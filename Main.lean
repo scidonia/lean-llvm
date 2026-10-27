@@ -18,12 +18,13 @@ structure Options where
   deriving Inhabited
 
 def usage : String :=
-  "usage: leanllvm <input.ll> [-o <output.ll>] [--passes constprop,foldbr|none] [--no-check]"
+  "usage: leanllvm <input.ll> [-o <output.ll>] [--passes constprop,foldbr,strength|none] [--no-check]"
 
 def parsePassName (s : String) : Option Pass :=
   match s with
   | "constprop" => some constantPropagation
   | "foldbr" => some branchFolding
+  | "strength" => some strengthReduction
   | _ => none
 
 def parsePasses (s : String) : Except String (List Pass) :=

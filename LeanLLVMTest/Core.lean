@@ -150,3 +150,32 @@ entry:
       | .ok m' => m' = m
       | .error _ => false
   | .error _ => false
+
+-- Strength reduction fires on `mul i32 %x, 2` and preserves behaviour.
+def strengthSample : String :=
+"define i32 @twice(i32 %x) {
+entry:
+  %y = mul i32 %x, 2
+  ret i32 %y
+}
+"
+
+def strengthFunction : Function :=
+  match parseModule strengthSample with
+  | .ok ⟨f :: _⟩ => f
+  | _ => ⟨"", .void, [], []⟩
+
+#guard
+  match (strengthReduction.run strengthFunction).blocks with
+  | b :: _ =>
+      match b.instrs with
+      | [i] => i = .binop "%y" .shl 32 (.reg "%x") (.imm (.int 32 (BitVec.ofNat 32 1)))
+      | _ => false
+  | [] => false
+
+#guard run strengthFunction [.int 32 (BitVec.ofInt 32 21)] =
+  run (strengthReduction.run strengthFunction) [.int 32 (BitVec.ofInt 32 21)]
+
+/-- info: 'LeanLLVM.strengthReduction_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.strengthReduction_sound

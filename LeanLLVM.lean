@@ -6,4 +6,5 @@ import LeanLLVM.Printer
 import LeanLLVM.Transform.Basic
 import LeanLLVM.Transform.ConstantFold
 import LeanLLVM.Transform.FoldBranches
+import LeanLLVM.Transform.StrengthReduce
 import LeanLLVM.Pipeline

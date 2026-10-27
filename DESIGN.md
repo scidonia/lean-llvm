@@ -78,6 +78,10 @@ substitution is carried through the block, and an environment invariant
 being substituted.  A separate invariant lemma maintains it across instructions,
 including instructions that rebind a name.
 
+The strength-reduction pass (`mul x, 2` → `shl x, 1`) is the smallest shape: one
+`BitVec` identity (`x * 2 = x <<< 1`), one instruction-equivalence lemma, the
+same lift over `runFuel`.
+
 ## Toolchain position
 
 ```

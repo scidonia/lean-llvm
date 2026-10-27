@@ -21,7 +21,7 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 | Front end | A line-oriented parser and a canonical printer for the modelled subset | bitcode, metadata, attributes, declarations with bodies |
 | Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency, calls |
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing | relational/log relations, memory-transformation relations |
-| Passes | Certified constant propagation, certified branch folding, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
+| Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
 
 Every pass is a theorem, not a test: the build fails if the refinement proof
@@ -48,7 +48,7 @@ checking emitted IR.
 ```bash
 nix develop -c lake exe leanllvm input.ll -o output.ll
 
-# choose passes (default: constprop,foldbr)
+# choose passes (default: constprop,foldbr,strength)
 nix develop -c lake exe leanllvm input.ll --passes foldbr
 
 # print to stdout instead of a file
@@ -101,6 +101,7 @@ conditional edge is gone, which is what the certified branch folder proves.
 | `LeanLLVM/Transform/Basic.lean` | `Pass`, soundness, composition, pipeline |
 | `LeanLLVM/Transform/ConstantFold.lean` | certified constant propagation |
 | `LeanLLVM/Transform/FoldBranches.lean` | certified conditional-branch folding |
+| `LeanLLVM/Transform/StrengthReduce.lean` | certified strength reduction (`mul x, 2` → `shl x, 1`) |
 | `LeanLLVM/Pipeline.lean` | the shipped pipeline and its soundness theorem |
 | `Main.lean` | the `leanllvm` driver |
 
@@ -119,7 +120,8 @@ proof obligation.
 Each pass is proved in two steps: a local lemma that a rewritten instruction or
 terminator has the same effect, and a lift over `runFuel` by induction on the
 fuel.  Composition is sound by transitivity, so the pipeline theorem is
-`constantPropagation_sound` and `branchFolding_sound` combined.
+`constantPropagation_sound`, `branchFolding_sound` and
+`strengthReduction_sound` combined.
 
 ## Reference materials
 
