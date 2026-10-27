@@ -1,0 +1,15 @@
+name = "LeanLLVM"
+version = "0.1.0"
+defaultTargets = ["leanllvm"]
+
+# No external package dependency: the development rests on Lean's own kernel
+# and core library only, so a build needs no network access.
+[[lean_lib]]
+name = "LeanLLVM"
+
+[[lean_lib]]
+name = "LeanLLVMTest"
+
+[[lean_exe]]
+name = "leanllvm"
+root = "Main"

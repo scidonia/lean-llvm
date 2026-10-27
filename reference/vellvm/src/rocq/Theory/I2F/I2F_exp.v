@@ -1,0 +1,1754 @@
+From Equations Require Import Equations.
+
+From Stdlib Require Import Lia.
+
+From ExtLib Require Import Structures.Monads.
+
+From ITree Require Import
+  ITree Eq HeterogeneousRelations.
+From Vellvm Require Import
+  Utils
+  Syntax
+  Semantics
+  VellvmIntegers
+  Integers
+  Interfaces.IPtr
+  Interfaces.Params
+  Implementations.Pointer
+  Implementations.Provenance
+  Implementations.IPtrInfinite
+  Implementations.IPtrFinite
+  Implementations.Memory
+  Implementations.ParamsV.
+
+From Vellvm Require Import
+  Utils.rutt_cutoff
+  Theory.I2F.Refinement.
+
+From Paco Require Import paco.
+
+Ltac rstep :=
+  first [apply ruttc_trigger; eauto 10; try easy |
+          apply ruttc_trigger_cast |
+          apply ruttc_ret; eauto 10 
+    ].
+Tactic Notation "rbind" uconstr(x) := eapply ruttc_bind with (RR := x).
+Tactic Notation "erbind" := eapply ruttc_bind.
+Hint Resolve ruttc_ret ruttc_trigger : core.
+Hint Unfold I2F_refine_MCFG : core.
+Hint Unfold I2F_refine : core.
+Hint Unfold I2F_Addr: core.
+Hint Unfold I2F_Iptr : core.
+Hint Transparent dvp : core.
+Ltac cbnn := cbn; unfold resum, ReSum_id, id_, Id_IFun.
+Tactic Notation "cbnn" "in" ident(h) :=
+  cbn in h; unfold resum, ReSum_id, id_, Id_IFun in h.
+
+(** [refine_dvalue_base_map] is [refine_dvalue_base_map_gen]
+      (Refinement.v) at the MCFG signature. *)
+Lemma refine_dvalue_base_map t1 t2 :
+  I2F_refine_MCFG I2F_dvalue_base t1 t2 ->
+  I2F_refine_MCFG I2F_dvalue (ITree.map DVALUE_Base t1) (ITree.map DVALUE_Base t2).
+Proof. apply refine_dvalue_base_map_gen. Qed.
+
+Hint Resolve refine_dvalue_base_map : core.
+
+(** Generic [freeze]/[freeze_base], parameterized over the single event
+      they trigger: [draw]. The MCFG and CFG instances then differ only in
+      the [draw]-refinement fed in ([I2F_draw_MCFG] / [I2F_draw_CFG]). *)
+Lemma I2F_freeze_base_gen {E1 E2}
+  `{@DrawE PInf -< E1} `{FailureE -< E1} `{OOME -< E1} `{UBE -< E1}
+  `{@DrawE PFin -< E2} `{FailureE -< E2} `{OOME -< E2} `{UBE -< E2}
+  {Rcutl : pred1 E1} {Rcutr : pred1 E2}
+  {REv : prerel E1 E2} {RAns : postrel E1 E2}
+  (Hdraw : forall dt, ruttc Rcutl Rcutr REv RAns I2F_dvalue (draw dt) (draw dt))
+  (a : @dvalue_base PInf) (b : @dvalue_base PFin) :
+  I2F_dvalue_base a b ->
+  ruttc Rcutl Rcutr REv RAns I2F_dvalue (freeze_base a) (freeze_base b).
+Proof.
+  intros HDV; destruct HDV; cbn;
+    try solve [ apply ruttc_ret; auto
+              | apply refine_dvalue_base_map_gen; apply ruttc_ret; auto ].
+  apply Hdraw.
+Qed.
+
+Lemma I2F_freeze_gen {E1 E2}
+  `{@DrawE PInf -< E1} `{FailureE -< E1} `{OOME -< E1} `{UBE -< E1}
+  `{@DrawE PFin -< E2} `{FailureE -< E2} `{OOME -< E2} `{UBE -< E2}
+  {Rcutl : pred1 E1} {Rcutr : pred1 E2}
+  {REv : prerel E1 E2} {RAns : postrel E1 E2}
+  (Hdraw : forall dt, ruttc Rcutl Rcutr REv RAns I2F_dvalue (draw dt) (draw dt))
+  (a : @dvalue PInf) (b : @dvalue PFin) :
+  I2F_dvalue a b ->
+  ruttc Rcutl Rcutr REv RAns I2F_dvalue (freeze a) (freeze b).
+Proof.
+  intros HDV; induction HDV; cbn.
+  - now apply (I2F_freeze_base_gen Hdraw).
+  - eapply ruttc_bind; [apply ruttc_map_monad_gen; eauto | intros ?? HR; apply ruttc_ret; now constructor].
+  - eapply ruttc_bind; [apply ruttc_map_monad_gen; eauto | intros ?? HR; apply ruttc_ret; now constructor].
+Qed.
+
+(** [draw] refined by itself at the MCFG signature --- the sole
+      event-triggering step of [freeze]/[freeze_base]. *)
+Lemma I2F_draw_MCFG : forall dt,
+    I2F_refine_MCFG I2F_dvalue (draw dt) (draw dt).
+Proof. intros; unfold I2F_refine_MCFG, draw; rstep. Qed.
+
+Lemma I2F_freeze_base a b :
+  I2F_dvalue_base a b ->
+  I2F_refine (freeze_base a) (freeze_base b).
+Proof. intros H; unfold I2F_refine, I2F_refine_MCFG; now apply (I2F_freeze_base_gen I2F_draw_MCFG). Qed.
+
+Lemma I2F_freeze a b :
+  I2F_dvalue a b ->
+  I2F_refine (freeze a) (freeze b).
+Proof. intros H; unfold I2F_refine, I2F_refine_MCFG; now apply (I2F_freeze_gen I2F_draw_MCFG). Qed.
+
+(** The pure content of the [EXP_Integer] case, and the one place where
+      the 14-way case analysis on [dtyp] happens. *)
+Lemma I2F_denote_int_syntax_as_int : forall τ x,
+    I2F_EOU I2F_dvalue
+      (@denote_int_syntax_as_int PInf τ x)
+      (@denote_int_syntax_as_int PFin τ x).
+Proof with (cbn; repeat constructor).
+  intros; destruct τ as [dt| |]...
+  destruct dt...
+  (* [DTYPE_Iptr]: the finite side either OOMs ([I2F_EOU_oom]) or
+       returns [repr x] with [x] in range, so that [unsigned (repr x) = x]. *)
+  unfold from_Z_bits.
+  destruct ((denote_int_syntax x <=? @Integers.max_unsigned 64)%Z
+            && (denote_int_syntax x >=? 0)%Z) eqn:EQ...
+  apply andb_prop in EQ as [LE GE].
+  apply Z.leb_le in LE; apply Z.geb_le in GE...
+  red; rewrite Integers.unsigned_repr; [reflexivity | lia].
+Qed.
+
+(** The pure content of the [EXP_Float] case. The float parsing is
+      parameter-independent: both sides run the very same computation. *)
+Lemma I2F_denote_float_syntax_as_float : forall τ x,
+    I2F_EOU I2F_dvalue
+      (@denote_float_syntax_as_float PInf τ x)
+      (@denote_float_syntax_as_float PFin τ x).
+Proof.
+  intros; destruct τ; cbn; try (repeat constructor).
+  repeat (break_match_goal; cbn); repeat constructor.
+Qed.
+
+#[local] Hint Resolve Forall2_repeat : core.
+(** The pure content of the [EXP_Zero_initializer] case, by induction on
+      [dtyp]. The only value-dependent leaves are [DTYPE_Iptr] (the zero
+      intptr on both sides) and [DTYPE_Pointer] ([null] on both sides),
+      including under vectors; the aggregate cases go through the
+      compatibility of [I2F_EOU] with [bind] and [map_monad]. *)
+Lemma I2F_default_dvalue_of_dtyp : forall τ,
+    I2F_EOU I2F_dvalue
+      (@default_dvalue_of_dtyp PInf τ)
+      (@default_dvalue_of_dtyp PFin τ).
+Proof.
+  induction τ; cbn.
+  - (* DTYPE_Base: scalar leaves, all diagonal up to [zero_iptr]/[null];
+         [DTYPE_B] relates the repeated zero bits pointwise *)
+    destruct t; cbn;
+      try (unfold default_dvalue_of_dtyp_i);
+      try (destruct fp; cbn); auto 7.
+  - (* DTYPE_Struct *)
+    eapply I2F_EOU_bind; [apply I2F_EOU_map_monad; auto|].
+    intros; do 2 constructor; auto.
+  - (* DTYPE_Array *)
+    eapply I2F_EOU_bind; [eassumption|].
+    intros; rewrite !repeat_acc_eq; do 2 constructor; auto.
+Qed.
+
+  (** * Arithmetic bridge: [IPZ] vs [IP64Bit] under [I2F_Iptr]
+
+      [I2F_Iptr x x'] pins [x = unsigned x'], so after substitution both
+      sides of the integer operations compute on [unsigned x'],
+      [unsigned y']. The lemmas below characterize the [unsigned] value of
+      the finite operations on their success paths; the failure paths are
+      absorbed by the [I2F_EOU] cuts (OOM on the right, UB on the left) or
+      synchronize as equal booleans. *)
+
+Section ArithBridge.
+  Context {sz : positive}.
+
+  Lemma unsigned_add_bounded : forall (x y : @bit_int sz),
+      (unsigned x + unsigned y < @Integers.modulus sz)%Z ->
+      unsigned (Integers.add x y) = (unsigned x + unsigned y)%Z.
+  Proof.
+    intros x y B.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.add.
+    rewrite Integers.unsigned_repr_eq.
+    apply Zmod_small; lia.
+  Qed.
+
+  Lemma unsigned_sub_bounded : forall (x y : @bit_int sz),
+      (unsigned y <= unsigned x)%Z ->
+      unsigned (Integers.sub x y) = (unsigned x - unsigned y)%Z.
+  Proof.
+    intros x y B.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.sub.
+    rewrite Integers.unsigned_repr_eq.
+    apply Zmod_small; lia.
+  Qed.
+
+  Lemma unsigned_divu : forall (x y : @bit_int sz),
+      unsigned y <> 0%Z ->
+      unsigned (Integers.divu x y) = (unsigned x / unsigned y)%Z.
+  Proof.
+    intros x y NZ.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.divu.
+    rewrite Integers.unsigned_repr; auto.
+    unfold Integers.max_unsigned.
+    assert (0 <= unsigned x / unsigned y <= unsigned x)%Z; [| lia].
+    split.
+    - apply Z.div_pos; lia.
+    - apply Z.div_le_upper_bound; nia.
+  Qed.
+
+  Lemma unsigned_modu : forall (x y : @bit_int sz),
+      unsigned y <> 0%Z ->
+      unsigned (Integers.modu x y) = (unsigned x mod unsigned y)%Z.
+  Proof.
+    intros x y NZ.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.modu.
+    rewrite Integers.unsigned_repr; auto.
+    pose proof (Z.mod_pos_bound (unsigned x) (unsigned y) ltac:(lia)).
+    unfold Integers.max_unsigned; lia.
+  Qed.
+
+  Lemma unsigned_shru : forall (x y : @bit_int sz),
+      unsigned (Integers.shru x y) = Z.shiftr (unsigned x) (unsigned y).
+  Proof.
+    intros x y.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.shru.
+    rewrite Integers.unsigned_repr; auto.
+    rewrite Z.shiftr_div_pow2 by lia.
+    assert (0 < 2 ^ unsigned y)%Z by (apply Z.pow_pos_nonneg; lia).
+    unfold Integers.max_unsigned.
+    assert (0 <= unsigned x / 2 ^ unsigned y <= unsigned x)%Z; [| lia].
+    split.
+    - apply Z.div_pos; lia.
+    - apply Z.div_le_upper_bound; nia.
+  Qed.
+
+  (* Bitwise operations: the exact result already fits in [sz] bits. *)
+
+  Lemma unsigned_testbit_above : forall (x : @bit_int sz) i,
+      (Z.pos sz <= i)%Z -> Z.testbit (unsigned x) i = false.
+  Proof.
+    intros x i LE.
+    apply Ztestbit_above with (n := Pos.to_nat sz).
+    - pose proof (Integers.unsigned_range x) as R.
+      unfold Integers.modulus in R.
+      now rewrite <- two_power_pos_nat, <- two_power_pos_memo_eq.
+    - rewrite positive_nat_Z; lia.
+  Qed.
+
+  Lemma max_unsigned_ones : @Integers.max_unsigned sz = Z.ones (Z.pos sz).
+  Proof.
+    unfold Integers.max_unsigned.
+    rewrite Integers.modulus_power, Z.ones_equiv, two_p_equiv.
+    unfold Integers.zwordsize; lia.
+  Qed.
+
+  Lemma Z_bits_range : forall z,
+      (0 <= z)%Z ->
+      (forall i, (Z.pos sz <= i)%Z -> Z.testbit z i = false) ->
+      (0 <= z <= @Integers.max_unsigned sz)%Z.
+  Proof.
+    intros z NN ABOVE; split; auto.
+    apply Ztestbit_le.
+    - pose proof (@Integers.modulus_pos sz).
+      unfold Integers.max_unsigned; lia.
+    - intros i POS TB.
+      rewrite max_unsigned_ones.
+      destruct (Z.ltb_spec i (Z.pos sz)) as [LT | GE].
+      + apply Z.ones_spec_low; lia.
+      + rewrite ABOVE in TB; [discriminate | lia].
+  Qed.
+
+  Lemma unsigned_and_land : forall (x y : @bit_int sz),
+      unsigned (Integers.and x y) = Z.land (unsigned x) (unsigned y).
+  Proof.
+    intros x y.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.and.
+    rewrite Integers.unsigned_repr; auto.
+    apply Z_bits_range.
+    - apply Z.land_nonneg; lia.
+    - intros i LE.
+      rewrite Z.land_spec, !unsigned_testbit_above; auto.
+  Qed.
+
+  Lemma unsigned_or_lor : forall (x y : @bit_int sz),
+      unsigned (Integers.or x y) = Z.lor (unsigned x) (unsigned y).
+  Proof.
+    intros x y.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.or.
+    rewrite Integers.unsigned_repr; auto.
+    apply Z_bits_range.
+    - apply Z.lor_nonneg; lia.
+    - intros i LE.
+      rewrite Z.lor_spec, !unsigned_testbit_above; auto.
+  Qed.
+
+  Lemma unsigned_xor_lxor : forall (x y : @bit_int sz),
+      unsigned (Integers.xor x y) = Z.lxor (unsigned x) (unsigned y).
+  Proof.
+    intros x y.
+    pose proof (Integers.unsigned_range x); pose proof (Integers.unsigned_range y).
+    unfold Integers.xor.
+    rewrite Integers.unsigned_repr; auto.
+    apply Z_bits_range.
+    - apply Z.lxor_nonneg; lia.
+    - intros i LE.
+      rewrite Z.lxor_spec, !unsigned_testbit_above; auto.
+  Qed.
+
+  Lemma eq_unsigned_eqb : forall (x y : @bit_int sz),
+      Integers.eq x y = (unsigned x =? unsigned y)%Z.
+  Proof.
+    intros; unfold Integers.eq.
+    destruct (zeq _ _) as [e | n]; symmetry.
+    - now apply Z.eqb_eq.
+    - now apply Z.eqb_neq.
+  Qed.
+
+  (* The always-[zero] overflow-flag functions of the intptr instances
+       make the poison guards vacuous. *)
+  Lemma eq_zero_one_false : @Integers.eq sz Integers.zero Integers.one = false.
+  Proof.
+    rewrite eq_unsigned_eqb, Integers.unsigned_zero, Integers.unsigned_one.
+    reflexivity.
+  Qed.
+
+  (* The success path of the finite [madd]. *)
+  Lemma unsigned_add_no_carry : forall (x y : @bit_int sz),
+      Integers.eq (Integers.add_carry x y Integers.zero) Integers.one = false ->
+      unsigned (Integers.add x y) = (unsigned x + unsigned y)%Z.
+  Proof.
+    intros x y NC.
+    unfold Integers.add_carry in NC.
+    rewrite Integers.unsigned_zero, Z.add_0_r in NC.
+    revert NC; destruct (zlt _ _) as [LT | GE]; intros NC.
+    - apply unsigned_add_bounded; auto.
+    - now rewrite Integers.eq_true in NC.
+  Qed.
+
+  (* Comparison bridges: the finite unsigned comparisons coincide with
+       [mcmpu_Z] on the [unsigned] values. *)
+  Lemma ltu_unsigned_ltb : forall (x y : @bit_int sz),
+      Integers.ltu x y = (unsigned x <? unsigned y)%Z.
+  Proof.
+    intros; unfold Integers.ltu.
+    destruct (zlt _ _) as [l | g]; symmetry.
+    - now apply Z.ltb_lt.
+    - apply Z.ltb_ge; lia.
+  Qed.
+
+  Lemma cmpu_unsigned : forall c (x y : @bit_int sz),
+      Integers.cmpu c x y = mcmpu_Z c (unsigned x) (unsigned y).
+  Proof.
+    intros []; intros; cbv [Integers.cmpu mcmpu_Z];
+      rewrite ?eq_unsigned_eqb, ?ltu_unsigned_ltb; auto.
+    - now rewrite Z.leb_antisym.
+    - now rewrite Z.gtb_ltb.
+    - now rewrite Z.geb_leb, Z.leb_antisym.
+  Qed.
+
+  Lemma Z_gtb_irrefl : forall z : Z, (z >? z)%Z = false.
+  Proof.
+    intros; rewrite Z.gtb_ltb; apply Z.ltb_irrefl.
+  Qed.
+
+End ArithBridge.
+
+(* Keep the overflow bounds abstract in goals rather than computed to
+     20-digit literals, and keep [unsigned (repr z)] from reducing to
+     [Z_mod_modulus z], so that explicit [destruct ... eqn:] and the
+     [ArithBridge] lemmas apply syntactically. *)
+#[local] Arguments Integers.max_unsigned : simpl never.
+#[local] Arguments Integers.repr : simpl never.
+#[local] Arguments msamesign_Z : simpl never.
+
+(** Layer 1: [eval_int_op] at the intptr instantiations, where the two
+      sides genuinely differ. The instances are pinned explicitly: at the
+      concrete parameters, [iptr IP64Bit] is definitionally [bit_int 64]
+      and inference would otherwise pick [ToDvalue_Int] rather than the
+      [ToDvalue_iptr] used (at abstract [Params]) by [eval_iop_integer_h]. *)
+Lemma I2F_eval_int_op_iptr : forall iop (x y : @iptr IPZ) (x' y' : @iptr IP64Bit),
+    I2F_Iptr x x' -> I2F_Iptr y y' ->
+    I2F_EOU I2F_dvalue_base
+      (@eval_int_op PInf (@iptr IPZ) (@VMemInt_iptr IPZ) (@ToDvalue_iptr PInf) iop x y)
+      (@eval_int_op PFin (@iptr IP64Bit) (@VMemInt_iptr IP64Bit) (@ToDvalue_iptr PFin) iop x' y').
+Proof.
+  intros * EQ1 EQ2; red in EQ1, EQ2; subst.
+  destruct iop; cbn.
+  - (* Add: the finite side OOMs on carry, else values agree *)
+    destruct nuw, nsw; cbn; rewrite ?eq_zero_one_false; cbn;
+      (destruct (Integers.eq (Integers.add_carry x' y' Integers.zero) Integers.one) eqn:NC;
+       cbn; auto;
+       do 2 constructor; red; rewrite unsigned_add_no_carry; auto).
+  - (* Sub: the finite side OOMs on underflow *)
+    destruct nuw, nsw; cbn; rewrite ?eq_zero_one_false; cbn;
+      (destruct ((unsigned y' >? unsigned x')%Z) eqn:B; cbn; auto;
+       rewrite Z.gtb_ltb, Z.ltb_ge in B;
+       do 2 constructor; red; rewrite unsigned_sub_bounded; auto).
+  - (* Mul: the finite side OOMs on overflow; the left side carries a
+         vacuous [z >? z] guard. *)
+    rewrite Z_gtb_irrefl; cbn.
+    destruct ((unsigned x' * unsigned y' >? @Integers.max_unsigned 64)%Z) eqn:B; cbn; auto.
+    rewrite Z.gtb_ltb, Z.ltb_ge in B.
+    assert (RANGE : (0 <= unsigned x' * unsigned y' <= @Integers.max_unsigned 64)%Z).
+    { pose proof (Integers.unsigned_range x'); pose proof (Integers.unsigned_range y'); nia. }
+    rewrite Integers.unsigned_repr; auto.
+    rewrite Z_gtb_irrefl; cbn.
+    do 2 constructor; red; rewrite Integers.unsigned_repr; auto.
+  - (* Shl: same shape as Mul *)
+    rewrite Z_gtb_irrefl; cbn.
+    destruct ((Z.shiftl (unsigned x') (unsigned y') >? @Integers.max_unsigned 64)%Z) eqn:B;
+      cbn; auto.
+    rewrite Z.gtb_ltb, Z.ltb_ge in B.
+    assert (RANGE : (0 <= Z.shiftl (unsigned x') (unsigned y') <= @Integers.max_unsigned 64)%Z).
+    { pose proof (Integers.unsigned_range x'); split; auto.
+      apply Z.shiftl_nonneg; lia. }
+    rewrite Integers.unsigned_repr; auto.
+    rewrite Z_gtb_irrefl; cbn.
+    do 2 constructor; red; rewrite Integers.unsigned_repr; auto.
+  - (* UDiv: division by zero raises UB on both sides (left cut) *)
+    destruct ((unsigned y' =? 0)%Z) eqn:Z0; cbn; auto.
+    apply Z.eqb_neq in Z0.
+    destruct exact; cbn.
+    + destruct ((unsigned x' mod unsigned y' =? 0)%Z) eqn:EX; cbn; eauto.
+      do 2 constructor; red; rewrite unsigned_divu; auto.
+    + do 2 constructor; red; rewrite unsigned_divu; auto.
+  - (* SDiv: unsupported at iptr type on both sides *)
+    repeat constructor.
+  - (* LShr *)
+    rewrite Bool.andb_false_r; cbn.
+    destruct exact; cbn.
+    + destruct ((unsigned x' mod 2 ^ unsigned y' =? 0)%Z) eqn:EX; cbn; eauto.
+      do 2 constructor; red; now rewrite unsigned_shru.
+    + do 2 constructor; red; now rewrite unsigned_shru.
+  - (* AShr: unsupported at iptr type on both sides *)
+    repeat constructor.
+  - (* URem *)
+    destruct ((unsigned y' =? 0)%Z) eqn:Z0; cbn; auto.
+    apply Z.eqb_neq in Z0.
+    do 2 constructor; red; rewrite unsigned_modu; auto.
+  - (* SRem: unsupported at iptr type on both sides *)
+    repeat constructor.
+  - (* And *)
+    do 2 constructor; red; now rewrite unsigned_and_land.
+  - (* Or *)
+    destruct disjoint; cbn.
+    + rewrite eq_unsigned_eqb, unsigned_or_lor, unsigned_xor_lxor.
+      destruct ((Z.lor (unsigned x') (unsigned y') =? Z.lxor (unsigned x') (unsigned y'))%Z) eqn:D;
+        cbn.
+      * do 2 constructor; red; now rewrite unsigned_or_lor.
+      * repeat constructor.
+    + do 2 constructor; red; now rewrite unsigned_or_lor.
+  - (* Xor *)
+    do 2 constructor; red; now rewrite unsigned_xor_lxor.
+Qed.
+
+(** Layer 2: on [bit_int sz] arguments both sides run the very same
+      computation; only the [dvalue] wrapper differs. *)
+Lemma I2F_eval_int_op_bit_int : forall (sz : positive) iop (x y : @bit_int sz),
+    I2F_EOU I2F_dvalue_base
+      (@eval_int_op PInf _ _ _ iop x y)
+      (@eval_int_op PFin _ _ _ iop x y).
+Proof.
+  intros; destruct iop; cbn.
+  all:repeat break_goal_fast; eauto; fail.
+Qed.
+
+(** Layer 3: the scalar dispatcher. Inverting the two value relations
+      keeps the case analysis synchronized; the remaining cases dispatch
+      to layers 1 and 2, or share their guards (including the SDiv-on-
+      poison check, whose scrutinee agrees on related values). *)
+Lemma I2F_eval_iop_integer_base : forall iop v1 v2 v1' v2',
+    I2F_dvalue_base v1 v1' ->
+    I2F_dvalue_base v2 v2' ->
+    I2F_EOU I2F_dvalue_base
+      (@eval_iop_integer_base PInf iop v1 v2)
+      (@eval_iop_integer_base PFin iop v1' v2').
+Proof.
+  intros * H1 H2.
+  induction H1; induction H2; cbn; eauto.
+  all: try (repeat break_goal_fast; eauto; fail).
+  - repeat break_goal_fast; eauto.
+    subst; cbn; apply I2F_eval_int_op_bit_int.
+  - apply I2F_eval_int_op_iptr; eauto.
+  - (* Poison rows: the guards are shared, up to [I2F_Iptr] on the payload *)
+    destruct iop; cbn; eauto.
+    try (match goal with H : I2F_Iptr _ _ |- _ => red in H; subst end).
+    repeat break_goal_fast; eauto.
+Qed.
+
+(* Destruct the (variable) vector flags blocking the [eval_*] wrapper
+     dispatches; the mismatched flavours are diagonal errors. *)
+Ltac i2f_vec_flags :=
+  repeat match goal with
+    | |- context [if ?v then _ else _] => is_var v; destruct v; cbn
+    end.
+
+(** The partial coercion to base values relates related values. *)
+Lemma I2F_dvalue_to_dvalue_base : forall v v',
+    I2F_dvalue v v' ->
+    I2F_EOU I2F_dvalue_base
+      (@dvalue_to_dvalue_base PInf v) (@dvalue_to_dvalue_base PFin v').
+Proof.
+  intros * H; inversion H; subst; cbn; repeat constructor; eauto.
+Qed.
+
+Lemma Forall2_map_Base : forall l1 l2,
+    Forall2 I2F_dvalue_base l1 l2 ->
+    Forall2 I2F_dvalue (map (@DVALUE_Base PInf) l1) (map (@DVALUE_Base PFin) l2).
+Proof.
+  intros l1 l2 F; induction F; cbn; constructor; auto.
+Qed.
+
+(* The [eval_*] wrappers share their vector plumbing: coerce both
+     element lists to base values, run the base dispatcher pointwise,
+     and rewrap. *)
+Ltac i2f_vec_wrap base_lemma :=
+  i2f_vec_flags;
+  try (repeat constructor);
+  repeat match goal with
+    | F : Forall2 I2F_dvalue _ _ |- _ =>
+        rewrite (Forall2_length_N F); revert F
+    end;
+  intros F1 F2;
+  break_match_goal; cbn; auto;
+  (eapply I2F_EOU_bind;
+   [eapply I2F_EOU_map_monad2;
+    [eauto | intros; apply I2F_dvalue_to_dvalue_base; auto]|]);
+  intros ? ? ?;
+    (eapply I2F_EOU_bind;
+     [eapply I2F_EOU_map_monad2;
+      [eauto | intros; apply I2F_dvalue_to_dvalue_base; auto]|]);
+  intros ? ? ?;
+    (eapply I2F_EOU_bind;
+     [ eapply I2F_EOU_vec_loop; [eapply Forall2_combine; eauto|];
+       intros; apply base_lemma; auto
+     | intros; do 2 constructor; apply Forall2_map_Base; auto ]).
+
+(** Layer 4: [eval_iop] adds the pointwise vector case on top of the
+      scalar dispatcher. *)
+Lemma I2F_eval_iop a1 a2 b1 b2 iop :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_EOU I2F_dvalue (eval_iop iop a1 a2) (eval_iop iop b1 b2).
+Proof.
+  intros H1 H2.
+  induction H1; subst; induction H2; subst; cbn; repeat constructor.
+  2,3: break_goal_fast; eauto.
+  - (* Base × Base *)
+    eapply I2F_EOU_bind; [apply I2F_eval_iop_integer_base; auto|].
+    intros; eauto.
+  - (* Array × Array *)
+    i2f_vec_wrap I2F_eval_iop_integer_base.
+Qed.
+
+(* The float operations are parameter-independent: related inputs have
+     synchronized shapes and identical payloads, so every leaf is
+     diagonal. *)
+Lemma I2F_eval_fneg_base : forall v v',
+    I2F_dvalue_base v v' ->
+    I2F_EOU I2F_dvalue_base (@eval_fneg_base PInf v) (@eval_fneg_base PFin v').
+Proof.
+  intros * H; inversion H; subst; cbn; repeat constructor.
+Qed.
+
+Lemma I2F_eval_fneg a b :
+  I2F_dvalue a b ->
+  I2F_EOU I2F_dvalue (eval_fneg a) (eval_fneg b).
+Proof.
+  intros H.
+  inversion H; subst; cbn; eauto.
+  - (* Base *)
+    eapply I2F_EOU_bind; [apply I2F_eval_fneg_base; auto| eauto].
+  - (* Array: only the vector flavour computes *)
+    match goal with v : bool |- _ => destruct v end; cbn; eauto.
+    eapply I2F_EOU_bind;
+      [eapply I2F_EOU_map_monad2;
+       [eauto | intros; apply I2F_dvalue_to_dvalue_base; auto]|].
+    intros;
+    eapply I2F_EOU_bind;
+      [eapply I2F_EOU_map_monad2;
+       [eauto | intros; apply I2F_eval_fneg_base; auto]|].
+    intros; do 2 constructor; apply Forall2_map_Base; auto.
+Qed.
+
+(* The infinite side's same-sign test is always true on unsigned values;
+     the finite side's is constantly true. *)
+Lemma msamesign_Z_nonneg : forall x y : Z,
+    (0 <= x)%Z -> (0 <= y)%Z -> msamesign_Z x y = true.
+Proof.
+  intros x y HX HY; unfold msamesign_Z.
+  apply Z.geb_le in HX; apply Z.geb_le in HY.
+  now rewrite HX, HY.
+Qed.
+
+(** [eval_int_icmp] at the intptr instantiations. The signed comparisons
+      are unsupported at iptr type on both sides; the unsigned ones agree
+      through the comparison bridges; the same-sign poison guard is vacuous
+      on both sides (unsigned values are nonnegative on the left, and the
+      finite [msamesign] is constantly [true]). *)
+Lemma I2F_eval_int_icmp_iptr : forall samesign icmp (x y : @iptr IPZ) (x' y' : @iptr IP64Bit),
+    I2F_Iptr x x' -> I2F_Iptr y y' ->
+    I2F_EOU I2F_dvalue_base
+      (@eval_int_icmp PInf _ (@VMemInt_iptr IPZ) samesign icmp x y)
+      (@eval_int_icmp PFin _ (@VMemInt_iptr IP64Bit) samesign icmp x' y').
+Proof.
+  intros * EQ1 EQ2; red in EQ1, EQ2; subst.
+  pose proof (Integers.unsigned_range x'); pose proof (Integers.unsigned_range y').
+  destruct icmp; cbn; repeat constructor;
+    rewrite ?eq_unsigned_eqb, ?ltu_unsigned_ltb, ?Z.gtb_ltb, ?Z.geb_leb, ?Z.leb_antisym;
+    rewrite msamesign_Z_nonneg by lia;
+    cbn; rewrite ?Bool.andb_false_r; cbn;
+    break_match_goal; repeat constructor.
+Qed.
+
+(** The scalar comparison dispatcher. *)
+Lemma I2F_eval_icmp_base : forall samesign icmp v1 v2 v1' v2',
+    I2F_dvalue_base v1 v1' ->
+    I2F_dvalue_base v2 v2' ->
+    I2F_EOU I2F_dvalue_base
+      (@eval_icmp_base PInf samesign icmp v1 v2)
+      (@eval_icmp_base PFin samesign icmp v1' v2').
+Proof.
+  intros * H1 H2.
+  induction H1; induction H2; cbn; eauto.
+  (* Iptr × Iptr *)
+  3:apply I2F_eval_int_icmp_iptr; eauto.
+  (* Remaining synchronized rows: [I × I] (after eliminating the
+       bitwidth transport) and [Pointer × Pointer] (where [ptr_to_int]
+       yields equal integers) run the same computation on both sides;
+       close by symbolic execution of the shared tests. *)
+  all: repeat match goal with
+         | HA : I2F_Addr ?a ?b |- _ =>
+             destruct a, b; destruct HA as [HI ->]; red in HI; subst
+         end;
+    try (match goal with
+         | |- context [Pos.eq_dec ?a ?b] =>
+             destruct (Pos.eq_dec a b) as [e | n]; [destruct e|]
+         end);
+    cbv [eq_rec_r eq_rec eq_rect Logic.eq_sym];
+    destruct icmp; cbn; eauto;
+    repeat (break_goal_fast; cbn); repeat constructor.
+Qed.
+
+Lemma I2F_eval_icmp a1 a2 b1 b2 samesign cmp :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_EOU I2F_dvalue (eval_icmp samesign cmp a1 a2)
+    (eval_icmp samesign cmp b1 b2).
+Proof.
+  intros H1 H2.
+  induction H1; induction H2; cbn; eauto.
+  all: try (i2f_vec_flags; eauto).
+  - (* Base × Base *)
+    eapply I2F_EOU_bind; [apply I2F_eval_icmp_base; auto|].
+    intros; eauto.
+  - (* Array × Array *)
+    i2f_vec_wrap I2F_eval_icmp_base.
+Qed.
+
+Lemma I2F_eval_fop_base : forall c v1 v2 v1' v2',
+    I2F_dvalue_base v1 v1' ->
+    I2F_dvalue_base v2 v2' ->
+    I2F_EOU I2F_dvalue_base
+      (@eval_fop_base PInf c v1 v2)
+      (@eval_fop_base PFin c v1' v2').
+Proof.
+  intros * H1 H2.
+  induction H1; induction H2; cbn; eauto;
+    destruct c; cbn; try (break_goal_fast; cbn); eauto.
+Qed.
+
+Lemma I2F_eval_fop a1 a2 b1 b2 fop :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_EOU I2F_dvalue (eval_fop fop a1 a2) (eval_fop fop b1 b2).
+Proof.
+  intros H1 H2.
+  induction H1; induction H2; cbn; eauto.
+  all: try (i2f_vec_flags; repeat constructor).
+  - (* Base × Base *)
+    eapply I2F_EOU_bind; [apply I2F_eval_fop_base; auto|].
+    intros; eauto.
+  - (* Array × Array *)
+    i2f_vec_wrap I2F_eval_fop_base.
+Qed.
+
+Lemma I2F_eval_fcmp_base : forall c v1 v2 v1' v2',
+    I2F_dvalue_base v1 v1' ->
+    I2F_dvalue_base v2 v2' ->
+    I2F_EOU I2F_dvalue_base
+      (@eval_fcmp_base PInf c v1 v2)
+      (@eval_fcmp_base PFin c v1' v2').
+Proof.
+  intros * H1 H2.
+  induction H1; induction H2; cbn; eauto;
+    unfold float_cmp, double_cmp; destruct c; cbn;
+    repeat (break_goal_fast; cbn); eauto.
+Qed.
+
+Lemma I2F_eval_fcmp a1 a2 b1 b2 cmp :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_EOU I2F_dvalue (eval_fcmp cmp a1 a2)
+    (eval_fcmp cmp b1 b2).
+Proof.
+  intros H1 H2.
+  inversion H1; subst; inversion H2; subst; cbn;
+    try (repeat constructor).
+  all: try (i2f_vec_flags; repeat constructor).
+  - (* Base × Base *)
+    eapply I2F_EOU_bind; [apply I2F_eval_fcmp_base; auto|].
+    intros; do 2 constructor; auto.
+  - (* Array × Array *)
+    i2f_vec_wrap I2F_eval_fcmp_base.
+Qed.
+
+(** * Bitcast: relating the byte-serialization round-trip.
+
+      The byte-extraction side is parameter-free-valued
+      ([EOU (MaybePoison Z)]): related values expose *equal* bytes, since
+      the payloads are shared ([DVALUE_I], floats) or [to_Z]-equal
+      (intptrs, addresses --- provenance is discarded by design), and the
+      offset/padding arithmetic only reads the shared [dtyp]. *)
+
+(** The semantic relation on lazy memory bytes: equal byte values. *)
+Definition I2F_mbyte (b : @memory_byte PInf) (b' : @memory_byte PFin) : Prop :=
+  @memory_byte_value PInf b = @memory_byte_value PFin b'.
+
+(* [EOUP]'s monad instance is local to [MemoryBytes.v]; re-register it
+     so that [map_monad] at [EOUP] can be spoken about here. *)
+#[local] Existing Instance EOUP_Monad.
+
+(** Related bytes give literally equal byte-value streams. *)
+Lemma I2F_map_monad_memory_byte_value : forall dbs dbs',
+    Forall2 I2F_mbyte dbs dbs' ->
+    map_monad (m := EOUP) (@memory_byte_value PInf) dbs
+    = map_monad (@memory_byte_value PFin) dbs'.
+Proof.
+  intros dbs dbs' F; induction F; cbn; auto.
+  red in H; rewrite H, IHF; reflexivity.
+Qed.
+
+#[local] Arguments absorb_pois : simpl never.
+
+(** Once the byte streams are aligned (they are parameter-free), the
+      two sides of [absorb_pois] share their scrutinee: the poison
+      short-circuit is diagonal and only the continuations differ. *)
+Lemma I2F_absorb_pois {A} (dt : dtyp) (c : EOUP A)
+  (k1 : A -> EOU (@dvalue_base PInf)) (k2 : A -> EOU (@dvalue_base PFin)) :
+  (forall a, I2F_EOU I2F_dvalue_base (k1 a) (k2 a)) ->
+  I2F_EOU I2F_dvalue_base (@absorb_pois PInf A dt c k1) (@absorb_pois PFin A dt c k2).
+Proof.
+  intros K; unfold absorb_pois.
+  eapply I2F_EOU_bind with (RA := Logic.eq); [apply I2F_EOU_refl|].
+  intros a ? <-; destruct a; cbn; [repeat constructor | apply K].
+Qed.
+
+(* [break_match_goal], but refusing to destruct [EOU]-typed scrutinees
+     opaquely: on those the two sides must be reduced in lockstep, either
+     because the scrutinees are the same term or through a dedicated
+     lemma. Failing the outer candidate lets the goal-matching backtrack
+     to the inner (boolean, type) tests. *)
+Ltac break_match_goal_safe :=
+  match goal with
+  | |- context [match ?X with _ => _ end] =>
+      lazymatch type of X with
+      | EOU _ => fail
+      | _ => destruct X eqn:?
+      end
+  end.
+
+(* Close an in-range [from_Z_bits] success branch: extract the bounds
+     from the guard, then relate [z] with [repr z] through
+     [unsigned_repr], wrapped either as an intptr value or as an
+     address. *)
+Ltac i2f_in_range_case :=
+  match goal with
+  | B : ((_ <=? _)%Z && (_ >=? _)%Z)%bool = true |- _ =>
+      apply andb_prop in B as [LE GE];
+      apply Z.leb_le in LE; apply Z.geb_le in GE;
+      first
+        [ (* an intptr value *)
+          do 2 constructor; red;
+          rewrite Integers.unsigned_repr; [reflexivity | now split]
+        | (* an address value *)
+          do 2 constructor; split;
+          [ red; rewrite Integers.unsigned_repr; [reflexivity | now split]
+          | reflexivity ]
+        | (* a bare address pair *)
+          do 2 constructor;
+          [ red; rewrite Integers.unsigned_repr; [reflexivity | now split]
+          | reflexivity ] ]
+  end.
+
+(** Deserialization at base types: every arm funnels through the shared
+      [EOUP] stream of [memory_byte_value]s (equal by [I2F_mbyte]);
+      [DTYPE_Iptr] and [DTYPE_Pointer] then run the finite in-range
+      analysis. *)
+Lemma I2F_memory_bytes_to_dvalue_base : forall t dbs dbs',
+    Forall2 I2F_mbyte dbs dbs' ->
+    I2F_EOU I2F_dvalue_base
+      (@memory_bytes_to_dvalue_base PInf dbs t)
+      (@memory_bytes_to_dvalue_base PFin dbs' t).
+Proof.
+  intros t dbs dbs' F; destruct t; cbn; auto.
+  - (* DTYPE_I *)
+    rewrite (I2F_map_monad_memory_byte_value F).
+    apply I2F_absorb_pois; intros v; repeat constructor.
+  - (* DTYPE_Iptr *)
+    rewrite (I2F_map_monad_memory_byte_value F).
+    apply I2F_absorb_pois; intros v; cbn.
+    unfold from_Z_bits;
+      repeat (break_match_goal_safe; cbn); auto;
+      i2f_in_range_case.
+  - (* DTYPE_Pointer *)
+    rewrite (I2F_map_monad_memory_byte_value F).
+    apply I2F_absorb_pois; intros v; cbn.
+    unfold from_Z_bits;
+      repeat (break_match_goal_safe; cbn); auto;
+      i2f_in_range_case.
+  - (* DTYPE_FP *)
+    destruct fp; cbn; auto;
+      rewrite (I2F_map_monad_memory_byte_value F);
+      apply I2F_absorb_pois; intros v; repeat constructor.
+Qed.
+
+(** Deserialization: related byte lists deserialize to related values;
+      aggregates recurse through the [Forall2] list combinators. *)
+Lemma I2F_memory_bytes_to_dvalue : forall t dbs dbs',
+    Forall2 I2F_mbyte dbs dbs' ->
+    I2F_EOU I2F_dvalue
+      (@memory_bytes_to_dvalue PInf dbs t)
+      (@memory_bytes_to_dvalue PFin dbs' t).
+Proof.
+  intros t; induction t using dtyp_ind; intros dbs dbs' F.
+  - (* DTYPE_Base *)
+    cbn.
+    eapply I2F_EOU_bind;
+      [apply I2F_memory_bytes_to_dvalue_base; auto|].
+    intros; do 2 constructor; auto.
+  - (* DTYPE_Struct: [cbn] normalizes both sides' paddings to the same
+         terms (the alignment payload is only tested for [Some]-ness, so
+         it reduces away entirely); both flavours then run the same
+         lockstep loop induction *)
+    destruct p; cbn.
+    + match goal with
+      | |- context [?L 0%N fields dbs] => set (goL := L)
+      end.
+      match goal with
+      | |- context [?R 0%N fields dbs'] => set (goR := R)
+      end.
+      assert (GO : forall offset xs ys,
+                 Forall2 I2F_mbyte xs ys ->
+                 I2F_EOU (Forall2 I2F_dvalue)
+                   (goL offset fields xs) (goR offset fields ys)).
+      { clear F.
+        match goal with
+        | IHu : forall u, In u fields -> _ |- _ => revert IHu
+        end.
+        induction fields as [| u fs IHf]; intros IH offset xs ys F.
+        - unfold goL, goR; cbn; repeat constructor.
+        - unfold goL, goR; cbn; fold goL; fold goR.
+          eapply I2F_EOU_bind;
+            [ apply IH; [now left | apply Forall2_take, Forall2_drop; auto] |].
+          intros f1 f2 Hf.
+          eapply I2F_EOU_bind;
+            [ apply IHf;
+              [ intros u0 IN; apply IH; now right
+              | apply Forall2_drop, Forall2_drop; auto ]
+            |].
+          intros r1 r2 Hr.
+          do 2 constructor; auto.
+      }
+      specialize (GO 0%N dbs dbs' F).
+      revert GO; generalize (goL 0%N fields dbs) (goR 0%N fields dbs');
+        intros m1 m2 GO; destruct GO; cbn; auto.
+    + match goal with
+      | |- context [?L 0%N fields dbs] => set (goL := L)
+      end.
+      match goal with
+      | |- context [?R 0%N fields dbs'] => set (goR := R)
+      end.
+      assert (GO : forall offset xs ys,
+                 Forall2 I2F_mbyte xs ys ->
+                 I2F_EOU (Forall2 I2F_dvalue)
+                   (goL offset fields xs) (goR offset fields ys)).
+      { clear F.
+        match goal with
+        | IHu : forall u, In u fields -> _ |- _ => revert IHu
+        end.
+        induction fields as [| u fs IHf]; intros IH offset xs ys F.
+        - unfold goL, goR; cbn; repeat constructor.
+        - unfold goL, goR; cbn; fold goL; fold goR.
+          eapply I2F_EOU_bind;
+            [ apply IH; [now left | apply Forall2_take, Forall2_drop; auto] |].
+          intros f1 f2 Hf.
+          eapply I2F_EOU_bind;
+            [ apply IHf;
+              [ intros u0 IN; apply IH; now right
+              | apply Forall2_drop, Forall2_drop; auto ]
+            |].
+          intros r1 r2 Hr.
+          do 2 constructor; auto.
+      }
+      specialize (GO 0%N dbs dbs' F).
+      revert GO; generalize (goL 0%N fields dbs) (goR 0%N fields dbs');
+        intros m1 m2 GO; destruct GO; cbn; auto.
+  - (* DTYPE_Array *)
+    cbn.
+    break_match_goal_safe.
+    + eapply I2F_EOU_bind;
+        [ eapply I2F_EOU_map_monad2 with (RA := Forall2 I2F_mbyte);
+          [ apply Forall2_repeatN; constructor
+          | intros ? ? ?; auto ]
+        | intros ? ? ?; do 2 constructor; auto ].
+    + eapply I2F_EOU_bind;
+        [ eapply I2F_EOU_map_monad2 with (RA := Forall2 I2F_mbyte);
+          [ apply Forall2_split_every_nil; auto
+          | intros ? ? ?; auto ]
+        | intros ? ? ?; do 2 constructor; auto ].
+Qed.
+
+(* The two models share their [Sizeof] instance, but its uses appear
+     behind distinct [Params] projections; align them syntactically. *)
+Lemma I2F_sizeof_dtyp : forall t,
+    @sizeof_dtyp (@SIZE PInf) t = @sizeof_dtyp (@SIZE PFin) t.
+Proof. reflexivity. Qed.
+
+Lemma I2F_max_alignment : forall ts,
+    @max_preferred_dtyp_alignment (@SIZE PInf) ts
+    = @max_preferred_dtyp_alignment (@SIZE PFin) ts.
+Proof. reflexivity. Qed.
+
+Lemma I2F_dvalue_extract_byte : forall v v',
+    I2F_dvalue v v' ->
+    forall dt idx,
+      @dvalue_extract_byte PInf v dt idx = @dvalue_extract_byte PFin v' dt idx.
+Proof.
+  induction v using dvalue_ind; intros v' R; inversion R; subst;
+    clear R; intros dt idx; cbn; auto.
+  - (* Base *)
+    match goal with HB : I2F_dvalue_base _ _ |- _ => inversion HB; subst end;
+    cbn; auto.
+    + (* Pointer *)
+      repeat match goal with
+             | HA : I2F_Addr ?a ?b |- _ =>
+                 destruct a, b; destruct HA as [HI ->]; red in HI; subst
+             end; reflexivity.
+    + (* Iptr *)
+      match goal with HI : I2F_Iptr _ _ |- _ => red in HI; subst end;
+      reflexivity.
+  - (* Struct: the packed flavour has no padding (capture the loops so
+         only the applied offset gets generalized); the aligned one first
+         aligns and generalizes the baked-in padding bound (freeing the
+         type list). Then induct on the related fields with the type list
+         universal; each step unfolds one iteration of both loops in
+         lockstep on shared scrutinees. *)
+    match goal with p : bool |- _ => destruct p end;
+    destruct dt as [ ? | p' ? | ? ? ? ]; cbn; auto;
+    destruct p'; cbn; auto.
+    + (* packed × packed *)
+      match goal with
+      | |- ?L _ _ _ _ = ?R _ _ _ _ => set (loopL := L); set (loopR := R)
+      end.
+      match goal with
+      | F : Forall2 I2F_dvalue _ _, IH : Forall _ _ |- _ _ ?ts _ _ = _ =>
+          generalize 0%N as offset; intros offset;
+          revert offset; revert idx; revert IH; revert ts;
+          induction F
+      end;
+      intros ts IH idx offset.
+      * unfold loopL, loopR; cbn;
+          destruct ts; cbn; auto;
+          repeat (break_match_goal; cbn); auto.
+      * unfold loopL, loopR; cbn; fold loopL; fold loopR;
+          inversion IH; subst;
+          destruct ts; cbn; auto;
+          repeat (break_match_goal; cbn); auto.
+    + (* aligned × aligned *)
+      rewrite I2F_max_alignment.
+      match goal with
+      | |- context [@max_preferred_dtyp_alignment ?S ?ts] =>
+          generalize (@max_preferred_dtyp_alignment S ts) as mpad; intros mpad
+      end.
+      match goal with
+      | F : Forall2 I2F_dvalue _ _, IH : Forall _ _ |- _ _ ?ts _ _ = _ =>
+          generalize 0%N as offset; intros offset;
+          revert offset; revert idx; revert IH; revert ts;
+          induction F
+      end;
+      intros ts IH idx offset; cbn.
+      * destruct ts; cbn; auto;
+          repeat (break_match_goal; cbn); auto.
+      * inversion IH; subst;
+          destruct ts; cbn; auto;
+          repeat (break_match_goal; cbn); auto.
+  - (* Array *)
+    destruct dt; cbn; auto.
+    match goal with
+    | F : Forall2 I2F_dvalue _ _, IH : Forall _ _ |- _ =>
+        revert idx; revert IH; induction F
+    end;
+    intros FIH fidx; cbn; auto;
+    inversion FIH; subst;
+    break_match_goal; cbn; auto.
+Qed.
+
+Lemma I2F_dvalue_to_memory_bytes : forall v v' t,
+    I2F_dvalue v v' ->
+    Forall2 I2F_mbyte
+      (@dvalue_to_memory_bytes PInf v t)
+      (@dvalue_to_memory_bytes PFin v' t).
+Proof.
+  intros; unfold dvalue_to_memory_bytes.
+  rewrite !seq_map_acc_eq.
+  rewrite I2F_sizeof_dtyp.
+  apply Forall2_map2; intros b _.
+  red; cbn.
+  now apply I2F_dvalue_extract_byte.
+Qed.
+
+(** Bitcast round-trips a value through its byte representation. *)
+Lemma I2F_bitcast_bytes : forall v v' t_from t_to,
+    I2F_dvalue v v' ->
+    I2F_EOU I2F_dvalue
+      (@memory_bytes_to_dvalue PInf (@dvalue_to_memory_bytes PInf v t_from) t_to)
+      (@memory_bytes_to_dvalue PFin (@dvalue_to_memory_bytes PFin v' t_from) t_to).
+Proof.
+  intros; apply I2F_memory_bytes_to_dvalue, I2F_dvalue_to_memory_bytes; auto.
+Qed.
+
+(* Related base values have equal integer interpretations: the
+     convertible shapes carry shared payloads ([DVALUE_I]) or
+     [to_Z]-equal ones ([DVALUE_Iptr]); everything else is interpreted
+     as [0]. *)
+Lemma I2F_dvalue_base_int_unsigned : forall v v',
+    I2F_dvalue_base v v' ->
+    @dvalue_base_int_unsigned PInf v = @dvalue_base_int_unsigned PFin v'.
+Proof.
+  intros * H; inversion H; subst; cbn; auto.
+Qed.
+
+(** Scalar conversions, by a single destruct of the related conversion
+      cases: [Conv_Pure] payloads are related outright, [Conv_ItoP] and
+      [Conv_PtoI] go through equal integers ([dvalue_base_int_unsigned]
+      and [ptr_to_int] agree on related values) followed by the finite
+      [from_Z] in-range analysis, and the failure cases are diagonal. *)
+Lemma I2F_convert_pure_base : forall conv t_from t_to v v',
+    I2F_dvalue_base v v' ->
+    I2F_EOU I2F_dvalue_base
+      (@convert_pure_base PInf conv t_from v t_to)
+      (@convert_pure_base PFin conv t_from v' t_to).
+Proof.
+  intros * R.
+  unfold convert_pure_base.
+  destruct conv; try congruence; cbn; auto.
+  all: destruct t_from; auto.
+  all: induction R; auto.
+  all: destruct t_to; auto.
+  all: repeat (break_fast; cbn); eauto.
+Qed.
+
+(* OLD Version - needed for impure casts: retaining here, but will be neede
+   in the handlder.
+ *)
+(*
+  destruct (@get_conv_case PInf conv t_from v t_to),
+    (@get_conv_case PFin conv t_from v' t_to);
+    intros CC; cbn in CC; try contradiction; auto.
+  (* [Conv_Pure], [Conv_Oom] and [Conv_Illegal] are closed by [auto] *)
+  - (* Conv_ItoP: equal integers into [int_to_ptr] *)
+    rewrite (I2F_dvalue_base_int_unsigned CC); cbn.
+    unfold from_Z_bits.
+    repeat (break_match_goal_safe; cbn); auto.
+    i2f_in_range_case.
+  - (* Conv_PtoI: related pointers expose the same integer *)
+    inversion CC; subst; cbn;
+      repeat match goal with
+        | HA : I2F_Addr ?a ?b |- _ =>
+            destruct a, b; destruct HA as [HI ->]; red in HI; subst
+        end;
+      destruct t_to; cbn; try (repeat constructor);
+      unfold from_Z_bits;
+      repeat (break_match_goal_safe; cbn); auto;
+      i2f_in_range_case.
+*)
+
+Lemma I2F_convert_pure cv t_from t_to a b :
+  I2F_dvalue a b ->
+  I2F_EOU I2F_dvalue (convert_pure cv t_from a t_to) (convert_pure cv t_from b t_to).
+Proof.
+  intros R.
+  inversion R; subst; cbn; auto.
+  - destruct (get_base_conversion_type t_from t_to) as [[? ?]|]; cbn; auto.
+    specialize (@I2F_convert_pure_base cv d d0 b0 b' H) as HV.
+    inversion HV; subst; auto.
+  - i2f_vec_flags; auto.
+    break_match_goal; auto.
+    destruct vector; auto.
+    destruct (get_vector_conversion_type t_from t_to) as [[? ?]|]; cbn; auto.
+    (eapply I2F_EOU_bind;
+        [ eapply I2F_EOU_map_monad2;
+          [ eauto | intros; apply I2F_dvalue_to_dvalue_base; eauto ] |]).
+    intros ? ? ?.
+    eapply I2F_EOU_bind;
+      [ eapply I2F_EOU_map_monad2 with (RB := I2F_dvalue_base); eauto |].
+    intros. apply I2F_convert_pure_base; auto.
+    intros. constructor. constructor.
+    apply Forall2_map_Base; auto.
+Qed.
+
+Lemma I2F_convert ct t_from t_to a b :
+  I2F_dvalue a b ->
+  I2F_refine (convert ct t_from a t_to) (convert ct t_from b t_to).
+Proof.
+  intros R.
+  destruct ct.
+  - cbn.
+    repeat break_match_goal; auto.
+    apply I2F_refine_lift.
+    apply I2F_bitcast_bytes; auto.
+    rstep. constructor.
+  - cbn.
+    apply I2F_refine_lift.
+    apply I2F_convert_pure; auto.
+  - cbn.
+    rstep.
+Qed.      
+
+
+(** * eval_gep *)
+(** GEP. The offset computation [handle_gep_h] lives in [EOU Z], a
+      parameter-free type: on related indices the two sides are literally
+      equal ([to_Z] agrees on related intptrs). *)
+Lemma I2F_handle_gep_h : forall vs vs',
+    Forall2 I2F_dvalue vs vs' ->
+    forall t off,
+      @handle_gep_h PInf t off vs = @handle_gep_h PFin t off vs'.
+Proof.
+  intros vs vs' F; induction F; intros t off; cbn; auto.
+  match goal with
+  | HC : I2F_dvalue ?c ?c' |- _ =>
+      induction HC; cbn; auto
+  end;
+  try (match goal with
+       | HB : I2F_dvalue_base _ _ |- _ =>
+           induction HB; cbn; auto
+       end);
+  try (match goal with
+       | HI : I2F_Iptr _ _ |- _ => red in HI; subst
+       end);
+  repeat (break_goal_fast; cbn); auto.
+Qed.
+
+Lemma I2F_handle_gep_ptr : forall t a a' vs vs',
+    I2F_Addr a a' ->
+    Forall2 I2F_dvalue vs vs' ->
+    I2F_EOU I2F_Addr
+      (@handle_gep_ptr PInf t a vs)
+      (@handle_gep_ptr PFin t a' vs').
+Proof.
+  intros * HA F.
+  destruct a, a'; destruct HA as [HI ->]; red in HI; subst.
+  inversion F; subst; cbn; [repeat constructor|].
+  match goal with
+  | HC : I2F_dvalue ?c ?c' |- _ =>
+      inversion HC; subst; cbn; try (repeat constructor)
+  end;
+  try (match goal with
+       | HB : I2F_dvalue_base _ _ |- _ =>
+           inversion HB; subst; cbn; try (repeat constructor)
+       end);
+  try (match goal with
+       | HI : I2F_Iptr _ _ |- _ => red in HI; subst
+       end);
+  unfold from_Z_bits;
+  (* bitwidth-literal dispatch first; the [EOU]-typed scrutinees are
+         skipped, exposing the offset computations at the top *)
+  repeat (break_match_goal_safe; cbn); auto;
+  (* align the two offset computations, then reduce them in lockstep *)
+  try (erewrite I2F_handle_gep_h by eauto;
+       match goal with
+       | |- context [match @handle_gep_h ?pa ?u ?o ?ws with _ => _ end] =>
+           destruct (@handle_gep_h pa u o ws); cbn; auto
+       end);
+  repeat (break_match_goal_safe; cbn); auto;
+  i2f_in_range_case.
+Qed.
+
+Lemma I2F_eval_gep t a1 a2 b1 b2 :
+  I2F_dvalue a1 b1 ->
+  Forall2 I2F_dvalue a2 b2 ->
+  I2F_EOU I2F_dvalue (eval_gep t a1 a2) (eval_gep t b1 b2).
+Proof.
+  intros R F.
+  inversion R; subst; cbn; try (repeat constructor).
+  match goal with
+  | HB : I2F_dvalue_base _ _ |- _ =>
+      inversion HB; subst; cbn; try (repeat constructor)
+  end.
+  (* Pointer *)
+  eapply I2F_EOU_bind; [now apply I2F_handle_gep_ptr|].
+  intros; do 3 constructor; auto.
+Qed.
+
+(** * extract_element *)
+(** Related aggregates split synchronously: either both indexings are out
+      of bounds (the shared UB guard), or the parts are pointwise
+      related. *)
+(* Split the two related aggregates of the goal synchronously: the
+     out-of-bounds UB is shared, the mixed cases are contradictory, and
+     [tac] finishes the successful case from the pointwise relations. *)
+Ltac i2f_split_case i tac :=
+  match goal with
+  | F : Forall2 I2F_dvalue ?u ?v |- _ =>
+      let SP := fresh "SP" in
+      pose proof (Forall2_split i F) as SP; revert SP;
+      destruct (split [] i u) as [[[? ?] ?] |],
+          (split [] i v) as [[[? ?] ?] |];
+      intros SP; cbn; try contradiction; auto;
+      destruct SP as (? & ? & ?); tac
+  end.
+
+(* Related values have equal integer interpretations as indices: the
+     only convertible shape is [DVALUE_I], whose payload is shared. *)
+Lemma I2F_dvalue_to_Z : forall v v',
+    I2F_dvalue v v' ->
+    @dvalue_to_Z PInf v = @dvalue_to_Z PFin v'.
+Proof.
+  intros * H; inversion H; subst; cbn; auto.
+  match goal with
+  | HB : I2F_dvalue_base _ _ |- _ => inversion HB; subst; cbn; auto
+  end.
+Qed.
+
+Lemma I2F_extract_element a1 a2 b1 b2 :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_EOU I2F_dvalue (extract_element a1 a2) (extract_element b1 b2).
+Proof.
+  intros R1 R2.
+  inversion R1; subst; cbn; try (repeat constructor).
+  (* Vector *)
+  match goal with v : bool |- _ => destruct v end; cbn;
+  try (repeat constructor).
+  match goal with
+  | τ : dtyp |- _ => destruct τ as [ ? | ? ? | [|] ? ? ]
+  end; cbn; try (repeat constructor).
+  rewrite (I2F_dvalue_to_Z R2).
+  destruct (dvalue_to_Z b2) as [i |]; cbn; try (repeat constructor).
+  rewrite !split_acc_eq.
+  i2f_split_case i ltac:(auto).
+Qed.
+
+(** * insert_element *)
+Lemma I2F_insert_element a1 a2 a3 b1 b2 b3 :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_dvalue a3 b3 ->
+  I2F_EOU I2F_dvalue (insert_element a1 a2 a3) (insert_element b1 b2 b3).
+Proof.
+  intros R1 R2 R3.
+  inversion R1; subst; cbn; repeat constructor.
+  - (* Base: poison at vector type splits a vector of poisons *)
+    match goal with
+    | HB : I2F_dvalue_base _ _ |- _ =>
+        inversion HB; subst; cbn; try (repeat constructor)
+    end.
+    match goal with
+    | t : dtyp |- _ => destruct t as [ ? | ? ? | [|] ? ? ]
+    end; cbn; try (repeat constructor).
+    rewrite (I2F_dvalue_to_Z R3).
+    destruct (dvalue_to_Z b3) as [i |]; cbn; repeat constructor.
+    match goal with
+    | |- context [repeat (DVALUE_Base (DVALUE_Poison ?dt)) ?n] =>
+        pose proof (Forall2_repeat _ _ n
+                      (I2F_dvalue_Base (I2F_dvalue_Poison dt))) as F
+    end.
+    rewrite !split_acc_eq.
+    i2f_split_case i
+      ltac:(do 2 constructor; apply Forall2_app; [auto | constructor; auto]).
+  - (* Vector *)
+    match goal with v : bool |- _ => destruct v end; cbn;
+    try (repeat constructor).
+    match goal with
+    | τ : dtyp |- _ => destruct τ as [ ? | ? ? | [|] ? ? ]
+    end; cbn; try (repeat constructor).
+    rewrite (I2F_dvalue_to_Z R3).
+    destruct (dvalue_to_Z b3) as [i |]; cbn; try (repeat constructor).
+    rewrite !split_acc_eq.
+    i2f_split_case i
+      ltac:(do 2 constructor; apply Forall2_app; [auto | constructor; auto]).
+Qed.
+
+(** * shufflevector *)
+
+(* [vector_elts] normalizes a whole vector operand (concrete array or the
+   scalar poison encoding) to its element dtyp/list; related dvalues
+   normalize to related pieces (or both fail). *)
+Lemma I2F_vector_elts : forall v1 v2,
+    I2F_dvalue v1 v2 ->
+    match vector_elts v1, vector_elts v2 with
+    | Some (dt1, elts1), Some (dt2, elts2) => dt1 = dt2 /\ Forall2 I2F_dvalue elts1 elts2
+    | None, None => True
+    | _, _ => False
+    end.
+Proof.
+  intros v1 v2 H; inversion H; subst; cbn.
+  - match goal with
+    | HB : I2F_dvalue_base _ _ |- _ => inversion HB; subst; cbn; auto
+    end.
+    match goal with
+    | t : dtyp |- _ => destruct t as [ ? | ? ? | [|] ? ? ]
+    end; cbn; auto.
+  - auto.
+  - match goal with v : bool |- _ => destruct v end; cbn; auto.
+    match goal with
+    | t : dtyp |- _ => destruct t as [ ? | ? ? | [|] ? ? ]
+    end; cbn; auto.
+Qed.
+
+Lemma I2F_shuffle_vector a1 a2 a3 b1 b2 b3 :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_dvalue a3 b3 ->
+  I2F_EOU I2F_dvalue (shuffle_vector a1 a2 a3) (shuffle_vector b1 b2 b3).
+Proof.
+  intros R1 R2 R3.
+  unfold shuffle_vector.
+  pose proof (I2F_vector_elts R1) as V1.
+  pose proof (I2F_vector_elts R2) as V2.
+  destruct (vector_elts a1) as [[dt1 elts1]|], (vector_elts b1) as [[dt1' elts1']|];
+    try contradiction; try (repeat constructor).
+  destruct (vector_elts a2) as [[dt2 elts2]|], (vector_elts b2) as [[dt2' elts2']|];
+    try contradiction; try (repeat constructor).
+  destruct V1 as [EQ1 HE1]; subst.
+  destruct V2 as [EQ2 HE2]; subst.
+  inversion R3; subst; cbn; try (repeat constructor).
+  break_match_goal; auto.
+  break_match_goal; auto.
+  break_match_goal; auto.
+  do 2 constructor.
+  eapply Forall2_map_rel; eauto.
+  intros idxv idxv' Ridx.
+  rewrite (I2F_dvalue_to_Z Ridx).
+  destruct (dvalue_to_Z idxv') as [i |]; [| repeat constructor].
+  destruct (i <? 0)%Z; [repeat constructor |].
+  pose proof (Forall2_nth_error (Forall2_app HE1 HE2) (Z.to_nat i)) as N.
+  destruct (nth_error (elts1 ++ elts2) (Z.to_nat i)) as [?v|],
+      (nth_error (elts1' ++ elts2') (Z.to_nat i)) as [v'|];
+    try contradiction; [assumption | repeat constructor].
+Qed.
+
+(** * extract_value *)
+Lemma I2F_extract_value a b idxs :
+  I2F_dvalue a b ->
+  I2F_EOU I2F_dvalue (extract_value a (map denote_int_syntax idxs))
+    (extract_value b (map denote_int_syntax idxs)).
+Proof.
+  intros R; revert a b R.
+  generalize (map denote_int_syntax idxs) as l; clear idxs.
+  induction l as [| i l IH]; intros a b R; cbn; auto.
+  inversion R; subst; cbn; try (repeat constructor).
+  - (* Base: only poison at struct type computes, splitting the shared
+         type list *)
+    match goal with
+    | HB : I2F_dvalue_base _ _ |- _ =>
+        inversion HB; subst; cbn; try (repeat constructor)
+    end.
+    match goal with
+    | t : dtyp |- _ => destruct t
+    end; cbn; try (repeat constructor).
+    match goal with
+    | |- context [split [] i ?ts] =>
+        destruct (split [] i ts) as [[[? ?] ?] |]
+    end; cbn; auto.
+  - (* Struct *)
+    i2f_split_case i ltac:(apply IH; auto).
+  - (* Array: only the non-vector flavour computes *)
+    match goal with v : bool |- _ => destruct v end; cbn;
+    [repeat constructor|].
+    i2f_split_case i ltac:(apply IH; auto).
+Qed.
+
+(** * insert_value *)
+
+Lemma Forall2_map_Poison : forall ts,
+    Forall2 I2F_dvalue
+      (map (fun t => @DVALUE_Base PInf (DVALUE_Poison t)) ts)
+      (map (fun t => @DVALUE_Base PFin (DVALUE_Poison t)) ts).
+Proof.
+  induction ts; cbn; auto.
+Qed.
+
+Lemma I2F_insert_value idxs :
+  forall a1 a2 b1 b2,
+    I2F_dvalue a1 b1 ->
+    I2F_dvalue a2 b2 ->
+    I2F_EOU I2F_dvalue (insert_value a1 a2 (map denote_int_syntax idxs))
+      (insert_value b1 b2 (map denote_int_syntax idxs)).
+Proof.
+  generalize (map denote_int_syntax idxs) as l; clear idxs.
+  induction l as [| i l IH]; intros a1 a2 b1 b2 R1 R2; cbn; auto.
+  inversion R1; subst; cbn; try (repeat constructor).
+  - (* Base: poison at struct type splits the shared type list and
+         rebuilds with poisons *)
+    match goal with
+    | HB : I2F_dvalue_base _ _ |- _ =>
+        inversion HB; subst; cbn; try (repeat constructor)
+    end.
+    match goal with
+    | t : dtyp |- _ => destruct t
+    end; cbn; try (repeat constructor).
+    match goal with
+    | |- context [split [] i ?ts] =>
+        destruct (split [] i ts) as [[[? ?] ?] |]
+    end; cbn; auto.
+    eapply I2F_EOU_bind; [apply IH; auto|].
+    intros; do 2 constructor.
+    apply Forall2_app; [apply Forall2_map_Poison |].
+    constructor; [auto | apply Forall2_map_Poison].
+  - (* Struct: split, modify the subfield recursively, reassemble *)
+    i2f_split_case i
+      ltac:(eapply I2F_EOU_bind; [apply IH; auto|];
+            intros; do 2 constructor;
+            apply Forall2_app; [auto | constructor; auto]).
+  - (* Array: only the non-vector flavour computes *)
+    match goal with v : bool |- _ => destruct v end; cbn;
+    [repeat constructor|].
+    i2f_split_case i
+      ltac:(eapply I2F_EOU_bind; [apply IH; auto|];
+            intros; do 2 constructor;
+            apply Forall2_app; [auto | constructor; auto]).
+Qed.
+
+(** * eval_select *)
+(** The scalar select: the shared [i1] test picks a side; the poison
+      condition computes the (equal) result type of the first operand. *)
+
+(** [dtyp_of_dvalue] computes in the parameter-free [EOU dtyp]: on
+      related values the two sides are literally equal (related scalars
+      carry equal payloads, and aggregates share their annotations). *)
+Lemma I2F_dtyp_of_dvalue_base_eq : forall v v',
+    I2F_dvalue_base v v' ->
+    @dtyp_of_dvalue_base PInf v = @dtyp_of_dvalue_base PFin v'.
+Proof.
+  intros * H; inversion H; subst; cbn; auto.
+Qed.
+
+Lemma I2F_dtyp_of_dvalue_eq : forall v v',
+    I2F_dvalue v v' ->
+    @dtyp_of_dvalue PInf v = @dtyp_of_dvalue PFin v'.
+Proof.
+  induction v using dvalue_ind; intros v' R; inversion R; subst;
+    clear R; cbn; auto.
+  - (* Base *)
+    match goal with
+    | HB : I2F_dvalue_base _ _ |- _ =>
+        now rewrite (I2F_dtyp_of_dvalue_base_eq HB)
+    end.
+  - (* Struct: the two [map_monad]s are equal *)
+    match goal with
+    | F2 : Forall2 I2F_dvalue ?l1 ?l2 |- _ =>
+        assert (MM : map_monad (@dtyp_of_dvalue PInf) l1
+                     = map_monad (@dtyp_of_dvalue PFin) l2);
+        [| rewrite MM; reflexivity ]
+    end.
+    match goal with
+    | F2 : Forall2 I2F_dvalue _ _, IH : Forall _ _ |- _ =>
+        revert IH; induction F2 as [| u u' us us' HU HUS IHUS]
+    end; intros FIH; cbn; auto.
+    inversion FIH; subst.
+    match goal with
+    | HP : forall _, I2F_dvalue u _ -> _ |- _ => rewrite (HP _ HU)
+    end.
+    rewrite IHUS by assumption; reflexivity.
+  - (* Array *)
+    match goal with
+    | τ : dtyp |- _ => destruct τ as [ ? | ? ? | ? ? ? ]
+    end; cbn; auto.
+    break_match_goal; cbn; auto.
+    match goal with
+    | F2 : Forall2 I2F_dvalue ?l1 ?l2 |- _ =>
+        match goal with
+        | |- context [forallb ?f l1] =>
+            match goal with
+            | |- context [forallb ?g l2] =>
+                assert (FB : forallb f l1 = forallb g l2);
+                [| assert (LEN : length l1 = length l2)
+                  by (eapply Forall2_length; eauto);
+                   rewrite FB, LEN; reflexivity ]
+            end
+        end
+    end.
+    match goal with
+    | F2 : Forall2 I2F_dvalue _ _, IH : Forall _ _ |- _ =>
+        revert IH; induction F2 as [| u u' us us' HU HUS IHUS]
+    end; intros FIH; cbn; auto.
+    inversion FIH; subst.
+    match goal with
+    | HP : forall _, I2F_dvalue u _ -> _ |- _ => rewrite (HP _ HU)
+    end.
+    rewrite IHUS by assumption; reflexivity.
+Qed.
+
+Lemma I2F_eval_select_base_dvalue : forall c c' v1 v2 v1' v2',
+    I2F_dvalue_base c c' ->
+    I2F_dvalue v1 v1' ->
+    I2F_dvalue v2 v2' ->
+    I2F_EOU I2F_dvalue
+      (@eval_select_base_dvalue PInf c v1 v2)
+      (@eval_select_base_dvalue PFin c' v1' v2').
+Proof.
+  intros * RC R1 R2.
+  inversion RC; subst; cbn; try (repeat constructor).
+  - (* I sz: the width test then the shared i1 test *)
+    repeat (break_goal_fast; cbn); auto.
+  - (* Poison: align the (equal) result types, then reduce the shared
+         scrutinees in lockstep *)
+    rewrite (I2F_dtyp_of_dvalue_eq R1).
+    repeat (break_goal_fast; cbn); auto.
+Qed.
+
+Lemma I2F_eval_select a1 a2 a3 b1 b2 b3 :
+  I2F_dvalue a1 b1 ->
+  I2F_dvalue a2 b2 ->
+  I2F_dvalue a3 b3 ->
+  I2F_EOU I2F_dvalue (eval_select a1 a2 a3) (eval_select b1 b2 b3).
+Proof.
+  intros R1 R2 R3.
+  inversion R1; subst; cbn; try ((repeat constructor); eauto; fail).
+  - (* Base condition *)
+    now apply I2F_eval_select_base_dvalue.
+  - (* Vector of conditions *)
+    match goal with v : bool |- _ => destruct v end; cbn;
+    [| repeat constructor; eauto].
+    eapply I2F_EOU_bind;
+      [eapply I2F_EOU_map_monad2;
+       [eauto | intros; apply I2F_dvalue_to_dvalue_base; auto]|].
+    intros cs cs' FCS.
+    induction R2; subst; cbn; repeat constructor.
+    + (* v1 base: only poison at vector type computes *)
+      match goal with
+      | HB : I2F_dvalue_base _ _ |- _ =>
+          induction HB; subst; cbn; repeat constructor
+      end.
+      match goal with
+      | t : dtyp |- _ => destruct t as [ ? | ? ? | [|] ? ? ]
+      end; cbn; try (repeat constructor).
+      induction R3; subst; cbn; repeat constructor.
+      * (* poison / base: only poison at vector type computes,
+             diagonally *)
+        match goal with
+        | HB : I2F_dvalue_base _ _ |- _ =>
+            induction HB; subst; cbn; repeat constructor
+        end.
+        match goal with
+        | t : dtyp |- _ => destruct t as [ ? | ? ? | [|] ? ? ]
+        end; cbn; repeat constructor.
+      * (* poison / vector *)
+        match goal with v : bool |- _ => destruct v end; cbn;
+        [| repeat constructor].
+        eapply I2F_EOU_bind.
+        { eapply I2F_EOU_vec_loop with (RB := prod_rel I2F_dvalue I2F_dvalue).
+          - eapply Forall2_combine; [eassumption|].
+            eapply Forall2_combine;
+              [apply Forall2_repeat; auto | eassumption].
+          - intros c p c' p' HC HP;
+              destruct p as [x y], p' as [x' y'], HP as [HX HY]; cbn.
+            apply I2F_eval_select_base_dvalue; auto. }
+        intros; do 2 constructor; auto.
+    + (* v1 vector *)
+      inversion R3; subst; cbn; try (repeat constructor).
+      * (* vector / base: only poison at vector type computes *)
+        match goal with v : bool |- _ => destruct v end; cbn;
+        [| repeat constructor].
+        match goal with
+        | HB : I2F_dvalue_base _ _ |- _ =>
+            inversion HB; subst; cbn; try (repeat constructor)
+        end.
+        match goal with
+        | t : dtyp |- _ => destruct t as [ ? | ? ? | [|] ? ? ]
+        end; cbn; try (repeat constructor).
+        eapply I2F_EOU_bind.
+        { eapply I2F_EOU_vec_loop with (RB := prod_rel I2F_dvalue I2F_dvalue).
+          - eapply Forall2_combine; [eassumption|].
+            eapply Forall2_combine;
+              [eassumption | apply Forall2_repeat; auto].
+          - intros c p c' p' HC HP;
+              destruct p as [x y], p' as [x' y'], HP as [HX HY]; cbn.
+            apply I2F_eval_select_base_dvalue; auto. }
+        intros; do 2 constructor; auto.
+      * (* vector / vector *)
+        i2f_vec_flags; repeat constructor.
+      * (* vector / vector *)
+        i2f_vec_flags; repeat constructor.
+        all: eapply I2F_EOU_bind;
+          [ eapply I2F_EOU_vec_loop with (RB := prod_rel I2F_dvalue I2F_dvalue);
+            [ eapply Forall2_combine; [eassumption|];
+              eapply Forall2_combine; eassumption
+            | intros c p c' p' HC HP;
+              destruct p as [x y], p' as [x' y'], HP as [HX HY]; cbn;
+              apply I2F_eval_select_base_dvalue; auto ]
+          | intros; do 2 constructor; auto ].
+Qed.
+
+Lemma I2F_denote_exp :
+  forall (e : exp dtyp) τ, I2F_refine (@denote_exp PInf τ e) (@denote_exp PFin τ e).
+Proof with try (rstep || cbnn; simp I2FE_Failure; reflexivity).
+  induction e.
+  - destruct id; intros; cbn...
+  - intros [d|]; cbn...
+    apply I2F_refine_lift, I2F_denote_int_syntax_as_int.
+  - intros [d|]; cbn...
+    apply I2F_refine_lift, I2F_denote_float_syntax_as_float.
+  - destruct b; intros ?; cbn...
+  - intros; cbn...
+  - (* initializer *)
+    intros [d|]; cbn...
+    apply I2F_refine_lift, I2F_default_dvalue_of_dtyp.
+  - cbn; intros.
+    erbind.
+    + apply ruttc_map_monad.
+      intros [d e] HIN; now apply (H (d,e)).
+    + intros * HF...
+  - cbn; intros []...
+  - cbn; intros []...
+  - cbn; intros. 
+    erbind.
+    + apply ruttc_map_monad.
+      intros [d e] HIN; now apply (H (d,e)).
+    + intros * HF...
+  - (* EXP_Packed_struct: the [dtyp] guard is a pure, parameter-free
+         computation, related to itself by reflexivity of [I2F_EOU] ---
+         no case analysis on the type. *)
+    cbn; intros.
+    erbind.
+    + apply I2F_refine_lift, I2F_EOU_refl.
+    + intros [] [] _.
+      erbind.
+      * apply ruttc_map_monad.
+        intros [d e] HIN; now apply (H (d,e)).
+      * intros * HF...
+  - cbn; intros.
+    erbind.
+    + apply ruttc_map_monad.
+      intros [d e] HIN; now apply (H (d,e)).
+    + intros * HF...
+  - cbn; intros.
+    erbind.
+    + apply ruttc_map_monad.
+      intros [d e] HIN; now apply (H (d,e)).
+    + intros * HF...
+  - cbn; intros.
+    erbind; [apply IHe1 | intros].
+    erbind; [apply IHe2 | intros].
+    apply I2F_refine_lift, I2F_eval_iop...
+  - destruct v; cbn; intros.
+    erbind; [apply IHe | intros].
+    apply I2F_refine_lift, I2F_eval_fneg...
+  - cbn; intros.
+    erbind; [apply IHe1 | intros].
+    erbind; [apply IHe2 | intros].
+    apply I2F_refine_lift, I2F_eval_icmp; eauto.
+  - cbn; intros.
+    erbind; [apply IHe1 | intros].
+    erbind; [apply IHe2 | intros].
+    apply I2F_refine_lift, I2F_eval_fop; eauto.
+  - cbn; intros.
+    erbind; [apply IHe1 | intros].
+    erbind; [apply IHe2 | intros].
+    apply I2F_refine_lift, I2F_eval_fcmp; eauto.
+  - cbn; intros _.
+    erbind; [apply IHe | intros].
+    apply I2F_convert; eauto.
+  - destruct ptrval; cbn; intros _.
+    erbind; [apply IHe | intros].
+    erbind.
+    + apply ruttc_map_monad.
+      intros [x y] HIN; now apply (H (x,y)).
+    + intros; apply I2F_refine_lift, I2F_eval_gep; eauto.
+  - destruct vec, idx; cbn; intros _.
+    erbind; [apply IHe | intros].
+    erbind; [apply IHe0 | intros].
+    apply I2F_refine_lift, I2F_extract_element; eauto.
+  - destruct vec, elt, idx; cbn; intros _.
+    erbind; [apply IHe | intros].
+    erbind; [erbind; [apply IHe0 | intros] | intros].
+    apply I2F_refine_lift,I2F_dvalue_to_dvalue_base; auto.
+    erbind; [apply IHe1 | intros].
+    apply I2F_refine_lift, I2F_insert_element; auto.
+  - destruct vec1,vec2,idxmask; cbn; intros _.
+    erbind; [apply IHe | intros].
+    erbind; [apply IHe0 | intros].
+    erbind; [apply IHe1 | intros].
+    apply I2F_refine_lift, I2F_shuffle_vector; auto.
+  - destruct vec; cbn; intros _.
+    erbind; [apply IHe | intros].
+    apply I2F_refine_lift, I2F_extract_value; eauto.
+  - destruct vec, elt; cbn; intros _.
+    erbind; [apply IHe | intros].
+    erbind; [apply IHe0 | intros].
+    apply I2F_refine_lift, I2F_insert_value; eauto.
+  - destruct cnd,v1,v2; cbn; intros _.
+    erbind; [apply IHe | intros].
+    erbind; [apply IHe0 | intros].
+    erbind; [apply IHe1 | intros].
+    apply I2F_refine_lift, I2F_eval_select; auto.
+  - destruct v; cbn; intros _.
+    erbind; [apply IHe | intros].
+    apply I2F_freeze; auto.
+  - cbn; intros _...
+  - cbn; intros _; destruct m...
+    all: try now rstep; constructor; eauto.
+    destruct tv; cbn.
+    eapply H; eauto.
+  - (* EXP_Splat: the vector-type accessor is a pure, parameter-free
+         computation, related to itself by reflexivity of [I2F_EOU] ---
+         no case analysis on the type. *)
+    destruct elt; cbn; intros.
+    erbind.
+    + apply I2F_refine_lift, I2F_EOU_refl.
+    + intros [sz t'] ? <-; cbn.
+      erbind; [apply IHe |].
+      intros...
+Qed.
+
+Lemma I2F_denote_exp' :
+  forall e τ,
+    I2F_refine_CFG I2F_dvalue (@denote_exp' PInf τ e) (@denote_exp' PFin τ e).
+Proof. 
+  unfold denote_exp', withCall.
+  intros.
+  unfold I2F_refine_CFG.
+  eapply ruttc_translate_inr'; cycle -1.
+  apply I2F_denote_exp.
+  all:clear.
+  - exact I2F_cutUB_CFG.
+  - exact I2F_cutOOM_CFG.
+  (* [rutt_cutoff.inr_prerel] of the (computing) sum is definitionally
+       its right component *)
+  - intros A B; split; intros e1 e2 HR.
+    + now destruct HR.
+    + now constructor.
+  - intros A B; split; intros [e1 a] [e2 b] HR.
+    + now destruct HR.
+    + now constructor.
+Qed.
+
