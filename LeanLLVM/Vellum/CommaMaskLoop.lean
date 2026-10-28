@@ -63,6 +63,10 @@ def bodyInstrs : List Instr := [
 def doneInstrs : List Instr := [
   .load "%r" (.int 64) (.reg "%acc")]
 
+/-- The body block. -/
+def bodyBlock : Block :=
+  { name := "body", instrs := bodyInstrs, term := .br "cond" }
+
 /-- The condition block. -/
 def condBody : Block :=
   { name := "cond", instrs := condInstrs, term := .condbr (.reg "%c") "body" "done" }
@@ -73,7 +77,7 @@ def loopFunction : Function :=
     blocks := [
       { name := "entry", instrs := entryInstrs, term := .br "cond" },
       condBody,
-      { name := "body", instrs := bodyInstrs, term := .br "cond" },
+      bodyBlock,
       { name := "done", instrs := doneInstrs, term := .ret (.int 64) (some (.reg "%r")) }] }
 
 #guard decide (firstFunction loopSrc = some loopFunction)
@@ -259,6 +263,8 @@ theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : Bi
     | ptr a => simp [Value.intToNat]
 
 theorem c_eight : c 8 = (BitVec.ofNat 64 8 : BitVec 64) := by decide
+theorem eight_lit : (8 : BitVec 64) = BitVec.ofNat 64 8 := rfl
+theorem one_lit : (1 : BitVec 64) = c 1 := by decide
 theorem c_zero : c 0 = (0 : BitVec 64) := by decide
 theorem c_255 : c 255 = (0xFF : BitVec 64) := by decide
 theorem c_128 : c 128 = (0x80 : BitVec 64) := by decide
@@ -364,5 +370,173 @@ theorem cond_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
     · simp [s3, s2, s1, State.bind, hf.accLoad]
     · simp [s3, s2, s1, State.bind, hf.iLoad]
   · simp [s3, s2, s1, State.bind, lookupName]
+
+theorem body_lane_shift (k : Nat) (hk : k < 8) :
+    (BitVec.ofNat 64 k * c 8).toNat = 8 * k := by
+  rw [ofNat_mul_eight k hk, ofNat_eight_mul_toNat k hk]
+
+theorem ofNat_mul_eight_lit (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k * (8 : BitVec 64) = BitVec.ofNat 64 (8 * k) := by
+  rw [show (8 : BitVec 64) = c 8 from c_eight.symm, ofNat_mul_eight k hk]
+
+theorem ofNat_add_one_lit (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k + (1 : BitVec 64) = BitVec.ofNat 64 (k + 1) := by
+  rw [show (1 : BitVec 64) = c 1 from one_lit, ofNat_add_one k hk]
+
+/-- One trip through the body block: the lane is folded into the accumulator,
+the two stores run, and the loop returns to `cond` with the next prefix. -/
+theorem body_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
+    (hacc : acc = maskPrefix m k) (hpc : s.pc = "body") (hf : LoopFacts s m acc k)
+    (hi1 : lookupName s.env "%i1" = some (.int 64 (BitVec.ofNat 64 k))) :
+    ∃ s', step noCalls loopFunction s = .jump s' ∧ s'.pc = "cond" ∧
+      LoopFacts s' m (maskPrefix m (k + 1)) (k + 1) := by
+  let shv : BitVec 64 := BitVec.ofNat 64 k * (8 : BitVec 64)
+  let bv : BitVec 64 := m >>> shv.toNat
+  let b2v : BitVec 64 := bv &&& (255 : BitVec 64)
+  let zv : BitVec 1 := BitVec.ofBool (b2v = (0 : BitVec 64))
+  let bitv : BitVec 64 := (128 : BitVec 64) <<< shv.toNat
+  let a1v : BitVec 64 := acc ||| bitv
+  let a2v : BitVec 64 := if zv = 1 then a1v else acc
+  let s1 : State := s.bind "%sh" (.int 64 shv)
+  let s2 : State := s1.bind "%b" (.int 64 bv)
+  let s3 : State := s2.bind "%b2" (.int 64 b2v)
+  let s4 : State := s3.bind "%z" (.int 1 zv)
+  let s5 : State := s4.bind "%a0" (.int 64 acc)
+  let s6 : State := s5.bind "%bit" (.int 64 bitv)
+  let s7 : State := s6.bind "%a1" (.int 64 a1v)
+  let s8 : State := s7.bind "%a2" (.int 64 a2v)
+  -- the two stores
+  have hstore1 : storeValue s8 (.int 64) (.int 64 a2v) 1 =
+      some { s8 with mem := writeBytes s8.mem 1 (natToBytes a2v.toNat 8) } :=
+    (loadValue_storeValue_64 s8 a2v 1).1
+  let s9 : State := { s8 with mem := writeBytes s8.mem 1 (natToBytes a2v.toNat 8) }
+  let i2v : BitVec 64 := BitVec.ofNat 64 k + (1 : BitVec 64)
+  let s10 : State := s9.bind "%i2" (.int 64 i2v)
+  have hstore2 : storeValue s10 (.int 64) (.int 64 i2v) 9 =
+      some { s10 with mem := writeBytes s10.mem 9 (natToBytes i2v.toNat 8) } :=
+    (loadValue_storeValue_64 s10 i2v 9).1
+  let s11 : State := { s10 with mem := writeBytes s10.mem 9 (natToBytes i2v.toNat 8) }
+  let s12 : State := { s11 with pc := "cond" }
+  -- one instruction at a time
+  have e1 : evalInstr noCalls s (.binop "%sh" .mul 64 (.reg "%i1") (.imm (.int 64 8))) = some s1 := by
+    have h := evalInstr_mul_imm noCalls s "%sh" "%i1" (8 : BitVec 64)
+    simp only [hi1] at h
+    simpa [s1, shv] using h
+  have hl1 : lookupName s1.env "%m" = some (.int 64 m) := by
+    simp [s1, State.bind, lookupName, hf.mReg]
+  have hl2 : lookupName s1.env "%sh" = some (.int 64 shv) := by
+    simp [s1, State.bind, shv]
+  have e2 : evalInstr noCalls s1 (.binop "%b" .lshr 64 (.reg "%m") (.reg "%sh")) = some s2 := by
+    have h := evalInstr_lshr_reg noCalls s1 "%b" "%m" "%sh"
+    simp only [hl1, hl2] at h
+    simpa [s2, bv] using h
+  have hl3 : lookupName s2.env "%b" = some (.int 64 bv) := by
+    simp [s2, State.bind, bv]
+  have e3 : evalInstr noCalls s2 (.binop "%b2" .and 64 (.reg "%b") (.imm (.int 64 255))) = some s3 := by
+    have h := evalInstr_and_imm noCalls s2 "%b2" "%b" (255 : BitVec 64)
+    simp only [hl3] at h
+    simpa [s3, b2v] using h
+  have hl4 : lookupName s3.env "%b2" = some (.int 64 b2v) := by
+    simp [s3, State.bind, b2v]
+  have e4 : evalInstr noCalls s3 (.icmp "%z" .eq 64 (.reg "%b2") (.imm (.int 64 0))) = some s4 := by
+    have h := evalInstr_icmp_eq_imm noCalls s3 "%z" "%b2" (0 : BitVec 64)
+    simp only [hl4] at h
+    simpa [s4, zv] using h
+  have hl_acc : lookupName s4.env "%acc" = some (.ptr 1) := by
+    simp [s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
+  have e5 : evalInstr noCalls s4 (.load "%a0" (.int 64) (.reg "%acc")) = some s5 := by
+    have h := eval_load_64 noCalls s4 "%a0" (.reg "%acc") 1 acc hl_acc (by simpa [s4, s3, s2, s1, State.bind] using hf.accLoad)
+    simpa [s5] using h
+  have hl_sh2 : lookupName s5.env "%sh" = some (.int 64 shv) := by
+    simp [s5, s4, s3, s2, s1, State.bind, lookupName, shv]
+  have e6 : evalInstr noCalls s5 (.binop "%bit" .shl 64 (.imm (.int 64 128)) (.reg "%sh")) = some s6 := by
+    have h := evalInstr_shl_imm_reg noCalls s5 "%bit" "%sh" (128 : BitVec 64)
+    simp only [hl_sh2] at h
+    simpa [s6, bitv] using h
+  have hl_a0 : lookupName s6.env "%a0" = some (.int 64 acc) := by
+    simp [s6, s5, s4, s3, s2, s1, State.bind, lookupName]
+  have hl_bit : lookupName s6.env "%bit" = some (.int 64 bitv) := by
+    simp [s6, State.bind, bitv]
+  have e7 : evalInstr noCalls s6 (.binop "%a1" .or 64 (.reg "%a0") (.reg "%bit")) = some s7 := by
+    have h := evalInstr_or_reg noCalls s6 "%a1" "%a0" "%bit"
+    simp only [hl_a0, hl_bit] at h
+    simpa [s7, a1v] using h
+  have hl_z : lookupName s7.env "%z" = some (.int 1 zv) := by
+    simp [s7, s6, s5, s4, State.bind, lookupName, zv]
+  have hl_a1 : lookupName s7.env "%a1" = some (.int 64 a1v) := by
+    simp [s7, State.bind, a1v]
+  have hl_a0b : lookupName s7.env "%a0" = some (.int 64 acc) := by
+    simp [s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName]
+  have e8 : evalInstr noCalls s7 (.select "%a2" (.int 64) (.reg "%z") (.reg "%a1") (.reg "%a0")) = some s8 := by
+    have h := evalInstr_select_reg noCalls s7 "%a2" "%z" "%a1" "%a0"
+    simp only [hl_z, hl_a1, hl_a0b] at h
+    simp only [ite_int] at h
+    simpa [s8, a2v] using h
+  have hl_a2 : lookupName s8.env "%a2" = some (.int 64 a2v) := by
+    simp [s8, State.bind, a2v]
+  have hl_acc8 : lookupName s8.env "%acc" = some (.ptr 1) := by
+    simp [s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
+  have e9 : evalInstr noCalls s8 (.store (.int 64) (.reg "%a2") (.reg "%acc")) = some s9 := by
+    have h := eval_store_64 noCalls s8 (.reg "%a2") (.reg "%acc") a2v 1 hl_a2 hl_acc8
+    rw [h, hstore1]
+  have hl_i1_9 : lookupName s9.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) := by
+    simp [s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hi1]
+  have e10 : evalInstr noCalls s9 (.binop "%i2" .add 64 (.reg "%i1") (.imm (.int 64 1))) = some s10 := by
+    have h := evalInstr_add_imm noCalls s9 "%i2" "%i1" (1 : BitVec 64)
+    simp only [hl_i1_9] at h
+    simpa [s10, i2v] using h
+  have hl_i2 : lookupName s10.env "%i2" = some (.int 64 i2v) := by
+    simp [s10, State.bind, i2v]
+  have hl_i10 : lookupName s10.env "%i" = some (.ptr 9) := by
+    simp [s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
+  have e11 : evalInstr noCalls s10 (.store (.int 64) (.reg "%i2") (.reg "%i")) = some s11 := by
+    have h := eval_store_64 noCalls s10 (.reg "%i2") (.reg "%i") i2v 9 hl_i2 hl_i10
+    rw [h, hstore2]
+  refine ⟨s12, ?_, rfl, ?_⟩
+  · have hfind : loopFunction.findBlock s.pc = some bodyBlock := by
+      simp [loopFunction, Function.findBlock, findBlockList, hpc, bodyBlock, bodyInstrs,
+        condBody]
+    simp only [step, hfind, bodyBlock, bodyInstrs, denoteCode, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11]
+    simp [execTerm, s12, s11]
+  · have hsh : shv.toNat = 8 * k := by
+      simp only [shv]
+      rw [ofNat_mul_eight_lit k hk, ofNat_eight_mul_toNat k hk]
+    have hbit : bitv = (0x80 : BitVec 64) <<< (8 * k) := by
+      simp only [bitv, hsh]
+    have hz : (zv = 1) ↔ isZeroByte m k := by
+      simp only [zv, ofBool_eq_one]
+      simp only [b2v, bv, hsh, isZeroByte]
+    have ha2 : a2v = maskPrefix m (k + 1) := by
+      simp only [a2v, a1v, hacc]
+      rw [maskPrefix_succ]
+      by_cases hp : isZeroByte m k
+      · rw [ite_eq_left (hz.mpr hp), ite_eq_left hp, hbit]
+      · rw [ite_eq_right (fun h => hp (hz.mp h)), ite_eq_right hp]
+        simp
+    have hi2 : i2v = BitVec.ofNat 64 (k + 1) := by
+      simp only [i2v]
+      rw [ofNat_add_one_lit k hk]
+    have hbelow : loadValue
+        (writeBytes (writeBytes s.mem 1 (natToBytes a2v.toNat 8)) 9 (natToBytes i2v.toNat 8))
+        (.int 64) 1 =
+        loadValue (writeBytes s.mem 1 (natToBytes a2v.toNat 8)) (.int 64) 1 :=
+      loadValue_writeBytes_below (writeBytes s.mem 1 (natToBytes a2v.toNat 8))
+        (natToBytes i2v.toNat 8) 64 1 9 (by decide)
+    have hrt1 : loadValue (writeBytes s.mem 1 (natToBytes a2v.toNat 8)) (.int 64) 1 =
+        some (.int 64 a2v) :=
+      (loadValue_storeValue_64 s a2v 1).2
+    have hrt2 : loadValue
+        (writeBytes (writeBytes s.mem 1 (natToBytes a2v.toNat 8)) 9 (natToBytes i2v.toNat 8))
+        (.int 64) 9 = some (.int 64 i2v) :=
+      (loadValue_storeValue_64
+        { s with mem := writeBytes s.mem 1 (natToBytes a2v.toNat 8) } i2v 9).2
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.mReg]
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
+    · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      rw [hbelow, hrt1, ha2]
+    · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      rw [hrt2, hi2]
 
 end LeanLLVM.Vellum.CommaMaskLoop
