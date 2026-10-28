@@ -128,6 +128,12 @@ fuel.  Composition is sound by transitivity, so the pipeline theorem is
 - [`docs/simd-recogniser-options.md`](docs/simd-recogniser-options.md) — where a
   faster SIMD recogniser can be inserted into a verified parser, the proof
   obligation at each insertion point, and the trust boundary each option adds.
+- [`docs/lean-vellum-development-programme.md`](docs/lean-vellum-development-programme.md)
+  — the proposed programme for certified replacement in a Lean compilation
+  chain, with milestones and acceptance gates.
+- [`docs/m0-runtime-noise-report.md`](docs/m0-runtime-noise-report.md) — M0
+  evidence: what Lean-generated IR contains at a replacement boundary, and why
+  the seam must be an opaque `@[extern]` symbol.
 
 ## Reference materials
 
