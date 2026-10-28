@@ -65,6 +65,29 @@ theorem readByte_writeBytes_below (m : Mem) :
       rw [readByte_writeBytes_below (writeByte m start b) bs (by omega)]
       exact readByte_writeByte_other m b (by omega)
 
+/-- A sequence read entirely below `start` is unaffected by writes at `start`. -/
+theorem readBytes_writeBytes_below (m : Mem) :
+    ∀ (bs : List UInt8) (n addr start : Nat), addr + n ≤ start →
+      readBytes (writeBytes m start bs) addr n = readBytes m addr n
+  | bs, 0, _, _, _ => by simp only [readBytes]
+  | bs, n + 1, addr, start, h => by
+      simp only [readBytes]
+      rw [readByte_writeBytes_below m bs (by omega)]
+      cases hr : readByte m addr with
+      | none => rfl
+      | some b =>
+          rw [readBytes_writeBytes_below m bs n (addr + 1) start (by omega)]
+
+/-- A typed load of a range entirely below `start` is unaffected by writes at
+`start`. -/
+theorem loadValue_writeBytes_below (m : Mem) (bs : List UInt8) (w : Nat)
+    (addr start : Nat) (h : addr + (w + 7) / 8 ≤ start) :
+    loadValue (writeBytes m start bs) (.int w) addr = loadValue m (.int w) addr := by
+  simp only [loadValue]
+  split
+  · rfl
+  · rw [readBytes_writeBytes_below m bs ((w + 7) / 8) addr start h]
+
 /-! ### Byte sequences -/
 
 /-- The bytes written at `addr` are read back at `addr`. -/
