@@ -132,8 +132,11 @@ fuel.  Composition is sound by transitivity, so the pipeline theorem is
   — the proposed programme for certified replacement in a Lean compilation
   chain, with milestones and acceptance gates.
 - [`docs/m0-runtime-noise-report.md`](docs/m0-runtime-noise-report.md) — M0
-  evidence: what Lean-generated IR contains at a replacement boundary, and why
-  the seam must be an opaque `@[extern]` symbol.
+  evidence: what Lean-generated IR contains at a replacement boundary, the
+  inline/opaque-call behaviour, and the corrected exact-mask contract.
+  Reproduce with `nix develop -c bash probes/m0/check.sh`.
+- [`docs/m0-runtime-noise-review-handoff.md`](docs/m0-runtime-noise-review-handoff.md)
+  — the review of that report and the corrected first work package.
 
 ## Reference materials
 
