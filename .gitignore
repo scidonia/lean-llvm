@@ -2,4 +2,5 @@
 .direnv/
 *.ll.out
 /probes/install/build/
+/probes/app/build/
 /probes/m0/build/

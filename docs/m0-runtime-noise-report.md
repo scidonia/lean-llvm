@@ -290,7 +290,10 @@ not against an unversioned page.
    each unit from its fixtures and requires byte equality before accepting it.
    `probes/install/check.sh` exercises candidate selection, stale-hash
    fallback, strict-mode rejection, mutated-fixture rejection and identical
-   semantic outputs from both binaries.
+   semantic outputs from both binaries. `probes/app/check.sh` repeats the
+   selection with a caller that does real work: a CSV comma-offset reader whose
+   seam call survives `-O2`, linked against either unit, producing the same
+   answer while the two executables contain demonstrably different bodies.
 5. **Decide the attribute policy per kind** and bind it, the target
    configuration and the artifact hashes into the manifest. The policy is
    `reject`: the fixtures carry no attributes and the parser refuses an
@@ -306,6 +309,9 @@ not against an unversioned page.
 
 - One toolchain (`Lean v4.35.0-rc3`, clang 21.1.8), one target
   (`x86_64-unknown-linux-gnu`), one probe family, no benchmark.
+- The application probe is one small Lean module written for the probe: a real
+  caller in that the seam call is embedded in surrounding work and survives
+  `-O2`, but not a production code base.
 - The observations are about IR shape, not speed.
 - The exact-mask formula and a candidate's implementation of it are proved:
   `swar_eq_spec` and `byteLoop_eq_spec` by the byte-lane argument, and
