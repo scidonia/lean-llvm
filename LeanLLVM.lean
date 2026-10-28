@@ -2,6 +2,7 @@ import LeanLLVM.Basic
 import LeanLLVM.Syntax
 import LeanLLVM.Semantics
 import LeanLLVM.Memory
+import LeanLLVM.Frames
 import LeanLLVM.Parser
 import LeanLLVM.Printer
 import LeanLLVM.Transform.Basic

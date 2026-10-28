@@ -88,6 +88,19 @@ theorem loadValue_writeBytes_below (m : Mem) (bs : List UInt8) (w : Nat)
   · rfl
   · rw [readBytes_writeBytes_below m bs ((w + 7) / 8) addr start h]
 
+/-- Writes entirely below an address do not change it (the mirror of
+`readByte_writeBytes_below`). -/
+theorem readByte_writeBytes_above (m : Mem) :
+    ∀ (bs : List UInt8) {start addr : Nat}, start + bs.length ≤ addr →
+      readByte (writeBytes m start bs) addr = readByte m addr
+  | [], _, _, _ => by simp only [writeBytes]
+  | b :: bs, start, addr, h => by
+      simp only [List.length_cons] at h
+      rw [show writeBytes m start (b :: bs) =
+        writeBytes (writeByte m start b) (start + 1) bs from rfl]
+      rw [readByte_writeBytes_above (writeByte m start b) bs (by omega)]
+      exact readByte_writeByte_other m b (by omega)
+
 /-! ### Byte sequences -/
 
 /-- The bytes written at `addr` are read back at `addr`. -/
