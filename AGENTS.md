@@ -21,6 +21,8 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 
 - `LeanLLVM/` is the library: syntax, semantics, parser, printer, refinement,
   the pass framework, and the passes.
+- `LeanLLVM/Vellum/` is the pure-seam refinement layer: `Contract`, `Refines` /
+  `SemRefines`, `Correct`, the contextual theorem, and the comma-mask instance.
 - `LeanLLVMTest/` is the check library.  It imports `LeanLLVM` from outside, so
   it sees exactly the public interface, and holds `#guard` checks,
   `#guard_msgs` pins, and small theorems.
@@ -40,6 +42,10 @@ nix develop -c lake exe leanllvm tests/constfold.ll
   `llvm-as`.
 - Anything the semantics does not model is refused by the parser with a message
   naming the construct.  Do not silently approximate an unmodelled construct.
+- The 64-bit seam identities are discharged by `bv_decide`.  It emits a native
+  bit-blast axiom per theorem; pin those axioms in `LeanLLVMTest/Vellum.lean`
+  and do not describe them as kernel reductions.  A kernel certificate is
+  follow-up work.
 - Checks are behavioural where behaviour is observable: parse a program, run it,
   run the pass, compare.  Avoid tests that merely restate a definition.
 

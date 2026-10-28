@@ -8,3 +8,5 @@ import LeanLLVM.Transform.ConstantFold
 import LeanLLVM.Transform.FoldBranches
 import LeanLLVM.Transform.StrengthReduce
 import LeanLLVM.Pipeline
+import LeanLLVM.Vellum.Refinement
+import LeanLLVM.Vellum.CommaMask

@@ -22,6 +22,7 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 | Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency, calls |
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing | relational/log relations, memory-transformation relations |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
+| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | the same at the emitted-LLVM level; the object connection is the differential certificate in `probes/install/` |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
 
 Every pass is a theorem, not a test: the build fails if the refinement proof
@@ -106,7 +107,9 @@ conditional edge is gone, which is what the certified branch folder proves.
 | `Main.lean` | the `leanllvm` driver |
 
 `DESIGN.md` records the refinement definition, the modelling choices that bound
-what the framework can claim, and the next milestones.
+what the framework can claim, and the next milestones.  The pure seam contract
+and its proof are in `LeanLLVM/Vellum/`: `commaContract ⊢ byteLoop ⊑ swar`,
+with `Correct` transferred to the candidate and a two-call contextual theorem.
 
 ## Refinement discipline
 

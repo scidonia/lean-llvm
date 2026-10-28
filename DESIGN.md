@@ -38,6 +38,35 @@ The fuel-indexed `runFuel` makes the modelling explicit: `none` is "no outcome
 within the budget", and `Beh` existentially quantifies the budget.  Proofs lift
 a per-step equality to `runFuel` by induction and then to `Beh`.
 
+## Pure seam refinement
+
+`LeanLLVM/Vellum/` carries the first boundary contract at the type the seam
+uses.  A contract fixes the admitted inputs and the observable guarantee:
+
+```lean
+structure Contract where
+  pre  : BitVec 64 → Prop
+  post : BitVec 64 → BitVec 64 → Prop
+
+def Refines (Γ : Contract) (target source : BitVec 64 → BitVec 64) : Prop :=
+  ∀ x, Γ.pre x → target x = source x
+```
+
+`SemRefines` is the option-valued form for partiality or undefined behaviour;
+`semRefines_total` relates it to the pure equality above.  `Correct Γ f` is
+`∀ x, Γ.pre x → Γ.post x (f x)`, and `Correct.of_refines` transfers it from the
+source to the target.  `Context` and `Context.refines` are the pure-slice
+counterpart of the contextual replacement theorem: a caller that only calls the
+seam at admissible arguments keeps its result.
+
+The first instance is the comma mask.  `swar` (the baseline body) and
+`byteLoop` (the candidate body) are both proved equal to the lane-wise `spec`,
+so `commaContract ⊢ byteLoop ⊑ swar`; a two-call context is preserved as well.
+The 64-bit identities are discharged by `bv_decide`, which emits a native
+bit-blast axiom per theorem; `LeanLLVMTest/Vellum.lean` pins those axioms as a
+named trust boundary.  A kernel-certificate replacement for that step is
+follow-up work, not a claim of the current proof.
+
 ## Modelling choices
 
 The model is deliberately conservative: it may permit fewer rewrites than LLVM's
