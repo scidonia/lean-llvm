@@ -48,6 +48,11 @@
               lean4
               pkgs.git
               pkgs.coreutils
+              pkgs.file
+              pkgs.binutils
+              pkgs.gnugrep
+              pkgs.gnused
+              pkgs.gawk
               pkgs.zstd
               # The IR the driver emits is checked against the real assembler in
               # the verification runs.

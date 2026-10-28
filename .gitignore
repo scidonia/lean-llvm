@@ -1,3 +1,5 @@
 /.lake
 .direnv/
 *.ll.out
+/probes/install/build/
+/probes/m0/build/

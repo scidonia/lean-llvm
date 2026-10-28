@@ -281,7 +281,10 @@ not against an unversioned page.
    replacement theorem; a `BitVec` equality is a lemma, not acceptance.
 4. **Install, then select.** Demonstrate identity installation, then install a
    structurally different certified body and show that the target paths execute
-   it. Report semantic acceptance and coverage separately.
+   it. Report semantic acceptance and coverage separately. The link-time
+   selection mechanics are exercised by `probes/install/check.sh`: candidate
+   selection, stale-hash fallback, strict-mode rejection and identical semantic
+   outputs from both binaries.
 5. **Decide the attribute policy per kind** and bind it, the target
    configuration and the artifact hashes into the manifest.
 6. **Then the memory-using loop**, where heap relations, framing and the
