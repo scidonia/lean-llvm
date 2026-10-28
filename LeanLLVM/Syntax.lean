@@ -21,6 +21,9 @@ inductive Instr where
   | alloca (dst : String) (ty : Ty) (align : Nat)
   | load (dst : String) (ty : Ty) (ptr : Operand)
   | store (ty : Ty) (val ptr : Operand)
+  /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
+  is resolved by the semantics' call environment, not by the function itself. -/
+  | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
   deriving DecidableEq, Repr
 
 /-- The register an instruction defines, if any. -/
@@ -34,6 +37,7 @@ def Instr.dst? : Instr → Option String
   | .alloca d _ _ => some d
   | .load d _ _ => some d
   | .store _ _ _ => none
+  | .call d _ _ _ => some d
 
 /-- Registers read by an instruction. -/
 def Instr.uses : Instr → List String
@@ -46,6 +50,7 @@ def Instr.uses : Instr → List String
   | .alloca _ _ _ => []
   | .load _ _ p => p.regs
   | .store _ v p => v.regs ++ p.regs
+  | .call _ _ _ args => (args.map (·.2.regs)).flatten
 
 /-- Instructions with no memory effect.  `alloca` moves the allocation pointer
 and `store` writes memory; both stay out of the pure set.  A `load` reads
@@ -60,6 +65,7 @@ def Instr.isPure : Instr → Bool
   | .alloca .. => false
   | .load .. => true
   | .store .. => false
+  | .call .. => false
 
 /-- A terminator.  `ret void` carries `none`. -/
 inductive Term where
@@ -99,10 +105,18 @@ structure Function where
   blocks : List Block
   deriving DecidableEq, Repr
 
-/-- A module: a list of function definitions.  Declarations are not modelled
+/-- An external declaration: a symbol the module calls but does not define. -/
+structure Decl where
+  name : String
+  retTy : Ty
+  params : List Ty
+  deriving DecidableEq, Repr
+
+/-- A module: declarations followed by function definitions.  Declarations are not modelled
 yet; the parser refuses a module that calls a function, so a declaration would
 be unreachable. -/
 structure Module where
+  decls : List Decl
   functions : List Function
   deriving DecidableEq, Repr
 

@@ -27,7 +27,7 @@ no:
 def sampleModule : Module :=
   match parseModule sample with
   | .ok m => m
-  | .error _ => ⟨[]⟩
+  | .error _ => ⟨[], []⟩
 
 def sampleFunction : Function :=
   match sampleModule.functions with
@@ -46,12 +46,46 @@ def sampleFunction : Function :=
   | .ok m => m = sampleModule
   | .error _ => false
 
+-- A call is modelled end to end: it round-trips through the printer, the
+-- environment supplies its result, and an unresolved call is `ub`.
+def callSample : String :=
+"declare i64 @f(i64)
+
+define i64 @caller(i64 %arg) {
+entry:
+  %r = call i64 @f(i64 %arg)
+  ret i64 %r
+}
+"
+
+#guard
+  match parseModule callSample with
+  | .ok m => m.render = callSample
+  | .error _ => false
+
+def plusOneEnv : Calls := fun callee args =>
+  if callee = "f" then
+    match args with
+    | [.int 64 x] => some (.int 64 (x + 1))
+    | _ => none
+  else none
+
+#guard
+  match parseModule callSample with
+  | .ok m =>
+      match m.functions with
+      | [f] => run plusOneEnv f [.int 64 41] =
+          some (.ret (some (.int 64 42)) []) ∧
+          run noCalls f [.int 64 41] = some .ub
+      | _ => false
+  | .error _ => false
+
 -- The semantics computes the taken branch (`%a` is 3).
-#guard run sampleFunction [.int 32 (BitVec.ofInt 32 2)] =
+#guard run noCalls sampleFunction [.int 32 (BitVec.ofInt 32 2)] =
   some (.ret (some (.int 32 (BitVec.ofInt 32 3))) [])
 
 -- The semantics computes the other input.
-#guard run sampleFunction [.int 32 (BitVec.ofInt 32 7)] =
+#guard run noCalls sampleFunction [.int 32 (BitVec.ofInt 32 7)] =
   some (.ret (some (.int 32 (BitVec.ofInt 32 8))) [])
 
 -- Constant propagation makes the comparison's operands literal and the branch
@@ -62,15 +96,15 @@ def sampleFunction : Function :=
   | [] => false
 
 -- The pipeline leaves observable behaviour unchanged on this program.
-#guard run sampleFunction [.int 32 (BitVec.ofInt 32 2)] =
-  run (optimizeFunction sampleFunction) [.int 32 (BitVec.ofInt 32 2)]
+#guard run noCalls sampleFunction [.int 32 (BitVec.ofInt 32 2)] =
+  run noCalls (optimizeFunction sampleFunction) [.int 32 (BitVec.ofInt 32 2)]
 
-#guard run sampleFunction [.int 32 (BitVec.ofInt 32 7)] =
-  run (optimizeFunction sampleFunction) [.int 32 (BitVec.ofInt 32 7)]
+#guard run noCalls sampleFunction [.int 32 (BitVec.ofInt 32 7)] =
+  run noCalls (optimizeFunction sampleFunction) [.int 32 (BitVec.ofInt 32 7)]
 
 -- Refinement is what the pipeline theorem provides.
-example : Refines (optimizeFunction sampleFunction) sampleFunction :=
-  optimisationPipeline_sound sampleFunction
+example : ∀ calls, Refines calls (optimizeFunction sampleFunction) sampleFunction :=
+  fun calls => optimisationPipeline_sound calls sampleFunction
 
 /-- info: 'LeanLLVM.constantPropagation_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -95,7 +129,7 @@ entry:
 
 def memoryFunction : Function :=
   match parseModule memorySample with
-  | .ok ⟨f :: _⟩ => f
+  | .ok ⟨_, f :: _⟩ => f
   | _ => ⟨"", .void, [], []⟩
 
 def returnsValue (o : Option Outcome) (v : Value) : Bool :=
@@ -103,7 +137,7 @@ def returnsValue (o : Option Outcome) (v : Value) : Bool :=
   | some (.ret (some w) _) => w = v
   | _ => false
 
-#guard returnsValue (run memoryFunction []) (.int 32 (BitVec.ofInt 32 42))
+#guard returnsValue (run noCalls memoryFunction []) (.int 32 (BitVec.ofInt 32 42))
 
 /-- Signed division truncates toward zero and `srem` follows the dividend's
 sign, as LLVM specifies; `-5 / 2 = -2`, `-5 % 2 = -1`. -/
@@ -120,13 +154,13 @@ entry:
 
 def signedFunction : Function :=
   match parseModule signedSample with
-  | .ok ⟨f :: _⟩ => f
+  | .ok ⟨_, f :: _⟩ => f
   | _ => ⟨"", .void, [], []⟩
 
-#guard returnsValue (run signedFunction []) (.int 32 (BitVec.ofInt 32 (-21)))
+#guard returnsValue (run noCalls signedFunction []) (.int 32 (BitVec.ofInt 32 (-21)))
 
 -- The pipeline preserves the signed-division program's behaviour.
-#guard run signedFunction [] = run (optimizeFunction signedFunction) []
+#guard run noCalls signedFunction [] = run noCalls (optimizeFunction signedFunction) []
 
 -- The printer keeps the type on register operands where the grammar requires
 -- it (`store`'s value, `select`'s arms), and omits `, align 0` from an
@@ -162,7 +196,7 @@ entry:
 
 def strengthFunction : Function :=
   match parseModule strengthSample with
-  | .ok ⟨f :: _⟩ => f
+  | .ok ⟨_, f :: _⟩ => f
   | _ => ⟨"", .void, [], []⟩
 
 #guard
@@ -173,8 +207,8 @@ def strengthFunction : Function :=
       | _ => false
   | [] => false
 
-#guard run strengthFunction [.int 32 (BitVec.ofInt 32 21)] =
-  run (strengthReduction.run strengthFunction) [.int 32 (BitVec.ofInt 32 21)]
+#guard run noCalls strengthFunction [.int 32 (BitVec.ofInt 32 21)] =
+  run noCalls (strengthReduction.run strengthFunction) [.int 32 (BitVec.ofInt 32 21)]
 
 /-- info: 'LeanLLVM.strengthReduction_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

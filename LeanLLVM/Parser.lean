@@ -3,7 +3,7 @@ A parser for the subset of textual LLVM IR that the semantics models.
 
 The parser is line oriented: one instruction per line, one label per block.
 Anything outside the modelled subset is refused with a message naming the
-construct, rather than being approximated.  In particular `phi`, `call`,
+construct, rather than being approximated.  In particular `phi`,
 `getelementptr`, aggregates and floating point are not accepted yet.
 -/
 import LeanLLVM.Syntax
@@ -182,6 +182,42 @@ def parseIPred (s : String) : Except String IPred :=
   | "slt" => .ok .slt | "sle" => .ok .sle | "sgt" => .ok .sgt | "sge" => .ok .sge
   | _ => .error s!"unsupported comparison predicate '{s}'"
 
+/-- Consume tokens up to and including `stop`, returning those before it. -/
+def P.takeUntil (stop : String) : P (List String) := fun ts =>
+  let rec go : List String → List String → Except String (List String × List String)
+    | [], _ => .error s!"expected '{stop}'"
+    | t :: rest, acc =>
+        if t = stop then .ok (acc.reverse, rest) else go rest (t :: acc)
+  go ts []
+
+/-- Build one argument from the tokens between two commas. -/
+def finishCallArg (cur : List String) (acc : List (Ty × Operand)) :
+    Except String (List (Ty × Operand)) :=
+  match parseTypedOperand cur.reverse with
+  | .error e => .error e
+  | .ok (a, []) => .ok (a :: acc)
+  | .ok (_, _ :: _) => .error "trailing tokens in a call argument"
+
+/-- Parse a call's argument list from the tokens between the parentheses. -/
+def parseCallArgs (toks : List String) : Except String (List (Ty × Operand)) :=
+  let step : Option (List (Ty × Operand) × List String) →
+      String → Option (List (Ty × Operand) × List String)
+    | none, _ => none
+    | some (acc, cur), t =>
+        if t = "," then
+          match finishCallArg cur acc with
+          | .error _ => none
+          | .ok acc' => some (acc', [])
+        else some (acc, t :: cur)
+  let init : Option (List (Ty × Operand) × List String) := some ([], [])
+  match toks.foldl step init with
+  | none => .error "malformed call argument list"
+  | some (acc, []) => .ok acc.reverse
+  | some (acc, cur) =>
+      match finishCallArg cur acc with
+      | .error e => .error e
+      | .ok acc' => .ok acc'.reverse
+
 def parseValueInstr (dst : String) : P Stmt := do
   let op ← P.next
   match op with
@@ -242,7 +278,15 @@ def parseValueInstr (dst : String) : P Stmt := do
       let (_, p) ← parseTypedOperand
       pure (.instr (.load dst ty p))
   | "getelementptr" => P.fail "getelementptr is not modelled yet"
-  | "call" => P.fail "call is not modelled yet"
+  | "call" =>
+      let retTy ← expectTy
+      let id ← P.next
+      let callee := if id.startsWith "@" then (id.drop 1).toString else id
+      P.expect "("
+      let toks ← P.takeUntil ")"
+      match parseCallArgs toks with
+      | .error e => P.fail e
+      | .ok args => pure (.instr (.call dst retTy callee args))
   | "phi" => P.fail "phi is not modelled yet"
   | other => P.fail s!"unsupported instruction '{other}'"
 where
@@ -405,22 +449,64 @@ def parseFunction (header : List String) (rest : List (List String)) :
   let blocks ← parseBlocks body
   .ok (⟨name, retTy, params, blocks⟩, rest')
 
-/-- Parse a module. -/
+/-- Build one parameter from the tokens between two commas. -/
+def finishDeclParam (cur : List String) (acc : List Ty) : Except String (List Ty) :=
+  match cur.reverse with
+  | [] => .error "empty declaration parameter"
+  | tyTok :: _ =>
+      match parseTy tyTok with
+      | .error e => .error e
+      | .ok ty => .ok (ty :: acc)
+
+/-- Parse a declaration's parameter types from the tokens between the
+parentheses.  A parameter name, if present, is dropped. -/
+def parseDeclParams (toks : List String) : Except String (List Ty) :=
+  let step : Option (List Ty × List String) → String → Option (List Ty × List String)
+    | none, _ => none
+    | some (acc, cur), t =>
+        if t = "," then
+          match finishDeclParam cur acc with
+          | .error _ => none
+          | .ok acc' => some (acc', [])
+        else some (acc, t :: cur)
+  let init : Option (List Ty × List String) := some ([], [])
+  match toks.foldl step init with
+  | none => .error "malformed declaration parameter list"
+  | some (acc, []) => .ok acc.reverse
+  | some (acc, cur) =>
+      match finishDeclParam cur acc with
+      | .error e => .error e
+      | .ok acc' => .ok acc'.reverse
+
+/-- Parse a `declare ret @name(types)` line. -/
+def parseDecl (l : List String) : Except String Decl := do
+  match l with
+  | "declare" :: retTok :: nameTok :: "(" :: rest =>
+      let retTy ← parseTy retTok
+      let name := if nameTok.startsWith "@" then (nameTok.drop 1).toString else nameTok
+      let params ← parseDeclParams (rest.takeWhile (· ≠ ")"))
+      .ok { name := name, retTy := retTy, params := params }
+  | _ => .error s!"malformed declaration '{String.intercalate " " l}'"
+
+/-- Parse a module: declarations, then function definitions. -/
 def parseModule (src : String) : Except String Module := do
-  let rec go : Nat → List (List String) → List Function → Except String (List Function)
-    | 0, _, _ => .error "internal parser error: module fuel exhausted"
-    | _ + 1, [], acc => .ok acc.reverse
-    | fuel + 1, l :: rest, acc =>
+  let rec go : Nat → List (List String) → List Decl → List Function →
+      Except String Module
+    | 0, _, _, _ => .error "internal parser error: module fuel exhausted"
+    | _ + 1, [], decls, acc => .ok ⟨decls.reverse, acc.reverse⟩
+    | fuel + 1, l :: rest, decls, acc =>
         match l with
-        | "declare" :: _ => go fuel rest acc
+        | "declare" :: _ =>
+            match parseDecl l with
+            | .error e => .error e
+            | .ok d => go fuel rest (d :: decls) acc
         | "define" :: _ =>
             match parseFunction l rest with
             | .error e => .error e
-            | .ok (f, rest') => go fuel rest' (f :: acc)
-        | ["}"] => go fuel rest acc
+            | .ok (f, rest') => go fuel rest' decls (f :: acc)
+        | ["}"] => go fuel rest decls acc
         | _ => .error s!"expected 'define' or 'declare', got '{String.intercalate " " l}'"
   let lines := tokenLines src
-  let funcs ← go (lines.length + 1) lines []
-  .ok ⟨funcs⟩
+  go (lines.length + 1) lines [] []
 
 end LeanLLVM

@@ -70,6 +70,8 @@ def substInstr (σ : Subst) : Instr → Instr
   | .alloca d ty align => .alloca d ty align
   | .load d ty p => .load d ty (substOperand σ p)
   | .store ty v p => .store ty (substOperand σ v) (substOperand σ p)
+  | .call d retTy callee args =>
+      .call d retTy callee (args.map fun (ty, op) => (ty, substOperand σ op))
 
 def substTerm (σ : Subst) : Term → Term
   | .ret ty v => .ret ty (v.map (substOperand σ))
@@ -196,9 +198,18 @@ theorem evalOperand_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (o :
       | some c => exact (h n c hσ).symm
   | imm c => rfl
 
-theorem evalInstr_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (i : Instr) :
-    evalInstr s (substInstr σ i) = evalInstr s i := by
-  cases i <;> simp [substInstr, evalInstr, evalOperand_subst h]
+theorem evalOperands_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) :
+    ∀ args : List (Ty × Operand),
+      evalOperands s (args.map fun (ty, op) => (ty, substOperand σ op)) =
+        evalOperands s args
+  | [] => rfl
+  | (ty, op) :: rest => by
+      simp only [List.map_cons, evalOperands, evalOperand_subst h, evalOperands_subst h rest]
+
+theorem evalInstr_subst {σ : Subst} {s : State} (calls : Calls)
+    (h : EnvEmbeds s.env σ) (i : Instr) :
+    evalInstr calls s (substInstr σ i) = evalInstr calls s i := by
+  cases i <;> simp [substInstr, evalInstr, evalOperand_subst h, evalOperands_subst h]
 
 /-- A constant operand evaluates to its literal. -/
 theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
@@ -257,7 +268,8 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
 
 /-- Executing an instruction with a destination binds exactly that
 destination. -/
-theorem evalInstr_env {i : Instr} {s s' : State} (h : evalInstr s i = some s') :
+theorem evalInstr_env (calls : Calls) {i : Instr} {s s' : State}
+    (h : evalInstr calls s i = some s') :
     match i.dst? with
     | some d => ∃ v, s'.env = (d, v) :: s.env
     | none => s'.env = s.env := by
@@ -271,9 +283,9 @@ theorem evalInstr_env {i : Instr} {s s' : State} (h : evalInstr s i = some s') :
 /-- Executing a foldable instruction binds its destination to the folded
 literal. -/
 theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
-    (h : EnvEmbeds s.env σ) (hf : foldInstr σ i = some c) :
+    (calls : Calls) (h : EnvEmbeds s.env σ) (hf : foldInstr σ i = some c) :
     ∃ v, Const.toValue c = some v ∧
-      ∃ d, i.dst? = some d ∧ evalInstr s i = some (s.bind d v) := by
+      ∃ d, i.dst? = some d ∧ evalInstr calls s i = some (s.bind d v) := by
   cases i with
   | binop d op w a b =>
       simp only [foldInstr] at hf
@@ -451,6 +463,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
   | alloca d ty align => simp [foldInstr] at hf
   | load d ty p => simp [foldInstr] at hf
   | store ty v p => simp [foldInstr] at hf
+  | call d retTy callee args => simp [foldInstr] at hf
 
 /-- Terminator substitution preserves execution once the invariant holds. -/
 theorem execTerm_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (t : Term) :
@@ -481,7 +494,7 @@ theorem execTerm_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (t : Te
 
 /-- The substitution after a step satisfies the invariant. -/
 theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
-    (h : EnvEmbeds s.env σ) (hs : evalInstr s i = some s') :
+    (calls : Calls) (h : EnvEmbeds s.env σ) (hs : evalInstr calls s i = some s') :
     EnvEmbeds s'.env (foldStep σ i) := by
   unfold foldStep
   split
@@ -491,7 +504,7 @@ theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
     by_cases hxd : x = d
     · subst hxd
       rw [Subst.update_self] at hx'
-      obtain ⟨v, hv, d', hd', hexec⟩ := evalInstr_fold h hx'
+      obtain ⟨v, hv, d', hd', hexec⟩ := evalInstr_fold calls h hx'
       rw [hd'] at hd
       injection hd with hdd
       subst hdd
@@ -501,7 +514,7 @@ theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
       simp only [State.bind, lookupName_cons_self]
       exact hv.symm
     · rw [Subst.update_ne _ hxd] at hx'
-      have henv := evalInstr_env hs
+      have henv := evalInstr_env calls hs
       rw [hd] at henv
       obtain ⟨v, hv⟩ := henv
       rw [hv]
@@ -512,7 +525,7 @@ theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
       cases i <;> simp [Instr.dst?] at hnone ⊢
     obtain ⟨ty, v, p, rfl⟩ := hstore
     have henv : s'.env = s.env := by
-      have h' := evalInstr_env hs
+      have h' := evalInstr_env calls hs
       rw [show (Instr.store ty v p).dst? = none from rfl] at h'
       exact h'
     intro x c hx
@@ -521,10 +534,10 @@ theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
 
 /-- Folding an instruction list preserves its denotation, and leaves the
 environment invariant holding at the end. -/
-theorem foldInstrs_correct (σ : Subst) (is : List Instr) (s : State)
+theorem foldInstrs_correct (calls : Calls) (σ : Subst) (is : List Instr) (s : State)
     (h : EnvEmbeds s.env σ) :
-    denoteCode (foldInstrs σ is).1 s = denoteCode is s ∧
-      (∀ s', denoteCode is s = some s' → EnvEmbeds s'.env (foldInstrs σ is).2) := by
+    denoteCode calls (foldInstrs σ is).1 s = denoteCode calls is s ∧
+      (∀ s', denoteCode calls is s = some s' → EnvEmbeds s'.env (foldInstrs σ is).2) := by
   induction is generalizing σ s with
   | nil =>
       refine ⟨rfl, ?_⟩
@@ -537,43 +550,43 @@ theorem foldInstrs_correct (σ : Subst) (is : List Instr) (s : State)
       | mk rest σ' =>
         simp only [foldInstrs_cons, htail]
         constructor
-        · simp only [denoteCode, evalInstr_subst h]
-          cases he : evalInstr s i with
+        · simp only [denoteCode, evalInstr_subst calls h]
+          cases he : evalInstr calls s i with
           | none => rfl
           | some s'' =>
-              have hstep := ih (foldStep σ i) s'' (envEmbeds_foldStep h he)
+              have hstep := ih (foldStep σ i) s'' (envEmbeds_foldStep calls h he)
               rw [htail] at hstep
               exact hstep.1
         · intro s' hs'
           simp only [denoteCode] at hs'
-          cases he : evalInstr s i with
+          cases he : evalInstr calls s i with
           | none => simp [he] at hs'
           | some s'' =>
               simp only [he] at hs'
-              have hstep := ih (foldStep σ i) s'' (envEmbeds_foldStep h he)
+              have hstep := ih (foldStep σ i) s'' (envEmbeds_foldStep calls h he)
               rw [htail] at hstep
               exact hstep.2 s' hs'
 
 /-- The block-level theorem: folding preserves the block's instruction
 denotation, and the end-of-block substitution is valid for the terminator. -/
-theorem foldBlock_denote (b : Block) (s : State) :
-    denoteCode (foldBlockInstrs b) s = denoteCode b.instrs s ∧
-      (∀ s', denoteCode b.instrs s = some s' →
+theorem foldBlock_denote (calls : Calls) (b : Block) (s : State) :
+    denoteCode calls (foldBlockInstrs b) s = denoteCode calls b.instrs s ∧
+      (∀ s', denoteCode calls b.instrs s = some s' →
         execTerm s' (foldBlock b).term = execTerm s' b.term) := by
-  have h := foldInstrs_correct Subst.empty b.instrs s
+  have h := foldInstrs_correct calls Subst.empty b.instrs s
     (fun x c hx => by simp [Subst.empty] at hx)
   exact ⟨h.1, fun s' hs' => execTerm_subst (h.2 s' hs') b.term⟩
 
 /-- One control step is unchanged by constant folding. -/
-theorem step_foldConstants (f : Function) (s : State) :
-    step (foldConstants f) s = step f s := by
+theorem step_foldConstants (calls : Calls) (f : Function) (s : State) :
+    step calls (foldConstants f) s = step calls f s := by
   simp only [step, foldConstants, Function.findBlock]
   rw [findBlockList_map (g := foldBlock) (fun b => rfl) f.blocks s.pc]
   cases hb : findBlockList f.blocks s.pc with
   | none => simp
   | some b =>
       simp only [Option.map_some]
-      have hblock := foldBlock_denote b s
+      have hblock := foldBlock_denote calls b s
       simp only [foldBlock] at hblock ⊢
       rw [hblock.1]
       split
@@ -582,13 +595,13 @@ theorem step_foldConstants (f : Function) (s : State) :
         exact hblock.2 s' hs'
 
 /-- A whole run is unchanged by constant folding. -/
-theorem runFuel_foldConstants (n : Nat) (f : Function) (s : State) :
-    runFuel n (foldConstants f) s = runFuel n f s := by
+theorem runFuel_foldConstants (calls : Calls) (n : Nat) (f : Function) (s : State) :
+    runFuel calls n (foldConstants f) s = runFuel calls n f s := by
   induction n generalizing s with
   | zero => rfl
   | succ n ih =>
       rw [runFuel_succ, runFuel_succ, step_foldConstants]
-      cases hs : step f s with
+      cases hs : step calls f s with
       | ub => rfl
       | ret v s' => rfl
       | jump s' => exact ih s'
@@ -608,8 +621,9 @@ theorem initState_foldConstants (f : Function) (args : List Value) :
   simp [initState, foldConstants, Function.entry?, List.head?_map, foldBlock_name_fun]
 
 /-- Constant folding preserves the observable behaviour exactly. -/
-theorem foldConstants_beh (f : Function) (args : List Value) (o : Outcome) :
-    Beh (foldConstants f) args o ↔ Beh f args o := by
+theorem foldConstants_beh (calls : Calls) (f : Function) (args : List Value)
+    (o : Outcome) :
+    Beh calls (foldConstants f) args o ↔ Beh calls f args o := by
   unfold Beh
   simp only [initState_foldConstants, runFuel_foldConstants]
 
@@ -619,6 +633,6 @@ def constantPropagation : Pass where
   run := foldConstants
 
 theorem constantPropagation_sound : constantPropagation.Sound :=
-  fun f => Refines.of_iff (foldConstants_beh f)
+  fun calls f => Refines.of_iff (foldConstants_beh calls f)
 
 end LeanLLVM

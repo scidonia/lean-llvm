@@ -12,3 +12,4 @@ import LeanLLVM.Vellum.Refinement
 import LeanLLVM.Vellum.CommaMask
 import LeanLLVM.Vellum.CommaMaskKernel
 import LeanLLVM.Vellum.CommaMaskIR
+import LeanLLVM.Vellum.SeamContext

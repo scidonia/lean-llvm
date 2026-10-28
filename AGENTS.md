@@ -21,8 +21,10 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 
 - `LeanLLVM/` is the library: syntax, semantics, parser, printer, refinement,
   the pass framework, and the passes.
-- `LeanLLVM/Vellum/` is the pure-seam refinement layer: `Contract`, `Refines` /
-  `SemRefines`, `Correct`, the contextual theorem, and the comma-mask instance.
+- `LeanLLVM/Vellum/` is the refinement layer: `Contract`, `Refines` /
+  `SemRefines`, `Correct`, the contextual theorems, the comma-mask instance,
+  the emitted-IR bridge (`CommaMaskIR`) and the IR-level caller
+  (`SeamContext`).
 - `LeanLLVMTest/` is the check library.  It imports `LeanLLVM` from outside, so
   it sees exactly the public interface, and holds `#guard` checks,
   `#guard_msgs` pins, and small theorems.

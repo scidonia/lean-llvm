@@ -64,9 +64,11 @@ fixtures carry neither and clang supplies the target default.
   transcription of `Candidate.lean`'s fold, not from Lean's own emission of that
   loop. The differential transcript is the evidence that the transcription
   agrees with the Lean body; it is not a proof.
-- The contextual replacement theorem is stated for the pure seam. A caller
-  function in the semantics requires call modelling, which the fragment does not
-  have yet.
+- The contextual replacement theorem covers a caller (in the semantics) whose
+  body is a call to the seam whose result it returns
+  (`LeanLLVM/Vellum/SeamContext.lean`). The call environment is deterministic,
+  so the theorem is an equality of behaviours rather than a one-directional
+  refinement, and calls have no memory effects yet.
 - One toolchain, one target, no benchmark.
 
 Inspect the evidence:

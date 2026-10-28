@@ -9,6 +9,10 @@ of steps produces an outcome.
 Undefined behaviour is a distinguished outcome (`ub`), not a stuck state.  A
 `ub` reached on any prefix makes every outcome possible, which is exactly what
 `Beh` below records.
+
+Calls are instructions whose callee is resolved by an explicit environment
+(`Calls`) rather than by the function being executed.  The environment is
+deterministic and has no memory effects yet: an unresolved call is `ub`.
 -/
 import LeanLLVM.Syntax
 
@@ -26,6 +30,15 @@ structure State where
 /-- Bind a register to a value. -/
 def State.bind (s : State) (n : String) (v : Value) : State :=
   { s with env := (n, v) :: s.env }
+
+/-- The values a call can return, indexed by callee symbol and argument list.
+This is the linker's selection seen from the semantics: an entry maps a symbol
+to its result on a given argument list, and a missing entry is an unresolved
+call.  The model has no memory effects across calls yet. -/
+abbrev Calls := String → List Value → Option Value
+
+/-- The environment in which no call resolves. -/
+def noCalls : Calls := fun _ _ => none
 
 /-- Read an operand. -/
 def evalOperand (s : State) : Operand → Option Value
@@ -110,8 +123,18 @@ def storeValue (s : State) (ty : Ty) (v : Value) (addr : Nat) : Option State :=
   | .ptr, .ptr a => some { s with mem := writeBytes s.mem addr (natToBytes a 8) }
   | _, _ => none
 
+/-- Evaluate a call's argument list.  Types are carried by the syntax but not
+checked here; a mismatch is the caller's problem, as in the rest of the
+useless-width checks in `evalInstr`. -/
+def evalOperands (s : State) : List (Ty × Operand) → Option (List Value)
+  | [] => some []
+  | (_, op) :: rest =>
+      match evalOperand s op, evalOperands s rest with
+      | some v, some vs => some (v :: vs)
+      | _, _ => none
+
 /-- Execute one instruction. -/
-def evalInstr (s : State) : Instr → Option State
+def evalInstr (calls : Calls) (s : State) : Instr → Option State
   | .binop d op w a b =>
       match evalOperand s a, evalOperand s b with
       | some va, some vb =>
@@ -170,14 +193,21 @@ def evalInstr (s : State) : Instr → Option State
       match evalOperand s v, evalOperand s p with
       | some vv, some (.ptr addr) => storeValue s ty vv addr
       | _, _ => none
+  | .call d _ callee args =>
+      match evalOperands s args with
+      | some vs =>
+          match calls callee vs with
+          | some v => some (s.bind d v)
+          | none => none
+      | none => none
 
 /-- Execute a straight-line instruction sequence. -/
-def denoteCode : List Instr → State → Option State
+def denoteCode (calls : Calls) : List Instr → State → Option State
   | [], s => some s
   | i :: is, s =>
-      match evalInstr s i with
+      match evalInstr calls s i with
       | none => none
-      | some s' => denoteCode is s'
+      | some s' => denoteCode calls is s'
 
 /-- The effect of a terminator. -/
 inductive Ctrl where
@@ -206,11 +236,11 @@ def execTerm (s : State) : Term → Ctrl
   | .unreachable => .ub
 
 /-- One control step of a function. -/
-def step (f : Function) (s : State) : Ctrl :=
+def step (calls : Calls) (f : Function) (s : State) : Ctrl :=
   match f.findBlock s.pc with
   | none => .ub
   | some b =>
-      match denoteCode b.instrs s with
+      match denoteCode calls b.instrs s with
       | none => .ub
       | some s' => execTerm s' b.term
 
@@ -221,13 +251,13 @@ inductive Outcome where
   deriving DecidableEq, Repr
 
 /-- Run for at most `n` control steps.  `none` means the fuel ran out. -/
-def runFuel : Nat → Function → State → Option Outcome
+def runFuel (calls : Calls) : Nat → Function → State → Option Outcome
   | 0, _, _ => none
   | n + 1, f, s =>
-      match step f s with
+      match step calls f s with
       | .ub => some .ub
       | .ret v s' => some (.ret v s'.mem)
-      | .jump s' => runFuel n f s'
+      | .jump s' => runFuel calls n f s'
 
 /-- Initial state for a call: parameters bound to the arguments, empty memory,
 address `0` reserved for `null`, and the entry block loaded. -/
@@ -238,17 +268,18 @@ def initState (f : Function) (args : List Value) : State :=
 /-- The set of outcomes a function can produce, as a predicate.  A `ub` outcome
 on any prefix admits every outcome; a function that never finishes admits
 none.  This is the observable behaviour `Refines` compares. -/
-def Beh (f : Function) (args : List Value) (o : Outcome) : Prop :=
-  (∃ n, runFuel n f (initState f args) = some .ub) ∨
-    (∃ n, runFuel n f (initState f args) = some o)
+def Beh (calls : Calls) (f : Function) (args : List Value) (o : Outcome) : Prop :=
+  (∃ n, runFuel calls n f (initState f args) = some .ub) ∨
+    (∃ n, runFuel calls n f (initState f args) = some o)
 
 /-- `target` refines `source`: every outcome the target can produce is one the
 source can produce. -/
-def Refines (target source : Function) : Prop :=
-  ∀ args o, Beh target args o → Beh source args o
+def Refines (calls : Calls) (target source : Function) : Prop :=
+  ∀ args o, Beh calls target args o → Beh calls source args o
 
 /-- Concrete execution with a default fuel budget. -/
-def run (f : Function) (args : List Value) (fuel : Nat := 10000) : Option Outcome :=
-  runFuel fuel f (initState f args)
+def run (calls : Calls) (f : Function) (args : List Value) (fuel : Nat := 10000) :
+    Option Outcome :=
+  runFuel calls fuel f (initState f args)
 
 end LeanLLVM

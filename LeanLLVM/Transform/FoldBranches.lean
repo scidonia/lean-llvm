@@ -73,8 +73,8 @@ theorem execTerm_foldTerm (s : State) (t : Term) :
 
 theorem foldTermBlock_name (b : Block) : (foldTermBlock b).name = b.name := rfl
 
-theorem step_foldBranches (f : Function) (s : State) :
-    step (foldBranches f) s = step f s := by
+theorem step_foldBranches (calls : Calls) (f : Function) (s : State) :
+    step calls (foldBranches f) s = step calls f s := by
   simp only [step, foldBranches, Function.findBlock]
   rw [findBlockList_map (g := foldTermBlock) (fun b => foldTermBlock_name b) f.blocks s.pc]
   cases hb : findBlockList f.blocks s.pc with
@@ -84,13 +84,13 @@ theorem step_foldBranches (f : Function) (s : State) :
       simp only [foldTermBlock]
       simp only [execTerm_foldTerm]
 
-theorem runFuel_foldBranches (n : Nat) (f : Function) (s : State) :
-    runFuel n (foldBranches f) s = runFuel n f s := by
+theorem runFuel_foldBranches (calls : Calls) (n : Nat) (f : Function) (s : State) :
+    runFuel calls n (foldBranches f) s = runFuel calls n f s := by
   induction n generalizing s with
   | zero => rfl
   | succ n ih =>
       rw [runFuel_succ, runFuel_succ, step_foldBranches]
-      cases hs : step f s with
+      cases hs : step calls f s with
       | ub => rfl
       | ret v s' => rfl
       | jump s' => exact ih s'
@@ -108,8 +108,9 @@ theorem initState_foldBranches (f : Function) (args : List Value) :
     initState (foldBranches f) args = initState f args := by
   simp [initState, foldBranches, Function.entry?, List.head?_map, foldTermBlock_name_fun]
 
-theorem foldBranches_beh (f : Function) (args : List Value) (o : Outcome) :
-    Beh (foldBranches f) args o ↔ Beh f args o := by
+theorem foldBranches_beh (calls : Calls) (f : Function) (args : List Value)
+    (o : Outcome) :
+    Beh calls (foldBranches f) args o ↔ Beh calls f args o := by
   unfold Beh
   simp only [initState_foldBranches, runFuel_foldBranches]
 
@@ -118,6 +119,6 @@ def branchFolding : Pass where
   run := foldBranches
 
 theorem branchFolding_sound : branchFolding.Sound :=
-  fun f => Refines.of_iff (foldBranches_beh f)
+  fun calls f => Refines.of_iff (foldBranches_beh calls f)
 
 end LeanLLVM

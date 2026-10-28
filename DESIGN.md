@@ -17,9 +17,18 @@ reaching `ub` admits every outcome; a run that never terminates contributes no
 outcome at all.
 
 ```lean
-def Refines (target source : Function) : Prop :=
-  ∀ args o, Beh target args o → Beh source args o
+def Refines (calls : Calls) (target source : Function) : Prop :=
+  ∀ args o, Beh calls target args o → Beh calls source args o
 ```
+
+`Calls` is the environment a call resolves in: a symbol and its argument values
+give the result, or nothing for an unresolved (undefined) call.  Threading it
+explicitly keeps one semantics for a function in every environment, and lets a
+theorem say what it assumes about the callee rather than inlining it.  The
+environment is deterministic, so replacing a callee by one that returns the
+same values preserves behaviour exactly; a one-directional contextual
+refinement needs a relational environment, in which one call may have several
+possible outcomes.
 
 Consequences that drive the proof style:
 
@@ -62,6 +71,16 @@ seam at admissible arguments keeps its result.
 The first instance is the comma mask.  `swar` (the baseline body) and
 `byteLoop` (the candidate body) are both proved equal to the lane-wise `spec`,
 so `commaContract ⊢ byteLoop ⊑ swar`; a two-call context is preserved as well.
+
+`LeanLLVM/Vellum/CommaMaskIR.lean` carries the same statement to emitted IR:
+it parses the probe's two fixtures, pins the ASTs, proves each body returns the
+corresponding `CommaMask` function, and concludes
+`Refines candidateFunction baselineFunction` for every call environment.  The
+fixtures are what the installation probe compiles and installs, so the proved
+code is the installed code.  `LeanLLVM/Vellum/SeamContext.lean` adds a caller
+whose body is a call to the seam and proves that swapping the environment entry
+leaves its behaviour unchanged, so the replacement goes through the call
+instruction rather than an inlined body.
 The 64-bit identities are kernel-checked in `CommaMaskKernel.lean` by a
 byte-lane argument: the packed addition is shown to have no lane carries, each
 8-bit lane is discharged by `decide`, and the lanes are glued back by a
@@ -131,8 +150,10 @@ verification runs.
    proof is naturally one-directional.
 2. **Unreachable-block elimination.**  Branch folding creates unreachable
    blocks; removing them is an equivalence over reachable states.
-3. **Wider syntax.**  `getelementptr`, `phi`, then calls and globals, with a
-   dominance check for cross-block constant propagation.
+3. **Wider syntax.**  `getelementptr`, `phi` and globals, with a dominance
+   check for cross-block constant propagation.  Calls are modelled
+   (`Instr.call` resolved through `Calls`); a relational call environment and
+   memory effects across calls are the next step after that.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite

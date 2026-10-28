@@ -64,7 +64,8 @@ example : probeBaselineBody = seamBaseline := by
 -- bridge adds no axiom beyond the standard footprint.
 open LeanLLVM.Vellum.CommaMaskIR
 
-example : LeanLLVM.Refines candidateFunction baselineFunction := IR_refines
+example : ∀ calls, LeanLLVM.Refines calls candidateFunction baselineFunction :=
+  IR_refines
 
 /--
 info: 'LeanLLVM.Vellum.CommaMaskIR.baseOut_eq_swar' depends on axioms: [propext, Quot.sound]
@@ -83,3 +84,24 @@ info: 'LeanLLVM.Vellum.CommaMaskIR.IR_refines' depends on axioms: [propext, Clas
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.CommaMaskIR.IR_refines
+
+-- The contextual replacement theorem: a caller in the semantics calls the seam
+-- and the result comes from the call environment, not from an inlined body.
+open LeanLLVM.Vellum.SeamContext
+
+example (x : BitVec 64) (o : LeanLLVM.Outcome) :
+    LeanLLVM.Beh (envFor byteLoop) callerFunction [LeanLLVM.Value.int 64 x] o ↔
+      LeanLLVM.Beh (envFor swar) callerFunction [LeanLLVM.Value.int 64 x] o :=
+  caller_seam_replacement x o
+
+/--
+info: 'LeanLLVM.Vellum.SeamContext.caller_beh' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.SeamContext.caller_beh
+
+/--
+info: 'LeanLLVM.Vellum.SeamContext.caller_seam_replacement' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.SeamContext.caller_seam_replacement

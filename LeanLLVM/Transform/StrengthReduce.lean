@@ -54,8 +54,8 @@ def strengthReduceInstr : Instr → Instr
   | i => i
 
 /-- One rewritten instruction has the same effect in every state. -/
-theorem evalInstr_strengthReduce (s : State) (i : Instr) :
-    evalInstr s (strengthReduceInstr i) = evalInstr s i := by
+theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
+    evalInstr calls s (strengthReduceInstr i) = evalInstr calls s i := by
   cases i with
   | binop d op w lhs rhs =>
       cases op with
@@ -112,6 +112,7 @@ theorem evalInstr_strengthReduce (s : State) (i : Instr) :
   | alloca d ty a => rfl
   | load d ty p => rfl
   | store ty v p => rfl
+  | call d ty callee args => rfl
 
 def strengthReduceBlock (b : Block) : Block :=
   { b with instrs := b.instrs.map strengthReduceInstr }
@@ -120,8 +121,8 @@ def strengthReduce (f : Function) : Function :=
   { f with blocks := f.blocks.map strengthReduceBlock }
 
 /-- Rewriting every instruction of a block preserves its denotation. -/
-theorem denoteCode_map_strengthReduce (is : List Instr) (s : State) :
-    denoteCode (is.map strengthReduceInstr) s = denoteCode is s := by
+theorem denoteCode_map_strengthReduce (calls : Calls) (is : List Instr) (s : State) :
+    denoteCode calls (is.map strengthReduceInstr) s = denoteCode calls is s := by
   induction is generalizing s with
   | nil => rfl
   | cons i is ih =>
@@ -131,8 +132,8 @@ theorem denoteCode_map_strengthReduce (is : List Instr) (s : State) :
       · rename_i s' _
         exact ih s'
 
-theorem step_strengthReduce (f : Function) (s : State) :
-    step (strengthReduce f) s = step f s := by
+theorem step_strengthReduce (calls : Calls) (f : Function) (s : State) :
+    step calls (strengthReduce f) s = step calls f s := by
   simp only [step, strengthReduce, Function.findBlock]
   rw [findBlockList_map (g := strengthReduceBlock) (fun b => rfl) f.blocks s.pc]
   cases hb : findBlockList f.blocks s.pc with
@@ -141,13 +142,13 @@ theorem step_strengthReduce (f : Function) (s : State) :
       simp only [Option.map_some, strengthReduceBlock]
       rw [denoteCode_map_strengthReduce]
 
-theorem runFuel_strengthReduce (n : Nat) (f : Function) (s : State) :
-    runFuel n (strengthReduce f) s = runFuel n f s := by
+theorem runFuel_strengthReduce (calls : Calls) (n : Nat) (f : Function) (s : State) :
+    runFuel calls n (strengthReduce f) s = runFuel calls n f s := by
   induction n generalizing s with
   | zero => rfl
   | succ n ih =>
       rw [runFuel_succ, runFuel_succ, step_strengthReduce]
-      cases hs : step f s with
+      cases hs : step calls f s with
       | ub => rfl
       | ret v s' => rfl
       | jump s' => exact ih s'
@@ -168,8 +169,9 @@ theorem initState_strengthReduce (f : Function) (args : List Value) :
   simp [initState, strengthReduce, Function.entry?, List.head?_map,
     strengthReduceBlock_name_fun]
 
-theorem strengthReduce_beh (f : Function) (args : List Value) (o : Outcome) :
-    Beh (strengthReduce f) args o ↔ Beh f args o := by
+theorem strengthReduce_beh (calls : Calls) (f : Function) (args : List Value)
+    (o : Outcome) :
+    Beh calls (strengthReduce f) args o ↔ Beh calls f args o := by
   unfold Beh
   simp only [initState_strengthReduce, runFuel_strengthReduce]
 
@@ -178,6 +180,6 @@ def strengthReduction : Pass where
   run := strengthReduce
 
 theorem strengthReduction_sound : strengthReduction.Sound :=
-  fun f => Refines.of_iff (strengthReduce_beh f)
+  fun calls f => Refines.of_iff (strengthReduce_beh calls f)
 
 end LeanLLVM

@@ -18,17 +18,20 @@ structure Pass where
 
 /-- A pass is sound when its result refines its input. -/
 def Pass.Sound (p : Pass) : Prop :=
-  ∀ f, Refines (p.run f) f
+  ∀ calls f, Refines calls (p.run f) f
 
-theorem Refines.refl (f : Function) : Refines f f := fun _ _ h => h
+theorem Refines.refl (calls : Calls) (f : Function) : Refines calls f f :=
+  fun _ _ h => h
 
-theorem Refines.trans {a b c : Function} (hab : Refines a b) (hbc : Refines b c) :
-    Refines a c :=
+theorem Refines.trans {calls : Calls} {a b c : Function}
+    (hab : Refines calls a b) (hbc : Refines calls b c) :
+    Refines calls a c :=
   fun args o h => hbc args o (hab args o h)
 
 /-- A soundness proof from behavioural equivalence. -/
-theorem Refines.of_iff {t s : Function} (h : ∀ args o, Beh t args o ↔ Beh s args o) :
-    Refines t s :=
+theorem Refines.of_iff {calls : Calls} {t s : Function}
+    (h : ∀ args o, Beh calls t args o ↔ Beh calls s args o) :
+    Refines calls t s :=
   fun args o ht => (h args o).mp ht
 
 /-- Sequential composition: `p₁` then `p₂`. -/
@@ -38,12 +41,12 @@ def Pass.comp (p₁ p₂ : Pass) : Pass where
 
 theorem Pass.comp_sound {p₁ p₂ : Pass} (h₁ : p₁.Sound) (h₂ : p₂.Sound) :
     (p₁.comp p₂).Sound :=
-  fun f => Refines.trans (h₂ (p₁.run f)) (h₁ f)
+  fun calls f => Refines.trans (h₂ calls (p₁.run f)) (h₁ calls f)
 
 /-- The identity pass. -/
 def Pass.id : Pass := ⟨"id", fun f => f⟩
 
-theorem Pass.id_sound : Pass.id.Sound := fun f => Refines.refl f
+theorem Pass.id_sound : Pass.id.Sound := fun calls f => Refines.refl calls f
 
 /-- Apply a pipeline of passes in order. -/
 def Pass.pipeline : List Pass → Pass
@@ -70,12 +73,12 @@ theorem findBlockList_map {g : Block → Block} (hname : ∀ b, (g b).name = b.n
       · exact findBlockList_map hname bs pc
 
 /-- Unfolding lemma for `runFuel` at a successor. -/
-theorem runFuel_succ (n : Nat) (f : Function) (s : State) :
-    runFuel (n + 1) f s =
-      (match step f s with
+theorem runFuel_succ (calls : Calls) (n : Nat) (f : Function) (s : State) :
+    runFuel calls (n + 1) f s =
+      (match step calls f s with
        | .ub => some .ub
        | .ret v s' => some (.ret v s'.mem)
-       | .jump s' => runFuel n f s') := rfl
+       | .jump s' => runFuel calls n f s') := rfl
 
 /-- Apply a pass to every function of a module. -/
 def Module.mapPass (p : Pass) (m : Module) : Module :=

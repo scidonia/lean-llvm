@@ -62,6 +62,10 @@ def Instr.render : Instr → String
       s!"  {d} = load {ty.render}, ptr {p.token}"
   | .store ty v p =>
       s!"  store {v.render ty}, ptr {p.token}"
+  | .call d retTy callee args =>
+      let rendered :=
+        String.intercalate ", " (args.map fun (ty, op) => s!"{ty.render} {op.token}")
+      s!"  {d} = call {retTy.render} @{callee}({rendered})"
 
 def Term.render : Term → String
   | .ret .void none => "  ret void"
@@ -81,7 +85,12 @@ def Function.render (f : Function) : String :=
   let body := String.intercalate "\n\n" (f.blocks.map Block.render)
   "define " ++ f.retTy.render ++ " @" ++ f.name ++ "(" ++ params ++ ") {\n" ++ body ++ "\n}"
 
+def Decl.render (d : Decl) : String :=
+  let params := String.intercalate ", " (d.params.map Ty.render)
+  s!"declare {d.retTy.render} @{d.name}({params})"
+
 def Module.render (m : Module) : String :=
-  String.intercalate "\n\n" (m.functions.map Function.render) ++ "\n"
+  let decls := m.decls.map Decl.render
+  String.intercalate "\n\n" (decls ++ m.functions.map Function.render) ++ "\n"
 
 end LeanLLVM

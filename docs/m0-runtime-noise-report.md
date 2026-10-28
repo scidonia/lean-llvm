@@ -314,8 +314,10 @@ not against an unversioned page.
   code the theorem is about. The remaining unproved link is the candidate
   fixture's provenance: it is generated from a lane-by-lane transcription of
   the Lean loop, and only the differential transcript compares the two. The
-  contextual replacement theorem is stated for the pure seam, not for IR-level
-  callers, because the fragment has no call.
+  contextual replacement theorem is stated for a caller whose body is a call
+  whose result is returned.  The call environment is deterministic, so that
+  theorem is an equality of behaviours; a one-directional contextual refinement
+  needs a relational environment in which a call may have several outcomes.
 - LTO was not enabled. With LTO, an extern whose definition is in another
   object can be inlined; preserve the boundary before installation, or control
   LTO explicitly.
