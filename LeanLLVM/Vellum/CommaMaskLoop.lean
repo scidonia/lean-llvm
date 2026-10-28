@@ -259,6 +259,39 @@ theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : Bi
     | ptr a => simp [Value.intToNat]
 
 theorem c_eight : c 8 = (BitVec.ofNat 64 8 : BitVec 64) := by decide
+theorem c_zero : c 0 = (0 : BitVec 64) := by decide
+theorem c_255 : c 255 = (0xFF : BitVec 64) := by decide
+theorem c_128 : c 128 = (0x80 : BitVec 64) := by decide
+theorem c_one : c 1 = (1 : BitVec 64) := by decide
+
+/-- `acc ||| (if p then bit else 0)` read as a select. -/
+theorem or_ite (acc bit : BitVec 64) (p : Prop) [Decidable p] :
+    acc ||| (if p then bit else 0) = if p then acc ||| bit else acc := by
+  by_cases h : p <;> simp [h]
+
+/-- The lane shift `k * 8` as a `BitVec`. -/
+theorem ofNat_mul_eight (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k * c 8 = BitVec.ofNat 64 (8 * k) := by
+  rw [c_eight]
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_mul, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  rw [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+  omega
+
+theorem ofNat_eight_mul_toNat (k : Nat) (hk : k < 8) :
+    (BitVec.ofNat 64 (8 * k)).toNat = 8 * k := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+
+/-- The counter increment. -/
+theorem ofNat_add_one (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k + c 1 = BitVec.ofNat 64 (k + 1) := by
+  rw [c_one]
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  have h1 : BitVec.toNat (1 : BitVec 64) = 1 := by decide
+  rw [h1]
+  rw [Nat.mod_eq_of_lt (by omega : k < 2 ^ 64),
+    Nat.mod_eq_of_lt (by omega : k + 1 < 2 ^ 64)]
 
 theorem ofBool_ult (k : Nat) (hk : k < 8) :
     BitVec.ofBool ((BitVec.ofNat 64 k).ult (8 : BitVec 64)) = 1 := by
