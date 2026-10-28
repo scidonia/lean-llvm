@@ -297,10 +297,10 @@ not against an unversioned page.
 5. **Decide the attribute policy per kind** and bind it, the target
    configuration and the artifact hashes into the manifest. The policy is
    `reject`: the fixtures carry no attributes and the parser refuses an
-   unmodelled construct rather than dropping one. The manifest binds the target,
-   the contract and theorem names, the fixture, marker, caller, unit and
-   certificate hashes; data layout and target features are not yet bound and the
-   fixtures carry neither.
+   unmodelled construct rather than dropping one. The manifest binds the target
+   triple, the data layout and the target-feature policy (`none`), the contract
+   and theorem names, the fixture, marker, caller, unit and certificate hashes,
+   and selection recomputes the triple and layout before accepting a unit.
 6. **Then the memory-using loop**, where heap relations, framing and the
    runtime-call contracts enter. That remains the programme's substantive M4
    target; the pure slice is an earlier integration gate.

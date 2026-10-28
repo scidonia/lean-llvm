@@ -79,17 +79,23 @@ done
   echo "RESULT: PASS"
 } > "$build/differential.txt"
 
-target="$(uname -m)-unknown-linux-gnu"
+# The target the objects were built for, and the data layout clang uses for it.
+target="$(clang -print-target-triple)"
+datalayout="$(printf '' | clang -O0 -S -emit-llvm -x c - -o - \
+  | sed -n 's/^target datalayout = "\(.*\)"$/\1/p')"
+triple="$target"
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 cat > "$build/manifest.env" <<EOF
 kind=proof-bound
 target=$target
+triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
 contract=LeanLLVM.Vellum.commaContract
 theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
 attributes=reject
-datalayout=none
+datalayout=$datalayout
+target_features=none
 baseline_fixture=$here/ir/baseline.ll
 candidate_fixture=$here/ir/candidate.ll
 loop_fixture=$here/ir/loop.ll

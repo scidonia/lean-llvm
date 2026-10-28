@@ -87,6 +87,9 @@ fi
 if [ "${attributes:-}" != "reject" ]; then
   ok=0; reasons+=("attribute policy ${attributes:-missing}")
 fi
+if [ "${target_features:-}" != "none" ]; then
+  ok=0; reasons+=("target features ${target_features:-missing}")
+fi
 
 if [ "$ok" -eq 1 ]; then
   if ! verify_rebuild baseline "$baseline_fixture" "$baseline_marker" "$baseline_sha256"; then
@@ -102,8 +105,20 @@ if [ "$ok" -eq 1 ]; then
   fi
 fi
 
-if [ "$(uname -m)-unknown-linux-gnu" != "$target" ]; then
-  ok=0; reasons+=("target $target")
+if [ -z "${triple:-}" ] || [ -z "${datalayout:-}" ]; then
+  ok=0; reasons+=("manifest does not bind the target triple and data layout")
+fi
+if command -v clang >/dev/null 2>&1; then
+  if [ "$(clang -print-target-triple)" != "$target" ]; then
+    ok=0; reasons+=("target $target")
+  fi
+  have_layout="$(printf '' | clang -O0 -S -emit-llvm -x c - -o - \
+    | sed -n 's/^target datalayout = "\(.*\)"$/\1/p')"
+  if [ "$have_layout" != "${datalayout:-}" ]; then
+    ok=0; reasons+=("data layout ${datalayout:-missing}")
+  fi
+else
+  ok=0; reasons+=("clang is not available to check the target")
 fi
 if ! grep -q '^RESULT: PASS$' "$certificate" 2>/dev/null; then
   ok=0; reasons+=("certificate result")

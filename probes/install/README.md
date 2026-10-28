@@ -18,8 +18,11 @@ This probe exercises the installation point described in
   authored body. The loop unit is the memory-backed loop, proved to return the
   specification by induction over its counter; `UNIT=loop` selects it.
 - `build.sh` writes `differential.txt` and `manifest.env`. The manifest binds
-  the target, the contract and theorem names, the attribute policy, every
-  fixture and marker hash, and the caller, unit and certificate hashes.
+  the target triple and data layout, the target-feature policy (`none`: the
+  build passes no `-march`/`-mattr`, so clang's triple default applies), the
+  contract and theorem names, the attribute policy, every fixture and marker
+  hash, and the caller, unit and certificate hashes. `select.sh` recomputes the
+  triple and data layout from the toolchain and rejects a mismatch.
 - `select.sh` verifies all of that, **rebuilds each unit from its fixtures**
   and compares the result with the installed bytes, then links either unit.
   `STRICT=1` fails instead of falling back.
@@ -57,8 +60,7 @@ bites: the proof fails and selection falls back until the fixture is restored.
 
 `attributes=reject` records the attribute policy: the fixtures carry none, and
 the parser refuses a construct it does not model rather than dropping an
-attribute silently. Data layout and target features are not yet bound; the
-fixtures carry neither and clang supplies the target default.
+attribute silently.
 
 ## Known limits
 

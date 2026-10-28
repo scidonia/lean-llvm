@@ -63,17 +63,22 @@ fi
 } > "$build/differential.txt"
 
 # 5. Manifest in the shape probes/install/select.sh verifies.
-target="$(uname -m)-unknown-linux-gnu"
+target="$(clang -print-target-triple)"
+datalayout="$(printf '' | clang -O0 -S -emit-llvm -x c - -o - \
+  | sed -n 's/^target datalayout = "\(.*\)"$/\1/p')"
+triple="$target"
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 cat > "$build/manifest.env" <<EOF
 kind=proof-bound
 target=$target
+triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
 contract=LeanLLVM.Vellum.commaContract
 theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
 attributes=reject
-datalayout=none
+datalayout=$datalayout
+target_features=none
 baseline_fixture=$install/ir/baseline.ll
 candidate_fixture=$install/ir/candidate.ll
 loop_fixture=$install/ir/loop.ll
