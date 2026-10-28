@@ -159,7 +159,9 @@ verification runs.
    one-directional (`CallRefinement`); memory effects across calls are the next
    step after that.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
-   byte map is the starting point, not the destination.
+   byte map is the starting point, not the destination.  The same-address
+   store/load round trip, the little-endian round trip and write-below framing
+   are in `LeanLLVM/Memory.lean`.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite
    against the semantics when a proof is not yet available, so unproved passes
    can still be gated in the toolchain.

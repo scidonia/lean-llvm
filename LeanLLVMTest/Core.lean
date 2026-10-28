@@ -80,6 +80,51 @@ def plusOneEnv : Calls := fun callee args =>
       | _ => false
   | .error _ => false
 
+-- A 64-bit store is read back by a 64-bit load at the same address, including
+-- when a later store overwrites it.
+def memory64Sample : String :=
+"define i64 @mem64() {
+entry:
+  %p = alloca i64, align 8
+  store i64 1234567890123456789, ptr %p
+  %v = load i64, ptr %p
+  ret i64 %v
+}
+"
+
+#guard
+  match parseModule memory64Sample with
+  | .ok m =>
+      match m.functions with
+      | [f] =>
+          match run noCalls f [] with
+          | some (.ret (some v) _) => v == .int 64 (BitVec.ofInt 64 1234567890123456789)
+          | _ => false
+      | _ => false
+  | .error _ => false
+
+def memory64Overwrite : String :=
+"define i64 @mem64b() {
+entry:
+  %p = alloca i64, align 8
+  store i64 1, ptr %p
+  store i64 2, ptr %p
+  %v = load i64, ptr %p
+  ret i64 %v
+}
+"
+
+#guard
+  match parseModule memory64Overwrite with
+  | .ok m =>
+      match m.functions with
+      | [f] =>
+          match run noCalls f [] with
+          | some (.ret (some v) _) => v == .int 64 2
+          | _ => false
+      | _ => false
+  | .error _ => false
+
 -- The semantics computes the taken branch (`%a` is 3).
 #guard run noCalls sampleFunction [.int 32 (BitVec.ofInt 32 2)] =
   some (.ret (some (.int 32 (BitVec.ofInt 32 3))) [])
