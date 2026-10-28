@@ -20,7 +20,7 @@ import LeanLLVM.Parser
 import LeanLLVM.Semantics
 import LeanLLVM.Memory
 import LeanLLVM.Vellum.CommaMaskIR
-import LeanLLVM.ValueRefinement
+import LeanLLVM.Frames
 
 namespace LeanLLVM.Vellum.CommaMaskLoop
 
@@ -118,6 +118,7 @@ structure LoopFacts (s : State) (m acc : BitVec 64) (k : Nat) : Prop where
   iPtr : lookupName s.env "%i" = some (.ptr 9)
   accLoad : loadValue s.mem (.int 64) 1 = some (.int 64 acc)
   iLoad : loadValue s.mem (.int 64) 9 = some (.int 64 (BitVec.ofNat 64 k))
+  memFrame : MemOutside s.mem
 
 /-- At the loop condition with the facts holding. -/
 def LoopInv (s : State) (m acc : BitVec 64) (k : Nat) : Prop :=
@@ -179,7 +180,7 @@ theorem ofNat_shiftLeft (a : BitVec 64) (n : Nat) :
 theorem entry_inv (x : BitVec 64) :
     LoopInv (entryState x) (x ^^^ c 3182967604875373612) 0 0 := by
   refine ⟨rfl, ?_⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · simp [entryState, lookupName, c]
   · simp [entryState, lookupName]
   · simp [entryState]
@@ -198,6 +199,10 @@ theorem entry_inv (x : BitVec 64) :
       (0 : BitVec 64) 9).2
     simp only [entryState]
     simpa using h
+  · -- no bytes outside the two allocations
+    simp only [entryState]
+    exact MemOutside.write9 _ (MemOutside.write1 [] MemOutside.nil (natToBytes_length 0 8))
+      (natToBytes_length 0 8)
 
 /-! ### Instruction evaluators
 
@@ -368,12 +373,13 @@ theorem cond_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
     rw [e2]
     simp only [execTerm, evalOperand, hlc, ofBool_ult k hk, s3]
     simp
-  · refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
     · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
     · simp [s3, s2, s1, State.bind, hf.accLoad]
     · simp [s3, s2, s1, State.bind, hf.iLoad]
+    · simpa [s3, s2, s1, State.bind] using hf.memFrame
   · simp [s3, s2, s1, State.bind, lookupName]
 
 theorem body_lane_shift (k : Nat) (hk : k < 8) :
@@ -535,7 +541,7 @@ theorem body_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
         (.int 64) 9 = some (.int 64 i2v) :=
       (loadValue_storeValue_64
         { s with mem := writeBytes s.mem 1 (natToBytes a2v.toNat 8) } i2v 9).2
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
     · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
@@ -543,6 +549,9 @@ theorem body_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
       rw [hbelow, hrt1, ha2]
     · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
       rw [hrt2, hi2]
+    · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      exact MemOutside.write9 _ (MemOutside.write1 _ hf.memFrame (natToBytes_length _ 8))
+        (natToBytes_length _ 8)
 
 theorem ofBool_ult_eight :
     BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64)) = 0 := by decide
@@ -578,17 +587,19 @@ theorem cond_done_step (s : State) (m acc : BitVec 64)
     rw [e2]
     simp only [execTerm, evalOperand, hlc, ofBool_ult_eight, s3]
     simp
-  · refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
     · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
     · simp [s3, s2, s1, State.bind, hf.accLoad]
     · simp [s3, s2, s1, State.bind, hf.iLoad]
+    · simpa [s3, s2, s1, State.bind] using hf.memFrame
 
 /-- The exit block: load the accumulator and return it. -/
 theorem done_step (s : State) (m acc : BitVec 64)
     (hpc : s.pc = "done") (hf : LoopFacts s m acc 8) :
-    ∃ s', step noCalls loopFunction s = .ret (some (.int 64 acc)) s' := by
+    ∃ s', step noCalls loopFunction s = .ret (some (.int 64 acc)) s' ∧
+      s'.mem = s.mem := by
   let s1 : State := s.bind "%r" (.int 64 acc)
   have hl_acc : lookupName s.env "%acc" = some (.ptr 1) := hf.accPtr
   have e1 : evalInstr noCalls s (.load "%r" (.int 64) (.reg "%acc")) = some s1 := by
@@ -599,10 +610,11 @@ theorem done_step (s : State) (m acc : BitVec 64)
   have hfind : loopFunction.findBlock s.pc = some doneBlock := by
     simp [loopFunction, Function.findBlock, findBlockList, hpc, doneBlock, doneInstrs,
       bodyBlock, condBody]
-  refine ⟨s1, ?_⟩
-  simp only [step, hfind, doneBlock, doneInstrs, denoteCode]
-  rw [e1]
-  simp only [execTerm, evalOperand, hl_r]
+  refine ⟨s1, ?_, ?_⟩
+  · simp only [step, hfind, doneBlock, doneInstrs, denoteCode]
+    rw [e1]
+    simp only [execTerm, evalOperand, hl_r]
+  · simp only [s1, State.bind]
 
 /-- Runs that have returned keep their result under more fuel. -/
 theorem runFuel_ret_succ {f : Function} {s : State} {v : Option Value} {mem : Mem} :
@@ -628,36 +640,38 @@ full prefix.  The induction is on `8 - k`, i.e. on the counter, not on unrolled
 copies of the body. -/
 theorem cond_run_aux : ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat),
     k ≤ 8 → 8 - k = n → acc = maskPrefix m k → LoopInv s m acc k →
-    ∃ mem, runFuel noCalls (2 * n + 2) loopFunction s =
+    ∃ mem, MemOutside mem ∧ runFuel noCalls (2 * n + 2) loopFunction s =
       some (.ret (some (.int 64 (maskPrefix m 8))) mem)
   | 0, s, m, acc, k, hk, hn, hacc, hinv => by
       have hk8 : k = 8 := by omega
       subst hk8
       obtain ⟨s1, h1, hp1, hf1⟩ := cond_done_step s m acc hinv
-      obtain ⟨s2, h2⟩ := done_step s1 m acc hp1 hf1
-      refine ⟨s2.mem, ?_⟩
-      simp only [runFuel, h1, h2]
-      rw [hacc]
+      obtain ⟨s2, h2, h2mem⟩ := done_step s1 m acc hp1 hf1
+      refine ⟨s2.mem, ?_, ?_⟩
+      · rw [h2mem]; exact hf1.memFrame
+      · simp only [runFuel, h1, h2]
+        rw [hacc]
   | n + 1, s, m, acc, k, hk, hn, hacc, hinv => by
       have hk8 : k < 8 := by omega
       obtain ⟨s1, h1, hp1, hf1, hi1⟩ := cond_step s m acc k hk8 hinv
       obtain ⟨s2, h2, hp2, hf2⟩ := body_step s1 m acc k hk8 hacc hp1 hf1 hi1
-      obtain ⟨mem, hrun⟩ := cond_run_aux n s2 m (maskPrefix m (k + 1)) (k + 1)
+      obtain ⟨mem, hmem, hrun⟩ := cond_run_aux n s2 m (maskPrefix m (k + 1)) (k + 1)
         (by omega) (by omega) rfl ⟨hp2, hf2⟩
-      refine ⟨mem, ?_⟩
+      refine ⟨mem, hmem, ?_⟩
       simp only [runFuel, h1, h2]
       rw [show 2 * (n + 1) = 2 * n + 2 from by omega, hrun]
 
-/-- The loop returns the lane-wise specification. -/
-theorem loop_returns_spec (x : BitVec 64) :
-    ∃ mem, run noCalls loopFunction [.int 64 x] =
+/-- The loop returns the lane-wise specification, and leaves no bytes outside
+its two locals. -/
+theorem loop_returns_spec_frame (x : BitVec 64) :
+    ∃ mem, MemOutside mem ∧ run noCalls loopFunction [.int 64 x] =
       some (.ret (some (.int 64 (spec x))) mem) := by
   have hstep : step noCalls loopFunction (initState loopFunction [.int 64 x]) =
       .jump (entryState x) := entry_run x
-  obtain ⟨mem, hrun⟩ := cond_run_aux 8 (entryState x)
+  obtain ⟨mem, hmem, hrun⟩ := cond_run_aux 8 (entryState x)
     (x ^^^ c 3182967604875373612) 0 0 (by decide) (by decide) (maskPrefix_zero _).symm
     (entry_inv x)
-  refine ⟨mem, ?_⟩
+  refine ⟨mem, hmem, ?_⟩
   simp only [run]
   have hfuel : runFuel noCalls 10000 loopFunction (initState loopFunction [.int 64 x]) =
       runFuel noCalls 9999 loopFunction (entryState x) := by
@@ -679,16 +693,26 @@ theorem loop_returns_spec (x : BitVec 64) :
   -- the value is the specification
   rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
 
-/-- The loop and the unrolled candidate return the same value.  This is the
-pairing the M4 slice uses: the returned value is compared, the locals the loop
-allocates are not. -/
-theorem loop_and_candidate_agree (x : BitVec 64) :
-    BehVal noCalls loopFunction [.int 64 x] (.int 64 (spec x)) ∧
-      BehVal noCalls candidateFunction [.int 64 x] (.int 64 (spec x)) := by
-  constructor
-  · obtain ⟨mem, hrun⟩ := loop_returns_spec x
-    exact ⟨mem, Or.inr ⟨10000, by simpa [run] using hrun⟩⟩
-  · refine ⟨[], ?_⟩
+/-- The loop returns the lane-wise specification. -/
+theorem loop_returns_spec (x : BitVec 64) :
+    ∃ mem, run noCalls loopFunction [.int 64 x] =
+      some (.ret (some (.int 64 (spec x))) mem) := by
+  obtain ⟨mem, _, hrun⟩ := loop_returns_spec_frame x
+  exact ⟨mem, hrun⟩
+
+/-- The loop and the unrolled candidate differ only inside the loop's two
+locals: they return the same value and their memories agree outside
+`[1, 17)`. -/
+theorem loop_and_candidate_framed (x : BitVec 64) :
+    ∃ memL memC,
+      Beh noCalls loopFunction [.int 64 x] (.ret (some (.int 64 (spec x))) memL) ∧
+      Beh noCalls candidateFunction [.int 64 x] (.ret (some (.int 64 (spec x))) memC) ∧
+      AgreesOutside ⟨[], memL, 0, ""⟩ ⟨[], memC, 0, ""⟩ (fun a => 1 ≤ a ∧ a < 17) := by
+  obtain ⟨memL, hmemL, hrunL⟩ := loop_returns_spec_frame x
+  have hcand : Beh noCalls candidateFunction [.int 64 x]
+      (.ret (some (.int 64 (spec x))) []) := by
     simpa [byteLoop_eq_spec] using (candidate_beh_int noCalls x [] _).2 rfl
+  exact ⟨memL, [], Or.inr ⟨10000, by simpa [run] using hrunL⟩, hcand,
+    agreesOutside_of_memOutside hmemL MemOutside.nil⟩
 
 end LeanLLVM.Vellum.CommaMaskLoop

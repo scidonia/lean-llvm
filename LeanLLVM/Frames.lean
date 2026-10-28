@@ -1,16 +1,16 @@
 /-
 A frame relation: two states agree on every address outside a footprint.
 
-`BehVal` forgets the whole memory, which is right for a unit whose writes are
-its own allocations and wrong for a caller-visible write.  This module states
-the finer relation the loop needs: agreement outside a set of addresses.  The
-footprint is a predicate on addresses, so it can be the interval a unit
-allocates, a set of abstract locations, or anything else.
+Comparing the returned value alone forgets the whole memory, which is right for
+a unit whose writes are its own allocations and wrong for a caller-visible
+write.  This module states the finer relation: agreement outside a set of
+addresses.  The footprint is a predicate on addresses, so it can be the
+interval a unit allocates, a set of abstract locations, or anything else.
 
 The lemmas say what a write inside the footprint does to the relation: it may
 differ between the two states and the relation outside is untouched.  Writes
-outside the footprint are not allowed to differ, which is why the relation is
-sound where `BehVal` is only sound for local-only writes.
+outside the footprint are not allowed to differ, which is what makes the
+relation sound for any caller-visible memory.
 -/
 import LeanLLVM.Memory
 
@@ -76,5 +76,40 @@ theorem AgreesOutside.write_bytes {s t : State} {frame : Nat → Prop}
     AgreesOutside { s with mem := writeBytes s.mem start bs }
       { t with mem := writeBytes t.mem start cs } frame :=
   AgreesOutside.write_bytes_aux bs cs start hlen hframe h
+
+/-- A memory with no bytes outside `[1, 17)`: the footprint the seam's loop
+allocates. -/
+def MemOutside (m : Mem) : Prop :=
+  ∀ a, a < 1 ∨ 17 ≤ a → readByte m a = none
+
+theorem MemOutside.nil : MemOutside [] := fun _ _ => rfl
+
+theorem MemOutside.write1 (m : Mem) (h : MemOutside m) {bs : List UInt8}
+    (hlen : bs.length = 8) : MemOutside (writeBytes m 1 bs) := by
+  intro a ha
+  rcases ha with ha | ha
+  · rw [readByte_writeBytes_below m bs (by omega)]
+    exact h a (Or.inl ha)
+  · rw [readByte_writeBytes_above m bs (by omega)]
+    exact h a (Or.inr ha)
+
+theorem MemOutside.write9 (m : Mem) (h : MemOutside m) {bs : List UInt8}
+    (hlen : bs.length = 8) : MemOutside (writeBytes m 9 bs) := by
+  intro a ha
+  rcases ha with ha | ha
+  · rw [readByte_writeBytes_below m bs (by omega)]
+    exact h a (Or.inl ha)
+  · rw [readByte_writeBytes_above m bs (by omega)]
+    exact h a (Or.inr ha)
+
+/-- Two memories with no bytes outside the loop's footprint agree there. -/
+theorem agreesOutside_of_memOutside {m n : Mem} (hm : MemOutside m) (hn : MemOutside n) :
+    AgreesOutside ⟨[], m, 0, ""⟩ ⟨[], n, 0, ""⟩ (fun a => 1 ≤ a ∧ a < 17) := by
+  intro a ha
+  have hout : a < 1 ∨ 17 ≤ a := by
+    by_cases h1 : a < 1
+    · exact Or.inl h1
+    · exact Or.inr (by omega)
+  rw [hm a hout, hn a hout]
 
 end LeanLLVM

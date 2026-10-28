@@ -66,10 +66,11 @@ fixtures carry neither and clang supplies the target default.
   transcription of `Candidate.lean`'s fold, not from Lean's own emission of that
   loop. The differential transcript is the evidence that the transcription
   agrees with the Lean body; it is not a proof.
-- The loop unit is compared with the unrolled candidate by returned value
-  (`BehVal`), not by whole outcomes: `Outcome` carries the final memory, and the
-  loop's two locals make that spurious. The relation and its restriction are in
-  `LeanLLVM/ValueRefinement.lean`.
+- The loop unit is compared with the unrolled candidate through
+  `AgreesOutside`: same returned value, memories agreeing outside the loop's
+  two locals (`LeanLLVM/Frames.lean`). Memory outside that footprint is not
+  forgotten, so the statement is sound for any caller-visible write; only the
+  loop's own allocations are ignored.
 - The contextual replacement theorem covers a caller (in the semantics) whose
   body is a call to the seam whose result it returns
   (`LeanLLVM/Vellum/SeamContext.lean`), in both an equality form and the

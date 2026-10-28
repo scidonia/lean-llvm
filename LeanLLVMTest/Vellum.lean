@@ -150,16 +150,20 @@ info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec' depends on axioms: [prop
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec
 
--- The loop and the unrolled candidate return the same value; the loop's local
--- allocations are forgotten by `BehVal`, which is stated and documented in
--- `LeanLLVM/ValueRefinement.lean`.
+-- The framed statement: same returned value, memories agree outside the loop's
+-- two locals.
 example (x : BitVec 64) :
-    LeanLLVM.BehVal LeanLLVM.noCalls loopFunction [LeanLLVM.Value.int 64 x]
-      (LeanLLVM.Value.int 64 (spec x)) :=
-  (loop_and_candidate_agree x).1
+    ∃ memL memC,
+      LeanLLVM.Beh LeanLLVM.noCalls loopFunction [LeanLLVM.Value.int 64 x]
+        (.ret (some (LeanLLVM.Value.int 64 (spec x))) memL) ∧
+      LeanLLVM.Beh LeanLLVM.noCalls candidateFunction [LeanLLVM.Value.int 64 x]
+        (.ret (some (LeanLLVM.Value.int 64 (spec x))) memC) ∧
+      LeanLLVM.AgreesOutside ⟨[], memL, 0, ""⟩ ⟨[], memC, 0, ""⟩
+        (fun a => 1 ≤ a ∧ a < 17) :=
+  loop_and_candidate_framed x
 
 /--
-info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_framed' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs in
-#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_agree
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_framed
