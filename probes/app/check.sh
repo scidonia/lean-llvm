@@ -34,6 +34,13 @@ if STRICT=1 MANIFEST=$build/manifest_bad.env OUT=$build/app_strict \
   exit 1
 fi
 
+echo "== the loop unit also installs behind the seam"
+UNIT=loop MANIFEST=$build/manifest.env OUT=$build/app_loop \
+  RECORD=$build/selection_loop.env "$select" >/dev/null
+"$build/app_loop" > "$build/out_loop.txt"
+grep -q '^selected=loop$' "$build/selection_loop.env"
+cmp "$build/out_candidate.txt" "$build/out_loop.txt"
+
 echo "== the application behaves the same under both bodies"
 cmp "$build/out_candidate.txt" "$build/out_fallback.txt"
 

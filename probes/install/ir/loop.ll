@@ -2,7 +2,7 @@
 ; memory, the lane bit and test are computed from the counter, and the select
 ; folds the accumulator.  The loop is the control-flow-different counterpart of
 ; the unrolled candidate in candidate.ll.
-define i64 @leanllvm_comma_mask8_loop(i64 %arg) {
+define i64 @leanllvm_comma_mask8(i64 %arg) {
 entry:
   %m = xor i64 %arg, 3182967604875373612
   %acc = alloca i64, align 8

@@ -63,6 +63,15 @@ grep -v '^impl=' "$build/out_candidate.txt" > "$build/sem_candidate.txt"
 grep -v '^impl=' "$build/out_fallback.txt" > "$build/sem_baseline.txt"
 cmp "$build/sem_candidate.txt" "$build/sem_baseline.txt"
 
+echo "== the loop unit installs behind the same seam"
+UNIT=loop MANIFEST=$build/manifest.env OUT=$build/app_loop \
+  RECORD=$build/selection_loop.env "$here/select.sh" >/dev/null
+"$build/app_loop" > "$build/out_loop.txt"
+grep -q '^impl=3$' "$build/out_loop.txt"
+grep -q '^selected=loop$' "$build/selection_loop.env"
+grep -v '^impl=' "$build/out_loop.txt" > "$build/sem_loop.txt"
+cmp "$build/sem_candidate.txt" "$build/sem_loop.txt"
+
 echo "== a mutated fixture invalidates the certificate"
 cp "$here/ir/candidate.ll" "$build/candidate.ll.bak"
 restore() { cp "$build/candidate.ll.bak" "$here/ir/candidate.ll"; }

@@ -12,9 +12,11 @@ This probe exercises the installation point described in
 - `Baseline.lean` and `Candidate.lean` are the Lean bodies. `build.sh` compiles
   them as **provenance** objects and compares them with the proved units on a
   differential corpus.
-- The installed units are compiled from `ir/baseline.ll` and `ir/candidate.ll`
-  plus their marker objects (`ir/marker_*.ll`). Each unit is therefore the
-  program the refinement theorem is about, not a separately authored body.
+- The installed units are compiled from `ir/baseline.ll`, `ir/candidate.ll`
+  and `ir/loop.ll` plus their marker objects (`ir/marker_*.ll`). Each unit is
+  therefore the program the refinement theorem is about, not a separately
+  authored body. The loop unit is the memory-backed loop, proved to return the
+  specification by induction over its counter; `UNIT=loop` selects it.
 - `build.sh` writes `differential.txt` and `manifest.env`. The manifest binds
   the target, the contract and theorem names, the attribute policy, every
   fixture and marker hash, and the caller, unit and certificate hashes.
@@ -64,6 +66,10 @@ fixtures carry neither and clang supplies the target default.
   transcription of `Candidate.lean`'s fold, not from Lean's own emission of that
   loop. The differential transcript is the evidence that the transcription
   agrees with the Lean body; it is not a proof.
+- The loop unit is compared with the unrolled candidate by returned value
+  (`BehVal`), not by whole outcomes: `Outcome` carries the final memory, and the
+  loop's two locals make that spurious. The relation and its restriction are in
+  `LeanLLVM/ValueRefinement.lean`.
 - The contextual replacement theorem covers a caller (in the semantics) whose
   body is a call to the seam whose result it returns
   (`LeanLLVM/Vellum/SeamContext.lean`), in both an equality form and the

@@ -78,7 +78,7 @@ def condBody : Block :=
 
 /-- `probes/install/ir/loop.ll`, as an AST. -/
 def loopFunction : Function :=
-  { name := "leanllvm_comma_mask8_loop", retTy := .int 64, params := [("%arg", .int 64)],
+  { name := "leanllvm_comma_mask8", retTy := .int 64, params := [("%arg", .int 64)],
     blocks := [
       { name := "entry", instrs := entryInstrs, term := .br "cond" },
       condBody,

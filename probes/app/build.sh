@@ -28,11 +28,15 @@ fi
 # 3. The two installation units, built from the proved fixtures.  Basenames
 #    are part of the input, as in probes/install/build.sh.
 units=$build/units
-mkdir -p "$units/baseline" "$units/candidate"
-for unit in baseline candidate; do
+mkdir -p "$units/baseline" "$units/candidate" "$units/loop"
+for unit in baseline candidate loop; do
   dir=$units/$unit
   cp "$install/ir/$unit.ll" "$dir/$unit.ll"
-  cp "$install/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
+  if [ "$unit" = loop ]; then
+    cp "$install/ir/marker_loop.ll" "$dir/marker_$unit.ll"
+  else
+    cp "$install/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
+  fi
   (cd "$dir" &&
     clang -c "$unit.ll" -o "$unit.o" 2>>"$build/clang.log" &&
     clang -c "marker_$unit.ll" -o "marker_$unit.o" 2>>"$build/clang.log" &&
@@ -72,19 +76,25 @@ attributes=reject
 datalayout=none
 baseline_fixture=$install/ir/baseline.ll
 candidate_fixture=$install/ir/candidate.ll
+loop_fixture=$install/ir/loop.ll
 baseline_marker=$install/ir/marker_baseline.ll
 candidate_marker=$install/ir/marker_candidate.ll
+loop_marker=$install/ir/marker_loop.ll
 baseline_fixture_sha256=$(sha "$install/ir/baseline.ll")
 candidate_fixture_sha256=$(sha "$install/ir/candidate.ll")
+loop_fixture_sha256=$(sha "$install/ir/loop.ll")
 baseline_marker_sha256=$(sha "$install/ir/marker_baseline.ll")
 candidate_marker_sha256=$(sha "$install/ir/marker_candidate.ll")
+loop_marker_sha256=$(sha "$install/ir/marker_loop.ll")
 caller=$build/app.o
 baseline=$build/baseline.o
 candidate=$build/candidate.o
+loop=$build/loop.o
 certificate=$build/differential.txt
 caller_sha256=$(sha "$build/app.o")
 baseline_sha256=$(sha "$build/baseline.o")
 candidate_sha256=$(sha "$build/candidate.o")
+loop_sha256=$(sha "$build/loop.o")
 certificate_sha256=$(sha "$build/differential.txt")
 EOF
 

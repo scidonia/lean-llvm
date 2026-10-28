@@ -20,6 +20,7 @@ manifest=${MANIFEST:-"$here/build/manifest.env"}
 out=${OUT:-"$here/build/app"}
 record=${RECORD:-"$here/build/selection.env"}
 strict=${STRICT:-0}
+unit=${UNIT:-}
 
 [ -f "$manifest" ] || { echo "select: no manifest at $manifest" >&2; exit 1; }
 # shellcheck disable=SC1090
@@ -71,6 +72,12 @@ check_hash "$candidate_fixture" "$candidate_fixture_sha256" "candidate fixture"
 check_hash "$baseline_marker" "$baseline_marker_sha256" "baseline marker"
 check_hash "$candidate_marker" "$candidate_marker_sha256" "candidate marker"
 
+if [ -n "${loop:-}" ]; then
+  check_hash "$loop" "$loop_sha256" "loop hash"
+  check_hash "$loop_fixture" "$loop_fixture_sha256" "loop fixture"
+  check_hash "$loop_marker" "$loop_marker_sha256" "loop marker"
+fi
+
 if [ "$kind" != "proof-bound" ]; then
   ok=0; reasons+=("manifest kind $kind")
 fi
@@ -87,6 +94,11 @@ if [ "$ok" -eq 1 ]; then
   fi
   if ! verify_rebuild candidate "$candidate_fixture" "$candidate_marker" "$candidate_sha256"; then
     ok=0; reasons+=("candidate unit not rebuilt from its fixture")
+  fi
+  if [ -n "${loop:-}" ]; then
+    if ! verify_rebuild loop "$loop_fixture" "$loop_marker" "$loop_sha256"; then
+      ok=0; reasons+=("loop unit not rebuilt from its fixture")
+    fi
   fi
 fi
 
@@ -108,13 +120,30 @@ fi
 if ! nm -g "$candidate" 2>/dev/null | grep -q ' T leanllvm_impl_id'; then
   ok=0; reasons+=("candidate marker")
 fi
+if [ -n "${loop:-}" ]; then
+  if ! file -b "$loop" 2>/dev/null | grep -q 'ELF 64-bit'; then
+    ok=0; reasons+=("loop is not ELF64")
+  fi
+  if ! nm -g "$loop" 2>/dev/null | grep -q ' T leanllvm_comma_mask8'; then
+    ok=0; reasons+=("loop symbol")
+  fi
+  if ! nm -g "$loop" 2>/dev/null | grep -q ' T leanllvm_impl_id'; then
+    ok=0; reasons+=("loop marker")
+  fi
+fi
 if ! nm -u "$caller" 2>/dev/null | grep -q 'leanllvm_comma_mask8'; then
   ok=0; reasons+=("caller import")
 fi
 
 if [ "$ok" -eq 1 ]; then
-  selected=$candidate
-  kind=candidate
+  case "$unit" in
+    ""|candidate) selected=$candidate; kind=candidate ;;
+    baseline) selected=$baseline; kind=baseline ;;
+    loop) selected=$loop; kind=loop ;;
+    *) ok=0; reasons+=("unknown unit $unit") ;;
+  esac
+fi
+if [ "$ok" -eq 1 ]; then
   reason="hashes, fixtures, rebuild and certificate match"
 else
   selected=$baseline
@@ -141,6 +170,7 @@ leanc "$caller" "$selected" -o "$out" 2>>"$here/build/link.log"
   echo "candidate_fixture_sha256=$candidate_fixture_sha256"
   echo "baseline_sha256=$baseline_sha256"
   echo "candidate_sha256=$candidate_sha256"
+  echo "loop_sha256=${loop_sha256:-}"
   echo "certificate_sha256=$certificate_sha256"
 } > "$record"
 

@@ -19,7 +19,7 @@ mkdir -p "$build"
 # Basenames are part of the build input: clang records the module name in the
 # object, so `select.sh` has to rebuild under the same names to compare.
 units=$build/units
-mkdir -p "$units/baseline" "$units/candidate"
+mkdir -p "$units/baseline" "$units/candidate" "$units/loop"
 
 # 1. The caller sees only opaque declarations.
 lean -c "$build/Caller.c" "$here/Caller.lean"
@@ -33,10 +33,14 @@ lean -c "$build/Candidate.c" "$here/Candidate.lean"
   leanc -c Candidate.c -o lean_candidate.o 2>>"$build/leanc.log")
 
 # 3. Installed units: the proved fixture plus its marker object.
-for unit in baseline candidate; do
+for unit in baseline candidate loop; do
   dir=$units/$unit
   cp "$here/ir/$unit.ll" "$dir/$unit.ll"
-  cp "$here/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
+  if [ "$unit" = loop ]; then
+    cp "$here/ir/marker_loop.ll" "$dir/marker_$unit.ll"
+  else
+    cp "$here/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
+  fi
   (cd "$dir" &&
     clang -c "$unit.ll" -o "$unit.o" 2>>"$build/clang.log" &&
     clang -c "marker_$unit.ll" -o "marker_$unit.o" 2>>"$build/clang.log" &&
@@ -48,13 +52,15 @@ done
 leanc "$here/diff.c" "$build/baseline.o" -o "$build/diff_baseline" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/candidate.o" -o "$build/diff_candidate" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/lean_baseline.o" -o "$build/diff_lean_baseline" 2>>"$build/leanc.log"
+leanc "$here/diff.c" "$build/loop.o" -o "$build/diff_loop" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/lean_candidate.o" -o "$build/diff_lean_candidate" 2>>"$build/leanc.log"
 
 "$build/diff_baseline" > "$build/diff_baseline.txt"
 "$build/diff_candidate" > "$build/diff_candidate.txt"
 "$build/diff_lean_baseline" > "$build/diff_lean_baseline.txt"
+"$build/diff_loop" > "$build/diff_loop.txt"
 "$build/diff_lean_candidate" > "$build/diff_lean_candidate.txt"
-for out in diff_candidate diff_lean_baseline diff_lean_candidate; do
+for out in diff_candidate diff_loop diff_lean_baseline diff_lean_candidate; do
   if ! cmp -s "$build/diff_baseline.txt" "$build/$out.txt"; then
     echo "build: differential test failed against $out" >&2
     diff -u "$build/diff_baseline.txt" "$build/$out.txt" >&2 || true
@@ -66,9 +72,10 @@ done
   echo "kind: differential"
   echo "symbol: leanllvm_comma_mask8"
   echo "corpus: probes/install/diff.c"
-  echo "bodies: proved-baseline proved-candidate lean-baseline lean-candidate"
+  echo "bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate"
   echo "baseline_sha256: $(sha256sum "$build/baseline.o" | cut -d' ' -f1)"
   echo "candidate_sha256: $(sha256sum "$build/candidate.o" | cut -d' ' -f1)"
+  echo "loop_sha256: $(sha256sum "$build/loop.o" | cut -d' ' -f1)"
   echo "RESULT: PASS"
 } > "$build/differential.txt"
 
@@ -85,19 +92,25 @@ attributes=reject
 datalayout=none
 baseline_fixture=$here/ir/baseline.ll
 candidate_fixture=$here/ir/candidate.ll
+loop_fixture=$here/ir/loop.ll
 baseline_marker=$here/ir/marker_baseline.ll
 candidate_marker=$here/ir/marker_candidate.ll
+loop_marker=$here/ir/marker_loop.ll
 baseline_fixture_sha256=$(sha "$here/ir/baseline.ll")
 candidate_fixture_sha256=$(sha "$here/ir/candidate.ll")
+loop_fixture_sha256=$(sha "$here/ir/loop.ll")
 baseline_marker_sha256=$(sha "$here/ir/marker_baseline.ll")
 candidate_marker_sha256=$(sha "$here/ir/marker_candidate.ll")
+loop_marker_sha256=$(sha "$here/ir/marker_loop.ll")
 caller=$build/caller.o
 baseline=$build/baseline.o
 candidate=$build/candidate.o
+loop=$build/loop.o
 certificate=$build/differential.txt
 caller_sha256=$(sha "$build/caller.o")
 baseline_sha256=$(sha "$build/baseline.o")
 candidate_sha256=$(sha "$build/candidate.o")
+loop_sha256=$(sha "$build/loop.o")
 certificate_sha256=$(sha "$build/differential.txt")
 lean_baseline_sha256=$(sha "$build/lean_baseline.o")
 lean_candidate_sha256=$(sha "$build/lean_candidate.o")
