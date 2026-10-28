@@ -22,27 +22,30 @@ example (x : UInt64) : seamCandidate x = seamBaseline x := seam_refines x
 #guard swar 0x2D2C = 0x80
 #guard swar 0x2C2C2C2C2C2C2C2C = 0x8080808080808080
 
--- The two 64-bit identities are proved by `bv_decide`, whose SAT step emits a
--- native bit-blast axiom per theorem.  The pins name that trust boundary; it
--- is not a kernel reduction.  Replacing it with a kernel-checked certificate
--- is tracked as follow-up work.
+-- The two 64-bit identities are kernel-checked by the byte-lane argument in
+-- `CommaMaskKernel.lean`; no native bit-blast axioms survive.  The pins record
+-- the remaining standard footprint.
 
 /--
-info: 'LeanLLVM.Vellum.byteLoop_refines_swar' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- byteLoop_eq_spec._native.bv_decide.ax_1_5,
- swar_eq_spec._native.bv_decide.ax_1_5]
+info: 'LeanLLVM.Vellum.swar_eq_spec' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.swar_eq_spec
+
+/--
+info: 'LeanLLVM.Vellum.byteLoop_eq_spec' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.byteLoop_eq_spec
+
+/--
+info: 'LeanLLVM.Vellum.byteLoop_refines_swar' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.byteLoop_refines_swar
 
 /--
-info: 'LeanLLVM.Vellum.twoCallContext_preserved' depends on axioms: [propext,
- Classical.choice,
- Quot.sound,
- byteLoop_eq_spec._native.bv_decide.ax_1_5,
- swar_eq_spec._native.bv_decide.ax_1_5]
+info: 'LeanLLVM.Vellum.twoCallContext_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.twoCallContext_preserved

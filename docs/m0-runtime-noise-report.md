@@ -279,9 +279,10 @@ not against an unversioned page.
 3. **Write the contextual theorem before proof automation.** For the pure
    slice, state the local LLVM refinement and the restricted caller/callee
    replacement theorem; a `BitVec` equality is a lemma, not acceptance.  The
-   first instance is `LeanLLVM/Vellum/CommaMask.lean`:
+   first instance is `LeanLLVM/Vellum/CommaMaskKernel.lean`:
    `commaContract ⊢ byteLoop ⊑ swar`, with `Correct` transfer and a two-call
-   context; its `bv_decide` axioms are pinned in `LeanLLVMTest/Vellum.lean`.
+   context, proved by a kernel-checked byte-lane argument; the axiom footprint
+   is pinned in `LeanLLVMTest/Vellum.lean`.
 4. **Install, then select.** Demonstrate identity installation, then install a
    structurally different certified body and show that the target paths execute
    it. Report semantic acceptance and coverage separately. The link-time

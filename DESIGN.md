@@ -62,10 +62,11 @@ seam at admissible arguments keeps its result.
 The first instance is the comma mask.  `swar` (the baseline body) and
 `byteLoop` (the candidate body) are both proved equal to the lane-wise `spec`,
 so `commaContract ⊢ byteLoop ⊑ swar`; a two-call context is preserved as well.
-The 64-bit identities are discharged by `bv_decide`, which emits a native
-bit-blast axiom per theorem; `LeanLLVMTest/Vellum.lean` pins those axioms as a
-named trust boundary.  A kernel-certificate replacement for that step is
-follow-up work, not a claim of the current proof.
+The 64-bit identities are kernel-checked in `CommaMaskKernel.lean` by a
+byte-lane argument: the packed addition is shown to have no lane carries, each
+8-bit lane is discharged by `decide`, and the lanes are glued back by a
+base-256 decomposition.  `LeanLLVMTest/Vellum.lean` pins the standard axiom
+footprint; no native bit-blast axioms remain.
 
 ## Modelling choices
 

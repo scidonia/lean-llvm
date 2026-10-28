@@ -1,15 +1,15 @@
 /-
-The first certified pure seam.
+The first certified pure seam: definitions.
 
 `swar` is the exact no-borrow comma mask compiled into the baseline object;
-`byteLoop` is the byte loop compiled into the candidate object.  Both are
-proved equal to the lane-wise specification `spec`, so
+`byteLoop` is the byte loop compiled into the candidate object.  The proofs
+that both meet the lane-wise specification, and hence that
 
   commaContract ⊢ byteLoop ⊑ swar
 
-holds, and `Correct` transfers from the baseline to the candidate.
+are in `CommaMaskKernel.lean`, which uses a kernel-checked byte-lane argument
+rather than `bv_decide`.
 -/
-import Std.Tactic.BVDecide
 import LeanLLVM.Vellum.Refinement
 
 namespace LeanLLVM.Vellum
@@ -42,36 +42,11 @@ def byteLoop (x : BitVec 64) : BitVec 64 :=
       if b = 0 then acc ||| (0x80 <<< shift) else acc)
     0
 
-/-- The packed formula meets the lane specification. -/
-theorem swar_eq_spec (x : BitVec 64) : swar x = spec x := by
-  unfold swar spec
-  bv_decide
-
-/-- The byte loop meets the same specification. -/
-theorem byteLoop_eq_spec (x : BitVec 64) : byteLoop x = spec x := by
-  unfold byteLoop spec
-  simp only [List.foldl_cons, List.foldl_nil]
-  bv_decide
-
 /-- The boundary contract for the comma mask.  Every input is admitted; the
 postcondition is the lane specification. -/
 def commaContract : Contract where
   pre := fun _ => True
   post := fun x y => y = spec x
-
-/-- The certified local obligation: the candidate refines the baseline. -/
-theorem byteLoop_refines_swar : commaContract ⊢ byteLoop ⊑ swar := by
-  intro x _
-  rw [byteLoop_eq_spec, swar_eq_spec]
-
-/-- The baseline meets the contract. -/
-theorem swar_correct : Correct commaContract swar := by
-  intro x _
-  exact swar_eq_spec x
-
-/-- Correctness transfers to the candidate by refinement. -/
-theorem byteLoop_correct : Correct commaContract byteLoop :=
-  Correct.of_refines byteLoop_refines_swar swar_correct
 
 /-! ### Contextual replacement -/
 
@@ -83,26 +58,5 @@ def twoCallContext : Context where
 theorem twoCallContext_admissible : twoCallContext.admissible commaContract := by
   intro _ _ _ _
   trivial
-
-/-- Replacing the baseline by the candidate preserves the caller's result. -/
-theorem twoCallContext_preserved (x : BitVec 64) :
-    twoCallContext.run byteLoop x = twoCallContext.run swar x :=
-  Context.refines byteLoop_refines_swar twoCallContext_admissible x trivial
-
-/-! ### The `UInt64` seam
-
-The probe's exported functions are `UInt64`; this is the same statement at the
-type the C ABI uses.  The object-level connection remains the differential
-certificate in `probes/install/`. -/
-
-def seamBaseline (x : UInt64) : UInt64 :=
-  UInt64.ofBitVec (swar x.toBitVec)
-
-def seamCandidate (x : UInt64) : UInt64 :=
-  UInt64.ofBitVec (byteLoop x.toBitVec)
-
-theorem seam_refines (x : UInt64) : seamCandidate x = seamBaseline x := by
-  unfold seamCandidate seamBaseline
-  rw [byteLoop_eq_spec, swar_eq_spec]
 
 end LeanLLVM.Vellum
