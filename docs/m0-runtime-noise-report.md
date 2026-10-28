@@ -300,8 +300,12 @@ not against an unversioned page.
 - One toolchain (`Lean v4.35.0-rc3`, clang 21.1.8), one target
   (`x86_64-unknown-linux-gnu`), one probe family, no benchmark.
 - The observations are about IR shape, not speed.
-- The exact-mask formula is checked on examples, not proved. Its parity proof
-  and the proof that a candidate implements it are separate work.
+- The exact-mask formula and a candidate's implementation of it are proved:
+  `swar_eq_spec` and `byteLoop_eq_spec` by the byte-lane argument, and
+  `IR_refines` over the emitted fixtures. What is not machine-checked is the
+  link from those fixtures to the selected objects: `probes/install` still
+  certifies installation with a differential transcript, and the contextual
+  replacement theorem is stated for the pure seam, not for IR-level callers.
 - LTO was not enabled. With LTO, an extern whose definition is in another
   object can be inlined; preserve the boundary before installation, or control
   LTO explicitly.

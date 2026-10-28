@@ -25,8 +25,10 @@ nix develop -c bash probes/install/check.sh
 
 The certificate is a **differential transcript**, not a Lean proof. The probe
 certifies the installation mechanics: artifact binding, selection, fallback and
-the surviving seam. The semantic proof and the contextual theorem remain the
-next work package.
+the surviving seam. The semantic proof of the two seam bodies is in
+`LeanLLVM/Vellum/CommaMaskKernel.lean`, and the emitted-IR refinement is in
+`LeanLLVM/Vellum/CommaMaskIR.lean`; what remains is binding the selected
+objects to those proofs and lifting the contextual theorem to IR-level callers.
 
 Inspect the evidence:
 
