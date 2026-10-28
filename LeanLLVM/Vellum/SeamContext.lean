@@ -22,6 +22,7 @@ than through an inlined body.
 import LeanLLVM.Parser
 import LeanLLVM.Semantics
 import LeanLLVM.Vellum.CommaMaskKernel
+import LeanLLVM.CallRefinement
 
 namespace LeanLLVM.Vellum.SeamContext
 
@@ -149,6 +150,12 @@ theorem caller_beh (v : BitVec 64 → BitVec 64) (x : BitVec 64) (o : Outcome) :
     subst h
     exact Or.inr ⟨1, caller_runFuel_succ v x 0⟩
 
+theorem seam_callRefines :
+    ∀ sym, CallRefines (envFor byteLoop) (envFor swar) sym := by
+  intro sym args
+  right
+  exact congrFun (congrFun envFor_eq sym) args
+
 /-! ### Replacement -/
 
 /-- Replacing the installed body leaves the caller's behaviour unchanged, for
@@ -159,5 +166,23 @@ theorem caller_seam_replacement (x : BitVec 64) (o : Outcome) :
       Beh (envFor swar) callerFunction [.int 64 x] o := by
   have e : byteLoop x = swar x := (byteLoop_eq_spec x).trans (swar_eq_spec x).symm
   rw [caller_beh, caller_beh, e]
+
+/-- The directional form: through the general call-refinement rule, the
+candidate environment's caller behaviours are included in the baseline
+environment's. -/
+theorem caller_refines_under_seam (x : BitVec 64) (o : Outcome) :
+    Beh (envFor byteLoop) callerFunction [.int 64 x] o →
+      Beh (envFor swar) callerFunction [.int 64 x] o :=
+  Beh_calls_refines seam_callRefines callerFunction _ _
+
+/-- An environment that leaves the seam undefined is *not* refined by a
+baseline that defines it: the target would be `ub`, which admits outcomes the
+source does not. -/
+theorem undefined_env_not_refines :
+    ¬ CallRefines (fun _ _ => none) (envFor swar) seamSymbol := by
+  intro h
+  have hsrc : envFor swar seamSymbol [.int 64 0] = none :=
+    CallRefines.ub_of_target_ub h rfl
+  simp [envFor] at hsrc
 
 end LeanLLVM.Vellum.SeamContext

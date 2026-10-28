@@ -25,10 +25,13 @@ def Refines (calls : Calls) (target source : Function) : Prop :=
 give the result, or nothing for an unresolved (undefined) call.  Threading it
 explicitly keeps one semantics for a function in every environment, and lets a
 theorem say what it assumes about the callee rather than inlining it.  The
-environment is deterministic, so replacing a callee by one that returns the
-same values preserves behaviour exactly; a one-directional contextual
-refinement needs a relational environment, in which one call may have several
-possible outcomes.
+environment is deterministic, but an unresolved call is `ub`, which admits
+every outcome, so the environments still have a non-trivial order:
+`CallRefines calls' calls sym` holds when on every argument list the source is
+`ub` or the two agree.  A target that defines a call the source leaves
+undefined refines it; the reverse does not.  `LeanLLVM/CallRefinement.lean`
+lifts that order to `Beh`, so a caller's behaviour under the candidate
+environment is included in its behaviour under the baseline environment.
 
 Consequences that drive the proof style:
 
@@ -152,8 +155,9 @@ verification runs.
    blocks; removing them is an equivalence over reachable states.
 3. **Wider syntax.**  `getelementptr`, `phi` and globals, with a dominance
    check for cross-block constant propagation.  Calls are modelled
-   (`Instr.call` resolved through `Calls`); a relational call environment and
-   memory effects across calls are the next step after that.
+   (`Instr.call` resolved through `Calls`) and refinement through them is
+   one-directional (`CallRefinement`); memory effects across calls are the next
+   step after that.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite

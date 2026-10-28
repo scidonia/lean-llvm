@@ -66,9 +66,10 @@ fixtures carry neither and clang supplies the target default.
   agrees with the Lean body; it is not a proof.
 - The contextual replacement theorem covers a caller (in the semantics) whose
   body is a call to the seam whose result it returns
-  (`LeanLLVM/Vellum/SeamContext.lean`). The call environment is deterministic,
-  so the theorem is an equality of behaviours rather than a one-directional
-  refinement, and calls have no memory effects yet.
+  (`LeanLLVM/Vellum/SeamContext.lean`), in both an equality form and the
+  directional form of `LeanLLVM/CallRefinement.lean`. The environment is
+  deterministic; `none` is `ub`, so a defined target call refines an undefined
+  source one but not the reverse. Calls still have no memory effects.
 - One toolchain, one target, no benchmark.
 
 Inspect the evidence:

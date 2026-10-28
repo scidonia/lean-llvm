@@ -321,9 +321,11 @@ not against an unversioned page.
   fixture's provenance: it is generated from a lane-by-lane transcription of
   the Lean loop, and only the differential transcript compares the two. The
   contextual replacement theorem is stated for a caller whose body is a call
-  whose result is returned.  The call environment is deterministic, so that
-  theorem is an equality of behaviours; a one-directional contextual refinement
-  needs a relational environment in which a call may have several outcomes.
+  whose result is returned, in an equality form and in the directional form of
+  `LeanLLVM/CallRefinement.lean`. The call environment is deterministic; an
+  unresolved call is `ub`, so a target that defines a call the source leaves
+  undefined refines it and the reverse does not. Calls still have no memory
+  effects across the boundary.
 - LTO was not enabled. With LTO, an extern whose definition is in another
   object can be inlined; preserve the boundary before installation, or control
   LTO explicitly.

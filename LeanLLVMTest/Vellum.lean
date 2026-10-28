@@ -105,3 +105,25 @@ info: 'LeanLLVM.Vellum.SeamContext.caller_seam_replacement' depends on axioms: [
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.SeamContext.caller_seam_replacement
+
+-- The directional rule: `none` is `ub`, so a deterministic environment still
+-- has a non-trivial refinement order.
+example (x : BitVec 64) (o : LeanLLVM.Outcome) :
+    LeanLLVM.Beh (envFor byteLoop) callerFunction [LeanLLVM.Value.int 64 x] o →
+      LeanLLVM.Beh (envFor swar) callerFunction [LeanLLVM.Value.int 64 x] o :=
+  caller_refines_under_seam x o
+
+example : ¬ LeanLLVM.CallRefines (fun _ _ => none) (envFor swar) seamSymbol :=
+  undefined_env_not_refines
+
+/--
+info: 'LeanLLVM.Beh_refines' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Beh_refines
+
+/--
+info: 'LeanLLVM.Vellum.SeamContext.caller_refines_under_seam' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.SeamContext.caller_refines_under_seam
