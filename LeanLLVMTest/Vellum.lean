@@ -127,3 +127,25 @@ info: 'LeanLLVM.Vellum.SeamContext.caller_refines_under_seam' depends on axioms:
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.SeamContext.caller_refines_under_seam
+
+-- The memory-backed loop, executed by the semantics, returns the same mask as
+-- the unrolled candidate on the lane examples.
+open LeanLLVM.Vellum.CommaMaskLoop
+
+#guard
+  match LeanLLVM.run LeanLLVM.noCalls loopFunction
+      [LeanLLVM.Value.int 64 0x2D2C] with
+  | some (.ret (some v) _) => v == LeanLLVM.Value.int 64 0x80
+  | _ => false
+
+#guard
+  match LeanLLVM.run LeanLLVM.noCalls loopFunction
+      [LeanLLVM.Value.int 64 0x2C2C2C2C2C2C2C2C] with
+  | some (.ret (some v) _) => v == LeanLLVM.Value.int 64 0x8080808080808080
+  | _ => false
+
+/--
+info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec

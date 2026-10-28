@@ -63,6 +63,10 @@ def bodyInstrs : List Instr := [
 def doneInstrs : List Instr := [
   .load "%r" (.int 64) (.reg "%acc")]
 
+/-- The exit block. -/
+def doneBlock : Block :=
+  { name := "done", instrs := doneInstrs, term := .ret (.int 64) (some (.reg "%r")) }
+
 /-- The body block. -/
 def bodyBlock : Block :=
   { name := "body", instrs := bodyInstrs, term := .br "cond" }
@@ -78,7 +82,7 @@ def loopFunction : Function :=
       { name := "entry", instrs := entryInstrs, term := .br "cond" },
       condBody,
       bodyBlock,
-      { name := "done", instrs := doneInstrs, term := .ret (.int 64) (some (.reg "%r")) }] }
+      doneBlock] }
 
 #guard decide (firstFunction loopSrc = some loopFunction)
 
@@ -538,5 +542,140 @@ theorem body_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
       rw [hbelow, hrt1, ha2]
     · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
       rw [hrt2, hi2]
+
+theorem ofBool_ult_eight :
+    BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64)) = 0 := by decide
+
+/-- The condition block at counter eight: the branch to `done` is taken. -/
+theorem cond_done_step (s : State) (m acc : BitVec 64)
+    (hinv : LoopInv s m acc 8) :
+    ∃ s', step noCalls loopFunction s = .jump s' ∧ s'.pc = "done" ∧
+      LoopFacts s' m acc 8 := by
+  obtain ⟨hpc, hf⟩ := hinv
+  let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 8))
+  let s2 : State :=
+    s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64))))
+  let s3 : State := { s2 with pc := "done" }
+  have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 8)) :=
+    lookup_bind_self s "%i1" _
+  have hlc : lookupName s2.env "%c" =
+      some (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64)))) :=
+    lookup_bind_self s1 "%c" _
+  have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
+    have h := eval_load_64 noCalls s "%i1" (.reg "%i") 9 (BitVec.ofNat 64 8) hf.iPtr hf.iLoad
+    simpa [s1] using h
+  have e2 : evalInstr noCalls s1 (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 8))) = some s2 := by
+    have h := evalInstr_icmp_ult_imm noCalls s1 "%c" "%i1" (8 : BitVec 64)
+    simp only [hli1] at h
+    simpa [s2] using h
+  refine ⟨s3, ?_, rfl, ?_⟩
+  · have hfind : loopFunction.findBlock s.pc = some condBody := by
+      simp [loopFunction, Function.findBlock, findBlockList, hpc, condBody, condInstrs]
+    simp only [step, hfind, condBody, condInstrs, denoteCode]
+    rw [e1]
+    simp only []
+    rw [e2]
+    simp only [execTerm, evalOperand, hlc, ofBool_ult_eight, s3]
+    simp
+  · refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
+    · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
+    · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
+    · simp [s3, s2, s1, State.bind, hf.accLoad]
+    · simp [s3, s2, s1, State.bind, hf.iLoad]
+
+/-- The exit block: load the accumulator and return it. -/
+theorem done_step (s : State) (m acc : BitVec 64)
+    (hpc : s.pc = "done") (hf : LoopFacts s m acc 8) :
+    ∃ s', step noCalls loopFunction s = .ret (some (.int 64 acc)) s' := by
+  let s1 : State := s.bind "%r" (.int 64 acc)
+  have hl_acc : lookupName s.env "%acc" = some (.ptr 1) := hf.accPtr
+  have e1 : evalInstr noCalls s (.load "%r" (.int 64) (.reg "%acc")) = some s1 := by
+    have h := eval_load_64 noCalls s "%r" (.reg "%acc") 1 acc hl_acc hf.accLoad
+    simpa [s1] using h
+  have hl_r : lookupName s1.env "%r" = some (.int 64 acc) := by
+    simp [s1, State.bind]
+  have hfind : loopFunction.findBlock s.pc = some doneBlock := by
+    simp [loopFunction, Function.findBlock, findBlockList, hpc, doneBlock, doneInstrs,
+      bodyBlock, condBody]
+  refine ⟨s1, ?_⟩
+  simp only [step, hfind, doneBlock, doneInstrs, denoteCode]
+  rw [e1]
+  simp only [execTerm, evalOperand, hl_r]
+
+/-- Runs that have returned keep their result under more fuel. -/
+theorem runFuel_ret_succ {f : Function} {s : State} {v : Option Value} {mem : Mem} :
+    ∀ {n : Nat}, runFuel noCalls n f s = some (.ret v mem) →
+      runFuel noCalls (n + 1) f s = some (.ret v mem)
+  | 0, h => by
+      simp only [runFuel] at h
+      cases h
+  | n + 1, h => by
+      cases hs : step noCalls f s with
+      | ub =>
+          simp only [runFuel, hs] at h
+          cases h
+      | ret v' s' =>
+          simp only [runFuel, hs] at h ⊢
+          exact h
+      | jump s' =>
+          simp only [runFuel, hs] at h ⊢
+          exact runFuel_ret_succ h
+
+/-- The loop condition: from the invariant at `k`, `k ≤ 8`, the run returns the
+full prefix.  The induction is on `8 - k`, i.e. on the counter, not on unrolled
+copies of the body. -/
+theorem cond_run_aux : ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat),
+    k ≤ 8 → 8 - k = n → acc = maskPrefix m k → LoopInv s m acc k →
+    ∃ mem, runFuel noCalls (2 * n + 2) loopFunction s =
+      some (.ret (some (.int 64 (maskPrefix m 8))) mem)
+  | 0, s, m, acc, k, hk, hn, hacc, hinv => by
+      have hk8 : k = 8 := by omega
+      subst hk8
+      obtain ⟨s1, h1, hp1, hf1⟩ := cond_done_step s m acc hinv
+      obtain ⟨s2, h2⟩ := done_step s1 m acc hp1 hf1
+      refine ⟨s2.mem, ?_⟩
+      simp only [runFuel, h1, h2]
+      rw [hacc]
+  | n + 1, s, m, acc, k, hk, hn, hacc, hinv => by
+      have hk8 : k < 8 := by omega
+      obtain ⟨s1, h1, hp1, hf1, hi1⟩ := cond_step s m acc k hk8 hinv
+      obtain ⟨s2, h2, hp2, hf2⟩ := body_step s1 m acc k hk8 hacc hp1 hf1 hi1
+      obtain ⟨mem, hrun⟩ := cond_run_aux n s2 m (maskPrefix m (k + 1)) (k + 1)
+        (by omega) (by omega) rfl ⟨hp2, hf2⟩
+      refine ⟨mem, ?_⟩
+      simp only [runFuel, h1, h2]
+      rw [show 2 * (n + 1) = 2 * n + 2 from by omega, hrun]
+
+/-- The loop returns the lane-wise specification. -/
+theorem loop_returns_spec (x : BitVec 64) :
+    ∃ mem, run noCalls loopFunction [.int 64 x] =
+      some (.ret (some (.int 64 (spec x))) mem) := by
+  have hstep : step noCalls loopFunction (initState loopFunction [.int 64 x]) =
+      .jump (entryState x) := entry_run x
+  obtain ⟨mem, hrun⟩ := cond_run_aux 8 (entryState x)
+    (x ^^^ c 3182967604875373612) 0 0 (by decide) (by decide) (maskPrefix_zero _).symm
+    (entry_inv x)
+  refine ⟨mem, ?_⟩
+  simp only [run]
+  have hfuel : runFuel noCalls 10000 loopFunction (initState loopFunction [.int 64 x]) =
+      runFuel noCalls 9999 loopFunction (entryState x) := by
+    rw [runFuel, hstep]
+  rw [hfuel]
+  -- 9999 = 18 + 9981: returned at 18, remains under more fuel
+  have h18 : runFuel noCalls 18 loopFunction (entryState x) =
+      some (.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem) := by
+    simpa using hrun
+  have hmono : ∀ d, runFuel noCalls (18 + d) loopFunction (entryState x) =
+      some (.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem) := by
+    intro d
+    induction d with
+    | zero => simpa using h18
+    | succ d ih =>
+        rw [Nat.add_succ]
+        exact runFuel_ret_succ ih
+  rw [show 9999 = 18 + 9981 from by decide, hmono]
+  -- the value is the specification
+  rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
 
 end LeanLLVM.Vellum.CommaMaskLoop
