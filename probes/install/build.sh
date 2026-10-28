@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# Build the caller, baseline and candidate objects, the differential
-# certificate, and the manifest. Run from anywhere; writes to
+# Build the installation units the certificate covers, the provenance objects,
+# the differential transcript and the manifest.  Run from anywhere; writes to
 # probes/install/build/.
+#
+# The installed units are compiled from the emitted IR in probes/install/ir/,
+# which is what `LeanLLVM/Vellum/CommaMaskIR.lean` proves: the parser pins that
+# IR, so the objects selected here are the objects the theorem is about.
+# `Baseline.lean` and `Candidate.lean` are still compiled, as provenance
+# objects: the differential transcript checks that each proved unit agrees with
+# the Lean-emitted body on the corpus.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -9,47 +16,91 @@ build=${BUILD_DIR:-"$here/build"}
 rm -rf "$build"
 mkdir -p "$build"
 
-cd "$here"
-lean -c "$build/Caller.c" Caller.lean
-lean -c "$build/Baseline.c" Baseline.lean
-lean -c "$build/Candidate.c" Candidate.lean
+# Basenames are part of the build input: clang records the module name in the
+# object, so `select.sh` has to rebuild under the same names to compare.
+units=$build/units
+mkdir -p "$units/baseline" "$units/candidate"
 
-cd "$build"
-leanc -c Caller.c -o caller.o 2>>leanc.log
-leanc -c Baseline.c -o baseline.o 2>>leanc.log
-leanc -c Candidate.c -o candidate.o 2>>leanc.log
+# 1. The caller sees only opaque declarations.
+lean -c "$build/Caller.c" "$here/Caller.lean"
+(cd "$build" && leanc -c Caller.c -o caller.o 2>>"$build/leanc.log")
 
-leanc "$here/diff.c" baseline.o -o diff_baseline 2>>leanc.log
-leanc "$here/diff.c" candidate.o -o diff_candidate 2>>leanc.log
+# 2. Provenance: the Lean-emitted bodies, not installed.
+lean -c "$build/Baseline.c" "$here/Baseline.lean"
+lean -c "$build/Candidate.c" "$here/Candidate.lean"
+(cd "$build" &&
+  leanc -c Baseline.c -o lean_baseline.o 2>>"$build/leanc.log" &&
+  leanc -c Candidate.c -o lean_candidate.o 2>>"$build/leanc.log")
 
-./diff_baseline > diff_baseline.txt
-./diff_candidate > diff_candidate.txt
-if ! cmp -s diff_baseline.txt diff_candidate.txt; then
-  echo "build: differential test failed" >&2
-  diff -u diff_baseline.txt diff_candidate.txt >&2 || true
-  exit 1
-fi
+# 3. Installed units: the proved fixture plus its marker object.
+for unit in baseline candidate; do
+  dir=$units/$unit
+  cp "$here/ir/$unit.ll" "$dir/$unit.ll"
+  cp "$here/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
+  (cd "$dir" &&
+    clang -c "$unit.ll" -o "$unit.o" 2>>"$build/clang.log" &&
+    clang -c "marker_$unit.ll" -o "marker_$unit.o" 2>>"$build/clang.log" &&
+    ld -r "$unit.o" "marker_$unit.o" -o unit.o)
+  cp "$dir/unit.o" "$build/$unit.o"
+done
+
+# 4. Differential transcript: all four bodies must agree on the corpus.
+leanc "$here/diff.c" "$build/baseline.o" -o "$build/diff_baseline" 2>>"$build/leanc.log"
+leanc "$here/diff.c" "$build/candidate.o" -o "$build/diff_candidate" 2>>"$build/leanc.log"
+leanc "$here/diff.c" "$build/lean_baseline.o" -o "$build/diff_lean_baseline" 2>>"$build/leanc.log"
+leanc "$here/diff.c" "$build/lean_candidate.o" -o "$build/diff_lean_candidate" 2>>"$build/leanc.log"
+
+"$build/diff_baseline" > "$build/diff_baseline.txt"
+"$build/diff_candidate" > "$build/diff_candidate.txt"
+"$build/diff_lean_baseline" > "$build/diff_lean_baseline.txt"
+"$build/diff_lean_candidate" > "$build/diff_lean_candidate.txt"
+for out in diff_candidate diff_lean_baseline diff_lean_candidate; do
+  if ! cmp -s "$build/diff_baseline.txt" "$build/$out.txt"; then
+    echo "build: differential test failed against $out" >&2
+    diff -u "$build/diff_baseline.txt" "$build/$out.txt" >&2 || true
+    exit 1
+  fi
+done
 
 {
   echo "kind: differential"
   echo "symbol: leanllvm_comma_mask8"
   echo "corpus: probes/install/diff.c"
-  echo "baseline_sha256: $(sha256sum baseline.o | cut -d' ' -f1)"
-  echo "candidate_sha256: $(sha256sum candidate.o | cut -d' ' -f1)"
+  echo "bodies: proved-baseline proved-candidate lean-baseline lean-candidate"
+  echo "baseline_sha256: $(sha256sum "$build/baseline.o" | cut -d' ' -f1)"
+  echo "candidate_sha256: $(sha256sum "$build/candidate.o" | cut -d' ' -f1)"
   echo "RESULT: PASS"
-} > differential.txt
+} > "$build/differential.txt"
 
 target="$(uname -m)-unknown-linux-gnu"
-cat > manifest.env <<EOF
+sha() { sha256sum "$1" | cut -d' ' -f1; }
+cat > "$build/manifest.env" <<EOF
+kind=proof-bound
 target=$target
+symbol=leanllvm_comma_mask8
+marker=leanllvm_impl_id
+contract=LeanLLVM.Vellum.commaContract
+theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+attributes=reject
+datalayout=none
+baseline_fixture=$here/ir/baseline.ll
+candidate_fixture=$here/ir/candidate.ll
+baseline_marker=$here/ir/marker_baseline.ll
+candidate_marker=$here/ir/marker_candidate.ll
+baseline_fixture_sha256=$(sha "$here/ir/baseline.ll")
+candidate_fixture_sha256=$(sha "$here/ir/candidate.ll")
+baseline_marker_sha256=$(sha "$here/ir/marker_baseline.ll")
+candidate_marker_sha256=$(sha "$here/ir/marker_candidate.ll")
 caller=$build/caller.o
 baseline=$build/baseline.o
 candidate=$build/candidate.o
 certificate=$build/differential.txt
-caller_sha256=$(sha256sum caller.o | cut -d' ' -f1)
-baseline_sha256=$(sha256sum baseline.o | cut -d' ' -f1)
-candidate_sha256=$(sha256sum candidate.o | cut -d' ' -f1)
-certificate_sha256=$(sha256sum differential.txt | cut -d' ' -f1)
+caller_sha256=$(sha "$build/caller.o")
+baseline_sha256=$(sha "$build/baseline.o")
+candidate_sha256=$(sha "$build/candidate.o")
+certificate_sha256=$(sha "$build/differential.txt")
+lean_baseline_sha256=$(sha "$build/lean_baseline.o")
+lean_candidate_sha256=$(sha "$build/lean_candidate.o")
 EOF
 
 echo "build: $build/manifest.env"

@@ -285,12 +285,19 @@ not against an unversioned page.
    is pinned in `LeanLLVMTest/Vellum.lean`.
 4. **Install, then select.** Demonstrate identity installation, then install a
    structurally different certified body and show that the target paths execute
-   it. Report semantic acceptance and coverage separately. The link-time
-   selection mechanics are exercised by `probes/install/check.sh`: candidate
-   selection, stale-hash fallback, strict-mode rejection and identical semantic
-   outputs from both binaries.
+   it. Report semantic acceptance and coverage separately. The installed units
+   are compiled from the emitted IR the proof pins, and `select.sh` rebuilds
+   each unit from its fixtures and requires byte equality before accepting it.
+   `probes/install/check.sh` exercises candidate selection, stale-hash
+   fallback, strict-mode rejection, mutated-fixture rejection and identical
+   semantic outputs from both binaries.
 5. **Decide the attribute policy per kind** and bind it, the target
-   configuration and the artifact hashes into the manifest.
+   configuration and the artifact hashes into the manifest. The policy is
+   `reject`: the fixtures carry no attributes and the parser refuses an
+   unmodelled construct rather than dropping one. The manifest binds the target,
+   the contract and theorem names, the fixture, marker, caller, unit and
+   certificate hashes; data layout and target features are not yet bound and the
+   fixtures carry neither.
 6. **Then the memory-using loop**, where heap relations, framing and the
    runtime-call contracts enter. That remains the programme's substantive M4
    target; the pure slice is an earlier integration gate.
@@ -302,10 +309,13 @@ not against an unversioned page.
 - The observations are about IR shape, not speed.
 - The exact-mask formula and a candidate's implementation of it are proved:
   `swar_eq_spec` and `byteLoop_eq_spec` by the byte-lane argument, and
-  `IR_refines` over the emitted fixtures. What is not machine-checked is the
-  link from those fixtures to the selected objects: `probes/install` still
-  certifies installation with a differential transcript, and the contextual
-  replacement theorem is stated for the pure seam, not for IR-level callers.
+  `IR_refines` over the emitted fixtures. The selected objects are rebuilt from
+  those fixtures and must match byte for byte, so the installed code is the
+  code the theorem is about. The remaining unproved link is the candidate
+  fixture's provenance: it is generated from a lane-by-lane transcription of
+  the Lean loop, and only the differential transcript compares the two. The
+  contextual replacement theorem is stated for the pure seam, not for IR-level
+  callers, because the fragment has no call.
 - LTO was not enabled. With LTO, an extern whose definition is in another
   object can be inlined; preserve the boundary before installation, or control
   LTO explicitly.
