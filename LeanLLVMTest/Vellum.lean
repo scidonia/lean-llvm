@@ -46,3 +46,12 @@ info: 'LeanLLVM.Vellum.twoCallContext_preserved' depends on axioms: [propext,
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.twoCallContext_preserved
+
+-- The probe's `Baseline.lean` body is definitionally the proved function.
+def probeBaselineBody (x : UInt64) : UInt64 :=
+  let m := x ^^^ 0x2C2C2C2C2C2C2C2C
+  ~~~(((m &&& 0x7F7F7F7F7F7F7F7F) + 0x7F7F7F7F7F7F7F7F) ||| m) &&& 0x8080808080808080
+
+example : probeBaselineBody = seamBaseline := by
+  funext x
+  rfl
