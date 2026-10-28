@@ -149,3 +149,17 @@ info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec' depends on axioms: [prop
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec
+
+-- The loop and the unrolled candidate return the same value; the loop's local
+-- allocations are forgotten by `BehVal`, which is stated and documented in
+-- `LeanLLVM/ValueRefinement.lean`.
+example (x : BitVec 64) :
+    LeanLLVM.BehVal LeanLLVM.noCalls loopFunction [LeanLLVM.Value.int 64 x]
+      (LeanLLVM.Value.int 64 (spec x)) :=
+  (loop_and_candidate_agree x).1
+
+/--
+info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_agree

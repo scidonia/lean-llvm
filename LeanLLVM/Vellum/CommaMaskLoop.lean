@@ -20,6 +20,7 @@ import LeanLLVM.Parser
 import LeanLLVM.Semantics
 import LeanLLVM.Memory
 import LeanLLVM.Vellum.CommaMaskIR
+import LeanLLVM.ValueRefinement
 
 namespace LeanLLVM.Vellum.CommaMaskLoop
 
@@ -677,5 +678,17 @@ theorem loop_returns_spec (x : BitVec 64) :
   rw [show 9999 = 18 + 9981 from by decide, hmono]
   -- the value is the specification
   rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+
+/-- The loop and the unrolled candidate return the same value.  This is the
+pairing the M4 slice uses: the returned value is compared, the locals the loop
+allocates are not. -/
+theorem loop_and_candidate_agree (x : BitVec 64) :
+    BehVal noCalls loopFunction [.int 64 x] (.int 64 (spec x)) ∧
+      BehVal noCalls candidateFunction [.int 64 x] (.int 64 (spec x)) := by
+  constructor
+  · obtain ⟨mem, hrun⟩ := loop_returns_spec x
+    exact ⟨mem, Or.inr ⟨10000, by simpa [run] using hrun⟩⟩
+  · refine ⟨[], ?_⟩
+    simpa [byteLoop_eq_spec] using (candidate_beh_int noCalls x [] _).2 rfl
 
 end LeanLLVM.Vellum.CommaMaskLoop
