@@ -123,6 +123,12 @@ fuel.  Composition is sound by transitivity, so the pipeline theorem is
 `constantPropagation_sound`, `branchFolding_sound` and
 `strengthReduction_sound` combined.
 
+## Design notes
+
+- [`docs/simd-recogniser-options.md`](docs/simd-recogniser-options.md) — where a
+  faster SIMD recogniser can be inserted into a verified parser, the proof
+  obligation at each insertion point, and the trust boundary each option adds.
+
 ## Reference materials
 
 `reference/vellvm/src/rocq/` contains the VeLLVM Coq sources (MIT) at revision
