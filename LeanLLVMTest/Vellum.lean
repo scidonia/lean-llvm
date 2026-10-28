@@ -58,3 +58,28 @@ def probeBaselineBody (x : UInt64) : UInt64 :=
 example : probeBaselineBody = seamBaseline := by
   funext x
   rfl
+
+-- The emitted-IR bridge: the two probe fixtures parse to the checked ASTs, and
+-- the parsed candidate refines the parsed baseline.  The pins record that the
+-- bridge adds no axiom beyond the standard footprint.
+open LeanLLVM.Vellum.CommaMaskIR
+
+example : LeanLLVM.Refines candidateFunction baselineFunction := IR_refines
+
+/--
+info: 'LeanLLVM.Vellum.CommaMaskIR.baseOut_eq_swar' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskIR.baseOut_eq_swar
+
+/--
+info: 'LeanLLVM.Vellum.CommaMaskIR.candOut_eq_byteLoop' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskIR.candOut_eq_byteLoop
+
+/--
+info: 'LeanLLVM.Vellum.CommaMaskIR.IR_refines' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskIR.IR_refines
