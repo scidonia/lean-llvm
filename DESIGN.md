@@ -50,6 +50,65 @@ The fuel-indexed `runFuel` makes the modelling explicit: `none` is "no outcome
 within the budget", and `Beh` existentially quantifies the budget.  Proofs lift
 a per-step equality to `runFuel` by induction and then to `Beh`.
 
+## Framed refinement
+
+`Refines` compares whole outcomes, so the returned memories must be equal.  A
+replacement that allocates privately does not satisfy that: its locals are not
+caller-visible, so demanding their equality rejects a sound replacement.  The
+finer relation is in `LeanLLVM/Frames.lean`:
+
+```lean
+def AgreesOutsideMem (m n : Mem) (frame : Nat → Prop) : Prop :=
+  ∀ a, ¬ frame a → readByte m a = readByte n a
+
+def Outcome.AgreesOutside (frame : Nat → Prop) : Outcome → Outcome → Prop
+  | .ub, .ub => True
+  | .ret v m, .ret w n => v = w ∧ AgreesOutsideMem m n frame
+  | _, _ => False
+
+def BehsWithin (target source : List Value → Outcome → Prop) (frame : Nat → Prop) : Prop :=
+  ∀ args o, target args o → ∃ o', source args o' ∧ o.AgreesOutside frame o'
+
+def RefinesWithin (calls : Calls) (target source : Function)
+    (frame : Nat → Prop) : Prop :=
+  BehsWithin (Beh calls target) (Beh calls source) frame
+```
+
+Four points make it usable rather than vacuous:
+
+- The footprint is a parameter, and the one used here is read off the execution:
+  `AllocFrame s₀ s₁` is the band from the allocator state before the run to the
+  state after it, so a unit that allocates nothing covers no address and a unit
+  that allocates two `i64` locals covers exactly their sixteen bytes.
+  `MemPrivate frame m` says the memory has nothing outside the frame, and
+  `AgreesOutsideMem.of_private` turns two such memories into agreement outside
+  the union of the two footprints.  A footprint chosen existentially could be
+  the universal predicate and the relation would say nothing, which is why the
+  band comes from the allocator states instead.
+- Memory is compared byte by byte rather than as an association list: `readByte`
+  equality is the observation, list equality would be stronger than a caller can
+  see.
+- The `ub` direction is kept.  A target that reaches `ub` admits every outcome,
+  including every defined one, so `RefinesWithin` forces the source to be `ub`
+  too, and a private allocation cannot hide undefined behaviour.  The
+  one-sided write law only covers stores inside the frame, so a byte written
+  outside it cannot be forgotten.
+- Exact refinement is the special case: `refinesWithin_of_refines` derives a
+  framed refinement from any `Refines`, so every existing theorem keeps its
+  meaning and none is weakened.
+
+`LeanLLVM/Vellum/CommaMaskLoop.lean` is the instance: the loop's two `alloca`s
+give the band, the invariant carries the proof that both stores stay inside it,
+and `loop_refines_candidate_within` states the same returned value with byte
+agreement outside the band.  `LeanLLVMTest/Vellum.lean` also exercises the
+negative direction: a unit that writes one byte outside the frame, for which the
+framed relation is proved to fail.
+
+The relation is a statement about memory, not a module theorem.  Calls still
+have no memory effects, and there is no simulation rule for an arbitrary loop;
+the loop's induction is proved for that fixture.  Both are open obligations of
+the programme rather than consequences of this relation.
+
 ## Pure seam refinement
 
 `LeanLLVM/Vellum/` carries the first boundary contract at the type the seam
@@ -161,7 +220,10 @@ verification runs.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing
-   are in `LeanLLVM/Memory.lean`.
+   are in `LeanLLVM/Memory.lean`; the footprint-parameterized relation and the
+   allocator-derived band are in `LeanLLVM/Frames.lean`.  A Lean-produced,
+   memory-using loop, a memory-aware call environment and a module theorem
+   remain open.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite
    against the semantics when a proof is not yet available, so unproved passes
    can still be gated in the toolchain.

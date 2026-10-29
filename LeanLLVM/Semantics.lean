@@ -259,6 +259,54 @@ def runFuel (calls : Calls) : Nat → Function → State → Option Outcome
       | .ret v s' => some (.ret v s'.mem)
       | .jump s' => runFuel calls n f s'
 
+/-- A completed run keeps its outcome with one more step of fuel: the outcome
+was produced by a prefix, and the extra step is never taken. -/
+theorem runFuel_succ_some {calls : Calls} {f : Function} {s : State} {o : Outcome} :
+    ∀ {n : Nat}, runFuel calls n f s = some o → runFuel calls (n + 1) f s = some o
+  | 0, h => by
+      simp only [runFuel] at h
+      cases h
+  | n + 1, h => by
+      cases hs : step calls f s with
+      | ub =>
+          simp only [runFuel, hs] at h ⊢
+          exact h
+      | ret v s' =>
+          simp only [runFuel, hs] at h ⊢
+          exact h
+      | jump s' =>
+          simp only [runFuel, hs] at h ⊢
+          exact runFuel_succ_some h
+
+/-- Extra fuel does not change a completed run's outcome. -/
+theorem runFuel_mono {calls : Calls} {f : Function} {s : State} {o : Outcome}
+    {n : Nat} (h : runFuel calls n f s = some o) :
+    ∀ {d : Nat}, runFuel calls (n + d) f s = some o
+  | 0 => h
+  | d + 1 => by
+      rw [← Nat.add_assoc]
+      exact runFuel_succ_some (runFuel_mono h)
+
+/-- A completed run is completed with the same outcome at any larger budget. -/
+theorem runFuel_mono_le {calls : Calls} {f : Function} {s : State} {o : Outcome}
+    {n m : Nat} (hmn : n ≤ m) (h : runFuel calls n f s = some o) :
+    runFuel calls m f s = some o := by
+  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hmn
+  exact runFuel_mono h
+
+/-- Two successful runs from the same state produce the same outcome, so the
+fuel budget never selects a different result. -/
+theorem runFuel_outcome_unique {calls : Calls} {f : Function} {s : State}
+    {n m : Nat} {o o' : Outcome} (hn : runFuel calls n f s = some o)
+    (hm : runFuel calls m f s = some o') : o = o' := by
+  rcases Nat.le_total n m with hle | hle
+  · have h1 := runFuel_mono_le hle hn
+    rw [h1] at hm
+    exact Option.some.inj hm
+  · have h1 := runFuel_mono_le hle hm
+    rw [h1] at hn
+    exact (Option.some.inj hn).symm
+
 /-- Initial state for a call: parameters bound to the arguments, empty memory,
 address `0` reserved for `null`, and the entry block loaded. -/
 def initState (f : Function) (args : List Value) : State :=

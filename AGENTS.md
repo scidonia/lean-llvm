@@ -30,7 +30,10 @@ nix develop -c lake exe leanllvm tests/constfold.ll
   `#guard_msgs` pins, and small theorems.
 - `reference/vellvm/` is vendored VeLLVM source for study.  It is not built,
   linted or edited.
-- `tests/` holds textual IR exercised by the driver.
+- `tests/` holds textual IR exercised by the driver, and executable scenarios of
+  a user-facing route: `m4-loop-gate.sh` drives the installer selector and
+  asserts that a loop request without a covering theorem is refused and that the
+  baseline is installed instead.
 
 ## What a change must satisfy
 
@@ -50,6 +53,12 @@ nix develop -c lake exe leanllvm tests/constfold.ll
   `LeanLLVMTest/Vellum.lean` must stay at the standard axiom footprint.
 - Checks are behavioural where behaviour is observable: parse a program, run it,
   run the pass, compare.  Avoid tests that merely restate a definition.
+- A mathematical obligation — a refinement, a framing law, a loop rule — is
+  discharged by a theorem, its axiom pin, and an adversarial example that fails
+  (`LeanLLVMTest/Vellum.lean` has both the loop's framed statement and a write
+  outside the frame that it refuses).  A user-facing route gets an executable
+  scenario instead: `tests/m4-loop-gate.sh` drives `probes/install/select.sh`
+  and asserts refusal and fallback.
 
 ## Adding a pass
 

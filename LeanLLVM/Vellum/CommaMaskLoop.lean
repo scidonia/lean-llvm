@@ -9,12 +9,18 @@ This module
 1. parses and pins the loop;
 2. defines the lane prefix the invariant tracks;
 3. proves the loop's entry reaches `cond` with the empty prefix;
-4. (next) proves one iteration preserves the invariant, and chains it.
+4. proves one iteration preserves the invariant, and chains it.
 
 The final theorem is functional correctness of the loop: it returns the
 lane-wise specification.  It is proved by induction over the counter, not by
 unrolling eight copies of the body, and it is where the memory round trip and
 the write-below framing are exercised by a real program.
+
+The memory story is the framed relation of `LeanLLVM/Frames.lean`.  The
+footprint is not written into a theorem: it is the band the allocator covered
+while the entry block handed out the two `i64` locals (`AllocFrame`), and the
+invariant carries the proof that every store stays inside it, so a write outside
+the band cannot be hidden by the relation.
 -/
 import LeanLLVM.Parser
 import LeanLLVM.Semantics
@@ -110,15 +116,18 @@ theorem maskPrefix_eight (m : BitVec 64) : maskPrefix m 8 = maskFold m := by
 
 /-! ### The loop invariant -/
 
-/-- The loop's state facts: the accumulator is the lane prefix and the counter
-is `k`, with the two pointers at the addresses `alloca` assigns. -/
+/-- The loop's state facts: the accumulator is the lane prefix, the counter is
+`k`, the two pointers are at the addresses the entry block's `alloca`s assign,
+and the memory holds nothing at or below the reserved address `0` and nothing at
+or above the allocator's next free address. -/
 structure LoopFacts (s : State) (m acc : BitVec 64) (k : Nat) : Prop where
   mReg : lookupName s.env "%m" = some (.int 64 m)
   accPtr : lookupName s.env "%acc" = some (.ptr 1)
   iPtr : lookupName s.env "%i" = some (.ptr 9)
   accLoad : loadValue s.mem (.int 64) 1 = some (.int 64 acc)
   iLoad : loadValue s.mem (.int 64) 9 = some (.int 64 (BitVec.ofNat 64 k))
-  memFrame : MemOutside s.mem
+  nextEq : s.next = 17
+  memBand : MemConfined 1 s.next s.mem
 
 /-- At the loop condition with the facts holding. -/
 def LoopInv (s : State) (m acc : BitVec 64) (k : Nat) : Prop :=
@@ -180,7 +189,7 @@ theorem ofNat_shiftLeft (a : BitVec 64) (n : Nat) :
 theorem entry_inv (x : BitVec 64) :
     LoopInv (entryState x) (x ^^^ c 3182967604875373612) 0 0 := by
   refine ⟨rfl, ?_⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simp [entryState, lookupName, c]
   · simp [entryState, lookupName]
   · simp [entryState]
@@ -199,10 +208,16 @@ theorem entry_inv (x : BitVec 64) :
       (0 : BitVec 64) 9).2
     simp only [entryState]
     simpa using h
-  · -- no bytes outside the two allocations
-    simp only [entryState]
-    exact MemOutside.write9 _ (MemOutside.write1 [] MemOutside.nil (natToBytes_length 0 8))
-      (natToBytes_length 0 8)
+  · -- the allocator has handed out both locals: eight bytes at 1 and at 9
+    simp [entryState]
+  · -- and nothing is present outside that band
+    have h1 : MemConfined 1 17 (writeBytes [] 1 (natToBytes 0 8)) :=
+      MemConfined.writeBytes (MemPrivate.nil _)
+        (by simp [natToBytes_length]) (by decide)
+    have h2 : MemConfined 1 17
+        (writeBytes (writeBytes [] 1 (natToBytes 0 8)) 9 (natToBytes 0 8)) :=
+      MemConfined.writeBytes h1 (by simp [natToBytes_length]) (by decide)
+    simpa [entryState] using h2
 
 /-! ### Instruction evaluators
 
@@ -373,13 +388,14 @@ theorem cond_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
     rw [e2]
     simp only [execTerm, evalOperand, hlc, ofBool_ult k hk, s3]
     simp
-  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
     · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
     · simp [s3, s2, s1, State.bind, hf.accLoad]
     · simp [s3, s2, s1, State.bind, hf.iLoad]
-    · simpa [s3, s2, s1, State.bind] using hf.memFrame
+    · simp [s3, s2, s1, State.bind, hf.nextEq]
+    · simpa [s3, s2, s1, State.bind] using hf.memBand
   · simp [s3, s2, s1, State.bind, lookupName]
 
 theorem body_lane_shift (k : Nat) (hk : k < 8) :
@@ -541,7 +557,7 @@ theorem body_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
         (.int 64) 9 = some (.int 64 i2v) :=
       (loadValue_storeValue_64
         { s with mem := writeBytes s.mem 1 (natToBytes a2v.toNat 8) } i2v 9).2
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
     · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
@@ -549,9 +565,19 @@ theorem body_step (s : State) (m acc : BitVec 64) (k : Nat) (hk : k < 8)
       rw [hbelow, hrt1, ha2]
     · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
       rw [hrt2, hi2]
-    · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
-      exact MemOutside.write9 _ (MemOutside.write1 _ hf.memFrame (natToBytes_length _ 8))
-        (natToBytes_length _ 8)
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, hf.nextEq]
+    · -- the two stores land inside the band the allocations cover, so the
+      -- confinement is carried to the next iteration
+      have h1 : MemConfined 1 s.next
+          (writeBytes s.mem 1 (natToBytes a2v.toNat 8)) :=
+        MemConfined.writeBytes hf.memBand (by simp [natToBytes_length, hf.nextEq])
+          (by omega)
+      have h2 : MemConfined 1 s.next
+          (writeBytes (writeBytes s.mem 1 (natToBytes a2v.toNat 8)) 9
+            (natToBytes i2v.toNat 8)) :=
+        MemConfined.writeBytes h1 (by simp [natToBytes_length, hf.nextEq]) (by omega)
+      simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      exact h2
 
 theorem ofBool_ult_eight :
     BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64)) = 0 := by decide
@@ -587,13 +613,14 @@ theorem cond_done_step (s : State) (m acc : BitVec 64)
     rw [e2]
     simp only [execTerm, evalOperand, hlc, ofBool_ult_eight, s3]
     simp
-  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
     · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
     · simp [s3, s2, s1, State.bind, hf.accLoad]
     · simp [s3, s2, s1, State.bind, hf.iLoad]
-    · simpa [s3, s2, s1, State.bind] using hf.memFrame
+    · simp [s3, s2, s1, State.bind, hf.nextEq]
+    · simpa [s3, s2, s1, State.bind] using hf.memBand
 
 /-- The exit block: load the accumulator and return it. -/
 theorem done_step (s : State) (m acc : BitVec 64)
@@ -616,31 +643,31 @@ theorem done_step (s : State) (m acc : BitVec 64)
     simp only [execTerm, evalOperand, hl_r]
   · simp only [s1, State.bind]
 
-/-- Runs that have returned keep their result under more fuel. -/
-theorem runFuel_ret_succ {f : Function} {s : State} {v : Option Value} {mem : Mem} :
-    ∀ {n : Nat}, runFuel noCalls n f s = some (.ret v mem) →
-      runFuel noCalls (n + 1) f s = some (.ret v mem)
-  | 0, h => by
-      simp only [runFuel] at h
-      cases h
-  | n + 1, h => by
-      cases hs : step noCalls f s with
-      | ub =>
-          simp only [runFuel, hs] at h
-          cases h
-      | ret v' s' =>
-          simp only [runFuel, hs] at h ⊢
-          exact h
-      | jump s' =>
-          simp only [runFuel, hs] at h ⊢
-          exact runFuel_ret_succ h
+/-- The loop's footprint is what its own allocations cover: the entry block
+allocates two `i64` locals from the reserved address `1`, so the band is read
+off the allocator state before the run and the state after the entry block. -/
+def loopFrame (x : BitVec 64) : Nat → Prop :=
+  AllocFrame (initState loopFunction [.int 64 x]) (entryState x)
+
+/-- The band, computed: two eight-byte locals from address one. -/
+theorem loopFrame_eq (x : BitVec 64) : loopFrame x = Band 1 17 := rfl
+
+/-- The addresses the loop stores to are its own two locals, and both lie in the
+band its allocations cover.  They are the pointer values the entry block's
+`alloca`s handed out (`LoopFacts.accPtr`, `LoopFacts.iPtr`), not addresses this
+development assumes. -/
+theorem loop_store_addresses_in_band (x : BitVec 64) :
+    loopFrame x 1 ∧ loopFrame x 9 := by
+  rw [loopFrame_eq]
+  exact ⟨⟨by decide, by decide⟩, ⟨by decide, by decide⟩⟩
 
 /-- The loop condition: from the invariant at `k`, `k ≤ 8`, the run returns the
-full prefix.  The induction is on `8 - k`, i.e. on the counter, not on unrolled
+full prefix, and its memory holds nothing outside the band the allocations
+cover.  The induction is on `8 - k`, i.e. on the counter, not on unrolled
 copies of the body. -/
 theorem cond_run_aux : ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat),
     k ≤ 8 → 8 - k = n → acc = maskPrefix m k → LoopInv s m acc k →
-    ∃ mem, MemOutside mem ∧ runFuel noCalls (2 * n + 2) loopFunction s =
+    ∃ mem, MemConfined 1 17 mem ∧ runFuel noCalls (2 * n + 2) loopFunction s =
       some (.ret (some (.int 64 (maskPrefix m 8))) mem)
   | 0, s, m, acc, k, hk, hn, hacc, hinv => by
       have hk8 : k = 8 := by omega
@@ -648,7 +675,8 @@ theorem cond_run_aux : ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat),
       obtain ⟨s1, h1, hp1, hf1⟩ := cond_done_step s m acc hinv
       obtain ⟨s2, h2, h2mem⟩ := done_step s1 m acc hp1 hf1
       refine ⟨s2.mem, ?_, ?_⟩
-      · rw [h2mem]; exact hf1.memFrame
+      · rw [h2mem]
+        simpa [hf1.nextEq] using hf1.memBand
       · simp only [runFuel, h1, h2]
         rw [hacc]
   | n + 1, s, m, acc, k, hk, hn, hacc, hinv => by
@@ -661,37 +689,30 @@ theorem cond_run_aux : ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat),
       simp only [runFuel, h1, h2]
       rw [show 2 * (n + 1) = 2 * n + 2 from by omega, hrun]
 
-/-- The loop returns the lane-wise specification, and leaves no bytes outside
-its two locals. -/
-theorem loop_returns_spec_frame (x : BitVec 64) :
-    ∃ mem, MemOutside mem ∧ run noCalls loopFunction [.int 64 x] =
-      some (.ret (some (.int 64 (spec x))) mem) := by
-  have hstep : step noCalls loopFunction (initState loopFunction [.int 64 x]) =
-      .jump (entryState x) := entry_run x
+/-- The loop returns the specification after nineteen steps, with a memory
+private to the band its own allocations cover. -/
+theorem loop_run_fuel (x : BitVec 64) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧
+      runFuel noCalls 19 loopFunction (initState loopFunction [.int 64 x]) =
+        some (.ret (some (.int 64 (spec x))) mem) := by
   obtain ⟨mem, hmem, hrun⟩ := cond_run_aux 8 (entryState x)
     (x ^^^ c 3182967604875373612) 0 0 (by decide) (by decide) (maskPrefix_zero _).symm
     (entry_inv x)
-  refine ⟨mem, hmem, ?_⟩
-  simp only [run]
-  have hfuel : runFuel noCalls 10000 loopFunction (initState loopFunction [.int 64 x]) =
-      runFuel noCalls 9999 loopFunction (entryState x) := by
-    rw [runFuel, hstep]
-  rw [hfuel]
-  -- 9999 = 18 + 9981: returned at 18, remains under more fuel
-  have h18 : runFuel noCalls 18 loopFunction (entryState x) =
-      some (.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem) := by
-    simpa using hrun
-  have hmono : ∀ d, runFuel noCalls (18 + d) loopFunction (entryState x) =
-      some (.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem) := by
-    intro d
-    induction d with
-    | zero => simpa using h18
-    | succ d ih =>
-        rw [Nat.add_succ]
-        exact runFuel_ret_succ ih
-  rw [show 9999 = 18 + 9981 from by decide, hmono]
-  -- the value is the specification
-  rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+  refine ⟨mem, ?_, ?_⟩
+  · rw [loopFrame_eq]
+    exact hmem
+  · have hspec : maskPrefix (x ^^^ c 3182967604875373612) 8 = spec x := by
+      rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+    rw [runFuel, entry_run]
+    simpa [hspec] using hrun
+
+/-- The loop returns the lane-wise specification, and its memory holds nothing
+outside the band its allocations cover. -/
+theorem loop_returns_spec_frame (x : BitVec 64) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧ run noCalls loopFunction [.int 64 x] =
+      some (.ret (some (.int 64 (spec x))) mem) := by
+  obtain ⟨mem, hmem, hrun⟩ := loop_run_fuel x
+  exact ⟨mem, hmem, by simpa [run] using runFuel_mono_le (by decide : 19 ≤ 10000) hrun⟩
 
 /-- The loop returns the lane-wise specification. -/
 theorem loop_returns_spec (x : BitVec 64) :
@@ -700,19 +721,61 @@ theorem loop_returns_spec (x : BitVec 64) :
   obtain ⟨mem, _, hrun⟩ := loop_returns_spec_frame x
   exact ⟨mem, hrun⟩
 
-/-- The loop and the unrolled candidate differ only inside the loop's two
-locals: they return the same value and their memories agree outside
-`[1, 17)`. -/
+/-- Any behaviour of the loop on an `i64` argument is its full-prefix return:
+the run is deterministic, so a shorter budget that succeeds agrees with the
+budget the induction pins, and a `ub` outcome would contradict that return. -/
+theorem loop_beh_ret (x : BitVec 64) (o : Outcome)
+    (h : Beh noCalls loopFunction [.int 64 x] o) :
+    ∃ mem, o = .ret (some (.int 64 (spec x))) mem ∧ MemPrivate (loopFrame x) mem := by
+  obtain ⟨mem, hmem, h19⟩ := loop_run_fuel x
+  have key : ∀ {o' : Outcome},
+      (∃ n, runFuel noCalls n loopFunction (initState loopFunction [.int 64 x]) = some o') →
+        o' = .ret (some (.int 64 (spec x))) mem := by
+    intro o' ⟨n, hn⟩
+    rcases Nat.le_total n 19 with hle | hle
+    · have h1 := runFuel_mono_le hle hn
+      rw [h19] at h1
+      exact (Option.some.inj h1).symm
+    · have h1 := runFuel_mono_le hle h19
+      rw [h1] at hn
+      exact (Option.some.inj hn).symm
+  rcases h with ⟨n, hu⟩ | ⟨n, hr⟩
+  · have hc := key ⟨n, hu⟩
+    cases hc
+  · exact ⟨mem, key ⟨n, hr⟩, hmem⟩
+
+/-- The parsed loop instantiates the framed relation of `LeanLLVM/Frames.lean`
+against the unrolled candidate on every `i64` argument: the same returned value,
+and byte agreement outside the band the loop's two allocations cover. -/
+theorem loop_refines_candidate_within (x : BitVec 64) (o : Outcome)
+    (ho : Beh noCalls loopFunction [.int 64 x] o) :
+    ∃ o', Beh noCalls candidateFunction [.int 64 x] o' ∧
+      o.AgreesOutside (loopFrame x) o' := by
+  obtain ⟨memL, hoEq, hpriv⟩ := loop_beh_ret x o ho
+  subst hoEq
+  refine ⟨.ret (some (.int 64 (byteLoop x))) [], ?_, ?_⟩
+  · simpa using (candidate_beh_int noCalls x [] _).2 rfl
+  · refine ⟨by rw [byteLoop_eq_spec], ?_⟩
+    exact AgreesOutsideMem.mono
+      (AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False)))
+      (fun _ ha => by simpa using ha)
+
+/-- The observable form: both units return the specification, and their
+memories agree outside the band the loop's allocations cover.  The candidate
+leaves no memory at all, so its own footprint is empty. -/
 theorem loop_and_candidate_framed (x : BitVec 64) :
-    ∃ memL memC,
+    ∃ memL,
       Beh noCalls loopFunction [.int 64 x] (.ret (some (.int 64 (spec x))) memL) ∧
-      Beh noCalls candidateFunction [.int 64 x] (.ret (some (.int 64 (spec x))) memC) ∧
-      AgreesOutside ⟨[], memL, 0, ""⟩ ⟨[], memC, 0, ""⟩ (fun a => 1 ≤ a ∧ a < 17) := by
-  obtain ⟨memL, hmemL, hrunL⟩ := loop_returns_spec_frame x
+      Beh noCalls candidateFunction [.int 64 x] (.ret (some (.int 64 (spec x))) []) ∧
+      (Outcome.ret (some (.int 64 (spec x))) memL).AgreesOutside (loopFrame x)
+        (Outcome.ret (some (.int 64 (spec x))) []) := by
+  obtain ⟨memL, hmem, hrun⟩ := loop_returns_spec_frame x
   have hcand : Beh noCalls candidateFunction [.int 64 x]
       (.ret (some (.int 64 (spec x))) []) := by
     simpa [byteLoop_eq_spec] using (candidate_beh_int noCalls x [] _).2 rfl
-  exact ⟨memL, [], Or.inr ⟨10000, by simpa [run] using hrunL⟩, hcand,
-    agreesOutside_of_memOutside hmemL MemOutside.nil⟩
+  exact ⟨memL, Or.inr ⟨10000, hrun⟩, hcand,
+    ⟨rfl, AgreesOutsideMem.mono
+      (AgreesOutsideMem.of_private hmem (MemPrivate.nil (fun _ => False)))
+      (fun _ ha => by simpa using ha)⟩⟩
 
 end LeanLLVM.Vellum.CommaMaskLoop

@@ -10,7 +10,9 @@
 #   4. select the candidate, link and run;
 #   5. corrupt the manifest's candidate hash, select the baseline, link and run;
 #   6. strict mode rejects the stale candidate;
-#   7. mutate the candidate fixture: the proof no longer checks and selection
+#   7. the loop unit has no covering theorem: strict mode refuses it, and
+#      non-strict mode installs the baseline for the same request;
+#   8. mutate the candidate fixture: the proof no longer checks and selection
 #      falls back, then restore and confirm the proof checks again.
 set -euo pipefail
 
@@ -63,13 +65,30 @@ grep -v '^impl=' "$build/out_candidate.txt" > "$build/sem_candidate.txt"
 grep -v '^impl=' "$build/out_fallback.txt" > "$build/sem_baseline.txt"
 cmp "$build/sem_candidate.txt" "$build/sem_baseline.txt"
 
-echo "== the loop unit installs behind the same seam"
-UNIT=loop MANIFEST=$build/manifest.env OUT=$build/app_loop \
-  RECORD=$build/selection_loop.env "$here/select.sh" >/dev/null
-"$build/app_loop" > "$build/out_loop.txt"
-grep -q '^impl=3$' "$build/out_loop.txt"
-grep -q '^selected=loop$' "$build/selection_loop.env"
-grep -v '^impl=' "$build/out_loop.txt" > "$build/sem_loop.txt"
+echo "== the loop unit has no covering theorem and is refused"
+if UNIT=loop STRICT=1 MANIFEST=$build/manifest.env OUT=$build/app_loop \
+    RECORD=$build/selection_loop.env "$here/select.sh" >/dev/null 2>&1; then
+  echo "check: strict mode accepted the loop unit" >&2
+  exit 1
+fi
+if [ -e "$build/app_loop" ]; then
+  echo "check: a loop executable was emitted" >&2
+  exit 1
+fi
+if [ -f "$build/selection_loop.env" ] &&
+    grep -qx 'selected=loop' "$build/selection_loop.env"; then
+  echo "check: the selection record names the loop" >&2
+  exit 1
+fi
+echo "select: refused the loop unit"
+
+echo "== the same request without strict mode installs the baseline"
+UNIT=loop MANIFEST=$build/manifest.env OUT=$build/app_loop_fallback \
+  RECORD=$build/selection_loop_fallback.env "$here/select.sh" >/dev/null
+grep -q '^selected=baseline$' "$build/selection_loop_fallback.env"
+"$build/app_loop_fallback" > "$build/out_loop_fallback.txt"
+grep -q '^impl=1$' "$build/out_loop_fallback.txt"
+grep -v '^impl=' "$build/out_loop_fallback.txt" > "$build/sem_loop.txt"
 cmp "$build/sem_candidate.txt" "$build/sem_loop.txt"
 
 echo "== a mutated fixture invalidates the certificate"

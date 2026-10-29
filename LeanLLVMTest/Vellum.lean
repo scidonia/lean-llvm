@@ -144,26 +144,154 @@ open LeanLLVM.Vellum.CommaMaskLoop
   | some (.ret (some v) _) => v == LeanLLVM.Value.int 64 0x8080808080808080
   | _ => false
 
-/--
-info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec
+-- The loop leaves bytes only in the band its two allocations cover, and at
+-- least one: the accumulator and the counter are both written.
+#guard
+  match LeanLLVM.run LeanLLVM.noCalls loopFunction
+      [LeanLLVM.Value.int 64 0x2D2C] with
+  | some (.ret _ m) => !m.isEmpty && m.all (fun (a, _) => decide (1 ≤ a ∧ a < 17))
+  | _ => false
 
--- The framed statement: same returned value, memories agree outside the loop's
--- two locals.
+-- The loop's footprint is read off the allocator: two eight-byte locals from
+-- the reserved address one.  It is not the universal predicate, so agreement
+-- outside it says something about the returned memory.
+example (x : BitVec 64) : loopFrame x = LeanLLVM.Band 1 17 := loopFrame_eq x
+
+-- The two addresses the loop stores to are the locals its `alloca`s handed out,
+-- and both are inside the band.
+example (x : BitVec 64) : loopFrame x 1 ∧ loopFrame x 9 :=
+  loop_store_addresses_in_band x
+
+example (x : BitVec 64) : ¬ (∀ a, loopFrame x a) := by
+  intro h
+  have h0 : loopFrame x 0 := h 0
+  rw [loopFrame_eq] at h0
+  simp [LeanLLVM.Band] at h0
+
+-- The framed relation, applied to the loop and the unrolled comparator: the
+-- same returned value and byte agreement outside the loop's allocation band.
+example (x : BitVec 64) (o : LeanLLVM.Outcome) :
+    LeanLLVM.Beh LeanLLVM.noCalls loopFunction [LeanLLVM.Value.int 64 x] o →
+      ∃ o', LeanLLVM.Beh LeanLLVM.noCalls candidateFunction
+          [LeanLLVM.Value.int 64 x] o' ∧ o.AgreesOutside (loopFrame x) o' :=
+  loop_refines_candidate_within x o
+
 example (x : BitVec 64) :
-    ∃ memL memC,
+    ∃ memL,
       LeanLLVM.Beh LeanLLVM.noCalls loopFunction [LeanLLVM.Value.int 64 x]
         (.ret (some (LeanLLVM.Value.int 64 (spec x))) memL) ∧
       LeanLLVM.Beh LeanLLVM.noCalls candidateFunction [LeanLLVM.Value.int 64 x]
-        (.ret (some (LeanLLVM.Value.int 64 (spec x))) memC) ∧
-      LeanLLVM.AgreesOutside ⟨[], memL, 0, ""⟩ ⟨[], memC, 0, ""⟩
-        (fun a => 1 ≤ a ∧ a < 17) :=
+        (.ret (some (LeanLLVM.Value.int 64 (spec x))) []) ∧
+      (LeanLLVM.Outcome.ret (some (LeanLLVM.Value.int 64 (spec x))) memL).AgreesOutside
+        (loopFrame x)
+        (LeanLLVM.Outcome.ret (some (LeanLLVM.Value.int 64 (spec x))) []) :=
   loop_and_candidate_framed x
 
-/--
-info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_framed' depends on axioms: [propext, Classical.choice, Quot.sound]
--/
+-- Exact refinement yields framed refinement, so the existing theorems keep
+-- their meaning and the framed relation is the weaker statement beside them.
+example : ∀ calls, LeanLLVM.RefinesWithin calls candidateFunction baselineFunction
+    (fun a => 1 ≤ a ∧ a < 17) :=
+  fun calls => LeanLLVM.refinesWithin_of_refines (IR_refines calls)
+
+-- A unit that writes one byte through the null pointer — address `0`, outside
+-- the loop's band `[1, 17)` — and returns zero.  Its returned value matches the
+-- unit below; only the memory differs, which is what the framed relation must
+-- refuse to forget.  The model has no null check, so the store is defined and
+-- the byte is observable.
+def vandalFunction : LeanLLVM.Function :=
+  { name := "vandal", retTy := .int 64, params := [],
+    blocks := [
+      { name := "entry",
+        instrs := [.store (.int 8) (.imm (.int 8 1)) (.imm .null)],
+        term := .ret (.int 64) (some (.imm (.int 64 0))) }] }
+
+/-- The same returned value, no memory. -/
+def quietFunction : LeanLLVM.Function :=
+  { name := "quiet", retTy := .int 64, params := [],
+    blocks := [
+      { name := "entry", instrs := [],
+        term := .ret (.int 64) (some (.imm (.int 64 0))) }] }
+
+theorem vandal_beh :
+    LeanLLVM.Beh LeanLLVM.noCalls vandalFunction []
+      (.ret (some (.int 64 0))
+        (LeanLLVM.writeBytes [] 0 (LeanLLVM.natToBytes 1 1))) := by
+  refine Or.inr ⟨1, ?_⟩
+  simp [LeanLLVM.runFuel, LeanLLVM.step, vandalFunction, LeanLLVM.Function.findBlock,
+    LeanLLVM.findBlockList, LeanLLVM.denoteCode, LeanLLVM.evalInstr,
+    LeanLLVM.evalOperand, LeanLLVM.Const.toValue, LeanLLVM.storeValue,
+    LeanLLVM.execTerm, LeanLLVM.initState, LeanLLVM.Function.entry?]
+
+theorem quiet_run (n : Nat) (s : LeanLLVM.State) (hpc : s.pc = "entry") :
+    LeanLLVM.runFuel LeanLLVM.noCalls (n + 1) quietFunction s =
+      some (.ret (some (.int 64 0)) s.mem) := by
+  cases n <;>
+    simp [LeanLLVM.runFuel, LeanLLVM.step, quietFunction, LeanLLVM.Function.findBlock,
+      LeanLLVM.findBlockList, LeanLLVM.denoteCode, LeanLLVM.execTerm,
+      LeanLLVM.evalOperand, LeanLLVM.Const.toValue, hpc]
+
+theorem quiet_beh (o : LeanLLVM.Outcome)
+    (h : LeanLLVM.Beh LeanLLVM.noCalls quietFunction [] o) :
+    o = .ret (some (.int 64 0)) [] := by
+  rcases h with ⟨n, hu⟩ | ⟨n, hr⟩
+  · cases n with
+    | zero => simp [LeanLLVM.runFuel] at hu
+    | succ n =>
+        rw [quiet_run n (LeanLLVM.initState quietFunction []) rfl] at hu
+        cases hu
+  · cases n with
+    | zero => simp [LeanLLVM.runFuel] at hr
+    | succ n =>
+        rw [quiet_run n (LeanLLVM.initState quietFunction []) rfl] at hr
+        have := (Option.some.inj hr).symm
+        simpa [LeanLLVM.initState] using this
+
+-- The frame is load-bearing: an equal return value and a byte written outside
+-- the frame is not a framed refinement.
+theorem vandal_not_refinesWithin :
+    ¬ LeanLLVM.RefinesWithin LeanLLVM.noCalls vandalFunction quietFunction
+      (fun a => 1 ≤ a ∧ a < 17) := by
+  intro h
+  obtain ⟨o', hbeh, hag⟩ := h [] _ vandal_beh
+  have ho' := quiet_beh o' hbeh
+  subst ho'
+  obtain ⟨-, hmem⟩ := hag
+  have h0 : LeanLLVM.readByte (LeanLLVM.writeBytes [] 0 (LeanLLVM.natToBytes 1 1)) 0 =
+      LeanLLVM.readByte [] 0 := hmem 0 (by decide)
+  exact absurd h0 (by decide)
+
+/-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_run_fuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_run_fuel
+
+/-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec
+
+/-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_returns_spec_frame
+
+/-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_beh_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_beh_ret
+
+/-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+
+/-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_framed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.CommaMaskLoop.loop_and_candidate_framed
+
+/-- info: 'LeanLLVM.AgreesOutsideMem.of_private' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.AgreesOutsideMem.of_private
+
+/-- info: 'LeanLLVM.refinesWithin_of_refines' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.refinesWithin_of_refines
+
+/-- info: 'LeanLLVM.runFuel_outcome_unique' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.runFuel_outcome_unique

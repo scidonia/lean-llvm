@@ -9,6 +9,12 @@
 # `Baseline.lean` and `Candidate.lean` are still compiled, as provenance
 # objects: the differential transcript checks that each proved unit agrees with
 # the Lean-emitted body on the corpus.
+#
+# The loop fixture is built and compared too, and the parser pin in
+# `LeanLLVM/Vellum/CommaMaskLoop.lean` adds a correctness proof for it, but no
+# checked theorem binds the loop object to the seam's contract: `theorem=`
+# below covers the candidate and the baseline only, so `select.sh` refuses
+# `UNIT=loop` and the transcript records that.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -73,6 +79,8 @@ done
   echo "symbol: leanllvm_comma_mask8"
   echo "corpus: probes/install/diff.c"
   echo "bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate"
+  echo "covers: candidate-vs-baseline"
+  echo "not-covered: loop (no checked theorem for the loop body)"
   echo "baseline_sha256: $(sha256sum "$build/baseline.o" | cut -d' ' -f1)"
   echo "candidate_sha256: $(sha256sum "$build/candidate.o" | cut -d' ' -f1)"
   echo "loop_sha256: $(sha256sum "$build/loop.o" | cut -d' ' -f1)"

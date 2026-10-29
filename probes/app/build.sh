@@ -57,6 +57,8 @@ fi
   echo "kind: differential"
   echo "symbol: leanllvm_comma_mask8"
   echo "corpus: probes/install/diff.c"
+  echo "covers: candidate-vs-baseline"
+  echo "not-covered: loop (no checked theorem for the loop body)"
   echo "baseline_sha256: $(sha256sum "$build/baseline.o" | cut -d' ' -f1)"
   echo "candidate_sha256: $(sha256sum "$build/candidate.o" | cut -d' ' -f1)"
   echo "RESULT: PASS"

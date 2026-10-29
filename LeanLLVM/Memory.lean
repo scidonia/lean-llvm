@@ -101,6 +101,15 @@ theorem readByte_writeBytes_above (m : Mem) :
       rw [readByte_writeBytes_above (writeByte m start b) bs (by omega)]
       exact readByte_writeByte_other m b (by omega)
 
+/-- A write sequence does not disturb an address outside its range, on either
+side of it. -/
+theorem readByte_writeBytes_outside (m : Mem) (bs : List UInt8) {start addr : Nat}
+    (h : addr < start ∨ start + bs.length ≤ addr) :
+    readByte (writeBytes m start bs) addr = readByte m addr := by
+  rcases h with h | h
+  · exact readByte_writeBytes_below m bs h
+  · exact readByte_writeBytes_above m bs h
+
 /-! ### Byte sequences -/
 
 /-- The bytes written at `addr` are read back at `addr`. -/

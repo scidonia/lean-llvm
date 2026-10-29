@@ -212,6 +212,44 @@ The first work package is:
 
 The programme succeeds when independently authored implementations can enter a normal Lean build only through a checked semantic refinement gate. A faster parser, an LLVM interpreter or a collection of peephole theorems can support that outcome, but none alone constitutes it.
 
+## 11. Milestone status
+
+This section records where the repository stands against the gates above.  It
+does not change them: an item listed as open is unmet, and no milestone is
+accepted on the strength of a narrower result.
+
+- **M0 — met as integration evidence.** The probes build, select, install and
+  run, and inspection shows the selected body is the installed one
+  (`probes/install/`, `probes/app/`).
+- **M1 — partly met.** The modelled fragment has a step semantics, a parser that
+  refuses what it does not model, and differential tests against the pinned
+  toolchain.  Poison, provenance and underdefined values are not modelled, and
+  the semantics' agreement with LLVM remains an explicit obligation.
+- **M2 — open.** Refinement is exact (`Refines`) plus a framed relation
+  (`RefinesWithin`, `AgreesOutsideMem`, `AllocFrame` in
+  `LeanLLVM/Frames.lean`) that compares the returned value and the bytes outside
+  a footprint read off the allocator state.  Open: a general loop or recursion
+  rule — the loop's induction is a proof about its own fixture — memory-effectful
+  call environments, and a `replaceFunction_sound`-style module theorem for a
+  memory-using callee.  The contextual theorem covers one pure caller
+  (`LeanLLVM/Vellum/SeamContext.lean`).
+- **M3 — partly met; certificate-bound installation open.** The selector
+  (`probes/install/select.sh`) verifies hashes, fixture rebuilds and target
+  configuration, and accepts a unit only when the manifest's theorem covers that
+  unit.  The memory-backed loop is refused on exactly that ground: no checked
+  theorem covers it, and a differential transcript ending `RESULT: PASS` is
+  never treated as proof.  Open: a serialized proof artifact generated from
+  kernel checking, rejection tests that mutate that artifact, and a semantic
+  attribute policy richer than `attributes=reject` over attribute-free fixtures.
+- **M4 — open.** The loop is a hand-written fixture
+  (`probes/install/ir/loop.ll`), not Lean-emitted: `capture.sh` regenerates only
+  the baseline and candidate, so loop provenance is unproved.  The repository
+  has correctness and framed-memory theorems for the parsed fixture, no
+  memory-aware module theorem, and no benchmark record.  The M4 acceptance
+  conditions — a Lean-produced memory-using loop, a contextual installation
+  proof including memory effects, a checked certificate and benchmark
+  measurements — are therefore unmet.
+
 ## References and provenance
 
 - [Vellvm development structure](https://vellvm.github.io/vellvm/structure/) — semantics, refinement layers and open-control-flow reasoning; consulted in the preceding design discussion.

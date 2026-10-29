@@ -20,15 +20,22 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 | Syntax | Integer scalars, `ptr`, `void`; arithmetic, `icmp`, `select`, `trunc`/`zext`/`sext`, `alloca`, `load`, `store`; `br`, `condbr`, `ret`, `unreachable` | aggregates, floating point, vectors, `phi`, `call`, `getelementptr`, globals |
 | Front end | A line-oriented parser and a canonical printer for the modelled subset | bitcode, metadata, attributes, declarations with bodies |
 | Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency, calls |
-| Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing | relational/log relations, memory-transformation relations |
+| Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing. A framed relation (`RefinesWithin`, `LeanLLVM/Frames.lean`) compares the returned value and the bytes outside a footprint read off the allocator state | relational/log relations; memory-aware contextual replacement; a simulation rule for arbitrary loops |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
-| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | the same at the emitted-LLVM level; the object connection is the differential certificate in `probes/install/` |
+| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | the same at the emitted-LLVM level; the object connection is a runtime differential transcript, not a proof, and the memory-backed loop is refused by the selector |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
 
 Every pass is a theorem, not a test: the build fails if the refinement proof
 fails.  The executable checks in `LeanLLVMTest/` exercise the parser, the
 semantics, the pipeline on a concrete program, and the axiom footprint of the
 soundness theorems.
+
+The memory-backed loop is the current boundary of that claim.  It is a
+hand-written fixture, not Lean-emitted code; its correctness and framed-memory
+statements are proved for the parsed text; and the installer refuses it, because
+no checked theorem binds the loop object to the seam's contract.  There is no
+benchmark, and calls still have no memory effects, so no memory-aware module
+theorem is claimed.
 
 ## Build
 
@@ -97,6 +104,8 @@ conditional edge is gone, which is what the certified branch folder proves.
 | `LeanLLVM/Basic.lean` | types, literals, values, environments, byte memory |
 | `LeanLLVM/Syntax.lean` | instructions, terminators, blocks, functions, cheap well-formedness |
 | `LeanLLVM/Semantics.lean` | executable step semantics, `Outcome`, `Beh`, `Refines` |
+| `LeanLLVM/Memory.lean` | byte-access and round-trip facts |
+| `LeanLLVM/Frames.lean` | framed refinement: byte agreement outside an allocation-derived footprint |
 | `LeanLLVM/Parser.lean` | textual-IR parser for the modelled subset |
 | `LeanLLVM/Printer.lean` | canonical textual-IR printer |
 | `LeanLLVM/Transform/Basic.lean` | `Pass`, soundness, composition, pipeline |
