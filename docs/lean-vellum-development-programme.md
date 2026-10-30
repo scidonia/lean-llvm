@@ -234,15 +234,26 @@ accepted on the strength of a narrower result.
   beside them: `LeanLLVM/ITree/` interprets the same fuel semantics as
   interaction trees and defines a postcondition-indexed, directed simulation
   `eutt` — left is the target, right the source — with budget timeout, undefined
-  behaviour and silent divergence as distinct terminals, and proves it for the
-  comma-mask loop against its unrolled candidate at the loop's allocator-derived
-  frame.  That is a statement about that one pair, it installs nothing, and it
-  leaves the executable relation and the pass theorems unchanged.  Open:
-  adoption of the tree relation by `Refines`/`RefinesWithin`, a general loop or
-  recursion rule — the loop's induction is a proof about its own fixture —
-  memory-effectful call environments, and a `replaceFunction_sound`-style module
-  theorem for a memory-using callee.  The contextual theorem covers one pure
-  caller (`LeanLLVM/Vellum/SeamContext.lean`).
+  behaviour and silent divergence as distinct terminals, a visible load matching
+  only when the two memories give the same canonical response, and a proof for
+  the comma-mask loop against its unrolled candidate at the loop's
+  allocator-derived frame.  That is a statement about that one pair, it installs
+  nothing, and it leaves the executable relation and the pass theorems
+  unchanged.  One conditional bridge exists from the tree relation to the
+  executable side: `eutt_exec_some` eliminates the relation against a completed
+  target run, `eutt_runFuel_some` and `eutt_beh_inclusion` state the consequence
+  at explicit budgets on each side, `refinesWithin_of_eutt` and `refines_of_eutt`
+  are corollaries at the framed and exact posts, and `loop_candidate_beh_bridge`
+  is the single loop-pair behaviour statement.  The bridge is one-directional
+  (target to source), conditional on a tree relation being supplied for every
+  completed target run, and fixes budgets for the loop instance; it is not an
+  adoption of the relation by `Refines`/`RefinesWithin`, not a pass-soundness
+  result, and not a general loop rule.  Open: adoption of the tree relation by
+  `Refines`/`RefinesWithin`, discharging that hypothesis for arbitrary function
+  pairs, a general loop or recursion rule — the loop's induction is a proof about
+  its own fixture — memory-effectful call environments, and a
+  `replaceFunction_sound`-style module theorem for a memory-using callee.  The
+  contextual theorem covers one pure caller (`LeanLLVM/Vellum/SeamContext.lean`).
 - **M3 — partly met; certificate-bound installation open.** The selector
   (`probes/install/select.sh`) verifies hashes, fixture rebuilds and target
   configuration, and accepts a unit only when the manifest's theorem covers that
@@ -263,9 +274,10 @@ accepted on the strength of a narrower result.
   conditions — a loop certified from the Lean compilation chain, a contextual
   installation proof including memory effects, a checked certificate and
   benchmark measurements — are therefore unmet.  The tree relation proved for
-  the loop and its unrolled candidate (`LeanLLVM/ITree/LoopInstance.lean`) is a
-  fixture statement at fixed budgets: it installs nothing and relates no Lean
-  compiler output, so it is not progress on those conditions.
+  the loop and its unrolled candidate (`LeanLLVM/ITree/LoopInstance.lean`), and
+  the one behaviour corollary the bridge derives from it, are fixture statements
+  at fixed budgets: they install nothing and relate no Lean compiler output, so
+  they are not progress on those conditions.
 
 ## References and provenance
 
@@ -276,9 +288,11 @@ accepted on the strength of a narrower result.
 
 The architecture, milestones and acceptance gates above are proposed engineering
 decisions.  The status sections separate what this revision checks — the tree
-relation proved for the loop fixture and its unrolled candidate, with its
-theorem and its axiom pins — from what remains open: adoption by
-`Refines`/`RefinesWithin`, a general loop or recursion rule, memory-effectful
-call environments and a module theorem for a memory-using callee, a
-certificate-backed installation, benchmark records, and the remaining M4
-conditions.  Nothing here claims that those open items are met.
+relation proved for the loop fixture and its unrolled candidate, the conditional
+one-way bridge from that relation to the canonical resolution with its
+fixed-budget loop corollary, and their theorems and axiom pins — from what
+remains open: adoption by `Refines`/`RefinesWithin`, discharging the bridge's
+tree-relation hypothesis for arbitrary function pairs, a general loop or
+recursion rule, memory-effectful call environments and a module theorem for a
+memory-using callee, a certificate-backed installation, benchmark records, and
+the remaining M4 conditions.  Nothing here claims that those open items are met.

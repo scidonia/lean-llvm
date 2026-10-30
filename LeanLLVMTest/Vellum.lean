@@ -455,6 +455,148 @@ example : ¬ eutt checkFrame checkPostFalse (ITree.ret Outcome.ub, ([] : Mem))
 
 end EuttUbChecks
 
+/-! #### Visible loads use the memories' canonical response
+
+The load clause relates a visible load only when the two memories give the same
+canonical response.  The checks below share one detector, one event, one
+continuation and one frame, and differ only in the memories: equal defined
+bytes, two undefined loads, and a disagreeing pair.  Address `0` is outside the
+check frame, so the load stays visible instead of becoming a silent step.
+-/
+
+section EuttLoadChecks
+
+open LeanLLVM
+open LeanLLVM.ITree
+
+/-- The continuation of the load checks: the same returned value and an empty
+memory on both sides, so the postcondition is closed as soon as the event
+matches. -/
+abbrev loadK : Option Value → ITree.Tree Ev Outcome :=
+  fun _ => ITree.ret (Outcome.ret (some (.int 8 1)) [])
+
+/-- Address `0` lies outside the loop's band, so a load there is not silent. -/
+theorem load_address_outside : ¬ InFrame checkFrame 0 (.int 8) := by
+  intro hf
+  have h : Band 1 17 0 := by simpa [checkFrame, loopFrame_eq] using hf 0 (by decide)
+  simp [Band] at h
+
+/-- The positive check's two memories give the same canonical response. -/
+theorem load_value_equal :
+    loadValue [(0, 1)] (.int 8) 0 = loadValue [(0, 1), (5, 9)] (.int 8) 0 := by
+  decide
+
+/-- The affirmative control's two memories are both undefined at the address. -/
+theorem load_value_none :
+    loadValue ([] : Mem) (.int 8) 0 = loadValue [(5, 9)] (.int 8) 0 := by
+  decide
+
+/-- The negative check's two memories disagree about the byte at the address. -/
+theorem load_value_disagree :
+    loadValue [(0, 1)] (.int 8) 0 ≠ loadValue [(0, 2)] (.int 8) 0 := by
+  decide
+
+/-- Equal defined responses: the same visible load matches at two different
+memories, and the identical returns close the postcondition. -/
+example : eutt checkFrame checkPost
+    (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 1)] : Mem))
+    (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 1), (5, 9)] : Mem)) := by
+  refine (eutt_iff checkFrame checkPost _ _).mpr ?_
+  refine EuttF.vis_load 0 (.int 8) loadK loadK (SilentHead.refl _ _)
+    (SilentHead.refl _ _) load_value_equal (fun v => ?_)
+  exact (eutt_ret_ret_iff checkFrame checkPost _ _ _ _ _ _).mpr
+    (Outcome.agreesOutside_refl _ checkFrame)
+
+/-- Two undefined loads are admitted as well: the affirmative control for the
+negative below, under the same detector, event, continuation and frame. -/
+example : eutt checkFrame checkPost
+    (ITree.vis (Ev.load 0 (.int 8)) loadK, ([] : Mem))
+    (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(5, 9)] : Mem)) := by
+  refine (eutt_iff checkFrame checkPost _ _).mpr ?_
+  refine EuttF.vis_load 0 (.int 8) loadK loadK (SilentHead.refl _ _)
+    (SilentHead.refl _ _) load_value_none (fun v => ?_)
+  exact (eutt_ret_ret_iff checkFrame checkPost _ _ _ _ _ _).mpr
+    (Outcome.agreesOutside_refl _ checkFrame)
+
+/-- A disagreeing pair is refused by the same detector: the load is visible, so
+the load clause is the only one that can match, and its response equality fails
+on the two actual memories. -/
+example : ¬ eutt checkFrame checkPost
+    (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 1)] : Mem))
+    (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 2)] : Mem)) :=
+  not_eutt_load_of_disagree load_address_outside load_value_disagree
+
+end EuttLoadChecks
+
+/-! #### The bridge transports in the target-to-source direction
+
+Two checks on the bridge itself: the fixed-budget transport applied to the
+loop's completed run mentions the *matched* outcomes in its postcondition, and
+a postcondition that holds of no pair is not manufactured, so the matched-return
+disjunct is the postcondition's and not a silent success.
+-/
+
+section BridgeChecks
+
+open LeanLLVM
+open LeanLLVM.ITree
+
+/-- The bridge applied at the loop's own 19/10000 budgets: the loop's completed
+return is answered by the candidate, and the postcondition is stated of the two
+matched outcomes. -/
+example (x : BitVec 64) (mem : Mem)
+    (h19 : runFuel noCalls 19 loopFunction (initState loopFunction [.int 64 x]) =
+      some (.ret (some (.int 64 (spec x))) mem)) :
+    runFuel noCalls 10000 candidateFunction (initState candidateFunction [.int 64 x]) =
+        some .ub ∨
+      ∃ vT vS memT memS,
+        Outcome.ret (some (.int 64 (spec x))) mem = .ret vT memT ∧
+        runFuel noCalls 10000 candidateFunction (initState candidateFunction [.int 64 x]) =
+          some (.ret vS memS) ∧
+        (Outcome.ret vT memT).AgreesOutside (loopFrame x) (Outcome.ret vS memS) :=
+  eutt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+    loopFunction candidateFunction [.int 64 x] 19 10000
+    (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_eutt x) h19
+
+/-- The postcondition is not bypassed: with a post that holds of no pair, two
+defined returns are not related, so the bridge's matched-return disjunct cannot
+be made of an unrelated pair. -/
+example : ¬ eutt checkFrame (fun _ _ => False)
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) := by
+  intro h
+  exact (eutt_ret_ret_iff checkFrame (fun _ _ => False) _ _ _ _ _ _).mp h
+
+end BridgeChecks
+
+/-- info: 'LeanLLVM.ITree.eutt_exec_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_exec_some
+
+/-- info: 'LeanLLVM.ITree.eutt_runFuel_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_runFuel_some
+
+/-- info: 'LeanLLVM.ITree.eutt_beh_inclusion' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_beh_inclusion
+
+/-- info: 'LeanLLVM.ITree.refinesWithin_of_eutt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.refinesWithin_of_eutt
+
+/-- info: 'LeanLLVM.ITree.refines_of_eutt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.refines_of_eutt
+
+/-- info: 'LeanLLVM.ITree.not_eutt_load_of_disagree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_load_of_disagree
+
+/-- info: 'LeanLLVM.ITree.loop_candidate_beh_bridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.loop_candidate_beh_bridge
+
 /-- info: 'LeanLLVM.ITree.EuttF_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.ITree.EuttF_monotone

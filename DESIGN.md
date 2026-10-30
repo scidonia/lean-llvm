@@ -171,11 +171,38 @@ least-fixed-point principle.  The clauses are:
   silently reach `timeout`; a right silent divergence is related only to a left
   one;
 - the same visible event is related to itself, with the response threaded into
-  both continuations and stores advancing both memories.
+  both continuations and stores advancing both memories.  A visible load also
+  requires that the two memories give the same canonical response,
+  `loadValue m₁ ty addr = loadValue m₂ ty addr`: two equal defined values or two
+  undefined loads are related, and a defined answer on one side against an
+  undefined load on the other is not.
 
 The direction is part of the statement: left is the target, right the source.
 There is no symmetric relation; where symmetry is wanted it is the conjunction
 of the two directions, and no lemma is derived by assuming it.
+
+`LeanLLVM/ITree/Bridge.lean` connects the relation to the canonical resolution
+`Exec` of a tree against a memory.  `eutt_exec_some` eliminates the relation
+against a *completed* target run: if the target resolves to a defined outcome
+and the pair is related, the source either resolves to undefined behaviour or
+resolves to an actual return that `post` accepts.  The elimination is by
+induction on the target's finite resolution — the relation is unfolded one
+clause at a time, a `tau` is absorbed by the relation's own closure, and a
+visible event advances both sides to their continuations' states — so it consumes
+a finite derivation and never a coinductive hypothesis.  Two consequences are
+stated at explicit budgets, `eutt_runFuel_some` (one budget for the target, one
+for the source, a completed run on each) and `eutt_beh_inclusion` (quantified
+over each completed target budget, with a fresh source budget): a budget that
+exhausts is `timeout` and never a `Beh` result, so no finite budget silently
+stands for all of them.  `refinesWithin_of_eutt` and `refines_of_eutt` are
+corollaries at the framed and exact posts; they are not new definitions of the
+relations, and they do not hold without a tree relation for every completed
+target run.
+
+The transport is one-directional and conditional.  It says what an available
+tree relation implies about resolution, not that any particular pair has one,
+and it is not a pass-soundness result: no theorem in this development
+establishes `hsim` for an arbitrary function pair.
 
 `LeanLLVM/ITree/LoopInstance.lean` is the instance.  For every
 `x : BitVec 64`, `loop_candidate_eutt` relates the parsed comma-mask loop at its
@@ -188,11 +215,20 @@ it is not a loop rule, and it installs nothing.  A returned memory that differs
 at address `0`, outside the band, is rejected by the same postcondition
 (`LeanLLVMTest/Vellum.lean`).
 
+`loop_candidate_beh_bridge` is the one behaviour statement derived from the
+bridge for that pair: `runFuel_outcome_unique` pins every successful loop
+budget to the 19-step return, `eutt_runFuel_some` transports it to the candidate
+at budget 10000, and the result is a candidate behaviour agreeing outside the
+band.  It is scoped to `x : BitVec 64`, uses fixed budgets, and does not
+generalise to arbitrary argument lists or to other loops.
+
 What remains open is the adoption rather than the relation.  `Refines`,
 `RefinesWithin` and the pass theorems are unchanged, no pass or route reasons
 through `eutt`, and nothing restates the executable refinement relation in
-terms of it.  There is still no general loop or recursion rule, no
-memory-effectful call environment and no memory-aware module theorem.
+terms of it: `refinesWithin_of_eutt` and `refines_of_eutt` take a tree relation
+as a hypothesis and define neither relation.  There is still no general loop or
+recursion rule, no automatic discharge of that hypothesis, no memory-effectful
+call environment and no memory-aware module theorem.
 
 ## Pure seam refinement
 
@@ -311,7 +347,10 @@ canonical IR, checked with `llvm-as` in the verification runs.
    allocator-derived band are in `LeanLLVM/Frames.lean`.  `LeanLLVM/ITree/`
    adds a parallel statement at the same memory model: a directed,
    postcondition-indexed simulation over interaction trees, with one proved
-   loop/candidate instance.  Restating the executable relation through it, and
+   loop/candidate instance and a conditional one-way bridge from the relation to
+   the canonical resolution (and one behaviour corollary for that pair).
+   Restating the executable relation through it — the bridge is conditional on a
+   tree relation the development does not supply for arbitrary pairs — and
    giving it a general loop or recursion rule, is open.  A Lean-produced,
    memory-using loop, a memory-aware call environment and a module theorem
    remain open.

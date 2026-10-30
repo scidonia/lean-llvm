@@ -21,7 +21,11 @@ silent steps on either side, matching terminals are related.
   that does not reach `timeout` through silent steps;
 * a right silent divergence requires a left silent divergence;
 * the same visible event matches, with the response threaded into the
-  continuations and stores advancing both memories.
+  continuations and stores advancing both memories.  A visible load matches
+  only when the two memories give the same canonical response
+  (`loadValue m₁ ty addr = loadValue m₂ ty addr`): two equal defined values or
+  two undefined loads, never a defined answer on one side against an undefined
+  load on the other.
 
 The left tree is the target and the right tree the source.  There is no
 symmetric equivalence: symmetry, where wanted, is the conjunction of the two
@@ -470,11 +474,14 @@ inductive EuttF (frame : Nat → Prop) (post : Outcome → Outcome → Prop)
   /-- Right silent divergence requires left silent divergence. -/
   | right_diverges {p q : TS} (hdiv2 : SilentDiverges frame q)
       (hdiv1 : SilentDiverges frame p) : EuttF frame post sim p q
-  /-- The same load value matches; the response is threaded. -/
+  /-- The same load matches when the two memories define the same canonical
+  response — the same value, or both undefined — and the response is threaded
+  into both continuations from each side's own memory. -/
   | vis_load {p q : TS} (addr : Nat) (ty : Ty) {m₁ m₂ : Mem}
       (k1 k2 : Option Value → ITree Ev Outcome)
       (h1 : SilentHead frame p (ITree.vis (Ev.load addr ty) k1, m₁))
       (h2 : SilentHead frame q (ITree.vis (Ev.load addr ty) k2, m₂))
+      (hm : loadValue m₁ ty addr = loadValue m₂ ty addr)
       (hs : ∀ v, sim (k1 v, m₁) (k2 v, m₂)) : EuttF frame post sim p q
   /-- The same store matches and advances both memories. -/
   | vis_store {p q : TS} (addr : Nat) (ty : Ty) (v : Value) {m₁ m₂ : Mem}
@@ -501,8 +508,8 @@ theorem EuttF_monotone {frame post} {sim sim' : TS → TS → Prop}
   | timeout k1 k2 h1 h2 => exact EuttF.timeout k1 k2 h1 h2
   | left_diverges hdiv hnt => exact EuttF.left_diverges hdiv hnt
   | right_diverges h2 h1 => exact EuttF.right_diverges h2 h1
-  | vis_load addr ty k1 k2 h1 h2 hs =>
-      exact EuttF.vis_load addr ty k1 k2 h1 h2 (fun v => h _ _ (hs v))
+  | vis_load addr ty k1 k2 h1 h2 hm hs =>
+      exact EuttF.vis_load addr ty k1 k2 h1 h2 hm (fun v => h _ _ (hs v))
   | vis_store addr ty v k1 k2 h1 h2 hs =>
       exact EuttF.vis_store addr ty v k1 k2 h1 h2 (h _ _ hs)
   | vis_call callee args k1 k2 h1 h2 hs =>
@@ -633,7 +640,7 @@ theorem eutt_ret_ret_iff (frame) (post) (v v' : Option Value) (mem mem' : Mem)
           (Prod.mk.inj (SilentHead_ret_self h1)).1).elim
     | left_diverges hdiv hnt => exact (not_silentDiverges_ret hdiv).elim
     | right_diverges hdiv2 hdiv1 => exact (not_silentDiverges_ret hdiv2).elim
-    | vis_load addr ty k1 k2 h1 h2 hs =>
+    | vis_load addr ty k1 k2 h1 h2 _ hs =>
         exact ((ITree.ret_ne_vis (Ev.load addr ty) k1).symm
           (Prod.mk.inj (SilentHead_ret_self h1)).1).elim
     | vis_store addr ty v k1 k2 h1 h2 hs =>
@@ -664,8 +671,8 @@ theorem eutt_silentHead_left {frame post} {p p' q : TS}
         exact EuttF.left_diverges (SilentDiverges.of_silentHead hr' hdiv) hnt
     | right_diverges hdiv2 hdiv1 =>
         exact EuttF.right_diverges hdiv2 (SilentDiverges.of_silentHead hr' hdiv1)
-    | vis_load addr ty k1 k2 h1 h2 hs =>
-        exact EuttF.vis_load addr ty k1 k2 (SilentHead.trans hr' h1) h2
+    | vis_load addr ty k1 k2 h1 h2 hm hs =>
+        exact EuttF.vis_load addr ty k1 k2 (SilentHead.trans hr' h1) h2 hm
           (fun v => ⟨_, SilentHead.refl _ _, hs v⟩)
     | vis_store addr ty v k1 k2 h1 h2 hs =>
         exact EuttF.vis_store addr ty v k1 k2 (SilentHead.trans hr' h1) h2
@@ -691,8 +698,8 @@ theorem eutt_silentHead_right {frame post} {p q q' : TS}
         exact EuttF.left_diverges hdiv (not_timeoutReachable_of_silentHead hs' hnt)
     | right_diverges hdiv2 hdiv1 =>
         exact EuttF.right_diverges (SilentDiverges.of_silentHead hs' hdiv2) hdiv1
-    | vis_load addr ty k1 k2 h1 h2 hs =>
-        exact EuttF.vis_load addr ty k1 k2 h1 (SilentHead.trans hs' h2)
+    | vis_load addr ty k1 k2 h1 h2 hm hs =>
+        exact EuttF.vis_load addr ty k1 k2 h1 (SilentHead.trans hs' h2) hm
           (fun v => ⟨_, SilentHead.refl _ _, hs v⟩)
     | vis_store addr ty v k1 k2 h1 h2 hs =>
         exact EuttF.vis_store addr ty v k1 k2 h1 (SilentHead.trans hs' h2)
@@ -794,7 +801,7 @@ theorem not_eutt_ub_terminal_ret (frame) (post) {p : TS} (hp : UbTerminal p)
       | ret m' => exact not_silentDiverges_ret hdiv
       | vis k m' => exact not_silentDiverges_ub hdiv
   | right_diverges hdiv2 hdiv1 => exact not_silentDiverges_ret hdiv2
-  | vis_load addr ty k1 k2 h1 h2 hs =>
+  | vis_load addr ty k1 k2 h1 h2 _ hs =>
       cases hp with
       | ret m' =>
           exact (ITree.ret_ne_vis (Ev.load addr ty) k1).symm
@@ -847,7 +854,7 @@ theorem not_eutt_ret_timeout (frame) (post) (o : Outcome) (m m' : Mem)
         (Prod.mk.inj (SilentHead_ret_self h1)).1
   | left_diverges hdiv hnt => exact not_silentDiverges_ret hdiv
   | right_diverges hdiv2 hdiv1 => exact not_silentDiverges_timeout hdiv2
-  | vis_load addr ty k1 k2 h1 h2 hs =>
+  | vis_load addr ty k1 k2 h1 h2 _ hs =>
       exact (vis_timeout_ne_load k addr ty k2).symm
         (Prod.mk.inj (SilentHead_timeout_self h2)).1
   | vis_store addr ty v k1 k2 h1 h2 hs =>
@@ -874,7 +881,7 @@ theorem not_eutt_timeout_ret (frame) (post) (o : Outcome) (m m' : Mem)
         (Prod.mk.inj (SilentHead_ret_self h2)).1
   | left_diverges hdiv hnt => exact not_silentDiverges_timeout hdiv
   | right_diverges hdiv2 hdiv1 => exact not_silentDiverges_ret hdiv2
-  | vis_load addr ty k1 k2 h1 h2 hs =>
+  | vis_load addr ty k1 k2 h1 h2 _ hs =>
       exact (vis_timeout_ne_load k addr ty k1).symm
         (Prod.mk.inj (SilentHead_timeout_self h1)).1
   | vis_store addr ty v k1 k2 h1 h2 hs =>
@@ -900,7 +907,7 @@ theorem not_eutt_timeout_ub (frame) (post)
       exact ub_ne_timeout ((ITree.vis_inj (Prod.mk.inj (SilentHead_ub_self h2)).1).1).symm
   | left_diverges hdiv hnt => exact not_silentDiverges_timeout hdiv
   | right_diverges hdiv2 hdiv1 => exact not_silentDiverges_ub hdiv2
-  | vis_load addr ty k1 k2 h1 h2 hs =>
+  | vis_load addr ty k1 k2 h1 h2 _ hs =>
       exact (vis_timeout_ne_load k addr ty k1).symm
         (Prod.mk.inj (SilentHead_timeout_self h1)).1
   | vis_store addr ty v k1 k2 h1 h2 hs =>
@@ -925,7 +932,7 @@ theorem not_eutt_ub_timeout (frame) (post)
       exact ub_ne_timeout ((ITree.vis_inj (Prod.mk.inj (SilentHead_ub_self h1)).1).1).symm
   | left_diverges hdiv hnt => exact not_silentDiverges_ub hdiv
   | right_diverges hdiv2 hdiv1 => exact not_silentDiverges_timeout hdiv2
-  | vis_load addr ty k1 k2 h1 h2 hs =>
+  | vis_load addr ty k1 k2 h1 h2 _ hs =>
       exact (vis_ub_ne_load k addr ty k1).symm
         (Prod.mk.inj (SilentHead_ub_self h1)).1
   | vis_store addr ty v k1 k2 h1 h2 hs =>
@@ -953,7 +960,7 @@ theorem not_eutt_ret_diverges (frame) (post) (o : Outcome) (m m' : Mem) :
           exact (ITree.tau_ne_vis Ev.timeout k2).symm hvis)
   | left_diverges hdiv hnt => exact not_silentDiverges_ret hdiv
   | right_diverges hdiv2 hdiv1 => exact not_silentDiverges_ret hdiv1
-  | vis_load addr ty k1 k2 h1 h2 hs =>
+  | vis_load addr ty k1 k2 h1 h2 _ hs =>
       exact absurd (Prod.mk.inj (SilentHead_infTau_self h2)).1
         (fun hvis => by
           rw [ITree.infTau_eq] at hvis

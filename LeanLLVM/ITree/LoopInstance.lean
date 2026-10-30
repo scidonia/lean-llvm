@@ -10,6 +10,7 @@ This is one instance, not a general loop rule: the proof walks the loop's own
 blocks and the candidate's single block, and installs nothing.
 -/
 import LeanLLVM.ITree.Eutt
+import LeanLLVM.ITree.Bridge
 import LeanLLVM.Vellum.CommaMaskLoop
 
 namespace LeanLLVM.ITree
@@ -534,3 +535,25 @@ theorem outcome_address_zero_rejected (x : BitVec 64) (v : Option Value) :
     ¬ (Outcome.ret v [(0, 1)]).AgreesOutside (loopFrame x) (Outcome.ret v []) := by
   intro h
   exact address_zero_rejected x h.2
+
+/-- Every observable behaviour of the parsed loop on an `i64` argument is
+matched by the unrolled candidate's behaviour, through the tree relation at the
+loop's own budgets: the run's outcome is pinned by budget determinism, the
+fixed 19/10000 tree relation transports it, and the postcondition hands back a
+candidate behaviour agreeing outside the loop's band. -/
+theorem loop_candidate_beh_bridge (x : BitVec 64) (o : Outcome)
+    (ho : Beh noCalls loopFunction [.int 64 x] o) :
+    ∃ o', Beh noCalls candidateFunction [.int 64 x] o' ∧
+      o.AgreesOutside (loopFrame x) o' := by
+  obtain ⟨mem, _, h19⟩ := loop_run_fuel x
+  have ho' : o = Outcome.ret (some (.int 64 (spec x))) mem := by
+    rcases ho with ⟨n, hn⟩ | ⟨n, hn⟩
+    · exact absurd (runFuel_outcome_unique hn h19) (by intro h; nomatch h)
+    · exact runFuel_outcome_unique hn h19
+  subst ho'
+  rcases eutt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+      loopFunction candidateFunction [.int 64 x] 19 10000
+      (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_eutt x) h19 with
+    hub | ⟨vT, vS, memT, memS, hEq, hrS, hpost⟩
+  · exact ⟨_, Or.inl ⟨10000, hub⟩, Outcome.agreesOutside_refl _ (loopFrame x)⟩
+  · exact ⟨Outcome.ret vS memS, Or.inr ⟨10000, hrS⟩, by rw [hEq]; exact hpost⟩

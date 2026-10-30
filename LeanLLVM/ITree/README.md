@@ -21,7 +21,8 @@ Every other module, here and in `LeanLLVM/`, reaches mathlib only through that
 adapter.  `Internal/Basic.lean` defines the coinductive tree; `Internal/Paco.lean`
 is the vendored parameterised-fixpoint layer; `Core.lean` is the public
 constructor/observer surface; `Interpret.lean` interprets `LeanLLVM`'s fuel
-semantics; `Eutt.lean` is the relation.
+semantics; `Eutt.lean` is the relation; `Bridge.lean` takes that relation to the
+canonical resolution.
 
 ## Modules
 
@@ -34,7 +35,7 @@ semantics; `Eutt.lean` is the relation.
   resolution relation `Exec` with the forward theorem `exec_runT`: every
   `runFuel` outcome is a leaf of the tree.  `ub` and `timeout` are distinct:
   `ub` is a completed semantic outcome, `timeout` a finite-budget artifact.
-* `Eutt.lean` — the directed relation.  Left is the target, right the source.
+  `Eutt.lean` — the directed relation.  Left is the target, right the source.
   `SilentStep` is a `tau`, a defined in-frame load, or an in-frame store; for a
   load the memory must define the value, while a store's event is private as
   soon as its span is in the frame.  `SilentHead` is its inductive
@@ -45,7 +46,10 @@ semantics; `Eutt.lean` is the relation.
   silent divergence as the bottom against a right side that cannot silently
   reach `timeout`; a right silent divergence only to a left one; and the same
   visible event with its response threaded into the continuations (stores
-  advance both memories).
+  advance both memories).  A visible load also requires that the two memories
+  give the same canonical response, `loadValue m₁ ty addr = loadValue m₂ ty
+  addr`: two equal values or two undefined loads are related, a defined answer
+  against an undefined load is not.
 
   A UB terminal is either a `ret` leaf carrying `Outcome.ub` or a `vis Ev.ub`
   node (`UbTerminal`), and `ReachesUb` is the silent closure to one.  The two
@@ -61,6 +65,20 @@ semantics; `Eutt.lean` is the relation.
   is Paco's `plfp_init` together with Park induction.  The finite-stutter
   lemmas, return inversion and the terminal mismatch rules are the rest of the
   public surface.
+* `Bridge.lean` — the executable side of the relation.  `Exec_inv` and the
+  shape-specific inversions read a canonical resolution's constructor off the
+  tree, `Exec.silentStep`/`Exec.silentHead` commute a resolution through silent
+  steps, and `eutt_exec_some` is the elimination: a *completed* target run
+  (`some` outcome) is answered by the source either with undefined behaviour or
+  with an actual return the postcondition accepts.  The budget-explicit
+  `eutt_runFuel_some` and the quantified `eutt_beh_inclusion` specialise it to
+  `runFuel` and `Beh`, with a separate budget on each side, and
+  `refinesWithin_of_eutt`/`refines_of_eutt` are corollaries at the framed and
+  exact posts.  This transport is one-directional, from target to source, and
+  conditional on a tree relation being available for every completed target
+  run; the module installs nothing and defines no relation of its own.
+  `not_eutt_load_of_disagree` is the negative side of the load clause: a visible
+  load whose two memories disagree is refused.
 * `LoopInstance.lean` — the repository's concrete fixture: for every
   `x : BitVec 64`, the parsed loop as left target is related to the unrolled
   candidate as right source by
@@ -70,7 +88,12 @@ semantics; `Eutt.lean` is the relation.
   own allocations cover.  The proof walks the loop's own blocks and the
   candidate's single block; it is not a general loop rule, and the module
   installs nothing.  A returned memory that differs at address `0` is rejected
-  by the same postcondition.
+  by the same postcondition.  `loop_candidate_beh_bridge` is the one behaviour
+  statement derived from the bridge for this pair: budget uniqueness pins the
+  loop's outcome to its 19-step return, the fixed 19/10000 tree relation
+  transports it, and the result is a candidate behaviour agreeing outside the
+  band.  It covers `x : BitVec 64` only and says nothing about arbitrary
+  argument lists or other loops.
 
 ## Provenance and deviations
 
