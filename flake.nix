@@ -18,24 +18,32 @@
       devShells = forAllSystems (
         pkgs:
         let
-          # Lean `v4.35.0-rc3`, the toolchain the Scidonia Lean work targets.
+          # Lean `v4.36.0-rc1`, the toolchain the Scidonia Lean work targets.
           # The source is fetched rather than resolved by `elan` so that a
           # build needs no network access.
+          # 4.36 links cadical into the runtime; point CMake at the packaged
+          # build instead of letting it clone from the network in the sandbox.
+          cadical = pkgs.cadical.override { version = "2.1.3"; };
           lean4 = pkgs.lean4.overrideAttrs (prev: {
-            version = "4.35.0-rc3";
+            version = "4.36.0-rc1";
             src = pkgs.fetchFromGitHub {
               owner = "leanprover";
               repo = "lean4";
-              tag = "v4.35.0-rc3";
-              hash = "sha256-gVqvQ9fdyCFxMiplNl5fQsw3uc3fPrkO2N3RymVAi7Y=";
+              tag = "v4.36.0-rc1";
+              hash = "sha256-IWQV0m4I9qhREhWCWtnyMtAE5HgRezcSOy+YSr2GxoU=";
             };
             # The tag's own `LEAN_SPECIAL_VERSION_DESC` is empty; the RC tarball
-            # was built with `rc3`, and the string is part of the `.olean`
+            # was built with `rc1`, and the string is part of the `.olean`
             # format, so every stage must agree on it.
-            cmakeFlags = prev.cmakeFlags ++ [ "-DLEAN_SPECIAL_VERSION_DESC=rc3" ];
-            # 4.35's CMakeLists declares `lean4lean`, `nanoda` and `con-leche`
-            # as `EXCLUDE_FROM_ALL` external projects; CMake still probes for
-            # the download tool during configure.
+            cmakeFlags = prev.cmakeFlags ++ [
+              "-DLEAN_SPECIAL_VERSION_DESC=rc1"
+              "-DCADICAL=${cadical}/bin/cadical"
+              "-DCADICAL_LIB=${cadical.lib}/lib/libcadical.a"
+              "-DCADICAL_INCLUDE_DIR=${cadical.dev}/include"
+            ];
+            # 4.36's CMakeLists declares `lean4lean`, `nanoda`, `con-leche` and
+            # `con-ron` as `EXCLUDE_FROM_ALL` external projects; CMake still
+            # probes for the download tool during configure.
             nativeBuildInputs = prev.nativeBuildInputs ++ [ pkgs.gitMinimal ];
           });
           llvm = pkgs.llvmPackages;

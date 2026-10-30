@@ -230,11 +230,19 @@ accepted on the strength of a narrower result.
 - **M2 — open.** Refinement is exact (`Refines`) plus a framed relation
   (`RefinesWithin`, `AgreesOutsideMem`, `AllocFrame` in
   `LeanLLVM/Frames.lean`) that compares the returned value and the bytes outside
-  a footprint read off the allocator state.  Open: a general loop or recursion
-  rule — the loop's induction is a proof about its own fixture — memory-effectful
-  call environments, and a `replaceFunction_sound`-style module theorem for a
-  memory-using callee.  The contextual theorem covers one pure caller
-  (`LeanLLVM/Vellum/SeamContext.lean`).
+  a footprint read off the allocator state.  A second, finer statement stands
+  beside them: `LeanLLVM/ITree/` interprets the same fuel semantics as
+  interaction trees and defines a postcondition-indexed, directed simulation
+  `eutt` — left is the target, right the source — with budget timeout, undefined
+  behaviour and silent divergence as distinct terminals, and proves it for the
+  comma-mask loop against its unrolled candidate at the loop's allocator-derived
+  frame.  That is a statement about that one pair, it installs nothing, and it
+  leaves the executable relation and the pass theorems unchanged.  Open:
+  adoption of the tree relation by `Refines`/`RefinesWithin`, a general loop or
+  recursion rule — the loop's induction is a proof about its own fixture —
+  memory-effectful call environments, and a `replaceFunction_sound`-style module
+  theorem for a memory-using callee.  The contextual theorem covers one pure
+  caller (`LeanLLVM/Vellum/SeamContext.lean`).
 - **M3 — partly met; certificate-bound installation open.** The selector
   (`probes/install/select.sh`) verifies hashes, fixture rebuilds and target
   configuration, and accepts a unit only when the manifest's theorem covers that
@@ -254,7 +262,10 @@ accepted on the strength of a narrower result.
   memory-aware module theorem and no benchmark record.  The M4 acceptance
   conditions — a loop certified from the Lean compilation chain, a contextual
   installation proof including memory effects, a checked certificate and
-  benchmark measurements — are therefore unmet.
+  benchmark measurements — are therefore unmet.  The tree relation proved for
+  the loop and its unrolled candidate (`LeanLLVM/ITree/LoopInstance.lean`) is a
+  fixture statement at fixed budgets: it installs nothing and relates no Lean
+  compiler output, so it is not progress on those conditions.
 
 ## References and provenance
 
@@ -263,4 +274,11 @@ accepted on the strength of a narrower result.
 - [LLVM language reference](https://llvm.org/docs/LangRef.html) — resolve to the pinned toolchain version during M0.
 - `simd-recogniser-options.md` — supplied design note defining Options A–E. Its repository observations are input claims, not independently reproduced by this programme document.
 
-The architecture, milestones and acceptance gates above are proposed engineering decisions. They do not assert that the framework or its required theorems already exist.
+The architecture, milestones and acceptance gates above are proposed engineering
+decisions.  The status sections separate what this revision checks — the tree
+relation proved for the loop fixture and its unrolled candidate, with its
+theorem and its axiom pins — from what remains open: adoption by
+`Refines`/`RefinesWithin`, a general loop or recursion rule, memory-effectful
+call environments and a module theorem for a memory-using callee, a
+certificate-backed installation, benchmark records, and the remaining M4
+conditions.  Nothing here claims that those open items are met.

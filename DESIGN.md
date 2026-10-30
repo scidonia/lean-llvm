@@ -109,6 +109,91 @@ have no memory effects, and there is no simulation rule for an arbitrary loop;
 the loop's induction is proved for that fixture.  Both are open obligations of
 the programme rather than consequences of this relation.
 
+## Interaction trees and a directed simulation
+
+`Refines` and `RefinesWithin` are statements about outcomes, with different
+matching rules.  `Refines` requires that every outcome the target can produce be
+admitted by the source: the source produces that same outcome — the same value
+and the same memory — or the source can reach `ub`, which `Beh` makes admit
+every outcome.  `RefinesWithin` compares the matched outcome with
+`Outcome.AgreesOutside` instead: a target `ub` only with a source `ub`, and a
+target return only with a source return of the same value whose memory agrees
+outside the footprint; a source that reaches `ub` again admits every outcome.
+Both say nothing about the order in which two programs touch memory, and a
+target run that produces no outcome contributes nothing to compare.
+`LeanLLVM/ITree/` interprets the same fuel semantics as a tree and compares two
+trees directly.
+
+The carrier is mathlib's coinductive polynomial functor `PFunctor.M`, reached
+through one adapter module (`LeanLLVM/ITree/Internal/PFunctor.lean`); the rest
+of the development, including the semantics clients, names trees through
+`LeanLLVM.ITree.Core` and never mentions `PFunctor.M`, `MIntl` or `CofixA`.
+`runT` interprets a function at a fuel budget: ordinary instruction evaluation
+is still the semantics' own, memory accesses become `load`/`store` events, a
+call becomes a `call` event, and the two fuel outcomes become distinct stuck
+nodes — `Ev.ub` (undefined behaviour, a completed outcome) and `Ev.timeout` (an
+exhausted budget, which `Beh` never observes).  `Exec` is the canonical
+resolution of a tree against the responses the machine itself gives, and
+`exec_runT` shows that every `runFuel` outcome is a leaf of the tree under that
+resolution.
+
+A state is a tree paired with the memory its events read and write.  Its
+*silent* step is a `tau`, or a `load`/`store` whose whole byte span lies in a
+frame parameter; calls, out-of-frame accesses, an undefined load, `ub` and
+`timeout` are not silent.  `SilentHead` is the reflexive-transitive closure of
+that step — finitely many silent steps — while `SilentDiverges` is the greatest
+fixed point of the same step, so divergence is a coinductive statement and does
+not follow from a budget.
+
+```lean
+def eutt (frame : Nat → Prop) (post : Outcome → Outcome → Prop) : TS → TS → Prop :=
+  plfp (EuttF frame post) ...
+```
+
+`EuttF frame post sim` is the one-step functional: it relates, after finitely
+many silent steps on both sides, matching terminals.  `eutt` is Paco's
+parameterised least fixed point of it over the reverse-implication order on
+propositions, where that fixed point is the greatest one; `eutt_unfold` is
+`plfp_unfold` and `eutt.coind` is `plfp_init` together with the
+least-fixed-point principle.  The clauses are:
+
+- a left and a right `ret` leaf carrying defined outcomes are related when
+  `post` holds of the two outcomes, memories included — `post` is never applied
+  to `ub`, and `Outcome.AgreesOutside` is the postcondition the loop instance
+  uses;
+- `timeout` is related to `timeout` only, including when the other side is `ub`
+  or divergent;
+- a UB terminal is a `ret` leaf carrying `Outcome.ub` or a `vis Ev.ub` node, and
+  the two shapes are one class: a left UB terminal requires a right one, while a
+  right UB terminal admits any completed left return, defined or `ub`, without
+  consulting `post`;
+- a left silent divergence is the bottom against any right state that cannot
+  silently reach `timeout`; a right silent divergence is related only to a left
+  one;
+- the same visible event is related to itself, with the response threaded into
+  both continuations and stores advancing both memories.
+
+The direction is part of the statement: left is the target, right the source.
+There is no symmetric relation; where symmetry is wanted it is the conjunction
+of the two directions, and no lemma is derived by assuming it.
+
+`LeanLLVM/ITree/LoopInstance.lean` is the instance.  For every
+`x : BitVec 64`, `loop_candidate_eutt` relates the parsed comma-mask loop at its
+fuel budget of 19 to the unrolled candidate at fuel 10000, with
+`Outcome.AgreesOutside (loopFrame x)` as the leaf postcondition.  Both sides are
+first walked to their actual returns by finite silent closure, so neither budget
+reaches `timeout`, and the postcondition is closed by the allocator-derived
+band.  The theorem walks that loop's blocks and that candidate's single block:
+it is not a loop rule, and it installs nothing.  A returned memory that differs
+at address `0`, outside the band, is rejected by the same postcondition
+(`LeanLLVMTest/Vellum.lean`).
+
+What remains open is the adoption rather than the relation.  `Refines`,
+`RefinesWithin` and the pass theorems are unchanged, no pass or route reasons
+through `eutt`, and nothing restates the executable refinement relation in
+terms of it.  There is still no general loop or recursion rule, no
+memory-effectful call environment and no memory-aware module theorem.
+
 ## Pure seam refinement
 
 `LeanLLVM/Vellum/` carries the first boundary contract at the type the seam
@@ -223,7 +308,11 @@ canonical IR, checked with `llvm-as` in the verification runs.
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing
    are in `LeanLLVM/Memory.lean`; the footprint-parameterized relation and the
-   allocator-derived band are in `LeanLLVM/Frames.lean`.  A Lean-produced,
+   allocator-derived band are in `LeanLLVM/Frames.lean`.  `LeanLLVM/ITree/`
+   adds a parallel statement at the same memory model: a directed,
+   postcondition-indexed simulation over interaction trees, with one proved
+   loop/candidate instance.  Restating the executable relation through it, and
+   giving it a general loop or recursion rule, is open.  A Lean-produced,
    memory-using loop, a memory-aware call environment and a module theorem
    remain open.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite

@@ -1,11 +1,22 @@
 name = "LeanLLVM"
 version = "0.1.0"
-defaultTargets = ["leanllvm"]
+defaultTargets = ["leanllvm", "LeanLLVM.ITree"]
 
-# No external package dependency: the development rests on Lean's own kernel
-# and core library only, so a build needs no network access.
+# The interaction-tree layer is proved against mathlib's QPF support; the
+# revision is pinned so a build resolves the same sources everywhere.  Every
+# other module reaches mathlib only through `LeanLLVM.ITree.Internal.PFunctor`.
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "3dfb8e22b67042b31fac228dee0e1169a1a7820f"
+
 [[lean_lib]]
 name = "LeanLLVM"
+
+[[lean_lib]]
+name = "LeanLLVM.ITree"
+roots = ["LeanLLVM.ITree"]
+globs = ["LeanLLVM.ITree.*"]
 
 [[lean_lib]]
 name = "LeanLLVMTest"

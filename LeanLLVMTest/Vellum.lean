@@ -295,3 +295,242 @@ theorem vandal_not_refinesWithin :
 /-- info: 'LeanLLVM.runFuel_outcome_unique' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.runFuel_outcome_unique
+
+
+/-! ### The directed tree relation
+
+The same `eutt` detector, frame, leaf postcondition and initial memories are
+used for the affirmative timeout control and its four mismatches, then for the
+divergence bounds and the loop/candidate instance.  The pins below are the
+kernel's axiom footprints.
+-/
+
+open LeanLLVM
+open LeanLLVM.ITree
+
+section EuttChecks
+
+/-- A fixed argument, so every check below uses one frame and postcondition. -/
+abbrev checkX : BitVec 64 := 0x0123456789ABCDEF
+
+abbrev checkFrame : Nat → Prop := loopFrame checkX
+
+abbrev checkPost : Outcome → Outcome → Prop := LeanLLVM.Outcome.AgreesOutside (loopFrame checkX)
+
+/-- The affirmative control: a budget timeout matches itself. -/
+example : eutt checkFrame checkPost (timeoutT, ([] : Mem)) (timeoutT, ([] : Mem)) :=
+  eutt_timeout_timeout checkFrame checkPost Empty.elim Empty.elim [] []
+
+/-- A timeout is not a right undefined behaviour. -/
+example : ¬ eutt checkFrame checkPost (timeoutT, ([] : Mem)) (ubT, ([] : Mem)) :=
+  not_eutt_timeout_ub checkFrame checkPost Empty.elim Empty.elim [] []
+
+/-- Nor is a left undefined behaviour a timeout. -/
+example : ¬ eutt checkFrame checkPost (ubT, ([] : Mem)) (timeoutT, ([] : Mem)) :=
+  not_eutt_ub_timeout checkFrame checkPost Empty.elim Empty.elim [] []
+
+/-- A timeout is not a return. -/
+example : ¬ eutt checkFrame checkPost (timeoutT, ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
+  not_eutt_timeout_ret checkFrame checkPost _ [] [] Empty.elim
+
+/-- Nor is a return a timeout. -/
+example : ¬ eutt checkFrame checkPost
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) (timeoutT, ([] : Mem)) :=
+  not_eutt_ret_timeout checkFrame checkPost _ [] [] Empty.elim
+
+/-- A right `ub` admits a completed left return. -/
+example : eutt checkFrame checkPost
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) (ubT, ([] : Mem)) :=
+  eutt_ret_ub checkFrame checkPost _ [] []
+
+/-- A left `ub` node is not matched by a defined return. -/
+example : ¬ eutt checkFrame checkPost (ubT, ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
+  not_eutt_ub_ret checkFrame checkPost _ [] [] [] Empty.elim
+
+/-- Left silent divergence is the bottom against a return. -/
+example : eutt checkFrame checkPost (ITree.infTau, ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
+  eutt_diverges_ret checkFrame checkPost _ [] []
+
+/-- Right silent divergence is not admitted by a return. -/
+example : ¬ eutt checkFrame checkPost
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) (ITree.infTau, ([] : Mem)) :=
+  not_eutt_ret_diverges checkFrame checkPost _ [] []
+
+/-- Both sides diverge silently, so the negative just above is not the whole
+story: the same detector admits two silent divergences. -/
+example : eutt checkFrame checkPost (ITree.infTau, ([] : Mem)) (ITree.infTau, ([] : Mem)) :=
+  eutt_diverges_diverges checkFrame checkPost [] []
+
+/-- Left silent divergence is related to a right `ub`. -/
+example : eutt checkFrame checkPost (ITree.infTau, ([] : Mem)) (ubT, ([] : Mem)) :=
+  eutt_diverges_ub checkFrame checkPost Empty.elim [] []
+
+/-- The loop instance: the parsed loop as target, the unrolled candidate as
+source, at the allocator-derived frame. -/
+example (x : BitVec 64) : eutt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+    (loopTree x, ([] : Mem)) (candidateTree x, ([] : Mem)) :=
+  loop_candidate_eutt x
+
+/-- The same postcondition rejects a return whose memory differs at address
+zero, outside the frame. -/
+example (x : BitVec 64) (v : Option Value) :
+    ¬ (Outcome.ret v [(0, 1)]).AgreesOutside (loopFrame x) (Outcome.ret v []) :=
+  outcome_address_zero_rejected x v
+
+end EuttChecks
+
+/-! #### The UB terminal class
+
+A `ret` leaf carrying `Outcome.ub` and a `vis Ev.ub` node are one terminal
+class, and `post` never sees `ub`.  The absence check is paired with an
+affirmative check under the same postcondition, so a detector that rejected
+every return cannot pass it.
+-/
+
+section EuttUbChecks
+
+/-- The postcondition under which every pair of outcomes is related. -/
+abbrev checkPostTrue : Outcome → Outcome → Prop := fun _ _ => True
+
+/-- The postcondition under which no pair of outcomes is related. -/
+abbrev checkPostFalse : Outcome → Outcome → Prop := fun _ _ => False
+
+/-- The affirmative control for the absence check below: under the same
+postcondition, two `ret` leaves carrying the same defined outcome are related. -/
+example : eutt checkFrame checkPostTrue
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
+  (eutt_ret_ret_iff checkFrame checkPostTrue _ _ _ _ _ _).mpr trivial
+
+/-- A left `ret` leaf carrying `Outcome.ub` is not related to a defined `ret`
+leaf, even when `post` holds of every pair. -/
+example : ¬ eutt checkFrame checkPostTrue
+    (ITree.ret Outcome.ub, ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
+  not_eutt_ret_ub_ret checkFrame checkPostTrue _ [] [] []
+
+/-- A left `vis Ev.ub` node is absent from the same check, so the two shapes
+behave alike on the left. -/
+example : ¬ eutt checkFrame checkPostTrue (ubT, ([] : Mem))
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
+  not_eutt_ub_ret checkFrame checkPostTrue _ [] [] [] Empty.elim
+
+/-- A right `ret` leaf carrying `Outcome.ub` admits a completed left return
+even when `post` holds of no pair, which is what makes the UB admission
+`post`-independent. -/
+example : eutt checkFrame checkPostFalse
+    (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem))
+    (ITree.ret Outcome.ub, ([] : Mem)) :=
+  eutt_ret_ub_terminal checkFrame checkPostFalse _ [] (UbTerminal.ret [])
+
+/-- The two shapes are one class on both sides: `ret .ub` against `ret .ub`. -/
+example : eutt checkFrame checkPostFalse
+    (ITree.ret Outcome.ub, ([] : Mem)) (ITree.ret Outcome.ub, ([] : Mem)) :=
+  eutt_ub_terminal checkFrame checkPostFalse (UbTerminal.ret []) (UbTerminal.ret [])
+
+/-- `ret .ub` on the left against a `vis Ev.ub` node on the right. -/
+example : eutt checkFrame checkPostFalse
+    (ITree.ret Outcome.ub, ([] : Mem)) (ubT, ([] : Mem)) :=
+  eutt_ub_terminal checkFrame checkPostFalse (UbTerminal.ret [])
+    (UbTerminal.vis Empty.elim [])
+
+/-- A `vis Ev.ub` node on the left against `ret .ub` on the right. -/
+example : eutt checkFrame checkPostFalse
+    (ubT, ([] : Mem)) (ITree.ret Outcome.ub, ([] : Mem)) :=
+  eutt_ub_terminal checkFrame checkPostFalse (UbTerminal.vis Empty.elim [])
+    (UbTerminal.ret [])
+
+/-- And a `vis Ev.ub` node against itself. -/
+example : eutt checkFrame checkPostFalse (ubT, ([] : Mem)) (ubT, ([] : Mem)) :=
+  eutt_ub_ub checkFrame checkPostFalse Empty.elim Empty.elim [] []
+
+/-- Neither shape is a timeout: a `ret` leaf carrying `Outcome.ub` is absent
+from the timeout check exactly where the `vis Ev.ub` node is. -/
+example : ¬ eutt checkFrame checkPostFalse (ITree.ret Outcome.ub, ([] : Mem))
+    (timeoutT, ([] : Mem)) :=
+  not_eutt_ret_timeout checkFrame checkPostFalse Outcome.ub [] [] Empty.elim
+
+end EuttUbChecks
+
+/-- info: 'LeanLLVM.ITree.EuttF_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.EuttF_monotone
+
+/-- info: 'LeanLLVM.ITree.eutt_silentHead_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_silentHead_left
+
+/-- info: 'LeanLLVM.ITree.infTau_diverges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.infTau_diverges
+
+/-- info: 'LeanLLVM.ITree.not_silentDiverges_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_silentDiverges_ret
+
+/-- info: 'LeanLLVM.ITree.eutt_ret_ret_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_ret_ret_iff
+
+/-- info: 'LeanLLVM.ITree.not_eutt_ub_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_ub_ret
+
+/-- info: 'LeanLLVM.ITree.not_eutt_ub_terminal_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_ub_terminal_ret
+
+/-- info: 'LeanLLVM.ITree.not_eutt_ret_ub_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_ret_ub_ret
+
+/-- info: 'LeanLLVM.ITree.eutt_ub_terminal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_ub_terminal
+
+/-- info: 'LeanLLVM.ITree.eutt_ret_ub_terminal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_ret_ub_terminal
+
+/-- info: 'LeanLLVM.ITree.eutt_diverges_diverges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_diverges_diverges
+
+/-- info: 'LeanLLVM.ITree.not_eutt_ret_timeout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_ret_timeout
+
+/-- info: 'LeanLLVM.ITree.not_eutt_timeout_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_timeout_ret
+
+/-- info: 'LeanLLVM.ITree.not_eutt_timeout_ub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_timeout_ub
+
+/-- info: 'LeanLLVM.ITree.not_eutt_ub_timeout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.not_eutt_ub_timeout
+
+/-- info: 'LeanLLVM.ITree.exec_runT' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.exec_runT
+
+/-- info: 'LeanLLVM.ITree.loop_candidate_eutt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.loop_candidate_eutt
+
+/-- info: 'LeanLLVM.ITree.outcome_address_zero_rejected' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.outcome_address_zero_rejected
+
+/-- info: 'LeanLLVM.ITree.eutt_eq_plfp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_eq_plfp
+
+/-- info: 'LeanLLVM.ITree.eutt_unfold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.eutt_unfold
