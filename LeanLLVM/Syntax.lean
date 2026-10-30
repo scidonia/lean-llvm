@@ -2,9 +2,13 @@
 The internal IR: instructions, terminators, basic blocks, functions and modules.
 
 This is the form the semantics and the certified passes work on.  It is
-deliberately smaller than the textual LLVM grammar: the parser rejects any
-construct the semantics does not model, so every `Function` that reaches the
-driver has a defined meaning.
+deliberately smaller than the textual LLVM grammar.  The parser refuses what it
+knows it does not model rather than approximating it: instructions, block
+structure, and a function definition's return attribute before the return type
+and function attribute after the parameter list are all checked, so a `Function`
+that reaches the driver has a defined meaning.  A `declare` header is not
+checked for attributes yet, so attributes on a declaration are outside that
+guarantee.
 -/
 import LeanLLVM.Basic
 

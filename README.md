@@ -30,12 +30,15 @@ fails.  The executable checks in `LeanLLVMTest/` exercise the parser, the
 semantics, the pipeline on a concrete program, and the axiom footprint of the
 soundness theorems.
 
-The memory-backed loop is the current boundary of that claim.  It is a
-hand-written fixture, not Lean-emitted code; its correctness and framed-memory
-statements are proved for the parsed text; and the installer refuses it, because
-no checked theorem binds the loop object to the seam's contract.  There is no
-benchmark, and calls still have no memory effects, so no memory-aware module
-theorem is claimed.
+The memory-backed loop is the current boundary of that claim.  Its fixture is
+printed from the Lean AST in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
+`lake exe leanllvm-loop-emit`, through the framework's own printer, so the text
+the correctness and framed-memory statements are proved about is what that AST
+renders to.  It is not Lean's native compiler output: no `lean -c` emission and
+no clang lowering is related to the AST, and that provenance chain is open.  The
+installer refuses the loop, because no checked theorem binds the loop object to
+the seam's contract.  There is no benchmark, and calls still have no memory
+effects, so no memory-aware module theorem is claimed.
 
 ## Build
 

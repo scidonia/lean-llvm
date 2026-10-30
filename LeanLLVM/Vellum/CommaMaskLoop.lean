@@ -3,10 +3,12 @@ The comma mask as a memory-backed loop.
 
 `probes/install/ir/loop.ll` is the control-flow-different counterpart of the
 unrolled candidate: the counter and accumulator live in memory, the lane test
-and bit are computed from the counter, and `select` folds the accumulator.
-This module
+and bit are computed from the counter, and `select` folds the accumulator.  The
+file is emitted by `lake exe leanllvm-loop-emit` with `LeanLLVM.Function.render`
+from the AST in `LeanLLVM/Vellum/CommaMaskLoopBody.lean`, which is the
+framework's printer rather than Lean's native compiler.  This module
 
-1. parses and pins the loop;
+1. parses the fixture and pins it to that AST;
 2. defines the lane prefix the invariant tracks;
 3. proves the loop's entry reaches `cond` with the empty prefix;
 4. proves one iteration preserves the invariant, and chains it.
@@ -26,6 +28,7 @@ import LeanLLVM.Parser
 import LeanLLVM.Semantics
 import LeanLLVM.Memory
 import LeanLLVM.Vellum.CommaMaskIR
+import LeanLLVM.Vellum.CommaMaskLoopBody
 import LeanLLVM.Frames
 
 namespace LeanLLVM.Vellum.CommaMaskLoop
@@ -41,55 +44,6 @@ def firstFunction (src : String) : Option Function :=
   match parseModule src with
   | .ok m => m.functions.head?
   | .error _ => none
-
-/-- The entry block of the loop. -/
-def entryInstrs : List Instr := [
-  .binop "%m" .xor 64 (.reg "%arg") (lit 3182967604875373612),
-  .alloca "%acc" (.int 64) 8,
-  .alloca "%i" (.int 64) 8,
-  .store (.int 64) (.imm (.int 64 0)) (.reg "%acc"),
-  .store (.int 64) (.imm (.int 64 0)) (.reg "%i")]
-
-def condInstrs : List Instr := [
-  .load "%i1" (.int 64) (.reg "%i"),
-  .icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 8))]
-
-def bodyInstrs : List Instr := [
-  .binop "%sh" .mul 64 (.reg "%i1") (.imm (.int 64 8)),
-  .binop "%b" .lshr 64 (.reg "%m") (.reg "%sh"),
-  .binop "%b2" .and 64 (.reg "%b") (.imm (.int 64 255)),
-  .icmp "%z" .eq 64 (.reg "%b2") (.imm (.int 64 0)),
-  .load "%a0" (.int 64) (.reg "%acc"),
-  .binop "%bit" .shl 64 (.imm (.int 64 128)) (.reg "%sh"),
-  .binop "%a1" .or 64 (.reg "%a0") (.reg "%bit"),
-  .select "%a2" (.int 64) (.reg "%z") (.reg "%a1") (.reg "%a0"),
-  .store (.int 64) (.reg "%a2") (.reg "%acc"),
-  .binop "%i2" .add 64 (.reg "%i1") (.imm (.int 64 1)),
-  .store (.int 64) (.reg "%i2") (.reg "%i")]
-
-def doneInstrs : List Instr := [
-  .load "%r" (.int 64) (.reg "%acc")]
-
-/-- The exit block. -/
-def doneBlock : Block :=
-  { name := "done", instrs := doneInstrs, term := .ret (.int 64) (some (.reg "%r")) }
-
-/-- The body block. -/
-def bodyBlock : Block :=
-  { name := "body", instrs := bodyInstrs, term := .br "cond" }
-
-/-- The condition block. -/
-def condBody : Block :=
-  { name := "cond", instrs := condInstrs, term := .condbr (.reg "%c") "body" "done" }
-
-/-- `probes/install/ir/loop.ll`, as an AST. -/
-def loopFunction : Function :=
-  { name := "leanllvm_comma_mask8", retTy := .int 64, params := [("%arg", .int 64)],
-    blocks := [
-      { name := "entry", instrs := entryInstrs, term := .br "cond" },
-      condBody,
-      bodyBlock,
-      doneBlock] }
 
 #guard decide (firstFunction loopSrc = some loopFunction)
 

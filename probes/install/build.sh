@@ -3,18 +3,19 @@
 # the differential transcript and the manifest.  Run from anywhere; writes to
 # probes/install/build/.
 #
-# The installed units are compiled from the emitted IR in probes/install/ir/,
-# which is what `LeanLLVM/Vellum/CommaMaskIR.lean` proves: the parser pins that
-# IR, so the objects selected here are the objects the theorem is about.
-# `Baseline.lean` and `Candidate.lean` are still compiled, as provenance
+# The installed units are compiled from the emitted IR in probes/install/ir/.
+# `LeanLLVM/Vellum/CommaMaskIR.lean` parses and pins `baseline.ll` and
+# `candidate.ll`, so those objects are the programs the refinement theorem is
+# about.  `Baseline.lean` and `Candidate.lean` are still compiled, as provenance
 # objects: the differential transcript checks that each proved unit agrees with
 # the Lean-emitted body on the corpus.
 #
-# The loop fixture is built and compared too, and the parser pin in
-# `LeanLLVM/Vellum/CommaMaskLoop.lean` adds a correctness proof for it, but no
-# checked theorem binds the loop object to the seam's contract: `theorem=`
-# below covers the candidate and the baseline only, so `select.sh` refuses
-# `UNIT=loop` and the transcript records that.
+# `loop.ll` is printed from the `loopFunction` AST by
+# `lake exe leanllvm-loop-emit` (the framework's printer, not `lean -c`), and
+# `LeanLLVM/Vellum/CommaMaskLoop.lean` parses and pins it.  The loop is built
+# and compared too, but no checked theorem binds the loop object to the seam's
+# contract: `theorem=` below covers the candidate and the baseline only, so
+# `select.sh` refuses `UNIT=loop` and the transcript records that.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -54,18 +55,47 @@ for unit in baseline candidate loop; do
   cp "$dir/unit.o" "$build/$unit.o"
 done
 
-# 4. Differential transcript: all four bodies must agree on the corpus.
+# 4. Differential transcript: every body must agree with every other on the
+#    corpus, and each must agree with the lane-wise specification `diff.c`
+#    computes itself.  A `mismatch` line makes the program exit nonzero, so
+#    agreement between two bodies cannot hide a shared error.
+#
+#    The detector is shown to detect before its verdict is used: a seam that
+#    returns zero for every input is linked against the same `diff.c` and must
+#    be reported on 0x2C, where the comma-XOR word has a zero byte and the
+#    specification is 0x80.  That object is a build artefact for this control;
+#    no manifest names it.
+cat > "$build/wrong_seam.c" <<'C'
+#include <stdint.h>
+
+/* Zero for every input: wrong for any word with a comma byte. */
+uint64_t leanllvm_comma_mask8(uint64_t x) { (void)x; return 0; }
+C
+leanc -c "$build/wrong_seam.c" -o "$build/wrong_seam.o" 2>>"$build/leanc.log"
+leanc "$here/diff.c" "$build/wrong_seam.o" -o "$build/diff_wrong" 2>>"$build/leanc.log"
+if "$build/diff_wrong" > "$build/diff_wrong.txt"; then
+  echo "build: the specification detector accepted a seam that returns zero for every input" >&2
+  exit 1
+fi
+if ! grep -q '^mismatch 44 ' "$build/diff_wrong.txt"; then
+  echo "build: the specification detector did not report the comma-byte input 0x2C" >&2
+  cat "$build/diff_wrong.txt" >&2
+  exit 1
+fi
+
 leanc "$here/diff.c" "$build/baseline.o" -o "$build/diff_baseline" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/candidate.o" -o "$build/diff_candidate" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/lean_baseline.o" -o "$build/diff_lean_baseline" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/loop.o" -o "$build/diff_loop" 2>>"$build/leanc.log"
 leanc "$here/diff.c" "$build/lean_candidate.o" -o "$build/diff_lean_candidate" 2>>"$build/leanc.log"
 
-"$build/diff_baseline" > "$build/diff_baseline.txt"
-"$build/diff_candidate" > "$build/diff_candidate.txt"
-"$build/diff_lean_baseline" > "$build/diff_lean_baseline.txt"
-"$build/diff_loop" > "$build/diff_loop.txt"
-"$build/diff_lean_candidate" > "$build/diff_lean_candidate.txt"
+for body in baseline candidate loop lean_baseline lean_candidate; do
+  if ! "$build/diff_$body" > "$build/diff_$body.txt"; then
+    echo "build: $body does not match the specification on the corpus" >&2
+    grep '^mismatch ' "$build/diff_$body.txt" >&2 || true
+    exit 1
+  fi
+done
 for out in diff_candidate diff_loop diff_lean_baseline diff_lean_candidate; do
   if ! cmp -s "$build/diff_baseline.txt" "$build/$out.txt"; then
     echo "build: differential test failed against $out" >&2
@@ -78,6 +108,7 @@ done
   echo "kind: differential"
   echo "symbol: leanllvm_comma_mask8"
   echo "corpus: probes/install/diff.c"
+  echo "specification: probes/install/diff.c (lane-wise mask, independent of the bodies)"
   echo "bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate"
   echo "covers: candidate-vs-baseline"
   echo "not-covered: loop (no checked theorem for the loop body)"

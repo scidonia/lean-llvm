@@ -19,6 +19,7 @@
 #   baseline.o1.ll     -O1 emission of @leanllvm_comma_mask8, for the record
 #   baseline.ll        parseable fixture
 #   candidate.ll       parseable fixture
+#   loop.ll            the memory-backed loop, printed from its Lean AST
 #
 # --- Why the parseable fixtures are -O0 plus two passes --------------------
 #
@@ -61,9 +62,10 @@
 #
 # --- Text removed before the parser sees the fixture ----------------------
 #
-# The parser refuses anything outside the modelled subset, so the emission is
-# reduced to the function it analyses plus the instruction text.  Removed, and
-# why it is irrelevant to the value computed:
+# The parser refuses the instructions, block structure and function-definition
+# header attributes it does not model (declaration headers are not checked), so
+# the emission is reduced to the function it analyses plus the instruction
+# text.  Removed, and why it is irrelevant to the value computed:
 #
 #   `noundef`        parameter attribute; a promise about the argument, not
 #                    part of the computation
@@ -80,8 +82,29 @@
 #                    the fixture is one function; the Lean initializer and the
 #                    boxed wrappers are not part of the pure seam
 #
-# Nothing inside the retained instruction list is rewritten.  Both fixtures are
-# checked with `opt -passes=verify`, so they remain valid LLVM IR.
+# Nothing inside the retained instruction list is rewritten.  The removal above
+# is a per-item claim that the value computed is unchanged -- not a proof that
+# the stripped and original texts are semantically equivalent, and it does not
+# undo an assumption a caller compiled against the original attributes may have
+# drawn.  baseline.ll and candidate.ll are checked with `opt -passes=verify`;
+# loop.ll is checked where it is printed and again with the others at the end.
+#
+# --- The loop fixture, printed from Lean ---------------------------------
+#
+# loop.ll does not go through clang.  It is printed from the `loopFunction` AST
+# in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
+#
+#   lake exe leanllvm-loop-emit
+#
+# which is `LoopEmit.lean` rendering that AST with `LeanLLVM.Function.render`,
+# the framework's own printer.  It is not the output of Lean's native compiler
+# (`lean -c`): no C emission and no clang lowering is involved.  The function
+# is inside the modelled subset, so nothing is stripped on this path -- the
+# text below the header is what the printer wrote.  The emitter refuses to
+# print unless its own output parses back to the same well-formed function, so
+# an attribute or construct the parser does not model cannot reach the fixture,
+# and the route verifies the result with `opt -passes=verify` before replacing
+# the fixture.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -254,11 +277,17 @@ emit "$here/candidate.ll" '; The candidate seam as emitted, in the fragment `Lea
 ; every `x`, by rewriting it to the fold in `CommaMask.byteLoop` (no
 ; bit-blasting).' "$work/candidate.body.ll"
 
-# --- both fixtures are still valid LLVM IR --------------------------------
+# --- the loop fixture, printed from its Lean AST -------------------------
 
-for f in baseline.ll candidate.ll; do
+(cd "$repo" && lake exe leanllvm-loop-emit) > "$work/loop.ll"
+opt -passes=verify -disable-output "$work/loop.ll"
+cp "$work/loop.ll" "$here/loop.ll"
+
+# --- all fixtures are still valid LLVM IR --------------------------------
+
+for f in baseline.ll candidate.ll loop.ll; do
   opt -passes=verify -disable-output "$here/$f"
   echo "capture: $f verifies"
 done
 
-echo "capture: wrote probes/install/ir/{baseline,candidate}{,.raw}.ll and baseline.o1.ll"
+echo "capture: wrote probes/install/ir/{baseline,candidate}{,.raw}.ll, baseline.o1.ll and loop.ll"

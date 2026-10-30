@@ -5,10 +5,11 @@ This probe exercises the installation point described in
 
 - `Caller.lean` sees only `@[extern]` declarations for the seam and an
   implementation marker.
-- `probes/install/ir/` holds the emitted IR that
-  `LeanLLVM/Vellum/CommaMaskIR.lean` parses, pins and proves. `capture.sh`
-  regenerates it from the Lean emission and records the exact `clang` and `opt`
-  invocations plus the textual syntax removed before the parser sees it.
+- `probes/install/ir/` holds the emitted IR that the refinement proofs parse,
+  pin and prove. `capture.sh` regenerates all three fixtures: `baseline.ll` and
+  `candidate.ll` from the C emissions, recording the exact `clang` and `opt`
+  invocations and the textual syntax removed before the parser sees them, and
+  `loop.ll` by printing the Lean AST, with nothing removed.
 - `Baseline.lean` and `Candidate.lean` are the Lean bodies. `build.sh` compiles
   them as **provenance** objects and compares them with the proved units on a
   differential corpus.
@@ -16,12 +17,16 @@ This probe exercises the installation point described in
   `ir/candidate.ll` plus their marker objects (`ir/marker_*.ll`), so each unit
   is the program the refinement theorem is about rather than a separately
   authored body.
-- `ir/loop.ll` is the memory-backed loop. It is **not** Lean-produced: it was
-  written by hand as the control-flow-different counterpart, and
-  `LeanLLVM/Vellum/CommaMaskLoop.lean` proves a correctness statement about the
-  parsed fixture. No checked theorem binds that object to the seam's contract,
-  so `UNIT=loop` is refused: strict mode fails and non-strict mode installs the
-  baseline. The gate is `bash tests/m4-loop-gate.sh`, described below.
+- `ir/loop.ll` is the memory-backed loop. It is printed from the `loopFunction`
+  AST in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
+  `lake exe leanllvm-loop-emit` (`LoopEmit.lean`) through
+  `LeanLLVM.Function.render`: the framework's own printer, not Lean's native
+  compiler (`lean -c`). `LeanLLVM/Vellum/CommaMaskLoop.lean` parses that file
+  and pins it to the same AST before proving a correctness and framed-memory
+  statement about it. No checked theorem binds that object to the seam's
+  contract, so `UNIT=loop` is refused: strict mode fails and non-strict mode
+  installs the baseline. The gate is `bash tests/m4-loop-gate.sh`, described
+  below.
 - `build.sh` writes `differential.txt` and `manifest.env`. The manifest binds
   the target triple and data layout, the target-feature policy (`none`: the
   build passes no `-march`/`-mattr`, so clang's triple default applies), the
@@ -32,9 +37,10 @@ This probe exercises the installation point described in
   the *requested* unit, **rebuilds each unit from its fixtures** and compares
   the result with the installed bytes, then links either unit. `STRICT=1` fails
   instead of falling back.
-- `check.sh` runs the whole flow, including the proof gate, a stale-candidate
-  fallback, a strict-mode rejection, a refused loop with baseline fallback, a
-  mutated-fixture rejection and a comparison of the semantic outputs.
+- `check.sh` runs the whole flow, including the proof gate for both pinned
+  fixtures, a stale-candidate fallback, a strict-mode rejection, a refused loop
+  with baseline fallback, a mutated-fixture rejection and a comparison of the
+  semantic outputs.
 
 Run from the repository root:
 
@@ -51,15 +57,21 @@ directory, so they exercise the selector without a compiler or a network.
 
 Two certificates, with different reach:
 
-1. **Semantic.** `LeanLLVM/Vellum/CommaMaskIR.lean` pins both fixtures by
-   parsed AST and proves `Refines candidateFunction baselineFunction`. The
-   kernel argument for the two bodies is in `CommaMaskKernel.lean`. Axiom
-   footprints are pinned in `LeanLLVMTest/Vellum.lean`.
+1. **Semantic.** `LeanLLVM/Vellum/CommaMaskIR.lean` pins `baseline.ll` and
+   `candidate.ll` by parsed AST and proves `Refines candidateFunction
+   baselineFunction`; `LeanLLVM/Vellum/CommaMaskLoop.lean` pins the printed
+   `loop.ll` to `loopFunction` and proves the loop's correctness and
+   framed-memory statements. The kernel argument for the two bodies is in
+   `CommaMaskKernel.lean`. Axiom footprints are pinned in
+   `LeanLLVMTest/Vellum.lean`.
 2. **Installation.** `differential.txt` is a runtime transcript, not a proof.
    It records that the proved units and the Lean-emitted provenance objects
-   agree on the corpus, and it says what it covers: `covers:
-   candidate-vs-baseline`, `not-covered: loop`. A transcript that ends
-   `RESULT: PASS` is never treated as a proof of the loop body.
+   agree on the corpus, and that each of them agrees with the lane-wise
+   specification `diff.c` computes for itself, and it says what it covers:
+   `covers: candidate-vs-baseline`, `not-covered: loop`. The same detector is
+   first shown to reject a seam that returns zero for every input, on a corpus
+   word with a comma byte, so its verdict is not an inert pass. A transcript
+   that ends `RESULT: PASS` is never treated as a proof of the loop body.
 
 The binding between them is the object rebuild plus the coverage table in
 `select.sh`: the selector compiles the fixtures with the same basenames
@@ -69,18 +81,28 @@ module name in the object, so the names are part of the input and a rename is a
 different object.
 
 `lake build` does not track `include_str` inputs, so a changed fixture alone
-does not invalidate a cached module. `check.sh` therefore elaborates the proof
-module from source every time, and it mutates a fixture to show that the pin
-bites: the proof fails and selection falls back until the fixture is restored.
+does not invalidate a cached module. `check.sh` therefore elaborates both proof
+modules from source every time, and it mutates a fixture to show that each pin
+bites: the candidate mutation makes `CommaMaskIR` fail and selection fall back,
+and the loop mutation makes `CommaMaskLoop`'s `#guard` fail; both are restored
+and re-checked.
 
 `attributes=reject` records the attribute policy: the fixtures carry none, and
-the parser refuses a construct it does not model rather than dropping an
-attribute silently. `capture.sh` removes `noundef`, `align`, `tbaa`, attribute
-groups and module-level lines the parser does not model when it regenerates the
-emitted IR; the parser would refuse the unstripped text. That removal is
-justified per item in the script's comment, but it is not a proof that the
-stripped and original texts are semantically equivalent, and it does not undo
-assumptions an already-compiled caller may have drawn from those attributes.
+the parser refuses an unmodelled attribute in a function definition's header
+rather than dropping it silently -- `tests/m4-loop-emission.sh --return-attr`
+and `--function-attr` exercise that at the driver's command line. The loop
+fixture needs no stripping: the printer writes the modelled AST, and the
+emitter refuses to print unless its own output parses back to the same
+function. For `baseline.ll` and `candidate.ll` `capture.sh` removes `noundef`,
+`align`, `tbaa`, attribute groups and module-level lines the parser does not
+model; the parser would refuse the unstripped text. That removal is justified
+per item in the script's comment and is an assertion about the value each
+retained instruction computes; it is not a proof that the stripped and original
+texts are semantically equivalent, and it does not undo assumptions an
+already-compiled caller may have drawn from those attributes. Declaration
+headers are not attribute-checked: the parser's `declare` route still accepts
+some unmodelled tokens, so the refusal promise covers function definitions, not
+`declare` lines.
 
 ## Known limits
 
@@ -88,10 +110,11 @@ assumptions an already-compiled caller may have drawn from those attributes.
   transcription of `Candidate.lean`'s fold, not from Lean's own emission of that
   loop. The differential transcript is the evidence that the transcription
   agrees with the Lean body; it is not a proof.
-- `ir/loop.ll` is handwritten, not emitted by Lean. The proof of the parsed
-  fixture is a correctness statement about that text, and it does not establish
-  that a Lean-produced memory-using loop compiles to it. Loop provenance is
-  open.
+- `ir/loop.ll` is printed from the Lean AST by the framework's printer, so the
+  text the proofs parse is what that AST renders to. It is **not** the output of
+  Lean's native compiler: a loop produced by `lean -c`, lowered by clang and
+  then related to the Lean AST has not been demonstrated, so the
+  compilation-chain form of loop provenance is open.
 - The loop has no installation certificate. The framed statement in
   `LeanLLVM/Vellum/CommaMaskLoop.lean` relates the loop's returned value and
   the bytes outside the band its own allocations cover, using the general
@@ -117,6 +140,7 @@ Inspect the evidence:
 cat probes/install/build/manifest.env
 cat probes/install/build/selection_candidate.env
 cat probes/install/build/differential.txt
+cat probes/install/build/diff_wrong.txt
 cat probes/install/build/out_candidate.txt
 cat probes/install/build/out_fallback.txt
 ```

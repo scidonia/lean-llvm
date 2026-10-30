@@ -222,9 +222,11 @@ accepted on the strength of a narrower result.
   run, and inspection shows the selected body is the installed one
   (`probes/install/`, `probes/app/`).
 - **M1 — partly met.** The modelled fragment has a step semantics, a parser that
-  refuses what it does not model, and differential tests against the pinned
-  toolchain.  Poison, provenance and underdefined values are not modelled, and
-  the semantics' agreement with LLVM remains an explicit obligation.
+  refuses the constructs it knows it does not model (instructions, block
+  structure and function-definition headers), and differential tests against the
+  pinned toolchain.  Poison, provenance and underdefined values are not modelled,
+  the semantics' agreement with LLVM remains an explicit obligation, and
+  declaration headers are not attribute-checked yet.
 - **M2 — open.** Refinement is exact (`Refines`) plus a framed relation
   (`RefinesWithin`, `AgreesOutsideMem`, `AllocFrame` in
   `LeanLLVM/Frames.lean`) that compares the returned value and the bytes outside
@@ -241,14 +243,18 @@ accepted on the strength of a narrower result.
   never treated as proof.  Open: a serialized proof artifact generated from
   kernel checking, rejection tests that mutate that artifact, and a semantic
   attribute policy richer than `attributes=reject` over attribute-free fixtures.
-- **M4 — open.** The loop is a hand-written fixture
-  (`probes/install/ir/loop.ll`), not Lean-emitted: `capture.sh` regenerates only
-  the baseline and candidate, so loop provenance is unproved.  The repository
-  has correctness and framed-memory theorems for the parsed fixture, no
-  memory-aware module theorem, and no benchmark record.  The M4 acceptance
-  conditions — a Lean-produced memory-using loop, a contextual installation
-  proof including memory effects, a checked certificate and benchmark
-  measurements — are therefore unmet.
+- **M4 — open.** The loop fixture (`probes/install/ir/loop.ll`) is printed from
+  the Lean AST (`LeanLLVM/Vellum/CommaMaskLoopBody.lean`) by
+  `lake exe leanllvm-loop-emit` through `LeanLLVM.Function.render`, and
+  `capture.sh` regenerates it; the correctness and framed-memory theorems are
+  pinned to that AST by a parsed `#guard`, so the text they are about is what
+  the AST renders to.  That emission is the framework's own printer, not Lean's
+  native compiler: a memory-using loop produced by `lean -c`, lowered by clang
+  and related to a Lean AST is still unproved.  The repository also has no
+  memory-aware module theorem and no benchmark record.  The M4 acceptance
+  conditions — a loop certified from the Lean compilation chain, a contextual
+  installation proof including memory effects, a checked certificate and
+  benchmark measurements — are therefore unmet.
 
 ## References and provenance
 

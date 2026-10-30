@@ -31,9 +31,12 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 - `reference/vellvm/` is vendored VeLLVM source for study.  It is not built,
   linted or edited.
 - `tests/` holds textual IR exercised by the driver, and executable scenarios of
-  a user-facing route: `m4-loop-gate.sh` drives the installer selector and
+  user-facing routes: `m4-loop-gate.sh` drives the installer selector and
   asserts that a loop request without a covering theorem is refused and that the
-  baseline is installed instead.
+  baseline is installed instead; `m4-loop-emission.sh` drives the fixture-capture
+  route and the driver's command line, and asserts that the loop fixture is
+  regenerated from the Lean emission and that a function header carrying an
+  unmodelled attribute is refused.
 
 ## What a change must satisfy
 
@@ -44,9 +47,19 @@ nix develop -c lake exe leanllvm tests/constfold.ll
   `LeanLLVMTest/` with `#guard_msgs in #print axioms ...` once it is stable.
 - The parser and printer are part of the contract: round-trip checks in
   `LeanLLVMTest/Core.lean` must pass, and emitted IR must assemble with
-  `llvm-as`.
-- Anything the semantics does not model is refused by the parser with a message
-  naming the construct.  Do not silently approximate an unmodelled construct.
+  `llvm-as`.  A fixture read through `include_str` is not a `lake build` input,
+  so elaborate its proof module from source after changing it; keep the mutation
+  that shows the pin bites (`probes/install/check.sh` does this for the candidate
+  and loop fixtures).
+- The parser refuses the surfaces it checks, with a message naming the
+  construct: unmodelled instructions, block structure, and a function
+  definition's header -- a return attribute before the return type and a
+  function attribute after the parameter list are refused
+  (`tests/m4-loop-emission.sh --return-attr`, `--function-attr`).  Do not
+  silently approximate an unmodelled construct on those surfaces.  A `declare`
+  header is not checked: its parameter list is read up to the closing `)` and
+  the rest of the line is ignored, so unmodelled declaration tokens can be
+  accepted and dropped.  Do not claim total attribute rejection.
 - The 64-bit seam identities are kernel-checked in
   `LeanLLVM/Vellum/CommaMaskKernel.lean` by a byte-lane argument.  Do not
   reintroduce `bv_decide`, `native_decide`, `sorry` or `admit`; the pins in

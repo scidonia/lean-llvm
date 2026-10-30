@@ -2,9 +2,14 @@
 A parser for the subset of textual LLVM IR that the semantics models.
 
 The parser is line oriented: one instruction per line, one label per block.
-Anything outside the modelled subset is refused with a message naming the
-construct, rather than being approximated.  In particular `phi`,
-`getelementptr`, aggregates and floating point are not accepted yet.
+Unmodelled instructions and block structure are refused with a message naming
+the construct, rather than being approximated: `phi`, `getelementptr`,
+aggregates and floating point are not accepted yet.  A function definition's
+header is checked for attributes the semantics does not model: a return
+attribute before the return type and a function attribute after the parameter
+list are both refused.  A `declare` header is not checked: unmodelled tokens in
+a declaration's parameter list or after its closing parenthesis are still
+accepted.
 -/
 import LeanLLVM.Syntax
 
@@ -439,12 +444,31 @@ def parseFunction (header : List String) (rest : List (List String)) :
   let retTok ← match retTok? with
     | some t => .ok t
     | none => .error "function header without a return type"
-  let retTy ← parseTy retTok
   let name := (nameTok.drop 1).toString
-  let params ←
+  -- A return attribute stands between `define` and the return type.  It
+  -- constrains the value the function returns, so it is part of the function's
+  -- contract: parsing past it and printing the function without it would accept
+  -- a wider contract than the pipeline was given.
+  let beforeName := header.takeWhile (· ≠ nameTok)
+  let returnAttrs := (beforeName.drop 1).dropLast
+  if !returnAttrs.isEmpty then
+    throw s!"unsupported return attribute '{String.intercalate " " returnAttrs}' before the return type of @{name}"
+  let retTy ← parseTy retTok
+  let (params, afterParams) ←
     match parseParams afterName with
-    | .ok (ps, _) => .ok ps
+    | .ok pr => .ok pr
     | .error e => .error s!"in parameters of @{name}: {e}"
+  -- A function attribute stands between the parameter list and the body, and
+  -- changes what the function promises its caller; it is refused for the same
+  -- reason.
+  let (functionAttrs, hasBody) :=
+    match afterParams.reverse with
+    | "{" :: rev => (rev.reverse, true)
+    | _ => (afterParams, false)
+  if !functionAttrs.isEmpty then
+    throw s!"unsupported function attribute '{String.intercalate " " functionAttrs}' after the parameter list of @{name}"
+  if !hasBody then
+    throw s!"malformed function header of @{name}: expected an opening brace after the parameter list"
   let (body, rest') ← takeBody rest
   let blocks ← parseBlocks body
   .ok (⟨name, retTy, params, blocks⟩, rest')

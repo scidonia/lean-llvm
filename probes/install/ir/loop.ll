@@ -2,6 +2,22 @@
 ; memory, the lane bit and test are computed from the counter, and the select
 ; folds the accumulator.  The loop is the control-flow-different counterpart of
 ; the unrolled candidate in candidate.ll.
+;
+; Emitted from LeanLLVM.Vellum.CommaMaskLoop.loopFunction -- the AST in
+; LeanLLVM/Vellum/CommaMaskLoopBody.lean that
+; LeanLLVM/Vellum/CommaMaskLoop.lean parses this file back to and proves its
+; correctness and framed-memory statements about -- with
+;
+;   nix develop -c bash -c 'lake exe leanllvm-loop-emit > probes/install/ir/loop.ll'
+;
+; through LeanLLVM.Function.render, the framework's own printer.
+; probes/install/ir/capture.sh runs the same command as part of the fixture
+; route, with the redirect inside the shell so the dev shell's startup banner
+; is not written here.
+;
+; This is not the output of Lean's native compiler: no `lean -c` C emission and
+; no clang lowering is involved.  Nothing in the text below was removed or
+; rewritten after rendering.
 define i64 @leanllvm_comma_mask8(i64 %arg) {
 entry:
   %m = xor i64 %arg, 3182967604875373612

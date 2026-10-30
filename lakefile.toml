@@ -13,3 +13,8 @@ name = "LeanLLVMTest"
 [[lean_exe]]
 name = "leanllvm"
 root = "Main"
+
+# Renders the memory-backed loop fixture from its Lean AST; see LoopEmit.lean.
+[[lean_exe]]
+name = "leanllvm-loop-emit"
+root = "LoopEmit"

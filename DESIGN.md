@@ -199,10 +199,12 @@ same lift over `runFuel`.
 source -> clang -S -emit-llvm -> .ll -> leanllvm -> .ll -> opt/llc -> object
 ```
 
-The driver rejects any construct the semantics does not model, so the invariant
-"every function that reaches the pipeline has a defined meaning" holds by
-construction.  The emitted text is canonical IR, checked with `llvm-as` in the
-verification runs.
+The driver rejects the constructs it knows it does not model -- instructions,
+block structure, and a function definition's return and function attributes --
+so the invariant "every function that reaches the pipeline has a defined
+meaning" holds for those.  A `declare` header is not attribute-checked yet, so
+that invariant is not claimed for declaration attributes.  The emitted text is
+canonical IR, checked with `llvm-as` in the verification runs.
 
 ## Next milestones
 

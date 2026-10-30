@@ -46,6 +46,38 @@ def sampleFunction : Function :=
   | .ok m => m = sampleModule
   | .error _ => false
 
+-- A function definition's header is checked for attributes the semantics does
+-- not model.  `sample` above is the control: an attribute-free header parses.
+-- An attribute that constrains the returned value, or one that changes what the
+-- function promises its caller, is refused with a diagnostic naming it rather
+-- than parsed past and printed back without it.
+def returnAttrSample : String :=
+"define range(i64 0, 1) i64 @f(i64 %x) {
+entry:
+  ret i64 %x
+}
+"
+
+def functionAttrSample : String :=
+"define i64 @f(i64 %x) noreturn {
+entry:
+  ret i64 %x
+}
+"
+
+/-- Whether `sub` occurs in `s`. -/
+def mentions (s sub : String) : Bool := (s.splitOn sub).length > 1
+
+#guard
+  match parseModule returnAttrSample with
+  | .error e => mentions e "unsupported" && mentions e "range"
+  | .ok _ => false
+
+#guard
+  match parseModule functionAttrSample with
+  | .error e => mentions e "unsupported" && mentions e "noreturn"
+  | .ok _ => false
+
 -- A call is modelled end to end: it round-trips through the printer, the
 -- environment supplies its result, and an unresolved call is `ub`.
 def callSample : String :=
