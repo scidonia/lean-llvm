@@ -1,7 +1,7 @@
 /-
 The executable side of the directed relation.
 
-`eutt` is a coinductive statement about trees; `Exec` is the canonical
+`simtt` is a coinductive statement about trees; `Exec` is the canonical
 resolution of one tree against a memory: following the responses the machine
 itself gives, the tree ends in an outcome, `none` for an exhausted budget and
 `some .ub` for undefined behaviour.
@@ -18,7 +18,7 @@ Nothing here redefines `Beh`, `Refines` or `RefinesWithin`: the consequences at
 the framed and exact posts are corollaries, and no pass or route reasons
 through the tree layer.
 -/
-import LeanLLVM.ITree.Eutt
+import LeanLLVM.ITree.Simtt
 import LeanLLVM.Frames
 
 namespace LeanLLVM.ITree
@@ -453,39 +453,39 @@ theorem exec_reachesUb {calls : Calls} {frame : Nat → Prop} {p : TS}
 
 /-- A `tau` on the left of the relation can be read off its closure, so the
 relation also holds one step later. -/
-theorem eutt_tau_left {frame : Nat → Prop} {post : Outcome → Outcome → Prop}
+theorem simtt_tau_left {frame : Nat → Prop} {post : Outcome → Outcome → Prop}
     {t : ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : eutt frame post (ITree.tau t, m) q) : eutt frame post (t, m) q := by
-  have hF := (eutt_iff frame post _ _).mp h
-  refine (eutt_iff frame post _ _).mpr ?_
+    (h : simtt frame post (ITree.tau t, m) q) : simtt frame post (t, m) q := by
+  have hF := (simtt_iff frame post _ _).mp h
+  refine (simtt_iff frame post _ _).mpr ?_
   cases hF with
   | ret h1 h2 hp =>
-      exact EuttF.ret (SilentHead.tau_strip h1
+      exact SimttF.ret (SilentHead.tau_strip h1
         (by intro hh; exact ITree.ret_ne_tau (Prod.mk.inj hh).1)) h2 hp
   | right_ub_ret h1 h2 =>
-      exact EuttF.right_ub_ret (SilentHead.tau_strip h1
+      exact SimttF.right_ub_ret (SilentHead.tau_strip h1
         (by intro hh; exact ITree.ret_ne_tau (Prod.mk.inj hh).1)) h2
-  | ub h1 h2 => exact EuttF.ub (ReachesUb.tau_strip h1) h2
+  | ub h1 h2 => exact SimttF.ub (ReachesUb.tau_strip h1) h2
   | timeout k1 k2 h1 h2 =>
-      exact EuttF.timeout k1 k2 (SilentHead.tau_strip h1
+      exact SimttF.timeout k1 k2 (SilentHead.tau_strip h1
         (by
           intro hh
           exact (ITree.tau_ne_vis Ev.timeout k1) ((Prod.mk.inj hh).1).symm)) h2
-  | left_diverges hdiv hnt => exact EuttF.left_diverges (SilentDiverges.tau_strip hdiv) hnt
+  | left_diverges hdiv hnt => exact SimttF.left_diverges (SilentDiverges.tau_strip hdiv) hnt
   | right_diverges hdiv2 hdiv1 =>
-      exact EuttF.right_diverges hdiv2 (SilentDiverges.tau_strip hdiv1)
+      exact SimttF.right_diverges hdiv2 (SilentDiverges.tau_strip hdiv1)
   | vis_load addr ty k1 k2 h1 h2 hm hs =>
-      exact EuttF.vis_load addr ty k1 k2 (SilentHead.tau_strip h1
+      exact SimttF.vis_load addr ty k1 k2 (SilentHead.tau_strip h1
         (by
           intro hh
           exact (ITree.tau_ne_vis (Ev.load addr ty) k1) ((Prod.mk.inj hh).1).symm)) h2 hm hs
   | vis_store addr ty v k1 k2 h1 h2 hs =>
-      exact EuttF.vis_store addr ty v k1 k2 (SilentHead.tau_strip h1
+      exact SimttF.vis_store addr ty v k1 k2 (SilentHead.tau_strip h1
         (by
           intro hh
           exact (ITree.tau_ne_vis (Ev.store addr ty v) k1) ((Prod.mk.inj hh).1).symm)) h2 hs
   | vis_call callee args k1 k2 h1 h2 hs =>
-      exact EuttF.vis_call callee args k1 k2 (SilentHead.tau_strip h1
+      exact SimttF.vis_call callee args k1 k2 (SilentHead.tau_strip h1
         (by
           intro hh
           exact (ITree.tau_ne_vis (Ev.call callee args) k1) ((Prod.mk.inj hh).1).symm)) h2 hs
@@ -496,15 +496,15 @@ The auxiliary statement is read over the target's resolution, so a resolution
 that starts at a later state is a strictly shorter derivation.  A private step
 of the target is either an in-frame access, whose continuation the relation
 hands over directly, or a `tau`, which the relation's closure absorbs
-(`eutt_tau_left`); a visible event advances the relation to the two
+(`simtt_tau_left`); a visible event advances the relation to the two
 continuations' matching states.
 -/
 
-theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
+theorem simtt_exec_aux {calls : Calls} {frame : Nat → Prop}
     {post : Outcome → Outcome → Prop} :
     ∀ {tT : ITree Ev Outcome} {mT : Mem} {rT : Option Outcome},
       Exec calls tT mT rT →
-    ∀ {tS : ITree Ev Outcome} {mS : Mem}, eutt frame post (tT, mT) (tS, mS) →
+    ∀ {tS : ITree Ev Outcome} {mS : Mem}, simtt frame post (tT, mT) (tS, mS) →
     ∀ {rS : Option Outcome}, Exec calls tS mS rS →
       rS = some .ub ∨ (rT = none ∧ rS = none) ∨
         ∃ vT vS memT memS, rT = some (.ret vT memT) ∧ rS = some (.ret vS memS) ∧
@@ -515,7 +515,7 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
   | ret =>
       rename_i o m'
       intro tS mS he rS hs
-      have hF := (eutt_iff frame post _ _).mp he
+      have hF := (simtt_iff frame post _ _).mp he
       cases hF with
       | ret h1 h2 hp =>
           have ho : Outcome.ret _ _ = o := ITree.ret_inj (Prod.mk.inj (SilentHead_ret_self h1)).1
@@ -541,13 +541,13 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
   | tau h' ih =>
       rename_i t0 m0 rT'
       intro tS mS he rS hs
-      exact ih (eutt_tau_left he) hs
+      exact ih (simtt_tau_left he) hs
   /- A visible load: the relation advances to the responses of the two memories,
   which agree by the load clause. -/
   | load h' ih =>
       rename_i addr ty k m' rT'
       intro tS mS he rS hs
-      have hF := (eutt_iff frame post _ _).mp he
+      have hF := (simtt_iff frame post _ _).mp he
       cases hF with
       | ret h1 h2 hp =>
           obtain ⟨v, hv, h1'⟩ := SilentHead.load_strip h1
@@ -585,9 +585,9 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
             exact hsc (loadValue m2 ty addr)
           · obtain ⟨v, hv, hq⟩ := SilentStep.load_shape hstep
             subst hq
-            have hrel : eutt frame post (k v, m') (tS, mS) :=
-              (eutt_iff frame post _ _).mpr (EuttF.vis_load addr' ty' k1 k2 hrest h2 hm hsc)
-            have hrel' : eutt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
+            have hrel : simtt frame post (k v, m') (tS, mS) :=
+              (simtt_iff frame post _ _).mpr (SimttF.vis_load addr' ty' k1 k2 hrest h2 hm hsc)
+            have hrel' : simtt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
               rw [hv]
               exact hrel
             exact ih hrel' hs
@@ -596,9 +596,9 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
           · exact absurd (Prod.mk.inj hpq).1 vis_load_ne_vis_store
           · obtain ⟨v0, hv0, hq⟩ := SilentStep.load_shape hstep
             subst hq
-            have hrel : eutt frame post (k v0, m') (tS, mS) :=
-              (eutt_iff frame post _ _).mpr (EuttF.vis_store addr' ty' v k1 k2 hrest h2 hsc)
-            have hrel' : eutt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
+            have hrel : simtt frame post (k v0, m') (tS, mS) :=
+              (simtt_iff frame post _ _).mpr (SimttF.vis_store addr' ty' v k1 k2 hrest h2 hsc)
+            have hrel' : simtt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
               rw [hv0]
               exact hrel
             exact ih hrel' hs
@@ -607,9 +607,9 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
           · exact absurd (Prod.mk.inj hpq).1 vis_load_ne_vis_call
           · obtain ⟨v0, hv0, hq⟩ := SilentStep.load_shape hstep
             subst hq
-            have hrel : eutt frame post (k v0, m') (tS, mS) :=
-              (eutt_iff frame post _ _).mpr (EuttF.vis_call callee args k1 k2 hrest h2 hsc)
-            have hrel' : eutt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
+            have hrel : simtt frame post (k v0, m') (tS, mS) :=
+              (simtt_iff frame post _ _).mpr (SimttF.vis_call callee args k1 k2 hrest h2 hsc)
+            have hrel' : simtt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
               rw [hv0]
               exact hrel
             exact ih hrel' hs
@@ -618,7 +618,7 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
   | store h' ih =>
       rename_i addr ty v k m' rT'
       intro tS mS he rS hs
-      have hF := (eutt_iff frame post _ _).mp he
+      have hF := (simtt_iff frame post _ _).mp he
       cases hF with
       | ret h1 h2 hp =>
           have h1' := SilentHead.store_strip h1
@@ -646,8 +646,8 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
           · exact absurd (Prod.mk.inj hpq).1 vis_store_ne_vis_load
           · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
             subst hq
-            have hrel : eutt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
-              (eutt_iff frame post _ _).mpr (EuttF.vis_load addr' ty' k1 k2 hrest h2 hm hsc)
+            have hrel : simtt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
+              (simtt_iff frame post _ _).mpr (SimttF.vis_load addr' ty' k1 k2 hrest h2 hm hsc)
             exact ih hrel hs
       | vis_store addr' ty' v' k1 k2 h1 h2 hsc =>
           rename_i m1 m2
@@ -660,22 +660,22 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
             exact ih hsc (Exec.vis_store_inv (Exec.silentHead h2 hs))
           · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
             subst hq
-            have hrel : eutt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
-              (eutt_iff frame post _ _).mpr (EuttF.vis_store addr' ty' v' k1 k2 hrest h2 hsc)
+            have hrel : simtt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
+              (simtt_iff frame post _ _).mpr (SimttF.vis_store addr' ty' v' k1 k2 hrest h2 hsc)
             exact ih hrel hs
       | vis_call callee args k1 k2 h1 h2 hsc =>
           rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
           · exact absurd (Prod.mk.inj hpq).1 vis_store_ne_vis_call
           · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
             subst hq
-            have hrel : eutt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
-              (eutt_iff frame post _ _).mpr (EuttF.vis_call callee args k1 k2 hrest h2 hsc)
+            have hrel : simtt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
+              (simtt_iff frame post _ _).mpr (SimttF.vis_call callee args k1 k2 hrest h2 hsc)
             exact ih hrel hs
   /- A call: the node has no silent step, so its closure is empty. -/
   | call h' ih =>
       rename_i callee args k m' rT'
       intro tS mS he rS hs
-      have hF := (eutt_iff frame post _ _).mp he
+      have hF := (simtt_iff frame post _ _).mp he
       cases hF with
       | ret h1 h2 hp =>
           exact absurd (Prod.mk.inj (SilentHead.call_self h1)).1
@@ -709,7 +709,7 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
   | ub =>
       rename_i k0 m'
       intro tS mS he rS hs
-      have hF := (eutt_iff frame post _ _).mp he
+      have hF := (simtt_iff frame post _ _).mp he
       cases hF with
       | ret h1 h2 hp =>
           exact absurd (Prod.mk.inj (SilentHead_ub_self h1)).1
@@ -734,7 +734,7 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
   | timeout =>
       rename_i k0 m'
       intro tS mS he rS hs
-      have hF := (eutt_iff frame post _ _).mp he
+      have hF := (simtt_iff frame post _ _).mp he
       cases hF with
       | ret h1 h2 hp =>
           exact absurd (Prod.mk.inj (SilentHead_timeout_self h1)).1
@@ -760,16 +760,16 @@ theorem eutt_exec_aux {calls : Calls} {frame : Nat → Prop}
 
 /-- A completed target return transports: the source either runs into undefined
 behaviour or returns an outcome the postcondition accepts. -/
-theorem eutt_exec_some {calls : Calls} {frame : Nat → Prop}
+theorem simtt_exec_some {calls : Calls} {frame : Nat → Prop}
     {post : Outcome → Outcome → Prop} {tT tS : ITree Ev Outcome}
     {mT mS : Mem} {oT : Outcome}
-    (he : eutt frame post (tT, mT) (tS, mS))
+    (he : simtt frame post (tT, mT) (tS, mS))
     {rS : Option Outcome} (ht : Exec calls tT mT (some oT))
     (hs : Exec calls tS mS rS) :
     rS = some .ub ∨
       ∃ vT vS memT memS, oT = .ret vT memT ∧ rS = some (.ret vS memS) ∧
         post (.ret vT memT) (.ret vS memS) := by
-  rcases eutt_exec_aux ht he hs with hub | ⟨hnoneT, hnoneS⟩ | ⟨vT, vS, memT, memS, hrT, hrS, hp⟩
+  rcases simtt_exec_aux ht he hs with hub | ⟨hnoneT, hnoneS⟩ | ⟨vT, vS, memT, memS, hrT, hrS, hp⟩
   · exact Or.inl hub
   · cases hnoneT
   · exact Or.inr ⟨vT, vS, memT, memS, Option.some.inj hrT, hrS, hp⟩
@@ -778,10 +778,10 @@ theorem eutt_exec_some {calls : Calls} {frame : Nat → Prop}
 source either runs into undefined behaviour at its own budget or returns an
 outcome the postcondition accepts.  The budgets are separate, and a budget that
 exhausts is not a completed outcome. -/
-theorem eutt_runFuel_some (calls : Calls) (frame : Nat → Prop)
+theorem simtt_runFuel_some (calls : Calls) (frame : Nat → Prop)
     (post : Outcome → Outcome → Prop) (target source : Function)
     (args : List Value) (nT nS : Nat) (oT : Outcome)
-    (he : eutt frame post
+    (he : simtt frame post
       (runT calls nT target (initState target args), (initState target args).mem)
       (runT calls nS source (initState source args), (initState source args).mem))
     (ht : runFuel calls nT target (initState target args) = some oT) :
@@ -795,17 +795,17 @@ theorem eutt_runFuel_some (calls : Calls) (frame : Nat → Prop)
   have hS : Exec calls (runT calls nS source (initState source args))
       (initState source args).mem (runFuel calls nS source (initState source args)) :=
     exec_runT calls nS source (initState source args)
-  exact eutt_exec_some he hT hS
+  exact simtt_exec_some he hT hS
 
 /-- Every observable target behaviour is transported, with its own budget on
 each side: a target run that succeeds at some budget is matched by undefined
 behaviour on the source or by an actual source return the postcondition
 accepts.  A target that never finishes has no behaviour, so no budget of the
 target is silently treated as one. -/
-theorem eutt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
+theorem simtt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
     (post : Outcome → Outcome → Prop) (target source : Function)
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
-      ∃ nS, eutt frame post
+      ∃ nS, simtt frame post
         (runT calls nT target (initState target args), (initState target args).mem)
         (runT calls nS source (initState source args), (initState source args).mem)) :
     ∀ args oT, Beh calls target args oT →
@@ -817,11 +817,11 @@ theorem eutt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
   intro args oT ho
   rcases ho with ⟨n, hn⟩ | ⟨n, hn⟩
   · obtain ⟨nS, he⟩ := hsim args n .ub hn
-    rcases eutt_runFuel_some calls frame post target source args n nS .ub he hn with hub | ⟨vT, vS, memT, memS, hEq⟩
+    rcases simtt_runFuel_some calls frame post target source args n nS .ub he hn with hub | ⟨vT, vS, memT, memS, hEq⟩
     · exact Or.inl ⟨nS, hub⟩
     · exact nomatch hEq
   · obtain ⟨nS, he⟩ := hsim args n oT hn
-    rcases eutt_runFuel_some calls frame post target source args n nS oT he hn with hub | ⟨vT, vS, memT, memS, hEq, hrS, hp⟩
+    rcases simtt_runFuel_some calls frame post target source args n nS oT he hn with hub | ⟨vT, vS, memT, memS, hEq, hrS, hp⟩
     · exact Or.inl ⟨nS, hub⟩
     · exact Or.inr ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
 
@@ -829,28 +829,28 @@ theorem eutt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
 every completed target run, in the target-to-source direction.  A source that
 runs into undefined behaviour is a behaviour for every outcome, so the target's
 own outcome is matched by itself; otherwise the matched return is the witness. -/
-theorem refinesWithin_of_eutt {calls : Calls} {target source : Function}
+theorem refinesWithin_of_simtt {calls : Calls} {target source : Function}
     {frame : Nat → Prop}
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
-      ∃ nS, eutt frame (Outcome.AgreesOutside frame)
+      ∃ nS, simtt frame (Outcome.AgreesOutside frame)
         (runT calls nT target (initState target args), (initState target args).mem)
         (runT calls nS source (initState source args), (initState source args).mem)) :
     RefinesWithin calls target source frame := by
   intro args o ho
-  rcases eutt_beh_inclusion calls frame (Outcome.AgreesOutside frame) target source hsim args o ho with
+  rcases simtt_beh_inclusion calls frame (Outcome.AgreesOutside frame) target source hsim args o ho with
     ⟨nS, hub⟩ | ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
   · exact ⟨o, Or.inl ⟨nS, hub⟩, Outcome.agreesOutside_refl o frame⟩
   · exact ⟨.ret vS memS, Or.inr ⟨nS, hrS⟩, by rw [hEq]; exact hp⟩
 
 /-- Exact refinement follows the same way at the equality postcondition. -/
-theorem refines_of_eutt {calls : Calls} {target source : Function}
+theorem refines_of_simtt {calls : Calls} {target source : Function}
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
-      ∃ nS, eutt (fun _ => False) Eq
+      ∃ nS, simtt (fun _ => False) Eq
         (runT calls nT target (initState target args), (initState target args).mem)
         (runT calls nS source (initState source args), (initState source args).mem)) :
     Refines calls target source := by
   intro args o ho
-  rcases eutt_beh_inclusion calls (fun _ => False) Eq target source hsim args o ho with
+  rcases simtt_beh_inclusion calls (fun _ => False) Eq target source hsim args o ho with
     ⟨nS, hub⟩ | ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
   · exact Or.inl ⟨nS, hub⟩
   · rw [hEq]
@@ -873,16 +873,16 @@ theorem load_no_step_of_notInFrame {frame : Nat → Prop} {addr : Nat} {ty : Ty}
 
 /-- The load clause bite: when the load is visible (its span is outside the
 frame) and the two memories give different canonical responses, the relation
-refuses the pair.  Every other clause of `EuttF` needs a silent closure from the
+refuses the pair.  Every other clause of `SimttF` needs a silent closure from the
 load node, and an out-of-frame load has none. -/
-theorem not_eutt_load_of_disagree {frame : Nat → Prop} {post : Outcome → Outcome → Prop}
+theorem not_simtt_load_of_disagree {frame : Nat → Prop} {post : Outcome → Outcome → Prop}
     {addr : Nat} {ty : Ty} {k k2 : Option Value → ITree Ev Outcome}
     {m1 m2 : Mem} (hout : ¬ InFrame frame addr ty)
     (hne : loadValue m1 ty addr ≠ loadValue m2 ty addr) :
-    ¬ eutt frame post (ITree.vis (Ev.load addr ty) k, m1)
+    ¬ simtt frame post (ITree.vis (Ev.load addr ty) k, m1)
       (ITree.vis (Ev.load addr ty) k2, m2) := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   have hno := load_no_step_of_notInFrame (frame := frame) (addr := addr) (ty := ty) (k := k) (m := m1) hout
   cases hF with
   | ret h1 h2 hp =>

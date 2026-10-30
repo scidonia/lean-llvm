@@ -9,7 +9,7 @@ memories agree outside the band the loop's own allocations cover.
 This is one instance, not a general loop rule: the proof walks the loop's own
 blocks and the candidate's single block, and installs nothing.
 -/
-import LeanLLVM.ITree.Eutt
+import LeanLLVM.ITree.Simtt
 import LeanLLVM.ITree.Bridge
 import LeanLLVM.Vellum.CommaMaskLoop
 
@@ -508,12 +508,12 @@ theorem candidateTree_silent (x : BitVec 64) :
 
 /-- The loop, as left target, is simulated by the unrolled candidate, as right
 source, at the framed postcondition. -/
-theorem loop_candidate_eutt (x : BitVec 64) :
-    eutt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+theorem loop_candidate_simtt (x : BitVec 64) :
+    simtt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
       (loopTree x, ([] : Mem)) (candidateTree x, ([] : Mem)) := by
   obtain ⟨mem, hpriv, hleft⟩ := loopTree_silent x
-  refine (eutt_iff _ _ _ _).mpr ?_
-  refine EuttF.ret hleft (candidateTree_silent x) ?_
+  refine (simtt_iff _ _ _ _).mpr ?_
+  refine SimttF.ret hleft (candidateTree_silent x) ?_
   · refine ⟨?_, ?_⟩
     · rw [byteLoop_eq_spec]
     · simpa using AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False))
@@ -551,9 +551,9 @@ theorem loop_candidate_beh_bridge (x : BitVec 64) (o : Outcome)
     · exact absurd (runFuel_outcome_unique hn h19) (by intro h; nomatch h)
     · exact runFuel_outcome_unique hn h19
   subst ho'
-  rcases eutt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+  rcases simtt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
       loopFunction candidateFunction [.int 64 x] 19 10000
-      (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_eutt x) h19 with
+      (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_simtt x) h19 with
     hub | ⟨vT, vS, memT, memS, hEq, hrS, hpost⟩
   · exact ⟨_, Or.inl ⟨10000, hub⟩, Outcome.agreesOutside_refl _ (loopFrame x)⟩
   · exact ⟨Outcome.ret vS memS, Or.inr ⟨10000, hrS⟩, by rw [hEq]; exact hpost⟩

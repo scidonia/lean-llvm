@@ -146,15 +146,15 @@ fixed point of the same step, so divergence is a coinductive statement and does
 not follow from a budget.
 
 ```lean
-def eutt (frame : Nat → Prop) (post : Outcome → Outcome → Prop) : TS → TS → Prop :=
-  plfp (EuttF frame post) ...
+def simtt (frame : Nat → Prop) (post : Outcome → Outcome → Prop) : TS → TS → Prop :=
+  plfp (SimttF frame post) ...
 ```
 
-`EuttF frame post sim` is the one-step functional: it relates, after finitely
-many silent steps on both sides, matching terminals.  `eutt` is Paco's
+`SimttF frame post sim` is the one-step functional: it relates, after finitely
+many silent steps on both sides, matching terminals.  `simtt` is Paco's
 parameterised least fixed point of it over the reverse-implication order on
-propositions, where that fixed point is the greatest one; `eutt_unfold` is
-`plfp_unfold` and `eutt.coind` is `plfp_init` together with the
+propositions, where that fixed point is the greatest one; `simtt_unfold` is
+`plfp_unfold` and `simtt.coind` is `plfp_init` together with the
 least-fixed-point principle.  The clauses are:
 
 - a left and a right `ret` leaf carrying defined outcomes are related when
@@ -182,7 +182,7 @@ There is no symmetric relation; where symmetry is wanted it is the conjunction
 of the two directions, and no lemma is derived by assuming it.
 
 `LeanLLVM/ITree/Bridge.lean` connects the relation to the canonical resolution
-`Exec` of a tree against a memory.  `eutt_exec_some` eliminates the relation
+`Exec` of a tree against a memory.  `simtt_exec_some` eliminates the relation
 against a *completed* target run: if the target resolves to a defined outcome
 and the pair is related, the source either resolves to undefined behaviour or
 resolves to an actual return that `post` accepts.  The elimination is by
@@ -190,11 +190,11 @@ induction on the target's finite resolution — the relation is unfolded one
 clause at a time, a `tau` is absorbed by the relation's own closure, and a
 visible event advances both sides to their continuations' states — so it consumes
 a finite derivation and never a coinductive hypothesis.  Two consequences are
-stated at explicit budgets, `eutt_runFuel_some` (one budget for the target, one
-for the source, a completed run on each) and `eutt_beh_inclusion` (quantified
+stated at explicit budgets, `simtt_runFuel_some` (one budget for the target, one
+for the source, a completed run on each) and `simtt_beh_inclusion` (quantified
 over each completed target budget, with a fresh source budget): a budget that
 exhausts is `timeout` and never a `Beh` result, so no finite budget silently
-stands for all of them.  `refinesWithin_of_eutt` and `refines_of_eutt` are
+stands for all of them.  `refinesWithin_of_simtt` and `refines_of_simtt` are
 corollaries at the framed and exact posts; they are not new definitions of the
 relations, and they do not hold without a tree relation for every completed
 target run.
@@ -205,7 +205,7 @@ and it is not a pass-soundness result: no theorem in this development
 establishes `hsim` for an arbitrary function pair.
 
 `LeanLLVM/ITree/LoopInstance.lean` is the instance.  For every
-`x : BitVec 64`, `loop_candidate_eutt` relates the parsed comma-mask loop at its
+`x : BitVec 64`, `loop_candidate_simtt` relates the parsed comma-mask loop at its
 fuel budget of 19 to the unrolled candidate at fuel 10000, with
 `Outcome.AgreesOutside (loopFrame x)` as the leaf postcondition.  Both sides are
 first walked to their actual returns by finite silent closure, so neither budget
@@ -217,15 +217,15 @@ at address `0`, outside the band, is rejected by the same postcondition
 
 `loop_candidate_beh_bridge` is the one behaviour statement derived from the
 bridge for that pair: `runFuel_outcome_unique` pins every successful loop
-budget to the 19-step return, `eutt_runFuel_some` transports it to the candidate
+budget to the 19-step return, `simtt_runFuel_some` transports it to the candidate
 at budget 10000, and the result is a candidate behaviour agreeing outside the
 band.  It is scoped to `x : BitVec 64`, uses fixed budgets, and does not
 generalise to arbitrary argument lists or to other loops.
 
 What remains open is the adoption rather than the relation.  `Refines`,
 `RefinesWithin` and the pass theorems are unchanged, no pass or route reasons
-through `eutt`, and nothing restates the executable refinement relation in
-terms of it: `refinesWithin_of_eutt` and `refines_of_eutt` take a tree relation
+through `simtt`, and nothing restates the executable refinement relation in
+terms of it: `refinesWithin_of_simtt` and `refines_of_simtt` take a tree relation
 as a hypothesis and define neither relation.  There is still no general loop or
 recursion rule, no automatic discharge of that hypothesis, no memory-effectful
 call environment and no memory-aware module theorem.

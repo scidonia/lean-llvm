@@ -299,7 +299,7 @@ theorem vandal_not_refinesWithin :
 
 /-! ### The directed tree relation
 
-The same `eutt` detector, frame, leaf postcondition and initial memories are
+The same `simtt` detector, frame, leaf postcondition and initial memories are
 used for the affirmative timeout control and its four mismatches, then for the
 divergence bounds and the loop/candidate instance.  The pins below are the
 kernel's axiom footprints.
@@ -308,7 +308,7 @@ kernel's axiom footprints.
 open LeanLLVM
 open LeanLLVM.ITree
 
-section EuttChecks
+section SimttChecks
 
 /-- A fixed argument, so every check below uses one frame and postcondition. -/
 abbrev checkX : BitVec 64 := 0x0123456789ABCDEF
@@ -318,61 +318,61 @@ abbrev checkFrame : Nat → Prop := loopFrame checkX
 abbrev checkPost : Outcome → Outcome → Prop := LeanLLVM.Outcome.AgreesOutside (loopFrame checkX)
 
 /-- The affirmative control: a budget timeout matches itself. -/
-example : eutt checkFrame checkPost (timeoutT, ([] : Mem)) (timeoutT, ([] : Mem)) :=
-  eutt_timeout_timeout checkFrame checkPost Empty.elim Empty.elim [] []
+example : simtt checkFrame checkPost (timeoutT, ([] : Mem)) (timeoutT, ([] : Mem)) :=
+  simtt_timeout_timeout checkFrame checkPost Empty.elim Empty.elim [] []
 
 /-- A timeout is not a right undefined behaviour. -/
-example : ¬ eutt checkFrame checkPost (timeoutT, ([] : Mem)) (ubT, ([] : Mem)) :=
-  not_eutt_timeout_ub checkFrame checkPost Empty.elim Empty.elim [] []
+example : ¬ simtt checkFrame checkPost (timeoutT, ([] : Mem)) (ubT, ([] : Mem)) :=
+  not_simtt_timeout_ub checkFrame checkPost Empty.elim Empty.elim [] []
 
 /-- Nor is a left undefined behaviour a timeout. -/
-example : ¬ eutt checkFrame checkPost (ubT, ([] : Mem)) (timeoutT, ([] : Mem)) :=
-  not_eutt_ub_timeout checkFrame checkPost Empty.elim Empty.elim [] []
+example : ¬ simtt checkFrame checkPost (ubT, ([] : Mem)) (timeoutT, ([] : Mem)) :=
+  not_simtt_ub_timeout checkFrame checkPost Empty.elim Empty.elim [] []
 
 /-- A timeout is not a return. -/
-example : ¬ eutt checkFrame checkPost (timeoutT, ([] : Mem))
+example : ¬ simtt checkFrame checkPost (timeoutT, ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
-  not_eutt_timeout_ret checkFrame checkPost _ [] [] Empty.elim
+  not_simtt_timeout_ret checkFrame checkPost _ [] [] Empty.elim
 
 /-- Nor is a return a timeout. -/
-example : ¬ eutt checkFrame checkPost
+example : ¬ simtt checkFrame checkPost
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) (timeoutT, ([] : Mem)) :=
-  not_eutt_ret_timeout checkFrame checkPost _ [] [] Empty.elim
+  not_simtt_ret_timeout checkFrame checkPost _ [] [] Empty.elim
 
 /-- A right `ub` admits a completed left return. -/
-example : eutt checkFrame checkPost
+example : simtt checkFrame checkPost
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) (ubT, ([] : Mem)) :=
-  eutt_ret_ub checkFrame checkPost _ [] []
+  simtt_ret_ub checkFrame checkPost _ [] []
 
 /-- A left `ub` node is not matched by a defined return. -/
-example : ¬ eutt checkFrame checkPost (ubT, ([] : Mem))
+example : ¬ simtt checkFrame checkPost (ubT, ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
-  not_eutt_ub_ret checkFrame checkPost _ [] [] [] Empty.elim
+  not_simtt_ub_ret checkFrame checkPost _ [] [] [] Empty.elim
 
 /-- Left silent divergence is the bottom against a return. -/
-example : eutt checkFrame checkPost (ITree.infTau, ([] : Mem))
+example : simtt checkFrame checkPost (ITree.infTau, ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
-  eutt_diverges_ret checkFrame checkPost _ [] []
+  simtt_diverges_ret checkFrame checkPost _ [] []
 
 /-- Right silent divergence is not admitted by a return. -/
-example : ¬ eutt checkFrame checkPost
+example : ¬ simtt checkFrame checkPost
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) (ITree.infTau, ([] : Mem)) :=
-  not_eutt_ret_diverges checkFrame checkPost _ [] []
+  not_simtt_ret_diverges checkFrame checkPost _ [] []
 
 /-- Both sides diverge silently, so the negative just above is not the whole
 story: the same detector admits two silent divergences. -/
-example : eutt checkFrame checkPost (ITree.infTau, ([] : Mem)) (ITree.infTau, ([] : Mem)) :=
-  eutt_diverges_diverges checkFrame checkPost [] []
+example : simtt checkFrame checkPost (ITree.infTau, ([] : Mem)) (ITree.infTau, ([] : Mem)) :=
+  simtt_diverges_diverges checkFrame checkPost [] []
 
 /-- Left silent divergence is related to a right `ub`. -/
-example : eutt checkFrame checkPost (ITree.infTau, ([] : Mem)) (ubT, ([] : Mem)) :=
-  eutt_diverges_ub checkFrame checkPost Empty.elim [] []
+example : simtt checkFrame checkPost (ITree.infTau, ([] : Mem)) (ubT, ([] : Mem)) :=
+  simtt_diverges_ub checkFrame checkPost Empty.elim [] []
 
 /-- The loop instance: the parsed loop as target, the unrolled candidate as
 source, at the allocator-derived frame. -/
-example (x : BitVec 64) : eutt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+example (x : BitVec 64) : simtt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
     (loopTree x, ([] : Mem)) (candidateTree x, ([] : Mem)) :=
-  loop_candidate_eutt x
+  loop_candidate_simtt x
 
 /-- The same postcondition rejects a return whose memory differs at address
 zero, outside the frame. -/
@@ -380,7 +380,7 @@ example (x : BitVec 64) (v : Option Value) :
     ¬ (Outcome.ret v [(0, 1)]).AgreesOutside (loopFrame x) (Outcome.ret v []) :=
   outcome_address_zero_rejected x v
 
-end EuttChecks
+end SimttChecks
 
 /-! #### The UB terminal class
 
@@ -390,7 +390,7 @@ affirmative check under the same postcondition, so a detector that rejected
 every return cannot pass it.
 -/
 
-section EuttUbChecks
+section SimttUbChecks
 
 /-- The postcondition under which every pair of outcomes is related. -/
 abbrev checkPostTrue : Outcome → Outcome → Prop := fun _ _ => True
@@ -400,60 +400,60 @@ abbrev checkPostFalse : Outcome → Outcome → Prop := fun _ _ => False
 
 /-- The affirmative control for the absence check below: under the same
 postcondition, two `ret` leaves carrying the same defined outcome are related. -/
-example : eutt checkFrame checkPostTrue
+example : simtt checkFrame checkPostTrue
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
-  (eutt_ret_ret_iff checkFrame checkPostTrue _ _ _ _ _ _).mpr trivial
+  (simtt_ret_ret_iff checkFrame checkPostTrue _ _ _ _ _ _).mpr trivial
 
 /-- A left `ret` leaf carrying `Outcome.ub` is not related to a defined `ret`
 leaf, even when `post` holds of every pair. -/
-example : ¬ eutt checkFrame checkPostTrue
+example : ¬ simtt checkFrame checkPostTrue
     (ITree.ret Outcome.ub, ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
-  not_eutt_ret_ub_ret checkFrame checkPostTrue _ [] [] []
+  not_simtt_ret_ub_ret checkFrame checkPostTrue _ [] [] []
 
 /-- A left `vis Ev.ub` node is absent from the same check, so the two shapes
 behave alike on the left. -/
-example : ¬ eutt checkFrame checkPostTrue (ubT, ([] : Mem))
+example : ¬ simtt checkFrame checkPostTrue (ubT, ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) :=
-  not_eutt_ub_ret checkFrame checkPostTrue _ [] [] [] Empty.elim
+  not_simtt_ub_ret checkFrame checkPostTrue _ [] [] [] Empty.elim
 
 /-- A right `ret` leaf carrying `Outcome.ub` admits a completed left return
 even when `post` holds of no pair, which is what makes the UB admission
 `post`-independent. -/
-example : eutt checkFrame checkPostFalse
+example : simtt checkFrame checkPostFalse
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem))
     (ITree.ret Outcome.ub, ([] : Mem)) :=
-  eutt_ret_ub_terminal checkFrame checkPostFalse _ [] (UbTerminal.ret [])
+  simtt_ret_ub_terminal checkFrame checkPostFalse _ [] (UbTerminal.ret [])
 
 /-- The two shapes are one class on both sides: `ret .ub` against `ret .ub`. -/
-example : eutt checkFrame checkPostFalse
+example : simtt checkFrame checkPostFalse
     (ITree.ret Outcome.ub, ([] : Mem)) (ITree.ret Outcome.ub, ([] : Mem)) :=
-  eutt_ub_terminal checkFrame checkPostFalse (UbTerminal.ret []) (UbTerminal.ret [])
+  simtt_ub_terminal checkFrame checkPostFalse (UbTerminal.ret []) (UbTerminal.ret [])
 
 /-- `ret .ub` on the left against a `vis Ev.ub` node on the right. -/
-example : eutt checkFrame checkPostFalse
+example : simtt checkFrame checkPostFalse
     (ITree.ret Outcome.ub, ([] : Mem)) (ubT, ([] : Mem)) :=
-  eutt_ub_terminal checkFrame checkPostFalse (UbTerminal.ret [])
+  simtt_ub_terminal checkFrame checkPostFalse (UbTerminal.ret [])
     (UbTerminal.vis Empty.elim [])
 
 /-- A `vis Ev.ub` node on the left against `ret .ub` on the right. -/
-example : eutt checkFrame checkPostFalse
+example : simtt checkFrame checkPostFalse
     (ubT, ([] : Mem)) (ITree.ret Outcome.ub, ([] : Mem)) :=
-  eutt_ub_terminal checkFrame checkPostFalse (UbTerminal.vis Empty.elim [])
+  simtt_ub_terminal checkFrame checkPostFalse (UbTerminal.vis Empty.elim [])
     (UbTerminal.ret [])
 
 /-- And a `vis Ev.ub` node against itself. -/
-example : eutt checkFrame checkPostFalse (ubT, ([] : Mem)) (ubT, ([] : Mem)) :=
-  eutt_ub_ub checkFrame checkPostFalse Empty.elim Empty.elim [] []
+example : simtt checkFrame checkPostFalse (ubT, ([] : Mem)) (ubT, ([] : Mem)) :=
+  simtt_ub_ub checkFrame checkPostFalse Empty.elim Empty.elim [] []
 
 /-- Neither shape is a timeout: a `ret` leaf carrying `Outcome.ub` is absent
 from the timeout check exactly where the `vis Ev.ub` node is. -/
-example : ¬ eutt checkFrame checkPostFalse (ITree.ret Outcome.ub, ([] : Mem))
+example : ¬ simtt checkFrame checkPostFalse (ITree.ret Outcome.ub, ([] : Mem))
     (timeoutT, ([] : Mem)) :=
-  not_eutt_ret_timeout checkFrame checkPostFalse Outcome.ub [] [] Empty.elim
+  not_simtt_ret_timeout checkFrame checkPostFalse Outcome.ub [] [] Empty.elim
 
-end EuttUbChecks
+end SimttUbChecks
 
 /-! #### Visible loads use the memories' canonical response
 
@@ -464,7 +464,7 @@ bytes, two undefined loads, and a disagreeing pair.  Address `0` is outside the
 check frame, so the load stays visible instead of becoming a silent step.
 -/
 
-section EuttLoadChecks
+section SimttLoadChecks
 
 open LeanLLVM
 open LeanLLVM.ITree
@@ -498,35 +498,35 @@ theorem load_value_disagree :
 
 /-- Equal defined responses: the same visible load matches at two different
 memories, and the identical returns close the postcondition. -/
-example : eutt checkFrame checkPost
+example : simtt checkFrame checkPost
     (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 1)] : Mem))
     (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 1), (5, 9)] : Mem)) := by
-  refine (eutt_iff checkFrame checkPost _ _).mpr ?_
-  refine EuttF.vis_load 0 (.int 8) loadK loadK (SilentHead.refl _ _)
+  refine (simtt_iff checkFrame checkPost _ _).mpr ?_
+  refine SimttF.vis_load 0 (.int 8) loadK loadK (SilentHead.refl _ _)
     (SilentHead.refl _ _) load_value_equal (fun v => ?_)
-  exact (eutt_ret_ret_iff checkFrame checkPost _ _ _ _ _ _).mpr
+  exact (simtt_ret_ret_iff checkFrame checkPost _ _ _ _ _ _).mpr
     (Outcome.agreesOutside_refl _ checkFrame)
 
 /-- Two undefined loads are admitted as well: the affirmative control for the
 negative below, under the same detector, event, continuation and frame. -/
-example : eutt checkFrame checkPost
+example : simtt checkFrame checkPost
     (ITree.vis (Ev.load 0 (.int 8)) loadK, ([] : Mem))
     (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(5, 9)] : Mem)) := by
-  refine (eutt_iff checkFrame checkPost _ _).mpr ?_
-  refine EuttF.vis_load 0 (.int 8) loadK loadK (SilentHead.refl _ _)
+  refine (simtt_iff checkFrame checkPost _ _).mpr ?_
+  refine SimttF.vis_load 0 (.int 8) loadK loadK (SilentHead.refl _ _)
     (SilentHead.refl _ _) load_value_none (fun v => ?_)
-  exact (eutt_ret_ret_iff checkFrame checkPost _ _ _ _ _ _).mpr
+  exact (simtt_ret_ret_iff checkFrame checkPost _ _ _ _ _ _).mpr
     (Outcome.agreesOutside_refl _ checkFrame)
 
 /-- A disagreeing pair is refused by the same detector: the load is visible, so
 the load clause is the only one that can match, and its response equality fails
 on the two actual memories. -/
-example : ¬ eutt checkFrame checkPost
+example : ¬ simtt checkFrame checkPost
     (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 1)] : Mem))
     (ITree.vis (Ev.load 0 (.int 8)) loadK, ([(0, 2)] : Mem)) :=
-  not_eutt_load_of_disagree load_address_outside load_value_disagree
+  not_simtt_load_of_disagree load_address_outside load_value_disagree
 
-end EuttLoadChecks
+end SimttLoadChecks
 
 /-! #### The bridge transports in the target-to-source direction
 
@@ -554,56 +554,56 @@ example (x : BitVec 64) (mem : Mem)
         runFuel noCalls 10000 candidateFunction (initState candidateFunction [.int 64 x]) =
           some (.ret vS memS) ∧
         (Outcome.ret vT memT).AgreesOutside (loopFrame x) (Outcome.ret vS memS) :=
-  eutt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+  simtt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
     loopFunction candidateFunction [.int 64 x] 19 10000
-    (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_eutt x) h19
+    (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_simtt x) h19
 
 /-- The postcondition is not bypassed: with a post that holds of no pair, two
 defined returns are not related, so the bridge's matched-return disjunct cannot
 be made of an unrelated pair. -/
-example : ¬ eutt checkFrame (fun _ _ => False)
+example : ¬ simtt checkFrame (fun _ _ => False)
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem))
     (ITree.ret (Outcome.ret (some (.int 64 0)) []), ([] : Mem)) := by
   intro h
-  exact (eutt_ret_ret_iff checkFrame (fun _ _ => False) _ _ _ _ _ _).mp h
+  exact (simtt_ret_ret_iff checkFrame (fun _ _ => False) _ _ _ _ _ _).mp h
 
 end BridgeChecks
 
-/-- info: 'LeanLLVM.ITree.eutt_exec_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_exec_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_exec_some
+#print axioms LeanLLVM.ITree.simtt_exec_some
 
-/-- info: 'LeanLLVM.ITree.eutt_runFuel_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_runFuel_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_runFuel_some
+#print axioms LeanLLVM.ITree.simtt_runFuel_some
 
-/-- info: 'LeanLLVM.ITree.eutt_beh_inclusion' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_beh_inclusion' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_beh_inclusion
+#print axioms LeanLLVM.ITree.simtt_beh_inclusion
 
-/-- info: 'LeanLLVM.ITree.refinesWithin_of_eutt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.refinesWithin_of_simtt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.refinesWithin_of_eutt
+#print axioms LeanLLVM.ITree.refinesWithin_of_simtt
 
-/-- info: 'LeanLLVM.ITree.refines_of_eutt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.refines_of_simtt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.refines_of_eutt
+#print axioms LeanLLVM.ITree.refines_of_simtt
 
-/-- info: 'LeanLLVM.ITree.not_eutt_load_of_disagree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_load_of_disagree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_load_of_disagree
+#print axioms LeanLLVM.ITree.not_simtt_load_of_disagree
 
 /-- info: 'LeanLLVM.ITree.loop_candidate_beh_bridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.ITree.loop_candidate_beh_bridge
 
-/-- info: 'LeanLLVM.ITree.EuttF_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.SimttF_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.EuttF_monotone
+#print axioms LeanLLVM.ITree.SimttF_monotone
 
-/-- info: 'LeanLLVM.ITree.eutt_silentHead_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_silentHead_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_silentHead_left
+#print axioms LeanLLVM.ITree.simtt_silentHead_left
 
 /-- info: 'LeanLLVM.ITree.infTau_diverges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -613,66 +613,66 @@ end BridgeChecks
 #guard_msgs in
 #print axioms LeanLLVM.ITree.not_silentDiverges_ret
 
-/-- info: 'LeanLLVM.ITree.eutt_ret_ret_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_ret_ret_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_ret_ret_iff
+#print axioms LeanLLVM.ITree.simtt_ret_ret_iff
 
-/-- info: 'LeanLLVM.ITree.not_eutt_ub_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_ub_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_ub_ret
+#print axioms LeanLLVM.ITree.not_simtt_ub_ret
 
-/-- info: 'LeanLLVM.ITree.not_eutt_ub_terminal_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_ub_terminal_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_ub_terminal_ret
+#print axioms LeanLLVM.ITree.not_simtt_ub_terminal_ret
 
-/-- info: 'LeanLLVM.ITree.not_eutt_ret_ub_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_ret_ub_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_ret_ub_ret
+#print axioms LeanLLVM.ITree.not_simtt_ret_ub_ret
 
-/-- info: 'LeanLLVM.ITree.eutt_ub_terminal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_ub_terminal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_ub_terminal
+#print axioms LeanLLVM.ITree.simtt_ub_terminal
 
-/-- info: 'LeanLLVM.ITree.eutt_ret_ub_terminal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_ret_ub_terminal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_ret_ub_terminal
+#print axioms LeanLLVM.ITree.simtt_ret_ub_terminal
 
-/-- info: 'LeanLLVM.ITree.eutt_diverges_diverges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_diverges_diverges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_diverges_diverges
+#print axioms LeanLLVM.ITree.simtt_diverges_diverges
 
-/-- info: 'LeanLLVM.ITree.not_eutt_ret_timeout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_ret_timeout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_ret_timeout
+#print axioms LeanLLVM.ITree.not_simtt_ret_timeout
 
-/-- info: 'LeanLLVM.ITree.not_eutt_timeout_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_timeout_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_timeout_ret
+#print axioms LeanLLVM.ITree.not_simtt_timeout_ret
 
-/-- info: 'LeanLLVM.ITree.not_eutt_timeout_ub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_timeout_ub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_timeout_ub
+#print axioms LeanLLVM.ITree.not_simtt_timeout_ub
 
-/-- info: 'LeanLLVM.ITree.not_eutt_ub_timeout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.not_simtt_ub_timeout' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.not_eutt_ub_timeout
+#print axioms LeanLLVM.ITree.not_simtt_ub_timeout
 
 /-- info: 'LeanLLVM.ITree.exec_runT' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.ITree.exec_runT
 
-/-- info: 'LeanLLVM.ITree.loop_candidate_eutt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.loop_candidate_simtt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.loop_candidate_eutt
+#print axioms LeanLLVM.ITree.loop_candidate_simtt
 
 /-- info: 'LeanLLVM.ITree.outcome_address_zero_rejected' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.ITree.outcome_address_zero_rejected
 
-/-- info: 'LeanLLVM.ITree.eutt_eq_plfp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_eq_plfp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_eq_plfp
+#print axioms LeanLLVM.ITree.simtt_eq_plfp
 
-/-- info: 'LeanLLVM.ITree.eutt_unfold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.ITree.simtt_unfold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.ITree.eutt_unfold
+#print axioms LeanLLVM.ITree.simtt_unfold

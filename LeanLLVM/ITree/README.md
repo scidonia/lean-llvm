@@ -21,7 +21,7 @@ Every other module, here and in `LeanLLVM/`, reaches mathlib only through that
 adapter.  `Internal/Basic.lean` defines the coinductive tree; `Internal/Paco.lean`
 is the vendored parameterised-fixpoint layer; `Core.lean` is the public
 constructor/observer surface; `Interpret.lean` interprets `LeanLLVM`'s fuel
-semantics; `Eutt.lean` is the relation; `Bridge.lean` takes that relation to the
+semantics; `Simtt.lean` is the relation; `Bridge.lean` takes that relation to the
 canonical resolution.
 
 ## Modules
@@ -35,12 +35,15 @@ canonical resolution.
   resolution relation `Exec` with the forward theorem `exec_runT`: every
   `runFuel` outcome is a leaf of the tree.  `ub` and `timeout` are distinct:
   `ub` is a completed semantic outcome, `timeout` a finite-budget artifact.
-  `Eutt.lean` — the directed relation.  Left is the target, right the source.
+  `Simtt.lean` — the directed relation.  `simtt` is a directed simulation up
+  to taus, where the silent steps are `tau` and private in-frame loads/stores;
+  it is not the symmetric equivalence-up-to-taus relation of the ITree
+  literature (`InteractionTrees`).  Left is the target, right the source.
   `SilentStep` is a `tau`, a defined in-frame load, or an in-frame store; for a
   load the memory must define the value, while a store's event is private as
   soon as its span is in the frame.  `SilentHead` is its inductive
   reflexive-transitive closure; `SilentDiverges` is the greatest fixed point of
-  the silent step.  `EuttF` relates, after finite silent closure on both sides:
+  the silent step.  `SimttF` relates, after finite silent closure on both sides:
   `ret` leaves carrying defined outcomes through `post` — `post` sees only
   `.ret`-valued outcomes and never `ub`; `timeout` only to `timeout`; a left
   silent divergence as the bottom against a right side that cannot silently
@@ -58,31 +61,31 @@ canonical resolution.
   UB terminal, while a right UB terminal admits any completed left return,
   defined or `ub`, without consulting `post`.
 
-  `eutt` is Paco's parameterised least fixed point `plfp (EuttF frame post) top`
+  `simtt` is Paco's parameterised least fixed point `plfp (SimttF frame post) top`
   of the one-step functional, with the reverse-implication order on
-  propositions.  `eutt_eq_plfp` records the definition, `eutt_unfold` is
-  Paco's `plfp_unfold` with the inert top assumption removed, and `eutt.coind`
+  propositions.  `simtt_eq_plfp` records the definition, `simtt_unfold` is
+  Paco's `plfp_unfold` with the inert top assumption removed, and `simtt.coind`
   is Paco's `plfp_init` together with Park induction.  The finite-stutter
   lemmas, return inversion and the terminal mismatch rules are the rest of the
   public surface.
 * `Bridge.lean` — the executable side of the relation.  `Exec_inv` and the
   shape-specific inversions read a canonical resolution's constructor off the
   tree, `Exec.silentStep`/`Exec.silentHead` commute a resolution through silent
-  steps, and `eutt_exec_some` is the elimination: a *completed* target run
+  steps, and `simtt_exec_some` is the elimination: a *completed* target run
   (`some` outcome) is answered by the source either with undefined behaviour or
   with an actual return the postcondition accepts.  The budget-explicit
-  `eutt_runFuel_some` and the quantified `eutt_beh_inclusion` specialise it to
+  `simtt_runFuel_some` and the quantified `simtt_beh_inclusion` specialise it to
   `runFuel` and `Beh`, with a separate budget on each side, and
-  `refinesWithin_of_eutt`/`refines_of_eutt` are corollaries at the framed and
+  `refinesWithin_of_simtt`/`refines_of_simtt` are corollaries at the framed and
   exact posts.  This transport is one-directional, from target to source, and
   conditional on a tree relation being available for every completed target
   run; the module installs nothing and defines no relation of its own.
-  `not_eutt_load_of_disagree` is the negative side of the load clause: a visible
+  `not_simtt_load_of_disagree` is the negative side of the load clause: a visible
   load whose two memories disagree is refused.
 * `LoopInstance.lean` — the repository's concrete fixture: for every
   `x : BitVec 64`, the parsed loop as left target is related to the unrolled
   candidate as right source by
-  `eutt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))`
+  `simtt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))`
   on `(loopTree x, [])` and `(candidateTree x, [])`, where the postcondition
   compares the actual returned values and memories outside the band the loop's
   own allocations cover.  The proof walks the loop's own blocks and the

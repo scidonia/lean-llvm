@@ -35,7 +35,7 @@ other two to match.
   (`SeamContext`).
 - `LeanLLVM/ITree/` is a second Lake library, `LeanLLVM.ITree`: the
   interaction-tree layer.  `Core` is the public tree API, `Interpret` the
-  interpretation of the fuel semantics as trees, `Eutt` the
+  interpretation of the fuel semantics as trees, `Simtt` the
   postcondition-indexed directed relation, and `LoopInstance` the
   comma-mask loop/candidate instance.  Only
   `LeanLLVM/ITree/Internal/PFunctor.lean` imports mathlib; every other module
@@ -90,7 +90,7 @@ other two to match.
   outside the frame that it refuses).  A user-facing route gets an executable
   scenario instead: `tests/m4-loop-gate.sh` drives `probes/install/select.sh`
   and asserts refusal and fallback.
-- The tree relation (`LeanLLVM/ITree/Eutt.lean`) is a second, finer statement
+- The tree relation (`LeanLLVM/ITree/Simtt.lean`) is a second, finer statement
   beside `Refines` and `RefinesWithin`, not a replacement for them.  Those
   keep their definitions and their proofs, and no pass or route reasons
   through the tree layer yet; do not describe it as the semantics' refinement

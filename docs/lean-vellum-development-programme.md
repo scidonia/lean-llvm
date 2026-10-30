@@ -233,16 +233,16 @@ accepted on the strength of a narrower result.
   a footprint read off the allocator state.  A second, finer statement stands
   beside them: `LeanLLVM/ITree/` interprets the same fuel semantics as
   interaction trees and defines a postcondition-indexed, directed simulation
-  `eutt` — left is the target, right the source — with budget timeout, undefined
+  `simtt` — left is the target, right the source — with budget timeout, undefined
   behaviour and silent divergence as distinct terminals, a visible load matching
   only when the two memories give the same canonical response, and a proof for
   the comma-mask loop against its unrolled candidate at the loop's
   allocator-derived frame.  That is a statement about that one pair, it installs
   nothing, and it leaves the executable relation and the pass theorems
   unchanged.  One conditional bridge exists from the tree relation to the
-  executable side: `eutt_exec_some` eliminates the relation against a completed
-  target run, `eutt_runFuel_some` and `eutt_beh_inclusion` state the consequence
-  at explicit budgets on each side, `refinesWithin_of_eutt` and `refines_of_eutt`
+  executable side: `simtt_exec_some` eliminates the relation against a completed
+  target run, `simtt_runFuel_some` and `simtt_beh_inclusion` state the consequence
+  at explicit budgets on each side, `refinesWithin_of_simtt` and `refines_of_simtt`
   are corollaries at the framed and exact posts, and `loop_candidate_beh_bridge`
   is the single loop-pair behaviour statement.  The bridge is one-directional
   (target to source), conditional on a tree relation being supplied for every

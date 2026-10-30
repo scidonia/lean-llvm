@@ -6,7 +6,7 @@ A state `(t, m)` can take a *silent* step: a `tau`, or a `load`/`store` whose
 whole byte span lies in the private frame.  Calls, out-of-frame accesses,
 undefined loads, `ub` and `timeout` are not silent.
 
-`eutt frame post` is the greatest fixed point of `EuttF`: after finitely many
+`simtt frame post` is the greatest fixed point of `SimttF`: after finitely many
 silent steps on either side, matching terminals are related.
 
 * a `ret` leaf carrying a defined outcome on both sides is related when `post`
@@ -443,37 +443,37 @@ theorem not_reachesUb_infTau {frame} {m : Mem} :
 
 /-! ### The relation -/
 
-/-- One unfolding of `eutt`: after finitely many silent steps on both sides,
+/-- One unfolding of `simtt`: after finitely many silent steps on both sides,
 matching terminals. -/
-inductive EuttF (frame : Nat → Prop) (post : Outcome → Outcome → Prop)
+inductive SimttF (frame : Nat → Prop) (post : Outcome → Outcome → Prop)
     (sim : TS → TS → Prop) : TS → TS → Prop where
   /-- Two defined outcomes related by `post`.  The outcomes are `.ret`-valued:
   `post` is never applied to `ub`. -/
   | ret {p q : TS} {v₁ v₂ : Option Value} {mem₁ mem₂ : Mem} {m₁ m₂ : Mem}
       (h1 : SilentHead frame p (ITree.ret (Outcome.ret v₁ mem₁), m₁))
       (h2 : SilentHead frame q (ITree.ret (Outcome.ret v₂ mem₂), m₂))
-      (hp : post (Outcome.ret v₁ mem₁) (Outcome.ret v₂ mem₂)) : EuttF frame post sim p q
+      (hp : post (Outcome.ret v₁ mem₁) (Outcome.ret v₂ mem₂)) : SimttF frame post sim p q
   /-- A right UB terminal admits any completed left return, defined or `ub`,
   and `post` is not consulted. -/
   | right_ub_ret {p q : TS} {o : Outcome} {m₁ : Mem}
       (h1 : SilentHead frame p (ITree.ret o, m₁))
-      (h2 : ReachesUb frame q) : EuttF frame post sim p q
+      (h2 : ReachesUb frame q) : SimttF frame post sim p q
   /-- A left UB terminal requires a right UB terminal; the `ret` leaf carrying
   `Outcome.ub` and the `vis Ev.ub` node are one class. -/
   | ub {p q : TS} (h1 : ReachesUb frame p) (h2 : ReachesUb frame q) :
-      EuttF frame post sim p q
+      SimttF frame post sim p q
   /-- A budget timeout matches only a budget timeout. -/
   | timeout {p q : TS} {m₁ m₂ : Mem}
       (k1 k2 : Empty → ITree Ev Outcome)
       (h1 : SilentHead frame p (ITree.vis Ev.timeout k1, m₁))
-      (h2 : SilentHead frame q (ITree.vis Ev.timeout k2, m₂)) : EuttF frame post sim p q
+      (h2 : SilentHead frame q (ITree.vis Ev.timeout k2, m₂)) : SimttF frame post sim p q
   /-- Left silent divergence is the bottom against a right side that cannot
   silently reach `timeout`. -/
   | left_diverges {p q : TS} (hdiv : SilentDiverges frame p)
-      (hnt : ¬ TimeoutReachable frame q) : EuttF frame post sim p q
+      (hnt : ¬ TimeoutReachable frame q) : SimttF frame post sim p q
   /-- Right silent divergence requires left silent divergence. -/
   | right_diverges {p q : TS} (hdiv2 : SilentDiverges frame q)
-      (hdiv1 : SilentDiverges frame p) : EuttF frame post sim p q
+      (hdiv1 : SilentDiverges frame p) : SimttF frame post sim p q
   /-- The same load matches when the two memories define the same canonical
   response — the same value, or both undefined — and the response is threaded
   into both continuations from each side's own memory. -/
@@ -482,98 +482,98 @@ inductive EuttF (frame : Nat → Prop) (post : Outcome → Outcome → Prop)
       (h1 : SilentHead frame p (ITree.vis (Ev.load addr ty) k1, m₁))
       (h2 : SilentHead frame q (ITree.vis (Ev.load addr ty) k2, m₂))
       (hm : loadValue m₁ ty addr = loadValue m₂ ty addr)
-      (hs : ∀ v, sim (k1 v, m₁) (k2 v, m₂)) : EuttF frame post sim p q
+      (hs : ∀ v, sim (k1 v, m₁) (k2 v, m₂)) : SimttF frame post sim p q
   /-- The same store matches and advances both memories. -/
   | vis_store {p q : TS} (addr : Nat) (ty : Ty) (v : Value) {m₁ m₂ : Mem}
       (k1 k2 : Unit → ITree Ev Outcome)
       (h1 : SilentHead frame p (ITree.vis (Ev.store addr ty v) k1, m₁))
       (h2 : SilentHead frame q (ITree.vis (Ev.store addr ty v) k2, m₂))
       (hs : sim (k1 (), storeMem m₁ ty v addr) (k2 (), storeMem m₂ ty v addr)) :
-      EuttF frame post sim p q
+      SimttF frame post sim p q
   /-- The same call matches. -/
   | vis_call {p q : TS} (callee : String) (args : List Value) {m₁ m₂ : Mem}
       (k1 k2 : Option Value → ITree Ev Outcome)
       (h1 : SilentHead frame p (ITree.vis (Ev.call callee args) k1, m₁))
       (h2 : SilentHead frame q (ITree.vis (Ev.call callee args) k2, m₂))
-      (hs : ∀ r, sim (k1 r, m₁) (k2 r, m₂)) : EuttF frame post sim p q
+      (hs : ∀ r, sim (k1 r, m₁) (k2 r, m₂)) : SimttF frame post sim p q
 
-theorem EuttF_monotone {frame post} {sim sim' : TS → TS → Prop}
+theorem SimttF_monotone {frame post} {sim sim' : TS → TS → Prop}
     (h : ∀ p q, sim p q → sim' p q) :
-    ∀ p q, EuttF frame post sim p q → EuttF frame post sim' p q := by
+    ∀ p q, SimttF frame post sim p q → SimttF frame post sim' p q := by
   intro p q hpq
   cases hpq with
-  | ret h1 h2 hp => exact EuttF.ret h1 h2 hp
-  | right_ub_ret h1 h2 => exact EuttF.right_ub_ret h1 h2
-  | ub h1 h2 => exact EuttF.ub h1 h2
-  | timeout k1 k2 h1 h2 => exact EuttF.timeout k1 k2 h1 h2
-  | left_diverges hdiv hnt => exact EuttF.left_diverges hdiv hnt
-  | right_diverges h2 h1 => exact EuttF.right_diverges h2 h1
+  | ret h1 h2 hp => exact SimttF.ret h1 h2 hp
+  | right_ub_ret h1 h2 => exact SimttF.right_ub_ret h1 h2
+  | ub h1 h2 => exact SimttF.ub h1 h2
+  | timeout k1 k2 h1 h2 => exact SimttF.timeout k1 k2 h1 h2
+  | left_diverges hdiv hnt => exact SimttF.left_diverges hdiv hnt
+  | right_diverges h2 h1 => exact SimttF.right_diverges h2 h1
   | vis_load addr ty k1 k2 h1 h2 hm hs =>
-      exact EuttF.vis_load addr ty k1 k2 h1 h2 hm (fun v => h _ _ (hs v))
+      exact SimttF.vis_load addr ty k1 k2 h1 h2 hm (fun v => h _ _ (hs v))
   | vis_store addr ty v k1 k2 h1 h2 hs =>
-      exact EuttF.vis_store addr ty v k1 k2 h1 h2 (h _ _ hs)
+      exact SimttF.vis_store addr ty v k1 k2 h1 h2 (h _ _ hs)
   | vis_call callee args k1 k2 h1 h2 hs =>
-      exact EuttF.vis_call callee args k1 k2 h1 h2 (fun r => h _ _ (hs r))
+      exact SimttF.vis_call callee args k1 k2 h1 h2 (fun r => h _ _ (hs r))
 
 /-- The reverse-implication complete lattice on `Prop`, lifted to the two
 tree/memory indices; the same instance Lean's `coinductive_fixpoint` builds for
 a coinductive predicate. -/
-private instance instEuttPartialOrder : Lean.Order.PartialOrder (TS → TS → Prop) :=
+private instance instSimttPartialOrder : Lean.Order.PartialOrder (TS → TS → Prop) :=
   inferInstanceAs (Lean.Order.PartialOrder (TS → TS → ReverseImplicationOrder))
 
-private instance instEuttLattice : Lean.Order.CompleteLattice (TS → TS → Prop) :=
+private instance instSimttLattice : Lean.Order.CompleteLattice (TS → TS → Prop) :=
   inferInstanceAs (Lean.Order.CompleteLattice (TS → TS → ReverseImplicationOrder))
 
-/-- `EuttF` is monotone in the reverse-implication order, which is what
+/-- `SimttF` is monotone in the reverse-implication order, which is what
 `plfp` needs. -/
-theorem EuttF_monotone_order (frame) (post) : monotone (EuttF frame post) := by
+theorem SimttF_monotone_order (frame) (post) : monotone (SimttF frame post) := by
   intro x y hxy
-  exact EuttF_monotone hxy
+  exact SimttF_monotone hxy
 
 /-- The directed simulation: left is the target, right the source.  It is
-Paco's parameterised least fixed point of `EuttF` at the top assumption; in the
+Paco's parameterised least fixed point of `SimttF` at the top assumption; in the
 reverse-implication order that is its greatest fixed point. -/
-def eutt (frame : Nat → Prop) (post : Outcome → Outcome → Prop) : TS → TS → Prop :=
-  plfp (EuttF frame post) (hm := EuttF_monotone_order frame post)
+def simtt (frame : Nat → Prop) (post : Outcome → Outcome → Prop) : TS → TS → Prop :=
+  plfp (SimttF frame post) (hm := SimttF_monotone_order frame post)
     (Lean.Order.top : TS → TS → Prop)
 
-/-- `eutt` is Paco's parameterised least fixed point of `EuttF` at the top
+/-- `simtt` is Paco's parameterised least fixed point of `SimttF` at the top
 assumption: with the reverse-implication order that is the greatest fixed
 point of the one-step functional. -/
-theorem eutt_eq_plfp (frame) (post) :
-    eutt frame post = plfp (EuttF frame post) (hm := EuttF_monotone_order frame post)
+theorem simtt_eq_plfp (frame) (post) :
+    simtt frame post = plfp (SimttF frame post) (hm := SimttF_monotone_order frame post)
       (Lean.Order.top : TS → TS → Prop) := rfl
 
-/-- Unfolding of `eutt`, by Paco's `plfp_unfold` and the fact that the top
+/-- Unfolding of `simtt`, by Paco's `plfp_unfold` and the fact that the top
 assumption is inert. -/
-theorem eutt_unfold (frame) (post) :
-    eutt frame post = EuttF frame post (eutt frame post) := by
-  have h : plfp (EuttF frame post) (hm := EuttF_monotone_order frame post)
+theorem simtt_unfold (frame) (post) :
+    simtt frame post = SimttF frame post (simtt frame post) := by
+  have h : plfp (SimttF frame post) (hm := SimttF_monotone_order frame post)
       (Lean.Order.top : TS → TS → Prop) =
-      EuttF frame post (plfp (EuttF frame post) (hm := EuttF_monotone_order frame post)
+      SimttF frame post (plfp (SimttF frame post) (hm := SimttF_monotone_order frame post)
         (Lean.Order.top : TS → TS → Prop)) := by
-    conv_lhs => rw [plfp_unfold (hm := EuttF_monotone_order frame post)]
+    conv_lhs => rw [plfp_unfold (hm := SimttF_monotone_order frame post)]
     congr 1
     simp only [uplfp]
     rw [CompleteLattice.meet_comm, CompleteLattice.meet_top]
-  rw [eutt]
+  rw [simtt]
   exact h
 
-/-- Unfolding of `eutt` into its one-step functional. -/
-theorem eutt_iff (frame) (post) (p q : TS) :
-    eutt frame post p q ↔ EuttF frame post (eutt frame post) p q :=
-  (congrArg (fun f => f p q) (eutt_unfold frame post)).to_iff
+/-- Unfolding of `simtt` into its one-step functional. -/
+theorem simtt_iff (frame) (post) (p q : TS) :
+    simtt frame post p q ↔ SimttF frame post (simtt frame post) p q :=
+  (congrArg (fun f => f p q) (simtt_unfold frame post)).to_iff
 
-/-- Coinduction: a relation contained in `EuttF` is contained in `eutt`.
-After `eutt_eq_plfp` this is Paco's `plfp_init` and the least-fixed-point
+/-- Coinduction: a relation contained in `SimttF` is contained in `simtt`.
+After `simtt_eq_plfp` this is Paco's `plfp_init` and the least-fixed-point
 principle for the reverse-implication order. -/
-theorem eutt.coind (frame) (post) (pred : TS → TS → Prop)
-    (h : ∀ p q, pred p q → EuttF frame post pred p q) :
-    ∀ p q, pred p q → eutt frame post p q := by
+theorem simtt.coind (frame) (post) (pred : TS → TS → Prop)
+    (h : ∀ p q, pred p q → SimttF frame post pred p q) :
+    ∀ p q, pred p q → simtt frame post p q := by
   intro p q hpq
-  rw [eutt, ← plfp_init (hm := EuttF_monotone_order frame post)]
-  exact lfp_le_of_le_monotone (EuttF frame post)
-    (hm := EuttF_monotone_order frame post) pred h p q hpq
+  rw [simtt, ← plfp_init (hm := SimttF_monotone_order frame post)]
+  exact lfp_le_of_le_monotone (SimttF frame post)
+    (hm := SimttF_monotone_order frame post) pred h p q hpq
 
 /-! ### Distinct visible events
 
@@ -619,14 +619,14 @@ theorem vis_ub_ne_timeout (k k' : Empty → ITree Ev Outcome) :
 /-- Return inversion: two `ret` leaves carrying defined outcomes are related
 exactly when `post` holds of those outcomes.  A `ret` leaf carrying
 `Outcome.ub` is a UB terminal, not a return, and `post` never sees it. -/
-theorem eutt_ret_ret_iff (frame) (post) (v v' : Option Value) (mem mem' : Mem)
+theorem simtt_ret_ret_iff (frame) (post) (v v' : Option Value) (mem mem' : Mem)
     (m m' : Mem) :
-    eutt frame post (ITree.ret (Outcome.ret v mem), m)
+    simtt frame post (ITree.ret (Outcome.ret v mem), m)
       (ITree.ret (Outcome.ret v' mem'), m') ↔
       post (Outcome.ret v mem) (Outcome.ret v' mem') := by
   constructor
   · intro h
-    have hF := (eutt_iff frame post _ _).mp h
+    have hF := (simtt_iff frame post _ _).mp h
     cases hF with
     | ret h1 h2 hp =>
         have e1 := ITree.ret_inj (Prod.mk.inj (SilentHead_ret_self h1)).1
@@ -650,62 +650,62 @@ theorem eutt_ret_ret_iff (frame) (post) (v v' : Option Value) (mem mem' : Mem)
         exact ((ITree.ret_ne_vis (Ev.call callee args) k1).symm
           (Prod.mk.inj (SilentHead_ret_self h1)).1).elim
   · intro hp
-    exact (eutt_iff frame post _ _).mpr
-      (EuttF.ret (SilentHead.refl _ _) (SilentHead.refl _ _) hp)
+    exact (simtt_iff frame post _ _).mpr
+      (SimttF.ret (SilentHead.refl _ _) (SilentHead.refl _ _) hp)
 
 /-! ### Finite stutter -/
 
 /-- Finitely many silent steps on the left preserve the relation. -/
-theorem eutt_silentHead_left {frame post} {p p' q : TS}
-    (hstep : SilentHead frame p p') (h : eutt frame post p' q) :
-    eutt frame post p q := by
-  apply eutt.coind frame post (fun r s => ∃ r', SilentHead frame r r' ∧ eutt frame post r' s)
+theorem simtt_silentHead_left {frame post} {p p' q : TS}
+    (hstep : SilentHead frame p p') (h : simtt frame post p' q) :
+    simtt frame post p q := by
+  apply simtt.coind frame post (fun r s => ∃ r', SilentHead frame r r' ∧ simtt frame post r' s)
   · intro r s ⟨r', hr', hrs⟩
-    have hF := (eutt_iff frame post r' s).mp hrs
+    have hF := (simtt_iff frame post r' s).mp hrs
     cases hF with
-    | ret h1 h2 hp => exact EuttF.ret (SilentHead.trans hr' h1) h2 hp
-    | right_ub_ret h1 h2 => exact EuttF.right_ub_ret (SilentHead.trans hr' h1) h2
-    | ub h1 h2 => exact EuttF.ub (ReachesUb.of_silentHead hr' h1) h2
-    | timeout k1 k2 h1 h2 => exact EuttF.timeout k1 k2 (SilentHead.trans hr' h1) h2
+    | ret h1 h2 hp => exact SimttF.ret (SilentHead.trans hr' h1) h2 hp
+    | right_ub_ret h1 h2 => exact SimttF.right_ub_ret (SilentHead.trans hr' h1) h2
+    | ub h1 h2 => exact SimttF.ub (ReachesUb.of_silentHead hr' h1) h2
+    | timeout k1 k2 h1 h2 => exact SimttF.timeout k1 k2 (SilentHead.trans hr' h1) h2
     | left_diverges hdiv hnt =>
-        exact EuttF.left_diverges (SilentDiverges.of_silentHead hr' hdiv) hnt
+        exact SimttF.left_diverges (SilentDiverges.of_silentHead hr' hdiv) hnt
     | right_diverges hdiv2 hdiv1 =>
-        exact EuttF.right_diverges hdiv2 (SilentDiverges.of_silentHead hr' hdiv1)
+        exact SimttF.right_diverges hdiv2 (SilentDiverges.of_silentHead hr' hdiv1)
     | vis_load addr ty k1 k2 h1 h2 hm hs =>
-        exact EuttF.vis_load addr ty k1 k2 (SilentHead.trans hr' h1) h2 hm
+        exact SimttF.vis_load addr ty k1 k2 (SilentHead.trans hr' h1) h2 hm
           (fun v => ⟨_, SilentHead.refl _ _, hs v⟩)
     | vis_store addr ty v k1 k2 h1 h2 hs =>
-        exact EuttF.vis_store addr ty v k1 k2 (SilentHead.trans hr' h1) h2
+        exact SimttF.vis_store addr ty v k1 k2 (SilentHead.trans hr' h1) h2
           ⟨_, SilentHead.refl _ _, hs⟩
     | vis_call callee args k1 k2 h1 h2 hs =>
-        exact EuttF.vis_call callee args k1 k2 (SilentHead.trans hr' h1) h2
+        exact SimttF.vis_call callee args k1 k2 (SilentHead.trans hr' h1) h2
           (fun r => ⟨_, SilentHead.refl _ _, hs r⟩)
   · exact ⟨p', hstep, h⟩
 
 /-- Finitely many silent steps on the right preserve the relation. -/
-theorem eutt_silentHead_right {frame post} {p q q' : TS}
-    (hstep : SilentHead frame q q') (h : eutt frame post p q') :
-    eutt frame post p q := by
-  apply eutt.coind frame post (fun r s => ∃ s', SilentHead frame s s' ∧ eutt frame post r s')
+theorem simtt_silentHead_right {frame post} {p q q' : TS}
+    (hstep : SilentHead frame q q') (h : simtt frame post p q') :
+    simtt frame post p q := by
+  apply simtt.coind frame post (fun r s => ∃ s', SilentHead frame s s' ∧ simtt frame post r s')
   · intro r s ⟨s', hs', hrs⟩
-    have hF := (eutt_iff frame post r s').mp hrs
+    have hF := (simtt_iff frame post r s').mp hrs
     cases hF with
-    | ret h1 h2 hp => exact EuttF.ret h1 (SilentHead.trans hs' h2) hp
-    | right_ub_ret h1 h2 => exact EuttF.right_ub_ret h1 (ReachesUb.of_silentHead hs' h2)
-    | ub h1 h2 => exact EuttF.ub h1 (ReachesUb.of_silentHead hs' h2)
-    | timeout k1 k2 h1 h2 => exact EuttF.timeout k1 k2 h1 (SilentHead.trans hs' h2)
+    | ret h1 h2 hp => exact SimttF.ret h1 (SilentHead.trans hs' h2) hp
+    | right_ub_ret h1 h2 => exact SimttF.right_ub_ret h1 (ReachesUb.of_silentHead hs' h2)
+    | ub h1 h2 => exact SimttF.ub h1 (ReachesUb.of_silentHead hs' h2)
+    | timeout k1 k2 h1 h2 => exact SimttF.timeout k1 k2 h1 (SilentHead.trans hs' h2)
     | left_diverges hdiv hnt =>
-        exact EuttF.left_diverges hdiv (not_timeoutReachable_of_silentHead hs' hnt)
+        exact SimttF.left_diverges hdiv (not_timeoutReachable_of_silentHead hs' hnt)
     | right_diverges hdiv2 hdiv1 =>
-        exact EuttF.right_diverges (SilentDiverges.of_silentHead hs' hdiv2) hdiv1
+        exact SimttF.right_diverges (SilentDiverges.of_silentHead hs' hdiv2) hdiv1
     | vis_load addr ty k1 k2 h1 h2 hm hs =>
-        exact EuttF.vis_load addr ty k1 k2 h1 (SilentHead.trans hs' h2) hm
+        exact SimttF.vis_load addr ty k1 k2 h1 (SilentHead.trans hs' h2) hm
           (fun v => ⟨_, SilentHead.refl _ _, hs v⟩)
     | vis_store addr ty v k1 k2 h1 h2 hs =>
-        exact EuttF.vis_store addr ty v k1 k2 h1 (SilentHead.trans hs' h2)
+        exact SimttF.vis_store addr ty v k1 k2 h1 (SilentHead.trans hs' h2)
           ⟨_, SilentHead.refl _ _, hs⟩
     | vis_call callee args k1 k2 h1 h2 hs =>
-        exact EuttF.vis_call callee args k1 k2 h1 (SilentHead.trans hs' h2)
+        exact SimttF.vis_call callee args k1 k2 h1 (SilentHead.trans hs' h2)
           (fun r => ⟨_, SilentHead.refl _ _, hs r⟩)
   · exact ⟨q', hstep, h⟩
 
@@ -714,70 +714,70 @@ theorem eutt_silentHead_right {frame post} {p q q' : TS}
 /-- Two UB terminals are related, whatever their shape and regardless of
 `post`: the `ret` leaf carrying `Outcome.ub` and the `vis Ev.ub` node are the
 same class. -/
-theorem eutt_ub_terminal (frame) (post) {p q : TS} (hp : UbTerminal p)
-    (hq : UbTerminal q) : eutt frame post p q :=
-  (eutt_iff frame post _ _).mpr
-    (EuttF.ub (reachesUb_of_terminal hp) (reachesUb_of_terminal hq))
+theorem simtt_ub_terminal (frame) (post) {p q : TS} (hp : UbTerminal p)
+    (hq : UbTerminal q) : simtt frame post p q :=
+  (simtt_iff frame post _ _).mpr
+    (SimttF.ub (reachesUb_of_terminal hp) (reachesUb_of_terminal hq))
 
 /-- A right UB terminal admits any completed left return, defined or `ub`, and
 `post` is not consulted. -/
-theorem eutt_ret_ub_terminal (frame) (post) (o : Outcome) (m : Mem) {q : TS}
-    (hq : UbTerminal q) : eutt frame post (ITree.ret o, m) q :=
-  (eutt_iff frame post _ _).mpr
-    (EuttF.right_ub_ret (SilentHead.refl _ _) (reachesUb_of_terminal hq))
+theorem simtt_ret_ub_terminal (frame) (post) (o : Outcome) (m : Mem) {q : TS}
+    (hq : UbTerminal q) : simtt frame post (ITree.ret o, m) q :=
+  (simtt_iff frame post _ _).mpr
+    (SimttF.right_ub_ret (SilentHead.refl _ _) (reachesUb_of_terminal hq))
 
 /-- A right `ub` node admits a completed left return. -/
-theorem eutt_ret_ub (frame) (post) (o : Outcome) (m m' : Mem) :
-    eutt frame post (ITree.ret o, m)
+theorem simtt_ret_ub (frame) (post) (o : Outcome) (m m' : Mem) :
+    simtt frame post (ITree.ret o, m)
       (ITree.vis Ev.ub (Empty.elim : Empty → ITree Ev Outcome), m') :=
-  eutt_ret_ub_terminal frame post o m (UbTerminal.vis Empty.elim m')
+  simtt_ret_ub_terminal frame post o m (UbTerminal.vis Empty.elim m')
 
 /-- A left `ub` node is related to a right `ub` node. -/
-theorem eutt_ub_ub (frame) (post)
+theorem simtt_ub_ub (frame) (post)
     (k1 k2 : Empty → ITree Ev Outcome) (m m' : Mem) :
-    eutt frame post (ITree.vis Ev.ub k1, m) (ITree.vis Ev.ub k2, m') :=
-  eutt_ub_terminal frame post (UbTerminal.vis k1 m) (UbTerminal.vis k2 m')
+    simtt frame post (ITree.vis Ev.ub k1, m) (ITree.vis Ev.ub k2, m') :=
+  simtt_ub_terminal frame post (UbTerminal.vis k1 m) (UbTerminal.vis k2 m')
 
 /-- A budget timeout matches itself. -/
-theorem eutt_timeout_timeout (frame) (post)
+theorem simtt_timeout_timeout (frame) (post)
     (k1 k2 : Empty → ITree Ev Outcome) (m m' : Mem) :
-    eutt frame post (ITree.vis Ev.timeout k1, m) (ITree.vis Ev.timeout k2, m') :=
-  (eutt_iff frame post _ _).mpr
-    (EuttF.timeout k1 k2 (SilentHead.refl _ _) (SilentHead.refl _ _))
+    simtt frame post (ITree.vis Ev.timeout k1, m) (ITree.vis Ev.timeout k2, m') :=
+  (simtt_iff frame post _ _).mpr
+    (SimttF.timeout k1 k2 (SilentHead.refl _ _) (SilentHead.refl _ _))
 
 /-- Left silent divergence is the bottom against a right side that cannot
 silently reach a timeout. -/
-theorem eutt_diverges (frame) (post) {p q : TS}
+theorem simtt_diverges (frame) (post) {p q : TS}
     (hdiv : SilentDiverges frame p) (hnt : ¬ TimeoutReachable frame q) :
-    eutt frame post p q :=
-  (eutt_iff frame post _ _).mpr (EuttF.left_diverges hdiv hnt)
+    simtt frame post p q :=
+  (simtt_iff frame post _ _).mpr (SimttF.left_diverges hdiv hnt)
 
 /-- A left silent divergence is related to any right return. -/
-theorem eutt_diverges_ret (frame) (post) (o : Outcome) (m m' : Mem) :
-    eutt frame post (ITree.infTau, m) (ITree.ret o, m') :=
-  eutt_diverges frame post (infTau_diverges frame m) not_timeoutReachable_ret
+theorem simtt_diverges_ret (frame) (post) (o : Outcome) (m m' : Mem) :
+    simtt frame post (ITree.infTau, m) (ITree.ret o, m') :=
+  simtt_diverges frame post (infTau_diverges frame m) not_timeoutReachable_ret
 
 /-- A left silent divergence is related to a right `ub`. -/
-theorem eutt_diverges_ub (frame) (post) (k : Empty → ITree Ev Outcome) (m m' : Mem) :
-    eutt frame post (ITree.infTau, m) (ITree.vis Ev.ub k, m') :=
-  eutt_diverges frame post (infTau_diverges frame m) not_timeoutReachable_ub
+theorem simtt_diverges_ub (frame) (post) (k : Empty → ITree Ev Outcome) (m m' : Mem) :
+    simtt frame post (ITree.infTau, m) (ITree.vis Ev.ub k, m') :=
+  simtt_diverges frame post (infTau_diverges frame m) not_timeoutReachable_ub
 
 /-- Two silent divergences are related: the right-divergence clause requires a
 left one and admits it here, so right divergence is not rejected wholesale. -/
-theorem eutt_diverges_diverges (frame) (post) (m m' : Mem) :
-    eutt frame post (ITree.infTau, m) (ITree.infTau, m') :=
-  (eutt_iff frame post _ _).mpr
-    (EuttF.right_diverges (infTau_diverges frame m') (infTau_diverges frame m))
+theorem simtt_diverges_diverges (frame) (post) (m m' : Mem) :
+    simtt frame post (ITree.infTau, m) (ITree.infTau, m') :=
+  (simtt_iff frame post _ _).mpr
+    (SimttF.right_diverges (infTau_diverges frame m') (infTau_diverges frame m))
 
 /-! ### Mismatched terminals are rejected -/
 
 /-- A left UB terminal is not related to a defined return: the UB class matches
 only itself on the right, and `post` never sees `ub`. -/
-theorem not_eutt_ub_terminal_ret (frame) (post) {p : TS} (hp : UbTerminal p)
+theorem not_simtt_ub_terminal_ret (frame) (post) {p : TS} (hp : UbTerminal p)
     (v : Option Value) (mem : Mem) (m : Mem) :
-    ¬ eutt frame post p (ITree.ret (Outcome.ret v mem), m) := by
+    ¬ simtt frame post p (ITree.ret (Outcome.ret v mem), m) := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   cases hF with
   | ret h1 h2 _ =>
       cases hp with
@@ -827,23 +827,23 @@ theorem not_eutt_ub_terminal_ret (frame) (post) {p : TS} (hp : UbTerminal p)
             (Prod.mk.inj (SilentHead_ub_self h1)).1
 
 /-- A left `ub` node is not matched by a defined return. -/
-theorem not_eutt_ub_ret (frame) (post) (v : Option Value) (mem : Mem) (m m' : Mem)
+theorem not_simtt_ub_ret (frame) (post) (v : Option Value) (mem : Mem) (m m' : Mem)
     (k : Empty → ITree Ev Outcome) :
-    ¬ eutt frame post (ITree.vis Ev.ub k, m) (ITree.ret (Outcome.ret v mem), m') :=
-  not_eutt_ub_terminal_ret frame post (UbTerminal.vis k m) v mem m'
+    ¬ simtt frame post (ITree.vis Ev.ub k, m) (ITree.ret (Outcome.ret v mem), m') :=
+  not_simtt_ub_terminal_ret frame post (UbTerminal.vis k m) v mem m'
 
 /-- The `ret` leaf carrying `Outcome.ub` is the same UB terminal: a defined
 return does not match it either. -/
-theorem not_eutt_ret_ub_ret (frame) (post) (v : Option Value) (mem : Mem) (m m' : Mem) :
-    ¬ eutt frame post (ITree.ret Outcome.ub, m) (ITree.ret (Outcome.ret v mem), m') :=
-  not_eutt_ub_terminal_ret frame post (UbTerminal.ret m) v mem m'
+theorem not_simtt_ret_ub_ret (frame) (post) (v : Option Value) (mem : Mem) (m m' : Mem) :
+    ¬ simtt frame post (ITree.ret Outcome.ub, m) (ITree.ret (Outcome.ret v mem), m') :=
+  not_simtt_ub_terminal_ret frame post (UbTerminal.ret m) v mem m'
 
 /-- A left return is not matched by a right budget timeout. -/
-theorem not_eutt_ret_timeout (frame) (post) (o : Outcome) (m m' : Mem)
+theorem not_simtt_ret_timeout (frame) (post) (o : Outcome) (m m' : Mem)
     (k : Empty → ITree Ev Outcome) :
-    ¬ eutt frame post (ITree.ret o, m) (ITree.vis Ev.timeout k, m') := by
+    ¬ simtt frame post (ITree.ret o, m) (ITree.vis Ev.timeout k, m') := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   cases hF with
   | ret h1 h2 hp =>
       exact ITree.ret_ne_vis Ev.timeout k (Prod.mk.inj (SilentHead_timeout_self h2)).1
@@ -865,11 +865,11 @@ theorem not_eutt_ret_timeout (frame) (post) (o : Outcome) (m m' : Mem)
         (Prod.mk.inj (SilentHead_timeout_self h2)).1
 
 /-- A left budget timeout is not matched by a right return. -/
-theorem not_eutt_timeout_ret (frame) (post) (o : Outcome) (m m' : Mem)
+theorem not_simtt_timeout_ret (frame) (post) (o : Outcome) (m m' : Mem)
     (k : Empty → ITree Ev Outcome) :
-    ¬ eutt frame post (ITree.vis Ev.timeout k, m) (ITree.ret o, m') := by
+    ¬ simtt frame post (ITree.vis Ev.timeout k, m) (ITree.ret o, m') := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   cases hF with
   | ret h1 h2 hp =>
       exact ITree.ret_ne_vis Ev.timeout k (Prod.mk.inj (SilentHead_timeout_self h1)).1
@@ -892,11 +892,11 @@ theorem not_eutt_timeout_ret (frame) (post) (o : Outcome) (m m' : Mem)
         (Prod.mk.inj (SilentHead_timeout_self h1)).1
 
 /-- A left budget timeout is not matched by a right `ub`. -/
-theorem not_eutt_timeout_ub (frame) (post)
+theorem not_simtt_timeout_ub (frame) (post)
     (k k' : Empty → ITree Ev Outcome) (m m' : Mem) :
-    ¬ eutt frame post (ITree.vis Ev.timeout k, m) (ITree.vis Ev.ub k', m') := by
+    ¬ simtt frame post (ITree.vis Ev.timeout k, m) (ITree.vis Ev.ub k', m') := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   cases hF with
   | ret h1 h2 hp =>
       exact ITree.ret_ne_vis Ev.timeout k (Prod.mk.inj (SilentHead_timeout_self h1)).1
@@ -918,11 +918,11 @@ theorem not_eutt_timeout_ub (frame) (post)
         (Prod.mk.inj (SilentHead_timeout_self h1)).1
 
 /-- A left `ub` is not matched by a right budget timeout. -/
-theorem not_eutt_ub_timeout (frame) (post)
+theorem not_simtt_ub_timeout (frame) (post)
     (k k' : Empty → ITree Ev Outcome) (m m' : Mem) :
-    ¬ eutt frame post (ITree.vis Ev.ub k, m) (ITree.vis Ev.timeout k', m') := by
+    ¬ simtt frame post (ITree.vis Ev.ub k, m) (ITree.vis Ev.timeout k', m') := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   cases hF with
   | ret h1 h2 hp =>
       exact ITree.ret_ne_vis Ev.ub k (Prod.mk.inj (SilentHead_ub_self h1)).1
@@ -943,10 +943,10 @@ theorem not_eutt_ub_timeout (frame) (post)
         (Prod.mk.inj (SilentHead_ub_self h1)).1
 
 /-- A right silent divergence is not matched by a left return. -/
-theorem not_eutt_ret_diverges (frame) (post) (o : Outcome) (m m' : Mem) :
-    ¬ eutt frame post (ITree.ret o, m) (ITree.infTau, m') := by
+theorem not_simtt_ret_diverges (frame) (post) (o : Outcome) (m m' : Mem) :
+    ¬ simtt frame post (ITree.ret o, m) (ITree.infTau, m') := by
   intro h
-  have hF := (eutt_iff frame post _ _).mp h
+  have hF := (simtt_iff frame post _ _).mp h
   cases hF with
   | ret h1 h2 hp =>
       exact absurd (Prod.mk.inj (SilentHead_infTau_self h2)).1
