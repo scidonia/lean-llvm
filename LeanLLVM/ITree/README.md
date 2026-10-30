@@ -1,122 +1,114 @@
-# `LeanLLVM.ITree`: interaction trees and a postcondition-indexed simulation
+# `LeanLLVM.ITree`: memory as an effect, and a directed simulation of handled trees
 
-This directory is a second Lake library, `LeanLLVM.ITree`, built beside
-`LeanLLVM`.  It carries the interaction-tree layer used to relate two programs
-by their memory interactions rather than by whole-outcome equality.
-
-## Dependency and import boundary
-
-The tree carrier is mathlib's coinductive polynomial functor `PFunctor.M`.
-The dependency is pinned in `lakefile.toml` at mathlib
-`3dfb8e22b67042b31fac228dee0e1169a1a7820f`; the package builds at Lean
-`v4.36.0-rc1`.
-
-Exactly one module imports mathlib directly:
-
-* `Internal/PFunctor.lean` — `Mathlib.Data.QPF.Univariate.Basic` and
-  `Mathlib.Data.Vector3`, plus the `Vector3`/`PFunctor.M` utilities the tree
-  encoding needs.
-
-Every other module, here and in `LeanLLVM/`, reaches mathlib only through that
-adapter.  `Internal/Basic.lean` defines the coinductive tree; `Internal/Paco.lean`
-is the vendored parameterised-fixpoint layer; `Core.lean` is the public
-constructor/observer surface; `Interpret.lean` interprets `LeanLLVM`'s fuel
-semantics; `Simtt.lean` is the relation; `Bridge.lean` takes that relation to the
-canonical resolution.
+This directory is the LLVM instantiation of the generic interaction-tree
+library (`ITree/`).  It interprets the fuel semantics as a tree, folds the
+memory protocol into a handler so that a tree no longer needs a memory index,
+and relates the resulting **bare handled trees** with a directed,
+postcondition-indexed relation.
 
 ## Modules
 
-* `Core.lean` — `Tree`, `ret`, `tau`, `vis`, `tauN`, `trigger`, `infTau`,
-  constructor injectivity, the disjointness of `ret`/`tau`/`vis`, and the
-  `dMatchOn` eliminator.  Clients name trees through this API and never spell
-  out `PFunctor.M`/`MIntl`/`CofixA`.
-* `Interpret.lean` — the `Ev` signature (`load`, `store`, `call`, `ub`,
-  `timeout`), the fuel-indexed tree of a function (`runT`), and the canonical
-  resolution relation `Exec` with the forward theorem `exec_runT`: every
-  `runFuel` outcome is a leaf of the tree.  `ub` and `timeout` are distinct:
-  `ub` is a completed semantic outcome, `timeout` a finite-budget artifact.
-  `Simtt.lean` — the directed relation.  `simtt` is a directed simulation up
-  to taus, where the silent steps are `tau` and private in-frame loads/stores;
-  it is not the symmetric equivalence-up-to-taus relation of the ITree
-  literature (`InteractionTrees`).  Left is the target, right the source.
-  `SilentStep` is a `tau`, a defined in-frame load, or an in-frame store; for a
-  load the memory must define the value, while a store's event is private as
-  soon as its span is in the frame.  `SilentHead` is its inductive
-  reflexive-transitive closure; `SilentDiverges` is the greatest fixed point of
-  the silent step.  `SimttF` relates, after finite silent closure on both sides:
-  `ret` leaves carrying defined outcomes through `post` — `post` sees only
-  `.ret`-valued outcomes and never `ub`; `timeout` only to `timeout`; a left
-  silent divergence as the bottom against a right side that cannot silently
-  reach `timeout`; a right silent divergence only to a left one; and the same
-  visible event with its response threaded into the continuations (stores
-  advance both memories).  A visible load also requires that the two memories
-  give the same canonical response, `loadValue m₁ ty addr = loadValue m₂ ty
-  addr`: two equal values or two undefined loads are related, a defined answer
-  against an undefined load is not.
+| Module | Contents |
+| --- | --- |
+| `Interpret.lean` | `Ev` (`load`, `store`, `call`, `ub`, `timeout`), `runT` (the fuel-indexed tree of a function), `Exec` and `exec_runT` (the canonical resolution of an unhandled tree) |
+| `MemoryEffect.lean` | `ObsEv`, `InFrame`, `memoryHandler`, `handle`, `runHandled`, the handler's equations, and the raw private step used only to transport the loop derivation |
+| `Simtt.lean` | `SilentStep`/`SilentHead`/`SilentDiverges`, the one-step functional `SimttF` and its greatest fixed point `simtt post` on bare `ObsEv` trees, the positive rules, the terminal refusals and the event-payload refusals |
+| `Bridge.lean` | `HandledExec`, the correspondence `handled_runFuel`, the elimination `simtt_exec_some`, and the budget-, behaviour- and refinement-level corollaries |
+| `LoopInstance.lean` | the comma-mask loop and its unrolled candidate: the fixed-budget instance, the address-0 counterexample, and the behaviour corollary |
 
-  A UB terminal is either a `ret` leaf carrying `Outcome.ub` or a `vis Ev.ub`
-  node (`UbTerminal`), and `ReachesUb` is the silent closure to one.  The two
-  shapes are one class in both directions, so neither can slip past the
-  left-UB rule through `post`: a left UB terminal is related only to a right
-  UB terminal, while a right UB terminal admits any completed left return,
-  defined or `ub`, without consulting `post`.
+## Memory as an effect
 
-  `simtt` is Paco's parameterised least fixed point `plfp (SimttF frame post) top`
-  of the one-step functional, with the reverse-implication order on
-  propositions.  `simtt_eq_plfp` records the definition, `simtt_unfold` is
-  Paco's `plfp_unfold` with the inert top assumption removed, and `simtt.coind`
-  is Paco's `plfp_init` together with Park induction.  The finite-stutter
-  lemmas, return inversion and the terminal mismatch rules are the rest of the
-  public surface.
-* `Bridge.lean` — the executable side of the relation.  `Exec_inv` and the
-  shape-specific inversions read a canonical resolution's constructor off the
-  tree, `Exec.silentStep`/`Exec.silentHead` commute a resolution through silent
-  steps, and `simtt_exec_some` is the elimination: a *completed* target run
-  (`some` outcome) is answered by the source either with undefined behaviour or
-  with an actual return the postcondition accepts.  The budget-explicit
-  `simtt_runFuel_some` and the quantified `simtt_beh_inclusion` specialise it to
-  `runFuel` and `Beh`, with a separate budget on each side, and
-  `refinesWithin_of_simtt`/`refines_of_simtt` are corollaries at the framed and
-  exact posts.  This transport is one-directional, from target to source, and
-  conditional on a tree relation being available for every completed target
-  run; the module installs nothing and defines no relation of its own.
-  `not_simtt_load_of_disagree` is the negative side of the load clause: a visible
-  load whose two memories disagree is refused.
-* `LoopInstance.lean` — the repository's concrete fixture: for every
-  `x : BitVec 64`, the parsed loop as left target is related to the unrolled
-  candidate as right source by
-  `simtt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))`
-  on `(loopTree x, [])` and `(candidateTree x, [])`, where the postcondition
-  compares the actual returned values and memories outside the band the loop's
-  own allocations cover.  The proof walks the loop's own blocks and the
-  candidate's single block; it is not a general loop rule, and the module
-  installs nothing.  A returned memory that differs at address `0` is rejected
-  by the same postcondition.  `loop_candidate_beh_bridge` is the one behaviour
-  statement derived from the bridge for this pair: budget uniqueness pins the
-  loop's outcome to its 19-step return, the fixed 19/10000 tree relation
-  transports it, and the result is a candidate behaviour agreeing outside the
-  band.  It covers `x : BitVec 64` only and says nothing about arbitrary
-  argument lists or other loops.
+`Ev` is the source protocol.  `memoryHandler frame` decides each event once, and
+`handle frame m t` is the generic fold of that decision over `t`:
 
-## Provenance and deviations
+* a **defined in-frame load** and **any in-frame store** are answered privately;
+  the fold performs them as `tau` and advances the handler's own memory
+  (`loadValue` for the read, `storeMem` for the write);
+* every other access stays **visible**: a load at another address, or an
+  undefined one, emits `ObsEv.load addr ty (loadValue m ty addr)` — the response
+  the handler itself computed — and a store outside the frame emits
+  `ObsEv.store addr ty v`.  Nothing observable is discarded;
+* a **call** is re-emitted with its own callee and arguments and its response
+  type intact; the memory is untouched and no environment is consulted;
+* `ub` and `timeout` remain distinct stuck nodes, `ObsEv.ub` and
+  `ObsEv.timeout`, each with the empty response type.
 
-The tree core is adapted from `mit-plv/lean4-itree` at revision
-`7f48fefaa2f12f599e6c4aa2be1ef39d5466122b`:
+A leaf's recorded memory is replaced by the handler's final state
+(`finishOutcome`).  For an arbitrary synthetic source tree that is a deliberate
+change; for the trees `runT` produces it is the same memory, which is the
+correspondence in `Bridge.lean`: at every reachable continuation the handler's
+memory equals the `State.mem` the semantics uses, because a store advances both
+by `storeMem` (`storeValue_mem`) and every other instruction and terminator
+leaves the memory alone.  So `handled_runFuel` states exactly
 
-* `Internal/PFunctor.lean` adapts `ITree/Utils.lean`;
-* `Internal/Basic.lean` adapts `ITree/Basic.lean`;
-* `Internal/Paco.lean` is the upstream `Paco/PacoDefs.lean` vendored whole
-  (its `plfp`/`uplfp` definitions, unfolding/accumulator lemmas and tactics).
+```lean
+HandledExec calls (runHandled calls frame n f s) (runFuel calls n f s)
+```
 
-The upstream MIT licence is reproduced in `LICENSE`.  Local deviations:
+**The host handler is proof-facing and noncomputable.**  `frame` is an arbitrary
+`Nat → Prop` predicate, and the existing API gives it no decider, so the
+handler's branch is decided with `Classical.propDecidable`.  This is not a new
+executable route: `runFuel`, `runT`, `Beh`, the driver and the installer are
+untouched.  A computable handler would need a decidable frame representation or
+an explicit `DecidablePred` contract for `frame`; that is a separate change, and
+it must not silently narrow today's frame API.
 
-* the upstream exact-equality relation `IEq`, its `IEqF` functional and the
-  library's monad/effect-algebra instances are not vendored; this library
-  needs the tree constructors, destructors and coinductive fixpoints only;
-* names are placed under `LeanLLVM.ITree` (`Shape`, `P`, `ITree`) and the
-  imports are the single adapter above rather than `Mathlib` in each file;
-* `ret`/`tau`/`vis` constructor disjointness, the `Ev` signature, the
-  interpretation, `Exec`, the relation and its instance are new here.
+The axiom budget reflects that: the simulation, the correspondence and the fixed
+loop proofs stay within `[propext, Classical.choice, Quot.sound]`, and
+`Classical.choice` is there for the arbitrary-`Prop` frame decision, exactly as
+the framed refinement layer already pays it.  The pins in
+`LeanLLVMTest/Vellum.lean` record it.
 
-The read-only VeLLVM reference subtree under `reference/vellvm/` is a separate
-thing and is not this library.
+## The relation
+
+`simtt post` relates two bare `ObsEv` trees.  Its silent step is exactly `tau` —
+a private access is silent because the handler inserted the `tau`, never because
+the relation inspects a memory — and it is the greatest fixed point of a
+one-step functional, built on the generic `plfp`.
+
+* a `ret` leaf on both sides is related when `post` holds of the two outcomes;
+  `post` never sees `ub`;
+* `timeout` matches only `timeout`;
+* a UB terminal is a `ret` leaf carrying `Outcome.ub` or a `vis ObsEv.ub` node;
+  a left UB terminal requires a right one, and a right one admits any completed
+  left return without consulting `post`;
+* left silent divergence is the bottom against a right side that cannot silently
+  reach `timeout`; right silent divergence requires left silent divergence;
+* a visible event matches only the same event: the same load annotation, the
+  same store address/type/value, the same callee and arguments — and then its
+  continuations are related (for a call, for every response).
+
+The frame is therefore not a parameter of the relation at all.  It is chosen by
+the caller's postcondition (`simtt (Outcome.AgreesOutside frame)`) and it is what
+selected each producer's private effects.
+
+`Bridge.lean` eliminates the relation against a completed target run
+(`simtt_exec_some`), specialises that to `runFuel` and `Beh` with a separate
+budget on each side, and derives `refinesWithin_of_simtt`/`refines_of_simtt` as
+corollaries at the framed and exact posts.  Those theorems take the relation
+between the two `runHandled` trees as a hypothesis: they define neither
+`Refines` nor `RefinesWithin`, and no pass or route reasons through the tree
+layer.
+
+## The instance
+
+`loop_candidate_simtt` relates, for every `x : BitVec 64`,
+
+```lean
+simtt (Outcome.AgreesOutside (loopFrame x))
+  (runHandled noCalls (loopFrame x) 19     loopFunction      (initState loopFunction      [.int 64 x]))
+  (runHandled noCalls (loopFrame x) 10000  candidateFunction (initState candidateFunction [.int 64 x]))
+```
+
+The loop's finite derivation of private accesses is stated on raw `(tree,
+memory)` states (`RawSilentHead`, local to `MemoryEffect`) and transported
+through the handler into the `tau` closure of the handled tree; the candidate has
+no memory events at all.  The postcondition compares the two handler-produced
+returns, and a returned memory that differs at address `0`, outside the
+allocator-derived band, is rejected.  `loop_candidate_beh_bridge` is the one
+behaviour statement derived from the bridge for that pair.
+
+This is one fixture at fixed budgets and one allocator-derived frame.  There is
+no general loop or recursion rule, no automatic discharge of the relation
+hypothesis, no memory-effectful call environment, and no memory-aware module
+theorem; both are open obligations of the programme.

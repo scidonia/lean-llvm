@@ -17,13 +17,14 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 
 `llvm-as`, `llvm-dis`, `opt`, `llc` and `clang` are provided by the shell.
 
-The default build covers the `LeanLLVM.ITree` library as well as `LeanLLVM`.
-That library depends on `leanprover-community/mathlib4` at the revision pinned
-in `lakefile.toml`, resolved into `.lake/packages`; mathlib's oleans must be
-present before the tree modules elaborate, so a cold checkout pays for a mathlib
-build unless its prebuilt cache is already in place.  The mathlib revision,
-`lean-toolchain` and the flake's Lean source are one unit: moving one needs the
-other two to match.
+The default targets are the `leanllvm` executable and the `ITree` library, so
+`lake build` covers `LeanLLVM` (through the executable) and the generic tree
+library.  The generic library depends on `leanprover-community/mathlib4` at the
+revision pinned in `lakefile.toml`, resolved into `.lake/packages`; mathlib's
+oleans must be present before the tree modules elaborate, so a cold checkout pays
+for a mathlib build unless its prebuilt cache is already in place.  The mathlib
+revision, `lean-toolchain` and the flake's Lean source are one unit: moving one
+needs the other two to match.
 
 ## Layout
 
@@ -33,16 +34,22 @@ other two to match.
   `SemRefines`, `Correct`, the contextual theorems, the comma-mask instance,
   the emitted-IR bridge (`CommaMaskIR`) and the IR-level caller
   (`SeamContext`).
-- `LeanLLVM/ITree/` is a second Lake library, `LeanLLVM.ITree`: the
-  interaction-tree layer.  `Core` is the public tree API, `Interpret` the
-  interpretation of the fuel semantics as trees, `Simtt` the
-  postcondition-indexed directed relation, and `LoopInstance` the
-  comma-mask loop/candidate instance.  Only
-  `LeanLLVM/ITree/Internal/PFunctor.lean` imports mathlib; every other module
-  reaches it through that adapter.  `LeanLLVM.lean` imports the library after
-  the loop module, so `LeanLLVMTest/` reaches the tree API through the same
-  entrypoint as the rest of `LeanLLVM`.  `LeanLLVM/ITree/README.md` records the
-  public surface, the dependency and the upstream provenance.
+- `ITree.lean` and `ITree/` are a second Lake library, `ITree`: the generic
+  interaction tree.  `ITree/Core` is the public tree API, `ITree/Effect` a
+  one-step event handler with a computable interpreter, and `ITree/Coinduction`
+  the parameterised-fixpoint layer the relation is built on.  No module here
+  imports a `LeanLLVM` module.  `ITree/README.md` records the public surface,
+  the one-step limit of `Effect.interp`, the single mathlib adapter and the
+  upstream provenance.
+- `LeanLLVM/ITree/` is the LLVM instantiation of that library: `Interpret` is
+  the fuel semantics as an `Ev` tree, `MemoryEffect` folds `Ev` into an
+  `ObsEv` handler so memory becomes an effect, `Simtt` the directed relation on
+  the resulting bare handled trees, `Bridge` the correspondence and elimination
+  against a completed run, and `LoopInstance` the comma-mask loop/candidate
+  instance.  `LeanLLVM.lean` imports it after the Vellum modules, so
+  `LeanLLVMTest/` reaches it through the same entrypoint as the rest of
+  `LeanLLVM`.  `LeanLLVM/ITree/README.md` records the handler, the relation and
+  the open obligations.
 - `LeanLLVMTest/` is the check library.  It imports `LeanLLVM` from outside, so
   it sees exactly the public interface, and holds `#guard` checks,
   `#guard_msgs` pins, and small theorems.
@@ -94,17 +101,33 @@ other two to match.
   beside `Refines` and `RefinesWithin`, not a replacement for them.  Those
   keep their definitions and their proofs, and no pass or route reasons
   through the tree layer yet; do not describe it as the semantics' refinement
-  relation.  Its own statements follow the same discipline: a positive
-  theorem, a negative example the same detector rejects, and an axiom pin no
-  wider than `[propext, Classical.choice, Quot.sound]` in
-  `LeanLLVMTest/Vellum.lean`.  The loop instance is one fixture at fixed
-  budgets and one allocator-derived frame; a wider frame, a bigger budget or a
-  general rule is new work, not a variation on that theorem.
-- Keep mathlib behind its adapter.  A new module in `LeanLLVM/` or
-  `LeanLLVM/ITree/` imports `LeanLLVM.ITree.Internal.PFunctor` (or a module
-  above it), never `Mathlib.*`, and clients name trees through
-  `LeanLLVM.ITree.Core` rather than `PFunctor.M`, `MIntl` or `CofixA`.  Only
-  `LeanLLVM/ITree/Internal/PFunctor.lean` may import mathlib directly.
+  relation.  It relates **bare handled trees**: memory is an effect, folded by
+  `MemoryEffect.handle`, so the relation has no memory index and no frame
+  parameter, and a private access is silent because the handler inserted a
+  `tau`.  Its own statements follow the same discipline: a positive theorem, a
+  negative example the same detector rejects, and an axiom pin no wider than
+  `[propext, Classical.choice, Quot.sound]` in `LeanLLVMTest/Vellum.lean`.
+  `Classical.choice` is budgeted there for the arbitrary-`Prop` frame the host
+  handler decides with `Classical.propDecidable`; that handler is
+  proof-facing, `runFuel` and the routes are untouched, and making it
+  computable needs a decidable frame contract rather than a silent narrowing.
+  The loop instance is one fixture at fixed budgets and one allocator-derived
+  frame; a wider frame, a bigger budget or a general rule is new work, not a
+  variation on that theorem.
+- Keep mathlib behind its adapter.  A new module anywhere in the package
+  imports `ITree.Core`/`ITree.Coinduction` (or a module above them), never
+  `Mathlib.*`, and clients name trees through `ITree.Core` rather than
+  `PFunctor.M`, `MIntl` or `CofixA`.  Only `ITree/Internal/PFunctor.lean` may
+  import mathlib directly: `Mathlib.*` may not appear in any other file.  No
+  module under `ITree/` or `ITree.lean` may import a `LeanLLVM` module, so
+  `lake build ITree` builds without the instantiation.
+- The generic library has two focused checks beside the builds:
+  `tests/itree-import.lean` elaborates a client that imports `ITree` only, and
+  `tests/itree-boundary.sh` checks the import inventory against the actual
+  `import` declarations — with a positive control on the same detector before
+  each absence claim.  Run them with
+  `nix develop -c lake env lean tests/itree-import.lean` and
+  `nix develop -c bash tests/itree-boundary.sh`.
 
 ## Adding a pass
 

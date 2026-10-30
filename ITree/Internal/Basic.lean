@@ -6,14 +6,17 @@ Adapted from `mit-plv/lean4-itree` at revision
 `7f48fefaa2f12f599e6c4aa2be1ef39d5466122b` (`ITree/Basic.lean`), restricted to
 the definitions this package uses: the exact-equality relation `IEq`, the
 library's monad instances and effect algebra are not vendored.  See
-`LeanLLVM/ITree/README.md` for provenance and deviations.
+`ITree/README.md` for provenance and deviations.
 -/
-import LeanLLVM.ITree.Internal.PFunctor
+import ITree.Internal.PFunctor
 
-namespace LeanLLVM.ITree
+-- The tree type and its namespace coincide (`ITree.ITree`), as the public API
+-- requires; the duplicate-namespace linter has nothing to report here.
+set_option linter.dupNamespace false
+
 namespace ITree
 
-open LeanLLVM.ITree.Internal
+open ITree.Internal
 
 /-- The one-step shape of an interaction tree: a result, a silent step, or a
 visible event with its response type. -/
@@ -192,4 +195,3 @@ theorem infTau_eq : @infTau ε ρ = tau infTau := by
 end
 
 end ITree
-end LeanLLVM.ITree

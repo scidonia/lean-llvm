@@ -3,18 +3,17 @@ The public interaction-tree API.
 
 Clients of this library construct and observe trees through `Tree`, `ret`,
 `tau`, `vis` and `dMatchOn`; they never mention `PFunctor.M`, `MIntl` or
-`CofixA`.  The coinductive encoding lives in `Internal.Basic` and the mathlib
-dependency it needs in `Internal.PFunctor`.
+`CofixA`.  The coinductive encoding lives in `ITree/Internal/Basic.lean` and the mathlib
+dependency it needs in `ITree/Internal/PFunctor.lean`.
 
 The library is adapted from `mit-plv/lean4-itree`; provenance and deviations
-are recorded in `LeanLLVM/ITree/README.md`.
+are recorded in `ITree/README.md`.
 -/
-import LeanLLVM.ITree.Internal.Basic
+import ITree.Internal.Basic
 
-namespace LeanLLVM.ITree
 namespace ITree
 
-open LeanLLVM.ITree.Internal
+open ITree.Internal
 
 /-- The public tree type. -/
 abbrev Tree (ε : Type → Type) (ρ : Type) := ITree ε ρ
@@ -56,4 +55,3 @@ theorem vis_ne_of_type_ne {α β : Type} {e : ε α} {e' : ε β}
 end
 
 end ITree
-end LeanLLVM.ITree

@@ -1,10 +1,11 @@
 name = "LeanLLVM"
 version = "0.1.0"
-defaultTargets = ["leanllvm", "LeanLLVM.ITree"]
+defaultTargets = ["leanllvm", "ITree"]
 
-# The interaction-tree layer is proved against mathlib's QPF support; the
+# The interaction-tree library is proved against mathlib's QPF support; the
 # revision is pinned so a build resolves the same sources everywhere.  Every
-# other module reaches mathlib only through `LeanLLVM.ITree.Internal.PFunctor`.
+# module reaches mathlib only through `ITree/Internal/PFunctor.lean`, the one
+# adapter that imports it directly.
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
@@ -13,10 +14,11 @@ rev = "3dfb8e22b67042b31fac228dee0e1169a1a7820f"
 [[lean_lib]]
 name = "LeanLLVM"
 
+# The generic interaction-tree library: no dependency on a `LeanLLVM` module.
 [[lean_lib]]
-name = "LeanLLVM.ITree"
-roots = ["LeanLLVM.ITree"]
-globs = ["LeanLLVM.ITree.*"]
+name = "ITree"
+roots = ["ITree"]
+globs = ["ITree.*"]
 
 [[lean_lib]]
 name = "LeanLLVMTest"

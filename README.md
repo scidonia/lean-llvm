@@ -21,7 +21,7 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 | Front end | A line-oriented parser and a canonical printer for the modelled subset | bitcode, metadata, attributes, declarations with bodies |
 | Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency, calls |
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing. A framed relation (`RefinesWithin`, `LeanLLVM/Frames.lean`) compares the returned value and the bytes outside a footprint read off the allocator state | relational/log relations; memory-aware contextual replacement; a simulation rule for arbitrary loops |
-| Tree relation | A postcondition-indexed, directed simulation `simtt` over interaction trees (`LeanLLVM/ITree/`): the one-step functional takes a leaf postcondition, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a general loop or recursion rule; a memory-aware module theorem |
+| Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a general loop or recursion rule; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
 | Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | the same at the emitted-LLVM level; the object connection is a runtime differential transcript, not a proof, and the memory-backed loop is refused by the selector |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
@@ -41,18 +41,30 @@ installer refuses the loop, because no checked theorem binds the loop object to
 the seam's contract.  There is no benchmark, and calls still have no memory
 effects, so no memory-aware module theorem is claimed.
 
-The interaction-tree layer in `LeanLLVM/ITree/` asks a different question of the
-same fuel semantics: whether two executions agree as trees under a postcondition
-on their leaves, with each side's private memory abstracted by a frame.  It is
-proved for the comma-mask loop against its unrolled candidate, for every 64-bit
-argument, at fixed fuel budgets (19 for the loop, 10000 for the candidate) and
-the loop's allocator-derived frame; a returned memory that differs at address
-zero is rejected by the same postcondition.  That is one fixture.  It is not a
-general loop rule, it installs nothing, and neither the pass proofs nor the
-executable relation (`Refines`, `RefinesWithin`) use it yet.  The layer is a
-second Lake library whose only direct mathlib importer is
-`LeanLLVM/ITree/Internal/PFunctor.lean`; `LeanLLVM/ITree/README.md` records the
-API, the dependency and the upstream provenance.
+The interaction-tree layer asks a different question of the same fuel
+semantics: whether two executions agree as trees under a postcondition on their
+leaves.  It comes in two libraries.
+
+`ITree/` is the **generic** interaction tree: the coinductive carrier, a
+one-step event handler with a computable interpreter, and the
+parameterised-fixpoint layer the relation is built on.  It imports no `LeanLLVM`
+module; its only direct mathlib importer is `ITree/Internal/PFunctor.lean`.
+`ITree/README.md` records the public surface, the import boundary, the one-step
+limit of `Effect.interp` and the upstream provenance.
+
+`LeanLLVM/ITree/` is the instantiation.  Memory is an **effect** there: a handler
+folds the `load`/`store` protocol into the tree, private accesses becoming silent
+steps and everything else staying visible with the response the handler computed.
+The directed relation then compares those bare handled trees, and the bridge
+shows that the handled tree of a budgeted run resolves exactly as `runFuel` does.
+It is proved for the comma-mask loop against its unrolled candidate, for every
+64-bit argument, at fixed fuel budgets (19 for the loop, 10000 for the
+candidate) and the loop's allocator-derived frame; a returned memory that differs
+at address zero is rejected by the same postcondition.  That is one fixture.  It
+is not a general loop rule, it installs nothing, and neither the pass proofs nor
+the executable relation (`Refines`, `RefinesWithin`) use it yet.  The handler is
+proof-facing and noncomputable, because the frame is an arbitrary proposition;
+the routes above are untouched.
 
 ## Build
 
@@ -60,7 +72,8 @@ The toolchain is Lean `v4.36.0-rc1` from the flake.  Run every command through
 the shell so the environment comes from this checkout:
 
 ```bash
-nix develop -c lake build            # library, tree library and leanllvm executable
+nix develop -c lake build            # default targets: leanllvm and the ITree library
+nix develop -c lake build ITree      # the generic tree library alone
 nix develop -c lake build LeanLLVMTest
 nix develop -c lake exe leanllvm tests/constfold.ll
 ```
@@ -68,8 +81,8 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 The flake also provides `llvm-as`, `llvm-dis`, `opt`, `llc` and `clang` for
 checking emitted IR.  A cold build also resolves
 `leanprover-community/mathlib4` at the revision pinned in `lakefile.toml` into
-`.lake/packages`, which `LeanLLVM.ITree` depends on; mathlib's oleans have to be
-present before the tree modules build, so expect a mathlib build unless its
+`.lake/packages`, which the `ITree` library depends on; mathlib's oleans have to
+be present before the tree modules build, so expect a mathlib build unless its
 prebuilt cache is already there.  That pin, `lean-toolchain` and the flake's
 Lean source are upgraded together.
 
@@ -128,7 +141,8 @@ conditional edge is gone, which is what the certified branch folder proves.
 | `LeanLLVM/Semantics.lean` | executable step semantics, `Outcome`, `Beh`, `Refines` |
 | `LeanLLVM/Memory.lean` | byte-access and round-trip facts |
 | `LeanLLVM/Frames.lean` | framed refinement: byte agreement outside an allocation-derived footprint |
-| `LeanLLVM/ITree.lean`, `LeanLLVM/ITree/` | interaction trees, the directed postcondition-indexed relation, the loop/candidate instance; the single mathlib import boundary |
+| `ITree.lean`, `ITree/` | the generic interaction tree: public tree API, one-step event handler and interpreter, coinduction layer; the single mathlib import boundary |
+| `LeanLLVM/ITree.lean`, `LeanLLVM/ITree/` | the LLVM instantiation: memory as an effect, the directed relation on bare handled trees, the correspondence with `runFuel`, the loop/candidate instance |
 | `LeanLLVM/Parser.lean` | textual-IR parser for the modelled subset |
 | `LeanLLVM/Printer.lean` | canonical textual-IR printer |
 | `LeanLLVM/Transform/Basic.lean` | `Pass`, soundness, composition, pipeline |
@@ -159,10 +173,11 @@ fuel.  Composition is sound by transitivity, so the pipeline theorem is
 `strengthReduction_sound` combined.
 
 `LeanLLVM/ITree/` asks a separate question: whether two executions agree as
-trees under a leaf postcondition, with private memory hidden by a frame.  It is
-directed — left is the target, right the source — and `ub`, budget timeout and
-silent divergence are distinct terminals there.  No pass is proved with it, so
-the obligations above are unchanged.
+handled trees under a leaf postcondition, with private memory already folded into
+the tree by the handler and a caller-chosen frame.  It is directed — left is the
+target, right the source — and `ub`, budget timeout and silent divergence are
+distinct terminals there.  No pass is proved with it, so the obligations above
+are unchanged.
 
 ## Design notes
 
@@ -178,9 +193,12 @@ the obligations above are unchanged.
   Reproduce with `nix develop -c bash probes/m0/check.sh`.
 - [`docs/m0-runtime-noise-review-handoff.md`](docs/m0-runtime-noise-review-handoff.md)
   — the review of that report and the corrected first work package.
-- [`LeanLLVM/ITree/README.md`](LeanLLVM/ITree/README.md) — the tree library:
-  its public API, the single mathlib dependency, the relation's clauses and the
-  upstream provenance.
+- [`ITree/README.md`](ITree/README.md) — the generic tree library: its public
+  API, the import boundary, the one-step handler limit and the upstream
+  provenance.
+- [`LeanLLVM/ITree/README.md`](LeanLLVM/ITree/README.md) — the instantiation:
+  memory as an effect, the handler's equations and noncomputability, the
+  relation's clauses, the correspondence with `runFuel` and the open work.
 
 ## Reference materials
 

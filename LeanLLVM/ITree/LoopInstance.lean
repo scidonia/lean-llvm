@@ -16,17 +16,17 @@ import LeanLLVM.Vellum.CommaMaskLoop
 namespace LeanLLVM.ITree
 
 open LeanLLVM
-open ITree
+open _root_.ITree
 open LeanLLVM.Vellum
 open LeanLLVM.Vellum.CommaMaskLoop
 open LeanLLVM.Vellum.CommaMaskIR
 
 /-- The loop's tree at the budget its proof uses. -/
-def loopTree (x : BitVec 64) : ITree Ev Outcome :=
+def loopTree (x : BitVec 64) : ITree.Tree Ev Outcome :=
   runT noCalls 19 loopFunction (initState loopFunction [.int 64 x])
 
 /-- The unrolled candidate's tree. -/
-def candidateTree (x : BitVec 64) : ITree Ev Outcome :=
+def candidateTree (x : BitVec 64) : ITree.Tree Ev Outcome :=
   runT noCalls 10000 candidateFunction (initState candidateFunction [.int 64 x])
 
 theorem loop_init_mem (x : BitVec 64) :
@@ -49,7 +49,7 @@ theorem inFrame_nine (x : BitVec 64) : InFrame (loopFrame x) 9 (.int 64) := by
 /-- The exit block: one in-frame load, then the return, silently. -/
 theorem done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     (hpos : 0 < fuel) (hpc : s.pc = "done") (hf : LoopFacts s m acc 8) :
-    SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+    RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
       (ITree.ret (Outcome.ret (some (.int 64 acc)) s.mem), s.mem) := by
   obtain ⟨n, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.pos_iff_ne_zero.mp hpos)
   have hfind : loopFunction.findBlock s.pc = some doneBlock := by
@@ -57,15 +57,15 @@ theorem done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
       condBody, bodyBlock]
   rw [runT_succ, hfind]
   simp only [doneBlock, doneInstrs, codeT, instrT, evalOperand, hf.accPtr]
-  refine SilentHead.step (SilentStep.load 1 (.int 64) _ s.mem (.int 64 acc)
+  refine RawSilentHead.step (RawSilentStep.load 1 (.int 64) _ s.mem (.int 64 acc)
     hf.accLoad (inFrame_one x)) ?_
   simp only [State.bind, termT, execTerm, evalOperand, lookup_bind_self]
-  exact SilentHead.refl _ _
+  exact RawSilentHead.refl _ _
 
 /-- The entry block: two in-frame zero stores, then the jump to `cond`,
 silently. -/
 theorem entry_silent (x : BitVec 64) (n : Nat) :
-    SilentHead (loopFrame x)
+    RawSilentHead (loopFrame x)
       (runT noCalls (n + 1) loopFunction (initState loopFunction [.int 64 x]),
         (initState loopFunction [.int 64 x]).mem)
       (runT noCalls n loopFunction (entryState x), (entryState x).mem) := by
@@ -79,10 +79,10 @@ theorem entry_silent (x : BitVec 64) (n : Nat) :
     Const.toValue, State.bind, lookupName, storeValue, termT, execTerm, Ty.sizeBytes,
     entryState, initState, List.map, List.zip, List.zipWith, loopFunction, Function.entry?,
     List.head?, Option.getD, c]
-  refine SilentHead.step (SilentStep.store 1 (.int 64) (.int 64 0) _ [] (inFrame_one x)) ?_
-  refine SilentHead.step (SilentStep.store 9 (.int 64) (.int 64 0) _ _ (inFrame_nine x)) ?_
-  refine SilentHead.step (SilentStep.tau _ _) ?_
-  exact SilentHead.refl _ _
+  refine RawSilentHead.step (RawSilentStep.store 1 (.int 64) (.int 64 0) _ [] (inFrame_one x)) ?_
+  refine RawSilentHead.step (RawSilentStep.store 9 (.int 64) (.int 64 0) _ _ (inFrame_nine x)) ?_
+  refine RawSilentHead.step (RawSilentStep.step _ _) ?_
+  exact RawSilentHead.refl _ _
 
 /-- One trip through the condition block, silently: the counter load, the
 comparison, and the jump to `body`. -/
@@ -91,7 +91,7 @@ theorem cond_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     ∃ s', loopFunction.findBlock s.pc = some condBody ∧ s'.pc = "body" ∧
       LoopFacts s' m acc k ∧
       lookupName s'.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) ∧
-      SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+      RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
         (runT noCalls (fuel - 1) loopFunction s', s'.mem) := by
   obtain ⟨n, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.pos_iff_ne_zero.mp hpos)
   obtain ⟨hpc, hf⟩ := hinv
@@ -130,10 +130,10 @@ theorem cond_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
   · simp [s3, s2, s1, State.bind, lookupName]
   · rw [runT_succ, hfind]
     simp only [condBody, condInstrs, codeT, instrT, evalOperand, hf.iPtr]
-    refine SilentHead.step (SilentStep.load 9 (.int 64) _ s.mem (.int 64 (BitVec.ofNat 64 k))
+    refine RawSilentHead.step (RawSilentStep.load 9 (.int 64) _ s.mem (.int 64 (BitVec.ofNat 64 k))
       hf.iLoad (inFrame_nine x)) ?_
     simp only [instrT, pureInstrT, e2, termT, hterm]
-    exact SilentHead.step (SilentStep.tau _ _) (SilentHead.refl _ _)
+    exact RawSilentHead.step (RawSilentStep.step _ _) (RawSilentHead.refl _ _)
 
 /-- One trip through the body block, silently: the lane arithmetic, the
 accumulator load, the two in-frame stores, and the jump back to `cond`. -/
@@ -142,7 +142,7 @@ theorem body_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     (hf : LoopFacts s m acc k)
     (hi1 : lookupName s.env "%i1" = some (.int 64 (BitVec.ofNat 64 k))) :
     ∃ s', s'.pc = "cond" ∧ LoopFacts s' m (maskPrefix m (k + 1)) (k + 1) ∧
-      SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+      RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
         (runT noCalls (fuel - 1) loopFunction s', s'.mem) := by
   obtain ⟨n, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.pos_iff_ne_zero.mp hpos)
   let shv : BitVec 64 := BitVec.ofNat 64 k * (8 : BitVec 64)
@@ -294,23 +294,23 @@ theorem body_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
   · rw [runT_succ, hfind]
     simp only [bodyBlock, bodyInstrs, codeT, instrT, evalOperand, pureInstrT,
       e1, e2, e3, e4, hl_acc4]
-    refine SilentHead.step (SilentStep.load 1 (.int 64) _ s.mem (.int 64 acc)
+    refine RawSilentHead.step (RawSilentStep.load 1 (.int 64) _ s.mem (.int 64 acc)
       hf.accLoad (inFrame_one x)) ?_
     dsimp only [s5] at e6
     simp only [instrT, pureInstrT, e6, e7, e8, hl_a2, hl_acc8]
-    refine SilentHead.step (SilentStep.store 1 (.int 64) (.int 64 a2v) _ _ (inFrame_one x)) ?_
+    refine RawSilentHead.step (RawSilentStep.store 1 (.int 64) (.int 64 a2v) _ _ (inFrame_one x)) ?_
     dsimp only [s9] at e10
     simp only [hstore1, instrT, pureInstrT, e10, hl_i2, hl_i10]
-    refine SilentHead.step (SilentStep.store 9 (.int 64) (.int 64 i2v) _ _ (inFrame_nine x)) ?_
+    refine RawSilentHead.step (RawSilentStep.store 9 (.int 64) (.int 64 i2v) _ _ (inFrame_nine x)) ?_
     dsimp only [s11] at hterm
     simp only [hstore2, termT, hterm]
-    exact SilentHead.step (SilentStep.tau _ _) (SilentHead.refl _ _)
+    exact RawSilentHead.step (RawSilentStep.step _ _) (RawSilentHead.refl _ _)
 
 /-- The condition block at counter eight, silently: the branch to `done`. -/
 theorem cond_done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     (hpos : 0 < fuel) (hinv : LoopInv s m acc 8) :
     ∃ s', s'.pc = "done" ∧ LoopFacts s' m acc 8 ∧
-      SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+      RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
         (runT noCalls (fuel - 1) loopFunction s', s'.mem) := by
   obtain ⟨n, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (Nat.pos_iff_ne_zero.mp hpos)
   obtain ⟨hpc, hf⟩ := hinv
@@ -348,10 +348,10 @@ theorem cond_done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVe
     · simpa [s3, s2, s1, State.bind] using hf.memBand
   · rw [runT_succ, hfind]
     simp only [condBody, condInstrs, codeT, instrT, evalOperand, hf.iPtr]
-    refine SilentHead.step (SilentStep.load 9 (.int 64) _ s.mem (.int 64 (BitVec.ofNat 64 8))
+    refine RawSilentHead.step (RawSilentStep.load 9 (.int 64) _ s.mem (.int 64 (BitVec.ofNat 64 8))
       hf.iLoad (inFrame_nine x)) ?_
     simp only [instrT, pureInstrT, e2, termT, hterm]
-    exact SilentHead.step (SilentStep.tau _ _) (SilentHead.refl _ _)
+    exact RawSilentHead.step (RawSilentStep.step _ _) (RawSilentHead.refl _ _)
 
 /-- Straight-line code with no memory events is its continuation at the code's
 final state. -/
@@ -362,7 +362,7 @@ def NoEvents : Instr → Bool
   | _ => true
 
 theorem codeT_eq_of_noEvents (calls : Calls) :
-    ∀ (is : List Instr) (s : State) (k : State → ITree Ev Outcome) (s' : State),
+    ∀ (is : List Instr) (s : State) (k : State → ITree.Tree Ev Outcome) (s' : State),
       is.all NoEvents = true → denoteCode calls is s = some s' → codeT calls is s k = k s'
   | [], s, k, s', _, h => by
       simp only [denoteCode, Option.some.injEq] at h
@@ -403,7 +403,7 @@ theorem cond_run_silent (x : BitVec 64) :
     ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat) (fuel : Nat),
       k ≤ 8 → 8 - k = n → fuel = 2 * n + 2 → acc = maskPrefix m k → LoopInv s m acc k →
       ∃ mem, MemConfined 1 17 mem ∧
-        SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+        RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
           (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix m 8))) mem), mem) := by
   intro n
   induction n with
@@ -416,12 +416,12 @@ theorem cond_run_silent (x : BitVec 64) :
       have h1 := r1.choose_spec
       have hp1 : s1.pc = "done" := h1.1
       have hf1 : LoopFacts s1 m acc 8 := h1.2.1
-      have hs1 : SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+      have hs1 : RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
           (runT noCalls (fuel - 1) loopFunction s1, s1.mem) := h1.2.2
       have hs2 := done_silent x (fuel - 1) s1 m acc (by omega) hp1 hf1
       refine ⟨s1.mem, ?_, ?_⟩
       · simpa [hf1.nextEq] using hf1.memBand
-      · have := SilentHead.trans hs1 hs2
+      · have := RawSilentHead.trans hs1 hs2
         rw [hacc] at this
         exact this
   | succ n ih =>
@@ -433,14 +433,14 @@ theorem cond_run_silent (x : BitVec 64) :
       have hp1 : s1.pc = "body" := h1.2.1
       have hf1 : LoopFacts s1 m acc k := h1.2.2.1
       have hi1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) := h1.2.2.2.1
-      have hs1 : SilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
+      have hs1 : RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
           (runT noCalls (fuel - 1) loopFunction s1, s1.mem) := h1.2.2.2.2
       let r2 := body_silent x (fuel - 1) s1 m acc k (by omega) hk8 hacc hp1 hf1 hi1
       let s2 := r2.choose
       have h2 := r2.choose_spec
       have hp2 : s2.pc = "cond" := h2.1
       have hf2 : LoopFacts s2 m (maskPrefix m (k + 1)) (k + 1) := h2.2.1
-      have hs2 : SilentHead (loopFrame x)
+      have hs2 : RawSilentHead (loopFrame x)
           (runT noCalls (fuel - 1) loopFunction s1, s1.mem)
           (runT noCalls ((fuel - 1) - 1) loopFunction s2, s2.mem) := h2.2.2
       have hn' : 8 - (k + 1) = n := by omega
@@ -450,18 +450,18 @@ theorem cond_run_silent (x : BitVec 64) :
       let mem := r3.choose
       have h3 := r3.choose_spec
       have hconf : MemConfined 1 17 mem := h3.1
-      have hrest : SilentHead (loopFrame x)
+      have hrest : RawSilentHead (loopFrame x)
           (runT noCalls ((fuel - 1) - 1) loopFunction s2, s2.mem)
           (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix m 8))) mem), mem) := h3.2
       refine ⟨mem, hconf, ?_⟩
-      have := SilentHead.trans hs1 (SilentHead.trans hs2 hrest)
+      have := RawSilentHead.trans hs1 (RawSilentHead.trans hs2 hrest)
       simpa [show 2 * (n + 1) + 2 = 2 * n + 4 from by omega] using this
 
 /-- The loop's tree reaches its return silently, with a memory private to the
 band the loop's own allocations cover. -/
 theorem loopTree_silent (x : BitVec 64) :
     ∃ mem, MemPrivate (loopFrame x) mem ∧
-      SilentHead (loopFrame x) (loopTree x, ([] : Mem))
+      RawSilentHead (loopFrame x) (loopTree x, ([] : Mem))
         (ITree.ret (Outcome.ret (some (.int 64 (spec x))) mem), mem) := by
   obtain ⟨mem, hconf, hrest⟩ := cond_run_silent x 8 (entryState x)
     (x ^^^ c 3182967604875373612) 0 0 18 (by decide) (by decide) (by decide)
@@ -475,22 +475,22 @@ theorem loopTree_silent (x : BitVec 64) :
           (initState loopFunction [.int 64 x]).mem) =
         (runT noCalls 19 loopFunction (initState loopFunction [.int 64 x]),
           (initState loopFunction [.int 64 x]).mem) := rfl
-    have hentry : SilentHead (loopFrame x)
+    have hentry : RawSilentHead (loopFrame x)
         (runT noCalls 19 loopFunction (initState loopFunction [.int 64 x]),
           (initState loopFunction [.int 64 x]).mem)
         (runT noCalls 18 loopFunction (entryState x), (entryState x).mem) := e1 ▸ entry_silent x 18
-    have hrest' : SilentHead (loopFrame x)
+    have hrest' : RawSilentHead (loopFrame x)
         (runT noCalls 18 loopFunction (entryState x), (entryState x).mem)
         (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem),
           mem) := hrest
-    have := SilentHead.trans hentry hrest'
+    have := RawSilentHead.trans hentry hrest'
     rw [hspec] at this
     simpa [loopTree, initState, show 18 + 1 = 19 from by omega] using this
 
 /-- The candidate's tree is already a returned outcome: its single block has no
 memory events. -/
 theorem candidateTree_silent (x : BitVec 64) :
-    SilentHead (loopFrame x) (candidateTree x, ([] : Mem))
+    RawSilentHead (loopFrame x) (candidateTree x, ([] : Mem))
       (ITree.ret (Outcome.ret (some (.int 64 (byteLoop x))) []), ([] : Mem)) := by
   rw [candidateTree]
   have hpc : (initState candidateFunction [.int 64 x]).pc = "bb" := rfl
@@ -504,19 +504,31 @@ theorem candidateTree_silent (x : BitVec 64) :
   rw [codeT_eq_of_noEvents noCalls candidateInstrs _ _ _ hne hblock]
   simp only [candidateBody, termT, execTerm, evalOperand, lookupName_candidateRun,
     candA7_eq_byteLoop, candidateRun_mem, candidate_initState_mem]
-  exact SilentHead.refl _ _
+  exact RawSilentHead.refl _ _
 
 /-- The loop, as left target, is simulated by the unrolled candidate, as right
 source, at the framed postcondition. -/
 theorem loop_candidate_simtt (x : BitVec 64) :
-    simtt (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
-      (loopTree x, ([] : Mem)) (candidateTree x, ([] : Mem)) := by
+    simtt (Outcome.AgreesOutside (loopFrame x))
+      (runHandled noCalls (loopFrame x) 19 loopFunction (initState loopFunction [.int 64 x]))
+      (runHandled noCalls (loopFrame x) 10000 candidateFunction
+        (initState candidateFunction [.int 64 x])) := by
   obtain ⟨mem, hpriv, hleft⟩ := loopTree_silent x
-  refine (simtt_iff _ _ _ _).mpr ?_
-  refine SimttF.ret hleft (candidateTree_silent x) ?_
-  · refine ⟨?_, ?_⟩
-    · rw [byteLoop_eq_spec]
-    · simpa using AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False))
+  have hL : SilentHead (handle (loopFrame x) [] (loopTree x))
+      (ret (Outcome.ret (some (.int 64 (spec x))) mem)) := by
+    have h := RawSilentHead.handle hleft
+    simpa only [handle_ret, finishOutcome] using h
+  have hR : SilentHead (handle (loopFrame x) [] (candidateTree x))
+      (ret (Outcome.ret (some (.int 64 (byteLoop x))) [])) := by
+    have h := RawSilentHead.handle (candidateTree_silent x)
+    simpa only [handle_ret, finishOutcome] using h
+  refine (simtt_iff _ _ _).mpr ?_
+  exact SimttF.ret_ret (v₁ := some (.int 64 (spec x))) (mem₁ := mem)
+    (v₂ := some (.int 64 (byteLoop x))) (mem₂ := [])
+    (by simpa only [runHandled, loopTree, initState] using hL)
+    (by simpa only [runHandled, candidateTree, initState] using hR)
+    ⟨by rw [byteLoop_eq_spec],
+     by simpa using AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False))⟩
 
 /-- A memory that differs at address zero is outside the frame, so the framed
 relation rejects it. -/

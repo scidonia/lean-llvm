@@ -2,8 +2,8 @@
 Parameterised least fixed points and the coinduction infrastructure they
 support, adapted from `mit-plv/lean4-itree` at revision
 `7f48fefaa2f12f599e6c4aa2be1ef39d5466122b` (`Paco/PacoDefs.lean`).  The MIT
-licence is reproduced in `LeanLLVM/ITree/LICENSE`; deviations are listed in
-`LeanLLVM/ITree/README.md`.
+licence is reproduced in `ITree/LICENSE`; deviations are listed in
+`ITree/README.md`.
 
 `plfp f r` is `lfp (fun x => f (r inf x))`, the parameterised least fixed
 point of a monotone functional; in the reverse-implication order on

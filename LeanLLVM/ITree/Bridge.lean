@@ -1,22 +1,33 @@
 /-
-The executable side of the directed relation.
+The executable side of the directed relation, for handled trees.
 
-`simtt` is a coinductive statement about trees; `Exec` is the canonical
-resolution of one tree against a memory: following the responses the machine
-itself gives, the tree ends in an outcome, `none` for an exhausted budget and
-`some .ub` for undefined behaviour.
+`simtt` is a coinductive statement about bare handled trees; `HandledExec` is
+the canonical resolution of one such tree: a `tau` is followed, a visible
+`ObsEv` load or store is consumed as the acknowledgement it carries, a call is
+resolved by the call environment, `ObsEv.ub` ends in `some .ub` and
+`ObsEv.timeout` in `none`.
 
-This module proves that a completed target resolution transports through the
-relation.  A target return that is definitely defined (`some (.ret v m)`) is
-answered either by undefined behaviour on the source or by an actual source
-return that `post` accepts; a target timeout is answered by a source timeout.
-The budget-explicit and behaviour-level corollaries specialise this to
-`runFuel` and `Beh`, and the loop instance derives one fixed-budget
-consequence from it.
+Two theorems connect the two.
 
-Nothing here redefines `Beh`, `Refines` or `RefinesWithin`: the consequences at
-the framed and exact posts are corollaries, and no pass or route reasons
-through the tree layer.
+* `handled_runFuel` is the correspondence that makes `runHandled` executable:
+  the handler's memory equals the semantics' `State.mem` at every point of the
+  run, so the canonical resolution of `runHandled calls frame n f s` is exactly
+  `runFuel calls n f s`.  Its local form is `handled_codeT`/`handled_termT`, and
+  the memory agreement is `storeValue_mem` (a store advances `State.mem` as
+  `storeMem` does) together with the fact that every other instruction and
+  terminator leaves the memory alone.  This is why the handler may replace a
+  leaf's recorded memory: for a `runT` tree it replaces it with the same memory.
+* `simtt_exec_some` eliminates the relation against a completed target run: if
+  the target resolves to a defined outcome and the two handled trees are
+  related, the source either resolves to undefined behaviour or to an actual
+  return that `post` accepts.  Because the trees are bare, the elimination is by
+  induction on the target's finite resolution and the relation is unfolded one
+  clause at a time.
+
+`_exec_runT` from `Interpret` is unchanged and remains the canonical resolution
+of the *unhandled* tree.  Nothing here redefines `Beh`, `Refines` or
+`RefinesWithin`: the consequences at the framed and exact posts are corollaries,
+and the tree relation is taken between the two `runHandled` trees.
 -/
 import LeanLLVM.ITree.Simtt
 import LeanLLVM.Frames
@@ -24,748 +35,713 @@ import LeanLLVM.Frames
 namespace LeanLLVM.ITree
 
 open LeanLLVM
-open ITree
+open _root_.ITree
+
+/-! ### The canonical resolution of a handled tree -/
+
+/-- `HandledExec calls t r` says: following the responses the machine gives — a
+visible load or store consumed as acknowledgement, a call resolved by `calls` —
+the handled tree `t` ends in `r`.  `r = none` is an exhausted budget and
+`some .ub` is undefined behaviour. -/
+inductive HandledExec (calls : Calls) : OTree → Option Outcome → Prop where
+  | retLeaf {o : Outcome} : HandledExec calls (ret o) (some o)
+  | tauStep {t : OTree} {r : Option Outcome} :
+      HandledExec calls t r → HandledExec calls (tau t) r
+  | load {addr : Nat} {ty : Ty} {resp : Option Value} {k : Unit → OTree}
+      {r : Option Outcome} :
+      HandledExec calls (k ()) r →
+      HandledExec calls (vis (ObsEv.load addr ty resp) k) r
+  | store {addr : Nat} {ty : Ty} {v : Value} {k : Unit → OTree}
+      {r : Option Outcome} :
+      HandledExec calls (k ()) r → HandledExec calls (vis (ObsEv.store addr ty v) k) r
+  | call {callee : String} {args : List Value} {k : Option Value → OTree}
+      {r : Option Outcome} :
+      HandledExec calls (k (calls callee args)) r →
+      HandledExec calls (vis (ObsEv.call callee args) k) r
+  | ub {k : Empty → OTree} : HandledExec calls (vis ObsEv.ub k) (some Outcome.ub)
+  | timeout {k : Empty → OTree} : HandledExec calls (vis ObsEv.timeout k) none
 
 /-! ### Inverting a canonical resolution
 
-`Exec` is indexed by the tree, and the tree constructors are definitions over
-the coinductive carrier, so `cases` on `Exec` at a literal tree would have to
-eliminate a coinductive index.  The inversion below keeps the tree a variable
-and reports the constructor it must have come from; every later step reads a
-tree's shape off the equality in its disjunct.
--/
+As with `Exec`, the tree constructors are definitions over the coinductive
+carrier, so the inversion keeps the tree a variable and reports the constructor
+it must have come from. -/
 
-theorem Exec_inv {calls : Calls} {t : ITree Ev Outcome} {m : Mem} {r : Option Outcome}
-    (h : Exec calls t m r) :
-    (∃ o : Outcome, t = ITree.ret o ∧ r = some o) ∨
-    (∃ t' : ITree Ev Outcome, t = ITree.tau t' ∧ Exec calls t' m r) ∨
-    (∃ (addr : Nat) (ty : Ty) (k : Option Value → ITree Ev Outcome),
-      t = ITree.vis (Ev.load addr ty) k ∧ Exec calls (k (loadValue m ty addr)) m r) ∨
-    (∃ (addr : Nat) (ty : Ty) (v : Value) (k : Unit → ITree Ev Outcome),
-      t = ITree.vis (Ev.store addr ty v) k ∧ Exec calls (k ()) (storeMem m ty v addr) r) ∨
-    (∃ (callee : String) (args : List Value) (k : Option Value → ITree Ev Outcome),
-      t = ITree.vis (Ev.call callee args) k ∧ Exec calls (k (calls callee args)) m r) ∨
-    (∃ k : Empty → ITree Ev Outcome, t = ITree.vis Ev.ub k ∧ r = some Outcome.ub) ∨
-    (∃ k : Empty → ITree Ev Outcome, t = ITree.vis Ev.timeout k ∧ r = none) := by
+theorem HandledExec_inv {calls : Calls} {t : OTree} {r : Option Outcome}
+    (h : HandledExec calls t r) :
+    (∃ o : Outcome, t = ret o ∧ r = some o) ∨
+    (∃ t' : OTree, t = tau t' ∧ HandledExec calls t' r) ∨
+    (∃ (addr : Nat) (ty : Ty) (resp : Option Value) (k : Unit → OTree),
+      t = vis (ObsEv.load addr ty resp) k ∧ HandledExec calls (k ()) r) ∨
+    (∃ (addr : Nat) (ty : Ty) (v : Value) (k : Unit → OTree),
+      t = vis (ObsEv.store addr ty v) k ∧ HandledExec calls (k ()) r) ∨
+    (∃ (callee : String) (args : List Value) (k : Option Value → OTree),
+      t = vis (ObsEv.call callee args) k ∧ HandledExec calls (k (calls callee args)) r) ∨
+    (∃ k : Empty → OTree, t = vis ObsEv.ub k ∧ r = some Outcome.ub) ∨
+    (∃ k : Empty → OTree, t = vis ObsEv.timeout k ∧ r = none) := by
   cases h with
-  | ret => exact Or.inl ⟨_, rfl, rfl⟩
-  | tau h' => exact Or.inr (Or.inl ⟨_, rfl, h'⟩)
-  | load h' => exact Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl, h'⟩))
+  | retLeaf => exact Or.inl ⟨_, rfl, rfl⟩
+  | tauStep h' => exact Or.inr (Or.inl ⟨_, rfl, h'⟩)
+  | load h' => exact Or.inr (Or.inr (Or.inl ⟨_, _, _, _, rfl, h'⟩))
   | store h' => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, _, rfl, h'⟩)))
   | call h' => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl, h'⟩))))
   | ub => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl, rfl⟩)))))
   | timeout => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨_, rfl, rfl⟩)))))
 
-/-! ### Distinct visible events
-
-The same pair of events can only be matched when their response types and
-constructors agree, so a closure that ends at one event cannot be read as a
-closure to another.
--/
-
-/-- A load and a call share the response type `Option Value`, so their
-disjointness is at the event and not at the response type. -/
-theorem ev_load_ne_call (addr : Nat) (ty : Ty) (callee : String) (args : List Value) :
-    (Ev.load addr ty : Ev (Option Value)) ≠ Ev.call callee args := by
-  intro h
-  cases h
-
-theorem vis_load_ne_vis_store {addr : Nat} {ty : Ty} {addr' : Nat} {ty' : Ty}
-    {v : Value} {k : Option Value → ITree Ev Outcome}
-    {k' : Unit → ITree Ev Outcome} :
-    (ITree.vis (Ev.load addr ty) k : ITree Ev Outcome) ≠
-      ITree.vis (Ev.store addr' ty' v) k' :=
-  ITree.vis_ne_of_type_ne (h := option_value_ne_unit)
-
-theorem vis_load_ne_vis_call {addr : Nat} {ty : Ty} {callee : String}
-    {args : List Value} {k k' : Option Value → ITree Ev Outcome} :
-    (ITree.vis (Ev.load addr ty) k : ITree Ev Outcome) ≠
-      ITree.vis (Ev.call callee args) k' := by
-  intro h
-  exact ev_load_ne_call addr ty callee args (ITree.vis_inj h).1
-
-theorem vis_load_ne_vis_ub {addr : Nat} {ty : Ty}
-    {k : Option Value → ITree Ev Outcome} {k' : Empty → ITree Ev Outcome} :
-    (ITree.vis (Ev.load addr ty) k : ITree Ev Outcome) ≠ ITree.vis Ev.ub k' :=
-  ITree.vis_ne_of_type_ne (h := empty_ne_option_value.symm)
-
-theorem vis_load_ne_vis_timeout {addr : Nat} {ty : Ty}
-    {k : Option Value → ITree Ev Outcome} {k' : Empty → ITree Ev Outcome} :
-    (ITree.vis (Ev.load addr ty) k : ITree Ev Outcome) ≠ ITree.vis Ev.timeout k' :=
-  ITree.vis_ne_of_type_ne (h := empty_ne_option_value.symm)
-
-theorem vis_store_ne_vis_load {addr : Nat} {ty : Ty} {v : Value} {addr' : Nat}
-    {ty' : Ty} {k : Unit → ITree Ev Outcome} {k' : Option Value → ITree Ev Outcome} :
-    (ITree.vis (Ev.store addr ty v) k : ITree Ev Outcome) ≠
-      ITree.vis (Ev.load addr' ty') k' :=
-  ITree.vis_ne_of_type_ne (h := option_value_ne_unit.symm)
-
-theorem vis_store_ne_vis_call {addr : Nat} {ty : Ty} {v : Value} {callee : String}
-    {args : List Value} {k : Unit → ITree Ev Outcome}
-    {k' : Option Value → ITree Ev Outcome} :
-    (ITree.vis (Ev.store addr ty v) k : ITree Ev Outcome) ≠
-      ITree.vis (Ev.call callee args) k' :=
-  ITree.vis_ne_of_type_ne (h := option_value_ne_unit.symm)
-
-theorem vis_store_ne_vis_ub {addr : Nat} {ty : Ty} {v : Value}
-    {k : Unit → ITree Ev Outcome} {k' : Empty → ITree Ev Outcome} :
-    (ITree.vis (Ev.store addr ty v) k : ITree Ev Outcome) ≠ ITree.vis Ev.ub k' :=
-  ITree.vis_ne_of_type_ne (h := empty_ne_unit.symm)
-
-theorem vis_store_ne_vis_timeout {addr : Nat} {ty : Ty} {v : Value}
-    {k : Unit → ITree Ev Outcome} {k' : Empty → ITree Ev Outcome} :
-    (ITree.vis (Ev.store addr ty v) k : ITree Ev Outcome) ≠ ITree.vis Ev.timeout k' :=
-  ITree.vis_ne_of_type_ne (h := empty_ne_unit.symm)
-
-theorem vis_call_ne_vis_load {callee : String} {args : List Value} {addr : Nat}
-    {ty : Ty} {k k' : Option Value → ITree Ev Outcome} :
-    (ITree.vis (Ev.call callee args) k : ITree Ev Outcome) ≠
-      ITree.vis (Ev.load addr ty) k' := by
-  intro h
-  exact (ev_load_ne_call addr ty callee args).symm (ITree.vis_inj h).1
-
-theorem vis_call_ne_vis_store {callee : String} {args : List Value} {addr : Nat}
-    {ty : Ty} {v : Value} {k : Option Value → ITree Ev Outcome}
-    {k' : Unit → ITree Ev Outcome} :
-    (ITree.vis (Ev.call callee args) k : ITree Ev Outcome) ≠
-      ITree.vis (Ev.store addr ty v) k' :=
-  ITree.vis_ne_of_type_ne (h := option_value_ne_unit)
-
-theorem vis_call_ne_vis_ub {callee : String} {args : List Value}
-    {k : Option Value → ITree Ev Outcome} {k' : Empty → ITree Ev Outcome} :
-    (ITree.vis (Ev.call callee args) k : ITree Ev Outcome) ≠ ITree.vis Ev.ub k' :=
-  ITree.vis_ne_of_type_ne (h := empty_ne_option_value.symm)
-
-theorem vis_call_ne_vis_timeout {callee : String} {args : List Value}
-    {k : Option Value → ITree Ev Outcome} {k' : Empty → ITree Ev Outcome} :
-    (ITree.vis (Ev.call callee args) k : ITree Ev Outcome) ≠ ITree.vis Ev.timeout k' :=
-  ITree.vis_ne_of_type_ne (h := empty_ne_option_value.symm)
-
-/-! ### Shape-specific inversions
-
-Each of these reads the one constructor a resolution at a tree of known shape
-can have used. -/
-
-theorem Exec.ret_inv {calls : Calls} {o : Outcome} {m : Mem} {r : Option Outcome}
-    (h : Exec calls (ITree.ret o) m r) : r = some o := by
-  rcases Exec_inv h with ⟨o', ht, hr⟩ | ⟨t', ht, _⟩ | ⟨a, ty, k, ht, _⟩ |
+theorem HandledExec.ret_inv {calls : Calls} {o : Outcome} {r : Option Outcome}
+    (h : HandledExec calls (ret o) r) : r = some o := by
+  rcases HandledExec_inv h with ⟨o', ht, hr⟩ | ⟨t', ht, _⟩ | ⟨a, ty, rp, k, ht, _⟩ |
     ⟨a, ty, v, k, ht, _⟩ | ⟨c, args, k, ht, _⟩ | ⟨k, ht, _⟩ | ⟨k, ht, _⟩
-  · rw [← ITree.ret_inj ht] at hr
+  · rw [← ret_inj ht] at hr
     exact hr
-  · exact absurd ht ITree.ret_ne_tau
-  · exact absurd ht (ITree.ret_ne_vis (Ev.load a ty) k)
-  · exact absurd ht (ITree.ret_ne_vis (Ev.store a ty v) k)
-  · exact absurd ht (ITree.ret_ne_vis (Ev.call c args) k)
-  · exact absurd ht (ITree.ret_ne_vis Ev.ub k)
-  · exact absurd ht (ITree.ret_ne_vis Ev.timeout k)
+  · exact absurd ht ret_ne_tau
+  · exact absurd ht (ret_ne_vis (ObsEv.load a ty rp) k)
+  · exact absurd ht (ret_ne_vis (ObsEv.store a ty v) k)
+  · exact absurd ht (ret_ne_vis (ObsEv.call c args) k)
+  · exact absurd ht (ret_ne_vis ObsEv.ub k)
+  · exact absurd ht (ret_ne_vis ObsEv.timeout k)
 
-theorem Exec.tau_inv {calls : Calls} {t : ITree Ev Outcome} {m : Mem}
-    {r : Option Outcome} (h : Exec calls (ITree.tau t) m r) : Exec calls t m r := by
-  rcases Exec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, he⟩ | ⟨a, ty, k, ht, _⟩ |
+theorem HandledExec.tau_inv {calls : Calls} {t : OTree} {r : Option Outcome}
+    (h : HandledExec calls (tau t) r) : HandledExec calls t r := by
+  rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, he⟩ | ⟨a, ty, rp, k, ht, _⟩ |
     ⟨a, ty, v, k, ht, _⟩ | ⟨c, args, k, ht, _⟩ | ⟨k, ht, _⟩ | ⟨k, ht, _⟩
-  · exact absurd ht (ITree.ret_ne_tau (v := o) (t := t)).symm
-  · rw [ITree.tau_inj ht]
+  · exact absurd ht (ret_ne_tau (v := o) (t := t)).symm
+  · rw [tau_inj ht]
     exact he
-  · exact absurd ht (ITree.tau_ne_vis (Ev.load a ty) k)
-  · exact absurd ht (ITree.tau_ne_vis (Ev.store a ty v) k)
-  · exact absurd ht (ITree.tau_ne_vis (Ev.call c args) k)
-  · exact absurd ht (ITree.tau_ne_vis Ev.ub k)
-  · exact absurd ht (ITree.tau_ne_vis Ev.timeout k)
+  · exact absurd ht (tau_ne_vis (ObsEv.load a ty rp) k)
+  · exact absurd ht (tau_ne_vis (ObsEv.store a ty v) k)
+  · exact absurd ht (tau_ne_vis (ObsEv.call c args) k)
+  · exact absurd ht (tau_ne_vis ObsEv.ub k)
+  · exact absurd ht (tau_ne_vis ObsEv.timeout k)
 
-theorem Exec.vis_load_inv {calls : Calls} {addr : Nat} {ty : Ty}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} {r : Option Outcome}
-    (h : Exec calls (ITree.vis (Ev.load addr ty) k) m r) :
-    Exec calls (k (loadValue m ty addr)) m r := by
-  rcases Exec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', k', ht, he⟩ |
+theorem HandledExec.vis_load_inv {calls : Calls} {addr : Nat} {ty : Ty}
+    {resp : Option Value} {k : Unit → OTree} {r : Option Outcome}
+    (h : HandledExec calls (vis (ObsEv.load addr ty resp) k) r) :
+    HandledExec calls (k ()) r := by
+  rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', rp, k', ht, he⟩ |
     ⟨a, ty', v, k', ht, _⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
-  · exact absurd ht (ITree.ret_ne_vis (Ev.load addr ty) k).symm
-  · exact absurd ht (ITree.tau_ne_vis (Ev.load addr ty) k).symm
-  · obtain ⟨hEv, hk⟩ := ITree.vis_inj ht
+  · exact absurd ht (ret_ne_vis (ObsEv.load addr ty resp) k).symm
+  · exact absurd ht (tau_ne_vis (ObsEv.load addr ty resp) k).symm
+  · obtain ⟨hEv, hk⟩ := vis_inj ht
     cases hEv
     rw [hk]
     exact he
-  · exact absurd ht vis_load_ne_vis_store
-  · exact absurd ht vis_load_ne_vis_call
-  · exact absurd ht vis_load_ne_vis_ub
-  · exact absurd ht vis_load_ne_vis_timeout
+  · exact absurd ht (vis_load_ne_store)
+  · exact absurd ht (vis_load_ne_call)
+  · exact absurd ht (vis_ub_ne_load k' addr ty resp k).symm
+  · exact absurd ht (vis_timeout_ne_load k' addr ty resp k).symm
 
-theorem Exec.vis_store_inv {calls : Calls} {addr : Nat} {ty : Ty} {v : Value}
-    {k : Unit → ITree Ev Outcome} {m : Mem} {r : Option Outcome}
-    (h : Exec calls (ITree.vis (Ev.store addr ty v) k) m r) :
-    Exec calls (k ()) (storeMem m ty v addr) r := by
-  rcases Exec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', k', ht, _⟩ |
+theorem HandledExec.vis_store_inv {calls : Calls} {addr : Nat} {ty : Ty} {v : Value}
+    {k : Unit → OTree} {r : Option Outcome}
+    (h : HandledExec calls (vis (ObsEv.store addr ty v) k) r) :
+    HandledExec calls (k ()) r := by
+  rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', rp, k', ht, _⟩ |
     ⟨a, ty', v', k', ht, he⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
-  · exact absurd ht (ITree.ret_ne_vis (Ev.store addr ty v) k).symm
-  · exact absurd ht (ITree.tau_ne_vis (Ev.store addr ty v) k).symm
-  · exact absurd ht vis_store_ne_vis_load
-  · obtain ⟨hEv, hk⟩ := ITree.vis_inj ht
+  · exact absurd ht (ret_ne_vis (ObsEv.store addr ty v) k).symm
+  · exact absurd ht (tau_ne_vis (ObsEv.store addr ty v) k).symm
+  · exact absurd ht (vis_load_ne_store).symm
+  · obtain ⟨hEv, hk⟩ := vis_inj ht
     cases hEv
     rw [hk]
     exact he
-  · exact absurd ht vis_store_ne_vis_call
-  · exact absurd ht vis_store_ne_vis_ub
-  · exact absurd ht vis_store_ne_vis_timeout
+  · exact absurd ht vis_store_ne_call
+  · exact absurd ht (vis_ub_ne_store _ addr ty v k).symm
+  · exact absurd ht (vis_timeout_ne_store _ addr ty v k).symm
 
-theorem Exec.vis_call_inv {calls : Calls} {callee : String} {args : List Value}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} {r : Option Outcome}
-    (h : Exec calls (ITree.vis (Ev.call callee args) k) m r) :
-    Exec calls (k (calls callee args)) m r := by
-  rcases Exec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', k', ht, _⟩ |
+theorem HandledExec.vis_call_inv {calls : Calls} {callee : String} {args : List Value}
+    {k : Option Value → OTree} {r : Option Outcome}
+    (h : HandledExec calls (vis (ObsEv.call callee args) k) r) :
+    HandledExec calls (k (calls callee args)) r := by
+  rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', rp, k', ht, _⟩ |
     ⟨a, ty', v, k', ht, _⟩ | ⟨c, args', k', ht, he⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
-  · exact absurd ht (ITree.ret_ne_vis (Ev.call callee args) k).symm
-  · exact absurd ht (ITree.tau_ne_vis (Ev.call callee args) k).symm
-  · exact absurd ht vis_call_ne_vis_load
-  · exact absurd ht vis_call_ne_vis_store
-  · obtain ⟨hEv, hk⟩ := ITree.vis_inj ht
+  · exact absurd ht (ret_ne_vis (ObsEv.call callee args) k).symm
+  · exact absurd ht (tau_ne_vis (ObsEv.call callee args) k).symm
+  · exact absurd ht (vis_load_ne_call).symm
+  · exact absurd ht (vis_store_ne_call).symm
+  · obtain ⟨hEv, hk⟩ := vis_inj ht
     cases hEv
     rw [hk]
     exact he
-  · exact absurd ht vis_call_ne_vis_ub
-  · exact absurd ht vis_call_ne_vis_timeout
+  · exact absurd ht (vis_ub_ne_call _ callee args k).symm
+  · exact absurd ht (vis_timeout_ne_call _ callee args k).symm
 
-theorem Exec.vis_ub_inv {calls : Calls} {k : Empty → ITree Ev Outcome} {m : Mem}
-    {r : Option Outcome} (h : Exec calls (ITree.vis Ev.ub k) m r) :
-    r = some Outcome.ub := by
-  rcases Exec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty, k', ht, _⟩ |
+theorem HandledExec.vis_ub_inv {calls : Calls} {k : Empty → OTree} {r : Option Outcome}
+    (h : HandledExec calls (vis ObsEv.ub k) r) : r = some Outcome.ub := by
+  rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty, rp, k', ht, _⟩ |
     ⟨a, ty, v, k', ht, _⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, hr⟩ | ⟨k', ht, _⟩
-  · exact absurd ht (ITree.ret_ne_vis Ev.ub k).symm
-  · exact absurd ht (ITree.tau_ne_vis Ev.ub k).symm
-  · exact absurd ht (vis_load_ne_vis_ub (k' := k)).symm
-  · exact absurd ht (vis_store_ne_vis_ub (k' := k)).symm
-  · exact absurd ht (vis_call_ne_vis_ub (k' := k)).symm
+  · exact absurd ht (ret_ne_vis ObsEv.ub k).symm
+  · exact absurd ht (tau_ne_vis ObsEv.ub k).symm
+  · exact absurd ht (vis_ub_ne_load k a ty rp k')
+  · exact absurd ht (vis_ub_ne_store k a ty v k')
+  · exact absurd ht (vis_ub_ne_call k c args k')
   · exact hr
   · exact absurd ht (vis_ub_ne_timeout k k')
 
-theorem Exec.vis_timeout_inv {calls : Calls} {k : Empty → ITree Ev Outcome}
-    {m : Mem} {r : Option Outcome} (h : Exec calls (ITree.vis Ev.timeout k) m r) :
-    r = none := by
-  rcases Exec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty, k', ht, _⟩ |
+theorem HandledExec.vis_timeout_inv {calls : Calls} {k : Empty → OTree}
+    {r : Option Outcome} (h : HandledExec calls (vis ObsEv.timeout k) r) : r = none := by
+  rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty, rp, k', ht, _⟩ |
     ⟨a, ty, v, k', ht, _⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, hr⟩
-  · exact absurd ht (ITree.ret_ne_vis Ev.timeout k).symm
-  · exact absurd ht (ITree.tau_ne_vis Ev.timeout k).symm
-  · exact absurd ht (vis_load_ne_vis_timeout (k' := k)).symm
-  · exact absurd ht (vis_store_ne_vis_timeout (k' := k)).symm
-  · exact absurd ht (vis_call_ne_vis_timeout (k' := k)).symm
+  · exact absurd ht (ret_ne_vis ObsEv.timeout k).symm
+  · exact absurd ht (tau_ne_vis ObsEv.timeout k).symm
+  · exact absurd ht (vis_timeout_ne_load k a ty rp k')
+  · exact absurd ht (vis_timeout_ne_store k a ty v k')
+  · exact absurd ht (vis_timeout_ne_call k c args k')
   · exact absurd ht (vis_ub_ne_timeout k' k).symm
   · exact hr
 
 /-! ### Commuting a resolution through silent steps -/
 
-/-- A private step does not change what a resolution ends in: the resolution
-follows the same tree the step does. -/
-theorem Exec.silentStep {calls : Calls} {frame : Nat → Prop} {p p' : TS}
-    {r : Option Outcome} (hs : SilentStep frame p p') (he : Exec calls p.1 p.2 r) :
-    Exec calls p'.1 p'.2 r := by
-  rcases SilentStep_inv hs with ⟨t, m, hp, hq⟩ | ⟨a, ty, k, m, v, hv, hf, hp, hq⟩ |
-    ⟨a, ty, v, k, m, hf, hp, hq⟩
-  · subst hp
-    subst hq
-    exact Exec.tau_inv he
-  · subst hp
-    rw [hq]
-    have h' := Exec.vis_load_inv he
-    rw [hv] at h'
-    exact h'
-  · subst hp
-    rw [hq]
-    exact Exec.vis_store_inv he
+/-- A silent step does not change what a resolution ends in. -/
+theorem HandledExec.silentStep {calls : Calls} {p p' : OTree} {r : Option Outcome}
+    (hs : SilentStep p p') (he : HandledExec calls p r) : HandledExec calls p' r := by
+  obtain ⟨t, hp, hq⟩ := SilentStep_inv hs
+  subst hq
+  exact HandledExec.tau_inv (hp ▸ he)
 
 /-- The same for a finite silent closure. -/
-theorem Exec.silentHead {calls : Calls} {frame : Nat → Prop} {p q : TS}
-    {r : Option Outcome} (hs : SilentHead frame p q) :
-    Exec calls p.1 p.2 r → Exec calls q.1 q.2 r := by
+theorem HandledExec.silentHead {calls : Calls} {p q : OTree} {r : Option Outcome}
+    (hs : SilentHead p q) : HandledExec calls p r → HandledExec calls q r := by
   induction hs with
   | refl => exact id
-  | tail _ hstep ih => exact fun he => Exec.silentStep hstep (ih he)
-
-/-! ### Silent steps of a tree of known shape -/
-
-theorem SilentStep.tau_shape {frame : Nat → Prop} {t : ITree Ev Outcome} {m : Mem}
-    {q : TS} (h : SilentStep frame (ITree.tau t, m) q) : q = (t, m) := by
-  rcases SilentStep_inv h with ⟨t', m', hp, hq⟩ | ⟨a, ty, k, m', v, hv, hf, hp, hq⟩ |
-    ⟨a, ty, v, k, m', hf, hp, hq⟩
-  · obtain ⟨hτ, hm⟩ := Prod.mk.inj hp
-    subst hq
-    have ht : t = t' := ITree.tau_inj hτ
-    subst ht
-    subst hm
-    rfl
-  · exact absurd (Prod.mk.inj hp).1 (ITree.tau_ne_vis (Ev.load a ty) k)
-  · exact absurd (Prod.mk.inj hp).1 (ITree.tau_ne_vis (Ev.store a ty v) k)
-
-theorem SilentStep.load_shape {frame : Nat → Prop} {addr : Nat} {ty : Ty}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : SilentStep frame (ITree.vis (Ev.load addr ty) k, m) q) :
-    ∃ v : Value, loadValue m ty addr = some v ∧ q = (k v, m) := by
-  rcases SilentStep_inv h with ⟨t, m', hp, hq⟩ | ⟨a, ty', k', m', v, hv, hf, hp, hq⟩ |
-    ⟨a, ty', v, k', m', hf, hp, hq⟩
-  · exact absurd (Prod.mk.inj hp).1 (ITree.tau_ne_vis (Ev.load addr ty) k).symm
-  · obtain ⟨hT, hM⟩ := Prod.mk.inj hp
-    obtain ⟨hEv, hk⟩ := ITree.vis_inj hT
-    subst hq
-    cases hEv
-    subst hk
-    subst hM
-    exact ⟨v, hv, rfl⟩
-  · exact absurd (Prod.mk.inj hp).1 vis_load_ne_vis_store
-
-theorem SilentStep.store_shape {frame : Nat → Prop} {addr : Nat} {ty : Ty} {v : Value}
-    {k : Unit → ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : SilentStep frame (ITree.vis (Ev.store addr ty v) k, m) q) :
-    ∃ _hf : InFrame frame addr ty, q = (k (), storeMem m ty v addr) := by
-  rcases SilentStep_inv h with ⟨t, m', hp, hq⟩ | ⟨a, ty', k', m', v', hv, hf, hp, hq⟩ |
-    ⟨a, ty', v', k', m', hf, hp, hq⟩
-  · exact absurd (Prod.mk.inj hp).1 (ITree.tau_ne_vis (Ev.store addr ty v) k).symm
-  · exact absurd (Prod.mk.inj hp).1 vis_store_ne_vis_load
-  · obtain ⟨hT, hM⟩ := Prod.mk.inj hp
-    obtain ⟨hEv, hk⟩ := ITree.vis_inj hT
-    subst hq
-    cases hEv
-    subst hk
-    subst hM
-    exact ⟨hf, rfl⟩
-
-theorem call_no_step {frame : Nat → Prop} {callee : String} {args : List Value}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} :
-    ∀ q : TS, ¬ SilentStep frame (ITree.vis (Ev.call callee args) k, m) q := by
-  intro q h
-  rcases SilentStep_inv h with ⟨t, m', hp, _⟩ | ⟨a, ty, k', m', v, hv, hf, hp, _⟩ |
-    ⟨a, ty, v, k', m', hf, hp, _⟩
-  · exact ITree.tau_ne_vis (Ev.call callee args) k ((Prod.mk.inj hp).1).symm
-  · exact vis_call_ne_vis_load (Prod.mk.inj hp).1
-  · exact absurd (Prod.mk.inj hp).1 vis_call_ne_vis_store
-
-/-- A call node has no silent step, so every closure from one is empty. -/
-theorem SilentHead.call_self {frame : Nat → Prop} {callee : String} {args : List Value}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : SilentHead frame (ITree.vis (Ev.call callee args) k, m) q) :
-    q = (ITree.vis (Ev.call callee args) k, m) :=
-  SilentHead.eq_of_no_step call_no_step h
-
-/-! ### Stripping a step from a silent closure -/
-
-/-- A closure from a `tau` state is empty only at that state itself; everywhere
-else its first step is the `tau`, and the rest is a closure from the successor. -/
-theorem SilentHead.tau_strip {frame : Nat → Prop} {t : ITree Ev Outcome} {m : Mem}
-    {q : TS} (h : SilentHead frame (ITree.tau t, m) q)
-    (hne : q ≠ (ITree.tau t, m)) : SilentHead frame (t, m) q := by
-  rcases SilentHead_inv h with hpq | ⟨p', hstep, hrest⟩
-  · exact absurd hpq.symm hne
-  · rw [SilentStep.tau_shape hstep] at hrest
-    exact hrest
-
-theorem SilentHead.load_strip {frame : Nat → Prop} {addr : Nat} {ty : Ty}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : SilentHead frame (ITree.vis (Ev.load addr ty) k, m) q)
-    (hne : q ≠ (ITree.vis (Ev.load addr ty) k, m)) :
-    ∃ v : Value, loadValue m ty addr = some v ∧ SilentHead frame (k v, m) q := by
-  rcases SilentHead_inv h with hpq | ⟨p', hstep, hrest⟩
-  · exact absurd hpq.symm hne
-  · obtain ⟨v, hv, hq⟩ := SilentStep.load_shape hstep
-    subst hq
-    exact ⟨v, hv, hrest⟩
-
-theorem SilentHead.store_strip {frame : Nat → Prop} {addr : Nat} {ty : Ty} {v : Value}
-    {k : Unit → ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : SilentHead frame (ITree.vis (Ev.store addr ty v) k, m) q)
-    (hne : q ≠ (ITree.vis (Ev.store addr ty v) k, m)) :
-    SilentHead frame (k (), storeMem m ty v addr) q := by
-  rcases SilentHead_inv h with hpq | ⟨p', hstep, hrest⟩
-  · exact absurd hpq.symm hne
-  · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
-    subst hq
-    exact hrest
-
-/-! ### Silent divergence and completion cannot coexist -/
-
-theorem SilentDiverges.tau_strip {frame : Nat → Prop} {t : ITree Ev Outcome} {m : Mem} :
-    SilentDiverges frame (ITree.tau t, m) → SilentDiverges frame (t, m) := by
-  intro h
-  have h' : DivF frame (SilentDiverges frame) (ITree.tau t, m) :=
-    (congrFun (SilentDiverges.eq_1 frame) _).mp h
-  cases h' with
-  | step hstep hs =>
-      rw [SilentStep.tau_shape hstep] at hs
-      exact hs
-
-theorem ReachesUb.tau_strip {frame : Nat → Prop} {t : ITree Ev Outcome} {m : Mem} :
-    ReachesUb frame (ITree.tau t, m) → ReachesUb frame (t, m) := by
-  intro h
-  cases h with
-  | ret h' =>
-      exact ReachesUb.ret (SilentHead.tau_strip h'
-        (by intro hh; exact ITree.ret_ne_tau (Prod.mk.inj hh).1))
-  | vis h' =>
-      exact ReachesUb.vis (SilentHead.tau_strip h'
-        (by
-          intro hh
-          exact (ITree.tau_ne_vis Ev.ub _) ((Prod.mk.inj hh).1).symm))
-
-/-- A completed resolution has no silent divergence behind it: the resolution
-follows the tree's own steps, and a silently diverging tree never reaches a
-terminal. -/
-theorem not_silentDiverges_of_exec {calls : Calls} {frame : Nat → Prop}
-    {t : ITree Ev Outcome} {m : Mem} {r : Option Outcome} (he : Exec calls t m r) :
-    ¬ SilentDiverges frame (t, m) := by
-  induction he with
-  | ret => exact not_silentDiverges_ret
-  | tau _ ih => exact fun h => ih (SilentDiverges.tau_strip h)
-  | load _ ih =>
-      intro h
-      have h' := (congrFun (SilentDiverges.eq_1 frame) _).mp h
-      cases h' with
-      | step hstep hs =>
-          obtain ⟨v, hv, hq⟩ := SilentStep.load_shape hstep
-          subst hq
-          exact ih (hv.symm ▸ hs)
-  | store _ ih =>
-      intro h
-      have h' := (congrFun (SilentDiverges.eq_1 frame) _).mp h
-      cases h' with
-      | step hstep hs =>
-          obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
-          subst hq
-          exact ih hs
-  | call _ ih =>
-      intro h
-      have h' := (congrFun (SilentDiverges.eq_1 frame) _).mp h
-      cases h' with
-      | step hstep _ => exact call_no_step _ hstep
-  | ub => exact not_silentDiverges_ub
-  | timeout => exact not_silentDiverges_timeout
-
-/-- A completed resolution has no timeout behind it either. -/
-theorem exec_timeoutReachable {calls : Calls} {frame : Nat → Prop} {p : TS}
-    {r : Option Outcome} (ht : TimeoutReachable frame p) (he : Exec calls p.1 p.2 r) :
-    r = none := by
-  obtain ⟨q, hq, k, hk⟩ := ht
-  have h := Exec.silentHead hq he
-  rw [hk] at h
-  exact Exec.vis_timeout_inv h
+  | tail _ hstep ih => exact fun he => HandledExec.silentStep hstep (ih he)
 
 /-- A resolution that reaches undefined behaviour ends in it. -/
-theorem exec_reachesUb {calls : Calls} {frame : Nat → Prop} {p : TS}
-    {r : Option Outcome} (hu : ReachesUb frame p) (he : Exec calls p.1 p.2 r) :
-    r = some Outcome.ub := by
+theorem handled_reachesUb {calls : Calls} {t : OTree} {r : Option Outcome}
+    (h : HandledExec calls t r) (hu : ReachesUb t) : r = some Outcome.ub := by
   cases hu with
-  | ret h => exact Exec.ret_inv (Exec.silentHead h he)
-  | vis h => exact Exec.vis_ub_inv (Exec.silentHead h he)
+  | retLeaf h' => exact HandledExec.ret_inv (HandledExec.silentHead h' h)
+  | ubNode h' => exact HandledExec.vis_ub_inv (HandledExec.silentHead h' h)
 
-/-- A `tau` on the left of the relation can be read off its closure, so the
-relation also holds one step later. -/
-theorem simtt_tau_left {frame : Nat → Prop} {post : Outcome → Outcome → Prop}
-    {t : ITree Ev Outcome} {m : Mem} {q : TS}
-    (h : simtt frame post (ITree.tau t, m) q) : simtt frame post (t, m) q := by
-  have hF := (simtt_iff frame post _ _).mp h
-  refine (simtt_iff frame post _ _).mpr ?_
-  cases hF with
-  | ret h1 h2 hp =>
-      exact SimttF.ret (SilentHead.tau_strip h1
-        (by intro hh; exact ITree.ret_ne_tau (Prod.mk.inj hh).1)) h2 hp
-  | right_ub_ret h1 h2 =>
-      exact SimttF.right_ub_ret (SilentHead.tau_strip h1
-        (by intro hh; exact ITree.ret_ne_tau (Prod.mk.inj hh).1)) h2
-  | ub h1 h2 => exact SimttF.ub (ReachesUb.tau_strip h1) h2
-  | timeout k1 k2 h1 h2 =>
-      exact SimttF.timeout k1 k2 (SilentHead.tau_strip h1
-        (by
-          intro hh
-          exact (ITree.tau_ne_vis Ev.timeout k1) ((Prod.mk.inj hh).1).symm)) h2
-  | left_diverges hdiv hnt => exact SimttF.left_diverges (SilentDiverges.tau_strip hdiv) hnt
-  | right_diverges hdiv2 hdiv1 =>
-      exact SimttF.right_diverges hdiv2 (SilentDiverges.tau_strip hdiv1)
-  | vis_load addr ty k1 k2 h1 h2 hm hs =>
-      exact SimttF.vis_load addr ty k1 k2 (SilentHead.tau_strip h1
-        (by
-          intro hh
-          exact (ITree.tau_ne_vis (Ev.load addr ty) k1) ((Prod.mk.inj hh).1).symm)) h2 hm hs
-  | vis_store addr ty v k1 k2 h1 h2 hs =>
-      exact SimttF.vis_store addr ty v k1 k2 (SilentHead.tau_strip h1
-        (by
-          intro hh
-          exact (ITree.tau_ne_vis (Ev.store addr ty v) k1) ((Prod.mk.inj hh).1).symm)) h2 hs
-  | vis_call callee args k1 k2 h1 h2 hs =>
-      exact SimttF.vis_call callee args k1 k2 (SilentHead.tau_strip h1
-        (by
-          intro hh
-          exact (ITree.tau_ne_vis (Ev.call callee args) k1) ((Prod.mk.inj hh).1).symm)) h2 hs
+/-- A resolution that reaches a timeout ends in `none`. -/
+theorem handled_timeoutReachable {calls : Calls} {t : OTree} {r : Option Outcome}
+    (h : HandledExec calls t r) (ht : TimeoutReachable t) : r = none := by
+  obtain ⟨q, hq, k, hk⟩ := ht
+  have h' := HandledExec.silentHead hq h
+  rw [hk] at h'
+  exact HandledExec.vis_timeout_inv h'
 
-/-! ### Eliminating the coinductive relation against a completed run
+/-! ### Correspondence with `runFuel`
 
-The auxiliary statement is read over the target's resolution, so a resolution
-that starts at a later state is a strictly shorter derivation.  A private step
-of the target is either an in-frame access, whose continuation the relation
-hands over directly, or a `tau`, which the relation's closure absorbs
-(`simtt_tau_left`); a visible event advances the relation to the two
-continuations' matching states.
--/
+The general facts the coherence needs: a `ret` terminator and a jump leave the
+memory alone, and a store advances it exactly as the handler does. -/
 
-theorem simtt_exec_aux {calls : Calls} {frame : Nat → Prop}
-    {post : Outcome → Outcome → Prop} :
-    ∀ {tT : ITree Ev Outcome} {mT : Mem} {rT : Option Outcome},
-      Exec calls tT mT rT →
-    ∀ {tS : ITree Ev Outcome} {mS : Mem}, simtt frame post (tT, mT) (tS, mS) →
-    ∀ {rS : Option Outcome}, Exec calls tS mS rS →
+/-- A `ret` terminator keeps the memory. -/
+theorem execTerm_ret_mem (s : State) (t : Term) (v : Option Value) (s' : State)
+    (h : execTerm s t = .ret v s') : s'.mem = s.mem := by
+  match t with
+  | .br dest => simp only [execTerm] at h; cases h
+  | .unreachable => simp only [execTerm] at h; cases h
+  | .condbr c tb fb =>
+      simp only [execTerm] at h
+      repeat' (split at h)
+      all_goals (cases h)
+  | .ret ty w =>
+      cases ty with
+      | void =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h; rfl
+          | some o => simp only [execTerm] at h; cases h
+      | int n =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h
+          | some o =>
+              simp only [execTerm] at h
+              split at h
+              · cases h; rfl
+              · cases h
+      | ptr =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h
+          | some o =>
+              simp only [execTerm] at h
+              split at h
+              · cases h; rfl
+              · cases h
+
+/-- `handle` of an undefined-behaviour node resolves to `some .ub`. -/
+theorem handled_ubT (calls : Calls) (frame : Nat → Prop) (m : Mem) :
+    HandledExec calls (handle frame m ubT) (some Outcome.ub) := by
+  unfold handle
+  rw [ubT]
+  rw [Effect.interp_vis_right (memoryHandler frame) finishOutcome m Ev.ub Empty.elim ObsEv.ub
+    (fun e => (Empty.elim e, m)) (memoryHandler_ub (frame := frame) (m := m))]
+  exact HandledExec.ub
+
+/-- `handle` of a timeout node resolves to `none`. -/
+theorem handled_timeoutT (calls : Calls) (frame : Nat → Prop) (m : Mem) :
+    HandledExec calls (handle frame m timeoutT) none := by
+  unfold handle
+  rw [timeoutT]
+  rw [Effect.interp_vis_right (memoryHandler frame) finishOutcome m Ev.timeout Empty.elim
+    ObsEv.timeout (fun e => (Empty.elim e, m))
+    (memoryHandler_timeout (frame := frame) (m := m))]
+  exact HandledExec.timeout
+
+/-- An instruction with no event leaves the memory alone and resolves as its
+continuation does. -/
+theorem handled_pureInstrT (calls : Calls) (frame : Nat → Prop) (s : State) (i : Instr)
+    (k : State → Tree Ev Outcome) (r : Option Outcome)
+    (hmem : ∀ s', evalInstr calls s i = some s' → s'.mem = s.mem)
+    (hok : ∀ s', evalInstr calls s i = some s' →
+      HandledExec calls (handle frame s'.mem (k s')) r)
+    (hub : evalInstr calls s i = none → r = some Outcome.ub) :
+    HandledExec calls (handle frame s.mem (pureInstrT calls s i k)) r := by
+  cases hE : evalInstr calls s i with
+  | none =>
+      rw [hub hE]
+      simp only [pureInstrT, hE]
+      exact handled_ubT calls frame s.mem
+  | some s' =>
+      simp only [pureInstrT, hE]
+      have h := hok s' hE
+      rwa [hmem s' hE] at h
+
+/-- A load resolves as its continuation does: privately (silent, memory
+unchanged) or visibly (annotated with the value the handler computed). -/
+theorem handled_instrT_load (calls : Calls) (frame : Nat → Prop) (s : State) (d : String)
+    (ty : Ty) (p : Operand) (k : State → Tree Ev Outcome) (r : Option Outcome)
+    (hok : ∀ s', evalInstr calls s (.load d ty p) = some s' →
+      HandledExec calls (handle frame s'.mem (k s')) r)
+    (hub : evalInstr calls s (.load d ty p) = none → r = some Outcome.ub) :
+    HandledExec calls (handle frame s.mem (instrT calls s (.load d ty p) k)) r := by
+  cases hOp : evalOperand s p with
+  | none =>
+      have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+      rw [hub hE]
+      simp only [instrT, hOp]
+      exact handled_ubT calls frame s.mem
+  | some v =>
+      cases v with
+      | int w x =>
+          have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+          rw [hub hE]
+          simp only [instrT, hOp]
+          exact handled_ubT calls frame s.mem
+      | ptr addr =>
+          cases hL : loadValue s.mem ty addr with
+          | none =>
+              have hE : evalInstr calls s (.load d ty p) = none := by
+                simp [evalInstr, hOp, hL]
+              rw [hub hE]
+              simp only [instrT, hOp]
+              rw [handle_load_none hL]
+              exact HandledExec.load (handled_ubT calls frame s.mem)
+          | some val =>
+              have hE : evalInstr calls s (.load d ty p) = some (s.bind d val) := by
+                simp [evalInstr, hOp, hL]
+              simp only [instrT, hOp]
+              by_cases hf : InFrame frame addr ty
+              · rw [handle_load_private hf hL]
+                exact HandledExec.tauStep (hok (s.bind d val) hE)
+              · rw [handle_load_out hf hL]
+                exact HandledExec.load (hok (s.bind d val) hE)
+
+/-- A store resolves as its continuation does; the handler's memory after it is
+`storeMem`, which is the semantics' own `s'.mem`. -/
+theorem handled_instrT_store (calls : Calls) (frame : Nat → Prop) (s : State) (ty : Ty)
+    (v p : Operand) (k : State → Tree Ev Outcome) (r : Option Outcome)
+    (hok : ∀ s', evalInstr calls s (.store ty v p) = some s' →
+      HandledExec calls (handle frame s'.mem (k s')) r)
+    (hub : evalInstr calls s (.store ty v p) = none → r = some Outcome.ub) :
+    HandledExec calls (handle frame s.mem (instrT calls s (.store ty v p) k)) r := by
+  cases hv : evalOperand s v with
+  | none =>
+      have hE : evalInstr calls s (.store ty v p) = none := by simp [evalInstr, hv]
+      rw [hub hE]
+      simp only [instrT, hv]
+      exact handled_ubT calls frame s.mem
+  | some vv =>
+      cases hp : evalOperand s p with
+      | none =>
+          have hE : evalInstr calls s (.store ty v p) = none := by
+            simp [evalInstr, hv, hp]
+          rw [hub hE]
+          simp only [instrT, hv, hp]
+          exact handled_ubT calls frame s.mem
+      | some pv =>
+          cases pv with
+          | int w x =>
+              have hE : evalInstr calls s (.store ty v p) = none := by
+                simp [evalInstr, hv, hp]
+              rw [hub hE]
+              simp only [instrT, hv, hp]
+              exact handled_ubT calls frame s.mem
+          | ptr addr =>
+              cases hS : storeValue s ty vv addr with
+              | none =>
+                  have hE : evalInstr calls s (.store ty v p) = none := by
+                    simp [evalInstr, hv, hp, hS]
+                  rw [hub hE]
+                  simp only [instrT, hv, hp]
+                  by_cases hf : InFrame frame addr ty
+                  · rw [handle_store_private hf]
+                    simp only [hS]
+                    exact HandledExec.tauStep (handled_ubT calls frame (storeMem s.mem ty vv addr))
+                  · rw [handle_store_visible hf]
+                    simp only [hS]
+                    exact HandledExec.store
+                      (handled_ubT calls frame (storeMem s.mem ty vv addr))
+              | some s' =>
+                  have hE : evalInstr calls s (.store ty v p) = some s' := by
+                    simp [evalInstr, hv, hp, hS]
+                  have hmem : s'.mem = storeMem s.mem ty vv addr :=
+                    storeValue_mem s ty vv addr s' hS
+                  simp only [instrT, hv, hp]
+                  by_cases hf : InFrame frame addr ty
+                  · rw [handle_store_private hf, ← hmem]
+                    simp only [hS]
+                    exact HandledExec.tauStep (hok s' hE)
+                  · rw [handle_store_visible hf, ← hmem]
+                    simp only [hS]
+                    exact HandledExec.store (hok s' hE)
+
+/-- A call re-emits its event and resolves as its continuation does on the
+environment's response. -/
+theorem handled_instrT_call (calls : Calls) (frame : Nat → Prop) (s : State) (d : String)
+    (retTy : Ty) (callee : String) (args : List (Ty × Operand)) (k : State → Tree Ev Outcome)
+    (r : Option Outcome)
+    (hok : ∀ s', evalInstr calls s (.call d retTy callee args) = some s' →
+      HandledExec calls (handle frame s'.mem (k s')) r)
+    (hub : evalInstr calls s (.call d retTy callee args) = none → r = some Outcome.ub) :
+    HandledExec calls (handle frame s.mem (instrT calls s (.call d retTy callee args) k)) r := by
+  cases ha : evalOperands s args with
+  | none =>
+      have hE : evalInstr calls s (.call d retTy callee args) = none := by
+        simp [evalInstr, ha]
+      rw [hub hE]
+      simp only [instrT, ha]
+      exact handled_ubT calls frame s.mem
+  | some vs =>
+      cases hC : calls callee vs with
+      | none =>
+          have hE : evalInstr calls s (.call d retTy callee args) = none := by
+            simp [evalInstr, ha, hC]
+          rw [hub hE]
+          simp only [instrT, ha]
+          rw [handle_call]
+          refine HandledExec.call ?_
+          rw [hC]
+          exact handled_ubT calls frame s.mem
+      | some val =>
+          have hE : evalInstr calls s (.call d retTy callee args) = some (s.bind d val) := by
+            simp [evalInstr, ha, hC]
+          simp only [instrT, ha]
+          rw [handle_call]
+          refine HandledExec.call ?_
+          rw [hC]
+          exact hok (s.bind d val) hE
+
+/-- Straight-line code: the handler's memory tracks the state `denoteCode`
+reaches. -/
+theorem handled_codeT (calls : Calls) (frame : Nat → Prop) :
+    ∀ (is : List Instr) (s : State) (k : State → Tree Ev Outcome) (r : Option Outcome),
+      (∀ s', denoteCode calls is s = some s' →
+        HandledExec calls (handle frame s'.mem (k s')) r) →
+      (denoteCode calls is s = none → r = some Outcome.ub) →
+      HandledExec calls (handle frame s.mem (codeT calls is s k)) r
+  | [], s, k, r, hok, _ => hok s rfl
+  | i :: is, s, k, r, hok, hub => by
+      have hokK : ∀ s1, evalInstr calls s i = some s1 →
+          HandledExec calls (handle frame s1.mem (codeT calls is s1 k)) r := by
+        intro s1 h1
+        exact handled_codeT calls frame is s1 k r
+          (fun s' h2 => hok s' (by simp [denoteCode, h1, h2]))
+          (fun h2 => hub (by simp [denoteCode, h1, h2]))
+      have hubK : evalInstr calls s i = none → r = some Outcome.ub := by
+        intro h1
+        exact hub (by simp [denoteCode, h1])
+      show HandledExec calls
+        (handle frame s.mem (instrT calls s i (fun s1 => codeT calls is s1 k))) r
+      cases i with
+      | load d ty p => exact handled_instrT_load calls frame s d ty p _ r hokK hubK
+      | store ty v p => exact handled_instrT_store calls frame s ty v p _ r hokK hubK
+      | call d rt c args => exact handled_instrT_call calls frame s d rt c args _ r hokK hubK
+      | binop d op w a b =>
+          exact handled_pureInstrT calls frame s (.binop d op w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+      | icmp d pr w a b =>
+          exact handled_pureInstrT calls frame s (.icmp d pr w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+      | select d ty c a b =>
+          exact handled_pureInstrT calls frame s (.select d ty c a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+      | trunc d wi wo v =>
+          exact handled_pureInstrT calls frame s (.trunc d wi wo v) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+      | zext d wi wo v =>
+          exact handled_pureInstrT calls frame s (.zext d wi wo v) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+      | sext d wi wo v =>
+          exact handled_pureInstrT calls frame s (.sext d wi wo v) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+      | alloca d ty al =>
+          exact handled_pureInstrT calls frame s (.alloca d ty al) _ r
+            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
+              (by intro ty v p hh; cases hh) h) hokK hubK
+
+/-- A terminator resolves as its continuation does on a jump, and its own memory
+is the handler's: a `ret` or a jump leaves the memory alone, and `ub` is a `ub`
+node. -/
+theorem handled_termT (calls : Calls) (frame : Nat → Prop) (n : Nat) (f : Function)
+    (s : State) (t : Term) (next : State → Tree Ev Outcome)
+    (hnext : ∀ s', execTerm s t = .jump s' →
+      HandledExec calls (handle frame s.mem (next s')) (runFuel calls n f s')) :
+    HandledExec calls (handle frame s.mem (termT s next t))
+      (match execTerm s t with
+       | .ub => some Outcome.ub
+       | .ret v s' => some (.ret v s'.mem)
+       | .jump s' => runFuel calls n f s') := by
+  cases h : execTerm s t with
+  | ub =>
+      simp only [termT, h]
+      exact handled_ubT calls frame s.mem
+  | ret v s' =>
+      simp only [termT, h]
+      rw [handle_ret]
+      simp only [finishOutcome]
+      rw [← execTerm_ret_mem s t v s' h]
+      exact HandledExec.retLeaf
+  | jump s' =>
+      simp only [termT, h]
+      exact hnext s' h
+
+/-- The handler's memory is the semantics' memory: the canonical resolution of
+`runHandled` is `runFuel`. -/
+theorem handled_runFuel (calls : Calls) (frame : Nat → Prop) :
+    ∀ (n : Nat) (f : Function) (s : State),
+      HandledExec calls (runHandled calls frame n f s) (runFuel calls n f s)
+  | 0, f, s => by
+      rw [runHandled, handle, runT_zero, runFuel]
+      exact handled_timeoutT calls frame s.mem
+  | n + 1, f, s => by
+      rw [runHandled, handle, runT_succ, runFuel_succ, step_unfold]
+      cases hfind : f.findBlock s.pc with
+      | none =>
+          dsimp only
+          exact handled_ubT calls frame s.mem
+      | some b =>
+          dsimp only
+          have hcont : ∀ (s0 : State), HandledExec calls
+              (handle frame s0.mem
+                (termT s0 (fun s'' => tau (runT calls n f s'')) b.term))
+              (match execTerm s0 b.term with
+               | .ub => some Outcome.ub
+               | .ret v s'' => some (.ret v s''.mem)
+               | .jump s'' => runFuel calls n f s'') := by
+            intro s0
+            exact handled_termT calls frame n f s0 b.term _
+              (fun s'' hj => by
+                rw [handle_tau, ← execTerm_jump_mem s0 b.term s'' hj]
+                exact HandledExec.tauStep (handled_runFuel calls frame n f s''))
+          cases hD : denoteCode calls b.instrs s with
+          | none =>
+              dsimp only
+              exact handled_codeT calls frame b.instrs s _ (some Outcome.ub)
+                (fun s0 h0 => by rw [hD] at h0; exact absurd h0 (by simp))
+                (fun _ => rfl)
+          | some s' =>
+              cases hT : execTerm s' b.term with
+              | ub =>
+                  simp only [hT]
+                  exact handled_codeT calls frame b.instrs s _ (some Outcome.ub)
+                    (fun s0 h0 => by
+                      rw [hD] at h0
+                      simp only [Option.some.injEq] at h0
+                      subst s0
+                      simpa only [hT] using hcont s')
+                    (fun _ => rfl)
+              | ret v s'' =>
+                  simp only [hT]
+                  exact handled_codeT calls frame b.instrs s _ (some (.ret v s''.mem))
+                    (fun s0 h0 => by
+                      rw [hD] at h0
+                      simp only [Option.some.injEq] at h0
+                      subst s0
+                      simpa only [hT] using hcont s')
+                    (fun h0 => by rw [hD] at h0; exact absurd h0 (by simp))
+              | jump s'' =>
+                  simp only [hT]
+                  exact handled_codeT calls frame b.instrs s _ (runFuel calls n f s'')
+                    (fun s0 h0 => by
+                      rw [hD] at h0
+                      simp only [Option.some.injEq] at h0
+                      subst s0
+                      simpa only [hT] using hcont s')
+                    (fun h0 => by rw [hD] at h0; exact absurd h0 (by simp))
+
+/-! ### Eliminating the relation against a completed run -/
+
+/-- The auxiliary elimination is read over the target's resolution, so a
+resolution that starts at a later state is a strictly shorter derivation. -/
+theorem simtt_exec_aux {calls : Calls} {post : Outcome → Outcome → Prop} :
+    ∀ {tT : OTree} {rT : Option Outcome}, HandledExec calls tT rT →
+    ∀ {tS : OTree}, simtt post tT tS →
+    ∀ {rS : Option Outcome}, HandledExec calls tS rS →
       rS = some .ub ∨ (rT = none ∧ rS = none) ∨
         ∃ vT vS memT memS, rT = some (.ret vT memT) ∧ rS = some (.ret vS memS) ∧
           post (.ret vT memT) (.ret vS memS) := by
-  intro tT mT rT hT
+  intro tT rT hT
   induction hT with
-  /- A `ret` leaf: the closure is empty, so the target's result is that leaf. -/
-  | ret =>
-      rename_i o m'
-      intro tS mS he rS hs
-      have hF := (simtt_iff frame post _ _).mp he
+  /- A `ret` leaf: its closure is empty, so the target's result is that leaf. -/
+  | retLeaf =>
+      rename_i o
+      intro tS he rS hs
+      have hF := (simtt_iff post _ _).mp he
       cases hF with
-      | ret h1 h2 hp =>
-          have ho : Outcome.ret _ _ = o := ITree.ret_inj (Prod.mk.inj (SilentHead_ret_self h1)).1
+      | ret_ret h1 h2 hp =>
+          have ho : Outcome.ret _ _ = o := ret_inj (SilentHead_ret_self h1)
           exact Or.inr (Or.inr ⟨_, _, _, _, by rw [← ho],
-            Exec.ret_inv (Exec.silentHead h2 hs), hp⟩)
-      | right_ub_ret h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
-      | ub h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
+            HandledExec.ret_inv (HandledExec.silentHead h2 hs), hp⟩)
+      | right_ub_ret h1 h2 => exact Or.inl (handled_reachesUb hs h2)
+      | ub h1 h2 => exact Or.inl (handled_reachesUb hs h2)
       | timeout k1 k2 h1 h2 =>
-          exact absurd (Prod.mk.inj (SilentHead_ret_self h1)).1
-            (ITree.ret_ne_vis Ev.timeout k1).symm
+          exact absurd (SilentHead_ret_self h1) (ret_ne_vis ObsEv.timeout k1).symm
       | left_diverges hdiv hnt => exact absurd hdiv not_silentDiverges_ret
       | right_diverges hdiv2 hdiv1 => exact absurd hdiv1 not_silentDiverges_ret
-      | vis_load addr ty k1 k2 h1 h2 hm hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_ret_self h1)).1
-            (ITree.ret_ne_vis (Ev.load addr ty) k1).symm
-      | vis_store addr ty v k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_ret_self h1)).1
-            (ITree.ret_ne_vis (Ev.store addr ty v) k1).symm
-      | vis_call callee args k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_ret_self h1)).1
-            (ITree.ret_ne_vis (Ev.call callee args) k1).symm
-  /- A `tau`: the relation absorbs it, and the continuation is one step shorter. -/
-  | tau h' ih =>
-      rename_i t0 m0 rT'
-      intro tS mS he rS hs
+      | vis_load addr ty r k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_ret_self h1) (ret_ne_vis (ObsEv.load addr ty r) k1).symm
+      | vis_store addr ty v k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_ret_self h1) (ret_ne_vis (ObsEv.store addr ty v) k1).symm
+      | vis_call callee args k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_ret_self h1) (ret_ne_vis (ObsEv.call callee args) k1).symm
+  /- A `tau`: the relation absorbs it. -/
+  | tauStep h' ih =>
+      rename_i t0 r0
+      intro tS he rS hs
       exact ih (simtt_tau_left he) hs
-  /- A visible load: the relation advances to the responses of the two memories,
-  which agree by the load clause. -/
+  /- A visible load: the relation's load clause annotates both sides with the
+  same response. -/
   | load h' ih =>
-      rename_i addr ty k m' rT'
-      intro tS mS he rS hs
-      have hF := (simtt_iff frame post _ _).mp he
+      rename_i addr ty resp k r0
+      intro tS he rS hs
+      have hF := (simtt_iff post _ _).mp he
       cases hF with
-      | ret h1 h2 hp =>
-          obtain ⟨v, hv, h1'⟩ := SilentHead.load_strip h1
-            (by intro hh; exact ITree.ret_ne_vis (Ev.load addr ty) k (Prod.mk.inj hh).1)
-          have hsub : Exec calls (k v) m' rT' := hv ▸ h'
-          exact Or.inr (Or.inr ⟨_, _, _, _, Exec.ret_inv (Exec.silentHead h1' hsub),
-            Exec.ret_inv (Exec.silentHead h2 hs), hp⟩)
-      | right_ub_ret h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
-      | ub h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
+      | ret_ret h1 h2 hp =>
+          exact absurd (SilentHead_vis_self h1) (ret_ne_vis (ObsEv.load addr ty resp) k)
+      | right_ub_ret h1 h2 => exact Or.inl (handled_reachesUb hs h2)
+      | ub h1 h2 => exact Or.inl (handled_reachesUb hs h2)
       | timeout k1 k2 h1 h2 =>
-          obtain ⟨v, hv, h1'⟩ := SilentHead.load_strip h1
-            (by
-              intro hh
-              exact (vis_load_ne_vis_timeout (k := k) (k' := k1)).symm (Prod.mk.inj hh).1)
-          have hsub : Exec calls (k v) m' rT' := hv ▸ h'
-          have hrT : rT' = none := Exec.vis_timeout_inv (Exec.silentHead h1' hsub)
-          have hrS : rS = none := Exec.vis_timeout_inv (Exec.silentHead h2 hs)
-          exact Or.inr (Or.inl ⟨hrT, hrS⟩)
+          exact absurd (SilentHead_vis_self h1) (vis_timeout_ne_load k1 addr ty resp k)
       | left_diverges hdiv hnt =>
-          exact absurd hdiv (not_silentDiverges_of_exec
-            (Exec.load (addr := addr) (ty := ty) (k := k) (m := m') (r := rT') h'))
+          exact absurd hdiv (not_silentDiverges_vis (ObsEv.load addr ty resp) k)
       | right_diverges hdiv2 hdiv1 =>
-          exact absurd hdiv1 (not_silentDiverges_of_exec
-            (Exec.load (addr := addr) (ty := ty) (k := k) (m := m') (r := rT') h'))
-      | vis_load addr' ty' k1 k2 h1 h2 hm hsc =>
-          rename_i m1 m2
-          rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
-          · obtain ⟨hT, hM⟩ := Prod.mk.inj hpq
-            obtain ⟨hEv, hk⟩ := ITree.vis_inj hT
-            subst hk
-            rw [← hM] at hsc hm
-            cases hEv
-            refine ih ?_ (Exec.vis_load_inv (Exec.silentHead h2 hs))
-            rw [hm]
-            exact hsc (loadValue m2 ty addr)
-          · obtain ⟨v, hv, hq⟩ := SilentStep.load_shape hstep
-            subst hq
-            have hrel : simtt frame post (k v, m') (tS, mS) :=
-              (simtt_iff frame post _ _).mpr (SimttF.vis_load addr' ty' k1 k2 hrest h2 hm hsc)
-            have hrel' : simtt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
-              rw [hv]
-              exact hrel
-            exact ih hrel' hs
-      | vis_store addr' ty' v k1 k2 h1 h2 hsc =>
-          rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
-          · exact absurd (Prod.mk.inj hpq).1 vis_load_ne_vis_store
-          · obtain ⟨v0, hv0, hq⟩ := SilentStep.load_shape hstep
-            subst hq
-            have hrel : simtt frame post (k v0, m') (tS, mS) :=
-              (simtt_iff frame post _ _).mpr (SimttF.vis_store addr' ty' v k1 k2 hrest h2 hsc)
-            have hrel' : simtt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
-              rw [hv0]
-              exact hrel
-            exact ih hrel' hs
-      | vis_call callee args k1 k2 h1 h2 hsc =>
-          rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
-          · exact absurd (Prod.mk.inj hpq).1 vis_load_ne_vis_call
-          · obtain ⟨v0, hv0, hq⟩ := SilentStep.load_shape hstep
-            subst hq
-            have hrel : simtt frame post (k v0, m') (tS, mS) :=
-              (simtt_iff frame post _ _).mpr (SimttF.vis_call callee args k1 k2 hrest h2 hsc)
-            have hrel' : simtt frame post (k (loadValue m' ty addr), m') (tS, mS) := by
-              rw [hv0]
-              exact hrel
-            exact ih hrel' hs
-  /- A visible store: the clause advances both memories, so the continuation is
-  the target's own next state. -/
+          exact absurd hdiv1 (not_silentDiverges_vis (ObsEv.load addr ty resp) k)
+      | vis_load addr' ty' r' k1 k2 h1 h2 hs' =>
+          obtain ⟨hev, hk⟩ := vis_inj (SilentHead_vis_self h1)
+          obtain ⟨rfl, rfl, rfl⟩ := obs_load_inj hev
+          rw [hk] at hs'
+          exact ih hs' (HandledExec.vis_load_inv (HandledExec.silentHead h2 hs))
+      | vis_store addr' ty' v k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_load_ne_store).symm
+      | vis_call callee args k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_load_ne_call).symm
+  /- A visible store. -/
   | store h' ih =>
-      rename_i addr ty v k m' rT'
-      intro tS mS he rS hs
-      have hF := (simtt_iff frame post _ _).mp he
+      rename_i addr ty v k r0
+      intro tS he rS hs
+      have hF := (simtt_iff post _ _).mp he
       cases hF with
-      | ret h1 h2 hp =>
-          have h1' := SilentHead.store_strip h1
-            (by intro hh; exact ITree.ret_ne_vis (Ev.store addr ty v) k (Prod.mk.inj hh).1)
-          exact Or.inr (Or.inr ⟨_, _, _, _, Exec.ret_inv (Exec.silentHead h1' h'),
-            Exec.ret_inv (Exec.silentHead h2 hs), hp⟩)
-      | right_ub_ret h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
-      | ub h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
+      | ret_ret h1 h2 hp =>
+          exact absurd (SilentHead_vis_self h1) (ret_ne_vis (ObsEv.store addr ty v) k)
+      | right_ub_ret h1 h2 => exact Or.inl (handled_reachesUb hs h2)
+      | ub h1 h2 => exact Or.inl (handled_reachesUb hs h2)
       | timeout k1 k2 h1 h2 =>
-          have h1' := SilentHead.store_strip h1
-            (by
-              intro hh
-              exact (vis_store_ne_vis_timeout (k := k) (k' := k1)).symm (Prod.mk.inj hh).1)
-          have hrT : rT' = none := Exec.vis_timeout_inv (Exec.silentHead h1' h')
-          have hrS : rS = none := Exec.vis_timeout_inv (Exec.silentHead h2 hs)
-          exact Or.inr (Or.inl ⟨hrT, hrS⟩)
+          exact absurd (SilentHead_vis_self h1) (vis_timeout_ne_store k1 addr ty v k)
       | left_diverges hdiv hnt =>
-          exact absurd hdiv (not_silentDiverges_of_exec
-            (Exec.store (addr := addr) (ty := ty) (v := v) (k := k) (m := m') (r := rT') h'))
+          exact absurd hdiv (not_silentDiverges_vis (ObsEv.store addr ty v) k)
       | right_diverges hdiv2 hdiv1 =>
-          exact absurd hdiv1 (not_silentDiverges_of_exec
-            (Exec.store (addr := addr) (ty := ty) (v := v) (k := k) (m := m') (r := rT') h'))
-      | vis_load addr' ty' k1 k2 h1 h2 hm hsc =>
-          rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
-          · exact absurd (Prod.mk.inj hpq).1 vis_store_ne_vis_load
-          · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
-            subst hq
-            have hrel : simtt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
-              (simtt_iff frame post _ _).mpr (SimttF.vis_load addr' ty' k1 k2 hrest h2 hm hsc)
-            exact ih hrel hs
-      | vis_store addr' ty' v' k1 k2 h1 h2 hsc =>
-          rename_i m1 m2
-          rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
-          · obtain ⟨hT, hM⟩ := Prod.mk.inj hpq
-            obtain ⟨hEv, hk⟩ := ITree.vis_inj hT
-            subst hk
-            rw [← hM] at hsc
-            cases hEv
-            exact ih hsc (Exec.vis_store_inv (Exec.silentHead h2 hs))
-          · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
-            subst hq
-            have hrel : simtt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
-              (simtt_iff frame post _ _).mpr (SimttF.vis_store addr' ty' v' k1 k2 hrest h2 hsc)
-            exact ih hrel hs
-      | vis_call callee args k1 k2 h1 h2 hsc =>
-          rcases SilentHead_inv h1 with hpq | ⟨p', hstep, hrest⟩
-          · exact absurd (Prod.mk.inj hpq).1 vis_store_ne_vis_call
-          · obtain ⟨hf, hq⟩ := SilentStep.store_shape hstep
-            subst hq
-            have hrel : simtt frame post (k (), storeMem m' ty v addr) (tS, mS) :=
-              (simtt_iff frame post _ _).mpr (SimttF.vis_call callee args k1 k2 hrest h2 hsc)
-            exact ih hrel hs
-  /- A call: the node has no silent step, so its closure is empty. -/
+          exact absurd hdiv1 (not_silentDiverges_vis (ObsEv.store addr ty v) k)
+      | vis_load addr' ty' r k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) vis_load_ne_store
+      | vis_store addr' ty' v' k1 k2 h1 h2 hs' =>
+          obtain ⟨hev, hk⟩ := vis_inj (SilentHead_vis_self h1)
+          obtain ⟨rfl, rfl, rfl⟩ := obs_store_inj hev
+          rw [hk] at hs'
+          exact ih hs' (HandledExec.vis_store_inv (HandledExec.silentHead h2 hs))
+      | vis_call callee args k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_store_ne_call).symm
+  /- A call: the environment's response is passed to the continuation. -/
   | call h' ih =>
-      rename_i callee args k m' rT'
-      intro tS mS he rS hs
-      have hF := (simtt_iff frame post _ _).mp he
+      rename_i callee args k r0
+      intro tS he rS hs
+      have hF := (simtt_iff post _ _).mp he
       cases hF with
-      | ret h1 h2 hp =>
-          exact absurd (Prod.mk.inj (SilentHead.call_self h1)).1
-            (ITree.ret_ne_vis (Ev.call callee args) k)
-      | right_ub_ret h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
-      | ub h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
+      | ret_ret h1 h2 hp =>
+          exact absurd (SilentHead_vis_self h1) (ret_ne_vis (ObsEv.call callee args) k)
+      | right_ub_ret h1 h2 => exact Or.inl (handled_reachesUb hs h2)
+      | ub h1 h2 => exact Or.inl (handled_reachesUb hs h2)
       | timeout k1 k2 h1 h2 =>
-          exact absurd (Prod.mk.inj (SilentHead.call_self h1)).1
-            (vis_call_ne_vis_timeout (k := k) (k' := k1)).symm
+          exact absurd (SilentHead_vis_self h1) (vis_timeout_ne_call k1 callee args k)
       | left_diverges hdiv hnt =>
-          exact absurd hdiv (not_silentDiverges_of_exec
-            (Exec.call (callee := callee) (args := args) (k := k) (m := m') (r := rT') h'))
+          exact absurd hdiv (not_silentDiverges_vis (ObsEv.call callee args) k)
       | right_diverges hdiv2 hdiv1 =>
-          exact absurd hdiv1 (not_silentDiverges_of_exec
-            (Exec.call (callee := callee) (args := args) (k := k) (m := m') (r := rT') h'))
-      | vis_load addr' ty' k1 k2 h1 h2 hm hsc =>
-          exact absurd (Prod.mk.inj (SilentHead.call_self h1)).1 vis_call_ne_vis_load.symm
-      | vis_store addr' ty' v' k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead.call_self h1)).1 vis_call_ne_vis_store.symm
-      | vis_call callee' args' k1 k2 h1 h2 hsc =>
-          rename_i m1 m2
-          obtain ⟨hT, hM⟩ := Prod.mk.inj (SilentHead.call_self h1)
-          obtain ⟨hEv, hk⟩ := ITree.vis_inj hT
-          subst hk
-          rw [hM] at hsc
-          cases hEv
-          refine ih ?_ (Exec.vis_call_inv (Exec.silentHead h2 hs))
-          exact hsc (calls callee args)
-  /- An undefined-behaviour node resolves to `ub`; the source side is forced to
-  reach one too. -/
+          exact absurd hdiv1 (not_silentDiverges_vis (ObsEv.call callee args) k)
+      | vis_load addr' ty' r k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) vis_load_ne_call
+      | vis_store addr' ty' v k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) vis_store_ne_call
+      | vis_call callee' args' k1 k2 h1 h2 hs' =>
+          obtain ⟨hev, hk⟩ := vis_inj (SilentHead_vis_self h1)
+          have hc := (obs_call_inj hev).1
+          have ha := (obs_call_inj hev).2
+          simp only [hc, ha] at *
+          rw [hk] at hs'
+          exact ih (hs' (calls callee args))
+            (HandledExec.vis_call_inv (HandledExec.silentHead h2 hs))
+  /- An undefined-behaviour node. -/
   | ub =>
-      rename_i k0 m'
-      intro tS mS he rS hs
-      have hF := (simtt_iff frame post _ _).mp he
+      rename_i k0
+      intro tS he rS hs
+      have hF := (simtt_iff post _ _).mp he
       cases hF with
-      | ret h1 h2 hp =>
-          exact absurd (Prod.mk.inj (SilentHead_ub_self h1)).1
-            (ITree.ret_ne_vis Ev.ub k0)
-      | right_ub_ret h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
-      | ub h1 h2 => exact Or.inl (exec_reachesUb h2 hs)
+      | ret_ret h1 h2 hp =>
+          exact absurd (SilentHead_vis_self h1) (ret_ne_vis ObsEv.ub k0)
+      | right_ub_ret h1 h2 => exact Or.inl (handled_reachesUb hs h2)
+      | ub h1 h2 => exact Or.inl (handled_reachesUb hs h2)
       | timeout k1 k2 h1 h2 =>
-          exact absurd (Prod.mk.inj (SilentHead_ub_self h1)).1
-            (vis_ub_ne_timeout k0 k1).symm
+          exact absurd (SilentHead_vis_self h1) (vis_ub_ne_timeout k0 k1).symm
       | left_diverges hdiv hnt => exact absurd hdiv not_silentDiverges_ub
       | right_diverges hdiv2 hdiv1 => exact absurd hdiv1 not_silentDiverges_ub
-      | vis_load addr ty k1 k2 h1 h2 hm hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_ub_self h1)).1
-            (vis_ub_ne_load k0 addr ty k1).symm
-      | vis_store addr ty v k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_ub_self h1)).1
-            (vis_ub_ne_store k0 addr ty v k1).symm
-      | vis_call callee args k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_ub_self h1)).1
-            (vis_ub_ne_call k0 callee args k1).symm
-  /- An exhausted budget resolves to `none`, and so does the source. -/
+      | vis_load addr ty r k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_ub_ne_load k0 addr ty r k1).symm
+      | vis_store addr ty v k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_ub_ne_store k0 addr ty v k1).symm
+      | vis_call callee args k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_ub_ne_call k0 callee args k1).symm
+  /- An exhausted budget. -/
   | timeout =>
-      rename_i k0 m'
-      intro tS mS he rS hs
-      have hF := (simtt_iff frame post _ _).mp he
+      rename_i k0
+      intro tS he rS hs
+      have hF := (simtt_iff post _ _).mp he
       cases hF with
-      | ret h1 h2 hp =>
-          exact absurd (Prod.mk.inj (SilentHead_timeout_self h1)).1
-            (ITree.ret_ne_vis Ev.timeout k0)
+      | ret_ret h1 h2 hp =>
+          exact absurd (SilentHead_vis_self h1) (ret_ne_vis ObsEv.timeout k0)
       | right_ub_ret h1 h2 =>
-          exact absurd (Prod.mk.inj (SilentHead_timeout_self h1)).1
-            (ITree.ret_ne_vis Ev.timeout k0)
+          exact absurd (SilentHead_vis_self h1) (ret_ne_vis ObsEv.timeout k0)
       | ub h1 h2 => exact absurd h1 not_reachesUb_timeout
       | timeout k1 k2 h1 h2 =>
-          exact Or.inr (Or.inl ⟨rfl,
-            Exec.vis_timeout_inv (Exec.silentHead h2 hs)⟩)
+          exact Or.inr (Or.inl ⟨rfl, handled_timeoutReachable hs ⟨_, h2, k2, rfl⟩⟩)
       | left_diverges hdiv hnt => exact absurd hdiv not_silentDiverges_timeout
       | right_diverges hdiv2 hdiv1 => exact absurd hdiv1 not_silentDiverges_timeout
-      | vis_load addr ty k1 k2 h1 h2 hm hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_timeout_self h1)).1
-            (vis_timeout_ne_load k0 addr ty k1).symm
-      | vis_store addr ty v k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_timeout_self h1)).1
-            (vis_timeout_ne_store k0 addr ty v k1).symm
-      | vis_call callee args k1 k2 h1 h2 hsc =>
-          exact absurd (Prod.mk.inj (SilentHead_timeout_self h1)).1
-            (vis_timeout_ne_call k0 callee args k1).symm
+      | vis_load addr ty r k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_timeout_ne_load k0 addr ty r k1).symm
+      | vis_store addr ty v k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_timeout_ne_store k0 addr ty v k1).symm
+      | vis_call callee args k1 k2 h1 h2 hs' =>
+          exact absurd (SilentHead_vis_self h1) (vis_timeout_ne_call k0 callee args k1).symm
 
 /-- A completed target return transports: the source either runs into undefined
 behaviour or returns an outcome the postcondition accepts. -/
-theorem simtt_exec_some {calls : Calls} {frame : Nat → Prop}
-    {post : Outcome → Outcome → Prop} {tT tS : ITree Ev Outcome}
-    {mT mS : Mem} {oT : Outcome}
-    (he : simtt frame post (tT, mT) (tS, mS))
-    {rS : Option Outcome} (ht : Exec calls tT mT (some oT))
-    (hs : Exec calls tS mS rS) :
+theorem simtt_exec_some {calls : Calls} {post : Outcome → Outcome → Prop}
+    {tT tS : OTree} {oT : Outcome}
+    (he : simtt post tT tS) {rS : Option Outcome} (ht : HandledExec calls tT (some oT))
+    (hs : HandledExec calls tS rS) :
     rS = some .ub ∨
       ∃ vT vS memT memS, oT = .ret vT memT ∧ rS = some (.ret vS memS) ∧
         post (.ret vT memT) (.ret vS memS) := by
@@ -774,27 +750,27 @@ theorem simtt_exec_some {calls : Calls} {frame : Nat → Prop}
   · cases hnoneT
   · exact Or.inr ⟨vT, vS, memT, memS, Option.some.inj hrT, hrS, hp⟩
 
-/-- A relation at two explicit budgets transports a completed target run: the
+/-- A relation between two handled trees transports a completed target run: the
 source either runs into undefined behaviour at its own budget or returns an
 outcome the postcondition accepts.  The budgets are separate, and a budget that
 exhausts is not a completed outcome. -/
 theorem simtt_runFuel_some (calls : Calls) (frame : Nat → Prop)
     (post : Outcome → Outcome → Prop) (target source : Function)
     (args : List Value) (nT nS : Nat) (oT : Outcome)
-    (he : simtt frame post
-      (runT calls nT target (initState target args), (initState target args).mem)
-      (runT calls nS source (initState source args), (initState source args).mem))
+    (he : simtt post
+      (runHandled calls frame nT target (initState target args))
+      (runHandled calls frame nS source (initState source args)))
     (ht : runFuel calls nT target (initState target args) = some oT) :
     runFuel calls nS source (initState source args) = some .ub ∨
       ∃ vT vS memT memS,
         oT = .ret vT memT ∧
         runFuel calls nS source (initState source args) = some (.ret vS memS) ∧
         post (.ret vT memT) (.ret vS memS) := by
-  have hT : Exec calls (runT calls nT target (initState target args))
-      (initState target args).mem (some oT) := ht ▸ exec_runT calls nT target (initState target args)
-  have hS : Exec calls (runT calls nS source (initState source args))
-      (initState source args).mem (runFuel calls nS source (initState source args)) :=
-    exec_runT calls nS source (initState source args)
+  have hT : HandledExec calls (runHandled calls frame nT target (initState target args))
+      (some oT) := ht ▸ handled_runFuel calls frame nT target (initState target args)
+  have hS : HandledExec calls (runHandled calls frame nS source (initState source args))
+      (runFuel calls nS source (initState source args)) :=
+    handled_runFuel calls frame nS source (initState source args)
   exact simtt_exec_some he hT hS
 
 /-- Every observable target behaviour is transported, with its own budget on
@@ -805,9 +781,9 @@ target is silently treated as one. -/
 theorem simtt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
     (post : Outcome → Outcome → Prop) (target source : Function)
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
-      ∃ nS, simtt frame post
-        (runT calls nT target (initState target args), (initState target args).mem)
-        (runT calls nS source (initState source args), (initState source args).mem)) :
+      ∃ nS, simtt post
+        (runHandled calls frame nT target (initState target args))
+        (runHandled calls frame nS source (initState source args))) :
     ∀ args oT, Beh calls target args oT →
       (∃ nS, runFuel calls nS source (initState source args) = some .ub) ∨
       (∃ nS vT vS memT memS,
@@ -817,37 +793,41 @@ theorem simtt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
   intro args oT ho
   rcases ho with ⟨n, hn⟩ | ⟨n, hn⟩
   · obtain ⟨nS, he⟩ := hsim args n .ub hn
-    rcases simtt_runFuel_some calls frame post target source args n nS .ub he hn with hub | ⟨vT, vS, memT, memS, hEq⟩
+    rcases simtt_runFuel_some calls frame post target source args n nS .ub he hn with
+      hub | ⟨vT, vS, memT, memS, hEq⟩
     · exact Or.inl ⟨nS, hub⟩
     · exact nomatch hEq
   · obtain ⟨nS, he⟩ := hsim args n oT hn
-    rcases simtt_runFuel_some calls frame post target source args n nS oT he hn with hub | ⟨vT, vS, memT, memS, hEq, hrS, hp⟩
+    rcases simtt_runFuel_some calls frame post target source args n nS oT he hn with
+      hub | ⟨vT, vS, memT, memS, hEq, hrS, hp⟩
     · exact Or.inl ⟨nS, hub⟩
     · exact Or.inr ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
 
-/-- The framed refinement relation follows from a tree simulation available for
+/-- The framed refinement relation follows from a tree relation available for
 every completed target run, in the target-to-source direction.  A source that
 runs into undefined behaviour is a behaviour for every outcome, so the target's
-own outcome is matched by itself; otherwise the matched return is the witness. -/
+own outcome is matched by itself; otherwise the matched return is the witness.
+The two returned memories are each tree's own handled final memory. -/
 theorem refinesWithin_of_simtt {calls : Calls} {target source : Function}
     {frame : Nat → Prop}
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
-      ∃ nS, simtt frame (Outcome.AgreesOutside frame)
-        (runT calls nT target (initState target args), (initState target args).mem)
-        (runT calls nS source (initState source args), (initState source args).mem)) :
+      ∃ nS, simtt (Outcome.AgreesOutside frame)
+        (runHandled calls frame nT target (initState target args))
+        (runHandled calls frame nS source (initState source args))) :
     RefinesWithin calls target source frame := by
   intro args o ho
-  rcases simtt_beh_inclusion calls frame (Outcome.AgreesOutside frame) target source hsim args o ho with
-    ⟨nS, hub⟩ | ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
+  rcases simtt_beh_inclusion calls frame (Outcome.AgreesOutside frame) target source hsim args o ho
+    with ⟨nS, hub⟩ | ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
   · exact ⟨o, Or.inl ⟨nS, hub⟩, Outcome.agreesOutside_refl o frame⟩
   · exact ⟨.ret vS memS, Or.inr ⟨nS, hrS⟩, by rw [hEq]; exact hp⟩
 
-/-- Exact refinement follows the same way at the equality postcondition. -/
+/-- Exact refinement follows the same way at the equality postcondition, through
+handled trees at the empty frame. -/
 theorem refines_of_simtt {calls : Calls} {target source : Function}
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
-      ∃ nS, simtt (fun _ => False) Eq
-        (runT calls nT target (initState target args), (initState target args).mem)
-        (runT calls nS source (initState source args), (initState source args).mem)) :
+      ∃ nS, simtt Eq
+        (runHandled calls (fun _ => False) nT target (initState target args))
+        (runHandled calls (fun _ => False) nS source (initState source args))) :
     Refines calls target source := by
   intro args o ho
   rcases simtt_beh_inclusion calls (fun _ => False) Eq target source hsim args o ho with
@@ -855,74 +835,5 @@ theorem refines_of_simtt {calls : Calls} {target source : Function}
   · exact Or.inl ⟨nS, hub⟩
   · rw [hEq]
     exact Or.inr ⟨nS, by rw [hp]; exact hrS⟩
-
-/-- A load whose byte span is not in the frame is not a silent step, so every
-closure from it is empty. -/
-theorem load_no_step_of_notInFrame {frame : Nat → Prop} {addr : Nat} {ty : Ty}
-    {k : Option Value → ITree Ev Outcome} {m : Mem} (hout : ¬ InFrame frame addr ty) :
-    ∀ q : TS, ¬ SilentStep frame (ITree.vis (Ev.load addr ty) k, m) q := by
-  intro q h
-  rcases SilentStep_inv h with ⟨t, m', hp, _⟩ | ⟨a, ty', k', m', v, hv, hf, hp, _⟩ |
-    ⟨a, ty', v, k', m', hf, hp, _⟩
-  · exact (ITree.tau_ne_vis (Ev.load addr ty) k) ((Prod.mk.inj hp).1).symm
-  · obtain ⟨hT, _⟩ := Prod.mk.inj hp
-    obtain ⟨hEv, _⟩ := ITree.vis_inj hT
-    cases hEv
-    exact hout hf
-  · exact absurd (Prod.mk.inj hp).1 vis_load_ne_vis_store
-
-/-- The load clause bite: when the load is visible (its span is outside the
-frame) and the two memories give different canonical responses, the relation
-refuses the pair.  Every other clause of `SimttF` needs a silent closure from the
-load node, and an out-of-frame load has none. -/
-theorem not_simtt_load_of_disagree {frame : Nat → Prop} {post : Outcome → Outcome → Prop}
-    {addr : Nat} {ty : Ty} {k k2 : Option Value → ITree Ev Outcome}
-    {m1 m2 : Mem} (hout : ¬ InFrame frame addr ty)
-    (hne : loadValue m1 ty addr ≠ loadValue m2 ty addr) :
-    ¬ simtt frame post (ITree.vis (Ev.load addr ty) k, m1)
-      (ITree.vis (Ev.load addr ty) k2, m2) := by
-  intro h
-  have hF := (simtt_iff frame post _ _).mp h
-  have hno := load_no_step_of_notInFrame (frame := frame) (addr := addr) (ty := ty) (k := k) (m := m1) hout
-  cases hF with
-  | ret h1 h2 hp =>
-      exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h1)).1
-        (ITree.ret_ne_vis (Ev.load addr ty) k)
-  | right_ub_ret h1 h2 =>
-      exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h1)).1
-        (ITree.ret_ne_vis (Ev.load addr ty) k)
-  | ub h1 h2 =>
-      cases h1 with
-      | ret h' =>
-          exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h')).1
-            (ITree.ret_ne_vis (Ev.load addr ty) k)
-      | vis h' =>
-          exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h')).1
-            (vis_load_ne_vis_ub (k := k)).symm
-  | timeout k1 k2 h1 h2 =>
-      exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h1)).1
-        (vis_load_ne_vis_timeout (k := k)).symm
-  | left_diverges hdiv hnt =>
-      have h' := (congrFun (SilentDiverges.eq_1 frame) _).mp hdiv
-      cases h' with
-      | step hstep _ => exact hno _ hstep
-  | right_diverges hdiv2 hdiv1 =>
-      have h' := (congrFun (SilentDiverges.eq_1 frame) _).mp hdiv1
-      cases h' with
-      | step hstep _ => exact hno _ hstep
-  | vis_load addr' ty' kc1 kc2 h1 h2 hm hsc =>
-      obtain ⟨hT, hM⟩ := Prod.mk.inj (SilentHead.eq_of_no_step hno h1)
-      obtain ⟨_, hM2⟩ := Prod.mk.inj (SilentHead.eq_of_no_step
-        (load_no_step_of_notInFrame (frame := frame) (addr := addr) (ty := ty)
-          (k := k2) (m := m2) hout) h2)
-      obtain ⟨hEv, hk⟩ := ITree.vis_inj hT
-      rw [hM] at hm
-      rw [hM2] at hm
-      cases hEv
-      exact hne hm
-  | vis_store addr' ty' v kc1 kc2 h1 h2 hsc =>
-      exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h1)).1 vis_store_ne_vis_load
-  | vis_call callee args kc1 kc2 h1 h2 hsc =>
-      exact absurd (Prod.mk.inj (SilentHead.eq_of_no_step hno h1)).1 vis_call_ne_vis_load
 
 end LeanLLVM.ITree

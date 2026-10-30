@@ -231,15 +231,22 @@ accepted on the strength of a narrower result.
   (`RefinesWithin`, `AgreesOutsideMem`, `AllocFrame` in
   `LeanLLVM/Frames.lean`) that compares the returned value and the bytes outside
   a footprint read off the allocator state.  A second, finer statement stands
-  beside them: `LeanLLVM/ITree/` interprets the same fuel semantics as
-  interaction trees and defines a postcondition-indexed, directed simulation
-  `simtt` — left is the target, right the source — with budget timeout, undefined
-  behaviour and silent divergence as distinct terminals, a visible load matching
-  only when the two memories give the same canonical response, and a proof for
-  the comma-mask loop against its unrolled candidate at the loop's
-  allocator-derived frame.  That is a statement about that one pair, it installs
-  nothing, and it leaves the executable relation and the pass theorems
-  unchanged.  One conditional bridge exists from the tree relation to the
+  beside them, in two libraries: the generic `ITree/` (tree carrier, a one-step
+  event handler with a computable interpreter, and the coinduction layer, with no
+  dependency on any `LeanLLVM` module) and the instantiation
+  `LeanLLVM/ITree/`, which interprets the same fuel semantics as `Ev` trees and
+  folds memory into them as an effect — private accesses becoming silent steps,
+  everything else staying visible with the response the handler computed — so
+  that `simtt` is a postcondition-indexed, directed simulation over bare handled
+  trees: left is the target, right the source, with budget timeout, undefined
+  behaviour and silent divergence as distinct terminals and a visible event
+  matching only itself.  The host handler is proof-facing and noncomputable,
+  because the frame is an arbitrary proposition; the routes and `runFuel` are
+  untouched.  `handled_runFuel` is the correspondence that makes the handled
+  trees executable, and `loop_candidate_simtt` relates the comma-mask loop's
+  handled tree to the unrolled candidate's at the loop's allocator-derived frame.
+  That is a statement about that one pair, it installs nothing, and it leaves the
+  executable relation and the pass theorems unchanged.  One conditional bridge exists from the tree relation to the
   executable side: `simtt_exec_some` eliminates the relation against a completed
   target run, `simtt_runFuel_some` and `simtt_beh_inclusion` state the consequence
   at explicit budgets on each side, `refinesWithin_of_simtt` and `refines_of_simtt`
@@ -274,10 +281,11 @@ accepted on the strength of a narrower result.
   conditions — a loop certified from the Lean compilation chain, a contextual
   installation proof including memory effects, a checked certificate and
   benchmark measurements — are therefore unmet.  The tree relation proved for
-  the loop and its unrolled candidate (`LeanLLVM/ITree/LoopInstance.lean`), and
-  the one behaviour corollary the bridge derives from it, are fixture statements
-  at fixed budgets: they install nothing and relate no Lean compiler output, so
-  they are not progress on those conditions.
+  the loop's handled tree and the unrolled candidate's
+  (`LeanLLVM/ITree/LoopInstance.lean`), and the one behaviour corollary the bridge
+  derives from it, are fixture statements at fixed budgets: they install
+  nothing and relate no Lean compiler output, so they are not progress on those
+  conditions.
 
 ## References and provenance
 

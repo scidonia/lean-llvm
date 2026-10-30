@@ -11,13 +11,13 @@ gives, the tree ends in an outcome, `none` for an exhausted budget and
 completed semantic outcome, while `timeout` is a finite-budget artifact that no
 run observed by `Beh` produces.
 -/
-import LeanLLVM.ITree.Core
+import ITree.Core
 import LeanLLVM.Semantics
 
 namespace LeanLLVM.ITree
 
 open LeanLLVM
-open ITree
+open _root_.ITree
 
 /-! ### The event signature -/
 
@@ -37,10 +37,10 @@ inductive Ev : Type → Type where
   | timeout : Ev Empty
 
 /-- Undefined behaviour, as a tree with no continuation. -/
-def ubT : ITree Ev Outcome := vis Ev.ub Empty.elim
+def ubT : Tree Ev Outcome := vis Ev.ub Empty.elim
 
 /-- Exhausted fuel, as a tree with no continuation. -/
-def timeoutT : ITree Ev Outcome := vis Ev.timeout Empty.elim
+def timeoutT : Tree Ev Outcome := vis Ev.timeout Empty.elim
 
 /-! ### The interpretation -/
 
@@ -55,18 +55,18 @@ def storeMem (m : Mem) (ty : Ty) (v : Value) (addr : Nat) : Mem :=
 
 /-- Instructions with no event: the semantics' own decision, lifted. -/
 def pureInstrT (calls : Calls) (s : State) (i : Instr)
-    (k : State → ITree Ev Outcome) : ITree Ev Outcome :=
+    (k : State → Tree Ev Outcome) : Tree Ev Outcome :=
   match evalInstr calls s i with
   | some s' => k s'
   | none => ubT
 
 /-- One instruction, as a tree whose leaf is the state after it. -/
 def instrT (calls : Calls) (s : State) :
-    Instr → (State → ITree Ev Outcome) → ITree Ev Outcome
+    Instr → (State → Tree Ev Outcome) → Tree Ev Outcome
   | .load d ty p, k =>
       match evalOperand s p with
       | some (.ptr addr) =>
-          ITree.vis (Ev.load addr ty) fun r =>
+          vis (Ev.load addr ty) fun r =>
             match r with
             | some v => k (s.bind d v)
             | none => ubT
@@ -74,7 +74,7 @@ def instrT (calls : Calls) (s : State) :
   | .store ty v p, k =>
       match evalOperand s v, evalOperand s p with
       | some vv, some (.ptr addr) =>
-          ITree.vis (Ev.store addr ty vv) fun _ =>
+          vis (Ev.store addr ty vv) fun _ =>
             match storeValue s ty vv addr with
             | some s' => k s'
             | none => ubT
@@ -82,7 +82,7 @@ def instrT (calls : Calls) (s : State) :
   | .call d _ callee args, k =>
       match evalOperands s args with
       | some vs =>
-          ITree.vis (Ev.call callee vs) fun r =>
+          vis (Ev.call callee vs) fun r =>
             match r with
             | some v => k (s.bind d v)
             | none => ubT
@@ -91,28 +91,28 @@ def instrT (calls : Calls) (s : State) :
 
 /-- A block's instructions as a tree; `k` receives the block's final state. -/
 def codeT (calls : Calls) :
-    List Instr → State → (State → ITree Ev Outcome) → ITree Ev Outcome
+    List Instr → State → (State → Tree Ev Outcome) → Tree Ev Outcome
   | [], s, k => k s
   | i :: is, s, k => instrT calls s i (fun s' => codeT calls is s' k)
 
 /-- The terminator's effect, read off `execTerm` itself so that the tree and the
 semantics make the same decision.  A jump continues with `next s'.pc`. -/
-def termT (s : State) (next : State → ITree Ev Outcome) (t : Term) : ITree Ev Outcome :=
+def termT (s : State) (next : State → Tree Ev Outcome) (t : Term) : Tree Ev Outcome :=
   match execTerm s t with
   | .ub => ubT
-  | .ret v s' => ITree.ret (.ret v s'.mem)
+  | .ret v s' => ret (.ret v s'.mem)
   | .jump s' => next s'
 
 /-- The fuel-indexed interpretation: the recursion of `runFuel`, with the
 block's instructions turned into events and each jump into a silent step. -/
-def runT (calls : Calls) : Nat → Function → State → ITree Ev Outcome
+def runT (calls : Calls) : Nat → Function → State → Tree Ev Outcome
   | 0, _, _ => timeoutT
   | n + 1, f, s =>
       match f.findBlock s.pc with
       | none => ubT
       | some b =>
           codeT calls b.instrs s fun s' =>
-            termT s' (fun s'' => ITree.tau (runT calls n f s'')) b.term
+            termT s' (fun s'' => tau (runT calls n f s'')) b.term
 
 /-! ### Unfolding lemmas -/
 
@@ -125,7 +125,7 @@ theorem runT_succ (calls : Calls) (n : Nat) (f : Function) (s : State) :
        | none => ubT
        | some b =>
            codeT calls b.instrs s fun s' =>
-             termT s' (fun s'' => ITree.tau (runT calls n f s'')) b.term) := rfl
+             termT s' (fun s'' => tau (runT calls n f s'')) b.term) := rfl
 
 theorem step_unfold (calls : Calls) (f : Function) (s : State) :
     step calls f s =
@@ -151,27 +151,27 @@ theorem runFuel_succ (calls : Calls) (n : Nat) (f : Function) (s : State) :
 `r = some .ub` is undefined behaviour.
 -/
 
-inductive Exec (calls : Calls) : ITree Ev Outcome → Mem → Option Outcome → Prop where
+inductive Exec (calls : Calls) : Tree Ev Outcome → Mem → Option Outcome → Prop where
   | ret {o : Outcome} {m : Mem} :
-      Exec calls (ITree.ret o) m (some o)
-  | tau {t : ITree Ev Outcome} {m : Mem} {r : Option Outcome} :
-      Exec calls t m r → Exec calls (ITree.tau t) m r
-  | load {addr : Nat} {ty : Ty} {k : Option Value → ITree Ev Outcome} {m : Mem}
+      Exec calls (ret o) m (some o)
+  | tau {t : Tree Ev Outcome} {m : Mem} {r : Option Outcome} :
+      Exec calls t m r → Exec calls (tau t) m r
+  | load {addr : Nat} {ty : Ty} {k : Option Value → Tree Ev Outcome} {m : Mem}
       {r : Option Outcome} :
       Exec calls (k (loadValue m ty addr)) m r →
-      Exec calls (ITree.vis (Ev.load addr ty) k) m r
-  | store {addr : Nat} {ty : Ty} {v : Value} {k : Unit → ITree Ev Outcome}
+      Exec calls (vis (Ev.load addr ty) k) m r
+  | store {addr : Nat} {ty : Ty} {v : Value} {k : Unit → Tree Ev Outcome}
       {m : Mem} {r : Option Outcome} :
       Exec calls (k ()) (storeMem m ty v addr) r →
-      Exec calls (ITree.vis (Ev.store addr ty v) k) m r
+      Exec calls (vis (Ev.store addr ty v) k) m r
   | call {callee : String} {args : List Value}
-      {k : Option Value → ITree Ev Outcome} {m : Mem} {r : Option Outcome} :
+      {k : Option Value → Tree Ev Outcome} {m : Mem} {r : Option Outcome} :
       Exec calls (k (calls callee args)) m r →
-      Exec calls (ITree.vis (Ev.call callee args) k) m r
-  | ub {k : Empty → ITree Ev Outcome} {m : Mem} :
-      Exec calls (ITree.vis Ev.ub k) m (some Outcome.ub)
-  | timeout {k : Empty → ITree Ev Outcome} {m : Mem} :
-      Exec calls (ITree.vis Ev.timeout k) m none
+      Exec calls (vis (Ev.call callee args) k) m r
+  | ub {k : Empty → Tree Ev Outcome} {m : Mem} :
+      Exec calls (vis Ev.ub k) m (some Outcome.ub)
+  | timeout {k : Empty → Tree Ev Outcome} {m : Mem} :
+      Exec calls (vis Ev.timeout k) m none
 
 /-! ### Correspondence with `runFuel`
 
@@ -248,7 +248,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
   | void => cases v <;> simp [storeValue] at h
 
 theorem exec_pureInstrT (calls : Calls) (s : State) (i : Instr)
-    (k : State → ITree Ev Outcome) (r : Option Outcome)
+    (k : State → Tree Ev Outcome) (r : Option Outcome)
     (hmem : ∀ s', evalInstr calls s i = some s' → s'.mem = s.mem)
     (hok : ∀ s', evalInstr calls s i = some s' → Exec calls (k s') s'.mem r)
     (hub : evalInstr calls s i = none → r = some Outcome.ub) :
@@ -265,7 +265,7 @@ theorem exec_pureInstrT (calls : Calls) (s : State) (i : Instr)
       exact h
 
 theorem exec_instrT_load (calls : Calls) (s : State) (d : String) (ty : Ty) (p : Operand)
-    (k : State → ITree Ev Outcome) (r : Option Outcome)
+    (k : State → Tree Ev Outcome) (r : Option Outcome)
     (hok : ∀ s', evalInstr calls s (.load d ty p) = some s' →
       Exec calls (k s') s'.mem r)
     (hub : evalInstr calls s (.load d ty p) = none → r = some Outcome.ub) :
@@ -302,7 +302,7 @@ theorem exec_instrT_load (calls : Calls) (s : State) (d : String) (ty : Ty) (p :
               simpa [State.bind] using hok (s.bind d val) hE
 
 theorem exec_instrT_store (calls : Calls) (s : State) (ty : Ty) (v p : Operand)
-    (k : State → ITree Ev Outcome) (r : Option Outcome)
+    (k : State → Tree Ev Outcome) (r : Option Outcome)
     (hok : ∀ s', evalInstr calls s (.store ty v p) = some s' →
       Exec calls (k s') s'.mem r)
     (hub : evalInstr calls s (.store ty v p) = none → r = some Outcome.ub) :
@@ -351,7 +351,7 @@ theorem exec_instrT_store (calls : Calls) (s : State) (ty : Ty) (v p : Operand)
 
 theorem exec_instrT_call (calls : Calls) (s : State) (d : String) (retTy : Ty)
     (callee : String) (args : List (Ty × Operand))
-    (k : State → ITree Ev Outcome) (r : Option Outcome)
+    (k : State → Tree Ev Outcome) (r : Option Outcome)
     (hok : ∀ s', evalInstr calls s (.call d retTy callee args) = some s' →
       Exec calls (k s') s'.mem r)
     (hub : evalInstr calls s (.call d retTy callee args) = none →
@@ -385,7 +385,7 @@ theorem exec_instrT_call (calls : Calls) (s : State) (d : String) (retTy : Ty)
 /-! ### Straight-line code -/
 
 theorem exec_codeT (calls : Calls) :
-    ∀ (is : List Instr) (s : State) (k : State → ITree Ev Outcome)
+    ∀ (is : List Instr) (s : State) (k : State → Tree Ev Outcome)
       (r : Option Outcome),
       (∀ s', denoteCode calls is s = some s' → Exec calls (k s') s'.mem r) →
       (denoteCode calls is s = none → r = some Outcome.ub) →
@@ -475,7 +475,7 @@ theorem execTerm_jump_mem (s : State) (t : Term) (s' : State)
 theorem exec_termT (calls : Calls) (n : Nat) (f : Function) (s : State) (t : Term)
     (hIH : ∀ (f : Function) (s : State),
       Exec calls (runT calls n f s) s.mem (runFuel calls n f s)) :
-    Exec calls (termT s (fun s' => ITree.tau (runT calls n f s')) t) s.mem
+    Exec calls (termT s (fun s' => tau (runT calls n f s')) t) s.mem
       (match execTerm s t with
        | .ub => some Outcome.ub
        | .ret v s' => some (.ret v s'.mem)
@@ -511,7 +511,7 @@ theorem exec_runT (calls : Calls) :
       | some b =>
           simp only [hfind]
           have hcont : ∀ (s0 : State), Exec calls
-              (termT s0 (fun s'' => ITree.tau (runT calls n f s'')) b.term) s0.mem
+              (termT s0 (fun s'' => tau (runT calls n f s'')) b.term) s0.mem
               (match execTerm s0 b.term with
                | .ub => some Outcome.ub
                | .ret v s'' => some (.ret v s''.mem)

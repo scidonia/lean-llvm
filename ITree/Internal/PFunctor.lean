@@ -9,12 +9,12 @@ visible in one file.
 
 Adapted from `mit-plv/lean4-itree` at revision
 `7f48fefaa2f12f599e6c4aa2be1ef39d5466122b` (`ITree/Utils.lean`); see
-`LeanLLVM/ITree/README.md` for provenance and the list of deviations.
+`ITree/README.md` for provenance and the list of deviations.
 -/
 import Mathlib.Data.QPF.Univariate.Basic
 import Mathlib.Data.Vector3
 
-namespace LeanLLVM.ITree.Internal
+namespace ITree.Internal
 
 /-! ### `Vector3`/`Fin2` utilities
 
@@ -54,7 +54,7 @@ theorem fin1Const_fin0 {α} (c : ULift (Fin2 1) → α) : fin1Const (c 0) = c :=
   match i with
   | .up (.ofNat' 0) => rfl
 
-end LeanLLVM.ITree.Internal
+end ITree.Internal
 
 /-! ### `PFunctor.M` utilities
 
