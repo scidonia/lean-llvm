@@ -38,7 +38,9 @@ needs the other two to match.
   interaction tree.  `ITree/Core` is the public tree API, `ITree/Coinduction`
   the parameterised-fixpoint layer, `ITree/IEq` exact equality,
   `ITree/Monad` the lawful functor/monad instances, `ITree/TauClosure` the
-  finite/infinite delay object, `ITree/MonadIter` the ported iterator, and
+  finite/infinite delay object, `ITree/MonadIter` the ported iterator and the
+  seeded guarded recursion `mfix` with its equations and positive-delay
+  witnesses, and
   `ITree/EffectAlgebra` the tree-valued handler with its directly guarded
   interpreter; `ITree/Effect` is the separate one-step handler with a computable
   fold.  No module here imports a `LeanLLVM` module.  `ITree/README.md` records
@@ -47,12 +49,14 @@ needs the other two to match.
 - `LeanLLVM/ITree/` is the LLVM instantiation of that library: `Interpret` is
   the fuel semantics as an `Ev` tree, `MemoryEffect` folds `Ev` into an
   `ObsEv` handler so memory becomes an effect, `Simtt` the directed relation on
-  the resulting bare handled trees, `Bridge` the correspondence and elimination
-  against a completed run, and `LoopInstance` the comma-mask loop/candidate
-  instance.  `LeanLLVM.lean` imports it after the Vellum modules, so
-  `LeanLLVMTest/` reaches it through the same entrypoint as the rest of
-  `LeanLLVM`.  `LeanLLVM/ITree/README.md` records the handler, the relation and
-  the open obligations.
+  the resulting bare handled trees, `LoopRule` the framed loop rule with its
+  postcondition weakening, handler jump-delay and decreasing-measure facts,
+  `Bridge` the correspondence and elimination against a completed run, and
+  `LoopInstance` the rule's two instances: a visibly recurring call tree and the
+  comma-mask loop/candidate pair.  `LeanLLVM.lean` imports it after the Vellum
+  modules, so `LeanLLVMTest/` reaches it through the same entrypoint as the rest
+  of `LeanLLVM`.  `LeanLLVM/ITree/README.md` records the handler, the relation,
+  the rule and the open obligations.
 - `LeanLLVMTest/` is the check library.  It imports `LeanLLVM` from outside, so
   it sees exactly the public interface, and holds `#guard` checks,
   `#guard_msgs` pins, and small theorems.
@@ -120,9 +124,14 @@ needs the other two to match.
   handler decides with `Classical.propDecidable`; that handler is
   proof-facing, `runFuel` and the routes are untouched, and making it
   computable needs a decidable frame contract rather than a silent narrowing.
-  The loop instance is one fixture at fixed budgets and one allocator-derived
-  frame; a wider frame, a bigger budget or a general rule is new work, not a
-  variation on that theorem.
+  The loop rule (`LeanLLVM/ITree/LoopRule.lean`) is conditional too: `simtt_loop`
+  does not assert that any pair of loops satisfies its premise, and it says
+  nothing about `Refines`/`RefinesWithin`.  Its frame is expressed at the return
+  (`oT.AgreesOutside frame oS`), which is why postcondition weakening
+  (`simtt_post_mono`), not definitional equality, recovers the plain framed post.
+  The loop instance is one pair at fixed budgets and one allocator-derived frame;
+  a wider frame, a bigger budget or a rule at the executable refinement relation
+  is new work, not a variation on that theorem.
 - Keep mathlib behind its adapter.  A new module anywhere in the package
   imports `ITree.Core`/`ITree.Coinduction` (or a module above them), never
   `Mathlib.*`, and clients name trees through `ITree.Core` rather than
@@ -137,6 +146,12 @@ needs the other two to match.
   each absence claim.  Run them with
   `nix develop -c lake env lean tests/itree-import.lean` and
   `nix develop -c bash tests/itree-boundary.sh`.
+- `ITree.mfix` is the seeded reading of the ported `iter`, not a second
+  corecursor: its equations and guards are the iterator's.  Do not add a fixed
+  point for an arbitrary function-argument body — such a body can choose an
+  unguarded recursive seed — and keep each recursive operation's `FiniteLater`
+  witness positive: a `now` witness is refused by `not_finiteLater_now`, and the
+  import test pins both the witness and that refusal.
 
 ## Adding a pass
 

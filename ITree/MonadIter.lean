@@ -22,6 +22,15 @@ Each initial and `.recur` transition carries a positive
 `TauClosure.FiniteLater` witness whose `flatten` is that exact transition, so
 the guard is the tree's own one-step delay rather than a token mention.
 
+`mfix` is the seeded reading of the same corecursor: `mfix step i` is `iter step i`
+under the name a loop proof uses, with no second engine behind it.  Its equations
+are the iterator's (`mfix_unfold`, `mfix_done`, `mfix_recur`) and its guards are
+the iterator's (`mfix_guard`, `mfix_recur_guard`, `mfix_bindStep_recur_guard`),
+so an immediate `.done` is one `tau` before the result and an immediate `.recur`
+is one `tau` before the next iteration.  There is no unguarded fixed-point
+equation: a step tree that returns a seed is a positive finite delay, and the
+`FiniteLater` witnesses say so.
+
 `IterState`, `MonadIter` and `iter` are adapted from `mit-plv/lean4-itree` at
 revision `7f48fefaa2f12f599e6c4aa2be1ef39d5466122b`
 (`ITree/EffectAlgebra.lean:28-66`), placed under the `ITree` namespace.  The
@@ -186,6 +195,58 @@ theorem bindStep_recur_guard (step : ι → ITree ε (IterState ι ρ)) (j : ι)
       flatten d = bindStep step (ret (.recur j)) :=
   ⟨later (now (bindStep step (step j))), finiteLater_later_now _,
     by rw [flatten_later, flatten_now, bindStep_ret_recur]⟩
+
+/-! ### The seeded recursion
+
+`mfix` names the iterator as a seeded recursive loop: `step`'s tree returns
+either the loop's result (`.done`) or the next seed (`.recur`).  It is the same
+corecursor, so every law below is the iterator's law and every guard is the
+positive delay the iterator already produces.  A step that returns a recursive
+seed is a guarded backedge, not an unguarded fixed point; the `FiniteLater`
+witnesses are what the difference amounts to. -/
+
+/-- Seeded guarded tree recursion: `mfix step i` runs `step` from seed `i`. -/
+def mfix (step : ι → ITree ε (IterState ι ρ)) (i : ι) : ITree ε ρ :=
+  iter step i
+
+/-- One unfolding: the initial `tau`, then the first step's tree bound into the
+iteration. -/
+theorem mfix_unfold (step : ι → ITree ε (IterState ι ρ)) (i : ι) :
+    mfix step i = tau (bindStep step (step i)) :=
+  iter_eq_tau step i
+
+/-- An immediate `.done` costs exactly one `tau`. -/
+theorem mfix_done (step : ι → ITree ε (IterState ι ρ)) {i : ι} {r : ρ}
+    (h : step i = ret (.done r)) : mfix step i = tau (ret r) :=
+  iter_done step h
+
+/-- An immediate `.recur` is one `tau` in front of the next iteration. -/
+theorem mfix_recur (step : ι → ITree ε (IterState ι ρ)) {i j : ι}
+    (h : step i = ret (.recur j)) : mfix step i = tau (mfix step j) :=
+  iter_recur step h
+
+/-- The initial guard: the first step's tree is behind one positive finite
+delay whose flattening is the iteration. -/
+theorem mfix_guard (step : ι → ITree ε (IterState ι ρ)) (i : ι) :
+    ∃ d : TauClosure (ITree ε ρ),
+      FiniteLater d (bindStep step (step i)) ∧ flatten d = mfix step i :=
+  iter_guard step i
+
+/-- The `.recur` guard at the external position: a step that returns a seed is a
+positive finite delay of the next iteration, whose own initial `tau` is the
+second stage. -/
+theorem mfix_recur_guard (step : ι → ITree ε (IterState ι ρ)) {i j : ι}
+    (h : step i = ret (.recur j)) :
+    ∃ d : TauClosure (ITree ε ρ), FiniteLater d (mfix step j) ∧
+      flatten d = mfix step i :=
+  iter_recur_guard step h
+
+/-- The `.recur` guard at the internal position, for a backedge reached after a
+visible or silent node of the step's tree rather than at its root. -/
+theorem mfix_bindStep_recur_guard (step : ι → ITree ε (IterState ι ρ)) (j : ι) :
+    ∃ d : TauClosure (ITree ε ρ), FiniteLater d (bindStep step (step j)) ∧
+      flatten d = bindStep step (ret (.recur j)) :=
+  bindStep_recur_guard step j
 
 end
 

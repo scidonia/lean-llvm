@@ -1,15 +1,20 @@
 /-
-The repository's concrete loop instance of the directed relation.
+The repository's concrete instances of the directed relation.
 
-The left tree is the parsed comma-mask loop at the budget its correctness proof
-uses; the right tree is the unrolled candidate.  The postcondition is
+The first is a genuinely recurring tree: a step that visibly emits the same call
+and returns a recursive seed at every response, related to itself through
+`simtt_loop`'s continuation position.  The second is the comma-mask fixture.  Its
+left tree is the parsed loop at the budget its correctness proof uses; its right
+tree is the unrolled candidate.  The postcondition is
 `Outcome.AgreesOutside (loopFrame x)`: the returned values are equal and the
 memories agree outside the band the loop's own allocations cover.
 
-This is one instance, not a general loop rule: the proof walks the loop's own
-blocks and the candidate's single block, and installs nothing.
+Both are instances of the general rule in `LoopRule`, not rules of their own.
+The loop's seed family carries the condition invariant, the budget arithmetic
+and the strictly decreasing measure the rule's return obligation is discharged
+with, and the proof installs nothing.
 -/
-import LeanLLVM.ITree.Simtt
+import LeanLLVM.ITree.LoopRule
 import LeanLLVM.ITree.Bridge
 import LeanLLVM.Vellum.CommaMaskLoop
 
@@ -395,67 +400,143 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
         | alloca d ty al =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
 
-/-- The loop's own induction, at the tree level: from the condition with `n`
-remaining iterations, finitely many silent steps reach the full prefix and a
-memory confined to the loop's band.  The fuel is a parameter so the three
-closures in each step compose with syntactically equal middle trees. -/
-theorem cond_run_silent (x : BitVec 64) :
-    ∀ (n : Nat) (s : State) (m acc : BitVec 64) (k : Nat) (fuel : Nat),
-      k ≤ 8 → 8 - k = n → fuel = 2 * n + 2 → acc = maskPrefix m k → LoopInv s m acc k →
-      ∃ mem, MemConfined 1 17 mem ∧
-        RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
-          (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix m 8))) mem), mem) := by
-  intro n
-  induction n with
-  | zero =>
-      intro s m acc k fuel hk hn hfuel hacc hinv
-      have hk8 : k = 8 := by omega
-      subst hk8
-      let r1 := cond_done_silent x fuel s m acc (by omega) hinv
-      let s1 := r1.choose
-      have h1 := r1.choose_spec
-      have hp1 : s1.pc = "done" := h1.1
-      have hf1 : LoopFacts s1 m acc 8 := h1.2.1
-      have hs1 : RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
-          (runT noCalls (fuel - 1) loopFunction s1, s1.mem) := h1.2.2
-      have hs2 := done_silent x (fuel - 1) s1 m acc (by omega) hp1 hf1
-      refine ⟨s1.mem, ?_, ?_⟩
-      · simpa [hf1.nextEq] using hf1.memBand
-      · have := RawSilentHead.trans hs1 hs2
-        rw [hacc] at this
-        exact this
-  | succ n ih =>
-      intro s m acc k fuel hk hn hfuel hacc hinv
-      have hk8 : k < 8 := by omega
-      let r1 := cond_silent x fuel s m acc k (by omega) hk8 hinv
-      let s1 := r1.choose
-      have h1 := r1.choose_spec
-      have hp1 : s1.pc = "body" := h1.2.1
-      have hf1 : LoopFacts s1 m acc k := h1.2.2.1
-      have hi1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) := h1.2.2.2.1
-      have hs1 : RawSilentHead (loopFrame x) (runT noCalls fuel loopFunction s, s.mem)
-          (runT noCalls (fuel - 1) loopFunction s1, s1.mem) := h1.2.2.2.2
-      let r2 := body_silent x (fuel - 1) s1 m acc k (by omega) hk8 hacc hp1 hf1 hi1
-      let s2 := r2.choose
-      have h2 := r2.choose_spec
-      have hp2 : s2.pc = "cond" := h2.1
-      have hf2 : LoopFacts s2 m (maskPrefix m (k + 1)) (k + 1) := h2.2.1
-      have hs2 : RawSilentHead (loopFrame x)
-          (runT noCalls (fuel - 1) loopFunction s1, s1.mem)
-          (runT noCalls ((fuel - 1) - 1) loopFunction s2, s2.mem) := h2.2.2
-      have hn' : 8 - (k + 1) = n := by omega
-      have hfuel' : (fuel - 1) - 1 = 2 * n + 2 := by omega
-      let r3 := ih s2 m (maskPrefix m (k + 1)) (k + 1) ((fuel - 1) - 1) (by omega) hn'
-        hfuel' rfl ⟨hp2, hf2⟩
-      let mem := r3.choose
-      have h3 := r3.choose_spec
-      have hconf : MemConfined 1 17 mem := h3.1
-      have hrest : RawSilentHead (loopFrame x)
-          (runT noCalls ((fuel - 1) - 1) loopFunction s2, s2.mem)
-          (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix m 8))) mem), mem) := h3.2
-      refine ⟨mem, hconf, ?_⟩
-      have := RawSilentHead.trans hs1 (RawSilentHead.trans hs2 hrest)
-      simpa [show 2 * (n + 1) + 2 = 2 * n + 4 from by omega] using this
+/-! ### The loop's seed family
+
+The condition invariant is indexed by a seed: the seed's budget is the one the
+loop actually has left, its counter is at most eight, its accumulator is the lane
+prefix of the symbolic memory, and that memory is the run's own.  The entry seed
+stands apart only because its budget is the run's, one entry block before the
+condition's.  The general rule's invariant and the measure derivation below are
+both stated over this family.
+-/
+
+/-- A seed of the loop's tree family. -/
+structure LoopSeed where
+  /-- The budget the seed's tree is built at. -/
+  fuel : Nat
+  /-- The machine state the seed's tree starts from. -/
+  st : State
+  /-- The symbolic memory the loop's `%m` register holds. -/
+  m : BitVec 64
+  /-- The accumulator the loop's `%acc` local holds. -/
+  acc : BitVec 64
+  /-- The loop's counter. -/
+  k : Nat
+
+namespace LoopSeed
+
+/-- The seed's raw source tree, paired with the memory its state records. -/
+def toRaw (p : LoopSeed) : RawTS :=
+  (runT noCalls p.fuel loopFunction p.st, p.st.mem)
+
+/-- The seed's handled tree. -/
+noncomputable def tree (x : BitVec 64) (p : LoopSeed) : OTree :=
+  handle (loopFrame x) p.st.mem (runT noCalls p.fuel loopFunction p.st)
+
+/-- A condition seed: at `cond`, with the loop invariant and a counter of at most
+eight; the budget is exactly the two block steps each remaining iteration costs;
+the accumulator is the lane prefix of the symbolic memory, and that memory is the
+run's own. -/
+def atCond (x : BitVec 64) (p : LoopSeed) : Prop :=
+  LoopInv p.st p.m p.acc p.k ∧ p.k ≤ 8 ∧ p.fuel = 2 * (8 - p.k) + 2 ∧
+    p.acc = maskPrefix p.m p.k ∧ p.m = x ^^^ c 3182967604875373612
+
+/-- The run's entry seed: its own initial state at its own budget. -/
+def isEntry (x : BitVec 64) (p : LoopSeed) : Prop :=
+  p.fuel = 19 ∧ p.st = initState loopFunction [.int 64 x]
+
+/-- The two kinds of seed the loop's tree family starts from. -/
+def inv (x : BitVec 64) (p : LoopSeed) : Prop := p.isEntry x ∨ p.atCond x
+
+end LoopSeed
+
+/-- The condition seed the entry block hands over to: no lanes folded yet, at
+the budget the eight iterations cost. -/
+def entryCondSeed (x : BitVec 64) : LoopSeed :=
+  { fuel := 18, st := entryState x, m := x ^^^ c 3182967604875373612, acc := 0, k := 0 }
+
+/-- The entry block's hand-over satisfies the condition invariant. -/
+theorem entryCondSeed_atCond (x : BitVec 64) : (entryCondSeed x).atCond x := by
+  have hk : (entryCondSeed x).k = 0 := rfl
+  have hfuel : (entryCondSeed x).fuel = 18 := rfl
+  have hacc : (entryCondSeed x).acc = 0 := rfl
+  refine ⟨entry_inv x, ?_, ?_, ?_, rfl⟩
+  · rw [hk]; decide
+  · rw [hfuel, hk]
+  · rw [hacc, hk]
+    exact (maskPrefix_zero _).symm
+
+/-- A memory confined to the loop's band is private to the loop's footprint. -/
+theorem memPrivate_of_confined {x : BitVec 64} {mem : Mem}
+    (h : MemConfined 1 17 mem) : MemPrivate (loopFrame x) mem := by
+  rw [loopFrame_eq]
+  exact h
+
+/-- Every condition seed reaches the loop's return through finitely many private
+steps: the returned value is the whole lane prefix of the run's symbolic memory,
+and the memory the return records is confined to the loop's band.  One iteration
+— the condition block, then the body block — supplies each step of the strictly
+decreasing measure `8 - k`, and the exit block supplies the terminal. -/
+theorem cond_run_silent (x : BitVec 64) (p : LoopSeed) (hinv : p.atCond x) :
+    ∃ mem, MemConfined 1 17 mem ∧
+      RawSilentHead (loopFrame x) p.toRaw
+        (ITree.ret
+          (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)))
+            mem), mem) := by
+  let P : RawTS → Prop := fun terminal =>
+    ∃ v, terminal.1 = ITree.ret (Outcome.ret v terminal.2) ∧
+      v = some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)) ∧
+        MemConfined 1 17 terminal.2
+  have hmain : ∃ terminal, P terminal ∧
+      RawSilentHead (loopFrame x) p.toRaw terminal := by
+    refine rawSilentHead_of_measure LoopSeed.toRaw (fun q => q.atCond x)
+      (fun q => 8 - q.k) P ?_ ?_ hinv
+    · -- one iteration: the condition block, then the body block
+      intro q hq hpos
+      have hk8 : q.k < 8 := by omega
+      have hle : q.k ≤ 8 := hq.2.1
+      have hfuelEq : q.fuel = 2 * (8 - q.k) + 2 := hq.2.2.1
+      have haccEq : q.acc = maskPrefix q.m q.k := hq.2.2.2.1
+      have hmEq : q.m = x ^^^ c 3182967604875373612 := hq.2.2.2.2
+      have hinvC : LoopInv q.st q.m q.acc q.k := hq.1
+      have hfuel : 0 < q.fuel := by omega
+      obtain ⟨s1, _, hpc1, hf1, hi1, hs1⟩ :=
+        cond_silent x q.fuel q.st q.m q.acc q.k hfuel hk8 hinvC
+      obtain ⟨s2, hpc2, hf2, hs2⟩ :=
+        body_silent x (q.fuel - 1) s1 q.m q.acc q.k (by omega) hk8 haccEq hpc1 hf1 hi1
+      have hk1 : q.k + 1 ≤ 8 := by omega
+      have hfuel' : (q.fuel - 1) - 1 = 2 * (8 - (q.k + 1)) + 2 := by omega
+      refine ⟨⟨(q.fuel - 1) - 1, s2, q.m, maskPrefix q.m (q.k + 1), q.k + 1⟩,
+        ?_, ?_, ?_⟩
+      · exact ⟨⟨hpc2, hf2⟩, hk1, hfuel', rfl, hmEq⟩
+      · show 8 - (q.k + 1) < 8 - q.k
+        omega
+      · exact hs1.trans hs2
+    · -- the exit: the condition block at eight, then the done block
+      intro q hq hzero
+      have hle : q.k ≤ 8 := hq.2.1
+      have hk8 : q.k = 8 := by omega
+      have hfuelEq : q.fuel = 2 * (8 - q.k) + 2 := hq.2.2.1
+      have haccEq : q.acc = maskPrefix q.m q.k := hq.2.2.2.1
+      have hmEq : q.m = x ^^^ c 3182967604875373612 := hq.2.2.2.2
+      have hfuel : 0 < q.fuel := by omega
+      have hinv8 : LoopInv q.st q.m q.acc 8 := hk8 ▸ hq.1
+      have hacc8 : q.acc = maskPrefix (x ^^^ c 3182967604875373612) 8 := by
+        rw [haccEq, hk8, hmEq]
+      obtain ⟨s1, hpc1, hf1, hs1⟩ := cond_done_silent x q.fuel q.st q.m q.acc hfuel hinv8
+      have hs2 := done_silent x (q.fuel - 1) s1 q.m q.acc (by omega) hpc1 hf1
+      refine ⟨(ITree.ret (Outcome.ret (some (.int 64 q.acc)) s1.mem), s1.mem),
+        ⟨some (.int 64 q.acc), rfl, by rw [hacc8], ?_⟩, hs1.trans hs2⟩
+      simpa [hf1.nextEq] using hf1.memBand
+  obtain ⟨⟨t, mem⟩, ⟨v, ht, hv, hconf⟩, hhead⟩ := hmain
+  have ht' : t = ITree.ret (Outcome.ret v mem) := ht
+  have hv' : v = some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)) := hv
+  have hpair : (t, mem) =
+      (ITree.ret
+        (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)))
+          mem), mem) := by
+    rw [ht', hv']
+  exact ⟨mem, hconf, hpair ▸ hhead⟩
 
 /-- The loop's tree reaches its return silently, with a memory private to the
 band the loop's own allocations cover. -/
@@ -463,29 +544,27 @@ theorem loopTree_silent (x : BitVec 64) :
     ∃ mem, MemPrivate (loopFrame x) mem ∧
       RawSilentHead (loopFrame x) (loopTree x, ([] : Mem))
         (ITree.ret (Outcome.ret (some (.int 64 (spec x))) mem), mem) := by
-  obtain ⟨mem, hconf, hrest⟩ := cond_run_silent x 8 (entryState x)
-    (x ^^^ c 3182967604875373612) 0 0 18 (by decide) (by decide) (by decide)
-    (maskPrefix_zero _).symm (entry_inv x)
-  refine ⟨mem, ?_, ?_⟩
-  · rw [loopFrame_eq]
-    exact hconf
-  · have hspec : maskPrefix (x ^^^ c 3182967604875373612) 8 = spec x := by
-      rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+  obtain ⟨mem, hconf, hrest⟩ :=
+    cond_run_silent x (entryCondSeed x) (entryCondSeed_atCond x)
+  refine ⟨mem, memPrivate_of_confined hconf, ?_⟩
+  have hspec : maskPrefix (x ^^^ c 3182967604875373612) 8 = spec x := by
+    rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+  have hentry : RawSilentHead (loopFrame x)
+      (runT noCalls 19 loopFunction (initState loopFunction [.int 64 x]),
+        (initState loopFunction [.int 64 x]).mem)
+      (runT noCalls 18 loopFunction (entryState x), (entryState x).mem) := by
     have e1 : (runT noCalls (18 + 1) loopFunction (initState loopFunction [.int 64 x]),
-          (initState loopFunction [.int 64 x]).mem) =
+        (initState loopFunction [.int 64 x]).mem) =
         (runT noCalls 19 loopFunction (initState loopFunction [.int 64 x]),
           (initState loopFunction [.int 64 x]).mem) := rfl
-    have hentry : RawSilentHead (loopFrame x)
-        (runT noCalls 19 loopFunction (initState loopFunction [.int 64 x]),
-          (initState loopFunction [.int 64 x]).mem)
-        (runT noCalls 18 loopFunction (entryState x), (entryState x).mem) := e1 ▸ entry_silent x 18
-    have hrest' : RawSilentHead (loopFrame x)
-        (runT noCalls 18 loopFunction (entryState x), (entryState x).mem)
-        (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem),
-          mem) := hrest
-    have := RawSilentHead.trans hentry hrest'
-    rw [hspec] at this
-    simpa [loopTree, initState, show 18 + 1 = 19 from by omega] using this
+    exact e1 ▸ entry_silent x 18
+  have hrest' : RawSilentHead (loopFrame x)
+      (runT noCalls 18 loopFunction (entryState x), (entryState x).mem)
+      (ITree.ret (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8))) mem),
+        mem) := hrest
+  have := RawSilentHead.trans hentry hrest'
+  rw [hspec] at this
+  simpa [loopTree, initState] using this
 
 /-- The candidate's tree is already a returned outcome: its single block has no
 memory events. -/
@@ -506,6 +585,129 @@ theorem candidateTree_silent (x : BitVec 64) :
     candA7_eq_byteLoop, candidateRun_mem, candidate_initState_mem]
   exact RawSilentHead.refl _ _
 
+/-- The candidate's handled tree at its fixed budget: the source side of the
+fixed-budget instance. -/
+noncomputable def candidateHandled (x : BitVec 64) : OTree :=
+  runHandled noCalls (loopFrame x) 10000 candidateFunction
+    (initState candidateFunction [.int 64 x])
+
+/-- The candidate's handled tree reaches its return silently. -/
+theorem candidateTree_head (x : BitVec 64) :
+    TauHead (candidateHandled x)
+      (ITree.ret (Outcome.ret (some (.int 64 (byteLoop x))) [])) := by
+  refine tauHead_of_silentHead ?_
+  have h := RawSilentHead.handle (candidateTree_silent x)
+  simpa only [candidateHandled, runHandled, candidateTree, initState, handle_ret,
+    finishOutcome] using h
+
+/-- The loop's handled entry tree reaches the loop's return silently, with a
+memory private to the loop's band. -/
+theorem loopTree_head (x : BitVec 64) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧
+      TauHead (handle (loopFrame x) [] (loopTree x))
+        (ITree.ret (Outcome.ret (some (.int 64 (spec x))) mem)) := by
+  obtain ⟨mem, hpriv, hraw⟩ := loopTree_silent x
+  refine ⟨mem, hpriv, tauHead_of_silentHead ?_⟩
+  simpa only [handle_ret, finishOutcome] using RawSilentHead.handle hraw
+
+/-- Every seed the loop's family starts from reaches the loop's return silently,
+at the value the candidate produces. -/
+theorem loopSeed_head (x : BitVec 64) (p : LoopSeed) (hinv : LoopSeed.inv x p) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧
+      TauHead (LoopSeed.tree x p)
+        (ITree.ret (Outcome.ret (some (.int 64 (spec x))) mem)) := by
+  rcases hinv with ⟨hfuel, hst⟩ | hcond
+  · obtain ⟨mem, hpriv, hhead⟩ := loopTree_head x
+    have htree : LoopSeed.tree x p = handle (loopFrame x) [] (loopTree x) := by
+      simp only [LoopSeed.tree, hfuel, hst, loopTree, initState]
+    exact ⟨mem, hpriv, htree ▸ hhead⟩
+  · -- a condition seed: the measure derivation, then the handler transport
+    obtain ⟨mem, hconf, hraw⟩ := cond_run_silent x p hcond
+    have hspec : maskPrefix (x ^^^ c 3182967604875373612) 8 = spec x := by
+      rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+    have hhead : TauHead (LoopSeed.tree x p)
+        (ITree.ret
+          (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)))
+            mem)) := by
+      refine tauHead_of_silentHead ?_
+      simpa only [LoopSeed.tree, LoopSeed.toRaw, handle_ret, finishOutcome]
+        using RawSilentHead.handle hraw
+    exact ⟨mem, memPrivate_of_confined hconf, hspec ▸ hhead⟩
+
+/-! ### The first instance: a recurring visible call
+
+`tickStep` visibly emits the same call and returns a recursive seed at every
+response, so the tree it builds has a genuine recursive backedge behind a visible
+event rather than a zero-iteration `.done`.  The rule's continuation position is
+what closes that backedge, and the internal `.recur` guard says the backedge is a
+positive finite delay of the next iteration. -/
+
+/-- A step that visibly emits `call "tick" []` and recurs at every response. -/
+def tickStep (_ : Unit) : ITree.Tree ObsEv (IterState Unit Outcome) :=
+  vis (ObsEv.call "tick" []) (fun _ => ret (.recur ()))
+
+/-- The tick loop shows its call after one silent step, and continues with the
+step's iteration continuation. -/
+theorem tickStep_head :
+    TauHead (mfix tickStep ())
+      (vis (ObsEv.call "tick" []) (fun _ => bindStep tickStep (ret (.recur ())))) :=
+  ⟨TauClosure.later (TauClosure.now _),
+    TauClosure.finite_later (TauClosure.finite_now _), by
+    simp only [TauClosure.flatten_later, TauClosure.flatten_now, mfix_unfold, tickStep,
+      bindStep_vis]⟩
+
+/-- The continuation after the visible event is the next iteration: the internal
+`.recur` guard is the positive delay of that backedge, flattened to the
+continuation itself. -/
+theorem tickStep_cont :
+    TauHead (bindStep tickStep (ret (.recur ()))) (mfix tickStep ()) :=
+  ⟨TauClosure.now (mfix tickStep ()), TauClosure.finite_now _, by
+    rw [TauClosure.flatten_now, mfix_unfold, bindStep_ret_recur]⟩
+
+/-- The general rule's first instantiation: a visibly recurring tree is simulated
+by itself at the rule's framed `True` postcondition. -/
+theorem tick_loop_simtt (frame : Nat → Prop) :
+    simtt (fun oT oS => True ∧ oT.AgreesOutside frame oS)
+      (mfix tickStep ()) (mfix tickStep ()) := by
+  refine simtt_loop frame (fun _ _ => True) (fun _ : Unit => mfix tickStep ())
+    (fun _ : Unit => mfix tickStep ()) (fun _ _ => True) ?_ () () trivial
+  intro s t _
+  cases s
+  cases t
+  exact TauSimttF.vis_call "tick" [] _ _ tickStep_head tickStep_head
+    (fun _ => ⟨(), (), trivial, tickStep_cont, tickStep_cont⟩)
+
+/-! ### The second instance: the fixed 19/10000 pair
+
+The rule is applied at the loop's seed family against the candidate's single
+tree.  Every seed's return obligation is the loop's own finite derivation, and the
+rule's framed return relation is weakened back to the original postcondition, so
+the public statement below is unchanged. -/
+
+/-- The rule applied at the loop's seed family: the run's entry seed against the
+candidate's 10000-step tree, at the rule's framed `True` postcondition. -/
+theorem loop_seed_simtt (x : BitVec 64) :
+    simtt (fun oT oS => True ∧ oT.AgreesOutside (loopFrame x) oS)
+      (runHandled noCalls (loopFrame x) 19 loopFunction (initState loopFunction [.int 64 x]))
+      (candidateHandled x) := by
+  have hstep : ∀ (p : LoopSeed) (_ : Unit), LoopSeed.inv x p →
+      TauSimttF (fun oT oS => True ∧ oT.AgreesOutside (loopFrame x) oS)
+        (fun a b => ∃ (s' : LoopSeed) (t' : Unit), LoopSeed.inv x s' ∧
+          TauHead a (LoopSeed.tree x s') ∧ TauHead b (candidateHandled x))
+        (LoopSeed.tree x p) (candidateHandled x) := by
+    intro p _ hinv
+    obtain ⟨mem, hpriv, hleft⟩ := loopSeed_head x p hinv
+    refine TauSimttF.ret_ret hleft (candidateTree_head x) ⟨trivial, ?_⟩
+    exact ⟨by rw [byteLoop_eq_spec],
+      by simpa using AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False))⟩
+  have hentry : LoopSeed.inv x ⟨19, initState loopFunction [.int 64 x],
+      x ^^^ c 3182967604875373612, 0, 0⟩ := Or.inl ⟨rfl, rfl⟩
+  have hres := simtt_loop (loopFrame x) (fun _ _ => True) (LoopSeed.tree x)
+    (fun _ => candidateHandled x) (fun p _ => LoopSeed.inv x p) hstep
+    ⟨19, initState loopFunction [.int 64 x], x ^^^ c 3182967604875373612, 0, 0⟩ ()
+    hentry
+  simpa only [LoopSeed.tree, runHandled] using hres
+
 /-- The loop, as left target, is simulated by the unrolled candidate, as right
 source, at the framed postcondition. -/
 theorem loop_candidate_simtt (x : BitVec 64) :
@@ -513,22 +715,8 @@ theorem loop_candidate_simtt (x : BitVec 64) :
       (runHandled noCalls (loopFrame x) 19 loopFunction (initState loopFunction [.int 64 x]))
       (runHandled noCalls (loopFrame x) 10000 candidateFunction
         (initState candidateFunction [.int 64 x])) := by
-  obtain ⟨mem, hpriv, hleft⟩ := loopTree_silent x
-  have hL : SilentHead (handle (loopFrame x) [] (loopTree x))
-      (ret (Outcome.ret (some (.int 64 (spec x))) mem)) := by
-    have h := RawSilentHead.handle hleft
-    simpa only [handle_ret, finishOutcome] using h
-  have hR : SilentHead (handle (loopFrame x) [] (candidateTree x))
-      (ret (Outcome.ret (some (.int 64 (byteLoop x))) [])) := by
-    have h := RawSilentHead.handle (candidateTree_silent x)
-    simpa only [handle_ret, finishOutcome] using h
-  refine (simtt_iff _ _ _).mpr ?_
-  exact SimttF.ret_ret (v₁ := some (.int 64 (spec x))) (mem₁ := mem)
-    (v₂ := some (.int 64 (byteLoop x))) (mem₂ := [])
-    (by simpa only [runHandled, loopTree, initState] using hL)
-    (by simpa only [runHandled, candidateTree, initState] using hR)
-    ⟨by rw [byteLoop_eq_spec],
-     by simpa using AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False))⟩
+  simpa only [candidateHandled] using
+    simtt_post_mono (fun _ _ h => h.2) (loop_seed_simtt x)
 
 /-- A memory that differs at address zero is outside the frame, so the framed
 relation rejects it. -/

@@ -21,7 +21,7 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 | Front end | A line-oriented parser and a canonical printer for the modelled subset | bitcode, metadata, attributes, declarations with bodies |
 | Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency, calls |
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing. A framed relation (`RefinesWithin`, `LeanLLVM/Frames.lean`) compares the returned value and the bytes outside a footprint read off the allocator state | relational/log relations; memory-aware contextual replacement; a simulation rule for arbitrary loops |
-| Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a general loop or recursion rule; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
+| Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, a seeded guarded recursion `mfix` with its unfolding equations and positive-delay witnesses, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, a framed rule proves it for the remaining pairs of an invariant, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a refinement- or behaviour-level loop rule; a `runT`/`mfix` correspondence; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
 | Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | the same at the emitted-LLVM level; the object connection is a runtime differential transcript, not a proof, and the memory-backed loop is refused by the selector |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
@@ -61,14 +61,20 @@ infinite silent closures are restated through the generic delay object and prove
 equivalent to them, and it is congruent under `bind` and under a re-emitting
 tree-valued interpreter under explicit hypotheses.  The bridge shows that the
 handled tree of a budgeted run resolves exactly as `runFuel` does.
-It is proved for the comma-mask loop against its unrolled candidate, for every
-64-bit argument, at fixed fuel budgets (19 for the loop, 10000 for the
-candidate) and the loop's allocator-derived frame; a returned memory that differs
-at address zero is rejected by the same postcondition.  That is one fixture.  It
-is not a general loop rule, it installs nothing, and neither the pass proofs nor
-the executable relation (`Refines`, `RefinesWithin`) use it yet.  The handler is
-proof-facing and noncomputable, because the frame is an arbitrary proposition;
-the routes above are untouched.
+The relation has a framed, postcondition-indexed rule: from an invariant over two
+tree families and one `TauSimttF` step obligation at the relation's framed return
+clause, it concludes `simtt` for every invariant pair, and postcondition weakening
+recovers the plain framed post.  Two instances are proved.  A tree that visibly
+emits the same call and recurs at every response is related to itself, which
+exercises an actual recursive backedge; and the comma-mask loop is related to its
+unrolled candidate, for every 64-bit argument, at fixed fuel budgets (19 for the
+loop, 10000 for the candidate) and the loop's allocator-derived frame, with a
+returned memory that differs at address zero rejected by the same postcondition.
+That is a rule for bare handled trees with two instances.  It is not a refinement
+rule: there is no rule for `Refines`/`RefinesWithin` loops, no `runT`/`mfix`
+correspondence, and it installs nothing; neither the pass proofs nor the
+executable relation use it.  The handler is proof-facing and noncomputable,
+because the frame is an arbitrary proposition; the routes above are untouched.
 
 ## Build
 

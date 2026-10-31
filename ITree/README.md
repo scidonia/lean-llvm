@@ -20,7 +20,7 @@ Public clients import `ITree` (or the two modules they need):
 | `ITree/IEq.lean` | the exact-equality relation `IEq`/`IEqF`, `ieq_iff_eq` identifying it with strict equality, its equivalence, and the reflexivity lemma the law proofs close on |
 | `ITree/Monad.lean` | `map` and `bind` with lawful `Functor`/`Monad` instances (`LawfulFunctor`, all seven `LawfulMonad` fields) at strict equality, plus `map`/`bind` compatibility with `IEq` |
 | `ITree/TauClosure.lean` | the first-class delay `TauClosure`: `now`/`later`/`forever`, inductive `Finite`, coinductive `Infinite`, their disjointness `Finite.not_infinite`, the positive guard `FiniteLater`, guarded `flatten` into a tree, result transport along `map`, and the `tauN` tower lemmas that move both principles and `flatten` across further `later`s |
-| `ITree/MonadIter.lean` | the ported monadic iterator: `IterState`, `MonadIter`, `iter`, `bindStep`, its five exact equations and the `FiniteLater` witnesses of the initial and `.recur` transitions |
+| `ITree/MonadIter.lean` | the ported monadic iterator: `IterState`, `MonadIter`, `iter`, `bindStep`, its five exact equations and the `FiniteLater` witnesses of the initial and `.recur` transitions; `mfix`, the same corecursor read as a seeded recursive loop, with its unfolding equations (`mfix_unfold`, `mfix_done`, `mfix_recur`) and its three guard witnesses (`mfix_guard`, `mfix_recur_guard`, `mfix_bindStep_recur_guard`) |
 | `ITree/EffectAlgebra.lean` | the tree-valued `Handler` and its directly guarded interpreter `interp`, with the five exact ret/tau/vis/bind/composition laws, handler composition and the transition guards |
 | `ITree/Effect.lean` | the **other** interpreter: the one-step `Handler` and its computable `interp`, with `interp_ret`, `interp_tau` and the two handler-conditional event equations |
 
@@ -78,10 +78,21 @@ emits an initial `tau` even for a return; see the deviations below.
 either silence or exactly one observable event, and the handler's final state
 reaches the leaves.  It remains computable and is what `LeanLLVM/ITree/` uses.
 
-The recursive-fixpoint operation `mfix` is **not** part of this library.  A later
-general loop rule will have to supply a positive `TauClosure.FiniteLater`
-witness for each recursive backedge — the same guard the iterator and the
-interpreter expose — rather than an arbitrary recursive tree.
+`mfix` is the seeded recursive loop over the same corecursor: `step`'s tree
+returns either the loop's result (`.done r`) or the next seed (`.recur j`), and
+`mfix step i` is `iter step i` under the name a loop proof uses.  There is no
+second engine and no unguarded fixed point.  An immediate `.done` is one `tau`
+before the result (`mfix_done`); an immediate `.recur` is one `tau` before the
+next iteration (`mfix_recur`), and one taken after a visible or silent node of
+the step's tree is the same delay at `bindStep` (`mfix_bindStep_recur_guard`).
+Each of those transitions carries a positive `TauClosure.FiniteLater` witness
+whose `flatten` is the transition itself, so a `now` witness never counts.
+
+What this does **not** provide is a fixed point for an arbitrary
+function-argument body `((ι → Tree ε ρ) → ι → Tree ε ρ)`: such a body can return
+an unguarded recursive seed, and `FiniteLater` classifies a delay only after the
+tree exists.  Guardedness is a theorem about the transitions the operator
+produces, not a productivity oracle on a caller's tree.
 
 ## The one-step handler
 
@@ -143,6 +154,9 @@ The upstream MIT licence is reproduced in `ITree/LICENSE`.  Local deviations:
   `ieq_iff_eq` and its monad instances; upstream's `MonadIter` and `iter` are
   adapted in `ITree/MonadIter.lean`, namespaced under `ITree` and with the
   unused `Add`/`Coe` instances and `StateT` lifting omitted;
+* `ITree.MonadIter.mfix` is this library's name for the seeded reading of that
+  ported `iter`, added with its equations and guards rather than ported:
+  upstream's `iter` has the same corecursor but no such operator;
 * `TauClosure`, `EffectAlgebra` (its two seed modes, `interp` and the five laws)
   and the delay witnesses are **not** ports: pinned upstream has no delay object,
   its finite closure is `Relation.ReflTransGen`, its divergence a coinductive

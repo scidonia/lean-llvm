@@ -423,17 +423,103 @@ example (hh : ITree.EffectAlgebra.Handler Tick Tick) (k : Nat → ITree.Tree Tic
         = ITree.tau (ITree.EffectAlgebra.interp hh (k a)) :=
   ITree.EffectAlgebra.interp_completion_witness hh k a
 
-/-! ### The still-open recursive fixpoint -/
+/-! ### Seeded recursive trees
 
--- The public iterator exists.
-#check @ITree.iter
+`mfix` is the seeded reading of the public iterator: the step's tree returns
+either the loop's result (`.done`) or the next seed (`.recur`).  The equations
+below are the operator's own, and the guards are positive finite delays of the
+trees the operator produces, not of a token. -/
 
--- There is no `mfix`: the general recursive fixpoint is not part of this
--- library, and its future rule must supply a positive `FiniteLater` backedge
--- witness.
-/-- error: Unknown identifier `_root_.ITree.mfix` -/
+-- The public seeded recursion exists.
+#check @ITree.mfix
+
+/-- A step that visually recurs at every response, in this file's own event
+signature: a genuine recursive backedge behind a visible event. -/
+def loopStep (_ : Unit) : ITree.Tree Tick (ITree.IterState Unit Nat) :=
+  ITree.vis Tick.unit (fun _ => ITree.ret (.recur ()))
+
+/-- One unfolding: a `tau`, then the first step's tree bound into the
+iteration. -/
+example (step : Nat → ITree.Tree Tick (ITree.IterState Nat Nat)) (i : Nat) :
+    ITree.mfix step i = ITree.tau (ITree.bindStep step (step i)) :=
+  ITree.mfix_unfold step i
+
+/-- An immediate `.done` costs exactly one `tau`. -/
+example (step : Nat → ITree.Tree Tick (ITree.IterState Nat Nat)) {i r : Nat}
+    (h : step i = ITree.ret (.done r)) : ITree.mfix step i = ITree.tau (ITree.ret r) :=
+  ITree.mfix_done step h
+
+/-- An immediate `.recur` is one `tau` before the next iteration. -/
+example (step : Nat → ITree.Tree Tick (ITree.IterState Nat Nat)) {i j : Nat}
+    (h : step i = ITree.ret (.recur j)) :
+    ITree.mfix step i = ITree.tau (ITree.mfix step j) :=
+  ITree.mfix_recur step h
+
+/-- The initial guard: the first step's tree behind one positive finite delay. -/
+example (step : Nat → ITree.Tree Tick (ITree.IterState Nat Nat)) (i : Nat) :
+    ∃ d : ITree.TauClosure (ITree.Tree Tick Nat),
+      ITree.TauClosure.FiniteLater d (ITree.bindStep step (step i)) ∧
+        ITree.TauClosure.flatten d = ITree.mfix step i :=
+  ITree.mfix_guard step i
+
+/-- The `.recur` guard at the external position. -/
+example (step : Nat → ITree.Tree Tick (ITree.IterState Nat Nat)) {i j : Nat}
+    (h : step i = ITree.ret (.recur j)) :
+    ∃ d : ITree.TauClosure (ITree.Tree Tick Nat),
+      ITree.TauClosure.FiniteLater d (ITree.mfix step j) ∧
+        ITree.TauClosure.flatten d = ITree.mfix step i :=
+  ITree.mfix_recur_guard step h
+
+/-- The `.recur` guard at the internal position, for a backedge behind a visible
+node of the step's tree. -/
+example (step : Nat → ITree.Tree Tick (ITree.IterState Nat Nat)) (j : Nat) :
+    ∃ d : ITree.TauClosure (ITree.Tree Tick Nat),
+      ITree.TauClosure.FiniteLater d (ITree.bindStep step (step j)) ∧
+        ITree.TauClosure.flatten d = ITree.bindStep step (ITree.ret (.recur j)) :=
+  ITree.mfix_bindStep_recur_guard step j
+
+/-- The recurring loop's own backedge is guarded: the continuation after the
+visible event is a positive finite delay of the next step's tree. -/
+example :
+    ∃ d : ITree.TauClosure (ITree.Tree Tick Nat),
+      ITree.TauClosure.FiniteLater d (ITree.bindStep loopStep (loopStep ())) ∧
+        ITree.TauClosure.flatten d = ITree.bindStep loopStep (ITree.ret (.recur ())) :=
+  ITree.mfix_bindStep_recur_guard loopStep ()
+
+/-- The same detector accepts the concrete delay that loop's backedge has, so the
+refusal below is the predicate's, not the absence of a witness. -/
+example : ITree.TauClosure.FiniteLater
+    (ITree.TauClosure.later (ITree.TauClosure.now (ITree.bindStep loopStep (loopStep ()))))
+    (ITree.bindStep loopStep (loopStep ())) :=
+  ITree.TauClosure.finiteLater_later_now _
+
+/-- An unguarded `now` backedge is refused by the same guard. -/
+example : ¬ ITree.TauClosure.FiniteLater (ITree.TauClosure.now 5) 5 :=
+  ITree.TauClosure.not_finiteLater_now 5
+
+/-- info: 'ITree.mfix_unfold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#check _root_.ITree.mfix
+#print axioms ITree.mfix_unfold
+
+/-- info: 'ITree.mfix_done' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ITree.mfix_done
+
+/-- info: 'ITree.mfix_recur' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ITree.mfix_recur
+
+/-- info: 'ITree.mfix_guard' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ITree.mfix_guard
+
+/-- info: 'ITree.mfix_recur_guard' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ITree.mfix_recur_guard
+
+/-- info: 'ITree.mfix_bindStep_recur_guard' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ITree.mfix_bindStep_recur_guard
 
 
 

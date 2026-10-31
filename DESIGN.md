@@ -105,9 +105,11 @@ negative direction: a unit that writes one byte outside the frame, for which the
 framed relation is proved to fail.
 
 The relation is a statement about memory, not a module theorem.  Calls still
-have no memory effects, and there is no simulation rule for an arbitrary loop;
-the loop's induction is proved for that fixture.  Both are open obligations of
-the programme rather than consequences of this relation.
+have no memory effects, and there is no simulation rule for an arbitrary loop at
+this executable refinement relation; the loop's induction is proved for that
+fixture, and the tree-level rule in `LeanLLVM/ITree/LoopRule.lean` is a statement
+about bare handled trees, not about `Refines` or `RefinesWithin`.  Both are open
+obligations of the programme rather than consequences of this relation.
 
 ## Interaction trees and a directed simulation
 
@@ -256,18 +258,47 @@ tree relation implies about resolution, not that any particular pair has one, an
 it is not a pass-soundness result: no theorem in this development establishes
 the hypothesis for an arbitrary function pair.
 
-`LoopInstance.lean` is the instance.  For every `x : BitVec 64`,
-`loop_candidate_simtt` relates the handled tree of the parsed comma-mask loop at
-its fuel budget of 19 to the handled tree of the unrolled candidate at fuel
-10000, with `Outcome.AgreesOutside (loopFrame x)` as the leaf postcondition.  The
-loop's finite derivation of private accesses is stated on raw `(tree, memory)`
-states and transported through the handler into the `tau` closure of the handled
-tree; the candidate has no memory events.  The postcondition compares the two
-handler-produced returns, each from its own handler's final memory, and a
-returned memory that differs at address `0`, outside the band, is rejected by the
-same postcondition (`LeanLLVMTest/Vellum.lean`).  The theorem walks that loop's
-blocks and that candidate's single block: it is not a loop rule, and it installs
-nothing.
+`LoopRule.lean` carries the tree-level rule.  `simtt_loop` is a framed,
+postcondition-indexed simulation principle: given an invariant over two families
+of bare handled trees — whose state spaces, and whose amount of silent work per
+step, need not correspond — and a `TauSimttF` obligation at the return relation
+`fun oT oS => post oT oS ∧ oT.AgreesOutside frame oS`, whose continuation
+position is the same invariant lifted through a finite silent delay on each side,
+it concludes `simtt` at that framed relation for every invariant pair.  The
+invariant in the premise is the relation the coinduction closes over, so a client
+cannot satisfy one and bypass the other.  `simtt_post_mono` weakens the
+postcondition, which is how the fixture's original `simtt (Outcome.AgreesOutside
+frame)` statement is recovered rather than identified with the `True ∧ _` form.
+`handle_tau_guard` is the handler's own positive jump delay, and
+`rawSilentHead_of_measure` turns an invariant with a strictly decreasing natural
+measure into a finite raw private closure ending at a stated value and memory.
+The rule is conditional: it does not assert that any two loops satisfy its
+premise, and it demands no positive guard of the caller's trees.
+
+`LoopInstance.lean` carries two instances.  The first is a genuinely recurring
+tree: `tickStep` visibly emits `call "tick" []` and returns `.recur ()` at every
+response, so the loop's only way forward is the rule's continuation position, and
+`tick_loop_simtt` relates it to itself at the framed `True` postcondition.  Its
+backedge is guarded at the internal position by
+`mfix_bindStep_recur_guard`, and a differing `"tock"` call is refused by the
+existing event detector.
+
+The second is the fixture.  For every `x : BitVec 64`, `loop_candidate_simtt`
+relates the handled tree of the parsed comma-mask loop at its fuel budget of 19
+to the handled tree of the unrolled candidate at fuel 10000, with
+`Outcome.AgreesOutside (loopFrame x)` as the leaf postcondition.  The proof is
+the rule at the loop's seed family — the run's entry state at its own budget, or
+a condition state carrying the loop invariant, a counter of at most eight, the
+budget the remaining iterations cost, the lane prefix as the accumulator and the
+run's own symbolic memory — against the candidate's single tree.  Each seed's
+return obligation is the loop's finite derivation of private accesses, obtained
+from `rawSilentHead_of_measure` at the measure `8 - k` and transported through
+the handler into the `tau` closure of the handled tree; the candidate has no
+memory events.  The postcondition compares the two handler-produced returns, each
+from its own handler's final memory, and a returned memory that differs at
+address `0`, outside the band, is rejected by the same postcondition
+(`LeanLLVMTest/Vellum.lean`).  It installs nothing, and it does not generalise the
+budgets or the frame.
 
 `loop_candidate_beh_bridge` is the one behaviour statement derived from the bridge
 for that pair: `runFuel_outcome_unique` pins every successful loop budget to the
@@ -279,20 +310,23 @@ arbitrary argument lists or to other loops.
 What remains open is the adoption rather than the relation.  `Refines`,
 `RefinesWithin` and the pass theorems are unchanged, no pass or route reasons
 through `simtt`, and nothing restates the executable refinement relation in terms
-of it.  There is still no general loop or recursion rule, no automatic discharge
-of the relation hypothesis, no memory-effectful call environment, no
-memory-aware module theorem, and no computable host handler.
+of it.  There is still no rule for loops at `Refines`/`RefinesWithin`, no
+automatic discharge of the tree rule's premise, no `runT`/`mfix` correspondence,
+no memory-effectful call environment, no memory-aware module theorem, and no
+computable host handler.
 
 The generic library now has the lawful compositional layer: exact `IEq`, lawful
-`Functor`/`Monad`, the delay object `TauClosure`, the ported `MonadIter`, and a
-tree-valued handler with directly guarded `interp` and five exact laws.
+`Functor`/`Monad`, the delay object `TauClosure`, the ported `MonadIter`, the
+seeded guarded recursion `mfix` with its equations and positive-delay witnesses,
+and a tree-valued handler with directly guarded `interp` and five exact laws.
 `Effect.interp` remains the separate one-step, computable fold.  The relation's
 silent closures are restated through `TauClosure` and proved equivalent, and its
 congruence under `bind` and under a re-emitting interpreter is proved under
 explicit hypotheses, with refused witnesses for the hypotheses that are dropped.
-Still open: a general loop or recursion rule (`mfix` does not exist; a later rule
-must supply a positive `FiniteLater` backedge witness), adoption of the tree
-relation by `Refines`/`RefinesWithin`, and a memory-effectful call environment.
+Still open: a loop rule at the executable refinement relation (the tree-level rule
+is conditional and does not discharge itself), a `runT`/`mfix` correspondence for
+the fixed-budget trees, adoption of the tree relation by
+`Refines`/`RefinesWithin`, and a memory-effectful call environment.
 
 ## Pure seam refinement
 
@@ -412,12 +446,15 @@ canonical IR, checked with `llvm-as` in the verification runs.
    adds a parallel statement at the same memory model: memory is an effect there,
    folded into the tree by a stateful handler, and the directed,
    postcondition-indexed simulation relates the resulting bare handled trees; it
-   has one proved loop/candidate instance, the `handled_runFuel` correspondence
-   with the fuel semantics, and a conditional one-way bridge from the relation to
-   the canonical resolution (and one behaviour corollary for that pair).
+   has a framed, postcondition-indexed rule for pairs of tree families with two
+   proved instances (a visibly recurring call tree, and the loop/candidate pair
+   at fixed budgets), the `handled_runFuel` correspondence with the fuel
+   semantics, and a conditional one-way bridge from the relation to the
+   canonical resolution (and one behaviour corollary for that pair).
    Restating the executable relation through it — the bridge is conditional on a
    tree relation the development does not supply for arbitrary pairs — and
-   giving it a general loop or recursion rule, is open.  A computable host
+   giving it a rule at the executable refinement relation, are open, as is a
+   `runT`/`mfix` correspondence for the fixed-budget trees.  A computable host
    handler (the frame has no decider today), a Lean-produced, memory-using loop,
    a memory-aware call environment and a module theorem remain open.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite

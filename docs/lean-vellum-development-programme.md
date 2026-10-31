@@ -250,7 +250,21 @@ accepted on the strength of a narrower result.
   `runFuel` are untouched.  `handled_runFuel` is the correspondence that makes the handled
   trees executable, and `loop_candidate_simtt` relates the comma-mask loop's
   handled tree to the unrolled candidate's at the loop's allocator-derived frame.
-  That is a statement about that one pair, it installs nothing, and it leaves the
+  The relation has a framed, postcondition-indexed rule (`simtt_loop` in
+  `LeanLLVM/ITree/LoopRule.lean`): from an invariant over two tree families and
+  one `TauSimttF` step obligation at the relation's framed return clause, it
+  concludes `simtt` for every invariant pair, with postcondition weakening
+  (`simtt_post_mono`) recovering the plain framed post.  The rule is conditional —
+  it does not assert that any pair satisfies its premise — and it is a statement
+  about bare handled trees, not about `Refines`/`RefinesWithin`.  It has two
+  proved instances: a tree that visibly emits the same call and recurs at every
+  response, and the loop/candidate pair, whose loop side is a seed family
+  discharged through a strictly decreasing measure
+  (`rawSilentHead_of_measure`).  The generic library also carries the seeded
+  guarded recursion `mfix` with its unfolding equations and positive-delay
+  witnesses, and does not provide a fixed point for an arbitrary
+  function-argument body.  The loop statements remain statements about that one
+  pair at fixed budgets, they install nothing, and they leave the
   executable relation and the pass theorems unchanged.  One conditional bridge exists from the tree relation to the
   executable side: `simtt_exec_some` eliminates the relation against a completed
   target run, `simtt_runFuel_some` and `simtt_beh_inclusion` state the consequence
@@ -260,10 +274,12 @@ accepted on the strength of a narrower result.
   (target to source), conditional on a tree relation being supplied for every
   completed target run, and fixes budgets for the loop instance; it is not an
   adoption of the relation by `Refines`/`RefinesWithin`, not a pass-soundness
-  result, and not a general loop rule.  Open: adoption of the tree relation by
-  `Refines`/`RefinesWithin`, discharging that hypothesis for arbitrary function
-  pairs, a general loop or recursion rule — the loop's induction is a proof about
-  its own fixture — memory-effectful call environments, and a
+  result, and not a loop rule at the executable relation.  Open: adoption of the
+  tree relation by `Refines`/`RefinesWithin`, discharging that hypothesis for
+  arbitrary function pairs, a rule for arbitrary loops at `Refines`/`RefinesWithin`
+  — the tree rule is conditional and the loop's induction is a proof about its own
+  fixture — a `runT`/`mfix` correspondence for the fixed-budget trees,
+  memory-effectful call environments, and a
   `replaceFunction_sound`-style module theorem for a memory-using callee.  The
   contextual theorem covers one pure caller (`LeanLLVM/Vellum/SeamContext.lean`).
 - **M3 — partly met; certificate-bound installation open.** The selector
@@ -287,10 +303,10 @@ accepted on the strength of a narrower result.
   installation proof including memory effects, a checked certificate and
   benchmark measurements — are therefore unmet.  The tree relation proved for
   the loop's handled tree and the unrolled candidate's
-  (`LeanLLVM/ITree/LoopInstance.lean`), and the one behaviour corollary the bridge
-  derives from it, are fixture statements at fixed budgets: they install
-  nothing and relate no Lean compiler output, so they are not progress on those
-  conditions.
+  (`LeanLLVM/ITree/LoopInstance.lean`), the framed rule it is an instance of, and
+  the one behaviour corollary the bridge derives from it, are fixture statements
+  at fixed budgets: they install nothing and relate no Lean compiler output, so
+  they are not progress on those conditions.
 
 ## References and provenance
 
@@ -300,12 +316,15 @@ accepted on the strength of a narrower result.
 - `simd-recogniser-options.md` — supplied design note defining Options A–E. Its repository observations are input claims, not independently reproduced by this programme document.
 
 The architecture, milestones and acceptance gates above are proposed engineering
-decisions.  The status sections separate what this revision checks — the tree
-relation proved for the loop fixture and its unrolled candidate, the conditional
-one-way bridge from that relation to the canonical resolution with its
-fixed-budget loop corollary, and their theorems and axiom pins — from what
-remains open: adoption by `Refines`/`RefinesWithin`, discharging the bridge's
-tree-relation hypothesis for arbitrary function pairs, a general loop or
-recursion rule, memory-effectful call environments and a module theorem for a
-memory-using callee, a certificate-backed installation, benchmark records, and
-the remaining M4 conditions.  Nothing here claims that those open items are met.
+decisions.  The status sections separate what this revision checks — the framed
+tree-level loop rule with its two instances, including the comma-mask loop's
+relation to its unrolled candidate, the seeded guarded recursion `mfix` with its
+equations and positive-delay witnesses, the conditional one-way bridge from the
+tree relation to the canonical resolution with its fixed-budget loop corollary,
+and their theorems and axiom pins — from what remains open: adoption by
+`Refines`/`RefinesWithin`, discharging the bridge's tree-relation hypothesis for
+arbitrary function pairs, a loop rule at the executable refinement relation, a
+`runT`/`mfix` correspondence for the fixed-budget trees, memory-effectful call
+environments and a module theorem for a memory-using callee, a certificate-backed
+installation, benchmark records, and the remaining M4 conditions.  Nothing here
+claims that those open items are met.

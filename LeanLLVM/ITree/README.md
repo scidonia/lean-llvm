@@ -15,8 +15,9 @@ postcondition-indexed relation.
 | `Simtt.lean` | `SilentStep`/`SilentHead`/`SilentDiverges`, the one-step functional `SimttF` and its greatest fixed point `simtt post` on bare `ObsEv` trees, the positive rules, the terminal refusals and the event-payload refusals; the **unchanged** accepted definition |
 | `TauClosure.lean` | the delay-indexed restatement: `TauHead`/`TauDiverges`/`TauReachesUb`/`TauTimeoutReachable`, each proved equivalent in both directions to the existing predicate on the same trees, the nine-clause functional `TauSimttF` with `TauSimttF post sim p q ↔ SimttF post sim p q`, and `simtt_eq_tau_plfp` |
 | `Algebra.lean` | exact-`IEq` transport (`simtt_ieq`), conditioned congruence under `bind` (`simtt_bind`) and under a re-emitting tree-valued interpreter (`simtt_interp`), proved by `TauSimttF` coinduction with `TauHead`/`TauDiverges` transport through `bind` and the finite-witness timeout inversion |
+| `LoopRule.lean` | the general loop rule `simtt_loop` (framed, postcondition-indexed, with the invariant also in the continuation position), postcondition weakening `simtt_post_mono`, the handler's positive jump delay `handle_tau_guard`, and the decreasing-measure derivation `rawSilentHead_of_measure` |
 | `Bridge.lean` | `HandledExec`, the correspondence `handled_runFuel`, the elimination `simtt_exec_some`, and the budget-, behaviour- and refinement-level corollaries |
-| `LoopInstance.lean` | the comma-mask loop and its unrolled candidate: the fixed-budget instance, the address-0 counterexample, and the behaviour corollary |
+| `LoopInstance.lean` | the repository's concrete instances of the rule: a visibly recurring call tree, and the comma-mask loop's seed family against its unrolled candidate — with the fixed-budget instance, the address-0 counterexample and the behaviour corollary |
 
 ## Memory as an effect
 
@@ -169,9 +170,37 @@ Neither theorem is about the host's one-step `Effect.interp`, which keeps its ow
 equations; the interpreter here is the generic, tree-valued
 `ITree.EffectAlgebra.interp`.
 
-## The instance
+## The general rule and its instances
 
-`loop_candidate_simtt` relates, for every `x : BitVec 64`,
+`simtt_loop` is the rule the instances use.  For a frame, a `post`, two families
+of bare handled trees over possibly unrelated state spaces, and an invariant
+`Inv s t`, it concludes
+
+```lean
+simtt (fun oT oS => post oT oS ∧ oT.AgreesOutside frame oS) (left s) (right t)
+```
+
+for every invariant pair, from a one-step `TauSimttF` obligation at exactly that
+framed return relation, whose continuation position is the same invariant lifted
+through a finite silent delay on each side.  The frame is expressed at the
+return, not as a third index, because `simtt` observes bare trees; the rule does
+not assert that any two loops satisfy its premise, and it demands no positive
+guard of the caller's trees.  `simtt_post_mono` weakens the postcondition, which
+is how the original `simtt (Outcome.AgreesOutside frame)` statement is recovered
+from the rule's `True ∧ _` return relation.  `handle_tau_guard` is the handler's
+own positive jump delay, and `rawSilentHead_of_measure` turns an invariant with a
+strictly decreasing natural measure into a finite raw private closure ending at a
+stated value and memory.
+
+The first instance is a genuinely recurring tree.  `tickStep` visibly emits
+`call "tick" []` and returns `.recur ()` at every response, so the loop's only
+way forward is the rule's continuation position; `tick_loop_simtt` relates it to
+itself at the framed `True` postcondition.  Its backedge is guarded at the
+internal position (`mfix_bindStep_recur_guard`), and a differing `"tock"` call is
+refused by the existing event detector.
+
+`loop_candidate_simtt` is the second instance.  It relates, for every
+`x : BitVec 64`,
 
 ```lean
 simtt (Outcome.AgreesOutside (loopFrame x))
@@ -179,18 +208,25 @@ simtt (Outcome.AgreesOutside (loopFrame x))
   (runHandled noCalls (loopFrame x) 10000  candidateFunction (initState candidateFunction [.int 64 x]))
 ```
 
-The loop's finite derivation of private accesses is stated on raw `(tree,
-memory)` states (`RawSilentHead`, local to `MemoryEffect`) and transported
-through the handler into the `tau` closure of the handled tree; the candidate has
-no memory events at all.  The postcondition compares the two handler-produced
-returns, and a returned memory that differs at address `0`, outside the
-allocator-derived band, is rejected.  `loop_candidate_beh_bridge` is the one
-behaviour statement derived from the bridge for that pair.
+The loop's state family is a `LoopSeed`: a budget, a machine state, the symbolic
+`%m` register, the accumulator and the counter.  The family's two kinds of seed
+are the run's entry state at its own 19-step budget and the condition seeds,
+each carrying the loop invariant, a counter of at most eight, the budget
+`2 * (8 - k) + 2` its remaining iterations cost, the lane prefix as the
+accumulator, and the run's own symbolic memory.  Every seed's return obligation
+is discharged by the loop's finite derivation of private accesses, obtained from
+`rawSilentHead_of_measure` at the measure `8 - k` from the per-block facts, and
+transported through the handler into the `tau` closure of the handled tree; the
+candidate has no memory events at all.  The postcondition compares the two
+handler-produced returns, and a returned memory that differs at address `0`,
+outside the allocator-derived band, is rejected.
+`loop_candidate_beh_bridge` is the one behaviour statement derived from the
+bridge for that pair.
 
-This is one fixture at fixed budgets and one allocator-derived frame.  There is
-no general loop or recursion rule, no automatic discharge of the relation
-hypothesis, no memory-effectful call environment, and no memory-aware module
-theorem; both are open obligations of the programme.  A later general loop rule
-must supply a positive `TauClosure.FiniteLater` witness for each recursive
-backedge, the guard the iterator and interpreter already expose; nothing here
-provides `mfix` or that rule.
+This is a tree-level conditional rule, two instances, fixed budgets for the
+fixture and one allocator-derived frame.  It is not a refinement rule: there is
+no rule for loops at `Refines`/`RefinesWithin`, no automatic discharge of the
+rule's premise, no `runT = mfix` correspondence for the fixed-budget trees, no
+memory-effectful call environment, and no memory-aware module theorem; those are
+open obligations of the programme.  No pass, route or installer reasons through
+the tree layer.

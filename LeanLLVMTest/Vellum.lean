@@ -743,6 +743,132 @@ example (x : BitVec 64) (v : Option Value) :
     ¬ (Outcome.ret v [(0, 1)]).AgreesOutside (loopFrame x) (Outcome.ret v []) :=
   outcome_address_zero_rejected x v
 
+/-! #### The general loop rule and its first instance
+
+`simtt_loop` is the framed, postcondition-indexed rule, and the tick tree is its
+first instance: a visibly recurring call whose backedge is only reachable through
+the rule's continuation position.  `simtt_post_mono` is the weakening that
+recovers the loop fixture's original postcondition, and `handle_tau_guard` is the
+handler's own positive jump delay. -/
+
+/-- The rule's exact statement: the same invariant and delay relation in the
+premise and in the coinduction seed. -/
+example {σ τ : Type} (frame : Nat → Prop) (post : Outcome → Outcome → Prop)
+    (left : σ → OTree) (right : τ → OTree) (Inv : σ → τ → Prop)
+    (hstep : ∀ s t, Inv s t →
+      TauSimttF (fun oT oS => post oT oS ∧ oT.AgreesOutside frame oS)
+        (fun p q => ∃ s' t', Inv s' t' ∧ TauHead p (left s') ∧ TauHead q (right t'))
+        (left s) (right t)) :
+    ∀ s t, Inv s t →
+      simtt (fun oT oS => post oT oS ∧ oT.AgreesOutside frame oS) (left s) (right t) :=
+  simtt_loop frame post left right Inv hstep
+
+/-- The rule's first instance: the visibly recurring tree at the rule's framed
+`True` postcondition, for an arbitrary frame. -/
+example (frame : Nat → Prop) :
+    simtt (fun oT oS => True ∧ oT.AgreesOutside frame oS)
+      (ITree.mfix tickStep ()) (ITree.mfix tickStep ()) :=
+  tick_loop_simtt frame
+
+/-- The same instance at the loop fixture's allocator-derived frame. -/
+example (x : BitVec 64) :
+    simtt (fun oT oS => True ∧ oT.AgreesOutside (loopFrame x) oS)
+      (ITree.mfix tickStep ()) (ITree.mfix tickStep ()) :=
+  tick_loop_simtt (loopFrame x)
+
+/-- The recurring tree's backedge is guarded at the concrete step: the
+continuation after the visible event is a positive finite delay of the next
+step's tree, with its flattened form the continuation itself. -/
+example :
+    ∃ d : ITree.TauClosure OTree,
+      ITree.TauClosure.FiniteLater d
+        (ITree.bindStep tickStep (tickStep ())) ∧
+        ITree.TauClosure.flatten d =
+          ITree.bindStep tickStep (ITree.ret (.recur ())) :=
+  ITree.mfix_bindStep_recur_guard tickStep ()
+
+/-- The same detector refuses a differing callee at that boundary: the tick
+loop's own call is `tick`, and its handled tree is not related to a `tock` node.
+The `tau` in front is the loop's own initial step, stripped by the existing
+left-`tau` transport. -/
+example (frame : Nat → Prop) :
+    ¬ simtt (fun oT oS => True ∧ oT.AgreesOutside frame oS)
+      (ITree.tau (ITree.vis (ObsEv.call "tick" [])
+        (fun _ => ITree.bindStep tickStep (ITree.ret (.recur ())))))
+      (ITree.vis (ObsEv.call "tock" [])
+        (fun _ => ITree.ret (Outcome.ret (some (.int 64 0)) []))) := by
+  intro h
+  exact not_simtt_call_ne _ (Or.inl (by decide)) _ _ (simtt_tau_left h)
+
+/-- The refusal stated of the loop's tree itself: `mfix tickStep ()` is one `tau`
+in front of its visible node, so the refusal applies to it unchanged. -/
+example (frame : Nat → Prop) :
+    ¬ simtt (fun oT oS => True ∧ oT.AgreesOutside frame oS)
+      (ITree.mfix tickStep ())
+      (ITree.vis (ObsEv.call "tock" [])
+        (fun _ => ITree.ret (Outcome.ret (some (.int 64 0)) []))) := by
+  have hmfix : ITree.mfix tickStep () =
+      ITree.tau (ITree.vis (ObsEv.call "tick" [])
+        (fun _ => ITree.bindStep tickStep (ITree.ret (.recur ())))) := by
+    simp only [ITree.mfix_unfold, tickStep, ITree.bindStep_vis]
+  rw [hmfix]
+  intro h
+  exact not_simtt_call_ne _ (Or.inl (by decide)) _ _ (simtt_tau_left h)
+
+/-- Postcondition weakening recovers the fixture's original framed postcondition
+from the rule's `True ∧ _` return relation. -/
+example (frame : Nat → Prop) {p q : OTree}
+    (h : simtt (fun oT oS => True ∧ oT.AgreesOutside frame oS) p q) :
+    simtt (Outcome.AgreesOutside frame) p q :=
+  simtt_post_mono (fun _ _ hh => hh.2) h
+
+/-- A handled `tau` is one positive finite delay of the handled continuation,
+flattening to the handled `tau`. -/
+example (frame : Nat → Prop) (m : Mem) (t : ITree.Tree Ev Outcome) :
+    ITree.TauClosure.FiniteLater
+        (ITree.TauClosure.later (ITree.TauClosure.now (handle frame m t)))
+        (handle frame m t) ∧
+      ITree.TauClosure.flatten
+        (ITree.TauClosure.later (ITree.TauClosure.now (handle frame m t))) =
+        handle frame m (ITree.tau t) :=
+  handle_tau_guard frame m t
+
+/-- The exported decreasing-measure lemma at its stated signature. -/
+example {frame : Nat → Prop} {σ : Type}
+    (toRaw : σ → RawTS) (Inv : σ → Prop) (μ : σ → Nat) (P : RawTS → Prop)
+    (hstep : ∀ s, Inv s → 0 < μ s →
+      ∃ s', Inv s' ∧ μ s' < μ s ∧ RawSilentHead frame (toRaw s) (toRaw s'))
+    (hexit : ∀ s, Inv s → μ s = 0 →
+      ∃ terminal, P terminal ∧ RawSilentHead frame (toRaw s) terminal)
+    {s₀ : σ} (h₀ : Inv s₀) :
+    ∃ terminal, P terminal ∧ RawSilentHead frame (toRaw s₀) terminal :=
+  rawSilentHead_of_measure toRaw Inv μ P hstep hexit h₀
+
+/-- The loop fixture's condition seed reaches the return with the whole lane
+prefix, through the measure lemma. -/
+example (x : BitVec 64) (p : LoopSeed) (h : p.atCond x) :
+    ∃ mem, MemConfined 1 17 mem ∧
+      RawSilentHead (loopFrame x) p.toRaw
+        (ITree.ret
+          (Outcome.ret (some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)))
+            mem), mem) :=
+  cond_run_silent x p h
+
+/-- Every seed of the loop's family reaches the return silently, at the value the
+candidate produces — the obligation the rule's return clause is discharged by. -/
+example (x : BitVec 64) (p : LoopSeed) (h : LoopSeed.inv x p) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧
+      TauHead (LoopSeed.tree x p)
+        (ITree.ret (Outcome.ret (some (.int 64 (spec x))) mem)) :=
+  loopSeed_head x p h
+
+/-- The rule at the loop's seed family, before the postcondition is weakened. -/
+example (x : BitVec 64) :
+    simtt (fun oT oS => True ∧ oT.AgreesOutside (loopFrame x) oS)
+      (runHandled noCalls (loopFrame x) 19 loopFunction (initState loopFunction [.int 64 x]))
+      (candidateHandled x) :=
+  loop_seed_simtt x
+
 /-! #### The correspondence and the axiom footprint -/
 
 /-- The handled correspondence: the handler's memory is the semantics' memory,
@@ -810,6 +936,70 @@ example (frame : Nat → Prop) (n : Nat) (f : LeanLLVM.Function) (s : LeanLLVM.S
 /-- info: 'LeanLLVM.ITree.loop_candidate_beh_bridge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.ITree.loop_candidate_beh_bridge
+
+/-- info: 'LeanLLVM.ITree.simtt_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.simtt_loop
+
+/-- info: 'LeanLLVM.ITree.simtt_post_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.simtt_post_mono
+
+/-- info: 'LeanLLVM.ITree.tauSimttF_post_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.tauSimttF_post_mono
+
+/-- info: 'LeanLLVM.ITree.handle_tau_guard' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.handle_tau_guard
+
+/-- info: 'LeanLLVM.ITree.rawSilentHead_of_measure' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.rawSilentHead_of_measure
+
+/-- info: 'LeanLLVM.ITree.tickStep_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.tickStep_head
+
+/-- info: 'LeanLLVM.ITree.tickStep_cont' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.tickStep_cont
+
+/-- info: 'LeanLLVM.ITree.tick_loop_simtt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.tick_loop_simtt
+
+/-- info: 'LeanLLVM.ITree.candidateTree_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.candidateTree_head
+
+/-- info: 'LeanLLVM.ITree.loopTree_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.loopTree_head
+
+/-- info: 'LeanLLVM.ITree.loopSeed_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.loopSeed_head
+
+/-- info: 'LeanLLVM.ITree.memPrivate_of_confined' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.memPrivate_of_confined
+
+/-- info: 'LeanLLVM.ITree.entryCondSeed_atCond' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.entryCondSeed_atCond
+
+/-- info: 'LeanLLVM.ITree.cond_run_silent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.cond_run_silent
+
+/-- info: 'LeanLLVM.ITree.loopTree_silent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.loopTree_silent
+
+/-- info: 'LeanLLVM.ITree.loop_seed_simtt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.ITree.loop_seed_simtt
 
 /-- info: 'LeanLLVM.ITree.outcome_address_zero_rejected' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
