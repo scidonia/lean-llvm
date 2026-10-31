@@ -35,11 +35,14 @@ needs the other two to match.
   the emitted-IR bridge (`CommaMaskIR`) and the IR-level caller
   (`SeamContext`).
 - `ITree.lean` and `ITree/` are a second Lake library, `ITree`: the generic
-  interaction tree.  `ITree/Core` is the public tree API, `ITree/Effect` a
-  one-step event handler with a computable interpreter, and `ITree/Coinduction`
-  the parameterised-fixpoint layer the relation is built on.  No module here
-  imports a `LeanLLVM` module.  `ITree/README.md` records the public surface,
-  the one-step limit of `Effect.interp`, the single mathlib adapter and the
+  interaction tree.  `ITree/Core` is the public tree API, `ITree/Coinduction`
+  the parameterised-fixpoint layer, `ITree/IEq` exact equality,
+  `ITree/Monad` the lawful functor/monad instances, `ITree/TauClosure` the
+  finite/infinite delay object, `ITree/MonadIter` the ported iterator, and
+  `ITree/EffectAlgebra` the tree-valued handler with its directly guarded
+  interpreter; `ITree/Effect` is the separate one-step handler with a computable
+  fold.  No module here imports a `LeanLLVM` module.  `ITree/README.md` records
+  the public surface, both interpreters, the single mathlib adapter and the
   upstream provenance.
 - `LeanLLVM/ITree/` is the LLVM instantiation of that library: `Interpret` is
   the fuel semantics as an `Ev` tree, `MemoryEffect` folds `Ev` into an
@@ -70,6 +73,9 @@ needs the other two to match.
   enforces that the theorem typechecks; a test is not a substitute.
 - Every theorem that claims soundness should have its axiom footprint pinned in
   `LeanLLVMTest/` with `#guard_msgs in #print axioms ...` once it is stable.
+  The generic layer pins the same way in `tests/itree-import.lean`; its ceiling
+  is the carrier's own footprint (`PFunctor.M.dest` already carries
+  `Classical.choice`), so a generic `rfl` lemma may report it too.
 - The parser and printer are part of the contract: round-trip checks in
   `LeanLLVMTest/Core.lean` must pass, and emitted IR must assemble with
   `llvm-as`.  A fixture read through `include_str` is not a `lake build` input,
@@ -106,7 +112,10 @@ needs the other two to match.
   parameter, and a private access is silent because the handler inserted a
   `tau`.  Its own statements follow the same discipline: a positive theorem, a
   negative example the same detector rejects, and an axiom pin no wider than
-  `[propext, Classical.choice, Quot.sound]` in `LeanLLVMTest/Vellum.lean`.
+  `[propext, Classical.choice, Quot.sound]` in `LeanLLVMTest/Vellum.lean`.  The
+  congruence theorems (`simtt_bind`, `simtt_interp`) are conditional, and their
+  refused witnesses are part of the statement: do not drop a hypothesis to make
+  a congruence easier.
   `Classical.choice` is budgeted there for the arbitrary-`Prop` frame the host
   handler decides with `Classical.propDecidable`; that handler is
   proof-facing, `runFuel` and the routes are untouched, and making it

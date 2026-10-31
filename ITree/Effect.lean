@@ -15,9 +15,11 @@ Two limits belong to this API rather than to a future effect algebra:
 
 * the handler is **one step**: a single source event produces either silence or
   one observable event, never a tree of them;
-* this is **not** upstream `lean4-itree`'s `EffectAlgebra.interp`, which is
-  monadic and needs the (unvendored) `Monad`/`IEq`/effect-algebra instances.
-  Adding those is a separate capability; see `ITree/README.md`.
+* this is **not** `ITree.EffectAlgebra.interp`, the tree-valued interpreter in
+  this same library (nor upstream's `iter`-based one): that interpreter runs a
+  handler *tree* against the source continuation, has its own five laws, and is
+  a different function from this computable one-step fold.  See
+  `ITree/README.md` for the two interpreters.
 
 `interp` itself is computable: the whole decision is the handler's, and the
 coiteration below is `PFunctor.M.corec'` over the source's destructor.

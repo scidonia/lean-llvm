@@ -4,9 +4,11 @@ destructor-based eliminator.
 
 Adapted from `mit-plv/lean4-itree` at revision
 `7f48fefaa2f12f599e6c4aa2be1ef39d5466122b` (`ITree/Basic.lean`), restricted to
-the definitions this package uses: the exact-equality relation `IEq`, the
-library's monad instances and effect algebra are not vendored.  See
-`ITree/README.md` for provenance and deviations.
+the carrier, constructors and eliminator; the exact-equality relation `IEq` and
+the monad instances are adapted in `ITree/IEq.lean` and `ITree/Monad.lean`, and
+the delay object and effect algebra are local designs in `ITree/TauClosure.lean`
+and `ITree/EffectAlgebra.lean`.  See `ITree/README.md` for provenance and
+deviations.
 -/
 import ITree.Internal.PFunctor
 

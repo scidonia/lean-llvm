@@ -231,18 +231,23 @@ accepted on the strength of a narrower result.
   (`RefinesWithin`, `AgreesOutsideMem`, `AllocFrame` in
   `LeanLLVM/Frames.lean`) that compares the returned value and the bytes outside
   a footprint read off the allocator state.  A second, finer statement stands
-  beside them, in two libraries: the generic `ITree/` (tree carrier, a one-step
-  event handler with a computable interpreter, and the coinduction layer, with no
-  dependency on any `LeanLLVM` module) and the instantiation
+  beside them, in two libraries: the generic `ITree/` (tree carrier, exact `IEq`
+  with lawful `Functor`/`Monad`, the finite/infinite delay object `TauClosure`,
+  the ported `MonadIter`, a tree-valued handler with its directly guarded
+  interpreter, *and* a one-step event handler with a computable interpreter,
+  with no dependency on any `LeanLLVM` module) and the instantiation
   `LeanLLVM/ITree/`, which interprets the same fuel semantics as `Ev` trees and
   folds memory into them as an effect — private accesses becoming silent steps,
   everything else staying visible with the response the handler computed — so
   that `simtt` is a postcondition-indexed, directed simulation over bare handled
   trees: left is the target, right the source, with budget timeout, undefined
   behaviour and silent divergence as distinct terminals and a visible event
-  matching only itself.  The host handler is proof-facing and noncomputable,
-  because the frame is an arbitrary proposition; the routes and `runFuel` are
-  untouched.  `handled_runFuel` is the correspondence that makes the handled
+  matching only itself.  The relation's finite and infinite silent closures are restated through the
+  delay object and proved equivalent to the accepted ones, and it is congruent
+  under `bind` and under a re-emitting tree-valued interpreter under explicit
+  hypotheses, each with a refused witness.  The host handler is proof-facing and
+  noncomputable, because the frame is an arbitrary proposition; the routes and
+  `runFuel` are untouched.  `handled_runFuel` is the correspondence that makes the handled
   trees executable, and `loop_candidate_simtt` relates the comma-mask loop's
   handled tree to the unrolled candidate's at the loop's allocator-derived frame.
   That is a statement about that one pair, it installs nothing, and it leaves the

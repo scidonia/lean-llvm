@@ -169,9 +169,20 @@ each branch is decided with `Classical.propDecidable`.  That is proof-facing tre
 construction, not a new executable route — `runFuel`, `runT`, `Beh`, the driver
 and the installer are untouched — and a computable handler would need a decidable
 frame representation or an explicit `DecidablePred` contract rather than a
-silently narrowed frame API.  The `Classical.choice` in the tree layer's axiom
-footprint is that decision, and it is the same axiom `RefinesWithin` already
-carries.
+silently narrowed frame API.
+
+The tree layer's axiom footprint is `[propext, Classical.choice, Quot.sound]`,
+and `Classical.choice` arrives there from **two** places that must not be
+conflated.  The generic `ITree` layer inherits it from mathlib's `PFunctor.M`
+carrier: `PFunctor.M.dest`/`children` already depend on it at this revision, so
+even the base revision's `ITree.dest_ret` — a `rfl` lemma — carries it, and no
+generic statement that mentions the destructor can be narrower; no generic proof
+introduces a classical decision of its own.  The **host** handler adds the frame
+decision, `Classical.propDecidable` on the arbitrary `Nat → Prop` frame above,
+which is the same axiom `RefinesWithin` already pays.  `ITree/README.md` records
+the carrier floor and names `tests/itree-import.lean` for the generic
+per-theorem pins; `LeanLLVM/ITree/README.md` records both sources and the
+host-side pins.
 
 Because `runT`'s tree carries the semantics' memory only implicitly, the
 correspondence is proved rather than assumed.  `handled_codeT` and
@@ -270,10 +281,18 @@ What remains open is the adoption rather than the relation.  `Refines`,
 through `simtt`, and nothing restates the executable refinement relation in terms
 of it.  There is still no general loop or recursion rule, no automatic discharge
 of the relation hypothesis, no memory-effectful call environment, no
-memory-aware module theorem, and no computable host handler.  The generic library
-also has no monad/`IEq`/effect-algebra layer: `Effect.interp` is a one-step fold,
-not upstream's monadic interpreter, and adding a lawful compositional layer is
-separate work.
+memory-aware module theorem, and no computable host handler.
+
+The generic library now has the lawful compositional layer: exact `IEq`, lawful
+`Functor`/`Monad`, the delay object `TauClosure`, the ported `MonadIter`, and a
+tree-valued handler with directly guarded `interp` and five exact laws.
+`Effect.interp` remains the separate one-step, computable fold.  The relation's
+silent closures are restated through `TauClosure` and proved equivalent, and its
+congruence under `bind` and under a re-emitting interpreter is proved under
+explicit hypotheses, with refused witnesses for the hypotheses that are dropped.
+Still open: a general loop or recursion rule (`mfix` does not exist; a later rule
+must supply a positive `FiniteLater` backedge witness), adoption of the tree
+relation by `Refines`/`RefinesWithin`, and a memory-effectful call environment.
 
 ## Pure seam refinement
 

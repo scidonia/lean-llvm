@@ -45,18 +45,22 @@ The interaction-tree layer asks a different question of the same fuel
 semantics: whether two executions agree as trees under a postcondition on their
 leaves.  It comes in two libraries.
 
-`ITree/` is the **generic** interaction tree: the coinductive carrier, a
-one-step event handler with a computable interpreter, and the
-parameterised-fixpoint layer the relation is built on.  It imports no `LeanLLVM`
-module; its only direct mathlib importer is `ITree/Internal/PFunctor.lean`.
-`ITree/README.md` records the public surface, the import boundary, the one-step
-limit of `Effect.interp` and the upstream provenance.
+`ITree/` is the **generic** interaction tree: the coinductive carrier, exact
+tree equality with lawful `Functor`/`Monad` instances, a first-class finite/
+infinite silent-delay object, the ported monadic iterator, a tree-valued handler
+with its directly guarded interpreter, *and* a one-step event handler with a
+computable interpreter.  It imports no `LeanLLVM` module; its only direct mathlib
+importer is `ITree/Internal/PFunctor.lean`.  `ITree/README.md` records the public
+surface, the two interpreters, the import boundary and the upstream provenance.
 
 `LeanLLVM/ITree/` is the instantiation.  Memory is an **effect** there: a handler
 folds the `load`/`store` protocol into the tree, private accesses becoming silent
 steps and everything else staying visible with the response the handler computed.
-The directed relation then compares those bare handled trees, and the bridge
-shows that the handled tree of a budgeted run resolves exactly as `runFuel` does.
+The directed relation then compares those bare handled trees; its finite and
+infinite silent closures are restated through the generic delay object and proved
+equivalent to them, and it is congruent under `bind` and under a re-emitting
+tree-valued interpreter under explicit hypotheses.  The bridge shows that the
+handled tree of a budgeted run resolves exactly as `runFuel` does.
 It is proved for the comma-mask loop against its unrolled candidate, for every
 64-bit argument, at fixed fuel budgets (19 for the loop, 10000 for the
 candidate) and the loop's allocator-derived frame; a returned memory that differs
