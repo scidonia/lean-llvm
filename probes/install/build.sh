@@ -20,12 +20,13 @@
 #
 # `loop.ll` is printed from the `loopFunction` AST by
 # `lake exe leanllvm-loop-emit` (the framework's printer, not `lean -c`), and
-# `LeanLLVM/Vellum/CommaMaskLoop.lean` parses and pins it.  The loop is built
-# and compared too, but no checked theorem binds the loop object to the seam's
-# contract: `theorem=` below covers the candidate and the baseline only, so
-# `select.sh` refuses `UNIT=loop` and the transcript records that.
+# `LeanLLVM/Vellum/CommaMaskLoop.lean` parses and pins it.  The loop is built,
+# compared and certified: its own `loop_theorem=` field names
+# `loop_refines_candidate_within`, the loop's certificate records that statement
+# and `select.sh` installs `UNIT=loop` from it exactly as it installs the other
+# two units from `theorem=`.
 #
-# The two kernel-derived certificates are produced before the differential
+# The three kernel-derived certificates are produced before the differential
 # detector runs, so a fixture-pin failure is reported by the source
 # elaboration that has to see it, not masked by a runtime comparison.
 set -euo pipefail
@@ -151,6 +152,7 @@ symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
 contract=LeanLLVM.Vellum.commaContract
 theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -183,6 +185,7 @@ EOF
   manifest_common "$staging"
   printf 'proof_baseline=%s\n' "$staging/proof_baseline.env"
   printf 'proof_candidate=%s\n' "$staging/proof_candidate.env"
+  printf 'proof_loop=%s\n' "$staging/proof_loop.env"
 } > "$staging/manifest.env"
 
 # 6. The kernel-derived certificates.  `lake build` does not track
@@ -193,12 +196,19 @@ EOF
 #    the imported graph is rebuilt from current source first, then the proof
 #    module is re-elaborated from source to force the fixture guards.  The
 #    source elaboration must succeed before any certificate is produced, and
-#    all three commands run from the repository root under the held lock.
+#    every command runs from the repository root under the held lock.
+#    `CommaMaskLoop` imports `CommaMaskIR` and the loop's certificate names its
+#    own theorem, so it is reconciled and re-elaborated after that pair: its
+#    proof module must see the already-freshened `CommaMaskIR` olean.
 source_check() {
   (cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskIR) &&
   (cd "$repo" &&
     lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean \
-      LeanLLVM/Vellum/CommaMaskIR.lean)
+      LeanLLVM/Vellum/CommaMaskIR.lean) &&
+  (cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskLoop) &&
+  (cd "$repo" &&
+    lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean \
+      LeanLLVM/Vellum/CommaMaskLoop.lean)
 }
 certificate() { # unit
   local unit=$1
@@ -214,6 +224,7 @@ certificate() { # unit
 source_check
 certificate baseline
 certificate candidate
+certificate loop
 
 # 7. Differential transcript: every body must agree with every other on the
 #    corpus, and each must agree with the lane-wise specification `diff.c`
@@ -271,8 +282,8 @@ done
   echo "corpus: probes/install/diff.c"
   echo "specification: probes/install/diff.c (lane-wise mask, independent of the bodies)"
   echo "bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate"
-  echo "covers: candidate-vs-baseline"
-  echo "not-covered: loop (no checked theorem for the loop body)"
+  echo "covers: candidate-vs-baseline, loop-vs-candidate"
+  echo "not-covered: none (each installed unit also has a checked certificate; this transcript remains runtime evidence, not either proof)"
   echo "baseline_sha256: $(sha "$staging/baseline.o")"
   echo "candidate_sha256: $(sha "$staging/candidate.o")"
   echo "loop_sha256: $(sha "$staging/loop.o")"
@@ -288,8 +299,10 @@ done
   printf 'differential_sha256=%s\n' "$(sha "$staging/differential.txt")"
   printf 'proof_baseline=%s\n' "$build/proof_baseline.env"
   printf 'proof_candidate=%s\n' "$build/proof_candidate.env"
+  printf 'proof_loop=%s\n' "$build/proof_loop.env"
   printf 'proof_baseline_sha256=%s\n' "$(sha "$staging/proof_baseline.env")"
   printf 'proof_candidate_sha256=%s\n' "$(sha "$staging/proof_candidate.env")"
+  printf 'proof_loop_sha256=%s\n' "$(sha "$staging/proof_loop.env")"
 } > "$staging/manifest.final.env"
 
 # 9. Publish.  Every object and evidence file first, then the certificates,
@@ -308,6 +321,7 @@ done
 publish differential.txt
 publish proof_baseline.env
 publish proof_candidate.env
+publish proof_loop.env
 cp "$staging/manifest.final.env" "$build/manifest.env.tmp.$$"
 mv "$build/manifest.env.tmp.$$" "$build/manifest.env"
 

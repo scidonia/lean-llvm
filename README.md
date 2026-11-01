@@ -23,7 +23,7 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing. A framed relation (`RefinesWithin`, `LeanLLVM/Frames.lean`) compares the returned value and the bytes outside a footprint read off the allocator state | relational/log relations; memory-aware contextual replacement; a simulation rule for arbitrary loops |
 | Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, a seeded guarded recursion `mfix` with its unfolding equations and positive-delay witnesses, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, a framed rule proves it for the remaining pairs of an invariant, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a refinement- or behaviour-level loop rule; a `runT`/`mfix` correspondence; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
-| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | no theorem relates Lean's compiled code or machine instructions to the model; installation is gated by a kernel-derived certificate over the proved fixture (hash and byte-for-byte reproduction), not by a compiler-equivalence theorem, and the memory-backed loop is refused by the selector |
+| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | no theorem relates Lean's compiled code or machine instructions to the model; installation is gated by a kernel-derived certificate over the proved fixture (hash and byte-for-byte reproduction), not by a compiler-equivalence theorem, and each installed unit — baseline, candidate and the memory-backed loop — has its own certificate and its own covering statement |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
 
 Every pass is a theorem, not a test: the build fails if the refinement proof
@@ -36,10 +36,13 @@ printed from the Lean AST in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
 `lake exe leanllvm-loop-emit`, through the framework's own printer, so the text
 the correctness and framed-memory statements are proved about is what that AST
 renders to.  It is not Lean's native compiler output: no `lean -c` emission and
-no clang lowering is related to the AST, and that provenance chain is open.  The
-installer refuses the loop, because no checked theorem binds the loop object to
-the seam's contract.  There is no benchmark, and calls still have no memory
-effects, so no memory-aware module theorem is claimed.
+no clang lowering is related to the AST, and that provenance chain is open. The
+loop is installed through its own certificate, gated by
+`loop_refines_candidate_within` (a framed-memory refinement within the loop's
+own allocations); the certificate is a hash-and-rebuild bridge like the
+candidate's and baseline's, not a compiled-code theorem.  There is no benchmark,
+and calls still have no memory effects, so no memory-aware module theorem is
+claimed.
 
 The interaction-tree layer asks a different question of the same fuel
 semantics: whether two executions agree as trees under a postcondition on their

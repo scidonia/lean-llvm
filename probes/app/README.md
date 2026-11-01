@@ -32,15 +32,17 @@ nix develop -c bash probes/app/check.sh
   extraction cannot pass as a difference. What this shows is that two different
   instruction sequences were linked; the proof is `IR_refines` over the units.
 - A stale candidate hash falls back to the baseline, and strict mode rejects it.
-- The loop unit is **refused**: no checked theorem covers it, so strict mode
-  exits nonzero without emitting a loop executable and non-strict mode installs
-  the baseline for the same request.
+- The loop unit installs from its own certificate: the selector links it in
+  strict mode, the record names `loop`, and the application prints the same
+  offsets and field count.
 
-The equality of the two runs is runtime evidence about this input, not the
-certificate: the installation certificate covers `IR_refines` over the
-candidate and the baseline, which are the units the selector accepts. The loop's
-framed correctness proof is a statement about its parsed fixture and does not
-make the loop installable.
+The equality of the runs is runtime evidence about this input, not the
+certificate: each installed unit is accepted because its own certificate checks
+out — `IR_refines` on the candidate's and the baseline's, and
+`loop_refines_candidate_within` (the loop's framed refinement to the unrolled
+candidate within the band its own allocations cover) on the loop's. Every one of
+them is a hash-and-rebuild bridge from the proved fixture to the linked object,
+not a theorem about compiled code.
 
 ## Limits
 

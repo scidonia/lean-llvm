@@ -12,8 +12,9 @@
 #   3. select the candidate, link and run;
 #   4. corrupt the manifest's candidate hash, select the baseline, link and run;
 #   5. strict mode rejects the stale candidate;
-#   6. the loop unit has no covering theorem: strict mode refuses it, and
-#      non-strict mode installs the baseline for the same request;
+#   6. the loop unit installs from its own certificate in strict and non-strict
+#      mode; a stale loop hash falls back to the baseline in non-strict mode and
+#      is rejected in strict mode;
 #   7. mutate the candidate fixture: the real build route fails at the source
 #      elaboration's `#guard`, publishes no new certificate or manifest, and
 #      leaves the published certificate bytes untouched; restore, rebuild and
@@ -65,6 +66,7 @@ warm >/dev/null
 "$here/build.sh" >/dev/null
 [ -s "$build/proof_baseline.env" ] || fail "no baseline certificate was published"
 [ -s "$build/proof_candidate.env" ] || fail "no candidate certificate was published"
+[ -s "$build/proof_loop.env" ] || fail "no loop certificate was published"
 
 echo "== proof"
 proof >/dev/null
@@ -101,28 +103,42 @@ grep -v '^impl=' "$build/out_candidate.txt" > "$build/sem_candidate.txt"
 grep -v '^impl=' "$build/out_fallback.txt" > "$build/sem_baseline.txt"
 cmp "$build/sem_candidate.txt" "$build/sem_baseline.txt"
 
-echo "== the loop unit has no covering theorem and is refused"
-if UNIT=loop STRICT=1 MANIFEST=$build/manifest.env OUT=$build/app_loop \
-    RECORD=$build/selection_loop.env "$here/select.sh" >/dev/null 2>&1; then
-  fail "strict mode accepted the loop unit"
-fi
-if [ -e "$build/app_loop" ]; then
-  fail "a loop executable was emitted"
-fi
-if [ -f "$build/selection_loop.env" ] &&
-    grep -qx 'selected=loop' "$build/selection_loop.env"; then
-  fail "the selection record names the loop"
-fi
-echo "select: refused the loop unit"
-
-echo "== the same request without strict mode installs the baseline"
-UNIT=loop MANIFEST=$build/manifest.env OUT=$build/app_loop_fallback \
-  RECORD=$build/selection_loop_fallback.env "$here/select.sh" >/dev/null
-grep -q '^selected=baseline$' "$build/selection_loop_fallback.env"
-"$build/app_loop_fallback" > "$build/out_loop_fallback.txt"
-grep -q '^impl=1$' "$build/out_loop_fallback.txt"
-grep -v '^impl=' "$build/out_loop_fallback.txt" > "$build/sem_loop.txt"
+echo "== the loop unit installs from its own certificate"
+UNIT=loop STRICT=1 MANIFEST=$build/manifest.env OUT=$build/app_loop \
+  RECORD=$build/selection_loop.env "$here/select.sh" >/dev/null
+grep -qx 'selected=loop' "$build/selection_loop.env"
+"$build/app_loop" > "$build/out_loop.txt"
+grep -q '^impl=3$' "$build/out_loop.txt"
+grep -v '^impl=' "$build/out_loop.txt" > "$build/sem_loop.txt"
 cmp "$build/sem_candidate.txt" "$build/sem_loop.txt"
+echo "select: installed the loop unit"
+
+echo "== the same request without strict mode also installs the loop"
+UNIT=loop MANIFEST=$build/manifest.env OUT="$build/app_loop_unstrict" \
+  RECORD="$build/selection_loop_unstrict.env" "$here/select.sh" >/dev/null
+grep -qx 'selected=loop' "$build/selection_loop_unstrict.env"
+"$build/app_loop_unstrict" > "$build/out_loop_unstrict.txt"
+grep -q '^impl=3$' "$build/out_loop_unstrict.txt"
+
+echo "== a stale loop hash falls back to the baseline"
+cp "$build/manifest.env" "$build/manifest_bad_loop.env"
+sed -i 's/^loop_sha256=.*/loop_sha256=0000000000000000000000000000000000000000000000000000000000000000/' \
+  "$build/manifest_bad_loop.env"
+UNIT=loop MANIFEST=$build/manifest_bad_loop.env OUT="$build/app_loop_stale" \
+  RECORD="$build/selection_loop_stale.env" "$here/select.sh" >/dev/null
+grep -qx 'selected=baseline' "$build/selection_loop_stale.env"
+"$build/app_loop_stale" > "$build/out_loop_stale.txt"
+grep -q '^impl=1$' "$build/out_loop_stale.txt"
+
+echo "== strict mode rejects the stale loop"
+if UNIT=loop STRICT=1 MANIFEST=$build/manifest_bad_loop.env \
+    OUT="$build/app_loop_strict" RECORD="$build/selection_loop_strict.env" \
+    "$here/select.sh" >/dev/null 2>&1; then
+  fail "strict mode accepted a stale loop"
+fi
+if [ -e "$build/app_loop_strict" ]; then
+  fail "a loop executable was emitted for a stale loop"
+fi
 
 # --- a changed fixture fails at the source guard, before any other detector --
 echo "== a mutated fixture fails at the source guard and publishes nothing"
@@ -322,7 +338,18 @@ for stale in --strict-stale-import --fallback-stale-import; do
     exit 1
   fi
 done
+# The loop's own gate: a matching certificate installs the loop, a mismatched
+# theorem or object hash is refused, and a non-strict mismatch falls back.
+loop_gate=$repo/tests/m4-loop-install-gate.sh
+for mode in --strict --strict-theorem --strict-hash --fallback-hash; do
+  if ! bash "$loop_gate" "$mode" >>"$gate_log" 2>&1; then
+    echo "check: the loop installation gate failed for '$mode'" >&2
+    tail -20 "$gate_log" >&2
+    exit 1
+  fi
+done
 echo "gate: 17 fields in both modes, three absence routes, four malformations and two stale-import routes held"
+echo "gate: the loop installed from its own certificate, refused a wrong theorem and a wrong hash, and fell back"
 
 # --- one source-elaboration writer at a time across the two routes -----------
 echo "== the source-elaboration lock serializes the build and the selector"

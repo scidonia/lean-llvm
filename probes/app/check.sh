@@ -45,24 +45,13 @@ if STRICT=1 MANIFEST=$build/manifest_bad.env OUT=$build/app_strict \
   exit 1
 fi
 
-echo "== the loop unit has no covering theorem and is refused"
-if UNIT=loop STRICT=1 MANIFEST=$build/manifest.env OUT=$build/app_loop_strict \
-    RECORD=$build/selection_loop_strict.env "$select" >/dev/null 2>&1; then
-  echo "app: strict mode accepted the loop unit" >&2
-  exit 1
-fi
-if [ -e "$build/app_loop_strict" ]; then
-  echo "app: a loop executable was emitted" >&2
-  exit 1
-fi
-echo "select: refused the loop unit"
-
-echo "== the same request without strict mode installs the baseline"
-UNIT=loop MANIFEST=$build/manifest.env OUT=$build/app_loop \
-  RECORD=$build/selection_loop.env "$select" >/dev/null
-grep -q '^selected=baseline$' "$build/selection_loop.env"
-"$build/app_loop" > "$build/out_loop.txt"
+echo "== the loop unit installs from its own certificate"
+UNIT=loop STRICT=1 MANIFEST=$build/manifest.env OUT=$build/app_loop_strict \
+  RECORD=$build/selection_loop_strict.env "$select" >/dev/null
+grep -q '^selected=loop$' "$build/selection_loop_strict.env"
+"$build/app_loop_strict" > "$build/out_loop.txt"
 cmp "$build/out_candidate.txt" "$build/out_loop.txt"
+echo "select: installed the loop unit"
 
 echo "== the application behaves the same under both bodies"
 cmp "$build/out_candidate.txt" "$build/out_fallback.txt"

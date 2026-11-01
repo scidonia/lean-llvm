@@ -285,16 +285,17 @@ accepted on the strength of a narrower result.
   `replaceFunction_sound`-style module theorem for a memory-using callee.  The
   contextual theorem covers one pure caller (`LeanLLVM/Vellum/SeamContext.lean`).
 - **M3 — machinery in place; certificate-bound installation openly scoped.**
-  `probes/install/build.sh` rebuilds the imported proof graph and re-elaborates
-  `CommaMaskIR` from source, then runs
-  `probes/install/InstallCertificate.lean` to publish one baseline and one
-  candidate certificate: a deterministic seventeen-field data file naming the
-  exact theorem, the checked axiom footprint, the contract, the target triple,
-  the data layout, the toolchain revision, and the SHA-256 of the unit and of
-  both refinement operands' objects, fixtures and markers.  The selector
-  (`probes/install/select.sh`) refuses unknown units and always refuses
-  `UNIT=loop`, requires the manifest's contract and theorem to be the
-  installation ones, parses the certificate as closed data, compares every
+  `probes/install/build.sh` rebuilds the imported proof graph, re-elaborates
+  `CommaMaskIR` from source and re-elaborates `CommaMaskLoop` after it, then
+  runs `probes/install/InstallCertificate.lean` to publish one baseline, one
+  candidate and one loop certificate: a deterministic seventeen-field data file
+  naming the theorem that covers that unit, the checked axiom footprint, the
+  contract, the target triple, the data layout, the toolchain revision, and the
+  SHA-256 of the unit and of both refinement operands' objects, fixtures and
+  markers.  The selector (`probes/install/select.sh`) refuses unknown units,
+  requires the manifest's contract and the theorem covering the requested unit
+  (the global `theorem` for the candidate and the baseline, `loop_theorem` for
+  the loop), parses the certificate as closed data, compares every
   field with the input it names and the toolchain it observes, and then
   rebuilds the imported proof graph, re-elaborates the proof module and
   reproduces the certificate byte for byte before linking.  Strict mode emits
@@ -302,11 +303,15 @@ accepted on the strength of a narrower result.
   explicit proof-rejected fallback.  The
   gate (`tests/m3-certificate-gate.sh`) covers each field, the absent
   certificate, four structural malformations and a stale imported proof source.
-  The memory-backed loop is
-  still refused on the original ground: no checked theorem covers it, a
-  differential transcript ending `RESULT: PASS` is never treated as proof, and
-  no loop certificate exists.  Open: a semantic attribute policy richer than
-  `attributes=reject` over attribute-free fixtures; a theorem relating the
+  The memory-backed loop is installed on the same terms: its certificate names
+  `loop_refines_candidate_within`, the framed refinement of the loop to the
+  unrolled candidate within the band its own two allocations cover, and
+  `tests/m4-loop-install-gate.sh` covers a matching certificate, a wrong
+  theorem, a wrong object hash and the fallback.  That statement is about the
+  loop body and its frame, and the certificate remains a hash-and-rebuild
+  bridge: a differential transcript ending `RESULT: PASS` is never treated as
+  proof.  Open: a semantic attribute policy richer than `attributes=reject`
+  over attribute-free fixtures; a theorem relating the
   compiled object or machine instructions to the model (the certificate is a
   hash-and-rebuild bridge, not that theorem); and the trusted compiler, runtime
   and manifest-shell boundary.
@@ -341,10 +346,11 @@ tree-level loop rule with its two instances, including the comma-mask loop's
 relation to its unrolled candidate, the seeded guarded recursion `mfix` with its
 equations and positive-delay witnesses, the conditional one-way bridge from the
 tree relation to the canonical resolution with its fixed-budget loop corollary,
-and their theorems and axiom pins — from what remains open: adoption by
+their theorems and axiom pins, and the certificate-bound installation of all
+three units — from what remains open: adoption by
 `Refines`/`RefinesWithin`, discharging the bridge's tree-relation hypothesis for
 arbitrary function pairs, a loop rule at the executable refinement relation, a
 `runT`/`mfix` correspondence for the fixed-budget trees, memory-effectful call
-environments and a module theorem for a memory-using callee, a certificate-backed
-installation, benchmark records, and the remaining M4 conditions.  Nothing here
+environments and a module theorem for a memory-using callee, benchmark records,
+and the remaining M4 conditions.  Nothing here
 claims that those open items are met.

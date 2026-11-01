@@ -67,7 +67,7 @@ if ! nm -u "$build/app.o" | grep -q 'leanllvm_comma_mask8'; then
   exit 1
 fi
 
-# 3. The two installation units, built from the proved fixtures.  Basenames
+# 3. The three installation units, built from the proved fixtures.  Basenames
 #    are part of the input, as in probes/install/build.sh.
 units=$build/units
 mkdir -p "$units/baseline" "$units/candidate" "$units/loop"
@@ -99,15 +99,15 @@ fi
   echo "kind: differential"
   echo "symbol: leanllvm_comma_mask8"
   echo "corpus: probes/install/diff.c"
-  echo "covers: candidate-vs-baseline"
-  echo "not-covered: loop (no checked theorem for the loop body)"
+  echo "covers: candidate-vs-baseline, loop-vs-candidate"
+  echo "not-covered: none (each installed unit also has a checked certificate; this transcript remains runtime evidence, not either proof)"
   echo "baseline_sha256: $(sha256sum "$build/baseline.o" | cut -d' ' -f1)"
   echo "candidate_sha256: $(sha256sum "$build/candidate.o" | cut -d' ' -f1)"
   echo "RESULT: PASS"
 } > "$build/differential.txt"
 
 # 5. Manifest in the shape probes/install/select.sh verifies, followed by the
-#    two kernel-derived certificates over this build's units.  The manifest is
+#    three kernel-derived certificates over this build's units.  The manifest is
 #    written first because the producer hashes the object paths it names; the
 #    certificate digests are appended once the certificates exist.
 target="$(clang -print-target-triple)"
@@ -124,6 +124,7 @@ symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
 contract=LeanLLVM.Vellum.commaContract
 theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -151,6 +152,7 @@ loop_sha256=$(sha "$build/loop.o")
 differential_sha256=$(sha "$build/differential.txt")
 proof_baseline=$build/proof_baseline.env
 proof_candidate=$build/proof_candidate.env
+proof_loop=$build/proof_loop.env
 EOF
 
 # `lake build` does not track `include_str`, so rebuild the imported graph from
@@ -162,7 +164,14 @@ EOF
 (cd "$repo" &&
   lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean \
     LeanLLVM/Vellum/CommaMaskIR.lean)
-for unit in baseline candidate; do
+# `CommaMaskLoop` imports `CommaMaskIR`, and the loop's certificate names its own
+# theorem, so it follows that pair.  Every unit this build links against is
+# certified here, so the step is not conditional on a request.
+(cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskLoop)
+(cd "$repo" &&
+  lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean \
+    LeanLLVM/Vellum/CommaMaskLoop.lean)
+for unit in baseline candidate loop; do
   (cd "$repo" &&
     CERT_UNIT="$unit" CERT_MANIFEST="$build/manifest.env" \
       CERT_OUT="$build/proof_$unit.env" \
@@ -177,6 +186,7 @@ done
   cat "$build/manifest.env"
   printf 'proof_baseline_sha256=%s\n' "$(sha "$build/proof_baseline.env")"
   printf 'proof_candidate_sha256=%s\n' "$(sha "$build/proof_candidate.env")"
+  printf 'proof_loop_sha256=%s\n' "$(sha "$build/proof_loop.env")"
 } > "$build/manifest.env.tmp.$$"
 mv "$build/manifest.env.tmp.$$" "$build/manifest.env"
 

@@ -4,13 +4,14 @@ The installation certificate producer.
 `probes/install/build.sh` and `probes/install/select.sh` elaborate this module
 with
 
-  CERT_UNIT=<baseline|candidate> CERT_MANIFEST=<absolute manifest path> \
+  CERT_UNIT=<baseline|candidate|loop> CERT_MANIFEST=<absolute manifest path> \
     CERT_OUT=<absolute output path> lake env lean probes/install/InstallCertificate.lean
 
 from the repository root, after re-elaborating `LeanLLVM/Vellum/CommaMaskIR.lean`
-from source.  The module imports that freshly built proof module, checks its
-statement and axiom footprint against the kernel, and writes one canonical
-certificate to `CERT_OUT`:
+from source and, for the loop unit, `LeanLLVM/Vellum/CommaMaskLoop.lean` too.
+The module imports those freshly built proof modules, checks the statement and
+axiom footprint of the theorem that covers the requested unit, and writes one
+canonical certificate to `CERT_OUT`:
 
   schema unit unit_object_sha256 unit_fixture_sha256 unit_marker_sha256
   baseline_object_sha256 candidate_object_sha256 baseline_fixture_sha256
@@ -36,6 +37,7 @@ are left untouched.
 -/
 import Lean
 import LeanLLVM.Vellum.CommaMaskIR
+import LeanLLVM.Vellum.CommaMaskLoop
 import Lean.Util.CollectAxioms
 
 open Lean Elab Command
@@ -52,6 +54,25 @@ def theoremName : Name := ``LeanLLVM.Vellum.CommaMaskIR.IR_refines
 
 /-- The same name as it is serialized. -/
 def theoremText : String := "LeanLLVM.Vellum.CommaMaskIR.IR_refines"
+
+/-- The theorem the loop unit's certificate names: the framed refinement of the
+memory-backed loop to the unrolled candidate within the band the loop's own two
+allocations cover. -/
+def loopTheoremName : Name :=
+  ``LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+
+/-- The same name as it is serialized. -/
+def loopTheoremText : String :=
+  "LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within"
+
+/-- The theorem that covers a unit: the loop has its own statement, every other
+unit is covered by `IR_refines`, which relates the candidate to the baseline. -/
+def theoremNameFor (unit : String) : Name :=
+  if unit == "loop" then loopTheoremName else theoremName
+
+/-- The serialized form of `theoremNameFor`. -/
+def theoremTextFor (unit : String) : String :=
+  if unit == "loop" then loopTheoremText else theoremText
 
 /-- The contract the certificate names. -/
 def contractName : Name := ``LeanLLVM.Vellum.commaContract
@@ -226,6 +247,13 @@ def gather (m : Manifest) (unit triple layout : String) : IO Inputs := do
   unless candidateFixtureText == LeanLLVM.Vellum.CommaMaskIR.candidateSrc do
     throw <| IO.userError
       s!"the loaded proof module was not elaborated from the current candidate fixture {candidateFixturePath}"
+  -- `CommaMaskLoop` carries the printed loop fixture the same way, so the same
+  -- staleness argument applies when the requested unit is the loop.
+  if unit == "loop" then
+    let loopFixtureText ← IO.FS.readFile unitFixturePath
+    unless loopFixtureText == LeanLLVM.Vellum.CommaMaskLoop.loopSrc do
+      throw <| IO.userError
+        s!"the loaded proof module was not elaborated from the current loop fixture {unitFixturePath}"
   pure {
     unitObject := (← sha256File unitObjectPath)
     unitFixture := (← sha256File unitFixturePath)
@@ -243,22 +271,35 @@ def gather (m : Manifest) (unit triple layout : String) : IO Inputs := do
 
 /-! ### The environment checks -/
 
-/-- The emitted-IR theorem must be a theorem of exactly the proposition the
-installation relies on: every call list refines the parsed candidate to the
-parsed baseline. -/
-def checkTheorem : TermElabM Unit := do
-  let info ← getConstInfo theoremName
+/-- The theorem that covers `unit` must be a theorem of exactly the proposition
+the installation relies on: `IR_refines` for the candidate and the baseline, and
+the framed loop-to-candidate refinement within the loop's own allocations for
+the loop. -/
+def checkTheorem (unit : String) : TermElabM Unit := do
+  let name := theoremNameFor unit
+  let info ← getConstInfo name
   match info with
   | ConstantInfo.thmInfo _ => pure ()
-  | _ => throwError m!"{theoremName} is not a theorem"
-  let expected ← Term.elabType (← `(∀ calls, LeanLLVM.Refines calls
-    LeanLLVM.Vellum.CommaMaskIR.candidateFunction
-    LeanLLVM.Vellum.CommaMaskIR.baselineFunction))
+  | _ => throwError m!"{name} is not a theorem"
+  let expected ← Term.elabType (←
+    if unit == "loop" then
+      `(∀ (x : BitVec 64) (o : LeanLLVM.Outcome),
+        LeanLLVM.Beh LeanLLVM.noCalls
+            LeanLLVM.Vellum.CommaMaskLoop.loopFunction [LeanLLVM.Value.int 64 x] o →
+          ∃ o', LeanLLVM.Beh LeanLLVM.noCalls
+              LeanLLVM.Vellum.CommaMaskIR.candidateFunction
+              [LeanLLVM.Value.int 64 x] o' ∧
+            o.AgreesOutside (LeanLLVM.Vellum.CommaMaskLoop.loopFrame x) o')
+    else
+      `(∀ calls, LeanLLVM.Refines calls
+        LeanLLVM.Vellum.CommaMaskIR.candidateFunction
+        LeanLLVM.Vellum.CommaMaskIR.baselineFunction))
   unless info.type.isForall do
-    throwError m!"{theoremName} is not a statement about every call list"
+    throwError m!"{name} is not a universally quantified statement"
   let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq info.type expected
   unless ok do
-    throwError m!"{theoremName} does not state the expected refinement"
+    throwError m!"{name} does not state the expected refinement"
+  pure ()
 
 /-- The named contract must be the contract structure's value, and the
 contract-level theorem must state the relation that links it to the two Lean
@@ -283,18 +324,18 @@ def checkContract : TermElabM Unit := do
   unless ok do
     throwError m!"{contractTheoremName} does not state the contract refinement"
 
-/-- The primary theorem's axiom footprint, read from the environment rather
+/-- The covering theorem's axiom footprint, read from the environment rather
 than from printed output, must be exactly the standard pinned set. -/
-def checkAxioms : CommandElabM (List String) := do
-  let axioms ← Lean.collectAxioms theoremName
-  let names := axioms.toList.map fun name => name.toString
+def checkAxioms (name : Name) : CommandElabM (List String) := do
+  let axioms ← Lean.collectAxioms name
+  let names := axioms.toList.map fun n => n.toString
   if names.contains "sorryAx" then
-    throwError m!"{theoremName} depends on sorryAx"
+    throwError m!"{name} depends on sorryAx"
   unless names.length == axiomFootprint.length do
-    throwError m!"{theoremName} depends on axioms {names}, not {axiomFootprint}"
-  for name in axiomFootprint do
-    unless names.contains name do
-      throwError m!"{theoremName} does not depend on {name}; footprint {names}"
+    throwError m!"{name} depends on axioms {names}, not {axiomFootprint}"
+  for required in axiomFootprint do
+    unless names.contains required do
+      throwError m!"{name} does not depend on {required}; footprint {names}"
   pure axiomFootprint
 
 /-! ### Publication -/
@@ -312,7 +353,7 @@ def render (unit : String) (inputs : Inputs) (axioms : List String) : String :=
     s!"candidate_fixture_sha256={inputs.candidateFixture}",
     s!"baseline_marker_sha256={inputs.baselineMarker}",
     s!"candidate_marker_sha256={inputs.candidateMarker}",
-    s!"theorem={theoremText}",
+    s!"theorem={theoremTextFor unit}",
     s!"axioms={String.intercalate "," axioms}",
     s!"contract={contractText}",
     s!"target_triple={inputs.targetTriple}",
@@ -352,8 +393,8 @@ open InstallCertificate
 
 run_cmd do
   let unit ← liftIO (requireEnv "CERT_UNIT")
-  unless unit == "baseline" || unit == "candidate" do
-    throwError s!"CERT_UNIT must name baseline or candidate, not '{unit}'"
+  unless unit == "baseline" || unit == "candidate" || unit == "loop" do
+    throwError s!"CERT_UNIT must name baseline, candidate or loop, not '{unit}'"
   let manifestPath ← liftIO (requireEnv "CERT_MANIFEST")
   let outPath ← liftIO (requireEnv "CERT_OUT")
   liftIO do
@@ -370,6 +411,10 @@ run_cmd do
   let manifestContract ← liftIO (manifest.require "contract")
   unless manifestContract == contractText do
     throwError s!"manifest {manifestPath} names contract '{manifestContract}', not '{contractText}'"
+  if unit == "loop" then
+    let manifestLoopTheorem ← liftIO (manifest.require "loop_theorem")
+    unless manifestLoopTheorem == loopTheoremText do
+      throwError s!"manifest {manifestPath} names loop theorem '{manifestLoopTheorem}', not '{loopTheoremText}'"
   let target ← liftIO (manifest.require "target")
   let triple ← liftIO (manifest.require "triple")
   unless target == triple do
@@ -380,7 +425,7 @@ run_cmd do
   unless shaped isLayoutChar layout do
     throwError s!"manifest {manifestPath} has a malformed data layout '{layout}'"
   let inputs ← liftIO (gather manifest unit triple layout)
-  liftTermElabM checkTheorem
+  liftTermElabM (checkTheorem unit)
   liftTermElabM checkContract
-  let axioms ← checkAxioms
+  let axioms ← checkAxioms (theoremNameFor unit)
   liftIO (publish outPath (render unit inputs axioms))

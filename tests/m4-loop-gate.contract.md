@@ -6,10 +6,12 @@ hashes, and a differential transcript.  The loop unit is the memory-backed
 counterpart of the unrolled candidate; the transcript records runtime agreement
 on a corpus and is not a theorem about the loop body.
 
-A selection is accepted only when the manifest's theorem covers the unit being
-selected.  A manifest that names
-`LeanLLVM.Vellum.CommaMaskIR.IR_refines`, which relates the candidate to the
-baseline, does not cover the loop, so the loop must not be installed from it.
+A selection is accepted only when the requested unit's own theorem is bound and
+its certificate checks out.  `IR_refines` covers the candidate and the
+baseline; the loop has its own theorem field (`loop_theorem`) and its own
+certificate (`proof_loop`), checked by the same gate
+(`tests/m4-loop-install-gate.sh`).  The scenarios below drive a manifest that
+binds neither, so the loop has nothing to check and is not installed.
 
 A manifest supplies the facts a build produced — the unit paths, the hashes and
 the theorem name.  The selector sources it as trusted, locally produced shell
@@ -34,15 +36,16 @@ temporary directory, so no compiler, linker or network is used:
 - **Actor:** the build integrator.
 - **Given:** a manifest whose hashes match its fixtures and objects, whose
   `theorem` is `LeanLLVM.Vellum.CommaMaskIR.IR_refines` (candidate to baseline
-  only), and whose differential transcript ends `RESULT: PASS`; and a baseline
-  selection from the same input that succeeds and produces an executable, so a
-  working link and output are known to be detectable.
+  only), and whose differential transcript ends `RESULT: PASS`, and whose
+  manifest binds no `loop_theorem` and no `proof_loop` certificate; and a
+  baseline selection from the same input that succeeds and produces an
+  executable, so a working link and output are known to be detectable.
 - **When:** the integrator invokes the selector with `UNIT=loop STRICT=1`,
   pointing `MANIFEST`, `OUT` and `RECORD` at isolated fixtures.
 - **Then:** it exits nonzero, emits no loop executable, and writes no selection
   record naming the loop.
-- **Why:** a strict request must fail closed rather than install a body that no
-  checked theorem covers.
+- **Why:** a strict request must fail closed rather than install a unit with no
+  theorem or certificate bound to it.
 
 ### G2 — a non-strict loop request falls back to the baseline
 
@@ -83,5 +86,6 @@ temporary directory, so no compiler, linker or network is used:
 - **Then:** it exits zero, the selection record's `selected` field is
   `baseline`, and the object handed to the linker is the baseline fixture's
   object — not the candidate's and not the loop's.
-- **Why:** the loop has no covering theorem, so the fallback must install the
-  baseline rather than a unit the manifest substituted for the request.
+- **Why:** the loop has no theorem or certificate bound to it in this manifest,
+  so the fallback must install the baseline rather than a unit the manifest
+  substituted for the request.

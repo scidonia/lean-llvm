@@ -316,8 +316,9 @@ not against an unversioned page.
    (`lake exe leanllvm-loop-emit`, not `lean -c`), the correctness and
    framed-memory statements are proved about that AST
    (`LeanLLVM/Vellum/CommaMaskLoop.lean` parses the printed file and pins it back
-   to it), and the selector refuses the loop because no checked theorem covers
-   it. The compilation-chain form of that provenance, heap relations across
+   to it), the loop installs through its own certificate naming
+   `loop_refines_candidate_within` on the same hash-and-rebuild bridge as the
+   other two units. The compilation-chain form of that provenance, heap relations across
    calls, a memory-aware module theorem and a benchmark remain open.
 
 ## 9. Limits

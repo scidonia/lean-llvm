@@ -63,9 +63,14 @@ needs the other two to match.
 - `reference/vellvm/` is vendored VeLLVM source for study.  It is not built,
   linted or edited.
 - `tests/` holds textual IR exercised by the driver, and executable scenarios of
-  user-facing routes: `m4-loop-gate.sh` drives the installer selector and
-  asserts that a loop request without a covering theorem is refused and that the
-  baseline is installed instead; `m3-certificate-gate.sh` drives the same
+  user-facing routes: `m4-loop-gate.sh` drives the installer selector with a
+  manifest that binds no loop theorem and no loop certificate, and asserts that
+  such a request fails closed and that the baseline is installed instead;
+  `m4-loop-install-gate.sh` drives the same selector against a manifest that
+  does bind the loop's theorem and certificate, and asserts that a matching one
+  installs the loop, that a certificate naming another unit's theorem or another
+  unit's object hash is refused, and that a non-strict mismatch falls back to
+  the baseline; `m3-certificate-gate.sh` drives the same
   selector against a certificate with one changed field, an absent certificate
   and a structurally malformed one, and asserts strict refusal and non-strict
   baseline fallback; `m4-loop-emission.sh` drives the fixture-capture
@@ -103,8 +108,12 @@ needs the other two to match.
 - An installation certificate is data, not source.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated
-  `CommaMaskIR`, and from the object, fixture and marker paths
-  the manifest names; it checks the theorem statement, the contract link and
+  `CommaMaskIR` (and, for the loop, a `CommaMaskLoop` re-elaborated after it,
+  since it imports `CommaMaskIR`), and from the object, fixture and marker paths
+  the manifest names; it checks the statement of the theorem covering the
+  requested unit — `IR_refines` for the candidate and the baseline,
+  `loop_refines_candidate_within` for the loop, which the loop's certificate
+  names in place of `IR_refines` — the contract link and
   the axiom footprint in the loaded environment and refuses a stale proof
   module whose pinned fixtures differ from the files it hashes.
   `probes/install/select.sh` parses the certificate with a closed grammar,
@@ -139,7 +148,9 @@ needs the other two to match.
   (`LeanLLVMTest/Vellum.lean` has both the loop's framed statement and a write
   outside the frame that it refuses).  A user-facing route gets an executable
   scenario instead: `tests/m4-loop-gate.sh` drives `probes/install/select.sh`
-  and asserts refusal and fallback.
+  with no loop theorem or certificate bound and asserts refusal and fallback,
+  and `tests/m4-loop-install-gate.sh` drives it with both bound and asserts the
+  loop install, the wrong-theorem and wrong-hash refusals, and the fallback.
 - The tree relation (`LeanLLVM/ITree/Simtt.lean`) is a second, finer statement
   beside `Refines` and `RefinesWithin`, not a replacement for them.  Those
   keep their definitions and their proofs, and no pass or route reasons

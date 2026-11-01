@@ -5,12 +5,13 @@
 #
 # A unit is accepted only when
 #   * the request names a known unit, and the manifest names the installation
-#     contract and theorem exactly: the only checked statement is
-#     `IR_refines` over the candidate and the baseline, so `UNIT=loop` is
-#     always refused as an installation request, strict or not;
-#   * every recorded hash matches: caller, unit objects, the differential
-#     transcript, and the four fixture inputs (baseline/candidate body and
-#     marker);
+#     contract exactly and the theorem that covers the requested unit:
+#     `IR_refines` over the candidate and the baseline for those two units,
+#     and the loop's own `loop_refines_candidate_within` in the manifest's
+#     `loop_theorem` field for `UNIT=loop`, so a loop request is decided by
+#     its certificate exactly as the other two are;
+#   * every recorded hash matches: caller, the unit objects, the differential
+#     transcript, and each bound unit's fixture and marker inputs;
 #   * each unit object is rebuilt from its fixtures and the rebuild matches the
 #     installed bytes, so the object is the one the parser pinned;
 #   * the target equals the manifest's `target` and `triple` and the triple
@@ -21,14 +22,16 @@
 #     delimiter and one terminal newline;
 #   * every certificate field equals the input it claims: the selected unit's
 #     object, fixture and marker; both operands' objects, fixtures and markers;
-#     the manifest's theorem and contract; the observed target and layout; the
-#     checked axiom set; and the toolchain revision the repository's own
-#     `toolchain-id.sh` prints now;
+#     the covering theorem the manifest binds for that unit and the contract;
+#     the observed target and layout; the checked axiom set; and the toolchain
+#     revision the repository's own `toolchain-id.sh` prints now;
 #   * the Lean producer, run after the imported proof graph is rebuilt from
 #     current project source and the proof module is re-elaborated from source,
 #     reproduces the certificate byte for byte.  That is the kernel re-check:
 #     a changed field, a stale proof module or a stale imported proof source
-#     fails here even if the certificate's manifest digest was rewritten;
+#     fails here even if the certificate's manifest digest was rewritten.  A
+#     loop request re-elaborates `CommaMaskLoop` after `CommaMaskIR`, because
+#     the loop's proof module imports the one the fixture guards are about;
 #   * the objects are ELF64 and export the seam and marker symbols, and the
 #     caller imports the seam.
 #
@@ -115,6 +118,7 @@ ok=1
 reasons=()
 
 expected_theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+expected_loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
 expected_contract=LeanLLVM.Vellum.commaContract
 expected_axioms=Classical.choice,Quot.sound,propext
 expected_symbol=leanllvm_comma_mask8
@@ -229,7 +233,9 @@ parse_certificate() { # path
     case "$key" in
       *_sha256) [[ "$value" =~ ^[0-9a-f]{64}$ ]] || return 1 ;;
       schema) [ "$value" = leanllvm-install-v1 ] || return 1 ;;
-      unit) [ "$value" = baseline ] || [ "$value" = candidate ] || return 1 ;;
+      unit)
+        [ "$value" = baseline ] || [ "$value" = candidate ] ||
+          [ "$value" = loop ] || return 1 ;;
       theorem | contract)
         [[ "$value" =~ ^LeanLLVM\.[A-Za-z0-9_.]+$ ]] || return 1 ;;
       axioms) [[ "$value" =~ ^[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*$ ]] || return 1 ;;
@@ -255,6 +261,7 @@ check_certificate() { # unit
   local fixture_var=${unit}_fixture marker_var=${unit}_marker
   local path=${!path_var:-} digest=${!digest_var:-}
   local unit_object unit_fixture unit_marker work derived manifest_abs
+  local bound_theorem expected_unit_theorem
 
   if [ -z "$path" ] || [ ! -f "$path" ]; then
     proof_failure=missing
@@ -272,6 +279,7 @@ check_certificate() { # unit
   case "$unit" in
     baseline) unit_object=${baseline:-} ;;
     candidate) unit_object=${candidate:-} ;;
+    loop) unit_object=${loop:-} ;;
     *) proof_failure=invalid; return 1 ;;
   esac
   unit_fixture=${!fixture_var:-}
@@ -298,8 +306,19 @@ check_certificate() { # unit
     { proof_failure=invalid; return 1; }
   [ "${cert[candidate_marker_sha256]}" = "$(file_sha "${candidate_marker:-}")" ] ||
     { proof_failure=invalid; return 1; }
-  [ "${cert[theorem]}" = "${theorem:-}" ] &&
-    [ "${cert[theorem]}" = "$expected_theorem" ] ||
+  # The theorem a certificate must name is the one the manifest binds for its
+  # unit: the loop has its own field and its own statement, every other unit is
+  # covered by the global `theorem` field.  Nothing is accepted from the
+  # certificate alone: both the manifest binding and the expected name are
+  # required to agree with it.
+  bound_theorem=${theorem:-}
+  expected_unit_theorem=$expected_theorem
+  if [ "$unit" = loop ]; then
+    bound_theorem=${loop_theorem:-}
+    expected_unit_theorem=$expected_loop_theorem
+  fi
+  [ "${cert[theorem]}" = "$bound_theorem" ] &&
+    [ "${cert[theorem]}" = "$expected_unit_theorem" ] ||
     { proof_failure=invalid; return 1; }
   [ "${cert[axioms]}" = "$expected_axioms" ] ||
     { proof_failure=invalid; return 1; }
@@ -337,6 +356,22 @@ check_certificate() { # unit
           LeanLLVM/Vellum/CommaMaskIR.lean) >/dev/null 2>"$work/source.log"; then
     sequence_ok=0
   fi
+  # `CommaMaskLoop` imports `CommaMaskIR`, so the loop's own proof module is
+  # reconciled and re-elaborated only after that pair, and only when the
+  # requested unit is the loop: a baseline or candidate request must not pay for
+  # a module its certificate does not name.
+  if [ "$sequence_ok" -eq 1 ] && [ "$unit" = loop ] &&
+     ! (cd "$root" && lake build LeanLLVM.Vellum.CommaMaskLoop) \
+      >/dev/null 2>"$work/loop-graph.log"; then
+    sequence_ok=0
+  fi
+  if [ "$sequence_ok" -eq 1 ] && [ "$unit" = loop ] &&
+     ! (cd "$root" &&
+        lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean \
+          LeanLLVM/Vellum/CommaMaskLoop.lean) \
+      >/dev/null 2>"$work/loop-source.log"; then
+    sequence_ok=0
+  fi
   if [ "$sequence_ok" -eq 1 ] &&
      ! (cd "$root" &&
         CERT_UNIT="$unit" CERT_MANIFEST="$manifest_abs" CERT_OUT="$derived" \
@@ -356,9 +391,8 @@ check_certificate() { # unit
   return 0
 }
 
-# The request.  An unknown unit is refused, and a loop request is refused as an
-# installation request: `IR_refines` relates the candidate to the baseline and
-# says nothing about the loop body.
+# The request.  An unknown unit fails here; a known unit — the loop included —
+# is decided by the hash, rebuild, object and certificate checks below.
 selected_unit=
 case "$req_unit" in
   "" | candidate) selected_unit=candidate ;;
@@ -368,8 +402,6 @@ case "$req_unit" in
 esac
 if [ -z "$selected_unit" ]; then
   ok=0; reasons+=("unknown unit $req_unit")
-elif [ "$selected_unit" = loop ]; then
-  ok=0; reasons+=("no checked theorem covers unit loop")
 fi
 
 check_hash "${caller:-}" "${caller_sha256:-}" "caller hash"
@@ -481,19 +513,21 @@ if ! probe 'leanllvm_comma_mask8' nm -u "${caller:-}"; then
   ok=0; reasons+=("caller import")
 fi
 
-# The certificate gate applies to the two units the theorem covers.  A loop or
-# unknown request has no certificate to check.
-if [ -n "$selected_unit" ] && [ "$selected_unit" != loop ]; then
+# The certificate gate applies to every known unit: the loop has its own
+# certificate and its own covering theorem, checked by the same code.
+if [ -n "$selected_unit" ]; then
   check_certificate "$selected_unit" || true
 fi
 
 if [ "$ok" -eq 1 ] && [ -z "$proof_failure" ]; then
+  covering_theorem=$theorem
   case "$selected_unit" in
     baseline) selected=${baseline:-} ;;
     candidate) selected=${candidate:-} ;;
+    loop) selected=${loop:-}; covering_theorem=${loop_theorem:-} ;;
   esac
   kind=$selected_unit
-  reason="hashes, fixtures, rebuild and certificate match; $theorem covers the selected unit"
+  reason="hashes, fixtures, rebuild and certificate match; $covering_theorem covers the selected unit"
 else
   if [ "$req_strict" = 1 ]; then
     printf 'select: strict failure\n' >&2
@@ -524,6 +558,7 @@ requested_proof_sha256=
 case "$selected_unit" in
   baseline) proof_path=${proof_baseline:-} ;;
   candidate) proof_path=${proof_candidate:-} ;;
+  loop) proof_path=${proof_loop:-} ;;
   *) proof_path= ;;
 esac
 if [ -n "$proof_path" ] && [ -f "$proof_path" ]; then
