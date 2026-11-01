@@ -78,7 +78,7 @@ because the frame is an arbitrary proposition; the routes above are untouched.
 
 ## Build
 
-The toolchain is Lean `v4.36.0-rc1` from the flake.  Run every command through
+The toolchain is Lean `v4.35.0` from the flake.  Run every command through
 the shell so the environment comes from this checkout:
 
 ```bash

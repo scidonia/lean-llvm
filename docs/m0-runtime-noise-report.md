@@ -45,7 +45,7 @@ Two findings decide the first work package.
 
 | Item | Value |
 |---|---|
-| Lean | `v4.35.0-rc3` (the repository flake) |
+| Lean | `v4.35.0-rc3` (the repository flake at the time of this report) |
 | Clang / LLVM | 21.1.8 (the repository flake) |
 | Target | `x86_64-unknown-linux-gnu` (from the emitted `target triple`) |
 | Lowering | `lean -c file.c` → `clang -S -emit-llvm` |

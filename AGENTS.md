@@ -6,7 +6,7 @@ records how to build and what a change must prove.
 
 ## Toolchain
 
-Lean `v4.36.0-rc1` and LLVM tools come from the flake.  Run every toolchain
+Lean `v4.35.0` and LLVM tools come from the flake.  Run every toolchain
 command through the dev shell so the environment belongs to this checkout:
 
 ```bash

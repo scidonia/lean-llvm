@@ -9,7 +9,7 @@ defaultTargets = ["leanllvm", "ITree"]
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
-rev = "3dfb8e22b67042b31fac228dee0e1169a1a7820f"
+rev = "56a005855ea17e0b0958f73ec801ae140b0a1679"
 
 [[lean_lib]]
 name = "LeanLLVM"

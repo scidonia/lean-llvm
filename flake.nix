@@ -2,10 +2,11 @@
   description = "lean-llvm — certified LLVM transformations and refinement in Lean 4";
 
   inputs = {
-    # Pinned to the revision the sibling `lean` flake resolved, so the
-    # `lean4` derivation below is the one already present in the store rather
-    # than a fresh source build.  `nix flake update nixpkgs` advances it.
-    nixpkgs.url = "github:NixOS/nixpkgs/151fa4e8ddfdd8dd25d945ad94ed54a13de9f6e4";
+    # Pinned to a `nixos-unstable` revision whose `lean4` is the released
+    # toolchain, so the shell substitutes a binary from `cache.nixos.org`
+    # instead of building Lean from source.  Mathlib's tag `v4.35.0` names the
+    # same version, so `lake` sees one toolchain on both sides.
+    nixpkgs.url = "github:NixOS/nixpkgs/1c89083e451e891152365b799595cf7790a43325";
   };
 
   outputs =
@@ -18,34 +19,9 @@
       devShells = forAllSystems (
         pkgs:
         let
-          # Lean `v4.36.0-rc1`, the toolchain the Scidonia Lean work targets.
-          # The source is fetched rather than resolved by `elan` so that a
-          # build needs no network access.
-          # 4.36 links cadical into the runtime; point CMake at the packaged
-          # build instead of letting it clone from the network in the sandbox.
-          cadical = pkgs.cadical.override { version = "2.1.3"; };
-          lean4 = pkgs.lean4.overrideAttrs (prev: {
-            version = "4.36.0-rc1";
-            src = pkgs.fetchFromGitHub {
-              owner = "leanprover";
-              repo = "lean4";
-              tag = "v4.36.0-rc1";
-              hash = "sha256-IWQV0m4I9qhREhWCWtnyMtAE5HgRezcSOy+YSr2GxoU=";
-            };
-            # The tag's own `LEAN_SPECIAL_VERSION_DESC` is empty; the RC tarball
-            # was built with `rc1`, and the string is part of the `.olean`
-            # format, so every stage must agree on it.
-            cmakeFlags = prev.cmakeFlags ++ [
-              "-DLEAN_SPECIAL_VERSION_DESC=rc1"
-              "-DCADICAL=${cadical}/bin/cadical"
-              "-DCADICAL_LIB=${cadical.lib}/lib/libcadical.a"
-              "-DCADICAL_INCLUDE_DIR=${cadical.dev}/include"
-            ];
-            # 4.36's CMakeLists declares `lean4lean`, `nanoda`, `con-leche` and
-            # `con-ron` as `EXCLUDE_FROM_ALL` external projects; CMake still
-            # probes for the download tool during configure.
-            nativeBuildInputs = prev.nativeBuildInputs ++ [ pkgs.gitMinimal ];
-          });
+          # `pkgs.lean4` is the released toolchain at this nixpkgs pin and comes
+          # from the binary cache, so no Lean build happens on a fresh store.
+          # Mathlib's tag names the same version; see `lakefile.toml`.
           llvm = pkgs.llvmPackages;
         in
         {
@@ -53,7 +29,7 @@
             name = "lean-llvm";
 
             packages = [
-              lean4
+              pkgs.lean4
               pkgs.git
               pkgs.coreutils
               pkgs.file
