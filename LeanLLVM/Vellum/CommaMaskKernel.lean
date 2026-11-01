@@ -598,7 +598,11 @@ theorem twoCallContext_preserved (x : BitVec 64) :
 
 The probe's exported functions are `UInt64`; this is the same statement at the
 type the C ABI uses.  The object-level connection is the IR bridge in
-`CommaMaskIR.lean` and the differential certificate in `probes/install/`. -/
+`CommaMaskIR.lean`, and `probes/install/` binds the installed objects to that
+bridge with kernel-derived certificates: the producer re-elaborates the proof
+module, checks this statement and its axiom footprint, and the selector
+reproduces the certificate byte for byte before installing a unit.  The
+differential transcript in the same directory is runtime evidence, not proof. -/
 
 def seamBaseline (x : UInt64) : UInt64 :=
   UInt64.ofBitVec (swar x.toBitVec)

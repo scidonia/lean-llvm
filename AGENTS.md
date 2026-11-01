@@ -65,10 +65,15 @@ needs the other two to match.
 - `tests/` holds textual IR exercised by the driver, and executable scenarios of
   user-facing routes: `m4-loop-gate.sh` drives the installer selector and
   asserts that a loop request without a covering theorem is refused and that the
-  baseline is installed instead; `m4-loop-emission.sh` drives the fixture-capture
+  baseline is installed instead; `m3-certificate-gate.sh` drives the same
+  selector against a certificate with one changed field, an absent certificate
+  and a structurally malformed one, and asserts strict refusal and non-strict
+  baseline fallback; `m4-loop-emission.sh` drives the fixture-capture
   route and the driver's command line, and asserts that the loop fixture is
   regenerated from the Lean emission and that a function header carrying an
-  unmodelled attribute is refused.
+  unmodelled attribute is refused.  The installer scenarios build their
+  manifest and tool shims in a private temporary directory: they reach no
+  compiler, proof checker, network or external service.
 
 ## What a change must satisfy
 
@@ -95,6 +100,34 @@ needs the other two to match.
   header is not checked: its parameter list is read up to the closing `)` and
   the rest of the line is ignored, so unmodelled declaration tokens can be
   accepted and dropped.  Do not claim total attribute rejection.
+- An installation certificate is data, not source.
+  `probes/install/InstallCertificate.lean` derives it from the imported proof
+  graph rebuilt from current project source, from a freshly source-elaborated
+  `CommaMaskIR`, and from the object, fixture and marker paths
+  the manifest names; it checks the theorem statement, the contract link and
+  the axiom footprint in the loaded environment and refuses a stale proof
+  module whose pinned fixtures differ from the files it hashes.
+  `probes/install/select.sh` parses the certificate with a closed grammar,
+  compares each field with the input it names, and reproduces the certificate
+  byte for byte before linking.  Never `source` a certificate, never accept a
+  supplied theorem, axiom set or target as proof, and keep certificate files
+  out of compiled units.
+- `probes/install/build.sh`, the app build and the selector serialize the
+  imported-graph rebuild, the proof-module olean rewrite and the certificate
+  producers under the `.lake/install-certificate.lock` directory, created
+  atomically by `mkdir`.  The install and app builders hold it through their
+  final manifest publication, and the selector holds it from before the
+  manifest is sourced through the link and selection record.  Not obtaining the
+  lock refuses before source elaboration or any published-input read; a lock
+  directory
+  left behind by a crashed run is removed only after verifying that no owner is
+  running. Lake warm-up builds and the fixture emitter are writers too: run them
+  through `probes/install/lake-locked.sh` rather than a bare `lake build` or
+  `lake exe`, which take the same lock for that command only. Do not run a
+  concurrent `lake build` that bypasses the wrapper. `probes/install/check.sh`
+  and `probes/app/check.sh` are the end-to-end routes;
+  `probes/install/build.sh` must run before reading the manifest or the
+  certificates it publishes.
 - The 64-bit seam identities are kernel-checked in
   `LeanLLVM/Vellum/CommaMaskKernel.lean` by a byte-lane argument.  Do not
   reintroduce `bv_decide`, `native_decide`, `sorry` or `admit`; the pins in

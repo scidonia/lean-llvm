@@ -7,12 +7,15 @@
 #   bash tests/m4-loop-gate.sh --fallback-conflict
 #
 # Each mode drives the selector CLI (probes/install/select.sh) against an
-# isolated manifest built in a temporary directory.  Only the compiler, linker
-# and inspection tools the selector invokes — clang, ld, file, nm and leanc —
-# are local shims in a private PATH; the remaining utilities (sha256sum, cut,
-# sed and the rest) are the real core utilities, operating on temporary inputs.
-# No compiler, linker or service is reached, and nothing outside the temporary
-# directory is written.
+# isolated manifest built in a temporary directory.  The tools the selector
+# invokes are local shims in a private PATH: clang, ld, file, nm and leanc;
+# lean, which answers `--version` only; and lake, which accepts the
+# imported-graph rebuild, the source-rebuild check and the certificate producer
+# and nothing else.  The remaining utilities (sha256sum, cut, sed and the rest)
+# are the real core utilities, operating on temporary inputs.  The temporary
+# tree mirrors the repository root the selector resolves the revision-bearing
+# pin files from.  No compiler, linker, proof checker or service is reached,
+# and nothing outside the temporary directory is written.
 #
 # --strict is G1: a strict loop request must be refused when the manifest's
 # theorem covers the candidate only.  --fallback is G2: the same request
@@ -49,15 +52,20 @@ fixtures=$work/fixtures
 units=$work/units
 outdir=$work/out
 rebuild=$work/rebuild
+proofs=$work/proofs
+canonical=$work/canonical
+mirror=$work
 link_log=$work/link.log
 manifest=$work/manifest.env
-selector=$work/select.sh
+selector=$mirror/probes/install/select.sh
 # Exit before the scenario's own assertions if the fixture cannot be built, so
 # a construction failure is never read as an assertion result.
 trap 'printf "SETUP: fixture construction failed: %s\n" "$BASH_COMMAND" >&2; exit 3' ERR
 set -e
 
-mkdir -p "$fakebin" "$fixtures/ir" "$units" "$outdir" "$rebuild" "$work/build"
+mkdir -p "$fakebin" "$fixtures/ir" "$units" "$outdir" "$rebuild" "$proofs" \
+  "$canonical" "$mirror/probes/install/build" \
+  "$mirror/.lake/build/lib/lean/LeanLLVM/Vellum"
 : > "$link_log"
 
 target=x86_64-unknown-linux-gnu
@@ -67,6 +75,7 @@ datalayout='e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16
   printf 'FAKE_TARGET=%q\n' "$target"
   printf 'FAKE_DATALAYOUT=%q\n' "$datalayout"
   printf 'FAKE_LINK_LOG=%q\n' "$link_log"
+  printf 'FAKE_CANONICAL_DIR=%q\n' "$canonical"
 } > "$fakebin/fake.env"
 
 # --- fake toolchain -------------------------------------------------------
@@ -80,6 +89,10 @@ set -euo pipefail
 . "$(dirname "$0")/fake.env"
 if [ "${1:-}" = "-print-target-triple" ]; then
   printf '%s\n' "$FAKE_TARGET"
+  exit 0
+fi
+if [ "${1:-}" = "--version" ]; then
+  printf 'clang version 18.1.8\n'
   exit 0
 fi
 out=
@@ -113,10 +126,15 @@ digest=$(sha256sum "$src" | cut -d' ' -f1)
 } > "$out"
 SHIM
 
-# ld -r: deterministic combination of the input objects.
+# ld -r: deterministic combination of the input objects, and a version answer
+# for the toolchain revision.
 cat > "$fakebin/ld" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${1:-}" = "--version" ]; then
+  printf 'GNU ld (GNU Binutils) 2.42\n'
+  exit 0
+fi
 out=
 inputs=()
 args=("$@")
@@ -233,10 +251,113 @@ done
 chmod +x "$out"
 SHIM
 
+# lean: a version answer only, for the toolchain revision record.
+cat > "$fakebin/lean" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$#" -eq 1 ] && [ "${1:-}" = "--version" ]; then
+  printf 'Lean (version 4.36.0-rc1, Release)\n'
+  exit 0
+fi
+echo "lean: unexpected invocation: $*" >&2
+exit 1
+SHIM
+
+# lake: the proof checker the selector drives.  Three command forms are
+# accepted: the imported-graph rebuild of the proof module, the source-rebuild
+# check, which succeeds without a proof system, and the certificate producer,
+# which publishes the canonical certificate of the requested unit derived from
+# the manifest inputs.  Any other invocation is refused.
+cat > "$fakebin/lake" <<'SHIM'
+#!/usr/bin/env bash
+set -euo pipefail
+. "$(dirname "$0")/fake.env"
+if [ "${1:-}" = build ]; then
+  [ "$#" -eq 2 ] && [ "$2" = LeanLLVM.Vellum.CommaMaskIR ] ||
+    { echo "lake: unexpected build arguments: $*" >&2; exit 1; }
+  exit 0
+fi
+[ "${1:-}" = env ] && [ "${2:-}" = lean ] ||
+  { echo "lake: only 'lake build' and 'lake env lean' are supported" >&2; exit 1; }
+shift 2
+if [ "${1:-}" = -o ]; then
+  [ "$#" -eq 3 ] &&
+    [ "$2" = .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean ] &&
+    [ "$3" = LeanLLVM/Vellum/CommaMaskIR.lean ] ||
+    { echo "lake: unexpected source-check arguments: $*" >&2; exit 1; }
+  exit 0
+fi
+[ "$#" -eq 1 ] && [ "$1" = probes/install/InstallCertificate.lean ] ||
+  { echo "lake: unexpected producer arguments: $*" >&2; exit 1; }
+case "${CERT_UNIT:-}" in
+  baseline|candidate) ;;
+  *) echo "lake: CERT_UNIT must name baseline or candidate" >&2; exit 1 ;;
+esac
+case "${CERT_MANIFEST:-}" in
+  /*) ;;
+  *) echo "lake: CERT_MANIFEST must be an absolute path" >&2; exit 1 ;;
+esac
+case "${CERT_OUT:-}" in
+  /*) ;;
+  *) echo "lake: CERT_OUT must be an absolute path" >&2; exit 1 ;;
+esac
+[ -f "$CERT_MANIFEST" ] || { echo "lake: no manifest at $CERT_MANIFEST" >&2; exit 1; }
+cp "$FAKE_CANONICAL_DIR/$CERT_UNIT.env" "$CERT_OUT"
+SHIM
+
 chmod +x "$fakebin/clang" "$fakebin/ld" "$fakebin/file" "$fakebin/nm" \
-  "$fakebin/leanc"
+  "$fakebin/leanc" "$fakebin/lean" "$fakebin/lake"
 PATH="$fakebin:$PATH"
 export PATH
+
+# The temporary tree mirrors the repository root the selector resolves: the
+# revision-bearing pin files, the selector at probes/install/select.sh, and
+# the project olean directory the source check writes into.
+for pinned in lean-toolchain flake.nix flake.lock lakefile.toml \
+  lake-manifest.json; do
+  cp "$repo/$pinned" "$mirror/$pinned"
+done
+cp "$selector_source" "$selector"
+chmod +x "$selector"
+if [ -f "$repo/probes/install/InstallCertificate.lean" ]; then
+  cp "$repo/probes/install/InstallCertificate.lean" \
+    "$mirror/probes/install/InstallCertificate.lean"
+fi
+if [ -f "$repo/probes/install/toolchain-id.sh" ]; then
+  cp "$repo/probes/install/toolchain-id.sh" \
+    "$mirror/probes/install/toolchain-id.sh"
+else
+  # The selector's sibling helper: the same nine-line record, computed from the
+  # mirrored pin files and the version commands' stdout.
+  cat > "$mirror/probes/install/toolchain-id.sh" <<'HELPER'
+#!/usr/bin/env bash
+# The toolchain revision: SHA-256 of a fixed nine-line record built from the
+# revision-bearing pin files at the repository root and the version commands'
+# stdout under LC_ALL=C.  A single component change changes the digest.
+toolchain_id() { # repository root
+  local root record
+  root=$(cd "$1" && pwd)
+  record=$(
+    printf 'leanllvm-toolchain-v1\n'
+    printf 'lean-toolchain=%s\n' "$(sha256sum "$root/lean-toolchain" | cut -d' ' -f1)"
+    printf 'flake-nix=%s\n' "$(sha256sum "$root/flake.nix" | cut -d' ' -f1)"
+    printf 'flake-lock=%s\n' "$(sha256sum "$root/flake.lock" | cut -d' ' -f1)"
+    printf 'lakefile=%s\n' "$(sha256sum "$root/lakefile.toml" | cut -d' ' -f1)"
+    printf 'lake-manifest=%s\n' "$(sha256sum "$root/lake-manifest.json" | cut -d' ' -f1)"
+    printf 'lean-version=%s\n' "$(LC_ALL=C lean --version | sha256sum | cut -d' ' -f1)"
+    printf 'clang-version=%s\n' "$(LC_ALL=C clang --version | sha256sum | cut -d' ' -f1)"
+    printf 'ld-version=%s\n' "$(LC_ALL=C ld --version | sha256sum | cut -d' ' -f1)"
+  )
+  printf 'sha256:%s\n' "$(printf '%s\n' "$record" | sha256sum | cut -d' ' -f1)"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  here=$(cd "$(dirname "$0")" && pwd)
+  toolchain_id "$here/../.."
+fi
+HELPER
+  chmod +x "$mirror/probes/install/toolchain-id.sh"
+fi
 
 # --- fixtures -------------------------------------------------------------
 # The unit IR is the repository's fixture, copied; each object is built with
@@ -284,6 +405,46 @@ fi
 
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
+# The certificate's field values are derived from the files the manifest names,
+# from the toolchain the selector observes and from the pinned proof data, so a
+# fixture value cannot silently disagree with the input it claims.
+axioms=$(
+  sed -n 's/.*IR_refines. depends on axioms: \[\(.*\)\]/\1/p' \
+    "$repo/LeanLLVMTest/Vellum.lean" |
+    tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
+    LC_ALL=C sort | paste -sd, -
+)
+[ -n "$axioms" ] || { echo "SETUP: cannot read the pinned axiom set" >&2; exit 3; }
+# The toolchain revision is the SHA-256 of a fixed nine-line record: a header,
+# then the digest of each revision-bearing pin file and of each version
+# command's stdout, in that order, every line terminated by one LF.  A single
+# component change changes the digest.
+hash_bytes() { sha256sum "$1" | cut -d' ' -f1; }
+hash_stdout() { LC_ALL=C "$@" | sha256sum | cut -d' ' -f1; }
+toolchain_record() { # [lakefile digest override]
+  local lakefile=${1:-$(hash_bytes "$mirror/lakefile.toml")}
+  printf 'leanllvm-toolchain-v1\n'
+  printf 'lean-toolchain=%s\n' "$(hash_bytes "$mirror/lean-toolchain")"
+  printf 'flake-nix=%s\n' "$(hash_bytes "$mirror/flake.nix")"
+  printf 'flake-lock=%s\n' "$(hash_bytes "$mirror/flake.lock")"
+  printf 'lakefile=%s\n' "$lakefile"
+  printf 'lake-manifest=%s\n' "$(hash_bytes "$mirror/lake-manifest.json")"
+  printf 'lean-version=%s\n' "$(hash_stdout lean --version)"
+  printf 'clang-version=%s\n' "$(hash_stdout clang --version)"
+  printf 'ld-version=%s\n' "$(hash_stdout ld --version)"
+}
+toolchain_revision="sha256:$(toolchain_record | sha256sum | cut -d' ' -f1)"
+if ! printf '%s' "$toolchain_revision" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+  echo "SETUP: cannot compute the toolchain revision" >&2
+  exit 3
+fi
+helper_revision=$(cd "$mirror" && bash "$mirror/probes/install/toolchain-id.sh")
+if [ "$helper_revision" != "$toolchain_revision" ]; then
+  echo "SETUP: the toolchain helper and the artifact's toolchain revision disagree" >&2
+  exit 3
+fi
+schema_version=leanllvm-install-v1
+
 cat > "$manifest" <<EOF
 kind=proof-bound
 target=$target
@@ -311,13 +472,80 @@ caller=$fixtures/caller.o
 baseline=$fixtures/baseline.o
 candidate=$fixtures/candidate.o
 loop=$fixtures/loop.o
+# The manifest is sourced shell, so both transcript key pairs are read as
+# ordinary assignments: certificate and differential name the same bytes, and
+# only the differential pair is a production binding.  The extra keys are inert
+# on the certificate route.
 certificate=$fixtures/differential.txt
+differential=$fixtures/differential.txt
 caller_sha256=$(sha "$fixtures/caller.o")
 baseline_sha256=$(sha "$fixtures/baseline.o")
 candidate_sha256=$(sha "$fixtures/candidate.o")
 loop_sha256=$(sha "$fixtures/loop.o")
 certificate_sha256=$(sha "$fixtures/differential.txt")
+differential_sha256=$(sha "$fixtures/differential.txt")
 EOF
+
+# The candidate certificate is valid in every G1--G4 run, so a refused loop
+# cannot be explained by a missing or invalid certificate.
+proof_baseline=$work/proofs/proof_baseline.env
+proof_candidate=$work/proofs/proof_candidate.env
+{
+  printf 'proof_baseline=%s\n' "$proof_baseline"
+  printf 'proof_candidate=%s\n' "$proof_candidate"
+} >> "$manifest"
+
+manifest_value() { # key
+  sed -n "s/^$1=//p" "$manifest" | sed -n '1p'
+}
+
+write_certificate() { # path unit
+  local path=$1 art_unit=$2
+  {
+    printf 'schema=%s\n' "$schema_version"
+    printf 'unit=%s\n' "$art_unit"
+    printf 'unit_object_sha256=%s\n' "$(sha "$(manifest_value "$art_unit")")"
+    printf 'unit_fixture_sha256=%s\n' \
+      "$(sha "$(manifest_value "${art_unit}_fixture")")"
+    printf 'unit_marker_sha256=%s\n' \
+      "$(sha "$(manifest_value "${art_unit}_marker")")"
+    printf 'baseline_object_sha256=%s\n' "$(sha "$(manifest_value baseline)")"
+    printf 'candidate_object_sha256=%s\n' "$(sha "$(manifest_value candidate)")"
+    printf 'baseline_fixture_sha256=%s\n' \
+      "$(sha "$(manifest_value baseline_fixture)")"
+    printf 'candidate_fixture_sha256=%s\n' \
+      "$(sha "$(manifest_value candidate_fixture)")"
+    printf 'baseline_marker_sha256=%s\n' \
+      "$(sha "$(manifest_value baseline_marker)")"
+    printf 'candidate_marker_sha256=%s\n' \
+      "$(sha "$(manifest_value candidate_marker)")"
+    printf 'theorem=%s\n' "$(manifest_value theorem)"
+    printf 'axioms=%s\n' "$axioms"
+    printf 'contract=%s\n' "$(manifest_value contract)"
+    printf 'target_triple=%s\n' "$target"
+    printf 'data_layout=%s\n' "$datalayout"
+    printf 'toolchain_revision=%s\n' "$toolchain_revision"
+  } > "$path"
+}
+
+# The canonical certificate of each unit is derived from the manifest inputs,
+# and the producer shim publishes it.
+write_certificate "$canonical/baseline.env" baseline
+write_certificate "$canonical/candidate.env" candidate
+(cd "$mirror" &&
+  CERT_UNIT=baseline CERT_MANIFEST="$manifest" CERT_OUT="$proof_baseline" \
+    lake env lean probes/install/InstallCertificate.lean)
+(cd "$mirror" &&
+  CERT_UNIT=candidate CERT_MANIFEST="$manifest" CERT_OUT="$proof_candidate" \
+    lake env lean probes/install/InstallCertificate.lean)
+cmp -s "$canonical/baseline.env" "$proof_baseline" ||
+  { echo "SETUP: the producer's baseline certificate is not the derived one" >&2; exit 3; }
+cmp -s "$canonical/candidate.env" "$proof_candidate" ||
+  { echo "SETUP: the producer's candidate certificate is not the derived one" >&2; exit 3; }
+{
+  printf 'proof_baseline_sha256=%s\n' "$(sha "$proof_baseline")"
+  printf 'proof_candidate_sha256=%s\n' "$(sha "$proof_candidate")"
+} >> "$manifest"
 
 # The conflict manifest repeats the clean manifest and ends with assignments
 # that name the caller's own `unit` and `strict` variables.  The selector reads
@@ -329,11 +557,6 @@ cat >> "$conflict_manifest" <<'CONFLICT'
 unit=candidate
 strict=0
 CONFLICT
-
-# The selector is run as the build integrator runs it: its copy lives beside
-# an empty build directory so its relative link log stays inside the fixture.
-cp "$selector_source" "$selector"
-chmod +x "$selector"
 
 set +e
 trap - ERR

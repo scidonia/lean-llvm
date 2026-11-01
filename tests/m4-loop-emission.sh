@@ -317,8 +317,10 @@ if [ "$mode" = --capture ]; then
     "$work/lean-prefix/include"
 
   # The tree starts from the fixture the repository checks in and the route's
-  # own inputs.
+  # own inputs.  The capture command runs the emitter through the repository
+  # lock wrapper, so the copied tree needs that sibling script too.
   cp "$capture_source" "$tree_ir/capture.sh"
+  cp "$repo/probes/install/lake-locked.sh" "$tree/probes/install/lake-locked.sh"
   cp "$start_fixture" "$tree_ir/loop.ll"
 
   # The constant the tree's fixture binds, and the pattern the Lean body

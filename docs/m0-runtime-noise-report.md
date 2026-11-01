@@ -303,8 +303,12 @@ not against an unversioned page.
    attribute-checked yet, so the refusal promise covers function definitions.
    The manifest binds the target
    triple, the data layout and the target-feature policy (`none`), the contract
-   and theorem names, the fixture, marker, caller, unit and certificate hashes,
-   and selection recomputes the triple and layout before accepting a unit.
+   and theorem names, the fixture, marker, caller and unit hashes, the
+   differential transcript as ancillary evidence, and the digests of two
+   kernel-derived installation certificates. Selection recomputes the triple
+   and layout, checks every certificate field against the object, fixture and
+   marker it names, re-elaborates the proof module from source and requires the
+   producer to reproduce the same certificate bytes before accepting a unit.
 6. **Then the memory-using loop**, where heap relations, framing and the
    runtime-call contracts enter. That remains the programme's substantive M4
    target; the pure slice is an earlier integration gate. Current status: the
@@ -327,9 +331,14 @@ not against an unversioned page.
 - The exact-mask formula and a candidate's implementation of it are proved:
   `swar_eq_spec` and `byteLoop_eq_spec` by the byte-lane argument, and
   `IR_refines` over the emitted fixtures. The selected objects are rebuilt from
-  those fixtures and must match byte for byte, so the installed code is the
-  code the theorem is about. The remaining unproved link is the candidate
-  fixture's provenance: it is generated from a lane-by-lane transcription of
+  those fixtures and must match byte for byte, so the installed object's bytes
+  are bound to the fixtures the theorem parses and pins — a hash-and-rebuild
+  binding, not a proof that the compiler's lowering or the running machine
+  instructions match the Lean model. The certificate binds that connection by
+  hashing the objects, fixtures and markers and by reproducing itself from a
+  fresh kernel check at selection time; it does not establish lowering, linking,
+  ABI or runtime behaviour. Fixture provenance remains unproved as well:
+  the candidate fixture is generated from a lane-by-lane transcription of
   the Lean loop, and only the differential transcript compares the two. The
   contextual replacement theorem is stated for a caller whose body is a call
   whose result is returned, in an equality form and in the directional form of

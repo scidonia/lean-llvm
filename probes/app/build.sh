@@ -5,7 +5,49 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 install=$(cd "$here/../install" && pwd)
+repo=$(cd "$here/../.." && pwd)
 build=${BUILD_DIR:-"$here/build"}
+
+# The build removes its previous output and then elaborates the proof module
+# from source and runs the certificate producers, so it takes the same
+# repository lock the installer build and the selector take.  The lock is a
+# directory created atomically by `mkdir`; a contender refuses instead of
+# racing, and only the owner removes it.  It is taken before the previous
+# output is removed, so a contended build leaves the published certificates,
+# manifest and objects in place.  A lock left behind by a crashed run refuses
+# too: removing it is a human decision after checking that no owner is running.
+lock_dir="$repo/.lake/install-certificate.lock"
+lock_held=0
+
+acquire_lock() {
+  mkdir -p "$repo/.lake"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    echo "app: another source elaboration holds $lock_dir" >&2
+    echo "app: if no such run exists, verify that and remove that directory" >&2
+    return 1
+  fi
+  lock_held=1
+}
+
+release_lock() {
+  [ "$lock_held" = 1 ] || return 0
+  lock_held=0
+  if ! rmdir "$lock_dir" 2>/dev/null; then
+    echo "app: could not remove $lock_dir" >&2
+    echo "app: verify that no run owns it and remove that directory" >&2
+    return 1
+  fi
+}
+cleanup() {
+  local status=$?
+  release_lock || status=1
+  exit "$status"
+}
+trap cleanup EXIT
+
+if ! acquire_lock; then
+  exit 1
+fi
 rm -rf "$build"
 mkdir -p "$build"
 
@@ -64,13 +106,17 @@ fi
   echo "RESULT: PASS"
 } > "$build/differential.txt"
 
-# 5. Manifest in the shape probes/install/select.sh verifies.
+# 5. Manifest in the shape probes/install/select.sh verifies, followed by the
+#    two kernel-derived certificates over this build's units.  The manifest is
+#    written first because the producer hashes the object paths it names; the
+#    certificate digests are appended once the certificates exist.
 target="$(clang -print-target-triple)"
 datalayout="$(printf '' | clang -O0 -S -emit-llvm -x c - -o - \
   | sed -n 's/^target datalayout = "\(.*\)"$/\1/p')"
 triple="$target"
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 cat > "$build/manifest.env" <<EOF
+schema=leanllvm-install-v1
 kind=proof-bound
 target=$target
 triple=$target
@@ -97,12 +143,46 @@ caller=$build/app.o
 baseline=$build/baseline.o
 candidate=$build/candidate.o
 loop=$build/loop.o
-certificate=$build/differential.txt
+differential=$build/differential.txt
 caller_sha256=$(sha "$build/app.o")
 baseline_sha256=$(sha "$build/baseline.o")
 candidate_sha256=$(sha "$build/candidate.o")
 loop_sha256=$(sha "$build/loop.o")
-certificate_sha256=$(sha "$build/differential.txt")
+differential_sha256=$(sha "$build/differential.txt")
+proof_baseline=$build/proof_baseline.env
+proof_candidate=$build/proof_candidate.env
 EOF
+
+# `lake build` does not track `include_str`, so rebuild the imported graph from
+# current source and then elaborate the proof module from source before the
+# producers import it.  The build acquired the repository lock before it
+# removed its previous output; the lock is held through the manifest
+# publication below and released only at the end.
+(cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskIR)
+(cd "$repo" &&
+  lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean \
+    LeanLLVM/Vellum/CommaMaskIR.lean)
+for unit in baseline candidate; do
+  (cd "$repo" &&
+    CERT_UNIT="$unit" CERT_MANIFEST="$build/manifest.env" \
+      CERT_OUT="$build/proof_$unit.env" \
+      lake env lean probes/install/InstallCertificate.lean)
+  [ -s "$build/proof_$unit.env" ] || {
+    echo "app: the producer wrote no $unit certificate" >&2
+    exit 1
+  }
+done
+
+{
+  cat "$build/manifest.env"
+  printf 'proof_baseline_sha256=%s\n' "$(sha "$build/proof_baseline.env")"
+  printf 'proof_candidate_sha256=%s\n' "$(sha "$build/proof_candidate.env")"
+} > "$build/manifest.env.tmp.$$"
+mv "$build/manifest.env.tmp.$$" "$build/manifest.env"
+
+# The manifest is published; only now release the repository lock.
+if ! release_lock; then
+  exit 1
+fi
 
 echo "app: $build/manifest.env"

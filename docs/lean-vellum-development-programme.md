@@ -172,6 +172,8 @@ Connecting this claim to the original Lean specification and the final machine e
 
 A proved source specification does not erase these compiler assumptions. Conversely, the project need not first verify the entire Lean compiler to deliver certified LLVM replacement.
 
+The installation certificate narrows one gap it can reach: it binds the checked proof artifact to the object, fixture, marker, target and toolchain bytes actually used, and the selector re-derives it from a fresh kernel check before installing a unit. It is a hash-and-rebuild bridge, not a theorem about lowering, linking or machine instructions, and the manifest is still executed as shell, so the integrity of the local manifest is assumed rather than proved.
+
 ## 8. Validation and release policy
 
 Maintain a corpus combining small semantic cases, real compiler output and adversarial replacement attempts. Cover overflow flags, poison propagation, invalid accesses, aliasing, alignment, lifetime, zero-length inputs, loop divergence, external effects and target mismatches as the supported fragment grows.
@@ -282,14 +284,32 @@ accepted on the strength of a narrower result.
   memory-effectful call environments, and a
   `replaceFunction_sound`-style module theorem for a memory-using callee.  The
   contextual theorem covers one pure caller (`LeanLLVM/Vellum/SeamContext.lean`).
-- **M3 — partly met; certificate-bound installation open.** The selector
-  (`probes/install/select.sh`) verifies hashes, fixture rebuilds and target
-  configuration, and accepts a unit only when the manifest's theorem covers that
-  unit.  The memory-backed loop is refused on exactly that ground: no checked
-  theorem covers it, and a differential transcript ending `RESULT: PASS` is
-  never treated as proof.  Open: a serialized proof artifact generated from
-  kernel checking, rejection tests that mutate that artifact, and a semantic
-  attribute policy richer than `attributes=reject` over attribute-free fixtures.
+- **M3 — machinery in place; certificate-bound installation openly scoped.**
+  `probes/install/build.sh` rebuilds the imported proof graph and re-elaborates
+  `CommaMaskIR` from source, then runs
+  `probes/install/InstallCertificate.lean` to publish one baseline and one
+  candidate certificate: a deterministic seventeen-field data file naming the
+  exact theorem, the checked axiom footprint, the contract, the target triple,
+  the data layout, the toolchain revision, and the SHA-256 of the unit and of
+  both refinement operands' objects, fixtures and markers.  The selector
+  (`probes/install/select.sh`) refuses unknown units and always refuses
+  `UNIT=loop`, requires the manifest's contract and theorem to be the
+  installation ones, parses the certificate as closed data, compares every
+  field with the input it names and the toolchain it observes, and then
+  rebuilds the imported proof graph, re-elaborates the proof module and
+  reproduces the certificate byte for byte before linking.  Strict mode emits
+  nothing on failure; non-strict mode installs the baseline and records the
+  explicit proof-rejected fallback.  The
+  gate (`tests/m3-certificate-gate.sh`) covers each field, the absent
+  certificate, four structural malformations and a stale imported proof source.
+  The memory-backed loop is
+  still refused on the original ground: no checked theorem covers it, a
+  differential transcript ending `RESULT: PASS` is never treated as proof, and
+  no loop certificate exists.  Open: a semantic attribute policy richer than
+  `attributes=reject` over attribute-free fixtures; a theorem relating the
+  compiled object or machine instructions to the model (the certificate is a
+  hash-and-rebuild bridge, not that theorem); and the trusted compiler, runtime
+  and manifest-shell boundary.
 - **M4 — open.** The loop fixture (`probes/install/ir/loop.ll`) is printed from
   the Lean AST (`LeanLLVM/Vellum/CommaMaskLoopBody.lean`) by
   `lake exe leanllvm-loop-emit` through `LeanLLVM.Function.render`, and

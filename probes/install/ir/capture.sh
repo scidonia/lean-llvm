@@ -94,10 +94,12 @@
 # loop.ll does not go through clang.  It is printed from the `loopFunction` AST
 # in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
 #
-#   lake exe leanllvm-loop-emit
+#   bash probes/install/lake-locked.sh exe leanllvm-loop-emit
 #
 # which is `LoopEmit.lean` rendering that AST with `LeanLLVM.Function.render`,
-# the framework's own printer.  It is not the output of Lean's native compiler
+# the framework's own printer.  The wrapper holds the repository
+# source-elaboration lock while Lake builds or runs the emitter, then releases
+# it.  It is not the output of Lean's native compiler
 # (`lean -c`): no C emission and no clang lowering is involved.  The function
 # is inside the modelled subset, so nothing is stripped on this path -- the
 # text below the header is what the printer wrote.  The emitter refuses to
@@ -279,7 +281,10 @@ emit "$here/candidate.ll" '; The candidate seam as emitted, in the fragment `Lea
 
 # --- the loop fixture, printed from its Lean AST -------------------------
 
-(cd "$repo" && lake exe leanllvm-loop-emit) > "$work/loop.ll"
+# The emitter is a Lake executable, so building it writes project build state.
+# It runs under the repository lock the certificate routes take, and releases
+# it before this script continues.
+(cd "$repo" && bash "$here/../lake-locked.sh" exe leanllvm-loop-emit) > "$work/loop.ll"
 opt -passes=verify -disable-output "$work/loop.ll"
 cp "$work/loop.ll" "$here/loop.ll"
 
