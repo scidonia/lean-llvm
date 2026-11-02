@@ -45,7 +45,7 @@ established; the scalar executable runs the corpus. **Met** on that content:
 The routes' staged cuts are recorded in `docs/json-route-evidence.md`: the API
 route reddens eight refusals including the `01` number case, the corpus route
 reddens its tampered-expectation assertion, and the tape route reddens six
-guards including the span check.  Those cuts are runtime overrides in
+guards including `correctTape`.  Those cuts are runtime overrides in
 throwaway copies, not edits to definitions that carry proofs; the tape route's
 individual span-mismatch refusals are not shown sensitive by a cut, and the
 evidence document says so.
