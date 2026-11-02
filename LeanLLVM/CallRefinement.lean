@@ -4,39 +4,48 @@ One-directional refinement through a call environment.
 A call environment is deterministic, but `none` (an unresolved call) is `ub`,
 which admits every outcome.  So the environments do have a non-trivial order:
 
-* `CallRefines calls' calls sym` holds when, on every argument list, either the
-  source environment is `ub` (`none`) — and therefore admits every outcome — or
-  the two environments agree.  A target that returns a value where the source
-  is `ub` is a refinement; a target that is `ub` where the source returns is
-  not.
+* `CallRefines calls' calls sym` holds when, on every argument list, every caller
+  memory and every caller allocator state, either the source environment is `ub`
+  (`none`) — and therefore admits every outcome — or the two environments agree
+  completely, on the returned value, on the memory the caller adopts and on the
+  allocator state it resumes from.  A target that returns a value where the
+  source is `ub` is a refinement; a target that is `ub` where the source returns
+  is not.
 * If every symbol relates this way, a function's behaviours under the target
   environment are included in its behaviours under the source environment.
 
 This is the contextual rule the seam replacement uses, and it is directional:
 the candidate may define a call the baseline leaves undefined, never the
-reverse.  Memory effects across calls are still outside the model.
+reverse.  The agreement it demands is exact, which is too strong for a callee
+that writes outside its own frame; the framed relation is a separate one.
 -/
 import LeanLLVM.Semantics
 
 namespace LeanLLVM
 
-/-- `calls'` refines `calls` at `sym`: on every argument list the source is
-`ub`, or the two agree.  `none` is `ub`, so the source then admits every
-outcome and the target's result is included. -/
+/-- `calls'` refines `calls` at `sym`: on every argument list, every caller
+memory and every caller allocator state, the source is `ub` — no defined outcome,
+hence every outcome — or the two agree completely: the same returned value, the
+same memory and the same allocator state.  Complete agreement is why the
+value-level refinement proofs lift with only their `call` case rewritten, and it
+is too strong for a callee that writes. -/
 def CallRefines (calls' calls : Calls) (sym : String) : Prop :=
-  ∀ args, calls sym args = none ∨ calls' sym args = calls sym args
+  ∀ args mem next,
+    calls sym args mem next = none ∨
+      calls' sym args mem next = calls sym args mem next
 
 theorem CallRefines.eq_of_source_defined {calls' calls : Calls} {sym : String}
-    (h : CallRefines calls' calls sym) {args : List Value} {v : Value}
-    (hs : calls sym args = some v) : calls' sym args = some v := by
-  rcases h args with hnone | heq
+    (h : CallRefines calls' calls sym) {args : List Value} {mem : Mem} {next : Nat}
+    {r : CallOutcome}
+    (hs : calls sym args mem next = some r) : calls' sym args mem next = some r := by
+  rcases h args mem next with hnone | heq
   · rw [hnone] at hs; cases hs
   · rw [heq]; exact hs
 
 theorem CallRefines.ub_of_target_ub {calls' calls : Calls} {sym : String}
-    (h : CallRefines calls' calls sym) {args : List Value}
-    (ht : calls' sym args = none) : calls sym args = none := by
-  rcases h args with hnone | heq
+    (h : CallRefines calls' calls sym) {args : List Value} {mem : Mem} {next : Nat}
+    (ht : calls' sym args mem next = none) : calls sym args mem next = none := by
+  rcases h args mem next with hnone | heq
   · exact hnone
   · rw [heq] at ht; exact ht
 
@@ -62,12 +71,12 @@ theorem evalInstr_refines {calls' calls : Calls}
       split at he
       · rename_i vs hvs
         split at he
-        · rename_i v hv
-          rcases h callee vs with hnone | heq
+        · rename_i r hr
+          rcases h callee vs s.mem s.next with hnone | heq
           · exact Or.inr (by simp only [hnone])
-          · have hs : calls callee vs = some v := heq ▸ hv
+          · have hs : calls callee vs s.mem s.next = some r := heq ▸ hr
             exact Or.inl (by simpa only [hvs, hs] using he)
-        · rename_i hv
+        · rename_i hr
           simp at he
       · rename_i hvs
         simp at he
@@ -86,13 +95,13 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
       | none => rfl
       | some vs =>
           rw [hvs] at he
-          cases hv : calls' callee vs with
+          cases hr : calls' callee vs s.mem s.next with
           | none =>
-              have hsrc : calls callee vs = none :=
-                CallRefines.ub_of_target_ub (h callee) hv
+              have hsrc : calls callee vs s.mem s.next = none :=
+                CallRefines.ub_of_target_ub (h callee) hr
               simp only [hsrc]
-          | some v =>
-              simp only [hv] at he
+          | some r =>
+              simp only [hr] at he
               cases he
   | binop d op w a b => intro he; exact he
   | icmp d p w a b => intro he; exact he

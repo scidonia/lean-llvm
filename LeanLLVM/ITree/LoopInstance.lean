@@ -751,7 +751,8 @@ theorem loop_candidate_beh_bridge (x : BitVec 64) (o : Outcome)
     · exact absurd (runFuel_outcome_unique hn h19) (by intro h; nomatch h)
     · exact runFuel_outcome_unique hn h19
   subst ho'
-  rcases simtt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+  rcases simtt_runFuel_some noCalls noCalls_pureEnv (loopFrame x)
+      (Outcome.AgreesOutside (loopFrame x))
       loopFunction candidateFunction [.int 64 x] 19 10000
       (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_simtt x) h19 with
     hub | ⟨vT, vS, memT, memS, hEq, hrS, hpost⟩

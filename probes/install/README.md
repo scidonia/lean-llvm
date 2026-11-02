@@ -230,8 +230,10 @@ some unmodelled tokens, so the refusal promise covers function definitions, not
   (`LeanLLVM/Vellum/SeamContext.lean`), in both an equality form and the
   directional form of `LeanLLVM/CallRefinement.lean`. The environment is
   deterministic; `none` is `ub`, so a defined target call refines an undefined
-  source one but not the reverse. Calls still have no memory effects, so there
-  is no memory-aware module theorem.
+  source one but not the reverse. An environment returns the callee's value,
+  memory and allocator state, and the caller adopts them; the replacement
+  theorem's environment agreement covers all three, so the theorem's frame is
+  inert and no contextual replacement whose frame is load-bearing is claimed.
 - One toolchain, one target, no benchmark: no timing was measured, and none of
   the checks above is evidence about speed.
 

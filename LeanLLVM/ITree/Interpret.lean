@@ -10,6 +10,13 @@ gives, the tree ends in an outcome, `none` for an exhausted budget and
 `ub` and `timeout` are distinct events with the empty response type: `ub` is a
 completed semantic outcome, while `timeout` is a finite-budget artifact that no
 run observed by `Beh` produces.
+
+The call event carries a symbol and an argument list, and its response is a
+value: the tree has no place to put a callee's memory or its allocator.  So the
+tree is the fuel semantics only for the environments `PureEnv` describes — those
+whose returned value depends on neither the caller's memory nor its allocator,
+and which leave both exactly as they found them.  `noCalls` qualifies; a
+memory-backed body does not, and this layer does not model one.
 -/
 import ITree.Core
 import LeanLLVM.Semantics
@@ -28,8 +35,9 @@ inductive Ev : Type → Type where
   | load (addr : Nat) (ty : Ty) : Ev (Option Value)
   /-- A store; the response acknowledges the write. -/
   | store (addr : Nat) (ty : Ty) (v : Value) : Ev Unit
-  /-- A call; the response is the linker's answer, `none` when the symbol is
-  unresolved. -/
+  /-- A call; the response is the value the environment returns at `retAt`, and
+  `none` when the symbol is unresolved.  Only a `PureEnv` environment can be
+  described this way: the event carries no memory and no allocator. -/
   | call (callee : String) (args : List Value) : Ev (Option Value)
   /-- Undefined behaviour as a stuck node. -/
   | ub : Ev Empty
@@ -41,6 +49,34 @@ def ubT : Tree Ev Outcome := vis Ev.ub Empty.elim
 
 /-- Exhausted fuel, as a tree with no continuation. -/
 def timeoutT : Tree Ev Outcome := vis Ev.timeout Empty.elim
+
+/-! ### The environments the tree layer can describe -/
+
+/-- The value a call environment returns, read at the reserved state (empty
+memory, allocator base `1`): the tree layer's call event carries a value and
+nothing else. -/
+def retAt (calls : Calls) (callee : String) (args : List Value) : Option Value :=
+  (calls callee args [] 1).map fun r => r.ret
+
+/-- The call environments the tree layer can describe.  Its call event carries a
+value, no memory and no allocator, so the tree is the fuel semantics only for
+environments whose returned value depends on neither the caller's memory nor its
+allocator and which leave both exactly as they found them.  `noCalls` qualifies;
+a memory-backed body does not, and the tree layer does not model one. -/
+def PureEnv (calls : Calls) : Prop :=
+  (∀ callee args mem next mem' next',
+      (calls callee args mem next).map (fun r => r.ret) =
+        (calls callee args mem' next').map (fun r => r.ret)) ∧
+    (∀ callee args mem next r, calls callee args mem next = some r →
+      r.mem = mem ∧ r.next = next)
+
+theorem noCalls_pureEnv : PureEnv noCalls := by
+  constructor
+  · intro callee args mem next mem' next'
+    rfl
+  · intro callee args mem next r h
+    simp only [noCalls] at h
+    cases h
 
 /-! ### The interpretation -/
 
@@ -165,8 +201,9 @@ inductive Exec (calls : Calls) : Tree Ev Outcome → Mem → Option Outcome → 
       Exec calls (k ()) (storeMem m ty v addr) r →
       Exec calls (vis (Ev.store addr ty v) k) m r
   | call {callee : String} {args : List Value}
-      {k : Option Value → Tree Ev Outcome} {m : Mem} {r : Option Outcome} :
-      Exec calls (k (calls callee args)) m r →
+      {k : Option Value → Tree Ev Outcome} {m : Mem} {r : Option Outcome}
+      (hpure : PureEnv calls) :
+      Exec calls (k (retAt calls callee args)) m r →
       Exec calls (vis (Ev.call callee args) k) m r
   | ub {k : Empty → Tree Ev Outcome} {m : Mem} :
       Exec calls (vis Ev.ub k) m (some Outcome.ub)
@@ -179,12 +216,18 @@ The proof is constructive: every `runFuel` outcome is a leaf of the tree under
 the canonical resolution.
 -/
 
-/-- Every instruction except `store` leaves the memory untouched. -/
-theorem evalInstr_mem_of_not_store (calls : Calls) (s : State) (i : Instr) (s' : State)
+/-- Every instruction that is neither a `store` nor a `call` leaves the memory
+untouched.  Those two are the instructions that can write: a store writes the
+bytes it is given, and a call adopts the memory its callee leaves. -/
+theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Instr)
+    (s' : State)
     (hns : ∀ (ty : Ty) (v p : Operand), i ≠ .store ty v p)
+    (hnc : ∀ (d : String) (rt : Ty) (c : String) (args : List (Ty × Operand)),
+      i ≠ .call d rt c args)
     (h : evalInstr calls s i = some s') : s'.mem = s.mem := by
   cases i with
   | store ty v p => exact absurd rfl (hns ty v p)
+  | call d rt c args => exact absurd rfl (hnc d rt c args)
   | binop d op w a b =>
       simp only [evalInstr] at h
       repeat' split at h
@@ -214,10 +257,6 @@ theorem evalInstr_mem_of_not_store (calls : Calls) (s : State) (i : Instr) (s' :
       repeat' split at h
       all_goals (cases h <;> rfl)
   | load d ty p =>
-      simp only [evalInstr] at h
-      repeat' split at h
-      all_goals (cases h <;> rfl)
-  | call d rt c args =>
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
@@ -349,8 +388,8 @@ theorem exec_instrT_store (calls : Calls) (s : State) (ty : Ty) (v p : Operand)
                   rw [storeValue_mem s ty vv addr s' hS] at h
                   exact h
 
-theorem exec_instrT_call (calls : Calls) (s : State) (d : String) (retTy : Ty)
-    (callee : String) (args : List (Ty × Operand))
+theorem exec_instrT_call (calls : Calls) (hpure : PureEnv calls) (s : State)
+    (d : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
     (k : State → Tree Ev Outcome) (r : Option Outcome)
     (hok : ∀ s', evalInstr calls s (.call d retTy callee args) = some s' →
       Exec calls (k s') s'.mem r)
@@ -365,26 +404,34 @@ theorem exec_instrT_call (calls : Calls) (s : State) (d : String) (retTy : Ty)
       simp only [instrT, ha]
       exact Exec.ub
   | some vs =>
-      cases hC : calls callee vs with
+      cases hC : calls callee vs s.mem s.next with
       | none =>
+          have hret : retAt calls callee vs = none := by
+            simp only [retAt, ← hpure.1 callee vs s.mem s.next [] 1, hC]
+            rfl
           have hE : evalInstr calls s (.call d retTy callee args) = none := by
             simp [evalInstr, ha, hC]
           rw [hub hE]
           simp only [instrT, ha]
-          refine Exec.call ?_
-          simp only [hC]
+          refine Exec.call hpure ?_
+          simp only [hret]
           exact Exec.ub
-      | some val =>
-          have hE : evalInstr calls s (.call d retTy callee args) = some (s.bind d val) := by
-            simp [evalInstr, ha, hC]
+      | some out =>
+          have hret : retAt calls callee vs = some out.ret := by
+            simp only [retAt, ← hpure.1 callee vs s.mem s.next [] 1, hC]
+            rfl
+          obtain ⟨hm, hn⟩ := hpure.2 callee vs s.mem s.next out hC
+          have hE : evalInstr calls s (.call d retTy callee args) =
+              some (s.bind d out.ret) := by
+            simp only [evalInstr, ha, hC, hm, hn, State.bind]
           simp only [instrT, ha]
-          refine Exec.call ?_
-          simp only [hC]
-          simpa [State.bind] using hok (s.bind d val) hE
+          refine Exec.call hpure ?_
+          simp only [hret]
+          exact hok (s.bind d out.ret) hE
 
 /-! ### Straight-line code -/
 
-theorem exec_codeT (calls : Calls) :
+theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
     ∀ (is : List Instr) (s : State) (k : State → Tree Ev Outcome)
       (r : Option Outcome),
       (∀ s', denoteCode calls is s = some s' → Exec calls (k s') s'.mem r) →
@@ -395,7 +442,7 @@ theorem exec_codeT (calls : Calls) :
       have hokK : ∀ s1, evalInstr calls s i = some s1 →
           Exec calls (codeT calls is s1 k) s1.mem r := by
         intro s1 h1
-        exact exec_codeT calls is s1 k r
+        exact exec_codeT calls hpure is s1 k r
           (fun s' h2 => hok s' (by simp [denoteCode, h1, h2]))
           (fun h2 => hub (by simp [denoteCode, h1, h2]))
       have hubK : evalInstr calls s i = none → r = some Outcome.ub := by
@@ -405,35 +452,42 @@ theorem exec_codeT (calls : Calls) :
       cases i with
       | load d ty p => exact exec_instrT_load calls s d ty p _ r hokK hubK
       | store ty v p => exact exec_instrT_store calls s ty v p _ r hokK hubK
-      | call d rt c args => exact exec_instrT_call calls s d rt c args _ r hokK hubK
+      | call d rt c args => exact exec_instrT_call calls hpure s d rt c args _ r hokK hubK
       | binop d op w a b =>
           exact exec_pureInstrT calls s (.binop d op w a b) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | icmp d pr w a b =>
           exact exec_pureInstrT calls s (.icmp d pr w a b) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | select d ty c a b =>
           exact exec_pureInstrT calls s (.select d ty c a b) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | trunc d wi wo v =>
           exact exec_pureInstrT calls s (.trunc d wi wo v) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | zext d wi wo v =>
           exact exec_pureInstrT calls s (.zext d wi wo v) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | sext d wi wo v =>
           exact exec_pureInstrT calls s (.sext d wi wo v) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | alloca d ty al =>
           exact exec_pureInstrT calls s (.alloca d ty al) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
 
 /-! ### Terminators -/
 
@@ -492,7 +546,7 @@ theorem exec_termT (calls : Calls) (n : Nat) (f : Function) (s : State) (t : Ter
 
 /-! ### The whole run -/
 
-theorem exec_runT (calls : Calls) :
+theorem exec_runT (calls : Calls) (hpure : PureEnv calls) :
     ∀ (n : Nat) (f : Function) (s : State),
       Exec calls (runT calls n f s) s.mem (runFuel calls n f s) := by
   intro n
@@ -520,14 +574,14 @@ theorem exec_runT (calls : Calls) :
           cases hD : denoteCode calls b.instrs s with
           | none =>
               simp only [hD]
-              exact exec_codeT calls b.instrs s _ (some Outcome.ub)
+              exact exec_codeT calls hpure b.instrs s _ (some Outcome.ub)
                 (fun s0 h0 => by rw [hD] at h0; exact absurd h0 (by simp))
                 (fun _ => rfl)
           | some s' =>
               cases hT : execTerm s' b.term with
               | ub =>
                   simp only [hD, hT]
-                  exact exec_codeT calls b.instrs s _ (some Outcome.ub)
+                  exact exec_codeT calls hpure b.instrs s _ (some Outcome.ub)
                     (fun s0 h0 => by
                       rw [hD] at h0
                       simp only [Option.some.injEq] at h0
@@ -536,7 +590,7 @@ theorem exec_runT (calls : Calls) :
                     (fun _ => rfl)
               | ret v s'' =>
                   simp only [hD, hT]
-                  exact exec_codeT calls b.instrs s _ (some (.ret v s''.mem))
+                  exact exec_codeT calls hpure b.instrs s _ (some (.ret v s''.mem))
                     (fun s0 h0 => by
                       rw [hD] at h0
                       simp only [Option.some.injEq] at h0
@@ -545,7 +599,7 @@ theorem exec_runT (calls : Calls) :
                     (fun h0 => by rw [hD] at h0; exact absurd h0 (by simp))
               | jump s'' =>
                   simp only [hD, hT]
-                  exact exec_codeT calls b.instrs s _ (runFuel calls n f s'')
+                  exact exec_codeT calls hpure b.instrs s _ (runFuel calls n f s'')
                     (fun s0 h0 => by
                       rw [hD] at h0
                       simp only [Option.some.injEq] at h0

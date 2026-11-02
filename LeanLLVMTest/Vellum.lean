@@ -117,7 +117,7 @@ example (x : BitVec 64) (o : LeanLLVM.Outcome) :
 -- baseline defines it is not a refinement of it.  That is the environment
 -- direction on its own; the module-level negative control below shows the
 -- replacement conclusion fails with it.
-example : ¬ LeanLLVM.CallRefines (fun _ _ => none) (envFor swar) seamSymbol :=
+example : ¬ LeanLLVM.CallRefines (fun _ _ _ _ => none) (envFor swar) seamSymbol :=
   undefined_env_not_refines
 
 /--
@@ -252,9 +252,10 @@ theorem quiet_beh (o : LeanLLVM.Outcome)
 
 -- The frame is load-bearing: an equal return value and a byte written outside
 -- the frame is not a framed refinement.  This is the memory content of the
--- framed relation, which the memory-effectful module theorem will thread; it is
--- not evidence for the value-level module theorem below, whose frame is inert
--- because the call environment carries no memory.
+-- framed relation, here under `noCalls`; it is not evidence for the value-level
+-- module theorem below, whose frame is inert for its own hypothesis, because
+-- `CallRefines` demands complete agreement of the value, the memory and the
+-- allocator state of the two outcomes.
 theorem vandal_not_refinesWithin :
     ¬ LeanLLVM.RefinesWithin LeanLLVM.noCalls vandalFunction quietFunction
       (fun a => 1 ≤ a ∧ a < 17) := by
@@ -293,8 +294,8 @@ example : LeanLLVM.Vellum.RefinesWithinAcross (envFor spec) (envFor byteLoop)
 -- With no environment entry the caller's call is unresolved, which the
 -- semantics turns into `ub` at the first step.
 theorem callerInstrs_none (s : LeanLLVM.State) :
-    LeanLLVM.denoteCode (fun _ _ => none) callerInstrs s = none := by
-  have hcall : LeanLLVM.evalInstr (fun _ _ => none) s
+    LeanLLVM.denoteCode (fun _ _ _ _ => none) callerInstrs s = none := by
+  have hcall : LeanLLVM.evalInstr (fun _ _ _ _ => none) s
       (.call "%r" (.int 64) seamSymbol [(.int 64, .reg "%arg")]) = none := by
     cases h : LeanLLVM.evalOperands s [(.int 64, .reg "%arg")] with
     | none => simp [LeanLLVM.evalInstr, h]
@@ -302,7 +303,7 @@ theorem callerInstrs_none (s : LeanLLVM.State) :
   simp [callerInstrs, LeanLLVM.denoteCode, hcall]
 
 theorem caller_step_none :
-    LeanLLVM.step (fun _ _ => none) callerFunction
+    LeanLLVM.step (fun _ _ _ _ => none) callerFunction
       (LeanLLVM.initState callerFunction [LeanLLVM.Value.int 64 0]) = .ub := by
   have hfind : callerFunction.findBlock
       (LeanLLVM.initState callerFunction [LeanLLVM.Value.int 64 0]).pc =
@@ -316,7 +317,7 @@ theorem caller_step_none :
 -- source.  Had the relation dropped `calls'`, the hypothesis would be trivial
 -- and this negation unprovable.
 theorem caller_not_refined_by_undefined_env :
-    ¬ LeanLLVM.Vellum.RefinesWithinAcross (fun _ _ => none) (envFor swar)
+    ¬ LeanLLVM.Vellum.RefinesWithinAcross (fun _ _ _ _ => none) (envFor swar)
         callerFunction callerFunction (LeanLLVM.Band 1 9) := by
   intro h
   obtain ⟨o', hsrc, hag⟩ :=
@@ -793,7 +794,8 @@ example (x : BitVec 64) (mem : Mem)
         runFuel noCalls 10000 candidateFunction (initState candidateFunction [.int 64 x]) =
           some (.ret vS memS) ∧
         (Outcome.ret vT memT).AgreesOutside (loopFrame x) (Outcome.ret vS memS) :=
-  simtt_runFuel_some noCalls (loopFrame x) (Outcome.AgreesOutside (loopFrame x))
+  simtt_runFuel_some noCalls noCalls_pureEnv (loopFrame x)
+    (Outcome.AgreesOutside (loopFrame x))
     loopFunction candidateFunction [.int 64 x] 19 10000
     (Outcome.ret (some (.int 64 (spec x))) mem) (loop_candidate_simtt x) h19
 
@@ -941,7 +943,7 @@ example (x : BitVec 64) :
 so the canonical resolution of a `runHandled` tree is exactly `runFuel`. -/
 example (frame : Nat → Prop) (n : Nat) (f : LeanLLVM.Function) (s : LeanLLVM.State) :
     HandledExec noCalls (runHandled noCalls frame n f s) (runFuel noCalls n f s) :=
-  handled_runFuel noCalls frame n f s
+  handled_runFuel noCalls noCalls_pureEnv frame n f s
 
 /-- info: 'LeanLLVM.ITree.handled_runFuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

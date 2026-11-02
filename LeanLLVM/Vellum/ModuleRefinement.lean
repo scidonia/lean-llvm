@@ -8,17 +8,20 @@ relation — `RefinesWithinAcross` — and proves it composed from the direction
 environment relation `CallRefines`: replacing the external call environment
 preserves the caller's behaviour at the framed relation.
 
-The statement is value-level, and the limit is real, not incidental: `Calls`
-has no memory channel, so a `call` binds a value only and the callee's memory
-never reaches the caller.  The conclusion is a directed inclusion, not an
-equality of behaviours: `Beh_calls_refines` matches each target outcome with the
-same source outcome, and the source may also exhibit outcomes (such as `ub`)
-that the target does not.  The caller's own memory is a function of its own
-instructions, so the matched outcomes carry the same memory and the frame in
-the conclusion is inert.  The frame is carried because the memory-effectful
-form of the relation will need it; the load-bearing hypothesis here is the
-environment relation, and the negative controls in `LeanLLVMTest/Vellum.lean`
-show that it can fail and that the conclusion fails with it.
+`Calls` now carries a memory channel — an entry returns the value, the memory
+and the allocator state the callee leaves behind — so a call's result includes
+the memory the caller adopts, and a callee that writes is inside the model.
+`CallRefines` demands *complete* agreement of the two outcomes, memory and
+allocator included, so for that hypothesis the two runs agree on memory exactly
+as they agree on value, and this module's statements hold at every frame.  The
+conclusion is a directed inclusion, not an equality of behaviours:
+`Beh_calls_refines` matches each target outcome with the same source outcome,
+and the source may also exhibit outcomes (such as `ub`) that the target does
+not.  The frame is carried because the memory-effectful form of the relation —
+one that permits the callee's memory to differ inside the footprint — needs it;
+the load-bearing hypothesis here is the environment relation, and the negative
+controls in `LeanLLVMTest/Vellum.lean` show that it can fail and that the
+conclusion fails with it.
 -/
 import LeanLLVM.Semantics
 import LeanLLVM.Frames
@@ -48,9 +51,9 @@ environment, not of the caller's text — preserves the caller's behaviour, at
 the framed relation, under the directional environment refinement `h`.  `h` is
 the load-bearing hypothesis: the conclusion relates `calls'` to `calls`, and
 fails when `h` fails (the adversarial example in `LeanLLVMTest/Vellum.lean`).
-The frame is carried for the memory-channel form of the theorem; in this model
-the memory is preserved exactly, since `Calls` carries no memory, so the
-conclusion holds at every frame. -/
+`CallRefines` demands complete agreement of the returned outcome, memory and
+allocator included, so the matched outcomes carry the same memory and the frame
+in the conclusion is inert for this hypothesis. -/
 theorem replaceFunction_sound
     {calls' calls : Calls} {C : Function} {frame : Nat → Prop}
     (h : ∀ sym, CallRefines calls' calls sym) :
@@ -61,10 +64,10 @@ theorem replaceFunction_sound
 
 /-- A caller with its own scratch local: allocate one `i64`, call the seam,
 store the result, load it back, return it.  The `alloca` and the `store` are the
-caller's own memory effects, so the caller has a footprint of its own to name;
-naming it here does not make the frame load-bearing — in this model the
-callee's memory cannot cross the call, and the frame is carried for the
-memory-channel form of the relation (see the module header). -/
+caller's own memory effects, so the caller has a footprint of its own to name.
+The two selections it is compared under return the caller's memory unchanged, so
+the callee's memory here is the caller's own; a callee that writes inside this
+footprint is what the memory-effectful form of the relation exists to permit. -/
 def memCaller : Function :=
   { name := "leanllvm_mem_caller", retTy := .int 64, params := [("%arg", .int 64)],
     blocks := [
@@ -94,10 +97,10 @@ def callerFrame : Nat → Prop := Band 1 9
 --   byteLoop_eq_spec   (`CommaMaskKernel`): `byteLoop x = spec x`.
 /-- The two seam selections are pointwise-related environments: the loop's
 selection (`spec`) and the candidate's (`byteLoop`) agree because their values
-agree. -/
+agree, and both leave the caller's memory and allocator untouched. -/
 theorem loop_seam_callRefines :
     ∀ sym, CallRefines (envFor spec) (envFor byteLoop) sym := by
-  intro sym args
+  intro sym args mem next
   right
   by_cases h : sym = seamSymbol
   · subst h

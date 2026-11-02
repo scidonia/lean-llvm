@@ -12,8 +12,11 @@ Two theorems connect the two.
 * `handled_runFuel` is the correspondence that makes `runHandled` executable:
   the handler's memory equals the semantics' `State.mem` at every point of the
   run, so the canonical resolution of `runHandled calls frame n f s` is exactly
-  `runFuel calls n f s`.  Its local form is `handled_codeT`/`handled_termT`, and
-  the memory agreement is `storeValue_mem` (a store advances `State.mem` as
+  `runFuel calls n f s`.  It is stated for a `PureEnv` environment: the handled
+  call event carries a value only, so a callee that writes cannot be described
+  here (`Interpret.PureEnv`).  Its local form is
+  `handled_codeT`/`handled_termT`, and the memory agreement is
+  `storeValue_mem` (a store advances `State.mem` as
   `storeMem` does) together with the fact that every other instruction and
   terminator leaves the memory alone.  This is why the handler may replace a
   leaf's recorded memory: for a `runT` tree it replaces it with the same memory.
@@ -24,8 +27,8 @@ Two theorems connect the two.
   induction on the target's finite resolution and the relation is unfolded one
   clause at a time.
 
-`_exec_runT` from `Interpret` is unchanged and remains the canonical resolution
-of the *unhandled* tree.  Nothing here redefines `Beh`, `Refines` or
+`exec_runT` from `Interpret` remains the canonical resolution of the
+*unhandled* tree, at the same `PureEnv` hypothesis.  Nothing here redefines `Beh`, `Refines` or
 `RefinesWithin`: the consequences at the framed and exact posts are corollaries,
 and the tree relation is taken between the two `runHandled` trees.
 -/
@@ -55,8 +58,8 @@ inductive HandledExec (calls : Calls) : OTree → Option Outcome → Prop where
       {r : Option Outcome} :
       HandledExec calls (k ()) r → HandledExec calls (vis (ObsEv.store addr ty v) k) r
   | call {callee : String} {args : List Value} {k : Option Value → OTree}
-      {r : Option Outcome} :
-      HandledExec calls (k (calls callee args)) r →
+      {r : Option Outcome} (hpure : PureEnv calls) :
+      HandledExec calls (k (retAt calls callee args)) r →
       HandledExec calls (vis (ObsEv.call callee args) k) r
   | ub {k : Empty → OTree} : HandledExec calls (vis ObsEv.ub k) (some Outcome.ub)
   | timeout {k : Empty → OTree} : HandledExec calls (vis ObsEv.timeout k) none
@@ -75,8 +78,10 @@ theorem HandledExec_inv {calls : Calls} {t : OTree} {r : Option Outcome}
       t = vis (ObsEv.load addr ty resp) k ∧ HandledExec calls (k ()) r) ∨
     (∃ (addr : Nat) (ty : Ty) (v : Value) (k : Unit → OTree),
       t = vis (ObsEv.store addr ty v) k ∧ HandledExec calls (k ()) r) ∨
-    (∃ (callee : String) (args : List Value) (k : Option Value → OTree),
-      t = vis (ObsEv.call callee args) k ∧ HandledExec calls (k (calls callee args)) r) ∨
+    (∃ (callee : String) (args : List Value) (k : Option Value → OTree)
+      (_hpure : PureEnv calls),
+      t = vis (ObsEv.call callee args) k ∧
+        HandledExec calls (k (retAt calls callee args)) r) ∨
     (∃ k : Empty → OTree, t = vis ObsEv.ub k ∧ r = some Outcome.ub) ∨
     (∃ k : Empty → OTree, t = vis ObsEv.timeout k ∧ r = none) := by
   cases h with
@@ -84,14 +89,15 @@ theorem HandledExec_inv {calls : Calls} {t : OTree} {r : Option Outcome}
   | tauStep h' => exact Or.inr (Or.inl ⟨_, rfl, h'⟩)
   | load h' => exact Or.inr (Or.inr (Or.inl ⟨_, _, _, _, rfl, h'⟩))
   | store h' => exact Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, _, rfl, h'⟩)))
-  | call h' => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, rfl, h'⟩))))
+  | call hpure h' =>
+      exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, hpure, rfl, h'⟩))))
   | ub => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, rfl, rfl⟩)))))
   | timeout => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨_, rfl, rfl⟩)))))
 
 theorem HandledExec.ret_inv {calls : Calls} {o : Outcome} {r : Option Outcome}
     (h : HandledExec calls (ret o) r) : r = some o := by
   rcases HandledExec_inv h with ⟨o', ht, hr⟩ | ⟨t', ht, _⟩ | ⟨a, ty, rp, k, ht, _⟩ |
-    ⟨a, ty, v, k, ht, _⟩ | ⟨c, args, k, ht, _⟩ | ⟨k, ht, _⟩ | ⟨k, ht, _⟩
+    ⟨a, ty, v, k, ht, _⟩ | ⟨c, args, k, _, ht, _⟩ | ⟨k, ht, _⟩ | ⟨k, ht, _⟩
   · rw [← ret_inj ht] at hr
     exact hr
   · exact absurd ht ret_ne_tau
@@ -104,7 +110,7 @@ theorem HandledExec.ret_inv {calls : Calls} {o : Outcome} {r : Option Outcome}
 theorem HandledExec.tau_inv {calls : Calls} {t : OTree} {r : Option Outcome}
     (h : HandledExec calls (tau t) r) : HandledExec calls t r := by
   rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, he⟩ | ⟨a, ty, rp, k, ht, _⟩ |
-    ⟨a, ty, v, k, ht, _⟩ | ⟨c, args, k, ht, _⟩ | ⟨k, ht, _⟩ | ⟨k, ht, _⟩
+    ⟨a, ty, v, k, ht, _⟩ | ⟨c, args, k, _, ht, _⟩ | ⟨k, ht, _⟩ | ⟨k, ht, _⟩
   · exact absurd ht (ret_ne_tau (v := o) (t := t)).symm
   · rw [tau_inj ht]
     exact he
@@ -119,7 +125,7 @@ theorem HandledExec.vis_load_inv {calls : Calls} {addr : Nat} {ty : Ty}
     (h : HandledExec calls (vis (ObsEv.load addr ty resp) k) r) :
     HandledExec calls (k ()) r := by
   rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', rp, k', ht, he⟩ |
-    ⟨a, ty', v, k', ht, _⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
+    ⟨a, ty', v, k', ht, _⟩ | ⟨c, args, k', _, ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
   · exact absurd ht (ret_ne_vis (ObsEv.load addr ty resp) k).symm
   · exact absurd ht (tau_ne_vis (ObsEv.load addr ty resp) k).symm
   · obtain ⟨hEv, hk⟩ := vis_inj ht
@@ -136,7 +142,7 @@ theorem HandledExec.vis_store_inv {calls : Calls} {addr : Nat} {ty : Ty} {v : Va
     (h : HandledExec calls (vis (ObsEv.store addr ty v) k) r) :
     HandledExec calls (k ()) r := by
   rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', rp, k', ht, _⟩ |
-    ⟨a, ty', v', k', ht, he⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
+    ⟨a, ty', v', k', ht, he⟩ | ⟨c, args, k', _, ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
   · exact absurd ht (ret_ne_vis (ObsEv.store addr ty v) k).symm
   · exact absurd ht (tau_ne_vis (ObsEv.store addr ty v) k).symm
   · exact absurd ht (vis_load_ne_store).symm
@@ -151,9 +157,9 @@ theorem HandledExec.vis_store_inv {calls : Calls} {addr : Nat} {ty : Ty} {v : Va
 theorem HandledExec.vis_call_inv {calls : Calls} {callee : String} {args : List Value}
     {k : Option Value → OTree} {r : Option Outcome}
     (h : HandledExec calls (vis (ObsEv.call callee args) k) r) :
-    HandledExec calls (k (calls callee args)) r := by
+    HandledExec calls (k (retAt calls callee args)) r := by
   rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty', rp, k', ht, _⟩ |
-    ⟨a, ty', v, k', ht, _⟩ | ⟨c, args', k', ht, he⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
+    ⟨a, ty', v, k', ht, _⟩ | ⟨c, args', k', _, ht, he⟩ | ⟨k', ht, _⟩ | ⟨k', ht, _⟩
   · exact absurd ht (ret_ne_vis (ObsEv.call callee args) k).symm
   · exact absurd ht (tau_ne_vis (ObsEv.call callee args) k).symm
   · exact absurd ht (vis_load_ne_call).symm
@@ -168,7 +174,7 @@ theorem HandledExec.vis_call_inv {calls : Calls} {callee : String} {args : List 
 theorem HandledExec.vis_ub_inv {calls : Calls} {k : Empty → OTree} {r : Option Outcome}
     (h : HandledExec calls (vis ObsEv.ub k) r) : r = some Outcome.ub := by
   rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty, rp, k', ht, _⟩ |
-    ⟨a, ty, v, k', ht, _⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, hr⟩ | ⟨k', ht, _⟩
+    ⟨a, ty, v, k', ht, _⟩ | ⟨c, args, k', _, ht, _⟩ | ⟨k', ht, hr⟩ | ⟨k', ht, _⟩
   · exact absurd ht (ret_ne_vis ObsEv.ub k).symm
   · exact absurd ht (tau_ne_vis ObsEv.ub k).symm
   · exact absurd ht (vis_ub_ne_load k a ty rp k')
@@ -180,7 +186,7 @@ theorem HandledExec.vis_ub_inv {calls : Calls} {k : Empty → OTree} {r : Option
 theorem HandledExec.vis_timeout_inv {calls : Calls} {k : Empty → OTree}
     {r : Option Outcome} (h : HandledExec calls (vis ObsEv.timeout k) r) : r = none := by
   rcases HandledExec_inv h with ⟨o, ht, _⟩ | ⟨t', ht, _⟩ | ⟨a, ty, rp, k', ht, _⟩ |
-    ⟨a, ty, v, k', ht, _⟩ | ⟨c, args, k', ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, hr⟩
+    ⟨a, ty, v, k', ht, _⟩ | ⟨c, args, k', _, ht, _⟩ | ⟨k', ht, _⟩ | ⟨k', ht, hr⟩
   · exact absurd ht (ret_ne_vis ObsEv.timeout k).symm
   · exact absurd ht (tau_ne_vis ObsEv.timeout k).symm
   · exact absurd ht (vis_timeout_ne_load k a ty rp k')
@@ -397,7 +403,8 @@ theorem handled_instrT_store (calls : Calls) (frame : Nat → Prop) (s : State) 
 
 /-- A call re-emits its event and resolves as its continuation does on the
 environment's response. -/
-theorem handled_instrT_call (calls : Calls) (frame : Nat → Prop) (s : State) (d : String)
+theorem handled_instrT_call (calls : Calls) (hcall : PureEnv calls) (frame : Nat → Prop)
+    (s : State) (d : String)
     (retTy : Ty) (callee : String) (args : List (Ty × Operand)) (k : State → Tree Ev Outcome)
     (r : Option Outcome)
     (hok : ∀ s', evalInstr calls s (.call d retTy callee args) = some s' →
@@ -412,28 +419,36 @@ theorem handled_instrT_call (calls : Calls) (frame : Nat → Prop) (s : State) (
       simp only [instrT, ha]
       exact handled_ubT calls frame s.mem
   | some vs =>
-      cases hC : calls callee vs with
+      cases hC : calls callee vs s.mem s.next with
       | none =>
+          have hret : retAt calls callee vs = none := by
+            simp only [retAt, ← hcall.1 callee vs s.mem s.next [] 1, hC]
+            rfl
           have hE : evalInstr calls s (.call d retTy callee args) = none := by
             simp [evalInstr, ha, hC]
           rw [hub hE]
           simp only [instrT, ha]
           rw [handle_call]
-          refine HandledExec.call ?_
-          rw [hC]
+          refine HandledExec.call hcall ?_
+          simp only [hret]
           exact handled_ubT calls frame s.mem
-      | some val =>
-          have hE : evalInstr calls s (.call d retTy callee args) = some (s.bind d val) := by
-            simp [evalInstr, ha, hC]
+      | some out =>
+          have hret : retAt calls callee vs = some out.ret := by
+            simp only [retAt, ← hcall.1 callee vs s.mem s.next [] 1, hC]
+            rfl
+          obtain ⟨hm, hn⟩ := hcall.2 callee vs s.mem s.next out hC
+          have hE : evalInstr calls s (.call d retTy callee args) =
+              some (s.bind d out.ret) := by
+            simp only [evalInstr, ha, hC, hm, hn, State.bind]
           simp only [instrT, ha]
           rw [handle_call]
-          refine HandledExec.call ?_
-          rw [hC]
-          exact hok (s.bind d val) hE
+          refine HandledExec.call hcall ?_
+          simp only [hret]
+          exact hok (s.bind d out.ret) hE
 
 /-- Straight-line code: the handler's memory tracks the state `denoteCode`
 reaches. -/
-theorem handled_codeT (calls : Calls) (frame : Nat → Prop) :
+theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → Prop) :
     ∀ (is : List Instr) (s : State) (k : State → Tree Ev Outcome) (r : Option Outcome),
       (∀ s', denoteCode calls is s = some s' →
         HandledExec calls (handle frame s'.mem (k s')) r) →
@@ -444,7 +459,7 @@ theorem handled_codeT (calls : Calls) (frame : Nat → Prop) :
       have hokK : ∀ s1, evalInstr calls s i = some s1 →
           HandledExec calls (handle frame s1.mem (codeT calls is s1 k)) r := by
         intro s1 h1
-        exact handled_codeT calls frame is s1 k r
+        exact handled_codeT calls hcall frame is s1 k r
           (fun s' h2 => hok s' (by simp [denoteCode, h1, h2]))
           (fun h2 => hub (by simp [denoteCode, h1, h2]))
       have hubK : evalInstr calls s i = none → r = some Outcome.ub := by
@@ -455,35 +470,42 @@ theorem handled_codeT (calls : Calls) (frame : Nat → Prop) :
       cases i with
       | load d ty p => exact handled_instrT_load calls frame s d ty p _ r hokK hubK
       | store ty v p => exact handled_instrT_store calls frame s ty v p _ r hokK hubK
-      | call d rt c args => exact handled_instrT_call calls frame s d rt c args _ r hokK hubK
+      | call d rt c args => exact handled_instrT_call calls hcall frame s d rt c args _ r hokK hubK
       | binop d op w a b =>
           exact handled_pureInstrT calls frame s (.binop d op w a b) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | icmp d pr w a b =>
           exact handled_pureInstrT calls frame s (.icmp d pr w a b) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | select d ty c a b =>
           exact handled_pureInstrT calls frame s (.select d ty c a b) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | trunc d wi wo v =>
           exact handled_pureInstrT calls frame s (.trunc d wi wo v) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | zext d wi wo v =>
           exact handled_pureInstrT calls frame s (.zext d wi wo v) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | sext d wi wo v =>
           exact handled_pureInstrT calls frame s (.sext d wi wo v) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | alloca d ty al =>
           exact handled_pureInstrT calls frame s (.alloca d ty al) _ r
-            (fun s' h => evalInstr_mem_of_not_store calls s _ s'
-              (by intro ty v p hh; cases hh) h) hokK hubK
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
 
 /-- A terminator resolves as its continuation does on a jump, and its own memory
 is the handler's: a `ret` or a jump leaves the memory alone, and `ub` is a `ub`
@@ -513,7 +535,7 @@ theorem handled_termT (calls : Calls) (frame : Nat → Prop) (n : Nat) (f : Func
 
 /-- The handler's memory is the semantics' memory: the canonical resolution of
 `runHandled` is `runFuel`. -/
-theorem handled_runFuel (calls : Calls) (frame : Nat → Prop) :
+theorem handled_runFuel (calls : Calls) (hcall : PureEnv calls) (frame : Nat → Prop) :
     ∀ (n : Nat) (f : Function) (s : State),
       HandledExec calls (runHandled calls frame n f s) (runFuel calls n f s)
   | 0, f, s => by
@@ -538,18 +560,18 @@ theorem handled_runFuel (calls : Calls) (frame : Nat → Prop) :
             exact handled_termT calls frame n f s0 b.term _
               (fun s'' hj => by
                 rw [handle_tau, ← execTerm_jump_mem s0 b.term s'' hj]
-                exact HandledExec.tauStep (handled_runFuel calls frame n f s''))
+                exact HandledExec.tauStep (handled_runFuel calls hcall frame n f s''))
           cases hD : denoteCode calls b.instrs s with
           | none =>
               dsimp only
-              exact handled_codeT calls frame b.instrs s _ (some Outcome.ub)
+              exact handled_codeT calls hcall frame b.instrs s _ (some Outcome.ub)
                 (fun s0 h0 => by rw [hD] at h0; exact absurd h0 (by simp))
                 (fun _ => rfl)
           | some s' =>
               cases hT : execTerm s' b.term with
               | ub =>
                   simp only [hT]
-                  exact handled_codeT calls frame b.instrs s _ (some Outcome.ub)
+                  exact handled_codeT calls hcall frame b.instrs s _ (some Outcome.ub)
                     (fun s0 h0 => by
                       rw [hD] at h0
                       simp only [Option.some.injEq] at h0
@@ -558,7 +580,7 @@ theorem handled_runFuel (calls : Calls) (frame : Nat → Prop) :
                     (fun _ => rfl)
               | ret v s'' =>
                   simp only [hT]
-                  exact handled_codeT calls frame b.instrs s _ (some (.ret v s''.mem))
+                  exact handled_codeT calls hcall frame b.instrs s _ (some (.ret v s''.mem))
                     (fun s0 h0 => by
                       rw [hD] at h0
                       simp only [Option.some.injEq] at h0
@@ -567,7 +589,7 @@ theorem handled_runFuel (calls : Calls) (frame : Nat → Prop) :
                     (fun h0 => by rw [hD] at h0; exact absurd h0 (by simp))
               | jump s'' =>
                   simp only [hT]
-                  exact handled_codeT calls frame b.instrs s _ (runFuel calls n f s'')
+                  exact handled_codeT calls hcall frame b.instrs s _ (runFuel calls n f s'')
                     (fun s0 h0 => by
                       rw [hD] at h0
                       simp only [Option.some.injEq] at h0
@@ -667,7 +689,7 @@ theorem simtt_exec_aux {calls : Calls} {post : Outcome → Outcome → Prop} :
       | vis_call callee args k1 k2 h1 h2 hs' =>
           exact absurd (SilentHead_vis_self h1) (vis_store_ne_call).symm
   /- A call: the environment's response is passed to the continuation. -/
-  | call h' ih =>
+  | call hpure h' ih =>
       rename_i callee args k r0
       intro tS he rS hs
       have hF := (simtt_iff post _ _).mp he
@@ -692,7 +714,7 @@ theorem simtt_exec_aux {calls : Calls} {post : Outcome → Outcome → Prop} :
           have ha := (obs_call_inj hev).2
           simp only [hc, ha] at *
           rw [hk] at hs'
-          exact ih (hs' (calls callee args))
+          exact ih (hs' (retAt calls callee args))
             (HandledExec.vis_call_inv (HandledExec.silentHead h2 hs))
   /- An undefined-behaviour node. -/
   | ub =>
@@ -754,7 +776,7 @@ theorem simtt_exec_some {calls : Calls} {post : Outcome → Outcome → Prop}
 source either runs into undefined behaviour at its own budget or returns an
 outcome the postcondition accepts.  The budgets are separate, and a budget that
 exhausts is not a completed outcome. -/
-theorem simtt_runFuel_some (calls : Calls) (frame : Nat → Prop)
+theorem simtt_runFuel_some (calls : Calls) (hcall : PureEnv calls) (frame : Nat → Prop)
     (post : Outcome → Outcome → Prop) (target source : Function)
     (args : List Value) (nT nS : Nat) (oT : Outcome)
     (he : simtt post
@@ -767,10 +789,10 @@ theorem simtt_runFuel_some (calls : Calls) (frame : Nat → Prop)
         runFuel calls nS source (initState source args) = some (.ret vS memS) ∧
         post (.ret vT memT) (.ret vS memS) := by
   have hT : HandledExec calls (runHandled calls frame nT target (initState target args))
-      (some oT) := ht ▸ handled_runFuel calls frame nT target (initState target args)
+      (some oT) := ht ▸ handled_runFuel calls hcall frame nT target (initState target args)
   have hS : HandledExec calls (runHandled calls frame nS source (initState source args))
       (runFuel calls nS source (initState source args)) :=
-    handled_runFuel calls frame nS source (initState source args)
+    handled_runFuel calls hcall frame nS source (initState source args)
   exact simtt_exec_some he hT hS
 
 /-- Every observable target behaviour is transported, with its own budget on
@@ -778,7 +800,7 @@ each side: a target run that succeeds at some budget is matched by undefined
 behaviour on the source or by an actual source return the postcondition
 accepts.  A target that never finishes has no behaviour, so no budget of the
 target is silently treated as one. -/
-theorem simtt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
+theorem simtt_beh_inclusion (calls : Calls) (hcall : PureEnv calls) (frame : Nat → Prop)
     (post : Outcome → Outcome → Prop) (target source : Function)
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
       ∃ nS, simtt post
@@ -793,12 +815,12 @@ theorem simtt_beh_inclusion (calls : Calls) (frame : Nat → Prop)
   intro args oT ho
   rcases ho with ⟨n, hn⟩ | ⟨n, hn⟩
   · obtain ⟨nS, he⟩ := hsim args n .ub hn
-    rcases simtt_runFuel_some calls frame post target source args n nS .ub he hn with
+    rcases simtt_runFuel_some calls hcall frame post target source args n nS .ub he hn with
       hub | ⟨vT, vS, memT, memS, hEq⟩
     · exact Or.inl ⟨nS, hub⟩
     · exact nomatch hEq
   · obtain ⟨nS, he⟩ := hsim args n oT hn
-    rcases simtt_runFuel_some calls frame post target source args n nS oT he hn with
+    rcases simtt_runFuel_some calls hcall frame post target source args n nS oT he hn with
       hub | ⟨vT, vS, memT, memS, hEq, hrS, hp⟩
     · exact Or.inl ⟨nS, hub⟩
     · exact Or.inr ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
@@ -808,29 +830,31 @@ every completed target run, in the target-to-source direction.  A source that
 runs into undefined behaviour is a behaviour for every outcome, so the target's
 own outcome is matched by itself; otherwise the matched return is the witness.
 The two returned memories are each tree's own handled final memory. -/
-theorem refinesWithin_of_simtt {calls : Calls} {target source : Function}
-    {frame : Nat → Prop}
+theorem refinesWithin_of_simtt {calls : Calls} (hcall : PureEnv calls)
+    {target source : Function} {frame : Nat → Prop}
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
       ∃ nS, simtt (Outcome.AgreesOutside frame)
         (runHandled calls frame nT target (initState target args))
         (runHandled calls frame nS source (initState source args))) :
     RefinesWithin calls target source frame := by
   intro args o ho
-  rcases simtt_beh_inclusion calls frame (Outcome.AgreesOutside frame) target source hsim args o ho
+  rcases simtt_beh_inclusion calls hcall frame (Outcome.AgreesOutside frame) target source
+      hsim args o ho
     with ⟨nS, hub⟩ | ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
   · exact ⟨o, Or.inl ⟨nS, hub⟩, Outcome.agreesOutside_refl o frame⟩
   · exact ⟨.ret vS memS, Or.inr ⟨nS, hrS⟩, by rw [hEq]; exact hp⟩
 
 /-- Exact refinement follows the same way at the equality postcondition, through
 handled trees at the empty frame. -/
-theorem refines_of_simtt {calls : Calls} {target source : Function}
+theorem refines_of_simtt {calls : Calls} (hcall : PureEnv calls)
+    {target source : Function}
     (hsim : ∀ args nT oT, runFuel calls nT target (initState target args) = some oT →
       ∃ nS, simtt Eq
         (runHandled calls (fun _ => False) nT target (initState target args))
         (runHandled calls (fun _ => False) nS source (initState source args))) :
     Refines calls target source := by
   intro args o ho
-  rcases simtt_beh_inclusion calls (fun _ => False) Eq target source hsim args o ho with
+  rcases simtt_beh_inclusion calls hcall (fun _ => False) Eq target source hsim args o ho with
     ⟨nS, hub⟩ | ⟨nS, vT, vS, memT, memS, hEq, hrS, hp⟩
   · exact Or.inl ⟨nS, hub⟩
   · rw [hEq]

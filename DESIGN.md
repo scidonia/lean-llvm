@@ -104,12 +104,16 @@ agreement outside the band.  `LeanLLVMTest/Vellum.lean` also exercises the
 negative direction: a unit that writes one byte outside the frame, for which the
 framed relation is proved to fail.
 
-The relation is a statement about memory, not a module theorem.  Calls still
-have no memory effects, and there is no simulation rule for an arbitrary loop at
-this executable refinement relation; the loop's induction is proved for that
-fixture, and the tree-level rule in `LeanLLVM/ITree/LoopRule.lean` is a statement
-about bare handled trees, not about `Refines` or `RefinesWithin`.  Both are open
-obligations of the programme rather than consequences of this relation.
+The relation is a statement about memory, not a module theorem.  A call
+environment returns the value, the memory and the allocator state the callee
+leaves (`CallOutcome`), and the caller adopts them, so a callee that writes is
+inside the semantics; the contextual replacement theorem is stated over an
+agreement that covers all three, which is why its frame stays inert.  There is
+no simulation rule for an arbitrary loop at this executable refinement relation;
+the loop's induction is proved for that fixture, and the tree-level rule in
+`LeanLLVM/ITree/LoopRule.lean` is a statement about bare handled trees, not about
+`Refines` or `RefinesWithin`.  Both are open obligations of the programme rather
+than consequences of this relation.
 
 ## Interaction trees and a directed simulation
 
@@ -312,8 +316,8 @@ What remains open is the adoption rather than the relation.  `Refines`,
 through `simtt`, and nothing restates the executable refinement relation in terms
 of it.  There is still no rule for loops at `Refines`/`RefinesWithin`, no
 automatic discharge of the tree rule's premise, no `runT`/`mfix` correspondence,
-no memory-effectful call environment, no memory-aware module theorem, and no
-computable host handler.
+no framed call environment the tree layer could describe, no contextual
+replacement whose frame is load-bearing, and no computable host handler.
 
 The generic library now has the lawful compositional layer: exact `IEq`, lawful
 `Functor`/`Monad`, the delay object `TauClosure`, the ported `MonadIter`, the
@@ -326,7 +330,8 @@ explicit hypotheses, with refused witnesses for the hypotheses that are dropped.
 Still open: a loop rule at the executable refinement relation (the tree-level rule
 is conditional and does not discharge itself), a `runT`/`mfix` correspondence for
 the fixed-budget trees, adoption of the tree relation by
-`Refines`/`RefinesWithin`, and a memory-effectful call environment.
+`Refines`/`RefinesWithin`, and a call environment the tree layer could describe
+beyond `PureEnv`.
 
 ## Pure seam refinement
 
@@ -435,9 +440,10 @@ canonical IR, checked with `llvm-as` in the verification runs.
    blocks; removing them is an equivalence over reachable states.
 3. **Wider syntax.**  `getelementptr`, `phi` and globals, with a dominance
    check for cross-block constant propagation.  Calls are modelled
-   (`Instr.call` resolved through `Calls`) and refinement through them is
-   one-directional (`CallRefinement`); memory effects across calls are the next
-   step after that.
+   (`Instr.call` resolved through `Calls`, which returns the callee's value,
+   memory and allocator state) and refinement through them is one-directional
+   (`CallRefinement`); a framed relation over that channel is the next step
+   after that.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing
@@ -456,7 +462,8 @@ canonical IR, checked with `llvm-as` in the verification runs.
    giving it a rule at the executable refinement relation, are open, as is a
    `runT`/`mfix` correspondence for the fixed-budget trees.  A computable host
    handler (the frame has no decider today), a Lean-produced, memory-using loop,
-   a memory-aware call environment and a module theorem remain open.
+   and a contextual replacement theorem whose frame is load-bearing remain
+   open.
 5. **Validation seam.**  An Alive2-style driver that checks a candidate rewrite
    against the semantics when a proof is not yet available, so unproved passes
    can still be gated in the toolchain.

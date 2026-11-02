@@ -50,6 +50,8 @@ not a theorem about compiled code.
 - The application is a small Lean module written for this probe. It is a real
   caller in the sense that the seam call is embedded in surrounding work and
   survives `-O2`; it is not a production code base.
-- The call is tail-position in the emitted IR. Calls with memory effects are
-  outside the modelled semantics; the seam is pure, so the replacement theorem
-  here is not a memory-aware module theorem.
+- The call is tail-position in the emitted IR.  An environment returns the
+  callee's value, memory and allocator state, and the caller adopts them, so a
+  callee that writes is inside the modelled semantics; the seam installed here
+  is pure and leaves the caller's memory and allocator untouched, so this is
+  the exact (`CallRefines`) form of the replacement rather than a framed one.

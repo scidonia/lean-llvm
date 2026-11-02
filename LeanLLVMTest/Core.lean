@@ -95,10 +95,12 @@ entry:
   | .ok m => m.render = callSample
   | .error _ => false
 
-def plusOneEnv : Calls := fun callee args =>
+/-- An environment in which `f` returns its argument plus one and leaves the
+caller's memory and allocator exactly as it found them. -/
+def plusOneEnv : Calls := fun callee args mem next =>
   if callee = "f" then
     match args with
-    | [.int 64 x] => some (.int 64 (x + 1))
+    | [.int 64 x] => some { ret := .int 64 (x + 1), mem := mem, next := next }
     | _ => none
   else none
 

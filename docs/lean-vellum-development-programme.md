@@ -280,16 +280,20 @@ accepted on the strength of a narrower result.
   tree relation by `Refines`/`RefinesWithin`, discharging that hypothesis for
   arbitrary function pairs, a rule for arbitrary loops at `Refines`/`RefinesWithin`
   — the tree rule is conditional and the loop's induction is a proof about its own
-  fixture — a `runT`/`mfix` correspondence for the fixed-budget trees,
-  memory-effectful call environments, and a **memory-aware** module theorem: a
-  `replaceFunction_sound`-style replacement that observes a memory-using callee
-  across the call boundary.  The value-level form exists —
+  fixture — a `runT`/`mfix` correspondence for the fixed-budget trees, a call
+  environment the tree layer can describe beyond `PureEnv`, and a **memory-aware**
+  module theorem: a `replaceFunction_sound`-style replacement whose frame is
+  load-bearing because the callee's footprint may differ across the call.  The
+  channel exists: `Calls` returns the callee's value, memory and allocator state
+  (`CallOutcome`) and `.call` adopts them, so a callee that writes is inside the
+  semantics.  The value-level form —
   `RefinesWithinAcross`, `replaceFunction_sound` and the
   `memCaller_replaces_loop` instance in `LeanLLVM/Vellum/ModuleRefinement.lean`,
   proved from the directional `CallRefines` over the caller and the two seam
-  selections — but `Calls` carries no memory channel, so its frame is inert and
-  it says nothing about callee memory.  The contextual theorem over one pure
-  caller is the earlier instance (`LeanLLVM/Vellum/SeamContext.lean`).
+  selections — demands complete agreement of the two outcomes, all three fields
+  included, so its frame is inert and it says nothing about a callee footprint
+  that differs.  The contextual theorem over one pure caller is the earlier
+  instance (`LeanLLVM/Vellum/SeamContext.lean`).
 - **M3 — machinery in place; certificate-bound installation openly scoped.**
   `probes/install/build.sh` rebuilds the imported proof graph, re-elaborates
   `CommaMaskIR` from source and re-elaborates `CommaMaskLoop` after it, then
@@ -329,7 +333,8 @@ accepted on the strength of a narrower result.
   the AST renders to.  That emission is the framework's own printer, not Lean's
   native compiler: a memory-using loop produced by `lean -c`, lowered by clang
   and related to a Lean AST is still unproved.  The repository also has no
-  memory-aware module theorem and no benchmark record.  The M4 acceptance
+  contextual replacement theorem whose frame is load-bearing, and no benchmark
+  record.  The M4 acceptance
   conditions — a loop certified from the Lean compilation chain, a contextual
   installation proof including memory effects, a checked certificate and
   benchmark measurements — are therefore unmet.  The tree relation proved for
@@ -356,7 +361,7 @@ their theorems and axiom pins, and the certificate-bound installation of all
 three units — from what remains open: adoption by
 `Refines`/`RefinesWithin`, discharging the bridge's tree-relation hypothesis for
 arbitrary function pairs, a loop rule at the executable refinement relation, a
-`runT`/`mfix` correspondence for the fixed-budget trees, memory-effectful call
-environments and a module theorem for a memory-using callee, benchmark records,
-and the remaining M4 conditions.  Nothing here
+`runT`/`mfix` correspondence for the fixed-budget trees, a call environment the
+tree layer can describe beyond `PureEnv` and a module theorem whose frame is
+load-bearing, benchmark records, and the remaining M4 conditions.  Nothing here
 claims that those open items are met.

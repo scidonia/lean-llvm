@@ -14,10 +14,12 @@ module
 The environment is deterministic — one result per argument list — so
 preservation is an equality of behaviours.  A one-directional contextual
 refinement (`target ⊆ source`) needs a relational call environment, in which a
-call may have several possible outcomes; that is the next extension, not a
-property of this model.  What the theorem does establish is that the caller's
-behaviour goes through the call semantics and the environment entry, rather
-than through an inlined body.
+call may have several possible outcomes; `CallRefines` is that relation.  An
+environment entry now returns what the callee leaves behind, memory and
+allocator state included, so a body that writes is inside the model: the caller
+adopts the memory the entry returns.  What the theorem does establish is that
+the caller's behaviour goes through the call semantics and the environment entry,
+rather than through an inlined body.
 -/
 import LeanLLVM.Parser
 import LeanLLVM.Semantics
@@ -60,19 +62,22 @@ def callerFunction : Function :=
 
 /-! ### The call environment -/
 
-/-- An environment in which the seam computes `v`; every other symbol is
-unresolved, which the semantics turns into `ub` at the call. -/
+/-- An environment in which the seam computes `v` and leaves the caller's memory
+and allocator exactly as it found them; every other symbol is unresolved, which
+the semantics turns into `ub` at the call.  A pure seam must return the caller's
+`mem` and `next` unchanged: the caller adopts the returned memory wholesale, so
+returning `[]` here would erase everything the caller had stored. -/
 def envFor (v : BitVec 64 → BitVec 64) : Calls :=
-  fun callee args =>
+  fun callee args mem next =>
     if callee = seamSymbol then
       match args with
-      | [.int 64 x] => some (.int 64 (v x))
+      | [.int 64 x] => some { ret := .int 64 (v x), mem := mem, next := next }
       | _ => none
     else none
 
 /-- The two installed bodies induce the same environment. -/
 theorem envFor_eq : envFor byteLoop = envFor swar := by
-  funext callee args
+  funext callee args mem next
   by_cases h : callee = seamSymbol
   · simp only [envFor, h, ite_true]
     cases args with
@@ -152,9 +157,9 @@ theorem caller_beh (v : BitVec 64 → BitVec 64) (x : BitVec 64) (o : Outcome) :
 
 theorem seam_callRefines :
     ∀ sym, CallRefines (envFor byteLoop) (envFor swar) sym := by
-  intro sym args
+  intro sym args mem next
   right
-  exact congrFun (congrFun envFor_eq sym) args
+  exact congrFun (congrFun (congrFun (congrFun envFor_eq sym) args) mem) next
 
 /-! ### Replacement -/
 
@@ -179,9 +184,9 @@ theorem caller_refines_under_seam (x : BitVec 64) (o : Outcome) :
 baseline that defines it: the target would be `ub`, which admits outcomes the
 source does not. -/
 theorem undefined_env_not_refines :
-    ¬ CallRefines (fun _ _ => none) (envFor swar) seamSymbol := by
+    ¬ CallRefines (fun _ _ _ _ => none) (envFor swar) seamSymbol := by
   intro h
-  have hsrc : envFor swar seamSymbol [.int 64 0] = none :=
+  have hsrc : envFor swar seamSymbol [.int 64 0] [] 1 = none :=
     CallRefines.ub_of_target_ub h rfl
   simp [envFor] at hsrc
 

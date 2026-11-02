@@ -42,11 +42,19 @@ change; for the trees `runT` produces it is the same memory, which is the
 correspondence in `Bridge.lean`: at every reachable continuation the handler's
 memory equals the `State.mem` the semantics uses, because a store advances both
 by `storeMem` (`storeValue_mem`) and every other instruction and terminator
-leaves the memory alone.  So `handled_runFuel` states exactly
+leaves the memory alone.  A call is the exception in the other direction: the
+semantics adopts the memory its callee leaves, while the tree's call event
+carries a value and nothing else, so the correspondence is stated for the
+environments `PureEnv` describes — those whose returned value depends on neither
+the caller's memory nor its allocator and which leave both untouched.  So
+`handled_runFuel` states
 
 ```lean
-HandledExec calls (runHandled calls frame n f s) (runFuel calls n f s)
+PureEnv calls → HandledExec calls (runHandled calls frame n f s) (runFuel calls n f s)
 ```
+
+for exactly that class; `noCalls` qualifies (`noCalls_pureEnv`), a
+memory-backed body does not.
 
 **The host handler is proof-facing and noncomputable.**  `frame` is an arbitrary
 `Nat → Prop` predicate, and the existing API gives it no decider, so the
@@ -227,6 +235,7 @@ This is a tree-level conditional rule, two instances, fixed budgets for the
 fixture and one allocator-derived frame.  It is not a refinement rule: there is
 no rule for loops at `Refines`/`RefinesWithin`, no automatic discharge of the
 rule's premise, no `runT = mfix` correspondence for the fixed-budget trees, no
-memory-effectful call environment, and no memory-aware module theorem; those are
-open obligations of the programme.  No pass, route or installer reasons through
+call environment beyond `PureEnv` that the tree layer could describe, and no
+contextual replacement whose frame is load-bearing; those are open obligations
+of the programme.  No pass, route or installer reasons through
 the tree layer.

@@ -164,7 +164,12 @@ needs the other two to match.
   `[propext, Classical.choice, Quot.sound]` in `LeanLLVMTest/Vellum.lean`.  The
   congruence theorems (`simtt_bind`, `simtt_interp`) are conditional, and their
   refused witnesses are part of the statement: do not drop a hypothesis to make
-  a congruence easier.
+  a congruence easier.  The tree layer describes **`PureEnv` environments only**:
+  its call event carries a value and no memory, so `handled_runFuel` and the
+  thirteen declarations that gain a `PureEnv` hypothesis carry one (fourteen
+  change; `HandledExec.vis_call_inv` gains `retAt` only).  A `Calls` entry
+  returns the callee's value, memory and allocator state for the semantics, and
+  nothing in the tree layer may be described as covering a callee that writes.
   `Classical.choice` is budgeted there for the arbitrary-`Prop` frame the host
   handler decides with `Classical.propDecidable`; that handler is
   proof-facing, `runFuel` and the routes are untouched, and making it

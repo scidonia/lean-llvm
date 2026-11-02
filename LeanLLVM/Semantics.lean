@@ -12,7 +12,9 @@ Undefined behaviour is a distinguished outcome (`ub`), not a stuck state.  A
 
 Calls are instructions whose callee is resolved by an explicit environment
 (`Calls`) rather than by the function being executed.  The environment is
-deterministic and has no memory effects yet: an unresolved call is `ub`.
+deterministic and returns what the callee leaves behind — its value, its memory
+and the allocator state the caller resumes from — so a call is a memory channel
+between caller and callee.  An unresolved call is `ub`.
 -/
 import LeanLLVM.Syntax
 
@@ -31,14 +33,27 @@ structure State where
 def State.bind (s : State) (n : String) (v : Value) : State :=
   { s with env := (n, v) :: s.env }
 
+/-- What a callee leaves behind: the value it returns, the memory after its
+writes, and the allocator state the caller resumes from.  The memory is the
+complete memory the callee leaves, not a delta: the caller adopts it, so a callee
+that allocates or writes must return the caller's memory with its own writes
+applied, and a callee that writes outside its own frame erases caller state. -/
+structure CallOutcome where
+  ret : Value
+  mem : Mem
+  next : Nat
+  deriving Repr
+
 /-- The values a call can return, indexed by callee symbol and argument list.
-This is the linker's selection seen from the semantics: an entry maps a symbol
-to its result on a given argument list, and a missing entry is an unresolved
-call.  The model has no memory effects across calls yet. -/
-abbrev Calls := String → List Value → Option Value
+This is the linker's selection seen from the semantics: an entry maps a symbol,
+an argument list, the caller's memory and the caller's allocator state to what
+the callee leaves.  A missing entry is an unresolved call, which is `ub`.  The
+allocator is shared: the callee receives the caller's `next` and the caller
+resumes from the value the callee returns. -/
+abbrev Calls := String → List Value → Mem → Nat → Option CallOutcome
 
 /-- The environment in which no call resolves. -/
-def noCalls : Calls := fun _ _ => none
+def noCalls : Calls := fun _ _ _ _ => none
 
 /-- Read an operand. -/
 def evalOperand (s : State) : Operand → Option Value
@@ -196,8 +211,8 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
   | .call d _ callee args =>
       match evalOperands s args with
       | some vs =>
-          match calls callee vs with
-          | some v => some (s.bind d v)
+          match calls callee vs s.mem s.next with
+          | some r => some { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next }
           | none => none
       | none => none
 
