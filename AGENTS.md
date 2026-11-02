@@ -90,7 +90,11 @@ needs the other two to match.
   staged cut recorded in `docs/json-route-evidence.md`: the cut is a runtime
   override in a throwaway copy, never an edit to a definition that carries a
   proof, because such an edit falsifies the proof and the route then stops at
-  import rather than at an assertion.
+  import rather than at an assertion.  The tape route's red is a reachability
+  red: it shows the scenario's accept path depends on the decoder's positions,
+  not that the span refusals are sensitive — their sensitivity rests on their
+  pairing with the affirmative controls and on `tape_valid`, and is not
+  claimed by a cut.
 
 ## What a change must satisfy
 
