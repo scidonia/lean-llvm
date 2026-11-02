@@ -32,13 +32,11 @@ The checks drive `probes/install/select.sh` — a copied, unmodified production
 file invoked as an external process — with local tool shims in a private
 temporary directory, so no compiler, linker, proof checker, network, clock or
 service is reached.  The proof checker the selector drives is a `lake` shim
-that accepts exactly these invocations: the imported-graph rebuilds
+that accepts exactly these invocations: the proof-module rebuilds
 `lake build LeanLLVM.Vellum.CommaMaskIR` and
-`lake build LeanLLVM.Vellum.CommaMaskLoop`, the source rebuilds
-`lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean
-LeanLLVM/Vellum/CommaMaskIR.lean` and
-`lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean
-LeanLLVM/Vellum/CommaMaskLoop.lean`, and the producer
+`lake build LeanLLVM.Vellum.CommaMaskLoop`, each issued after the selector
+removes that module's olean so Lake re-elaborates it from source, and the
+producer
 `CERT_UNIT=<unit> CERT_MANIFEST=<manifest> CERT_OUT=<path>
 lake env lean probes/install/InstallCertificate.lean`.  Every form validates its
 arguments and succeeds; the producer publishes the canonical certificate of the

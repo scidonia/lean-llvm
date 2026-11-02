@@ -37,16 +37,15 @@ artifact must be refused even after that digest is repaired.
 The checks drive `probes/install/select.sh` with local tool shims in a private
 temporary directory, so no compiler, linker, proof checker, network, clock or
 service is reached.  The proof checker the selector drives is a `lake` shim
-that accepts exactly three invocations: the imported-graph rebuild
-`lake build LeanLLVM.Vellum.CommaMaskIR`, the source rebuild
-`lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean
-LeanLLVM/Vellum/CommaMaskIR.lean`, and the producer
+that accepts exactly two invocations: the proof-module rebuild
+`lake build LeanLLVM.Vellum.CommaMaskIR`, which the selector issues after it
+removes that module's olean so Lake re-elaborates it from source, and the
+producer
 `CERT_UNIT=<unit> CERT_MANIFEST=<manifest> CERT_OUT=<path>
-lake env lean probes/install/InstallCertificate.lean`.  The graph rebuild
+lake env lean probes/install/InstallCertificate.lean`.  The rebuild
 validates its arguments and normally succeeds; it returns nonzero only when
 the copied imported source carries the appended invalid-Lean line, and no real
-Lean elaboration or proof checking runs.  The direct source check validates
-its arguments and succeeds, and the producer publishes the canonical
+Lean elaboration or proof checking runs.  The producer publishes the canonical
 certificate of the requested unit, derived from the manifest inputs before any
 change is made, so a changed artifact is never echoed back.  Every other `lake`
 invocation is refused.  The artifact the checks use is test data: its hashes
@@ -244,8 +243,7 @@ fallback must be attributable to the change made.
 - **When:** the integrator invokes the selector with `UNIT=candidate STRICT=1`
   into separate `OUT` and `RECORD` paths.  The `lake` shim's imported-graph
   rebuild `lake build LeanLLVM.Vellum.CommaMaskIR` returns nonzero for the
-  marked source, while its direct source check and certificate producer still
-  succeed.
+  marked source, while its certificate producer still succeeds.
 - **Then:** it exits nonzero, no executable exists at the requested output, no
   selection record names the candidate, and the linker was not given the
   candidate object for that output.

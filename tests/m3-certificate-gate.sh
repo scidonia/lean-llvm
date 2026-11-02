@@ -45,10 +45,10 @@
 # isolated manifest built in a temporary directory.  The tools the selector
 # invokes are local shims in a private PATH: clang, ld, file, nm and leanc;
 # lean, which answers `--version` only; and lake, which accepts the
-# imported-graph rebuild, the source-rebuild check and the certificate producer
-# and nothing else.  The graph rebuild succeeds unless the copied imported
-# source carries the appended invalid-Lean line; the other two forms always
-# succeed, so only the graph rebuild can observe a stale import.  The
+# proof-module rebuild and the certificate producer, and nothing else.  The
+# rebuild succeeds unless the copied imported source carries the appended
+# invalid-Lean line; the producer always succeeds, so only the rebuild can
+# observe a stale import.  The
 # remaining utilities (sha256sum, cut, sed, sort and the rest) are the real
 # core utilities, operating on temporary inputs.  No compiler, linker, proof
 # checker or service is reached, and nothing outside the temporary directory is
@@ -58,10 +58,10 @@
 # checker resolve their pinned inputs from: lean-toolchain, flake.nix,
 # flake.lock, lakefile.toml and lake-manifest.json are copied byte for byte,
 # the selector is copied to probes/install/select.sh beside the toolchain
-# helper, and the project olean directory the source check writes into exists
-# there.  The imported proof source LeanLLVM/Vellum/CommaMaskKernel.lean is
-# copied there too, so a stale-import run marks only that copy and never the
-# repository's source.
+# helper, and the project olean directory the rebuild removes the module's
+# olean from exists there.  The imported proof source
+# LeanLLVM/Vellum/CommaMaskKernel.lean is copied there too, so a stale-import
+# run marks only that copy and never the repository's source.
 #
 # Exit status: 0 when the scenario's assertions hold, 1 when one fails,
 # 2 on bad usage, 3 when the fixture itself is not usable.
@@ -424,14 +424,13 @@ echo "lean: unexpected invocation: $*" >&2
 exit 1
 SHIM
 
-# lake: the proof checker the selector drives.  Three command forms are
-# accepted: the imported-graph rebuild of the proof module, which succeeds
-# unless the copied imported source carries the appended invalid-Lean line; the
-# source-rebuild check, which succeeds without a proof system; and the
-# certificate producer, which publishes the canonical certificate of the
-# requested unit.  That certificate is derived from the manifest inputs before
-# any change is made, so a changed artifact is never echoed back.  Any other
-# invocation is refused.
+# lake: the proof checker the selector drives.  Two command forms are
+# accepted: the rebuild of the proof module, which succeeds unless the copied
+# imported source carries the appended invalid-Lean line; and the certificate
+# producer, which publishes the canonical certificate of the requested unit.
+# That certificate is derived from the manifest inputs before any change is
+# made, so a changed artifact is never echoed back.  Any other invocation is
+# refused.
 cat > "$fakebin/lake" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -449,13 +448,6 @@ fi
 [ "${1:-}" = env ] && [ "${2:-}" = lean ] ||
   { echo "lake: only 'lake build' and 'lake env lean' are supported" >&2; exit 1; }
 shift 2
-if [ "${1:-}" = -o ]; then
-  [ "$#" -eq 3 ] &&
-    [ "$2" = .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean ] &&
-    [ "$3" = LeanLLVM/Vellum/CommaMaskIR.lean ] ||
-    { echo "lake: unexpected source-check arguments: $*" >&2; exit 1; }
-  exit 0
-fi
 [ "$#" -eq 1 ] && [ "$1" = probes/install/InstallCertificate.lean ] ||
   { echo "lake: unexpected producer arguments: $*" >&2; exit 1; }
 case "${CERT_UNIT:-}" in
@@ -481,7 +473,7 @@ export PATH
 
 # The temporary tree mirrors the repository root the selector resolves: the
 # revision-bearing pin files, the selector at probes/install/select.sh, and
-# the project olean directory the source check writes into.
+# the project olean directory the selector rebuilds the proof module in.
 for pinned in lean-toolchain flake.nix flake.lock lakefile.toml \
   lake-manifest.json; do
   cp "$repo/$pinned" "$mirror/$pinned"

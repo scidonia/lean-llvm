@@ -10,11 +10,11 @@
 # isolated manifest built in a temporary directory.  The tools the selector
 # invokes are local shims in a private PATH: clang, ld, file, nm and leanc;
 # lean, which answers `--version` only; and lake, which accepts the
-# imported-graph rebuild, the source-rebuild check and the certificate producer
-# and nothing else.  The remaining utilities (sha256sum, cut, sed and the rest)
-# are the real core utilities, operating on temporary inputs.  The temporary
-# tree mirrors the repository root the selector resolves the revision-bearing
-# pin files from.  No compiler, linker, proof checker or service is reached,
+# proof-module rebuild and the certificate producer, and nothing else.  The
+# remaining utilities (sha256sum, cut, sed and the rest) are the real core
+# utilities, operating on temporary inputs.  The temporary tree mirrors the
+# repository root the selector resolves the revision-bearing pin files from.
+# No compiler, linker, proof checker or service is reached,
 # and nothing outside the temporary directory is written.
 #
 # --strict is G1: a strict loop request must be refused when the manifest's
@@ -263,11 +263,11 @@ echo "lean: unexpected invocation: $*" >&2
 exit 1
 SHIM
 
-# lake: the proof checker the selector drives.  Three command forms are
-# accepted: the imported-graph rebuild of the proof module, the source-rebuild
-# check, which succeeds without a proof system, and the certificate producer,
-# which publishes the canonical certificate of the requested unit derived from
-# the manifest inputs.  Any other invocation is refused.
+# lake: the proof checker the selector drives.  Two command forms are
+# accepted: the rebuild of the proof module, which succeeds without a proof
+# system; and the certificate producer, which publishes the canonical
+# certificate of the requested unit derived from the manifest inputs.  Any
+# other invocation is refused.
 cat > "$fakebin/lake" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -280,13 +280,6 @@ fi
 [ "${1:-}" = env ] && [ "${2:-}" = lean ] ||
   { echo "lake: only 'lake build' and 'lake env lean' are supported" >&2; exit 1; }
 shift 2
-if [ "${1:-}" = -o ]; then
-  [ "$#" -eq 3 ] &&
-    [ "$2" = .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean ] &&
-    [ "$3" = LeanLLVM/Vellum/CommaMaskIR.lean ] ||
-    { echo "lake: unexpected source-check arguments: $*" >&2; exit 1; }
-  exit 0
-fi
 [ "$#" -eq 1 ] && [ "$1" = probes/install/InstallCertificate.lean ] ||
   { echo "lake: unexpected producer arguments: $*" >&2; exit 1; }
 case "${CERT_UNIT:-}" in
@@ -312,7 +305,7 @@ export PATH
 
 # The temporary tree mirrors the repository root the selector resolves: the
 # revision-bearing pin files, the selector at probes/install/select.sh, and
-# the project olean directory the source check writes into.
+# the project olean directory the selector rebuilds the proof module in.
 for pinned in lean-toolchain flake.nix flake.lock lakefile.toml \
   lake-manifest.json; do
   cp "$repo/$pinned" "$mirror/$pinned"

@@ -37,8 +37,8 @@ build=${BUILD_DIR:-"$here/build"}
 mkdir -p "$build"
 
 # One source-elaboration writer at a time in this repository.  The build and
-# the selector both rebuild the proof module's imported graph, rewrite its olean
-# and then import it, so the graph rebuild, the source elaboration, both
+# the selector both re-elaborate the proof module by removing its olean and
+# asking Lake to build the module, then import it, so those rebuilds, both
 # certificate producers and the publication below run under one lock.  The lock
 # is a directory created atomically by `mkdir`; a contender refuses before this
 # build mutates any published output, and only the owner removes it.  A lock
@@ -189,26 +189,30 @@ EOF
 } > "$staging/manifest.env"
 
 # 6. The kernel-derived certificates.  `lake build` does not track
-#    `include_str` inputs, so the proof module is elaborated from source first;
-#    the producer then imports that fresh module, checks the theorem statement,
-#    the contract link and the axiom footprint, and writes the certificate.
-#    Lake tracks imported project source but not the `include_str` fixtures, so
-#    the imported graph is rebuilt from current source first, then the proof
-#    module is re-elaborated from source to force the fixture guards.  The
-#    source elaboration must succeed before any certificate is produced, and
-#    every command runs from the repository root under the held lock.
+#    `include_str` inputs, so the proof module is re-elaborated from current
+#    source before the producer imports it; the producer then checks the
+#    theorem statement, the contract link and the axiom footprint, and writes
+#    the certificate.
+#    Removing the module's olean is the force.  Lake's up-to-date check compares
+#    the hashes it recorded for the module's inputs and accepts an olean written
+#    by another process as current, so a plain `lake build` would skip the
+#    module and its `#guard`s; a missing olean is rebuilt by Lake's own module
+#    job, whose `--setup` record carries the package identity (`package:
+#    LeanLLVM`) and so keeps the initializer names a later dependent emits
+#    linkable.  That job also rewrites the module's ilean, C file, hash
+#    sidecars and trace, so the build state is Lake's throughout.
 #    `CommaMaskLoop` imports `CommaMaskIR` and the loop's certificate names its
-#    own theorem, so it is reconciled and re-elaborated after that pair: its
-#    proof module must see the already-freshened `CommaMaskIR` olean.
+#    own theorem, so it is rebuilt after that module: its proof module must see
+#    the freshly built `CommaMaskIR` olean.  Every command runs from the
+#    repository root under the held lock, and a failed elaboration stops the
+#    build before any certificate is produced.
 source_check() {
-  (cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskIR) &&
   (cd "$repo" &&
-    lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean \
-      LeanLLVM/Vellum/CommaMaskIR.lean) &&
-  (cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskLoop) &&
+    rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean &&
+    lake build LeanLLVM.Vellum.CommaMaskIR) &&
   (cd "$repo" &&
-    lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean \
-      LeanLLVM/Vellum/CommaMaskLoop.lean)
+    rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
+    lake build LeanLLVM.Vellum.CommaMaskLoop)
 }
 certificate() { # unit
   local unit=$1

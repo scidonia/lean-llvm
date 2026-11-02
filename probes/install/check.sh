@@ -46,14 +46,15 @@ fail() {
   exit 1
 }
 
-# `lake build` does not track `include_str` inputs, so a changed fixture alone
-# does not invalidate a cached module.  The gate elaborates the module from
-# source every time; `lake build` only warms the dependency oleans the
-# certificate producer imports, and it writes the same build state a
-# source-elaboration writer does, so it runs under the repository lock through
-# `lake-locked.sh` and releases it before the builder runs.  The loop's pin is a
-# `#guard` over its own `include_str`, so it needs the same treatment after the
-# fixture is printed again.
+# Lake tracks imported project source but not `include_str` inputs, so a changed
+# fixture alone does not invalidate a cached module.  The builder re-elaborates
+# the module through Lake's own module job after removing that module's olean,
+# so the guards see the current fixture text and the olean keeps the package
+# identity the dependents link against.  The warm-up build below runs under the
+# repository lock through `lake-locked.sh`, because Lake writes the project's
+# oleans, and releases it before the builder runs.  The loop's pin is a `#guard`
+# over its own `include_str`, so it needs the same treatment after the fixture
+# is printed again.
 warm() { bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR; }
 proof() { (cd "$repo" && lake env lean LeanLLVM/Vellum/CommaMaskIR.lean); }
 loop_proof() { (cd "$repo" && lake env lean LeanLLVM/Vellum/CommaMaskLoop.lean); }

@@ -10,13 +10,12 @@
 # isolated manifest built in a temporary directory.  The tools the selector
 # invokes are local shims in a private PATH: clang, ld, file, nm and leanc;
 # lean, which answers `--version` only; and lake, which accepts the
-# imported-graph rebuild of either proof module, the source-rebuild check of
-# either module and the certificate producer, and nothing else.  The remaining
-# utilities (sha256sum, cut, sed and the rest) are the real core utilities,
-# operating on temporary inputs.  The temporary tree mirrors the repository
-# root the selector resolves the revision-bearing pin files from.  No compiler,
-# linker, proof checker or service is reached, and nothing outside the
-# temporary directory is written.
+# proof-module rebuild of either module and the certificate producer, and
+# nothing else.  The remaining utilities (sha256sum, cut, sed and the rest) are
+# the real core utilities, operating on temporary inputs.  The temporary tree
+# mirrors the repository root the selector resolves the revision-bearing pin
+# files from.  No compiler, linker, proof checker or service is reached,
+# and nothing outside the temporary directory is written.
 #
 # --strict is L1: a strict loop request whose certificate names the loop's own
 # theorem, matches the loop object, its fixture and marker, and matches the
@@ -276,14 +275,13 @@ echo "lean: unexpected invocation: $*" >&2
 exit 1
 SHIM
 
-# lake: the proof checker the selector drives.  Three command forms are
-# accepted: the imported-graph rebuild of either proof module; the
-# source-rebuild check of either module, which succeeds without a proof system;
-# and the certificate producer, which publishes the canonical certificate of
-# the requested unit derived from the manifest inputs.  Both proof modules are
-# accepted unconditionally, so the gate is observed through the certificate and
-# not through a stale import; that failure is covered by
-# tests/m3-certificate-gate.sh.  Any other invocation is refused.
+# lake: the proof checker the selector drives.  Two command forms are
+# accepted: the rebuild of either proof module; and the certificate producer,
+# which publishes the canonical certificate of the requested unit derived from
+# the manifest inputs.  Both proof modules are accepted unconditionally, so the
+# gate is observed through the certificate and not through a stale import; that
+# failure is covered by tests/m3-certificate-gate.sh.  Any other invocation is
+# refused.
 cat > "$fakebin/lake" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -299,18 +297,6 @@ fi
 [ "${1:-}" = env ] && [ "${2:-}" = lean ] ||
   { echo "lake: only 'lake build' and 'lake env lean' are supported" >&2; exit 1; }
 shift 2
-if [ "${1:-}" = -o ]; then
-  [ "$#" -eq 3 ] ||
-    { echo "lake: unexpected source-check arguments: $*" >&2; exit 1; }
-  case "$2:$3" in
-    .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean:LeanLLVM/Vellum/CommaMaskIR.lean)
-      exit 0 ;;
-    .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean:LeanLLVM/Vellum/CommaMaskLoop.lean)
-      exit 0 ;;
-  esac
-  echo "lake: unexpected source-check arguments: $*" >&2
-  exit 1
-fi
 [ "$#" -eq 1 ] && [ "$1" = probes/install/InstallCertificate.lean ] ||
   { echo "lake: unexpected producer arguments: $*" >&2; exit 1; }
 case "${CERT_UNIT:-}" in
@@ -336,7 +322,7 @@ export PATH
 
 # The temporary tree mirrors the repository root the selector resolves: the
 # revision-bearing pin files, the selector at probes/install/select.sh, and
-# the project olean directory the source check writes into.
+# the project olean directory the selector rebuilds the proof module in.
 for pinned in lean-toolchain flake.nix flake.lock lakefile.toml \
   lake-manifest.json; do
   cp "$repo/$pinned" "$mirror/$pinned"

@@ -67,13 +67,14 @@ req_unit=${UNIT:-}
 [ -f "$req_manifest" ] || { echo "select: no manifest at $req_manifest" >&2; exit 1; }
 
 # One source-elaboration writer at a time in this repository: the build and the
-# selector both rebuild the proof module's imported graph, rewrite its olean and
-# then import it.  The lock is a directory created atomically by `mkdir`, which
-# is already pinned; only the owner removes it.  It is taken before the
-# manifest is sourced or any mutable published input is read, and held through
-# the link and the selection-record write, so a contender fails before touching
-# published bytes and a validated certificate cannot be replaced between
-# validation and use.  A lock left behind by a crashed run refuses too:
+# selector both re-elaborate the proof module by removing its olean and asking
+# Lake to build the module, then import it.  The lock is a directory created
+# atomically by `mkdir`, which is already pinned; only the owner removes it.  It
+# is taken before the manifest is sourced or any mutable published input is
+# read, and held through the link and the selection-record write, so a
+# contender fails before touching published bytes and a validated certificate
+# cannot be replaced between validation and use.  A lock left behind by a
+# crashed run refuses too:
 # removing it is a human decision after checking that no owner is running.
 lock_dir="$root/.lake/install-certificate.lock"
 lock_held=0
@@ -333,43 +334,35 @@ check_certificate() { # unit
     [ "${cert[toolchain_revision]}" = "$observed_toolchain" ] ||
     { proof_failure=invalid; return 1; }
 
-  # The kernel re-check: reconcile the imported proof graph, elaborate the
-  # proof module from source, have the producer derive the certificate again,
-  # and compare bytes.  The manifest path is passed absolute because the
-  # producer runs from the repository root.  This runs under the script's
-  # repository lock, which is held from before the manifest is sourced through
-  # the link and record write.
+  # The kernel re-check: re-elaborate the proof module from current source,
+  # have the producer derive the certificate again, and compare bytes.  The
+  # force is removing the module's olean: Lake accepts an olean written by
+  # another process as current and does not track the `include_str` fixtures,
+  # while its own module job re-evaluates the guards and carries the `--setup`
+  # package identity the dependent link needs; that job also rewrites the
+  # module's ilean, C file, hash sidecars and trace.  The manifest path is
+  # passed absolute because the producer runs from the repository root.  This
+  # runs under the script's repository lock, which is held from before the
+  # manifest is sourced through the link and record write.
   work=$(mktemp -d) || { proof_failure=invalid; return 1; }
   derived=$work/proof.env
   manifest_abs=$(cd "$(dirname "$req_manifest")" && pwd)/$(basename "$req_manifest")
   sequence_ok=1
-  # Lake tracks imported project source but not the `include_str` fixtures, and
-  # the direct re-elaboration below forces only the latter, so the imported
-  # graph is rebuilt first.
-  if ! (cd "$root" && lake build LeanLLVM.Vellum.CommaMaskIR) \
-      >/dev/null 2>"$work/graph.log"; then
-    sequence_ok=0
-  fi
-  if [ "$sequence_ok" -eq 1 ] &&
-     ! (cd "$root" &&
-        lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean \
-          LeanLLVM/Vellum/CommaMaskIR.lean) >/dev/null 2>"$work/source.log"; then
+  if ! (cd "$root" &&
+        rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean &&
+        lake build LeanLLVM.Vellum.CommaMaskIR) \
+      >/dev/null 2>"$work/rebuild.log"; then
     sequence_ok=0
   fi
   # `CommaMaskLoop` imports `CommaMaskIR`, so the loop's own proof module is
-  # reconciled and re-elaborated only after that pair, and only when the
-  # requested unit is the loop: a baseline or candidate request must not pay for
-  # a module its certificate does not name.
-  if [ "$sequence_ok" -eq 1 ] && [ "$unit" = loop ] &&
-     ! (cd "$root" && lake build LeanLLVM.Vellum.CommaMaskLoop) \
-      >/dev/null 2>"$work/loop-graph.log"; then
-    sequence_ok=0
-  fi
+  # rebuilt only after it, and only when the requested unit is the loop: a
+  # baseline or candidate request must not pay for a module its certificate
+  # does not name.
   if [ "$sequence_ok" -eq 1 ] && [ "$unit" = loop ] &&
      ! (cd "$root" &&
-        lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean \
-          LeanLLVM/Vellum/CommaMaskLoop.lean) \
-      >/dev/null 2>"$work/loop-source.log"; then
+        rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
+        lake build LeanLLVM.Vellum.CommaMaskLoop) \
+      >/dev/null 2>"$work/loop-rebuild.log"; then
     sequence_ok=0
   fi
   if [ "$sequence_ok" -eq 1 ] &&

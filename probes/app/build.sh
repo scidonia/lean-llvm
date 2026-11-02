@@ -155,22 +155,23 @@ proof_candidate=$build/proof_candidate.env
 proof_loop=$build/proof_loop.env
 EOF
 
-# `lake build` does not track `include_str`, so rebuild the imported graph from
-# current source and then elaborate the proof module from source before the
-# producers import it.  The build acquired the repository lock before it
-# removed its previous output; the lock is held through the manifest
-# publication below and released only at the end.
-(cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskIR)
+# `lake build` does not track `include_str`, and it accepts an olean written by
+# another process as current, so the proof module is re-elaborated by removing
+# its olean and asking Lake for it: a missing olean forces Lake's own module
+# job, which evaluates the fixture guards and carries the `--setup` record whose
+# `package` field keeps the module's initializer names linkable.  The build
+# acquired the repository lock before it removed its previous output; the lock
+# is held through the manifest publication below and released only at the end.
 (cd "$repo" &&
-  lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean \
-    LeanLLVM/Vellum/CommaMaskIR.lean)
+  rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean &&
+  lake build LeanLLVM.Vellum.CommaMaskIR)
 # `CommaMaskLoop` imports `CommaMaskIR`, and the loop's certificate names its own
-# theorem, so it follows that pair.  Every unit this build links against is
+# theorem, so it is rebuilt after that module: its proof module must see the
+# freshly built `CommaMaskIR` olean.  Every unit this build links against is
 # certified here, so the step is not conditional on a request.
-(cd "$repo" && lake build LeanLLVM.Vellum.CommaMaskLoop)
 (cd "$repo" &&
-  lake env lean -o .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean \
-    LeanLLVM/Vellum/CommaMaskLoop.lean)
+  rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
+  lake build LeanLLVM.Vellum.CommaMaskLoop)
 for unit in baseline candidate loop; do
   (cd "$repo" &&
     CERT_UNIT="$unit" CERT_MANIFEST="$build/manifest.env" \

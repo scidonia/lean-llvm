@@ -123,9 +123,9 @@ needs the other two to match.
   supplied theorem, axiom set or target as proof, and keep certificate files
   out of compiled units.
 - `probes/install/build.sh`, the app build and the selector serialize the
-  imported-graph rebuild, the proof-module olean rewrite and the certificate
-  producers under the `.lake/install-certificate.lock` directory, created
-  atomically by `mkdir`.  The install and app builders hold it through their
+  proof-module rebuilds and the certificate producers under the
+  `.lake/install-certificate.lock` directory, created atomically by `mkdir`.
+  The install and app builders hold it through their
   final manifest publication, and the selector holds it from before the
   manifest is sourced through the link and selection record.  Not obtaining the
   lock refuses before source elaboration or any published-input read; a lock

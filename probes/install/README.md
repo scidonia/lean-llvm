@@ -62,11 +62,11 @@ This probe exercises the installation point described in
   whose certificate is missing or rejected installs the baseline and records
   the rejection as a fallback.
 - `build.sh`, the app build and `select.sh` take the
-  `.lake/install-certificate.lock` directory around the imported-graph
-  rebuild, the proof-module olean rewrite and the producer, so two routes
-  cannot overlap. The install builder holds it through the final manifest
-  publication, and the selector holds it from before the manifest is sourced
-  through the link and selection record. Lake warm-up builds and the fixture
+  `.lake/install-certificate.lock` directory around the proof-module rebuilds
+  and the producer, so two routes cannot overlap. The install builder holds it
+  through the final manifest publication, and the selector holds it from before
+  the manifest is sourced through the link and selection record. Lake warm-up
+  builds and the fixture
   emitter run through `lake-locked.sh`, which takes the same lock for that one
   command and releases it before the caller's builder runs; the app build takes
   the lock before it removes its previous output and holds it through the
