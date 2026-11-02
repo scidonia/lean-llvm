@@ -27,6 +27,11 @@ name = "LeanLLVMTest"
 name = "leanllvm"
 root = "Main"
 
+# The scalar JSON reference parser's corpus driver; see JsonMain.lean.
+[[lean_exe]]
+name = "leanllvm-json"
+root = "JsonMain"
+
 # Renders the memory-backed loop fixture from its Lean AST; see LoopEmit.lean.
 [[lean_exe]]
 name = "leanllvm-loop-emit"

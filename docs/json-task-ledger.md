@@ -28,16 +28,25 @@ ledger (met), and a repeatable benchmark driver (met, `probes/bench/bench.sh`).
 
 ## J1 — independent semantics, scalar parser, tape
 
-|Task|Status|
-|---|---|
-|Byte-level JSON semantics (independent of any parser)|missing|
-|Scalar Lean parser: scanner, grammar, tape builder|missing|
-|`parseRef_sound`, `parseRef_complete` under policy and limits|missing|
-|`tape_valid`, `decodeTape_correct`|missing|
-|Scalar executable over fixtures|missing|
+|Task|Status|Evidence|
+|---|---|---|
+|Byte-level JSON semantics (independent of any parser)|implemented and checked|`LeanLLVM/JSON/Spec.lean`: `Value` (`:22`), `ValueAt` (`:393`), `TextAt`/`RfcText`/`StrictText` (`:463,468,473`), `Policy` (`:479`); the meaning is RFC 8259 §2's grammar as a relation over the bytes, `Utf8Char` is RFC 3629 §4 (`Utf8.lean:17`), and `Policy` is RFC 7493 §2.1's character constraint (`Bytes.lean:82,87`), so no parser is consulted|
+|Scalar Lean parser: scanner, grammar, tape builder|implemented and checked|`Scan.lean:166` (`scanChars`), `Parse.lean:88,206,377` (`Parsed`, `parseValue`, `parseBytes`), `Tape.lean:48,314` (`Tape`, `decodeTape`); `scanChars_iff` (`Scan.lean:1500`) ties `scanChars` to the strict string-body relation `StrChars .strict` over RFC 3629 §4's `UTF8-char`, and `valid_iff_strict` (`Scan.lean:1763`) ties the strict grammar to RFC 8259 under `Policy`|
+|`parseRef_sound`, `parseRef_complete` under policy and limits|implemented and checked|`Correct.lean:2707` and `:4029`; both print `[propext, Quot.sound]` under `#print axioms`, pinned in `LeanLLVMTest/Json.lean:388-410`, as do the corollaries `accepted_is_rfc_text`, `rfc_text_accepted_on_policy`, `parseRef_inputTooLong` and `parseRef_not_invalid_on_valid`|
+|`tape_valid`, `decodeTape_correct`|implemented and checked|`TapeCorrect.lean:1041` and `Correct.lean:4079`; same pins. The zero-copy seams are separate theorems — `decoded_number_is_span_bytes` and `decoded_string_is_span_literal`|
+|Scalar executable over fixtures|implemented and checked|`JsonMain.lean` (`leanllvm-json`, with the `default`, `depth2`, `tok4` and `in8` limits profiles) runs `tests/json/manifest.tsv`: 130 rows over 130 corpus files, `bash tests/json/check.sh` exit 0. `lake env lean tests/json-api.lean` and `lake env lean tests/json-tape.lean` exit 0, with `lake build` (1627 jobs) and `lake build LeanLLVMTest` (824). Run in this session against the worktree based on `4411f6a`|
 
 Gate: soundness and completeness under the policy and limits; tape meaning
-established; the scalar executable runs the corpus.
+established; the scalar executable runs the corpus. **Met** on that content:
+`parseRef_sound` and `parseRef_complete` under `Policy` and the limits,
+`tape_valid` and `decodeTape_correct`, and `bash tests/json/check.sh` over the
+130 rows, all at `[propext, Quot.sound]`.
+
+C13 is a separate item and is not absorbed into that verdict: it is landed at
+this revision — `docs/contract.md` §1.1 names RFC 8259, RFC 3629 and RFC 7493
+§2.1 with the clause map, §3 carries the two adherence rows, the strict-subset
+note is replaced by the two-direction statement naming unpaired surrogates and
+noncharacters, and the rows above name the three standards.
 
 ## J2 — pure block candidate and restricted contextual integration
 

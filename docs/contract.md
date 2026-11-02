@@ -32,6 +32,26 @@ no honest `Value` to return, so a malformed tape yields `none` and
 lexeme; converting a lexeme to binary floating point is a separate obligation
 with its own proof and is not part of the first equivalence contract.
 
+### 1.1 Normative references and clause map
+
+The specification is RFC 8259 (STD 90) together with RFC 3629 for the encoding
+its §8.1 requires.  RFC 7493 (I-JSON) is the strictness profile adopted for
+characters only.  ECMA-404 is the same grammar as RFC 8259 §2, not an alternative
+to it.  The section numbers below are citations of clauses, not summaries.
+
+|Clause|Requirement|Our reading|Consequence|
+|---|---|---|---|
+|8259 §2|`JSON-text = ws value ws`; the six structural-character productions carry `ws` on both sides|implemented as the ABNF reads|whitespace is allowed wherever the ABNF allows it|
+|8259 §3, §4, §5|lowercase literals; objects; arrays; names `SHOULD` be unique|the grammar, with duplicates preserved in order|outside RFC 7493 §2.3, and stated so|
+|8259 §6|number grammar; `NaN`/`Infinity` not permitted; implementations may limit range and precision|grammar enforced, lexeme preserved, magnitude unconstrained|outside RFC 7493 §2.2, and stated so|
+|8259 §7|escape list; `unescaped = %x20-21 / %x23-5B / %x5D-10FFFF`; surrogate-pair rule|the ABNF, with the pair rule as a clause|`"\uD834\uDD1E"` and raw `𝄞` denote the same character|
+|8259 §8.1|UTF-8 for interchange; BOM `MUST NOT` be added, parser `MAY` ignore|RFC 3629 as normative base; the `MAY ignore` option is not taken|strict UTF-8 is part of the language, and a BOM is refused as a non-text|
+|8259 §8.2|the ABNF admits `"\uDEAD"`|`RfcText` admits it; `Policy` refuses its reading|the two adherence theorems are conditional on `Policy`|
+|8259 §9|a parser `MUST` accept every grammar-conforming text, and `MAY` set limits|narrowed by `Policy`, and bounded by the resource limits|never claimed unconditionally|
+|3629 §3, §4|invalid sequences must be rejected; the `UTF8-char` ABNF|transcribed clause for clause|overlongs, encoded surrogates and `> U+10FFFF` are not JSON texts|
+|7493 §2.1|no Surrogates or Noncharacters in names and string values|`Policy`|the only narrowing of the language|
+|7493 §2.3|no duplicate member names|not adopted|duplicates preserved; no I-JSON conformance is claimed|
+
 ## 2. Policy decisions
 
 | Concern | Decision |
@@ -39,7 +59,7 @@ with its own proof and is not part of the first equivalence contract.
 | Input encoding | Strict UTF-8; malformed sequences and overlong encodings rejected |
 | Byte-order mark | Rejected, as an explicit API policy |
 | String escapes | The standard escapes and four-hex-digit `\uXXXX` validated |
-| Unicode surrogates | Well-formed pairs required; unpaired escaped surrogates rejected, as a stated Unicode policy |
+| Unicode surrogates and noncharacters | Well-formed pairs required; unpaired escaped surrogates and noncharacters rejected, as RFC 7493 §2.1's character policy |
 | Numbers | JSON number grammar enforced; exact lexeme preserved; no `NaN`/`Infinity` extension |
 | Duplicate object keys | Preserved in order, including duplicates; no implicit last-wins map |
 | Output | A tape with checked spans into the input, plus a unique decoded value |
@@ -47,9 +67,12 @@ with its own proof and is not part of the first equivalence contract.
 | Limits | Input length, nesting depth and output capacity are explicit; exhaustion is distinguishable from invalid input |
 | Parser reuse | Supported only through explicitly owned reusable buffers; fresh and reused modes are measured separately |
 
-Rejecting unpaired surrogate escapes recognises a strict subset of
-grammar-legal JSON. This restriction is deliberate and must be stated wherever
-the recogniser theorem is quoted.
+The recognised language is therefore RFC 8259's grammar restricted by RFC 7493
+§2.1's character constraint.  `accepted_is_rfc_text` and
+`rfc_text_accepted_on_policy` state the two directions; both are conditional on
+`Policy` and the latter also on the resource limits, so neither is RFC 8259 §9's
+unconditional `MUST`.  `"\uDEAD"` and the noncharacters RFC 7493 §2.1 forbids
+are texts this API refuses, and that pairing is the deliberate restriction.
 
 ## 3. Theorem families and their repository names
 
@@ -58,8 +81,10 @@ may change; the strength may not.
 
 | Obligation | Intended statement | Where it lives |
 |---|---|---|
-| Reference correctness | `parseRef_sound`, `parseRef_complete`: acceptance and decoding agree with the byte-level JSON semantics, subject to policy and limits | new JSON module |
-| Tape interpretation | `tape_valid`, `decodeTape_correct`: spans well formed, nesting and values consistent, decoded meaning correct; a source-backed tape owns its input for its lifetime | new JSON module |
+| Reference correctness | `parseRef_sound`, `parseRef_complete`: acceptance and decoding agree with the byte-level JSON semantics, subject to policy and limits | `LeanLLVM/JSON/Correct.lean` |
+| Tape interpretation | `tape_valid`, `decodeTape_correct`: spans well formed, nesting and values consistent, decoded meaning correct; a source-backed tape owns its input for its lifetime | `LeanLLVM/JSON/TapeCorrect.lean` (`tape_valid`), `LeanLLVM/JSON/Correct.lean` (`decodeTape_correct`) |
+| Adherence, forward | `accepted_is_rfc_text`: everything accepted is an RFC 8259 text, with an interpretation — `Accepted → RfcText` | `LeanLLVM/JSON/Correct.lean` |
+| Adherence, backward | `rfc_text_accepted_on_policy`: every RFC 8259 text whose interpretation satisfies `Policy`, inside the resource limits, is accepted and decodes to that interpretation — `RfcText ∧ Policy → Accepted` | `LeanLLVM/JSON/Correct.lean` |
 | Block correctness | `scanBlock_correct`: the candidate block operation refines the scalar transition, including next state and error information | new JSON module |
 | Whole-scan correctness | `scan_simd_refines_scalar`: blocks, tails and end-of-input finalisation composed | new JSON module |
 | Actual LLVM refinement | `scannerLLVM_refines`: the imported baseline and candidate bodies, under this repository's semantics — not two Lean models compared to each other | `LeanLLVM/Vellum/*` + fixtures |

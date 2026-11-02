@@ -19,3 +19,4 @@ import LeanLLVM.Vellum.SeamContext
 import LeanLLVM.Vellum.CommaMaskLoop
 import LeanLLVM.Vellum.ModuleRefinement
 import LeanLLVM.ITree
+import LeanLLVM.JSON
