@@ -6,10 +6,14 @@ This probe exercises the installation point described in
 - `Caller.lean` sees only `@[extern]` declarations for the seam and an
   implementation marker.
 - `probes/install/ir/` holds the emitted IR that the refinement proofs parse,
-  pin and prove. `capture.sh` regenerates all three fixtures: `baseline.ll` and
-  `candidate.ll` from the C emissions, recording the exact `clang` and `opt`
-  invocations and the textual syntax removed before the parser sees them, and
-  `loop.ll` by printing the Lean AST, with nothing removed.
+  pin and prove. `capture.sh` regenerates the three comma-mask fixtures:
+  `baseline.ll` and `candidate.ll` from the C emissions, recording the exact
+  `clang` and `opt` invocations and the textual syntax removed before the
+  parser sees them, and `loop.ll` by printing the Lean AST, with nothing
+  removed. `capture-json.sh` regenerates the fourth fixture,
+  `json-classify.candidate.ll`, from
+  `probes/install/json/classify.candidate.c` at `-O2 -mavx2`, recording the
+  same provenance and stripping decisions.
 - `Baseline.lean` and `Candidate.lean` are the Lean bodies. `build.sh` compiles
   them as **provenance** objects and compares them with the proved units on a
   differential corpus.
