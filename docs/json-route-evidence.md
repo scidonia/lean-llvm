@@ -21,7 +21,10 @@ module, and a named span comparison in the decoder costs twelve proof-script
 edits in `TapeCorrect.lean` plus thirteen in `Correct.lean`.
 
 Where the defect class is *compiled artefact diverging from proven definition*,
-the cut is therefore a runtime override — `@[implemented_by]` — in a copy. The
+the cut is therefore a runtime override — `@[implemented_by]` — in a copy.  The premise that a named
+comparison would cost no proof changes was measured false for this module:
+twelve `simp only` list additions in `TapeCorrect.lean` and thirteen sites in
+`Correct.lean`, the tail equation lemmas and both seam theorems among them. The
 definition, its statement and its proof are untouched; only the compiled body
 differs. That is the class a certificate about a compiled unit has to care
 about, and it is why these cuts are evidence about a runtime rather than about
