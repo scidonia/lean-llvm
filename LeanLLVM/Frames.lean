@@ -72,6 +72,42 @@ theorem AgreesOutsideMem.writeBytes_left {m n : Mem} {frame : Nat → Prop}
   rw [readByte_writeBytes_outside m bs hout]
   exact h a ha
 
+/-! ### States and control steps -/
+
+/-- Two states agree at `frame`: the same registers, block, allocator state, and
+byte agreement on memory outside `frame`.  This is the invariant a framed call
+preserves: after a call the two memories may differ inside the callee's
+footprint, and nothing else may differ.  The allocator is required to agree
+exactly rather than outside `frame`, because the caller resumes from it and a
+disagreement relocates every later allocation.  No bound is placed on `next`:
+the relation `CallRefinesWithin` is stated at every base, so the step lemma needs
+none here. -/
+def State.AgreesOutside (frame : Nat → Prop) (s t : State) : Prop :=
+  s.env = t.env ∧ s.pc = t.pc ∧ s.next = t.next ∧ AgreesOutsideMem s.mem t.mem frame
+
+theorem State.agreesOutside_refl (s : State) (frame : Nat → Prop) :
+    State.AgreesOutside frame s s :=
+  ⟨rfl, rfl, rfl, AgreesOutsideMem.refl s.mem frame⟩
+
+/-- A control step's result related at `frame`: the two take the same constructor
+with post-states that agree.  This mirrors `Outcome.AgreesOutside`
+(`Frames.lean:125-128`) line for line, and for the same reason: the relation
+compares *defined* results only.  A `ub` source is handled by the caller, not here
+— `step_refinesWithin` concludes `c' = .ub ∨ c.AgreesOutside F c'`, and
+`runFuel_refinesWithin` keeps the `∃ m ≤ n, … = some .ub` disjunct, exactly as
+`Beh` carries the source-`ub` case at the outcome level.  So `| .ub, .ub => True`
+and `| _, _ => False` is the intended definition, **not** `| .ub, _ => True`: the
+`ub` direction is decided once, in `CallRefines`/`CallRefinesWithin`, and widening
+this relation would move that decision to a second place.  Equality of `Ctrl` is
+*not* the relation either: `Ctrl` embeds the whole
+post-state (`Semantics.lean:213-217`), so at a writing call the two states differ
+inside `frame`, which is precisely what the framed relation permits. -/
+def Ctrl.AgreesOutside (frame : Nat → Prop) : Ctrl → Ctrl → Prop
+  | .ub, .ub => True
+  | .ret v s, .ret w t => v = w ∧ State.AgreesOutside frame s t
+  | .jump s, .jump t => State.AgreesOutside frame s t
+  | _, _ => False
+
 /-! ### Private footprints -/
 
 /-- Nothing outside `frame` is present in the memory.  This is the property an
@@ -116,6 +152,13 @@ theorem MemConfined.writeBytes {lo hi : Nat} {m : Mem} {start : Nat}
     {bs : List UInt8} (h : MemConfined lo hi m) (hlen : start + bs.length ≤ hi)
     (hlo : lo ≤ start) : MemConfined lo hi (writeBytes m start bs) :=
   MemPrivate.writeBytes h (by intro k hk; exact ⟨by omega, by omega⟩)
+
+/-- The band a callee's reservations cover when the caller's allocator base is
+`base`.  `ReserveFrame 16 1` is `Band 1 17`, i.e. `loopFrame x` at
+`CommaMaskLoop.lean:607`, which is how the loop's own framed statement becomes
+the base-`1` instance of a caller's frame obligation. -/
+def ReserveFrame (reserve : Nat) : Nat → Nat → Prop :=
+  fun base a => base ≤ a ∧ a < base + reserve
 
 /-! ### Behaviour-level refinement -/
 
