@@ -32,8 +32,9 @@ needs the other two to match.
   the pass framework, and the passes.
 - `LeanLLVM/Vellum/` is the refinement layer: `Contract`, `Refines` /
   `SemRefines`, `Correct`, the contextual theorems, the comma-mask instance,
-  the emitted-IR bridge (`CommaMaskIR`) and the IR-level caller
-  (`SeamContext`).
+  the emitted-IR bridge (`CommaMaskIR`), the IR-level caller (`SeamContext`),
+  and the two-environment contextual replacement (`ModuleRefinement`:
+  `RefinesWithinAcross`, `replaceFunction_sound`, `memCaller_replaces_loop`).
 - `ITree.lean` and `ITree/` are a second Lake library, `ITree`: the generic
   interaction tree.  `ITree/Core` is the public tree API, `ITree/Coinduction`
   the parameterised-fixpoint layer, `ITree/IEq` exact equality,

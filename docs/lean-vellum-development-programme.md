@@ -281,9 +281,15 @@ accepted on the strength of a narrower result.
   arbitrary function pairs, a rule for arbitrary loops at `Refines`/`RefinesWithin`
   — the tree rule is conditional and the loop's induction is a proof about its own
   fixture — a `runT`/`mfix` correspondence for the fixed-budget trees,
-  memory-effectful call environments, and a
-  `replaceFunction_sound`-style module theorem for a memory-using callee.  The
-  contextual theorem covers one pure caller (`LeanLLVM/Vellum/SeamContext.lean`).
+  memory-effectful call environments, and a **memory-aware** module theorem: a
+  `replaceFunction_sound`-style replacement that observes a memory-using callee
+  across the call boundary.  The value-level form exists —
+  `RefinesWithinAcross`, `replaceFunction_sound` and the
+  `memCaller_replaces_loop` instance in `LeanLLVM/Vellum/ModuleRefinement.lean`,
+  proved from the directional `CallRefines` over the caller and the two seam
+  selections — but `Calls` carries no memory channel, so its frame is inert and
+  it says nothing about callee memory.  The contextual theorem over one pure
+  caller is the earlier instance (`LeanLLVM/Vellum/SeamContext.lean`).
 - **M3 — machinery in place; certificate-bound installation openly scoped.**
   `probes/install/build.sh` rebuilds the imported proof graph, re-elaborates
   `CommaMaskIR` from source and re-elaborates `CommaMaskLoop` after it, then

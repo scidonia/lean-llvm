@@ -17,4 +17,5 @@ import LeanLLVM.Vellum.CommaMaskKernel
 import LeanLLVM.Vellum.CommaMaskIR
 import LeanLLVM.Vellum.SeamContext
 import LeanLLVM.Vellum.CommaMaskLoop
+import LeanLLVM.Vellum.ModuleRefinement
 import LeanLLVM.ITree

@@ -113,6 +113,10 @@ example (x : BitVec 64) (o : LeanLLVM.Outcome) :
       LeanLLVM.Beh (envFor swar) callerFunction [LeanLLVM.Value.int 64 x] o :=
   caller_refines_under_seam x o
 
+-- `h` can fail: an environment that leaves the seam undefined where the
+-- baseline defines it is not a refinement of it.  That is the environment
+-- direction on its own; the module-level negative control below shows the
+-- replacement conclusion fails with it.
 example : ¬ LeanLLVM.CallRefines (fun _ _ => none) (envFor swar) seamSymbol :=
   undefined_env_not_refines
 
@@ -247,7 +251,10 @@ theorem quiet_beh (o : LeanLLVM.Outcome)
         simpa [LeanLLVM.initState] using this
 
 -- The frame is load-bearing: an equal return value and a byte written outside
--- the frame is not a framed refinement.
+-- the frame is not a framed refinement.  This is the memory content of the
+-- framed relation, which the memory-effectful module theorem will thread; it is
+-- not evidence for the value-level module theorem below, whose frame is inert
+-- because the call environment carries no memory.
 theorem vandal_not_refinesWithin :
     ¬ LeanLLVM.RefinesWithin LeanLLVM.noCalls vandalFunction quietFunction
       (fun a => 1 ≤ a ∧ a < 17) := by
@@ -259,6 +266,65 @@ theorem vandal_not_refinesWithin :
   have h0 : LeanLLVM.readByte (LeanLLVM.writeBytes [] 0 (LeanLLVM.natToBytes 1 1)) 0 =
       LeanLLVM.readByte [] 0 := hmem 0 (by decide)
   exact absurd h0 (by decide)
+
+/-! ### The module-level replacement
+
+`replaceFunction_sound` composes the directional environment relation into the
+framed refinement of one caller under two selections, and `memCaller` is a
+caller with a footprint of its own.  The two pins record the environment
+composition; the negative control at the end is the test of the conclusion.
+-/
+
+-- The instance: the memory-backed loop's selection (`spec`) against the
+-- unrolled candidate's (`byteLoop`), for a caller whose `alloca` gives it a
+-- local of its own.
+example : LeanLLVM.Vellum.RefinesWithinAcross (envFor spec) (envFor byteLoop)
+    memCaller memCaller callerFrame :=
+  memCaller_replaces_loop
+
+/-- info: 'LeanLLVM.Vellum.replaceFunction_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.replaceFunction_sound
+
+/-- info: 'LeanLLVM.Vellum.memCaller_replaces_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.memCaller_replaces_loop
+
+-- With no environment entry the caller's call is unresolved, which the
+-- semantics turns into `ub` at the first step.
+theorem callerInstrs_none (s : LeanLLVM.State) :
+    LeanLLVM.denoteCode (fun _ _ => none) callerInstrs s = none := by
+  have hcall : LeanLLVM.evalInstr (fun _ _ => none) s
+      (.call "%r" (.int 64) seamSymbol [(.int 64, .reg "%arg")]) = none := by
+    cases h : LeanLLVM.evalOperands s [(.int 64, .reg "%arg")] with
+    | none => simp [LeanLLVM.evalInstr, h]
+    | some vs => simp [LeanLLVM.evalInstr, h]
+  simp [callerInstrs, LeanLLVM.denoteCode, hcall]
+
+theorem caller_step_none :
+    LeanLLVM.step (fun _ _ => none) callerFunction
+      (LeanLLVM.initState callerFunction [LeanLLVM.Value.int 64 0]) = .ub := by
+  have hfind : callerFunction.findBlock
+      (LeanLLVM.initState callerFunction [LeanLLVM.Value.int 64 0]).pc =
+        some callerBody := caller_findBlock (x := (0 : BitVec 64))
+  rw [LeanLLVM.step, hfind]
+  simp [callerBody, callerInstrs_none]
+
+-- The conclusion is not vacuous: the same caller under the undefined
+-- environment reaches `ub`, while under `envFor swar` its only behaviour is the
+-- defined return, and `ub` is matched by a defined source only by a `ub`
+-- source.  Had the relation dropped `calls'`, the hypothesis would be trivial
+-- and this negation unprovable.
+theorem caller_not_refined_by_undefined_env :
+    ¬ LeanLLVM.Vellum.RefinesWithinAcross (fun _ _ => none) (envFor swar)
+        callerFunction callerFunction (LeanLLVM.Band 1 9) := by
+  intro h
+  obtain ⟨o', hsrc, hag⟩ :=
+    h [LeanLLVM.Value.int 64 0] LeanLLVM.Outcome.ub
+      (Or.inl ⟨1, by rw [LeanLLVM.runFuel, caller_step_none]⟩)
+  have ho' : o' = .ret (some (.int 64 (swar 0))) [] := (caller_beh swar 0 o').1 hsrc
+  rw [ho'] at hag
+  cases hag
 
 /-- info: 'LeanLLVM.Vellum.CommaMaskLoop.loop_run_fuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
