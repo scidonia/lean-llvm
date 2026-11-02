@@ -185,6 +185,16 @@ theorem natToBytes_toNat (v : Nat) (n : Nat) :
 
 /-! ### Typed access -/
 
+/-- A successful 64-bit load means the first of its eight bytes is present. -/
+theorem readByte_ne_none_of_loadValue_64 {m : Mem} {addr : Nat} {v : Value}
+    (h : loadValue m (.int 64) addr = some v) : readByte m addr ≠ none := by
+  intro hb
+  have hread : readBytes m addr 8 = none := by
+    simpa only [show (8 : Nat) = 7 + 1 from rfl, readBytes, hb]
+  have h8 : (64 + 7) / 8 = 8 := by decide
+  simp only [loadValue, h8, if_neg (by decide : ¬ (64 = 0)), hread] at h
+  cases h
+
 /-- A 64-bit store followed by a 64-bit load at the same address returns the
 stored value. -/
 theorem loadValue_storeValue_64 (s : State) (x : BitVec 64) (addr : Nat) :

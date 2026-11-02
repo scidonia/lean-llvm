@@ -527,7 +527,7 @@ theorem cond_run_silent (x : BitVec 64) (p : LoopSeed) (hinv : p.atCond x) :
       have hs2 := done_silent x (q.fuel - 1) s1 q.m q.acc (by omega) hpc1 hf1
       refine ⟨(ITree.ret (Outcome.ret (some (.int 64 q.acc)) s1.mem), s1.mem),
         ⟨some (.int 64 q.acc), rfl, by rw [hacc8], ?_⟩, hs1.trans hs2⟩
-      simpa [hf1.nextEq] using hf1.memBand
+      simpa [MemConfined, MemPrivate, hf1.nextEq] using hf1.memBand
   obtain ⟨⟨t, mem⟩, ⟨v, ht, hv, hconf⟩, hhead⟩ := hmain
   have ht' : t = ITree.ret (Outcome.ret v mem) := ht
   have hv' : v = some (.int 64 (maskPrefix (x ^^^ c 3182967604875373612) 8)) := hv
