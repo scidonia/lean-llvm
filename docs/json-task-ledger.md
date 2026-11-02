@@ -18,13 +18,13 @@ and the evidence is recorded here.
 |Seam identified|done|the opaque external declaration + separate baseline unit, i.e. the route the installation probe already drives (`probes/install/select.sh`, `InstallCertificate.lean`)|
 |Inventory unsupported output constructs and separate application runtime noise from work inside the selected unit|available, to be recorded for JSON|`docs/m0-runtime-noise-report.md` §1 for the current baseline; the JSON equivalent waits on J1's compiled output|
 |Capture baseline C/LLVM and show the intended call survives caller optimisation|available for the pure seam and the loop, missing for JSON|`probes/install/ir/capture.sh`, `probes/install/check.sh`; the JSON baseline capture waits on J1|
-|Establish a repeatable benchmark driver before changing performance-sensitive code|missing|no timing harness exists; this is a J0 task that has not been done and is why J0 is partial|
+|Establish a repeatable benchmark driver before changing performance-sensitive code|done|`probes/bench/bench.sh` (driver `probes/bench/driver.c`): median over repetitions, deterministic input stream, identical-checksum guard, and it records revision, toolchain, triple and unit digests. First record at `b29716c`: baseline 4.55 ns/call, candidate 8.12 ns/call, ratio 1.785, both checksums equal|
 
 J0 exit gate: reproducible unchanged builds (met), capability ledger (met),
 IR inventory (baseline compiler output recorded, and the recogniser inventory
 done — the stateful scanner's inventory follows its candidate), written trust
-ledger (met), and a repeatable benchmark driver (**not done**). J0 is
-therefore **partially met**, for one remaining reason: no benchmark driver.
+ledger (met), and a repeatable benchmark driver (met, `probes/bench/bench.sh`).
+**J0 is met** for the scope it can reach before a candidate exists.
 
 ## J1 — independent semantics, scalar parser, tape
 
