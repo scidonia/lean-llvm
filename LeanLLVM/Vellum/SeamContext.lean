@@ -75,6 +75,26 @@ def envFor (v : BitVec 64 → BitVec 64) : Calls :=
       | _ => none
     else none
 
+/-- The environment an installed body provides.  The seam runs `f` from the
+caller's memory and from an allocator whose next free address is the caller's
+`next`, with the parameters bound to the arguments; the caller resumes from
+`next + reserve`, the frame the selection reserves for the body.  A run that
+reaches `ub`, or that does not return a value within `fuel`, is an unresolved
+call.  The reservation is declared rather than read off the run: a callee that
+reserves more than it uses is still correct, and `Outcome` (`Semantics.lean:246-251`)
+records only the value and the memory, so the allocator the body actually reached
+is a separate obligation (`CommaMaskLoop.loopFrameAt_eq`). -/
+def envForBody (fuel reserve : Nat) (f : Function) : Calls :=
+  fun callee args mem next =>
+    if callee = seamSymbol then
+      let s : State :=
+        { env := (f.params.zip args).map fun p => (p.1.1, p.2)
+          mem := mem, next := next, pc := f.entry?.getD "" }
+      match runFuel noCalls fuel f s with
+      | some (.ret (some v) m) => some { ret := v, mem := m, next := next + reserve }
+      | _ => none
+    else none
+
 /-- The two installed bodies induce the same environment. -/
 theorem envFor_eq : envFor byteLoop = envFor swar := by
   funext callee args mem next
@@ -103,6 +123,12 @@ theorem lookupName_initState_caller (x : BitVec 64) :
     lookupName (initState callerFunction [.int 64 x]).env "%arg" =
       some (.int 64 x) := by
   simp [initState, callerFunction, List.map, List.zip, List.zipWith]
+
+/-- A longer argument list binds the same parameter, because the caller has one
+parameter: `zip` truncates at it.  Both behaviours and both runs are therefore
+about `initState callerFunction [a]`. -/
+theorem initState_cons_caller (a : Value) (rest : List Value) :
+    initState callerFunction (a :: rest) = initState callerFunction [a] := rfl
 
 theorem caller_findBlock :
     callerFunction.findBlock (initState callerFunction [.int 64 x]).pc =
@@ -154,6 +180,123 @@ theorem caller_beh (v : BitVec 64 → BitVec 64) (x : BitVec 64) (o : Outcome) :
   · intro h
     subst h
     exact Or.inr ⟨1, caller_runFuel_succ v x 0⟩
+
+/-- The caller's whole entry block under a body's selection: the call resolves
+to `r` and the caller binds the returned value, adopts the returned memory and
+resumes from the returned allocator state.  This is the `envForBody` counterpart
+of the block computation inside `caller_step`. -/
+theorem caller_block_body (fuel reserve : Nat) (f : Function) (s : State)
+    (x : BitVec 64) {r : CallOutcome}
+    (h0 : lookupName s.env "%arg" = some (.int 64 x))
+    (h : envForBody fuel reserve f seamSymbol [.int 64 x] s.mem s.next = some r) :
+    denoteCode (envForBody fuel reserve f) callerInstrs s =
+      some { s with env := ("%r", r.ret) :: s.env, mem := r.mem, next := r.next } := by
+  simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand, h0]
+  rw [h]
+
+/-- The caller's run under a body's selection returns, after one step, the
+body's value with the body's memory. -/
+theorem caller_runFuel_body_succ (fuel reserve : Nat) (f : Function) (x : BitVec 64)
+    {r : CallOutcome}
+    (h : envForBody fuel reserve f seamSymbol [.int 64 x] [] 1 = some r) (n : Nat) :
+    runFuel (envForBody fuel reserve f) (n + 1) callerFunction
+        (initState callerFunction [.int 64 x]) = some (.ret (some r.ret) r.mem) := by
+  have h0 := lookupName_initState_caller x
+  simp only [runFuel, step, caller_findBlock, callerBody]
+  rw [caller_block_body fuel reserve f _ x h0 h]
+  simp [execTerm, evalOperand]
+
+theorem caller_runFuel_body_none_or (fuel reserve : Nat) (f : Function) (x : BitVec 64)
+    {r : CallOutcome}
+    (h : envForBody fuel reserve f seamSymbol [.int 64 x] [] 1 = some r) :
+    ∀ n, runFuel (envForBody fuel reserve f) n callerFunction
+        (initState callerFunction [.int 64 x]) = none ∨
+      runFuel (envForBody fuel reserve f) n callerFunction
+        (initState callerFunction [.int 64 x]) = some (.ret (some r.ret) r.mem) := by
+  intro n
+  cases n with
+  | zero => exact Or.inl rfl
+  | succ k => exact Or.inr (caller_runFuel_body_succ fuel reserve f x h k)
+
+/-- The emitted caller has exactly one behaviour under an installed body's
+selection: the body's return, with the body's memory.  This is the `envForBody`
+counterpart of `caller_beh` and it is what `caller_replaces_loop_within` and
+scenario `CM4` both consume — the "exactly one" half is what lets CM4 collapse
+two behaviours to one and refute the relation at a frame that excludes address
+`1`. -/
+theorem caller_beh_body (fuel reserve : Nat) (f : Function) (x : BitVec 64)
+    {r : CallOutcome}
+    (h : envForBody fuel reserve f seamSymbol [.int 64 x] [] 1 = some r) :
+    ∀ o, Beh (envForBody fuel reserve f) callerFunction [.int 64 x] o ↔
+      o = .ret (some r.ret) r.mem := by
+  intro o
+  constructor
+  · intro hb
+    rcases hb with ⟨n, hn⟩ | ⟨n, hn⟩
+    · rcases caller_runFuel_body_none_or fuel reserve f x h n with h' | h' <;>
+        rw [h'] at hn <;> simp at hn
+    · rcases caller_runFuel_body_none_or fuel reserve f x h n with h' | h' <;>
+        rw [h'] at hn
+      · simp at hn
+      · exact (Option.some.inj hn).symm
+  · intro ho
+    subst ho
+    exact Or.inr ⟨1, caller_runFuel_body_succ fuel reserve f x h 0⟩
+
+/-- The caller's block is the entry block, whatever the state's memory and
+allocator are. -/
+theorem caller_findBlock_entry : callerFunction.findBlock "entry" = some callerBody := by
+  simp [callerFunction, callerBody, Function.findBlock, findBlockList]
+
+/-- A block whose instructions leave the caller undefined ends the run in `ub`,
+whatever the state's memory and allocator are. -/
+theorem caller_step_ub (calls : Calls) (s : State) (hpc : s.pc = "entry")
+    (hblock : denoteCode calls callerInstrs s = none) :
+    step calls callerFunction s = .ub := by
+  simp only [step, hpc, caller_findBlock_entry, callerBody, hblock]
+
+/-- The caller's block under a selection that leaves its call undefined: the
+call's argument is read and the unresolved entry makes the instruction, and so
+the block, undefined. -/
+theorem caller_block_unresolved (fuel reserve : Nat) (f : Function) (s : State)
+    (a : Value) (h0 : lookupName s.env "%arg" = some a)
+    (hm : s.mem = []) (hn : s.next = 1)
+    (h : envForBody fuel reserve f seamSymbol [a] [] 1 = none) :
+    denoteCode (envForBody fuel reserve f) callerInstrs s = none := by
+  simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand, h0]
+  rw [hm, hn, h]
+
+/-- The caller reaches `ub` at its call whenever the selection leaves that call
+undefined, and `ub` admits every outcome, so every outcome is one of its
+behaviours.  This is the other-argument case `caller_beh_body` does not cover: an
+argument list whose first value is not an `i64` is passed to the seam unchanged,
+and the callee's selection refuses it. -/
+theorem caller_beh_of_unresolved (fuel reserve : Nat) (f : Function) (a : Value)
+    (rest : List Value) (o : Outcome)
+    (h : envForBody fuel reserve f seamSymbol [a] [] 1 = none) :
+    Beh (envForBody fuel reserve f) callerFunction (a :: rest) o := by
+  refine Or.inl ⟨1, ?_⟩
+  rw [initState_cons_caller]
+  have h0 : lookupName (initState callerFunction [a]).env "%arg" = some a := by
+    simp [initState, callerFunction, List.map, List.zip, List.zipWith]
+  have hstep : step (envForBody fuel reserve f) callerFunction
+      (initState callerFunction [a]) = .ub :=
+    caller_step_ub _ _ rfl (caller_block_unresolved fuel reserve f _ a h0 rfl rfl h)
+  simp only [runFuel, hstep]
+
+/-- With no argument the caller's parameter is unbound, so its call is undefined
+and every outcome is a behaviour. -/
+theorem caller_beh_nil (fuel reserve : Nat) (f : Function) (o : Outcome) :
+    Beh (envForBody fuel reserve f) callerFunction [] o := by
+  refine Or.inl ⟨1, ?_⟩
+  have hblock : denoteCode (envForBody fuel reserve f) callerInstrs
+      (initState callerFunction ([] : List Value)) = none := by
+    simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand,
+      initState, callerFunction, List.map, List.zip, List.zipWith, lookupName]
+  have hstep : step (envForBody fuel reserve f) callerFunction
+      (initState callerFunction ([] : List Value)) = .ub :=
+    caller_step_ub _ _ rfl hblock
+  simp only [runFuel, hstep]
 
 theorem seam_callRefines :
     ∀ sym, CallRefines (envFor byteLoop) (envFor swar) sym := by

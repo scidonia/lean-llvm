@@ -20,6 +20,7 @@ reverse.  The agreement it demands is exact, which is too strong for a callee
 that writes outside its own frame; the framed relation is a separate one.
 -/
 import LeanLLVM.Semantics
+import LeanLLVM.Frames
 
 namespace LeanLLVM
 
@@ -33,6 +34,30 @@ def CallRefines (calls' calls : Calls) (sym : String) : Prop :=
   ∀ args mem next,
     calls sym args mem next = none ∨
       calls' sym args mem next = calls sym args mem next
+
+/-- `calls'` refines `calls` at `sym` outside the footprint a callee's
+reservations cover, for every caller state and every allocator base.  `frame` is
+indexed by the base because a callee's footprint is the band its own allocations
+advance through, and that band starts wherever the caller's allocator is.  Two
+exactness requirements sit beside the frame: the allocator state must agree, since
+the caller resumes from the callee's `next` and a disagreement would silently
+relocate every allocation it makes later; and the reservation may not shrink it
+(`next ≤ r.next`), which is **allocator monotonicity** — the caller's address space
+never runs backwards.  That clause is not what keeps the band non-empty, and it is
+not consumed by the step or the fuel lemma: a pure environment returns
+`next := next` (`envFor`, §2.7 is the witness), so its band *is* empty and the
+memory clause then demands full agreement — a stronger claim, not a weaker one,
+and sound either way.  There is **no** lower bound on the base: the relation is
+defined at every state, which is what lets the composition's step and fuel lemmas
+quantify over all related pairs rather than a reachable subset.  The `none` branch
+carries no memory — an undefined callee leaves no memory state at all (§3). -/
+def CallRefinesWithin (calls' calls : Calls) (sym : String)
+    (frame : Nat → Nat → Prop) : Prop :=
+  ∀ args mem next,
+    calls sym args mem next = none ∨
+      ∃ r' r, calls' sym args mem next = some r' ∧ calls sym args mem next = some r ∧
+        r'.ret = r.ret ∧ next ≤ r.next ∧ r'.next = r.next ∧
+        AgreesOutsideMem r'.mem r.mem (frame next)
 
 theorem CallRefines.eq_of_source_defined {calls' calls : Calls} {sym : String}
     (h : CallRefines calls' calls sym) {args : List Value} {mem : Mem} {next : Nat}

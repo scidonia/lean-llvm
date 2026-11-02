@@ -14,7 +14,8 @@ compared byte by byte, because the representation is an association list and
 equality of the whole list is stronger than anything a caller can observe.
 
 The lemmas are the one-sided write law (a store inside the frame on one side
-does not disturb agreement outside it) and the union rule for two private
+does not disturb agreement outside it), its two-sided form (the same store on
+both sides leaves agreement untouched), and the union rule for two private
 footprints.  A write outside the frame is not allowed to differ, which is what
 makes the relation sound for caller-visible memory.  `RefinesWithin` also keeps
 the direction of `ub`: a target that is undefined admits every outcome, so it
@@ -71,6 +72,24 @@ theorem AgreesOutsideMem.writeBytes_left {m n : Mem} {frame : Nat → Prop}
       · omega
   rw [readByte_writeBytes_outside m bs hout]
   exact h a ha
+
+/-- The same byte sequence written at the same address on both sides leaves
+agreement untouched, wherever the write lies: outside the write the two
+memories are unchanged, and inside it both read the byte the sequence put
+there.  This is the two-sided form a caller needs for a store both runs
+execute; `writeBytes_left` writes one side only. -/
+theorem AgreesOutsideMem.writeBytes_same {m n : Mem} {frame : Nat → Prop}
+    (h : AgreesOutsideMem m n frame) (start : Nat) (bs : List UInt8) :
+    AgreesOutsideMem (writeBytes m start bs) (writeBytes n start bs) frame := by
+  intro a ha
+  by_cases hin : start ≤ a ∧ a < start + bs.length
+  · obtain ⟨hlo, hhi⟩ := hin
+    obtain ⟨k, rfl⟩ : ∃ k, a = start + k := ⟨a - start, by omega⟩
+    have hk : k < bs.length := by omega
+    rw [readByte_writeBytes_at m bs start k hk, readByte_writeBytes_at n bs start k hk]
+  · have hout : a < start ∨ start + bs.length ≤ a := by omega
+    rw [readByte_writeBytes_outside m bs hout, readByte_writeBytes_outside n bs hout]
+    exact h a ha
 
 /-! ### States and control steps -/
 

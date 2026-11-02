@@ -5,8 +5,9 @@ The memory is an association list of addressed bytes.  A write replaces the
 first cell at an address (or appends one); a read takes the first cell at an
 address.  This module proves the facts a loop invariant rests on:
 
-* a byte written at an address is read back there, and writes at or above an
-  address do not disturb addresses below it;
+* a byte written at an address is read back there, every offset of a written
+  sequence reads back its own byte, and writes at or above an address do not
+  disturb addresses below it;
 * a little-endian round trip through `natToBytes` and `bytesToNat` recovers the
   value, so a 64-bit store followed by a 64-bit load at the same address
   returns the stored value.
@@ -109,6 +110,29 @@ theorem readByte_writeBytes_outside (m : Mem) (bs : List UInt8) {start addr : Na
   rcases h with h | h
   · exact readByte_writeBytes_below m bs h
   · exact readByte_writeBytes_above m bs h
+
+/-- A written byte is read back at the offset it was written at, independently
+of the memory underneath.  This is the per-offset form of
+`readBytes_writeBytes_same` for a single address, and it is what lets a write of
+the same bytes at the same address on two different memories be compared byte by
+byte. -/
+theorem readByte_writeBytes_at (m : Mem) (bs : List UInt8) (start k : Nat)
+    (hk : k < bs.length) :
+    readByte (writeBytes m start bs) (start + k) = some (bs.getD k 0) := by
+  induction bs generalizing start k m with
+  | nil => exact absurd hk (Nat.not_lt_zero k)
+  | cons b bs ih =>
+      cases k with
+      | zero =>
+          show readByte (writeBytes (writeByte m start b) (start + 1) bs) start = some b
+          rw [readByte_writeBytes_below (writeByte m start b) bs (by omega),
+            readByte_writeByte_same]
+      | succ k =>
+          have hk' : k < bs.length := by simpa using hk
+          show readByte (writeBytes (writeByte m start b) (start + 1) bs)
+            (start + (k + 1)) = some (bs.getD k 0)
+          rw [show start + (k + 1) = (start + 1) + k from by omega]
+          exact ih (writeByte m start b) (start + 1) k hk'
 
 /-! ### Byte sequences -/
 
