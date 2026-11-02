@@ -21,10 +21,10 @@ and the evidence is recorded here.
 |Establish a repeatable benchmark driver before changing performance-sensitive code|missing|no timing harness exists; this is a J0 task that has not been done and is why J0 is partial|
 
 J0 exit gate: reproducible unchanged builds (met), capability ledger (met),
-IR inventory (baseline compiler output recorded; the JSON candidate's is
-**blocked** on J2), written trust ledger (met), and a repeatable benchmark
-driver (**not done**). J0 is therefore **partially met**, for two separate
-reasons recorded above: no candidate to inventory, and no benchmark driver.
+IR inventory (baseline compiler output recorded, and the recogniser inventory
+done — the stateful scanner's inventory follows its candidate), written trust
+ledger (met), and a repeatable benchmark driver (**not done**). J0 is
+therefore **partially met**, for one remaining reason: no benchmark driver.
 
 ## J1 — independent semantics, scalar parser, tape
 
@@ -55,9 +55,13 @@ vectorised**; a scalar block candidate can proceed on today's fragment.
 
 ## J3 — stateful SIMD scanner model
 
-Missing in full: classification, quote/escape logic, UTF-8 state, block
-composition, tails, finalisation. Depends on vector semantics in `LeanLLVM`
-(`Ty` has no vector constructor today).
+Missing: quote/escape logic, UTF-8 state, block composition, tails and
+finalisation. The vector fragment is now **sized from IR** rather than guessed:
+`docs/json-scanner-ir-inventory.md` shows a classifier needs only a vector
+type with splat constants, vector load/store, lane-wise `icmp eq` into
+`vec n i1`, lane-wise bitwise operations, and `bitcast vec n i1 → iN` — no
+shuffle and no target intrinsic. Cross-byte state (string mask, parity) can
+stay scalar on the 32-bit masks.
 
 ## J4 — memory-using LLVM scanner and installation
 
