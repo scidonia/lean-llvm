@@ -10,8 +10,15 @@ edit. It does not claim any capability: the audited state lives in
 Parse one complete UTF-8 JSON document supplied as bytes.
 
 ```text
-parseDocument (input : ByteArray) : Result ParseError Tape
+parseDocument (limits : Limits) (input : ByteArray) : Result ParseError Tape
 ```
+
+The limits are explicit arguments because §2 requires input length, nesting
+depth and output capacity to be stated; a document that fits no default is
+still parseable at a caller's chosen bound.  `Result` distinguishes
+`invalid` — a proof obligation that the input is not valid JSON — from
+`inputTooLong`, `depthExceeded` and `outOfCapacity`, which are resource
+outcomes and prove nothing about validity.
 
 * Accepts the four JSON whitespace characters before and after the document.
 * Rejects trailing non-whitespace and any second top-level document.
@@ -19,9 +26,11 @@ parseDocument (input : ByteArray) : Result ParseError Tape
   for the first API; they are later extensions, not silent behaviours.
 
 A second, optional API decodes the tape into a logical value
-(`decodeTape : Tape → Value`). Numbers keep their source lexeme; converting a
-lexeme to binary floating point is a separate obligation with its own proof and
-is not part of the first equivalence contract.
+(`decodeTape : Tape → Option Value`): a total function on arbitrary tapes has
+no honest `Value` to return, so a malformed tape yields `none` and
+`decodeTape_correct` states the produced tapes decode. Numbers keep their source
+lexeme; converting a lexeme to binary floating point is a separate obligation
+with its own proof and is not part of the first equivalence contract.
 
 ## 2. Policy decisions
 
