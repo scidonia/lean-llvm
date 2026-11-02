@@ -79,7 +79,18 @@ needs the other two to match.
   regenerated from the Lean emission and that a function header carrying an
   unmodelled attribute is refused.  The installer scenarios build their
   manifest and tool shims in a private temporary directory: they reach no
-  compiler, proof checker, network or external service.
+  compiler, proof checker, network or external service.  Three further routes
+  exercise the JSON parser: `json-api.lean` and `json-tape.lean` are `#guard`
+  programs over the public entry point -- accepted documents with their decoded
+  values and their tape's input, refusals naming their reason, limit outcomes
+  reported as themselves, and tapes whose spans do and do not name their
+  tokens -- while `tests/json/check.sh` runs the built `leanllvm-json` over
+  `tests/json/corpus` against the hand-written `tests/json/manifest.tsv` and
+  asserts that a tampered expectation is a mismatch.  Each route carries a
+  staged cut recorded in `docs/json-route-evidence.md`: the cut is a runtime
+  override in a throwaway copy, never an edit to a definition that carries a
+  proof, because such an edit falsifies the proof and the route then stops at
+  import rather than at an assertion.
 
 ## What a change must satisfy
 

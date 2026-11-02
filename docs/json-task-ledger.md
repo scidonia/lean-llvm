@@ -42,6 +42,14 @@ established; the scalar executable runs the corpus. **Met** on that content:
 `tape_valid` and `decodeTape_correct`, and `bash tests/json/check.sh` over the
 130 rows, all at `[propext, Quot.sound]`.
 
+The routes' staged cuts are recorded in `docs/json-route-evidence.md`: the API
+route reddens eight refusals including the `01` number case, the corpus route
+reddens its tampered-expectation assertion, and the tape route reddens six
+guards including the span check.  Those cuts are runtime overrides in
+throwaway copies, not edits to definitions that carry proofs; the tape route's
+individual span-mismatch refusals are not shown sensitive by a cut, and the
+evidence document says so.
+
 C13 is a separate item and is not absorbed into that verdict: it is landed at
 this revision — `docs/contract.md` §1.1 names RFC 8259, RFC 3629 and RFC 7493
 §2.1 with the clause map, §3 carries the two adherence rows, the strict-subset
