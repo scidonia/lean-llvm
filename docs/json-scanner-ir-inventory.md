@@ -130,13 +130,37 @@ load handles the remainder.
    and structural parity is a prefix-sum on the mask, both on `i32`/`i64` with
    the ordinary scalar model. That keeps the vector fragment confined to
    classification, which is the part SIMD is actually for.
-4. **What is genuinely absent from the model today** (`Ty` has no vector
-   constructor): the vector type itself (`<32 x i8>`, `<32 x i1>`), vector
-   constants (`splat`, including a negative lane value), a vector `load`,
-   lane-wise `icmp` producing `i1` lanes, lane-wise `or` on predicate vectors
-   and `add` on integer vectors, and the `bitcast` from a predicate vector to
-   an integer. Nothing about shuffles, gathers, saturation, stores, shifts,
-   `select` or target intrinsics is required by this kernel.
+4. **The model carries this fragment and the closed set around it.** Every
+   construct the classifier's body uses is modelled and exercised by a proof;
+   item 2's table is the measured list. The set is a little wider than the
+   body: the five lane-wise integer binops `or`, `and`, `xor`, `add` and `sub`
+   are admitted (`LeanLLVM/Parser.lean:252`, evaluated per lane in
+   `Semantics.lean:272-281`), of which the body uses `or` and `add`, and vector
+   `icmp` is confined to `eq` and `ult` (`Parser.lean:341-343`). `Ty.vec` is
+   `LeanLLVM/Basic.lean:19`, with
+   `<32 x i8>` and `<32 x i1>` distinct types. A splat constant is
+   `Const.splat` (`Basic.lean:44`): integer lanes only, so a non-integer splat
+   has no representation and no printed form. The vector `load` is
+   `Instr.load` (`LeanLLVM/Syntax.lean:26`) — the same constructor as the
+   scalar load, and it carries no alignment field, which is why the captured
+   `align 1` does not survive the round trip. The lane-wise forms are
+   `icmpVec` (`Syntax.lean:31`), `binopVec` (`:33`) and `bitcastMask` (`:35`),
+   evaluated in `evalInstr` (`LeanLLVM/Semantics.lean:198`) and packed by
+   `lanesToNat` (`:127`), whose bit-level reading is `lanesToNat_testBit`
+   (`:138`). `LeanLLVM/JSON/ScanBlock.lean` proves the packed mask is the
+   scalar transition's (`maskOfList_getLsbD`, `:184`), and
+   `LeanLLVM/Vellum/JsonClassifyIR.lean` proves the emitted body returns that
+   mask on every readable block (`scannerLLVM_refines`, `:838`), so the
+   fragment is modelled *and* checked against a body that uses it.
+
+   Still absent from the model, and refused by name: `shufflevector` (the
+   generic instruction branch, `LeanLLVM/Parser.lean:402`, names the token),
+   vector `alloca`/`store`/`select` (`:352,370,454`) and `getelementptr`
+   (`:391`). An intrinsic call is **not** refused: the parser
+   accepts any callee symbol (`Parser.lean:392`), so a call to
+   `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
+   `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model
+   does not give. Nothing in this kernel needs any of them.
 
 ## Not yet inventoried
 

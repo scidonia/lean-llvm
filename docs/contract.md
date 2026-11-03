@@ -85,10 +85,10 @@ may change; the strength may not.
 | Tape interpretation | `tape_valid`, `decodeTape_correct`: spans well formed, nesting and values consistent, decoded meaning correct; a source-backed tape owns its input for its lifetime | `LeanLLVM/JSON/TapeCorrect.lean` (`tape_valid`), `LeanLLVM/JSON/Correct.lean` (`decodeTape_correct`) |
 | Adherence, forward | `accepted_is_rfc_text`: everything accepted is an RFC 8259 text, with an interpretation — `Accepted → RfcText` | `LeanLLVM/JSON/Correct.lean` |
 | Adherence, backward | `rfc_text_accepted_on_policy`: every RFC 8259 text whose interpretation satisfies `Policy`, inside the resource limits, is accepted and decodes to that interpretation — `RfcText ∧ Policy → Accepted` | `LeanLLVM/JSON/Correct.lean` |
-| Block correctness | `scanBlock_correct`: the candidate block operation refines the scalar transition, including next state and error information | new JSON module |
+| Block correctness | `scanBlock_correct`: the candidate block operation refines the scalar transition, including next state and error information | `LeanLLVM/JSON/ScanBlock.lean` (`scanBlock_correct`) |
 | Whole-scan correctness | `scan_simd_refines_scalar`: blocks, tails and end-of-input finalisation composed | new JSON module |
-| Actual LLVM refinement | `scannerLLVM_refines`: the imported baseline and candidate bodies, under this repository's semantics — not two Lean models compared to each other | `LeanLLVM/Vellum/*` + fixtures |
-| Contextual replacement | `replaceScanner_sound`: the local statement transported through the parser caller and the linking environment | `RefinesWithinAcross` / `CallRefinesWithin` |
+| Actual LLVM refinement | `scannerLLVM_refines`: the imported baseline and candidate bodies, under this repository's semantics — not two Lean models compared to each other | `LeanLLVM/Vellum/*` + fixtures. The J2 instance (`LeanLLVM/Vellum/JsonClassifyIR.lean`) is candidate-against-reference: it relates the emitted classifier body to the verified scalar transition's mask, because the pair has no baseline *body* — the fragment has no pointer arithmetic, so no scalar byte-walking body can be written in it — and **the baseline-body half of this obligation remains open** |
+| Contextual replacement | `replaceScanner_sound`: the local statement transported through the parser caller and the linking environment | `RefinesWithinAcross` / `CallRefinesWithin`. The J2 instance (`LeanLLVM/Vellum/JsonSeam.lean`) carries the relation through `scanCaller`, a staging caller of its own — not through the JSON parser, which is why the parser half of this obligation stays open |
 | Build acceptance | the installation gate binds theorem, artifacts, toolchain, target, data layout and attributes into one checked record | `probes/install/*` |
 
 The local relation is stated schematically as `Γ ⊢ candidate ⊑ baseline`, where
@@ -112,6 +112,14 @@ escaping, pending UTF-8 continuation requirements, and whatever else a
 successor needs to recognise token starts. The invariant that makes a state
 admissible is part of the contract: local refinement may assume it only with a
 proved initialisation and a proved preservation step.
+
+The J2 instance does not yet meet that list. `LeanLLVM.JSON.ScanState`
+(`LeanLLVM/JSON/ScanBlock.lean:47`) carries the cursor (`pos`) and nothing else:
+the in-string flag, the escape-run carry and the pending UTF-8 state are added
+with the stateful scanner that consumes these masks, and are not present as
+unused fields. `scanBlock_correct` is therefore a statement about classification
+and cursor advance, not about a state that crosses a block boundary in a
+scanner.
 
 Finalisation is explicit: end of input rejects an incomplete string, an
 incomplete escape sequence and an incomplete UTF-8 sequence. The grammar stage
@@ -196,5 +204,9 @@ nothing about lowering, linking or machine instructions.
 
 `NaN`/`Infinity`, binary floating-point conversion as a proved equivalence,
 NDJSON, incremental input, concurrent parsing, diagnostic text or positions,
-and any vector operation the semantics does not model. Each is a later,
-explicitly stated extension.
+and any vector operation the semantics does not model. The modelled vector
+forms — `Ty.vec` with integer lanes, `Const.splat`, a vector `load`, lane-wise
+`icmp` and integer binops, and `bitcastMask` — are listed in
+`docs/capabilities.md`, "Language and IR coverage", with the construct in
+`probes/install/ir/json-classify.candidate.ll` that each one serves. Each
+further extension is a later, explicitly stated change.

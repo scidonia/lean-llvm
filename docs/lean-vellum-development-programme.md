@@ -333,8 +333,11 @@ accepted on the strength of a narrower result.
   the AST renders to.  That emission is the framework's own printer, not Lean's
   native compiler: a memory-using loop produced by `lean -c`, lowered by clang
   and related to a Lean AST is still unproved.  The repository also has no
-  contextual replacement theorem whose frame is load-bearing, and no benchmark
-  record.  The M4 acceptance
+  contextual replacement theorem whose frame is load-bearing, and its benchmark
+  harness (`probes/bench/bench.sh`, with a recorded run at `b29716c`) times only
+  the units it hardcodes — `units=(baseline candidate)`
+  (`probes/bench/bench.sh:35`) — so the loop is not timed and no benchmark
+  record for the loop's chain exists.  The M4 acceptance
   conditions — a loop certified from the Lean compilation chain, a contextual
   installation proof including memory effects, a checked certificate and
   benchmark measurements — are therefore unmet.  The tree relation proved for
@@ -363,5 +366,5 @@ three units — from what remains open: adoption by
 arbitrary function pairs, a loop rule at the executable refinement relation, a
 `runT`/`mfix` correspondence for the fixed-budget trees, a call environment the
 tree layer can describe beyond `PureEnv` and a module theorem whose frame is
-load-bearing, benchmark records, and the remaining M4 conditions.  Nothing here
-claims that those open items are met.
+load-bearing, benchmark records for the loop's chain, and the remaining M4
+conditions.  Nothing here claims that those open items are met.

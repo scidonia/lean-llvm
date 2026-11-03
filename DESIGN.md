@@ -443,7 +443,12 @@ canonical IR, checked with `llvm-as` in the verification runs.
    (`Instr.call` resolved through `Calls`, which returns the callee's value,
    memory and allocator state) and refinement through them is one-directional
    (`CallRefinement`); a framed relation over that channel is the next step
-   after that.
+   after that.  Vectors are modelled too: `Ty.vec` with integer lanes, splat
+   constants, lane-wise `icmp` and integer binops, the mask `bitcast`, and a
+   vector `load` (`Instr.load` carries no alignment field, so a captured
+   `align 1` is dropped), each justified by the construct it serves in the
+   emitted classifier fixture `probes/install/ir/json-classify.candidate.ll`.
+   `getelementptr` remains future.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing

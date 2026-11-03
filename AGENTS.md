@@ -33,8 +33,20 @@ needs the other two to match.
 - `LeanLLVM/Vellum/` is the refinement layer: `Contract`, `Refines` /
   `SemRefines`, `Correct`, the contextual theorems, the comma-mask instance,
   the emitted-IR bridge (`CommaMaskIR`), the IR-level caller (`SeamContext`),
-  and the two-environment contextual replacement (`ModuleRefinement`:
-  `RefinesWithinAcross`, `replaceFunction_sound`, `memCaller_replaces_loop`).
+  the two-environment contextual replacement (`ModuleRefinement`:
+  `RefinesWithinAcross`, `replaceFunction_sound`, `memCaller_replaces_loop`), and
+  the JSON classifier's two: `JsonClassifyIR` relates the emitted classifier
+  body to the block layer's mask (`scannerLLVM_refines`, over
+  `probes/install/ir/json-classify.candidate.ll`), and `JsonSeam` states the
+  reference selection, the installed body's selection, and the framed
+  replacement through a staging caller (`classifySeam_refines`,
+  `replaceScanner_sound`, `replaceScanner_ret`, over
+  `probes/install/ir/json-caller.ll`).
+- `LeanLLVM/JSON/` is the byte-level JSON development: the independent
+  semantics (`Spec`), scanner (`Scan`), parser (`Parse`), tape (`Tape`) and
+  their correctness modules, plus the block layer `ScanBlock` — `maskOfList`,
+  `maskOf`, `scanBlock` and `scanBlock_correct`, which reads the mask per lane
+  against the scalar transition and confines `ok` to a full 32-byte block.
 - `ITree.lean` and `ITree/` are a second Lake library, `ITree`: the generic
   interaction tree.  `ITree/Core` is the public tree API, `ITree/Coinduction`
   the parameterised-fixpoint layer, `ITree/IEq` exact equality,
@@ -86,7 +98,18 @@ needs the other two to match.
   reported as themselves, and tapes whose spans do and do not name their
   tokens -- while `tests/json/check.sh` runs the built `leanllvm-json` over
   `tests/json/corpus` against the hand-written `tests/json/manifest.tsv` and
-  asserts that a tampered expectation is a mismatch.  Each route carries a
+  asserts that a tampered expectation is a mismatch.  The JSON classifier
+  has its own two: `tests/json-classify.lean` with
+  `tests/json-classify.contract.md` exercises the block layer, the emitted body
+  and the seam under the semantics, and `tests/json-classify/check.sh` compares
+  the installed object — rebuilt from the committed fixture, `sha256` recorded
+  in its transcript — against `leanllvm-json-classify` over every 32-byte
+  window of the corpus and a mixed block, with a defect object and a tampered
+  expectation as its controls.  Its object arm stages each window in a
+  32-byte-aligned buffer, so it claims agreement on aligned windows only.
+  `probes/install/ir/capture-json.sh` regenerates the classifier fixture and
+  records its invocation and stripped items, and `lake exe leanllvm-json-emit`
+  prints the caller fixture.  Each route carries a
   staged cut recorded in `docs/json-route-evidence.md`: the cut is a runtime
   override in a throwaway copy, never an edit to a definition that carries a
   proof, because such an edit falsifies the proof and the route then stops at
@@ -111,7 +134,12 @@ needs the other two to match.
   `llvm-as`.  A fixture read through `include_str` is not a `lake build` input,
   so elaborate its proof module from source after changing it; keep the mutation
   that shows the pin bites (`probes/install/check.sh` does this for the candidate
-  and loop fixtures).
+  and loop fixtures).  A fixture whose portable form is produced by the
+  optimiser is emitted at `-O2` with its flags and target recorded:
+  `json-classify.candidate.ll` is `-O2 -mavx2`, because instcombine folds the
+  tab and newline comparisons into a range test and that form is what the proof
+  analyses, and `probes/install/ir/capture-json.sh` records the invocation and
+  every piece of syntax stripped before the parser sees it.
 - The parser refuses the surfaces it checks, with a message naming the
   construct: unmodelled instructions, block structure, and a function
   definition's header -- a return attribute before the return type and a

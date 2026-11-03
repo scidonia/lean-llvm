@@ -17,9 +17,9 @@ This repository is an initial vertical slice, not a port of VeLLVM:
 
 | Area | What is here | What is not |
 | --- | --- | --- |
-| Syntax | Integer scalars, `ptr`, `void`; arithmetic, `icmp`, `select`, `trunc`/`zext`/`sext`, `alloca`, `load`, `store`; `br`, `condbr`, `ret`, `unreachable` | aggregates, floating point, vectors, `phi`, `call`, `getelementptr`, globals |
-| Front end | A line-oriented parser and a canonical printer for the modelled subset | bitcode, metadata, attributes, declarations with bodies |
-| Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency, calls |
+| Syntax | Integer scalars, `ptr`, `void` and integer-lane vectors `<n x iW>`; arithmetic, `icmp`, `select`, `trunc`/`zext`/`sext`, `alloca`, `load`, `store`, plus a vector `load`, splat constants, lane-wise `icmp` and integer binops, and the mask `bitcast`; `br`, `condbr`, `ret`, `unreachable`, `call` | aggregates, floating point, `phi`, `getelementptr`, globals |
+| Front end | A line-oriented parser and a canonical printer for the modelled subset, including `declare` lines (held in `Module.decls`) | bitcode, metadata, attributes |
+| Semantics | Executable step semantics over basic blocks, byte-addressed memory, fuel-indexed divergence, `ub` as a distinguished outcome | poison, provenance, concurrency |
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing. A framed relation (`RefinesWithin`, `LeanLLVM/Frames.lean`) compares the returned value and the bytes outside a footprint read off the allocator state. A call environment returns the value, the memory and the allocator state the callee leaves (`CallOutcome`), and the caller adopts them | relational/log relations; a contextual replacement whose frame is load-bearing; a simulation rule for arbitrary loops |
 | Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, a seeded guarded recursion `mfix` with its unfolding equations and positive-delay witnesses, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, a framed rule proves it for the remaining pairs of an invariant, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a refinement- or behaviour-level loop rule; a `runT`/`mfix` correspondence; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
@@ -40,7 +40,11 @@ no clang lowering is related to the AST, and that provenance chain is open. The
 loop is installed through its own certificate, gated by
 `loop_refines_candidate_within` (a framed-memory refinement within the loop's
 own allocations); the certificate is a hash-and-rebuild bridge like the
-candidate's and baseline's, not a compiled-code theorem.  There is no benchmark.
+candidate's and baseline's, not a compiled-code theorem.  The seam units have a
+benchmark (`probes/bench/bench.sh`, with a recorded run at `b29716c`) that
+reports how fast each installed unit ran and presents no ratio as proof, while
+the parser has no timing and no native-reference comparison (J5 and J6 are
+open), so no parser performance is claimed.
 Calls carry a memory channel: an environment returns the value, the memory and
 the allocator state the callee leaves, and the caller adopts them.  The
 module-level replacement theorem is stated over `CallRefines`, which demands
