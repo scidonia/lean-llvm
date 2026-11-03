@@ -45,19 +45,22 @@ plausible.  No compiler, proof checker, network, clock or service is reached.
   - no tokens over `1`.
 - **When:** the operator elaborates the scenario with the command above.
 - **Then:** the `lean` process exits 0, and every assertion holds:
-  - the correct tape decodes to `some (.array [.number [0x31]])` and
+  - the correct tape decodes to
+    `some (.array [.number (ByteString.literal [0x31])])` and
     `spansWellFormed` is `true`;
-  - the correct two-element tape decodes to
-    `some (.array [.number [0x31], .number [0x32]])` and its spans are well
-    formed, so the comma path has an accepted instance;
+  - the correct two-element tape decodes to the array of the two number
+    lexemes `ByteString.literal [0x31]` and `ByteString.literal [0x32]`, in
+    that order, and its spans are well formed, so the comma path has an
+    accepted instance;
   - the correct string tape decodes to `some (.string [0x61])` and its spans
     are well formed;
   - the `a"` tape decodes to `none` although its span is well formed: the byte
     at the span's start is `a`, not `"`, so only the opening-quote check can
     refuse it;
   - the correct object tape decodes to
-    `some (.object [([0x61], .number [0x31])])`, its spans are well formed, and
-    its colon token's span is `⟨4, 5⟩`, naming the `:` byte at offset `4`;
+    `some (.object [([0x61], .number (ByteString.literal [0x31]))])`, its
+    spans are well formed, and its colon token's span is `⟨4, 5⟩`, naming the
+    `:` byte at offset `4`;
   - the object tape with no colon token decodes to `none`, so a separator the
     tape does not carry cannot be supplied by the decoder;
   - the object tape whose colon span is `⟨5, 6⟩` decodes to `none`, so the
@@ -76,7 +79,7 @@ plausible.  No compiler, proof checker, network, clock or service is reached.
   - `[]` over `[1]` decodes to `none`, while the same token kinds over `[ ]`
     decode to `some (.array [])`;
   - `1` over `1 2` decodes to `none`, while `1` over ` 1 ` decodes to
-    `some (.number [0x31])`;
+    `some (.number (ByteString.literal [0x31]))`;
   - the overlapping spans are `spansWellFormed = false`, while the correct
     tape's spans are `spansWellFormed = true`;
   - the empty token list decodes to `none` and its spans are well formed.

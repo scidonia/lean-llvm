@@ -22,20 +22,20 @@ open LeanLLVM.JSON
 /-! ### The affirmative control: a tape that spells `[1]` -/
 
 def correctTape : Tape :=
-  { input := [0x5B, 0x31, 0x5D],
+  { input := ByteString.literal [0x5B, 0x31, 0x5D],
     tokens := [
       .punct .openBracket ⟨0, 1⟩,
       .number ⟨1, 2⟩,
       .punct .closeBracket ⟨2, 3⟩ ] }
 
-#guard decodeTape correctTape = some (.array [.number [0x31]])
+#guard decodeTape correctTape = some (.array [.number (ByteString.literal [0x31])])
 #guard spansWellFormed correctTape = true
 
 /-- A correct two-element array tape: `[1,2]`, the affirmative control for the
 comma path.  Without it, a decoder that refused every multi-element array would
 satisfy every comma refusal below. -/
 def correctTwoElemsTape : Tape :=
-  { input := [0x5B, 0x31, 0x2C, 0x32, 0x5D],
+  { input := ByteString.literal [0x5B, 0x31, 0x2C, 0x32, 0x5D],
     tokens := [
       .punct .openBracket ⟨0, 1⟩,
       .number ⟨1, 2⟩,
@@ -44,13 +44,13 @@ def correctTwoElemsTape : Tape :=
       .punct .closeBracket ⟨4, 5⟩ ] }
 
 #guard decodeTape correctTwoElemsTape =
-  some (.array [.number [0x31], .number [0x32]])
+  some (.array [.number (ByteString.literal [0x31]), .number (ByteString.literal [0x32])])
 #guard spansWellFormed correctTwoElemsTape = true
 
 /-- A correct string tape: one string token over `"a"`.  Without it, a decoder
 that refused every string would satisfy every string refusal below. -/
 def correctStringTape : Tape :=
-  { input := [0x22, 0x61, 0x22], tokens := [.string ⟨0, 3⟩] }
+  { input := ByteString.literal [0x22, 0x61, 0x22], tokens := [.string ⟨0, 3⟩] }
 
 #guard decodeTape correctStringTape = some (.string [0x61])
 #guard spansWellFormed correctStringTape = true
@@ -58,7 +58,7 @@ def correctStringTape : Tape :=
 /-- A correct object tape: `{"a":1}`, with the colon token's span naming the
 byte between the name and the value. -/
 def correctObjectTape : Tape :=
-  { input := [0x7B, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D],
+  { input := ByteString.literal [0x7B, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D],
     tokens := [
       .punct .openBrace ⟨0, 1⟩,
       .string ⟨1, 4⟩,
@@ -66,7 +66,7 @@ def correctObjectTape : Tape :=
       .number ⟨5, 6⟩,
       .punct .closeBrace ⟨6, 7⟩ ] }
 
-#guard decodeTape correctObjectTape = some (.object [([0x61], .number [0x31])])
+#guard decodeTape correctObjectTape = some (.object [([0x61], .number (ByteString.literal [0x31]))])
 #guard spansWellFormed correctObjectTape = true
 
 /- The colon token's span is the byte between the name and the value, so the
@@ -83,7 +83,7 @@ object tape is not the same tokens with the separator unchecked. -/
 /-- The object's colon token removed: the separator is a token the tape must
 carry, so the name and the value do not become adjacent members. -/
 def objectMissingColon : Tape :=
-  { input := [0x7B, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D],
+  { input := ByteString.literal [0x7B, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D],
     tokens := [
       .punct .openBrace ⟨0, 1⟩,
       .string ⟨1, 4⟩,
@@ -95,7 +95,7 @@ def objectMissingColon : Tape :=
 /-- The colon token one byte late: its span names the value byte, not the colon
 at the cursor the name leaves. -/
 def objectShortColon : Tape :=
-  { input := [0x7B, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D],
+  { input := ByteString.literal [0x7B, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D],
     tokens := [
       .punct .openBrace ⟨0, 1⟩,
       .string ⟨1, 4⟩,
@@ -109,7 +109,7 @@ def objectShortColon : Tape :=
 token sits between two number tokens, and the byte at its cursor is `x`, not a
 comma.  The byte is the only thing the decoder can refuse. -/
 def commaWithoutCommaByte : Tape :=
-  { input := [0x5B, 0x31, 0x78, 0x32, 0x5D],
+  { input := ByteString.literal [0x5B, 0x31, 0x78, 0x32, 0x5D],
     tokens := [
       .punct .openBracket ⟨0, 1⟩,
       .number ⟨1, 2⟩,
@@ -126,7 +126,7 @@ def commaWithoutCommaByte : Tape :=
 the input and well formed, so only the decoder's reading of the bytes rejects
 it. -/
 def numberOverText : Tape :=
-  { input := [0x61, 0x62, 0x63],
+  { input := ByteString.literal [0x61, 0x62, 0x63],
     tokens := [.number ⟨0, 3⟩] }
 
 #guard decodeTape numberOverText = none
@@ -136,7 +136,7 @@ def numberOverText : Tape :=
 span is non-empty, in order and inside the input, so `spansWellFormed` accepts
 it; the decoder rejects it because the span does not cover the literal. -/
 def stringShortSpan : Tape :=
-  { input := [0x22, 0x61, 0x62, 0x22],
+  { input := ByteString.literal [0x22, 0x61, 0x62, 0x22],
     tokens := [.string ⟨0, 3⟩] }
 
 #guard decodeTape stringShortSpan = none
@@ -146,7 +146,7 @@ def stringShortSpan : Tape :=
 the byte at its start is `a`, not the opening quote.  Only the opening-quote
 check can refuse it, so the tape separates a string's span from its bytes. -/
 def stringMissingOpenQuote : Tape :=
-  { input := [0x61, 0x22], tokens := [.string ⟨0, 2⟩] }
+  { input := ByteString.literal [0x61, 0x22], tokens := [.string ⟨0, 2⟩] }
 
 #guard decodeTape stringMissingOpenQuote = none
 #guard spansWellFormed stringMissingOpenQuote = true
@@ -155,7 +155,7 @@ def stringMissingOpenQuote : Tape :=
 so the bytes are an RFC text; the decoder's character discipline is the strict
 reading, so the tape does not decode.  This is the tape-level face of `Policy`. -/
 def unpairedSurrogateTape : Tape :=
-  { input := [0x22, 0x5C, 0x75, 0x44, 0x45, 0x41, 0x44, 0x22],
+  { input := ByteString.literal [0x22, 0x5C, 0x75, 0x44, 0x45, 0x41, 0x44, 0x22],
     tokens := [.string ⟨0, 8⟩] }
 
 #guard decodeTape unpairedSurrogateTape = none
@@ -164,7 +164,7 @@ def unpairedSurrogateTape : Tape :=
 /-- An opening-bracket token over a brace: the span is one byte as punctuation
 requires, and the byte is the wrong punctuation. -/
 def bracketOverBrace : Tape :=
-  { input := [0x7B],
+  { input := ByteString.literal [0x7B],
     tokens := [.punct .openBracket ⟨0, 1⟩] }
 
 #guard decodeTape bracketOverBrace = none
@@ -174,7 +174,7 @@ def bracketOverBrace : Tape :=
 /-- Tokens for `[]` laid over `[1]`: the closing bracket is not at the cursor
 the opening bracket leaves, and the byte between them is not whitespace. -/
 def emptyArrayOverOne : Tape :=
-  { input := [0x5B, 0x31, 0x5D],
+  { input := ByteString.literal [0x5B, 0x31, 0x5D],
     tokens := [.punct .openBracket ⟨0, 1⟩, .punct .closeBracket ⟨2, 3⟩] }
 
 #guard decodeTape emptyArrayOverOne = none
@@ -182,7 +182,7 @@ def emptyArrayOverOne : Tape :=
 /-- The same token kinds over `[ ]`, where the gap is whitespace: the control
 for the previous case. -/
 def emptyArrayOverSpace : Tape :=
-  { input := [0x5B, 0x20, 0x5D],
+  { input := ByteString.literal [0x5B, 0x20, 0x5D],
     tokens := [.punct .openBracket ⟨0, 1⟩, .punct .closeBracket ⟨2, 3⟩] }
 
 #guard decodeTape emptyArrayOverSpace = some (.array [])
@@ -192,7 +192,7 @@ def emptyArrayOverSpace : Tape :=
 /-- A token for `1` over `1 2`: the input is not consumed apart from
 whitespace, because a second value follows. -/
 def numberOverTwoValues : Tape :=
-  { input := [0x31, 0x20, 0x32],
+  { input := ByteString.literal [0x31, 0x20, 0x32],
     tokens := [.number ⟨0, 1⟩] }
 
 #guard decodeTape numberOverTwoValues = none
@@ -200,17 +200,17 @@ def numberOverTwoValues : Tape :=
 /-- A token for `1` over ` 1 `: surrounding whitespace is admitted, so the same
 token list decodes. -/
 def numberSurrounded : Tape :=
-  { input := [0x20, 0x31, 0x20],
+  { input := ByteString.literal [0x20, 0x31, 0x20],
     tokens := [.number ⟨1, 2⟩] }
 
-#guard decodeTape numberSurrounded = some (.number [0x31])
+#guard decodeTape numberSurrounded = some (.number (ByteString.literal [0x31]))
 
 /-! ### `spansWellFormed` decides the span discipline alone -/
 
 /-- Two number tokens whose spans overlap: the second starts before the first
 stops.  The token kinds alone would not show it. -/
 def overlappingSpans : Tape :=
-  { input := [0x31, 0x32, 0x33],
+  { input := ByteString.literal [0x31, 0x32, 0x33],
     tokens := [.number ⟨0, 2⟩, .number ⟨1, 3⟩] }
 
 #guard spansWellFormed overlappingSpans = false
@@ -223,7 +223,7 @@ discipline and not by their token kinds. -/
 /-- No tokens: the span predicate holds vacuously, and the decoder refuses the
 tape because the input is not consumed. -/
 def emptyTokenList : Tape :=
-  { input := [0x31], tokens := [] }
+  { input := ByteString.literal [0x31], tokens := [] }
 
 #guard decodeTape emptyTokenList = none
 #guard spansWellFormed emptyTokenList = true

@@ -30,7 +30,7 @@ def rawBytes (bs : List Nat) : ByteArray :=
   ByteArray.mk (bs.map UInt8.ofNat).toArray
 
 /-- The proof layer's byte string, for the semantic names. -/
-def rawList (bs : List Nat) : Bytes := bs.map UInt8.ofNat
+def rawList (bs : List Nat) : Bytes := ByteString.literal (bs.map UInt8.ofNat)
 
 /-- A string literal around a raw byte payload, with the quotation marks supplied
 here so a case names only the payload it means. -/
@@ -40,7 +40,7 @@ def stringWith (payload : List Nat) : ByteArray :=
 /-- A document parses and decodes to the expected value. -/
 def accepts (input : ByteArray) (v : Value) : Bool :=
   match parseDocument Limits.default input with
-  | .ok t => decide (t.input = input.toList ∧ decodeTape t = some v)
+  | .ok t => decide (t.input = input ∧ decodeTape t = some v)
   | .error _ => false
 
 /-- A document is refused as `invalid`, whatever the reason. -/
@@ -70,26 +70,26 @@ def isNoncharacter : Reject → Bool
 #guard
   match parseDocument Limits.default (docBytes "null") with
   | .ok t =>
-      decide (t.input = (docBytes "null").toList ∧ decodeTape t = some .null)
+      decide (t.input = docBytes "null" ∧ decodeTape t = some .null)
   | .error _ => false
 
 #guard
   match parseDocument Limits.default (docBytes "true") with
   | .ok t =>
-      decide (t.input = (docBytes "true").toList ∧
+      decide (t.input = docBytes "true" ∧
         decodeTape t = some (.bool true))
   | .error _ => false
 
 /- A repeated key is kept, in order, as two members; no map is built. -/
-#guard accepts (docBytes "{\"a\":1,\"a\":2}") (.object [([0x61], .number [0x31]), ([0x61], .number [0x32])])
+#guard accepts (docBytes "{\"a\":1,\"a\":2}") (.object [([0x61], .number (ByteString.literal [0x31])), ([0x61], .number (ByteString.literal [0x32]))])
 
 /- A lexeme longer than a machine word is kept as bytes, exactly. -/
-#guard accepts (docBytes "123456789012345678901234567890") (.number (docBytes "123456789012345678901234567890").toList)
+#guard accepts (docBytes "123456789012345678901234567890") (.number (docBytes "123456789012345678901234567890"))
 
 /- Whitespace around the elements and around the document is accepted. -/
-#guard accepts (docBytes "[ 1 , 2 ]") (.array [.number [0x31], .number [0x32]])
+#guard accepts (docBytes "[ 1 , 2 ]") (.array [.number (ByteString.literal [0x31]), .number (ByteString.literal [0x32])])
 
-#guard accepts (docBytes " 1 ") (.number [0x31])
+#guard accepts (docBytes " 1 ") (.number (ByteString.literal [0x31]))
 
 /-! ### Refused documents are `invalid` -/
 
@@ -160,19 +160,19 @@ character. -/
 #guard accepts
   (rawBytes [0x7B, 0x09, 0x0D, 0x0A, 0x20, 0x22, 0x61, 0x22,
     0x09, 0x3A, 0x0A, 0x31, 0x0D, 0x7D])
-  (.object [([0x61], .number [0x31])])
+  (.object [([0x61], .number (ByteString.literal [0x31]))])
 #guard refuses (rawBytes [0x0C, 0x31])
 #guard refuses (rawBytes [0x31, 0x0B])
 #guard refuses (rawBytes [0x7B, 0x0C, 0x22, 0x61, 0x22, 0x3A, 0x31, 0x7D])
 
 /- §6's `number` grammar: the four shapes, the leading-zero rule, and no
 `NaN`/`Infinity`/hex extension. -/
-#guard accepts (docBytes "-0") (.number [0x2D, 0x30])
-#guard accepts (docBytes "1E+3") (.number [0x31, 0x45, 0x2B, 0x33])
+#guard accepts (docBytes "-0") (.number (ByteString.literal [0x2D, 0x30]))
+#guard accepts (docBytes "1E+3") (.number (ByteString.literal [0x31, 0x45, 0x2B, 0x33]))
 #guard accepts (docBytes "-1.5E-7")
-  (.number [0x2D, 0x31, 0x2E, 0x35, 0x45, 0x2D, 0x37])
+  (.number (ByteString.literal [0x2D, 0x31, 0x2E, 0x35, 0x45, 0x2D, 0x37]))
 #guard accepts (docBytes "1.25e10")
-  (.number [0x31, 0x2E, 0x32, 0x35, 0x65, 0x31, 0x30])
+  (.number (ByteString.literal [0x31, 0x2E, 0x32, 0x35, 0x65, 0x31, 0x30]))
 #guard refuses (docBytes "+1")
 #guard refuses (docBytes ".5")
 #guard refuses (docBytes "1.")
@@ -208,8 +208,8 @@ that encodes the same code point takes the pair path to the same refusal. -/
 
 /- A repeated name is preserved in order, at any position. -/
 #guard accepts (docBytes "{\"a\":1,\"b\":2,\"a\":3}")
-  (.object [([0x61], .number [0x31]), ([0x62], .number [0x32]),
-    ([0x61], .number [0x33])])
+  (.object [([0x61], .number (ByteString.literal [0x31])), ([0x62], .number (ByteString.literal [0x32])),
+    ([0x61], .number (ByteString.literal [0x33]))])
 
 /-! ### The two readings
 
@@ -226,9 +226,11 @@ example : ∃ v : Value,
     refine ⟨0, 8, by decide, ?_, by decide⟩
     refine ValueAt.string ?_
     unfold StringAt
-    refine ⟨by decide, [], ?_, by decide⟩
+    refine ⟨by decide, ByteString.empty, ?_, by decide⟩
     refine StrChars.cons ?_ StrChars.nil
-    exact StrChar.escLone rfl (by decide) (by decide)
+    exact StrChar.escLone (h0 := 0x44) (h1 := 0x45) (h2 := 0x41) (h3 := 0x44)
+      (c := 0xDEAD) (rest := 0x22 +: ByteString.empty)
+      rfl (by decide) (by decide)
   · unfold Policy Value.charPolicy
     intro h
     exact absurd (h 0xDEAD (by simp)).1 (by decide)

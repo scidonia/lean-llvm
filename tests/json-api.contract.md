@@ -19,8 +19,9 @@ This scenario is a Lean program of `#guard` checks and two `example` proofs,
 elaborated against the public entrypoint, so it observes the same interface a
 client does.  Accepted documents are compared through `decodeTape`, not by
 inspecting a parser-private structure, and no accepted case is judged on the
-decoded value alone: `accepts` requires both the decoded value and
-`t.input = input.toList`.  The program builds its own inputs; no
+decoded value alone: `accepts` requires both the decoded value and that the
+tape's input is the bytes that were parsed, written `t.input = input` over the
+carrier.  The program builds its own inputs; no
 compiler, proof checker, network, clock or service is reached.
 
     nix develop -c lake env lean tests/json-api.lean

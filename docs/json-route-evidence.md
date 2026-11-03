@@ -98,10 +98,24 @@ is `:280`.
 | `X2` corpus route | the same fixture mutation | exit 0 | `nix develop -c bash tests/json-classify/check.sh` | 1 | `FAIL: the installed object and the Lean body disagree`; diff `mixed.block 0 0x7bd6f7b7` → `0x7bd4f7a7` |
 | `X3` `scanBlock`'s compiled body | `LeanLLVM/JSON/ScanBlock.lean`: `@[implemented_by] scanBlockImpl`, which ignores `valid` and returns `.ok` with `pos + 32` | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 1 | `:340`, `:341`, `:342` (the three short-block assertions) |
 | `X4` the relation's value clause | no staged cut: `wrongMask_not_refines` (proof) and `JB4`'s executable inequality | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 0 | none: the theorem checks and both the equality and the complement inequality hold |
-| `X5` parser no-regression | no divergent cut: production as it stands, built in a copy (the same build as production) | exit 0 | `nix develop -c bash tests/json/check.sh`; `nix develop -c lake env lean tests/json-api.lean`; `nix develop -c lake env lean tests/json-tape.lean` | 0, 0, 0 | none: `ok: the corpus agrees with the manifest; a tampered expectation is a mismatch`, then two silent exits |
+| `X5` parser no-regression | no divergent cut: production as it stands, built in a copy (the same build as production) | exit 0 | `nix develop -c bash tests/json/check.sh`; `nix develop -c lake env lean tests/json-api.lean`; `nix develop -c lake env lean tests/json-tape.lean` | 0, 0, 0 (at `d13d633`; see the note below) | none: `ok: the corpus agrees with the manifest; a tampered expectation is a mismatch`, then two silent exits |
 | `X6` the packing the semantics applies | `LeanLLVM/Semantics.lean`: `@[implemented_by] lanesToNatImpl`, which packs lane `k` into bit `31 - k` | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 1 | `:403`, `:411`, `:475` |
 | `X7` the splat's width comparison | `LeanLLVM/Parser.lean`: the `if w' ≠ w then … else` guard removed from the splat branch | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 1 | `:283`, `:284`, `:285` |
 | `X8` the splat's element-type check | `LeanLLVM/Parser.lean`: the integer-type failure removed, falling back to the operand width, so the text reaches the shared value branch | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 1 | `:280` only (`refusalNames splatTypeMismatch "ptr"`) |
+
+The `X5` row's route commands and exits are the record of `d13d633`, the
+revision they were observed at: that is the last revision at which this
+document records the two `#guard` routes exiting 0, and their exits do not
+extend past it. At `77abc35`, where `Bytes` becomes `ByteString`,
+`tests/json-api.lean` and `tests/json-tape.lean` fail to elaborate — 46 and 53
+errors, measured at that revision — because their byte literals still spell
+bytes in the old list carrier. Both commands exit 1 at `77abc35`; what they do
+not produce is the row's exit 0, and so neither is evidence there.
+`tests/json/check.sh` is green at `77abc35`.
+Restating the two files over the carrier restores both: at the revision that
+carries that update, `nix develop -c lake env lean tests/json-api.lean` and the
+same command for `tests/json-tape.lean` each exit 0 with no output, and the
+corpus route prints its `ok` line and exits 0.
 
 All of `X1`–`X3` and `X6`–`X8` were reproduced in this observation; none is an
 inherited reading. `X1`, `X2`, `X3`, `X6`, `X7` and `X8` are **assertion reds**:
@@ -154,8 +168,10 @@ is not counted as one.
 - **`X5` — the parser routes stay green.** In a copy built at `d13d633`, and
   again on production afterwards, `tests/json/check.sh` printed its `ok` line
   and exited 0, and `tests/json-api.lean` and `tests/json-tape.lean` exited 0
-  with no output. There is no divergent cut here and no fired assertion; a
-  green control is not an assertion red. It does **not** show that the parser
+  with no output. Both observations are of `d13d633`; the two `#guard` exits do
+  not extend past it, as the note under the table records. There is no
+  divergent cut here and no fired assertion; a green control is not an
+  assertion red. It does **not** show that the parser
   routes through the candidate, and it does not: the transported caller is
   `scanCaller` (`LeanLLVM/Vellum/JsonSeam.lean:99-119`), which stages its own
   32 bytes from four `i64` words before calling the classifier, so the parser
