@@ -152,3 +152,11 @@ comparison against a native reference; J6 requires J5 and that comparison.
    yet in the repository (three setup lines in the untracked
    `tests/call-memory.lean` still need repair) and the axiom pins for the new
    theorems are not yet added to `LeanLLVMTest`.
+6. **Known limitation: parser cost is quadratic in input size.** The working
+   byte representation (`List UInt8`) makes per-token access cost grow with the
+   token's position, so document cost grows with the square of the input;
+   documents of hundreds of kilobytes are not practical until the
+   representation and the access pattern change together. The theorems are
+   stated over `List UInt8`, so re-stating the lemmas that index a byte string
+   is the price of that change, not a local edit. Tracked as J3's opening
+   question.
