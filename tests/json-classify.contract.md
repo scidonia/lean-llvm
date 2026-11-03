@@ -22,10 +22,14 @@ block offered with one byte short produces no information, and the mask equals
 a hand-written constant rather than `maskOf` read back.  The body side places
 that same block in memory at a non-zero address and runs `classify32Function`
 through `runFuel`: the returned `i32` equals the same hand-written constant, and
-the returned memory reads back the same bytes.  Every parser assertion
-is a `#guard` over `parseModule`, every block assertion a `#guard` over
-`scanBlock`, and each body assertion a `#guard` over `runFuel`, so each
-observation is a closed decision about one call, and a
+the returned memory reads back the same bytes.  The caller side stages four
+`i64` words into its own locals and calls the seam: the returned `i32` is that
+same style of hand-written mask under both the installed selection and the
+reference selection, and a complementing body is distinguished both by the
+complement it returns and by an inequality over `Option Outcome`.  Every
+parser assertion is a `#guard` over `parseModule`, every block assertion a
+`#guard` over `scanBlock`, and each body and caller assertion a `#guard` over
+`runFuel`, so each observation is a closed decision about one call, and a
 `#guard` that does not hold stops elaboration with a nonzero exit status.  No
 compiler, proof checker, service, clock or network is reached.
 
@@ -137,6 +141,51 @@ compiler, proof checker, service, clock or network is reached.
   nothing about the cursor being carried correctly past this operation by its
   caller.
 
+### JB4 — the staging caller returns the staged block's mask and memory under both the reference selection and the installed classifier body, and a complementing body is distinguishable
+
+- **Actor:** the staging caller `scanCaller`, run under a call environment.
+- **Given:** the same 32-byte `mixedBytes` block `JB3` classifies, staged by
+  the caller's four little-endian `i64` stores.  The four words are derived
+  from `mixedBytes` through the production `blockOf` encoding rather than
+  retyped, and the derivation is asserted in the same run, so a fixture that
+  failed to stage that block cannot make the mask assertion disagree with
+  `JB3` silently.  Three selections are run at the same caller: the reference
+  selection `envForMask`, the installed classifier body's selection
+  `envForBodySym jsonSeamSymbol 10000 0 classify32Function`, and the
+  complemented body's selection over `wrongMaskFunction`.  `mixedMask`'s
+  hand-written provenance is established in `JB3`, where it is asserted
+  against `mixedBytes` without reading `maskOfList` back; this scenario reuses
+  that constant and does not recompute it.
+- **When:** `runFuel` is applied to `scanCaller` from `initState` with the four
+  staged words, once per selection.
+- **Then:** the caller returns, and separately, so a failure names which:
+  1. under the installed classifier body's selection the caller's one outcome
+     is `.ret (some (.int 32 mixedMask)) (stagedMem w0 w1 w2 w3)`, where
+     `mixedMask` is the hand-written constant `0x7BD6F7B7` — the same constant
+     `JB3` and `JB5` use, not a value read back out of `maskOfList` — and the
+     memory is the one its four stores staged;
+  2. the same value and memory hold under the reference selection `envForMask`
+     — the two selections agree at the caller;
+  3. under the complemented body's selection the caller returns the complement
+     `mixedMask ^^^ -1`, and its whole run (`Option Outcome`) is an
+     **inequality** against the classifier's run — the negative control over a
+     type with `DecidableEq`;
+  4. under the classifier's selection the caller's returned memory reads back
+     the staged 32 bytes at address `1` (its first local), exactly
+     `blockOf w0 w1 w2 w3`, so the mask is bound to the block that was
+     staged.
+- **Why:** the caller is where the seam's replacement is observed: the
+  installed body and the reference selection must give the caller one outcome,
+  and a body whose mask is complemented must give a different one, so the
+  value clause is exercised rather than assumed.  Asserting the run inequality
+  as well as the complement keeps the refusal observable even if the expected
+  constant were written wrong, and the memory read-back ties the mask to the
+  bytes actually written.
+- **Not claimed:** the caller's behaviour for words other than those staging
+  this block (that is the library theorem's statement), nor any difference
+  between the runs beyond the returned value — both selections allocate
+  nothing and return the caller's memory unchanged.
+
 ### JB5 — the classifier body, run from a memory holding the chosen block, returns the hand-written mask and leaves the caller's memory alone
 
 - **Actor:** `runFuel`, running `classify32Function` — the AST pinned from
@@ -162,3 +211,5 @@ compiler, proof checker, service, clock or network is reached.
 - **Not claimed:** the body's behaviour on any block other than this one (that
   is the library theorem's statement), nor the packed value's agreement with
   the scalar transition beyond this block.
+
+

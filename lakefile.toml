@@ -36,3 +36,9 @@ root = "JsonMain"
 [[lean_exe]]
 name = "leanllvm-loop-emit"
 root = "LoopEmit"
+
+# Renders the JSON seam's staging-caller fixture from its Lean AST; see
+# JsonEmit.lean.
+[[lean_exe]]
+name = "leanllvm-json-emit"
+root = "JsonEmit"

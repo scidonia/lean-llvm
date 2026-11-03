@@ -1751,3 +1751,72 @@ congruence, each pinned at its observed footprint. -/
 /-- info: 'LeanLLVM.ITree.timeoutReachable_interp_reflect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.ITree.timeoutReachable_interp_reflect
+
+/-! ### The JSON seam
+
+`LeanLLVM/Vellum/JsonSeam.lean`: the reference selection, the installed
+candidate's selection, the staging caller, and the contextual replacement.  The
+headline theorems are restated as statement pins, so weakening one fails to
+elaborate even when its footprint is unchanged, and the observed axiom footprint
+is pinned beside it.  The negative control's footprint is a pin: the refusal is
+a theorem, not a scenario.
+
+`Classical.choice` in the four seam theorems' footprints is inherited, not
+entailed: `zip_replicate_right` → `classify32_block` → `classify32_step` carries
+it from core's `Nat.right_eq_add`, whose `by omega` proof applies
+`Classical.propDecidable` to `b = a + b` and `a = 0` — both `Nat.decEq`-decidable.
+It is a core tactic artefact, not an arbitrary-`Prop` frame, and not
+`bv_decide`. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonSeam.classifySeam_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonSeam.classifySeam_refines
+
+/-- info: 'LeanLLVM.Vellum.JsonSeam.replaceScanner_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonSeam.replaceScanner_sound
+
+/-- info: 'LeanLLVM.Vellum.JsonSeam.replaceScanner_ret' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonSeam.replaceScanner_ret
+
+/-- info: 'LeanLLVM.Vellum.JsonSeam.wrongMask_not_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonSeam.wrongMask_not_refines
+
+/-- info: 'LeanLLVM.Vellum.JsonSeam.envForBodySym_comma' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonSeam.envForBodySym_comma
+
+open LeanLLVM.Vellum.JsonSeam in
+example : ∀ sym, LeanLLVM.CallRefinesWithin
+    (envForBodySym jsonSeamSymbol 10000 0 LeanLLVM.Vellum.JsonClassifyIR.classify32Function)
+    envForMask sym (LeanLLVM.ReserveFrame 0) :=
+  classifySeam_refines
+
+open LeanLLVM.Vellum.JsonSeam in
+example : LeanLLVM.Vellum.RefinesWithinAcross
+    (envForBodySym jsonSeamSymbol 10000 0 LeanLLVM.Vellum.JsonClassifyIR.classify32Function)
+    envForMask scanCaller scanCaller (fun _ => False) :=
+  replaceScanner_sound
+
+open LeanLLVM.Vellum.JsonSeam in
+example (w0 w1 w2 w3 : BitVec 64) :
+    ∀ o, LeanLLVM.Beh
+        (envForBodySym jsonSeamSymbol 10000 0 LeanLLVM.Vellum.JsonClassifyIR.classify32Function)
+        scanCaller [.int 64 w0, .int 64 w1, .int 64 w2, .int 64 w3] o ↔
+      o = .ret (some (.int 32 (LeanLLVM.JSON.maskOfList (blockOf w0 w1 w2 w3))))
+        (stagedMem w0 w1 w2 w3) :=
+  replaceScanner_ret w0 w1 w2 w3
+
+open LeanLLVM.Vellum.JsonSeam in
+example : ¬ LeanLLVM.CallRefinesWithin
+    (envForBodySym jsonSeamSymbol 10000 0 LeanLLVM.Vellum.JsonClassifyIR.wrongMaskFunction)
+    envForMask jsonSeamSymbol (LeanLLVM.ReserveFrame 0) :=
+  wrongMask_not_refines
+
+open LeanLLVM.Vellum.JsonSeam in
+example (fuel reserve : Nat) (f : LeanLLVM.Function) :
+    envForBodySym LeanLLVM.Vellum.SeamContext.seamSymbol fuel reserve f =
+      LeanLLVM.Vellum.SeamContext.envForBody fuel reserve f :=
+  envForBodySym_comma fuel reserve f

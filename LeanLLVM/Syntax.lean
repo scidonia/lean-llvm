@@ -133,9 +133,10 @@ structure Decl where
   params : List Ty
   deriving DecidableEq, Repr
 
-/-- A module: declarations followed by function definitions.  Declarations are not modelled
-yet; the parser refuses a module that calls a function, so a declaration would
-be unreachable. -/
+/-- A module: declarations followed by function definitions.  A `declare` line is
+parsed into `decls`, and a `call` instruction names its callee as a symbol that
+the environment resolves, not one the module defines — so declarations are
+modelled, and the JSON caller fixture's pin compares them. -/
 structure Module where
   decls : List Decl
   functions : List Function

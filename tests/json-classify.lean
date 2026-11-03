@@ -1,9 +1,10 @@
 /-
 The JSON classifier scenarios: the emitted classifier text the parser must
 accept, the vector constructs it must refuse while naming each one, the block
-operation's full-block and short-block outcomes with the per-byte mask, and the
+operation's full-block and short-block outcomes with the per-byte mask, the
 classifier body's own run returning that same mask and leaving the caller's
-memory alone.
+memory alone, and the staging caller's run returning that mask under the
+installed selection, the reference selection and a complementing body.
 
 The classifier text is `probes/install/ir/json-classify.candidate.ll`, read here
 through `include_str`, so the assertion is about the committed bytes.  The
@@ -339,6 +340,85 @@ def mixedMask : BitVec 32 := 0x7BD6F7B7
 #guard (scanBlock blockCursor mixedBlock 31).2.2 = .short
 #guard (scanBlock blockCursor mixedBlock 31).1.pos = blockCursor.pos
 #guard (scanBlock blockCursor mixedBlock 31).2.1 = (0 : BlockInfo)
+
+/-! ### JB4 — the staging caller returns the staged block's mask and memory
+under both the reference selection and the installed classifier body, and a
+complementing body is distinguishable
+
+The same `mixedBytes` block is staged by the caller's four `i64` stores, so the
+caller's outcome is asserted against the same hand-written constant `JB3` and
+`JB5` use, together with the memory its stores staged.  The words are derived
+from `mixedBytes` through the production `blockOf` encoding rather than
+retyped, and the derivation is itself asserted, so a fixture that failed to
+stage that block cannot make the mask assertion disagree with `JB3` silently.
+A third selection — the complemented body — is run at the same caller: it must
+return the complement, and its run must differ from the classifier's, so the
+value clause is observed rather than assumed.  The caller's returned memory is
+read back as the staged block, so the mask is bound to the bytes actually
+written. -/
+
+open LeanLLVM.Vellum.JsonSeam
+open LeanLLVM.Vellum.JsonClassifyIR
+
+/-- The little-endian `i64` word staging bytes `8 * j` through `8 * j + 7` of
+`mixedBytes`: the bytes the caller's `j`-th store writes. -/
+def mixedWord (j : Nat) : BitVec 64 :=
+  BitVec.ofNat 64 (bytesToNat ((mixedBytes.drop (8 * j)).take 8))
+
+/-- The four words the caller is run on, in argument order. -/
+def mixedArgs : List LeanLLVM.Value :=
+  [.int 64 (mixedWord 0), .int 64 (mixedWord 1),
+   .int 64 (mixedWord 2), .int 64 (mixedWord 3)]
+
+/-- The caller's run under a selection, from `initState`. -/
+def callerOutcome (calls : Calls) : Option Outcome :=
+  runFuel calls 10000 scanCaller (initState scanCaller mixedArgs)
+
+/-- The outcome the caller must produce: the hand-written mask and the memory
+its four stores staged. -/
+def stagedOutcome : Outcome :=
+  .ret (some (.int 32 mixedMask))
+    (stagedMem (mixedWord 0) (mixedWord 1) (mixedWord 2) (mixedWord 3))
+
+/-- The memory the caller's run returned, when it returned. -/
+def callerReturnedMem (calls : Calls) : Option Mem :=
+  match callerOutcome calls with
+  | some (.ret _ m) => some m
+  | _ => none
+
+/-- The installed classifier body's selection. -/
+def candidateCalls : Calls :=
+  envForBodySym jsonSeamSymbol 10000 0 classify32Function
+
+/-- The complemented body's selection. -/
+def wrongCalls : Calls :=
+  envForBodySym jsonSeamSymbol 10000 0 wrongMaskFunction
+
+-- (0) The four words stage `mixedBytes`, so the expected mask below is the mask
+-- of the bytes the caller actually writes.
+#guard blockOf (mixedWord 0) (mixedWord 1) (mixedWord 2) (mixedWord 3) = mixedBytes
+
+-- (1) Under the installed classifier body's selection the caller's one outcome
+-- is the hand-written mask with the staged memory.
+#guard callerOutcome candidateCalls = some stagedOutcome
+
+-- (2) The same value and memory hold under the reference selection — the two
+-- selections agree at the caller.
+#guard callerOutcome envForMask = some stagedOutcome
+
+-- (3) Under the complemented body's selection the caller returns the
+-- complement of the mask, with the same staged memory.
+#guard callerOutcome wrongCalls = some
+  (.ret (some (.int 32 (mixedMask ^^^ BitVec.ofInt 32 (-1))))
+    (stagedMem (mixedWord 0) (mixedWord 1) (mixedWord 2) (mixedWord 3)))
+
+-- (4) The complemented body's run differs from the classifier's.
+#guard callerOutcome wrongCalls ≠ callerOutcome candidateCalls
+
+-- (5) The caller's returned memory reads back exactly the block it staged at
+-- address `1` (its first local), so the mask is bound to those bytes.
+#guard (callerReturnedMem candidateCalls).bind (fun m => readBytes m 1 32) =
+  some (blockOf (mixedWord 0) (mixedWord 1) (mixedWord 2) (mixedWord 3))
 
 /-! ### JB5 — the classifier body, run from a memory holding the chosen block,
 returns the hand-written mask and leaves the caller's memory alone
