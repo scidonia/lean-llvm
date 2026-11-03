@@ -44,9 +44,46 @@ def spaceRun : Bytes → Nat
   | [] => 0
   | b :: rest => if IsSpaceB b then spaceRun rest + 1 else 0
 
+/-! ### A cursor over the byte list
+
+A cursor keeps the unread suffix together with its absolute offset and its
+length, so a reader that threads it takes the suffix directly, names an absolute
+position as `off + k`, and reads the length without walking the suffix.
+
+`len` and `hlen` are redundant with `rest.length`; `hlen` is a proof field, so it
+carries no compiled data.  Both are carried for the parsers that thread the
+cursor: `Cursor.advance` reads `len` to keep the invariant, but no caller
+consumes it yet, and `skipFrom`'s bridge below is
+`(skipC (Cursor.of bs i)).off`, so it computes the dropped suffix's length in
+`Cursor.of` and discards it.  Until those callers thread the cursor, every
+`skipFrom bs i` pays one extra suffix-length walk per call. -/
+structure Cursor where
+  rest : Bytes
+  off : Nat
+  len : Nat
+  hlen : len = rest.length
+
+/-- The cursor over the suffix starting at `i`. -/
+def Cursor.of (bs : Bytes) (i : Nat) : Cursor :=
+  { rest := bs.drop i, off := i, len := (bs.drop i).length, hlen := rfl }
+
+/-- Consume `k` bytes. -/
+def Cursor.advance (c : Cursor) (k : Nat) : Cursor :=
+  { rest := c.rest.drop k, off := c.off + k, len := c.len - k,
+    hlen := by rw [c.hlen, List.length_drop] }
+
+/-- Cursor form of the whitespace skip: advance past the run at the cursor. -/
+def skipC (c : Cursor) : Cursor := c.advance (spaceRun c.rest)
+
 /-- The first index at or after `i` that is not whitespace; `bs.length` when the
 rest of the input is whitespace. -/
-def skipFrom (bs : Bytes) (i : Nat) : Nat := i + spaceRun (bs.drop i)
+def skipFrom (bs : Bytes) (i : Nat) : Nat := (skipC (Cursor.of bs i)).off
+
+/-- The arithmetic form of `skipFrom`: the cursor's offset after the skip is its
+starting offset plus the run's length, so lemmas stated in terms of `spaceRun`
+rewrite rather than re-derive. -/
+theorem skipFrom_def (bs : Bytes) (i : Nat) :
+    skipFrom bs i = i + spaceRun (bs.drop i) := rfl
 
 /-- `bs[i…]` starts with exactly `p`. -/
 def HasPrefix (bs : Bytes) (i : Nat) (p : Bytes) : Prop := (bs.drop i).take p.length = p

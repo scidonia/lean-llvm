@@ -1912,7 +1912,7 @@ theorem spaceRun_le_length : ∀ (bs : Bytes), spaceRun bs ≤ bs.length
       · simp
 
 theorem skipFrom_ge (bs : Bytes) (i : Nat) : i ≤ skipFrom bs i := by
-  unfold skipFrom
+  rw [skipFrom_def]
   omega
 
 /-- In range, the skip stays inside the input.  The `i ≤ bs.length` hypothesis is
@@ -1920,7 +1920,7 @@ not decoration: `skipFrom bs i = i` once `i` is past the end, and that exceeds
 `bs.length`. -/
 theorem skipFrom_le_length (bs : Bytes) (i : Nat) (h : i ≤ bs.length) :
     skipFrom bs i ≤ bs.length := by
-  unfold skipFrom
+  rw [skipFrom_def]
   have hs := spaceRun_le_length (bs.drop i)
   have hd : (bs.drop i).length = bs.length - i := by simp
   omega
@@ -1970,7 +1970,7 @@ theorem spaceAt_drop {bs : Bytes} {i j : Nat} (h : SpaceAt (bs.drop i) 0 j) :
 
 /-- The skipped range is whitespace: what a separator's `ws` run needs. -/
 theorem skipFrom_space (bs : Bytes) (i : Nat) : SpaceAt bs i (skipFrom bs i) := by
-  unfold skipFrom
+  rw [skipFrom_def]
   exact spaceAt_drop (spaceRun_space (bs.drop i))
 
 /-- The Boolean prefix test and the proposition agree. -/

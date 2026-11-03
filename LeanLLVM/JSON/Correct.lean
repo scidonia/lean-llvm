@@ -314,7 +314,7 @@ private theorem skipFrom_eq_of_spaceAt {bs : Bytes} {i j : Nat} {b : UInt8}
     rw [List.getElem?_drop, Nat.add_sub_of_le hij]
     exact hj
   have h := spaceRun_eq_of_all hspace hni hns
-  unfold skipFrom
+  rw [skipFrom_def]
   rw [h]
   omega
 
@@ -413,7 +413,7 @@ private theorem follow_numberStop {bs : Bytes} {j : Nat} (h : ValueFollow bs j) 
       omega
     have hrun : spaceRun (bs.drop j) = bs.length - j := by
       have := hsf
-      unfold skipFrom at this
+      rw [skipFrom_def] at this
       omega
     rw [hd] at hrun
     rw [spaceRun] at hrun
@@ -2758,7 +2758,7 @@ theorem parseRef_sound (l : Limits) (bs : Bytes) :
         have hns : IsSpaceB 0xEF = false := by decide
         have hdrop := drop_eq_cons_of_get? hbom0
         have hskip0 : skipFrom bs 0 = 0 := by
-          unfold skipFrom
+          rw [skipFrom_def]
           rw [hdrop]
           simp [spaceRun, hns]
         rw [← h0, hskip0] at hva
@@ -2995,7 +2995,7 @@ private theorem numberStop_of_skipFrom_length {bs : Bytes} {j : Nat}
     simp only [List.length_drop] at this
     omega
   have hpos : 0 < spaceRun (bs.drop j) := by
-    unfold skipFrom at h
+    rw [skipFrom_def] at h
     omega
   exact isSpace_not_constituent (spaceRun_pos_head hpos c rest hd)
 
@@ -4053,7 +4053,7 @@ theorem parseRef_complete (l : Limits) (bs : Bytes) (v : Value)
     have hns : IsSpaceB 0xEF = false := by decide
     have hdrop := drop_eq_cons_of_get? hbom0
     have hskip0' : skipFrom bs 0 = 0 := by
-      unfold skipFrom
+      rw [skipFrom_def]
       rw [hdrop]
       simp [spaceRun, hns]
     rw [hskip0'] at hva
