@@ -420,6 +420,13 @@ def wrongCalls : Calls :=
 #guard (callerReturnedMem candidateCalls).bind (fun m => readBytes m 1 32) =
   some (blockOf (mixedWord 0) (mixedWord 1) (mixedWord 2) (mixedWord 3))
 
+-- (6) The block's bytes are the committed fixture `--emit-block` writes, read
+-- from disk.  A byte change that preserves the byte's mask class would leave
+-- every mask assertion above green while the scenario and the fixture
+-- described different blocks, so the bytes are compared directly.
+#guard (include_str "json-classify/mixed.block").toList.map (·.toNat) =
+  mixedBytes.map (·.toNat)
+
 /-! ### JB5 — the classifier body, run from a memory holding the chosen block,
 returns the hand-written mask and leaves the caller's memory alone
 

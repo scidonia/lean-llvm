@@ -155,7 +155,11 @@ compiler, proof checker, service, clock or network is reached.
   complemented body's selection over `wrongMaskFunction`.  `mixedMask`'s
   hand-written provenance is established in `JB3`, where it is asserted
   against `mixedBytes` without reading `maskOfList` back; this scenario reuses
-  that constant and does not recompute it.
+  that constant and does not recompute it.  The block's bytes are also
+  cross-checked at build time against `tests/json-classify/mixed.block`, the
+  fixture the executable's `--emit-block` writes, so a class-preserving drift
+  between the scenario's copy of the block and the on-disk block is caught even
+  though every mask assertion would still agree.
 - **When:** `runFuel` is applied to `scanCaller` from `initState` with the four
   staged words, once per selection.
 - **Then:** the caller returns, and separately, so a failure names which:

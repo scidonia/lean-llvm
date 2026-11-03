@@ -1,0 +1,36 @@
+# Hand-written expectations for the classifier route.
+#
+# Each row is <path>\t<offset>\t<mask>: the 32-byte window at <offset> in <path>
+# (used as given, relative to the repository root) and the mask the classifier
+# must return for it, as `0x` and eight lowercase hex digits.  Lines beginning
+# with `#` and empty lines are not rows.
+#
+# The classifier marks twelve bytes: the six RFC 8259 structural characters
+# `{ } [ ] : ,`, the quote `"` and the backslash `\` (the eight `IsStructuralB`
+# bytes, the last two being the classifier's own string business), and RFC
+# 8259's four whitespace bytes — space, tab, line feed and carriage return.
+# Every byte of every pad window is `[`, space or `]`, all marked, so the mask
+# is 0xffffffff; these rows are a no-regression set, not a discriminator.
+#
+# mixed.block interleaves those twelve classes with ordinary content.  Hand
+# derivation, bit k = byte k: bits 0 (`[`), 4 (`,`), 7 (`]`), 14 (`:`), 17
+# (`,`), 22 (`{`) and 28 (`}`) are structural; bits 10, 12, 24 and 27 are the
+# quote; bit 25 is the backslash; bits 1, 2, 5, 9, 13, 15, 18, 23 and 30 are
+# space, 8 line feed, 20 tab and 29 carriage return; bits 3 (`1`), 6 (`2`), 11
+# (`a`), 16 (`x`), 19 (`y`), 21 (`z`), 26 (`k`) and 31 (`q`) are ordinary
+# content and are clear.  With all eight structural bytes counted, that is
+# 0x7bd6f7b7 — not read back from maskOfList — and a body returning a constant
+# all-ones mask cannot produce it.  The file is emitted by
+# `leanllvm-json-classify --emit-block` and pinned by check.sh.
+#
+# The object arm establishes agreement with the compiled candidate on aligned
+# windows only; see probes/json/classify_driver.c for the alignment gap.
+tests/json/corpus/pad32.json	0	0xffffffff
+tests/json/corpus/pad33.json	0	0xffffffff
+tests/json/corpus/pad33.json	1	0xffffffff
+tests/json/corpus/pad64.json	0	0xffffffff
+tests/json/corpus/pad64.json	16	0xffffffff
+tests/json/corpus/pad64.json	32	0xffffffff
+tests/json/corpus/pad65.json	0	0xffffffff
+tests/json/corpus/pad65.json	33	0xffffffff
+tests/json-classify/mixed.block	0	0x7bd6f7b7

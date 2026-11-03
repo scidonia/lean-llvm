@@ -42,3 +42,8 @@ root = "LoopEmit"
 [[lean_exe]]
 name = "leanllvm-json-emit"
 root = "JsonEmit"
+
+# Runs the emitted classifier body over corpus texts; see JsonClassifyMain.lean.
+[[lean_exe]]
+name = "leanllvm-json-classify"
+root = "JsonClassifyMain"
