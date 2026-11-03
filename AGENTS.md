@@ -17,6 +17,19 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 
 `llvm-as`, `llvm-dis`, `opt`, `llc` and `clang` are provided by the shell.
 
+Run Lean and Lake under a **memory ceiling**, so a runaway elaboration dies
+inside its own cgroup instead of taking the session or the machine with it:
+
+```bash
+systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=1G --quiet \
+  nix develop -c lake build
+```
+
+The ceiling is per invocation and inherited by everything the shell starts.
+A build killed by it is a signal that the file it was elaborating needs
+splitting or its `maxHeartbeats` raising — not a reason to run the same
+command without the ceiling.
+
 The default targets are the `leanllvm` executable and the `ITree` library, so
 `lake build` covers `LeanLLVM` (through the executable) and the generic tree
 library.  The generic library depends on `leanprover-community/mathlib4` at the
