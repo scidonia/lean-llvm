@@ -127,9 +127,6 @@ need; the `.length` spelling follows from it. -/
 @[simp] theorem size_literal (l : List UInt8) : (literal l).size = l.length := by
   rw [size_eq_data, ← Array.length_toList, data_toList_literal]
 
-theorem length_literal (l : List UInt8) : (literal l).length = l.length := by
-  rw [length_eq_size, size_literal]
-
 /-- The literal of a byte string's list is that byte string: the round-trip
 `ByteArray` does not ship. -/
 theorem literal_toList (bs : ByteString) : literal bs.toList = bs := by
@@ -164,19 +161,10 @@ theorem eq_of_data_toList_eq {a b : ByteString} (h : a.data.toList = b.data.toLi
   apply ByteArray.ext
   exact Array.toList_inj.mp h
 
-theorem toList_eq_iff {a b : ByteString} : a.toList = b.toList ↔ a = b :=
-  ⟨eq_of_toList_eq, fun h => by rw [h]⟩
-
 /-- The literal of a byte string's underlying list is that byte string. -/
 theorem literal_data_toList (bs : ByteString) : literal bs.data.toList = bs := by
   apply eq_of_data_toList_eq
   rw [data_toList_literal]
-
-theorem empty_eq_byteArray_empty : (empty : ByteString) = ByteArray.empty := by
-  apply eq_of_data_toList_eq
-  rw [data_toList_empty]
-  show ([] : List UInt8) = ByteArray.empty.data.toList
-  rw [← ByteArray.toList_empty, toList_eq_data_toList]
 
 /-- `List.getElem?_eq_getElem`-shaped: an in-bounds lookup is the byte at that
 index.  The proof layer's statements read a byte positionally, so the list
@@ -234,22 +222,6 @@ theorem head?_cons (b : UInt8) (bs : ByteString) : head? (cons b bs) = some b :=
 theorem head?_toList (bs : ByteString) : head? bs = bs.toList.head? := by
   rw [head?, List.head?_eq_getElem?, toList_eq_data_toList, Array.getElem?_toList]
 
-
-theorem head?_eq_none_iff (bs : ByteString) : head? bs = none ↔ bs = empty := by
-  rw [head?, ByteString.empty]
-  constructor
-  · intro h
-    apply eq_of_data_toList_eq
-    rw [data_toList_literal]
-    rw [Array.getElem?_eq_none_iff] at h
-    have hz : bs.data.toList.length = 0 := by
-      rw [Array.length_toList]
-      omega
-    exact List.eq_nil_of_length_eq_zero hz
-  · intro h
-    subst h
-    rfl
-
 /-- A byte string is empty or a cons.  The elimination form the proofs use where
 they used to `cases` the carrier. -/
 theorem eq_empty_or_cons (bs : ByteString) :
@@ -286,18 +258,6 @@ noncomputable def induction_on {C : ByteString → Sort u} (bs : ByteString)
     | cons b rest ih => exact hs b (literal rest) ih
   rw [← literal_data_toList bs]
   exact key bs.data.toList
-
-/-- Case analysis on a byte string: the two shapes, with no induction hypothesis. -/
-noncomputable def cases_on {C : ByteString → Sort u} (bs : ByteString)
-    (h0 : C empty) (hs : ∀ (b : UInt8) (rest : ByteString), C (cons b rest)) : C bs :=
-  induction_on bs h0 (fun b rest _ => hs b rest)
-
-/-- The cons case of `eq_empty_or_cons`, for `rcases`. -/
-theorem cons_exists_of_ne_empty {bs : ByteString} (h : bs ≠ empty) :
-    ∃ b rest, bs = cons b rest := by
-  rcases eq_empty_or_cons bs with he | hc
-  · exact absurd he h
-  · exact hc
 
 /-! ### `take` and `drop` -/
 
@@ -340,14 +300,6 @@ theorem take_zero (bs : ByteString) : take bs 0 = empty := by
 theorem drop_length (bs : ByteString) : drop bs bs.length = empty := by
   apply eq_of_toList_eq
   rw [toList_drop, toList_empty, length_eq_size, ← toList_length, List.drop_length]
-
-theorem drop_empty (n : Nat) : drop empty n = empty := by
-  apply eq_of_toList_eq
-  rw [toList_drop, toList_empty, List.drop_nil]
-
-theorem take_empty (n : Nat) : take empty n = empty := by
-  apply eq_of_toList_eq
-  rw [toList_take, toList_empty, List.take_nil]
 
 /-- `List.take_succ_cons`-shaped: taking `i + 1` from a cons is the cons of
 taking `i` from its tail. -/
@@ -424,18 +376,6 @@ theorem append_empty (bs : ByteString) : bs ++ empty = bs := by
 constructed array, so this is how a literal byte is read positionally. -/
 @[simp] theorem getElem?_literal (l : List UInt8) (i : Nat) : (literal l)[i]? = l[i]? := by
   rw [getElem?_eq_data, ← Array.getElem?_toList, data_toList_literal]
-
-/-- A literal's in-bounds read is its list's, the `getElem` counterpart of
-`getElem?_literal`. -/
-@[simp] theorem getElem_literal (l : List UInt8) {i : Nat} (h : i < l.length) :
-    (literal l)[i] = l[i] := by
-  have h1 : (literal l)[i]? = some (l[i]) := by
-    rw [getElem?_literal, List.getElem?_eq_getElem h]
-  have h2 : (literal l)[i]? = some ((literal l)[i]) := by
-    have hlt : i < (literal l).length := by
-      rw [length_eq_size]; simpa using h
-    exact getElem?_eq_getElem hlt
-  exact (Option.some.inj (h1.symm.trans h2)).symm
 
 /-- `List.drop_drop`-shaped. -/
 theorem drop_drop (bs : ByteString) {i j : Nat} :
@@ -549,11 +489,6 @@ theorem literal_cons (b : UInt8) (l : List UInt8) :
     literal (b :: l) = cons b (literal l) := by
   apply eq_of_toList_eq
   rw [toList_literal, toList_cons, toList_literal]
-
-theorem literal_append (l₁ l₂ : List UInt8) :
-    literal (l₁ ++ l₂) = literal l₁ ++ literal l₂ := by
-  apply eq_of_toList_eq
-  rw [toList_literal, toList_append, toList_literal, toList_literal]
 
 
 /-! ### Further `List`-shaped facts the proofs rewrite with -/

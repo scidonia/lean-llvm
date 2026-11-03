@@ -288,20 +288,6 @@ theorem numLexB.numBodyB_cons (b : UInt8) (bs : Bytes) :
       else if 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39 then numSuffixB (dropWhile bs IsDigitB)
       else false := rfl
 
-theorem scanCons_eq (pos next c : Nat) (rest : Bytes) :
-    scanCons pos next c rest = okCons pos c (scanCharsFrom next rest) := rfl
-
-theorem okCons_error (pos c : Nat) (e : ScanError) :
-    okCons pos c (.error e) = if IsNoncharacter c then .error (.noncharacter pos) else .error e := by
-  unfold okCons
-  split <;> rfl
-
-theorem okCons_ok (pos c : Nat) (cs : List Nat) (fin : Bytes) :
-    okCons pos c (.ok (cs, fin)) =
-      if IsNoncharacter c then .error (.noncharacter pos) else .ok (c :: cs, fin) := by
-  unfold okCons
-  split <;> rfl
-
 theorem digits_all : ∀ {bs : Bytes}, Digits bs → ∀ b ∈ bs, IsDigitB b = true
   | _, .one h, b, hb => by
       rw [ByteString.mem_singleton] at hb; subst hb; exact h

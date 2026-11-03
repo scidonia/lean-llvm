@@ -381,14 +381,6 @@ private theorem valueAt_startB {m : Strictness} {bs : Bytes} {i : Nat} {v : Valu
       · simp [ValueStartB, h]
       · simp [ValueStartB, h]
 
-private theorem valueAt_not_space {m : Strictness} {bs : Bytes} {i : Nat} {v : Value} {j : Nat}
-    (h : ValueAt m bs i v j) {b : UInt8} (hb : bs[i]? = some b) : IsSpaceB b = false := by
-  obtain ⟨b', hb', hstart⟩ := valueAt_startB h
-  rw [hb] at hb'
-  injection hb' with hb''
-  subst hb''
-  exact valueStart_not_space hstart
-
 private theorem valueAt_not_bom {m : Strictness} {bs : Bytes} {v : Value} {j : Nat}
     (h : ValueAt m bs 0 v j) (hb : bs[0]? = some 0xEF) : False := by
   obtain ⟨b, hb', hstart⟩ := valueAt_startB h

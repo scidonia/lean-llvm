@@ -5,6 +5,13 @@ parser.  Nothing here mentions a value, a token, a tape or a limit.
 RFC 8259 §2 fixes the whitespace set; RFC 8259 §6 and §7 fix the digit and hex
 sets; RFC 7493 §2.1 fixes the character restriction, which is a predicate on
 code points and therefore lives here too.
+
+The carrier is one move, not a translation: every definition in the JSON chain
+is written over `Bytes`, so the statements are the same sentences over the
+carrier that holds the bytes.  No transport theorem from the former
+`List UInt8` development to this one is stated or proved, and propositional
+identity with it is not claimed — only that the definitions moved together and
+that the claims their statements make are the ones they made before.
 -/
 import LeanLLVM.JSON.ByteString
 
@@ -22,11 +29,6 @@ def IsSpaceB (b : UInt8) : Bool :=
   decide (b = 0x20) || decide (b = 0x09) || decide (b = 0x0A) || decide (b = 0x0D)
 
 def IsDigitB (b : UInt8) : Bool := decide (0x30 ≤ b) && decide (b ≤ 0x39)
-
-/-- A hex digit; RFC 8259 §7 admits both cases. -/
-def IsHexB (b : UInt8) : Bool :=
-  IsDigitB b || (decide (0x41 ≤ b) && decide (b ≤ 0x46)) ||
-    (decide (0x61 ≤ b) && decide (b ≤ 0x66))
 
 def HexVal (b : UInt8) : Option Nat :=
   if IsDigitB b then some (b.toNat - 0x30)
