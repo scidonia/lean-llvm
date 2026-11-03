@@ -99,10 +99,18 @@ comparison against a native reference.
 
 ## Standing blockers, stated rather than assumed
 
-1. **Vector semantics** — absent. `Ty` is `int w | ptr | void`
-   (`LeanLLVM/Basic.lean:12-16`); no vector operations, shuffles, mask
-   extraction or AVX2 intrinsics are modelled. Every SIMD milestone waits on
-   this, and the host has `avx2` and no `avx512f`.
+1. **Vector semantics** — *partly present since J2's WP2* (2026-11-03). `Ty`
+   now carries `vec n elem` (`LeanLLVM/Basic.lean:12-20`) and the classifier's
+   fragment is modelled: splat constants, lane-wise `icmp` into `<n x i1>`,
+   lane-wise integer binops, and `bitcast <n x i1> to iN`
+   (`LeanLLVM/Syntax.lean:31-35`), with the three element-position refusals in
+   the parser. Still absent and still blocking J3+: shuffles, mask extraction,
+   AVX2 intrinsics, and any scanner written over the modelled vector types.
+   `docs/capabilities.md` carries the same status. The host has `avx2` and no
+   `avx512f`.
+   *(Before this date the row read "absent — `Ty` is `int w | ptr | void`"; that
+   stopped being true at `694e5d7`'s successor and is corrected here rather than
+   left to be discovered.)*
 2. **Compiler-emitted memory-backed bodies** — absent for the unit the JSON
    work needs. The pure seam **is** refined over Lean's own C emission
    (`probes/install/ir/capture.sh:8-11`, `baseline.ll:1-12`,
