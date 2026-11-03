@@ -16,10 +16,10 @@ namespace LeanLLVMTest.Json
 open LeanLLVM.JSON
 
 /-- The bytes of an ASCII document. -/
-def ascii (s : String) : Bytes := s.toUTF8.toList
+def ascii (s : String) : Bytes := ByteString.literal s.toUTF8.toList
 
 /-- A byte string from literal byte values. -/
-def rawBytes (bs : List Nat) : Bytes := bs.map UInt8.ofNat
+def rawBytes (bs : List Nat) : Bytes := ByteString.literal (bs.map UInt8.ofNat)
 
 /-! ### Number grammar (RFC 8259 §6) -/
 
@@ -57,15 +57,15 @@ def rawBytes (bs : List Nat) : Bytes := bs.map UInt8.ofNat
 `scanChars` takes the body after the opening quote and returns the remainder
 after the closing quote. -/
 
-#guard scanChars (rawBytes [0x5C, 0x22, 0x22]) = .ok ([0x22], [])
-#guard scanChars (rawBytes [0x5C, 0x5C, 0x22]) = .ok ([0x5C], [])
-#guard scanChars (rawBytes [0x5C, 0x2F, 0x22]) = .ok ([0x2F], [])
+#guard scanChars (rawBytes [0x5C, 0x22, 0x22]) = .ok ([0x22], ByteString.empty)
+#guard scanChars (rawBytes [0x5C, 0x5C, 0x22]) = .ok ([0x5C], ByteString.empty)
+#guard scanChars (rawBytes [0x5C, 0x2F, 0x22]) = .ok ([0x2F], ByteString.empty)
 #guard scanChars (rawBytes [0x5C, 0x62, 0x5C, 0x66, 0x5C, 0x6E, 0x5C, 0x72,
-    0x5C, 0x74, 0x22]) = .ok ([8, 12, 10, 13, 9], [])
+    0x5C, 0x74, 0x22]) = .ok ([8, 12, 10, 13, 9], ByteString.empty)
 #guard scanChars (rawBytes [0x5C, 0x75, 0x30, 0x30, 0x30, 0x30, 0x22]) =
-  .ok ([0], [])
+  .ok ([0], ByteString.empty)
 #guard scanChars (rawBytes [0x5C, 0x75, 0x30, 0x30, 0x65, 0x39, 0x22]) =
-  .ok ([0xE9], [])
+  .ok ([0xE9], ByteString.empty)
 
 #guard scanChars (rawBytes [0x5C, 0x71, 0x22]) = .error (.badEscape 0)
 #guard scanChars (rawBytes [0x5C, 0x75, 0x31, 0x32, 0x22]) = .error .ended
@@ -75,11 +75,11 @@ after the closing quote. -/
 
 /-! ### Strict UTF-8 (RFC 3629 §4) -/
 
-#guard scanChars (rawBytes [0xC3, 0xA9, 0x22]) = .ok ([0xE9], [])
-#guard scanChars (rawBytes [0xE2, 0x82, 0xAC, 0x22]) = .ok ([0x20AC], [])
-#guard scanChars (rawBytes [0xF0, 0x90, 0x8D, 0x88, 0x22]) = .ok ([0x10348], [])
-#guard scanChars (rawBytes [0xF0, 0x90, 0x80, 0x80, 0x22]) = .ok ([0x10000], [])
-#guard scanChars (rawBytes [0xF4, 0x8F, 0xBF, 0xBD, 0x22]) = .ok ([0x10FFFD], [])
+#guard scanChars (rawBytes [0xC3, 0xA9, 0x22]) = .ok ([0xE9], ByteString.empty)
+#guard scanChars (rawBytes [0xE2, 0x82, 0xAC, 0x22]) = .ok ([0x20AC], ByteString.empty)
+#guard scanChars (rawBytes [0xF0, 0x90, 0x8D, 0x88, 0x22]) = .ok ([0x10348], ByteString.empty)
+#guard scanChars (rawBytes [0xF0, 0x90, 0x80, 0x80, 0x22]) = .ok ([0x10000], ByteString.empty)
+#guard scanChars (rawBytes [0xF4, 0x8F, 0xBF, 0xBD, 0x22]) = .ok ([0x10FFFD], ByteString.empty)
 
 #guard scanChars (rawBytes [0x80, 0x22]) = .error (.badUTF8 0)
 #guard scanChars (rawBytes [0xC3]) = .error .ended
@@ -95,7 +95,7 @@ after the closing quote. -/
 
 /-! ### `unescaped` ranges (RFC 8259 §7) -/
 
-#guard scanChars (rawBytes [0x7F, 0x22]) = .ok ([0x7F], [])
+#guard scanChars (rawBytes [0x7F, 0x22]) = .ok ([0x7F], ByteString.empty)
 #guard scanChars (rawBytes [0x00, 0x22]) = .error (.controlCharacter 0)
 #guard scanChars (rawBytes [0x1F, 0x22]) = .error (.controlCharacter 0)
 #guard scanChars (rawBytes [0x09, 0x22]) = .error (.controlCharacter 0)
@@ -104,10 +104,10 @@ after the closing quote. -/
 /-! ### Surrogate pairs and unpaired escapes (RFC 8259 §7, §8.2; RFC 7493 §2.1) -/
 
 #guard scanChars (rawBytes [0x5C, 0x75, 0x44, 0x38, 0x33, 0x34,
-    0x5C, 0x75, 0x44, 0x44, 0x31, 0x45, 0x22]) = .ok ([0x1D11E], [])
-#guard scanChars (rawBytes [0xF0, 0x9D, 0x84, 0x9E, 0x22]) = .ok ([0x1D11E], [])
+    0x5C, 0x75, 0x44, 0x44, 0x31, 0x45, 0x22]) = .ok ([0x1D11E], ByteString.empty)
+#guard scanChars (rawBytes [0xF0, 0x9D, 0x84, 0x9E, 0x22]) = .ok ([0x1D11E], ByteString.empty)
 #guard scanChars (rawBytes [0x5C, 0x75, 0x44, 0x38, 0x30, 0x30,
-    0x5C, 0x75, 0x44, 0x45, 0x41, 0x44, 0x22]) = .ok ([0x102AD], [])
+    0x5C, 0x75, 0x44, 0x45, 0x41, 0x44, 0x22]) = .ok ([0x102AD], ByteString.empty)
 
 #guard scanChars (rawBytes [0x5C, 0x75, 0x44, 0x45, 0x41, 0x44, 0x22]) =
   .error (.unpairedSurrogate 0)
@@ -125,7 +125,7 @@ after the closing quote. -/
 /-! ### Noncharacters (RFC 7493 §2.1) -/
 
 #guard scanChars (rawBytes [0x5C, 0x75, 0x46, 0x46, 0x46, 0x44, 0x22]) =
-  .ok ([0xFFFD], [])
+  .ok ([0xFFFD], ByteString.empty)
 #guard scanChars (rawBytes [0x5C, 0x75, 0x46, 0x44, 0x44, 0x30, 0x22]) =
   .error (.noncharacter 0)
 #guard scanChars (rawBytes [0x5C, 0x75, 0x46, 0x46, 0x46, 0x45, 0x22]) =
@@ -153,9 +153,10 @@ example : ∃ v : Value,
     refine ⟨0, 8, by decide, ?_, by decide⟩
     refine ValueAt.string ?_
     unfold StringAt
-    refine ⟨by decide, [], ?_, by decide⟩
+    refine ⟨by decide, ByteString.empty, ?_, by decide⟩
     refine StrChars.cons ?_ StrChars.nil
-    exact StrChar.escLone rfl (by decide) (by decide)
+    exact StrChar.escLone (h0 := 0x44) (h1 := 0x45) (h2 := 0x41) (h3 := 0x44)
+      (c := 0xDEAD) (rest := 0x22 +: ByteString.empty) rfl (by decide) (by decide)
   · unfold Policy Value.charPolicy
     intro h
     exact absurd (h 0xDEAD (by simp)).1 (by decide)
@@ -168,9 +169,11 @@ example : StrictText (rawBytes [0x22, 0x5C, 0x75, 0x44, 0x38, 0x30, 0x30,
   refine ⟨0, 14, by decide, ?_, by decide⟩
   refine ValueAt.string ?_
   unfold StringAt
-  refine ⟨by decide, [], ?_, by decide⟩
+  refine ⟨by decide, ByteString.empty, ?_, by decide⟩
   refine StrChars.cons ?_ StrChars.nil
-  exact StrChar.escPair (hi := 0xD800) (lo := 0xDEAD)
+  exact StrChar.escPair (h0 := 0x44) (h1 := 0x38) (h2 := 0x30) (h3 := 0x30)
+    (l0 := 0x44) (l1 := 0x45) (l2 := 0x41) (l3 := 0x44)
+    (hi := 0xD800) (lo := 0xDEAD) (c := 0x102AD) (rest := 0x22 +: ByteString.empty)
     (hhi := by decide) (hlo := by decide) (hh := by decide) (hl := by decide)
     (hc := by decide) (hm := by decide)
 
@@ -234,24 +237,24 @@ def isInvalid : ParseError → Bool
 
 /-! #### Documents -/
 
-#guard parses (ascii "0") (.number [0x30])
+#guard parses (ascii "0") (.number (ByteString.literal [0x30]))
 #guard parses (ascii "\"a\"") (.string [0x61])
 #guard parses (ascii "[]") (.array [])
 #guard parses (ascii "{}") (.object [])
-#guard parses (ascii "[1,2]") (.array [.number [0x31], .number [0x32]])
+#guard parses (ascii "[1,2]") (.array [.number (ByteString.literal [0x31]), .number (ByteString.literal [0x32])])
 #guard parses (ascii "{\"a\":1,\"a\":2}")
-  (.object [([0x61], .number [0x31]), ([0x61], .number [0x32])])
+  (.object [([0x61], .number (ByteString.literal [0x31])), ([0x61], .number (ByteString.literal [0x32]))])
 #guard parses (ascii "{\"a\":1,\"b\":2,\"a\":3}")
-  (.object [([0x61], .number [0x31]), ([0x62], .number [0x32]),
-    ([0x61], .number [0x33])])
-#guard parses (ascii "{\"\":0}") (.object [([], .number [0x30])])
+  (.object [([0x61], .number (ByteString.literal [0x31])), ([0x62], .number (ByteString.literal [0x32])),
+    ([0x61], .number (ByteString.literal [0x33]))])
+#guard parses (ascii "{\"\":0}") (.object [([], .number (ByteString.literal [0x30]))])
 #guard parses (ascii "{\"a\":{\"b\":[true,null]}}")
   (.object [([0x61], .object [([0x62], .array [.bool true, .null])])])
-#guard parses (ascii "[ 1 , 2 ]") (.array [.number [0x31], .number [0x32]])
-#guard parses (ascii "{\"a\" : 1}") (.object [([0x61], .number [0x31])])
-#guard parses (ascii " 1 ") (.number [0x31])
+#guard parses (ascii "[ 1 , 2 ]") (.array [.number (ByteString.literal [0x31]), .number (ByteString.literal [0x32])])
+#guard parses (ascii "{\"a\" : 1}") (.object [([0x61], .number (ByteString.literal [0x31]))])
+#guard parses (ascii " 1 ") (.number (ByteString.literal [0x31]))
 #guard parses (rawBytes [0x09, 0x0D, 0x0A, 0x20, 0x31, 0x20, 0x0A])
-  (.number [0x31])
+  (.number (ByteString.literal [0x31]))
 
 /-! #### Trailing data -/
 
@@ -260,16 +263,16 @@ def isInvalid : ParseError → Bool
 #guard refuses (rawBytes [0x6E, 0x75, 0x6C, 0x6C, 0x00])
 #guard refuses (ascii "[1]]")
 #guard refuses (ascii "}:")
-#guard parses (ascii " 1 ") (.number [0x31])
+#guard parses (ascii " 1 ") (.number (ByteString.literal [0x31]))
 
 /-! #### Separators and closers, each with its control -/
 
 #guard refuses (ascii "[1,]")
-#guard parses (ascii "[1]") (.array [.number [0x31]])
+#guard parses (ascii "[1]") (.array [.number (ByteString.literal [0x31])])
 #guard refuses (ascii "{\"a\":1,}")
-#guard parses (ascii "{\"a\":1}") (.object [([0x61], .number [0x31])])
+#guard parses (ascii "{\"a\":1}") (.object [([0x61], .number (ByteString.literal [0x31]))])
 #guard refuses (ascii "[1 2]")
-#guard parses (ascii "[1,2]") (.array [.number [0x31], .number [0x32]])
+#guard parses (ascii "[1,2]") (.array [.number (ByteString.literal [0x31]), .number (ByteString.literal [0x32])])
 #guard refuses (ascii "{\"a\" 1}")
 #guard refuses (ascii "{\"a\":1 \"b\":2}")
 #guard refuses (ascii "[1,,2]")
@@ -279,7 +282,7 @@ def isInvalid : ParseError → Bool
 #guard refusesWith (rawBytes [0xEF, 0xBB, 0xBF, 0x31]) fun
   | .byteOrderMark => true
   | _ => false
-#guard parses (ascii "1") (.number [0x31])
+#guard parses (ascii "1") (.number (ByteString.literal [0x31]))
 
 /-! #### Policy refusals name their reason -/
 
@@ -300,20 +303,20 @@ def isNoncharacter : Reject → Bool
 
 #guard refuses (rawBytes [])
 #guard refuses (rawBytes [0x20, 0x09, 0x0A])
-#guard parses (ascii "1") (.number [0x31])
+#guard parses (ascii "1") (.number (ByteString.literal [0x31]))
 
 /-! #### Depth -/
 
 #guard parsesWith { Limits.default with maxDepth := 3 } (ascii "[[[1]]]")
-  (.array [.array [.array [.number [0x31]]]])
+  (.array [.array [.array [.number (ByteString.literal [0x31])]]])
 #guard errorWith { Limits.default with maxDepth := 2 } (ascii "[[[1]]]") =
   .depthExceeded
-#guard parsesWith { Limits.default with maxDepth := 0 } (ascii "1") (.number [0x31])
+#guard parsesWith { Limits.default with maxDepth := 0 } (ascii "1") (.number (ByteString.literal [0x31]))
 
 /-! #### Capacity -/
 
 #guard parsesWith { Limits.default with maxTokens := 5 } (ascii "[1,2]")
-  (.array [.number [0x31], .number [0x32]])
+  (.array [.number (ByteString.literal [0x31]), .number (ByteString.literal [0x32])])
 #guard errorWith { Limits.default with maxTokens := 4 } (ascii "[1,2]") =
   .outOfCapacity
 #guard isInvalid (errorWith { Limits.default with maxTokens := 1 } (ascii "01"))
@@ -321,7 +324,7 @@ def isNoncharacter : Reject → Bool
 /-! #### Length -/
 
 #guard parsesWith { Limits.default with maxInput := 3 } (ascii "[1]")
-  (.array [.number [0x31]])
+  (.array [.number (ByteString.literal [0x31])])
 #guard errorWith { Limits.default with maxInput := 2 } (ascii "[1]") = .inputTooLong
 #guard errorWith { Limits.default with maxInput := 2 } (ascii "[x]") = .inputTooLong
 #guard isInvalid (errorWith Limits.default (ascii "[x]"))
@@ -368,14 +371,14 @@ in question. -/
 #guard renderValue .null = "null"
 #guard renderValue (.bool true) = "true"
 #guard renderValue (.bool false) = "false"
-#guard renderValue (.number [0x31]) = "#31"
-#guard renderValue (.number [0x2D, 0x30]) = "#2d30"
+#guard renderValue (.number (ByteString.literal [0x31])) = "#31"
+#guard renderValue (.number (ByteString.literal [0x2D, 0x30])) = "#2d30"
 #guard renderValue (.string []) = "\"\""
 #guard renderValue (.string [0x61, 0x62]) = "\"97 98\""
 #guard renderValue (.array []) = "[]"
-#guard renderValue (.array [.number [0x31], .null]) = "[#31,null]"
+#guard renderValue (.array [.number (ByteString.literal [0x31]), .null]) = "[#31,null]"
 #guard renderValue (.object []) = "{}"
-#guard renderValue (.object [([0x61], .number [0x31])]) = "{\"97\":#31}"
+#guard renderValue (.object [([0x61], .number (ByteString.literal [0x31]))]) = "{\"97\":#31}"
 
 end LeanLLVMTest.Json
 

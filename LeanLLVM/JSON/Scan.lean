@@ -9,6 +9,8 @@ import LeanLLVM.JSON.Spec
 
 namespace LeanLLVM.JSON
 
+open ByteString
+
 /-- Why a string body was refused.  The offset is relative to the subject;
 `parseString` adds the opening quote's index.  No theorem depends on the reason or
 the offset — the contract's diagnostics row leaves them out of the equivalence —
@@ -24,23 +26,29 @@ inductive ScanError where
   | noncharacter (offset : Nat)
 deriving DecidableEq, Repr
 
-mutual
+/-- The accepting continuation of a scanned character: RFC 7493 §2.1 refuses a
+noncharacter wherever it appears, so every accepting branch funnels through this
+step, and a refusal of the body passes through it unchanged. -/
+def okCons (pos c : Nat) (r : Except ScanError (List Nat × Bytes)) :
+    Except ScanError (List Nat × Bytes) :=
+  if IsNoncharacter c then .error (.noncharacter pos)
+  else
+    match r with
+    | .error e => .error e
+    | .ok (cs, fin) => .ok (c :: cs, fin)
 
-/-- Decode a string body — the bytes after the opening quote — to the code points
-and the remainder, which begins *after* the closing quote (`StrChars`'s `nil`
-clause consumes it), or say why it was refused.  The discipline is `StrChar
-.strict`, so an unpaired escape and a noncharacter are refused with their own
-reasons, and a subject that ends before the quote is `ended`.  `off` is the
-position of the argument within the body, so a refusal can name it. -/
-def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
+/-- The string body scan, over the carrier's list view: the one definition of
+the scan.  It returns carrier remainders, so `scanCharsFrom` is this function
+applied to `bs.data.toList` and no conversion stands between them. -/
+private def scanCharsL (off : Nat) : List UInt8 → Except ScanError (List Nat × Bytes)
   | [] => .error .ended
-  | 0x22 :: rest => .ok ([], rest)
+  | 0x22 :: rest => .ok ([], literal rest)
   | 0x5C :: rest =>
       match rest with
       | [] => .error .ended
       | e :: rest1 =>
           match EscVal e with
-          | some c => scanCons off (off + 2) c rest1
+          | some c => okCons off c (scanCharsL (off + 2) rest1)
           | none =>
               if e = 0x75 then
                 match rest1 with
@@ -53,28 +61,28 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
                               match Hex4 l0 l1 l2 l3 with
                               | some lo =>
                                   if 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF then
-                                    scanCons off (off + 12)
-                                      (0x10000 + (c - 0xD800) * 0x400 + (lo - 0xDC00))
-                                      rest3
+                                    okCons off (0x10000 + (c - 0xD800) * 0x400 +
+                                      (lo - 0xDC00))
+                                      (scanCharsL (off + 12) rest3)
                                   else .error (.unpairedSurrogate off)
                               | none => .error (.badEscape (off + 8))
                           | _ => .error (.unpairedSurrogate off)
                         else if 0xDC00 ≤ c ∧ c ≤ 0xDFFF then
                           .error (.unpairedSurrogate off)
-                        else scanCons off (off + 6) c rest2
+                        else okCons off c (scanCharsL (off + 6) rest2)
                     | none => .error (.badEscape (off + 2))
                 | _ => .error .ended
               else .error (.badEscape off)
   | b :: rest =>
       if b.toNat < 0x80 then
-        if 0x20 ≤ b.toNat then scanCons off (off + 1) b.toNat rest
+        if 0x20 ≤ b.toNat then okCons off b.toNat (scanCharsL (off + 1) rest)
         else .error (.controlCharacter off)
       else if 0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF then
         match rest with
         | b1 :: rest1 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF then
-              scanCons off (off + 2)
-                ((b.toNat - 0xC0) * 0x40 + (b1.toNat - 0x80)) rest1
+              okCons off ((b.toNat - 0xC0) * 0x40 + (b1.toNat - 0x80))
+                (scanCharsL (off + 2) rest1)
             else .error (.badUTF8 off)
         | [] => .error .ended
       else if b = 0xE0 then
@@ -82,8 +90,8 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
         | b1 :: b2 :: rest1 =>
             if 0xA0 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              scanCons off (off + 3)
-                ((b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1
+              okCons off ((b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80))
+                (scanCharsL (off + 3) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else if 0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC then
@@ -91,9 +99,9 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
         | b1 :: b2 :: rest1 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              scanCons off (off + 3)
-                ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
-                  (b2.toNat - 0x80)) rest1
+              okCons off ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
+                  (b2.toNat - 0x80))
+                (scanCharsL (off + 3) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else if b = 0xED then
@@ -101,8 +109,8 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
         | b1 :: b2 :: rest1 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x9F ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              scanCons off (off + 3)
-                (0xD000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1
+              okCons off (0xD000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80))
+                (scanCharsL (off + 3) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else if 0xEE ≤ b.toNat ∧ b.toNat ≤ 0xEF then
@@ -110,9 +118,9 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
         | b1 :: b2 :: rest1 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              scanCons off (off + 3)
-                ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
-                  (b2.toNat - 0x80)) rest1
+              okCons off ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
+                  (b2.toNat - 0x80))
+                (scanCharsL (off + 3) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else if b = 0xF0 then
@@ -121,9 +129,9 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
             if 0x90 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                 0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF then
-              scanCons off (off + 4)
-                ((b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
-                  (b3.toNat - 0x80)) rest1
+              okCons off ((b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
+                  (b3.toNat - 0x80))
+                (scanCharsL (off + 4) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else if 0xF1 ≤ b.toNat ∧ b.toNat ≤ 0xF3 then
@@ -132,9 +140,9 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                 0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF then
-              scanCons off (off + 4)
-                ((b.toNat - 0xF0) * 0x40000 + (b1.toNat - 0x80) * 0x1000 +
-                  (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80)) rest1
+              okCons off ((b.toNat - 0xF0) * 0x40000 + (b1.toNat - 0x80) * 0x1000 +
+                  (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80))
+                (scanCharsL (off + 4) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else if b = 0xF4 then
@@ -143,135 +151,227 @@ def scanCharsFrom (off : Nat) : Bytes → Except ScanError (List Nat × Bytes)
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x8F ∧
                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                 0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF then
-              scanCons off (off + 4)
-                (0x100000 + (b1.toNat - 0x80) * 0x1000 +
-                  (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80)) rest1
+              okCons off (0x100000 + (b1.toNat - 0x80) * 0x1000 +
+                  (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80))
+                (scanCharsL (off + 4) rest1)
             else .error (.badUTF8 off)
         | _ => .error .ended
       else .error (.badUTF8 off)
 
-/-- The continuation of an accepted character: RFC 7493 §2.1 refuses a
-noncharacter wherever it appears, so every accepting branch funnels here. -/
+/-- Decode a string body — the bytes after the opening quote — to the code points
+and the remainder, which begins *after* the closing quote (`StrChars`'s `nil`
+clause consumes it), or say why it was refused.  The discipline is `StrChar
+.strict`, so an unpaired escape and a noncharacter are refused with their own
+reasons, and a subject that ends before the quote is `ended`.  `off` is the
+position of the argument within the body, so a refusal can name it. -/
+def scanCharsFrom (off : Nat) (bs : Bytes) : Except ScanError (List Nat × Bytes) :=
+  scanCharsL off bs.data.toList
+
+/-- The continuation of an accepted character: the same step as `okCons`, stated
+over the remainder of the body. -/
 def scanCons (pos next : Nat) (c : Nat) (rest : Bytes) :
     Except ScanError (List Nat × Bytes) :=
-  if IsNoncharacter c then .error (.noncharacter pos)
-  else
-    match scanCharsFrom next rest with
-    | .error e => .error e
-    | .ok (cs, fin) => .ok (c :: cs, fin)
-
-end
+  okCons pos c (scanCharsFrom next rest)
 
 /-- The string scanner at the start of a body. -/
 def scanChars (bs : Bytes) : Except ScanError (List Nat × Bytes) :=
   scanCharsFrom 0 bs
 
-/-! ### The number lexeme
-
-`numLexB` decides the whole of RFC 8259 §6 on a lexeme: the leading `minus`, the
-`int` with its `zero`/`digit1-9 *DIGIT` split, and the optional fraction and
-exponent.  It is not a prefix matcher — the lexeme must be exhausted, which is
-what makes `1.2.3` and `01` refusals rather than accepted prefixes. -/
+/-- `*DIGIT` consumes the whole argument, over the carrier's list view. -/
+private def allDigitsL : List UInt8 → Bool
+  | [] => true
+  | b :: rest => IsDigitB b && allDigitsL rest
 
 /-- `*DIGIT` consumes the whole argument. -/
-def allDigitsB : Bytes → Bool
-  | [] => true
-  | b :: rest => IsDigitB b && allDigitsB rest
+def allDigitsB (bs : Bytes) : Bool := allDigitsL bs.data.toList
+
+/-- `1*DIGIT` consumes the whole argument, over the carrier's list view. -/
+private def digits1L : List UInt8 → Bool
+  | [] => false
+  | b :: rest => IsDigitB b && allDigitsL rest
 
 /-- `1*DIGIT` consumes the whole argument. -/
-def digits1B : Bytes → Bool
-  | [] => false
-  | b :: rest => IsDigitB b && allDigitsB rest
+def digits1B (bs : Bytes) : Bool := digits1L bs.data.toList
 
 /-- The bytes after an `e`: `[ minus / plus ] 1*DIGIT`, exhausted. -/
-def expB : Bytes → Bool
+private def expBL : List UInt8 → Bool
   | [] => false
-  | b :: rest => if b = 0x2B ∨ b = 0x2D then digits1B rest else digits1B (b :: rest)
+  | b :: rest => if b = 0x2B ∨ b = 0x2D then digits1L rest else digits1L (b :: rest)
+
+def expB (bs : Bytes) : Bool := expBL bs.data.toList
 
 /-- The bytes after a fraction's digits: an optional exponent, exhausted. -/
-def expTailB : Bytes → Bool
+private def expTailL : List UInt8 → Bool
   | [] => true
   | b :: rest =>
-      if decide (b = 0x65) || decide (b = 0x45) then expB rest else false
+      if decide (b = 0x65) || decide (b = 0x45) then expBL rest else false
+
+def expTailB (bs : Bytes) : Bool := expTailL bs.data.toList
 
 /-- The bytes after an `int`: an optional fraction, an optional exponent,
 exhausted. -/
-def numSuffixB : Bytes → Bool
+private def numSuffixL : List UInt8 → Bool
   | [] => true
   | b :: rest =>
       if decide (b = 0x2E) then
-        digits1B (rest.takeWhile IsDigitB) && expTailB (rest.dropWhile IsDigitB)
-      else if decide (b = 0x65) || decide (b = 0x45) then expB rest
+        digits1L (List.takeWhile IsDigitB rest) && expTailL (List.dropWhile IsDigitB rest)
+      else if decide (b = 0x65) || decide (b = 0x45) then expBL rest
+      else false
+
+def numSuffixB (bs : Bytes) : Bool := numSuffixL bs.data.toList
+
+/-- `int [ frac ] [ exp ]`, exhausted. -/
+private def numBodyL : List UInt8 → Bool
+  | [] => false
+  | b :: rest =>
+      if decide (b = 0x30) then numSuffixL rest
+      else if 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39 then
+        numSuffixL (List.dropWhile IsDigitB rest)
       else false
 
 /-- `[ minus ] int [ frac ] [ exp ]`, exhausted. -/
-def numLexB (lex : Bytes) : Bool :=
-  match lex with
-  | [] => numBodyB []
-  | b :: rest =>
-      if decide (b = 0x2D) then numBodyB rest else numBodyB (b :: rest)
+private def numLexL : List UInt8 → Bool
+  | [] => numBodyL []
+  | b :: rest => if decide (b = 0x2D) then numBodyL rest else numBodyL (b :: rest)
 
+def numLexB (lex : Bytes) : Bool := numLexL lex.data.toList
 where
-  /-- `int [ frac ] [ exp ]`, exhausted. -/
-  numBodyB : Bytes → Bool
-    | [] => false
-    | b :: rest =>
-        if decide (b = 0x30) then numSuffixB rest
-        else if 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39 then
-          numSuffixB (rest.dropWhile IsDigitB)
-        else false
+  numBodyB (bs : Bytes) : Bool := numBodyL bs.data.toList
 
+/-! #### The scanners' equations
+
+One equation per shape.  The carrier's functions apply a list-shaped scan to
+`bs.data.toList`, so each equation is the scan's own recursion step: these are
+`rfl`, and they are the form the proofs rewrite with. -/
+
+theorem allDigitsB_empty : allDigitsB (empty : Bytes) = true := rfl
+
+theorem allDigitsB_cons (b : UInt8) (bs : Bytes) :
+    allDigitsB (b +: bs) = (IsDigitB b && allDigitsB bs) := rfl
+
+theorem digits1B_empty : digits1B (empty : Bytes) = false := rfl
+
+theorem digits1B_cons (b : UInt8) (bs : Bytes) :
+    digits1B (b +: bs) = (IsDigitB b && allDigitsB bs) := rfl
+
+theorem expB_empty : expB (empty : Bytes) = false := rfl
+
+theorem expB_cons (b : UInt8) (bs : Bytes) :
+    expB (b +: bs) = if b = 0x2B ∨ b = 0x2D then digits1B bs else digits1B (b +: bs) := rfl
+
+theorem expTailB_empty : expTailB (empty : Bytes) = true := rfl
+
+theorem expTailB_cons (b : UInt8) (bs : Bytes) :
+    expTailB (b +: bs) =
+      if decide (b = 0x65) || decide (b = 0x45) then expB bs else false := rfl
+
+theorem numSuffixB_empty : numSuffixB (empty : Bytes) = true := rfl
+
+theorem numSuffixB_cons (b : UInt8) (bs : Bytes) :
+    numSuffixB (b +: bs) =
+      (if decide (b = 0x2E) then
+        digits1B (takeWhile bs IsDigitB) && expTailB (dropWhile bs IsDigitB)
+      else if decide (b = 0x65) || decide (b = 0x45) then expB bs
+      else false) := rfl
+
+theorem numLexB_empty : numLexB (empty : Bytes) = numLexB.numBodyB empty := rfl
+
+theorem numLexB_cons (b : UInt8) (bs : Bytes) :
+    numLexB (b +: bs) =
+      if decide (b = 0x2D) then numLexB.numBodyB bs else numLexB.numBodyB (b +: bs) := rfl
+
+theorem numLexB.numBodyB_empty : numLexB.numBodyB (empty : Bytes) = false := rfl
+
+theorem numLexB.numBodyB_cons (b : UInt8) (bs : Bytes) :
+    numLexB.numBodyB (b +: bs) =
+      if decide (b = 0x30) then numSuffixB bs
+      else if 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39 then numSuffixB (dropWhile bs IsDigitB)
+      else false := rfl
+
+theorem scanCons_eq (pos next c : Nat) (rest : Bytes) :
+    scanCons pos next c rest = okCons pos c (scanCharsFrom next rest) := rfl
+
+theorem okCons_error (pos c : Nat) (e : ScanError) :
+    okCons pos c (.error e) = if IsNoncharacter c then .error (.noncharacter pos) else .error e := by
+  unfold okCons
+  split <;> rfl
+
+theorem okCons_ok (pos c : Nat) (cs : List Nat) (fin : Bytes) :
+    okCons pos c (.ok (cs, fin)) =
+      if IsNoncharacter c then .error (.noncharacter pos) else .ok (c :: cs, fin) := by
+  unfold okCons
+  split <;> rfl
 
 theorem digits_all : ∀ {bs : Bytes}, Digits bs → ∀ b ∈ bs, IsDigitB b = true
   | _, .one h, b, hb => by
-      simp at hb; subst hb; exact h
+      rw [ByteString.mem_singleton] at hb; subst hb; exact h
   | _, .more h _, b, hb => by
-      simp at hb
+      rw [ByteString.mem_cons] at hb
       rcases hb with rfl | hb
       · exact h
       · exact digits_all ‹_› b hb
 
 theorem digits0_all : ∀ {bs : Bytes}, Digits0 bs → ∀ b ∈ bs, IsDigitB b = true
-  | _, .nil, b, hb => by simp at hb
+  | _, .nil, b, hb => by simp [ByteString.mem_def] at hb
   | _, .more h hr, b, hb => by
-      simp at hb
+      rw [ByteString.mem_cons] at hb
       rcases hb with rfl | hb
       · exact h
       · exact digits0_all hr b hb
 
-theorem digits0_to_digits : ∀ {bs : Bytes}, Digits0 bs → bs ≠ [] → Digits bs
-  | [], _, hne => absurd rfl hne
-  | b :: rest, h, _ => by
-      cases h with
-      | more hb hr =>
-          cases rest with
-          | nil => exact .one hb
-          | cons c cs => exact .more hb (digits0_to_digits hr (by simp))
+theorem digits0_to_digits_or_empty : ∀ {bs : Bytes}, Digits0 bs → Digits bs ∨ bs = empty
+  | _, .nil => Or.inr rfl
+  | _, .more hb hr => by
+      cases digits0_to_digits_or_empty hr with
+      | inl h => exact Or.inl (.more hb h)
+      | inr he => subst he; exact Or.inl (.one hb)
 
-theorem allDigitsB_spec : ∀ {bs : Bytes}, allDigitsB bs = true → Digits0 bs
-  | [], _ => .nil
-  | b :: rest, h => by
-      simp only [allDigitsB, Bool.and_eq_true] at h
-      exact .more h.1 (allDigitsB_spec h.2)
+theorem digits0_to_digits : ∀ {bs : Bytes}, Digits0 bs → bs ≠ empty → Digits bs
+  | bs, h, hne => by
+      cases digits0_to_digits_or_empty h with
+      | inl hd => exact hd
+      | inr he => exact absurd he hne
 
-theorem digits1B_spec : ∀ {bs : Bytes}, digits1B bs = true → Digits bs
-  | [], h => by simp [digits1B] at h
-  | b :: rest, h => by
-      simp only [digits1B, Bool.and_eq_true] at h
-      cases rest with
-      | nil => exact .one h.1
-      | cons c cs =>
-          exact .more h.1 (digits0_to_digits (allDigitsB_spec h.2) (by simp))
+theorem allDigitsB_spec : ∀ {bs : Bytes}, allDigitsB bs = true → Digits0 bs := by
+  intro bs
+  have key : ∀ (l : List UInt8), allDigitsB (ByteString.literal l) = true →
+      Digits0 (ByteString.literal l) := by
+    intro l
+    induction l with
+    | nil => intro _; exact .nil
+    | cons b rest ih =>
+        intro h
+        rw [ByteString.literal_cons, allDigitsB_cons, Bool.and_eq_true] at h
+        exact .more h.1 (ih h.2)
+  rw [← ByteString.literal_data_toList bs]
+  exact key bs.data.toList
+
+theorem digits1B_spec : ∀ {bs : Bytes}, digits1B bs = true → Digits bs := by
+  intro bs h
+  match hb : bs.data.toList with
+  | [] =>
+      rw [ByteString.eq_empty_of_data_toList hb, digits1B_empty] at h
+      exact absurd h (by simp)
+  | b :: rest =>
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [digits1B_cons, Bool.and_eq_true] at h
+      match hr : rest with
+      | [] => exact .one h.1
+      | c :: cs =>
+          rw [ByteString.literal_cons]
+          exact .more h.1 (digits0_to_digits (allDigitsB_spec h.2)
+            (ByteString.cons_ne_empty c _))
 
 theorem allDigitsB_complete : ∀ {bs : Bytes}, Digits0 bs → allDigitsB bs = true
-  | [], .nil => rfl
-  | b :: rest, .more h hr => by
-      simp only [allDigitsB, h, allDigitsB_complete hr, Bool.true_and, Bool.and_true]
+  | _, .nil => allDigitsB_empty
+  | _, .more h hr => by
+      rw [allDigitsB_cons, h, allDigitsB_complete hr, Bool.true_and]
 
 theorem digits1B_complete : ∀ {bs : Bytes}, Digits bs → digits1B bs = true
-  | _, .one h => by simp [digits1B, allDigitsB, h]
+  | _, .one h => by
+      rw [digits1B_cons, h, Bool.true_and, allDigitsB_empty]
   | _, .more h hr => by
-      simp only [digits1B, h, Bool.true_and]
+      rw [digits1B_cons, h, Bool.true_and]
       exact allDigitsB_complete (digits0_to_digits0_of_digits hr)
 where
   digits0_to_digits0_of_digits : ∀ {bs : Bytes}, Digits bs → Digits0 bs
@@ -279,56 +379,70 @@ where
     | _, .more h hr => .more h (digits0_to_digits0_of_digits hr)
 
 theorem digits0_takeWhile (bs : Bytes) : Digits0 (bs.takeWhile IsDigitB) := by
-  induction bs with
-  | nil => simp [Digits0.nil]
-  | cons b rest ih =>
-      rw [List.takeWhile_cons]
-      split
-      · rename_i hb
-        exact .more hb ih
-      · exact .nil
+  refine ByteString.induction_on (C := fun b => Digits0 (b.takeWhile IsDigitB)) bs ?_ ?_
+  · rw [ByteString.takeWhile_empty]
+    exact .nil
+  · intro b rest ih
+    rw [ByteString.takeWhile_cons]
+    split
+    · rename_i hb
+      exact .more hb ih
+    · exact .nil
 
-theorem dropWhile_digits : ∀ {bs : Bytes}, Digits0 bs → bs.dropWhile IsDigitB = []
-  | [], .nil => rfl
-  | b :: rest, .more h hr => by
-      rw [List.dropWhile_cons]
+theorem dropWhile_digits : ∀ {bs : Bytes}, Digits0 bs → bs.dropWhile IsDigitB = empty
+  | _, .nil => ByteString.dropWhile_empty IsDigitB
+  | _, .more h hr => by
+      rw [ByteString.dropWhile_cons]
       simp [h, dropWhile_digits hr]
 
 theorem takeWhile_digits : ∀ {bs : Bytes}, Digits0 bs → bs.takeWhile IsDigitB = bs
-  | [], .nil => rfl
-  | b :: rest, .more h hr => by
-      rw [List.takeWhile_cons]
-      simp [h, takeWhile_digits hr]
+  | _, .nil => ByteString.takeWhile_empty IsDigitB
+  | _, .more h hr => by
+      rw [ByteString.takeWhile_cons, if_pos h, takeWhile_digits hr]
 
-theorem eq_takeWhile_of_dropWhile_eq_nil {bs : Bytes} (h : bs.dropWhile IsDigitB = []) :
+theorem eq_takeWhile_of_dropWhile_eq_nil {bs : Bytes} (h : bs.dropWhile IsDigitB = empty) :
     bs = bs.takeWhile IsDigitB := by
-  have hsplit := List.takeWhile_append_dropWhile (p := IsDigitB) (l := bs)
-  rw [h, List.append_nil] at hsplit
+  have hsplit := ByteString.takeWhile_append_dropWhile bs IsDigitB
+  rw [h, ByteString.append_empty] at hsplit
   exact hsplit.symm
 
 theorem expB_spec {e : UInt8} (he : e = 0x65 ∨ e = 0x45) {bs : Bytes}
-    (h : expB bs = true) : ExpPart (e :: bs) := by
-  cases bs with
-  | nil => exact absurd h (by simp [expB])
-  | cons b rest =>
-      rw [expB] at h
+    (h : expB bs = true) : ExpPart (e +: bs) := by
+  match hb : bs.data.toList with
+  | [] =>
+      rw [ByteString.eq_empty_of_data_toList hb, expB_empty] at h
+      exact absurd h (by simp)
+  | b :: rest =>
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [expB_cons] at h
       by_cases hs : b = 0x2B ∨ b = 0x2D
       · rw [if_pos hs] at h
         have hd := digits1B_spec h
-        refine ExpPart.mk (e := e) (sign := [b]) (ds := rest) he ?_ hd
         rcases hs with rfl | rfl
-        · exact Or.inr (Or.inl rfl)
-        · exact Or.inr (Or.inr rfl)
+        · have hE : ExpPart (e +: ((0x2B +: empty) ++ ByteString.literal rest)) :=
+            ExpPart.mk (e := e) (sign := 0x2B +: empty) (ds := ByteString.literal rest) he
+              (Or.inr (Or.inl rfl)) hd
+          rwa [ByteString.cons_append, ByteString.empty_append] at hE
+        · have hE : ExpPart (e +: ((0x2D +: empty) ++ ByteString.literal rest)) :=
+            ExpPart.mk (e := e) (sign := 0x2D +: empty) (ds := ByteString.literal rest) he
+              (Or.inr (Or.inr rfl)) hd
+          rwa [ByteString.cons_append, ByteString.empty_append] at hE
       · rw [if_neg hs] at h
         have hd := digits1B_spec h
-        exact ExpPart.mk (e := e) (sign := []) (ds := b :: rest) he (Or.inl rfl) hd
+        have hE : ExpPart (e +: (empty ++ (b +: ByteString.literal rest))) :=
+          ExpPart.mk (e := e) (sign := empty) (ds := b +: ByteString.literal rest) he
+            (Or.inl rfl) hd
+        rwa [ByteString.empty_append] at hE
 
 theorem expTailB_spec {bs : Bytes} (h : expTailB bs = true) :
-    bs = [] ∨ ExpPart bs := by
-  match bs with
-  | [] => exact Or.inl rfl
+    bs = empty ∨ ExpPart bs := by
+  match hb : bs.data.toList with
+  | [] =>
+      left
+      exact ByteString.eq_empty_of_data_toList hb
   | b :: rest =>
-      rw [expTailB] at h
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [expTailB_cons] at h
       split at h
       · rename_i hcond
         simp only [Bool.or_eq_true, decide_eq_true_eq] at hcond
@@ -338,28 +452,41 @@ theorem expTailB_spec {bs : Bytes} (h : expTailB bs = true) :
       · exact absurd h (by simp)
 
 theorem numSuffixB_spec {ip : Bytes} (hi : IntPart ip) :
-    ∀ {suf : Bytes}, numSuffixB suf = true → NumBody (ip ++ suf)
-  | [], _ => by simpa using NumBody.plain hi
-  | b :: rest, h => by
-      rw [numSuffixB] at h
+    ∀ {suf : Bytes}, numSuffixB suf = true → NumBody (ip ++ suf) := by
+  intro suf h
+  match hb : suf.data.toList with
+  | [] =>
+      rw [ByteString.eq_empty_of_data_toList hb] at h ⊢
+      simpa [ByteString.append_empty] using NumBody.plain hi
+  | b :: rest =>
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [numSuffixB_cons] at h
       split at h
       · rename_i hdot
         simp only [decide_eq_true_eq] at hdot
         subst hdot
         simp only [Bool.and_eq_true] at h
-        have hf : Digits (rest.takeWhile IsDigitB) := digits1B_spec h.1
-        have hsplit : rest.takeWhile IsDigitB ++ rest.dropWhile IsDigitB = rest :=
-          List.takeWhile_append_dropWhile
+        have hf : Digits (ByteString.literal rest |>.takeWhile IsDigitB) := digits1B_spec h.1
+        have hsplit : (ByteString.literal rest).takeWhile IsDigitB ++
+            (ByteString.literal rest).dropWhile IsDigitB = ByteString.literal rest :=
+          ByteString.takeWhile_append_dropWhile _ IsDigitB
         rcases expTailB_spec h.2 with he | he
-        · have hrest : rest = rest.takeWhile IsDigitB :=
+        · have hrest : ByteString.literal rest =
+              (ByteString.literal rest).takeWhile IsDigitB :=
             eq_takeWhile_of_dropWhile_eq_nil he
-          have hb : NumBody (ip ++ 0x2E :: rest.takeWhile IsDigitB) := NumBody.frac hi hf
-          have hEq : ip ++ 0x2E :: rest.takeWhile IsDigitB = ip ++ 0x2E :: rest := by
-            rw [← hrest]
-          rwa [hEq] at hb
-        · have hb : NumBody (ip ++ 0x2E :: rest.takeWhile IsDigitB ++
-              rest.dropWhile IsDigitB) := NumBody.fracExp hi hf he
-          simpa [hsplit] using hb
+          have hb2 : NumBody (ip ++ (0x2E +: (ByteString.literal rest).takeWhile IsDigitB)) :=
+            NumBody.frac hi hf
+          rw [← hrest] at hb2
+          simpa using hb2
+        · have hb2 : NumBody (ip ++ (0x2E +: ((ByteString.literal rest).takeWhile IsDigitB ++
+              (ByteString.literal rest).dropWhile IsDigitB))) := by
+            have hfrac := NumBody.fracExp (ip := ip)
+              (fs := (ByteString.literal rest).takeWhile IsDigitB)
+              (es := (ByteString.literal rest).dropWhile IsDigitB) hi hf he
+            rw [ByteString.append_assoc] at hfrac
+            rwa [ByteString.cons_append] at hfrac
+          rw [hsplit] at hb2
+          simpa using hb2
       · split at h
         · rename_i hexp
           simp only [Bool.or_eq_true, decide_eq_true_eq] at hexp
@@ -368,72 +495,81 @@ theorem numSuffixB_spec {ip : Bytes} (hi : IntPart ip) :
           · exact NumBody.exp hi (expB_spec (Or.inr rfl) h)
         · exact absurd h (by simp)
 
-theorem numBodyB_spec : ∀ {bs : Bytes}, numLexB.numBodyB bs = true → NumBody bs
-  | [], h => by simp [numLexB.numBodyB] at h
-  | b :: rest, h => by
-      rw [numLexB.numBodyB] at h
+theorem numBodyB_spec : ∀ {bs : Bytes}, numLexB.numBodyB bs = true → NumBody bs := by
+  intro bs h
+  match hb : bs.data.toList with
+  | [] =>
+      rw [ByteString.eq_empty_of_data_toList hb, numLexB.numBodyB_empty] at h
+      exact absurd h (by simp)
+  | b :: rest =>
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [numLexB.numBodyB_cons] at h
       split at h
       · rename_i hzero
         simp only [decide_eq_true_eq] at hzero
         subst hzero
-        simpa using numSuffixB_spec (IntPart.zero) h
+        have hb2 := numSuffixB_spec (ip := 0x30 +: empty) (IntPart.zero) h
+        rwa [ByteString.cons_append, ByteString.empty_append] at hb2
       · split at h
         · rename_i hd
-          have htake : Digits0 (rest.takeWhile IsDigitB) := digits0_takeWhile rest
-          have hsplit : rest.takeWhile IsDigitB ++ rest.dropWhile IsDigitB = rest :=
-            List.takeWhile_append_dropWhile
-          have hip : IntPart (b :: rest.takeWhile IsDigitB) :=
+          have htake : Digits0 ((ByteString.literal rest).takeWhile IsDigitB) :=
+            digits0_takeWhile _
+          have hsplit : (ByteString.literal rest).takeWhile IsDigitB ++
+              (ByteString.literal rest).dropWhile IsDigitB = ByteString.literal rest :=
+            ByteString.takeWhile_append_dropWhile _ IsDigitB
+          have hip : IntPart (b +: (ByteString.literal rest).takeWhile IsDigitB) :=
             IntPart.lead hd.1 hd.2 htake
           have hbody := numSuffixB_spec hip h
-          simpa [hsplit] using hbody
+          rwa [ByteString.cons_append, hsplit] at hbody
         · exact absurd h (by simp)
+
 
 theorem digits0_of_digits : ∀ {bs : Bytes}, Digits bs → Digits0 bs
   | _, .one h => .more h .nil
   | _, .more h hr => .more h (digits0_of_digits hr)
 
 theorem expB_digits {ds : Bytes} (hd : Digits ds) : expB ds = true := by
-  cases ds with
-  | nil => cases hd
-  | cons b rest =>
-      have hb : IsDigitB b = true := digits_all hd b (by simp)
+  match h : ds.data.toList with
+  | [] =>
+      rw [ByteString.eq_empty_of_data_toList h] at hd
+      cases hd
+  | b :: rest =>
+      rw [ByteString.eq_cons_of_data_toList h] at hd ⊢
+      have hb : IsDigitB b = true := digits_all hd b (ByteString.mem_cons_self b _)
       have hnot : ¬ (b = 0x2B ∨ b = 0x2D) := by
-        intro h
-        rcases h with rfl | rfl <;> simp [IsDigitB] at hb
-      rw [expB]
-      rw [if_neg hnot]
+        intro hc
+        rcases hc with rfl | rfl <;> simp [IsDigitB] at hb
+      rw [expB_cons, if_neg hnot]
       exact digits1B_complete hd
 
 theorem expB_complete {sign ds : Bytes}
-    (hs : sign = [] ∨ sign = [0x2B] ∨ sign = [0x2D]) (hd : Digits ds) :
-    expB (sign ++ ds) = true := by
+    (hs : sign = empty ∨ sign = (0x2B +: empty) ∨ sign = (0x2D +: empty))
+    (hd : Digits ds) : expB (sign ++ ds) = true := by
   rcases hs with h | h | h
-  · subst h; simpa using expB_digits hd
   · subst h
-    show expB (0x2B :: ds) = true
-    rw [expB]
-    rw [if_pos (Or.inl rfl)]
+    rw [ByteString.empty_append]
+    exact expB_digits hd
+  · subst h
+    rw [ByteString.cons_append, ByteString.empty_append, expB_cons, if_pos (Or.inl rfl)]
     exact digits1B_complete hd
   · subst h
-    show expB (0x2D :: ds) = true
-    rw [expB]
-    rw [if_pos (Or.inr rfl)]
+    rw [ByteString.cons_append, ByteString.empty_append, expB_cons, if_pos (Or.inr rfl)]
     exact digits1B_complete hd
 
 theorem digits_takeWhile_empty {e : UInt8} (he : e = 0x65 ∨ e = 0x45) (rest : Bytes) :
-    (e :: rest).takeWhile IsDigitB = [] := by
-  rw [List.takeWhile_cons]
+    (e +: rest).takeWhile IsDigitB = empty := by
+  rw [ByteString.takeWhile_cons]
   have h : IsDigitB e = false := by rcases he with rfl | rfl <;> rfl
   simp [h]
 
 theorem digits_dropWhile_self {e : UInt8} (he : e = 0x65 ∨ e = 0x45) (rest : Bytes) :
-    (e :: rest).dropWhile IsDigitB = e :: rest := by
-  rw [List.dropWhile_cons]
+    (e +: rest).dropWhile IsDigitB = e +: rest := by
+  rw [ByteString.dropWhile_cons]
   have h : IsDigitB e = false := by rcases he with rfl | rfl <;> rfl
   simp [h]
 
 theorem expPart_takeWhile_nil {es : Bytes} (h : ExpPart es) :
-    es.takeWhile IsDigitB = [] := by
+    es.takeWhile IsDigitB = empty := by
   cases h with
   | mk he hs hd => exact digits_takeWhile_empty he _
 
@@ -443,30 +579,30 @@ theorem expPart_dropWhile_self {es : Bytes} (h : ExpPart es) :
   | mk he hs hd => exact digits_dropWhile_self he _
 
 theorem numSuffixB_frac {fs : Bytes} (hf : Digits fs) :
-    numSuffixB (0x2E :: fs) = true := by
+    numSuffixB (0x2E +: fs) = true := by
   have h0 : Digits0 fs := digits0_of_digits hf
   have ht : fs.takeWhile IsDigitB = fs := takeWhile_digits h0
-  have hd : fs.dropWhile IsDigitB = [] := dropWhile_digits h0
-  show numSuffixB (0x2E :: fs) = true
-  simp [numSuffixB, expTailB, ht, hd, digits1B_complete hf]
+  have hd : fs.dropWhile IsDigitB = empty := dropWhile_digits h0
+  show numSuffixB (0x2E +: fs) = true
+  simp [numSuffixB_cons, expTailB_empty, ht, hd, digits1B_complete hf]
 
 theorem numSuffixB_exp {e : UInt8} (he : e = 0x65 ∨ e = 0x45) {sign ds : Bytes}
-    (hs : sign = [] ∨ sign = [0x2B] ∨ sign = [0x2D]) (hd : Digits ds) :
-    numSuffixB (e :: sign ++ ds) = true := by
+    (hs : sign = empty ∨ sign = (0x2B +: empty) ∨ sign = (0x2D +: empty))
+    (hd : Digits ds) : numSuffixB (e +: sign ++ ds) = true := by
   have hne : decide (e = 0x2E) = false := by
     rcases he with rfl | rfl <;> rfl
   have hyes : (decide (e = 0x65) || decide (e = 0x45)) = true := by
     rcases he with rfl | rfl <;> rfl
-  show numSuffixB (e :: (sign ++ ds)) = true
-  simp [numSuffixB, hne, hyes, expB_complete hs hd]
+  show numSuffixB (e +: (sign ++ ds)) = true
+  simp [numSuffixB_cons, hne, hyes, expB_complete hs hd]
 
 theorem expTailB_exp {e : UInt8} (he : e = 0x65 ∨ e = 0x45) {sign ds : Bytes}
-    (hs : sign = [] ∨ sign = [0x2B] ∨ sign = [0x2D]) (hd : Digits ds) :
-    expTailB (e :: sign ++ ds) = true := by
+    (hs : sign = empty ∨ sign = (0x2B +: empty) ∨ sign = (0x2D +: empty))
+    (hd : Digits ds) : expTailB (e +: sign ++ ds) = true := by
   have hyes : (decide (e = 0x65) || decide (e = 0x45)) = true := by
     rcases he with rfl | rfl <;> rfl
-  show expTailB (e :: (sign ++ ds)) = true
-  simp [expTailB, hyes, expB_complete hs hd]
+  show expTailB (e +: (sign ++ ds)) = true
+  simp [expTailB_cons, hyes, expB_complete hs hd]
 
 theorem expPart_expTailB {es : Bytes} (h : ExpPart es) : expTailB es = true := by
   cases h with
@@ -477,118 +613,139 @@ theorem expPart_numSuffixB {es : Bytes} (h : ExpPart es) : numSuffixB es = true 
   | mk he hs hd => exact numSuffixB_exp he hs hd
 
 theorem numSuffixB_fracExp {fs es : Bytes} (hf : Digits fs) (he : ExpPart es) :
-    numSuffixB (0x2E :: fs ++ es) = true := by
+    numSuffixB (0x2E +: fs ++ es) = true := by
   have h0 : Digits0 fs := digits0_of_digits hf
   have hall : ∀ a ∈ fs, IsDigitB a = true := digits0_all h0
   have htake : (fs ++ es).takeWhile IsDigitB = fs := by
-    rw [List.takeWhile_append_of_pos hall, expPart_takeWhile_nil he, List.append_nil]
+    rw [ByteString.takeWhile_append_of_pos hall, expPart_takeWhile_nil he,
+      ByteString.append_empty]
   have hdrop : (fs ++ es).dropWhile IsDigitB = es := by
-    rw [List.dropWhile_append_of_pos hall]
+    rw [ByteString.dropWhile_append_of_pos hall]
     exact expPart_dropWhile_self he
   have hd1 : digits1B fs = true := digits1B_complete hf
   have hexp : expTailB es = true := expPart_expTailB he
-  show numSuffixB (0x2E :: (fs ++ es)) = true
-  simp [numSuffixB, htake, hdrop, hd1, hexp]
+  show numSuffixB (0x2E +: (fs ++ es)) = true
+  simp [numSuffixB_cons, htake, hdrop, hd1, hexp]
 
 theorem numSuffixB_nodigit {suf : Bytes} (h : numSuffixB suf = true) :
-    suf = [] ∨ ∀ (b : UInt8) (rest : Bytes), suf = b :: rest → IsDigitB b = false := by
-  cases suf with
-  | nil => exact Or.inl rfl
-  | cons b rest =>
-      rw [numSuffixB] at h
+    suf = empty ∨ ∀ (b : UInt8) (rest : Bytes), suf = b +: rest → IsDigitB b = false := by
+  match hb : suf.data.toList with
+  | [] =>
+      left
+      exact ByteString.eq_empty_of_data_toList hb
+  | b :: rest =>
+      right
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [numSuffixB_cons] at h
       split at h
       · rename_i hdot
-        have hb : b = 0x2E := by simpa using hdot
-        subst hb
-        exact Or.inr (fun b' rest' he => by
-          injection he with hb' _
-          subst hb'
-          rfl)
+        have hb2 : b = 0x2E := by simpa using hdot
+        subst hb2
+        intro b' rest' he
+        rw [ByteString.cons_inj] at he
+        obtain ⟨h1, _⟩ := he
+        subst h1
+        rfl
+
       · split at h
         · rename_i hexp
           simp only [Bool.or_eq_true, decide_eq_true_eq] at hexp
-          exact Or.inr (fun b' rest' he => by
-            injection he with hb' _
-            subst hb'
-            rcases hexp with rfl | rfl <;> rfl)
+          intro b' rest' he
+          rw [ByteString.cons_inj] at he
+          obtain ⟨h1, _⟩ := he
+          subst h1
+          rcases hexp with rfl | rfl <;> rfl
         · exact absurd h (by simp)
 
 theorem digits_dropWhile_notdigit {rest suf : Bytes} (hr : Digits0 rest)
-    (hs : suf = [] ∨ ∀ (b : UInt8) (rest' : Bytes), suf = b :: rest' → IsDigitB b = false) :
+    (hs : suf = empty ∨ ∀ (b : UInt8) (rest' : Bytes), suf = b +: rest' → IsDigitB b = false) :
     (rest ++ suf).dropWhile IsDigitB = suf := by
-  rw [List.dropWhile_append_of_pos (digits0_all hr)]
+  rw [ByteString.dropWhile_append_of_pos (digits0_all hr)]
   rcases hs with rfl | hs
-  · rfl
-  · cases suf with
-    | nil => rfl
-    | cons b rest' =>
-        rw [List.dropWhile_cons]
-        have hb := hs b rest' rfl
-        simp [hb]
+  · rw [ByteString.dropWhile_empty]
+  · match hb : suf.data.toList with
+    | [] => rw [ByteString.eq_empty_of_data_toList hb, ByteString.dropWhile_empty]
+    | b :: rest' =>
+        rw [ByteString.eq_cons_of_data_toList hb, ByteString.dropWhile_cons]
+        have hb' : IsDigitB b = false :=
+          hs b (ByteString.literal rest') (ByteString.eq_cons_of_data_toList hb)
+        simp [hb']
 
 theorem numBodyB_int {ip suf : Bytes} (hi : IntPart ip) (hsuf : numSuffixB suf = true) :
     numLexB.numBodyB (ip ++ suf) = true := by
-  cases ip with
-  | nil => cases hi
-  | cons b bs =>
-      cases hi with
-      | zero =>
-          show numLexB.numBodyB (([0x30] : Bytes) ++ suf) = true
-          simp [numLexB.numBodyB, hsuf]
-      | lead h1 h2 hr =>
-          have hne' : ¬ (b = 0x30) := by
-            intro hc
-            rw [hc] at h1
-            exact absurd h1 (by decide)
-          have hdigit : (0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39) := by
-            constructor
-            · rwa [UInt8.le_iff_toNat_le] at h1
-            · rwa [UInt8.le_iff_toNat_le] at h2
-          show numLexB.numBodyB (b :: (bs ++ suf)) = true
-          simp only [numLexB.numBodyB]
-          rw [if_neg (by simp [hne']), if_pos hdigit]
-          rw [digits_dropWhile_notdigit hr (numSuffixB_nodigit hsuf)]
-          exact hsuf
+  cases hi with
+  | zero =>
+      rw [show (0x30 +: empty) ++ suf = 0x30 +: suf by
+        rw [ByteString.cons_append, ByteString.empty_append]]
+      rw [numLexB.numBodyB_cons]
+      simp [hsuf]
+  | @lead b bs h1 h2 hr =>
+      have hne : ¬ (b = 0x30) := by
+        intro hc
+        rw [hc] at h1
+        exact absurd h1 (by decide)
+      have hdigit : (0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39) :=
+        ⟨UInt8.le_iff_toNat_le.mp h1, UInt8.le_iff_toNat_le.mp h2⟩
+      rw [ByteString.cons_append]
+      rw [numLexB.numBodyB_cons, if_neg (by simp [hne]), if_pos hdigit]
+      rw [digits_dropWhile_notdigit hr (numSuffixB_nodigit hsuf)]
+      exact hsuf
 
 theorem numBodyB_complete {bs : Bytes} (h : NumBody bs) : numLexB.numBodyB bs = true := by
   cases h with
-  | plain hi => simpa using numBodyB_int (suf := []) hi (by rfl)
-  | frac hi hf => exact numBodyB_int (suf := 0x2E :: _) hi (numSuffixB_frac hf)
-  | exp hi he => exact numBodyB_int (suf := _) hi (expPart_numSuffixB he)
-  | fracExp hi hf he =>
-      simpa [List.append_assoc] using
-        numBodyB_int (suf := 0x2E :: _) hi (numSuffixB_fracExp hf he)
+  | plain hi => simpa [ByteString.append_empty] using numBodyB_int (suf := empty) hi numSuffixB_empty
+  | @frac ip fs hi hf =>
+      exact numBodyB_int (suf := 0x2E +: fs) hi (numSuffixB_frac (fs := fs) hf)
+  | @exp ip es hi he =>
+      exact numBodyB_int (suf := es) hi (expPart_numSuffixB he)
+  | @fracExp ip fs es hi hf he =>
+      have hb := numBodyB_int (suf := (0x2E +: fs) ++ es) hi
+        (numSuffixB_fracExp (fs := fs) (es := es) hf he)
+      rw [ByteString.append_assoc]
+      exact hb
 
 theorem numLexB_spec {lex : Bytes} (h : numLexB lex = true) : RfcNumber lex := by
-  match lex with
-  | [] => simp [numLexB, numLexB.numBodyB] at h
+  match hb : lex.data.toList with
+  | [] =>
+      rw [ByteString.eq_empty_of_data_toList hb, numLexB_empty,
+        numLexB.numBodyB_empty] at h
+      exact absurd h (by simp)
   | b :: rest =>
-      rw [numLexB] at h
+      rw [ByteString.eq_cons_of_data_toList hb] at h ⊢
+      rw [numLexB_cons] at h
       split at h
       · rename_i hminus
-        have hb : b = 0x2D := by simpa using hminus
-        subst hb
+        have hb2 : b = 0x2D := by simpa using hminus
+        subst hb2
         exact RfcNumber.neg (numBodyB_spec h)
       · exact RfcNumber.pos (numBodyB_spec h)
 
 theorem numLexB_complete {lex : Bytes} (h : RfcNumber lex) : numLexB lex = true := by
   cases h with
   | pos hb =>
-      cases lex with
-      | nil => exact absurd (numBodyB_complete hb) (by simp [numLexB.numBodyB])
-      | cons b rest =>
-          rw [numLexB]
+      match hl : lex.data.toList with
+      | [] =>
+          rw [ByteString.eq_empty_of_data_toList hl] at hb
+          have htrue := numBodyB_complete hb
+          rw [numLexB.numBodyB_empty] at htrue
+          exact absurd htrue (by simp)
+      | b :: rest =>
+          rw [ByteString.eq_cons_of_data_toList hl] at hb ⊢
+          rw [numLexB_cons]
           have hnot : decide (b = 0x2D) = false := by
             by_cases hb2d : b = 0x2D
             · exfalso
               subst hb2d
               have htrue := numBodyB_complete hb
-              simp [numLexB.numBodyB] at htrue
+              rw [numLexB.numBodyB_cons] at htrue
+              simp at htrue
             · simp [hb2d]
           rw [if_neg (by simp [hnot])]
           exact numBodyB_complete hb
   | neg hb =>
-      simp [numLexB, numBodyB_complete hb]
+      rw [numLexB_cons, if_pos (by decide)]
+      exact numBodyB_complete hb
+
 
 theorem numLexB_iff (lex : Bytes) : numLexB lex = true ↔ RfcNumber lex :=
   ⟨numLexB_spec, numLexB_complete⟩
@@ -610,35 +767,42 @@ formulas), so completeness can apply them to a `StrChars` derivation's
 theorem le_toNat {a b : UInt8} (h : a ≤ b) : a.toNat ≤ b.toNat :=
   UInt8.le_iff_toNat_le.mp h
 
-theorem scanCharsFrom_nil (off : Nat) : scanCharsFrom off ([] : Bytes) = .error .ended := by
-  simp only [scanCharsFrom.eq_def]
+theorem scanCharsFrom_nil (off : Nat) : scanCharsFrom off (empty : Bytes) = .error .ended := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_empty]
 
 theorem scanCharsFrom_quote (off : Nat) (rest : Bytes) :
-    scanCharsFrom off (0x22 :: rest) = .ok ([], rest) := by
-  simp only [scanCharsFrom.eq_def]
+    scanCharsFrom off (0x22 +: rest) = .ok ([], rest) := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, ByteString.literal_data_toList]
 
 theorem scanCharsFrom_ascii (off : Nat) (b : UInt8) (rest : Bytes)
     (hq : b ≠ 0x22) (hs : b ≠ 0x5C) (h1 : b < 0x80) (h2 : 0x20 ≤ b.toNat) :
-    scanCharsFrom off (b :: rest) = scanCons off (off + 1) b.toNat rest := by
+    scanCharsFrom off (b +: rest) = scanCons off (off + 1) b.toNat rest := by
   have h1' : b.toNat < 0x80 := UInt8.lt_iff_toNat_lt.mp h1
-  simp only [scanCharsFrom.eq_def]
-  simp [h1', h2]
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hq, hs, h1', h2]
 
 theorem scanCharsFrom_escape (off : Nat) (e : UInt8) (rest1 : Bytes) (c : Nat)
     (hv : EscVal e = some c) :
-    scanCharsFrom off (0x5C :: e :: rest1) = scanCons off (off + 2) c rest1 := by
-  simp only [scanCharsFrom.eq_def]
-  simp [hv]
+    scanCharsFrom off (0x5C +: e +: rest1) = scanCons off (off + 2) c rest1 := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hv]
 
 theorem scanCharsFrom_uchar (off : Nat) (h0 h1 h2 h3 : UInt8) (rest2 : Bytes) (c : Nat)
     (hv : EscVal (0x75 : UInt8) = none)
     (hx : Hex4 h0 h1 h2 h3 = some c)
     (hhi : ¬ (0xD800 ≤ c ∧ c ≤ 0xDBFF))
     (hlo : ¬ (0xDC00 ≤ c ∧ c ≤ 0xDFFF)) :
-    scanCharsFrom off (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: rest2) =
+    scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest2) =
       scanCons off (off + 6) c rest2 := by
-  simp only [scanCharsFrom.eq_def, hv]
-  simp [hx, hhi, hlo]
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hv, hx, hhi, hlo]
 
 theorem scanCharsFrom_pair (off : Nat) (h0 h1 h2 h3 l0 l1 l2 l3 : UInt8)
     (rest3 : Bytes) (hi lo : Nat)
@@ -646,15 +810,16 @@ theorem scanCharsFrom_pair (off : Nat) (h0 h1 h2 h3 l0 l1 l2 l3 : UInt8)
     (hx : Hex4 h0 h1 h2 h3 = some hi) (hy : Hex4 l0 l1 l2 l3 = some lo)
     (hh : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF) (hl : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF) :
     scanCharsFrom off
-        (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: 0x5C :: 0x75 ::
-          l0 :: l1 :: l2 :: l3 :: rest3) =
+        (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+          l0 +: l1 +: l2 +: l3 +: rest3) =
       scanCons off (off + 12) (0x10000 + (hi - 0xD800) * 0x400 + (lo - 0xDC00)) rest3 := by
-  simp only [scanCharsFrom.eq_def, hv]
-  simp [hx, hy, hh, hl]
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hv, hx, hy, hh, hl]
 
 theorem scanCharsFrom_utf8_two (off : Nat) (b0 b1 : UInt8) (rest1 : Bytes)
     (h0 : 0xC2 ≤ b0) (h0' : b0 ≤ 0xDF) (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) :
-    scanCharsFrom off (b0 :: b1 :: rest1) =
+    scanCharsFrom off (b0 +: b1 +: rest1) =
       scanCons off (off + 2) ((b0.toNat - 0xC0) * 0x40 + (b1.toNat - 0x80)) rest1 := by
   have h0n : (0xC2 : Nat) ≤ b0.toNat := by simpa using le_toNat h0
   have h0n' : b0.toNat ≤ (0xDF : Nat) := by simpa using le_toNat h0'
@@ -663,24 +828,26 @@ theorem scanCharsFrom_utf8_two (off : Nat) (b0 b1 : UInt8) (rest1 : Bytes)
   have hq : b0 ≠ 0x22 := by intro h; subst h; simp at h0n
   have hs : b0 ≠ 0x5C := by intro h; subst h; simp at h0n
   have hlt : ¬ b0.toNat < 0x80 := by omega
-  simp only [scanCharsFrom.eq_def]
-  simp [hlt, h0n, h0n', h1n, h1n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hlt, h0n, h0n', h1n, h1n']
 
 theorem scanCharsFrom_utf8_e0 (off : Nat) (b1 b2 : UInt8) (rest1 : Bytes)
     (h1 : 0xA0 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF) :
-    scanCharsFrom off (0xE0 :: b1 :: b2 :: rest1) =
+    scanCharsFrom off (0xE0 +: b1 +: b2 +: rest1) =
       scanCons off (off + 3) ((b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1 := by
   have h1n : (0xA0 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h1'
   have h2n : (0x80 : Nat) ≤ b2.toNat := by simpa using le_toNat h2
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
-  simp only [scanCharsFrom.eq_def]
-  simp [h1n, h1n', h2n, h2n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, h1n, h1n', h2n, h2n']
 
 theorem scanCharsFrom_utf8_e1ec (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
     (hb : 0xE1 ≤ b) (hb' : b ≤ 0xEC)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF) :
-    scanCharsFrom off (b :: b1 :: b2 :: rest1) =
+    scanCharsFrom off (b +: b1 +: b2 +: rest1) =
       scanCons off (off + 3)
         ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
           (b2.toNat - 0x80)) rest1 := by
@@ -695,25 +862,27 @@ theorem scanCharsFrom_utf8_e1ec (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
   have hlt : ¬ b.toNat < 0x80 := by omega
   have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
   have he0 : b ≠ 0xE0 := by intro h; subst h; simp at hbn
-  simp only [scanCharsFrom.eq_def]
-  simp [hlt, htwo, he0, hbn, hbn', h1n, h1n', h2n, h2n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hlt, htwo, he0, hbn, hbn', h1n, h1n', h2n, h2n']
 
 theorem scanCharsFrom_utf8_ed (off : Nat) (b1 b2 : UInt8) (rest1 : Bytes)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0x9F) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF) :
-    scanCharsFrom off (0xED :: b1 :: b2 :: rest1) =
+    scanCharsFrom off (0xED +: b1 +: b2 +: rest1) =
       scanCons off (off + 3)
         (0xD000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1 := by
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0x9F : Nat) := by simpa using le_toNat h1'
   have h2n : (0x80 : Nat) ≤ b2.toNat := by simpa using le_toNat h2
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
-  simp only [scanCharsFrom.eq_def]
-  simp [h1n, h1n', h2n, h2n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, h1n, h1n', h2n, h2n']
 
 theorem scanCharsFrom_utf8_eeef (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
     (hb : 0xEE ≤ b) (hb' : b ≤ 0xEF)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF) :
-    scanCharsFrom off (b :: b1 :: b2 :: rest1) =
+    scanCharsFrom off (b +: b1 +: b2 +: rest1) =
       scanCons off (off + 3)
         ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
           (b2.toNat - 0x80)) rest1 := by
@@ -730,13 +899,14 @@ theorem scanCharsFrom_utf8_eeef (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
   have he0 : b ≠ 0xE0 := by intro h; subst h; simp at hbn
   have h31 : ¬ (0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC) := by omega
   have hed : b ≠ 0xED := by intro h; subst h; simp at hbn
-  simp only [scanCharsFrom.eq_def]
-  simp [hlt, htwo, he0, h31, hed, hbn, hbn', h1n, h1n', h2n, h2n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hlt, htwo, he0, h31, hed, hbn, hbn', h1n, h1n', h2n, h2n']
 
 theorem scanCharsFrom_utf8_f0 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
     (h1 : 0x90 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     (h3 : 0x80 ≤ b3) (h3' : b3 ≤ 0xBF) :
-    scanCharsFrom off (0xF0 :: b1 :: b2 :: b3 :: rest1) =
+    scanCharsFrom off (0xF0 +: b1 +: b2 +: b3 +: rest1) =
       scanCons off (off + 4)
         ((b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
           (b3.toNat - 0x80)) rest1 := by
@@ -746,14 +916,15 @@ theorem scanCharsFrom_utf8_f0 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
   have h3n : (0x80 : Nat) ≤ b3.toNat := by simpa using le_toNat h3
   have h3n' : b3.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h3'
-  simp only [scanCharsFrom.eq_def]
-  simp [h1n, h1n', h2n, h2n', h3n, h3n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, h1n, h1n', h2n, h2n', h3n, h3n']
 
 theorem scanCharsFrom_utf8_f1f3 (off : Nat) (b b1 b2 b3 : UInt8) (rest1 : Bytes)
     (hb : 0xF1 ≤ b) (hb' : b ≤ 0xF3)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     (h3 : 0x80 ≤ b3) (h3' : b3 ≤ 0xBF) :
-    scanCharsFrom off (b :: b1 :: b2 :: b3 :: rest1) =
+    scanCharsFrom off (b +: b1 +: b2 +: b3 +: rest1) =
       scanCons off (off + 4)
         ((b.toNat - 0xF0) * 0x40000 + (b1.toNat - 0x80) * 0x1000 +
           (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80)) rest1 := by
@@ -774,13 +945,14 @@ theorem scanCharsFrom_utf8_f1f3 (off : Nat) (b b1 b2 b3 : UInt8) (rest1 : Bytes)
   have hed : b ≠ 0xED := by intro h; subst h; simp at hbn
   have h33 : ¬ (0xEE ≤ b.toNat ∧ b.toNat ≤ 0xEF) := by omega
   have hf0 : b ≠ 0xF0 := by intro h; subst h; simp at hbn
-  simp only [scanCharsFrom.eq_def]
-  simp [hlt, htwo, he0, h31, hed, h33, hf0, hbn, hbn', h1n, h1n', h2n, h2n', h3n, h3n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, hlt, htwo, he0, h31, hed, h33, hf0, hbn, hbn', h1n, h1n', h2n, h2n', h3n, h3n']
 
 theorem scanCharsFrom_utf8_f4 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0x8F) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     (h3 : 0x80 ≤ b3) (h3' : b3 ≤ 0xBF) :
-    scanCharsFrom off (0xF4 :: b1 :: b2 :: b3 :: rest1) =
+    scanCharsFrom off (0xF4 +: b1 +: b2 +: b3 +: rest1) =
       scanCons off (off + 4)
         (0x100000 + (b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
           (b3.toNat - 0x80)) rest1 := by
@@ -790,8 +962,9 @@ theorem scanCharsFrom_utf8_f4 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
   have h3n : (0x80 : Nat) ≤ b3.toNat := by simpa using le_toNat h3
   have h3n' : b3.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h3'
-  simp only [scanCharsFrom.eq_def]
-  simp [h1n, h1n', h2n, h2n', h3n, h3n']
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, h1n, h1n', h2n, h2n', h3n, h3n']
 
 /-! #### Character and byte facts
 
@@ -877,15 +1050,15 @@ delegates to the body's remainder. -/
 theorem scanCons_ok (pos next c rest cs fin)
     (hnc : IsNoncharacter c = false) (h : scanCharsFrom next rest = .ok (cs, fin)) :
     scanCons pos next c rest = .ok (c :: cs, fin) := by
-  simp only [scanCons.eq_def]
-  rw [ite_eq_right (by simp [hnc])]
+  unfold scanCons okCons
+  rw [if_neg (by simp [hnc])]
   rw [h]
 
 theorem scanCons_inv (pos next c rest cs fin)
     (h : scanCons pos next c rest = .ok (cs, fin)) :
     IsNoncharacter c = false ∧ ∃ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom next rest = .ok (cs', fin') ∧ cs = c :: cs' ∧ fin = fin' := by
-  simp only [scanCons.eq_def] at h
+  unfold scanCons okCons at h
   split at h
   · simp at h
   · rename_i hnc
@@ -966,14 +1139,14 @@ is the corresponding `StrChar`. -/
 theorem strChars_ascii (off : Nat) (q : UInt8) (tl : Bytes)
     (hq : q ≠ 0x22) (hs : q ≠ 0x5C) (hlt : q.toNat < 0x80) (hctrl : 0x20 ≤ q.toNat)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (q :: tl) = .ok (cs, fin))
+    (h : scanCharsFrom off (q +: tl) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 1) tl = .ok (cs', fin') → StrChars .strict tl cs' fin') :
-    StrChars .strict (q :: tl) cs fin := by
+    StrChars .strict (q +: tl) cs fin := by
   rw [scanCharsFrom_ascii off q tl hq hs (UInt8.lt_iff_toNat_lt.mpr hlt) hctrl] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
   rw [hcs, hfin]
-  have hutf : Utf8Char (q :: tl) q.toNat tl := Utf8Char.one (UInt8.lt_iff_toNat_lt.mpr hlt)
+  have hutf : Utf8Char (q +: tl) q.toNat tl := Utf8Char.one (UInt8.lt_iff_toNat_lt.mpr hlt)
   refine StrChars.cons (StrChar.unescaped hutf hctrl ?_ ?_ ?_) ?_
   · intro hc
     exact hq (UInt8.toNat_inj.mp hc)
@@ -984,10 +1157,10 @@ theorem strChars_ascii (off : Nat) (q : UInt8) (tl : Bytes)
 
 theorem strChars_escape (off : Nat) (e : UInt8) (rest1 : Bytes) (c : Nat)
     (hv : EscVal e = some c) {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (0x5C :: e :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (0x5C +: e +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 2) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (0x5C :: e :: rest1) cs fin := by
+    StrChars .strict (0x5C +: e +: rest1) cs fin := by
   rw [scanCharsFrom_escape off e rest1 c hv] at h
   obtain ⟨_, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
   rw [hcs, hfin]
@@ -997,11 +1170,11 @@ theorem strChars_uchar (off : Nat) (h0 h1 h2 h3 : UInt8) (rest2 : Bytes) (c : Na
     (hv : EscVal (0x75 : UInt8) = none) (hx : Hex4 h0 h1 h2 h3 = some c)
     (hhi : ¬ (0xD800 ≤ c ∧ c ≤ 0xDBFF)) (hlo : ¬ (0xDC00 ≤ c ∧ c ≤ 0xDFFF))
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: rest2) =
+    (h : scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest2) =
       .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 6) rest2 = .ok (cs', fin') → StrChars .strict rest2 cs' fin') :
-    StrChars .strict (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: rest2) cs fin := by
+    StrChars .strict (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest2) cs fin := by
   rw [scanCharsFrom_uchar off h0 h1 h2 h3 rest2 c hv hx hhi hlo] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
   rw [hcs, hfin]
@@ -1021,14 +1194,14 @@ theorem strChars_pair (off : Nat) (h0 h1 h2 h3 l0 l1 l2 l3 : UInt8) (rest3 : Byt
     (hh : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF) (hl : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF)
     {cs : List Nat} {fin : Bytes}
     (h : scanCharsFrom off
-      (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: 0x5C :: 0x75 ::
-        l0 :: l1 :: l2 :: l3 :: rest3) = .ok (cs, fin))
+      (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+        l0 +: l1 +: l2 +: l3 +: rest3) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 12) rest3 = .ok (cs', fin') →
         StrChars .strict rest3 cs' fin') :
     StrChars .strict
-      (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: 0x5C :: 0x75 ::
-        l0 :: l1 :: l2 :: l3 :: rest3) cs fin := by
+      (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+        l0 +: l1 +: l2 +: l3 +: rest3) cs fin := by
   rw [scanCharsFrom_pair off h0 h1 h2 h3 l0 l1 l2 l3 rest3 hi lo hv hx hy hh hl] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
   rw [hcs, hfin]
@@ -1045,17 +1218,17 @@ theorem strChars_pair (off : Nat) (h0 h1 h2 h3 l0 l1 l2 l3 : UInt8) (rest3 : Byt
 theorem strChars_utf8_two (off : Nat) (b0 b1 : UInt8) (rest1 : Bytes)
     (h0 : 0xC2 ≤ b0) (h0' : b0 ≤ 0xDF) (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (b0 :: b1 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (b0 +: b1 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 2) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (b0 :: b1 :: rest1) cs fin := by
+    StrChars .strict (b0 +: b1 +: rest1) cs fin := by
   have h0n : (0xC2 : Nat) ≤ b0.toNat := by simpa using le_toNat h0
   have h0n' : b0.toNat ≤ (0xDF : Nat) := by simpa using le_toNat h0'
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h1'
   rw [scanCharsFrom_utf8_two off b0 b1 rest1 h0 h0' h1 h1'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (b0 :: b1 :: rest1)
+  have hutf : Utf8Char (b0 +: b1 +: rest1)
       ((b0.toNat - 0xC0) * 0x40 + (b1.toNat - 0x80)) rest1 := Utf8Char.two h0 h0' h1 h1'
   rw [hcs, hfin]
   refine StrChars.cons (StrChar.unescaped hutf ?_ ?_ ?_ ?_) ?_
@@ -1068,17 +1241,17 @@ theorem strChars_utf8_two (off : Nat) (b0 b1 : UInt8) (rest1 : Bytes)
 theorem strChars_utf8_e0 (off : Nat) (b1 b2 : UInt8) (rest1 : Bytes)
     (h1 : 0xA0 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (0xE0 :: b1 :: b2 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (0xE0 +: b1 +: b2 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 3) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (0xE0 :: b1 :: b2 :: rest1) cs fin := by
+    StrChars .strict (0xE0 +: b1 +: b2 +: rest1) cs fin := by
   have h1n : (0xA0 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h1'
   have h2n : (0x80 : Nat) ≤ b2.toNat := by simpa using le_toNat h2
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
   rw [scanCharsFrom_utf8_e0 off b1 b2 rest1 h1 h1' h2 h2'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (0xE0 :: b1 :: b2 :: rest1)
+  have hutf : Utf8Char (0xE0 +: b1 +: b2 +: rest1)
       ((b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1 := Utf8Char.three₀ h1 h1' h2 h2'
   rw [hcs, hfin]
   refine StrChars.cons (StrChar.unescaped hutf ?_ ?_ ?_ ?_) ?_
@@ -1092,10 +1265,10 @@ theorem strChars_utf8_e1ec (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
     (hb : 0xE1 ≤ b) (hb' : b ≤ 0xEC)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (b :: b1 :: b2 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (b +: b1 +: b2 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 3) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (b :: b1 :: b2 :: rest1) cs fin := by
+    StrChars .strict (b +: b1 +: b2 +: rest1) cs fin := by
   have hbn : (0xE1 : Nat) ≤ b.toNat := by simpa using le_toNat hb
   have hbn' : b.toNat ≤ (0xEC : Nat) := by simpa using le_toNat hb'
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
@@ -1104,7 +1277,7 @@ theorem strChars_utf8_e1ec (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
   rw [scanCharsFrom_utf8_e1ec off b b1 b2 rest1 hb hb' h1 h1' h2 h2'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (b :: b1 :: b2 :: rest1)
+  have hutf : Utf8Char (b +: b1 +: b2 +: rest1)
       ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1 :=
     Utf8Char.three₁ hb hb' h1 h1' h2 h2'
   rw [hcs, hfin]
@@ -1118,17 +1291,17 @@ theorem strChars_utf8_e1ec (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
 theorem strChars_utf8_ed (off : Nat) (b1 b2 : UInt8) (rest1 : Bytes)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0x9F) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (0xED :: b1 :: b2 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (0xED +: b1 +: b2 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 3) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (0xED :: b1 :: b2 :: rest1) cs fin := by
+    StrChars .strict (0xED +: b1 +: b2 +: rest1) cs fin := by
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0x9F : Nat) := by simpa using le_toNat h1'
   have h2n : (0x80 : Nat) ≤ b2.toNat := by simpa using le_toNat h2
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
   rw [scanCharsFrom_utf8_ed off b1 b2 rest1 h1 h1' h2 h2'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (0xED :: b1 :: b2 :: rest1)
+  have hutf : Utf8Char (0xED +: b1 +: b2 +: rest1)
       (0xD000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1 :=
     Utf8Char.three₂ h1 h1' h2 h2'
   rw [hcs, hfin]
@@ -1143,10 +1316,10 @@ theorem strChars_utf8_eeef (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
     (hb : 0xEE ≤ b) (hb' : b ≤ 0xEF)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (b :: b1 :: b2 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (b +: b1 +: b2 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 3) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (b :: b1 :: b2 :: rest1) cs fin := by
+    StrChars .strict (b +: b1 +: b2 +: rest1) cs fin := by
   have hbn : (0xEE : Nat) ≤ b.toNat := by simpa using le_toNat hb
   have hbn' : b.toNat ≤ (0xEF : Nat) := by simpa using le_toNat hb'
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
@@ -1155,7 +1328,7 @@ theorem strChars_utf8_eeef (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
   have h2n' : b2.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h2'
   rw [scanCharsFrom_utf8_eeef off b b1 b2 rest1 hb hb' h1 h1' h2 h2'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (b :: b1 :: b2 :: rest1)
+  have hutf : Utf8Char (b +: b1 +: b2 +: rest1)
       ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80)) rest1 :=
     Utf8Char.three₃ hb hb' h1 h1' h2 h2'
   rw [hcs, hfin]
@@ -1170,10 +1343,10 @@ theorem strChars_utf8_f0 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
     (h1 : 0x90 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     (h3 : 0x80 ≤ b3) (h3' : b3 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (0xF0 :: b1 :: b2 :: b3 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (0xF0 +: b1 +: b2 +: b3 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 4) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (0xF0 :: b1 :: b2 :: b3 :: rest1) cs fin := by
+    StrChars .strict (0xF0 +: b1 +: b2 +: b3 +: rest1) cs fin := by
   have h1n : (0x90 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h1'
   have h2n : (0x80 : Nat) ≤ b2.toNat := by simpa using le_toNat h2
@@ -1182,7 +1355,7 @@ theorem strChars_utf8_f0 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
   have h3n' : b3.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h3'
   rw [scanCharsFrom_utf8_f0 off b1 b2 b3 rest1 h1 h1' h2 h2' h3 h3'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (0xF0 :: b1 :: b2 :: b3 :: rest1)
+  have hutf : Utf8Char (0xF0 +: b1 +: b2 +: b3 +: rest1)
       ((b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80)) rest1 :=
     Utf8Char.four₀ h1 h1' h2 h2' h3 h3'
   rw [hcs, hfin]
@@ -1198,10 +1371,10 @@ theorem strChars_utf8_f1f3 (off : Nat) (b b1 b2 b3 : UInt8) (rest1 : Bytes)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0xBF) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     (h3 : 0x80 ≤ b3) (h3' : b3 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (b :: b1 :: b2 :: b3 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (b +: b1 +: b2 +: b3 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 4) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (b :: b1 :: b2 :: b3 :: rest1) cs fin := by
+    StrChars .strict (b +: b1 +: b2 +: b3 +: rest1) cs fin := by
   have hbn : (0xF1 : Nat) ≤ b.toNat := by simpa using le_toNat hb
   have hbn' : b.toNat ≤ (0xF3 : Nat) := by simpa using le_toNat hb'
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
@@ -1212,7 +1385,7 @@ theorem strChars_utf8_f1f3 (off : Nat) (b b1 b2 b3 : UInt8) (rest1 : Bytes)
   have h3n' : b3.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h3'
   rw [scanCharsFrom_utf8_f1f3 off b b1 b2 b3 rest1 hb hb' h1 h1' h2 h2' h3 h3'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (b :: b1 :: b2 :: b3 :: rest1)
+  have hutf : Utf8Char (b +: b1 +: b2 +: b3 +: rest1)
       ((b.toNat - 0xF0) * 0x40000 + (b1.toNat - 0x80) * 0x1000 +
         (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80)) rest1 :=
     Utf8Char.four₁ hb hb' h1 h1' h2 h2' h3 h3'
@@ -1228,10 +1401,10 @@ theorem strChars_utf8_f4 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
     (h1 : 0x80 ≤ b1) (h1' : b1 ≤ 0x8F) (h2 : 0x80 ≤ b2) (h2' : b2 ≤ 0xBF)
     (h3 : 0x80 ≤ b3) (h3' : b3 ≤ 0xBF)
     {cs : List Nat} {fin : Bytes}
-    (h : scanCharsFrom off (0xF4 :: b1 :: b2 :: b3 :: rest1) = .ok (cs, fin))
+    (h : scanCharsFrom off (0xF4 +: b1 +: b2 +: b3 +: rest1) = .ok (cs, fin))
     (ih : ∀ (cs' : List Nat) (fin' : Bytes),
       scanCharsFrom (off + 4) rest1 = .ok (cs', fin') → StrChars .strict rest1 cs' fin') :
-    StrChars .strict (0xF4 :: b1 :: b2 :: b3 :: rest1) cs fin := by
+    StrChars .strict (0xF4 +: b1 +: b2 +: b3 +: rest1) cs fin := by
   have h1n : (0x80 : Nat) ≤ b1.toNat := by simpa using le_toNat h1
   have h1n' : b1.toNat ≤ (0x8F : Nat) := by simpa using le_toNat h1'
   have h2n : (0x80 : Nat) ≤ b2.toNat := by simpa using le_toNat h2
@@ -1240,7 +1413,7 @@ theorem strChars_utf8_f4 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
   have h3n' : b3.toNat ≤ (0xBF : Nat) := by simpa using le_toNat h3'
   rw [scanCharsFrom_utf8_f4 off b1 b2 b3 rest1 h1 h1' h2 h2' h3 h3'] at h
   obtain ⟨hnc, cs', fin', hrec, hcs, hfin⟩ := scanCons_inv _ _ _ _ _ _ h
-  have hutf : Utf8Char (0xF4 :: b1 :: b2 :: b3 :: rest1)
+  have hutf : Utf8Char (0xF4 +: b1 +: b2 +: b3 +: rest1)
       (0x100000 + (b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
         (b3.toNat - 0x80)) rest1 :=
     Utf8Char.four₂ h1 h1' h2 h2' h3 h3'
@@ -1262,20 +1435,22 @@ theorem le_of_toNat {a b : UInt8} (h : a.toNat ≤ b.toNat) : a ≤ b :=
   UInt8.le_iff_toNat_le.mpr h
 
 theorem scanCharsFrom_sound_aux (n : Nat) :
-    ∀ (b : Bytes), b.length ≤ n →
+    ∀ (l : List UInt8), l.length ≤ n →
       ∀ (off : Nat) (cs : List Nat) (rest : Bytes),
-        scanCharsFrom off b = .ok (cs, rest) → StrChars .strict b cs rest := by
+        scanCharsFrom off (ByteString.literal l) = .ok (cs, rest) →
+          StrChars .strict (ByteString.literal l) cs rest := by
   induction n with
   | zero =>
-      intro b hlen off cs rest h
-      cases b with
-      | nil => rw [scanCharsFrom_nil] at h; simp at h
+      intro l hlen off cs rest h
+      cases l with
+      | nil => rw [show ByteString.literal ([] : List UInt8) = empty from rfl, scanCharsFrom_nil] at h; simp at h
       | cons q tl => simp at hlen
   | succ n ih =>
-      intro b hlen off cs rest h
-      cases b with
-      | nil => rw [scanCharsFrom_nil] at h; simp at h
+      intro l hlen off cs rest h
+      cases l with
+      | nil => rw [show ByteString.literal ([] : List UInt8) = empty from rfl, scanCharsFrom_nil] at h; simp at h
       | cons q tl =>
+          simp only [ByteString.literal_cons] at h ⊢
           have htl : tl.length ≤ n := by
             simp only [List.length_cons] at hlen
             omega
@@ -1288,154 +1463,156 @@ theorem scanCharsFrom_sound_aux (n : Nat) :
           · by_cases hs : q = 0x5C
             · subst hs
               cases tl with
-              | nil => simp [scanCharsFrom.eq_def] at h
+              | nil =>
+                  simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp at h
               | cons e rest1 =>
+                  simp only [ByteString.literal_cons] at h ⊢
                   cases hv : EscVal e with
                   | some c =>
                       have hrest : rest1.length ≤ n := by
                         simp only [List.length_cons] at hlen
                         omega
-                      exact strChars_escape off e rest1 c hv h (ih rest1 hrest (off + 2))
+                      exact strChars_escape off e  (ByteString.literal rest1) c hv h (ih rest1 hrest (off + 2))
                   | none =>
                       by_cases he : e = 0x75
                       · subst he
                         rcases rest1 with _ | ⟨h0, r0⟩
-                        · simp [scanCharsFrom.eq_def, hv] at h
+                        · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv] at h
                         · rcases r0 with _ | ⟨h1, r1⟩
-                          · simp [scanCharsFrom.eq_def, hv] at h
+                          · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv] at h
                           · rcases r1 with _ | ⟨h2, r2⟩
-                            · simp [scanCharsFrom.eq_def, hv] at h
+                            · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv] at h
                             · rcases r2 with _ | ⟨h3, rest2⟩
-                              · simp [scanCharsFrom.eq_def, hv] at h
+                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv] at h
                               · cases hx : Hex4 h0 h1 h2 h3 with
-                                | none => simp [scanCharsFrom.eq_def, hv, hx] at h
+                                | none => simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx] at h
                                 | some c =>
                                     by_cases hhi : 0xD800 ≤ c ∧ c ≤ 0xDBFF
                                     · rcases rest2 with _ | ⟨z0, w0⟩
-                                      · simp [scanCharsFrom.eq_def, hv, hx, hhi] at h
+                                      · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi] at h
                                       · by_cases hz0 : z0 = 0x5C
                                         · subst hz0
                                           rcases w0 with _ | ⟨z1, w1⟩
-                                          · simp [scanCharsFrom.eq_def, hv, hx, hhi] at h
+                                          · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi] at h
                                           · by_cases hz1 : z1 = 0x75
                                             · subst hz1
                                               rcases w1 with _ | ⟨l0, v0⟩
-                                              · simp [scanCharsFrom.eq_def, hv, hx, hhi] at h
+                                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi] at h
                                               · rcases v0 with _ | ⟨l1, v1⟩
-                                                · simp [scanCharsFrom.eq_def, hv, hx, hhi] at h
+                                                · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi] at h
                                                 · rcases v1 with _ | ⟨l2, v2⟩
-                                                  · simp [scanCharsFrom.eq_def, hv, hx, hhi] at h
+                                                  · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi] at h
                                                   · rcases v2 with _ | ⟨l3, rest3⟩
-                                                    · simp [scanCharsFrom.eq_def, hv, hx, hhi] at h
+                                                    · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi] at h
                                                     · cases hy : Hex4 l0 l1 l2 l3 with
                                                       | none =>
-                                                          simp [scanCharsFrom.eq_def, hv, hx, hhi, hy] at h
+                                                          simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi, hy] at h
                                                       | some lo =>
                                                           by_cases hlo : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF
                                                           · have hrest : rest3.length ≤ n := by
                                                               simp only [List.length_cons] at hlen
                                                               omega
                                                             exact strChars_pair off h0 h1 h2 h3
-                                                              l0 l1 l2 l3 rest3 c lo (by decide)
+                                                              l0 l1 l2 l3 (ByteString.literal rest3) c lo (by decide)
                                                               hx hy hhi hlo h
                                                               (ih rest3 hrest (off + 12))
-                                                          · simp [scanCharsFrom.eq_def, hv, hx, hhi, hy, hlo] at h
-                                            · simp [scanCharsFrom.eq_def, hv, hx, hhi, hz1] at h
-                                        · simp [scanCharsFrom.eq_def, hv, hx, hhi, hz0] at h
+                                                          · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi, hy, hlo] at h
+                                            · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi, hz1] at h
+                                        · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi, hz0] at h
                                     · by_cases hlo : 0xDC00 ≤ c ∧ c ≤ 0xDFFF
-                                      · simp [scanCharsFrom.eq_def, hv, hx, hhi, hlo] at h
+                                      · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, hx, hhi, hlo] at h
                                       · have hrest : rest2.length ≤ n := by
                                           simp only [List.length_cons] at hlen
                                           omega
-                                        exact strChars_uchar off h0 h1 h2 h3 rest2 c
+                                        exact strChars_uchar off h0 h1 h2 h3  (ByteString.literal rest2) c
                                           (by decide) hx hhi hlo h (ih rest2 hrest (off + 6))
-                      · simp [scanCharsFrom.eq_def, hv, he] at h
+                      · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hv, he] at h
             · by_cases hlt : q.toNat < 0x80
               · by_cases hctrl : 0x20 ≤ q.toNat
-                · exact strChars_ascii off q tl hq hs hlt hctrl h (ih tl htl (off + 1))
-                · simp [scanCharsFrom.eq_def, hlt, hctrl] at h
+                · exact strChars_ascii off q  (ByteString.literal tl) hq hs hlt hctrl h (ih tl htl (off + 1))
+                · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, hctrl] at h
               · by_cases htwo : 0xC2 ≤ q.toNat ∧ q.toNat ≤ 0xDF
                 · rcases tl with _ | ⟨b1, rest1⟩
-                  · simp [scanCharsFrom.eq_def, hlt, htwo] at h
+                  · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo] at h
                   · by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF
                     · have hrest : rest1.length ≤ n := by
                         simp only [List.length_cons] at hlen
                         omega
-                      exact strChars_utf8_two off q b1 rest1
+                      exact strChars_utf8_two off q b1  (ByteString.literal rest1)
                         (le_of_toNat htwo.1) (le_of_toNat htwo.2)
                         (le_of_toNat h12.1) (le_of_toNat h12.2) h
                         (ih rest1 hrest (off + 2))
-                    · simp [scanCharsFrom.eq_def, hlt, htwo, h12] at h
+                    · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, h12] at h
                 · by_cases he0 : q = 0xE0
                   · subst he0
                     rcases tl with _ | ⟨b1, _ | ⟨b2, rest1⟩⟩
-                    · simp [scanCharsFrom.eq_def] at h
-                    · simp [scanCharsFrom.eq_def] at h
+                    · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp at h
+                    · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp at h
                     · by_cases h12 : 0xA0 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                           0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF
                       · obtain ⟨h1n, h1n', h2n, h2n'⟩ := h12
                         have hrest : rest1.length ≤ n := by
                           simp only [List.length_cons] at hlen
                           omega
-                        exact strChars_utf8_e0 off b1 b2 rest1
+                        exact strChars_utf8_e0 off b1 b2  (ByteString.literal rest1)
                           (le_of_toNat h1n) (le_of_toNat h1n')
                           (le_of_toNat h2n) (le_of_toNat h2n') h
                           (ih rest1 hrest (off + 3))
-                      · simp [scanCharsFrom.eq_def, h12] at h
+                      · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [h12] at h
                   · by_cases h31 : 0xE1 ≤ q.toNat ∧ q.toNat ≤ 0xEC
                     · rcases tl with _ | ⟨b1, _ | ⟨b2, rest1⟩⟩
-                      · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31] at h
-                      · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31] at h
+                      · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31] at h
+                      · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31] at h
                       · by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                             0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF
                         · obtain ⟨h1n, h1n', h2n, h2n'⟩ := h12
                           have hrest : rest1.length ≤ n := by
                             simp only [List.length_cons] at hlen
                             omega
-                          exact strChars_utf8_e1ec off q b1 b2 rest1
+                          exact strChars_utf8_e1ec off q b1 b2  (ByteString.literal rest1)
                             (le_of_toNat h31.1) (le_of_toNat h31.2)
                             (le_of_toNat h1n) (le_of_toNat h1n')
                             (le_of_toNat h2n) (le_of_toNat h2n') h
                             (ih rest1 hrest (off + 3))
-                        · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, h12] at h
+                        · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, h12] at h
                     · by_cases hed : q = 0xED
                       · subst hed
                         rcases tl with _ | ⟨b1, _ | ⟨b2, rest1⟩⟩
-                        · simp [scanCharsFrom.eq_def, he0] at h
-                        · simp [scanCharsFrom.eq_def, he0] at h
+                        · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0] at h
+                        · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0] at h
                         · by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x9F ∧
                               0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF
                           · obtain ⟨h1n, h1n', h2n, h2n'⟩ := h12
                             have hrest : rest1.length ≤ n := by
                               simp only [List.length_cons] at hlen
                               omega
-                            exact strChars_utf8_ed off b1 b2 rest1
+                            exact strChars_utf8_ed off b1 b2  (ByteString.literal rest1)
                               (le_of_toNat h1n) (le_of_toNat h1n')
                               (le_of_toNat h2n) (le_of_toNat h2n') h
                               (ih rest1 hrest (off + 3))
-                          · simp [scanCharsFrom.eq_def, he0, h12] at h
+                          · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, h12] at h
                       · by_cases h33 : 0xEE ≤ q.toNat ∧ q.toNat ≤ 0xEF
                         · rcases tl with _ | ⟨b1, _ | ⟨b2, rest1⟩⟩
-                          · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33] at h
-                          · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33] at h
+                          · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33] at h
+                          · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33] at h
                           · by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                                 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF
                             · obtain ⟨h1n, h1n', h2n, h2n'⟩ := h12
                               have hrest : rest1.length ≤ n := by
                                 simp only [List.length_cons] at hlen
                                 omega
-                              exact strChars_utf8_eeef off q b1 b2 rest1
+                              exact strChars_utf8_eeef off q b1 b2  (ByteString.literal rest1)
                                 (le_of_toNat h33.1) (le_of_toNat h33.2)
                                 (le_of_toNat h1n) (le_of_toNat h1n')
                                 (le_of_toNat h2n) (le_of_toNat h2n') h
                                 (ih rest1 hrest (off + 3))
-                            · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33, h12] at h
+                            · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33, h12] at h
                         · by_cases hf0 : q = 0xF0
                           · subst hf0
                             rcases tl with _ | ⟨b1, _ | ⟨b2, _ | ⟨b3, rest1⟩⟩⟩
-                            · simp [scanCharsFrom.eq_def, he0, hed] at h
-                            · simp [scanCharsFrom.eq_def, he0, hed] at h
-                            · simp [scanCharsFrom.eq_def, he0, hed] at h
+                            · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed] at h
+                            · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed] at h
+                            · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed] at h
                             · by_cases h12 : 0x90 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                                   0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                                   0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF
@@ -1443,17 +1620,17 @@ theorem scanCharsFrom_sound_aux (n : Nat) :
                                 have hrest : rest1.length ≤ n := by
                                   simp only [List.length_cons] at hlen
                                   omega
-                                exact strChars_utf8_f0 off b1 b2 b3 rest1
+                                exact strChars_utf8_f0 off b1 b2 b3  (ByteString.literal rest1)
                                   (le_of_toNat h1n) (le_of_toNat h1n')
                                   (le_of_toNat h2n) (le_of_toNat h2n')
                                   (le_of_toNat h3n) (le_of_toNat h3n') h
                                   (ih rest1 hrest (off + 4))
-                              · simp [scanCharsFrom.eq_def, he0, hed, h12] at h
+                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed, h12] at h
                           · by_cases h41 : 0xF1 ≤ q.toNat ∧ q.toNat ≤ 0xF3
                             · rcases tl with _ | ⟨b1, _ | ⟨b2, _ | ⟨b3, rest1⟩⟩⟩
-                              · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33, hf0, h41] at h
-                              · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33, hf0, h41] at h
-                              · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33, hf0, h41] at h
+                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33, hf0, h41] at h
+                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33, hf0, h41] at h
+                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33, hf0, h41] at h
                               · by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
                                     0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                                     0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF
@@ -1461,19 +1638,19 @@ theorem scanCharsFrom_sound_aux (n : Nat) :
                                   have hrest : rest1.length ≤ n := by
                                     simp only [List.length_cons] at hlen
                                     omega
-                                  exact strChars_utf8_f1f3 off q b1 b2 b3 rest1
+                                  exact strChars_utf8_f1f3 off q b1 b2 b3  (ByteString.literal rest1)
                                     (le_of_toNat h41.1) (le_of_toNat h41.2)
                                     (le_of_toNat h1n) (le_of_toNat h1n')
                                     (le_of_toNat h2n) (le_of_toNat h2n')
                                     (le_of_toNat h3n) (le_of_toNat h3n') h
                                     (ih rest1 hrest (off + 4))
-                                · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33, hf0, h41, h12] at h
+                                · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33, hf0, h41, h12] at h
                             · by_cases hf4 : q = 0xF4
                               · subst hf4
                                 rcases tl with _ | ⟨b1, _ | ⟨b2, _ | ⟨b3, rest1⟩⟩⟩
-                                · simp [scanCharsFrom.eq_def, he0, hed, hf0] at h
-                                · simp [scanCharsFrom.eq_def, he0, hed, hf0] at h
-                                · simp [scanCharsFrom.eq_def, he0, hed, hf0] at h
+                                · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed, hf0] at h
+                                · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed, hf0] at h
+                                · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed, hf0] at h
                                 · by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x8F ∧
                                       0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                                       0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF
@@ -1481,17 +1658,19 @@ theorem scanCharsFrom_sound_aux (n : Nat) :
                                     have hrest : rest1.length ≤ n := by
                                       simp only [List.length_cons] at hlen
                                       omega
-                                    exact strChars_utf8_f4 off b1 b2 b3 rest1
+                                    exact strChars_utf8_f4 off b1 b2 b3  (ByteString.literal rest1)
                                       (le_of_toNat h1n) (le_of_toNat h1n')
                                       (le_of_toNat h2n) (le_of_toNat h2n')
                                       (le_of_toNat h3n) (le_of_toNat h3n') h
                                       (ih rest1 hrest (off + 4))
-                                  · simp [scanCharsFrom.eq_def, he0, hed, hf0, h12] at h
-                              · simp [scanCharsFrom.eq_def, hlt, htwo, he0, h31, hed, h33, hf0, h41, hf4] at h
+                                  · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [he0, hed, hf0, h12] at h
+                              · simp only [scanCharsFrom, ByteString.data_toList_cons, ByteString.data_toList_literal] at h; unfold scanCharsL at h; simp [hlt, htwo, he0, h31, hed, h33, hf0, h41, hf4] at h
 
 theorem scanCharsFrom_sound {off : Nat} {b : Bytes} {cs : List Nat} {rest : Bytes}
-    (h : scanCharsFrom off b = .ok (cs, rest)) : StrChars .strict b cs rest :=
-  scanCharsFrom_sound_aux b.length b (Nat.le_refl _) off cs rest h
+    (h : scanCharsFrom off b = .ok (cs, rest)) : StrChars .strict b cs rest := by
+  have h' : scanCharsFrom off (ByteString.literal b.data.toList) = .ok (cs, rest) := h
+  have := scanCharsFrom_sound_aux b.data.toList.length b.data.toList (Nat.le_refl _) off cs rest h'
+  rwa [ByteString.literal_data_toList] at this
 
 /-! #### The reflection lemma -/
 
@@ -1773,23 +1952,23 @@ theorem valid_iff_strict (bs : Bytes) (v : Value) :
 /-- `Utf8Char` consumes at least one byte. -/
 theorem utf8_rest_lt {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest) :
     rest.length < b.length := by
-  cases h <;> simp <;> omega
+  cases h <;> simp [ByteString.length_cons, ByteString.length_empty, ByteString.size_cons] <;> omega
 
 /-- A string character consumes at least one byte. -/
 theorem strChar_rest_lt {m : Strictness} {b : Bytes} {c : Nat} {rest : Bytes}
     (h : StrChar m b c rest) : rest.length < b.length := by
   cases h with
   | unescaped h _ _ _ _ => exact utf8_rest_lt h
-  | short h => simp <;> omega
-  | escU _ _ _ => simp <;> omega
-  | escPair _ _ _ _ _ _ => simp <;> omega
-  | escLone _ _ _ => simp <;> omega
+  | short _ => simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+  | escU _ _ _ => simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+  | escPair _ _ _ _ _ _ => simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+  | escLone _ _ _ => simp [ByteString.length_cons, ByteString.size_cons] <;> omega
 
 /-- A string body consumes at least its characters' bytes. -/
 theorem strChars_suffix_lt {m : Strictness} {b : Bytes} {cs : List Nat} {rest : Bytes}
     (h : StrChars m b cs rest) : rest.length < b.length := by
   induction h with
-  | nil => simp
+  | nil => simp [ByteString.length_cons, ByteString.size_cons]
   | cons hch _ ih =>
       have h1 := strChar_rest_lt hch
       omega
@@ -1798,43 +1977,66 @@ theorem strChars_suffix_lt {m : Strictness} {b : Bytes} {cs : List Nat} {rest : 
 theorem utf8_split {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest) :
     ∃ pre, b = pre ++ rest := by
   cases h with
-  | @one b rest _ => exact ⟨[b], rfl⟩
-  | @two b0 b1 rest _ _ _ _ => exact ⟨[b0, b1], rfl⟩
-  | @three₀ b1 b2 rest _ _ _ _ => exact ⟨[0xE0, b1, b2], rfl⟩
-  | @three₁ b0 b1 b2 rest _ _ _ _ _ _ => exact ⟨[b0, b1, b2], rfl⟩
-  | @three₂ b1 b2 rest _ _ _ _ => exact ⟨[0xED, b1, b2], rfl⟩
-  | @three₃ b0 b1 b2 rest _ _ _ _ _ _ => exact ⟨[b0, b1, b2], rfl⟩
-  | @four₀ b1 b2 b3 rest _ _ _ _ _ _ => exact ⟨[0xF0, b1, b2, b3], rfl⟩
-  | @four₁ b0 b1 b2 b3 rest _ _ _ _ _ _ _ _ => exact ⟨[b0, b1, b2, b3], rfl⟩
-  | @four₂ b1 b2 b3 rest _ _ _ _ _ _ => exact ⟨[0xF4, b1, b2, b3], rfl⟩
+  | @one b rest _ =>
+      exact ⟨b +: empty, by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @two b0 b1 rest _ _ _ _ =>
+      exact ⟨b0 +: b1 +: empty, by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @three₀ b1 b2 rest _ _ _ _ =>
+      exact ⟨0xE0 +: b1 +: b2 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @three₁ b0 b1 b2 rest _ _ _ _ _ _ =>
+      exact ⟨b0 +: b1 +: b2 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @three₂ b1 b2 rest _ _ _ _ =>
+      exact ⟨0xED +: b1 +: b2 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @three₃ b0 b1 b2 rest _ _ _ _ _ _ =>
+      exact ⟨b0 +: b1 +: b2 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @four₀ b1 b2 b3 rest _ _ _ _ _ _ =>
+      exact ⟨0xF0 +: b1 +: b2 +: b3 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @four₁ b0 b1 b2 b3 rest _ _ _ _ _ _ _ _ =>
+      exact ⟨b0 +: b1 +: b2 +: b3 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
+  | @four₂ b1 b2 b3 rest _ _ _ _ _ _ =>
+      exact ⟨0xF4 +: b1 +: b2 +: b3 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
 
 /-- A string character consumes a prefix. -/
 theorem strChar_split {m : Strictness} {b : Bytes} {c : Nat} {rest : Bytes}
     (h : StrChar m b c rest) : ∃ pre, b = pre ++ rest := by
   cases h with
   | @unescaped b c rest h8 _ _ _ _ => exact utf8_split h8
-  | @short e c rest _ => exact ⟨[0x5C, e], rfl⟩
+  | @short e c rest _ =>
+      exact ⟨0x5C +: e +: empty, by simp [ByteString.cons_append, ByteString.empty_append]⟩
   | @escU h0 h1 h2 h3 c rest _ _ _ =>
-      exact ⟨[0x5C, 0x75, h0, h1, h2, h3], rfl⟩
+      exact ⟨0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
   | @escPair h0 h1 h2 h3 l0 l1 l2 l3 hi lo c rest _ _ _ _ _ _ =>
-      exact ⟨[0x5C, 0x75, h0, h1, h2, h3, 0x5C, 0x75, l0, l1, l2, l3], rfl⟩
+      exact ⟨0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+         l0 +: l1 +: l2 +: l3 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
   | @escLone h0 h1 h2 h3 c rest _ _ _ =>
-      exact ⟨[0x5C, 0x75, h0, h1, h2, h3], rfl⟩
+      exact ⟨0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: empty,
+        by simp [ByteString.cons_append, ByteString.empty_append]⟩
 
 /-- A string body consumes a prefix, so the remainder it leaves is a suffix. -/
 theorem strChars_split {m : Strictness} {b : Bytes} {cs : List Nat} {rest : Bytes}
     (h : StrChars m b cs rest) : ∃ pre, b = pre ++ rest := by
   induction h with
-  | nil => exact ⟨[0x22], rfl⟩
+  | nil =>
+      exact ⟨0x22 +: empty, by simp [ByteString.cons_append, ByteString.empty_append]⟩
   | cons hch _ ih =>
       obtain ⟨pre1, hp1⟩ := strChar_split hch
       obtain ⟨pre2, hp2⟩ := ih
-      exact ⟨pre1 ++ pre2, by rw [hp1, hp2, List.append_assoc]⟩
+      exact ⟨pre1 ++ pre2, by rw [hp1, hp2, ByteString.append_assoc]⟩
+
 
 /-- Dropping the last `after.length` bytes of a split list gives `after`. -/
 theorem drop_of_split {l pre after : Bytes} (h : l = pre ++ after) :
     l.drop (l.length - after.length) = after := by
-  rw [h, List.length_append, Nat.add_sub_cancel, List.drop_left]
+  rw [h, ByteString.length_append, Nat.add_sub_cancel, ByteString.drop_left]
 
 /-- The remainder a scanned body leaves is no longer than the body: the fact
 `parseKey`'s `consumed` field needs. -/
@@ -1849,67 +2051,81 @@ theorem rfcNumber_nonempty {lex : Bytes} (h : RfcNumber lex) : 0 < lex.length :=
   cases h with
   | pos hb =>
       cases hb with
-      | plain hi => cases hi <;> simp
-      | frac hi _ => cases hi <;> simp
-      | exp hi _ => cases hi <;> simp
-      | fracExp hi _ _ => cases hi <;> simp
-  | neg _ => simp
+      | plain hi => cases hi <;> simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+      | frac hi _ =>
+          cases hi <;> simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+      | exp hi _ =>
+          cases hi <;> simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+      | fracExp hi _ _ =>
+          cases hi <;> simp [ByteString.length_cons, ByteString.size_cons] <;> omega
+  | neg _ => simp [ByteString.length_cons, ByteString.size_cons]
 
 theorem numLexB_nonempty (lex : Bytes) (h : numLexB lex = true) : 0 < lex.length :=
   rfcNumber_nonempty (numLexB_iff lex |>.mp h)
 
-theorem numRun_length_le : ∀ (b : Bytes), (numRun b).length ≤ b.length
-  | [] => by simp [numRun]
-  | c :: rest => by
-      rw [numRun]
-      split
-      · have ih := numRun_length_le rest
-        simp only [List.length_cons]
-        omega
-      · simp
+theorem numRun_length_le (b : Bytes) : (numRun b).length ≤ b.length := by
+  refine ByteString.induction_on
+    (C := fun b => (numRun b).length ≤ b.length) b ?_ ?_
+  · rw [numRun_empty, ByteString.length_empty]
+    exact Nat.zero_le _
+  · intro c rest ih
+    rw [numRun_cons]
+    split
+    · rw [ByteString.length_cons, ByteString.length_cons]
+      omega
+    · rw [ByteString.length_empty]
+      exact Nat.zero_le _
 
 /-- `numRun b` is the longest constituent prefix: it is a prefix of `b`, and the
 byte where it stops is not a constituent. -/
 theorem numRun_spec (b : Bytes) :
     b.take (numRun b).length = numRun b ∧
-      ∀ (c : UInt8) (rest : Bytes), b.drop (numRun b).length = c :: rest →
+      ∀ (c : UInt8) (rest : Bytes), b.drop (numRun b).length = c +: rest →
         NumConstituent c = false := by
-  induction b with
-  | nil => simp [numRun]
-  | cons a rest ih =>
-      rw [numRun]
-      split
-      · rename_i hc
-        obtain ⟨ih1, ih2⟩ := ih
-        refine ⟨?_, ?_⟩
-        · simp only [List.length_cons, List.take_succ_cons]
-          rw [ih1]
-        · intro c tail hd
-          rw [List.length_cons, List.drop_succ_cons] at hd
-          exact ih2 c tail hd
-      · rename_i hc
-        refine ⟨?_, ?_⟩
-        · simp
-        · intro c tail hd
-          rw [List.length_nil, List.drop_zero] at hd
-          injection hd with h1 _
-          rw [← h1]
-          cases hv : NumConstituent a <;> simp_all
+  refine ByteString.induction_on
+    (C := fun b => b.take (numRun b).length = numRun b ∧
+      ∀ (c : UInt8) (rest : Bytes), b.drop (numRun b).length = c +: rest →
+        NumConstituent c = false) b ?_ ?_
+  · rw [numRun_empty, ByteString.length_empty, ByteString.take_zero]
+    refine ⟨rfl, ?_⟩
+    intro c rest hd
+    rw [ByteString.drop_zero] at hd
+    exact absurd hd.symm (ByteString.cons_ne_empty c rest)
+  · intro a rest ih
+    obtain ⟨ih1, ih2⟩ := ih
+    rw [numRun_cons]
+    split
+    · rename_i hc
+      refine ⟨?_, ?_⟩
+      · rw [ByteString.length_cons, ByteString.take_succ_cons, ih1]
+      · intro c tail hd
+        rw [ByteString.length_cons, ByteString.drop_succ_cons] at hd
+        exact ih2 c tail hd
+    · rename_i hc
+      refine ⟨?_, ?_⟩
+      · rw [ByteString.length_empty, ByteString.take_zero]
+      · intro c tail hd
+        rw [ByteString.length_empty, ByteString.drop_zero] at hd
+        obtain ⟨h1, _⟩ := ByteString.cons_inj.mp hd.symm
+        subst h1
+        cases hv : NumConstituent c <;> simp_all
 
 /-! ### Whitespace arithmetic
 
 The parser's measure is `bs.length - i`, so it needs `skipFrom` to be at least its
 index and at most the input's length. -/
 
-theorem spaceRun_le_length : ∀ (bs : Bytes), spaceRun bs ≤ bs.length
-  | [] => by simp [spaceRun]
-  | b :: rest => by
-      rw [spaceRun]
-      split
-      · have ih := spaceRun_le_length rest
-        simp only [List.length_cons]
-        omega
-      · simp
+theorem spaceRun_le_length (bs : Bytes) : spaceRun bs ≤ bs.length := by
+  refine ByteString.induction_on
+    (C := fun bs => spaceRun bs ≤ bs.length) bs ?_ ?_
+  · rw [spaceRun_empty, ByteString.length_empty]
+    exact Nat.zero_le _
+  · intro b rest ih
+    rw [spaceRun_cons]
+    split
+    · rw [ByteString.length_cons]
+      omega
+    · exact Nat.zero_le _
 
 theorem skipFrom_ge (bs : Bytes) (i : Nat) : i ≤ skipFrom bs i := by
   rw [skipFrom_def]
@@ -1922,27 +2138,33 @@ theorem skipFrom_le_length (bs : Bytes) (i : Nat) (h : i ≤ bs.length) :
     skipFrom bs i ≤ bs.length := by
   rw [skipFrom_def]
   have hs := spaceRun_le_length (bs.drop i)
-  have hd : (bs.drop i).length = bs.length - i := by simp
+  have hd : (bs.drop i).length = bs.length - i := ByteString.length_drop bs i
   omega
 
 /-- Every byte of the leading whitespace run is whitespace. -/
-theorem spaceRun_all : ∀ (bs : Bytes) (k : Nat) (b : UInt8),
-    k < spaceRun bs → bs[k]? = some b → IsSpaceB b = true
-  | [], k, b, hk, _ => by simp [spaceRun] at hk
-  | a :: rest, k, b, hk, hget => by
-      rw [spaceRun] at hk
-      split at hk
-      · rename_i ha
-        cases k with
-        | zero =>
-            rw [List.getElem?_cons_zero] at hget
-            injection hget with hb
-            subst hb
-            exact ha
-        | succ k =>
-            rw [List.getElem?_cons_succ] at hget
-            exact spaceRun_all rest k b (by omega) hget
-      · omega
+theorem spaceRun_all (bs : Bytes) (k : Nat) (b : UInt8)
+    (hk : k < spaceRun bs) (hget : bs[k]? = some b) : IsSpaceB b = true := by
+  revert k b
+  refine ByteString.induction_on
+    (C := fun bs => ∀ (k : Nat) (b : UInt8), k < spaceRun bs → bs[k]? = some b →
+      IsSpaceB b = true) bs ?_ ?_
+  · intro k b hk _
+    rw [spaceRun_empty] at hk
+    omega
+  · intro a rest ih k b hk hget
+    rw [spaceRun_cons] at hk
+    split at hk
+    · rename_i ha
+      cases k with
+      | zero =>
+          rw [ByteString.getElem?_cons_zero] at hget
+          injection hget with hb
+          subst hb
+          exact ha
+      | succ k =>
+          rw [ByteString.getElem?_cons_succ] at hget
+          exact ih k b (by omega) hget
+    · omega
 
 /-- The leading whitespace run is a `ws` range: the empty range when the input
 starts with a non-whitespace byte. -/
@@ -1960,7 +2182,7 @@ theorem spaceAt_drop {bs : Bytes} {i j : Nat} (h : SpaceAt (bs.drop i) 0 j) :
   intro k b hi hk hget
   have hbase : i + (k - i) = k := Nat.add_sub_of_le hi
   have hget' : (bs.drop i)[k - i]? = some b := by
-    rw [List.getElem?_drop, hbase]
+    rw [ByteString.getElem?_drop, hbase]
     exact hget
   have hlt : k - i < j := by
     rw [← hbase] at hk
@@ -1976,15 +2198,15 @@ theorem skipFrom_space (bs : Bytes) (i : Nat) : SpaceAt bs i (skipFrom bs i) := 
 /-- The Boolean prefix test and the proposition agree. -/
 theorem hasPrefixB_iff {bs : Bytes} {i : Nat} {p : Bytes} :
     HasPrefixB bs i p = true ↔ HasPrefix bs i p := by
-  simp [HasPrefixB, HasPrefix, decide_eq_true_eq]
+  unfold HasPrefixB HasPrefix
+  exact ⟨fun h => of_decide_eq_true h, fun h => decide_eq_true h⟩
 
 /-- A checked prefix has room in the input: the fact a span's stop needs. -/
 theorem hasPrefix_le {bs : Bytes} {i : Nat} {p : Bytes} (h : HasPrefix bs i p)
     (hne : 0 < p.length) : i + p.length ≤ bs.length := by
   unfold HasPrefix at h
   have h1 : ((bs.drop i).take p.length).length = p.length := by rw [h]
-  rw [List.length_take] at h1
-  rw [List.length_drop] at h1
+  rw [ByteString.length_take, ByteString.length_drop] at h1
   omega
 
 end LeanLLVM.JSON

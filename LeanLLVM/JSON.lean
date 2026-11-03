@@ -8,16 +8,16 @@ cannot be defined in terms of the parser: `Spec` mentions no scanner, tape or
 limit, `Tape` mentions no parser, and only `Correct` mentions both.  `ScanBlock`
 is the block layer — the per-byte mask transition and the block operation that
 reports it — and it reaches `Bytes` alone, so the parser's proof chain never
-sees it.  `ByteString` is the byte vector `Bytes` is being moved to: it is
-`ByteArray`, and it carries the list-shaped operations and lemmas that type
-needs.  No statement in the subtree is written over it yet, so it sits above
-`Scan` — the four digit-run facts it restates are proved there.
+sees it.  `ByteString` is the carrier: it is `ByteArray`, and it holds the
+list-shaped operations and lemmas the proof layer writes against.  `Bytes`
+abbreviates it, so every statement in this subtree is written over the array,
+not over a list; `ByteString` imports nothing and `Bytes` is its first user, so
+the carrier introduces no cycle.
 -/
 import LeanLLVM.JSON.Bytes
 import LeanLLVM.JSON.Utf8
 import LeanLLVM.JSON.Spec
 import LeanLLVM.JSON.Scan
-import LeanLLVM.JSON.ByteString
 import LeanLLVM.JSON.Tape
 import LeanLLVM.JSON.Parse
 import LeanLLVM.JSON.TapeCorrect

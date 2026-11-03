@@ -34,7 +34,7 @@ ledger (met), and a repeatable benchmark driver (met, `probes/bench/bench.sh`).
 |Scalar Lean parser: scanner, grammar, tape builder|implemented and checked|`Scan.lean:166` (`scanChars`), `Parse.lean:88,206,377` (`Parsed`, `parseValue`, `parseBytes`), `Tape.lean:48,314` (`Tape`, `decodeTape`); `scanChars_iff` (`Scan.lean:1500`) ties `scanChars` to the strict string-body relation `StrChars .strict` over RFC 3629 §4's `UTF8-char`, and `valid_iff_strict` (`Scan.lean:1763`) ties the strict grammar to RFC 8259 under `Policy`|
 |`parseRef_sound`, `parseRef_complete` under policy and limits|implemented and checked|`Correct.lean:2707` and `:4029`; both print `[propext, Quot.sound]` under `#print axioms`, pinned in `LeanLLVMTest/Json.lean:388-410`, as do the corollaries `accepted_is_rfc_text`, `rfc_text_accepted_on_policy`, `parseRef_inputTooLong` and `parseRef_not_invalid_on_valid`|
 |`tape_valid`, `decodeTape_correct`|implemented and checked|`TapeCorrect.lean:1041` and `Correct.lean:4079`; same pins. The zero-copy seams are separate theorems — `decoded_number_is_span_bytes` and `decoded_string_is_span_literal`|
-|Scalar executable over fixtures|implemented and checked|`JsonMain.lean` (`leanllvm-json`, with the `default`, `depth2`, `tok4` and `in8` limits profiles) runs `tests/json/manifest.tsv`: 130 rows over 130 corpus files, `bash tests/json/check.sh` exit 0. `lake env lean tests/json-api.lean` and `lake env lean tests/json-tape.lean` exit 0, with `lake build` (1627 jobs) and `lake build LeanLLVMTest` (824). Run in this session against the worktree based on `4411f6a`|
+|Scalar executable over fixtures|implemented and checked (corpus); two routes known broken by the carrier change, pending their notation update|`JsonMain.lean` (`leanllvm-json`, with the `default`, `depth2`, `tok4` and `in8` limits profiles) runs `tests/json/manifest.tsv`: 130 rows over 130 corpus files, `bash tests/json/check.sh` exit 0 at this revision. The two `#guard` routes, `lake env lean tests/json-api.lean` and `lake env lean tests/json-tape.lean`, are known broken by the carrier change and wait on their notation update: under `Bytes := ByteString` their byte literals no longer elaborate (46 and 53 errors), so their exit-0 claim belongs to the revision that last produced it, `4411f6a`, not to this one. `lake build` is green (1635 jobs) and `lake build LeanLLVMTest` (828) at this revision|
 
 Gate: soundness and completeness under the policy and limits; tape meaning
 established; the scalar executable runs the corpus. **Met** on that content:
@@ -152,11 +152,13 @@ comparison against a native reference; J6 requires J5 and that comparison.
    yet in the repository (three setup lines in the untracked
    `tests/call-memory.lean` still need repair) and the axiom pins for the new
    theorems are not yet added to `LeanLLVMTest`.
-6. **Known limitation: parser cost is quadratic in input size.** The working
-   byte representation (`List UInt8`) makes per-token access cost grow with the
-   token's position, so document cost grows with the square of the input;
-   documents of hundreds of kilobytes are not practical until the
-   representation and the access pattern change together. The theorems are
-   stated over `List UInt8`, so re-stating the lemmas that index a byte string
-   is the price of that change, not a local edit. Tracked as J3's opening
-   question.
+6. **Known limitation: parser cost may still be quadratic in input size.** The
+   working byte representation is the contiguous carrier `ByteString`
+   (`ByteArray`) that `Bytes` abbreviates, so a byte is read at an index rather
+   than walked to, and the theorems are stated over that carrier. Whether
+   document cost still grows with the square of the input depends on whether the
+   parser's suffix operations — `drop` in particular — copy, and on the access
+   pattern; that is not assumed either way here. Documents of hundreds of
+   kilobytes are not practical until it is measured and, if a quadratic term
+   remains, the access pattern changes with the representation. Tracked as J3's
+   opening question; the measurement is still open.

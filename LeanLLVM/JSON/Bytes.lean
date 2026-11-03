@@ -6,12 +6,16 @@ RFC 8259 §2 fixes the whitespace set; RFC 8259 §6 and §7 fix the digit and he
 sets; RFC 7493 §2.1 fixes the character restriction, which is a predicate on
 code points and therefore lives here too.
 -/
+import LeanLLVM.JSON.ByteString
+
 namespace LeanLLVM.JSON
 
-/-- The proof layer's byte string.  `ByteArray` appears only at the API boundary
-(`parseDocument`), so every definition and theorem in this subtree is about bytes
-as a list. -/
-abbrev Bytes := List UInt8
+open ByteString
+
+/-- The proof layer's byte string: the contiguous carrier of `ByteString`, so
+`bs[i]?`, `bs.size`, `bs.drop n` and `bs ++ bs'` are the vector's operations and
+no statement in this subtree is about a linked list. -/
+abbrev Bytes := ByteString
 
 /-- The four JSON whitespace bytes of RFC 8259 §2's `ws` production. -/
 def IsSpaceB (b : UInt8) : Bool :=
@@ -39,49 +43,26 @@ def Hex4 (a b c d : UInt8) : Option Nat :=
 def SpaceAt (bs : Bytes) (i j : Nat) : Prop :=
   i ≤ j ∧ ∀ (k : Nat) (b : UInt8), i ≤ k → k < j → bs[k]? = some b → IsSpaceB b = true
 
-/-- The length of the whitespace run at the head of the argument. -/
-def spaceRun : Bytes → Nat
+/-- The whitespace run, over the carrier's list view.  This is the one definition
+of the scan; `spaceRun` applies it to the view. -/
+private def spaceRunL : List UInt8 → Nat
   | [] => 0
-  | b :: rest => if IsSpaceB b then spaceRun rest + 1 else 0
+  | b :: rest => if IsSpaceB b then spaceRunL rest + 1 else 0
 
-/-! ### A cursor over the byte list
+/-- The length of the whitespace run at the head of the argument. -/
+def spaceRun (bs : Bytes) : Nat := spaceRunL bs.data.toList
 
-A cursor keeps the unread suffix together with its absolute offset and its
-length, so a reader that threads it takes the suffix directly, names an absolute
-position as `off + k`, and reads the length without walking the suffix.
+theorem spaceRun_cons (b : UInt8) (bs : Bytes) :
+    spaceRun (cons b bs) = if IsSpaceB b then spaceRun bs + 1 else 0 := rfl
 
-`len` and `hlen` are redundant with `rest.length`; `hlen` is a proof field, so it
-carries no compiled data.  Both are carried for the parsers that thread the
-cursor: `Cursor.advance` reads `len` to keep the invariant, but no caller
-consumes it yet, and `skipFrom`'s bridge below is
-`(skipC (Cursor.of bs i)).off`, so it computes the dropped suffix's length in
-`Cursor.of` and discards it.  Until those callers thread the cursor, every
-`skipFrom bs i` pays one extra suffix-length walk per call. -/
-structure Cursor where
-  rest : Bytes
-  off : Nat
-  len : Nat
-  hlen : len = rest.length
-
-/-- The cursor over the suffix starting at `i`. -/
-def Cursor.of (bs : Bytes) (i : Nat) : Cursor :=
-  { rest := bs.drop i, off := i, len := (bs.drop i).length, hlen := rfl }
-
-/-- Consume `k` bytes. -/
-def Cursor.advance (c : Cursor) (k : Nat) : Cursor :=
-  { rest := c.rest.drop k, off := c.off + k, len := c.len - k,
-    hlen := by rw [c.hlen, List.length_drop] }
-
-/-- Cursor form of the whitespace skip: advance past the run at the cursor. -/
-def skipC (c : Cursor) : Cursor := c.advance (spaceRun c.rest)
+theorem spaceRun_empty : spaceRun (empty : Bytes) = 0 := rfl
 
 /-- The first index at or after `i` that is not whitespace; `bs.length` when the
 rest of the input is whitespace. -/
-def skipFrom (bs : Bytes) (i : Nat) : Nat := (skipC (Cursor.of bs i)).off
+def skipFrom (bs : Bytes) (i : Nat) : Nat := i + spaceRun (bs.drop i)
 
-/-- The arithmetic form of `skipFrom`: the cursor's offset after the skip is its
-starting offset plus the run's length, so lemmas stated in terms of `spaceRun`
-rewrite rather than re-derive. -/
+/-- The arithmetic form of `skipFrom`, by `rfl`: the definition already is that
+form, and the lemma is the name proofs rewrite with. -/
 theorem skipFrom_def (bs : Bytes) (i : Nat) :
     skipFrom bs i = i + spaceRun (bs.drop i) := rfl
 
@@ -97,18 +78,26 @@ def NumConstituent (b : UInt8) : Bool :=
   IsDigitB b || decide (b = 0x2E) || decide (b = 0x65) || decide (b = 0x45) ||
     decide (b = 0x2B) || decide (b = 0x2D)
 
-/-- The longest prefix of the argument consisting of number constituents. -/
-def numRun : Bytes → Bytes
+/-- The longest prefix of the argument consisting of number constituents, over
+the carrier's list view. -/
+private def numRunL : List UInt8 → List UInt8
   | [] => []
-  | b :: rest => if NumConstituent b then b :: numRun rest else []
+  | b :: rest => if NumConstituent b then b :: numRunL rest else []
 
-namespace List
+/-- The longest prefix of the argument consisting of number constituents. -/
+def numRun (bs : Bytes) : Bytes := literal (numRunL bs.data.toList)
 
-/-- Positional lookup under the method spelling: `l.get? n` is `l[n]?`.  It is
-the form the tape scenario's span assertion reads a source byte with. -/
-def get? (l : List α) (n : Nat) : Option α := l[n]?
+theorem numRun_empty : numRun (empty : Bytes) = empty := rfl
 
-end List
+theorem numRun_cons (b : UInt8) (bs : Bytes) :
+    numRun (cons b bs) = if NumConstituent b then cons b (numRun bs) else empty := by
+  by_cases h : NumConstituent b = true
+  · rw [if_pos h]
+    apply ByteString.eq_of_toList_eq
+    simp [numRun, numRunL, ByteString.data_toList_cons, ByteString.toList_cons, h]
+  · rw [if_neg h]
+    apply ByteString.eq_of_toList_eq
+    simp [numRun, numRunL, ByteString.data_toList_cons, ByteString.toList_empty, h]
 
 /-- A Unicode scalar value: a code point that is not a surrogate.  The
 `≤ 0x10FFFF` bound is already imposed by `Utf8Char`, and is restated because this

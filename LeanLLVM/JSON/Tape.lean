@@ -20,6 +20,8 @@ import LeanLLVM.JSON.Scan
 
 namespace LeanLLVM.JSON
 
+open ByteString
+
 /-- A half-open byte range into the tape's input. -/
 structure Span where
   start : Nat
@@ -115,11 +117,12 @@ claims and neither is a tape over `{"a"1}`. -/
 def decodeValue (bs : Bytes) (i : Nat) : (toks : List Token) → Option (Decoded toks)
   | [] => none
   | .null s :: rest =>
-      if s == ⟨i, i + 4⟩ && HasPrefixB bs i [0x6E, 0x75, 0x6C, 0x6C] then
+      if s == ⟨i, i + 4⟩ && HasPrefixB bs i (literal [0x6E, 0x75, 0x6C, 0x6C]) then
         some { value := .null, rest := rest, cursor := i + 4, shrunk := by simp }
       else none
   | .bool b s :: rest =>
-      let lit := if b then [0x74, 0x72, 0x75, 0x65] else [0x66, 0x61, 0x6C, 0x73, 0x65]
+      let lit := if b then literal [0x74, 0x72, 0x75, 0x65]
+        else literal [0x66, 0x61, 0x6C, 0x73, 0x65]
       if s == ⟨i, i + lit.length⟩ && HasPrefixB bs i lit then
         some { value := .bool b, rest := rest, cursor := i + lit.length,
                shrunk := by simp }

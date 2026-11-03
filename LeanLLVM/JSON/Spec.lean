@@ -12,6 +12,8 @@ import LeanLLVM.JSON.Utf8
 
 namespace LeanLLVM.JSON
 
+open ByteString
+
 /-- The logical JSON value.  Strings are lists of Unicode code points rather than
 Lean `String`s: the policy is about code points, and rendering to `String` is a
 separate, unproved view.  `RfcText` accepts a reading whose list can contain a
@@ -252,45 +254,46 @@ RFC 8259 §6, with the ABNF's own production names as clause docstrings. -/
 
 /-- `1*DIGIT` -/
 inductive Digits : Bytes → Prop where
-  | one {b : UInt8} (h : IsDigitB b = true) : Digits [b]
+  | one {b : UInt8} (h : IsDigitB b = true) : Digits (b +: empty)
   | more {b : UInt8} {bs : Bytes} (h : IsDigitB b = true) (hr : Digits bs) :
-      Digits (b :: bs)
+      Digits (b +: bs)
 
 /-- `*DIGIT`: the zero-or-more digit tail RFC 8259 §6's `int` production carries
 (`digit1-9 *DIGIT`).  Distinct from `Digits` so the `1*DIGIT` uses above stay
 `1*DIGIT`. -/
 inductive Digits0 : Bytes → Prop where
-  | nil : Digits0 []
+  | nil : Digits0 empty
   | more {b : UInt8} {bs : Bytes} (h : IsDigitB b = true) (hr : Digits0 bs) :
-      Digits0 (b :: bs)
+      Digits0 (b +: bs)
 
 /-- `int = zero / ( digit1-9 *DIGIT )`.  The tail is `*DIGIT`, so a one-digit
 `int` such as `1` has a derivation. -/
 inductive IntPart : Bytes → Prop where
-  | zero : IntPart [0x30]
+  | zero : IntPart (0x30 +: empty)
   | lead {b : UInt8} {bs : Bytes} (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39)
-      (hr : Digits0 bs) : IntPart (b :: bs)
+      (hr : Digits0 bs) : IntPart (b +: bs)
 
 /-- `exp = e [ minus / plus ] 1*DIGIT`, with `e = %x65 / %x45` -/
 inductive ExpPart : Bytes → Prop where
   | mk {e : UInt8} {sign ds : Bytes} (he : e = 0x65 ∨ e = 0x45)
-      (hs : sign = [] ∨ sign = [0x2B] ∨ sign = [0x2D]) (hd : Digits ds) :
-      ExpPart (e :: sign ++ ds)
+      (hs : sign = empty ∨ sign = (0x2B +: empty) ∨ sign = (0x2D +: empty))
+      (hd : Digits ds) :
+      ExpPart (e +: (sign ++ ds))
 
 /-- `[ frac ] [ exp ]` applied to an `int`: the four shapes of §6's `number`
 without its optional `minus`. -/
 inductive NumBody : Bytes → Prop where
   | plain {ip : Bytes} (h : IntPart ip) : NumBody ip
   | frac {ip fs : Bytes} (hi : IntPart ip) (hf : Digits fs) :
-      NumBody (ip ++ 0x2E :: fs)
+      NumBody (ip ++ (0x2E +: fs))
   | exp {ip es : Bytes} (hi : IntPart ip) (he : ExpPart es) : NumBody (ip ++ es)
   | fracExp {ip fs es : Bytes} (hi : IntPart ip) (hf : Digits fs)
-      (he : ExpPart es) : NumBody (ip ++ 0x2E :: fs ++ es)
+      (he : ExpPart es) : NumBody (ip ++ (0x2E +: fs) ++ es)
 
 /-- `number = [ minus ] int [ frac ] [ exp ]` -/
 inductive RfcNumber : Bytes → Prop where
   | pos {b : Bytes} (h : NumBody b) : RfcNumber b
-  | neg {b : Bytes} (h : NumBody b) : RfcNumber (0x2D :: b)
+  | neg {b : Bytes} (h : NumBody b) : RfcNumber (0x2D +: b)
 
 /-- `bs[i…j)` is a JSON number lexeme.  The `i ≤ j` conjunct is what keeps the
 empty range out, and the lexeme is a function of the range. -/
@@ -345,31 +348,31 @@ inductive StrChar (m : Strictness) : Bytes → Nat → Bytes → Prop where
       StrChar m b c rest
   /-- `escape ( %x22 / %x5C / %x2F / %x62 / %x66 / %x6E / %x72 / %x74 )` -/
   | short {e : UInt8} {c : Nat} {rest : Bytes} (h : EscVal e = some c) :
-      StrChar m (0x5C :: e :: rest) c rest
+      StrChar m (0x5C +: e +: rest) c rest
   /-- `%x75 4HEXDIG` whose digits denote a scalar -/
   | escU {h0 h1 h2 h3 : UInt8} {c : Nat} {rest : Bytes}
       (hx : Hex4 h0 h1 h2 h3 = some c) (hs : IsScalar c)
       (hm : ModeAllows m c) :
-      StrChar m (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: rest) c rest
+      StrChar m (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest) c rest
   /-- §7's surrogate-pair rule: a high and a low escape denote one code point -/
   | escPair {h0 h1 h2 h3 l0 l1 l2 l3 : UInt8} {hi lo c : Nat} {rest : Bytes}
       (hhi : Hex4 h0 h1 h2 h3 = some hi) (hlo : Hex4 l0 l1 l2 l3 = some lo)
       (hh : IsHighSurrogate hi) (hl : IsLowSurrogate lo)
       (hc : c = 0x10000 + (hi - 0xD800) * 0x400 + (lo - 0xDC00))
       (hm : ModeAllows m c) :
-      StrChar m (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: 0x5C :: 0x75 ::
-        l0 :: l1 :: l2 :: l3 :: rest) c rest
+      StrChar m (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+        l0 +: l1 +: l2 +: l3 +: rest) c rest
   /-- §8.2's case: an unpaired `\u` escape denotes its code unit, and only the
   RFC grammar derives it -/
   | escLone {h0 h1 h2 h3 : UInt8} {c : Nat} {rest : Bytes}
       (hm : m = .rfc) (hx : Hex4 h0 h1 h2 h3 = some c) (hs : ¬ IsScalar c) :
-      StrChar m (0x5C :: 0x75 :: h0 :: h1 :: h2 :: h3 :: rest) c rest
+      StrChar m (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest) c rest
 
 /-- `string = quotation-mark *char quotation-mark`.  The base case matches the
 closing quote, so the remainder is what follows the literal and a body cannot
 contain a raw quote. -/
 inductive StrChars (m : Strictness) : Bytes → List Nat → Bytes → Prop where
-  | nil {rest : Bytes} : StrChars m (0x22 :: rest) [] rest
+  | nil {rest : Bytes} : StrChars m (0x22 +: rest) [] rest
   | cons {b : Bytes} {c : Nat} {mid rest : Bytes} {cs : List Nat}
       (h : StrChar m b c mid) (hr : StrChars m mid cs rest) :
       StrChars m b (c :: cs) rest
@@ -392,13 +395,13 @@ holds when `bs[i…j)` spells the value `v` in mode `m`.  Nothing here mentions 
 parser, a tape or a limit. -/
 inductive ValueAt (m : Strictness) (bs : Bytes) : Nat → Value → Nat → Prop where
   /-- §3 `null = %x6e.75.6c.6c` -/
-  | null {i : Nat} (h : HasPrefix bs i [0x6E, 0x75, 0x6C, 0x6C]) :
+  | null {i : Nat} (h : HasPrefix bs i (literal [0x6E, 0x75, 0x6C, 0x6C])) :
       ValueAt m bs i .null (i + 4)
   /-- §3 `true = %x74.72.75.65` -/
-  | true {i : Nat} (h : HasPrefix bs i [0x74, 0x72, 0x75, 0x65]) :
+  | true {i : Nat} (h : HasPrefix bs i (literal [0x74, 0x72, 0x75, 0x65])) :
       ValueAt m bs i (.bool true) (i + 4)
   /-- §3 `false = %x66.61.6c.73.65` -/
-  | false {i : Nat} (h : HasPrefix bs i [0x66, 0x61, 0x6C, 0x73, 0x65]) :
+  | false {i : Nat} (h : HasPrefix bs i (literal [0x66, 0x61, 0x6C, 0x73, 0x65])) :
       ValueAt m bs i (.bool false) (i + 5)
   /-- §6 `number` -/
   | number {i j : Nat} (h : NumberAt bs i j) :
@@ -486,6 +489,6 @@ def ValidDocument (bs : Bytes) (v : Value) : Prop := RfcText bs v ∧ Policy v
 guarantees after a value, and what makes the number scan's maximal run equal the
 semantic lexeme. -/
 def NumberStop (bs : Bytes) (j : Nat) : Prop :=
-  ∀ (c : UInt8) (rest : Bytes), bs.drop j = c :: rest → NumConstituent c = false
+  ∀ (c : UInt8) (rest : Bytes), bs.drop j = c +: rest → NumConstituent c = false
 
 end LeanLLVM.JSON

@@ -40,9 +40,9 @@ def renderValue : Value → String
   | .array es => "[" ++ String.intercalate "," (renderValues es) ++ "]"
   | .object ms => "{" ++ String.intercalate "," (renderMembers ms) ++ "}"
 
-def numHexChars : Bytes → List String
-  | [] => []
-  | b :: rest => hexByte b.toNat :: numHexChars rest
+/-- The lexeme's bytes as lowercase hex, read over the carrier's list view. -/
+def numHexChars (bs : Bytes) : List String :=
+  bs.toList.map (fun b => hexByte b.toNat)
 
 def renderCodePoints : List Nat → List String
   | [] => []

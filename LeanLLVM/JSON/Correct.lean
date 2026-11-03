@@ -17,20 +17,26 @@ namespace LeanLLVM.JSON
 
 /-! #### Byte and number helpers -/
 
-private theorem drop_eq_cons_of_get? {l : List UInt8} {i : Nat} {a : UInt8}
-    (h : l[i]? = some a) : l.drop i = a :: l.drop (i + 1) := by
-  obtain ⟨hlt, hget⟩ := List.getElem?_eq_some_iff.mp h
-  rw [List.drop_eq_getElem_cons hlt, hget]
+private theorem drop_eq_cons_of_get? {bs : Bytes} {i : Nat} {a : UInt8}
+    (h : bs[i]? = some a) : bs.drop i = a +: bs.drop (i + 1) := by
+  obtain ⟨hlt, hget⟩ := ByteString.getElem?_eq_some_iff.mp h
+  rw [ByteString.drop_eq_getElem_cons (ByteString.getElem?_eq_getElem hlt), hget]
 
 private theorem hasPrefix_head {bs : Bytes} {i : Nat} {b : UInt8} {p : Bytes}
-    (h : HasPrefix bs i (b :: p)) : bs[i]? = some b := by
+    (h : HasPrefix bs i (b +: p)) : bs[i]? = some b := by
   unfold HasPrefix at h
-  have h1 : ((bs.drop i).take (b :: p).length).head? = some b := by
-    rw [h]; rfl
-  rw [List.head?_take] at h1
-  simp only [List.length_cons] at h1
+  have h1 : ByteString.head? ((bs.drop i).take (b +: p).length) = some b := by
+    rw [h]; exact ByteString.head?_cons b p
+  rw [ByteString.head?_take] at h1
+  simp only [ByteString.length_cons] at h1
   rw [if_neg (by omega)] at h1
-  rwa [List.head?_drop] at h1
+  rwa [ByteString.head?_drop] at h1
+
+/-- `hasPrefix_head` at the literal spelling the grammar's constructors use. -/
+private theorem hasPrefix_head_lit {bs : Bytes} {i : Nat} {b : UInt8} {l : List UInt8}
+    (h : HasPrefix bs i (ByteString.literal (b :: l))) : bs[i]? = some b := by
+  rw [ByteString.literal_cons] at h
+  exact hasPrefix_head h
 
 private def ValueStartB (b : UInt8) : Bool :=
   decide (b = 0x6E) || decide (b = 0x74) || decide (b = 0x66) ||
@@ -84,24 +90,33 @@ private theorem digits0_constituent {bs : Bytes} (h : Digits0 bs) :
   isDigit_constituent (digits0_all h b hb)
 
 private theorem intPart_head {b : UInt8} {rest : Bytes}
-    (h : IntPart (b :: rest)) : IsDigitB b = true := by
-  cases h with
-  | zero => decide
-  | lead h1 h2 _ =>
-      simp only [IsDigitB, Bool.and_eq_true, decide_eq_true_eq]
-      exact ⟨UInt8.le_trans (by decide : (0x30 : UInt8) ≤ 0x31) h1, h2⟩
+    (h : IntPart (b +: rest)) : IsDigitB b = true := by
+  have key : ∀ {bs : Bytes}, IntPart bs → ∀ b rest, bs = b +: rest → IsDigitB b = true := by
+    intro bs hbs
+    cases hbs with
+    | zero =>
+        intro b rest heq
+        rw [ByteString.cons_inj] at heq
+        rw [← heq.1]; decide
+    | lead h1 h2 _ =>
+        intro b rest heq
+        rw [ByteString.cons_inj] at heq
+        rw [← heq.1]
+        simp only [IsDigitB, Bool.and_eq_true, decide_eq_true_eq]
+        exact ⟨UInt8.le_trans (by decide : (0x30 : UInt8) ≤ 0x31) h1, h2⟩
+  exact key h b rest rfl
 
 private theorem intPart_constituent {bs : Bytes} (h : IntPart bs) :
     ∀ b ∈ bs, NumConstituent b = true := by
   cases h with
   | zero =>
       intro b hb
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      simp only [ByteString.mem_cons, ByteString.not_mem_empty, or_false] at hb
       subst hb
       decide
   | lead h1 h2 hr =>
       intro b hb
-      simp only [List.mem_cons] at hb
+      simp only [ByteString.mem_cons] at hb
       rcases hb with rfl | hb
       · exact isDigit_constituent (by
           simp only [IsDigitB, Bool.and_eq_true, decide_eq_true_eq]
@@ -113,15 +128,15 @@ private theorem expPart_constituent {bs : Bytes} (h : ExpPart bs) :
   cases h with
   | mk he hs hd =>
       intro b hb
-      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false, false_or,
+      simp only [ByteString.mem_append, ByteString.mem_cons, ByteString.not_mem_empty, or_false, false_or,
         or_assoc] at hb
       rcases hb with rfl | hb | hb
       · rcases he with rfl | rfl <;> decide
       · rcases hs with rfl | rfl | rfl
         · simp at hb
-        · simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+        · simp only [ByteString.mem_cons, ByteString.not_mem_empty, or_false] at hb
           subst hb; decide
-        · simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+        · simp only [ByteString.mem_cons, ByteString.not_mem_empty, or_false] at hb
           subst hb; decide
       · exact digits_constituent hd b hb
 
@@ -131,7 +146,7 @@ private theorem numBody_constituent {bs : Bytes} (h : NumBody bs) :
   | plain hi => exact intPart_constituent hi
   | frac hi hf =>
       intro b hb
-      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false, false_or,
+      simp only [ByteString.mem_append, ByteString.mem_cons, ByteString.not_mem_empty, or_false, false_or,
         or_assoc] at hb
       rcases hb with hb | rfl | hb
       · exact intPart_constituent hi b hb
@@ -139,13 +154,13 @@ private theorem numBody_constituent {bs : Bytes} (h : NumBody bs) :
       · exact digits_constituent hf b hb
   | exp hi he =>
       intro b hb
-      rw [List.mem_append] at hb
+      rw [ByteString.mem_append] at hb
       rcases hb with hb | hb
       · exact intPart_constituent hi b hb
       · exact expPart_constituent he b hb
   | fracExp hi hf he =>
       intro b hb
-      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false, false_or,
+      simp only [ByteString.mem_append, ByteString.mem_cons, ByteString.not_mem_empty, or_false, false_or,
         or_assoc] at hb
       rcases hb with hb | rfl | hb | hb
       · exact intPart_constituent hi b hb
@@ -159,13 +174,13 @@ private theorem rfcNumber_constituent {lex : Bytes} (h : RfcNumber lex) :
   | pos hb => exact numBody_constituent hb
   | neg hb =>
       intro b hbmem
-      simp only [List.mem_cons] at hbmem
+      simp only [ByteString.mem_cons] at hbmem
       rcases hbmem with rfl | hbmem
       · decide
       · exact numBody_constituent hb b hbmem
 
 private theorem numBody_head {bs : Bytes} (h : NumBody bs) :
-    ∀ b rest, bs = b :: rest → IsDigitB b = true := by
+    ∀ b rest, bs = b +: rest → IsDigitB b = true := by
   cases h with
   | plain hi =>
       intro b rest heq
@@ -174,104 +189,114 @@ private theorem numBody_head {bs : Bytes} (h : NumBody bs) :
       intro b rest heq
       cases hi with
       | zero =>
-          simp only [List.cons_append, List.cons.injEq] at heq
+          simp only [ByteString.cons_append, ByteString.cons_inj] at heq
           rw [← heq.1]; decide
       | lead h1 h2 hr =>
-          simp only [List.cons_append, List.cons.injEq] at heq
+          simp only [ByteString.cons_append, ByteString.cons_inj] at heq
           rw [← heq.1]
           exact intPart_head (.lead h1 h2 hr)
   | exp hi he =>
       intro b rest heq
       cases hi with
       | zero =>
-          simp only [List.cons_append, List.cons.injEq] at heq
+          simp only [ByteString.cons_append, ByteString.cons_inj] at heq
           rw [← heq.1]; decide
       | lead h1 h2 hr =>
-          simp only [List.cons_append, List.cons.injEq] at heq
+          simp only [ByteString.cons_append, ByteString.cons_inj] at heq
           rw [← heq.1]
           exact intPart_head (.lead h1 h2 hr)
   | fracExp hi hf he =>
       intro b rest heq
       cases hi with
       | zero =>
-          simp only [List.cons_append, List.cons.injEq] at heq
+          simp only [ByteString.cons_append, ByteString.cons_inj] at heq
           rw [← heq.1]; decide
       | lead h1 h2 hr =>
-          simp only [List.cons_append, List.cons.injEq] at heq
+          simp only [ByteString.cons_append, ByteString.cons_inj] at heq
           rw [← heq.1]
           exact intPart_head (.lead h1 h2 hr)
 
 private theorem rfcNumber_head_aux {lex : Bytes} (h : RfcNumber lex) :
-    ∀ b rest, lex = b :: rest → IsDigitB b = true ∨ b = 0x2D := by
+    ∀ b rest, lex = b +: rest → IsDigitB b = true ∨ b = 0x2D := by
   cases h with
   | pos hb =>
       intro b rest heq
       exact Or.inl (numBody_head hb b rest heq)
   | neg hb =>
       intro b rest heq
-      simp only [List.cons.injEq] at heq
+      simp only [ByteString.cons_inj] at heq
       exact Or.inr (heq.1.symm)
 
 private theorem rfcNumber_head {b : UInt8} {rest : Bytes}
-    (h : RfcNumber (b :: rest)) : IsDigitB b = true ∨ b = 0x2D :=
+    (h : RfcNumber (b +: rest)) : IsDigitB b = true ∨ b = 0x2D :=
   rfcNumber_head_aux h b rest rfl
 
 /-! #### `numRun` facts -/
 
 private theorem numRun_all (b : Bytes) : ∀ x ∈ numRun b, NumConstituent x = true := by
-  induction b with
-  | nil => simp [numRun]
-  | cons a rest ih =>
-      rw [numRun]
+  induction b using ByteString.induction_on with
+  | h0 => simp [numRun_empty]
+  | hs a rest ih =>
+      rw [numRun_cons]
       split
       · rename_i ha
         intro x hx
-        simp only [List.mem_cons] at hx
+        simp only [ByteString.mem_cons] at hx
         rcases hx with rfl | hx
         · exact ha
         · exact ih x hx
       · simp
 
-private theorem length_le_numRun :
-    ∀ (b : Bytes) (n : Nat), n ≤ b.length →
-      (∀ x ∈ b.take n, NumConstituent x = true) → n ≤ (numRun b).length
-  | [], n, hn, _ => by simp at hn; omega
-  | a :: t, n, hn, hall => by
+private theorem length_le_numRun (b : Bytes) :
+    ∀ (n : Nat), n ≤ b.length →
+      (∀ x ∈ b.take n, NumConstituent x = true) → n ≤ (numRun b).length := by
+  induction b using ByteString.induction_on with
+  | h0 =>
+      intro n hn _
+      simp only [ByteString.length_empty] at hn
+      simp only [numRun_empty, ByteString.length_empty]
+      omega
+  | hs a t ih =>
+      intro n hn hall
       cases n with
       | zero => simp
       | succ m =>
-          rw [numRun]
+          rw [numRun_cons]
           split
           · rename_i ha
-            simp only [List.length_cons]
-            have hm : m ≤ t.length := by simpa using hn
+            rw [ByteString.length_cons]
+            have hm : m ≤ t.length := by
+              have h2 := hn
+              rw [ByteString.length_cons] at h2
+              omega
             have hmem : ∀ x ∈ t.take m, NumConstituent x = true := by
               intro x hx
               exact hall x (by
-                rw [List.take_succ_cons]
-                exact List.mem_cons_of_mem a hx)
-            have := length_le_numRun t m hm hmem
+                rw [ByteString.take_succ_cons]
+                exact ByteString.mem_cons_of_mem (b := a) hx)
+            have := ih m hm hmem
             omega
           · rename_i ha
             have htrue : NumConstituent a = true := hall a (by
-              rw [List.take_succ_cons]
-              exact List.mem_cons_self)
+              rw [ByteString.take_succ_cons]
+              exact ByteString.mem_cons_self a (t.take m))
             exact absurd htrue ha
 
 private theorem numRun_byte {b : Bytes} {k : Nat} (hk : k < (numRun b).length) :
-    ∃ c rest, b.drop k = c :: rest ∧ NumConstituent c = true := by
+    ∃ c rest, b.drop k = c +: rest ∧ NumConstituent c = true := by
   have htake := (numRun_spec b).1
   have hlen : (numRun b).length ≤ b.length := numRun_length_le b
   have hklt : k < b.length := Nat.lt_of_lt_of_le hk hlen
   have hget : b[k]? = (numRun b)[k]? := by
-    rw [← htake, List.getElem?_take]
-    simp [hk]
+    rw [← htake, ByteString.getElem?_take]
+    rw [if_pos (by simpa only [ByteString.length_eq_size] using hk)]
   have hval : b[k] = (numRun b)[k] := by
-    rw [List.getElem?_eq_getElem hklt, List.getElem?_eq_getElem hk] at hget
+    rw [ByteString.getElem?_eq_getElem hklt, ByteString.getElem?_eq_getElem hk] at hget
     injection hget
-  refine ⟨b[k], b.drop (k+1), List.drop_eq_getElem_cons hklt, ?_⟩
+  refine ⟨b[k], b.drop (k+1),
+    ByteString.drop_eq_getElem_cons (ByteString.getElem?_eq_getElem hklt), ?_⟩
   rw [hval]
-  exact numRun_all b _ (List.getElem_mem hk)
+  exact numRun_all b _ (ByteString.getElem_mem hk)
 
 /-! #### Whitespace -/
 
@@ -279,26 +304,27 @@ private theorem spaceRun_eq_of_all {l : Bytes} {n : Nat} {b : UInt8}
     (hall : ∀ k c, k < n → l[k]? = some c → IsSpaceB c = true)
     (hn : l[n]? = some b) (hns : IsSpaceB b = false) :
     spaceRun l = n := by
-  induction l generalizing n with
-  | nil => simp at hn
-  | cons a t ih =>
+  induction l using ByteString.induction_on generalizing n with
+  | h0 => simp [ByteString.getElem?_empty] at hn
+  | hs a t ih =>
       cases n with
       | zero =>
           have ha : IsSpaceB a = false := by
-            have h0 : (a :: t)[0]? = some b := hn
-            simp only [List.getElem?_cons_zero] at h0
+            have h0 : (a +: t)[0]? = some b := hn
+            simp only [ByteString.getElem?_cons_zero] at h0
             injection h0 with h0
             rw [h0]; exact hns
-          rw [spaceRun]
+          rw [spaceRun_cons]
           simp [ha]
       | succ m =>
           have ha : IsSpaceB a = true := hall 0 a (by omega) rfl
           have htail : ∀ k c, k < m → t[k]? = some c → IsSpaceB c = true := by
             intro k c hk hc
-            exact hall (k+1) c (by omega) (by simpa using hc)
-          have hnt : t[m]? = some b := by simpa using hn
+            exact hall (k+1) c (by omega) (by simpa only [ByteString.getElem?_cons_succ] using hc)
+          have hnt : t[m]? = some b := by
+            simpa only [ByteString.getElem?_cons_succ] using hn
           have ih' : spaceRun t = m := ih htail hnt
-          rw [spaceRun]
+          rw [spaceRun_cons]
           simp only [ha, if_true]
           omega
 
@@ -308,10 +334,10 @@ private theorem skipFrom_eq_of_spaceAt {bs : Bytes} {i j : Nat} {b : UInt8}
   obtain ⟨hij, hall⟩ := hsp
   have hspace : ∀ k c, k < j - i → (bs.drop i)[k]? = some c → IsSpaceB c = true := by
     intro k c hk hc
-    rw [List.getElem?_drop] at hc
+    rw [ByteString.getElem?_drop] at hc
     exact hall (i + k) c (by omega) (by omega) hc
   have hni : (bs.drop i)[j - i]? = some b := by
-    rw [List.getElem?_drop, Nat.add_sub_of_le hij]
+    rw [ByteString.getElem?_drop, Nat.add_sub_of_le hij]
     exact hj
   have h := spaceRun_eq_of_all hspace hni hns
   rw [skipFrom_def]
@@ -329,9 +355,9 @@ private theorem valueAt_startB {m : Strictness} {bs : Bytes} {i : Nat} {v : Valu
     (h : ValueAt m bs i v j) :
     ∃ b, bs[i]? = some b ∧ ValueStartB b = true := by
   cases h with
-  | null hp => exact ⟨0x6E, hasPrefix_head hp, by decide⟩
-  | true hp => exact ⟨0x74, hasPrefix_head hp, by decide⟩
-  | false hp => exact ⟨0x66, hasPrefix_head hp, by decide⟩
+  | null hp => exact ⟨0x6E, hasPrefix_head_lit hp, by decide⟩
+  | true hp => exact ⟨0x74, hasPrefix_head_lit hp, by decide⟩
+  | false hp => exact ⟨0x66, hasPrefix_head_lit hp, by decide⟩
   | string hs => exact ⟨0x22, hs.1, by decide⟩
   | array hl _ _ => exact ⟨0x5B, hl, by decide⟩
   | object hl _ _ => exact ⟨0x7B, hl, by decide⟩
@@ -339,18 +365,18 @@ private theorem valueAt_startB {m : Strictness} {bs : Bytes} {i : Nat} {v : Valu
       obtain ⟨hij, hnum⟩ := hn
       have hne := rfcNumber_nonempty hnum
       have hlen : ((bs.drop i).take (j - i)).length = min (j - i) (bs.length - i) := by
-        rw [List.length_take, List.length_drop]
+        rw [ByteString.length_take, ByteString.length_drop]
       have hmpos : 0 < min (j - i) (bs.length - i) := by rwa [hlen] at hne
       have hpos : 0 < j - i := by omega
       have hlt : i < bs.length := by omega
       obtain ⟨m, hm⟩ : ∃ m, j - i = m + 1 := ⟨j - i - 1, by omega⟩
-      have hdrop := List.drop_eq_getElem_cons hlt
-      have hlex : (bs.drop i).take (j - i) = bs[i] :: ((bs.drop (i + 1)).take m) := by
-        rw [hm, hdrop, List.take_succ_cons]
-      have hnum' : RfcNumber (bs[i] :: (bs.drop (i + 1)).take m) := by
+      have hdrop := ByteString.drop_eq_getElem_cons (ByteString.getElem?_eq_getElem hlt)
+      have hlex : (bs.drop i).take (j - i) = bs[i] +: ((bs.drop (i + 1)).take m) := by
+        rw [hm, hdrop, ByteString.take_succ_cons]
+      have hnum' : RfcNumber (bs[i] +: (bs.drop (i + 1)).take m) := by
         rwa [hlex] at hnum
       have hhead : IsDigitB bs[i] = true ∨ bs[i] = 0x2D := rfcNumber_head hnum'
-      refine ⟨bs[i], List.getElem?_eq_getElem hlt, ?_⟩
+      refine ⟨bs[i], ByteString.getElem?_eq_getElem hlt, ?_⟩
       rcases hhead with h | h
       · simp [ValueStartB, h]
       · simp [ValueStartB, h]
@@ -407,24 +433,24 @@ private theorem follow_numberStop {bs : Bytes} {j : Nat} (h : ValueFollow bs j) 
   rintro c rest hd
   rcases h with hsf | ⟨k, hsp, hk⟩ | ⟨k, hsp, hk⟩ | ⟨k, hsp, hk⟩
   · have hjlt : j < bs.length := by
-      have := congrArg List.length hd
-      simp only [List.length_cons] at this
-      rw [List.length_drop] at this
+      have := congrArg ByteString.length hd
+      simp only [ByteString.length_cons] at this
+      rw [ByteString.length_drop] at this
       omega
     have hrun : spaceRun (bs.drop j) = bs.length - j := by
       have := hsf
       rw [skipFrom_def] at this
       omega
     rw [hd] at hrun
-    rw [spaceRun] at hrun
+    rw [spaceRun_cons] at hrun
     split at hrun
     · rename_i hc
       exact isSpace_not_constituent hc
     · omega
   · obtain ⟨hjk, hall⟩ := hsp
     have hjb : bs[j]? = some c := by
-      have h := congrArg List.head? hd
-      simpa [List.head?_drop] using h
+      have h := congrArg ByteString.head? hd
+      simpa [ByteString.head?_drop, ByteString.head?_cons] using h
     rcases Nat.lt_or_ge j k with hlt | hge
     · exact isSpace_not_constituent (hall j c (Nat.le_refl _) hlt hjb)
     · have hk_eq : k = j := by omega
@@ -436,8 +462,8 @@ private theorem follow_numberStop {bs : Bytes} {j : Nat} (h : ValueFollow bs j) 
       decide
   · obtain ⟨hjk, hall⟩ := hsp
     have hjb : bs[j]? = some c := by
-      have h := congrArg List.head? hd
-      simpa [List.head?_drop] using h
+      have h := congrArg ByteString.head? hd
+      simpa [ByteString.head?_drop, ByteString.head?_cons] using h
     rcases Nat.lt_or_ge j k with hlt | hge
     · exact isSpace_not_constituent (hall j c (Nat.le_refl _) hlt hjb)
     · have hk_eq : k = j := by omega
@@ -449,8 +475,8 @@ private theorem follow_numberStop {bs : Bytes} {j : Nat} (h : ValueFollow bs j) 
       decide
   · obtain ⟨hjk, hall⟩ := hsp
     have hjb : bs[j]? = some c := by
-      have h := congrArg List.head? hd
-      simpa [List.head?_drop] using h
+      have h := congrArg ByteString.head? hd
+      simpa [ByteString.head?_drop, ByteString.head?_cons] using h
     rcases Nat.lt_or_ge j k with hlt | hge
     · exact isSpace_not_constituent (hall j c (Nat.le_refl _) hlt hjb)
     · have hk_eq : k = j := by omega
@@ -468,8 +494,8 @@ private theorem stringAt_of_scan {bs : Bytes} {i : Nat} {cs : List Nat} {after :
   have hstr : StrChars .strict (bs.drop (i + 1)) cs after := (scanChars_iff _ _ _).mp hs
   obtain ⟨pre, hp⟩ := strChars_split hstr
   have hbs : bs = (bs.take (i + 1) ++ pre) ++ after := by
-    have h := List.take_append_drop (i + 1) bs
-    rw [hp, ← List.append_assoc] at h
+    have h := ByteString.take_append_drop bs (i + 1)
+    rw [hp, ← ByteString.append_assoc] at h
     exact h.symm
   exact ⟨hb, after, hstr, drop_of_split hbs⟩
 
@@ -481,32 +507,33 @@ private theorem numberAt_head {bs : Bytes} {i j : Nat} {b : UInt8}
   obtain ⟨hij, hnum⟩ := hn
   have hne := rfcNumber_nonempty hnum
   have hlen : ((bs.drop i).take (j - i)).length = min (j - i) (bs.length - i) := by
-    rw [List.length_take, List.length_drop]
+    rw [ByteString.length_take, ByteString.length_drop]
   have hmpos : 0 < min (j - i) (bs.length - i) := by rwa [hlen] at hne
   have hpos : 0 < j - i := by omega
   obtain ⟨m, hm⟩ : ∃ m, j - i = m + 1 := ⟨j - i - 1, by omega⟩
   have hlt : i < bs.length := by
-    have := List.getElem?_eq_some_iff.mp hb
+    have := ByteString.getElem?_eq_some_iff.mp hb
     omega
-  have hdrop := List.drop_eq_getElem_cons hlt
-  have hlex : (bs.drop i).take (j - i) = b :: ((bs.drop (i + 1)).take m) := by
-    rw [hm, hdrop, List.getElem?_eq_some_iff.mp hb |>.2, List.take_succ_cons]
-  have hnum' : RfcNumber (b :: (bs.drop (i + 1)).take m) := by
+  have hdrop := ByteString.drop_eq_getElem_cons (ByteString.getElem?_eq_getElem hlt)
+  have hlex : (bs.drop i).take (j - i) = b +: ((bs.drop (i + 1)).take m) := by
+    rw [hm, hdrop, ByteString.getElem?_eq_some_iff.mp hb |>.2, ByteString.take_succ_cons]
+  have hnum' : RfcNumber (b +: (bs.drop (i + 1)).take m) := by
     rw [hlex] at hnum
     exact hnum
   exact rfcNumber_head hnum'
 
 private theorem valueAt_null_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : Value} {j : Nat}
     (h : ValueAt m bs i v j) (hb : bs[i]? = some 0x6E) :
-    v = .null ∧ j = i + 4 ∧ HasPrefix bs i [0x6E, 0x75, 0x6C, 0x6C] := by
+    v = .null ∧ j = i + 4 ∧
+      HasPrefix bs i (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]) := by
   cases h with
   | null hp => exact ⟨rfl, rfl, hp⟩
   | true hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | false hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | string hs =>
@@ -526,15 +553,16 @@ private theorem valueAt_null_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : Va
 
 private theorem valueAt_true_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : Value} {j : Nat}
     (h : ValueAt m bs i v j) (hb : bs[i]? = some 0x74) :
-    v = .bool true ∧ j = i + 4 ∧ HasPrefix bs i [0x74, 0x72, 0x75, 0x65] := by
+    v = .bool true ∧ j = i + 4 ∧
+      HasPrefix bs i (ByteString.literal [0x74, 0x72, 0x75, 0x65]) := by
   cases h with
   | null hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | true hp => exact ⟨rfl, rfl, hp⟩
   | false hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | string hs =>
@@ -554,14 +582,15 @@ private theorem valueAt_true_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : Va
 
 private theorem valueAt_false_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : Value} {j : Nat}
     (h : ValueAt m bs i v j) (hb : bs[i]? = some 0x66) :
-    v = .bool false ∧ j = i + 5 ∧ HasPrefix bs i [0x66, 0x61, 0x6C, 0x73, 0x65] := by
+    v = .bool false ∧ j = i + 5 ∧
+      HasPrefix bs i (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]) := by
   cases h with
   | null hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | true hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | false hp => exact ⟨rfl, rfl, hp⟩
@@ -585,15 +614,15 @@ private theorem valueAt_string_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : 
     ∃ cs, v = .string cs ∧ StringAt m bs i j cs := by
   cases h with
   | null hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | true hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | false hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | string hs => exact ⟨_, rfl, hs⟩
@@ -614,15 +643,15 @@ private theorem valueAt_array_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : V
       bs[k]? = some 0x5D ∧ j = k + 1 := by
   cases h with
   | null hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | true hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | false hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | string hs =>
@@ -644,15 +673,15 @@ private theorem valueAt_object_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : 
       bs[k]? = some 0x7D ∧ j = k + 1 := by
   cases h with
   | null hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | true hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | false hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       exact absurd (Option.some.inj hh) (by decide)
   | string hs =>
@@ -887,7 +916,7 @@ private theorem parseKey_next_le {bs : Bytes} {i : Nat} {k : Key i}
       change bs.length - after.length ≤ bs.length
       have hstr := (scanChars_iff _ _ _).mp hs
       have := strChars_suffix_lt hstr
-      simp only [List.length_drop] at this
+      simp only [ByteString.length_drop] at this
       omega
   · cases hk
 
@@ -902,11 +931,11 @@ private theorem stringAt_end_unique {bs : Bytes} {i j1 j2 : Nat}
   injection hs2 with heq
   have hr : r1 = r2 := by injection heq
   have hl1 : bs.length - j1 = r1.length := by
-    have := congrArg List.length hdrop1
-    rwa [List.length_drop] at this
+    have := congrArg ByteString.length hdrop1
+    rwa [ByteString.length_drop] at this
   have hl2 : bs.length - j2 = r2.length := by
-    have := congrArg List.length hdrop2
-    rwa [List.length_drop] at this
+    have := congrArg ByteString.length hdrop2
+    rwa [ByteString.length_drop] at this
   rw [hr] at hl1
   omega
 
@@ -1289,7 +1318,7 @@ private theorem decodeValue_object_of {bs : Bytes} {i first colon : Nat}
 
 /-- The decoder equation for a `null` token. -/
 private theorem decodeValue_null_of {bs : Bytes} {i : Nat}
-    (hlit : HasPrefixB bs i [0x6E, 0x75, 0x6C, 0x6C] = true) :
+    (hlit : HasPrefixB bs i (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]) = true) :
     DecodesValue bs i [Token.null ⟨i, i + 4⟩] .null (i + 4) := by
   intro rest
   refine ⟨{ value := .null, rest := rest, cursor := i + 4, shrunk := by simp }, ?_, rfl, rfl, rfl⟩
@@ -1297,7 +1326,7 @@ private theorem decodeValue_null_of {bs : Bytes} {i : Nat}
 
 /-- The decoder equation for a `true` token. -/
 private theorem decodeValue_true_of {bs : Bytes} {i : Nat}
-    (hlit : HasPrefixB bs i [0x74, 0x72, 0x75, 0x65] = true) :
+    (hlit : HasPrefixB bs i (ByteString.literal [0x74, 0x72, 0x75, 0x65]) = true) :
     DecodesValue bs i [Token.bool true ⟨i, i + 4⟩] (.bool true) (i + 4) := by
   intro rest
   refine ⟨{ value := .bool true, rest := rest, cursor := i + 4, shrunk := by simp }, ?_, rfl, rfl, rfl⟩
@@ -1305,7 +1334,7 @@ private theorem decodeValue_true_of {bs : Bytes} {i : Nat}
 
 /-- The decoder equation for a `false` token. -/
 private theorem decodeValue_false_of {bs : Bytes} {i : Nat}
-    (hlit : HasPrefixB bs i [0x66, 0x61, 0x6C, 0x73, 0x65] = true) :
+    (hlit : HasPrefixB bs i (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]) = true) :
     DecodesValue bs i [Token.bool false ⟨i, i + 5⟩] (.bool false) (i + 5) := by
   intro rest
   refine ⟨{ value := .bool false, rest := rest, cursor := i + 5, shrunk := by simp }, ?_, rfl, rfl, rfl⟩
@@ -1329,19 +1358,19 @@ private theorem valueAt_digit_inv {m : Strictness} {bs : Bytes} {i : Nat} {v : V
     NumberAt bs i j ∧ v = .number ((bs.drop i).take (j - i)) := by
   cases h with
   | null hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       have e : b = 0x6E := Option.some.inj hh
       rw [e] at hd
       exact absurd hd (by decide)
   | true hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       have e : b = 0x74 := Option.some.inj hh
       rw [e] at hd
       exact absurd hd (by decide)
   | false hp =>
-      have hh := hasPrefix_head hp
+      have hh := hasPrefix_head_lit hp
       rw [hb] at hh
       have e : b = 0x66 := Option.some.inj hh
       rw [e] at hd
@@ -1371,19 +1400,19 @@ private theorem numberAt_eq {bs : Bytes} {i j : Nat} (hn : NumberAt bs i j)
     j = i + (numRun (bs.drop i)).length := by
   obtain ⟨hij, hnum⟩ := hn
   have hlen : ((bs.drop i).take (j - i)).length = j - i := by
-    rw [List.length_take, List.length_drop]
+    rw [ByteString.length_take, ByteString.length_drop]
     omega
   have hall : ∀ x ∈ (bs.drop i).take (j - i), NumConstituent x = true := by
     intro x hx
     exact rfcNumber_constituent hnum x hx
   have h1 : j - i ≤ (numRun (bs.drop i)).length :=
-    length_le_numRun (bs.drop i) (j - i) (by rw [List.length_drop]; omega) hall
+    length_le_numRun (bs.drop i) (j - i) (by rw [ByteString.length_drop]; omega) hall
   have h2 : (numRun (bs.drop i)).length ≤ j - i := by
     rcases Nat.lt_or_ge (j - i) (numRun (bs.drop i)).length with hlt | hge
     · exfalso
       obtain ⟨c, rest, hdrop, hc⟩ := numRun_byte (b := bs.drop i) (k := j - i) hlt
-      have hbs : bs.drop j = c :: rest := by
-        rw [← hdrop, List.drop_drop, Nat.add_sub_of_le hij]
+      have hbs : bs.drop j = c +: rest := by
+        rw [← hdrop, ByteString.drop_drop, Nat.add_sub_of_le hij]
       exact absurd (hstop c rest hbs) (by rw [hc]; simp)
     · exact hge
   have h3 : j - i = (numRun (bs.drop i)).length := Nat.le_antisymm h1 h2
@@ -1397,14 +1426,14 @@ private theorem not_numberAt_of_head {bs : Bytes} {i : Nat} {b : UInt8}
   obtain ⟨hij, hnum⟩ := hn
   have hne := rfcNumber_nonempty hnum
   have hlen : ((bs.drop i).take (j - i)).length = min (j - i) (bs.length - i) := by
-    rw [List.length_take, List.length_drop]
+    rw [ByteString.length_take, ByteString.length_drop]
   have hmpos : 0 < min (j - i) (bs.length - i) := by rwa [hlen] at hne
   have hpos : 0 < j - i := by omega
   have hlt : i < bs.length := by have := length_gt_of_get? hb; omega
   obtain ⟨m, hm⟩ : ∃ m, j - i = m + 1 := ⟨j - i - 1, by omega⟩
-  have hdrop := List.drop_eq_getElem_cons hlt
-  have hlex : (bs.drop i).take (j - i) = b :: ((bs.drop (i + 1)).take m) := by
-    rw [hm, hdrop, List.getElem?_eq_some_iff.mp hb |>.2, List.take_succ_cons]
+  have hdrop := ByteString.drop_eq_getElem_cons (ByteString.getElem?_eq_getElem hlt)
+  have hlex : (bs.drop i).take (j - i) = b +: ((bs.drop (i + 1)).take m) := by
+    rw [hm, hdrop, ByteString.getElem?_eq_some_iff.mp hb |>.2, ByteString.take_succ_cons]
   have hhead := rfcNumber_head (by rwa [hlex] at hnum)
   rcases hhead with hh | hh
   · rw [hh] at hd; simp at hd
@@ -1496,7 +1525,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | (simp_all [pv, first, hbi])
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1505,7 +1534,7 @@ private theorem parse_all (bs : Bytes) :
       subst p
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · exact ValueAt.array hb (ArrBody.empty hclose') hclose'
-      · exact Nat.succ_le_of_lt (List.getElem?_eq_some_iff.mp hclose').1
+      · exact Nat.succ_le_of_lt (ByteString.getElem?_eq_some_iff.mp hclose').1
       · simp [pv]
       · intro rest
         refine ⟨{ value := .array [], rest := rest, cursor := first + 1,
@@ -1543,7 +1572,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hcall]
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1575,7 +1604,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hcall, htail]
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1642,7 +1671,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hcall, htail, hclose, p]
     obtain ⟨hv, hvlen, hvtok, hdecv, hagree⟩ := ihm.1 pv hcall
     obtain ⟨hspec, hdecT⟩ := ihtm.1.1 t htail
@@ -1661,7 +1690,7 @@ private theorem parse_all (bs : Bytes) :
           · exact Elems.cons hv (skipFrom_space bs pv.next) hcomma
               (skipFrom_space bs (skipFrom bs pv.next + 1)) he
         exact ValueAt.array hb (ArrBody.elems helems hclose') hclose'
-      · exact Nat.succ_le_of_lt (List.getElem?_eq_some_iff.mp hclose').1
+      · exact Nat.succ_le_of_lt (ByteString.getElem?_eq_some_iff.mp hclose').1
       · dsimp only [p]
         intro hnil
         cases hnil
@@ -1723,7 +1752,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hcall, htail, hnclose]
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1771,7 +1800,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [pv, first, hbi]
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1780,7 +1809,7 @@ private theorem parse_all (bs : Bytes) :
       subst p
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · exact ValueAt.object hb (ObjBody.empty hclose') hclose'
-      · exact Nat.succ_le_of_lt (List.getElem?_eq_some_iff.mp hclose').1
+      · exact Nat.succ_le_of_lt (ByteString.getElem?_eq_some_iff.mp hclose').1
       · dsimp only [pv]
         intro hnil
         cases hnil
@@ -1817,7 +1846,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hkey]
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1851,7 +1880,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hkey, hncColon]
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1935,7 +1964,7 @@ private theorem parse_all (bs : Bytes) :
   case c17 =>
     intro i depth hb
     have hres : parseValue bs i depth =
-        parseLiteral bs i [0x74, 0x72, 0x75, 0x65] .true (by decide) := by
+        parseLiteral bs i (ByteString.literal [0x74, 0x72, 0x75, 0x65]) .true (by decide) := by
       rw [parseValue.eq_def]; split <;> simp_all
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1965,7 +1994,7 @@ private theorem parse_all (bs : Bytes) :
   case c18 =>
     intro i depth hb
     have hres : parseValue bs i depth =
-        parseLiteral bs i [0x66, 0x61, 0x6C, 0x73, 0x65] .false (by decide) := by
+        parseLiteral bs i (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]) .false (by decide) := by
       rw [parseValue.eq_def]; split <;> simp_all
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -1995,7 +2024,7 @@ private theorem parse_all (bs : Bytes) :
   case c19 =>
     intro i depth hb
     have hres : parseValue bs i depth =
-        parseLiteral bs i [0x6E, 0x75, 0x6C, 0x6C] .null (by decide) := by
+        parseLiteral bs i (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]) .null (by decide) := by
       rw [parseValue.eq_def]; split <;> simp_all
     refine ⟨?_, ?_⟩
     · intro p hp
@@ -2044,7 +2073,7 @@ private theorem parse_all (bs : Bytes) :
           rwa [Nat.add_sub_cancel_left, (numRun_spec (bs.drop i)).1] at h
         · have hle := numRun_length_le (bs.drop i)
           have hib := length_gt_of_get? hb
-          rw [List.length_drop] at hle
+          rw [ByteString.length_drop] at hle
           have h2 := Nat.add_le_add_left hle i
           rwa [Nat.add_sub_of_le (Nat.le_of_lt hib)] at h2
         · intro v j hv hf
@@ -2081,15 +2110,15 @@ private theorem parse_all (bs : Bytes) :
         rw [Bool.eq_false_iff]; exact hd
       cases hv with
       | null hp =>
-          have hh := hasPrefix_head hp
+          have hh := hasPrefix_head_lit hp
           rw [hb] at hh
           exact hb110 (Option.some.inj hh)
       | true hp =>
-          have hh := hasPrefix_head hp
+          have hh := hasPrefix_head_lit hp
           rw [hb] at hh
           exact hb116 (Option.some.inj hh)
       | false hp =>
-          have hh := hasPrefix_head hp
+          have hh := hasPrefix_head_lit hp
           rw [hb] at hh
           exact hb102 (Option.some.inj hh)
       | string hs =>
@@ -2192,7 +2221,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hkey, hkskip, hncColon, hcall]
     refine ⟨?_, ?_⟩
     · intro p hp; rw [hres] at hp; cases hp
@@ -2251,7 +2280,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hkey, hkskip, hncColon, hcall, htail]
     refine ⟨?_, ?_⟩
     · intro p hp; rw [hres] at hp; cases hp
@@ -2304,7 +2333,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hkey, hkskip, hncColon, hcall, htail, hclose, p]
     obtain ⟨hv, hvlen, hvtok, hdecv, hagree⟩ := ihm.1 pv hcall
     obtain ⟨-, hsKey, hktok, hkdec⟩ := parseKey_sound hkey
@@ -2330,7 +2359,7 @@ private theorem parse_all (bs : Bytes) :
       subst hp2
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · exact ValueAt.object hb (ObjBody.members hm hclose') hclose'
-      · exact Nat.succ_le_of_lt (List.getElem?_eq_some_iff.mp hclose').1
+      · exact Nat.succ_le_of_lt (ByteString.getElem?_eq_some_iff.mp hclose').1
       · intro hnil
         simp [p] at hnil
       · simp only [p, hktok]
@@ -2363,7 +2392,7 @@ private theorem parse_all (bs : Bytes) :
           split
           all_goals
             first
-            | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
             | simp_all [first, hd, hnc, hkey, hkskip, hncColon, hcall, htail, hnclose]
     refine ⟨?_, ?_⟩
     · intro p hp; rw [hres] at hp; cases hp
@@ -2717,7 +2746,7 @@ theorem parseRef_sound (l : Limits) (bs : Bytes) :
     by_cases hin : bs.length > l.maxInput
     · rw [if_pos hin] at ht; cases ht
     · rw [if_neg hin] at ht
-      by_cases hbom : bs.take 3 = [0xEF, 0xBB, 0xBF]
+      by_cases hbom : bs.take 3 = ByteString.literal [0xEF, 0xBB, 0xBF]
       · rw [if_pos hbom] at ht; cases ht
       · rw [if_neg hbom] at ht
         cases hpv : parseValue bs (skipFrom bs 0) l.maxDepth with
@@ -2748,19 +2777,21 @@ theorem parseRef_sound (l : Limits) (bs : Bytes) :
     by_cases hin : bs.length > l.maxInput
     · rw [if_pos hin] at hr; cases hr
     · rw [if_neg hin] at hr
-      by_cases hbom : bs.take 3 = [0xEF, 0xBB, 0xBF]
+      by_cases hbom : bs.take 3 = ByteString.literal [0xEF, 0xBB, 0xBF]
       · rw [if_pos hbom] at hr
         rintro ⟨v, hv⟩
         obtain ⟨i, j, h0, hva, hjlen⟩ := (valid_iff_strict bs v).mp hv
         have hbom0 : bs[0]? = some 0xEF := by
-          have h : (bs.take 3)[0]? = some 0xEF := by rw [hbom]; rfl
-          rwa [List.getElem?_take, if_pos (by decide : 0 < 3)] at h
+          have h : (bs.take 3)[0]? = some 0xEF := by
+            rw [hbom, ByteString.getElem?_literal]
+            simp
+          rwa [ByteString.getElem?_take, if_pos (by decide : 0 < 3)] at h
         have hns : IsSpaceB 0xEF = false := by decide
         have hdrop := drop_eq_cons_of_get? hbom0
         have hskip0 : skipFrom bs 0 = 0 := by
           rw [skipFrom_def]
           rw [hdrop]
-          simp [spaceRun, hns]
+          simp [spaceRun_cons, hns]
         rw [← h0, hskip0] at hva
         exact valueAt_not_bom hva hbom0
       · rw [if_neg hbom] at hr
@@ -2907,13 +2938,13 @@ private theorem parseKey_complete {bs : Bytes} {i j : Nat} {cs : List Nat}
   have hs : scanChars (bs.drop (i + 1)) = .ok (cs, rest) :=
     (scanChars_iff _ _ _).mpr hstr
   have hlen : rest.length = bs.length - j := by
-    have := congrArg List.length hdrop
-    simp only [List.length_drop] at this
+    have := congrArg ByteString.length hdrop
+    simp only [ByteString.length_drop] at this
     omega
   have hnext : bs.length - rest.length = j := by omega
   have hi : i < bs.length := length_gt_of_get? hb
   have hle := scalar_suffix_le (bs.drop (i + 1)) cs rest hs
-  simp only [List.length_drop] at hle
+  simp only [ByteString.length_drop] at hle
   refine ⟨⟨.string ⟨i, bs.length - rest.length⟩, cs, bs.length - rest.length, by omega⟩,
     ?_, rfl, hnext⟩
   unfold parseKey
@@ -2978,10 +3009,10 @@ private theorem members_head {bs : Bytes} {i k : Nat} {ms : List (List Nat × Va
 
 /-- A non-empty whitespace run starts with a whitespace byte. -/
 private theorem spaceRun_pos_head {l : Bytes} (h : 0 < spaceRun l) :
-    ∀ (c : UInt8) (rest : Bytes), l = c :: rest → IsSpaceB c = true := by
+    ∀ (c : UInt8) (rest : Bytes), l = c +: rest → IsSpaceB c = true := by
   intro c rest he
   subst he
-  rw [spaceRun] at h
+  rw [spaceRun_cons] at h
   split at h
   · assumption
   · omega
@@ -2991,8 +3022,8 @@ private theorem numberStop_of_skipFrom_length {bs : Bytes} {j : Nat}
     (h : skipFrom bs j = bs.length) : NumberStop bs j := by
   intro c rest hd
   have hlen : j < bs.length := by
-    have : 0 < (bs.drop j).length := by rw [hd]; simp
-    simp only [List.length_drop] at this
+    have : 0 < (bs.drop j).length := by rw [hd, ByteString.length_cons]; simp
+    simp only [ByteString.length_drop] at this
     omega
   have hpos : 0 < spaceRun (bs.drop j) := by
     rw [skipFrom_def] at h
@@ -3012,7 +3043,7 @@ private theorem parseNumber_done {bs : Bytes} {i j : Nat}
   have hne : 0 < (numRun (bs.drop i)).length := by
     rw [hlen]
     have h2 : ((bs.drop i).take (j - i)).length = j - i := by
-      rw [List.length_take, List.length_drop]
+      rw [ByteString.length_take, ByteString.length_drop]
       omega
     have h3 := rfcNumber_nonempty hnum
     omega
@@ -3074,7 +3105,7 @@ private theorem complete_all (bs : Bytes) :
         split
         all_goals
           first
-          | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+          | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
           | (simp_all; done)
   case c4 =>
     intro i depth hb hd hi first hfirst hnc e hcall ihm v j hv hj hdep hstop
@@ -3199,7 +3230,7 @@ private theorem complete_all (bs : Bytes) :
             split
             all_goals
               first
-              | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+              | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
               | (simp_all; done)
           · rw [hval1, htvals, hvs]
           · show t.next + 1 = j
@@ -3227,7 +3258,7 @@ private theorem complete_all (bs : Bytes) :
             split
             all_goals
               first
-              | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+              | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
               | (simp_all; done)
           · rw [hval1, htval, hvs]
           · show t.next + 1 = j
@@ -3312,7 +3343,7 @@ private theorem complete_all (bs : Bytes) :
         split
         all_goals
           first
-          | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+          | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
           | (simp_all; done)
   case c10 =>
     intro i depth hb hd hi first hfirst hnc e hkey v j hv hj hdep hstop
@@ -3515,7 +3546,7 @@ private theorem complete_all (bs : Bytes) :
             split
             all_goals
               first
-              | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+              | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
               | (simp_all; done)
           · rw [hkeyName, hval1, htmems, hms]
           · show t.next + 1 = j
@@ -3543,7 +3574,7 @@ private theorem complete_all (bs : Bytes) :
             split
             all_goals
               first
-              | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+              | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
               | (simp_all; done)
           · rw [hkeyName, hval1, htval, hms]
           · show t.next + 1 = j
@@ -3626,15 +3657,17 @@ private theorem complete_all (bs : Bytes) :
       split
       all_goals
         first
-        | (exfalso; rw [List.getElem?_eq_getElem (length_gt_of_get? hb)] at *; simp_all; done)
+        | (exfalso; rw [ByteString.getElem?_eq_getElem (length_gt_of_get? hb)] at *; simp_all; done)
         | (simp_all [parseString, hk]; done)
     exact ⟨_, hres, by rw [hname], hnext, rfl⟩
   case c17 =>
     intro i depth hb v j hv hj hdep hstop
     obtain ⟨rfl, rfl, hp⟩ := valueAt_true_inv hv hb
     have hi : i < bs.length := length_gt_of_get? hb
-    have hpfx : HasPrefixB bs i [0x74, 0x72, 0x75, 0x65] = true := hasPrefixB_iff.mpr hp
-    have hlres : parseLiteral bs i [0x74, 0x72, 0x75, 0x65] .true (by decide) =
+    have hpfx : HasPrefixB bs i (ByteString.literal [0x74, 0x72, 0x75, 0x65]) = true :=
+      hasPrefixB_iff.mpr hp
+    have hlres : parseLiteral bs i (ByteString.literal [0x74, 0x72, 0x75, 0x65]) .true
+        (by decide) =
         .done ⟨[.bool true ⟨i, i + 4⟩], .bool true, i + 4, by omega⟩ := by
       simp only [parseLiteral]
       rw [hpfx]
@@ -3645,15 +3678,17 @@ private theorem complete_all (bs : Bytes) :
       split
       all_goals
         first
-        | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+        | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
         | (rw [hlres]; done)
     exact ⟨_, hres, rfl, rfl, rfl⟩
   case c18 =>
     intro i depth hb v j hv hj hdep hstop
     obtain ⟨rfl, rfl, hp⟩ := valueAt_false_inv hv hb
     have hi : i < bs.length := length_gt_of_get? hb
-    have hpfx : HasPrefixB bs i [0x66, 0x61, 0x6C, 0x73, 0x65] = true := hasPrefixB_iff.mpr hp
-    have hlres : parseLiteral bs i [0x66, 0x61, 0x6C, 0x73, 0x65] .false (by decide) =
+    have hpfx : HasPrefixB bs i (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]) = true :=
+      hasPrefixB_iff.mpr hp
+    have hlres : parseLiteral bs i (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]) .false
+        (by decide) =
         .done ⟨[.bool false ⟨i, i + 5⟩], .bool false, i + 5, by omega⟩ := by
       simp only [parseLiteral]
       rw [hpfx]
@@ -3664,15 +3699,17 @@ private theorem complete_all (bs : Bytes) :
       split
       all_goals
         first
-        | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+        | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
         | (rw [hlres]; done)
     exact ⟨_, hres, rfl, rfl, rfl⟩
   case c19 =>
     intro i depth hb v j hv hj hdep hstop
     obtain ⟨rfl, rfl, hp⟩ := valueAt_null_inv hv hb
     have hi : i < bs.length := length_gt_of_get? hb
-    have hpfx : HasPrefixB bs i [0x6E, 0x75, 0x6C, 0x6C] = true := hasPrefixB_iff.mpr hp
-    have hlres : parseLiteral bs i [0x6E, 0x75, 0x6C, 0x6C] .null (by decide) =
+    have hpfx : HasPrefixB bs i (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]) = true :=
+      hasPrefixB_iff.mpr hp
+    have hlres : parseLiteral bs i (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]) .null
+        (by decide) =
         .done ⟨[.null ⟨i, i + 4⟩], .null, i + 4, by omega⟩ := by
       simp only [parseLiteral]
       rw [hpfx]
@@ -3683,7 +3720,7 @@ private theorem complete_all (bs : Bytes) :
       split
       all_goals
         first
-        | (exfalso; rw [List.getElem?_eq_getElem hi] at *; simp_all; done)
+        | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
         | (rw [hlres]; done)
     exact ⟨_, hres, rfl, rfl, rfl⟩
   case c20 =>
@@ -3695,7 +3732,7 @@ private theorem complete_all (bs : Bytes) :
       split
       all_goals
         first
-        | (exfalso; rw [List.getElem?_eq_getElem (length_gt_of_get? hb)] at *; simp_all; done)
+        | (exfalso; rw [ByteString.getElem?_eq_getElem (length_gt_of_get? hb)] at *; simp_all; done)
         | (simp_all; done)
     exact ⟨p, hres, hpval, hpnext, hptok⟩
   case c21 =>
@@ -4045,17 +4082,19 @@ theorem parseRef_complete (l : Limits) (bs : Bytes) (v : Value)
   -- completeness just produced.
   obtain ⟨hVsnd, -, -⟩ := parse_all bs
   obtain ⟨-, -, -, hdec, -⟩ := (hVsnd (skipFrom bs 0) l.maxDepth).1 p hpd
-  have hbom : bs.take 3 ≠ [0xEF, 0xBB, 0xBF] := by
+  have hbom : bs.take 3 ≠ ByteString.literal [0xEF, 0xBB, 0xBF] := by
     intro hb3
     have hbom0 : bs[0]? = some 0xEF := by
-      have h : (bs.take 3)[0]? = some 0xEF := by rw [hb3]; rfl
-      rwa [List.getElem?_take, if_pos (by decide : 0 < 3)] at h
+      have h : (bs.take 3)[0]? = some 0xEF := by
+        rw [hb3, ByteString.getElem?_literal]
+        simp
+      rwa [ByteString.getElem?_take, if_pos (by decide : 0 < 3)] at h
     have hns : IsSpaceB 0xEF = false := by decide
     have hdrop := drop_eq_cons_of_get? hbom0
     have hskip0' : skipFrom bs 0 = 0 := by
       rw [skipFrom_def]
       rw [hdrop]
-      simp [spaceRun, hns]
+      simp [spaceRun_cons, hns]
     rw [hskip0'] at hva
     exact valueAt_not_bom hva hbom0
   refine ⟨⟨bs, p.tokens⟩, ?_, rfl, ?_⟩
@@ -4186,7 +4225,7 @@ theorem decoded_string_is_span_literal (bs : Bytes) (i : Nat) (s : Span)
       obtain ⟨pre, hp⟩ := strChars_split hstr
       have hsuffix : ∃ pre', bs = pre' ++ after :=
         ⟨bs.take (i + 1) ++ pre, by
-          rw [List.append_assoc, ← hp, List.take_append_drop]⟩
+          rw [ByteString.append_assoc, ← hp, ByteString.take_append_drop]⟩
       obtain ⟨pre', hpre'⟩ := hsuffix
       exact drop_of_split hpre'
     · exact absurd h (by simp)

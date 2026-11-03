@@ -124,8 +124,13 @@ structure Key (src : Nat) where
 
 /-- An index that is known to be inside the input, from a successful lookup. -/
 theorem length_gt_of_get? {bs : Bytes} {i : Nat} {b : UInt8} (h : bs[i]? = some b) :
-    i < bs.length :=
-  (List.getElem?_eq_some_iff.mp h).1
+    i < bs.length := by
+  have h' : bs.toList[i]? = some b := by
+    rw [ByteString.toList_getElem?_eq_getElem?]
+    exact h
+  have := (List.getElem?_eq_some_iff.mp h').1
+  rw [ByteString.length_eq_size, ← ByteString.toList_length]
+  exact this
 
 /-- The one place a `ScanError` becomes a `Reject`.  `ended` is why
 `Reject.unterminatedString` is reachable at all. -/
@@ -152,7 +157,8 @@ def parseKey (bs : Bytes) (i : Nat) : Step (Key i) :=
                   consumed := by
                     have h := scalar_suffix_le (bs.drop (i + 1)) cs after hs
                     have hi : i < bs.length := length_gt_of_get? hb
-                    have hd : (bs.drop (i + 1)).length = bs.length - (i + 1) := by simp
+                    have hd : (bs.drop (i + 1)).length = bs.length - (i + 1) :=
+                      ByteString.length_drop bs (i + 1)
                     omega }
   | _ => .fail (.invalid (.unexpectedByte i (bs[i]?.getD 0)))
 
@@ -177,7 +183,7 @@ def parseNumber (bs : Bytes) (i : Nat) : Step (Parsed i) :=
               have hpos := numLexB_nonempty lex h
               have hlen : (numRun (bs.drop i)).length ≤ (bs.drop i).length :=
                 numRun_length_le (bs.drop i)
-              have hd : (bs.drop i).length = bs.length - i := by simp
+              have hd : (bs.drop i).length = bs.length - i := ByteString.length_drop bs i
               omega }
   else .fail (.invalid (.badNumber i))
 
@@ -284,9 +290,11 @@ def parseValue (bs : Bytes) (i depth : Nat) : Step (Parsed i) :=
                               omega }
                   else .fail (.invalid (.expectedCloseBrace t.next))
   | some 0x22 => parseString bs i
-  | some 0x74 => parseLiteral bs i [0x74, 0x72, 0x75, 0x65] .true (by decide)
-  | some 0x66 => parseLiteral bs i [0x66, 0x61, 0x6C, 0x73, 0x65] .false (by decide)
-  | some 0x6E => parseLiteral bs i [0x6E, 0x75, 0x6C, 0x6C] .null (by decide)
+  | some 0x74 => parseLiteral bs i (ByteString.literal [0x74, 0x72, 0x75, 0x65]) .true (by decide)
+  | some 0x66 =>
+      parseLiteral bs i (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]) .false (by decide)
+  | some 0x6E =>
+      parseLiteral bs i (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]) .null (by decide)
   | some b =>
       if decide (b = 0x2D) || IsDigitB b then parseNumber bs i
       else .fail (.invalid (.unexpectedByte i b))
@@ -376,7 +384,8 @@ end
 byte-order mark, then syntax, then token capacity. -/
 def parseBytes (l : Limits) (bs : Bytes) : ParseResult :=
   if bs.length > l.maxInput then .error .inputTooLong
-  else if bs.take 3 = [0xEF, 0xBB, 0xBF] then .error (.invalid .byteOrderMark)
+  else if bs.take 3 = ByteString.literal [0xEF, 0xBB, 0xBF] then
+    .error (.invalid .byteOrderMark)
   else
     match parseValue bs (skipFrom bs 0) l.maxDepth with
     | .done p =>
@@ -386,12 +395,11 @@ def parseBytes (l : Limits) (bs : Bytes) : ParseResult :=
         else .error .outOfCapacity
     | .fail e => .error e
 
-/-- The contract's public entry point.  `ByteArray.toList` is Lean's own total
-conversion; everything below this line is about `Bytes`, and the conversion is
-the only part of the API this run does not state a theorem about.  The tape the
-parse returns is index-based over a copy of these bytes; a consumer that wants to
-read the caller's buffer takes the tape's spans. -/
+/-- The contract's public entry point.  `ByteArray` is the carrier, so `input` is
+`Bytes` itself: the tape the parse returns is index-based over the caller's bytes,
+with no conversion and no copy.  A consumer that wants to read the caller's buffer
+takes the tape's spans. -/
 def parseDocument (l : Limits) (input : ByteArray) : ParseResult :=
-  parseBytes l input.toList
+  parseBytes l input
 
 end LeanLLVM.JSON

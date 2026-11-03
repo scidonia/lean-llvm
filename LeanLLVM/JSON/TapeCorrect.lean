@@ -46,7 +46,7 @@ private theorem spansOK_iff (bs : Bytes) : ∀ (toks : List Token) (prev : Nat),
   | [], _ => by simp [SpansOK, checkSpans]
   | tok :: rest, prev => by
       cases tok <;>
-        simp [SpansOK, checkSpans, Bool.and_eq_true, decide_eq_true_eq,
+        simp only [SpansOK, checkSpans, Bool.and_eq_true, decide_eq_true_eq,
           spansOK_iff bs rest, and_assoc]
 
 /-- The last cursor of an append is the last cursor of its second part. -/
@@ -140,8 +140,8 @@ private theorem decode_sound_aux (bs : Bytes) :
             refine ⟨[Token.null ⟨i, i + 4⟩], by simp, ?_, ?_⟩
             · simp only [SpansOK, Token.span]
               refine ⟨hprev, by omega, ?_, trivial, trivial⟩
-              have := hasPrefix_le (hasPrefixB_iff.mp hp)
-                (by decide : 0 < [0x6E, 0x75, 0x6C, 0x6C].length)
+              have hp4 : (ByteString.literal [0x6E, 0x75, 0x6C, 0x6C]).length = 4 := by simp
+              have := hasPrefix_le (hasPrefixB_iff.mp hp) (by omega)
               omega
             · simp [lastStop, Token.span]
           · cases hdec
@@ -162,8 +162,8 @@ private theorem decode_sound_aux (bs : Bytes) :
               refine ⟨[Token.bool true ⟨i, i + 4⟩], by simp, ?_, ?_⟩
               · simp only [SpansOK, Token.span]
                 refine ⟨hprev, by omega, ?_, trivial, trivial⟩
-                have := hasPrefix_le (hasPrefixB_iff.mp hp)
-                  (by decide : 0 < [0x74, 0x72, 0x75, 0x65].length)
+                have hp4 : (ByteString.literal [0x74, 0x72, 0x75, 0x65]).length = 4 := by simp
+                have := hasPrefix_le (hasPrefixB_iff.mp hp) (by omega)
                 omega
               · simp [lastStop, Token.span]
             · cases hdec
@@ -182,8 +182,8 @@ private theorem decode_sound_aux (bs : Bytes) :
               refine ⟨[Token.bool false ⟨i, i + 5⟩], by simp, ?_, ?_⟩
               · simp only [SpansOK, Token.span]
                 refine ⟨hprev, by omega, ?_, trivial, trivial⟩
-                have := hasPrefix_le (hasPrefixB_iff.mp hp)
-                  (by decide : 0 < [0x66, 0x61, 0x6C, 0x73, 0x65].length)
+                have hp4 : (ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65]).length = 5 := by simp
+                have := hasPrefix_le (hasPrefixB_iff.mp hp) (by omega)
                 omega
               · simp [lastStop, Token.span]
             · cases hdec
@@ -213,11 +213,11 @@ private theorem decode_sound_aux (bs : Bytes) :
                 have h1 := (numRun_spec (bs.drop i)).1
                 have h2 : ((bs.drop i).take (numRun (bs.drop i)).length).length
                     ≤ (bs.drop i).length := by
-                  rw [List.length_take]
+                  rw [ByteString.length_take]
                   omega
                 rwa [h1] at h2
               have hpos := numLexB_nonempty _ hlex
-              rw [List.length_drop] at hple
+              rw [ByteString.length_drop] at hple
               omega
             · simp [lastStop, Token.span]
           · cases hdec
@@ -239,7 +239,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                 obtain ⟨pre, hp⟩ := strChars_split hstr
                 have hsuffix : ∃ pre', bs = pre' ++ after :=
                   ⟨bs.take (i + 1) ++ pre, by
-                    rw [List.append_assoc, ← hp, List.take_append_drop]⟩
+                    rw [ByteString.append_assoc, ← hp, ByteString.take_append_drop]⟩
                 obtain ⟨pre', hpre'⟩ := hsuffix
                 exact drop_of_split hpre'
               injection hdec with hd
@@ -250,8 +250,8 @@ private theorem decode_sound_aux (bs : Bytes) :
               · simp only [SpansOK, Token.span]
                 refine ⟨hprev, ?_, by omega, trivial, trivial⟩
                 have hlt := strChars_suffix_lt hstr
-                rw [List.length_drop] at hlt
-                obtain ⟨hi, -⟩ := List.getElem?_eq_some_iff.mp hq
+                rw [ByteString.length_drop] at hlt
+                obtain ⟨hi, -⟩ := ByteString.getElem?_eq_some_iff.mp hq
                 omega
               · simp [lastStop, Token.span]
             · cases hdec
@@ -281,9 +281,9 @@ private theorem decode_sound_aux (bs : Bytes) :
                           by simp, ?_, ?_⟩
                         · simp only [SpansOK, Token.span]
                           refine ⟨hprev, by omega, ?_, trivial, skipFrom_ge _ _, by omega, ?_, trivial, trivial⟩
-                          · have := (List.getElem?_eq_some_iff.mp hb).1
+                          · have := (ByteString.getElem?_eq_some_iff.mp hb).1
                             omega
-                          · have := (List.getElem?_eq_some_iff.mp hcl).1
+                          · have := (ByteString.getElem?_eq_some_iff.mp hcl).1
                             omega
                         · simp [lastStop, Token.span]
                       · cases hdec
@@ -378,7 +378,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                             have hbr : SpansOK bs [Token.punct .openBracket ⟨i, i + 1⟩] prev := by
                               simp only [SpansOK, Token.span]
                               refine ⟨hprev, by omega, ?_, trivial, trivial⟩
-                              have := (List.getElem?_eq_some_iff.mp hb).1
+                              have := (ByteString.getElem?_eq_some_iff.mp hb).1
                               omega
                             have h12 : SpansOK bs ([Token.punct .openBracket ⟨i, i + 1⟩] ++ pre1) prev := by
                               have h := spansOK_append (bs := bs)
@@ -407,7 +407,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                               refine ⟨?_, by omega, ?_, trivial, trivial⟩
                               · rw [hlast2]
                                 exact skipFrom_ge _ _
-                              · have := (List.getElem?_eq_some_iff.mp hcl).1
+                              · have := (ByteString.getElem?_eq_some_iff.mp hcl).1
                                 omega
                             exact spansOK_append (bs := bs)
                               (([Token.punct .openBracket ⟨i, i + 1⟩] ++ pre1) ++ pre2)
@@ -449,9 +449,9 @@ private theorem decode_sound_aux (bs : Bytes) :
                           by simp, ?_, ?_⟩
                         · simp only [SpansOK, Token.span]
                           refine ⟨hprev, by omega, ?_, trivial, skipFrom_ge _ _, by omega, ?_, trivial, trivial⟩
-                          · have := (List.getElem?_eq_some_iff.mp hb).1
+                          · have := (ByteString.getElem?_eq_some_iff.mp hb).1
                             omega
-                          · have := (List.getElem?_eq_some_iff.mp hcl).1
+                          · have := (ByteString.getElem?_eq_some_iff.mp hcl).1
                             omega
                         · simp [lastStop, Token.span]
                       · cases hdec
@@ -606,7 +606,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                                     have hbr : SpansOK bs [Token.punct .openBrace ⟨i, i + 1⟩] prev := by
                                       simp only [SpansOK, Token.span]
                                       refine ⟨hprev, by omega, ?_, trivial, trivial⟩
-                                      have := (List.getElem?_eq_some_iff.mp hb).1
+                                      have := (ByteString.getElem?_eq_some_iff.mp hb).1
                                       omega
                                     have h1 : SpansOK bs
                                         ([Token.punct .openBrace ⟨i, i + 1⟩] ++ preK) prev := by
@@ -629,7 +629,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                                         simp only [SpansOK, Token.span]
                                         refine ⟨?_, by omega, ?_, trivial, trivial⟩
                                         · exact skipFrom_ge _ _
-                                        · have := (List.getElem?_eq_some_iff.mp hcol).1
+                                        · have := (ByteString.getElem?_eq_some_iff.mp hcol).1
                                           omega
                                     have h3 : SpansOK bs
                                         (([Token.punct .openBrace ⟨i, i + 1⟩] ++ preK)
@@ -674,7 +674,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                                       refine ⟨?_, by omega, ?_, trivial, trivial⟩
                                       · rw [hlastT]
                                         exact skipFrom_ge _ _
-                                      · have := (List.getElem?_eq_some_iff.mp hcl).1
+                                      · have := (ByteString.getElem?_eq_some_iff.mp hcl).1
                                         omega
                                     exact spansOK_append (bs := bs)
                                       (([Token.punct .openBrace ⟨i, i + 1⟩] ++ preK)
@@ -769,7 +769,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                       simp only [SpansOK, Token.span]
                       refine ⟨?_, by omega, ?_, trivial, trivial⟩
                       · exact Nat.le_trans hprev (skipFrom_ge _ _)
-                      · have := (List.getElem?_eq_some_iff.mp hc).1
+                      · have := (ByteString.getElem?_eq_some_iff.mp hc).1
                         omega
                     have h12 : SpansOK bs
                         ([Token.punct .comma ⟨skipFrom bs j, skipFrom bs j + 1⟩] ++ preD) prev := by
@@ -943,7 +943,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                               simp only [SpansOK, Token.span]
                               refine ⟨?_, by omega, ?_, trivial, trivial⟩
                               · exact Nat.le_trans hprev (skipFrom_ge _ _)
-                              · have := (List.getElem?_eq_some_iff.mp hc).1
+                              · have := (ByteString.getElem?_eq_some_iff.mp hc).1
                                 omega
                             have h12 : SpansOK bs
                                 ([Token.punct .comma ⟨skipFrom bs j, skipFrom bs j + 1⟩] ++ preK)
@@ -968,7 +968,7 @@ private theorem decode_sound_aux (bs : Bytes) :
                                 simp only [SpansOK, Token.span]
                                 refine ⟨?_, by omega, ?_, trivial, trivial⟩
                                 · exact skipFrom_ge _ _
-                                · have := (List.getElem?_eq_some_iff.mp hcol).1
+                                · have := (ByteString.getElem?_eq_some_iff.mp hcol).1
                                   omega
                             have h3 : SpansOK bs
                                 (([Token.punct .comma ⟨skipFrom bs j, skipFrom bs j + 1⟩] ++ preK)
