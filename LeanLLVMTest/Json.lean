@@ -512,3 +512,75 @@ example : ∀ (st : ScanState) (block : Block32) (valid : Nat), valid ≤ 32 →
     (valid < 32 →
         scanBlock st block valid = (st, (0 : BlockInfo), .short)) :=
   LeanLLVM.JSON.scanBlock_correct
+
+/-! ### The emitted classifier body
+
+`LeanLLVM/Vellum/JsonClassifyIR.lean` pins the fixture, builds its AST
+register by register, and proves the body's contract against the block layer:
+the packed lanes are the block mask, the outcome does not depend on the
+allocator state the run is seeded with, and an unreadable block is `ub`.  The
+pack fact it consumes is `lanesToNat_testBit`; the `BitVec` side of the mask
+proof reaches it through core's `BitVec.getLsbD_ofNat`.  Each statement is
+restated below beside its footprint. -/
+
+/-- info: 'LeanLLVM.lanesToNat_testBit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.lanesToNat_testBit
+
+-- `Classical.choice` in the two footprints below is inherited, not entailed:
+-- `zip_replicate_right` → `classify32_block` → `classify32_step` carries it
+-- from core's `Nat.right_eq_add` (itself `by omega`), which applies
+-- `Classical.propDecidable` to `b = a + b` and `a = 0` — both
+-- `Nat.decEq`-decidable.  It is a core tactic artefact, not an arbitrary-`Prop`
+-- frame, and not `bv_decide`.
+/--
+info: 'LeanLLVM.Vellum.JsonClassifyIR.classify32_next_independent' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.Vellum.JsonClassifyIR.classify32_next_independent
+
+/--
+info: 'LeanLLVM.Vellum.JsonClassifyIR.scannerLLVM_refines' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.Vellum.JsonClassifyIR.scannerLLVM_refines
+
+/--
+info: 'LeanLLVM.Vellum.JsonClassifyIR.classify32_undefined_of_no_read' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.Vellum.JsonClassifyIR.classify32_undefined_of_no_read
+
+open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+example : ∀ (l : List (BitVec 1)) (k : Nat),
+    (LeanLLVM.lanesToNat l).testBit k = (l[k]? = some (1 : BitVec 1)) :=
+  @LeanLLVM.lanesToNat_testBit
+
+open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+example : ∀ (block : Block32) (mem : LeanLLVM.Mem) (p n m : Nat),
+    LeanLLVM.readBytes mem p 32 = some (List.ofFn block) →
+    LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function
+        { (LeanLLVM.initState classify32Function [LeanLLVM.Value.ptr p]) with
+          mem := mem, next := n } =
+      LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function
+        { (LeanLLVM.initState classify32Function [LeanLLVM.Value.ptr p]) with
+          mem := mem, next := m } :=
+  @classify32_next_independent
+
+open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+example : ∀ (block : Block32) (mem : LeanLLVM.Mem) (p : Nat),
+    LeanLLVM.readBytes mem p 32 = some (List.ofFn block) →
+    LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function
+        { (LeanLLVM.initState classify32Function [LeanLLVM.Value.ptr p]) with
+          mem := mem } =
+      some (LeanLLVM.Outcome.ret
+        (some (LeanLLVM.Value.int 32 (maskOf block))) mem) :=
+  @scannerLLVM_refines
+
+open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+example : ∀ (mem : LeanLLVM.Mem) (p : Nat),
+    LeanLLVM.readBytes mem p 32 = none →
+    LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function
+        { (LeanLLVM.initState classify32Function [LeanLLVM.Value.ptr p]) with
+          mem := mem } = some LeanLLVM.Outcome.ub :=
+  @classify32_undefined_of_no_read

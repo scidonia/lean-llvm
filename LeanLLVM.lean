@@ -20,3 +20,4 @@ import LeanLLVM.Vellum.CommaMaskLoop
 import LeanLLVM.Vellum.ModuleRefinement
 import LeanLLVM.ITree
 import LeanLLVM.JSON
+import LeanLLVM.Vellum.JsonClassifyIR

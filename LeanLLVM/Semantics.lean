@@ -128,6 +128,31 @@ def lanesToNat : List (BitVec 1) → Nat
   | [] => 0
   | b :: bs => (if b = 1 then 1 else 0) + 2 * lanesToNat bs
 
+/-- The bit-level reading of `lanesToNat`: bit `k` is set exactly when lane `k`
+is.  **No length hypothesis** — past the end the natural's bit is zero and the
+lane lookup is `none`, so the two sides agree there too, and the consumer
+discharges no bound at each use.  This is the fact the classifier body's mask
+proof consumes; the `BitVec` side of that proof reaches the natural through
+core's `BitVec.getLsbD_ofNat`, so no separate `BitVec`-width form of this fact
+is stated. -/
+theorem lanesToNat_testBit (l : List (BitVec 1)) (k : Nat) :
+    (lanesToNat l).testBit k = (l[k]? = some (1 : BitVec 1)) := by
+  induction l generalizing k with
+  | nil => simp [lanesToNat]
+  | cons b bs ih =>
+      have ha : (if b = 1 then (1 : Nat) else 0) < 2 := by
+        split <;> omega
+      cases k with
+      | zero =>
+          rw [lanesToNat, Nat.testBit_zero, Nat.add_mul_mod_self_left,
+            Nat.mod_eq_of_lt ha]
+          split <;> simp_all
+      | succ j =>
+          rw [lanesToNat, Nat.testBit_succ,
+            Nat.add_mul_div_left (if b = 1 then (1 : Nat) else 0) _ (by decide : (0 : Nat) < 2),
+            Nat.div_eq_of_lt ha, Nat.zero_add]
+          exact ih j
+
 /-- Load a value of the given type from an address.  A byte that was never
 written makes the load undefined. -/
 def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=

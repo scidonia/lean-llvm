@@ -1,7 +1,9 @@
 /-
 The JSON classifier scenarios: the emitted classifier text the parser must
-accept, the vector constructs it must refuse while naming each one, and the
-block operation's full-block and short-block outcomes with the per-byte mask.
+accept, the vector constructs it must refuse while naming each one, the block
+operation's full-block and short-block outcomes with the per-byte mask, and the
+classifier body's own run returning that same mask and leaving the caller's
+memory alone.
 
 The classifier text is `probes/install/ir/json-classify.candidate.ll`, read here
 through `include_str`, so the assertion is about the committed bytes.  The
@@ -337,5 +339,57 @@ def mixedMask : BitVec 32 := 0x7BD6F7B7
 #guard (scanBlock blockCursor mixedBlock 31).2.2 = .short
 #guard (scanBlock blockCursor mixedBlock 31).1.pos = blockCursor.pos
 #guard (scanBlock blockCursor mixedBlock 31).2.1 = (0 : BlockInfo)
+
+/-! ### JB5 — the classifier body, run from a memory holding the chosen block,
+returns the hand-written mask and leaves the caller's memory alone
+
+The same `mixedBytes` block `JB3` classifies through `scanBlock` is placed in
+memory at a non-zero address, and `classify32Function` — the AST pinned from
+`probes/install/ir/json-classify.candidate.ll` — is run over it under the
+repository's semantics.  The returned `i32` is asserted against the same
+hand-written `mixedMask`, so `JB3` and this section read together as
+*body = hand value* and *`scanBlock` = hand value* rather than either one
+reading its expectation back out of `maskOf`.  The returned memory is asserted
+to read back the same 32 bytes, so the body is a pure read: a store, an alloca
+or a clobbered address would show here. -/
+
+open LeanLLVM.Vellum.JsonClassifyIR
+
+/-- The address the block is placed at.  Non-zero, because `initState` reserves
+address `0` for `null`, and not `mixedBlock`'s own size, so the read is not
+anchored at the start of memory. -/
+def blockBase : Nat := 4096
+
+/-- Memory holding `mixedBytes` at `blockBase`, one cell per byte, laid out as
+`readBytes` consumes it. -/
+def blockMem : Mem :=
+  List.ofFn fun i : Fin 32 =>
+    (blockBase + i.val, mixedBytes.get ⟨i.val, i.isLt⟩)
+
+/-- The body run from that memory, under the repository's semantics. -/
+def classifyOutcome : Option Outcome :=
+  runFuel noCalls 10000 classify32Function
+    { (initState classify32Function [.ptr blockBase]) with mem := blockMem }
+
+/-- The `i32` the run returned, when it returned one. -/
+def classifyReturned : Option (BitVec 32) :=
+  match classifyOutcome with
+  | some (.ret (some (.int 32 v)) _) => some v
+  | _ => none
+
+/-- The memory the run returned, when it returned. -/
+def classifyReturnedMem : Option Mem :=
+  match classifyOutcome with
+  | some (.ret _ m) => some m
+  | _ => none
+
+-- (1) The returned `i32` is the hand-written constant `JB3` uses for the same
+-- block.
+#guard classifyReturned = some mixedMask
+
+-- (2) The returned memory reads back the same bytes, so the run neither wrote
+-- nor displaced the caller's block.
+#guard (classifyReturnedMem.bind fun m => readBytes m blockBase 32) =
+  some mixedBytes
 
 end JsonClassifyScenario

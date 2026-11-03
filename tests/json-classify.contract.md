@@ -19,9 +19,13 @@ scalar forms and two splats whose type and width agree), which must each be
 accepted.  The block-operation side is `scanBlock` and `maskOfList`, given a
 mixed 32-byte block: a full block is classified and advances the cursor, a
 block offered with one byte short produces no information, and the mask equals
-a hand-written constant rather than `maskOf` read back.  Every parser assertion
-is a `#guard` over `parseModule` and every block assertion a `#guard` over
-`scanBlock`, so each observation is a closed decision about one call, and a
+a hand-written constant rather than `maskOf` read back.  The body side places
+that same block in memory at a non-zero address and runs `classify32Function`
+through `runFuel`: the returned `i32` equals the same hand-written constant, and
+the returned memory reads back the same bytes.  Every parser assertion
+is a `#guard` over `parseModule`, every block assertion a `#guard` over
+`scanBlock`, and each body assertion a `#guard` over `runFuel`, so each
+observation is a closed decision about one call, and a
 `#guard` that does not hold stops elaboration with a nonzero exit status.  No
 compiler, proof checker, service, clock or network is reached.
 
@@ -132,3 +136,29 @@ compiler, proof checker, service, clock or network is reached.
 - **Not claimed:** the compiled body's behaviour beyond these two inputs, and
   nothing about the cursor being carried correctly past this operation by its
   caller.
+
+### JB5 — the classifier body, run from a memory holding the chosen block, returns the hand-written mask and leaves the caller's memory alone
+
+- **Actor:** `runFuel`, running `classify32Function` — the AST pinned from
+  `probes/install/ir/json-classify.candidate.ll` — under the repository's
+  semantics.
+- **Given:** the same 32-byte `mixedBytes` block `JB3` classifies, laid out in
+  memory one cell per byte at the non-zero address `blockBase = 4096` (address
+  `0` is reserved for `null` by `initState`), and initialised with that
+  argument.
+- **When:** `runFuel noCalls 10000 classify32Function` is applied to that state.
+- **Then:** the run returns, and:
+  1. the returned `i32` is exactly the hand-written constant
+     `mixedMask` (`0x7BD6F7B7`) — the same constant `JB3` asserts for
+     `scanBlock`, not a value read back out of `maskOf`;
+  2. the returned memory, read back with `readBytes` at `blockBase` for 32
+     bytes, is exactly `mixedBytes`.
+- **Why:** `JB3` and this section read together as *body = hand value* and
+  *`scanBlock` = hand value*, through two independent assertions, so neither
+  reads its expectation out of `maskOf` and asserts a tautology.  The memory
+  read-back is the body's purity: a store, an `alloca`, or a displaced address
+  would change the caller's block, and the fixture body is supposed to execute
+  neither `alloca` nor store.
+- **Not claimed:** the body's behaviour on any block other than this one (that
+  is the library theorem's statement), nor the packed value's agreement with
+  the scalar transition beyond this block.
