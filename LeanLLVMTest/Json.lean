@@ -466,3 +466,49 @@ open LeanLLVM.JSON in
 example : ∀ (bs : Bytes) (v : Value),
     (RfcText bs v ∧ Policy v) ↔ StrictText bs v :=
   LeanLLVM.JSON.valid_iff_strict
+
+/-! ### The block layer
+
+`LeanLLVM/JSON/ScanBlock.lean`'s theorems: the mask's lane reading, the
+`List.ofFn` bridge, the take discipline, the 32-byte indexing bridge, the range
+identity the body's unsigned comparison computes, and the block operation's
+contract.  The last two are the ones the emitted classifier is checked against,
+so their statements are restated below as well as their footprints. -/
+
+/-- info: 'LeanLLVM.JSON.maskOfList_getLsbD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.maskOfList_getLsbD
+
+/-- info: 'LeanLLVM.JSON.maskOf_eq_maskOfList' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.maskOf_eq_maskOfList
+
+/-- info: 'LeanLLVM.JSON.maskOfList_take' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.maskOfList_take
+
+/-- info: 'LeanLLVM.JSON.ofFn_of_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.ofFn_of_length
+
+/-- info: 'LeanLLVM.JSON.tab_newline_range' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.tab_newline_range
+
+/-- info: 'LeanLLVM.JSON.scanBlock_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanBlock_correct
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {k : Nat} {b : UInt8}, k < 32 → bs[k]? = some b →
+    (maskOfList bs).getLsbD k = IsStructOrSpaceB b :=
+  @LeanLLVM.JSON.maskOfList_getLsbD
+
+open LeanLLVM.JSON in
+example : ∀ (st : ScanState) (block : Block32) (valid : Nat), valid ≤ 32 →
+    (valid = 32 →
+        scanBlock st block valid = ({ pos := st.pos + 32 }, maskOf block, .ok) ∧
+        ∀ k : Fin 32, (maskOf block).getLsbD k.val = IsStructOrSpaceB (block k)) ∧
+    (valid < 32 →
+        scanBlock st block valid = (st, (0 : BlockInfo), .short)) :=
+  LeanLLVM.JSON.scanBlock_correct

@@ -1,6 +1,7 @@
 /-
 The JSON classifier scenarios: the emitted classifier text the parser must
-accept, and the vector constructs it must refuse while naming each one.
+accept, the vector constructs it must refuse while naming each one, and the
+block operation's full-block and short-block outcomes with the per-byte mask.
 
 The classifier text is `probes/install/ir/json-classify.candidate.ll`, read here
 through `include_str`, so the assertion is about the committed bytes.  The
@@ -283,5 +284,58 @@ entry:
 -- Both matching splats are accepted.
 #guard accepted splatTypeMatch
 #guard accepted splatWidthMatch
+
+/-! ### JB3 — a full block is classified and advances the cursor, a short block
+reports no information, and the mask is the scalar decision per byte
+
+`scanBlock` receives the block and the number of bytes offered.  A full block
+(`valid = 32`) is classified, advances the cursor by 32 and reports `ok`; a
+block offered with `valid = 31` produces no information and leaves the cursor
+where it was, reporting `short`.  The mixed block's mask is asserted against a
+hand-written constant rather than read back through `maskOf`, so the assertion
+is not a tautology; the block's bytes make bit 0 set and bit 31 clear, which a
+reversed bit order cannot satisfy.
+
+The `valid = 32` half is definitional — it is the branch `scanBlock`'s `if`
+takes — and is stated for clarity rather than as evidence.  The load-bearing
+assertions are the mask constant and the short-block outcome. -/
+
+open LeanLLVM.JSON
+
+/-- The cursor the block is offered at.  Not zero, so an advanced cursor is not
+mistaken for the initial state. -/
+def blockCursor : ScanState := { pos := 7 }
+
+/-- The mixed block's 32 bytes: structural bytes, JSON whitespace and ordinary
+content interleaved. -/
+def mixedBytes : List UInt8 :=
+  [ 0x5B, 0x20, 0x20, 0x31, 0x2C, 0x20, 0x32, 0x5D,
+    0x0A, 0x20, 0x22, 0x61, 0x22, 0x20, 0x3A, 0x20,
+    0x78, 0x2C, 0x20, 0x79, 0x09, 0x7A, 0x7B, 0x20,
+    0x22, 0x5C, 0x6B, 0x22, 0x7D, 0x0D, 0x20, 0x71 ]
+
+/-- The mixed block, indexed as `Block32` requires. -/
+def mixedBlock : Block32 := fun i => mixedBytes.get ⟨i.val, i.isLt⟩
+
+/-- The mask the scalar transition must produce for `mixedBlock`: bit `k` set
+exactly where byte `k` is structural or JSON whitespace.  Written out rather
+than read back through `maskOf`, and mixed in the bit-order-sensitive sense —
+bit 0 is set (byte 0 is `[`) and bit 31 is clear (byte 31 is `q`). -/
+def mixedMask : BitVec 32 := 0x7BD6F7B7
+
+-- (1) A full block reports `ok`, and the cursor advances by 32.  This half is
+-- definitional: `valid = 32` takes `scanBlock`'s first branch.
+#guard (scanBlock blockCursor mixedBlock 32).2.2 = .ok
+#guard (scanBlock blockCursor mixedBlock 32).1.pos = blockCursor.pos + 32
+
+-- (2) The full block's mask is the hand-written constant, not `maskOf` read
+-- back.
+#guard (scanBlock blockCursor mixedBlock 32).2.1 = mixedMask
+
+-- (3) A block offered with 31 valid bytes is `short`, leaves the cursor alone
+-- and produces no information.
+#guard (scanBlock blockCursor mixedBlock 31).2.2 = .short
+#guard (scanBlock blockCursor mixedBlock 31).1.pos = blockCursor.pos
+#guard (scanBlock blockCursor mixedBlock 31).2.1 = (0 : BlockInfo)
 
 end JsonClassifyScenario

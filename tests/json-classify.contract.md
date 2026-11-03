@@ -16,10 +16,14 @@ the scenario — six carrying one unmodelled vector construct each, one a splat
 whose element type is not an integer, and one a splat whose element width
 disagrees with the operand type's — with five controls in the same run (three
 scalar forms and two splats whose type and width agree), which must each be
-accepted.  Every assertion is a `#guard` over `parseModule`, so each observation
-is a closed decision about one parse, and a `#guard` that does not hold stops
-elaboration with a nonzero exit status.  No compiler, proof checker, service,
-clock or network is reached.
+accepted.  The block-operation side is `scanBlock` and `maskOfList`, given a
+mixed 32-byte block: a full block is classified and advances the cursor, a
+block offered with one byte short produces no information, and the mask equals
+a hand-written constant rather than `maskOf` read back.  Every parser assertion
+is a `#guard` over `parseModule` and every block assertion a `#guard` over
+`scanBlock`, so each observation is a closed decision about one call, and a
+`#guard` that does not hold stops elaboration with a nonzero exit status.  No
+compiler, proof checker, service, clock or network is reached.
 
     nix develop -c lake env lean tests/json-classify.lean
 
@@ -104,3 +108,27 @@ clock or network is reached.
 - **Not claimed:** the message wording beyond the asserted tokens, and nothing
   about the separate refusal of a splat element whose **value** is not an
   integer literal (`JB2` case 6), which is a different branch.
+
+### JB3 — a full block is classified and advances the cursor, a short block reports no information, and the mask is the scalar decision per byte
+
+- **Actor:** `scanBlock`, given a block and the number of bytes offered.
+- **Given:** a 32-byte mixed block — structural bytes, JSON whitespace and
+  ordinary content interleaved — whose byte 0 is `[` and whose byte 31 is `q`,
+  offered at cursor position 7.  The mask the scalar transition must produce
+  for it is the hand-written constant `0x7BD6F7B7`, in which bit 0 is set and
+  bit 31 is clear, so a reversed bit order cannot satisfy the assertion.
+- **When:** `scanBlock` is applied to that block with `valid = 32`, and again
+  with `valid = 31`.
+- **Then:** with `valid = 32` the status is `.ok` and the cursor is
+  `pos + 32`; that half is definitional — it is the branch `scanBlock`'s `if`
+  takes — and is asserted for clarity rather than as evidence.  The reported
+  mask is exactly `0x7BD6F7B7`, written out rather than read back through
+  `maskOf`, so the assertion is not a tautology.  With `valid = 31` the status
+  is `.short`, the cursor is unchanged and the information is `0`.
+- **Why:** a block operation that reported success on a partial block would
+  carry bytes the caller never supplied as though they had been classified, and
+  the mask is the scalar transition the emitted classifier body stands for, so
+  reading it back out of `maskOf` would assert nothing about the transition.
+- **Not claimed:** the compiled body's behaviour beyond these two inputs, and
+  nothing about the cursor being carried correctly past this operation by its
+  caller.
