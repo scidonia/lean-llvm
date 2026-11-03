@@ -264,6 +264,45 @@ entry:
       | .error _ => false
   | .error _ => false
 
+-- The vector sample: the load of `<32 x i8>`, the lane-wise comparison and
+-- operation, the mask `bitcast` and the `splat` operand the emitted classifier
+-- uses.  The text must parse to these exact constructors, and the printed form
+-- must parse back to the same module, so a wrong `<n x iw>` type, a `splat`
+-- without its element type, or a `bitcast` without its result width fails here
+-- rather than only in the emitted classifier.
+def vectorRoundTripSample : String :=
+"define i32 @vector_roundtrip(ptr %p) {
+entry:
+  %v = load <32 x i8>, ptr %p
+  %c = icmp eq <32 x i8> %v, splat (i8 34)
+  %d = icmp ult <32 x i8> %v, splat (i8 2)
+  %o = or <32 x i1> %c, %d
+  %a = add <32 x i8> %v, splat (i8 -9)
+  %m = bitcast <32 x i1> %o to i32
+  ret i32 %m
+}
+"
+
+#guard
+  match parseModule vectorRoundTripSample with
+  | .ok ⟨_, f :: _⟩ =>
+      match f.blocks with
+      | [b] =>
+          b.instrs =
+            [ .load "%v" (.vec 32 (.int 8)) (.reg "%p"),
+              .icmpVec "%c" .eq 32 8 (.reg "%v") (.imm (.splat 32 8 34)),
+              .icmpVec "%d" .ult 32 8 (.reg "%v") (.imm (.splat 32 8 2)),
+              .binopVec "%o" .or 32 1 (.reg "%c") (.reg "%d"),
+              .binopVec "%a" .add 32 8 (.reg "%v") (.imm (.splat 32 8 (BitVec.ofInt 8 (-9)))),
+              .bitcastMask "%m" 32 (.reg "%o") ]
+      | _ => false
+  | _ => false
+
+#guard
+  match parseModule vectorRoundTripSample with
+  | .ok m => parseModule (Module.render m) = .ok m
+  | .error _ => false
+
 -- Strength reduction fires on `mul i32 %x, 2` and preserves behaviour.
 def strengthSample : String :=
 "define i32 @twice(i32 %x) {

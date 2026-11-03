@@ -25,6 +25,14 @@ inductive Instr where
   | alloca (dst : String) (ty : Ty) (align : Nat)
   | load (dst : String) (ty : Ty) (ptr : Operand)
   | store (ty : Ty) (val ptr : Operand)
+  /-- A lane-wise integer comparison: each lane of the result is the predicate's
+  one-bit result on the two operands' lane at that position.  The lane count and
+  width are the operands' vector type, `<n x iw>`. -/
+  | icmpVec (dst : String) (pred : IPred) (n w : Nat) (lhs rhs : Operand)
+  /-- A lane-wise binary integer operation on vectors of `<n x iw>`. -/
+  | binopVec (dst : String) (op : BinOp) (n w : Nat) (lhs rhs : Operand)
+  /-- Pack a `<n x i1>` mask into an `n`-bit integer, lane `k` to bit `k`. -/
+  | bitcastMask (dst : String) (n : Nat) (v : Operand)
   /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
   is resolved by the semantics' call environment, not by the function itself. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
@@ -41,6 +49,9 @@ def Instr.dst? : Instr → Option String
   | .alloca d _ _ => some d
   | .load d _ _ => some d
   | .store _ _ _ => none
+  | .icmpVec d _ _ _ _ _ => some d
+  | .binopVec d _ _ _ _ _ => some d
+  | .bitcastMask d _ _ => some d
   | .call d _ _ _ => some d
 
 /-- Registers read by an instruction. -/
@@ -54,6 +65,9 @@ def Instr.uses : Instr → List String
   | .alloca _ _ _ => []
   | .load _ _ p => p.regs
   | .store _ v p => v.regs ++ p.regs
+  | .icmpVec _ _ _ _ a b => a.regs ++ b.regs
+  | .binopVec _ _ _ _ a b => a.regs ++ b.regs
+  | .bitcastMask _ _ v => v.regs
   | .call _ _ _ args => (args.map (·.2.regs)).flatten
 
 /-- Instructions with no memory effect.  `alloca` moves the allocation pointer
@@ -69,6 +83,9 @@ def Instr.isPure : Instr → Bool
   | .alloca .. => false
   | .load .. => true
   | .store .. => false
+  | .icmpVec .. => true
+  | .binopVec .. => true
+  | .bitcastMask .. => true
   | .call .. => false
 
 /-- A terminator.  `ret void` carries `none`. -/

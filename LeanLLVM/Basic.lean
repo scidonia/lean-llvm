@@ -2,49 +2,71 @@
 Core data types shared by the syntax, the semantics and the transformations.
 
 The model targets the LLVM IR that reaches the late optimisation pipeline: the
-scalar integer core plus a byte-addressed memory.  Aggregates, floating point,
-vectors and pointer provenance are deliberately outside the first slice, and the
-parser refuses them rather than silently approximating them.
+scalar integer core plus a byte-addressed memory.  The one aggregate form is the
+fixed-length vector `<n x iW>`, which the JSON block classifier is emitted in.
+Aggregates other than vectors, floating point and pointer provenance are
+deliberately outside the first slice, and the parser refuses them rather than
+silently approximating them.
 -/
 namespace LeanLLVM
 
-/-- LLVM value types modelled by the core. -/
+/-- LLVM value types modelled by the core.  A vector carries its element type,
+so `<32 x i8>` and `<32 x i1>` are distinct types. -/
 inductive Ty where
   | int (w : Nat)
   | ptr
   | void
+  | vec (n : Nat) (elem : Ty)
   deriving DecidableEq, Repr
 
-/-- Number of bytes a value of this type occupies in memory. -/
+/-- Number of bytes a value of this type occupies in memory.  A vector of
+integers occupies its lane count times the lane width; any other element type is
+not laid out, so its size is zero and an allocation of it moves the cursor
+nowhere. -/
 def Ty.sizeBytes : Ty → Nat
   | .int w => (w + 7) / 8
   | .ptr => 8
   | .void => 0
+  | .vec n (.int w) => n * ((w + 7) / 8)
+  | .vec _ _ => 0
 
-/-- A literal operand, as it appears in textual IR. -/
+/-- A literal operand, as it appears in textual IR.  A splat is the vector
+constant form `splat (<elem> <value>)`: the same integer in every lane.  It
+carries its lane count, its lane width and its value, so a splat of a non-integer
+— `splat (i8 undef)`, `splat (ptr null)` — has no representation and no printed
+form.  The lane count is omitted by the printer because the operand's vector type
+supplies it on re-parse. -/
 inductive Const where
   | int (w : Nat) (v : BitVec w)
   | null
   | undef
   | poison
+  | splat (n w : Nat) (v : BitVec w)
   deriving DecidableEq, Repr
 
 /-- A dynamically typed value.  Integer values carry their width, so arithmetic
-is width-checked when an operand is read. -/
+is width-checked when an operand is read.  A vector value carries its lane count
+and lane width, and its lanes are a list of exactly that many lanes; a list of
+another length is a value the semantics does not produce, and `Value.vecLanes`
+rejects it by shape. -/
 inductive Value where
   | int (w : Nat) (v : BitVec w)
   | ptr (addr : Nat)
+  | vec (n w : Nat) (lanes : List (BitVec w))
   deriving DecidableEq, Repr
 
 /-- The value of a literal.  `undef` and `poison` are modelled as undefined
 behaviour: the first slice has no nondeterministic or poison semantics, so a
 program that reads one is `ub`.  This is a conservative model for an optimiser:
-it permits fewer rewrites than LLVM's own semantics, never more. -/
+it permits fewer rewrites than LLVM's own semantics, never more.  A splat is the
+same value in every lane, and it is total: its element is an integer by
+construction. -/
 def Const.toValue : Const → Option Value
   | .int w v => some (.int w v)
   | .null => some (.ptr 0)
   | .undef => none
   | .poison => none
+  | .splat n w v => some (.vec n w (List.replicate n v))
 
 /-- An instruction operand. -/
 inductive Operand where

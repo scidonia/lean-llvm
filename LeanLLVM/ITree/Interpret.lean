@@ -260,6 +260,18 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
+  | icmpVec d pr n w a b =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | binopVec d op n w a b =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | bitcastMask d n v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
 
 /-- `storeValue` updates the memory exactly as `storeMem` does. -/
 theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : State)
@@ -277,6 +289,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
             rw [if_pos hw]
           · exact absurd h (by simp)
       | ptr a => simp [storeValue] at h
+      | vec n' w' lanes => simp [storeValue] at h
   | ptr =>
       cases v with
       | int w x => simp [storeValue] at h
@@ -284,6 +297,8 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
           simp only [storeValue, Option.some.injEq] at h
           subst h
           simp only [storeMem]
+      | vec n' w' lanes => simp [storeValue] at h
+  | vec n elem => cases v <;> simp [storeValue] at h
   | void => cases v <;> simp [storeValue] at h
 
 theorem exec_pureInstrT (calls : Calls) (s : State) (i : Instr)
@@ -318,6 +333,11 @@ theorem exec_instrT_load (calls : Calls) (s : State) (d : String) (ty : Ty) (p :
   | some v =>
       cases v with
       | int w x =>
+          have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+          rw [hub hE]
+          simp only [instrT, hOp]
+          exact Exec.ub
+      | vec n' w' lanes =>
           have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
           rw [hub hE]
           simp only [instrT, hOp]
@@ -363,6 +383,12 @@ theorem exec_instrT_store (calls : Calls) (s : State) (ty : Ty) (v p : Operand)
       | some pv =>
           cases pv with
           | int w x =>
+              have hE : evalInstr calls s (.store ty v p) = none := by
+                simp [evalInstr, hv, hp]
+              rw [hub hE]
+              simp only [instrT, hv, hp]
+              exact Exec.ub
+          | vec n w x =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]
               rw [hub hE]
@@ -463,6 +489,21 @@ theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) h) hokK hubK
+      | icmpVec d pr n w a b =>
+          exact exec_pureInstrT calls s (.icmpVec d pr n w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
+      | binopVec d op n w a b =>
+          exact exec_pureInstrT calls s (.binopVec d op n w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
+      | bitcastMask d n v =>
+          exact exec_pureInstrT calls s (.bitcastMask d n v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | select d ty c a b =>
           exact exec_pureInstrT calls s (.select d ty c a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
@@ -507,6 +548,7 @@ theorem execTerm_jump_mem (s : State) (t : Term) (s' : State)
       | some v =>
           cases v with
           | ptr a => simp [execTerm, hOp] at h
+          | vec n w x => simp [execTerm, hOp] at h
           | int w b =>
               cases w with
               | zero => simp [execTerm, hOp] at h

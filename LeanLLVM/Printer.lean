@@ -13,12 +13,19 @@ def Ty.render : Ty → String
   | .int w => s!"i{w}"
   | .ptr => "ptr"
   | .void => "void"
+  | .vec n elem => s!"<{n} x {elem.render}>"
 
+/-- A literal, without its type: an integer is its unsigned value, as LLVM
+prints it.  A splat is `splat (<elem> <value>)` — the lane count is omitted
+because the operand's vector type supplies it on re-parse, and the element width
+comes from the value itself.  Every splat has a printed form, because a splat
+carries an integer. -/
 def Const.render : Const → String
   | .int _ v => toString v.toNat
   | .null => "null"
   | .undef => "undef"
   | .poison => "poison"
+  | .splat _ w v => s!"splat (i{w} {v.toNat})"
 
 /-- Render an operand that carries no type prefix of its own. -/
 def Operand.token : Operand → String
@@ -62,6 +69,15 @@ def Instr.render : Instr → String
       s!"  {d} = load {ty.render}, ptr {p.token}"
   | .store ty v p =>
       s!"  store {v.render ty}, ptr {p.token}"
+  | .icmpVec d pred n w a b =>
+      let ty := Ty.vec n (.int w)
+      s!"  {d} = icmp {pred.render} {ty.render} {a.token}, {b.token}"
+  | .binopVec d op n w a b =>
+      let ty := Ty.vec n (.int w)
+      s!"  {d} = {op.render} {ty.render} {a.token}, {b.token}"
+  | .bitcastMask d n v =>
+      let ty := Ty.vec n (.int 1)
+      s!"  {d} = bitcast {ty.render} {v.token} to i{n}"
   | .call d retTy callee args =>
       let rendered :=
         String.intercalate ", " (args.map fun (ty, op) => s!"{ty.render} {op.token}")

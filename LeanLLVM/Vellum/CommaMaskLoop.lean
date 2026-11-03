@@ -254,6 +254,7 @@ theorem evalInstr_mul_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
         simp [Value.intToNat, evalBinopNat, evalBinop, ofNat_mul]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
     evalInstr calls s (.binop d .lshr 64 (.reg r₁) (.reg r₂)) =
@@ -278,7 +279,9 @@ theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
             · simp [Value.intToNat, hw']
           · simp [Value.intToNat, hw]
         | ptr b => simp [Value.intToNat]
+        | vec n' w' lanes => simp [Value.intToNat]
       | ptr a => simp [Value.intToNat]
+      | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : BitVec 64) :
     evalInstr calls s (.binop d .shl 64 (.imm (.int 64 a)) (.reg r)) =
@@ -296,6 +299,7 @@ theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : Bi
         simp [Value.intToNat, evalBinopNat, evalBinop, ofNat_shiftLeft]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem c_eight : c 8 = (BitVec.ofNat 64 8 : BitVec 64) := by decide
 theorem eight_lit : (8 : BitVec 64) = BitVec.ofNat 64 8 := rfl
@@ -358,6 +362,7 @@ theorem evalInstr_icmp_ult_imm (calls : Calls) (s : State) (d r : String) (b : B
         simp [Value.intToNat, evalICmpNat, evalICmp]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem lookup_bind_self (s : State) (d : String) (v : Value) :
     lookupName (s.bind d v).env d = some v := by

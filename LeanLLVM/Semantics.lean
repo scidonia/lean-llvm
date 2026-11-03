@@ -88,6 +88,7 @@ casts. -/
 def Value.intToNat (w : Nat) : Value → Option Nat
   | .int w' v => if w' = w then some v.toNat else none
   | .ptr _ => none
+  | .vec .. => none
 
 /-- `evalBinop` at the `Nat` level: the operands are read as `w`-bit values. -/
 def evalBinopNat (op : BinOp) (w : Nat) (a b : Nat) : Option Nat :=
@@ -112,6 +113,21 @@ def evalICmp (p : IPred) {w : Nat} (a b : BitVec w) : BitVec 1 :=
 def evalICmpNat (p : IPred) (w : Nat) (a b : Nat) : BitVec 1 :=
   evalICmp p (BitVec.ofNat w a) (BitVec.ofNat w b)
 
+/-- The lanes of a vector value at lane width `w` and count `n`, or `none` when
+the value is not a vector of exactly that shape.  The width is an argument, so
+the caller fixes the lane type and the shape check is a boolean, not a cast. -/
+def Value.vecLanes (n w : Nat) : Value → Option (List (BitVec w))
+  | .vec n' w' l =>
+      if h : w' = w then
+        (if l.length = n ∧ n' = n then some (h ▸ l) else none)
+      else none
+  | _ => none
+
+/-- Little-endian lane packing: lane `k` becomes bit `k` of the natural. -/
+def lanesToNat : List (BitVec 1) → Nat
+  | [] => 0
+  | b :: bs => (if b = 1 then 1 else 0) + 2 * lanesToNat bs
+
 /-- Load a value of the given type from an address.  A byte that was never
 written makes the load undefined. -/
 def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
@@ -126,6 +142,11 @@ def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
       match readBytes m addr 8 with
       | some bs => some (.ptr (bytesToNat bs))
       | none => none
+  | .vec n (.int 8) =>
+      match readBytes m addr n with
+      | some bs => some (.vec n 8 (bs.map fun b => BitVec.ofNat 8 b.toNat))
+      | none => none
+  | .vec _ _ => none
   | .void => none
 
 /-- Store a value at an address. -/
@@ -215,6 +236,31 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
           | some r => some { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next }
           | none => none
       | none => none
+  | .icmpVec d pred n w a b =>
+      match evalOperand s a, evalOperand s b with
+      | some va, some vb =>
+          match va.vecLanes n w, vb.vecLanes n w with
+          | some l₁, some l₂ =>
+              some (s.bind d (.vec n 1 ((l₁.zip l₂).map fun (x, y) => evalICmp pred x y)))
+          | _, _ => none
+      | _, _ => none
+  | .binopVec d op n w a b =>
+      match evalOperand s a, evalOperand s b with
+      | some va, some vb =>
+          match va.vecLanes n w, vb.vecLanes n w with
+          | some l₁, some l₂ =>
+              match (l₁.zip l₂).mapM (fun (x, y) => evalBinop op x y) with
+              | some ls => some (s.bind d (.vec n w ls))
+              | none => none
+          | _, _ => none
+      | _, _ => none
+  | .bitcastMask d n v =>
+      match evalOperand s v with
+      | some (.vec n' 1 l) =>
+          if n' = n ∧ l.length = n then
+            some (s.bind d (.int n (BitVec.ofNat n (lanesToNat l))))
+          else none
+      | _ => none
 
 /-- Execute a straight-line instruction sequence. -/
 def denoteCode (calls : Calls) : List Instr → State → Option State

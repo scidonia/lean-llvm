@@ -115,6 +115,7 @@ theorem envFor_eq : envFor byteLoop = envFor swar := by
             simp only [e]
           · simp [hw]
         | ptr a => rfl
+        | vec n' w' lanes => rfl
   · simp only [envFor, h, ite_false]
 
 /-! ### Execution -/

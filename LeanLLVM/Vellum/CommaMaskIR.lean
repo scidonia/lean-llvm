@@ -264,6 +264,7 @@ theorem evalInstr_and_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
         simp [Value.intToNat, evalBinopNat, evalBinop, BitVec.ofNat_toNat]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_xor_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
     evalInstr calls s (.binop d .xor 64 (.reg r) (.imm (.int 64 b))) =
@@ -281,6 +282,7 @@ theorem evalInstr_xor_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
         simp [Value.intToNat, evalBinopNat, evalBinop, BitVec.ofNat_toNat]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_add_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
     evalInstr calls s (.binop d .add 64 (.reg r) (.imm (.int 64 b))) =
@@ -298,6 +300,7 @@ theorem evalInstr_add_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
         simp [Value.intToNat, evalBinopNat, evalBinop, BitVec.ofNat_toNat, ofNat_add_toNat]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_or_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
     evalInstr calls s (.binop d .or 64 (.reg r) (.imm (.int 64 b))) =
@@ -315,6 +318,7 @@ theorem evalInstr_or_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 
         simp [Value.intToNat, evalBinopNat, evalBinop, BitVec.ofNat_toNat]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_lshr_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
     evalInstr calls s (.binop d .lshr 64 (.reg r) (.imm (.int 64 b))) =
@@ -333,6 +337,7 @@ theorem evalInstr_lshr_imm (calls : Calls) (s : State) (d r : String) (b : BitVe
           ofNat_ushiftRight_toNat]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 /-- Two immediates need no lookup: the result is a constant. -/
 theorem evalInstr_or_imm_imm (calls : Calls) (s : State) (d : String) (a b : BitVec 64) :
@@ -364,7 +369,9 @@ theorem evalInstr_or_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
             · simp [Value.intToNat, hw']
           · simp [Value.intToNat, hw]
         | ptr b => simp [Value.intToNat]
+        | vec n' w' lanes => simp [Value.intToNat]
       | ptr a => simp [Value.intToNat]
+      | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_icmp_eq_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
     evalInstr calls s (.icmp d .eq 64 (.reg r) (.imm (.int 64 b))) =
@@ -382,6 +389,7 @@ theorem evalInstr_icmp_eq_imm (calls : Calls) (s : State) (d r : String) (b : Bi
         simp [Value.intToNat, evalICmpNat, evalICmp, BitVec.ofNat_toNat]
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
 
 theorem evalInstr_select_reg_imm (calls : Calls) (s : State) (d r r₁ : String) (b : BitVec 64) :
     evalInstr calls s (.select d (.int 64) (.reg r) (.reg r₁) (.imm (.int 64 b))) =
@@ -398,6 +406,7 @@ theorem evalInstr_select_reg_imm (calls : Calls) (s : State) (d r r₁ : String)
     | some v₁ =>
       cases v with
       | ptr a => simp
+      | vec n' w' lanes => simp
       | int w c =>
         by_cases hw : w = 1
         · subst hw
@@ -425,6 +434,7 @@ theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String
       | some v₂ =>
         cases v with
         | ptr a => simp
+        | vec n' w' lanes => simp
         | int w c =>
           by_cases hw : w = 1
           · subst hw
@@ -1063,7 +1073,7 @@ instruction. -/
 theorem baseline_beh_other (calls : Calls) (a : Value) (rest : List Value)
     (hne : ∀ x, a ≠ .int 64 x) (o : Outcome) :
     Beh calls baselineFunction (a :: rest) o := by
-  obtain ⟨w, v⟩ | ⟨p⟩ := a
+  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ := a
   · have hw : w ≠ 64 := by
       intro hw
       subst hw
@@ -1078,12 +1088,17 @@ theorem baseline_beh_other (calls : Calls) (a : Value) (rest : List Value)
       Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
       Option.getD, List.map, List.zip, List.zipWith, denoteCode, baselineInstrs, execTerm,
       evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
+  · refine Or.inl ⟨2, ?_⟩
+    simp [runFuel, step, baselineFunction, baselineEntry, baselineBody,
+      Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
+      Option.getD, List.map, List.zip, List.zipWith, denoteCode, baselineInstrs, execTerm,
+      evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
 
 /-- The candidate refuses any other argument list in the same way. -/
 theorem candidate_beh_other (calls : Calls) (a : Value) (rest : List Value)
     (hne : ∀ x, a ≠ .int 64 x) (o : Outcome) :
     Beh calls candidateFunction (a :: rest) o := by
-  obtain ⟨w, v⟩ | ⟨p⟩ := a
+  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ := a
   · have hw : w ≠ 64 := by
       intro hw
       subst hw
@@ -1093,6 +1108,11 @@ theorem candidate_beh_other (calls : Calls) (a : Value) (rest : List Value)
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
       List.map, List.zip, List.zipWith, denoteCode, candidateInstrs, evalInstr,
       evalOperand, Const.toValue, Value.intToNat, lit, c, argName, hw]
+  · refine Or.inl ⟨1, ?_⟩
+    simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
+      findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
+      List.map, List.zip, List.zipWith, denoteCode, candidateInstrs, evalInstr,
+      evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
   · refine Or.inl ⟨1, ?_⟩
     simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
@@ -1140,6 +1160,11 @@ theorem IR_refines : ∀ calls, LeanLLVM.Refines calls candidateFunction baselin
         exact baseline_beh_other calls _ _ hne o
     | .ptr p =>
       have hne : ∀ y, (Value.ptr p : Value) ≠ .int 64 y := by
+        intro y hy
+        cases hy
+      exact baseline_beh_other calls _ _ hne o
+    | .vec n' w' lanes =>
+      have hne : ∀ y, (Value.vec n' w' lanes : Value) ≠ .int 64 y := by
         intro y hy
         cases hy
       exact baseline_beh_other calls _ _ hne o

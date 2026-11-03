@@ -263,6 +263,14 @@ theorem execTerm_ret_mem (s : State) (t : Term) (v : Option Value) (s' : State)
               split at h
               · cases h; rfl
               · cases h
+      | vec n elem =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h
+          | some o =>
+              simp only [execTerm] at h
+              split at h
+              · cases h; rfl
+              · cases h
 
 /-- `handle` of an undefined-behaviour node resolves to `some .ub`. -/
 theorem handled_ubT (calls : Calls) (frame : Nat → Prop) (m : Mem) :
@@ -323,6 +331,11 @@ theorem handled_instrT_load (calls : Calls) (frame : Nat → Prop) (s : State) (
           rw [hub hE]
           simp only [instrT, hOp]
           exact handled_ubT calls frame s.mem
+      | vec n w x =>
+          have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+          rw [hub hE]
+          simp only [instrT, hOp]
+          exact handled_ubT calls frame s.mem
       | ptr addr =>
           cases hL : loadValue s.mem ty addr with
           | none =>
@@ -367,6 +380,12 @@ theorem handled_instrT_store (calls : Calls) (frame : Nat → Prop) (s : State) 
       | some pv =>
           cases pv with
           | int w x =>
+              have hE : evalInstr calls s (.store ty v p) = none := by
+                simp [evalInstr, hv, hp]
+              rw [hub hE]
+              simp only [instrT, hv, hp]
+              exact handled_ubT calls frame s.mem
+          | vec n w x =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]
               rw [hub hE]
@@ -478,6 +497,21 @@ theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → P
               (by intro d rt c a hh; cases hh) h) hokK hubK
       | icmp d pr w a b =>
           exact handled_pureInstrT calls frame s (.icmp d pr w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
+      | icmpVec d pr n w a b =>
+          exact handled_pureInstrT calls frame s (.icmpVec d pr n w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
+      | binopVec d op n w a b =>
+          exact handled_pureInstrT calls frame s (.binopVec d op n w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
+      | bitcastMask d n v =>
+          exact handled_pureInstrT calls frame s (.bitcastMask d n v) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) h) hokK hubK

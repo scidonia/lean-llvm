@@ -125,6 +125,7 @@ theorem loop_seam_callRefines :
             simp [envFor, (byteLoop_eq_spec x).symm]
           · simp [envFor, hw]
         | ptr a => simp [envFor]
+        | vec n' w' lanes => simp [envFor]
   · simp [envFor, h]
 
 /-- The contextual replacement: the caller under the memory-backed loop's
@@ -185,7 +186,7 @@ undefined. -/
 theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem : Mem)
     (next : Nat) (hne : ∀ y, a ≠ .int 64 y) :
     envForBody 10000 16 candidateFunction seamSymbol (a :: rest) mem next = none := by
-  obtain ⟨w, v⟩ | ⟨p⟩ := a
+  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ := a
   · have hw : w ≠ 64 := by
       intro hw
       subst hw
@@ -194,6 +195,10 @@ theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem :
       findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
       argName, hw]
+  · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
+      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode,
+      candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
+      argName]
   · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
@@ -275,6 +280,10 @@ theorem loop_seam_within_refines (x : BitVec 64) :
       exact Or.inl (candidate_envForBody_none_of_head (.ptr p) rest mem next (by
         intro y hy
         cases hy))
+    | .vec n' w' lanes =>
+      exact Or.inl (candidate_envForBody_none_of_head (.vec n' w' lanes) rest mem next (by
+        intro y hy
+        cases hy))
 
 /-- The emitted caller (`probes/install/ir/caller.ll`, `SeamContext.callerFunction`)
 observes the loop's selection at the loop's own footprint.  Its call is its first
@@ -340,6 +349,11 @@ theorem caller_replaces_loop_within (x : BitVec 64) :
     | .ptr p =>
       exact ⟨o, caller_beh_of_unresolved 10000 16 candidateFunction (.ptr p) rest o
         (candidate_envForBody_none_of_head (.ptr p) rest [] 1 (by
+          intro y hy
+          cases hy)), Outcome.agreesOutside_refl o _⟩
+    | .vec n' w' lanes =>
+      exact ⟨o, caller_beh_of_unresolved 10000 16 candidateFunction (.vec n' w' lanes) rest o
+        (candidate_envForBody_none_of_head (.vec n' w' lanes) rest [] 1 (by
           intro y hy
           cases hy)), Outcome.agreesOutside_refl o _⟩
 
@@ -523,6 +537,12 @@ theorem memCaller_replaces_loop_within (x : BitVec 64) :
       exact ⟨o, memCaller_beh_of_unresolved (envForBody 10000 16 candidateFunction)
         (.ptr p) rest o
         (candidate_envForBody_none_of_head (.ptr p) rest [] 9 (by
+          intro y hy
+          cases hy)), Outcome.agreesOutside_refl o _⟩
+    | .vec n' w' lanes =>
+      exact ⟨o, memCaller_beh_of_unresolved (envForBody 10000 16 candidateFunction)
+        (.vec n' w' lanes) rest o
+        (candidate_envForBody_none_of_head (.vec n' w' lanes) rest [] 9 (by
           intro y hy
           cases hy)), Outcome.agreesOutside_refl o _⟩
 

@@ -397,6 +397,12 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | sext d wi wo v =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | icmpVec d p n w a b =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | binopVec d op n w a b =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | bitcastMask d n v =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
         | alloca d ty al =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
 

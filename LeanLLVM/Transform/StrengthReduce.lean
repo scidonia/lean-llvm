@@ -87,11 +87,14 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
                                 rw [evalBinopNat_mul_two]
                                 rfl
                               · simp [evalOperand, Const.toValue, Value.intToNat, hw]
+                          | vec n' w' lanes =>
+                              simp [evalOperand, Const.toValue, Value.intToNat]
                     · rw [ite_eq_right hv]
                   · rw [dite_eq_right h]
               | null => rfl
               | undef => rfl
               | poison => rfl
+              | splat _ _ _ => rfl
       | add => rfl
       | sub => rfl
       | udiv => rfl
@@ -112,6 +115,9 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
   | alloca d ty a => rfl
   | load d ty p => rfl
   | store ty v p => rfl
+  | icmpVec d p n w a b => rfl
+  | binopVec d op n w a b => rfl
+  | bitcastMask d n v => rfl
   | call d ty callee args => rfl
 
 def strengthReduceBlock (b : Block) : Block :=

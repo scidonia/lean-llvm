@@ -4,7 +4,11 @@ A parser for the subset of textual LLVM IR that the semantics models.
 The parser is line oriented: one instruction per line, one label per block.
 Unmodelled instructions and block structure are refused with a message naming
 the construct, rather than being approximated: `phi`, `getelementptr`,
-aggregates and floating point are not accepted yet.  A function definition's
+aggregates other than the fixed-length vector, and floating point are not
+accepted yet.  Of the vector fragment the modelled part is the one an emitted
+classifier contains — `load` of `<n x i8>`, the lane-wise `icmp`, the lane-wise
+`or`/`and`/`xor`/`add`/`sub`, the mask `bitcast` and a `splat` operand — and the
+rest of the vector grammar is refused by name.  A function definition's
 header is checked for attributes the semantics does not model: a return
 attribute before the return type and a function attribute after the parameter
 list are both refused.  A `declare` header is not checked: unmodelled tokens in
@@ -12,6 +16,7 @@ a declaration's parameter list or after its closing parenthesis are still
 accepted.
 -/
 import LeanLLVM.Syntax
+import LeanLLVM.Printer
 
 namespace LeanLLVM
 
@@ -104,11 +109,33 @@ def parseTy (s : String) : Except String Ty :=
     | none => .error s!"unsupported type '{s}'"
   else .error s!"unsupported type '{s}'"
 
+/-- Parse a type from the token stream: a scalar type token, or `<n x elem>` for
+a vector.  The element type is one scalar token, because only integer lanes are
+modelled; any other element type is refused by name.  `Ty.render` is the one
+type speller, and the refusals name a type the way the printer would write it. -/
 def expectTy : P Ty := do
-  let t ← P.next
-  match parseTy t with
-  | .ok ty => pure ty
-  | .error e => P.fail e
+  let o ← P.peek
+  match o with
+  | some "<" =>
+      let _ ← P.next
+      let nTok ← P.next
+      let n ← match nTok.toNat? with
+        | some n => if n = 0 then P.fail "a vector needs at least one lane" else pure n
+        | none => P.fail s!"invalid vector lane count '{nTok}'"
+      P.expect "x"
+      let elemTok ← P.next
+      let elem ← match parseTy elemTok with
+        | .ok ty => pure ty
+        | .error e => P.fail e
+      P.expect ">"
+      match elem with
+      | .int _ => pure (.vec n elem)
+      | _ => P.fail s!"vector element type '{elemTok}' is not modelled"
+  | _ =>
+      let t ← P.next
+      match parseTy t with
+      | .ok ty => pure ty
+      | .error e => P.fail e
 
 def hexVal (c : Char) : Option Nat :=
   if c.isDigit then some (c.toNat - '0'.toNat)
@@ -130,7 +157,8 @@ def parseInt (s : String) : Option Int :=
   else (parseNat s).map fun n => (n : Int)
 
 /-- A constant of the given type.  Register operands are parsed by
-`parseOperand`. -/
+`parseOperand`.  A vector constant has no literal form of its own: it arrives
+through `parseOperand`'s `splat` branch, which the operand's vector type sizes. -/
 def parseConst (ty : Ty) (t : String) : Except String Const :=
   match ty with
   | .int w =>
@@ -147,12 +175,52 @@ def parseConst (ty : Ty) (t : String) : Except String Const :=
   | .ptr =>
       if t = "null" then .ok .null
       else .error s!"only the 'null' pointer constant is supported, got '{t}'"
+  | .vec _ _ => .error s!"unsupported vector constant '{t}': only a splat is modelled"
   | .void => .error "void operand"
 
-/-- Parse an operand at a known type: a register `%x` or a literal. -/
+/-- The lane value of a splat: an integer literal of exactly width `w`.  `none`
+means the token is not such a literal (`undef`, `poison`, `zeroinitializer`, a
+register, a malformed literal), which the caller refuses by name.  It reuses
+`parseConst`, so a splat accepts the same **integer**-literal grammar a scalar
+operand does: `undef` and `poison` are literals a scalar operand accepts and a
+splat refuses, because the narrowed constructor cannot hold them.  The width is
+recovered because `parseConst` at `.int w` only ever builds an `.int w`. -/
+def parseSplatValue (w : Nat) (t : String) : Option (BitVec w) :=
+  match parseConst (.int w) t with
+  | .ok (.int w' v) => if h : w' = w then some (h ▸ v) else none
+  | _ => none
+
+/-- Parse an operand at a known type: a register `%x`, a literal, or a `splat`
+of a literal at a vector type.  A splat's lane count comes from the operand's
+vector type, because the printed form omits it and LLVM's grammar supplies it
+from that position. -/
 def parseOperand (ty : Ty) : P Operand := do
   let t ← P.next
   if t.startsWith "%" then pure (.reg t)
+  else if t = "splat" then
+    let (n, w) ← match ty with
+      | .vec n (.int w) => pure (n, w)
+      | _ => P.fail "a splat operand requires a vector operand type"
+    P.expect "("
+    let elemTok ← P.next
+    -- One shared refusal for the element type position: whatever the token is
+    -- (`ptr`, `void`, a malformed width, `undef` written in place of a type),
+    -- the message names it.
+    let w' ← match parseTy elemTok with
+      | .ok (.int w') => pure w'
+      | _ => P.fail s!"a splat element must be an integer type, got '{elemTok}'"
+    if w' ≠ w then
+      P.fail s!"splat element width i{w'} disagrees with the operand type's element width i{w}"
+    else
+      let lit ← P.next
+      -- One shared refusal for the element value position: a literal that is
+      -- not an integer (`undef`, `poison`, `zeroinitializer`, a register, …)
+      -- is named, rather than being approximated by a default.
+      let v ← match parseSplatValue w lit with
+        | some v => pure v
+        | none => P.fail s!"a splat element must be an integer literal, got '{lit}'"
+      P.expect ")"
+      pure (.imm (.splat n w v))
   else
     match parseConst ty t with
     | .ok c => pure (.imm c)
@@ -170,15 +238,26 @@ inductive Stmt where
   | instr (i : Instr)
   | term (t : Term)
 
+/-- A binary operation.  The vector form is lane-wise and is modelled only for
+the operations the classifier is emitted with; the rest are refused on vectors
+by name. -/
 def parseBinop (dst : String) (bop : BinOp) : P Stmt := do
   let ty ← expectTy
-  let w ← match ty with
-    | .int w => pure w
-    | _ => P.fail "binary operation on a non-integer type"
-  let a ← parseOperand ty
-  P.expect ","
-  let b ← parseOperand ty
-  pure (.instr (.binop dst bop w a b))
+  match ty with
+  | .int w =>
+      let a ← parseOperand ty
+      P.expect ","
+      let b ← parseOperand ty
+      pure (.instr (.binop dst bop w a b))
+  | .vec n (.int w) =>
+      match bop with
+      | .or | .and | .xor | .add | .sub =>
+          let a ← parseOperand ty
+          P.expect ","
+          let b ← parseOperand ty
+          pure (.instr (.binopVec dst bop n w a b))
+      | _ => P.fail s!"'{bop.render}' on a vector type is not modelled"
+  | _ => P.fail "binary operation on a non-integer type"
 
 def parseIPred (s : String) : Except String IPred :=
   match s with
@@ -245,21 +324,33 @@ def parseValueInstr (dst : String) : P Stmt := do
         | .ok p => pure p
         | .error e => P.fail e
       let ty ← expectTy
-      let w ← match ty with
-        | .int w => pure w
-        | _ => P.fail "icmp on a non-integer type"
-      let a ← parseOperand ty
-      P.expect ","
-      let b ← parseOperand ty
-      pure (.instr (.icmp dst pred w a b))
+      match ty with
+      | .int w =>
+          let a ← parseOperand ty
+          P.expect ","
+          let b ← parseOperand ty
+          pure (.instr (.icmp dst pred w a b))
+      | .vec n (.int w) =>
+          -- Only the two predicates the classifier is emitted with are
+          -- modelled lane-wise; the signed and remaining unsigned predicates
+          -- are refused by name.
+          match pred with
+          | .eq | .ult =>
+              let a ← parseOperand ty
+              P.expect ","
+              let b ← parseOperand ty
+              pure (.instr (.icmpVec dst pred n w a b))
+          | _ => P.fail s!"icmp {predTok} on a vector type is not modelled"
+      | _ => P.fail "icmp on a non-integer type"
   | "select" =>
       let (condTy, c) ← parseTypedOperand
       P.expect ","
       let (ty, a) ← parseTypedOperand
       P.expect ","
       let (_, b) ← parseTypedOperand
-      if condTy ≠ .int 1 then P.fail "select condition must be i1" else
-        pure (.instr (.select dst ty c a b))
+      if condTy ≠ .int 1 then P.fail "select condition must be i1"
+      else if let .vec _ _ := ty then P.fail "select of a vector value is not modelled"
+      else pure (.instr (.select dst ty c a b))
   | "trunc" => parseCast dst fun d wi wo v => .trunc d wi wo v
   | "zext" => parseCast dst fun d wi wo v => .zext d wi wo v
   | "sext" => parseCast dst fun d wi wo v => .sext d wi wo v
@@ -276,12 +367,27 @@ def parseValueInstr (dst : String) : P Stmt := do
             | none => P.fail s!"invalid alignment '{n}'"
           else P.fail "expected 'align' after ','"
         else pure 0
-      pure (.instr (.alloca dst ty align))
+      if let .vec _ _ := ty then P.fail "alloca of a vector type is not modelled"
+      else pure (.instr (.alloca dst ty align))
   | "load" =>
       let ty ← expectTy
       P.expect ","
       let (_, p) ← parseTypedOperand
       pure (.instr (.load dst ty p))
+  | "bitcast" =>
+      -- The one modelled cast is a mask pack: `<n x i1>` to the `n`-bit
+      -- integer whose bit `k` is lane `k`.  Any other type pair is refused
+      -- with both types named, because a vector cast the semantics does not
+      -- model must not be approximated by a scalar one.
+      let tyIn ← expectTy
+      let v ← parseOperand tyIn
+      P.expect "to"
+      let tyOut ← expectTy
+      match tyIn, tyOut with
+      | .vec n (.int 1), .int m =>
+          if m = n then pure (.instr (.bitcastMask dst n v))
+          else P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
+      | _, _ => P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
   | "getelementptr" => P.fail "getelementptr is not modelled yet"
   | "call" =>
       let retTy ← expectTy
@@ -345,7 +451,8 @@ def parseSimple : P Stmt := do
       let (ty, v) ← parseTypedOperand
       P.expect ","
       let (_, p) ← parseTypedOperand
-      pure (.instr (.store ty v p))
+      if let .vec _ _ := ty then P.fail "store of a vector value is not modelled"
+      else pure (.instr (.store ty v p))
   | other => P.fail s!"unsupported instruction '{other}'"
 
 /-- Parse one instruction or terminator line. -/

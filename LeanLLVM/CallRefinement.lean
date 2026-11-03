@@ -90,6 +90,9 @@ theorem evalInstr_refines {calls' calls : Calls}
   | alloca d ty a => intro s' he; exact Or.inl he
   | load d ty p => intro s' he; exact Or.inl he
   | store ty v p => intro s' he; exact Or.inl he
+  | icmpVec d p n w a b => intro s' he; exact Or.inl he
+  | binopVec d op n w a b => intro s' he; exact Or.inl he
+  | bitcastMask d n v => intro s' he; exact Or.inl he
   | call d retTy callee args =>
       intro s' he
       simp only [evalInstr] at he ⊢
@@ -137,6 +140,9 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
   | alloca d ty a => intro he; exact he
   | load d ty p => intro he; exact he
   | store ty v p => intro he; exact he
+  | icmpVec d p n w a b => intro he; exact he
+  | binopVec d op n w a b => intro he; exact he
+  | bitcastMask d n v => intro he; exact he
 
 /-- A straight-line sequence that is undefined in the target is undefined in
 the source. -/

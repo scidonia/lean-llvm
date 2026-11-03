@@ -36,7 +36,11 @@ theorem Subst.update_ne {σ : Subst} {n x : String} (c : Option Const) (h : x �
   simp [Subst.update, h]
 
 /-- Read an operand as a usable literal, when it is one.  `undef` and `poison`
-are undefined behaviour here, so they are never folded and never substituted. -/
+are undefined behaviour here, so they are never folded and never substituted.  A
+splat is `none` as well: this is the *scalar* fold's read, and a splat is a vector
+literal, so it is not a scalar constant — the same answer `undef` and `poison`
+get, and no fold can reach one (`foldInstr` has no vector case, and the parser
+refuses a splat at a scalar operand type). -/
 def constOperand (σ : Subst) : Operand → Option Const
   | .reg n =>
       match σ n with
@@ -44,12 +48,14 @@ def constOperand (σ : Subst) : Operand → Option Const
           match c with
           | .undef => none
           | .poison => none
+          | .splat _ _ _ => none
           | _ => some c
       | none => none
   | .imm c =>
       match c with
       | .undef => none
       | .poison => none
+      | .splat _ _ _ => none
       | _ => some c
 
 /-- Replace a register by its literal, when the substitution knows one. -/
@@ -70,6 +76,9 @@ def substInstr (σ : Subst) : Instr → Instr
   | .alloca d ty align => .alloca d ty align
   | .load d ty p => .load d ty (substOperand σ p)
   | .store ty v p => .store ty (substOperand σ v) (substOperand σ p)
+  | .icmpVec d pred n w a b => .icmpVec d pred n w (substOperand σ a) (substOperand σ b)
+  | .binopVec d op n w a b => .binopVec d op n w (substOperand σ a) (substOperand σ b)
+  | .bitcastMask d n v => .bitcastMask d n (substOperand σ v)
   | .call d retTy callee args =>
       .call d retTy callee (args.map fun (ty, op) => (ty, substOperand σ op))
 
@@ -227,6 +236,7 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
           | null => simp at hc; cases hc; exact h n .null hσ
           | undef => simp at hc
           | poison => simp at hc
+          | splat _ _ _ => simp at hc
   | imm k =>
       simp only [constOperand] at hc
       cases k with
@@ -234,6 +244,7 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
       | null => simp at hc; cases hc; rfl
       | undef => simp at hc
       | poison => simp at hc
+      | splat _ _ _ => simp at hc
 
 /-- A store does not touch the register environment. -/
 theorem storeValue_env {s s' : State} {ty : Ty} {v : Value} {addr : Nat}
@@ -258,6 +269,7 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
           | null => simp at h; cases h; exact ⟨_, rfl⟩
           | undef => simp at h
           | poison => simp at h
+          | splat _ _ _ => simp at h
   | imm k =>
       simp only [constOperand] at h
       cases k with
@@ -265,6 +277,7 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
       | null => simp at h; cases h; exact ⟨_, rfl⟩
       | undef => simp at h
       | poison => simp at h
+      | splat _ _ _ => simp at h
 
 /-- Executing an instruction with a destination binds exactly that
 destination. -/
@@ -321,9 +334,11 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
             | null => simp [foldBinop] at hf
             | undef => simp [foldBinop] at hf
             | poison => simp [foldBinop] at hf
+            | splat _ _ _ => simp [foldBinop] at hf
           | null => simp [foldBinop] at hf
           | undef => simp [foldBinop] at hf
           | poison => simp [foldBinop] at hf
+          | splat _ _ _ => simp [foldBinop] at hf
   | icmp d pred w a b =>
       simp only [foldInstr] at hf
       cases hca : constOperand σ a with
@@ -354,9 +369,11 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
             | null => simp [foldICmp] at hf
             | undef => simp [foldICmp] at hf
             | poison => simp [foldICmp] at hf
+            | splat _ _ _ => simp [foldICmp] at hf
           | null => simp [foldICmp] at hf
           | undef => simp [foldICmp] at hf
           | poison => simp [foldICmp] at hf
+          | splat _ _ _ => simp [foldICmp] at hf
   | select d ty cond a b =>
       simp only [foldInstr] at hf
       cases hcc : constOperand σ cond with
@@ -402,6 +419,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | null => simp [hcc] at hf
         | undef => simp [hcc] at hf
         | poison => simp [hcc] at hf
+        | splat _ _ _ => simp [hcc] at hf
   | trunc d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -421,6 +439,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | null => simp at hf
         | undef => simp at hf
         | poison => simp at hf
+        | splat _ _ _ => simp at hf
   | zext d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -440,6 +459,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | null => simp at hf
         | undef => simp at hf
         | poison => simp at hf
+        | splat _ _ _ => simp at hf
   | sext d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -460,9 +480,13 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | null => simp at hf
         | undef => simp at hf
         | poison => simp at hf
+        | splat _ _ _ => simp at hf
   | alloca d ty align => simp [foldInstr] at hf
   | load d ty p => simp [foldInstr] at hf
   | store ty v p => simp [foldInstr] at hf
+  | icmpVec d pred n w a b => simp [foldInstr] at hf
+  | binopVec d op n w a b => simp [foldInstr] at hf
+  | bitcastMask d n v => simp [foldInstr] at hf
   | call d retTy callee args => simp [foldInstr] at hf
 
 /-- Terminator substitution preserves execution once the invariant holds. -/
@@ -483,6 +507,11 @@ theorem execTerm_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (t : Te
           | ptr =>
               change execTerm s (.ret .ptr (some (substOperand σ o))) =
                 execTerm s (.ret .ptr (some o))
+              simp only [execTerm]
+              rw [evalOperand_subst h]
+          | vec n elem =>
+              change execTerm s (.ret (.vec n elem) (some (substOperand σ o))) =
+                execTerm s (.ret (.vec n elem) (some o))
               simp only [execTerm]
               rw [evalOperand_subst h]
   | br d => rfl
