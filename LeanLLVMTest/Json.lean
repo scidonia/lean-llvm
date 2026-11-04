@@ -12,6 +12,7 @@ import LeanLLVM
 import JsonMain
 import LeanLLVM.JSON.ScanBody
 import LeanLLVM.JSON.ScanWindow
+import LeanLLVM.JSON.ScanString
 
 namespace LeanLLVMTest.Json
 
@@ -761,6 +762,140 @@ example :
         ((windowOf bs BodyState.body).delim.getLsbD k = true ↔
           backslashParityEscapes bs k = false)) :=
   LeanLLVM.JSON.backslashParityEscapes_not_refines
+
+/-! ### The run, the scan and the tail
+
+`LeanLLVM/JSON/ScanString.lean`'s theorems, and the stop readback of
+`LeanLLVM/JSON/ScanWindow.lean` that the window step consumes: the fold's stop is the
+first lane the byte rule does not continue past, the run reaches that lane with the
+fold's carry, the four bounds a `bodyRun` end satisfies, the tail's own bound, the
+scan's window branch as an equation, and the block operation's cursor.  `scanStringAt_succ`
+is the centre of these pins: a `scanStringAt` that matched the run, or that computed its
+own `i + 32`, would keep every other pin here and every `#guard` while no longer
+consuming the window.  The bounds are restated as well as pinned because a restatement is
+what fixes their hypotheses, which a build alone does not check: a closing run's bound
+stands without one, the two open-run bounds carry the start inside the input — the
+early-stop one with the position short of the fuel — the window bound carries
+`i + 32 ≤ bs.size`, and `tailRun_open_at` carries the start inside the input as well. -/
+
+section
+
+set_option maxRecDepth 10000
+
+/-- info: 'LeanLLVM.JSON.ContinuesBefore' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.ContinuesBefore
+
+/-- info: 'LeanLLVM.JSON.windowOf_stop_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_stop_spec
+
+/-- info: 'LeanLLVM.JSON.scanWindow_stop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanWindow_stop
+
+/-- info: 'LeanLLVM.JSON.scanStringAt_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanStringAt_succ
+
+/-- info: 'LeanLLVM.JSON.scanStringAt_pos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanStringAt_pos
+
+/-- info: 'LeanLLVM.JSON.bodyRun_bound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.bodyRun_bound
+
+/-- info: 'LeanLLVM.JSON.bodyRun_open_bound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.bodyRun_open_bound
+
+/-- info: 'LeanLLVM.JSON.bodyRun_open_at_end' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.bodyRun_open_at_end
+
+/-- info: 'LeanLLVM.JSON.bodyRun_open_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.bodyRun_open_window
+
+/-- info: 'LeanLLVM.JSON.tailRun_open_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.tailRun_open_at
+
+open LeanLLVM.JSON in
+example : ∀ (bs : List UInt8) (st : BodyState) (k : Nat),
+    ContinuesBefore bs st k =
+      (∀ j, j < k → ∀ {b : UInt8}, bs[j]? = some b →
+        ∃ st', bodyStep (carryAt bs st j) b = .cont st') :=
+  fun _ _ _ => rfl
+
+open LeanLLVM.JSON in
+example : ∀ (bs : List UInt8) (st : BodyState),
+    (match (windowOf bs st).stop with
+     | none => ContinuesBefore bs st 32
+     | some (.close k) =>
+         k < 32 ∧ (∃ b : UInt8, bs[k]? = some b) ∧ ContinuesBefore bs st k ∧
+           ∀ {b : UInt8}, bs[k]? = some b → bodyStep (carryAt bs st k) b = .closed
+     | some (.refuse k s) =>
+         k < 32 ∧ (∃ b : UInt8, bs[k]? = some b) ∧ ContinuesBefore bs st k ∧
+           ∀ {b : UInt8}, bs[k]? = some b → bodyStep (carryAt bs st k) b = .refused s) :=
+  fun _ _ => LeanLLVM.JSON.windowOf_stop_spec
+
+open LeanLLVM.JSON in
+example : ∀ (bs : Bytes) (i : Nat) (h : i + 32 ≤ bs.size) (st : BodyState),
+    bodyRun bs 32 i st =
+      match (windowAt bs i h st).stop with
+      | some (.close k) => .closed (i + k + 1)
+      | some (.refuse k s) => .refused s (i + k)
+      | none => .open (windowAt bs i h st).carry (i + 32) :=
+  LeanLLVM.JSON.scanWindow_stop
+
+open LeanLLVM.JSON in
+example : ∀ (bs : Bytes) (fuel i : Nat) (st : BodyState),
+    scanStringAt bs (fuel + 1) i st =
+      (if h : i + 32 ≤ bs.size then
+        match (windowAt bs i h st).stop with
+        | some (.close k) => .ok (i + k + 1)
+        | some (.refuse k s) => .error (s, i + k)
+        | none =>
+            scanStringAt bs fuel (scanBlock ⟨i⟩ (blockAt bs i h) 32).1.pos
+              (windowAt bs i h st).carry
+      else tailRun bs i st) :=
+  LeanLLVM.JSON.scanStringAt_succ
+
+open LeanLLVM.JSON in
+example : ∀ (bs : Bytes) (i : Nat) (h : i + 32 ≤ bs.size),
+    (scanBlock ⟨i⟩ (blockAt bs i h) 32).1.pos = i + 32 :=
+  LeanLLVM.JSON.scanStringAt_pos
+
+open LeanLLVM.JSON in
+example : ∀ {bs : Bytes} {fuel i : Nat} {st : BodyState} {k : Nat},
+    bodyRun bs fuel i st = .closed k → i < k ∧ k ≤ i + fuel ∧ k ≤ bs.size :=
+  @LeanLLVM.JSON.bodyRun_bound
+
+open LeanLLVM.JSON in
+example : ∀ {bs : Bytes} {fuel i pos : Nat} {st st' : BodyState},
+    i ≤ bs.size → bodyRun bs fuel i st = .open st' pos →
+      i ≤ pos ∧ pos ≤ min (i + fuel) bs.size :=
+  @LeanLLVM.JSON.bodyRun_open_bound
+
+open LeanLLVM.JSON in
+example : ∀ {bs : Bytes} {fuel i pos : Nat} {st st' : BodyState},
+    i ≤ bs.size → bodyRun bs fuel i st = .open st' pos → pos < i + fuel →
+      pos = bs.size :=
+  @LeanLLVM.JSON.bodyRun_open_at_end
+
+open LeanLLVM.JSON in
+example : ∀ {bs : Bytes} {i pos : Nat} {st st' : BodyState},
+    i + 32 ≤ bs.size → bodyRun bs 32 i st = .open st' pos → pos = i + 32 :=
+  @LeanLLVM.JSON.bodyRun_open_window
+
+open LeanLLVM.JSON in
+example : ∀ {bs : Bytes} {i pos : Nat} {st st' : BodyState},
+    i ≤ bs.size → bodyRun bs (bs.size - i) i st = .open st' pos → pos = bs.size :=
+  @LeanLLVM.JSON.tailRun_open_at
+
+end
 
 /-! ### The emitted classifier body
 

@@ -567,6 +567,304 @@ theorem windowOf_stop_close {bs : List UInt8} {st : BodyState} {k : Nat}
     (fun p hp => snd_lt_of_mem_zipIdx_take hp)
     (fun j hj => by simp [windowInit] at hj) k (by simpa [windowOf] using h)
 
+/-! ### The stop, read back
+
+`windowOf_stop_close` reads one consequence of a closing stop: its lane is a delimiter
+lane.  A scan that steps the byte rule through a window needs the whole of the stop —
+which lanes the fold continued past, and, at the lane it stopped at, what the rule
+answered there.  `ContinuesBefore` is that prefix, and `windowOf_stop_spec` is the
+readback: every lane before a window's stop continues, and at the stop's own lane the
+rule closes the body or refuses, on the carry the fold held at that lane.
+
+The readback is an induction over the lanes, because a stop is recorded at the first lane
+that raises one and is never overwritten: a prefix whose fold records no stop continued
+at every lane it covered, and a prefix that records one records it at the lane that
+raised it.  A stop's lane carries a byte, and that is a conjunct of the statement rather
+than a consequence of the lane bound: the fold is private, so the existence of a byte at
+the lane a stop names has to come from the statement.
+-/
+
+/-- The lanes before `k` all continue the run: at each of them the byte rule answers
+`.cont`, on the carry the fold reached at that lane. -/
+def ContinuesBefore (bs : List UInt8) (st : BodyState) (k : Nat) : Prop :=
+  ∀ j, j < k → ∀ {b : UInt8}, bs[j]? = some b → ∃ st', bodyStep (carryAt bs st j) b = .cont st'
+
+/-- The first `n` lanes the fold reads. -/
+private def lanesPrefix (bs : List UInt8) (n : Nat) : List (UInt8 × Nat) :=
+  (bs.zipIdx.take 32).take n
+
+/-- A lane that continues records no stop. -/
+private theorem windowLane_stop_cont {w : Window} {b : UInt8} {k : Nat} {st' : BodyState}
+    (h : bodyStep w.carry b = .cont st') : (windowLane w (b, k)).stop = w.stop := by
+  simp only [windowLane, h]
+
+/-- A closing lane records its own lane as the close when no earlier lane stopped, and
+otherwise leaves the stop it was given. -/
+private theorem windowLane_stop_closed {w : Window} {b : UInt8} {k : Nat}
+    (h : bodyStep w.carry b = .closed) :
+    (windowLane w (b, k)).stop =
+      (match w.stop with | some s => some s | none => some (.close k)) := by
+  simp only [windowLane, h]
+
+/-- A refusing lane records its own lane and reason when no earlier lane stopped, and
+otherwise leaves the stop it was given. -/
+private theorem windowLane_stop_refused {w : Window} {b : UInt8} {k : Nat} {s : BodyStop}
+    (h : bodyStep w.carry b = .refused s) :
+    (windowLane w (b, k)).stop =
+      (match w.stop with | some s' => some s' | none => some (.refuse k s)) := by
+  simp only [windowLane, h]
+
+/-- A lane that records no stop leaves the window's own stop: a stop is not
+overwritten. -/
+private theorem windowLane_stop_none {w : Window} {b : UInt8} {k : Nat}
+    (h : (windowLane w (b, k)).stop = none) : w.stop = none := by
+  cases hs : bodyStep w.carry b with
+  | cont st' => simpa only [windowLane, hs] using h
+  | closed => simp only [windowLane, hs] at h; cases hw : w.stop <;> simp [hw] at h
+  | refused s => simp only [windowLane, hs] at h; cases hw : w.stop <;> simp [hw] at h
+
+/-- The prefix's carry is the byte rule's state at lane `n`. -/
+private theorem lanesPrefix_carry (bs : List UInt8) (st : BodyState) {n : Nat} (hn : n ≤ 32) :
+    ((lanesPrefix bs n).foldl windowLane (windowInit st)).carry = carryAt bs st n := by
+  rw [lanesPrefix, fold_carry, show (windowInit st).carry = st from rfl]
+  exact fold_take_carry bs st n hn
+
+/-- A prefix gains its next lane by one step of the fold. -/
+private theorem lanesPrefix_succ (bs : List UInt8) {n : Nat} {b : UInt8} (hn : n < 32)
+    (hb : bs[n]? = some b) (w : Window) :
+    (lanesPrefix bs (n + 1)).foldl windowLane w =
+      windowLane ((lanesPrefix bs n).foldl windowLane w) (b, n) := by
+  have hpair : (bs.zipIdx.take 32)[n]? = some (b, n) := zipIdx_take_getElem?_some hn hb
+  unfold lanesPrefix
+  rw [List.take_add_one, List.foldl_append]
+  cases hp : (bs.zipIdx.take 32)[n]? with
+  | none => rw [hpair] at hp; cases hp
+  | some p =>
+      have hpe : p = (b, n) := by
+        rw [hpair] at hp
+        exact (Option.some.inj hp).symm
+      subst hpe
+      simp
+
+/-- A prefix whose next lane has no byte is the same fold: the fold's list ends
+there. -/
+private theorem lanesPrefix_succ_none (bs : List UInt8) {n : Nat} (hn : n < 32)
+    (hb : bs[n]? = none) : lanesPrefix bs (n + 1) = lanesPrefix bs n := by
+  have hnone : (bs.zipIdx.take 32)[n]? = none := by
+    rw [zipIdx_take_getElem? bs hn, hb]
+    simp
+  unfold lanesPrefix
+  rw [List.take_add_one, hnone]
+  simp
+
+/-- A prefix that records no stop leaves the previous prefix's stop alone. -/
+private theorem lanesPrefix_stop_none (bs : List UInt8) (st : BodyState) {n : Nat} (hn : n < 32)
+    (h : ((lanesPrefix bs (n + 1)).foldl windowLane (windowInit st)).stop = none) :
+    ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none := by
+  cases hb : bs[n]? with
+  | none => rwa [lanesPrefix_succ_none bs hn hb] at h
+  | some b =>
+      rw [lanesPrefix_succ bs hn hb] at h
+      exact windowLane_stop_none h
+
+/-- If a prefix's fold records no stop, every lane it read continued. -/
+private theorem fold_prefix_cont (bs : List UInt8) (st : BodyState) :
+    ∀ (n : Nat), n ≤ 32 →
+      ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none →
+      ContinuesBefore bs st n := by
+  intro n
+  induction n with
+  | zero => intro _ _ j hj; exact absurd hj (Nat.not_lt_zero j)
+  | succ n ih =>
+      intro hn hstop j hj b hbj
+      have hn32 : n < 32 := by omega
+      have hprev : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none :=
+        lanesPrefix_stop_none bs st hn32 hstop
+      rcases Nat.lt_or_eq_of_le (Nat.le_of_lt_succ hj) with hjn | hje
+      · exact ih (by omega) hprev j hjn hbj
+      · rw [hje] at hbj ⊢
+        cases hbn : bs[n]? with
+        | none => rw [hbn] at hbj; cases hbj
+        | some b₀ =>
+            rw [hbn] at hbj
+            cases hbj
+            rw [lanesPrefix_succ bs hn32 hbn] at hstop
+            have hcarry := lanesPrefix_carry bs st (n := n) (by omega)
+            cases hstep : bodyStep
+                ((lanesPrefix bs n).foldl windowLane (windowInit st)).carry b with
+            | cont st' => exact ⟨st', by rw [← hcarry]; exact hstep⟩
+            | closed =>
+                rw [windowLane_stop_closed hstep, hprev] at hstop
+                cases hstop
+            | refused s =>
+                rw [windowLane_stop_refused hstep, hprev] at hstop
+                cases hstop
+
+/-- A prefix that records a closing stop records it at its own lane, and every lane
+before that lane continued. -/
+private theorem fold_prefix_close (bs : List UInt8) (st : BodyState) (k : Nat) :
+    ∀ (n : Nat), n ≤ 32 →
+      ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = some (.close k) →
+      k < n ∧ (∃ b : UInt8, bs[k]? = some b) ∧ ContinuesBefore bs st k ∧
+        ∀ {b : UInt8}, bs[k]? = some b → bodyStep (carryAt bs st k) b = .closed := by
+  intro n
+  induction n with
+  | zero =>
+      intro _ h
+      simp [lanesPrefix, windowInit] at h
+  | succ n ih =>
+      intro hn h
+      have hn32 : n < 32 := by omega
+      cases hb : bs[n]? with
+      | none =>
+          rw [lanesPrefix_succ_none bs hn32 hb] at h
+          obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) h
+          exact ⟨by omega, h2, h3, h4⟩
+      | some b =>
+          rw [lanesPrefix_succ bs hn32 hb] at h
+          have hcarry := lanesPrefix_carry bs st (n := n) (by omega)
+          cases hstep : bodyStep
+              ((lanesPrefix bs n).foldl windowLane (windowInit st)).carry b with
+          | cont st' =>
+              rw [windowLane_stop_cont hstep] at h
+              obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) h
+              exact ⟨by omega, h2, h3, h4⟩
+          | closed =>
+              rw [windowLane_stop_closed hstep] at h
+              by_cases hprev : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none
+              · rw [hprev] at h
+                simp only [Option.some.injEq, Stop.close.injEq] at h
+                rw [← h]
+                refine ⟨Nat.lt_succ_self n, ⟨b, hb⟩,
+                  fold_prefix_cont bs st n (by omega) hprev, ?_⟩
+                intro b' hb'
+                rw [hb] at hb'
+                cases hb'
+                rw [← hcarry]
+                exact hstep
+              · obtain ⟨s, hs⟩ : ∃ s, ((lanesPrefix bs n).foldl windowLane
+                    (windowInit st)).stop = some s := by
+                  cases hw : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop with
+                  | none => exact absurd hw hprev
+                  | some s => exact ⟨s, rfl⟩
+                rw [hs] at h
+                simp only [Option.some.injEq] at h
+                rw [h] at hs
+                obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) hs
+                exact ⟨by omega, h2, h3, h4⟩
+          | refused s =>
+              rw [windowLane_stop_refused hstep] at h
+              by_cases hprev : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none
+              · rw [hprev] at h
+                exact absurd h (by simp)
+              · obtain ⟨s', hs⟩ : ∃ s', ((lanesPrefix bs n).foldl windowLane
+                    (windowInit st)).stop = some s' := by
+                  cases hw : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop with
+                  | none => exact absurd hw hprev
+                  | some s' => exact ⟨s', rfl⟩
+                rw [hs] at h
+                simp only [Option.some.injEq] at h
+                rw [h] at hs
+                obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) hs
+                exact ⟨by omega, h2, h3, h4⟩
+
+/-- A prefix that records a refusing stop records it, with its reason, at its own lane,
+and every lane before that lane continued. -/
+private theorem fold_prefix_refuse (bs : List UInt8) (st : BodyState) (k : Nat) (s : BodyStop) :
+    ∀ (n : Nat), n ≤ 32 →
+      ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = some (.refuse k s) →
+      k < n ∧ (∃ b : UInt8, bs[k]? = some b) ∧ ContinuesBefore bs st k ∧
+        ∀ {b : UInt8}, bs[k]? = some b → bodyStep (carryAt bs st k) b = .refused s := by
+  intro n
+  induction n with
+  | zero =>
+      intro _ h
+      simp [lanesPrefix, windowInit] at h
+  | succ n ih =>
+      intro hn h
+      have hn32 : n < 32 := by omega
+      cases hb : bs[n]? with
+      | none =>
+          rw [lanesPrefix_succ_none bs hn32 hb] at h
+          obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) h
+          exact ⟨by omega, h2, h3, h4⟩
+      | some b =>
+          rw [lanesPrefix_succ bs hn32 hb] at h
+          have hcarry := lanesPrefix_carry bs st (n := n) (by omega)
+          cases hstep : bodyStep
+              ((lanesPrefix bs n).foldl windowLane (windowInit st)).carry b with
+          | cont st' =>
+              rw [windowLane_stop_cont hstep] at h
+              obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) h
+              exact ⟨by omega, h2, h3, h4⟩
+          | closed =>
+              rw [windowLane_stop_closed hstep] at h
+              by_cases hprev : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none
+              · rw [hprev] at h
+                exact absurd h (by simp)
+              · obtain ⟨s', hs⟩ : ∃ s', ((lanesPrefix bs n).foldl windowLane
+                    (windowInit st)).stop = some s' := by
+                  cases hw : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop with
+                  | none => exact absurd hw hprev
+                  | some s' => exact ⟨s', rfl⟩
+                rw [hs] at h
+                simp only [Option.some.injEq] at h
+                rw [h] at hs
+                obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) hs
+                exact ⟨by omega, h2, h3, h4⟩
+          | refused s' =>
+              rw [windowLane_stop_refused hstep] at h
+              by_cases hprev : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop = none
+              · rw [hprev] at h
+                simp only [Option.some.injEq, Stop.refuse.injEq] at h
+                obtain ⟨hnk, hss⟩ := h
+                rw [← hnk]
+                refine ⟨Nat.lt_succ_self n, ⟨b, hb⟩,
+                  fold_prefix_cont bs st n (by omega) hprev, ?_⟩
+                intro b' hb'
+                rw [hb] at hb'
+                cases hb'
+                rw [hss] at hstep
+                rw [← hcarry]
+                exact hstep
+              · obtain ⟨s'', hs⟩ : ∃ s'', ((lanesPrefix bs n).foldl windowLane
+                    (windowInit st)).stop = some s'' := by
+                  cases hw : ((lanesPrefix bs n).foldl windowLane (windowInit st)).stop with
+                  | none => exact absurd hw hprev
+                  | some s'' => exact ⟨s'', rfl⟩
+                rw [hs] at h
+                simp only [Option.some.injEq] at h
+                rw [h] at hs
+                obtain ⟨h1, h2, h3, h4⟩ := ih (by omega) hs
+                exact ⟨by omega, h2, h3, h4⟩
+
+/-- **A window's stop, read back.**  Every lane before the stop continues the run, the
+stop's lane carries a byte and is a lane of the fold, and at that lane the byte rule
+closes the body or refuses with the stop's own reason — on the carry the fold held
+there.  A window with no stop continued at all thirty-two lanes. -/
+theorem windowOf_stop_spec {bs : List UInt8} {st : BodyState} :
+    (match (windowOf bs st).stop with
+     | none => ContinuesBefore bs st 32
+     | some (.close k) =>
+         k < 32 ∧ (∃ b : UInt8, bs[k]? = some b) ∧ ContinuesBefore bs st k ∧
+           ∀ {b : UInt8}, bs[k]? = some b → bodyStep (carryAt bs st k) b = .closed
+     | some (.refuse k s) =>
+         k < 32 ∧ (∃ b : UInt8, bs[k]? = some b) ∧ ContinuesBefore bs st k ∧
+           ∀ {b : UInt8}, bs[k]? = some b → bodyStep (carryAt bs st k) b = .refused s) := by
+  have htake : (bs.zipIdx.take 32).take 32 = bs.zipIdx.take 32 :=
+    List.take_of_length_le (List.length_take_le ..)
+  have hfold : windowOf bs st = (lanesPrefix bs 32).foldl windowLane (windowInit st) := by
+    unfold lanesPrefix windowOf
+    rw [htake]
+  rw [hfold]
+  cases hstop : ((lanesPrefix bs 32).foldl windowLane (windowInit st)).stop with
+  | none => exact fold_prefix_cont bs st 32 (by omega) hstop
+  | some s =>
+      cases s with
+      | close k => exact fold_prefix_close bs st k 32 (by omega) hstop
+      | refuse k s => exact fold_prefix_refuse bs st k s 32 (by omega) hstop
+
+
 /-- The quote mask is the fold's, read back lane by lane — **with the hypothesis that
 the lane was not refused**.  The fold's `.refused` branch records only the
 classification bit and the stop, and a lane at a quote can be refused: an outstanding
