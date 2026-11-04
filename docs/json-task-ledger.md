@@ -108,11 +108,12 @@ measured full-parser improvement.
 ## J6 — performance refinement and synthesis
 
 Missing. The harness exists and has recorded runs (`probes/bench/bench.sh`,
-`b29716c`; the parser carrier comparison; see blockers 4 and 6), but there is no
-reproducible comparison against a native reference, and the recorded carrier
-comparison — at `8f2b445` against `3159514` — showed the carrier quadratic and
-slower than the list carrier, so J6 requires J5 and a native-reference
-comparison.
+`b29716c`; the parser three-column scaling comparison at `3159514`, `e46b17f`
+and `a0a1df2`, blocker 6), but there is no reproducible comparison against a
+native reference, and J5 is still open, so J6 requires J5 and a
+native-reference comparison. The scaling comparison shows no quadratic growth
+over 4–64 KiB once the parser reads at a position; the measured law is no longer
+an obstacle to J6.
 
 ## Standing blockers, stated rather than assumed
 
@@ -147,15 +148,17 @@ comparison.
    anything, because the certificate says the units agree and the harness only
    says how fast each ran here. A recorded run at `b29716c` measured baseline
    4.55 ns/call and candidate 8.12 ns/call (ratio 1.785) with identical
-   checksums. A parser scaling comparison of the two carriers (list at
-   `3159514`, `ByteArray` at `8f2b445`) is now recorded in the run state: same
-   synthetic documents, input read inside the timed region, a floor
-   calibration, medians over repetitions, and an identical-output check over the
-   corpus. Its result is blocker 6's. The scaling instrument itself is now in the
+   checksums. The parser scaling comparison — list carrier at `3159514`,
+   pre-fix carrier at `e46b17f`, fixed carrier at `a0a1df2` — is recorded in
+   blocker 6: same synthetic documents, input read inside the timed region, a
+   floor calibration, medians over repetitions, and an identical-output check
+   over the corpus. The scaling instrument itself is now in the
    repository: `probes/bench/JsonBench.lean`, built as `leanllvm-json-bench`, over
    the documents in `probes/bench/json/` and driven by
-   `probes/bench/json-bench.sh` (floor first, then the sizes, and a
-   `--digest` mode for the cross-revision equality check). A timed region there
+   `probes/bench/json-bench.sh` (floor first, then the sizes; its `--digest`
+   mode covers the timed documents, and the direct
+   `leanllvm-json-bench --digest <dir>` form covers any directory, including
+   the 130-document corpus). A timed region there
    contains a file read and the parse, and folds the parse's token count into an
    accumulator, because a pure call over a loop-invariant buffer is hoisted out of
    a repetition: a region that stays flat while the wall clock grows is measuring
@@ -167,42 +170,59 @@ comparison.
    yet in the repository (three setup lines in the untracked
    `tests/call-memory.lean` still need repair) and the axiom pins for the new
    theorems are not yet added to `LeanLLVMTest`.
-6. **Known limitation: parser cost is quadratic in input size, and the carrier
-   alone has not removed it.** The working byte representation is the contiguous
-   carrier `ByteString` (`ByteArray`) that `Bytes` abbreviates, so a byte is read
-   at an index rather than walked to, and the theorems are stated over that
-   carrier. The scaling question has now been measured — at `8f2b445` against the
-   list carrier at `3159514`, on the same synthetic documents, with the input
-   read inside the timed region and a cheapest-document floor under 1 % at every
-   size — and the quadratic term survives in both readings: the carrier parser's
-   exponent over 4–96 KiB is 2.00 against the list parser's 1.98. It is also
-   **slower**, not faster, at every size measured.  At that revision every token
-   rebuilt the carrier through a list: `drop` is
+6. **Parser cost in input size: quadratic under both list-shaped access
+   patterns, near-linear once the parser reads at a position.** The working byte
+   representation is the contiguous carrier `ByteString` (`ByteArray`) that
+   `Bytes` abbreviates, so a byte is read at an index rather than walked to, and
+   the theorems are stated over that carrier. The scaling question has been
+   measured on the tracked instrument (`probes/bench/JsonBench.lean`, driven by
+   `probes/bench/json-bench.sh`) over the same synthetic documents at 4, 16 and
+   64 KiB, with the input read inside the timed region, a cheapest-document
+   floor first, medians over 21 repetitions for the sizes (the floor
+   calibration takes 5), the parse's token count accumulated, and the parse
+   results of the 130-document corpus, by
+   `leanllvm-json-bench --digest tests/json/corpus`, compared byte for byte:
+   under the bench limits 65 documents are accepted and 65 refused, at every
+   revision (the manifest's per-row limits profiles accept 62). The three
+   columns are the list carrier at `3159514`, the carrier whose scans read by
+   index but whose parser still drops a suffix at `e46b17f`, and the carrier
+   read at a position throughout at `a0a1df2`. Over 4–64 KiB the exponents are
+   **1.97 (list), 2.00 (pre-fix carrier), 1.05 (fixed carrier)**. The fixed
+   column's figure is the per-size median over five interleaved 21-repetition
+   rounds (1.034; the individual rounds span 0.96–1.04), and the same binaries
+   at 5 repetitions give 1.09, so that column's exponent is sensitive to the
+   repetition count at the low end. Every row's floor is under 3 % of that
+   row, and the accumulated token count is equal across the three revisions at
+   each size.
+   The container alone did not change the law. At `8f2b445`, one commit after
+   the carrier migration at `77abc35` (the two share their library sources;
+   `8f2b445` differs only in docs and route tests), every token rebuilt the
+   carrier through a list: `drop` is
    `literal (bs.data.toList.drop n)`, so a token handed a dropped suffix paid a
    list view of the whole array and then a copy of the suffix, and
-   `spaceRun`/`numRun` built a further list view per token on top of that.  That
-   is why the per-token cost grew with the document instead of staying a copy of
-   the suffix — the representation had changed without the access pattern
-   changing.  Documents of hundreds of kilobytes were impractical at that
-   revision, and raising that ceiling needed the access pattern to stop
-   converting suffixes to lists.
-   The cause is the access pattern rather than the container: `drop` rebuilds the
-   carrier through a list (`literal (bs.data.toList.drop n)`), and a scanner over
-   the dropped suffix reads the bytes after every token again.  (`Array.extract`
-   is a different operation — it is the one copy `tailFrom` makes, not the
-   per-token drop.)  The
-   remedy is to read the buffer at an offset — no `drop`, no per-token list
-   materialisation — and it is a requirement of J5's full-parser demonstration,
-   refined and measured under J6; neither milestone claims the ceiling raised
-   here.  The
-   remedy is now in the source — the scans read the carrier at an index and the
-   parser and the tape decoder hand them a position (`scanCharsEnd`,
-   `numRunFrom`, `HasPrefixB`), so no compiled call site drops a suffix — but
-   whether it closes the quadratic is **not claimed here**.  One pair has been
-   measured on the tracked instrument (`probes/bench/JsonBench.lean`, 4–64 KiB):
-   this tree's exponent is ≈1.0 against `e46b17f`'s ≈1.98, with identical parses.
-   That is a two-revision reading, not the three-column comparison against the
-   list carrier that replaces this entry, and the entry and its measured
-   sentences above stay until that comparison exists.  The timed table, its floor
-   calibration and the identical-output check (both binaries produce the same
-   parse results on the corpus) live in the run's record rather than here.
+   `spaceRun`/`numRun` built a further list view per token on top of that. The
+   carrier's exponent over 4–96 KiB was 2.00 against the list carrier at
+   `3159514`'s 1.98, and it was **slower** than that list carrier at every size
+   measured. That measurement is what isolated the cause: the representation
+   had changed without the access pattern changing. (`Array.extract` is a
+   different operation — it is the one copy `tailFrom` makes, not the per-token
+   drop.)
+   The access pattern is what changes the law. At `e46b17f` the scanners already
+   read by index, but the parser still handed them a dropped suffix per token,
+   and the exponent is 2.00 — the same quadratic. At `a0a1df2` the scanner
+   interface takes an offset (`scanCharsEnd`, `numRunFrom`, `HasPrefixB`) and no
+   compiled call site drops a suffix, and the exponent is 1.05: the cost grows
+   close to proportionally to the document, with a small residual across the
+   range. The carrier read at a position is faster than the list carrier at
+   every measured size; the shape alone bought nothing, because at `8f2b445`
+   the carrier was slower than the list carrier at `3159514` at every size
+   measured. What separates the two carrier columns is the access pattern, and
+   that is what the exponent responds to. The quadratic limitation is
+   resolved by measurement rather than by argument, and the quadratic term that
+   made larger documents impractical at `8f2b445` is not present in the measured
+   range.
+   Scope of the claim: the measured range is 4–64 KiB on these documents. No
+   claim is made about larger documents, about a native-reference comparison, or
+   about sizes beyond those measured here; J5 and J6 keep their remaining
+   requirements. Only the scaling law, the equality checks and the probe
+   protocol are stated here; the timed rows are not reproduced in the tree.
