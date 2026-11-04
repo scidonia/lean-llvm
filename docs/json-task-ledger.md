@@ -109,9 +109,10 @@ measured full-parser improvement.
 
 Missing. The harness exists and has recorded runs (`probes/bench/bench.sh`,
 `b29716c`; the parser carrier comparison; see blockers 4 and 6), but there is no
-reproducible comparison against a native reference, and the measured carrier
-comparison shows the current carrier is quadratic and slower than the list
-carrier, so J6 requires J5 and a native-reference comparison.
+reproducible comparison against a native reference, and the recorded carrier
+comparison — at `8f2b445` against `3159514` — showed the carrier quadratic and
+slower than the list carrier, so J6 requires J5 and a native-reference
+comparison.
 
 ## Standing blockers, stated rather than assumed
 
@@ -150,8 +151,17 @@ carrier, so J6 requires J5 and a native-reference comparison.
    `3159514`, `ByteArray` at `8f2b445`) is now recorded in the run state: same
    synthetic documents, input read inside the timed region, a floor
    calibration, medians over repetitions, and an identical-output check over the
-   corpus. Its result is blocker 6's. There is still no native-reference
-   comparison, so no ratio here is a claim against a best-in-class parser.
+   corpus. Its result is blocker 6's. The scaling instrument itself is now in the
+   repository: `probes/bench/JsonBench.lean`, built as `leanllvm-json-bench`, over
+   the documents in `probes/bench/json/` and driven by
+   `probes/bench/json-bench.sh` (floor first, then the sizes, and a
+   `--digest` mode for the cross-revision equality check). A timed region there
+   contains a file read and the parse, and folds the parse's token count into an
+   accumulator, because a pure call over a loop-invariant buffer is hoisted out of
+   a repetition: a region that stays flat while the wall clock grows is measuring
+   nothing, and the instrument reports the repetitions it took so that can be
+   seen. There is still no native-reference comparison, so no ratio here is a
+   claim against a best-in-class parser.
 5. **Unfinished evidence for the module theorem.** The memory-aware module
    theorem is committed and pushed (`376641f`), but its contract corpus is not
    yet in the repository (three setup lines in the untracked
@@ -166,18 +176,33 @@ carrier, so J6 requires J5 and a native-reference comparison.
    read inside the timed region and a cheapest-document floor under 1 % at every
    size — and the quadratic term survives in both readings: the carrier parser's
    exponent over 4–96 KiB is 2.00 against the list parser's 1.98. It is also
-   **slower**, not faster, at every size measured: the carrier's suffix
-   operations copy, because `drop` is an `extract` and `spaceRun`/`numRun`
-   convert the suffix to a list per token, so the representation changed without
-   the access pattern changing. Documents of hundreds of kilobytes remain
-   impractical, and raising that ceiling needs the access pattern to stop
-   converting suffixes to lists. The cause is the access pattern rather than the
-   container: `drop` copies (`ByteArray.extract`) and the scanners build a list
-   view of the suffix for every token, so a byte is read at an index while the
-   bytes after it are still copied. The remedy is to read the buffer at an
-   offset — no `drop`, no per-token list materialisation — and it is a
-   requirement of J5's full-parser demonstration, refined and measured under J6;
-   neither milestone claims it done here. Whether that closes the quadratic is
-   open until it is measured. The timed table, its floor calibration and the
-   identical-output check (both binaries produce the same parse results on the
-   corpus) live in the run's record rather than here.
+   **slower**, not faster, at every size measured.  At that revision every token
+   rebuilt the carrier through a list: `drop` is
+   `literal (bs.data.toList.drop n)`, so a token handed a dropped suffix paid a
+   list view of the whole array and then a copy of the suffix, and
+   `spaceRun`/`numRun` built a further list view per token on top of that.  That
+   is why the per-token cost grew with the document instead of staying a copy of
+   the suffix — the representation had changed without the access pattern
+   changing.  Documents of hundreds of kilobytes were impractical at that
+   revision, and raising that ceiling needed the access pattern to stop
+   converting suffixes to lists.
+   The cause is the access pattern rather than the container: `drop` rebuilds the
+   carrier through a list (`literal (bs.data.toList.drop n)`), and a scanner over
+   the dropped suffix reads the bytes after every token again.  (`Array.extract`
+   is a different operation — it is the one copy `tailFrom` makes, not the
+   per-token drop.)  The
+   remedy is to read the buffer at an offset — no `drop`, no per-token list
+   materialisation — and it is a requirement of J5's full-parser demonstration,
+   refined and measured under J6; neither milestone claims the ceiling raised
+   here.  The
+   remedy is now in the source — the scans read the carrier at an index and the
+   parser and the tape decoder hand them a position (`scanCharsEnd`,
+   `numRunFrom`, `HasPrefixB`), so no compiled call site drops a suffix — but
+   whether it closes the quadratic is **not claimed here**.  One pair has been
+   measured on the tracked instrument (`probes/bench/JsonBench.lean`, 4–64 KiB):
+   this tree's exponent is ≈1.0 against `e46b17f`'s ≈1.98, with identical parses.
+   That is a two-revision reading, not the three-column comparison against the
+   list carrier that replaces this entry, and the entry and its measured
+   sentences above stay until that comparison exists.  The timed table, its floor
+   calibration and the identical-output check (both binaries produce the same
+   parse results on the corpus) live in the run's record rather than here.

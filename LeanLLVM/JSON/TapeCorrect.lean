@@ -193,6 +193,7 @@ private theorem decode_sound_aux (bs : Bytes) :
           · rename_i hcond
             obtain ⟨hs, hlex⟩ := by
               simpa only [Bool.and_eq_true, beq_iff_eq] using hcond
+            simp only [numRunFrom_eq] at hlex hs
             have hnum : NumberAt bs i (i + (numRun (bs.drop i)).length) := by
               refine ⟨Nat.le_add_right _ _, ?_⟩
               show RfcNumber ((bs.drop i).take (i + (numRun (bs.drop i)).length - i))
@@ -205,6 +206,7 @@ private theorem decode_sound_aux (bs : Bytes) :
             injection hdec with hd
             subst hd
             subst hs
+            simp only [numRunFrom_eq]
             refine ⟨hv, ?_⟩
             refine ⟨[Token.number ⟨i, i + (numRun (bs.drop i)).length⟩], by simp, ?_, ?_⟩
             · simp only [SpansOK, Token.span]
@@ -225,33 +227,31 @@ private theorem decode_sound_aux (bs : Bytes) :
           rw [decodeValue] at hdec <;> (first | (intro c rest' heq; cases heq) | skip)
           split at hdec
           · cases hdec
-          · rename_i cs after hs
-            dsimp only at hdec
+          · rename_i cs stop hs
             split at hdec
             · rename_i hcond
               obtain ⟨hq, hspan⟩ := by
                 simpa only [Bool.and_eq_true, decide_eq_true_eq] using hcond
-              have hstr : StrChars .strict (bs.drop (i + 1)) cs after :=
-                (scanChars_iff (bs.drop (i + 1)) cs after).mp hs
-              have hsa : StringAt .strict bs i (bs.length - after.length) cs := by
+              obtain ⟨rest, hrest, hdrop⟩ := scanCharsEnd_sound hs
+              have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) := by
+                rw [scanChars_eq]; exact hrest
+              have hstr : StrChars .strict (bs.drop (i + 1)) cs rest :=
+                (scanChars_iff (bs.drop (i + 1)) cs rest).mp hok
+              have hsa : StringAt .strict bs i stop.val cs := by
                 unfold StringAt
-                refine ⟨hq, after, hstr, ?_⟩
-                obtain ⟨pre, hp⟩ := strChars_split hstr
-                have hsuffix : ∃ pre', bs = pre' ++ after :=
-                  ⟨bs.take (i + 1) ++ pre, by
-                    rw [ByteString.append_assoc, ← hp, ByteString.take_append_drop]⟩
-                obtain ⟨pre', hpre'⟩ := hsuffix
-                exact drop_of_split hpre'
+                exact ⟨hq, rest, hstr, hdrop⟩
               injection hdec with hd
               subst hd
               subst hspan
               refine ⟨ValueAt.string hsa, ?_⟩
-              refine ⟨[Token.string ⟨i, bs.length - after.length⟩], by simp, ?_, ?_⟩
+              refine ⟨[Token.string ⟨i, stop.val⟩], by simp, ?_, ?_⟩
               · simp only [SpansOK, Token.span]
-                refine ⟨hprev, ?_, by omega, trivial, trivial⟩
+                refine ⟨hprev, ?_, stop.2, trivial, trivial⟩
                 have hlt := strChars_suffix_lt hstr
                 rw [ByteString.length_drop] at hlt
-                obtain ⟨hi, -⟩ := ByteString.getElem?_eq_some_iff.mp hq
+                have hlen : (bs.drop stop.val).length = bs.length - stop.val :=
+                  ByteString.length_drop bs stop.val
+                rw [hdrop] at hlen
                 omega
               · simp [lastStop, Token.span]
             · cases hdec

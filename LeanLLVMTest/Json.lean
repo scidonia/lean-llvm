@@ -436,6 +436,22 @@ rests on a proof. -/
 #guard_msgs (whitespace := lax) in
 #print axioms LeanLLVM.JSON.scanChars_iff
 
+/-- info: 'LeanLLVM.JSON.numRunFrom_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.numRunFrom_eq
+
+/-- info: 'LeanLLVM.JSON.scanCharsEnd_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanCharsEnd_sound
+
+/-- info: 'LeanLLVM.JSON.scanCharsEnd_ok_of_scanCharsFrom' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanCharsEnd_ok_of_scanCharsFrom
+
+/-- info: 'LeanLLVM.JSON.hasPrefixB_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.hasPrefixB_iff
+
 /-
 No pin covered this lemma, so a proof change would have shown only through the
 theorems that use it (`scanChars_eq` → `scanChars_iff` → the headline pins).  Its

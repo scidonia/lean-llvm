@@ -479,18 +479,6 @@ private theorem follow_numberStop {bs : Bytes} {j : Nat} (h : ValueFollow bs j) 
       subst hc
       decide
 
-/-- A scanned string literal, read against the bytes, is a `StringAt` span. -/
-private theorem stringAt_of_scan {bs : Bytes} {i : Nat} {cs : List Nat} {after : Bytes}
-    (hb : bs[i]? = some 0x22) (hs : scanChars (bs.drop (i + 1)) = .ok (cs, after)) :
-    StringAt .strict bs i (bs.length - after.length) cs := by
-  have hstr : StrChars .strict (bs.drop (i + 1)) cs after := (scanChars_iff _ _ _).mp hs
-  obtain ⟨pre, hp⟩ := strChars_split hstr
-  have hbs : bs = (bs.take (i + 1) ++ pre) ++ after := by
-    have h := ByteString.take_append_drop bs (i + 1)
-    rw [hp, ← ByteString.append_assoc] at h
-    exact h.symm
-  exact ⟨hb, after, hstr, drop_of_split hbs⟩
-
 /-! #### Reading back a value's shape from its first byte -/
 
 private theorem numberAt_head {bs : Bytes} {i j : Nat} {b : UInt8}
@@ -860,11 +848,18 @@ private theorem parseKey_sound {bs : Bytes} {i : Nat} {k : Key i}
   · rename_i hb
     split at hk
     · cases hk
-    · rename_i cs after hs
+    · rename_i cs stop hs
       cases hk
-      refine ⟨hb, stringAt_of_scan hb hs, rfl, ?_⟩
-      intro rest
-      simp [decodeValue, hs, hb]
+      obtain ⟨rest, hrest, hdrop⟩ := scanCharsEnd_sound hs
+      have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) := by
+        rw [scanChars_eq]; exact hrest
+      have hstr : StrChars .strict (bs.drop (i + 1)) cs rest :=
+        (scanChars_iff _ _ _).mp hok
+      refine ⟨hb, ?_, rfl, ?_⟩
+      · unfold StringAt
+        exact ⟨hb, rest, hstr, hdrop⟩
+      · intro rest'
+        simp [decodeValue, hs, hb]
   · cases hk
 
 private theorem parseKey_reject {bs : Bytes} {i : Nat} {r : Reject}
@@ -877,9 +872,13 @@ private theorem parseKey_reject {bs : Bytes} {i : Nat} {r : Reject}
     · rename_i hs
       rintro ⟨cs, j, hsAt⟩
       obtain ⟨-, rest, hstr, -⟩ := hsAt
-      have := (scanChars_iff (bs.drop (i + 1)) cs rest).mpr hstr
-      rw [hs] at this
-      cases this
+      have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) :=
+        (scanChars_iff _ _ _).mpr hstr
+      have hfrom : scanCharsFrom 0 (bs.drop (i + 1)) = .ok (cs, rest) := by
+        rw [← scanChars_eq]; exact hok
+      obtain ⟨stop, hstop, -⟩ := scanCharsEnd_ok_of_scanCharsFrom hfrom
+      rw [hs] at hstop
+      cases hstop
     · cases hk
   · rename_i hb
     rintro ⟨cs, j, hsAt⟩
@@ -903,13 +902,9 @@ private theorem parseKey_next_le {bs : Bytes} {i : Nat} {k : Key i}
   · rename_i hb
     split at hk
     · cases hk
-    · rename_i cs after hs
+    · rename_i cs stop hs
       cases hk
-      change bs.length - after.length ≤ bs.length
-      have hstr := (scanChars_iff _ _ _).mp hs
-      have := strChars_suffix_lt hstr
-      simp only [ByteString.length_drop] at this
-      omega
+      exact stop.2
   · cases hk
 
 private theorem stringAt_end_unique {bs : Bytes} {i j1 j2 : Nat}
@@ -1334,12 +1329,12 @@ private theorem decodeValue_false_of {bs : Bytes} {i : Nat}
 
 /-- The decoder equation for a number token whose lexeme is the maximal run. -/
 private theorem decodeValue_number_of {bs : Bytes} {i : Nat} {lex : Bytes}
-    (hlex : lex = numRun (bs.drop i)) (hnum : numLexB lex = true) :
+    (hlex : lex = numRunFrom bs i) (hnum : numLexB lex = true) :
     DecodesValue bs i [Token.number ⟨i, i + lex.length⟩] (.number lex) (i + lex.length) := by
   intro rest
   subst hlex
-  refine ⟨{ value := .number (numRun (bs.drop i)), rest := rest,
-            cursor := i + (numRun (bs.drop i)).length, shrunk := by simp }, ?_, rfl, rfl, rfl⟩
+  refine ⟨{ value := .number (numRunFrom bs i), rest := rest,
+            cursor := i + (numRunFrom bs i).length, shrunk := by simp }, ?_, rfl, rfl, rfl⟩
   simp [decodeValue, hnum]
 
 /-- A value whose head byte starts a number is a number, and its end index is the
@@ -2055,22 +2050,31 @@ private theorem parse_all (bs : Bytes) :
       · rename_i hlex
         injection hp with hp'
         subst hp'
-        have hnum : NumberAt bs i (i + (numRun (bs.drop i)).length) := by
+        have hlexN : numLexB (numRun (bs.drop i)) = true := by
+          rw [← numRunFrom_eq]; exact hlex
+        have hspec : (bs.drop i).take (numRunFrom bs i).length = numRunFrom bs i := by
+          rw [numRunFrom_eq]; exact (numRun_spec (bs.drop i)).1
+        have hnum : NumberAt bs i (i + (numRunFrom bs i).length) := by
           refine ⟨Nat.le_add_right _ _, ?_⟩
-          show RfcNumber ((bs.drop i).take (i + (numRun (bs.drop i)).length - i))
-          rw [Nat.add_sub_cancel_left, (numRun_spec (bs.drop i)).1]
-          exact numLexB_iff _ |>.mp hlex
+          show RfcNumber ((bs.drop i).take (i + (numRunFrom bs i).length - i))
+          rw [Nat.add_sub_cancel_left, hspec, numRunFrom_eq]
+          exact numLexB_iff _ |>.mp hlexN
         refine ⟨?_, ?_, by simp, decodeValue_number_of rfl hlex, ?_⟩
         · have h := ValueAt.number (m := .strict) hnum
-          rwa [Nat.add_sub_cancel_left, (numRun_spec (bs.drop i)).1] at h
-        · have hle := numRun_length_le (bs.drop i)
+          rwa [Nat.add_sub_cancel_left, hspec] at h
+        · show i + (numRunFrom bs i).length ≤ bs.length
+          rw [numRunFrom_eq]
+          have hle := numRun_length_le (bs.drop i)
           have hib := length_gt_of_get? hb
           rw [ByteString.length_drop] at hle
           have h2 := Nat.add_le_add_left hle i
           rwa [Nat.add_sub_of_le (Nat.le_of_lt hib)] at h2
         · intro v j hv hf
           obtain ⟨hn, -⟩ := valueAt_digit_inv hv hb hd
-          exact numberAt_eq hn (follow_le_length hf) (follow_numberStop hf)
+          have hj := numberAt_eq hn (follow_le_length hf) (follow_numberStop hf)
+          show j = i + (numRunFrom bs i).length
+          rw [numRunFrom_eq]
+          exact hj
       · cases hp
     · intro r hr
       rw [hres] at hr
@@ -2080,13 +2084,12 @@ private theorem parse_all (bs : Bytes) :
       · rename_i hlex
         rintro ⟨v, j, hv, hf⟩
         obtain ⟨hn, -⟩ := valueAt_digit_inv hv hb hd
-        have hj := numberAt_eq hn (follow_le_length hf) (follow_numberStop hf)
         have hrf : RfcNumber ((bs.drop i).take (j - i)) := hn.2
-        rw [hj] at hrf
+        rw [numberAt_eq hn (follow_le_length hf) (follow_numberStop hf)] at hrf
         have hnum : numLexB (numRun (bs.drop i)) = true := by
           refine numLexB_iff _ |>.mpr ?_
           rwa [Nat.add_sub_cancel_left, (numRun_spec (bs.drop i)).1] at hrf
-        exact hlex hnum
+        exact hlex (by rw [numRunFrom_eq]; exact hnum)
   case c21 =>
     intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd
     have hres : parseValue bs i depth = .fail (.invalid (.unexpectedByte i b)) := by
@@ -2927,32 +2930,42 @@ private theorem parseKey_complete {bs : Bytes} {i j : Nat} {cs : List Nat}
     (h : StringAt .strict bs i j cs) (hj : j ≤ bs.length) :
     ∃ k : Key i, parseKey bs i = .done k ∧ k.name = cs ∧ k.next = j := by
   obtain ⟨hb, rest, hstr, hdrop⟩ := h
-  have hs : scanChars (bs.drop (i + 1)) = .ok (cs, rest) :=
+  have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) :=
     (scanChars_iff _ _ _).mpr hstr
-  have hlen : rest.length = bs.length - j := by
-    have := congrArg ByteString.length hdrop
-    simp only [ByteString.length_drop] at this
+  have hfrom : scanCharsFrom 0 (bs.drop (i + 1)) = .ok (cs, rest) := by
+    rw [← scanChars_eq]; exact hok
+  obtain ⟨stop, hstop, hdrop'⟩ := scanCharsEnd_ok_of_scanCharsFrom hfrom
+  have hnext : stop.val = j := by
+    have h1 : bs.length - stop.val = rest.length := by
+      rw [← hdrop', ByteString.length_drop]
+    have h2 : bs.length - j = rest.length := by
+      rw [← hdrop, ByteString.length_drop]
+    have hle : stop.val ≤ bs.length := stop.2
+    have hj' : j ≤ bs.length := hj
     omega
-  have hnext : bs.length - rest.length = j := by omega
   have hi : i < bs.length := length_gt_of_get? hb
-  have hle := scalar_suffix_le (bs.drop (i + 1)) cs rest hs
-  simp only [ByteString.length_drop] at hle
-  refine ⟨⟨.string ⟨i, bs.length - rest.length⟩, cs, bs.length - rest.length, by omega⟩,
-    ?_, rfl, hnext⟩
-  unfold parseKey
-  split
-  · rename_i hb2
+  refine ⟨⟨.string ⟨i, stop.val⟩, cs, stop.val, ?_⟩, ?_, rfl, hnext⟩
+  · have hle := stop.2
+    have hlt := strChars_suffix_lt hstr
+    rw [ByteString.length_drop] at hlt
+    have hlen : (bs.drop stop.val).length = bs.length - stop.val :=
+      ByteString.length_drop bs stop.val
+    rw [hdrop'] at hlen
+    omega
+  · unfold parseKey
     split
-    · rename_i e hs2
-      rw [hs] at hs2
-      cases hs2
-    · rename_i cs2 after hs2
-      rw [hs] at hs2
-      cases hs2
-      rfl
-  · rename_i hb2
-    rw [hb] at hb2
-    exact absurd rfl hb2
+    · rename_i hb2
+      split
+      · rename_i e hs2
+        rw [hstop] at hs2
+        cases hs2
+      · rename_i cs2 stop2 hs2
+        rw [hstop] at hs2
+        cases hs2
+        rfl
+    · rename_i hb2
+      rw [hb] at hb2
+      exact absurd rfl hb2
 
 /-- An element list's first element, and the continuation the parser resumes at:
 the whitespace after the value, then either the enclosing close byte (when the list
@@ -3043,13 +3056,18 @@ private theorem parseNumber_done {bs : Bytes} {i j : Nat}
     rw [← hlen]
     exact (numRun_spec (bs.drop i)).1
   have hnum' : RfcNumber (numRun (bs.drop i)) := by rw [← hlex]; exact hnum
-  have hb : numLexB (numRun (bs.drop i)) = true := (numLexB_iff _).mpr hnum'
-  refine ⟨⟨[.number ⟨i, i + (numRun (bs.drop i)).length⟩], .number (numRun (bs.drop i)),
-    i + (numRun (bs.drop i)).length, by omega⟩, ?_, hJ.symm, ?_, rfl⟩
+  have hb : numLexB (numRunFrom bs i) = true := by
+    rw [numRunFrom_eq]; exact (numLexB_iff _).mpr hnum'
+  refine ⟨⟨[.number ⟨i, i + (numRunFrom bs i).length⟩], .number (numRunFrom bs i),
+    i + (numRunFrom bs i).length,
+    by have := numLexB_nonempty _ hb; omega⟩, ?_, ?_, ?_, rfl⟩
   · unfold parseNumber
     dsimp only
     rw [dite_eq_left hb]
-  · rw [hlex]
+  · show i + (numRunFrom bs i).length = j
+    rw [numRunFrom_eq]; exact hJ.symm
+  · show Value.number (numRunFrom bs i) = Value.number ((bs.drop i).take (j - i))
+    rw [hlex, numRunFrom_eq]
 
 /-- `complete_all`.  The mutual induction over the parser's three recursive
 definitions, at every index and depth.  Each case reconstructs the branch's result
@@ -4181,11 +4199,9 @@ theorem decoded_number_is_span_bytes (bs : Bytes) (i : Nat) (s : Span)
     injection h with hd
     subst hd
     subst hs
-    refine ⟨numRun (bs.drop i), rfl, ?_⟩
-    have hp := (numRun_spec (bs.drop i)).1
-    show numRun (bs.drop i) = (bs.drop i).take (i + (numRun (bs.drop i)).length - i)
-    rw [Nat.add_sub_cancel_left]
-    exact hp.symm
+    refine ⟨numRun (bs.drop i), by rw [numRunFrom_eq], ?_⟩
+    rw [numRunFrom_eq, Nat.add_sub_cancel_left]
+    exact (numRun_spec (bs.drop i)).1.symm
   · exact absurd h (by simp)
 
 /-! ### The string half of the zero-copy seam -/
@@ -4201,25 +4217,21 @@ theorem decoded_string_is_span_literal (bs : Bytes) (i : Nat) (s : Span)
   rw [decodeValue] at h
   split at h
   · exact absurd h (by simp)
-  · rename_i cs after hs
-    dsimp only at h
+  · rename_i cs stop hs
     split at h
     · rename_i hcond
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
       obtain ⟨hq, hspan⟩ := hcond
       injection h with hd
       subst hd
-      have hstr : StrChars .strict (bs.drop (i + 1)) cs after :=
-        (scanChars_iff (bs.drop (i + 1)) cs after).mp hs
-      refine ⟨cs, bs.length - after.length, rfl, hspan, ?_⟩
+      obtain ⟨rest, hrest, hdrop⟩ := scanCharsEnd_sound hs
+      have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) := by
+        rw [scanChars_eq]; exact hrest
+      have hstr : StrChars .strict (bs.drop (i + 1)) cs rest :=
+        (scanChars_iff _ _ _).mp hok
+      refine ⟨cs, stop.val, rfl, hspan, ?_⟩
       unfold StringAt
-      refine ⟨hq, after, hstr, ?_⟩
-      obtain ⟨pre, hp⟩ := strChars_split hstr
-      have hsuffix : ∃ pre', bs = pre' ++ after :=
-        ⟨bs.take (i + 1) ++ pre, by
-          rw [ByteString.append_assoc, ← hp, ByteString.take_append_drop]⟩
-      obtain ⟨pre', hpre'⟩ := hsuffix
-      exact drop_of_split hpre'
+      exact ⟨hq, rest, hstr, hdrop⟩
     · exact absurd h (by simp)
 
 end LeanLLVM.JSON

@@ -126,9 +126,9 @@ the list view (`spaceRunAt_eq_list`, `numRunAt_eq_list`) rather than being
 definitional: `rfl` does not reduce across `cons` or `drop`, which rebuild the
 carrier.  The proofs' footprint is `[propext, Quot.sound]`.
 
-A caller that hands a scan a dropped suffix still pays that copy: the parser's
-number and string paths and `HasPrefix` call these functions on `bs.drop i`, and
-they keep doing so until the parser threads offsets instead of dropping. -/
+A scan that takes a carrier value scans from its first byte, so a caller holding
+an index uses the position forms (`skipFrom`, `numRunFrom`, `HasPrefixB`), which
+read the same carrier at that index and copy nothing at the call site. -/
 
 theorem spaceRun_cons (b : UInt8) (bs : Bytes) :
     spaceRun (cons b bs) = if IsSpaceB b then spaceRun bs + 1 else 0 := by
@@ -157,8 +157,61 @@ theorem skipFrom_def (bs : Bytes) (i : Nat) :
 /-- `bs[i…]` starts with exactly `p`. -/
 def HasPrefix (bs : Bytes) (i : Nat) (p : Bytes) : Prop := (bs.drop i).take p.length = p
 
+/-- Compare `p` with the bytes of `bs` at `i`, one byte at a time: the test reads
+the carrier at an index, so a token's prefix is checked without materialising
+the suffix it starts at. -/
+private def hasPrefixAt (bs : Bytes) (i : Nat) : List UInt8 → Bool
+  | [] => true
+  | b :: rest =>
+      match bs[i]? with
+      | none => false
+      | some c => decide (c = b) && hasPrefixAt bs (i + 1) rest
+
 def HasPrefixB (bs : Bytes) (i : Nat) (p : Bytes) : Bool :=
-  decide ((bs.drop i).take p.length = p)
+  hasPrefixAt bs i p.data.toList
+
+/-- The index test compares the byte at `i + k` with the pattern's byte `k`: the
+list view of the carrier at the offset is the pattern when every byte agrees and
+the pattern is exhausted, which is the prefix relation on the list view. -/
+private theorem hasPrefixAt_iff (l : List UInt8) :
+    ∀ (bs : Bytes) (i : Nat),
+      hasPrefixAt bs i l = true ↔ (bs.data.toList.drop i).take l.length = l := by
+  induction l with
+  | nil => intro bs i; simp [hasPrefixAt]
+  | cons b rest ih =>
+      intro bs i
+      cases hk : bs[i]? with
+      | none =>
+          have hge : bs.size ≤ i := ge_of_getElem?_eq_none hk
+          rw [hasPrefixAt, hk, data_toList_drop_eq_nil hge]
+          simp
+      | some c =>
+          rw [hasPrefixAt, hk, data_toList_drop_eq_cons hk]
+          simp only [List.take_succ_cons, List.length_cons, Bool.and_eq_true,
+            decide_eq_true_eq, List.cons.injEq]
+          constructor
+          · rintro ⟨h1, h2⟩
+            exact ⟨h1, (ih bs (i + 1)).mp h2⟩
+          · rintro ⟨h1, h2⟩
+            exact ⟨h1, (ih bs (i + 1)).mpr h2⟩
+
+/-- The Boolean prefix test and the proposition agree. -/
+theorem hasPrefixB_iff {bs : Bytes} {i : Nat} {p : Bytes} :
+    HasPrefixB bs i p = true ↔ HasPrefix bs i p := by
+  unfold HasPrefixB HasPrefix
+  rw [hasPrefixAt_iff]
+  have hlen : p.length = p.data.toList.length := by
+    rw [ByteString.length_eq_size, ByteString.size_eq_data, Array.length_toList]
+  constructor
+  · intro h
+    rw [hlen]
+    apply ByteString.eq_of_data_toList_eq
+    rw [ByteString.data_toList_take, ByteString.data_toList_drop]
+    exact h
+  · intro h
+    have := congrArg (fun x : Bytes => x.data.toList) h
+    rw [ByteString.data_toList_take, ByteString.data_toList_drop, hlen] at this
+    exact this
 
 /-- A byte that could continue a JSON number.  The number scan takes the maximal
 run of these and then validates it with the grammar. -/
@@ -187,6 +240,11 @@ private def numRunAt (bs : Bytes) (fuel i : Nat) : List UInt8 :=
 
 /-- The longest prefix of the argument consisting of number constituents. -/
 def numRun (bs : Bytes) : Bytes := literal (numRunAt bs bs.size 0)
+
+/-- The number constituents from index `i`: the run's bytes are built once, and
+the lexeme is a `literal` of that list, so a reader that knows its position reads
+the carrier at that index instead of first dropping the suffix. -/
+def numRunFrom (bs : Bytes) (i : Nat) : Bytes := literal (numRunAt bs (bs.size - i) i)
 
 /-- The index scan is the list view's scan at every offset: the agreement the
 cons equations and the spec lemmas are proved through. -/
@@ -225,6 +283,21 @@ theorem numRun_cons (b : UInt8) (bs : Bytes) :
   by_cases h : NumConstituent b = true
   · simp [numRunL, h, ByteString.literal_cons]
   · simp [numRunL, h, ByteString.empty]
+
+/-- The run at a position is the run at the head of the suffix that position
+starts: the two reads are the same bytes, and the position form is the one a
+caller holding an index uses. -/
+theorem numRunFrom_eq (bs : Bytes) (i : Nat) : numRunFrom bs i = numRun (bs.drop i) := by
+  rcases Nat.lt_or_ge i bs.size with hlt | hge
+  · rw [numRunFrom, numRun, numRunAt_eq_list (bs.size - i) bs i (by omega),
+      numRunAt_eq_list (bs.drop i).size (bs.drop i) 0 (by omega), List.drop_zero,
+      ByteString.data_toList_drop]
+  · have hnil : bs.data.toList.drop i = [] := data_toList_drop_eq_nil (by omega)
+    have hd : bs.drop i = empty := by
+      apply ByteString.eq_empty_of_data_toList
+      rwa [ByteString.data_toList_drop]
+    have hz : bs.size - i = 0 := by omega
+    rw [numRunFrom, hz, numRunAt, hd, numRun_empty, ByteString.empty]
 
 /-- A Unicode scalar value: a code point that is not a surrogate.  The
 `≤ 0x10FFFF` bound is already imposed by `Utf8Char`, and is restated because this

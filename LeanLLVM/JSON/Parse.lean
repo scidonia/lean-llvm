@@ -143,22 +143,29 @@ def rejectOf (i : Nat) : ScanError → Reject
   | .noncharacter k => .noncharacter (i + 1 + k)
 
 
-/-- `string` as RFC 8259 §7 defines it: a quote, a body, a quote.  `scanChars`
-is given the bytes after the opening quote and returns the remainder after the
-closing quote, so `bs.length - after.length` is one past the quote. -/
+/-- `string` as RFC 8259 §7 defines it: a quote, a body, a quote.  `scanCharsEnd`
+is given the index of the body's first byte and returns the index past the
+closing quote, so the scan reads the caller's buffer at a position and copies
+neither the body's suffix nor the bytes past its end. -/
 def parseKey (bs : Bytes) (i : Nat) : Step (Key i) :=
   match hb : bs[i]? with
   | some 0x22 =>
-      match hs : scanChars (bs.drop (i + 1)) with
+      match hs : scanCharsEnd bs (i + 1) 0 with
       | .error e => .fail (.invalid (rejectOf i e))
-      | .ok (cs, after) =>
-          let stop := bs.length - after.length
-          .done { token := .string ⟨i, stop⟩, name := cs, next := stop,
+      | .ok (cs, stop) =>
+          .done { token := .string ⟨i, stop.val⟩, name := cs, next := stop.val,
                   consumed := by
-                    have h := scalar_suffix_le (bs.drop (i + 1)) cs after hs
+                    obtain ⟨rest, hrest, hdrop⟩ := scanCharsEnd_sound hs
+                    have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) := by
+                      rw [scanChars_eq]; exact hrest
+                    have hstr := (scanChars_iff _ _ _).mp hok
+                    have hlt := strChars_suffix_lt hstr
+                    rw [ByteString.length_drop] at hlt
+                    have hlen : (bs.drop stop.val).length = bs.length - stop.val :=
+                      ByteString.length_drop bs stop.val
+                    rw [hdrop] at hlen
                     have hi : i < bs.length := length_gt_of_get? hb
-                    have hd : (bs.drop (i + 1)).length = bs.length - (i + 1) :=
-                      ByteString.length_drop bs (i + 1)
+                    have hle := stop.2
                     omega }
   | _ => .fail (.invalid (.unexpectedByte i (bs[i]?.getD 0)))
 
@@ -175,15 +182,13 @@ A run that is not a number is refused here; a run that is a number but ends wher
 the enclosing production cannot use it is refused by the caller, which is why the
 soundness lemma carries the boundary condition. -/
 def parseNumber (bs : Bytes) (i : Nat) : Step (Parsed i) :=
-  let lex := numRun (bs.drop i)
+  let lex := numRunFrom bs i
   if h : numLexB lex then
     .done { tokens := [.number ⟨i, i + lex.length⟩], value := .number lex,
             next := i + lex.length,
             consumed := by
               have hpos := numLexB_nonempty lex h
-              have hlen : (numRun (bs.drop i)).length ≤ (bs.drop i).length :=
-                numRun_length_le (bs.drop i)
-              have hd : (bs.drop i).length = bs.length - i := ByteString.length_drop bs i
+              have hlen := numRunFrom_length_le bs i
               omega }
   else .fail (.invalid (.badNumber i))
 

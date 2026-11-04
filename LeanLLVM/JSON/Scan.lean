@@ -37,6 +37,18 @@ def okCons (pos c : Nat) (r : Except ScanError (List Nat × Bytes)) :
     | .error e => .error e
     | .ok (cs, fin) => .ok (c :: cs, fin)
 
+/-- The same step over an index record: the accepted character is prepended to
+the code points, and the index the scan stopped at passes through unchanged.
+This is the form a caller that reads the carrier at a position uses, because it
+never materialises the remainder as a carrier. -/
+private def okConsIx (pos c : Nat) (r : Except ScanError (List Nat × Nat)) :
+    Except ScanError (List Nat × Nat) :=
+  if IsNoncharacter c then .error (.noncharacter pos)
+  else
+    match r with
+    | .error e => .error e
+    | .ok (cs, fin) => .ok (c :: cs, fin)
+
 /-- The string body scan, over the carrier's list view: the one definition of
 the scan.  It returns carrier remainders, so `scanCharsFrom` is this function
 applied to `bs.data.toList` and no conversion stands between them. -/
@@ -174,29 +186,30 @@ def scanCons (pos next : Nat) (c : Nat) (rest : Bytes) :
   okCons pos c (scanCharsFrom next rest)
 
 /-- The tail of the subject from index `j`: one `Array.extract` into a fresh
-array.  This is the one copy a scan makes, and it is taken once, at the closing
-quote; the recursion reads the subject at an index and copies nothing. -/
+array.  `scanChars` takes it once, at the closing quote; the position scan
+records the index instead and copies nothing. -/
 private def tailFrom (bs : Bytes) (j : Nat) : Bytes := bs.extract j bs.size
 
 /-- The string body scan from index `i`, read at that index: `scanCharsL`'s
-branches with the list view replaced by lookups.  `fuel` bounds the steps, one
-per character, so the recursion is structural and a scan over concrete bytes
-reduces; the caller supplies the subject's length, which is as many steps as a
-scan of it can take. -/
+branches with the list view replaced by lookups, recording the index of the byte
+that follows the closing quote instead of copying the remainder.  `fuel` bounds
+the steps, one per character, so the recursion is structural and a scan over
+concrete bytes reduces; the caller supplies the subject's length, which is as
+many steps as a scan of it can take. -/
 private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
-    Except ScanError (List Nat × Bytes) :=
+    Except ScanError (List Nat × Nat) :=
   match fuel with
   | 0 => .error .ended
   | fuel + 1 =>
     match bs[i]? with
     | none => .error .ended
-    | some 0x22 => .ok ([], tailFrom bs (i + 1))
+    | some 0x22 => .ok ([], i + 1)
     | some 0x5C =>
       match bs[i + 1]? with
       | none => .error .ended
       | some e =>
         match EscVal e with
-        | some c => okCons off c (scanCharsAt bs fuel (i + 2) (off + 2))
+        | some c => okConsIx off c (scanCharsAt bs fuel (i + 2) (off + 2))
         | none =>
           if e = 0x75 then
             match bs[i + 2]? with
@@ -239,7 +252,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
                                         | none => .error (.badEscape (off + 8))
                                         | some lo =>
                                           if 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF then
-                                            okCons off (0x10000 + (c - 0xD800) * 0x400 +
+                                            okConsIx off (0x10000 + (c - 0xD800) * 0x400 +
                                                 (lo - 0xDC00))
                                               (scanCharsAt bs fuel (i + 12) (off + 12))
                                           else .error (.unpairedSurrogate off)
@@ -247,19 +260,19 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
                                     else .error (.unpairedSurrogate off)
                       else if 0xDC00 ≤ c ∧ c ≤ 0xDFFF then
                         .error (.unpairedSurrogate off)
-                      else okCons off c (scanCharsAt bs fuel (i + 6) (off + 6))
+                      else okConsIx off c (scanCharsAt bs fuel (i + 6) (off + 6))
           else .error (.badEscape off)
     | some b =>
       if b.toNat < 0x80 then
         if 0x20 ≤ b.toNat then
-          okCons off b.toNat (scanCharsAt bs fuel (i + 1) (off + 1))
+          okConsIx off b.toNat (scanCharsAt bs fuel (i + 1) (off + 1))
         else .error (.controlCharacter off)
       else if 0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF then
         match bs[i + 1]? with
         | none => .error .ended
         | some b1 =>
           if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF then
-            okCons off ((b.toNat - 0xC0) * 0x40 + (b1.toNat - 0x80))
+            okConsIx off ((b.toNat - 0xC0) * 0x40 + (b1.toNat - 0x80))
               (scanCharsAt bs fuel (i + 2) (off + 2))
           else .error (.badUTF8 off)
       else if b = 0xE0 then
@@ -270,7 +283,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
           | none => .error .ended
           | some b2 =>
             if 0xA0 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              okCons off ((b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80))
+              okConsIx off ((b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80))
                 (scanCharsAt bs fuel (i + 3) (off + 3))
             else .error (.badUTF8 off)
       else if 0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC then
@@ -281,7 +294,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
           | none => .error .ended
           | some b2 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              okCons off ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
+              okConsIx off ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
                   (b2.toNat - 0x80))
                 (scanCharsAt bs fuel (i + 3) (off + 3))
             else .error (.badUTF8 off)
@@ -293,7 +306,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
           | none => .error .ended
           | some b2 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x9F ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              okCons off (0xD000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80))
+              okConsIx off (0xD000 + (b1.toNat - 0x80) * 0x40 + (b2.toNat - 0x80))
                 (scanCharsAt bs fuel (i + 3) (off + 3))
             else .error (.badUTF8 off)
       else if 0xEE ≤ b.toNat ∧ b.toNat ≤ 0xEF then
@@ -304,7 +317,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
           | none => .error .ended
           | some b2 =>
             if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF then
-              okCons off ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
+              okConsIx off ((b.toNat - 0xE0) * 0x1000 + (b1.toNat - 0x80) * 0x40 +
                   (b2.toNat - 0x80))
                 (scanCharsAt bs fuel (i + 3) (off + 3))
             else .error (.badUTF8 off)
@@ -320,7 +333,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
             | some b3 =>
               if 0x90 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                   0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF then
-                okCons off ((b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
+                okConsIx off ((b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
                     (b3.toNat - 0x80))
                   (scanCharsAt bs fuel (i + 4) (off + 4))
               else .error (.badUTF8 off)
@@ -336,7 +349,7 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
             | some b3 =>
               if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                   0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF then
-                okCons off ((b.toNat - 0xF0) * 0x40000 + (b1.toNat - 0x80) * 0x1000 +
+                okConsIx off ((b.toNat - 0xF0) * 0x40000 + (b1.toNat - 0x80) * 0x1000 +
                     (b2.toNat - 0x80) * 0x40 + (b3.toNat - 0x80))
                   (scanCharsAt bs fuel (i + 4) (off + 4))
               else .error (.badUTF8 off)
@@ -352,16 +365,35 @@ private def scanCharsAt (bs : Bytes) (fuel i off : Nat) :
             | some b3 =>
               if 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x8F ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF ∧
                   0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF then
-                okCons off (0x100000 + (b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
+                okConsIx off (0x100000 + (b1.toNat - 0x80) * 0x1000 + (b2.toNat - 0x80) * 0x40 +
                     (b3.toNat - 0x80))
                   (scanCharsAt bs fuel (i + 4) (off + 4))
               else .error (.badUTF8 off)
       else .error (.badUTF8 off)
 
 /-- The string scanner at the start of a body: the index scan at the first byte,
-with the body's length as its fuel. -/
+with the body's length as its fuel, and the remainder taken as the one extract
+past the closing quote. -/
 def scanChars (bs : Bytes) : Except ScanError (List Nat × Bytes) :=
-  scanCharsAt bs bs.size 0 0
+  (scanCharsAt bs bs.size 0 0).map (fun p => (p.1, tailFrom bs p.2))
+
+/-- The string body scan from index `i` of the buffer, returning the code points
+and the index just past the closing quote: the form the parser and the tape
+decoder use, which reads the buffer at the position it was given and copies no
+suffix and no remainder.
+
+The stop is typed as a position in the buffer.  `min` supplies that position by
+construction: the scan advances only past bytes it has looked up, but that is an
+observation about its branches rather than a theorem here, so the bound is not
+proved from them and the pin is what makes the type hold.  The fact the callers
+read is that the pinned stop names the same suffix as the index it pins
+(`drop_min`), and `scanCharsEnd_sound` states the agreement with the reference
+scan through it. -/
+def scanCharsEnd (bs : Bytes) (i off : Nat) :
+    Except ScanError (List Nat × { stop : Nat // stop ≤ bs.size }) :=
+  match scanCharsAt bs (bs.size - i) i off with
+  | .error e => .error e
+  | .ok (cs, stop) => .ok (cs, ⟨min stop bs.size, Nat.min_le_right _ _⟩)
 
 /-- `*DIGIT` consumes the whole argument, over the carrier's list view. -/
 private def allDigitsL : List UInt8 → Bool
@@ -2297,16 +2329,54 @@ private theorem tailFrom_cons_at {bs : Bytes} {i j : Nat} {a : UInt8}
   rw [hj]
   exact tailFrom_cons h
 
+/-- The tail's length is the buffer's remainder, for every index. -/
+private theorem tailFrom_length (bs : Bytes) (j : Nat) : (tailFrom bs j).length = bs.size - j := by
+  have h : (tailFrom bs j).data.toList.length = bs.data.toList.length - j := by
+    rw [tailFrom_data_toList, List.length_drop]
+  have h1 : (tailFrom bs j).length = (tailFrom bs j).data.toList.length := by
+    rw [ByteString.length_eq_size, ByteString.size_eq_data, Array.length_toList]
+  have h2 : bs.size = bs.data.toList.length := by
+    rw [ByteString.size_eq_data, Array.length_toList]
+  rw [h1, h2, h]
+
+/-- The tail is the dropped suffix. -/
+private theorem tailFrom_eq_drop (bs : Bytes) (j : Nat) : tailFrom bs j = bs.drop j := by
+  apply ByteString.eq_of_data_toList_eq
+  rw [tailFrom_data_toList, ByteString.data_toList_drop]
+
+/-- Reading an error through the tail map is the error. -/
+private theorem map_error {α β : Type} (e : ScanError) (f : α → β) :
+    (Except.error e : Except ScanError α).map f = Except.error e := rfl
+
+/-- Reading an accepted record through the tail map maps its payload. -/
+private theorem map_ok {α β : Type} (a : α) (f : α → β) :
+    (Except.ok a : Except ScanError α).map f = Except.ok (f a) := rfl
+
+/-- The continuation commutes with reading the stop as a tail: accepting a
+character prepends its code point and passes the index through, so mapping the
+index scan's result through `tailFrom` is the reference step. -/
+private theorem okConsIx_tail (bs : Bytes) (pos c : Nat)
+    (r : Except ScanError (List Nat × Nat)) :
+    (okConsIx pos c r).map (fun p => (p.1, tailFrom bs p.2)) =
+      okCons pos c (r.map (fun p => (p.1, tailFrom bs p.2))) := by
+  unfold okConsIx okCons
+  cases r with
+  | error e => split <;> simp [Except.map]
+  | ok p => split <;> simp [Except.map]
+
 set_option maxHeartbeats 800000 in
-/-- The index scan is the reference scan of the tail, at every offset. -/
+/-- The index scan is the reference scan of the tail, at every offset: reading
+the carrier at a position and recording the stopping index, then reading the
+tail there, is scanning the suffix that position starts. -/
 private theorem scanCharsAt_eq (fuel : Nat) :
     ∀ (bs : Bytes) (i off : Nat), bs.size ≤ i + fuel →
-      scanCharsAt bs fuel i off = scanCharsFrom off (tailFrom bs i) := by
+      (scanCharsAt bs fuel i off).map (fun p => (p.1, tailFrom bs p.2)) =
+        scanCharsFrom off (tailFrom bs i) := by
   induction fuel with
   | zero =>
     intro bs i off h
     have hge : bs.size ≤ i := by omega
-    simp only [scanCharsAt.eq_1, tailFrom_eq_empty hge, scanCharsFrom_nil]
+    simp only [scanCharsAt.eq_1, map_error, map_ok, tailFrom_eq_empty hge, scanCharsFrom_nil]
   | succ fuel ih =>
     intro bs i off h
     have hb := h
@@ -2314,13 +2384,13 @@ private theorem scanCharsAt_eq (fuel : Nat) :
     cases hk : bs[i]? with
     | none =>
       have hge := ge_of_getElem?_eq_none hk
-      simp only [hk, tailFrom_eq_empty hge, scanCharsFrom_nil]
+      simp only [hk, map_error, map_ok, tailFrom_eq_empty hge, scanCharsFrom_nil]
     | some a =>
       rw [tailFrom_cons_at (j := i + 1) hk (by omega)]
       by_cases hq : a = 0x22
       · subst a
         have hstep := scanCharsFrom_quote off (tailFrom bs (i + 1))
-        simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+        simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
       · by_cases hs : a = 0x5C
         · subst a
           cases h1 : bs[i + 1]? with
@@ -2328,14 +2398,14 @@ private theorem scanCharsAt_eq (fuel : Nat) :
             have hge := ge_of_getElem?_eq_none h1
             rw [tailFrom_eq_empty hge]
             have hstep := scanCharsFrom_escape_ended off
-            simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+            simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
           | some e =>
             rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
             cases hv : EscVal e with
             | some c =>
               have hstep := scanCharsFrom_escape off e (tailFrom bs (i + 2)) c hv
-              simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-              rw [ih bs (i + 2) (off + 2) (Nat.le_trans hb (by omega))]
+              simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+              rw [okConsIx_tail bs, ih bs (i + 2) (off + 2) (Nat.le_trans hb (by omega))]
             | none =>
               by_cases he : e = 0x75
               · subst e
@@ -2345,7 +2415,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                   have hge := ge_of_getElem?_eq_none h2
                   have hstep := scanCharsFrom_uchar_ended off (tailFrom bs (i + 2))
                     (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                  simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                  simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                 | some h0 =>
                   rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                   cases h3 : bs[i + 3]? with
@@ -2353,7 +2423,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                     have hge := ge_of_getElem?_eq_none h3
                     have hstep := scanCharsFrom_uchar_ended off (h0 +: tailFrom bs (i + 3))
                       (by rw [tailFrom_eq_empty hge, ByteString.length_cons, ByteString.length_empty]; omega)
-                    simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                    simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                   | some h1' =>
                     rw [tailFrom_cons_at (j := i + 4) h3 (by omega)]
                     cases h4 : bs[i + 4]? with
@@ -2363,7 +2433,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                         (h0 +: h1' +: tailFrom bs (i + 4))
                         (by rw [tailFrom_eq_empty hge, ByteString.length_cons, ByteString.length_cons,
                           ByteString.length_empty]; omega)
-                      simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                      simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                     | some h2' =>
                       rw [tailFrom_cons_at (j := i + 5) h4 (by omega)]
                       cases h5 : bs[i + 5]? with
@@ -2373,14 +2443,14 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                           (h0 +: h1' +: h2' +: tailFrom bs (i + 5))
                           (by rw [tailFrom_eq_empty hge, ByteString.length_cons, ByteString.length_cons,
                             ByteString.length_cons, ByteString.length_empty]; omega)
-                        simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                        simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                       | some h3' =>
                         rw [tailFrom_cons_at (j := i + 6) h5 (by omega)]
                         cases hx : Hex4 h0 h1' h2' h3' with
                         | none =>
                           have hstep := scanCharsFrom_uchar_badHex off h0 h1' h2' h3'
                             (tailFrom bs (i + 6)) hx
-                          simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                          simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                         | some c =>
                           by_cases hhi : 0xD800 ≤ c ∧ c ≤ 0xDBFF
                           · cases h6 : bs[i + 6]? with
@@ -2389,7 +2459,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                               have hstep := scanCharsFrom_pair_ended off h0 h1' h2' h3'
                                 (tailFrom bs (i + 6)) c hx hhi
                                 (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                             | some z0 =>
                               rw [tailFrom_cons_at (j := i + 7) h6 (by omega)]
                               cases h7 : bs[i + 7]? with
@@ -2399,7 +2469,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                   (z0 +: tailFrom bs (i + 7)) c hx hhi
                                   (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                     ByteString.length_empty]; omega)
-                                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                               | some z1 =>
                                 rw [tailFrom_cons_at (j := i + 8) h7 (by omega)]
                                 cases h8 : bs[i + 8]? with
@@ -2409,7 +2479,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                     (z0 +: z1 +: tailFrom bs (i + 8)) c hx hhi
                                     (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                       ByteString.length_cons, ByteString.length_empty]; omega)
-                                  simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                  simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                 | some l0 =>
                                   rw [tailFrom_cons_at (j := i + 9) h8 (by omega)]
                                   cases h9 : bs[i + 9]? with
@@ -2420,7 +2490,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                       (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                         ByteString.length_cons, ByteString.length_cons,
                                         ByteString.length_empty]; omega)
-                                    simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                    simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                   | some l1 =>
                                     rw [tailFrom_cons_at (j := i + 10) h9 (by omega)]
                                     cases h10 : bs[i + 10]? with
@@ -2431,7 +2501,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                         (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                           ByteString.length_cons, ByteString.length_cons,
                                           ByteString.length_cons, ByteString.length_empty]; omega)
-                                      simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                      simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                     | some l2 =>
                                       rw [tailFrom_cons_at (j := i + 11) h10 (by omega)]
                                       cases h11 : bs[i + 11]? with
@@ -2444,7 +2514,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                             ByteString.length_cons, ByteString.length_cons,
                                             ByteString.length_cons, ByteString.length_cons,
                                             ByteString.length_empty]; omega)
-                                        simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                        simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                       | some l3 =>
                                         rw [tailFrom_cons_at (j := i + 12) h11 (by omega)]
                                         by_cases hz0 : z0 = 0x5C
@@ -2456,46 +2526,46 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                               have hstep := scanCharsFrom_pair_badHex off
                                                 h0 h1' h2' h3' l0 l1 l2 l3
                                                 (tailFrom bs (i + 12)) c hx hhi hy
-                                              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                             | some lo =>
                                               by_cases hlo : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF
                                               · have hstep := scanCharsFrom_pair off h0 h1'
                                                   h2' h3' l0 l1 l2 l3
                                                   (tailFrom bs (i + 12)) c lo hv' hx hy hhi hlo
-                                                simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                                                rw [ih bs (i + 12) (off + 12)
+                                                simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                                                rw [okConsIx_tail bs, ih bs (i + 12) (off + 12)
                                                   (Nat.le_trans hb (by omega))]
                                               · have hstep := scanCharsFrom_pair_badLow off h0
                                                   h1' h2' h3' l0 l1 l2 l3
                                                   (tailFrom bs (i + 12)) c lo hx hhi hy hlo
-                                                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                           · have hstep := scanCharsFrom_pair_noU off h0 h1' h2' h3'
                                               z1 (l0 +: l1 +: l2 +: l3 +: tailFrom bs (i + 12)) c hx
                                               hhi hz1
-                                            simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                            simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                         · have hstep := scanCharsFrom_pair_noEscape off h0 h1'
                                             h2' h3' z0 (z1 +: l0 +: l1 +: l2 +: l3 +: tailFrom bs (i + 12))
                                             c hx hhi hz0
-                                          simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                          simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                           · by_cases hlo : 0xDC00 ≤ c ∧ c ≤ 0xDFFF
                             · have hstep := scanCharsFrom_uchar_low off h0 h1' h2' h3'
                                 (tailFrom bs (i + 6)) c hx hlo
-                              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                             · have hstep := scanCharsFrom_uchar off h0 h1' h2' h3'
                                 (tailFrom bs (i + 6)) c hv' hx hhi hlo
-                              simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                              rw [ih bs (i + 6) (off + 6) (Nat.le_trans hb (by omega))]
+                              simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                              rw [okConsIx_tail bs, ih bs (i + 6) (off + 6) (Nat.le_trans hb (by omega))]
               · have hstep := scanCharsFrom_escape_bad off e (tailFrom bs (i + 2)) hv he
-                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
         · by_cases hlt : a.toNat < 0x80
           · by_cases hctrl : 0x20 ≤ a.toNat
             · have hstep := scanCharsFrom_ascii off a (tailFrom bs (i + 1)) hq hs
                 (UInt8.lt_iff_toNat_lt.mpr hlt) hctrl
-              simp only [hstep, scanCons, hk, hq, hs, hlt, hctrl, ite_true, ite_false,
+              simp only [hstep, scanCons, map_error, map_ok, hk, hq, hs, hlt, hctrl, ite_true, ite_false,
                 and_self, and_true, true_and]
-              rw [ih bs (i + 1) (off + 1) (Nat.le_trans hb (by omega))]
+              rw [okConsIx_tail bs, ih bs (i + 1) (off + 1) (Nat.le_trans hb (by omega))]
             · have hstep := scanCharsFrom_control off a (tailFrom bs (i + 1)) hlt hctrl
-              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
           · by_cases htwo : 0xC2 ≤ a.toNat ∧ a.toNat ≤ 0xDF
             · cases h1 : bs[i + 1]? with
               | none =>
@@ -2503,17 +2573,17 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                 rw [tailFrom_eq_empty hge]
                 have hstep := scanCharsFrom_utf8_two_ended off a
                   (le_of_toNat htwo.1) (le_of_toNat htwo.2)
-                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
               | some b1 =>
                 rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                 by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF
                 · have hstep := scanCharsFrom_utf8_two off a b1 (tailFrom bs (i + 2))
                     (le_of_toNat htwo.1) (le_of_toNat htwo.2) (le_of_toNat h12.1) (le_of_toNat h12.2)
-                  simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                  rw [ih bs (i + 2) (off + 2) (Nat.le_trans hb (by omega))]
+                  simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                  rw [okConsIx_tail bs, ih bs (i + 2) (off + 2) (Nat.le_trans hb (by omega))]
                 · have hstep := scanCharsFrom_utf8_two_bad off a b1 (tailFrom bs (i + 2))
                     (le_of_toNat htwo.1) (le_of_toNat htwo.2) h12
-                  simp only [hstep, hk, hq, hs, h1, hlt, htwo, h12, ite_true, ite_false,
+                  simp only [hstep, map_error, hk, hq, hs, h1, hlt, htwo, h12, ite_true, ite_false,
                     and_self, and_true, true_and]
             · by_cases he0 : a = 0xE0
               · subst a
@@ -2522,7 +2592,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                   have hge := ge_of_getElem?_eq_none h1
                   have hstep := scanCharsFrom_utf8_e0_ended off (tailFrom bs (i + 1))
                     (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                  simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                  simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                 | some b1 =>
                   rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                   cases h2 : bs[i + 2]? with
@@ -2531,7 +2601,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                     have hstep := scanCharsFrom_utf8_e0_ended off (b1 +: tailFrom bs (i + 2))
                       (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                         ByteString.length_empty]; omega)
-                    simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                    simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                   | some b2 =>
                     rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                     by_cases h12 : 0xA0 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
@@ -2539,11 +2609,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                     · have hstep := scanCharsFrom_utf8_e0 off b1 b2 (tailFrom bs (i + 3))
                         (le_of_toNat h12.1) (le_of_toNat h12.2.1) (le_of_toNat h12.2.2.1)
                         (le_of_toNat h12.2.2.2)
-                      simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                      rw [ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
+                      simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                      rw [okConsIx_tail bs, ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
                     · have hstep := scanCharsFrom_utf8_e0_bad off b1 b2 (tailFrom bs (i + 3))
                         h12
-                      simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                      simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
               · by_cases h31 : 0xE1 ≤ a.toNat ∧ a.toNat ≤ 0xEC
                 · cases h1 : bs[i + 1]? with
                   | none =>
@@ -2551,7 +2621,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                     have hstep := scanCharsFrom_utf8_e1ec_ended off a (tailFrom bs (i + 1))
                       (le_of_toNat h31.1) (le_of_toNat h31.2)
                       (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                    simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                    simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                   | some b1 =>
                     rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                     cases h2 : bs[i + 2]? with
@@ -2561,7 +2631,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                         (b1 +: tailFrom bs (i + 2)) (le_of_toNat h31.1) (le_of_toNat h31.2)
                         (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                           ByteString.length_empty]; omega)
-                      simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                      simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                     | some b2 =>
                       rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                       by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
@@ -2569,11 +2639,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                       · have hstep := scanCharsFrom_utf8_e1ec off a b1 b2 (tailFrom bs (i + 3))
                           (le_of_toNat h31.1) (le_of_toNat h31.2) (le_of_toNat h12.1)
                           (le_of_toNat h12.2.1) (le_of_toNat h12.2.2.1) (le_of_toNat h12.2.2.2)
-                        simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                        rw [ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
+                        simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                        rw [okConsIx_tail bs, ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
                       · have hstep := scanCharsFrom_utf8_e1ec_bad off a b1 b2
                           (tailFrom bs (i + 3)) (le_of_toNat h31.1) (le_of_toNat h31.2) h12
-                        simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                        simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                 · by_cases hed : a = 0xED
                   · subst a
                     cases h1 : bs[i + 1]? with
@@ -2581,7 +2651,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                       have hge := ge_of_getElem?_eq_none h1
                       have hstep := scanCharsFrom_utf8_ed_ended off (tailFrom bs (i + 1))
                         (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                      simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                      simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                     | some b1 =>
                       rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                       cases h2 : bs[i + 2]? with
@@ -2590,7 +2660,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                         have hstep := scanCharsFrom_utf8_ed_ended off (b1 +: tailFrom bs (i + 2))
                           (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                             ByteString.length_empty]; omega)
-                        simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                        simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                       | some b2 =>
                         rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                         by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x9F ∧
@@ -2598,11 +2668,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                         · have hstep := scanCharsFrom_utf8_ed off b1 b2 (tailFrom bs (i + 3))
                             (le_of_toNat h12.1) (le_of_toNat h12.2.1) (le_of_toNat h12.2.2.1)
                             (le_of_toNat h12.2.2.2)
-                          simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                          rw [ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
+                          simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                          rw [okConsIx_tail bs, ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
                         · have hstep := scanCharsFrom_utf8_ed_bad off b1 b2
                             (tailFrom bs (i + 3)) h12
-                          simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                          simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                   · by_cases h33 : 0xEE ≤ a.toNat ∧ a.toNat ≤ 0xEF
                     · cases h1 : bs[i + 1]? with
                       | none =>
@@ -2610,7 +2680,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                         have hstep := scanCharsFrom_utf8_eeef_ended off a
                           (tailFrom bs (i + 1)) (le_of_toNat h33.1) (le_of_toNat h33.2)
                           (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                        simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                        simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                       | some b1 =>
                         rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                         cases h2 : bs[i + 2]? with
@@ -2620,7 +2690,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                             (b1 +: tailFrom bs (i + 2)) (le_of_toNat h33.1) (le_of_toNat h33.2)
                             (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                               ByteString.length_empty]; omega)
-                          simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                          simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                         | some b2 =>
                           rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                           by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
@@ -2629,11 +2699,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                               (tailFrom bs (i + 3)) (le_of_toNat h33.1) (le_of_toNat h33.2)
                               (le_of_toNat h12.1) (le_of_toNat h12.2.1) (le_of_toNat h12.2.2.1)
                               (le_of_toNat h12.2.2.2)
-                            simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                            rw [ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
+                            simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                            rw [okConsIx_tail bs, ih bs (i + 3) (off + 3) (Nat.le_trans hb (by omega))]
                           · have hstep := scanCharsFrom_utf8_eeef_bad off a b1 b2
                               (tailFrom bs (i + 3)) (le_of_toNat h33.1) (le_of_toNat h33.2) h12
-                            simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                            simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                     · by_cases hf0 : a = 0xF0
                       · subst a
                         cases h1 : bs[i + 1]? with
@@ -2641,7 +2711,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                           have hge := ge_of_getElem?_eq_none h1
                           have hstep := scanCharsFrom_utf8_f0_ended off (tailFrom bs (i + 1))
                             (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                          simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                          simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                         | some b1 =>
                           rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                           cases h2 : bs[i + 2]? with
@@ -2651,7 +2721,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                               (b1 +: tailFrom bs (i + 2))
                               (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                 ByteString.length_empty]; omega)
-                            simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                            simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                           | some b2 =>
                             rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                             cases h3 : bs[i + 3]? with
@@ -2661,7 +2731,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                 (b1 +: b2 +: tailFrom bs (i + 3))
                                 (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                   ByteString.length_cons, ByteString.length_empty]; omega)
-                              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                             | some b3 =>
                               rw [tailFrom_cons_at (j := i + 4) h3 (by omega)]
                               by_cases h12 : 0x90 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
@@ -2671,11 +2741,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                   (tailFrom bs (i + 4)) (le_of_toNat h12.1) (le_of_toNat h12.2.1)
                                   (le_of_toNat h12.2.2.1) (le_of_toNat h12.2.2.2.1)
                                   (le_of_toNat h12.2.2.2.2.1) (le_of_toNat h12.2.2.2.2.2)
-                                simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                                rw [ih bs (i + 4) (off + 4) (Nat.le_trans hb (by omega))]
+                                simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                                rw [okConsIx_tail bs, ih bs (i + 4) (off + 4) (Nat.le_trans hb (by omega))]
                               · have hstep := scanCharsFrom_utf8_f0_bad off b1 b2 b3
                                   (tailFrom bs (i + 4)) h12
-                                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                       · by_cases h41 : 0xF1 ≤ a.toNat ∧ a.toNat ≤ 0xF3
                         · cases h1 : bs[i + 1]? with
                           | none =>
@@ -2683,7 +2753,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                             have hstep := scanCharsFrom_utf8_f1f3_ended off a
                               (tailFrom bs (i + 1)) (le_of_toNat h41.1) (le_of_toNat h41.2)
                               (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                            simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                            simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                           | some b1 =>
                             rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                             cases h2 : bs[i + 2]? with
@@ -2693,7 +2763,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                 (b1 +: tailFrom bs (i + 2)) (le_of_toNat h41.1) (le_of_toNat h41.2)
                                 (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                   ByteString.length_empty]; omega)
-                              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                             | some b2 =>
                               rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                               cases h3 : bs[i + 3]? with
@@ -2704,7 +2774,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                   (le_of_toNat h41.2)
                                   (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                     ByteString.length_cons, ByteString.length_empty]; omega)
-                                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                               | some b3 =>
                                 rw [tailFrom_cons_at (j := i + 4) h3 (by omega)]
                                 by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧
@@ -2715,11 +2785,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                     (le_of_toNat h12.1) (le_of_toNat h12.2.1)
                                     (le_of_toNat h12.2.2.1) (le_of_toNat h12.2.2.2.1)
                                     (le_of_toNat h12.2.2.2.2.1) (le_of_toNat h12.2.2.2.2.2)
-                                  simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                                  rw [ih bs (i + 4) (off + 4) (Nat.le_trans hb (by omega))]
+                                  simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                                  rw [okConsIx_tail bs, ih bs (i + 4) (off + 4) (Nat.le_trans hb (by omega))]
                                 · have hstep := scanCharsFrom_utf8_f1f3_bad off a b1 b2 b3
                                     (tailFrom bs (i + 4)) (le_of_toNat h41.1) (le_of_toNat h41.2) h12
-                                  simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                  simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                         · by_cases hf4 : a = 0xF4
                           · subst a
                             cases h1 : bs[i + 1]? with
@@ -2727,7 +2797,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                               have hge := ge_of_getElem?_eq_none h1
                               have hstep := scanCharsFrom_utf8_f4_ended off (tailFrom bs (i + 1))
                                 (by rw [tailFrom_eq_empty hge, ByteString.length_empty]; omega)
-                              simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                              simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                             | some b1 =>
                               rw [tailFrom_cons_at (j := i + 2) h1 (by omega)]
                               cases h2 : bs[i + 2]? with
@@ -2737,7 +2807,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                   (b1 +: tailFrom bs (i + 2))
                                   (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                     ByteString.length_empty]; omega)
-                                simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                               | some b2 =>
                                 rw [tailFrom_cons_at (j := i + 3) h2 (by omega)]
                                 cases h3 : bs[i + 3]? with
@@ -2747,7 +2817,7 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                     (b1 +: b2 +: tailFrom bs (i + 3))
                                     (by rw [tailFrom_eq_empty hge, ByteString.length_cons,
                                       ByteString.length_cons, ByteString.length_empty]; omega)
-                                  simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                  simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                                 | some b3 =>
                                   rw [tailFrom_cons_at (j := i + 4) h3 (by omega)]
                                   by_cases h12 : 0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x8F ∧
@@ -2757,11 +2827,11 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                       (tailFrom bs (i + 4)) (le_of_toNat h12.1) (le_of_toNat h12.2.1)
                                       (le_of_toNat h12.2.2.1) (le_of_toNat h12.2.2.2.1)
                                       (le_of_toNat h12.2.2.2.2.1) (le_of_toNat h12.2.2.2.2.2)
-                                    simp_all only [hstep, scanCons, ite_true, ite_false, and_self, and_true, true_and]
-                                    rw [ih bs (i + 4) (off + 4) (Nat.le_trans hb (by omega))]
+                                    simp_all only [hstep, scanCons, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
+                                    rw [okConsIx_tail bs, ih bs (i + 4) (off + 4) (Nat.le_trans hb (by omega))]
                                   · have hstep := scanCharsFrom_utf8_f4_bad off b1 b2 b3
                                       (tailFrom bs (i + 4)) h12
-                                    simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                                    simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
                           · have hbad : ¬ (0xC2 ≤ a.toNat ∧ a.toNat ≤ 0xF4) := by
                               rintro ⟨h1, h2⟩
                               have hgt : ¬ a.toNat ≤ 0xDF := fun h => htwo ⟨h1, h⟩
@@ -2789,13 +2859,106 @@ private theorem scanCharsAt_eq (fuel : Nat) :
                                     exact hf4 (UInt8.toNat_inj.mp (Nat.le_antisymm h2 hF4))
                             have hstep := scanCharsFrom_utf8_lead off a (tailFrom bs (i + 1))
                               (Nat.not_lt.mp hlt) hbad
-                            simp_all only [hstep, ite_true, ite_false, and_self, and_true, true_and]
+                            simp_all only [hstep, map_error, map_ok, ite_true, ite_false, and_self, and_true, true_and]
 
 /-- The string scanner at the start of a body is the index scan, and the index
 scan is the reference scan of the body: the bridge the reflection lemma rewrites
 through. -/
 theorem scanChars_eq (bs : Bytes) : scanChars bs = scanCharsFrom 0 bs := by
   rw [scanChars, scanCharsAt_eq bs.size bs 0 0 (by omega), tailFrom_zero]
+
+/-! #### The position scan
+
+The parser and the tape decoder read the carrier at the index a token starts at,
+so they use `scanCharsEnd`, which records the index after the closing quote
+instead of materialising the bytes past it.  These are the lemmas that state
+what the recorded index means, in the reference scan's own terms. -/
+
+/-- A clamped stop names the same suffix as the index it clamps: past the end a
+drop is empty whichever of the two indices is used. -/
+private theorem drop_min (bs : Bytes) (k : Nat) : bs.drop (min k bs.size) = bs.drop k := by
+  rcases Nat.lt_or_ge k bs.size with hlt | hge
+  · rw [show min k bs.size = k from by omega]
+  · have hk : bs.drop k = empty := by
+      apply ByteString.eq_empty_of_data_toList
+      rw [ByteString.data_toList_drop, data_toList_drop_eq_nil (by omega)]
+    have hm : bs.drop (min k bs.size) = empty := by
+      rw [show min k bs.size = bs.size from by omega]
+      exact ByteString.drop_length bs
+    rw [hk, hm]
+
+/-- Reading a mapped success back: the value under the map accepted. -/
+private theorem map_ok_inv {α β : Type} {e : Except ScanError α} {f : α → β} {b : β}
+    (h : e.map f = .ok b) : ∃ a, e = .ok a := by
+  cases e with
+  | error err => rw [map_error] at h; cases h
+  | ok a => exact ⟨a, rfl⟩
+
+/-- The position scan's success is the reference scan's success, and its stop
+names the buffer position the reference remainder begins at. -/
+theorem scanCharsEnd_sound {bs : Bytes} {i off : Nat} {cs : List Nat}
+    {stop : { n : Nat // n ≤ bs.size }}
+    (h : scanCharsEnd bs i off = .ok (cs, stop)) :
+    ∃ rest : Bytes, scanCharsFrom off (bs.drop i) = .ok (cs, rest) ∧
+      bs.drop stop.val = rest := by
+  rcases Nat.lt_or_ge i bs.size with hi | hi
+  · have hmap := scanCharsAt_eq (bs.size - i) bs i off (by omega)
+    unfold scanCharsEnd at h
+    split at h
+    · cases h
+    · rename_i cs0 stop0 hs
+      have hp := Except.ok.inj h
+      simp only [Prod.mk.injEq] at hp
+      obtain ⟨hcs, hstop⟩ := hp
+      rw [hcs] at hs
+      have hval : stop.val = min stop0 bs.size := by
+        rw [← hstop]
+      have hm : (Except.ok (cs, stop0) : Except ScanError (List Nat × Nat)).map
+          (fun p => (p.1, tailFrom bs p.2)) = scanCharsFrom off (tailFrom bs i) := by
+        rw [← hs]; exact hmap
+      rw [map_ok] at hm
+      refine ⟨tailFrom bs stop0, ?_, ?_⟩
+      · rw [← tailFrom_eq_drop, ← hm]
+      · rw [hval, drop_min, tailFrom_eq_drop]
+  · have hz : bs.size - i = 0 := by omega
+    unfold scanCharsEnd at h
+    rw [hz] at h
+    simp only [scanCharsAt.eq_1] at h
+    cases h
+
+/-- The reference scan's success is the position scan's, and the recorded stop
+names where the reference remainder begins. -/
+theorem scanCharsEnd_ok_of_scanCharsFrom {bs : Bytes} {i off : Nat} {cs : List Nat}
+    {rest : Bytes} (h : scanCharsFrom off (bs.drop i) = .ok (cs, rest)) :
+    ∃ stop : { n : Nat // n ≤ bs.size },
+      scanCharsEnd bs i off = .ok (cs, stop) ∧ bs.drop stop.val = rest := by
+  rcases Nat.lt_or_ge i bs.size with hi | hi
+  · have hmap := scanCharsAt_eq (bs.size - i) bs i off (by omega)
+    have hfrom : scanCharsFrom off (tailFrom bs i) = .ok (cs, rest) := by
+      rw [tailFrom_eq_drop]; exact h
+    have hok : (scanCharsAt bs (bs.size - i) i off).map
+        (fun p => (p.1, tailFrom bs p.2)) = .ok (cs, rest) := by
+      rw [hmap]; exact hfrom
+    obtain ⟨⟨cs0, e0⟩, he⟩ := map_ok_inv hok
+    have hpair : (cs0, tailFrom bs e0) = (cs, rest) := by
+      rw [he, map_ok] at hok
+      exact Except.ok.inj hok
+    simp only [Prod.mk.injEq] at hpair
+    obtain ⟨hcs, hrest⟩ := hpair
+    rw [hcs] at he
+    refine ⟨⟨min e0 bs.size, Nat.min_le_right _ _⟩, ?_, ?_⟩
+    · have : scanCharsEnd bs i off =
+          .ok (cs, (⟨min e0 bs.size, Nat.min_le_right _ _⟩ : { n : Nat // n ≤ bs.size })) := by
+        unfold scanCharsEnd
+        rw [he]
+      rw [this]
+    · show bs.drop (min e0 bs.size) = rest
+      rw [drop_min, ← hrest, tailFrom_eq_drop]
+  · have hd : bs.drop i = empty := by
+      apply ByteString.eq_empty_of_data_toList
+      rw [ByteString.data_toList_drop, data_toList_drop_eq_nil (by omega)]
+    rw [hd, scanCharsFrom_nil] at h
+    cases h
 
 /-! #### The reflection lemma -/
 
@@ -3202,6 +3365,13 @@ theorem numRun_length_le (b : Bytes) : (numRun b).length ≤ b.length := by
     · rw [ByteString.length_empty]
       exact Nat.zero_le _
 
+/-- The run from a position stays inside the bytes from that position on: the
+fact a number token's stop needs. -/
+theorem numRunFrom_length_le (bs : Bytes) (i : Nat) :
+    (numRunFrom bs i).length ≤ bs.length - i := by
+  rw [numRunFrom_eq, ← ByteString.length_drop]
+  exact numRun_length_le (bs.drop i)
+
 /-- `numRun b` is the longest constituent prefix: it is a prefix of `b`, and the
 byte where it stops is not a constituent. -/
 theorem numRun_spec (b : Bytes) :
@@ -3320,12 +3490,6 @@ theorem spaceAt_drop {bs : Bytes} {i j : Nat} (h : SpaceAt (bs.drop i) 0 j) :
 theorem skipFrom_space (bs : Bytes) (i : Nat) : SpaceAt bs i (skipFrom bs i) := by
   rw [skipFrom_def]
   exact spaceAt_drop (spaceRun_space (bs.drop i))
-
-/-- The Boolean prefix test and the proposition agree. -/
-theorem hasPrefixB_iff {bs : Bytes} {i : Nat} {p : Bytes} :
-    HasPrefixB bs i p = true ↔ HasPrefix bs i p := by
-  unfold HasPrefixB HasPrefix
-  exact ⟨fun h => of_decide_eq_true h, fun h => decide_eq_true h⟩
 
 /-- A checked prefix has room in the input: the fact a span's stop needs. -/
 theorem hasPrefix_le {bs : Bytes} {i : Nat} {p : Bytes} (h : HasPrefix bs i p)

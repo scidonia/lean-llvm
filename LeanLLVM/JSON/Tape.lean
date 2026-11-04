@@ -128,22 +128,21 @@ def decodeValue (bs : Bytes) (i : Nat) : (toks : List Token) → Option (Decoded
                shrunk := by simp }
       else none
   | .number s :: rest =>
-      let lex := numRun (bs.drop i)
+      let lex := numRunFrom bs i
       if s == ⟨i, i + lex.length⟩ && numLexB lex then
         some { value := .number lex, rest := rest, cursor := i + lex.length,
                shrunk := by simp }
       else none
   | .string s :: rest =>
-      match scanChars (bs.drop (i + 1)) with
+      match scanCharsEnd bs (i + 1) 0 with
       | .error _ => none
-      | .ok (cs, after) =>
-          -- `after` begins past the closing quote, so `stop` is one past it and
-          -- the span covers both quotes; a span ending at the quote is short.
-          -- The opening quote at `i` is checked too: the span claims to cover a
-          -- string literal, and a span that starts anywhere else does not.
-          let stop := bs.length - after.length
-          if decide (bs[i]? = some 0x22) && decide (s = ⟨i, stop⟩) then
-            some { value := .string cs, rest := rest, cursor := stop,
+      | .ok (cs, stop) =>
+          -- `stop` is the index past the closing quote, so the span covers both
+          -- quotes; a span ending at the quote is short.  The opening quote at
+          -- `i` is checked too: the span claims to cover a string literal, and a
+          -- span that starts anywhere else does not.
+          if decide (bs[i]? = some 0x22) && decide (s = ⟨i, stop.val⟩) then
+            some { value := .string cs, rest := rest, cursor := stop.val,
                    shrunk := by simp }
           else none
   | .punct .openBracket s :: .punct .closeBracket c :: rest' =>
