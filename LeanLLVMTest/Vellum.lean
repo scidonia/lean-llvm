@@ -1,5 +1,6 @@
 import LeanLLVM
 import LeanLLVM.Vellum.JsonScanABI
+import LeanLLVM.Vellum.JsonScanModel
 
 open LeanLLVM.Vellum
 
@@ -2062,3 +2063,381 @@ open LeanLLVM.Vellum.JsonScanABI in
 example : ¬ jsonScanContract.capacityExhausted := by
   intro h
   exact h
+
+/-! ### The model-side selection (P3)
+
+The slot's readback, the selection's statement with its stopped cases, and the
+whole-scan post-memory.  Each theorem is pinned with its footprint and restated
+beside it. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.slotAt_writeSlot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.slotAt_writeSlot
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example (m : Mem) (p : Nat) {st : BodyState} (h : st.WellFormed) :
+    slotAt (writeSlot m p (encodeState st)) p = some st :=
+  slotAt_writeSlot m p h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.slotAt_writeMask' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.slotAt_writeMask
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM in
+example (m : Mem) (pOut pState : Nat) (w : BitVec 32) (h : pOut + 4 ≤ pState) :
+    slotAt (writeMask m pOut w) pState = slotAt m pState :=
+  slotAt_writeMask m pOut pState w h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example (st : BodyState) (bs : List UInt8) (mem : Mem) (pIn pOut pState valid : Nat)
+    (hvalid : valid ≤ 32) (hread : readBytes mem pIn valid = some bs)
+    (hslot : slotAt mem pState = some st) (next : Nat) :
+    envForScanWindow scanSymbol
+        [.ptr pIn, .ptr pOut, .ptr pState, .int 32 (BitVec.ofNat 32 valid)] mem next =
+      some { ret := .int 32 (encodeStatus (Status.ok (stopOf bs st))),
+             mem := writeSlot (writeMask mem pOut (maskOfList bs)) pState
+                      (encodeState (carryAt bs st (stopLaneOrLength bs st))),
+             next := next } :=
+  envForScanWindow_spec st bs mem pIn pOut pState valid hvalid hread hslot next
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec_close
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example (st : BodyState) (bs : List UInt8) (mem : Mem) (pIn pOut pState valid k : Nat)
+    (hvalid : valid ≤ 32) (hread : readBytes mem pIn valid = some bs)
+    (hslot : slotAt mem pState = some st) (hstop : stopOf bs st = some (.close k))
+    (next : Nat) :
+    envForScanWindow scanSymbol
+        [.ptr pIn, .ptr pOut, .ptr pState, .int 32 (BitVec.ofNat 32 valid)] mem next =
+      some { ret := .int 32 (encodeStatus (Status.ok (some (.close k)))),
+             mem := writeSlot (writeMask mem pOut (maskOfList bs)) pState
+                      (encodeState (carryAt bs st k)),
+             next := next } :=
+  envForScanWindow_spec_close st bs mem pIn pOut pState valid k hvalid hread hslot
+    hstop next
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec_refuse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec_refuse
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example (st : BodyState) (bs : List UInt8) (mem : Mem) (pIn pOut pState valid k : Nat)
+    (reason : BodyStop) (hvalid : valid ≤ 32)
+    (hread : readBytes mem pIn valid = some bs) (hslot : slotAt mem pState = some st)
+    (hstop : stopOf bs st = some (.refuse k reason)) (next : Nat) :
+    envForScanWindow scanSymbol
+        [.ptr pIn, .ptr pOut, .ptr pState, .int 32 (BitVec.ofNat 32 valid)] mem next =
+      some { ret := .int 32 (encodeStatus (Status.ok (some (.refuse k reason)))),
+             mem := writeSlot (writeMask mem pOut (maskOfList bs)) pState
+                      (encodeState (carryAt bs st k)),
+             next := next } :=
+  envForScanWindow_spec_refuse st bs mem pIn pOut pState valid k reason hvalid hread
+    hslot hstop next
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec_full' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.envForScanWindow_spec_full
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example (st : BodyState) (bs : List UInt8) (mem : Mem) (pIn pOut pState valid : Nat)
+    (hvalid : valid ≤ 32) (hread : readBytes mem pIn valid = some bs)
+    (hslot : slotAt mem pState = some st) (hstop : stopOf bs st = none)
+    (hlen : bs.length = 32) (next : Nat) :
+    envForScanWindow scanSymbol
+        [.ptr pIn, .ptr pOut, .ptr pState, .int 32 (BitVec.ofNat 32 valid)] mem next =
+      some { ret := .int 32 (encodeStatus (Status.ok none)),
+             mem := writeSlot (writeMask mem pOut (maskOfList bs)) pState
+                      (encodeState ((windowOf bs st).carry)),
+             next := next } :=
+  envForScanWindow_spec_full st bs mem pIn pOut pState valid hvalid hread hslot hstop
+    hlen next
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.envForScanWindow_refuses_valid' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.envForScanWindow_refuses_valid
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example (mem : Mem) (pIn pOut pState : Nat) (v : BitVec 32) (next : Nat)
+    (hlarge : readExtent < v.toNat) :
+    envForScanWindow scanSymbol
+        [.ptr pIn, .ptr pOut, .ptr pState, .int 32 v] mem next = none :=
+  envForScanWindow_refuses_valid mem pIn pOut pState v next hlarge
+
+-- The out-of-domain witness, discriminating: the buffer really holds the forty
+-- bytes (35 `a`, the closing quote, four more `a`), so a `valid = 40` read would
+-- succeed and the extent guard is the only reason the call does not resolve.
+-- The same memory with `valid = 32` does resolve and reports no stop, because the
+-- first thirty-two bytes contain no quote.
+def witnessRange : List UInt8 := List.replicate 35 0x61 ++ [0x22] ++ List.replicate 4 0x61
+
+def witnessMem : LeanLLVM.Mem :=
+  LeanLLVM.Vellum.JsonScanModel.writeSlot
+    (LeanLLVM.writeBytes [] 0 witnessRange) 64
+    (LeanLLVM.Vellum.JsonScanABI.encodeState LeanLLVM.JSON.BodyState.body)
+
+set_option maxRecDepth 10000 in
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example :
+    readBytes witnessMem 0 40 = some witnessRange ∧
+    envForScanWindow scanSymbol [.ptr 0, .ptr 100, .ptr 64, .int 32 40] witnessMem 1 = none ∧
+    envForScanWindow scanSymbol
+        [.ptr 0, .ptr 100, .ptr 64, .int 32 (BitVec.ofNat 32 32)] witnessMem 1 =
+      some { ret := .int 32 0,
+             mem := writeSlot (writeMask witnessMem 100 0) 64
+                      (encodeState BodyState.body),
+             next := 1 } := by
+  refine ⟨by decide,
+    envForScanWindow_refuses_valid witnessMem 0 100 64 40 1 (by decide), ?_⟩
+  rw [envForScanWindow_spec BodyState.body (List.replicate 32 0x61) witnessMem 0 100 64 32
+    (by decide) (by decide) (by
+      simp only [witnessMem]
+      exact slotAt_writeSlot (writeBytes [] 0 witnessRange) 64 BodyState.body_wellFormed) 1]
+  have hstopF : stopOf (List.replicate 32 0x61) BodyState.body = none := by decide
+  have hmaskF : maskOfList (List.replicate 32 0x61) = (0 : BitVec 32) := by decide
+  have hcarryF : carryAt (List.replicate 32 0x61) BodyState.body
+      (stopLaneOrLength (List.replicate 32 0x61) BodyState.body) = BodyState.body := by
+    decide
+  have hstatus : encodeStatus (Status.ok none) = (0 : BitVec 32) := by decide
+  rw [hstopF, hmaskF, hcarryF, hstatus]
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.stoppedWindow_stop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.stoppedWindow_stop
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example : stopOf stoppedWindow BodyState.body = some (.close 0) :=
+  stoppedWindow_stop
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.stoppedWindow_prefix' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.stoppedWindow_prefix
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example : carryAt stoppedWindow BodyState.body 0 = BodyState.body :=
+  stoppedWindow_prefix
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.stoppedWindow_carry_diverges' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.stoppedWindow_carry_diverges
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example :
+    (windowOf stoppedWindow BodyState.body).carry ≠
+      carryAt stoppedWindow BodyState.body 0 :=
+  stoppedWindow_carry_diverges
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.stoppedWindow_fold_carry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.stoppedWindow_fold_carry
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example :
+    (windowOf stoppedWindow BodyState.body).carry = ⟨true, true, Utf8Need.none⟩ :=
+  stoppedWindow_fold_carry
+
+-- The stopped window read through the selection, on a real memory: the window's
+-- two bytes at `%in = 0`, the slot seeded with the body's state at `%state = 64`.
+-- The returned status closes at lane 0 and the slot receives the prefix carry
+-- `carryAt stoppedWindow BodyState.body 0`, which is the body's state.
+def stoppedWindowMem : LeanLLVM.Mem :=
+  LeanLLVM.Vellum.JsonScanModel.writeSlot
+    (LeanLLVM.writeBytes [] 0 LeanLLVM.Vellum.JsonScanModel.stoppedWindow) 64
+    (LeanLLVM.Vellum.JsonScanABI.encodeState LeanLLVM.JSON.BodyState.body)
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example :
+    envForScanWindow scanSymbol [.ptr 0, .ptr 32, .ptr 64, .int 32 (BitVec.ofNat 32 2)]
+        stoppedWindowMem 0 =
+      some { ret := .int 32 (encodeStatus (Status.ok (some (.close 0)))),
+             mem := writeSlot (writeMask stoppedWindowMem 32 (maskOfList stoppedWindow)) 64
+                      (encodeState (carryAt stoppedWindow BodyState.body 0)),
+             next := 0 } := by
+  apply envForScanWindow_spec_close BodyState.body stoppedWindow stoppedWindowMem 0 32 64 2 0
+    (by decide) (by decide) ?_ stoppedWindow_stop 0
+  simp only [stoppedWindowMem]
+  exact slotAt_writeSlot (writeBytes [] 0 stoppedWindow) 64 BodyState.body_wellFormed
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.carryAt_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.carryAt_succ
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : List UInt8) (st : BodyState) (k : Nat) :
+    carryAt bs st (k + 1) =
+      (match bs[k]? with
+       | some b =>
+           (match bodyStep (carryAt bs st k) b with
+            | .cont st' => st'
+            | _ => carryAt bs st k)
+       | none => carryAt bs st k) :=
+  carryAt_succ bs st k
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.carryAt_wellFormed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.carryAt_wellFormed
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example {bs : List UInt8} {st : BodyState} (h : st.WellFormed) (k : Nat) :
+    (carryAt bs st k).WellFormed :=
+  carryAt_wellFormed h k
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.carryAt_of_length_le' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.carryAt_of_length_le
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example {bs : List UInt8} {st : BodyState} {k : Nat} (h : bs.length ≤ k) :
+    carryAt bs st k = carryAt bs st bs.length :=
+  carryAt_of_length_le h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.windowOf_carry_of_short' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.windowOf_carry_of_short
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example {bs : List UInt8} {st : BodyState} (hlen : bs.length < 32) :
+    (windowOf bs st).carry = carryAt bs st bs.length :=
+  windowOf_carry_of_short hlen
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.carryAt_stopLaneOrLength_eq_carry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.carryAt_stopLaneOrLength_eq_carry
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON in
+example {bs : List UInt8} {st : BodyState} (hlen : bs.length ≤ 32)
+    (hstop : stopOf bs st = none) :
+    carryAt bs st (stopLaneOrLength bs st) = (windowOf bs st).carry :=
+  carryAt_stopLaneOrLength_eq_carry hlen hstop
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.windowBytes_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.windowBytes_length_le
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : Bytes) (i : Nat) : (windowBytes bs i).length ≤ 32 :=
+  windowBytes_length_le bs i
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.memModelCarry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.memModelCarry
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : Bytes) (i : Nat) (st : BodyState) : memModelCarry bs 0 i st = st := rfl
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.memModelSteps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.memModelSteps
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : Bytes) (i : Nat) (st : BodyState) : memModelSteps bs 0 i st = 0 := rfl
+
+-- The count is one mask per visited window: one for a one-byte body plus its
+-- quote, two for forty body bytes plus the quote (a full window and the tail).
+set_option maxRecDepth 10000 in
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example : memModelSteps (ByteString.literal [0x22, 0x61, 0x22]) 4 1 BodyState.body = 1 := by
+  decide
+
+set_option maxRecDepth 10000 in
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example :
+    memModelSteps (ByteString.literal ([0x22] ++ List.replicate 40 0x61 ++ [0x22])) 42 1
+      BodyState.body = 2 := by
+  decide
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.memModelGo_slot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.memModelGo_slot
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : Bytes) (pOut pState : Nat) :
+    ∀ (fuel i k : Nat) (st : BodyState) (mem : Mem),
+      st.WellFormed →
+      pOut + 4 * (k + memModelSteps bs fuel i st) ≤ pState →
+      slotAt mem pState = some st →
+      slotAt (memModelGo bs pOut pState fuel i k st mem) pState =
+        some (memModelCarry bs fuel i st) :=
+  memModelGo_slot bs pOut pState
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.memModel_slot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.memModel_slot
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : Bytes) (q : Nat) (mem : Mem) (pOut pState : Nat)
+    (hbound : pOut + 4 * memModelSteps bs (bs.size + 1) (q + 1) BodyState.body ≤ pState)
+    (hslot : slotAt mem pState = some BodyState.body) :
+    slotAt (memModel bs q mem pOut pState) pState =
+      some (memModelCarry bs (bs.size + 1) (q + 1) BodyState.body) :=
+  memModel_slot bs q mem pOut pState hbound hslot
+
+-- The final slot on a concrete scan: a one-byte body plus its quote is one
+-- window, and the slot ends holding the prefix carry's encoding.
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example :
+    slotAt (memModel (ByteString.literal [0x22, 0x61, 0x22]) 0
+        (writeSlot [] 64 (encodeState BodyState.body)) 32 64) 64 =
+      some BodyState.body := by
+  decide
+
+-- The same scan through the invariant, with both hypotheses discharged rather
+-- than assumed: the mask store at 32 ends below the slot at 64, and the seeded
+-- slot reads back as the body's state.
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example :
+    slotAt (memModel (ByteString.literal [0x22, 0x61, 0x22]) 0
+        (writeSlot [] 64 (encodeState BodyState.body)) 32 64) 64 =
+      some (memModelCarry (ByteString.literal [0x22, 0x61, 0x22]) 4 1 BodyState.body) :=
+  memModel_slot _ 0 _ 32 64 (by decide)
+    (slotAt_writeSlot [] 64 BodyState.body_wellFormed)
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.memModel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.memModel
+
+/-- info: 'LeanLLVM.Vellum.JsonScanModel.memModel_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanModel.memModel_eq
+
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example (bs : Bytes) (q : Nat) (mem : Mem) (pOut pState : Nat) :
+    memModel bs q mem pOut pState =
+      memModelGo bs pOut pState (bs.size + 1) (q + 1) 0 BodyState.body mem :=
+  memModel_eq bs q mem pOut pState
+
+-- A body with no bytes at all leaves memory untouched.
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.JSON LeanLLVM in
+example : memModel (ByteString.literal [0x22]) 0 [] 100 200 = [] := rfl
+
+-- A one-byte body followed by its closing quote is one window that stops at
+-- lane 1: the mask is the window's, and the slot holds the prefix carry before
+-- the quote — the body's own state.
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example :
+    memModel (ByteString.literal [0x22, 0x61, 0x22]) 0 [] 100 200 =
+      writeSlot (writeMask [] 100 (maskOfList [0x61, 0x22])) 200
+        (encodeState BodyState.body) := by
+  decide
+
+-- Forty body bytes and the closing quote: a full no-stop window at `%out`, then
+-- the nine-byte tail at `%out + 4`, which stops at lane 8.  A 32-lane fold is
+-- deeper than `decide`'s default recursion depth, so the limit is raised here
+-- and only here.
+set_option maxRecDepth 10000 in
+open LeanLLVM.Vellum.JsonScanModel LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON LeanLLVM in
+example :
+    memModel (ByteString.literal ([0x22] ++ List.replicate 40 0x61 ++ [0x22])) 0
+        [] 100 200 =
+      writeSlot
+        (writeMask
+          (writeSlot (writeMask [] 100 (maskOfList (List.replicate 32 0x61))) 200
+            (encodeState BodyState.body))
+          104 (maskOfList (List.replicate 8 0x61 ++ [0x22])))
+        200 (encodeState BodyState.body) := by
+  decide
