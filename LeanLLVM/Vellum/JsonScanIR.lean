@@ -308,15 +308,6 @@ theorem carriedAt_succ_stop {bs : List UInt8} {st : BodyState} {k : Nat} {b : UI
   | closed => rfl
   | refused s => rfl
 
-/-- A prefix that already stopped leaves the clamp alone. -/
-theorem carriedAt_succ_of_some {bs : List UInt8} {st : BodyState} {k : Nat} {s : Stop}
-    (hstop : firstStop bs st k = some s) : carriedAt bs st (k + 1) = carriedAt bs st k := by
-  unfold carriedAt
-  rw [firstStop_succ, hstop]
-  cases s with
-  | close j => rfl
-  | refuse j r => rfl
-
 /-- **The carry clause of the theorem, at the model's own object.**  At the end of
 the window the slot holds the prefix carry at the stop's lane, or the window's
 length when nothing stopped — `JsonScanModel`'s `stopLaneOrLength`. -/

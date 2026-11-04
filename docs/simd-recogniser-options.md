@@ -189,8 +189,9 @@ hand-written replacement is not.
    `f'` is substituted. Without this, `Refines fastIR specIR` cannot reach the
    parser.
 3. A `replaceFunction` pass, sound by that congruence.
-4. Enough IR to parse clang output: `getelementptr`, `phi`, globals,
-   aggregates/arrays, `memcpy`-class intrinsics, and vector types.
+4. Enough IR to parse clang output: `phi`, globals, aggregates/arrays and
+   `memcpy`-class intrinsics. A byte-offset `getelementptr` and the vector
+   forms are modelled; those four are not.
 
 **Trust boundary.** The compiler for everything except the replaced function;
 the swap is proved.

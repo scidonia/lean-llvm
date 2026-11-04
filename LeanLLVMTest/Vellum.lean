@@ -2451,8 +2451,9 @@ example :
 the AST are one object at build time.  The module proves the prefix facts the
 refinement statement rests on — the mask, the stop and the carry at a window's
 first `k` lanes — and the statements below are those theorems, restated and
-pinned.  The refinement theorem itself is outstanding and is recorded as such in
-that module's header, so nothing here pins it.
+pinned.  Every theorem in that module is pinned here.  The refinement theorem
+itself is outstanding and is recorded as such in that module's header, so
+nothing here pins it.
 -/
 
 /--
@@ -2484,6 +2485,52 @@ info: 'LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_stop' depends on axioms: [prope
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_stop
+
+-- The prefix internals the identifications above are proved from, pinned for
+-- the same reason as the conclusions: a nonstandard axiom here reaches the
+-- mask, the stop and the carry statements by way of their proofs.
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.zipIdx_take_getElem?' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.zipIdx_take_getElem?
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.ofNat_one_shiftLeft' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.ofNat_one_shiftLeft
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.maskPref_succ' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.maskPref_succ
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.maskPref_eq_laneFold' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.maskPref_eq_laneFold
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.firstStop_succ' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.firstStop_succ
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.firstStop_eq_none' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.firstStop_eq_none
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.firstStop_eq_some' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.firstStop_eq_some
 
 -- The mask the accumulator holds at the end of a full window is the classifier's
 -- own `maskOfList`, which is what the unit writes at `%out`.
@@ -2520,6 +2567,64 @@ example (bs : List UInt8) (st : LeanLLVM.JSON.BodyState) (k : Nat) (b : UInt8)
     LeanLLVM.Vellum.JsonScanIR.carriedAt bs st (k + 1) =
       LeanLLVM.Vellum.JsonScanIR.carriedAt bs st k :=
   LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_stop hstop hb hne
+
+-- The prefix fold is split at its last lane: the lane the fold's list has at
+-- `k` is the byte and its own index, for `k` inside a window.
+example (bs : List UInt8) {k : Nat} (hk : k < 32) :
+    (bs.zipIdx.take 32)[k]? = (bs[k]?).map (fun b => (b, k)) :=
+  LeanLLVM.Vellum.JsonScanIR.zipIdx_take_getElem? bs hk
+
+-- The emitted one read back as a word: a shift of the lane index is a shift of
+-- `BitVec 32`'s own one, for a lane inside the window.
+example (k : Nat) (hk : k < 32) :
+    BitVec.ofNat 32 (1 <<< k) = ((1 : BitVec 32) <<< k) :=
+  LeanLLVM.Vellum.JsonScanIR.ofNat_one_shiftLeft k hk
+
+-- One lane of the prefix mask, as the recursion's own equation.
+open LeanLLVM.JSON in
+example (bs : List UInt8) (k : Nat) :
+    LeanLLVM.Vellum.JsonScanIR.maskPref bs (k + 1) =
+      (match bs[k]? with
+       | some b =>
+           if IsStructOrSpaceB b then
+             LeanLLVM.Vellum.JsonScanIR.maskPref bs k ||| ((1 : BitVec 32) <<< k)
+           else LeanLLVM.Vellum.JsonScanIR.maskPref bs k
+       | none => LeanLLVM.Vellum.JsonScanIR.maskPref bs k) :=
+  LeanLLVM.Vellum.JsonScanIR.maskPref_succ bs k
+
+-- The prefix mask is the model's `Nat` fold over the window list, truncated at
+-- the prefix.
+example (bs : List UInt8) (k : Nat) (hk : k ≤ 32) :
+    LeanLLVM.Vellum.JsonScanIR.maskPref bs k =
+      BitVec.ofNat 32 (LeanLLVM.Vellum.JsonScanIR.laneFold bs k) :=
+  LeanLLVM.Vellum.JsonScanIR.maskPref_eq_laneFold bs k hk
+
+-- One lane of the stop prefix, as the recursion's own equation.
+example (bs : List UInt8) (st : LeanLLVM.JSON.BodyState) (k : Nat) :
+    LeanLLVM.Vellum.JsonScanIR.firstStop bs st (k + 1) =
+      (match LeanLLVM.Vellum.JsonScanIR.firstStop bs st k with
+       | some s => some s
+       | none => LeanLLVM.Vellum.JsonScanIR.laneStop bs st k) :=
+  LeanLLVM.Vellum.JsonScanIR.firstStop_succ bs st k
+
+-- No lane before `k` raises a stop, so the prefix records none.
+open LeanLLVM.JSON in
+example (bs : List UInt8) (st : BodyState) (k : Nat)
+    (h : ∀ j, j < k → ∀ (b : UInt8), bs[j]? = some b →
+      ∃ st', bodyStep (carryAt bs st j) b = .cont st') :
+    LeanLLVM.Vellum.JsonScanIR.firstStop bs st k = none :=
+  LeanLLVM.Vellum.JsonScanIR.firstStop_eq_none (bs := bs) (st := st) (k := k) h
+
+-- A lane that raises a stop fixes the prefix's answer from there on.
+open LeanLLVM.JSON in
+example (bs : List UInt8) (st : BodyState) (k : Nat)
+    (hcont : ∀ j, j < k → ∀ (b : UInt8), bs[j]? = some b →
+      ∃ st', bodyStep (carryAt bs st j) b = .cont st')
+    (stop : Stop) (hlane : LeanLLVM.Vellum.JsonScanIR.laneStop bs st k = some stop)
+    (n : Nat) (hn : k < n) :
+    LeanLLVM.Vellum.JsonScanIR.firstStop bs st n = some stop :=
+  LeanLLVM.Vellum.JsonScanIR.firstStop_eq_some (bs := bs) (st := st) (k := k)
+    hcont (stop := stop) hlane (n := n) hn
 
 /-! ### The JSON window scanner's lane machinery
 

@@ -61,15 +61,16 @@ def lit64 (v : Nat) : Operand := .imm (.int 64 (BitVec.ofNat 64 v))
 /-- A `splat` of thirty-two one-byte lanes. -/
 def splat8 (v : Nat) : Operand := .imm (.splat 32 8 (BitVec.ofNat 8 v))
 
-/-- The first word of the structural bit table: byte `b < 64` sets bit `b` when
-the byte is one of `{0x09, 0x0A, 0x0D, 0x20, 0x22, 0x2C, 0x3A, 0x5B, 0x5C, 0x5D}`
-— RFC 8259's whitespace and structural characters, quoted from
-`LeanLLVM.JSON.IsStructOrSpaceB`. -/
+/-- The first word of the structural bit table: a byte `b < 64` sets bit `b` when
+it is one of `{0x09, 0x0A, 0x0D, 0x20, 0x22, 0x2C, 0x3A}` — seven of RFC 8259's
+whitespace and structural characters, the ones below `64`.  The rest of
+`IsStructOrSpaceB`'s set, `{0x5B, 0x5C, 0x5D, 0x7B, 0x7D}`, is not representable
+in this word and lives in `structHi`. -/
 def structLo : Nat := 288247989812602368
 
-/-- The second word: byte `b` with `64 ≤ b < 128` sets bit `b - 64` when the byte
-is one of `{0x5B, 0x5C, 0x5D, 0x7B, 0x7D}`; every byte above `0x7F` is content
-for this test and takes the zero word. -/
+/-- The second word: a byte `b` with `64 ≤ b < 128` sets bit `b - 64` when it is
+one of `{0x5B, 0x5C, 0x5D, 0x7B, 0x7D}`; every other byte in that range, and
+every byte above `0x7F`, takes the zero word. -/
 def structHi : Nat := 2882303762456641536
 
 /-! ### The lane body
