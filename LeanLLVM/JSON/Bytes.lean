@@ -46,7 +46,7 @@ def SpaceAt (bs : Bytes) (i j : Nat) : Prop :=
   i ≤ j ∧ ∀ (k : Nat) (b : UInt8), i ≤ k → k < j → bs[k]? = some b → IsSpaceB b = true
 
 /-- A lookup that found nothing is past the end. -/
-private theorem ge_of_getElem?_eq_none {bs : Bytes} {i : Nat} (h : bs[i]? = none) :
+theorem ge_of_getElem?_eq_none {bs : Bytes} {i : Nat} (h : bs[i]? = none) :
     bs.size ≤ i := by
   by_cases hi : i < bs.size
   · have hi' : i < bs.length := by rwa [ByteString.length_eq_size]
@@ -57,7 +57,7 @@ private theorem ge_of_getElem?_eq_none {bs : Bytes} {i : Nat} (h : bs[i]? = none
 
 /-- The list view of a drop splits off the byte at the index: the shape an
 index scan recurses on. -/
-private theorem data_toList_drop_eq_cons {bs : Bytes} {i : Nat} {a : UInt8}
+theorem data_toList_drop_eq_cons {bs : Bytes} {i : Nat} {a : UInt8}
     (h : bs[i]? = some a) :
     bs.data.toList.drop i = a :: bs.data.toList.drop (i + 1) := by
   have hlist : bs.data.toList[i]? = some a := by
@@ -68,7 +68,7 @@ private theorem data_toList_drop_eq_cons {bs : Bytes} {i : Nat} {a : UInt8}
 
 /-- A drop at or past the end is empty: the other shape an index scan recurses
 on. -/
-private theorem data_toList_drop_eq_nil {bs : Bytes} {i : Nat} (h : bs.size ≤ i) :
+theorem data_toList_drop_eq_nil {bs : Bytes} {i : Nat} (h : bs.size ≤ i) :
     bs.data.toList.drop i = [] :=
   List.drop_eq_nil_of_le (by simpa [Array.length_toList] using h)
 

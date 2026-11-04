@@ -390,6 +390,100 @@ theorem take_append_drop (bs : ByteString) (n : Nat) :
   rw [toList_append, toList_take, toList_drop]
   exact List.take_append_drop n bs.toList
 
+/-! ### `extract`
+
+`Array.extract` is the array's slice: a `min`-clamped length and a loop that
+pushes the bytes it walks into a fresh array.  Its list view is what a proof
+that reads a slice positionally needs, and the core characterisations of it
+(`Array.toList_extract`, `Array.getElem_extract`, `Array.extract_append`) carry
+`Classical.choice`.  The loop invariant below is the same correspondence without
+that route: the loop's own recursion is the whole argument, so the slice facts
+here rest on `propext` and `Quot.sound` alone. -/
+
+/-- The loop invariant of `Array.extract`: from `start`, with `k` bytes left to
+take, the accumulator's list view is the slice in front of it. -/
+theorem extract_loop_toList (xs : Array UInt8) :
+    ∀ (k start : Nat) (ys : Array UInt8), start + k ≤ xs.size →
+      (Array.extract.loop xs k start ys).toList
+        = ys.toList ++ (xs.toList.drop start).take k := by
+  intro k
+  induction k with
+  | zero =>
+      intro start ys _
+      rw [Array.extract_loop_zero]
+      simp
+  | succ k ih =>
+      intro start ys h
+      have hlt : start < xs.size := by omega
+      rw [Array.extract_loop_succ (h := hlt)]
+      rw [ih (start + 1) (ys.push xs[start]) (by omega)]
+      rw [Array.toList_push]
+      have hlen : start < xs.toList.length := by simpa using hlt
+      have hdrop : xs.toList.drop start
+          = xs[start] :: xs.toList.drop (start + 1) := by
+        rw [List.drop_eq_getElem_cons hlen]
+        simp only [Array.getElem_toList]
+      rw [hdrop, List.take_succ_cons]
+      simp only [List.append_assoc, List.singleton_append]
+
+/-- A slice to the end of the array is the list view dropped at the same index. -/
+theorem extract_suffix_toList (xs : Array UInt8) (j : Nat) :
+    (xs.extract j xs.size).toList = xs.toList.drop j := by
+  rw [Array.extract]
+  simp only [Nat.min_self]
+  rw [Array.emptyWithCapacity_eq]
+  by_cases hj : j ≤ xs.size
+  · rw [extract_loop_toList]
+    · simp only [List.nil_append]
+      refine List.take_of_length_le ?_
+      simp [List.length_drop]
+    · exact Nat.le_of_eq (Nat.add_sub_of_le hj)
+  · rw [Array.extract_loop_of_ge (h := by omega)]
+    rw [List.drop_eq_nil_of_le (by simpa [Array.length_toList] using Nat.le_of_not_le hj)]
+
+/-- The same correspondence on the carrier: the data view of the suffix. -/
+theorem extract_suffix_data_toList (bs : ByteString) (j : Nat) :
+    (bs.extract j bs.size).data.toList = bs.data.toList.drop j := by
+  rw [ByteArray.data_extract]
+  exact extract_suffix_toList bs.data j
+
+/-- The suffix of a byte string is its `drop`: the equality a scanner needs to
+hand a native slice to a specification stated over the carrier's `drop`. -/
+theorem extract_suffix_eq_drop (bs : ByteString) (j : Nat) :
+    bs.extract j bs.size = drop bs j := by
+  apply eq_of_data_toList_eq
+  rw [extract_suffix_data_toList, data_toList_drop]
+
+/-- The list view of an arbitrary slice, the choice-free replacement for
+`Array.toList_extract`.  The length is spelled `Nat.sub` so that it matches the
+form `Array.extract`'s body produces on unfolding; `-` elaborates to `HSub.hSub`
+and does not. -/
+theorem extract_toList (xs : Array UInt8) (i j : Nat) :
+    (xs.extract i j).toList = (xs.toList.drop i).take (Nat.sub j i) := by
+  by_cases hji : j ≤ i
+  · rw [Array.extract_empty_of_stop_le_start hji]
+    have h0 : Nat.sub j i = 0 := Nat.sub_eq_zero_of_le hji
+    rw [h0]
+    rfl
+  · rw [Array.extract, Array.emptyWithCapacity_eq]
+    by_cases hj : j ≤ xs.size
+    · rw [Nat.min_eq_left hj]
+      rw [extract_loop_toList]
+      · simp only [List.nil_append]
+      · exact Nat.le_trans (Nat.le_of_eq (Nat.add_sub_of_le (by omega))) hj
+    · rw [Nat.min_eq_right (by omega)]
+      by_cases his : i ≤ xs.size
+      · rw [extract_loop_toList]
+        · simp only [List.nil_append]
+          rw [List.take_of_length_le (by simp [List.length_drop]), List.take_of_length_le]
+          rw [List.length_drop, Array.length_toList]
+          exact Nat.sub_le_sub_right (Nat.le_of_not_le hj) i
+        · exact Nat.le_trans (Nat.le_of_eq (Nat.add_sub_of_le his)) (Nat.le_refl _)
+      · rw [Array.extract_loop_of_ge (h := Nat.le_of_not_le his)]
+        rw [List.drop_eq_nil_of_le
+          (by simpa [Array.length_toList] using Nat.le_of_not_le his)]
+        simp
+
 /-! ### `takeWhile` and `dropWhile` -/
 
 /-- The longest prefix whose bytes satisfy `p`. -/

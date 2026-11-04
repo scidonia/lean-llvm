@@ -436,6 +436,18 @@ rests on a proof. -/
 #guard_msgs (whitespace := lax) in
 #print axioms LeanLLVM.JSON.scanChars_iff
 
+/-
+No pin covered this lemma, so a proof change would have shown only through the
+theorems that use it (`scanChars_eq` → `scanChars_iff` → the headline pins).  Its
+`[propext]` comes from the proof route, not the statement: the four `by omega`
+steps over negated conjunctions, each carrying `Classical.choice`, are now
+`Nat.not_lt.mpr` (for `hlt`) and a transitive range split against `hbad`; the
+`by decide` steps on the literal bytes are unchanged and were never the source.
+-/
+/-- info: 'LeanLLVM.JSON.scanCharsFrom_utf8_lead' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanCharsFrom_utf8_lead
+
 /-- info: 'LeanLLVM.JSON.valid_iff_strict' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms LeanLLVM.JSON.valid_iff_strict
