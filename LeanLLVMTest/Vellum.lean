@@ -2628,12 +2628,45 @@ example (bs : List UInt8) (st : BodyState) (k : Nat)
 
 /-! ### The JSON window scanner's lane machinery
 
-`LeanLLVM/Vellum/JsonScanLane.lean` holds the mask accumulator's step: one lane's
-`shl`/`or` leaves the model's `maskPref` fold, with the lane's structural bit
-decided by the two-word table.  The instruction chain, `laneStep`, the loop
-induction and `scanWindowLLVM_refines` are outstanding; that module's header
-records the measured per-lane count and the generator the chain is to come from.
+`LeanLLVM/Vellum/JsonScanLane.lean` holds the lane machinery's first two facts.
+`structBit` runs the body's own nine table instructions through the semantics,
+and `structBit_correct` says the bit they leave is `IsStructOrSpaceB` on every
+byte — the table's correctness is a theorem, where nothing in the kernel had
+connected its arithmetic to the predicate.  `maskStep` then accumulates that
+bit: one lane's `shl`/`or` leaves the model's `maskPref` fold.  The rest of the
+instruction chain, `laneStep`, the loop induction and `scanWindowLLVM_refines`
+are outstanding; that module's header records the measured per-lane count and
+the generator the chain is to come from.
 -/
+
+-- The table prefix is the body's own nine instructions, named here so that a
+-- change to `ruleInstrs`'s head fails this pin rather than silently shifting
+-- what `structBit_correct` is about.
+open LeanLLVM.Vellum.JsonScanBody in
+example :
+    LeanLLVM.Vellum.JsonScanLane.structBitCode =
+      [ .zext "%b64" 8 64 (.reg "%b"),
+        .binop "%bt" .and 64 (.reg "%b64") (lit64 63),
+        .icmp "%g64" .ult 8 (.reg "%b") (lit8 64),
+        .icmp "%g128" .ult 8 (.reg "%b") (lit8 128),
+        .select "%t0" (LeanLLVM.Ty.int 64) (.reg "%g128") (lit64 structHi) (lit64 0),
+        .select "%t1" (LeanLLVM.Ty.int 64) (.reg "%g64") (lit64 structLo) (.reg "%t0"),
+        .binop "%sh" .lshr 64 (.reg "%t1") (.reg "%bt"),
+        .binop "%sb1" .and 64 (.reg "%sh") (lit64 1),
+        .icmp "%stb" .ne 64 (.reg "%sb1") (lit64 0)] := rfl
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanLane.structBit_correct' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanLane.structBit_correct
+
+-- The table's answer on a byte is the model's predicate on that byte: the bridge
+-- the mask accumulator consumes, and the one an instruction-level lane proof
+-- reaches for instead of restating the table's arithmetic.
+open LeanLLVM.JSON in
+example (b : UInt8) : LeanLLVM.Vellum.JsonScanLane.structBit b = IsStructOrSpaceB b :=
+  LeanLLVM.Vellum.JsonScanLane.structBit_correct b
 
 /--
 info: 'LeanLLVM.Vellum.JsonScanLane.maskStep' depends on axioms: [propext, Quot.sound]
@@ -2642,12 +2675,14 @@ info: 'LeanLLVM.Vellum.JsonScanLane.maskStep' depends on axioms: [propext, Quot.
 #print axioms LeanLLVM.Vellum.JsonScanLane.maskStep
 
 -- One lane's accumulated `or` is the model's prefix fold — the clause the ruling
--- asks the body to satisfy.
+-- asks the body to satisfy.  The lane's bit is the table chain's answer, and the
+-- equality with `IsStructOrSpaceB` is supplied by `structBit_correct`, not
+-- assumed by the caller.
 open LeanLLVM.JSON in
-example (bs : List UInt8) (m : BitVec 32) (stb : Bool) (k : Nat) (b : UInt8)
+example (bs : List UInt8) (m : BitVec 32) (k : Nat) (b : UInt8)
     (hk : k < 32) (hb : bs[k]? = some b)
-    (hm : m = LeanLLVM.Vellum.JsonScanIR.maskPref bs k)
-    (hstb : stb = IsStructOrSpaceB b) :
-    (if stb = true then m ||| ((1 : BitVec 32) <<< k) else m) =
+    (hm : m = LeanLLVM.Vellum.JsonScanIR.maskPref bs k) :
+    (if LeanLLVM.Vellum.JsonScanLane.structBit b = true then
+        m ||| ((1 : BitVec 32) <<< k) else m) =
       LeanLLVM.Vellum.JsonScanIR.maskPref bs (k + 1) :=
-  LeanLLVM.Vellum.JsonScanLane.maskStep bs m stb k b hk hb hm hstb
+  LeanLLVM.Vellum.JsonScanLane.maskStep bs m k b hk hb hm

@@ -158,7 +158,7 @@ load handles the remainder.
    vector `alloca`/`store`/`select` (`:357,375,500`). A pointer offset is
    modelled: `getelementptr` reads one `i8`-indexed offset whose index is no
    wider than 64 bits, and every other shape is refused by name
-   (`Parser.lean:396-425`). An intrinsic call is **not** refused: the parser
+   (`Parser.lean:396-426`). An intrinsic call is **not** refused: the parser
    accepts any callee symbol (`Parser.lean:427-435`), so a call to
    `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
    `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model
