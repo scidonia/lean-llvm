@@ -13,6 +13,7 @@ import JsonMain
 import LeanLLVM.JSON.ScanBody
 import LeanLLVM.JSON.ScanWindow
 import LeanLLVM.JSON.ScanString
+import LeanLLVM.JSON.ScanBlocks
 
 namespace LeanLLVMTest.Json
 
@@ -896,6 +897,109 @@ example : ∀ {bs : Bytes} {i pos : Nat} {st st' : BodyState},
   @LeanLLVM.JSON.tailRun_open_at
 
 end
+
+/-! ### The refinement
+
+`LeanLLVM/JSON/ScanBlocks.lean`: the whole-scan statement `docs/contract.md:89` names, and
+the three cases the block model was opened with.  Those cases come first because they are
+the composition in miniature: a two-byte character whose continuation is still owed at the
+thirty-first lane, a surrogate pair whose twelve bytes the run consumes before the quote
+closes it, and a control byte the fold refuses at the lane the run refuses at.  Each
+`#guard` writes its expectation out by hand; none reads a value back out of the definition
+it tests.  Then the footprints, and a restatement of each statement beside its pin,
+because a build passes for a theorem that grew a hypothesis and a footprint does not name
+a conclusion. -/
+
+namespace LeanLLVMTest.Json
+
+open LeanLLVM.JSON
+
+/-- Thirty content lanes, then a two-byte character: its lead byte is lane thirty and its
+continuation lane thirty-one, both inside the one window, so the fold's carry after
+thirty-one lanes still owes the continuation and the thirty-second lane clears it. -/
+def splitWindow : List UInt8 := List.replicate 30 0x61 ++ [0xC3, 0xA9]
+
+#guard (carryAt splitWindow BodyState.body 31) =
+  (⟨true, false, Utf8Need.more 1 0x80 0xBF⟩ : BodyState)
+#guard (carryAt splitWindow BodyState.body 32) = BodyState.body
+#guard (windowOf splitWindow BodyState.body).carry = BodyState.body
+#guard (windowOf splitWindow BodyState.body).stop = none
+#guard bodyRun (ByteString.literal splitWindow) 32 0 BodyState.body =
+  .open BodyState.body 32
+
+/-- `\uD83D\uDE00` and the quote that follows it: twelve bytes of escape, and the fold's
+only delimiter lane is the thirteenth. -/
+def pairWindow : List UInt8 :=
+  [0x5C, 0x75, 0x44, 0x38, 0x33, 0x44, 0x5C, 0x75, 0x44, 0x45, 0x30, 0x30, 0x22]
+
+#guard (windowOf pairWindow BodyState.body).stop = some (.close 12)
+#guard (windowOf pairWindow BodyState.body).delim = ((1 : BitVec 32) <<< 12)
+#guard bodyRun (ByteString.literal pairWindow) 13 0 BodyState.body = .closed 13
+
+/-- A content lane, then a control byte, then the quote: the fold refuses where the run
+refuses, and the refusal is the string stage's to read. -/
+def controlWindow : List UInt8 := [0x61, 0x01, 0x22]
+
+#guard (windowOf controlWindow BodyState.body).stop = some (.refuse 1 .control)
+#guard bodyRun (ByteString.literal controlWindow) 2 0 BodyState.body =
+  .refused .control 1
+
+/-- The same window with the control byte replaced by a content byte: the detector that
+refused lane one finds the closing lane instead, so the refusal above is the control
+byte's and not a detector that refuses every lane. -/
+def contentWindow : List UInt8 := [0x61, 0x62, 0x22]
+
+#guard (windowOf contentWindow BodyState.body).stop = some (.close 2)
+#guard bodyRun (ByteString.literal contentWindow) 3 0 BodyState.body = .closed 3
+
+/- The one-character body, `"a"`: the body state starts inside the body, so the second
+quote closes rather than opens.  The scan and the reference scan are asserted separately,
+so neither reading is taken from the other. -/
+#guard scanStringBlocks (rawBytes [0x22, 0x61, 0x22]) 0 = .ok 3
+#guard ((scanCharsEnd (rawBytes [0x22, 0x61, 0x22]) 1 0).map (fun p => (p.1, p.2.val))) =
+  .ok ([0x61], 3)
+
+/-- info: 'LeanLLVM.JSON.scan_simd_refines_scalar' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scan_simd_refines_scalar
+
+/-- info: 'LeanLLVM.JSON.scanStringBlocks_ok_of_scanCharsEnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanStringBlocks_ok_of_scanCharsEnd
+
+/-- info: 'LeanLLVM.JSON.scanStringBlocks_refusal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.scanStringBlocks_refusal
+
+/-- info: 'LeanLLVM.JSON.tailRun_ended' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.tailRun_ended
+
+example : ∀ (bs : Bytes),
+    (∀ (q : Nat) (cs : List Nat) (stop : { n : Nat // n ≤ bs.size }),
+        bs[q]? = some 0x22 → scanCharsEnd bs (q + 1) 0 = .ok (cs, stop) →
+          scanStringBlocks bs q = .ok stop.val) ∧
+    (∀ (q : Nat) {k : Nat},
+        bs[q]? = some 0x22 → scanStringBlocks bs q = .ok k →
+          q < k ∧ k ≤ bs.size ∧ bs[k - 1]? = some 0x22) :=
+  LeanLLVM.JSON.scan_simd_refines_scalar
+
+example : ∀ {bs : Bytes} {q : Nat} {cs : List Nat} {stop : { n : Nat // n ≤ bs.size }},
+    bs[q]? = some 0x22 → scanCharsEnd bs (q + 1) 0 = .ok (cs, stop) →
+      scanStringBlocks bs q = .ok stop.val :=
+  @LeanLLVM.JSON.scanStringBlocks_ok_of_scanCharsEnd
+
+example : ∀ {bs : Bytes} {q : Nat} {s : Refusal}, bs[q]? = some 0x22 →
+    scanStringBlocks bs q = .error s →
+      ∀ (cs : List Nat) (stop : { n : Nat // n ≤ bs.size }),
+        scanCharsEnd bs (q + 1) 0 ≠ .ok (cs, stop) :=
+  @LeanLLVM.JSON.scanStringBlocks_refusal
+
+example : ∀ (bs : Bytes) (i : Nat), bs.size ≤ i → ∀ (st : BodyState),
+    tailRun bs i st = .error (.ended, i) :=
+  LeanLLVM.JSON.tailRun_ended
+
+end LeanLLVMTest.Json
 
 /-! ### The emitted classifier body
 
