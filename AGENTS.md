@@ -57,9 +57,17 @@ needs the other two to match.
   `probes/install/ir/json-caller.ll`).
 - `LeanLLVM/JSON/` is the byte-level JSON development: the independent
   semantics (`Spec`), scanner (`Scan`), parser (`Parse`), tape (`Tape`) and
-  their correctness modules, plus the block layer `ScanBlock` — `maskOfList`,
+  their correctness modules; the block layer `ScanBlock` — `maskOfList`,
   `maskOf`, `scanBlock` and `scanBlock_correct`, which reads the mask per lane
-  against the scalar transition and confines `ok` to a full 32-byte block.
+  against the scalar transition and confines `ok` to a full 32-byte block; and
+  the stateful scanner model above both chains: `ScanBody` is the single
+  `BodyState` carry (in-string flag, escape-run parity and pending UTF-8) and
+  the byte rule, `ScanWindow` the window fold and the masks it reports,
+  `ScanString` the window-driven scan and the tail, and `ScanBlocks`
+  `scan_simd_refines_scalar`, the whole-scan statement relating that scan to
+  the parser's own string scanner.  The parser imports none of the four:
+  outside the model modules themselves, `LeanLLVM/JSON.lean` is the only
+  importer, and it imports all four.
 - `ITree.lean` and `ITree/` are a second Lake library, `ITree`: the generic
   interaction tree.  `ITree/Core` is the public tree API, `ITree/Coinduction`
   the parameterised-fixpoint layer, `ITree/IEq` exact equality,
@@ -120,6 +128,15 @@ needs the other two to match.
   window of the corpus and a mixed block, with a defect object and a tampered
   expectation as its controls.  Its object arm stages each window in a
   32-byte-aligned buffer, so it claims agreement on aligned windows only.
+  One more check sits beside those routes: `tests/json-import-boundary.sh`
+  filters the actual `import` declarations of `LeanLLVM/JSON/*.lean` and
+  asserts that `Parse.lean` imports exactly `Spec`, `Scan` and `Tape`, that
+  `ScanBlock.lean` imports `Bytes` alone, that no module of the parser's chain
+  names the block layer or the model in an `import` line, and that the four
+  model modules are imported only by each other and by `LeanLLVM/JSON.lean`.
+  Every detector runs on an in-memory sample it must catch — and, where the
+  corpus allows, on a file it must catch — before any absence is asserted.
+  Run it with `nix develop -c bash tests/json-import-boundary.sh`.
   `probes/install/ir/capture-json.sh` regenerates the classifier fixture and
   records its invocation and stripped items, and `lake exe leanllvm-json-emit`
   prints the caller fixture.  Each route carries a

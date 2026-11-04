@@ -148,7 +148,7 @@ load handles the remainder.
    evaluated in `evalInstr` (`LeanLLVM/Semantics.lean:198`) and packed by
    `lanesToNat` (`:127`), whose bit-level reading is `lanesToNat_testBit`
    (`:138`). `LeanLLVM/JSON/ScanBlock.lean` proves the packed mask is the
-   scalar transition's (`maskOfList_getLsbD`, `:184`), and
+   scalar transition's (`maskOfList_getLsbD`, `:219`), and
    `LeanLLVM/Vellum/JsonClassifyIR.lean` proves the emitted body returns that
    mask on every readable block (`scannerLLVM_refines`, `:838`), so the
    fragment is modelled *and* checked against a body that uses it.
