@@ -227,6 +227,7 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
     (h : evalInstr calls s i = some s') : s'.mem = s.mem := by
   cases i with
   | store ty v p => exact absurd rfl (hns ty v p)
+  | gep d base off => (simp only [evalInstr] at h); (repeat' split at h); (all_goals (cases h <;> rfl))
   | call d rt c args => exact absurd rfl (hnc d rt c args)
   | binop d op w a b =>
       simp only [evalInstr] at h
@@ -478,6 +479,7 @@ theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
       cases i with
       | load d ty p => exact exec_instrT_load calls s d ty p _ r hokK hubK
       | store ty v p => exact exec_instrT_store calls s ty v p _ r hokK hubK
+      | gep d base off => exact exec_pureInstrT calls s (.gep d base off) _ r (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s' (by intro ty v p hh; cases hh) (by intro d rt c a hh; cases hh) h) hokK hubK
       | call d rt c args => exact exec_instrT_call calls hpure s d rt c args _ r hokK hubK
       | binop d op w a b =>
           exact exec_pureInstrT calls s (.binop d op w a b) _ r

@@ -3,17 +3,22 @@ A parser for the subset of textual LLVM IR that the semantics models.
 
 The parser is line oriented: one instruction per line, one label per block.
 Unmodelled instructions and block structure are refused with a message naming
-the construct, rather than being approximated: `phi`, `getelementptr`,
-aggregates other than the fixed-length vector, and floating point are not
-accepted yet.  Of the vector fragment the modelled part is the one an emitted
-classifier contains — `load` of `<n x i8>`, the lane-wise `icmp`, the lane-wise
-`or`/`and`/`xor`/`add`/`sub`, the mask `bitcast` and a `splat` operand — and the
-rest of the vector grammar is refused by name.  A function definition's
-header is checked for attributes the semantics does not model: a return
-attribute before the return type and a function attribute after the parameter
-list are both refused.  A `declare` header is not checked: unmodelled tokens in
-a declaration's parameter list or after its closing parenthesis are still
-accepted.
+the construct, rather than being approximated: `phi`, aggregates other than the
+fixed-length vector, and floating point are not accepted yet.  Of the pointer
+arithmetic the modelled part is the byte offset an emitted body contains —
+`getelementptr [inbounds] i8, ptr X, iN Y` with one index no wider than 64 bits
+— and every other `getelementptr` shape is refused by name: a different element
+type, a base that is not a `ptr`, a second index, a wider index, and the
+`inrange`/`nuw`/`nusw` modifiers.  `inbounds` is accepted and dropped, because
+the instruction has no field for it.  Of the vector fragment the modelled part
+is the one an emitted classifier contains — `load` of `<n x i8>`, the lane-wise
+`icmp`, the lane-wise `or`/`and`/`xor`/`add`/`sub`, the mask `bitcast` and a
+`splat` operand — and the rest of the vector grammar is refused by name.  A
+function definition's header is checked for attributes the semantics does not
+model: a return attribute before the return type and a function attribute after
+the parameter list are both refused.  A `declare` header is not checked:
+unmodelled tokens in a declaration's parameter list or after its closing
+parenthesis are still accepted.
 -/
 import LeanLLVM.Syntax
 import LeanLLVM.Printer
@@ -388,7 +393,37 @@ def parseValueInstr (dst : String) : P Stmt := do
           if m = n then pure (.instr (.bitcastMask dst n v))
           else P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
       | _, _ => P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
-  | "getelementptr" => P.fail "getelementptr is not modelled yet"
+  | "getelementptr" =>
+      -- `getelementptr [inbounds] i8, ptr %base, iN %off`: one index, an `i8`
+      -- element type, and an index no wider than 64 bits.  The element type is
+      -- fixed because the index is a byte count, and every excluded shape is
+      -- refused by name rather than approximated: the modifiers other than
+      -- `inbounds`, an element type other than `i8`, a base that is not a
+      -- `ptr`, a second index, and an index type that is not an integer no
+      -- wider than 64 bits.  `inbounds` itself is accepted and dropped: the
+      -- instruction has no field for it, and the printer emits it again.
+      let _ ← gepModifiers
+      let elemTok ← P.next
+      match parseTy elemTok with
+      | .ok (.int 8) => pure ()
+      | _ => P.fail s!"getelementptr element type '{elemTok}' is not modelled: the index is a byte count"
+      P.expect ","
+      let baseTyTok ← P.next
+      if baseTyTok ≠ "ptr" then
+        P.fail s!"getelementptr base type '{baseTyTok}' is not modelled: the base must be a ptr"
+      let base ← parseOperand .ptr
+      P.expect ","
+      let idxTok ← P.next
+      let w ← match parseTy idxTok with
+        | .ok (.int w) => pure w
+        | _ => P.fail s!"getelementptr index type '{idxTok}' is not modelled: the index must be an integer type"
+      if w > 64 then
+        P.fail s!"getelementptr index width i{w} is not modelled: an index wider than 64 bits is refused rather than truncated"
+      let off ← parseOperand (.int w)
+      match (← P.peek) with
+      | some "," => P.fail "getelementptr with more than one index is not modelled"
+      | _ => pure ()
+      pure (.instr (.gep dst base off))
   | "call" =>
       let retTy ← expectTy
       let id ← P.next
@@ -401,6 +436,17 @@ def parseValueInstr (dst : String) : P Stmt := do
   | "phi" => P.fail "phi is not modelled yet"
   | other => P.fail s!"unsupported instruction '{other}'"
 where
+  /-- Consume a `getelementptr`'s modifiers.  `inbounds` is accepted and
+  dropped, because the instruction has no field for it; `inrange`, `nuw` and
+  `nusw` constrain the offset and are refused by name, because no semantics here
+  reads them and dropping one would model more programs than the text defines. -/
+  gepModifiers : P Unit
+    | "inbounds" :: rest => gepModifiers rest
+    | f :: rest =>
+        if f = "inrange" || f = "nuw" || f = "nusw" then
+          .error s!"getelementptr modifier '{f}' is not modelled"
+        else .ok ((), f :: rest)
+    | [] => .ok ((), [])
   parseCast (dst : String) (mk : String → Nat → Nat → Operand → Instr) : P Stmt := do
     let tyIn ← expectTy
     let wIn ← match tyIn with

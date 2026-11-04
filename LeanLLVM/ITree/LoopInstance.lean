@@ -384,6 +384,7 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
         cases i with
         | load d ty p => simp [NoEvents] at hi
         | store ty v p => simp [NoEvents] at hi
+        | gep d base off => simpa only [codeT, instrT, pureInstrT, heq] using hih
         | call d rt c args => simp [NoEvents] at hi
         | binop d op w a b =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih

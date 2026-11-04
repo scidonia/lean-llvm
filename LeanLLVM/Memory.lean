@@ -8,6 +8,8 @@ address.  This module proves the facts a loop invariant rests on:
 * a byte written at an address is read back there, every offset of a written
   sequence reads back its own byte, and writes at or above an address do not
   disturb addresses below it;
+* a range that reads back reads back byte by byte, so a range the body asked for
+  supplies the per-lane byte a byte-walking body reads at each offset;
 * a little-endian round trip through `natToBytes` and `bytesToNat` recovers the
   value, so a 64-bit store followed by a 64-bit load at the same address
   returns the stored value.
@@ -149,6 +151,31 @@ theorem readBytes_writeBytes_same (m : Mem) :
       rw [readByte_writeBytes_below (writeByte m addr b) bs (by omega)]
       rw [readByte_writeByte_same]
       simp only [ih]
+
+/-- A range that reads back reads back byte by byte: the byte at offset `k` of a
+range `readBytes` returned is the returned list's byte at `k`.  This is what
+turns `readBytes mem p 32 = some block` into the per-lane read a byte-walking
+body performs at `p + k`. -/
+theorem readByte_of_readBytes {m : Mem} {addr n : Nat} {bs : List UInt8}
+    (h : readBytes m addr n = some bs) {k : Nat} (hk : k < n) :
+    readByte m (addr + k) = some (bs.getD k 0) := by
+  induction n generalizing addr bs k with
+  | zero => exact absurd hk (Nat.not_lt_zero k)
+  | succ n ih =>
+      simp only [readBytes] at h
+      split at h
+      · cases h
+      · rename_i b hb
+        split at h
+        · cases h
+        · rename_i bs' hbs
+          cases h
+          cases k with
+          | zero => simpa using hb
+          | succ j =>
+              rw [show addr + (j + 1) = addr + 1 + j from by omega]
+              rw [ih hbs (by omega)]
+              simp
 
 /-- `UInt8.ofNat` at byte width. -/
 theorem uint8_toNat_ofNat_mod (v : Nat) :

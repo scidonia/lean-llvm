@@ -331,3 +331,123 @@ def strengthFunction : Function :=
 /-- info: 'LeanLLVM.strengthReduction_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.strengthReduction_sound
+
+/-- The byte-offset `getelementptr`: a pointer and a byte count, printed in the
+canonical form the parser accepts back. -/
+def gepSample : String :=
+"define ptr @gep(ptr %p, i64 %k) {
+entry:
+  %q = getelementptr inbounds i8, ptr %p, i64 %k
+  ret ptr %q
+}
+"
+
+#guard
+  match parseModule gepSample with
+  | .ok m => parseModule (Module.render m) = .ok m
+  | .error _ => false
+
+/-- `getelementptr` where a byte-walking body uses it: the address of one byte
+inside a word, read back through the memory model.  The offset is a parameter,
+so the check below reads every offset of the word rather than only the first,
+and the negative one is the undefined offset the model refuses. -/
+def gepByteProgram (off : String) : String :=
+"define i32 @gep_byte(ptr %p) {
+entry:
+  store i32 16909060, ptr %p
+  %q = getelementptr inbounds i8, ptr %p, i64 " ++ off ++ "
+  %v = load i8, ptr %q
+  %w = zext i8 %v to i32
+  ret i32 %w
+}
+"
+
+def gepByteRun (off : String) : Option Outcome :=
+  match parseModule (gepByteProgram off) with
+  | .ok ⟨_, f :: _⟩ => run noCalls f [.ptr 1]
+  | _ => none
+
+-- `16909060` is `0x01020304`, which the byte-addressed memory holds as
+-- `04 03 02 01`, so the byte at offset `k` of the word is `4 - k`.
+#guard returnsValue (gepByteRun "0") (.int 32 (BitVec.ofNat 32 4))
+#guard returnsValue (gepByteRun "1") (.int 32 (BitVec.ofNat 32 3))
+#guard returnsValue (gepByteRun "2") (.int 32 (BitVec.ofNat 32 2))
+#guard returnsValue (gepByteRun "3") (.int 32 (BitVec.ofNat 32 1))
+
+-- Past the word the byte was never written, and a negative offset is undefined
+-- rather than a read of an address below the base: both are `ub`.
+#guard gepByteRun "4" = some .ub
+#guard gepByteRun "-1" = some .ub
+
+-- The step's facts, restated from `LeanLLVM.Semantics`: the accepting case, the
+-- refusal the negative index is, the refusal of each other operand shape, and
+-- the memory it leaves alone.  A `#guard` above observes the step on values this
+-- file chose; these are the statements a later proof composes with, and each is
+-- pinned below to the standard axioms.
+example {calls : Calls} {s : State} {d : String} {base off : Operand}
+    {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n)) (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls s (.gep d base off) =
+      some (s.bind d (.ptr (a + (n.signExtend 64).toNat))) :=
+  evalInstr_gep hb ho hpos
+
+example {calls : Calls} {s : State} {d : String} {base off : Operand}
+    {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n)) (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls s (.gep d base off) = none :=
+  evalInstr_gep_negative hb ho hneg
+
+example {calls : Calls} {s : State} {d : String} {base off : Operand} {v : Value}
+    (hb : evalOperand s base = some v) (hv : ∀ a, v ≠ .ptr a) :
+    evalInstr calls s (.gep d base off) = none :=
+  evalInstr_gep_none_of_base hb hv
+
+example {calls : Calls} {s : State} {d : String} {base off : Operand} {a : Nat}
+    (hb : evalOperand s base = some (.ptr a)) {v : Value}
+    (ho : evalOperand s off = some v) (hv : ∀ w n, v ≠ .int w n) :
+    evalInstr calls s (.gep d base off) = none :=
+  evalInstr_gep_none_of_off hb ho hv
+
+example {calls : Calls} {s : State} {d : String} {base off : Operand}
+    (h : evalOperand s base = none ∨ evalOperand s off = none) :
+    evalInstr calls s (.gep d base off) = none :=
+  evalInstr_gep_none_of_unbound h
+
+example {calls : Calls} {s s' : State} {d : String} {base off : Operand}
+    (h : evalInstr calls s (.gep d base off) = some s') : s'.mem = s.mem :=
+  evalInstr_gep_mem h
+
+/-- info: 'LeanLLVM.evalInstr_gep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep
+
+/-- info: 'LeanLLVM.evalInstr_gep_negative' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_negative
+
+/-- info: 'LeanLLVM.evalInstr_gep_none_of_base' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_none_of_base
+
+/-- info: 'LeanLLVM.evalInstr_gep_none_of_off' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_none_of_off
+
+/-- info: 'LeanLLVM.evalInstr_gep_none_of_unbound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_none_of_unbound
+
+/-- info: 'LeanLLVM.evalInstr_gep_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_mem
+
+-- The readback lemma the byte walk rests on, restated: a range the body read
+-- supplies each of its bytes at the offset the body asks for.
+example {m : Mem} {addr n : Nat} {bs : List UInt8}
+    (h : readBytes m addr n = some bs) {k : Nat} (hk : k < n) :
+    readByte m (addr + k) = some (bs.getD k 0) :=
+  readByte_of_readBytes h hk
+
+/-- info: 'LeanLLVM.readByte_of_readBytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.readByte_of_readBytes

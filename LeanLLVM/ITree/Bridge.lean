@@ -489,6 +489,7 @@ theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → P
       cases i with
       | load d ty p => exact handled_instrT_load calls frame s d ty p _ r hokK hubK
       | store ty v p => exact handled_instrT_store calls frame s ty v p _ r hokK hubK
+      | gep d base off => exact handled_pureInstrT calls frame s (.gep d base off) _ r (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s' (by intro ty v p hh; cases hh) (by intro d rt c a hh; cases hh) h) hokK hubK
       | call d rt c args => exact handled_instrT_call calls hcall frame s d rt c args _ r hokK hubK
       | binop d op w a b =>
           exact handled_pureInstrT calls frame s (.binop d op w a b) _ r

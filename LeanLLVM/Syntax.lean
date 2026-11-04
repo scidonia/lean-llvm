@@ -25,6 +25,13 @@ inductive Instr where
   | alloca (dst : String) (ty : Ty) (align : Nat)
   | load (dst : String) (ty : Ty) (ptr : Operand)
   | store (ty : Ty) (val ptr : Operand)
+  /-- A pointer offset: `getelementptr [inbounds] i8, ptr %base, iN %off`.  The
+  element type is `i8`, so the index is a byte count and the result is a `ptr`.
+  The index's own width is not a field: the semantics sign-extends whatever
+  integer value it reads to 64 bits, so an `iN` in the text is a shape the
+  parser checks, not state the instruction keeps.  `inbounds` is not a field
+  either — the printer emits it and no semantics here reads it. -/
+  | gep (dst : String) (base : Operand) (off : Operand)
   /-- A lane-wise integer comparison: each lane of the result is the predicate's
   one-bit result on the two operands' lane at that position.  The lane count and
   width are the operands' vector type, `<n x iw>`. -/
@@ -49,6 +56,7 @@ def Instr.dst? : Instr → Option String
   | .alloca d _ _ => some d
   | .load d _ _ => some d
   | .store _ _ _ => none
+  | .gep d _ _ => some d
   | .icmpVec d _ _ _ _ _ => some d
   | .binopVec d _ _ _ _ _ => some d
   | .bitcastMask d _ _ => some d
@@ -65,6 +73,7 @@ def Instr.uses : Instr → List String
   | .alloca _ _ _ => []
   | .load _ _ p => p.regs
   | .store _ v p => v.regs ++ p.regs
+  | .gep _ base off => base.regs ++ off.regs
   | .icmpVec _ _ _ _ a b => a.regs ++ b.regs
   | .binopVec _ _ _ _ a b => a.regs ++ b.regs
   | .bitcastMask _ _ v => v.regs
@@ -83,6 +92,7 @@ def Instr.isPure : Instr → Bool
   | .alloca .. => false
   | .load .. => true
   | .store .. => false
+  | .gep .. => true
   | .icmpVec .. => true
   | .binopVec .. => true
   | .bitcastMask .. => true

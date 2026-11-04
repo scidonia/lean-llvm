@@ -254,6 +254,17 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       match evalOperand s v, evalOperand s p with
       | some vv, some (.ptr addr) => storeValue s ty vv addr
       | _, _ => none
+  | .gep d base off =>
+      -- The index is sign-extended to 64 bits and a negative one is undefined:
+      -- pointers are bare addresses with no object to walk backwards inside.
+      -- The index's declared width is not part of the instruction, so the value
+      -- read supplies it.
+      match evalOperand s base, evalOperand s off with
+      | some (.ptr addr), some (.int _ n) =>
+          if (n.signExtend 64).toNat < 2 ^ 63 then
+            some (s.bind d (.ptr (addr + (n.signExtend 64).toNat)))
+          else none
+      | _, _ => none
   | .call d _ callee args =>
       match evalOperands s args with
       | some vs =>
@@ -286,6 +297,80 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
             some (s.bind d (.int n (BitVec.ofNat n (lanesToNat l))))
           else none
       | _ => none
+
+/-! ### The pointer offset
+
+`getelementptr`'s step, as facts a later proof composes with: the accepting case,
+the negative index it refuses, the operand shapes it refuses, and the memory it
+leaves alone.  A refused offset is `none` here; `none` is read as the `ub`
+outcome by `step`, and nothing in this module decides that.
+
+The index's **width** is not checked by this step — it sign-extends whatever
+integer value it reads to 64 bits, and a value wider than 64 bits would be
+truncated to 64.  An index type wider than 64 bits is refused by the parser, so a
+module that came through it never reaches this step with one.
+-/
+
+/-- The accepting case: a pointer base and an integer index whose sign-extended
+value is below `2 ^ 63` bind the destination to the base plus that value. -/
+theorem evalInstr_gep {calls : Calls} {s : State} {d : String} {base off : Operand}
+    {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n)) (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls s (.gep d base off) =
+      some (s.bind d (.ptr (a + (n.signExtend 64).toNat))) := by
+  simp only [evalInstr, hb, ho]
+  rw [ite_eq_left hpos]
+
+/-- The refused index: a sign-extended value at or above `2 ^ 63` is the negative
+offset, which this model does not define — pointers are bare addresses with no
+object to walk backwards inside. -/
+theorem evalInstr_gep_negative {calls : Calls} {s : State} {d : String} {base off : Operand}
+    {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n)) (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls s (.gep d base off) = none := by
+  simp only [evalInstr, hb, ho]
+  rw [ite_eq_right hneg]
+
+/-- A base that is not a pointer is refused, whatever the index is. -/
+theorem evalInstr_gep_none_of_base {calls : Calls} {s : State} {d : String}
+    {base off : Operand} {v : Value} (hb : evalOperand s base = some v)
+    (hv : ∀ a, v ≠ .ptr a) : evalInstr calls s (.gep d base off) = none := by
+  simp only [evalInstr, hb]
+  cases v with
+  | ptr a => exact absurd rfl (hv a)
+  | int w x => rfl
+  | vec n w l => rfl
+
+/-- An index that is not an integer is refused, a pointer base or not: a pointer
+offset by a pointer has no meaning here. -/
+theorem evalInstr_gep_none_of_off {calls : Calls} {s : State} {d : String}
+    {base off : Operand} {a : Nat} (hb : evalOperand s base = some (.ptr a))
+    {v : Value} (ho : evalOperand s off = some v) (hv : ∀ w n, v ≠ .int w n) :
+    evalInstr calls s (.gep d base off) = none := by
+  cases v with
+  | int w x => exact absurd rfl (hv w x)
+  | ptr b => simp only [evalInstr, hb, ho]
+  | vec n w l => simp only [evalInstr, hb, ho]
+
+/-- An operand that does not read — an unbound register, an `undef` or `poison`
+literal — is refused before either value shape is examined. -/
+theorem evalInstr_gep_none_of_unbound {calls : Calls} {s : State} {d : String}
+    {base off : Operand} (h : evalOperand s base = none ∨ evalOperand s off = none) :
+    evalInstr calls s (.gep d base off) = none := by
+  rcases h with h | h
+  · simp only [evalInstr, h]
+  · simp only [evalInstr, h]
+    cases hb : evalOperand s base with
+    | none => rfl
+    | some v => cases v <;> rfl
+
+/-- A pointer offset writes nothing: a successful step leaves the memory as it
+found it, and only the destination binding changes. -/
+theorem evalInstr_gep_mem {calls : Calls} {s s' : State} {d : String} {base off : Operand}
+    (h : evalInstr calls s (.gep d base off) = some s') : s'.mem = s.mem := by
+  simp only [evalInstr] at h
+  repeat' split at h
+  all_goals (cases h <;> rfl)
 
 /-- Execute a straight-line instruction sequence. -/
 def denoteCode (calls : Calls) : List Instr → State → Option State

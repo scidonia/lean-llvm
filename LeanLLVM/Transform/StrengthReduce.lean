@@ -57,6 +57,7 @@ def strengthReduceInstr : Instr → Instr
 theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
     evalInstr calls s (strengthReduceInstr i) = evalInstr calls s i := by
   cases i with
+  | gep d base off => rfl
   | binop d op w lhs rhs =>
       cases op with
       | mul =>

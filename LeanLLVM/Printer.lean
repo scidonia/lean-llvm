@@ -49,6 +49,18 @@ def IPred.render : IPred → String
   | .ult => "ult" | .ule => "ule" | .ugt => "ugt" | .uge => "uge"
   | .slt => "slt" | .sle => "sle" | .sgt => "sgt" | .sge => "sge"
 
+/-- The index type a `getelementptr` prints.  An integer literal carries its own
+width; a register carries none in the instruction, so the canonical form is
+`i64` — the width the semantics sign-extends the index to.  Those are the two
+forms the parser produces, and each re-parses to the instruction it was printed
+from: the index width is checked and dropped on the way in, and recovered here.
+A register index therefore prints as `i64` whatever width its definition has, so
+a body whose printed text must also pass `opt` uses an `i64` index register or a
+literal — the parser accepts a narrower index, and the printer cannot recover it. -/
+def gepIndexTy : Operand → String
+  | .imm (.int w _) => s!"i{w}"
+  | _ => "i64"
+
 def Instr.render : Instr → String
   | .binop d op w a b =>
       s!"  {d} = {op.render} i{w} {a.token}, {b.token}"
@@ -69,6 +81,8 @@ def Instr.render : Instr → String
       s!"  {d} = load {ty.render}, ptr {p.token}"
   | .store ty v p =>
       s!"  store {v.render ty}, ptr {p.token}"
+  | .gep d base off =>
+      s!"  {d} = getelementptr inbounds i8, ptr {base.token}, {gepIndexTy off} {off.token}"
   | .icmpVec d pred n w a b =>
       let ty := Ty.vec n (.int w)
       s!"  {d} = icmp {pred.render} {ty.render} {a.token}, {b.token}"
