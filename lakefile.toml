@@ -37,6 +37,12 @@ root = "JsonMain"
 name = "leanllvm-loop-emit"
 root = "LoopEmit"
 
+# Renders the JSON window scanner's authored body from its Lean AST, and (with
+# the caller) the scanner's fixtures; see JsonScanEmit.lean.
+[[lean_exe]]
+name = "leanllvm-json-scan-emit"
+root = "JsonScanEmit"
+
 # Renders the JSON seam's staging-caller fixture from its Lean AST; see
 # JsonEmit.lean.
 [[lean_exe]]

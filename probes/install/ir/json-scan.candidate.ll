@@ -3,7 +3,16 @@
 ;
 ;   nix develop -c bash probes/install/ir/capture-json-scan.sh
 ;
-; from probes/install/json/scan-window.candidate.c, emitted with
+; This is not the certified body.  The certified body is printed from
+; LeanLLVM/Vellum/JsonScanBody.lean -- the AST that
+; LeanLLVM/Vellum/JsonScanIR.lean parses probes/install/ir/json-scan-body.ll
+; back to and proves the refinement statement about -- into
+; probes/install/ir/json-scan-body.ll.  What follows is the same algorithm as
+; the compiler builds it, and it is kept as the measured record of the shapes
+; this fragment has to carry: no manifest arm names this fixture, the installed
+; unit is the printed body, and nothing here certifies these bytes.
+;
+; It is captured from probes/install/json/scan-window.candidate.c, emitted with
 ;
 ;   clang -S -emit-llvm -O2 -mavx2 -fno-slp-vectorize probes/install/json/scan-window.candidate.c
 ;

@@ -1,6 +1,8 @@
 import LeanLLVM
 import LeanLLVM.Vellum.JsonScanABI
 import LeanLLVM.Vellum.JsonScanModel
+import LeanLLVM.Vellum.JsonScanIR
+import LeanLLVM.Vellum.JsonScanLane
 
 open LeanLLVM.Vellum
 
@@ -2441,3 +2443,106 @@ example :
           104 (maskOfList (List.replicate 8 0x61 ++ [0x22])))
         200 (encodeState BodyState.body) := by
   decide
+
+/-! ### The JSON window scanner's authored body
+
+`LeanLLVM/Vellum/JsonScanIR.lean` pins `probes/install/ir/json-scan-body.ll` to
+`LeanLLVM.Vellum.JsonScanBody.scanWindowBody` with a `#guard`, so the fixture and
+the AST are one object at build time.  The module proves the prefix facts the
+refinement statement rests on — the mask, the stop and the carry at a window's
+first `k` lanes — and the statements below are those theorems, restated and
+pinned.  The refinement theorem itself is outstanding and is recorded as such in
+that module's header, so nothing here pins it.
+-/
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.maskPref_eq_maskOfList' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.maskPref_eq_maskOfList
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.firstStop_eq_stopOf' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.firstStop_eq_stopOf
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.carriedAt_eq_carryAt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.carriedAt_eq_carryAt
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_cont' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_cont
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_stop' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_stop
+
+-- The mask the accumulator holds at the end of a full window is the classifier's
+-- own `maskOfList`, which is what the unit writes at `%out`.
+open LeanLLVM.JSON in
+example (bs : List UInt8) (h : bs.length ≤ 32) :
+    LeanLLVM.Vellum.JsonScanIR.maskPref bs bs.length = maskOfList bs :=
+  LeanLLVM.Vellum.JsonScanIR.maskPref_eq_maskOfList bs h
+
+-- The stop word the body leaves is the window fold's first stop.
+example (bs : List UInt8) (st : LeanLLVM.JSON.BodyState) (h : bs.length ≤ 32) :
+    LeanLLVM.Vellum.JsonScanIR.firstStop bs st bs.length =
+      LeanLLVM.Vellum.JsonScanModel.stopOf bs st :=
+  LeanLLVM.Vellum.JsonScanIR.firstStop_eq_stopOf h
+
+-- The carry the slot holds is the model's prefix carry at the stop's lane, or at
+-- the window's length when nothing stopped.
+example (bs : List UInt8) (st : LeanLLVM.JSON.BodyState) (h : bs.length ≤ 32) :
+    LeanLLVM.Vellum.JsonScanIR.carriedAt bs st bs.length =
+      LeanLLVM.JSON.carryAt bs st (LeanLLVM.Vellum.JsonScanModel.stopLaneOrLength bs st) :=
+  LeanLLVM.Vellum.JsonScanIR.carriedAt_eq_carryAt h
+
+-- A lane that continues advances the carry, and one that stops holds it.
+example (bs : List UInt8) (st st' : LeanLLVM.JSON.BodyState) (k : Nat) (b : UInt8)
+    (hstop : LeanLLVM.Vellum.JsonScanIR.firstStop bs st k = none)
+    (hb : bs[k]? = some b)
+    (hstep : LeanLLVM.JSON.bodyStep (LeanLLVM.JSON.carryAt bs st k) b = .cont st') :
+    LeanLLVM.Vellum.JsonScanIR.carriedAt bs st (k + 1) = st' :=
+  LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_cont hstop hb hstep
+
+example (bs : List UInt8) (st : LeanLLVM.JSON.BodyState) (k : Nat) (b : UInt8)
+    (hstop : LeanLLVM.Vellum.JsonScanIR.firstStop bs st k = none)
+    (hb : bs[k]? = some b)
+    (hne : ∀ st', LeanLLVM.JSON.bodyStep (LeanLLVM.JSON.carryAt bs st k) b ≠ .cont st') :
+    LeanLLVM.Vellum.JsonScanIR.carriedAt bs st (k + 1) =
+      LeanLLVM.Vellum.JsonScanIR.carriedAt bs st k :=
+  LeanLLVM.Vellum.JsonScanIR.carriedAt_succ_stop hstop hb hne
+
+/-! ### The JSON window scanner's lane machinery
+
+`LeanLLVM/Vellum/JsonScanLane.lean` holds the mask accumulator's step: one lane's
+`shl`/`or` leaves the model's `maskPref` fold, with the lane's structural bit
+decided by the two-word table.  The instruction chain, `laneStep`, the loop
+induction and `scanWindowLLVM_refines` are outstanding; that module's header
+records the measured per-lane count and the generator the chain is to come from.
+-/
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanLane.maskStep' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanLane.maskStep
+
+-- One lane's accumulated `or` is the model's prefix fold — the clause the ruling
+-- asks the body to satisfy.
+open LeanLLVM.JSON in
+example (bs : List UInt8) (m : BitVec 32) (stb : Bool) (k : Nat) (b : UInt8)
+    (hk : k < 32) (hb : bs[k]? = some b)
+    (hm : m = LeanLLVM.Vellum.JsonScanIR.maskPref bs k)
+    (hstb : stb = IsStructOrSpaceB b) :
+    (if stb = true then m ||| ((1 : BitVec 32) <<< k) else m) =
+      LeanLLVM.Vellum.JsonScanIR.maskPref bs (k + 1) :=
+  LeanLLVM.Vellum.JsonScanLane.maskStep bs m stb k b hk hb hm hstb
