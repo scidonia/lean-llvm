@@ -11,6 +11,7 @@ confused with the escape rules under test.
 import LeanLLVM
 import JsonMain
 import LeanLLVM.JSON.ScanBody
+import LeanLLVM.JSON.ScanWindow
 
 namespace LeanLLVMTest.Json
 
@@ -643,6 +644,123 @@ example : Utf8Need.step (.more 1 0x80 0xBF) 0x22 = Option.none :=
 open LeanLLVM.JSON in
 example : Utf8Need.step .none 0x80 = Option.none :=
   LeanLLVM.JSON.step_rejects_lead
+
+/-! ### The window fold
+
+`LeanLLVM/JSON/ScanWindow.lean`'s theorems, one per claim the fold makes: each mask
+read back lane by lane on the carry the byte rule held at that lane, the
+classification mask equal to the block layer's, the carry equal to the window's own
+byte run, well-formedness preserved across a window, and the carry's composition over
+two lists.  The alternative escape rule — parity over every backslash since the body's
+opening quote — is refused by a theorem on a fixed body rather than by a `#guard`: a
+comparison of two `Bool`s would assert nothing about the rule, while the theorem says
+the alternative is not a description of the fold. -/
+
+/-- info: 'LeanLLVM.JSON.windowOf_content_agrees' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_content_agrees
+
+/-- info: 'LeanLLVM.JSON.windowOf_delim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_delim
+
+/-- info: 'LeanLLVM.JSON.windowOf_stop_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_stop_close
+
+/-- info: 'LeanLLVM.JSON.windowOf_quote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_quote
+
+/-- info: 'LeanLLVM.JSON.windowOf_backslash' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_backslash
+
+/-- info: 'LeanLLVM.JSON.windowOf_structural' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_structural
+
+/-- info: 'LeanLLVM.JSON.windowAt_structural' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowAt_structural
+
+/-- info: 'LeanLLVM.JSON.windowOf_carry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_carry
+
+/-- info: 'LeanLLVM.JSON.windowOf_wellFormed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.windowOf_wellFormed
+
+/-- info: 'LeanLLVM.JSON.carryAt_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.carryAt_append
+
+/-- info: 'LeanLLVM.JSON.backslashParityEscapes_not_refines' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.backslashParityEscapes_not_refines
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {st : BodyState} {k : Nat} {b : UInt8},
+    k < 32 → bs[k]? = some b →
+      (windowOf bs st).content.getLsbD k = IsContentLane (carryAt bs st k) b :=
+  @LeanLLVM.JSON.windowOf_content_agrees
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {st : BodyState} {k : Nat} {b : UInt8},
+    k < 32 → bs[k]? = some b →
+      (windowOf bs st).delim.getLsbD k =
+        (match bodyStep (carryAt bs st k) b with | .closed => true | _ => false) :=
+  @LeanLLVM.JSON.windowOf_delim
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {st : BodyState} {k : Nat},
+    (windowOf bs st).stop = some (.close k) → (windowOf bs st).delim.getLsbD k = true :=
+  @LeanLLVM.JSON.windowOf_stop_close
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {st : BodyState} {k : Nat} {b : UInt8},
+    k < 32 → bs[k]? = some b → (∀ s, bodyStep (carryAt bs st k) b ≠ .refused s) →
+      (windowOf bs st).quote.getLsbD k = IsQuoteB b :=
+  @LeanLLVM.JSON.windowOf_quote
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {st : BodyState} {k : Nat} {b : UInt8},
+    k < 32 → bs[k]? = some b → (∀ s, bodyStep (carryAt bs st k) b ≠ .refused s) →
+      (windowOf bs st).backslash.getLsbD k = IsBackslashB b :=
+  @LeanLLVM.JSON.windowOf_backslash
+
+open LeanLLVM.JSON in
+example : ∀ (bs : List UInt8) (st : BodyState),
+    (windowOf bs st).structural = maskOfList bs :=
+  LeanLLVM.JSON.windowOf_structural
+
+open LeanLLVM.JSON in
+example : ∀ (bs : Bytes) (i : Nat) (h : i + 32 ≤ bs.size) (st : BodyState),
+    (windowAt bs i h st).structural = (scanBlock ⟨i⟩ (blockAt bs i h) 32).2.1 :=
+  LeanLLVM.JSON.windowAt_structural
+
+open LeanLLVM.JSON in
+example : ∀ (bs : List UInt8) (st : BodyState),
+    (windowOf bs st).carry = carryAt bs st 32 :=
+  LeanLLVM.JSON.windowOf_carry
+
+open LeanLLVM.JSON in
+example : ∀ {bs : List UInt8} {st : BodyState}, st.WellFormed →
+    (windowOf bs st).carry.WellFormed :=
+  @LeanLLVM.JSON.windowOf_wellFormed
+
+open LeanLLVM.JSON in
+example : ∀ (a b : List UInt8) (st : BodyState) (k : Nat),
+    carryAt (a ++ b) st (a.length + k) = carryAt b (carryAt a st a.length) k :=
+  LeanLLVM.JSON.carryAt_append
+
+open LeanLLVM.JSON in
+example :
+    ¬ (∀ (bs : List UInt8) (k : Nat), k < 32 → bs[k]? = some 0x22 →
+        ((windowOf bs BodyState.body).delim.getLsbD k = true ↔
+          backslashParityEscapes bs k = false)) :=
+  LeanLLVM.JSON.backslashParityEscapes_not_refines
 
 /-! ### The emitted classifier body
 
