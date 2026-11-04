@@ -1,4 +1,5 @@
 import LeanLLVM
+import LeanLLVM.Vellum.JsonScanABI
 
 open LeanLLVM.Vellum
 
@@ -1820,3 +1821,244 @@ example (fuel reserve : Nat) (f : LeanLLVM.Function) :
     envForBodySym LeanLLVM.Vellum.SeamContext.seamSymbol fuel reserve f =
       LeanLLVM.Vellum.SeamContext.envForBody fuel reserve f :=
   envForBodySym_comma fuel reserve f
+
+/-! ### The scanner window's ABI
+
+`LeanLLVM/Vellum/JsonScanABI.lean`: the state slot and status word encodings,
+the two round trips, the five-bit lane field's collision, the ABI's symbol, and
+`docs/contract.md` §5 as a record with the window's instance.  Each theorem is
+restated beside its pin, and every contract field is read by name so a field
+removed from the record fails elaboration here rather than passing silently. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.encodeFlags_inside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.encodeFlags_inside
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (st : LeanLLVM.JSON.BodyState) : (encodeFlags st).getLsbD 0 = st.inside :=
+  encodeFlags_inside st
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.encodeFlags_oddRun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.encodeFlags_oddRun
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (st : LeanLLVM.JSON.BodyState) : (encodeFlags st).getLsbD 1 = st.oddRun :=
+  encodeFlags_oddRun st
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.byteOf_ofNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.byteOf_ofNat
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (b : UInt8) : byteOf (BitVec.ofNat 32 b.toNat) = b :=
+  byteOf_ofNat b
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.decodeState_encodeState' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.decodeState_encodeState
+
+open LeanLLVM.Vellum.JsonScanABI in
+example {st : LeanLLVM.JSON.BodyState} (h : st.WellFormed) :
+    decodeState (encodeState st) = st :=
+  decodeState_encodeState h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.reasonOfCode_reasonCode' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.reasonOfCode_reasonCode
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (s : LeanLLVM.JSON.BodyStop) : reasonOfCode (reasonCode s) = s :=
+  reasonOfCode_reasonCode s
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.reasonCode_reasonOfCode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.reasonCode_reasonOfCode
+
+open LeanLLVM.Vellum.JsonScanABI in
+example {r : Nat} (h0 : 0 < r) (h3 : r < 4) : reasonCode (reasonOfCode r) = r :=
+  reasonCode_reasonOfCode h0 h3
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.encodeStatusNat_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.encodeStatusNat_lt
+
+open LeanLLVM.Vellum.JsonScanABI in
+example {s : Status} (h : s.LanesInWindow) : encodeStatusNat s < 2 ^ 32 :=
+  encodeStatusNat_lt h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.ofNat32_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.ofNat32_toNat
+
+open LeanLLVM.Vellum.JsonScanABI in
+example {n : Nat} (h : n < 2 ^ 32) : (BitVec.ofNat 32 n).toNat = n :=
+  ofNat32_toNat h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.decodeStatusNat_encodeStatusNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.decodeStatusNat_encodeStatusNat
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (s : Status) (h : s.LanesInWindow) :
+    decodeStatusNat (encodeStatusNat s) = s :=
+  decodeStatusNat_encodeStatusNat s h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.decodeStatus_encodeStatus' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.decodeStatus_encodeStatus
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (s : Status) (h : s.LanesInWindow) : decodeStatus (encodeStatus s) = s :=
+  decodeStatus_encodeStatus s h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.encodeStatusNat_decodeStatusNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.encodeStatusNat_decodeStatusNat
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (n : Nat) (h : Status.InImage n) :
+    encodeStatusNat (decodeStatusNat n) = n :=
+  encodeStatusNat_decodeStatusNat n h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.decodeStatusNat_lanesInWindow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.decodeStatusNat_lanesInWindow
+
+open LeanLLVM.Vellum.JsonScanABI in
+example {n : Nat} (h : Status.InImage n) : (decodeStatusNat n).LanesInWindow :=
+  decodeStatusNat_lanesInWindow h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.encodeStatusNat_inImage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.encodeStatusNat_inImage
+
+open LeanLLVM.Vellum.JsonScanABI in
+example {s : Status} (h : s.LanesInWindow) : Status.InImage (encodeStatusNat s) :=
+  encodeStatusNat_inImage h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.status_inImage_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.status_inImage_iff
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (n : Nat) :
+    Status.InImage n ↔ ∃ s : Status, s.LanesInWindow ∧ encodeStatusNat s = n :=
+  status_inImage_iff n
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.encodeStatus_decodeStatus' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.encodeStatus_decodeStatus
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (w : BitVec 32) (h : Status.InImage w.toNat) :
+    encodeStatus (decodeStatus w) = w :=
+  encodeStatus_decodeStatus w h
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.laneFieldFive_lane31_collides' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.laneFieldFive_lane31_collides
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : laneFieldFive (some 31) = laneFieldFive none :=
+  laneFieldFive_lane31_collides
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.lane31_fiveBit_wraps' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.lane31_fiveBit_wraps
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : (31 + 1) % 32 = 0 ∧ laneFieldSix (some 31) ≠ laneFieldSix none :=
+  lane31_fiveBit_wraps
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.closeAt31_stop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.closeAt31_stop
+
+open LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON in
+example : (windowOf closeAt31 BodyState.body).stop = some (.close 31) :=
+  closeAt31_stop
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.controlAt31_stop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.controlAt31_stop
+
+open LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON in
+example :
+    (windowOf controlAt31 BodyState.body).stop = some (.refuse 31 .control) :=
+  controlAt31_stop
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.close31_roundTrip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.close31_roundTrip
+
+open LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON in
+example :
+    decodeStatus (encodeStatus (.ok ((windowOf closeAt31 BodyState.body).stop))) =
+      .ok ((windowOf closeAt31 BodyState.body).stop) :=
+  close31_roundTrip
+
+/-- info: 'LeanLLVM.Vellum.JsonScanABI.refuse31_roundTrip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanABI.refuse31_roundTrip
+
+open LeanLLVM.Vellum.JsonScanABI LeanLLVM.JSON in
+example :
+    decodeStatus (encodeStatus (.ok ((windowOf controlAt31 BodyState.body).stop))) =
+      .ok ((windowOf controlAt31 BodyState.body).stop) :=
+  refuse31_roundTrip
+
+-- The ABI's sizes and symbol.
+open LeanLLVM.Vellum.JsonScanABI in
+example : stateBytes = 16 := rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : outBytes = 4 := rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : readExtent = 32 := rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : scanSymbol = "leanllvm_json_scan_window" := rfl
+
+-- `jsonScanContract`'s §5 fields, each read by name: a field removed from the
+-- record fails to elaborate here rather than passing silently.
+open LeanLLVM.Vellum.JsonScanABI in
+example : jsonScanContract.readBytes_ = 32 := rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : jsonScanContract.outBytes = 4 := rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : jsonScanContract.stateBytes = 16 := rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (m m' : LeanLLVM.Mem) (in_ out state valid : Nat) :
+    jsonScanContract.footprint m m' in_ out state valid ↔
+      scanFootprint m m' in_ out state valid :=
+  Iff.rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (in_ out state valid : Nat) :
+    jsonScanContract.slotDisjoint in_ out state valid ↔
+      scanSlotDisjoint in_ out state valid :=
+  Iff.rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : jsonScanContract.ownedByCaller := trivial
+
+open LeanLLVM.Vellum.JsonScanABI in
+example (in_ out state : Nat) :
+    jsonScanContract.lifetimes in_ out state ↔ scanLifetimes in_ out state :=
+  Iff.rfl
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : jsonScanContract.alignmentFree := trivial
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : jsonScanContract.noIndexArithmetic := trivial
+
+open LeanLLVM.Vellum.JsonScanABI in
+example : ¬ jsonScanContract.capacityExhausted := by
+  intro h
+  exact h
