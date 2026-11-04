@@ -952,6 +952,410 @@ theorem scanCharsFrom_utf8_f4 (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
   unfold scanCharsL
   simp [scanCons, scanCharsFrom, ByteString.data_toList_cons, ByteString.literal_data_toList, h1n, h1n', h2n, h2n', h3n, h3n']
 
+/-! ##### The scanner's refusals
+
+The equations above state each accepting branch.  These state each refusing one:
+the argument's shape, the side conditions that select the branch, and the reason
+and offset the scan reports.  Each is the accepting equations' mirror — the
+`\uXXXX` and surrogate branches refuse in several places, so they have several —
+and together the two families fix the scan's value on every byte shape, refusal
+included.  Where the refusal is `ended` the tail is bounded only by its length,
+because the scanner finds out the subject ran out rather than which bytes would
+have followed. -/
+
+theorem scanCharsFrom_escape_ended (off : Nat) :
+    scanCharsFrom off (0x5C +: empty) = .error .ended := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, ByteString.data_toList_empty]
+
+theorem scanCharsFrom_escape_bad (off : Nat) (e : UInt8) (rest1 : Bytes)
+    (hv : EscVal e = none) (he : e ≠ 0x75) :
+    scanCharsFrom off (0x5C +: e +: rest1) = .error (.badEscape off) := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, he]
+
+theorem scanCharsFrom_uchar_ended (off : Nat) (l : Bytes) (hl : l.length < 4) :
+    scanCharsFrom off (0x5C +: 0x75 +: l) = .error .ended := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  have hl' : l.data.toList.length < 4 := by
+    rw [Array.length_toList]
+    exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, r⟩⟩⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv]
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_uchar_badHex (off : Nat) (h0 h1 h2 h3 : UInt8) (rest2 : Bytes)
+    (hx : Hex4 h0 h1 h2 h3 = none) :
+    scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest2) =
+      .error (.badEscape (off + 2)) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, hx]
+
+theorem scanCharsFrom_uchar_low (off : Nat) (h0 h1 h2 h3 : UInt8) (rest2 : Bytes) (c : Nat)
+    (hx : Hex4 h0 h1 h2 h3 = some c) (hlo : 0xDC00 ≤ c ∧ c ≤ 0xDFFF) :
+    scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest2) =
+      .error (.unpairedSurrogate off) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  have hhi : ¬ (0xD800 ≤ c ∧ c ≤ 0xDBFF) := by omega
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, hx, hhi, hlo]
+
+theorem scanCharsFrom_pair_ended (off : Nat) (h0 h1 h2 h3 : UInt8) (rest2 : Bytes) (hi : Nat)
+    (hx : Hex4 h0 h1 h2 h3 = some hi) (hhi : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF)
+    (hr : rest2.length < 6) :
+    scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: rest2) =
+      .error (.unpairedSurrogate off) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  have hr' : rest2.data.toList.length < 6 := by
+    rw [Array.length_toList]
+    exact hr
+  rw [← ByteString.literal_data_toList rest2, scanCharsFrom]
+  unfold scanCharsL
+  rcases hr'' : rest2.data.toList with
+    _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, _ | ⟨e, _ | ⟨f, r⟩⟩⟩⟩⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv, hx, hhi]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv, hx, hhi]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv, hx, hhi]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv, hx, hhi]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv, hx, hhi]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hv, hx, hhi]
+  · exfalso
+    rw [hr''] at hr'
+    simp only [List.length_cons] at hr'
+    omega
+
+theorem scanCharsFrom_pair_noEscape (off : Nat) (h0 h1 h2 h3 : UInt8) (z0 : UInt8) (zs : Bytes)
+    (hi : Nat) (hx : Hex4 h0 h1 h2 h3 = some hi) (hhi : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF)
+    (hz : z0 ≠ 0x5C) :
+    scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: z0 +: zs) =
+      .error (.unpairedSurrogate off) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, hx, hhi, hz]
+
+theorem scanCharsFrom_pair_noU (off : Nat) (h0 h1 h2 h3 : UInt8) (z1 : UInt8) (zs : Bytes)
+    (hi : Nat) (hx : Hex4 h0 h1 h2 h3 = some hi) (hhi : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF)
+    (hz : z1 ≠ 0x75) :
+    scanCharsFrom off (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: z1 +: zs) =
+      .error (.unpairedSurrogate off) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, hx, hhi, hz]
+
+theorem scanCharsFrom_pair_badHex (off : Nat) (h0 h1 h2 h3 l0 l1 l2 l3 : UInt8)
+    (rest3 : Bytes) (hi : Nat) (hx : Hex4 h0 h1 h2 h3 = some hi)
+    (hhi : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF) (hy : Hex4 l0 l1 l2 l3 = none) :
+    scanCharsFrom off
+        (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+          l0 +: l1 +: l2 +: l3 +: rest3) =
+      .error (.badEscape (off + 8)) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, hx, hhi, hy]
+
+theorem scanCharsFrom_pair_badLow (off : Nat) (h0 h1 h2 h3 l0 l1 l2 l3 : UInt8)
+    (rest3 : Bytes) (hi lo : Nat) (hx : Hex4 h0 h1 h2 h3 = some hi)
+    (hhi : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF) (hy : Hex4 l0 l1 l2 l3 = some lo)
+    (hlo : ¬ (0xDC00 ≤ lo ∧ lo ≤ 0xDFFF)) :
+    scanCharsFrom off
+        (0x5C +: 0x75 +: h0 +: h1 +: h2 +: h3 +: 0x5C +: 0x75 +:
+          l0 +: l1 +: l2 +: l3 +: rest3) =
+      .error (.unpairedSurrogate off) := by
+  have hv : EscVal (0x75 : UInt8) = none := rfl
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hv, hx, hhi, hy, hlo]
+
+theorem scanCharsFrom_control (off : Nat) (b : UInt8) (rest : Bytes)
+    (h1 : b.toNat < 0x80) (h2 : ¬ 0x20 ≤ b.toNat) :
+    scanCharsFrom off (b +: rest) = .error (.controlCharacter off) := by
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at h2
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at h2
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hq, hs, h1, h2]
+
+theorem scanCharsFrom_utf8_two_ended (off : Nat) (b : UInt8) (h0 : 0xC2 ≤ b) (h0' : b ≤ 0xDF) :
+    scanCharsFrom off (b +: empty) = .error .ended := by
+  have h0n : (0xC2 : Nat) ≤ b.toNat := by simpa using le_toNat h0
+  have h0n' : b.toNat ≤ (0xDF : Nat) := by simpa using le_toNat h0'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at h0n
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at h0n
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, ByteString.data_toList_empty, hq, hs, hlt, h0n, h0n']
+
+theorem scanCharsFrom_utf8_two_bad (off : Nat) (b0 b1 : UInt8) (rest1 : Bytes)
+    (h0 : 0xC2 ≤ b0) (h0' : b0 ≤ 0xDF) (hb : ¬ (0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF)) :
+    scanCharsFrom off (b0 +: b1 +: rest1) = .error (.badUTF8 off) := by
+  have h0n : (0xC2 : Nat) ≤ b0.toNat := by simpa using le_toNat h0
+  have h0n' : b0.toNat ≤ (0xDF : Nat) := by simpa using le_toNat h0'
+  have hq : b0 ≠ 0x22 := by intro h; subst h; simp at h0n
+  have hs : b0 ≠ 0x5C := by intro h; subst h; simp at h0n
+  have hlt : ¬ b0.toNat < 0x80 := by omega
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hq, hs, hlt, h0n, h0n', hb]
+
+theorem scanCharsFrom_utf8_e0_ended (off : Nat) (l : Bytes) (hl : l.length < 2) :
+    scanCharsFrom off (0xE0 +: l) = .error .ended := by
+  have hl' : l.data.toList.length < 2 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, r⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_e1ec_ended (off : Nat) (b : UInt8) (l : Bytes)
+    (hb : 0xE1 ≤ b) (hb' : b ≤ 0xEC) (hl : l.length < 2) :
+    scanCharsFrom off (b +: l) = .error .ended := by
+  have hbn : (0xE1 : Nat) ≤ b.toNat := by simpa using le_toNat hb
+  have hbn' : b.toNat ≤ (0xEC : Nat) := by simpa using le_toNat hb'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at hbn
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at hbn
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro h; subst h; simp at hbn
+  have hl' : l.data.toList.length < 2 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, r⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      hbn, hbn']
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      hbn, hbn']
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_ed_ended (off : Nat) (l : Bytes) (hl : l.length < 2) :
+    scanCharsFrom off (0xED +: l) = .error .ended := by
+  have hl' : l.data.toList.length < 2 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, r⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_eeef_ended (off : Nat) (b : UInt8) (l : Bytes)
+    (hb : 0xEE ≤ b) (hb' : b ≤ 0xEF) (hl : l.length < 2) :
+    scanCharsFrom off (b +: l) = .error .ended := by
+  have hbn : (0xEE : Nat) ≤ b.toNat := by simpa using le_toNat hb
+  have hbn' : b.toNat ≤ (0xEF : Nat) := by simpa using le_toNat hb'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at hbn
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at hbn
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro h; subst h; simp at hbn
+  have h31 : ¬ (0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC) := by omega
+  have hed : b ≠ 0xED := by intro h; subst h; simp at hbn
+  have hl' : l.data.toList.length < 2 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, r⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      h31, hed, hbn, hbn']
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      h31, hed, hbn, hbn']
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_f0_ended (off : Nat) (l : Bytes) (hl : l.length < 3) :
+    scanCharsFrom off (0xF0 +: l) = .error .ended := by
+  have hl' : l.data.toList.length < 3 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, _ | ⟨b2, r⟩⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_f1f3_ended (off : Nat) (b : UInt8) (l : Bytes)
+    (hb : 0xF1 ≤ b) (hb' : b ≤ 0xF3) (hl : l.length < 3) :
+    scanCharsFrom off (b +: l) = .error .ended := by
+  have hbn : (0xF1 : Nat) ≤ b.toNat := by simpa using le_toNat hb
+  have hbn' : b.toNat ≤ (0xF3 : Nat) := by simpa using le_toNat hb'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at hbn
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at hbn
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro h; subst h; simp at hbn
+  have h31 : ¬ (0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC) := by omega
+  have hed : b ≠ 0xED := by intro h; subst h; simp at hbn
+  have h33 : ¬ (0xEE ≤ b.toNat ∧ b.toNat ≤ 0xEF) := by omega
+  have hf0 : b ≠ 0xF0 := by intro h; subst h; simp at hbn
+  have hl' : l.data.toList.length < 3 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, _ | ⟨b2, r⟩⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      h31, hed, h33, hf0, hbn, hbn']
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      h31, hed, h33, hf0, hbn, hbn']
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal, hq, hs, hlt, htwo, he0,
+      h31, hed, h33, hf0, hbn, hbn']
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_f4_ended (off : Nat) (l : Bytes) (hl : l.length < 3) :
+    scanCharsFrom off (0xF4 +: l) = .error .ended := by
+  have hl' : l.data.toList.length < 3 := by rw [Array.length_toList]; exact hl
+  rw [← ByteString.literal_data_toList l, scanCharsFrom]
+  unfold scanCharsL
+  rcases hl'' : l.data.toList with _ | ⟨a, _ | ⟨b1, _ | ⟨b2, r⟩⟩⟩
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · simp [ByteString.data_toList_cons, ByteString.data_toList_literal]
+  · exfalso
+    rw [hl''] at hl'
+    simp only [List.length_cons] at hl'
+    omega
+
+theorem scanCharsFrom_utf8_e0_bad (off : Nat) (b1 b2 : UInt8) (rest1 : Bytes)
+    (h : ¬ (0xA0 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF)) :
+    scanCharsFrom off (0xE0 +: b1 +: b2 +: rest1) = .error (.badUTF8 off) := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, h]
+
+theorem scanCharsFrom_utf8_e1ec_bad (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
+    (hb : 0xE1 ≤ b) (hb' : b ≤ 0xEC)
+    (h : ¬ (0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF)) :
+    scanCharsFrom off (b +: b1 +: b2 +: rest1) = .error (.badUTF8 off) := by
+  have hbn : (0xE1 : Nat) ≤ b.toNat := by simpa using le_toNat hb
+  have hbn' : b.toNat ≤ (0xEC : Nat) := by simpa using le_toNat hb'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at hbn
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at hbn
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro hh; subst hh; simp at hbn
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hq, hs, hlt, htwo, he0, hbn, hbn', h]
+
+theorem scanCharsFrom_utf8_ed_bad (off : Nat) (b1 b2 : UInt8) (rest1 : Bytes)
+    (h : ¬ (0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x9F ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF)) :
+    scanCharsFrom off (0xED +: b1 +: b2 +: rest1) = .error (.badUTF8 off) := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, h]
+
+theorem scanCharsFrom_utf8_eeef_bad (off : Nat) (b b1 b2 : UInt8) (rest1 : Bytes)
+    (hb : 0xEE ≤ b) (hb' : b ≤ 0xEF)
+    (h : ¬ (0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧ b2.toNat ≤ 0xBF)) :
+    scanCharsFrom off (b +: b1 +: b2 +: rest1) = .error (.badUTF8 off) := by
+  have hbn : (0xEE : Nat) ≤ b.toNat := by simpa using le_toNat hb
+  have hbn' : b.toNat ≤ (0xEF : Nat) := by simpa using le_toNat hb'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at hbn
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at hbn
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro hh; subst hh; simp at hbn
+  have h31 : ¬ (0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC) := by omega
+  have hed : b ≠ 0xED := by intro hh; subst hh; simp at hbn
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hq, hs, hlt, htwo, he0, h31, hed, hbn, hbn', h]
+
+theorem scanCharsFrom_utf8_f0_bad (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
+    (h : ¬ (0x90 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧
+      b2.toNat ≤ 0xBF ∧ 0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF)) :
+    scanCharsFrom off (0xF0 +: b1 +: b2 +: b3 +: rest1) = .error (.badUTF8 off) := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, h]
+
+theorem scanCharsFrom_utf8_f1f3_bad (off : Nat) (b b1 b2 b3 : UInt8) (rest1 : Bytes)
+    (hb : 0xF1 ≤ b) (hb' : b ≤ 0xF3)
+    (h : ¬ (0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0xBF ∧ 0x80 ≤ b2.toNat ∧
+      b2.toNat ≤ 0xBF ∧ 0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF)) :
+    scanCharsFrom off (b +: b1 +: b2 +: b3 +: rest1) = .error (.badUTF8 off) := by
+  have hbn : (0xF1 : Nat) ≤ b.toNat := by simpa using le_toNat hb
+  have hbn' : b.toNat ≤ (0xF3 : Nat) := by simpa using le_toNat hb'
+  have hq : b ≠ 0x22 := by intro h; subst h; simp at hbn
+  have hs : b ≠ 0x5C := by intro h; subst h; simp at hbn
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro hh; subst hh; simp at hbn
+  have h31 : ¬ (0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC) := by omega
+  have hed : b ≠ 0xED := by intro hh; subst hh; simp at hbn
+  have h33 : ¬ (0xEE ≤ b.toNat ∧ b.toNat ≤ 0xEF) := by omega
+  have hf0 : b ≠ 0xF0 := by intro hh; subst hh; simp at hbn
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, hq, hs, hlt, htwo, he0, h31, hed, h33, hf0, hbn, hbn', h]
+
+theorem scanCharsFrom_utf8_f4_bad (off : Nat) (b1 b2 b3 : UInt8) (rest1 : Bytes)
+    (h : ¬ (0x80 ≤ b1.toNat ∧ b1.toNat ≤ 0x8F ∧ 0x80 ≤ b2.toNat ∧
+      b2.toNat ≤ 0xBF ∧ 0x80 ≤ b3.toNat ∧ b3.toNat ≤ 0xBF)) :
+    scanCharsFrom off (0xF4 +: b1 +: b2 +: b3 +: rest1) = .error (.badUTF8 off) := by
+  rw [scanCharsFrom]
+  unfold scanCharsL
+  simp [ByteString.data_toList_cons, h]
+
+theorem scanCharsFrom_utf8_lead (off : Nat) (b : UInt8) (rest : Bytes)
+    (hge : 0x80 ≤ b.toNat) (hbad : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xF4)) :
+    scanCharsFrom off (b +: rest) = .error (.badUTF8 off) := by
+  have hq : b ≠ 0x22 := by intro h; subst h; exact absurd hge (by decide)
+  have hs : b ≠ 0x5C := by intro h; subst h; exact absurd hge (by decide)
+  have hlt : ¬ b.toNat < 0x80 := by omega
+  have htwo : ¬ (0xC2 ≤ b.toNat ∧ b.toNat ≤ 0xDF) := by omega
+  have he0 : b ≠ 0xE0 := by intro h; subst h; exact hbad ⟨by decide, by decide⟩
+  have h31 : ¬ (0xE1 ≤ b.toNat ∧ b.toNat ≤ 0xEC) := by omega
+  have hed : b ≠ 0xED := by intro h; subst h; exact hbad ⟨by decide, by decide⟩
+  have h33 : ¬ (0xEE ≤ b.toNat ∧ b.toNat ≤ 0xEF) := by omega
+  have hf0 : b ≠ 0xF0 := by intro h; subst h; exact hbad ⟨by decide, by decide⟩
+  have h41 : ¬ (0xF1 ≤ b.toNat ∧ b.toNat ≤ 0xF3) := by omega
+  have hf4 : b ≠ 0xF4 := by intro h; subst h; exact hbad ⟨by decide, by decide⟩
+  rw [scanCharsFrom]
+  cases hl : rest.data.toList with
+  | nil =>
+    have hemp : rest = empty := by
+      apply ByteString.eq_of_data_toList_eq
+      rw [hl, ByteString.data_toList_empty]
+    subst hemp
+    rw [ByteString.data_toList_cons, ByteString.data_toList_empty, scanCharsL.eq_7 off b hq hs]
+    simp only [ite_true, ite_false, hlt, htwo, he0, h31, hed, h33, hf0, h41, hf4, and_self,
+      and_true, true_and]
+  | cons b1 rest1 =>
+    rw [ByteString.data_toList_cons, hl, scanCharsL.eq_6 off b b1 rest1 hq hs]
+    simp only [ite_true, ite_false, hlt, htwo, he0, h31, hed, h33, hf0, h41, hf4, and_self,
+      and_true, true_and]
+
 /-! #### Character and byte facts
 
 The strict character policy on the relation's side, and the arithmetic the branch
