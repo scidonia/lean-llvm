@@ -10,10 +10,6 @@ confused with the escape rules under test.
 -/
 import LeanLLVM
 import JsonMain
-import LeanLLVM.JSON.ScanBody
-import LeanLLVM.JSON.ScanWindow
-import LeanLLVM.JSON.ScanString
-import LeanLLVM.JSON.ScanBlocks
 
 namespace LeanLLVMTest.Json
 
@@ -902,30 +898,17 @@ end
 
 `LeanLLVM/JSON/ScanBlocks.lean`: the whole-scan statement `docs/contract.md:89` names, and
 the three cases the block model was opened with.  Those cases come first because they are
-the composition in miniature: a two-byte character whose continuation is still owed at the
-thirty-first lane, a surrogate pair whose twelve bytes the run consumes before the quote
-closes it, and a control byte the fold refuses at the lane the run refuses at.  Each
-`#guard` writes its expectation out by hand; none reads a value back out of the definition
-it tests.  Then the footprints, and a restatement of each statement beside its pin,
-because a build passes for a theorem that grew a hypothesis and a footprint does not name
-a conclusion. -/
+the composition in miniature: a surrogate pair whose twelve bytes the run consumes before
+the quote closes it, and a control byte the fold refuses at the lane the run refuses at.
+The character that straddles a window boundary is scanned below, with the one wholly
+inside a window, so the two splits are read together.  Each `#guard` writes its expectation
+out by hand; none reads a value back out of the definition it tests.  Then the footprints,
+and a restatement of each statement beside its pin, because a build passes for a theorem
+that grew a hypothesis and a footprint does not name a conclusion. -/
 
 namespace LeanLLVMTest.Json
 
 open LeanLLVM.JSON
-
-/-- Thirty content lanes, then a two-byte character: its lead byte is lane thirty and its
-continuation lane thirty-one, both inside the one window, so the fold's carry after
-thirty-one lanes still owes the continuation and the thirty-second lane clears it. -/
-def splitWindow : List UInt8 := List.replicate 30 0x61 ++ [0xC3, 0xA9]
-
-#guard (carryAt splitWindow BodyState.body 31) =
-  (⟨true, false, Utf8Need.more 1 0x80 0xBF⟩ : BodyState)
-#guard (carryAt splitWindow BodyState.body 32) = BodyState.body
-#guard (windowOf splitWindow BodyState.body).carry = BodyState.body
-#guard (windowOf splitWindow BodyState.body).stop = none
-#guard bodyRun (ByteString.literal splitWindow) 32 0 BodyState.body =
-  .open BodyState.body 32
 
 /-- `\uD83D\uDE00` and the quote that follows it: twelve bytes of escape, and the fold's
 only delimiter lane is the thirteenth. -/
@@ -998,6 +981,229 @@ example : ∀ {bs : Bytes} {q : Nat} {s : Refusal}, bs[q]? = some 0x22 →
 example : ∀ (bs : Bytes) (i : Nat), bs.size ≤ i → ∀ (st : BodyState),
     tailRun bs i st = .error (.ended, i) :=
   LeanLLVM.JSON.tailRun_ended
+
+end LeanLLVMTest.Json
+
+/-! ### Fixed windows and tails
+
+The calls the theorem statements quantify over, as closed decisions: one full block read
+field by field in two body states, both escape parities on the byte rule's own decision,
+the refused lane, a two-byte character split across a window boundary and the same
+character carried wholly inside one, a close inside the second window, and the tail of the
+last ten bytes.  Every equality and every refusal below has an affirmative control in
+this run — the same bytes in a neighbouring state, or the same reading on a window that
+clears, closes or accepts — so a fold or a run that answered one way for every input
+would fail one of the pair.
+
+No expectation is read back out of the definition it tests: the masks, stops and indices
+are hand-written constants, and the two-against-three-backslash pair is the control that
+makes the parity reading a reading rather than a constant.  The footprints and statement
+restatements for these theorems are in the sections above, beside the module each pins. -/
+
+namespace LeanLLVMTest.Json
+
+open LeanLLVM.JSON
+
+/-- The block: a quote, a backslash and the byte it escapes, a tab, content lanes, and a
+two-byte character across the last two lanes. -/
+def specBlock : Block32 :=
+  fun k =>
+    match k.val with
+    | 0 => 0x22
+    | 1 => 0x5C
+    | 2 => 0x6E
+    | 3 => 0x09
+    | 30 => 0xC3
+    | 31 => 0xA9
+    | _ => 0x61
+
+/-- The same block as the lane list the fold reads. -/
+def specWindow : List UInt8 := List.ofFn specBlock
+
+/- Outside a body the quote at lane zero opens one, the tab at lane three is the body's
+own refusal, lanes four to twenty-nine are content, and the two-byte character completes
+inside the window: no delimiter, and a carry that is the body state.  `structural` is the
+block's decision and is the same in both states, which is what makes its equality with
+`maskOf` a claim about the block rather than about the state. -/
+#guard (windowOf specWindow BodyState.init).structural = (0x0000000B : BitVec 32)
+#guard (windowOf specWindow BodyState.init).quote = (0x00000001 : BitVec 32)
+#guard (windowOf specWindow BodyState.init).backslash = (0x00000002 : BitVec 32)
+#guard (windowOf specWindow BodyState.init).content = (0x3FFFFFF0 : BitVec 32)
+#guard (windowOf specWindow BodyState.init).delim = (0 : BitVec 32)
+#guard (windowOf specWindow BodyState.init).stop = some (.refuse 3 .control)
+#guard (windowOf specWindow BodyState.init).carry = BodyState.body
+#guard (windowOf specWindow BodyState.init).structural = maskOf specBlock
+
+/- The control: the same bytes read as a body already open, where the first quote closes
+it and the tab is refused behind that earlier stop.  `delim` and `stop` move; the three
+masks that carry the block's own decisions do not. -/
+#guard (windowOf specWindow BodyState.body).delim = (0x00000001 : BitVec 32)
+#guard (windowOf specWindow BodyState.body).stop = some (.close 0)
+#guard (windowOf specWindow BodyState.body).structural = maskOf specBlock
+#guard (windowOf specWindow BodyState.body).content = (0x3FFFFFF0 : BitVec 32)
+#guard (windowOf specWindow BodyState.body).quote = (0x00000001 : BitVec 32)
+#guard (windowOf specWindow BodyState.body).backslash = (0x00000002 : BitVec 32)
+
+/- Two backslashes and the quote: the run's parity is even at the second quote, so it
+closes the body, and the opening quote at lane zero is the only other quote lane. -/
+def evenRunWindow : List UInt8 := [0x22, 0x5C, 0x5C, 0x22]
+
+#guard (windowOf evenRunWindow BodyState.init).stop = some (.close 3)
+#guard (windowOf evenRunWindow BodyState.init).delim = (0x00000008 : BitVec 32)
+#guard (windowOf evenRunWindow BodyState.init).content = (0 : BitVec 32)
+
+/- One backslash, then the quote: the parity is odd, the quote is escaped, and the body
+does not close — the same reading, the opposite side. -/
+def oddRunWindow : List UInt8 := [0x5C, 0x22]
+
+#guard (windowOf oddRunWindow BodyState.body).stop = none
+#guard (windowOf oddRunWindow BodyState.body).delim = (0 : BitVec 32)
+#guard (windowOf oddRunWindow BodyState.body).quote = (0x00000002 : BitVec 32)
+
+/- Three backslashes and the quote: odd again, so still no close.  The backslash lane is
+three bits wide and the quote lane is marked while the delimiter is not, which is what
+keeps the quote lane and the delimiter lane apart. -/
+def oddRunThree : List UInt8 := [0x5C, 0x5C, 0x5C, 0x22]
+
+#guard (windowOf oddRunThree BodyState.body).stop = none
+#guard (windowOf oddRunThree BodyState.body).delim = (0 : BitVec 32)
+#guard (windowOf oddRunThree BodyState.body).backslash = (0x00000007 : BitVec 32)
+#guard (windowOf oddRunThree BodyState.body).quote = (0x00000008 : BitVec 32)
+
+/- The control for both parities: two backslashes and the quote close at lane two. -/
+#guard (windowOf [0x5C, 0x5C, 0x22] BodyState.body).stop = some (.close 2)
+
+/-- A content lane, a backslash and the quote it escapes, then a content lane: the
+escaped quote is neither a delimiter nor content, and the fold's `content` lane is the
+predicate's decision on every lane of the window. -/
+def escapeLaneWindow : List UInt8 := [0x61, 0x5C, 0x22, 0x62]
+
+#guard (windowOf escapeLaneWindow BodyState.body).content = (0x00000009 : BitVec 32)
+#guard (windowOf escapeLaneWindow BodyState.body).delim = (0 : BitVec 32)
+#guard (windowOf escapeLaneWindow BodyState.body).stop = none
+#guard (windowOf escapeLaneWindow BodyState.body).content.getLsbD 2 = false
+#guard IsContentLane (carryAt escapeLaneWindow BodyState.body 2) 0x22 = false
+#guard (windowOf escapeLaneWindow BodyState.body).content.getLsbD 0 = true
+#guard IsContentLane (carryAt escapeLaneWindow BodyState.body 0) 0x61 = true
+#guard (escapeLaneWindow.zipIdx.take 32).all (fun p =>
+  (windowOf escapeLaneWindow BodyState.body).content.getLsbD p.2 =
+    IsContentLane (carryAt escapeLaneWindow BodyState.body p.2) p.1)
+
+/- The closing quote's own lane, for the same reading: content one at lane zero and the
+delimiter set at lane one. -/
+#guard (windowOf [0x61, 0x22] BodyState.body).content = (0x00000001 : BitVec 32)
+#guard (windowOf [0x61, 0x22] BodyState.body).delim = (0x00000002 : BitVec 32)
+#guard IsContentLane (carryAt [0x61, 0x22] BodyState.body 1) 0x22 = false
+
+/- A lead byte and the quote that follows it: the sequence is still owed at lane one, so
+the rule refuses the quote as `badUtf8` and the quote lane is not set. -/
+#guard (windowOf [0xC3, 0x22] BodyState.body).stop = some (.refuse 1 .badUtf8)
+#guard (windowOf [0xC3, 0x22] BodyState.body).quote = (0 : BitVec 32)
+
+/- The control: a content byte in place of the lead, where the quote lane is set and the
+stop is the close. -/
+#guard (windowOf [0x61, 0x22] BodyState.body).stop = some (.close 1)
+#guard (windowOf [0x61, 0x22] BodyState.body).quote = (0x00000002 : BitVec 32)
+
+/-- Thirty-one content lanes and the lead byte of a two-byte character in the last lane:
+the window cannot clear the sequence, so its carry owes the continuation at lane
+thirty-two.  The character wholly inside a window sits immediately below as its control. -/
+def splitBoundary : List UInt8 := List.replicate 31 0x61 ++ [0xC3]
+
+#guard (windowOf splitBoundary BodyState.body).stop = none
+#guard (windowOf splitBoundary BodyState.body).content = (0x7FFFFFFF : BitVec 32)
+#guard (windowOf splitBoundary BodyState.body).carry =
+  (⟨true, false, Utf8Need.more 1 0x80 0xBF⟩ : BodyState)
+#guard bodyRun (ByteString.literal (splitBoundary ++ [0xA9])) 32 0 BodyState.body =
+  .open (⟨true, false, Utf8Need.more 1 0x80 0xBF⟩ : BodyState) 32
+
+/-- The control: thirty content lanes, then the same two-byte character, both bytes inside
+the one window — the fold's carry after thirty-one lanes still owes the continuation and
+the thirty-second lane clears it.  The boundary case above and this one are the same
+reading at the two sides of a window's edge. -/
+def splitWindow : List UInt8 := List.replicate 30 0x61 ++ [0xC3, 0xA9]
+
+#guard (carryAt splitWindow BodyState.body 31) =
+  (⟨true, false, Utf8Need.more 1 0x80 0xBF⟩ : BodyState)
+#guard (carryAt splitWindow BodyState.body 32) = BodyState.body
+#guard (windowOf splitWindow BodyState.body).carry = BodyState.body
+#guard (windowOf splitWindow BodyState.body).stop = none
+#guard bodyRun (ByteString.literal splitWindow) 32 0 BodyState.body =
+  .open BodyState.body 32
+
+/-- The lead byte at carrier index thirty-two, its continuation at thirty-three: carried
+into a body, the next step clears the sequence and the quote after it closes the body at
+index thirty-four. -/
+def splitBody : Bytes := ByteString.literal ((0x22 :: splitBoundary) ++ [0xA9, 0x22])
+
+#guard scanStringBlocks splitBody 0 = .ok 35
+
+/-- The control: the same carrier without the lead byte.  The continuation byte is then
+read with nothing outstanding and the rule refuses it, so the acceptance above is the
+carry's rather than a reading that ignores the requirement. -/
+def noLeadBody : Bytes :=
+  ByteString.literal ((0x22 :: List.replicate 32 0x61) ++ [0xA9, 0x22])
+
+#guard scanStringBlocks noLeadBody 0 = .error (.badUtf8, 33)
+
+/-- A body whose closing quote sits in the second window: the first window is all
+content, and the second window's stop is its own lane seventeen, so the scan reports the
+carrier index fifty-one without reading the bytes after the close. -/
+def secondWindowBody : Bytes :=
+  ByteString.literal ((0x22 :: List.replicate 49 0x61) ++ (0x22 :: List.replicate 20 0x61))
+
+#guard scanStringBlocks secondWindowBody 0 = .ok 51
+
+/-- The control: the same carrier with that quote replaced by a content byte, where no
+window stops and the tail of six bytes runs out at the input's end. -/
+def secondWindowOpen : Bytes :=
+  ByteString.literal ((0x22 :: List.replicate 50 0x61) ++ List.replicate 20 0x61)
+
+#guard scanStringBlocks secondWindowOpen 0 = .error (.ended, 65)
+
+/-- A body with a control byte at index five, and the same body with a content byte
+there. -/
+def controlList : List UInt8 :=
+  0x22 :: (List.replicate 4 0x61 ++ [0x01] ++ List.replicate 27 0x61 ++ [0x22])
+
+def controlFreeList : List UInt8 :=
+  0x22 :: (List.replicate 4 0x61 ++ [0x62] ++ List.replicate 27 0x61 ++ [0x22])
+
+#guard (windowOf (controlList.drop 1) BodyState.body).stop = some (.refuse 4 .control)
+#guard scanStringBlocks (ByteString.literal controlList) 0 = .error (.control, 5)
+
+/- The control: the same lanes with a content byte, where the window has no stop and the
+scan closes at the carrier's length. -/
+#guard (windowOf (controlFreeList.drop 1) BodyState.body).stop = none
+#guard scanStringBlocks (ByteString.literal controlFreeList) 0 = .ok 34
+
+/- A two-byte character cut off after its lead byte is `ended` at the tail's start, and
+the same input with the continuation and the quote is accepted. -/
+#guard tailRun (rawBytes [0x22, 0x61, 0xC3]) 1 BodyState.body = .error (.ended, 1)
+#guard scanStringBlocks (rawBytes [0x22, 0x61, 0xC3]) 0 = .error (.ended, 1)
+#guard scanStringBlocks (rawBytes [0x22, 0x61, 0xC3, 0xA9, 0x22]) 0 = .ok 5
+
+/- A stray continuation byte in a body: the requirement rejects it, so the scan reports
+`badUtf8` at the byte's own index, and the same body with the lead byte in front of it is
+accepted. -/
+#guard scanStringBlocks (rawBytes [0x22, 0xC3, 0x22]) 0 = .error (.badUtf8, 2)
+#guard scanStringBlocks (rawBytes [0x22, 0xC3, 0xA9, 0x22]) 0 = .ok 4
+
+/- A body with no closing quote is `ended` at the body's first byte, and the control
+appends the quote and closes. -/
+#guard scanStringBlocks (rawBytes [0x22, 0x61, 0x62]) 0 = .error (.ended, 1)
+#guard scanStringBlocks (rawBytes [0x22, 0x61, 0x62, 0x22]) 0 = .ok 4
+
+/-- A closing quote in the last ten bytes: the window at index one covers the first
+thirty-two body bytes, and the ten bytes after it are the tail, stepped one at a time.
+The scan's stop and the reference scan's are asserted separately, so neither is taken
+from the other. -/
+def tailBody : Bytes := ByteString.literal (0x22 :: (List.replicate 41 0x61 ++ [0x22]))
+
+#guard tailBody.size = 43
+#guard tailBody.size - 33 = 10
+#guard scanStringBlocks tailBody 0 = .ok 43
+#guard ((scanCharsEnd tailBody 1 0).map (fun p => p.2.val)) = .ok 43
 
 end LeanLLVMTest.Json
 
