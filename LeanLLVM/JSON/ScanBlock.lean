@@ -23,6 +23,12 @@ def IsStructuralB (b : UInt8) : Bool :=
 /-- The scalar transition's per-byte decision: structural or RFC 8259 §2 `ws`. -/
 def IsStructOrSpaceB (b : UInt8) : Bool := IsStructuralB b || IsSpaceB b
 
+/-- The classifier's quote lane and backslash lane: the two predicates the window fold
+reads and the byte rule uses, named once. -/
+def IsQuoteB (b : UInt8) : Bool := decide (b = 0x22)
+
+def IsBackslashB (b : UInt8) : Bool := decide (b = 0x5C)
+
 /-- The scalar transition, over a byte list: bit `k` is set iff byte `k` is
 structural or whitespace.  Bytes past the end contribute nothing, so a list
 shorter than 32 leaves the high bits zero and the fold is total. -/
@@ -30,6 +36,15 @@ def maskOfList (bs : List UInt8) : BitVec 32 :=
   BitVec.ofNat 32 <|
     (bs.zipIdx.take 32).foldl
       (fun acc (b, k) => if IsStructOrSpaceB b then acc ||| (1 <<< k) else acc) 0
+
+/-- The mask fold at an arbitrary per-byte predicate.  `maskOfList` is its instance at
+`IsStructOrSpaceB`; there is no second or third instance here — the quote and
+backslash lanes are the window fold's, which reads them through this lemma's
+per-lane statement. -/
+def maskOfListWith (f : UInt8 → Bool) (bs : List UInt8) : BitVec 32 :=
+  BitVec.ofNat 32 <|
+    (bs.zipIdx.take 32).foldl
+      (fun acc (b, k) => if f b then acc ||| (1 <<< k) else acc) 0
 
 /-- A 32-byte block: every byte addressable, length in the type.  Named `Block32`
 rather than `Block`: this module sits in `namespace LeanLLVM.JSON` and
@@ -40,10 +55,16 @@ abbrev Block32 := Fin 32 → UInt8
 /-- The scalar transition on a block. -/
 def maskOf (block : Block32) : BitVec 32 := maskOfList (List.ofFn block)
 
+/-- The window of a carrier at `i`: lane `k` is the byte at `i + k`.  Unaligned
+windows are what the emitted body's `load <32 x i8>` with `align 1` reads. -/
+def blockAt (bs : Bytes) (i : Nat) (h : i + 32 ≤ bs.size) : Block32 :=
+  fun k => bs[i + k.val]'(by omega)
+
 /-- What crosses a block boundary.  `pos` is the index of the next unread byte;
 nothing else crosses in this operation.  The in-string flag, the escape-run carry
 and the pending-UTF-8 state are added with the scanner that consumes these masks,
-and are not carried here as unused fields. -/
+and are not carried here as unused fields; they are one state, `BodyState` in
+`ScanBody.lean`, and it is that scanner's carry rather than a field here. -/
 structure ScanState where
   pos : Nat
 deriving DecidableEq, Repr
@@ -93,25 +114,25 @@ private theorem testBit_or_one_shiftLeft (acc i k : Nat) :
   rw [Nat.testBit_or, testBit_one_shiftLeft]
 
 /-- One fold step, read at bit `k`. -/
-private theorem step_testBit (acc : Nat) (b : UInt8) (i k : Nat) :
-    ((if IsStructOrSpaceB b then acc ||| (1 <<< i) else acc)).testBit k =
-      (acc.testBit k || (decide (i = k) && IsStructOrSpaceB b)) := by
+private theorem step_testBit (f : UInt8 → Bool) (acc : Nat) (b : UInt8) (i k : Nat) :
+    ((if f b then acc ||| (1 <<< i) else acc)).testBit k =
+      (acc.testBit k || (decide (i = k) && f b)) := by
   split
   · rename_i hc
     rw [testBit_or_one_shiftLeft, hc, Bool.and_true]
   · rename_i hc
-    have hf : IsStructOrSpaceB b = false := by
-      cases h : IsStructOrSpaceB b <;> simp_all
+    have hf : f b = false := by
+      cases h : f b <;> simp_all
     rw [hf, Bool.and_false, Bool.or_false]
 
 /-- The fold's bit `k` is the accumulator's bit `k`, or-ed with the decision on
 each pair whose index is `k`. -/
-private theorem fold_testBit (xs : List (UInt8 × Nat)) (acc k : Nat) :
+private theorem fold_testBit (f : UInt8 → Bool) (xs : List (UInt8 × Nat)) (acc k : Nat) :
     (xs.foldl
-        (fun acc (b, k) => if IsStructOrSpaceB b then acc ||| (1 <<< k) else acc)
+        (fun acc (b, k) => if f b then acc ||| (1 <<< k) else acc)
         acc).testBit k =
       (acc.testBit k ||
-        xs.any (fun p => decide (p.2 = k) && IsStructOrSpaceB p.1)) := by
+        xs.any (fun p => decide (p.2 = k) && f p.1)) := by
   induction xs generalizing acc with
   | nil => simp
   | cons p xs ih =>
@@ -154,15 +175,14 @@ private theorem zipIdx_take (l : List UInt8) (n : Nat) :
   by_cases hj : j < n <;> simp [hj]
 
 /-- At index `k`, the block mask's `any` is the byte's own decision. -/
-private theorem any_zipIdx_take {bs : List UInt8} {k : Nat} {b : UInt8}
+private theorem any_zipIdx_take {f : UInt8 → Bool} {bs : List UInt8} {k : Nat} {b : UInt8}
     (hk : k < 32) (hb : bs[k]? = some b) :
-    (bs.zipIdx.take 32).any (fun p => decide (p.2 = k) && IsStructOrSpaceB p.1) =
-      IsStructOrSpaceB b := by
-  by_cases hb' : IsStructOrSpaceB b = true
+    (bs.zipIdx.take 32).any (fun p => decide (p.2 = k) && f p.1) = f b := by
+  by_cases hb' : f b = true
   · rw [hb', List.any_eq_true]
     exact ⟨(b, k), mem_zipIdx_take_iff.mpr ⟨hk, hb⟩, by simp [hb']⟩
-  · have hbf : IsStructOrSpaceB b = false := by
-      cases h : IsStructOrSpaceB b <;> simp_all
+  · have hbf : f b = false := by
+      cases h : f b <;> simp_all
     rw [hbf, List.any_eq_false]
     intro p hp hpt
     rw [Bool.and_eq_true] at hpt
@@ -180,15 +200,26 @@ private theorem any_zipIdx_take {bs : List UInt8} {k : Nat} {b : UInt8}
 
 /-! ### The theorems -/
 
-/-- Bit `k` of the mask is the scalar decision on byte `k`. -/
-theorem maskOfList_getLsbD {bs : List UInt8} {k : Nat} {b : UInt8}
+/-- The mask the block layer already reports is the general fold at the scalar
+transition's decision. -/
+theorem maskOfList_eq_maskOfListWith (bs : List UInt8) :
+    maskOfList bs = maskOfListWith IsStructOrSpaceB bs := rfl
+
+/-- Bit `k` of any lane mask is the predicate on byte `k`. -/
+theorem maskOfListWith_getLsbD {f : UInt8 → Bool} {bs : List UInt8} {k : Nat} {b : UInt8}
     (hk : k < 32) (hb : bs[k]? = some b) :
-    (maskOfList bs).getLsbD k = IsStructOrSpaceB b := by
-  unfold maskOfList
+    (maskOfListWith f bs).getLsbD k = f b := by
+  unfold maskOfListWith
   rw [BitVec.getLsbD_ofNat]
   have hdec : decide (k < 32) = true := decide_eq_true hk
   rw [hdec, Bool.true_and, fold_testBit, Nat.zero_testBit, Bool.false_or]
   exact any_zipIdx_take hk hb
+
+/-- Bit `k` of the mask is the scalar decision on byte `k`. -/
+theorem maskOfList_getLsbD {bs : List UInt8} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (maskOfList bs).getLsbD k = IsStructOrSpaceB b :=
+  maskOfListWith_getLsbD hk hb
 
 /-- The block instance is the list instance at `List.ofFn`. -/
 theorem maskOf_eq_maskOfList (block : Block32) :
@@ -212,6 +243,10 @@ theorem ofFn_of_length {bs : List UInt8} (h : bs.length = 32) :
   · rename_i hj
     rw [List.getElem?_eq_getElem (by omega)]
   · rw [List.getElem?_eq_none_iff.mpr (by omega)]
+
+/-- The window's lanes are the carrier's bytes. -/
+theorem blockAt_apply (bs : Bytes) (i : Nat) (h : i + 32 ≤ bs.size) (k : Fin 32) :
+    blockAt bs i h k = bs[i + k.val] := rfl
 
 /-- The per-byte identity the emitted range test stands for: `(b + (-9)) < 2`
 (unsigned) is exactly "b is a tab or a newline". -/

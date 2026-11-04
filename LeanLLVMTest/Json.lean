@@ -510,6 +510,18 @@ so their statements are restated below as well as their footprints. -/
 #guard_msgs (whitespace := lax) in
 #print axioms LeanLLVM.JSON.maskOfList_getLsbD
 
+/-- info: 'LeanLLVM.JSON.maskOfList_eq_maskOfListWith' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.maskOfList_eq_maskOfListWith
+
+/-- info: 'LeanLLVM.JSON.maskOfListWith_getLsbD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.maskOfListWith_getLsbD
+
+/-- info: 'LeanLLVM.JSON.blockAt_apply' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.blockAt_apply
+
 /-- info: 'LeanLLVM.JSON.maskOf_eq_maskOfList' depends on axioms: [propext] -/
 #guard_msgs (whitespace := lax) in
 #print axioms LeanLLVM.JSON.maskOf_eq_maskOfList
@@ -534,6 +546,20 @@ open LeanLLVM.JSON in
 example : ∀ {bs : List UInt8} {k : Nat} {b : UInt8}, k < 32 → bs[k]? = some b →
     (maskOfList bs).getLsbD k = IsStructOrSpaceB b :=
   @LeanLLVM.JSON.maskOfList_getLsbD
+
+open LeanLLVM.JSON in
+example : ∀ (bs : List UInt8), maskOfList bs = maskOfListWith IsStructOrSpaceB bs :=
+  LeanLLVM.JSON.maskOfList_eq_maskOfListWith
+
+open LeanLLVM.JSON in
+example : ∀ {f : UInt8 → Bool} {bs : List UInt8} {k : Nat} {b : UInt8},
+    k < 32 → bs[k]? = some b → (maskOfListWith f bs).getLsbD k = f b :=
+  @LeanLLVM.JSON.maskOfListWith_getLsbD
+
+open LeanLLVM.JSON in
+example : ∀ (bs : Bytes) (i : Nat) (h : i + 32 ≤ bs.size) (k : Fin 32),
+    blockAt bs i h k = bs[i + k.val] :=
+  LeanLLVM.JSON.blockAt_apply
 
 open LeanLLVM.JSON in
 example : ∀ (st : ScanState) (block : Block32) (valid : Nat), valid ≤ 32 →
