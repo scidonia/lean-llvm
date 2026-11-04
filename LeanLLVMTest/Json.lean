@@ -10,6 +10,7 @@ confused with the escape rules under test.
 -/
 import LeanLLVM
 import JsonMain
+import LeanLLVM.JSON.ScanBody
 
 namespace LeanLLVMTest.Json
 
@@ -569,6 +570,79 @@ example : ∀ (st : ScanState) (block : Block32) (valid : Nat), valid ≤ 32 →
     (valid < 32 →
         scanBlock st block valid = (st, (0 : BlockInfo), .short)) :=
   LeanLLVM.JSON.scanBlock_correct
+
+/-! ### The body state and the byte rule
+
+`LeanLLVM/JSON/ScanBody.lean`'s theorems: the two initial states are well formed,
+the byte rule preserves well-formedness, the UTF-8 requirement accepts exactly
+`Utf8Char`'s byte counts, and it rejects both an out-of-range continuation byte
+and a byte no character starts with.  The `BodyState.body` arity `example` sits
+beside the definition in that module, where a re-added state field fails to
+elaborate.  The two `step` rejections print no axiom at all: they are `decide` on
+the definition, which is the instrument a `step` whose fallbacks read as the
+`none` constructor cannot satisfy, because that `step` accepts both bytes. -/
+
+/-- info: 'LeanLLVM.JSON.BodyState.init_wellFormed' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.BodyState.init_wellFormed
+
+/-- info: 'LeanLLVM.JSON.BodyState.body_wellFormed' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.BodyState.body_wellFormed
+
+/-- info: 'LeanLLVM.JSON.bodyStep_wellFormed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.bodyStep_wellFormed
+
+/-- info: 'LeanLLVM.JSON.utf8Len_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.utf8Len_iff
+
+/-- info: 'LeanLLVM.JSON.utf8Char_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.utf8Char_length
+
+/-- info: 'LeanLLVM.JSON.step_rejects_cont' does not depend on any axioms -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.step_rejects_cont
+
+/-- info: 'LeanLLVM.JSON.step_rejects_lead' does not depend on any axioms -/
+#guard_msgs (whitespace := lax) in
+#print axioms LeanLLVM.JSON.step_rejects_lead
+
+open LeanLLVM.JSON in
+example : BodyState.init.WellFormed :=
+  LeanLLVM.JSON.BodyState.init_wellFormed
+
+open LeanLLVM.JSON in
+example : BodyState.body.WellFormed :=
+  LeanLLVM.JSON.BodyState.body_wellFormed
+
+open LeanLLVM.JSON in
+example : ∀ {st : BodyState}, st.WellFormed → ∀ {b : UInt8} {st' : BodyState},
+    bodyStep st b = .cont st' → st'.WellFormed :=
+  @LeanLLVM.JSON.bodyStep_wellFormed
+
+open LeanLLVM.JSON in
+example : ∀ (b : Bytes) (n : Nat),
+    utf8Len .none b = some n ↔
+      ∃ (c : Nat) (rest : Bytes), Utf8Char b c rest ∧ b.length = rest.length + n :=
+  LeanLLVM.JSON.utf8Len_iff
+
+open LeanLLVM.JSON in
+example : ∀ {b : Bytes} {c : Nat} {rest : Bytes}, Utf8Char b c rest →
+    b.length = rest.length +
+      (if c < 0x80 then 1 else if c < 0x800 then 2 else
+        if c < 0x10000 then 3 else 4) :=
+  @LeanLLVM.JSON.utf8Char_length
+
+open LeanLLVM.JSON in
+example : Utf8Need.step (.more 1 0x80 0xBF) 0x22 = Option.none :=
+  LeanLLVM.JSON.step_rejects_cont
+
+open LeanLLVM.JSON in
+example : Utf8Need.step .none 0x80 = Option.none :=
+  LeanLLVM.JSON.step_rejects_lead
 
 /-! ### The emitted classifier body
 
