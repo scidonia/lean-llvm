@@ -110,6 +110,21 @@ theorem evalInstr_refines {calls' calls : Calls}
           simp at he
       · rename_i hvs
         simp at he
+  | callVoid callee args =>
+      intro s' he
+      simp only [evalInstr] at he ⊢
+      split at he
+      · rename_i vs hvs
+        split at he
+        · rename_i r hr
+          rcases h callee vs s.mem s.next with hnone | heq
+          · exact Or.inr (by simp only [hnone])
+          · have hs : calls callee vs s.mem s.next = some r := heq ▸ hr
+            exact Or.inl (by simpa only [hvs, hs] using he)
+        · rename_i hr
+          simp at he
+      · rename_i hvs
+        simp at he
 
 /-- An undefined instruction in the target is undefined in the source.  A call
 is the only instruction whose result depends on the environment, and `none`
@@ -119,6 +134,21 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
     evalInstr calls' s i = none → evalInstr calls s i = none := by
   cases i with
   | call d retTy callee args =>
+      intro he
+      simp only [evalInstr] at he ⊢
+      cases hvs : evalOperands s args with
+      | none => rfl
+      | some vs =>
+          rw [hvs] at he
+          cases hr : calls' callee vs s.mem s.next with
+          | none =>
+              have hsrc : calls callee vs s.mem s.next = none :=
+                CallRefines.ub_of_target_ub (h callee) hr
+              simp only [hsrc]
+          | some r =>
+              simp only [hr] at he
+              cases he
+  | callVoid callee args =>
       intro he
       simp only [evalInstr] at he ⊢
       cases hvs : evalOperands s args with

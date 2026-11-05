@@ -364,6 +364,7 @@ def NoEvents : Instr → Bool
   | .load _ _ _ => false
   | .store _ _ _ => false
   | .call _ _ _ _ => false
+  | .callVoid _ _ => false
   | _ => true
 
 theorem codeT_eq_of_noEvents (calls : Calls) :
@@ -386,6 +387,7 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
         | store ty v p => simp [NoEvents] at hi
         | gep d base off => simpa only [codeT, instrT, pureInstrT, heq] using hih
         | call d rt c args => simp [NoEvents] at hi
+        | callVoid c args => simp [NoEvents] at hi
         | binop d op w a b =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | icmp d p w a b =>

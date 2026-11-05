@@ -265,17 +265,45 @@ bb:
 #guard refusedWith (withBody "  %p = phi i32 [ %x %entry ]") ["phi"]
 #guard refusedWith (withBody "  %p = phi i32 []") ["phi"]
 
--- A predecessor listed twice is refused by name.  First-match would give a
--- defined meaning to a module LLVM's verifier rejects, which is the one
--- direction the model must not take; the message names both the instruction and
--- the duplicated label.
-#guard refusedWith (withBody "  %p = phi i32 [ %x, %entry ], [ %x, %entry ]")
-  ["phi", "entry"]
+-- A predecessor listed twice is accepted when both entries write the same value
+-- the same way.  That is the shape clang emits when it merges `switch` arms, and
+-- the entries select the same operand, so first-match — which is what the
+-- semantics does — lands on the value the text gives.  This is the affirmative
+-- control for the refusal two cases below.
+def duplicateSample : String :=
+"define i32 @dup(i32 %x) {
+entry:
+  br label %bb
+bb:
+  %p = phi i32 [ 7, %entry ], [ 7, %entry ]
+  ret i32 %p
+}
+"
 
--- The control for that refusal, in the same run: two entries on *distinct*
--- labels parse.  Together with the refusal above it shows the check is about
--- duplication and not about a two-entry list.
+#guard (parseOk duplicateSample).functions.length = 1
+
+-- And the accepted list runs to the value its entries name, so it is accepted as
+-- the same selection rather than as a list that happens to parse.
+#guard
+  match (parseOk duplicateSample).functions with
+  | [f] => intOut (run noCalls f [.int 32 (BitVec.ofNat 32 0)]) = some 7
+  | _ => false
+
+-- Two entries on *distinct* labels parse: the check is about a repeated label and
+-- not about a two-entry list.
 #guard (parseOk (withBody "  %p = phi i32 [ %x, %entry ], [ %x, %other ]")).functions.length = 1
+
+-- A repeated label whose entries are written differently is refused by name, and
+-- the message names the instruction, the label, both spellings and the reason:
+-- deciding that two different spellings denote one value is not a check this
+-- parser makes.
+#guard refusedWith (withBody "  %p = phi i32 [ %x, %entry ], [ %y, %entry ]")
+  ["phi", "entry", "%x", "%y", "same value the same way"]
+
+-- The criterion is the spelling and not the value: `5` and `0x5` are one value in
+-- two spellings, and the refusal names both.
+#guard refusedWith (withBody "  %p = phi i32 [ 5, %entry ], [ 0x5, %entry ]")
+  ["phi", "entry", "5", "0x5"]
 
 -- A register name bound twice is refused, and so is a definition that reuses a
 -- parameter's name: the semantics binds the later one while the `phi` type check

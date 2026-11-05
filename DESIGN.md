@@ -444,7 +444,10 @@ canonical IR, checked with `llvm-as` in the verification runs.
    predecessor field, and its conformance and differential evidence live in
    `tests/phi-fragment.lean` and `tests/phi-differential.sh`.)  Calls are modelled
    (`Instr.call` resolved through `Calls`, which returns the callee's value,
-   memory and allocator state) and refinement through them is one-directional
+   memory and allocator state; `Instr.callVoid` is the same channel with no
+   destination register, so it binds nothing and adopts only the memory and
+   allocator cursor, `evalInstr_callVoid_env`) and refinement through them is
+   one-directional
    (`CallRefinement`); a framed relation over that channel is the next step
    after that.  Vectors are modelled too: `Ty.vec` with integer lanes, splat
    constants, lane-wise `icmp` and integer binops, the mask `bitcast`, and a

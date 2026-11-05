@@ -82,6 +82,8 @@ def substInstr (σ : Subst) : Instr → Instr
   | .bitcastMask d n v => .bitcastMask d n (substOperand σ v)
   | .call d retTy callee args =>
       .call d retTy callee (args.map fun (ty, op) => (ty, substOperand σ op))
+  | .callVoid callee args =>
+      .callVoid callee (args.map fun (ty, op) => (ty, substOperand σ op))
   | .phi d ty inc =>
       -- Substituting inside an incoming list rewrites the value the selector
       -- returns and leaves selection alone: the labels are not operands.
@@ -539,6 +541,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
   | bitcastMask d n v => simp [foldInstr] at hf
   | phi d ty inc => simp [foldInstr] at hf
   | call d retTy callee args => simp [foldInstr] at hf
+  | callVoid callee args => simp [foldInstr] at hf
 
 /-- Terminator substitution preserves execution once the invariant holds. -/
 theorem execTerm_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (t : Term) :
@@ -601,13 +604,19 @@ theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
       rw [lookupName_cons_ne v s.env (Ne.symm hxd)]
       exact h x c hx'
   · rename_i hnone
-    have hstore : ∃ ty v p, i = .store ty v p := by
-      cases i <;> simp [Instr.dst?] at hnone ⊢
-    obtain ⟨ty, v, p, rfl⟩ := hstore
+    -- `dst? = none` holds for the store and for the void call, and neither binds
+    -- a register: the store writes memory and the call adopts what its callee
+    -- leaves, and the environment is the same before and after both.
     have henv : s'.env = s.env := by
       have h' := evalInstr_env calls hs
-      rw [show (Instr.store ty v p).dst? = none from rfl] at h'
-      exact h'
+      cases i with
+      | store ty v p =>
+          rw [show (Instr.store ty v p).dst? = none from rfl] at h'
+          exact h'
+      | callVoid c args =>
+          rw [show (Instr.callVoid c args).dst? = none from rfl] at h'
+          exact h'
+      | _ => simp [Instr.dst?] at hnone
     intro x c hx
     rw [henv]
     exact h x c hx

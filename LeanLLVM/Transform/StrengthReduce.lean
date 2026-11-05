@@ -121,6 +121,7 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
   | bitcastMask d n v => rfl
   | phi d ty inc => rfl
   | call d ty callee args => rfl
+  | callVoid callee args => rfl
 
 def strengthReduceBlock (b : Block) : Block :=
   { b with instrs := b.instrs.map strengthReduceInstr }

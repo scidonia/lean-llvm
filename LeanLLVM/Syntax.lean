@@ -43,6 +43,13 @@ inductive Instr where
   /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
   is resolved by the semantics' call environment, not by the function itself. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
+  /-- A call whose result has no name in the caller: `call void @f(...)`.  It
+  binds nothing, so there is no destination and no name a later instruction could
+  read, and it has no return type field because the only accepted form returns
+  `void` — the parser refuses a discarded non-`void` result rather than print it
+  back as a `void` call.  Its effect is the call environment's: the value the
+  callee leaves is discarded, its memory and allocator state are adopted. -/
+  | callVoid (callee : String) (args : List (Ty × Operand))
   /-- A `phi`: one incoming value per predecessor block, selected at entry by the
   block the edge came from.  The type is the instruction's result type, which
   LLVM's text requires because an incoming value carries none; the parser refuses
@@ -69,6 +76,7 @@ def Instr.dst? : Instr → Option String
   | .binopVec d _ _ _ _ _ => some d
   | .bitcastMask d _ _ => some d
   | .call d _ _ _ => some d
+  | .callVoid _ _ => none
   | .phi d _ _ => some d
 
 /-- Registers read by an instruction. -/
@@ -87,6 +95,7 @@ def Instr.uses : Instr → List String
   | .binopVec _ _ _ _ a b => a.regs ++ b.regs
   | .bitcastMask _ _ v => v.regs
   | .call _ _ _ args => (args.map (·.2.regs)).flatten
+  | .callVoid _ args => (args.map (·.2.regs)).flatten
   | .phi _ _ incoming => (incoming.map (fun kv => kv.2.regs)).flatten
 
 /-- Instructions with no memory effect.  `alloca` moves the allocation pointer
@@ -108,6 +117,7 @@ def Instr.isPure : Instr → Bool
   | .binopVec .. => true
   | .bitcastMask .. => true
   | .call .. => false
+  | .callVoid .. => false
   | .phi .. => true
 
 /-- Whether an instruction is a `phi`, the one constructor that reads the

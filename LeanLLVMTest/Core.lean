@@ -689,3 +689,278 @@ proof that starts to depend on a choice axiom shows up here. -/
 /-- info: 'LeanLLVM.State.setPre_self' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.State.setPre_self
+
+/-! ### Surfaces the parser accepts and drops
+
+Four pieces of LLVM's text that the model does not represent: the `tail` marker on
+a call, a definition's linkage and calling convention, the `samesign` flag on an
+integer comparison, and a call written without a destination register.  Each is
+checked the same way — the construct parses to the AST the same program without it
+parses to, and the program runs to the same answer.  The first half fails a parser
+that dropped something else or kept the token in a field; the second fails a
+semantics that gave the construct a meaning.  The reason each is droppable is with
+the parser, at the point of the decision.
+-/
+
+/-- The function a module defines, when it parses and defines exactly one.  A
+failed parse or another arity is `none`, and every check below makes `none` fail:
+a `Function` placeholder would let two failed parses compare equal and prove
+nothing. -/
+def onlyFunction (src : String) : Option Function :=
+  match parseModule src with
+  | .ok ⟨_, [f]⟩ => some f
+  | _ => none
+
+/-- Whether two texts parse to one function each and to the same function.  A
+failed parse on either side is `false`, never an equality of placeholders. -/
+def sameFunction (a b : String) : Bool :=
+  match onlyFunction a, onlyFunction b with
+  | some f, some g => f = g
+  | _, _ => false
+
+/-- Whether `src` is refused with a message naming every token. -/
+def refusedWith (src : String) (tokens : List String) : Bool :=
+  match parseModule src with
+  | .error e => tokens.all (mentions e)
+  | .ok _ => false
+
+/-- The integer a run returns, or `none` for `ub` and for an unfinished run. -/
+def intOut (o : Option Outcome) : Option Nat :=
+  match o with
+  | some (.ret (some (.int _ v)) _) => some v.toNat
+  | _ => none
+
+/-- The outcome of a run, when `src` parses to one function: a failed parse is
+`none` and an outcome is `some o`, so a check cannot mistake one for the other. -/
+def runOf (calls : Calls) (src : String) (args : List Value) : Option (Option Outcome) :=
+  (onlyFunction src).map fun f => run calls f args
+
+/-- The integer a run returns, at the same two levels: `some (some n)` is the
+answer, `some none` is `ub` or an unfinished run, and `none` is a failed parse. -/
+def intOf (calls : Calls) (src : String) (args : List Value) : Option (Option Nat) :=
+  (runOf calls src args).map intOut
+
+/-- A call with and without the `tail` marker. -/
+def tailSrc (marker : String) : String :=
+"define i32 @tailer(i32 %x) {
+entry:
+  %y = " ++ marker ++ "call i32 @g(i32 %x)
+  ret i32 %y
+}
+"
+
+/-- `@g` adds one and leaves the caller's memory and allocator alone. -/
+def plusOneCalls : Calls := fun callee args mem next =>
+  if callee = "g" then
+    match args with
+    | [.int 32 v] => some { ret := .int 32 (v + 1), mem := mem, next := next }
+    | _ => none
+  else none
+
+-- The marker is dropped: both texts parse to one function.
+#guard sameFunction (tailSrc "tail ") (tailSrc "")
+
+-- And the call still does what it did: the environment answers, and the answer is
+-- the one the plain call gives (the ASTs are equal above, so one run decides both).
+#guard runOf plusOneCalls (tailSrc "tail ") [.int 32 (BitVec.ofNat 32 41)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 42))) []))
+
+/-- A definition with and without header surface in front of its return type. -/
+def headerSrc (surface : String) : String :=
+"define " ++ surface ++ "i32 @header(i32 %x) {
+entry:
+  %y = add i32 %x, 1
+  ret i32 %y
+}
+"
+
+-- Linkage, a calling convention, a preemption or visibility specifier and a
+-- numbered calling convention are dropped, alone and together.
+#guard sameFunction (headerSrc "internal ") (headerSrc "")
+#guard sameFunction (headerSrc "internal fastcc ") (headerSrc "")
+#guard sameFunction (headerSrc "dso_local hidden cc 10 ") (headerSrc "")
+#guard sameFunction (headerSrc "private dso_preemptable dllimport coldcc ") (headerSrc "")
+
+-- The target-specific calling conventions are the same kind of token as `fastcc`:
+-- each is a calling convention, and none is modelled, so each is dropped rather
+-- than reported as a property of the returned value.
+#guard sameFunction (headerSrc "x86_stdcallcc ") (headerSrc "")
+#guard sameFunction (headerSrc "win64cc ") (headerSrc "")
+#guard sameFunction (headerSrc "x86_fastcallcc ") (headerSrc "")
+#guard sameFunction (headerSrc "aarch64_vector_pcs ") (headerSrc "")
+#guard sameFunction (headerSrc "aarch64_sve_vector_pcs ") (headerSrc "")
+#guard sameFunction (headerSrc "arm_aapcs_vfpcc ") (headerSrc "")
+#guard sameFunction (headerSrc "cxx_fast_tlscc ") (headerSrc "")
+#guard sameFunction (headerSrc "amdgpu_kernel ") (headerSrc "")
+-- And in the position clang writes them, mixed with linkage and visibility.
+#guard sameFunction (headerSrc "internal win64cc dso_local hidden ") (headerSrc "")
+
+-- The body is the body: the run is the same answer.
+#guard runOf noCalls (headerSrc "internal fastcc ") [.int 32 (BitVec.ofNat 32 1)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 2))) []))
+
+-- The boundary is where the attributes start: a token in the same position that
+-- is not linkage or a calling convention is still a return attribute, and it is
+-- refused as one.
+#guard refusedWith (headerSrc "zeroext ") ["zeroext", "return attribute"]
+
+/-- An integer comparison with and without the `samesign` flag. -/
+def samesignSrc (flag : String) : String :=
+"define i32 @cmp(i32 %x) {
+entry:
+  %c = icmp " ++ flag ++ "ugt i32 %x, 5
+  br i1 %c, label %big, label %small
+big:
+  ret i32 1
+small:
+  ret i32 0
+}
+"
+
+-- Dropped: the flag leaves no field behind, so both texts parse to one function.
+#guard sameFunction (samesignSrc "samesign ") (samesignSrc "")
+
+-- The comparison still decides, both ways: `6 > 5` and `3 > 5`.
+#guard runOf noCalls (samesignSrc "samesign ") [.int 32 (BitVec.ofNat 32 6)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 1))) []))
+#guard runOf noCalls (samesignSrc "samesign ") [.int 32 (BitVec.ofNat 32 3)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 0))) []))
+
+/-- Two void calls in one function, the second written with `tail`.  Both bind
+nothing, so the function defines no register at all. -/
+def twoVoidSrc : String :=
+"define void @two(i32 %x) {
+entry:
+  call void @sink(i32 %x)
+  tail call void @sink(i32 %x)
+  ret void
+}
+"
+
+#guard
+  match onlyFunction twoVoidSrc with
+  | some f =>
+      match f.blocks with
+      | [b] => b.instrs =
+          [ .callVoid "sink" [(.int 32, .reg "%x")],
+            .callVoid "sink" [(.int 32, .reg "%x")] ]
+      | _ => false
+  | none => false
+
+-- The two-call case is the one a destination sentinel would have refused as a
+-- repeated definition: a void call has no destination, so `definedNames` is empty
+-- however many of them the function makes.
+#guard
+  match onlyFunction twoVoidSrc with
+  | some f => f.definedNames = []
+  | none => false
+
+#guard
+  match onlyFunction twoVoidSrc with
+  | some f => parseModule (Module.render ⟨[], [f]⟩) = .ok ⟨[], [f]⟩
+  | none => false
+
+/-- The callee of the state test: it writes `77` through the pointer it is given,
+writes `111` at the caller's allocator cursor and `555` four bytes further on, and
+hands the caller a cursor four bytes on — so it writes and it allocates. -/
+def fittingCalls : Calls := fun callee args mem next =>
+  if callee = "fit" then
+    match args with
+    | [.ptr a] =>
+        some { ret := .int 32 0,
+               mem := writeBytes (writeBytes (writeBytes mem a (natToBytes 77 4))
+                 next (natToBytes 111 4)) (next + 4) (natToBytes 555 4),
+               next := next + 4 }
+    | _ => none
+  else none
+
+/-- A void call whose effect the caller then observes: through the pointer it
+passed, and through the allocator cursor it resumes from. -/
+def fitSrc : String :=
+"define i32 @fitter(i32 %x) {
+entry:
+  %p = alloca i32
+  store i32 %x, ptr %p
+  call void @fit(ptr %p)
+  %q = alloca i32
+  %a = load i32, ptr %p
+  %b = load i32, ptr %q
+  %r = add i32 %a, %b
+  ret i32 %r
+}
+"
+
+-- 632 = 77 + 555 is the answer only when the call's memory *and* its allocator
+-- cursor are adopted: a model that kept its own cursor would land the second
+-- `alloca` on 111 and answer 188, and one that kept its own memory would leave
+-- `%q` unreadable and the run `ub`.
+#guard intOf fittingCalls fitSrc [.int 32 (BitVec.ofNat 32 0)] = some (some 632)
+
+/-- The control: a callee that leaves the state alone. -/
+def idleCalls : Calls := fun callee _ mem next =>
+  if callee = "fit" then some { ret := .int 32 0, mem := mem, next := next } else none
+
+-- With nothing written, the caller's second `alloca` lands on a byte no
+-- instruction wrote, so the 632 above is the callee's state and not the caller's.
+-- `some (some .ub)` also pins that the program parsed: a failed parse is `none`.
+#guard runOf idleCalls fitSrc [.int 32 (BitVec.ofNat 32 0)] = some (some .ub)
+
+/-- One body line in a function that returns `i32`. -/
+def withLine (line : String) : String :=
+"define i32 @line(i32 %x) {
+entry:
+  " ++ line ++ "
+  ret i32 %x
+}
+"
+
+-- A `void` call binds nothing, so a destination register is refused by name; a
+-- call with no destination whose result is not `void` is refused too; and a call
+-- that writes an explicit function type in its callee position is refused as
+-- that, whether or not the type is variadic.
+#guard refusedWith (withLine "%d = call void @sink()") ["void", "%d"]
+#guard refusedWith (withLine "call i32 @g()") ["no destination", "i32"]
+#guard refusedWith (withLine "call i32 (i32) @g(i32 1)") ["explicit function type", "not modelled"]
+#guard refusedWith (withLine "call void (ptr, ...) @printf()") ["explicit function type", "not modelled"]
+
+-- Their control: the void call with no destination parses.
+#guard (onlyFunction (withLine "call void @sink()")).isSome
+
+/-- A void call whose argument list is written by the parameter. -/
+def argsSrc (args : String) : String :=
+"define i32 @argscanner(i32 %x) {
+entry:
+  call void @takesargs(" ++ args ++ ")
+  ret i32 %x
+}
+"
+
+-- The scanner reads to the `)` that closes the list and not the first `)`, and a
+-- comma inside a nested group does not separate arguments: this is one call with
+-- two arguments, the second a `splat`.
+#guard
+  match onlyFunction (argsSrc "i32 1, <4 x i32> splat (i32 7)") with
+  | some f =>
+      match f.blocks with
+      | [b] => b.instrs = [ .callVoid "takesargs"
+          [(.int 32, .imm (.int 32 1)), (.vec 4 (.int 32), .imm (.splat 4 32 7))] ]
+      | _ => false
+  | none => false
+
+-- A `poison` argument is read, and the model gives it no value: the call is `ub`,
+-- which is the conservative reading of a poison operand rather than a narrowing.
+-- The same holds at a vector type, where the literal is not a lane list.
+#guard runOf noCalls (argsSrc "i32 poison") [.int 32 (BitVec.ofNat 32 0)] = some (some .ub)
+#guard runOf noCalls (argsSrc "<4 x i32> poison") [.int 32 (BitVec.ofNat 32 0)] =
+  some (some .ub)
+
+-- The two shapes the operand grammar still has no value for are refused by name,
+-- with the argument's position: a literal vector, and an argument attribute.
+#guard refusedWith (argsSrc "i32 1, <4 x i32> <i32 1, i32 2, i32 3, i32 4>")
+  ["argument 2", "vector literal"]
+#guard refusedWith (argsSrc "i32 1, i32 range(i32 0, 65) %x")
+  ["argument 2", "range", "not modelled"]
+
+/-- info: 'LeanLLVM.evalInstr_callVoid_env' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_callVoid_env

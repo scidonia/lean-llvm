@@ -190,6 +190,17 @@ needs the other two to match.
   header is not checked: its parameter list is read up to the closing `)` and
   the rest of the line is ignored, so unmodelled declaration tokens can be
   accepted and dropped.  Do not claim total attribute rejection.
+- Four surfaces are accepted and dropped rather than refused, each because the
+  model has nothing for it to affect: a definition's linkage, visibility and
+  calling convention (no linkage or calling-convention semantics — the `Calls`
+  environment decides which definition answers and how the call is made),
+  `icmp`'s `samesign` (the modelled predicate is the plain one and the flag can
+  only exclude inputs, so dropping it widens), a call's `tail` marker (no ABI,
+  stack or frame), and a call written without a destination (it binds nothing).
+  Each has its paired check in `LeanLLVMTest/Core.lean`: the construct parses to
+  the AST the same program without it parses to, and the program runs to the
+  same answer.  A new accepted-and-dropped surface needs the same pair and the
+  reason written where the decision is made.
 - An installation certificate is data, not source.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated
@@ -250,7 +261,7 @@ needs the other two to match.
   refused witnesses are part of the statement: do not drop a hypothesis to make
   a congruence easier.  The tree layer describes **`PureEnv` environments only**:
   its call event carries a value and no memory, so `handled_runFuel` and the
-  thirteen declarations that gain a `PureEnv` hypothesis carry one (fourteen
+  fifteen declarations that gain a `PureEnv` hypothesis carry one (sixteen
   change; `HandledExec.vis_call_inv` gains `retAt` only).  A `Calls` entry
   returns the callee's value, memory and allocator state for the semantics, and
   nothing in the tree layer may be described as covering a callee that writes.

@@ -328,6 +328,16 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
           | some r => some { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next }
           | none => none
       | none => none
+  | .callVoid callee args =>
+      -- A void call binds nothing, so the environment is untouched: the value
+      -- the callee leaves has no name in the caller and is discarded, and only
+      -- its memory and allocator state are adopted.
+      match evalOperands s args with
+      | some vs =>
+          match calls callee vs s.mem s.next with
+          | some r => some { s with mem := r.mem, next := r.next }
+          | none => none
+      | none => none
   | .icmpVec d pred n w a b =>
       match evalOperand s a, evalOperand s b with
       | some va, some vb =>
@@ -922,6 +932,32 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | some r =>
           try dsimp only
           rfl
+  | callVoid callee args =>
+      simp only [evalInstr, evalOperands_setPre, State.setPre_mem, State.setPre_next,
+        State.setPre_env, State.setPre_pc]
+      cases evalOperands s args with
+      | none => rfl
+      | some vs =>
+        try dsimp only
+        cases calls callee vs s.mem s.next with
+        | none => rfl
+        | some r =>
+          try dsimp only
+          rfl
+
+/-- A void call binds nothing: the register environment after it is the one
+before it, whatever the callee left.  The caller has no name for the answer, so
+there is no binding to make, and a later instruction cannot read it. -/
+theorem evalInstr_callVoid_env {calls : Calls} {s s' : State} {callee : String}
+    {args : List (Ty × Operand)}
+    (h : evalInstr calls s (.callVoid callee args) = some s') : s'.env = s.env := by
+  simp only [evalInstr] at h
+  split at h
+  · split at h
+    · cases h
+      rfl
+    · cases h
+  · cases h
 
 /-- A `phi`-free instruction leaves the predecessor field where it found it: only
 a jump writes it. -/

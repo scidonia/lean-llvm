@@ -6,7 +6,8 @@ predecessor field, a jump writes it with the block it is leaving, and a `phi`
 reads it.  A `phi` whose incoming list has no entry for the actual predecessor is
 `ub`; so is a `phi` in a block with no predecessor at all, which is the same
 undefinedness for a different reason.  A predecessor label listed twice is
-refused at the parser, and so is a register name bound twice.
+accepted when both entries write the same value the same way and refused by name
+when they differ; a register name bound twice is refused.
 
 The checks drive the parser, the printer and the semantics in process; the
 differential compiles the same two `.ll` files with `clang` and compares its
@@ -102,39 +103,51 @@ parser's refusals.
 - **Not claimed:** that a `phi`-free program's *memory* is unchanged in any
   finer sense than the outcome being equal.
 
-### P6 — the parser's refusals, and their control
+### P6 — the parser's refusals, the one repeated-label form it accepts, and their controls
 
 - **Actor:** the parser.
 - **Given:** a `phi` of `void`; a `phi i8` whose incoming register is an `i32`;
   a `phi` after another instruction in its block; an entry written without its
-  comma; an empty incoming list; a `phi` that lists one predecessor twice; a
-  register name bound twice in one function; and a definition that reuses a
-  parameter's name.
+  comma; an empty incoming list; a `phi` that lists one predecessor twice with
+  two different incoming values (both a register pair and a literal pair written
+  `5` and `0x5`); a register name bound twice in one function; and a definition
+  that reuses a parameter's name.
 - **When:** each is parsed.
 - **Then:** each is refused with a message naming what was refused (`void`; both
-  types; that a `phi` must be first; the entry's shape; the duplicated label; the
-  repeated register name; the parameter it shadows), and, in the same run, the
-  controls parse: a correctly written one-entry `phi`, a two-entry `phi` on
-  *distinct* labels, one definition of a name, and two distinct names in one
-  block — so each check is shown to be about the thing it refuses and not about
-  its shape.
+  types; that a `phi` must be first; the entry's shape; the label and both
+  spellings of the differing entries; the repeated register name; the parameter
+  it shadows), and, in the same run, the controls parse: a correctly written
+  one-entry `phi`, a two-entry `phi` on *distinct* labels, a two-entry `phi` that
+  repeats a label with identical entries — which also runs to `7`, the value both
+  entries name — one definition of a name, and two distinct names in one block.
+  So each check is shown to be about the thing it refuses and not about its
+  shape.
 - **Why:** a refusal that does not name the construct is not actionable, and an
   absence claim needs its affirmative control in the same run.
-- **The asymmetry, and why it is not an oversight:** a duplicate label is refused
-  because first-match would give a *defined* meaning to a module LLVM's verifier
-  rejects — narrowing what the model permits below what the text says — while a
-  label naming no real predecessor is accepted, because selecting nothing is
-  `ub`, which widens the model's permitted behaviours instead.  The duplicate
-  check is local to the incoming list and needs no environment; checking labels
-  against the block list would make the parser a verifier for a dominance fact it
-  does not otherwise police.
-- **The duplicate-name refusal, and why it is the same check in another costume:**
-  the semantics binds a later definition over an earlier one (`State.bind`
-  prepends, `lookupName` reads the head) while the `phi` type check reads the
-  first definition in program order, so a function that bound a name twice would
-  get a defined meaning from the two readings disagreeing.  Refusing the repeat is
-  what keeps them in step; the check is over the function's own definition list
-  and needs no environment.
+- **A repeated label: accepted when identical, refused when not.**  A repeated
+  label whose two entries write the same value the same way is the shape clang
+  emits when it merges `switch` arms: both entries select the same operand, so
+  taking the first — which is what the semantics does — lands on the value the
+  text gives, and accepting it narrows nothing.  Entries that differ are the
+  other case: deciding that two different spellings denote one value is not a
+  check this parser makes, and selecting the first would give a *defined* meaning
+  to text whose reading depends on that equality.  So the refusal names the
+  instruction, the label and both spellings, and the criterion is the spelling
+  rather than the value — `5` and `0x5` are one value and two spellings, and they
+  are refused.  A label naming no real predecessor is accepted, because selecting
+  nothing is `ub`, which widens the model's permitted behaviours.  Both checks
+  are local to the incoming list and need no environment; checking labels against
+  the block list would make the parser a verifier for a dominance fact it does
+  not otherwise police.
+- **The duplicate-name refusal, and why it is a different check:** the semantics
+  binds a later definition over an earlier one (`State.bind` prepends,
+  `lookupName` reads the head) while the `phi` type check reads the first
+  definition in program order, so a function that bound a name twice would get a
+  defined meaning from the two readings disagreeing.  Refusing the repeat is what
+  keeps them in step; the check is over the function's own definition list and
+  needs no environment.  A repeated *label* with identical entries has no such
+  disagreement — the two entries are one operand — which is why the two are not
+  the same rule.
 - **Not claimed:** that labels are compared with the function's block list (they
   are not), or that a `phi` whose incoming list is longer than the block's
   predecessor set is refused, or that a use-before-definition is refused (the

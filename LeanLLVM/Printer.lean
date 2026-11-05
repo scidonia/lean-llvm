@@ -61,6 +61,10 @@ def gepIndexTy : Operand → String
   | .imm (.int w _) => s!"i{w}"
   | _ => "i64"
 
+/-- A call's argument list, as the parenthesised text its printer emits. -/
+def callArgs (args : List (Ty × Operand)) : String :=
+  String.intercalate ", " (args.map fun (ty, op) => s!"{ty.render} {op.token}")
+
 def Instr.render : Instr → String
   | .binop d op w a b =>
       s!"  {d} = {op.render} i{w} {a.token}, {b.token}"
@@ -93,9 +97,11 @@ def Instr.render : Instr → String
       let ty := Ty.vec n (.int 1)
       s!"  {d} = bitcast {ty.render} {v.token} to i{n}"
   | .call d retTy callee args =>
-      let rendered :=
-        String.intercalate ", " (args.map fun (ty, op) => s!"{ty.render} {op.token}")
-      s!"  {d} = call {retTy.render} @{callee}({rendered})"
+      s!"  {d} = call {retTy.render} @{callee}({callArgs args})"
+  | .callVoid callee args =>
+      -- No destination and no return type: the instruction binds no name, and
+      -- the only accepted form returns `void`.
+      s!"  call void @{callee}({callArgs args})"
   | .phi d ty incoming =>
       -- LLVM writes the incoming values untyped — the instruction's type prefix
       -- supplies it — so the printer emits a register bare and a literal without

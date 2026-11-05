@@ -465,6 +465,52 @@ theorem handled_instrT_call (calls : Calls) (hcall : PureEnv calls) (frame : Nat
           simp only [hret]
           exact hok (s.bind d out.ret) hE
 
+/-- A void call re-emits its event under the handler, and under a `PureEnv`
+environment the caller's memory is untouched, so the continuation is entered
+where it was. -/
+theorem handled_instrT_callVoid (calls : Calls) (hcall : PureEnv calls)
+    (frame : Nat → Prop) (s : State) (callee : String)
+    (args : List (Ty × Operand)) (k : State → Tree Ev Outcome)
+    (r : Option Outcome)
+    (hok : ∀ s', evalInstr calls s (.callVoid callee args) = some s' →
+      HandledExec calls (handle frame s'.mem (k s')) r)
+    (hub : evalInstr calls s (.callVoid callee args) = none → r = some Outcome.ub) :
+    HandledExec calls
+      (handle frame s.mem (instrT calls s (.callVoid callee args) k)) r := by
+  cases ha : evalOperands s args with
+  | none =>
+      have hE : evalInstr calls s (.callVoid callee args) = none := by
+        simp [evalInstr, ha]
+      rw [hub hE]
+      simp only [instrT, ha]
+      exact handled_ubT calls frame s.mem
+  | some vs =>
+      cases hC : calls callee vs s.mem s.next with
+      | none =>
+          have hret : retAt calls callee vs = none := by
+            simp only [retAt, ← hcall.1 callee vs s.mem s.next [] 1, hC]
+            rfl
+          have hE : evalInstr calls s (.callVoid callee args) = none := by
+            simp [evalInstr, ha, hC]
+          rw [hub hE]
+          simp only [instrT, ha]
+          rw [handle_call]
+          refine HandledExec.call hcall ?_
+          simp only [hret]
+          exact handled_ubT calls frame s.mem
+      | some out =>
+          have hret : retAt calls callee vs = some out.ret := by
+            simp only [retAt, ← hcall.1 callee vs s.mem s.next [] 1, hC]
+            rfl
+          obtain ⟨hm, hn⟩ := hcall.2 callee vs s.mem s.next out hC
+          have hE : evalInstr calls s (.callVoid callee args) = some s := by
+            simp only [evalInstr, ha, hC, hm, hn]
+          simp only [instrT, ha]
+          rw [handle_call]
+          refine HandledExec.call hcall ?_
+          simp only [hret]
+          exact hok s hE
+
 /-- Straight-line code: the handler's memory tracks the state `denoteCode`
 reaches. -/
 theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → Prop) :
@@ -489,63 +535,64 @@ theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → P
       cases i with
       | load d ty p => exact handled_instrT_load calls frame s d ty p _ r hokK hubK
       | store ty v p => exact handled_instrT_store calls frame s ty v p _ r hokK hubK
-      | gep d base off => exact handled_pureInstrT calls frame s (.gep d base off) _ r (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s' (by intro ty v p hh; cases hh) (by intro d rt c a hh; cases hh) h) hokK hubK
+      | gep d base off => exact handled_pureInstrT calls frame s (.gep d base off) _ r (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s' (by intro ty v p hh; cases hh) (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | call d rt c args => exact handled_instrT_call calls hcall frame s d rt c args _ r hokK hubK
+      | callVoid c args => exact handled_instrT_callVoid calls hcall frame s c args _ r hokK hubK
       | binop d op w a b =>
           exact handled_pureInstrT calls frame s (.binop d op w a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | icmp d pr w a b =>
           exact handled_pureInstrT calls frame s (.icmp d pr w a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | icmpVec d pr n w a b =>
           exact handled_pureInstrT calls frame s (.icmpVec d pr n w a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | binopVec d op n w a b =>
           exact handled_pureInstrT calls frame s (.binopVec d op n w a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | bitcastMask d n v =>
           exact handled_pureInstrT calls frame s (.bitcastMask d n v) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | phi d ty inc =>
           exact handled_pureInstrT calls frame s (.phi d ty inc) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | select d ty c a b =>
           exact handled_pureInstrT calls frame s (.select d ty c a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | trunc d wi wo v =>
           exact handled_pureInstrT calls frame s (.trunc d wi wo v) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | zext d wi wo v =>
           exact handled_pureInstrT calls frame s (.zext d wi wo v) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | sext d wi wo v =>
           exact handled_pureInstrT calls frame s (.sext d wi wo v) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | alloca d ty al =>
           exact handled_pureInstrT calls frame s (.alloca d ty al) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
-              (by intro d rt c a hh; cases hh) h) hokK hubK
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
 
 /-- A terminator resolves as its continuation does on a jump, and its own memory
 is the handler's: a `ret` or a jump leaves the memory alone, and `ub` is a `ub`
