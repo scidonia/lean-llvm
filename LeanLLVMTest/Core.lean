@@ -379,47 +379,59 @@ def gepByteRun (off : String) : Option Outcome :=
 #guard gepByteRun "4" = some .ub
 #guard gepByteRun "-1" = some .ub
 
--- The step's facts, restated from `LeanLLVM.Semantics`: the accepting case, the
--- refusal the negative index is, the refusal of each other operand shape, and
--- the memory it leaves alone.  A `#guard` above observes the step on values this
--- file chose; these are the statements a later proof composes with, and each is
--- pinned below to the standard axioms.
-example {calls : Calls} {s : State} {d : String} {base off : Operand}
+-- The step's facts, restated from `LeanLLVM.Semantics`: the accepting case with
+-- the element-type scaling, the `i8` case where the scaling is the byte count
+-- the earlier model computed, the refusal the negative index is, the refusal of
+-- each other operand shape, and the memory it leaves alone.  A `#guard` above
+-- observes the step on values this file chose; these are the statements a later
+-- proof composes with, and each is pinned below to the standard axioms.
+example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
     {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
     (ho : evalOperand s off = some (.int w n)) (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
-    evalInstr calls s (.gep d base off) =
-      some (s.bind d (.ptr (a + (n.signExtend 64).toNat))) :=
+    evalInstr calls s (.gep d elemTy base off) =
+      some (s.bind d (.ptr (a + (n.signExtend 64).toNat * elemTy.sizeBytes))) :=
   evalInstr_gep hb ho hpos
 
 example {calls : Calls} {s : State} {d : String} {base off : Operand}
     {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n)) (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls s (.gep d (.int 8) base off) =
+      some (s.bind d (.ptr (a + (n.signExtend 64).toNat))) :=
+  evalInstr_gep_i8 hb ho hpos
+
+example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
+    {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
     (ho : evalOperand s off = some (.int w n)) (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63) :
-    evalInstr calls s (.gep d base off) = none :=
+    evalInstr calls s (.gep d elemTy base off) = none :=
   evalInstr_gep_negative hb ho hneg
 
-example {calls : Calls} {s : State} {d : String} {base off : Operand} {v : Value}
-    (hb : evalOperand s base = some v) (hv : ∀ a, v ≠ .ptr a) :
-    evalInstr calls s (.gep d base off) = none :=
+example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
+    {v : Value} (hb : evalOperand s base = some v) (hv : ∀ a, v ≠ .ptr a) :
+    evalInstr calls s (.gep d elemTy base off) = none :=
   evalInstr_gep_none_of_base hb hv
 
-example {calls : Calls} {s : State} {d : String} {base off : Operand} {a : Nat}
-    (hb : evalOperand s base = some (.ptr a)) {v : Value}
+example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
+    {a : Nat} (hb : evalOperand s base = some (.ptr a)) {v : Value}
     (ho : evalOperand s off = some v) (hv : ∀ w n, v ≠ .int w n) :
-    evalInstr calls s (.gep d base off) = none :=
+    evalInstr calls s (.gep d elemTy base off) = none :=
   evalInstr_gep_none_of_off hb ho hv
 
-example {calls : Calls} {s : State} {d : String} {base off : Operand}
+example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
     (h : evalOperand s base = none ∨ evalOperand s off = none) :
-    evalInstr calls s (.gep d base off) = none :=
+    evalInstr calls s (.gep d elemTy base off) = none :=
   evalInstr_gep_none_of_unbound h
 
-example {calls : Calls} {s s' : State} {d : String} {base off : Operand}
-    (h : evalInstr calls s (.gep d base off) = some s') : s'.mem = s.mem :=
+example {calls : Calls} {s s' : State} {d : String} {elemTy : Ty} {base off : Operand}
+    (h : evalInstr calls s (.gep d elemTy base off) = some s') : s'.mem = s.mem :=
   evalInstr_gep_mem h
 
 /-- info: 'LeanLLVM.evalInstr_gep' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.evalInstr_gep
+
+/-- info: 'LeanLLVM.evalInstr_gep_i8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_i8
 
 /-- info: 'LeanLLVM.evalInstr_gep_negative' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

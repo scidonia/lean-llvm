@@ -88,7 +88,7 @@ def laneHead : List Instr := [
   .load "%ki" (.int 64) (.reg "%k"),
   .trunc "%k32" 64 32 (.reg "%ki"),
   .binop "%one" .shl 32 (lit32 1) (.reg "%k32"),
-  .gep "%bp" (.reg "%in") (.reg "%ki"),
+  .gep "%bp" (.int 8) (.reg "%in") (.reg "%ki"),
   .load "%b" (.int 8) (.reg "%bp")]
 
 /-- The full-window path's skip bits: the quote, backslash and `< 0x20` lane
@@ -143,11 +143,11 @@ def ruleInstrs : List Instr := [
   .store (.int 32) (.reg "%m2") (.reg "%maskp"),
   -- the carry, as the slot's four words, and the stop word
   .load "%f" (.int 32) (.reg "%state"),
-  .gep "%sp4" (.reg "%state") (lit32 4),
+  .gep "%sp4" (.int 8) (.reg "%state") (lit32 4),
   .load "%nw" (.int 32) (.reg "%sp4"),
-  .gep "%sp8" (.reg "%state") (lit32 8),
+  .gep "%sp8" (.int 8) (.reg "%state") (lit32 8),
   .load "%lo" (.int 32) (.reg "%sp8"),
-  .gep "%sp12" (.reg "%state") (lit32 12),
+  .gep "%sp12" (.int 8) (.reg "%state") (lit32 12),
   .load "%hi" (.int 32) (.reg "%sp12"),
   .load "%stp" (.int 32) (.reg "%stopp"),
   -- the byte rule's conditions, in its own order

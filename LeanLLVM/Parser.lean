@@ -754,19 +754,38 @@ def parseValueInstr (dst : String) : P Stmt := do
           else P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
       | _, _ => P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
   | "getelementptr" =>
-      -- `getelementptr [inbounds] i8, ptr %base, iN %off`: one index, an `i8`
-      -- element type, and an index no wider than 64 bits.  The element type is
-      -- fixed because the index is a byte count, and every excluded shape is
-      -- refused by name rather than approximated: the modifiers other than
-      -- `inbounds`, an element type other than `i8`, a base that is not a
-      -- `ptr`, a second index, and an index type that is not an integer no
-      -- wider than 64 bits.  `inbounds` itself is accepted and dropped: the
-      -- instruction has no field for it, and the printer emits it again.
+      -- `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`: one index and an
+      -- element type whose allocated size is the stored size the step scales by.
+      -- The element token is read as a type first, so an aggregate (`[N x T]`), a
+      -- named struct (`%struct.P`) or a vector (`<n x iW>`) is refused by
+      -- `parseTy` before this branch decides anything, and that message names
+      -- the first token it read (`[`, `%struct.P`, `<`) rather than a whole
+      -- type; this branch's non-integer arm therefore sees only `ptr` and
+      -- `void`.  An integer width outside `Ty.gepElemAdmitted` is refused here,
+      -- by name and with the allocated-versus-stored-size reason: the step
+      -- scales by the stored size, so a width where the two differ would give
+      -- this model one address and LLVM another.  The other excluded shapes —
+      -- the modifiers other than `inbounds`, a base that is not a `ptr`, a
+      -- second index, and an index type that is not an integer no wider than 64
+      -- bits — are refused by name too.  `inbounds` itself is accepted and
+      -- dropped: the instruction has no field for it, and the printer emits it
+      -- again.
       let _ ← gepModifiers
       let elemTok ← P.next
-      match parseTy elemTok with
-      | .ok (.int 8) => pure ()
-      | _ => P.fail s!"getelementptr element type '{elemTok}' is not modelled: the index is a byte count"
+      let elemTy ← match parseTy elemTok with
+        | .ok ty@(.int w) =>
+            if ty.gepElemAdmitted then pure ty
+            else
+              P.fail s!"getelementptr element width i{w} is not admitted: the step \
+                scales by the stored size, and only i1, i7, i8, i16, i32, i64 and \
+                i128 are admitted — the widths the model pins as having the same \
+                allocated and stored size. A width where the two differ would be \
+                given one address here and another by LLVM, and a width the model \
+                does not pin is not characterised here; both are refused"
+        | .ok _ =>
+            P.fail s!"getelementptr element type '{elemTok}' is not modelled: a \
+              pointer or void element type has no integer size to scale the index by"
+        | .error e => P.fail e
       P.expect ","
       let baseTyTok ← P.next
       if baseTyTok ≠ "ptr" then
@@ -783,7 +802,7 @@ def parseValueInstr (dst : String) : P Stmt := do
       match (← P.peek) with
       | some "," => P.fail "getelementptr with more than one index is not modelled"
       | _ => pure ()
-      pure (.instr (.gep dst base off))
+      pure (.instr (.gep dst elemTy base off))
   | "call" => parseCall (some dst)
   | "tail" => do
       P.expect "call"

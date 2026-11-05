@@ -76,7 +76,7 @@ def substInstr (σ : Subst) : Instr → Instr
   | .alloca d ty align => .alloca d ty align
   | .load d ty p => .load d ty (substOperand σ p)
   | .store ty v p => .store ty (substOperand σ v) (substOperand σ p)
-  | .gep d base off => .gep d (substOperand σ base) (substOperand σ off)
+  | .gep d elemTy base off => .gep d elemTy (substOperand σ base) (substOperand σ off)
   | .icmpVec d pred n w a b => .icmpVec d pred n w (substOperand σ a) (substOperand σ b)
   | .binopVec d op n w a b => .binopVec d op n w (substOperand σ a) (substOperand σ b)
   | .bitcastMask d n v => .bitcastMask d n (substOperand σ v)
@@ -535,7 +535,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
   | alloca d ty align => simp [foldInstr] at hf
   | load d ty p => simp [foldInstr] at hf
   | store ty v p => simp [foldInstr] at hf
-  | gep d base off => simp [foldInstr] at hf
+  | gep d elemTy base off => simp [foldInstr] at hf
   | icmpVec d pred n w a b => simp [foldInstr] at hf
   | binopVec d op n w a b => simp [foldInstr] at hf
   | bitcastMask d n v => simp [foldInstr] at hf

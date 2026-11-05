@@ -156,9 +156,17 @@ load handles the remainder.
    generic instruction branch of `parseValueInstr` names the token), vector
    `alloca`/`store`/`select` (`parseValueInstr`'s `alloca` and `select` arms,
    and `parseSimple`'s `store`). A pointer offset is
-   modelled: `getelementptr` reads one `i8`-indexed offset whose index is no
-   wider than 64 bits, and every other shape is refused by name
-   (`parseValueInstr`'s `getelementptr` branch). An intrinsic call is **not** refused: the parser
+   modelled: `getelementptr` reads one offset scaled by one of the admitted
+   integer element widths (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128` — the
+   widths pinned as having an allocated size equal to the stored size the model
+   scales by), with an index
+   no wider than 64 bits, and every other shape — a width such as `i24` whose
+   allocated size differs, an aggregate, pointer or vector element type, a
+   second index, a wider index, the `inrange`/`nuw`/`nusw` modifiers — is
+   refused by name (`parseValueInstr`'s `getelementptr`
+   branch). The element type is a field of the instruction (`Instr.gep`), so the
+   step is `base + off * sizeof(elemTy)` and `i8` is the byte offset this model
+   started with. An intrinsic call is **not** refused: the parser
    accepts any callee symbol (`parseValueInstr`'s `call` branch), so a call to
    `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
    `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model

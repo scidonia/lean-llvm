@@ -25,13 +25,18 @@ inductive Instr where
   | alloca (dst : String) (ty : Ty) (align : Nat)
   | load (dst : String) (ty : Ty) (ptr : Operand)
   | store (ty : Ty) (val ptr : Operand)
-  /-- A pointer offset: `getelementptr [inbounds] i8, ptr %base, iN %off`.  The
-  element type is `i8`, so the index is a byte count and the result is a `ptr`.
-  The index's own width is not a field: the semantics sign-extends whatever
-  integer value it reads to 64 bits, so an `iN` in the text is a shape the
-  parser checks, not state the instruction keeps.  `inbounds` is not a field
-  either — the printer emits it and no semantics here reads it. -/
-  | gep (dst : String) (base : Operand) (off : Operand)
+  /-- A pointer offset: `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`.
+  The element type is a field, because the step scales the index by the element
+  type's size: an `i32` element type adds `4 * off` bytes and an `i8` element
+  type adds `off`, which is the byte count the earlier form expressed.  The
+  parser admits only the integer widths `Ty.gepElemAdmitted` names below, plus
+  no other non-integer type, and refuses the rest by name; the field itself is
+  any `Ty`, and the step reads its `sizeBytes`.  The index's own width is not a
+  field: the semantics sign-extends whatever integer value it reads to 64 bits,
+  so an `iN` in the text is a shape the parser checks, not state the instruction
+  keeps.  `inbounds` is not a field either — the printer emits it and no
+  semantics here reads it. -/
+  | gep (dst : String) (elemTy : Ty) (base : Operand) (off : Operand)
   /-- A lane-wise integer comparison: each lane of the result is the predicate's
   one-bit result on the two operands' lane at that position.  The lane count and
   width are the operands' vector type, `<n x iw>`. -/
@@ -60,6 +65,41 @@ inductive Instr where
   | phi (dst : String) (ty : Ty) (incoming : List (String × Operand))
   deriving DecidableEq, Repr
 
+/-- The `getelementptr` element widths this model admits: the widths it **pins**
+as having the same **allocated** size on the modelled datalayout as the **stored**
+size `Ty.sizeBytes` computes.
+
+`sizeBytes` is a store size — `(w + 7) / 8` — while LLVM scales a `getelementptr`
+by the type's *allocated* size, which rounds the store size up to the type's ABI
+alignment.  The two agree on the seven widths this model admits and diverge on
+others.  Measured with `opt -passes=instcombine` here, under the datalayout this
+repository records (`target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"`),
+it folds `getelementptr i24, ptr null, i64 1` to 4 while `sizeBytes i24` is 3,
+`i33` to 8 while it is 5, `i48` to 8 while it is 6, and `i96` to 16 while it is
+12.  The datalayout matters: without one, `opt` uses LLVM's default layout and
+folds `i96` to 12 instead, which is why every number here is qualified by the
+layout it was read under.  A step scaled by the stored size would therefore name
+one address in this model and another in LLVM, so the parser refuses such a width
+by name instead of approximating it, and admits only `i1`, `i7`, `i8`, `i16`,
+`i32`, `i64` and `i128`, whose allocated size is 1, 1, 1, 2, 4, 8 and 16 bytes on
+the same datalayout.  This is an allowlist rather than a computation of the
+allocated size: the model has no use for one yet, and it does not characterise
+which widths beyond the listed seven would also agree (`i2` is allocated 1 for a
+stored 1, and is refused as policy).
+
+Two limits of the resulting guarantee belong with it.  First, the admitted set is
+what the model *establishes* and pins by measurement, not every width whose two
+sizes happen to agree, so an unlisted agreeing width is refused as policy.
+Second, the step bounds the index below `2 ^ 63` but not the **address**: an
+`i128` element type multiplies an index below `2 ^ 63` by 16, so the model can
+compute an address at or above `2 ^ 64`.  The printer emits `inbounds` on every
+`getelementptr`, and LLVM's `inbounds` poisoning such a pointer is a behaviour
+this model does not represent; a bound tying the index to the element width
+would close that, and is not added here. -/
+def Ty.gepElemAdmitted : Ty → Bool
+  | .int 1 | .int 7 | .int 8 | .int 16 | .int 32 | .int 64 | .int 128 => true
+  | _ => false
+
 /-- The register an instruction defines, if any. -/
 def Instr.dst? : Instr → Option String
   | .binop d _ _ _ _ => some d
@@ -71,7 +111,7 @@ def Instr.dst? : Instr → Option String
   | .alloca d _ _ => some d
   | .load d _ _ => some d
   | .store _ _ _ => none
-  | .gep d _ _ => some d
+  | .gep d _ _ _ => some d
   | .icmpVec d _ _ _ _ _ => some d
   | .binopVec d _ _ _ _ _ => some d
   | .bitcastMask d _ _ => some d
@@ -90,7 +130,7 @@ def Instr.uses : Instr → List String
   | .alloca _ _ _ => []
   | .load _ _ p => p.regs
   | .store _ v p => v.regs ++ p.regs
-  | .gep _ base off => base.regs ++ off.regs
+  | .gep _ _ base off => base.regs ++ off.regs
   | .icmpVec _ _ _ _ a b => a.regs ++ b.regs
   | .binopVec _ _ _ _ a b => a.regs ++ b.regs
   | .bitcastMask _ _ v => v.regs

@@ -194,7 +194,9 @@ hand-written replacement is not.
 3. A `replaceFunction` pass, sound by that congruence.
 4. Enough IR to parse clang output: `phi`, globals, aggregates/arrays and
    `memcpy`-class intrinsics. A byte-offset `getelementptr` and the vector
-   forms are modelled; those four are not.
+   forms were modelled when this was weighed; since then `phi` and an
+   integer-element `getelementptr` have entered the fragment, and globals,
+   aggregates/arrays and `memcpy`-class intrinsics have not.
 
 **Trust boundary.** The compiler for everything except the replaced function;
 the swap is proved.

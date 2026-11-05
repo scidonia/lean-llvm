@@ -439,7 +439,7 @@ canonical IR, checked with `llvm-as` in the verification runs.
    proof is naturally one-directional.
 2. **Unreachable-block elimination.**  Branch folding creates unreachable
    blocks; removing them is an equivalence over reachable states.
-3. **Wider syntax.**  `getelementptr` and globals, and a dominance check for
+3. **Wider syntax.**  Globals, and a dominance check for
    cross-block constant propagation.  (`phi` is modelled: selection is by the
    predecessor field, and its conformance and differential evidence live in
    `tests/phi-fragment.lean` and `tests/phi-differential.sh`.)  Calls are modelled
@@ -454,7 +454,13 @@ canonical IR, checked with `llvm-as` in the verification runs.
    vector `load` (`Instr.load` carries no alignment field, so a captured
    `align 1` is dropped), each justified by the construct it serves in the
    emitted classifier fixture `probes/install/ir/json-classify.candidate.ll`.
-   `getelementptr` remains future.
+   `getelementptr` is modelled for the integer element widths the model pins as
+   having an allocated size equal to the stored size `Ty.sizeBytes` computes
+   (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128`): `Instr.gep` carries the element type and the step adds
+   `off * sizeof(elemTy)`, so `i8` is the byte offset the model began with and
+   `i32`/`i64` strides are the forms clang emits; a width whose two sizes differ
+   (`i24`, `i48`), and an aggregate, pointer or vector element type, remains
+   future and is refused by name.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing
