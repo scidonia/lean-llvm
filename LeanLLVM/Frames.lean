@@ -100,13 +100,18 @@ footprint, and nothing else may differ.  The allocator is required to agree
 exactly rather than outside `frame`, because the caller resumes from it and a
 disagreement relocates every later allocation.  No bound is placed on `next`:
 the relation `CallRefinesWithin` is stated at every base, so the step lemma needs
-none here. -/
+none here.
+
+The predecessor is compared exactly, because a `phi` reads it: two states that
+disagreed there would select different incoming values from the same instruction,
+which is a difference no footprint excuses. -/
 def State.AgreesOutside (frame : Nat → Prop) (s t : State) : Prop :=
-  s.env = t.env ∧ s.pc = t.pc ∧ s.next = t.next ∧ AgreesOutsideMem s.mem t.mem frame
+  s.env = t.env ∧ s.pc = t.pc ∧ s.next = t.next ∧ s.pre = t.pre ∧
+    AgreesOutsideMem s.mem t.mem frame
 
 theorem State.agreesOutside_refl (s : State) (frame : Nat → Prop) :
     State.AgreesOutside frame s s :=
-  ⟨rfl, rfl, rfl, AgreesOutsideMem.refl s.mem frame⟩
+  ⟨rfl, rfl, rfl, rfl, AgreesOutsideMem.refl s.mem frame⟩
 
 /-- A control step's result related at `frame`: the two take the same constructor
 with post-states that agree.  This mirrors `Outcome.AgreesOutside`

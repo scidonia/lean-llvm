@@ -72,7 +72,7 @@ def envForBodySym (sym : String) (fuel reserve : Nat) (f : Function) : Calls :=
     if callee = sym then
       let s : State :=
         { env := (f.params.zip args).map fun p => (p.1.1, p.2)
-          mem := mem, next := next, pc := f.entry?.getD "" }
+          mem := mem, next := next, pc := f.entry?.getD "", pre := none }
       match runFuel noCalls fuel f s with
       | some (.ret (some v) m) => some { ret := v, mem := m, next := next + reserve }
       | _ => none
@@ -234,11 +234,11 @@ theorem classify32_seed_run (block : Block32) (mem : Mem) (p next : Nat)
     (hread : readBytes mem p 32 = some (List.ofFn block)) :
     runFuel noCalls 10000 classify32Function
         { env := (classify32Function.params.zip [.ptr p]).map fun q => (q.1.1, q.2)
-          mem := mem, next := next, pc := classify32Function.entry?.getD "" } =
+          mem := mem, next := next, pc := classify32Function.entry?.getD "", pre := none } =
       some (.ret (some (.int 32 (maskOf block))) mem) := by
   let s : State :=
     { env := (classify32Function.params.zip [.ptr p]).map fun q => (q.1.1, q.2)
-      mem := mem, next := next, pc := classify32Function.entry?.getD "" }
+      mem := mem, next := next, pc := classify32Function.entry?.getD "", pre := none }
   change runFuel noCalls 10000 classify32Function s =
     some (.ret (some (.int 32 (maskOf block))) mem)
   have harg : lookupName s.env argName = some (.ptr p) := by
@@ -253,11 +253,11 @@ theorem classify32_seed_run_ub (mem : Mem) (p next : Nat)
     (hread : readBytes mem p 32 = none) :
     runFuel noCalls 10000 classify32Function
         { env := (classify32Function.params.zip [.ptr p]).map fun q => (q.1.1, q.2)
-          mem := mem, next := next, pc := classify32Function.entry?.getD "" } =
+          mem := mem, next := next, pc := classify32Function.entry?.getD "", pre := none } =
       some .ub := by
   let s : State :=
     { env := (classify32Function.params.zip [.ptr p]).map fun q => (q.1.1, q.2)
-      mem := mem, next := next, pc := classify32Function.entry?.getD "" }
+      mem := mem, next := next, pc := classify32Function.entry?.getD "", pre := none }
   change runFuel noCalls 10000 classify32Function s = some .ub
   have harg : lookupName s.env argName = some (.ptr p) := by
     simp [s, classify32Function, argName, List.map, List.zip, List.zipWith]
@@ -287,10 +287,10 @@ theorem classify32_run_ub_of_head (v : Value) (rest : List Value) (mem : Mem)
     (next : Nat) (hne : ∀ p, v ≠ .ptr p) :
     runFuel noCalls 10000 classify32Function
         { env := (classify32Function.params.zip (v :: rest)).map fun q => (q.1.1, q.2)
-          mem := mem, next := next, pc := classify32Function.entry?.getD "" } = some .ub := by
+          mem := mem, next := next, pc := classify32Function.entry?.getD "", pre := none } = some .ub := by
   let s : State :=
     { env := (classify32Function.params.zip (v :: rest)).map fun q => (q.1.1, q.2)
-      mem := mem, next := next, pc := classify32Function.entry?.getD "" }
+      mem := mem, next := next, pc := classify32Function.entry?.getD "", pre := none }
   change runFuel noCalls 10000 classify32Function s = some .ub
   have harg : lookupName s.env argName = some v := by
     simp [s, classify32Function, argName, List.map, List.zip, List.zipWith]
@@ -468,7 +468,7 @@ theorem scanCaller_step_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
         { env := [("%m", v), ("%b3", .ptr 25), ("%b2", .ptr 17), ("%b1", .ptr 9),
                   ("%b0", .ptr 1), ("%w0", .int 64 w0), ("%w1", .int 64 w1),
                   ("%w2", .int 64 w2), ("%w3", .int 64 w3)]
-          mem := m, next := next, pc := "entry" } := by
+          mem := m, next := next, pc := "entry", pre := none } := by
   have h' : calls jsonSeamSymbol [.ptr 1]
       (writeBytes (writeBytes (writeBytes (writeBytes [] 1 (natToBytes w0.toNat 8))
         9 (natToBytes w1.toNat 8)) 17 (natToBytes w2.toNat 8)) 25
@@ -666,11 +666,11 @@ theorem wrongMask_run (block : Block32) (mem : Mem) (p next : Nat)
     (hread : readBytes mem p 32 = some (List.ofFn block)) :
     runFuel noCalls 10000 wrongMaskFunction
         { env := (wrongMaskFunction.params.zip [.ptr p]).map fun q => (q.1.1, q.2)
-          mem := mem, next := next, pc := wrongMaskFunction.entry?.getD "" } =
+          mem := mem, next := next, pc := wrongMaskFunction.entry?.getD "", pre := none } =
       some (.ret (some (.int 32 (packed block ^^^ BitVec.ofInt 32 (-1)))) mem) := by
   let s : State :=
     { env := (wrongMaskFunction.params.zip [.ptr p]).map fun q => (q.1.1, q.2)
-      mem := mem, next := next, pc := wrongMaskFunction.entry?.getD "" }
+      mem := mem, next := next, pc := wrongMaskFunction.entry?.getD "", pre := none }
   change runFuel noCalls 10000 wrongMaskFunction s =
     some (.ret (some (.int 32 (packed block ^^^ BitVec.ofInt 32 (-1)))) mem)
   have harg : lookupName s.env argName = some (.ptr p) := by

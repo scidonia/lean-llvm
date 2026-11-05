@@ -79,7 +79,8 @@ lane body's `load` binds it, empty memory, and no other register.  The chain
 reads only the byte it is given and writes no memory, so nothing else is
 needed. -/
 def structBitStart (b : UInt8) : State :=
-  { env := [("%b", .int 8 (BitVec.ofNat 8 b.toNat))], mem := [], next := 0, pc := "body" }
+  { env := [("%b", .int 8 (BitVec.ofNat 8 b.toNat))], mem := [], next := 0, pc := "body",
+    pre := none }
 
 /-- `%stb` after the body's table instructions have run: the one-bit value the
 lane body's `select` reads.  `none` would be a stuck chain, which

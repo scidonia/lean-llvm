@@ -516,6 +516,11 @@ theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → P
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) h) hokK hubK
+      | phi d ty inc =>
+          exact handled_pureInstrT calls frame s (.phi d ty inc) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
       | select d ty c a b =>
           exact handled_pureInstrT calls frame s (.select d ty c a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'

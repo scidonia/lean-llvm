@@ -386,7 +386,8 @@ own semantics, never more.
 | memory | finite map from byte address to byte; `alloca` bumps a monotone pointer | no provenance, aliasing or deallocation model yet |
 | uninitialised load | `ub` | store-to-load forwarding needs the memory model next |
 | integer values | width carried with a `BitVec`; operations read operands at `Nat` width | representation-agnostic folds, no dependent casts in proofs |
-| control flow | one flat register environment across blocks | `phi` and dominance are not modelled; passes stay block-local |
+| control flow | one flat register environment across blocks | dominance is not modelled; passes stay block-local |
+| `phi` | selected by the block the edge came from: `State` carries a predecessor field, written by a jump and read by `phi`; an entry missing for the actual predecessor, or a `phi` in a block with no predecessor, is `ub` | the predecessor is a field of the state rather than an edge-indexed rule, so a `phi`-free program is provably unaffected (`runFuel_init_setPre`); incoming labels are not checked against the block list, and a `phi` that is not at the head of its block is refused |
 
 ## Pass framework
 
@@ -438,8 +439,10 @@ canonical IR, checked with `llvm-as` in the verification runs.
    proof is naturally one-directional.
 2. **Unreachable-block elimination.**  Branch folding creates unreachable
    blocks; removing them is an equivalence over reachable states.
-3. **Wider syntax.**  `getelementptr`, `phi` and globals, with a dominance
-   check for cross-block constant propagation.  Calls are modelled
+3. **Wider syntax.**  `getelementptr` and globals, and a dominance check for
+   cross-block constant propagation.  (`phi` is modelled: selection is by the
+   predecessor field, and its conformance and differential evidence live in
+   `tests/phi-fragment.lean` and `tests/phi-differential.sh`.)  Calls are modelled
    (`Instr.call` resolved through `Calls`, which returns the callee's value,
    memory and allocator state) and refinement through them is one-directional
    (`CallRefinement`); a framed relation over that channel is the next step

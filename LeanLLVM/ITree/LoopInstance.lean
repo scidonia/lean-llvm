@@ -103,7 +103,7 @@ theorem cond_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
   let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 k))
   let s2 : State :=
     s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 k).ult (8 : BitVec 64))))
-  let s3 : State := { s2 with pc := "body" }
+  let s3 : State := { s2 with pc := "body", pre := some s2.pc }
   have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) :=
     lookup_bind_self s "%i1" _
   have hlc : lookupName s2.env "%c" =
@@ -175,7 +175,7 @@ theorem body_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
       some { s10 with mem := writeBytes s10.mem 9 (natToBytes i2v.toNat 8) } :=
     (loadValue_storeValue_64 s10 i2v 9).1
   let s11 : State := { s10 with mem := writeBytes s10.mem 9 (natToBytes i2v.toNat 8) }
-  let s12 : State := { s11 with pc := "cond" }
+  let s12 : State := { s11 with pc := "cond", pre := some s11.pc }
   have e1 : evalInstr noCalls s (.binop "%sh" .mul 64 (.reg "%i1") (.imm (.int 64 8))) = some s1 := by
     have h := evalInstr_mul_imm noCalls s "%sh" "%i1" (8 : BitVec 64)
     simp only [hi1] at h
@@ -322,7 +322,7 @@ theorem cond_done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVe
   let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 8))
   let s2 : State :=
     s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64))))
-  let s3 : State := { s2 with pc := "done" }
+  let s3 : State := { s2 with pc := "done", pre := some s2.pc }
   have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 8)) :=
     lookup_bind_self s "%i1" _
   have hlc : lookupName s2.env "%c" =
@@ -403,6 +403,8 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
         | binopVec d op n w a b =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | bitcastMask d n v =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | phi d ty inc =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | alloca d ty al =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih

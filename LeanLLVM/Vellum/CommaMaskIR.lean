@@ -542,7 +542,7 @@ theorem baseOut_eq_swar (x : BitVec 64) : baseOut x = swar x := by
 
 theorem baseline_step_entry (calls : Calls) (x : BitVec 64) :
     step calls baselineFunction (initState baselineFunction [.int 64 x]) =
-      .jump { initState baselineFunction [.int 64 x] with pc := "bb1" } := by
+      .jump { initState baselineFunction [.int 64 x] with pc := "bb1", pre := some "bb" } := by
   simp only [step, baselineFunction, baselineEntry, baselineBody, Function.findBlock,
     findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
     List.map, List.zip, List.zipWith, denoteCode, execTerm, ite_true, argName]

@@ -43,6 +43,14 @@ inductive Instr where
   /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
   is resolved by the semantics' call environment, not by the function itself. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
+  /-- A `phi`: one incoming value per predecessor block, selected at entry by the
+  block the edge came from.  The type is the instruction's result type, which
+  LLVM's text requires because an incoming value carries none; the parser refuses
+  an incoming operand whose type disagrees with it, and the semantics does not
+  consult it — the selected operand evaluates to its own value, exactly as
+  `select`'s result type is not consulted.  The predecessor is read from
+  `State.pre`, which only a jump writes. -/
+  | phi (dst : String) (ty : Ty) (incoming : List (String × Operand))
   deriving DecidableEq, Repr
 
 /-- The register an instruction defines, if any. -/
@@ -61,6 +69,7 @@ def Instr.dst? : Instr → Option String
   | .binopVec d _ _ _ _ _ => some d
   | .bitcastMask d _ _ => some d
   | .call d _ _ _ => some d
+  | .phi d _ _ => some d
 
 /-- Registers read by an instruction. -/
 def Instr.uses : Instr → List String
@@ -78,10 +87,12 @@ def Instr.uses : Instr → List String
   | .binopVec _ _ _ _ a b => a.regs ++ b.regs
   | .bitcastMask _ _ v => v.regs
   | .call _ _ _ args => (args.map (·.2.regs)).flatten
+  | .phi _ _ incoming => (incoming.map (fun kv => kv.2.regs)).flatten
 
 /-- Instructions with no memory effect.  `alloca` moves the allocation pointer
 and `store` writes memory; both stay out of the pure set.  A `load` reads
-memory but has no effect, so it is pure in this sense as well. -/
+memory but has no effect, so it is pure in this sense as well.  A `phi` reads
+the predecessor field of the state and no memory, so it is pure here too. -/
 def Instr.isPure : Instr → Bool
   | .binop .. => true
   | .icmp .. => true
@@ -97,6 +108,14 @@ def Instr.isPure : Instr → Bool
   | .binopVec .. => true
   | .bitcastMask .. => true
   | .call .. => false
+  | .phi .. => true
+
+/-- Whether an instruction is a `phi`, the one constructor that reads the
+state's predecessor field.  The non-interference theorem is stated for functions
+in which no instruction is a `phi`. -/
+def Instr.isPhi : Instr → Bool
+  | .phi .. => true
+  | _ => false
 
 /-- A terminator.  `ret void` carries `none`. -/
 inductive Term where
@@ -165,6 +184,18 @@ def findBlockList : List Block → String → Option Block
 def Function.findBlock (f : Function) (name : String) : Option Block :=
   findBlockList f.blocks name
 
+/-- A block found by name is a block of the function. -/
+theorem findBlockList_mem {bs : List Block} {n : String} {b : Block}
+    (h : findBlockList bs n = some b) : b ∈ bs := by
+  induction bs with
+  | nil => simp [findBlockList] at h
+  | cons b' rest ih =>
+      simp only [findBlockList] at h
+      split at h
+      · cases h
+        exact List.mem_cons_self ..
+      · exact List.mem_cons_of_mem _ (ih h)
+
 /-- Every register read anywhere in the function. -/
 def Function.usedNames (f : Function) : List String :=
   f.blocks.flatMap fun b => b.instrs.flatMap Instr.uses ++ b.term.uses
@@ -176,6 +207,39 @@ def Function.definedNames (f : Function) : List String :=
 /-- Block names in definition order. -/
 def Function.blockNames (f : Function) : List String :=
   f.blocks.map (·.name)
+
+/-- The incoming operand a `phi` selects for the block `p`: the entry whose label
+is `p`, searched in list order.  `none` means the incoming list has no entry for
+that predecessor, which the step transition reads as undefined behaviour. -/
+def phiIncoming (p : String) : List (String × Operand) → Option Operand
+  | [] => none
+  | (l, op) :: rest => if l = p then some op else phiIncoming p rest
+
+/-- Rewriting the operands of an incoming list rewrites the operand the selector
+returns, any predecessor and any list.  The labels are untouched, so selection
+is unaffected. -/
+theorem phiIncoming_map (p : String) (inc : List (String × Operand))
+    (f : Operand → Operand) :
+    phiIncoming p (inc.map fun kv => (kv.1, f kv.2)) = (phiIncoming p inc).map f := by
+  induction inc with
+  | nil => rfl
+  | cons kv rest ih =>
+      obtain ⟨l, op⟩ := kv
+      by_cases h : l = p <;> simp [phiIncoming, h, ih]
+
+/-- A function in which no block holds a `phi`.  The predicate the
+non-interference theorem is stated at. -/
+def Function.phiFree (f : Function) : Bool :=
+  f.blocks.all fun b => b.instrs.all fun i => !i.isPhi
+
+/-- A `phi`-free function's blocks hold no `phi`: the form the instruction-level
+proofs consume. -/
+theorem Function.phiFree_block {f : Function} (h : f.phiFree = true) {b : Block}
+    (hb : b ∈ f.blocks) : ∀ i ∈ b.instrs, i.isPhi = false := by
+  have h' : ∀ (x : Block), x ∈ f.blocks → ∀ i ∈ x.instrs, i.isPhi = false := by
+    simpa [Function.phiFree] using h
+  exact h' b hb
+
 
 /-- A cheap structural well-formedness condition: block names are unique and
 every branch target is a defined block.  The parser produces functions that

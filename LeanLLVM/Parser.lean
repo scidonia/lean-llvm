@@ -3,8 +3,8 @@ A parser for the subset of textual LLVM IR that the semantics models.
 
 The parser is line oriented: one instruction per line, one label per block.
 Unmodelled instructions and block structure are refused with a message naming
-the construct, rather than being approximated: `phi`, aggregates other than the
-fixed-length vector, and floating point are not accepted yet.  Of the pointer
+the construct, rather than being approximated: aggregates other than the
+fixed-length vector, and floating point, are not accepted yet.  Of the pointer
 arithmetic the modelled part is the byte offset an emitted body contains —
 `getelementptr [inbounds] i8, ptr X, iN Y` with one index no wider than 64 bits
 — and every other `getelementptr` shape is refused by name: a different element
@@ -19,6 +19,30 @@ model: a return attribute before the return type and a function attribute after
 the parameter list are both refused.  A `declare` header is not checked:
 unmodelled tokens in a declaration's parameter list or after its closing
 parenthesis are still accepted.
+
+`phi` is modelled, in the two shapes an emitted body writes: `%d = phi <ty> [
+<value>, %<block> ], ...` with at least one entry.  Its type token is required
+and compared with every incoming value — a literal is read at that type, and a
+register is looked up among the function's parameters and definitions once the
+blocks are known — so the type is not decoration.  Two further shapes are
+refused: a `phi` that is not at the head of its block, and a predecessor label
+listed twice.  A function that binds one register name twice is refused too, and
+so is one that defines a name one of its parameters already holds: the semantics
+binds a later definition over an earlier one while the `phi` type check reads the
+first, so a module that reused a name would get a defined meaning from the two
+readings disagreeing.  The rest is stated where it is met rather than silently
+approximated: a `phi` in the entry block is accepted and selects nothing at run
+time (the entry block has no predecessor, so the parser is not asked to play
+verifier); and an incoming label is not compared with the function's block list,
+so an entry naming a block that is not a predecessor is simply never selected
+and one naming a block that does not exist is never selected either.
+
+The asymmetry between those two label cases is deliberate.  A duplicate is
+refused because selecting the first match would hand a *defined* meaning to a
+module LLVM's verifier rejects, narrowing what the model permits below what the
+text says; a label that names no real predecessor is accepted because selecting
+nothing is `ub`, which widens the model's permitted behaviours rather than
+narrowing them.
 -/
 import LeanLLVM.Syntax
 import LeanLLVM.Printer
@@ -307,6 +331,155 @@ def parseCallArgs (toks : List String) : Except String (List (Ty × Operand)) :=
       | .error e => .error e
       | .ok acc' => .ok acc'.reverse
 
+/-- Parse one `phi` incoming entry: `[ <value>, %<block> ]`.  The value is read
+at the instruction's type, because LLVM's text leaves it untyped there; the
+label is a block name with its `%` stripped, as branch targets are. -/
+def parsePhiEntry (ty : Ty) : P (String × Operand) := do
+  P.expect "["
+  let toks ← P.takeUntil "]"
+  let vToks := toks.takeWhile (· ≠ ",")
+  let rest := toks.dropWhile (· ≠ ",")
+  let labelTok ← match rest with
+    | [",", l] => pure l
+    | _ => P.fail "a phi incoming entry must be written '[ <value>, %<block> ]'"
+  let label := if labelTok.startsWith "%" then (labelTok.drop 1).toString else labelTok
+  match P.runExact (parseOperand ty) vToks with
+  | .error e => P.fail s!"in a phi incoming value: {e}"
+  | .ok v => pure (label, v)
+
+/-- The incoming entries of a `phi`, in order.  The fuel is the token count, so
+each recursion consumes a token even when an entry is length-checked rather than
+recursed into. -/
+def phiEntries (ty : Ty) (fuel : Nat) (acc : List (String × Operand)) (ts : List String) :
+    Except String (List (String × Operand) × List String) :=
+  match fuel with
+  | 0 => .error "internal parser error: phi incoming fuel exhausted"
+  | n + 1 =>
+      match parsePhiEntry ty ts with
+      | .error e => .error e
+      | .ok (e, rest) =>
+          match rest with
+          | "," :: rest' => phiEntries ty n (e :: acc) rest'
+          | _ => .ok ((e :: acc).reverse, rest)
+
+/-- Refuse a `phi` that names the same predecessor block twice.  The check is
+local to the incoming list and needs no environment, and it is refused rather
+than resolved by first-match because a duplicated entry is a module LLVM's
+verifier rejects: taking the first would give a defined behaviour to text LLVM
+refuses, which is the one direction the model must not take.  A label naming no
+block at all is not checked here — it is simply never selected, and the step is
+`ub`, which is conservative. -/
+def checkPhiDuplicates (d : String) : List (String × Operand) → Except String Unit
+  | [] => .ok ()
+  | (l, _) :: rest =>
+      if rest.any (fun kv => kv.1 = l) then
+        .error s!"phi {d} lists block '{l}' more than once: each predecessor may \
+            appear at most once"
+      else checkPhiDuplicates d rest
+
+/-- Parse a `phi`'s incoming list.  At least one entry is required: LLVM's
+grammar has no empty incoming list. -/
+def parsePhiIncoming (ty : Ty) : P (List (String × Operand)) := fun ts =>
+  match phiEntries ty (ts.length + 1) [] ts with
+  | .error e => .error e
+  | .ok r => .ok r
+
+/-- The type an instruction's destination is bound at, when it binds one.  This
+is what lets the parser compare a `phi`'s type with a register its incoming list
+names; `store` binds nothing, so it has no type here. -/
+def Instr.resultTy : Instr → Option Ty
+  | .binop _ _ w _ _ => some (.int w)
+  | .icmp .. => some (.int 1)
+  | .select _ ty _ _ _ => some ty
+  | .trunc _ _ wOut _ => some (.int wOut)
+  | .zext _ _ wOut _ => some (.int wOut)
+  | .sext _ _ wOut _ => some (.int wOut)
+  | .alloca .. => some .ptr
+  | .load _ ty _ => some ty
+  | .store .. => none
+  | .gep .. => some .ptr
+  | .icmpVec _ _ n _ _ _ => some (.vec n (.int 1))
+  | .binopVec _ _ n w _ _ => some (.vec n (.int w))
+  | .bitcastMask _ n _ => some (.int n)
+  | .call _ retTy _ _ => some retTy
+  | .phi _ ty _ => some ty
+
+/-- The type a register is bound at in a function: its parameter type, or the
+result type of the first instruction that defines it.  A name is bound at most
+once, because `checkDefinitions` refuses a repeat, so the first definition is the
+only one and this table agrees with the semantics' reading of the environment
+(`State.bind` prepends and `lookupName` reads the head, so the last binding is the
+one in force — the two coincide only while no name is bound twice).  A name the
+function neither takes as a parameter nor defines has no type here. -/
+def Function.regType (f : Function) (n : String) : Option Ty :=
+  match lookupName f.params n with
+  | some ty => some ty
+  | none =>
+      let rec go : List Block → Option Ty
+        | [] => none
+        | b :: bs =>
+            match (b.instrs.filterMap fun i =>
+                match i.dst? with
+                | some d => if d = n then i.resultTy else none
+                | none => none).head? with
+            | some ty => some ty
+            | none => go bs
+      go f.blocks
+
+/-- Compare a `phi`'s type with every incoming operand.  A literal has already
+been read at that type by the operand grammar; a register is looked up among the
+function's parameters and definitions, and one bound at another type — or bound
+at no type at all — is refused by name. -/
+def checkPhiIncoming (f : Function) (blockName d : String) (ty : Ty) :
+    List (String × Operand) → Except String Bool
+  | [] => .ok true
+  | (_, .imm _) :: rest => checkPhiIncoming f blockName d ty rest
+  | (_, .reg n) :: rest =>
+      match f.regType n with
+      | some ty' =>
+          if ty' = ty then checkPhiIncoming f blockName d ty rest
+          else .error s!"phi {d} in block '{blockName}' has type {ty.render} but its \
+              incoming value {n} has type {ty'.render}"
+      | none =>
+          .error s!"phi {d} in block '{blockName}' reads {n}, which @{f.name} neither \
+              takes as a parameter nor defines"
+
+/-- Refuse a function that binds one register name twice: a definition repeated
+anywhere, or a definition reusing a parameter's name.
+
+This is the duplicate-labelled-edge problem in another costume, and it is
+refused for the same reason.  The semantics binds a *later* definition over an
+earlier one (`State.bind` prepends and `lookupName` reads the head), while the
+`phi` type check above reads the *first* definition in program order; a module
+that reused a name — which SSA forbids and LLVM's verifier rejects — would
+therefore get a defined meaning from the disagreement between the two readings,
+which is the one direction the model must not take.  A name that is bound once is
+read the same way by both, so refusing repeats keeps them in step. -/
+def checkDefinitions (f : Function) : Except String Unit :=
+  let rec go : List String → Except String Unit
+    | [] => .ok ()
+    | n :: rest =>
+        if rest.contains n then
+          .error s!"@{f.name} defines {n} more than once: a register name must be \
+              bound once, since a later binding would shadow the earlier one"
+        else if f.params.any fun p => p.1 = n then
+          .error s!"@{f.name} defines {n}, which is also one of its parameters: a \
+              parameter and a definition may not share a name"
+        else go rest
+  go f.definedNames
+
+/-- Check every `phi` of a function.  The parser does not build a full type
+environment, so this runs once the blocks are known; it is the check that makes
+the instruction's type field mean something rather than decorate the text. -/
+def checkPhiTypes (f : Function) : Except String Unit :=
+  match f.blocks.allM fun b =>
+      b.instrs.allM fun i =>
+        match i with
+        | .phi d ty inc => checkPhiIncoming f b.name d ty inc
+        | _ => .ok true with
+  | .error e => .error e
+  | .ok _ => .ok ()
+
 def parseValueInstr (dst : String) : P Stmt := do
   let op ← P.next
   match op with
@@ -433,7 +606,19 @@ def parseValueInstr (dst : String) : P Stmt := do
       match parseCallArgs toks with
       | .error e => P.fail e
       | .ok args => pure (.instr (.call dst retTy callee args))
-  | "phi" => P.fail "phi is not modelled yet"
+  | "phi" =>
+      -- `%d = phi <ty> [ <val>, %<block> ], ...`.  LLVM's grammar requires the
+      -- type token because an incoming value carries none; the values are read
+      -- at that type, so a literal is sized by it and a splat must agree with
+      -- its lane width.  A `void` phi has no value and is refused; the function
+      -- level type check below compares the type with every incoming register.
+      let ty ← expectTy
+      if ty = .void then P.fail "a phi of void has no value to select"
+      else
+        let incoming ← parsePhiIncoming ty
+        match checkPhiDuplicates dst incoming with
+        | .error e => P.fail e
+        | .ok _ => pure (.instr (.phi dst ty incoming))
   | other => P.fail s!"unsupported instruction '{other}'"
 where
   /-- Consume a `getelementptr`'s modifiers.  `inbounds` is accepted and
@@ -519,16 +704,24 @@ def isLabel (toks : List String) : Bool :=
 
 def parseBlockBody (name : String) (ls : List (List String)) :
     Except String (Block × List (List String)) := do
-  let rec collect (ls : List (List String)) (acc : List Instr) :
+  -- `seen` records whether a non-`phi` instruction has already been read in this
+  -- block.  LLVM requires `phi` nodes to be the first instructions of a basic
+  -- block; a `phi` after one has no defined meaning in the model either, because
+  -- the block's entry is the only point at which the predecessor is known.
+  let rec collect (ls : List (List String)) (acc : List Instr) (seen : Bool) :
       Except String (List Instr × Term × List (List String)) :=
     match ls with
     | [] => .error s!"block '{name}' has no terminator"
     | l :: rest =>
         match parseStmtLine l with
         | .error e => .error s!"in block '{name}': {e}"
-        | .ok (.instr i) => collect rest (i :: acc)
+        | .ok (.instr i) =>
+            if i.isPhi && seen then
+              .error s!"in block '{name}': a phi must be the first instructions of its \
+                  block, and this one follows a non-phi instruction"
+            else collect rest (i :: acc) (seen || !i.isPhi)
         | .ok (.term t) => .ok (acc.reverse, t, rest)
-  let (instrs, term, rest) ← collect ls []
+  let (instrs, term, rest) ← collect ls [] false
   .ok (⟨name, instrs, term⟩, rest)
 
 /-- Parse the body of a function: a sequence of labelled blocks.  The fuel is
@@ -624,7 +817,13 @@ def parseFunction (header : List String) (rest : List (List String)) :
     throw s!"malformed function header of @{name}: expected an opening brace after the parameter list"
   let (body, rest') ← takeBody rest
   let blocks ← parseBlocks body
-  .ok (⟨name, retTy, params, blocks⟩, rest')
+  let f : Function := ⟨name, retTy, params, blocks⟩
+  match checkDefinitions f with
+  | .error e => throw e
+  | .ok _ =>
+      match checkPhiTypes f with
+      | .error e => throw e
+      | .ok _ => .ok (f, rest')
 
 /-- Build one parameter from the tokens between two commas. -/
 def finishDeclParam (cur : List String) (acc : List Ty) : Except String (List Ty) :=

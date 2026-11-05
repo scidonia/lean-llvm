@@ -173,7 +173,7 @@ is not counted as one.
   divergent cut here and no fired assertion; a green control is not an
   assertion red. It does **not** show that the parser
   routes through the candidate, and it does not: the transported caller is
-  `scanCaller` (`LeanLLVM/Vellum/JsonSeam.lean:99-119`), which stages its own
+  `scanCaller` (`LeanLLVM/Vellum/JsonSeam.lean`), which stages its own
   32 bytes from four `i64` words before calling the classifier, so the parser
   never reaches the classifier.
 - **`X6` — the packing the semantics applies.** The reversing override builds,

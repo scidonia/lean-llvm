@@ -96,6 +96,12 @@ def Instr.render : Instr → String
       let rendered :=
         String.intercalate ", " (args.map fun (ty, op) => s!"{ty.render} {op.token}")
       s!"  {d} = call {retTy.render} @{callee}({rendered})"
+  | .phi d ty incoming =>
+      -- LLVM writes the incoming values untyped — the instruction's type prefix
+      -- supplies it — so the printer emits a register bare and a literal without
+      -- a type, and the parser reads both back at the phi's type.
+      let entries := incoming.map fun kv => s!"[ {kv.2.token}, %{kv.1} ]"
+      s!"  {d} = phi {ty.render} {String.intercalate ", " entries}"
 
 def Term.render : Term → String
   | .ret .void none => "  ret void"

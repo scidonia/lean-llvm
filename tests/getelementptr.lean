@@ -154,7 +154,7 @@ def gepLiteral : String := "  %q = getelementptr i8, ptr %p, i32 7"
 `%p = 100`, or `none` when the step refuses the offset. -/
 def gepAddress? (w : Nat) (off : Int) : Option Nat :=
   match evalInstr noCalls
-      { env := [("%p", .ptr 100)], mem := [], next := 0, pc := "entry" }
+      { env := [("%p", .ptr 100)], mem := [], next := 0, pc := "entry", pre := none }
       (.gep "%q" (.reg "%p") (.imm (.int w (BitVec.ofInt w off)))) with
   | some s =>
       match lookupName s.env "%q" with
@@ -189,12 +189,14 @@ def gepAddress? (w : Nat) (off : Int) : Option Nat :=
 -- undefined rather than coerced.
 #guard
   (evalInstr noCalls
-    { env := [("%p", .int 64 1), ("%k", .int 64 1)], mem := [], next := 0, pc := "entry" }
+    { env := [("%p", .int 64 1), ("%k", .int 64 1)], mem := [], next := 0, pc := "entry",
+      pre := none }
     (.gep "%q" (.reg "%p") (.reg "%k"))).isSome = false
 
 #guard
   (evalInstr noCalls
-    { env := [("%p", .ptr 8), ("%k", .ptr 8)], mem := [], next := 0, pc := "entry" }
+    { env := [("%p", .ptr 8), ("%k", .ptr 8)], mem := [], next := 0, pc := "entry",
+      pre := none }
     (.gep "%q" (.reg "%p") (.reg "%k"))).isSome = false
 
 /-! ### The instruction's projections -/

@@ -119,6 +119,7 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
   | icmpVec d p n w a b => rfl
   | binopVec d op n w a b => rfl
   | bitcastMask d n v => rfl
+  | phi d ty inc => rfl
   | call d ty callee args => rfl
 
 def strengthReduceBlock (b : Block) : Block :=

@@ -129,7 +129,7 @@ def entryStateMemAt (mem : Mem) (base : Nat) (x : BitVec 64) : State :=
             ("%m", .int 64 (x ^^^ 0x2C2C2C2C2C2C2C2C)),
             ("%arg", .int 64 x)],
     mem := writeBytes (writeBytes mem base (natToBytes 0 8)) (base + 8) (natToBytes 0 8),
-    next := base + 16, pc := "cond" }
+    next := base + 16, pc := "cond", pre := some "entry" }
 
 /-- The state the entry block reaches at `cond` from allocator base `base` and
 no incoming memory. -/
@@ -197,14 +197,14 @@ theorem entry_inv_at (x : BitVec 64) (mem : Mem) (base : Nat) :
       loadValue_writeBytes_below (writeBytes mem base (natToBytes 0 8)) (natToBytes 0 8)
         64 base (base + 8) (by omega)
     have h1 := (loadValue_storeValue_64
-      { env := [], mem := mem, next := base, pc := "entry" }
+      { env := [], mem := mem, next := base, pc := "entry", pre := none }
       (0 : BitVec 64) base).2
     simp only [entryStateMemAt, h9]
     simpa using h1
   · -- counter load
     have h := (loadValue_storeValue_64
       { env := [], mem := writeBytes mem base (natToBytes 0 8), next := base + 8,
-        pc := "entry" }
+        pc := "entry", pre := none }
       (0 : BitVec 64) (base + 8)).2
     simp only [entryStateMemAt]
     simpa using h
@@ -379,7 +379,7 @@ theorem cond_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
   let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 k))
   let s2 : State :=
     s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 k).ult (8 : BitVec 64))))
-  let s3 : State := { s2 with pc := "body" }
+  let s3 : State := { s2 with pc := "body", pre := some "cond" }
   have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) :=
     lookup_bind_self s "%i1" _
   have hlc : lookupName s2.env "%c" =
@@ -402,7 +402,7 @@ theorem cond_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
     simp only []
     rw [e2]
     simp only [execTerm, evalOperand, hlc, ofBool_ult k hk, s3]
-    simp
+    simp [s2, s1, State.bind, hpc]
   · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
@@ -461,7 +461,7 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
     (loadValue_storeValue_64 s10 i2v (base + 8)).1
   let s11 : State :=
     { s10 with mem := writeBytes s10.mem (base + 8) (natToBytes i2v.toNat 8) }
-  let s12 : State := { s11 with pc := "cond" }
+  let s12 : State := { s11 with pc := "cond", pre := some "body" }
   -- one instruction at a time
   have e1 : evalInstr noCalls s (.binop "%sh" .mul 64 (.reg "%i1") (.imm (.int 64 8))) = some s1 := by
     have h := evalInstr_mul_imm noCalls s "%sh" "%i1" (8 : BitVec 64)
@@ -542,7 +542,7 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
       simp [loopFunction, Function.findBlock, findBlockList, hpc, bodyBlock, bodyInstrs,
         condBody]
     simp only [step, hfind, bodyBlock, bodyInstrs, denoteCode, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11]
-    simp [execTerm, s12, s11]
+    simp [execTerm, s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, hpc]
   · have hsh : shv.toNat = 8 * k := by
       simp only [shv]
       rw [ofNat_mul_eight_lit k hk, ofNat_eight_mul_toNat k hk]
@@ -621,7 +621,7 @@ theorem cond_done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 
   let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 8))
   let s2 : State :=
     s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64))))
-  let s3 : State := { s2 with pc := "done" }
+  let s3 : State := { s2 with pc := "done", pre := some "cond" }
   have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 8)) :=
     lookup_bind_self s "%i1" _
   have hlc : lookupName s2.env "%c" =
@@ -643,7 +643,7 @@ theorem cond_done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 
     simp only []
     rw [e2]
     simp only [execTerm, evalOperand, hlc, ofBool_ult_eight, s3]
-    simp
+    simp [s2, s1, State.bind, hpc]
   · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
     · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]

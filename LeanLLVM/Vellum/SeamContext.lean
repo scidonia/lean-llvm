@@ -89,7 +89,7 @@ def envForBody (fuel reserve : Nat) (f : Function) : Calls :=
     if callee = seamSymbol then
       let s : State :=
         { env := (f.params.zip args).map fun p => (p.1.1, p.2)
-          mem := mem, next := next, pc := f.entry?.getD "" }
+          mem := mem, next := next, pc := f.entry?.getD "", pre := none }
       match runFuel noCalls fuel f s with
       | some (.ret (some v) m) => some { ret := v, mem := m, next := next + reserve }
       | _ => none

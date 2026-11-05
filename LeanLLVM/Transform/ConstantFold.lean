@@ -82,6 +82,10 @@ def substInstr (σ : Subst) : Instr → Instr
   | .bitcastMask d n v => .bitcastMask d n (substOperand σ v)
   | .call d retTy callee args =>
       .call d retTy callee (args.map fun (ty, op) => (ty, substOperand σ op))
+  | .phi d ty inc =>
+      -- Substituting inside an incoming list rewrites the value the selector
+      -- returns and leaves selection alone: the labels are not operands.
+      .phi d ty (inc.map fun kv => (kv.1, substOperand σ kv.2))
 
 def substTerm (σ : Subst) : Term → Term
   | .ret ty v => .ret ty (v.map (substOperand σ))
@@ -216,10 +220,32 @@ theorem evalOperands_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) :
   | (ty, op) :: rest => by
       simp only [List.map_cons, evalOperands, evalOperand_subst h, evalOperands_subst h rest]
 
+/-- Substituting inside a `phi`'s incoming list does not change the value it
+selects: the selector reads the same entry, and that entry's operand evaluates
+to the same value once the substitution's invariant holds. -/
+theorem evalInstr_phi_subst {σ : Subst} {s : State} (calls : Calls)
+    (h : EnvEmbeds s.env σ) (d : String) (ty : Ty)
+    (inc : List (String × Operand)) :
+    evalInstr calls s (.phi d ty (inc.map fun kv => (kv.1, substOperand σ kv.2))) =
+      evalInstr calls s (.phi d ty inc) := by
+  simp only [evalInstr]
+  cases hpre : s.pre with
+  | none => rfl
+  | some p =>
+      simp only []
+      rw [phiIncoming_map]
+      cases phiIncoming p inc with
+      | none => rfl
+      | some op =>
+          simp only [Option.map_some, evalOperand_subst h]
+
 theorem evalInstr_subst {σ : Subst} {s : State} (calls : Calls)
     (h : EnvEmbeds s.env σ) (i : Instr) :
     evalInstr calls s (substInstr σ i) = evalInstr calls s i := by
-  cases i <;> simp [substInstr, evalInstr, evalOperand_subst h, evalOperands_subst h]
+  cases i <;>
+    first
+      | exact evalInstr_phi_subst calls h _ _ _
+      | simp [substInstr, evalInstr, evalOperand_subst h, evalOperands_subst h]
 
 /-- A constant operand evaluates to its literal. -/
 theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
@@ -280,6 +306,25 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
       | poison => simp at h
       | splat _ _ _ => simp at h
 
+/-- A `phi` binds exactly its destination. -/
+theorem evalInstr_phi_env {calls : Calls} {s s' : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)}
+    (h : evalInstr calls s (.phi d ty inc) = some s') :
+    ∃ v, s'.env = (d, v) :: s.env := by
+  simp only [evalInstr] at h
+  split at h
+  · cases h
+  · rename_i p _
+    split at h
+    · cases h
+    · rename_i op _
+      cases hop : evalOperand s op with
+      | none => simp only [hop] at h; cases h
+      | some v =>
+          simp only [hop, Option.map_some, Option.some.injEq] at h
+          subst h
+          exact ⟨v, rfl⟩
+
 /-- Executing an instruction with a destination binds exactly that
 destination. -/
 theorem evalInstr_env (calls : Calls) {i : Instr} {s s' : State}
@@ -287,12 +332,15 @@ theorem evalInstr_env (calls : Calls) {i : Instr} {s s' : State}
     match i.dst? with
     | some d => ∃ v, s'.env = (d, v) :: s.env
     | none => s'.env = s.env := by
-  cases i <;> simp only [Instr.dst?, evalInstr] at h ⊢ <;>
-    (repeat' split at h) <;>
-    (try simp_all) <;>
-    (try (subst h; exact ⟨_, rfl⟩)) <;>
-    (try (subst h; rfl)) <;>
-    (try exact storeValue_env h)
+  cases i <;>
+    first
+      | exact evalInstr_phi_env h
+      | (simp only [Instr.dst?, evalInstr] at h ⊢ <;>
+         (repeat' split at h) <;>
+         (try simp_all) <;>
+         (try (subst h; exact ⟨_, rfl⟩)) <;>
+         (try (subst h; rfl)) <;>
+         (try exact storeValue_env h))
 
 /-- Executing a foldable instruction binds its destination to the folded
 literal. -/
@@ -489,6 +537,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
   | icmpVec d pred n w a b => simp [foldInstr] at hf
   | binopVec d op n w a b => simp [foldInstr] at hf
   | bitcastMask d n v => simp [foldInstr] at hf
+  | phi d ty inc => simp [foldInstr] at hf
   | call d retTy callee args => simp [foldInstr] at hf
 
 /-- Terminator substitution preserves execution once the invariant holds. -/

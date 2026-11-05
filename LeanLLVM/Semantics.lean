@@ -20,18 +20,69 @@ import LeanLLVM.Syntax
 
 namespace LeanLLVM
 
-/-- Machine state: register environment, memory, next free byte address, and
-the block currently being executed. -/
+/-- Machine state: register environment, memory, next free byte address, the
+block currently being executed, and the block it was entered from.
+
+The predecessor field is written by the `jump` transition and by nothing else,
+and read by `phi` and by nothing else: `initState` sets it to `none`, because
+the entry block has no predecessor.  A program without a `phi` never observes
+it, which is the non-interference theorem below. -/
 structure State where
   env : Env
   mem : Mem
   next : Nat
   pc : String
+  pre : Option String
   deriving Repr
+
+/-- The same state with a different predecessor.  Used to state that the field
+is not observable by a `phi`-free program. -/
+def State.setPre (s : State) (p : Option String) : State := { s with pre := p }
+
+@[simp] theorem State.setPre_self (s : State) : s.setPre s.pre = s := rfl
+
+/-- Two states agree on every field except the predecessor: the registers, the
+memory, the allocator state and the block are equal, and only the block the
+state was entered from may differ.  This is the relation `phi`-free code cannot
+distinguish. -/
+def State.SameExceptPre (s t : State) : Prop :=
+  s.env = t.env ∧ s.mem = t.mem ∧ s.next = t.next ∧ s.pc = t.pc
+
+theorem State.sameExceptPre_refl (s : State) : s.SameExceptPre s :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+/-- Two states agreeing outside the predecessor are one `setPre` apart: the
+state with `t`'s predecessor is `t` itself. -/
+theorem State.setPre_eq_of_sameExceptPre {s t : State} (h : s.SameExceptPre t) :
+    s.setPre t.pre = t := by
+  cases s with
+  | mk env mem next pc pre =>
+    cases t with
+    | mk env' mem' next' pc' pre' =>
+      simp only [State.SameExceptPre] at h
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+      rfl
+
+/-- The predecessor field is not part of an operand read or of a jump's source
+block, so replacing it leaves those projections alone. -/
+@[simp] theorem State.setPre_pc (s : State) (p : Option String) :
+    (s.setPre p).pc = s.pc := rfl
+
+@[simp] theorem State.setPre_env (s : State) (p : Option String) :
+    (s.setPre p).env = s.env := rfl
+
+@[simp] theorem State.setPre_mem (s : State) (p : Option String) :
+    (s.setPre p).mem = s.mem := rfl
+
+@[simp] theorem State.setPre_next (s : State) (p : Option String) :
+    (s.setPre p).next = s.next := rfl
 
 /-- Bind a register to a value. -/
 def State.bind (s : State) (n : String) (v : Value) : State :=
   { s with env := (n, v) :: s.env }
+
+theorem State.bind_setPre (s : State) (p : Option String) (n : String) (v : Value) :
+    (s.setPre p).bind n v = (s.bind n v).setPre p := rfl
 
 /-- What a callee leaves behind: the value it returns, the memory after its
 writes, and the allocator state the caller resumes from.  The memory is the
@@ -59,6 +110,11 @@ def noCalls : Calls := fun _ _ _ _ => none
 def evalOperand (s : State) : Operand → Option Value
   | .reg n => lookupName s.env n
   | .imm c => Const.toValue c
+
+/-- Reading an operand does not consult the predecessor field. -/
+theorem evalOperand_setPre (s : State) (p : Option String) (o : Operand) :
+    evalOperand (s.setPre p) o = evalOperand s o := by
+  cases o <;> rfl
 
 /-- Binary integer operations.  Division and remainder by zero are undefined
 behaviour (LLVM: poison).  Shifts follow Lean's `BitVec` saturating behaviour:
@@ -297,6 +353,20 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
             some (s.bind d (.int n (BitVec.ofNat n (lanesToNat l))))
           else none
       | _ => none
+  | .phi d _ty inc =>
+      -- Selection reads the predecessor field, which only a jump writes.  With
+      -- no predecessor — the entry block — nothing can match, and an incoming
+      -- list without an entry for the predecessor the edge actually came from
+      -- is undefined behaviour: LLVM's verifier refuses such a module, and a
+      -- runtime-only `none` cannot admit a behaviour LLVM forbids.  The
+      -- instruction's type is not consulted: the selected operand evaluates to
+      -- its own value, and the parser has already refused a mismatch.
+      match s.pre with
+      | none => none
+      | some p =>
+          match phiIncoming p inc with
+          | none => none
+          | some op => (evalOperand s op).map fun v => s.bind d v
 
 /-! ### The pointer offset
 
@@ -380,6 +450,62 @@ def denoteCode (calls : Calls) : List Instr → State → Option State
       | none => none
       | some s' => denoteCode calls is s'
 
+/-! ### The `phi` selection
+
+Four facts about the one instruction that reads the predecessor field, each a
+closed statement about `evalInstr` rather than a restatement of it: the entry
+whose label is the predecessor is the one that is read, a `phi` in a block with
+no predecessor selects nothing, a `phi` whose list omits the predecessor is
+undefined, and neither shape writes memory.
+-/
+
+/-- A `phi` reached from block `p` whose incoming list names `p` binds the
+destination to what that entry's operand evaluates to, whatever the other
+entries are. -/
+theorem evalInstr_phi {calls : Calls} {s : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)} {p : String} {op : Operand} {v : Value}
+    (hpre : s.pre = some p) (hinc : phiIncoming p inc = some op)
+    (hop : evalOperand s op = some v) :
+    evalInstr calls s (.phi d ty inc) = some (s.bind d v) := by
+  simp only [evalInstr, hpre, hinc, hop, Option.map_some]
+
+/-- A `phi` in a block that was not entered from anywhere — the entry block —
+selects nothing, because `initState` leaves the predecessor `none` and no
+incoming entry can name `none`.  This is undefined behaviour: the module is one
+LLVM's verifier refuses, and a program that reached it would be one the model
+runs with a meaning LLVM does not give it. -/
+theorem evalInstr_phi_no_pred {calls : Calls} {s : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)} (h : s.pre = none) :
+    evalInstr calls s (.phi d ty inc) = none := by
+  simp [evalInstr, h]
+
+/-- A `phi` whose incoming list has no entry for the block the edge came from is
+undefined behaviour: `none`, which `step` reads as `ub`. -/
+theorem evalInstr_phi_missing {calls : Calls} {s : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)} {p : String} (hpre : s.pre = some p)
+    (hinc : phiIncoming p inc = none) :
+    evalInstr calls s (.phi d ty inc) = none := by
+  simp only [evalInstr, hpre, hinc]
+
+/-- Selecting an incoming value writes no memory: the step binds one register and
+changes nothing else. -/
+theorem evalInstr_phi_mem {calls : Calls} {s s' : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)}
+    (h : evalInstr calls s (.phi d ty inc) = some s') : s'.mem = s.mem := by
+  simp only [evalInstr] at h
+  split at h
+  · cases h
+  · rename_i p _
+    split at h
+    · cases h
+    · rename_i op _
+      cases hop : evalOperand s op with
+      | none => simp only [hop] at h; cases h
+      | some v =>
+          simp only [hop, Option.map_some, Option.some.injEq] at h
+          subst h
+          rfl
+
 /-- The effect of a terminator. -/
 inductive Ctrl where
   | ub
@@ -387,7 +513,41 @@ inductive Ctrl where
   | jump (s : State)
   deriving Repr
 
-/-- Execute a terminator in a state. -/
+/-- Carry a state's predecessor field into a control result.  A `ret` keeps the
+field: nothing after it overwrites it.  A `jump` does not, and that asymmetry is
+the whole reason the non-interference theorem holds: the jump sets the field
+from the block the edge came *from*, so whatever the state arrived with is gone
+by the time the successor block's `phi` reads it. -/
+def Ctrl.setPre (p : Option String) : Ctrl → Ctrl
+  | .ub => .ub
+  | .ret v s => .ret v (s.setPre p)
+  | .jump s => .jump s
+
+/-- Two control results agree outside the predecessor: the same constructor, the
+same returned value, and post-states that agree outside the field.  The `ret`
+arm keeps the returned value, which is what makes the relation enough for
+`Outcome`, where no predecessor is observable. -/
+def Ctrl.SameExceptPre : Ctrl → Ctrl → Prop
+  | .ub, .ub => True
+  | .ret v s, .ret w t => v = w ∧ State.SameExceptPre s t
+  | .jump s, .jump t => State.SameExceptPre s t
+  | _, _ => False
+
+/-- Replacing a control result's predecessor with any value leaves the result
+agreeing outside the field.  A jumped state is untouched — the field it carries
+is the one the jump itself set — so it agrees with itself outright. -/
+theorem Ctrl.sameExceptPre_setPre (c : Ctrl) (q : Option String) :
+    Ctrl.SameExceptPre c (c.setPre q) := by
+  cases c with
+  | ub => trivial
+  | ret v s => exact ⟨rfl, State.sameExceptPre_refl s⟩
+  | jump s => exact State.sameExceptPre_refl s
+
+/-- Execute a terminator in a state.
+
+A jump is the only transition that writes the predecessor field, and it writes
+the block it came from: `s.pc` is still the block being left, because the
+instruction sequence does not change it. -/
 def execTerm (s : State) : Term → Ctrl
   | .ret .void none => .ret none s
   | .ret .void (some _) => .ub
@@ -396,12 +556,12 @@ def execTerm (s : State) : Term → Ctrl
       match evalOperand s v with
       | some x => .ret (some x) s
       | none => .ub
-  | .br dest => .jump { s with pc := dest }
+  | .br dest => .jump { s with pc := dest, pre := some s.pc }
   | .condbr c t f =>
       match evalOperand s c with
       | some (.int 1 bit) =>
-          if bit = (1 : BitVec 1) then .jump { s with pc := t }
-          else if bit = (0 : BitVec 1) then .jump { s with pc := f }
+          if bit = (1 : BitVec 1) then .jump { s with pc := t, pre := some s.pc }
+          else if bit = (0 : BitVec 1) then .jump { s with pc := f, pre := some s.pc }
           else .ub
       | _ => .ub
   | .unreachable => .ub
@@ -478,11 +638,428 @@ theorem runFuel_outcome_unique {calls : Calls} {f : Function} {s : State}
     rw [h1] at hn
     exact (Option.some.inj hn).symm
 
+/-! ### Non-interference
+
+The `phi` constructor reads the state's predecessor field, and a jump writes it.
+A function that contains no `phi` therefore cannot observe the field at all: the
+step transition carries it into a `ret` result and drops it at a jump, and the
+run's outcome carries no field at all.
+
+These statements are the load-bearing evidence that adding `phi` is additive —
+every run of a `phi`-free program is unchanged, and that is proved here rather
+than asserted.  They are stated at three levels because the claim is needed at
+three: one instruction, one control step, and the whole run.
+-/
+
+/-- Reading an operand list does not consult the predecessor field. -/
+theorem evalOperands_setPre (s : State) (p : Option String)
+    (args : List (Ty × Operand)) :
+    evalOperands (s.setPre p) args = evalOperands s args := by
+  induction args with
+  | nil => rfl
+  | cons a rest ih =>
+      obtain ⟨ty, op⟩ := a
+      simp only [evalOperands, evalOperand_setPre, ih]
+
+/-- A store reaches the same result from two states one `setPre` apart, up to the
+field: the bytes it writes are the same and only the state's predecessor differs.
+-/
+theorem storeValue_setPre (s : State) (p : Option String) (ty : Ty) (v : Value)
+    (addr : Nat) :
+    storeValue (s.setPre p) ty v addr = (storeValue s ty v addr).map (·.setPre p) := by
+  cases ty <;> cases v <;> simp [storeValue, State.setPre, Option.map_ite]
+
+/-- A `phi`-free instruction reaches the same result from two states that are one
+`setPre` apart, up to the destination binding.  The `phi` case is excluded by the
+hypothesis — it is the only constructor that reads the field. -/
+theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
+    (s : State) (p : Option String) :
+    evalInstr calls (s.setPre p) i = (evalInstr calls s i).map (·.setPre p) := by
+  cases i with
+  | phi d ty inc => simp [Instr.isPhi] at hi
+  | binop d op w a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases evalOperand s b with
+        | none => rfl
+        | some vb =>
+          try dsimp only
+          cases va.intToNat w with
+          | none => rfl
+          | some x =>
+            try dsimp only
+            cases vb.intToNat w with
+            | none => rfl
+            | some y =>
+              try dsimp only
+              cases evalBinopNat op w x y with
+              | none => rfl
+              | some r => rfl
+  | icmp d pred w a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases evalOperand s b with
+        | none => rfl
+        | some vb =>
+          try dsimp only
+          cases va.intToNat w with
+          | none => rfl
+          | some x =>
+            try dsimp only
+            cases vb.intToNat w with
+            | none => rfl
+            | some y => rfl
+  | select d ty c a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s c with
+      | none => rfl
+      | some vc =>
+        cases vc with
+        | int w cbit =>
+          cases w with
+          | zero => rfl
+          | succ k =>
+            cases k with
+            | zero =>
+              try dsimp only
+              cases evalOperand s a with
+              | none => rfl
+              | some cva =>
+                try dsimp only
+                cases evalOperand s b with
+                | none => rfl
+                | some cvb =>
+                  try dsimp only
+                  simp only []
+                  first
+                    | rfl
+                    | (by_cases h1 : cbit = (1 : BitVec 1)
+                       · rw [ite_eq_left h1, ite_eq_left h1]
+                         rfl
+                       · by_cases h0 : cbit = (0 : BitVec 1)
+                         · rw [ite_eq_right h1, ite_eq_left h0, ite_eq_right h1,
+                             ite_eq_left h0]
+                           rfl
+                         · rw [ite_eq_right h1, ite_eq_right h0, ite_eq_right h1,
+                             ite_eq_right h0]
+                           rfl)
+            | succ j => rfl
+        | ptr a => rfl
+        | vec n w l => rfl
+  | trunc d wIn wOut v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w' x =>
+          try dsimp only
+          by_cases hw : w' = wIn
+          · rw [ite_eq_left hw, ite_eq_left hw]
+            rfl
+          · rw [ite_eq_right hw, ite_eq_right hw]
+            rfl
+        | ptr a => rfl
+        | vec n w l => rfl
+  | zext d wIn wOut v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w' x =>
+          try dsimp only
+          by_cases hw : w' = wIn
+          · rw [ite_eq_left hw, ite_eq_left hw]
+            rfl
+          · rw [ite_eq_right hw, ite_eq_right hw]
+            rfl
+        | ptr a => rfl
+        | vec n w l => rfl
+  | sext d wIn wOut v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w' x =>
+          try dsimp only
+          by_cases hw : w' = wIn
+          · rw [ite_eq_left hw, ite_eq_left hw]
+            rfl
+          · rw [ite_eq_right hw, ite_eq_right hw]
+            rfl
+        | ptr a => rfl
+        | vec n w l => rfl
+  | alloca d ty align =>
+      simp only [evalInstr, State.setPre, Option.map_some]
+  | load d ty ptr =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre, State.setPre_mem]
+      cases evalOperand s ptr with
+      | none => rfl
+      | some pv =>
+        try dsimp only
+        cases pv with
+        | int w x => rfl
+        | ptr addr =>
+          try dsimp only
+          cases loadValue s.mem ty addr with
+          | none => rfl
+          | some v => rfl
+        | vec n w l => rfl
+  | store ty val ptr =>
+      simp only [evalInstr, evalOperand_setPre, storeValue_setPre]
+      cases evalOperand s val with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases evalOperand s ptr with
+        | none => rfl
+        | some pv =>
+          try dsimp only
+          cases pv with
+          | int w x => rfl
+          | ptr addr => rfl
+          | vec n w l => rfl
+  | gep d base off =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s base with
+      | none => rfl
+      | some bv =>
+        cases bv with
+        | int w x => rfl
+        | ptr a =>
+          try dsimp only
+          cases evalOperand s off with
+          | none => rfl
+          | some ov =>
+            try dsimp only
+            cases ov with
+            | int w n =>
+              try dsimp only
+              by_cases hp : (n.signExtend 64).toNat < 2 ^ 63
+              · rw [ite_eq_left hp, ite_eq_left hp]
+                rfl
+              · rw [ite_eq_right hp, ite_eq_right hp]
+                rfl
+            | ptr b => rfl
+            | vec n w l => rfl
+        | vec n w l => rfl
+  | icmpVec d pred n w a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases evalOperand s b with
+        | none => rfl
+        | some vb =>
+          try dsimp only
+          cases va.vecLanes n w with
+          | none => rfl
+          | some l₁ =>
+            try dsimp only
+            cases vb.vecLanes n w with
+            | none => rfl
+            | some l₂ => rfl
+  | binopVec d op n w a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases evalOperand s b with
+        | none => rfl
+        | some vb =>
+          try dsimp only
+          cases va.vecLanes n w with
+          | none => rfl
+          | some l₁ =>
+            try dsimp only
+            cases vb.vecLanes n w with
+            | none => rfl
+            | some l₂ =>
+              try dsimp only
+              cases (l₁.zip l₂).mapM (fun (x, y) => evalBinop op x y) with
+              | none => rfl
+              | some ls => rfl
+  | bitcastMask d n v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w x => rfl
+        | ptr a => rfl
+        | vec bn bw bl =>
+          cases bw with
+          | zero => rfl
+          | succ k =>
+            cases k with
+            | zero =>
+              try dsimp only
+              simp only [Option.map_ite]
+            | succ j => rfl
+  | call d retTy callee args =>
+      simp only [evalInstr, evalOperands_setPre, State.setPre_mem, State.setPre_next,
+        State.setPre_env, State.setPre_pc]
+      cases evalOperands s args with
+      | none => rfl
+      | some vs =>
+        try dsimp only
+        cases calls callee vs s.mem s.next with
+        | none => rfl
+        | some r =>
+          try dsimp only
+          rfl
+
+/-- A `phi`-free instruction leaves the predecessor field where it found it: only
+a jump writes it. -/
+theorem evalInstr_pre_of_not_phi {calls : Calls} {s s' : State} {i : Instr}
+    (hi : i.isPhi = false) (h : evalInstr calls s i = some s') : s'.pre = s.pre := by
+  have hkey := evalInstr_setPre (calls := calls) i hi s s.pre
+  rw [State.setPre_self] at hkey
+  rw [h] at hkey
+  simp only [Option.map_some] at hkey
+  have hEq : s' = s'.setPre s.pre := Option.some.inj hkey
+  rw [hEq]
+  rfl
+
+/-- A straight-line sequence of `phi`-free instructions reaches the same state up
+to the predecessor field. -/
+theorem denoteCode_setPre (calls : Calls) (is : List Instr)
+    (h : ∀ i ∈ is, i.isPhi = false) (s : State) (p : Option String) :
+    denoteCode calls is (s.setPre p) = (denoteCode calls is s).map (·.setPre p) := by
+  induction is generalizing s with
+  | nil => rfl
+  | cons i rest ih =>
+      have hi : i.isPhi = false := h i (List.mem_cons_self ..)
+      have hrest : ∀ j ∈ rest, j.isPhi = false :=
+        fun j hj => h j (List.mem_cons_of_mem _ hj)
+      simp only [denoteCode, evalInstr_setPre i hi]
+      cases he : evalInstr calls s i with
+      | none => rfl
+      | some s' => simp only [Option.map_some]; exact ih hrest s'
+
+/-- A terminator reaches the same control result from two states one `setPre`
+apart.  A `ret` keeps the field; a jump overwrites it with the block it came
+from, which is why the right-hand side's jump is unmoved. -/
+theorem execTerm_setPre (s : State) (p : Option String) (t : Term) :
+    execTerm (s.setPre p) t = (execTerm s t).setPre p := by
+  cases t with
+  | ret ty v =>
+      cases ty with
+      | void => cases v <;> rfl
+      | int w =>
+          cases v with
+          | none => rfl
+          | some o =>
+              simp only [execTerm, evalOperand_setPre]
+              cases ho : evalOperand s o with
+              | none => rfl
+              | some x => rfl
+      | ptr =>
+          cases v with
+          | none => rfl
+          | some o =>
+              simp only [execTerm, evalOperand_setPre]
+              cases ho : evalOperand s o with
+              | none => rfl
+              | some x => rfl
+      | vec n elem =>
+          cases v with
+          | none => rfl
+          | some o =>
+              simp only [execTerm, evalOperand_setPre]
+              cases ho : evalOperand s o with
+              | none => rfl
+              | some x => rfl
+  | br dest => rfl
+  | condbr c t f =>
+      simp only [execTerm, evalOperand_setPre, State.setPre_pc]
+      repeat' split
+      all_goals rfl
+  | unreachable => rfl
+
+/-- One control step of a `phi`-free function is the same whatever predecessor its
+starting state carries, as an equation **whose carrier is `Ctrl.setPre`**: that
+carrier maps `ub` to itself, carries the field into a `ret` result, and leaves a
+`jump` result *unmoved*, because the jump has already set the field from the block
+it came from.  The carrier is part of the claim: read with the naive carrier that
+maps `.jump s` to `.jump (s.setPre p)`, the equation is false whenever `p` differs
+from the block the jump leaves.  `step_sameExceptPre` states the same fact as a
+relation, and that form does not name a carrier at all. -/
+theorem step_setPre {calls : Calls} {f : Function} (hf : f.phiFree = true)
+    (s : State) (p : Option String) :
+    step calls f (s.setPre p) = (step calls f s).setPre p := by
+  unfold step
+  simp only [State.setPre_pc]
+  cases hfind : f.findBlock s.pc with
+  | none => simp [Ctrl.setPre]
+  | some b =>
+      have hpi := Function.phiFree_block hf (findBlockList_mem hfind)
+      try dsimp only
+      rw [denoteCode_setPre calls b.instrs hpi]
+      cases hcode : denoteCode calls b.instrs s with
+      | none => simp [Ctrl.setPre]
+      | some s' => simpa only [hcode, Option.map_some, Ctrl.setPre] using
+          execTerm_setPre s' p b.term
+
+/-- One control step preserves agreement outside the predecessor.  This is the
+step-level form of non-interference, stated as the relation rather than as an
+equation: two states agreeing on every field but the predecessor produce control
+results that agree outside it. -/
+theorem step_sameExceptPre {calls : Calls} {f : Function} (hf : f.phiFree = true)
+    {s t : State} (h : s.SameExceptPre t) :
+    Ctrl.SameExceptPre (step calls f s) (step calls f t) := by
+  have ht : t = s.setPre t.pre := (State.setPre_eq_of_sameExceptPre h).symm
+  rw [ht, step_setPre hf]
+  exact Ctrl.sameExceptPre_setPre (step calls f s) t.pre
+
+/-- Non-interference at the fuel semantics: for a `phi`-free function the run from
+a state and the run from the same state with any predecessor whatever produce the
+same outcome, at every budget.  The jump drops the field before the successor
+block could read it, so the induction is not even needed: after one step the two
+runs coincide. -/
+theorem runFuel_setPre {calls : Calls} {f : Function} (hf : f.phiFree = true) :
+    ∀ (n : Nat) (s : State) (q : Option String),
+      runFuel calls n f (s.setPre q) = runFuel calls n f s
+  | 0, _, _ => rfl
+  | n + 1, s, q => by
+      simp only [runFuel, step_setPre hf]
+      cases hs : step calls f s with
+      | ub => rfl
+      | ret v s' => rfl
+      | jump s' => rfl
+
+/-- Non-interference over a whole run, stated as the relation: a `phi`-free
+function produces the same outcome at every fuel budget starting from two states
+that agree on every field but the predecessor.  `Outcome` carries the returned
+value and the memory, and neither is the field, so the two runs are
+indistinguishable. -/
+theorem runFuel_sameExceptPre {calls : Calls} {f : Function} (hf : f.phiFree = true)
+    {s t : State} (h : s.SameExceptPre t) (n : Nat) :
+    runFuel calls n f s = runFuel calls n f t := by
+  have ht : t = s.setPre t.pre := (State.setPre_eq_of_sameExceptPre h).symm
+  rw [ht, runFuel_setPre hf n s t.pre]
+
+
 /-- Initial state for a call: parameters bound to the arguments, empty memory,
-address `0` reserved for `null`, and the entry block loaded. -/
+address `0` reserved for `null`, the entry block loaded, and no predecessor —
+the entry block has none, so a `phi` there selects nothing. -/
 def initState (f : Function) (args : List Value) : State :=
   { env := (f.params.zip args).map fun (p, v) => (p.1, v)
-    mem := [], next := 1, pc := f.entry?.getD "" }
+    mem := [], next := 1, pc := f.entry?.getD "", pre := none }
 
 /-- The set of outcomes a function can produce, as a predicate.  A `ub` outcome
 on any prefix admits every outcome; a function that never finishes admits
@@ -500,5 +1077,16 @@ def Refines (calls : Calls) (target source : Function) : Prop :=
 def run (calls : Calls) (f : Function) (args : List Value) (fuel : Nat := 10000) :
     Option Outcome :=
   runFuel calls fuel f (initState f args)
+
+/-- Existing runs are unchanged.  A `phi`-free function's canonical run does not
+depend on the predecessor its initial state carries, so every result recorded
+before `phi` existed is still that result: `initState` sets the field to `none`,
+and the field is not observable — at any budget, from that state with any other
+predecessor whatever. -/
+theorem runFuel_init_setPre {calls : Calls} {f : Function} (hf : f.phiFree = true)
+    (n : Nat) (args : List Value) (q : Option String) :
+    runFuel calls n f ((initState f args).setPre q) =
+      runFuel calls n f (initState f args) :=
+  runFuel_setPre hf n (initState f args) q
 
 end LeanLLVM

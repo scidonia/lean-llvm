@@ -451,3 +451,241 @@ example {m : Mem} {addr n : Nat} {bs : List UInt8}
 /-- info: 'LeanLLVM.readByte_of_readBytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.readByte_of_readBytes
+
+/-! ### `phi`
+
+The instruction's text, its selection, and the non-interference theorem that
+says adding it changes no existing run.  The pins are the load-bearing ones: a
+`phi`-free program's outcome is the same whatever predecessor its starting state
+carries.  The round trip is the parser/printer half.
+-/
+
+/-- A loop whose `phi` takes a different value on entry than on the back-edge,
+printed in the canonical form. -/
+def phiSample : String :=
+"define i32 @loop() {
+entry:
+  br label %head
+head:
+  %i = phi i32 [ 0, %entry ], [ %j, %body ]
+  %c = icmp ult i32 %i, 3
+  br i1 %c, label %body, label %exit
+body:
+  %j = add i32 %i, 1
+  br label %head
+exit:
+  ret i32 %i
+}
+"
+
+#guard
+  match parseModule phiSample with
+  | .ok m => parseModule (Module.render m) = .ok m
+  | .error _ => false
+
+-- The instruction reaches the AST with its type and its two labelled entries in
+-- order, so a printer or parser that dropped either would fail here.
+#guard
+  match parseModule phiSample with
+  | .ok ⟨_, f :: _⟩ =>
+      match f.findBlock "head" with
+      | some b =>
+          b.instrs.head? = some (.phi "%i" (.int 32)
+            [("entry", .imm (.int 32 0)), ("body", .reg "%j")])
+      | none => false
+  | _ => false
+
+-- Running it returns 3, which is the answer only edge timing produces: the
+-- entry value is 0 and the loop needs three back-edges.
+#guard
+  match parseModule phiSample with
+  | .ok ⟨_, f :: _⟩ => run noCalls f [] = some (.ret (some (.int 32 3)) [])
+  | _ => false
+
+/-- Non-interference, restated: a `phi`-free function's run is the same from a
+state and from that state with any predecessor whatever.  The statement is
+spelled out here so a narrowing of the theorem fails this file. -/
+example (f : Function) (hf : f.phiFree = true) (n : Nat) (s : State)
+    (q : Option String) :
+    runFuel noCalls n f (s.setPre q) = runFuel noCalls n f s :=
+  runFuel_setPre hf n s q
+
+/-- The same fact between two states that agree on every field but the
+predecessor. -/
+example (f : Function) (hf : f.phiFree = true) {s t : State}
+    (h : s.SameExceptPre t) (n : Nat) :
+    runFuel noCalls n f s = runFuel noCalls n f t :=
+  runFuel_sameExceptPre hf h n
+
+/-- And at the initial state, which is the claim that existing runs — the ones
+recorded before `phi` existed — are unchanged. -/
+example (f : Function) (hf : f.phiFree = true) (n : Nat) (args : List Value)
+    (q : Option String) :
+    runFuel noCalls n f ((initState f args).setPre q) =
+      runFuel noCalls n f (initState f args) :=
+  runFuel_init_setPre hf n args q
+
+/-- info: 'LeanLLVM.runFuel_setPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.runFuel_setPre
+
+/-- info: 'LeanLLVM.runFuel_sameExceptPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.runFuel_sameExceptPre
+
+/-- info: 'LeanLLVM.runFuel_init_setPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.runFuel_init_setPre
+
+/-- info: 'LeanLLVM.evalInstr_phi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_phi
+
+/-- info: 'LeanLLVM.evalInstr_phi_missing' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_phi_missing
+
+/-- info: 'LeanLLVM.evalInstr_phi_no_pred' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_phi_no_pred
+
+/-- info: 'LeanLLVM.step_setPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.step_setPre
+
+/-! The rest of the chain, pinned.
+
+`runFuel_init_setPre` is the claim; these are the lemmas it is built from, and
+`AGENTS.md` asks for a footprint pin on every theorem that carries a soundness
+claim.  The helpers the chain uses (`evalOperand_setPre`, `evalOperands_setPre`,
+`storeValue_setPre`) and the `phi` facts the proof layers consume are here too, so
+a widening — a `Classical.choice` arriving through a rewrite, or a statement
+narrowed to a special case — changes this file rather than passing unnoticed.
+-/
+
+/-- info: 'LeanLLVM.evalInstr_setPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_setPre
+
+/-- info: 'LeanLLVM.denoteCode_setPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.denoteCode_setPre
+
+/-- info: 'LeanLLVM.execTerm_setPre' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.execTerm_setPre
+
+/-- info: 'LeanLLVM.step_sameExceptPre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.step_sameExceptPre
+
+/-- info: 'LeanLLVM.evalInstr_pre_of_not_phi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_pre_of_not_phi
+
+/-- info: 'LeanLLVM.evalOperand_setPre' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.evalOperand_setPre
+
+/-- info: 'LeanLLVM.evalOperands_setPre' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalOperands_setPre
+
+/-- info: 'LeanLLVM.storeValue_setPre' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.storeValue_setPre
+
+/-- info: 'LeanLLVM.evalInstr_phi_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_phi_mem
+
+/-- info: 'LeanLLVM.evalInstr_phi_env' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_phi_env
+
+/-- info: 'LeanLLVM.phiIncoming_map' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.phiIncoming_map
+
+/-! The chain's statements, spelled out.
+
+Each `example` restates a member of the non-interference chain in full and
+discharges it by the theorem, so a narrowed statement — an extra hypothesis, a
+special case in place of the general one — fails here rather than at a consumer.
+-/
+
+example {calls : Calls} (i : Instr) (hi : i.isPhi = false) (s : State)
+    (p : Option String) :
+    evalInstr calls (s.setPre p) i = (evalInstr calls s i).map (·.setPre p) :=
+  evalInstr_setPre i hi s p
+
+example (calls : Calls) (is : List Instr) (h : ∀ i ∈ is, i.isPhi = false)
+    (s : State) (p : Option String) :
+    denoteCode calls is (s.setPre p) = (denoteCode calls is s).map (·.setPre p) :=
+  denoteCode_setPre calls is h s p
+
+example (s : State) (p : Option String) (t : Term) :
+    execTerm (s.setPre p) t = (execTerm s t).setPre p :=
+  execTerm_setPre s p t
+
+example {calls : Calls} {f : Function} (hf : f.phiFree = true) (s : State)
+    (p : Option String) :
+    step calls f (s.setPre p) = (step calls f s).setPre p :=
+  step_setPre hf s p
+
+example {calls : Calls} {f : Function} (hf : f.phiFree = true) {s t : State}
+    (h : s.SameExceptPre t) :
+    Ctrl.SameExceptPre (step calls f s) (step calls f t) :=
+  step_sameExceptPre hf h
+
+/-! The supporting lemmas, pinned.  Each is a step the chain or the parser's
+checks rest on; none is left unpinned, including the `rfl` conveniences, so a
+proof that starts to depend on a choice axiom shows up here. -/
+
+/-- info: 'LeanLLVM.Function.phiFree_block' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Function.phiFree_block
+
+/-- info: 'LeanLLVM.findBlockList_mem' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.findBlockList_mem
+
+/-- info: 'LeanLLVM.Ctrl.sameExceptPre_setPre' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Ctrl.sameExceptPre_setPre
+
+/-- info: 'LeanLLVM.State.setPre_eq_of_sameExceptPre' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.setPre_eq_of_sameExceptPre
+
+/-- info: 'LeanLLVM.State.sameExceptPre_refl' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.sameExceptPre_refl
+
+/-- info: 'LeanLLVM.State.bind_setPre' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.bind_setPre
+
+/-- info: 'LeanLLVM.evalInstr_phi_subst' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_phi_subst
+
+/-- info: 'LeanLLVM.State.setPre_pc' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.setPre_pc
+
+/-- info: 'LeanLLVM.State.setPre_env' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.setPre_env
+
+/-- info: 'LeanLLVM.State.setPre_mem' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.setPre_mem
+
+/-- info: 'LeanLLVM.State.setPre_next' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.setPre_next
+
+/-- info: 'LeanLLVM.State.setPre_self' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.State.setPre_self

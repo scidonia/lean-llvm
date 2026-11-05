@@ -237,14 +237,15 @@ theorem loop_seam_within_refines (x : BitVec 64) :
         obtain ⟨memC, hrunC, hmemC⟩ := candidate_run_mem_eq v mem next
         have hLrun : runFuel noCalls 10000 loopFunction
             { env := (loopFunction.params.zip (.int 64 v :: rest)).map fun p => (p.1.1, p.2)
-              mem := mem, next := next, pc := loopFunction.entry?.getD "" } =
+              mem := mem, next := next, pc := loopFunction.entry?.getD "", pre := none } =
             some (.ret (some (.int 64 (spec v))) memL) := by
           simpa [initState, loopFunction] using
             runFuel_mono_le (by decide : 19 ≤ 10000) hrunL
         have hCrun : runFuel noCalls 10000 candidateFunction
             { env := (candidateFunction.params.zip (.int 64 v :: rest)).map
                 fun p => (p.1.1, p.2)
-              mem := mem, next := next, pc := candidateFunction.entry?.getD "" } =
+              mem := mem, next := next, pc := candidateFunction.entry?.getD "",
+              pre := none } =
             some (.ret (some (.int 64 (byteLoop v))) memC) := by
           simpa [initState, candidateFunction] using hrunC
         refine Or.inr
@@ -325,7 +326,7 @@ theorem caller_replaces_loop_within (x : BitVec 64) :
         obtain ⟨memC, hrunC, _⟩ := candidate_run_mem_eq v [] 1
         have hCrun : runFuel noCalls 10000 candidateFunction
             { env := (candidateFunction.params.zip [.int 64 v]).map fun p => (p.1.1, p.2)
-              mem := [], next := 1, pc := candidateFunction.entry?.getD "" } =
+              mem := [], next := 1, pc := candidateFunction.entry?.getD "", pre := none } =
             some (.ret (some (.int 64 (byteLoop v))) memC) := by
           simpa [initState] using hrunC
         have hC : envForBody 10000 16 candidateFunction seamSymbol [.int 64 v] [] 1 =
@@ -377,10 +378,11 @@ theorem memCaller_step (calls : Calls) (x : BitVec 64) {r : CallOutcome} (v : Bi
       .ret (some (.int 64 v))
         { env := [("%out", .int 64 v), ("%r", r.ret), ("%buf", .ptr 1),
                   ("%arg", .int 64 x)]
-          mem := writeBytes r.mem 1 (natToBytes v.toNat 8), next := r.next, pc := "entry" } := by
+          mem := writeBytes r.mem 1 (natToBytes v.toNat 8), next := r.next, pc := "entry",
+          pre := none } := by
   have hload : loadValue (writeBytes r.mem 1 (natToBytes v.toNat 8)) (.int 64) 1 =
       some (.int 64 v) :=
-    (loadValue_storeValue_64 ⟨[], r.mem, r.next, "entry"⟩ v 1).2
+    (loadValue_storeValue_64 ⟨[], r.mem, r.next, "entry", none⟩ v 1).2
   simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
     Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode,
     evalInstr, evalOperands, evalOperand, execTerm, Ty.sizeBytes, State.bind, lookupName,
@@ -482,7 +484,7 @@ theorem memCaller_replaces_loop_within (x : BitVec 64) :
         obtain ⟨memC, hrunC, hmemC⟩ := candidate_run_mem_eq v [] 9
         have hCrun : runFuel noCalls 10000 candidateFunction
             { env := (candidateFunction.params.zip [.int 64 v]).map fun p => (p.1.1, p.2)
-              mem := [], next := 9, pc := candidateFunction.entry?.getD "" } =
+              mem := [], next := 9, pc := candidateFunction.entry?.getD "", pre := none } =
             some (.ret (some (.int 64 (byteLoop v))) memC) := by
           simpa [initState] using hrunC
         have hC : envForBody 10000 16 candidateFunction seamSymbol [.int 64 v] [] 9 =
@@ -491,7 +493,7 @@ theorem memCaller_replaces_loop_within (x : BitVec 64) :
         obtain ⟨memL, _hagreeL, hrunL⟩ := loop_run_at_base v 9 []
         have hLrun : runFuel noCalls 10000 loopFunction
             { env := (loopFunction.params.zip [.int 64 v]).map fun p => (p.1.1, p.2)
-              mem := [], next := 9, pc := loopFunction.entry?.getD "" } =
+              mem := [], next := 9, pc := loopFunction.entry?.getD "", pre := none } =
             some (.ret (some (.int 64 (spec v))) memL) := by
           simpa [initState] using runFuel_mono_le (by decide : 19 ≤ 10000) hrunL
         have hL : envForBody 10000 16 loopFunction seamSymbol [.int 64 v] [] 9 =

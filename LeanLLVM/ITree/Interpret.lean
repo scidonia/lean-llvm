@@ -273,6 +273,8 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
+  | phi d ty inc =>
+      exact evalInstr_phi_mem h
 
 /-- `storeValue` updates the memory exactly as `storeMem` does. -/
 theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : State)
@@ -503,6 +505,11 @@ theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
               (by intro d rt c a hh; cases hh) h) hokK hubK
       | bitcastMask d n v =>
           exact exec_pureInstrT calls s (.bitcastMask d n v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) h) hokK hubK
+      | phi d ty inc =>
+          exact exec_pureInstrT calls s (.phi d ty inc) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) h) hokK hubK

@@ -170,6 +170,17 @@ needs the other two to match.
   tab and newline comparisons into a range test and that form is what the proof
   analyses, and `probes/install/ir/capture-json.sh` records the invocation and
   every piece of syntax stripped before the parser sees it.
+- `phi` is part of the modelled fragment: `Instr.phi` carries its type and its
+  labelled incoming list, `State` carries the predecessor a jump writes, and a
+  `phi` whose list omits the actual predecessor is `ub`.  The additive claim is
+  a theorem, not an assertion: `runFuel_init_setPre` (and its step and relational
+  forms) says a `phi`-free function's run is unchanged whatever predecessor the
+  state carries, pinned in `LeanLLVMTest/Core.lean` with the rest of the
+  footprint.  Its conformance evidence is `tests/phi-fragment.lean` (the paired
+  edge-timing evaluation, three predecessors, an entry-block `phi`, a missing
+  predecessor and the exercised non-interference instance) and its differential
+  observation is `tests/phi-differential.sh`, which compares `clang`'s answers
+  with the model's on the same files and is an observation, not a proof.
 - The parser refuses the surfaces it checks, with a message naming the
   construct: unmodelled instructions, block structure, and a function
   definition's header -- a return attribute before the return type and a

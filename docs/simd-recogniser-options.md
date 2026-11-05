@@ -63,11 +63,14 @@ The parser is then either
 | `ByteArray` exposes byte access only (`get`, `get!`, `uget`, `size`, `data`, `toList`, `foldl`); there is no `ByteArray.toUInt64LE?` | `#check` probes |
 | `UInt64.toBitVec` / `UInt64.ofBitVec` exist | `#check` |
 | This repository's LLVM semantics is single-function: no `call`, no module/global state | `LeanLLVM/Semantics.lean` (`Beh`, `Refines`); `Instr` has no `call` constructor |
-| The `.ll` parser refuses vector types, `getelementptr`, `phi`, calls and aggregates | `LeanLLVM/Parser.lean` (`parseTy`, `parseSimple`, `parseValueInstr`) |
+| The `.ll` parser **refused** vector types, `getelementptr`, `phi`, calls and aggregates when this option was weighed | `LeanLLVM/Parser.lean` (`parseTy`, `parseSimple`, `parseValueInstr`). Since then vector types, `getelementptr`, calls and `phi` have entered the fragment; aggregates and floating point are still refused, and the census in `docs/capabilities.md` is the current list |
 
 Consequence: "lower to LLVM" here means Lean → C → clang → LLVM IR. The clang
 IR for a recogniser can contain `getelementptr`, `phi`, calls, globals and
-vector types, none of which the current parser or semantics models.
+vector types, none of which the model covered when this option was weighed.
+Globals, aggregates and floating point are still unmodelled; `getelementptr`,
+calls, `phi` and the classifier's vector forms now are, and the refusal census
+(`docs/capabilities.md`) is what a recogniser's `-O2` body still trips on.
 
 ## 3. Option A — source-level parametric recogniser, pure Lean SWAR
 
