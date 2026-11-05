@@ -3084,3 +3084,61 @@ info: 'LeanLLVM.Vellum.JsonScanSpec.escaped_quote_witness' depends on axioms: [p
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonScanSpec.escaped_quote_witness
+
+/-! ### The stage-1 depth counter
+
+`LeanLLVM/Vellum/DepthCountRefine.lean` proves the emitted kernel `@depth_count`
+against the depth fold: the run returns the fold's running depth, writes the
+depth and the running-depth sum to the statistics pair, and changes no other
+byte.  The fixture pin is restated here through the module's public `src`, and
+the axiom footprint of the theorem and of the two internal lemmas its proof rests
+on is pinned.
+
+The negative control for the fixture pin is a mutation, not a shipped guard:
+editing `tests/v16/depth_count.ll` at `%more` from `ult` to `ule` parses to an
+AST that is not the transcription, so applying the `#guard` below to that text
+yields `false`.  The mutation is not committed.
+-/
+
+open LeanLLVM.Vellum.DepthCountRefine
+
+-- The committed text parses to the transcription the module proves against.
+#guard
+  match LeanLLVM.parseModule src with
+  | .ok m => m = { decls := [], functions := [depthFunction] }
+  | .error _ => false
+
+-- The conclusion, at the public statement: from a memory holding the index array
+-- and the bytes it points at, the kernel returns and stores the depth fold over
+-- the token sequence, and leaves memory otherwise unchanged.
+example (calls : LeanLLVM.Calls) (pbuf pidx pstats : Nat) (m0 : LeanLLVM.Mem)
+    (tokens : List UInt8) (idxs : Nat → Nat) (n : Nat)
+    (hn : n < 2^63) (hlen : tokens.length = n)
+    (hidx : ∀ (k : Nat), k < n →
+      LeanLLVM.readBytes m0 (pidx + k * 4) 4 = some (LeanLLVM.natToBytes (idxs k) 4))
+    (hfit : ∀ (k : Nat), k < n → idxs k < 2^32)
+    (hbuf : ∀ (k : Nat) (hk : k < n),
+      LeanLLVM.readBytes m0 (pbuf + idxs k) 1 =
+        some [tokens.get ⟨k, by rw [hlen]; exact hk⟩]) :
+    LeanLLVM.runFuel calls (n + 2) depthFunction
+        (start m0 pbuf pidx pstats (BitVec.ofNat 64 n)) =
+      LeanLLVM.Vellum.DepthCountRefine.Result calls m0 pstats tokens :=
+  depth_count_refines calls pbuf pidx pstats m0 tokens idxs n hn hlen hidx hfit hbuf
+
+/--
+info: 'LeanLLVM.Vellum.DepthCountRefine.depth_count_refines' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
+
+/--
+info: 'LeanLLVM.Vellum.DepthCountRefine.loop_run' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DepthCountRefine.loop_run
+
+/--
+info: 'LeanLLVM.Vellum.DepthCountRefine.loop_body' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DepthCountRefine.loop_body

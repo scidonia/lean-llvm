@@ -17,19 +17,19 @@ bash probes/census/repo-census.sh          # checked
 bash probes/census/repo-census.sh --all    # also counts generated IR
 ```
 
-Measured 2026-11-05 with the driver built from `c5adb94` plus this change:
+Measured 2026-11-05 with the driver built from `bd40b35` plus this change:
 
-- **Tracked corpus: 23 files, 24 `define`s — 20 of the 23 files parse, 3 are
+- **Tracked corpus: 24 files, 25 `define`s — 21 of the 24 files parse, 3 are
   refused.**  The refusals are `probes/install/ir/baseline.o1.ll` (return
   attribute `range`), and `probes/install/ir/baseline.raw.ll` and
   `probes/install/ir/candidate.raw.ll` (parameter attribute `noundef`).
-- **Coverage: 0 of the 23 files contain an `icmp … ptr` line, 0 contain a
-  written callee function type, and 1 contains each of the four constructs this
-  change adds** — a literal vector operand, an `extractelement` line, an
-  `insertelement` line and a `zeroinitializer` operand.  All four are the same
-  file, `tests/v16/ci2.ll` (below), and it is one of the parsed ones, so the
-  corpus does exercise those constructs.
-- **Working tree including generated IR: 42 files — 38 of the 42 files parse,
+- **Coverage: 0 of the 24 files contain an `icmp … ptr` line, 0 contain a
+  written callee function type, and 1 contains each of the four constructs the
+  construct-admission change added** — a literal vector operand, an
+  `extractelement` line, an `insertelement` line and a `zeroinitializer`
+  operand.  All four are the same file, `tests/v16/ci2.ll` (below), and it is one
+  of the parsed ones, so the corpus does exercise those constructs.
+- **Working tree including generated IR: 43 files — 39 of the 43 files parse,
   4 are refused.**  The fourth refusal is `probes/app/build/app.ll`,
   refused at line 1 (`source_filename`), not at an instruction.  That file holds
   the tree's only `icmp … ptr` line, so the line itself is never reached.  The
@@ -43,6 +43,17 @@ fast prototype uses — with the capture strip applied: the per-function text th
 extended census's `strip.py` produces, so it is the same text the peel below was
 measured on.  It is committed, and `repo-corpus.manifest` lists it as `parsed`, so
 the kernel's parse is a checked entry rather than a scratch-corpus observation.
+
+`tests/v16/depth_count.ll` is the same strip applied to that module's
+`@depth_count`, the depth counter of the same index stream: the `nocapture`,
+`readonly` and `writeonly` parameter attributes, the `align` on the two loads and
+the four stores, and the `nuw` flag on the counter's add are removed, and every
+other line is verbatim.  It is committed and listed as `parsed`, and
+`LeanLLVM/Vellum/DepthCountRefine.lean` proves the kernel against its depth fold
+(`depth_count_refines`) over that text, with the parsed AST pinned by a `#guard`.
+The strip instrument is the extended census's scratch `strip.py`, so — as for
+`ci2.ll` — the re-runnable check of the fixture is the manifest entry and this
+script, not the capture.
 
 The chain below is the peel **sequence** on that text, not the set of constructs
 the text contains: each relaxation rewrites the line it is applied to, so a

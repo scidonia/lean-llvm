@@ -21,3 +21,4 @@ parsed	tests/roundtrip.ll
 parsed	tests/signed.ll
 parsed	tests/strength.ll
 parsed	tests/v16/ci2.ll
+parsed	tests/v16/depth_count.ll
