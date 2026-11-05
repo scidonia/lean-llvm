@@ -265,11 +265,13 @@ entry:
   | .error _ => false
 
 -- The vector sample: the load of `<32 x i8>`, the lane-wise comparison and
--- operation, the mask `bitcast` and the `splat` operand the emitted classifier
--- uses.  The text must parse to these exact constructors, and the printed form
--- must parse back to the same module, so a wrong `<n x iw>` type, a `splat`
--- without its element type, or a `bitcast` without its result width fails here
--- rather than only in the emitted classifier.
+-- operation, the mask `bitcast`, the `splat` operand and the constructs a
+-- lane-accessing body uses — a literal vector operand, `extractelement` and
+-- `insertelement`.  The text must parse to these exact constructors, and the
+-- printed form must parse back to the same module, so a wrong `<n x iw>` type, a
+-- `splat` without its element type, a `bitcast` without its result width, a
+-- literal vector read as one of its lanes, or a lane index dropped on the way
+-- out fails here rather than only in an emitted body.
 def vectorRoundTripSample : String :=
 "define i32 @vector_roundtrip(ptr %p) {
 entry:
@@ -279,6 +281,9 @@ entry:
   %o = or <32 x i1> %c, %d
   %a = add <32 x i8> %v, splat (i8 -9)
   %m = bitcast <32 x i1> %o to i32
+  %lane = extractelement <32 x i8> %v, i32 3
+  %ins = insertelement <32 x i8> %v, i8 7, i32 2
+  %q = icmp eq <4 x i32> <i32 1, i32 2, i32 3, i32 4>, <i32 4, i32 3, i32 2, i32 1>
   ret i32 %m
 }
 "
@@ -294,7 +299,12 @@ entry:
               .icmpVec "%d" .ult 32 8 (.reg "%v") (.imm (.splat 32 8 2)),
               .binopVec "%o" .or 32 1 (.reg "%c") (.reg "%d"),
               .binopVec "%a" .add 32 8 (.reg "%v") (.imm (.splat 32 8 (BitVec.ofInt 8 (-9)))),
-              .bitcastMask "%m" 32 (.reg "%o") ]
+              .bitcastMask "%m" 32 (.reg "%o"),
+              .extractelement "%lane" 32 8 (.reg "%v") (.imm (.int 32 3)),
+              .insertelement "%ins" 32 8 (.reg "%v") (.imm (.int 8 7)) (.imm (.int 32 2)),
+              .icmpVec "%q" .eq 4 32
+                (.imm (.vector 32 [1, 2, 3, 4]))
+                (.imm (.vector 32 [4, 3, 2, 1])) ]
       | _ => false
   | _ => false
 
@@ -302,6 +312,30 @@ entry:
   match parseModule vectorRoundTripSample with
   | .ok m => parseModule (Module.render m) = .ok m
   | .error _ => false
+
+-- `zeroinitializer` at a vector type is the all-zero vector, and the splat of
+-- zero is that same value: the two spellings parse to the same module, so
+-- reading one as the other changes no instruction.  The printed form is the
+-- splat, so the round trip through the printer is stable.
+def zeroInitializerSample : String :=
+"define i32 @zeroinit(ptr %p) {
+entry:
+  %v = load <4 x i64>, ptr %p
+  %w = add <4 x i64> %v, zeroinitializer
+  ret i32 0
+}
+"
+
+def zeroSplatSample : String :=
+"define i32 @zeroinit(ptr %p) {
+entry:
+  %v = load <4 x i64>, ptr %p
+  %w = add <4 x i64> %v, splat (i64 0)
+  ret i32 0
+}
+"
+
+#guard parseModule zeroInitializerSample = parseModule zeroSplatSample
 
 -- Strength reduction fires on `mul i32 %x, 2` and preserves behaviour.
 def strengthSample : String :=
@@ -452,6 +486,66 @@ example {calls : Calls} {s s' : State} {d : String} {elemTy : Ty} {base off : Op
 /-- info: 'LeanLLVM.evalInstr_gep_mem' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.evalInstr_gep_mem
+
+-- The lane access facts, restated and pinned.  A lane read inside the range
+-- binds that lane; an index at or past the lane count is undefined behaviour,
+-- which is the model's reading of LLVM's poison; and a lane write inside the
+-- range binds the vector with that lane replaced.  The pair is what makes the
+-- range rule a statement rather than a comment: the same instruction returns the
+-- lane at a valid index and `none` at `k ≥ n`.
+example {calls : Calls} {s : State} {d : String} {n w : Nat} {v idx : Operand}
+    {vv : Value} {lanes : List (BitVec w)} {wi : Nat} {k : BitVec wi} {x : BitVec w}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (hi : evalOperand s idx = some (.int wi k)) (hx : lanes[k.toNat]? = some x) :
+    evalInstr calls s (.extractelement d n w v idx) = some (s.bind d (.int w x)) :=
+  evalInstr_extractelement hv hl hi hx
+
+example {calls : Calls} {s : State} {d : String} {n w : Nat} {v idx : Operand}
+    {vv : Value} {lanes : List (BitVec w)} {wi : Nat} {k : BitVec wi}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (hi : evalOperand s idx = some (.int wi k)) (hge : lanes.length ≤ k.toNat) :
+    evalInstr calls s (.extractelement d n w v idx) = none :=
+  evalInstr_extractelement_out_of_range hv hl hi hge
+
+example {calls : Calls} {s : State} {d : String} {n w : Nat} {v elt idx : Operand}
+    {vv ev : Value} {lanes : List (BitVec w)} {wi x : Nat} {k : BitVec wi}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k)) (hk : k.toNat < lanes.length) :
+    evalInstr calls s (.insertelement d n w v elt idx) =
+      some (s.bind d (.vec n w (lanes.set k.toNat (BitVec.ofNat w x)))) :=
+  evalInstr_insertelement hv hl he hx hi hk
+
+example {calls : Calls} {s : State} {d : String} {n w : Nat} {v elt idx : Operand}
+    {vv ev : Value} {lanes : List (BitVec w)} {wi x : Nat} {k : BitVec wi}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k)) (hge : lanes.length ≤ k.toNat) :
+    evalInstr calls s (.insertelement d n w v elt idx) = none :=
+  evalInstr_insertelement_out_of_range hv hl he hx hi hge
+
+example {α : Type} {l : List α} {i : Nat} (h : l.length ≤ i) : l[i]? = none :=
+  laneList_getElem?_eq_none h
+
+/-- info: 'LeanLLVM.evalInstr_extractelement' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_extractelement
+
+/-- info: 'LeanLLVM.evalInstr_extractelement_out_of_range' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_extractelement_out_of_range
+
+/-- info: 'LeanLLVM.evalInstr_insertelement' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_insertelement
+
+/-- info: 'LeanLLVM.evalInstr_insertelement_out_of_range' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_insertelement_out_of_range
+
+/-- info: 'LeanLLVM.laneList_getElem?_eq_none' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.laneList_getElem?_eq_none
 
 -- The readback lemma the byte walk rests on, restated: a range the body read
 -- supplies each of its bytes at the offset the body asks for.
@@ -1208,10 +1302,18 @@ entry:
 #guard runOf noCalls (argsSrc "<4 x i32> poison") [.int 32 (BitVec.ofNat 32 0)] =
   some (some .ub)
 
--- The two shapes the operand grammar still has no value for are refused by name,
--- with the argument's position: a literal vector, and an argument attribute.
-#guard refusedWith (argsSrc "i32 1, <4 x i32> <i32 1, i32 2, i32 3, i32 4>")
-  ["argument 2", "vector literal"]
+-- A literal vector argument is read at the type its position writes: the lane
+-- list carries its lanes and the vector type supplies the count.  An argument
+-- attribute is still refused by name, with the argument's position.
+#guard
+  match onlyFunction (argsSrc "i32 1, <4 x i32> <i32 1, i32 2, i32 3, i32 4>") with
+  | some f =>
+      match f.blocks with
+      | [b] => b.instrs = [ .callVoid "takesargs"
+          [(.int 32, .imm (.int 32 1)),
+           (.vec 4 (.int 32), .imm (.vector 32 [1, 2, 3, 4]))] ]
+      | _ => false
+  | none => false
 #guard refusedWith (argsSrc "i32 1, i32 range(i32 0, 65) %x")
   ["argument 2", "range", "not modelled"]
 

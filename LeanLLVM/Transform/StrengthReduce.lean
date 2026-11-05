@@ -96,6 +96,7 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
               | undef => rfl
               | poison => rfl
               | splat _ _ _ => rfl
+              | vector _ _ => rfl
       | add => rfl
       | sub => rfl
       | udiv => rfl
@@ -120,6 +121,8 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
   | icmpVec d p n w a b => rfl
   | binopVec d op n w a b => rfl
   | bitcastMask d n v => rfl
+  | extractelement d n w v idx => rfl
+  | insertelement d n w v elt idx => rfl
   | phi d ty inc => rfl
   | call d ty callee args => rfl
   | callVoid callee args => rfl

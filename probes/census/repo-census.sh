@@ -88,9 +88,14 @@ fi
 
 ptr_lines=$(git ls-files '*.ll' | xargs grep -lE 'icmp[[:space:]]+(samesign[[:space:]]+)?[a-z]+[[:space:]]+ptr\b' 2>/dev/null | wc -l || true)
 sig_lines=$(git ls-files '*.ll' | xargs grep -lE 'call[^=]*\([^()]*\)[[:space:]]*@' 2>/dev/null | wc -l || true)
+veclit_lines=$(git ls-files '*.ll' | xargs grep -lE '<i[0-9]+[[:space:]]+(-?[0-9]|undef|poison)' 2>/dev/null | wc -l || true)
+extract_lines=$(git ls-files '*.ll' | xargs grep -lE '^[[:space:]]*%[^[:space:]]*[[:space:]]*=[[:space:]]*extractelement[[:space:]]' 2>/dev/null | wc -l || true)
+insert_lines=$(git ls-files '*.ll' | xargs grep -lE '^[[:space:]]*%[^[:space:]]*[[:space:]]*=[[:space:]]*insertelement[[:space:]]' 2>/dev/null | wc -l || true)
+zeroinit_lines=$(git ls-files '*.ll' | xargs grep -lE '\bzeroinitializer\b' 2>/dev/null | wc -l || true)
 
 echo "tracked corpus: $((parsed + refused)) files, $parsed parsed, $refused refused ($(printf '%s\n' "${tracked[@]}" | xargs grep -c '^define ' 2>/dev/null | awk -F: '{s+=$2} END{print s+0}') defines)"
 echo "corpus coverage: $ptr_lines file(s) with an 'icmp ... ptr' line, $sig_lines file(s) with a written callee function type"
+echo "corpus coverage: $veclit_lines file(s) with a literal vector operand, $extract_lines file(s) with an 'extractelement' line, $insert_lines file(s) with an 'insertelement' line, $zeroinit_lines file(s) with a 'zeroinitializer' operand"
 
 if [ "$scan_all" = 1 ]; then
   all_parsed=0

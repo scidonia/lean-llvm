@@ -408,6 +408,10 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | bitcastMask d n v =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | extractelement d n w v idx =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | insertelement d n w v elt idx =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
         | phi d ty inc =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | alloca d ty al =>

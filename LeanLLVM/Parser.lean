@@ -11,9 +11,15 @@ arithmetic the modelled part is the byte offset an emitted body contains —
 type, a base that is not a `ptr`, a second index, a wider index, and the
 `inrange`/`nuw`/`nusw` modifiers.  `inbounds` is accepted and dropped, because
 the instruction has no field for it.  Of the vector fragment the modelled part
-is the one an emitted classifier contains — `load` of `<n x i8>`, the lane-wise
-`icmp`, the lane-wise `or`/`and`/`xor`/`add`/`sub`, the mask `bitcast` and a
-`splat` operand — and the rest of the vector grammar is refused by name.  A
+is the one an emitted body contains — `load` of `<n x i8>`, the lane-wise
+`icmp`, the lane-wise `or`/`and`/`xor`/`add`/`sub`, the mask `bitcast`, the lane
+accesses `extractelement` and `insertelement`, and both literal forms a vector
+constant takes: the `splat` and the lane list `<i32 1, i32 2>`, with
+`zeroinitializer` read as the splat of zero — and the rest of the vector grammar
+is refused by name.  A lane access's index is read as an unsigned count and its
+width is checked and dropped; an index outside the vector's lane range is not
+refused here (it is not a syntax error) and is undefined behaviour at run time,
+which is what LLVM's poison becomes in this model.  A
 function definition's header is checked for attributes the semantics does not
 model: a return attribute before the return type and a function attribute after
 the parameter list are both refused.  A `declare` header is not checked:
@@ -51,9 +57,9 @@ too — the mixed comparison LLVM's verifier also refuses.
 An argument list is read to the `)` that closes it, counting the groups nested
 inside, and split at the commas that are not inside one, so a `splat (i8 1)` and
 a `<4 x i32>` literal neither end the list nor split an argument.  Each argument
-is then read by the operand grammar; a literal vector and an argument attribute
-(`range(...)`, `noundef`, …) have no modelled value and are refused by name, with
-the argument's position.
+is then read by the operand grammar; an argument attribute (`range(...)`,
+`noundef`, …) has no modelled value and is refused by name, with the argument's
+position, and a literal vector argument is read at the type its position writes.
 
 A function definition's header may carry linkage, a preemption or visibility
 specifier, a DLL storage class and a calling convention before its return type,
@@ -236,8 +242,13 @@ def parseInt (s : String) : Option Int :=
   else (parseNat s).map fun n => (n : Int)
 
 /-- A constant of the given type.  Register operands are parsed by
-`parseOperand`.  A vector constant has no literal form of its own: it arrives
-through `parseOperand`'s `splat` branch, which the operand's vector type sizes. -/
+`parseOperand`.  A vector constant has two literal forms: a lane list, which
+`parseOperand` reads because it spans several tokens, and `zeroinitializer`,
+which is the all-zero vector — the splat of zero exactly, so it is read as one
+and the spelling is not kept.  `undef` and `poison` are literals no type
+parameter constrains: the constructor carries no type, and `Const.toValue`
+refuses both, so reading one at a vector type gives the model no value and is
+`ub`. -/
 def parseConst (ty : Ty) (t : String) : Except String Const :=
   match ty with
   | .int w =>
@@ -254,14 +265,15 @@ def parseConst (ty : Ty) (t : String) : Except String Const :=
   | .ptr =>
       if t = "null" then .ok .null
       else .error s!"only the 'null' pointer constant is supported, got '{t}'"
+  | .vec n (.int w) =>
+      if t = "zeroinitializer" then .ok (.splat n w (BitVec.ofNat w 0))
+      else if t = "undef" then .ok .undef
+      else if t = "poison" then .ok .poison
+      else .error s!"unsupported vector constant '{t}': a splat, a lane list or 'zeroinitializer' is read"
   | .vec _ _ =>
-      -- `undef` and `poison` are literals no type parameter constrains: the
-      -- constructor carries no type, and `Const.toValue` refuses both, so reading
-      -- one at a vector type gives the model no value and is `ub`.  Any other
-      -- vector constant — a lane list, `zeroinitializer` — has no shape here.
       if t = "undef" then .ok .undef
       else if t = "poison" then .ok .poison
-      else .error s!"unsupported vector constant '{t}': only a splat is modelled"
+      else .error s!"unsupported vector constant '{t}': only integer lanes are modelled"
   | .void => .error "void operand"
 
 /-- The lane value of a splat: an integer literal of exactly width `w`.  `none`
@@ -276,10 +288,54 @@ def parseSplatValue (w : Nat) (t : String) : Option (BitVec w) :=
   | .ok (.int w' v) => if h : w' = w then some (h ▸ v) else none
   | _ => none
 
+/-- The lanes of a literal vector constant `<i8 34, i8 92, …>`.  The tokens are
+the ones after the opening `<`; each lane is written with its element type and
+then its integer value, lanes are separated by `,`, and the list is closed by
+`>`.  The operand's vector type sizes the list: a lane written at another width
+is refused by name, and so is a list that does not write exactly the type's lane
+count.  A lane is an integer literal, so `undef` and `poison` in a lane position
+are refused by name rather than given a lane value.
+
+The fuel is the number of tokens left, so a malformed list is refused instead of
+being recursed into; every step consumes at least one token. -/
+def vectorLanes (ty : Ty) (n w : Nat) : Nat → List (BitVec w) → List String →
+    Except String (List (BitVec w) × List String)
+  | 0, _, _ => .error "internal parser error: vector literal fuel exhausted"
+  | _ + 1, _, [] => .error "unterminated vector literal: expected '>'"
+  | f + 1, acc, elemTok :: litTok :: rest =>
+      match parseTy elemTok with
+      | .ok (.int w') =>
+          if w' = w then
+            match parseSplatValue w litTok with
+            | none => .error s!"a vector literal lane must be an integer literal, got '{litTok}'"
+            | some v =>
+                let acc := v :: acc
+                match rest with
+                | "," :: more => vectorLanes ty n w f acc more
+                | ">" :: more =>
+                    if acc.length = n then .ok (acc.reverse, more)
+                    else
+                      .error s!"a vector literal writes {acc.length} lane(s), but its \
+                          operand type {ty.render} has {n}"
+                | [] => .error "unterminated vector literal: expected '>'"
+                | t :: _ => .error s!"expected ',' or '>' in a vector literal, got '{t}'"
+          else
+            .error s!"a vector literal lane is written i{w'}, but the operand type's \
+                element width is i{w}"
+      | .ok _ =>
+          .error s!"a vector literal lane must be written with an integer type, got '{elemTok}'"
+      | .error _ =>
+          .error s!"a vector literal lane must be written with an integer type, got '{elemTok}'"
+  | _ + 1, _, _ => .error "incomplete vector literal lane: expected '<type> <literal>'"
+
 /-- Parse an operand at a known type: a register `%x`, a literal, or a `splat`
 of a literal at a vector type.  A splat's lane count comes from the operand's
 vector type, because the printed form omits it and LLVM's grammar supplies it
-from that position. -/
+from that position.
+
+A lane list `<i8 34, i8 92, …>` is read at a vector operand type too: it spans
+several tokens, so it is read here rather than by `parseConst`, and its lane
+count and lane width are checked against the operand's type. -/
 def parseOperand (ty : Ty) : P Operand := do
   let t ← P.next
   if t.startsWith "%" then pure (.reg t)
@@ -308,10 +364,16 @@ def parseOperand (ty : Ty) : P Operand := do
       P.expect ")"
       pure (.imm (.splat n w v))
   else if t = "<" then
-    -- A literal vector is a value shape the model does not have: `Const` carries
-    -- the splat and the scalar literals, not a lane list.  It is refused by name
-    -- rather than approximated by one of its lanes.
-    P.fail "a vector literal operand ('<i8 1, i8 2>') is not modelled: only a `splat` constant is read"
+    -- A literal vector constant, whose operand type supplies the lane count and
+    -- the element width.  The refusal for a non-vector type is separate from the
+    -- lane reader's, so a `<…>` written where a scalar belongs names that.
+    let (n, w) ← match ty with
+      | .vec n (.int w) => pure (n, w)
+      | _ =>
+          P.fail s!"a vector literal operand requires an integer-lane vector operand \
+              type, got {ty.render}"
+    let ls ← fun ts => vectorLanes ty n w (ts.length + 1) [] ts
+    pure (.imm (.vector w ls))
   else
     match parseConst ty t with
     | .ok c => pure (.imm c)
@@ -588,19 +650,23 @@ structure PhiEdge where
 
 /-- Parse one `phi` incoming entry: `[ <value>, %<block> ]`.  The value is read
 at the instruction's type, because LLVM's text leaves it untyped there; the
-label is a block name with its `%` stripped, as branch targets are. -/
+label is a block name with its `%` stripped, as branch targets are.
+
+The entry is split at the comma that separates the value from the label, not at
+the first comma: a literal vector value writes its own commas
+(`<i64 1, i64 2>`), and splitting at the first one would report a well-formed
+entry as malformed.  The splitter is the call-argument one, which already skips
+the commas inside `(`, `<` and `[`. -/
 def parsePhiEntry (ty : Ty) : P PhiEdge := do
   P.expect "["
   let toks ← P.takeUntil "]"
-  let vToks := toks.takeWhile (· ≠ ",")
-  let rest := toks.dropWhile (· ≠ ",")
-  let labelTok ← match rest with
-    | [",", l] => pure l
-    | _ => P.fail "a phi incoming entry must be written '[ <value>, %<block> ]'"
-  let label := if labelTok.startsWith "%" then (labelTok.drop 1).toString else labelTok
-  match P.runExact (parseOperand ty) vToks with
-  | .error e => P.fail s!"in a phi incoming value: {e}"
-  | .ok v => pure ⟨label, v, vToks⟩
+  match splitCallArgs toks with
+  | [vToks, [labelTok]] =>
+      let label := if labelTok.startsWith "%" then (labelTok.drop 1).toString else labelTok
+      match P.runExact (parseOperand ty) vToks with
+      | .error e => P.fail s!"in a phi incoming value: {e}"
+      | .ok v => pure ⟨label, v, vToks⟩
+  | _ => P.fail "a phi incoming entry must be written '[ <value>, %<block> ]'"
 
 /-- The incoming entries of a `phi`, in order.  The fuel is the token count, so
 each recursion consumes a token even when an entry is length-checked rather than
@@ -671,6 +737,8 @@ def Instr.resultTy : Instr → Option Ty
   | .icmpVec _ _ n _ _ _ => some (.vec n (.int 1))
   | .binopVec _ _ n w _ _ => some (.vec n (.int w))
   | .bitcastMask _ n _ => some (.int n)
+  | .extractelement _ _ w _ _ => some (.int w)
+  | .insertelement _ n w _ _ _ => some (.vec n (.int w))
   | .call _ retTy _ _ => some retTy
   | .callVoid _ _ => none
   | .phi _ ty _ => some ty
@@ -898,6 +966,57 @@ def parseValueInstr (dst : String) : P Stmt := do
           if m = n then pure (.instr (.bitcastMask dst n v))
           else P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
       | _, _ => P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
+  | "extractelement" =>
+      -- `%d = extractelement <n x iw> <vec>, iN <idx>`.  The vector type is the
+      -- operand's and fixes the result's element type; the index is read at its
+      -- own written integer type, which the instruction does not keep — the
+      -- value it reads supplies the count, and the bound is a run-time check.
+      -- An index outside the lane range is not a syntax error: LLVM calls it
+      -- poison and the model reads it as `ub`.
+      let vTy ← expectTy
+      let (n, w) ← match vTy with
+        | .vec n (.int w) => pure (n, w)
+        | _ =>
+            P.fail s!"extractelement requires an integer-lane vector operand type, \
+                got {vTy.render}"
+      let v ← parseOperand vTy
+      P.expect ","
+      let idxTy ← expectTy
+      match idxTy with
+      | .int _ => pure ()
+      | _ =>
+          P.fail s!"extractelement index type '{idxTy.render}' is not modelled: the \
+              index must be an integer type"
+      let idx ← parseOperand idxTy
+      pure (.instr (.extractelement dst n w v idx))
+  | "insertelement" =>
+      -- `%d = insertelement <n x iw> <vec>, iw <elt>, iN <idx>`.  The element
+      -- operand is written with the vector's element type, which is checked
+      -- here; the index is read as in `extractelement`, and an index outside the
+      -- lane range is `ub` there too.
+      let vTy ← expectTy
+      let (n, w) ← match vTy with
+        | .vec n (.int w) => pure (n, w)
+        | _ =>
+            P.fail s!"insertelement requires an integer-lane vector operand type, \
+                got {vTy.render}"
+      let v ← parseOperand vTy
+      P.expect ","
+      let eltTy ← expectTy
+      if eltTy ≠ .int w then
+        P.fail s!"insertelement's element operand is written {eltTy.render}, but the \
+            vector's element type is i{w}"
+      else
+        let elt ← parseOperand eltTy
+        P.expect ","
+        let idxTy ← expectTy
+        match idxTy with
+        | .int _ => pure ()
+        | _ =>
+            P.fail s!"insertelement index type '{idxTy.render}' is not modelled: the \
+                index must be an integer type"
+        let idx ← parseOperand idxTy
+        pure (.instr (.insertelement dst n w v elt idx))
   | "getelementptr" =>
       -- `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`: one index and an
       -- element type whose allocated size is the stored size the step scales by.

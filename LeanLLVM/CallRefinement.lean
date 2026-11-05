@@ -95,6 +95,8 @@ theorem evalInstr_refines {calls' calls : Calls}
   | icmpVec d p n w a b => intro s' he; exact Or.inl he
   | binopVec d op n w a b => intro s' he; exact Or.inl he
   | bitcastMask d n v => intro s' he; exact Or.inl he
+  | extractelement d n w v idx => intro s' he; exact Or.inl he
+  | insertelement d n w v elt idx => intro s' he; exact Or.inl he
   | phi d ty inc => intro s' he; exact Or.inl he
   | call d retTy callee args =>
       intro s' he
@@ -178,6 +180,8 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
   | icmpVec d p n w a b => intro he; exact he
   | binopVec d op n w a b => intro he; exact he
   | bitcastMask d n v => intro he; exact he
+  | extractelement d n w v idx => intro he; exact he
+  | insertelement d n w v elt idx => intro he; exact he
   | phi d ty inc => intro he; exact he
 
 /-- A straight-line sequence that is undefined in the target is undefined in

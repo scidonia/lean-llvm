@@ -35,13 +35,24 @@ constant form `splat (<elem> <value>)`: the same integer in every lane.  It
 carries its lane count, its lane width and its value, so a splat of a non-integer
 — `splat (i8 undef)`, `splat (ptr null)` — has no representation and no printed
 form.  The lane count is omitted by the printer because the operand's vector type
-supplies it on re-parse. -/
+supplies it on re-parse.
+
+`vector` is the other vector literal form, `<i8 34, i8 92, …>`: the lanes written
+one by one.  It carries the lane width and the lanes and takes its lane count
+from their length, so there is no count field that could disagree with the list;
+the operand's `<n x iw>` type supplies the count on parse and the parser refuses
+a list of another length.  Lanes are integers, so a list with `undef` or `poison`
+in a lane position has no representation and the parser refuses one by name.  A
+hand-built list whose length disagrees with the operand type is not a value of
+that type: `Value.vecLanes` refuses it by shape, which the semantics reads as
+undefined behaviour. -/
 inductive Const where
   | int (w : Nat) (v : BitVec w)
   | null
   | undef
   | poison
   | splat (n w : Nat) (v : BitVec w)
+  | vector (w : Nat) (lanes : List (BitVec w))
   deriving DecidableEq, Repr
 
 /-- A dynamically typed value.  Integer values carry their width, so arithmetic
@@ -57,16 +68,20 @@ inductive Value where
 
 /-- The value of a literal.  `undef` and `poison` are modelled as undefined
 behaviour: the first slice has no nondeterministic or poison semantics, so a
-program that reads one is `ub`.  This is a conservative model for an optimiser:
-it permits fewer rewrites than LLVM's own semantics, never more.  A splat is the
+program that reads one is `ub`.  That is an over-approximation of LLVM's poison,
+not a refinement-direction guarantee: `Beh` has a run that reaches `ub` admit
+every outcome, so where LLVM's poison is never observed this model is more
+permissive than LLVM, not less.  A splat is the
 same value in every lane, and it is total: its element is an integer by
-construction. -/
+construction.  A lane list is the vector it writes, with the list's length as the
+lane count. -/
 def Const.toValue : Const → Option Value
   | .int w v => some (.int w v)
   | .null => some (.ptr 0)
   | .undef => none
   | .poison => none
   | .splat n w v => some (.vec n w (List.replicate n v))
+  | .vector w lanes => some (.vec lanes.length w lanes)
 
 /-- An instruction operand. -/
 inductive Operand where

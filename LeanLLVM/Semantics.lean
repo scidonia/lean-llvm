@@ -425,6 +425,37 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
             some (s.bind d (.int n (BitVec.ofNat n (lanesToNat l))))
           else none
       | _ => none
+  | .extractelement d n w v idx =>
+      -- A lane read.  The index is read as an unsigned count — the width it was
+      -- written at is not part of the instruction — and one outside the vector's
+      -- lane range is `none`.  LLVM calls that poison, and this model has no
+      -- poison: `Const.toValue` answers a `poison` or `undef` literal the same
+      -- way, so an out-of-range read is undefined behaviour rather than a lane
+      -- the compiler may choose.
+      match evalOperand s v, evalOperand s idx with
+      | some vv, some (.int _ k) =>
+          match vv.vecLanes n w with
+          | some lanes =>
+              match lanes[k.toNat]? with
+              | some x => some (s.bind d (.int w x))
+              | none => none
+          | none => none
+      | _, _ => none
+  | .insertelement d n w v elt idx =>
+      -- A lane write, and the same rule for an index outside the range.  The
+      -- vector operand must be a `<n x iw>` value and the element an `iw`
+      -- integer; the parser fixes both from the text, so a disagreement here is
+      -- the hand-built-AST case and is undefined behaviour rather than a cell
+      -- left alone.
+      match evalOperand s v, evalOperand s elt, evalOperand s idx with
+      | some vv, some ev, some (.int _ k) =>
+          match vv.vecLanes n w, ev.intToNat w with
+          | some lanes, some x =>
+              if k.toNat < lanes.length then
+                some (s.bind d (.vec n w (lanes.set k.toNat (BitVec.ofNat w x))))
+              else none
+          | _, _ => none
+      | _, _, _ => none
   | .phi d _ty inc =>
       -- Selection reads the predecessor field, which only a jump writes.  With
       -- no predecessor — the entry block — nothing can match, and an incoming
@@ -563,6 +594,71 @@ theorem evalInstr_gep_mem {calls : Calls} {s s' : State} {d : String} {elemTy : 
   simp only [evalInstr] at h
   repeat' split at h
   all_goals (cases h <;> rfl)
+
+/-! ### Lane access
+
+The accepting case of each lane instruction and the refusal its out-of-range
+index gets.  Together they are the statement that a lane read returns *that*
+lane, and that an index the vector does not have is undefined behaviour rather
+than a lane the compiler may pick: LLVM calls the latter poison, and this model
+has no poison, so it answers `none`, exactly as it does for a `poison` literal.
+-/
+
+/-- A lane index at or past the list's length names no lane.  This is the step
+from "the index is outside the vector's lane range" to the read's refusal, so the
+theorems below can be stated at the range rather than at the lookup. -/
+theorem laneList_getElem?_eq_none {α : Type} {l : List α} {i : Nat} (h : l.length ≤ i) :
+    l[i]? = none := by
+  induction l generalizing i with
+  | nil => rfl
+  | cons a as ih =>
+      cases i with
+      | zero => simp at h
+      | succ j => simp [ih (by simpa using h)]
+
+/-- A lane read inside the range binds the lane the index names. -/
+theorem evalInstr_extractelement {calls : Calls} {s : State} {d : String}
+    {n w : Nat} {v idx : Operand} {vv : Value} {lanes : List (BitVec w)}
+    {wi : Nat} {k : BitVec wi} {x : BitVec w}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (hi : evalOperand s idx = some (.int wi k)) (hx : lanes[k.toNat]? = some x) :
+    evalInstr calls s (.extractelement d n w v idx) = some (s.bind d (.int w x)) := by
+  simp [evalInstr, hv, hl, hi, hx]
+
+/-- A lane read at or past the lane count is undefined behaviour.  The hypothesis
+is the range condition on the lanes the operand's value yields; `vecLanes` returns
+a list of exactly `n` lanes, so it says `n ≤ index`.  The instruction's index
+width is irrelevant to it, which is why the width is not a field. -/
+theorem evalInstr_extractelement_out_of_range {calls : Calls} {s : State} {d : String}
+    {n w : Nat} {v idx : Operand} {vv : Value} {lanes : List (BitVec w)}
+    {wi : Nat} {k : BitVec wi}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (hi : evalOperand s idx = some (.int wi k)) (hge : lanes.length ≤ k.toNat) :
+    evalInstr calls s (.extractelement d n w v idx) = none := by
+  simp [evalInstr, hv, hl, hi, laneList_getElem?_eq_none hge]
+
+/-- A lane write inside the range binds the vector with that lane replaced and
+the others as they were. -/
+theorem evalInstr_insertelement {calls : Calls} {s : State} {d : String}
+    {n w : Nat} {v elt idx : Operand} {vv ev : Value} {lanes : List (BitVec w)}
+    {wi x : Nat} {k : BitVec wi}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k)) (hk : k.toNat < lanes.length) :
+    evalInstr calls s (.insertelement d n w v elt idx) =
+      some (s.bind d (.vec n w (lanes.set k.toNat (BitVec.ofNat w x)))) := by
+  simp [evalInstr, hv, hl, he, hx, hi, hk]
+
+/-- A lane write at or past the lane count is undefined behaviour, the same rule
+as the lane read's. -/
+theorem evalInstr_insertelement_out_of_range {calls : Calls} {s : State} {d : String}
+    {n w : Nat} {v elt idx : Operand} {vv ev : Value} {lanes : List (BitVec w)}
+    {wi x : Nat} {k : BitVec wi}
+    (hv : evalOperand s v = some vv) (hl : vv.vecLanes n w = some lanes)
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k)) (hge : lanes.length ≤ k.toNat) :
+    evalInstr calls s (.insertelement d n w v elt idx) = none := by
+  simp [evalInstr, hv, hl, he, hx, hi, Nat.not_lt.mpr hge]
 
 /-- Execute a straight-line instruction sequence. -/
 def denoteCode (calls : Calls) : List Instr → State → Option State
@@ -1054,6 +1150,60 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               try dsimp only
               simp only [Option.map_ite]
             | succ j => rfl
+  | extractelement d n w v idx =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases evalOperand s idx with
+        | none => rfl
+        | some iv =>
+          try dsimp only
+          cases iv with
+          | int wi k =>
+            try dsimp only
+            cases vv.vecLanes n w with
+            | none => rfl
+            | some lanes =>
+              try dsimp only
+              cases lanes[k.toNat]? with
+              | none => rfl
+              | some x => rfl
+          | ptr a => rfl
+          | vec n' w' l => rfl
+  | insertelement d n w v elt idx =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases evalOperand s elt with
+        | none => rfl
+        | some ev =>
+          try dsimp only
+          cases evalOperand s idx with
+          | none => rfl
+          | some iv =>
+            try dsimp only
+            cases iv with
+            | int wi k =>
+              try dsimp only
+              cases vv.vecLanes n w with
+              | none => rfl
+              | some lanes =>
+                try dsimp only
+                cases ev.intToNat w with
+                | none => rfl
+                | some x =>
+                  try dsimp only
+                  by_cases hk : k.toNat < lanes.length
+                  · simp only [ite_eq_left hk]
+                    rfl
+                  · simp only [ite_eq_right hk]
+                    rfl
+            | ptr a => rfl
+            | vec n' w' l => rfl
   | call d retTy callee args =>
       simp only [evalInstr, evalOperands_setPre, State.setPre_mem, State.setPre_next,
         State.setPre_env, State.setPre_pc]

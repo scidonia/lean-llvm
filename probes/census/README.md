@@ -17,24 +17,96 @@ bash probes/census/repo-census.sh          # checked
 bash probes/census/repo-census.sh --all    # also counts generated IR
 ```
 
-Measured 2026-11-05 with the driver built from `7d679eb` plus this change
-(binary `2026-11-05 12:33:28`, after `LeanLLVM/Semantics.lean` at `12:31:55`):
+Measured 2026-11-05 with the driver built from `c5adb94` plus this change:
 
-- **Tracked corpus: 22 files, 23 `define`s — 19 of the 22 files parse, 3 are
+- **Tracked corpus: 23 files, 24 `define`s — 20 of the 23 files parse, 3 are
   refused.**  The refusals are `probes/install/ir/baseline.o1.ll` (return
   attribute `range`), and `probes/install/ir/baseline.raw.ll` and
   `probes/install/ir/candidate.raw.ll` (parameter attribute `noundef`).
-- **Coverage of the two constructs this change adds: 0 of the 22 files contain
-  an `icmp … ptr` line, and 0 contain a written callee function type.**  This
-  corpus therefore does not exercise them; their evidence is
-  `LeanLLVMTest/Core.lean`.
-- **Working tree including generated IR: 41 files, 72 `define`s — 37 of the 41
-  files parse, 4 are refused.**  The fourth refusal is
-  `probes/app/build/app.ll`, refused at line 1 (`source_filename`), not at an
-  instruction.  That file holds the tree's only `icmp … ptr` line, so the line
-  itself is never reached.  The extra 19 files are untracked build output under
-  `probes/*/build`, which is why `--all` reports without asserting: the
-  checked manifest is the tracked set.
+- **Coverage: 0 of the 23 files contain an `icmp … ptr` line, 0 contain a
+  written callee function type, and 1 contains each of the four constructs this
+  change adds** — a literal vector operand, an `extractelement` line, an
+  `insertelement` line and a `zeroinitializer` operand.  All four are the same
+  file, `tests/v16/ci2.ll` (below), and it is one of the parsed ones, so the
+  corpus does exercise those constructs.
+- **Working tree including generated IR: 42 files — 38 of the 42 files parse,
+  4 are refused.**  The fourth refusal is `probes/app/build/app.ll`,
+  refused at line 1 (`source_filename`), not at an instruction.  That file holds
+  the tree's only `icmp … ptr` line, so the line itself is never reached.  The
+  extra 19 files are untracked build output under `probes/*/build`, which is why
+  `--all` reports without asserting: the checked manifest is the tracked set.
+
+## The stage-1 kernel
+
+`tests/v16/ci2.ll` is `v16.generated.ll`'s `@ci2` — the stage-1 index kernel the
+fast prototype uses — with the capture strip applied: the per-function text the
+extended census's `strip.py` produces, so it is the same text the peel below was
+measured on.  It is committed, and `repo-corpus.manifest` lists it as `parsed`, so
+the kernel's parse is a checked entry rather than a scratch-corpus observation.
+
+The chain below is the peel **sequence** on that text, not the set of constructs
+the text contains: each relaxation rewrites the line it is applied to, so a
+construct on a line another relaxation stubs is never reached and cannot appear.
+`peel2.py` is the scratch instrument, not part of this repository; the re-runnable
+check of the same fact is the manifest entry and `repo-census.sh` above, which
+drive the built driver over the committed file.  The sequence it reports:
+
+| driver | chain |
+|---|---|
+| `c5adb94` (before this change) | `semantic:vector-literal-operand`, `semantic:op-extractelement` |
+| this change | *(empty)* |
+
+The text itself carries four of the constructs this change adds, and the sequence
+names two of them:
+
+- literal vector operands, on the `icmp` lines and inside the `pclmulqdq` call;
+- `insertelement` with a `zeroinitializer` operand, at `tests/v16/ci2.ll:97`;
+- `extractelement`, at `tests/v16/ci2.ll:99`.
+
+`op-insertelement` cannot appear in the sequence because the first relaxation,
+`semantic:vector-literal-operand`, replaces every line carrying a literal vector
+or `zeroinitializer` — including that line — with a stub before the parser reaches
+it.  `zeroinitializer` is hidden the same way.  Both therefore had to be modelled
+even though the sequence does not name them.  The extended-census table below
+does count `op-insertelement` for other functions, because those `insertelement`
+lines carry no literal vector or `zeroinitializer` and so are never stubbed.
+
+The chain before typed `getelementptr` carried `semantic:gep-element-i64` as
+well; the previous change admitted that construct, which is why it is absent from
+the first row.  The driver run on the committed fixture (`--passes none`) exits 0
+and re-emits 120 lines.
+
+The kernel's `call <2 x i64> @llvm.x86.pclmulqdq(... <2 x i64> <i64 -1, i64 0>
+...)` line carries the literal vector in an argument position and takes a
+vector-typed result; the argument position is covered by the literal operand and
+the argument scanner, and the vector-typed result was already accepted, so
+neither needed a construct of its own.
+
+## The delta this change measured on the extended corpus
+
+Before = the `after2` run recorded for the previous package (`integrated.O2.after2.jsonl`
+and its three siblings, driver at `c5adb94`); after = a fresh run of the same
+instrument over the same texts with this change's driver.  Both runs open with the
+three controls, and all fifteen control lines (three per input, counting
+`control.jsonl`) report `parses=True caps=[]` in both.
+
+Units: a construct column counts **functions whose peel chain contains that
+construct** (one hit per function per construct, not files and not instructions);
+the parsed column counts **functions** out of the universe's total.
+
+| universe, flags | functions | parsed before → after | literal vector operand | `extractelement` | `insertelement` | non-splat vector constant |
+|---|---|---|---|---|---|---|
+| integrated O2 | 41 | 4 → 8 | 11 → 0 | 14 → 0 | 7 → 0 | 3 → 0 |
+| integrated O3 | 41 | 3 → 7 | 12 → 0 | 14 → 0 | 9 → 0 | 3 → 0 |
+| p5 O2 | 58 | 1 → 1 | 46 → 0 | 46 → 0 | 47 → 0 | 2 → 0 |
+| p5 O3 | 58 | 1 → 1 | 46 → 0 | 46 → 0 | 47 → 0 | 2 → 0 |
+
+No function that parsed before stopped parsing in any of the four runs.  The four
+that newly parse are `ci`, `ci1`, `ci2` and `v2a_nc` of `v16.generated.ll`, at
+both flag sets — so this package enabled three kernels it was not asked for,
+besides `ci2`.  The p5 universe's parsed count does not move: every function
+there still needs several other constructs, which is why a construct's chain
+membership falling to zero is the measurable part rather than the parsed count.
 
 ## The extended census (scratch corpus, not in this repository)
 
@@ -106,10 +178,12 @@ files or instructions.
 First-refusal counts over the same runs: integrated O2 and O3 go from 6 to 0
 for pointer `icmp` and from 17 to 0 for the written callee type; p5 O2 and O3
 go from 11 to 0 for pointer `icmp` and stay at 0 for the written callee type.
-The parsed counts are unchanged: integrated O2 4 of 41 parsed (37 blocked),
-integrated O3 3 of 41 parsed (38 blocked), p5 O2 1 of 58 parsed (57 blocked),
-p5 O3 1 of 58 parsed (57 blocked).  The functions the two constructs blocked
-remain blocked by other constructs, so no parsed count moves.
+The parsed counts were unchanged **in that comparison**: integrated O2 4 of 41
+parsed (37 blocked), integrated O3 3 of 41 parsed (38 blocked), p5 O2 1 of 58
+parsed (57 blocked), p5 O3 1 of 58 parsed (57 blocked).  The functions those two
+constructs blocked remained blocked by other constructs, so no parsed count moved
+there.  This package's comparison, above, is a later one: it moves the integrated
+parsed counts 4 → 8 and 3 → 7 and leaves p5 at 1 → 1.
 
 Both reports contain zero `unclassified:` entries, and all 15 control lines
 (three controls in each of the five aggregation inputs, counting

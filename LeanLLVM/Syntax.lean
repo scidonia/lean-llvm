@@ -53,6 +53,34 @@ inductive Instr where
   | binopVec (dst : String) (op : BinOp) (n w : Nat) (lhs rhs : Operand)
   /-- Pack a `<n x i1>` mask into an `n`-bit integer, lane `k` to bit `k`. -/
   | bitcastMask (dst : String) (n : Nat) (v : Operand)
+  /-- A lane read: `extractelement <n x iw> <vec>, iN <idx>` binds the lane at
+  `idx`.  The vector's shape is a field because it is what the read checks the
+  value against; the index's own width is not, because the value the index
+  operand reads supplies it and the model reads the index as an unsigned count —
+  the width the text writes is a shape the parser checks and drops.
+
+  An index outside `[0, n)` is **poison** in LLVM and **`ub`** here.  The model
+  has no poison: `Const.toValue` answers a `poison` literal the same way, and
+  `ub` is the chosen over-approximation of it.  That is an over-approximation
+  and not a refinement-direction guarantee — `Beh` has a run that reaches `ub`
+  admit every outcome, so where LLVM's poison is never observed this model is
+  more permissive, not less.  The LLVM side is measured, not assumed: `opt
+  -passes=instcombine` (LLVM 21.1.8, this repository's toolchain) folds an
+  out-of-range lane read of a constant vector to `poison`, and the write below to
+  `poison` too.  The parser does not evaluate the index — a literal and a
+  register index are both admitted — so the bound is checked at run time. -/
+  | extractelement (dst : String) (n w : Nat) (v : Operand) (idx : Operand)
+  /-- A lane write: `insertelement <n x iw> <vec>, iw <elt>, iN <idx>` binds a
+  vector that is `vec` with lane `idx` replaced by `elt`.  The element operand is
+  written with the vector's element type, which the parser checks; the index's
+  width is not a field for the reason given at `extractelement`.
+
+  An index outside `[0, n)` is poison in LLVM and `ub` here, exactly as the lane
+  read's is.  An operand whose value is not a vector of the instruction's shape,
+  or an element that does not read as an `iw` integer, is `ub` as well — that is
+  the hand-built-AST case, since the parser fixes both from the text. -/
+  | insertelement (dst : String) (n w : Nat) (v : Operand) (elt : Operand)
+      (idx : Operand)
   /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
   is resolved by the semantics' call environment, not by the function itself. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
@@ -124,6 +152,8 @@ def Instr.dst? : Instr → Option String
   | .icmpVec d _ _ _ _ _ => some d
   | .binopVec d _ _ _ _ _ => some d
   | .bitcastMask d _ _ => some d
+  | .extractelement d _ _ _ _ => some d
+  | .insertelement d _ _ _ _ _ => some d
   | .call d _ _ _ => some d
   | .callVoid _ _ => none
   | .phi d _ _ => some d
@@ -144,6 +174,8 @@ def Instr.uses : Instr → List String
   | .icmpVec _ _ _ _ a b => a.regs ++ b.regs
   | .binopVec _ _ _ _ a b => a.regs ++ b.regs
   | .bitcastMask _ _ v => v.regs
+  | .extractelement _ _ _ v idx => v.regs ++ idx.regs
+  | .insertelement _ _ _ v elt idx => v.regs ++ elt.regs ++ idx.regs
   | .call _ _ _ args => (args.map (·.2.regs)).flatten
   | .callVoid _ args => (args.map (·.2.regs)).flatten
   | .phi _ _ incoming => (incoming.map (fun kv => kv.2.regs)).flatten
@@ -167,6 +199,8 @@ def Instr.isPure : Instr → Bool
   | .icmpVec .. => true
   | .binopVec .. => true
   | .bitcastMask .. => true
+  | .extractelement .. => true
+  | .insertelement .. => true
   | .call .. => false
   | .callVoid .. => false
   | .phi .. => true

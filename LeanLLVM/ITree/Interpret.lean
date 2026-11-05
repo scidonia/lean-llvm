@@ -288,6 +288,14 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
+  | extractelement d n w v idx =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | insertelement d n w v elt idx =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
   | phi d ty inc =>
       exact evalInstr_phi_mem h
 
@@ -569,6 +577,16 @@ theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | bitcastMask d n v =>
           exact exec_pureInstrT calls s (.bitcastMask d n v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | extractelement d n w v idx =>
+          exact exec_pureInstrT calls s (.extractelement d n w v idx) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | insertelement d n w v elt idx =>
+          exact exec_pureInstrT calls s (.insertelement d n w v elt idx) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK

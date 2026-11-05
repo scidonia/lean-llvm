@@ -207,6 +207,20 @@ needs the other two to match.
   to the same answer.  For the written callee type the pair is the same AST and
   the same run, plus the refusal of a disagreeing type.  A new accepted surface
   needs the same pair and the reason written where the decision is made.
+- A vector constant has one accepted spelling beside its literals:
+  `zeroinitializer` at a vector type is the splat of zero, which is that value
+  exactly, so it parses to the AST the splat spelling does and runs to the same
+  answer (`zeroInitializerSample`/`zeroSplatSample` in
+  `LeanLLVMTest/Core.lean`, and the run pair in `tests/vector-lanes.lean`).  The
+  lane-list literal and the lane accesses `extractelement`/`insertelement` are
+  modelled, not accepted-and-dropped.  An index outside the vector's lane range
+  is `ub`: LLVM calls it poison, and the model has no poison — the same reading
+  `Const.toValue` gives a `poison` literal — so the accepting case and the
+  refusal are stated as theorems (`evalInstr_extractelement`,
+  `evalInstr_extractelement_out_of_range`, and the `insertelement` pair) and
+  pinned in `LeanLLVMTest/Core.lean`.  `tests/vector-lanes.lean` is the scenario:
+  a lane read returns that lane and an out-of-range index is `ub`, with the lane
+  values chosen so a read of another lane, or of zero, fails one of the pair.
 - An installation certificate is data, not source.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated

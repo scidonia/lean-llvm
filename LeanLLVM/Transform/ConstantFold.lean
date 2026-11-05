@@ -40,7 +40,8 @@ are undefined behaviour here, so they are never folded and never substituted.  A
 splat is `none` as well: this is the *scalar* fold's read, and a splat is a vector
 literal, so it is not a scalar constant — the same answer `undef` and `poison`
 get, and no fold can reach one (`foldInstr` has no vector case, and the parser
-refuses a splat at a scalar operand type). -/
+refuses a splat at a scalar operand type).  A lane list is refused for the same
+reason: it is a vector literal, not a scalar. -/
 def constOperand (σ : Subst) : Operand → Option Const
   | .reg n =>
       match σ n with
@@ -49,6 +50,7 @@ def constOperand (σ : Subst) : Operand → Option Const
           | .undef => none
           | .poison => none
           | .splat _ _ _ => none
+          | .vector _ _ => none
           | _ => some c
       | none => none
   | .imm c =>
@@ -56,6 +58,7 @@ def constOperand (σ : Subst) : Operand → Option Const
       | .undef => none
       | .poison => none
       | .splat _ _ _ => none
+      | .vector _ _ => none
       | _ => some c
 
 /-- Replace a register by its literal, when the substitution knows one. -/
@@ -81,6 +84,10 @@ def substInstr (σ : Subst) : Instr → Instr
   | .icmpVec d pred n w a b => .icmpVec d pred n w (substOperand σ a) (substOperand σ b)
   | .binopVec d op n w a b => .binopVec d op n w (substOperand σ a) (substOperand σ b)
   | .bitcastMask d n v => .bitcastMask d n (substOperand σ v)
+  | .extractelement d n w v idx =>
+      .extractelement d n w (substOperand σ v) (substOperand σ idx)
+  | .insertelement d n w v elt idx =>
+      .insertelement d n w (substOperand σ v) (substOperand σ elt) (substOperand σ idx)
   | .call d retTy callee args =>
       .call d retTy callee (args.map fun (ty, op) => (ty, substOperand σ op))
   | .callVoid callee args =>
@@ -267,6 +274,7 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
           | undef => simp at hc
           | poison => simp at hc
           | splat _ _ _ => simp at hc
+          | vector _ _ => simp at hc
   | imm k =>
       simp only [constOperand] at hc
       cases k with
@@ -275,6 +283,7 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
       | undef => simp at hc
       | poison => simp at hc
       | splat _ _ _ => simp at hc
+      | vector _ _ => simp at hc
 
 /-- A store does not touch the register environment. -/
 theorem storeValue_env {s s' : State} {ty : Ty} {v : Value} {addr : Nat}
@@ -300,6 +309,7 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
           | undef => simp at h
           | poison => simp at h
           | splat _ _ _ => simp at h
+          | vector _ _ => simp at h
   | imm k =>
       simp only [constOperand] at h
       cases k with
@@ -308,6 +318,7 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
       | undef => simp at h
       | poison => simp at h
       | splat _ _ _ => simp at h
+      | vector _ _ => simp at h
 
 /-- A `phi` binds exactly its destination. -/
 theorem evalInstr_phi_env {calls : Calls} {s s' : State} {d : String} {ty : Ty}
@@ -400,10 +411,12 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
             | undef => simp [foldBinop] at hf
             | poison => simp [foldBinop] at hf
             | splat _ _ _ => simp [foldBinop] at hf
+            | vector _ _ => simp [foldBinop] at hf
           | null => simp [foldBinop] at hf
           | undef => simp [foldBinop] at hf
           | poison => simp [foldBinop] at hf
           | splat _ _ _ => simp [foldBinop] at hf
+          | vector _ _ => simp [foldBinop] at hf
   | icmp d pred w a b =>
       simp only [foldInstr] at hf
       cases hca : constOperand σ a with
@@ -435,10 +448,12 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
             | undef => simp [foldICmp] at hf
             | poison => simp [foldICmp] at hf
             | splat _ _ _ => simp [foldICmp] at hf
+            | vector _ _ => simp [foldICmp] at hf
           | null => simp [foldICmp] at hf
           | undef => simp [foldICmp] at hf
           | poison => simp [foldICmp] at hf
           | splat _ _ _ => simp [foldICmp] at hf
+          | vector _ _ => simp [foldICmp] at hf
   | icmpPtr d pred a b =>
       -- No fold is defined for a pointer comparison, so `foldInstr` is `none`
       -- and there is nothing to be unsound about.
@@ -489,6 +504,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | undef => simp [hcc] at hf
         | poison => simp [hcc] at hf
         | splat _ _ _ => simp [hcc] at hf
+        | vector _ _ => simp [hcc] at hf
   | trunc d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -509,6 +525,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | undef => simp at hf
         | poison => simp at hf
         | splat _ _ _ => simp at hf
+        | vector _ _ => simp at hf
   | zext d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -529,6 +546,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | undef => simp at hf
         | poison => simp at hf
         | splat _ _ _ => simp at hf
+        | vector _ _ => simp at hf
   | sext d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -550,6 +568,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | undef => simp at hf
         | poison => simp at hf
         | splat _ _ _ => simp at hf
+        | vector _ _ => simp at hf
   | alloca d ty align => simp [foldInstr] at hf
   | load d ty p => simp [foldInstr] at hf
   | store ty v p => simp [foldInstr] at hf
@@ -557,6 +576,13 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
   | icmpVec d pred n w a b => simp [foldInstr] at hf
   | binopVec d op n w a b => simp [foldInstr] at hf
   | bitcastMask d n v => simp [foldInstr] at hf
+  | extractelement d n w v idx =>
+      -- No fold is defined for a lane read, so `foldInstr` is `none` and there
+      -- is nothing to be unsound about.
+      simp [foldInstr] at hf
+  | insertelement d n w v elt idx =>
+      -- No fold is defined for a lane write either.
+      simp [foldInstr] at hf
   | phi d ty inc => simp [foldInstr] at hf
   | call d retTy callee args => simp [foldInstr] at hf
   | callVoid callee args => simp [foldInstr] at hf

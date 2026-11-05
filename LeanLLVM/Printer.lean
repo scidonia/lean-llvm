@@ -18,14 +18,19 @@ def Ty.render : Ty → String
 /-- A literal, without its type: an integer is its unsigned value, as LLVM
 prints it.  A splat is `splat (<elem> <value>)` — the lane count is omitted
 because the operand's vector type supplies it on re-parse, and the element width
-comes from the value itself.  Every splat has a printed form, because a splat
-carries an integer. -/
+comes from the value itself.  A lane list is `<i8 34, i8 92>`, each lane written
+with its width the way LLVM prints a vector constant.  Every splat has a printed
+form, because a splat carries an integer.  A lane list with no lanes prints
+`<>`, which the parser does not read back: the parser requires at least one lane,
+so a zero-lane literal can only be built directly in an AST. -/
 def Const.render : Const → String
   | .int _ v => toString v.toNat
   | .null => "null"
   | .undef => "undef"
   | .poison => "poison"
   | .splat _ w v => s!"splat (i{w} {v.toNat})"
+  | .vector w lanes =>
+      "<" ++ String.intercalate ", " (lanes.map fun v => s!"i{w} {v.toNat}") ++ ">"
 
 /-- Render an operand that carries no type prefix of its own. -/
 def Operand.token : Operand → String
@@ -69,6 +74,23 @@ def gepIndexTy : Operand → String
 def callArgs (args : List (Ty × Operand)) : String :=
   String.intercalate ", " (args.map fun (ty, op) => s!"{ty.render} {op.token}")
 
+/-- The index type a lane instruction prints.  An integer literal carries its
+own width; a register carries none in the instruction, so the canonical form is
+`i32` — the width those instructions are usually written at, and the one the
+parser checks and drops.  Both forms re-parse to the instruction they were
+printed from, because the index width is not part of the instruction.
+
+A register index therefore prints as `i32` whatever width its definition has, so
+a body whose printed text must also pass `opt`/`llvm-as` uses an `i32` index
+register or a literal: the parser accepts an index written at another width, and
+the printer cannot recover it.  Measured here with `llvm-as`: a function whose
+`%k` is `i64 %k` prints `insertelement … i32 %k`, which the assembler refuses
+with `'%k' defined with type 'i64' but expected 'i32'`.  This is the same
+limitation `gepIndexTy` records, for the same reason. -/
+def laneIndexTy : Operand → String
+  | .imm (.int w _) => s!"i{w}"
+  | _ => "i32"
+
 def Instr.render : Instr → String
   | .binop d op w a b =>
       s!"  {d} = {op.render} i{w} {a.token}, {b.token}"
@@ -102,6 +124,10 @@ def Instr.render : Instr → String
   | .bitcastMask d n v =>
       let ty := Ty.vec n (.int 1)
       s!"  {d} = bitcast {ty.render} {v.token} to i{n}"
+  | .extractelement d n w v idx =>
+      s!"  {d} = extractelement <{n} x i{w}> {v.token}, {laneIndexTy idx} {idx.token}"
+  | .insertelement d n w v elt idx =>
+      s!"  {d} = insertelement <{n} x i{w}> {v.token}, i{w} {elt.token}, {laneIndexTy idx} {idx.token}"
   | .call d retTy callee args =>
       s!"  {d} = call {retTy.render} @{callee}({callArgs args})"
   | .callVoid callee args =>
