@@ -3103,6 +3103,10 @@ yields `false`.  The mutation is not committed.
 open LeanLLVM.Vellum.DepthCountRefine
 
 -- The committed text parses to the transcription the module proves against.
+-- `src` is the string the imported module baked in through `include_str`, so
+-- this reads the fixture as of that module's elaboration: after editing
+-- `tests/v16/depth_count.ll`, re-elaborate `DepthCountRefine` before reading a
+-- green run here.
 #guard
   match LeanLLVM.parseModule src with
   | .ok m => m = { decls := [], functions := [depthFunction] }

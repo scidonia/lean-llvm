@@ -1549,7 +1549,15 @@ theorem entry_jump_pos (calls : Calls) (pbuf pidx pstats : Nat) (m0 : Mem) (n : 
 
 /-- The kernel's refinement: from the caller's memory, the depth fold's two
 values are the returned word and the statistics pair, and nothing else in
-memory is touched. -/
+memory is touched.
+
+`hn` is the model's own `gep` bound, not slack: `evalInstr`'s `gep` arm scales the
+index by the element size and adds it only while the sign-extended 64-bit index is
+below `2 ^ 63`, returning `none` above it (`LeanLLVM/Semantics.lean`).  The loop
+reaches `%ip = getelementptr i32, ptr %idx, i64 %k` at the top of every iteration,
+so the run is defined only while `%k`, and therefore `n`, stays below that bound.
+The second `gep`, `%cp`, needs no such hypothesis: `hfit` already confines the
+index it loads from the array to `2 ^ 32`. -/
 theorem depth_count_refines (calls : Calls) (pbuf pidx pstats : Nat) (m0 : Mem)
     (tokens : List UInt8) (idxs : Nat → Nat) (n : Nat)
     (hn : n < 2^63) (hlen : tokens.length = n)
