@@ -61,3 +61,11 @@ root = "JsonClassifyMain"
 name = "leanllvm-json-bench"
 srcDir = "probes/bench"
 root = "JsonBench"
+
+# Prints the depth fold's specification over the installation corpus;
+# probes/install/DepthMain.lean, compared with the installed object by
+# tests/depth-count/check.sh.
+[[lean_exe]]
+name = "leanllvm-depth-check"
+srcDir = "probes/install"
+root = "DepthMain"

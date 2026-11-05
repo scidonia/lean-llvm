@@ -32,39 +32,56 @@ This probe exercises the installation point described in
   within the band its own two allocations cover), and `UNIT=loop` installs the
   loop from it in strict and non-strict mode. The gate is
   `tests/m4-loop-install-gate.sh`, described below.
+- `depth_count` is the stage-1 census kernel `tests/v16/depth_count.ll`, the
+  per-function text `LeanLLVM/Vellum/DepthCountRefine.lean` parses and pins
+  before proving that the run returns and stores the depth fold `depthSpec`
+  (`depth_count_refines`). Its installed object is the fixture plus
+  `ir/marker_depth_count.ll`; its certificate names that theorem and the
+  propositional boundary `depthContract` (the theorem's own hypothesis set and
+  conclusion, with `depthContract_holds` as its witness) rather than the
+  comma-mask units' pure `commaContract`, which does not describe a kernel that
+  reads a buffer through an index array. Its caller is the corpus driver
+  `depth_driver.c`, not the one-word comma seam, so `UNIT=depth_count` links the
+  driver. The gate is `tests/m4-depth-install-gate.sh`, and the numeric route is
+  `tests/depth-count/check.sh`.
 - `build.sh` builds everything in a private staging directory and publishes
   `differential.txt`, `proof_baseline.env`, `proof_candidate.env`,
-  `proof_loop.env` and `manifest.env` only after every check passes, one file
-  at a time with the
+  `proof_loop.env`, `proof_depth_count.env` and `manifest.env` only after every
+  check passes, one file at a time with the
   manifest last, so a failed build leaves the previously published bytes in
   place. The manifest binds the schema, the target triple and data layout, the
   target-feature policy (`none`: the build passes no `-march`/`-mattr`, so
-  clang's triple default applies), the contract and both theorem names
-  (`theorem` for the candidate and the baseline, `loop_theorem` for the loop),
-  the attribute policy, every fixture and marker hash, the caller and unit
-  hashes, the differential transcript as ancillary evidence, and the three
+  clang's triple default applies), the contract and every unit's theorem name
+  (`theorem` for the candidate and the baseline, `loop_theorem` for the loop,
+  `depth_count_theorem` and `depth_contract` for the depth counter), the
+  attribute policy, every fixture and marker hash, the caller, depth-caller and
+  unit hashes, the differential transcript as ancillary evidence, and the four
   certificate paths and digests. `select.sh` recomputes the triple and data
   layout from the toolchain and rejects a mismatch.
 - `InstallCertificate.lean` is the certificate producer. The imported proof
   graph is rebuilt from current project source, `CommaMaskIR` is re-elaborated
   from source and — for a loop certificate — so is `CommaMaskLoop`, which
-  imports it; the producer imports those fresh modules, checks the statement of
-  the theorem that covers the requested unit, the `commaContract` link and the
+  imports it; a depth certificate re-elaborates `DepthCountRefine`. The
+  producer imports those fresh modules, checks the statement of the theorem
+  that covers the requested unit, the contract or boundary link and the
   axiom footprint, and writes the certificate described below. It also refuses
   a proof module whose pinned fixture text differs from the file it hashes, so
   a stale module cannot certify changed bytes. `toolchain-id.sh` prints the
   toolchain revision the certificate records.
 - `select.sh` verifies the hashes, target and layout, requires the manifest's
   contract and the theorem that covers the requested unit (the global `theorem`
-  for the candidate and the baseline, `loop_theorem` for the loop),
+  and `contract` for the candidate and the baseline, `loop_theorem` for the
+  loop, `depth_count_theorem` and `depth_contract` for the depth counter),
   **rebuilds each unit from its fixtures**, parses the requested unit's
   certificate as closed data, compares every field with the object, fixture,
   marker, manifest and observed toolchain, and then rebuilds the imported proof
   graph, re-elaborates the proof module and reproduces the certificate with the
-  producer, requiring the same bytes. Only then does it link. An unknown unit is
+  producer, requiring the same bytes. Only then does it link the unit with its
+  caller (the depth corpus driver for `UNIT=depth_count`). An unknown unit is
   refused; `STRICT=1` fails instead of falling back, and a non-strict request
   whose certificate is missing or rejected installs the baseline and records
-  the rejection as a fallback.
+  the rejection as a fallback. A strict refusal names the certificate field that
+  disagreed when the disagreement is a wrong theorem or contract name.
 - `build.sh`, the app build and `select.sh` take the
   `.lake/install-certificate.lock` directory around the proof-module rebuilds
   and the producer, so two routes cannot overlap. The install builder holds it
@@ -81,13 +98,17 @@ This probe exercises the installation point described in
 - `check.sh` runs the whole flow, including the proof gate for both pinned
   fixtures, a stale-candidate fallback, a strict-mode rejection, a loop install
   with its own certificate in both modes, a loop-hash-mismatch fallback and
-  strict rejection, a mutated-fixture failure at the source guard with the
+  strict rejection, a depth install with its own certificate in which the
+  selection record's object and certificate digests are checked and the
+  installed executable's numeric output is compared with `depthSpec`, a
+  mutated-fixture failure at the source guard with the
   published bytes asserted unchanged, a stale imported proof source refused by
   the real build and both selector modes under a restoring trap, the full
   certificate-gate matrix (seventeen fields in both modes, three
   absent-certificate routes, four structural malformations and two
-  stale-import routes), the loop installation gate in its four modes, and the
-  lock, warm-up and release-failure checks.
+  stale-import routes), the loop installation gate in its four modes, the depth
+  installation gate in its five modes, the depth numeric scenario with its
+  three controls, and the lock, warm-up and release-failure checks.
 
 Run from the repository root:
 
@@ -103,6 +124,12 @@ nix develop -c bash tests/m4-loop-install-gate.sh --strict          # the loop i
 nix develop -c bash tests/m4-loop-install-gate.sh --strict-theorem  # a wrong theorem is refused
 nix develop -c bash tests/m4-loop-install-gate.sh --strict-hash     # a wrong object hash is refused
 nix develop -c bash tests/m4-loop-install-gate.sh --fallback-hash   # a wrong hash falls back
+nix develop -c bash tests/m4-depth-install-gate.sh --strict           # the depth counter installs
+nix develop -c bash tests/m4-depth-install-gate.sh --strict-theorem   # another unit's theorem is refused by name
+nix develop -c bash tests/m4-depth-install-gate.sh --strict-contract  # another unit's contract is refused by name
+nix develop -c bash tests/m4-depth-install-gate.sh --strict-hash      # another unit's object hash is refused
+nix develop -c bash tests/m4-depth-install-gate.sh --fallback-hash    # a wrong hash falls back
+nix develop -c bash tests/depth-count/check.sh   # the installed object against depthSpec, with controls
 ```
 
 `check.sh` must run once before the commands below that read the generated
@@ -118,25 +145,38 @@ Two kinds of certificate, with different reach:
    `candidate.ll` by parsed AST and proves `Refines candidateFunction
    baselineFunction`; `LeanLLVM/Vellum/CommaMaskLoop.lean` pins the printed
    `loop.ll` to `loopFunction` and proves the loop's correctness and
-   framed-memory statements. The kernel argument for the two bodies is in
+   framed-memory statements; `LeanLLVM/Vellum/DepthCountRefine.lean` pins
+   `tests/v16/depth_count.ll` to `depthFunction` and proves
+   `depth_count_refines`, the kernel's returned depth and stored statistics
+   against `depthSpec`. The kernel argument for the comma-mask bodies is in
    `CommaMaskKernel.lean`. Axiom footprints are pinned in
    `LeanLLVMTest/Vellum.lean`.
-2. **Installation.** `proof_baseline.env`, `proof_candidate.env` and
-   `proof_loop.env` are the
+2. **Installation.** `proof_baseline.env`, `proof_candidate.env`,
+   `proof_loop.env` and `proof_depth_count.env` are the
    kernel-derived certificates. Each is a deterministic data file with exactly
    these fields, in this order: `schema` (`leanllvm-install-v1`), `unit`, the
    unit's object, fixture and marker hashes, the baseline/candidate object,
    fixture and marker hashes, `theorem`, `axioms`
    (`Classical.choice,Quot.sound,propext`, read from `collectAxioms` rather than
-   from printed output), `contract` (`LeanLLVM.Vellum.commaContract`),
-   `target_triple`, `data_layout` and `toolchain_revision` (the `sha256:` of a
+   from printed output), `contract`, `target_triple`, `data_layout` and
+   `toolchain_revision` (the `sha256:` of a
    fixed nine-line record over the pin files and the `lean`, `clang` and `ld`
    version output). `theorem` names the statement that covers that unit:
    `LeanLLVM.Vellum.CommaMaskIR.IR_refines` on the baseline's and the
-   candidate's certificates, and
+   candidate's certificates,
    `LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within` on the loop's,
    because `IR_refines` relates the candidate to the baseline and says nothing
-   about the memory-backed loop. The selector never sources a certificate: it
+   about the memory-backed loop, and
+   `LeanLLVM.Vellum.DepthCountRefine.depth_count_refines` on the depth
+   counter's. `contract` names `LeanLLVM.Vellum.commaContract` for the
+   comma-mask units and `LeanLLVM.Vellum.DepthCountRefine.depthContract` for
+   the depth counter: the latter is a proposition — the hypothesis set and
+   conclusion of `depth_count_refines`, with `depthContract_holds` as its
+   witness — because the pure `BitVec 64 → BitVec 64` structure does not
+   describe a kernel that reads through an index array and writes statistics
+   words. The producer checks the depth theorem's type against that proposition
+   by definitional equality and checks the contract definition's own body, not
+   just its name. The selector never sources a certificate: it
    parses the closed grammar, compares each field with the input it names, and
    reproduces the bytes from a fresh kernel check. A manifest digest of a
    certificate only says the file is the byte sequence the manifest names,
@@ -161,20 +201,23 @@ installed objects, and accepts a unit only when the manifest names the contract
 and the theorem covering that unit, the certificate's fields match those objects
 and fixtures, and the producer reproduces the certificate from a fresh kernel
 check of that unit. clang records the module name in the object, so the names
-are part of the input and a rename is a different object. A field mutation, a
+are part of the input and a rename is a different object. The depth counter's
+caller is the corpus driver, so the selector links the driver with the depth
+object rather than the comma-mask caller. A field mutation, a
 missing certificate or a malformed certificate is a rejection; non-strict mode
 still installs the baseline and records the rejection as a fallback, strict mode
 emits nothing.
 
 `lake build` does not track `include_str` inputs, so a changed fixture alone
-does not invalidate a cached module. `check.sh` therefore elaborates both proof
-modules from source every time, and it mutates a fixture to show that each pin
-bites: the candidate mutation makes `CommaMaskIR` fail, the real build route
+does not invalidate a cached module. `check.sh` therefore elaborates the proof
+modules from source every time, and it mutates a fixture to show that each
+pin bites: the candidate mutation makes `CommaMaskIR` fail, the real build route
 stops at that guard without publishing a new certificate or manifest, and
 selection falls back; the loop mutation makes `CommaMaskLoop`'s `#guard` fail;
-both are restored and re-checked. The certificate producer additionally refuses
-a loaded proof module whose pinned fixture text differs from the fixture file it
-is hashing, so a stale olean cannot certify changed bytes.
+both are restored and re-checked. A depth selection re-elaborates
+`DepthCountRefine` from source, and the producer refuses that module when its
+`include_str` text differs from the fixture file it hashes, so a stale olean
+cannot certify changed bytes for any of the four units.
 
 `attributes=reject` records the attribute policy: the fixtures carry none, and
 the parser refuses an unmodelled attribute in a function definition's header
@@ -229,6 +272,16 @@ some unmodelled tokens, so the refusal promise covers function definitions, not
   by a theorem about machine code. The `IR_refines` statement still relates only
   the candidate and the baseline; the loop has its own statement and its own
   field.
+- The depth counter's certificate names `depth_count_refines` — a theorem about
+  the model's execution of the parsed fixture — and `depthContract`, which is
+  that theorem's own type stated as a proposition with `depthContract_holds` as
+  its witness. It is not a compiled-code equivalence, and it is not a
+  `LeanLLVM.Vellum.Contract`: the pure one-word structure cannot express the
+  memory and index-array hypotheses. `tests/depth-count/check.sh` compares the
+  installed object with `depthSpec` over a fixed corpus, with a tampered
+  expectation, a sequential-reader defect and a return-only defect as controls;
+  that comparison is runtime
+  evidence, not the proof, and the corpus is finite.
 - The contextual replacement theorem covers a caller (in the semantics) whose
   body is a call to the seam whose result it returns
   (`LeanLLVM/Vellum/SeamContext.lean`), in both an equality form and the
@@ -248,12 +301,15 @@ cat probes/install/build/manifest.env
 cat probes/install/build/proof_baseline.env
 cat probes/install/build/proof_candidate.env
 cat probes/install/build/proof_loop.env
+cat probes/install/build/proof_depth_count.env
 cat probes/install/build/selection_candidate.env
 cat probes/install/build/selection_loop.env
+cat probes/install/build/selection_depth_count.env
 cat probes/install/build/differential.txt
 cat probes/install/build/diff_wrong.txt
 cat probes/install/build/out_candidate.txt
 cat probes/install/build/out_loop.txt
+cat probes/install/build/out_depth_count.txt
 cat probes/install/build/out_fallback.txt
 cat probes/install/build/gate.log
 ```

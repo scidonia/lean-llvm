@@ -4,11 +4,12 @@ The installation certificate producer.
 `probes/install/build.sh` and `probes/install/select.sh` elaborate this module
 with
 
-  CERT_UNIT=<baseline|candidate|loop> CERT_MANIFEST=<absolute manifest path> \
+  CERT_UNIT=<baseline|candidate|loop|depth_count> CERT_MANIFEST=<absolute manifest path> \
     CERT_OUT=<absolute output path> lake env lean probes/install/InstallCertificate.lean
 
 from the repository root, after re-elaborating `LeanLLVM/Vellum/CommaMaskIR.lean`
-from source and, for the loop unit, `LeanLLVM/Vellum/CommaMaskLoop.lean` too.
+from source and, for the loop unit, `LeanLLVM/Vellum/CommaMaskLoop.lean` too, and
+for the depth unit `LeanLLVM/Vellum/DepthCountRefine.lean`.
 The module imports those freshly built proof modules, checks the statement and
 axiom footprint of the theorem that covers the requested unit, and writes one
 canonical certificate to `CERT_OUT`:
@@ -29,6 +30,13 @@ manifest records, and the toolchain revision the repository's
 `toolchain-id.sh` prints -- and it checks the theorem, the contract-level
 theorem and the axiom footprint in the Lean environment it loaded.  An
 externally supplied theorem, type, axiom list or contract is never accepted.
+The comma-mask units name `commaContract`'s structure and its linking theorem;
+the depth unit names the propositional boundary `depthContract` and its witness,
+and the producer checks the covering theorem's type against it by definitional
+equality rather than by name.  The depth witness is a proof object the
+certificate names, so its axiom footprint is checked against the same budget and
+unioned into the serialized `axioms` field; a `sorry`-proved witness cannot ride
+along with a clean covering theorem.
 Before serializing a fixture hash, the producer compares the file with the
 `include_str` string the loaded proof module carries, so a stale module whose
 guards ran against different fixture text cannot certify the current bytes.
@@ -38,6 +46,7 @@ are left untouched.
 import Lean
 import LeanLLVM.Vellum.CommaMaskIR
 import LeanLLVM.Vellum.CommaMaskLoop
+import LeanLLVM.Vellum.DepthCountRefine
 import Lean.Util.CollectAxioms
 
 open Lean Elab Command
@@ -65,20 +74,53 @@ def loopTheoremName : Name :=
 def loopTheoremText : String :=
   "LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within"
 
-/-- The theorem that covers a unit: the loop has its own statement, every other
-unit is covered by `IR_refines`, which relates the candidate to the baseline. -/
+/-- The theorem the depth unit's certificate names: the refinement of the
+emitted `@depth_count` kernel to the depth fold `depthSpec`. -/
+def depthTheoremName : Name :=
+  ``LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
+
+/-- The same name as it is serialized. -/
+def depthTheoremText : String :=
+  "LeanLLVM.Vellum.DepthCountRefine.depth_count_refines"
+
+/-- The theorem that covers a unit: the loop has its own statement, the depth
+counter has its own, and every other unit is covered by `IR_refines`, which
+relates the candidate to the baseline. -/
 def theoremNameFor (unit : String) : Name :=
-  if unit == "loop" then loopTheoremName else theoremName
+  if unit == "loop" then loopTheoremName
+  else if unit == "depth_count" then depthTheoremName
+  else theoremName
 
 /-- The serialized form of `theoremNameFor`. -/
 def theoremTextFor (unit : String) : String :=
-  if unit == "loop" then loopTheoremText else theoremText
+  if unit == "loop" then loopTheoremText
+  else if unit == "depth_count" then depthTheoremText
+  else theoremText
 
-/-- The contract the certificate names. -/
+/-- The contract the certificate names for the comma-mask units. -/
 def contractName : Name := ``LeanLLVM.Vellum.commaContract
 
 /-- The same name as it is serialized. -/
 def contractText : String := "LeanLLVM.Vellum.commaContract"
+
+/-- The depth unit's boundary.  `commaContract` is a pure
+`BitVec 64 → BitVec 64` contract and does not describe a kernel that reads a
+buffer through an index array and writes two statistics words, so the depth
+certificate names the proposition the depth theorem proves instead. -/
+def depthContractName : Name :=
+  ``LeanLLVM.Vellum.DepthCountRefine.depthContract
+
+/-- The same name as it is serialized. -/
+def depthContractText : String :=
+  "LeanLLVM.Vellum.DepthCountRefine.depthContract"
+
+/-- The contract name a unit's certificate serializes. -/
+def contractTextFor (unit : String) : String :=
+  if unit == "depth_count" then depthContractText else contractText
+
+/-- The witness that the depth boundary is proved, not merely named. -/
+def depthContractWitness : Name :=
+  ``LeanLLVM.Vellum.DepthCountRefine.depthContract_holds
 
 /-- The contract-level theorem that links the named contract to the Lean
 functions the emitted-IR theorem relates. -/
@@ -254,6 +296,13 @@ def gather (m : Manifest) (unit triple layout : String) : IO Inputs := do
     unless loopFixtureText == LeanLLVM.Vellum.CommaMaskLoop.loopSrc do
       throw <| IO.userError
         s!"the loaded proof module was not elaborated from the current loop fixture {unitFixturePath}"
+  -- The depth kernel's fixture is read through `include_str` by
+  -- `DepthCountRefine`, so the same check applies to it.
+  if unit == "depth_count" then
+    let depthFixtureText ← IO.FS.readFile unitFixturePath
+    unless depthFixtureText == LeanLLVM.Vellum.DepthCountRefine.src do
+      throw <| IO.userError
+        s!"the loaded proof module was not elaborated from the current depth fixture {unitFixturePath}"
   pure {
     unitObject := (← sha256File unitObjectPath)
     unitFixture := (← sha256File unitFixturePath)
@@ -271,72 +320,171 @@ def gather (m : Manifest) (unit triple layout : String) : IO Inputs := do
 
 /-! ### The environment checks -/
 
+/-- The proposition the depth unit's certificate relies on, restated here from
+the kernel's hypotheses and conclusion.  The producer never accepts a supplied
+statement: this is compared with the covering theorem's type and with the named
+contract's definition, so a renamed or edited contract does not certify. -/
+def depthProposition : TermElabM Lean.Expr := do
+  let expected ← Term.elabType (←
+    `(∀ (calls : LeanLLVM.Calls) (pbuf pidx pstats : Nat) (m0 : LeanLLVM.Mem)
+        (tokens : List UInt8) (idxs : Nat → Nat) (n : Nat)
+        (hn : n < 2^63) (hlen : tokens.length = n)
+        (hidx : ∀ (k : Nat), k < n →
+          LeanLLVM.readBytes m0 (pidx + k * 4) 4 =
+            some (LeanLLVM.natToBytes (idxs k) 4))
+        (hfit : ∀ (k : Nat), k < n → idxs k < 2^32)
+        (hbuf : ∀ (k : Nat) (hk : k < n),
+          LeanLLVM.readBytes m0 (pbuf + idxs k) 1 =
+            some [tokens.get ⟨k, by rw [hlen]; exact hk⟩]),
+        LeanLLVM.runFuel calls (n + 2)
+            LeanLLVM.Vellum.DepthCountRefine.depthFunction
+            (LeanLLVM.Vellum.DepthCountRefine.start m0 pbuf pidx pstats
+              (BitVec.ofNat 64 n))
+          = LeanLLVM.Vellum.DepthCountRefine.Result calls m0 pstats tokens))
+  -- The quotation's universe and type metavariables must be assigned before the
+  -- expression is compared: `isDefEq` on an expression carrying a live level
+  -- metavariable fails with an unknown-universe error rather than deciding.
+  Term.synthesizeSyntheticMVarsNoPostponing
+  instantiateMVars expected
+
 /-- The theorem that covers `unit` must be a theorem of exactly the proposition
-the installation relies on: `IR_refines` for the candidate and the baseline, and
-the framed loop-to-candidate refinement within the loop's own allocations for
-the loop. -/
+the installation relies on: `IR_refines` for the candidate and the baseline, the
+framed loop-to-candidate refinement within the loop's own allocations for the
+loop, and the kernel-to-`depthSpec` statement for the depth counter. -/
 def checkTheorem (unit : String) : TermElabM Unit := do
   let name := theoremNameFor unit
   let info ← getConstInfo name
   match info with
   | ConstantInfo.thmInfo _ => pure ()
   | _ => throwError m!"{name} is not a theorem"
-  let expected ← Term.elabType (←
-    if unit == "loop" then
-      `(∀ (x : BitVec 64) (o : LeanLLVM.Outcome),
-        LeanLLVM.Beh LeanLLVM.noCalls
-            LeanLLVM.Vellum.CommaMaskLoop.loopFunction [LeanLLVM.Value.int 64 x] o →
-          ∃ o', LeanLLVM.Beh LeanLLVM.noCalls
-              LeanLLVM.Vellum.CommaMaskIR.candidateFunction
-              [LeanLLVM.Value.int 64 x] o' ∧
-            o.AgreesOutside (LeanLLVM.Vellum.CommaMaskLoop.loopFrame x) o')
+  let expected ←
+    if unit == "depth_count" then
+      depthProposition
     else
-      `(∀ calls, LeanLLVM.Refines calls
-        LeanLLVM.Vellum.CommaMaskIR.candidateFunction
-        LeanLLVM.Vellum.CommaMaskIR.baselineFunction))
+      Term.elabType (←
+        if unit == "loop" then
+          `(∀ (x : BitVec 64) (o : LeanLLVM.Outcome),
+            LeanLLVM.Beh LeanLLVM.noCalls
+                LeanLLVM.Vellum.CommaMaskLoop.loopFunction [LeanLLVM.Value.int 64 x] o →
+              ∃ o', LeanLLVM.Beh LeanLLVM.noCalls
+                  LeanLLVM.Vellum.CommaMaskIR.candidateFunction
+                  [LeanLLVM.Value.int 64 x] o' ∧
+                o.AgreesOutside (LeanLLVM.Vellum.CommaMaskLoop.loopFrame x) o')
+        else
+          `(∀ calls, LeanLLVM.Refines calls
+            LeanLLVM.Vellum.CommaMaskIR.candidateFunction
+            LeanLLVM.Vellum.CommaMaskIR.baselineFunction))
   unless info.type.isForall do
     throwError m!"{name} is not a universally quantified statement"
   let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq info.type expected
   unless ok do
     throwError m!"{name} does not state the expected refinement"
+  -- The depth unit's certificate names a contract.  The covering theorem must
+  -- be that contract's statement definitionally, not merely a proposition that
+  -- happens to match a restatement here.
+  if unit == "depth_count" then
+    let contractOk ← Lean.Meta.withNewMCtxDepth do
+      Lean.Meta.isDefEq info.type (Lean.mkConst depthContractName)
+    unless contractOk do
+      throwError m!"{name} is not definitionally the named depth contract"
+  pure ()
+
+/-- The depth boundary is a proposition, not a `Contract` instance: the kernel's
+boundary includes the memory hypotheses the pure structure cannot express.  The
+named definition must be that proposition (§ its value, not its name), and the
+named witness must be a theorem of it, so the certificate's `contract` field
+names a proved statement rather than a predicate beside one. -/
+def checkDepthContract : TermElabM Unit := do
+  let info ← getConstInfo depthContractName
+  let value ←
+    match info with
+    | ConstantInfo.defnInfo defn => pure defn.value
+    | _ => throwError m!"{depthContractName} is not a definition"
+  let prop ← depthProposition
+  let typeOk ← Lean.Meta.withNewMCtxDepth do
+    Lean.Meta.isDefEq info.type (Lean.mkSort Lean.Level.zero)
+  unless typeOk do
+    throwError m!"{depthContractName} is not a proposition"
+  let valueOk ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq value prop
+  unless valueOk do
+    throwError m!"{depthContractName} is not the depth kernel's boundary"
+  let witnessInfo ← getConstInfo depthContractWitness
+  match witnessInfo with
+  | ConstantInfo.thmInfo _ => pure ()
+  | _ => throwError m!"{depthContractWitness} is not a theorem"
+  let witnessOk ← Lean.Meta.withNewMCtxDepth do
+    Lean.Meta.isDefEq witnessInfo.type prop
+  unless witnessOk do
+    throwError m!"{depthContractWitness} does not prove {depthContractName}"
   pure ()
 
 /-- The named contract must be the contract structure's value, and the
 contract-level theorem must state the relation that links it to the two Lean
-functions. -/
-def checkContract : TermElabM Unit := do
-  let contractInfo ← getConstInfo contractName
-  match contractInfo with
-  | ConstantInfo.defnInfo _ => pure ()
-  | ConstantInfo.opaqueInfo _ => pure ()
-  | _ => throwError m!"{contractName} is not a definition"
-  let contractType ← Term.elabType (← `(LeanLLVM.Vellum.Contract))
-  let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq contractInfo.type contractType
-  unless ok do
-    throwError m!"{contractName} is not a LeanLLVM.Vellum.Contract"
-  let theoremInfo ← getConstInfo contractTheoremName
-  match theoremInfo with
-  | ConstantInfo.thmInfo _ => pure ()
-  | _ => throwError m!"{contractTheoremName} is not a theorem"
-  let expected ← Term.elabType (← `(LeanLLVM.Vellum.commaContract ⊢
-    LeanLLVM.Vellum.byteLoop ⊑ LeanLLVM.Vellum.swar))
-  let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq theoremInfo.type expected
-  unless ok do
-    throwError m!"{contractTheoremName} does not state the contract refinement"
+functions.  The depth unit's boundary is the proposition `checkDepthContract`
+checks instead. -/
+def checkContract (unit : String) : TermElabM Unit := do
+  if unit == "depth_count" then
+    checkDepthContract
+  else
+    let contractInfo ← getConstInfo contractName
+    match contractInfo with
+    | ConstantInfo.defnInfo _ => pure ()
+    | ConstantInfo.opaqueInfo _ => pure ()
+    | _ => throwError m!"{contractName} is not a definition"
+    let contractType ← Term.elabType (← `(LeanLLVM.Vellum.Contract))
+    let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq contractInfo.type contractType
+    unless ok do
+      throwError m!"{contractName} is not a LeanLLVM.Vellum.Contract"
+    let theoremInfo ← getConstInfo contractTheoremName
+    match theoremInfo with
+    | ConstantInfo.thmInfo _ => pure ()
+    | _ => throwError m!"{contractTheoremName} is not a theorem"
+    let expected ← Term.elabType (← `(LeanLLVM.Vellum.commaContract ⊢
+      LeanLLVM.Vellum.byteLoop ⊑ LeanLLVM.Vellum.swar))
+    let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq theoremInfo.type expected
+    unless ok do
+      throwError m!"{contractTheoremName} does not state the contract refinement"
 
-/-- The covering theorem's axiom footprint, read from the environment rather
-than from printed output, must be exactly the standard pinned set. -/
-def checkAxioms (name : Name) : CommandElabM (List String) := do
+/-- The axioms a named declaration relies on, read from the environment rather
+than from printed output, with `sorryAx` refused by name. -/
+def collectFootprint (name : Name) : CommandElabM (List String) := do
   let axioms ← Lean.collectAxioms name
   let names := axioms.toList.map fun n => n.toString
   if names.contains "sorryAx" then
     throwError m!"{name} depends on sorryAx"
+  pure names
+
+/-- The covering theorem's axiom footprint must be exactly the standard pinned
+set. -/
+def checkAxioms (name : Name) : CommandElabM (List String) := do
+  let names ← collectFootprint name
   unless names.length == axiomFootprint.length do
     throwError m!"{name} depends on axioms {names}, not {axiomFootprint}"
   for required in axiomFootprint do
     unless names.contains required do
       throwError m!"{name} does not depend on {required}; footprint {names}"
-  pure axiomFootprint
+  pure names
+
+/-- A proof object the certificate names beside the covering theorem — the
+depth boundary's witness — is held to the same budget.  It may rely on nothing
+outside the pinned set, and `sorryAx` is refused by `collectFootprint`.  Without
+this check a `sorry`-proved witness would ride along with a clean covering
+theorem, because the certificate names both. -/
+def checkWitnessAxioms (witness : Name) : CommandElabM (List String) := do
+  let names ← collectFootprint witness
+  let outside := names.filter fun n => !axiomFootprint.contains n
+  unless outside.isEmpty do
+    throwError m!"{witness} depends on axioms {outside}, outside the permitted footprint {axiomFootprint}"
+  pure names
+
+/-- The certificate's `axioms` field: the union of the footprints the named
+proof objects rely on, in the canonical pinned order.  A name outside that set
+cannot appear in the union: the covering theorem's footprint is exactly the
+pinned set and `checkWitnessAxioms` refuses anything else. -/
+def canonicalAxioms (names : List String) : List String :=
+  let unique := names.foldl (fun acc n => if acc.contains n then acc else acc ++ [n]) []
+  axiomFootprint.filter (fun n => unique.contains n) ++
+    unique.filter (fun n => !axiomFootprint.contains n)
 
 /-! ### Publication -/
 
@@ -355,7 +503,7 @@ def render (unit : String) (inputs : Inputs) (axioms : List String) : String :=
     s!"candidate_marker_sha256={inputs.candidateMarker}",
     s!"theorem={theoremTextFor unit}",
     s!"axioms={String.intercalate "," axioms}",
-    s!"contract={contractText}",
+    s!"contract={contractTextFor unit}",
     s!"target_triple={inputs.targetTriple}",
     s!"data_layout={inputs.dataLayout}",
     s!"toolchain_revision={inputs.toolchainRevision}"
@@ -393,8 +541,9 @@ open InstallCertificate
 
 run_cmd do
   let unit ← liftIO (requireEnv "CERT_UNIT")
-  unless unit == "baseline" || unit == "candidate" || unit == "loop" do
-    throwError s!"CERT_UNIT must name baseline, candidate or loop, not '{unit}'"
+  unless unit == "baseline" || unit == "candidate" || unit == "loop" ||
+      unit == "depth_count" do
+    throwError s!"CERT_UNIT must name baseline, candidate, loop or depth_count, not '{unit}'"
   let manifestPath ← liftIO (requireEnv "CERT_MANIFEST")
   let outPath ← liftIO (requireEnv "CERT_OUT")
   liftIO do
@@ -415,6 +564,13 @@ run_cmd do
     let manifestLoopTheorem ← liftIO (manifest.require "loop_theorem")
     unless manifestLoopTheorem == loopTheoremText do
       throwError s!"manifest {manifestPath} names loop theorem '{manifestLoopTheorem}', not '{loopTheoremText}'"
+  if unit == "depth_count" then
+    let manifestDepthTheorem ← liftIO (manifest.require "depth_count_theorem")
+    unless manifestDepthTheorem == depthTheoremText do
+      throwError s!"manifest {manifestPath} names depth theorem '{manifestDepthTheorem}', not '{depthTheoremText}'"
+    let manifestDepthContract ← liftIO (manifest.require "depth_contract")
+    unless manifestDepthContract == depthContractText do
+      throwError s!"manifest {manifestPath} names depth contract '{manifestDepthContract}', not '{depthContractText}'"
   let target ← liftIO (manifest.require "target")
   let triple ← liftIO (manifest.require "triple")
   unless target == triple do
@@ -426,6 +582,12 @@ run_cmd do
     throwError s!"manifest {manifestPath} has a malformed data layout '{layout}'"
   let inputs ← liftIO (gather manifest unit triple layout)
   liftTermElabM (checkTheorem unit)
-  liftTermElabM checkContract
-  let axioms ← checkAxioms (theoremNameFor unit)
+  liftTermElabM (checkContract unit)
+  let theoremAxioms ← checkAxioms (theoremNameFor unit)
+  let axioms ←
+    if unit == "depth_count" then do
+      let witnessAxioms ← checkWitnessAxioms depthContractWitness
+      pure (canonicalAxioms (theoremAxioms ++ witnessAxioms))
+    else
+      pure theoremAxioms
   liftIO (publish outPath (render unit inputs axioms))

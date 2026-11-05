@@ -26,7 +26,16 @@
 # and `select.sh` installs `UNIT=loop` from it exactly as it installs the other
 # two units from `theorem=`.
 #
-# The three kernel-derived certificates are produced before the differential
+# `depth_count` is the census fixture `tests/v16/depth_count.ll`, the text
+# `LeanLLVM/Vellum/DepthCountRefine.lean` parses and proves.  It is installed
+# from its own `depth_count.o` (fixture plus marker), its certificate names
+# `depth_count_refines` and the propositional boundary `depthContract`, and its
+# caller is the corpus driver `depth_driver.c` rather than the one-word comma
+# seam.  Its numeric evidence is `tests/depth-count/check.sh`, which compares
+# the installed object with `depthSpec`; it is not part of the comma-mask
+# differential transcript below.
+#
+# The four kernel-derived certificates are produced before the differential
 # detector runs, so a fixture-pin failure is reported by the source
 # elaboration that has to see it, not masked by a runtime comparison.
 set -euo pipefail
@@ -101,7 +110,17 @@ publish() { # name
 # Basenames are part of the build input: clang records the module name in the
 # object, so `select.sh` has to rebuild under the same names to compare.
 units=$staging/units
-mkdir -p "$units/baseline" "$units/candidate" "$units/loop"
+mkdir -p "$units/baseline" "$units/candidate" "$units/loop" "$units/depth_count"
+
+# The fixture a unit is compiled from.  The comma-mask units' fixtures are the
+# captured IR in `probes/install/ir/`; the depth counter's is the census
+# fixture in `tests/v16/`, which is the text its proof module parses.
+unit_fixture() { # unit
+  case "$1" in
+    depth_count) printf '%s' "$repo/tests/v16/depth_count.ll" ;;
+    *) printf '%s' "$here/ir/$1.ll" ;;
+  esac
+}
 
 # 1. The caller sees only opaque declarations.
 lean -c "$staging/Caller.c" "$here/Caller.lean"
@@ -115,20 +134,23 @@ lean -c "$staging/Candidate.c" "$here/Candidate.lean"
   leanc -c Candidate.c -o lean_candidate.o 2>>"$staging/leanc.log")
 
 # 3. Installed units: the proved fixture plus its marker object.
-for unit in baseline candidate loop; do
+for unit in baseline candidate loop depth_count; do
   dir=$units/$unit
-  cp "$here/ir/$unit.ll" "$dir/$unit.ll"
-  if [ "$unit" = loop ]; then
-    cp "$here/ir/marker_loop.ll" "$dir/marker_$unit.ll"
-  else
-    cp "$here/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
-  fi
+  cp "$(unit_fixture "$unit")" "$dir/$unit.ll"
+  cp "$here/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
   (cd "$dir" &&
     clang -c "$unit.ll" -o "$unit.o" 2>>"$staging/clang.log" &&
     clang -c "marker_$unit.ll" -o "marker_$unit.o" 2>>"$staging/clang.log" &&
     ld -r "$unit.o" "marker_$unit.o" -o unit.o)
   cp "$dir/unit.o" "$staging/$unit.o"
 done
+
+# The depth unit's caller is the corpus driver: it calls the ABI the fixture
+# defines (`depth_count(ptr buf, ptr idx, i64 nidx, ptr stats)`) rather than the
+# comma mask's one-word seam, so the selector links it in place of `caller.o`
+# for that unit.  It is an object like the caller, bound by hash like every
+# other installation input.
+clang -c "$here/depth_driver.c" -o "$staging/depth_caller.o" 2>>"$staging/clang.log"
 
 # 4. The target the objects were built for, and the data layout clang uses.
 target="$(clang -print-target-triple)"
@@ -153,29 +175,40 @@ marker=leanllvm_impl_id
 contract=LeanLLVM.Vellum.commaContract
 theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
 loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+depth_count_symbol=depth_count
+depth_contract=LeanLLVM.Vellum.DepthCountRefine.depthContract
+depth_count_theorem=LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
 attributes=reject
 datalayout=$datalayout
 target_features=none
 baseline_fixture=$here/ir/baseline.ll
 candidate_fixture=$here/ir/candidate.ll
 loop_fixture=$here/ir/loop.ll
+depth_count_fixture=$repo/tests/v16/depth_count.ll
 baseline_marker=$here/ir/marker_baseline.ll
 candidate_marker=$here/ir/marker_candidate.ll
 loop_marker=$here/ir/marker_loop.ll
+depth_count_marker=$here/ir/marker_depth_count.ll
 baseline_fixture_sha256=$(sha "$here/ir/baseline.ll")
 candidate_fixture_sha256=$(sha "$here/ir/candidate.ll")
 loop_fixture_sha256=$(sha "$here/ir/loop.ll")
+depth_count_fixture_sha256=$(sha "$repo/tests/v16/depth_count.ll")
 baseline_marker_sha256=$(sha "$here/ir/marker_baseline.ll")
 candidate_marker_sha256=$(sha "$here/ir/marker_candidate.ll")
 loop_marker_sha256=$(sha "$here/ir/marker_loop.ll")
+depth_count_marker_sha256=$(sha "$here/ir/marker_depth_count.ll")
 caller=$objects/caller.o
 baseline=$objects/baseline.o
 candidate=$objects/candidate.o
 loop=$objects/loop.o
+depth_count=$objects/depth_count.o
+depth_caller=$objects/depth_caller.o
 caller_sha256=$(sha "$hashes/caller.o")
 baseline_sha256=$(sha "$hashes/baseline.o")
 candidate_sha256=$(sha "$hashes/candidate.o")
 loop_sha256=$(sha "$hashes/loop.o")
+depth_count_sha256=$(sha "$hashes/depth_count.o")
+depth_caller_sha256=$(sha "$hashes/depth_caller.o")
 EOF
 }
 
@@ -186,6 +219,7 @@ EOF
   printf 'proof_baseline=%s\n' "$staging/proof_baseline.env"
   printf 'proof_candidate=%s\n' "$staging/proof_candidate.env"
   printf 'proof_loop=%s\n' "$staging/proof_loop.env"
+  printf 'proof_depth_count=%s\n' "$staging/proof_depth_count.env"
 } > "$staging/manifest.env"
 
 # 6. The kernel-derived certificates.  `lake build` does not track
@@ -212,7 +246,10 @@ source_check() {
     lake build LeanLLVM.Vellum.CommaMaskIR) &&
   (cd "$repo" &&
     rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
-    lake build LeanLLVM.Vellum.CommaMaskLoop)
+    lake build LeanLLVM.Vellum.CommaMaskLoop) &&
+  (cd "$repo" &&
+    rm -f .lake/build/lib/lean/LeanLLVM/Vellum/DepthCountRefine.olean &&
+    lake build LeanLLVM.Vellum.DepthCountRefine)
 }
 certificate() { # unit
   local unit=$1
@@ -229,6 +266,7 @@ source_check
 certificate baseline
 certificate candidate
 certificate loop
+certificate depth_count
 
 # 7. Differential transcript: every body must agree with every other on the
 #    corpus, and each must agree with the lane-wise specification `diff.c`
@@ -304,9 +342,11 @@ done
   printf 'proof_baseline=%s\n' "$build/proof_baseline.env"
   printf 'proof_candidate=%s\n' "$build/proof_candidate.env"
   printf 'proof_loop=%s\n' "$build/proof_loop.env"
+  printf 'proof_depth_count=%s\n' "$build/proof_depth_count.env"
   printf 'proof_baseline_sha256=%s\n' "$(sha "$staging/proof_baseline.env")"
   printf 'proof_candidate_sha256=%s\n' "$(sha "$staging/proof_candidate.env")"
   printf 'proof_loop_sha256=%s\n' "$(sha "$staging/proof_loop.env")"
+  printf 'proof_depth_count_sha256=%s\n' "$(sha "$staging/proof_depth_count.env")"
 } > "$staging/manifest.final.env"
 
 # 9. Publish.  Every object and evidence file first, then the certificates,
@@ -315,7 +355,8 @@ done
 #    refuses while the lock is held, and never sees a new manifest pointing at
 #    old bytes.
 for name in Caller.c Baseline.c Candidate.c caller.o lean_baseline.o \
-  lean_candidate.o baseline.o candidate.o loop.o wrong_seam.c wrong_seam.o \
+  lean_candidate.o baseline.o candidate.o loop.o depth_count.o depth_caller.o \
+  wrong_seam.c wrong_seam.o \
   diff_wrong diff_wrong.txt diff_baseline diff_baseline.txt diff_candidate \
   diff_candidate.txt diff_loop diff_loop.txt diff_lean_baseline \
   diff_lean_baseline.txt diff_lean_candidate diff_lean_candidate.txt \
@@ -326,6 +367,7 @@ publish differential.txt
 publish proof_baseline.env
 publish proof_candidate.env
 publish proof_loop.env
+publish proof_depth_count.env
 cp "$staging/manifest.final.env" "$build/manifest.env.tmp.$$"
 mv "$build/manifest.env.tmp.$$" "$build/manifest.env"
 

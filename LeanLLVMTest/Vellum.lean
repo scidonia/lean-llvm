@@ -3135,6 +3135,33 @@ info: 'LeanLLVM.Vellum.DepthCountRefine.depth_count_refines' depends on axioms: 
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
 
+-- The installation boundary, restated: the same hypothesis set and conclusion,
+-- with `depthContract_holds` as the inhabitant.  The theorem is the contract's
+-- own proof, so a hypothesis added to `depthContract` and not to
+-- `depth_count_refines` (or the reverse) makes this fail rather than letting a
+-- certificate name a boundary nothing proved.
+example (calls : LeanLLVM.Calls) (pbuf pidx pstats : Nat) (m0 : LeanLLVM.Mem)
+    (tokens : List UInt8) (idxs : Nat → Nat) (n : Nat)
+    (hn : n < 2^63) (hlen : tokens.length = n)
+    (hidx : ∀ (k : Nat), k < n →
+      LeanLLVM.readBytes m0 (pidx + k * 4) 4 = some (LeanLLVM.natToBytes (idxs k) 4))
+    (hfit : ∀ (k : Nat), k < n → idxs k < 2^32)
+    (hbuf : ∀ (k : Nat) (hk : k < n),
+      LeanLLVM.readBytes m0 (pbuf + idxs k) 1 =
+        some [tokens.get ⟨k, by rw [hlen]; exact hk⟩]) :
+    LeanLLVM.runFuel calls (n + 2) depthFunction
+        (start m0 pbuf pidx pstats (BitVec.ofNat 64 n)) =
+      LeanLLVM.Vellum.DepthCountRefine.Result calls m0 pstats tokens := by
+  have h : depthContract := depthContract_holds
+  unfold depthContract at h
+  exact h calls pbuf pidx pstats m0 tokens idxs n hn hlen hidx hfit hbuf
+
+/--
+info: 'LeanLLVM.Vellum.DepthCountRefine.depthContract_holds' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DepthCountRefine.depthContract_holds
+
 /--
 info: 'LeanLLVM.Vellum.DepthCountRefine.loop_run' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/

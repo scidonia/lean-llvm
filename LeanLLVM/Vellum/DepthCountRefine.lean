@@ -1620,4 +1620,33 @@ theorem depth_count_refines (calls : Calls) (pbuf pidx pstats : Nat) (m0 : Mem)
         (by rfl) (by rfl))
     simpa using hlr
 
+/-! ## The installation boundary
+
+The comma-mask units carry a pure boundary contract,
+`LeanLLVM.Vellum.commaContract`: one `BitVec 64` in, one out.  The depth kernel
+is not that shape — it reads a buffer through an index array, is defined only on
+a memory holding both, and writes the two statistics words — so that structure
+does not describe it.  Its boundary is the statement `depth_count_refines`
+proves, written once as a proposition so the installation certificate can name
+it and the selector can compare a certificate field with it.
+
+The statement is the theorem's own type, not a paraphrase beside it: every
+hypothesis and the conclusion are repeated here, so `depth_count_refines` is an
+inhabitant of `depthContract` and a hypothesis added to one and not the other
+leaves the contract unproved. -/
+def depthContract : Prop :=
+  ∀ (calls : Calls) (pbuf pidx pstats : Nat) (m0 : Mem)
+    (tokens : List UInt8) (idxs : Nat → Nat) (n : Nat)
+    (hn : n < 2^63) (hlen : tokens.length = n)
+    (hidx : ∀ (k : Nat), k < n →
+      readBytes m0 (pidx + k * 4) 4 = some (natToBytes (idxs k) 4))
+    (hfit : ∀ (k : Nat), k < n → idxs k < 2^32)
+    (hbuf : ∀ (k : Nat) (hk : k < n),
+      readBytes m0 (pbuf + idxs k) 1 = some [tokens.get ⟨k, by rw [hlen]; exact hk⟩]),
+    runFuel calls (n + 2) depthFunction (start m0 pbuf pidx pstats (BitVec.ofNat 64 n))
+      = Result calls m0 pstats tokens
+
+/-- The installation boundary is exactly what the kernel theorem proves. -/
+theorem depthContract_holds : depthContract := depth_count_refines
+
 end LeanLLVM.Vellum.DepthCountRefine

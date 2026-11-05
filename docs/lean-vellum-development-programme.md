@@ -317,7 +317,17 @@ accepted on the strength of a narrower result.
   `loop_refines_candidate_within`, the framed refinement of the loop to the
   unrolled candidate within the band its own two allocations cover, and
   `tests/m4-loop-install-gate.sh` covers a matching certificate, a wrong
-  theorem, a wrong object hash and the fallback.  That statement is about the
+  theorem, a wrong object hash and the fallback.  The stage-1 depth counter is
+  the first compiler-emitted body through the route: its certificate names
+  `depth_count_refines` and the propositional `depthContract` (the theorem's
+  own hypothesis set and conclusion, with `depthContract_holds` as its
+  witness), the object is built from `tests/v16/depth_count.ll` with
+  `ir/marker_depth_count.ll`, and the caller is the corpus driver
+  `probes/install/depth_driver.c` because the unit's ABI is not the one-word
+  comma seam.  `tests/m4-depth-install-gate.sh` covers the matching certificate,
+  another unit's theorem and contract by name, another unit's object hash and
+  the fallback; `tests/depth-count/check.sh` compares the installed object with
+  `depthSpec` over an index-array corpus.  That statement is about the
   loop body and its frame, and the certificate remains a hash-and-rebuild
   bridge: a differential transcript ending `RESULT: PASS` is never treated as
   proof.  Open: a semantic attribute policy richer than `attributes=reject`

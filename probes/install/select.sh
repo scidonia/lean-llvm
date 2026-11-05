@@ -7,9 +7,11 @@
 #   * the request names a known unit, and the manifest names the installation
 #     contract exactly and the theorem that covers the requested unit:
 #     `IR_refines` over the candidate and the baseline for those two units,
-#     and the loop's own `loop_refines_candidate_within` in the manifest's
-#     `loop_theorem` field for `UNIT=loop`, so a loop request is decided by
-#     its certificate exactly as the other two are;
+#     the loop's own `loop_refines_candidate_within` in the manifest's
+#     `loop_theorem` field for `UNIT=loop`, and
+#     `depth_count_refines` with `depthContract` in `depth_count_theorem` and
+#     `depth_contract` for `UNIT=depth_count`, so each request is decided by
+#     its certificate;
 #   * every recorded hash matches: caller, the unit objects, the differential
 #     transcript, and each bound unit's fixture and marker inputs;
 #   * each unit object is rebuilt from its fixtures and the rebuild matches the
@@ -31,7 +33,9 @@
 #     a changed field, a stale proof module or a stale imported proof source
 #     fails here even if the certificate's manifest digest was rewritten.  A
 #     loop request re-elaborates `CommaMaskLoop` after `CommaMaskIR`, because
-#     the loop's proof module imports the one the fixture guards are about;
+#     the loop's proof module imports the one the fixture guards are about; a
+#     depth request re-elaborates `DepthCountRefine`, which carries the depth
+#     fixture through `include_str`;
 #   * the objects are ELF64 and export the seam and marker symbols, and the
 #     caller imports the seam.
 #
@@ -120,10 +124,13 @@ reasons=()
 
 expected_theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
 expected_loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+expected_depth_theorem=LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
 expected_contract=LeanLLVM.Vellum.commaContract
+expected_depth_contract=LeanLLVM.Vellum.DepthCountRefine.depthContract
 expected_axioms=Classical.choice,Quot.sound,propext
 expected_symbol=leanllvm_comma_mask8
 expected_marker=leanllvm_impl_id
+expected_depth_symbol=depth_count
 
 # A tool probe whose answer does not depend on how much of the output is read.
 # `tool | grep -q` leaves as soon as it matches, so the producer can be killed
@@ -236,7 +243,7 @@ parse_certificate() { # path
       schema) [ "$value" = leanllvm-install-v1 ] || return 1 ;;
       unit)
         [ "$value" = baseline ] || [ "$value" = candidate ] ||
-          [ "$value" = loop ] || return 1 ;;
+          [ "$value" = loop ] || [ "$value" = depth_count ] || return 1 ;;
       theorem | contract)
         [[ "$value" =~ ^LeanLLVM\.[A-Za-z0-9_.]+$ ]] || return 1 ;;
       axioms) [[ "$value" =~ ^[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*$ ]] || return 1 ;;
@@ -253,8 +260,10 @@ parse_certificate() { # path
 
 # Why the requested unit's certificate was refused: `missing` when the manifest
 # names no certificate or the file is absent, `invalid` for any other failure.
-# Empty when the certificate passed every check.
+# Empty when the certificate passed every check.  `proof_detail` names the
+# field value when the disagreement is a wrong theorem or contract name.
 proof_failure=
+proof_detail=
 
 check_certificate() { # unit
   local unit=$1
@@ -262,7 +271,8 @@ check_certificate() { # unit
   local fixture_var=${unit}_fixture marker_var=${unit}_marker
   local path=${!path_var:-} digest=${!digest_var:-}
   local unit_object unit_fixture unit_marker work derived manifest_abs
-  local bound_theorem expected_unit_theorem
+  local bound_theorem expected_unit_theorem bound_contract expected_unit_contract
+  proof_detail=
 
   if [ -z "$path" ] || [ ! -f "$path" ]; then
     proof_failure=missing
@@ -281,6 +291,7 @@ check_certificate() { # unit
     baseline) unit_object=${baseline:-} ;;
     candidate) unit_object=${candidate:-} ;;
     loop) unit_object=${loop:-} ;;
+    depth_count) unit_object=${depth_count:-} ;;
     *) proof_failure=invalid; return 1 ;;
   esac
   unit_fixture=${!fixture_var:-}
@@ -307,25 +318,40 @@ check_certificate() { # unit
     { proof_failure=invalid; return 1; }
   [ "${cert[candidate_marker_sha256]}" = "$(file_sha "${candidate_marker:-}")" ] ||
     { proof_failure=invalid; return 1; }
-  # The theorem a certificate must name is the one the manifest binds for its
-  # unit: the loop has its own field and its own statement, every other unit is
-  # covered by the global `theorem` field.  Nothing is accepted from the
-  # certificate alone: both the manifest binding and the expected name are
-  # required to agree with it.
+  # The theorem and contract a certificate must name are the ones the manifest
+  # binds for its unit: the loop and the depth counter each have their own
+  # fields and their own statements, every other unit is covered by the global
+  # `theorem`/`contract` fields.  Nothing is accepted from the certificate
+  # alone: both the manifest binding and the expected name are required to
+  # agree with it, and a disagreement names the value that was used.
   bound_theorem=${theorem:-}
   expected_unit_theorem=$expected_theorem
+  bound_contract=${contract:-}
+  expected_unit_contract=$expected_contract
   if [ "$unit" = loop ]; then
     bound_theorem=${loop_theorem:-}
     expected_unit_theorem=$expected_loop_theorem
   fi
-  [ "${cert[theorem]}" = "$bound_theorem" ] &&
-    [ "${cert[theorem]}" = "$expected_unit_theorem" ] ||
-    { proof_failure=invalid; return 1; }
+  if [ "$unit" = depth_count ]; then
+    bound_theorem=${depth_count_theorem:-}
+    expected_unit_theorem=$expected_depth_theorem
+    bound_contract=${depth_contract:-}
+    expected_unit_contract=$expected_depth_contract
+  fi
+  if [ "${cert[theorem]}" != "$bound_theorem" ] ||
+     [ "${cert[theorem]}" != "$expected_unit_theorem" ]; then
+    proof_failure=invalid
+    proof_detail="theorem '${cert[theorem]}' is not the unit's theorem '$expected_unit_theorem'"
+    return 1
+  fi
   [ "${cert[axioms]}" = "$expected_axioms" ] ||
     { proof_failure=invalid; return 1; }
-  [ "${cert[contract]}" = "${contract:-}" ] &&
-    [ "${cert[contract]}" = "$expected_contract" ] ||
-    { proof_failure=invalid; return 1; }
+  if [ "${cert[contract]}" != "$bound_contract" ] ||
+     [ "${cert[contract]}" != "$expected_unit_contract" ]; then
+    proof_failure=invalid
+    proof_detail="contract '${cert[contract]}' is not the unit's contract '$expected_unit_contract'"
+    return 1
+  fi
   [ "${cert[target_triple]}" = "${target:-}" ] ||
     { proof_failure=invalid; return 1; }
   [ "${cert[data_layout]}" = "${datalayout:-}" ] ||
@@ -365,6 +391,17 @@ check_certificate() { # unit
       >/dev/null 2>"$work/loop-rebuild.log"; then
     sequence_ok=0
   fi
+  # `DepthCountRefine` carries the depth fixture through `include_str` and its
+  # own `#guard`, so a depth request re-elaborates it from source.  It does not
+  # import the comma-mask modules, so it is independent of the two rebuilds
+  # above.
+  if [ "$sequence_ok" -eq 1 ] && [ "$unit" = depth_count ] &&
+     ! (cd "$root" &&
+        rm -f .lake/build/lib/lean/LeanLLVM/Vellum/DepthCountRefine.olean &&
+        lake build LeanLLVM.Vellum.DepthCountRefine) \
+      >/dev/null 2>"$work/depth-rebuild.log"; then
+    sequence_ok=0
+  fi
   if [ "$sequence_ok" -eq 1 ] &&
      ! (cd "$root" &&
         CERT_UNIT="$unit" CERT_MANIFEST="$manifest_abs" CERT_OUT="$derived" \
@@ -384,13 +421,15 @@ check_certificate() { # unit
   return 0
 }
 
-# The request.  An unknown unit fails here; a known unit — the loop included —
-# is decided by the hash, rebuild, object and certificate checks below.
+# The request.  An unknown unit fails here; a known unit — the loop and the
+# depth counter included — is decided by the hash, rebuild, object and
+# certificate checks below.
 selected_unit=
 case "$req_unit" in
   "" | candidate) selected_unit=candidate ;;
   baseline) selected_unit=baseline ;;
   loop) selected_unit=loop ;;
+  depth_count) selected_unit=depth_count ;;
   *) selected_unit= ;;
 esac
 if [ -z "$selected_unit" ]; then
@@ -411,6 +450,15 @@ if [ -n "${loop:-}" ]; then
   check_hash "${loop:-}" "${loop_sha256:-}" "loop hash"
   check_hash "${loop_fixture:-}" "${loop_fixture_sha256:-}" "loop fixture"
   check_hash "${loop_marker:-}" "${loop_marker_sha256:-}" "loop marker"
+fi
+
+if [ -n "${depth_count:-}" ]; then
+  check_hash "${depth_count:-}" "${depth_count_sha256:-}" "depth_count hash"
+  check_hash "${depth_count_fixture:-}" "${depth_count_fixture_sha256:-}" \
+    "depth_count fixture"
+  check_hash "${depth_count_marker:-}" "${depth_count_marker_sha256:-}" \
+    "depth_count marker"
+  check_hash "${depth_caller:-}" "${depth_caller_sha256:-}" "depth_caller hash"
 fi
 
 if [ "${kind:-}" != "proof-bound" ]; then
@@ -438,6 +486,24 @@ fi
 if [ "${target_features:-}" != "none" ]; then
   ok=0; reasons+=("target features ${target_features:-missing}")
 fi
+if [ -n "${depth_count_symbol:-}" ] &&
+   [ "$depth_count_symbol" != "$expected_depth_symbol" ]; then
+  ok=0; reasons+=("manifest depth_count symbol $depth_count_symbol")
+fi
+if [ -n "${depth_contract:-}" ] &&
+   [ "$depth_contract" != "$expected_depth_contract" ]; then
+  ok=0; reasons+=("manifest depth contract $depth_contract")
+fi
+if [ -n "${depth_count_theorem:-}" ] &&
+   [ "$depth_count_theorem" != "$expected_depth_theorem" ]; then
+  ok=0; reasons+=("manifest depth_count theorem $depth_count_theorem")
+fi
+if [ "$selected_unit" = depth_count ]; then
+  if [ -z "${depth_count_symbol:-}" ] || [ -z "${depth_contract:-}" ] ||
+     [ -z "${depth_count_theorem:-}" ] || [ -z "${depth_caller:-}" ]; then
+    ok=0; reasons+=("manifest does not bind the depth_count unit")
+  fi
+fi
 
 if [ "$ok" -eq 1 ]; then
   if ! verify_rebuild baseline "${baseline_fixture:-}" "${baseline_marker:-}" \
@@ -452,6 +518,12 @@ if [ "$ok" -eq 1 ]; then
     if ! verify_rebuild loop "${loop_fixture:-}" "${loop_marker:-}" \
         "${loop_sha256:-}"; then
       ok=0; reasons+=("loop unit not rebuilt from its fixture")
+    fi
+  fi
+  if [ -n "${depth_count:-}" ]; then
+    if ! verify_rebuild depth_count "${depth_count_fixture:-}" \
+        "${depth_count_marker:-}" "${depth_count_sha256:-}"; then
+      ok=0; reasons+=("depth_count unit not rebuilt from its fixture")
     fi
   fi
 fi
@@ -502,7 +574,27 @@ if [ -n "${loop:-}" ]; then
     ok=0; reasons+=("loop marker")
   fi
 fi
-if ! probe 'leanllvm_comma_mask8' nm -u "${caller:-}"; then
+if [ -n "${depth_count:-}" ]; then
+  if ! probe 'ELF 64-bit' file -b "${depth_count:-}"; then
+    ok=0; reasons+=("depth_count is not ELF64")
+  fi
+  if ! probe ' T depth_count' nm -g "${depth_count:-}"; then
+    ok=0; reasons+=("depth_count symbol")
+  fi
+  if ! probe ' T leanllvm_impl_id' nm -g "${depth_count:-}"; then
+    ok=0; reasons+=("depth_count marker")
+  fi
+fi
+# The caller is the object that imports the selected unit's symbol: the
+# comma-mask caller for the three mask units, the depth corpus driver for the
+# depth counter, whose ABI is not the one-word seam.
+link_caller=${caller:-}
+if [ "$selected_unit" = depth_count ]; then
+  link_caller=${depth_caller:-}
+  if ! probe 'depth_count' nm -u "${link_caller:-}"; then
+    ok=0; reasons+=("depth caller import")
+  fi
+elif ! probe 'leanllvm_comma_mask8' nm -u "${link_caller:-}"; then
   ok=0; reasons+=("caller import")
 fi
 
@@ -514,14 +606,22 @@ fi
 
 if [ "$ok" -eq 1 ] && [ -z "$proof_failure" ]; then
   covering_theorem=$theorem
+  covering_contract=$contract
   case "$selected_unit" in
     baseline) selected=${baseline:-} ;;
     candidate) selected=${candidate:-} ;;
     loop) selected=${loop:-}; covering_theorem=${loop_theorem:-} ;;
+    depth_count)
+      selected=${depth_count:-}
+      covering_theorem=${depth_count_theorem:-}
+      covering_contract=${depth_contract:-}
+      ;;
   esac
   kind=$selected_unit
   reason="hashes, fixtures, rebuild and certificate match; $covering_theorem covers the selected unit"
 else
+  covering_theorem=${theorem:-}
+  covering_contract=${contract:-}
   if [ "$req_strict" = 1 ]; then
     printf 'select: strict failure\n' >&2
     if [ "${#reasons[@]}" -gt 0 ]; then
@@ -529,6 +629,9 @@ else
     fi
     if [ -n "$proof_failure" ]; then
       printf '  - proof certificate %s\n' "$proof_failure" >&2
+      if [ -n "$proof_detail" ]; then
+        printf '  - proof certificate detail: %s\n' "$proof_detail" >&2
+      fi
     fi
     exit 1
   fi
@@ -545,13 +648,14 @@ else
   fi
 fi
 
-leanc "$caller" "$selected" -o "$req_out" 2>>"$here/build/link.log"
+leanc "$link_caller" "$selected" -o "$req_out" 2>>"$here/build/link.log"
 
 requested_proof_sha256=
 case "$selected_unit" in
   baseline) proof_path=${proof_baseline:-} ;;
   candidate) proof_path=${proof_candidate:-} ;;
   loop) proof_path=${proof_loop:-} ;;
+  depth_count) proof_path=${proof_depth_count:-} ;;
   *) proof_path= ;;
 esac
 if [ -n "$proof_path" ] && [ -f "$proof_path" ]; then
@@ -564,8 +668,8 @@ fi
   echo "target=${target:-}"
   echo "triple=${triple:-}"
   echo "datalayout=${datalayout:-}"
-  echo "contract=${contract:-}"
-  echo "theorem=${theorem:-}"
+  echo "contract=$covering_contract"
+  echo "theorem=$covering_theorem"
   echo "toolchain_revision=$observed_toolchain"
   echo "proof_sha256=$requested_proof_sha256"
   echo "reason=$reason"
@@ -574,6 +678,8 @@ fi
   echo "baseline_sha256=${baseline_sha256:-}"
   echo "candidate_sha256=${candidate_sha256:-}"
   echo "loop_sha256=${loop_sha256:-}"
+  echo "depth_count_sha256=${depth_count_sha256:-}"
+  echo "depth_caller_sha256=${depth_caller_sha256:-}"
   echo "differential_sha256=${differential_sha256:-}"
 } > "$req_record"
 

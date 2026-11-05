@@ -11,6 +11,7 @@ parsed	probes/install/ir/json-scan.candidate.ll
 parsed	probes/install/ir/loop.ll
 parsed	probes/install/ir/marker_baseline.ll
 parsed	probes/install/ir/marker_candidate.ll
+parsed	probes/install/ir/marker_depth_count.ll
 parsed	probes/install/ir/marker_loop.ll
 parsed	tests/call.ll
 parsed	tests/constfold.ll

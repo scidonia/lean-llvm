@@ -15,7 +15,10 @@
 #   6. the loop unit installs from its own certificate in strict and non-strict
 #      mode; a stale loop hash falls back to the baseline in non-strict mode and
 #      is rejected in strict mode;
-#   7. mutate the candidate fixture: the real build route fails at the source
+#   7. the depth counter installs from its own certificate, its selection
+#      record names the unit's object and certificate digests, and the installed
+#      executable's numeric output over the index-array corpus is `depthSpec`'s;
+#   8. mutate the candidate fixture: the real build route fails at the source
 #      elaboration's `#guard`, publishes no new certificate or manifest, and
 #      leaves the published certificate bytes untouched; restore, rebuild and
 #      require the same certificate bytes as the positive control;
@@ -59,15 +62,19 @@ warm() { bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR; }
 proof() { (cd "$repo" && lake env lean LeanLLVM/Vellum/CommaMaskIR.lean); }
 loop_proof() { (cd "$repo" && lake env lean LeanLLVM/Vellum/CommaMaskLoop.lean); }
 warm_loop() { bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskLoop; }
+warm_depth() { bash "$here/lake-locked.sh" build leanllvm-depth-check; }
+pub_sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 echo "== fixtures and build"
 warm >/dev/null
 "$here/build.sh" >/dev/null
 "$here/ir/capture.sh" >/dev/null
 "$here/build.sh" >/dev/null
+warm_depth >/dev/null
 [ -s "$build/proof_baseline.env" ] || fail "no baseline certificate was published"
 [ -s "$build/proof_candidate.env" ] || fail "no candidate certificate was published"
 [ -s "$build/proof_loop.env" ] || fail "no loop certificate was published"
+[ -s "$build/proof_depth_count.env" ] || fail "no depth_count certificate was published"
 
 echo "== proof"
 proof >/dev/null
@@ -140,6 +147,27 @@ fi
 if [ -e "$build/app_loop_strict" ]; then
   fail "a loop executable was emitted for a stale loop"
 fi
+
+# --- the depth counter installs from its own certificate -------------------
+echo "== the depth counter installs from its own certificate"
+UNIT=depth_count STRICT=1 MANIFEST=$build/manifest.env \
+  OUT=$build/app_depth_count RECORD=$build/selection_depth_count.env \
+  "$here/select.sh" >/dev/null
+grep -qx 'selected=depth_count' "$build/selection_depth_count.env"
+grep -qx "theorem=LeanLLVM.Vellum.DepthCountRefine.depth_count_refines" \
+  "$build/selection_depth_count.env"
+grep -qx "contract=LeanLLVM.Vellum.DepthCountRefine.depthContract" \
+  "$build/selection_depth_count.env"
+grep -qx "depth_count_sha256=$(pub_sha "$build/depth_count.o")" \
+  "$build/selection_depth_count.env"
+grep -qx "proof_sha256=$(pub_sha "$build/proof_depth_count.env")" \
+  "$build/selection_depth_count.env"
+"$build/app_depth_count" "$here/depth-corpus.tsv" > "$build/out_depth_count.txt"
+"$repo/.lake/build/bin/leanllvm-depth-check" "$here/depth-corpus.tsv" |
+  awk -F '\t' 'NF == 3 { print $1 "\t" $2 "\t" $2 "\t" $3 }' \
+  > "$build/depth_expected.txt"
+cmp "$build/out_depth_count.txt" "$build/depth_expected.txt"
+echo "select: installed the depth counter; its numeric output is depthSpec's"
 
 # --- a changed fixture fails at the source guard, before any other detector --
 echo "== a mutated fixture fails at the source guard and publishes nothing"
@@ -351,6 +379,28 @@ for mode in --strict --strict-theorem --strict-hash --fallback-hash; do
 done
 echo "gate: 17 fields in both modes, three absence routes, four malformations and two stale-import routes held"
 echo "gate: the loop installed from its own certificate, refused a wrong theorem and a wrong hash, and fell back"
+
+# The depth counter's gate: a matching certificate installs the unit and
+# records its object and certificate digests, another unit's theorem or
+# contract is refused by name, another unit's object hash is refused, and a
+# non-strict mismatch falls back.  The numeric scenario then re-derives the
+# installed object from the committed fixture and compares it with `depthSpec`.
+depth_gate=$repo/tests/m4-depth-install-gate.sh
+for mode in --strict --strict-theorem --strict-hash --strict-contract \
+  --fallback-hash; do
+  if ! bash "$depth_gate" "$mode" >>"$gate_log" 2>&1; then
+    echo "check: the depth installation gate failed for '$mode'" >&2
+    tail -20 "$gate_log" >&2
+    exit 1
+  fi
+done
+if ! bash "$repo/tests/depth-count/check.sh" >>"$gate_log" 2>&1; then
+  echo "check: the depth numeric agreement scenario failed" >&2
+  tail -20 "$gate_log" >&2
+  exit 1
+fi
+echo "gate: the depth counter installed from its own certificate, refused another unit's theorem, contract and object hash, and fell back"
+echo "gate: the installed depth object agrees with depthSpec, and the tampered expectation and defect object are reported"
 
 # --- one source-elaboration writer at a time across the two routes -----------
 echo "== the source-elaboration lock serializes the build and the selector"

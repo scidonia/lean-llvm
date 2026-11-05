@@ -112,7 +112,12 @@ needs the other two to match.
   does bind the loop's theorem and certificate, and asserts that a matching one
   installs the loop, that a certificate naming another unit's theorem or another
   unit's object hash is refused, and that a non-strict mismatch falls back to
-  the baseline; `m3-certificate-gate.sh` drives the same
+  the baseline; `m4-depth-install-gate.sh` does the same for the depth counter,
+  adding another unit's contract to the wrong-name refusals, and
+  `depth-count/check.sh` compares the installed depth object, rebuilt from
+  `tests/v16/depth_count.ll`, against `depthSpec` over an index-array corpus
+  with a tampered expectation and a defect object as controls;
+  `m3-certificate-gate.sh` drives the same
   selector against a certificate with one changed field, an absent certificate
   and a structurally malformed one, and asserts strict refusal and non-strict
   baseline fallback; `m4-loop-emission.sh` drives the fixture-capture
@@ -233,16 +238,24 @@ needs the other two to match.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated
   `CommaMaskIR` (and, for the loop, a `CommaMaskLoop` re-elaborated after it,
-  since it imports `CommaMaskIR`), and from the object, fixture and marker paths
+  since it imports `CommaMaskIR`, and for the depth counter a
+  `DepthCountRefine` re-elaborated from source), and from the object, fixture
+  and marker paths
   the manifest names; it checks the statement of the theorem covering the
   requested unit — `IR_refines` for the candidate and the baseline,
   `loop_refines_candidate_within` for the loop, which the loop's certificate
-  names in place of `IR_refines` — the contract link and
+  names in place of `IR_refines`, and `depth_count_refines` for the depth
+  counter, whose certificate names the propositional boundary `depthContract`
+  (the theorem's own hypothesis set and conclusion) instead of the pure
+  `commaContract` — the contract link and
   the axiom footprint in the loaded environment and refuses a stale proof
   module whose pinned fixtures differ from the files it hashes.
   `probes/install/select.sh` parses the certificate with a closed grammar,
   compares each field with the input it names, and reproduces the certificate
-  byte for byte before linking.  Never `source` a certificate, never accept a
+  byte for byte before linking. The depth unit is built from
+  `tests/v16/depth_count.ll` at the same `clang -c` flags as the other units,
+  and its caller is the corpus driver `probes/install/depth_driver.c` rather
+  than the one-word comma seam. Never `source` a certificate, never accept a
   supplied theorem, axiom set or target as proof, and keep certificate files
   out of compiled units.
 - `probes/install/build.sh`, the app build and the selector serialize the
