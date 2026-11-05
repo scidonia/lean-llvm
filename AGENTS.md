@@ -54,9 +54,18 @@ needs the other two to match.
   interface in the model's vocabulary — the delimiter predicate, the packed words,
   the in-string and candidate masks, and the carry — with the candidate mask's
   unescaped-quote reading recorded as the specification decision, the bridges to
-  `ScanBlock`'s fold and to `ScanBody`'s byte rule's `inside` field proved, and the
-  identification with `ScanWindow`'s `windowOf`/`carryAt` and with the kernel's
-  registers recorded as still owed; `JsonClassifyIR` relates the emitted
+  `ScanBlock`'s fold and to `ScanBody`'s byte rule's `inside` field proved, the
+  identification with `ScanWindow`'s `windowOf`/`carryAt` proved **at the projection**
+  `BodyState.classPart := ⟨inside, oddRun⟩` (the classifier has no UTF-8 field, so the
+  theorem is about those two fields, not about `BodyState` equality) on a full window
+  with no stop — the quote, backslash and structural mask equalities there, the
+  closing lane empty on both sides exactly when the window stops nowhere, the same bit
+  at a closing stop's own lane, and the carry — the closing-lane comparison under
+  `NoBackslashOutside` and the carry under `ContinuesBefore` and
+  `NoBackslashOutside`, each with its counterexample,
+  and the post-stop divergence stated as a divergence (`classCarryAt_succ_of_stop`,
+  `classCarryAt_succ_closed`) rather than a caveat — and the identification with
+  the kernel's registers still owed; `JsonClassifyIR` relates the emitted
   classifier body to the block layer's mask (`scannerLLVM_refines`, over
   `probes/install/ir/json-classify.candidate.ll`); and `JsonSeam` states the
   reference selection, the installed body's selection, and the framed
@@ -91,7 +100,12 @@ needs the other two to match.
   emitted IR is owed here as it is in `Pclmul`.  Every **public** theorem is pinned
   in `LeanLLVMTest/Vellum.lean` at `[propext, Quot.sound]` or narrower — the three
   `private` numeral lemmas of `BitLanes` cannot be named from another file — each of
-  the choice-carrying `BitVec`/`List` lemmas replaced by a local proof.
+  the choice-carrying `BitVec`/`List` lemmas replaced by a local proof.  The pins are
+  the instrument and not a formality: a proof term that widens to `Classical.choice`
+  shows in no build, no warning and no diff.  `JsonScanSpec`'s bridge had exactly one,
+  closed by `simp` deciding a concrete `UInt8` comparison inside a proposition-valued
+  definition; it was caught by `#print axioms` on the declaration and fixed by
+  `unfold`/`decide` and re-probing every theorem in the module.
 - `LeanLLVM/JSON/` is the byte-level JSON development: the independent
   semantics (`Spec`), scanner (`Scan`), parser (`Parse`), tape (`Tape`) and
   their correctness modules; the block layer `ScanBlock` — `maskOfList`,

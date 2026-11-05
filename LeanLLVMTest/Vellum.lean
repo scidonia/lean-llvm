@@ -3086,6 +3086,230 @@ info: 'LeanLLVM.Vellum.JsonScanSpec.escaped_quote_witness' depends on axioms: [p
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonScanSpec.escaped_quote_witness
 
+-- The classifier's projection of the model's carry is the identity on `toBody`.
+example (st : ClassState) : BodyState.classPart st.toBody = st :=
+  ClassState.classPart_toBody st
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.ClassState.classPart_toBody' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.ClassState.classPart_toBody
+
+-- One byte of agreement between the byte rule and the classifier's step.
+example (st : BodyState) (b : UInt8) {st' : BodyState}
+    (hstep : bodyStep st b = .cont st')
+    (hodd : st.oddRun = true → st.utf8 = Utf8Need.none)
+    (habove : Utf8Need.AboveAscii st.utf8)
+    (hins : IsBackslashB b = true → st.inside = true) :
+    BodyState.classPart st' = classStep (BodyState.classPart st) b :=
+  classPart_classStep_of_cont st b hstep hodd habove hins
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classPart_classStep_of_cont' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classPart_classStep_of_cont
+
+-- The rule's closing decision carries its own premises.
+example {st : BodyState} {b : UInt8} (h : bodyStep st b = .closed) :
+    st.inside = true ∧ st.oddRun = false ∧ IsQuoteB b = true :=
+  bodyStep_closed_facts h
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.bodyStep_closed_facts' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.bodyStep_closed_facts
+
+-- The two carries agree before lane `k`, under the two named conditions.
+example (bs : List UInt8) (st : ClassState) {k : Nat}
+    (hcont : ContinuesBefore bs st.toBody k)
+    (hdom : NoBackslashOutside bs st.toBody k) :
+    classCarryAt bs st k = BodyState.classPart (carryAt bs st.toBody k) :=
+  classCarryAt_eq_classPart bs st hcont hdom
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classCarryAt_eq_classPart' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classCarryAt_eq_classPart
+
+-- A window read from inside a body needs no condition on its bytes.
+example (bs : List UInt8) (st : ClassState) (hin : st.inside = true) {k : Nat}
+    (hcont : ContinuesBefore bs st.toBody k) :
+    classCarryAt bs st k = BodyState.classPart (carryAt bs st.toBody k) :=
+  classCarryAt_eq_classPart_of_inside bs st hin hcont
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classCarryAt_eq_classPart_of_inside' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classCarryAt_eq_classPart_of_inside
+
+-- The no-stop hypothesis alone is not enough: a backslash outside a body fails
+-- `NoBackslashOutside` and the carries differ.
+example :
+    (windowOf [0x5C] (⟨false, false⟩ : ClassState).toBody).stop = none ∧
+      ¬ NoBackslashOutside [0x5C] (⟨false, false⟩ : ClassState).toBody 1 ∧
+      classCarryAt [0x5C] (⟨false, false⟩ : ClassState) 1 ≠
+        BodyState.classPart
+          (carryAt [0x5C] (⟨false, false⟩ : ClassState).toBody 1) :=
+  no_stop_does_not_identify_carries
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.no_stop_does_not_identify_carries' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.no_stop_does_not_identify_carries
+
+-- The no-stop hypothesis is necessary: a closing stop at lane 0 fails
+-- `ContinuesBefore` and the carries differ.
+example :
+    (windowOf [0x22] (⟨true, false⟩ : ClassState).toBody).stop = some (.close 0) ∧
+      ¬ ContinuesBefore [0x22] (⟨true, false⟩ : ClassState).toBody 1 ∧
+      classCarryAt [0x22] (⟨true, false⟩ : ClassState) 1 = ⟨false, false⟩ ∧
+      carryAt [0x22] (⟨true, false⟩ : ClassState).toBody 1 = BodyState.body :=
+  close_stop_carry_diverges
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.close_stop_carry_diverges' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.close_stop_carry_diverges
+
+-- The model's quote mask is the classifier's two quote masks.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length)
+    (hstop : (windowOf bs st.toBody).stop = none) :
+    (windowOf bs st.toBody).quote = quoteMask bs st ||| escapedQuoteMask bs st :=
+  windowOf_quote_eq bs st hlen hstop
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.windowOf_quote_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.windowOf_quote_eq
+
+-- The model's backslash mask is the classifier's.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length)
+    (hstop : (windowOf bs st.toBody).stop = none) :
+    (windowOf bs st.toBody).backslash = backslashMask bs st :=
+  windowOf_backslash_eq bs st hlen hstop
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.windowOf_backslash_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.windowOf_backslash_eq
+
+-- The model's structural mask in the classifier's component vocabulary.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    (windowOf bs st.toBody).structural =
+      delimiterMask bs st ||| quoteMask bs st ||| escapedQuoteMask bs st |||
+        backslashMask bs st ||| maskOfListWith IsSpaceB bs :=
+  windowOf_structural_eq bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.windowOf_structural_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.windowOf_structural_eq
+
+-- With no stop the closing lane is empty on both sides.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length)
+    (hstop : (windowOf bs st.toBody).stop = none) :
+    (windowOf bs st.toBody).delim = 0 ∧
+      quoteMask bs st &&& ~~~inStringMask bs st = 0 :=
+  windowOf_delim_eq_zero_of_stop_none bs st hlen hstop
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.windowOf_delim_eq_zero_of_stop_none' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.windowOf_delim_eq_zero_of_stop_none
+
+-- At a closing stop's lane the model's closing lane and the classifier's are the same
+-- bit, under the no-backslash condition the stop's readback does not supply.
+example (bs : List UInt8) (st : ClassState) {k : Nat}
+    (hstop : (windowOf bs st.toBody).stop = some (.close k))
+    (hdom : NoBackslashOutside bs st.toBody k) :
+    (windowOf bs st.toBody).delim.getLsbD k =
+      (quoteMask bs st &&& ~~~inStringMask bs st).getLsbD k :=
+  windowOf_delim_eq_of_close_stop bs st hstop hdom
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.windowOf_delim_eq_of_close_stop' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.windowOf_delim_eq_of_close_stop
+
+-- The no-backslash condition is necessary for that identification.
+example :
+    (windowOf [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody).stop =
+        some (.close 2) ∧
+      (windowOf [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody).delim.getLsbD 2 =
+        true ∧
+      (quoteMask [0x5C, 0x22, 0x22] ⟨false, false⟩ &&&
+        ~~~inStringMask [0x5C, 0x22, 0x22] ⟨false, false⟩).getLsbD 2 = false ∧
+      ContinuesBefore [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody 2 ∧
+      ¬ NoBackslashOutside [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody 2 :=
+  delim_eq_fails_outside
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.delim_eq_fails_outside' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.delim_eq_fails_outside
+
+-- The continuation is necessary for that identification.
+example :
+    (windowOf [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody).stop = some (.close 0) ∧
+      (windowOf [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody).delim.getLsbD 1 = true ∧
+      (quoteMask [0x22, 0x22] ⟨true, false⟩ &&&
+        ~~~inStringMask [0x22, 0x22] ⟨true, false⟩).getLsbD 1 = false ∧
+      NoBackslashOutside [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody 1 ∧
+      ¬ ContinuesBefore [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody 1 :=
+  delim_eq_fails_past_stop
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.delim_eq_fails_past_stop' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.delim_eq_fails_past_stop
+
+-- Past a stop the classifier steps and the model holds.
+example (bs : List UInt8) (st : ClassState) {s : Nat} {b : UInt8}
+    (hb : bs[s]? = some b)
+    (hcarry : classCarryAt bs st s = BodyState.classPart (carryAt bs st.toBody s))
+    (hstop : ∀ st', bodyStep (carryAt bs st.toBody s) b ≠ .cont st') :
+    carryAt bs st.toBody (s + 1) = carryAt bs st.toBody s ∧
+      classCarryAt bs st (s + 1) =
+        classStep (BodyState.classPart (carryAt bs st.toBody s)) b :=
+  classCarryAt_succ_of_stop bs st hb hcarry hstop
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classCarryAt_succ_of_stop' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classCarryAt_succ_of_stop
+
+-- At a closing stop the classifier's flag is the complement of the model's.
+example (bs : List UInt8) (st : ClassState) {s : Nat} {b : UInt8}
+    (hb : bs[s]? = some b)
+    (hcont : ContinuesBefore bs st.toBody s)
+    (hdom : NoBackslashOutside bs st.toBody s)
+    (hclosed : bodyStep (carryAt bs st.toBody s) b = .closed) :
+    classCarryAt bs st (s + 1) = ⟨false, false⟩ ∧
+      carryAt bs st.toBody (s + 1) = carryAt bs st.toBody s ∧
+      (carryAt bs st.toBody s).inside = true :=
+  classCarryAt_succ_closed bs st hb hcont hdom hclosed
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classCarryAt_succ_closed' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classCarryAt_succ_closed
+
 /-! ### The stage-1 depth counter
 
 `LeanLLVM/Vellum/DepthCountRefine.lean` proves the emitted kernel `@depth_count`

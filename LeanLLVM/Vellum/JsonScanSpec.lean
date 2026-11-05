@@ -10,11 +10,17 @@ in-string mask the index kernel forms from the quote, backslash and delimiter
 lanes of a sixty-four-byte block, with the escape-run state carried across the
 block boundary.  That interface exists only as the arithmetic of the emitted
 kernel, so this module writes it down here — in the vocabulary the model already
-uses.  The bridges to the block layer's fold, to its predicates and to the byte
-rule's `inside` field are proved below.  The identification with
-`ScanWindow.lean`'s `windowOf`/`carryAt`, and with the emitted kernel's own
-registers, is **not** proved here; both are recorded as owed under "What is not
-proved" below, and this module does not claim them.
+uses.  The bridges to the block layer's fold, to its predicates, to the byte
+rule's `inside` field and to `ScanWindow.lean`'s own window fold are proved
+below: on a full window with no stop, `classWindow`'s quote, backslash and
+structural masks are `windowOf`'s, its closing lane is empty on both sides, and
+`classCarryAt` is `carryAt` read at the two fields both states have — the carry
+takes the two named conditions, and the closing-lane identification at a stop's
+own lane takes `NoBackslashOutside` on top of the continuation the stop's readback
+supplies — and each condition is shown necessary by a counterexample rather than
+assumed.
+The identification with the emitted kernel's own registers is **not** proved
+here; it is recorded as owed under "What is not proved" below.
 
 ## The specification decision: which quotes count
 
@@ -116,18 +122,52 @@ with no hypothesis.
 * `candidateMask_eq` states `cand = q | (s & ~im)` at one window, and
   `candidateMask64_eq` states it at the kernel's sixty-four-lane interface.
   Every component of both statements is a definition in this module.
+* **The window fold is the model's.**  On a full window with no stop,
+  `windowOf_quote_eq` and `windowOf_backslash_eq` identify the model's quote and
+  backslash fields with the classifier's masks, and `windowOf_structural_eq` puts
+  the structural field in the classifier's component vocabulary; those three need
+  only the no-stop hypothesis.  `Window.delim` — the closing-quote lane, which is
+  not `delimiterMask` — is a different case, because the fold records it only on
+  the branch that also records a stop: `windowOf_delim_eq_zero_of_stop_none`
+  states that a no-stop window has both it and `quoteMask &&& ~~~inStringMask`
+  empty, and `windowOf_delim_eq_of_close_stop` identifies the two bits at a
+  closing stop's own lane, under `NoBackslashOutside` (`delim_eq_fails_outside`)
+  and the stop's own continuation (`delim_eq_fails_past_stop`).
+* **The carry is the model's.**  `classPart_classStep_of_cont` is one byte of
+  agreement between `classStep` and `bodyStep`, at the projection
+  `BodyState.classPart := ⟨inside, oddRun⟩`; `classCarryAt_eq_classPart` is the
+  fold, under `ContinuesBefore bs st.toBody k` (no stop before the lane) and
+  `NoBackslashOutside bs st.toBody k` (no backslash read outside a body).
+  `classCarryAt_eq_classPart_of_inside` discharges the second condition for a
+  window read from inside a body.  Neither condition is decorative:
+  `no_stop_does_not_identify_carries` is a window that stops nowhere and reads a
+  backslash outside a body, where the carries differ, and
+  `close_stop_carry_diverges` is a window with a closing stop, where they differ.
+  The UTF-8 field is not a hypothesis: `carryAt_oddRun_utf8` proves a run parity
+  and an outstanding requirement never coincide on the fold's states, and
+  `carryAt_aboveAscii` that such a requirement only wants continuation bytes.
+* **Past a stop the two are different objects.**  `classCarryAt_succ_of_stop`
+  states the divergence: at a lane the rule does not continue past, `carryAt`
+  keeps the state on entry while `classStep` takes the step the rule refused;
+  `classCarryAt_succ_closed` reads it at a closing stop, where the classifier's
+  string flag is the complement of the model's.  It is a divergence, not a
+  widening: the classifier neither over- nor under-approximates the scanner after
+  a stop, it describes a different state.
 
 ## What is not proved (owed)
 
-* **No bridge to `windowOf` or `carryAt`.**  `classWindow`, `classLane`,
-  `classCarryAt` and `classStep` are a fold in `windowOf`'s shape, but they are a
-  parallel fold: no theorem relates `classWindow`'s masks to the corresponding
-  `windowOf` fields, and no theorem relates `classCarryAt` to `carryAt`.
-  `bodyStep_inside` is the only connection to the model's byte rule, and it is a
-  per-byte statement about `inside` on a common carry.  The identification is
-  owed — `windowOf` carries the stop, the refusal and the clamped carry, which the
-  classifier's total fold deliberately does not — and until it is proved, this
-  module is the classifier's vocabulary, not yet the scanner model's classifier.
+* **The bridge stops at the stop.**  The carry identifications are stated on a
+  window that stops nowhere — the window shape the scanner's readback hands over —
+  and the carry's also needs no backslash outside a body.  The masks are identified
+  on a no-stop window, except the closing lane, which is empty there and is
+  identified only at a closing stop's own lane (`windowOf_delim_eq_of_close_stop`).
+  Past a stop the classifier's fold continues where `windowOf`'s holds, so no
+  theorem here compares the two carries there: `classCarryAt_succ_of_stop` and
+  `classCarryAt_succ_closed` are the divergence, and a refinement that reads the
+  classifier's masks on a stopped window is resting on lanes the parser re-reads
+  from the model, not on the identification.  A refinement stated over the
+  classifier's whole window therefore owes either a no-stop hypothesis or a
+  statement that its lanes past the stop are unused.
 * **The sixty-four-lane masks are a transcription, not a proved bridge.**
   `specQuote64`, `specDelimiter64`, `specInString64` and `specCandidate64` are the
   two-half block the kernel computes, but nothing here relates them to the
@@ -139,6 +179,7 @@ with no hypothesis.
 
 import LeanLLVM.JSON.ScanBlock
 import LeanLLVM.JSON.ScanBody
+import LeanLLVM.JSON.ScanWindow
 import LeanLLVM.Semantics
 import LeanLLVM.Vellum.BitLanes
 
@@ -869,6 +910,1242 @@ theorem candidateMask_eq (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.l
     delimiterMask_getLsbD hk (getElem?_of_lt hklen),
     inStringMask_getLsbD hk (getElem?_of_lt hklen)]
   rfl
+
+/-! ### The bridge to the window fold
+
+`ScanWindow.lean`'s `windowOf` folds the byte rule and reports the masks the scanner
+consumes; `classWindow` folds the classifier's arithmetic.  They are not the same fold:
+`windowOf` records a stop and a refusal and holds its carry at them, while `classWindow`
+asks every lane and always steps.  So the identifications below are stated where the two
+folds can agree — on a full window with **no stop**, the window shape the scanner's own
+readback hands over — and the places where the classifier is defined and the model is
+not are named, with what they cost.
+
+Two conditions are named, and each is proved necessary by a counterexample rather than
+asserted:
+
+* `ContinuesBefore bs st.toBody k` — the fold stops nowhere before lane `k`.
+  `close_stop_carry_diverges` is a window where it fails and the carries differ.
+* `NoBackslashOutside bs st.toBody k` — every backslash before lane `k` is read inside
+  a body.  `no_stop_does_not_identify_carries` is a no-stop window where it fails and
+  the carries differ.
+
+Nothing else is assumed.  In particular the UTF-8 field of the model's state is not a
+hypothesis: `carryAt_oddRun_utf8` proves that a run parity and an outstanding sequence
+never coincide on a state the fold reaches from `ClassState.toBody`, and
+`carryAt_aboveAscii` proves that such a requirement only ever wants continuation
+bytes — so the classifier's silence about UTF-8 costs nothing on the fold's reachable
+states.
+-/
+
+/-- The classifier's view of the model's carry: the two fields `ClassState` has.  The
+UTF-8 requirement is dropped, which is why the comparison is stated here and not at
+`BodyState` itself. -/
+def BodyState.classPart (st : BodyState) : ClassState where
+  inside := st.inside
+  oddRun := st.oddRun
+
+/-- The embedding's projection is the identity. -/
+theorem ClassState.classPart_toBody (st : ClassState) : BodyState.classPart st.toBody = st := rfl
+
+/-- A requirement that only continuation bytes satisfy: its range starts at or above
+`0x80`.  `Utf8Need.step` produces one from `.none`, and a continuation leaves one, so
+every state the byte rule reaches from `ClassState.toBody` has this shape.  It is what
+the classifier's silence about UTF-8 needs: a byte such a requirement accepts is
+neither a quote nor a backslash. -/
+def Utf8Need.AboveAscii : Utf8Need → Prop
+  | .none => True
+  | .more _ lo _ => 0x80 ≤ lo
+
+/-- A byte at or above `0x80` is not a quote. -/
+private theorem isQuoteB_false_of_ge {b : UInt8} (h : 0x80 ≤ b) : IsQuoteB b = false := by
+  unfold IsQuoteB
+  rw [decide_eq_false_iff_not]
+  intro hb
+  subst hb
+  exact absurd h (by decide)
+
+/-- A byte at or above `0x80` is not a backslash. -/
+private theorem isBackslashB_false_of_ge {b : UInt8} (h : 0x80 ≤ b) :
+    IsBackslashB b = false := by
+  unfold IsBackslashB
+  rw [decide_eq_false_iff_not]
+  intro hb
+  subst hb
+  exact absurd h (by decide)
+
+/-- A quote byte is not a backslash. -/
+private theorem isBackslash_false_of_quote {b : UInt8} (h : IsQuoteB b = true) :
+    IsBackslashB b = false := by
+  unfold IsQuoteB at h
+  obtain rfl : b = 0x22 := of_decide_eq_true h
+  unfold IsBackslashB
+  exact decide_eq_false (by decide)
+
+/-- A requirement produced from `.none` wants continuation bytes only. -/
+private theorem step_none_aboveAscii {b : UInt8} {u : Utf8Need}
+    (h : Utf8Need.step .none b = some u) : Utf8Need.AboveAscii u := by
+  by_cases h1 : b < 0x80
+  · have hs : Utf8Need.step .none b = some Utf8Need.none := by
+      simp only [Utf8Need.step]
+      rw [ite_eq_left h1]
+    rw [hs] at h
+    cases h
+    simp [Utf8Need.AboveAscii]
+  · by_cases h2 : 0xC2 ≤ b ∧ b ≤ 0xDF
+    · have hs : Utf8Need.step .none b = some (Utf8Need.more 1 0x80 0xBF) := by
+        simp only [Utf8Need.step]
+        rw [ite_eq_right h1, ite_eq_left h2]
+      rw [hs] at h
+      cases h
+      unfold Utf8Need.AboveAscii
+      decide
+    · by_cases h3 : b = 0xE0
+      · have hs : Utf8Need.step .none b = some (Utf8Need.more 2 0xA0 0xBF) := by
+          simp only [Utf8Need.step]
+          rw [ite_eq_right h1, ite_eq_right h2, ite_eq_left h3]
+        rw [hs] at h
+        cases h
+        unfold Utf8Need.AboveAscii
+        decide
+      · by_cases h4 : 0xE1 ≤ b ∧ b ≤ 0xEC
+        · have hs : Utf8Need.step .none b = some (Utf8Need.more 2 0x80 0xBF) := by
+            simp only [Utf8Need.step]
+            rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3, ite_eq_left h4]
+          rw [hs] at h
+          cases h
+          unfold Utf8Need.AboveAscii
+          decide
+        · by_cases h5 : b = 0xED
+          · have hs : Utf8Need.step .none b = some (Utf8Need.more 2 0x80 0x9F) := by
+              simp only [Utf8Need.step]
+              rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3, ite_eq_right h4,
+                ite_eq_left h5]
+            rw [hs] at h
+            cases h
+            unfold Utf8Need.AboveAscii
+            decide
+          · by_cases h6 : 0xEE ≤ b ∧ b ≤ 0xEF
+            · have hs : Utf8Need.step .none b = some (Utf8Need.more 2 0x80 0xBF) := by
+                simp only [Utf8Need.step]
+                rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3, ite_eq_right h4,
+                  ite_eq_right h5, ite_eq_left h6]
+              rw [hs] at h
+              cases h
+              unfold Utf8Need.AboveAscii
+              decide
+            · by_cases h7 : b = 0xF0
+              · have hs : Utf8Need.step .none b = some (Utf8Need.more 3 0x90 0xBF) := by
+                  simp only [Utf8Need.step]
+                  rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3, ite_eq_right h4,
+                    ite_eq_right h5, ite_eq_right h6, ite_eq_left h7]
+                rw [hs] at h
+                cases h
+                unfold Utf8Need.AboveAscii
+                decide
+              · by_cases h8 : 0xF1 ≤ b ∧ b ≤ 0xF3
+                · have hs : Utf8Need.step .none b = some (Utf8Need.more 3 0x80 0xBF) := by
+                    simp only [Utf8Need.step]
+                    rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3, ite_eq_right h4,
+                      ite_eq_right h5, ite_eq_right h6, ite_eq_right h7, ite_eq_left h8]
+                  rw [hs] at h
+                  cases h
+                  unfold Utf8Need.AboveAscii
+                  decide
+                · by_cases h9 : b = 0xF4
+                  · have hs : Utf8Need.step .none b = some (Utf8Need.more 3 0x80 0x8F) := by
+                      simp only [Utf8Need.step]
+                      rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3,
+                        ite_eq_right h4, ite_eq_right h5, ite_eq_right h6,
+                        ite_eq_right h7, ite_eq_right h8, ite_eq_left h9]
+                    rw [hs] at h
+                    cases h
+                    unfold Utf8Need.AboveAscii
+                    decide
+                  · have hs : Utf8Need.step .none b = Option.none := by
+                      simp only [Utf8Need.step]
+                      rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right h3,
+                        ite_eq_right h4, ite_eq_right h5, ite_eq_right h6,
+                        ite_eq_right h7, ite_eq_right h8, ite_eq_right h9]
+                    rw [hs] at h
+                    cases h
+
+/-- A requirement keeps its range above `0x80` across a byte it accepts. -/
+private theorem step_aboveAscii {u : Utf8Need} (hu : Utf8Need.AboveAscii u) {b : UInt8}
+    {u' : Utf8Need} (h : Utf8Need.step u b = some u') : Utf8Need.AboveAscii u' := by
+  cases u with
+  | none => exact step_none_aboveAscii h
+  | more n lo hi =>
+      unfold Utf8Need.AboveAscii at hu
+      by_cases hmem : lo ≤ b ∧ b ≤ hi
+      · have hstep : Utf8Need.step (.more n lo hi) b =
+            some (if n ≤ 1 then Utf8Need.none else Utf8Need.more (n - 1) 0x80 0xBF) := by
+          simp only [Utf8Need.step]
+          rw [ite_eq_left hmem]
+        rw [hstep] at h
+        by_cases hn : n ≤ 1
+        · rw [ite_eq_left hn] at h
+          cases h
+          simp [Utf8Need.AboveAscii]
+        · rw [ite_eq_right hn] at h
+          cases h
+          show (0x80 : UInt8) ≤ 0x80
+          decide
+      · have hstep : Utf8Need.step (.more n lo hi) b = none := by
+          simp only [Utf8Need.step]
+          rw [ite_eq_right hmem]
+        rw [hstep] at h
+        exact absurd h (by simp)
+
+/-- A byte an above-`0x80` requirement accepts is itself at or above `0x80`. -/
+private theorem step_accepted_ge {u : Utf8Need} (hu : Utf8Need.AboveAscii u) (hn : u ≠ .none)
+    {b : UInt8} {u' : Utf8Need} (h : Utf8Need.step u b = some u') : 0x80 ≤ b := by
+  cases u with
+  | none => exact absurd rfl hn
+  | more n lo hi =>
+      unfold Utf8Need.AboveAscii at hu
+      by_cases hmem : lo ≤ b ∧ b ≤ hi
+      · have h1 : (0x80 : UInt8).toNat ≤ lo.toNat := UInt8.le_iff_toNat_le.mp hu
+        have h2 : lo.toNat ≤ b.toNat := UInt8.le_iff_toNat_le.mp hmem.1
+        exact UInt8.le_iff_toNat_le.mpr (Nat.le_trans h1 h2)
+      · have hstep : Utf8Need.step (.more n lo hi) b = none := by
+          simp only [Utf8Need.step]
+          rw [ite_eq_right hmem]
+        rw [hstep] at h
+        exact absurd h (by simp)
+
+/-- **One byte, both rules.**  Where the byte rule continues, the two fields the
+classifier has are `classStep`'s: the same string flag, the same run parity.  The
+hypotheses are the per-lane form of the two named conditions — an odd run never
+overlaps an outstanding requirement, the requirement only wants continuation bytes, and
+a backslash is read inside a body — and each is used by one branch of the rule.  At the
+fold the first two are **derived**, not assumed (`carryAt_oddRun_utf8`,
+`carryAt_aboveAscii`), and the third is the named condition `NoBackslashOutside`.  The
+other conjunct of `BodyState.WellFormed`, a run implies the string flag, is **unused by
+this proof and not established here**. -/
+theorem classPart_classStep_of_cont (st : BodyState) (b : UInt8) {st' : BodyState}
+    (hstep : bodyStep st b = .cont st')
+    (hodd : st.oddRun = true → st.utf8 = Utf8Need.none)
+    (habove : Utf8Need.AboveAscii st.utf8)
+    (hins : IsBackslashB b = true → st.inside = true) :
+    BodyState.classPart st' = classStep (BodyState.classPart st) b := by
+  have hkey : st'.inside = inStringAfter (BodyState.classPart st) b ∧
+      st'.oddRun = (if IsBackslashB b then !st.oddRun else false) ∧
+      Utf8Need.AboveAscii st'.utf8 := by
+    by_cases h8 : st.utf8 = Utf8Need.none
+    · by_cases ho : st.oddRun = true
+      · simp [bodyStep, h8, ho] at hstep
+        subst hstep
+        refine ⟨?_, ?_, ?_⟩
+        · simp [BodyState.classPart, inStringAfter, isUnescapedQuote, ho]
+        · simp [ho]
+        · simp [Utf8Need.AboveAscii]
+      · by_cases hq : IsQuoteB b = true
+        · by_cases hin : st.inside = true
+          · simp [bodyStep, h8, ho, hq, hin] at hstep
+          · simp [bodyStep, h8, ho, hq, hin] at hstep
+            subst hstep
+            have hof : st.oddRun = false := by
+              cases h : st.oddRun with
+              | false => rfl
+              | true => exact absurd h ho
+            have hinf : st.inside = false := by
+              cases h : st.inside with
+              | false => rfl
+              | true => exact absurd h hin
+            refine ⟨?_, ?_, ?_⟩
+            · simp [BodyState.classPart, inStringAfter, isUnescapedQuote, hq, hof, hinf]
+            · simp [isBackslash_false_of_quote hq]
+            · simp [Utf8Need.AboveAscii]
+        · by_cases hbs : IsBackslashB b = true
+          · simp [bodyStep, h8, ho, hq, hbs] at hstep
+            subst hstep
+            have hin := hins hbs
+            have hof : st.oddRun = false := by
+              cases h : st.oddRun with
+              | false => rfl
+              | true => exact absurd h ho
+            refine ⟨?_, ?_, ?_⟩
+            · simp [BodyState.classPart, inStringAfter, isUnescapedQuote, hq]
+            · simp [hbs, hin, hof]
+            · simp [Utf8Need.AboveAscii]
+          · by_cases hin : st.inside = true
+            · by_cases hctl : decide (b < 0x20) = true
+              · simp [bodyStep, h8, ho, hq, hbs, hin, hctl] at hstep
+              · cases hs : Utf8Need.step .none b with
+                | none => simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at hstep
+                | some u =>
+                    simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at hstep
+                    subst hstep
+                    have hof : st.oddRun = false := by
+                      cases h : st.oddRun with
+                      | false => rfl
+                      | true => exact absurd h ho
+                    refine ⟨?_, ?_, ?_⟩
+                    · simp [BodyState.classPart, inStringAfter, isUnescapedQuote, hq, hin]
+                    · simp [hbs]
+                    · exact step_none_aboveAscii hs
+            · simp [bodyStep, h8, ho, hq, hbs, hin] at hstep
+              subst hstep
+              have hof : st.oddRun = false := by
+                cases h : st.oddRun with
+                | false => rfl
+                | true => exact absurd h ho
+              have hinf : st.inside = false := by
+                cases h : st.inside with
+                | false => rfl
+                | true => exact absurd h hin
+              refine ⟨?_, ?_, ?_⟩
+              · simp [BodyState.classPart, inStringAfter, isUnescapedQuote, hq, hinf]
+              · simp [hbs, hof]
+              · simp [Utf8Need.AboveAscii, h8]
+    · cases hs : st.utf8.step b with
+      | none => simp [bodyStep, h8, hs] at hstep
+      | some u =>
+          simp [bodyStep, h8, hs] at hstep
+          subst hstep
+          have hge : 0x80 ≤ b := step_accepted_ge habove h8 hs
+          have hq : IsQuoteB b = false := isQuoteB_false_of_ge hge
+          have hbk : IsBackslashB b = false := isBackslashB_false_of_ge hge
+          have hof : st.oddRun = false := by
+            cases h : st.oddRun with
+            | false => rfl
+            | true => exact absurd (hodd h) h8
+          refine ⟨?_, ?_, ?_⟩
+          · simp [BodyState.classPart, inStringAfter, isUnescapedQuote, hq, hof]
+          · simp [hbk, hof]
+          · exact step_aboveAscii habove hs
+  obtain ⟨h1, h2, _⟩ := hkey
+  simp [BodyState.classPart, classStep, h1, h2]
+
+/-- **The byte rule's `.closed` is an unescaped quote inside a body.**  Every other
+branch of the rule answers `.cont` or `.refused`, so the closing decision carries its
+own premises. -/
+theorem bodyStep_closed_facts {st : BodyState} {b : UInt8}
+    (h : bodyStep st b = .closed) :
+    st.inside = true ∧ st.oddRun = false ∧ IsQuoteB b = true := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho] at h
+    · by_cases hq : IsQuoteB b = true
+      · by_cases hin : st.inside = true
+        · have hof : st.oddRun = false := by
+            cases h : st.oddRun with
+            | false => rfl
+            | true => exact absurd h ho
+          exact ⟨hin, hof, hq⟩
+        · simp [bodyStep, h8, ho, hq, hin] at h
+      · by_cases hbs : IsBackslashB b = true
+        · simp [bodyStep, h8, ho, hq, hbs] at h
+        · by_cases hin : st.inside = true
+          · by_cases hctl : decide (b < 0x20) = true
+            · simp [bodyStep, h8, ho, hq, hbs, hin, hctl] at h
+            · cases hs : Utf8Need.step .none b with
+              | none => simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+              | some u => simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+          · simp [bodyStep, h8, ho, hq, hbs, hin] at h
+  · cases hs : st.utf8.step b with
+    | none => simp [bodyStep, h8, hs] at h
+    | some u => simp [bodyStep, h8, hs] at h
+
+/-! ### The two named conditions, and their counterexamples
+
+`ContinuesBefore` is `ScanWindow.lean`'s; `NoBackslashOutside` is the classifier's
+domain, and it is the condition the run parity needs.
+-/
+
+/-- Before lane `k`, the byte rule reads no backslash outside a body: every backslash
+lane is reached with the string flag set.  `classStep` toggles the run parity on every
+backslash, while `bodyStep` starts a run only inside a body (`oddRun := st.inside`), so
+this is exactly where the two folds can agree on the parity.  It is not free:
+`no_stop_does_not_identify_carries` fails it on a window that stops nowhere. -/
+def NoBackslashOutside (bs : List UInt8) (st : BodyState) (k : Nat) : Prop :=
+  ∀ j, j < k → ∀ {b : UInt8}, bs[j]? = some b → IsBackslashB b = true →
+    (carryAt bs st j).inside = true
+
+/-- `ScanWindow.lean`'s `carryAt` advances one lane at a time.  The original is private
+there, so this is a restatement rather than an import — the same reason the lane
+helpers above are restated. -/
+private theorem carryAt_succ (bs : List UInt8) (st : BodyState) (k : Nat) :
+    carryAt bs st (k + 1) =
+      (match bs[k]? with
+       | some b => (match bodyStep (carryAt bs st k) b with
+                    | .cont st' => st'
+                    | _ => carryAt bs st k)
+       | none => carryAt bs st k) := by
+  unfold carryAt
+  rw [List.take_add_one, List.foldl_append]
+  cases h : bs[k]? with
+  | none => simp
+  | some b => rfl
+
+/-- The lane's own step, when the carrier has a byte there. -/
+private theorem carryAt_succ_some (bs : List UInt8) (st : BodyState) (k : Nat) {b : UInt8}
+    (hb : bs[k]? = some b) :
+    carryAt bs st (k + 1) =
+      (match bodyStep (carryAt bs st k) b with
+       | .cont st' => st'
+       | _ => carryAt bs st k) := by
+  rw [carryAt_succ, hb]
+
+/-- A lane past the carrier's length does not move the carry. -/
+private theorem carryAt_succ_none (bs : List UInt8) (st : BodyState) (k : Nat)
+    (hb : bs[k]? = none) : carryAt bs st (k + 1) = carryAt bs st k := by
+  rw [carryAt_succ, hb]
+
+/-- A continuing lane leaves the state its step reports. -/
+private theorem carryAt_succ_cont (bs : List UInt8) (st : BodyState) (k : Nat) {b : UInt8}
+    {st' : BodyState} (hb : bs[k]? = some b)
+    (hstep : bodyStep (carryAt bs st k) b = .cont st') :
+    carryAt bs st (k + 1) = st' := by
+  rw [carryAt_succ_some bs st k hb]
+  simp [hstep]
+
+/-- The classifier's carry advances one lane, when the carrier has a byte there. -/
+private theorem classCarryAt_succ_some (bs : List UInt8) (st : ClassState) (k : Nat)
+    {b : UInt8} (hb : bs[k]? = some b) :
+    classCarryAt bs st (k + 1) = classStep (classCarryAt bs st k) b := by
+  rw [classCarryAt_succ, hb]
+
+/-- A lane past the carrier's length does not move the classifier's carry. -/
+private theorem classCarryAt_succ_none (bs : List UInt8) (st : ClassState) (k : Nat)
+    (hb : bs[k]? = none) : classCarryAt bs st (k + 1) = classCarryAt bs st k := by
+  rw [classCarryAt_succ, hb]
+
+/-- The rule never leaves an odd run and an outstanding sequence in one state: the run
+is started only past the requirement's guard, and a requirement is entered only past
+the run's. -/
+private theorem bodyStep_oddRun_utf8 {st st' : BodyState} {b : UInt8}
+    (h : bodyStep st b = .cont st')
+    (hodd : st.oddRun = true → st.utf8 = Utf8Need.none) :
+    st'.oddRun = true → st'.utf8 = Utf8Need.none := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho] at h
+      subst h
+      intro hc
+      simp at hc
+    · by_cases hq : IsQuoteB b = true
+      · by_cases hin : st.inside = true
+        · simp [bodyStep, h8, ho, hq, hin] at h
+        · simp [bodyStep, h8, ho, hq, hin] at h
+          subst h
+          intro hc
+          simp at hc
+      · by_cases hbs : IsBackslashB b = true
+        · simp [bodyStep, h8, ho, hq, hbs] at h
+          subst h
+          intro _
+          simp
+        · by_cases hin : st.inside = true
+          · by_cases hctl : decide (b < 0x20) = true
+            · simp [bodyStep, h8, ho, hq, hbs, hin, hctl] at h
+            · cases hs : Utf8Need.step .none b with
+              | none => simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+              | some u =>
+                  simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+                  subst h
+                  intro hc
+                  simp at hc
+          · simp [bodyStep, h8, ho, hq, hbs, hin] at h
+            subst h
+            intro hc
+            exact absurd hc ho
+  · cases hs : st.utf8.step b with
+    | none => simp [bodyStep, h8, hs] at h
+    | some u =>
+        simp [bodyStep, h8, hs] at h
+        subst h
+        intro hc
+        exact absurd (hodd hc) h8
+
+/-- The fold from `ClassState.toBody` never holds an odd run and a requirement at once:
+the invariant is the initial state's (`utf8 = none`) and `bodyStep` keeps it. -/
+private theorem carryAt_oddRun_utf8 (bs : List UInt8) (st : ClassState) (k : Nat) :
+    (carryAt bs st.toBody k).oddRun = true → (carryAt bs st.toBody k).utf8 = Utf8Need.none := by
+  induction k with
+  | zero => intro _; rfl
+  | succ k ih =>
+      cases hb : bs[k]? with
+      | none => rw [carryAt_succ_none bs st.toBody k hb]; exact ih
+      | some b =>
+          cases hstep : bodyStep (carryAt bs st.toBody k) b with
+          | cont st' =>
+              rw [carryAt_succ_some bs st.toBody k hb]
+              simpa [hstep] using bodyStep_oddRun_utf8 hstep ih
+          | closed =>
+              rw [carryAt_succ_some bs st.toBody k hb]
+              simpa [hstep] using ih
+          | refused s =>
+              rw [carryAt_succ_some bs st.toBody k hb]
+              simpa [hstep] using ih
+
+/-- A continuation keeps an above-`0x80` requirement above `0x80`. -/
+private theorem bodyStep_cont_aboveAscii {st st' : BodyState} {b : UInt8}
+    (h : bodyStep st b = .cont st') (hu : Utf8Need.AboveAscii st.utf8) :
+    Utf8Need.AboveAscii st'.utf8 := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho] at h
+      subst h
+      simp [Utf8Need.AboveAscii]
+    · by_cases hq : IsQuoteB b = true
+      · by_cases hin : st.inside = true
+        · simp [bodyStep, h8, ho, hq, hin] at h
+        · simp [bodyStep, h8, ho, hq, hin] at h
+          subst h
+          simp [Utf8Need.AboveAscii]
+      · by_cases hbs : IsBackslashB b = true
+        · simp [bodyStep, h8, ho, hq, hbs] at h
+          subst h
+          simp [Utf8Need.AboveAscii]
+        · by_cases hin : st.inside = true
+          · by_cases hctl : decide (b < 0x20) = true
+            · simp [bodyStep, h8, ho, hq, hbs, hin, hctl] at h
+            · cases hs : Utf8Need.step .none b with
+              | none => simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+              | some u =>
+                  simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+                  subst h
+                  exact step_none_aboveAscii hs
+          · simp [bodyStep, h8, ho, hq, hbs, hin] at h
+            subst h
+            simp [Utf8Need.AboveAscii, h8]
+  · cases hs : st.utf8.step b with
+    | none => simp [bodyStep, h8, hs] at h
+    | some u =>
+        simp [bodyStep, h8, hs] at h
+        subst h
+        exact step_aboveAscii hu hs
+
+/-- The fold from `ClassState.toBody` keeps the requirement's range above `0x80`. -/
+private theorem carryAt_aboveAscii (bs : List UInt8) (st : ClassState) (k : Nat) :
+    Utf8Need.AboveAscii (carryAt bs st.toBody k).utf8 := by
+  induction k with
+  | zero => simp [carryAt, ClassState.toBody, Utf8Need.AboveAscii]
+  | succ k ih =>
+      cases hb : bs[k]? with
+      | none => rw [carryAt_succ_none bs st.toBody k hb]; exact ih
+      | some b =>
+          cases hstep : bodyStep (carryAt bs st.toBody k) b with
+          | cont st' =>
+              rw [carryAt_succ_some bs st.toBody k hb]
+              simpa [hstep] using bodyStep_cont_aboveAscii hstep ih
+          | closed =>
+              rw [carryAt_succ_some bs st.toBody k hb]
+              simpa [hstep] using ih
+          | refused s =>
+              rw [carryAt_succ_some bs st.toBody k hb]
+              simpa [hstep] using ih
+
+/-! ### The carry bridge
+
+On a window where the model stops nowhere and reads no backslash outside a body, the
+two carries are one state read at the two states' shared fields.
+-/
+
+/-- **The carries agree where the model is defined.**  Before lane `k`, if the byte
+rule has continued at every lane and has read no backslash outside a body, then the
+classifier's carry on entry to lane `k` is the model's carry there, read at the two
+fields both states have.  Both hypotheses are named conditions of this module, and both
+have a counterexample below.
+
+`BodyState.WellFormed` is **not** assumed, and the omission is per conjunct rather than
+global.  Two of its conjuncts are **unused by this proof and are not established here**:
+a run implies the string flag (`oddRun → inside`), which a later proof needing it must
+prove for itself, and the requirement's count bound.  The third — a run excludes an
+outstanding requirement (`oddRun → utf8 = none`) — is **derived at the fold** by
+`carryAt_oddRun_utf8`, exactly as `carryAt_aboveAscii` derives the continuation-only
+range that `classPart_classStep_of_cont` takes per lane. -/
+theorem classCarryAt_eq_classPart (bs : List UInt8) (st : ClassState) {k : Nat}
+    (hcont : ContinuesBefore bs st.toBody k)
+    (hdom : NoBackslashOutside bs st.toBody k) :
+    classCarryAt bs st k = BodyState.classPart (carryAt bs st.toBody k) := by
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+      have hcont' : ContinuesBefore bs st.toBody k := fun j hj b hb => hcont j (by omega) hb
+      have hdom' : NoBackslashOutside bs st.toBody k :=
+        fun j hj b hb hbs => hdom j (by omega) hb hbs
+      cases hb : bs[k]? with
+      | none =>
+          rw [classCarryAt_succ_none bs st k hb, carryAt_succ_none bs st.toBody k hb]
+          exact ih hcont' hdom'
+      | some b =>
+          obtain ⟨st', hst'⟩ := hcont k (Nat.lt_succ_self k) hb
+          have hins : IsBackslashB b = true → (carryAt bs st.toBody k).inside = true :=
+            fun hbs => hdom k (Nat.lt_succ_self k) hb hbs
+          rw [classCarryAt_succ_some bs st k hb, carryAt_succ_cont bs st.toBody k hb hst']
+          rw [ih hcont' hdom']
+          exact (classPart_classStep_of_cont (carryAt bs st.toBody k) b hst'
+            (carryAt_oddRun_utf8 bs st k) (carryAt_aboveAscii bs st k) hins).symm
+
+/-- A continuing byte keeps the string flag set: every `.cont` branch either leaves the
+flag alone or sets it. -/
+private theorem bodyStep_cont_inside {st st' : BodyState} {b : UInt8}
+    (h : bodyStep st b = .cont st') (hin : st.inside = true) : st'.inside = true := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho] at h
+      subst h
+      simp [hin]
+    · by_cases hq : IsQuoteB b = true
+      · simp [bodyStep, h8, ho, hq, hin] at h
+      · by_cases hbs : IsBackslashB b = true
+        · simp [bodyStep, h8, ho, hq, hbs] at h
+          subst h
+          simp [hin]
+        · by_cases hctl : decide (b < 0x20) = true
+          · simp [bodyStep, h8, ho, hq, hbs, hin, hctl] at h
+          · cases hs : Utf8Need.step .none b with
+            | none => simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+            | some u =>
+                simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs] at h
+                subst h
+                simp
+  · cases hs : st.utf8.step b with
+    | none => simp [bodyStep, h8, hs] at h
+    | some u =>
+        simp [bodyStep, h8, hs] at h
+        subst h
+        simp [hin]
+
+/-- The fold from a state inside a body keeps the flag set, while the rule continues. -/
+private theorem carryAt_inside_of_continues (bs : List UInt8) (st : BodyState) {k : Nat}
+    (hin : st.inside = true) (hcont : ContinuesBefore bs st k) :
+    ∀ j, j < k → (carryAt bs st j).inside = true := by
+  intro j
+  induction j with
+  | zero => intro _; simp [carryAt, hin]
+  | succ j ih =>
+      intro hj
+      have hj' : j < k := by omega
+      cases hb : bs[j]? with
+      | none => rw [carryAt_succ_none bs st j hb]; exact ih hj'
+      | some b =>
+          obtain ⟨st', hst'⟩ := hcont j hj' hb
+          rw [carryAt_succ_cont bs st j hb hst']
+          exact bodyStep_cont_inside hst' (ih hj')
+
+/-- A window read from inside a body that stops nowhere stays inside it: the flag can
+only leave through a closing quote, which is a stop.  So `NoBackslashOutside` follows
+from the start state, and the bridge needs no condition on the window's bytes there. -/
+theorem classCarryAt_eq_classPart_of_inside (bs : List UInt8) (st : ClassState)
+    (hin : st.inside = true) {k : Nat} (hcont : ContinuesBefore bs st.toBody k) :
+    classCarryAt bs st k = BodyState.classPart (carryAt bs st.toBody k) := by
+  apply classCarryAt_eq_classPart bs st hcont
+  intro j hj b hb _
+  exact carryAt_inside_of_continues bs st.toBody hin hcont j hj
+
+/-- **The no-stop hypothesis alone does not identify the carries.**  Outside a body a
+backslash continues the byte rule without starting a run, while `classStep` toggles the
+parity.  The window stops nowhere, so `ContinuesBefore` holds; `NoBackslashOutside` is
+the condition that fails, and the carries differ. -/
+theorem no_stop_does_not_identify_carries :
+    (windowOf [0x5C] (⟨false, false⟩ : ClassState).toBody).stop = none ∧
+      ¬ NoBackslashOutside [0x5C] (⟨false, false⟩ : ClassState).toBody 1 ∧
+      classCarryAt [0x5C] (⟨false, false⟩ : ClassState) 1 ≠
+        BodyState.classPart (carryAt [0x5C] (⟨false, false⟩ : ClassState).toBody 1) := by
+  refine ⟨by decide, ?_, by decide⟩
+  intro h
+  have hin := h 0 (by omega) (b := 0x5C) rfl (by decide)
+  exact absurd hin (by decide)
+
+/-- **The no-stop hypothesis is necessary.**  A closing quote at lane 0 stops the model,
+which holds its state, while the classifier steps past it: `ContinuesBefore` fails at
+lane 0 and the two carries differ at lane 1. -/
+theorem close_stop_carry_diverges :
+    (windowOf [0x22] (⟨true, false⟩ : ClassState).toBody).stop = some (.close 0) ∧
+      ¬ ContinuesBefore [0x22] (⟨true, false⟩ : ClassState).toBody 1 ∧
+      classCarryAt [0x22] (⟨true, false⟩ : ClassState) 1 = ⟨false, false⟩ ∧
+      carryAt [0x22] (⟨true, false⟩ : ClassState).toBody 1 = BodyState.body := by
+  refine ⟨by decide, ?_, by decide, by decide⟩
+  intro h
+  obtain ⟨st', hst'⟩ := h 0 (by omega) (b := 0x22) rfl
+  have hclosed : bodyStep (carryAt [0x22] (⟨true, false⟩ : ClassState).toBody 0) 0x22 = .closed :=
+    rfl
+  rw [hclosed] at hst'
+  cases hst'
+
+/-! ### The model's masks are the classifier's
+
+The three statements below are stated on a full window with no stop and need no
+condition on the bytes: the quote statement splits the model's quote lane into the
+classifier's unescaped and escaped quotes, the backslash statement reads the same
+predicate, and the structural statement is the block layer's fold in the classifier's
+component vocabulary.
+
+The closing lane is a different matter, because `windowOf` records it only where the
+rule answers `.closed`, and that answer records a stop too.  `windowOf_delim_eq_zero_of_stop_none`
+states the consequence: on a no-stop window both `Window.delim` and the classifier's
+closing-lane mask are empty, so nothing there identifies them on a lane where `delim`
+means anything.  `windowOf_delim_eq_of_close_stop` states the identification at a
+closing stop's own lane, which reads the carry and therefore needs
+`NoBackslashOutside` on top of the continuation the stop's readback supplies.  Each
+condition is necessary for that statement and has a witness where it fails and the
+lane disagrees: `delim_eq_fails_outside` and `delim_eq_fails_past_stop`.
+-/
+
+/-- A window with no stop continues at every lane, so no lane refuses either. -/
+private theorem continuesBefore_of_stop_none {bs : List UInt8} {st : BodyState}
+    (h : (windowOf bs st).stop = none) : ContinuesBefore bs st 32 := by
+  have hs := windowOf_stop_spec (bs := bs) (st := st)
+  rw [h] at hs
+  exact hs
+
+/-- At a lane before the window's length, a no-stop window does not refuse. -/
+private theorem not_refused_of_continues {bs : List UInt8} {st : BodyState} {k : Nat}
+    (hcont : ContinuesBefore bs st k) {j : Nat} (hj : j < k) {b : UInt8}
+    (hb : bs[j]? = some b) : ∀ s, bodyStep (carryAt bs st j) b ≠ .refused s := by
+  obtain ⟨st', hst'⟩ := hcont j hj hb
+  intro s h
+  rw [hst'] at h
+  cases h
+
+/-- **The model's quote mask is the classifier's two quote masks.**  `windowOf`'s
+`quote` field records the byte rule's quote lane, and the classifier splits that lane
+into the unescaped quotes — the string boundaries — and the escaped ones.  On a full
+window with no stop the split loses no lane, and no parity condition is needed. -/
+theorem windowOf_quote_eq (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length)
+    (hstop : (windowOf bs st.toBody).stop = none) :
+    (windowOf bs st.toBody).quote = quoteMask bs st ||| escapedQuoteMask bs st := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  have hklen : k < bs.length := by omega
+  have hb : bs[k]? = some (bs[k]'hklen) := getElem?_of_lt hklen
+  have hcont := continuesBefore_of_stop_none hstop
+  rw [BitVec.getLsbD_or,
+    windowOf_quote (bs := bs) (st := st.toBody) (k := k) (b := bs[k]'hklen) hk hb
+      (not_refused_of_continues hcont hk hb),
+    quoteMask_getLsbD hk hb, escapedQuoteMask_getLsbD hk hb, quote_or_escaped]
+
+/-- **The model's backslash mask is the classifier's.** -/
+theorem windowOf_backslash_eq (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length)
+    (hstop : (windowOf bs st.toBody).stop = none) :
+    (windowOf bs st.toBody).backslash = backslashMask bs st := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  have hklen : k < bs.length := by omega
+  have hb : bs[k]? = some (bs[k]'hklen) := getElem?_of_lt hklen
+  have hcont := continuesBefore_of_stop_none hstop
+  rw [windowOf_backslash (bs := bs) (st := st.toBody) (k := k) (b := bs[k]'hklen) hk hb
+      (not_refused_of_continues hcont hk hb),
+    backslashMask_getLsbD hk hb]
+
+/-- **The model's structural mask is the classifier's components.**  This one is the
+block layer's `maskOfList` read through the split, so it holds on every full window,
+stopped or not: the scalar transition's decision does not read the carry. -/
+theorem windowOf_structural_eq (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    (windowOf bs st.toBody).structural =
+      delimiterMask bs st ||| quoteMask bs st ||| escapedQuoteMask bs st |||
+        backslashMask bs st ||| maskOfListWith IsSpaceB bs := by
+  rw [windowOf_structural, maskOfList_decompose bs st hlen]
+
+/-- At a lane where the rule refuses nothing, its closing decision is the classifier's
+closing lane: an unescaped quote lane read inside a body, which is `quoteMask` without
+`inStringMask` at that bit.  The refusal hypothesis is not decoration — a quote arriving
+while a requirement is outstanding is a `badUtf8` refusal, and on that lane the
+classifier's bit would say "closing" while the rule refuses. -/
+private theorem closed_iff_classifier (st : BodyState) (b : UInt8)
+    (hodd : st.oddRun = true → st.utf8 = Utf8Need.none)
+    (habove : Utf8Need.AboveAscii st.utf8)
+    (hnr : ∀ s, bodyStep st b ≠ .refused s) :
+    (match bodyStep st b with | .closed => true | _ => false) =
+      (isUnescapedQuote (BodyState.classPart st) b &&
+        !inStringAfter (BodyState.classPart st) b) := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho, BodyState.classPart, isUnescapedQuote, inStringAfter]
+    · by_cases hq : IsQuoteB b = true
+      · by_cases hin : st.inside = true
+        · simp [bodyStep, h8, ho, hq, hin, BodyState.classPart, isUnescapedQuote,
+            inStringAfter]
+        · simp [bodyStep, h8, ho, hq, hin, BodyState.classPart, isUnescapedQuote,
+            inStringAfter]
+      · by_cases hbs : IsBackslashB b = true
+        · simp [bodyStep, h8, ho, hq, hbs, BodyState.classPart, isUnescapedQuote,
+            inStringAfter]
+        · by_cases hin : st.inside = true
+          · by_cases hctl : decide (b < 0x20) = true
+            · exact absurd (by simp [bodyStep, h8, ho, hq, hbs, hin, hctl]) (hnr .control)
+            · cases hs : Utf8Need.step .none b with
+              | none =>
+                  exact absurd (by simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs])
+                    (hnr .badUtf8)
+              | some u =>
+                  simp [bodyStep, h8, ho, hq, hbs, hin, hctl, hs, BodyState.classPart,
+                    isUnescapedQuote, inStringAfter]
+          · simp [bodyStep, h8, ho, hq, hbs, hin, BodyState.classPart, isUnescapedQuote,
+              inStringAfter]
+  · cases hs : st.utf8.step b with
+    | none => exact absurd (by simp [bodyStep, h8, hs]) (hnr .badUtf8)
+    | some u =>
+        have hge : 0x80 ≤ b := step_accepted_ge habove h8 hs
+        have hq : IsQuoteB b = false := isQuoteB_false_of_ge hge
+        have hof : st.oddRun = false := by
+          cases h : st.oddRun with
+          | false => rfl
+          | true => exact absurd (hodd h) h8
+        simp [bodyStep, h8, hs, BodyState.classPart, isUnescapedQuote, inStringAfter,
+          hq, hof]
+
+/-- A continuing lane that leaves the byte rule outside a body leaves it with the run
+parity clear and the requirement empty.  The one branch that could carry a requirement
+while outside a body is the requirement's own, and it is never entered from outside:
+the initial state has no requirement, and every branch that produces one is inside. -/
+private theorem bodyStep_cont_outside_facts {st st' : BodyState} {b : UInt8}
+    (hstep : bodyStep st b = .cont st') (hin : st'.inside = false)
+    (hutf : st.utf8 ≠ Utf8Need.none → st.inside = true) :
+    st'.oddRun = false ∧ st'.utf8 = Utf8Need.none := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho] at hstep
+      subst hstep
+      exact ⟨rfl, by simp⟩
+    · have hof : st.oddRun = false := by
+        cases h : st.oddRun with
+        | false => rfl
+        | true => exact absurd h ho
+      by_cases hq : IsQuoteB b = true
+      · by_cases hi : st.inside = true
+        · simp [bodyStep, h8, hof, hq, hi] at hstep
+        · simp [bodyStep, h8, hof, hq, hi] at hstep
+          subst hstep
+          simp at hin
+      · by_cases hbs : IsBackslashB b = true
+        · simp [bodyStep, h8, hof, hq, hbs] at hstep
+          subst hstep
+          exact ⟨by simpa using hin, by simp⟩
+        · by_cases hi : st.inside = true
+          · by_cases hctl : decide (b < 0x20) = true
+            · simp [bodyStep, h8, hof, hq, hbs, hi, hctl] at hstep
+            · cases hu : Utf8Need.step .none b with
+              | none => simp [bodyStep, h8, hof, hq, hbs, hi, hctl, hu] at hstep
+              | some u =>
+                  simp [bodyStep, h8, hof, hq, hbs, hi, hctl, hu] at hstep
+                  subst hstep
+                  simp at hin
+          · simp [bodyStep, h8, hof, hq, hbs, hi] at hstep
+            subst hstep
+            exact ⟨hof, h8⟩
+  · have hsi : st.inside = true := hutf h8
+    cases hu : st.utf8.step b with
+    | none => simp [bodyStep, h8, hu] at hstep
+    | some u =>
+        simp [bodyStep, h8, hu] at hstep
+        subst hstep
+        simp [hsi] at hin
+
+/-- The requirement's own fold never leaves the string flag behind: a requirement is
+produced only inside a body, and every branch reached with one keeps the flag set. -/
+private theorem carryAt_utf8_inside (bs : List UInt8) (st : ClassState) :
+    ∀ k, (carryAt bs st.toBody k).utf8 ≠ Utf8Need.none →
+      (carryAt bs st.toBody k).inside = true := by
+  intro k
+  induction k with
+  | zero => intro h; exact absurd rfl h
+  | succ k ih =>
+      intro h
+      cases hb : bs[k]? with
+      | none =>
+          rw [carryAt_succ_none bs st.toBody k hb] at h ⊢
+          exact ih h
+      | some b =>
+          cases hs : bodyStep (carryAt bs st.toBody k) b with
+          | cont st' =>
+              rw [carryAt_succ_some bs st.toBody k hb] at h ⊢
+              rw [hs] at h ⊢
+              by_cases h8 : (carryAt bs st.toBody k).utf8 = Utf8Need.none
+              · by_cases ho : (carryAt bs st.toBody k).oddRun = true
+                · simp [bodyStep, h8, ho] at hs
+                  subst hs
+                  exfalso
+                  exact h (by simp)
+                · by_cases hq : IsQuoteB b = true
+                  · by_cases hi : (carryAt bs st.toBody k).inside = true
+                    · simp [bodyStep, h8, ho, hq, hi] at hs
+                    · simp [bodyStep, h8, ho, hq, hi] at hs
+                      subst hs
+                      simp
+                  · by_cases hbs : IsBackslashB b = true
+                    · simp [bodyStep, h8, ho, hq, hbs] at hs
+                      subst hs
+                      exfalso
+                      exact h (by simp)
+                    · by_cases hi : (carryAt bs st.toBody k).inside = true
+                      · by_cases hctl : decide (b < 0x20) = true
+                        · simp [bodyStep, h8, ho, hq, hbs, hi, hctl] at hs
+                        · cases hu : Utf8Need.step .none b with
+                          | none =>
+                              simp [bodyStep, h8, ho, hq, hbs, hi, hctl, hu] at hs
+                          | some u =>
+                              simp [bodyStep, h8, ho, hq, hbs, hi, hctl, hu] at hs
+                              subst hs
+                              simp
+                      · simp [bodyStep, h8, ho, hq, hbs, hi] at hs
+                        subst hs
+                        simp [h8] at h
+              · have hsi : (carryAt bs st.toBody k).inside = true := ih h8
+                cases hu : (carryAt bs st.toBody k).utf8.step b with
+                | none => simp [bodyStep, h8, hu] at hs
+                | some u =>
+                    simp [bodyStep, h8, hu] at hs
+                    subst hs
+                    simpa using hsi
+          | closed =>
+              rw [carryAt_succ_some bs st.toBody k hb] at h ⊢
+              rw [hs] at h ⊢
+              exact ih h
+          | refused s =>
+              rw [carryAt_succ_some bs st.toBody k hb] at h ⊢
+              rw [hs] at h ⊢
+              exact ih h
+
+/-- One continuing lane more: a lane the rule continues from outside a body leaves the
+next carry outside it with the run parity clear and no requirement outstanding. -/
+private theorem carryAt_succ_outside_of_cont (bs : List UInt8) (st : ClassState)
+    {j : Nat} {b : UInt8} (hb : bs[j]? = some b)
+    (hcont : ContinuesBefore bs st.toBody (j + 1))
+    (hin : (carryAt bs st.toBody (j + 1)).inside = false) :
+    (carryAt bs st.toBody (j + 1)).oddRun = false ∧
+      (carryAt bs st.toBody (j + 1)).utf8 = Utf8Need.none := by
+  obtain ⟨st', hstep⟩ := hcont j (Nat.lt_succ_self j) hb
+  rw [carryAt_succ_cont bs st.toBody j hb hstep] at hin ⊢
+  exact bodyStep_cont_outside_facts hstep hin (carryAt_utf8_inside bs st j)
+
+/-- A continuing quote lane the classifier reads as unescaped leaves the byte rule
+inside a body with the run parity clear.  Arriving outside, the rule opens the body;
+arriving inside with the parity clear, the lane would close or refuse, so it cannot
+continue at all. -/
+private theorem cont_quote_outside_class {st : BodyState} {b : UInt8} {st' : BodyState}
+    (hstep : bodyStep st b = .cont st') (hq : IsQuoteB b = true)
+    (habove : Utf8Need.AboveAscii st.utf8)
+    (hout : st.inside = false → st.oddRun = false ∧ st.utf8 = Utf8Need.none) :
+    st'.inside = true ∧ st'.oddRun = false := by
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · by_cases ho : st.oddRun = true
+    · simp [bodyStep, h8, ho] at hstep
+      subst hstep
+      have hsi : st.inside = true := by
+        cases hi : st.inside with
+        | true => rfl
+        | false => exact absurd ho (by rw [(hout hi).1]; simp)
+      exact ⟨by simp [hsi], by simp⟩
+    · have hof : st.oddRun = false := by
+        cases h : st.oddRun with
+        | false => rfl
+        | true => exact absurd h ho
+      by_cases hi : st.inside = true
+      · simp [bodyStep, h8, hof, hq, hi] at hstep
+      · simp [bodyStep, h8, hof, hq, hi] at hstep
+        subst hstep
+        exact ⟨by simp, by simp⟩
+  · have hge : 0x80 ≤ b := by
+      cases hu : st.utf8.step b with
+      | none => simp [bodyStep, h8, hu] at hstep
+      | some u => exact step_accepted_ge habove h8 hu
+    have hbq : b = 0x22 := of_decide_eq_true hq
+    subst hbq
+    exact absurd hge (by decide)
+
+/-- **Inside a body, the classifier's carry is the rule's**, on a window that continues
+at every lane before the one being read.  The two can only part where the rule reads a
+backslash outside a body — the classifier toggles the run parity there and the rule does
+not — and such a lane leaves the classifier outside the body it opened, which the rule
+does not.  So whenever the classifier is inside, the rule is inside with the same
+parity, and a classifier lane marked as closing is a lane where the rule does not
+continue. -/
+private theorem classInside_of_continues (bs : List UInt8) (st : ClassState)
+    (hlen : 32 ≤ bs.length) :
+    ∀ k, k < 32 → ContinuesBefore bs st.toBody (k + 1) →
+      (classCarryAt bs st k).inside = true →
+        (carryAt bs st.toBody k).inside = true ∧
+          (classCarryAt bs st k).oddRun = (carryAt bs st.toBody k).oddRun := by
+  intro k
+  induction k with
+  | zero =>
+      intro _ _ hin
+      refine ⟨?_, rfl⟩
+      simpa [classCarryAt, carryAt, ClassState.toBody] using hin
+  | succ k ih =>
+      intro hk32 hcont hin
+      have hk : k < 32 := by omega
+      have hcont' : ContinuesBefore bs st.toBody (k + 1) :=
+        fun j hj b hb => hcont j (by omega) hb
+      cases hb : bs[k]? with
+      | none =>
+          rw [classCarryAt_succ_none bs st k hb] at hin ⊢
+          rw [carryAt_succ_none bs st.toBody k hb] at ⊢
+          exact ih hk hcont' hin
+      | some b =>
+          obtain ⟨st', hstep⟩ := hcont k (by omega) hb
+          rw [classCarryAt_succ_some bs st k hb] at hin ⊢
+          rw [carryAt_succ_cont bs st.toBody k hb hstep] at ⊢
+          by_cases hci : (classCarryAt bs st k).inside = true
+          · obtain ⟨hmcin, hodd⟩ := ih hk hcont' hci
+            have hpart : BodyState.classPart (carryAt bs st.toBody k) =
+                classCarryAt bs st k := by
+              cases hcc : classCarryAt bs st k
+              cases hmc : carryAt bs st.toBody k
+              simp_all [BodyState.classPart]
+            have hstep' := classPart_classStep_of_cont (carryAt bs st.toBody k) b hstep
+              (carryAt_oddRun_utf8 bs st k) (carryAt_aboveAscii bs st k)
+              (fun _ => hmcin)
+            rw [hpart] at hstep'
+            refine ⟨?_, ?_⟩
+            · have h := congrArg ClassState.inside hstep'
+              simpa [BodyState.classPart, hin] using h
+            · have h := congrArg ClassState.oddRun hstep'
+              simpa [BodyState.classPart] using h.symm
+          · have hci' : (classCarryAt bs st k).inside = false := by
+              cases h : (classCarryAt bs st k).inside <;> simp_all
+            have hin0 : isUnescapedQuote (classCarryAt bs st k) b = true := by
+              have h : inStringAfter (classCarryAt bs st k) b = true := hin
+              rw [inStringAfter, hci'] at h
+              simpa using h
+            have hq : IsQuoteB b = true := by
+              have h := hin0
+              unfold isUnescapedQuote at h
+              exact ((Bool.and_eq_true ..).mp h).1
+            have hccodd : (classCarryAt bs st k).oddRun = false := by
+              have h := hin0
+              unfold isUnescapedQuote at h
+              have h2 := ((Bool.and_eq_true ..).mp h).2
+              simpa using h2
+            have hout : (carryAt bs st.toBody k).inside = false →
+                (carryAt bs st.toBody k).oddRun = false ∧
+                  (carryAt bs st.toBody k).utf8 = Utf8Need.none := by
+              intro hmi
+              rcases Nat.eq_zero_or_pos k with hk0 | hkpos
+              · subst hk0
+                refine ⟨?_, by simp [carryAt, ClassState.toBody]⟩
+                simpa [classCarryAt, carryAt, ClassState.toBody] using hccodd
+              · have hbprev : bs[k - 1]? = some (bs[k - 1]'(by omega)) :=
+                  getElem?_of_lt (by omega)
+                have hcontk : ContinuesBefore bs st.toBody ((k - 1) + 1) :=
+                  fun j hj b' hb' => hcont j (by omega) hb'
+                have hprev := carryAt_succ_outside_of_cont bs st hbprev hcontk
+                  (by simpa [Nat.sub_add_cancel hkpos] using hmi)
+                simpa [Nat.sub_add_cancel hkpos] using hprev
+            obtain ⟨hstin, hstodd⟩ := cont_quote_outside_class hstep hq
+              (carryAt_aboveAscii bs st k) hout
+            refine ⟨hstin, ?_⟩
+            rw [hstodd]
+            simp [classStep, isBackslash_false_of_quote hq]
+
+/-- A lane the classifier marks as closing is a lane where the byte rule does not
+continue: an unescaped quote read inside a body closes it, or — with a requirement
+outstanding — is refused, since a quote is not a continuation byte. -/
+private theorem bodyStep_cont_quote_impossible {st : BodyState} {b : UInt8}
+    (hin : st.inside = true) (hoff : st.oddRun = false) (hq : IsQuoteB b = true)
+    (habove : Utf8Need.AboveAscii st.utf8) :
+    ∀ st', bodyStep st b ≠ .cont st' := by
+  intro st' h
+  by_cases h8 : st.utf8 = Utf8Need.none
+  · simp [bodyStep, h8, hoff, hq, hin] at h
+  · have hge : 0x80 ≤ b := by
+      cases hu : st.utf8.step b with
+      | none => simp [bodyStep, h8, hu] at h
+      | some u => exact step_accepted_ge habove h8 hu
+    have hbq : b = 0x22 := of_decide_eq_true hq
+    subst hbq
+    exact absurd hge (by decide)
+
+/-- **With no stop, the closing lane is empty on both sides.**  `windowLane` writes
+`Window.delim` only on the branch that answers `.closed`, and that branch records the
+stop, so a window that stops nowhere has `delim = 0`.  On the classifier's side the
+same emptiness holds with no condition on the bytes: its closing-lane mask marks an
+unescaped quote read inside a body, and such a lane is one the rule cannot continue
+past — it closes the body or refuses the byte.  No identification is claimed here,
+because neither mask has a set lane to identify. -/
+theorem windowOf_delim_eq_zero_of_stop_none (bs : List UInt8) (st : ClassState)
+    (hlen : 32 ≤ bs.length) (hstop : (windowOf bs st.toBody).stop = none) :
+    (windowOf bs st.toBody).delim = 0 ∧
+      quoteMask bs st &&& ~~~inStringMask bs st = 0 := by
+  refine ⟨?_, ?_⟩
+  · apply BitVec.eq_of_getLsbD_eq
+    intro k hk
+    have hklen : k < bs.length := by omega
+    have hb : bs[k]? = some (bs[k]'hklen) := getElem?_of_lt hklen
+    obtain ⟨st', hst'⟩ := continuesBefore_of_stop_none hstop k hk hb
+    rw [windowOf_delim hk hb, hst']
+    exact BitVec.getLsbD_zero.symm
+  · apply BitVec.eq_of_getLsbD_eq
+    intro k hk
+    have hklen : k < bs.length := by omega
+    have hcont := continuesBefore_of_stop_none hstop
+    have hcontk : ContinuesBefore bs st.toBody (k + 1) :=
+      fun j hj b hb' => hcont j (by omega) hb'
+    obtain ⟨b, hb⟩ : ∃ b, bs[k]? = some b := ⟨_, getElem?_of_lt hklen⟩
+    rw [BitVec.getLsbD_and, LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt _ hk,
+      quoteMask_getLsbD hk hb, inStringMask_getLsbD hk hb]
+    cases hmask : (isUnescapedQuote (classCarryAt bs st k) b &&
+        !inStringAfter (classCarryAt bs st k) b) with
+    | false =>
+        exact BitVec.getLsbD_zero.symm
+    | true =>
+        exfalso
+        have h1 : isUnescapedQuote (classCarryAt bs st k) b = true :=
+          ((Bool.and_eq_true ..).mp hmask).1
+        have h2 : (!inStringAfter (classCarryAt bs st k) b) = true :=
+          ((Bool.and_eq_true ..).mp hmask).2
+        have hq : IsQuoteB b = true := by
+          have h := h1
+          unfold isUnescapedQuote at h
+          exact ((Bool.and_eq_true ..).mp h).1
+        have hccodd : (classCarryAt bs st k).oddRun = false := by
+          have h := h1
+          unfold isUnescapedQuote at h
+          simpa using ((Bool.and_eq_true ..).mp h).2
+        have hcin : (classCarryAt bs st k).inside = true := by
+          have h3 : inStringAfter (classCarryAt bs st k) b = false := by simpa using h2
+          rw [inStringAfter, h1] at h3
+          simpa using h3
+        obtain ⟨hmcin, hmcodd⟩ := classInside_of_continues bs st hlen k hk hcontk hcin
+        have hoff : (carryAt bs st.toBody k).oddRun = false := by
+          rw [← hmcodd]; exact hccodd
+        obtain ⟨st', hst'⟩ := hcont k hk hb
+        exact bodyStep_cont_quote_impossible hmcin hoff hq
+          (carryAt_aboveAscii bs st k) st' hst'
+
+/-- **At a closing stop's lane the two closing lanes are the same bit.**  `Window.delim`
+is the lane where the rule closes the body; in the classifier's vocabulary that is an
+unescaped quote read inside a body, which is `quoteMask` without `inStringMask` — the
+same two masks the candidate identity is built from.  The comparison reads the carry at
+the stop's own lane, so it takes both named conditions: the stop's readback supplies
+`ContinuesBefore`, and `NoBackslashOutside` is the second, necessary because the
+counterexamples below each fail it or the continuation and disagree at the stop. -/
+theorem windowOf_delim_eq_of_close_stop (bs : List UInt8) (st : ClassState) {k : Nat}
+    (hstop : (windowOf bs st.toBody).stop = some (.close k))
+    (hdom : NoBackslashOutside bs st.toBody k) :
+    (windowOf bs st.toBody).delim.getLsbD k =
+      (quoteMask bs st &&& ~~~inStringMask bs st).getLsbD k := by
+  obtain ⟨hk, ⟨b, hb⟩, hcont, hclosedAll⟩ := by
+    have hs := windowOf_stop_spec (bs := bs) (st := st.toBody)
+    rw [hstop] at hs
+    exact hs
+  have hclosed : bodyStep (carryAt bs st.toBody k) b = .closed := hclosedAll hb
+  have hcarry := classCarryAt_eq_classPart bs st hcont hdom
+  have hleft : (windowOf bs st.toBody).delim.getLsbD k = true := windowOf_stop_close hstop
+  have hclass : (isUnescapedQuote (classCarryAt bs st k) b &&
+      !inStringAfter (classCarryAt bs st k) b) = true := by
+    rw [hcarry]
+    have h := closed_iff_classifier (carryAt bs st.toBody k) b
+      (carryAt_oddRun_utf8 bs st k) (carryAt_aboveAscii bs st k)
+      (fun s hs => by rw [hclosed] at hs; cases hs)
+    rw [hclosed] at h
+    exact h.symm
+  rw [hleft, BitVec.getLsbD_and, LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt _ hk,
+    quoteMask_getLsbD hk hb, inStringMask_getLsbD hk hb]
+  exact hclass.symm
+
+/-- **`NoBackslashOutside` is necessary for the stop-lane identification.**  Read from
+outside a body, a backslash starts the classifier's run but not the rule's, so the
+classifier calls the following quote escaped and the rule does not.  The rule closes at
+lane 2, where `Window.delim` is set, while the classifier's closing lane there is
+empty; the lanes before it all continue, so the failing hypothesis is the backslash
+condition. -/
+theorem delim_eq_fails_outside :
+    (windowOf [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody).stop =
+        some (.close 2) ∧
+      (windowOf [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody).delim.getLsbD 2 =
+        true ∧
+      (quoteMask [0x5C, 0x22, 0x22] ⟨false, false⟩ &&&
+        ~~~inStringMask [0x5C, 0x22, 0x22] ⟨false, false⟩).getLsbD 2 = false ∧
+      ContinuesBefore [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody 2 ∧
+      ¬ NoBackslashOutside [0x5C, 0x22, 0x22] (⟨false, false⟩ : ClassState).toBody 2 := by
+  refine ⟨by decide, by decide, by decide, ?_, ?_⟩
+  · intro j hj b hb
+    have hj' : j = 0 ∨ j = 1 := by omega
+    rcases hj' with rfl | rfl
+    · simp at hb
+      subst hb
+      exact ⟨⟨false, false, Utf8Need.none⟩, rfl⟩
+    · simp at hb
+      subst hb
+      exact ⟨⟨true, false, Utf8Need.none⟩, rfl⟩
+  · intro h
+    have hin := h 0 (by omega) (b := 0x5C) rfl (by decide)
+    exact absurd hin (by decide)
+
+/-- **`ContinuesBefore` is necessary for the stop-lane identification.**  The window
+starts inside a body and the first lane closes it; the fold still asks the second lane,
+which closes the same body again, so `Window.delim` has lane 1 set.  The classifier
+steps past the first close and its closing lane at 1 is empty.  No backslash occurs, so
+`NoBackslashOutside` holds and the failing hypothesis is the continuation. -/
+theorem delim_eq_fails_past_stop :
+    (windowOf [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody).stop = some (.close 0) ∧
+      (windowOf [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody).delim.getLsbD 1 = true ∧
+      (quoteMask [0x22, 0x22] ⟨true, false⟩ &&&
+        ~~~inStringMask [0x22, 0x22] ⟨true, false⟩).getLsbD 1 = false ∧
+      NoBackslashOutside [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody 1 ∧
+      ¬ ContinuesBefore [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody 1 := by
+  refine ⟨by decide, by decide, by decide, ?_, ?_⟩
+  · intro j hj b hb hbs
+    have hj0 : j = 0 := by omega
+    subst hj0
+    simp at hb
+    subst hb
+    exact absurd hbs (by decide)
+  · intro h
+    obtain ⟨st', hst'⟩ := h 0 (by omega) (b := 0x22) rfl
+    have hclosed : bodyStep (carryAt [0x22, 0x22] (⟨true, false⟩ : ClassState).toBody 0) 0x22
+        = .closed := rfl
+    rw [hclosed] at hst'
+    cases hst'
+
+/-! ### What happens after a stop
+
+The classifier is total where the model stops or refuses, so its values past a stop
+describe no run of the byte rule.  The two theorems below are the divergence itself, not
+a caveat: at the stop's lane the model holds the state on entry, and the classifier
+takes the step the rule refused.  Everything the parser reads after a stop comes from
+the model again, so the classifier's post-stop lanes are defined but not meaningful.
+-/
+
+/-- **Past a stop the classifier steps and the model holds.**  At a lane the byte rule
+does not continue past, `carryAt` keeps the state on entry to the lane while `classStep`
+takes the step the rule refused; from the next lane the two folds read the same bytes
+from different states. -/
+theorem classCarryAt_succ_of_stop (bs : List UInt8) (st : ClassState) {s : Nat} {b : UInt8}
+    (hb : bs[s]? = some b)
+    (hcarry : classCarryAt bs st s = BodyState.classPart (carryAt bs st.toBody s))
+    (hstop : ∀ st', bodyStep (carryAt bs st.toBody s) b ≠ .cont st') :
+    carryAt bs st.toBody (s + 1) = carryAt bs st.toBody s ∧
+      classCarryAt bs st (s + 1) = classStep (BodyState.classPart (carryAt bs st.toBody s)) b := by
+  constructor
+  · rw [carryAt_succ, hb]
+    cases hstep : bodyStep (carryAt bs st.toBody s) b with
+    | cont st' => exact absurd hstep (hstop st')
+    | closed => simp [hstep]
+    | refused s' => simp [hstep]
+  · rw [classCarryAt_succ, hb, hcarry]
+
+/-- **At a closing stop the classifier's string state is the complement of the model's.**
+The rule's `.closed` is an unescaped quote inside a body, so `classStep` flips the flag
+exactly where the model holds it: the classifier lands outside the string and the model
+stays inside.  This is a divergence, not a widening — the classifier neither
+over-approximates nor under-approximates the scanner after a stop, it describes a
+different state, and every lane past the stop is one the parser re-reads from the
+model. -/
+theorem classCarryAt_succ_closed (bs : List UInt8) (st : ClassState) {s : Nat} {b : UInt8}
+    (hb : bs[s]? = some b)
+    (hcont : ContinuesBefore bs st.toBody s)
+    (hdom : NoBackslashOutside bs st.toBody s)
+    (hclosed : bodyStep (carryAt bs st.toBody s) b = .closed) :
+    classCarryAt bs st (s + 1) = ⟨false, false⟩ ∧
+      carryAt bs st.toBody (s + 1) = carryAt bs st.toBody s ∧
+      (carryAt bs st.toBody s).inside = true := by
+  have hcarry : classCarryAt bs st s = BodyState.classPart (carryAt bs st.toBody s) :=
+    classCarryAt_eq_classPart bs st hcont hdom
+  have hstep := classCarryAt_succ_of_stop bs st hb hcarry
+    (fun st' h => by rw [hclosed] at h; cases h)
+  obtain ⟨hhold, hfold⟩ := hstep
+  obtain ⟨hin, hof, hq⟩ := bodyStep_closed_facts hclosed
+  have hbs : IsBackslashB b = false := isBackslash_false_of_quote hq
+  have hclass : classStep (BodyState.classPart (carryAt bs st.toBody s)) b = ⟨false, false⟩ := by
+    simp [BodyState.classPart, classStep, inStringAfter, isUnescapedQuote, hq, hin, hof, hbs]
+  exact ⟨by rw [hfold, hclass], hhold, hin⟩
 
 /-! ### The kernel's sixty-four lanes
 
