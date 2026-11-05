@@ -62,7 +62,15 @@ needs the other two to match.
   reference selection, the installed body's selection, and the framed
   replacement through a staging caller (`classifySeam_refines`,
   `replaceScanner_sound`, `replaceScanner_ret`, over
-  `probes/install/ir/json-caller.ll`).
+  `probes/install/ir/json-caller.ll`).  `Pclmul` is the classifier's arithmetic
+  underneath those three: `clmul` as the truncated GF(2) polynomial product
+  written as a fold of shifted XORs, the all-ones instance as the prefix parity
+  (`clmul_allOnes_self`) and its uniqueness (`clmul_allOnes_unique`), and the two
+  mask identities — `inStringMask_eq_clmul` over a window and
+  `specInString64_eq_clmul` over a sixty-four-byte block — with the outgoing carry
+  `specInString64_outgoing_carry`, all stated over `JsonScanSpec`'s own masks.
+  Its docstring records what it does not prove: the kernel's `specQuote64`
+  derivation through `pext`/`pdep` lane moves, and any relation to the emitted IR.
 - `LeanLLVM/JSON/` is the byte-level JSON development: the independent
   semantics (`Spec`), scanner (`Scan`), parser (`Parse`), tape (`Tape`) and
   their correctness modules; the block layer `ScanBlock` — `maskOfList`,

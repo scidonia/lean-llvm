@@ -4,6 +4,7 @@ import LeanLLVM.Vellum.JsonScanModel
 import LeanLLVM.Vellum.JsonScanIR
 import LeanLLVM.Vellum.JsonScanLane
 import LeanLLVM.Vellum.JsonScanSpec
+import LeanLLVM.Vellum.Pclmul
 
 open LeanLLVM.Vellum
 
@@ -3173,3 +3174,389 @@ info: 'LeanLLVM.Vellum.DepthCountRefine.loop_body' depends on axioms: [propext, 
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.DepthCountRefine.loop_body
+
+/-! ### The carry-less product and the mask identity
+
+`LeanLLVM/Vellum/Pclmul.lean` states the classifier's arithmetic: `clmul` — the
+truncated GF(2) polynomial product as a fold of shifted XORs — the all-ones
+instance as the prefix parity (`clmul_allOnes_self`), its uniqueness
+(`clmul_allOnes_unique`), and the two mask identities that put
+`JsonScanSpec`'s in-string mask in that arithmetic, with the outgoing carry as
+the block's top lane.
+
+Its docstring records what is **not** proved: the kernel's `specQuote64`
+derivation through `pext`/`pdep` lane moves, and any relation to the emitted IR.
+Nothing here restates those as facts.
+
+Each theorem's axiom footprint is pinned below, and each is restated as an
+`example` over the public interface.  Every pin is at `[propext, Quot.sound]` or
+below: the module proves its own all-ones lane lemma rather than using
+`BitVec.getLsbD_allOnes`, whose proof carries `Classical.choice`, so no theorem
+here depends on a choice principle.
+-/
+
+open LeanLLVM.Vellum.Pclmul
+
+-- The XOR normal forms the folds are written with.
+example {w : Nat} (a b c : BitVec w) : a ^^^ (b ^^^ c) = b ^^^ (a ^^^ c) :=
+  xor_left_comm a b c
+
+example {w : Nat} (a b : BitVec w) : (a ^^^ b) ^^^ b = a :=
+  xor_self_right a b
+
+-- Cancelling an addend in the Bool XOR group.
+example (x y z : Bool) : ((x ^^ y) = z) ↔ (x = (z ^^ y)) :=
+  xor_eq_iff
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.xor_left_comm' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.xor_left_comm
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.xor_self_right' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.xor_self_right
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.xor_eq_iff' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.xor_eq_iff
+
+-- The all-ones multiplier selects every shifted copy of `a`.
+example {w : Nat} (a : BitVec w) :
+    clmul a (BitVec.allOnes w) =
+      (List.range w).foldl (fun acc j => acc ^^^ (a <<< j)) 0#w :=
+  clmul_allOnes_eq_fold a
+
+/-- **The prefix-parity identity**: the all-ones product is the prefix XOR of its
+input, so it is the `1 + x` inverse of its own shift. -/
+example {w : Nat} (a : BitVec w) :
+    clmul a (BitVec.allOnes w) ^^^ (clmul a (BitVec.allOnes w) <<< 1) = a :=
+  clmul_allOnes_self a
+
+/-- **The uniqueness**: any word with that difference *is* the all-ones product —
+prefix parity is pinned by its difference and its lane zero, not merely
+exhibited. -/
+example {w : Nat} {p q : BitVec w} (h : p ^^^ (p <<< 1) = q) :
+    p = clmul q (BitVec.allOnes w) :=
+  clmul_allOnes_unique h
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.clmul_allOnes_eq_fold' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.clmul_allOnes_eq_fold
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.clmul_allOnes_self' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.clmul_allOnes_self
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.clmul_allOnes_unique' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.clmul_allOnes_unique
+
+-- The carry word's lanes are the carry bit.
+example {w : Nat} {seed : Bool} {k : Nat} (hk : k < w) :
+    (seedVec w seed).getLsbD k = seed :=
+  seedVec_getLsbD hk
+
+-- The lane recurrence read off the identity: lane zero, and the step.
+example {w : Nat} (a : BitVec w) :
+    (clmul a (BitVec.allOnes w)).getLsbD 0 = a.getLsbD 0 :=
+  clmul_allOnes_getLsbD_zero a
+
+example {w : Nat} {a : BitVec w} {k : Nat} (hk : k + 1 < w) :
+    (clmul a (BitVec.allOnes w)).getLsbD (k + 1)
+      = (a.getLsbD (k + 1) ^^ (clmul a (BitVec.allOnes w)).getLsbD k) :=
+  clmul_allOnes_getLsbD_succ hk
+
+/-- Two lane sequences with the same difference and the same seed agree. -/
+example {w : Nat} (a c m : BitVec w) (seed : Bool)
+    (hc0 : c.getLsbD 0 = a.getLsbD 0)
+    (hc : ∀ k, k + 1 < w → c.getLsbD (k + 1) = (a.getLsbD (k + 1) ^^ c.getLsbD k))
+    (hm0 : m.getLsbD 0 = (a.getLsbD 0 ^^ seed))
+    (hm : ∀ k, k + 1 < w → m.getLsbD (k + 1) = (a.getLsbD (k + 1) ^^ m.getLsbD k)) :
+    m = c ^^^ seedVec w seed :=
+  eq_clmul_of_recur a c m seed hc0 hc hm0 hm
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.seedVec_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.seedVec_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.clmul_allOnes_getLsbD_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.clmul_allOnes_getLsbD_zero
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.clmul_allOnes_getLsbD_succ' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.clmul_allOnes_getLsbD_succ
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.eq_clmul_of_recur' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.eq_clmul_of_recur
+
+-- The window recurrence, read one lane at a time against `classStep`.
+example (s : ClassState) (b : UInt8) :
+    inStringAfter s b = (s.inside ^^ isUnescapedQuote s b) :=
+  inStringAfter_apply s b
+
+example (s : ClassState) (b b' : UInt8) :
+    inStringAfter (classStep s b) b'
+      = (inStringAfter s b ^^ isUnescapedQuote (classStep s b) b') :=
+  inStringAfter_classStep s b b'
+
+example (bs : List UInt8) (st : ClassState) : classCarryAt bs st 0 = st :=
+  classCarryAt_zero bs st
+
+example {bs : List UInt8} {st : ClassState} {b : UInt8} (hb : bs[0]? = some b) :
+    (inStringMask bs st).getLsbD 0 = ((quoteMask bs st).getLsbD 0 ^^ st.inside) :=
+  inStringMask_zero hb
+
+example {bs : List UInt8} {st : ClassState} {i : Nat} {b b' : UInt8}
+    (hi : i + 1 < 32) (hbi : bs[i]? = some b) (hbi1 : bs[i + 1]? = some b') :
+    (inStringMask bs st).getLsbD (i + 1)
+      = ((quoteMask bs st).getLsbD (i + 1) ^^ (inStringMask bs st).getLsbD i) :=
+  inStringMask_recur hi hbi hbi1
+
+/-- **The window identity**: the in-string mask is the all-ones product of the
+unescaped-quote mask, XOR the carry word. -/
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    inStringMask bs st =
+      clmul (quoteMask bs st) (BitVec.allOnes 32) ^^^ seedVec 32 st.inside :=
+  inStringMask_eq_clmul bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.inStringAfter_apply' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.inStringAfter_apply
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.inStringAfter_classStep' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.inStringAfter_classStep
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.classCarryAt_zero' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.classCarryAt_zero
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.inStringMask_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.inStringMask_zero
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.inStringMask_recur' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.inStringMask_recur
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.inStringMask_eq_clmul' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.inStringMask_eq_clmul
+
+-- Lane lookups in a halved block.
+example {lo : Block32} {k : Nat} (hk : k < 32) :
+    (List.ofFn lo)[k]? = some (lo ⟨k, hk⟩) :=
+  ofFn_getElem? hk
+
+example {lo hi : Block32} {st : ClassState} {k : Nat} (hk : k < 32) :
+    (specInString64 lo hi st).getLsbD k = (inStringMask (List.ofFn lo) st).getLsbD k :=
+  specInString64_bit_lo hk
+
+example {lo hi : Block32} {st : ClassState} {m : Nat} (hm : m < 32) :
+    (specInString64 lo hi st).getLsbD (m + 32) =
+      (inStringMask (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD m :=
+  specInString64_bit_hi hm
+
+example {lo hi : Block32} {st : ClassState} {j : Nat} (h32 : 32 ≤ j) (hj : j < 64) :
+    (specInString64 lo hi st).getLsbD j =
+      (inStringMask (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD (j - 32) :=
+  specInString64_bit_hi' h32 hj
+
+example {lo hi : Block32} {st : ClassState} {k : Nat} (hk : k < 32) :
+    (specQuote64 lo hi st).getLsbD k = (quoteMask (List.ofFn lo) st).getLsbD k :=
+  specQuote64_bit_lo hk
+
+example {lo hi : Block32} {st : ClassState} {m : Nat} (hm : m < 32) :
+    (specQuote64 lo hi st).getLsbD (m + 32) =
+      (quoteMask (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD m :=
+  specQuote64_bit_hi hm
+
+example {lo hi : Block32} {st : ClassState} {j : Nat} (h32 : 32 ≤ j) (hj : j < 64) :
+    (specQuote64 lo hi st).getLsbD j =
+      (quoteMask (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD (j - 32) :=
+  specQuote64_bit_hi' h32 hj
+
+example {lo hi : Block32} {st : ClassState} :
+    (specInString64 lo hi st).getLsbD 32 =
+      (inStringMask (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD 0 :=
+  specInString64_bit_32
+
+example {lo hi : Block32} {st : ClassState} :
+    (specQuote64 lo hi st).getLsbD 32 =
+      (quoteMask (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD 0 :=
+  specQuote64_bit_32
+
+/-- The carry crosses the halfway point as the low half's top lane. -/
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    (classWindow bs st).carry.inside = (inStringMask bs st).getLsbD 31 :=
+  classWindow_carry_inside bs st hlen
+
+example {lo hi : Block32} {st : ClassState} :
+    (specInString64 lo hi st).getLsbD 32
+      = ((specQuote64 lo hi st).getLsbD 32 ^^ (specInString64 lo hi st).getLsbD 31) :=
+  specInString64_step_32
+
+example {lo hi : Block32} {st : ClassState} {k : Nat}
+    (hk : 33 ≤ k + 1) (hk64 : k + 1 < 64) :
+    (specInString64 lo hi st).getLsbD (k + 1)
+      = ((specQuote64 lo hi st).getLsbD (k + 1) ^^ (specInString64 lo hi st).getLsbD k) :=
+  specInString64_step_hi hk hk64
+
+/-- **The block identity**: the kernel's in-string mask over a sixty-four-byte
+block is the all-ones product of its unescaped-quote mask, XOR the carry. -/
+example (lo hi : Block32) (st : ClassState) :
+    specInString64 lo hi st =
+      clmul (specQuote64 lo hi st) (BitVec.allOnes 64) ^^^ seedVec 64 st.inside :=
+  specInString64_eq_clmul lo hi st
+
+/-- **The outgoing carry**: the way out of a block is its mask's bit 63. -/
+example (lo hi : Block32) (st : ClassState) :
+    (classWindow (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).carry.inside
+      = (specInString64 lo hi st).getLsbD 63 :=
+  specInString64_outgoing_carry lo hi st
+
+example (lo hi : Block32) (st : ClassState) :
+    (classWindow (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).carry.inside
+      = ((clmul (specQuote64 lo hi st) (BitVec.allOnes 64)
+          ^^^ seedVec 64 st.inside)).getLsbD 63 :=
+  specInString64_outgoing_carry_pclmul lo hi st
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.ofFn_getElem?' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.ofFn_getElem?
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_bit_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_bit_lo
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_bit_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_bit_hi
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_bit_hi'' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_bit_hi'
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specQuote64_bit_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specQuote64_bit_lo
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specQuote64_bit_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specQuote64_bit_hi
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specQuote64_bit_hi'' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specQuote64_bit_hi'
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_bit_32' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_bit_32
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specQuote64_bit_32' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specQuote64_bit_32
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.classWindow_carry_inside' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.classWindow_carry_inside
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_step_32' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_step_32
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_step_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_step_hi
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_eq_clmul' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_eq_clmul
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_outgoing_carry' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_outgoing_carry
+
+/--
+info: 'LeanLLVM.Vellum.Pclmul.specInString64_outgoing_carry_pclmul' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Pclmul.specInString64_outgoing_carry_pclmul
+
+/-! #### Executed witnesses
+
+`clmul` is a fold, so the four-lane instance reduces: the specification module's
+own example has the unescaped-quote mask of `"\""` at `0b1001` and its all-ones
+product at the inclusive prefix XOR `0b0111`, and the identity's two sides agree
+on the specification's window. -/
+
+#guard clmul (0b1001 : BitVec 4) (0b1111 : BitVec 4) = 0b0111
+#guard clmul (0b1001 : BitVec 4) (BitVec.allOnes 4) ^^^ seedVec 4 true = 0b1000
+
+example :
+    inStringMask (0x22 :: List.replicate 31 0x20) ⟨false, false⟩
+      = clmul (quoteMask (0x22 :: List.replicate 31 0x20) ⟨false, false⟩)
+          (BitVec.allOnes 32) ^^^ seedVec 32 false :=
+  inStringMask_eq_clmul _ _ (by simp)
