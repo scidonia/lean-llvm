@@ -48,9 +48,15 @@ needs the other two to match.
   the emitted-IR bridge (`CommaMaskIR`), the IR-level caller (`SeamContext`),
   the two-environment contextual replacement (`ModuleRefinement`:
   `RefinesWithinAcross`, `replaceFunction_sound`, `memCaller_replaces_loop`), and
-  the JSON classifier's two: `JsonClassifyIR` relates the emitted classifier
-  body to the block layer's mask (`scannerLLVM_refines`, over
-  `probes/install/ir/json-classify.candidate.ll`), and `JsonSeam` states the
+  the JSON classifier's three: `JsonScanSpec` writes the classifier's interface in
+  the model's vocabulary — the delimiter predicate, the packed words, the in-string
+  and candidate masks, and the carry — with the candidate mask's unescaped-quote
+  reading recorded as the specification decision, the bridges to `ScanBlock`'s
+  fold and to `ScanBody`'s byte rule's `inside` field proved, and the
+  identification with `ScanWindow`'s `windowOf`/`carryAt` and with the kernel's
+  registers recorded as still owed; `JsonClassifyIR` relates the emitted
+  classifier body to the block layer's mask (`scannerLLVM_refines`, over
+  `probes/install/ir/json-classify.candidate.ll`); and `JsonSeam` states the
   reference selection, the installed body's selection, and the framed
   replacement through a staging caller (`classifySeam_refines`,
   `replaceScanner_sound`, `replaceScanner_ret`, over

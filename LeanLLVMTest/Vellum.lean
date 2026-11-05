@@ -3,6 +3,7 @@ import LeanLLVM.Vellum.JsonScanABI
 import LeanLLVM.Vellum.JsonScanModel
 import LeanLLVM.Vellum.JsonScanIR
 import LeanLLVM.Vellum.JsonScanLane
+import LeanLLVM.Vellum.JsonScanSpec
 
 open LeanLLVM.Vellum
 
@@ -2686,3 +2687,400 @@ example (bs : List UInt8) (m : BitVec 32) (k : Nat) (b : UInt8)
         m ||| ((1 : BitVec 32) <<< k) else m) =
       LeanLLVM.Vellum.JsonScanIR.maskPref bs (k + 1) :=
   LeanLLVM.Vellum.JsonScanLane.maskStep bs m k b hk hb hm
+
+/-! ### The JSON classifier's specification
+
+`LeanLLVM/Vellum/JsonScanSpec.lean` writes down the classifier's interface — the
+quote, escaped-quote, delimiter, backslash, in-string and candidate masks over a
+window, the packing to words, and the sixty-four-lane form the kernel stores —
+in the model's own vocabulary, and proves the bridges to `ScanBlock.lean`'s fold,
+its predicates and `ScanBody.bodyStep`'s `inside` field.  Its docstring records
+the specification decision — the candidate mask's quote component counts
+**unescaped** quotes only — and records what is still owed: the identification
+with `windowOf`/`carryAt` and the relation to the emitted kernel's registers.
+
+Each theorem's axiom footprint is pinned here, and each is restated as an
+`example` over the public interface.
+-/
+
+open LeanLLVM
+open LeanLLVM.JSON
+open LeanLLVM.Vellum.JsonScanSpec
+
+-- The model's structural set is the classifier's three components.
+example (b : UInt8) :
+    IsStructuralB b = (IsDelimB b || IsQuoteB b || IsBackslashB b) :=
+  isStructuralB_eq b
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.isStructuralB_eq' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.isStructuralB_eq
+
+-- The scalar transition's set is those three plus whitespace.
+example (b : UInt8) :
+    IsStructOrSpaceB b = (IsDelimB b || IsQuoteB b || IsBackslashB b || IsSpaceB b) :=
+  isStructOrSpaceB_eq b
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.isStructOrSpaceB_eq' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.isStructOrSpaceB_eq
+
+-- The packed word is `maskOfListWith` at the block's lanes, definitionally.
+example (f : UInt8 → Bool) (blk : Block32) :
+    pack32 f blk = maskOfListWith f (List.ofFn blk) :=
+  pack32_eq_maskOfListWith f blk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.pack32_eq_maskOfListWith' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.pack32_eq_maskOfListWith
+
+-- The block layer's `maskOf` is the packing at the scalar transition.
+example (blk : Block32) : pack32 IsStructOrSpaceB blk = maskOf blk :=
+  pack32_eq_maskOf blk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.pack32_eq_maskOf' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.pack32_eq_maskOf
+
+-- Bit `k` of a packed word is the decision on lane `k`.
+example (f : UInt8 → Bool) (blk : Block32) (k : Fin 32) :
+    (pack32 f blk).getLsbD k.val = f (blk k) :=
+  pack32_getLsbD f blk k
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.pack32_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.pack32_getLsbD
+
+-- The packed word is the bitcast of the lane vector.
+example (f : UInt8 → Bool) (blk : Block32) :
+    pack32 f blk =
+      BitVec.ofNat 32
+        (lanesToNat (List.ofFn (fun k : Fin 32 => BitVec.ofBool (f (blk k))))) :=
+  pack32_eq_bitcast f blk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.pack32_eq_bitcast' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.pack32_eq_bitcast
+
+-- The join's low word is the low lane's word.
+example (lo hi : BitVec 32) {k : Nat} (hk : k < 32) :
+    (mask64 lo hi).getLsbD k = lo.getLsbD k :=
+  mask64_getLsbD_lo lo hi hk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_getLsbD_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.mask64_getLsbD_lo
+
+-- The join's high word is the high lane's word.
+example (lo hi : BitVec 32) {k : Nat} (hk : k < 32) :
+    (mask64 lo hi).getLsbD (k + 32) = hi.getLsbD k :=
+  mask64_getLsbD_hi lo hi hk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_getLsbD_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.mask64_getLsbD_hi
+
+-- The sixty-four-lane mask's low half.
+example (f : UInt8 → Bool) (lo hi : Block32) {k : Nat} (hk : k < 32) :
+    (specMask64 f lo hi).getLsbD k = f (lo ⟨k, hk⟩) :=
+  specMask64_getLsbD_lo f lo hi hk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.specMask64_getLsbD_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.specMask64_getLsbD_lo
+
+-- The sixty-four-lane mask's high half.
+example (f : UInt8 → Bool) (lo hi : Block32) {k : Nat} (hk : k < 32) :
+    (specMask64 f lo hi).getLsbD (k + 32) = f (hi ⟨k, hk⟩) :=
+  specMask64_getLsbD_hi f lo hi hk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.specMask64_getLsbD_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.specMask64_getLsbD_hi
+
+-- The carry advances one lane at a time.
+example (bs : List UInt8) (st : ClassState) (k : Nat) :
+    classCarryAt bs st (k + 1) =
+      (match bs[k]? with
+       | some b => classStep (classCarryAt bs st k) b
+       | none => classCarryAt bs st k) :=
+  classCarryAt_succ bs st k
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classCarryAt_succ' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classCarryAt_succ
+
+-- Bit `k` of the unescaped-quote mask.
+example {bs : List UInt8} {st : ClassState} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (quoteMask bs st).getLsbD k = isUnescapedQuote (classCarryAt bs st k) b :=
+  quoteMask_getLsbD hk hb
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.quoteMask_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.quoteMask_getLsbD
+
+-- Bit `k` of the escaped-quote mask.
+example {bs : List UInt8} {st : ClassState} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (escapedQuoteMask bs st).getLsbD k = isEscapedQuote (classCarryAt bs st k) b :=
+  escapedQuoteMask_getLsbD hk hb
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.escapedQuoteMask_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.escapedQuoteMask_getLsbD
+
+-- Bit `k` of the delimiter mask.
+example {bs : List UInt8} {st : ClassState} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (delimiterMask bs st).getLsbD k = IsDelimB b :=
+  delimiterMask_getLsbD hk hb
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.delimiterMask_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.delimiterMask_getLsbD
+
+-- Bit `k` of the backslash mask.
+example {bs : List UInt8} {st : ClassState} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (backslashMask bs st).getLsbD k = IsBackslashB b :=
+  backslashMask_getLsbD hk hb
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.backslashMask_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.backslashMask_getLsbD
+
+-- Bit `k` of the in-string mask is the string state after byte `k`.
+example {bs : List UInt8} {st : ClassState} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (inStringMask bs st).getLsbD k = inStringAfter (classCarryAt bs st k) b :=
+  inStringMask_getLsbD hk hb
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.inStringMask_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.inStringMask_getLsbD
+
+-- Bit `k` of the candidate mask.
+example {bs : List UInt8} {st : ClassState} {k : Nat} {b : UInt8}
+    (hk : k < 32) (hb : bs[k]? = some b) :
+    (candidateMask bs st).getLsbD k = isCandidateLane (classCarryAt bs st k) b :=
+  candidateMask_getLsbD hk hb
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.candidateMask_getLsbD
+
+-- The fold leaves the carry the window's bytes leave.
+example (bs : List UInt8) (st : ClassState) :
+    (classWindow bs st).carry = classCarryAt bs st 32 :=
+  classWindow_carry bs st
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classWindow_carry' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classWindow_carry
+
+-- A quote lane is exactly one of unescaped and escaped.
+example (st : ClassState) (b : UInt8) :
+    (isUnescapedQuote st b || isEscapedQuote st b) = IsQuoteB b :=
+  quote_or_escaped st b
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.quote_or_escaped' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.quote_or_escaped
+
+-- The byte rule's inside field is the classifier's in-string decision.
+example (st : ClassState) (b : UInt8) :
+    (∀ st', bodyStep (ClassState.toBody st) b = .cont st' →
+        st'.inside = inStringAfter st b) ∧
+    (bodyStep (ClassState.toBody st) b = .closed → inStringAfter st b = false) :=
+  bodyStep_inside st b
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.bodyStep_inside' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.bodyStep_inside
+
+-- The delimiter mask is the block layer's fold at `IsDelimB`.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    delimiterMask bs st = maskOfListWith IsDelimB bs :=
+  delimiterMask_eq_maskOfListWith bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.delimiterMask_eq_maskOfListWith' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.delimiterMask_eq_maskOfListWith
+
+-- The backslash mask is the block layer's fold at `IsBackslashB`.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    backslashMask bs st = maskOfListWith IsBackslashB bs :=
+  backslashMask_eq_maskOfListWith bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.backslashMask_eq_maskOfListWith' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.backslashMask_eq_maskOfListWith
+
+-- The two quote masks together are the block layer's raw quote mask.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    quoteMask bs st ||| escapedQuoteMask bs st = maskOfListWith IsQuoteB bs :=
+  quoteMask_or_escaped_eq bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.quoteMask_or_escaped_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.quoteMask_or_escaped_eq
+
+-- The scalar transition's mask is the classifier's components.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    maskOfList bs =
+      delimiterMask bs st ||| quoteMask bs st ||| escapedQuoteMask bs st |||
+        backslashMask bs st ||| maskOfListWith IsSpaceB bs :=
+  maskOfList_decompose bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.maskOfList_decompose' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.maskOfList_decompose
+
+-- The candidate mask is `q | (s & ~im)` at one window.
+example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
+    candidateMask bs st =
+      quoteMask bs st ||| (delimiterMask bs st &&& ~~~inStringMask bs st) :=
+  candidateMask_eq bs st hlen
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.candidateMask_eq
+
+-- The join's low half, read at a lane.
+example (f : List UInt8 → ClassState → BitVec 32) (lo hi : Block32) (st : ClassState)
+    {k : Nat} (hk : k < 32) :
+    (classMask64 f lo hi st).getLsbD k = (f (List.ofFn lo) st).getLsbD k :=
+  classMask64_getLsbD_lo f lo hi st hk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classMask64_getLsbD_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classMask64_getLsbD_lo
+
+-- The join's high half, read at a lane, entered with the low half's carry.
+example (f : List UInt8 → ClassState → BitVec 32) (lo hi : Block32) (st : ClassState)
+    {k : Nat} (hk : k < 32) :
+    (classMask64 f lo hi st).getLsbD (k + 32) =
+      (f (List.ofFn hi) ((classWindow (List.ofFn lo) st).carry)).getLsbD k :=
+  classMask64_getLsbD_hi f lo hi st hk
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.classMask64_getLsbD_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.classMask64_getLsbD_hi
+
+-- The join commutes with disjunction.
+example (a b c d : BitVec 32) :
+    mask64 a b ||| mask64 c d = mask64 (a ||| c) (b ||| d) :=
+  mask64_or a b c d
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_or' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.mask64_or
+
+-- The join commutes with conjunction.
+example (a b c d : BitVec 32) :
+    mask64 a b &&& mask64 c d = mask64 (a &&& c) (b &&& d) :=
+  mask64_and a b c d
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_and' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.mask64_and
+
+-- The join commutes with complement.
+example (a b : BitVec 32) : ~~~(mask64 a b) = mask64 (~~~a) (~~~b) :=
+  mask64_not a b
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_not' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.mask64_not
+
+-- The kernel's sixty-four-lane candidate mask is `q | (s & ~im)`.
+example (lo hi : Block32) (st : ClassState) :
+    specCandidate64 lo hi st =
+      specQuote64 lo hi st |||
+        (specDelimiter64 lo hi st &&& ~~~specInString64 lo hi st) :=
+  candidateMask64_eq lo hi st
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask64_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.candidateMask64_eq
+
+-- The decision, executed: `"\""` (four bytes) from outside a string.  The escaped quote is a
+-- quote lane and not a candidate, so the candidate mask has lanes 0 and 3 while
+-- the raw quote mask also has lane 2.
+example :
+    candidateMask [0x22, 0x5C, 0x22, 0x22] ⟨false, false⟩ = 0b1001 ∧
+    quoteMask [0x22, 0x5C, 0x22, 0x22] ⟨false, false⟩ = 0b1001 ∧
+    escapedQuoteMask [0x22, 0x5C, 0x22, 0x22] ⟨false, false⟩ = 0b100 ∧
+    inStringMask [0x22, 0x5C, 0x22, 0x22] ⟨false, false⟩ = 0b0111 ∧
+    (quoteMask [0x22, 0x5C, 0x22, 0x22] ⟨false, false⟩ |||
+      escapedQuoteMask [0x22, 0x5C, 0x22, 0x22] ⟨false, false⟩) = 0b1101 :=
+  escaped_quote_witness
+
+/--
+info: 'LeanLLVM.Vellum.JsonScanSpec.escaped_quote_witness' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.escaped_quote_witness
