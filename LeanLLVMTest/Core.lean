@@ -838,6 +838,180 @@ small:
 #guard runOf noCalls (samesignSrc "samesign ") [.int 32 (BitVec.ofNat 32 3)] =
   some (some (.ret (some (.int 32 (BitVec.ofNat 32 0))) []))
 
+/-! ### Pointer comparison
+
+A pointer is compared by its address.  The two programs below make the failure
+mode a naive reading would have: comparing integer *values* rather than
+addresses, or a signed 64-bit order rather than an unsigned one. -/
+
+/-- Two different objects at the same offset: `%pa` and `%pb` both add zero to
+the address of a distinct `i32`, so only their addresses distinguish them. -/
+def ptrCmpSrc (pred : String) : String :=
+"define i1 @pcmp() {
+entry:
+  %a = alloca i32
+  %b = alloca i32
+  %pa = getelementptr inbounds i32, ptr %a, i64 0
+  %pb = getelementptr inbounds i32, ptr %b, i64 0
+  %c = icmp " ++ pred ++ " ptr %pa, %pb
+  ret i1 %c
+}
+"
+
+-- Different objects compare unequal even at equal offsets, and equality says
+-- they are not equal.
+#guard intOf noCalls (ptrCmpSrc "ne") [] = some (some 1)
+#guard intOf noCalls (ptrCmpSrc "eq") [] = some (some 0)
+
+-- The printer emits the pointer form and the parser reads it back: one function,
+-- so no field of the written address comparison is lost.
+#guard
+  match onlyFunction (ptrCmpSrc "eq") with
+  | some f => parseModule (Module.render ⟨[], [f]⟩) = .ok ⟨[], [f]⟩
+  | none => false
+
+-- The control: one pointer compares equal to itself.
+def ptrSelfSrc (pred : String) : String :=
+"define i1 @pself() {
+entry:
+  %a = alloca i32
+  %c = icmp " ++ pred ++ " ptr %a, %a
+  ret i1 %c
+}
+"
+
+#guard intOf noCalls (ptrSelfSrc "eq") [] = some (some 1)
+#guard intOf noCalls (ptrSelfSrc "ne") [] = some (some 0)
+
+/-- `%hi` is `0x8000000000000004`: `%a` is the first `i32`, at address 1 (address
+0 is `null`), `%b` is the second, at 5, and the index is the largest one the
+`getelementptr` step admits. -/
+def highPtrCmpSrc (pred : String) : String :=
+"define i1 @hcmp() {
+entry:
+  %a = alloca i32
+  %b = alloca i32
+  %hi = getelementptr inbounds i8, ptr %b, i64 0x7FFFFFFFFFFFFFFF
+  %c = icmp " ++ pred ++ " ptr %hi, %a
+  ret i1 %c
+}
+"
+
+-- An address at or above `2 ^ 63` is *above* a low one unsigned, and a signed
+-- 64-bit order would put it below: `ugt` and `uge` are true, `ult` and `ule` are
+-- false.  A signed reading of the same bit pattern would answer the other way.
+#guard intOf noCalls (highPtrCmpSrc "ugt") [] = some (some 1)
+#guard intOf noCalls (highPtrCmpSrc "uge") [] = some (some 1)
+#guard intOf noCalls (highPtrCmpSrc "ult") [] = some (some 0)
+#guard intOf noCalls (highPtrCmpSrc "ule") [] = some (some 0)
+
+-- The ordered pair the other way round, so the answers above are the order and
+-- not a constant.
+def highPtrCmpRevSrc (pred : String) : String :=
+"define i1 @hrev() {
+entry:
+  %a = alloca i32
+  %b = alloca i32
+  %hi = getelementptr inbounds i8, ptr %b, i64 0x7FFFFFFFFFFFFFFF
+  %c = icmp " ++ pred ++ " ptr %a, %hi
+  ret i1 %c
+}
+"
+
+#guard intOf noCalls (highPtrCmpRevSrc "ugt") [] = some (some 0)
+#guard intOf noCalls (highPtrCmpRevSrc "ult") [] = some (some 1)
+
+-- A signed predicate over pointers is not LLVM-valid and is refused by name.
+#guard refusedWith (ptrCmpSrc "slt") ["slt", "pointer", "signed order"]
+#guard refusedWith (ptrCmpSrc "sge") ["sge", "pointer", "signed order"]
+
+/-- A pointer comparison with one operand bound at an integer type, in the left
+position and in the right.  The text parses as `icmp <pred> ptr ...`, so the
+instruction's type is a pointer and the register's type disagrees with it. -/
+def mixedPtrSrc (l r : String) : String :=
+"define i1 @mixed(i32 %i) {
+entry:
+  %a = alloca i32
+  %c = icmp eq ptr " ++ l ++ ", " ++ r ++ "
+  ret i1 %c
+}
+"
+
+#guard refusedWith (mixedPtrSrc "%i" "%a") ["left operand", "%i", "i32", "not comparable"]
+#guard refusedWith (mixedPtrSrc "%a" "%i") ["right operand", "%i", "i32", "not comparable"]
+
+-- The semantics' answer for a hand-built AST, where no register table exists:
+-- an operand that is not a pointer is `none`, which `step` reads as `ub`.
+def handBuiltMixedCmp : Function :=
+  ⟨"hand", .int 1, [],
+   [⟨"entry",
+     [ .binop "%i" .add 32 (.imm (.int 32 1)) (.imm (.int 32 2)),
+       .icmpPtr "%c" .eq (.reg "%i") (.reg "%i") ],
+     .ret (.int 1) (some (.reg "%c"))⟩]⟩
+
+#guard run noCalls handBuiltMixedCmp [] = some .ub
+
+-- And a hand-built signed predicate over two real pointers is `ub` too: the
+-- parser refuses the text, and `evalICmpPtr` refuses the predicate.
+def handBuiltSignedCmp : Function :=
+  ⟨"hand", .int 1, [],
+   [⟨"entry",
+     [ .alloca "%a" (.int 32) 0, .alloca "%b" (.int 32) 0,
+       .icmpPtr "%c" .slt (.reg "%a") (.reg "%b") ],
+     .ret (.int 1) (some (.reg "%c"))⟩]⟩
+
+#guard run noCalls handBuiltSignedCmp [] = some .ub
+#guard evalICmpPtr .slt 0 0 = none
+
+/-- The unsigned order over addresses, restated: an address at or above `2 ^ 63`
+is greater than a low one. -/
+example : evalICmpPtr .ugt (2 ^ 63) 0 = some (1 : BitVec 1) :=
+  evalICmpPtr_high_address_unsigned.1
+
+/-- info: 'LeanLLVM.evalICmpPtr_high_address_unsigned' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.evalICmpPtr_high_address_unsigned
+
+/-- A signed predicate over addresses is refused, restated. -/
+example : evalICmpPtr .slt 5 7 = none :=
+  evalICmpPtr_signed_none .slt (Or.inl rfl) 5 7
+
+/-- info: 'LeanLLVM.evalICmpPtr_signed_none' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.evalICmpPtr_signed_none
+
+/-- The accepting case of the instruction, restated: two pointer operands bind
+the predicate's result on their addresses. -/
+example {calls : Calls} {s : State} {d : String} {pr : IPred} {a b : Operand}
+    {x y : Nat} {r : BitVec 1}
+    (ha : evalOperand s a = some (.ptr x)) (hb : evalOperand s b = some (.ptr y))
+    (hr : evalICmpPtr pr x y = some r) :
+    evalInstr calls s (.icmpPtr d pr a b) = some (s.bind d (.int 1 r)) :=
+  evalInstr_icmpPtr ha hb hr
+
+/-- info: 'LeanLLVM.evalInstr_icmpPtr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_icmpPtr
+
+/-- A pointer comparison writes no memory, restated. -/
+example {calls : Calls} {s s' : State} {d : String} {pr : IPred} {a b : Operand}
+    (h : evalInstr calls s (.icmpPtr d pr a b) = some s') : s'.mem = s.mem :=
+  evalInstr_icmpPtr_mem h
+
+/-- info: 'LeanLLVM.evalInstr_icmpPtr_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_icmpPtr_mem
+
+/-- A pointer comparison binds exactly its destination, restated. -/
+example {calls : Calls} {s s' : State} {d : String} {pr : IPred} {a b : Operand}
+    (h : evalInstr calls s (.icmpPtr d pr a b) = some s') :
+    ∃ v, s'.env = (d, v) :: s.env :=
+  evalInstr_icmpPtr_env h
+
+/-- info: 'LeanLLVM.evalInstr_icmpPtr_env' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_icmpPtr_env
+
 /-- Two void calls in one function, the second written with `tail`.  Both bind
 nothing, so the function defines no register at all. -/
 def twoVoidSrc : String :=
@@ -927,16 +1101,84 @@ entry:
 "
 
 -- A `void` call binds nothing, so a destination register is refused by name; a
--- call with no destination whose result is not `void` is refused too; and a call
--- that writes an explicit function type in its callee position is refused as
--- that, whether or not the type is variadic.
+-- call with no destination whose result is not `void` is refused too.
 #guard refusedWith (withLine "%d = call void @sink()") ["void", "%d"]
 #guard refusedWith (withLine "call i32 @g()") ["no destination", "i32"]
-#guard refusedWith (withLine "call i32 (i32) @g(i32 1)") ["explicit function type", "not modelled"]
-#guard refusedWith (withLine "call void (ptr, ...) @printf()") ["explicit function type", "not modelled"]
 
 -- Their control: the void call with no destination parses.
 #guard (onlyFunction (withLine "call void @sink()")).isSome
+
+/-- A call with a written callee function type in front of its symbol. -/
+def typedCallSrc (sig : String) : String :=
+"define i32 @typed(i32 %x) {
+entry:
+  %r = call i32 " ++ sig ++ "@g(i32 %x)
+  ret i32 %r
+}
+"
+
+-- The written type leaves no field behind: the text with it parses to the same
+-- function as the text without it, for a scalar and for a variadic signature.
+#guard sameFunction (typedCallSrc "(i32) ") (typedCallSrc "")
+#guard
+  sameFunction
+    (withLine "call void (ptr, i64, ptr, ...) @printf(ptr null, i64 0, ptr null)")
+    (withLine "call void @printf(ptr null, i64 0, ptr null)")
+
+-- And the call still runs: the environment answers by symbol, and the written
+-- type changed none of the values it receives.
+#guard intOf plusOneCalls (typedCallSrc "(i32) ") [.int 32 (BitVec.ofNat 32 41)] =
+  some (some 42)
+
+-- The printer has no field for the written type, so the canonical text omits it
+-- and re-parses to the same instruction.
+#guard
+  match onlyFunction (typedCallSrc "(i32) ") with
+  | some f => parseModule (Module.render ⟨[], [f]⟩) = .ok ⟨[], [f]⟩
+  | none => false
+
+-- The check is not vacuous: a written type that disagrees with the arguments is
+-- refused, by argument position and with both types named.
+#guard refusedWith (withLine "%d = call i32 (i64) @g(i32 1)")
+  ["argument 1", "i64", "i32"]
+-- The written return type is the type the destination is bound at, so the
+-- function-level table already sees it.  The `phi` check reads that table: a
+-- call at `i64` feeding a `phi i32` is refused by the same check that refuses
+-- any other incoming-type disagreement.
+def typedCallPhiSrc (ty : String) : String :=
+"define " ++ ty ++ " @pcf() {
+entry:
+  %r = call " ++ ty ++ " (i32) @g(i32 1)
+  br label %b
+b:
+  %p = phi " ++ ty ++ " [ %r, %entry ]
+  ret " ++ ty ++ " %p
+}
+"
+
+#guard (onlyFunction (typedCallPhiSrc "i32")).isSome
+
+def typedCallPhiMismatch : String :=
+"define i32 @pcf() {
+entry:
+  %r = call i64 (i32) @g(i32 1)
+  br label %b
+b:
+  %p = phi i32 [ %r, %entry ]
+  ret i32 %p
+}
+"
+
+#guard refusedWith typedCallPhiMismatch ["phi %p", "i32", "i64"]
+
+-- A variadic signature still constrains its fixed prefix.
+#guard refusedWith (withLine "call void (ptr, ...) @printf()")
+  ["writes 1 parameter", "passes 0 argument"]
+#guard refusedWith (withLine "call void (ptr, ...) @printf(i32 1)")
+  ["argument 1", "ptr", "i32"]
+-- A `...` is only a suffix.
+#guard refusedWith (withLine "call void (..., ptr) @printf(ptr null)")
+  ["variadic", "last"]
 
 /-- A void call whose argument list is written by the parameter. -/
 def argsSrc (args : String) : String :=

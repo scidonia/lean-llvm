@@ -18,6 +18,14 @@ namespace LeanLLVM
 inductive Instr where
   | binop (dst : String) (op : BinOp) (w : Nat) (lhs rhs : Operand)
   | icmp (dst : String) (pred : IPred) (w : Nat) (lhs rhs : Operand)
+  /-- A pointer comparison: the operands' addresses are compared as unsigned
+  naturals.  It is a separate constructor from `icmp` because a pointer has no
+  integer width; the signed order is defined by LLVM over its 64-bit pointer but
+  is not representable over this model's unbounded `Nat` address, and the
+  semantics refuses one (see `evalICmpPtr`).  The operand type is not a field:
+  every accepted operand is a pointer, which the parser checks against the
+  function's register types, so the printer emits `ptr`. -/
+  | icmpPtr (dst : String) (pred : IPred) (lhs rhs : Operand)
   | select (dst : String) (ty : Ty) (cond lhs rhs : Operand)
   | trunc (dst : String) (wIn wOut : Nat) (v : Operand)
   | zext (dst : String) (wIn wOut : Nat) (v : Operand)
@@ -104,6 +112,7 @@ def Ty.gepElemAdmitted : Ty → Bool
 def Instr.dst? : Instr → Option String
   | .binop d _ _ _ _ => some d
   | .icmp d _ _ _ _ => some d
+  | .icmpPtr d _ _ _ => some d
   | .select d _ _ _ _ => some d
   | .trunc d _ _ _ => some d
   | .zext d _ _ _ => some d
@@ -123,6 +132,7 @@ def Instr.dst? : Instr → Option String
 def Instr.uses : Instr → List String
   | .binop _ _ _ a b => a.regs ++ b.regs
   | .icmp _ _ _ a b => a.regs ++ b.regs
+  | .icmpPtr _ _ a b => a.regs ++ b.regs
   | .select _ _ c a b => c.regs ++ a.regs ++ b.regs
   | .trunc _ _ _ v => v.regs
   | .zext _ _ _ v => v.regs
@@ -145,6 +155,7 @@ the predecessor field of the state and no memory, so it is pure here too. -/
 def Instr.isPure : Instr → Bool
   | .binop .. => true
   | .icmp .. => true
+  | .icmpPtr .. => true
   | .select .. => true
   | .trunc .. => true
   | .zext .. => true

@@ -1,0 +1,22 @@
+parsed	probes/install/ir/baseline.ll
+refused	probes/install/ir/baseline.o1.ll	unsupported return attribute
+refused	probes/install/ir/baseline.raw.ll	expected a parameter name, got 'noundef'
+parsed	probes/install/ir/caller.ll
+parsed	probes/install/ir/candidate.ll
+refused	probes/install/ir/candidate.raw.ll	expected a parameter name, got 'noundef'
+parsed	probes/install/ir/json-caller.ll
+parsed	probes/install/ir/json-classify.candidate.ll
+parsed	probes/install/ir/json-scan-body.ll
+parsed	probes/install/ir/json-scan.candidate.ll
+parsed	probes/install/ir/loop.ll
+parsed	probes/install/ir/marker_baseline.ll
+parsed	probes/install/ir/marker_candidate.ll
+parsed	probes/install/ir/marker_loop.ll
+parsed	tests/call.ll
+parsed	tests/constfold.ll
+parsed	tests/memory.ll
+parsed	tests/phi/loop.ll
+parsed	tests/phi/three.ll
+parsed	tests/roundtrip.ll
+parsed	tests/signed.ll
+parsed	tests/strength.ll

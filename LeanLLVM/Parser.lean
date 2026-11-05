@@ -20,19 +20,33 @@ the parameter list are both refused.  A `declare` header is not checked:
 unmodelled tokens in a declaration's parameter list or after its closing
 parenthesis are still accepted.
 
-A call is written `[<dst> =] [tail] call <ty> @<callee>(<args>)`.  `tail` is
+A call is written `[<dst> =] [tail] call <ty> [<function type>]
+@<callee>(<args>)`, where the function type may be omitted.  `tail` is
 accepted and dropped: the model has no ABI, no stack discipline and no caller or
 callee frame — a call's meaning is entirely the `Calls` environment's, which
 receives the symbol, the argument values, the caller's memory and the allocator
 cursor — so the marker has nothing here to affect.  A call with no destination is
 the `void` form and binds nothing; a discarded non-`void` result and a
-destination on a `void` call are both refused by name.  The callee's *signature*
-is **not** checked, because a symbol is resolved by the environment rather than
-by the module: `call void @f` naming a callee that returns a value is accepted and
-the value is discarded, and `%d = call i32 @g` naming a callee that returns
-nothing is accepted with `%d` bound to whatever the environment's outcome carries
-— `CallOutcome.ret` is a value, so an environment that models a returning-nothing
-callee must still supply one, and nothing here can tell that it did.
+destination on a `void` call are both refused by name.  A written callee function
+type is checked positionally against the call's arguments, a final `...` allowing
+further arguments; a disagreement, a non-final `...`, and a type the model does
+not read are refused by name.  The written type has no field of its own, because
+a symbol is resolved by the environment rather than by the module, so the call's
+*result kind* is not checked against the module: `call void @f` naming a callee
+that returns a value is accepted and the value is discarded, and `%d = call i32
+@g` naming a callee that returns nothing is accepted with `%d` bound to whatever
+the environment's outcome carries — `CallOutcome.ret` is a value, so an
+environment that models a returning-nothing callee must still supply one, and
+nothing here can tell that it did.
+
+A pointer comparison is written `icmp <pred> ptr <a>, <b>`.  It compares the two
+addresses as unsigned naturals: `eq` and `ne` are address equality, and
+`ult`/`ule`/`ugt`/`uge` the unsigned order.  LLVM also defines the signed order
+over its 64-bit pointer value, but this model's address is an unbounded `Nat`
+with no sign, so the signed reading is not representable here: `slt`, `sle`,
+`sgt` and `sge` on pointers are refused by name as a fragment restriction.  An
+operand the function's register table says is not a pointer is refused by name
+too — the mixed comparison LLVM's verifier also refuses.
 
 An argument list is read to the `)` that closes it, counting the groups nested
 inside, and split at the commas that are not inside one, so a `splat (i8 1)` and
@@ -432,8 +446,56 @@ def parseCallArgs (toks : List String) : Except String (List (Ty × Operand)) :=
             | .ok rest => .ok (a :: rest)
   go 1 chunks
 
+/-- Read a written callee function type's parameter list into types and a
+variadic flag.  The tokens are the ones between the type's parentheses, and a
+`...` is a variadic marker that must be last.  The list is read rather than
+dropped because it is checked against the call's arguments; a type the model
+does not read is refused by name, which is the only way the written type can
+still make the text unreadable. -/
+def parseCallParamTypes (toks : List String) : Except String (List Ty × Bool) :=
+  let chunks := match splitCallArgs toks with
+    | [[]] => []   -- `()`
+    | chunks => chunks
+  let rec go : List (List String) → Except String (List Ty × Bool)
+    | [] => .ok ([], false)
+    | ["..."] :: [] => .ok ([], true)
+    | ["..."] :: _ :: _ =>
+        .error "a variadic marker '...' must be the last parameter type of a \
+            written callee signature"
+    | c :: cs =>
+        match P.runExact expectTy c with
+        | .error e => .error s!"in the written callee type: {e}"
+        | .ok ty =>
+            match go cs with
+            | .error e => .error e
+            | .ok (tys, variadic) => .ok (ty :: tys, variadic)
+  go chunks
+
+/-- Check a written callee function type against the call's argument types,
+positionally.  A final `...` admits any number of further arguments past the
+fixed prefix.  The check refuses only text LLVM's verifier also refuses, so it
+cannot narrow the fragment: it keeps a written type that disagrees with the
+arguments from being read as if the model had silently retyped the call. -/
+def checkCallParamTypes (callee : String) (sig : List Ty × Bool)
+    (args : List (Ty × Operand)) : Except String Unit :=
+  let written := sig.1.length
+  let rec go : Nat → List Ty → List (Ty × Operand) → Except String Unit
+    | _, [], [] => .ok ()
+    | _, [], _ :: _ =>
+        if sig.2 then .ok ()
+        else .error s!"@{callee} writes {written} parameter type(s) but the call \
+            passes {args.length} argument(s)"
+    | _, _ :: _, [] =>
+        .error s!"@{callee} writes {written} parameter type(s) but the call passes \
+            {args.length} argument(s)"
+    | i, ty :: rest, (aty, _) :: arest =>
+        if ty = aty then go (i + 1) rest arest
+        else .error s!"argument {i} of the call to @{callee} is written {aty.render}, \
+            but the callee's written function type gives {ty.render} at that position"
+  go 1 sig.1 args
+
 /-- The call instruction, with or without a destination register:
-`[<dst> =] [tail] call <retTy> @<callee>(<args>)`.
+`[<dst> =] [tail] call <retTy> [<function type>] @<callee>(<args>)`.
 
 `tail` is accepted and dropped.  It asserts something about the caller's frame —
 that the callee may reuse it — and the model has none of the machinery it is
@@ -450,29 +512,57 @@ text would name no place for a value the call still produces, and the model has
 no constructor that discards a typed result.  The other direction is refused too:
 `%d = call void @f(...)` names a value a `void` call does not produce.
 
-The callee's **signature** is not checked, because a symbol is resolved by the
-environment rather than by the module.  Two consequences, stated rather than
-implied: `call void @f` naming a callee that returns a value is accepted and the
-value is discarded; and `%d = call i32 @g` naming a callee that returns nothing
-is accepted with `%d` bound to whatever the environment's outcome carries —
-`CallOutcome.ret` is a value, so an environment that models a callee returning
-nothing must still supply one, and nothing here can tell that it did. -/
+LLVM writes a callee's function type between the return type and the symbol, as
+in `call i32 (i32) @g(i32 1)`, and a variadic callee is one instance of it.  The
+type has no field in the AST — the callee is resolved by the environment, which
+keys on the symbol and carries no type — but it is not ignored: its parameter
+list is checked positionally against the call's arguments, with a final `...`
+admitting any number of further arguments.  A disagreement, a non-final `...`,
+and a type the model does not read are all refused by name.  The check refuses
+only text LLVM's verifier refuses, so accepting the type does not widen what the
+model reads, and it keeps a written type that disagrees with the arguments from
+silently retyping the call in the reader's mind.
+
+The return type is the call's own `retTy` and is used: it is the type the
+destination is bound at, which is what `Instr.resultTy` reports to the `phi`
+check and to `Function.regType`.
+
+The callee's **result kind** is not checked against the module, because a symbol
+is resolved by the environment rather than by the module.  Two consequences,
+stated rather than implied: `call void @f` naming a callee that returns a value
+is accepted and the value is discarded; and `%d = call i32 @g` naming a callee
+that returns nothing is accepted with `%d` bound to whatever the environment's
+outcome carries — `CallOutcome.ret` is a value, so an environment that models a
+callee returning nothing must still supply one, and nothing here can tell that
+it did. -/
 def parseCall (dst : Option String) : P Stmt := do
   let retTy ← expectTy
-  let id ← P.next
-  if id = "(" then
-    -- LLVM writes a callee's function type between the return type and the
-    -- symbol, as in `call i32 (i32) @g(i32 1)`, and a variadic callee is one
-    -- instance of it.  The type is not represented, so it is refused here rather
-    -- than reported as a missing `(` at the callee's position.
-    P.fail "a call that writes an explicit function type in its callee position \
-        is not modelled: the callee is named by a symbol and carries no type"
-  let callee := if id.startsWith "@" then (id.drop 1).toString else id
+  let first ← P.next
+  let (callee, writtenSig) ←
+    if first = "(" then
+      let tyToks ← P.takeUntil ")"
+      let sig ← match parseCallParamTypes tyToks with
+        | .ok s => pure s
+        | .error e => P.fail e
+      let nameTok ← P.next
+      if nameTok.startsWith "@" then
+        pure ((nameTok.drop 1).toString, some sig)
+      else
+        P.fail s!"expected the callee's symbol after its written function type, \
+            got '{nameTok}'"
+    else pure ((if first.startsWith "@" then (first.drop 1).toString else first), none)
   P.expect "("
   let toks ← P.takeCallArgs
   match parseCallArgs toks with
   | .error e => P.fail s!"in the arguments of @{callee}: {e}"
   | .ok args =>
+      let _ ←
+        match writtenSig with
+        | some sig =>
+            match checkCallParamTypes callee sig args with
+            | .error e => P.fail e
+            | .ok u => pure u
+        | none => pure ()
       match dst with
       | some d =>
           if retTy = .void then
@@ -569,6 +659,7 @@ names; `store` and a `void` call bind nothing, so they have no type here. -/
 def Instr.resultTy : Instr → Option Ty
   | .binop _ _ w _ _ => some (.int w)
   | .icmp .. => some (.int 1)
+  | .icmpPtr .. => some (.int 1)
   | .select _ ty _ _ _ => some ty
   | .trunc _ _ wOut _ => some (.int wOut)
   | .zext _ _ wOut _ => some (.int wOut)
@@ -660,6 +751,40 @@ def checkPhiTypes (f : Function) : Except String Unit :=
   | .error e => .error e
   | .ok _ => .ok ()
 
+/-- Check one operand of a pointer comparison: it must be a pointer.  The
+instruction's type says `ptr`, and the function's register table says what a
+named operand is bound at; the pointer grammar admits only the `null` literal as
+an immediate.  A mixed comparison is refused here, by name, because LLVM's
+verifier refuses the same module — and accepting it would leave the semantics'
+`none` to stand for a text the parser could have judged. -/
+def checkICmpPtrOperand (f : Function) (d pos : String) : Operand → Except String Bool
+  | .imm .null => .ok true
+  | .imm _ =>
+      .error s!"icmp {d} compares a pointer with an integer literal: a pointer and \
+          an integer are not comparable"
+  | .reg n =>
+      match f.regType n with
+      | some .ptr => .ok true
+      | some ty =>
+          .error s!"icmp {d} has type ptr but its {pos} operand {n} has type \
+              {ty.render}: a pointer and an integer are not comparable"
+      | none =>
+          .error s!"icmp {d} reads {n}, which @{f.name} neither takes as a \
+              parameter nor defines"
+
+/-- Check every pointer comparison of a function.  This runs once the blocks and
+the register table are known, like the `phi` type check. -/
+def checkICmpPtrTypes (f : Function) : Except String Unit :=
+  match f.blocks.allM fun b =>
+      b.instrs.allM fun i =>
+        match i with
+        | .icmpPtr d _ a b => do
+            let _ ← checkICmpPtrOperand f d "left" a
+            checkICmpPtrOperand f d "right" b
+        | _ => .ok true with
+  | .error e => .error e
+  | .ok _ => .ok ()
+
 def parseValueInstr (dst : String) : P Stmt := do
   let op ← P.next
   match op with
@@ -706,7 +831,27 @@ def parseValueInstr (dst : String) : P Stmt := do
               let b ← parseOperand ty
               pure (.instr (.icmpVec dst pred n w a b))
           | _ => P.fail s!"icmp {predTok} on a vector type is not modelled"
-      | _ => P.fail "icmp on a non-integer type"
+      | .ptr =>
+          -- A pointer is compared by address.  Equality and the unsigned order
+          -- are modelled; the signed order is defined by LLVM over the 64-bit
+          -- pointer value but is not representable over this model's unbounded
+          -- `Nat` address, which has no sign, so `slt`, `sle`, `sgt` and `sge`
+          -- are refused by name as a fragment restriction.  Whether both
+          -- operands really are pointers is checked once the function's
+          -- register types are known.
+          match pred with
+          | .eq | .ne | .ult | .ule | .ugt | .uge =>
+              let a ← parseOperand ty
+              P.expect ","
+              let b ← parseOperand ty
+              pure (.instr (.icmpPtr dst pred a b))
+          | _ =>
+              P.fail s!"icmp {predTok} on a pointer type is not modelled: the \
+                  model's address is an unbounded Nat with no sign, so the signed \
+                  order over a 64-bit pointer is not representable here; only eq, \
+                  ne, ult, ule, ugt and uge are modelled on pointers"
+      | .void => P.fail "icmp on a void type is not modelled"
+      | .vec _ _ => P.fail "icmp on a vector of non-integer lanes is not modelled"
   | "select" =>
       let (condTy, c) ← parseTypedOperand
       P.expect ","
@@ -1074,7 +1219,10 @@ def parseFunction (header : List String) (rest : List (List String)) :
   | .ok _ =>
       match checkPhiTypes f with
       | .error e => throw e
-      | .ok _ => .ok (f, rest')
+      | .ok _ =>
+          match checkICmpPtrTypes f with
+          | .error e => throw e
+          | .ok _ => .ok (f, rest')
 
 /-- Build one parameter from the tokens between two commas. -/
 def finishDeclParam (cur : List String) (acc : List Ty) : Except String (List Ty) :=

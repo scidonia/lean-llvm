@@ -251,6 +251,7 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
+  | icmpPtr d pr a b => exact evalInstr_icmpPtr_mem h
   | select d ty c a b =>
       simp only [evalInstr] at h
       repeat' split at h
@@ -548,6 +549,11 @@ theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | icmp d pr w a b =>
           exact exec_pureInstrT calls s (.icmp d pr w a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | icmpPtr d pr a b =>
+          exact exec_pureInstrT calls s (.icmpPtr d pr a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK

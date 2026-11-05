@@ -109,6 +109,7 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
       | lshr => rfl
       | ashr => rfl
   | icmp d p w a b => rfl
+  | icmpPtr d p a b => rfl
   | select d ty c a b => rfl
   | trunc d wi wo v => rfl
   | zext d wi wo v => rfl

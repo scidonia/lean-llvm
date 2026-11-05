@@ -74,6 +74,8 @@ def Instr.render : Instr → String
       s!"  {d} = {op.render} i{w} {a.token}, {b.token}"
   | .icmp d pred w a b =>
       s!"  {d} = icmp {pred.render} i{w} {a.token}, {b.token}"
+  | .icmpPtr d pred a b =>
+      s!"  {d} = icmp {pred.render} ptr {a.token}, {b.token}"
   | .select d ty c a b =>
       s!"  {d} = select i1 {c.token}, {a.render ty}, {b.render ty}"
   | .trunc d wIn wOut v =>

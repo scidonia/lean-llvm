@@ -83,6 +83,7 @@ theorem evalInstr_refines {calls' calls : Calls}
   cases i with
   | binop d op w a b => intro s' he; exact Or.inl he
   | icmp d p w a b => intro s' he; exact Or.inl he
+  | icmpPtr d p a b => intro s' he; exact Or.inl he
   | select d ty c a b => intro s' he; exact Or.inl he
   | trunc d wi wo v => intro s' he; exact Or.inl he
   | zext d wi wo v => intro s' he; exact Or.inl he
@@ -165,6 +166,7 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
               cases he
   | binop d op w a b => intro he; exact he
   | icmp d p w a b => intro he; exact he
+  | icmpPtr d p a b => intro he; exact he
   | select d ty c a b => intro he; exact he
   | trunc d wi wo v => intro he; exact he
   | zext d wi wo v => intro he; exact he

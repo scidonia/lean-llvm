@@ -392,6 +392,8 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | icmp d p w a b =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | icmpPtr d p a b =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
         | select d ty c a b =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | trunc d wi wo v =>

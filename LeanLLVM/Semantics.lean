@@ -169,6 +169,56 @@ def evalICmp (p : IPred) {w : Nat} (a b : BitVec w) : BitVec 1 :=
 def evalICmpNat (p : IPred) (w : Nat) (a b : Nat) : BitVec 1 :=
   evalICmp p (BitVec.ofNat w a) (BitVec.ofNat w b)
 
+/-- Compare two pointer addresses.
+
+An address is a natural here, so `eq` and `ne` are address equality and
+`ult`/`ule`/`ugt`/`uge` are the unsigned order on addresses — the order LLVM
+gives those predicates over its pointer value.  LLVM also defines `slt`, `sle`,
+`sgt` and `sge` over the signed reading of its 64-bit pointer, but this model's
+address is an unbounded `Nat` with no sign, so that reading is not representable
+here: those four predicates return `none`.  The parser refuses text that writes
+one on a pointer type; this is also the semantics' answer for an
+`Instr.icmpPtr` built directly in an AST.
+
+Agreement with LLVM's order holds while addresses stay below `2 ^ 64`, which the
+model does not enforce: a `getelementptr i128` can put a `ptr` at `2 ^ 64 + 1`,
+where `ugt` against a low address answers 1 while LLVM's wrapped address answers
+0 (measured with `lli`).
+
+The same `none` covers an operand that is not a pointer.  Text cannot reach it —
+the parser refuses a pointer comparison whose register is not bound at `ptr` —
+so it is the hand-built-AST case too, and `step` reads `none` as `ub`. -/
+def evalICmpPtr (p : IPred) (a b : Nat) : Option (BitVec 1) :=
+  match p with
+  | .eq => some (BitVec.ofBool (a = b))
+  | .ne => some (BitVec.ofBool (a ≠ b))
+  | .ult => some (BitVec.ofBool (a < b))
+  | .ule => some (BitVec.ofBool (a ≤ b))
+  | .ugt => some (BitVec.ofBool (b < a))
+  | .uge => some (BitVec.ofBool (b ≤ a))
+  | .slt | .sle | .sgt | .sge => none
+
+/-- Address equality is exact: the accepting case of `evalICmpPtr` is
+`BitVec.ofBool` of the equality of the two naturals. -/
+@[simp] theorem evalICmpPtr_eq (a b : Nat) :
+    evalICmpPtr .eq a b = some (BitVec.ofBool (a = b)) := rfl
+
+/-- The unsigned order compares addresses as naturals, so an address at or above
+`2 ^ 63` is greater than a low one.  A signed reading of the same 64-bit pattern
+would say the opposite; this model's address has no sign, so the signed
+predicates are refused rather than given that reading. -/
+theorem evalICmpPtr_high_address_unsigned :
+    evalICmpPtr .ugt (2 ^ 63) 0 = some (1 : BitVec 1) ∧
+      evalICmpPtr .ult (2 ^ 63) 0 = some (0 : BitVec 1) := by
+  decide
+
+/-- A signed predicate is not representable over this model's address, which has
+no sign: `evalICmpPtr` returns `none`, which `step` reads as `ub`. -/
+theorem evalICmpPtr_signed_none (p : IPred)
+    (h : p = .slt ∨ p = .sle ∨ p = .sgt ∨ p = .sge) (a b : Nat) :
+    evalICmpPtr p a b = none := by
+  rcases h with rfl | rfl | rfl | rfl <;> rfl
+
 /-- The lanes of a vector value at lane width `w` and count `n`, or `none` when
 the value is not a vector of exactly that shape.  The width is an argument, so
 the caller fixes the lane type and the shape check is a boolean, not a cast. -/
@@ -268,6 +318,14 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
           match va.intToNat w, vb.intToNat w with
           | some x, some y => some (s.bind d (.int 1 (evalICmpNat pred w x y)))
           | _, _ => none
+      | _, _ => none
+  | .icmpPtr d pred a b =>
+      -- Both operands must read as pointers.  A mixed pair is `none` here; the
+      -- parser refuses that text, so it is reachable only from an AST built
+      -- without the parser, where no type table exists to decide it.
+      match evalOperand s a, evalOperand s b with
+      | some (.ptr x), some (.ptr y) =>
+          (evalICmpPtr pred x y).map fun r => s.bind d (.int 1 r)
       | _, _ => none
   | .select d _ty c a b =>
       match evalOperand s c, evalOperand s a, evalOperand s b with
@@ -381,6 +439,33 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
           match phiIncoming p inc with
           | none => none
           | some op => (evalOperand s op).map fun v => s.bind d v
+
+/-! ### Pointer comparison
+
+The accepting case, and the two facts the rest of the development consumes: the
+destination is bound to a one-bit value and the memory is untouched.  An operand
+that is not a pointer is `none`, which is the hand-built-AST case; the parser
+refuses that text. -/
+
+/-- Two pointer operands compare to the predicate's result on their addresses. -/
+theorem evalInstr_icmpPtr {calls : Calls} {s : State} {d : String} {pr : IPred}
+    {a b : Operand} {x y : Nat} {r : BitVec 1}
+    (ha : evalOperand s a = some (.ptr x)) (hb : evalOperand s b = some (.ptr y))
+    (hr : evalICmpPtr pr x y = some r) :
+    evalInstr calls s (.icmpPtr d pr a b) = some (s.bind d (.int 1 r)) := by
+  simp [evalInstr, ha, hb, hr]
+
+/-- Executing a pointer comparison leaves the memory alone: it binds a one-bit
+value and writes nothing. -/
+theorem evalInstr_icmpPtr_mem {calls : Calls} {s s' : State} {d : String}
+    {pr : IPred} {a b : Operand}
+    (h : evalInstr calls s (.icmpPtr d pr a b) = some s') : s'.mem = s.mem := by
+  simp only [evalInstr] at h
+  split at h
+  · simp only [Option.map] at h
+    split at h
+    all_goals (cases h <;> rfl)
+  · cases h
 
 /-! ### The pointer offset
 
@@ -752,6 +837,28 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             cases vb.intToNat w with
             | none => rfl
             | some y => rfl
+  | icmpPtr d pred a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        cases va with
+        | int w x =>
+            cases evalOperand s b <;> dsimp only <;> rfl
+        | vec n w l =>
+            cases evalOperand s b <;> dsimp only <;> rfl
+        | ptr addr =>
+            cases evalOperand s b with
+            | none => rfl
+            | some vb =>
+              cases vb with
+              | int w y => dsimp only; rfl
+              | vec n w l => dsimp only; rfl
+              | ptr addr2 =>
+                dsimp only
+                cases evalICmpPtr pred addr addr2 with
+                | none => rfl
+                | some r => rfl
   | select d ty c a b =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s c with

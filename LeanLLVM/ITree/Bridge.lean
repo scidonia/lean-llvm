@@ -548,6 +548,11 @@ theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → P
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | icmpPtr d pr a b =>
+          exact handled_pureInstrT calls frame s (.icmpPtr d pr a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | icmpVec d pr n w a b =>
           exact handled_pureInstrT calls frame s (.icmpVec d pr n w a b) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'

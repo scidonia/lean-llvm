@@ -69,6 +69,7 @@ def substOperand (σ : Subst) : Operand → Operand
 def substInstr (σ : Subst) : Instr → Instr
   | .binop d op w a b => .binop d op w (substOperand σ a) (substOperand σ b)
   | .icmp d pred w a b => .icmp d pred w (substOperand σ a) (substOperand σ b)
+  | .icmpPtr d pred a b => .icmpPtr d pred (substOperand σ a) (substOperand σ b)
   | .select d ty c a b => .select d ty (substOperand σ c) (substOperand σ a) (substOperand σ b)
   | .trunc d wIn wOut v => .trunc d wIn wOut (substOperand σ v)
   | .zext d wIn wOut v => .zext d wIn wOut (substOperand σ v)
@@ -327,6 +328,18 @@ theorem evalInstr_phi_env {calls : Calls} {s s' : State} {d : String} {ty : Ty}
           subst h
           exact ⟨v, rfl⟩
 
+/-- A pointer comparison binds exactly its destination. -/
+theorem evalInstr_icmpPtr_env {calls : Calls} {s s' : State} {d : String}
+    {pr : IPred} {a b : Operand}
+    (h : evalInstr calls s (.icmpPtr d pr a b) = some s') :
+    ∃ v, s'.env = (d, v) :: s.env := by
+  simp only [evalInstr] at h
+  split at h
+  · simp only [Option.map] at h
+    split at h
+    all_goals (cases h <;> exact ⟨.int 1 _, rfl⟩)
+  · cases h
+
 /-- Executing an instruction with a destination binds exactly that
 destination. -/
 theorem evalInstr_env (calls : Calls) {i : Instr} {s s' : State}
@@ -337,6 +350,7 @@ theorem evalInstr_env (calls : Calls) {i : Instr} {s s' : State}
   cases i <;>
     first
       | exact evalInstr_phi_env h
+      | exact evalInstr_icmpPtr_env h
       | (simp only [Instr.dst?, evalInstr] at h ⊢ <;>
          (repeat' split at h) <;>
          (try simp_all) <;>
@@ -425,6 +439,10 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
           | undef => simp [foldICmp] at hf
           | poison => simp [foldICmp] at hf
           | splat _ _ _ => simp [foldICmp] at hf
+  | icmpPtr d pred a b =>
+      -- No fold is defined for a pointer comparison, so `foldInstr` is `none`
+      -- and there is nothing to be unsound about.
+      simp [foldInstr] at hf
   | select d ty cond a b =>
       simp only [foldInstr] at hf
       cases hcc : constOperand σ cond with
