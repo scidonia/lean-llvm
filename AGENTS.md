@@ -69,8 +69,29 @@ needs the other two to match.
   mask identities — `inStringMask_eq_clmul` over a window and
   `specInString64_eq_clmul` over a sixty-four-byte block — with the outgoing carry
   `specInString64_outgoing_carry`, all stated over `JsonScanSpec`'s own masks.
-  Its docstring records what it does not prove: the kernel's `specQuote64`
-  derivation through `pext`/`pdep` lane moves, and any relation to the emitted IR.
+  `BitLanes` models the three instructions the kernel uses besides `pclmulqdq` —
+  `pext`, `pdep` and `ctlz` — in lane vocabulary, with `rank` and the two
+  alignment facts that pair a mask's set lanes with their positions
+  (`rank_setLanes_getElem`, `setLanes_getElem?_rank`), the Galois connection
+  `pdep_pext`/`pext_pdep`, and `ctlz (~~~m) = trailingRun m`.  `QuoteDerive`
+  proves the kernel's escape arithmetic: `kernelEscape_eq` — the kernel's
+  `pext`/`pdep` scatter is the parity mask on the lanes that are not backslashes —
+  `kernelQuote64` — the kernel's `%qmc2 = %qrawc2 & ~%escc2` over a sixty-four-lane
+  block *is* `JsonScanSpec`'s `specQuote64` — and `ppn64`, the same for the outgoing
+  parity `%ppnc2` against the `classStep` fold's `oddRun`.  That derivation carries
+  `st.oddRun = (runOpen && ppar)` as a hypothesis, and both sides keep it rather
+  than being restricted by it: `nextParity_and_not_top` and
+  `nextParity_ne_zero_imp_open` confine the kernel's parity to its top lane, while
+  `classStep_oddRun_gated`, `specCarry_hypothesis` and `classState_self_open` read
+  the specification's parity as its own run-open bit.  Its docstring records what it
+  does not prove: the sequence is a **hand transcription** of `tests/v16/ci2.ll`, no
+  fixture of that file is `include_str`'d and no AST is pinned, so no theorem reaches
+  `@ci2`; the `i1`-vector bitcast and the low-then-high join are the conventions the
+  transcription reads, not theorems about the instructions; and any relation to the
+  emitted IR is owed here as it is in `Pclmul`.  Every **public** theorem is pinned
+  in `LeanLLVMTest/Vellum.lean` at `[propext, Quot.sound]` or narrower — the three
+  `private` numeral lemmas of `BitLanes` cannot be named from another file — each of
+  the choice-carrying `BitVec`/`List` lemmas replaced by a local proof.
 - `LeanLLVM/JSON/` is the byte-level JSON development: the independent
   semantics (`Spec`), scanner (`Scan`), parser (`Parse`), tape (`Tape`) and
   their correctness modules; the block layer `ScanBlock` — `maskOfList`,

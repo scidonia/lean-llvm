@@ -23,4 +23,6 @@ import LeanLLVM.ITree
 import LeanLLVM.JSON
 import LeanLLVM.Vellum.JsonClassifyIR
 import LeanLLVM.Vellum.JsonSeam
+import LeanLLVM.Vellum.BitLanes
 import LeanLLVM.Vellum.Pclmul
+import LeanLLVM.Vellum.QuoteDerive

@@ -140,6 +140,7 @@ with no hypothesis.
 import LeanLLVM.JSON.ScanBlock
 import LeanLLVM.JSON.ScanBody
 import LeanLLVM.Semantics
+import LeanLLVM.Vellum.BitLanes
 
 namespace LeanLLVM.Vellum.JsonScanSpec
 
@@ -861,8 +862,8 @@ theorem candidateMask_eq (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.l
   apply BitVec.eq_of_getLsbD_eq
   intro k hk
   have hklen : k < bs.length := by omega
-  rw [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_not,
-    show decide (k < 32) = true from decide_eq_true hk, Bool.true_and,
+  rw [BitVec.getLsbD_or, BitVec.getLsbD_and,
+    LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt _ hk,
     candidateMask_getLsbD hk (getElem?_of_lt hklen),
     quoteMask_getLsbD hk (getElem?_of_lt hklen),
     delimiterMask_getLsbD hk (getElem?_of_lt hklen),
@@ -939,22 +940,21 @@ theorem mask64_and (a b c d : BitVec 32) :
       mask64_getLsbD_hi _ _ (by omega), mask64_getLsbD_hi _ _ (by omega),
       BitVec.getLsbD_and]
 
-/-- The join commutes with complement. -/
+/-- The join commutes with complement.  The lane lemmas it needs are
+`BitLanes.getLsbD_not_of_lt`, proved without the `Classical.choice` that
+`BitVec.getLsbD_not`'s proof term carries; this is a specification lemma, so the
+narrower footprint belongs here. -/
 theorem mask64_not (a b : BitVec 32) :
     ~~~(mask64 a b) = mask64 (~~~a) (~~~b) := by
   apply BitVec.eq_of_getLsbD_eq
   intro k hk
+  rw [LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt _ hk]
   by_cases hk32 : k < 32
-  · rw [BitVec.getLsbD_not, mask64_getLsbD_lo _ _ hk32, mask64_getLsbD_lo _ _ hk32,
-      BitVec.getLsbD_not]
-    rw [show decide (k < 64) = true from decide_eq_true (by omega), Bool.true_and,
-      show decide (k < 32) = true from decide_eq_true hk32, Bool.true_and]
-  · rw [show k = (k - 32) + 32 from by omega]
-    rw [BitVec.getLsbD_not, mask64_getLsbD_hi _ _ (by omega),
-      mask64_getLsbD_hi _ _ (by omega), BitVec.getLsbD_not]
-    rw [show decide ((k - 32) + 32 < 64) = true from decide_eq_true (by omega),
-      Bool.true_and,
-      show decide (k - 32 < 32) = true from decide_eq_true (by omega), Bool.true_and]
+  · rw [mask64_getLsbD_lo _ _ hk32, mask64_getLsbD_lo _ _ hk32,
+      LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt _ hk32]
+  · rw [show k = (k - 32) + 32 from by omega, mask64_getLsbD_hi _ _ (by omega),
+      mask64_getLsbD_hi _ _ (by omega),
+      LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt _ (by omega)]
 
 /-- **The kernel's candidate mask is `q | (s & ~im)` at sixty-four lanes.**  The
 high half's components are its own window's, entered with the carry the low half

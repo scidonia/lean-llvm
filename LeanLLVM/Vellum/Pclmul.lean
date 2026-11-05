@@ -31,18 +31,22 @@ axiom beyond Lean's own `propext` and `Quot.sound`, the module proves:
 Nothing here is a new axiom: `clmul` is a fold of shifts and XORs, and every fact
 below is proved from the BitVec XOR group and `List` induction.
 
-## What this module does not prove (owed)
+## What this module does not prove
 
-* **The kernel's `specQuote64` derivation.**  The identity above takes
-  `specQuote64` — the kernel's unescaped-quote mask — as the specification
-  defines it, and says nothing about how the kernel *computes* it.  The kernel
-  forms it from the raw quote lanes and the escape-run parity with `pext`/`pdep`
-  lane moves; that derivation is not proved here, so this module relates the
-  masks the specification names, not the instructions that produce them.
-* **Any relation to the emitted IR.**  No theorem here mentions the classifier
-  body's registers, the emitted body, or a refinement statement about it.  This
-  is the arithmetic the kernel's masks satisfy, stated over the specification's
-  own definitions; relating it to the compiled kernel is the standing owed item.
+The identity above takes `specQuote64` — the kernel's unescaped-quote mask — as the
+specification defines it; how the kernel *computes* it is
+`LeanLLVM/Vellum/QuoteDerive.lean`'s subject, not this module's.  There
+`kernelQuote64` proves the kernel's `%qmc2 = %qrawc2 & ~%escc2` over a
+sixty-four-lane block — the raw quote mask filtered by a `pext`/`pdep` escape
+mask — is the `specQuote64` this module's identity is stated over, and `BitLanes`
+models the three intrinsics that expression is built from.
+
+This module's own remaining item is **any relation to the emitted IR**: no theorem
+here mentions the classifier body's registers, the emitted body, or a refinement
+statement about it.  It states the arithmetic the kernel's masks satisfy, over the
+specification's own definitions; relating it to the compiled kernel is the standing
+owed item, and `QuoteDerive` records the same item for its derivation, beside the
+transcription gap it carries on its own.
 -/
 import LeanLLVM.Vellum.JsonScanSpec
 

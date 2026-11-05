@@ -2993,7 +2993,7 @@ example (bs : List UInt8) (st : ClassState) (hlen : 32 ≤ bs.length) :
   candidateMask_eq bs st hlen
 
 /--
-info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask_eq' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonScanSpec.candidateMask_eq
@@ -3050,7 +3050,7 @@ example (a b : BitVec 32) : ~~~(mask64 a b) = mask64 (~~~a) (~~~b) :=
   mask64_not a b
 
 /--
-info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_not' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'LeanLLVM.Vellum.JsonScanSpec.mask64_not' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonScanSpec.mask64_not
@@ -3063,7 +3063,7 @@ example (lo hi : Block32) (st : ClassState) :
   candidateMask64_eq lo hi st
 
 /--
-info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask64_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'LeanLLVM.Vellum.JsonScanSpec.candidateMask64_eq' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonScanSpec.candidateMask64_eq
@@ -3560,3 +3560,823 @@ example :
       = clmul (quoteMask (0x22 :: List.replicate 31 0x20) ⟨false, false⟩)
           (BitVec.allOnes 32) ^^^ seedVec 32 false :=
   inStringMask_eq_clmul _ _ (by simp)
+
+/-! ### The bit intrinsics and the kernel's quote-mask derivation
+
+`LeanLLVM/Vellum/BitLanes.lean` models the three instructions the index kernel
+calls besides `pclmulqdq` — `pext`, `pdep` and `ctlz` — in lane vocabulary, with
+the rank machinery that pairs a mask's set lanes with their positions:
+`rank_setLanes_getElem` (the `j`-th set lane's rank is `j`),
+`setLanes_getElem?_rank` (a set lane's rank indexes it), the population bound
+`setLanes_length_le` and the monotonicity `rank_mono`.  The Galois connection is
+two statements: `pdep_pext` — `pdep (pext a m) m = a &&& m`, for every `a`, since
+scattering a gather puts back exactly the lanes `m` selects — and the round trip
+`pext_pdep`, `pext (pdep a m) m = a &&& lowLanes w (setLanes m).length`, whose
+lanes above the population count are zero whatever was scattered there.  `ctlz` is
+the leading-zero count and `trailingRun` the maximal suffix of set lanes;
+`ctlz (~~~m) = trailingRun m` is `ctlz_not_eq_trailingRun`.
+
+`LeanLLVM/Vellum/QuoteDerive.lean` proves the kernel's escape arithmetic against
+`JsonScanSpec`'s own masks.  `kernelEscape_eq` says the kernel's scatter is the
+parity mask on the lanes that are not backslashes — the kernel's mask leaves a
+run's interior lanes clear, and the identity says exactly that — and `kernelQuote64`
+is the derivation itself: `%qmc2 = %qrawc2 & ~%escc2` over a sixty-four-lane block
+*is* the specification's `specQuote64`.  Both carry the hypothesis
+`st.oddRun = (runOpen && ppar)`: the kernel carries the run-open bit beside the
+parity, `ClassState` does not name it, and the two agree under that invariant,
+which the kernel maintains because `%ppnc2` implies `%topc2`.  `ppn64` is the same
+for the outgoing parity: the kernel's `ctlz(~~~bs) & 1`, corrected when the block
+is all backslashes and the run continues, is the `oddRun` the specification's
+`classStep` fold leaves.
+
+Every public theorem is pinned below at `[propext, Quot.sound]` or narrower; the three
+`private` numeral lemmas of `BitLanes` cannot be named from another file and are not
+pinned.  The `BitVec`
+and `List` lane lemmas whose proof terms carry `Classical.choice`
+(`BitVec.getLsbD_allOnes`, `BitVec.getLsbD_not`, `List.filter_eq_nil_iff`, and
+`JsonScanSpec.mask64_not`, which follows from the second) are not used: each is
+replaced by a local proof, so no theorem here needs a choice principle.
+-/
+
+open LeanLLVM.Vellum.BitLanes LeanLLVM.Vellum.QuoteDerive
+
+-- A packed lane reads back as the function's value.
+example (f : Fin 8 → Bool) : (ofLanes f).getLsbD 3 = f ⟨3, by decide⟩ :=
+  ofLanes_getLsbD f (by decide)
+
+-- A mask has at most `w` set lanes, and the rank counts them without exceeding
+-- that bound and without decreasing as the lane rises.
+example (m : BitVec 8) : (setLanes m).length ≤ 8 := setLanes_length_le m
+
+example (m : BitVec 8) {i j : Nat} (h : i ≤ j) : rank m i ≤ rank m j := rank_mono m h
+
+-- The two alignment facts.
+example (m : BitVec 8) {j : Nat} (hj : j < (setLanes m).length) :
+    rank m (setLanes m)[j] = j :=
+  rank_setLanes_getElem m hj
+
+example (m : BitVec 8) {i : Nat} (hi : i < 8) (hm : m.getLsbD i = true) :
+    (setLanes m)[rank m i]? = some i :=
+  setLanes_getElem?_rank m hi hm
+
+-- The Galois connection: scattering a gather puts back exactly `m`'s lanes.
+example {w : Nat} (a m : BitVec w) : pdep (pext a m) m = a &&& m := pdep_pext a m
+
+-- The round trip clears the lanes above the population count: `0b0110` has two set
+-- lanes, so gathering its scatter keeps `a`'s lanes 0 and 1 and clears lanes 2 and 3,
+-- even though `a` sets lane 3.
+example : pext (pdep (0b1011 : BitVec 4) (0b0110 : BitVec 4)) (0b0110 : BitVec 4)
+    = 0b0011 := by decide
+
+-- `ctlz` of the complement is the trailing run.
+example (m : BitVec 8) : ctlz (~~~m) = trailingRun m := ctlz_not_eq_trailingRun m
+
+-- The run-start and run-end lanes do not read the run-open bit, and a run starts at
+-- lane zero exactly when lane zero is a backslash.
+example (bs : BitVec 8) (o : Bool) : (runStarts bs o).getLsbD 0 = bs.getLsbD 0 := by
+  rw [runStarts_getLsbD bs o (by decide), startLane]
+  cases bs.getLsbD 0 <;> cases o <;> rfl
+
+example (bs : BitVec 8) : (runEnds bs).getLsbD 7 = bs.getLsbD 7 := by
+  rw [runEnds_getLsbD bs (by decide), endLane]
+  rw [BitVec.getLsbD_of_ge bs 8 (by decide)]
+  rw [Bool.not_false, Bool.and_true]
+
+-- The count invariant: a backslash lane has been entered and not yet left.
+example (bs : BitVec 8) (o : Bool) {k : Nat} (hk : k < 8) :
+    startsBelow bs o (k + 1) = endsBelow bs k + (if bs.getLsbD k then 1 else 0) :=
+  startsUpTo_end bs o k hk
+
+-- The escape mask is the parity mask on the lanes that are not backslashes.
+example (bs : BitVec 8) (o p : Bool) :
+    kernelEscape bs o p = escapeLanes bs o p &&& ~~~bs :=
+  kernelEscape_eq bs o p
+
+-- The derivation, over the specification's own masks.
+example (lo hi : Block32) (st : ClassState) (o p : Bool) (hst : st.oddRun = (o && p)) :
+    kernelQuote (specMask64 IsQuoteB lo hi) (specMask64 IsBackslashB lo hi) o p
+      = specQuote64 lo hi st :=
+  kernelQuote64 lo hi st o p hst
+
+-- The same, stated against the specification's fold: the low half's `oddRun` is the
+-- lane recursion the kernel's escape arithmetic runs on.
+example (lo hi : Block32) (st : ClassState) (o p : Bool) (hst : st.oddRun = (o && p)) :
+    (classCarryAt (List.ofFn lo) st 16).oddRun
+      = runParityBefore (specMask64 IsBackslashB lo hi) o p 16 :=
+  oddRun_lo hst 16 (by decide)
+
+example (lo hi : Block32) (st : ClassState) (o p : Bool) (hst : st.oddRun = (o && p)) :
+    (classCarryAt (List.ofFn hi) (classWindow (List.ofFn lo) st).carry 16).oddRun
+      = runParityBefore (specMask64 IsBackslashB lo hi) o p 48 :=
+  oddRun_hi hst 16 (by decide)
+
+-- The run parity at a lane is the trailing run's parity.
+example (bs : BitVec 8) (o p : Bool) :
+    runParityBefore bs o p 8
+      = (decide (suffixRun bs 8 % 2 = 1) ^^ (decide (suffixRun bs 8 = 8) && (o && p))) :=
+  runParityBefore_eq bs o p 8 (by decide)
+
+-- `%lzpc2` is that parity, and `%ppnc2` is the fold's `oddRun`.
+example (bs : BitVec 8) :
+    decide (ctlz (~~~bs) % 2 = 1) = decide (suffixRun bs 8 % 2 = 1) :=
+  lzParity_eq_suffixRun bs
+
+example (bs : BitVec 8) (o p : Bool) (h : 0 < 8) :
+    nextParity bs o p = oneLane 8 (runParityBefore bs o p 8) :=
+  nextParity_eq bs o p h
+
+example (lo hi : Block32) (st : ClassState) (o p : Bool) (hst : st.oddRun = (o && p)) :
+    nextParity (specMask64 IsBackslashB lo hi) o p
+      = oneLane 64
+          (classWindow (List.ofFn hi) (classWindow (List.ofFn lo) st).carry).carry.oddRun :=
+  ppn64 lo hi st o p hst
+
+-- The derivation's hypothesis is not a restriction.  The kernel's parity word lives
+-- on the block's top lane, so a nonzero outgoing parity means an open run…
+example (bs : BitVec 8) (o p : Bool) : nextParity bs o p &&& ~~~(bs >>> 7) = 0#8 :=
+  nextParity_and_not_top bs o p
+
+example (bs : BitVec 8) (o p : Bool) : (bs >>> 7 = 0#8) ↔ bs.getLsbD 7 = false :=
+  topWord_eq_zero_iff bs (by decide)
+
+example (bs : BitVec 8) (o p : Bool) :
+    nextParity bs o p ≠ 0#8 → bs.getLsbD 7 = true :=
+  nextParity_ne_zero_imp_open bs o p (by decide)
+
+-- …and the specification's parity is its own run-open bit, in every state the fold
+-- reaches and in the degenerate instance any `ClassState` satisfies.
+example (st : ClassState) (b : UInt8) :
+    (classStep st b).oddRun = (IsBackslashB b && (classStep st b).oddRun) :=
+  classStep_oddRun_gated st b
+
+example (bs : List UInt8) (inside : Bool) (k : Nat) (hk : k ≤ bs.length) :
+    (classCarryAt bs ⟨inside, false⟩ k).oddRun
+      = (byteOpen bs k && (classCarryAt bs ⟨inside, false⟩ k).oddRun) :=
+  specCarry_hypothesis bs inside k hk
+
+example (st : ClassState) : st.oddRun = (st.oddRun && st.oddRun) :=
+  classState_self_open st
+
+-- Every public theorem's footprint, in declaration order, `BitLanes` first.  The three
+-- `private` numeral lemmas of `BitLanes` cannot be named from another file and so are
+-- not pinned; every named theorem here is.
+/--
+info: 'LeanLLVM.Vellum.BitLanes.ofLanes_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ofLanes_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.ofLanes_congr' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ofLanes_congr
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.ofLanes_false' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ofLanes_false
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.lowLanes_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.lowLanes_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.allOnes_getLsbD_of_lt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.allOnes_getLsbD_of_lt
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.mem_setLanes' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.mem_setLanes
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.range_pairwise' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.range_pairwise
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.setLanes_pairwise' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.setLanes_pairwise
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.setLanes_length_le' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.setLanes_length_le
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.setLanes_getElem_true' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.setLanes_getElem_true
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.setLanes_getElem_lt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.setLanes_getElem_lt
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.setLanes_getElem?_eq' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.setLanes_getElem?_eq
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.rank_le' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.rank_le
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.filter_implies_filter' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.filter_implies_filter
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.rank_mono' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.rank_mono
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.filter_eq_nil_of_all_false' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.filter_eq_nil_of_all_false
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.filter_lt_getElem_eq_take' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.filter_lt_getElem_eq_take
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.filter_lt_getElem_eq_take_length' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.filter_lt_getElem_eq_take_length
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.filter_lt_getElem?_mem' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.filter_lt_getElem?_mem
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.rank_setLanes_getElem' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.rank_setLanes_getElem
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.setLanes_getElem?_rank' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.setLanes_getElem?_rank
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pext_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pext_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pext_getLsbD_of_lt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pext_getLsbD_of_lt
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pext_getLsbD_of_ge' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pext_getLsbD_of_ge
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pdep_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pdep_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pdep_pext' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pdep_pext
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pext_pdep' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pext_pdep
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.pext_pdep_of_clear' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.pext_pdep_of_clear
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.suffixRun_le' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.suffixRun_le
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.trailingRun_le' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.trailingRun_le
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.ite_not_add' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ite_not_add
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.ctlz_not_eq_trailingRun' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ctlz_not_eq_trailingRun
+
+/--
+info: 'LeanLLVM.Vellum.BitLanes.ctlz_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ctlz_zero
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.oneLane_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.oneLane_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.evenLanes_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.evenLanes_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.escapeLanes_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.escapeLanes_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.runStarts_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.runStarts_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.runEnds_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.runEnds_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.afterRuns_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.afterRuns_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.countBelow_succ' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.countBelow_succ
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.countBelow_mono' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.countBelow_mono
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.filter_singleton_length' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.filter_singleton_length
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.filter_true_eq' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.filter_true_eq
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.range_filter_lt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.range_filter_lt
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.range_filter_and_lt' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.range_filter_and_lt
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.countBelow_eq_rank' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.countBelow_eq_rank
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.filter_map_eq' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.filter_map_eq
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.countBelow_shift' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.countBelow_shift
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.startsBelow_succ' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.startsBelow_succ
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.endsBelow_succ' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.endsBelow_succ
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.startsUpTo_end' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.startsUpTo_end
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.startsBelow_top' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.startsBelow_top
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.rank_runStarts' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.rank_runStarts
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.rank_runEnds' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.rank_runEnds
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.rank_afterRuns' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.rank_afterRuns
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.mod_two_eq_zero_or_one' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.mod_two_eq_zero_or_one
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.mod_two_succ_eq_one' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.mod_two_succ_eq_one
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.mod_two_succ_eq_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.mod_two_succ_eq_zero
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.xor_not_right' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.xor_not_right
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.evenXor_add' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.evenXor_add
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.altLanes_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.altLanes_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.startPara_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.startPara_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.endPara_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.endPara_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.oddRuns_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.oddRuns_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.escapedRuns_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.escapedRuns_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.boundaryEscape_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.boundaryEscape_getLsbD
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.runParityBefore_start' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.runParityBefore_start
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.runParity_iterate' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.runParity_iterate
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.startLane_backslash' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.startLane_backslash
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.escape_at_run_end' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.escape_at_run_end
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.kernelEscape_of_clear' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.kernelEscape_of_clear
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.kernelEscape_of_set' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.kernelEscape_of_set
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.kernelEscape_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.kernelEscape_eq
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.kernelQuote_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.kernelQuote_eq
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.isQuoteB_and_isBackslashB' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.isQuoteB_and_isBackslashB
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.specQuote64_disjoint' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.specQuote64_disjoint
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.classCarryAt_oddRun_zero' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.classCarryAt_oddRun_zero
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.oddRun_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.oddRun_lo
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.oddRun_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.oddRun_hi
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.escapeLanes_eq_join' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.escapeLanes_eq_join
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.quoteMask_lo' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.quoteMask_lo
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.quoteMask_hi' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.quoteMask_hi
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.kernelQuote64' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.kernelQuote64
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.not_xor' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.not_xor
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.decide_succ_eq_succ' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.decide_succ_eq_succ
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.runParityBefore_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.runParityBefore_eq
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.suffixRun_eq_self_iff' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.suffixRun_eq_self_iff
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.lzParity_eq_suffixRun' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.lzParity_eq_suffixRun
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.lzpc_getLsbD_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.lzpc_getLsbD_zero
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.parity_top' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.parity_top
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.contrib_getLsbD_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.contrib_getLsbD_zero
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.nextParity_getLsbD_zero' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.nextParity_getLsbD_zero
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.nextParity_getLsbD_of_pos' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.nextParity_getLsbD_of_pos
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.nextParity_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.nextParity_eq
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.ppn64' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.ppn64
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.nextParity_and_not_top' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.nextParity_and_not_top
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.topWord_eq_zero_iff' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.topWord_eq_zero_iff
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.nextParity_ne_zero_imp_open' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.nextParity_ne_zero_imp_open
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.classStep_oddRun_gated' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.classStep_oddRun_gated
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.specCarry_hypothesis' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.specCarry_hypothesis
+
+/--
+info: 'LeanLLVM.Vellum.QuoteDerive.classState_self_open' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.QuoteDerive.classState_self_open
+
+
+/-! #### Executed witness
+
+The same block the specification's own witness uses — `"\""` and thirty-two spaces
+in the low half, spaces in the high half — read through the kernel's instruction
+sequence: the scattered parity marks lane 2, the escaped quote, and leaves lanes 0
+and 3 as the string's boundaries, so `%qmc2` is `0b1001` and agrees with
+`specQuote64`.  The block ends in a space, so neither side's outgoing parity is set.
+-/
+
+private def escapedQuoteBlock : Block32 :=
+  fun i => match i.val with
+    | 0 => 0x22
+    | 1 => 0x5C
+    | 2 => 0x22
+    | 3 => 0x22
+    | _ => 0x20
+
+#guard kernelQuote (specMask64 IsQuoteB escapedQuoteBlock (fun _ => 0x20))
+    (specMask64 IsBackslashB escapedQuoteBlock (fun _ => 0x20)) false false = 0b1001
+
+#guard specQuote64 escapedQuoteBlock (fun _ => 0x20) ⟨false, false⟩ = 0b1001
+
+-- The second number the negative witness below compares against, guarded here so that
+-- its `≠` is a comparison of two guarded values rather than of one value and a literal.
+#guard specQuote64 escapedQuoteBlock (fun _ => 0x20) ⟨false, true⟩ = 0b1000
+
+#guard (kernelEscape (specMask64 IsBackslashB escapedQuoteBlock (fun _ => 0x20))
+    false false).toNat % 4 = 0
+
+#guard (nextParity (specMask64 IsBackslashB escapedQuoteBlock (fun _ => 0x20))
+    false false).toNat = 0
+
+example :
+    kernelQuote (specMask64 IsQuoteB escapedQuoteBlock (fun _ => 0x20))
+        (specMask64 IsBackslashB escapedQuoteBlock (fun _ => 0x20)) false false
+      = specQuote64 escapedQuoteBlock (fun _ => 0x20) ⟨false, false⟩ :=
+  kernelQuote64 _ _ _ _ _ rfl
+
+-- The invariant is not decoration.  The same block with a state that claims an odd
+-- run before the window while no run is open — `st.oddRun = true`, `%opennz` false —
+-- is read differently: the specification's fold keeps lane 0 out of the unescaped
+-- quotes (`0b1000`), while the kernel's boundary bit is gated by the run-open bit and
+-- keeps it (`0b1001`).  The kernel never reaches that state, because `%ppnc2` implies
+-- `%topc2`; the value below is the witness that the hypothesis carries content.
+#guard kernelQuote (specMask64 IsQuoteB escapedQuoteBlock (fun _ => 0x20))
+    (specMask64 IsBackslashB escapedQuoteBlock (fun _ => 0x20)) false false
+  ≠ specQuote64 escapedQuoteBlock (fun _ => 0x20) ⟨false, true⟩
