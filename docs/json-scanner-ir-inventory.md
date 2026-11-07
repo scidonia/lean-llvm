@@ -152,10 +152,24 @@ load handles the remainder.
    mask on every readable block (`scannerLLVM_refines`, `:838`), so the
    fragment is modelled *and* checked against a body that uses it.
 
-   Still absent from the model, and refused by name: `shufflevector` (the
-   generic instruction branch of `parseValueInstr` names the token), vector
-   `alloca`/`store`/`select` (`parseValueInstr`'s `alloca` and `select` arms,
-   and `parseSimple`'s `store`). A pointer offset is
+   The forms **admitted since this inventory was written** — the ones the
+   stage-1 classification-mask kernel is emitted with — are: `shufflevector` with
+   a defined mask whose entries name a lane below `2n` (`Instr.shuffleVec`), a
+   vector `load` at integer lanes whose total width is a whole number of bytes
+   (`<4 x i64>`), a mask-only vector `store` (`store <n x i1>` whose total width
+   is a whole number of bytes), a non-mask vector `bitcast` at equal total
+   width (`Instr.vecBitcast`, `<4 x i64>` read as `<32 x i8>`), and vector
+   `lshr` (`Instr.binopVec`, the per-sixteen-bit-lane shift the high-nibble
+   extraction uses).  Vector `shl` is admitted as the same operation in the other
+   direction, and no tracked `.ll` emits one.  All of them are checked, with their
+   neighbouring refusals in the same run, by `tests/vector-s1.lean`; the fixture
+   `probes/install/ir/json-s1-masks.candidate.ll` uses every one but the `shl`.
+
+   Still absent from the model, and refused by name: vector `alloca` and vector
+   `select` (`parseValueInstr`'s `alloca` and `select` arms), a vector `store`
+   that is not a mask, a `shufflevector` mask entry at or past `2n` or written
+   `undef`, a vector `ashr`, `umin`/`umax`, and a `bitcast` whose total widths
+   disagree. A pointer offset is
    modelled: `getelementptr` reads one offset scaled by one of the admitted
    integer element widths (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128` — the
    widths pinned as having an allocated size equal to the stored size the model
@@ -170,7 +184,10 @@ load handles the remainder.
    accepts any callee symbol (`parseValueInstr`'s `call` branch), so a call to
    `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
    `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model
-   does not give. Nothing in this kernel needs any of them.
+   does not give. The five symbols the stage-1 kernel calls are the exception:
+   `checkIntrinsicShape` validates their arity, operand types and immediate, and
+   refuses the neighbouring spellings by name (`tests/vector-s1.lean`). Nothing
+   in *this* kernel needs any of them.
 
 ## Not yet inventoried
 

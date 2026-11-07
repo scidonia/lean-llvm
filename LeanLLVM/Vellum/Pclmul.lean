@@ -41,12 +41,14 @@ sixty-four-lane block — the raw quote mask filtered by a `pext`/`pdep` escape
 mask — is the `specQuote64` this module's identity is stated over, and `BitLanes`
 models the three intrinsics that expression is built from.
 
-This module's own remaining item is **any relation to the emitted IR**: no theorem
-here mentions the classifier body's registers, the emitted body, or a refinement
-statement about it.  It states the arithmetic the kernel's masks satisfy, over the
-specification's own definitions; relating it to the compiled kernel is the standing
-owed item, and `QuoteDerive` records the same item for its derivation, beside the
-transcription gap it carries on its own.
+This module states the arithmetic the kernel's masks satisfy, over the
+specification's own definitions; a relation to the *compiled* kernel is not stated
+here.  For the extracted stage-1 mask unit it is stated above this module:
+`s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`) binds `@llvm.x86.pclmulqdq` to
+`clmul`, and `s1_masks_refines` (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) reads the
+resulting word back at the emitted body's own register.  For any other body the
+relation stays open, and `QuoteDerive` records the same split for its derivation,
+beside the transcription gap it carries on its own.
 -/
 import LeanLLVM.Vellum.JsonScanSpec
 

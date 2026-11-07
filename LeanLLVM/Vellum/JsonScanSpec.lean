@@ -19,8 +19,11 @@ takes the two named conditions, and the closing-lane identification at a stop's
 own lane takes `NoBackslashOutside` on top of the continuation the stop's readback
 supplies — and each condition is shown necessary by a counterexample rather than
 assumed.
-The identification with the emitted kernel's own registers is **not** proved
-here; it is recorded as owed under "What is not proved" below.
+The identification with the emitted kernel's own registers is proved for the
+extracted unit, at the committed fixture: `s1_masks_refines`
+(`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) states it of `@leanllvm_json_s1_masks`
+as `LeanLLVM/Vellum/JsonS1MasksIR.lean` pins that text. It stays owed for any
+*other* emission, which is what "What is not proved" below now says.
 
 ## The specification decision: which quotes count
 
@@ -81,7 +84,14 @@ on every backslash, which is exactly the run continuing across the boundary.
   carry-free prefix XOR of the unescaped quotes and `carry` is the all-ones or
   zero sign of the previous block's top `im` bit;
 * `candidateMask` (`cand`) — lanes that are a candidate token start: an
-  unescaped quote, or a delimiter that is not inside a string.
+  unescaped quote, or a delimiter that is not inside a string;
+* `spaceMask` (`ws`) — lanes holding one of the four RFC 8259 §2 whitespace
+  bytes, space, tab, LF and CR, which is the kernel's two-nibble `pshufb` table;
+* `controlMask` (`ctl`) — lanes holding a byte below `0x20`.
+
+`spaceMask` and `controlMask` read no carry: they are the block layer's
+`maskOfListWith` at their predicates, and the `ClassState` argument exists only so
+`classMask64` can be instantiated without a lambda at the call site.
 
 The escape rule is the kernel's: a quote is escaped exactly when the number of
 backslashes immediately before it is odd, with the run continuing across the
@@ -115,7 +125,10 @@ with no hypothesis.
   is the block layer's fold and not a second packing; `pack32_getLsbD` reads a
   lane, and `pack32_eq_maskOf` is the instance at the scalar transition.
 * `mask64` is the kernel's `zext`/`shl`/`or` join of two packed words, and
-  `specMask64` applies a predicate over a two-half block.
+  `specMask64` applies a predicate over a two-half block.  `specSpace64` and
+  `specControl64` are its carry-free instances: whitespace and control never
+  need the high half's entering state, which is why `spaceMask`/`controlMask`
+  ignore the one `classMask64` hands them.
 * `maskOfList_decompose` states the scalar transition's mask as the union of the
   classifier's components and whitespace: the model's `maskOf` is the classifier's
   lane vocabulary, not a parallel one.
@@ -168,13 +181,18 @@ with no hypothesis.
   from the model, not on the identification.  A refinement stated over the
   classifier's whole window therefore owes either a no-stop hypothesis or a
   statement that its lanes past the stop are unused.
-* **The sixty-four-lane masks are a transcription, not a proved bridge.**
-  `specQuote64`, `specDelimiter64`, `specInString64` and `specCandidate64` are the
-  two-half block the kernel computes, but nothing here relates them to the
-  kernel's registers `%qmc2`, `%ssc2`, `%m` and `%cand`, and the outgoing carry
-  (`%carryn`, `%pparn`, `%openn`) is neither defined nor related to
-  `(classWindow ...).carry`.  Proving the kernel body against these definitions is
-  the next obligation; this module only states the target.
+* **The sixty-four-lane masks are proved against the extracted unit, and are a
+  transcription for any other emission.** `specQuote64`, `specDelimiter64`,
+  `specInString64`, `specCandidate64`, `specSpace64`, `specControl64`,
+  `specBackslash64` and `specEscapedQuote64` are the two-half block the kernel
+  computes. `s1_masks_refines` (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) relates
+  each of the six stored masks, and the outgoing carry, to these definitions at
+  the body `LeanLLVM/Vellum/JsonS1MasksIR.lean` pins from
+  `probes/install/ir/json-s1-masks.candidate.ll` — `%p`, `%c` and `%o` read and
+  written at that body's own slot layout, under `s1Calls`. A body that is not
+  that fixture's is still unrelated to them: what is established is the
+  identification for the extracted unit, not a rule about emitted text in
+  general.
 -/
 
 import LeanLLVM.JSON.ScanBlock
@@ -193,7 +211,9 @@ open LeanLLVM.JSON
 `IsQuoteB` and `IsBackslashB` are `ScanBlock.lean`'s, and the shared parser proves
 through them; they are used here rather than restated.  `IsDelimB` is the missing
 third of the classifier's vocabulary: the six RFC 8259 §2 structural characters,
-without the quote and the backslash, which the kernel masks separately. -/
+without the quote and the backslash, which the kernel masks separately.
+`IsControlB` is the classifier's alone, so it lives here and not in
+`JSON/Bytes.lean`, which is the parser's predicate set. -/
 
 /-- The six RFC 8259 §2 structural characters the classifier masks as `s`:
 `,` `:` `{` `}` `[` `]`.  The quote and the backslash are not here; the kernel
@@ -217,6 +237,10 @@ theorem isStructOrSpaceB_eq (b : UInt8) :
     IsStructOrSpaceB b = (IsDelimB b || IsQuoteB b || IsBackslashB b || IsSpaceB b) := by
   simp only [IsStructOrSpaceB, IsStructuralB, IsDelimB, IsQuoteB, IsBackslashB, IsSpaceB]
   simp only [Bool.or_assoc, Bool.or_left_comm, Bool.or_comm]
+
+/-- A control byte: the kernel's control test, `b < 0x20`, which the emission
+writes as `icmp ult <64 x i8> %32, splat (i8 32)` — not as `umin`. -/
+def IsControlB (b : UInt8) : Bool := decide (b ≤ 0x1F)
 
 /-! ### Packing the lanes
 
@@ -458,6 +482,19 @@ def inStringMask (bs : List UInt8) (st : ClassState) : BitVec 32 :=
 /-- The window's candidate mask (`cand`). -/
 def candidateMask (bs : List UInt8) (st : ClassState) : BitVec 32 :=
   (classWindow bs st).candidate
+
+/-- The window's whitespace word (`ws`): the four RFC 8259 §2 whitespace bytes.
+It reads no carry, which is why it is stated as `maskOfListWith` at `IsSpaceB` —
+`delimiterMask_eq_maskOfListWith` is the same shape one predicate over.  The
+`ClassState` argument is ignored so `classMask64` can be instantiated without a
+lambda at the call site. -/
+def spaceMask (bs : List UInt8) (_ : ClassState) : BitVec 32 :=
+  maskOfListWith IsSpaceB bs
+
+/-- The window's control word (`ctl`): every byte below `0x20`.  Carry-free like
+`spaceMask`, and stated the same way. -/
+def controlMask (bs : List UInt8) (_ : ClassState) : BitVec 32 :=
+  maskOfListWith IsControlB bs
 
 /-! ### Reading one lane
 
@@ -2175,6 +2212,22 @@ def specQuote64 (lo hi : Block32) (st : ClassState) : BitVec 64 :=
 /-- The kernel's delimiter mask over one sixty-four-byte block. -/
 def specDelimiter64 (lo hi : Block32) (st : ClassState) : BitVec 64 :=
   classMask64 delimiterMask lo hi st
+
+/-- The kernel's whitespace mask over one sixty-four-byte block. -/
+def specSpace64 (lo hi : Block32) (st : ClassState) : BitVec 64 :=
+  classMask64 spaceMask lo hi st
+
+/-- The kernel's control-byte mask over one sixty-four-byte block. -/
+def specControl64 (lo hi : Block32) (st : ClassState) : BitVec 64 :=
+  classMask64 controlMask lo hi st
+
+/-- The kernel's backslash mask over one sixty-four-byte block. -/
+def specBackslash64 (lo hi : Block32) (st : ClassState) : BitVec 64 :=
+  classMask64 backslashMask lo hi st
+
+/-- The kernel's escaped-quote mask over one sixty-four-byte block. -/
+def specEscapedQuote64 (lo hi : Block32) (st : ClassState) : BitVec 64 :=
+  classMask64 escapedQuoteMask lo hi st
 
 /-- Bit `k` below the halfway point of the joined mask. -/
 theorem classMask64_getLsbD_lo (f : List UInt8 → ClassState → BitVec 32)

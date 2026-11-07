@@ -65,13 +65,21 @@ needs the other two to match.
   `NoBackslashOutside`, each with its counterexample,
   and the post-stop divergence stated as a divergence (`classCarryAt_succ_of_stop`,
   `classCarryAt_succ_closed`) rather than a caveat — and the identification with
-  the kernel's registers still owed; `JsonClassifyIR` relates the emitted
+  the kernel's registers proved for the extracted mask unit and owed for any other
+  emission; `JsonClassifyIR` relates the emitted
   classifier body to the block layer's mask (`scannerLLVM_refines`, over
   `probes/install/ir/json-classify.candidate.ll`); and `JsonSeam` states the
   reference selection, the installed body's selection, and the framed
   replacement through a staging caller (`classifySeam_refines`,
   `replaceScanner_sound`, `replaceScanner_ret`, over
-  `probes/install/ir/json-caller.ll`).  `Pclmul` is the classifier's arithmetic
+  `probes/install/ir/json-caller.ll`); and the stage-1 mask unit's own bridge:
+  `JsonS1MasksIR` pins `probes/install/ir/json-s1-masks.candidate.ll` by
+  `#guard`, and `JsonS1MasksSteps` proves `s1_masks_refines` over that body — the
+  six masks `JsonScanSpec` specifies and the outgoing carry, at the body's own
+  registers, under an environment binding its five intrinsic calls — with the six
+  per-mask identities and the totality companion `s1_masks_undefined_of_no_read`
+  (a block absent across the 64 bytes the body reads is `ub`).  `Pclmul` is the
+  classifier's arithmetic
   underneath those three: `clmul` as the truncated GF(2) polynomial product
   written as a fold of shifted XORs, the all-ones instance as the prefix parity
   (`clmul_allOnes_self`) and its uniqueness (`clmul_allOnes_unique`), and the two
@@ -97,7 +105,9 @@ needs the other two to match.
   fixture of that file is `include_str`'d and no AST is pinned, so no theorem reaches
   `@ci2`; the `i1`-vector bitcast and the low-then-high join are the conventions the
   transcription reads, not theorems about the instructions; and any relation to the
-  emitted IR is owed here as it is in `Pclmul`.  Every **public** theorem is pinned
+  emitted IR is owed here for `@ci2` — as it is in `Pclmul` — while the extracted
+  stage-1 mask unit's body is related to these definitions by `JsonS1MasksSteps`.
+  Every **public** theorem is pinned
   in `LeanLLVMTest/Vellum.lean` at `[propext, Quot.sound]` or narrower — the three
   `private` numeral lemmas of `BitLanes` cannot be named from another file — each of
   the choice-carrying `BitVec`/`List` lemmas replaced by a local proof.  The pins are
@@ -184,6 +194,16 @@ needs the other two to match.
   window of the corpus and a mixed block, with a defect object and a tampered
   expectation as its controls.  Its object arm stages each window in a
   32-byte-aligned buffer, so it claims agreement on aligned windows only.
+  The stage-1 mask unit has two routes of its own: `tests/json-s1-masks.lean`
+  asserts the six masks and the carry of a mixed block under three carry states,
+  that no byte outside the two slots moved, and the three clause witnesses; and
+  `tests/json-s1-masks/check.sh` compares the installed object — compiled from
+  `kernel/json/s1_block.c` and called through `probes/json/s1_masks_driver.c`,
+  every window staged at offset 1 of a 96-byte buffer so the object is called
+  misaligned — against the Lean body over the corpus and the three generated arms
+  (byte, class alphabet, fixed-seed random), with a defect object and a tampered
+  expectation as its controls.  It also regenerates the fixture from that source
+  and byte-compares it; a difference is a setup failure, not an assertion result.
   One more check sits beside those routes: `tests/json-import-boundary.sh`
   filters the actual `import` declarations of `LeanLLVM/JSON/*.lean` and
   asserts that `Parse.lean` imports exactly `Spec`, `Scan` and `Tape`, that
@@ -284,6 +304,28 @@ needs the other two to match.
   pinned in `LeanLLVMTest/Core.lean`.  `tests/vector-lanes.lean` is the scenario:
   a lane read returns that lane and an out-of-range index is `ub`, with the lane
   values chosen so a read of another lane, or of zero, fails one of the pair.
+- A vector form is modelled only where a body uses it, and each is admitted
+  beside its nearest unmodelled neighbour, refused by name: `shufflevector` with
+  a defined mask naming lanes below `2n` (a mask entry at or past `2n`, or one
+  written `undef`/`poison`, is refused); a mask-only vector `store` — `store
+  <n x i1>` whose total width is whole bytes — where `store <5 x i1>` and a
+  non-mask vector store are refused; a non-mask vector `bitcast` at equal total
+  width, where an unequal width is refused; vector `lshr`, which the stage-1
+  fixture emits twice (`lshr <16 x i16> …, splat (i16 4)` reading `%12` and
+  `%22`, the high-nibble extraction), and vector `shl` with it — the two
+  directions are one operation, and no tracked `.ll` emits a vector `shl`, so
+  that side is exercised as an accepted control in `tests/vector-s1.lean`
+  (accepted, printed, re-parsed and evaluated) and in `tests/json-s1-parser.lean`
+  — where a vector `ashr` is refused; a vector `load` at integer lanes whose
+  total width is whole bytes; and the five intrinsic spellings the stage-1
+  kernel calls —
+  `llvm.x86.avx2.pshuf.b` at two arguments, `llvm.x86.pclmulqdq` at immediate 0,
+  `llvm.x86.bmi.pext.64`, `llvm.x86.bmi.pdep.64` and `llvm.ctlz.i64` with the
+  non-poison flag — each validated at symbol, arity, type and immediate, with its
+  neighbouring spelling refused.  `umin`/`umax` stay refused: the emission
+  contains none.  `tests/vector-s1.lean` checks every acceptance and its refusal
+  in one run, and `probes/install/ir/json-s1-masks.candidate.ll` is the fixture
+  that uses them all except a vector `shl`, which appears in no tracked `.ll`.
 - An installation certificate is data, not source.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated

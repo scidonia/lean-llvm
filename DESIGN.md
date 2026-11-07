@@ -451,13 +451,18 @@ canonical IR, checked with `llvm-as` in the verification runs.
    (`CallRefinement`); a framed relation over that channel is the next step
    after that.  Vectors are modelled too: `Ty.vec` with integer lanes, both literal
    forms — a splat and a lane list, with `zeroinitializer` read as the splat of zero
-   — lane-wise `icmp` and integer binops, the mask `bitcast`, the lane accesses
+   — lane-wise `icmp` and integer binops including `shl`/`lshr`, the mask `bitcast`
+   and the non-mask vector `bitcast` at equal total width, `shufflevector` with a
+   defined mask, a mask-only vector `store`, the lane accesses
    `extractelement`/`insertelement` (an index outside the lane range is `ub`, the
    model's reading of LLVM's poison), and a
-   vector `load` (`Instr.load` carries no alignment field, so a captured
+   vector `load` at `<n x i8>` or at integer lanes whose total width is whole bytes
+   (`Instr.load` carries no alignment field, so a captured
    `align 1` is dropped), each justified by the construct it serves in the
-   emitted classifier fixture `probes/install/ir/json-classify.candidate.ll` or in
-   the stage-1 kernel fixture `tests/v16/ci2.ll`.
+   emitted classifier fixture `probes/install/ir/json-classify.candidate.ll`, in
+   the stage-1 kernel fixture `tests/v16/ci2.ll`, or in the extracted mask unit's
+   fixture `probes/install/ir/json-s1-masks.candidate.ll`, whose body is the one
+   `s1_masks_refines` proves.
    `getelementptr` is modelled for the integer element widths the model pins as
    having an allocated size equal to the stored size `Ty.sizeBytes` computes
    (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128`): `Instr.gep` carries the element type and the step adds

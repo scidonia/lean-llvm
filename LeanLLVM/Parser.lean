@@ -404,7 +404,7 @@ def parseBinop (dst : String) (bop : BinOp) : P Stmt := do
       pure (.instr (.binop dst bop w a b))
   | .vec n (.int w) =>
       match bop with
-      | .or | .and | .xor | .add | .sub =>
+      | .or | .and | .xor | .add | .sub | .shl | .lshr =>
           let a ← parseOperand ty
           P.expect ","
           let b ← parseOperand ty
@@ -556,6 +556,92 @@ def checkCallParamTypes (callee : String) (sig : List Ty × Bool)
             but the callee's written function type gives {ty.render} at that position"
   go 1 sig.1 args
 
+/-- The five intrinsic spellings the fragment models, checked at the symbol,
+arity, operand-type and immediate positions.
+
+The generic `call` path checks none of these: it reads any callee name and any
+argument list, so without this check a three-argument `pshuf.b`, a `pclmulqdq`
+at an immediate other than 0, a `pext.32` and a `ctlz` with the flag `i1 true`
+would all parse while meaning nothing here.  Each refusal names the intrinsic it
+refused, and the accepted form is the one the emission uses:
+
+* `llvm.x86.avx2.pshuf.b`: `<32 x i8> (<32 x i8>, <32 x i8>)` — two operands,
+  the table then the control;
+* `llvm.x86.pclmulqdq`: `<2 x i64> (<2 x i64>, <2 x i64>, i8 0)`;
+* `llvm.x86.bmi.pext.64` and `llvm.x86.bmi.pdep.64`: `i64 (i64, i64)`;
+* `llvm.ctlz.i64`: `i64 (i64, i1 false)`.
+
+A call to any other symbol is not this check's business: a callee's meaning is
+the `Calls` environment's, and the fixture's own opcode-and-call-target
+inventory is what records an unmodelled intrinsic reaching the text.  The
+families that do have a modelled reading are refused at every other width or
+suffix, by name, rather than left to that record. -/
+def checkIntrinsicShape (callee : String) (retTy : Ty)
+    (args : List (Ty × Operand)) : Except String Unit :=
+  let argTys : List Ty := args.map fun a => a.1
+  let shape (n : Nat) (res : Ty) (tys : List Ty) : Except String Unit :=
+    if retTy ≠ res then
+      .error s!"the intrinsic @{callee} is modelled only at result type \
+          {res.render}, got {retTy.render}"
+    else if args.length ≠ n then
+      .error s!"the intrinsic @{callee} takes exactly {n} argument(s) in the \
+          modelled form, got {args.length}"
+    else if argTys ≠ tys then
+      .error s!"the intrinsic @{callee} is modelled only with the operand types \
+          {String.intercalate ", " (tys.map Ty.render)}, got \
+          {String.intercalate ", " (args.map fun a => a.1.render)}"
+    else .ok ()
+  match callee with
+  | "llvm.x86.avx2.pshuf.b" =>
+      shape 2 (.vec 32 (.int 8)) [.vec 32 (.int 8), .vec 32 (.int 8)]
+  | "llvm.x86.pclmulqdq" =>
+      match shape 3 (.vec 2 (.int 64))
+          [.vec 2 (.int 64), .vec 2 (.int 64), .int 8] with
+      | .error e => .error e
+      | .ok _ =>
+          match args with
+          | [(_, _), (_, _), (_, .imm (.int 8 v))] =>
+              if v.toNat = 0 then .ok ()
+              else
+                .error s!"the intrinsic @llvm.x86.pclmulqdq is modelled only at \
+                    immediate 0, got i8 {v.toNat}: the model pins lane 0's \
+                    product and lane 1 as zero, which is the imm-0 case only"
+          | _ =>
+              .error "the intrinsic @llvm.x86.pclmulqdq's third argument must be \
+                  the immediate i8 0"
+  | "llvm.x86.bmi.pext.64" =>
+      shape 2 (.int 64) [.int 64, .int 64]
+  | "llvm.x86.bmi.pdep.64" =>
+      shape 2 (.int 64) [.int 64, .int 64]
+  | "llvm.ctlz.i64" =>
+      match shape 2 (.int 64) [.int 64, .int 1] with
+      | .error e => .error e
+      | .ok _ =>
+          match args with
+          | [(_, _), (_, .imm (.int 1 f))] =>
+              if f.toNat = 0 then .ok ()
+              else
+                .error "the intrinsic @llvm.ctlz.i64 is modelled only with the \
+                    flag i1 false: the flag i1 true promises an undefined result \
+                    at zero, and this model has no poison"
+          | _ =>
+              .error "the intrinsic @llvm.ctlz.i64's second argument must be the \
+                  immediate i1 false"
+  | s =>
+      if s.startsWith "llvm.x86.bmi.pext." then
+        .error s!"the intrinsic @{s} is not modelled: the pext model is the \
+            64-bit reading, @llvm.x86.bmi.pext.64"
+      else if s.startsWith "llvm.x86.bmi.pdep." then
+        .error s!"the intrinsic @{s} is not modelled: the pdep model is the \
+            64-bit reading, @llvm.x86.bmi.pdep.64"
+      else if s.startsWith "llvm.ctlz." then
+        .error s!"the intrinsic @{s} is not modelled: only @llvm.ctlz.i64 with \
+            the flag i1 false is"
+      else if s.startsWith "llvm.x86.avx2.pshuf." then
+        .error s!"the intrinsic @{s} is not modelled: only \
+            @llvm.x86.avx2.pshuf.b is"
+      else .ok ()
+
 /-- The call instruction, with or without a destination register:
 `[<dst> =] [tail] call <retTy> [<function type>] @<callee>(<args>)`.
 
@@ -596,7 +682,15 @@ is accepted and the value is discarded; and `%d = call i32 @g` naming a callee
 that returns nothing is accepted with `%d` bound to whatever the environment's
 outcome carries — `CallOutcome.ret` is a value, so an environment that models a
 callee returning nothing must still supply one, and nothing here can tell that
-it did. -/
+it did.
+
+The five intrinsic symbols the fragment models are the exception to that
+openness: `checkIntrinsicShape` validates each one's symbol, arity, operand
+types and immediate, so a `pshuf.b` of the wrong arity, a `pclmulqdq` at an
+immediate other than 0, a `pext.32`, a `pdep.32` and a `ctlz` with the flag
+`i1 true` are refused by name instead of reaching the semantics as calls no
+environment can resolve meaningfully.  Any other callee is still resolved by
+the environment alone. -/
 def parseCall (dst : Option String) : P Stmt := do
   let retTy ← expectTy
   let first ← P.next
@@ -625,6 +719,10 @@ def parseCall (dst : Option String) : P Stmt := do
             | .error e => P.fail e
             | .ok u => pure u
         | none => pure ()
+      let _ ←
+        match checkIntrinsicShape callee retTy args with
+        | .error e => P.fail e
+        | .ok u => pure u
       match dst with
       | some d =>
           if retTy = .void then
@@ -739,6 +837,8 @@ def Instr.resultTy : Instr → Option Ty
   | .bitcastMask _ n _ => some (.int n)
   | .extractelement _ _ w _ _ => some (.int w)
   | .insertelement _ n w _ _ _ => some (.vec n (.int w))
+  | .shuffleVec _ _ w _ _ mask => some (.vec mask.length (.int w))
+  | .vecBitcast _ _ _ m jw _ => some (.vec m (.int jw))
   | .call _ retTy _ _ => some retTy
   | .callVoid _ _ => none
   | .phi _ ty _ => some ty
@@ -853,6 +953,49 @@ def checkICmpPtrTypes (f : Function) : Except String Unit :=
   | .error e => .error e
   | .ok _ => .ok ()
 
+/-- The entry list of a `shufflevector` mask, read after its opening `<`: one
+`i32 <literal>` per entry, the list closed by `>`.  An entry is a decimal or
+`0x` integer naming a source lane, so `undef` and `poison` are refused by name —
+the model has no poison and the mask field is a list of naturals — and an entry
+at or past `2n` is refused with the bound it crossed.  The caller checks the
+entry count against the mask type's lane count. -/
+def shuffleMaskEntries (n : Nat) : P (List Nat) := fun ts =>
+  let rec go (acc : List Nat) : List String → Except String (List Nat × List String)
+    | [] => .error "unterminated shufflevector mask: expected '>'"
+    | ">" :: rest => .ok (acc.reverse, rest)
+    | elemTok :: litTok :: rest =>
+        match parseTy elemTok with
+        | .ok (.int 32) =>
+            let entry : Except String Nat :=
+              if litTok = "undef" || litTok = "poison" then
+                .error s!"a shufflevector mask entry '{litTok}' is not modelled: \
+                    the model has no poison, so every entry must name a source lane"
+              else
+                match parseNat litTok with
+                | some k =>
+                    if k < 2 * n then .ok k
+                    else
+                      .error s!"a shufflevector mask entry {k} is at or past \
+                          2n = {2 * n}, the lane count of the two {n}-lane \
+                          operands: the model has no poison to give that entry"
+                | none =>
+                    .error s!"a shufflevector mask entry must be an i32 integer \
+                        literal or undef, got '{litTok}'"
+            match entry with
+            | .error e => .error e
+            | .ok k =>
+                match rest with
+                | "," :: more => go (k :: acc) more
+                | ">" :: more => .ok ((k :: acc).reverse, more)
+                | [] => .error "unterminated shufflevector mask: expected '>'"
+                | t :: _ =>
+                    .error s!"expected ',' or '>' in a shufflevector mask, got '{t}'"
+        | _ =>
+            .error s!"a shufflevector mask entry must be written with i32, got \
+                '{elemTok}'"
+    | [_] => .error "incomplete shufflevector mask entry: expected '<i32> <value>'"
+  go [] ts
+
 def parseValueInstr (dst : String) : P Stmt := do
   let op ← P.next
   match op with
@@ -953,10 +1096,12 @@ def parseValueInstr (dst : String) : P Stmt := do
       let (_, p) ← parseTypedOperand
       pure (.instr (.load dst ty p))
   | "bitcast" =>
-      -- The one modelled cast is a mask pack: `<n x i1>` to the `n`-bit
-      -- integer whose bit `k` is lane `k`.  Any other type pair is refused
-      -- with both types named, because a vector cast the semantics does not
-      -- model must not be approximated by a scalar one.
+      -- Two modelled reinterpretations.  A mask pack is `<n x i1>` to the
+      -- `n`-bit integer whose bit `k` is lane `k`; a vector reinterpretation is
+      -- any `<n x iw>` to `<m x jw>` at equal total width, which is how the
+      -- emission widens `<4 x i64>` to `<32 x i8>`.  Any other pair is refused
+      -- with both types named, because a cast the semantics does not model must
+      -- not be approximated by a scalar one.
       let tyIn ← expectTy
       let v ← parseOperand tyIn
       P.expect "to"
@@ -965,6 +1110,11 @@ def parseValueInstr (dst : String) : P Stmt := do
       | .vec n (.int 1), .int m =>
           if m = n then pure (.instr (.bitcastMask dst n v))
           else P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
+      | .vec n (.int w), .vec m (.int jw) =>
+          if n * w = m * jw then pure (.instr (.vecBitcast dst n w m jw v))
+          else
+            P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not \
+                modelled: the total bit widths {n * w} and {m * jw} disagree"
       | _, _ => P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
   | "extractelement" =>
       -- `%d = extractelement <n x iw> <vec>, iN <idx>`.  The vector type is the
@@ -1017,6 +1167,40 @@ def parseValueInstr (dst : String) : P Stmt := do
                 index must be an integer type"
         let idx ← parseOperand idxTy
         pure (.instr (.insertelement dst n w v elt idx))
+  | "shufflevector" =>
+      -- `%d = shufflevector <n x iw> %a, <n x iw> %b, <m x i32> <...>`.  The
+      -- result has the mask's lane count at the operands' element width; both
+      -- operands are written with the same type, and every mask entry is read
+      -- by `shuffleMaskEntries`, which refuses an out-of-range or
+      -- `undef`/`poison` entry by name.
+      let vTy ← expectTy
+      let (n, w) ← match vTy with
+        | .vec n (.int w) => pure (n, w)
+        | _ =>
+            P.fail s!"shufflevector requires an integer-lane vector operand type, \
+                got {vTy.render}"
+      let a ← parseOperand vTy
+      P.expect ","
+      let vTyB ← expectTy
+      if vTyB ≠ vTy then
+        P.fail s!"shufflevector's operands must have one type: the first is \
+            written {vTy.render}, the second {vTyB.render}"
+      else
+        let b ← parseOperand vTyB
+        P.expect ","
+        let maskTy ← expectTy
+        let m ← match maskTy with
+          | .vec m (.int 32) => pure m
+          | _ =>
+              P.fail s!"shufflevector's mask must be an '<m x i32>' vector type, \
+                  got {maskTy.render}"
+        P.expect "<"
+        let entries ← shuffleMaskEntries n
+        if entries.length ≠ m then
+          P.fail s!"a shufflevector mask writes {entries.length} entr(ies), but \
+              its mask type {maskTy.render} has {m} lane(s)"
+        else
+          pure (.instr (.shuffleVec dst n w a b entries))
   | "getelementptr" =>
       -- `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`: one index and an
       -- element type whose allocated size is the stored size the step scales by.
@@ -1145,11 +1329,26 @@ def parseSimple : P Stmt := do
             pure (.term (.condbr c thenBlock elseBlock))
   | "unreachable" => pure (.term .unreachable)
   | "store" =>
+      -- The modelled vector store is a packed mask: `<n x i1>` whose total
+      -- width is a whole number of bytes, the shape the classifier body stores
+      -- its comparison result at.  Any other vector value is refused by name,
+      -- mask or not — `<32 x i8>` has no byte-packing rule here even though its
+      -- total width is whole — and a mask whose width is not whole bytes has no
+      -- byte layout at all.
       let (ty, v) ← parseTypedOperand
       P.expect ","
       let (_, p) ← parseTypedOperand
-      if let .vec _ _ := ty then P.fail "store of a vector value is not modelled"
-      else pure (.instr (.store ty v p))
+      match ty with
+      | .vec n (.int 1) =>
+          if n % 8 = 0 then pure (.instr (.store ty v p))
+          else
+            P.fail s!"store of {ty.render} is not modelled: a mask store's total \
+                width of {n} bit(s) is not a whole number of bytes"
+      | .vec _ _ =>
+          P.fail s!"store of the vector value {ty.render} is not modelled: the \
+              modelled vector store is an '<n x i1>' mask whose total width is a \
+              whole number of bytes"
+      | _ => pure (.instr (.store ty v p))
   | "call" => parseCall none
   | "tail" => do
       P.expect "call"

@@ -81,12 +81,18 @@ theorem noCalls_pureEnv : PureEnv noCalls := by
 /-! ### The interpretation -/
 
 /-- The memory an event `store addr ty v` leaves behind.  It agrees with
-`storeValue` on every case that is not undefined behaviour. -/
+`storeValue` on every case that is not undefined behaviour, the vector store
+included: the lanes are packed little-endian exactly as `storeValue` packs them.
+-/
 def storeMem (m : Mem) (ty : Ty) (v : Value) (addr : Nat) : Mem :=
   match ty, v with
   | .int w, .int w' x =>
       if w' = w then writeBytes m addr (natToBytes x.toNat ((w + 7) / 8)) else m
   | .ptr, .ptr a => writeBytes m addr (natToBytes a 8)
+  | .vec n (.int w), .vec n' w' lanes =>
+      if n' = n ∧ w' = w ∧ lanes.length = n ∧ n * w % 8 = 0 then
+        writeBytes m addr (natToBytes (packLanes lanes) (n * w / 8))
+      else m
   | _, _ => m
 
 /-- Instructions with no event: the semantics' own decision, lifted. -/
@@ -296,6 +302,14 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
+  | shuffleVec d n w a b mask =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | vecBitcast d n w m jw v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
   | phi d ty inc =>
       exact evalInstr_phi_mem h
 
@@ -324,7 +338,24 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
           subst h
           simp only [storeMem]
       | vec n' w' lanes => simp [storeValue] at h
-  | vec n elem => cases v <;> simp [storeValue] at h
+  | vec n elem =>
+      cases elem with
+      | int w =>
+          cases v with
+          | vec n' w' lanes =>
+              simp only [storeValue] at h
+              repeat' split at h
+              · rename_i hcond
+                simp only [Option.some.injEq] at h
+                subst h
+                simp only [storeMem]
+                rw [ite_eq_left hcond]
+              · exact absurd h (by simp)
+          | int w' x => simp [storeValue] at h
+          | ptr a => simp [storeValue] at h
+      | ptr => cases v <;> simp [storeValue] at h
+      | void => cases v <;> simp [storeValue] at h
+      | vec m e => cases v <;> simp [storeValue] at h
   | void => cases v <;> simp [storeValue] at h
 
 theorem exec_pureInstrT (calls : Calls) (s : State) (i : Instr)
@@ -587,6 +618,16 @@ theorem exec_codeT (calls : Calls) (hpure : PureEnv calls) :
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | insertelement d n w v elt idx =>
           exact exec_pureInstrT calls s (.insertelement d n w v elt idx) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | shuffleVec d n w a b mask =>
+          exact exec_pureInstrT calls s (.shuffleVec d n w a b mask) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | vecBitcast d n w m jw v =>
+          exact exec_pureInstrT calls s (.vecBitcast d n w m jw v) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK

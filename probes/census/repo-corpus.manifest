@@ -6,6 +6,7 @@ parsed	probes/install/ir/candidate.ll
 refused	probes/install/ir/candidate.raw.ll	expected a parameter name, got 'noundef'
 parsed	probes/install/ir/json-caller.ll
 parsed	probes/install/ir/json-classify.candidate.ll
+parsed	probes/install/ir/json-s1-masks.candidate.ll
 parsed	probes/install/ir/json-scan-body.ll
 parsed	probes/install/ir/json-scan.candidate.ll
 parsed	probes/install/ir/loop.ll

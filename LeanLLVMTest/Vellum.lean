@@ -5,6 +5,7 @@ import LeanLLVM.Vellum.JsonScanIR
 import LeanLLVM.Vellum.JsonScanLane
 import LeanLLVM.Vellum.JsonScanSpec
 import LeanLLVM.Vellum.Pclmul
+import LeanLLVM.Vellum.JsonS1MasksSteps
 
 open LeanLLVM.Vellum
 
@@ -368,6 +369,326 @@ theorem caller_not_refined_by_undefined_env :
 /-- info: 'LeanLLVM.runFuel_outcome_unique' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.runFuel_outcome_unique
+
+
+
+/-! ### The stage-1 classification masks
+
+The kernel's five-word environment, the two usability corollaries, and — below,
+with the theorem they are stated for — the public results of the stage-1 mask
+unit.  Every pin is `[propext, Quot.sound]` or narrower; `s1_masks_decompose`
+carries no `Classical.choice` because it is a bit-level identity about bytes.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.s1_masks_decompose' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.s1_masks_decompose
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.s1_masks_candidate' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.s1_masks_candidate
+
+/-! ### The stage-1 mask unit's step corpus
+
+The emitted body's execution is stated at an opaque environment, with each
+instruction's operands as hypotheses; the composition conses onto a chain ending in
+a variable.  The pins record that the shape carries no extra axiom: `s1_chain6`,
+the six-step witness, is `[propext, Quot.sound]` only.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.denoteCode_cons_of' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.denoteCode_cons_of
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_step9' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_step9
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_step10' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_step10
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_chain6' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_chain6
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_load0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_load0
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_ptr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_ptr
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_load1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_load1
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_chain3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_chain3
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.withEnv' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.withEnv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backLo' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backLo
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backHi' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backHi
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backLo_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backLo_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backHi_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backHi_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast2
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast3
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_shuffle4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_shuffle4
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast5' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast5
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmp6' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmp6
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_quote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_quote
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_quoteChain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_quoteChain
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_backLoCmp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_backLoCmp
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_backLoMask' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_backLoMask
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_zext9' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_zext9
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_backHiCmp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_backHiCmp
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_backHiMask' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_backHiMask
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_zext12' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_zext12
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_shl13' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_shl13
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_or14' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_or14
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.conv9W' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.conv9W
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.conv12W' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.conv12W
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shl13W' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shl13W
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.or14W' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.or14W
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isBackslashB_lane_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isBackslashB_lane_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isBackslashB_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isBackslashB_lane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backLo_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backLo_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backHi_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backHi_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backLoW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backLoW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backHiW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backHiW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backLo_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backLo_lt
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.backHi_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.backHi_lt
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.ofNat32_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.ofNat32_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.backslashWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.backslashWord
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.ofNat_lanesToNat_join' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.ofNat_lanesToNat_join
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_getElem?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_getElem?
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.ofBool_eq_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.ofBool_eq_one
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.mul_pow' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.mul_pow
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.conv9W_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.conv9W_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.conv12W_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.conv12W_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shl13W_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shl13W_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.or14W_comm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.or14W_comm
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_backslash_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_backslash_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_lane_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_lane_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_lane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_iff_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_iff_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isQuoteB_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_quote_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_quote_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.controlLanes' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.controlLanes
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.ofBool_eq_one_bool' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.ofBool_eq_one_bool
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isControlB_iff_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isControlB_iff_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isControlB_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isControlB_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_control_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_control_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.loTab16' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.loTab16
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.hiTab16' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.hiTab16
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.tabAnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.tabAnd
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_delim_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_delim_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_space_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_space_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_delim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_delim
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_space' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.tabAnd_space
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.split16' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.split16
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.split16'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.split16'
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.getD_two_copies' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.getD_two_copies
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.pshufbLanes_two_copies_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.pshufbLanes_two_copies_lane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.bitcastVecLanes_unpackLanes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.bitcastVecLanes_unpackLanes
+
+
 
 
 /-! ### The directed tree relation
@@ -4604,3 +4925,1305 @@ example :
 #guard kernelQuote (specMask64 IsQuoteB escapedQuoteBlock (fun _ => 0x20))
     (specMask64 IsBackslashB escapedQuoteBlock (fun _ => 0x20)) false false
   ≠ specQuote64 escapedQuoteBlock (fun _ => 0x20) ⟨false, true⟩
+
+
+/-! ### The table region, the nibble arithmetic and the delimiter word
+
+The pins below cover §6.3's helper list — the step lemmas, the composition lemmas and
+the lane-to-word bridge — together with the nibble arithmetic the table region rests
+on and the delimiter word's identity.  Every one is at the standard footprint
+`[propext, Quot.sound]` or narrower; a widened one fails elaboration.
+
+Two core lemmas the first draft reached for carry `Classical.choice` and are not used
+here: `Nat.mod_mul_right_div_self` (replaced by `mod_mul_div`, derived from
+`Nat.mod_add_div`, `Nat.add_mul_mod_self_left`, `Nat.add_mul_div_left`,
+`Nat.mod_eq_of_lt` and `Nat.div_eq_of_lt`) and `BitVec.getLsbD_allOnes` (replaced by
+the `~~~x` route through `BitLanes.getLsbD_not_of_lt`).  The pins for those two
+replacements and their consumers are what hold that repair in place. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.evalInstr_binopVec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.evalInstr_binopVec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_getElem?_len' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_getElem?_len
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_map' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_map
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_mapM' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.zipReplicate_mapM
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.mapM_some_map' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.mapM_some_map
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksIR.evalOperands_cons' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksIR.evalOperands_cons
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.unpackLanes_getElem' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.unpackLanes_getElem
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.unpackLanes_getElem_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.unpackLanes_getElem_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.mod_pow16_div16' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.mod_pow16_div16
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.lane_shr4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.lane_shr4
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shr4Lanes_length' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shr4Lanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shr4Lanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shr4Lanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shr4_mod_even' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shr4_mod_even
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shr4_mod_odd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shr4_mod_odd
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.packLanes_shr4_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.packLanes_shr4_mod
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.and15_eq_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.and15_eq_mod
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.nibbleLanes_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.nibbleLanes_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.loTabV_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.loTabV_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiTabV_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiTabV_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcastHalf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcastHalf
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_shr4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_shr4
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_andNib' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_andNib
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_pshufb' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_pshufb
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast8
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_andHiNib' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_andHiNib
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_andTables' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_andTables
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_and63' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_and63
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmpEq0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmpEq0
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmpUlt64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmpUlt64
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcastMask32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcastMask32
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_compl' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_compl
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.ofNat32_toNat'' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.ofNat32_toNat'
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.complW_getLsbD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.complW_getLsbD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.getD_map' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.getD_map
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.zip_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.zip_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.nibLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.nibLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.nibLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.nibLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.pshufbLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.pshufbLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.getLsbD7_of_lt16' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.getLsbD7_of_lt16
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_getD' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.loLanes_getD_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.loLanes_getD_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.loLanes_getD_loWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.loLanes_getD_loWord
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.loLanes_hiNibble' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.loLanes_hiNibble
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.tabLoLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.tabLoLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.tabHiLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.tabHiLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.tabLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.tabLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_toNat_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_toNat_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.cmpWordLanes_getElem?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.cmpWordLanes_getElem?
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bool_not_decide' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bool_not_decide
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.lanesToNat_testBit_bool' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.lanesToNat_testBit_bool
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.loToBitVec' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.loToBitVec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.add_rotate' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.add_rotate
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.mod_mul_div' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.mod_mul_div
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.delimLoW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.delimLoW_eq
+
+
+/-! ### The high half's table region
+
+Every lemma below is its low-half counterpart at `hiWord`/`hiLanes`, and each holds the
+same footprint as the lemma it mirrors — the mirror introduced no widening. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiLanes_getD_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiLanes_getD_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiLanes_getD_hiWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiLanes_getD_hiWord
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiLanes_hiNibble' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiLanes_hiNibble
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.tabLoLanesHi_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.tabLoLanesHi_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.tabHiLanesHi_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.tabHiLanesHi_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.tabLanesHi_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.tabLanesHi_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanesHi_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanesHi_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_toNat_eq_hi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.hiNibbleLanes_toNat_eq_hi
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanesHi_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanesHi_getD
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanesHi_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sWordLanesHi_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.cmpWordLanesHi_getElem?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.cmpWordLanesHi_getElem?
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.delimHiW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.delimHiW_eq
+
+
+/-! ### The join and the delimiter identity
+
+`s1_delimiter_eq` is the first of the milestone's six mask identities stated at the
+kernel's units: the body's `%or5.i.i`, read as a natural, is the specification's
+`IsDelimB` mask over the block.  `joinW_toNat` is the join it rides on, and it is
+where the operand order is settled at the `BitVec` level rather than by `Nat.lor`
+commutativity — which this core does not carry. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.joinW_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.joinW_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_delimiter_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_delimiter_eq
+
+
+/-! ### The whitespace word's low half
+
+`wsLoW_eq` is the fifth of the six mask identities at the half's units; the block's
+`joinW` and the high-half mirror are what make it `s1_whitespace_eq` at sixty-four
+lanes.  `not_ult64_bv` is the per-byte link `!(x < 64) = (x &&& 0xC0 ≠ 0))` — the
+emission's `ult 64` against the table's bits six and seven. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.ult64Lanes_getElem?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.ult64Lanes_getElem?
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanes_eq_tabAnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanes_eq_tabAnd
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.not_ult64_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.not_ult64_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.wsLoW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.wsLoW_eq
+
+
+/-! ### The whitespace identity
+
+`s1_whitespace_eq` is the fifth of the six mask identities at the kernel's units: the
+body's `%or.i.i`, read as a natural, is the specification's `IsSpaceB` mask over the
+block.  It is the delimiter's skeleton with `ult 64` in place of the `&&& 0x3F`
+equality, so the high half is three declarations rather than a second development. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanesHi_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanesHi_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanesHi_eq_tabAnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andWordLanesHi_eq_tabAnd
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.wsHiW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.wsHiW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_whitespace_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_whitespace_eq
+
+/-! ### The escape region
+
+`s1f_escaped`'s arithmetic: the run starts and ends, the parity alternate, the two
+gathers, the scatter and the boundary lane, then `%or15.i.i` identified with
+`QuoteDerive`'s `kernelEscape`.  Each word is `[propext, Quot.sound]` or narrower —
+the `bv` truncation, the lane helpers and the identity included.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bv_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bv_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bv_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bv_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.ofNat_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.ofNat_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.xor_allOnes_eq_not' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.xor_allOnes_eq_not
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_and' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_and
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.and_oneLane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.and_oneLane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_and_not' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_and_not
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.oneW_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.oneW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.and_oneW' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.and_oneW
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.evenLanes_literal' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.evenLanes_literal
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.evenC_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.evenC_eq
+
+/-! ### The escape words' own equations
+
+Each `…W_eq` states a word as the body composes it without `evalInstr`'s
+truncation, and each is consumed by one of the identities pinned below.  Pinning
+the word equations is what keeps a widening in a step's value from reaching those
+identities without a red pin of its own.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bsW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bsW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escShlW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escShlW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escOr62W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escOr62W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escNotW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escNotW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAndStartsW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAndStartsW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd1W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd1W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd2W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd2W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escOr3W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escOr3W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escShrW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escShrW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escNot4W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escNot4W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd5W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd5W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escShl6W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escShl6W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd7W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd7W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escXorEvenW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escXorEvenW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escPext1W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escPext1W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escPext2W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escPext2W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escXor36W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escXor36W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escNot10W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escNot10W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escPdepW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escPdepW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escNot12W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escNot12W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd39W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd39W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd14W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd14W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escapedWord_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escapedWord_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escXor25W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escXor25W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd26W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd26W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.openW_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.openW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.pparW_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.pparW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.natToBytes_bit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.natToBytes_bit
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.loadValue_int64' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.loadValue_int64
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bv1_zero_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bv1_zero_one
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.nat32' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.nat32
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.ofNat_conv9' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.ofNat_conv9
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.ofNat_shl13' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.ofNat_shl13
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shl13_lane0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shl13_lane0
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.or14W_lane0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.or14W_lane0
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd1W_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd1W_lane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAnd2W_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAnd2W_lane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escRunStarts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escRunStarts
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escRunEnds' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escRunEnds
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAfterRuns' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAfterRuns
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escAlt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escAlt
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escOddRuns' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escOddRuns
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escEscapedRuns' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escEscapedRuns
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escBoundary' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escBoundary
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escapedWord_eq_kernelEscape' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escapedWord_eq_kernelEscape
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bsW_eq_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bsW_eq_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escaped_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escaped_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShl' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShl
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOpenLoad' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOpenLoad
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOr62' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOr62
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAndStarts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAndStarts
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd1
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd2
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOr3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOr3
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShr
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot4
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd5' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd5
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShl6' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShl6
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPparLoad' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPparLoad
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd7' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd7
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escXorEven' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escXorEven
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPext1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPext1
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPext2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPext2
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escXor36' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escXor36
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot10' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot10
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPdep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escPdep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escCmp63' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escCmp63
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escTobool' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escTobool
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOrCond' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOrCond
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escCond24' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escCond24
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot17' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot17
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escCtlz' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escCtlz
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShr16' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escShr16
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot12' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escNot12
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd39' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd39
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd14' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd14
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOr15' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escOr15
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escXor25' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escXor25
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd26' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_escAnd26
+
+/-! ### The unescaped-quote and in-string words
+
+`%and.i` — the raw quote word without the escapes — is `specQuote64`, and
+`%xor.i` — the block's carry-less product XOR the carry slot's word — is
+`specInString64`.  The `classWindow`-level algebra that separates the two is
+`quoteMask_and_not_escaped`; every pin here is `[propext, Quot.sound]` or narrower.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.isUnescapedQuote_and_isEscapedQuote' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.isUnescapedQuote_and_isEscapedQuote
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.quote_and_not_escaped_lane' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.quote_and_not_escaped_lane
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.quoteMask_and_not_escaped' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.quoteMask_and_not_escaped
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.qrawW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.qrawW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.notEscW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.notEscW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andQuoteW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andQuoteW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_and_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_and_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.andQuoteW_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.andQuoteW_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_andNotEsc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_andNotEsc
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_andQuote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_andQuote
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_vecInit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_vecInit
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_pclmul' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_pclmul
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_vecext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_vecext
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_imGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_imGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.seedBytes' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.seedBytes
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_imLoad' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_imLoad
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_inString' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_inString
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_imSign' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_imSign
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_instring_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_instring_eq
+
+/-! ### The joins, the control word and the stores
+
+The two `zext`/`shl`/`or` joins are stated once, parametrically in the destination
+and the word, and the join word is `joinW`; the control word is the quote word's
+shape at `ult 0x20`; the six stores are two parametric steps.  All
+`[propext, Quot.sound]` or narrower.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bv32' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bv32
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.bv32_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.bv32_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shiftLeft_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shiftLeft_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.shlJoin_hr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.shlJoin_hr
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.or_bv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.or_bv
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.orJoin_hr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.orJoin_hr
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_zextJoin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_zextJoin
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_shlJoin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_shlJoin
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_orJoin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_orJoin
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.joinBody_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.joinBody_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_wsJoin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_wsJoin
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_delimJoin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_delimJoin
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_shuffle9' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_shuffle9
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast10' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_bitcast10
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmp11' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_icmp11
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_storeInt64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_storeInt64
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_storeVec1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_storeVec1
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_wsGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_wsGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_ctlGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_ctlGep
+
+/-! ### The unit's `ub` case, and the memory facts the readback needs
+
+`s1_masks_undefined_of_no_read`: a block that is absent across the whole 64 bytes
+the body reads reaches `ub` — at the first load when its half is the absent one,
+at the second load when that one is.  With it, the two `readBytes` facts the slot
+readback rests on (a read above a written range, and two consecutive reads
+composing).  All `[propext, Quot.sound]` or narrower.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.denoteCode_cons_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.denoteCode_cons_none
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1MasksInstrs_three' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1MasksInstrs_three
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_load0_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_load0_none
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_load0_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_load0_bytes
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_load1_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_load1_none
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.step_s1Masks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.step_s1Masks
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_masks_undefined_of_no_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_masks_undefined_of_no_read
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readByte_writeBytes_above' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readByte_writeBytes_above
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_writeBytes_above' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_writeBytes_above
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_app' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_app
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_second_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_second_none
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_wsGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_wsGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_ctlGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_ctlGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_delimGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_delimGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_inStringGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_inStringGep
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_backslashGep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_backslashGep
+
+/-! ### The composed run, its readback and the six stored words
+
+`s1_run` is the body composed instruction by instruction, and `s1_runFuel` reads
+it as one control step.  The slot readback turns each of its nine writes into a
+read at the address the write is at, the six `_spec` lemmas identify those words
+with the specification's masks, and `s1Slot_outside` is the byte sweep for the
+bytes in neither slot.  All `[propext, Quot.sound]` or narrower; `withEnv_mem` is
+a projection and carries no axiom at all.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_run
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_runFuel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_runFuel
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.withEnv_mem' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.withEnv_mem
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.or5W_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.or5W_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.orWsW_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.orWsW_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.controlLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.controlLanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readImCarry_after_stores' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readImCarry_after_stores
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_slot_same' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_slot_same
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_slot_below' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_slot_below
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_slot_above' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readBytes_slot_above
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.readByte_slot_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.readByte_slot_outside
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_quote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_quote
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_delim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_delim
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_instring' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_instring
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_space' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_space
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_backslash' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_backslash
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_control' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_control
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_open' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_open
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_ppar' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_ppar
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_im' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_im
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_carry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_carry
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.specDelimiter64_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.specDelimiter64_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.specBackslash64_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.specBackslash64_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.specSpace64_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.specSpace64_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.specControl64_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.specControl64_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.packLanes_control' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.packLanes_control
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_quote_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_quote_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_delim_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_delim_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_instring_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_instring_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_space_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_space_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_backslash_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_backslash_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_control_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_control_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_outside
+
+/-! ### The outgoing carry
+
+`carry64_oddRun_eq` and `carry64_inside_eq` read the specification's outgoing
+carry at the body's own units — the lane recursion, and bit 63 of the carry-less
+product — and `runParityBefore_eq` is that recursion in closed form, so the
+trailing run and the incoming parity are the only things it depends on.
+`s1_open_spec` is the first of the body's three carry words.  All
+`[propext, Quot.sound]` or narrower.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.carry64_oddRun_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.carry64_oddRun_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.carry64_inside_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.carry64_inside_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.div_pow_two_mod_two' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.div_pow_two_mod_two
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_open_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_open_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.flipBits_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.flipBits_succ
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.succ_mod_two_test' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.succ_mod_two_test
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.runParityBefore_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.runParityBefore_eq
+
+/-! ### The outgoing carry, the slot-order mirror, and the terminal theorem
+
+The carry slot's three words are `s1_open_spec`, `s1_ppar_spec` and
+`s1_inside_spec`, and `s1_masks_refines` assembles the run, the six mask clauses,
+the carry triple and the outside sweep.  Every one of these is `[propext,
+Quot.sound]` or narrower **except** the three that read the sign word, which carry
+`Classical.choice` through this core's bit-to-magnitude bridge:
+`sshiftRight_63`, `s1_inside_spec`, and so `s1_masks_refines`.  The pins state that
+footprint rather than claiming the narrower one.
+-/
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escCtlz_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escCtlz_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escShr16_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escShr16_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_toNat' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_eq_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.oneLane_eq_zero
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escCmp63L_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escCmp63L_one
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escToboolL_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escToboolL_one
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escOrCondL_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escOrCondL_one
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.escCond24_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.escCond24_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.suffixRun_full' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.suffixRun_full
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.eq_allOnes_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.eq_allOnes_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.trailingRun_eq_64_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.trailingRun_eq_64_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.trailingRun_eq_zero' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.trailingRun_eq_zero
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.flipBits_64' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.flipBits_64
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_ppar_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_ppar_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_open_below' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_open_below
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_ppar_below' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_ppar_below
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_im_below' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_im_below
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_carry_below' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1Slot_carry_below
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.slotTake' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.slotTake
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.slotDrop' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.slotDrop
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.blockTake' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.blockTake
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.blockDrop' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.blockDrop
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.sshiftRight_63' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.sshiftRight_63
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_inside_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_inside_spec
+
+/-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_masks_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_masks_refines

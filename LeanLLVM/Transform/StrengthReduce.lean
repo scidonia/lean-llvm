@@ -123,6 +123,8 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
   | bitcastMask d n v => rfl
   | extractelement d n w v idx => rfl
   | insertelement d n w v elt idx => rfl
+  | shuffleVec d n w a b mask => rfl
+  | vecBitcast d n w m jw v => rfl
   | phi d ty inc => rfl
   | call d ty callee args => rfl
   | callVoid callee args => rfl

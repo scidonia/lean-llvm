@@ -7,10 +7,15 @@ quote lanes, the escape mask, the delimiter lanes, and the unescaped-quote mask
 owed that nothing there relates those definitions to the `pext`/`pdep` lane moves
 the kernel emits for them (`tests/v16/ci2.ll`).  This module closes that gap *for
 the arithmetic*: the sequence those instructions form is transcribed here, lane by
-lane, and proved equal to the specification's masks.  It is a transcription and not
-a model of the file — the body it names is not parsed anywhere in the library, and
-nothing here reaches `@ci2`; both limits are in "What is not proved" below, next to
-the lane conventions the transcription reads.
+lane, and proved equal to the specification's masks.  For the extracted stage-1
+mask unit the transcribed arithmetic is also tied to emitted text: the body
+`LeanLLVM/Vellum/JsonS1MasksIR.lean` pins stores `kernelEscape`'s word and feeds
+`kernelQuote64` and `ppn64`, and `s1_masks_refines`
+(`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) turns that into the mask the body
+leaves.  For `@ci2` itself it is a transcription and not a model of the file — the
+body it names is not parsed anywhere in the library, and nothing here reaches
+`@ci2`; both limits are in "What is not proved" below, next to the lane
+conventions the transcription reads.
 
 ## The kernel's escape arithmetic
 
@@ -85,9 +90,15 @@ expressions, and `kernelQuote` is the last line.  `evenLanes` is the kernel's
   `%qhic2 = shl i64 %qhi0c2, 32` with `or` joins the halves low-then-high, which is
   `JsonScanSpec.mask64`'s definition.  A different bit order in the emitted code
   would make them false about it and change nothing here.
-* **Any relation to the emitted IR.**  `Pclmul`, which states the same of the
-  in-string identity: no theorem in either module mentions the classifier body's
-  registers, the emitted body, or a refinement statement about it.
+* **Any relation to the emitted IR**, for `@ci2`.  `Pclmul`, which states the same
+  of the in-string identity: no theorem in either module mentions *that* body's
+  registers, or states a refinement about it.  The extracted stage-1 mask unit is
+  the exception and is proved elsewhere: `escapedWord_eq_kernelEscape`,
+  `s1_backslash_eq` and `s1_inString`
+  (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) read these definitions at the emitted
+  body's own words, and `s1_masks_refines` turns them into the masks that body
+  stores — so the arithmetic here is tied to text for that unit, and remains
+  arithmetic alone for `@ci2`.
 
 ## The hypothesis, and why it restricts nothing
 

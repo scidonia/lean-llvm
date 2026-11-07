@@ -88,6 +88,9 @@ def substInstr (σ : Subst) : Instr → Instr
       .extractelement d n w (substOperand σ v) (substOperand σ idx)
   | .insertelement d n w v elt idx =>
       .insertelement d n w (substOperand σ v) (substOperand σ elt) (substOperand σ idx)
+  | .shuffleVec d n w a b mask =>
+      .shuffleVec d n w (substOperand σ a) (substOperand σ b) mask
+  | .vecBitcast d n w m jw v => .vecBitcast d n w m jw (substOperand σ v)
   | .call d retTy callee args =>
       .call d retTy callee (args.map fun (ty, op) => (ty, substOperand σ op))
   | .callVoid callee args =>
@@ -583,6 +586,8 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
   | insertelement d n w v elt idx =>
       -- No fold is defined for a lane write either.
       simp [foldInstr] at hf
+  | shuffleVec d n w a b mask => simp [foldInstr] at hf
+  | vecBitcast d n w m jw v => simp [foldInstr] at hf
   | phi d ty inc => simp [foldInstr] at hf
   | call d retTy callee args => simp [foldInstr] at hf
   | callVoid callee args => simp [foldInstr] at hf

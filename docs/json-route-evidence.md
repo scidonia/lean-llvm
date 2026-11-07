@@ -1,8 +1,9 @@
 # Evidence for the JSON route scenarios
 
-The three JSON routes exist to make externally visible behaviour observable:
-the API's accept/refuse outcomes, the tape's meaning, and the corpus runner's
-agreement with its oracle. A green run alone does not show that a route would
+The JSON routes exist to make externally visible behaviour observable:
+the API's accept/refuse outcomes, the tape's meaning, the corpus runner's
+agreement with its oracle, and the stage-1 mask route's object-versus-body row
+comparison. A green run alone does not show that a route would
 notice a wrong implementation, so each route carries a **staged cut**: a
 deliberate divergence applied in a throwaway copy of the tree, built and run to
 show which assertion fires.
@@ -201,3 +202,48 @@ is not counted as one.
   *as a type*, but the text does not become acceptable. It does **not** show
   the text becomes acceptable without the check — it does not, and this cut
   does not claim it.
+
+## The stage-1 mask route's cut (`Y1`)
+
+`tests/json-s1-masks/check.sh` is the JSON route for the stage-1 classification
+masks: the object built from `kernel/json/s1_block.c`, called through
+`probes/json/s1_masks_driver.c`, against the Lean body `s1MasksFunction` that
+`LeanLLVM/Vellum/JsonS1MasksIR.lean` pins from
+`probes/install/ir/json-s1-masks.candidate.ll`. The two row streams must be
+equal line for line; the assertion is that comparison, and the row count it
+walks is asserted separately.
+
+The cut is the kernel object replaced by a stub — `kernel/json/identity/stub.c`
+defines the same ABI and writes six zero words, leaving the carry slot
+untouched. It was built and run in a throwaway copy, with nothing else moved.
+
+| Route | Cut | Build | Scenario | Fired |
+|---|---|---|---|---|
+| `tests/json-s1-masks/check.sh` | the kernel object replaced by `kernel/json/identity/stub.c`: `leanllvm_json_s1_masks` writes six zero words and leaves the carry slot | exit 0 | exit 1 | the row comparison: **675 048 of 688 824 rows differ**, first differing row **1**, byte-identical across two runs |
+
+- **The 288-row arm is the mixed block plus `mixed.json` alone.** That is the
+  row set the contract record (`tests/json-s1-masks.contract.md`, "The red, as
+  observed") was taken on: the 8 mixed rows and `mixed.json`'s 35 windows at 8
+  rows each — 288 rows, every one of which differed. The full arm is 688 824
+  rows, and it is that 288 plus two additions: `mixed.json`'s five neighbours in
+  the corpus — `boundary-63.json` 0 windows, `boundary-64.json` 1,
+  `boundary-65.json` 2, `nested.json` 18 and `strings.json` 30, so 51 windows and
+  408 rows — and the three generated arms (`arm:byte` 131 072 rows,
+  `arm:alphabet` 524 288, `arm:random` 32 768). On that larger set 13 776 rows
+  agree; the comparison is exact, so those are rows on which the stub and the
+  body write the same bytes. The two numbers are one observation over two row
+  sets; they do not disagree.
+- **Nothing else moved.** The cut's caller is the route's own driver
+  (`probes/json/s1_masks_driver.c`) — not a second harness, and not the Lean
+  runner. No other route reads `kernel/json/s1_block.c`, and both other JSON
+  routes, `tests/json-classify/check.sh` and `tests/json/check.sh`, exit 0 in the
+  cut tree.
+- **The same first row on two runs.** Two runs of the cut produced byte-identical
+  output naming row 1, so the first failing row is a property of the cut and not
+  of a run.
+- **What it does not show.** A stub is not a semantic defect: it shows the
+  comparison is live and that the first failing row is stable, not that the masks
+  are right for any particular block. The object-versus-body agreement uncut is
+  `JS4`'s claim, and the targeted comma-class defect is `JS5`'s.
+
+Command: `nix develop -c bash tests/json-s1-masks/check.sh`.

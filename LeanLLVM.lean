@@ -26,3 +26,5 @@ import LeanLLVM.Vellum.JsonSeam
 import LeanLLVM.Vellum.BitLanes
 import LeanLLVM.Vellum.Pclmul
 import LeanLLVM.Vellum.QuoteDerive
+import LeanLLVM.Vellum.JsonS1MasksIR
+import LeanLLVM.Vellum.JsonS1MasksSteps

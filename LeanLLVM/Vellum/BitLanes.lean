@@ -2,10 +2,13 @@
 The bit intrinsics of the JSON index kernel, in lane vocabulary.
 
 `tests/v16/ci2.ll`, the stage-1 index kernel, forms its masks with three
-instructions the LLVM semantics has no model for: `llvm.x86.bmi.pext.64` twice,
-`llvm.x86.bmi.pdep.64` and `llvm.ctlz.i64`.  `Pclmul` gives the fourth
-(`llvm.x86.pclmulqdq`) its algebra; this module gives the other three their
-lanes.
+intrinsics: `llvm.x86.bmi.pext.64` twice, `llvm.x86.bmi.pdep.64` and
+`llvm.ctlz.i64`.  They are modelled as calls — the parser validates their
+spelling and an environment supplies their meaning, so the semantics needs no
+special case — and this module is that meaning: `pext`, `pdep` and `ctlz` lane by
+lane, which `s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`) binds for the
+extracted mask unit.  `Pclmul` gives the fourth (`llvm.x86.pclmulqdq`) its
+algebra.
 
 A word is read lane by lane with `BitVec.getLsbD`, and `ofLanes` packs a lane
 function back into a word, so every definition below is a statement about lanes

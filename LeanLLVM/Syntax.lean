@@ -81,6 +81,30 @@ inductive Instr where
   the hand-built-AST case, since the parser fixes both from the text. -/
   | insertelement (dst : String) (n w : Nat) (v : Operand) (elt : Operand)
       (idx : Operand)
+  /-- A two-source static permutation, LLVM's
+  `shufflevector <n x iw> %a, <n x iw> %b, <m x i32> <i32 k₀, …, i32 k₍m₋₁₎>`.
+  The result has `mask.length` lanes of the operands' element width; entry `k`
+  selects lane `k` of the first operand when `k < n` and lane `k - n` of the
+  second when `n ≤ k < 2n`.  The permutation is static, which is why the mask is
+  a list of naturals rather than an operand: no register supplies it, and the
+  mask's length is the result's lane count by construction.
+
+  An entry at or past `2n` is poison in LLVM and `ub` here, and `undef`/`poison`
+  entries have no representation in this field at all; the parser refuses both
+  spellings by name, because the model has no poison. -/
+  | shuffleVec (dst : String) (n w : Nat) (a b : Operand) (mask : List Nat)
+  /-- A vector reinterpretation at equal total bit width:
+  `bitcast <n x iw> %v to <m x jw>` with `n * w = m * jw`.  Lane order is
+  little-endian — lane 0 holds the least significant `w` bits of the packed
+  value — so result lane `k` is bits `[k * jw, (k + 1) * jw)` of the source
+  lanes packed in order.
+
+  The mask pack `<n x i1>` → `iN` stays `bitcastMask`; this constructor is the
+  vector-to-vector case (including a mask vector to a wider lane type), where
+  the element size may change but the total width must not.  Any other pair,
+  scalar-to-vector and vector-to-scalar included, has no field here and the
+  parser refuses it by name. -/
+  | vecBitcast (dst : String) (n w m jw : Nat) (v : Operand)
   /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
   is resolved by the semantics' call environment, not by the function itself. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
@@ -154,6 +178,8 @@ def Instr.dst? : Instr → Option String
   | .bitcastMask d _ _ => some d
   | .extractelement d _ _ _ _ => some d
   | .insertelement d _ _ _ _ _ => some d
+  | .shuffleVec d _ _ _ _ _ => some d
+  | .vecBitcast d _ _ _ _ _ => some d
   | .call d _ _ _ => some d
   | .callVoid _ _ => none
   | .phi d _ _ => some d
@@ -176,6 +202,8 @@ def Instr.uses : Instr → List String
   | .bitcastMask _ _ v => v.regs
   | .extractelement _ _ _ v idx => v.regs ++ idx.regs
   | .insertelement _ _ _ v elt idx => v.regs ++ elt.regs ++ idx.regs
+  | .shuffleVec _ _ _ a b _ => a.regs ++ b.regs
+  | .vecBitcast _ _ _ _ _ v => v.regs
   | .call _ _ _ args => (args.map (·.2.regs)).flatten
   | .callVoid _ args => (args.map (·.2.regs)).flatten
   | .phi _ _ incoming => (incoming.map (fun kv => kv.2.regs)).flatten
@@ -201,6 +229,8 @@ def Instr.isPure : Instr → Bool
   | .bitcastMask .. => true
   | .extractelement .. => true
   | .insertelement .. => true
+  | .shuffleVec .. => true
+  | .vecBitcast .. => true
   | .call .. => false
   | .callVoid .. => false
   | .phi .. => true

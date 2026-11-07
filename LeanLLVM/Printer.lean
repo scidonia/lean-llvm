@@ -128,6 +128,12 @@ def Instr.render : Instr → String
       s!"  {d} = extractelement <{n} x i{w}> {v.token}, {laneIndexTy idx} {idx.token}"
   | .insertelement d n w v elt idx =>
       s!"  {d} = insertelement <{n} x i{w}> {v.token}, i{w} {elt.token}, {laneIndexTy idx} {idx.token}"
+  | .shuffleVec d n w a b mask =>
+      let ty := s!"<{n} x i{w}>"
+      let entries := String.intercalate ", " (mask.map fun k => s!"i32 {k}")
+      s!"  {d} = shufflevector {ty} {a.token}, {ty} {b.token}, <{mask.length} x i32> <{entries}>"
+  | .vecBitcast d n w m jw v =>
+      s!"  {d} = bitcast <{n} x i{w}> {v.token} to <{m} x i{jw}>"
   | .call d retTy callee args =>
       s!"  {d} = call {retTy.render} @{callee}({callArgs args})"
   | .callVoid callee args =>

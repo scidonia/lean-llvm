@@ -578,6 +578,16 @@ theorem handled_codeT (calls : Calls) (hcall : PureEnv calls) (frame : Nat → P
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
               (by intro ty v p hh; cases hh)
               (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | shuffleVec d n w a b mask =>
+          exact handled_pureInstrT calls frame s (.shuffleVec d n w a b mask) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
+      | vecBitcast d n w m jw v =>
+          exact handled_pureInstrT calls frame s (.vecBitcast d n w m jw v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh) (by intro c a hh; cases hh) h) hokK hubK
       | phi d ty inc =>
           exact handled_pureInstrT calls frame s (.phi d ty inc) _ r
             (fun s' h => evalInstr_mem_of_not_store_or_call calls s _ s'

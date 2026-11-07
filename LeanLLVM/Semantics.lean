@@ -259,8 +259,51 @@ theorem lanesToNat_testBit (l : List (BitVec 1)) (k : Nat) :
             Nat.div_eq_of_lt ha, Nat.zero_add]
           exact ih j
 
+/-- Little-endian packing of integer lanes: lane `k` becomes bits
+`[k * w, (k + 1) * w)` of the natural.  This is the layout `storeValue` writes
+and `vecBitcast` reinterprets, so both read one definition rather than a second
+packing. -/
+def packLanes {w : Nat} : List (BitVec w) → Nat
+  | [] => 0
+  | x :: xs => x.toNat + 2 ^ w * packLanes xs
+
+/-- The inverse of `packLanes` at another lane width: `n` lanes of width `w`,
+lane `k` read from bit `k * w` of the natural.  `BitVec.ofNat` keeps the low `w`
+bits of each quotient, so a natural wider than `n * w` is truncated exactly as a
+reinterpretation truncates it. -/
+def unpackLanes (w n v : Nat) : List (BitVec w) :=
+  (List.range n).map fun k => BitVec.ofNat w (v / 2 ^ (k * w))
+
+/-- A vector `bitcast`'s lane reinterpretation at equal total width: the source
+lanes packed little-endian and split again at the destination's lane width. -/
+def bitcastVecLanes {w : Nat} (wOut nOut : Nat) (lanes : List (BitVec w)) :
+    List (BitVec wOut) :=
+  unpackLanes wOut nOut (packLanes lanes)
+
+/-- `llvm.x86.avx2.pshuf.b`'s table lookup, one entry per control lane: byte `i`
+of the result is zero when bit 7 of control byte `i` is set, and otherwise the
+table byte its low four bits select **within its own 16-byte lane** — lane base
+`16 * (i / 16)`, bit 4 through bit 6 ignored.  VPSHUFB is lane-local; a linear
+32-entry reading of the control is a different function.
+
+The lane count is the control's: the instruction's two operands have one vector
+type, and a shorter table leaves the unaddressed lanes zero. -/
+def pshufbLanes (table control : List (BitVec 8)) : List (BitVec 8) :=
+  (List.range control.length).map fun i =>
+    let c := control.getD i 0
+    if c.getLsbD 7 then 0
+    else table.getD (16 * (i / 16) + (c.toNat % 16)) 0
+
 /-- Load a value of the given type from an address.  A byte that was never
-written makes the load undefined. -/
+written makes the load undefined.
+
+The `<n x i8>` arm is the byte-vector form the classifier's emitted body reads
+with; the integer-lane arm below it is the same layout at another lane width — the
+`bitcast <4 x i64> to <32 x i8>` the stage-1 kernel's emission opens with needs
+it, and it is `storeValue`'s vector arm read back: `n * w / 8` bytes, lane `k`
+from bits `[k * w, (k + 1) * w)`.  A total bit width that is not a whole number
+of bytes has no byte layout, exactly as on the store side — a lane width that is
+not a whole number of bytes is admitted when the vector's total width is whole. -/
 def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
   match ty with
   | .int w =>
@@ -277,10 +320,21 @@ def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
       match readBytes m addr n with
       | some bs => some (.vec n 8 (bs.map fun b => BitVec.ofNat 8 b.toNat))
       | none => none
+  | .vec n (.int w) =>
+      if n * w % 8 = 0 then
+        match readBytes m addr (n * w / 8) with
+        | some bs => some (.vec n w (unpackLanes w n (bytesToNat bs)))
+        | none => none
+      else none
   | .vec _ _ => none
   | .void => none
 
-/-- Store a value at an address. -/
+/-- Store a value at an address.  A vector is stored as its lanes packed
+little-endian, one lane after another, so a `<64 x i1>` value occupies eight
+bytes.  A vector whose total bit width is not a whole number of bytes has no
+byte layout, and a shape or width that disagrees with the instruction's type is
+undefined behaviour (the parser refuses both, so this is the hand-built-AST
+case). -/
 def storeValue (s : State) (ty : Ty) (v : Value) (addr : Nat) : Option State :=
   match ty, v with
   | .int w, .int w' x =>
@@ -288,6 +342,10 @@ def storeValue (s : State) (ty : Ty) (v : Value) (addr : Nat) : Option State :=
         some { s with mem := writeBytes s.mem addr (natToBytes x.toNat ((w + 7) / 8)) }
       else none
   | .ptr, .ptr a => some { s with mem := writeBytes s.mem addr (natToBytes a 8) }
+  | .vec n (.int w), .vec n' w' lanes =>
+      if n' = n ∧ w' = w ∧ lanes.length = n ∧ n * w % 8 = 0 then
+        some { s with mem := writeBytes s.mem addr (natToBytes (packLanes lanes) (n * w / 8)) }
+      else none
   | _, _ => none
 
 /-- Evaluate a call's argument list.  Types are carried by the syntax but not
@@ -456,6 +514,35 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
               else none
           | _, _ => none
       | _, _, _ => none
+  | .shuffleVec d n w a b mask =>
+      -- A static permutation: mask entry `k` reads lane `k` of the first
+      -- operand when `k < n` and lane `k - n` of the second below `2n`.  An
+      -- entry outside that range is poison in LLVM and `ub` here; the parser
+      -- refuses one, so it is reachable only from a hand-built AST.
+      match evalOperand s a, evalOperand s b with
+      | some va, some vb =>
+          match va.vecLanes n w, vb.vecLanes n w with
+          | some l₁, some l₂ =>
+              let pick (k : Nat) : Option (BitVec w) :=
+                if k < n then l₁[k]? else l₂[k - n]?
+              match mask.mapM pick with
+              | some ls => some (s.bind d (.vec mask.length w ls))
+              | none => none
+          | _, _ => none
+      | _, _ => none
+  | .vecBitcast d n w m jw v =>
+      -- A reinterpretation at equal total width.  The element sizes may
+      -- differ; a width disagreement is `ub` (the parser refuses the text), and
+      -- a value that is not a vector of the instruction's shape is `ub` too.
+      match evalOperand s v with
+      | some vv =>
+          match vv.vecLanes n w with
+          | some lanes =>
+              if n * w = m * jw then
+                some (s.bind d (.vec m jw (bitcastVecLanes jw m lanes)))
+              else none
+          | none => none
+      | none => none
   | .phi d _ty inc =>
       -- Selection reads the predecessor field, which only a jump writes.  With
       -- no predecessor — the entry block — nothing can match, and an incoming
@@ -885,7 +972,10 @@ field: the bytes it writes are the same and only the state's predecessor differs
 theorem storeValue_setPre (s : State) (p : Option String) (ty : Ty) (v : Value)
     (addr : Nat) :
     storeValue (s.setPre p) ty v addr = (storeValue s ty v addr).map (·.setPre p) := by
-  cases ty <;> cases v <;> simp [storeValue, State.setPre, Option.map_ite]
+  cases ty with
+  | vec n elem =>
+      cases elem <;> cases v <;> simp [storeValue, State.setPre, Option.map_ite]
+  | _ => cases v <;> simp [storeValue, State.setPre, Option.map_ite]
 
 /-- A `phi`-free instruction reaches the same result from two states that are one
 `setPre` apart, up to the destination binding.  The `phi` case is excluded by the
@@ -1132,6 +1222,42 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               cases (l₁.zip l₂).mapM (fun (x, y) => evalBinop op x y) with
               | none => rfl
               | some ls => rfl
+  | shuffleVec d n w a b mask =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases evalOperand s b with
+        | none => rfl
+        | some vb =>
+          try dsimp only
+          cases va.vecLanes n w with
+          | none => rfl
+          | some l₁ =>
+            try dsimp only
+            cases vb.vecLanes n w with
+            | none => rfl
+            | some l₂ =>
+              try dsimp only
+              cases mask.mapM (fun k => if k < n then l₁[k]? else l₂[k - n]?) with
+              | none => rfl
+              | some ls => rfl
+  | vecBitcast d n w m jw v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv.vecLanes n w with
+        | none => rfl
+        | some lanes =>
+          try dsimp only
+          by_cases hw : n * w = m * jw
+          · rw [ite_eq_left hw, ite_eq_left hw]
+            rfl
+          · rw [ite_eq_right hw, ite_eq_right hw]
+            rfl
   | bitcastMask d n v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with

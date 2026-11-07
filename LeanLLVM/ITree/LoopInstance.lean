@@ -412,6 +412,10 @@ theorem codeT_eq_of_noEvents (calls : Calls) :
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | insertelement d n w v elt idx =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | shuffleVec d n w a b mask =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
+        | vecBitcast d n w m jw v =>
+            simpa only [codeT, instrT, pureInstrT, heq] using hih
         | phi d ty inc =>
             simpa only [codeT, instrT, pureInstrT, heq] using hih
         | alloca d ty al =>

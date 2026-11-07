@@ -55,6 +55,23 @@ The strip instrument is the extended census's scratch `strip.py`, so — as for
 `ci2.ll` — the re-runnable check of the fixture is the manifest entry and this
 script, not the capture.
 
+`probes/install/ir/json-s1-masks.candidate.ll` is the extracted stage-1 mask
+unit — `kernel/json/s1_block.c`'s `leanllvm_json_s1_masks` at the measured
+compiler line, normalised by `probes/install/ir/capture-s1-masks.sh`.  That
+capture derives, in the same run, the normalisation inventory
+(`json-s1-masks.strip.tsv`), the rewrite inventory (`json-s1-masks.rewrites.tsv`)
+and the fixture's own construct inventory (`json-s1-masks.inventory`), and
+refuses when any of the four no longer regenerates.  The fixture is committed and
+`repo-corpus.manifest` lists it as `parsed`, so its parse is a checked entry;
+`LeanLLVM/Vellum/JsonS1MasksIR.lean` pins the parsed AST by `#guard` and
+`LeanLLVM/Vellum/JsonS1MasksSteps.lean` proves the body (`s1_masks_refines`).
+
+The manifest entry counts once the fixture is **tracked**: `repo-census.sh`
+enumerates `git ls-files`, so a green run over an untracked file describes a tree
+state that will not exist once it is committed.  The dated measurement block
+above therefore does not include this row, and the run that counts is the one
+over the staged tree.
+
 The chain below is the peel **sequence** on that text, not the set of constructs
 the text contains: each relaxation rewrites the line it is applied to, so a
 construct on a line another relaxation stubs is never reached and cannot appear.
