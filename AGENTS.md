@@ -204,6 +204,13 @@ needs the other two to match.
   not that the span refusals are sensitive — their sensitivity rests on their
   pairing with the affirmative controls and on `tape_valid`, and is not
   claimed by a cut.
+- `docs/` holds the design notes and evidence records: `contract.md` and
+  `capabilities.md` for the trust ledger, `json-route-evidence.md` for the
+  staged cuts, and `json-pipeline-performance.md`, which records the measured
+  performance of a native SIMD JSON pipeline against simdjson.  That note
+  describes a scratch implementation **not in this tree**: it records observed
+  ratios and the shapes refuted at measured cost, and no theorem, contract or
+  axiom pin covers the code it measures.
 
 ## What a change must satisfy
 
