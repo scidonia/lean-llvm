@@ -7743,3 +7743,123 @@ info: 'LeanLLVM.Vellum.JsonUtf8Steps.counterexample_block0_not_ascii' depends on
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.counterexample_block0_not_ascii
 
+/-! ### The window aggregation
+
+`klErrWin` reads one staged position's error byte as a proposition, `klErrAll` is
+that reading over the first `L` positions, and `IsCharEnd` is the byte predicate a
+character's end leaves behind.  The twenty-seven pins below are the role
+statements and one control per family: three definitions, seven bridge statements
+(the Nat forms of `NeedsCont`, `IsCharEnd` and `KlPair`, the pair condition's two
+half-facts, and the `IsCharEnd` bound), four byte reads at a character's offset,
+five character steps (the four per-length steps and `char_ok`), and eight bound
+and constructor facts the steps consume.  The arithmetic shims the steps use
+(`win_shift`, `win_m0`..`win_m3`, `klByte_of_drop_eq`) interrupt no statement a
+reader looks for and are not pinned. -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrWin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrWin
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrAll' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrAll
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.IsCharEnd' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.IsCharEnd
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.needsCont_nat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.needsCont_nat
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.needsCont_false_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.needsCont_false_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.isCharEnd_nat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.isCharEnd_nat
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.isCharEnd_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.isCharEnd_lt
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klPair_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klPair_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.ok_right' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.ok_right
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.ok_left' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.ok_left
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_drop' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_drop
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_drop_any' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_drop_any
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_prefix' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_prefix
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.drop_of_literal' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.drop_of_literal
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.char1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.char1
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.char2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.char2
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.char3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.char3
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.char4' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.char4
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.char_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.char_ok
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_lt
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_needsCont_of_lt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_needsCont_of_lt
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.cont_of_bounds' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.cont_of_bounds
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_lead' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_lead
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.needsCont_of_lead' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.needsCont_of_lead
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.needsCont_of_lead3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.needsCont_of_lead3
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.cont_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.cont_le
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_ge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_ge
+

@@ -107,6 +107,7 @@ import LeanLLVM.Vellum.BitLanes
 namespace LeanLLVM.Vellum.JsonUtf8Spec
 
 open LeanLLVM
+open LeanLLVM.JSON
 
 /-! ### The three published tables
 
@@ -605,5 +606,667 @@ theorem accepted_four_F4 : klErrByte 0x00 0x00 0xF4 0x8F = 0 := by decide
 /-- The middle of a four-byte character: a lead three bytes back demands a
 continuation here, and this byte is one. -/
 theorem accepted_four_middle : klErrByte 0xF0 0x90 0x80 0x80 = 0 := by decide
+
+
+/-! ### The local condition across a window
+
+`klErrByte` is one position's error byte; the verdict is zero exactly when every
+position of the staged window reads zero.  The three definitions below name that
+reading: the window starting at byte `t` (`s[t]`, `s[t+1]`, `s[t+2]` precede
+`s[t+3]`), the conjunction over the first `L` windows, and the byte predicate
+"ASCII or a continuation" — a byte that may end a character. -/
+
+/-- The window starting at byte `t`: the three carry bytes and the byte they
+precede. -/
+def klErrWin (s : List UInt8) (t : Nat) : Prop :=
+  klErrByte (klByte s t) (klByte s (t + 1)) (klByte s (t + 2)) (klByte s (t + 3)) = 0
+
+/-- Every window of the first `L` reads zero.  `L` is the block count's byte
+count, so the windows are the positions the loop stages. -/
+def klErrAll (s : List UInt8) (L : Nat) : Prop := ∀ t, t < L → klErrWin s t
+
+/-- A byte that may end a character: ASCII or a continuation. -/
+def IsCharEnd (b : UInt8) : Prop := b.toNat < 0x80 ∨ IsContByte b
+
+theorem needsCont_nat (p2 p3 : UInt8) :
+    NeedsCont p2 p3 ↔ (224 ≤ p2.toNat ∨ 240 ≤ p3.toNat) := by
+  unfold NeedsCont
+  simp only [UInt8.le_iff_toNat_le]
+  exact Iff.rfl
+
+theorem needsCont_false_iff (p2 p3 : UInt8) :
+    ¬ NeedsCont p2 p3 ↔ (p2.toNat < 224 ∧ p3.toNat < 240) := by
+  rw [needsCont_nat]
+  constructor
+  · intro h
+    exact ⟨Nat.not_le.mp fun h1 => h (Or.inl h1),
+      Nat.not_le.mp fun h2 => h (Or.inr h2)⟩
+  · rintro ⟨h1, h2⟩ (h | h)
+    · exact (Nat.not_le.mpr h1) h
+    · exact (Nat.not_le.mpr h2) h
+
+theorem isCharEnd_nat (b : UInt8) :
+    IsCharEnd b ↔ (b.toNat < 128 ∨ (128 ≤ b.toNat ∧ b.toNat ≤ 191)) := by
+  unfold IsCharEnd IsContByte
+  simp only [UInt8.le_iff_toNat_le]
+  exact Iff.rfl
+
+theorem isCharEnd_lt (b : UInt8) (h : IsCharEnd b) : b.toNat < 192 := by
+  rw [isCharEnd_nat] at h; omega
+
+theorem not_cont_of_lt (b : UInt8) (h : b.toNat < 128) : ¬ IsContByte b := by
+  rintro ⟨h1, -⟩
+  rw [UInt8.le_iff_toNat_le] at h1
+  have h80 : (0x80 : UInt8).toNat = 128 := rfl
+  omega
+
+theorem not_needsCont_of_lt {p2 p3 : UInt8} (h2 : p2.toNat < 224) (h3 : p3.toNat < 240) :
+    ¬ NeedsCont p2 p3 := by
+  rw [needsCont_nat]
+  rintro (h | h)
+  · exact (Nat.not_le.mpr h2) h
+  · exact (Nat.not_le.mpr h3) h
+
+theorem cont_of_bounds {b : UInt8} (h1 : 128 ≤ b.toNat) (h2 : b.toNat ≤ 191) :
+    IsContByte b := by
+  unfold IsContByte
+  constructor
+  · rw [UInt8.le_iff_toNat_le]; simpa using h1
+  · rw [UInt8.le_iff_toNat_le]; simpa using h2
+
+/-! ### The `KlPair` clauses, in the form a character supplies them -/
+
+theorem klPair_iff (p1 c : UInt8) :
+    KlPair p1 c ↔
+      (¬ IsContByte c ∧ IsCharEnd p1) ∨
+      (0xC2 ≤ p1 ∧ p1 ≤ 0xDF ∧ IsContByte c) ∨
+      (p1 = 0xE0 ∧ 0xA0 ≤ c ∧ c ≤ 0xBF) ∨
+      ((0xE1 ≤ p1 ∧ p1 ≤ 0xEC) ∨ (0xEE ≤ p1 ∧ p1 ≤ 0xEF)) ∧ IsContByte c ∨
+      (p1 = 0xED ∧ 0x80 ≤ c ∧ c ≤ 0x9F) ∨
+      (p1 = 0xF0 ∧ 0x90 ≤ c ∧ c ≤ 0xBF) ∨
+      (0xF1 ≤ p1 ∧ p1 ≤ 0xF3 ∧ IsContByte c) ∨
+      (p1 = 0xF4 ∧ 0x80 ≤ c ∧ c ≤ 0x8F) := by
+  unfold KlPair IsCharEnd
+  simp only [UInt8.lt_iff_toNat_lt]
+  exact Iff.rfl
+
+theorem ok_right (a b c d : UInt8) (hn : ¬ NeedsCont b a) (hp : KlPair c d) :
+    klErrByte a b c d = 0 :=
+  (klErrByte_eq_zero_iff a b c d).mpr (Or.inr ⟨hn, hp⟩)
+
+theorem ok_left (a b c d : UInt8) (hn : NeedsCont b a) (hc : IsContByte c)
+    (hd : IsContByte d) : klErrByte a b c d = 0 :=
+  (klErrByte_eq_zero_iff a b c d).mpr (Or.inl ⟨hn, hc, hd⟩)
+
+/-! ### Reading a character's bytes off the stream -/
+
+theorem klByte_drop (s : List UInt8) (i m : Nat) :
+    klByte s (i + m) = klByte (s.drop i) m := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_drop]
+
+theorem klByte_of_drop_eq {s : List UInt8} {i : Nat} {cs rs : List UInt8}
+    (h : s.drop i = cs ++ rs) {m : Nat} (hm : m < cs.length) : klByte s (i + m) = cs[m] := by
+  rw [klByte_drop]
+  unfold klByte
+  rw [h, List.getD_eq_getElem?_getD, List.getElem?_append_left hm,
+    List.getElem?_eq_getElem hm]
+  rfl
+
+theorem win_shift (s : List UInt8) (j : Nat) :
+    klErrWin s j = (klErrByte (klByte s j) (klByte s (j + 1)) (klByte s (j + 2))
+      (klByte s (j + 3)) = 0) := rfl
+
+theorem win_m0 {s : List UInt8} {i : Nat} (hi : 3 ≤ i) :
+    klErrWin s (i - 3) = (klErrByte (klByte s (i - 3)) (klByte s (i - 2)) (klByte s (i - 1))
+      (klByte s i) = 0) := by
+  rw [win_shift]
+  rw [show i - 3 + 1 = i - 2 from by omega, show i - 3 + 2 = i - 1 from by omega,
+    show i - 3 + 3 = i from by omega]
+
+theorem win_m1 {s : List UInt8} {i : Nat} (hi : 3 ≤ i) :
+    klErrWin s (i - 2) = (klErrByte (klByte s (i - 2)) (klByte s (i - 1)) (klByte s i)
+      (klByte s (i + 1)) = 0) := by
+  rw [win_shift]
+  rw [show i - 2 + 1 = i - 1 from by omega, show i - 2 + 2 = i from by omega,
+    show i - 2 + 3 = i + 1 from by omega]
+
+theorem win_m2 {s : List UInt8} {i : Nat} (hi : 3 ≤ i) :
+    klErrWin s (i - 1) = (klErrByte (klByte s (i - 1)) (klByte s i) (klByte s (i + 1))
+      (klByte s (i + 2)) = 0) := by
+  rw [win_shift]
+  rw [show i - 1 + 1 = i from by omega, show i - 1 + 2 = i + 1 from by omega,
+    show i - 1 + 3 = i + 2 from by omega]
+
+theorem win_m3 (s : List UInt8) (i : Nat) :
+    klErrWin s i = (klErrByte (klByte s i) (klByte s (i + 1)) (klByte s (i + 2))
+      (klByte s (i + 3)) = 0) := rfl
+
+
+theorem klByte_drop_any (s : List UInt8) (i m : Nat) :
+    klByte s (i + m) = (s.drop i)[m]?.getD 0x00 := by
+  rw [klByte_drop]
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD]
+
+theorem klByte_prefix {s : List UInt8} {i : Nat} {cs rs : List UInt8} (h : s.drop i = cs ++ rs)
+    {m : Nat} (hm : m < cs.length) : klByte s (i + m) = (cs[m]?).getD 0x00 := by
+  rw [klByte_drop]
+  unfold klByte
+  rw [h, List.getD_eq_getElem?_getD, List.getElem?_append, ite_eq_left hm]
+
+/-! ### One character's windows
+
+The four helpers below are the character step at each byte length: given the
+carry facts at the character's first byte and the pair/clause facts its
+constructor supplies, the windows the character's bytes occupy read zero and the
+carry at the position after it is the one the next character needs. -/
+
+theorem not_cont_of_lead {b : UInt8} (h : 192 ≤ b.toNat) : ¬ IsContByte b := by
+  rintro ⟨h1, h2⟩
+  rw [UInt8.le_iff_toNat_le] at h2
+  have hbf : (0xBF : UInt8).toNat = 191 := rfl
+  omega
+
+theorem needsCont_of_lead {p2 p3 : UInt8} (h : 224 ≤ p2.toNat) : NeedsCont p2 p3 := by
+  rw [needsCont_nat]; omega
+
+theorem needsCont_of_lead3 {p2 p3 : UInt8} (h : 240 ≤ p3.toNat) : NeedsCont p2 p3 := by
+  rw [needsCont_nat]; omega
+
+theorem cont_le {b : UInt8} (h : IsContByte b) : b.toNat ≤ 191 := by
+  have := h.2
+  rw [UInt8.le_iff_toNat_le] at this
+  have hbf : (0xBF : UInt8).toNat = 191 := rfl
+  omega
+
+theorem char1 (s : List UInt8) (i : Nat) (hi : 3 ≤ i)
+    (hn : ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)))
+    (he : IsCharEnd (klByte s (i - 1)))
+    (hc : ¬ IsContByte (klByte s i)) (hce : IsCharEnd (klByte s i)) :
+    klErrWin s (i - 3) ∧ ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) ∧
+      IsCharEnd (klByte s i) := by
+  refine ⟨?_, ?_, hce⟩
+  · rw [win_m0 hi]
+    exact ok_right _ _ _ _ hn (klPair_iff _ _ |>.mpr (Or.inl ⟨hc, he⟩))
+  · refine not_needsCont_of_lt ?_ ?_
+    · have := isCharEnd_lt _ he; omega
+    · have := (needsCont_false_iff _ _).mp hn; omega
+
+theorem char2 (s : List UInt8) (i : Nat) (hi : 3 ≤ i)
+    (hn : ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)))
+    (he : IsCharEnd (klByte s (i - 1)))
+    (hc : ¬ IsContByte (klByte s i)) (hi224 : (klByte s i).toNat < 224)
+    (hpair : KlPair (klByte s i) (klByte s (i + 1)))
+    (hcont : IsContByte (klByte s (i + 1))) :
+    klErrWin s (i - 3) ∧ klErrWin s (i - 2) ∧
+      ¬ NeedsCont (klByte s i) (klByte s (i - 1)) ∧ IsCharEnd (klByte s (i + 1)) := by
+  have hnc : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) := by
+    refine not_needsCont_of_lt ?_ ?_
+    · have := isCharEnd_lt _ he; omega
+    · have := (needsCont_false_iff _ _).mp hn; omega
+  refine ⟨?_, ?_, ?_, Or.inr hcont⟩
+  · rw [win_m0 hi]
+    exact ok_right _ _ _ _ hn (klPair_iff _ _ |>.mpr (Or.inl ⟨hc, he⟩))
+  · rw [win_m1 hi]
+    exact ok_right _ _ _ _ hnc hpair
+  · refine not_needsCont_of_lt hi224 ?_
+    have := isCharEnd_lt _ he; omega
+
+theorem char3 (s : List UInt8) (i : Nat) (hi : 3 ≤ i)
+    (hn : ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)))
+    (he : IsCharEnd (klByte s (i - 1)))
+    (hc : ¬ IsContByte (klByte s i)) (hpos : 224 ≤ (klByte s i).toNat)
+    (hi240 : (klByte s i).toNat < 240)
+    (hpair : KlPair (klByte s i) (klByte s (i + 1)))
+    (hc1 : IsContByte (klByte s (i + 1))) (hc2 : IsContByte (klByte s (i + 2))) :
+    klErrWin s (i - 3) ∧ klErrWin s (i - 2) ∧ klErrWin s (i - 1) ∧
+      ¬ NeedsCont (klByte s (i + 1)) (klByte s i) ∧ IsCharEnd (klByte s (i + 2)) := by
+  have hnc : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) := by
+    refine not_needsCont_of_lt ?_ ?_
+    · have := isCharEnd_lt _ he; omega
+    · have := (needsCont_false_iff _ _).mp hn; omega
+  refine ⟨?_, ?_, ?_, ?_, Or.inr hc2⟩
+  · rw [win_m0 hi]
+    exact ok_right _ _ _ _ hn (klPair_iff _ _ |>.mpr (Or.inl ⟨hc, he⟩))
+  · rw [win_m1 hi]
+    exact ok_right _ _ _ _ hnc hpair
+  · rw [win_m2 hi]
+    exact ok_left _ _ _ _ (needsCont_of_lead hpos) hc1 hc2
+  · refine not_needsCont_of_lt ?_ hi240
+    have := cont_le hc1; omega
+
+theorem char4 (s : List UInt8) (i : Nat) (hi : 3 ≤ i)
+    (hn : ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)))
+    (he : IsCharEnd (klByte s (i - 1)))
+    (hc : ¬ IsContByte (klByte s i)) (hpos : 240 ≤ (klByte s i).toNat)
+    (hpair : KlPair (klByte s i) (klByte s (i + 1)))
+    (hc1 : IsContByte (klByte s (i + 1))) (hc2 : IsContByte (klByte s (i + 2)))
+    (hc3 : IsContByte (klByte s (i + 3))) :
+    klErrWin s (i - 3) ∧ klErrWin s (i - 2) ∧ klErrWin s (i - 1) ∧ klErrWin s i ∧
+      ¬ NeedsCont (klByte s (i + 2)) (klByte s (i + 1)) ∧
+      IsCharEnd (klByte s (i + 3)) := by
+  have hnc : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) := by
+    refine not_needsCont_of_lt ?_ ?_
+    · have := isCharEnd_lt _ he; omega
+    · have := (needsCont_false_iff _ _).mp hn; omega
+  refine ⟨?_, ?_, ?_, ?_, ?_, Or.inr hc3⟩
+  · rw [win_m0 hi]
+    exact ok_right _ _ _ _ hn (klPair_iff _ _ |>.mpr (Or.inl ⟨hc, he⟩))
+  · rw [win_m1 hi]
+    exact ok_right _ _ _ _ hnc hpair
+  · rw [win_m2 hi]
+    exact ok_left _ _ _ _ (needsCont_of_lead (by omega)) hc1 hc2
+  · rw [win_m3]
+    exact ok_left _ _ _ _ (needsCont_of_lead3 hpos) hc2 hc3
+  · refine not_needsCont_of_lt ?_ ?_
+    · have := cont_le hc2; omega
+    · have := cont_le hc1; omega
+
+
+theorem not_cont_of_ge {b : UInt8} (h : 0xC2 ≤ b) : ¬ IsContByte b := by
+  apply not_cont_of_lead
+  rw [UInt8.le_iff_toNat_le] at h
+  have hc2 : (0xC2 : UInt8).toNat = 194 := rfl
+  omega
+
+theorem drop_of_literal {s : List UInt8} {i : Nat} {v : Bytes}
+    (hl : ByteString.literal (s.drop i) = v) : s.drop i = v.data.toList := by
+  have := congrArg (fun x : Bytes => x.data.toList) hl
+  simpa [ByteString.data_toList_literal] using this
+
+theorem char_ok {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest) :
+    ∀ (s : List UInt8) (i : Nat), ByteString.literal (s.drop i) = b → 3 ≤ i →
+    ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)) →
+    IsCharEnd (klByte s (i - 1)) →
+    (∀ m, m < b.length - rest.length → klErrWin s (i - 3 + m)) ∧
+    ¬ NeedsCont (klByte s (i - 3 + (b.length - rest.length) + 1))
+        (klByte s (i - 3 + (b.length - rest.length))) ∧
+    IsCharEnd (klByte s (i - 3 + (b.length - rest.length) + 2)) := by
+  induction h with
+  | one hb =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hlt : (klByte s i).toNat < 128 := by
+        rw [hb0]
+        rw [UInt8.lt_iff_toNat_lt] at hb
+        simpa using hb
+      have hcn : ¬ IsContByte (klByte s i) := not_cont_of_lt _ hlt
+      have hce : IsCharEnd (klByte s i) := Or.inl hlt
+      obtain ⟨h0, h1, h2⟩ := char1 s i hi hn he hcn hce
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, (a + 1) - a = 1 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm0 : m = 0 := by omega
+        subst hm0
+        simpa using h0
+      · rw [show i - 3 + 1 + 1 = i - 1 from by omega,
+            show i - 3 + 1 = i - 2 from by omega]
+        exact h1
+      · simpa [show i - 3 + 1 + 2 = i from by omega] using h2
+  | two h0 h0' h1 h1' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have h0i : 0xC2 ≤ klByte s i := by rw [hb0]; exact h0
+      have h0i' : klByte s i ≤ 0xDF := by rw [hb0]; exact h0'
+      have hcn : ¬ IsContByte (klByte s i) := not_cont_of_ge h0i
+      have hcont : IsContByte (klByte s (i + 1)) := by rw [hb1]; exact ⟨h1, h1'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr (Or.inr (Or.inl ⟨h0, h0', h1, h1'⟩))
+      have hi224 : (klByte s i).toNat < 224 := by
+        rw [UInt8.le_iff_toNat_le] at h0i'
+        have hdf : (0xDF : UInt8).toNat = 223 := rfl
+        omega
+      obtain ⟨hc0, hc1, hc2, hc3⟩ := char2 s i hi hn he hcn hi224 hpair hcont
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, ((a + 1) + 1) - a = 2 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 := by omega
+        rcases hm' with rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+      · rw [show i - 3 + 2 + 1 = i from by omega,
+            show i - 3 + 2 = i - 1 from by omega]
+        exact hc2
+      · simpa [show i - 3 + 2 + 2 = i + 1 from by omega] using hc3
+  | three₀ h1 h1' h2 h2' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have hcn : ¬ IsContByte (klByte s i) := by
+        rw [hb0]; exact not_cont_of_ge (by decide)
+      have hpos : 224 ≤ (klByte s i).toNat := by rw [hb0]; decide
+      have hi240 : (klByte s i).toNat < 240 := by rw [hb0]; decide
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr (Or.inr (Or.inr (Or.inl ⟨rfl, h1, h1'⟩)))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4⟩ :=
+        char3 s i hi hn he hcn hpos hi240 hpair hcont1 hcont2
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, (((a + 1) + 1) + 1) - a = 3 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 := by omega
+        rcases hm' with rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+      · rw [show i - 3 + 3 + 1 = i + 1 from by omega,
+            show i - 3 + 3 = i from by omega]
+        exact hc3
+      · simpa [show i - 3 + 3 + 2 = i + 2 from by omega] using hc4
+  | three₁ h0 h0' h1 h1' h2 h2' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have h0i : 0xE1 ≤ klByte s i := by rw [hb0]; exact h0
+      have hcn : ¬ IsContByte (klByte s i) :=
+        not_cont_of_ge (UInt8.le_trans (by decide) h0i)
+      have hpos : 224 ≤ (klByte s i).toNat := by
+        have hn : (0xE1 : UInt8).toNat ≤ (klByte s i).toNat := by
+          rw [hb0]; exact (UInt8.le_iff_toNat_le).mp h0
+        have hv : (0xE1 : UInt8).toNat = 225 := by decide
+        omega
+      have hi240 : (klByte s i).toNat < 240 := by
+        have hn : (klByte s i).toNat ≤ (0xEC : UInt8).toNat := by
+          rw [hb0]; exact (UInt8.le_iff_toNat_le).mp h0'
+        have hv : (0xEC : UInt8).toNat = 236 := by decide
+        omega
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr
+          (Or.inr (Or.inr (Or.inr (Or.inl ⟨Or.inl ⟨h0, h0'⟩, h1, h1'⟩))))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4⟩ :=
+        char3 s i hi hn he hcn hpos hi240 hpair hcont1 hcont2
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, (((a + 1) + 1) + 1) - a = 3 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 := by omega
+        rcases hm' with rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+      · rw [show i - 3 + 3 + 1 = i + 1 from by omega,
+            show i - 3 + 3 = i from by omega]
+        exact hc3
+      · simpa [show i - 3 + 3 + 2 = i + 2 from by omega] using hc4
+  | three₂ h1 h1' h2 h2' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have hcn : ¬ IsContByte (klByte s i) := by
+        rw [hb0]; exact not_cont_of_ge (by decide)
+      have hpos : 224 ≤ (klByte s i).toNat := by rw [hb0]; decide
+      have hi240 : (klByte s i).toNat < 240 := by rw [hb0]; decide
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr (Or.inr (Or.inr (Or.inr (Or.inr
+          (Or.inl ⟨rfl, h1, h1'⟩)))))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4⟩ :=
+        char3 s i hi hn he hcn hpos hi240 hpair hcont1 hcont2
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, (((a + 1) + 1) + 1) - a = 3 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 := by omega
+        rcases hm' with rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+      · rw [show i - 3 + 3 + 1 = i + 1 from by omega,
+            show i - 3 + 3 = i from by omega]
+        exact hc3
+      · simpa [show i - 3 + 3 + 2 = i + 2 from by omega] using hc4
+  | three₃ h0 h0' h1 h1' h2 h2' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have h0i : 0xEE ≤ klByte s i := by rw [hb0]; exact h0
+      have hcn : ¬ IsContByte (klByte s i) :=
+        not_cont_of_ge (UInt8.le_trans (by decide) h0i)
+      have hpos : 224 ≤ (klByte s i).toNat := by
+        have hn : (0xEE : UInt8).toNat ≤ (klByte s i).toNat := by
+          rw [hb0]; exact (UInt8.le_iff_toNat_le).mp h0
+        have hv : (0xEE : UInt8).toNat = 238 := by decide
+        omega
+      have hi240 : (klByte s i).toNat < 240 := by
+        rw [hb0]; rw [UInt8.le_iff_toNat_le] at h0'
+        have hef : (0xEF : UInt8).toNat = 239 := rfl
+        omega
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr
+          (Or.inr (Or.inr (Or.inr (Or.inl ⟨Or.inr ⟨h0, h0'⟩, h1, h1'⟩))))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4⟩ :=
+        char3 s i hi hn he hcn hpos hi240 hpair hcont1 hcont2
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, (((a + 1) + 1) + 1) - a = 3 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 := by omega
+        rcases hm' with rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+      · rw [show i - 3 + 3 + 1 = i + 1 from by omega,
+            show i - 3 + 3 = i from by omega]
+        exact hc3
+      · simpa [show i - 3 + 3 + 2 = i + 2 from by omega] using hc4
+  | four₀ h1 h1' h2 h2' h3 h3' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have hb3 := klByte_drop_any s i 3
+      rw [hdrop] at hb3
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb3
+      have hcn : ¬ IsContByte (klByte s i) := by
+        rw [hb0]; exact not_cont_of_ge (by decide)
+      have hpos : 240 ≤ (klByte s i).toNat := by rw [hb0]; decide
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hcont3 : IsContByte (klByte s (i + 3)) := by rw [hb3]; exact ⟨h3, h3'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr
+          (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨rfl, h1, h1'⟩))))))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4, hc5⟩ :=
+        char4 s i hi hn he hcn hpos hpair hcont1 hcont2 hcont3
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, ((((a + 1) + 1) + 1) + 1) - a = 4 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 ∨ m = 3 := by omega
+        rcases hm' with rfl | rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+        · simpa [show i - 3 + 3 = i from by omega] using hc3
+      · rw [show i - 3 + 4 + 1 = i + 2 from by omega,
+            show i - 3 + 4 = i + 1 from by omega]
+        exact hc4
+      · simpa [show i - 3 + 4 + 2 = i + 3 from by omega] using hc5
+  | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have hb3 := klByte_drop_any s i 3
+      rw [hdrop] at hb3
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb3
+      have h0i : 0xF1 ≤ klByte s i := by rw [hb0]; exact h0
+      have hcn : ¬ IsContByte (klByte s i) :=
+        not_cont_of_ge (UInt8.le_trans (by decide) h0i)
+      have hpos : 240 ≤ (klByte s i).toNat := by
+        have hn : (0xF1 : UInt8).toNat ≤ (klByte s i).toNat := by
+          rw [hb0]; exact (UInt8.le_iff_toNat_le).mp h0
+        have hv : (0xF1 : UInt8).toNat = 241 := by decide
+        omega
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hcont3 : IsContByte (klByte s (i + 3)) := by rw [hb3]; exact ⟨h3, h3'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr
+          (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
+            (Or.inl ⟨h0, h0', h1, h1'⟩)))))))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4, hc5⟩ :=
+        char4 s i hi hn he hcn hpos hpair hcont1 hcont2 hcont3
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, ((((a + 1) + 1) + 1) + 1) - a = 4 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 ∨ m = 3 := by omega
+        rcases hm' with rfl | rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+        · simpa [show i - 3 + 3 = i from by omega] using hc3
+      · rw [show i - 3 + 4 + 1 = i + 2 from by omega,
+            show i - 3 + 4 = i + 1 from by omega]
+        exact hc4
+      · simpa [show i - 3 + 4 + 2 = i + 3 from by omega] using hc5
+  | four₂ h1 h1' h2 h2' h3 h3' =>
+      intro s i hl hi hn he
+      have hdrop := drop_of_literal hl
+      simp only [ByteString.data_toList_cons] at hdrop
+      have hb0 : klByte s i = (s.drop i)[0]?.getD 0x00 := by
+        simpa using klByte_drop_any s i 0
+      rw [hdrop] at hb0
+      simp only [List.getElem?_cons_zero, Option.getD_some] at hb0
+      have hb1 := klByte_drop_any s i 1
+      rw [hdrop] at hb1
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb1
+      have hb2 := klByte_drop_any s i 2
+      rw [hdrop] at hb2
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb2
+      have hb3 := klByte_drop_any s i 3
+      rw [hdrop] at hb3
+      simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some] at hb3
+      have hcn : ¬ IsContByte (klByte s i) := by
+        rw [hb0]; exact not_cont_of_ge (by decide)
+      have hpos : 240 ≤ (klByte s i).toNat := by rw [hb0]; decide
+      have hcont1 : IsContByte (klByte s (i + 1)) := by
+        rw [hb1]
+        exact ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h1' (by decide)⟩
+      have hcont2 : IsContByte (klByte s (i + 2)) := by rw [hb2]; exact ⟨h2, h2'⟩
+      have hcont3 : IsContByte (klByte s (i + 3)) := by rw [hb3]; exact ⟨h3, h3'⟩
+      have hpair : KlPair (klByte s i) (klByte s (i + 1)) := by
+        rw [hb0, hb1]
+        exact (klPair_iff _ _).mpr
+          (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
+            (Or.inr ⟨rfl, h1, h1'⟩)))))))
+      obtain ⟨hc0, hc1, hc2, hc3, hc4, hc5⟩ :=
+        char4 s i hi hn he hcn hpos hpair hcont1 hcont2 hcont3
+      simp only [ByteString.length_cons]
+      rw [show ∀ a : Nat, ((((a + 1) + 1) + 1) + 1) - a = 4 from fun a => by omega]
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        have hm' : m = 0 ∨ m = 1 ∨ m = 2 ∨ m = 3 := by omega
+        rcases hm' with rfl | rfl | rfl | rfl
+        · simpa using hc0
+        · simpa [show i - 3 + 1 = i - 2 from by omega] using hc1
+        · simpa [show i - 3 + 2 = i - 1 from by omega] using hc2
+        · simpa [show i - 3 + 3 = i from by omega] using hc3
+      · rw [show i - 3 + 4 + 1 = i + 2 from by omega,
+            show i - 3 + 4 = i + 1 from by omega]
+        exact hc4
+      · simpa [show i - 3 + 4 + 2 = i + 3 from by omega] using hc5
+
 
 end LeanLLVM.Vellum.JsonUtf8Spec
