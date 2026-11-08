@@ -705,12 +705,103 @@ if refuses_global_gep "$work/gep.plain"; then
 fi
 printf 'ok: the folding detector refuses a GEP through a global and accepts one through a value\n'
 
-# The fixture body is the normalised body, and that is a computed equality: a
-# difference here would be a rewrite this capture does not record.
-cp "$work/body.ll" "$work/fixture-body.ll"
-if ! cmp -s "$work/body.ll" "$work/fixture-body.ll"; then
-  fail "the fixture body differs from the normalised emission, and this unit records no rewrite"
+# The fixture body is the emission with the strip table's removals applied: the
+# strip table is the fixture's provenance, so the emission's body must be
+# exactly the fixture's tokens with the table's items inserted in their recorded
+# order.  The reconstruction reads the table rather than the normaliser that
+# produced it, so a fixture difference no row records -- or a row the emission
+# does not carry -- is a failure.  A file compared with its own copy is not:
+# that check can never fail, whatever the fixture holds.
+reconstruct_check() { # <emission-body> <fixture-body> <strip-rows>
+  awk -F'\t' -v ofs="$ofs" -v rowsf="$3" '
+    function tokenize(s, tk,   n, k, c, cur, inTok) {
+      k = 0; cur = ""; inTok = 0
+      for (n = 1; n <= length(s); n++) {
+        c = substr(s, n, 1)
+        if (index(" \t,()<>{}", c) > 0) {
+          if (inTok) { tk[++k] = cur; cur = ""; inTok = 0 }
+        } else { cur = cur c; inTok = 1 }
+      }
+      if (inTok) tk[++k] = cur
+      return k
+    }
+    FILENAME == ARGV[1] { emit[FNR] = $0; ne = FNR; next }
+    FILENAME == ARGV[2] { fix[FNR] = $0; nf = FNR; next }
+    BEGIN {
+      while ((getline r < rowsf) > 0) {
+        if (r == "") continue
+        split(r, f, "\t")
+        if (f[2] != "removed") continue
+        ln = f[5] + 0 - ofs
+        nrow[ln]++
+        items[ln, nrow[ln]] = f[3]
+      }
+    }
+    END {
+      bad = 0
+      if (ne != nf) {
+        printf "the emission body has %d line(s) and the fixture %d\n", ne, nf > "/dev/stderr"
+        bad = 1
+      }
+      for (ln = 1; ln <= ne && ln <= nf; ln++) {
+        text = emit[ln]
+        cursor = 1
+        for (r = 1; r <= nrow[ln]; r++) {
+          it = items[ln, r]
+          p = index(substr(text, cursor), it)
+          if (p == 0) {
+            printf "line %d: the strip table removes '\''%s'\'', which the emission does not carry there\n", \
+              ln + ofs, it > "/dev/stderr"
+            bad = 1
+            continue
+          }
+          pos = cursor + p - 1
+          text = substr(text, 1, pos - 1) substr(text, pos + length(it))
+          cursor = pos
+        }
+        nt = tokenize(text, tt)
+        ns = tokenize(fix[ln], ss)
+        if (nt != ns) {
+          printf "line %d: the fixture has %d token(s) where the emission less the rows has %d\n", \
+            ln + ofs, ns, nt > "/dev/stderr"
+          bad = 1
+          continue
+        }
+        for (k = 1; k <= nt; k++)
+          if (tt[k] != ss[k]) {
+            printf "line %d: the fixture has '\''%s'\'' where the emission less the rows has '\''%s'\''\n", \
+              ln + ofs, ss[k], tt[k] > "/dev/stderr"
+            bad = 1
+            break
+          }
+      }
+      for (ln in nrow)
+        if (ln + 0 < 1 || ln + 0 > ne) {
+          printf "the strip table removes an item from line %d, outside the emission body\n", \
+            ln + 0 + ofs > "/dev/stderr"
+          bad = 1
+        }
+      exit (bad ? 1 : 0)
+    }
+  ' "$1" "$2"
+}
+
+if ! reconstruct_check "$work/block.ll" "$work/body.ll" "$work/rows.strip"; then
+  fail "the fixture body is not the emission with the strip table's removals applied"
 fi
+
+# The reconstruction is exercised in the same run on a body it must refuse: one
+# token deleted from the fixture is a difference no row records, so a
+# reconstruction that accepts this one is not evidence about the real pair.
+awk '!done && /ret i64/ { sub(/ret /, ""); done = 1 } { print }' "$work/body.ll" \
+  > "$work/body.perturbed.ll"
+cmp -s "$work/body.ll" "$work/body.perturbed.ll" &&
+  fail "the reconstruction control did not change the body; it is not evidence"
+if reconstruct_check "$work/block.ll" "$work/body.perturbed.ll" "$work/rows.strip" \
+     > "$work/perturbed.out" 2>&1; then
+  fail "the reconstruction accepts a body difference the strip table does not record; it is not evidence"
+fi
+printf 'ok: the fixture body is the emission less the strip table'\''s rows, and the reconstruction refuses an unrecorded one\n'
 
 # --- the fixture's inventory ----------------------------------------------
 
@@ -746,9 +837,12 @@ inventory_of() {
 # --- the fixture ----------------------------------------------------------
 
 # The module configuration the removed lines carried, read from the emission so
-# the provenance comment cannot drift from it.
+# the provenance comment cannot drift from it.  `source_filename` is one of
+# them: it is a class 8 row in the strip table, so leaving it out here would
+# make the comment shorter than the table it is meant to agree with.
 module_config() {
   awk '
+    /^source_filename =/ { printf "%s\n", $0; next }
     /^target triple/ { printf "%s\n", $0; next }
     /^target datalayout/ { printf "%s\n", $0; next }
   ' "$1"
@@ -810,7 +904,7 @@ PROVENANCE
 ;
 ; The fixture's own opcodes and call targets are in json-utf8.inventory.
 PROVENANCE
-  cat "$work/fixture-body.ll"
+  cat "$work/body.ll"
 } > "$work/fixture.ll"
 
 inventory_of "$work/fixture.ll" > "$work/inventory.txt"
@@ -957,7 +1051,7 @@ printf '    substitution and no splat expansion is applied)\n'
 printf 'capture-utf8: wrote probes/install/ir/json-utf8.inventory (%s line(s))\n' \
   "$(wc -l < "$work/inventory.txt" | tr -d ' ')"
 printf 'capture-utf8: calls in the fixture body, counted there: %s\n' \
-  "$(grep -o '@llvm\.[A-Za-z0-9_.]*' "$work/fixture-body.ll" | LC_ALL=C sort | uniq -c |
+  "$(grep -o '@llvm\.[A-Za-z0-9_.]*' "$work/body.ll" | LC_ALL=C sort | uniq -c |
      awk '{ printf "%s%s=%s", (NR > 1 ? ", " : ""), $2, $1 }')"
 printf 'capture-utf8: counted in the strip rows: %s nuw, %s nsw, %s "align 1", %s "!tbaa" item(s)\n' \
   "$nnuw" "$nnsw" "$nalign1" "$ntbaa"

@@ -43,6 +43,7 @@
 ; json-utf8.strip.tsv.  Nothing is rewritten: json-utf8.rewrites.tsv records why
 ; each kind of rewrite is absent, and its row count is zero.  The lines removed
 ; from the module carried:
+;   source_filename = "kernel/json/utf8.c"
 ;   target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 ;   target triple = "x86_64-unknown-linux-gnu"
 ;   (the attribute groups, the three callee declarations and the module

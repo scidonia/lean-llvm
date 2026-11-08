@@ -390,12 +390,16 @@ The six definitions `utf8-entities:` names in `u8kl.h` and the stage statements 
 formatting and comments.  The statements have no name, so the identity list
 names them by **line range** on the measured side — safe only because that file
 is pinned by digest — and by a **marker pair** inside `utf8.c`,
-`/* begin: copied stage statements */` and `/* end: copied stage statements */`.
+`/* begin: copied stage statements */` and `/* end: copied stage statements */`,
+one pair per measured range.
 `identity/source-identity.sh --unit utf8` diffs the tokens of each entity and of
 the stage, concatenating `utf8-stage:`'s ranges and then `utf8-stage-tail:`'s —
-the order the comparison reads them in — and requires **both** sides of the
-stage comparison to be non-empty with a non-empty normalisation; an empty
-extraction is a setup fault, never an equality.
+the order the comparison reads them in — and concatenating every pair inside the
+unit in file order.  The pair count must equal the range count, so a unit that
+lost a pair is a setup fault rather than a comparison against a prefix.  The
+comparison also requires **both** sides of the stage to be non-empty with a
+non-empty normalisation; an empty extraction is a setup fault, never an
+equality.
 
 One token is **renamed**, and it is a recorded row rather than a silent edit:
 `s1f_u8_ungated` becomes `ungated`, because the document-level static becomes
@@ -478,7 +482,7 @@ nix develop -c bash kernel/json/identity/source-identity.sh --unit entry --arms-
                                                                        # detectors and the public symbols
 nix develop -c bash kernel/json/identity/ent-identity.sh --text-only   # the ent word's statements
 nix develop -c bash kernel/json/identity/source-identity.sh --unit utf8 # UTF-8 unit: tokens, the stage range
-                                                                       # and the three controls
+                                                                       # and its eight controls
 nix develop -c bash kernel/json/identity/source-identity.sh --unit utf8 --arms-only # UTF-8 unit: the TU, its
                                                                        # calibrated detector and its ABI symbol
 nix develop -c bash kernel/json/identity/ir-identity.sh --unit utf8    # UTF-8 unit: the stage's emitted-code

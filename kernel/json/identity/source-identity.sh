@@ -22,9 +22,12 @@
 #          against the stage the `utf8-stage:` line names by line range in
 #          `measured/s1fuse.h`.  The stage has no name to locate it by, so each
 #          side gets the locator it can hold: a line range on the measured side
-#          (safe because that file is pinned by digest) and a marker-delimited
-#          region inside the unit (`utf8-stage-begin`/`utf8-stage-end`, safe
-#          because the unit is this repository's own file).  The ranges are
+#          (safe because that file is pinned by digest) and one marker-delimited
+#          pair inside the unit per range (`utf8-stage-begin`/`utf8-stage-end`,
+#          safe because the unit is this repository's own file).  Every pair is
+#          part of the stage, concatenated in file order, and the pair count must
+#          equal the range count: a unit that lost one would otherwise be
+#          compared against a prefix.  The ranges are
 #          concatenated in the key order `stage_text` fixes (`utf8-stage:` then
 #          `utf8-stage-tail:`, and within one row in the order written), the
 #          `utf8-rename:`
@@ -514,15 +517,57 @@ apply_renames() { # <text>
   printf '%s\n' "$text"
 }
 
-# extract_region <file> <begin marker> <end marker> -- the lines strictly
-# between the first line carrying <begin> and the next line carrying <end>.
-# Either marker missing, or the end marker first, is a setup fault.
+# extract_region <file> <begin marker> <end marker> -- the lines of every
+# `begin`..`end` pair in the file, in file order, concatenated.  The unit may
+# carry the stage in more than one pair, and every pair is part of the stage: an
+# extractor that returned only the first would compare the measured stage
+# against a prefix of it, and would still report identity whenever the prefix
+# agreed.  A malformed pairing is a setup fault and never a short extraction: a
+# `begin` before the previous `end`, an `end` before its `begin`, both markers
+# on one line, a pair left unclosed, and a file with no pair at all are each
+# refused here rather than measured.
 extract_region() { # <file> <begin> <end>
   awk -v begin="$2" -v end="$3" '
-    !seen { if (index($0, begin) > 0) seen = 1; next }
-    index($0, end) > 0 { done = 1; exit }
-    { print }
-    END { if (!seen || !done) exit 1 }
+    {
+      b = index($0, begin) > 0
+      e = index($0, end) > 0
+      if (b && e) {
+        printf "SETUP: %s carries both markers on one line: %s\n", FILENAME, $0 > "/dev/stderr"
+        bad = 1; exit
+      }
+      if (b) {
+        if (inside) {
+          printf "SETUP: %s opens a pair before the previous one closed (line %d)\n", \
+            FILENAME, FNR > "/dev/stderr"
+          bad = 1; exit
+        }
+        inside = 1
+        next
+      }
+      if (e) {
+        if (!inside) {
+          printf "SETUP: %s closes a pair that was not opened (line %d)\n", \
+            FILENAME, FNR > "/dev/stderr"
+          bad = 1; exit
+        }
+        inside = 0
+        pairs++
+        next
+      }
+      if (inside) print
+    }
+    END {
+      if (bad) exit 1
+      if (inside) {
+        printf "SETUP: %s leaves the last pair unclosed\n", FILENAME > "/dev/stderr"
+        exit 1
+      }
+      if (pairs == 0) {
+        printf "SETUP: %s carries no pair between \"%s\" and \"%s\"\n", \
+          FILENAME, begin, end > "/dev/stderr"
+        exit 1
+      }
+    }
   ' "$1"
 }
 
@@ -559,11 +604,13 @@ compare_token_text() { # <label> <measured-text> <unit-text>
 }
 
 # compare_stage <unit-file> -- the measured stage text against the unit's marked
-# region, with the rename row applied to the measured side only: a unit that
+# regions, with the rename row applied to the measured side only: a unit that
 # kept the measured static's name would then be a difference, which is what the
-# rename records.
+# rename records.  The measured side names one range per pair the unit must
+# carry, so the marker count is asserted before the text is: a unit that lost a
+# pair would otherwise be compared against a prefix of the stage and pass.
 compare_stage() { # <unit-file>
-  local kfile=$1 measured_text unit_text
+  local kfile=$1 measured_text unit_text nspans nbegin nend spec span
   [ -n "$stage_specs" ] || {
     printf 'SETUP: unit %s has no stage range list\n' "$unit" >&2
     return 3
@@ -572,13 +619,22 @@ compare_stage() { # <unit-file>
     printf 'SETUP: the stage unit row names %s and the arm reads %s\n' "$stage_unit" "$kfile" >&2
     return 3
   fi
+  nspans=0
+  for spec in $stage_specs $stage_tail_specs; do
+    for span in ${spec#*:}; do nspans=$((nspans + 1)); done
+  done
+  nbegin=$(grep -cF -- "$stage_begin" "$kfile")
+  nend=$(grep -cF -- "$stage_end" "$kfile")
+  if [ "$nbegin" -ne "$nspans" ] || [ "$nend" -ne "$nspans" ]; then
+    printf 'SETUP: %s carries %s begin and %s end marker line(s); the measured\n' \
+      "$kfile" "$nbegin" "$nend" >&2
+    printf 'SETUP: stage names %s range(s), and each range is one marked pair\n' \
+      "$nspans" >&2
+    return 3
+  fi
   measured_text=$(stage_text) || return 3
   measured_text=$(apply_renames "$measured_text") || return 3
-  unit_text=$(extract_region "$kfile" "$stage_begin" "$stage_end") || {
-    printf 'SETUP: %s carries no region between "%s" and "%s"\n' \
-      "$kfile" "$stage_begin" "$stage_end" >&2
-    return 3
-  }
+  unit_text=$(extract_region "$kfile" "$stage_begin" "$stage_end") || return 3
   compare_token_text identity "$measured_text" "$unit_text"
 }
 
@@ -595,7 +651,7 @@ compare_stage_copies() {
 
 # stage_control -- the stage comparison's own controls, in the same run.
 stage_control() {
-  local first span src clipped copy_text status rc=0
+  local first span src clipped copy_text status rc=0 got want
   first=${stage_specs%% *}
   src=${first%%:*}
   span=${first#*:}
@@ -627,6 +683,112 @@ stage_control() {
     1) printf 'ok: a dropped statement is reported as a difference\n' ;;
     *) printf 'FAIL: a dropped statement was not reported (status %s)\n' "$status" >&2; rc=1 ;;
   esac
+
+  # The stage is carried in more than one pair, and the extractor is the only
+  # thing that decides how many of them are compared.  These controls are the
+  # properties that would rot first: an extractor that returned one pair, or
+  # that accepted a malformed pairing, would keep every older transcript green.
+  printf '\n== Control: a third marker pair is extracted, not only the first two\n'
+  printf '/* C-PAIR begin */\none();\n/* C-PAIR end */\n/* C-PAIR begin */\ntwo();\n/* C-PAIR end */\n/* C-PAIR begin */\nthree();\n/* C-PAIR end */\n' \
+    > "$work/pairs.c"
+  got=$(extract_region "$work/pairs.c" '/* C-PAIR begin */' '/* C-PAIR end */')
+  status=$?
+  want=$(printf 'one();\ntwo();\nthree();')
+  if [ "$status" -eq 0 ] && [ "$got" = "$want" ]; then
+    printf 'ok: all three pairs are returned, in file order\n'
+  else
+    printf 'FAIL: the extractor did not return all three pairs in file order (status %s)\n' \
+      "$status" >&2
+    rc=1
+  fi
+
+  printf '\n== Control: a unit whose two pairs are swapped is a difference at the arm\n'
+  mkdir -p "$work/swap"
+  awk -v begin="$stage_begin" -v end="$stage_end" '
+    {
+      line[NR] = $0
+      if (index($0, begin) > 0) { np++; bstart[np] = NR; inside = 1; next }
+      if (index($0, end) > 0) { bend[np] = NR; inside = 0; next }
+      if (inside) { cnt[np]++; body[np, cnt[np]] = $0 }
+    }
+    END {
+      if (np != 2 || cnt[1] == 0 || cnt[2] == 0) exit 1
+      for (i = 1; i <= bstart[1]; i++) print line[i]
+      for (k = 1; k <= cnt[2]; k++) print body[2, k]
+      for (i = bend[1]; i <= bstart[2]; i++) print line[i]
+      for (k = 1; k <= cnt[1]; k++) print body[1, k]
+      for (i = bend[2]; i <= NR; i++) print line[i]
+    }
+  ' "$kernel" > "$work/swap/$stage_unit" || {
+    printf 'SETUP: the swap control could not pair the unit'"'"'s markers\n' >&2
+    return 3
+  }
+  if cmp -s "$kernel" "$work/swap/$stage_unit"; then
+    printf 'SETUP: the swap control did not change the unit\n' >&2
+    return 3
+  fi
+  printf '   the arm compares %s, the same text in the other pair order\n' "$work/swap/$stage_unit"
+  compare_stage "$work/swap/$stage_unit" > "$work/swap.out" 2>&1
+  status=$?
+  case "$status" in
+    1)
+      printf 'ok: the arm reports a difference on the swapped unit\n'
+      printf '   %s\n' "$(sed -n '1p' "$work/swap.out")"
+      ;;
+    *)
+      printf 'FAIL: the arm did not report a difference on the swapped unit (status %s)\n' \
+        "$status" >&2
+      sed -e 's/^/      /' "$work/swap.out" >&2
+      rc=1
+      ;;
+  esac
+
+  printf '\n== Control: a pair opened before the previous one closed is a setup fault\n'
+  printf '/* C-PAIR begin */\none();\n/* C-PAIR begin */\ntwo();\n/* C-PAIR end */\n' \
+    > "$work/unbalanced.c"
+  extract_region "$work/unbalanced.c" '/* C-PAIR begin */' '/* C-PAIR end */' \
+    > "$work/unbalanced.out" 2>&1
+  status=$?
+  case "$status" in
+    1) printf 'ok: an overlapping pair is refused\n'
+       printf '   %s\n' "$(sed -n '1p' "$work/unbalanced.out")" ;;
+    *) printf 'FAIL: an overlapping pair did not fail as the extractor'"'"'s fault (status %s)\n' \
+         "$status" >&2; rc=1 ;;
+  esac
+
+  printf '\n== Control: an unclosed pair is a setup fault\n'
+  printf '/* C-PAIR begin */\none();\n/* C-PAIR end */\n/* C-PAIR begin */\ntwo();\n' \
+    > "$work/unclosed.c"
+  extract_region "$work/unclosed.c" '/* C-PAIR begin */' '/* C-PAIR end */' \
+    > "$work/unclosed.out" 2>&1
+  status=$?
+  case "$status" in
+    1) printf 'ok: an unclosed pair is refused\n'
+       printf '   %s\n' "$(sed -n '1p' "$work/unclosed.out")" ;;
+    *) printf 'FAIL: an unclosed pair did not fail as the extractor'"'"'s fault (status %s)\n' \
+         "$status" >&2; rc=1 ;;
+  esac
+
+  printf '\n== Control: a well-formed but empty pair is a setup fault in the comparison\n'
+  printf '/* C-PAIR begin */\n/* C-PAIR end */\n' > "$work/empty.c"
+  got=$(extract_region "$work/empty.c" '/* C-PAIR begin */' '/* C-PAIR end */')
+  status=$?
+  if [ "$status" -ne 0 ] || [ -n "$got" ]; then
+    printf 'FAIL: the empty pair was not extracted as empty text (status %s)\n' "$status" >&2
+    rc=1
+  else
+    compare_token_text empty "$(stage_text)" "$got" > "$work/empty.out" 2>&1
+    status=$?
+    case "$status" in
+      3)
+        printf 'ok: an empty region is refused as a setup fault, not reported as identity\n'
+        printf '   %s\n' "$(sed -n '1p' "$work/empty.out")"
+        ;;
+      *) printf 'FAIL: the empty region did not fail as a setup fault (status %s)\n' \
+           "$status" >&2
+         rc=1 ;;
+    esac
+  fi
   return "$rc"
 }
 
