@@ -5680,3 +5680,1463 @@ theorem utf8_stage_undefined_of_no_read : utf8StageUndefinedStatement := by
       exact runFuel_mono_le (by omega) hrun
 
 end LeanLLVM.Vellum.JsonUtf8Steps
+
+open LeanLLVM
+open LeanLLVM.JSON
+open LeanLLVM.Vellum.JsonUtf8Steps
+open LeanLLVM.Vellum.JsonUtf8Spec
+open LeanLLVM.Vellum.JsonUtf8IR
+open LeanLLVM.Vellum.JsonEntrySteps
+namespace LeanLLVM.Vellum.JsonUtf8Steps
+
+theorem literal_append_bytes (l m : List UInt8) :
+    ByteString.literal (l ++ m) = ByteString.literal l ++ ByteString.literal m := by
+  apply ByteString.eq_of_toList_eq
+  rw [ByteString.toList_append, ByteString.toList_literal, ByteString.toList_literal,
+    ByteString.toList_literal]
+
+/-- Appending bytes to both sides of a span. -/
+theorem utf8Spans_append_right {a r d : Bytes} (h : Utf8Spans a r) :
+    Utf8Spans (a ++ d) (r ++ d) := by
+  induction h with
+  | nil t => exact Utf8Spans.nil (t ++ d)
+  | char hc hr ih =>
+      cases hc with
+      | one hx =>
+          rw [ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.one (rest := _ ++ d) hx) ih
+      | two h0 h0' h1 h1' =>
+          rw [ByteString.cons_append, ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.two (rest := _ ++ d) h0 h0' h1 h1') ih
+      | three₀ h1 h1' h2 h2' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.three₀ (rest := _ ++ d) h1 h1' h2 h2') ih
+      | three₁ h0 h0' h1 h1' h2 h2' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.three₁ (rest := _ ++ d) h0 h0' h1 h1' h2 h2') ih
+      | three₂ h1 h1' h2 h2' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.three₂ (rest := _ ++ d) h1 h1' h2 h2') ih
+      | three₃ h0 h0' h1 h1' h2 h2' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.three₃ (rest := _ ++ d) h0 h0' h1 h1' h2 h2') ih
+      | four₀ h1 h1' h2 h2' h3 h3' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append,
+            ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.four₀ (rest := _ ++ d) h1 h1' h2 h2' h3 h3') ih
+      | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append,
+            ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.four₁ (rest := _ ++ d) h0 h0' h1 h1' h2 h2' h3 h3') ih
+      | four₂ h1 h1' h2 h2' h3 h3' =>
+          rw [ByteString.cons_append, ByteString.cons_append, ByteString.cons_append,
+            ByteString.cons_append]
+          exact Utf8Spans.char (Utf8Char.four₂ (rest := _ ++ d) h1 h1' h2 h2' h3 h3') ih
+
+/-- Two spans compose. -/
+theorem utf8Spans_trans {a r s : Bytes} (h1 : Utf8Spans a r) (h2 : Utf8Spans r s) :
+    Utf8Spans a s := by
+  induction h1 with
+  | nil t => exact h2
+  | char hc hr ih => exact Utf8Spans.char hc (ih h2)
+
+/-- A run of zero bytes is a complete document. -/
+theorem utf8Spans_replicate_zero (p : Nat) :
+    Utf8Spans (ByteString.literal (List.replicate p (0x00 : UInt8))) ByteString.empty := by
+  induction p with
+  | zero => exact Utf8Spans.nil ByteString.empty
+  | succ p ih =>
+      rw [List.replicate_succ]
+      rw [ByteString.literal_cons]
+      exact Utf8Spans.char (Utf8Char.one (by decide)) ih
+
+theorem peel_byte (u : List UInt8) (b0 : UInt8) (rest : List UInt8)
+    (h : u ++ [0x00] = b0 :: rest) :
+    (u = [] ∧ rest = [] ∧ b0 = 0x00) ∨ ∃ t, u = b0 :: t ∧ rest = t ++ [0x00] := by
+  rcases List.append_eq_cons_iff.mp h with ⟨rfl, h⟩ | ⟨t, rfl, ht⟩
+  · left
+    have h' : ([0x00] : List UInt8) = b0 :: rest := h
+    simp only [List.cons.injEq, List.nil_eq] at h'
+    exact ⟨rfl, h'.2, h'.1.symm⟩
+  · exact Or.inr ⟨t, rfl, ht⟩
+
+theorem peel_list : ∀ (bs : List UInt8) (u rest : List UInt8),
+    u ++ [0x00] = bs ++ rest →
+    (∃ t, u = bs ++ t ∧ rest = t ++ [0x00]) ∨ (u ++ [0x00] = bs ∧ rest = []) := by
+  intro bs
+  induction bs with
+  | nil =>
+      intro u rest h
+      exact Or.inl ⟨u, rfl, h.symm⟩
+  | cons b bs ih =>
+      intro u rest h
+      rcases peel_byte u b (bs ++ rest) h with ⟨hu, hrest, -⟩ | ⟨t, hu, ht⟩
+      · obtain ⟨hbs, hrest'⟩ := List.append_eq_nil_iff.mp hrest
+        right
+        refine ⟨?_, hrest'⟩
+        simpa [hu, hbs, hrest'] using h
+      · rcases ih t rest ht.symm with ⟨t', ht', hrest⟩ | ⟨ht', hrest⟩
+        · left
+          exact ⟨t', by rw [hu, ht']; rfl, hrest⟩
+        · right
+          refine ⟨?_, hrest⟩
+          rw [hu]
+          rw [show b :: t ++ [0x00] = b :: (t ++ [0x00]) from rfl, ht']
+
+theorem getLast_append_singleton_zero (u bs : List UInt8) (h : u ++ [0x00] = bs) :
+    bs.getLast? = some 0x00 := by
+  have := congrArg List.getLast? h
+  rw [List.getLast?_append] at this
+  simpa using this.symm
+
+theorem utf8Spans_strip_zero_tail (u : List UInt8) :
+    Utf8Spans (ByteString.literal (u ++ [0x00])) ByteString.empty →
+      Utf8Spans (ByteString.literal u) ByteString.empty := by
+  suffices H : ∀ k, ∀ u : List UInt8, u.length = k →
+      Utf8Spans (ByteString.literal (u ++ [0x00])) ByteString.empty →
+      Utf8Spans (ByteString.literal u) ByteString.empty from
+    fun h => H u.length u rfl h
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+    intro u hk h
+    rcases utf8Spans_cases h with hnil | ⟨b', c, hc, hr⟩
+    · exfalso
+      have h1 := congrArg ByteArray.toList hnil
+      simp only [ByteString.toList_empty, ByteString.toList_literal] at h1
+      have h2 := congrArg List.length h1
+      simp only [List.length_nil, List.length_append, List.length_cons] at h2
+      omega
+    · generalize hb : ByteString.literal (u ++ [0x00]) = b2 at hc
+      cases hc with
+      | one hx =>
+          rename_i c0
+          have hb' : u ++ [0x00] = c0 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [c0] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.one (rest := ByteString.literal t) hx) hrec
+          · have hlen : u.length = 0 := by
+              have := congrArg List.length hu
+              simp only [List.length_append, List.length_cons, List.length_nil] at this
+              omega
+            have hu0 : u = [] := List.eq_nil_of_length_eq_zero hlen
+            rw [hu0]
+            exact Utf8Spans.nil ByteString.empty
+      | two h0 h0' h1 h1' =>
+          rename_i c0 c1
+          have hb' : u ++ [0x00] = c0 :: c1 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [c0, c1] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.two (rest := ByteString.literal t) h0 h0' h1 h1') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [c0, c1] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h1
+            exact absurd h1 (by decide)
+      | three₀ h1 h1' h2 h2' =>
+          rename_i c1 c2
+          have hb' : u ++ [0x00] = 0xE0 :: c1 :: c2 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [0xE0, c1, c2] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.three₀ (rest := ByteString.literal t) h1 h1' h2 h2') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [0xE0, c1, c2] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h2
+            exact absurd h2 (by decide)
+      | three₁ h0 h0' h1 h1' h2 h2' =>
+          rename_i c0 c1 c2
+          have hb' : u ++ [0x00] = c0 :: c1 :: c2 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [c0, c1, c2] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.three₁ (rest := ByteString.literal t) h0 h0' h1 h1' h2 h2') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [c0, c1, c2] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h2
+            exact absurd h2 (by decide)
+      | three₂ h1 h1' h2 h2' =>
+          rename_i c1 c2
+          have hb' : u ++ [0x00] = 0xED :: c1 :: c2 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [0xED, c1, c2] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.three₂ (rest := ByteString.literal t) h1 h1' h2 h2') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [0xED, c1, c2] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h2
+            exact absurd h2 (by decide)
+      | three₃ h0 h0' h1 h1' h2 h2' =>
+          rename_i c0 c1 c2
+          have hb' : u ++ [0x00] = c0 :: c1 :: c2 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [c0, c1, c2] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.three₃ (rest := ByteString.literal t) h0 h0' h1 h1' h2 h2') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [c0, c1, c2] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h2
+            exact absurd h2 (by decide)
+      | four₀ h1 h1' h2 h2' h3 h3' =>
+          rename_i c1 c2 c3
+          have hb' : u ++ [0x00] = 0xF0 :: c1 :: c2 :: c3 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [0xF0, c1, c2, c3] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.four₀ (rest := ByteString.literal t) h1 h1' h2 h2' h3 h3') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [0xF0, c1, c2, c3] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h3
+            exact absurd h3 (by decide)
+      | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+          rename_i c0 c1 c2 c3
+          have hb' : u ++ [0x00] = c0 :: c1 :: c2 :: c3 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [c0, c1, c2, c3] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.four₁ (rest := ByteString.literal t) h0 h0' h1 h1' h2 h2' h3 h3') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [c0, c1, c2, c3] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h3
+            exact absurd h3 (by decide)
+      | four₂ h1 h1' h2 h2' h3 h3' =>
+          rename_i c1 c2 c3
+          have hb' : u ++ [0x00] = 0xF4 :: c1 :: c2 :: c3 :: b'.toList := by
+            have := congrArg ByteArray.toList hb
+            simpa [ByteString.toList_literal, ByteString.toList_cons] using this
+          rcases peel_list [0xF4, c1, c2, c3] u b'.toList hb' with ⟨t, hu, hrt⟩ | ⟨hu, hrt⟩
+          · have hrest : b' = ByteString.literal (t ++ [0x00]) := by
+              apply ByteString.eq_of_toList_eq
+              rw [ByteString.toList_literal]
+              exact hrt
+            have hlt : t.length < k := by
+              rw [← hk, hu]
+              simp only [List.length_append, List.length_cons, List.length_nil]
+              omega
+            have hr' : Utf8Spans (ByteString.literal (t ++ [0x00])) ByteString.empty :=
+              hrest ▸ hr
+            have hrec := ih t.length hlt t rfl hr'
+            rw [hu, literal_append_bytes]
+            simp only [ByteString.literal_cons, ByteString.cons_append]
+            exact Utf8Spans.char (Utf8Char.four₂ (rest := ByteString.literal t) h1 h1' h2 h2' h3 h3') hrec
+          · exfalso
+            have hl := getLast_append_singleton_zero u [0xF4, c1, c2, c3] hu
+            simp only [List.getLast?_cons_cons, List.getLast?_singleton,
+              Option.some.injEq] at hl
+            rw [hl] at h3
+            exact absurd h3 (by decide)
+
+theorem utf8Char_byte_ne_zero {b : Bytes} {c : Nat} {r : Bytes} (h : Utf8Char b c r) :
+    ∀ (n : Nat) (z : UInt8), 1 ≤ n → n < b.length - r.length →
+      b.toList[n - 1]? = some z → z ≠ 0x00 := by
+  cases h with
+  | one hx =>
+      rename_i b0
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      omega
+  | two h0 h0' h1 h1' =>
+      rename_i b0 b1
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 := by omega
+      rcases hcases with rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h0
+        exact absurd h0 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+  | three₀ h1 h1' h2 h2' =>
+      rename_i b1 b2
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 := by omega
+      rcases hcases with rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        exact absurd hz (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+  | three₁ h0 h0' h1 h1' h2 h2' =>
+      rename_i b0 b1 b2
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 := by omega
+      rcases hcases with rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h0
+        exact absurd h0 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+  | three₂ h1 h1' h2 h2' =>
+      rename_i b1 b2
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 := by omega
+      rcases hcases with rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        exact absurd hz (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+  | three₃ h0 h0' h1 h1' h2 h2' =>
+      rename_i b0 b1 b2
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 := by omega
+      rcases hcases with rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h0
+        exact absurd h0 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+  | four₀ h1 h1' h2 h2' h3 h3' =>
+      rename_i b1 b2 b3
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 := by omega
+      rcases hcases with rfl | rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        exact absurd hz (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h3
+        exact absurd h3 (by decide)
+  | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+      rename_i b0 b1 b2 b3
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 := by omega
+      rcases hcases with rfl | rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h0
+        exact absurd h0 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h3
+        exact absurd h3 (by decide)
+  | four₂ h1 h1' h2 h2' h3 h3' =>
+      rename_i b1 b2 b3
+      intro n z hn hlen hz
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlen
+      have hcases : n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 := by omega
+      rcases hcases with rfl | rfl | rfl | rfl
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        exact absurd hz (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h1
+        exact absurd h1 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h2
+        exact absurd h2 (by decide)
+      · simp only [ByteString.toList_cons] at hz
+        simp at hz
+        intro hc
+        rw [hc] at hz
+        rw [hz] at h3
+        exact absurd h3 (by decide)
+
+/-- A proper prefix of one character's encoding never ends in `0x00`: the
+encoding's later bytes are continuations and the one-byte character's own byte is
+its whole length. -/
+theorem not_utf8PrefixOf_append_zero (l : List UInt8) :
+    ¬ Utf8PrefixOf (ByteString.literal (l ++ [0x00])) := by
+  intro hp
+  obtain ⟨hne, b, c, r, hc, hlt, hpre⟩ := hp
+  unfold HasPrefix at hpre
+  rw [ByteString.drop_zero] at hpre
+  have hlitlen : (ByteString.literal (l ++ [0x00])).length = (l ++ [0x00]).length := by
+    rw [ByteString.length_eq_size, ByteString.size_literal]
+  have hpre' : b.take (l ++ [0x00]).length = ByteString.literal (l ++ [0x00]) := by
+    rwa [hlitlen] at hpre
+  have hlen1 : 1 ≤ (l ++ [0x00]).length := by simp
+  have htake : b.toList.take (l ++ [0x00]).length = l ++ [0x00] := by
+    have := congrArg ByteArray.toList hpre'
+    rwa [ByteString.toList_take, ByteString.toList_literal] at this
+  have hlt2 : (l ++ [0x00]).length < b.length - r.length := by
+    rwa [hlitlen] at hlt
+  have hbyte : b.toList[(l ++ [0x00]).length - 1]? = some 0x00 := by
+    have h1 : (b.toList.take (l ++ [0x00]).length)[(l ++ [0x00]).length - 1]?
+        = b.toList[(l ++ [0x00]).length - 1]? := by
+      simp
+    rw [← h1, htake]
+    have h2 : (l ++ [0x00]).length - 1 = l.length := by simp
+    rw [h2, List.getElem?_append_right (Nat.le_refl l.length)]
+    simp
+  exact (utf8Char_byte_ne_zero hc (l ++ [0x00]).length 0x00 hlen1 hlt2 hbyte) rfl
+
+
+/-- Peeling `p` trailing zeros from a complete span. -/
+theorem utf8Spans_strip_zeros_tail (u : List UInt8) (p : Nat) :
+    Utf8Spans (ByteString.literal (u ++ List.replicate p 0x00)) ByteString.empty →
+      Utf8Spans (ByteString.literal u) ByteString.empty := by
+  revert u
+  induction p with
+  | zero =>
+      intro u h
+      simpa using h
+  | succ p ih =>
+      intro u h
+      have hrew : ByteString.literal (u ++ List.replicate (p + 1) 0x00)
+          = ByteString.literal ((u ++ List.replicate p 0x00) ++ [0x00]) := by
+        rw [List.replicate_succ', List.append_assoc]
+      rw [hrew] at h
+      exact ih u (utf8Spans_strip_zero_tail (u ++ List.replicate p 0x00) h)
+
+/-- **The padded window read as a document.**  With at least one padding byte, a
+valid prefix of the staged window is exactly a concatenation of complete
+characters: the three prefix zeros are complete characters, the padding zeros are
+complete characters, and a truncated final character of the document is completed
+— or broken — by a `0x00` that no character can contain. -/
+theorem validPrefix_padded_iff_utf8Chars (bs : List UInt8) (p : Nat) (hp : 1 ≤ p) :
+    ValidPrefix (ByteString.literal (List.replicate 3 0x00 ++ bs ++ List.replicate p 0x00)) ↔
+      Utf8Chars (ByteString.literal bs) := by
+  have hsplit : List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate p 0x00
+      = 0x00 :: 0x00 :: 0x00 :: (bs ++ List.replicate p 0x00) := rfl
+  constructor
+  · intro hv
+    have hv3 : ValidPrefix
+        (ByteString.literal (0x00 :: 0x00 :: 0x00 :: (bs ++ List.replicate p 0x00))) := by
+      rwa [hsplit] at hv
+    have hv' : ValidPrefix (ByteString.literal (bs ++ List.replicate p 0x00)) :=
+      validPrefix_three_cons hv3
+    rw [validPrefix_iff] at hv'
+    rcases hv' with hchars | ⟨t, hspans, hpref⟩
+    · exact utf8Spans_strip_zeros_tail bs p hchars
+    · exfalso
+      obtain ⟨k, hk⟩ := utf8Spans_literal_tail hspans
+      have htne : t ≠ ByteString.empty := hpref.1
+      have hklt : k < (bs ++ List.replicate p 0x00).length := by
+        by_cases h : k < (bs ++ List.replicate p 0x00).length
+        · exact h
+        · exfalso
+          apply htne
+          rw [hk, List.drop_eq_nil_of_le (Nat.le_of_not_lt h)]
+          rfl
+      have hzlast : (List.replicate p (0x00 : UInt8)).getLast? = some 0x00 := by
+        have hp' : p = (p - 1) + 1 := by omega
+        rw [hp', List.replicate_succ']
+        rw [List.getLast?_append]
+        simp
+      have huget : (bs ++ List.replicate p (0x00 : UInt8)).getLast? = some 0x00 := by
+        rw [List.getLast?_append, hzlast]
+        simp
+      have hdropget :
+          ((bs ++ List.replicate p (0x00 : UInt8)).drop k).getLast? = some 0x00 := by
+        rw [List.getLast?_eq_getElem?, List.getElem?_drop, List.length_drop]
+        have hidx : k + ((bs ++ List.replicate p (0x00 : UInt8)).length - k - 1)
+            = (bs ++ List.replicate p (0x00 : UInt8)).length - 1 := by omega
+        rw [hidx, ← List.getLast?_eq_getElem?, huget]
+      obtain ⟨l', hl'⟩ := List.getLast?_eq_some_iff.mp hdropget
+      have htform : t = ByteString.literal (l' ++ [0x00]) := by
+        rw [hk, hl']
+      exact (not_utf8PrefixOf_append_zero l') (htform ▸ hpref)
+  · intro hchars
+    have h2 : Utf8Spans (ByteString.literal (bs ++ List.replicate p 0x00))
+        (ByteString.literal (List.replicate p 0x00)) := by
+      have happ := utf8Spans_append_right hchars (d := ByteString.literal (List.replicate p 0x00))
+      rwa [← literal_append_bytes, ByteString.empty_append] at happ
+    have h1 : Utf8Spans (ByteString.literal (bs ++ List.replicate p 0x00)) ByteString.empty :=
+      utf8Spans_trans h2 (utf8Spans_replicate_zero p)
+    have hv : ValidPrefix (ByteString.literal (bs ++ List.replicate p 0x00)) :=
+      validPrefix_of_utf8Chars h1
+    have hv3 := validPrefix_three_cons_back hv
+    rw [hsplit]
+    exact hv3
+
+
+
+theorem ofBool_bool_eq_one (b : Bool) : (BitVec.ofBool b = (1 : BitVec 1)) ↔ b = true := by
+  cases b <;> decide
+
+theorem ofBool_bool_eq_zero (b : Bool) : (BitVec.ofBool b = (0 : BitVec 1)) ↔ b = false := by
+  cases b <;> decide
+
+theorem bit1_or_eq_zero_iff (a b : BitVec 1) : (a ||| b) = 0 ↔ a = 0 ∧ b = 0 := by
+  constructor
+  · intro h
+    have h' : (a ||| b).toNat = 0 := by rw [h]; rfl
+    rw [BitVec.toNat_or, Nat.or_eq_zero_iff] at h'
+    exact ⟨BitVec.toNat_inj.mp h'.1, BitVec.toNat_inj.mp h'.2⟩
+  · rintro ⟨rfl, rfl⟩
+    rfl
+
+def utf8TailBit (d : BitVec 8) : BitVec 1 :=
+  BitVec.ofBool (BitVec.ult (BitVec.ofInt 8 (-12)) d) |||
+    BitVec.ofBool (d &&& BitVec.ofInt 8 (-2) = BitVec.ofInt 8 (-64))
+
+theorem ofInt8_neg12 : (BitVec.ofInt 8 (-12) : BitVec 8) = BitVec.ofNat 8 244 := by decide
+theorem ofInt8_neg2 : (BitVec.ofInt 8 (-2) : BitVec 8) = BitVec.ofNat 8 254 := by decide
+theorem ofInt8_neg64 : (BitVec.ofInt 8 (-64) : BitVec 8) = BitVec.ofNat 8 192 := by decide
+
+theorem u8_toBitVec_ofNat_244 : (BitVec.ofNat 8 244 : BitVec 8) = (0xF4 : UInt8).toBitVec := by
+  decide
+theorem u8_toBitVec_ofNat_254 : (BitVec.ofNat 8 254 : BitVec 8) = (0xFE : UInt8).toBitVec := by
+  decide
+theorem u8_toBitVec_ofNat_192 : (BitVec.ofNat 8 192 : BitVec 8) = (0xC0 : UInt8).toBitVec := by
+  decide
+
+theorem tail_ult_decide_iff (x : UInt8) :
+    (decide ((0xF4 : UInt8).toBitVec.toNat < x.toBitVec.toNat) = false) ↔
+      (decide ((0xF5 : UInt8) ≤ x) = false) := by
+  simp only [decide_eq_false_iff_not, UInt8.toNat_toBitVec, UInt8.le_iff_toNat_le,
+    UInt8.toNat_ofNat]
+  constructor
+  · intro h hc
+    exact h (by omega)
+  · intro h hc
+    exact h (by omega)
+
+theorem tail_eq_decide_iff (x : UInt8) :
+    (decide ((x &&& (0xFE : UInt8)).toBitVec = (0xC0 : UInt8).toBitVec) = false) ↔
+      (decide ((x &&& 0xFE) = 0xC0) = false) := by
+  simp only [decide_eq_false_iff_not, UInt8.toBitVec_inj]
+
+theorem utf8TailBit_zero_iff (x : UInt8) :
+    utf8TailBit x.toBitVec = 0 ↔ klTailByte x = false := by
+  unfold utf8TailBit klTailByte
+  rw [bit1_or_eq_zero_iff, ofBool_bool_eq_zero, ofBool_bool_eq_zero,
+    Bool.or_eq_false_iff]
+  rw [BitVec.ult_eq_decide, ofInt8_neg12, u8_toBitVec_ofNat_244,
+    ofInt8_neg2, ofInt8_neg64, u8_toBitVec_ofNat_254, u8_toBitVec_ofNat_192,
+    ← UInt8.toBitVec_and]
+  exact ⟨fun h => ⟨tail_eq_decide_iff x |>.mpr h.2, tail_ult_decide_iff x |>.mpr h.1⟩,
+    fun h => ⟨tail_ult_decide_iff x |>.mp h.2, tail_eq_decide_iff x |>.mp h.1⟩⟩
+
+
+theorem ofInt32_zero : (BitVec.ofInt 32 0 : BitVec 32) = 0 := by decide
+
+theorem all_eq_zero_iff (l : List UInt8) :
+    (l.all (fun x => decide (x = 0x00))) = true ↔ ∀ x ∈ l, x = 0x00 := by
+  rw [List.all_eq_true]
+  constructor
+  · intro h x hx
+    exact of_decide_eq_true (h x hx)
+  · intro h x hx
+    exact decide_eq_true (h x hx)
+
+theorem ofNat256_eq_zero_iff (V : Nat) (hV : V < 2 ^ 256) :
+    (BitVec.ofNat 256 V = 0) ↔ V = 0 := by
+  constructor
+  · intro h
+    have h' := congrArg BitVec.toNat h
+    rw [BitVec.toNat_ofNat] at h'
+    have h2 : V % 2 ^ 256 = 0 := by simpa using h'
+    rwa [Nat.mod_eq_of_lt hV] at h2
+  · intro h
+    rw [h]
+    rfl
+
+theorem t16_zero_iff (bs : List UInt8) (n nb : Nat) (gate : Bool)
+    (u8k : List (BitVec 64))
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64)
+    (hu8klen : u8k.length = 4)
+    (hpack : packLanes u8k = bytesToNat (klAcc bs nb)) :
+    (BitVec.ofBool (decide (BitLanes.ptestz (BitVec.ofNat 256 (packLanes u8k))
+        (BitVec.ofNat 256 (packLanes u8k)) = BitVec.ofInt 32 0)) = (0 : BitVec 1)) ↔
+      klErrAll (utf8Window bs n nb) (64 * nb) := by
+  rw [ofBool_bool_eq_zero, decide_eq_false_iff_not, ofInt32_zero,
+    BitLanes.ptestz_eq_zero_iff]
+  rw [show ¬ (BitVec.ofNat 256 (packLanes u8k) &&& BitVec.ofNat 256 (packLanes u8k) ≠ 0)
+      ↔ (BitVec.ofNat 256 (packLanes u8k) = 0) from by
+    rw [BitVec.and_self]
+    exact Decidable.not_not]
+  have hlt := packLanes_lt u8k
+  rw [hu8klen, show (4 : Nat) * 64 = 256 from rfl] at hlt
+  rw [ofNat256_eq_zero_iff _ hlt, hpack, bytesToNat_eq_zero_iff, ← all_eq_zero_iff]
+  have hnb' : nb = (bs.length + 63) / 64 := by rw [hnb, hn]
+  have hsame : klAcc bs nb = klAll gate bs := by
+    rw [hnb', ← klAll_false_eq_klAcc bs]
+    cases gate with
+    | false => rfl
+    | true => exact (klAll_gate_invariant bs).symm
+  rw [hsame]
+  exact klAll_zero_iff_klErrAll bs n nb gate hn hnb
+
+
+theorem ofNat64_ne_zero_iff (n : Nat) (hn : n < 2 ^ 63) :
+    (BitVec.ofNat 64 n ≠ BitVec.ofInt 64 0) ↔ n ≠ 0 := by
+  have h0 : (BitVec.ofInt 64 0 : BitVec 64) = 0 := by decide
+  rw [h0]
+  constructor
+  · intro h hn0
+    apply h
+    rw [hn0]
+    rfl
+  · intro h hx
+    apply h
+    have hh := congrArg BitVec.toNat hx
+    rw [BitVec.toNat_ofNat] at hh
+    have h2 : n % 2 ^ 64 = 0 := by simpa using hh
+    have hlt : n < 2 ^ 64 := by omega
+    rwa [Nat.mod_eq_of_lt hlt] at h2
+
+theorem nat_and63_eq_mod (n : Nat) : n &&& 63 = n % 64 := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  rw [show (64 : Nat) = 2 ^ 6 from by decide]
+  rw [Nat.testBit_and, Nat.testBit_mod_two_pow]
+  rcases Nat.lt_or_ge i 6 with hi | hi
+  · have h63 : (63 : Nat).testBit i = true := by
+      have hcases : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 := by omega
+      rcases hcases with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+    have hdec : decide (i < 6) = true := by rw [decide_eq_true_eq]; exact hi
+    rw [h63, hdec, Bool.true_and, Bool.and_true]
+  · have h63 : (63 : Nat).testBit i = false := by
+      apply Nat.testBit_lt_two_pow
+      have h2 : (2 : Nat) ^ 6 ≤ 2 ^ i := Nat.pow_le_pow_right (by decide) hi
+      omega
+    have hdec : decide (i < 6) = false := by rw [decide_eq_false_iff_not]; omega
+    rw [h63, hdec, Bool.false_and, Bool.and_false]
+
+theorem nat_and_one_eq_self {n : Nat} (h : n < 2) : n &&& 1 = n := by
+  have hn : n = 0 ∨ n = 1 := by omega
+  rcases hn with rfl | rfl <;> decide
+
+theorem and63_eq_zero_iff (n : Nat) (hn : n < 2 ^ 64) :
+    (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0) ↔ n % 64 = 0 := by
+  have h63 : (BitVec.ofInt 64 63 : BitVec 64) = BitVec.ofNat 64 63 := by decide
+  have h0 : (BitVec.ofInt 64 0 : BitVec 64) = 0 := by decide
+  rw [h63, h0, BitVec.toNat_eq]
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  have h63' : (63 : Nat) % 2 ^ 64 = 63 := by decide
+  rw [h63']
+  have hzero : (0 : BitVec 64).toNat = 0 := rfl
+  rw [hzero, Nat.mod_eq_of_lt hn, nat_and63_eq_mod]
+
+theorem bit1_one_and (x : BitVec 1) : ((1 : BitVec 1) &&& x) = x := by
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_and]
+  have hx : x.toNat < 2 := x.isLt
+  have h1 : (1 : BitVec 1).toNat = 1 := rfl
+  rw [h1, Nat.and_comm]
+  exact nat_and_one_eq_self hx
+
+theorem bitvec_toNat_eq_zero_iff {w : Nat} (e : BitVec w) : e.toNat = 0 ↔ e = 0 := by
+  constructor
+  · intro h
+    apply BitVec.toNat_inj.mp
+    rw [h]
+    rfl
+  · intro h
+    rw [h]
+    rfl
+
+theorem natToBytes_u8 (x : UInt8) : natToBytes x.toBitVec.toNat 1 = [x] := by
+  rw [UInt8.toNat_toBitVec]
+  simp [natToBytes]
+
+theorem klByte_eq_of_drop_cons {s : List UInt8} {i : Nat} {a : UInt8} {as : List UInt8}
+    (h : s.drop i = a :: as) : klByte s i = a := by
+  have h' := klByte_drop_any s i 0
+  rw [Nat.add_zero, h] at h'
+  rw [h']
+  rfl
+
+theorem klByte_window_tail (bs : List UInt8) (n nb : Nat) (hn : 1 ≤ n) :
+    klByte (utf8Window bs n nb) (n + 2) = klByte bs (n - 1) := by
+  rw [klByte_window]
+  rw [show n + 2 = 3 + (n - 1) from by omega, klByte_drop]
+  rfl
+
+theorem evalOperand_reg_utf8 (env : Env) (s : State) (n : String) :
+    evalOperand (withEnv env s) (.reg n) = lookupName env n := by
+  simp only [withEnv, evalOperand]
+
+theorem utf8_cleanup_run
+    (bs : List UInt8) (n nb b : Nat) (mem : Mem) (gate : Bool)
+    (env : Env) (s : State) (p : String) (op : Operand) (u8k : List (BitVec 64))
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64)
+    (hb : 3 ≤ b) (hn64 : n < 2 ^ 63) (hpos : 0 < n)
+    (hread : readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs n nb))
+    (hpc : s.pc = "for.cond.cleanup") (hpre : s.pre = some p) (hmem : s.mem = mem)
+    (hinc : phiIncoming p [("entry", .imm (.splat 4 64 (BitVec.ofInt 64 0))),
+      ("if.end14.us", .reg "%u8k.2.us"), ("for.body", .reg "%or.i47")] = some op)
+    (hop : evalOperand (withEnv env s) op = some (.vec 4 64 u8k))
+    (hu8klen : u8k.length = 4)
+    (hpack : packLanes u8k = bytesToNat (klAcc bs nb))
+    (hnl : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hbl : lookupName env "%b" = some (.ptr b)) :
+    ∃ (err' : Nat) (mem' : Mem),
+      runFuel utf8Calls 3 utf8Function (withEnv env s) =
+        some (.ret (some (.int 64 err')) mem') ∧
+      (err' = 0 ∨ err' = 1) ∧
+      (err' = 0 ↔ utf8WinPrefix (utf8Window bs n nb)) ∧
+      mem' = mem := by
+  obtain ⟨env1, hrun1, h36, ht16, ht19, hcond⟩ :=
+    utf8Reduce env s p op u8k n hpre hinc hop hu8klen hnl
+  have hstep1 : step utf8Calls utf8Function (withEnv env s)
+      = execTerm (withEnv env1 s)
+          (.condbr (.reg "%or.cond45") "if.then20" "if.end24") :=
+    step_of_utf8 _ "for.cond.cleanup" utf8Cleanup _ hpc findBlock_utf8Cleanup hrun1
+  have hkept_cleanup : ∀ i ∈ utf8Cleanup.instrs, i.dst? ∉ utf8Kept.map some := by decide
+  have hbl1 : lookupName env1 "%b" = some (.ptr b) :=
+    (denoteCode_kept utf8Cleanup.instrs env env1 s hrun1 hkept_cleanup "%b"
+      (by decide)).trans hbl
+  have hnl1 : lookupName env1 "%n" = some (.int 64 (BitVec.ofNat 64 n)) :=
+    (denoteCode_kept utf8Cleanup.instrs env env1 s hrun1 hkept_cleanup "%n"
+      (by decide)).trans hnl
+  have ht16zero : (BitVec.ofBool (decide (BitLanes.ptestz
+        (BitVec.ofNat 256 (packLanes u8k)) (BitVec.ofNat 256 (packLanes u8k))
+        = BitVec.ofInt 32 0)) = (0 : BitVec 1)) ↔
+      klErrAll (utf8Window bs n nb) (64 * nb) :=
+    t16_zero_iff bs n nb gate u8k hn hnb hu8klen hpack
+  have hb1 : (BitVec.ofBool (decide (BitVec.ofNat 64 n ≠ BitVec.ofInt 64 0))
+      : BitVec 1) = 1 := by
+    rw [ofBool_bool_eq_one, decide_eq_true_eq]
+    exact ofNat64_ne_zero_iff n hn64 |>.mpr (by omega)
+  have hb2 : ((BitVec.ofBool (decide (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63
+        = BitVec.ofInt 64 0)) : BitVec 1) = 1) ↔ n % 64 = 0 := by
+    rw [ofBool_bool_eq_one, decide_eq_true_eq]
+    exact and63_eq_zero_iff n (by omega)
+  have hnb_le : n ≤ 64 * nb := by
+    rw [hnb]; exact LeanLLVM.Vellum.JsonUtf8IR.le_mul_div_sixtyfour n
+  have htot : (n + 2) + (1 + 64 * nb - n) = 3 + 64 * nb := by omega
+  have hread' : readBytes mem (b - 3) ((n + 2) + (1 + 64 * nb - n))
+      = some (utf8Window bs n nb) := by
+    rw [htot]; exact hread
+  obtain ⟨_, hdropread⟩ :=
+    readBytes_split mem (b - 3) (n + 2) (1 + 64 * nb - n) hread'
+  have haddr : b - 3 + (n + 2) = b + n - 1 := by omega
+  rw [haddr] at hdropread
+  obtain ⟨hone, _⟩ := readBytes_split mem (b + n - 1) 1 (64 * nb - n) (by
+    rw [show 1 + (64 * nb - n) = 1 + 64 * nb - n from by omega]; exact hdropread)
+  have hlenpos : 0 < ((utf8Window bs n nb).drop (n + 2)).length := by
+    rw [List.length_drop, utf8Window_length bs n nb hn hnb]
+    omega
+  obtain ⟨x, xs, hx⟩ : ∃ x xs, (utf8Window bs n nb).drop (n + 2) = x :: xs := by
+    cases h : (utf8Window bs n nb).drop (n + 2) with
+    | nil => rw [h] at hlenpos; simp at hlenpos
+    | cons x xs => exact ⟨x, xs, rfl⟩
+  have hklast : klByte (utf8Window bs n nb) (n + 2) = klByte bs (n - 1) :=
+    klByte_window_tail bs n nb (by omega)
+  have hxbyte : x = klByte bs (n - 1) := by
+    rw [← klByte_eq_of_drop_cons hx, hklast]
+  have htake1 : ((utf8Window bs n nb).drop (n + 2)).take 1 = [x] := by
+    rw [hx]; rfl
+  have hreadtail : readBytes mem (b + n - 1) 1
+      = some (natToBytes x.toBitVec.toNat 1) := by
+    rw [hone, htake1, natToBytes_u8]
+  have hreadtail' : readBytes s.mem (b + n - 1) 1
+      = some (natToBytes x.toBitVec.toNat 1) := by
+    rw [hmem]; exact hreadtail
+  let t16 : BitVec 1 := BitVec.ofBool (decide (BitLanes.ptestz
+    (BitVec.ofNat 256 (packLanes u8k)) (BitVec.ofNat 256 (packLanes u8k))
+    = BitVec.ofInt 32 0))
+  have ht16' : lookupName env1 "%tobool16.not" = some (.int 1 t16) := ht16
+  let s1 : State := { s with pc := "if.then20", pre := some "for.cond.cleanup" }
+  let s2 : State := { s with pc := "if.end24", pre := some "if.then20" }
+  let s3 : State := { s with pc := "if.end24", pre := some "for.cond.cleanup" }
+  by_cases hmod : n % 64 = 0
+  · have hbit2one : (BitVec.ofBool (decide (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63
+        = BitVec.ofInt 64 0)) : BitVec 1) = 1 := hb2.mpr hmod
+    have hguard : (BitVec.ofBool (decide (BitVec.ofNat 64 n ≠ BitVec.ofInt 64 0))
+        &&& BitVec.ofBool (decide (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63
+          = BitVec.ofInt 64 0)) : BitVec 1) = 1 := by
+      rw [hb1, bit1_one_and, hbit2one]
+    have heval : evalOperand (withEnv env1 s) (.reg "%or.cond45")
+        = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 64 n
+            ≠ BitVec.ofInt 64 0)) &&& BitVec.ofBool (decide (BitVec.ofNat 64 n
+              &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0)))) := by
+      rw [evalOperand_reg_utf8]; exact hcond
+    have hjump1 : step utf8Calls utf8Function (withEnv env s) = .jump (withEnv env1 s1) := by
+      rw [hstep1]
+      simpa only [s1, withEnv, hpc] using execTerm_condbr_true heval hguard
+    have htail := utf8Tail env1 s1 b n t16 x.toBitVec
+      (by simpa only [s1, withEnv] using hbl1) (by simpa only [s1, withEnv] using hnl1)
+      (by simpa only [s1, withEnv] using ht16') hb hn64
+      (by simpa only [s1, withEnv] using hreadtail')
+    obtain ⟨env2, hrun2, hval⟩ := htail
+    have hstep2 : step utf8Calls utf8Function (withEnv env1 s1) = .jump (withEnv env2 s2) := by
+      rw [step_of_utf8 _ "if.then20" utf8Then20 _ (by simp only [withEnv, s1]) findBlock_utf8Then20 hrun2]
+      simpa only [utf8Then20, s1, s2, withEnv] using execTerm_br (withEnv env2 s1) "if.end24"
+    have hret := utf8Return env2 s2 "if.then20" (.reg "%or2373") (t16 ||| utf8TailBit x.toBitVec)
+      (by simp only [s2]) (by simp [phiIncoming])
+      (by rw [evalOperand_reg_utf8]
+          show lookupName env2 "%or2373" = some (.int 1 (t16 ||| utf8TailBit x.toBitVec))
+          exact hval)
+    obtain ⟨env3, hrun3, hval3⟩ := hret
+    have hevret : evalOperand (withEnv env3 s2) (.reg "%err.0")
+        = some (.int 64 (BitVec.ofNat 64 (t16 ||| utf8TailBit x.toBitVec).toNat)) := by
+      rw [evalOperand_reg_utf8]; exact hval3
+    have hstep3 : step utf8Calls utf8Function (withEnv env2 s2)
+        = .ret (some (.int 64 (BitVec.ofNat 64 (t16 ||| utf8TailBit x.toBitVec).toNat)))
+          (withEnv env3 s2) := by
+      rw [step_of_utf8 _ "if.end24" utf8End24 _ (by simp only [withEnv, s2]) findBlock_utf8End24 hrun3]
+      show execTerm (withEnv env3 s2) (.ret (.int 64) (some (.reg "%err.0"))) = _
+      rw [execTerm_ret_reg (withEnv env3 s2) "%err.0"
+        (.int 64 (BitVec.ofNat 64 (t16 ||| utf8TailBit x.toBitVec).toNat)) hevret]
+    refine ⟨(t16 ||| utf8TailBit x.toBitVec).toNat, mem, ?_, ?_, ?_, ?_⟩
+    · refine Eq.trans (runFuel_jump_utf8 (n := 2) hjump1)
+        (Eq.trans (runFuel_jump_utf8 (n := 1) hstep2) ?_)
+      have h2 : runFuel utf8Calls 1 utf8Function (withEnv env2 s2)
+          = some (.ret (some (.int 64 ((t16 ||| utf8TailBit x.toBitVec).toNat)))
+              (withEnv env3 s2).mem) :=
+        runFuel_ret_utf8 (n := 0) hstep3
+      rw [show (withEnv env3 s2).mem = mem from by simp only [withEnv, s2]; exact hmem] at h2
+      exact h2
+    · have his := (t16 ||| utf8TailBit x.toBitVec).isLt
+      omega
+    · have hmide : ((t16 ||| utf8TailBit x.toBitVec).toNat = 0) ↔
+          (klErrAll (utf8Window bs n nb) (64 * nb) ∧
+            ¬ (klTailByte (klByte bs (n - 1)) = true)) := by
+        rw [bitvec_toNat_eq_zero_iff]
+        rw [bit1_or_eq_zero_iff, show (utf8TailBit x.toBitVec = 0) ↔ klTailByte x = false from
+          utf8TailBit_zero_iff x]
+        rw [show (klTailByte x = false) ↔ ¬ (klTailByte x = true) from by
+          rw [Bool.not_eq_true]]
+        rw [hxbyte]
+        exact ⟨fun h => ⟨ht16zero.mp h.1, h.2⟩, fun h => ⟨ht16zero.mpr h.1, h.2⟩⟩
+      rw [hmide]
+      have hclause : ¬ (klTailByte (klByte bs (n - 1)) = true) ↔
+          ¬ (n ≠ 0 ∧ n % 64 = 0 ∧ klTailByte (klByte bs (n - 1)) = true) := by
+        have hn0 : n ≠ 0 := by omega
+        constructor
+        · intro h hc; exact h hc.2.2
+        · intro h ht; exact h ⟨hn0, hmod, ht⟩
+      rw [hclause]
+      show (klErrAll (utf8Window bs n nb) (64 * nb) ∧
+          ¬ (n ≠ 0 ∧ n % 64 = 0 ∧ klTailByte (klByte bs (n - 1)) = true)) ↔
+        ValidPrefix (ByteString.literal (utf8Window bs n nb))
+      exact klErrAll_window_iff bs n nb hn hnb
+    · rfl
+  · have hbit2zero : (BitVec.ofBool (decide (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63
+        = BitVec.ofInt 64 0)) : BitVec 1) = 0 := by
+      rw [ofBool_bool_eq_zero, decide_eq_false_iff_not]
+      intro hh
+      exact hmod ((and63_eq_zero_iff n (by omega)).mp hh)
+    have hguard : (BitVec.ofBool (decide (BitVec.ofNat 64 n ≠ BitVec.ofInt 64 0))
+        &&& BitVec.ofBool (decide (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63
+          = BitVec.ofInt 64 0)) : BitVec 1) = 0 := by
+      rw [hb1, bit1_one_and, hbit2zero]
+    have heval : evalOperand (withEnv env1 s) (.reg "%or.cond45")
+        = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 64 n
+            ≠ BitVec.ofInt 64 0)) &&& BitVec.ofBool (decide (BitVec.ofNat 64 n
+              &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0)))) := by
+      rw [evalOperand_reg_utf8]; exact hcond
+    have hjump1 : step utf8Calls utf8Function (withEnv env s) = .jump (withEnv env1 s3) := by
+      rw [hstep1]
+      simpa only [s3, withEnv, hpc] using execTerm_condbr_false heval hguard
+    have hret := utf8Return env1 s3 "for.cond.cleanup" (.reg "%tobool16.not") t16
+      (by simp only [s3]) (by simp [phiIncoming])
+      (by rw [evalOperand_reg_utf8]
+          show lookupName env1 "%tobool16.not" = some (.int 1 t16)
+          exact ht16')
+    obtain ⟨env3, hrun3, hval3⟩ := hret
+    have hevret : evalOperand (withEnv env3 s3) (.reg "%err.0")
+        = some (.int 64 (BitVec.ofNat 64 t16.toNat)) := by
+      rw [evalOperand_reg_utf8]; exact hval3
+    have hstep3 : step utf8Calls utf8Function (withEnv env1 s3)
+        = .ret (some (.int 64 (BitVec.ofNat 64 t16.toNat))) (withEnv env3 s3) := by
+      rw [step_of_utf8 _ "if.end24" utf8End24 _ (by simp only [withEnv, s3]) findBlock_utf8End24 hrun3]
+      show execTerm (withEnv env3 s3) (.ret (.int 64) (some (.reg "%err.0"))) = _
+      rw [execTerm_ret_reg (withEnv env3 s3) "%err.0"
+        (.int 64 (BitVec.ofNat 64 t16.toNat)) hevret]
+    refine ⟨t16.toNat, mem, ?_, ?_, ?_, ?_⟩
+    · refine Eq.trans (runFuel_jump_utf8 (n := 2) hjump1) ?_
+      have h2 : runFuel utf8Calls 2 utf8Function (withEnv env1 s3)
+          = some (.ret (some (.int 64 (t16.toNat))) (withEnv env3 s3).mem) :=
+        runFuel_ret_utf8 (n := 1) hstep3
+      rw [show (withEnv env3 s3).mem = mem from by simp only [withEnv, s3]; exact hmem] at h2
+      exact h2
+    · have his := t16.isLt
+      omega
+    · have hmide : (t16.toNat = 0) ↔
+          (klErrAll (utf8Window bs n nb) (64 * nb) ∧
+            ¬ (n ≠ 0 ∧ n % 64 = 0 ∧ klTailByte (klByte bs (n - 1)) = true)) := by
+        rw [bitvec_toNat_eq_zero_iff]
+        have hC : ¬ (n ≠ 0 ∧ n % 64 = 0 ∧ klTailByte (klByte bs (n - 1)) = true) := by
+          intro hc; exact hmod hc.2.1
+        rw [ht16zero]
+        exact ⟨fun h => ⟨h, hC⟩, fun h => h.1⟩
+      rw [hmide]
+      show (klErrAll (utf8Window bs n nb) (64 * nb) ∧
+          ¬ (n ≠ 0 ∧ n % 64 = 0 ∧ klTailByte (klByte bs (n - 1)) = true)) ↔
+        ValidPrefix (ByteString.literal (utf8Window bs n nb))
+      exact klErrAll_window_iff bs n nb hn hnb
+    · rfl
+
+/-! ### The entry and the gate selection -/
+
+theorem ofInt64_63 : (BitVec.ofInt 64 63 : BitVec 64) = BitVec.ofNat 64 63 := by decide
+theorem ofInt64_6_toNat : (BitVec.ofInt 64 6 : BitVec 64).toNat = 6 := by decide
+theorem ofInt64_64_toNat : (BitVec.ofInt 64 64 : BitVec 64).toNat = 64 := by decide
+theorem ofInt64_0 : (BitVec.ofInt 64 0 : BitVec 64) = 0 := by decide
+
+theorem stage_ofNat64_add63 (n : Nat) (hn : n + 63 < 2 ^ 64) :
+    (BitVec.ofNat 64 n + BitVec.ofInt 64 63) = BitVec.ofNat 64 (n + 63) := by
+  rw [ofInt64_63]
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  have h63 : (63 : Nat) % 2 ^ 64 = 63 := by decide
+  rw [h63]
+  have hn64 : n < 2 ^ 64 := by omega
+  rw [Nat.mod_eq_of_lt hn64, Nat.mod_eq_of_lt hn]
+
+theorem stage_div44_ofNat (n nb : Nat) (hlen : n + 63 < 2 ^ 64) (hnb : nb = (n + 63) / 64) :
+    ((BitVec.ofNat 64 n + BitVec.ofInt 64 63) >>> (BitVec.ofInt 64 6).toNat)
+      = BitVec.ofNat 64 nb := by
+  rw [stage_ofNat64_add63 n hlen, ofInt64_6_toNat]
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_ushiftRight, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  have hx : (n + 63) % 2 ^ 64 = n + 63 := Nat.mod_eq_of_lt hlen
+  rw [hx, Nat.shiftRight_eq_div_pow]
+  have h64 : (2 : Nat) ^ 6 = 64 := by decide
+  rw [h64, hnb]
+  symm
+  exact Nat.mod_eq_of_lt (by
+    have := Nat.div_le_self (n + 63) 64
+    omega)
+
+theorem stage_ofNat64_ult_false (n : Nat) (hlen : n + 63 < 2 ^ 64) (hpos : 0 < n) :
+    BitVec.ult (BitVec.ofNat 64 n + BitVec.ofInt 64 63) (BitVec.ofInt 64 64) = false := by
+  rw [stage_ofNat64_add63 n hlen, BitVec.ult_eq_decide, ofInt64_64_toNat, BitVec.toNat_ofNat]
+  have hx : (n + 63) % 2 ^ 64 = n + 63 := Nat.mod_eq_of_lt hlen
+  rw [hx]
+  rw [decide_eq_false_iff_not]
+  omega
+
+theorem ofNat32_ungated_ne (ungated : Bool) :
+    ((BitVec.ofNat 32 (if ungated then 1 else 0)) = (BitVec.ofInt 32 0 : BitVec 32))
+      ↔ ungated = false := by
+  have h0 : (BitVec.ofInt 32 0 : BitVec 32) = 0 := by decide
+  rw [h0]
+  cases ungated with
+  | false => decide
+  | true => decide
+
+/-! ### The headline: `utf8_stage_refines` -/
+
+theorem packLanes_replicate_zero {w : Nat} (k : Nat) :
+    packLanes (List.replicate k (0 : BitVec w)) = 0 := by
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+      rw [List.replicate_succ, packLanes]
+      rw [show ((0 : BitVec w)).toNat = 0 from rfl, ih, Nat.mul_zero, Nat.add_zero]
+
+theorem bytesToNat_replicate_zero (k : Nat) :
+    bytesToNat (List.replicate k (0x00 : UInt8)) = 0 := by
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+      rw [List.replicate_succ, bytesToNat]
+      rw [show ((0x00 : UInt8)).toNat = 0 from rfl, ih, Nat.mul_zero, Nat.add_zero]
+
+theorem ofInt32_1 : (BitVec.ofInt 32 1 : BitVec 32) = 1 := by decide
+
+theorem utf8_stage_refines
+    (bs : LeanLLVM.JSON.Bytes) (n nb : Nat) (mem : Mem) (b : Nat) (ungated : Bool)
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64)
+    (hb : 3 ≤ b) (hlen : n + 63 < 2 ^ 64) (haddr : n < 2 ^ 63)
+    (hread : readBytes mem (b - 3) (3 + 64 * nb)
+      = some (utf8Window bs.toList n nb))
+    (hpos : 0 < n) :
+    ∃ (err' : Nat) (mem' : Mem),
+      runFuel utf8Calls (fuelOf nb) utf8Function
+        { (initState utf8Function [.ptr b, .int 64 n, .int 32 (if ungated then 1 else 0)])
+          with mem := mem } = some (.ret (some (.int 64 err')) mem') ∧
+      (err' = 0 ∨ err' = 1) ∧
+      (err' = 0 ↔ utf8WinPrefix (utf8Window bs.toList n nb)) ∧
+      mem' = mem := by
+  have hn64 : n < 2 ^ 64 := by omega
+  have hnlist : n = bs.toList.length := by
+    rw [hn]
+    simp only [ByteString.length_eq_size]
+    exact (ByteString.toList_length bs).symm
+  have hnb' : nb = (bs.toList.length + 63) / 64 := by rw [hnb, hnlist]
+  have hspan : 64 * (nb - 1) < 2 ^ 63 := utf8SpanBound n nb hnb haddr hpos
+  have hnb1 : 1 ≤ nb := by
+    rw [hnb]
+    exact Nat.div_pos
+      (Nat.le_trans (by decide : 64 ≤ 1 + 63)
+        (Nat.add_le_add_right (Nat.succ_le_of_lt hpos) 63)) (by decide)
+  let S0 : State :=
+    { (initState utf8Function [.ptr b, .int 64 n, .int 32 (if ungated then 1 else 0)])
+        with mem := mem }
+  have hS0pc : S0.pc = "entry" := by
+    simp only [S0, initState, utf8Function, List.map, List.zip, lookupName]
+    simp [Function.entry?, List.head?]
+    rfl
+  have hS0b : lookupName S0.env "%b" = some (.ptr b) := by
+    simp [S0, initState, utf8Function, List.zip, List.map, lookupName]
+  have hS0n : lookupName S0.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) := by
+    simp [S0, initState, utf8Function, List.zip, List.map, lookupName]
+  have hS0u : lookupName S0.env "%ungated"
+      = some (.int 32 (BitVec.ofNat 32 (if ungated then 1 else 0))) := by
+    simp [S0, initState, utf8Function, List.zip, List.map, lookupName]
+    split <;> rfl
+  obtain ⟨env1, hrunE, hdiv, hcmp⟩ := utf8Entry_run S0.env S0 n hS0n
+  have hdiv1 : lookupName env1 "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) := by
+    rw [stage_div44_ofNat n nb hlen hnb] at hdiv
+    exact hdiv
+  have hb1e : lookupName env1 "%b" = some (.ptr b) := by
+    have h := denoteCode_lookupName utf8Calls utf8Entry.instrs "%b"
+      (by decide) (withEnv S0.env S0) (withEnv env1 S0) hrunE
+    have h' : lookupName env1 "%b" = lookupName S0.env "%b" := by
+      simpa [withEnv] using h
+    exact h'.trans hS0b
+  have hn1e : lookupName env1 "%n" = some (.int 64 (BitVec.ofNat 64 n)) := by
+    have h := denoteCode_lookupName utf8Calls utf8Entry.instrs "%n"
+      (by decide) (withEnv S0.env S0) (withEnv env1 S0) hrunE
+    have h' : lookupName env1 "%n" = lookupName S0.env "%n" := by
+      simpa [withEnv] using h
+    exact h'.trans hS0n
+  have hu1e : lookupName env1 "%ungated"
+      = some (.int 32 (BitVec.ofNat 32 (if ungated then 1 else 0))) := by
+    have h := denoteCode_lookupName utf8Calls utf8Entry.instrs "%ungated"
+      (by decide) (withEnv S0.env S0) (withEnv env1 S0) hrunE
+    have h' : lookupName env1 "%ungated" = lookupName S0.env "%ungated" := by
+      simpa [withEnv] using h
+    exact h'.trans hS0u
+  have hbitE : (BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 n + BitVec.ofInt 64 63)
+      (BitVec.ofInt 64 64)) : BitVec 1) = 0 := by
+    rw [ofBool_bool_eq_zero]
+    exact stage_ofNat64_ult_false n hlen hpos
+  have hstepE : step utf8Calls utf8Function S0
+      = .jump (withEnv env1 { S0 with pc := "for.body.lr.ph", pre := some "entry" }) := by
+    have h1 : step utf8Calls utf8Function (withEnv S0.env S0)
+        = execTerm (withEnv env1 S0) utf8Entry.term :=
+      step_of_utf8 _ "entry" utf8Entry _ hS0pc findBlock_utf8Entry hrunE
+    have h2 : (withEnv S0.env S0) = S0 := rfl
+    rw [h2] at h1
+    rw [h1]
+    show execTerm (withEnv env1 S0)
+        (.condbr (.reg "%cmp74.not") "for.cond.cleanup" "for.body.lr.ph") = _
+    have hev : evalOperand (withEnv env1 S0) (.reg "%cmp74.not")
+        = some (.int 1 (BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 n
+            + BitVec.ofInt 64 63) (BitVec.ofInt 64 64)))) := by
+      rw [evalOperand_reg_utf8]; exact hcmp
+    rw [execTerm_condbr_false hev hbitE]
+    simp only [withEnv, hS0pc]
+  -- the gate selection
+  let S1 : State := { S0 with pc := "for.body.lr.ph", pre := some "entry" }
+  obtain ⟨env2, hrunL, htobool⟩ :=
+    utf8LrPh_run env1 S1 (BitVec.ofNat 32 (if ungated then 1 else 0)) hu1e
+  have hdiv2 : lookupName env2 "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) :=
+    (denoteCode_lookupName utf8Calls utf8LrPh.instrs "%div44" (by decide)
+      (withEnv env1 S1) (withEnv env2 S1) hrunL).trans (by simpa [withEnv] using hdiv1)
+  have hb2 : lookupName env2 "%b" = some (.ptr b) :=
+    (denoteCode_lookupName utf8Calls utf8LrPh.instrs "%b" (by decide)
+      (withEnv env1 S1) (withEnv env2 S1) hrunL).trans (by simpa [withEnv] using hb1e)
+  have hn2 : lookupName env2 "%n" = some (.int 64 (BitVec.ofNat 64 n)) :=
+    (denoteCode_lookupName utf8Calls utf8LrPh.instrs "%n" (by decide)
+      (withEnv env1 S1) (withEnv env2 S1) hrunL).trans (by simpa [withEnv] using hn1e)
+  have hUng : (BitVec.ofNat 32 (if ungated then 1 else 0)
+      = (BitVec.ofInt 32 0 : BitVec 32)) ↔ ungated = false := ofNat32_ungated_ne ungated
+  -- the preheader operands
+  let u8k0 : List (BitVec 64) := List.replicate 4 (BitVec.ofInt 64 0)
+  have hu8k0len : u8k0.length = 4 := by simp [u8k0]
+  have hpack0 : packLanes u8k0 = bytesToNat (klAcc bs.toList 0) := by
+    rw [show klAcc bs.toList 0 = List.replicate 32 (0x00 : UInt8) from rfl,
+      bytesToNat_replicate_zero]
+    exact packLanes_replicate_zero 4
+  -- case on the gate
+  cases ungated with
+  | false =>
+      -- the gated loop
+      have hbitL : (BitVec.ofBool (decide (BitVec.ofNat 32 0
+          = (BitVec.ofInt 32 0 : BitVec 32))) : BitVec 1) = 1 := by
+        rw [ofBool_bool_eq_one, decide_eq_true_eq]
+        exact (hUng).mpr rfl
+      have hstepL : step utf8Calls utf8Function (withEnv env1 S1)
+          = .jump (withEnv env2 { S1 with pc := "for.body.us", pre := some "for.body.lr.ph" }) := by
+        have h1 : step utf8Calls utf8Function (withEnv env1 S1)
+            = execTerm (withEnv env2 S1) utf8LrPh.term :=
+          step_of_utf8 _ "for.body.lr.ph" utf8LrPh _ (by rfl) findBlock_utf8LrPh hrunL
+        rw [h1]
+        show execTerm (withEnv env2 S1)
+            (.condbr (.reg "%tobool.not") "for.body.us" "for.body") = _
+        have hev : evalOperand (withEnv env2 S1) (.reg "%tobool.not")
+            = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 32 0
+                = (BitVec.ofInt 32 0 : BitVec 32))))) := by
+          rw [evalOperand_reg_utf8]; exact htobool
+        rw [execTerm_condbr_true hev hbitL]
+        simp only [withEnv, S1]
+      let S2 : State := { S1 with pc := "for.body.us", pre := some "for.body.lr.ph" }
+      have hpAscii : (BitVec.ofInt 32 1 : BitVec 32) = 1 →
+          ∀ b' ∈ klPre (utf8Window bs.toList n nb) 0, b'.toNat < 0x80 := by
+        intro _ b' hb'
+        simp only [klPre, Nat.zero_mul, List.drop_zero] at hb'
+        change b' ∈ List.take 3 (List.replicate 3 (0x00 : UInt8) ++ bs.toList
+          ++ List.replicate (64 * nb - n) 0x00) at hb'
+        rw [List.append_assoc] at hb'
+        rw [List.take_append_of_le_length (l₁ := List.replicate 3 (0x00 : UInt8))
+          (l₂ := bs.toList ++ List.replicate (64 * nb - n) 0x00) (i := 3) (by simp)] at hb'
+        rw [List.take_replicate, Nat.min_self] at hb'
+        simp only [List.mem_replicate] at hb'
+        obtain ⟨-, hb''⟩ := hb'
+        rw [hb'']
+        decide
+      obtain ⟨env', s', u8k', t, hpc', hpre', hmem', ht, hU', hlen', hpack', hb', hn',
+        hdiv', hrun'⟩ :=
+        utf8Gated_loop_run bs.toList n nb b mem hnb' hread hb hspan nb 0 env2 S2
+          "for.body.lr.ph" (.imm (.int 32 (BitVec.ofInt 32 1)))
+          (.imm (.splat 4 64 (BitVec.ofInt 64 0)))
+          (.imm (.int 64 (BitVec.ofInt 64 0))) u8k0 (BitVec.ofInt 32 1)
+          hnb1 (by omega) (by rfl) (by rfl) rfl
+          (by simp [phiIncoming])
+          (by simp [phiIncoming])
+          (by simp [phiIncoming])
+          (by simp only [evalOperand]; rfl)
+          (by simp only [withEnv, evalOperand]; rfl)
+          (by simp only [withEnv, evalOperand]; rfl)
+          hb2 hdiv2 hn2 hu8k0len hpack0 (Or.inr ofInt32_1) hpAscii
+      obtain ⟨err', mem', hrunC, herr01, herrVP, hmemC⟩ :=
+        utf8_cleanup_run bs.toList n nb b mem false env' s' "if.end14.us"
+          (.reg "%u8k.2.us") u8k' hnlist hnb hb haddr hpos hread
+          (by rw [← hpc']) (by rw [← hpre']) hmem'
+          (by simp [phiIncoming]) (by rw [evalOperand_reg_utf8]; exact hU')
+          hlen' hpack' hn' hb'
+      have hloop : runFuel utf8Calls (t + 3) utf8Function (withEnv env2 S2)
+          = some (.ret (some (.int 64 err')) mem') := by
+        rw [hrun' 3]; exact hrunC
+      have htotal : runFuel utf8Calls (1 + (1 + (t + 3))) utf8Function S0
+          = some (.ret (some (.int 64 err')) mem') := by
+        rw [show (1 : Nat) + (1 + (t + 3)) = (1 + (t + 3)) + 1 from by omega,
+          runFuel_jump_utf8 hstepE,
+          show (1 + (t + 3)) = (t + 3) + 1 from by omega,
+          runFuel_jump_utf8 hstepL, hloop]
+      have hle : 1 + (1 + (t + 3)) ≤ fuelOf nb := by
+        have := ht
+        rw [fuelOf_eq]
+        omega
+      refine ⟨err', mem', ?_, herr01, herrVP, hmemC⟩
+      exact runFuel_mono_le hle htotal
+  | true =>
+      -- the ungated loop
+      have hbitL : (BitVec.ofBool (decide (BitVec.ofNat 32 1
+          = (BitVec.ofInt 32 0 : BitVec 32))) : BitVec 1) = 0 := by
+        rw [ofBool_bool_eq_zero, decide_eq_false_iff_not]
+        intro hh
+        exact absurd (hUng.mp hh) (by decide)
+      have hstepL : step utf8Calls utf8Function (withEnv env1 S1)
+          = .jump (withEnv env2 { S1 with pc := "for.body", pre := some "for.body.lr.ph" }) := by
+        have h1 : step utf8Calls utf8Function (withEnv env1 S1)
+            = execTerm (withEnv env2 S1) utf8LrPh.term :=
+          step_of_utf8 _ "for.body.lr.ph" utf8LrPh _ (by rfl) findBlock_utf8LrPh hrunL
+        rw [h1]
+        show execTerm (withEnv env2 S1)
+            (.condbr (.reg "%tobool.not") "for.body.us" "for.body") = _
+        have hev : evalOperand (withEnv env2 S1) (.reg "%tobool.not")
+            = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 32 1
+                = (BitVec.ofInt 32 0 : BitVec 32))))) := by
+          rw [evalOperand_reg_utf8]; exact htobool
+        rw [execTerm_condbr_false hev hbitL]
+        simp only [withEnv, S1]
+      let S2 : State := { S1 with pc := "for.body", pre := some "for.body.lr.ph" }
+      obtain ⟨env', s', u8k', hpc', hpre', hmem', hU', hlen', hpack', hb', hn',
+        hdiv', hrun'⟩ :=
+        utf8Ungated_loop_run bs.toList n nb b mem hnb' hread hb hspan nb 0 env2 S2
+          "for.body.lr.ph"
+          (.imm (.splat 4 64 (BitVec.ofInt 64 0)))
+          (.imm (.int 64 (BitVec.ofInt 64 0))) u8k0
+          hnb1 (by omega) (by rfl) (by rfl) rfl
+          (by simp [phiIncoming])
+          (by simp [phiIncoming])
+          (by simp only [evalOperand]; rfl)
+          (by simp only [withEnv, evalOperand]; rfl)
+          hb2 hdiv2 hn2 hu8k0len hpack0
+      obtain ⟨err', mem', hrunC, herr01, herrVP, hmemC⟩ :=
+        utf8_cleanup_run bs.toList n nb b mem false env' s' "for.body"
+          (.reg "%or.i47") u8k' hnlist hnb hb haddr hpos hread
+          (by rw [← hpc']) (by rw [← hpre']) hmem'
+          (by simp [phiIncoming]) (by rw [evalOperand_reg_utf8]; exact hU')
+          hlen' hpack' hn' hb'
+      have hloop : runFuel utf8Calls (nb + 3) utf8Function (withEnv env2 S2)
+          = some (.ret (some (.int 64 err')) mem') := by
+        rw [hrun' 3]; exact hrunC
+      have htotal : runFuel utf8Calls (1 + (1 + (nb + 3))) utf8Function S0
+          = some (.ret (some (.int 64 err')) mem') := by
+        rw [show (1 : Nat) + (1 + (nb + 3)) = (1 + (nb + 3)) + 1 from by omega,
+          runFuel_jump_utf8 hstepE,
+          show (1 + (nb + 3)) = (nb + 3) + 1 from by omega,
+          runFuel_jump_utf8 hstepL, hloop]
+      have hle : 1 + (1 + (nb + 3)) ≤ fuelOf nb := by
+        rw [fuelOf_eq]; omega
+      refine ⟨err', mem', ?_, herr01, herrVP, hmemC⟩
+      exact runFuel_mono_le hle htotal
+
+theorem utf8_stage_refines_chars
+    (bs : LeanLLVM.JSON.Bytes) (n nb : Nat) (mem : Mem) (b : Nat) (ungated : Bool)
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64)
+    (hb : 3 ≤ b) (hlen : n + 63 < 2 ^ 64) (haddr : n < 2 ^ 63)
+    (hread : readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs.toList n nb))
+    (hpos : 0 < n) (hmod : n % 64 ≠ 0) :
+    ∃ (err' : Nat) (mem' : Mem),
+      runFuel utf8Calls (fuelOf nb) utf8Function
+        { (initState utf8Function [.ptr b, .int 64 n, .int 32 (if ungated then 1 else 0)])
+          with mem := mem } = some (.ret (some (.int 64 err')) mem') ∧
+      (err' = 0 ↔ Utf8Chars bs) ∧
+      mem' = mem := by
+  obtain ⟨err', mem', hrun, -, hVP, hmem'⟩ :=
+    utf8_stage_refines bs n nb mem b ungated hn hnb hb hlen haddr hread hpos
+  have hnle : n ≤ 64 * nb := by
+    rw [hnb]; exact LeanLLVM.Vellum.JsonUtf8IR.le_mul_div_sixtyfour n
+  have hne : 64 * nb ≠ n := by
+    intro h
+    apply hmod
+    rw [← h]
+    exact Nat.mul_mod_right 64 nb
+  have hp1 : 1 ≤ 64 * nb - n := by omega
+  refine ⟨err', mem', hrun, ?_, hmem'⟩
+  have hbridge := validPrefix_padded_iff_utf8Chars bs.toList (64 * nb - n) hp1
+  rw [hVP]
+  show ValidPrefix (ByteString.literal (List.replicate 3 (0x00 : UInt8) ++ bs.toList
+      ++ List.replicate (64 * nb - n) (0x00 : UInt8))) ↔ Utf8Chars bs
+  rw [show ByteString.literal bs.toList = bs from ByteString.literal_toList bs] at hbridge
+  exact hbridge
+
+theorem utf8_stage_refines_mod0
+    (bs : LeanLLVM.JSON.Bytes) (n nb : Nat) (mem : Mem) (b : Nat) (ungated : Bool)
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64)
+    (hb : 3 ≤ b) (hlen : n + 63 < 2 ^ 64) (haddr : n < 2 ^ 63)
+    (hread : readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs.toList n nb))
+    (hpos : 0 < n) (hmod : n % 64 = 0) :
+    ∃ (err' : Nat) (mem' : Mem),
+      runFuel utf8Calls (fuelOf nb) utf8Function
+        { (initState utf8Function [.ptr b, .int 64 n, .int 32 (if ungated then 1 else 0)])
+          with mem := mem } = some (.ret (some (.int 64 err')) mem') ∧
+      (err' = 0 ↔ ValidPrefix bs) ∧
+      mem' = mem := by
+  obtain ⟨err', mem', hrun, -, hVP, hmem'⟩ :=
+    utf8_stage_refines bs n nb mem b ungated hn hnb hb hlen haddr hread hpos
+  refine ⟨err', mem', hrun, ?_, hmem'⟩
+  have hp0 : 64 * nb - n = 0 := pad_eq_zero_of_mod hnb hmod
+  rw [hVP]
+  show ValidPrefix (ByteString.literal (List.replicate 3 (0x00 : UInt8) ++ bs.toList
+      ++ List.replicate (64 * nb - n) (0x00 : UInt8))) ↔ ValidPrefix bs
+  have hz : List.replicate (0 : Nat) (0x00 : UInt8) = [] := List.replicate_zero
+  rw [hp0, hz, List.append_nil]
+  have hsplit : List.replicate 3 (0x00 : UInt8) ++ bs.toList
+      = 0x00 :: 0x00 :: 0x00 :: bs.toList := rfl
+  rw [hsplit]
+  constructor
+  · intro h
+    have h' := validPrefix_three_cons h
+    rwa [ByteString.literal_toList] at h'
+  · intro h
+    apply validPrefix_three_cons_back
+    rwa [ByteString.literal_toList]
+
+
+end LeanLLVM.Vellum.JsonUtf8Steps

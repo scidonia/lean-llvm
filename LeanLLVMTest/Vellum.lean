@@ -9012,3 +9012,23 @@ pack facts are `propext`-only or `[propext, Quot.sound]`, and no proof reaches
  Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_undefined_of_no_read
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines_chars' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines_chars
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines_mod0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines_mod0
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.validPrefix_padded_iff_utf8Chars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.validPrefix_padded_iff_utf8Chars
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.t16_zero_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.t16_zero_iff
