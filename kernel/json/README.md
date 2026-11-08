@@ -12,8 +12,8 @@ third is what this directory's lists and arms are ready for:
 
 None is the pipeline.  Nothing here decodes UTF-8 into text, builds or expands
 an escape list, or reads a value: the UTF-8 unit returns a validity word and no
-positions.  `measured/` is read-only reference, compiled by the identity and
-bench scripts alone and by no `lake` target.  The units share the vendored
+positions.  `measured/` is read-only reference, compiled by the identity, bench and route
+scripts and by no `lake` target.  The units share the vendored
 files, the compiler line and the arms' machinery, and nothing else: each has its
 own entity list, its own deletion list and its own boundary.
 

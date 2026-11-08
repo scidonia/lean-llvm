@@ -82,3 +82,11 @@ root = "JsonBench"
 name = "leanllvm-depth-check"
 srcDir = "probes/install"
 root = "DepthMain"
+
+# Prints the UTF-8 stage's three specification tables; JsonUtf8Main.lean,
+# compared with the vendored header's bytes by tests/json-utf8/check.sh.  It is
+# not a default target: `lake build` builds the library and `ITree` alone, and
+# tests/json-utf8/check.sh names this target when it needs it.
+[[lean_exe]]
+name = "leanllvm-json-utf8"
+root = "JsonUtf8Main"

@@ -59,9 +59,11 @@ the same files for the same reason, one unit each.
 ## Read-only
 
 No `lake` target builds these files.  No lint runs over them.  The translation
-units that include them are the identity arms' oracles and the timing arms'
-probes, and each exists to be compiled, compared or timed, never linked into
-anything shipped.  An edit to any of them is an edit to the pinned set: it moves
+units that include them are the identity arms' oracles, the timing arms' probes
+and the route's table dumper (`probes/json/u8kl_tables.c`, compiled by
+`tests/json-utf8/check.sh` to print the three tables the specification states),
+and each exists to be compiled, compared or timed, never linked into anything
+shipped.  An edit to any of them is an edit to the pinned set: it moves
 `SHA256SUMS` deliberately and it re-opens the identity claim, which is why no
 change to `kernel/json/s1_block.c`, `kernel/json/entry.c` or
 `kernel/json/utf8.c` may be accompanied by a silent refresh of it.
