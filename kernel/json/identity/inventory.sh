@@ -7,7 +7,7 @@
 #   nix develop -c bash kernel/json/identity/inventory.sh --unit entry
 #
 # The unit (`--unit s1` is the default, so an invocation with no arguments keeps
-# its meaning and its exit codes).  Two units are gated:
+# its meaning and its exit codes).  Three units are gated:
 #
 #   s1     the classification mask unit.  Its capture is
 #          probes/install/ir/capture-s1-masks.sh and its artefacts are the
@@ -21,6 +21,14 @@
 #          adds: the unit's table cannot be a module global, so each of the
 #          eight `getelementptr` reads through it becomes a read through the
 #          `%tab` parameter.
+#   utf8   the UTF-8 validity unit.  Its capture is
+#          probes/install/ir/capture-utf8.sh and its artefacts are the fixture
+#          `json-utf8.candidate.ll` and the three inventories
+#          `json-utf8.strip.tsv`, `….rewrites.tsv` and `….inventory`.  This unit
+#          has no table rewrite and no parameter rename: its tables fold to
+#          literal vector operands and its emission carries the unit's own
+#          parameter names, so the capture refuses rather than rewrites if
+#          either appears.
 #
 # This gate holds no class list of its own, because the classes are the capture's
 # formats and a list kept here would be the hand-kept list this gate exists to
@@ -57,6 +65,14 @@
 #              accepts a pair that differs only in the table read and refuses a
 #              pair whose differing GEP is not the table read — the refusal
 #              naming the line as unattributed.
+#       utf8   a text carrying the refused neighbour spelling
+#              `llvm.usub.sat.v16i8` is reported by the same detector and is
+#              outside the fixture's inventory, and the two spellings the stage
+#              calls — `@llvm.usub.sat.v32i8` and `@llvm.x86.avx.ptestz.256` —
+#              are named by the same detector and named in the committed
+#              inventory.  A unit whose control arm is missing passes zero
+#              controls silently, because this file's controls switch has no
+#              default.
 #
 # Exit status: 0 when all four hold; 3 otherwise, naming the missing or
 # differing item.  There is no 1: a fixture that does not regenerate, does not
@@ -102,8 +118,15 @@ case "$unit" in
     inventories=("$ir/json-entry.strip.tsv" "$ir/json-entry.rewrites.tsv" \
                  "$ir/json-entry.table.tsv" "$ir/json-entry.inventory")
     ;;
+  utf8)
+    capture=$ir/capture-utf8.sh
+    fixture=$ir/json-utf8.candidate.ll
+    kernel=$repo/kernel/json/utf8.c
+    inventories=("$ir/json-utf8.strip.tsv" "$ir/json-utf8.rewrites.tsv" \
+                 "$ir/json-utf8.inventory")
+    ;;
   *)
-    printf 'SETUP: unit %s has no inventory gate; implemented: s1, entry\n' "$unit" >&2
+    printf 'SETUP: unit %s has no inventory gate; implemented: s1, entry, utf8\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -358,9 +381,59 @@ EOF
   printf '          not the table read, naming line %s as unattributed\n' "$tamperlineno"
 }
 
+controls_utf8() {
+  local seen usub ptestz
+  local inventory=${inventories[2]}
+
+  # Control 1: the refused neighbour of the saturating-subtract spelling.  It is
+  # a call the fragment does not model at that width, so the same detector must
+  # report it and the fixture's inventory must not name it.
+  cat > "$work/usub16.ll" <<'EOF'
+define void @probe(<16 x i8> %a, <16 x i8> %b) {
+entry:
+  %0 = call <16 x i8> @llvm.usub.sat.v16i8(<16 x i8> %a, <16 x i8> %b)
+  ret void
+}
+
+declare <16 x i8> @llvm.usub.sat.v16i8(<16 x i8>, <16 x i8>)
+EOF
+  seen=$(detect "$work/usub16.ll" | grep -c '@llvm\.usub\.sat\.v16i8' || true)
+  [ "$seen" -gt 0 ] || fail "(d) control 1: the detector did not report llvm.usub.sat.v16i8 in a text that contains it"
+  if grep -q 'llvm\.usub\.sat\.v16i8' "$inventory"; then
+    fail "(d) control 1: the fixture's inventory names the refused spelling; the control text is not outside it"
+  fi
+  printf 'ok: (d) control 1: the detector reports llvm.usub.sat.v16i8 in a text carrying it,\n'
+  printf '          and the fixture inventory does not name it\n'
+
+  # Control 2: the two spellings the stage calls are inside, by the same
+  # detector and by the committed inventory the fixture's own calls produce.
+  cat > "$work/stage-spellings.ll" <<'EOF'
+define void @probe(<32 x i8> %a, <32 x i8> %b, <4 x i64> %c, <4 x i64> %d) {
+entry:
+  %0 = call <32 x i8> @llvm.usub.sat.v32i8(<32 x i8> %a, <32 x i8> %b)
+  %1 = call i32 @llvm.x86.avx.ptestz.256(<4 x i64> %c, <4 x i64> %d)
+  ret void
+}
+
+declare <32 x i8> @llvm.usub.sat.v32i8(<32 x i8>, <32 x i8>)
+declare i32 @llvm.x86.avx.ptestz.256(<4 x i64>, <4 x i64>)
+EOF
+  usub=$(detect "$work/stage-spellings.ll" | grep -c '@llvm\.usub\.sat\.v32i8' || true)
+  ptestz=$(detect "$work/stage-spellings.ll" | grep -c '@llvm\.x86\.avx\.ptestz\.256' || true)
+  [ "$usub" -gt 0 ] || fail "(d) control 2: the detector did not report llvm.usub.sat.v32i8"
+  [ "$ptestz" -gt 0 ] || fail "(d) control 2: the detector did not report llvm.x86.avx.ptestz.256"
+  grep -qx 'call @llvm.usub.sat.v32i8' "$inventory" ||
+    fail "(d) control 2: the fixture's inventory does not name @llvm.usub.sat.v32i8"
+  grep -qx 'call @llvm.x86.avx.ptestz.256' "$inventory" ||
+    fail "(d) control 2: the fixture's inventory does not name @llvm.x86.avx.ptestz.256"
+  printf 'ok: (d) control 2: the detector reports both stage spellings in a text carrying them,\n'
+  printf '          and the fixture inventory names them\n'
+}
+
 case "$unit" in
   s1) controls_s1 ;;
   entry) controls_entry ;;
+  utf8) controls_utf8 ;;
 esac
 
 printf '\nok: the fixture is the kernel emission, its inventories are its own, it parses,\n'

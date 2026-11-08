@@ -205,11 +205,11 @@ load handles the remainder.
    accepts any callee symbol (`parseValueInstr`'s `call` branch), so a call to
    `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
    `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model
-   does not give. The eight symbols the two extracted units call are the
+   does not give. The ten symbols the three units call are the
    exception: `checkIntrinsicShape` validates their arity, operand types and
    immediate, and refuses the neighbouring spellings by name
-   (`tests/vector-s1.lean`, `tests/vector-entry.lean`). Nothing
-   in *this* kernel needs any of them.
+   (`tests/vector-s1.lean`, `tests/vector-entry.lean`, `tests/vector-utf8.lean`).
+   Nothing in *this* kernel needs any of them.
 
 ## Not yet inventoried
 

@@ -14,13 +14,12 @@
    outside the timed region and outside the two lifted functions, and both
    sides carry an identical one.
 
-   `S1F_UTF8` is left at the header's default 0: the UTF-8 probe is a different
-   unit, it names `u8kl` symbols this repository does not vendor, and no
-   identity claim here reaches it.  The rest of the measured `-D` set
-   (`build49.sh:19-21`) is passed by `ir-identity.sh --unit entry`; `S1F_EXP2=11`
-   among them is what builds the kernel region at all, and the two switches
-   above the emitters leave `s1f_ke_b4` and the `SP45_MODES` instantiations out
-   of the module exactly as the measured build does. */
+   `S1F_UTF8` is left at the header's default 0: the UTF-8 stage is a different
+   unit, and no identity claim here reaches it.  The rest of the measured `-D`
+   set (`build49.sh:19-21`) is passed by `ir-identity.sh --unit entry`;
+   `S1F_EXP2=11` among them is what builds the kernel region at all, and the
+   two switches above the emitters leave `s1f_ke_b4` and the `SP45_MODES`
+   instantiations out of the module exactly as the measured build does. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>

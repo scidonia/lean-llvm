@@ -3,6 +3,7 @@
 #
 #   nix develop -c bash kernel/json/identity/final-identity.sh entry
 #   nix develop -c bash kernel/json/identity/final-identity.sh s1
+#   nix develop -c bash kernel/json/identity/final-identity.sh utf8
 #   nix develop -c bash kernel/json/identity/final-identity.sh entry --tree-only
 #
 # The three arms, in this order:
@@ -13,10 +14,11 @@
 #      (`ir-identity.sh --unit <unit>`);
 #   3. the unit's paired timing arm (`bench/paired.sh --unit <unit>`).
 #
-# `s1` (the classification mask unit) and `entry` (the entry unit) are the units
-# that have all three.  Any other unit is a setup fault and exits 3 naming it,
-# because an arm that does not exist cannot pass; a control runs that path on
-# every invocation, since no implemented unit reaches it in normal use.
+# `s1` (the classification mask unit), `entry` (the entry unit) and `utf8` (the
+# UTF-8 validity unit) are the units that have all three.  Any other unit is a
+# setup fault and exits 3 naming it, because an arm that does not exist cannot
+# pass; a control runs that path on every invocation, since no implemented unit
+# reaches it in normal use.
 #
 # `--tree-only` is passed to the two identity scripts: every input path must be
 # inside this repository, so the claim reproduces from a checkout.  The timing
@@ -61,9 +63,9 @@ done
 dispatch() {
   local u=$1
   case "$u" in
-    s1|entry) : ;;
+    s1|entry|utf8) : ;;
     *)
-      printf 'SETUP: unit %s has no identity arms here; implemented units: s1 entry\n' "$u" >&2
+      printf 'SETUP: unit %s has no identity arms here; implemented units: s1 entry utf8\n' "$u" >&2
       return 3
       ;;
   esac
@@ -107,7 +109,7 @@ refusal_control() {
 
 if [ -z "$unit" ]; then
   usage
-  printf 'final-identity: give a unit: s1 or entry\n' >&2
+  printf 'final-identity: give a unit: s1, entry or utf8\n' >&2
   exit 3
 fi
 

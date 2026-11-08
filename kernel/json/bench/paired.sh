@@ -25,6 +25,15 @@
 #          per input and kernel against the same +/-0.5 ns/block bound.  The
 #          unit's own table is initialised by a constructor in each probe TU,
 #          outside the timed region.
+#   utf8   the UTF-8 unit, whose two sides are two texts rather than two include
+#          paths: the measured side is the translation unit
+#          `source-identity.sh --unit utf8 --stage-tu` generates, with its
+#          function renamed to `probe_utf8_measured`, and the extracted side is
+#          `kernel/json/utf8.c` behind `probe_utf8_extracted`.  `paired-utf8.c`
+#          is the binary's main and its two probes; the inputs are the curated
+#          corpus `tests/json-utf8/corpus.tsv` and the arms the probes
+#          generate, and the report is the per-input median difference against
+#          the same +/-0.5 ns/block bound.
 #
 # `--self-control` runs the measured unit against itself.  It must report
 # exactly 0.0, which tests the harness's dispatch and subtraction — the two
@@ -35,14 +44,16 @@
 # process is unpinned and the class printed is the one it observed.  Repeat
 # `--core` to run the same binary on more than one core class.
 #
-# Both units place their probes on 4 KiB boundaries (see each source file for
-# why), and the entry unit additionally aligns every function to 4 KiB so the
-# kernels it times have the same geometry on both sides; this script asserts the
-# placement with `nm`.  For the entry unit it also prints the preprocessed text
-# of the timed entry point and refuses to report a time unless that text names
-# the extracted unit and calls both kernels -- a staged pipeline is not measured
-# until its timed source is shown to reach the new code
-# (`docs/json-pipeline-performance.md` §7.1).
+# All three units place their probes on 4 KiB boundaries (see each source file
+# for why), and the entry and UTF-8 units additionally align every function to
+# 4 KiB so the kernels or the stage they time have the same geometry on both
+# sides; this script asserts the placement with `nm`.  For the entry unit it
+# also prints the preprocessed text of the timed entry point and refuses to
+# report a time unless that text names the extracted unit and calls both
+# kernels -- a staged pipeline is not measured until its timed source is shown
+# to reach the new code (`docs/json-pipeline-performance.md` §7.1); the same
+# check runs for the UTF-8 unit and requires its timed source to name and call
+# `leanllvm_json_utf8`.
 #
 # Exit status: 0 when every input holds, 1 when one is outside the bound,
 # 3 on a setup fault (an absent input, tool or corpus, a build failure, a
@@ -61,10 +72,15 @@ cc=clang
 cflags=(-O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64)
 defs=(-DPSTAGE=32 -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2 -DS1F_XS_DYN=1)
 # The entry unit's measured set (`build49.sh:19-21`), with the UTF-8 switch at
-# the header's default: `u8kl.h` is not vendored and no act here reaches it.
+# the header's default: the entry unit is not the UTF-8 unit, and no act here
+# reaches that stage.
 entry_defs=(-DSTAGE_PROBE -DS1F_ENT_PROBE=1 -DS1F_DENS=1 -DS1F_TWOPHASE=1
             -DS1F_EXP2=11 -DS1F_DISPATCH=1 -DS1F_UTF8=0 -DS1F_KL_DOC=0 -DPSTAGE=32
             -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2 -DS1F_XS_DYN=1)
+# The UTF-8 unit's: the same measured set with the stage selected.
+utf8_defs=(-DSTAGE_PROBE -DS1F_ENT_PROBE=1 -DS1F_DENS=1 -DS1F_TWOPHASE=1
+           -DS1F_EXP2=11 -DS1F_DISPATCH=1 -DS1F_UTF8=7 -DS1F_KL_DOC=1 -DPSTAGE=32
+           -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2 -DS1F_XS_DYN=1)
 
 unit=s1
 rounds=11
@@ -97,8 +113,14 @@ case "$unit" in
     src=$here/paired-entry.c
     inputs=("$src" "$measured/s1fuse.h" "$measured/xlist.h" "$kernel_dir/entry.c")
     ;;
+  utf8)
+    src=$here/paired-utf8.c
+    inputs=("$src" "$measured/s1fuse.h" "$measured/u8kl.h" "$kernel_dir/utf8.c" \
+            "$repo/kernel/json/identity/source-identity.sh" \
+            "$repo/tests/json-utf8/corpus.tsv")
+    ;;
   *)
-    printf 'SETUP: unit %s has no paired timing arm; implemented units: s1 entry\n' "$unit" >&2
+    printf 'SETUP: unit %s has no paired timing arm; implemented units: s1 entry utf8\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -136,6 +158,28 @@ if [ "$unit" = s1 ]; then
     -DPROBE_NAME=probe_kernel -I "$kernel_dir" -c "$src"
   build "$work/main.o" -O2 -DPAIRED_MAIN -c "$src"
   build "$work/paired" -O2 "$work/main.o" "$work/measured.o" "$work/kernel.o"
+elif [ "$unit" = utf8 ]; then
+  # The measured side is generated, not included: the stage is a region of the
+  # measured header, so the token arm's helper pastes it into the measured
+  # declarations and the function is renamed here so the two sides can share one
+  # binary.  4 KiB alignment on both sides, as for the entry unit.
+  UTF8_STAGE_NAME=probe_utf8_measured \
+    bash "$repo/kernel/json/identity/source-identity.sh" --unit utf8 --stage-tu \
+    > "$work/stage-a.c" || {
+    printf 'SETUP: the measured side could not be generated\n' >&2
+    exit 3
+  }
+  if [ ! -s "$work/stage-a.c" ]; then
+    printf 'SETUP: the generated measured side is empty\n' >&2
+    exit 3
+  fi
+  build "$work/measured.o" "${cflags[@]}" "${utf8_defs[@]}" -falign-functions=4096 \
+    -I "$measured" -c "$work/stage-a.c"
+  build "$work/kernel.o" "${cflags[@]}" "${utf8_defs[@]}" -falign-functions=4096 \
+    -DPAIRED_PROBE=extracted -DPROBE_NAME=probe_utf8_extracted \
+    -I "$kernel_dir" -c "$src"
+  build "$work/main.o" -O2 -DPAIRED_MAIN -c "$src"
+  build "$work/paired" -O2 "$work/main.o" "$work/measured.o" "$work/kernel.o"
 else
   # 4 KiB function alignment on both probe TUs: the kernels are measured text
   # and cannot carry an attribute, so the geometry is set by the flag, equally
@@ -162,6 +206,19 @@ if command -v nm >/dev/null 2>&1; then
       exit 3
     fi
     printf 'probe addresses %s (page-aligned)\n' "$(echo $probe_addrs)"
+  elif [ "$unit" = utf8 ]; then
+    probe_addrs=$(nm "$work/paired" | awk '$3 ~ /^probe_utf8_(measured|extracted)$/ { print $1, $3 }')
+    if [ "$(printf '%s\n' "$probe_addrs" | grep -c . || true)" -ne 2 ]; then
+      printf 'SETUP: expected two probe symbols, found: %s\n' "$(echo $probe_addrs)" >&2
+      exit 3
+    fi
+    bad=$(printf '%s\n' "$probe_addrs" | awk '$1 !~ /000$/ { print $1, $2 }')
+    if [ -n "$bad" ]; then
+      printf 'SETUP: a probe is not page-aligned: %s\n' "$(echo $bad)" >&2
+      exit 3
+    fi
+    printf 'probe addresses (page-aligned):\n'
+    printf '%s\n' "$probe_addrs" | awk '{ printf "  %s %s\n", $1, $2 }'
   else
     probe_addrs=$(nm "$work/paired" | awk '$3 ~ /^probe_entry_(measured|extracted)_(pos8|b8)$/ { print $1, $3 }')
     if [ "$(printf '%s\n' "$probe_addrs" | grep -c . || true)" -ne 4 ]; then
@@ -232,6 +289,38 @@ if [ "$unit" = entry ]; then
   printf 'timed entry point reaches the extracted unit (docs/json-pipeline-performance.md 7.1):\n'
   printf '  the preprocessed TU names leanllvm_json_entry_pos8, and both probes call\n'
   printf '  their own kernel (s1f_k_pos8, s1f_k_b8)\n'
+elif [ "$unit" = utf8 ]; then
+  "$cc" "${cflags[@]}" "${utf8_defs[@]}" -falign-functions=4096 \
+    -DPAIRED_PROBE=extracted -DPROBE_NAME=probe_utf8_extracted -I "$kernel_dir" \
+    -E -P "$src" > "$work/timed.i" 2>"$work/timed.err" || {
+    printf 'SETUP: the timed source did not preprocess\n' >&2
+    awk 'NR <= 20' "$work/timed.err" >&2
+    exit 3
+  }
+  if ! grep -q 'leanllvm_json_utf8' "$work/timed.i"; then
+    printf 'SETUP: the timed source does not name the extracted unit\n' >&2
+    printf 'SETUP: docs/json-pipeline-performance.md 7.1: the timed path must reach the new code\n' >&2
+    exit 3
+  fi
+  body=$(awk -v name="probe_utf8_extracted" '
+    !infn && index($0, name "(") > 0 &&
+      ($0 ~ /\([ \t]*$/ || $0 ~ /\{[ \t]*$/) { infn = 1 }
+    infn {
+      print
+      probe = $0
+      o = gsub(/\{/, "", probe); c = gsub(/\}/, "", probe)
+      depth += o - c
+      if (o > 0) opened = 1
+      if (opened && depth == 0) exit
+    }
+  ' "$work/timed.i")
+  if [ -z "$body" ] || ! printf '%s\n' "$body" | grep -qF 'leanllvm_json_utf8('; then
+    printf 'SETUP: the timed probe probe_utf8_extracted does not call the unit in its\n' >&2
+    printf 'SETUP: preprocessed text; docs/json-pipeline-performance.md 7.1\n' >&2
+    exit 3
+  fi
+  printf 'timed entry point reaches the extracted unit (docs/json-pipeline-performance.md 7.1):\n'
+  printf '  the preprocessed TU names leanllvm_json_utf8, and probe_utf8_extracted calls it\n'
 fi
 
 printf 'unit        %s\n' "$unit"
@@ -245,6 +334,10 @@ if [ "$unit" = s1 ]; then
   mapfile -t corpus_files < <(find "$corpus" -mindepth 1 -maxdepth 1 -type f | LC_ALL=C sort)
   [ "${#corpus_files[@]}" -gt 0 ] || { printf 'SETUP: no corpus files under %s\n' "$corpus" >&2; exit 3; }
   for f in "${corpus_files[@]}"; do args+=(--corpus "$f"); done
+elif [ "$unit" = utf8 ]; then
+  # One file, not a directory: the curated rows are the committed corpus and the
+  # probe generates the counted arms around them.
+  args+=(--corpus "$repo/tests/json-utf8/corpus.tsv")
 fi
 args+=(--arms --rounds "$rounds")
 [ "$self_control" -eq 1 ] && args+=(--self-control)

@@ -1,11 +1,11 @@
 # Native SIMD JSON pipeline: measured performance record
 
-Status: **measurement record, with stage 1's two units now in the tree**. The
+Status: **measurement record, with two of stage 1's three units in the tree**. The
 pipeline was built and measured in a scratch tree outside the checkout, and the
 numbers below are a record of observed runs, not an artefact reproducible from
 this tree — re-measuring requires rebuilding the harness, whose structure, arms
 and controls are described in §7 so that a rebuild can repeat the same
-comparisons. Stage 1's two units are the exception. The classification-mask
+comparisons. Stage 1's units are the exception. The classification-mask
 kernel is extracted as `kernel/json/s1_block.c`, its emitted IR is committed as
 `probes/install/ir/json-s1-masks.candidate.ll`, and `s1_masks_refines`
 (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves that pinned body stores the six
@@ -15,9 +15,13 @@ as `probes/install/ir/json-entry.candidate.ll`, and the two bodies
 `LeanLLVM/Vellum/JsonEntryIR.lean` pins are proved by `entry_pos8_refines`
 (`LeanLLVM/Vellum/JsonEntrySteps.lean`) and `entry_b8_refines`
 (`LeanLLVM/Vellum/JsonB8Steps.lean`) against the entry word
-`LeanLLVM/Vellum/JsonEntSpec.lean` specifies. Everything else — the selection
-that fills the entry stream, the exit and escape stages, the assembled pipeline,
-and the parser's own refinement — remains outside the tree.
+`LeanLLVM/Vellum/JsonEntSpec.lean` specifies. The UTF-8 validity stage is the
+third: `LeanLLVM/Vellum/JsonUtf8IR.lean` gives its three calls their reading
+(`utf8Calls`, with `utf8Calls_pshufb`/`utf8Calls_usubSat`/`utf8Calls_ptestz`),
+its specification and the relation over its body are not in the tree, and its
+unit is `kernel/json/utf8.c`, whose extraction is pending. Everything else — the selection that fills
+the entry stream, the exit and escape stages, the assembled pipeline, and the
+parser's own refinement — remains outside the tree.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -220,7 +224,7 @@ Bounded but unresolved, and all inside or near the placement floor:
 ## 9. What this does not establish
 
 - **Mostly nothing about refinement, and stage 1 is the exception.** The measured
-  pipeline is a native implementation. Both of stage 1's units are now related.
+  pipeline is a native implementation. Stage 1's units are the exception.
   The classification-mask unit's kernel is extracted as `kernel/json/s1_block.c`,
   and `s1_masks_refines` (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves the
   emitted body pinned from that source stores exactly the masks and carry
@@ -231,7 +235,11 @@ Bounded but unresolved, and all inside or near the placement floor:
   (`LeanLLVM/Vellum/JsonB8Steps.lean`) prove the bodies pinned from
   `probes/install/ir/json-entry.candidate.ll` against the entry word
   `LeanLLVM/Vellum/JsonEntSpec.lean` specifies: the positions each body writes and
-  the cursor it returns. Everything else here is still unrelated to the Lean
+  the cursor it returns. The UTF-8 validity stage is the third:
+  `LeanLLVM/Vellum/JsonUtf8IR.lean` gives its three calls their reading, its
+  specification and the relation over its body are not in the tree, and its unit
+  is `kernel/json/utf8.c`, whose extraction is pending. Everything else here is
+  still unrelated to the Lean
   development by any proof: the selection that fills the entry stream, the escape
   and exit stages, the assembled pipeline, and `LeanLLVM/JSON/`'s parser.
   Connecting those is the open obligation, not a corollary of these numbers.

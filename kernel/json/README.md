@@ -1,18 +1,21 @@
 # The stage-1 units
 
-Two units of the measured SIMD JSON pipeline live here, each a unit of the same
-vendored header pair (`measured/s1fuse.h`, `measured/xlist.h`) with its own
-public ABI, its own specification in `LeanLLVM/Vellum/`, and its own identity
-arms and route:
+Two units of the measured SIMD JSON pipeline are extracted here, each a unit of
+the same vendored measured set (`measured/`) with its own public ABI, its own
+specification and identity arms, and its own boundary, and the extraction of a
+third is what this directory's lists and arms are ready for:
 
-- **`s1_block.c`**, the classification mask unit, and
-- **`entry.c`**, the entry unit: a block's `ent` word to positions.
+- **`s1_block.c`**, the classification mask unit,
+- **`entry.c`**, the entry unit: a block's `ent` word to positions, and
+- **the UTF-8 validity unit**, the stage that decides whether the bytes scanned
+  so far form valid UTF-8, whose unit is `kernel/json/utf8.c`.
 
-Neither is the pipeline.  Nothing here decodes UTF-8, builds or expands an
-escape list, or reads a value; `measured/` is read-only reference, compiled by
-the identity and bench scripts alone and by no `lake` target.  The two units
-share the vendored files, the compiler line and the arms' machinery, and nothing
-else: each has its own entity list, its own deletion list and its own boundary.
+None is the pipeline.  Nothing here decodes UTF-8 into text, builds or expands
+an escape list, or reads a value: the UTF-8 unit returns a validity word and no
+positions.  `measured/` is read-only reference, compiled by the identity and
+bench scripts alone and by no `lake` target.  The units share the vendored
+files, the compiler line and the arms' machinery, and nothing else: each has its
+own entity list, its own deletion list and its own boundary.
 
 ## The mask unit
 
@@ -77,6 +80,16 @@ entry-delete: xlist:34-38
 entry-delete: xlist:49-52
 entry-extra: leanllvm_json_entry_pos8 leanllvm_json_entry_b8 leanllvm_json_entry_table
 entry-xl-exempt: xl_pos8 xl_pos8_init xl_pos8_ready
+utf8-entities: u8kl:kl_t1 u8kl:kl_t2 u8kl:kl_t3 u8kl:kl_err32_ld u8kl:kl_err_vec_ld u8kl:kl_tail_byte
+utf8-stage: s1fuse:1833-1841
+utf8-stage-tail: s1fuse:1911-1912
+utf8-stage-copy: s1fuse:997-1005 s1fuse:1070-1071
+utf8-stage-unit: utf8.c
+utf8-stage-begin: /* begin: copied stage statements */
+utf8-stage-end: /* end: copied stage statements */
+utf8-rename: s1f_u8_ungated ungated
+utf8-extra: leanllvm_json_utf8
+utf8-permutation: KLCARRY kl_carry_init kl_err32 kl_err_vec kl_block_vec kl_block kl_block_ld kl_carry_prefix
 <!-- identity-list:end -->
 
 The four deletions are the two conditional arms inside `s1f_masks`, resolved to
@@ -93,6 +106,43 @@ names the lines dropped from them; `entry-extra:` names the definitions the unit
 carries that are not measured text; and `entry-xl-exempt:` is the exact set of
 `xl_` identifiers the unit's own text may name.
 
+The `utf8-` rows are the **UTF-8 unit's**, and the UTF-8 section below reads
+them:
+
+- `utf8-entities:` names the six definitions `utf8.c` copies from `u8kl.h`;
+- `utf8-stage:` and `utf8-stage-tail:` are **line ranges** of the vendored
+  header — the statements `S1F_KL_DOC` selects inside `s1f_build2`'s block loop,
+  and the reduce and tail statements it runs after the loop. Each is a
+  `<source>:<first>-<last>` span. `utf8-stage-copy:` is the same two spans in
+  `s1f_build`, the builder the measured configuration does not select; the token
+  arm compares it with `utf8-stage:` + `utf8-stage-tail:`, which is what makes
+  choosing one copy harmless. The script concatenates `utf8-stage:` and then
+  `utf8-stage-tail:`, in that fixed key order, so that pair is the measured
+  side of the comparison; the order of the *list* is not load-bearing, while the
+  order of the spans **within one row** is: swapping the two spans of
+  `utf8-stage-copy:` changes the concatenation;
+- `utf8-stage-unit:` names the unit file, `utf8-stage-begin:` and
+  `utf8-stage-end:` the two marker comments that delimit the unit's copy of the
+  stage inside it;
+- `utf8-rename:` is the one renamed token, `<measured> <unit>` — the
+  document-level static becomes the function's parameter — and a row whose
+  measured name is absent from the measured text is a setup fault, so a dead
+  rename cannot pass;
+- `utf8-extra:` names the definition the unit carries that is not measured text;
+- `utf8-permutation:` names the `u8kl.h` definitions the measured build does
+  not select. Together with `utf8-entities:` it is the complete `kl_` name set
+  of the vendored header, so a seventh name is a setup fault rather than an
+  unlisted copy.
+
+The stage form is a range on both sides because these statements have no name
+to locate them by: the measured side is pinned by line, which is safe only
+because the file is pinned by digest, and the unit side is pinned by markers,
+because a line locator inside a file this repository owns would break on every
+unrelated insertion.  Both sides are required to be non-empty and to have a
+non-empty normalisation: a comparison that reports `identical (0 token bytes)`
+for two empty extractions is not evidence of anything, and a range clipped to a
+preprocessor directive alone normalises to nothing for exactly that reason.
+
 ### The deletion list
 
 Besides the four in-entity deletions above, the extraction leaves behind every
@@ -104,8 +154,8 @@ extracted at all.
 |---|---|---|
 |`s1fuse.h:433-445` `#if S1F_XS`|`S1F_XS=5` (`build49.sh:21`) → on|the `#else` `(void)bm_o; (void)ctl_o;` arm (whole lines)|
 |`s1fuse.h:446-455` `#if S1F_CTAB`|default `1` (`:384-386`) → table path|`s1f_structural` (`:370-377`) and the `#else` `cmpeq` chain (whole)|
-|`s1fuse.h:112-155, 156-165` UTF-8 arms|`S1F_UTF8=7`, `S1F_KL_DOC=1`|the UTF-8 machinery and its includes (whole; the UTF-8 probe's subject, which is not a mask)|
-|`s1fuse.h:249-343` `s1f_init`, `s1f_x_reserve`, `s1f_em_reserve`, `s1f_uk_*`|—|the buffers and per-process switches (whole)|
+|`s1fuse.h:112-165, 715-803` UTF-8 arms|`S1F_UTF8=7`, `S1F_KL_DOC=1`|the UTF-8 machinery and its includes (whole).  It has **two** sites, not one: the includes and the gates at `:112-165` and the mask-derived probe `s1f_uge`/`s1f_uchunk`/`s1f_uchunk_x`/`s1f_pend` at `:715-803` — the `S1F_UTF8=1..6` path, refuted in `docs/json-pipeline-performance.md:152` at +8.1/+7.3 ns/block|
+|`s1fuse.h:1832-1842, 1908-1918` the `S1F_KL_DOC` stage of `s1f_build2`|`S1F_KL_DOC=1`|the UTF-8 unit's stage statements (whole here — not a mask; that unit extracts them by line range)|
 |`s1fuse.h:505-543` `s1f_ent_probe`|`S1F_ENT_PROBE=1` (`build49.sh:19`)|the probe, a decision instrument rather than a mask (whole)|
 |`s1fuse.h:544-716` `s1f_emit` and its variants|—|the inline per-block emitter of `s1f_build` (whole; the entry unit extracts the two block kernels the selector dispatches to — `s1f_ke_pos8`/`s1f_ke_b8` below — and not this inline path)|
 |`s1fuse.h:1102-1333` expanders, kernel ids|—|the escape expanders and the kernel selector (whole; the entry unit exports both emitters instead)|
@@ -126,7 +176,10 @@ so this is a hoist of values, not a re-shaping of arithmetic.
    `p`"; the tail policy is the entry unit's (`lim` masking at
    `s1fuse.h:1721-1722`), where `LeanLLVM/Vellum/JsonEntryIR.lean`'s
    `entry_tail_eq` states it: a block's word masked with `limMask (n - b)` has
-   exactly that block's positions below the document's end `n`.
+   exactly that block's positions below the document's end `n`.  The UTF-8 unit
+   has a document-end rule of its own and it is a different one — its last block
+   is scanned whole, and the end is the DFA's zero padding plus `kl_tail_byte`
+   (below) — so the two tails are not one rule stated twice.
 2. **The escape rule does not consult the string state.**  This is the kernel's
    rule, kept; it is stated where the specification states it.
 3. **No alignment requirement, and the loads are this unit's.**  The wrapper
@@ -284,6 +337,133 @@ the measured header this unit is not.  Each row is a deletion, and a row marked
    the block's positions below the document's end, and nothing above it.  The
    buffer the caller provides is the caller's to size (limit 2).
 
+## The UTF-8 unit
+
+The UTF-8 unit is the stage-1 UTF-8 validity stage: the Keiser–Lemire
+`pshufb` table DFA the measured builder runs in its block loop, and the
+document-end rule it applies after the loop.  The stage is not a measured
+function — it is statements inside the block loop of `s1f_build2`
+(`measured/s1fuse.h:1614`), which `S1F_TWOPHASE=1` selects — so the table DFA's
+definitions and the stage's statements are copied from two places, and the
+identity arms compare both.  The stage's unit is `kernel/json/utf8.c`, extracted
+with the stage's corpus: the entity list, the stage rows and the arms below are
+what that extraction must satisfy, and they are checked once it exists.
+
+### The ABI
+
+```c
+uint64_t leanllvm_json_utf8(const uint8_t *b, uint64_t n, int ungated);
+```
+
+The measured statements' own types, hoisted: the document-level static the stage
+reads per document becomes the `int` parameter `ungated`, and the word the stage
+writes to `*uerr` becomes the return.  A document is valid exactly when the
+returned word is zero, and the verdict does not depend on `ungated` — which of
+the two gate paths a document takes is decided by the caller.
+
+Three obligations on the caller, each of them measured rather than conventional:
+
+1. **`3 <= b`, and `b-3 .. b-1` read as zero.**  The DFA's state crosses the
+   buffer start: with `F0 90 80` staged there, a document beginning `80` flips
+   from reject to accept.
+2. **`n` is the document's length and `b .. b+n-1` is the document.**
+3. **`b+n .. b+64*ceil(n/64)-1` is readable and zero.**  Those bytes are inside
+   the scanned window and the verdict depends on them; a non-zero padding byte
+   can suppress a rejection.
+
+And one length bound, also the caller's: **`n < 2^63`**.  The body's
+`(n + 63)` wraps above it, and `n` is itself an index in the tail's read of
+`b[n-1]`.
+
+### Build
+
+The unit's build is `build49.sh:17`'s compiler line, the one the measured build
+used, with `-I kernel/json`; `lake` does not build it, because it is a C unit of
+the identity, route and bench scripts and not of the Lean library.  The unit
+includes `<immintrin.h>`, `<stdint.h>` and `utf8.h` and nothing else: the
+vendored headers are the source of record, not this unit's includes.
+
+### What is measured text, and what is not
+
+The six definitions `utf8-entities:` names in `u8kl.h` and the stage statements of
+`measured/s1fuse.h:1833-1841, 1911-1912` are copied unchanged, including names,
+formatting and comments.  The statements have no name, so the identity list
+names them by **line range** on the measured side — safe only because that file
+is pinned by digest — and by a **marker pair** inside `utf8.c`,
+`/* begin: copied stage statements */` and `/* end: copied stage statements */`.
+`identity/source-identity.sh --unit utf8` diffs the tokens of each entity and of
+the stage, concatenating `utf8-stage:`'s ranges and then `utf8-stage-tail:`'s —
+the order the comparison reads them in — and requires **both** sides of the
+stage comparison to be non-empty with a non-empty normalisation; an empty
+extraction is a setup fault, never an equality.
+
+One token is **renamed**, and it is a recorded row rather than a silent edit:
+`s1f_u8_ungated` becomes `ungated`, because the document-level static becomes
+the parameter.  The new text is the function header with its five declarations
+(`nb`, `prev_ascii`, `high`, `u8k`, `err`), the loop header with `p`, `v0` and
+`v1`, and the `return err`; `utf8-extra:` names its one definition, so the
+reverse check accepts it.  A second check compares the two measured copies of
+the stage — `s1f_build2`'s, which is the source of record, and `s1f_build`'s,
+which the measured configuration does not select — token for token, which is
+what makes choosing one of them harmless.
+
+### The deletion list
+
+Besides the six entities, the extraction leaves behind every part of the
+measured header and of `u8kl.h` this unit is not.  Each row is a deletion, and a
+row marked *whole* is a site that is never extracted at all.
+
+|Site|Measured value|Deleted|
+|---|---|---|
+|`u8kl.h:57-160` the permutation form|not selected at `S1F_UTF8=7`|`KLCARRY`, `kl_carry_init`, `kl_err32`, `kl_err_vec`, `kl_block_vec`, `kl_block`, `kl_block_ld`, `kl_carry_prefix` (whole; the measured call sites are `kl_err_vec_ld` twice and `kl_tail_byte` once)|
+|`s1fuse.h:715-803` `s1f_uge`, `s1f_uchunk`, `s1f_uchunk_x`, `s1f_pend`|`#if S1F_UTF8`, the mask-derived probe|whole|
+|`s1fuse.h:117` the `u8fold.h` include|`S1F_UTF8=3..6`|whole, and `u8fold.h` is not vendored|
+|`s1fuse.h:134-165` `s1f_u8_decide` and the `S1F_KL_DOC` guards|`S1F_KL_DOC=1`|whole; the selection is the caller's|
+|`s1fuse.h:239-263` `s1f_u8_fold`, `s1f_u8_kl` and their environment reads|`S1F_UTF8 == 4`, `S1F_UTF8 == 8`|whole|
+|`s1fuse.h:153-163` `s1f_u8_mode`, `S1F_U8_MODES`|off in `m49`|whole|
+|`s1fuse.h:806-1091` `s1f_build`, and `:944-1077` its UTF-8 stage copy|not selected (`S1F_TWOPHASE=1`)|whole; its stage text is asserted token-identical to `s1f_build2`'s|
+|`s1fuse.h:1782-1831` the `S1F_UTF8` 3, 4, 5 and 6 branches|`S1F_UTF8=7`|whole|
+|`s1fuse.h:1842-1851` the `#elif S1F_KL_GATE` arm|`S1F_KL_DOC=1`|whole, and it is why the stage range ends at `:1841`|
+|`s1fuse.h:1853-1894` the `S1F_UTF8` 8 and 2 branches|`S1F_UTF8=7`|whole|
+
+The `kl_` identifiers the vendored header carries are therefore exactly the six
+entities plus the eight permutation-form names, and the token arm asserts that
+set: a seventh `kl_` name is a setup fault, because it would be a definition
+both lists miss.  For the same reason this unit's arm detector is its own — the
+unit is the UTF-8 machinery, so `kl_` is its subject and not a measurement arm
+to be refused, while `dens_`, `S1F_`, `SP_` and `sp_` stay refused.
+
+### Limits
+
+1. **The tail is asymmetric, and it is measured.**  With `n % 64 != 0` the zero
+   padding supplies the position after the last document byte, so a truncated
+   final character is rejected; with `n % 64 = 0` that position does not exist,
+   so a truncated `C2-F4` tail is accepted, while `C0`/`C1`/`F5-FF` is still
+   rejected by `kl_tail_byte`.  The document-level rule for the truncation is
+   finalisation's, and the narrowing matters: `ScanBlocks.tailRun_ended` proves
+   the **model's** finalisation rule and not the measured stage 2's, so what
+   this unit's arms establish is that the rule is not this stage's; the proof
+   that the pipeline's finalisation refuses it is a later stage's.
+2. **The verdict is about the staged window, not about `b .. b+n-1`.**  Three
+   bytes before the document and up to 63 after it are read and are part of the
+   condition; a document staged at the end of a buffer that is not zero-filled
+   gets a different verdict if it starts with a continuation byte.
+3. **It reads `64*ceil(n/64) + 3` bytes and nothing else.**  For `n = 0` it
+   reads nothing at all: the loop does not run and the tail is guarded by
+   `n != 0`.
+4. **The word is 0 or 1**, and the emission's own `range(i64 0, 2)` says so.  It
+   is not a position: the stage reports that the document is invalid, not where,
+   and the offsets belong to the pipeline's stage 2.
+5. **No alignment requirement and no aliasing claim.**  The loads are unaligned,
+   the model addresses bytes, and the caller owns the buffer; nothing here
+   states what happens if it overlaps anything.
+6. **The selection is not here.**  The unit is defined for both values of
+   `ungated` and the verdict does not depend on which was chosen.
+7. **The tables are read, not derived.**  `u8kl.h`'s comment records that they
+   were verified exhaustively against a scalar reference; this unit reads them
+   as they are, and the identity arms pin them by digest and by name rather than
+   re-deriving the constants.
+
 ## The checks
 
 ```bash
@@ -297,10 +477,19 @@ nix develop -c bash kernel/json/identity/source-identity.sh --unit entry # entry
 nix develop -c bash kernel/json/identity/source-identity.sh --unit entry --arms-only # entry unit: the TU, the
                                                                        # detectors and the public symbols
 nix develop -c bash kernel/json/identity/ent-identity.sh --text-only   # the ent word's statements
+nix develop -c bash kernel/json/identity/source-identity.sh --unit utf8 # UTF-8 unit: tokens, the stage range
+                                                                       # and the three controls
+nix develop -c bash kernel/json/identity/source-identity.sh --unit utf8 --arms-only # UTF-8 unit: the TU, its
+                                                                       # calibrated detector and its ABI symbol
+nix develop -c bash kernel/json/identity/ir-identity.sh --unit utf8    # UTF-8 unit: the stage's emitted-code
+                                                                       # identity + two controls
 nix develop -c bash kernel/json/identity/inventory.sh                  # the fixture's inventory gate
+nix develop -c bash kernel/json/identity/inventory.sh --unit utf8      # the UTF-8 fixture's inventory gate
 nix develop -c bash kernel/json/bench/paired.sh                        # mask unit: paired timing
 nix develop -c bash kernel/json/bench/paired.sh --unit entry           # entry unit: paired timing, both kernels
+nix develop -c bash kernel/json/bench/paired.sh --unit utf8            # UTF-8 unit: paired timing
 nix develop -c bash kernel/json/identity/final-identity.sh entry       # the entry unit's three arms, one command
+nix develop -c bash kernel/json/identity/final-identity.sh utf8        # the UTF-8 unit's three arms, one command
 ```
 
 `final-identity.sh <unit>` is the dispatcher: it runs the unit's token identity,
@@ -311,7 +500,15 @@ reproduces from a checkout with the scratch tree gone.  Under it, `--vendor`
 refuses while the scratch tree exists, because the live diff is the one thing
 that asks to read outside.
 
-Two properties of the instruments are worth knowing when reading their output:
+`source-identity.sh --unit utf8 --stage-tu` prints the measured side of the
+UTF-8 unit's emitted-code comparison — the measured declarations with the
+extracted stage pasted in — and it is the **one** definition of that text:
+`ir-identity.sh --unit utf8` and `bench/paired.sh --unit utf8` both build their
+measured side from it rather than from copies.  `UTF8_STAGE_NAME` in the
+environment renames the function, which is how the timing arm can link it beside
+the unit in one binary.
+
+Three properties of the instruments are worth knowing when reading their output:
 
 - `ir-identity.sh` compares emitted code.  "Identical IR" means the instruction
   text — every opcode, operand, type, constant and branch edge.  Analysis
@@ -326,6 +523,11 @@ Two properties of the instruments are worth knowing when reading their output:
   canonical text, the `distinct` loop node's self-reference included -- and the
   node count is printed beside it.  A metadata difference with no nameable cause
   is a finding and fails the arm.
+- `llvm-diff` does **not** compare instruction flags, so the UTF-8 unit's arm
+  also compares the two lifted modules' code text byte for byte before their
+  metadata sections.  A `nuw` removed from an instruction is a difference in
+  that text and no difference to `llvm-diff` — measured, and the reason the unit
+  prints both verdicts for that control.
 - `paired.sh` places both probes on 4 KiB boundaries.  The two bodies are the
   same machine code, but identical code at different addresses can run at
   different speeds on a core whose caches map by address; without the alignment
@@ -382,10 +584,13 @@ differing item, for anything else — a missing input or a non-regenerating
 artefact is an unusable input, not a verdict about this unit.
 
 The entry unit's inventory gate is its own capture's: `--unit entry` names
-`probes/install/ir/capture-entry.sh` and exits `3` while that capture does not
-exist, because the classes that gate checks -- the strip classes, the rewrite
-classes, and the table-rewrite class the entry fixture's GEPs become -- are the
-capture's formats, and a list kept in the gate would be the hand-kept list this
-gate exists to avoid.  An invocation with no `--unit` is the mask unit's,
-unchanged.
+`probes/install/ir/capture-entry.sh` and the four artefacts it derives, because
+the classes that gate checks -- the strip classes, the rewrite classes, and the
+table-rewrite class the entry fixture's GEPs become -- are the capture's formats,
+and a list kept in the gate would be the hand-kept list this gate exists to
+avoid.  The UTF-8 unit's gate names its own capture and its three inventories in
+the same way (`--unit utf8`: `capture-utf8.sh`, with no table class, because that
+unit's tables fold to literal vector operands), and it exits `3` naming the
+missing file while an input is absent.  An invocation with no `--unit` is the
+mask unit's, unchanged.
 
