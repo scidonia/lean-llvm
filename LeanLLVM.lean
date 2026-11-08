@@ -33,4 +33,5 @@ import LeanLLVM.Vellum.JsonEntryIR
 import LeanLLVM.Vellum.JsonEntrySteps
 import LeanLLVM.Vellum.JsonB8Steps
 import LeanLLVM.Vellum.JsonUtf8IR
+import LeanLLVM.Vellum.JsonUtf8Steps
 import LeanLLVM.Vellum.JsonUtf8Spec

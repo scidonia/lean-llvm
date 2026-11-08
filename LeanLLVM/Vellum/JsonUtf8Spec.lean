@@ -60,10 +60,29 @@ is what the caller supplies.
 
 ## What is proved here
 
-`klErrByte_eq_zero_iff` is C59: a position's error byte is zero exactly when the
-four bytes around it are admissible in RFC 3629 §4's terms — `NeedsCont` (a lead
-two or three bytes back still inside its character) and `KlPair` (the local
-two-byte structure, clause for clause).  The decomposition the proof uses is
+`klErrByte_eq_zero_iff` is C59, and what it states is **local** admissibility
+given the continuation requirement the byte one back imposes: if a lead two or
+three bytes back still owns this position (`NeedsCont p2 p3`) then both `p1` and
+`c` are `UTF8-tail`s, and otherwise `c` may follow `p1` in the sense of `KlPair`
+(RFC 3629 §4's productions, clause for clause).  It is deliberately not a claim
+about the four bytes around the position being admissible *each in turn*: a
+position can be locally fine while the sequence is broken one or two places
+earlier.
+
+The witness is the window `(0xF0, 0x41, 0x80, 0x80)` read at its last byte:
+`klErrByte 0xF0 0x41 0x80 0x80 = 0`, and none of that zero is a claim about the
+pair (`0x41`, `0x80`).  `NeedsCont` is **true** here — `0xF0` is a four-byte lead
+three bytes back — so the requirement the tables read is that `p1` and `c` be
+continuations, and both are `0x80`s.  On its own the pair is refused:
+`KlPair 0x41 0x80` is false and `klErrByte 0x00 0x00 0x41 0x80` is the
+`tooLong` class this file already names.  The error is at the neighbours, and at
+both of them: one position earlier, the *first* `0x80`, is
+`klErrByte 0x00 0xF0 0x41 0x80 = 0x82` — `twoConts | tooLong`, because `NeedsCont`
+demands a continuation at `p1 = 0x41` and an ASCII byte is not one — and two
+positions earlier the `0x41` is `klErrByte 0x00 0x00 0xF0 0x41 = 0x01`,
+`tooShort`, a lead with no continuation after it.  Those two evaluations are
+`klErrByte_window_witness_earlier` and `klErrByte_window_witness_earliest` in
+`JsonUtf8Steps`.  The decomposition the proof uses is
 `err = sc ^ must`, then `must`'s single bit and `sc`'s table word; `sc` is decided
 over `lo(p1) × hi(p1) × hi(c)`, which is 16 × 16 × 16 = 4096 table cases, once per
 value of `NeedsCont`, so 2 × 4096 = 8192 decided cases.
@@ -76,9 +95,11 @@ this module's three tables with `kl_t1`/`kl_t2`/`kl_t3` read out of
 `kernel/json/measured/u8kl.h` by a compiled translation unit, so the values are
 checked against the header rather than transcribed from it here.
 
-Nothing here is about the emitted body: `utf8Calls` (`JsonUtf8IR.lean`) binds the
-three intrinsics, and the refinement of the pinned body against `klStage` is
-stated in `JsonUtf8IR.lean` and `JsonUtf8Steps.lean`, not here.
+Nothing here is about the emitted body.  `utf8Calls` (`JsonUtf8IR.lean`) binds
+the three intrinsics and `JsonUtf8IR` pins the fixture; `JsonUtf8Steps` holds the
+body's execution and the refinement of the pinned body against `klStage`.  The
+specification is this module's, the statement is that module's, and neither
+restates the other's definitions.
 -/
 import LeanLLVM.JSON.Utf8
 import LeanLLVM.Vellum.BitLanes
@@ -473,10 +494,20 @@ theorem klSc_twoConts (p1 c : UInt8) :
     isCont_p1_nib, isCont_c_nib]
 
 /-- **C59, the per-position characterization.**  A position's error byte is zero
-exactly when the four bytes around it are admissible in RFC 3629 §4's terms: if a
-lead two or three bytes back still owns the position (`NeedsCont`) then both it
-and this byte are `UTF8-tail`s, and otherwise the two-byte structure `KlPair`
-holds.
+exactly when the position is locally admissible given the continuation
+requirement the byte one back imposes: if a lead two or three bytes back still
+owns the position (`NeedsCont`) then both it and this byte are `UTF8-tail`s, and
+otherwise the two-byte structure `KlPair` holds.
+
+"Locally" is load-bearing and is not a hedge.  The statement does not say the
+bytes before it are themselves admissible, so a window can be zero here while the
+sequence is broken one or two places earlier: at `klErrByte 0xF0 0x41 0x80 0x80 =
+0` the position one place earlier is `0x82` (`twoConts | tooLong`, from the `0x41`
+that follows the `0xF0` lead) and the one two places earlier is `0x01`
+(`tooShort`).  A reader who took this for a statement about the four bytes around
+the position would have a claim the tables refute, twice over — and would also be
+reading the pair (`0x41`, `0x80`) as admitted, which `KlPair 0x41 0x80 = false`
+denies.
 
 The decomposition is `err = sc ^ must`: `must` is the bit `subsSat_high_bit` reads,
 `sc` is the table word `klSc_zero_iff` and `klSc_twoConts` characterize, and the
