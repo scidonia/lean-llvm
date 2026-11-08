@@ -8198,8 +8198,11 @@ one that carries `Classical.choice`, and it carries the same carrier the bodies
 do — `BitVec.signExtend_eq`, reached through `utf8_step_gep` for the block's
 base.  The nine lookups are `[propext]`-only: each is proved by `decide`, so the
 lookup is the kernel's computation on the pinned block list and no `Decidable`
-instance is consulted classically — narrower than the `simp`-proved lookups the
-entry pins name, and the reason no attribution is owed for them here. -/
+instance is consulted classically.  That is narrower than the `simp`-proved
+lookups which **do** carry choice (`findBlock_pos8Body` and its group), and level
+with `findBlock_pos8Entry`, which is `simp`-proved and `[propext]`-only — so the
+difference is the proof route and not the goal, and no attribution is owed for
+these nine. -/
 
 
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_lshr_imm' depends on axioms: [propext, Quot.sound] -/

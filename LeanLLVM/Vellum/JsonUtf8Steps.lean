@@ -2761,6 +2761,8 @@ theorem utf8ForBodyUs_run (env : Env) (s : State) (p : String) (opP opU opB : Op
       lookupName env' "%u8k.076.us" = some (.vec 4 64 u8kIn) ∧
       lookupName env' "%bi.075.us" = some (.int 64 (BitVec.ofNat 64 bi)) ∧
       lookupName env' "%add.ptr.us" = some (.ptr (b + 64 * bi)) ∧
+      lookupName env' "%0" = some (.vec 4 64 (unpackLanes 64 4 (bytesToNat B0))) ∧
+      lookupName env' "%1" = some (.vec 4 64 (unpackLanes 64 4 (bytesToNat B1))) ∧
       lookupName env' "%2" = some (.int 32 (ptestz
         (BitVec.ofNat 256 (packLanes (List.zipWith (· ||| ·) (unpackLanes 64 4 (bytesToNat B1))
           (unpackLanes 64 4 (bytesToNat B0)))))
@@ -2783,7 +2785,7 @@ theorem utf8ForBodyUs_run (env : Env) (s : State) (p : String) (opP opU opB : Op
   have hlt1 : bytesToNat B1 < 2 ^ 256 := by
     have := bytesToNat_lt B1
     rwa [h1, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
-  refine ⟨?env', ?hrun, ?hP, ?hU, ?hB, ?hptr, ?h2, ?hcond⟩
+  refine ⟨?env', ?hrun, ?hP, ?hU, ?hB, ?hptr, ?h0', ?h1', ?h2, ?hcond⟩
   case hrun =>
     simp only [utf8ForBodyUs, reg, lit, splatOf, highBitMask, JsonUtf8IR.ptestz]
     ent_step (utf8_phi env s "%prev_ascii.077.us" (.int 32)
@@ -2833,6 +2835,8 @@ theorem utf8ForBodyUs_run (env : Env) (s : State) (p : String) (opP opU opB : Op
   case hU => ent_auto
   case hB => ent_auto
   case hptr => ent_auto
+  case h0' => ent_auto
+  case h1' => ent_auto
   case h2 => ent_auto
   case hcond => ent_auto
 
