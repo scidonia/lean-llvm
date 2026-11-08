@@ -7139,4 +7139,146 @@ theorem utf8_stage_refines_mod0
     rwa [ByteString.literal_toList]
 
 
+set_option linter.unusedVariables false in
+/-- **The stage's verdict at `n = 0`.**
+
+`utf8_stage_refines` does not cover this case and this is not a case of it: at
+`n = 0` the body reads no byte, so the headline's hypothesis on the
+`3 + 64 * nb`-byte window would be a fiction about a window the run never
+touches, and its `hpos` is false.  Stated separately, the case says what the run
+actually does: the accumulator is the empty fold and the window has no block.
+
+The run is three steps.  `entry` computes `%div44 = 0` and `%cmp74.not = true`,
+so control passes both loops to `for.cond.cleanup`.  The reduce's `ptestz` of the
+zero accumulator — the `entry` phi's zero splat — answers one, so `%tobool16.not`
+is zero; the tail guard is false because `%n` is zero; and `if.end24`
+zero-extends that zero to the returned word.  No block and no tail is read, so
+the caller's memory comes back unchanged, and three steps sit inside
+`fuelOf 0 = 8` with five to spare.
+
+The hypothesis set is the headline's, not a narrower one: `hn`, `hnb`, `hb` and
+`hread` are exactly the obligations `utf8_stage_refines` puts on a caller, and at
+`n = 0` the read hypothesis is precisely the staged window's three zero prefix
+bytes.  The body consumes none of them here, and they stay in the statement so
+that a caller splitting on `n` discharges the same obligations on either side.
+The headline's other two bounds are absent because `n = 0` settles them outright
+(`0 + 63 < 2 ^ 64`, `0 < 2 ^ 63`), and `hpos` is absent because it is false.
+
+Footprint: `[propext, Quot.sound]` — no `Classical.choice`, since the entry's
+`%n` lookup is read through `lookupName_initState_utf8` and the two phi edges
+through `decide` rather than through the `simp` route that decides a string
+disequality by `String.ofList_injective`. -/
+theorem utf8_stage_refines_zero
+    (bs : LeanLLVM.JSON.Bytes) (n nb : Nat) (mem : Mem) (b : Nat) (ungated : Bool)
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64)
+    (hb : 3 ≤ b)
+    (hread : readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs.toList n nb))
+    (hn0 : n = 0) :
+    runFuel utf8Calls (fuelOf nb) utf8Function
+      { (initState utf8Function [.ptr b, .int 64 n, .int 32 (if ungated then 1 else 0)])
+        with mem := mem } = some (.ret (some (.int 64 0)) mem) := by
+  subst hn0
+  have hnb0 : nb = 0 := by
+    rw [hnb]
+  let S0 : State :=
+    { (initState utf8Function [.ptr b, .int 64 0, .int 32 (if ungated then 1 else 0)])
+        with mem := mem }
+  have hS0pc : S0.pc = "entry" :=
+    initState_utf8_pc b 0 (BitVec.ofNat 32 (if ungated then 1 else 0))
+  have hS0n : lookupName S0.env "%n" = some (.int 64 (BitVec.ofNat 64 0)) :=
+    (lookupName_initState_utf8 b 0 (BitVec.ofNat 32 (if ungated then 1 else 0))).2.1
+  obtain ⟨env1, hrunE, hdiv, hcmp⟩ := utf8Entry_run S0.env S0 0 hS0n
+  let S1 : State := { S0 with pc := "for.cond.cleanup", pre := some "entry" }
+  have hn1 : lookupName env1 "%n" = some (.int 64 (BitVec.ofNat 64 0)) := by
+    have h := denoteCode_lookupName utf8Calls utf8Entry.instrs "%n"
+      (by decide) (withEnv S0.env S0) (withEnv env1 S0) hrunE
+    have h' : lookupName env1 "%n" = lookupName S0.env "%n" := by
+      simpa [withEnv] using h
+    exact h'.trans hS0n
+  have hbitE : (BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 0 + BitVec.ofInt 64 63)
+      (BitVec.ofInt 64 64)) : BitVec 1) = 1 := by
+    rw [ofBool_bool_eq_one, stage_ofNat64_add63 0 (by decide), BitVec.ult_eq_decide,
+      ofInt64_64_toNat, BitVec.toNat_ofNat]
+    rw [show (0 + 63) % 2 ^ 64 = 63 from by decide]
+    decide
+  have hstepE : step utf8Calls utf8Function S0 = .jump (withEnv env1 S1) := by
+    have h1 : step utf8Calls utf8Function (withEnv S0.env S0)
+        = execTerm (withEnv env1 S0) utf8Entry.term :=
+      step_of_utf8 _ "entry" utf8Entry _ hS0pc findBlock_utf8Entry hrunE
+    have h2 : (withEnv S0.env S0) = S0 := rfl
+    rw [h2] at h1
+    rw [h1]
+    show execTerm (withEnv env1 S0)
+        (.condbr (.reg "%cmp74.not") "for.cond.cleanup" "for.body.lr.ph") = _
+    have hev : evalOperand (withEnv env1 S0) (.reg "%cmp74.not")
+        = some (.int 1 (BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 0
+            + BitVec.ofInt 64 63) (BitVec.ofInt 64 64)))) := by
+      rw [evalOperand_reg_utf8]; exact hcmp
+    rw [execTerm_condbr_true hev hbitE]
+    simp only [withEnv, S1, hS0pc]
+  let u8k0 : List (BitVec 64) := List.replicate 4 (BitVec.ofInt 64 0)
+  have hu8k0len : u8k0.length = 4 := by simp [u8k0]
+  obtain ⟨env2, hrunC, h36, ht16, ht19, hcond⟩ :=
+    utf8Reduce env1 S1 "entry" (.imm (.splat 4 64 (BitVec.ofInt 64 0))) u8k0 0
+      rfl (by decide) (by simp only [evalOperand]; rfl) hu8k0len hn1
+  have hpack0 : packLanes u8k0 = 0 := by
+    have hz : u8k0 = List.replicate 4 (0 : BitVec 64) := by
+      simp only [u8k0, show (BitVec.ofInt 64 0 : BitVec 64) = 0 from by decide]
+    rw [hz]
+    exact packLanes_replicate_zero 4
+  have h256 : BitVec.ofNat 256 (packLanes u8k0) = (0 : BitVec 256) :=
+    (ofNat256_eq_zero_iff _ (by rw [hpack0]; decide)).mpr hpack0
+  have hpt : BitLanes.ptestz (BitVec.ofNat 256 (packLanes u8k0))
+      (BitVec.ofNat 256 (packLanes u8k0)) = (1 : BitVec 32) := by
+    rw [h256, BitLanes.ptestz_eq_one_iff]
+    simp
+  have ht16z : lookupName env2 "%tobool16.not" = some (.int 1 (0 : BitVec 1)) := by
+    rw [ht16, hpt, ofInt32_zero]
+    rw [show (BitVec.ofBool (decide ((1 : BitVec 32) = (0 : BitVec 32))) : BitVec 1) = 0
+      from (ofBool_bool_eq_zero (decide ((1 : BitVec 32) = (0 : BitVec 32)))).mpr (by decide)]
+  have hcondz : lookupName env2 "%or.cond45" = some (.int 1 (0 : BitVec 1)) := by
+    rw [hcond]
+    have h1 : (BitVec.ofBool (decide (BitVec.ofNat 64 0 ≠ (BitVec.ofInt 64 0 : BitVec 64)))
+        : BitVec 1) = 0 :=
+      (ofBool_bool_eq_zero (decide (BitVec.ofNat 64 0 ≠ (BitVec.ofInt 64 0 : BitVec 64)))).mpr
+        (by decide)
+    have h2 : (BitVec.ofBool (decide (BitVec.ofNat 64 0 &&& (BitVec.ofInt 64 63 : BitVec 64)
+        = (BitVec.ofInt 64 0 : BitVec 64))) : BitVec 1) = 1 :=
+      (ofBool_bool_eq_one (decide (BitVec.ofNat 64 0 &&& (BitVec.ofInt 64 63 : BitVec 64)
+        = (BitVec.ofInt 64 0 : BitVec 64)))).mpr (by decide)
+    rw [h1, h2]
+    simp
+  let S2 : State := { S1 with pc := "if.end24", pre := some "for.cond.cleanup" }
+  have hstepC : step utf8Calls utf8Function (withEnv env1 S1) = .jump (withEnv env2 S2) := by
+    have h1 : step utf8Calls utf8Function (withEnv env1 S1)
+        = execTerm (withEnv env2 S1) utf8Cleanup.term :=
+      step_of_utf8 _ "for.cond.cleanup" utf8Cleanup _ (by simp only [withEnv, S1])
+        findBlock_utf8Cleanup hrunC
+    rw [h1]
+    show execTerm (withEnv env2 S1) (.condbr (.reg "%or.cond45") "if.then20" "if.end24") = _
+    have hev : evalOperand (withEnv env2 S1) (.reg "%or.cond45")
+        = some (.int 1 (0 : BitVec 1)) := by
+      rw [evalOperand_reg_utf8]; exact hcondz
+    rw [execTerm_condbr_false hev rfl]
+    simp only [withEnv, S2, S1]
+  obtain ⟨env3, hrunR, hval⟩ := utf8Return env2 S2 "for.cond.cleanup"
+    (.reg "%tobool16.not") (0 : BitVec 1) (by simp only [S2]) (by decide)
+    (by rw [evalOperand_reg_utf8]; exact ht16z)
+  have hevret : evalOperand (withEnv env3 S2) (.reg "%err.0") = some (.int 64 0) := by
+    rw [evalOperand_reg_utf8]
+    exact hval
+  have hstepR : step utf8Calls utf8Function (withEnv env2 S2)
+      = .ret (some (.int 64 0)) (withEnv env3 S2) := by
+    rw [step_of_utf8 _ "if.end24" utf8End24 _ (by simp only [withEnv, S2]) findBlock_utf8End24 hrunR]
+    show execTerm (withEnv env3 S2) (.ret (.int 64) (some (.reg "%err.0"))) = _
+    rw [execTerm_ret_reg (withEnv env3 S2) "%err.0" (.int 64 0) hevret]
+  have hfuel : fuelOf nb = 8 := by rw [fuelOf_eq, hnb0]
+  rw [hfuel]
+  refine Eq.trans (runFuel_jump_utf8 (n := 7) hstepE) ?_
+  refine Eq.trans (runFuel_jump_utf8 (n := 6) hstepC) ?_
+  simpa only [withEnv, S2, S1, S0] using runFuel_ret_utf8 (n := 5) hstepR
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_refines_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms utf8_stage_refines_zero
 end LeanLLVM.Vellum.JsonUtf8Steps
