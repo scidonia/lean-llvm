@@ -71,10 +71,16 @@ trip `pext_pdep` (`pext (pdep a m) m = a`) holds when `a` is clear above `m`'s
 population count, which is the side condition the gather necessarily has — its
 lanes past the count are zero whatever was scattered into `m`.
 
-Nothing here is an axiom, and nothing reaches `BitVec.allOnes`, whose lane lemma
-carries `Classical.choice`; the module's footprint is `[propext, Quot.sound]`.
+Nothing here is an axiom, and nothing reaches `BitVec.allOnes` through a core
+lemma that carries `Classical.choice` — the module's own lane lemma and
+`BitVec.toNat_allOnes` are the two routes it takes; the module's footprint is
+`[propext, Quot.sound]`.  The lane algebra that a body and its specification share
+— the packing's distribution, a fold's lane, the lane list's zero test, and the
+`i8` bound — is stated in the section at the end, and it depends on nothing in
+this repository below `LeanLLVM.Semantics` and `LeanLLVM.Memory`.
 -/
 import LeanLLVM.Semantics
+import LeanLLVM.Memory
 
 namespace LeanLLVM.Vellum.BitLanes
 
@@ -606,5 +612,418 @@ theorem ptestz_eq_one_iff {w : Nat} (a b : BitVec w) :
 theorem ptestz_eq_zero_iff {w : Nat} (a b : BitVec w) :
     ptestz a b = 0 ↔ a &&& b ≠ 0 := by
   by_cases h : a &&& b = 0 <;> simp [ptestz, h]
+
+/-! ### The lane algebra: packing, distributing, folding, and the lane list
+
+`packLanes` (`LeanLLVM/Semantics.lean`) lays a lane list out little-endian —
+lane `k` at bits `[k * w, (k + 1) * w)` of the natural — and `unpackLanes` reads
+a word back at a lane width.  That pair is what a vector `bitcast` is
+(`bitcastVecLanes wOut nOut lanes = unpackLanes wOut nOut (packLanes lanes)`), so
+the facts below are what lets an emitted body's lane list stand for a list-shaped
+specification, and a specification's lane list for the body's words.  They are
+stated over the packing and the lane read, and over nothing else: no fixture, no
+unit, no call environment, no route.
+
+**Distribution.**  A lane-wise bitwise operation is the same operation on the
+packed word, in both directions: `unpackLanes_or`/`_and`/`_xor`/`_not` cut the
+word at a lane, and `packLanes_zipWith_or`/`_and`/`_xor`/`_map_not` read the list
+back from the word.  The cutting direction is `Nat.or_div_two_pow` and
+`BitVec.ofNat_or`: lane `k` is the quotient by `2 ^ (k * w)`, and cutting commutes
+with `|||` because no lane carries into another.  The packing direction is the
+same statement read backwards through `unpackLanes_packLanes` and
+`packLanes_unpackLanes`, so the two directions cannot disagree — which is what a
+body and its specification need, since each crosses the bitcast once.  Two facts
+about the all-ones word are proved here for the complement's sake
+(`unpackLanes_allOnes`, and `allOnes_xor_eq_not` in the private step), because
+the core lemma that states the complement's lane carries `Classical.choice`.
+
+**The fold's lane.**  `foldl_or_getLsbD` and its `&&&` and `^^^` siblings say a
+fold's lane is a function of its operands' lanes: `|||` reads as `any`, `&&&` as
+`all`, and `^^^` as the fold of the bits.  `getLsbD_or_eq_false_iff` and its
+siblings give the same step at one operation.  They are proved from
+`BitVec.getLsbD_or`/`_and`/`_xor` and a case split on the lane values, never by
+`decide`: a symbolic `BitVec 8 × BitVec 8` product is 256 × 256 = 65,536 cases
+and crosses the default heartbeat budget, while the bitwise identity closes in
+one split.
+
+**The lane list.**  `packLanes_eq_zero_iff` reads a packed word as its lanes, in
+`∀` form, and `packLanes_eq_zero_iff_all` as a `List.all` — the decidable form a
+verdict reads, because `List.all` on a list of lanes is a computation while
+`decide` over a `∀` on a symbolic product type has no `Decidable` instance at
+all.  `zipWith_zero_right` is the zero lane as an `|||` identity, stated for an
+arbitrary operation and zero because the two sides of a comparison need not share
+a lane type: a specification's accumulator is a byte list (`UInt8`) where an
+emitted body's is a word's lane list (`BitVec w`), and both are read by the same
+`zipWith`.  It is what makes "this block contributed nothing" a statement about
+the accumulator rather than about a copy of it.
+
+**The `i8` facts.**  `getLsbD_seven_iff` and `getLsbD_seven_false_iff` read bit 7
+as the bound `0x80`, `getLsbD_highBit` reads the mask word's own lane, and
+`and80_eq_zero_iff`/`and80_eq_zero_iff_lt` turn a cleared high-bit mask into
+"every byte is below `0x80`" — the form an ASCII gate's `ptestz` test is read at.
+
+**The controls.**  Each family carries a decided witness that a near-miss does
+not satisfy the statement it sits beside, so a reader can see which clause is
+load-bearing.  `packLanes_zipWith_or_control`: the length hypothesis is not
+decoration, because `zipWith` stops at the shorter list.
+`foldl_or_getLsbD_control`: a `|||` fold's lane is not a `&&&` fold's.
+`packLanes_eq_zero_iff_control`: the zero characterization is not a gate's ASCII
+predicate, which a near-miss that reused `all` for it would confuse.
+`and80_eq_zero_iff_control`: the mask reading is the `i8` bound and not a wider
+one, because at sixteen bits the mask misses the bit the bound sees.
+
+Nothing in this section is an axiom, and nothing reaches a core lemma carrying
+`Classical.choice`: the all-ones word enters only through
+`BitVec.toNat_allOnes` and this module's own `allOnes_getLsbD_of_lt`, and the
+complement's lane through `getLsbD_not_of_lt`.  `decide` appears only on closed
+facts, never over a symbolic word. -/
+
+private theorem map_zipWith_map {α β γ δ : Type} (l : List α) (f : α → β)
+    (g : β → γ → δ) (h : α → γ) :
+    List.zipWith g (l.map f) (l.map h) = l.map (fun x => g (f x) (h x)) := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+      rw [List.map_cons, List.map_cons, List.zipWith_cons_cons, ih, List.map_cons]
+
+theorem unpackLanes_or {w n : Nat} (u v : Nat) :
+    unpackLanes w n (u ||| v) =
+      List.zipWith (· ||| ·) (unpackLanes w n u) (unpackLanes w n v) := by
+  have h : (fun k => BitVec.ofNat w ((u ||| v) / 2 ^ (k * w)))
+      = fun k => BitVec.ofNat w (u / 2 ^ (k * w)) ||| BitVec.ofNat w (v / 2 ^ (k * w)) := by
+    funext k
+    rw [Nat.or_div_two_pow, BitVec.ofNat_or]
+  simp only [unpackLanes, h]
+  exact (map_zipWith_map (List.range n) _ _ _).symm
+
+theorem unpackLanes_and {w n : Nat} (u v : Nat) :
+    unpackLanes w n (u &&& v) =
+      List.zipWith (· &&& ·) (unpackLanes w n u) (unpackLanes w n v) := by
+  have h : (fun k => BitVec.ofNat w ((u &&& v) / 2 ^ (k * w)))
+      = fun k => BitVec.ofNat w (u / 2 ^ (k * w)) &&& BitVec.ofNat w (v / 2 ^ (k * w)) := by
+    funext k
+    rw [Nat.and_div_two_pow, BitVec.ofNat_and]
+  simp only [unpackLanes, h]
+  exact (map_zipWith_map (List.range n) _ _ _).symm
+
+theorem unpackLanes_xor {w n : Nat} (u v : Nat) :
+    unpackLanes w n (u ^^^ v) =
+      List.zipWith (· ^^^ ·) (unpackLanes w n u) (unpackLanes w n v) := by
+  have h : (fun k => BitVec.ofNat w ((u ^^^ v) / 2 ^ (k * w)))
+      = fun k => BitVec.ofNat w (u / 2 ^ (k * w)) ^^^ BitVec.ofNat w (v / 2 ^ (k * w)) := by
+    funext k
+    rw [Nat.xor_div_two_pow, BitVec.ofNat_xor]
+  simp only [unpackLanes, h]
+  exact (map_zipWith_map (List.range n) _ _ _).symm
+
+private theorem two_pow_sub_one_div {m k : Nat} (hk : k ≤ m) :
+    (2 ^ m - 1) / 2 ^ k = 2 ^ (m - k) - 1 := by
+  have hAB : 2 ^ (m - k) * 2 ^ k = 2 ^ m := by
+    rw [← Nat.pow_add]
+    congr 1
+    omega
+  have hmul : (2 ^ (m - k) - 1) * 2 ^ k = 2 ^ m - 2 ^ k := by
+    rw [Nat.sub_mul, hAB, Nat.one_mul]
+  have hle : 2 ^ k ≤ 2 ^ m := Nat.pow_le_pow_right (by decide) hk
+  have hone : 1 ≤ 2 ^ k := Nat.one_le_two_pow
+  rw [show 2 ^ m - 1 = (2 ^ k - 1) + (2 ^ (m - k) - 1) * 2 ^ k by rw [hmul]; omega]
+  rw [Nat.mul_comm (2 ^ (m - k) - 1) (2 ^ k),
+    Nat.add_mul_div_left _ _ (Nat.two_pow_pos k),
+    Nat.div_eq_of_lt (by omega)]
+  omega
+
+private theorem two_pow_mul_sub_one_mod {w q : Nat} (hq : 1 ≤ q) :
+    (2 ^ (w * q) - 1) % 2 ^ w = 2 ^ w - 1 := by
+  obtain ⟨d, rfl⟩ : ∃ d, q = d + 1 := ⟨q - 1, by omega⟩
+  have hexp : 2 ^ (w * (d + 1)) = 2 ^ w * 2 ^ (w * d) := by
+    rw [Nat.mul_succ, Nat.pow_add, Nat.mul_comm (2 ^ (w * d)) (2 ^ w)]
+  have hmul : 2 ^ w * (2 ^ (w * d) - 1) = 2 ^ w * 2 ^ (w * d) - 2 ^ w := by
+    rw [Nat.mul_sub_left_distrib, Nat.mul_one]
+  have hshape : 2 ^ (w * (d + 1)) - 1 = (2 ^ w - 1) + 2 ^ w * (2 ^ (w * d) - 1) := by
+    rw [hexp, hmul]
+    have h1 : 1 ≤ 2 ^ w := Nat.one_le_two_pow
+    have h2 : 1 ≤ 2 ^ (w * d) := Nat.one_le_two_pow (n := w * d)
+    have h4 : 2 ^ w ≤ 2 ^ w * 2 ^ (w * d) := by
+      simpa using Nat.mul_le_mul_left (2 ^ w) h2
+    omega
+  rw [hshape, Nat.add_mul_mod_self_left]
+  exact Nat.mod_eq_of_lt (by have := Nat.two_pow_pos w; omega)
+
+private theorem ofNat_two_pow_mul_sub_one_eq_allOnes {w q : Nat} (hq : 1 ≤ q) :
+    BitVec.ofNat w (2 ^ (w * q) - 1) = BitVec.allOnes w := by
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_ofNat, BitVec.toNat_allOnes, two_pow_mul_sub_one_mod hq]
+
+theorem unpackLanes_allOnes {w n : Nat} :
+    unpackLanes w n (2 ^ (n * w) - 1) = List.replicate n (BitVec.allOnes w) := by
+  apply List.ext_getElem
+  · rw [unpackLanes_length, List.length_replicate]
+  · intro k h1 h2
+    have hk : k < n := by simpa [unpackLanes_length] using h1
+    rw [show (unpackLanes w n (2 ^ (n * w) - 1))[k]'h1
+          = BitVec.ofNat w ((2 ^ (n * w) - 1) / 2 ^ (k * w)) from by
+        simp [unpackLanes, List.getElem_range]]
+    rw [show (List.replicate n (BitVec.allOnes w))[k]'h2 = BitVec.allOnes w from by simp]
+    rw [two_pow_sub_one_div (Nat.mul_le_mul_right w (Nat.le_of_lt hk)),
+      ← Nat.sub_mul, Nat.mul_comm (n - k) w]
+    exact ofNat_two_pow_mul_sub_one_eq_allOnes (by omega)
+
+private theorem zipWith_replicate_left {α β γ : Type} (f : α → β → γ) (l : List β)
+    {n : Nat} {a : α} (h : l.length = n) :
+    List.zipWith f (List.replicate n a) l = l.map (fun x => f a x) := by
+  induction l generalizing n with
+  | nil =>
+      have hn : n = 0 := by simpa using h.symm
+      subst hn
+      rfl
+  | cons x xs ih =>
+      cases n with
+      | zero => simp at h
+      | succ m =>
+          rw [List.replicate_succ, List.zipWith_cons_cons, ih (by simpa using h),
+            List.map_cons]
+
+private theorem allOnes_xor_eq_not {w : Nat} (x : BitVec w) :
+    BitVec.allOnes w ^^^ x = ~~~x := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro j hj
+  rw [BitVec.getLsbD_xor, allOnes_getLsbD_of_lt hj, Bool.true_xor, getLsbD_not_of_lt _ hj]
+
+private theorem map_allOnes_xor {w : Nat} (l : List (BitVec w)) :
+    l.map (fun x => BitVec.allOnes w ^^^ x) = l.map (fun x => ~~~x) := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+      rw [List.map_cons, List.map_cons, ih, allOnes_xor_eq_not]
+
+theorem unpackLanes_not {w n : Nat} (u : Nat) :
+    unpackLanes w n ((2 ^ (n * w) - 1) ^^^ u) =
+      (unpackLanes w n u).map (fun x => ~~~x) := by
+  rw [unpackLanes_xor, unpackLanes_allOnes,
+    zipWith_replicate_left (· ^^^ ·) (unpackLanes w n u) (unpackLanes_length w n u),
+    map_allOnes_xor]
+
+/-! #### The packing side, through the round trip -/
+
+theorem packLanes_zipWith_or {w : Nat} {a b : List (BitVec w)} (h : a.length = b.length) :
+    packLanes (List.zipWith (· ||| ·) a b) = packLanes a ||| packLanes b := by
+  have ha : a = unpackLanes w a.length (packLanes a) := (unpackLanes_packLanes a).symm
+  have hb : b = unpackLanes w b.length (packLanes b) := (unpackLanes_packLanes b).symm
+  have hL : packLanes (List.zipWith (· ||| ·) a b)
+      = (packLanes a ||| packLanes b) % 2 ^ (a.length * w) := by
+    conv => lhs; rw [ha, hb, ← h]
+    rw [← unpackLanes_or, packLanes_unpackLanes]
+  rw [hL, Nat.mod_eq_of_lt (Nat.or_lt_two_pow (packLanes_lt a) (by rw [h]; exact packLanes_lt b))]
+
+theorem packLanes_zipWith_and {w : Nat} {a b : List (BitVec w)} (h : a.length = b.length) :
+    packLanes (List.zipWith (· &&& ·) a b) = packLanes a &&& packLanes b := by
+  have ha : a = unpackLanes w a.length (packLanes a) := (unpackLanes_packLanes a).symm
+  have hb : b = unpackLanes w b.length (packLanes b) := (unpackLanes_packLanes b).symm
+  have hL : packLanes (List.zipWith (· &&& ·) a b)
+      = (packLanes a &&& packLanes b) % 2 ^ (a.length * w) := by
+    conv => lhs; rw [ha, hb, ← h]
+    rw [← unpackLanes_and, packLanes_unpackLanes]
+  rw [hL, Nat.mod_eq_of_lt (Nat.and_lt_two_pow (packLanes a) (by rw [h]; exact packLanes_lt b))]
+
+theorem packLanes_zipWith_xor {w : Nat} {a b : List (BitVec w)} (h : a.length = b.length) :
+    packLanes (List.zipWith (· ^^^ ·) a b) = packLanes a ^^^ packLanes b := by
+  have ha : a = unpackLanes w a.length (packLanes a) := (unpackLanes_packLanes a).symm
+  have hb : b = unpackLanes w b.length (packLanes b) := (unpackLanes_packLanes b).symm
+  have hL : packLanes (List.zipWith (· ^^^ ·) a b)
+      = (packLanes a ^^^ packLanes b) % 2 ^ (a.length * w) := by
+    conv => lhs; rw [ha, hb, ← h]
+    rw [← unpackLanes_xor, packLanes_unpackLanes]
+  rw [hL, Nat.mod_eq_of_lt (Nat.xor_lt_two_pow (packLanes_lt a) (by rw [h]; exact packLanes_lt b))]
+
+theorem packLanes_map_not {w : Nat} (a : List (BitVec w)) :
+    packLanes (a.map (fun x => ~~~x)) = (2 ^ (a.length * w) - 1) ^^^ packLanes a := by
+  have ha : a = unpackLanes w a.length (packLanes a) := (unpackLanes_packLanes a).symm
+  have h : a.map (fun x => ~~~x)
+      = unpackLanes w a.length ((2 ^ (a.length * w) - 1) ^^^ packLanes a) := by
+    conv => lhs; rw [ha]
+    exact (unpackLanes_not (w := w) (n := a.length) (u := packLanes a)).symm
+  rw [h, packLanes_unpackLanes]
+  exact Nat.mod_eq_of_lt (Nat.xor_lt_two_pow
+    (by have := Nat.two_pow_pos (a.length * w); omega) (packLanes_lt a))
+
+/-! #### The lane ops and the folds -/
+
+theorem getLsbD_or_eq_false_iff {w : Nat} (x y : BitVec w) (i : Nat) :
+    (x ||| y).getLsbD i = false ↔ x.getLsbD i = false ∧ y.getLsbD i = false := by
+  rw [BitVec.getLsbD_or]
+  cases hx : x.getLsbD i <;> cases hy : y.getLsbD i <;> simp
+
+theorem getLsbD_and_eq_true_iff {w : Nat} (x y : BitVec w) (i : Nat) :
+    (x &&& y).getLsbD i = true ↔ x.getLsbD i = true ∧ y.getLsbD i = true := by
+  rw [BitVec.getLsbD_and]
+  cases hx : x.getLsbD i <;> cases hy : y.getLsbD i <;> simp
+
+theorem getLsbD_xor_eq_false_iff {w : Nat} (x y : BitVec w) (i : Nat) :
+    (x ^^^ y).getLsbD i = false ↔ x.getLsbD i = y.getLsbD i := by
+  rw [BitVec.getLsbD_xor]
+  cases hx : x.getLsbD i <;> cases hy : y.getLsbD i <;> simp
+
+theorem foldl_or_getLsbD {w : Nat} (l : List (BitVec w)) (init : BitVec w) (i : Nat) :
+    (l.foldl (· ||| ·) init).getLsbD i =
+      (init.getLsbD i || l.any (fun x => x.getLsbD i)) := by
+  induction l generalizing init with
+  | nil => simp
+  | cons x xs ih =>
+      rw [List.foldl_cons, List.any_cons, ih (init := init ||| x), BitVec.getLsbD_or,
+        Bool.or_assoc]
+
+theorem foldl_and_getLsbD {w : Nat} (l : List (BitVec w)) (init : BitVec w) (i : Nat) :
+    (l.foldl (· &&& ·) init).getLsbD i =
+      (init.getLsbD i && l.all (fun x => x.getLsbD i)) := by
+  induction l generalizing init with
+  | nil => simp
+  | cons x xs ih =>
+      rw [List.foldl_cons, List.all_cons, ih (init := init &&& x), BitVec.getLsbD_and,
+        Bool.and_assoc]
+
+theorem foldl_xor_getLsbD {w : Nat} (l : List (BitVec w)) (init : BitVec w) (i : Nat) :
+    (l.foldl (· ^^^ ·) init).getLsbD i =
+      l.foldl (fun acc x => acc ^^ x.getLsbD i) (init.getLsbD i) := by
+  induction l generalizing init with
+  | nil => rfl
+  | cons x xs ih =>
+      rw [List.foldl_cons, List.foldl_cons, ih (init := init ^^^ x), BitVec.getLsbD_xor]
+
+/-! #### The lane list: zero, `all`, and the `|||` identity -/
+
+theorem packLanes_eq_zero_iff {w : Nat} (l : List (BitVec w)) :
+    packLanes l = 0 ↔ ∀ x ∈ l, x = 0 := by
+  induction l with
+  | nil =>
+      rw [packLanes]
+      constructor
+      · intro _ x hx
+        cases hx
+      · intro _
+        rfl
+  | cons x xs ih =>
+      have hmul : 2 ^ w * packLanes xs = 0 ↔ packLanes xs = 0 := by
+        rw [Nat.mul_eq_zero]
+        constructor
+        · rintro (h2 | h0)
+          · exact absurd h2 (by have := Nat.two_pow_pos w; omega)
+          · exact h0
+        · intro h0
+          exact Or.inr h0
+      rw [packLanes, Nat.add_eq_zero_iff, hmul, ih, List.forall_mem_cons]
+      constructor
+      · rintro ⟨hx, hxs⟩
+        refine ⟨?_, hxs⟩
+        apply BitVec.toNat_inj.mp
+        rw [hx]
+        simp
+      · rintro ⟨hx, hxs⟩
+        exact ⟨by rw [hx]; simp, hxs⟩
+
+theorem packLanes_eq_zero_iff_all {w : Nat} (l : List (BitVec w)) :
+    packLanes l = 0 ↔ l.all (fun x => decide (x = 0)) = true := by
+  rw [packLanes_eq_zero_iff, List.all_eq_true]
+  exact ⟨fun hh x hx => decide_eq_true (hh x hx), fun hh x hx => of_decide_eq_true (hh x hx)⟩
+
+theorem zipWith_zero_right {α : Type} (op : α → α → α) (z : α) (l : List α) {n : Nat}
+    (hz : ∀ x, op x z = x) (h : l.length = n) :
+    List.zipWith op l (List.replicate n z) = l := by
+  induction l generalizing n with
+  | nil => rfl
+  | cons x xs ih =>
+      cases n with
+      | zero => simp at h
+      | succ m =>
+          rw [List.replicate_succ, List.zipWith_cons_cons, hz x,
+            ih (n := m) (by simpa using h)]
+
+/-! #### The `i8` facts -/
+
+theorem getLsbD_seven_iff (b : BitVec 8) : b.getLsbD 7 = true ↔ 0x80 ≤ b.toNat := by
+  have hbit : b.getLsbD 7 = decide (b.toNat / 2 ^ 7 % 2 = 1) := by
+    show b.toNat.testBit 7 = _
+    exact Nat.testBit_eq_decide_div_mod_eq
+  have hq : b.toNat / 2 ^ 7 < 2 := by
+    have h255le : b.toNat ≤ 255 := by have := b.isLt; omega
+    have hle : b.toNat / 2 ^ 7 ≤ 255 / 2 ^ 7 := Nat.div_le_div_right h255le
+    have h255 : 255 / 2 ^ 7 = 1 := by decide
+    omega
+  rw [hbit, decide_eq_true_iff, Nat.mod_eq_of_lt hq]
+  constructor
+  · intro hh
+    have hx : 128 * (b.toNat / 128) + b.toNat % 128 = b.toNat :=
+      Nat.div_add_mod b.toNat 128
+    omega
+  · intro hh
+    have hdiv : 1 ≤ b.toNat / 2 ^ 7 := by
+      have := Nat.div_le_div_right (c := 2 ^ 7) hh
+      have h1 : 0x80 / 2 ^ 7 = 1 := by decide
+      omega
+    omega
+
+theorem getLsbD_seven_false_iff (b : BitVec 8) : b.getLsbD 7 = false ↔ b.toNat < 0x80 := by
+  have h := getLsbD_seven_iff b
+  constructor
+  · intro hf
+    have hnt : ¬ 0x80 ≤ b.toNat := by
+      intro hge
+      have ht : b.getLsbD 7 = true := h.mpr hge
+      rw [hf] at ht
+      exact absurd ht (by simp)
+    omega
+  · intro hlt
+    have : ¬ 0x80 ≤ b.toNat := by omega
+    cases hv : b.getLsbD 7 with
+    | false => rfl
+    | true => exact absurd (h.mp hv) this
+
+theorem getLsbD_highBit (i : Nat) : (0x80 : BitVec 8).getLsbD i = decide (i = 7) := by
+  have htoNat : (0x80 : BitVec 8).toNat = 128 := by decide
+  have h128 : (128 : Nat) = 2 ^ 7 := by decide
+  by_cases hi : i = 7
+  · subst hi
+    rw [BitVec.getLsbD, htoNat, h128, Nat.testBit_two_pow_self]
+    rfl
+  · rw [BitVec.getLsbD, htoNat, h128, Nat.testBit_two_pow, decide_eq_false (by omega),
+      decide_eq_false hi]
+
+theorem and80_eq_zero_iff (b : BitVec 8) : (b &&& 0x80 = 0) ↔ b.getLsbD 7 = false := by
+  constructor
+  · intro hh
+    have hb := congrArg (fun y => y.getLsbD 7) hh
+    simpa [BitVec.getLsbD_and, getLsbD_highBit] using hb
+  · intro hh
+    apply BitVec.eq_of_getLsbD_eq
+    intro i _
+    by_cases hi : i = 7
+    · subst hi
+      rw [BitVec.getLsbD_and, getLsbD_highBit, decide_eq_true rfl, hh]
+      simp
+    · rw [BitVec.getLsbD_and, getLsbD_highBit, decide_eq_false hi]
+      simp
+
+theorem and80_eq_zero_iff_lt (b : BitVec 8) : (b &&& 0x80 = 0) ↔ b.toNat < 0x80 := by
+  rw [and80_eq_zero_iff, getLsbD_seven_false_iff]
+
+/-! #### Controls -/
+
+theorem packLanes_zipWith_or_control :
+    packLanes (List.zipWith (· ||| ·) [(0xFF : BitVec 8)] [(0xFF : BitVec 8), (0xFF : BitVec 8)])
+      ≠ packLanes [(0xFF : BitVec 8)] ||| packLanes [(0xFF : BitVec 8), (0xFF : BitVec 8)] := by
+  decide
+
+theorem foldl_or_getLsbD_control :
+    ([(0x00 : BitVec 8), (0xFF : BitVec 8)].foldl (· ||| ·) 0x00).getLsbD 0
+      ≠ ([(0x00 : BitVec 8), (0xFF : BitVec 8)].foldl (· &&& ·) 0xFF).getLsbD 0 := by
+  decide
+
+theorem packLanes_eq_zero_iff_control :
+    ¬ (packLanes [(0x01 : BitVec 8)] = 0 ↔
+        [(0x01 : BitVec 8)].all (fun x => decide (x.getLsbD 7 = false)) = true) := by
+  decide
+
+theorem and80_eq_zero_iff_control :
+    ¬ ((0x100 : BitVec 16) &&& 0x80 = 0 ↔ (0x100 : BitVec 16).toNat < 0x80) := by
+  decide
 
 end LeanLLVM.Vellum.BitLanes

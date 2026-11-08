@@ -6428,6 +6428,142 @@ answers are decided by the byte comparison and the and-word, not by a choice. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.BitLanes.ptestz_eq_zero_iff
 
+/-! The lane algebra: the twenty-seven declarations the `BitLanes` section at the
+end of that module adds — five distribution, four packing, six fold-and-lane, two
+zero-and-reduce, one zero-lane identity, five `i8`, and four controls, which is
+23 + 4 — in declaration order, with the count on each heading so the composition is
+read off the block rather than reconstructed from it.  The seven `private` helpers
+of that section are outwith this count: they cannot be named from another file and
+so are not pinned.  Every one of the twenty-seven is at the module's
+ceiling — `[propext, Quot.sound]` — except `zipWith_zero_right` and
+`packLanes_eq_zero_iff_control`, which report `[propext]` alone (list induction and
+a closed `decide`, respectively).  A carrier appearing here would mean a lane fact
+was proved through a core lemma that carries one, and the module's docstring names
+the two routes it is allowed to take to the all-ones word — so the pin, not the
+docstring, is what holds it. -/
+
+/-! #### Distribution: the word cut at a lane (5) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.unpackLanes_or' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.unpackLanes_or
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.unpackLanes_and' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.unpackLanes_and
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.unpackLanes_xor' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.unpackLanes_xor
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.unpackLanes_allOnes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.unpackLanes_allOnes
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.unpackLanes_not' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.unpackLanes_not
+
+/-! #### Packing: the list read back from the word (4) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_zipWith_or' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_zipWith_or
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_zipWith_and' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_zipWith_and
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_zipWith_xor' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_zipWith_xor
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_map_not' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_map_not
+
+/-! #### The lane operations and the bitwise folds (6) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_or_eq_false_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_or_eq_false_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_and_eq_true_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_and_eq_true_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_xor_eq_false_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_xor_eq_false_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.foldl_or_getLsbD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.foldl_or_getLsbD
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.foldl_and_getLsbD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.foldl_and_getLsbD
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.foldl_xor_getLsbD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.foldl_xor_getLsbD
+
+/-! #### Zero and reduce: the packed word read as its lanes, and as a `List.all` (2) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_eq_zero_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_eq_zero_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_eq_zero_iff_all' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_eq_zero_iff_all
+
+/-! #### The zero lane as an identity, for an arrow's own carrier (1) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.zipWith_zero_right' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.zipWith_zero_right
+
+/-! #### The `i8` facts (5) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_seven_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_seven_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_seven_false_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_seven_false_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_highBit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_highBit
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.and80_eq_zero_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.and80_eq_zero_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.and80_eq_zero_iff_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.and80_eq_zero_iff_lt
+
+/-! #### The controls (4) -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_zipWith_or_control' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_zipWith_or_control
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.foldl_or_getLsbD_control' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.foldl_or_getLsbD_control
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.packLanes_eq_zero_iff_control' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.packLanes_eq_zero_iff_control
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.and80_eq_zero_iff_control' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.and80_eq_zero_iff_control
+
 /-! The zero word's two facts, at the ceiling they hold without a carrier: the
 all-clear lanes are found through `BitVec.getLsbD_zero` and
 `BitLanes.filter_eq_nil_of_all_false`, not through `List.filter_eq_nil_iff`,
