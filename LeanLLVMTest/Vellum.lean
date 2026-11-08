@@ -8,6 +8,7 @@ import LeanLLVM.Vellum.JsonScanSpec
 import LeanLLVM.Vellum.Pclmul
 import LeanLLVM.Vellum.JsonS1MasksSteps
 import LeanLLVM.Vellum.JsonB8Steps
+import LeanLLVM.Vellum.JsonUnitContracts
 
 open LeanLLVM.Vellum
 
@@ -9030,3 +9031,187 @@ pack facts are `propext`-only or `[propext, Quot.sound]`, and no proof reaches
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.t16_zero_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.t16_zero_iff
+
+
+/-! ### The memory-aware records and their calls
+
+`JsonUnitContracts.lean` states the three units' boundary records, proves each
+one a `Satisfies` instance, and exercises the controls that make the records
+non-vacuous.  The footprints below are measured at each declaration; the module
+pins the same facts at its end, so a proof that reaches a new carrier fails in
+either place. -/
+
+/-- info: 'LeanLLVM.Vellum.ofNat_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ofNat_toNat
+
+/-- info: 'LeanLLVM.Vellum.wordsAt_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.wordsAt_eq
+
+/-- info: 'LeanLLVM.Vellum.masks_next_independent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_next_independent
+
+/-- info: 'LeanLLVM.Vellum.entry_pos8_next_independent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_pos8_next_independent
+
+/-- info: 'LeanLLVM.Vellum.entry_b8_next_independent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_b8_next_independent
+
+/-- info: 'LeanLLVM.Vellum.utf8_next_independent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.utf8_next_independent
+
+/-- info: 'LeanLLVM.Vellum.masks_valueIrrelevant' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_valueIrrelevant
+
+/-- info: 'LeanLLVM.Vellum.masks_written_extent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_written_extent
+
+/-- info: 'LeanLLVM.Vellum.masks_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_satisfies
+
+/-- info: 'LeanLLVM.Vellum.entry_pos8_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_pos8_satisfies
+
+/-- info: 'LeanLLVM.Vellum.entry_b8_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_b8_satisfies
+
+/-- info: 'LeanLLVM.Vellum.utf8_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.utf8_satisfies
+
+/-- info: 'LeanLLVM.Vellum.masks_pre_inhabited' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_pre_inhabited
+
+/-- info: 'LeanLLVM.Vellum.entry_pos8_pre_inhabited' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_pos8_pre_inhabited
+
+/-- info: 'LeanLLVM.Vellum.entry_b8_pre_inhabited' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_b8_pre_inhabited
+
+/-- info: 'LeanLLVM.Vellum.utf8_pre_inhabited' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.utf8_pre_inhabited
+
+/-- info: 'LeanLLVM.Vellum.masks_post_not_implied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_post_not_implied
+
+/-- info: 'LeanLLVM.Vellum.entry_pos8_post_not_implied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_pos8_post_not_implied
+
+/-- info: 'LeanLLVM.Vellum.entry_b8_post_not_implied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_b8_post_not_implied
+
+/-- info: 'LeanLLVM.Vellum.utf8_post_not_implied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.utf8_post_not_implied
+
+/-- info: 'LeanLLVM.Vellum.masksStaged_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masksStaged_satisfies
+
+/-- info: 'LeanLLVM.Vellum.masksStaged_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masksStaged_calls
+
+/-- info: 'LeanLLVM.Vellum.masks_shifted_calls_refused' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masks_shifted_calls_refused
+
+/-- info: 'LeanLLVM.Vellum.readsValue_not_valueIrrelevant' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.readsValue_not_valueIrrelevant
+
+/-! ### The memory-aware relation's declarations
+
+`LeanLLVM/Vellum/Refinement.lean` adds the relation and the two bridges.  Each
+declaration C81 enumerates is pinned here, and the two bridges with them, so the
+"nothing it adds is unpinned" clause is checked by the build rather than stated
+in prose.  `wordsAt_eq` lives beside the extractor it decodes and is pinned in the
+section above. -/
+
+/-- info: 'LeanLLVM.Vellum.MemContract' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.MemContract
+
+/-- info: 'LeanLLVM.Vellum.EntryState' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.EntryState
+
+/-- info: 'LeanLLVM.Vellum.initState_eq_entryState' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.initState_eq_entryState
+
+/-- info: 'LeanLLVM.Vellum.BehFromState' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BehFromState
+
+/-- info: 'LeanLLVM.Vellum.Satisfies' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Satisfies
+
+/-- info: 'LeanLLVM.Vellum.Satisfies.mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Satisfies.mono
+
+/-- info: 'LeanLLVM.Vellum.ValueIrrelevant' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ValueIrrelevant
+
+/-- info: 'LeanLLVM.Vellum.CallSatisfies' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CallSatisfies
+
+/-- info: 'LeanLLVM.Vellum.voidRet' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.voidRet
+
+/-- info: 'LeanLLVM.Vellum.envForUnit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.envForUnit
+
+/-- info: 'LeanLLVM.Vellum.retsValued' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.retsValued
+
+/-- info: 'LeanLLVM.Vellum.ret_some_of_retsValued' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ret_some_of_retsValued
+
+/-- info: 'LeanLLVM.Vellum.wordsAt' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.wordsAt
+
+/-- info: 'LeanLLVM.Vellum.satisfies_calls' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.satisfies_calls
+
+/-- info: 'LeanLLVM.Vellum.satisfies_calls_void' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.satisfies_calls_void
+
+
+-- The composition law's other half: the refutation and its witness.
+
+/-- info: 'LeanLLVM.Vellum.masksMispost_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masksMispost_witness
+
+/-- info: 'LeanLLVM.Vellum.masksMispost_not_satisfies' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.masksMispost_not_satisfies
