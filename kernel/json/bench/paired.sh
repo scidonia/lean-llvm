@@ -34,6 +34,15 @@
 #          corpus `tests/json-utf8/corpus.tsv` and the arms the probes
 #          generate, and the report is the per-input median difference against
 #          the same +/-0.5 ns/block bound.
+#   escape the escape unit.  The measured side is
+#          `kernel/json/identity/escape_oracle.c` — the unit's two ABI entry
+#          points over the vendored `xl_lanes`/`xl_emit` and `us_dec_x` — and
+#          the extracted side is `kernel/json/escape.c`, both renamed so one
+#          binary holds them.  `paired-escape.c` is the harness: one act walks
+#          the block masks through the list and then expands the document from
+#          the list it built, and the inputs are generated from the harness's
+#          own rules.  The list the harness derives is checked against the
+#          measured list before the clock starts.
 #
 # `--self-control` runs the measured unit against itself.  It must report
 # exactly 0.0, which tests the harness's dispatch and subtraction — the two
@@ -81,6 +90,12 @@ entry_defs=(-DSTAGE_PROBE -DS1F_ENT_PROBE=1 -DS1F_DENS=1 -DS1F_TWOPHASE=1
 utf8_defs=(-DSTAGE_PROBE -DS1F_ENT_PROBE=1 -DS1F_DENS=1 -DS1F_TWOPHASE=1
            -DS1F_EXP2=11 -DS1F_DISPATCH=1 -DS1F_UTF8=7 -DS1F_KL_DOC=1 -DPSTAGE=32
            -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2 -DS1F_XS_DYN=1)
+# The escape unit's: the measured set with the decoder's escape step enabled
+# (`build49.sh:28`'s `-DUS_EMIT4=1`).
+escape_defs=(-DSTAGE_PROBE -DS1F_ENT_PROBE=1 -DS1F_DENS=1 -DS1F_TWOPHASE=1
+             -DS1F_EXP2=11 -DS1F_DISPATCH=1 -DS1F_UTF8=7 -DS1F_KL_DOC=1
+             -DPSTAGE=32 -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2
+             -DS1F_XS_DYN=1 -DUS_EMIT4=1)
 
 unit=s1
 rounds=11
@@ -119,8 +134,15 @@ case "$unit" in
             "$repo/kernel/json/identity/source-identity.sh" \
             "$repo/tests/json-utf8/corpus.tsv")
     ;;
+  escape)
+    src=$here/paired-escape.c
+    inputs=("$src" "$kernel_dir/escape.c" "$kernel_dir/escape.h" \
+            "$repo/kernel/json/identity/escape_oracle.c" \
+            "$measured/s1fuse.h" "$measured/xlist.h" "$measured/usdec.h" \
+            "$measured/uj.c")
+    ;;
   *)
-    printf 'SETUP: unit %s has no paired timing arm; implemented units: s1 entry utf8\n' "$unit" >&2
+    printf 'SETUP: unit %s has no paired timing arm; implemented units: s1 entry utf8 escape\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -157,6 +179,21 @@ if [ "$unit" = s1 ]; then
   build "$work/kernel.o" "${cflags[@]}" "${defs[@]}" -DPAIRED_PROBE=kernel \
     -DPROBE_NAME=probe_kernel -I "$kernel_dir" -c "$src"
   build "$work/main.o" -O2 -DPAIRED_MAIN -c "$src"
+  build "$work/paired" -O2 "$work/main.o" "$work/measured.o" "$work/kernel.o"
+elif [ "$unit" = escape ]; then
+  # The measured side includes the vendored text; the extracted side is the
+  # unit.  Both are renamed so the two copies of each ABI function share one
+  # binary, and both get the same function alignment.
+  build "$work/measured.o" "${cflags[@]}" "${escape_defs[@]}" \
+    -falign-functions=4096 \
+    -Dleanllvm_json_escape_list=probe_escape_list_measured \
+    -Dleanllvm_json_escape_expand=probe_escape_expand_measured \
+    -I "$measured" -c "$repo/kernel/json/identity/escape_oracle.c"
+  build "$work/kernel.o" "${cflags[@]}" -falign-functions=4096 \
+    -Dleanllvm_json_escape_list=probe_escape_list_extracted \
+    -Dleanllvm_json_escape_expand=probe_escape_expand_extracted \
+    -I "$kernel_dir" -c "$kernel_dir/escape.c"
+  build "$work/main.o" -O2 -c "$src"
   build "$work/paired" -O2 "$work/main.o" "$work/measured.o" "$work/kernel.o"
 elif [ "$unit" = utf8 ]; then
   # The measured side is generated, not included: the stage is a region of the
@@ -206,6 +243,19 @@ if command -v nm >/dev/null 2>&1; then
       exit 3
     fi
     printf 'probe addresses %s (page-aligned)\n' "$(echo $probe_addrs)"
+  elif [ "$unit" = escape ]; then
+    probe_addrs=$(nm "$work/paired" | awk '$3 ~ /^probe_escape_(list|expand)_(measured|extracted)$/ { print $1, $3 }')
+    if [ "$(printf '%s\n' "$probe_addrs" | grep -c . || true)" -ne 4 ]; then
+      printf 'SETUP: expected four probe symbols, found: %s\n' "$(echo $probe_addrs)" >&2
+      exit 3
+    fi
+    bad=$(printf '%s\n' "$probe_addrs" | awk '$1 !~ /000$/ { print $1, $2 }')
+    if [ -n "$bad" ]; then
+      printf 'SETUP: a probe is not page-aligned: %s\n' "$(echo $bad)" >&2
+      exit 3
+    fi
+    printf 'probe addresses (page-aligned):\n'
+    printf '%s\n' "$probe_addrs" | awk '{ printf "  %s %s\n", $1, $2 }'
   elif [ "$unit" = utf8 ]; then
     probe_addrs=$(nm "$work/paired" | awk '$3 ~ /^probe_utf8_(measured|extracted)$/ { print $1, $3 }')
     if [ "$(printf '%s\n' "$probe_addrs" | grep -c . || true)" -ne 2 ]; then
@@ -355,6 +405,9 @@ fi
 if [ "$status" -eq 0 ]; then
   if [ "$self_control" -eq 1 ]; then
     printf '\nok: the harness reports 0.0 against itself\n'
+  elif [ "$unit" = escape ]; then
+    printf '\nok: every bounded input is within +/-0.5 ns/block of the measured one\n'
+    printf '    (arm:escapes-64 is reported as an observation with no delta claim)\n'
   else
     printf '\nok: the extracted unit is within +/-0.5 ns/block of the measured one\n'
   fi

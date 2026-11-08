@@ -27,12 +27,19 @@ which the file is read.
 |`usdec_variants44.h`|`c75cbb91fb14f1d5affac7563c94130daa34066769c127962cd9949215b8bf06`|seven carried-kind decoder shapes and the identical-copy placement controls `us_dec_x_dup44`, `us_dec_x_dup2_44`, `us_dec_x_kifdup44`, `us_dec_x_kifdup2_44`|`s2port.h:56`, under `SP44_MODES`|
 |`usdec_x_body.inc`|`667da9db8b72a08a767f2376daed32185c6aeed58f64f415cb7939963301987f`|one copy of the list decoder's body, parameterised by `USDEC_NAME`, `USDEC_ATTR` and `USDEC_ESCFN`, so a build can hold several shapes with one text|`usdec_gate.h:61,72,81`, `usdec_variants43.h` at thirteen sites, `usdec_variants44.h:25,31`|
 |`usdec_x_kind.inc`|`045e1357105c100beee2dacde9172a36890cdcd63b88a990aa38ff7d60d2b227`|the same body with the escape kind carried in, whose escape step reads the kind record rather than the bytes|`usdec_variants44.h:38,44,50,57,63`|
-|`uj.c`|`11155f19663c22ee43a00ae5b844262860b25ee2046c32aea856cf89633bd263`|`UJ_UNESC` (the simple-escape map, `:30`), `UJ_HEX` (`:37`), `uj_enc` (`:49`) and `uj_enc_word` (`:127`); also the fused unescaper `uj_decode` and the SIMD run helpers, which no unit of this repository calls — the file is pinned whole because a digest pins a file, not a selection from it.  It includes only `<stdint.h>`, `<string.h>` and `<immintrin.h>`, so the set's closure closes at it|`p16.c:57` in the measured chain; nothing inside this set pulls it, and `usdec.h`'s escape step and encoder (`:240`, `:290`, `:295`, `:338`, `:349`, `:378`, `:428`, `:659`) reference its four names|
+|`uj.c`|`11155f19663c22ee43a00ae5b844262860b25ee2046c32aea856cf89633bd263`|`UJ_UNESC` (the simple-escape map, `:30`), `UJ_HEX` (`:37`), `uj_enc` (`:49`) and `uj_enc_word` (`:127`); also the fused unescaper `uj_decode` and the SIMD run helpers, which no unit of this repository calls — the file is pinned whole because a digest pins a file, not a selection from it.  It includes only `<stdint.h>`, `<string.h>` and `<immintrin.h>`, so the set's closure closes at it|`p16.c:57` in the measured chain; nothing inside this set pulls it, and `usdec.h`'s escape step and encoder reference three of its four names at the measured `US_ENC=0` — `UJ_HEX` (`:240`, `:350-351`, `:359-360`), `UJ_UNESC` (`:338`, `:349`, `:378`, `:428`, `:659`) and `uj_enc_word` (`:290`, `:300`, `:447`); `uj_enc` (`:295`) is not compiled at the measured flags: `US_EMIT4=1` selects the `#if US_EMIT4` arm of `us_emit` (`:288`) before the `#elif US_ENC` arm (`:293`); reaching `:295` takes `-DUS_EMIT4=0 -DUS_ENC=1`|
 
 `usdec.h` is the file whose closure forced `uj.c` into the set: a translation
-unit that includes it alone fails with four undeclared identifiers, and the
-measured chain supplies them only because `sb34.c:28` includes `p16.c` (whose
-`:57` is `#include "uj.c"`) before `:29` includes `s2port.h`.  `usdec_x_body.inc`'s
+unit holding the header at the measured flags (with the libc and intrinsic
+headers it needs) fails with **three** undeclared names under
+`-ferror-limit=0`: `UJ_HEX` and `UJ_UNESC` (variables) and `uj_enc_word` (a
+call in `us_emit`, which the header itself defines, so the diagnostic does not
+wait for `us_dec_x` to be instantiated).  `-DUS_ENC=1` does not change that
+count at the measured flags, because `US_EMIT4=1` takes the `#if US_EMIT4` arm
+of `us_emit` before the `#elif US_ENC` arm; the fourth name, `uj_enc`, appears
+only under `-DUS_EMIT4=0 -DUS_ENC=1`, which reports four.  The measured chain
+supplies the three only because `sb34.c:28` includes `p16.c` (whose `:57` is
+`#include "uj.c"`) before `:29` includes `s2port.h`.  `usdec_x_body.inc`'s
 own header comment says it is "included from usdec_gate.h"; it is also included
 from `usdec_variants43.h` and `usdec_variants44.h`, and the row above gives the
 sites, because that comment describes the first caller rather than every one.
@@ -102,8 +109,9 @@ files alone.
 Four pulls are outside the set, each with the reason it is out:
 
 - **`kind44.h`** — included by `s1fuse.h:289` under `SP44_MODES`, which the
-  measured build does not set (`build49.sh:29`'s `M` is `-DSP_MODES
-  -DSP45_MODES -DS1F_U8_MODES -DDENS_PRINT`).  The decoder's 44-series arms are
+  measured build does not set (`build49.sh:24`'s `M` is `-DSP_MODES
+  -DSP45_MODES -DS1F_U8_MODES -DDENS_PRINT`; `:29` is a `b p49` build
+  invocation, not the `M` definition).  The decoder's 44-series arms are
   in the set because they are `usdec_*` files; their stage-1 counterpart is not,
   and a `clang -E -H` run over `dens.h` + `s1fuse.h` at the `m49` set reads
   exactly `dens.h`, `s1fuse.h` and `xlist.h` — plus `u8kl.h` at `-DS1F_UTF8=7` —

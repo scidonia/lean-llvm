@@ -31,6 +31,13 @@
 #          `kernel/json/utf8.c`.  Both define `leanllvm_json_utf8`, which is
 #          lifted from each side by name, so no extra probe symbol exists and
 #          no wrapper can hide a difference.
+#   escape the escape unit.  `escape_oracle.c` includes the vendored measured
+#          text and defines the unit's two ABI entry points over the measured
+#          `xl_lanes`/`xl_emit` and `us_dec_x`; `escape_probe.c` includes
+#          `kernel/json/escape.c`, whose own ABI functions are the same text.
+#          Both sides are lifted by name — the two entry points and the
+#          out-of-line `us_dec_x` — and the arm asserts each lifted module
+#          defines exactly those three and no other.
 #
 # All three units: both sides are compiled with the measured compiler line
 # (`build49.sh:17`); `s1` adds the P2 `-D` set (`build49.sh:21`), `entry` the
@@ -169,8 +176,25 @@ case "$unit" in
     by_name=0
     generated=1
     ;;
+  escape)
+    kernel=$repo/kernel/json/escape.c
+    oracle=$here/escape_oracle.c
+    probe_src=$here/escape_probe.c
+    probe=leanllvm_json_escape_list
+    # `build49.sh:19-21`'s measured set plus `-DUS_EMIT4=1` (`:28`), the arm
+    # the stage-2 consumer's escape step is built at.
+    defs=(-DSTAGE_PROBE -DS1F_ENT_PROBE=1 -DS1F_DENS=1 -DS1F_TWOPHASE=1
+          -DS1F_EXP2=11 -DS1F_DISPATCH=1 -DS1F_UTF8=7 -DS1F_KL_DOC=1 -DPSTAGE=32
+          -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2 -DS1F_XS_DYN=1
+          -DUS_EMIT4=1)
+    lift=(-func=leanllvm_json_escape_list -func=leanllvm_json_escape_expand
+          -func=us_dec_x)
+    lift_functions="leanllvm_json_escape_expand leanllvm_json_escape_list us_dec_x"
+    by_name=1
+    generated=0
+    ;;
   *)
-    printf 'SETUP: unit %s has no IR identity arm; implemented units: s1 entry utf8\n' "$unit" >&2
+    printf 'SETUP: unit %s has no IR identity arm; implemented units: s1 entry utf8 escape\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -180,6 +204,8 @@ inputs=("$kernel" "$readme")
 [ -n "$probe_src" ] && inputs+=("$probe_src")
 measured=$repo/kernel/json/measured
 [ "$generated" -eq 1 ] && inputs+=("$measured/s1fuse.h" "$measured/u8kl.h")
+[ "$unit" = escape ] && inputs+=("$measured/s1fuse.h" "$measured/xlist.h" \
+                                 "$measured/usdec.h" "$measured/uj.c")
 
 for path in "${inputs[@]}"; do
   [ -e "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
@@ -530,6 +556,13 @@ arm_identity() {
       return 1
     fi
     metadata_cause "$a" "$b"
+  elif [ "$unit" = escape ]; then
+    # No global definition is part of this unit's interface: the decoder's
+    # tables are constants inside the lifted functions' text, and the list has
+    # no table at this arm.  The instruction comparison is the claim; the
+    # metadata comparison is the canonical-graph form, because each side is
+    # serialised from a different source module.
+    metadata_graph "$a" "$b"
   else
     compare_global identical "$a" "$b" identity || return 1
     metadata_graph "$a" "$b"
@@ -622,9 +655,60 @@ arm_controls_utf8() {
   return "$rc"
 }
 
+# mutate_escape_probe <name> <mutated kernel file> -- the escape unit's shape:
+# the mutated copy is the whole unit, included as its own translation unit.
+mutate_escape_probe() {
+  local name=$1 src=$2
+  printf '#include "%s"\n' "$src" > "$work/$name.c"
+  compile_probe "$name" "$work/$name.c" "$repo/kernel/json"
+}
+
+# The escape unit's two controls, one in each half of the unit: a numeral in
+# the list's batch and a bound in the decoder.  Both change instruction text,
+# which is what `llvm-diff` compares; if either half were compared against
+# itself the control would report no difference and fail the arm.
+arm_controls_escape() {
+  local base mut module rc=0
+  base=$(compile_probe kernel "$probe_src" "$repo/kernel/json") || return 3
+
+  printf '\n== Control: one numeral in xl_batch changed\n'
+  mut=$work/escape.batch.c
+  awk '
+    { if (!done && index($0, "0x8000000000000000ULL") > 0) {
+        sub(/0x8000000000000000ULL/, "0x8000000000000001ULL"); done = 1 }
+      print }
+    END { if (!done) exit 1 }
+  ' "$kernel" > "$mut" || {
+    printf 'SETUP: the batch control did not apply; the numeral is absent\n' >&2
+    return 3
+  }
+  module=$(mutate_escape_probe kernel_batch "$mut") || return 3
+  compare different "$base" "$module" batch || rc=1
+
+  printf '\n== Control: the decoder bound pos0 + n changed\n'
+  mut=$work/escape.endp.c
+  awk '
+    { if (!done && index($0, "uint64_t endp = pos0 + n;") > 0) {
+        sub(/pos0 \+ n;/, "pos0 + n + 1;"); done = 1 }
+      print }
+    END { if (!done) exit 1 }
+  ' "$kernel" > "$mut" || {
+    printf 'SETUP: the decoder control did not apply; the bound is absent\n' >&2
+    return 3
+  }
+  module=$(mutate_escape_probe kernel_endp "$mut") || return 3
+  compare different "$base" "$module" endp || rc=1
+
+  return "$rc"
+}
+
 arm_controls() {
   if [ "$generated" -eq 1 ]; then
     arm_controls_utf8
+    return $?
+  fi
+  if [ "$unit" = escape ]; then
+    arm_controls_escape
     return $?
   fi
   if [ "$by_name" -eq 1 ]; then

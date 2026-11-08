@@ -41,16 +41,30 @@ nix develop -c clang -O2 -DDENS_PLAIN_NUM=1 \
   -o /tmp/escape_matrix probes/json/escape_driver.c /tmp/probe.o
 ```
 
-The driver's four modes print one transcript each:
-`--measured` (the actor's rows), `--reference` (the reference's rows),
-`--class` (`<source> <label> <re-derived class> <exhibited class>`), and
-`--gate` (`<source> <label> <nb> <stride> <samples> <hits> <class>`, the gate's
-own reading of each document).  `DENS_PLAIN_NUM` is taken from `dens.h` rather
+The driver's four modes print one transcript each, and these are the four
+invocations the tables below come from:
+
+```sh
+nix develop -c /tmp/escape_matrix --corpus tests/json-escape/corpus.tsv --measured
+nix develop -c /tmp/escape_matrix --corpus tests/json-escape/corpus.tsv --reference
+nix develop -c /tmp/escape_matrix --corpus tests/json-escape/corpus.tsv --class
+nix develop -c /tmp/escape_matrix --corpus tests/json-escape/corpus.tsv --gate
+```
+
+`--measured` prints the actor's rows, `--reference` the reference's, `--class`
+prints `<source> <label> <re-derived class> <exhibited class>`, and `--gate`
+prints `<source> <label> <nb> <stride> <samples> <hits> <class>` — the gate's
+own reading of each document.  `DENS_PLAIN_NUM` is taken from `dens.h` rather
 than retyped, which is the value the measured translation unit sees.
 
-The escape expander's matrix is one binary with no arguments; it prints its rows
-and a per-group count, and exits nonzero if any row disagrees or if the row
-total does not equal the sum of the group bounds.
+The escape expander's matrix is one binary with no arguments:
+
+```sh
+nix develop -c /tmp/unescape_matrix
+```
+
+It prints its rows and a per-group count, and exits nonzero if any row
+disagrees or if the row total does not equal the sum of the group bounds.
 
 ```sh
 nix develop -c clang -O3 -march=x86-64-v3 -mpclmul -std=gnu11 \
@@ -68,6 +82,12 @@ transcripts in the same session produced files identical to the first.
 ## The escape list, per arm
 
 The corpus is `tests/json-escape/corpus.tsv`: **21 rows**, its own line count.
+**It is not in the commit these measurements describe.**  At the time of
+writing it is present in the worktree but untracked — `git ls-files` does not
+list it and `git show <commit>:tests/json-escape/corpus.tsv` fails — so a
+checkout of that commit carries the numbers in this file but not the rows they
+were taken over.  The corpus and the route belong to a later change that stages
+them; until then, reproduce by using the worktree file, not the commit.
 Each transcript has one line per row.  The columns below are the four
 transcripts joined on the row's label: `n` is the document's length, `nb` its
 number of whole 64-byte blocks, `samples`/`hits` the gate's counts over the

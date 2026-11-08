@@ -36,6 +36,14 @@
 #          extraction is a setup fault, not an equality.  This unit's arm
 #          detector is its own (`--arms-only`): it keeps `dens_`, `S1F_`, `SP_`
 #          and `sp_` refused and accepts `kl_`, which is this unit's subject.
+#   escape the escape unit, `kernel/json/escape.c`, against the fifteen
+#          definitions `README.md`'s `escape-entities:` line names across
+#          `measured/xlist.h`, `measured/usdec.h` and `measured/uj.c`, with the
+#          deletions `escape-delete:` names.  Every copied entity has a name, so
+#          this unit has no stage range: there are no unnamed measured
+#          statements to locate by line.  Its arm detector refuses `dens_`,
+#          `S1F_`, `SP_` and `sp_` and accepts `xl_`, `us_` and `uj_`, which are
+#          this unit's subject.  `--arms-only` asserts its two public symbols.
 #
 # Modes (default: --identity --mutate):
 #   --identity    extract the entities `kernel/json/README.md` lists from the
@@ -122,6 +130,10 @@ detector_xl='\bxl_[A-Za-z0-9_]*'
 # A detector loosened for all three units would stop refusing the arm these two
 # exist to exclude, which is why the calibration is per unit and not shared.
 detector_utf8='\b(dens_|S1F_|SP_|sp_)[A-Za-z0-9_]*'
+# The escape unit's own detector.  `xl_` (the list emitter), `us_` (the
+# decoder) and `uj_` (its tables and encoder) are this unit's subject; the rest
+# of the measured vocabulary stays refused.
+detector_escape='\b(dens_|S1F_|SP_|sp_)[A-Za-z0-9_]*'
 # The vendored header's own name shape, for the completeness check: every
 # definition `u8kl.h` carries, whichever list accounts for it.
 detector_kl='\b(kl_[A-Za-z0-9_]*|KLCARRY)'
@@ -178,8 +190,14 @@ case "$unit" in
     oracle=""
     input_paths=("$kernel" "$repo/kernel/json/utf8.h" "$header_src" "$measured/u8kl.h" "$readme")
     ;;
+  escape)
+    kernel=$repo/kernel/json/escape.c
+    oracle=""
+    input_paths=("$kernel" "$repo/kernel/json/escape.h" "$measured/xlist.h" \
+                 "$measured/usdec.h" "$measured/uj.c" "$readme")
+    ;;
   *)
-    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8\n' "$unit" >&2
+    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -303,6 +321,14 @@ case "$unit" in
     rename_specs=$(list_rows utf8-rename)
     perm_specs=$(list_field utf8-permutation)
     ;;
+  escape)
+    entity_specs=$(list_field escape-entities)
+    deletion_specs=$(list_field escape-delete)
+    extra_specs=$(list_field escape-extra)
+    defs_re="xl_[a-z0-9_]+|us_[a-z0-9_]+|uj_[a-z0-9_]+|UJ_[A-Za-z0-9_]+|leanllvm_json_escape_[a-z0-9_]+"
+    xl_exempt=""
+    detector_unit=$detector_escape
+    ;;
 esac
 
 if [ -z "$entity_specs" ]; then
@@ -323,6 +349,8 @@ source_file() { # <source>
     s1fuse) printf '%s' "$header_src" ;;
     xlist) printf '%s' "$measured/xlist.h" ;;
     u8kl) printf '%s' "$measured/u8kl.h" ;;
+    usdec) printf '%s' "$measured/usdec.h" ;;
+    uj) printf '%s' "$measured/uj.c" ;;
     *) printf 'SETUP: the identity list names an unknown source %s\n' "$1" >&2; return 3 ;;
   esac
 }
@@ -361,10 +389,15 @@ extract_entity() { # <file> <entity> <skip-list>
           for (l = r[1] + 0; l <= r[2] + 0; l++) drop[l] = 1
         } else if (parts[i] != "") drop[parts[i] + 0] = 1
       }
+      # A name matches only as a whole identifier: `us_hex4` must not locate
+      # `us_hex4_scalar`, and `us_esc` must not locate `us_esc_u`.  The
+      # substring test this replaced quietly compared the first name the
+      # prefix shared, which is identity against the wrong definition.
+      word = "(^|[^A-Za-z0-9_])" name "([^A-Za-z0-9_]|$)"
       start = 0
       for (l = 1; l <= NR; l++) {
-        if (line[l] ~ /^#define[ \t]/ && index(line[l], name) > 0) { start = l; break }
-        if (line[l] ~ /^[^ \t#\/]/ && index(line[l], name) > 0 &&
+        if (line[l] ~ /^#define[ \t]/ && line[l] ~ word) { start = l; break }
+        if (line[l] ~ /^[^ \t#\/]/ && line[l] ~ word &&
             (index(line[l], "(") > 0 || index(line[l], "[") > 0)) { start = l; break }
       }
       if (!start) { printf "no definition of %s in %s\n", name, FILENAME > "/dev/stderr"; exit 1 }
@@ -938,7 +971,7 @@ arm_identity() {
   ' "$kernel" | LC_ALL=C sort -u)
   extra=$(printf '%s\n' $entity_specs $extra_specs \
     | sed 's/^[^:]*://' | LC_ALL=C sort -u \
-    | comm -13 - <(printf '%s\n' "$defs"))
+    | LC_ALL=C comm -13 - <(printf '%s\n' "$defs"))
   if [ -n "$extra" ]; then
     printf 'DIFF: the unit defines %s, which the identity list does not name\n' \
       "$(echo $extra)" >&2
@@ -979,6 +1012,7 @@ arm_mutate() {
     s1) local needle='0x1F' replacement='0x1E' subject=s1_masks ;;
     entry) local needle='0xFFu' replacement='0xFEu' subject=s1f_ke_pos8 ;;
     utf8) local needle='0xe7,' replacement='0xe5,' subject=kl_t1 ;;
+    escape) local needle='0x8000000000000000ULL' replacement='0x8000000000000001ULL' subject=xl_batch ;;
   esac
   local mut=$work/unit.numeral.c
   awk -v needle="$needle" -v replacement="$replacement" '
@@ -1077,6 +1111,10 @@ EOF
       printf 'ok: the preprocessed unit names none of dens_/S1F_/SP_/sp_\n'
       printf '    (kl_ is this unit'"'"'s subject, so its detector accepts it by design)\n'
       ;;
+    escape)
+      printf 'ok: the preprocessed unit names none of dens_/S1F_/SP_/sp_\n'
+      printf '    (xl_, us_ and uj_ are this unit'"'"'s subject, so its detector accepts them)\n'
+      ;;
   esac
 
   if [ "$unit" = entry ]; then
@@ -1136,6 +1174,36 @@ EOF
       return 1
     fi
     printf 'ok: the unit defines exactly its one ABI symbol\n'
+  fi
+
+  if [ "$unit" = escape ]; then
+    # The calibrated detector's positive control, as for the UTF-8 unit: a
+    # copy with one measurement identifier inserted must be named.
+    { cat "$kernel"; printf '\nint dens_escape_control;\n'; } > "$work/kernel.dens.c"
+    "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$work/kernel.dens.c" \
+      > "$work/kernel.dens.i" || {
+      printf 'SETUP: the detector control did not preprocess\n' >&2
+      return 3
+    }
+    hits=$(grep -oE "$detector_unit" "$work/kernel.dens.i" | sort -u || true)
+    if [ -z "$hits" ]; then
+      printf 'FAIL: the detector names nothing in a copy that inserts a dens_ name\n' >&2
+      return 1
+    fi
+    printf 'ok: control: the same detector names %s in a copy that inserts one\n' \
+      "$(echo $hits)"
+    if ! command -v nm >/dev/null 2>&1; then
+      printf 'SETUP: no nm on PATH; the public-symbol assertion needs it\n' >&2
+      return 3
+    fi
+    hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
+    hits=${hits% }
+    if [ "$hits" != "leanllvm_json_escape_expand leanllvm_json_escape_list" ]; then
+      printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
+      printf 'FAIL: expected exactly leanllvm_json_escape_expand/list\n' >&2
+      return 1
+    fi
+    printf 'ok: the unit defines exactly its two ABI symbols\n'
   fi
 
   hits=$(grep -oE "$detector" "$work/control.i" | sort -u || true)

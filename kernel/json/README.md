@@ -90,6 +90,9 @@ utf8-stage-end: /* end: copied stage statements */
 utf8-rename: s1f_u8_ungated ungated
 utf8-extra: leanllvm_json_utf8
 utf8-permutation: KLCARRY kl_carry_init kl_err32 kl_err_vec kl_block_vec kl_block kl_block_ld kl_carry_prefix
+escape-entities: xlist:xl_lanes xlist:xl_batch xlist:xl_emit_batch xlist:xl_emit usdec:US_FAIL usdec:us_hex4_pshufb usdec:us_hex4 usdec:us_emit usdec:us_esc_u usdec:us_esc usdec:us_run usdec:us_run_long usdec:us_dec_x uj:UJ_UNESC uj:uj_enc_word
+escape-delete: xlist:301 xlist:303-313 xlist:315 usdec:288 usdec:293-304 usdec:334-375 usdec:387 usdec:399-403 usdec:407-410 usdec:275 usdec:277-279 usdec:862-868 usdec:876-878 usdec:879 usdec:881 usdec:883-885 usdec:891-893 usdec:898 usdec:906 usdec:909 usdec:911 usdec:913
+escape-extra: leanllvm_json_escape_list leanllvm_json_escape_expand
 <!-- identity-list:end -->
 
 The four deletions are the two conditional arms inside `s1f_masks`, resolved to
@@ -468,6 +471,128 @@ to be refused, while `dens_`, `S1F_`, `SP_` and `sp_` stay refused.
    as they are, and the identity arms pin them by digest and by name rather than
    re-deriving the constants.
 
+## The escape unit
+
+The escape unit is two measured stages under one ABI: the stage-1 escape-position
+list — the block's control and escape-start positions, appended to the caller's
+`uint32_t` stream — and the stage-2 list-driven expander, the decoder a string
+body is run through with the document's position list.  The list is
+`xlist.h`'s `xl_lanes` and `xl_emit` at `XL_EMIT=1` (`s1fuse.h:70-71`, selected
+by `S1F_XS=5`); the expander is `usdec.h`'s `us_dec_x` at `US_EMIT4=1`, with
+`UJ_UNESC` and `uj_enc_word` from `uj.c`.  The unit is `kernel/json/escape.c`,
+and the identity arms compare every copied definition.
+
+### The ABI
+
+```c
+void leanllvm_json_escape_list(uint64_t bs, uint64_t ctl, uint64_t im,
+                               uint64_t blk0, uint32_t *xp,
+                               uint64_t *xn, uint64_t *carry);
+uint64_t leanllvm_json_escape_expand(const uint8_t *b, uint64_t n, uint8_t *dst,
+                                     uint64_t *err, const uint32_t *xp,
+                                     uint64_t *xj, uint64_t nxp, uint64_t pos0);
+```
+
+The list takes the classifier's **three words**, not bytes: lane `t` of `bs`,
+`ctl` and `im` is document byte `64 * blk0 + t`.  That is why the unit does not
+copy `s1f_masks`: the mask unit produces those words and this unit consumes them.
+`carry[0]`/`carry[1]` are the previous block's last-byte backslash and its
+escape-start flag, zero at the document's first block, updated from this block,
+so a caller walking blocks threads the pair through.  `*xn` is the stream's
+count in and out, and the buffer needs **`*xn + 64 + 8` writable entries**: one
+block cannot hold more than 64 positions, and the measured eight-entry batch
+writes its slots past the true count.  Only `*xn` entries are the stream.
+
+The expander keeps `us_dec_x`'s measured eight-parameter signature and return.
+`b .. b+n-1` is the body, `pos0` its document offset, `*xj` the list cursor, and
+the return is the decoded length or `~0ULL` with `*err` the body-relative
+refusal offset.
+
+### The caller's obligations
+
+Each is the measurement's, not the ABI's convenience:
+
+1. **The expander's `xp` is exactly this body's escape positions**, not a
+   `uint32_t` array of that capacity.  `us_dec_x` never tests a position against
+   its input cursor (`usdec.h:880` computes `b - i` with no `b < i` guard, while
+   the scan-driven kernels have one at `:709`, `:723`, `:757`, `:771`, `:1094`),
+   so a position inside an escape the previous one consumed underflows the run
+   length and the copy faults.  A caller that took the list from
+   `leanllvm_json_escape_list` has this by construction.
+2. **`b + n .. b + n + 31` is readable.**  `us_run`'s first load
+   (`usdec.h:398`) is unconditional on every path.
+3. **`dst` needs 64 writable bytes past the decoded extent; the measured form
+   writes at most 32.**  `us_run` stores one 32-byte vector unconditionally and
+   a second at `dst + 32 .. dst + 63` when `US_W == 64` and its arm takes it
+   (`usdec.h:398-410`).  The measured `US_RUN2=0` form takes the second only
+   for a run longer than 32 bytes, so its farthest write past the decoded
+   extent is 32 — the unconditional first store on a zero-length copy — and 31
+   for a non-empty run of at most 32.  The ABI asks for 64 because that is the
+   whole extent the pinned function can write; the `US_RUN2=1` form stores the
+   second vector unconditionally.  The vendored comment at `:390-392` ("up to
+   31 bytes past the run") is therefore accurate for a non-empty run in the
+   measured form and understates the empty copy and the unselected form.  The
+   pinned bytes are not edited.
+4. `*xj <= nxp`, `pos0 + n` does not wrap, and `dst` does not overlap `b` or
+   `xp`.  The list's position base is `(uint32_t)(blk0 << 6)`, so a document at
+   or above 2^32 bytes truncates; the entry stream has the same width limit.
+
+### What is measured text, and what is not
+
+The fifteen definitions `escape-entities:` names are copied unchanged from
+`xlist.h`, `usdec.h` and `uj.c`, with the arms the measured configuration does
+not take deleted by line, as `escape-delete:` records: the `xl_emit` batch's
+other shapes, the `us_emit` encoder arms, the branch-free `us_esc` arm, the
+`US_RUN2` and non-64 window forms of `us_run`, the scalar hex reader, and
+`us_dec_x`'s diagnostic and trace arms.  Every copied entity has a name, so there
+is **no stage row** for this unit: the stage form exists for measured statements
+that have no name to locate them by, and nothing here is one.
+
+The only new text is the two ABI functions, the `US_XP_DIAG` default the
+decoder's kept guard reads, the two attribute selectors the deleted conditional
+blocks left outside the extracted spans (`us_esc_u`'s inline form and
+`us_dec_x`'s `noinline`), and the includes — no measured token is renamed, and
+the expander keeps `us_dec_x`'s measured name and signature.  The bilateral
+check in `source-identity.sh` names the two ABI definitions through
+`escape-extra:`.  That row is an **exemption, not a comparison**: the bilateral
+check asks the same question of an entity name and an extra name (is this
+definition listed?), but it token-compares only the entity rows, so moving a
+measured name into `escape-extra:` would stop comparing it.  Here the extras
+are exactly the two ABI functions, and `--arms-only` asserts both symbols with
+`nm`, so nothing measured is exempt.
+
+### The arms
+
+`source-identity.sh --unit escape` diffs all fifteen entities' tokens with one
+numeral control; `--arms-only` compiles the unit standalone, runs a detector
+calibrated to refuse `dens_`/`S1F_`/`SP_`/`sp_` while accepting this unit's
+`xl_`/`us_`/`uj_` vocabulary (with a positive control that inserts a `dens_`
+name), and asserts exactly the two ABI symbols.  `ir-identity.sh --unit escape`
+lifts the two ABI functions and `us_dec_x` from the unit and from
+`identity/escape_oracle.c` — the measured text with the same wrapper bodies —
+and requires an empty `llvm-diff`, with two controls: a numeral in `xl_batch`
+and the `pos0 + n` bound in `us_dec_x`.  `bench/paired.sh --unit escape` times
+the extracted unit against that oracle in one binary and bounds every input
+except `arm:escapes-64`, which one block divides a fixed call and placement
+term by and which is therefore reported only as an observation; the summary
+names the bounded set, not "every input".
+
+### Limits
+
+1. **The per-document gate is not here.**  Whether a document gets a list at all
+   is the density probe's decision, and it is an arm selector, not a
+   presence test: seven of the route's twenty-one rows carry escapes the gate
+   suppresses.  The caller passes the arm; this unit never classifies a
+   document.
+2. **Outside `pre` the model and the measured code differ.**  Lean's subtraction
+   truncates, so on a list that is not the document's positions the model copies
+   nothing where the C underflows and faults; `pre` excludes exactly that input.
+   The same is true of every unit's under-reservation case.
+3. **The list is a 32-bit position stream**, and the batch's reserve slots past
+   the count hold the emitter's stores, not positions.
+4. **No aliasing claim.**  The caller owns `xp`, `dst` and the document; nothing
+   here states what happens if they overlap.
+
 ## The checks
 
 ```bash
@@ -487,6 +612,13 @@ nix develop -c bash kernel/json/identity/source-identity.sh --unit utf8 --arms-o
                                                                        # calibrated detector and its ABI symbol
 nix develop -c bash kernel/json/identity/ir-identity.sh --unit utf8    # UTF-8 unit: the stage's emitted-code
                                                                        # identity + two controls
+nix develop -c bash kernel/json/identity/source-identity.sh --unit escape # escape unit: tokens, deletions,
+                                                                       # mutation control
+nix develop -c bash kernel/json/identity/source-identity.sh --unit escape --arms-only # escape unit: the TU,
+                                                                       # calibrated detector, two ABI symbols
+nix develop -c bash kernel/json/identity/ir-identity.sh --unit escape   # escape unit: emitted-code identity +
+                                                                       # two controls
+nix develop -c bash kernel/json/bench/paired.sh --unit escape           # escape unit: paired timing
 nix develop -c bash kernel/json/identity/inventory.sh                  # the fixture's inventory gate
 nix develop -c bash kernel/json/identity/inventory.sh --unit utf8      # the UTF-8 fixture's inventory gate
 nix develop -c bash kernel/json/bench/paired.sh                        # mask unit: paired timing
@@ -494,6 +626,7 @@ nix develop -c bash kernel/json/bench/paired.sh --unit entry           # entry u
 nix develop -c bash kernel/json/bench/paired.sh --unit utf8            # UTF-8 unit: paired timing
 nix develop -c bash kernel/json/identity/final-identity.sh entry       # the entry unit's three arms, one command
 nix develop -c bash kernel/json/identity/final-identity.sh utf8        # the UTF-8 unit's three arms, one command
+nix develop -c bash kernel/json/identity/final-identity.sh escape      # the escape unit's three arms, one command
 ```
 
 `final-identity.sh <unit>` is the dispatcher: it runs the unit's token identity,
