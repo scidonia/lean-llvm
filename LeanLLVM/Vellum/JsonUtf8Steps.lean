@@ -2953,4 +2953,953 @@ theorem win_read (mem : Mem) (b nb j : Nat) (W : List UInt8)
     rw [hM]; exact h2
   exact (readBytes_split mem ((b - 3) + j) 32 ((3 + 64 * nb - j) - 32) h3).1
 
+/-! ### The window, byte by byte -/
+
+theorem readBytes_eq_none_iff (m : Mem) (a n : Nat) :
+    readBytes m a n = none ↔ ∃ k, k < n ∧ readByte m (a + k) = none := by
+  induction n generalizing a with
+  | zero => simp [readBytes]
+  | succ n ih =>
+      rw [readBytes]
+      constructor
+      · intro h
+        cases hb : readByte m a with
+        | none => exact ⟨0, Nat.succ_pos n, hb⟩
+        | some b =>
+            cases hr : readBytes m (a + 1) n with
+            | none =>
+                obtain ⟨k, hk, hkn⟩ := (ih (a + 1)).mp hr
+                exact ⟨k + 1, by omega, by rw [show a + (k + 1) = a + 1 + k from by omega]; exact hkn⟩
+            | some bs => rw [hb, hr] at h; exact absurd h (by simp)
+      · rintro ⟨k, hk, hnone⟩
+        cases hb : readByte m a with
+        | none => simp
+        | some b =>
+            cases k with
+            | zero =>
+                rw [Nat.add_zero] at hnone
+                rw [hb] at hnone
+                exact absurd hnone (by simp)
+            | succ j =>
+                have h2 : readBytes m (a + 1) n = none :=
+                  (ih (a + 1)).mpr ⟨j, by omega,
+                    by rw [show a + 1 + j = a + (j + 1) from by omega]; exact hnone⟩
+                simp [h2]
+
+theorem readBytes_eq_none_of_readByte_none (m : Mem) {a p n : Nat}
+    (h : readByte m a = none) (h1 : p ≤ a) (h2 : a < p + n) :
+    readBytes m p n = none :=
+  (readBytes_eq_none_iff m p n).mpr ⟨a - p, by omega,
+    by rw [show p + (a - p) = a from by omega]; exact h⟩
+
+theorem exists_readBytes_of_readable (m : Mem) (p n : Nat)
+    (h : ∀ k, k < n → readByte m (p + k) ≠ none) : ∃ bs, readBytes m p n = some bs := by
+  cases hr : readBytes m p n with
+  | none =>
+      obtain ⟨k, hk, hnone⟩ := (readBytes_eq_none_iff m p n).mp hr
+      exact absurd hnone (h k hk)
+  | some bs => exact ⟨bs, rfl⟩
+
+/-! ### `klByte` past zero padding -/
+
+theorem klByte_append_zeros (l z : List UInt8) (hz : ∀ x ∈ z, x = 0x00) (j : Nat) :
+    klByte (l ++ z) j = klByte l j := by
+  unfold klByte
+  by_cases hj : j < l.length
+  · rw [getD_of_lt (l ++ z) 0x00 (by rw [List.length_append]; omega),
+        getD_of_lt l 0x00 hj, List.getElem_append_left hj]
+  · by_cases hjz : j < (l ++ z).length
+    · rw [getD_of_lt (l ++ z) 0x00 hjz, List.getElem_append_right (by omega),
+        List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+      exact hz _ (List.getElem_mem _)
+    · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega),
+        List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+
+theorem klByte_window (bs : List UInt8) (n nb j : Nat) :
+    klByte (utf8Window bs n nb) j = klByte (0x00 :: 0x00 :: 0x00 :: bs) j := by
+  rw [show utf8Window bs n nb
+      = (0x00 :: 0x00 :: 0x00 :: bs) ++ List.replicate (64 * nb - n) 0x00 from rfl]
+  exact klByte_append_zeros _ _ (by
+    intro x hx
+    exact List.eq_of_mem_replicate hx) j
+
+theorem klErrWin_window (bs : List UInt8) (n nb t : Nat) :
+    klErrWin (utf8Window bs n nb) t = klErrWin (0x00 :: 0x00 :: 0x00 :: bs) t := by
+  simp only [klErrWin, klByte_window]
+
+theorem klErrAll_window (bs : List UInt8) (n nb L : Nat) :
+    klErrAll (utf8Window bs n nb) L ↔ klErrAll (0x00 :: 0x00 :: 0x00 :: bs) L := by
+  unfold klErrAll
+  constructor
+  · intro h t ht
+    rw [← klErrWin_window bs n nb t]
+    exact h t ht
+  · intro h t ht
+    rw [klErrWin_window bs n nb t]
+    exact h t ht
+
+/-! ### The block's error vector, read from the window -/
+
+theorem u8_or_eq_zero_iff (a b : UInt8) : a ||| b = 0 ↔ a = 0 ∧ b = 0 := by
+  constructor
+  · intro h
+    have h1 : (a ||| b).toNat = 0 := by rw [h]; rfl
+    rw [UInt8.toNat_or, Nat.or_eq_zero_iff] at h1
+    exact ⟨UInt8.toNat_inj.mp h1.1, UInt8.toNat_inj.mp h1.2⟩
+  · rintro ⟨rfl, rfl⟩
+    rfl
+
+theorem klByte_take_drop (l : List UInt8) (m n k : Nat) (hk : k < n) :
+    klByte ((l.drop m).take n) k = klByte l (m + k) := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD, List.getElem?_take, ite_eq_left hk, List.getElem?_drop,
+    ← List.getD_eq_getElem?_getD]
+
+theorem klErrVec_getD (s : List UInt8) (j : Nat) (hj : j < 32) :
+    (klErrVec s).getD j 0x00
+      = klErrByte (klByte s j) (klByte s (j + 1)) (klByte s (j + 2)) (klByte s (j + 3)) := by
+  unfold klErrVec
+  rw [getD_of_lt (List.map _ (List.range 32)) 0x00 (by simp; omega), List.getElem_map,
+    List.getElem_range (by simpa using hj)]
+
+theorem block_arg_lo (l : List UInt8) (m : Nat) :
+    (l.drop m).take 3 ++ ((l.drop (m + 3)).take 64).take 32 = (l.drop m).take 35 := by
+  rw [show l.drop (m + 3) = (l.drop m).drop 3 from by rw [List.drop_drop],
+    List.take_take, Nat.min_eq_left (by omega : 32 ≤ 64)]
+  exact take_append_take_len (l.drop m) 3 32
+
+theorem block_arg_hi (l : List UInt8) (m : Nat) :
+    ((l.drop m).take 3 ++ ((l.drop (m + 3)).take 64).take 32).drop 32 ++
+      ((l.drop (m + 3)).take 64).drop 32 = (l.drop (m + 32)).take 35 := by
+  rw [block_arg_lo l m, List.drop_take, List.drop_take,
+    show l.drop (m + 3) = (l.drop m).drop 3 from by rw [List.drop_drop],
+    show l.drop (m + 32) = (l.drop m).drop 32 from by rw [List.drop_drop],
+    show List.drop 32 (List.drop 3 (l.drop m)) = List.drop 3 (List.drop 32 (l.drop m)) from by
+      rw [show List.drop 32 (List.drop 3 (l.drop m)) = List.drop 35 (l.drop m) from by
+            rw [List.drop_drop],
+          show List.drop 3 (List.drop 32 (l.drop m)) = List.drop 35 (l.drop m) from by
+            rw [List.drop_drop]]]
+  exact take_append_take_len _ 3 32
+
+theorem klErrBlk_getD_zero_iff (bs : List UInt8) (i j : Nat) (hj : j < 32) :
+    (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+        (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i)).getD j 0x00 = 0
+      ↔ klErrWin (0x00 :: 0x00 :: 0x00 :: bs) (64 * i + j) ∧
+        klErrWin (0x00 :: 0x00 :: 0x00 :: bs) (64 * i + 32 + j) := by
+  unfold klErrBlk klPre klBlk klErr32
+  rw [block_arg_hi (0x00 :: 0x00 :: 0x00 :: bs) (64 * i)]
+  rw [block_arg_lo (0x00 :: 0x00 :: 0x00 :: bs) (64 * i)]
+  rw [getD_zipWith (· ||| ·) _ _ 0x00 0x00 0x00
+    (by rw [klErrVec_length]; exact hj) (by rw [klErrVec_length]; exact hj)]
+  rw [klErrVec_getD _ _ hj, klErrVec_getD _ _ hj]
+  simp only [klByte_take_drop _ _ _ _ (by omega : j < 35),
+    klByte_take_drop _ _ _ _ (by omega : j + 1 < 35),
+    klByte_take_drop _ _ _ _ (by omega : j + 2 < 35),
+    klByte_take_drop _ _ _ _ (by omega : j + 3 < 35)]
+  rw [u8_or_eq_zero_iff]
+  unfold klErrWin
+  constructor
+  · rintro ⟨h1, h2⟩
+    simp only [Nat.add_assoc] at h1 h2 ⊢
+    exact ⟨h1, h2⟩
+  · rintro ⟨h1, h2⟩
+    simp only [Nat.add_assoc] at h1 h2 ⊢
+    exact ⟨h1, h2⟩
+
+/-! ### The accumulator the loop folds -/
+
+/-- The accumulator after `i` blocks, in the step the ungated loop takes: each
+block's error vector or-ed in, from the three carry bytes and the block's sixty-four. -/
+def klAcc (bs : List UInt8) (i : Nat) : List UInt8 :=
+  (List.range i).foldl (fun acc bi =>
+    List.zipWith (· ||| ·) acc
+      (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) bi)
+        (klBlk (0x00 :: 0x00 :: 0x00 :: bs) bi)))
+    (List.replicate 32 0x00)
+
+theorem klStep_false_fst (bs : List UInt8) (st : List UInt8 × Bool) (bi : Nat) :
+    (klStep (0x00 :: 0x00 :: 0x00 :: bs) false st bi).1
+      = List.zipWith (· ||| ·) st.1
+          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) bi)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) bi)) := by
+  unfold klStep
+  rw [ite_eq_right (by simp)]
+
+theorem klRun_false_fst (bs : List UInt8) :
+    ∀ (nb : Nat) (init : List UInt8) (b0 : Bool),
+      (((List.range nb).foldl (fun (st : List UInt8 × Bool) bi =>
+          klStep (0x00 :: 0x00 :: 0x00 :: bs) false st bi) (init, b0))).1
+        = (List.range nb).foldl (fun acc bi => List.zipWith (· ||| ·) acc
+            (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) bi)
+              (klBlk (0x00 :: 0x00 :: 0x00 :: bs) bi))) init := by
+  intro nb
+  induction nb with
+  | zero => intro init b0; rfl
+  | succ n ih =>
+      intro init b0
+      rw [List.range_succ, List.foldl_append, List.foldl_append,
+        List.foldl_cons, List.foldl_nil, klStep_false_fst, ih]
+      rfl
+
+theorem klAll_false_eq_klAcc (bs : List UInt8) :
+    klAll false bs = klAcc bs ((bs.length + 63) / 64) := by
+  rw [klAll_eq_klRun]
+  exact klRun_false_fst bs _ _ _
+
+/-! ### The accumulator is zero exactly when every window reads zero -/
+
+theorem zipWith_or_zero_iff (a b : List UInt8) (ha : a.length = 32) (hb : b.length = 32) :
+    List.zipWith (· ||| ·) a b = List.replicate 32 0x00 ↔
+      a = List.replicate 32 0x00 ∧ b = List.replicate 32 0x00 := by
+  constructor
+  · intro h
+    have hzero : ∀ j, j < 32 → a.getD j 0x00 ||| b.getD j 0x00 = 0x00 := by
+      intro j hj
+      have hj2 : j < (List.replicate 32 (0x00 : UInt8)).length := by simp; omega
+      have hh := congrArg (fun l => l.getD j 0x00) h
+      rw [getD_zipWith (· ||| ·) a b 0x00 0x00 0x00 (by rw [ha]; omega) (by rw [hb]; omega),
+        getD_of_lt (List.replicate 32 0x00) 0x00 hj2, List.getElem_replicate] at hh
+      exact hh
+    constructor
+    · apply List.ext_getElem
+      · rw [ha]; simp
+      · intro j h1 h2
+        rw [List.getElem_replicate]
+        have hz := hzero j (by rw [ha] at h1; omega)
+        rw [getD_of_lt a 0x00 h1,
+          getD_of_lt b 0x00 (by rw [hb]; rw [ha] at h1; omega)] at hz
+        exact (u8_or_eq_zero_iff _ _).mp hz |>.1
+    · apply List.ext_getElem
+      · rw [hb]; simp
+      · intro j h1 h2
+        rw [List.getElem_replicate]
+        have hz := hzero j (by rw [hb] at h1; omega)
+        rw [getD_of_lt a 0x00 (by rw [ha]; rw [hb] at h1; omega),
+          getD_of_lt b 0x00 h1] at hz
+        exact (u8_or_eq_zero_iff _ _).mp hz |>.2
+  · rintro ⟨rfl, rfl⟩
+    apply List.ext_getElem
+    · simp
+    · intro j h1 h2
+      simp only [List.getElem_zipWith, List.getElem_replicate]
+      decide
+
+theorem all_zero_replicate (l : List UInt8) (h : l.length = 32) :
+    l.all (fun x => decide (x = 0x00)) = true ↔ l = List.replicate 32 0x00 := by
+  rw [List.all_eq_true]
+  constructor
+  · intro hh
+    apply List.ext_getElem
+    · rw [h]; simp
+    · intro j h1 h2
+      rw [List.getElem_replicate]
+      exact of_decide_eq_true (hh l[j] (List.getElem_mem h1))
+  · rintro rfl
+    intro x hx
+    rw [List.eq_of_mem_replicate hx]
+    rfl
+
+theorem eq_replicate_zero_iff_getD (l : List UInt8) (h : l.length = 32) :
+    l = List.replicate 32 0x00 ↔ ∀ j, j < 32 → l.getD j 0x00 = 0x00 := by
+  constructor
+  · rintro rfl j hj
+    rw [getD_of_lt (List.replicate 32 (0x00 : UInt8)) 0x00 (by simpa using hj),
+      List.getElem_replicate]
+  · intro hh
+    apply List.ext_getElem
+    · rw [h]; simp
+    · intro j h1 h2
+      rw [List.getElem_replicate]
+      exact (getD_of_lt l 0x00 h1).symm.trans (hh j (by omega))
+
+theorem klAcc_succ (bs : List UInt8) (i : Nat) :
+    klAcc bs (i + 1) = List.zipWith (· ||| ·) (klAcc bs i)
+      (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+        (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i)) := by
+  unfold klAcc
+  rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+
+theorem klAcc_length (bs : List UInt8) (i : Nat) : (klAcc bs i).length = 32 := by
+  have key : ∀ (l : List Nat) (init : List UInt8), init.length = 32 →
+      ((l.foldl (fun acc bi => List.zipWith (· ||| ·) acc
+        (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) bi)
+          (klBlk (0x00 :: 0x00 :: 0x00 :: bs) bi))) init)).length = 32 := by
+    intro l
+    induction l with
+    | nil => intro init h; exact h
+    | cons x xs ih =>
+        intro init h
+        rw [List.foldl_cons]
+        refine ih (List.zipWith (· ||| ·) init
+          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) x)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) x))) ?_
+        rw [List.length_zipWith, h, klErrBlk_length, Nat.min_self]
+  unfold klAcc
+  exact key _ _ rfl
+
+theorem klAcc_zero_iff (bs : List UInt8) :
+    ∀ i, klAcc bs i = List.replicate 32 0x00 ↔
+      ∀ bi, bi < i → klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) bi)
+        (klBlk (0x00 :: 0x00 :: 0x00 :: bs) bi) = List.replicate 32 0x00 := by
+  intro i
+  induction i with
+  | zero =>
+      constructor
+      · intro _ bi hb; omega
+      · intro _; rfl
+  | succ n ih =>
+      have hs := klAcc_succ bs n
+      constructor
+      · intro h bi hb
+        have hz := (zipWith_or_zero_iff (klAcc bs n)
+          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) n)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) n))
+          (klAcc_length bs n) (klErrBlk_length _ _)).mp (by rw [← hs]; exact h)
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hb with hlt | heq
+        · exact ih.mp hz.1 bi hlt
+        · subst heq; exact hz.2
+      · intro h
+        rw [hs]
+        refine (zipWith_or_zero_iff (klAcc bs n)
+          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) n)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) n))
+          (klAcc_length bs n) (klErrBlk_length _ _)).mpr ⟨?_, h n (by omega)⟩
+        exact ih.mpr (fun bi hb => h bi (by omega))
+
+theorem klAcc_zero_iff_klErrAll (bs : List UInt8) (nb : Nat) :
+    klAcc bs nb = List.replicate 32 0x00 ↔ klErrAll (0x00 :: 0x00 :: 0x00 :: bs) (64 * nb) := by
+  rw [klAcc_zero_iff, klErrAll]
+  constructor
+  · intro h t ht
+    have hbi : t / 64 < nb := by
+      refine Nat.div_lt_of_lt_mul ?_
+      omega
+    have hr : t % 64 < 64 := Nat.mod_lt _ (by decide)
+    have ht' : 64 * (t / 64) + t % 64 = t := Nat.div_add_mod t 64
+    rcases Nat.lt_or_ge (t % 64) 32 with h32 | h32
+    · have hz : (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) (t / 64))
+          (klBlk (0x00 :: 0x00 :: 0x00 :: bs) (t / 64))).getD (t % 64) 0x00 = 0 := by
+        rw [h (t / 64) hbi, getD_of_lt (List.replicate 32 (0x00 : UInt8)) 0x00 (by simpa using h32),
+          List.getElem_replicate]
+      have hw := (klErrBlk_getD_zero_iff bs (t / 64) (t % 64) h32).mp hz
+      rw [← ht']
+      exact hw.1
+    · have h32' : t % 64 - 32 < 32 := by omega
+      have hz : (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) (t / 64))
+          (klBlk (0x00 :: 0x00 :: 0x00 :: bs) (t / 64))).getD (t % 64 - 32) 0x00 = 0 := by
+        rw [h (t / 64) hbi, getD_of_lt (List.replicate 32 (0x00 : UInt8)) 0x00 (by simpa using h32'),
+          List.getElem_replicate]
+      have hw := (klErrBlk_getD_zero_iff bs (t / 64) (t % 64 - 32) h32').mp hz
+      rw [← ht']
+      have he : 64 * (t / 64) + 32 + (t % 64 - 32) = 64 * (t / 64) + t % 64 := by omega
+      rw [← he]
+      exact hw.2
+  · intro h bi hbi
+    apply (eq_replicate_zero_iff_getD _ (klErrBlk_length _ _)).mpr
+    intro j hj
+    have hlt : 64 * bi + j < 64 * nb := by omega
+    have hlt2 : 64 * bi + 32 + j < 64 * nb := by omega
+    exact (klErrBlk_getD_zero_iff bs bi j hj).mpr ⟨h _ hlt, h _ hlt2⟩
+
+theorem klAll_zero_iff_klErrAll (bs : List UInt8) (n nb : Nat) (gate : Bool)
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64) :
+    (klAll gate bs).all (fun x => decide (x = 0x00)) = true ↔
+      klErrAll (utf8Window bs n nb) (64 * nb) := by
+  have hnb' : nb = (bs.length + 63) / 64 := by rw [hnb, hn]
+  have hsame : klAll gate bs = klAll false bs := by
+    cases gate with
+    | false => rfl
+    | true => exact klAll_gate_invariant bs
+  have hlen : (klAll false bs).length = 32 := by
+    rw [klAll_false_eq_klAcc bs]
+    exact klAcc_length bs _
+  rw [klErrAll_window]
+  constructor
+  · intro h
+    have h0 : (klAll false bs).all (fun x => decide (x = 0x00)) = true := by
+      rw [← hsame]
+      exact h
+    have h1 : klAcc bs nb = List.replicate 32 0x00 := by
+      rw [hnb', ← klAll_false_eq_klAcc bs]
+      exact (all_zero_replicate _ hlen).mp h0
+    exact klAcc_zero_iff_klErrAll bs nb |>.mp h1
+  · intro h
+    have h1 : klAcc bs nb = List.replicate 32 0x00 := (klAcc_zero_iff_klErrAll bs nb).mpr h
+    have h0 : (klAcc bs nb).all (fun x => decide (x = 0x00)) = true :=
+      (all_zero_replicate _ (klAcc_length bs nb)).mpr h1
+    rw [hsame, klAll_false_eq_klAcc bs, ← hnb']
+    exact h0
+
+
+/-! ### The names the loop carries across a block -/
+
+/-- The three cells the loop's bodies never write: the pointer, the document's
+length and the block count. -/
+def utf8Kept : List String := ["%b", "%n", "%div44"]
+
+theorem denoteCode_kept (instrs : List Instr) (env env' : Env) (s : State)
+    (hrun : denoteCode utf8Calls instrs (withEnv env s) = some (withEnv env' s))
+    (hn : ∀ i ∈ instrs, i.dst? ∉ utf8Kept.map some) :
+    ∀ n ∈ utf8Kept, lookupName env' n = lookupName env n := by
+  intro n hmem
+  have h := denoteCode_lookupName utf8Calls instrs n
+    (fun i hi hd => hn i hi (hd.symm ▸ List.mem_map_of_mem (f := some) hmem))
+    (withEnv env s) (withEnv env' s) hrun
+  simpa [withEnv] using h
+
+theorem utf8Kept_body : ∀ i ∈ utf8ForBody.instrs, i.dst? ∉ utf8Kept.map some := by decide
+
+theorem utf8Kept_then : ∀ i ∈ utf8ThenUs.instrs, i.dst? ∉ utf8Kept.map some := by decide
+
+theorem utf8Kept_us : ∀ i ∈ utf8ForBodyUs.instrs, i.dst? ∉ utf8Kept.map some := by decide
+
+theorem utf8Kept_end : ∀ i ∈ utf8EndUs.instrs, i.dst? ∉ utf8Kept.map some := by decide
+
+/-- A decided proposition's `ofBool` is one, at the carrier `i1`. -/
+theorem ofBool_of_true {p : Prop} [Decidable p] (h : p) : (BitVec.ofBool p : BitVec 1) = 1 := by
+  simp [h]
+
+/-- A refuted proposition's `ofBool` is zero. -/
+theorem ofBool_of_false {p : Prop} [Decidable p] (h : ¬ p) : (BitVec.ofBool p : BitVec 1) = 0 := by
+  simp [h]
+
+/-- A conditional branch on a true bit jumps to the taken block. -/
+theorem execTerm_condbr_true {s : State} {c : Operand} {t f : String} {bit : BitVec 1}
+    (h : evalOperand s c = some (.int 1 bit)) (hb : bit = 1) :
+    execTerm s (.condbr c t f) = .jump { s with pc := t, pre := some s.pc } := by
+  simp only [execTerm, h]
+  rw [hb]
+  simp
+
+/-- A conditional branch on a zero bit jumps to the untaken block. -/
+theorem execTerm_condbr_false {s : State} {c : Operand} {t f : String} {bit : BitVec 1}
+    (h : evalOperand s c = some (.int 1 bit)) (hb : bit = 0) :
+    execTerm s (.condbr c t f) = .jump { s with pc := f, pre := some s.pc } := by
+  simp only [execTerm, h]
+  rw [hb]
+  simp
+
+/-! ### The body's stream, sliced -/
+
+/-- The bytes block `i` reads from: the window from the three carry bytes before
+the block to the end of its sixty-four. -/
+def utf8Stream (bs : List UInt8) (n nb i : Nat) : List UInt8 :=
+  (utf8Window bs n nb).drop (64 * i)
+
+theorem body_stream (l : List UInt8) :
+    l.take 3 ++ (l.drop 3).take 64 = l.take 67 :=
+  take_append_take_len l 3 64
+
+theorem take67_drop (l : List UInt8) (c m : Nat) (h : c + m ≤ 67) :
+    ((l.take 67).drop c).take m = (l.drop c).take m := by
+  rw [List.drop_take, List.take_take, Nat.min_eq_left (by omega : m ≤ 67 - c)]
+
+/-- The slice the body's `hL` hypothesis names, read as the stream's own bytes. -/
+theorem stream_slice (bs : List UInt8) (n nb i c m : Nat) (h : c + m ≤ 67) :
+    (((utf8Stream bs n nb i).take 3 ++ ((utf8Stream bs n nb i).drop 3).take 64).drop c).take m
+      = ((utf8Stream bs n nb i).drop c).take m := by
+  rw [body_stream]
+  exact take67_drop _ c m h
+
+/-- `klErrVec` depends only on the stream's bytes. -/
+theorem klErrVec_eq_of_getD (s t : List UInt8) (h : ∀ k, k < 35 → klByte s k = klByte t k) :
+    klErrVec s = klErrVec t := by
+  unfold klErrVec
+  apply List.map_congr_left
+  intro k hk
+  have hk32 : k < 32 := by simpa using hk
+  rw [h k (by omega), h (k + 1) (by omega), h (k + 2) (by omega), h (k + 3) (by omega)]
+
+/-- A thirty-five byte slice of the padded window and of the unpadded one read
+the same error vector: the padding is zero, which `getD` already answers. -/
+theorem klErrVec_slice_window (bs : List UInt8) (n nb m : Nat) :
+    klErrVec (((utf8Window bs n nb).drop m).take 35)
+      = klErrVec (((0x00 :: 0x00 :: 0x00 :: bs).drop m).take 35) := by
+  apply klErrVec_eq_of_getD
+  intro k hk
+  rw [klByte_take_drop _ m 35 k hk, klByte_take_drop _ m 35 k hk, klByte_window]
+
+/-- A block's error vector is the same in the padded window and the unpadded
+one: the block's sixty-four bytes and its three carry bytes are the same bytes,
+with the padding zero past the end. -/
+theorem klErrBlk_window (bs : List UInt8) (n nb i : Nat) :
+    klErrBlk (klPre (utf8Window bs n nb) i) (klBlk (utf8Window bs n nb) i)
+      = klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+          (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i) := by
+  have hP : klErrBlk (klPre (utf8Window bs n nb) i) (klBlk (utf8Window bs n nb) i)
+      = List.zipWith (· ||| ·) (klErrVec (((utf8Window bs n nb).drop (64 * i)).take 35))
+          (klErrVec (((utf8Window bs n nb).drop (64 * i + 32)).take 35)) := by
+    unfold klErrBlk klPre klBlk klErr32
+    rw [block_arg_hi (utf8Window bs n nb) (64 * i)]
+    rw [block_arg_lo (utf8Window bs n nb) (64 * i)]
+  have hW : klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+        (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i)
+      = List.zipWith (· ||| ·)
+          (klErrVec (((0x00 :: 0x00 :: 0x00 :: bs).drop (64 * i)).take 35))
+          (klErrVec (((0x00 :: 0x00 :: 0x00 :: bs).drop (64 * i + 32)).take 35)) := by
+    unfold klErrBlk klPre klBlk klErr32
+    rw [block_arg_hi (0x00 :: 0x00 :: 0x00 :: bs) (64 * i)]
+    rw [block_arg_lo (0x00 :: 0x00 :: 0x00 :: bs) (64 * i)]
+  rw [hP, hW, klErrVec_slice_window bs n nb (64 * i),
+    klErrVec_slice_window bs n nb (64 * i + 32)]
+
+/-- One thirty-two byte read of the body, at the eight slice offsets the block
+uses, in the address form the block's own instructions carry. -/
+theorem win_read_slice (mem : Mem) (b nb : Nat) (W : List UInt8) (i c : Nat)
+    (hw : readBytes mem (b - 3) (3 + 64 * nb) = some W) (hb : 3 ≤ b)
+    (hc : c + 32 ≤ 67) (hj : 64 * i + c + 32 ≤ 3 + 64 * nb) :
+    readBytes mem (b + 64 * i + c - 3) 32
+      = some (((W.drop (64 * i)).drop c).take 32) := by
+  have h := win_read mem b nb (64 * i + c) W hw hb (by omega)
+  rw [show b - 3 + (64 * i + c) = b + 64 * i + c - 3 from by omega] at h
+  rw [show List.drop (64 * i + c) W = List.drop c (List.drop (64 * i) W) from by
+    rw [List.drop_drop]] at h
+  exact h
+
+/-! ### The ungated loop, one block at a time -/
+
+/-- Taking `for.body`'s blocks one at a time.  The invariant is the folded word —
+`packLanes u8k = bytesToNat (klAcc bs i)` — and the block's own error vector is
+`klErrBlk` at the window's three carry bytes and its sixty-four, so the step is
+`klAcc_succ`.  The conclusion is the run's own equality at a symbolic fuel: the
+`r` blocks cost exactly `r` control steps, and any continuation `k` runs from the
+state the loop leaves. -/
+theorem utf8Ungated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
+    (hnb : nb = (bs.length + 63) / 64)
+    (hw : readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs n nb))
+    (hb : 3 ≤ b) (hspan : 64 * (nb - 1) < 2 ^ 63) :
+    ∀ (r i : Nat) (env : Env) (s : State) (p : String) (opA opB : Operand)
+      (u8k : List (BitVec 64)),
+      1 ≤ r → i + r = nb → s.pc = "for.body" → s.pre = some p → s.mem = mem →
+      phiIncoming p [("for.body", .reg "%or.i47"),
+        ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))] = some opA →
+      phiIncoming p [("for.body", .reg "%inc"),
+        ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opB →
+      evalOperand (withEnv env s) opA = some (.vec 4 64 u8k) →
+      evalOperand (withEnv (("%u8k.076", .vec 4 64 u8k) :: env) s) opB
+        = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName env "%b" = some (.ptr b) →
+      lookupName env "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) →
+      lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)) →
+      u8k.length = 4 → packLanes u8k = bytesToNat (klAcc bs i) →
+      ∃ (env' : Env) (s' : State) (u8k' : List (BitVec 64)),
+        s'.pc = "for.cond.cleanup" ∧ s'.pre = some "for.body" ∧ s'.mem = mem ∧
+        lookupName env' "%or.i47" = some (.vec 4 64 u8k') ∧ u8k'.length = 4 ∧
+        packLanes u8k' = bytesToNat (klAcc bs nb) ∧
+        lookupName env' "%b" = some (.ptr b) ∧
+        lookupName env' "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+        lookupName env' "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) ∧
+        ∀ (k : Nat), runFuel utf8Calls (r + k) utf8Function (withEnv env s)
+          = runFuel utf8Calls k utf8Function (withEnv env' s') := by
+  intro r
+  induction r with
+  | zero => intro i env s p opA opB u8k hr _; omega
+  | succ r' ih =>
+      intro i env s p opA opB u8k hr hi hpc hpre hmem hincA hincB hopA hopB hb' hdiv hn
+        hu8klen hu8kpack
+      have hinb : i < nb := by omega
+      have hi64 : 64 * i < 2 ^ 63 := by
+        have h1 : i ≤ nb - 1 := by omega
+        have h2 := Nat.mul_le_mul_left 64 h1
+        omega
+      have hWlen : (utf8Window bs n nb).length = 3 + 64 * nb :=
+        readBytes_length mem (b - 3) (3 + 64 * nb) hw
+      -- the eight reads and the eight slice identities
+      have read37 : readBytes s.mem (b + 64 * i + 3 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 3).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 3 hw hb (by omega) (by omega)
+      have read38 : readBytes s.mem (b + 64 * i + 35 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 35).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 35 hw hb (by omega) (by omega)
+      have read39 : readBytes s.mem (b + 64 * i + 2 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 2).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 2 hw hb (by omega) (by omega)
+      have read40 : readBytes s.mem (b + 64 * i + 1 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 1).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 1 hw hb (by omega) (by omega)
+      have read41 : readBytes s.mem (b + 64 * i + 0 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 0).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 0 hw hb (by omega) (by omega)
+      have read54 : readBytes s.mem (b + 64 * i + 34 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 34).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 34 hw hb (by omega) (by omega)
+      have read55 : readBytes s.mem (b + 64 * i + 33 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 33).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 33 hw hb (by omega) (by omega)
+      have read56 : readBytes s.mem (b + 64 * i + 32 - 3) 32
+          = some (((utf8Stream bs n nb i).drop 32).take 32) := by
+        rw [hmem]; exact win_read_slice mem b nb _ i 32 hw hb (by omega) (by omega)
+      have upper : ∀ c : Nat, c + 32 ≤ 35 →
+          (((((utf8Stream bs n nb i).take 3 ++ ((utf8Stream bs n nb i).drop 3).take 64).drop 32).drop c).take 32)
+            = ((utf8Stream bs n nb i).drop (32 + c)).take 32 := by
+        intro c hc
+        rw [List.drop_drop, stream_slice bs n nb i (32 + c) 32 (by omega)]
+      have slice37 := stream_slice bs n nb i 3 32 (by omega)
+      have slice38 := upper 3 (by omega)
+      have slice39 := stream_slice bs n nb i 2 32 (by omega)
+      have slice40 := stream_slice bs n nb i 1 32 (by omega)
+      have slice41 := stream_slice bs n nb i 0 32 (by omega)
+      have slice54 := upper 2 (by omega)
+      have slice55 := upper 1 (by omega)
+      have slice56 := upper 0 (by omega)
+      have hstream67 : 67 ≤ (utf8Stream bs n nb i).length := by
+        rw [utf8Stream, List.length_drop, hWlen]; omega
+      obtain ⟨env'', hrunB, hval, hinc, hexit⟩ :=
+        utf8Ungated_body env s b nb i (klAcc bs i)
+          ((utf8Stream bs n nb i).take 3) (((utf8Stream bs n nb i).drop 3).take 64) u8k
+          (((utf8Stream bs n nb i).drop 3).take 32) (((utf8Stream bs n nb i).drop 35).take 32)
+          (((utf8Stream bs n nb i).drop 2).take 32) (((utf8Stream bs n nb i).drop 1).take 32)
+          (((utf8Stream bs n nb i).drop 0).take 32) (((utf8Stream bs n nb i).drop 34).take 32)
+          (((utf8Stream bs n nb i).drop 33).take 32) (((utf8Stream bs n nb i).drop 32).take 32)
+          p opA opB hpre hincA hincB hopA hopB hb' hdiv
+          (klAcc_length bs i) hu8klen (by simp; omega) (by simp; omega) hu8kpack
+          slice37.symm slice38.symm slice39.symm slice40.symm slice41.symm
+          slice54.symm slice55.symm slice56.symm
+          read37 read38 read39 read40 read41 read54 read55 read56 hb hi64
+      have hframe := fun (nm : String) (hm : nm ∈ utf8Kept) =>
+        denoteCode_kept utf8ForBody.instrs env env'' s hrunB utf8Kept_body nm hm
+      have hstep : step utf8Calls utf8Function (withEnv env s)
+          = execTerm (withEnv env'' s)
+              (.condbr (.reg "%exitcond.not") "for.cond.cleanup" "for.body") :=
+        step_of_utf8 _ "for.body" utf8ForBody (withEnv env'' s) hpc findBlock_utf8ForBody hrunB
+      have hexit' : evalOperand (withEnv env'' s) (.reg "%exitcond.not")
+          = some (.int 1 (BitVec.ofBool
+              (BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
+        simpa only [withEnv, evalOperand] using hexit
+      have hone : (BitVec.ofInt 64 1 : BitVec 64) = BitVec.ofNat 64 1 := by decide
+      have hnext : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 (i + 1) := by
+        rw [hone, ofNat64_add_ofNat i 1 (by omega)]
+      have hpackNext : packLanes (unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) (klAcc bs i)
+          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i))))) = bytesToNat (klAcc bs (i + 1)) := by
+        have hlt := bytesToNat_lt (List.zipWith (· ||| ·) (klAcc bs i)
+          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i)))
+        rw [List.length_zipWith, klAcc_length, klErrBlk_length, Nat.min_self,
+          show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at hlt
+        rw [packLanes_unpackLanes, Nat.mod_eq_of_lt hlt, klAcc_succ bs i]
+      have hblkEq : klErrBlk (List.take 3 (utf8Stream bs n nb i))
+          (List.take 64 (List.drop 3 (utf8Stream bs n nb i)))
+          = klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+              (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i) := by
+        have h1 : List.take 3 (utf8Stream bs n nb i)
+            = klPre (utf8Window bs n nb) i := by
+          rw [klPre, utf8Stream]
+        have h2 : List.take 64 (List.drop 3 (utf8Stream bs n nb i))
+            = klBlk (utf8Window bs n nb) i := by
+          rw [klBlk, utf8Stream, List.drop_drop]
+        rw [h1, h2, klErrBlk_window]
+      by_cases hlast : i + 1 = nb
+      · -- the loop is done: the test leaves for `for.cond.cleanup`
+        have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb := by
+          rw [hnext, hlast]
+        have hjump : step utf8Calls utf8Function (withEnv env s) = .jump
+            ({ (withEnv env'' s) with pc := "for.cond.cleanup", pre := some "for.body" } : State) := by
+          rw [hstep, execTerm_condbr_true hexit' (ofBool_of_true hbit),
+            show (withEnv env'' s).pc = "for.body" from by rw [withEnv]; exact hpc]
+        have hpack : packLanes (unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) (klAcc bs i)
+            (klErrBlk (List.take 3 (utf8Stream bs n nb i))
+              (List.take 64 (List.drop 3 (utf8Stream bs n nb i))))))) = bytesToNat (klAcc bs nb) := by
+          rw [hblkEq, hpackNext, hlast]
+        have hr0 : r' = 0 := by omega
+        refine ⟨env'', ({ (withEnv env'' s) with pc := "for.cond.cleanup", pre := some "for.body" } : State), _, rfl, rfl, hmem, hval, ?_, hpack, ?_, ?_, ?_, ?_⟩
+        · rw [unpackLanes_length]
+        · exact (hframe "%b" (by decide)).trans hb'
+        · exact (hframe "%n" (by decide)).trans hn
+        · exact (hframe "%div44" (by decide)).trans hdiv
+        · intro k
+          rw [show (r' + 1) + k = k + 1 from by omega, runFuel_jump_utf8 hjump]
+          rfl
+      · -- the loop continues at the next block
+        have hlt : i + 1 < nb := by omega
+        have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 ≠ BitVec.ofNat 64 nb := by
+          intro hc
+          rw [hnext] at hc
+          exact hlast (ofNat64_inj (by omega) (by omega) hc)
+        have hjump : step utf8Calls utf8Function (withEnv env s) = .jump
+            ({ (withEnv env'' s) with pc := "for.body", pre := some "for.body" } : State) := by
+          rw [hstep, execTerm_condbr_false hexit' (ofBool_of_false hbit),
+            show (withEnv env'' s).pc = "for.body" from by rw [withEnv]; exact hpc]
+        have hr' : 1 ≤ r' := by omega
+        obtain ⟨env3, s3, u8k3, hpc3, hpre3, hmem3, hval3, hlen3, hpack3, hb3, hn3, hdiv3,
+          hrun3⟩ :=
+          ih (i + 1) env'' { (withEnv env'' s) with pc := "for.body", pre := some "for.body" }
+            "for.body" (.reg "%or.i47") (.reg "%inc")
+            (unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) (klAcc bs i)
+              (klErrBlk (List.take 3 (utf8Stream bs n nb i))
+                (List.take 64 (List.drop 3 (utf8Stream bs n nb i)))))))
+            hr' (by omega) rfl rfl hmem rfl rfl
+            (evalOperand_reg_of env'' _ "%or.i47" _ hval)
+            (by
+              rw [evalOperand_reg_of _ _ "%inc" _
+                ((lookupName_cons_ne _ _ (by decide)).trans hinc), hnext])
+            ((hframe "%b" (by decide)).trans hb')
+            ((hframe "%div44" (by decide)).trans hdiv)
+            ((hframe "%n" (by decide)).trans hn)
+            (by rw [unpackLanes_length])
+            (by rw [hblkEq]; exact hpackNext)
+        refine ⟨env3, s3, u8k3, hpc3, hpre3, hmem3, hval3, hlen3, hpack3, hb3, hn3, hdiv3,
+          ?_⟩
+        intro k
+        rw [show (r' + 1) + k = (r' + k) + 1 from by omega, runFuel_jump_utf8 hjump,
+          show r' + k = r' + k from rfl]
+        exact hrun3 k
+
+
+/-! ### The gate's reading of its own test -/
+
+theorem bytesToNat_eq_zero_iff (l : List UInt8) :
+    bytesToNat l = 0 ↔ ∀ x ∈ l, x = 0 := by
+  induction l with
+  | nil => simp [bytesToNat]
+  | cons b bs ih =>
+      show b.toNat + 256 * bytesToNat bs = 0 ↔ ∀ x ∈ b :: bs, x = 0
+      have hmul : 256 * bytesToNat bs = 0 ↔ bytesToNat bs = 0 := by
+        constructor
+        · intro h
+          rcases Nat.mul_eq_zero.mp h with h1 | h1
+          · omega
+          · exact h1
+        · intro h; rw [h, Nat.mul_zero]
+      rw [Nat.add_eq_zero_iff, hmul, ih, List.forall_mem_cons]
+      constructor
+      · rintro ⟨h1, h2⟩
+        refine ⟨UInt8.toNat_inj.mp ?_, h2⟩
+        simpa using h1
+      · rintro ⟨h1, h2⟩
+        exact ⟨by rw [h1]; rfl, h2⟩
+
+theorem u8_and_high_lt (y : UInt8) : (y &&& 0x80) = 0 ↔ y.toNat < 0x80 := by
+  have h := and80_eq_zero_iff_lt y.toBitVec
+  rw [← UInt8.toBitVec_inj, UInt8.toBitVec_and,
+    show (0x80 : UInt8).toBitVec = (0x80 : BitVec 8) from by decide,
+    show (0 : UInt8).toBitVec = (0 : BitVec 8) from rfl]
+  rw [h, UInt8.toNat_toBitVec]
+
+theorem u8_or_lt (a b : UInt8) :
+    (a ||| b).toNat < 0x80 ↔ a.toNat < 0x80 ∧ b.toNat < 0x80 := by
+  have h := or_high a.toBitVec b.toBitVec
+  rw [← UInt8.toBitVec_or, UInt8.toNat_toBitVec] at h
+  constructor
+  · intro hlt
+    have hna : ¬ ((0x80 : Nat) ≤ a.toNat ∨ (0x80 : Nat) ≤ b.toNat) := by
+      intro hc
+      have h2 : (0x80 : Nat) ≤ (a ||| b).toNat := h.mpr hc
+      omega
+    omega
+  · rintro ⟨h1, h2⟩
+    have hna : ¬ ((0x80 : Nat) ≤ a.toNat ∨ (0x80 : Nat) ≤ b.toNat) := by omega
+    have hn : ¬ (0x80 : Nat) ≤ (a ||| b).toNat := fun hP => hna (h.mp hP)
+    omega
+
+theorem byteLanes_zipWith_and_toBitVec (l₁ l₂ : List UInt8) :
+    (List.zipWith (· &&& ·) l₁ l₂).map UInt8.toBitVec
+      = List.zipWith (· &&& ·) (l₁.map UInt8.toBitVec) (l₂.map UInt8.toBitVec) := by
+  induction l₁ generalizing l₂ with
+  | nil => rfl
+  | cons x xs ih =>
+      cases l₂ with
+      | nil => rfl
+      | cons y ys =>
+          simp only [List.zipWith_cons_cons, List.map_cons]
+          rw [UInt8.toBitVec_and, ih]
+
+theorem byteLanes_zipWith_and (l₁ l₂ : List UInt8) :
+    byteLanes (List.zipWith (· &&& ·) l₁ l₂)
+      = List.zipWith (· &&& ·) (byteLanes l₁) (byteLanes l₂) := by
+  simpa [byteLanes] using byteLanes_zipWith_and_toBitVec l₁ l₂
+
+theorem bytesToNat_zipWith_and (a b : List UInt8) (h : a.length = b.length) :
+    bytesToNat (List.zipWith (· &&& ·) a b) = bytesToNat a &&& bytesToNat b := by
+  rw [← packLanes_byteLanes, byteLanes_zipWith_and,
+    packLanes_zipWith_and (by rw [byteLanes_length, byteLanes_length, h]),
+    packLanes_byteLanes, packLanes_byteLanes]
+
+theorem packLanes_highLanes64 :
+    packLanes highLanes64 = bytesToNat (List.replicate 32 (0x80 : UInt8)) := by
+  have hlt : packLanes highLanes64 < 2 ^ 256 := by
+    have h := packLanes_lt highLanes64
+    rw [show (highLanes64.length * 64) = 256 from by simp [highLanes64],
+      show (256 : Nat) = 2 ^ 8 from by decide] at h
+    exact h
+  have e1 : packLanes highLanes64
+      = packLanes (unpackLanes 8 32 (packLanes highLanes64)) := by
+    rw [packLanes_unpackLanes, show (32 * 8) = 256 from by decide, Nat.mod_eq_of_lt hlt]
+  have hbyte : byteLanes (List.replicate 32 (0x80 : UInt8))
+      = List.replicate 32 (BitVec.ofInt 8 0x80) := by
+    unfold byteLanes
+    rw [List.map_replicate, show UInt8.toNat (0x80 : UInt8) = 128 from by decide,
+      show (BitVec.ofNat 8 128 : BitVec 8) = BitVec.ofInt 8 128 from by decide]
+  rw [e1,
+    show unpackLanes 8 32 (packLanes highLanes64)
+      = List.replicate 32 (BitVec.ofInt 8 0x80) from highLanes64_bytes,
+    ← packLanes_byteLanes, hbyte]
+
+/-- The gate's packed word: the two halves' bytes or-ed, packed at the
+accumulator's lane width. -/
+def utf8GateWord (B0 B1 : List UInt8) : Nat :=
+  packLanes (List.zipWith (· ||| ·) (unpackLanes 64 4 (bytesToNat B1))
+    (unpackLanes 64 4 (bytesToNat B0)))
+
+theorem utf8GateWord_eq (B0 B1 : List UInt8) (h0 : B0.length = 32) (h1 : B1.length = 32) :
+    utf8GateWord B0 B1 = bytesToNat (List.zipWith (· ||| ·) B1 B0) := by
+  have hV0 : bytesToNat B0 < 2 ^ 256 := by
+    have h := bytesToNat_lt B0
+    rwa [h0, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at h
+  have hV1 : bytesToNat B1 < 2 ^ 256 := by
+    have h := bytesToNat_lt B1
+    rwa [h1, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at h
+  unfold utf8GateWord
+  rw [packLanes_zipWith_or (by rw [unpackLanes_length, unpackLanes_length]),
+    packLanes_unpackLanes, packLanes_unpackLanes,
+    show (4 * 64) = 256 from by decide,
+    Nat.mod_eq_of_lt hV1, Nat.mod_eq_of_lt hV0,
+    ← bytesToNat_zipWith_or B1 B0 (by rw [h1, h0])]
+
+/-- **The gate's reading**: a block whose packed halves test clear against the
+high-bit mask has every byte below `0x80`.  The `ptestz` answers one exactly on a
+cleared and-word, the mask's own packed word is `0x80` in every byte, and the
+`&&&` distributes over the byte list, so the test is "every byte's bit 7 is
+clear". -/
+theorem ascii_of_ptestz (B0 B1 : List UInt8) (h0 : B0.length = 32) (h1 : B1.length = 32)
+    (h : ptestz (BitVec.ofNat 256 (utf8GateWord B0 B1))
+        (BitVec.ofNat 256 (packLanes highLanes64)) = 1) :
+    ∀ b ∈ B0 ++ B1, b.toNat < 0x80 := by
+  have hWlt : utf8GateWord B0 B1 < 2 ^ 256 := by
+    unfold utf8GateWord
+    have h := packLanes_lt (List.zipWith (· ||| ·) (unpackLanes 64 4 (bytesToNat B1))
+      (unpackLanes 64 4 (bytesToNat B0)))
+    rw [List.length_zipWith, unpackLanes_length, unpackLanes_length, Nat.min_self,
+      show (64 * 4) = 256 from by decide] at h
+    exact h
+  have hMlt : packLanes highLanes64 < 2 ^ 256 := by
+    have h := packLanes_lt highLanes64
+    rw [show (highLanes64.length * 64) = 256 from by simp [highLanes64],
+      show (256 : Nat) = 2 ^ 8 from by decide] at h
+    exact h
+  have hp := (ptestz_eq_one_iff _ _).mp h
+  have hz1 : ((BitVec.ofNat 256 (utf8GateWord B0 B1))
+      &&& (BitVec.ofNat 256 (packLanes highLanes64))).toNat = 0 := by
+    rw [hp]
+    rfl
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt hWlt, Nat.mod_eq_of_lt hMlt, utf8GateWord_eq B0 B1 h0 h1,
+    packLanes_highLanes64,
+    ← bytesToNat_zipWith_and _ _
+      (by rw [List.length_zipWith, h1, h0, Nat.min_self]; simp),
+    bytesToNat_eq_zero_iff] at hz1
+  have key : ∀ (k : Nat) (hk : k < 32),
+      (B0.get ⟨k, by rw [h0]; exact hk⟩).toNat < 0x80 ∧
+      (B1.get ⟨k, by rw [h1]; exact hk⟩).toNat < 0x80 := by
+    intro k hk
+    have hc : (List.zipWith (· ||| ·) B1 B0).length = 32 := by
+      rw [List.length_zipWith, h1, h0, Nat.min_self]
+    have hlen : (List.zipWith (· &&& ·) (List.zipWith (· ||| ·) B1 B0)
+        (List.replicate 32 (0x80 : UInt8))).length = 32 := by
+      rw [List.length_zipWith]
+      simp [hc]
+    have hget : (List.zipWith (· &&& ·) (List.zipWith (· ||| ·) B1 B0)
+        (List.replicate 32 (0x80 : UInt8)))[k]'(by rw [hlen]; exact hk) = 0 := by
+      have := hz1 _ (List.getElem_mem (by rw [hlen]; exact hk))
+      simpa using this
+    simp only [List.getElem_zipWith, List.getElem_replicate] at hget
+    rw [u8_and_high_lt, u8_or_lt] at hget
+    exact ⟨hget.2, hget.1⟩
+  intro b hb
+  rw [List.mem_append] at hb
+  rcases hb with hb | hb
+  · obtain ⟨k, hk, hbk⟩ := List.mem_iff_getElem.mp hb
+    rw [← hbk]
+    exact (key k (by rw [h0] at hk; exact hk)).1
+  · obtain ⟨k, hk, hbk⟩ := List.mem_iff_getElem.mp hb
+    rw [← hbk]
+    exact (key k (by rw [h1] at hk; exact hk)).2
+
+
+/-! ### The gate's own `i1` test -/
+
+theorem ofBool_eq_one_iff {p : Prop} [Decidable p] :
+    (BitVec.ofBool p : BitVec 1) = 1 ↔ p := by
+  rw [show (BitVec.ofBool p : BitVec 1) = BitVec.ofBool (decide p) from rfl]
+  cases hp : decide p with
+  | false =>
+      rw [BitVec.ofBool_false]
+      refine ⟨fun h => absurd h (by decide), fun h => ?_⟩
+      rw [decide_eq_true h] at hp
+      exact absurd hp (by decide)
+  | true =>
+      rw [BitVec.ofBool_true]
+      exact ⟨fun _ => of_decide_eq_true hp, fun _ => rfl⟩
+
+theorem bit1_and_eq_one (a b : BitVec 1) : a &&& b = 1 ↔ a = 1 ∧ b = 1 := by
+  have ha : a.toNat < 2 := a.isLt
+  have hb : b.toNat < 2 := b.isLt
+  constructor
+  · intro h
+    have h1 : (a &&& b).toNat = 1 := by rw [h]; rfl
+    rw [BitVec.toNat_and] at h1
+    have ha1 : a.toNat = 1 := by
+      by_cases h0 : a.toNat = 0
+      · rw [h0] at h1; simp at h1
+      · omega
+    have hb1 : b.toNat = 1 := by
+      by_cases h0 : b.toNat = 0
+      · rw [h0] at h1; simp at h1
+      · omega
+    exact ⟨BitVec.toNat_inj.mp (by rw [ha1]; rfl), BitVec.toNat_inj.mp (by rw [hb1]; rfl)⟩
+  · rintro ⟨rfl, rfl⟩
+    decide
+
+theorem bit1_eq_zero_of_ne_one (a : BitVec 1) (h : a ≠ 1) : a = 0 := by
+  have ha : a.toNat < 2 := a.isLt
+  have h1 : a.toNat ≠ 1 := fun hc => h (BitVec.toNat_inj.mp (by rw [hc]; rfl))
+  exact BitVec.toNat_inj.mp (by
+    have : a.toNat = 0 := by omega
+    rw [this]; rfl)
+
+theorem ptestz_eq_one_or_zero (a b : BitVec 256) :
+    BitLanes.ptestz a b = 0 ∨ BitLanes.ptestz a b = 1 := by
+  unfold BitLanes.ptestz
+  split <;> simp
+
+/-- A `ptestz` that is not zero is one. -/
+theorem ptestz_eq_one_of_ne_zero (a b : BitVec 256) (h : BitLanes.ptestz a b ≠ 0) :
+    BitLanes.ptestz a b = 1 := by
+  rcases ptestz_eq_one_or_zero a b with h0 | h1
+  · exact absurd h0 h
+  · exact h1
+
+/-- **The gate's condition, read at the body's own test**: a taken skip means the
+block's sixty-four bytes are ASCII and the block before it was. -/
+theorem orcond_one_imp (B0 B1 : List UInt8) (prev : BitVec 32)
+    (h0 : B0.length = 32) (h1 : B1.length = 32) (hp01 : prev = 0 ∨ prev = 1)
+    (h : (BitVec.ofBool (ptestz (BitVec.ofNat 256 (utf8GateWord B0 B1))
+          (BitVec.ofNat 256 (packLanes highLanes64)) ≠ 0) &&&
+        BitVec.ofBool (prev ≠ 0) : BitVec 1) = 1) :
+    (∀ b ∈ B0 ++ B1, b.toNat < 0x80) ∧ prev = 1 := by
+  rw [bit1_and_eq_one, ofBool_eq_one_iff, ofBool_eq_one_iff] at h
+  refine ⟨ascii_of_ptestz B0 B1 h0 h1 (ptestz_eq_one_of_ne_zero _ _ h.1), ?_⟩
+  rcases hp01 with hq | hq
+  · exact absurd hq h.2
+  · exact hq
+
+/-- The block's own `%2` reads the gate: one means every byte is below `0x80`. -/
+theorem ptestz_ascii (B0 B1 : List UInt8) (h0 : B0.length = 32) (h1 : B1.length = 32)
+    (h : ptestz (BitVec.ofNat 256 (utf8GateWord B0 B1))
+        (BitVec.ofNat 256 (packLanes highLanes64)) = 1) :
+    ∀ b ∈ B0 ++ B1, b.toNat < 0x80 :=
+  ascii_of_ptestz B0 B1 h0 h1 h
+
+
+/-- **The preheader edge.**  Entered from `for.body.lr.ph`, the ungated loop's two
+phis select the constant operands — the zero lane list and `i64 0` — so
+`utf8Ungated_body` is instantiated there with the constants, and at the latch with
+`%or.i47`/`%inc`.  The two facts below are what a caller at that edge supplies. -/
+theorem utf8Ungated_preheader_operands (s : State) :
+    evalOperand s (.imm (.splat 4 64 (BitVec.ofInt 64 0)))
+        = some (.vec 4 64 (unpackLanes 64 4 0)) ∧
+      evalOperand s (.imm (.int 64 (BitVec.ofInt 64 0)))
+        = some (.int 64 (BitVec.ofNat 64 0)) := by
+  constructor <;> rfl
+
 end LeanLLVM.Vellum.JsonUtf8Steps
