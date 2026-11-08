@@ -3062,16 +3062,35 @@ theorem klErrVec_getD (s : List UInt8) (j : Nat) (hj : j < 32) :
   rw [getD_of_lt (List.map _ (List.range 32)) 0x00 (by simp; omega), List.getElem_map,
     List.getElem_range (by simpa using hj)]
 
+/-- `List.drop_take`'s statement, proved from `List`'s own recursion rather than
+taken from the library: the library lemma carries `Classical.choice`, and nothing
+in this slice's arithmetic needs a decision procedure. -/
+theorem drop_take' {α : Type} (i j : Nat) (l : List α) :
+    (l.take j).drop i = (l.drop i).take (j - i) := by
+  induction l generalizing j i with
+  | nil =>
+      rw [List.take_nil, List.drop_nil, List.take_nil]
+  | cons x xs ih =>
+      cases j with
+      | zero =>
+          rw [List.take_zero, List.drop_nil, Nat.zero_sub, List.take_zero]
+      | succ j =>
+          cases i with
+          | zero => rfl
+          | succ i =>
+              rw [Nat.succ_sub_succ]
+              exact ih i j
+
 theorem block_arg_lo (l : List UInt8) (m : Nat) :
     (l.drop m).take 3 ++ ((l.drop (m + 3)).take 64).take 32 = (l.drop m).take 35 := by
   rw [show l.drop (m + 3) = (l.drop m).drop 3 from by rw [List.drop_drop],
-    List.take_take, Nat.min_eq_left (by omega : 32 ≤ 64)]
+    List.take_take, Nat.min_eq_left (by decide : 32 ≤ 64)]
   exact take_append_take_len (l.drop m) 3 32
 
 theorem block_arg_hi (l : List UInt8) (m : Nat) :
     ((l.drop m).take 3 ++ ((l.drop (m + 3)).take 64).take 32).drop 32 ++
       ((l.drop (m + 3)).take 64).drop 32 = (l.drop (m + 32)).take 35 := by
-  rw [block_arg_lo l m, List.drop_take, List.drop_take,
+  rw [block_arg_lo l m, drop_take', drop_take',
     show l.drop (m + 3) = (l.drop m).drop 3 from by rw [List.drop_drop],
     show l.drop (m + 32) = (l.drop m).drop 32 from by rw [List.drop_drop],
     show List.drop 32 (List.drop 3 (l.drop m)) = List.drop 3 (List.drop 32 (l.drop m)) from by
@@ -3092,10 +3111,15 @@ theorem klErrBlk_getD_zero_iff (bs : List UInt8) (i j : Nat) (hj : j < 32) :
   rw [getD_zipWith (· ||| ·) _ _ 0x00 0x00 0x00
     (by rw [klErrVec_length]; exact hj) (by rw [klErrVec_length]; exact hj)]
   rw [klErrVec_getD _ _ hj, klErrVec_getD _ _ hj]
-  simp only [klByte_take_drop _ _ _ _ (by omega : j < 35),
-    klByte_take_drop _ _ _ _ (by omega : j + 1 < 35),
-    klByte_take_drop _ _ _ _ (by omega : j + 2 < 35),
-    klByte_take_drop _ _ _ _ (by omega : j + 3 < 35)]
+  have ja : j + 1 < 33 := Nat.add_lt_add_right hj 1
+  have jb : j + 2 < 34 := Nat.add_lt_add_right ja 1
+  have jc : j + 3 < 35 := Nat.add_lt_add_right jb 1
+  have hj35 : j < 35 := Nat.lt_of_lt_of_le hj (by decide)
+  have hj36 : j + 1 < 35 := Nat.lt_of_lt_of_le ja (by decide)
+  have hj37 : j + 2 < 35 := Nat.lt_of_lt_of_le jb (by decide)
+  have hj38 : j + 3 < 35 := jc
+  simp only [klByte_take_drop _ _ _ _ hj35, klByte_take_drop _ _ _ _ hj36,
+    klByte_take_drop _ _ _ _ hj37, klByte_take_drop _ _ _ _ hj38]
   rw [u8_or_eq_zero_iff]
   unfold klErrWin
   constructor
@@ -3266,14 +3290,26 @@ theorem klAcc_zero_iff (bs : List UInt8) :
           (klAcc_length bs n) (klErrBlk_length _ _)).mpr ⟨?_, h n (by omega)⟩
         exact ih.mpr (fun bi hb => h bi (by omega))
 
+/-- `Nat.div_lt_of_lt_mul`'s statement, proved from the division identity rather
+than taken from the library: the library lemma carries `Classical.choice`. -/
+theorem div_lt_of_lt_mul' {n m k : Nat} (h : m < n * k) : m / n < k := by
+  rcases Nat.eq_zero_or_pos n with hn | hn
+  · subst hn
+    rw [Nat.zero_mul] at h
+    exact absurd h (Nat.not_lt_zero m)
+  · refine Nat.lt_of_not_le (fun hk => ?_)
+    have h1 : m / n * n ≤ m := Nat.div_mul_le_self m n
+    have h1' : n * (m / n) ≤ m := by rw [Nat.mul_comm]; exact h1
+    have h2 : n * k ≤ n * (m / n) := Nat.mul_le_mul_left n hk
+    exact absurd (Nat.lt_of_lt_of_le h (Nat.le_trans h2 h1')) (Nat.lt_irrefl m)
+
 theorem klAcc_zero_iff_klErrAll (bs : List UInt8) (nb : Nat) :
     klAcc bs nb = List.replicate 32 0x00 ↔ klErrAll (0x00 :: 0x00 :: 0x00 :: bs) (64 * nb) := by
   rw [klAcc_zero_iff, klErrAll]
   constructor
   · intro h t ht
-    have hbi : t / 64 < nb := by
-      refine Nat.div_lt_of_lt_mul ?_
-      omega
+    have hbi : t / 64 < nb :=
+      div_lt_of_lt_mul' (by simpa [Nat.mul_comm] using ht)
     have hr : t % 64 < 64 := Nat.mod_lt _ (by decide)
     have ht' : 64 * (t / 64) + t % 64 = t := Nat.div_add_mod t 64
     rcases Nat.lt_or_ge (t % 64) 32 with h32 | h32
@@ -3284,21 +3320,33 @@ theorem klAcc_zero_iff_klErrAll (bs : List UInt8) (nb : Nat) :
       have hw := (klErrBlk_getD_zero_iff bs (t / 64) (t % 64) h32).mp hz
       rw [← ht']
       exact hw.1
-    · have h32' : t % 64 - 32 < 32 := by omega
+    · have h32' : t % 64 - 32 < 32 := by
+        have hr64 : t % 64 < 64 := Nat.mod_lt _ (by decide)
+        exact Nat.sub_lt_left_of_lt_add h32 (by simpa using hr64)
       have hz : (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) (t / 64))
           (klBlk (0x00 :: 0x00 :: 0x00 :: bs) (t / 64))).getD (t % 64 - 32) 0x00 = 0 := by
         rw [h (t / 64) hbi, getD_of_lt (List.replicate 32 (0x00 : UInt8)) 0x00 (by simpa using h32'),
           List.getElem_replicate]
       have hw := (klErrBlk_getD_zero_iff bs (t / 64) (t % 64 - 32) h32').mp hz
       rw [← ht']
-      have he : 64 * (t / 64) + 32 + (t % 64 - 32) = 64 * (t / 64) + t % 64 := by omega
+      have he : 64 * (t / 64) + 32 + (t % 64 - 32) = 64 * (t / 64) + t % 64 := by
+        rw [Nat.add_assoc, Nat.add_sub_of_le h32]
       rw [← he]
       exact hw.2
   · intro h bi hbi
     apply (eq_replicate_zero_iff_getD _ (klErrBlk_length _ _)).mpr
     intro j hj
-    have hlt : 64 * bi + j < 64 * nb := by omega
-    have hlt2 : 64 * bi + 32 + j < 64 * nb := by omega
+    have hle64 : 64 * bi + 64 ≤ 64 * nb :=
+      calc 64 * bi + 64 = 64 * (bi + 1) := (Nat.mul_succ 64 bi).symm
+        _ ≤ 64 * nb := Nat.mul_le_mul_left 64 (Nat.succ_le_of_lt hbi)
+    have hle : 64 * bi + 32 ≤ 64 * nb :=
+      Nat.le_trans (Nat.add_le_add_left (by decide : 32 ≤ 64) _) hle64
+    have hlt : 64 * bi + j < 64 * nb :=
+      Nat.lt_of_lt_of_le (Nat.add_lt_add_left hj _) hle
+    have hlt2 : 64 * bi + 32 + j < 64 * nb := by
+      rw [Nat.add_assoc]
+      refine Nat.lt_of_lt_of_le (Nat.add_lt_add_left ?_ (64 * bi)) hle64
+      exact Nat.lt_of_lt_of_le (Nat.add_lt_add_left hj 32) (by decide)
     exact (klErrBlk_getD_zero_iff bs bi j hj).mpr ⟨h _ hlt, h _ hlt2⟩
 
 theorem klAll_zero_iff_klErrAll (bs : List UInt8) (n nb : Nat) (gate : Bool)
@@ -3392,7 +3440,7 @@ theorem body_stream (l : List UInt8) :
 
 theorem take67_drop (l : List UInt8) (c m : Nat) (h : c + m ≤ 67) :
     ((l.take 67).drop c).take m = (l.drop c).take m := by
-  rw [List.drop_take, List.take_take, Nat.min_eq_left (by omega : m ≤ 67 - c)]
+  rw [drop_take', List.take_take, Nat.min_eq_left (Nat.le_sub_of_add_le' h)]
 
 /-- The slice the body's `hL` hypothesis names, read as the stream's own bytes. -/
 theorem stream_slice (bs : List UInt8) (n nb i c m : Nat) (h : c + m ≤ 67) :
@@ -3408,7 +3456,14 @@ theorem klErrVec_eq_of_getD (s t : List UInt8) (h : ∀ k, k < 35 → klByte s k
   apply List.map_congr_left
   intro k hk
   have hk32 : k < 32 := by simpa using hk
-  rw [h k (by omega), h (k + 1) (by omega), h (k + 2) (by omega), h (k + 3) (by omega)]
+  have ha : k + 1 < 33 := Nat.add_lt_add_right hk32 1
+  have hb : k + 2 < 34 := Nat.add_lt_add_right ha 1
+  have hc : k + 3 < 35 := Nat.add_lt_add_right hb 1
+  have h35 : k < 35 := Nat.lt_of_lt_of_le hk32 (by decide)
+  have h36 : k + 1 < 35 := Nat.lt_of_lt_of_le ha (by decide)
+  have h37 : k + 2 < 35 := Nat.lt_of_lt_of_le hb (by decide)
+  have h38 : k + 3 < 35 := hc
+  rw [h k h35, h (k + 1) h36, h (k + 2) h37, h (k + 3) h38]
 
 /-- A thirty-five byte slice of the padded window and of the unpadded one read
 the same error vector: the padding is zero, which `getD` already answers. -/
@@ -3455,6 +3510,55 @@ theorem win_read_slice (mem : Mem) (b nb : Nat) (W : List UInt8) (i c : Nat)
   rw [show List.drop (64 * i + c) W = List.drop c (List.drop (64 * i) W) from by
     rw [List.drop_drop]] at h
   exact h
+
+
+/-! ### The block's error vector at the body's own slices, and the fold's step
+
+The two facts both loops need at every block, stated once beside the slices they
+name: the body's `pre ++ blk` slices read the specification's `klErrBlk` for the
+block, and one block's contribution turns `klAcc`'s `i`-th step into its
+`i + 1`-th. -/
+
+/-- Block `i`'s error vector at the slices the body's own loads supply. -/
+def utf8BlkErr (bs : List UInt8) (n nb i : Nat) : List UInt8 :=
+  klErrBlk (List.take 3 (utf8Stream bs n nb i))
+    (List.take 64 (List.drop 3 (utf8Stream bs n nb i)))
+
+/-- One step of the accumulator fold. -/
+def klAccStep (bs : List UInt8) (i : Nat) : List UInt8 :=
+  List.zipWith (· ||| ·) (klAcc bs i)
+    (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+      (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i))
+
+theorem klAcc_step (bs : List UInt8) (i : Nat) : klAcc bs (i + 1) = klAccStep bs i :=
+  klAcc_succ bs i
+
+/-- The body's slices read the block's `klErrBlk`. -/
+theorem utf8BlkErr_eq (bs : List UInt8) (n nb i : Nat) :
+    utf8BlkErr bs n nb i
+      = klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+          (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i) := by
+  unfold utf8BlkErr
+  have h1 : List.take 3 (utf8Stream bs n nb i) = klPre (utf8Window bs n nb) i := by
+    rw [klPre, utf8Stream]
+  have h2 : List.take 64 (List.drop 3 (utf8Stream bs n nb i))
+      = klBlk (utf8Window bs n nb) i := by
+    rw [klBlk, utf8Stream, List.drop_drop]
+  rw [h1, h2, klErrBlk_window]
+
+/-- **One block's contribution.**  Or-ing the block's error vector into the
+accumulator advances the fold by one block: this is the step both loop lemmas
+conclude with. -/
+theorem klAccStep_pack (bs : List UInt8) (n nb i : Nat) :
+    packLanes (unpackLanes 64 4 (bytesToNat
+        (List.zipWith (· ||| ·) (klAcc bs i) (utf8BlkErr bs n nb i))))
+      = bytesToNat (klAcc bs (i + 1)) := by
+  have hlen : (List.zipWith (· ||| ·) (klAcc bs i) (utf8BlkErr bs n nb i)).length = 32 := by
+    rw [List.length_zipWith, klAcc_length, utf8BlkErr, klErrBlk_length, Nat.min_self]
+  have hlt := bytesToNat_lt (List.zipWith (· ||| ·) (klAcc bs i) (utf8BlkErr bs n nb i))
+  rw [hlen, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at hlt
+  rw [packLanes_unpackLanes, show (4 * 64) = 256 from by decide, Nat.mod_eq_of_lt hlt,
+    klAcc_step, klAccStep, ← utf8BlkErr_eq]
 
 /-! ### The ungated loop, one block at a time -/
 
@@ -3569,26 +3673,6 @@ theorem utf8Ungated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
       have hone : (BitVec.ofInt 64 1 : BitVec 64) = BitVec.ofNat 64 1 := by decide
       have hnext : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 (i + 1) := by
         rw [hone, ofNat64_add_ofNat i 1 (by omega)]
-      have hpackNext : packLanes (unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) (klAcc bs i)
-          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
-            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i))))) = bytesToNat (klAcc bs (i + 1)) := by
-        have hlt := bytesToNat_lt (List.zipWith (· ||| ·) (klAcc bs i)
-          (klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
-            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i)))
-        rw [List.length_zipWith, klAcc_length, klErrBlk_length, Nat.min_self,
-          show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at hlt
-        rw [packLanes_unpackLanes, Nat.mod_eq_of_lt hlt, klAcc_succ bs i]
-      have hblkEq : klErrBlk (List.take 3 (utf8Stream bs n nb i))
-          (List.take 64 (List.drop 3 (utf8Stream bs n nb i)))
-          = klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
-              (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i) := by
-        have h1 : List.take 3 (utf8Stream bs n nb i)
-            = klPre (utf8Window bs n nb) i := by
-          rw [klPre, utf8Stream]
-        have h2 : List.take 64 (List.drop 3 (utf8Stream bs n nb i))
-            = klBlk (utf8Window bs n nb) i := by
-          rw [klBlk, utf8Stream, List.drop_drop]
-        rw [h1, h2, klErrBlk_window]
       by_cases hlast : i + 1 = nb
       · -- the loop is done: the test leaves for `for.cond.cleanup`
         have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb := by
@@ -3598,9 +3682,8 @@ theorem utf8Ungated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
           rw [hstep, execTerm_condbr_true hexit' (ofBool_of_true hbit),
             show (withEnv env'' s).pc = "for.body" from by rw [withEnv]; exact hpc]
         have hpack : packLanes (unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) (klAcc bs i)
-            (klErrBlk (List.take 3 (utf8Stream bs n nb i))
-              (List.take 64 (List.drop 3 (utf8Stream bs n nb i))))))) = bytesToNat (klAcc bs nb) := by
-          rw [hblkEq, hpackNext, hlast]
+            (utf8BlkErr bs n nb i)))) = bytesToNat (klAcc bs nb) := by
+          rw [klAccStep_pack, hlast]
         have hr0 : r' = 0 := by omega
         refine ⟨env'', ({ (withEnv env'' s) with pc := "for.cond.cleanup", pre := some "for.body" } : State), _, rfl, rfl, hmem, hval, ?_, hpack, ?_, ?_, ?_, ?_⟩
         · rw [unpackLanes_length]
@@ -3637,7 +3720,7 @@ theorem utf8Ungated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
             ((hframe "%div44" (by decide)).trans hdiv)
             ((hframe "%n" (by decide)).trans hn)
             (by rw [unpackLanes_length])
-            (by rw [hblkEq]; exact hpackNext)
+            (klAccStep_pack bs n nb i)
         refine ⟨env3, s3, u8k3, hpc3, hpre3, hmem3, hval3, hlen3, hpack3, hb3, hn3, hdiv3,
           ?_⟩
         intro k
@@ -3683,14 +3766,18 @@ theorem u8_or_lt (a b : UInt8) :
   constructor
   · intro hlt
     have hna : ¬ ((0x80 : Nat) ≤ a.toNat ∨ (0x80 : Nat) ≤ b.toNat) := by
-      intro hc
-      have h2 : (0x80 : Nat) ≤ (a ||| b).toNat := h.mpr hc
-      omega
-    omega
+      rintro (hc | hc)
+      · exact absurd (h.mpr (Or.inl hc)) (Nat.not_le.mpr hlt)
+      · exact absurd (h.mpr (Or.inr hc)) (Nat.not_le.mpr hlt)
+    exact ⟨Nat.lt_of_not_le (fun hc => hna (Or.inl hc)),
+      Nat.lt_of_not_le (fun hc => hna (Or.inr hc))⟩
   · rintro ⟨h1, h2⟩
-    have hna : ¬ ((0x80 : Nat) ≤ a.toNat ∨ (0x80 : Nat) ≤ b.toNat) := by omega
+    have hna : ¬ ((0x80 : Nat) ≤ a.toNat ∨ (0x80 : Nat) ≤ b.toNat) := by
+      rintro (hc | hc)
+      · exact absurd hc (Nat.not_le.mpr h1)
+      · exact absurd hc (Nat.not_le.mpr h2)
     have hn : ¬ (0x80 : Nat) ≤ (a ||| b).toNat := fun hP => hna (h.mp hP)
-    omega
+    exact Nat.lt_of_not_le hn
 
 theorem byteLanes_zipWith_and_toBitVec (l₁ l₂ : List UInt8) :
     (List.zipWith (· &&& ·) l₁ l₂).map UInt8.toBitVec
@@ -3816,6 +3903,45 @@ theorem ascii_of_ptestz (B0 B1 : List UInt8) (h0 : B0.length = 32) (h1 : B1.leng
     exact (key k (by rw [h1] at hk; exact hk)).2
 
 
+
+/-! ### The span bound the loop's address arithmetic needs
+
+`le_mul_div_sixtyfour` (`JsonUtf8IR`) bounds a length by its own block count;
+this is the same fact read the other way, and the bound the loop's and the tail's
+`getelementptr` indices need.  It is a lemma rather than a loop hypothesis
+because the headline does **not** state it: it follows from `haddr` and `hpos`. -/
+
+/-- `64 * ((n + 63) / 64) ≤ n + 63`: the block count times sixty-four does not
+exceed the length rounded up. -/
+theorem sixtyfour_mul_div_le (n : Nat) : 64 * ((n + 63) / 64) ≤ n + 63 := by
+  rw [Nat.mul_comm]
+  exact Nat.div_mul_le_self (n + 63) 64
+
+/-- **The span bound.**  Under the block count's definition, the address bound
+`n < 2 ^ 63` and `0 < n`, the last block's index is legal:
+`64 * (nb - 1) < 2 ^ 63`.  This is what the loop lemmas take as their span
+hypothesis, discharged here rather than assumed. -/
+theorem utf8SpanBound (n nb : Nat) (hnb : nb = (n + 63) / 64) (haddr : n < 2 ^ 63)
+    (hpos : 0 < n) : 64 * (nb - 1) < 2 ^ 63 := by
+  have hle : 64 * nb ≤ n + 63 := by
+    rw [hnb]
+    exact sixtyfour_mul_div_le n
+  have hnb1 : 1 ≤ nb := by
+    rw [hnb]
+    exact Nat.div_pos
+      (Nat.le_trans (by decide : 64 ≤ 1 + 63) (Nat.add_le_add_right (Nat.succ_le_of_lt hpos) 63))
+      (by decide)
+  have hmul : 64 * (nb - 1) + 64 = 64 * nb := by
+    have h1 : 64 * (nb - 1) = 64 * nb - 64 := by
+      rw [Nat.mul_sub_left_distrib 64 nb 1, Nat.mul_one]
+    rw [h1, Nat.sub_add_cancel (by simpa using Nat.mul_le_mul_left 64 hnb1)]
+  refine (Nat.add_lt_add_iff_right (k := 64)).mp ?_
+  have h3 : 64 * (nb - 1) + 64 ≤ n + 63 := by rw [hmul]; exact hle
+  have h4 : n + 63 < 2 ^ 63 + 64 :=
+    Nat.lt_of_lt_of_le (Nat.add_lt_add_right haddr 63)
+      (Nat.add_le_add_left (by decide : 63 ≤ 64) _)
+  exact Nat.lt_of_le_of_lt h3 h4
+
 /-! ### The gate's own `i1` test -/
 
 theorem ofBool_eq_one_iff {p : Prop} [Decidable p] :
@@ -3868,6 +3994,13 @@ theorem ptestz_eq_one_of_ne_zero (a b : BitVec 256) (h : BitLanes.ptestz a b ≠
   rcases ptestz_eq_one_or_zero a b with h0 | h1
   · exact absurd h0 h
   · exact h1
+
+/-- The gate's own test at one block: `%or.cond.us` — the block's bytes are
+ASCII and the block before it was. -/
+def utf8GateBit (B0 B1 : List UInt8) (prev : BitVec 32) : BitVec 1 :=
+  BitVec.ofBool (ptestz (BitVec.ofNat 256 (utf8GateWord B0 B1))
+    (BitVec.ofNat 256 (packLanes highLanes64)) ≠ BitVec.ofInt 32 0) &&&
+  BitVec.ofBool (prev ≠ BitVec.ofInt 32 0)
 
 /-- **The gate's condition, read at the body's own test**: a taken skip means the
 block's sixty-four bytes are ASCII and the block before it was. -/

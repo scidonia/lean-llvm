@@ -8550,16 +8550,21 @@ the same bytes are valid at one block boundary and refused at the other. -/
 
 Every declaration the window's byte reading, the accumulator fold, the read
 utility and the ungated loop's run introduce, at the footprint each was measured
-at.  Two carriers appear, and neither is new.  `utf8Ungated_loop_run` carries
-`BitVec.signExtend_eq`, the same carrier the two body lemmas and the tail
-already name — it consumes `utf8Ungated_body`, whose seven backward
-`getelementptr` sites read it.  The lemmas that carry `Classical.choice`
-without that lemma are the ones whose arithmetic is an `omega` on a
-subtraction or a negated disjunction: `omega` discharges the goal's
-`Decidable` through `Classical.propDecidable`, which is the fourth of C64's
-four known routes and the one §5 records.  The list and `UInt8` lemmas below
-it are `[propext, Quot.sound]` or narrower, and the four definitions carry
-nothing beyond the fold they name. -/
+at.  **One carrier appears, and it is inherited**: `utf8Ungated_loop_run` carries
+`BitVec.signExtend_eq`, the same carrier the two body lemmas and the tail already
+name — it consumes `utf8Ungated_body`, whose seven backward `getelementptr` sites
+read it.  Nothing else here carries `Classical.choice`: the arithmetic is stated
+so that no decision procedure is consulted, and `omega` is not used in any of
+these proofs.
+
+**Two library lemmas are replaced rather than inherited, because their own proof
+terms carry `Classical.choice` and the statements do not need it**:
+`List.drop_take` and `Nat.div_lt_of_lt_mul`, re-proved here as `drop_take'` and
+`div_lt_of_lt_mul'` from `List`'s recursion and the division identity.  Naming
+them is the point: a later proof that reaches for the library lemma would put the
+carrier back into a statement — `klAll_zero_iff_klErrAll` above all, which the
+headline's right-hand side reads — that no emission and no classical argument
+requires. -/
 
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Kept' does not depend on any axioms -/
 #guard_msgs in
@@ -8617,15 +8622,19 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klErrVec_getD
 
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.drop_take'' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.drop_take'
+
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.block_arg_lo' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.block_arg_lo
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.block_arg_hi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.block_arg_hi' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.block_arg_hi
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klErrBlk_getD_zero_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klErrBlk_getD_zero_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klErrBlk_getD_zero_iff
 
@@ -8665,11 +8674,15 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAcc_zero_iff
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAcc_zero_iff_klErrAll' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.div_lt_of_lt_mul'' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.div_lt_of_lt_mul'
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAcc_zero_iff_klErrAll' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAcc_zero_iff_klErrAll
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAll_zero_iff_klErrAll' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAll_zero_iff_klErrAll' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAll_zero_iff_klErrAll
 
@@ -8713,11 +8726,11 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.body_stream
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.take67_drop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.take67_drop' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.take67_drop
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.stream_slice' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.stream_slice' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.stream_slice
 
@@ -8729,7 +8742,7 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klErrVec_slice_window
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klErrBlk_window' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klErrBlk_window' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klErrBlk_window
 
@@ -8749,7 +8762,7 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.u8_and_high_lt
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.u8_or_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.u8_or_lt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.u8_or_lt
 
@@ -8773,7 +8786,7 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8GateWord_eq
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ascii_of_ptestz' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ascii_of_ptestz' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.ascii_of_ptestz
 
@@ -8797,14 +8810,46 @@ nothing beyond the fold they name. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.ptestz_eq_one_of_ne_zero
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.orcond_one_imp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.orcond_one_imp' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.orcond_one_imp
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ptestz_ascii' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ptestz_ascii' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.ptestz_ascii
 
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_preheader_operands' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_preheader_operands
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.sixtyfour_mul_div_le' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.sixtyfour_mul_div_le
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8SpanBound' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8SpanBound
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8BlkErr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8BlkErr
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAccStep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAccStep
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAcc_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAcc_step
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8BlkErr_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8BlkErr_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAccStep_pack' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAccStep_pack
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8GateBit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8GateBit
