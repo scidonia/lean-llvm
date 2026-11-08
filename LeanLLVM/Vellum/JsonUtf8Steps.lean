@@ -694,6 +694,174 @@ def utf8StageUndefinedStatement : Prop :=
            .int 32 (BitVec.ofNat 32 (if ungated then 1 else 0))]) with mem := mem } =
       some .ub
 
+/-! ### The gate's two paths are one statement
+
+`klAll` carries the gate as a parameter: a block whose sixty-four bytes are ASCII
+and whose predecessor was ASCII is skipped by the gated path and evaluated by the
+free one.  The two blocks above say the skip changes nothing — a skipped block
+contributes `klErrBlk = 0` (`utf8Skip_eq_zero`) and OR-ing a zero vector in is the
+identity (`zipWith_zero_right`) — and this section threads that into the fold, so
+the verdict is one statement rather than two.
+
+The induction carries three facts: the two gate values' states agree, the
+accumulator keeps its lane count, and a set `prev_ascii` means the three bytes
+before the current block are ASCII.  The last is what the skip condition needs,
+it starts from the window's three zero prefix bytes, and it is carried forward by
+`klPre_succ` and the block's own `klAsciiBlk_iff` reading.
+-/
+
+/-- The three bytes before block `bi`, as `klAll` reads them. -/
+def klPre (win : List UInt8) (bi : Nat) : List UInt8 := (win.drop (64 * bi)).take 3
+
+/-- Block `bi` of the window: sixty-four bytes from the position after the three
+prefix bytes. -/
+def klBlk (win : List UInt8) (bi : Nat) : List UInt8 := (win.drop (64 * bi + 3)).take 64
+
+/-- `klAll`'s step at one block index and one state, with its `skip` condition
+written as `klAll` writes it. -/
+def klStep (win : List UInt8) (gate : Bool) (st : List UInt8 × Bool) (bi : Nat) :
+    List UInt8 × Bool :=
+  (if (gate && klAsciiBlk (klBlk win bi) && st.2) = true then st.1
+   else List.zipWith (· ||| ·) st.1 (klErrBlk (klPre win bi) (klBlk win bi)),
+   klAsciiBlk (klBlk win bi))
+
+/-- One gate's run over `nb` blocks of the window. -/
+def klRun (win : List UInt8) (gate : Bool) (nb : Nat) : List UInt8 × Bool :=
+  (List.range nb).foldl (klStep win gate) (List.replicate 32 0x00, true)
+
+/-- **`klAll` is this run.**  The specification's inline step and `klStep` are the
+same function: the accumulator is the same `if`, and the second component is the
+block's `klAsciiBlk` in both. -/
+theorem klAll_eq_klRun (bs : List UInt8) (gate : Bool) :
+    klAll gate bs = (klRun (0x00 :: 0x00 :: 0x00 :: bs) gate ((bs.length + 63) / 64)).1 :=
+  rfl
+
+/-- The three bytes before block `bi + 1` are block `bi`'s last three.  This is the
+window arithmetic the loop's `prev_ascii` invariant rests on. -/
+theorem klPre_succ (win : List UInt8) (bi : Nat) :
+    klPre win (bi + 1) = (klBlk win bi).drop 61 := by
+  unfold klPre klBlk
+  rw [show 64 * (bi + 1) = 64 * bi + 3 + 61 from by omega, ← List.drop_drop,
+    List.take_drop]
+
+/-- **The gate's step is the same step.**  The state's `prev_ascii` is the whole
+of the difference: if it is set, the two ASCII facts give a zero error vector
+(`utf8Skip_eq_zero`, from the block's own reading) and `zipWith_zero_right` makes
+skipping equal to OR-ing that zero vector in; if it is not set, neither run skips
+and the condition is the same on both sides. -/
+theorem klStep_gate (win : List UInt8) (bi : Nat) (st : List UInt8 × Bool)
+    (hlen : st.1.length = 32)
+    (hpre : st.2 = true → ∀ b ∈ klPre win bi, b.toNat < 0x80) :
+    klStep win true st bi = klStep win false st bi := by
+  unfold klStep
+  by_cases hg : (true && klAsciiBlk (klBlk win bi) && st.2) = true
+  · have hparts : klAsciiBlk (klBlk win bi) = true ∧ st.2 = true := by
+      have := hg
+      rw [Bool.and_eq_true, Bool.and_eq_true] at this
+      exact ⟨this.1.2, this.2⟩
+    obtain ⟨hascii, hprev⟩ := hparts
+    have hzero : klErrBlk (klPre win bi) (klBlk win bi) = List.replicate 32 0x00 :=
+      utf8Skip_eq_zero _ _ (hpre hprev) (klAsciiBlk_iff _ |>.mp hascii)
+    have hfalse : ¬ (false && klAsciiBlk (klBlk win bi) && st.2) = true := by
+      simp
+    rw [ite_eq_left hg, ite_eq_right hfalse, hzero,
+      zipWith_zero_right (· ||| ·) (0 : UInt8) st.1 (fun x => UInt8.or_zero) hlen]
+  · have hfalse : ¬ (false && klAsciiBlk (klBlk win bi) && st.2) = true := by
+      simp
+    rw [ite_eq_right hg, ite_eq_right hfalse]
+
+/-- The step keeps the accumulator's lane count. -/
+theorem klStep_length (win : List UInt8) (gate : Bool) (st : List UInt8 × Bool) (bi : Nat)
+    (hlen : st.1.length = 32) : (klStep win gate st bi).1.length = 32 := by
+  unfold klStep
+  by_cases hg : (gate && klAsciiBlk (klBlk win bi) && st.2) = true
+  · rw [ite_eq_left hg]
+    exact hlen
+  · rw [ite_eq_right hg, List.length_zipWith, hlen]
+    have hblk : (klErrBlk (klPre win bi) (klBlk win bi)).length = 32 := by
+      simp [klErrBlk, klErr32, klErrVec]
+    rw [hblk, Nat.min_self]
+
+/-- **The run's invariant.**  The three things the block induction carries: the two
+gate values' states agree, the accumulator keeps its lane count, and a set
+`prev_ascii` means the three bytes before the next block are ASCII. -/
+theorem klRun_invariant (bs : List UInt8) :
+    ∀ nb : Nat,
+      klRun (0x00 :: 0x00 :: 0x00 :: bs) true nb
+        = klRun (0x00 :: 0x00 :: 0x00 :: bs) false nb ∧
+      (klRun (0x00 :: 0x00 :: 0x00 :: bs) true nb).1.length = 32 ∧
+      ((klRun (0x00 :: 0x00 :: 0x00 :: bs) true nb).2 = true →
+        ∀ b ∈ klPre (0x00 :: 0x00 :: 0x00 :: bs) nb, b.toNat < 0x80) := by
+  have hbase : ∀ b ∈ klPre (0x00 :: 0x00 :: 0x00 :: bs) 0, b.toNat < 0x80 := by
+    intro b hb
+    simp [klPre] at hb
+    subst hb
+    decide
+  have hnext : ∀ bi, klAsciiBlk (klBlk (0x00 :: 0x00 :: 0x00 :: bs) bi) = true →
+      ∀ b ∈ klPre (0x00 :: 0x00 :: 0x00 :: bs) (bi + 1), b.toNat < 0x80 := by
+    intro bi hascii b hb
+    rw [klPre_succ] at hb
+    exact ascii_drop (klAsciiBlk_iff _ |>.mp hascii) 61 b hb
+  intro nb
+  induction nb with
+  | zero =>
+      exact ⟨rfl, rfl, fun _ => hbase⟩
+  | succ n ih =>
+      obtain ⟨heq, hlen, hpre⟩ := ih
+      have hT : klRun (0x00 :: 0x00 :: 0x00 :: bs) true (n + 1)
+          = klStep (0x00 :: 0x00 :: 0x00 :: bs) true
+              (klRun (0x00 :: 0x00 :: 0x00 :: bs) true n) n := by
+        unfold klRun
+        rw [List.range_succ, List.foldl_append]
+        rfl
+      have hF : klRun (0x00 :: 0x00 :: 0x00 :: bs) false (n + 1)
+          = klStep (0x00 :: 0x00 :: 0x00 :: bs) false
+              (klRun (0x00 :: 0x00 :: 0x00 :: bs) true n) n := by
+        have h1 : klRun (0x00 :: 0x00 :: 0x00 :: bs) false (n + 1)
+            = klStep (0x00 :: 0x00 :: 0x00 :: bs) false
+                (klRun (0x00 :: 0x00 :: 0x00 :: bs) false n) n := by
+          unfold klRun
+          rw [List.range_succ, List.foldl_append]
+          rfl
+        rw [h1, ← heq]
+      have hstep := klStep_gate (0x00 :: 0x00 :: 0x00 :: bs) n
+        (klRun (0x00 :: 0x00 :: 0x00 :: bs) true n) hlen hpre
+      refine ⟨?_, ?_, ?_⟩
+      · rw [hT, hF, hstep]
+      · rw [hT]
+        exact klStep_length _ true _ n hlen
+      · intro h
+        rw [hT] at h
+        exact hnext n h
+
+/-- **The gate invariance, unconditionally.**  No hypothesis survives into the
+conclusion: the loop's own invariant — a set `prev_ascii` means the three bytes
+before the block are ASCII — is proved from the window's three zero prefix bytes
+and from `klPre_succ` with `klAsciiBlk_iff`, and the step equality is
+`klStep_gate`.  This is what makes the headline one statement for both values of
+the gate parameter. -/
+theorem klAll_gate_invariant (bs : List UInt8) : klAll true bs = klAll false bs := by
+  rw [klAll_eq_klRun bs true, klAll_eq_klRun bs false]
+  exact congrArg Prod.fst (klRun_invariant bs ((bs.length + 63) / 64)).1
+
+/-- The window whose `klPre win 1` is not ASCII: the theorem is unconditional, so
+this instance needs nothing beyond it.  At `bi = 1` the three bytes before the
+block include the `0xF0`, but the skip is decided by the *state's* `prev_ascii`,
+which is block 0's flag, and block 0 holds the `0xF0` — so the state-conditioned
+step is what carries this case. -/
+theorem klAll_gate_invariant_counterexample :
+    klAll true (List.replicate 61 0x41 ++ [0xF0, 0x41, 0x41] ++ List.replicate 64 0x41)
+      = klAll false (List.replicate 61 0x41 ++ [0xF0, 0x41, 0x41]
+          ++ List.replicate 64 0x41) :=
+  klAll_gate_invariant _
+
+/-- The same window's block 0 is not ASCII, so its `prev_ascii` is `false` and no
+skip is taken at `bi = 1`. -/
+theorem counterexample_block0_not_ascii :
+    klAsciiBlk (klBlk (0x00 :: 0x00 :: 0x00 ::
+      (List.replicate 61 0x41 ++ [0xF0, 0x41, 0x41] ++ List.replicate 64 0x41)) 0) = false := by
+  decide
+
 end LeanLLVM.Vellum.JsonUtf8Steps
 
 

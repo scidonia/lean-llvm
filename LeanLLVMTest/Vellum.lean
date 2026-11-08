@@ -7298,6 +7298,13 @@ info: 'LeanLLVM.Vellum.JsonUtf8IR.utf8Window' does not depend on any axioms
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8IR.utf8Window
 
+-- The staged window on the carrier `ValidPrefix` is stated over.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8IR.utf8WinPrefix' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8IR.utf8WinPrefix
+
 -- `n ≤ 64 * ((n + 63) / 64)`: the padding count subtracts something smaller.
 /--
 info: 'LeanLLVM.Vellum.JsonUtf8IR.le_mul_div_sixtyfour' depends on axioms: [propext, Quot.sound]
@@ -7638,4 +7645,101 @@ info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAsciiBlk_iff' depends on axioms: [propext
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAsciiBlk_iff
+
+/-! ### The gate's two paths are one statement
+
+`klAll` carries the gate as a parameter: a block whose sixty-four bytes are ASCII
+and whose predecessor was ASCII is skipped by the gated path and evaluated by the
+free one.  These declarations are the block fold's invariant — the two states
+agree, the accumulator keeps its lane count, and a set `prev_ascii` means the
+three bytes before the block are ASCII — and the invariance that closes over it.
+Every one reports `[propext, Quot.sound]` at most: the proof is an induction over
+blocks with the lane algebra and the table's ASCII facts, and it consumes no
+body step and no `getelementptr`, so this stage's own ceiling is untouched. -/
+
+-- The three bytes before a block, as `klAll` reads them.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klPre' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klPre
+
+-- A block of the window: sixty-four bytes after the three prefix bytes.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klBlk' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klBlk
+
+-- `klAll`'s step at one block index and one state.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klStep' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klStep
+
+-- One gate's run over `nb` blocks of the window.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klRun' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klRun
+
+-- `klAll` is the run: the specification's inline step is `klStep`.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAll_eq_klRun' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAll_eq_klRun
+
+-- The three bytes before block `bi + 1` are block `bi`'s last three.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klPre_succ' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klPre_succ
+
+-- The gate's step is the same step, given the predecessor's ASCII reading.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klStep_gate' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klStep_gate
+
+-- The step keeps the accumulator's lane count.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klStep_length' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klStep_length
+
+-- The run's invariant: the two gates agree, the lane count is kept, and a set
+-- `prev_ascii` means the bytes before the next block are ASCII.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klRun_invariant' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klRun_invariant
+
+-- **The gate invariance, unconditionally**: `klAll true bs = klAll false bs`.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAll_gate_invariant' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAll_gate_invariant
+
+-- The window whose `klPre win 1` is not ASCII: the invariance needs nothing
+-- beyond itself, because the skip is decided by the state's flag.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.klAll_gate_invariant_counterexample' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.klAll_gate_invariant_counterexample
+
+-- The same window's block 0 is not ASCII, so no skip is taken at `bi = 1`.
+/--
+info: 'LeanLLVM.Vellum.JsonUtf8Steps.counterexample_block0_not_ascii' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.counterexample_block0_not_ascii
 

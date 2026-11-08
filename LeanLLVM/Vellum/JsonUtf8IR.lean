@@ -21,6 +21,7 @@ between this unit's call sites and the mask unit's, whose table arrives as a
 -/
 import LeanLLVM.Memory
 import LeanLLVM.Parser
+import LeanLLVM.JSON.Utf8
 import LeanLLVM.Vellum.BitLanes
 
 namespace LeanLLVM.Vellum.JsonUtf8IR
@@ -454,6 +455,14 @@ is tight. -/
 padding to `64 * nb` bytes after the document. -/
 def utf8Window (doc : List UInt8) (n nb : Nat) : List UInt8 :=
   List.replicate 3 0 ++ doc ++ List.replicate (64 * nb - n) 0
+
+/-- The staged window read as the byte string the valid-prefix relation is
+stated over.  The window is a `List UInt8` because `readBytes` returns one, and
+`ValidPrefix` is stated over `Bytes = ByteString`, so the two meet here rather
+than at each use: `ByteString.literal` is the same bytes on the carrier the
+relation reads. -/
+def utf8WinPrefix (win : List UInt8) : Prop :=
+  LeanLLVM.JSON.ValidPrefix (LeanLLVM.JSON.ByteString.literal win)
 
 /-- A length is inside its own block count: `n ≤ 64 * ((n + 63) / 64)`.  This is
 what makes the padding count `64 * nb - n` a subtraction of something smaller,
