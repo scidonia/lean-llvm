@@ -313,6 +313,119 @@ entry:
   | .ok m => parseModule (Module.render m) = .ok m
   | .error _ => false
 
+-- The UTF-8 stage's two intrinsic spellings, at the shapes the emission writes:
+-- the saturating vector subtract at `<32 x i8>` and the zero test at
+-- `<4 x i64>`.  Both must parse to calls at those symbols and result types and
+-- print back to the same module, so a spelled symbol the parser accepts as an
+-- unmodelled callee cannot pass here as the modelled one.
+def utf8IntrinsicSample : String :=
+"define i32 @utf8_intrinsics(ptr %p) {
+entry:
+  %a = load <32 x i8>, ptr %p
+  %b = load <32 x i8>, ptr %p
+  %s = tail call <32 x i8> @llvm.usub.sat.v32i8(<32 x i8> %a, <32 x i8> %b)
+  %w = load <4 x i64>, ptr %p
+  %x = load <4 x i64>, ptr %p
+  %z = tail call i32 @llvm.x86.avx.ptestz.256(<4 x i64> %w, <4 x i64> %x)
+  ret i32 %z
+}
+"
+
+#guard
+  match parseModule utf8IntrinsicSample with
+  | .ok ⟨_, f :: _⟩ =>
+      match f.blocks with
+      | [b] =>
+          b.instrs.any (fun i => match i with
+            | .call "%s" (.vec 32 (.int 8)) "llvm.usub.sat.v32i8" _ => true
+            | _ => false) ∧
+          b.instrs.any (fun i => match i with
+            | .call "%z" (.int 32) "llvm.x86.avx.ptestz.256" _ => true
+            | _ => false)
+      | _ => false
+  | _ => false
+
+#guard
+  match parseModule utf8IntrinsicSample with
+  | .ok m => parseModule (Module.render m) = .ok m
+  | .error _ => false
+
+-- The shapes the two spellings do not have are refused by name rather than read
+-- as unmodelled calls: a lane count the symbol does not carry, a wrong arity, a
+-- wrong operand type, the neighbour `ptest` spelling, and a wrong result type.
+def utf8BadLanes : String :=
+"define i32 @utf8_bad_lanes(ptr %p) {
+entry:
+  %a = load <16 x i8>, ptr %p
+  %b = load <16 x i8>, ptr %p
+  %r = tail call <16 x i8> @llvm.usub.sat.v16i8(<16 x i8> %a, <16 x i8> %b)
+  ret i32 0
+}
+"
+
+def utf8BadArity : String :=
+"define i32 @utf8_bad_arity(ptr %p) {
+entry:
+  %a = load <32 x i8>, ptr %p
+  %r = tail call <32 x i8> @llvm.usub.sat.v32i8(<32 x i8> %a)
+  ret i32 0
+}
+"
+
+def utf8BadOperand : String :=
+"define i32 @utf8_bad_operand(ptr %p, i32 %n) {
+entry:
+  %a = load <32 x i8>, ptr %p
+  %r = tail call <32 x i8> @llvm.usub.sat.v32i8(<32 x i8> %a, i32 %n)
+  ret i32 0
+}
+"
+
+def utf8BadPtest : String :=
+"define i32 @utf8_bad_ptest(ptr %p) {
+entry:
+  %a = load <4 x i64>, ptr %p
+  %b = load <4 x i64>, ptr %p
+  %r = tail call i32 @llvm.x86.avx.ptest.256(<4 x i64> %a, <4 x i64> %b)
+  ret i32 %r
+}
+"
+
+def utf8BadResult : String :=
+"define i64 @utf8_bad_result(ptr %p) {
+entry:
+  %a = load <4 x i64>, ptr %p
+  %b = load <4 x i64>, ptr %p
+  %r = tail call i64 @llvm.x86.avx.ptestz.256(<4 x i64> %a, <4 x i64> %b)
+  ret i64 %r
+}
+"
+
+#guard
+  match parseModule utf8BadLanes with
+  | .error e => mentions e "llvm.usub.sat.v16i8"
+  | .ok _ => false
+
+#guard
+  match parseModule utf8BadArity with
+  | .error e => mentions e "llvm.usub.sat.v32i8"
+  | .ok _ => false
+
+#guard
+  match parseModule utf8BadOperand with
+  | .error e => mentions e "llvm.usub.sat.v32i8"
+  | .ok _ => false
+
+#guard
+  match parseModule utf8BadPtest with
+  | .error e => mentions e "llvm.x86.avx.ptest.256"
+  | .ok _ => false
+
+#guard
+  match parseModule utf8BadResult with
+  | .error e => mentions e "llvm.x86.avx.ptestz.256"
+  | .ok _ => false
+
 -- `zeroinitializer` at a vector type is the all-zero vector, and the splat of
 -- zero is that same value: the two spellings parse to the same module, so
 -- reading one as the other changes no instruction.  The printed form is the

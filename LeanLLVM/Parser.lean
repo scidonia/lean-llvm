@@ -574,6 +574,10 @@ the intrinsic it refused, and the accepted form is the one the emission uses:
 
 * `llvm.x86.avx2.pshuf.b`: `<32 x i8> (<32 x i8>, <32 x i8>)` — two operands,
   the table then the control;
+* `llvm.usub.sat.v32i8`: `<32 x i8> (<32 x i8>, <32 x i8>)` — lane-wise
+  unsigned saturating subtract, two operands and no flag;
+* `llvm.x86.avx.ptestz.256`: `i32 (<4 x i64>, <4 x i64>)` — one when no bit is
+  set in both operands, two operands and no flag;
 * `llvm.x86.pclmulqdq`: `<2 x i64> (<2 x i64>, <2 x i64>, i8 0)`;
 * `llvm.x86.bmi.pext.64` and `llvm.x86.bmi.pdep.64`: `i64 (i64, i64)`;
 * `llvm.ctlz.i64`: `i64 (i64, i1 false)`;
@@ -586,6 +590,11 @@ the intrinsic it refused, and the accepted form is the one the emission uses:
   true` has no such bound and stays refused, so the asymmetry is the admission
   rule and not an inconsistency: a spelling is admitted with an obligation that
   bounds its poison, and that one has none.
+
+`usub.sat.v32i8` and `ptestz.256` are exact: each states its whole meaning at
+the symbol and operand types, and neither carries a flag or poison.  The
+poison-flag rule above is therefore not invoked for them — it exists for
+`cttz`'s `i1`, and these two spellings have none to bound.
 
 A call to any other symbol is not this check's business: a callee's meaning is
 the `Calls` environment's, and the fixture's own opcode-and-call-target
@@ -610,6 +619,10 @@ def checkIntrinsicShape (callee : String) (retTy : Ty)
   match callee with
   | "llvm.x86.avx2.pshuf.b" =>
       shape 2 (.vec 32 (.int 8)) [.vec 32 (.int 8), .vec 32 (.int 8)]
+  | "llvm.usub.sat.v32i8" =>
+      shape 2 (.vec 32 (.int 8)) [.vec 32 (.int 8), .vec 32 (.int 8)]
+  | "llvm.x86.avx.ptestz.256" =>
+      shape 2 (.int 32) [.vec 4 (.int 64), .vec 4 (.int 64)]
   | "llvm.x86.pclmulqdq" =>
       match shape 3 (.vec 2 (.int 64))
           [.vec 2 (.int 64), .vec 2 (.int 64), .int 8] with
@@ -676,6 +689,13 @@ def checkIntrinsicShape (callee : String) (retTy : Ty)
       else if s.startsWith "llvm.x86.avx2.pshuf." then
         .error s!"the intrinsic @{s} is not modelled: only \
             @llvm.x86.avx2.pshuf.b is"
+      else if s.startsWith "llvm.usub.sat" then
+        .error s!"the intrinsic @{s} is not modelled: the saturating subtract \
+            is @llvm.usub.sat.v32i8, at <32 x i8> with two operands"
+      else if s.startsWith "llvm.x86.avx.ptest" then
+        .error s!"the intrinsic @{s} is not modelled: the zero test is \
+            @llvm.x86.avx.ptestz.256, at <4 x i64> with two operands and an \
+            i32 result"
       else .ok ()
 
 /-- The call instruction, with or without a destination register:
@@ -724,9 +744,12 @@ The intrinsic symbols the fragment models are the exception to that
 openness: `checkIntrinsicShape` validates each one's symbol, arity, operand
 types and immediate, so a `pshuf.b` of the wrong arity, a `pclmulqdq` at an
 immediate other than 0, a `pext.32`, a `pdep.32`, a `ctpop.i16`, a `cttz` whose
-flag is not an immediate `i1`, and a `ctlz` with the flag `i1 true` are refused
-by name instead of reaching the semantics as calls no environment can resolve
-meaningfully.  Any other callee is still resolved by the environment alone. -/
+flag is not an immediate `i1`, a `ctlz` with the flag `i1 true`, a
+`usub.sat.v16i8` (or a `usub.sat` of the wrong arity or operand types) and a
+`ptest.256` or a `ptestz.128` are refused by name instead of reaching the
+semantics as calls no environment can resolve meaningfully.  Any other callee is
+still resolved by the environment alone; that fall-through is deliberate, and a
+call target no environment resolves is `ub` rather than silently read. -/
 def parseCall (dst : Option String) : P Stmt := do
   let retTy ← expectTy
   let first ← P.next

@@ -6408,6 +6408,26 @@ the ceiling recorded for them: `ctpop_eq_setLanes_length` at
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.BitLanes.cttz_eq_head
 
+/-! The UTF-8 stage's two instructions, at the footprint their facts hold
+without a carrier: the saturating subtract's two cases and the zero test's two
+answers are decided by the byte comparison and the and-word, not by a choice. -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.subsSat_of_le' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.subsSat_of_le
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.subsSat_of_gt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.subsSat_of_gt
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.ptestz_eq_one_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ptestz_eq_one_iff
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.ptestz_eq_zero_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ptestz_eq_zero_iff
+
 /-! The zero word's two facts, at the ceiling they hold without a carrier: the
 all-clear lanes are found through `BitVec.getLsbD_zero` and
 `BitLanes.filter_eq_nil_of_all_false`, not through `List.filter_eq_nil_iff`,

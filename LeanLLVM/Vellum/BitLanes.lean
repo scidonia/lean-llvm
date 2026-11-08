@@ -4,15 +4,18 @@ The bit intrinsics of the JSON kernels, in lane vocabulary.
 `tests/v16/ci2.ll`, the stage-1 index kernel, forms its masks with three
 intrinsics: `llvm.x86.bmi.pext.64` twice, `llvm.x86.bmi.pdep.64` and
 `llvm.ctlz.i64`.  The entry kernels add three more — `llvm.ctpop.i32`,
-`llvm.ctpop.i64` and `llvm.cttz.i64` — so six spellings have a modelled reading
-here, as five lane definitions (the two `ctpop` widths share one) and no
-semantics case.  They are modelled as calls — the parser
+`llvm.ctpop.i64` and `llvm.cttz.i64` — and the UTF-8 stage adds two,
+`llvm.usub.sat.v32i8` and `llvm.x86.avx.ptestz.256`, so eight spellings have a
+modelled reading here, as seven lane definitions (the two `ctpop` widths share
+one) and no semantics case.  They are modelled as calls — the parser
 validates their spelling and an environment supplies their meaning, so the
 semantics needs no special case — and this module is that meaning: `pext`, `pdep`
 and `ctlz` lane by lane, which `s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`)
 binds for the extracted mask unit, and `ctpop`/`cttz`, which `entryCalls`
-(`LeanLLVM/Vellum/JsonEntryIR.lean`) binds for the entry kernels.  `Pclmul`
-gives the fourth (`llvm.x86.pclmulqdq`) its algebra.
+(`LeanLLVM/Vellum/JsonEntryIR.lean`) binds for the entry kernels, and
+`subsSat`/`ptestz`, which `utf8Calls` (`LeanLLVM/Vellum/JsonUtf8IR.lean`) binds
+for the UTF-8 stage.  `Pclmul` gives the fourth (`llvm.x86.pclmulqdq`) its
+algebra.
 
 A word is read lane by lane with `BitVec.getLsbD`, and `ofLanes` packs a lane
 function back into a word, so every definition below is a statement about lanes
@@ -27,6 +30,11 @@ rather than about a bit-twiddling sequence:
   set lanes; `ctlz_not_eq_trailingRun` is `ctlz (~~~m) = trailingRun m`.
 * `ctpop x` is the number of set lanes, and `cttz x` is the least set lane —
   `w` at the zero word.
+* `subsSat a b` subtracts one byte lane from another and saturates at zero, so
+  it is `a - b` when the subtrahend fits and `0` when it does not; the UTF-8
+  stage's `usub.sat.v32i8` applies it byte by byte.
+* `ptestz a b` is the 256-bit zero test: `1` when no lane is set in both
+  operands, `0` otherwise.
 
 **The poison flag, stated once.** `cttz` has an `i1` flag in LLVM.  At `false`
 the zero word yields `w`, which is exact.  At `true` LLVM makes the zero operand
@@ -37,6 +45,8 @@ count, outside the written region the frame clause confines and the read region
 the words clause reads — and it is why `cttz`'s `i1 true` is the one poison-carrying
 flag the parser admits.  `ctlz`'s `i1 true` is refused by the same rule applied
 the other way: not observed, and no clause bounds where its poison would land.
+`usub.sat.v32i8` and `ptestz.256` carry no flag at all, so the rule has nothing
+to bound for them.
 
 ## The rank machinery
 
@@ -556,5 +566,45 @@ theorem cttz_eq_head {w : Nat} (x : BitVec w) :
     cttz x = ((setLanes x).head?).getD w := by
   unfold cttz setLanes
   rw [find?_eq_head_filter]
+
+/-! ### The UTF-8 stage's two instructions
+
+The UTF-8 stage's `llvm.usub.sat.v32i8` and `llvm.x86.avx.ptestz.256` are exact:
+neither has a flag, and the parser admits only their written shapes.  They are
+stated here at the byte lane and at the word rather than at the bit, because
+that is the granularity the instructions read: the subtract saturates each byte,
+and the test reads all 256 bits of the and-word at once. -/
+
+/-- `llvm.usub.sat.v32i8`'s lane: unsigned saturating subtraction at one byte,
+`a - b` when the subtrahend fits and `0` otherwise.  A vector call applies it
+lane by lane. -/
+def subsSat (a b : BitVec 8) : BitVec 8 :=
+  if b.toNat ≤ a.toNat then a - b else 0
+
+/-- A lane whose subtrahend fits is the plain difference. -/
+theorem subsSat_of_le {a b : BitVec 8} (h : b.toNat ≤ a.toNat) :
+    subsSat a b = a - b := by
+  simp [subsSat, h]
+
+/-- A lane whose subtrahend is larger saturates at zero. -/
+theorem subsSat_of_gt {a b : BitVec 8} (h : a.toNat < b.toNat) :
+    subsSat a b = 0 := by
+  have h' : ¬ b.toNat ≤ a.toNat := by omega
+  simp [subsSat, h']
+
+/-- `llvm.x86.avx.ptestz.256`'s word test: `1` when no bit is set in both
+operands, `0` otherwise.  The result type is the instruction's `i32`. -/
+def ptestz {w : Nat} (a b : BitVec w) : BitVec 32 :=
+  if a &&& b = 0 then 1 else 0
+
+/-- The test answers one exactly on a cleared and-word. -/
+theorem ptestz_eq_one_iff {w : Nat} (a b : BitVec w) :
+    ptestz a b = 1 ↔ a &&& b = 0 := by
+  by_cases h : a &&& b = 0 <;> simp [ptestz, h]
+
+/-- The test answers zero exactly when some lane is set in both operands. -/
+theorem ptestz_eq_zero_iff {w : Nat} (a b : BitVec w) :
+    ptestz a b = 0 ↔ a &&& b ≠ 0 := by
+  by_cases h : a &&& b = 0 <;> simp [ptestz, h]
 
 end LeanLLVM.Vellum.BitLanes
