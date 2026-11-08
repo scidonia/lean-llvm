@@ -4036,3 +4036,268 @@ theorem utf8Ungated_preheader_operands (s : State) :
   constructor <;> rfl
 
 end LeanLLVM.Vellum.JsonUtf8Steps
+
+namespace LeanLLVM.Vellum.JsonUtf8Steps
+
+open LeanLLVM
+open LeanLLVM.Vellum.JsonUtf8IR
+open LeanLLVM.Vellum.JsonUtf8Spec
+open LeanLLVM.Vellum.BitLanes
+open LeanLLVM.Vellum.JsonEntrySteps
+open LeanLLVM.Vellum.JsonS1MasksIR
+  (evalInstr_load)
+
+/-! ### What an unreadable byte does
+
+`utf8StageUndefinedStatement` says that a byte the body cannot read makes the
+run `ub`.  Two facts carry it, and neither is the run: the window's unreadable
+position has a **least** one, which fixes the block a run first reaches with a
+bad byte; and that block's header loads are the instructions that refuse, so its
+`denoteCode` is `none`.
+
+The staging clauses are what make the first fact a statement about a document
+byte: the three prefix bytes and the padding are stated readable, so the least
+position lies in `[3, 3 + n)` and names a block below the block count. -/
+
+/-- A range that contains an unreadable byte has a least one, with every earlier
+position readable.  The witness is the induction's own — no well-founded choice
+enters, which is why the proof is by cases on the head rather than `Nat.find`. -/
+theorem exists_least_unreadable (m : Mem) (p n : Nat)
+    (h : ∃ k, k < n ∧ readByte m (p + k) = none) :
+    ∃ k, k < n ∧ readByte m (p + k) = none ∧
+      ∀ j, j < k → readByte m (p + j) ≠ none := by
+  induction n generalizing p with
+  | zero =>
+      obtain ⟨k, hk, _⟩ := h
+      exact absurd hk (Nat.not_lt_zero k)
+  | succ n ih =>
+      obtain ⟨k, hk, hnone⟩ := h
+      cases k with
+      | zero => exact ⟨0, Nat.succ_pos n, by simpa using hnone, by omega⟩
+      | succ j =>
+          have hj : j < n := by omega
+          have htail : readByte m (p + 1 + j) = none := by
+            rw [show p + 1 + j = p + (j + 1) from by omega]
+            exact hnone
+          cases hp : readByte m p with
+          | none => exact ⟨0, Nat.succ_pos n, hp, by omega⟩
+          | some b =>
+              obtain ⟨k', hk', hnone', hleast⟩ := ih (p + 1) ⟨j, hj, htail⟩
+              refine ⟨k' + 1, by omega, ?_, ?_⟩
+              · rw [show p + (k' + 1) = p + 1 + k' from by omega]
+                exact hnone'
+              · intro j' hj'
+                cases j' with
+                | zero =>
+                    rw [Nat.add_zero]
+                    intro hcon
+                    rw [hp] at hcon
+                    cases hcon
+                | succ j'' =>
+                    have hlt : j'' < k' := by omega
+                    rw [show p + (j'' + 1) = p + 1 + j'' from by omega]
+                    exact hleast j'' hlt
+
+/-- **The least unreadable block.**  An unreadable position in the staged window
+is a document byte, and its block index is below the block count; every byte of
+every earlier block is readable, which is what lets the run reach this block. -/
+theorem utf8_least_unreadable_block (mem : Mem) (b n nb w : Nat)
+    (hb : 3 ≤ b)
+    (hnb : nb = (n + 63) / 64)
+    (hpre : ∀ k, k < 3 → readByte mem (b - 3 + k) = some 0x00)
+    (hpad : ∀ k, n ≤ k → k < 64 * nb → readByte mem (b + k) = some 0x00)
+    (hw : w < 3 + 64 * nb)
+    (hbad : readByte mem (b - 3 + w) = none) :
+    ∃ i j, i < nb ∧ j < 64 ∧ readByte mem (b + 64 * i + j) = none ∧
+      ∀ i' j', i' < i → j' < 64 → readByte mem (b + 64 * i' + j') ≠ none := by
+  obtain ⟨k, hk, hnone, hleast⟩ :=
+    exists_least_unreadable mem (b - 3) (3 + 64 * nb) ⟨w, hw, hbad⟩
+  have hk3 : 3 ≤ k := by
+    refine Nat.le_of_not_lt (fun hlt => ?_)
+    have hsome := hpre k hlt
+    rw [hsome] at hnone
+    cases hnone
+  have hkend : k < 3 + n := by
+    refine Nat.lt_of_not_le (fun hge => ?_)
+    have hsome := hpad (k - 3) (by omega) (by omega)
+    rw [show b + (k - 3) = b - 3 + k from by omega] at hsome
+    rw [hsome] at hnone
+    cases hnone
+  refine ⟨(k - 3) / 64, (k - 3) % 64, ?_, ?_, ?_, ?_⟩
+  · have h1 : k - 3 < n := by omega
+    have h2 : n ≤ 64 * nb := by
+      rw [hnb]
+      exact JsonUtf8IR.le_mul_div_sixtyfour n
+    exact div_lt_of_lt_mul' (by omega)
+  · exact Nat.mod_lt _ (by decide)
+  · rw [Nat.add_assoc, Nat.div_add_mod]
+    rw [show b + (k - 3) = b - 3 + k from by omega]
+    exact hnone
+  · intro i' j' hi' hj'
+    have hlt : 3 + 64 * i' + j' < k := by
+      have hdiv : i' + 1 ≤ (k - 3) / 64 := by omega
+      have hmul : (i' + 1) * 64 ≤ ((k - 3) / 64) * 64 := Nat.mul_le_mul_right 64 hdiv
+      have hle : ((k - 3) / 64) * 64 ≤ k - 3 := Nat.div_mul_le_self (k - 3) 64
+      omega
+    have haddr : b + 64 * i' + j' = b - 3 + (3 + 64 * i' + j') := by omega
+    rw [haddr]
+    exact hleast (3 + 64 * i' + j') hlt
+
+/-- A block all of whose sixty-four bytes are readable supplies the two
+thirty-two-byte header loads: the halves the gate's own test reads. -/
+theorem utf8_block_two_reads (mem : Mem) (b i : Nat)
+    (h : ∀ j, j < 64 → readByte mem (b + 64 * i + j) ≠ none) :
+    (∃ B0, readBytes mem (b + 64 * i) 32 = some B0) ∧
+      ∃ B1, readBytes mem (b + 64 * i + 32) 32 = some B1 := by
+  constructor
+  · exact exists_readBytes_of_readable mem (b + 64 * i) 32
+      (fun k hk => h k (by omega))
+  · refine exists_readBytes_of_readable mem (b + 64 * i + 32) 32
+      (fun k hk => ?_)
+    rw [show b + 64 * i + 32 + k = b + 64 * i + (32 + k) from by omega]
+    exact h (32 + k) (by omega)
+
+/-- **`for.body.us` refuses the step when its block is unreadable.**  The three
+phis, the shift and the address run; whichever half holds the bad byte, the
+header load that reads it is `none`, so the block's `denoteCode` is `none`. -/
+theorem utf8ForBodyUs_denote_none (env : Env) (s : State) (p : String)
+    (opP opU opB : Operand) (b bi : Nat) (prev : BitVec 32) (u8kIn : List (BitVec 64))
+    (hpre : s.pre = some p)
+    (hincP : phiIncoming p [("if.end14.us", .reg "%2"),
+      ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))] = some opP)
+    (hincU : phiIncoming p [("if.end14.us", .reg "%u8k.2.us"),
+      ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))] = some opU)
+    (hincB : phiIncoming p [("if.end14.us", .reg "%inc.us"),
+      ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opB)
+    (hopP : evalOperand (withEnv env s) opP = some (.int 32 prev))
+    (hopU : evalOperand (withEnv (("%prev_ascii.077.us", .int 32 prev) :: env) s) opU
+      = some (.vec 4 64 u8kIn))
+    (hopB : evalOperand (withEnv (("%u8k.076.us", .vec 4 64 u8kIn) ::
+      ("%prev_ascii.077.us", .int 32 prev) :: env) s) opB
+      = some (.int 64 (BitVec.ofNat 64 bi)))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hbad : ∃ j, j < 64 ∧ readByte s.mem (b + 64 * bi + j) = none)
+    (hbi64 : 64 * bi < 2 ^ 63) :
+    denoteCode utf8Calls utf8ForBodyUs.instrs (withEnv env s) = none := by
+  simp only [utf8ForBodyUs, reg, lit, splatOf, highBitMask, JsonUtf8IR.ptestz]
+  ent_step (utf8_phi env s "%prev_ascii.077.us" (.int 32)
+    [("if.end14.us", .reg "%2"), ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))]
+    p opP (.int 32 prev) hpre hincP hopP)
+  ent_step (utf8_phi (("%prev_ascii.077.us", .int 32 prev) :: env) s "%u8k.076.us" v4i64
+    [("if.end14.us", .reg "%u8k.2.us"),
+      ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))]
+    p opU (.vec 4 64 u8kIn) hpre hincU hopU)
+  ent_step (utf8_phi (("%u8k.076.us", .vec 4 64 u8kIn) ::
+    ("%prev_ascii.077.us", .int 32 prev) :: env) s "%bi.075.us" (.int 64)
+    [("if.end14.us", .reg "%inc.us"), ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))]
+    p opB (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+  ent_step (utf8_step_shl _ _ "%shl.us" "%bi.075.us" 64 (BitVec.ofNat 64 bi)
+    (BitVec.ofInt 64 6) (by ent_auto))
+  rw [shl64_six bi (by omega)]
+  ent_step (utf8_step_gep _ _ "%add.ptr.us" "%b" "%shl.us" (.int 8) b
+    (BitVec.ofNat 64 (64 * bi)) (by ent_auto) (by ent_auto)
+    (by rw [toNat_ofNat64 (64 * bi) (by omega)]; exact hbi64))
+  rw [show b + (BitVec.ofNat 64 (64 * bi)).toNat * (Ty.int 8).sizeBytes = b + 64 * bi from by
+    rw [toNat_ofNat64 (64 * bi) (by omega), sizeBytes_i8, Nat.mul_one]]
+  obtain ⟨j, hj, hnone⟩ := hbad
+  by_cases hj32 : j < 32
+  · have hr : readBytes s.mem (b + 64 * bi) 32 = none :=
+      readBytes_eq_none_of_readByte_none s.mem hnone (by omega) (by omega)
+    exact denoteCode_cons_none _ _ _ _
+      (evalInstr_load_none (p := .reg "%add.ptr.us") (hp := by ent_auto)
+        (hv := loadValue_vec_int_of_readBytes_none (by decide) (by decide) hr))
+  · cases hr : readBytes s.mem (b + 64 * bi) 32 with
+    | none =>
+        exact denoteCode_cons_none _ _ _ _
+          (evalInstr_load_none (p := .reg "%add.ptr.us") (hp := by ent_auto)
+            (hv := loadValue_vec_int_of_readBytes_none (by decide) (by decide) hr))
+    | some B0 =>
+        have hl0 : B0.length = 32 := readBytes_length s.mem (b + 64 * bi) 32 hr
+        have hV : B0 = natToBytes (bytesToNat B0) 32 :=
+          (natToBytes_bytesToNat B0).symm.trans (by rw [hl0])
+        have hlt : bytesToNat B0 < 2 ^ 256 := by
+          have h1 := bytesToNat_lt B0
+          rwa [hl0, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at h1
+        ent_step (step_load4_64 _ _ "%0" "%add.ptr.us" (b + 64 * bi) (bytesToNat B0)
+          (by ent_auto) (by rw [← hV]; exact hr) hlt)
+        ent_step (utf8_step_gep_imm _ _ "%add.ptr3.us" "%add.ptr.us" (.int 8) (b + 64 * bi)
+          (BitVec.ofInt 64 32) (by ent_auto) (by decide))
+        rw [show b + 64 * bi + (BitVec.ofInt 64 32).toNat * (Ty.int 8).sizeBytes
+          = b + 64 * bi + 32 from by
+          rw [show (BitVec.ofInt 64 32).toNat = 32 from by decide, sizeBytes_i8]]
+        have hr1 : readBytes s.mem (b + 64 * bi + 32) 32 = none :=
+          readBytes_eq_none_of_readByte_none s.mem hnone (by omega) (by omega)
+        exact denoteCode_cons_none _ _ _ _
+          (evalInstr_load_none (p := .reg "%add.ptr3.us") (hp := by ent_auto)
+            (hv := loadValue_vec_int_of_readBytes_none (by decide) (by decide) hr1))
+
+/-- **`for.body` refuses the step when its block is unreadable**, by the same two
+header loads at the `<16 x i16>` shape the ungated path reads. -/
+theorem utf8ForBody_denote_none (env : Env) (s : State) (b bi : Nat)
+    (u8k : List (BitVec 64)) (p : String) (opA opB : Operand)
+    (hpre : s.pre = some p)
+    (hincA : phiIncoming p [("for.body", .reg "%or.i47"),
+      ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))] = some opA)
+    (hincB : phiIncoming p [("for.body", .reg "%inc"),
+      ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opB)
+    (hopA : evalOperand (withEnv env s) opA = some (.vec 4 64 u8k))
+    (hopB : evalOperand (withEnv (("%u8k.076", .vec 4 64 u8k) :: env) s) opB
+      = some (.int 64 (BitVec.ofNat 64 bi)))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hbad : ∃ j, j < 64 ∧ readByte s.mem (b + 64 * bi + j) = none)
+    (hbi64 : 64 * bi < 2 ^ 63) :
+    denoteCode utf8Calls utf8ForBody.instrs (withEnv env s) = none := by
+  simp only [utf8ForBody, reg, lit, splatOf, lanesOf, highBitMask, JsonUtf8IR.pshufb,
+    JsonUtf8IR.usubSat]
+  ent_step (utf8_phi env s "%u8k.076" v4i64 _ p opA (.vec 4 64 u8k) hpre hincA hopA)
+  ent_step (utf8_phi (("%u8k.076", .vec 4 64 u8k) :: env) s "%bi.075" (.int 64) _ p opB
+    (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+  ent_step (utf8_step_shl _ _ "%shl" "%bi.075" 64 (BitVec.ofNat 64 bi) (BitVec.ofInt 64 6)
+    (by ent_auto))
+  rw [shl64_six bi (by omega)]
+  ent_step (utf8_step_gep _ _ "%add.ptr" "%b" "%shl" (.int 8) b (BitVec.ofNat 64 (64 * bi))
+    (by ent_auto) (by ent_auto) (by rw [toNat_ofNat64 (64 * bi) (by omega)]; exact hbi64))
+  rw [show b + (BitVec.ofNat 64 (64 * bi)).toNat * (Ty.int 8).sizeBytes = b + 64 * bi from by
+    rw [toNat_ofNat64 (64 * bi) (by omega), sizeBytes_i8, Nat.mul_one]]
+  obtain ⟨j, hj, hnone⟩ := hbad
+  by_cases hj32 : j < 32
+  · have hr : readBytes s.mem (b + 64 * bi) 32 = none :=
+      readBytes_eq_none_of_readByte_none s.mem hnone (by omega) (by omega)
+    exact denoteCode_cons_none _ _ _ _
+      (evalInstr_load_none (p := .reg "%add.ptr") (hp := by ent_auto)
+        (hv := loadValue_vec_int_of_readBytes_none (by decide) (by decide) hr))
+  · cases hr : readBytes s.mem (b + 64 * bi) 32 with
+    | none =>
+        exact denoteCode_cons_none _ _ _ _
+          (evalInstr_load_none (p := .reg "%add.ptr") (hp := by ent_auto)
+            (hv := loadValue_vec_int_of_readBytes_none (by decide) (by decide) hr))
+    | some B0 =>
+        have hl0 : B0.length = 32 := readBytes_length s.mem (b + 64 * bi) 32 hr
+        have hV : B0 = natToBytes (bytesToNat B0) 32 :=
+          (natToBytes_bytesToNat B0).symm.trans (by rw [hl0])
+        have hlt : bytesToNat B0 < 2 ^ 256 := by
+          have h1 := bytesToNat_lt B0
+          rwa [hl0, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at h1
+        ent_step (step_load16_16 _ _ "%37" "%add.ptr" (b + 64 * bi) (bytesToNat B0)
+          (by ent_auto) (by rw [← hV]; exact hr) hlt)
+        ent_step (utf8_step_gep_imm _ _ "%add.ptr3" "%add.ptr" (.int 8) (b + 64 * bi)
+          (BitVec.ofInt 64 32) (by ent_auto) (by decide))
+        rw [show b + 64 * bi + (BitVec.ofInt 64 32).toNat * (Ty.int 8).sizeBytes
+          = b + 64 * bi + 32 from by
+          rw [show (BitVec.ofInt 64 32).toNat = 32 from by decide, sizeBytes_i8]]
+        have hr1 : readBytes s.mem (b + 64 * bi + 32) 32 = none :=
+          readBytes_eq_none_of_readByte_none s.mem hnone (by omega) (by omega)
+        exact denoteCode_cons_none _ _ _ _
+          (evalInstr_load_none (p := .reg "%add.ptr3") (hp := by ent_auto)
+            (hv := loadValue_vec_int_of_readBytes_none (by decide) (by decide) hr1))
+
+/-- A block whose instructions refuse makes the step `ub`; the run reads that as
+`ub` at any positive fuel (`runFuel_ub_utf8`).  Stated once here so the block
+facts above meet the stepping surface at one place. -/
+theorem step_ub_utf8 (s : State) (name : String) (b : Block)
+    (hpc : s.pc = name) (hfind : utf8Function.findBlock name = some b)
+    (hbody : denoteCode utf8Calls b.instrs s = none) :
+    step utf8Calls utf8Function s = .ub := by
+  simp [step, hpc, hfind, hbody]
+
+end LeanLLVM.Vellum.JsonUtf8Steps

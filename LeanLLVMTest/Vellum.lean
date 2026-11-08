@@ -8853,3 +8853,42 @@ requires. -/
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8GateBit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8GateBit
+
+/-! ### The unreadable byte: the least index, the block facts and the step
+
+Every declaration the unreadable-byte statement's two supporting halves introduce,
+at the footprint each was measured at.  **One carrier appears, and it is inherited**:
+`utf8ForBodyUs_denote_none` and `utf8ForBody_denote_none` carry
+`BitVec.signExtend_eq`, the same carrier the body lemmas and the ungated loop's
+run already name — each runs its block's forward `getelementptr` sites
+(`utf8_step_gep`, `utf8_step_gep_imm`) to reach the failing header load, and
+that is where the carrier enters.  Nothing else here carries `Classical.choice`:
+the least-index argument is an induction that cases on the head byte, the
+earlier blocks' reads come from `readBytes_eq_none_of_readByte_none` and
+`exists_readBytes_of_readable`, and the block facts go through
+`denoteCode_cons_none` and `evalInstr_load_none`, each at `[propext,
+Quot.sound]`. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.exists_least_unreadable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.exists_least_unreadable
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_least_unreadable_block' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_least_unreadable_block
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_block_two_reads' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_block_two_reads
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8ForBodyUs_denote_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8ForBodyUs_denote_none
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8ForBody_denote_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8ForBody_denote_none
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.step_ub_utf8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.step_ub_utf8
