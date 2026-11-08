@@ -1552,12 +1552,19 @@ values are the returned word and the statistics pair, and nothing else in
 memory is touched.
 
 `hn` is the model's own `gep` bound, not slack: `evalInstr`'s `gep` arm scales the
-index by the element size and adds it only while the sign-extended 64-bit index is
-below `2 ^ 63`, returning `none` above it (`LeanLLVM/Semantics.lean`).  The loop
+index by the element type's size and adds it only while the sign-extended 64-bit
+index is below `2 ^ 63`; at or above that bound it subtracts instead, taking a
+sign-extended index `v`'s magnitude `2 ^ 64 - v`, whose displacement is that
+magnitude scaled by the element type's size, and it is `ub` there only where the
+displacement exceeds the base
+(`LeanLLVM/Semantics.lean`).  The loop
 reaches `%ip = getelementptr i32, ptr %idx, i64 %k` at the top of every iteration,
-so the run is defined only while `%k`, and therefore `n`, stays below that bound.
-The second `gep`, `%cp`, needs no such hypothesis: `hfit` already confines the
-index it loads from the array to `2 ^ 32`. -/
+so `hn` is what keeps every iteration on the **forward** branch, where the address
+this theorem composes — `%idx + 4 * %k` — is the address the model computes for
+`%ip`.  It is not a definedness hypothesis: a `%k` at or above the bound takes the
+backward branch, which is a different run and not the one composed here.  The
+second `gep`, `%cp`, needs no such hypothesis: `hfit` already confines the index it
+loads from the array to `2 ^ 32`. -/
 theorem depth_count_refines (calls : Calls) (pbuf pidx pstats : Nat) (m0 : Mem)
     (tokens : List UInt8) (idxs : Nat → Nat) (n : Nat)
     (hn : n < 2^63) (hlen : tokens.length = n)

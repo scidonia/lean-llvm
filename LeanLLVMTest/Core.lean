@@ -460,8 +460,9 @@ entry:
 
 /-- `getelementptr` where a byte-walking body uses it: the address of one byte
 inside a word, read back through the memory model.  The offset is a parameter,
-so the check below reads every offset of the word rather than only the first,
-and the negative one is the undefined offset the model refuses. -/
+so the check below reads every offset of the word rather than only the first.
+A negative offset is not refused for its sign, so it cannot be observed here as a
+refusal; the fixture below reads one back from a byte the body wrote. -/
 def gepByteProgram (off : String) : String :=
 "define i32 @gep_byte(ptr %p) {
 entry:
@@ -485,17 +486,50 @@ def gepByteRun (off : String) : Option Outcome :=
 #guard returnsValue (gepByteRun "2") (.int 32 (BitVec.ofNat 32 2))
 #guard returnsValue (gepByteRun "3") (.int 32 (BitVec.ofNat 32 1))
 
--- Past the word the byte was never written, and a negative offset is undefined
--- rather than a read of an address below the base: both are `ub`.
+-- Past the word the byte was never written, which is `ub`.
 #guard gepByteRun "4" = some .ub
-#guard gepByteRun "-1" = some .ub
 
--- The step's facts, restated from `LeanLLVM.Semantics`: the accepting case with
--- the element-type scaling, the `i8` case where the scaling is the byte count
--- the earlier model computed, the refusal the negative index is, the refusal of
--- each other operand shape, and the memory it leaves alone.  A `#guard` above
--- observes the step on values this file chose; these are the statements a later
--- proof composes with, and each is pinned below to the standard axioms.
+/-- The backward step through the memory model, from a base whose preceding byte
+the body wrote: `%z` is `%p - 1` and the store puts a value there before the read
+of the offset under test names it. -/
+def gepBackProgram (off : String) : String :=
+"define i32 @gep_back(ptr %p) {
+entry:
+  store i32 16909060, ptr %p
+  %z = getelementptr inbounds i8, ptr %p, i64 -1
+  store i8 42, ptr %z
+  %q = getelementptr inbounds i8, ptr %p, i64 " ++ off ++ "
+  %v = load i8, ptr %q
+  %w = zext i8 %v to i32
+  ret i32 %w
+}
+"
+
+def gepBackRun (off : String) : Option Outcome :=
+  match parseModule (gepBackProgram off) with
+  | .ok ⟨_, f :: _⟩ => run noCalls f [.ptr 1]
+  | _ => none
+
+-- The backward step at a written byte: `%p - 1` from `%p = 1` is address 0,
+-- which the body wrote before the read, so the run returns 42.  This is a
+-- definedness control — a step that refused the negative index for its sign
+-- would make the run `ub` here, so the guard fails if that refusal returns.
+#guard returnsValue (gepBackRun "-1") (.int 32 (BitVec.ofNat 32 42))
+
+-- The defect a negative index can still be is a displacement larger than the
+-- base: `%p - 2` would leave the address space below zero and the step is
+-- refused.  The byte it would name — address 0 — is written above, so a step
+-- that admitted the case by saturating the subtraction would read 42 here
+-- rather than reach `ub`.
+#guard gepBackRun "-2" = some .ub
+
+-- The step's facts, restated from `LeanLLVM.Semantics`: the forward accepting
+-- case with the element-type scaling, the `i8` case where the scaling is the
+-- byte count the earlier model computed, the backward accepting case, the
+-- displacement past the base that is refused, the refusal of each other operand
+-- shape, and the memory it leaves alone.  A `#guard` above observes the step on
+-- values this file chose; these are the statements a later proof composes with,
+-- and each is pinned below to the standard axioms.
 example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
     {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
     (ho : evalOperand s off = some (.int w n)) (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
@@ -512,9 +546,20 @@ example {calls : Calls} {s : State} {d : String} {base off : Operand}
 
 example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
     {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
-    (ho : evalOperand s off = some (.int w n)) (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63) :
+    (ho : evalOperand s off = some (.int w n))
+    (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63)
+    (hk : (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes ≤ a) :
+    evalInstr calls s (.gep d elemTy base off) =
+      some (s.bind d (.ptr (a - (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes))) :=
+  evalInstr_gep_back hb ho hneg hk
+
+example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
+    {a w : Nat} {n : BitVec w} (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n))
+    (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63)
+    (hunder : a < (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes) :
     evalInstr calls s (.gep d elemTy base off) = none :=
-  evalInstr_gep_negative hb ho hneg
+  evalInstr_gep_negative hb ho hneg hunder
 
 example {calls : Calls} {s : State} {d : String} {elemTy : Ty} {base off : Operand}
     {v : Value} (hb : evalOperand s base = some v) (hv : ∀ a, v ≠ .ptr a) :
@@ -543,6 +588,10 @@ example {calls : Calls} {s s' : State} {d : String} {elemTy : Ty} {base off : Op
 /-- info: 'LeanLLVM.evalInstr_gep_i8' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.evalInstr_gep_i8
+
+/-- info: 'LeanLLVM.evalInstr_gep_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_gep_back
 
 /-- info: 'LeanLLVM.evalInstr_gep_negative' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

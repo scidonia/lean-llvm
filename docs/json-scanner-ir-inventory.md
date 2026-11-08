@@ -194,7 +194,14 @@ load handles the remainder.
    (`parseValueInstr`'s `getelementptr`
    branch). The element type is a field of the instruction (`Instr.gep`), so the
    step is `base + off * sizeof(elemTy)` and `i8` is the byte offset this model
-   started with. An intrinsic call is **not** refused: the parser
+   started with. The offset is read as signed, which is what makes a body's
+   `p - 1` expressible: a sign-extended index below `2 ^ 63` is added, and one at
+   or above it is subtracted, its magnitude being `2 ^ 64 - v` and its
+   displacement that magnitude scaled by the element type's size. The bound is
+   then on the address rather than on the sign — the subtraction is defined only
+   while the displacement does not exceed the base, so a step whose displacement
+   exceeds it is `ub` — and the step touches no byte either way, so no read
+   becomes defined that was not. An intrinsic call is **not** refused: the parser
    accepts any callee symbol (`parseValueInstr`'s `call` branch), so a call to
    `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
    `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model

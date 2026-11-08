@@ -470,7 +470,14 @@ canonical IR, checked with `llvm-as` in the verification runs.
    having an allocated size equal to the stored size `Ty.sizeBytes` computes
    (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128`): `Instr.gep` carries the element type and the step adds
    `off * sizeof(elemTy)`, so `i8` is the byte offset the model began with and
-   `i32`/`i64` strides are the forms clang emits.  A vector of integer lanes is
+   `i32`/`i64` strides are the forms clang emits.  The offset is read as
+   **signed** and the step has two directions — a sign-extended value below
+   `2 ^ 63` is added, and one at or above it is subtracted, its magnitude being
+   `2 ^ 64 - v` and its displacement that magnitude scaled by the element type's
+   size, which is how an emitted body spells `p - 1` — and the bound that remains
+   is on the address rather than on the sign: the subtraction is defined only
+   while the displacement does not exceed the base, and a step whose displacement
+   exceeds it is refused rather than wrapped.  A vector of integer lanes is
    admitted under one condition — the lane width is a whole number of bytes and
    the packed size `n * w / 8` is a power of two, hence at least 1 — because the
    step scales by the size LLVM allocates, which is the packed size only where

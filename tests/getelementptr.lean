@@ -18,14 +18,20 @@ whose size is one, so every `getelementptr i8` computes exactly the byte count
 the earlier model computed, and the `i8` assertions below are the control for
 that.
 
-The index is sign-extended to 64 bits and a negative offset is undefined.  That
-refusal is load-bearing at a typed element: a negative index would mean
-`base - k * sizeof(elemTy)`, so admitting it would change what the instruction
-computes rather than merely widen the model, and pointers here are bare
-addresses with no object to walk backwards inside.  The bound is on the index,
-not on the address: with an `i128` element type an index below `2 ^ 63` scales to
-an address at or above `2 ^ 64`, where the `inbounds` the printer always emits
-would poison the pointer in LLVM — a behaviour this model does not represent.
+The index is sign-extended to 64 bits and read as signed, so the step has two
+directions: a value below `2 ^ 63` is added to the base, and one at or above it is
+subtracted — its **magnitude** is `2 ^ 64 - v` and its **displacement** is that
+magnitude scaled by the element type's size, which is how a body spells `p - 1`.
+The bound is on the **address**, not on the sign: the subtraction is defined only
+while the displacement does not exceed the base, and a step whose displacement
+exceeds it is undefined.  Pointers here are bare addresses, so the model can
+subtract from one even though it has no object to walk backwards inside; the
+caller supplies the byte a backward step names, and reading an address nothing
+wrote stays `ub`.  What remains true of the forward direction is a bound on the
+index rather than on the address: with an `i128` element type an index below
+`2 ^ 63` scales to an address at or above `2 ^ 64`, where the `inbounds` the
+printer always emits would poison the pointer in LLVM — a behaviour this model
+does not represent.
 
 A base that is not a `ptr`, a second index, an index type that is not an integer
 no wider than 64 bits, an element type that is neither an admitted integer width
@@ -391,23 +397,51 @@ def gepAddress? (elemTy : Ty) (w : Nat) (off : Int) : Option Nat :=
 #guard gepAddress? (.int 8) 32 2147483647 = some 2147483747
 #guard gepAddress? (.int 8) 64 9223372036854775807 = some 9223372036854775907
 
--- The negative sign of each width is undefined behaviour: `i8 0x80`,
--- `i32 0x80000000` and `i64 -1` are refused, and so is `i64 2^63`.  The three
--- accepted offsets above are this check's control: the step refuses these and
--- not everything.  At a typed element a negative index would subtract
--- `k * sizeof(elemTy)`, so this is the only sound answer short of modelling
--- pointer arithmetic backwards.
+-- The bound is on the address, not on the sign.  `-1` is the backward step's
+-- plain case and names 99; `-100` is its boundary exactly — the byte element
+-- type's size is one and the base is 100, so the address it computes is 0; and
+-- `-101` is one past the boundary and is refused, because the address would
+-- leave the space below zero.  The last two differ in the displacement alone,
+-- so the refusal is the address's rather than the sign's.
+#guard gepAddress? (.int 8) 64 (-1) = some 99
+#guard gepAddress? (.int 8) 64 (-100) = some 0
+#guard gepAddress? (.int 8) 64 (-101) = none
+
+-- The backward step is scaled like the forward one, and a byte element type
+-- cannot show it.  At `i32` one step is four bytes: `-1` names 96, `-25` is the
+-- boundary exactly (`25 * 4 = 100`) and `-26` is one past it (`26 * 4 = 104`).
+-- A branch that compared the magnitude to the base without scaling would answer
+-- 99 for the first and admit the last at address 74, so the pair is what makes
+-- the scaling observed rather than only proved.
+#guard gepAddress? (.int 32) 64 (-1) = some 96
+#guard gepAddress? (.int 32) 64 (-25) = some 0
+#guard gepAddress? (.int 32) 64 (-26) = none
+
+-- An `i8` and an `i32` negative index sign-extend to a magnitude of 128 and
+-- `2 ^ 31`; their displacements are those magnitudes scaled by the element
+-- type's size — 128 at `i8`, `2 ^ 33` at `i32` — and each is larger than the
+-- base of 100, so both are still refused, for the displacement and not for the
+-- sign.  Each is the control for one of the two ways the rule can go wrong: a
+-- step that went back to refusing the sign fails the admitted guards above, and
+-- one that admitted every negative index by saturating the subtraction answers
+-- `some 0` here instead of `none`.
 #guard gepAddress? (.int 8) 8 (-128) = none
 #guard gepAddress? (.int 32) 32 (-2147483648) = none
-#guard gepAddress? (.int 64) 64 (-1) = none
+
+-- A positive index at `2 ^ 63` is past the forward bound, so the step reads it as
+-- one at or above the bound: its magnitude is `2 ^ 64 - 2 ^ 63 = 2 ^ 63` and its
+-- displacement, at an `i64` element, is eight times that, which no base of 100
+-- covers.  The accepted offsets above are this check's control: the step refuses
+-- these and not everything.
 #guard gepAddress? (.int 64) 64 9223372036854775808 = none
 
--- The negative offset in the textual form the refusals use: the parser accepts
--- it as a literal, and the step refuses it.  Both halves are checked, so the
--- restriction is the semantics' and not the parser's by accident.
+-- The negative offset in the textual form a body writes: the parser accepts it
+-- as a literal and the step takes it backwards to 99.  Both halves are checked,
+-- so neither the parser's acceptance nor the step's reading can return to a
+-- refusal without this failing.
 #guard
   match parseWith "  %q = getelementptr i8, ptr %p, i64 -1" with
-  | .ok _ => gepAddress? (.int 8) 64 (-1) = none
+  | .ok _ => gepAddress? (.int 8) 64 (-1) = some 99
   | .error _ => false
 
 -- A base that is not a pointer, and an index that is not an integer, are

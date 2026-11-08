@@ -430,8 +430,13 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       | some vv, some (.ptr addr) => storeValue s ty vv addr
       | _, _ => none
   | .gep d elemTy base off =>
-      -- The index is sign-extended to 64 bits and a negative one is undefined:
-      -- pointers are bare addresses with no object to walk backwards inside.
+      -- The index is sign-extended to 64 bits and read as signed, so the step has
+      -- two accepting cases: a value below `2 ^ 63` is added, and a value at or
+      -- above it is subtracted — its magnitude is `2 ^ 64 - v` and its
+      -- displacement is that magnitude scaled by the element type's size.  What
+      -- is undefined is an address that would leave the address space below zero,
+      -- not the index's sign: a displacement larger than the base is refused,
+      -- because pointers are bare addresses with no object to bound the walk.
       -- The index's declared width is not part of the instruction, so the value
       -- read supplies it.  The step is scaled by the element type's size, so
       -- `getelementptr i32` adds four bytes per index step and `getelementptr
@@ -442,6 +447,8 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       | some (.ptr addr), some (.int _ n) =>
           if (n.signExtend 64).toNat < 2 ^ 63 then
             some (s.bind d (.ptr (addr + (n.signExtend 64).toNat * elemTy.sizeBytes)))
+          else if (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes ≤ addr then
+            some (s.bind d (.ptr (addr - (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes)))
           else none
       | _, _ => none
   | .call d _ callee args =>
@@ -590,10 +597,21 @@ theorem evalInstr_icmpPtr_mem {calls : Calls} {s s' : State} {d : String}
 
 /-! ### The pointer offset
 
-`getelementptr`'s step, as facts a later proof composes with: the accepting case,
-the negative index it refuses, the operand shapes it refuses, and the memory it
+`getelementptr`'s step, as facts a later proof composes with: the forward
+accepting case, the backward one, the displacement that would leave the address
+space below zero and is refused, the operand shapes it refuses, and the memory it
 leaves alone.  A refused offset is `none` here; `none` is read as the `ub`
 outcome by `step`, and nothing in this module decides that.
+
+The index is read as **signed**, and the step has two directions: a sign-extended
+value below `2 ^ 63` is added, and one at or above it is subtracted.  The
+subtraction's **magnitude** is `2 ^ 64 - v` and its **displacement** is that
+magnitude scaled by the element type's size, which is the byte count the base is
+compared with.  The bound is on the address, not on the index: the subtraction is
+defined only while the displacement does not exceed the base, and it is refused
+above that, since the result would leave the address space below zero.  Neither
+direction touches memory — a `getelementptr` binds a register — so no address
+becomes readable that was not readable before.
 
 The index's **width** is not checked by this step — it sign-extends whatever
 integer value it reads to 64 bits, and a value wider than 64 bits would be
@@ -631,16 +649,39 @@ theorem evalInstr_gep_i8 {calls : Calls} {s : State} {d : String}
   rw [evalInstr_gep hb ho hpos]
   simp [Ty.sizeBytes]
 
-/-- The refused index: a sign-extended value at or above `2 ^ 63` is the negative
-offset, which this model does not define — pointers are bare addresses with no
-object to walk backwards inside.  The element type does not enter the decision. -/
+/-- The backward accepting case: a sign-extended index at or above `2 ^ 63` whose
+displacement `k * sizeof(elemTy)` — `k` being the magnitude `2 ^ 64 - v` — does
+not exceed the base binds the destination to the base minus that displacement.
+`hk` is the whole of the address arithmetic's definedness: the result is a `Nat`
+and `(a - k * sizeof(elemTy)) + k * sizeof(elemTy) = a`, so the address does not
+wrap below zero.  The memory is untouched, which `evalInstr_gep_mem` states for
+every accepted `getelementptr` and therefore for this branch unchanged. -/
+theorem evalInstr_gep_back {calls : Calls} {s : State} {d : String} {elemTy : Ty}
+    {base off : Operand} {a w : Nat} {n : BitVec w}
+    (hb : evalOperand s base = some (.ptr a))
+    (ho : evalOperand s off = some (.int w n))
+    (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63)
+    (hk : (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes ≤ a) :
+    evalInstr calls s (.gep d elemTy base off) =
+      some (s.bind d (.ptr (a - (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes))) := by
+  simp only [evalInstr, hb, ho]
+  rw [ite_eq_right hneg, ite_eq_left hk]
+
+/-- The refusal that remains: a negative index whose displacement exceeds the
+base would take the address below zero, which this model does not define.  The
+index's sign alone is no longer the defect — that is the conflation this step
+used to make — and the element type enters through the displacement, so one index
+can be admitted at one element type and refused at another: `-1` from a base of
+`1` is address `0` at `i8` and refused at `i32`, where one step is four bytes. -/
 theorem evalInstr_gep_negative {calls : Calls} {s : State} {d : String} {elemTy : Ty}
     {base off : Operand} {a w : Nat} {n : BitVec w}
     (hb : evalOperand s base = some (.ptr a))
-    (ho : evalOperand s off = some (.int w n)) (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63) :
+    (ho : evalOperand s off = some (.int w n))
+    (hneg : ¬ (n.signExtend 64).toNat < 2 ^ 63)
+    (hunder : a < (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes) :
     evalInstr calls s (.gep d elemTy base off) = none := by
   simp only [evalInstr, hb, ho]
-  rw [ite_eq_right hneg]
+  rw [ite_eq_right hneg, ite_eq_right (Nat.not_le.mpr hunder)]
 
 /-- A base that is not a pointer is refused, whatever the index is. -/
 theorem evalInstr_gep_none_of_base {calls : Calls} {s : State} {d : String}
@@ -1183,7 +1224,11 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               · rw [ite_eq_left hp, ite_eq_left hp]
                 rfl
               · rw [ite_eq_right hp, ite_eq_right hp]
-                rfl
+                by_cases hk : (2 ^ 64 - (n.signExtend 64).toNat) * elemTy.sizeBytes ≤ a
+                · rw [ite_eq_left hk, ite_eq_left hk]
+                  rfl
+                · rw [ite_eq_right hk, ite_eq_right hk]
+                  rfl
             | ptr b => rfl
             | vec n w l => rfl
         | vec n w l => rfl
