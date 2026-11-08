@@ -325,3 +325,146 @@ from the flake.
   route's two detector arms, not to this cut.
 
 Command: `nix develop -c bash tests/json-entry/check.sh`.
+
+## The UTF-8 stage's route, observed at `8541d8f`
+
+`tests/json-utf8/check.sh` is the UTF-8 stage's route. Three actors and a
+scalar reference agree row for row over a counted corpus:
+
+- **the object** — `kernel/json/utf8.c` compiled at the measured compiler line
+  and called through `probes/json/utf8_driver.c`, which stages each row's
+  window and prints the returned word;
+- **the Lean body** — `utf8Function`, the AST `LeanLLVM/Vellum/JsonUtf8IR.lean`
+  pins to `probes/install/ir/json-utf8.candidate.ll`, run by
+  `leanllvm-json-utf8` through `runFuel` under the repository's semantics;
+- **the measured statements** — `probes/json/utf8_measured.c`, which includes
+  the vendored `s1fuse.h` at the measured `-D` set and calls the measured
+  `s1f_build2`, reporting its `uerr`;
+- and **the reference**, `utf8_driver.c`'s own scalar valid-prefix predicate in
+  two forms: over the staged window — three prefix bytes, the document, zero
+  padding to the block boundary — which is the expectation on every row, and
+  over the document alone, whose disagreement with the window form is counted
+  arm by arm.
+
+A row is nine tab-separated columns — `source label n gate path word skip eval
+padded` — and each actor is run twice, once per gate value, so one transcript
+is one gate value throughout.  `path` is the effective path the actor used,
+which for the measured actor is the TU-static `s1f_u8_ungated` read back after
+`s1f_u8_decide`; `word` is the stage's error word, 0 accepted and 1 rejected.
+`skip` and `eval` are **derived** from the staged window's bytes by
+`probes/json/utf8_skip.h`'s one function (and by the same rule in Lean), never
+read out of the code under test: the two arms' verdicts are equal on every
+document of this matrix, so the counts are the gate's only per-document trace.
+
+**One total, derived from the enumeration beside it.**  The corpus
+`tests/json-utf8/corpus.tsv` holds 27 curated rows, re-derived by the script
+from committed bytes: six documents' own first 64 bytes, fifteen high-byte
+blocks of the committed `utf8-*.json` documents, the truncated-lead boundary at
+63, 64 and 65 bytes, the prefix-flip pair, and the 200-byte document the gate's
+skip count is about.  The arms are 1 empty + 256 one-byte + 65,536 two-byte + 486
+three-byte + 5,103 four-byte + 1,671 tail + 18 prefix + 512 placement
+= 73,583, so the route is 27 + 73,583 = **73,610 rows per gate value**.  The
+counted matrix without the placement arm is 73,071 and the gate's coverage is
+73,053 (73,071 less the 18 prefix variants, whose non-ASCII prefixes are
+outside the staging obligation the gate's soundness is stated under).  The
+script computes that total twice — from the formula and by enumerating every
+row's identity in `awk` — and requires the transcript to match both.
+
+Uncut, the route exits 0 and prints thirteen `ok` lines.  What it asserts, with
+the numbers observed:
+
+| Fact | Observed |
+|---|---|
+| rows per gate value | 73,610 = 27 corpus + 73,583 arm |
+| word equals the window reference | 73,610 of 73,610 |
+| document form against window form | 51 (one-byte arm), 7,744 (two-byte), 342 (tail, all in the `raw` layout), 0 (three-byte, four-byte, empty) |
+| window accepts where document rejects | 0 |
+| three-byte per-lead rejections | `E0` 69, `E1`/`EC`/`EE`/`EF` 45, `ED` 57, of 81 each |
+| four-byte per-lead rejections | `F0` 585, `F1`/`F3` 513, `F4` 657, `F5`/`F7`/`FF` 729, of 729 each |
+| gate-invariant words | 73,053 documents |
+| documents whose verdict moves across the three prefix values | 2 |
+| `ascii:200-c3a9` blocks | gated 3 skipped / 1 evaluated, ungated 0 / 4 |
+| the tail at 63, 64, 65 bytes | rejected, accepted, rejected |
+| the defect object moves | 144 rows, first `arm:tail/c0/pre/L1` |
+
+These are the stage's measured behaviour matrix re-derived on every run, and
+they are the route's numbers rather than recalled ones: the per-lead counts pin the nine
+continuation values the three- and four-byte arms are built from, and the
+51 / 7,744 / 342 split is the count of rows where the document ends inside a
+character.
+
+The timing arm beside it, `nix develop -c bash kernel/json/bench/paired.sh
+--unit utf8`, exits 0 at the same revision: one binary holds the measured
+statements and the extracted unit behind page-aligned probes, and every input is
+within ±0.5 ns/block.  Its gated/ungated medians are printed as an observation
+with those derived counts, and no gated-to-ungated delta is claimed — on
+`arm:ascii-4096` the gated arm costs 0.72 ns/block against the ungated arm's
+1.98 (64 blocks, 64 skipped by the gate), which is the gate doing something
+rather than being harmless.
+
+### The two cuts
+
+| Cut | Assertion that fired | Rows that differ | First differing row | Repeat |
+|---|---|---|---|---|
+| `V1` the unit's object replaced by a stub returning a constant verdict | `FAIL: the lean actor and the object disagree at gate g` | 53,784 | row 11, `blk:utf8-ff/blk0` | two runs identical once the private work path is normalised |
+| `V2` the measured probe built without the `dens_pick_u8(0, 0, 0, 0)` pre-binding | `FAIL: <work>/measured.u: row 1 path g, not u` | 1, in the `path` column; 0 `word` differences | row 1, `doc:boundary-63/blk0` | two runs identical once the private work path is normalised |
+
+Both were made at `8541d8f` in their own copy of the tree — a `tar` of the
+checkout without `.lake`, which is symlinked in, so the Lean runner is the
+production binary — with the working tree carrying this change.  Each copy ran
+`nix develop -c bash tests/json-utf8/check.sh` twice; uncut, the same command
+exits 0 in the production tree.  Both cuts reached their assertion on a tree
+that compiled: `V1`'s stub object compiles and links against the driver, and
+`V2`'s two probe builds compile.
+
+The three conditions:
+
+- **the caller is the route's own driver.**  `V1` compiles the stub in place of
+  the object `check.sh` links into `probes/json/utf8_driver.c`, so the first
+  assertion to fire is the object-versus-body comparison and not one of the
+  route's own detectors.  `V2` edits `probes/json/utf8_measured.c`, which is
+  the measured actor and nothing else.
+- **no other route's outcome moved.**  Neither cut touches a file another route
+  reads: no other `check.sh` compiles `kernel/json/utf8.c` or
+  `probes/json/utf8_measured.c` — the unit's other consumers are the identity
+  scripts under `kernel/json/identity/` and
+  `kernel/json/bench/paired.sh --unit utf8`, neither of which is a route.  In
+  `V1`'s copy `tests/json/check.sh` exits 0 with its `ok` line, and in `V2`'s
+  copy `tests/json-entry/check.sh` exits 0 with 131,730 rows agreeing (its
+  object at kernel sha256 `384f710b…`).
+- **two runs name the same first failing row.**  Each pair of runs is identical
+  once the unified diff's header, which carries the temporary directory and
+  timestamps, is normalised away.  The first failing row is a property of the
+  cut, not of a run.
+
+What each shows, and what it does not:
+
+- **`V1` — the route notices an object that answers with a constant.**  The
+  53,784 differing rows are exactly the rows whose reference verdict is a
+  rejection, so the cut is invisible on the accepting rows: it shows the
+  comparison is live and that its first differing row is stable, not that any
+  row's verdict is *right*.  That is the reference's job, and the route's own
+  defect control — the tail term cut from a copy of the unit's
+  source — is the arm that pins a semantic defect to its row set.
+- **`V2` — the effective-path field notices a probe that leaves the measured
+  static at its default.**  `dens_u8_ungated` is process-wide and
+  `s1f_build2`'s `dens_probe` re-sets it for every document with a block, so
+  without the pre-binding only the short documents that precede the first
+  block-bearing one carry the default: one row here, and the route's corpus
+  order — a 63-byte document first — is what makes the cut measurable.  The
+  second assertion the run prints (`counts 1/0, expected 0/1`) is a consequence
+  and not an independent observation: the counts are derived from the reported
+  path, so a wrong path moves them.  A probe that *ignored* the build and
+  always reported one arm would fail on every row instead, which is the
+  assertion's own claim.
+- **The cut that is not here: the gated path's skip replaced by an
+  unconditional evaluate.**  It is not observable at this boundary.  The ABI
+  returns one error word, whose value is gate-invariant, so a verdict-preserving
+  cut moves nothing the route prints; an "evaluated-block count" computed by any
+  actor is derived from the document's bytes, so it does not move either; and
+  there is no seam to instrument — `kl_err_vec_ld` is `static inline` in a
+  read-only vendored header, and a counter in the unit's own text would be both
+  a production backdoor and an emission difference `ir-identity.sh --unit utf8`
+  would report.  The timing arm's gated/ungated medians are an observation with
+  no band, so they are not a witness either.  The cut reopens if a later
+  milestone adds a seam that reads the unit's own branch.
