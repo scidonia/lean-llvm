@@ -86,10 +86,26 @@ def Utf8Chars (b : Bytes) : Prop := Utf8Spans b empty
 /-- A proper nonempty prefix of one character's encoding, in `Bytes.lean`'s own
 prefix predicate (`HasPrefix b 0 t` is `b.take t.length = t`).  This is the
 unfinished character a caller may hold at the end of a window, and the reason the
-relation below is not `Utf8Chars`. -/
+relation below is not `Utf8Chars`.
+
+The bound is `t.length < b.length - r.length`, the character's **own** encoding,
+and not `t.length < b.length`.  `Utf8Char b c r` has `b` = the character's bytes
+**followed by** `r`, so `b.length` is the whole remaining string; a bound at
+`b.length` lets `t` walk past the character and into `r`.  That weaker bound is
+false of this relation's meaning, and it made `ValidPrefix` hold for every
+nonempty string beginning with one valid character: `Utf8Spans.nil` gives `t` the
+whole remainder, and the false bound then accepts it with `b` = that remainder
+plus anything (`0x00 +: l` is a character, so every such string was a
+"prefix").  It falsified the three statements the relation is a hypothesis of in
+this development: the refinement of the staged window's verdict against this
+relation, the corollary that reads the document itself at a whole block count,
+and the aggregation of the per-position condition over the window.  The witness
+is recorded below as `not_validPrefix_walked`; with the subtraction, `b.length -
+r.length` is the character's byte count and `HasPrefix b 0 t` keeps `t` inside
+that encoding. -/
 def Utf8PrefixOf (t : Bytes) : Prop :=
   t ≠ empty ∧ ∃ (b : Bytes) (c : Nat) (r : Bytes),
-    Utf8Char b c r ∧ t.length < b.length ∧ HasPrefix b 0 t
+    Utf8Char b c r ∧ t.length < b.length - r.length ∧ HasPrefix b 0 t
 
 /-- The valid-prefix relation: complete characters, then at most one unfinished
 one.  This is the predicate a staged window's verdict is judged against — the
@@ -226,6 +242,268 @@ theorem not_utf8PrefixOf_of_no_start {b0 : UInt8} {b' : Bytes}
     (hbad : ¬ IsUtf8LeadByte b0) : ¬ Utf8PrefixOf (cons b0 b') := by
   rintro ⟨-, b, c, r, hc, _hlen, hp⟩
   exact hbad (utf8Char_head hc (head?_eq_of_hasPrefix_cons hp))
+
+/-! ### Why the prefix bound is the character's own encoding
+
+`Utf8PrefixOf`'s bound is `t.length < b.length - r.length`; the weaker
+`t.length < b.length` let `t` walk past the character and into `r`, and with
+`Utf8Spans.nil` handing `t` the whole remainder every nonempty string beginning
+with one valid character became a `ValidPrefix`.  The witnesses below record the
+refutation in place: a zero-leading tail is never a proper prefix of one
+character, a `C2`-leading tail of two or more bytes is never one, and the staged
+window `not_validPrefix_walked` is not a valid prefix. -/
+
+/-- A tail beginning with `0x00` is never a proper prefix of one character: the
+character would be `UTF8-1`, one byte long, and a prefix of it shorter than one
+byte is empty. -/
+theorem not_utf8PrefixOf_zero (l : List UInt8) :
+    ¬ Utf8PrefixOf (ByteString.literal (0x00 :: l)) := by
+  rintro ⟨hne, b, c, r, hc, hlt, hp⟩
+  have ht : ByteString.literal (0x00 :: l) = 0x00 +: ByteString.literal l :=
+    ByteString.literal_cons _ _
+  rw [ht] at hp
+  have hhead : b.head? = some 0x00 := head?_eq_of_hasPrefix_cons hp
+  have hb0 : b[0]? = some 0x00 := by
+    rw [ByteString.getElem?_eq_data]
+    exact hhead
+  have hb : b = 0x00 +: ByteString.drop b 1 := by
+    rw [← ByteString.drop_zero (bs := b)]
+    exact ByteString.drop_eq_getElem_cons hb0
+  have hpos : 0 < ByteArray.size (ByteString.literal (0x00 :: l)) := by
+    rw [ByteString.size_literal]; simp
+  rw [hb] at hc hlt
+  generalize hb2 : (0x00 +: ByteString.drop b 1) = b2 at hc hlt
+  cases hc with
+  | one h =>
+      rename_i b0
+      have h0 : b0 = 0x00 := (ByteString.cons_inj.mp hb2).1.symm
+      have hr : r = ByteString.drop b 1 := (ByteString.cons_inj.mp hb2).2.symm
+      rw [h0, hr] at hlt
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hlt
+      omega
+  | two h0 h0' h1 h1' =>
+      rename_i b0 b1
+      exact absurd ((ByteString.cons_inj.mp hb2).1.symm ▸ h0) (by decide)
+  | three₀ h1 h1' h2 h2' =>
+      rename_i b1 b2
+      exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+  | three₁ h0 h0' h1 h1' h2 h2' =>
+      rename_i b0 b1 b2
+      exact absurd ((ByteString.cons_inj.mp hb2).1.symm ▸ h0) (by decide)
+  | three₂ h1 h1' h2 h2' =>
+      rename_i b1 b2
+      exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+  | three₃ h0 h0' h1 h1' h2 h2' =>
+      rename_i b0 b1 b2
+      exact absurd ((ByteString.cons_inj.mp hb2).1.symm ▸ h0) (by decide)
+  | four₀ h1 h1' h2 h2' h3 h3' =>
+      rename_i b1 b2 b3
+      exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+  | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+      rename_i b0 b1 b2 b3
+      exact absurd ((ByteString.cons_inj.mp hb2).1.symm ▸ h0) (by decide)
+  | four₂ h1 h1' h2 h2' h3 h3' =>
+      rename_i b1 b2 b3
+      exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+
+/-- A tail beginning with `0xC2` and carrying a further byte is never a proper
+prefix of one character: a `0xC2` character is two bytes long, so a proper prefix
+of it is at most one byte. -/
+theorem not_utf8PrefixOf_C2_tail {z : List UInt8} (hz : z ≠ []) :
+    ¬ Utf8PrefixOf (ByteString.literal (0xC2 :: z)) := by
+  rintro ⟨-, b, c, r, hc, hlt, hp⟩
+  have ht : ByteString.literal (0xC2 :: z) = 0xC2 +: ByteString.literal z :=
+    ByteString.literal_cons _ _
+  rw [ht] at hp
+  have hhead : b.head? = some 0xC2 := head?_eq_of_hasPrefix_cons hp
+  have hs : 1 ≤ z.length := by
+    cases z with
+    | nil => exact absurd rfl hz
+    | cons _ _ => simp
+  cases hc with
+  | one h =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      subst hhead
+      exact absurd h (by decide)
+  | two h0 h0' h1 h1' =>
+      simp only [ByteString.length_eq_size, ByteString.size_literal, List.length_cons,
+        ByteString.size_cons] at hlt
+      omega
+  | three₀ h1 h1' h2 h2' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      exact absurd hhead (by decide)
+  | three₁ h0 h0' h1 h1' h2 h2' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      subst hhead
+      exact absurd h0 (by decide)
+  | three₂ h1 h1' h2 h2' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      exact absurd hhead (by decide)
+  | three₃ h0 h0' h1 h1' h2 h2' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      subst hhead
+      exact absurd h0 (by decide)
+  | four₀ h1 h1' h2 h2' h3 h3' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      exact absurd hhead (by decide)
+  | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      subst hhead
+      exact absurd h0 (by decide)
+  | four₂ h1 h1' h2 h2' h3 h3' =>
+      simp only [ByteString.head?_cons, Option.some.injEq] at hhead
+      exact absurd hhead (by decide)
+
+/-- A leading `0x00` is either the whole span's remainder or one parsed character
+and a shorter span. -/
+theorem utf8Spans_zero {l : List UInt8} {t : Bytes} :
+    Utf8Spans (ByteString.literal (0x00 :: l)) t →
+      t = ByteString.literal (0x00 :: l) ∨ Utf8Spans (ByteString.literal l) t := by
+  intro h
+  rcases utf8Spans_cases h with hnil | ⟨b', c, hc, hr⟩
+  · exact Or.inl hnil
+  · right
+    rw [ByteString.literal_cons] at hc
+    generalize hb2 : (0x00 +: ByteString.literal l) = b2 at hc
+    cases hc with
+    | one hx =>
+        rename_i b0
+        have hb' : b' = ByteString.literal l := ((ByteString.cons_inj.mp hb2).2).symm
+        rwa [hb'] at hr
+    | two h0 h0' h1 h1' =>
+        rename_i b0 b1
+        have h0eq : b0 = 0x00 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | three₀ h1 h1' h2 h2' =>
+        rename_i b1 b2
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+    | three₁ h0 h0' h1 h1' h2 h2' =>
+        rename_i b0 b1 b2
+        have h0eq : b0 = 0x00 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | three₂ h1 h1' h2 h2' =>
+        rename_i b1 b2
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+    | three₃ h0 h0' h1 h1' h2 h2' =>
+        rename_i b0 b1 b2
+        have h0eq : b0 = 0x00 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | four₀ h1 h1' h2 h2' h3 h3' =>
+        rename_i b1 b2 b3
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+    | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+        rename_i b0 b1 b2 b3
+        have h0eq : b0 = 0x00 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | four₂ h1 h1' h2 h2' h3 h3' =>
+        rename_i b1 b2 b3
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+
+/-- A leading `C2 80` is either the whole span's remainder or that character and a
+shorter span. -/
+theorem utf8Spans_C2_80 {z : List UInt8} {t : Bytes} :
+    Utf8Spans (ByteString.literal (0xC2 :: 0x80 :: z)) t →
+      t = ByteString.literal (0xC2 :: 0x80 :: z) ∨ Utf8Spans (ByteString.literal z) t := by
+  intro h
+  rcases utf8Spans_cases h with hnil | ⟨b', c, hc, hr⟩
+  · exact Or.inl hnil
+  · right
+    rw [ByteString.literal_cons, ByteString.literal_cons] at hc
+    generalize hb2 : (0xC2 +: (0x80 +: ByteString.literal z)) = b2 at hc
+    cases hc with
+    | one hx =>
+        rename_i b0
+        have h0eq : b0 = 0xC2 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at hx
+        exact absurd hx (by decide)
+    | two h0 h0' h1 h1' =>
+        rename_i b0 b1
+        have hb' : b' = ByteString.literal z := by
+          have h2 := (ByteString.cons_inj.mp hb2).2
+          exact ((ByteString.cons_inj.mp h2).2).symm
+        rwa [hb'] at hr
+    | three₀ h1 h1' h2 h2' =>
+        rename_i b1 b2
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+    | three₁ h0 h0' h1 h1' h2 h2' =>
+        rename_i b0 b1 b2
+        have h0eq : b0 = 0xC2 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | three₂ h1 h1' h2 h2' =>
+        rename_i b1 b2
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+    | three₃ h0 h0' h1 h1' h2 h2' =>
+        rename_i b0 b1 b2
+        have h0eq : b0 = 0xC2 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | four₀ h1 h1' h2 h2' h3 h3' =>
+        rename_i b1 b2 b3
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+    | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+        rename_i b0 b1 b2 b3
+        have h0eq : b0 = 0xC2 := ((ByteString.cons_inj.mp hb2).1).symm
+        rw [h0eq] at h0
+        exact absurd h0 (by decide)
+    | four₂ h1 h1' h2 h2' h3 h3' =>
+        rename_i b1 b2 b3
+        exact absurd (ByteString.cons_inj.mp hb2).1 (by decide)
+
+/-- A one-character literal is not empty. -/
+theorem literal_cons_ne_empty (b : UInt8) (l : List UInt8) :
+    ByteString.literal (b :: l) ≠ empty := by
+  rw [ByteString.literal_cons]
+  exact ByteString.cons_ne_empty _ _
+
+/-- **The refutation**: the staged window the false bound admitted is not a valid
+prefix.  `0xC2 0x80` is one character, and the `0x80` after it can begin none; the
+false bound accepted the whole window as `t` with `b` = that window plus a byte
+(`0x00`'s character), which the bound at the character's own encoding refuses. -/
+theorem not_validPrefix_walked :
+    ¬ ValidPrefix (ByteString.literal
+      (List.replicate 3 0x00 ++ [0xC2, 0x80, 0x80] ++ List.replicate 61 0x00)) := by
+  have hwin : List.replicate 3 (0x00 : UInt8) ++ [0xC2, 0x80, 0x80] ++
+      List.replicate 61 0x00
+      = 0x00 :: 0x00 :: 0x00 :: (0xC2 :: 0x80 :: 0x80 :: List.replicate 61 0x00) := by
+    rfl
+  rintro ⟨t, hs, hcase⟩
+  rw [hwin] at hs
+  rcases utf8Spans_zero hs with hw | hs1
+  · rw [hw] at hcase
+    rcases hcase with ht | hp
+    · exact literal_cons_ne_empty _ _ ht
+    · exact not_utf8PrefixOf_zero _ hp
+  · rcases utf8Spans_zero hs1 with hw | hs2
+    · rw [hw] at hcase
+      rcases hcase with ht | hp
+      · exact literal_cons_ne_empty _ _ ht
+      · exact not_utf8PrefixOf_zero _ hp
+    · rcases utf8Spans_zero hs2 with hw | hs3
+      · rw [hw] at hcase
+        rcases hcase with ht | hp
+        · exact literal_cons_ne_empty _ _ ht
+        · exact not_utf8PrefixOf_zero _ hp
+      · rcases utf8Spans_C2_80 hs3 with hw | hs4
+        · rw [hw] at hcase
+          rcases hcase with ht | hp
+          · exact literal_cons_ne_empty _ _ ht
+          · exact not_utf8PrefixOf_C2_tail (z := 0x80 :: 0x80 :: List.replicate 61 0x00)
+              (by simp) hp
+        · have hb : ¬ IsUtf8LeadByte 0x80 := by unfold IsUtf8LeadByte; simp
+          have hs4' : Utf8Spans (0x80 +: ByteString.literal (List.replicate 61 0x00)) t := by
+            rwa [ByteString.literal_cons] at hs4
+          have ht_eq : t = ByteString.literal (0x80 :: List.replicate 61 0x00) := by
+            rw [utf8Spans_eq_of_no_start hb hs4', ByteString.literal_cons]
+          rw [ht_eq] at hcase
+          rcases hcase with ht | hp
+          · exact literal_cons_ne_empty _ _ ht
+          · rw [ByteString.literal_cons] at hp
+            exact not_utf8PrefixOf_of_no_start hb hp
 
 /-- Every character's encoding has one of four shapes, by its constructor's own
 byte count: `UTF8-1`'s single byte, `UTF8-2`'s two, `UTF8-3`'s three and
