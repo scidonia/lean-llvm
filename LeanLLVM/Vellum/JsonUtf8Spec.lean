@@ -1389,7 +1389,8 @@ theorem spans_ok {b rest : Bytes} (h : Utf8Spans b rest) :
       intro s i _ hi hn he
       refine ⟨?_, ?_, ?_⟩
       · intro m hm
-        omega
+        rw [Nat.sub_self] at hm
+        exact absurd hm (Nat.not_lt_zero m)
       · have h1 : i - 3 + (t.length - t.length) + 1 = i - 2 := by omega
         have h2 : i - 3 + (t.length - t.length) = i - 3 := by omega
         rw [h1, h2]

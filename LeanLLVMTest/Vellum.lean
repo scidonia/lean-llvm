@@ -8344,7 +8344,7 @@ the same bytes are valid at one block boundary and refused at the other. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_append_left
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.spans_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.spans_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.spans_ok
 
@@ -8528,21 +8528,19 @@ the same bytes are valid at one block boundary and refused at the other. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.pad_eq_zero_of_mod
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_last_of_validPrefix' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_last_of_validPrefix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_last_of_validPrefix
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrAll_window_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrAll_window_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrAll_window_iff
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_nonmultiple' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_nonmultiple' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_nonmultiple
 
-/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_block' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_block
 
