@@ -58,6 +58,29 @@ block-boundary case is the reason the verdict is a statement about a *prefix*:
 the stage's own contract is the window, and the window's relation to a document
 is what the caller supplies.
 
+## Applying the lead classes
+
+The reconstruction splits the lead byte by class, and each class's `Utf8Char`
+constructor fixes part of the byte list it concludes.  Three consequences hold
+for proofs in this file:
+
+* A class whose constructor fixes the lead — `0xE0` in `three₀`, `0xED` in
+  `three₂`, `0xF0` in `four₀`, `0xF4` in `four₂` — cannot be applied while the
+  goal's head is `klByte s i`.  The class is known from `hcE0 : c = 0xE0`, a
+  propositional equality, not by reduction, so the head is rewritten to the
+  literal first.  The classes that take the lead as a parameter (`three₁`,
+  `three₃`, `four₁`) need no such step.
+* Write the byte list in cons form and give the codepoint in the constructor's
+  own expression.  A list written `([a, b] ++ [c])` leaves the codepoint
+  placeholder unsynthesised although the two forms are definitionally equal, and
+  a codepoint in reduced form — `(c.toNat - 0xF0) * 0x40000` for `four₁` rather
+  than the constructor's sum of four terms — exhausts the elaborator's recursion
+  budget when it is unified against the constructor's.
+* A branch whose `omega` counterexample is satisfiable is a missing case in the
+  lead-class tree, not an arithmetic problem.  `klPair_iff`'s clauses are the
+  ranges to check the branch against: a counterexample set narrower than one
+  clause's range is a missing split, and only an empty set is arithmetic.
+
 ## What is proved here
 
 `klErrByte_eq_zero_iff` is C59, and what it states is **local** admissibility
@@ -1268,5 +1291,1596 @@ theorem char_ok {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest) :
         exact hc4
       · simpa [show i - 3 + 4 + 2 = i + 3 from by omega] using hc5
 
+
+theorem klByte_getElem {s : List UInt8} {j : Nat} (h : j < s.length) :
+    klByte s j = s[j] := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h]
+  rfl
+
+theorem literal_drop_cons {s : List UInt8} {i : Nat} (hi : i < s.length) :
+    ByteString.literal (s.drop i) = klByte s i +: ByteString.literal (s.drop (i + 1)) := by
+  have hb : klByte s i = s[i] := klByte_getElem hi
+  rw [hb, List.drop_eq_getElem_cons hi, ByteString.literal_cons]
+
+theorem utf8Char_length_le {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest) :
+    rest.length ≤ b.length := by
+  cases h <;> (simp only [ByteString.length_eq_size, ByteString.size_cons]; omega)
+
+theorem utf8Spans_length_le {b rest : Bytes} (h : Utf8Spans b rest) :
+    rest.length ≤ b.length := by
+  induction h with
+  | nil t => exact Nat.le_refl _
+  | char hc hr ih => exact Nat.le_trans ih (utf8Char_length_le hc)
+
+theorem utf8Char_drop {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest) :
+    b.data.toList.drop (b.length - rest.length) = rest.data.toList := by
+  cases h with
+  | one _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 - ByteArray.size rest = 1 from by omega]
+      rfl
+  | two _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 - ByteArray.size rest = 2 from by omega]
+      rfl
+  | three₀ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 - ByteArray.size rest = 3 from by omega]
+      rfl
+  | three₁ _ _ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 - ByteArray.size rest = 3 from by omega]
+      rfl
+  | three₂ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 - ByteArray.size rest = 3 from by omega]
+      rfl
+  | three₃ _ _ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 - ByteArray.size rest = 3 from by omega]
+      rfl
+  | four₀ _ _ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 + 1 - ByteArray.size rest = 4 from by omega]
+      rfl
+  | four₁ _ _ _ _ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 + 1 - ByteArray.size rest = 4 from by omega]
+      rfl
+  | four₂ _ _ _ _ _ _ =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons]
+      rw [show ByteArray.size rest + 1 + 1 + 1 + 1 - ByteArray.size rest = 4 from by omega]
+      rfl
+
+theorem drop_three_cons (l : List UInt8) (k : Nat) :
+    (0x00 :: 0x00 :: 0x00 :: l).drop (3 + k) = l.drop k := by
+  rw [← List.drop_drop]
+  rfl
+
+theorem literal_drop_list (l : List UInt8) (k : Nat) :
+    ByteString.literal (l.drop k) = ByteString.drop (ByteString.literal l) k := by
+  apply ByteString.eq_of_toList_eq
+  rw [ByteString.toList_literal, ByteString.toList_drop, ByteString.toList_literal]
+
+theorem klByte_append_left {s t : List UInt8} {j : Nat} (hj : j < s.length) :
+    klByte (s ++ t) j = klByte s j := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_append_left hj]
+
+theorem klErrWin_append_left {s t : List UInt8} {j : Nat} (hj : j + 3 < s.length) :
+    klErrWin (s ++ t) j = klErrWin s j := by
+  unfold klErrWin
+  rw [klByte_append_left (s := s) (t := t) (by omega),
+    klByte_append_left (s := s) (t := t) (by omega),
+    klByte_append_left (s := s) (t := t) (by omega),
+    klByte_append_left (s := s) (t := t) (by omega)]
+
+theorem spans_ok {b rest : Bytes} (h : Utf8Spans b rest) :
+    ∀ (s : List UInt8) (i : Nat), ByteString.literal (s.drop i) = b → 3 ≤ i →
+    ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)) →
+    IsCharEnd (klByte s (i - 1)) →
+    (∀ m, m < b.length - rest.length → klErrWin s (i - 3 + m)) ∧
+    ¬ NeedsCont (klByte s (i - 3 + (b.length - rest.length) + 1))
+        (klByte s (i - 3 + (b.length - rest.length))) ∧
+    IsCharEnd (klByte s (i - 3 + (b.length - rest.length) + 2)) := by
+  induction h with
+  | nil t =>
+      intro s i _ hi hn he
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        omega
+      · have h1 : i - 3 + (t.length - t.length) + 1 = i - 2 := by omega
+        have h2 : i - 3 + (t.length - t.length) = i - 3 := by omega
+        rw [h1, h2]
+        exact hn
+      · have h1 : i - 3 + (t.length - t.length) + 2 = i - 1 := by omega
+        rw [h1]
+        exact he
+  | char hc hr ih =>
+      rename_i bb bp rr cc
+      intro s i hl hi hn he
+      obtain ⟨hw1, hc1, he1⟩ := char_ok hc s i hl hi hn he
+      have hcle := utf8Char_length_le hc
+      have hltl := utf8Spans_length_le hr
+      have hsub : (bb.length - bp.length) + (bp.length - rr.length)
+          = bb.length - rr.length := by omega
+      have hi' : 3 ≤ i + (bb.length - bp.length) := by omega
+      have hl' : ByteString.literal (s.drop (i + (bb.length - bp.length))) = bp := by
+        rw [← List.drop_drop, drop_of_literal hl, utf8Char_drop hc,
+          ByteString.literal_data_toList]
+      have hnc : ¬ NeedsCont (klByte s (i + (bb.length - bp.length) - 2))
+          (klByte s (i + (bb.length - bp.length) - 3)) := by
+        have h := hc1
+        rwa [show i - 3 + (bb.length - bp.length) + 1
+              = i + (bb.length - bp.length) - 2 from by omega,
+            show i - 3 + (bb.length - bp.length)
+              = i + (bb.length - bp.length) - 3 from by omega] at h
+      have hec : IsCharEnd (klByte s (i + (bb.length - bp.length) - 1)) := by
+        have h := he1
+        rwa [show i - 3 + (bb.length - bp.length) + 2
+              = i + (bb.length - bp.length) - 1 from by omega] at h
+      obtain ⟨hw2, hc2, he2⟩ := ih s (i + (bb.length - bp.length)) hl' hi' hnc hec
+      refine ⟨?_, ?_, ?_⟩
+      · intro m hm
+        by_cases hmk : m < bb.length - bp.length
+        · exact hw1 m hmk
+        · have hm' : m - (bb.length - bp.length) < bp.length - rr.length := by omega
+          have h := hw2 (m - (bb.length - bp.length)) hm'
+          rwa [show i + (bb.length - bp.length) - 3 + (m - (bb.length - bp.length))
+                = i - 3 + m from by omega] at h
+      · have h := hc2
+        rwa [show i + (bb.length - bp.length) - 3 + (bp.length - rr.length) + 1
+              = i - 3 + (bb.length - rr.length) + 1 from by omega,
+            show i + (bb.length - bp.length) - 3 + (bp.length - rr.length)
+              = i - 3 + (bb.length - rr.length) from by omega] at h
+      · have h := he2
+        rwa [show i + (bb.length - bp.length) - 3 + (bp.length - rr.length) + 2
+              = i - 3 + (bb.length - rr.length) + 2 from by omega] at h
+
+theorem char_prefix_ok {b : Bytes} {c : Nat} {rest : Bytes} (h : Utf8Char b c rest)
+    (k : Nat) (hk1 : 1 ≤ k) (hkl : k < b.length - rest.length) :
+    ∀ (s : List UInt8) (i : Nat), ByteString.literal (s.drop i) = (b.take k) → 3 ≤ i →
+    ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)) →
+    IsCharEnd (klByte s (i - 1)) →
+    ∀ m, m < k → klErrWin s (i - 3 + m) := by
+  intro s i hl hi hn he m hm
+  have hk_le : k ≤ b.length := by
+    have := utf8Char_length_le h
+    omega
+  have hdrop : (s.drop i).length = k := by
+    have hh := congrArg (fun x : Bytes => x.length) hl
+    rw [ByteString.length_take] at hh
+    rw [ByteString.length_eq_size, ByteString.size_literal] at hh
+    rw [hh, Nat.min_eq_left hk_le]
+  have hsi : s.length = i + k := by
+    have h1 : (s.drop i).length = s.length - i := List.length_drop
+    omega
+  have hsplit : (b.take k).data.toList ++ (b.drop k).data.toList = b.data.toList := by
+    have hh := congrArg (fun x : Bytes => x.toList) (ByteString.take_append_drop b k)
+    rw [ByteString.toList_append, ByteString.toList_eq_data_toList,
+      ByteString.toList_eq_data_toList, ByteString.toList_eq_data_toList] at hh
+    exact hh
+  have hd : s.drop i = (b.take k).data.toList := drop_of_literal hl
+  have hs' : ByteString.literal ((s ++ (b.drop k).data.toList).drop i) = b := by
+    have hdropi : (s ++ (b.drop k).data.toList).drop i
+        = s.drop i ++ (b.drop k).data.toList := by
+      rw [List.drop_append, Nat.sub_eq_zero_of_le (by omega), List.drop_zero]
+    rw [hdropi, hd, hsplit, ByteString.literal_data_toList]
+  have hn' : ¬ NeedsCont (klByte (s ++ (b.drop k).data.toList) (i - 2))
+      (klByte (s ++ (b.drop k).data.toList) (i - 3)) := by
+    rw [klByte_append_left (s := s) (t := (b.drop k).data.toList) (by omega),
+      klByte_append_left (s := s) (t := (b.drop k).data.toList) (by omega)]
+    exact hn
+  have he' : IsCharEnd (klByte (s ++ (b.drop k).data.toList) (i - 1)) := by
+    rw [klByte_append_left (s := s) (t := (b.drop k).data.toList) (by omega)]
+    exact he
+  obtain ⟨hw, -, -⟩ := char_ok h (s ++ (b.drop k).data.toList) i hs' hi hn' he'
+  have hm' : m < b.length - rest.length := by omega
+  have hwin := hw m hm'
+  rwa [klErrWin_append_left (s := s) (t := (b.drop k).data.toList)
+        (j := i - 3 + m) (by omega)] at hwin
+
+theorem u8_le_of_toNat {a b : UInt8} (h : a.toNat ≤ b.toNat) : a ≤ b :=
+  (UInt8.le_iff_toNat_le).mpr h
+
+theorem u8_lt_of_toNat {a b : UInt8} (h : a.toNat < b.toNat) : a < b :=
+  (UInt8.lt_iff_toNat_lt).mpr h
+
+theorem klErrWin_at_succ {s : List UInt8} {i : Nat} (hi : 3 ≤ i) (h : klErrWin s (i + 1 - 3)) :
+    klErrByte (klByte s (i - 2)) (klByte s (i - 1)) (klByte s i) (klByte s (i + 1)) = 0 := by
+  unfold klErrWin at h
+  simpa [show i + 1 - 3 = i - 2 from by omega, show i - 2 + 1 = i - 1 from by omega,
+    show i - 2 + 2 = i from by omega, show i - 2 + 3 = i + 1 from by omega] using h
+
+theorem klErrWin_at_succ2 {s : List UInt8} {i : Nat} (hi : 3 ≤ i) (h : klErrWin s (i + 2 - 3)) :
+    klErrByte (klByte s (i - 1)) (klByte s i) (klByte s (i + 1)) (klByte s (i + 2)) = 0 := by
+  unfold klErrWin at h
+  simpa [show i + 2 - 3 = i - 1 from by omega, show i - 1 + 1 = i from by omega,
+    show i - 1 + 2 = i + 1 from by omega, show i - 1 + 3 = i + 2 from by omega] using h
+
+theorem klErrWin_at_succ3 {s : List UInt8} {i : Nat} (hi : 3 ≤ i) (h : klErrWin s (i + 3 - 3)) :
+    klErrByte (klByte s i) (klByte s (i + 1)) (klByte s (i + 2)) (klByte s (i + 3)) = 0 := by
+  unfold klErrWin at h
+  simpa [show i + 3 - 3 = i from by omega, show i + 1 = i + 1 from by omega,
+    show i + 2 = i + 2 from by omega, show i + 3 = i + 3 from by omega] using h
+
+theorem not_charEnd_of_ge {p : UInt8} (h : 0xC2 ≤ p) : ¬ IsCharEnd p := by
+  intro hp
+  have hlt := isCharEnd_lt p hp
+  rw [UInt8.le_iff_toNat_le] at h
+  have hc2 : (0xC2 : UInt8).toNat = 194 := rfl
+  omega
+
+theorem not_cont_of_pair {p1 c : UInt8} (hp : IsCharEnd p1) (hk : KlPair p1 c) :
+    ¬ IsContByte c := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨h1, -⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exact h1
+  · exfalso; exact not_charEnd_of_ge (UInt8.le_trans (by decide) h1) hp
+  · exfalso; exact not_charEnd_of_ge (h1 ▸ (by decide)) hp
+  · exfalso
+    rcases h1 with ⟨a, -⟩ | ⟨a, -⟩
+    · exact not_charEnd_of_ge (UInt8.le_trans (by decide) a) hp
+    · exact not_charEnd_of_ge (UInt8.le_trans (by decide) a) hp
+  · exfalso; exact not_charEnd_of_ge (h1 ▸ (by decide)) hp
+  · exfalso; exact not_charEnd_of_ge (h1 ▸ (by decide)) hp
+  · exfalso; exact not_charEnd_of_ge (UInt8.le_trans (by decide) h1) hp
+  · exfalso; exact not_charEnd_of_ge (h1 ▸ (by decide)) hp
+
+theorem not_klPair_of_dead {c d : UInt8} (hc : ¬ IsCharEnd c)
+    (hl : ¬ IsUtf8LeadByte c) : ¬ KlPair c d := by
+  intro hk
+  rw [klPair_iff] at hk
+  rcases hk with ⟨-, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exact hc h2
+  · exact hl (Or.inr ⟨h1, UInt8.le_trans h2 (by decide)⟩)
+  · exact hl (Or.inr (h1.symm ▸ (by decide)))
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exact hl (Or.inr ⟨UInt8.le_trans (by decide) a, UInt8.le_trans b (by decide)⟩)
+    · exact hl (Or.inr ⟨UInt8.le_trans (by decide) a, UInt8.le_trans b (by decide)⟩)
+  · exact hl (Or.inr (h1.symm ▸ (by decide)))
+  · exact hl (Or.inr (h1.symm ▸ (by decide)))
+  · exact hl (Or.inr ⟨UInt8.le_trans (by decide) h1, UInt8.le_trans h2 (by decide)⟩)
+  · exact hl (Or.inr (h1.symm ▸ (by decide)))
+
+theorem not_needsCont_of_charEnd {p1 p2 p3 : UInt8} (hp : IsCharEnd p1)
+    (hn : ¬ NeedsCont p2 p3) : ¬ NeedsCont p1 p2 := by
+  refine not_needsCont_of_lt ?_ ?_
+  · have := isCharEnd_lt p1 hp; omega
+  · have := (needsCont_false_iff p2 p3).mp hn; omega
+
+theorem pair_two_cont {p1 d : UInt8} (h0 : 0xC2 ≤ p1) (h0' : p1 ≤ 0xDF)
+    (hk : KlPair p1 d) : IsContByte d := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨h1, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exfalso; exact not_charEnd_of_ge h0 h2
+  · exact h3
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exfalso; simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at a h0' ⊢; omega
+    · exfalso; simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at a h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+  · exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h1 h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+
+theorem pair_three0_cont {d : UInt8} (hk : KlPair 0xE0 d) :
+    0xA0 ≤ d ∧ d ≤ 0xBF := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨-, h2⟩ | ⟨h1, h2, h3⟩ | ⟨-, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exact absurd h2 (not_charEnd_of_ge (by decide))
+  · exact absurd h2 (by decide)
+  · exact ⟨h2, h3⟩
+  · rcases h1 with ⟨a, -⟩ | ⟨a, -⟩ <;> exact absurd a (by decide)
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+
+theorem pair_three1_cont {p1 d : UInt8} (h0 : 0xE1 ≤ p1) (h0' : p1 ≤ 0xEC)
+    (hk : KlPair p1 d) : IsContByte d := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨h1, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exfalso; exact not_charEnd_of_ge (UInt8.le_trans (by decide) h0) h2
+  · exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 h2 ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 ⊢; omega
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exact h3
+    · exfalso
+      simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at a h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+  · exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h1 h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+
+theorem pair_three2_cont {d : UInt8} (hk : KlPair 0xED d) :
+    0x80 ≤ d ∧ d ≤ 0x9F := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨-, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨-, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exact absurd h2 (not_charEnd_of_ge (by decide))
+  · exact absurd h2 (by decide)
+  · exact absurd h1 (by decide)
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exact absurd b (by decide)
+    · exact absurd a (by decide)
+  · exact ⟨h2, h3⟩
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+
+theorem pair_three3_cont {p1 d : UInt8} (h0 : 0xEE ≤ p1) (h0' : p1 ≤ 0xEF)
+    (hk : KlPair p1 d) : IsContByte d := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨h1, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exfalso; exact not_charEnd_of_ge (UInt8.le_trans (by decide) h0) h2
+  · exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 h2 ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 ⊢; omega
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exfalso
+      simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 b ⊢; omega
+    · exact h3
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+  · exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h1 h0' ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+
+theorem pair_four0_cont {d : UInt8} (hk : KlPair 0xF0 d) :
+    0x90 ≤ d ∧ d ≤ 0xBF := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨-, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨-, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exact absurd h2 (not_charEnd_of_ge (by decide))
+  · exact absurd h2 (by decide)
+  · exact absurd h1 (by decide)
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exact absurd b (by decide)
+    · exact absurd b (by decide)
+  · exact absurd h1 (by decide)
+  · exact ⟨h2, h3⟩
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+
+theorem pair_four1_cont {p1 d : UInt8} (h0 : 0xF1 ≤ p1) (h0' : p1 ≤ 0xF3)
+    (hk : KlPair p1 d) : IsContByte d := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨h1, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩
+  · exfalso; exact not_charEnd_of_ge (UInt8.le_trans (by decide) h0) h2
+  · exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 h2 ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 ⊢; omega
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exfalso
+      simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 b ⊢; omega
+    · exfalso
+      simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 b ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 ⊢; omega
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0 ⊢; omega
+  · exact h3
+  · subst h1; exfalso
+    simp only [UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at h0' ⊢; omega
+
+theorem pair_four2_cont {d : UInt8} (hk : KlPair 0xF4 d) :
+    0x80 ≤ d ∧ d ≤ 0x8F := by
+  rw [klPair_iff] at hk
+  rcases hk with ⟨-, h2⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨h1, h3⟩ | ⟨h1, h2, h3⟩ |
+    ⟨h1, h2, h3⟩ | ⟨h1, h2, h3⟩ | ⟨-, h2, h3⟩
+  · exact absurd h2 (not_charEnd_of_ge (by decide))
+  · exact absurd h2 (by decide)
+  · exact absurd h1 (by decide)
+  · rcases h1 with ⟨a, b⟩ | ⟨a, b⟩
+    · exact absurd b (by decide)
+    · exact absurd b (by decide)
+  · exact absurd h1 (by decide)
+  · exact absurd h1 (by decide)
+  · exact absurd h2 (by decide)
+  · exact ⟨h2, h3⟩
+
+theorem klTailByte_true_ge {c : UInt8} (h : klTailByte c = true) : 192 ≤ c.toNat := by
+  unfold klTailByte at h
+  rw [Bool.or_eq_true] at h
+  rcases h with h1 | h2
+  · rw [decide_eq_true_eq] at h1
+    have he : (c &&& 0xFE).toNat = 192 := by rw [h1]; rfl
+    have hle : (c &&& 0xFE).toNat ≤ c.toNat := by
+      rw [UInt8.toNat_and]
+      exact Nat.and_le_left
+    omega
+  · rw [decide_eq_true_eq] at h2
+    have hge := (UInt8.le_iff_toNat_le).mp h2
+    have hf5 : (0xF5 : UInt8).toNat = 245 := rfl
+    omega
+
+theorem klTailByte_false_of_lead {c : UInt8} (h1 : 0xC2 ≤ c) (h2 : c ≤ 0xF4) :
+    klTailByte c = false := by
+  have h1' : 194 ≤ c.toNat := (UInt8.le_iff_toNat_le).mp h1
+  have h2' : c.toNat ≤ 244 := (UInt8.le_iff_toNat_le).mp h2
+  have hc : c = UInt8.ofNat (194 + (c.toNat - 194)) := by
+    apply UInt8.toNat_inj.mp
+    rw [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
+    omega
+  rw [hc]
+  exact (by decide : ∀ i : Fin 51, klTailByte (UInt8.ofNat (194 + i.val)) = false)
+    ⟨c.toNat - 194, by omega⟩
+
+theorem klTailByte_false_of_cont {c : UInt8} (h1 : 0x80 ≤ c) (h2 : c ≤ 0xBF) :
+    klTailByte c = false := by
+  have h1' : 128 ≤ c.toNat := (UInt8.le_iff_toNat_le).mp h1
+  have h2' : c.toNat ≤ 191 := (UInt8.le_iff_toNat_le).mp h2
+  have hc : c = UInt8.ofNat (128 + (c.toNat - 128)) := by
+    apply UInt8.toNat_inj.mp
+    rw [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
+    omega
+  rw [hc]
+  exact (by decide : ∀ i : Fin 64, klTailByte (UInt8.ofNat (128 + i.val)) = false)
+    ⟨c.toNat - 128, by omega⟩
+
+theorem klTailByte_false_of_charEnd {c : UInt8} (h : IsCharEnd c) : klTailByte c = false := by
+  rcases h with h | h
+  · cases hb : klTailByte c with
+    | false => rfl
+    | true =>
+        have hge := klTailByte_true_ge hb
+        exact absurd hge (by omega)
+  · exact klTailByte_false_of_cont h.1 h.2
+
+theorem utf8PrefixOf_of_literal_take {l : List UInt8} {b : Bytes} {c : Nat} {r : Bytes}
+    (hc : Utf8Char b c r) (hne : l ≠ [])
+    (hlt : l.length < b.length - r.length)
+    (ht : b.take l.length = ByteString.literal l) :
+    Utf8PrefixOf (ByteString.literal l) := by
+  refine ⟨?_, b, c, r, hc, ?_, ?_⟩
+  · cases l with
+    | nil => exact absurd rfl hne
+    | cons _ _ => rw [ByteString.literal_cons]; exact ByteString.cons_ne_empty _ _
+  · rw [ByteString.length_eq_size, ByteString.size_literal]; exact hlt
+  · unfold HasPrefix
+    rw [ByteString.drop_zero, ByteString.length_eq_size, ByteString.size_literal]
+    exact ht
+
+theorem utf8Spans_tail_drop {b : Bytes} {t : Bytes} (h : Utf8Spans b t) :
+    ∃ k, t = ByteString.literal (b.data.toList.drop k) := by
+  induction h with
+  | nil t => exact ⟨0, by rw [List.drop_zero, ByteString.literal_data_toList]⟩
+  | char hc hr ih =>
+      rename_i bb bp rr cc
+      obtain ⟨k, hk⟩ := ih
+      refine ⟨(bb.length - bp.length) + k, ?_⟩
+      rw [hk]
+      have hd := utf8Char_drop hc
+      rw [← hd, List.drop_drop]
+
+theorem utf8Spans_literal_tail {l : List UInt8} {t : Bytes}
+    (h : Utf8Spans (ByteString.literal l) t) :
+    ∃ k, t = ByteString.literal (l.drop k) := by
+  obtain ⟨k, hk⟩ := utf8Spans_tail_drop h
+  exact ⟨k, by rwa [ByteString.data_toList_literal] at hk⟩
+
+theorem help_drop1 {s : List UInt8} {i : Nat} (hi : i < s.length) (h : i + 1 = s.length) :
+    s.drop i = [klByte s i] := by
+  rw [List.drop_eq_getElem_cons hi]
+  have hnil : s.drop (i + 1) = [] := List.drop_eq_nil_of_le (by omega)
+  rw [hnil, klByte_getElem hi]
+
+theorem help_drop2 {s : List UInt8} {i : Nat} (hi : i < s.length) (hi1 : i + 1 < s.length)
+    (h : i + 2 = s.length) : s.drop i = [klByte s i, klByte s (i + 1)] := by
+  rw [List.drop_eq_getElem_cons hi, List.drop_eq_getElem_cons hi1]
+  have hnil : s.drop (i + 2) = [] := List.drop_eq_nil_of_le (by omega)
+  rw [hnil, klByte_getElem hi, klByte_getElem hi1]
+
+theorem help_drop3 {s : List UInt8} {i : Nat} (hi : i < s.length) (hi1 : i + 1 < s.length)
+    (hi2 : i + 2 < s.length) (h : i + 3 = s.length) :
+    s.drop i = [klByte s i, klByte s (i + 1), klByte s (i + 2)] := by
+  rw [List.drop_eq_getElem_cons hi, List.drop_eq_getElem_cons hi1,
+    List.drop_eq_getElem_cons hi2]
+  have hnil : s.drop (i + 3) = [] := List.drop_eq_nil_of_le (by omega)
+  rw [hnil, klByte_getElem hi, klByte_getElem hi1, klByte_getElem hi2]
+
+theorem literal_take_append (l d : List UInt8) :
+    (ByteString.literal (l ++ d)).take l.length = ByteString.literal l := by
+  apply ByteString.eq_of_toList_eq
+  simp [ByteString.toList_take]
+
+theorem literal_length_lt_append {l d : List UInt8} (hd : d ≠ []) :
+    l.length < (ByteString.literal (l ++ d)).length - (ByteString.literal []).length := by
+  have h0 : (ByteString.literal [] : Bytes).length = 0 := rfl
+  rw [h0, ByteString.length_eq_size, ByteString.size_literal]
+  simp only [List.length_append, Nat.sub_zero]
+  have hdlen : 0 < d.length := by
+    cases d with
+    | nil => exact absurd rfl hd
+    | cons _ _ => simp
+  omega
+
+theorem klTailByte_true_of_C0_C1 {c : UInt8} (h1 : 0xC0 ≤ c) (h2 : c ≤ 0xC1) :
+    klTailByte c = true := by
+  have h1' : 192 ≤ c.toNat := (UInt8.le_iff_toNat_le).mp h1
+  have h2' : c.toNat ≤ 193 := (UInt8.le_iff_toNat_le).mp h2
+  have hc : c = UInt8.ofNat (0xC0 + (c.toNat - 0xC0)) := by
+    apply UInt8.toNat_inj.mp
+    rw [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
+    omega
+  rw [hc]
+  exact (by decide : ∀ i : Fin 2, klTailByte (UInt8.ofNat (0xC0 + i.val)) = true)
+    ⟨c.toNat - 0xC0, by omega⟩
+
+theorem klTailByte_true_of_F5 {c : UInt8} (h1 : 0xF5 ≤ c) (h2 : c.toNat ≤ 255) :
+    klTailByte c = true := by
+  have h1' : 245 ≤ c.toNat := (UInt8.le_iff_toNat_le).mp h1
+  have hc : c = UInt8.ofNat (0xF5 + (c.toNat - 0xF5)) := by
+    apply UInt8.toNat_inj.mp
+    rw [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
+    omega
+  rw [hc]
+  exact (by decide : ∀ i : Fin 11, klTailByte (UInt8.ofNat (0xF5 + i.val)) = true)
+    ⟨c.toNat - 0xF5, by omega⟩
+
+theorem validPrefix_of_klErrAll {s : List UInt8} {i : Nat} (hi : 3 ≤ i)
+    (hstate : ¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)) ∧
+      IsCharEnd (klByte s (i - 1)))
+    (hwin : ∀ q, i ≤ q → q < s.length → klErrWin s (q - 3))
+    (hlast : ¬ klTailByte (klByte s (s.length - 1)) = true) :
+    ValidPrefix (ByteString.literal (s.drop i)) := by
+  suffices h : ∀ k, ∀ (s : List UInt8) (i : Nat), s.length - i = k → 3 ≤ i →
+      (¬ NeedsCont (klByte s (i - 2)) (klByte s (i - 3)) ∧
+        IsCharEnd (klByte s (i - 1))) →
+      (∀ q, i ≤ q → q < s.length → klErrWin s (q - 3)) →
+      (¬ klTailByte (klByte s (s.length - 1)) = true) →
+      ValidPrefix (ByteString.literal (s.drop i)) from
+    h (s.length - i) s i rfl hi hstate hwin hlast
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+    intro s i hk hi hstate hwin hlast
+    by_cases hlen : i < s.length
+    · let c := klByte s i
+      have hc : c = klByte s i := rfl
+      have hwin_i : klErrWin s (i - 3) := hwin i (Nat.le_refl i) hlen
+      have hwin_i' : klErrByte (klByte s (i - 3)) (klByte s (i - 2)) (klByte s (i - 1))
+          (klByte s i) = 0 := by
+        have hh := hwin_i
+        unfold klErrWin at hh
+        simpa [show i - 3 + 1 = i - 2 from by omega, show i - 3 + 2 = i - 1 from by omega,
+          show i - 3 + 3 = i from by omega] using hh
+      have hpair : KlPair (klByte s (i - 1)) c := by
+        rcases (klErrByte_eq_zero_iff _ _ _ _).mp hwin_i' with ⟨hn, -⟩ | ⟨-, hp⟩
+        · exact absurd hn hstate.1
+        · rw [← hc] at hp
+          exact hp
+      have hnc : ¬ IsContByte c := not_cont_of_pair hstate.2 hpair
+      have hne_l : s.drop i ≠ [] := by
+        intro h0
+        have hpos : 0 < (s.drop i).length := by rw [List.length_drop]; omega
+        rw [h0] at hpos; simp at hpos
+      have step : ∀ (l : Nat) (c' : Nat) (b' : Bytes),
+          Utf8Char (ByteString.literal (s.drop i)) c' b' →
+          b' = ByteString.literal (s.drop (i + l)) → 1 ≤ l →
+          (¬ NeedsCont (klByte s (i + l - 2)) (klByte s (i + l - 3)) ∧
+            IsCharEnd (klByte s (i + l - 1))) →
+          ValidPrefix (ByteString.literal (s.drop i)) := by
+        intro l c' b' hch hb' hl hstate'
+        have hi' : 3 ≤ i + l := by omega
+        obtain ⟨t, hspans, htail⟩ :=
+          ih (s.length - (i + l)) (by omega) s (i + l) rfl hi' hstate'
+            (fun q hq hqs => hwin q (by omega) hqs) hlast
+        rw [← hb'] at hspans
+        exact ⟨t, Utf8Spans.char hch hspans, htail⟩
+      have lift : ∀ (l : Nat) (L : List UInt8) (d : List UInt8) (c' : Nat),
+          s.drop i = L → d ≠ [] →
+          Utf8Char (ByteString.literal (L ++ d)) c' (ByteString.literal []) →
+          ValidPrefix (ByteString.literal (s.drop i)) := by
+        intro l L d c' hd hdn hchar
+        rw [hd]
+        exact ⟨ByteString.literal L, Utf8Spans.nil _,
+          Or.inr (utf8PrefixOf_of_literal_take (l := L) hchar
+            (by cases L with | nil => exact absurd hd.symm (by simpa using hne_l) | cons _ _ => simp)
+            (literal_length_lt_append hdn) (literal_take_append L d))⟩
+      by_cases hascii : c.toNat < 0x80
+      · have hlt80 : c < 0x80 := by rw [UInt8.lt_iff_toNat_lt]; exact hascii
+        have hch : Utf8Char (ByteString.literal (s.drop i)) c.toNat
+            (ByteString.literal (s.drop (i + 1))) := by
+          rw [literal_drop_cons hlen]
+          exact Utf8Char.one hlt80
+        refine step 1 c.toNat _ hch rfl (by omega) ⟨?_, ?_⟩
+        · have h := not_needsCont_of_charEnd hstate.2 hstate.1
+          simpa [show i + 1 - 2 = i - 1 from by omega, show i + 1 - 3 = i - 2 from by omega] using h
+        · rw [show i + 1 - 1 = i from by omega]
+          exact Or.inl hascii
+      · have hge : 0x80 ≤ c.toNat := by omega
+        by_cases hcont : c.toNat ≤ 0xBF
+        · exact absurd (cont_of_bounds hge hcont) hnc
+        · have hgeC0 : 0xC0 ≤ c.toNat := by omega
+          by_cases hc01 : c.toNat < 0xC2
+          · have h1 : 0xC0 ≤ c := u8_le_of_toNat hgeC0
+            have h2 : c ≤ 0xC1 :=
+              u8_le_of_toNat (by simp only [UInt8.toNat_ofNat] at hc01 ⊢; omega)
+            have hctrue : klTailByte c = true := klTailByte_true_of_C0_C1 h1 h2
+            by_cases hnext : i + 1 < s.length
+            · exfalso
+              have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                not_needsCont_of_charEnd hstate.2 hstate.1
+              have hpair1 : KlPair c (klByte s (i + 1)) := by
+                have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                · exact absurd hn hneed1
+                · rw [← hc] at hp
+                  exact hp
+              have hnc' : ¬ IsCharEnd c := by
+                rw [isCharEnd_nat]; omega
+              have hnl : ¬ IsUtf8LeadByte c := by
+                intro hl
+                unfold IsUtf8LeadByte at hl
+                simp only [UInt8.lt_iff_toNat_lt, UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at hl
+                omega
+              exact not_klPair_of_dead hnc' hnl hpair1
+            · exfalso
+              have hi_eq : i = s.length - 1 := by omega
+              rw [hc] at hctrue
+              exact hlast (by rw [← hi_eq]; exact hctrue)
+          · have h0 : 0xC2 ≤ c := by
+              rw [UInt8.le_iff_toNat_le]
+              simp only [UInt8.toNat_ofNat] at hc01 ⊢
+              omega
+            by_cases hdf : c.toNat ≤ 0xDF
+            · have h0' : c ≤ 0xDF := by rw [UInt8.le_iff_toNat_le]; exact hdf
+              by_cases hnext : i + 1 < s.length
+              · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                  not_needsCont_of_charEnd hstate.2 hstate.1
+                have hpair1 : KlPair c (klByte s (i + 1)) := by
+                  have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                  rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                  · exact absurd hn hneed1
+                  · exact hp
+                have hcont1 : IsContByte (klByte s (i + 1)) := pair_two_cont h0 h0' hpair1
+                have hch : Utf8Char (ByteString.literal (s.drop i))
+                    (((klByte s i).toNat - 0xC0) * 0x40 + ((klByte s (i + 1)).toNat - 0x80))
+                    (ByteString.literal (s.drop (i + 2))) := by
+                  rw [literal_drop_cons hlen, literal_drop_cons hnext]
+                  exact Utf8Char.two h0 h0' hcont1.1 hcont1.2
+                refine step 2 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                · refine not_needsCont_of_lt ?_ ?_
+                  · rw [show i + 2 - 2 = i from by omega, ← hc]
+                    omega
+                  · rw [show i + 2 - 3 = i - 1 from by omega]
+                    have hlt := isCharEnd_lt _ hstate.2
+                    omega
+                · rw [show i + 2 - 1 = i + 1 from by omega]; exact Or.inr hcont1
+              · have hcord : i + 1 = s.length := by omega
+                have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                have hchar := Utf8Char.two (b0 := c) (b1 := 0x80) (rest := ByteString.literal [])
+                  h0 h0' (by decide) (by decide)
+                exact lift 1 [c] [0x80] _ hd (by simp) hchar
+            · have hE0 : 0xE0 ≤ c.toNat := by omega
+              by_cases hef : c.toNat ≤ 0xEF
+              · have h0E : 0xE0 ≤ c := by rw [UInt8.le_iff_toNat_le]; exact hE0
+                by_cases he0 : c.toNat = 0xE0
+                · have hcE0 : c = 0xE0 := UInt8.toNat_inj.mp (by simpa using he0)
+                  by_cases hnext : i + 1 < s.length
+                  · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                      not_needsCont_of_charEnd hstate.2 hstate.1
+                    have hpair1 : KlPair c (klByte s (i + 1)) := by
+                      have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                      rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                      · exact absurd hn hneed1
+                      · exact hp
+                    have hp1 : 0xA0 ≤ klByte s (i + 1) ∧ klByte s (i + 1) ≤ 0xBF := by
+                      rw [hcE0] at hpair1
+                      exact pair_three0_cont hpair1
+                    by_cases hnext2 : i + 2 < s.length
+                    · have hcont2 : IsContByte (klByte s (i + 1)) ∧ IsContByte (klByte s (i + 2)) := by
+                        have hw := klErrWin_at_succ2 (s := s) (hi := hi) (hwin (i + 2) (by omega) hnext2)
+                        rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                        · exact ⟨h1, h2⟩
+                        · exact absurd (needsCont_of_lead hE0) hnn
+                      have hch : Utf8Char (ByteString.literal (s.drop i))
+                          (((klByte s (i + 1)).toNat - 0x80) * 0x40 + ((klByte s (i + 2)).toNat - 0x80))
+                          (ByteString.literal (s.drop (i + 3))) := by
+                        rw [literal_drop_cons hlen, literal_drop_cons hnext, literal_drop_cons hnext2]
+                        rw [show klByte s i = 0xE0 from hcE0]
+                        exact Utf8Char.three₀ hp1.1 hp1.2 hcont2.2.1 hcont2.2.2
+                      refine step 3 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                      · refine not_needsCont_of_lt ?_ ?_
+                        · rw [show i + 3 - 2 = i + 1 from by omega]; have h := cont_le hcont2.1; omega
+                        · rw [show i + 3 - 3 = i from by omega]; rw [← hc]; omega
+                      · rw [show i + 3 - 1 = i + 2 from by omega]; exact Or.inr hcont2.2
+                    · have hcord : i + 2 = s.length := by omega
+                      have hd : s.drop i = [c, klByte s (i + 1)] := by
+                        rw [help_drop2 hlen hnext hcord, hc]
+                      have hchar : Utf8Char (ByteString.literal (c :: klByte s (i + 1) :: 0x80 :: []))
+                          (((klByte s (i + 1)).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                          (ByteString.literal []) := by
+                        rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons]
+                        rw [show c = 0xE0 from hcE0]
+                        exact Utf8Char.three₀ hp1.1 hp1.2 (by decide) (by decide)
+                      exact lift 2 [c, klByte s (i + 1)] [0x80] _ hd (by simp) hchar
+                  · have hcord : i + 1 = s.length := by omega
+                    have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                    have hchar : Utf8Char (ByteString.literal (c :: 0xA0 :: 0x80 :: []))
+                        (((0xA0 : UInt8).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                        (ByteString.literal []) := by
+                      rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons]
+                      rw [show c = 0xE0 from hcE0]
+                      exact Utf8Char.three₀ (by decide) (by decide) (by decide) (by decide)
+                    exact lift 1 [c] [0xA0, 0x80] _ hd (by simp) hchar
+                · by_cases hed : c.toNat = 0xED
+                  · have hcED : c = 0xED := UInt8.toNat_inj.mp (by simpa using hed)
+                    by_cases hnext : i + 1 < s.length
+                    · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                        not_needsCont_of_charEnd hstate.2 hstate.1
+                      have hpair1 : KlPair c (klByte s (i + 1)) := by
+                        have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                        rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                        · exact absurd hn hneed1
+                        · exact hp
+                      have hp1 : 0x80 ≤ klByte s (i + 1) ∧ klByte s (i + 1) ≤ 0x9F := by
+                        rw [hcED] at hpair1
+                        exact pair_three2_cont hpair1
+                      by_cases hnext2 : i + 2 < s.length
+                      · have hcont2 : IsContByte (klByte s (i + 1)) ∧ IsContByte (klByte s (i + 2)) := by
+                          have hw := klErrWin_at_succ2 (s := s) (hi := hi) (hwin (i + 2) (by omega) hnext2)
+                          rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                          · exact ⟨h1, h2⟩
+                          · exact absurd (needsCont_of_lead hE0) hnn
+                        have hch : Utf8Char (ByteString.literal (s.drop i))
+                            (0xD000 + ((klByte s (i + 1)).toNat - 0x80) * 0x40 + ((klByte s (i + 2)).toNat - 0x80))
+                            (ByteString.literal (s.drop (i + 3))) := by
+                          rw [literal_drop_cons hlen, literal_drop_cons hnext, literal_drop_cons hnext2]
+                          rw [show klByte s i = 0xED from hcED]
+                          exact Utf8Char.three₂ hp1.1 hp1.2 hcont2.2.1 hcont2.2.2
+                        refine step 3 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                        · refine not_needsCont_of_lt ?_ ?_
+                          · rw [show i + 3 - 2 = i + 1 from by omega]; have h := cont_le hcont2.1; omega
+                          · rw [show i + 3 - 3 = i from by omega]; rw [← hc]; omega
+                        · rw [show i + 3 - 1 = i + 2 from by omega]; exact Or.inr hcont2.2
+                      · have hcord : i + 2 = s.length := by omega
+                        have hd : s.drop i = [c, klByte s (i + 1)] := by
+                          rw [help_drop2 hlen hnext hcord, hc]
+                        have hchar : Utf8Char (ByteString.literal (c :: klByte s (i + 1) :: 0x80 :: []))
+                            (0xD000 + ((klByte s (i + 1)).toNat - 0x80) * 0x40
+                              + ((0x80 : UInt8).toNat - 0x80))
+                            (ByteString.literal []) := by
+                          rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons]
+                          rw [show c = 0xED from hcED]
+                          exact Utf8Char.three₂ hp1.1 hp1.2 (by decide) (by decide)
+                        exact lift 2 [c, klByte s (i + 1)] [0x80] _ hd (by simp) hchar
+                    · have hcord : i + 1 = s.length := by omega
+                      have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                      have hchar : Utf8Char (ByteString.literal (c :: 0x80 :: 0x80 :: [])) 0xD000
+                          (ByteString.literal []) := by
+                        rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons]
+                        rw [show c = 0xED from hcED]
+                        exact Utf8Char.three₂ (by decide) (by decide) (by decide) (by decide)
+                      exact lift 1 [c] [0x80, 0x80] _ hd (by simp) hchar
+                  · have hECsplit : c.toNat ≤ 0xEC ∨ 0xEE ≤ c.toNat := by omega
+                    have hpE : (0xE1 ≤ c ∧ c ≤ 0xEC) ∨ (0xEE ≤ c ∧ c ≤ 0xEF) := by
+                      have hE1 : 0xE1 ≤ c := by
+                        rw [UInt8.le_iff_toNat_le]
+                        simp only [UInt8.toNat_ofNat]
+                        omega
+                      rcases hECsplit with hle | hge
+                      · left
+                        exact ⟨hE1, by rw [UInt8.le_iff_toNat_le]; exact hle⟩
+                      · right
+                        exact ⟨by rw [UInt8.le_iff_toNat_le]; simpa only [UInt8.toNat_ofNat] using hge,
+                          by rw [UInt8.le_iff_toNat_le]; exact hef⟩
+                    by_cases hnext : i + 1 < s.length
+                    · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                        not_needsCont_of_charEnd hstate.2 hstate.1
+                      have hpair1 : KlPair c (klByte s (i + 1)) := by
+                        have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                        rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                        · exact absurd hn hneed1
+                        · exact hp
+                      have hcont1 : IsContByte (klByte s (i + 1)) := by
+                        rcases hpE with ⟨a, b⟩ | ⟨a, b⟩
+                        · exact pair_three1_cont a b hpair1
+                        · exact pair_three3_cont a b hpair1
+                      by_cases hnext2 : i + 2 < s.length
+                      · have hcont2 : IsContByte (klByte s (i + 1)) ∧ IsContByte (klByte s (i + 2)) := by
+                          have hw := klErrWin_at_succ2 (s := s) (hi := hi) (hwin (i + 2) (by omega) hnext2)
+                          rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                          · exact ⟨h1, h2⟩
+                          · exact absurd (needsCont_of_lead hE0) hnn
+                        have hch : Utf8Char (ByteString.literal (s.drop i))
+                            (((klByte s i).toNat - 0xE0) * 0x1000 + ((klByte s (i + 1)).toNat - 0x80) * 0x40
+                              + ((klByte s (i + 2)).toNat - 0x80))
+                            (ByteString.literal (s.drop (i + 3))) := by
+                          rw [literal_drop_cons hlen, literal_drop_cons hnext, literal_drop_cons hnext2]
+                          exact Or.elim hpE
+                            (fun h => Utf8Char.three₁ h.1 h.2 hcont1.1 hcont1.2 hcont2.2.1 hcont2.2.2)
+                            (fun h => Utf8Char.three₃ h.1 h.2 hcont1.1 hcont1.2 hcont2.2.1 hcont2.2.2)
+                        refine step 3 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                        · refine not_needsCont_of_lt ?_ ?_
+                          · rw [show i + 3 - 2 = i + 1 from by omega]; have h := cont_le hcont2.1; omega
+                          · rw [show i + 3 - 3 = i from by omega, ← hc]; omega
+                        · rw [show i + 3 - 1 = i + 2 from by omega]; exact Or.inr hcont2.2
+                      · have hcord : i + 2 = s.length := by omega
+                        have hd : s.drop i = [c, klByte s (i + 1)] := by
+                          rw [help_drop2 hlen hnext hcord, hc]
+                        have hchar : Utf8Char (ByteString.literal (c :: klByte s (i + 1) :: 0x80 :: []))
+                            ((c.toNat - 0xE0) * 0x1000 + ((klByte s (i + 1)).toNat - 0x80) * 0x40
+                              + ((0x80 : UInt8).toNat - 0x80))
+                            (ByteString.literal []) := by
+                          rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons]
+                          exact Or.elim hpE
+                            (fun h => Utf8Char.three₁ h.1 h.2 hcont1.1 hcont1.2 (by decide) (by decide))
+                            (fun h => Utf8Char.three₃ h.1 h.2 hcont1.1 hcont1.2 (by decide) (by decide))
+                        exact lift 2 [c, klByte s (i + 1)] [0x80] _ hd (by simp) hchar
+                    · have hcord : i + 1 = s.length := by omega
+                      have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                      have hchar : Utf8Char (ByteString.literal (c :: 0x80 :: 0x80 :: []))
+                          ((c.toNat - 0xE0) * 0x1000 + ((0x80 : UInt8).toNat - 0x80) * 0x40
+                            + ((0x80 : UInt8).toNat - 0x80))
+                          (ByteString.literal []) := by
+                        rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons]
+                        exact Or.elim hpE
+                          (fun h => Utf8Char.three₁ h.1 h.2 (by decide) (by decide) (by decide) (by decide))
+                          (fun h => Utf8Char.three₃ h.1 h.2 (by decide) (by decide) (by decide) (by decide))
+                      exact lift 1 [c] [0x80, 0x80] _ hd (by simp) hchar
+              · have hF0 : 0xF0 ≤ c.toNat := by omega
+                have h0F : 0xF0 ≤ c := by rw [UInt8.le_iff_toNat_le]; exact hF0
+                by_cases hf0 : c.toNat = 0xF0
+                · have hcF0 : c = 0xF0 := UInt8.toNat_inj.mp (by simpa using hf0)
+                  by_cases hnext : i + 1 < s.length
+                  · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                      not_needsCont_of_charEnd hstate.2 hstate.1
+                    have hpair1 : KlPair c (klByte s (i + 1)) := by
+                      have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                      rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                      · exact absurd hn hneed1
+                      · exact hp
+                    have hp1 : 0x90 ≤ klByte s (i + 1) ∧ klByte s (i + 1) ≤ 0xBF := by
+                      rw [hcF0] at hpair1
+                      exact pair_four0_cont hpair1
+                    by_cases hnext2 : i + 2 < s.length
+                    · have hcont2 : IsContByte (klByte s (i + 1)) ∧ IsContByte (klByte s (i + 2)) := by
+                        have hw := klErrWin_at_succ2 (s := s) (hi := hi) (hwin (i + 2) (by omega) hnext2)
+                        rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                        · exact ⟨h1, h2⟩
+                        · exact absurd (needsCont_of_lead hE0) hnn
+                      by_cases hnext3 : i + 3 < s.length
+                      · have hcont3 : IsContByte (klByte s (i + 2)) ∧ IsContByte (klByte s (i + 3)) := by
+                          have hw := klErrWin_at_succ3 (s := s) (hi := hi) (hwin (i + 3) (by omega) hnext3)
+                          rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                          · exact ⟨h1, h2⟩
+                          · exact absurd (needsCont_of_lead3 hF0) hnn
+                        have hch : Utf8Char (ByteString.literal (s.drop i))
+                            (((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                              + ((klByte s (i + 2)).toNat - 0x80) * 0x40 + ((klByte s (i + 3)).toNat - 0x80))
+                            (ByteString.literal (s.drop (i + 4))) := by
+                          rw [literal_drop_cons hlen, literal_drop_cons hnext, literal_drop_cons hnext2,
+                            literal_drop_cons hnext3]
+                          rw [show klByte s i = 0xF0 from hcF0]
+                          exact Utf8Char.four₀ hp1.1 hp1.2 hcont2.2.1 hcont2.2.2 hcont3.2.1 hcont3.2.2
+                        refine step 4 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                        · refine not_needsCont_of_lt ?_ ?_
+                          · rw [show i + 4 - 2 = i + 2 from by omega]; have h := cont_le hcont2.2; omega
+                          · rw [show i + 4 - 3 = i + 1 from by omega]; have h := cont_le hcont2.1; omega
+                        · rw [show i + 4 - 1 = i + 3 from by omega]; exact Or.inr hcont3.2
+                      · have hcord : i + 3 = s.length := by omega
+                        have hd : s.drop i = [c, klByte s (i + 1), klByte s (i + 2)] := by
+                          rw [help_drop3 hlen hnext hnext2 hcord, hc]
+                        have hchar : Utf8Char
+                            (ByteString.literal (c :: klByte s (i + 1) :: klByte s (i + 2) :: 0x80 :: []))
+                            (((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                              + ((klByte s (i + 2)).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                            (ByteString.literal []) := by
+                          rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                            ByteString.literal_cons]
+                          rw [show c = 0xF0 from hcF0]
+                          exact Utf8Char.four₀ hp1.1 hp1.2 hcont2.2.1 hcont2.2.2 (by decide) (by decide)
+                        exact lift 3 [c, klByte s (i + 1), klByte s (i + 2)] [0x80] _ hd (by simp) hchar
+                    · have hcord : i + 2 = s.length := by omega
+                      have hd : s.drop i = [c, klByte s (i + 1)] := by
+                        rw [help_drop2 hlen hnext hcord, hc]
+                      have hchar : Utf8Char (ByteString.literal (c :: klByte s (i + 1) :: 0x80 :: 0x80 :: []))
+                          (((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                            + ((0x80 : UInt8).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                          (ByteString.literal []) := by
+                        rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                          ByteString.literal_cons]
+                        rw [show c = 0xF0 from hcF0]
+                        exact Utf8Char.four₀ hp1.1 hp1.2 (by decide) (by decide) (by decide) (by decide)
+                      exact lift 2 [c, klByte s (i + 1)] [0x80, 0x80] _ hd (by simp) hchar
+                  · have hcord : i + 1 = s.length := by omega
+                    have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                    have hchar : Utf8Char (ByteString.literal (c :: 0x90 :: 0x80 :: 0x80 :: [])) 0x10000
+                        (ByteString.literal []) := by
+                      rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                        ByteString.literal_cons]
+                      rw [show c = 0xF0 from hcF0]
+                      exact Utf8Char.four₀ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+                    exact lift 1 [c] [0x90, 0x80, 0x80] _ hd (by simp) hchar
+                · by_cases hf4 : c.toNat = 0xF4
+                  · have hcF4 : c = 0xF4 := UInt8.toNat_inj.mp (by simpa using hf4)
+                    by_cases hnext : i + 1 < s.length
+                    · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                        not_needsCont_of_charEnd hstate.2 hstate.1
+                      have hpair1 : KlPair c (klByte s (i + 1)) := by
+                        have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                        rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                        · exact absurd hn hneed1
+                        · exact hp
+                      have hp1 : 0x80 ≤ klByte s (i + 1) ∧ klByte s (i + 1) ≤ 0x8F := by
+                        rw [hcF4] at hpair1
+                        exact pair_four2_cont hpair1
+                      by_cases hnext2 : i + 2 < s.length
+                      · have hcont2 : IsContByte (klByte s (i + 1)) ∧ IsContByte (klByte s (i + 2)) := by
+                          have hw := klErrWin_at_succ2 (s := s) (hi := hi) (hwin (i + 2) (by omega) hnext2)
+                          rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                          · exact ⟨h1, h2⟩
+                          · exact absurd (needsCont_of_lead hE0) hnn
+                        by_cases hnext3 : i + 3 < s.length
+                        · have hcont3 : IsContByte (klByte s (i + 2)) ∧ IsContByte (klByte s (i + 3)) := by
+                            have hw := klErrWin_at_succ3 (s := s) (hi := hi) (hwin (i + 3) (by omega) hnext3)
+                            rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                            · exact ⟨h1, h2⟩
+                            · exact absurd (needsCont_of_lead3 hF0) hnn
+                          have hch : Utf8Char (ByteString.literal (s.drop i))
+                              (0x100000 + ((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                                + ((klByte s (i + 2)).toNat - 0x80) * 0x40 + ((klByte s (i + 3)).toNat - 0x80))
+                              (ByteString.literal (s.drop (i + 4))) := by
+                            rw [literal_drop_cons hlen, literal_drop_cons hnext, literal_drop_cons hnext2,
+                              literal_drop_cons hnext3]
+                            rw [show klByte s i = 0xF4 from hcF4]
+                            exact Utf8Char.four₂ hp1.1 hp1.2 hcont2.2.1 hcont2.2.2 hcont3.2.1 hcont3.2.2
+                          refine step 4 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                          · refine not_needsCont_of_lt ?_ ?_
+                            · rw [show i + 4 - 2 = i + 2 from by omega]; have h := cont_le hcont2.2; omega
+                            · rw [show i + 4 - 3 = i + 1 from by omega]; have h := cont_le hcont2.1; omega
+                          · rw [show i + 4 - 1 = i + 3 from by omega]; exact Or.inr hcont3.2
+                        · have hcord : i + 3 = s.length := by omega
+                          have hd : s.drop i = [c, klByte s (i + 1), klByte s (i + 2)] := by
+                            rw [help_drop3 hlen hnext hnext2 hcord, hc]
+                          have hchar : Utf8Char
+                              (ByteString.literal (c :: klByte s (i + 1) :: klByte s (i + 2) :: 0x80 :: []))
+                              (0x100000 + ((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                                + ((klByte s (i + 2)).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                              (ByteString.literal []) := by
+                            rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                              ByteString.literal_cons]
+                            rw [show c = 0xF4 from hcF4]
+                            exact Utf8Char.four₂ hp1.1 hp1.2 hcont2.2.1 hcont2.2.2 (by decide) (by decide)
+                          exact lift 3 [c, klByte s (i + 1), klByte s (i + 2)] [0x80] _ hd (by simp) hchar
+                      · have hcord : i + 2 = s.length := by omega
+                        have hd : s.drop i = [c, klByte s (i + 1)] := by
+                          rw [help_drop2 hlen hnext hcord, hc]
+                        have hchar : Utf8Char (ByteString.literal (c :: klByte s (i + 1) :: 0x80 :: 0x80 :: []))
+                            (0x100000 + ((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                              + ((0x80 : UInt8).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                            (ByteString.literal []) := by
+                          rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                            ByteString.literal_cons]
+                          rw [show c = 0xF4 from hcF4]
+                          exact Utf8Char.four₂ hp1.1 hp1.2 (by decide) (by decide) (by decide) (by decide)
+                        exact lift 2 [c, klByte s (i + 1)] [0x80, 0x80] _ hd (by simp) hchar
+                    · have hcord : i + 1 = s.length := by omega
+                      have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                      have hchar : Utf8Char (ByteString.literal (c :: 0x80 :: 0x80 :: 0x80 :: [])) 0x100000
+                          (ByteString.literal []) := by
+                        rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                          ByteString.literal_cons]
+                        rw [show c = 0xF4 from hcF4]
+                        exact Utf8Char.four₂ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+                      exact lift 1 [c] [0x80, 0x80, 0x80] _ hd (by simp) hchar
+                  · by_cases hf13 : c.toNat ≤ 0xF3
+                    · have h0F1 : 0xF1 ≤ c := by
+                        rw [UInt8.le_iff_toNat_le]
+                        simp only [UInt8.toNat_ofNat]
+                        omega
+                      have h0F3 : c ≤ 0xF3 := by rw [UInt8.le_iff_toNat_le]; exact hf13
+                      by_cases hnext : i + 1 < s.length
+                      · have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                          not_needsCont_of_charEnd hstate.2 hstate.1
+                        have hpair1 : KlPair c (klByte s (i + 1)) := by
+                          have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                          rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                          · exact absurd hn hneed1
+                          · exact hp
+                        have hcont1 : IsContByte (klByte s (i + 1)) := pair_four1_cont h0F1 h0F3 hpair1
+                        by_cases hnext2 : i + 2 < s.length
+                        · have hcont2 : IsContByte (klByte s (i + 1)) ∧ IsContByte (klByte s (i + 2)) := by
+                            have hw := klErrWin_at_succ2 (s := s) (hi := hi) (hwin (i + 2) (by omega) hnext2)
+                            rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                            · exact ⟨h1, h2⟩
+                            · exact absurd (needsCont_of_lead hE0) hnn
+                          by_cases hnext3 : i + 3 < s.length
+                          · have hcont3 : IsContByte (klByte s (i + 2)) ∧ IsContByte (klByte s (i + 3)) := by
+                              have hw := klErrWin_at_succ3 (s := s) (hi := hi) (hwin (i + 3) (by omega) hnext3)
+                              rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hne, h1, h2⟩ | ⟨hnn, hp⟩
+                              · exact ⟨h1, h2⟩
+                              · exact absurd (needsCont_of_lead3 hF0) hnn
+                            have hch : Utf8Char (ByteString.literal (s.drop i))
+                                (((klByte s i).toNat - 0xF0) * 0x40000
+                                  + ((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                                  + ((klByte s (i + 2)).toNat - 0x80) * 0x40 + ((klByte s (i + 3)).toNat - 0x80))
+                                (ByteString.literal (s.drop (i + 4))) := by
+                              rw [literal_drop_cons hlen, literal_drop_cons hnext, literal_drop_cons hnext2,
+                                literal_drop_cons hnext3]
+                              exact Utf8Char.four₁ h0F1 h0F3 hcont1.1 hcont1.2 hcont2.2.1 hcont2.2.2
+                                hcont3.2.1 hcont3.2.2
+                            refine step 4 _ _ hch rfl (by omega) ⟨?_, ?_⟩
+                            · refine not_needsCont_of_lt ?_ ?_
+                              · rw [show i + 4 - 2 = i + 2 from by omega]; have h := cont_le hcont2.2; omega
+                              · rw [show i + 4 - 3 = i + 1 from by omega]; have h := cont_le hcont2.1; omega
+                            · rw [show i + 4 - 1 = i + 3 from by omega]; exact Or.inr hcont3.2
+                          · have hcord : i + 3 = s.length := by omega
+                            have hd : s.drop i = [c, klByte s (i + 1), klByte s (i + 2)] := by
+                              rw [help_drop3 hlen hnext hnext2 hcord, hc]
+                            have hchar : Utf8Char
+                                (ByteString.literal (c :: klByte s (i + 1) :: klByte s (i + 2) :: 0x80 :: []))
+                                ((c.toNat - 0xF0) * 0x40000 + ((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                                  + ((klByte s (i + 2)).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                                (ByteString.literal []) := by
+                              rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                                ByteString.literal_cons]
+                              exact Utf8Char.four₁ h0F1 h0F3 hcont1.1 hcont1.2 hcont2.2.1 hcont2.2.2
+                                (by decide) (by decide)
+                            exact lift 3 [c, klByte s (i + 1), klByte s (i + 2)] [0x80] _ hd (by simp) hchar
+                        · have hcord : i + 2 = s.length := by omega
+                          have hd : s.drop i = [c, klByte s (i + 1)] := by
+                            rw [help_drop2 hlen hnext hcord, hc]
+                          have hchar : Utf8Char (ByteString.literal (c :: klByte s (i + 1) :: 0x80 :: 0x80 :: []))
+                              ((c.toNat - 0xF0) * 0x40000 + ((klByte s (i + 1)).toNat - 0x80) * 0x1000
+                                + ((0x80 : UInt8).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                              (ByteString.literal []) := by
+                            rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                              ByteString.literal_cons]
+                            exact Utf8Char.four₁ h0F1 h0F3 hcont1.1 hcont1.2 (by decide) (by decide)
+                              (by decide) (by decide)
+                          exact lift 2 [c, klByte s (i + 1)] [0x80, 0x80] _ hd (by simp) hchar
+                      · have hcord : i + 1 = s.length := by omega
+                        have hd : s.drop i = [c] := by rw [help_drop1 hlen hcord, hc]
+                        have hchar : Utf8Char (ByteString.literal (c :: 0x80 :: 0x80 :: 0x80 :: []))
+                            ((c.toNat - 0xF0) * 0x40000 + ((0x80 : UInt8).toNat - 0x80) * 0x1000
+                              + ((0x80 : UInt8).toNat - 0x80) * 0x40 + ((0x80 : UInt8).toNat - 0x80))
+                            (ByteString.literal []) := by
+                          rw [ByteString.literal_cons, ByteString.literal_cons, ByteString.literal_cons,
+                            ByteString.literal_cons]
+                          exact Utf8Char.four₁ (b1 := 0x80) (b2 := 0x80) (b3 := 0x80)
+                            h0F1 h0F3 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+                        exact lift 1 [c] [0x80, 0x80, 0x80] _ hd (by simp) hchar
+                    · have h1 : 0xF5 ≤ c :=
+                        u8_le_of_toNat (by simp only [UInt8.toNat_ofNat] at hf13 hf4 ⊢; omega)
+                      have hctrue : klTailByte c = true :=
+                        klTailByte_true_of_F5 h1 (by have := c.toNat_lt; omega)
+                      by_cases hnext : i + 1 < s.length
+                      · exfalso
+                        have hneed1 : ¬ NeedsCont (klByte s (i - 1)) (klByte s (i - 2)) :=
+                          not_needsCont_of_charEnd hstate.2 hstate.1
+                        have hpair1 : KlPair c (klByte s (i + 1)) := by
+                          have hw := klErrWin_at_succ (s := s) (hi := hi) (hwin (i + 1) (by omega) hnext)
+                          rcases (klErrByte_eq_zero_iff _ _ _ _).mp hw with ⟨hn, -⟩ | ⟨-, hp⟩
+                          · exact absurd hn hneed1
+                          · rw [← hc] at hp
+                            exact hp
+                        have hnc' : ¬ IsCharEnd c := by
+                          rw [isCharEnd_nat]; omega
+                        have hnl : ¬ IsUtf8LeadByte c := by
+                          intro hl
+                          unfold IsUtf8LeadByte at hl
+                          simp only [UInt8.lt_iff_toNat_lt, UInt8.le_iff_toNat_le, UInt8.toNat_ofNat] at hl
+                          omega
+                        exact not_klPair_of_dead hnc' hnl hpair1
+                      · exfalso
+                        have hi_eq : i = s.length - 1 := by omega
+                        rw [hc] at hctrue
+                        exact hlast (by rw [← hi_eq]; exact hctrue)
+    · have hdrop : s.drop i = [] := List.drop_eq_nil_of_le (by omega)
+      rw [hdrop]
+      exact ⟨ByteString.literal [], Utf8Spans.nil _, Or.inl rfl⟩
+
+theorem not_klTailByte_of_char_prefix {b : Bytes} {c : Nat} {r : Bytes}
+    (hc : Utf8Char b c r) {k : Nat} (hk1 : 1 ≤ k) (hkl : k < b.length - r.length) :
+    ¬ klTailByte ((b.data.toList).getD (k - 1) 0x00) = true := by
+  cases hc with
+  | one h =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      omega
+  | two h0 h0' h1 h1' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 := by omega
+      rename_i b0 b1
+      rw [hk]
+      show ¬ klTailByte b0 = true
+      rw [klTailByte_false_of_lead h0 (UInt8.le_trans h0' (by decide))]; simp
+  | three₀ h1 h1' h2 h2' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 := by omega
+      rename_i b1 b2
+      rcases hk with rfl | rfl
+      · show ¬ klTailByte (0xE0 : UInt8) = true
+        rw [klTailByte_false_of_lead (by decide : (0xC2 : UInt8) ≤ 0xE0) (by decide)]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont (UInt8.le_trans (by decide) h1) h1']; simp
+  | three₁ h0 h0' h1 h1' h2 h2' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 := by omega
+      rename_i b0 b1 b2
+      rcases hk with rfl | rfl
+      · show ¬ klTailByte b0 = true
+        rw [klTailByte_false_of_lead (UInt8.le_trans (by decide) h0)
+          (UInt8.le_trans h0' (by decide))]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont h1 h1']; simp
+  | three₂ h1 h1' h2 h2' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 := by omega
+      rename_i b1 b2
+      rcases hk with rfl | rfl
+      · show ¬ klTailByte (0xED : UInt8) = true
+        rw [klTailByte_false_of_lead (by decide : (0xC2 : UInt8) ≤ 0xED) (by decide)]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont h1 (UInt8.le_trans h1' (by decide))]; simp
+  | three₃ h0 h0' h1 h1' h2 h2' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 := by omega
+      rename_i b0 b1 b2
+      rcases hk with rfl | rfl
+      · show ¬ klTailByte b0 = true
+        rw [klTailByte_false_of_lead (UInt8.le_trans (by decide) h0)
+          (UInt8.le_trans h0' (by decide))]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont h1 h1']; simp
+  | four₀ h1 h1' h2 h2' h3 h3' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 ∨ k = 3 := by omega
+      rename_i b1 b2 b3
+      rcases hk with rfl | rfl | rfl
+      · show ¬ klTailByte (0xF0 : UInt8) = true
+        rw [klTailByte_false_of_lead (by decide : (0xC2 : UInt8) ≤ 0xF0) (by decide)]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont (UInt8.le_trans (by decide) h1) h1']; simp
+      · show ¬ klTailByte b2 = true
+        rw [klTailByte_false_of_cont h2 h2']; simp
+  | four₁ h0 h0' h1 h1' h2 h2' h3 h3' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 ∨ k = 3 := by omega
+      rename_i b0 b1 b2 b3
+      rcases hk with rfl | rfl | rfl
+      · show ¬ klTailByte b0 = true
+        rw [klTailByte_false_of_lead (UInt8.le_trans (by decide) h0)
+          (UInt8.le_trans h0' (by decide))]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont h1 h1']; simp
+      · show ¬ klTailByte b2 = true
+        rw [klTailByte_false_of_cont h2 h2']; simp
+  | four₂ h1 h1' h2 h2' h3 h3' =>
+      simp only [ByteString.length_eq_size, ByteString.size_cons] at hkl
+      have hk : k = 1 ∨ k = 2 ∨ k = 3 := by omega
+      rename_i b1 b2 b3
+      rcases hk with rfl | rfl | rfl
+      · show ¬ klTailByte (0xF4 : UInt8) = true
+        rw [klTailByte_false_of_lead (by decide : (0xC2 : UInt8) ≤ 0xF4) (by decide)]; simp
+      · show ¬ klTailByte b1 = true
+        rw [klTailByte_false_of_cont h1 (UInt8.le_trans h1' (by decide))]; simp
+      · show ¬ klTailByte b2 = true
+        rw [klTailByte_false_of_cont h2 h2']; simp
+
+theorem le_mul_div_sixtyfour (n : Nat) : n ≤ 64 * ((n + 63) / 64) := by
+  have h := Nat.div_add_mod (n + 63) 64
+  have hmod : (n + 63) % 64 < 64 := Nat.mod_lt _ (by decide)
+  omega
+
+theorem klByte_append_right (a b : List UInt8) (j : Nat) :
+    klByte (a ++ b) (a.length + j) = klByte b j := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD]
+  rw [List.getElem?_append_right (Nat.le_add_right a.length j),
+    show a.length + j - a.length = j from by omega]
+
+theorem klByte_replicate_zero (p j : Nat) :
+    klByte (List.replicate p (0x00 : UInt8)) j = 0x00 := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD]
+  cases h : (List.replicate p (0x00 : UInt8))[j]? with
+  | none => rfl
+  | some v =>
+      have hv : v = 0x00 := by
+        obtain ⟨hj, hval⟩ := List.getElem?_eq_some_iff.mp h
+        rw [List.getElem_replicate hj] at hval
+        exact hval.symm
+      rw [hv]
+      rfl
+
+theorem klByte_win_pad_last (bs : List UInt8) (n nb : Nat)
+    (hpad : 0 < 64 * nb - n) :
+    klByte (List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00)
+      ((List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00).length - 1)
+      = 0x00 := by
+  have hj : (List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00).length - 1
+      = (List.replicate 3 0x00 ++ bs).length + (64 * nb - n - 1) := by
+    simp only [List.length_append, List.length_replicate]
+    omega
+  rw [hj, klByte_append_right, klByte_replicate_zero]
+
+theorem klByte_win_doc_last (bs : List UInt8) (n nb : Nat) (hn : n = bs.length)
+    (hpad : 64 * nb - n = 0) (hn0 : 0 < n) :
+    klByte (List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00)
+      ((List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00).length - 1)
+      = klByte bs (n - 1) := by
+  have hj : (List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00).length - 1
+      = (List.replicate 3 0x00).length + (n - 1) := by
+    simp only [List.length_append, List.length_replicate, hn]
+    omega
+  have hpad' : List.replicate (64 * nb - n) (0x00 : UInt8) = [] := by rw [hpad]; rfl
+  rw [hj]
+  rw [hpad', List.append_nil]
+  exact klByte_append_right (List.replicate 3 (0x00 : UInt8)) bs (n - 1)
+
+theorem validPrefix_zero_cons {l : List UInt8}
+    (h : ValidPrefix (ByteString.literal (0x00 :: l))) : ValidPrefix (ByteString.literal l) := by
+  rcases h with ⟨t, hspans, htail⟩
+  rcases utf8Spans_zero hspans with hw | hs
+  · rcases htail with ht | hp
+    · rw [hw] at ht
+      exact absurd ht (literal_cons_ne_empty 0x00 l)
+    · rw [hw] at hp
+      exact absurd hp (not_utf8PrefixOf_zero l)
+  · exact ⟨t, hs, htail⟩
+
+theorem validPrefix_zero_cons_back {l : List UInt8}
+    (h : ValidPrefix (ByteString.literal l)) : ValidPrefix (ByteString.literal (0x00 :: l)) := by
+  rcases h with ⟨t, hspans, htail⟩
+  refine ⟨t, ?_, htail⟩
+  rw [ByteString.literal_cons]
+  exact Utf8Spans.char (Utf8Char.one (b := 0x00) (rest := ByteString.literal l) (by decide)) hspans
+
+theorem validPrefix_three_cons {l : List UInt8}
+    (h : ValidPrefix (ByteString.literal (0x00 :: 0x00 :: 0x00 :: l))) :
+    ValidPrefix (ByteString.literal l) :=
+  validPrefix_zero_cons (validPrefix_zero_cons (validPrefix_zero_cons h))
+
+theorem validPrefix_three_cons_back {l : List UInt8}
+    (h : ValidPrefix (ByteString.literal l)) :
+    ValidPrefix (ByteString.literal (0x00 :: 0x00 :: 0x00 :: l)) :=
+  validPrefix_zero_cons_back (validPrefix_zero_cons_back (validPrefix_zero_cons_back h))
+
+theorem klByte_take_len {l : List UInt8} {n j : Nat} (hj : j < n) :
+    klByte (l.take n) j = klByte l j := by
+  unfold klByte
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_take, ite_eq_left hj]
+
+theorem pad_eq_zero_of_mod {n nb : Nat} (hnb : nb = (n + 63) / 64) (h : n % 64 = 0) :
+    64 * nb - n = 0 := by
+  subst hnb
+  have h1 : n = 64 * (n / 64) := by
+    have := Nat.div_add_mod n 64
+    omega
+  have h2 : (n + 63) / 64 = n / 64 := by
+    have hd : n + 63 = 64 * (n / 64) + 63 := by omega
+    rw [hd, Nat.mul_add_div (by decide : 0 < 64)]
+    simp
+  rw [h2, ← h1]
+  exact Nat.sub_self _
+
+theorem not_klTailByte_last_of_validPrefix {l : List UInt8} (hl : l ≠ []) :
+    ValidPrefix (ByteString.literal l) →
+    ¬ klTailByte (klByte l (l.length - 1)) = true := by
+  intro hvp
+  rcases hvp with ⟨t, hspans, ht | hp⟩
+  · rw [ht] at hspans
+    have hz0 : klByte (0x00 :: 0x00 :: 0x00 :: l) 0 = 0x00 := rfl
+    have hz1 : klByte (0x00 :: 0x00 :: 0x00 :: l) 1 = 0x00 := rfl
+    have hz2 : klByte (0x00 :: 0x00 :: 0x00 :: l) 2 = 0x00 := rfl
+    have hstate : ¬ NeedsCont (klByte (0x00 :: 0x00 :: 0x00 :: l) 1)
+        (klByte (0x00 :: 0x00 :: 0x00 :: l) 0) ∧
+        IsCharEnd (klByte (0x00 :: 0x00 :: 0x00 :: l) 2) := by
+      rw [hz1, hz0, hz2]
+      exact ⟨by decide, Or.inl (by decide)⟩
+    obtain ⟨-, -, he1⟩ := spans_ok hspans (0x00 :: 0x00 :: 0x00 :: l) 3 rfl (by omega)
+      hstate.1 hstate.2
+    have hblen : (ByteString.literal l).length = l.length := by
+      rw [ByteString.length_eq_size, ByteString.size_literal]
+    have hzlen : ByteString.empty.length = 0 := rfl
+    have hlpos : 0 < l.length := by
+      cases l with
+      | nil => exact absurd rfl hl
+      | cons _ _ => simp
+    have heq : klByte (0x00 :: 0x00 :: 0x00 :: l)
+          (3 - 3 + ((ByteString.literal l).length - ByteString.empty.length) + 2)
+        = klByte l (l.length - 1) := by
+      rw [hblen, hzlen]
+      rw [show (0x00 :: 0x00 :: 0x00 :: l) = List.replicate 3 (0x00 : UInt8) ++ l from rfl]
+      rw [show 3 - 3 + (l.length - 0) + 2 = (List.replicate 3 (0x00 : UInt8)).length + (l.length - 1) from by
+        simp only [List.length_replicate]; omega]
+      exact klByte_append_right (List.replicate 3 (0x00 : UInt8)) l (l.length - 1)
+    rw [heq] at he1
+    intro hb
+    rw [klTailByte_false_of_charEnd he1] at hb
+    simp at hb
+  · rcases hp with ⟨htne, b, c, r, hc, hlt, hp'⟩
+    obtain ⟨k, hk⟩ := utf8Spans_literal_tail hspans
+    have hklt : k < l.length := by
+      by_cases h : k < l.length
+      · exact h
+      · exfalso
+        have hnil : l.drop k = [] := List.drop_eq_nil_of_le (by omega)
+        rw [hk, hnil] at htne
+        exact htne rfl
+    have htlen : t.length = (l.length - k) := by
+      rw [hk, ByteString.length_eq_size, ByteString.size_literal, List.length_drop]
+    have htlen' : (l.drop k).length = l.length - k := List.length_drop
+    have ht_take : t = b.take t.length := by
+      unfold HasPrefix at hp'
+      rw [ByteString.drop_zero] at hp'
+      exact hp'.symm
+    have hprefix : ¬ klTailByte ((b.data.toList).getD (t.length - 1) 0x00) = true :=
+      not_klTailByte_of_char_prefix hc (by omega) hlt
+    have hklast : klByte l (l.length - 1) = klByte (b.data.toList) (t.length - 1) := by
+      have h1 : klByte l (l.length - 1) = klByte (l.drop k) ((l.drop k).length - 1) := by
+        rw [← klByte_drop]
+        congr 1
+        omega
+      have h2 : klByte (l.drop k) ((l.drop k).length - 1)
+          = klByte (t.data.toList) (t.length - 1) := by
+        rw [hk, ByteString.length_eq_size, ByteString.size_literal]
+        rfl
+      have htlist : t.data.toList = (b.data.toList).take t.length := by
+        conv =>
+          lhs
+          rw [ht_take]
+        rw [ByteString.data_toList_take]
+      have h3 : klByte (t.data.toList) (t.length - 1)
+          = klByte ((b.data.toList).take t.length) (t.length - 1) := by rw [htlist]
+      have h4 : klByte ((b.data.toList).take t.length) (t.length - 1)
+          = klByte (b.data.toList) (t.length - 1) :=
+        klByte_take_len (l := b.data.toList) (n := t.length) (j := t.length - 1) (by omega)
+      rw [h1, h2, h3, h4]
+    intro hb
+    rw [hklast] at hb
+    exact hprefix hb
+
+theorem klErrAll_window_iff (bs : List UInt8) (n nb : Nat)
+    (hn : n = bs.length) (hnb : nb = (n + 63) / 64) :
+    (klErrAll (List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00) (64 * nb) ∧
+      ¬ (n ≠ 0 ∧ n % 64 = 0 ∧ klTailByte (klByte bs (n - 1)) = true)) ↔
+    ValidPrefix (ByteString.literal
+      (List.replicate 3 0x00 ++ bs ++ List.replicate (64 * nb - n) 0x00)) := by
+  have hle : n ≤ 64 * nb := by rw [hnb]; exact le_mul_div_sixtyfour n
+  have hLlen : (bs ++ List.replicate (64 * nb - n) 0x00).length = 64 * nb := by
+    simp only [List.length_append, List.length_replicate, hn]; omega
+  have hlitlen : (ByteString.literal (bs ++ List.replicate (64 * nb - n) 0x00)).length
+      = (bs ++ List.replicate (64 * nb - n) 0x00).length := by
+    rw [ByteString.length_eq_size, ByteString.size_literal]
+  have hzlen : ByteString.empty.length = 0 := rfl
+  have hwinlen : (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00).length
+      = 3 + (bs ++ List.replicate (64 * nb - n) 0x00).length := by
+    simp only [List.length_append, List.length_replicate]
+    omega
+  have hsplit : (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+      = 0x00 :: 0x00 :: 0x00 :: (bs ++ List.replicate (64 * nb - n) 0x00) := rfl
+  have hdrop3 : (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00).drop 3
+      = bs ++ List.replicate (64 * nb - n) 0x00 := by rw [hsplit]; rfl
+  have hw0 : klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+      0 = 0x00 := by rw [hsplit]; rfl
+  have hw1 : klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+      1 = 0x00 := by rw [hsplit]; rfl
+  have hw2 : klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+      2 = 0x00 := by rw [hsplit]; rfl
+  have hstate : ¬ NeedsCont
+      (klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) (3 - 2))
+      (klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) (3 - 3)) ∧
+      IsCharEnd (klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+        (3 - 1)) := by
+    refine ⟨?_, ?_⟩
+    · rw [show 3 - 2 = 1 from rfl, show 3 - 3 = 0 from rfl, hw1, hw0]
+      exact (by decide : ¬ NeedsCont (0x00 : UInt8) (0x00 : UInt8))
+    · rw [show 3 - 1 = 2 from rfl, hw2]
+      exact Or.inl (by decide)
+  constructor
+  · rintro ⟨hwinall, htail⟩
+    have hlast : ¬ klTailByte (klByte
+        (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+        ((List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00).length - 1))
+        = true := by
+      intro hb
+      by_cases hpad : 64 * nb - n = 0
+      · by_cases hn0 : n = 0
+        · subst hn0
+          have hnb0 : nb = 0 := by omega
+          subst hnb0
+          have hbs0 : bs = [] := List.eq_nil_of_length_eq_zero hn.symm
+          subst hbs0
+          exact absurd hb (by decide)
+        · have hmod : n % 64 = 0 := by
+            have h1 : n = 64 * nb := by omega
+            rw [h1]; omega
+          have hbl := klByte_win_doc_last bs n nb hn hpad (by omega)
+          exact htail ⟨hn0, hmod, by rw [← hbl]; exact hb⟩
+      · have hb0 := klByte_win_pad_last bs n nb (by omega)
+        rw [hb0] at hb
+        exact absurd hb (by decide)
+    have hwin' : ∀ q, 3 ≤ q →
+        q < (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00).length →
+        klErrWin (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) (q - 3) := by
+      intro q hq hqw
+      rw [hwinlen] at hqw
+      have hlt : q - 3 < 64 * nb := by omega
+      exact hwinall (q - 3) hlt
+    have hvpl := validPrefix_of_klErrAll (s := List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) (i := 3)
+      (by omega) hstate hwin' hlast
+    rw [hdrop3] at hvpl
+    rw [hsplit]
+    exact validPrefix_three_cons_back hvpl
+  · intro hvp
+    have hL : ValidPrefix (ByteString.literal (bs ++ List.replicate (64 * nb - n) 0x00)) := by
+      have h := hvp
+      rw [hsplit] at h
+      exact validPrefix_three_cons h
+    constructor
+    · intro m hm
+      obtain ⟨t, hspans, htail⟩ := hL
+      rcases htail with ht | hp
+      · rw [ht] at hspans
+        obtain ⟨hws, -, -⟩ := spans_ok hspans
+          (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) 3
+          (by rw [hdrop3]) (by omega) hstate.1 hstate.2
+        have hm' : m < (ByteString.literal (bs ++ List.replicate (64 * nb - n) 0x00)).length
+            - ByteString.empty.length := by
+          rw [hlitlen, hzlen, hLlen]
+          simpa using hm
+        have := hws m hm'
+        rwa [show 3 - 3 + m = m from by omega] at this
+      · rcases hp with ⟨htne, b, c, r, hc, hltc, hp'⟩
+        obtain ⟨k, hk⟩ := utf8Spans_literal_tail hspans
+        have hklt : k < (bs ++ List.replicate (64 * nb - n) 0x00).length := by
+          by_cases h : k < (bs ++ List.replicate (64 * nb - n) 0x00).length
+          · exact h
+          · exfalso
+            have hnil : (bs ++ List.replicate (64 * nb - n) 0x00).drop k = [] :=
+              List.drop_eq_nil_of_le (by omega)
+            rw [hk, hnil] at htne
+            exact htne rfl
+        have htlen : t.length = (bs ++ List.replicate (64 * nb - n) 0x00).length - k := by
+          rw [hk, ByteString.length_eq_size, ByteString.size_literal, List.length_drop]
+        obtain ⟨hws, hc1, he1⟩ := spans_ok hspans
+          (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) 3
+          (by rw [hdrop3]) (by omega) hstate.1 hstate.2
+        have hlk : (bs ++ List.replicate (64 * nb - n) 0x00).length - t.length = k := by
+          rw [htlen]; omega
+        by_cases hmk : m < k
+        · have := hws m (by rw [hlitlen, hlk]; exact hmk)
+          rwa [show 3 - 3 + m = m from by omega] at this
+        · have ht_take : t = b.take t.length := by
+            unfold HasPrefix at hp'
+            rw [ByteString.drop_zero] at hp'
+            exact hp'.symm
+          have hk1 : 1 ≤ t.length := by
+            rw [htlen]; omega
+          have H1 : ByteString.literal
+              ((List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00).drop (3 + k))
+              = b.take t.length := by
+            rw [hsplit, drop_three_cons, ← hk, ← ht_take]
+          have hidx2 : 3 - 3 + ((bs ++ List.replicate (64 * nb - n) 0x00).length - t.length) + 1
+              = 3 + k - 2 := by omega
+          have hidx3 : 3 - 3 + ((bs ++ List.replicate (64 * nb - n) 0x00).length - t.length)
+              = 3 + k - 3 := by omega
+          have hidx4 : 3 - 3 + ((bs ++ List.replicate (64 * nb - n) 0x00).length - t.length) + 2
+              = 3 + k - 1 := by omega
+          have H2 : ¬ NeedsCont
+              (klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+                (3 + k - 2))
+              (klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+                (3 + k - 3)) := by
+            have := hc1
+            rw [hlitlen, hidx2, hidx3] at this
+            exact this
+          have H3 : IsCharEnd
+              (klByte (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00)
+                (3 + k - 1)) := by
+            have := he1
+            rw [hlitlen, hidx4] at this
+            exact this
+          have hm' : m - k < t.length := by
+            have hmlen : m < (bs ++ List.replicate (64 * nb - n) 0x00).length := by rw [hLlen]; exact hm
+            rw [htlen]; omega
+          have hcp := char_prefix_ok hc t.length hk1 hltc
+            (List.replicate 3 (0x00 : UInt8) ++ bs ++ List.replicate (64 * nb - n) 0x00) (3 + k)
+            H1 (by omega) H2 H3 (m - k) hm'
+          rwa [show 3 + k - 3 + (m - k) = m from by omega] at hcp
+    · rintro ⟨hn0, hmod, hb⟩
+      have hpad : 64 * nb - n = 0 := pad_eq_zero_of_mod hnb hmod
+      have hl_eq : (bs ++ List.replicate (64 * nb - n) 0x00) = bs := by rw [hpad]; simp
+      have hlne : (bs ++ List.replicate (64 * nb - n) 0x00) ≠ [] := by
+        intro h0
+        apply hn0
+        have hlen0 : (bs ++ List.replicate (64 * nb - n) 0x00).length = 0 := by rw [h0]; rfl
+        rw [hLlen] at hlen0
+        omega
+      have hlast := not_klTailByte_last_of_validPrefix hlne hL
+      rw [hl_eq] at hlast
+      rw [hn] at hb
+      exact hlast hb
+
+theorem witness_C0_nonmultiple :
+    (¬ klErrAll (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00) 64) ∧
+    (¬ ValidPrefix (ByteString.literal
+      (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00))) := by
+  have hno : ¬ klErrAll (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00) 64 := by
+    intro h
+    have hw := h 1 (by decide)
+    unfold klErrWin at hw
+    have he : klErrByte
+        (klByte (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00) 1)
+        (klByte (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00) 2)
+        (klByte (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00) 3)
+        (klByte (List.replicate 3 0x00 ++ [0xC0] ++ List.replicate 63 0x00) 4) = 0x01 := by
+      decide
+    rw [he] at hw
+    exact (by decide : (0x01 : UInt8) = 0 → False) hw
+  refine ⟨hno, ?_⟩
+  intro hvp
+  exact hno ((klErrAll_window_iff [0xC0] 1 1 (by decide) (by decide)).mpr hvp).1
+
+theorem witness_C0_block :
+    (klErrAll (List.replicate 3 0x00 ++ (List.replicate 63 0x00 ++ [0xC0])) 64) ∧
+    (klTailByte 0xC0 = true) ∧
+    (¬ ValidPrefix (ByteString.literal
+      (List.replicate 3 0x00 ++ (List.replicate 63 0x00 ++ [0xC0])))) := by
+  have hwin : List.replicate 3 (0x00 : UInt8) ++ (List.replicate 63 0x00 ++ [0xC0])
+      = List.replicate 66 0x00 ++ [0xC0] := by
+    rw [← List.append_assoc]
+    congr 1
+  have hall : klErrAll (List.replicate 3 0x00 ++ (List.replicate 63 0x00 ++ [0xC0])) 64 := by
+    intro t ht
+    rw [hwin]
+    unfold klErrWin
+    by_cases h63 : t < 63
+    · have hz : ∀ j, j < 66 → klByte (List.replicate 66 (0x00 : UInt8) ++ [0xC0]) j = 0x00 := by
+        intro j hj
+        rw [klByte_append_left (s := List.replicate 66 (0x00 : UInt8)) (t := [0xC0])
+          (by simpa using hj)]
+        exact klByte_replicate_zero 66 j
+      rw [hz t (by omega), hz (t + 1) (by omega), hz (t + 2) (by omega), hz (t + 3) (by omega)]
+      exact (by decide : klErrByte (0x00 : UInt8) 0x00 0x00 0x00 = 0x00)
+    · have ht63 : t = 63 := by omega
+      subst ht63
+      have h63z : klByte (List.replicate 66 (0x00 : UInt8) ++ [0xC0]) 63 = 0x00 := by
+        rw [klByte_append_left (s := List.replicate 66 (0x00 : UInt8)) (t := [0xC0]) (by decide)]
+        exact klByte_replicate_zero 66 63
+      have h64z : klByte (List.replicate 66 (0x00 : UInt8) ++ [0xC0]) 64 = 0x00 := by
+        rw [klByte_append_left (s := List.replicate 66 (0x00 : UInt8)) (t := [0xC0]) (by decide)]
+        exact klByte_replicate_zero 66 64
+      have h65z : klByte (List.replicate 66 (0x00 : UInt8) ++ [0xC0]) 65 = 0x00 := by
+        rw [klByte_append_left (s := List.replicate 66 (0x00 : UInt8)) (t := [0xC0]) (by decide)]
+        exact klByte_replicate_zero 66 65
+      have h66 : klByte (List.replicate 66 (0x00 : UInt8) ++ [0xC0]) 66 = 0xC0 := by
+        rw [show (66 : Nat) = (List.replicate 66 (0x00 : UInt8)).length + 0 from by simp]
+        exact klByte_append_right (List.replicate 66 (0x00 : UInt8)) [0xC0] 0
+      rw [h63z, h64z, h65z, h66]
+      decide
+  refine ⟨hall, by decide, ?_⟩
+  intro hvp
+  have hL := (klErrAll_window_iff (List.replicate 63 0x00 ++ [0xC0]) 64 1 (by decide) (by decide)).mpr hvp
+  exact hL.2 ⟨by decide, by decide, by decide⟩
 
 end LeanLLVM.Vellum.JsonUtf8Spec

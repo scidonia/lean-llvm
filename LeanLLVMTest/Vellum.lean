@@ -8298,3 +8298,250 @@ carry-over. -/
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_body
+
+/-! #### The validity stage's reconstruction
+
+`klErrAll` over the padded sixty-four-byte-multiple window, together with the
+condition that the last byte of a full block is not a tail byte, is exactly a
+valid prefix under `Utf8Spans`.  The pins below are this appendix's measurement:
+`klErrAll_window_iff` is the equivalence, `validPrefix_of_klErrAll` the direction
+that rebuilds the character stream, and the two `C0` witnesses the positions where
+the same bytes are valid at one block boundary and refused at the other. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_getElem' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_getElem
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.literal_drop_cons' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.literal_drop_cons
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.utf8Char_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.utf8Char_length_le
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.utf8Spans_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.utf8Spans_length_le
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.utf8Char_drop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.utf8Char_drop
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.drop_three_cons' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.drop_three_cons
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.literal_drop_list' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.literal_drop_list
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_append_left' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_append_left
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_append_left' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_append_left
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.spans_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.spans_ok
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.char_prefix_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.char_prefix_ok
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.u8_le_of_toNat' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.u8_le_of_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.u8_lt_of_toNat' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.u8_lt_of_toNat
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_at_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_at_succ
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_at_succ2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_at_succ2
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_at_succ3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrWin_at_succ3
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_charEnd_of_ge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_charEnd_of_ge
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_pair' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_cont_of_pair
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_klPair_of_dead' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_klPair_of_dead
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_needsCont_of_charEnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_needsCont_of_charEnd
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_two_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_two_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_three0_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_three0_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_three1_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_three1_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_three2_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_three2_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_three3_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_three3_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_four0_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_four0_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_four1_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_four1_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pair_four2_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pair_four2_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_true_ge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_true_ge
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_false_of_lead' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_false_of_lead
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_false_of_cont' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_false_of_cont
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_false_of_charEnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_false_of_charEnd
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.utf8PrefixOf_of_literal_take' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.utf8PrefixOf_of_literal_take
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.utf8Spans_tail_drop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.utf8Spans_tail_drop
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.utf8Spans_literal_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.utf8Spans_literal_tail
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.help_drop1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.help_drop1
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.help_drop2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.help_drop2
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.help_drop3' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.help_drop3
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.literal_take_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.literal_take_append
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.literal_length_lt_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.literal_length_lt_append
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_true_of_C0_C1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_true_of_C0_C1
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_true_of_F5' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klTailByte_true_of_F5
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_of_klErrAll' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_of_klErrAll
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_of_char_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_of_char_prefix
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.le_mul_div_sixtyfour' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.le_mul_div_sixtyfour
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_append_right' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_append_right
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_replicate_zero' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_replicate_zero
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_win_pad_last' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_win_pad_last
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_win_doc_last' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_win_doc_last
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_zero_cons' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_zero_cons
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_zero_cons_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_zero_cons_back
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_three_cons' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_three_cons
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_three_cons_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.validPrefix_three_cons_back
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klByte_take_len' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klByte_take_len
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.pad_eq_zero_of_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.pad_eq_zero_of_mod
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_last_of_validPrefix' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.not_klTailByte_last_of_validPrefix
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.klErrAll_window_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.klErrAll_window_iff
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_nonmultiple' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_nonmultiple
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Spec.witness_C0_block
