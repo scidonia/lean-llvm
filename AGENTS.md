@@ -65,8 +65,9 @@ needs the other two to match.
   `NoBackslashOutside`, each with its counterexample,
   and the post-stop divergence stated as a divergence (`classCarryAt_succ_of_stop`,
   `classCarryAt_succ_closed`) rather than a caveat — and the identification with
-  the kernel's registers proved for the extracted mask unit and owed for any other
-  emission; `JsonClassifyIR` relates the emitted
+  the kernel's registers proved for two of the three extracted units, and for the
+  third in its own module, while owed for any other emission; `JsonClassifyIR`
+  relates the emitted
   classifier body to the block layer's mask (`scannerLLVM_refines`, over
   `probes/install/ir/json-classify.candidate.ll`); and `JsonSeam` states the
   reference selection, the installed body's selection, and the framed
@@ -86,10 +87,11 @@ needs the other two to match.
   mask identities — `inStringMask_eq_clmul` over a window and
   `specInString64_eq_clmul` over a sixty-four-byte block — with the outgoing carry
   `specInString64_outgoing_carry`, all stated over `JsonScanSpec`'s own masks.
-  `BitLanes` models the bit intrinsics the two units' kernels use besides
-  `pclmulqdq` — `pext`, `pdep` and `ctlz`, and `ctpop`/`cttz` for the entry
-  kernels, five lane definitions over six intrinsic spellings — in lane
-  vocabulary, with `rank` and the two alignment facts that pair a mask's set
+  `BitLanes` models the bit intrinsics the three units' kernels use besides
+  `pclmulqdq` — `pext`, `pdep` and `ctlz`, `ctpop`/`cttz` for the entry kernels,
+  and `subsSat`/`ptestz` for the UTF-8 stage, seven lane definitions over eight
+  intrinsic spellings — in lane vocabulary, with `rank` and the two alignment
+  facts that pair a mask's set
   lanes with their positions (`rank_setLanes_getElem`,
   `setLanes_getElem?_rank`), the Galois connection `pdep_pext`/`pext_pdep`,
   `ctlz (~~~m) = trailingRun m`, and the `ctpop`/`cttz` readings of a mask's set
@@ -125,6 +127,20 @@ needs the other two to match.
   agreement `entry_pos8_b8_agree` and B8's totality companion
   `entry_b8_undefined_of_no_read`, which are the statements the block layer asks
   for.
+  The UTF-8 unit is the third unit's chain: `JsonUtf8IR` pins
+  `probes/install/ir/json-utf8.candidate.ll` by `#guard`, binds the three
+  intrinsics the stage calls in `utf8Calls`, and states the window the body
+  stages; `JsonUtf8Spec` states the vendored header's three 32-byte tables, the
+  per-position error byte in the eight-class vocabulary, the per-block error
+  vector and the accumulator, and proves the per-position characterization
+  `klErrByte_eq_zero_iff`, the window aggregation `klErrAll_window_iff` and the
+  two block-boundary witnesses `witness_C0_nonmultiple` and `witness_C0_block`;
+  and `JsonUtf8Steps` proves `utf8_stage_refines` — the returned word is zero
+  exactly when the staged window is a valid prefix, the memory unchanged, for
+  both gate values — with the gate's invariance `klAll_gate_invariant`, the
+  corollaries `utf8_stage_refines_chars` and `utf8_stage_refines_mod0`, the
+  empty-document case `utf8_stage_refines_zero`, and the totality companion
+  `utf8_stage_undefined_of_no_read`.
   The theorems the refinement claims rest on are pinned in
   `LeanLLVMTest/Vellum.lean`, each at the ceiling `[propext, Quot.sound]` or with a
   `Classical.choice` carrier the pin names — the three `private` numeral lemmas of
@@ -235,6 +251,15 @@ needs the other two to match.
   chunk), asserting the word at the cursor plus eight on every row as the
   body's stop sentinel, with a defect object per kernel and a tampered
   expectation as its controls.
+  The UTF-8 unit has its own route: `tests/json-utf8/check.sh` compares the
+  specification's three tables with the vendored `u8kl.h`'s bytes, then makes
+  three actors agree over `tests/json-utf8/corpus.tsv` and the driver's
+  generated arms — the object from `kernel/json/utf8.c` through
+  `probes/json/utf8_driver.c`, the Lean body through `leanllvm-json-utf8`, and
+  the measured `s1f_build2` through `probes/json/utf8_measured.c` — against the
+  driver's scalar reference, with a defect object and a tampered expectation as
+  controls and each transcript required to hold one accept and one reject, and
+  `tests/json-utf8.lean` pins the fixture and the specification's verdicts.
   One more check sits beside those routes: `tests/json-import-boundary.sh`
   filters the actual `import` declarations of `LeanLLVM/JSON/*.lean` and
   asserts that `Parse.lean` imports exactly `Spec`, `Scan` and `Tape`, that
@@ -255,12 +280,13 @@ needs the other two to match.
   not that the span refusals are sensitive — their sensitivity rests on their
   pairing with the affirmative controls and on `tape_valid`, and is not
   claimed by a cut.
-- `kernel/json/` holds the two extracted units of the measured SIMD JSON
-  stage 1 — `s1_block.c`, the classification mask unit, and `entry.c`, the entry
-  positions unit — each with its own ABI, its own specification in
-  `LeanLLVM/Vellum/`, its own identity arms and its own route.  Neither is the
-  pipeline, and `kernel/json/measured/` is read-only reference that the identity
-  and bench scripts read and no `lake` target builds.  `kernel/json/README.md`
+- `kernel/json/` holds the three extracted units of the measured SIMD JSON
+  stage 1 — `s1_block.c`, the classification mask unit; `entry.c`, the entry
+  positions unit; and `utf8.c`, the UTF-8 validity unit — each with its own ABI,
+  its own specification in `LeanLLVM/Vellum/`, its own identity arms and its own
+  route.  None is the pipeline, and `kernel/json/measured/` is read-only
+  reference that the identity and bench scripts and the UTF-8 route's table
+  dumper read, and no `lake` target builds.  `kernel/json/README.md`
   records each unit's entity list, deletion list, boundary and limits.
 - `docs/` holds the design notes and evidence records: `contract.md` and
   `capabilities.md` for the trust ledger, `json-route-evidence.md` for the
@@ -268,10 +294,11 @@ needs the other two to match.
   performance of a native SIMD JSON pipeline against simdjson.  The measured
   pipeline is a scratch implementation **not in this tree**: the note records
   observed ratios and the shapes refuted at measured cost, and no theorem,
-  contract or axiom pin covers the code those numbers came from.  Two units of
-  that pipeline are here — the classification mask unit and the entry positions
-  unit named above — each pinned and proved (`s1_masks_refines`,
-  `entry_pos8_refines`, `entry_b8_refines`); the note's ratios are measurements
+  contract or axiom pin covers the code those numbers came from.  Three units of
+  that pipeline are here — the classification mask unit, the entry positions
+  unit and the UTF-8 validity unit named above — each pinned and proved
+  (`s1_masks_refines`, `entry_pos8_refines`, `entry_b8_refines`,
+  `utf8_stage_refines`); the note's ratios are measurements
   of the scratch build and are not claims about those units.
 
 ## What a change must satisfy
@@ -362,23 +389,28 @@ needs the other two to match.
   that side is exercised as an accepted control in `tests/vector-s1.lean`
   (accepted, printed, re-parsed and evaluated) and in `tests/json-s1-parser.lean`
   — where a vector `ashr` is refused; a vector `load` at integer lanes whose
-  total width is whole bytes; and the eight intrinsic spellings the two units
+  total width is whole bytes; and the ten intrinsic spellings the three units
   call —
   `llvm.x86.avx2.pshuf.b` at two arguments, `llvm.x86.pclmulqdq` at immediate 0,
   `llvm.x86.bmi.pext.64`, `llvm.x86.bmi.pdep.64`, `llvm.ctlz.i64` with the
-  non-poison flag, `llvm.ctpop.i32`, `llvm.ctpop.i64`, and `llvm.cttz.i64` at
-  both flag values — each validated at symbol, arity, type and immediate, with
-  its neighbouring spelling refused.  The two `cttz` flags are not symmetric:
+  non-poison flag, `llvm.ctpop.i32`, `llvm.ctpop.i64`, `llvm.cttz.i64` at both
+  flag values, `llvm.usub.sat.v32i8` at two `<32 x i8>` operands, and
+  `llvm.x86.avx.ptestz.256` at two `<4 x i64>` operands with an `i32` result,
+  the last two carrying no flag — each validated at symbol, arity, type and
+  immediate, with its neighbouring spelling refused.  The two `cttz` flags are
+  not symmetric:
   `i1 false` is exact at the zero word, and `i1 true` is admitted because the
   entry claims read no lane the poison can reach, the bound stated once in
   `LeanLLVM/Vellum/BitLanes.lean`; `ctlz … i1 true` has no such bound and stays
   refused.  `umin`/`umax` stay refused: the emission
   contains none.  `tests/vector-s1.lean` checks every acceptance and its refusal
   in one run, `tests/vector-entry.lean` does the same for the widened store and
-  the entry intrinsics, and `probes/install/ir/json-s1-masks.candidate.ll` is the
+  the entry intrinsics, `tests/vector-utf8.lean` for the two UTF-8 spellings and
+  their refusals, and `probes/install/ir/json-s1-masks.candidate.ll` is the
   fixture that uses every stage-1 form except a vector `shl`, which appears in no
   tracked `.ll`; `probes/install/ir/json-entry.candidate.ll` is the entry
-  kernels' fixture.
+  kernels' fixture, and `probes/install/ir/json-utf8.candidate.ll` is the UTF-8
+  stage's.
 - An installation certificate is data, not source.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated

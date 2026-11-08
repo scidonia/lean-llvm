@@ -1,6 +1,6 @@
 # Native SIMD JSON pipeline: measured performance record
 
-Status: **measurement record, with two of stage 1's three units in the tree**. The
+Status: **measurement record, with stage 1's three units in the tree**. The
 pipeline was built and measured in a scratch tree outside the checkout, and the
 numbers below are a record of observed runs, not an artefact reproducible from
 this tree — re-measuring requires rebuilding the harness, whose structure, arms
@@ -16,12 +16,16 @@ as `probes/install/ir/json-entry.candidate.ll`, and the two bodies
 (`LeanLLVM/Vellum/JsonEntrySteps.lean`) and `entry_b8_refines`
 (`LeanLLVM/Vellum/JsonB8Steps.lean`) against the entry word
 `LeanLLVM/Vellum/JsonEntSpec.lean` specifies. The UTF-8 validity stage is the
-third: `LeanLLVM/Vellum/JsonUtf8IR.lean` gives its three calls their reading
+third, and it is in the tree: its unit is `kernel/json/utf8.c`, its emitted IR is
+committed as `probes/install/ir/json-utf8.candidate.ll`,
+`LeanLLVM/Vellum/JsonUtf8IR.lean` gives its three calls their reading
 (`utf8Calls`, with `utf8Calls_pshufb`/`utf8Calls_usubSat`/`utf8Calls_ptestz`),
-its specification and the relation over its body are not in the tree, and its
-unit is `kernel/json/utf8.c`, whose extraction is pending. Everything else — the selection that fills
-the entry stream, the exit and escape stages, the assembled pipeline, and the
-parser's own refinement — remains outside the tree.
+`LeanLLVM/Vellum/JsonUtf8Spec.lean` states the specification the verdict is
+judged against, and `utf8_stage_refines` (`LeanLLVM/Vellum/JsonUtf8Steps.lean`)
+proves the pinned body returns zero exactly when the staged window is a valid
+prefix. Everything else — the selection that fills the entry stream, the exit
+and escape stages, the assembled pipeline, and the parser's own refinement —
+remains outside the tree.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -205,7 +209,12 @@ zero position mismatches against a scalar reference; 58,367 documents with
 and core classes; and for UTF-8 an exhaustive 10,172,525-string × 64-offset
 placement set (651M placements) with zero disagreements against the scalar
 reference, including documents that start mid-sequence and a lone lead byte at
-the end of a document.
+the end of a document. That differential is a scratch-build measurement and is
+not the UTF-8 unit's route: the route compares the extracted object, the Lean
+body and the measured function on the counted matrix of its curated rows in
+`tests/json-utf8/corpus.tsv` and the driver's generated arms — 73,071 generated
+documents plus a 512-row placement arm — and the two must not be read as one
+measurement.
 
 ## 8. Open items
 
@@ -235,14 +244,17 @@ Bounded but unresolved, and all inside or near the placement floor:
   (`LeanLLVM/Vellum/JsonB8Steps.lean`) prove the bodies pinned from
   `probes/install/ir/json-entry.candidate.ll` against the entry word
   `LeanLLVM/Vellum/JsonEntSpec.lean` specifies: the positions each body writes and
-  the cursor it returns. The UTF-8 validity stage is the third:
-  `LeanLLVM/Vellum/JsonUtf8IR.lean` gives its three calls their reading, its
-  specification and the relation over its body are not in the tree, and its unit
-  is `kernel/json/utf8.c`, whose extraction is pending. Everything else here is
-  still unrelated to the Lean
-  development by any proof: the selection that fills the entry stream, the escape
-  and exit stages, the assembled pipeline, and `LeanLLVM/JSON/`'s parser.
-  Connecting those is the open obligation, not a corollary of these numbers.
+  the cursor it returns. The UTF-8 validity stage is the third, and it too is
+  refined: its unit is `kernel/json/utf8.c`, its emitted IR is
+  `probes/install/ir/json-utf8.candidate.ll`, `LeanLLVM/Vellum/JsonUtf8IR.lean`
+  gives its three calls their reading, `LeanLLVM/Vellum/JsonUtf8Spec.lean` states
+  the specification, and `utf8_stage_refines`
+  (`LeanLLVM/Vellum/JsonUtf8Steps.lean`) proves the pinned body returns zero
+  exactly when the staged window is a valid prefix. Everything else here is
+  still unrelated to the Lean development by any proof: the selection that fills
+  the entry stream, the escape and exit stages, the assembled pipeline, and
+  `LeanLLVM/JSON/`'s parser. Connecting those is the open obligation, not a
+  corollary of these numbers.
 - **Nothing about this machine's generality.** One host, two core classes, one
   governor setting (`powersave`), one compiler toolchain, `AVX2` code paths.
   Absolute levels drift 5–10% between processes; only within-run paired deltas

@@ -10,6 +10,7 @@ parsed	probes/install/ir/json-entry.candidate.ll
 parsed	probes/install/ir/json-s1-masks.candidate.ll
 parsed	probes/install/ir/json-scan-body.ll
 parsed	probes/install/ir/json-scan.candidate.ll
+parsed	probes/install/ir/json-utf8.candidate.ll
 parsed	probes/install/ir/loop.ll
 parsed	probes/install/ir/marker_baseline.ll
 parsed	probes/install/ir/marker_candidate.ll

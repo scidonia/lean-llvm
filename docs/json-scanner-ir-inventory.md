@@ -203,11 +203,11 @@ load handles the remainder.
    exceeds it is `ub` — and the step touches no byte either way, so no read
    becomes defined that was not. An intrinsic call is **not** refused: the parser
    accepts any callee symbol (`parseValueInstr`'s `call` branch), so a call to
-   `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
-   `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model
-   does not give. The ten symbols the three units call are the
-   exception: `checkIntrinsicShape` validates their arity, operand types and
-   immediate, and refuses the neighbouring spellings by name
+   `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation other than the
+   modelled `usub.sat.v32i8`, or `llvm.vector.reduce.*` parses as an opaque
+   `call` whose semantics the model does not give. The ten symbols the three
+   units call are the exception: `checkIntrinsicShape` validates their arity,
+   operand types and immediate, and refuses the neighbouring spellings by name
    (`tests/vector-s1.lean`, `tests/vector-entry.lean`, `tests/vector-utf8.lean`).
    Nothing in *this* kernel needs any of them.
 

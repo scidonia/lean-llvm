@@ -48,7 +48,7 @@ to it.  The section numbers below are citations of clauses, not summaries.
 |8259 §8.1|UTF-8 for interchange; BOM `MUST NOT` be added, parser `MAY` ignore|RFC 3629 as normative base; the `MAY ignore` option is not taken|strict UTF-8 is part of the language, and a BOM is refused as a non-text|
 |8259 §8.2|the ABNF admits `"\uDEAD"`|`RfcText` admits it; `Policy` refuses its reading|the two adherence theorems are conditional on `Policy`|
 |8259 §9|a parser `MUST` accept every grammar-conforming text, and `MAY` set limits|narrowed by `Policy`, and bounded by the resource limits|never claimed unconditionally|
-|3629 §3, §4|invalid sequences must be rejected; the `UTF8-char` ABNF|transcribed clause for clause|overlongs, encoded surrogates and `> U+10FFFF` are not JSON texts|
+|3629 §3, §4|invalid sequences must be rejected; the `UTF8-char` ABNF|transcribed clause for clause in `LeanLLVM/JSON/Utf8.lean`; the parser's strict reading is checked against it, and the extracted validator's emitted body is proved against it too — `utf8_stage_refines` states the returned word is zero exactly when the staged window is a valid prefix, and `utf8_stage_refines_chars` the complete-character case at `n % 64 ≠ 0`|overlongs, encoded surrogates and `> U+10FFFF` are not JSON texts|
 |7493 §2.1|no Surrogates or Noncharacters in names and string values|`Policy`|the only narrowing of the language|
 |7493 §2.3|no duplicate member names|not adopted|duplicates preserved; no I-JSON conformance is claimed|
 

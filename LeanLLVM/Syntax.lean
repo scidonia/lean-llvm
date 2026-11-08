@@ -132,7 +132,9 @@ inductive Instr where
   is resolved by the semantics' call environment, not by the function itself.
   The intrinsic spellings the fragment models are the exception the parser
   validates at symbol, arity and operand type: the five the classifier's body
-  calls, and `llvm.ctpop.i32`, `llvm.ctpop.i64` and `llvm.cttz.i64`. -/
+  calls, `llvm.ctpop.i32`, `llvm.ctpop.i64` and `llvm.cttz.i64` for the entry
+  kernels, and `llvm.usub.sat.v32i8` and `llvm.x86.avx.ptestz.256` for the
+  UTF-8 stage. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
   /-- A call whose result has no name in the caller: `call void @f(...)`.  It
   binds nothing, so there is no destination and no name a later instruction could

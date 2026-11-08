@@ -15,7 +15,10 @@ open ByteString
 
 /-- RFC 3629 §4: `UTF8-octets = *( UTF8-char )`, one constructor per `UTF8-char`
 alternative.  `Utf8Char b c rest` holds when `b` begins with exactly one encoded
-code point, `c`, and `rest` follows it. -/
+code point, `c`, and `rest` follows it.  The two relations that clause needs
+beside it are below: `Utf8Chars`, the star over a whole string, and
+`ValidPrefix`, a string of complete characters followed by a proper prefix of one
+— the unfinished character a window may end in. -/
 inductive Utf8Char : Bytes → Nat → Bytes → Prop where
   /-- `UTF8-1 = %x00-7F` -/
   | one {b : UInt8} {rest : Bytes} (h : b < 0x80) :

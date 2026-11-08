@@ -19,18 +19,19 @@ bash probes/census/repo-census.sh --all    # also counts generated IR
 
 Measured 2026-11-08 with the driver built from this tree:
 
-- **Tracked corpus: 27 files, 29 `define`s — 24 of the 27 files parse, 3 are
+- **Tracked corpus: 28 files, 30 `define`s — 25 of the 28 files parse, 3 are
   refused.**  The refusals are `probes/install/ir/baseline.o1.ll` (return
   attribute `range`), and `probes/install/ir/baseline.raw.ll` and
   `probes/install/ir/candidate.raw.ll` (parameter attribute `noundef`).
-- **Coverage: 0 of the 27 files contain an `icmp … ptr` line, 0 contain a
-  written callee function type, 3 contain a literal vector operand, 2 an
-  `extractelement` line, 3 an `insertelement` line and 3 a `zeroinitializer`
-  operand.**  The three files carrying those vector constructs are
-  `tests/v16/ci2.ll` (below), `probes/install/ir/json-s1-masks.candidate.ll` and
-  `probes/install/ir/json-entry.candidate.ll`, and all three parse, so the corpus
+- **Coverage: 0 of the 28 files contain an `icmp … ptr` line, 0 contain a
+  written callee function type, 4 contain a literal vector operand, 2 an
+  `extractelement` line, 3 an `insertelement` line and 4 a `zeroinitializer`
+  operand.**  The four files carrying those vector constructs are
+  `tests/v16/ci2.ll` (below), `probes/install/ir/json-s1-masks.candidate.ll`,
+  `probes/install/ir/json-entry.candidate.ll` and
+  `probes/install/ir/json-utf8.candidate.ll`, and all four parse, so the corpus
   does exercise them.
-- **Working tree including generated IR: 46 files — 42 of the 46 files parse,
+- **Working tree including generated IR: 47 files — 43 of the 47 files parse,
   4 are refused.**  The fourth refusal is `probes/app/build/app.ll`,
   refused at line 1 (`source_filename`), not at an instruction.  That file holds
   the tree's only `icmp … ptr` line, so the line itself is never reached.  The
@@ -84,11 +85,23 @@ and `LeanLLVM/Vellum/JsonB8Steps.lean` proves B8's (`entry_b8_refines`), the two
 kernels' agreement (`entry_pos8_b8_agree`) and B8's undefinedness beyond its
 reads (`entry_b8_undefined_of_no_read`).
 
+`probes/install/ir/json-utf8.candidate.ll` is the extracted UTF-8 unit —
+`kernel/json/utf8.c`'s `leanllvm_json_utf8` at the measured compiler line,
+normalised by `probes/install/ir/capture-utf8.sh`.  That capture derives, in the
+same run, the normalisation inventory (`json-utf8.strip.tsv`), the rewrite
+inventory (`json-utf8.rewrites.tsv`) and the fixture's construct inventory
+(`json-utf8.inventory`), and `kernel/json/identity/inventory.sh --unit utf8` is
+the gate: it regenerates them, compares them, parses the fixture and fires its
+control.  The fixture is committed and `repo-corpus.manifest` lists it as
+`parsed`, so its parse — one function, one file — is a checked entry;
+`LeanLLVM/Vellum/JsonUtf8IR.lean` pins the parsed AST by `#guard` and
+`LeanLLVM/Vellum/JsonUtf8Steps.lean` proves the body (`utf8_stage_refines`).
+
 The manifest entry counts once the fixture is **tracked**: `repo-census.sh`
 enumerates `git ls-files`, so a green run over an untracked file describes a tree
-state that will not exist once it is committed.  Both fixtures are tracked, so
-the counts above include their rows, and the run that counts is one over a tree
-in which they are.
+state that will not exist once it is committed.  All three unit fixtures are
+tracked, so the counts above include their rows, and the run that counts is one
+over a tree in which they are.
 
 The chain below is the peel **sequence** on that text, not the set of constructs
 the text contains: each relaxation rewrites the line it is applied to, so a

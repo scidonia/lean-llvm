@@ -465,7 +465,9 @@ canonical IR, checked with `llvm-as` in the verification runs.
    fixture `probes/install/ir/json-s1-masks.candidate.ll`, whose body is the one
    `s1_masks_refines` proves, or in the entry unit's fixture
    `probes/install/ir/json-entry.candidate.ll`, whose two bodies `entry_pos8_refines`
-   and `entry_b8_refines` prove.
+   and `entry_b8_refines` prove, or in the extracted UTF-8 unit's fixture
+   `probes/install/ir/json-utf8.candidate.ll`, whose body `utf8_stage_refines`
+   proves.
    `getelementptr` is modelled for the integer element widths the model pins as
    having an allocated size equal to the stored size `Ty.sizeBytes` computes
    (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128`): `Instr.gep` carries the element type and the step adds
