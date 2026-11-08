@@ -125,12 +125,13 @@ needs the other two to match.
   agreement `entry_pos8_b8_agree` and B8's totality companion
   `entry_b8_undefined_of_no_read`, which are the statements the block layer asks
   for.
-  Every **public** theorem is pinned
-  in `LeanLLVMTest/Vellum.lean` at `[propext, Quot.sound]` or narrower — the three
-  `private` numeral lemmas of `BitLanes` cannot be named from another file — each of
-  the choice-carrying `BitVec`/`List` lemmas replaced by a local proof.  The pins are
-  the instrument and not a formality: a proof term that widens to `Classical.choice`
-  shows in no build, no warning and no diff.  `JsonScanSpec`'s bridge had exactly one,
+  The theorems the refinement claims rest on are pinned in
+  `LeanLLVMTest/Vellum.lean`, each at the ceiling `[propext, Quot.sound]` or with a
+  `Classical.choice` carrier the pin names — the three `private` numeral lemmas of
+  `BitLanes` cannot be named from another file — each choice-carrying `BitVec`/`List`
+  lemma replaced by a local proof.  The pins are the instrument and not a formality:
+  **a proof term that picks up a carrier no pin names** shows in no build, no warning
+  and no diff.  `JsonScanSpec`'s bridge had exactly one,
   closed by `simp` deciding a concrete `UInt8` comparison inside a proposition-valued
   definition; it was caught by `#print axioms` on the declaration and fixed by
   `unfold`/`decide` and re-probing every theorem in the module.
