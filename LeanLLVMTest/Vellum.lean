@@ -8932,3 +8932,83 @@ carries `Classical.choice` that the statement does not need. -/
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_loop_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_loop_run
+
+/-! ### The `ub` companion over the staged window
+
+Every declaration `utf8_stage_undefined_of_no_read` introduces, at the footprint
+each was measured at, in the order the section declares them: the entry and guard
+arithmetic, the guard's own entry, the read ladder the statement's prefix needs,
+the two loops' reach lemmas, the initial state's projections, and the companion
+itself.
+
+**One carrier appears, and it is inherited**: `utf8Ungated_reach`,
+`utf8Gated_reach` and `utf8_stage_undefined_of_no_read` carry
+`Classical.choice`, which is `step_gep64`'s `BitVec.signExtend_eq` — the reach
+lemmas consume `utf8Ungated_body` and `utf8Gated_body`, and the companion
+consumes `utf8ForBody_denote_none` and `utf8ForBodyUs_denote_none`, each of which
+steps a `getelementptr` whose sign extension carries it.  Nothing else here
+carries it: the entry arithmetic, the read ladder, the slice identities and the
+pack facts are `propext`-only or `[propext, Quot.sound]`, and no proof reaches
+`List.drop_take`, `Nat.div_lt_of_lt_mul` or `List.take_add`. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ofNat64_add63' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.ofNat64_add63
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ofNat64_ushr' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.ofNat64_ushr
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.div44_ofNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.div44_ofNat
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.ofNat64_ult_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.ofNat64_ult_false
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.prefix_readable_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.prefix_readable_bytes
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.win_read_len' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.win_read_len
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.win_read_slice_len' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.win_read_slice_len
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.stream_slice_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.stream_slice_at
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.packLanes_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.packLanes_word
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.packLanes_fits' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.packLanes_fits
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_reach' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_reach
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_reach' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_reach
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.initState_utf8_pc' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.initState_utf8_pc
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.lookupName_initState_utf8' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.lookupName_initState_utf8
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_undefined_of_no_read' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_stage_undefined_of_no_read
