@@ -6,9 +6,11 @@ window the body stages; `JsonUtf8Spec` holds the specification the verdict is
 judged against.  This module holds the body's instructions as step lemmas, the
 backward `getelementptr` the seven backward sites need, the tables' tie to the
 specification, and the two specification-side theorems the statement consumes:
-the `klMust` bridge and the gate lemma.  The loop lemmas, the reduce and the tail,
-and the refinement theorem itself are stated over these and are not in this
-module yet; what is here is the part they are built from.
+the `klMust` bridge and the gate lemma.  The two loop bodies — `for.body` and
+`if.then11.us`, each as one flat chain over its block — the reduce and the tail
+are here too.  The loop *run* lemmas, which unroll those bodies a block at a
+time, and the refinement theorem itself are stated over these and are not in
+this module.
 
 ## The shape of a step
 
@@ -2074,5 +2076,877 @@ theorem errRaw_length (p2 p3 : List (BitVec 8)) (V1 Vc : Nat)
   have hm : (mustHalf p2 p3).length = 32 := mustHalf_length p2 p3 h2 h3
   unfold errRaw
   simp [List.length_zipWith, bitcastVecLanes, unpackLanes_length, highLanes64]
+
+/-! ### The raw word at the accumulator's vocabulary
+
+The chains below read one instruction per line, so the environment carries the
+body's own expression: the tables' controls are `nibLanes`' lists of the words
+the bitcasts produced, which is `scRaw`'s vocabulary and not `scHalf`'s.  The
+reconciliation is `errRaw_eq`'s, and it is paid once, in
+`errRawBlk_word_eq`, instead of at every site inside a chain. -/
+
+/-- A byte list's lanes have the list's length. -/
+theorem len32_byteLanes (P : List UInt8) (h : P.length = 32) : (byteLanes P).length = 32 := by
+  rw [byteLanes_length]; exact h
+
+/-- The three tables' lane lists have thirty-two entries, which is the length
+`pshuf.b`'s step asks of a literal table. -/
+theorem t1Lanes_length : t1Lanes.length = 32 := by decide
+
+theorem t2Lanes_length : t2Lanes.length = 32 := by decide
+
+theorem t3Lanes_length : t3Lanes.length = 32 := by decide
+
+/-- A `pshuf.b` result at a low-nibble control has thirty-two lanes. -/
+theorem len32_pshufb_nib (t : List (BitVec 8)) (V : Nat) :
+    (pshufbLanes t (nibLanes (unpackLanes 8 32 V))).length = 32 := by
+  rw [pshufbLanes_length, nibLanes_len, unpackLanes_length]
+
+/-- A `pshuf.b` result at a high-nibble control has thirty-two lanes. -/
+theorem len32_pshufb_hi (t : List (BitVec 8)) (V : Nat) :
+    (pshufbLanes t (nibLanes (unpackLanes 8 32 (packLanes (shr4Lanes V))))).length = 32 := by
+  rw [pshufbLanes_length, nibLanes_len, unpackLanes_length]
+
+/-- The block index's shift: `%bi << 6` is the block's byte offset.  The bound is
+what keeps the shift from wrapping, and the loop's own `%bi < nb` supplies it. -/
+theorem shl64_six (bi : Nat) (h : 64 * bi < 2 ^ 64) :
+    BitVec.ofNat 64 bi <<< (BitVec.ofInt 64 6).toNat = BitVec.ofNat 64 (64 * bi) := by
+  rw [show (BitVec.ofInt 64 6).toNat = 6 from by decide]
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_shiftLeft, toNat_ofNat64 bi (by omega), toNat_ofNat64 (64 * bi) h,
+    Nat.shiftLeft_eq, show (2 : Nat) ^ 6 = 64 from by decide, Nat.mul_comm bi 64,
+    Nat.mod_eq_of_lt h]
+
+/-- **The accumulator step, at the un-folded word.**  The two `errRaw` halves are
+the body's own expression — `scRaw`'s controls — and this is the one place they are
+read as `errHalf`'s and then as `klErrBlk`'s: `errRaw_eq` twice, the two
+`unpackLanes → byteLanes` steps the two `t1` controls need, and `errBlk_word_eq`
+carrying the accumulator.  `errBlk_word_eq` is the whole of the tie to the
+specification.
+
+The conversion sits at the **body's end**, not after the loop: the ungated body's
+own proof applies this lemma, so its conclusion is already the folded word, and
+the loop's invariant, its header and the tail carry `klErrBlk`'s vocabulary.
+Raw `errRaw` terms survive in exactly two statements — this one and
+`utf8Gated_body`'s, which states the word the gated body emits — and the gated
+loop's step pays the same conversion once per iteration, at its body's end. -/
+theorem errRawBlk_word_eq (s : List UInt8) (acc : List UInt8) (u8k : List (BitVec 64))
+    (pre blk : List UInt8) (hs : s = pre ++ blk) (h67 : 67 ≤ s.length)
+    (hacc : acc.length = 32) (hu8klen : u8k.length = 4)
+    (hpre3 : pre.length = 3) (hblk64 : blk.length = 64)
+    (hu8k : packLanes u8k = bytesToNat acc) :
+    List.zipWith (· ||| ·)
+        (List.zipWith (· ||| ·)
+          (errRaw (byteLanes ((s.drop 1).take 32)) (byteLanes (s.take 32))
+            (bytesToNat ((s.drop 2).take 32)) (bytesToNat ((s.drop 3).take 32)))
+          u8k)
+        (errRaw (byteLanes (((s.drop 32).drop 1).take 32))
+          (byteLanes ((s.drop 32).take 32))
+          (bytesToNat (((s.drop 32).drop 2).take 32))
+          (bytesToNat (((s.drop 32).drop 3).take 32)))
+      = unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) acc (klErrBlk pre blk))) := by
+  subst hs
+  have h1 : (((pre ++ blk).drop 2).take 32).length = 32 := by
+    simp only [List.length_take, List.length_drop]; omega
+  have h2 : ((((pre ++ blk).drop 32).drop 2).take 32).length = 32 := by
+    simp only [List.length_take, List.length_drop]; omega
+  rw [errRaw_eq, errRaw_eq, byteLanes_eq_unpackLanes (n := 32) h1,
+    byteLanes_eq_unpackLanes (n := 32) h2]
+  exact errBlk_word_eq (pre ++ blk) acc u8k pre blk rfl h67 hacc hu8klen hpre3 hblk64 hu8k
+
+/-! ### The ungated loop's body
+
+`for.body` is sixty-five instruction lines: the two phis, the block's two
+`<4 x i64>` and two `<16 x i16>` loads, the three carry loads, the two `pshuf.b`
+triples, the six saturating subtracts and the accumulate.  The statement is in the
+specification's vocabulary — the word the loop carries after the block is the
+natural of the accumulator list or-ed with `klErrBlk`, the vector `klErrAll` counts
+its windows over — and the body's own expression appears nowhere in it.
+
+The stream is `pre ++ blk`: `pre` is the block's three carry bytes and `blk` its
+sixty-four, so `pre ++ blk` is the sixty-seven bytes the eight loads read.
+`B37 :: B38 :: … :: B56` are the loads' byte lists, tied to the stream's slices by
+the `B…` hypotheses; a caller derives them from the window read.
+
+The predecessor is a **parameter**, not `for.body` fixed: the loop enters this
+block from `for.body.lr.ph` on its first iteration and from its own latch on every
+later one, so this is *the* body step for both edges — the preheader is an
+instance (the constant operands `splat (i64 0)` and `i64 0`), not a second
+lemma.  Two lemmas would have to be kept in step, and nothing would say which one
+a proof meant. -/
+theorem utf8Ungated_body (env : Env) (s : State) (b nb bi : Nat) (acc : List UInt8)
+    (pre blk : List UInt8) (u8k : List (BitVec 64))
+    (B37 B38 B39 B40 B41 B54 B55 B56 : List UInt8)
+    (p : String) (opA opB : Operand)
+    (hpre : s.pre = some p)
+    (hincA : phiIncoming p [("for.body", .reg "%or.i47"),
+      ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))] = some opA)
+    (hincB : phiIncoming p [("for.body", .reg "%inc"),
+      ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opB)
+    (hopA : evalOperand (withEnv env s) opA = some (.vec 4 64 u8k))
+    (hopB : evalOperand (withEnv (("%u8k.076", .vec 4 64 u8k) :: env) s) opB
+      = some (.int 64 (BitVec.ofNat 64 bi)))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hdiv : lookupName env "%div44" = some (.int 64 (BitVec.ofNat 64 nb)))
+    (hacc : acc.length = 32) (hu8klen : u8k.length = 4)
+    (hpre3 : pre.length = 3) (hblk64 : blk.length = 64)
+    (hu8kpack : packLanes u8k = bytesToNat acc)
+    (hL37 : B37 = ((pre ++ blk).drop 3).take 32)
+    (hL38 : B38 = (((pre ++ blk).drop 32).drop 3).take 32)
+    (hL39 : B39 = ((pre ++ blk).drop 2).take 32)
+    (hL40 : B40 = ((pre ++ blk).drop 1).take 32)
+    (hL41 : B41 = (pre ++ blk).take 32)
+    (hL54 : B54 = (((pre ++ blk).drop 32).drop 2).take 32)
+    (hL55 : B55 = (((pre ++ blk).drop 32).drop 1).take 32)
+    (hL56 : B56 = ((pre ++ blk).drop 32).take 32)
+    (hread37 : readBytes s.mem (b + 64 * bi) 32 = some B37)
+    (hread38 : readBytes s.mem (b + 64 * bi + 32) 32 = some B38)
+    (hread39 : readBytes s.mem (b + 64 * bi - 1) 32 = some B39)
+    (hread40 : readBytes s.mem (b + 64 * bi - 2) 32 = some B40)
+    (hread41 : readBytes s.mem (b + 64 * bi - 3) 32 = some B41)
+    (hread54 : readBytes s.mem (b + 64 * bi + 31) 32 = some B54)
+    (hread55 : readBytes s.mem (b + 64 * bi + 30) 32 = some B55)
+    (hread56 : readBytes s.mem (b + 64 * bi + 29) 32 = some B56)
+    (hb3 : 3 ≤ b) (hbi64 : 64 * bi < 2 ^ 63) :
+    ∃ env', denoteCode utf8Calls utf8ForBody.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%or.i47" = some (.vec 4 64
+        (unpackLanes 64 4 (bytesToNat (List.zipWith (· ||| ·) acc (klErrBlk pre blk))))) ∧
+      lookupName env' "%inc" = some (.int 64 (BitVec.ofNat 64 bi + BitVec.ofInt 64 1)) ∧
+      lookupName env' "%exitcond.not" = some (.int 1 (BitVec.ofBool
+        (BitVec.ofNat 64 bi + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
+  have h37 : B37.length = 32 := readBytes_length s.mem (b + 64 * bi) 32 hread37
+  have h38 : B38.length = 32 := readBytes_length s.mem (b + 64 * bi + 32) 32 hread38
+  have h39 : B39.length = 32 := readBytes_length s.mem (b + 64 * bi - 1) 32 hread39
+  have h40 : B40.length = 32 := readBytes_length s.mem (b + 64 * bi - 2) 32 hread40
+  have h41 : B41.length = 32 := readBytes_length s.mem (b + 64 * bi - 3) 32 hread41
+  have h54 : B54.length = 32 := readBytes_length s.mem (b + 64 * bi + 31) 32 hread54
+  have h55 : B55.length = 32 := readBytes_length s.mem (b + 64 * bi + 30) 32 hread55
+  have h56 : B56.length = 32 := readBytes_length s.mem (b + 64 * bi + 29) 32 hread56
+  have hV37 : B37 = natToBytes (bytesToNat B37) 32 :=
+    (natToBytes_bytesToNat B37).symm.trans (by rw [h37])
+  have hV38 : B38 = natToBytes (bytesToNat B38) 32 :=
+    (natToBytes_bytesToNat B38).symm.trans (by rw [h38])
+  have hV39 : B39 = natToBytes (bytesToNat B39) 32 :=
+    (natToBytes_bytesToNat B39).symm.trans (by rw [h39])
+  have hV54 : B54 = natToBytes (bytesToNat B54) 32 :=
+    (natToBytes_bytesToNat B54).symm.trans (by rw [h54])
+  have hlt37 : bytesToNat B37 < 2 ^ 256 := by
+    have := bytesToNat_lt B37
+    rwa [h37, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  have hlt38 : bytesToNat B38 < 2 ^ 256 := by
+    have := bytesToNat_lt B38
+    rwa [h38, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  have hlt39 : bytesToNat B39 < 2 ^ 256 := by
+    have := bytesToNat_lt B39
+    rwa [h39, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  have hlt54 : bytesToNat B54 < 2 ^ 256 := by
+    have := bytesToNat_lt B54
+    rwa [h54, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  refine ⟨?env', ?hrun, ?hval, ?hinc', ?hexit⟩
+  case hrun =>
+    simp only [utf8ForBody, reg, lit, splatOf, lanesOf, highBitMask, JsonUtf8IR.pshufb,
+      JsonUtf8IR.usubSat]
+    ent_step (utf8_phi env s "%u8k.076" v4i64 _ p opA (.vec 4 64 u8k) hpre hincA hopA)
+    ent_step (utf8_phi (("%u8k.076", .vec 4 64 u8k) :: env) s "%bi.075" (.int 64) _ p opB
+      (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+    ent_step (utf8_step_shl _ _ "%shl" "%bi.075" 64 (BitVec.ofNat 64 bi) (BitVec.ofInt 64 6)
+      (by ent_auto))
+    rw [shl64_six bi (by omega)]
+    ent_step (utf8_step_gep _ _ "%add.ptr" "%b" "%shl" (.int 8) b (BitVec.ofNat 64 (64 * bi))
+      (by ent_auto) (by ent_auto) (by rw [toNat_ofNat64 (64 * bi) (by omega)]; exact hbi64))
+    rw [show b + (BitVec.ofNat 64 (64 * bi)).toNat * (Ty.int 8).sizeBytes = b + 64 * bi from by
+      rw [toNat_ofNat64 (64 * bi) (by omega), sizeBytes_i8, Nat.mul_one]]
+    ent_step (step_load16_16 _ _ "%37" "%add.ptr" (b + 64 * bi) (bytesToNat B37) (by ent_auto)
+      (by rw [← hV37]; exact hread37) hlt37)
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr3" "%add.ptr" (.int 8) (b + 64 * bi)
+      (BitVec.ofInt 64 32) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 32).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 32
+      from by rw [show (BitVec.ofInt 64 32).toNat = 32 from by decide, sizeBytes_i8]]
+    ent_step (step_load16_16 _ _ "%38" "%add.ptr3" (b + 64 * bi + 32) (bytesToNat B38)
+      (by ent_auto) (by rw [← hV38]; exact hread38) hlt38)
+    ent_step (step_gep64_m1 _ _ "%add.ptr.i.i" "%add.ptr" (b + 64 * bi) (by ent_auto) (by omega))
+    ent_step (step_load4_64 _ _ "%39" "%add.ptr.i.i" (b + 64 * bi - 1) (bytesToNat B39)
+      (by ent_auto) (by rw [← hV39]; exact hread39) hlt39)
+    ent_step (step_gep64_m2 _ _ "%add.ptr3.i.i" "%add.ptr" (b + 64 * bi) (by ent_auto) (by omega))
+    ent_step (step_load32_8 _ _ "%40" "%add.ptr3.i.i" (b + 64 * bi - 2) B40 (by ent_auto) hread40)
+    ent_step (step_gep64_m3 _ _ "%add.ptr5.i.i" "%add.ptr" (b + 64 * bi) (by ent_auto) (by omega))
+    ent_step (step_load32_8 _ _ "%41" "%add.ptr5.i.i" (b + 64 * bi - 3) B41 (by ent_auto) hread41)
+    ent_step (utf8_step_bc64_8 _ _ "%42" "%39" (bytesToNat B39) hlt39 (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%43" "%42" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%44" "%43" t1Lanes t1V _ t1Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_bc64_16 _ _ "%45" "%39" (bytesToNat B39) hlt39 (by ent_auto))
+    ent_step (utf8_step_shr16 _ _ "%46" "%45" (bytesToNat B39) (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%47" "%46" (bytesToNat B39) (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%48" "%47" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%49" "%48" t2Lanes t2V _ t2Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3741.i.i" "%49" "%44" 32 8 _ _ (by ent_auto)
+      (by ent_auto) (len32_pshufb_hi t2V (bytesToNat B39)) (len32_pshufb_nib t1V (bytesToNat B39)))
+    ent_step (utf8_step_shr16 _ _ "%50" "%37" (bytesToNat B37) (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%51" "%50" (bytesToNat B37) (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%52" "%51" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%53" "%52" t3Lanes t3V _ t3Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3542.i.i" "%and.i3741.i.i" "%53" 32 8 _ _ (by ent_auto)
+      (by ent_auto) (len32_zip (· &&& ·) _ _ (len32_pshufb_hi t2V (bytesToNat B39))
+        (len32_pshufb_nib t1V (bytesToNat B39)))
+      (len32_pshufb_hi t3V (bytesToNat B37)))
+    ent_step (utf8_step_bc8_64 _ _ "%and.i35.i.i" "%and.i3542.i.i" _
+      (by ent_auto) (len32_zip (· &&& ·) _ _ (len32_zip (· &&& ·) _ _
+        (len32_pshufb_hi t2V (bytesToNat B39)) (len32_pshufb_nib t1V (bytesToNat B39)))
+        (len32_pshufb_hi t3V (bytesToNat B37))))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i40.i.i" "%40" 96 (byteLanes B40)
+      (by rw [byteLanes_length]; exact h40) (by ent_auto))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i.i.i" "%41" 112 (byteLanes B41)
+      (by rw [byteLanes_length]; exact h41) (by ent_auto))
+    ent_step (utf8_step_vec_or _ _ "%or.i43.i.i" "%elt.sat.i.i.i" "%elt.sat.i40.i.i" 32 8 _ _
+      (by ent_auto) (by ent_auto) (len32_zip subsSat _ _ (len32_byteLanes B41 h41) (by simp))
+      (len32_zip subsSat _ _ (len32_byteLanes B40 h40) (by simp)))
+    ent_step (utf8_step_bc8_64 _ _ "%or.i.i.i" "%or.i43.i.i" _
+      (by ent_auto) (len32_zip (· ||| ·) _ _ (len32_zip subsSat _ _ (len32_byteLanes B41 h41) (by simp))
+        (len32_zip subsSat _ _ (len32_byteLanes B40 h40) (by simp))))
+    ent_step (utf8_step_andHigh _ _ "%and.i.i.i" "%or.i.i.i" _
+      (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_vec_xor _ _ "%xor.i.i.i" "%and.i.i.i" "%and.i35.i.i" 4 64 _ _ (by ent_auto)
+      (by ent_auto) (len4_zip64 (· &&& ·) _ _ (by rw [unpackLanes_length]) (by simp [highLanes64]))
+      (by rw [unpackLanes_length]))
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr.i4.i" "%add.ptr" (.int 8) (b + 64 * bi)
+      (BitVec.ofInt 64 31) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 31).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 31
+      from by rw [show (BitVec.ofInt 64 31).toNat = 31 from by decide, sizeBytes_i8]]
+    ent_step (step_load4_64 _ _ "%54" "%add.ptr.i4.i" (b + 64 * bi + 31) (bytesToNat B54)
+      (by ent_auto) (by rw [← hV54]; exact hread54) hlt54)
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr3.i5.i" "%add.ptr" (.int 8) (b + 64 * bi)
+      (BitVec.ofInt 64 30) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 30).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 30
+      from by rw [show (BitVec.ofInt 64 30).toNat = 30 from by decide, sizeBytes_i8]]
+    ent_step (step_load32_8 _ _ "%55" "%add.ptr3.i5.i" (b + 64 * bi + 30) B55 (by ent_auto) hread55)
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr5.i6.i" "%add.ptr" (.int 8) (b + 64 * bi)
+      (BitVec.ofInt 64 29) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 29).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 29
+      from by rw [show (BitVec.ofInt 64 29).toNat = 29 from by decide, sizeBytes_i8]]
+    ent_step (step_load32_8 _ _ "%56" "%add.ptr5.i6.i" (b + 64 * bi + 29) B56 (by ent_auto) hread56)
+    ent_step (utf8_step_bc64_8 _ _ "%57" "%54" (bytesToNat B54) hlt54 (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%58" "%57" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%59" "%58" t1Lanes t1V _ t1Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_bc64_16 _ _ "%60" "%54" (bytesToNat B54) hlt54 (by ent_auto))
+    ent_step (utf8_step_shr16 _ _ "%61" "%60" (bytesToNat B54) (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%62" "%61" (bytesToNat B54) (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%63" "%62" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%64" "%63" t2Lanes t2V _ t2Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3741.i7.i" "%64" "%59" 32 8 _ _ (by ent_auto)
+      (by ent_auto) (len32_pshufb_hi t2V (bytesToNat B54)) (len32_pshufb_nib t1V (bytesToNat B54)))
+    ent_step (utf8_step_shr16 _ _ "%65" "%38" (bytesToNat B38) (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%66" "%65" (bytesToNat B38) (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%67" "%66" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%68" "%67" t3Lanes t3V _ t3Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3542.i8.i" "%and.i3741.i7.i" "%68" 32 8 _ _ (by ent_auto)
+      (by ent_auto) (len32_zip (· &&& ·) _ _ (len32_pshufb_hi t2V (bytesToNat B54))
+        (len32_pshufb_nib t1V (bytesToNat B54)))
+      (len32_pshufb_hi t3V (bytesToNat B38)))
+    ent_step (utf8_step_bc8_64 _ _ "%and.i35.i9.i" "%and.i3542.i8.i" _
+      (by ent_auto) (len32_zip (· &&& ·) _ _ (len32_zip (· &&& ·) _ _
+        (len32_pshufb_hi t2V (bytesToNat B54)) (len32_pshufb_nib t1V (bytesToNat B54)))
+        (len32_pshufb_hi t3V (bytesToNat B38))))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i40.i10.i" "%55" 96 (byteLanes B55)
+      (by rw [byteLanes_length]; exact h55) (by ent_auto))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i.i11.i" "%56" 112 (byteLanes B56)
+      (by rw [byteLanes_length]; exact h56) (by ent_auto))
+    ent_step (utf8_step_vec_or _ _ "%or.i43.i12.i" "%elt.sat.i.i11.i" "%elt.sat.i40.i10.i" 32 8 _ _
+      (by ent_auto) (by ent_auto) (len32_zip subsSat _ _ (len32_byteLanes B56 h56) (by simp))
+      (len32_zip subsSat _ _ (len32_byteLanes B55 h55) (by simp)))
+    ent_step (utf8_step_bc8_64 _ _ "%or.i.i13.i" "%or.i43.i12.i" _
+      (by ent_auto) (len32_zip (· ||| ·) _ _ (len32_zip subsSat _ _ (len32_byteLanes B56 h56) (by simp))
+        (len32_zip subsSat _ _ (len32_byteLanes B55 h55) (by simp))))
+    ent_step (utf8_step_andHigh _ _ "%and.i.i14.i" "%or.i.i13.i" _
+      (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_vec_xor _ _ "%xor.i.i15.i" "%and.i.i14.i" "%and.i35.i9.i" 4 64 _ _
+      (by ent_auto) (by ent_auto) (len4_zip64 (· &&& ·) _ _ (by rw [unpackLanes_length])
+        (by simp [highLanes64])) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_vec_or _ _ "%or.i.i" "%xor.i.i.i" "%u8k.076" 4 64 _ _ (by ent_auto)
+      (by ent_auto) (by simp [List.length_zipWith, unpackLanes_length, highLanes64])
+      hu8klen)
+    ent_step (utf8_step_vec_or _ _ "%or.i47" "%or.i.i" "%xor.i.i15.i" 4 64 _ _ (by ent_auto)
+      (by ent_auto) (by simp [List.length_zipWith, unpackLanes_length, highLanes64, hu8klen])
+      (by simp [List.length_zipWith, unpackLanes_length, highLanes64]))
+    ent_step (utf8_step_add _ _ "%inc" "%bi.075" 64 (BitVec.ofNat 64 bi) (BitVec.ofInt 64 1)
+      (by ent_auto))
+    ent_step (utf8_step_icmp_eq _ _ "%exitcond.not" "%inc" "%div44" 64 _ _
+      (by ent_auto) (by ent_auto))
+    rfl
+  case hval =>
+    ent_auto
+    rw [lookupName_cons_self, Option.some.injEq]
+    congr 1
+    rw [hL37, hL38, hL39, hL40, hL41, hL54, hL55, hL56]
+    exact errRawBlk_word_eq (pre ++ blk) acc u8k pre blk rfl
+      (by rw [List.length_append]; omega) hacc hu8klen hpre3 hblk64 hu8kpack
+  case hinc' => ent_auto
+  case hexit => ent_auto
+
+/-- `%d = icmp eq i32 %src, <c>`. -/
+theorem utf8_step_icmp_eq_imm (env : Env) (s : State) (d src : String) (w : Nat)
+    (x c : BitVec w) (h : lookupName env src = some (.int w x)) :
+    evalInstr utf8Calls (withEnv env s) (.icmp d .eq w (.reg src) (.imm (.int w c))) =
+      some (withEnv ((d, .int 1 (BitVec.ofBool (x = c))) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s src (.int w x) h)
+    (hb := evalOperand_lit_of _ w c)]
+  simp [withEnv, State.bind, evalICmp]
+
+/-- `%d = and i32 %src, <c>`. -/
+theorem utf8_step_and_imm (env : Env) (s : State) (d src : String) (w : Nat)
+    (x c : BitVec w) (h : lookupName env src = some (.int w x)) :
+    evalInstr utf8Calls (withEnv env s) (.binop d .and w (.reg src) (.imm (.int w c))) =
+      some (withEnv ((d, .int w (x &&& c)) :: env) s) := by
+  rw [evalInstr_binop (ha := evalOperand_reg_of env s src (.int w x) h)
+    (hb := evalOperand_lit_of _ w c) (hr := by rfl)]
+  simp only [withEnv, State.bind, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- `%d = zext i1 %src to i64`, the returned verdict's width change. -/
+theorem utf8_step_zext (env : Env) (s : State) (d src : String) (wIn wOut : Nat)
+    (x : BitVec wIn) (h : lookupName env src = some (.int wIn x)) :
+    evalInstr utf8Calls (withEnv env s) (.zext d wIn wOut (.reg src)) =
+      some (withEnv ((d, .int wOut (BitVec.ofNat wOut x.toNat)) :: env) s) := by
+  rw [evalInstr_zext (hv := evalOperand_reg_of env s src (.int wIn x) h)]
+  simp [withEnv, State.bind]
+
+/-! ### The gated loop's body
+
+`if.then11.us` is the same DFA over the same two halves — fifty-eight
+instruction lines instead of the ungated body's sixty-five, because the two
+`<4 x i64>` halves `%0` and `%1` arrive already loaded from `for.body.us` and the
+two phis are the header's.  The result is stated in `errRaw`'s vocabulary, in the
+association the emission builds: `(%lower ||| %upper) ||| u8k`, where the ungated
+body writes `(%lower ||| u8k) ||| %upper`.  The difference needs no lane-level
+lemma, and asking for one would be the signal that the comparison had been raised
+above the verdict: the two gate settings are compared as **verdicts** (C62 (ii)),
+and a zero test does not see the order of the lanes' `|||`.  Each body therefore
+stays in the order it emits, and the fold to `klErrBlk`'s word is paid where a
+loop step consumes the body, once per iteration. -/
+theorem utf8Gated_body (env : Env) (s : State) (b bi : Nat) (u8k : List (BitVec 64))
+    (B3 B4 B5 B19 B20 B21 : List UInt8) (V0 V1 : Nat)
+    (hu8k : lookupName env "%u8k.076.us" = some (.vec 4 64 u8k))
+    (hptr : lookupName env "%add.ptr.us" = some (.ptr (b + 64 * bi)))
+    (h0 : lookupName env "%0" = some (.vec 4 64 (unpackLanes 64 4 V0)))
+    (h1 : lookupName env "%1" = some (.vec 4 64 (unpackLanes 64 4 V1)))
+    (hu8klen : u8k.length = 4)
+    (hV0 : V0 < 2 ^ 256) (hV1 : V1 < 2 ^ 256)
+    (hread3 : readBytes s.mem (b + 64 * bi - 1) 32 = some B3)
+    (hread4 : readBytes s.mem (b + 64 * bi - 2) 32 = some B4)
+    (hread5 : readBytes s.mem (b + 64 * bi - 3) 32 = some B5)
+    (hread19 : readBytes s.mem (b + 64 * bi + 31) 32 = some B19)
+    (hread20 : readBytes s.mem (b + 64 * bi + 30) 32 = some B20)
+    (hread21 : readBytes s.mem (b + 64 * bi + 29) 32 = some B21)
+    (hb3 : 3 ≤ b) (hbi64 : 64 * bi < 2 ^ 63) :
+    ∃ env', denoteCode utf8Calls utf8ThenUs.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%or.i.us" = some (.vec 4 64
+        (List.zipWith (· ||| ·)
+          (List.zipWith (· ||| ·)
+            (errRaw (byteLanes B4) (byteLanes B5) (bytesToNat B3) V0)
+            (errRaw (byteLanes B20) (byteLanes B21) (bytesToNat B19) V1))
+          u8k)) := by
+  have h3 : B3.length = 32 := readBytes_length s.mem (b + 64 * bi - 1) 32 hread3
+  have h4 : B4.length = 32 := readBytes_length s.mem (b + 64 * bi - 2) 32 hread4
+  have h5 : B5.length = 32 := readBytes_length s.mem (b + 64 * bi - 3) 32 hread5
+  have h19 : B19.length = 32 := readBytes_length s.mem (b + 64 * bi + 31) 32 hread19
+  have h20 : B20.length = 32 := readBytes_length s.mem (b + 64 * bi + 30) 32 hread20
+  have h21 : B21.length = 32 := readBytes_length s.mem (b + 64 * bi + 29) 32 hread21
+  have hV3 : B3 = natToBytes (bytesToNat B3) 32 :=
+    (natToBytes_bytesToNat B3).symm.trans (by rw [h3])
+  have hV19 : B19 = natToBytes (bytesToNat B19) 32 :=
+    (natToBytes_bytesToNat B19).symm.trans (by rw [h19])
+  have hlt3 : bytesToNat B3 < 2 ^ 256 := by
+    have := bytesToNat_lt B3
+    rwa [h3, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  have hlt19 : bytesToNat B19 < 2 ^ 256 := by
+    have := bytesToNat_lt B19
+    rwa [h19, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  refine ⟨?env', ?hrun, ?hval⟩
+  case hrun =>
+    simp only [utf8ThenUs, reg, lit, splatOf, lanesOf, highBitMask, JsonUtf8IR.pshufb,
+      JsonUtf8IR.usubSat]
+    ent_step (step_gep64_m1 _ _ "%add.ptr.i.i48.us" "%add.ptr.us" (b + 64 * bi)
+      (by ent_auto) (by omega))
+    ent_step (step_load4_64 _ _ "%3" "%add.ptr.i.i48.us" (b + 64 * bi - 1) (bytesToNat B3)
+      (by ent_auto) (by rw [← hV3]; exact hread3) hlt3)
+    ent_step (step_gep64_m2 _ _ "%add.ptr3.i.i49.us" "%add.ptr.us" (b + 64 * bi)
+      (by ent_auto) (by omega))
+    ent_step (step_load32_8 _ _ "%4" "%add.ptr3.i.i49.us" (b + 64 * bi - 2) B4 (by ent_auto)
+      hread4)
+    ent_step (step_gep64_m3 _ _ "%add.ptr5.i.i50.us" "%add.ptr.us" (b + 64 * bi)
+      (by ent_auto) (by omega))
+    ent_step (step_load32_8 _ _ "%5" "%add.ptr5.i.i50.us" (b + 64 * bi - 3) B5 (by ent_auto)
+      hread5)
+    ent_step (utf8_step_bc64_8 _ _ "%6" "%3" (bytesToNat B3) hlt3 (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%7" "%6" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%8" "%7" t1Lanes t1V _ t1Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_bc64_16 _ _ "%9" "%3" (bytesToNat B3) hlt3 (by ent_auto))
+    ent_step (utf8_step_shr16 _ _ "%10" "%9" (bytesToNat B3) (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%11" "%10" (bytesToNat B3) (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%12" "%11" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%13" "%12" t2Lanes t2V _ t2Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3741.i.i51.us" "%13" "%8" 32 8 _ _ (by ent_auto)
+      (by ent_auto) (len32_pshufb_hi t2V (bytesToNat B3)) (len32_pshufb_nib t1V (bytesToNat B3)))
+    ent_step (utf8_step_bc64_16 _ _ "%14" "%0" V0 hV0 (by ent_auto))
+    ent_step (utf8_step_shr16 _ _ "%15" "%14" V0 (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%16" "%15" V0 (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%17" "%16" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%18" "%17" t3Lanes t3V _ t3Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3542.i.i52.us" "%and.i3741.i.i51.us" "%18" 32 8 _ _
+      (by ent_auto) (by ent_auto)
+      (len32_zip (· &&& ·) _ _ (len32_pshufb_hi t2V (bytesToNat B3))
+        (len32_pshufb_nib t1V (bytesToNat B3)))
+      (len32_pshufb_hi t3V V0))
+    ent_step (utf8_step_bc8_64 _ _ "%and.i35.i.i53.us" "%and.i3542.i.i52.us" _
+      (by ent_auto) (len32_zip (· &&& ·) _ _ (len32_zip (· &&& ·) _ _
+        (len32_pshufb_hi t2V (bytesToNat B3)) (len32_pshufb_nib t1V (bytesToNat B3)))
+        (len32_pshufb_hi t3V V0)))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i40.i.i54.us" "%4" 96 (byteLanes B4)
+      (by rw [byteLanes_length]; exact h4) (by ent_auto))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i.i.i55.us" "%5" 112 (byteLanes B5)
+      (by rw [byteLanes_length]; exact h5) (by ent_auto))
+    ent_step (utf8_step_vec_or _ _ "%or.i43.i.i56.us" "%elt.sat.i.i.i55.us"
+      "%elt.sat.i40.i.i54.us" 32 8 _ _ (by ent_auto) (by ent_auto)
+      (len32_zip subsSat _ _ (len32_byteLanes B5 h5) (by simp))
+      (len32_zip subsSat _ _ (len32_byteLanes B4 h4) (by simp)))
+    ent_step (utf8_step_bc8_64 _ _ "%or.i.i.i57.us" "%or.i43.i.i56.us" _
+      (by ent_auto) (len32_zip (· ||| ·) _ _ (len32_zip subsSat _ _ (len32_byteLanes B5 h5)
+        (by simp)) (len32_zip subsSat _ _ (len32_byteLanes B4 h4) (by simp))))
+    ent_step (utf8_step_andHigh _ _ "%and.i.i.i58.us" "%or.i.i.i57.us" _
+      (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_vec_xor _ _ "%xor.i.i.i59.us" "%and.i.i.i58.us" "%and.i35.i.i53.us"
+      4 64 _ _ (by ent_auto) (by ent_auto)
+      (len4_zip64 (· &&& ·) _ _ (by rw [unpackLanes_length]) (by simp [highLanes64]))
+      (by rw [unpackLanes_length]))
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr.i4.i60.us" "%add.ptr.us" (.int 8)
+      (b + 64 * bi) (BitVec.ofInt 64 31) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 31).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 31
+      from by rw [show (BitVec.ofInt 64 31).toNat = 31 from by decide, sizeBytes_i8]]
+    ent_step (step_load4_64 _ _ "%19" "%add.ptr.i4.i60.us" (b + 64 * bi + 31) (bytesToNat B19)
+      (by ent_auto) (by rw [← hV19]; exact hread19) hlt19)
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr3.i5.i61.us" "%add.ptr.us" (.int 8)
+      (b + 64 * bi) (BitVec.ofInt 64 30) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 30).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 30
+      from by rw [show (BitVec.ofInt 64 30).toNat = 30 from by decide, sizeBytes_i8]]
+    ent_step (step_load32_8 _ _ "%20" "%add.ptr3.i5.i61.us" (b + 64 * bi + 30) B20
+      (by ent_auto) hread20)
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr5.i6.i62.us" "%add.ptr.us" (.int 8)
+      (b + 64 * bi) (BitVec.ofInt 64 29) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 29).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 29
+      from by rw [show (BitVec.ofInt 64 29).toNat = 29 from by decide, sizeBytes_i8]]
+    ent_step (step_load32_8 _ _ "%21" "%add.ptr5.i6.i62.us" (b + 64 * bi + 29) B21
+      (by ent_auto) hread21)
+    ent_step (utf8_step_bc64_8 _ _ "%22" "%19" (bytesToNat B19) hlt19 (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%23" "%22" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%24" "%23" t1Lanes t1V _ t1Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_bc64_16 _ _ "%25" "%19" (bytesToNat B19) hlt19 (by ent_auto))
+    ent_step (utf8_step_shr16 _ _ "%26" "%25" (bytesToNat B19) (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%27" "%26" (bytesToNat B19) (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%28" "%27" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%29" "%28" t2Lanes t2V _ t2Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3741.i7.i63.us" "%29" "%24" 32 8 _ _ (by ent_auto)
+      (by ent_auto) (len32_pshufb_hi t2V (bytesToNat B19))
+      (len32_pshufb_nib t1V (bytesToNat B19)))
+    ent_step (utf8_step_bc64_16 _ _ "%30" "%1" V1 hV1 (by ent_auto))
+    ent_step (utf8_step_shr16 _ _ "%31" "%30" V1 (by ent_auto))
+    ent_step (utf8_step_bc16_8 _ _ "%32" "%31" V1 (by ent_auto))
+    ent_step (utf8_step_and15 _ _ "%33" "%32" _ (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_pshufb _ _ "%34" "%33" t3Lanes t3V _ t3Lanes_length rfl (by ent_auto))
+    ent_step (utf8_step_vec_and _ _ "%and.i3542.i8.i64.us" "%and.i3741.i7.i63.us" "%34" 32 8 _ _
+      (by ent_auto) (by ent_auto)
+      (len32_zip (· &&& ·) _ _ (len32_pshufb_hi t2V (bytesToNat B19))
+        (len32_pshufb_nib t1V (bytesToNat B19)))
+      (len32_pshufb_hi t3V V1))
+    ent_step (utf8_step_bc8_64 _ _ "%and.i35.i9.i65.us" "%and.i3542.i8.i64.us" _
+      (by ent_auto) (len32_zip (· &&& ·) _ _ (len32_zip (· &&& ·) _ _
+        (len32_pshufb_hi t2V (bytesToNat B19)) (len32_pshufb_nib t1V (bytesToNat B19)))
+        (len32_pshufb_hi t3V V1)))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i40.i10.i66.us" "%20" 96 (byteLanes B20)
+      (by rw [byteLanes_length]; exact h20) (by ent_auto))
+    ent_step (utf8_step_usubSat _ _ "%elt.sat.i.i11.i67.us" "%21" 112 (byteLanes B21)
+      (by rw [byteLanes_length]; exact h21) (by ent_auto))
+    ent_step (utf8_step_vec_or _ _ "%or.i43.i12.i68.us" "%elt.sat.i.i11.i67.us"
+      "%elt.sat.i40.i10.i66.us" 32 8 _ _ (by ent_auto) (by ent_auto)
+      (len32_zip subsSat _ _ (len32_byteLanes B21 h21) (by simp))
+      (len32_zip subsSat _ _ (len32_byteLanes B20 h20) (by simp)))
+    ent_step (utf8_step_bc8_64 _ _ "%or.i.i13.i69.us" "%or.i43.i12.i68.us" _
+      (by ent_auto) (len32_zip (· ||| ·) _ _ (len32_zip subsSat _ _ (len32_byteLanes B21 h21)
+        (by simp)) (len32_zip subsSat _ _ (len32_byteLanes B20 h20) (by simp))))
+    ent_step (utf8_step_andHigh _ _ "%and.i.i14.i70.us" "%or.i.i13.i69.us" _
+      (by ent_auto) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_vec_xor _ _ "%xor.i.i15.i71.us" "%and.i.i14.i70.us" "%and.i35.i9.i65.us"
+      4 64 _ _ (by ent_auto) (by ent_auto)
+      (len4_zip64 (· &&& ·) _ _ (by rw [unpackLanes_length]) (by simp [highLanes64]))
+      (by rw [unpackLanes_length]))
+    ent_step (utf8_step_vec_or _ _ "%35" "%xor.i.i.i59.us" "%xor.i.i15.i71.us" 4 64 _ _
+      (by ent_auto) (by ent_auto)
+      (by simp [List.length_zipWith, unpackLanes_length, highLanes64])
+      (by simp [List.length_zipWith, unpackLanes_length, highLanes64]))
+    ent_step (utf8_step_vec_or _ _ "%or.i.us" "%35" "%u8k.076.us" 4 64 _ _ (by ent_auto)
+      (by ent_auto) (by simp [List.length_zipWith, unpackLanes_length, highLanes64])
+      hu8klen)
+    rfl
+  case hval => ent_auto
+
+/-! ### The reduce and the tail
+
+`for.cond.cleanup` carries the accumulator out of whichever loop ran, tests it with
+one `ptestz` at its own lanes, and forms the tail's guard — `n != 0 && n % 64 == 0`.
+`if.then20` reads the document's last byte and tests it against `klTailByte`'s two
+parts, and `if.end24` narrows the `i1` verdict the two branches carried into the
+ABI's `i64`. -/
+theorem utf8Reduce (env : Env) (s : State) (p : String) (op : Operand)
+    (u8k : List (BitVec 64)) (n : Nat)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("entry", .imm (.splat 4 64 (BitVec.ofInt 64 0))),
+      ("if.end14.us", .reg "%u8k.2.us"), ("for.body", .reg "%or.i47")] = some op)
+    (hop : evalOperand (withEnv env s) op = some (.vec 4 64 u8k))
+    (hu8klen : u8k.length = 4)
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n))) :
+    ∃ env', denoteCode utf8Calls utf8Cleanup.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%36" = some (.int 32 (ptestz (BitVec.ofNat 256 (packLanes u8k))
+        (BitVec.ofNat 256 (packLanes u8k)))) ∧
+      lookupName env' "%tobool16.not" = some (.int 1 (BitVec.ofBool
+        (ptestz (BitVec.ofNat 256 (packLanes u8k))
+          (BitVec.ofNat 256 (packLanes u8k)) = BitVec.ofInt 32 0))) ∧
+      lookupName env' "%tobool19.not" = some (.int 1 (BitVec.ofBool
+        (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0))) ∧
+      lookupName env' "%or.cond45" = some (.int 1
+        (BitVec.ofBool (BitVec.ofNat 64 n ≠ BitVec.ofInt 64 0) &&&
+          BitVec.ofBool (BitVec.ofNat 64 n &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0))) := by
+  refine ⟨?env', ?hrun, ?h36, ?h16, ?h19, ?hcond⟩
+  case hrun =>
+    simp only [utf8Cleanup, reg, lit, splatOf, JsonUtf8IR.ptestz]
+    ent_step (utf8_phi _ _ "%u8k.0.lcssa" v4i64
+      [("entry", .imm (.splat 4 64 (BitVec.ofInt 64 0))), ("if.end14.us", .reg "%u8k.2.us"),
+        ("for.body", .reg "%or.i47")] p op (.vec 4 64 u8k) hpre hinc hop)
+    ent_step (utf8_step_ptestz _ _ "%36" "%u8k.0.lcssa" (.reg "%u8k.0.lcssa") u8k u8k
+      (by simp only [withEnv, evalOperand]; ent_auto) hu8klen (by ent_auto) hu8klen)
+    ent_step (utf8_step_icmp_eq_imm _ _ "%tobool16.not" "%36" 32 _ (BitVec.ofInt 32 0)
+      (by ent_auto))
+    ent_step (utf8_step_icmp_ne_imm _ _ "%tobool17.not" "%n" 64 (BitVec.ofNat 64 n)
+      (BitVec.ofInt 64 0) (by ent_auto))
+    ent_step (utf8_step_and_imm _ _ "%and" "%n" 64 (BitVec.ofNat 64 n) (BitVec.ofInt 64 63)
+      (by ent_auto))
+    ent_step (utf8_step_icmp_eq_imm _ _ "%tobool19.not" "%and" 64 _ (BitVec.ofInt 64 0)
+      (by ent_auto))
+    ent_step (utf8_step_and1 _ _ "%or.cond45" "%tobool17.not" "%tobool19.not" _ _
+      (by ent_auto) (by ent_auto))
+    rfl
+  case h36 => ent_auto
+  case h16 => ent_auto
+  case h19 => ent_auto
+  case hcond => ent_auto
+
+theorem utf8Tail (env : Env) (s : State) (b n : Nat) (t16 : BitVec 1) (d : BitVec 8)
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (htn : lookupName env "%tobool16.not" = some (.int 1 t16))
+    (hb3 : 3 ≤ b) (hn64 : n < 2 ^ 63)
+    (hread : readBytes s.mem (b + n - 1) 1 = some (natToBytes d.toNat 1)) :
+    ∃ env', denoteCode utf8Calls utf8Then20.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%or2373" = some (.int 1
+        (t16 ||| (BitVec.ofBool (BitVec.ult (BitVec.ofInt 8 (-12)) d) |||
+          BitVec.ofBool (d &&& BitVec.ofInt 8 (-2) = BitVec.ofInt 8 (-64))))) := by
+  refine ⟨?env', ?hrun, ?hval⟩
+  case hrun =>
+    simp only [utf8Then20, reg, lit]
+    ent_step (utf8_step_gep _ _ "%69" "%b" "%n" (.int 8) b (BitVec.ofNat 64 n) (by ent_auto)
+      (by ent_auto) (by rw [toNat_ofNat64 n (by omega)]; exact hn64))
+    rw [show b + (BitVec.ofNat 64 n).toNat * (Ty.int 8).sizeBytes = b + n from by
+      rw [toNat_ofNat64 n (by omega), sizeBytes_i8, Nat.mul_one]]
+    ent_step (step_gep64_m1 _ _ "%arrayidx" "%69" (b + n) (by ent_auto) (by omega))
+    ent_step (utf8_step_load8 _ _ "%70" "%arrayidx" (b + n - 1) d (by ent_auto)
+      (by rw [show b + n - 1 = b + n - 1 from rfl]; exact hread))
+    ent_step (utf8_step_and_imm _ _ "%71" "%70" 8 d (BitVec.ofInt 8 (-2)) (by ent_auto))
+    ent_step (utf8_step_icmp_eq_imm _ _ "%cmp.i" "%71" 8 _ (BitVec.ofInt 8 (-64))
+      (by ent_auto))
+    ent_step (step_icmp_ugt_imm _ _ "%cmp3.i" "%70" 8 d (BitVec.ofInt 8 (-12)) (by ent_auto))
+    ent_step (utf8_step_or1 _ _ "%72" "%cmp3.i" "%cmp.i" _ _ (by ent_auto) (by ent_auto))
+    ent_step (utf8_step_or1 _ _ "%or2373" "%tobool16.not" "%72" _ _ (by ent_auto)
+      (by ent_auto))
+    rfl
+  case hval => ent_auto
+
+theorem utf8Return (env : Env) (s : State) (p : String) (op : Operand) (e : BitVec 1)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("if.then20", .reg "%or2373"),
+      ("for.cond.cleanup", .reg "%tobool16.not")] = some op)
+    (hop : evalOperand (withEnv env s) op = some (.int 1 e)) :
+    ∃ env', denoteCode utf8Calls utf8End24.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%err.0" = some (.int 64 (BitVec.ofNat 64 e.toNat)) := by
+  refine ⟨?env', ?hrun, ?hval⟩
+  case hrun =>
+    simp only [utf8End24, reg]
+    ent_step (utf8_phi _ _ "%err.0.in" (.int 1)
+      [("if.then20", .reg "%or2373"), ("for.cond.cleanup", .reg "%tobool16.not")] p op
+      (.int 1 e) hpre hinc hop)
+    ent_step (utf8_step_zext _ _ "%err.0" "%err.0.in" 1 64 e (by ent_auto))
+    rfl
+  case hval => ent_auto
+
+/-! ### The blocks around the two loops
+
+The run lemmas step block by block, so the blocks between the ABI's entry and the
+loop bodies are stated here: `entry` (the block count and the zero-block guard),
+`for.body.lr.ph` (the gate selection), `for.body.us` (the gated loop's header) and
+`if.end14.us` (its latch).  Each is one chain, read the way `pos8`'s run lemmas
+read a block. -/
+theorem utf8_step_lshr_imm (env : Env) (s : State) (d src : String) (w : Nat)
+    (x c : BitVec w) (h : lookupName env src = some (.int w x)) :
+    evalInstr utf8Calls (withEnv env s) (.binop d .lshr w (.reg src) (.imm (.int w c))) =
+      some (withEnv ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  rw [evalInstr_binop (ha := evalOperand_reg_of env s src (.int w x) h)
+    (hb := evalOperand_lit_of _ w c) (hr := by rfl)]
+  simp only [withEnv, State.bind, BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.ushiftRight_eq]
+
+/-- `entry`: `%add = n + 63`, `%div44 = %add >>> 6`, `%cmp74.not = %add < 64`. -/
+theorem utf8Entry_run (env : Env) (s : State) (n : Nat)
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n))) :
+    ∃ env', denoteCode utf8Calls utf8Entry.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%div44" = some (.int 64
+        ((BitVec.ofNat 64 n + BitVec.ofInt 64 63) >>> (BitVec.ofInt 64 6).toNat)) ∧
+      lookupName env' "%cmp74.not" = some (.int 1 (BitVec.ofBool
+        (BitVec.ult (BitVec.ofNat 64 n + BitVec.ofInt 64 63) (BitVec.ofInt 64 64)))) := by
+  refine ⟨?env', ?hrun, ?hdiv, ?hcmp⟩
+  case hrun =>
+    simp only [utf8Entry, reg, lit]
+    ent_step (utf8_step_add _ _ "%add" "%n" 64 (BitVec.ofNat 64 n) (BitVec.ofInt 64 63)
+      (by ent_auto))
+    ent_step (utf8_step_lshr_imm _ _ "%div44" "%add" 64
+      (BitVec.ofNat 64 n + BitVec.ofInt 64 63) (BitVec.ofInt 64 6) (by ent_auto))
+    ent_step (step_icmp_ult_imm _ _ "%cmp74.not" "%add" 64
+      (BitVec.ofNat 64 n + BitVec.ofInt 64 63) (BitVec.ofInt 64 64) (by ent_auto))
+    rfl
+  case hdiv => ent_auto
+  case hcmp => ent_auto
+
+/-- `for.body.lr.ph`: `%tobool.not = (%ungated == 0)`, the gate selection. -/
+theorem utf8LrPh_run (env : Env) (s : State) (ungated : BitVec 32)
+    (hu : lookupName env "%ungated" = some (.int 32 ungated)) :
+    ∃ env', denoteCode utf8Calls utf8LrPh.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%tobool.not" = some (.int 1
+        (BitVec.ofBool (ungated = BitVec.ofInt 32 0))) := by
+  refine ⟨?env', ?hrun, ?hval⟩
+  case hrun =>
+    simp only [utf8LrPh, reg, lit]
+    ent_step (utf8_step_icmp_eq_imm _ _ "%tobool.not" "%ungated" 32 ungated
+      (BitVec.ofInt 32 0) (by ent_auto))
+    rfl
+  case hval => ent_auto
+
+/-- `for.body.us`: the gated loop's header.  Three phis carry the state in, then
+the block's two `<4 x i64>` loads, their `or`, the `ptestz` at the high-bit mask,
+and the `ascii && prev_ascii` test the loop branches on. -/
+theorem utf8ForBodyUs_run (env : Env) (s : State) (p : String) (opP opU opB : Operand)
+    (b bi : Nat) (prev : BitVec 32) (u8kIn : List (BitVec 64))
+    (B0 B1 : List UInt8)
+    (hpre : s.pre = some p)
+    (hincP : phiIncoming p [("if.end14.us", .reg "%2"),
+      ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))] = some opP)
+    (hincU : phiIncoming p [("if.end14.us", .reg "%u8k.2.us"),
+      ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))] = some opU)
+    (hincB : phiIncoming p [("if.end14.us", .reg "%inc.us"),
+      ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opB)
+    (hopP : evalOperand (withEnv env s) opP = some (.int 32 prev))
+    (hopU : evalOperand (withEnv (("%prev_ascii.077.us", .int 32 prev) :: env) s) opU
+      = some (.vec 4 64 u8kIn))
+    (hopB : evalOperand (withEnv (("%u8k.076.us", .vec 4 64 u8kIn) ::
+      ("%prev_ascii.077.us", .int 32 prev) :: env) s) opB
+      = some (.int 64 (BitVec.ofNat 64 bi)))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hread0 : readBytes s.mem (b + 64 * bi) 32 = some B0)
+    (hread1 : readBytes s.mem (b + 64 * bi + 32) 32 = some B1)
+    (hbi64 : 64 * bi < 2 ^ 63) :
+    ∃ env', denoteCode utf8Calls utf8ForBodyUs.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%prev_ascii.077.us" = some (.int 32 prev) ∧
+      lookupName env' "%u8k.076.us" = some (.vec 4 64 u8kIn) ∧
+      lookupName env' "%bi.075.us" = some (.int 64 (BitVec.ofNat 64 bi)) ∧
+      lookupName env' "%add.ptr.us" = some (.ptr (b + 64 * bi)) ∧
+      lookupName env' "%2" = some (.int 32 (ptestz
+        (BitVec.ofNat 256 (packLanes (List.zipWith (· ||| ·) (unpackLanes 64 4 (bytesToNat B1))
+          (unpackLanes 64 4 (bytesToNat B0)))))
+        (BitVec.ofNat 256 (packLanes highLanes64)))) ∧
+      lookupName env' "%or.cond.us" = some (.int 1
+        (BitVec.ofBool (ptestz
+          (BitVec.ofNat 256 (packLanes (List.zipWith (· ||| ·) (unpackLanes 64 4 (bytesToNat B1))
+            (unpackLanes 64 4 (bytesToNat B0)))))
+          (BitVec.ofNat 256 (packLanes highLanes64)) ≠ BitVec.ofInt 32 0) &&&
+        BitVec.ofBool (prev ≠ BitVec.ofInt 32 0))) := by
+  have h0 : B0.length = 32 := readBytes_length s.mem (b + 64 * bi) 32 hread0
+  have h1 : B1.length = 32 := readBytes_length s.mem (b + 64 * bi + 32) 32 hread1
+  have hV0 : B0 = natToBytes (bytesToNat B0) 32 :=
+    (natToBytes_bytesToNat B0).symm.trans (by rw [h0])
+  have hV1 : B1 = natToBytes (bytesToNat B1) 32 :=
+    (natToBytes_bytesToNat B1).symm.trans (by rw [h1])
+  have hlt0 : bytesToNat B0 < 2 ^ 256 := by
+    have := bytesToNat_lt B0
+    rwa [h0, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  have hlt1 : bytesToNat B1 < 2 ^ 256 := by
+    have := bytesToNat_lt B1
+    rwa [h1, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at this
+  refine ⟨?env', ?hrun, ?hP, ?hU, ?hB, ?hptr, ?h2, ?hcond⟩
+  case hrun =>
+    simp only [utf8ForBodyUs, reg, lit, splatOf, highBitMask, JsonUtf8IR.ptestz]
+    ent_step (utf8_phi env s "%prev_ascii.077.us" (.int 32)
+      [("if.end14.us", .reg "%2"), ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))]
+      p opP (.int 32 prev) hpre hincP hopP)
+    ent_step (utf8_phi (("%prev_ascii.077.us", .int 32 prev) :: env) s "%u8k.076.us" v4i64
+      [("if.end14.us", .reg "%u8k.2.us"),
+        ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))]
+      p opU (.vec 4 64 u8kIn) hpre hincU hopU)
+    ent_step (utf8_phi (("%u8k.076.us", .vec 4 64 u8kIn) ::
+      ("%prev_ascii.077.us", .int 32 prev) :: env) s "%bi.075.us" (.int 64)
+      [("if.end14.us", .reg "%inc.us"), ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))]
+      p opB (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+    ent_step (utf8_step_shl _ _ "%shl.us" "%bi.075.us" 64 (BitVec.ofNat 64 bi)
+      (BitVec.ofInt 64 6) (by ent_auto))
+    rw [shl64_six bi (by omega)]
+    ent_step (utf8_step_gep _ _ "%add.ptr.us" "%b" "%shl.us" (.int 8) b
+      (BitVec.ofNat 64 (64 * bi)) (by ent_auto) (by ent_auto)
+      (by rw [toNat_ofNat64 (64 * bi) (by omega)]; exact hbi64))
+    rw [show b + (BitVec.ofNat 64 (64 * bi)).toNat * (Ty.int 8).sizeBytes = b + 64 * bi from by
+      rw [toNat_ofNat64 (64 * bi) (by omega), sizeBytes_i8, Nat.mul_one]]
+    ent_step (step_load4_64 _ _ "%0" "%add.ptr.us" (b + 64 * bi) (bytesToNat B0) (by ent_auto)
+      (by rw [← hV0]; exact hread0) hlt0)
+    ent_step (utf8_step_gep_imm _ _ "%add.ptr3.us" "%add.ptr.us" (.int 8) (b + 64 * bi)
+      (BitVec.ofInt 64 32) (by ent_auto) (by decide))
+    rw [show b + 64 * bi + (BitVec.ofInt 64 32).toNat * (Ty.int 8).sizeBytes = b + 64 * bi + 32
+      from by rw [show (BitVec.ofInt 64 32).toNat = 32 from by decide, sizeBytes_i8]]
+    ent_step (step_load4_64 _ _ "%1" "%add.ptr3.us" (b + 64 * bi + 32) (bytesToNat B1)
+      (by ent_auto) (by rw [← hV1]; exact hread1) hlt1)
+    ent_step (utf8_step_vec_or _ _ "%or.i46.us" "%1" "%0" 4 64 _ _ (by ent_auto) (by ent_auto)
+      (by rw [unpackLanes_length]) (by rw [unpackLanes_length]))
+    ent_step (utf8_step_ptestz _ _ "%2" "%or.i46.us"
+      (.imm (.splat 4 64 (BitVec.ofInt 64 (-9187201950435737472))))
+      (List.zipWith (· ||| ·) (unpackLanes 64 4 (bytesToNat B1))
+        (unpackLanes 64 4 (bytesToNat B0))) highLanes64
+      (by simp only [evalOperand, Const.toValue, highLanes64])
+      (by simp [highLanes64]) (by ent_auto)
+      (len4_zip64 (· ||| ·) _ _ (by rw [unpackLanes_length]) (by rw [unpackLanes_length])))
+    ent_step (utf8_step_icmp_ne_imm _ _ "%tobool9.us" "%2" 32 _ (BitVec.ofInt 32 0)
+      (by ent_auto))
+    ent_step (utf8_step_icmp_ne_imm _ _ "%tobool10.us" "%prev_ascii.077.us" 32 prev
+      (BitVec.ofInt 32 0) (by ent_auto))
+    ent_step (utf8_step_and1 _ _ "%or.cond.us" "%tobool9.us" "%tobool10.us" _ _
+      (by ent_auto) (by ent_auto))
+    rfl
+  case hP => ent_auto
+  case hU => ent_auto
+  case hB => ent_auto
+  case hptr => ent_auto
+  case h2 => ent_auto
+  case hcond => ent_auto
+
+/-- `if.end14.us`: the gated loop's latch.  The phi carries the accumulator in
+from either edge, `%inc.us` is the block index's successor, and `%exitcond79.not`
+is the loop's test. -/
+theorem utf8EndUs_run (env : Env) (s : State) (p : String) (op : Operand)
+    (u8k : List (BitVec 64)) (bi nb : Nat)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("for.body.us", .reg "%u8k.076.us"),
+      ("if.then11.us", .reg "%or.i.us")] = some op)
+    (hop : evalOperand (withEnv env s) op = some (.vec 4 64 u8k))
+    (hbi : lookupName env "%bi.075.us" = some (.int 64 (BitVec.ofNat 64 bi)))
+    (hdiv : lookupName env "%div44" = some (.int 64 (BitVec.ofNat 64 nb))) :
+    ∃ env', denoteCode utf8Calls utf8EndUs.instrs (withEnv env s) = some (withEnv env' s) ∧
+      lookupName env' "%u8k.2.us" = some (.vec 4 64 u8k) ∧
+      lookupName env' "%inc.us" = some (.int 64 (BitVec.ofNat 64 bi + BitVec.ofInt 64 1)) ∧
+      lookupName env' "%exitcond79.not" = some (.int 1 (BitVec.ofBool
+        (BitVec.ofNat 64 bi + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
+  refine ⟨?env', ?hrun, ?hU, ?hI, ?hE⟩
+  case hrun =>
+    simp only [utf8EndUs, reg, lit]
+    ent_step (utf8_phi _ _ "%u8k.2.us" v4i64
+      [("for.body.us", .reg "%u8k.076.us"), ("if.then11.us", .reg "%or.i.us")]
+      p op (.vec 4 64 u8k) hpre hinc hop)
+    ent_step (utf8_step_add _ _ "%inc.us" "%bi.075.us" 64 (BitVec.ofNat 64 bi)
+      (BitVec.ofInt 64 1) (by ent_auto))
+    ent_step (utf8_step_icmp_eq _ _ "%exitcond79.not" "%inc.us" "%div44" 64 _ _
+      (by ent_auto) (by ent_auto))
+    rfl
+  case hU => ent_auto
+  case hI => ent_auto
+  case hE => ent_auto
+
+/-! ### The stepping surface at `utf8Function`
+
+`step` looks a block up by name and runs its instructions, then its terminator;
+the run lemmas below read one block per step, so the nine lookups and the two
+`runFuel` reductions are stated once, here, rather than rediscovered per step. -/
+theorem findBlock_utf8Entry : utf8Function.findBlock "entry" = some utf8Entry := by
+  decide
+
+theorem findBlock_utf8LrPh : utf8Function.findBlock "for.body.lr.ph" = some utf8LrPh := by
+  decide
+
+theorem findBlock_utf8ForBodyUs : utf8Function.findBlock "for.body.us" = some utf8ForBodyUs := by
+  decide
+
+theorem findBlock_utf8ThenUs : utf8Function.findBlock "if.then11.us" = some utf8ThenUs := by
+  decide
+
+theorem findBlock_utf8EndUs : utf8Function.findBlock "if.end14.us" = some utf8EndUs := by
+  decide
+
+theorem findBlock_utf8Cleanup : utf8Function.findBlock "for.cond.cleanup" = some utf8Cleanup := by
+  decide
+
+theorem findBlock_utf8ForBody : utf8Function.findBlock "for.body" = some utf8ForBody := by
+  decide
+
+theorem findBlock_utf8Then20 : utf8Function.findBlock "if.then20" = some utf8Then20 := by
+  decide
+
+theorem findBlock_utf8End24 : utf8Function.findBlock "if.end24" = some utf8End24 := by
+  decide
+
+/-- One block's step: its instructions then its terminator. -/
+theorem step_of_utf8 (s : State) (name : String) (b : Block) (s' : State)
+    (hpc : s.pc = name) (hfind : utf8Function.findBlock name = some b)
+    (hbody : denoteCode utf8Calls b.instrs s = some s') :
+    step utf8Calls utf8Function s = execTerm s' b.term := by
+  simp [step, hpc, hfind, hbody]
+
+/-- A jump spends one step of fuel. -/
+theorem runFuel_jump_utf8 {s s' : State} {n : Nat}
+    (h : step utf8Calls utf8Function s = .jump s') :
+    runFuel utf8Calls (n + 1) utf8Function s = runFuel utf8Calls n utf8Function s' := by
+  simp [runFuel, h]
+
+/-- A return ends the run, and the outcome carries the returning state's memory. -/
+theorem runFuel_ret_utf8 {s s' : State} {v : Option Value} {n : Nat}
+    (h : step utf8Calls utf8Function s = .ret v s') :
+    runFuel utf8Calls (n + 1) utf8Function s = some (.ret v s'.mem) := by
+  simp [runFuel, h]
+
+/-- A block whose run refuses the step is `ub` at any positive fuel. -/
+theorem runFuel_ub_utf8 {s : State} {n : Nat} (h : step utf8Calls utf8Function s = .ub) :
+    runFuel utf8Calls (n + 1) utf8Function s = some .ub := by
+  simp [runFuel, h]
+
+/-- Taking a prefix and then a prefix of the rest is one prefix. -/
+theorem take_append_take_len {α : Type} (l : List α) (m k : Nat) :
+    l.take m ++ (l.drop m).take k = l.take (m + k) := by
+  induction m generalizing l with
+  | zero => simp
+  | succ m ih =>
+      cases l with
+      | nil => simp
+      | cons x xs =>
+          show x :: (xs.take m ++ (xs.drop m).take k) = (x :: xs).take (m + 1 + k)
+          rw [show m + 1 + k = (m + k) + 1 from by omega, List.take_succ_cons, ih xs]
+
+/-- A read inside the staged window: any thirty-two bytes at an interior offset
+are the window's slice there. -/
+theorem win_read (mem : Mem) (b nb j : Nat) (W : List UInt8)
+    (hw : readBytes mem (b - 3) (3 + 64 * nb) = some W) (hb3 : 3 ≤ b)
+    (hj : j + 32 ≤ 3 + 64 * nb) :
+    readBytes mem (b - 3 + j) 32 = some ((W.drop j).take 32) := by
+  have hN : j + (3 + 64 * nb - j) = 3 + 64 * nb := by omega
+  have h1 : readBytes mem (b - 3) (j + (3 + 64 * nb - j)) = some W := by rw [hN]; exact hw
+  obtain ⟨-, h2⟩ := readBytes_split mem (b - 3) j (3 + 64 * nb - j) h1
+  have hM : 32 + ((3 + 64 * nb - j) - 32) = 3 + 64 * nb - j := by omega
+  have h3 : readBytes mem ((b - 3) + j) (32 + ((3 + 64 * nb - j) - 32)) = some (W.drop j) := by
+    rw [hM]; exact h2
+  exact (readBytes_split mem ((b - 3) + j) 32 ((3 + 64 * nb - j) - 32) h3).1
 
 end LeanLLVM.Vellum.JsonUtf8Steps

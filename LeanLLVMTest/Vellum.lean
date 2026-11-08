@@ -8104,3 +8104,194 @@ beside the identity's lane counts. -/
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_gep_imm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_gep_imm
+
+/-! ### The body's two loops, its reduce and its tail
+
+Every declaration the loop bodies, the reduce and the tail introduce, at the
+footprint it was measured at.  Three carry `Classical.choice` —
+`utf8Ungated_body`, `utf8Gated_body` and `utf8Tail` — and each names the same
+carrier: `BitVec.signExtend_eq`, the sign-extension premise their
+`getelementptr` steps read.  That is one of C64's four known routes and the
+carrier M2's `step_gep64` pin already names; `evalInstr_gep`,
+`evalInstr_gep_back` and `evalOperand_reg_of` carry none, so nothing new enters
+here.  The reduce's `ptestz` and the returned word's `zext` reach the carrier
+not at all.
+
+**One carrier, two descriptions.**  The `step_gep64` paragraph of M2's
+`Classical.choice` block above reports this same footprint by its *mechanism* —
+the `Classical.propDecidable`-discharged `Decidable` inside the step's own proof
+term — while this block reports it by the *lemma* that carries it,
+`BitVec.signExtend_eq`, which is the last line of `step_gep64`'s proof and of
+`utf8_step_gep`'s alike; a reader meeting both should not conclude that there are
+two carriers, nor that the second one needs a decision. -/
+
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.t1Lanes_length' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.t1Lanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.t2Lanes_length' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.t2Lanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.t3Lanes_length' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.t3Lanes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.len32_pshufb_nib' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.len32_pshufb_nib
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.len32_pshufb_hi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.len32_pshufb_hi
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.len32_byteLanes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.len32_byteLanes
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.shl64_six' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.shl64_six
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.errRawBlk_word_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.errRawBlk_word_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_icmp_eq_imm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_icmp_eq_imm
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_and_imm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_and_imm
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_zext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_zext
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_body
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_body
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Reduce' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Reduce
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Tail' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Tail
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Return' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Return
+
+/-! ### The blocks around the loops, and their stepping surface
+
+The header, latch, entry and selection chains, the nine block lookups and the
+`runFuel` reductions a block-by-block run needs.  `utf8ForBodyUs_run` is the only
+one that carries `Classical.choice`, and it carries the same carrier the bodies
+do — `BitVec.signExtend_eq`, reached through `utf8_step_gep` for the block's
+base.  The nine lookups are `[propext]`-only: each is proved by `decide`, so the
+lookup is the kernel's computation on the pinned block list and no `Decidable`
+instance is consulted classically — narrower than the `simp`-proved lookups the
+entry pins name, and the reason no attribution is owed for them here. -/
+
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_lshr_imm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8_step_lshr_imm
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Entry_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Entry_run
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8LrPh_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8LrPh_run
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8ForBodyUs_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8ForBodyUs_run
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8EndUs_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8EndUs_run
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8Entry' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8Entry
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8LrPh' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8LrPh
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8ForBodyUs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8ForBodyUs
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8ThenUs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8ThenUs
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8EndUs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8EndUs
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8Cleanup' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8Cleanup
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8ForBody' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8ForBody
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8Then20' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8Then20
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8End24' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.findBlock_utf8End24
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.step_of_utf8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.step_of_utf8
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.runFuel_jump_utf8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.runFuel_jump_utf8
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.runFuel_ret_utf8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.runFuel_ret_utf8
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.runFuel_ub_utf8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.runFuel_ub_utf8
+
+/-! #### The window split, shared by the run lemmas and the companion
+
+`take_append_take_len` and `win_read` are the two lemmas that turn C60's single
+`hread` into every interior thirty-two-byte read, and the body and the `ub`
+companion read the window through them rather than through two splitters that
+would have to be kept in agreement.  The generalised `utf8Ungated_body` was
+re-measured when its predecessor became a parameter: same footprint, same
+carrier — `BitVec.signExtend_eq` — and the pin below is the measurement, not a
+carry-over. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.take_append_take_len' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.take_append_take_len
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.win_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.win_read
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Ungated_body
