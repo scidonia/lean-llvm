@@ -8892,3 +8892,43 @@ Quot.sound]`. -/
 /-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.step_ub_utf8' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonUtf8Steps.step_ub_utf8
+
+/-! ### The gated loop's run
+
+Every declaration the gated loop's run introduces, at the footprint each was
+measured at, in the order the section declares them.  **One carrier appears, and
+it is inherited**: `utf8Gated_loop_run` carries `BitVec.signExtend_eq`, the same
+carrier the header's run lemma, the gated body, the ungated body and the ungated
+loop's run already name — it consumes `utf8ForBodyUs_run` and `utf8Gated_body`,
+whose forward and backward `getelementptr` sites read it, and nothing else here
+carries `Classical.choice`.  `blk_split` is proved through
+`take_append_take_len` and not through `List.take_add`, whose own proof term
+carries `Classical.choice` that the statement does not need. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.blk_split' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.blk_split
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.latch_keeps_two' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.latch_keeps_two
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.denoteCode_lookupName_of_not_dst' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.denoteCode_lookupName_of_not_dst
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.withEnv_setJmp' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.withEnv_setJmp
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.evalOperand_reg_withEnv' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.evalOperand_reg_withEnv
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.packLanes_zipWith_or_reorder' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.packLanes_zipWith_or_reorder
+
+/-- info: 'LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_loop_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonUtf8Steps.utf8Gated_loop_run

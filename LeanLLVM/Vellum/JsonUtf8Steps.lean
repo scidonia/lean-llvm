@@ -4301,3 +4301,524 @@ theorem step_ub_utf8 (s : State) (name : String) (b : Block)
   simp [step, hpc, hfind, hbody]
 
 end LeanLLVM.Vellum.JsonUtf8Steps
+namespace LeanLLVM.Vellum.JsonUtf8Steps
+open LeanLLVM
+open LeanLLVM.Vellum.JsonUtf8IR
+open LeanLLVM.Vellum.JsonUtf8Spec
+open LeanLLVM.Vellum.BitLanes
+open LeanLLVM.Vellum.JsonEntrySteps
+
+/-! ### The gated loop, one block at a time
+
+`for.body.us` is the header: three phis carry `%prev_ascii`, the accumulator and
+the block index in, the block's two `<4 x i64>` halves are loaded, and
+`%or.cond.us` is the gate — the block's bytes are ASCII and the block before it
+was.  A taken gate jumps straight to the latch, so a skipped block costs two
+control steps; an untaken gate runs `if.then11.us` first, so an evaluated block
+costs three.  The fuel is therefore a bound `t ≤ 3 * r` with the run's equality
+at every continuation, and it is the two branches' count that makes it an
+existential rather than the ungated lemma's one step per block. -/
+
+/-- A block's sixty-four bytes are its two thirty-two byte halves. -/
+theorem blk_split (l : List UInt8) :
+    (l.drop 3).take 64 = (l.drop 3).take 32 ++ (l.drop 35).take 32 := by
+  rw [show (64 : Nat) = 32 + 32 from rfl,
+    ← take_append_take_len (l.drop 3) 32 32, List.drop_drop]
+
+/-- The latch does not write `%2`, so the next header's gate phi reads the bit
+the previous header's `ptestz` produced. -/
+theorem latch_keeps_two (env env' : Env) (s : State)
+    (hrun : denoteCode utf8Calls utf8EndUs.instrs (withEnv env s) = some (withEnv env' s)) :
+    lookupName env' "%2" = lookupName env "%2" :=
+  denoteCode_lookupName utf8Calls utf8EndUs.instrs "%2" (by decide) _ _ hrun
+
+/-- A name a block does not write survives its run, stated at the environment
+rather than at the state's projection, so it composes with `Eq.trans`. -/
+theorem denoteCode_lookupName_of_not_dst (instrs : List Instr) (env env' : Env) (s : State)
+    (n : String) (hn : ∀ i ∈ instrs, i.dst? ≠ some n)
+    (hrun : denoteCode utf8Calls instrs (withEnv env s) = some (withEnv env' s)) :
+    lookupName env' n = lookupName env n :=
+  denoteCode_lookupName utf8Calls instrs n hn (withEnv env s) (withEnv env' s) hrun
+
+/-- A jump target written as an update of `withEnv env s` is a `withEnv` of the
+updated state, so the block lemmas chain without unwrapping the environment. -/
+theorem withEnv_setJmp (env : Env) (s : State) (pc : String) (pre : Option String) :
+    ({ (withEnv env s) with pc := pc, pre := pre })
+      = withEnv env { s with pc := pc, pre := pre } := rfl
+
+/-- A register operand under `withEnv` reads the environment's cell. -/
+theorem evalOperand_reg_withEnv (env : Env) (s : State) (n : String) :
+    evalOperand (withEnv env s) (.reg n) = lookupName env n := rfl
+
+/-- The emission's lane order does not change the packed word: the outer `|||`s
+associate and commute lane by lane, so the gated body's
+`(%lower ||| %upper) ||| u8k` packs to the natural the accumulator step is stated
+at, which is the ungated body's `(%lower ||| u8k) ||| %upper`. -/
+theorem packLanes_zipWith_or_reorder (A B u8k : List (BitVec 64))
+    (hAB : A.length = B.length) (hBu : B.length = u8k.length) :
+    packLanes (List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A B) u8k)
+      = packLanes (List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A u8k) B) := by
+  have hAu : A.length = u8k.length := hAB.trans hBu
+  have hABu : (List.zipWith (· ||| ·) A B).length = u8k.length := by
+    rw [List.length_zipWith, hAB, Nat.min_self, hBu]
+  have hAuu : (List.zipWith (· ||| ·) A u8k).length = B.length := by
+    rw [List.length_zipWith, hAu, Nat.min_self, hBu.symm]
+  rw [packLanes_zipWith_or (a := List.zipWith (· ||| ·) A B) (b := u8k) hABu,
+    packLanes_zipWith_or (a := A) (b := B) hAB,
+    packLanes_zipWith_or (a := List.zipWith (· ||| ·) A u8k) (b := B) hAuu,
+    packLanes_zipWith_or (a := A) (b := u8k) hAu,
+    Nat.or_assoc, Nat.or_assoc, Nat.or_comm (packLanes B) (packLanes u8k)]
+
+/-- Taking `for.body.us`'s blocks one at a time.  The invariant is the ungated
+lemma's folded word — `packLanes u8k = bytesToNat (klAcc bs i)` — carried beside
+the gate's own `prev_ascii`.  A skipped block runs the header and the latch, an
+evaluated one runs the header, the DFA body and the latch, so the fuel is a bound
+`t ≤ 3 * r` and the conclusion is an existential with the run's equality at every
+continuation.  A skipped block contributes nothing to the fold
+(`utf8Skip_eq_zero`); an evaluated one contributes its `klErrBlk`, read at the
+emission's own `|||` order (`errRawBlk_word_eq`, reordered once per iteration). -/
+theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
+    (hnb : nb = (bs.length + 63) / 64)
+    (hw : readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs n nb))
+    (hb : 3 ≤ b) (hspan : 64 * (nb - 1) < 2 ^ 63) :
+    ∀ (r i : Nat) (env : Env) (s : State) (p : String) (opP opU opB : Operand)
+      (u8k : List (BitVec 64)) (prev : BitVec 32),
+      1 ≤ r → i + r = nb → s.pc = "for.body.us" → s.pre = some p → s.mem = mem →
+      phiIncoming p [("if.end14.us", .reg "%2"),
+        ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))] = some opP →
+      phiIncoming p [("if.end14.us", .reg "%u8k.2.us"),
+        ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))] = some opU →
+      phiIncoming p [("if.end14.us", .reg "%inc.us"),
+        ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opB →
+      evalOperand (withEnv env s) opP = some (.int 32 prev) →
+      evalOperand (withEnv (("%prev_ascii.077.us", .int 32 prev) :: env) s) opU
+        = some (.vec 4 64 u8k) →
+      evalOperand (withEnv (("%u8k.076.us", .vec 4 64 u8k) ::
+        ("%prev_ascii.077.us", .int 32 prev) :: env) s) opB
+        = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName env "%b" = some (.ptr b) →
+      lookupName env "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) →
+      lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)) →
+      u8k.length = 4 → packLanes u8k = bytesToNat (klAcc bs i) →
+      (prev = 0 ∨ prev = 1) →
+      (prev = 1 → ∀ b' ∈ klPre (utf8Window bs n nb) i, b'.toNat < 0x80) →
+      ∃ (env' : Env) (s' : State) (u8k' : List (BitVec 64)) (t : Nat),
+        s'.pc = "for.cond.cleanup" ∧ s'.pre = some "if.end14.us" ∧ s'.mem = mem ∧
+        t ≤ 3 * r ∧
+        lookupName env' "%u8k.2.us" = some (.vec 4 64 u8k') ∧ u8k'.length = 4 ∧
+        packLanes u8k' = bytesToNat (klAcc bs nb) ∧
+        lookupName env' "%b" = some (.ptr b) ∧
+        lookupName env' "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+        lookupName env' "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) ∧
+        ∀ (k : Nat), runFuel utf8Calls (t + k) utf8Function (withEnv env s)
+          = runFuel utf8Calls k utf8Function (withEnv env' s') := by
+  intro r
+  induction r with
+  | zero =>
+      intro i env s p opP opU opB u8k prev hr _
+      omega
+  | succ r' ih =>
+      intro i env s p opP opU opB u8k prev hr hi hpc hpre hmem hincP hincU hincB hopP hopU
+        hopB hb' hdiv hn hu8klen hu8kpack hp01 hpAscii
+      have hinb : i < nb := by omega
+      have hi64 : 64 * i < 2 ^ 63 := by
+        have h1 : i ≤ nb - 1 := by omega
+        have h2 := Nat.mul_le_mul_left 64 h1
+        omega
+      have hWlen : (utf8Window bs n nb).length = 3 + 64 * nb :=
+        readBytes_length mem (b - 3) (3 + 64 * nb) hw
+      have hstreamLen : (utf8Stream bs n nb i).length = 3 + 64 * nb - 64 * i := by
+        rw [utf8Stream, List.length_drop, hWlen]
+      let S := utf8Stream bs n nb i
+      have hSlen : S.length = 3 + 64 * nb - 64 * i := hstreamLen
+      -- the eight reads the header and the DFA body take
+      have read0 : readBytes s.mem (b + 64 * i) 32 = some ((S.drop 3).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 3 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 3 - 3 = b + 64 * i from by omega] at h
+      have read1 : readBytes s.mem (b + 64 * i + 32) 32 = some ((S.drop 35).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 35 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 35 - 3 = b + 64 * i + 32 from by omega] at h
+      have read3 : readBytes s.mem (b + 64 * i - 1) 32 = some ((S.drop 2).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 2 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 2 - 3 = b + 64 * i - 1 from by omega] at h
+      have read4 : readBytes s.mem (b + 64 * i - 2) 32 = some ((S.drop 1).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 1 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 1 - 3 = b + 64 * i - 2 from by omega] at h
+      have read5 : readBytes s.mem (b + 64 * i - 3) 32 = some (S.take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 0 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 0 - 3 = b + 64 * i - 3 from by omega] at h
+      have read19 : readBytes s.mem (b + 64 * i + 31) 32 = some ((S.drop 34).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 34 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 34 - 3 = b + 64 * i + 31 from by omega] at h
+      have read20 : readBytes s.mem (b + 64 * i + 30) 32 = some ((S.drop 33).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 33 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 33 - 3 = b + 64 * i + 30 from by omega] at h
+      have read21 : readBytes s.mem (b + 64 * i + 29) 32 = some ((S.drop 32).take 32) := by
+        rw [hmem]
+        have h := win_read_slice mem b nb (utf8Window bs n nb) i 32 hw hb (by omega) (by omega)
+        rwa [show b + 64 * i + 32 - 3 = b + 64 * i + 29 from by omega] at h
+      -- their lengths, and the two halves' word bounds
+      have hlenB0 : ((S.drop 3).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlenB1 : ((S.drop 35).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlen2 : ((S.drop 2).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlen1 : ((S.drop 1).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlen0 : (S.take 32).length = 32 := by
+        rw [List.length_take, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlen34 : ((S.drop 34).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlen33 : ((S.drop 33).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hlen32 : ((S.drop 32).take 32).length = 32 := by
+        rw [List.length_take, List.length_drop, hSlen]; exact Nat.min_eq_left (by omega)
+      have hV0 : bytesToNat ((S.drop 3).take 32) < 2 ^ 256 := by
+        have h := bytesToNat_lt ((S.drop 3).take 32)
+        rwa [hlenB0, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at h
+      have hV1 : bytesToNat ((S.drop 35).take 32) < 2 ^ 256 := by
+        have h := bytesToNat_lt ((S.drop 35).take 32)
+        rwa [hlenB1, show (256 : Nat) ^ 32 = 2 ^ 256 from by decide] at h
+      -- the header
+      obtain ⟨env1, hrun1, hP1, hU1, hB1, hptr1, h01, h11, h21, hcond1⟩ :=
+        utf8ForBodyUs_run env s p opP opU opB b i prev u8k ((S.drop 3).take 32)
+          ((S.drop 35).take 32) hpre hincP hincU hincB hopP hopU hopB hb' read0 read1 hi64
+      have hframe := fun (nm : String) (hm : nm ∈ utf8Kept) =>
+        denoteCode_kept utf8ForBodyUs.instrs env env1 s hrun1 utf8Kept_us nm hm
+      have hdiv1 : lookupName env1 "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) :=
+        (hframe "%div44" (by decide)).trans hdiv
+      have hb1 : lookupName env1 "%b" = some (.ptr b) := (hframe "%b" (by decide)).trans hb'
+      have hn1 : lookupName env1 "%n" = some (.int 64 (BitVec.ofNat 64 n)) :=
+        (hframe "%n" (by decide)).trans hn
+      have hstep1 : step utf8Calls utf8Function (withEnv env s)
+          = execTerm (withEnv env1 s)
+              (.condbr (.reg "%or.cond.us") "if.end14.us" "if.then11.us") :=
+        step_of_utf8 _ "for.body.us" utf8ForBodyUs (withEnv env1 s) hpc findBlock_utf8ForBodyUs hrun1
+      have hev1 : evalOperand (withEnv env1 s) (.reg "%or.cond.us")
+          = some (.int 1 (utf8GateBit ((S.drop 3).take 32) ((S.drop 35).take 32) prev)) := by
+        rw [evalOperand_reg_withEnv]
+        exact hcond1
+      have hpc1 : (withEnv env1 s).pc = "for.body.us" := hpc
+      -- the block's own bytes, and the next block's `prev_ascii`
+      have hklBlk : klBlk (utf8Window bs n nb) i
+          = (S.drop 3).take 32 ++ (S.drop 35).take 32 := by
+        unfold klBlk
+        rw [show (utf8Window bs n nb).drop (64 * i + 3) = S.drop 3 from by
+          show (utf8Window bs n nb).drop (64 * i + 3) = (utf8Stream bs n nb i).drop 3
+          rw [utf8Stream, List.drop_drop]]
+        exact blk_split S
+      have hp01' : ptestz (BitVec.ofNat 256 (utf8GateWord ((S.drop 3).take 32)
+            ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)) = 0 ∨
+          ptestz (BitVec.ofNat 256 (utf8GateWord ((S.drop 3).take 32)
+            ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)) = 1 :=
+        ptestz_eq_one_or_zero _ _
+      have hpAscii' : ptestz (BitVec.ofNat 256 (utf8GateWord ((S.drop 3).take 32)
+            ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)) = 1 →
+          ∀ b' ∈ klPre (utf8Window bs n nb) (i + 1), b'.toNat < 0x80 := by
+        intro h2 b' hb'
+        rw [klPre_succ] at hb'
+        have hblk : ∀ x ∈ klBlk (utf8Window bs n nb) i, x.toNat < 0x80 := by
+          intro x hx
+          rw [hklBlk] at hx
+          exact ptestz_ascii _ _ hlenB0 hlenB1 h2 x hx
+        exact ascii_drop hblk 61 b' hb'
+      have hnext : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 (i + 1) := by
+        rw [show (BitVec.ofInt 64 1 : BitVec 64) = BitVec.ofNat 64 1 from by decide,
+          ofNat64_add_ofNat i 1 (by omega)]
+      by_cases hskip : utf8GateBit ((S.drop 3).take 32) ((S.drop 35).take 32) prev = 1
+      · -- the gate skips: the block contributes nothing to the fold
+        obtain ⟨hblkAscii, hprev1⟩ :=
+          orcond_one_imp ((S.drop 3).take 32) ((S.drop 35).take 32) prev hlenB0 hlenB1 hp01
+            (by simpa [utf8GateBit] using hskip)
+        have hjump1 : step utf8Calls utf8Function (withEnv env s)
+            = .jump (withEnv env1 { s with pc := "if.end14.us", pre := some "for.body.us" }) := by
+          have h := hstep1
+          rw [execTerm_condbr_true hev1 hskip, withEnv_setJmp, hpc1] at h
+          exact h
+        have hzero : klErrBlk (klPre (0x00 :: 0x00 :: 0x00 :: bs) i)
+            (klBlk (0x00 :: 0x00 :: 0x00 :: bs) i) = List.replicate 32 0x00 := by
+          rw [← klErrBlk_window bs n nb i]
+          refine utf8Skip_eq_zero _ _ (hpAscii hprev1) ?_
+          intro x hx
+          rw [hklBlk] at hx
+          exact hblkAscii x hx
+        have haccEq : klAcc bs (i + 1) = klAcc bs i := by
+          rw [klAcc_step, klAccStep, hzero,
+            zipWith_zero_right (· ||| ·) (0 : UInt8) (klAcc bs i) (fun x => by rw [UInt8.or_zero])
+              (klAcc_length bs i)]
+        obtain ⟨env2, hrun2, hU2, hI2, hE2⟩ :=
+          utf8EndUs_run env1 { s with pc := "if.end14.us", pre := some "for.body.us" }
+            "for.body.us" (.reg "%u8k.076.us") u8k i nb rfl rfl
+            (by rw [evalOperand_reg_withEnv]; exact hU1) hB1 hdiv1
+        have hstep2 : step utf8Calls utf8Function
+            (withEnv env1 { s with pc := "if.end14.us", pre := some "for.body.us" })
+            = execTerm (withEnv env2 { s with pc := "if.end14.us", pre := some "for.body.us" })
+                (.condbr (.reg "%exitcond79.not") "for.cond.cleanup" "for.body.us") :=
+          step_of_utf8 _ "if.end14.us" utf8EndUs _ rfl findBlock_utf8EndUs hrun2
+        have hev2 : evalOperand
+            (withEnv env2 { s with pc := "if.end14.us", pre := some "for.body.us" })
+            (.reg "%exitcond79.not")
+            = some (.int 1 (BitVec.ofBool
+                (BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
+          rw [evalOperand_reg_withEnv]
+          exact hE2
+        have hframe2 := fun (nm : String) (hm : nm ∈ utf8Kept) =>
+          denoteCode_kept utf8EndUs.instrs env1 env2
+            { s with pc := "if.end14.us", pre := some "for.body.us" } hrun2 utf8Kept_end nm hm
+        by_cases hlast : i + 1 = nb
+        · -- the loop is done: the latch's test leaves for `for.cond.cleanup`
+          have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb := by
+            rw [hnext, hlast]
+          have hjump2 : step utf8Calls utf8Function
+              (withEnv env1 { s with pc := "if.end14.us", pre := some "for.body.us" })
+              = .jump (withEnv env2
+                  { s with pc := "for.cond.cleanup", pre := some "if.end14.us" }) := by
+            have h := hstep2
+            rw [execTerm_condbr_true hev2 (ofBool_of_true hbit), withEnv_setJmp] at h
+            exact h
+          have hpack : packLanes u8k = bytesToNat (klAcc bs nb) := by
+            rw [hu8kpack, ← hlast, haccEq]
+          refine ⟨env2, { s with pc := "for.cond.cleanup", pre := some "if.end14.us" }, u8k, 2,
+            rfl, rfl, hmem, by omega, hU2, hu8klen, hpack, ?_, ?_, ?_, ?_⟩
+          · exact (hframe2 "%b" (by decide)).trans hb1
+          · exact (hframe2 "%n" (by decide)).trans hn1
+          · exact (hframe2 "%div44" (by decide)).trans hdiv1
+          · intro k
+            rw [show 2 + k = (1 + k) + 1 from by omega, runFuel_jump_utf8 hjump1,
+              show 1 + k = k + 1 from by omega, runFuel_jump_utf8 hjump2]
+        · -- the loop continues at the next block
+          have hlt : i + 1 < nb := by omega
+          have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 ≠ BitVec.ofNat 64 nb := by
+            intro hc
+            rw [hnext] at hc
+            exact hlast (ofNat64_inj (by omega) (by omega) hc)
+          have hjump2 : step utf8Calls utf8Function
+              (withEnv env1 { s with pc := "if.end14.us", pre := some "for.body.us" })
+              = .jump (withEnv env2
+                  { s with pc := "for.body.us", pre := some "if.end14.us" }) := by
+            have h := hstep2
+            rw [execTerm_condbr_false hev2 (ofBool_of_false hbit), withEnv_setJmp] at h
+            exact h
+          have hr' : 1 ≤ r' := by omega
+          obtain ⟨env3, s3, u8k3, t3, hpc3, hpre3, hmem3, ht3, hU3, hlen3, hpack3, hb3, hn3,
+            hdiv3, hrun3⟩ :=
+            ih (i + 1) env2 { s with pc := "for.body.us", pre := some "if.end14.us" }
+              "if.end14.us" (.reg "%2") (.reg "%u8k.2.us") (.reg "%inc.us") u8k
+              (ptestz (BitVec.ofNat 256 (utf8GateWord ((S.drop 3).take 32)
+                ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)))
+              hr' (by omega) rfl rfl hmem rfl rfl rfl
+              (by
+                rw [evalOperand_reg_withEnv,
+                  latch_keeps_two env1 env2
+                    { s with pc := "if.end14.us", pre := some "for.body.us" } hrun2]
+                exact h21)
+              (by
+                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
+                exact hU2)
+              (by
+                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
+                  lookupName_cons_ne _ _ (by decide), hI2, hnext])
+              ((hframe2 "%b" (by decide)).trans hb1)
+              ((hframe2 "%div44" (by decide)).trans hdiv1)
+              ((hframe2 "%n" (by decide)).trans hn1)
+              hu8klen (by rw [hu8kpack, haccEq]) hp01' hpAscii'
+          refine ⟨env3, s3, u8k3, 2 + t3, hpc3, hpre3, hmem3, by omega, hU3, hlen3, hpack3,
+            hb3, hn3, hdiv3, ?_⟩
+          intro k
+          rw [show (2 + t3) + k = ((1 + t3) + k) + 1 from by omega,
+            runFuel_jump_utf8 hjump1,
+            show (1 + t3) + k = (t3 + k) + 1 from by omega,
+            runFuel_jump_utf8 hjump2]
+          exact hrun3 k
+      · -- the gate does not skip: the DFA body runs, then the latch
+        have hbit0 : utf8GateBit ((S.drop 3).take 32) ((S.drop 35).take 32) prev = 0 :=
+          bit1_eq_zero_of_ne_one _ hskip
+        have hjump1 : step utf8Calls utf8Function (withEnv env s)
+            = .jump (withEnv env1 { s with pc := "if.then11.us", pre := some "for.body.us" }) := by
+          have h := hstep1
+          rw [execTerm_condbr_false hev1 hbit0, withEnv_setJmp, hpc1] at h
+          exact h
+        obtain ⟨envB, hrunB, hvalB⟩ :=
+          utf8Gated_body env1 { s with pc := "if.then11.us", pre := some "for.body.us" }
+            b i u8k ((S.drop 2).take 32) ((S.drop 1).take 32) (S.take 32)
+            ((S.drop 34).take 32) ((S.drop 33).take 32) ((S.drop 32).take 32)
+            (bytesToNat ((S.drop 3).take 32)) (bytesToNat ((S.drop 35).take 32))
+            hU1 hptr1 h01 h11 hu8klen hV0 hV1 read3 read4 read5 read19 read20 read21 hb hi64
+        -- the body's word, in the emission's `|||` order
+        let A := errRaw (byteLanes ((S.drop 1).take 32)) (byteLanes (S.take 32))
+          (bytesToNat ((S.drop 2).take 32)) (bytesToNat ((S.drop 3).take 32))
+        let Bv := errRaw (byteLanes ((S.drop 33).take 32)) (byteLanes ((S.drop 32).take 32))
+          (bytesToNat ((S.drop 34).take 32)) (bytesToNat ((S.drop 35).take 32))
+        let G := List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A Bv) u8k
+        have hvalG : lookupName envB "%or.i.us" = some (.vec 4 64 G) := hvalB
+        have hlenA : A.length = 4 :=
+          errRaw_length _ _ _ _ (len32_byteLanes _ hlen1) (len32_byteLanes _ hlen0)
+        have hlenBv : Bv.length = 4 :=
+          errRaw_length _ _ _ _ (len32_byteLanes _ hlen33) (len32_byteLanes _ hlen32)
+        have hglen : G.length = 4 := by
+          show (List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A Bv) u8k).length = 4
+          rw [List.length_zipWith, List.length_zipWith, hlenA, hlenBv, Nat.min_self, hu8klen,
+            Nat.min_self]
+        -- the body's word is the fold's step
+        have hpackG : packLanes G = bytesToNat (klAcc bs (i + 1)) := by
+          have hbody :=
+            errRawBlk_word_eq (S.take 67) (klAcc bs i) u8k
+              (klPre (utf8Window bs n nb) i) (klBlk (utf8Window bs n nb) i)
+              (by
+                rw [← body_stream, klBlk,
+                  show (utf8Window bs n nb).drop (64 * i + 3) = S.drop 3 from by
+                    show (utf8Window bs n nb).drop (64 * i + 3) = (utf8Stream bs n nb i).drop 3
+                    rw [utf8Stream, List.drop_drop]]
+                rfl)
+              (by rw [List.length_take, hSlen]; exact Nat.le_min.mpr ⟨by omega, by omega⟩)
+              (klAcc_length bs i) hu8klen
+              (by rw [klPre, List.length_take, List.length_drop, hWlen]
+                  exact Nat.min_eq_left (by omega))
+              (by rw [klBlk, List.length_take, List.length_drop, hWlen]
+                  exact Nat.min_eq_left (by omega))
+              hu8kpack
+          rw [List.drop_drop, List.drop_drop, List.drop_drop] at hbody
+          have h67 : ((S.take 67).take 32) = S.take 32 := by
+            rw [List.take_take, Nat.min_eq_left (by decide)]
+          rw [h67, take67_drop _ 1 32 (by omega), take67_drop _ 2 32 (by omega),
+            take67_drop _ 3 32 (by omega), take67_drop _ 32 32 (by omega),
+            take67_drop _ 33 32 (by omega), take67_drop _ 34 32 (by omega),
+            take67_drop _ 35 32 (by omega)] at hbody
+          have hkl : klErrBlk (klPre (utf8Window bs n nb) i) (klBlk (utf8Window bs n nb) i)
+              = utf8BlkErr bs n nb i := by
+            rw [utf8BlkErr_eq, klErrBlk_window]
+          rw [hkl] at hbody
+          have hp1 : packLanes G
+              = packLanes (List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A u8k) Bv) :=
+            packLanes_zipWith_or_reorder A Bv u8k (hlenA.trans hlenBv.symm)
+              (hlenBv.trans hu8klen.symm)
+          have hstep : List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A u8k) Bv
+              = unpackLanes 64 4 (bytesToNat
+                  (List.zipWith (· ||| ·) (klAcc bs i) (utf8BlkErr bs n nb i))) := hbody
+          calc packLanes G
+              = packLanes (List.zipWith (· ||| ·) (List.zipWith (· ||| ·) A u8k) Bv) := hp1
+            _ = packLanes (unpackLanes 64 4 (bytesToNat
+                  (List.zipWith (· ||| ·) (klAcc bs i) (utf8BlkErr bs n nb i)))) := by
+                  rw [hstep]
+            _ = bytesToNat (klAcc bs (i + 1)) := klAccStep_pack bs n nb i
+        -- the latch, from the body's edge
+        have hbiB : lookupName envB "%bi.075.us" = some (.int 64 (BitVec.ofNat 64 i)) :=
+          (denoteCode_lookupName_of_not_dst utf8ThenUs.instrs env1 envB
+            { s with pc := "if.then11.us", pre := some "for.body.us" } "%bi.075.us"
+            (by decide) hrunB).trans hB1
+        have hbB : lookupName envB "%b" = some (.ptr b) :=
+          (denoteCode_kept utf8ThenUs.instrs env1 envB
+            { s with pc := "if.then11.us", pre := some "for.body.us" } hrunB utf8Kept_then
+            "%b" (by decide)).trans hb1
+        have hnB : lookupName envB "%n" = some (.int 64 (BitVec.ofNat 64 n)) :=
+          (denoteCode_kept utf8ThenUs.instrs env1 envB
+            { s with pc := "if.then11.us", pre := some "for.body.us" } hrunB utf8Kept_then
+            "%n" (by decide)).trans hn1
+        have hdivB : lookupName envB "%div44" = some (.int 64 (BitVec.ofNat 64 nb)) :=
+          (denoteCode_kept utf8ThenUs.instrs env1 envB
+            { s with pc := "if.then11.us", pre := some "for.body.us" } hrunB utf8Kept_then
+            "%div44" (by decide)).trans hdiv1
+        obtain ⟨env2, hrun2, hU2, hI2, hE2⟩ :=
+          utf8EndUs_run envB { s with pc := "if.end14.us", pre := some "if.then11.us" }
+            "if.then11.us" (.reg "%or.i.us") G i nb rfl rfl
+            (by rw [evalOperand_reg_withEnv]; exact hvalG) hbiB hdivB
+        have hstep2 : step utf8Calls utf8Function
+            (withEnv envB { s with pc := "if.end14.us", pre := some "if.then11.us" })
+            = execTerm (withEnv env2 { s with pc := "if.end14.us", pre := some "if.then11.us" })
+                (.condbr (.reg "%exitcond79.not") "for.cond.cleanup" "for.body.us") :=
+          step_of_utf8 _ "if.end14.us" utf8EndUs _ rfl findBlock_utf8EndUs hrun2
+        have hstepB : step utf8Calls utf8Function
+            (withEnv env1 { s with pc := "if.then11.us", pre := some "for.body.us" })
+            = .jump (withEnv envB { s with pc := "if.end14.us", pre := some "if.then11.us" }) :=
+          step_of_utf8 _ "if.then11.us" utf8ThenUs _ rfl findBlock_utf8ThenUs hrunB
+        have hev2 : evalOperand
+            (withEnv env2 { s with pc := "if.end14.us", pre := some "if.then11.us" })
+            (.reg "%exitcond79.not")
+            = some (.int 1 (BitVec.ofBool
+                (BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
+          rw [evalOperand_reg_withEnv]
+          exact hE2
+        have hframe2 := fun (nm : String) (hm : nm ∈ utf8Kept) =>
+          denoteCode_kept utf8EndUs.instrs envB env2
+            { s with pc := "if.end14.us", pre := some "if.then11.us" } hrun2 utf8Kept_end nm hm
+        by_cases hlast : i + 1 = nb
+        · -- the loop is done: the latch's test leaves for `for.cond.cleanup`
+          have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb := by
+            rw [hnext, hlast]
+          have hjump2 : step utf8Calls utf8Function
+              (withEnv envB { s with pc := "if.end14.us", pre := some "if.then11.us" })
+              = .jump (withEnv env2
+                  { s with pc := "for.cond.cleanup", pre := some "if.end14.us" }) := by
+            have h := hstep2
+            rw [execTerm_condbr_true hev2 (ofBool_of_true hbit), withEnv_setJmp] at h
+            exact h
+          have hpack : packLanes G = bytesToNat (klAcc bs nb) := by
+            rw [hpackG, hlast]
+          refine ⟨env2, { s with pc := "for.cond.cleanup", pre := some "if.end14.us" }, G, 3,
+            rfl, rfl, hmem, by omega, hU2, hglen, hpack, ?_, ?_, ?_, ?_⟩
+          · exact (hframe2 "%b" (by decide)).trans hbB
+          · exact (hframe2 "%n" (by decide)).trans hnB
+          · exact (hframe2 "%div44" (by decide)).trans hdivB
+          · intro k
+            rw [show 3 + k = ((2 + k) + 1) from by omega, runFuel_jump_utf8 hjump1,
+              show 2 + k = ((1 + k) + 1) from by omega, runFuel_jump_utf8 hstepB,
+              show 1 + k = k + 1 from by omega, runFuel_jump_utf8 hjump2]
+        · -- the loop continues at the next block
+          have hlt : i + 1 < nb := by omega
+          have hbit : BitVec.ofNat 64 i + BitVec.ofInt 64 1 ≠ BitVec.ofNat 64 nb := by
+            intro hc
+            rw [hnext] at hc
+            exact hlast (ofNat64_inj (by omega) (by omega) hc)
+          have hjump2 : step utf8Calls utf8Function
+              (withEnv envB { s with pc := "if.end14.us", pre := some "if.then11.us" })
+              = .jump (withEnv env2
+                  { s with pc := "for.body.us", pre := some "if.end14.us" }) := by
+            have h := hstep2
+            rw [execTerm_condbr_false hev2 (ofBool_of_false hbit), withEnv_setJmp] at h
+            exact h
+          have hr' : 1 ≤ r' := by omega
+          obtain ⟨env3, s3, u8k3, t3, hpc3, hpre3, hmem3, ht3, hU3, hlen3, hpack3, hb3, hn3,
+            hdiv3, hrun3⟩ :=
+            ih (i + 1) env2 { s with pc := "for.body.us", pre := some "if.end14.us" }
+              "if.end14.us" (.reg "%2") (.reg "%u8k.2.us") (.reg "%inc.us") G
+              (ptestz (BitVec.ofNat 256 (utf8GateWord ((S.drop 3).take 32)
+                ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)))
+              hr' (by omega) rfl rfl hmem rfl rfl rfl
+              (by
+                rw [evalOperand_reg_withEnv,
+                  latch_keeps_two envB env2
+                    { s with pc := "if.end14.us", pre := some "if.then11.us" } hrun2,
+                  denoteCode_lookupName_of_not_dst utf8ThenUs.instrs env1 envB
+                    { s with pc := "if.then11.us", pre := some "for.body.us" } "%2"
+                    (by decide) hrunB]
+                exact h21)
+              (by
+                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
+                exact hU2)
+              (by
+                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
+                  lookupName_cons_ne _ _ (by decide), hI2, hnext])
+              ((hframe2 "%b" (by decide)).trans hbB)
+              ((hframe2 "%div44" (by decide)).trans hdivB)
+              ((hframe2 "%n" (by decide)).trans hnB)
+              hglen hpackG hp01' hpAscii'
+          refine ⟨env3, s3, u8k3, 3 + t3, hpc3, hpre3, hmem3, by omega, hU3, hlen3, hpack3,
+            hb3, hn3, hdiv3, ?_⟩
+          intro k
+          rw [show (3 + t3) + k = ((2 + t3) + k) + 1 from by omega,
+            runFuel_jump_utf8 hjump1,
+            show (2 + t3) + k = ((1 + t3) + k) + 1 from by omega,
+            runFuel_jump_utf8 hstepB,
+            show (1 + t3) + k = (t3 + k) + 1 from by omega,
+            runFuel_jump_utf8 hjump2]
+          exact hrun3 k
+
+end LeanLLVM.Vellum.JsonUtf8Steps
