@@ -1,14 +1,18 @@
 /-
-The bit intrinsics of the JSON index kernel, in lane vocabulary.
+The bit intrinsics of the JSON kernels, in lane vocabulary.
 
 `tests/v16/ci2.ll`, the stage-1 index kernel, forms its masks with three
 intrinsics: `llvm.x86.bmi.pext.64` twice, `llvm.x86.bmi.pdep.64` and
-`llvm.ctlz.i64`.  They are modelled as calls — the parser validates their
-spelling and an environment supplies their meaning, so the semantics needs no
-special case — and this module is that meaning: `pext`, `pdep` and `ctlz` lane by
-lane, which `s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`) binds for the
-extracted mask unit.  `Pclmul` gives the fourth (`llvm.x86.pclmulqdq`) its
-algebra.
+`llvm.ctlz.i64`.  The entry kernels add three more — `llvm.ctpop.i32`,
+`llvm.ctpop.i64` and `llvm.cttz.i64` — so six spellings have a modelled reading
+here, as five lane definitions (the two `ctpop` widths share one) and no
+semantics case.  They are modelled as calls — the parser
+validates their spelling and an environment supplies their meaning, so the
+semantics needs no special case — and this module is that meaning: `pext`, `pdep`
+and `ctlz` lane by lane, which `s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`)
+binds for the extracted mask unit, and `ctpop`/`cttz`, which `entryCalls`
+(`LeanLLVM/Vellum/JsonEntryIR.lean`) binds for the entry kernels.  `Pclmul`
+gives the fourth (`llvm.x86.pclmulqdq`) its algebra.
 
 A word is read lane by lane with `BitVec.getLsbD`, and `ofLanes` packs a lane
 function back into a word, so every definition below is a statement about lanes
@@ -21,6 +25,18 @@ rather than about a bit-twiddling sequence:
 * `ctlz x` is the number of clear lanes above `x`'s highest set lane — `w` for
   the zero word — and `trailingRun m` is the length of `m`'s maximal suffix of
   set lanes; `ctlz_not_eq_trailingRun` is `ctlz (~~~m) = trailingRun m`.
+* `ctpop x` is the number of set lanes, and `cttz x` is the least set lane —
+  `w` at the zero word.
+
+**The poison flag, stated once.** `cttz` has an `i1` flag in LLVM.  At `false`
+the zero word yields `w`, which is exact.  At `true` LLVM makes the zero operand
+poison, and this model has no poison: it returns the determined `w` where LLVM
+allows anything.  That is admissible because no clause of the claims that read
+`cttz` reads where those values land — they reach only lanes past the emitted
+count, outside the written region the frame clause confines and the read region
+the words clause reads — and it is why `cttz`'s `i1 true` is the one poison-carrying
+flag the parser admits.  `ctlz`'s `i1 true` is refused by the same rule applied
+the other way: not observed, and no clause bounds where its poison would land.
 
 ## The rank machinery
 
@@ -128,6 +144,17 @@ private theorem testBit_two_pow_sub_one_of_lt :
   | w + 1, i + 1, h => by
     rw [Nat.testBit_succ, two_pow_sub_one_div_two]
     exact testBit_two_pow_sub_one_of_lt (by omega)
+
+/-- Lane `i` of the numeral `2 ^ w - 1` is the test `i < w`, without the choice
+that `Nat.testBit_two_pow_sub_one` carries. -/
+theorem testBit_two_pow_sub_one (w i : Nat) :
+    (2 ^ w - 1).testBit i = decide (i < w) := by
+  by_cases h : i < w
+  · rw [testBit_two_pow_sub_one_of_lt h, decide_eq_true h]
+  · have hpos : 1 ≤ 2 ^ w := Nat.one_le_two_pow
+    have hle : 2 ^ w ≤ 2 ^ i := Nat.pow_le_pow_right (by decide) (by omega)
+    have hlt : 2 ^ w - 1 < 2 ^ i := by omega
+    rw [Nat.testBit_lt_two_pow hlt, decide_eq_false h]
 
 /-- Lane `i` of an all-ones word is set while `i < w`, without the choice that
 `BitVec.getLsbD_allOnes` carries. -/
@@ -468,5 +495,66 @@ theorem ctlz_zero {w : Nat} : ctlz (0#w) = w := by
         show 1 + (i + 1) = i + 1 + 1
         omega
     rw [ctlz, haux]
+
+/-! ### `ctpop` and `cttz`
+
+Both are counts over the set lanes, and both are determined at the zero word.
+`ctpop` is exact there and needs no bound.  `cttz` at the flag `i1 false` is
+exact there too (it is `w`); at `i1 true` it is the value LLVM leaves poison,
+admitted under the bound the module docstring states once. -/
+
+/-- `llvm.ctpop`: the population count, as the sum of the word's lanes read one
+at a time — lane `k` contributes one when it is set.  `ctpop.i32` and
+`ctpop.i64` share this definition, each at its own width. -/
+def ctpop {w : Nat} (x : BitVec w) : Nat :=
+  ((List.range w).map (fun k => if x.getLsbD k then 1 else 0)).sum
+
+/-- A list's lane indicators sum to the length of its set lanes. -/
+private theorem sum_map_ite_eq_length_filter (l : List Nat) (p : Nat → Bool) :
+    (l.map (fun k => if p k then 1 else 0)).sum = (l.filter p).length := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+    rw [List.map_cons, List.sum_cons, List.filter_cons]
+    split
+    · rw [ih, List.length_cons]
+      omega
+    · simpa using ih
+
+/-- **The population count is the number of set lanes.** -/
+theorem ctpop_eq_setLanes_length {w : Nat} (x : BitVec w) :
+    ctpop x = (setLanes x).length :=
+  sum_map_ite_eq_length_filter (List.range w) (fun k => x.getLsbD k)
+
+/-- `llvm.cttz`: the least set lane, and the word's width when no lane is set —
+LLVM's `i1 false` flag is exactly this.  At `i1 true` LLVM makes the zero word
+poison instead; this model has no poison, so `w` is the determined value it gives
+there, admissible only under the bound the module docstring states. -/
+def cttz {w : Nat} (x : BitVec w) : Nat :=
+  ((List.range w).find? (fun k => x.getLsbD k)).getD w
+
+/-- Finding the first set lane is taking the head of the set-lane list. -/
+private theorem find?_eq_head_filter (l : List Nat) (p : Nat → Bool) :
+    l.find? p = (l.filter p).head? := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+    rw [List.filter_cons]
+    split
+    · rename_i hp
+      rw [List.find?_cons]
+      rw [show p a = true from hp]
+      rfl
+    · rename_i hp
+      rw [List.find?_cons]
+      rw [show p a = false from by cases hv : p a <;> simp_all]
+      exact ih
+
+/-- **The trailing count is the least set lane**, and the width at the zero
+word. -/
+theorem cttz_eq_head {w : Nat} (x : BitVec w) :
+    cttz x = ((setLanes x).head?).getD w := by
+  unfold cttz setLanes
+  rw [find?_eq_head_filter]
 
 end LeanLLVM.Vellum.BitLanes

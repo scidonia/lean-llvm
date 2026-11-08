@@ -1,0 +1,9 @@
+{
+  "source": "tests/json-s1-masks/corpus/mixed.json",
+  "blk0": 0,
+  "k": 0,
+  "masks": [
+    "0xaae1d8ee1c1819c3",
+    "0x00000003bbc0e5ce"
+  ]
+}

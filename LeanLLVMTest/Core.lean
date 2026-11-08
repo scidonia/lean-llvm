@@ -381,6 +381,83 @@ entry:
   | .ok m => parseModule (Module.render m) = .ok m
   | .error _ => false
 
+/-- The entry fragment's spellings, one text: the three intrinsics the entry
+kernels call at the symbols and arities the parser validates, the integer-lane
+vector `store`, and the vector `getelementptr` element type the table read is
+captured as.  Each must parse to its constructor, print to text the parser reads
+back, and print the vector element type rather than a scalar the token suggests,
+so a printer rule that dropped the element type, invented a `nuw` the parser
+refuses, or wrote an intrinsic's operand types wrong fails here rather than in an
+emitted body. -/
+def entryFragmentSample : String :=
+"declare i32 @llvm.ctpop.i32(i32)
+declare i64 @llvm.ctpop.i64(i64)
+declare i64 @llvm.cttz.i64(i64, i1)
+define i64 @entry_fragment(ptr %p, i64 %k) {
+entry:
+  %v = load <8 x i32>, ptr %p
+  store <8 x i32> %v, ptr %p
+  %q = getelementptr inbounds <8 x i32>, ptr %p, i64 %k
+  %w = load i32, ptr %q
+  %a = tail call i32 @llvm.ctpop.i32(i32 %w)
+  %b = zext i32 %a to i64
+  %c = tail call i64 @llvm.ctpop.i64(i64 %b)
+  %d = tail call i64 @llvm.cttz.i64(i64 %c, i1 true)
+  %e = tail call i64 @llvm.cttz.i64(i64 %c, i1 false)
+  %f = add i64 %d, %e
+  ret i64 %f
+}
+"
+
+#guard
+  match parseModule entryFragmentSample with
+  | .ok ⟨_, [f]⟩ =>
+      match f.blocks with
+      | [b] =>
+          b.instrs =
+            [ .load "%v" (.vec 8 (.int 32)) (.reg "%p"),
+              .store (.vec 8 (.int 32)) (.reg "%v") (.reg "%p"),
+              .gep "%q" (.vec 8 (.int 32)) (.reg "%p") (.reg "%k"),
+              .load "%w" (.int 32) (.reg "%q"),
+              .call "%a" (.int 32) "llvm.ctpop.i32" [(.int 32, .reg "%w")],
+              .zext "%b" 32 64 (.reg "%a"),
+              .call "%c" (.int 64) "llvm.ctpop.i64" [(.int 64, .reg "%b")],
+              .call "%d" (.int 64) "llvm.cttz.i64"
+                [(.int 64, .reg "%c"), (.int 1, .imm (.int 1 1))],
+              .call "%e" (.int 64) "llvm.cttz.i64"
+                [(.int 64, .reg "%c"), (.int 1, .imm (.int 1 0))],
+              .binop "%f" .add 64 (.reg "%d") (.reg "%e") ]
+      | _ => false
+  | _ => false
+
+-- The `mentions` detector the printed-text guard reads with: it finds `nuw` in a
+-- text that carries the modifier and `tail` in the source sample, so the two
+-- absence halves of the next guard are about the printed module and not about a
+-- detector that matches nothing.
+#guard mentions "  %q = getelementptr nuw i8, ptr %p, i64 %k" "nuw" ∧
+  mentions entryFragmentSample "tail" ∧
+  !mentions "  %q = getelementptr inbounds <8 x i32>, ptr %p, i64 %k" "nuw"
+
+-- The printed text is the parser's form: the vector element type and the vector
+-- store's type are written, `tail` is dropped because the parser does not keep
+-- it, and no `nuw` appears because the parser refuses one.
+#guard
+  match parseModule entryFragmentSample with
+  | .ok m =>
+      let printed := Module.render m
+      mentions printed "store <8 x i32> %v, ptr %p" ∧
+        mentions printed "getelementptr inbounds <8 x i32>, ptr %p, i64 %k" ∧
+        mentions printed "call i32 @llvm.ctpop.i32(i32 %w)" ∧
+        mentions printed "call i64 @llvm.cttz.i64(i64 %c, i1 1)" ∧
+        !mentions printed "nuw" ∧
+        !mentions printed "tail"
+  | .error _ => false
+
+#guard
+  match parseModule entryFragmentSample with
+  | .ok m => parseModule (Module.render m) = .ok m
+  | .error _ => false
+
 /-- `getelementptr` where a byte-walking body uses it: the address of one byte
 inside a word, read back through the memory model.  The offset is a parameter,
 so the check below reads every offset of the word rather than only the first,

@@ -96,11 +96,14 @@ entry:
 }
 "
 
-/-- (2) A vector `store`. -/
+/-- (2) A vector `store` whose total width is not a whole number of bytes: five
+bits have no byte layout.  The refusal is the **width**, not the vector-ness —
+`<32 x i8>` is admitted at 32 whole bytes — so this text is refused before and
+after the widening alike. -/
 def storeVec : String :=
 "define i32 @store_vec(ptr %p) {
 entry:
-  store <32 x i8> %v, ptr %p
+  store <5 x i1> %v, ptr %p
   ret i32 0
 }
 "

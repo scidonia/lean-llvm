@@ -86,11 +86,14 @@ needs the other two to match.
   mask identities — `inStringMask_eq_clmul` over a window and
   `specInString64_eq_clmul` over a sixty-four-byte block — with the outgoing carry
   `specInString64_outgoing_carry`, all stated over `JsonScanSpec`'s own masks.
-  `BitLanes` models the three instructions the kernel uses besides `pclmulqdq` —
-  `pext`, `pdep` and `ctlz` — in lane vocabulary, with `rank` and the two
-  alignment facts that pair a mask's set lanes with their positions
-  (`rank_setLanes_getElem`, `setLanes_getElem?_rank`), the Galois connection
-  `pdep_pext`/`pext_pdep`, and `ctlz (~~~m) = trailingRun m`.  `QuoteDerive`
+  `BitLanes` models the bit intrinsics the two units' kernels use besides
+  `pclmulqdq` — `pext`, `pdep` and `ctlz`, and `ctpop`/`cttz` for the entry
+  kernels, five lane definitions over six intrinsic spellings — in lane
+  vocabulary, with `rank` and the two alignment facts that pair a mask's set
+  lanes with their positions (`rank_setLanes_getElem`,
+  `setLanes_getElem?_rank`), the Galois connection `pdep_pext`/`pext_pdep`,
+  `ctlz (~~~m) = trailingRun m`, and the `ctpop`/`cttz` readings of a mask's set
+  lanes a position emitter uses.  `QuoteDerive`
   proves the kernel's escape arithmetic: `kernelEscape_eq` — the kernel's
   `pext`/`pdep` scatter is the parity mask on the lanes that are not backslashes —
   `kernelQuote64` — the kernel's `%qmc2 = %qrawc2 & ~%escc2` over a sixty-four-lane
@@ -107,6 +110,21 @@ needs the other two to match.
   transcription reads, not theorems about the instructions; and any relation to the
   emitted IR is owed here for `@ci2` — as it is in `Pclmul` — while the extracted
   stage-1 mask unit's body is related to these definitions by `JsonS1MasksSteps`.
+  The entry positions unit is the second unit's chain: `JsonEntSpec` writes the
+  entry stream's specification out of `JsonScanSpec`'s masks — `specScalar64` as
+  the complement of four of them, its run starts `scalarStarts64`, the joined
+  `entryMask64`, `structuralOnly64` for the `S1F_GRAIN=1` granularity the measured
+  build does not select, the `lim` tail `limMask`, the positions read
+  `positionsOf`, and the `pos8Row` table row; `JsonEntryIR` pins both bodies of
+  `probes/install/ir/json-entry.candidate.ll` by `#guard`, binds their intrinsics
+  in `entryCalls`, gives the rewritten table read an address so no clause depends
+  on a global, and proves the tail statement `entry_tail_eq`; `JsonEntrySteps`
+  proves `entry_pos8_refines` — the returned cursor, the words below it read as
+  the model's positions, and every byte outside the span the body's stores reach
+  unchanged — and `JsonB8Steps` proves `entry_b8_refines`, the two kernels'
+  agreement `entry_pos8_b8_agree` and B8's totality companion
+  `entry_b8_undefined_of_no_read`, which are the statements the block layer asks
+  for.
   Every **public** theorem is pinned
   in `LeanLLVMTest/Vellum.lean` at `[propext, Quot.sound]` or narrower — the three
   `private` numeral lemmas of `BitLanes` cannot be named from another file — each of
@@ -204,6 +222,18 @@ needs the other two to match.
   (byte, class alphabet, fixed-seed random), with a defect object and a tampered
   expectation as its controls.  It also regenerates the fixture from that source
   and byte-compares it; a difference is a setup failure, not an assertion result.
+  The entry positions unit has two routes of its own: `tests/json-entry.lean`
+  holds the fixture pin, the positions and two-stream assertions over a mixed
+  block, and the clause witnesses, every observation a `#guard`; and
+  `tests/json-entry/check.sh` makes two actors agree row for row — the pinned
+  ASTs, run by `leanllvm-json-entry` under the semantics, and the installed
+  object, compiled from `kernel/json/entry.c` and called through
+  `probes/json/entry_driver.c` — over a corpus whose mask streams are derived from
+  committed JSON documents' block bytes and six generated arms (one-lane,
+  one-byte, fixed-seed random, empty, full, and one stream longer than a caller
+  chunk), asserting the word at the cursor plus eight on every row as the
+  body's stop sentinel, with a defect object per kernel and a tampered
+  expectation as its controls.
   One more check sits beside those routes: `tests/json-import-boundary.sh`
   filters the actual `import` declarations of `LeanLLVM/JSON/*.lean` and
   asserts that `Parse.lean` imports exactly `Spec`, `Scan` and `Tape`, that
@@ -224,13 +254,24 @@ needs the other two to match.
   not that the span refusals are sensitive — their sensitivity rests on their
   pairing with the affirmative controls and on `tape_valid`, and is not
   claimed by a cut.
+- `kernel/json/` holds the two extracted units of the measured SIMD JSON
+  stage 1 — `s1_block.c`, the classification mask unit, and `entry.c`, the entry
+  positions unit — each with its own ABI, its own specification in
+  `LeanLLVM/Vellum/`, its own identity arms and its own route.  Neither is the
+  pipeline, and `kernel/json/measured/` is read-only reference that the identity
+  and bench scripts read and no `lake` target builds.  `kernel/json/README.md`
+  records each unit's entity list, deletion list, boundary and limits.
 - `docs/` holds the design notes and evidence records: `contract.md` and
   `capabilities.md` for the trust ledger, `json-route-evidence.md` for the
   staged cuts, and `json-pipeline-performance.md`, which records the measured
-  performance of a native SIMD JSON pipeline against simdjson.  That note
-  describes a scratch implementation **not in this tree**: it records observed
-  ratios and the shapes refuted at measured cost, and no theorem, contract or
-  axiom pin covers the code it measures.
+  performance of a native SIMD JSON pipeline against simdjson.  The measured
+  pipeline is a scratch implementation **not in this tree**: the note records
+  observed ratios and the shapes refuted at measured cost, and no theorem,
+  contract or axiom pin covers the code those numbers came from.  Two units of
+  that pipeline are here — the classification mask unit and the entry positions
+  unit named above — each pinned and proved (`s1_masks_refines`,
+  `entry_pos8_refines`, `entry_b8_refines`); the note's ratios are measurements
+  of the scratch build and are not claims about those units.
 
 ## What a change must satisfy
 
@@ -307,25 +348,36 @@ needs the other two to match.
 - A vector form is modelled only where a body uses it, and each is admitted
   beside its nearest unmodelled neighbour, refused by name: `shufflevector` with
   a defined mask naming lanes below `2n` (a mask entry at or past `2n`, or one
-  written `undef`/`poison`, is refused); a mask-only vector `store` — `store
-  <n x i1>` whose total width is whole bytes — where `store <5 x i1>` and a
-  non-mask vector store are refused; a non-mask vector `bitcast` at equal total
-  width, where an unequal width is refused; vector `lshr`, which the stage-1
+  written `undef`/`poison`, is refused); a vector `store` at integer lanes —
+  `store <n x iW>` whose total width is whole bytes (`n * w % 8 = 0`, the mask
+  store being that rule at `w = 1`) — where `store <5 x i1>` and `store
+  <3 x i2>` are refused, and a value operand the function defines at another
+  type than the written one is refused by name while an undefined register has
+  no type, stays accepted and is `ub` when read; a non-mask vector `bitcast` at
+  equal total width, where an unequal width is refused; vector `lshr`, which the stage-1
   fixture emits twice (`lshr <16 x i16> …, splat (i16 4)` reading `%12` and
   `%22`, the high-nibble extraction), and vector `shl` with it — the two
   directions are one operation, and no tracked `.ll` emits a vector `shl`, so
   that side is exercised as an accepted control in `tests/vector-s1.lean`
   (accepted, printed, re-parsed and evaluated) and in `tests/json-s1-parser.lean`
   — where a vector `ashr` is refused; a vector `load` at integer lanes whose
-  total width is whole bytes; and the five intrinsic spellings the stage-1
-  kernel calls —
+  total width is whole bytes; and the eight intrinsic spellings the two units
+  call —
   `llvm.x86.avx2.pshuf.b` at two arguments, `llvm.x86.pclmulqdq` at immediate 0,
-  `llvm.x86.bmi.pext.64`, `llvm.x86.bmi.pdep.64` and `llvm.ctlz.i64` with the
-  non-poison flag — each validated at symbol, arity, type and immediate, with its
-  neighbouring spelling refused.  `umin`/`umax` stay refused: the emission
+  `llvm.x86.bmi.pext.64`, `llvm.x86.bmi.pdep.64`, `llvm.ctlz.i64` with the
+  non-poison flag, `llvm.ctpop.i32`, `llvm.ctpop.i64`, and `llvm.cttz.i64` at
+  both flag values — each validated at symbol, arity, type and immediate, with
+  its neighbouring spelling refused.  The two `cttz` flags are not symmetric:
+  `i1 false` is exact at the zero word, and `i1 true` is admitted because the
+  entry claims read no lane the poison can reach, the bound stated once in
+  `LeanLLVM/Vellum/BitLanes.lean`; `ctlz … i1 true` has no such bound and stays
+  refused.  `umin`/`umax` stay refused: the emission
   contains none.  `tests/vector-s1.lean` checks every acceptance and its refusal
-  in one run, and `probes/install/ir/json-s1-masks.candidate.ll` is the fixture
-  that uses them all except a vector `shl`, which appears in no tracked `.ll`.
+  in one run, `tests/vector-entry.lean` does the same for the widened store and
+  the entry intrinsics, and `probes/install/ir/json-s1-masks.candidate.ll` is the
+  fixture that uses every stage-1 form except a vector `shl`, which appears in no
+  tracked `.ll`; `probes/install/ir/json-entry.candidate.ll` is the entry
+  kernels' fixture.
 - An installation certificate is data, not source.
   `probes/install/InstallCertificate.lean` derives it from the imported proof
   graph rebuilt from current project source, from a freshly source-elaborated

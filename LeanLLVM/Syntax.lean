@@ -32,18 +32,35 @@ inductive Instr where
   | sext (dst : String) (wIn wOut : Nat) (v : Operand)
   | alloca (dst : String) (ty : Ty) (align : Nat)
   | load (dst : String) (ty : Ty) (ptr : Operand)
+  /-- A memory write of a scalar or a vector of integer lanes.  A vector value is
+  written as its lanes packed little-endian, lane `k` to bits
+  `[k * w, (k + 1) * w)` and `n * w / 8` bytes in all, so the admitted widths are
+  exactly those whose total width is a whole number of bytes; a `<n x i1>` mask
+  store is that rule at `w = 1`, not a rule of its own.  A vector whose total
+  width is not a whole number of bytes has no byte layout and is refused by name.
+  The parser also checks a value operand that the function defines against the
+  written type, because the operand grammar reads a register without consulting
+  its type; an undefined register has no type and stays accepted, and the
+  semantics' type-mismatch arm is the hand-built-AST case. -/
   | store (ty : Ty) (val ptr : Operand)
   /-- A pointer offset: `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`.
   The element type is a field, because the step scales the index by the element
   type's size: an `i32` element type adds `4 * off` bytes and an `i8` element
   type adds `off`, which is the byte count the earlier form expressed.  The
-  parser admits only the integer widths `Ty.gepElemAdmitted` names below, plus
-  no other non-integer type, and refuses the rest by name; the field itself is
-  any `Ty`, and the step reads its `sizeBytes`.  The index's own width is not a
-  field: the semantics sign-extends whatever integer value it reads to 64 bits,
-  so an `iN` in the text is a shape the parser checks, not state the instruction
-  keeps.  `inbounds` is not a field either — the printer emits it and no
-  semantics here reads it. -/
+  parser admits exactly the element types `Ty.gepElemAdmitted` names below — the
+  seven integer widths, and a vector of integer lanes whose lane width is a
+  whole number of bytes and whose packed size is a power of two (`w % 8 = 0` and
+  `n * w / 8` a power of two, hence at least 1) — and refuses
+  the rest by name; the field itself is any `Ty`, and the step reads its
+  `sizeBytes`.  A vector element type is admitted because it keeps the byte
+  offset of a packed row (`<8 x i32>`, 32 bytes) expressible with no index
+  arithmetic added.  A mask vector as a `getelementptr` element type is a
+  different rule over a different quantity from a mask *store*: the GEP scales by
+  the size LLVM allocates, which is why `<8 x i1>` is refused there.  The index's
+  own width is not a field: the semantics sign-extends whatever integer value it
+  reads to 64 bits, so an `iN` in the text is a shape the parser checks, not
+  state the instruction keeps.  `inbounds` is not a field either — the printer
+  emits it and no semantics here reads it. -/
   | gep (dst : String) (elemTy : Ty) (base : Operand) (off : Operand)
   /-- A lane-wise integer comparison: each lane of the result is the predicate's
   one-bit result on the two operands' lane at that position.  The lane count and
@@ -106,7 +123,10 @@ inductive Instr where
   parser refuses it by name. -/
   | vecBitcast (dst : String) (n w m jw : Nat) (v : Operand)
   /-- A call instruction.  The result is bound to `dst` as `retTy`; the callee
-  is resolved by the semantics' call environment, not by the function itself. -/
+  is resolved by the semantics' call environment, not by the function itself.
+  The intrinsic spellings the fragment models are the exception the parser
+  validates at symbol, arity and operand type: the five the classifier's body
+  calls, and `llvm.ctpop.i32`, `llvm.ctpop.i64` and `llvm.cttz.i64`. -/
   | call (dst : String) (retTy : Ty) (callee : String) (args : List (Ty × Operand))
   /-- A call whose result has no name in the caller: `call void @f(...)`.  It
   binds nothing, so there is no destination and no name a later instruction could
@@ -125,15 +145,23 @@ inductive Instr where
   | phi (dst : String) (ty : Ty) (incoming : List (String × Operand))
   deriving DecidableEq, Repr
 
-/-- The `getelementptr` element widths this model admits: the widths it **pins**
-as having the same **allocated** size on the modelled datalayout as the **stored**
-size `Ty.sizeBytes` computes.
+/-- Whether `n` is a positive power of two: the packed-size test a vector
+`getelementptr` element type must pass.  `1 ≤ n` is part of the test and not a
+remark — `0` is not a power of two, and a `n &&& (n - 1) = 0` test written
+without it would admit `0`. -/
+def isPowerOfTwo (n : Nat) : Bool :=
+  decide (1 ≤ n) && (n &&& (n - 1) == 0)
 
-`sizeBytes` is a store size — `(w + 7) / 8` — while LLVM scales a `getelementptr`
-by the type's *allocated* size, which rounds the store size up to the type's ABI
-alignment.  The two agree on the seven widths this model admits and diverge on
-others.  Measured with `opt -passes=instcombine` here, under the datalayout this
-repository records (`target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"`),
+/-- The `getelementptr` element types this model admits: the widths and the
+vector shapes it **pins** as having the same **allocated** size on the modelled
+datalayout as the **stored** size `Ty.sizeBytes` computes.
+
+`sizeBytes` is a store size — `(w + 7) / 8`, and `n * ((w + 7) / 8)` for a
+vector — while LLVM scales a `getelementptr` by the type's *allocated* size,
+which rounds the store size up to the type's ABI alignment.  The two agree on
+the seven integer widths this model admits and diverge on others.  Measured with
+`opt -passes=instcombine` here, under the datalayout this repository records
+(`target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"`),
 it folds `getelementptr i24, ptr null, i64 1` to 4 while `sizeBytes i24` is 3,
 `i33` to 8 while it is 5, `i48` to 8 while it is 6, and `i96` to 16 while it is
 12.  The datalayout matters: without one, `opt` uses LLVM's default layout and
@@ -142,14 +170,33 @@ layout it was read under.  A step scaled by the stored size would therefore name
 one address in this model and another in LLVM, so the parser refuses such a width
 by name instead of approximating it, and admits only `i1`, `i7`, `i8`, `i16`,
 `i32`, `i64` and `i128`, whose allocated size is 1, 1, 1, 2, 4, 8 and 16 bytes on
-the same datalayout.  This is an allowlist rather than a computation of the
-allocated size: the model has no use for one yet, and it does not characterise
-which widths beyond the listed seven would also agree (`i2` is allocated 1 for a
-stored 1, and is refused as policy).
+the same datalayout.
+
+A **vector** of integer lanes is admitted under one condition: the lane width is
+a whole number of bytes (`w % 8 = 0`) **and** the packed size `n * w / 8` is a
+power of two, hence at least 1.  The first clause excludes the packing
+divergence — `sizeBytes` of a vector is `n * ((w + 7) / 8)` while the memory
+model packs and stores it at `n * w / 8`, and the two agree only for whole-byte
+lanes, so `<8 x i1>` (packed 1, `sizeBytes` 8) steps eight times too far.  The
+second excludes the allocation divergence — LLVM's vector stride is the store
+size rounded up to its next power of two, so a packed size that is not a power of
+two steps further than `sizeBytes`: `<3 x i32>` and `<4 x i24>` both pack 12 and
+LLVM steps 16.  The guarantee is relative to the pinned datalayout: on the layout
+recorded above a vector's ABI alignment is `PowerOf2Ceil(storeSize)`, so a
+power-of-two packed size *is* the stored size; a layout that raised a vector's
+alignment above its size (`v64:128` would do it to `<2 x i32>`) would break the
+equality without touching either clause, so a change to the recorded layout
+reopens this admission rather than passing silently.
+
+This is an allowlist rather than a computation of the allocated size: the model
+has no use for one yet, and it does not characterise which other types would also
+agree (`i2` is allocated 1 for a stored 1 and is refused as policy; `<1 x i7>`
+and `<2 x i7>` pack and step alike and fail the whole-byte clause, exactly as
+`i2` is refused by the integer list).
 
 Two limits of the resulting guarantee belong with it.  First, the admitted set is
-what the model *establishes* and pins by measurement, not every width whose two
-sizes happen to agree, so an unlisted agreeing width is refused as policy.
+what the model *establishes* and pins by measurement, not every type whose two
+sizes happen to agree, so an unlisted agreeing type is refused as policy.
 Second, the step bounds the index below `2 ^ 63` but not the **address**: an
 `i128` element type multiplies an index below `2 ^ 63` by 16, so the model can
 compute an address at or above `2 ^ 64`.  The printer emits `inbounds` on every
@@ -158,6 +205,7 @@ this model does not represent; a bound tying the index to the element width
 would close that, and is not added here. -/
 def Ty.gepElemAdmitted : Ty → Bool
   | .int 1 | .int 7 | .int 8 | .int 16 | .int 32 | .int 64 | .int 128 => true
+  | .vec n (.int w) => w % 8 == 0 && isPowerOfTwo (n * w / 8)
   | _ => false
 
 /-- The register an instruction defines, if any. -/

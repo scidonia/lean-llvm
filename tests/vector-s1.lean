@@ -10,6 +10,11 @@ The forms, one text each:
 * `shufflevector` with a defined mask: a two-source static permutation whose
   result has the mask's lane count;
 * a mask `store`: `<n x i1>` whose total width is a whole number of bytes;
+* a non-mask vector `store` at a whole-byte total width, the entry body's
+  `<8 x i32>` row store — `<32 x i8>`, `<4 x i2>` and `<3 x i8>` here are the
+  same rule at other lane widths and lane counts, the last two chosen so that
+  the mask rule's `n % 8` and the `gep` condition's power-of-two test cannot
+  stand in for `n * w % 8`;
 * a non-mask vector `bitcast` at equal total width, changing element size;
 * `lshr` on an integer vector, the shift the emitted body writes, and `shl` with
   it, the same operation in the other direction; no tracked `.ll` emits a vector
@@ -20,13 +25,15 @@ The forms, one text each:
   the flag `i1 false`.
 
 The refusals, one text each: a `shufflevector` mask entry at `2n`; the same with
-`undef` in the mask; a mask store whose width is not a whole number of bytes; a
-vector store that is not a mask; a `bitcast` whose total widths disagree; a
-`bitcast` to a vector of non-integer elements; a vector `ashr`; `umin` and
-`umax`; and, for each intrinsic, the neighbouring spelling the fragment does
-not model — `pshuf.b` with three arguments or at another vector type,
-`pclmulqdq` at an immediate other than 0 or with a register there, `pext.32`,
-`pdep.32`, and `ctlz` with the flag `i1 true`.
+`undef` in the mask; a vector `store` whose total width is not a whole number of
+bytes; a `bitcast` whose total widths disagree; a `bitcast` to a vector of
+non-integer elements; a vector `ashr`; `umin` and `umax`; and, for each
+intrinsic, the neighbouring spelling the fragment does not model — `pshuf.b`
+with three arguments or at another vector type, `pclmulqdq` at an immediate
+other than 0 or with a register there, `pext.32`, `pdep.32`, and `ctlz` with the
+flag `i1 true`.  A vector `store` is admitted at a whole-byte total width,
+because `n * w % 8 = 0` is exactly the condition under which the value has a
+byte layout; it is refused when that product is not a whole number of bytes.
 
 Two special facts are asserted where they arise rather than described:
 
@@ -204,12 +211,76 @@ def maskStoreBody : String :=
 #guard memOf [("%m", .vec 8 1 [1, 0, 1, 1, 0, 0, 1, 0]), ("%p", .ptr 0)] maskStoreBody
   = some [(0, (0x4D : UInt8))]
 
+/-- A non-mask vector store: `<32 x i8>` packs thirty-two bytes, and
+`n * w % 8 = 0` is exactly the condition under which the value has a byte
+layout, so the store rule admits it at that width. -/
+def vectorStoreBody : String := "  store <32 x i8> %v, ptr %p"
+
+-- The form is admitted, keeps its vector shape, and prints back to itself.
+#guard accepted vectorStoreBody
+#guard instrsOf vectorStoreBody = some [.store (.vec 32 (.int 8)) (.reg "%v") (.reg "%p")]
+#guard reparses vectorStoreBody
+
+-- And it evaluates as the semantics' vector store: the 32 bytes at `%p` are the
+-- lanes packed little-endian, one byte per lane, so lane `i` lands at address
+-- `i` with its own value.  The lane values are all distinct, so a store that
+-- reversed the lanes, wrote only part of the vector, or used a lane width other
+-- than eight fails here; this is the widened store's `storeValue` arm at 32
+-- lanes, read back rather than assumed.
+#guard
+  memOf [("%v", .vec 32 8 ((List.range 32).map fun i => BitVec.ofNat 8 (0x10 + i))),
+    ("%p", .ptr 0)] vectorStoreBody =
+  some ((List.range 32).map fun i => (i, UInt8.ofNat (0x10 + i)))
+
+/-- A vector store at a lane width narrower than a byte: four 2-bit lanes pack
+one byte, which `n * w % 8 = 0` admits and the mask rule's `n % 8` would refuse
+(whole bytes, but only four lanes). -/
+def packedLaneStoreBody : String := "  store <4 x i2> %v, ptr %p"
+
+-- The shape is admitted, keeps its lane width, and prints back to itself.
+#guard accepted packedLaneStoreBody
+#guard instrsOf packedLaneStoreBody = some [.store (.vec 4 (.int 2)) (.reg "%v") (.reg "%p")]
+#guard reparses packedLaneStoreBody
+
+-- And it evaluates as the semantics' vector store: the four lanes pack
+-- little-endian into one byte, lane `k` at bits `[2k, 2k+2)`, so lanes 0, 1, 2
+-- and 3 give `0b11_10_01_00 = 0xE4`.  The lane values are distinct, so a
+-- reversed or partial write fails here.
+#guard
+  memOf [("%v", .vec 4 2 [0, 1, 2, 3]), ("%p", .ptr 0)] packedLaneStoreBody =
+  some [(0, (0xE4 : UInt8))]
+
+/-- A vector store at a whole-byte total width that is **not** a power of two:
+three bytes, which `n * w % 8 = 0` admits and the `gep` condition's power-of-two
+test would refuse. -/
+def oddSizeStoreBody : String := "  store <3 x i8> %v, ptr %p"
+
+-- The shape is admitted, keeps its lane width, and prints back to itself.
+#guard accepted oddSizeStoreBody
+#guard instrsOf oddSizeStoreBody = some [.store (.vec 3 (.int 8)) (.reg "%v") (.reg "%p")]
+#guard reparses oddSizeStoreBody
+
+-- And it evaluates as the semantics' vector store: three bytes at `%p`, one per
+-- lane, lane `k` at address `k`.
+#guard
+  memOf [("%v", .vec 3 8 [7, 8, 9]), ("%p", .ptr 0)] oddSizeStoreBody =
+  some [(0, (7 : UInt8)), (1, (8 : UInt8)), (2, (9 : UInt8))]
+
 -- A mask whose total width is not whole bytes has no byte layout.
 #guard refusedWith "  store <5 x i1> %m, ptr %p" ["store"]
 
--- A vector store that is not a mask is refused: `<32 x i8>` has no packing rule
--- here even though its total width is whole.
-#guard refusedWith "  store <32 x i8> %v, ptr %p" ["store"]
+-- So does a vector store at a width that is not whole bytes: `<3 x i1>` packs
+-- three bits, which is not a whole number of bytes either.
+#guard refusedWith "  store <3 x i1> %v, ptr %p" ["store"]
+
+-- Six bits pack no whole byte, and this is a **non-mask** vector: the refusal has
+-- to come from the widened integer-lane branch, not from the mask rule.  It is a
+-- **both-states guard, not a red**: the parser refuses it before and after the
+-- widening, so it cannot fail for the widening's absence.  What it catches is the
+-- opposite defect — a widening implemented by deleting the integer-lane refusal,
+-- which would admit this text (six bits, no byte layout, `storeValue` returns
+-- `none`) while every accepted control and both mask refusals still passed.
+#guard refusedWith "  store <3 x i2> %v, ptr %p" ["store"]
 
 /-! ### A non-mask vector `bitcast` -/
 

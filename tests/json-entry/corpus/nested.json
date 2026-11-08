@@ -1,0 +1,9 @@
+{
+  "source": "tests/json-s1-masks/corpus/nested.json",
+  "blk0": 3,
+  "k": 0,
+  "masks": [
+    "0x3bdfffddd577df7f",
+    "0x000000000001e104"
+  ]
+}

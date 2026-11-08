@@ -331,10 +331,13 @@ def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
 
 /-- Store a value at an address.  A vector is stored as its lanes packed
 little-endian, one lane after another, so a `<64 x i1>` value occupies eight
-bytes.  A vector whose total bit width is not a whole number of bytes has no
-byte layout, and a shape or width that disagrees with the instruction's type is
-undefined behaviour (the parser refuses both, so this is the hand-built-AST
-case). -/
+bytes and a `<8 x i32>` value thirty-two: the admitted vector widths are exactly
+those whose total bit width is whole bytes, at any lane width.  A vector whose
+total bit width is not a whole number of bytes has no byte layout, and a shape
+or lane width that disagrees with the instruction's type is undefined behaviour;
+the parser refuses both — the total-width rule at the store, and a value register
+of another type against the function's register table — so this is the
+hand-built-AST case. -/
 def storeValue (s : State) (ty : Ty) (v : Value) (addr : Nat) : Option State :=
   match ty, v with
   | .int w, .int w' x =>

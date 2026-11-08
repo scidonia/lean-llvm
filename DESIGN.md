@@ -453,23 +453,31 @@ canonical IR, checked with `llvm-as` in the verification runs.
    forms — a splat and a lane list, with `zeroinitializer` read as the splat of zero
    — lane-wise `icmp` and integer binops including `shl`/`lshr`, the mask `bitcast`
    and the non-mask vector `bitcast` at equal total width, `shufflevector` with a
-   defined mask, a mask-only vector `store`, the lane accesses
+   defined mask, a vector `store` at a whole-byte total width — a `<n x i1>` mask
+   being the same rule at lane width one — the lane accesses
    `extractelement`/`insertelement` (an index outside the lane range is `ub`, the
    model's reading of LLVM's poison), and a
    vector `load` at `<n x i8>` or at integer lanes whose total width is whole bytes
    (`Instr.load` carries no alignment field, so a captured
    `align 1` is dropped), each justified by the construct it serves in the
    emitted classifier fixture `probes/install/ir/json-classify.candidate.ll`, in
-   the stage-1 kernel fixture `tests/v16/ci2.ll`, or in the extracted mask unit's
+   the stage-1 kernel fixture `tests/v16/ci2.ll`, in the extracted mask unit's
    fixture `probes/install/ir/json-s1-masks.candidate.ll`, whose body is the one
-   `s1_masks_refines` proves.
+   `s1_masks_refines` proves, or in the entry unit's fixture
+   `probes/install/ir/json-entry.candidate.ll`, whose two bodies `entry_pos8_refines`
+   and `entry_b8_refines` prove.
    `getelementptr` is modelled for the integer element widths the model pins as
    having an allocated size equal to the stored size `Ty.sizeBytes` computes
    (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128`): `Instr.gep` carries the element type and the step adds
    `off * sizeof(elemTy)`, so `i8` is the byte offset the model began with and
-   `i32`/`i64` strides are the forms clang emits; a width whose two sizes differ
-   (`i24`, `i48`), and an aggregate, pointer or vector element type, remains
-   future and is refused by name.
+   `i32`/`i64` strides are the forms clang emits.  A vector of integer lanes is
+   admitted under one condition — the lane width is a whole number of bytes and
+   the packed size `n * w / 8` is a power of two, hence at least 1 — because the
+   step scales by the size LLVM allocates, which is the packed size only where
+   the two clauses hold; `<8 x i1>` fails the first (the model packs one byte where
+   `sizeBytes` counts eight) and `<4 x i24>` and `<3 x i32>` the second (both pack
+   12 bytes and LLVM steps 16).  A width whose two sizes differ (`i24`, `i48`),
+   and an aggregate or pointer element type, remains future and is refused by name.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing

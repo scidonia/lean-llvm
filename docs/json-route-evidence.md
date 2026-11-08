@@ -2,8 +2,9 @@
 
 The JSON routes exist to make externally visible behaviour observable:
 the API's accept/refuse outcomes, the tape's meaning, the corpus runner's
-agreement with its oracle, and the stage-1 mask route's object-versus-body row
-comparison. A green run alone does not show that a route would
+agreement with its oracle, and the two object-versus-body row comparisons — the
+stage-1 classification masks and the entry position emitters. A green run alone
+does not show that a route would
 notice a wrong implementation, so each route carries a **staged cut**: a
 deliberate divergence applied in a throwaway copy of the tree, built and run to
 show which assertion fires.
@@ -247,3 +248,80 @@ untouched. It was built and run in a throwaway copy, with nothing else moved.
   `JS4`'s claim, and the targeted comma-class defect is `JS5`'s.
 
 Command: `nix develop -c bash tests/json-s1-masks/check.sh`.
+
+## The entry route's cuts (`Z1`, `Z2`)
+
+`tests/json-entry/check.sh` is the JSON route for the entry position emitters:
+the object built from `kernel/json/entry.c`, called through
+`probes/json/entry_driver.c`, against the Lean bodies `entryPos8Function` and
+`entryB8Function` that `LeanLLVM/Vellum/JsonEntryIR.lean` pins from
+`probes/install/ir/json-entry.candidate.ll`.  One row is one `(mask stream,
+blk0, nblk, k)` call under one kernel; the route derives every row's count,
+`multi` and sentinel — and, for every row but the one long `nblk` row, its words
+— from the committed corpus bytes and from the arm's own label and asserts them,
+asserts the row count, and then compares the two actors' streams line for line.
+The row count is `2 * (6 corpus files + 65 859 arm streams)` = **131 730**.
+
+Both are the staged cut `JE2` and `JE3` name in `tests/json-entry.contract.md`:
+the entry unit's object is replaced by a stub that returns the cursor `k`
+unchanged and writes nothing — `leanllvm_json_entry_pos8` and
+`leanllvm_json_entry_b8` each discard their arguments and `return k` — while
+`leanllvm_json_entry_table` keeps its production body, so the table the POS8
+rows read stays the real one.  `Z1` stubs both kernels; `Z2` stubs B8 only,
+which makes every POS8 row the production body's own and so separates "the
+comparison is live" from "each kernel is compared separately".
+
+The stub is compiled from a source in a throwaway copy of the tree and
+substituted for the route's control object by a `clang` front end on `PATH` that
+rewrites the one compile whose `-o` basename is `kernel.o`; the fixture capture's
+compiles, the driver link, and the route's own two defect objects go to the real
+compiler untouched.  The cut adds no file to the tree: the stub source and the
+front end live outside it, and only the one compile of `kernel.o` is redirected.
+`nix develop -c lake build leanllvm-json-entry` in the copy exits 0 (1660 jobs).  The
+substituted objects are sha256 `611c9415…` (`Z1`) and `962c1eba…` (`Z2`) at the
+route's measured compiler line, against the production object's `384f710b…`;
+those hashes are the objects the compiles produced, so a substitution that
+silently kept the production object would show as a hash.  Observed on the
+working tree at `ad188ad` plus this change, Lean 4.35.0 and clang/LLVM 21.1.8
+from the flake.
+
+| Route | Cut | Build | Scenario | Fired |
+|---|---|---|---|---|
+| `tests/json-entry/check.sh` | the entry object replaced by a stub over both kernels (`Z1`) | exit 0 (1660 jobs) | exit 1 | `FAIL: the object and the Lean body disagree`, reached after the route's per-row derivation of the Lean actor's 131 730 rows had passed; the first differing row is **1**, whose count column is `0` and whose words are `-` |
+| `tests/json-entry/check.sh` | the entry object replaced by a stub over B8 only (`Z2`) | exit 0 (1660 jobs) | exit 1 | the same assertion; the first stream's POS8 row is identical in both actors, and the first differing row is **2**, that stream's B8 row, at count `0` |
+
+- **The two first differing rows are one stream's two kernels.** In `Z1` row 1
+  is `boundary-63.json`, label `blk00/k0/masks1`, kernel `p`: the body returns
+  36 and writes 36 positions, the stub returns 0 and writes nothing, so the
+  object's row reads `… p 0 - 1 0xa5a5a5a5` against the body's 36 words.  In
+  `Z2` that row is a context line — byte-identical in both actors — and row 2,
+  the same stream's `b` row, is the first that differs, `… b 0 - 1
+  0xa5a5a5a5` against the body's 36.  Both rows' streams carry 36 set lanes,
+  which is the property the cut needs: the row is chosen to have a set bit, so
+  a `0` in the count column is the stub's answer and not the stream's.
+- **The stub's count is the starting cursor, not a constant zero.**  The
+  `strings.json` stream is staged at `k = 5`, and under `Z1` its rows read
+  count `5` with five sentinel words and no position, where the body's count is
+  60.  A stub that returned a literal `0` would be a different divergence, and
+  this row is what tells the two apart.
+- **Nothing else moved.**  The cut's caller is the route's own driver
+  (`probes/json/entry_driver.c`) — not a second harness, and not the Lean
+  runner.  No other route reads `kernel/json/entry.c`: its other consumers are
+  the unit's identity scripts under `kernel/json/identity/` and the paired
+  benchmark `kernel/json/bench/paired.sh --unit entry`, neither of which is a
+  route.  In the cut tree both other JSON routes,
+  `tests/json-classify/check.sh` (exit 0, 71 windows agreeing; object sha256
+  `95a38141…`) and `tests/json-s1-masks/check.sh` (exit 0, 688 824 rows
+  agreeing; object sha256 `80d29a5b…`), are green.
+- **The same first row on two runs.**  Both cuts were run twice, and each pair of
+  outputs is identical once the unified diff's header — which carries the
+  temporary directory and timestamps — is excluded: `Z1`'s first differing row
+  is row 1 both times and `Z2`'s is row 2 both times.  The first failing row is
+  a property of the cut, not of a run.
+- **What it does not show.**  A stub is not a semantic defect: it shows the
+  comparison is live and that the first failing row is stable, not that the
+  positions are right for any block.  The object-versus-body agreement uncut is
+  the route's own green assertion, and the targeted defects belong to the
+  route's two detector arms, not to this cut.
+
+Command: `nix develop -c bash tests/json-entry/check.sh`.

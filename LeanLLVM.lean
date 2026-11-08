@@ -28,3 +28,7 @@ import LeanLLVM.Vellum.Pclmul
 import LeanLLVM.Vellum.QuoteDerive
 import LeanLLVM.Vellum.JsonS1MasksIR
 import LeanLLVM.Vellum.JsonS1MasksSteps
+import LeanLLVM.Vellum.JsonEntSpec
+import LeanLLVM.Vellum.JsonEntryIR
+import LeanLLVM.Vellum.JsonEntrySteps
+import LeanLLVM.Vellum.JsonB8Steps

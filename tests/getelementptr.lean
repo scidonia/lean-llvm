@@ -28,17 +28,24 @@ an address at or above `2 ^ 64`, where the `inbounds` the printer always emits
 would poison the pointer in LLVM — a behaviour this model does not represent.
 
 A base that is not a `ptr`, a second index, an index type that is not an integer
-no wider than 64 bits, an integer element width outside the admitted set, a
-non-integer element type, and the `inrange`/`nuw`/`nusw` modifiers are each
-refused by a message naming what was refused.  `inbounds` is accepted and dropped, and the printer emits it again, so
-the round trip is stable.
+no wider than 64 bits, an element type that is neither an admitted integer width
+nor a vector meeting the condition below, and the `inrange`/`nuw`/`nusw`
+modifiers are each refused by a message naming what was refused.  `inbounds` is
+accepted and dropped, and the printer emits it again, so the round trip is
+stable.
 
 Several refusals are produced by the type parser rather than the `getelementptr`
 branch, because the element token is read as a type first: an aggregate such as
-`[8 x i8]`, a named struct such as `%struct.P` and a vector such as `<4 x i32>`
-fail there with `unsupported type`, naming the first token it read (`[`,
-`%struct.P`, `<`).  A scalar type that parses but cannot size a step — `ptr`,
-`void` — and an integer width outside the admitted set fail in the
+`[8 x i8]` and a named struct such as `%struct.P` fail there with `unsupported
+type`, naming the first token it read (`[`, `%struct.P`).  A **vector** element
+type is read by the same type reader and admitted under one condition — the lane
+width is a whole number of bytes **and** the packed size is a power of two,
+`w % 8 = 0` and `n * w / 8` — because a step may scale by `sizeBytes` only where
+`sizeBytes` is the size LLVM allocates: `<8 x i1>` fails the first clause (the
+packing divergence, since `sizeBytes` is 8 while the model packs one byte) and
+`<4 x i24>` and `<3 x i32>` the second (the allocation divergence: both pack 12
+bytes and LLVM steps 16).  A scalar type that parses but cannot size a step —
+`ptr`, `void` — and an integer width outside the admitted set fail in the
 `getelementptr` branch, with that branch's wording.  The checks below assert
 which wording each shape gets, and that the other branch's wording is absent, so
 the routing is checked rather than assumed.
@@ -130,6 +137,11 @@ def gepWide : String := "  %q = getelementptr i32, ptr %p, i64 %k"
 clang emits when it walks an array of words. -/
 def gepWideLiteral : String := "  %q = getelementptr inbounds i64, ptr %p, i32 2"
 
+/-- A vector element type, the form the entry capture rewrites the table read to:
+`<4 x i32>` packs sixteen bytes, a whole-byte lane width and a power-of-two
+packed size, so it meets the condition and its step is the row's sixteen bytes. -/
+def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
+
 -- The affirmative controls: these lines parse, and to exactly one instruction
 -- of the expected shape.  A parser that refused every `getelementptr` would
 -- fail here, so the refusals below cannot pass by refusing everything.
@@ -144,6 +156,21 @@ def gepWideLiteral : String := "  %q = getelementptr inbounds i64, ptr %p, i32 2
 
 #guard instrsOf gepWideLiteral =
   some [.gep "%q" (.int 64) (.reg "%p") (.imm (.int 32 (BitVec.ofNat 32 2)))]
+
+-- A vector element type meeting the condition parses, and the width it parsed is
+-- the vector shape it keeps rather than a scalar the element token suggests.
+#guard instrsOf gepVec = some [.gep "%q" (.vec 4 (.int 32)) (.reg "%p") (.reg "%k")]
+
+-- And it round-trips: the printed form carries the modifier the parser accepts
+-- and the vector element type it parsed, and carries no `nuw`, which the parser
+-- refuses and the capture strips.
+#guard
+  match instrsOf gepVec with
+  | some [i] =>
+      reparses i ∧
+        mentions (Instr.render i) "getelementptr inbounds <4 x i32>, ptr %p, i64 %k" ∧
+        !mentions (Instr.render i) "nuw"
+  | _ => false
 
 -- Every admitted width parses, and the width it parsed is the width it keeps:
 -- dropping one from `Ty.gepElemAdmitted`, or admitting a width it does not name,
@@ -258,10 +285,27 @@ def gepWideLiteral : String := "  %q = getelementptr inbounds i64, ptr %p, i32 2
 #guard refusedWith "  %q = getelementptr void, ptr %p, i64 %k"
   ["getelementptr element type 'void'", "pointer or void"]
 
--- A vector element type is refused by the type parser, which names the `<` it
--- read; that is a different branch's wording, so it is asserted as such.
-#guard refusedWithOut "  %q = getelementptr <4 x i32>, ptr %p, i64 %k"
-  ["unsupported type '<'"] ["getelementptr element type"]
+-- A vector element type is admitted only under the gep condition, and the two
+-- divergence classes the condition excludes are refused separately, by the
+-- `getelementptr` branch rather than the type parser.  Each refusal guard is
+-- what separates the clauses: a rule that kept only one of the two would admit
+-- the text below that fails the other.
+
+-- The packing class: `<8 x i1>`'s lanes are not whole bytes, so `sizeBytes` (8)
+-- and the packed size (1) disagree.
+#guard refusedWithOut "  %q = getelementptr <8 x i1>, ptr %p, i64 %k"
+  ["getelementptr element type", "<8 x i1>"] ["unsupported type"]
+
+-- The allocation class: `<4 x i24>` packs twelve bytes, which is not a power of
+-- two, so LLVM steps sixteen where `sizeBytes` says twelve.
+#guard refusedWithOut "  %q = getelementptr <4 x i24>, ptr %p, i64 %k"
+  ["getelementptr element type", "<4 x i24>"] ["unsupported type"]
+
+-- The same class at another lane count: `<3 x i32>` packs twelve bytes too, so a
+-- rule that admitted a packed size merely because it is a whole number of bytes
+-- would accept it.
+#guard refusedWithOut "  %q = getelementptr <3 x i32>, ptr %p, i64 %k"
+  ["getelementptr element type", "<3 x i32>"] ["unsupported type"]
 
 -- An aggregate element type is refused by the type parser, which is where the
 -- element token is read as a type.  The assertion names that branch's wording

@@ -1,0 +1,8 @@
+{
+  "source": "tests/json-s1-masks/corpus/boundary-64.json",
+  "blk0": 0,
+  "k": 0,
+  "masks": [
+    "0x813b6c361bbbaedb"
+  ]
+}

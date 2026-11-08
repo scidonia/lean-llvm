@@ -60,6 +60,13 @@ root = "JsonClassifyMain"
 name = "leanllvm-json-s1-masks"
 root = "JsonS1MasksMain"
 
+# Runs the entry position bodies over corpus mask streams and the generated
+# arms, so the object's rows can be compared with the body's, and emits the
+# `ent` word's specification rows; see JsonEntryMain.lean.
+[[lean_exe]]
+name = "leanllvm-json-entry"
+root = "JsonEntryMain"
+
 # The JSON parser's scaling instrument: probes/bench/JsonBench.lean over the
 # documents in probes/bench/json/, driven by probes/bench/json-bench.sh.  Its
 # scope is the measurement only; it is not part of the library.

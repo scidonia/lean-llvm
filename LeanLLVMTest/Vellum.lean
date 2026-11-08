@@ -1,4 +1,5 @@
 import LeanLLVM
+import LeanLLVM.Vellum.JsonEntrySteps
 import LeanLLVM.Vellum.JsonScanABI
 import LeanLLVM.Vellum.JsonScanModel
 import LeanLLVM.Vellum.JsonScanIR
@@ -6,6 +7,7 @@ import LeanLLVM.Vellum.JsonScanLane
 import LeanLLVM.Vellum.JsonScanSpec
 import LeanLLVM.Vellum.Pclmul
 import LeanLLVM.Vellum.JsonS1MasksSteps
+import LeanLLVM.Vellum.JsonB8Steps
 
 open LeanLLVM.Vellum
 
@@ -4929,7 +4931,7 @@ example :
 
 /-! ### The table region, the nibble arithmetic and the delimiter word
 
-The pins below cover §6.3's helper list — the step lemmas, the composition lemmas and
+The pins below cover the helper list — the step lemmas, the composition lemmas and
 the lane-to-word bridge — together with the nibble arithmetic the table region rests
 on and the delimiter word's identity.  Every one is at the standard footprint
 `[propext, Quot.sound]` or narrower; a widened one fails elaboration.
@@ -6227,3 +6229,342 @@ footprint rather than claiming the narrower one.
 /-- info: 'LeanLLVM.Vellum.JsonS1MasksSteps.s1_masks_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonS1MasksSteps.s1_masks_refines
+
+/-! ### The entry word and its tail
+
+Both statements are over the block layer's own masks and consume no step lemma,
+so both are at the ceiling with no carrier.  `entry_mask_eq` rests on
+`BitLanes.getLsbD_not_of_lt`; the tail's proof rests on three further `BitLanes`
+lane facts (`testBit_two_pow_sub_one`, `allOnes_getLsbD_of_lt` and
+`ctpop_eq_setLanes_length`), the first two proved there without the
+`Classical.choice` that `Nat.testBit_two_pow_sub_one` and
+`BitVec.getLsbD_allOnes` carry, so the pins below hold each of those facts where
+it is. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonScanSpec.entry_mask_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonScanSpec.entry_mask_eq
+
+/-- info: 'LeanLLVM.Vellum.JsonEntryIR.entry_tail_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntryIR.entry_tail_eq
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.getLsbD_not_of_lt
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.testBit_two_pow_sub_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.testBit_two_pow_sub_one
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.allOnes_getLsbD_of_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.allOnes_getLsbD_of_lt
+
+/-! ### The entry unit's step corpus
+
+**The `Classical.choice` these pins report is none of the three carriers the
+stage-1 pins name** (`sshiftRight_63`, `s1_inside_spec`, `s1_masks_refines`):
+none of them is consumed here. It is introduced by the entry lemmas' own proof
+terms, and the pins below name the declaration that introduced it rather than a
+single origin, because the entry corpus has more than one:
+
+* `step_gep64` widens in its own proof term — measured at
+  `[propext, Classical.choice, Quot.sound]` while each of its dependencies
+  (`evalInstr_gep`, `evalOperand_reg_of`, `Ty.sizeBytes`) is clean — through a
+  `Classical.propDecidable`-discharged `Decidable` inside it. Every pin that
+  steps a `getelementptr` reaches the choice there.
+* `findBlock_pos8Body`, `findBlock_pos8Groups`, `findBlock_pos8Advance` and
+  `findBlock_pos8Exit` each widen in their own proof terms, independently of
+  `step_gep64`; `findBlock_pos8Entry` reaches nothing beyond `propext`. A pin
+  that steps through a block lookup names the lookup it consumed —
+  `pos8Exit_step`, for instance, reports the choice from `findBlock_pos8Exit`.
+
+`entry_pos8_refines`'s footprint, and the footprint of every helper it consumes,
+is `[propext, Quot.sound]` plus those carriers and the two `BitLanes` lane facts
+the intrinsic calls resolve through (`ctpop_eq_setLanes_length` and
+`cttz_eq_head`), which the pins below keep where they are. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.entry_pos8_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.entry_pos8_refines
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8_loop_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8_loop_run
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_run
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Body_step_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Body_step_zero
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Body_step_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Body_step_pos
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_step
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Cleanup_step_last' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Cleanup_step_last
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Cleanup_step_more' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Cleanup_step_more
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Exit_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Exit_step
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Entry_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Entry_step_zero
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Entry_step_pos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Entry_step_pos
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8MemFold_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8MemFold_read
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8MemFold_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8MemFold_frame
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Stream_eq_positions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Stream_eq_positions
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Stream_eq_streamPrefix' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Stream_eq_streamPrefix
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.blockMem_frame_tight' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.blockMem_frame_tight
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.blockStore_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.blockStore_frame
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.readBytes_wordsOf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.readBytes_wordsOf
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.denoteCode_params' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.denoteCode_params
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8_init' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8_init
+
+/-! The carriers themselves, at the footprint each introduces.  `step_gep64` and
+the four block lookups `findBlock_pos8Body`, `findBlock_pos8Groups`,
+`findBlock_pos8Advance` and `findBlock_pos8Exit` widen in their own proof terms,
+independently of one another; `findBlock_pos8Entry` reaches nothing beyond
+`propext`.  Every pin in this section that reports `Classical.choice` names the
+declaration it reached, and these pins hold those declarations where they are. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.step_gep64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.step_gep64
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Entry' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Entry
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Body
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Groups' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Groups
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Advance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Advance
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.findBlock_pos8Exit
+
+/-! The two lane facts the entry theorem's intrinsic calls resolve to, held at
+the ceiling recorded for them: `ctpop_eq_setLanes_length` at
+`[propext, Quot.sound]`, `cttz_eq_head` at `[propext]`. -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.ctpop_eq_setLanes_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.ctpop_eq_setLanes_length
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.cttz_eq_head' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.BitLanes.cttz_eq_head
+
+/-! The zero word's two facts, at the ceiling they hold without a carrier: the
+all-clear lanes are found through `BitVec.getLsbD_zero` and
+`BitLanes.filter_eq_nil_of_all_false`, not through `List.filter_eq_nil_iff`,
+which carries `Classical.choice`; the population count of the zero word then
+follows.  Both are consumed by the fold lemmas below, so a proof that reintroduces
+the choice-carrying list lemma shows here and at `b8MemFold_frame`. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.setLanes_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.setLanes_zero
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.ctpop_zero64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.ctpop_zero64
+
+/-! The `ub` bricks: the body-level fact both companions consume, for each body. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Body_ub_of_no_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Body_ub_of_no_read
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.b8Body_ub_of_no_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.b8Body_ub_of_no_read
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.findBlock_b8Body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.findBlock_b8Body
+
+/-! The mask-word half of the `ub` companion: the loop's own induction
+(`pos8_loop_run_ub`) and the whole-function statement built from it
+(`entry_pos8_undefined_of_no_read`), then the three read facts it rests on and the
+memory projection it states its invariant with. The `Classical.choice` these
+report is `step_gep64`'s, as the block above records: the companion reaches it
+through `pos8Body_ub_of_no_read`, and the two read facts are `propext`-only. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.entry_pos8_undefined_of_no_read' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.entry_pos8_undefined_of_no_read
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8_loop_run_ub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8_loop_run_ub
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.natToBytes_bytesToNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.natToBytes_bytesToNat
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.readBytes_length' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.readBytes_length
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.natToBytes_of_readBytes_eight' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.natToBytes_of_readBytes_eight
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.state_mem_update_pc' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.state_mem_update_pc
+
+/-! The block kernel's entry stream, at the ceiling the entry statement records:
+the refinement, the agreement with POS8, and the `ub` companion with the loop
+recurrence and the per-block step count it rests on. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.entry_b8_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.entry_b8_refines
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.entry_pos8_b8_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.entry_pos8_b8_agree
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.entry_b8_undefined_of_no_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.entry_b8_undefined_of_no_read
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.b8_loop_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.b8_loop_run
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.b8_loop_run_ub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.b8_loop_run_ub
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.b8Block_pos_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.b8Block_pos_run
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.b8BlockSteps_two' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.b8BlockSteps_two
+
+/-! The fold's two facts, which the block statement rests on and which no
+`getelementptr` enters: `b8MemFold_read` gives back the positions the fold writes,
+`b8MemFold_frame` leaves every read outside the fold's span alone.  Both hold at
+`[propext, Quot.sound]` with no carrier — the frame's zero-block step reaches the
+zero word's empty lane list through `setLanes_zero`, so there is nothing here to
+name. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.b8MemFold_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.b8MemFold_read
+
+/-- info: 'LeanLLVM.Vellum.JsonB8Steps.b8MemFold_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonB8Steps.b8MemFold_frame
+
+/-! ### The entry companion's table-row half
+
+The mirror of the block above.  Where the mask word's half takes the whole table
+readable (`readBytes mem0 tab 8192 = some pos8Table`), the row half takes it
+readable in every row but the one group `g` of block `j`'s word selects — the
+whole table readable contradicts the failing row, so the two halves cannot share
+that premise.  Pinned: the whole-function statement, the loop's induction, the
+two compositions of the row-readable runners (`pos8Groups_run_row` for a block
+that completes, `pos8Groups_ub_of_row` for one that does not), the `if.end` step
+built from the first, the group runner both rest on, one failing prefix, and
+`blockMem_read_row`, the frame that carries a row past the stores.
+
+The `Classical.choice` these report is `step_gep64`'s, as the entry step corpus
+block above records: the row half reaches it through `pos8Head_run_row` and
+through the `_none_row` prefixes, which step the same `getelementptr` before the
+load that fails.  `blockMem_read_row` reports `[propext, Quot.sound]` — it only
+frames a read, and no `getelementptr` is in it. -/
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.entry_pos8_undefined_of_no_row' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.entry_pos8_undefined_of_no_row
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8_loop_run_row_ub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8_loop_run_row_ub
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_run_row' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_run_row
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_ub_of_row' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_ub_of_row
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_step_row' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Groups_step_row
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Head_run_row' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Head_run_row
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.pos8Head_run_none_row' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.pos8Head_run_none_row
+
+/-- info: 'LeanLLVM.Vellum.JsonEntrySteps.blockMem_read_row' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonEntrySteps.blockMem_read_row

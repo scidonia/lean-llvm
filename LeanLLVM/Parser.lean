@@ -5,21 +5,28 @@ The parser is line oriented: one instruction per line, one label per block.
 Unmodelled instructions and block structure are refused with a message naming
 the construct, rather than being approximated: aggregates other than the
 fixed-length vector, and floating point, are not accepted yet.  Of the pointer
-arithmetic the modelled part is the byte offset an emitted body contains —
-`getelementptr [inbounds] i8, ptr X, iN Y` with one index no wider than 64 bits
-— and every other `getelementptr` shape is refused by name: a different element
-type, a base that is not a `ptr`, a second index, a wider index, and the
-`inrange`/`nuw`/`nusw` modifiers.  `inbounds` is accepted and dropped, because
-the instruction has no field for it.  Of the vector fragment the modelled part
-is the one an emitted body contains — `load` of `<n x i8>`, the lane-wise
-`icmp`, the lane-wise `or`/`and`/`xor`/`add`/`sub`, the mask `bitcast`, the lane
-accesses `extractelement` and `insertelement`, and both literal forms a vector
-constant takes: the `splat` and the lane list `<i32 1, i32 2>`, with
-`zeroinitializer` read as the splat of zero — and the rest of the vector grammar
-is refused by name.  A lane access's index is read as an unsigned count and its
-width is checked and dropped; an index outside the vector's lane range is not
-refused here (it is not a syntax error) and is undefined behaviour at run time,
-which is what LLVM's poison becomes in this model.  A
+arithmetic the modelled part is one index no wider than 64 bits over an element
+type whose allocated size is the stored size the step scales by —
+`getelementptr [inbounds] <elemTy>, ptr X, iN Y`, with `<elemTy>` one of the
+seven integer widths `Ty.gepElemAdmitted` names or a vector of integer lanes
+under that predicate's one condition — and every other `getelementptr` shape is
+refused by name: an element type outside that admission, a base that is not a
+`ptr`, a second index, a wider index, and the `inrange`/`nuw`/`nusw` modifiers.
+`inbounds` is accepted and dropped, because the instruction has no field for it.
+Of the vector fragment the modelled part is the one an emitted body contains —
+`load` of `<n x i8>` and of integer lanes, a `store` of integer lanes whose total
+width is a whole number of bytes (the mask store's `<n x i1>` rule at `w = 1`),
+the lane-wise `icmp`, the lane-wise `or`/`and`/`xor`/`add`/`sub`, the mask
+`bitcast`, the lane accesses `extractelement` and `insertelement`, and both
+literal forms a vector constant takes: the `splat` and the lane list
+`<i32 1, i32 2>`, with `zeroinitializer` read as the splat of zero — and the rest
+of the vector grammar is refused by name.  A `store`'s value operand is compared
+with the written type once the function's register table is known, so a defined
+register of another type is refused by name while an undefined one stays
+accepted and is `ub` when read.  A lane access's index is read as an unsigned
+count and its width is checked and dropped; an index outside the vector's lane
+range is not refused here (it is not a syntax error) and is undefined behaviour
+at run time, which is what LLVM's poison becomes in this model.  A
 function definition's header is checked for attributes the semantics does not
 model: a return attribute before the return type and a function attribute after
 the parameter list are both refused.  A `declare` header is not checked:
@@ -556,20 +563,29 @@ def checkCallParamTypes (callee : String) (sig : List Ty × Bool)
             but the callee's written function type gives {ty.render} at that position"
   go 1 sig.1 args
 
-/-- The five intrinsic spellings the fragment models, checked at the symbol,
-arity, operand-type and immediate positions.
+/-- The intrinsic spellings the fragment models, checked at the symbol, arity,
+operand-type and immediate positions.
 
 The generic `call` path checks none of these: it reads any callee name and any
 argument list, so without this check a three-argument `pshuf.b`, a `pclmulqdq`
-at an immediate other than 0, a `pext.32` and a `ctlz` with the flag `i1 true`
-would all parse while meaning nothing here.  Each refusal names the intrinsic it
-refused, and the accepted form is the one the emission uses:
+at an immediate other than 0, a `pext.32`, a `ctpop.i16` and a `ctlz` with the
+flag `i1 true` would all parse while meaning nothing here.  Each refusal names
+the intrinsic it refused, and the accepted form is the one the emission uses:
 
 * `llvm.x86.avx2.pshuf.b`: `<32 x i8> (<32 x i8>, <32 x i8>)` — two operands,
   the table then the control;
 * `llvm.x86.pclmulqdq`: `<2 x i64> (<2 x i64>, <2 x i64>, i8 0)`;
 * `llvm.x86.bmi.pext.64` and `llvm.x86.bmi.pdep.64`: `i64 (i64, i64)`;
-* `llvm.ctlz.i64`: `i64 (i64, i1 false)`.
+* `llvm.ctlz.i64`: `i64 (i64, i1 false)`;
+* `llvm.ctpop.i32`: `i32 (i32)` and `llvm.ctpop.i64`: `i64 (i64)` — one operand
+  and no flag;
+* `llvm.cttz.i64`: `i64 (i64, i1 <flag>)`, at **both** flag values.  The flag is
+  a literal, not a register, and unlike `ctlz` the `i1 true` value is admitted:
+  it promises poison at the zero word, and `BitLanes.cttz`'s docstring states the
+  bound that makes the model's determined value there admissible.  `ctlz … i1
+  true` has no such bound and stays refused, so the asymmetry is the admission
+  rule and not an inconsistency: a spelling is admitted with an obligation that
+  bounds its poison, and that one has none.
 
 A call to any other symbol is not this check's business: a callee's meaning is
 the `Calls` environment's, and the fixture's own opcode-and-call-target
@@ -627,6 +643,20 @@ def checkIntrinsicShape (callee : String) (retTy : Ty)
           | _ =>
               .error "the intrinsic @llvm.ctlz.i64's second argument must be the \
                   immediate i1 false"
+  | "llvm.ctpop.i32" =>
+      shape 1 (.int 32) [.int 32]
+  | "llvm.ctpop.i64" =>
+      shape 1 (.int 64) [.int 64]
+  | "llvm.cttz.i64" =>
+      match shape 2 (.int 64) [.int 64, .int 1] with
+      | .error e => .error e
+      | .ok _ =>
+          match args with
+          | [(_, _), (_, .imm (.int 1 _))] => .ok ()
+          | _ =>
+              .error "the intrinsic @llvm.cttz.i64's second argument must be the \
+                  immediate i1 true or i1 false: the flag is a literal, not a \
+                  register, and both values are modelled"
   | s =>
       if s.startsWith "llvm.x86.bmi.pext." then
         .error s!"the intrinsic @{s} is not modelled: the pext model is the \
@@ -637,6 +667,12 @@ def checkIntrinsicShape (callee : String) (retTy : Ty)
       else if s.startsWith "llvm.ctlz." then
         .error s!"the intrinsic @{s} is not modelled: only @llvm.ctlz.i64 with \
             the flag i1 false is"
+      else if s.startsWith "llvm.ctpop." then
+        .error s!"the intrinsic @{s} is not modelled: only @llvm.ctpop.i32 and \
+            @llvm.ctpop.i64 are, each at its own width and with one operand"
+      else if s.startsWith "llvm.cttz." then
+        .error s!"the intrinsic @{s} is not modelled: only @llvm.cttz.i64 is, \
+            with an immediate i1 flag"
       else if s.startsWith "llvm.x86.avx2.pshuf." then
         .error s!"the intrinsic @{s} is not modelled: only \
             @llvm.x86.avx2.pshuf.b is"
@@ -684,13 +720,13 @@ outcome carries — `CallOutcome.ret` is a value, so an environment that models 
 callee returning nothing must still supply one, and nothing here can tell that
 it did.
 
-The five intrinsic symbols the fragment models are the exception to that
+The intrinsic symbols the fragment models are the exception to that
 openness: `checkIntrinsicShape` validates each one's symbol, arity, operand
 types and immediate, so a `pshuf.b` of the wrong arity, a `pclmulqdq` at an
-immediate other than 0, a `pext.32`, a `pdep.32` and a `ctlz` with the flag
-`i1 true` are refused by name instead of reaching the semantics as calls no
-environment can resolve meaningfully.  Any other callee is still resolved by
-the environment alone. -/
+immediate other than 0, a `pext.32`, a `pdep.32`, a `ctpop.i16`, a `cttz` whose
+flag is not an immediate `i1`, and a `ctlz` with the flag `i1 true` are refused
+by name instead of reaching the semantics as calls no environment can resolve
+meaningfully.  Any other callee is still resolved by the environment alone. -/
 def parseCall (dst : Option String) : P Stmt := do
   let retTy ← expectTy
   let first ← P.next
@@ -953,6 +989,41 @@ def checkICmpPtrTypes (f : Function) : Except String Unit :=
   | .error e => .error e
   | .ok _ => .ok ()
 
+/-- Check a `store`'s value operand against the written type, when the operand
+names a register the function defines.
+
+The operand grammar reads a register without consulting its type, so before this
+check `store i32 %q, ptr %p` with `%q` an `i64` parsed — and the vector widening
+would have accepted `store <8 x i32> %q` with `%q` an `i64` and `store <8 x
+i64> %v` with `%v` an `<8 x i32>` as well, since their total widths are whole
+bytes.  A register bound at another type is refused by name, with both types.
+
+An **undefined** register has no type, so it is not refused here: the run is
+`ub` when it is read, which is the model's existing reading of a name the
+function neither binds nor takes as a parameter.  A literal is read at the
+written type by the operand grammar, so it has no separate type to compare. -/
+def checkStoreValue (f : Function) (written : Ty) : Operand → Except String Bool
+  | .imm _ => .ok true
+  | .reg n =>
+      match f.regType n with
+      | some ty' =>
+          if ty' = written then .ok true
+          else
+            .error s!"store writes {written.render} but its value operand {n} has \
+                type {ty'.render}: a store's value must have the written type"
+      | none => .ok true
+
+/-- Check every `store` of a function.  This runs once the blocks and the
+register table are known, like the `phi` and `icmp ptr` type checks. -/
+def checkStoreValues (f : Function) : Except String Unit :=
+  match f.blocks.allM fun b =>
+      b.instrs.allM fun i =>
+        match i with
+        | .store ty v _ => checkStoreValue f ty v
+        | _ => .ok true with
+  | .error e => .error e
+  | .ok _ => .ok ()
+
 /-- The entry list of a `shufflevector` mask, read after its opening `<`: one
 `i32 <literal>` per entry, the list closed by `>`.  An entry is a decimal or
 `0x` integer naming a source lane, so `undef` and `poison` are refused by name —
@@ -1204,36 +1275,58 @@ def parseValueInstr (dst : String) : P Stmt := do
   | "getelementptr" =>
       -- `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`: one index and an
       -- element type whose allocated size is the stored size the step scales by.
-      -- The element token is read as a type first, so an aggregate (`[N x T]`), a
-      -- named struct (`%struct.P`) or a vector (`<n x iW>`) is refused by
-      -- `parseTy` before this branch decides anything, and that message names
-      -- the first token it read (`[`, `%struct.P`, `<`) rather than a whole
-      -- type; this branch's non-integer arm therefore sees only `ptr` and
-      -- `void`.  An integer width outside `Ty.gepElemAdmitted` is refused here,
-      -- by name and with the allocated-versus-stored-size reason: the step
-      -- scales by the stored size, so a width where the two differ would give
-      -- this model one address and LLVM another.  The other excluded shapes —
-      -- the modifiers other than `inbounds`, a base that is not a `ptr`, a
-      -- second index, and an index type that is not an integer no wider than 64
-      -- bits — are refused by name too.  `inbounds` itself is accepted and
-      -- dropped: the instruction has no field for it, and the printer emits it
-      -- again.
+      -- The element type is read by `expectTy`, so a vector element type
+      -- (`<n x iW>`) is read as the vector it is rather than refused as a token;
+      -- an aggregate (`[N x T]`) and a named struct (`%struct.P`) fail in the
+      -- type reader with `unsupported type`, naming the first token it read
+      -- (`[`, `%struct.P`).  `Ty.gepElemAdmitted` is the admission: the seven
+      -- integer widths, and a vector of integer lanes whose lane width is a whole
+      -- number of bytes and whose packed size is a power of two (`w % 8 = 0` and
+      -- `n * w / 8` a power of two, hence at least 1).  A refused
+      -- integer width and a refused vector are each refused here, by name and
+      -- with the reason — a step scaled by the stored size would give this model
+      -- one address and LLVM another, whether the divergence is in the packing
+      -- (`<8 x i1>`) or in the allocation (`<4 x i24>`, `<3 x i32>`) — while the
+      -- scalar non-integer arm sees only `ptr` and `void`.  The other excluded
+      -- shapes — the modifiers other than `inbounds`, a base that is not a
+      -- `ptr`, a second index, and an index type that is not an integer no wider
+      -- than 64 bits — are refused by name too.  `inbounds` itself is accepted
+      -- and dropped: the instruction has no field for it, and the printer emits
+      -- it again.
       let _ ← gepModifiers
-      let elemTok ← P.next
-      let elemTy ← match parseTy elemTok with
-        | .ok ty@(.int w) =>
-            if ty.gepElemAdmitted then pure ty
+      let elemTy ← expectTy
+      if elemTy.gepElemAdmitted then pure ()
+      else
+        match elemTy with
+        | .int w =>
+            P.fail s!"getelementptr element width i{w} is not admitted: the step \
+              scales by the stored size, and only i1, i7, i8, i16, i32, i64 and \
+              i128 are admitted — the widths the model pins as having the same \
+              allocated and stored size. A width where the two differ would be \
+              given one address here and another by LLVM, and a width the model \
+              does not pin is not characterised here; both are refused"
+        | .vec n (.int w) =>
+            -- The two divergence classes are named separately, because the
+            -- condition has two clauses and a rule that kept only one would admit
+            -- the input class the other excludes.
+            let stored := n * ((w + 7) / 8)
+            let packed := n * w / 8
+            if w % 8 ≠ 0 then
+              P.fail s!"getelementptr element type '{elemTy.render}' is not admitted: \
+                a lane width of i{w} is not a whole number of bytes, so the packed \
+                size n * w / 8 = {packed} is not the n * ((w + 7) / 8) = {stored} \
+                bytes this step would scale by, and LLVM steps the packed size \
+                rounded up to its next power of two"
             else
-              P.fail s!"getelementptr element width i{w} is not admitted: the step \
-                scales by the stored size, and only i1, i7, i8, i16, i32, i64 and \
-                i128 are admitted — the widths the model pins as having the same \
-                allocated and stored size. A width where the two differ would be \
-                given one address here and another by LLVM, and a width the model \
-                does not pin is not characterised here; both are refused"
-        | .ok _ =>
-            P.fail s!"getelementptr element type '{elemTok}' is not modelled: a \
+              P.fail s!"getelementptr element type '{elemTy.render}' is not admitted: \
+                its packed size n * w / 8 = {packed} is not a power of two, so LLVM \
+                steps the next power of two above it while sizeBytes is {stored}. \
+                A vector element type is admitted under one condition — w % 8 = 0 \
+                and n * w / 8 a power of two, hence at least 1 — because the step \
+                scales by the size LLVM allocates"
+        | _ =>
+            P.fail s!"getelementptr element type '{elemTy.render}' is not modelled: a \
               pointer or void element type has no integer size to scale the index by"
-        | .error e => P.fail e
       P.expect ","
       let baseTyTok ← P.next
       if baseTyTok ≠ "ptr" then
@@ -1329,25 +1422,26 @@ def parseSimple : P Stmt := do
             pure (.term (.condbr c thenBlock elseBlock))
   | "unreachable" => pure (.term .unreachable)
   | "store" =>
-      -- The modelled vector store is a packed mask: `<n x i1>` whose total
-      -- width is a whole number of bytes, the shape the classifier body stores
-      -- its comparison result at.  Any other vector value is refused by name,
-      -- mask or not — `<32 x i8>` has no byte-packing rule here even though its
-      -- total width is whole — and a mask whose width is not whole bytes has no
-      -- byte layout at all.
+      -- A vector value is written as its lanes packed little-endian, lane `k` to
+      -- bits `[k * w, (k + 1) * w)` and `n * w / 8` bytes in all, so a vector
+      -- store is admitted exactly when its total width is a whole number of
+      -- bytes.  A `<n x i1>` mask store is that rule at `w = 1`, not a rule of
+      -- its own: the classifier's mask store and the entry body's `<8 x i32>`
+      -- row store are the same admission at two lane widths.  A total width that
+      -- is not whole bytes has no byte layout and is refused by name.  The value
+      -- operand's type is checked against the written type once the function is
+      -- known (`checkStoreValues`), because `parseOperand` returns a register
+      -- without consulting its type.
       let (ty, v) ← parseTypedOperand
       P.expect ","
       let (_, p) ← parseTypedOperand
       match ty with
-      | .vec n (.int 1) =>
-          if n % 8 = 0 then pure (.instr (.store ty v p))
+      | .vec n (.int w) =>
+          if n * w % 8 = 0 then pure (.instr (.store ty v p))
           else
-            P.fail s!"store of {ty.render} is not modelled: a mask store's total \
-                width of {n} bit(s) is not a whole number of bytes"
-      | .vec _ _ =>
-          P.fail s!"store of the vector value {ty.render} is not modelled: the \
-              modelled vector store is an '<n x i1>' mask whose total width is a \
-              whole number of bytes"
+            P.fail s!"store of {ty.render} is not modelled: a vector store's total \
+                width of {n * w} bit(s) is not a whole number of bytes, so the \
+                value has no byte layout"
       | _ => pure (.instr (.store ty v p))
   | "call" => parseCall none
   | "tail" => do
@@ -1540,7 +1634,10 @@ def parseFunction (header : List String) (rest : List (List String)) :
       | .ok _ =>
           match checkICmpPtrTypes f with
           | .error e => throw e
-          | .ok _ => .ok (f, rest')
+          | .ok _ =>
+              match checkStoreValues f with
+              | .error e => throw e
+              | .ok _ => .ok (f, rest')
 
 /-- Build one parameter from the tokens between two commas. -/
 def finishDeclParam (cur : List String) (acc : List Ty) : Except String (List Ty) :=

@@ -1,17 +1,23 @@
 # Native SIMD JSON pipeline: measured performance record
 
-Status: **measurement record, with stage 1 now in the tree**. The pipeline was
-built and measured in a scratch tree outside the checkout, and the numbers below
-are a record of observed runs, not an artefact reproducible from this tree —
-re-measuring requires rebuilding the harness, whose structure, arms and controls
-are described in §7 so that a rebuild can repeat the same comparisons. The
-exception is the stage-1 classification-mask unit: its kernel is extracted as
-`kernel/json/s1_block.c`, its emitted IR is committed as
+Status: **measurement record, with stage 1's two units now in the tree**. The
+pipeline was built and measured in a scratch tree outside the checkout, and the
+numbers below are a record of observed runs, not an artefact reproducible from
+this tree — re-measuring requires rebuilding the harness, whose structure, arms
+and controls are described in §7 so that a rebuild can repeat the same
+comparisons. Stage 1's two units are the exception. The classification-mask
+kernel is extracted as `kernel/json/s1_block.c`, its emitted IR is committed as
 `probes/install/ir/json-s1-masks.candidate.ll`, and `s1_masks_refines`
 (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves that pinned body stores the six
-masks and the carry `LeanLLVM/Vellum/JsonScanSpec.lean` specifies. Nothing past
-stage 1 — the entry emitters, the exit/escape stage, the parser's own refinement
-— is in the tree.
+masks and the carry `LeanLLVM/Vellum/JsonScanSpec.lean` specifies. The entry
+positions unit is extracted as `kernel/json/entry.c`, its emitted IR is committed
+as `probes/install/ir/json-entry.candidate.ll`, and the two bodies
+`LeanLLVM/Vellum/JsonEntryIR.lean` pins are proved by `entry_pos8_refines`
+(`LeanLLVM/Vellum/JsonEntrySteps.lean`) and `entry_b8_refines`
+(`LeanLLVM/Vellum/JsonB8Steps.lean`) against the entry word
+`LeanLLVM/Vellum/JsonEntSpec.lean` specifies. Everything else — the selection
+that fills the entry stream, the exit and escape stages, the assembled pipeline,
+and the parser's own refinement — remains outside the tree.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -145,7 +151,7 @@ repeat them.
 |carrying the escape kind out of stage 1|27.875 vs 27.871 ns/body — the branch moves, not disappears|
 |mask-derived UTF-8 (`pshufb` classes over the classifier's masks)|117 instructions vs 89; +8.1 vs +7.3 ns/block|
 |mask-derived UTF-8, vectorised range check|15.5–20.0 ns/block; the gated form mispredicts 33% of the time|
-|4-entry emitter batch for `dense`|did not reproduce under the corrected route; POS8 wins|
+|4-entry emitter batch for `dense`|did not reproduce under the corrected route; POS8 wins. The extraction in `kernel/json/entry.c` carries the POS8 and B8 kernels and no batch, so no cost is claimed for the batch there|
 |removing the escape-list class gate|saves 2.3–2.8 ns/block on `dense`/`canada` — the gate is the win, not the cost|
 
 Two refutations are specifically about **where** a decision is taken rather
@@ -214,15 +220,21 @@ Bounded but unresolved, and all inside or near the placement floor:
 ## 9. What this does not establish
 
 - **Mostly nothing about refinement, and stage 1 is the exception.** The measured
-  pipeline is a native implementation. Stage 1's mask unit is now related: its
-  kernel is extracted as `kernel/json/s1_block.c`, and `s1_masks_refines`
-  (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves the emitted body pinned from
-  that source stores exactly the masks and carry `JsonScanSpec` defines — which
-  `JsonScanSpec` in turn relates to `ScanBlock`'s `maskOf` fold and to
-  `ScanWindow`'s `windowOf`. Everything else here is still unrelated to the Lean
-  development by any proof: the entry emitter, the escape and exit stages, the
-  assembled pipeline, and `LeanLLVM/JSON/`'s parser. Connecting those is the open
-  obligation, not a corollary of these numbers.
+  pipeline is a native implementation. Both of stage 1's units are now related.
+  The classification-mask unit's kernel is extracted as `kernel/json/s1_block.c`,
+  and `s1_masks_refines` (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves the
+  emitted body pinned from that source stores exactly the masks and carry
+  `JsonScanSpec` defines — which `JsonScanSpec` in turn relates to `ScanBlock`'s
+  `maskOf` fold and to `ScanWindow`'s `windowOf`. The entry positions unit's two
+  kernels are extracted as `kernel/json/entry.c`, and `entry_pos8_refines`
+  (`LeanLLVM/Vellum/JsonEntrySteps.lean`) and `entry_b8_refines`
+  (`LeanLLVM/Vellum/JsonB8Steps.lean`) prove the bodies pinned from
+  `probes/install/ir/json-entry.candidate.ll` against the entry word
+  `LeanLLVM/Vellum/JsonEntSpec.lean` specifies: the positions each body writes and
+  the cursor it returns. Everything else here is still unrelated to the Lean
+  development by any proof: the selection that fills the entry stream, the escape
+  and exit stages, the assembled pipeline, and `LeanLLVM/JSON/`'s parser.
+  Connecting those is the open obligation, not a corollary of these numbers.
 - **Nothing about this machine's generality.** One host, two core classes, one
   governor setting (`powersave`), one compiler toolchain, `AVX2` code paths.
   Absolute levels drift 5–10% between processes; only within-run paired deltas

@@ -20,10 +20,15 @@ own lane takes `NoBackslashOutside` on top of the continuation the stop's readba
 supplies — and each condition is shown necessary by a counterexample rather than
 assumed.
 The identification with the emitted kernel's own registers is proved for the
-extracted unit, at the committed fixture: `s1_masks_refines`
+first of the two extracted units, at the committed fixture: `s1_masks_refines`
 (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) states it of `@leanllvm_json_s1_masks`
-as `LeanLLVM/Vellum/JsonS1MasksIR.lean` pins that text. It stays owed for any
-*other* emission, which is what "What is not proved" below now says.
+as `LeanLLVM/Vellum/JsonS1MasksIR.lean` pins that text. The second unit, the
+entry positions emitters, is identified in `LeanLLVM/Vellum/JsonEntryIR.lean`,
+which pins the two bodies of `probes/install/ir/json-entry.candidate.ll`: the
+entry stage's identification is `entry_pos8_refines` and `entry_b8_refines`,
+stated against the entry word `LeanLLVM/Vellum/JsonEntSpec.lean` writes from the
+masks this module specifies. The identification stays owed for any *other*
+emission, which is what "What is not proved" below now says.
 
 ## The specification decision: which quotes count
 

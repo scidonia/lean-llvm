@@ -103,8 +103,12 @@ no cross-byte state.
 
 ## J4 — memory-using LLVM scanner and installation
 
-Missing: a scanner body that writes its index output (no vector `store` is
-modelled and no index-emission body exists; J3's model is Lean and emits none),
+Missing: a scanner body that writes its index output (the widened vector
+`store` is modelled since the entry unit, and the entry unit is itself an
+index-emission body — `kernel/json/entry.c`'s two position kernels, proved by
+`entry_pos8_refines` and `entry_b8_refines` — but no body joins classification
+to emission: J3's model is Lean and emits none, and the loop that would call
+both units is the pipeline's, not this tree's),
 a baseline body for the pair, and an artifact-bound installation. The
 classifier's vector and memory operations **are** modelled and its imported
 body **is** refined (`scannerLLVM_refines`), the caller theorem holds for the
@@ -138,10 +142,14 @@ an obstacle to J6.
    (`LeanLLVM/Syntax.lean`: `Instr.icmpVec`, `Instr.binopVec`, `Instr.bitcastMask`), with the three element-position refusals in
    the parser. The classifier's emitted body is proved against the modelled
    fragment (`scannerLLVM_refines`, `LeanLLVM/Vellum/JsonClassifyIR.lean:838`).
-   Still absent and still blocking the emitted scanner (J4+): shuffles, mask extraction, AVX2
-   intrinsics, a vector store, and any stateful scanner written over the
-   modelled vector types — the classifier classifies one block and carries no
-   cross-byte state.
+   Still absent and still blocking the emitted scanner (J4+): `movemask` as a
+   form — the mask `bitcast` covers what the bodies extract — and any stateful
+   scanner written over the modelled vector types — the classifier classifies
+   one block and carries no cross-byte state.  Three items left this list after
+   the 2026-11-03 reading: `shufflevector` with a defined mask, the five
+   stage-1 intrinsic spellings, and a vector `store`, the last admitted at a
+   whole-byte total width; they are checked by `tests/vector-s1.lean` and
+   `tests/vector-entry.lean`.
    `docs/capabilities.md` carries the same status. The host has `avx2` and no
    `avx512f`.
    *(Before this date the row read "absent — `Ty` is `int w | ptr | void`"; that

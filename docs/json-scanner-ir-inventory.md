@@ -156,8 +156,9 @@ load handles the remainder.
    stage-1 classification-mask kernel is emitted with — are: `shufflevector` with
    a defined mask whose entries name a lane below `2n` (`Instr.shuffleVec`), a
    vector `load` at integer lanes whose total width is a whole number of bytes
-   (`<4 x i64>`), a mask-only vector `store` (`store <n x i1>` whose total width
-   is a whole number of bytes), a non-mask vector `bitcast` at equal total
+   (`<4 x i64>`), a vector `store` at integer lanes whose total width is a whole
+   number of bytes (`n * w % 8 = 0`, the mask store being that rule at `w = 1`),
+   a non-mask vector `bitcast` at equal total
    width (`Instr.vecBitcast`, `<4 x i64>` read as `<32 x i8>`), and vector
    `lshr` (`Instr.binopVec`, the per-sixteen-bit-lane shift the high-nibble
    extraction uses).  Vector `shl` is admitted as the same operation in the other
@@ -165,28 +166,42 @@ load handles the remainder.
    neighbouring refusals in the same run, by `tests/vector-s1.lean`; the fixture
    `probes/install/ir/json-s1-masks.candidate.ll` uses every one but the `shl`.
 
+   The **entry index kernels** add three more forms to the modelled set, each
+   justified by `probes/install/ir/json-entry.candidate.ll` and checked in
+   `tests/vector-entry.lean` beside its refused neighbour: the `<8 x i32>` row
+   store (the same widened store, at a non-mask lane width), `llvm.ctpop.i32` and
+   `llvm.ctpop.i64` at one operand, and `llvm.cttz.i64` at both flag values.  A
+   `store`'s value operand is compared with the written type once the function's
+   register table is known, so a defined register of another type is refused by
+   name; an undefined register has no type and stays accepted.
+
    Still absent from the model, and refused by name: vector `alloca` and vector
    `select` (`parseValueInstr`'s `alloca` and `select` arms), a vector `store`
-   that is not a mask, a `shufflevector` mask entry at or past `2n` or written
-   `undef`, a vector `ashr`, `umin`/`umax`, and a `bitcast` whose total widths
-   disagree. A pointer offset is
-   modelled: `getelementptr` reads one offset scaled by one of the admitted
-   integer element widths (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128` — the
+   whose total width is not a whole number of bytes, a `shufflevector` mask entry
+   at or past `2n` or written `undef`, a vector `ashr`, `umin`/`umax`, and a
+   `bitcast` whose total widths disagree. A pointer offset is
+   modelled: `getelementptr` reads one offset scaled by an admitted element type —
+   the integer widths (`i1`, `i7`, `i8`, `i16`, `i32`, `i64`, `i128` — the
    widths pinned as having an allocated size equal to the stored size the model
-   scales by), with an index
-   no wider than 64 bits, and every other shape — a width such as `i24` whose
-   allocated size differs, an aggregate, pointer or vector element type, a
-   second index, a wider index, the `inrange`/`nuw`/`nusw` modifiers — is
-   refused by name (`parseValueInstr`'s `getelementptr`
+   scales by) and, under one condition, a vector of integer lanes: lane width a
+   whole number of bytes and the packed size `n * w / 8` a power of two, hence at
+   least one. The clauses name two divergences — `<8 x i1>` packs a byte where
+   `sizeBytes` counts eight, and `<4 x i24>` and `<3 x i32>` pack 12 bytes where
+   LLVM steps 16 — and everything else in the shape is
+   refused by name: a width such as `i24` whose
+   allocated size differs, an aggregate or pointer element type, a
+   second index, a wider index, the `inrange`/`nuw`/`nusw` modifiers
+   (`parseValueInstr`'s `getelementptr`
    branch). The element type is a field of the instruction (`Instr.gep`), so the
    step is `base + off * sizeof(elemTy)` and `i8` is the byte offset this model
    started with. An intrinsic call is **not** refused: the parser
    accepts any callee symbol (`parseValueInstr`'s `call` branch), so a call to
    `@llvm.x86.avx2.pmovmskb`, a gather, a saturating operation or
    `llvm.vector.reduce.*` parses as an opaque `call` whose semantics the model
-   does not give. The five symbols the stage-1 kernel calls are the exception:
-   `checkIntrinsicShape` validates their arity, operand types and immediate, and
-   refuses the neighbouring spellings by name (`tests/vector-s1.lean`). Nothing
+   does not give. The eight symbols the two extracted units call are the
+   exception: `checkIntrinsicShape` validates their arity, operand types and
+   immediate, and refuses the neighbouring spellings by name
+   (`tests/vector-s1.lean`, `tests/vector-entry.lean`). Nothing
    in *this* kernel needs any of them.
 
 ## Not yet inventoried

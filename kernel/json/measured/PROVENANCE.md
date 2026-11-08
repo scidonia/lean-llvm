@@ -11,6 +11,12 @@ Three files, copied byte for byte from the measured scratch tree
 |`xlist.h`|`242286de0e1047e516f95b6eef313f9817adec4c981945cd03746e5c37397f51`|the escape-position list the measured builder includes at `S1F_XS=5`; not used by the mask unit, but part of the header's own include closure at the measured configuration|
 |`dens.h`|`77e5dcb05c08bceaf34f9c0833a929f2cba0f7a62bf84db8ed041697eb0ef6f2`|the document-level readings; likewise included by `s1fuse.h` before the mask region|
 
+Two units are read out of these files, not one: the mask unit (`s1f_masks` and
+its four helpers, the two tables and the `S1F` type, all in `s1fuse.h`) and the
+entry unit (`xl_pos8` and its initialiser from `xlist.h`, the two entry kernels
+and their block-loop macro from `s1fuse.h`).  The second unit's closure is the
+same two files, so the set does not grow and `SHA256SUMS` does not move.
+
 The measured build they come from is `build49.sh` in the same tree: the
 compiler line `clang -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64
 -falign-functions=64` (clang 21.1.8) and the configuration `m49`
@@ -34,17 +40,21 @@ fixture, not transcribed here.
 ## Why each file is committed
 
 So that the identity claim reproduces from a checkout.  `identity/oracle.c`
-compiles `s1f_masks` out of `s1fuse.h`; `identity/ir-identity.sh` compares that
-emission with the one `kernel/json/s1_block.c` produces; and both scripts run
-under `--tree-only`, which refuses any input path outside this repository.  The
-scratch tree is a convenience for the first vendoring and for the digests'
-corroboration, never a dependency of the result.
+compiles `s1f_masks` out of `s1fuse.h` and `identity/entry_oracle.c` compiles the
+two entry kernels out of the same file; `identity/ir-identity.sh` compares each
+emission with the one the matching unit in `kernel/json/` produces; and both
+scripts run under `--tree-only`, which refuses any input path outside this
+repository.  The scratch tree is a convenience for the first vendoring and for
+the digests' corroboration, never a dependency of the result.  The timing arms'
+probe translation units (`bench/paired.c`, `bench/paired-entry.c`) include the
+same files for the same reason, one unit each.
 
 ## Read-only
 
-No target builds these files.  No lint runs over them.  `identity/oracle.c` is
-the only translation unit that includes them, and it exists to be compiled and
-compared, never linked into anything shipped.  An edit to any of them is an edit
-to the pinned set: it moves `SHA256SUMS` deliberately and it re-opens the
-identity claim, which is why no change to `kernel/json/s1_block.c` may be
-accompanied by a silent refresh of it.
+No `lake` target builds these files.  No lint runs over them.  The translation
+units that include them are the identity arms' oracles and the timing arms'
+probes, and each exists to be compiled, compared or timed, never linked into
+anything shipped.  An edit to any of them is an edit to the pinned set: it moves
+`SHA256SUMS` deliberately and it re-opens the identity claim, which is why no
+change to `kernel/json/s1_block.c` or `kernel/json/entry.c` may be accompanied
+by a silent refresh of it.
