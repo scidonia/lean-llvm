@@ -2,8 +2,9 @@
 The expander's four runs, composed from the trace's block steps.
 
 `JsonEscapeExpandRun` states the expander's claim with `ExpandFacts` as its
-hypothesis; this module starts discharging that bundle from the record's `pre`,
-and it states the staged invariant the iteration and refusal arms need.
+hypothesis; this module starts discharging that bundle from the record's `pre`.
+The staged invariant and the arm statements the iteration and refusal consume are
+in `JsonEscapeExpandStaged`, below `JsonEscapeExpandRun`.
 
 **Why the arms need more than `LatchInv`.**  `DecodeLatch`
 (`JsonEscapeDecodeRun.lean`) binds the state's `%p`, `%xp`, `%tab`, `%pos0` and
@@ -28,7 +29,7 @@ walk's own seed produces.  It is the second arm of `ExpandSeed`, closed from the
 trace's two steps and the caller's cursor read, and it needs no iteration at all.
 -/
 import LeanLLVM.Vellum.JsonEscapeExpandRun
-import LeanLLVM.Vellum.JsonEscapeCompose
+import LeanLLVM.Vellum.JsonEscapeExpandStaged
 
 set_option autoImplicit false
 set_option maxRecDepth 16000
@@ -40,75 +41,6 @@ open LeanLLVM
 open LeanLLVM.Vellum.JsonEscapeIR
 open LeanLLVM.Vellum.JsonEscapeIntrinsics
 open LeanLLVM.Vellum.JsonScanSpec
-
-/-! ### The staged invariant the arms consume
-
-`StagedLatchInv` carries the latch, the staging the copies read, and the `%add`
-cell; the five pinnings below are the register cells the staging and the record's
-`pre` are about.  They are stated as equalities of the cells, which is the same
-fact as pinning `DecodeLatch`'s existentials: a cell holds one value, so a second
-equality for the same name forces the two values equal, and
-`assemblyLatchInv_paddr_eq` states that consequence rather than leaving it to be
-rediscovered. -/
-def AssemblyLatchInv (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
-    (r c : Nat) (s : State) : Prop :=
-  StagedLatchInv body st dst nps goal xp pos0 n ps r c s ∧
-  lookupName s.env "%p" = some (.ptr b) ∧
-  lookupName s.env "%xp" = some (.ptr xp) ∧
-  lookupName s.env "%tab" = some (.ptr tab) ∧
-  lookupName s.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
-  lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n))
-
-/-- The staged latch under the pinnings. -/
-theorem assemblyLatchInv_staged {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
-    StagedLatchInv body st dst nps goal xp pos0 n ps r c s := h.1
-
-/-- The latch's own invariant, which is what `decodeLatchTwoExit` consumes. -/
-theorem assemblyLatchInv_latch {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
-    LatchInv body st dst nps goal r s c :=
-  stagedLatchInv_latch h.1
-
-/-- The caller's staging, on its own. -/
-theorem assemblyLatchInv_staging {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
-    ∃ addv : BitVec 64,
-      DecodeStaging s.mem nps xp pos0 n ps addv ∧
-      lookupName s.env "%add" = some (.int 64 addv) :=
-  stagedLatchInv_staging h.1
-
-/-- The latch's budget pair. -/
-theorem assemblyLatchInv_budget {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
-    c ≤ nps ∧ nps ≤ c + r :=
-  stagedLatchInv_budget h.1
-
-/-- The five parameter cells. -/
-theorem assemblyLatchInv_params {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
-    lookupName s.env "%p" = some (.ptr b) ∧
-      lookupName s.env "%xp" = some (.ptr xp) ∧
-      lookupName s.env "%tab" = some (.ptr tab) ∧
-      lookupName s.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
-      lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) :=
-  ⟨h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2⟩
-
-/-- The pinning is a pinning of `DecodeLatch`'s existential, not a second claim
-about the same cell: the two values are equal. -/
-theorem assemblyLatchInv_paddr_eq {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s)
-    {paddr : Nat} (hp : lookupName s.env "%p" = some (.ptr paddr)) : paddr = b := by
-  have hb : lookupName s.env "%p" = some (.ptr b) := h.2.1
-  rw [hp] at hb
-  exact Value.ptr.inj (Option.some.inj hb)
 
 /-! ### The position list's length is at most the body's -/
 
@@ -182,7 +114,7 @@ theorem emptySeedRun
     (hgoal : goal = .decoded body nps) :
     ∃ (e : State) (j : Nat), j ≤ entryBlocks ∧ e.pc = "while.end35" ∧
       goal = .decoded body nps ∧
-      decodeTwoExitWord body ⟨true, false⟩ dst nps goal e ∧
+      assemblyExitWord body ⟨true, false⟩ dst nps goal err xj e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
         (EntryState usDecFunction args mem next) = runFuel escapeCalls k usDecFunction e := by
   -- the caller's cursor is at the list's end, so both entry tests are false
@@ -290,22 +222,6 @@ theorem refusalReturn (s : State) (hs : s.pc = "cleanup41")
   rfl
 
 /-! ### Axiom footprints -/
-
-/-- info: 'LeanLLVM.Vellum.AssemblyLatchInv' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms AssemblyLatchInv
-
-/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_latch' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms assemblyLatchInv_latch
-
-/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_params' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms assemblyLatchInv_params
-
-/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_paddr_eq' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms assemblyLatchInv_paddr_eq
 
 /-- info: 'LeanLLVM.Vellum.escAt_length_le' depends on axioms: [propext] -/
 #guard_msgs in

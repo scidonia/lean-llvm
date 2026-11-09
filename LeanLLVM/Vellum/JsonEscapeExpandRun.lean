@@ -21,16 +21,29 @@ arithmetic is then `omega` on the budget's own decomposition rather than a fact
 about the run.
 
 **The stages are stated over the record's own surface.**  `ExpandSeed` and
-`ExpandExit` take the argument list, the memory and the next id, so a hypothesis
-about them is a hypothesis about the record's own `pre` and not about an invented
-staging.  `ExpandSeed` carries the `LatchInv` at the whole bound — the state
+`ExpandExit` take the argument list, the memory and the next id, and the record's
+own witnesses `b xp tab err xj pos0 ps`, so a hypothesis about them is a
+hypothesis about the record's own `pre` and not about an invented staging.
+`ExpandSeed` carries `AssemblyLatchInv` at the whole bound — the state
 `BoundLoop.run` starts from — and `ExpandExit` carries the two exit targets' data
-(`decodeTwoExit` / `decodeTwoExitWord`) and the post, because the two exits leave
+(`decodeTwoExit` / `assemblyExitWord`) and the post, because the two exits leave
 different continuations and the split is taken once, between them.
 
+**The invariant is the staged one.**  `JsonEscapeExpandStaged` defines
+`AssemblyLatchInv` as `StagedLatchInv` (`JsonEscapeCopyLoops`, which the copy
+instances already consume) plus the five register cells the record's `pre` is
+about: `%p`, `%xp`, `%tab`, `%pos0` and `%n`.  `DecodeLatch` binds those to
+existentials, so a block that reads the position stream or the body cannot be
+stepped from the plain latch; the pinnings are equalities of the same cells, so
+they force the existentials rather than competing with them
+(`assemblyLatchInv_paddr_eq`).  The exit word is `assemblyExitWord`: the decoded
+edge records the index the exit proves (`c = nps`), the refusal edge records the
+two stores the refusal performed before `cleanup41`, and the entry edge is
+`DecodeEntryExit` unchanged.
+
 **What is proved and what is assumed.**  `run_stages` is the composition: three
-prefix facts give one run bounded by the sum of their allowances.  It consumes the
-loop instance's `BoundLoop.run` and nothing else about the body, so the exit split
+prefix facts give one run bounded by the sum of their allowances.  It consumes
+`assemblyBoundLoop`'s `BoundLoop.run` and nothing else about the body, so the exit split
 is one case split inside the continuation hypothesis rather than a case in the
 induction.  `escape_expand_satisfies` instantiates it at `EntryState` and derives
 the record's two conjuncts from `runFuel_outcome_unique`: completion at the budget
@@ -45,6 +58,7 @@ pinned at the footprint the development already carries.
 -/
 import LeanLLVM.Vellum.JsonEscapeDecodeRun
 import LeanLLVM.Vellum.JsonEscapeSteps
+import LeanLLVM.Vellum.JsonEscapeExpandStaged
 
 set_option autoImplicit false
 set_option maxRecDepth 16000
@@ -128,10 +142,12 @@ walk at `(0, nps, [])` — the whole body copied, which is `decoded body nps` �
 its `phi` operands are `while.end`'s own, so the arm is stated at the cells that
 edge supplies rather than at the latch's. -/
 def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
-    (st : ClassState) (dst : Nat) (goal : EscapeOutcome) : Prop :=
+    (st : ClassState) (dst : Nat) (goal : EscapeOutcome)
+    (b xp tab err xj pos0 : Nat) (ps : List Nat) : Prop :=
   (∃ (s : State) (c j : Nat),
       j ≤ preScanFuel (expandPosCount args) + decodeIterCost (expandBodyLen args) ∧
-      LatchInv body st dst (expandPosCount args) goal (expandPosCount args) s c ∧
+      AssemblyLatchInv body st dst (expandPosCount args) goal b xp tab pos0
+        (expandBodyLen args) ps (expandPosCount args) c s ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
           (EntryState usDecFunction args mem next) =
         runFuel escapeCalls k usDecFunction s)
@@ -139,7 +155,7 @@ def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
       j ≤ entryBlocks ∧
       e.pc = "while.end35" ∧
       goal = .decoded body (expandPosCount args) ∧
-      decodeTwoExitWord body st dst (expandPosCount args) goal e ∧
+      assemblyExitWord body st dst (expandPosCount args) goal err xj e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
           (EntryState usDecFunction args mem next) =
         runFuel escapeCalls k usDecFunction e)
@@ -149,9 +165,9 @@ def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
 post within the final copy's allowance.  The split at the two exits is here and
 nowhere else. -/
 def ExpandExit (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
-    (st : ClassState) (dst : Nat) (goal : EscapeOutcome) : Prop :=
+    (st : ClassState) (dst : Nat) (goal : EscapeOutcome) (err xj : Nat) : Prop :=
   ∀ (e : State), decodeTwoExit e →
-    decodeTwoExitWord body st dst (expandPosCount args) goal e →
+    assemblyExitWord body st dst (expandPosCount args) goal err xj e →
     ∃ (o : Outcome), runFuel escapeCalls (expandExitFuel args) usDecFunction e = some o ∧
       (Γ_escape_expand escapeExpandBudget).post args mem next o
 
@@ -165,46 +181,40 @@ allowances: the loop's own `BoundLoop.run` supplies the prefix, and the
 continuation supplies the outcome and the property.
 
 Nothing here reads the body's blocks: the only thing consumed about the loop is its
-`run`, at `decodeLatchTwoExit`'s instance and its own `decodeIterCost n`, so the
-composition is the arithmetic of the three allowances rather than a second analysis
-of the walk. -/
+`run`, at `assemblyBoundLoop`'s instance and its own `cost`, so the composition is
+the arithmetic of the three allowances rather than a second analysis of the walk. -/
 theorem run_stages {start : State} {P : Outcome → Prop} {body : List UInt8}
-    {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome} {ps : List Nat}
-    {pos0 n exitFuel : Nat}
-    (hcost : 1 ≤ decodeIterCost n)
-    (hrefuse : ∀ (r : Nat) (s : State) (c : Nat),
-      LatchInv body st dst nps goal r s c →
-      (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = true → ¬ nps ≤ c →
-      ∃ (e : State) (j : Nat), j ≤ decodeIterCost n ∧ decodeTwoExit e ∧
-        decodeTwoExitWord body st dst nps goal e ∧
-        ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
-          runFuel escapeCalls k usDecFunction e)
-    (hloop : LatchStepLoopTwo body st dst nps goal (decodeIterCost n) ps pos0)
+    {st : ClassState} {dst nps n : Nat} {goal : EscapeOutcome}
+    {b xp tab err xj pos0 : Nat} {ps : List Nat}
+    {cost exitFuel : Nat}
+    (hcost : 1 ≤ cost)
+    (hrefuse : assemblyRefusalArm body st dst nps goal b xp tab pos0 n ps err xj cost)
+    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps cost)
     (hseed :
-      (∃ (s : State) (c j : Nat), j ≤ preScanFuel nps + decodeIterCost n ∧
-        LatchInv body st dst nps goal nps s c ∧
+      (∃ (s : State) (c j : Nat), j ≤ preScanFuel nps + cost ∧
+        AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps nps c s ∧
         ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
           runFuel escapeCalls k usDecFunction s)
       ∨ (∃ (e : State) (j : Nat), j ≤ entryBlocks ∧ e.pc = "while.end35" ∧
         goal = .decoded body nps ∧
-        decodeTwoExitWord body st dst nps goal e ∧
+        assemblyExitWord body st dst nps goal err xj e ∧
         ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
           runFuel escapeCalls k usDecFunction e))
     (hexit : ∀ (e : State), decodeTwoExit e →
-      decodeTwoExitWord body st dst nps goal e →
+      assemblyExitWord body st dst nps goal err xj e →
       ∃ (o : Outcome), runFuel escapeCalls exitFuel usDecFunction e = some o ∧ P o) :
     ∃ (o : Outcome) (K : Nat),
-      K ≤ preScanFuel nps + decodeIterCost n +
-        (nps + 1) * decodeIterCost n + exitFuel ∧
+      K ≤ preScanFuel nps + cost +
+        (nps + 1) * cost + exitFuel ∧
       runFuel escapeCalls K usDecFunction start = some o ∧ P o := by
   rcases hseed with ⟨s, c, j, hj, hinv, hrun⟩ | ⟨e, j, hj, hpc, _hgoal, hword, hrun⟩
   · obtain ⟨e, jl, hjl, hexi, hword, hrunl⟩ :=
-      (decodeLatchTwoExit body st dst nps goal (decodeIterCost n) ps pos0 hcost
+      (assemblyBoundLoop body st dst nps goal b xp tab pos0 n ps err xj cost hcost
         hrefuse hloop).run s c hinv exitFuel
-    simp only [decodeLatchTwoExit] at hjl
+    simp only [assemblyBoundLoop] at hjl
     obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
     refine ⟨o, j + (jl + exitFuel), ?_, ?_, hPo⟩
-    · have hjl' : jl ≤ (nps + 1) * decodeIterCost n := by
+    · have hjl' : jl ≤ (nps + 1) * cost := by
         simpa [Nat.mul_one] using hjl
       omega
     · rw [hrun (jl + exitFuel), hrunl]
@@ -240,27 +250,31 @@ structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
   ps : List Nat
   /-- The document offset of the body's first byte. -/
   pos0 : Nat
+  /-- The body base the latch's `%p` reads. -/
+  pb : Nat
+  /-- The position stream base the latch's `%xp` reads. -/
+  xp : Nat
+  /-- The escape table's base, which the latch's `%tab` reads. -/
+  tab : Nat
+  /-- The offset slot's base, which the refusal stores to. -/
+  err : Nat
+  /-- The cursor slot's base, which the refusal and the success path store to. -/
+  xj : Nat
   /-- **The iteration arm**: the run from the latch back to the latch, crossing
   the two copy loops and the escape emitter. -/
-  loop : LatchStepLoopTwo body st dst (expandPosCount args) goal
-    (decodeIterCost (expandBodyLen args)) ps pos0
+  loop : assemblyLatchStep body st dst (expandPosCount args) goal pb xp tab pos0
+    (expandBodyLen args) ps (decodeIterCost (expandBodyLen args))
   /-- **The refusal arm**: the run from the latch to `cleanup41` at a position that
   refuses, crossing the same blocks as the iteration. -/
-  refuse : ∀ (r : Nat) (s : State) (c : Nat),
-    LatchInv body st dst (expandPosCount args) goal r s c →
-    (decide (expandPosCount args ≤ c) || decodeRefuses body ps pos0 c) = true →
-    ¬ expandPosCount args ≤ c →
-    ∃ (e : State) (j : Nat), j ≤ decodeIterCost (expandBodyLen args) ∧
-      decodeTwoExit e ∧ decodeTwoExitWord body st dst (expandPosCount args) goal e ∧
-      ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
-        runFuel escapeCalls k usDecFunction e
+  refuse : assemblyRefusalArm body st dst (expandPosCount args) goal pb xp tab pos0
+    (expandBodyLen args) ps err xj (decodeIterCost (expandBodyLen args))
   /-- **The entry stage, in its two arms**: the pre-scan plus one iteration to the
   latch, or — when the list has nothing left to walk — the pre-scan straight to
   `while.end35`. -/
-  seed : ExpandSeed args mem next body st dst goal
+  seed : ExpandSeed args mem next body st dst goal pb xp tab err xj pos0 ps
   /-- **The exit continuations**: `while.end35`'s final copy and return, and
   `cleanup41`'s refusal return. -/
-  exit : ExpandExit args mem next body st dst goal
+  exit : ExpandExit args mem next body st dst goal err xj
 
 /-! ### The record's instance -/
 
@@ -280,8 +294,8 @@ theorem escape_expand_satisfies
       ExpandFacts args mem next) :
     Satisfies escapeCalls usDecFunction (Γ_escape_expand escapeExpandBudget) := by
   intro args mem next hpre
-  obtain ⟨body, st, dst, goal, ps, pos0, hloop, hrefuse, hseed, hexit⟩ :=
-    hfacts args mem next hpre
+  obtain ⟨body, st, dst, goal, ps, pos0, pb, xp, tab, err, xj, hloop, hrefuse,
+    hseed, hexit⟩ := hfacts args mem next hpre
   have hcost : 1 ≤ decodeIterCost (expandBodyLen args) := by
     unfold decodeIterCost
     omega
@@ -289,6 +303,8 @@ theorem escape_expand_satisfies
     run_stages (start := EntryState usDecFunction args mem next)
       (P := (Γ_escape_expand escapeExpandBudget).post args mem next)
       (nps := expandPosCount args) (n := expandBodyLen args)
+      (b := pb) (xp := xp) (tab := tab) (err := err) (xj := xj)
+      (pos0 := pos0) (ps := ps)
       (exitFuel := expandExitFuel args) hcost hrefuse hloop hseed hexit
   have hbudget : escapeExpandBudget args mem =
       (expandPosCount args + 1) * 3 + decodeIterCost (expandBodyLen args) +
@@ -333,9 +349,10 @@ theorem escape_expand_satisfies
 /-! ### Axiom footprints
 
 `run_stages` and the record's instance carry `Classical.choice` because the loop
-instance they consume does: `decodeLatchTwoExit` inherits it from
-`evalICmp_ult_zero_iff`'s `BitVec.ult`, the same carrier `JsonEscapeDecodeRun`
-already names for the exit arm.  The rest is the development's own ceiling. -/
+instance they consume does: `assemblyBoundLoop` inherits it from
+`decodeLatch_step_exit`'s `evalICmp_ult_zero_iff`, the same `BitVec.ult` carrier
+`JsonEscapeDecodeRun` names for the exit arm.  The rest is the development's own
+ceiling. -/
 
 /-- info: 'LeanLLVM.Vellum.expandBodyLen' depends on axioms: [propext] -/
 #guard_msgs in

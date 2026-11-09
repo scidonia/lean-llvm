@@ -9701,3 +9701,39 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.refusalReturn' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.refusalReturn
+
+/-! ### The staged arm statements and the two-exit instance -/
+
+/-- info: 'LeanLLVM.Vellum.AssemblyLatchExit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyLatchExit
+
+/-- info: 'LeanLLVM.Vellum.AssemblyRefusalExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyRefusalExit
+
+/-- info: 'LeanLLVM.Vellum.assemblyExitWord' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyExitWord
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchStepExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchStepExit
+
+/-- info: 'LeanLLVM.Vellum.assemblyBoundLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyBoundLoop
+
+/-- info: 'LeanLLVM.Vellum.assemblyBoundLoop_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyBoundLoop_run_at
+
+/-! ### The refusal word's empty-memory consequence -/
+
+/-- info: 'LeanLLVM.Vellum.readBytes_empty_succ' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.readBytes_empty_succ
+
+/-- info: 'LeanLLVM.Vellum.DecodeRefusalExit_mem_ne_nil' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DecodeRefusalExit_mem_ne_nil

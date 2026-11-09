@@ -251,7 +251,14 @@ def DecodeLatch (body : List UInt8) (st : ClassState) (dst nps : Nat)
 with the cells `while.end35`'s `phi`s take from `cleanup32`.  The continuation
 reads `%j.3` as the decoded length, `%add24` as the byte cursor, and `%add28` as
 the position index; the parameters are the caller's staging, carried so the final
-copy's trace can name them. -/
+copy's trace can name them.
+
+The index is the bound: `c = nps`.  The exit is reached only on `%cmp4` false,
+which with the latch's `c ≤ nps` is `nps = c`, and the continuation stores
+`%add28` at the caller's cursor slot while the `post`'s cursor clause names the
+walk's own `nps` — so without the equality the stored value and the record's claim
+are unrelated.  It is recorded at the arm from the two facts the arm already
+holds, never assumed. -/
 def DecodeLatchExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (c : Nat) (s : State) : Prop :=
   ∃ (i : Nat) (out : List UInt8) (j : BitVec 64) (add24 : BitVec 64)
@@ -260,6 +267,7 @@ def DecodeLatchExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (pos0v : BitVec 64) (addv : BitVec 64) (nv : BitVec 64),
     s.pc = "while.end35" ∧
     DecodeInv body st s.mem dst nps i c out goal ∧
+    c = nps ∧
     lookupName s.env "%j.3" = some (.int 64 j) ∧
     j.toNat = out.length ∧
     lookupName s.env "%add24" = some (.int 64 add24) ∧
@@ -308,7 +316,9 @@ theorem latch_phi_operand_simple_adv :
 /-- **The exit arm.**  From the latch with `%cmp4` false — which the invariant's
 index link and `c ≤ nps` make equivalent to `nps ≤ c` — one control step reaches
 `while.end35` and leaves the walk and the cells the exit block's `phi`s take from
-the latch. -/
+the latch.  The arm also leaves the index itself: the false test and the latch's
+`c ≤ nps` give `c = nps`, which is the value the continuation stores at the
+caller's cursor slot and the value the `post`'s cursor clause names. -/
 theorem decodeLatch_step_exit {body : List UInt8} {st : ClassState} {dst nps : Nat}
     {goal : EscapeOutcome} {s : State} {c : Nat} (h : DecodeLatch body st dst nps goal s c)
     (hat : decide (nps ≤ c) = true) :
@@ -325,6 +335,10 @@ theorem decodeLatch_step_exit {body : List UInt8} {st : ClassState} {dst nps : N
     exact Nat.not_lt_of_ge (of_decide_eq_true hat)
   have hcond : evalICmp .ult (decodeNextIdx inc11 adv) nxp = (0 : BitVec 1) :=
     (evalICmp_ult_zero_iff _ _).2 hge
+  -- the false test and the latch's `c ≤ nps` are the exit's index equality
+  have hceq : c = nps := by
+    have hge' : nps ≤ c := of_decide_eq_true hat
+    omega
   rcases hphi with ⟨hprev, hj, ha⟩ | ⟨hprev, hj, hadv⟩
   · -- the emitter edge: both `phi` operands are registers
     subst hprev
@@ -345,7 +359,7 @@ theorem decodeLatch_step_exit {body : List UInt8} {st : ClassState} {dst nps : N
       exact h1
     refine ⟨e, 1, by omega, rfl, ?_, fun k => runFuel_jump_prefix hstep k⟩
     refine ⟨i, out, j, adv + sub, decodeNextIdx inc11 adv, paddr, xpaddr, tabaddr,
-      err, xjaddr, pos0v, addv, nv, rfl, ?_, ?_, hjlen, ?_, hi, ?_, hnext,
+      err, xjaddr, pos0v, addv, nv, rfl, ?_, hceq, ?_, hjlen, ?_, hi, ?_, hnext,
       hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell, hpos0cell, haddcall,
       hncell⟩
     · rw [show e.mem = s.mem from rfl]
@@ -370,7 +384,7 @@ theorem decodeLatch_step_exit {body : List UInt8} {st : ClassState} {dst nps : N
       exact h1
     refine ⟨e, 1, by omega, rfl, ?_, fun k => runFuel_jump_prefix hstep k⟩
     refine ⟨i, out, j, adv + sub, decodeNextIdx inc11 adv, paddr, xpaddr, tabaddr,
-      err, xjaddr, pos0v, addv, nv, rfl, ?_, ?_, hjlen, ?_, hi, ?_, hnext,
+      err, xjaddr, pos0v, addv, nv, rfl, ?_, hceq, ?_, hjlen, ?_, hi, ?_, hnext,
       hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell, hpos0cell, haddcall,
       hncell⟩
     · rw [show e.mem = s.mem from rfl]
@@ -599,12 +613,46 @@ def decodeRefuses (body : List UInt8) (ps : List Nat) (pos0 : Nat) (c : Nat) : B
 def decodeTwoExit (e : State) : Prop := e.pc = "while.end35" ∨ e.pc = "cleanup41"
 
 /-- The refusal state's data: the cursor and the offset the refusal's two stores
-carry, which are the cells the continuation reads. -/
+carry, which are the cells the continuation reads, and the two stores themselves.
+
+The stores happen in `if.then20`/`if.then22` (`JsonEscapeIR.lean:384-385`,
+`:539-540`), both **before** `cleanup41`, so the state this word describes has
+already written and the word has to record what it wrote.  Without the two
+`readBytes` clauses a `cleanup41` state with empty memory is admitted, and at such
+a state the record's post has no byte to read and no outcome satisfies it: the
+clauses are what make the word a statement about a state the post can hold at.
+
+The destinations are existentials, the idiom `DecodeLatchExit` uses for its own
+cells.  Naming a particular base is the caller's business: the assembly records
+the equality between these and the record's `%err`/`%xj`, and this word stays a
+statement about the state rather than about one contract's arguments. -/
 def DecodeRefusalExit (e : State) : Prop :=
   e.pc = "cleanup41" ∧
-  ∃ (off k : BitVec 64),
+  ∃ (off k : BitVec 64) (err xj : Nat),
     lookupName e.env "%sub" = some (.int 64 off) ∧
-    lookupName e.env "%inc11" = some (.int 64 k)
+    lookupName e.env "%inc11" = some (.int 64 k) ∧
+    lookupName e.env "%err" = some (.ptr err) ∧
+    lookupName e.env "%xj" = some (.ptr xj) ∧
+    readBytes e.mem err 8 = some (wordBytes 8 off.toNat) ∧
+    readBytes e.mem xj 8 = some (wordBytes 8 k.toNat)
+
+/-- Nothing is readable in empty memory, at any address, for any non-zero length. -/
+theorem readBytes_empty_succ (addr n : Nat) :
+    readBytes ([] : Mem) addr (n + 1) = none := by
+  simp [readBytes, readByte]
+
+/-- The refusal word is not satisfiable at empty memory.  This is the state the
+word admitted before the two store clauses: with `e.mem = []` the record's post has
+no byte to read, so it holds at no outcome, and a word that admits it makes every
+consumer of the exit unsound rather than unproved. -/
+theorem DecodeRefusalExit_mem_ne_nil {e : State} (h : DecodeRefusalExit e) :
+    e.mem ≠ [] := by
+  obtain ⟨-, off, k, err, xj, -, -, -, -, hread, -⟩ := h
+  intro hnil
+  rw [hnil] at hread
+  have h8 : (8 : Nat) = 7 + 1 := rfl
+  rw [h8, readBytes_empty_succ] at hread
+  cases hread
 
 /-- **The entry's exit edge.**  When the caller's cursor is already at the list's
 end, `while.end` sends the walk straight to `while.end35` and the latch is never
@@ -765,6 +813,14 @@ theorem decodeLatchTwoExit_run_at (body : List UInt8) (st : ClassState) (dst nps
 /-- info: 'LeanLLVM.Vellum.DecodeRefusalExit' does not depend on any axioms -/
 #guard_msgs in
 #print axioms DecodeRefusalExit
+
+/-- info: 'LeanLLVM.Vellum.readBytes_empty_succ' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms readBytes_empty_succ
+
+/-- info: 'LeanLLVM.Vellum.DecodeRefusalExit_mem_ne_nil' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms DecodeRefusalExit_mem_ne_nil
 
 /-- info: 'LeanLLVM.Vellum.DecodeEntryExit' depends on axioms: [propext] -/
 #guard_msgs in
