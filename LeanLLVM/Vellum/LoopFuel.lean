@@ -31,6 +31,16 @@ data-dependent loop leaves for is usually the next stage of the body, so
 state, and the caller composes that with the exit block's own trace at its own
 fuel.  That is what makes the loop's contribution to a record's budget the bound
 `N + 1` rather than the trip count.
+
+**The second shape is the bound exit.**  A scan or a copy loop does not exit on a
+fixed point: it carries a counter and compares it with a bound — `k < nps`, `i + 1
+= nblk`, `clearLow w 8 = 0` — so the measure is the distance to that bound and the
+loop's trip count is the counter's progress.  `BoundLoop` is that induction, with
+the bound, the per-iteration step and the invariant as parameters.  One iteration
+there is the run between successive visits to the head rather than one block's
+step, because the head is the loop's test block and the body between two visits is
+several blocks; `cost` is the per-iteration step bound, and the loop's contribution
+to a record's budget is `(N + 1) * cost`.
 -/
 import LeanLLVM.Semantics
 
@@ -188,6 +198,153 @@ theorem CarriedLoop.run_at (L : CarriedLoop calls f) (s : State) (w : BitVec 64)
     exact hcont e j d hpc hexit hfix
   exact runFuel_mono_le (by omega) hone
 
+/-! ### The bound exit
+
+`CarriedLoop` above is the loop that leaves when its map is fixed.  A scan or a
+copy loop leaves on a different test: it carries a counter and compares that
+counter with a bound — `k < nps` for the decoder's position walk, `i + 1 = nblk`
+for the block scan, `clearLow w 8 = 0` for the eight-at-a-time writer.  The trip
+count is the distance to the bound, so the measure is `N - c`, and none of the
+iteration's own words is a fixed point to identify.
+
+`BoundLoop` is that induction as vocabulary.  The four things a body supplies are
+the bound, the head's exit test, the per-iteration step, and the invariant:
+
+* `N` is the bound and `cost` the per-iteration control-step bound, both terms of
+  the caller's arguments;
+* `Inv r s c` is the invariant at the head: the state is at `head` carrying the
+  counter `c`, and `r` is the iteration budget the caller has accounted for;
+* `atBound s c` is the head's exit test — the branch value its terminator reads,
+  at the state and the carried counter.  It is a test rather than `c = N`
+  because a body may leave **before** the bound: the decoder leaves when the
+  position has passed the body's end, the writer when its residual lanes fit the
+  final batch, and a refusal leaves at the position that refused;
+* `step_exit` and `step_loop` are one iteration in its two arms.
+
+One iteration is the **run** between successive visits to the head, not a single
+block's step: the bound exit's head is the loop's test block, and the body between
+two visits is several blocks (a position scan's copy, an eight-at-a-time batch).
+`step_exit` and `step_loop` therefore state `runFuel` prefixes at an exact count
+bounded by `cost`; that is what makes the loop's whole fuel `(N + 1) * cost`
+rather than a number only the run knows.
+
+`budget` is the arithmetic that ties the two: the budget covers the distance to
+the bound, and every iteration spends one unit of it.  A step's counter advance
+may overshoot by more than one (a surrogate pair advances the position index by
+two, a writer batch claims up to eight entries), which is why the measure is the
+budget and not `N - c` itself. -/
+structure BoundLoop (calls : Calls) (f : Function) where
+  /-- The block the loop's iteration is entered at: the loop's test block. -/
+  head : String
+  /-- The block the loop leaves for. -/
+  exitBlock : String
+  /-- The bound the carried counter is compared against: a term of the caller's
+  arguments. -/
+  N : Nat
+  /-- The per-iteration control-step bound: a term of the caller's arguments. -/
+  cost : Nat
+  /-- The invariant at the head: after `r` iterations' budget the state is at
+  `head` carrying the counter `c`. -/
+  Inv : Nat → State → Nat → Prop
+  /-- The head's exit test: the branch value its terminator reads, at the state
+  and the carried counter. -/
+  atBound : State → Nat → Bool
+  /-- What the state the loop leaves satisfies. -/
+  ExitWord : State → Prop
+  /-- The exit arm: the head's test holds, and the iteration reaches `exitBlock`
+  within `cost` control steps. -/
+  step_exit : ∀ (r : Nat) (s : State) (c : Nat), Inv r s c → atBound s c = true →
+    ∃ (e : State) (j : Nat), j ≤ cost ∧ e.pc = exitBlock ∧ ExitWord e ∧
+      ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
+  /-- The back edge: the test fails, the iteration re-enters `head` within `cost`
+  control steps carrying a strictly larger counter, and spends one unit of the
+  budget. -/
+  step_loop : ∀ (r : Nat) (s : State) (c : Nat), Inv (r + 1) s c → atBound s c = false →
+    ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = head ∧ c < c' ∧
+      Inv r e c' ∧ ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
+  /-- At the end of the budget the head's test holds, so the loop cannot stay in
+  it: this is where the bound is consumed. -/
+  exit_at_zero : ∀ (s : State) (c : Nat), Inv 0 s c → atBound s c = true
+  /-- The invariant's budget accounts for the distance to the bound. -/
+  budget : ∀ (r : Nat) (s : State) (c : Nat), Inv r s c → c ≤ N ∧ N ≤ c + r
+
+/-- **The induction.**  From an invariant state with `r` iterations of budget, the
+run reaches the exit block within `(r + 1) * cost` control steps.  The recursion
+consumes the two arms only; the bound appears as the budget, and the counter's
+strict advance is what lets the budget fall by one per iteration however far the
+counter jumps. -/
+theorem BoundLoop.run_from (L : BoundLoop calls f) :
+    ∀ (r : Nat) (s : State) (c : Nat), L.Inv r s c →
+      ∃ (e : State) (j : Nat), j ≤ (r + 1) * L.cost ∧ e.pc = L.exitBlock ∧
+        L.ExitWord e ∧
+        ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
+  | 0, s, c, h => by
+      obtain ⟨e, j, hj, hpc, hexit, hrun⟩ :=
+        L.step_exit 0 s c h (L.exit_at_zero s c h)
+      exact ⟨e, j, by simpa using hj, hpc, hexit, hrun⟩
+  | r + 1, s, c, h => by
+      cases hb : L.atBound s c
+      · obtain ⟨e, c', j, hj, hpc, hlt, hinv, hrun⟩ := L.step_loop r s c h hb
+        obtain ⟨e', j', hj', hpc', hexit', hrun'⟩ := L.run_from r e c' hinv
+        refine ⟨e', j + j', ?_, hpc', hexit', fun k => ?_⟩
+        · rw [Nat.succ_mul]
+          omega
+        · rw [show j + j' + k = j + (j' + k) from by omega, hrun (j' + k)]
+          exact hrun' k
+      · obtain ⟨e, j, hj, hpc, hexit, hrun⟩ := L.step_exit (r + 1) s c h hb
+        have hj' : j ≤ (r + 1 + 1) * L.cost := by
+          rw [Nat.succ_mul]
+          omega
+        exact ⟨e, j, hj', hpc, hexit, hrun⟩
+
+/-- **The loop from its head.**  At the whole bound as its budget — `Inv N s c`,
+which every instance inhabits, since the budget covers any distance up to `N` —
+the run reaches the exit block within `(N + 1) * cost` control steps.
+
+That is the loop's whole cost and it is a term of the caller's arguments: one
+iteration's cost per unit of the bound, plus the exit iteration.  Everything the
+caller adds — the entry blocks and the exit block's continuation — is its own, so
+a record's budget over this loop is a function of `(args, mem)` and not of the trip
+count the run happened to take. -/
+theorem BoundLoop.run (L : BoundLoop calls f) (s : State) (c : Nat)
+    (h : L.Inv L.N s c) (k : Nat) :
+    ∃ (e : State) (j : Nat), j ≤ (L.N + 1) * L.cost ∧ e.pc = L.exitBlock ∧
+      L.ExitWord e ∧
+      runFuel calls (j + k) f s = runFuel calls k f e := by
+  obtain ⟨e, j, hj, hpc, hexit, hrun⟩ := L.run_from L.N s c h
+  exact ⟨e, j, hj, hpc, hexit, hrun k⟩
+
+/-- **A budget at the bound, not at the trip count.**  The induction hands back the
+run's exact exit count `j`, and `j ≤ (N + 1) * cost`.  A caller that has a
+completed outcome from the exit state therefore has one from the head at
+`(N + 1) * cost + k`: the count is replaced by the bound, which is what lets a
+record state its completion at `Γ.budget args mem` — a term of the arguments —
+instead of at a number only the run knows.
+
+`hcont` is the exit block's trace: the caller's completion from the state the loop
+leaves, at its own fuel.  Only a *completed* continuation can be lifted, because
+the exit is a jump and `runFuel` past it executes the next block. -/
+theorem BoundLoop.run_at (L : BoundLoop calls f) (s : State) (c : Nat)
+    (h : L.Inv L.N s c) (k : Nat) {o : Outcome}
+    (hcont : ∀ (e : State), e.pc = L.exitBlock → L.ExitWord e →
+        runFuel calls k f e = some o) :
+    runFuel calls ((L.N + 1) * L.cost + k) f s = some o := by
+  obtain ⟨e, j, hj, hpc, hexit, hrun⟩ := L.run s c h k
+  have hone : runFuel calls (j + k) f s = some o := by
+    rw [hrun]
+    exact hcont e hpc hexit
+  exact runFuel_mono_le (by omega) hone
+
+/-- **One step's prefix.**  A `jump` is the iteration fact `BoundLoop` consumes at
+`cost = 1`: from the state the step leaves, the run continues identically.  Named
+here so an instance whose head block is a self-loop states its arms without
+unfolding `runFuel`. -/
+theorem runFuel_jump_prefix {calls : Calls} {f : Function} {s s' : State}
+    (h : step calls f s = .jump s') (k : Nat) :
+    runFuel calls (1 + k) f s = runFuel calls k f s' := by
+  rw [show 1 + k = k + 1 from by omega]
+  simp only [runFuel, h]
+
 /-! ### Axiom footprints -/
 
 /-- info: 'LeanLLVM.Vellum.iter' does not depend on any axioms -/
@@ -205,5 +362,21 @@ theorem CarriedLoop.run_at (L : CarriedLoop calls f) (s : State) (w : BitVec 64)
 /-- info: 'LeanLLVM.Vellum.CarriedLoop.run_at' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms CarriedLoop.run_at
+
+/-- info: 'LeanLLVM.Vellum.BoundLoop.run_from' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoop.run_from
+
+/-- info: 'LeanLLVM.Vellum.BoundLoop.run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoop.run
+
+/-- info: 'LeanLLVM.Vellum.BoundLoop.run_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoop.run_at
+
+/-- info: 'LeanLLVM.Vellum.runFuel_jump_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms runFuel_jump_prefix
 
 end LeanLLVM.Vellum
