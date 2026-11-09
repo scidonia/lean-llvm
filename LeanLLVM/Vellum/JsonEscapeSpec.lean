@@ -455,6 +455,57 @@ theorem utf8Encode_length_pos (c : Nat) : 0 < (utf8Encode c).length := by
       · rw [utf8Encode_eq_three h1 h2 h3]; simp
       · rw [utf8Encode_eq_four h1 h2 h3]; simp
 
+/-- A little-endian word read back from its bytes starts with them: the first
+`bs.length` bytes of `natToBytes (bytesToNat bs) n` are `bs` when they fit. -/
+theorem natToBytes_bytesToNat (bs : List UInt8) (n : Nat) (h : bs.length ≤ n) :
+    (natToBytes (bytesToNat bs) n).take bs.length = bs := by
+  induction bs generalizing n with
+  | nil => simp
+  | cons b bs ih =>
+      cases n with
+      | zero => simp at h
+      | succ m =>
+          have hb : b.toNat < 256 := b.toNat_lt
+          have hdiv : (256 * bytesToNat bs + b.toNat) / 256 = bytesToNat bs := by
+            rw [Nat.mul_add_div (by decide : 0 < 256), Nat.div_eq_of_lt hb, Nat.add_zero]
+          have hmod : (256 * bytesToNat bs + b.toNat) % 256 = b.toNat := by
+            rw [Nat.mul_add_mod_self_left, Nat.mod_eq_of_lt hb]
+          simp only [bytesToNat, natToBytes, hmod, hdiv, List.length_cons, Nat.add_comm]
+          have hle : bs.length ≤ m := by simpa using h
+          rw [List.take_succ_cons, ih m hle]
+          simp
+
+/-- An encoding is at most four bytes. -/
+theorem utf8Encode_length_le_four (c : Nat) : (utf8Encode c).length ≤ 4 := by
+  by_cases h1 : c < 0x80
+  · rw [utf8Encode_eq_one h1]; simp
+  · by_cases h2 : c < 0x800
+    · rw [utf8Encode_eq_two h1 h2]; simp
+    · by_cases h3 : c < 0x10000
+      · rw [utf8Encode_eq_three h1 h2 h3]; simp
+      · rw [utf8Encode_eq_four h1 h2 h3]; simp
+
+/-- **The encoding, read out of a four-byte word.**  The little-endian word of an
+encoding's bytes has that encoding as its first `(utf8Encode c).length` bytes.
+This is the specification's side of the encoder's word; it names no emission
+term. -/
+theorem utf8Word_bytes (c : Nat) (h : c < 0x110000) :
+    (natToBytes (bytesToNat (utf8Encode c)) 4).take (utf8Encode c).length =
+      utf8Encode c :=
+  natToBytes_bytesToNat (utf8Encode c) 4 (utf8Encode_length_le_four c)
+
+/-- info: 'LeanLLVM.Vellum.natToBytes_bytesToNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms natToBytes_bytesToNat
+
+/-- info: 'LeanLLVM.Vellum.utf8Encode_length_le_four' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms utf8Encode_length_le_four
+
+/-- info: 'LeanLLVM.Vellum.utf8Word_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms utf8Word_bytes
+
 /-- A list of code points is no longer than their encodings. -/
 theorem flatten_length_ge (cps : List Nat) :
     cps.length ≤ (cps.map utf8Encode).flatten.length := by
