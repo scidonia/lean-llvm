@@ -599,8 +599,25 @@ poison-flag rule above is therefore not invoked for them — it exists for
 A call to any other symbol is not this check's business: a callee's meaning is
 the `Calls` environment's, and the fixture's own opcode-and-call-target
 inventory is what records an unmodelled intrinsic reaching the text.  The
-families that do have a modelled reading are refused at every other width or
-suffix, by name, rather than left to that record. -/
+families listed above are refused at every other width or suffix, by name, rather
+than left to that record.
+
+Three spellings are modelled and **not** shape-checked here: `llvm.umin.i32`
+(`i32 (i32, i32)`), `llvm.x86.sse2.pmadd.wd`
+(`<4 x i32> (<8 x i16>, <8 x i16>)`) and `llvm.x86.ssse3.pmadd.ub.sw.128`
+(`<8 x i16> (<16 x i8>, <16 x i8>)`).  Their models and bindings are
+`BitLanes`' and `JsonEscapeIntrinsics.escapeCalls`', which matches exactly those
+shapes; another shape of the same symbol is therefore accepted by this check and
+`ub` at that environment rather than refused here, so a `llvm.umin.i64` or a
+three-argument `pmadd.wd` parses and is undefined rather than being named.  That
+is the fail-closed direction — nothing is read as something it is not — but it is
+a later one, and the shape rule for these three is not yet stated.
+
+`umax` at every width, and `umin` at every width other than `i32`, are bound by no
+environment in the tree, and no capture under `probes/` calls them: the only
+`@llvm.umin` call sites in the emissions are the two `i32` calls in
+`json-escape.candidate.ll`.  A call to one of them is `ub`, and this check has no
+rule for them either, so they are unresolved rather than refused by name. -/
 def checkIntrinsicShape (callee : String) (retTy : Ty)
     (args : List (Ty × Operand)) : Except String Unit :=
   let argTys : List Ty := args.map fun a => a.1
@@ -747,7 +764,11 @@ immediate other than 0, a `pext.32`, a `pdep.32`, a `ctpop.i16`, a `cttz` whose
 flag is not an immediate `i1`, a `ctlz` with the flag `i1 true`, a
 `usub.sat.v16i8` (or a `usub.sat` of the wrong arity or operand types) and a
 `ptest.256` or a `ptestz.128` are refused by name instead of reaching the
-semantics as calls no environment can resolve meaningfully.  Any other callee is
+semantics as calls no environment can resolve meaningfully.
+`JsonEscapeIntrinsics.escapeCalls` binds three further spellings — `llvm.umin.i32`,
+`llvm.x86.sse2.pmadd.wd` and `llvm.x86.ssse3.pmadd.ub.sw.128` — for which this
+check has no rule, so a call to one of them at another shape passes the parser and
+is `ub` at that environment rather than a parse error.  Any other callee is
 still resolved by the environment alone; that fall-through is deliberate, and a
 call target no environment resolves is `ub` rather than silently read. -/
 def parseCall (dst : Option String) : P Stmt := do

@@ -87,15 +87,18 @@ needs the other two to match.
   mask identities — `inStringMask_eq_clmul` over a window and
   `specInString64_eq_clmul` over a sixty-four-byte block — with the outgoing carry
   `specInString64_outgoing_carry`, all stated over `JsonScanSpec`'s own masks.
-  `BitLanes` models the bit intrinsics the three units' kernels use besides
-  `pclmulqdq` — `pext`, `pdep` and `ctlz`, `ctpop`/`cttz` for the entry kernels,
-  and `subsSat`/`ptestz` for the UTF-8 stage, seven lane definitions over eight
-  intrinsic spellings — in lane vocabulary, with `rank` and the two alignment
+  `BitLanes` models the bit and lane intrinsics the four units' kernels use
+  besides `pclmulqdq` — `pext`, `pdep` and `ctlz`, `ctpop`/`cttz` for the entry
+  kernels, `subsSat`/`ptestz` for the UTF-8 stage, and `umin`/`pmaddUbSw`/
+  `pmaddWd` for the escape unit, ten lane definitions over eleven intrinsic
+  spellings — in lane vocabulary, with `rank` and the two alignment
   facts that pair a mask's set
   lanes with their positions (`rank_setLanes_getElem`,
   `setLanes_getElem?_rank`), the Galois connection `pdep_pext`/`pext_pdep`,
-  `ctlz (~~~m) = trailingRun m`, and the `ctpop`/`cttz` readings of a mask's set
-  lanes a position emitter uses.  `QuoteDerive`
+  `ctlz (~~~m) = trailingRun m`, the `ctpop`/`cttz` readings of a mask's set
+  lanes a position emitter uses, and the four controls the escape unit's three
+  rest on (`umin_highBit_control`, `pmaddUbSw_operand_order_control`,
+  `pmaddUbSw_saturate_control`, `pmaddWd_wrap_control`).  `QuoteDerive`
   proves the kernel's escape arithmetic: `kernelEscape_eq` — the kernel's
   `pext`/`pdep` scatter is the parity mask on the lanes that are not backslashes —
   `kernelQuote64` — the kernel's `%qmc2 = %qrawc2 & ~%escc2` over a sixty-four-lane
@@ -260,6 +263,17 @@ needs the other two to match.
   driver's scalar reference, with a defect object and a tampered expectation as
   controls and each transcript required to hold one accept and one reject, and
   `tests/json-utf8.lean` pins the fixture and the specification's verdicts.
+  The escape unit's intrinsic vocabulary has its own check:
+  `tests/escape-intrinsics.lean` reads
+  `probes/install/ir/json-escape.inventory` on each run and fails when the fixture
+  names a spelling `JsonEscapeIntrinsics.escapeCalls` does not bind, with the two
+  sides of that comparison asserted non-empty and a detector control each way; it
+  also states one step lemma per call form the emission contains —
+  `llvm.ctpop.i64` and `llvm.cttz.i64` at that environment as well as the unit's
+  three — each concluding in the model its binding returns, with the
+  operand-order, saturation and wrap controls `BitLanes` carries and each lemma's
+  axiom footprint pinned.  Run it with
+  `nix develop -c lake env lean tests/escape-intrinsics.lean`.
   One more check sits beside those routes: `tests/json-import-boundary.sh`
   filters the actual `import` declarations of `LeanLLVM/JSON/*.lean` and
   asserts that `Parse.lean` imports exactly `Spec`, `Scan` and `Tape`, that
@@ -389,8 +403,8 @@ needs the other two to match.
   that side is exercised as an accepted control in `tests/vector-s1.lean`
   (accepted, printed, re-parsed and evaluated) and in `tests/json-s1-parser.lean`
   — where a vector `ashr` is refused; a vector `load` at integer lanes whose
-  total width is whole bytes; and the ten intrinsic spellings the three units
-  call —
+  total width is whole bytes; and the ten intrinsic spellings
+  `checkIntrinsicShape` has a rule for —
   `llvm.x86.avx2.pshuf.b` at two arguments, `llvm.x86.pclmulqdq` at immediate 0,
   `llvm.x86.bmi.pext.64`, `llvm.x86.bmi.pdep.64`, `llvm.ctlz.i64` with the
   non-poison flag, `llvm.ctpop.i32`, `llvm.ctpop.i64`, `llvm.cttz.i64` at both
@@ -401,9 +415,17 @@ needs the other two to match.
   not symmetric:
   `i1 false` is exact at the zero word, and `i1 true` is admitted because the
   entry claims read no lane the poison can reach, the bound stated once in
-  `LeanLLVM/Vellum/BitLanes.lean`; `ctlz … i1 true` has no such bound and stays
-  refused.  `umin`/`umax` stay refused: the emission
-  contains none.  `tests/vector-s1.lean` checks every acceptance and its refusal
+  `LeanLLVM/Vellum/BitLanes.lean` — and the escape unit's list record carries the
+  same bound over its batch reserve — while `ctlz … i1 true` has no such bound
+  and stays refused.  Three modelled spellings have no shape rule here: the
+  escape unit's `llvm.umin.i32`, `llvm.x86.sse2.pmadd.wd` and
+  `llvm.x86.ssse3.pmadd.ub.sw.128` are matched at exactly the measured shapes by
+  `JsonEscapeIntrinsics.escapeCalls`, so another shape of one of them parses and
+  is `ub` at that environment rather than a parse error; `umax` at every width and
+  `umin` at every width other than `i32` are bound by no environment and called by
+  no capture under `probes/` — the only `@llvm.umin` sites in the emissions are the
+  two `i32` calls in `json-escape.candidate.ll` — so a call to one is `ub` and is
+  not refused by name either.  `tests/vector-s1.lean` checks every acceptance and its refusal
   in one run, `tests/vector-entry.lean` does the same for the widened store and
   the entry intrinsics, `tests/vector-utf8.lean` for the two UTF-8 spellings and
   their refusals, and `probes/install/ir/json-s1-masks.candidate.ll` is the

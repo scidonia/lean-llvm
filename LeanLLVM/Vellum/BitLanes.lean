@@ -4,18 +4,21 @@ The bit intrinsics of the JSON kernels, in lane vocabulary.
 `tests/v16/ci2.ll`, the stage-1 index kernel, forms its masks with three
 intrinsics: `llvm.x86.bmi.pext.64` twice, `llvm.x86.bmi.pdep.64` and
 `llvm.ctlz.i64`.  The entry kernels add three more — `llvm.ctpop.i32`,
-`llvm.ctpop.i64` and `llvm.cttz.i64` — and the UTF-8 stage adds two,
-`llvm.usub.sat.v32i8` and `llvm.x86.avx.ptestz.256`, so eight spellings have a
-modelled reading here, as seven lane definitions (the two `ctpop` widths share
-one) and no semantics case.  They are modelled as calls — the parser
-validates their spelling and an environment supplies their meaning, so the
-semantics needs no special case — and this module is that meaning: `pext`, `pdep`
-and `ctlz` lane by lane, which `s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`)
-binds for the extracted mask unit, and `ctpop`/`cttz`, which `entryCalls`
-(`LeanLLVM/Vellum/JsonEntryIR.lean`) binds for the entry kernels, and
-`subsSat`/`ptestz`, which `utf8Calls` (`LeanLLVM/Vellum/JsonUtf8IR.lean`) binds
-for the UTF-8 stage.  `Pclmul` gives the fourth (`llvm.x86.pclmulqdq`) its
-algebra.
+`llvm.ctpop.i64` and `llvm.cttz.i64` — the UTF-8 stage adds two,
+`llvm.usub.sat.v32i8` and `llvm.x86.avx.ptestz.256`, and the escape unit adds
+three, `llvm.umin.i32`, `llvm.x86.sse2.pmadd.wd` and
+`llvm.x86.ssse3.pmadd.ub.sw.128`, so eleven spellings have a modelled reading
+here, as ten lane definitions (the two `ctpop` widths share one) and no semantics
+case.  They are modelled as calls — the parser checks the shape of the spellings
+it has a rule for, and an environment supplies every meaning, so the semantics
+needs no special case — and this module is that meaning: `pext`, `pdep` and
+`ctlz` lane by lane, which `s1Calls` (`LeanLLVM/Vellum/JsonS1MasksIR.lean`)
+binds for the extracted mask unit; `ctpop`/`cttz`, which `entryCalls`
+(`LeanLLVM/Vellum/JsonEntryIR.lean`) binds for the entry kernels; `subsSat`/
+`ptestz`, which `utf8Calls` (`LeanLLVM/Vellum/JsonUtf8IR.lean`) binds for the
+UTF-8 stage; and `umin`/`pmaddUbSw`/`pmaddWd`, which `escapeCalls`
+(`LeanLLVM/Vellum/JsonEscapeIntrinsics.lean`) binds for the escape unit.
+`Pclmul` gives the fourth (`llvm.x86.pclmulqdq`) its algebra.
 
 A word is read lane by lane with `BitVec.getLsbD`, and `ofLanes` packs a lane
 function back into a word, so every definition below is a statement about lanes
@@ -35,6 +38,12 @@ rather than about a bit-twiddling sequence:
   stage's `usub.sat.v32i8` applies it byte by byte.
 * `ptestz a b` is the 256-bit zero test: `1` when no lane is set in both
   operands, `0` otherwise.
+* `umin a b` is the unsigned minimum of two words; `pmaddWd x y` is the signed
+  word multiply-add — adjacent word lanes of each operand multiplied pairwise,
+  the two products summed at `i32` and wrapping; and `pmaddUbSw x y` is the
+  unsigned-by-signed byte multiply-add, its pair sums saturated to a signed word.
+  The last two read an operand as adjacent lane pairs (`pairsOf`), which is the
+  granularity both instructions read.
 
 **The poison flag, stated once.** `cttz` has an `i1` flag in LLVM.  At `false`
 the zero word yields `w`, which is exact.  At `true` LLVM makes the zero operand
@@ -45,8 +54,8 @@ count, outside the written region the frame clause confines and the read region
 the words clause reads — and it is why `cttz`'s `i1 true` is the one poison-carrying
 flag the parser admits.  `ctlz`'s `i1 true` is refused by the same rule applied
 the other way: not observed, and no clause bounds where its poison would land.
-`usub.sat.v32i8` and `ptestz.256` carry no flag at all, so the rule has nothing
-to bound for them.
+`usub.sat.v32i8`, `ptestz.256` and the escape unit's three carry no flag at all,
+so the rule has nothing to bound for them.
 
 ## The rank machinery
 
@@ -612,6 +621,222 @@ theorem ptestz_eq_one_iff {w : Nat} (a b : BitVec w) :
 theorem ptestz_eq_zero_iff {w : Nat} (a b : BitVec w) :
     ptestz a b = 0 ↔ a &&& b ≠ 0 := by
   by_cases h : a &&& b = 0 <;> simp [ptestz, h]
+
+/-! ### The escape unit's three instructions
+
+`json-escape.candidate.ll` calls three intrinsic spellings the entry, mask and
+UTF-8 units do not: `llvm.umin.i32` in `xl_batch`, and the pair
+`llvm.x86.ssse3.pmadd.ub.sw.128` then `llvm.x86.sse2.pmadd.wd` in
+`us_hex4_pshufb`, whose four hexadecimal digits are read as lane 0 of the
+`pmadd.wd` result.  Each model below is the instruction, at the granularity the
+instruction reads: the scalar minimum at the word, and the two multiply-adds at
+the adjacent lane pair.
+
+Three facts in them are the ones a plausible lookalike would get wrong, and each
+has a control rather than only a sentence:
+
+* `umin` compares **unsigned**, so `umin 0x80000000 1 = 1` at `i32`
+  (`umin_highBit_control`); a signed comparison would answer `0x80000000`.
+* `pmadd.ub.sw` is **not symmetric**.  Its first operand's byte lanes are read
+  unsigned and its second's signed — that is `_mm_maddubs_epi16`'s reading — and
+  its result is a signed word, which the spelling's `ub`/`sw` abbreviates.
+  `pmaddUbSw_operand_order_control` is the pair at which the swapped reading is
+  `0x4000` and the instruction's is `0xC000`.  Its pair sum is then
+  **saturated** to a signed word rather than wrapped:
+  `pmaddUbSw_saturate_control` gives `0x7FFF` where the modular sum of the same
+  17-bit value is `0xFD02`.  The individual products fit a signed word
+  (`255 * -128 = -32640`), so the pair sum is the only place saturation occurs.
+* `pmadd.wd` **wraps**.  It multiplies signed word lanes and adds the two
+  adjacent products at `i32` with no saturation and no trap; with both products
+  at `2 ^ 30` the sum is `2 ^ 31`, which the instruction writes as `-2 ^ 31`
+  (`pmaddWd_wrap_control`), so the model's `BitVec` arithmetic is the
+  instruction's and not exact arithmetic's.
+
+None of the three carries a flag, so the poison note above has nothing to bound
+here: `umin` is total at every operand pair and both multiply-adds are total at
+every lane pair, which is why no clause of the escape unit's records has to bound
+where a poison value would land. -/
+
+/-- The adjacent pairs of a lane list, in order: pair `j` is lanes `2j` and
+`2j + 1`.  A list of fewer than two remaining lanes contributes no pair, which
+the multiply-adds' eight- and sixteen-lane operands make unreachable. -/
+def pairsOf {α : Type} : List α → List (α × α)
+  | a :: b :: rest => (a, b) :: pairsOf rest
+  | _ => []
+
+/-- A lane list of `n` lanes has `n / 2` adjacent pairs. -/
+theorem pairsOf_length {α : Type} (l : List α) : (pairsOf l).length = l.length / 2 := by
+  induction l using pairsOf.induct with
+  | case1 a b rest ih =>
+      simp only [pairsOf, List.length_cons]
+      rw [ih, show rest.length + 1 + 1 = 2 * 1 + rest.length from by omega,
+        Nat.mul_add_div (by decide)]
+      omega
+  | case2 t h =>
+      cases t with
+      | nil => simp [pairsOf]
+      | cons a t' =>
+        cases t' with
+        | nil => simp [pairsOf]
+        | cons b rest => exact (h a b rest rfl).elim
+
+/-- `llvm.umin`: the unsigned minimum of two words.  The order is `toNat`'s, so
+at `i32` a high bit does not make an operand the larger one; the escape emission
+calls the spelling at `i32` only, and the definition is the two-operand order at
+whatever width a call spells. -/
+def umin {w : Nat} (a b : BitVec w) : BitVec w :=
+  if a.toNat ≤ b.toNat then a else b
+
+/-- The minimum is the first operand exactly when it is the smaller. -/
+theorem umin_eq_left {w : Nat} {a b : BitVec w} (h : a.toNat ≤ b.toNat) :
+    umin a b = a := by
+  simp [umin, h]
+
+/-- The minimum is the second operand exactly when the first is not the smaller. -/
+theorem umin_eq_right {w : Nat} {a b : BitVec w} (h : ¬ a.toNat ≤ b.toNat) :
+    umin a b = b := by
+  simp [umin, h]
+
+/-- The comparison is unsigned: a set top bit does not make an operand larger. -/
+theorem umin_highBit_control : umin (0x80000000 : BitVec 32) 1 = 1 := by decide
+
+/-- One `pmadd.wd` lane: the two products of a pair of adjacent signed word lanes,
+summed at `i32`.  The parameters are the **first** operand's pair and then the
+**second's**, in the order the call spells them. -/
+def pmaddWdLane (x₀ x₁ y₀ y₁ : BitVec 16) : BitVec 32 :=
+  BitVec.ofInt 32 (x₀.toInt * y₀.toInt + x₁.toInt * y₁.toInt)
+
+/-- `llvm.x86.sse2.pmadd.wd`: signed word multiply-add.  Word lanes `2j` and
+`2j + 1` of each operand are multiplied pairwise, the two products are summed, and
+the sum is `i32` lane `j` — wrapping, because the instruction neither saturates
+nor traps.  The emission calls it at `<8 x i16>` → `<4 x i32>`, and that is the
+shape the environment's arm matches; the parser has no shape rule for the
+spelling, so a call at another shape is unresolved rather than refused. -/
+def pmaddWd (x y : List (BitVec 16)) : List (BitVec 32) :=
+  List.zipWith (fun (x₀, x₁) (y₀, y₁) => pmaddWdLane x₀ x₁ y₀ y₁) (pairsOf x) (pairsOf y)
+
+/-- One result lane consumes one adjacent pair of each operand. -/
+theorem pmaddWd_cons (x₀ x₁ : BitVec 16) (xs : List (BitVec 16)) (y₀ y₁ : BitVec 16)
+    (ys : List (BitVec 16)) :
+    pmaddWd (x₀ :: x₁ :: xs) (y₀ :: y₁ :: ys)
+      = pmaddWdLane x₀ x₁ y₀ y₁ :: pmaddWd xs ys := rfl
+
+/-- The multiply-add halves the lane count, so the pairing is exhaustive on the
+measured shape. -/
+theorem pmaddWd_length (x y : List (BitVec 16)) :
+    (pmaddWd x y).length = min (x.length / 2) (y.length / 2) := by
+  rw [pmaddWd, List.length_zipWith, pairsOf_length, pairsOf_length]
+
+/-- At the emission's shape the result is the `<4 x i32>` the call declares. -/
+theorem pmaddWd_length_eight {x y : List (BitVec 16)} (hx : x.length = 8)
+    (hy : y.length = 8) : (pmaddWd x y).length = 4 := by
+  rw [pmaddWd_length, hx, hy]
+  rfl
+
+/-- The wrap case: two products of `2 ^ 30` sum to `2 ^ 31`, which `i32` writes
+as `-2 ^ 31`.  An exact-arithmetic reading of the instruction would answer
+`0x100000000` and have no `i32` lane to put it in. -/
+theorem pmaddWd_wrap_control :
+    pmaddWd [0x8000, 0x8000] [0x8000, 0x8000] = [0x80000000] := by decide
+
+/-- A signed lane pair: `-1 * 1` is `-1`, and `i32` writes it all ones. -/
+theorem pmaddWd_signed_control :
+    pmaddWd [0xFFFF, 0x0000] [0x0001, 0x0000] = [0xFFFFFFFF] := by decide
+
+/-- A signed word saturated from exact arithmetic: PMADDUBSW's pack step, which
+clamps a pair sum (which can need seventeen bits) into `[-2 ^ 15, 2 ^ 15 - 1]`. -/
+def satI16 (k : Int) : BitVec 16 :=
+  if 32767 < k then BitVec.ofInt 16 32767
+  else if k < -32768 then BitVec.ofInt 16 (-32768)
+  else BitVec.ofInt 16 k
+
+/-- A sum already inside the signed word's range is itself. -/
+theorem satI16_of_range {k : Int} (h₁ : k ≤ 32767) (h₂ : -32768 ≤ k) :
+    satI16 k = BitVec.ofInt 16 k := by
+  simp [satI16, show ¬ 32767 < k from by omega, show ¬ k < -32768 from by omega]
+
+/-- A sum above the range saturates at the largest signed word. -/
+theorem satI16_of_high {k : Int} (h : 32767 < k) : satI16 k = BitVec.ofInt 16 32767 := by
+  simp [satI16, h]
+
+/-- A sum below the range saturates at the smallest signed word. -/
+theorem satI16_of_low {k : Int} (h : k < -32768) :
+    satI16 k = BitVec.ofInt 16 (-32768) := by
+  simp [satI16, show ¬ 32767 < k from by omega, h]
+
+/-- One `pmadd.ub.sw` lane: the first operand's byte lanes read **unsigned**, the
+second's read **signed**, the two products summed exactly and saturated to a signed
+word.  The parameters are the first operand's pair and then the second's, in the
+order the call spells them. -/
+def pmaddUbSwLane (x₀ x₁ y₀ y₁ : BitVec 8) : BitVec 16 :=
+  satI16 ((x₀.toNat : Int) * y₀.toInt + (x₁.toNat : Int) * y₁.toInt)
+
+/-- `llvm.x86.ssse3.pmadd.ub.sw.128`: unsigned-byte times signed-byte multiply-add
+with a saturated signed-word result.  Byte lanes `2j` and `2j + 1` of each operand
+are multiplied pairwise — the first operand's read unsigned, the second's signed —
+the two products are summed, and the sum saturates into signed word lane `j`.  The
+emission calls it at `<16 x i8>` → `<8 x i16>`, and that is the shape the
+environment's arm matches; the parser has no shape rule for the spelling, so a
+call at another shape is unresolved rather than refused. -/
+def pmaddUbSw (x y : List (BitVec 8)) : List (BitVec 16) :=
+  List.zipWith (fun (x₀, x₁) (y₀, y₁) => pmaddUbSwLane x₀ x₁ y₀ y₁) (pairsOf x) (pairsOf y)
+
+/-- One result lane consumes one adjacent pair of each operand. -/
+theorem pmaddUbSw_cons (x₀ x₁ : BitVec 8) (xs : List (BitVec 8)) (y₀ y₁ : BitVec 8)
+    (ys : List (BitVec 8)) :
+    pmaddUbSw (x₀ :: x₁ :: xs) (y₀ :: y₁ :: ys)
+      = pmaddUbSwLane x₀ x₁ y₀ y₁ :: pmaddUbSw xs ys := rfl
+
+/-- The multiply-add halves the lane count. -/
+theorem pmaddUbSw_length (x y : List (BitVec 8)) :
+    (pmaddUbSw x y).length = min (x.length / 2) (y.length / 2) := by
+  rw [pmaddUbSw, List.length_zipWith, pairsOf_length, pairsOf_length]
+
+/-- At the emission's shape the result is the `<8 x i16>` the call declares. -/
+theorem pmaddUbSw_length_sixteen {x y : List (BitVec 8)} (hx : x.length = 16)
+    (hy : y.length = 16) : (pmaddUbSw x y).length = 8 := by
+  rw [pmaddUbSw_length, hx, hy]
+  rfl
+
+/-- The operand order: `0x80` read unsigned times `0x80` read signed is `-16384`,
+which is `0xC000`; the signed-by-signed reading would answer `0x4000`. -/
+theorem pmaddUbSw_operand_order_control :
+    pmaddUbSw [0x80, 0x00] [0x80, 0x00] = [0xC000] := by decide
+
+/-- The saturation: two products of `255 * 127` sum to `64770`, which the
+instruction packs as `0x7FFF`; the modular sum of the same value is `0xFD02`. -/
+theorem pmaddUbSw_saturate_control :
+    pmaddUbSw [0xFF, 0xFF] [0x7F, 0x7F] = [0x7FFF] := by decide
+
+/-- A negative lane: `2 * -1` is `-2`, and the signed word writes it `0xFFFE`. -/
+theorem pmaddUbSw_signed_control :
+    pmaddUbSw [0x02, 0x00] [0xFF, 0x00] = [0xFFFE] := by decide
+
+/-! #### Axiom footprints
+
+The three models' own terms: `umin` is axiom-free, and the two multiply-adds reach
+`propext` through `BitVec.ofInt`'s definition and nothing else.  Both are inside
+the module's ceiling, and no declaration here introduces a carrier. -/
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.umin' does not depend on any axioms -/
+#guard_msgs in
+#print axioms umin
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.pmaddWd' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pmaddWd
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.pmaddUbSw' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pmaddUbSw
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.pairsOf' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pairsOf
+
+/-- info: 'LeanLLVM.Vellum.BitLanes.satI16' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms satI16
 
 /-! ### The lane algebra: packing, distributing, folding, and the lane list
 
