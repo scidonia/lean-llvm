@@ -9869,3 +9869,13 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.pipeline_satisfies_of_records' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.pipeline_satisfies_of_records
+
+/-! #### The expander's exit: the final copy and the six-branch claim -/
+
+/-- info: 'LeanLLVM.Vellum.whileEnd35_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.whileEnd35_run
+
+/-- info: 'LeanLLVM.Vellum.expandExit_satisfied' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.expandExit_satisfied
