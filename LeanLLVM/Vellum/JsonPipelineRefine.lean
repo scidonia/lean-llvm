@@ -724,6 +724,93 @@ themselves, not this module. -/
 #guard_msgs in
 #print axioms PipelineLoop.run_at
 
+-- The declarations this module adds that the section above did not already
+-- name.  Each is measured, not assumed: `[propext, Quot.sound]` for the loop
+-- shape, the environment's resolutions and the call-site derivations;
+-- `[propext]` for the readings of the staging that do no case analysis on a
+-- quotient; and none for the congruence on `CallSatisfies`, which is `intro`,
+-- `rw` and application.
+
+/-- info: 'LeanLLVM.Vellum.PipelineLoop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms PipelineLoop
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.PipelineUnits' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.PipelineUnits
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms PipelineBodyFacts
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.CallSatisfies_congr' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.CallSatisfies_congr
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_pos8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_pos8
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_b8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_b8
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_escape' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_escape
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_utf8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_utf8
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_stage2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_stage2
+
+/-- info: 'LeanLLVM.Vellum.block64_exists' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms block64_exists
+
+/-- info: 'LeanLLVM.Vellum.readBytes_mid' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_mid
+
+/-- info: 'LeanLLVM.Vellum.blockRead_of_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms blockRead_of_window
+
+/-- info: 'LeanLLVM.Vellum.separated_at_block' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms separated_at_block
+
+/-- info: 'LeanLLVM.Vellum.masksPre_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms masksPre_at
+
+/-- info: 'LeanLLVM.Vellum.le_blocks_mul' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms le_blocks_mul
+
+/-- info: 'LeanLLVM.Vellum.masksPre_of_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms masksPre_of_window
+
+/-- info: 'LeanLLVM.Vellum.pipelineArgLen' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineArgLen
+
+/-- info: 'LeanLLVM.Vellum.pipelineStaging_args' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineStaging_args
+
+/-- info: 'LeanLLVM.Vellum.pipelineStaging_base' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineStaging_base
+
+/-- info: 'LeanLLVM.Vellum.pipelineBudget_of_staging' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineBudget_of_staging
+
 /-- info: 'LeanLLVM.Vellum.pipeline_satisfies_of_units' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pipeline_satisfies_of_units
