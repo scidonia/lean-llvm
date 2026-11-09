@@ -18,7 +18,10 @@ Three things are stated here and nothing else:
   previous one consumed underflows the run length; **thirty-two readable bytes past
   `b + n`**, because the run copy's first load is unconditional; and the
   destination extent, **sixty-four bytes past the decoded extent**, because the
-  stored form writes a whole vector there.
+  stored form writes a whole vector there.  It also carries the escape table the
+  rewritten body reads: the fragment has no globals, so the table base is a ninth
+  argument and the clause promises its content at `unescapeTable`, the rule's own
+  table rather than a transcription.
 
 * The two `post`s.  The list's pairs with the arm the caller chose — and the arm is
   a *selection between two clauses*, never a claim about a document's escapes: the
@@ -39,10 +42,17 @@ count, which is read off the pinned body of the unit; it is not a constant of th
 contract, and a number written here before the body exists would be a promise with
 nothing behind it.
 
-No `Satisfies` instance is stated in this module yet: each is read at a body the
-tree does not yet pin, and a record proved about a body that is not the measured
-one would be a statement about a different unit.
+The bodies are pinned in `JsonEscapeIR`: the list entry point, the expander's entry
+point, the decoder it calls and the batch the list calls, all four compared whole
+against `probes/install/ir/json-escape.candidate.ll` by `#guard`.  The `Satisfies`
+instances that read these records at those bodies are **not** stated in this module
+yet; the pin is what lets such an instance name the measured body rather than an
+authored one, and the records above are stated at the corrected boundary — the
+list's stream claim at `xp + 4 * xn0` with the block base added, and the expander's
+ninth argument with the table clause — so that an instance proved at the pinned body
+is a statement about the measured unit.
 -/
+import LeanLLVM.Vellum.JsonEscapeIR
 import LeanLLVM.Vellum.JsonEscapeSpec
 import LeanLLVM.Vellum.JsonS1MasksIR
 import LeanLLVM.Vellum.Refinement
@@ -91,16 +101,57 @@ def batchReserve : Nat := 8
 /-- One block's positions occupy at most sixty-four entries. -/
 def blockMax (xn0 : Nat) : Nat := xn0 + 64 + batchReserve
 
+/-- The positions a block's run emits, as the store holds them: the block's own
+escape positions, in order, lifted to the document by the position base.  The
+specification is about the block (`escapePositionsFrom`), so the lift is the
+record's, where the ABI's address is. -/
+def blockPositions (blk0 : BitVec 64) (lo hi : Block32) (st : ClassState) : List Nat :=
+  (escapePositionsFrom (block64 lo hi) st).map fun k => blockAddr blk0 + k
+
+/-- The escape table the rewritten decoder reads: `UJ_UNESC`'s reading of a byte,
+stated from the escape rule rather than transcribed.  A byte an escape can stand
+for maps to the byte it means, and every other byte maps to `0xFF`, which the
+decoder's signed test reads as "not a two-character escape".  Derived from
+`simpleEscape`, so the table and the rule cannot drift. -/
+def unescapeTable : List UInt8 :=
+  (List.range 256).map fun c => (simpleEscape (UInt8.ofNat c)).getD 0xFF
+
+-- The table has one entry per byte.
+#guard unescapeTable.length = 256
+
+-- Each of the eight escape characters maps to the byte it stands for.
+#guard unescapeTable[0x22]? = some 0x22
+#guard unescapeTable[0x5C]? = some 0x5C
+#guard unescapeTable[0x2F]? = some 0x2F
+#guard unescapeTable[0x62]? = some 0x08
+#guard unescapeTable[0x66]? = some 0x0C
+#guard unescapeTable[0x6E]? = some 0x0A
+#guard unescapeTable[0x72]? = some 0x0D
+#guard unescapeTable[0x74]? = some 0x09
+
+-- The control's own affirmative control, in the same run: a byte that is not an
+-- escape character maps to `0xFF`, which the decoder's signed test reads as "not
+-- a two-character escape".  `u`, `0` and `A` are each handled by another rule —
+-- the hex form and the refusal — and none of them may be met by the table.
+#guard unescapeTable[0x75]? = some 0xFF
+#guard unescapeTable[0x30]? = some 0xFF
+#guard unescapeTable[0x41]? = some 0xFF
+#guard unescapeTable[0x01]? = some 0xFF
+
 /-! ### The position list's record
 
 Two arms, one record: the arm is a parameter, so the clause a run must meet is
 chosen by the caller and the difference between the arms is the contract's content
 rather than a case analysis buried in a proof. -/
 
-/-- The list's claim about the memory it leaves, in the built arm: the positions the
-caller's stream now holds are exactly this block's escape positions, in order, and
-the count is the true count.  The unchanged conjunct is over the extent the run
-wrote, which includes the batch reserve the run touched. -/
+/-- The list's claim about the memory it leaves, in the built arm: the eight-entry
+reserve the first batch writes is at `xp + 4 * xn0`, so the entries the run *claims*
+start where the caller's count says the stream ends.  The positions are the block's
+own, lifted by `blockAddr blk0`, because the store's positions are document offsets
+and the specification's are block lanes.
+
+The unchanged conjunct is over the extent the run wrote, which includes the batch
+reserve the run touched. -/
 def escapePositionsBuiltPost (args : List Value) (mem m : Mem) : Prop :=
   ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
     (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
@@ -114,8 +165,8 @@ def escapePositionsBuiltPost (args : List Value) (mem m : Mem) : Prop :=
     readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
     readBytes m xn 8 = some (wordBytes 8 (xn0 +
       (escapePositionsFrom (block64 lo hi) st).length)) ∧
-    readBytes m xp (4 * (escapePositionsFrom (block64 lo hi) st).length) =
-      some (positionsBytes 4 (escapePositionsFrom (block64 lo hi) st)) ∧
+    readBytes m (xp + 4 * xn0) (4 * (escapePositionsFrom (block64 lo hi) st).length) =
+      some (positionsBytes 4 (blockPositions blk0 lo hi st)) ∧
     UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (xn, 8), (carry, 16)]
 
 /-- The list's claim in the suppressed arm: the count is zero and no position is
@@ -198,10 +249,11 @@ theorem escape_positions_suppressed_count {args : List Value} {mem m : Mem}
 the decoded bytes with the cursor, or a refusal at a body-relative offset with the
 same cursor. -/
 def escapeExpandPost (args : List Value) (mem m : Mem) (v : Value) : Prop :=
-  ∃ (b n dst err xp xj : Nat) (nps pos0 : Nat) (body : List UInt8) (ps : List Nat)
+  ∃ (b n dst err xp xj : Nat) (nps pos0 tab : Nat) (body : List UInt8) (ps : List Nat)
     (err0 : Nat) (k0 : Nat),
     args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
-      .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
+      .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0),
+      .ptr tab] ∧
     readBytes mem b n = some body ∧
     readBytes mem xp (4 * nps) = some (positionsBytes 4 ps) ∧
     readBytes mem err 8 = some (wordBytes 8 err0) ∧
@@ -223,9 +275,20 @@ def escapeExpandPost (args : List Value) (mem m : Mem) (v : Value) : Prop :=
 /-- The expander's boundary record.
 
 Its `pre` is the caller's staging and carries all three obligations the measurement
-of this unit forced.  The list clause is the exact one: `xp` holds this body's
-`escapePositions`, in order, and `*xj` is a cursor into it.  Readability reaches
-thirty-two bytes past `b + n`.
+of this unit forced, and the escape table the rewritten body reads.  The list clause
+is the exact one: `xp` holds this body's `escapePositions`, in order, and `*xj` is a
+cursor into it.  Readability reaches thirty-two bytes past `b + n`.
+
+**The ninth argument is the table base, and it is a parameter rather than a
+constant.** The fixture has no module-level globals, so the capture appends `%tab`
+to the bodies that read it: the decoder dereferences `tab + e` for every byte after
+a backslash, *before* it decides whether that byte is a two-character escape.  An
+eight-argument call leaves the parameter unbound and every body containing an escape
+is `ub`, which is why the record names it and promises the table's content —
+`unescapeTable`, stated from `simpleEscape`, so the table the body reads and the
+rule `escapeDecode` applies cannot disagree.  The pipeline supplies that table at
+its call site; a mismatched table is then a failed `pre` rather than a silently
+wrong decode.
 
 The destination's extent is `dst` through the decoded length plus sixty-four bytes,
 and the record asks for `dst + n + 64`: the number `kernel/json/escape.h` promises
@@ -266,10 +329,11 @@ the proof having to notice it.
 def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
   pre := fun args mem _ =>
-    ∃ (b n dst err xp xj : Nat) (nps pos0 : Nat) (body : List UInt8) (ps : List Nat)
+    ∃ (b n dst err xp xj : Nat) (nps pos0 tab : Nat) (body : List UInt8) (ps : List Nat)
       (err0 : Nat) (k0 : Nat),
       args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
-        .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
+        .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0),
+        .ptr tab] ∧
       -- the body
       readBytes mem b n = some body ∧
       -- the list is exactly this body's escape positions, rebased onto the body:
@@ -282,6 +346,8 @@ def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
       -- the cursor is a cursor
       readBytes mem xj 8 = some (wordBytes 8 k0) ∧ k0 ≤ nps ∧
       readBytes mem err 8 = some (wordBytes 8 err0) ∧
+      -- the escape table the rewritten decoder reads, at the rule's own table
+      readBytes mem tab 256 = some unescapeTable ∧
       -- thirty-two readable bytes past the body
       HasBytes mem (b + n) 32 ∧
       -- the destination extent: the body's length plus sixty-four bytes, which is
@@ -307,12 +373,13 @@ in the bridges — the list's record takes the void bridge and this one the valu
 bridge. -/
 theorem escape_expand_post_value {args : List Value} {mem m : Mem} {v : Value}
     (h : escapeExpandPost args mem m v) :
-    ∃ (b n dst err xp xj nps pos0 : Nat) (body : List UInt8),
+    ∃ (b n dst err xp xj nps pos0 tab : Nat) (body : List UInt8),
       args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
-        .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
+        .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0),
+        .ptr tab] ∧
       readBytes mem b n = some body := by
-  obtain ⟨b, n, dst, err, xp, xj, nps, pos0, body, ps, err0, k0, hargs, hbody, _⟩ := h
-  exact ⟨b, n, dst, err, xp, xj, nps, pos0, body, hargs, hbody⟩
+  obtain ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, ps, err0, k0, hargs, hbody, _⟩ := h
+  exact ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, hargs, hbody⟩
 
 /-! ### Axiom footprints -/
 
@@ -335,5 +402,13 @@ theorem escape_expand_post_value {args : List Value} {mem m : Mem} {v : Value}
 /-- info: 'LeanLLVM.Vellum.escape_expand_post_value' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms escape_expand_post_value
+
+/-- info: 'LeanLLVM.Vellum.unescapeTable' does not depend on any axioms -/
+#guard_msgs in
+#print axioms unescapeTable
+
+/-- info: 'LeanLLVM.Vellum.blockPositions' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms blockPositions
 
 end LeanLLVM.Vellum

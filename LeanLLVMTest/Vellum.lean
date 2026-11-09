@@ -9217,3 +9217,35 @@ section above. -/
 /-- info: 'LeanLLVM.Vellum.masksMispost_not_satisfies' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.masksMispost_not_satisfies
+
+/-! ### The escape unit's pinned bodies
+
+`JsonEscapeIR` parses `probes/install/ir/json-escape.candidate.ll` and pins the
+four definitions it commits against literals.  The pin is restated here because
+this file is compiled from source by the criterion's own evidence command: a
+`#guard` in a library module is a claim about a build, and the fixture is a file
+that can change independently of every module that reads it. -/
+
+-- The fixture's four definitions, whole and in its order: the list entry point,
+-- the expander's entry point, the decoder and the batch.
+#guard decide
+  ((parseModule JsonEscapeIR.escapeSrc).toOption.map (fun m => m.functions) =
+    some [JsonEscapeIR.escapeListFunction, JsonEscapeIR.escapeExpandFunction,
+      JsonEscapeIR.usDecFunction, JsonEscapeIR.xlBatchFunction])
+
+-- The enumeration behind the shapes the two records are read at: 41 blocks and
+-- 412 instruction lines over the four bodies.
+#guard (JsonEscapeIR.escapeListFunction.blocks.length +
+  JsonEscapeIR.escapeExpandFunction.blocks.length +
+  JsonEscapeIR.usDecFunction.blocks.length +
+  JsonEscapeIR.xlBatchFunction.blocks.length) = 41
+#guard ((JsonEscapeIR.escapeListFunction.blocks.map (fun b => b.instrs.length)).sum +
+  (JsonEscapeIR.escapeExpandFunction.blocks.map (fun b => b.instrs.length)).sum +
+  (JsonEscapeIR.usDecFunction.blocks.map (fun b => b.instrs.length)).sum +
+  (JsonEscapeIR.xlBatchFunction.blocks.map (fun b => b.instrs.length)).sum) = 412
+
+-- The two entry points' parameter lists, as the fixture writes them.
+#guard JsonEscapeIR.escapeListFunction.params.map (fun p => p.1) =
+  ["%bs", "%ctl", "%im", "%blk0", "%xp", "%xn", "%carry"]
+#guard JsonEscapeIR.usDecFunction.params.map (fun p => p.1) =
+  ["%p", "%n", "%dst", "%err", "%xp", "%xj", "%nxp", "%pos0", "%tab"]
