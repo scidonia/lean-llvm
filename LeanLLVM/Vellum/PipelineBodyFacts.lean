@@ -2236,6 +2236,7 @@ end PipelineBodyFacts
 open LeanLLVM.JSON (Block32)
 open LeanLLVM.Vellum.JsonScanSpec
 open LeanLLVM.Vellum.JsonS1MasksIR (block64 carrySlot)
+open LeanLLVM.Vellum.JsonEntryIR (pos8Table)
 open LeanLLVM.Vellum.PipelineBodyFacts
 open LeanLLVM.Vellum.JsonPipelineBlockEval (pUsUs usUsIn usUsOut)
 open LeanLLVM.Vellum.BlockEval (stateAt)
@@ -2545,6 +2546,10 @@ structure PipelineLoopCarried where
   /-- The entry word's slot and the entry stream's base. -/
   entw : Nat
   ep : Nat
+  /-- The POS8 record's staged table: `Γ_entry_pos8at tab` reads it at the
+  argument the record appends, so the stage the loop carries must be the same
+  8 KiB region at every iteration. -/
+  tab : Nat
   /-- The escape list's stream, its count slot and its carry slot. -/
   xp : Nat
   nxp : Nat
@@ -2585,7 +2590,21 @@ def PipelineBodyArm.inBuilder (a : PipelineBodyArm) (env : Env)
 /-- **The loop invariant.**  With `r + 1` iterations of budget the state is the
 entry of the loop's next iteration at the arm the document's selector chose; with
 the budget spent it is the loop's exit block, which is the shape
-`PipelineLoop.exit` consumes.  Every conjunct names the step that reads it:
+`PipelineLoop.exit` consumes.  `base` and `tab` are the call environment's fixed
+values — `pipelineCalls base tab` chooses the escape record and the POS8
+record before the argument list opens — so the invariant names them rather than
+leaving the step to infer an address from the state.  Every conjunct names the
+step that reads it:
+
+* `S.b = base` and `S.tab = tab` — the two stages the call records are fixed at.
+  `Γ_escape_positions base …`'s block clause reads `base + blockAddr blk0`, and
+  `Γ_entry_pos8at tab`'s `pre` reads the 8 KiB table at `tab`; a state whose
+  memory happens to hold a document or a table elsewhere does not satisfy those
+  records at the addresses the environment resolves.  Both are static: every
+  step hands them on untouched, and the seed takes them from the staging's first
+  argument slot (`.ptr base`) and its `pos8Table` clause.  Carried rather than
+  derived per step because no clause of the state's memory determines an address
+  the environment fixed outside it;
 
 * `pc`/`pre` and the agreement — the arm step's `hpc` and `hagree`
   (`usUs_step_at` … `body_step_at`), i.e. the transport;
@@ -2606,13 +2625,60 @@ the budget spent it is the loop's exit block, which is the shape
 * the escape carry pair — the escape list's `pre` carry clause (gate-on arms);
 * the two `cursorRoom` clauses — POS8's `k + 64 * nblk + 9 < 2 ^ 63` and the
   escape list's `xn0 < 2 ^ 63` through `cursorRoom_bounds`;
-* `HasBytes xp` — the escape list's capacity clause;
-* the three mask separations — `masksPre_at`'s three disjunctions;
-* the three escape exclusions — the escape list's count and carry exclusions.
-  They are stated at the stream's *staged capacity* rather than at the current
-  count, because the current count grows and a per-block extent is not preserved
-  by the growth; the capacity extent is a staging fact and survives every step. -/
-def pipelineLoopInv (blocks : Nat) : Nat → State → Prop
+* `S.kw = ofNat 64 S.k` — the entry emitter's `pre` takes its count as the
+  `%k.081` cell, a 64-bit word, while the cursor bound above is about the `Nat`.
+  The step could not read `cursorRoom` at the argument the call passes without
+  it.  Carried rather than derived per step because the arm's trace is stated at
+  the builder's cell, and the seed establishes it from the entry block's load of
+  `%nk`; the entry post hands it on, stating both `v = .int 64 (ofNat 64 k')` and
+  the `Nat` `k'`, so one successor clause is the returned word and the other its
+  numeric form;
+* `readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn)` — the escape list's count
+  clause reads the count out of its own slot, and the `cursorRoom` bound above is
+  a `Nat` fact about the state, not a memory fact.  Without this the gate-on
+  arms' third call site has no supplier for its count.  The seed establishes it
+  from the staging's count slot; `escapePositionsPost`'s count clause hands it on,
+  writing the advanced count at the same slot;
+* `readBytes s.mem S.tab 8192 = some pos8Table` — `Γ_entry_pos8at tab` reads the
+  staged table at the argument the record appends, so the entry call's `pre` is
+  unsatisfiable unless the loop can name the region and know it is intact.  It is
+  static, so every step hands it on untouched; the seed establishes it from the
+  staging's table clause.  Carried rather than derived per step because the
+  region is not a field any unit post writes, and reaching outside the state for
+  it at four arms is the defect the invariant exists to remove;
+* the fixed capacity `HasBytes s.mem S.xp (4 * S.xpExtent)` with
+  `S.xpExtent = S.xn0 + 64 * blocks + 8`, and the two count-growth bounds
+  `S.k ≤ S.k0 + 64 * S.i`, `S.xn ≤ S.xn0 + 64 * S.i` — the
+  escape list's capacity clause is stated at `4 * blockMax xn0`, an extent that
+  *grows* with the count, and its post promises only bytes inside that extent.
+  So a carried `HasBytes` at the per-call extent promises nothing about the bytes
+  the next block's larger extent names, and the successor's capacity clause is
+  underivable.  The fixed extent is the staged stream; `readBytes_split` makes
+  the per-call `4 * blockMax S.xn` a prefix of it at the call site, and the
+  escape count's growth bound is what keeps the prefix inside the fixed extent at
+  every block.  The entry count's bound has a different consumer: the entry
+  emitter's `entw`-versus-`ep` separation asks `ep + 4*(S.k + 72) ≤ entw` inside
+  a staged `ep` extent of `4*(S.k0 + 64*blocks + 9)`, and with
+  `S.i + (r+1) = blocks` the bound leaves `S.k0 + 64*blocks + 8` at `r = 0` —
+  one byte inside the `+9`.  The seed takes all three from the staging (counts at
+  their initial cursors, `S.i = 0`); `entryPos8Post`'s count clause hands the
+  entry bound on and `escapePositionsPost`'s count clause the escape bound, each
+  growing the count by at most sixty-four per block, while the fixed extent is
+  static;
+* the staged regions' separation — `DisjointRegions` at the document, the table,
+  the mask carry slot, the mask slot, the entry word, the entry stream, the escape
+  count, the escape stream and the escape carry.  The units' posts leave
+  everything outside their own store regions unchanged, so the window, the mask
+  carry slot, the mask words, the table and the escape carry pair survive an
+  iteration only if those regions are pairwise disjoint from every region the
+  iteration writes.  They are static, so every step hands them on untouched, and
+  the seed takes them from `pipelineStaging`'s own `DisjointRegions` at the
+  staging's witnesses.  The mask unit's three separations and the escape list's
+  three exclusions are the pairs this list shares with those records; stating the
+  whole list once is what makes the store at `entw`, the entry stream and the
+  table's preservation derivable from the same conjunct rather than from a
+  separate promise per frame. -/
+def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
   | 0, s => s.pc = "for.cond.cleanup"
   | r + 1, s =>
       ∃ (S : PipelineLoopCarried),
@@ -2622,6 +2688,7 @@ def pipelineLoopInv (blocks : Nat) : Nat → State → Prop
         S.shr = BitVec.ofNat 64 blocks ∧
         S.iw = BitVec.ofNat 64 S.i ∧
         AgreeOn (blockUses S.arm.block) (stateAt (S.arm.inBuilder s.env S) s) s ∧
+        S.b = base ∧
         readBytes s.mem S.b (64 * blocks) = some S.doc ∧
         readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside) ∧
         S.stM.oddRun = (S.opened && S.ppar) ∧
@@ -2632,17 +2699,30 @@ def pipelineLoopInv (blocks : Nat) : Nat → State → Prop
         S.ws = S.maskSlot + 24 ∧
         S.backslash = S.maskSlot + 32 ∧
         S.ctl = S.maskSlot + 40 ∧
+        S.tab = tab ∧
+        readBytes s.mem S.tab 8192 = some pos8Table ∧
+        S.kw = BitVec.ofNat 64 S.k ∧
+        readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
+        S.xpExtent = S.xn0 + 64 * blocks + 8 ∧
+        -- the entry count's growth: at block `S.i` the count is at most the
+        -- first iteration's plus sixty-four per block.  Needed at the entry
+        -- call's `entw`-versus-`ep` separation: the staged `ep` extent is
+        -- `4 * (S.k0 + 64 * blocks + 9)`, while the call asks
+        -- `ep + 4 * (S.k + 72) ≤ entw`; with `S.i + (r+1) = blocks` this bound
+        -- gives `S.k + 72 ≤ S.k0 + 64 * blocks - 64 * (r+1) + 72`, so at
+        -- `r = 0` the margin is `S.k0 + 64 * blocks + 8` against the `+9` —
+        -- one byte, which is the whole reason the staged extent has a `+9`.
+        S.k ≤ S.k0 + 64 * S.i ∧
+        S.xn ≤ S.xn0 + 64 * S.i ∧
         (S.arm.hasEscape = true →
           carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
         cursorRoom S.k (blocks - S.i) 9 ∧
         cursorRoom S.xn (blocks - S.i) 9 ∧
-        HasBytes s.mem S.xp (4 * blockMax S.xn) ∧
-        (S.b + 64 * blocks ≤ S.sc ∨ S.sc + 24 ≤ S.b) ∧
-        (S.b + 64 * blocks ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.b) ∧
-        (S.sc + 24 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.sc) ∧
-        (S.nxp + 8 ≤ S.xp ∨ S.xp + 4 * S.xpExtent ≤ S.nxp) ∧
-        (S.xcarry + 16 ≤ S.nxp ∨ S.nxp + 8 ≤ S.xcarry) ∧
-        (S.xcarry + 16 ≤ S.xp ∨ S.xp + 4 * S.xpExtent ≤ S.xcarry)
+        HasBytes s.mem S.xp (4 * S.xpExtent) ∧
+        DisjointRegions
+          [(S.b, 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
+           (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.nxp, 8),
+           (S.xp, 4 * S.xpExtent), (S.xcarry, 16)]
 
 /-- The states the loop may leave in: the exit block, which carries the loop's
 counts to the tail. -/
@@ -2650,16 +2730,17 @@ def pipelineLoopExit (s : State) : Prop := s.pc = "for.cond.cleanup"
 
 /-- At a spent budget the invariant is the exit predicate, which is the shape
 `PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
-theorem pipelineLoopInv_zero {blocks : Nat} {s : State}
-    (h : pipelineLoopInv blocks 0 s) : pipelineLoopExit s := h
+theorem pipelineLoopInv_zero (base tab : Nat) {blocks : Nat} {s : State}
+    (h : pipelineLoopInv base tab blocks 0 s) : pipelineLoopExit s := h
 
 /-- **`PipelineLoop.exit`'s obligation, discharged.**  A spent budget is the loop's
 exit block, so from any state the invariant admits at `r = 0` the loop's exit is
 already reached and the prefix is the zero-length one.  The last iteration is
 therefore `step`'s at `r = 0` — where the arm's own exit test fires and the
 successor is `for.cond.cleanup` — and not `exit`'s. -/
-theorem pipelineLoop_exitObligation (calls : Calls) (blocks : Nat) (s : State)
-    (h : pipelineLoopInv blocks 0 s) :
+theorem pipelineLoop_exitObligation (calls : Calls) (base tab : Nat) (blocks : Nat)
+    (s : State)
+    (h : pipelineLoopInv base tab blocks 0 s) :
     ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit e ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e :=
   ⟨s, 0, Nat.le_refl 0, h, fun k => by rw [Nat.zero_add]⟩

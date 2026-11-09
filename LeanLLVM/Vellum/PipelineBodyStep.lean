@@ -32,7 +32,7 @@ open LeanLLVM.Vellum.JsonS1MasksIR (block64 carrySlot carry64)
 open LeanLLVM.Vellum.PipelineBodyFacts
 open LeanLLVM.Vellum.JsonEntryIR (pos8Table wordsOf)
 open LeanLLVM.Vellum.JsonPipelineIR (Γ_entry_pos8at)
-open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6)
+open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6 vinc one vexit)
 
 /-! ### The block address's bound
 
@@ -231,10 +231,165 @@ theorem pos8PreAt_of_stored_word {mem : Mem} {entw ep tab : Nat}
   simpa [Γ_entry_pos8at] using
     pos8Pre_of_stored_word hstored htab hblk hsepWord hsepTab hcap hroom
 
+/-- **The mask unit's `pre` at a carried carry slot.**  `masksPre_of_window`
+states the document's first block, where the slot holds `carrySlot false false
+false`.  Every later iteration passes the slot the previous block's mask post
+wrote, so the derivation is needed at an arbitrary classifier state and pair of
+run flags; the three separations and the block read are the caller's, exactly as
+at `masksPre_at`. -/
+theorem masksPre_of_carrySlot {mem : Mem} {p sc mk : Nat}
+    {lo hi : Block32} {st : ClassState} {opened ppar : Bool}
+    (hp : readBytes mem p 64 = some (block64 lo hi))
+    (hsc : readBytes mem sc 24 = some (carrySlot opened ppar st.inside))
+    (hodd : st.oddRun = (opened && ppar))
+    (hpc : p + 64 ≤ sc ∨ sc + 24 ≤ p)
+    (hpo : p + 64 ≤ mk ∨ mk + 48 ≤ p)
+    (hco : sc + 24 ≤ mk ∨ mk + 48 ≤ sc) :
+    Γ_masks.pre [.ptr p, .ptr sc, .ptr mk] mem 0 :=
+  ⟨p, sc, mk, lo, hi, st, opened, ppar, rfl, hp, hsc, hodd, hpc, hpo, hco⟩
+
+/-- **The B8 emitter's `pre` at the pipeline's call site, after the store.**  The
+same shape as `pos8Pre_of_stored_word` without the staged table: the emitter's
+entry-word clause is the body's own store, and the block bound, the separation
+and the count's room are the staging's and the invariant's. -/
+theorem b8Pre_of_stored_word {mem : Mem} {entw ep : Nat}
+    {blk0 k : BitVec 64} {word : BitVec 64}
+    (hstored : readBytes mem entw 8 = some (natToBytes word.toNat 8))
+    (hblk : 64 * (blk0.toNat + 1) + 63 < 2 ^ 32)
+    (hsepWord : entw + 8 ≤ ep ∨ ep + 4 * (k.toNat + 64 + 8) ≤ entw)
+    (hroom : k.toNat + 64 + 9 < 2 ^ 63) :
+    Γ_entry_b8.pre [.ptr entw, .int 64 blk0, .int 64 (1 : BitVec 64), .ptr ep,
+      .int 64 k] mem 0 := by
+  refine ⟨entw, ep, blk0, 1, k, [word], rfl, by simp, hblk, ?_, ?_, hroom⟩
+  · simpa [wordsOf] using hstored
+  · simpa using hsepWord
+
+/-! ### The step's invariant-independent support
+
+The four arm dispatches share three shapes, and none of them is about an arm: a
+region pair read off the invariant's separation list, a range preserved from a
+unit post's byte-level frame, and the carried block index's arithmetic at the
+exit test.  They are stated here so the step itself is a dispatch.
+
+`DisjointRegions` is `List.Pairwise` over a literal list, so a pair is read by
+peeling the earlier region into head position and applying the head lemma to the
+tail.  `readBytes_of_readByte_eq` is the turn from a post's `readByte` frame to a
+range read, and `hasBytes_of_readByte_eq` its presence counterpart; together they
+are what lets every unit post's frame preserve the invariant's fixed regions. -/
+
+/-- The tail of a separated region list is separated. -/
+theorem disjointRegions_tail {r : Nat × Nat} {rs : List (Nat × Nat)}
+    (h : DisjointRegions (r :: rs)) : DisjointRegions rs :=
+  (List.pairwise_cons.mp h).2
+
+/-- The head of a separated region list is separated from every later region. -/
+theorem disjointRegions_head {r s : Nat × Nat} {rs : List (Nat × Nat)}
+    (h : DisjointRegions (r :: rs)) (hs : s ∈ rs) :
+    r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1 :=
+  (List.pairwise_cons.mp h).1 s hs
+
+/-- A byte of a range disjoint from a region is outside it: the range lies
+entirely before the region or entirely after it. -/
+theorem not_inside_of_disjoint {a n x w k : Nat}
+    (h : a + n ≤ x ∨ x + w ≤ a) (hk : k < n) :
+    ¬ (x ≤ a + k ∧ a + k < x + w) := by
+  rintro ⟨h1, h2⟩
+  omega
+
+/-- Two memories that agree byte for byte over a range read the same range. -/
+theorem readBytes_of_readByte_eq {m m' : Mem} {a n : Nat}
+    (h : ∀ k, k < n → readByte m' (a + k) = readByte m (a + k)) :
+    readBytes m' a n = readBytes m a n := by
+  induction n generalizing a with
+  | zero => rfl
+  | succ n ih =>
+      have h0 : readByte m' a = readByte m a := by simpa using h 0 (by omega)
+      simp only [readBytes]
+      rw [h0]
+      cases readByte m a with
+      | none => rfl
+      | some b =>
+          rw [ih (a := a + 1) (fun k hk => by
+            rw [show a + 1 + k = a + (k + 1) from by omega]
+            exact h (k + 1) (by omega))]
+
+/-- Presence is a byte-level fact: a range present in one memory is present in
+another that agrees with it byte for byte over the range.  This is how a unit
+post's frame carries the invariant's capacity clause across a call. -/
+theorem hasBytes_of_readByte_eq {m m' : Mem} {a K : Nat} (h : HasBytes m a K)
+    (heq : ∀ k, k < K → readByte m' (a + k) = readByte m (a + k)) :
+    HasBytes m' a K := by
+  obtain ⟨vs, hvs⟩ := h
+  exact ⟨vs, by rw [readBytes_of_readByte_eq heq, hvs]⟩
+
+/-- A present range has every shorter prefix present: the shorter read is the
+longer read's take. -/
+theorem hasBytes_of_le {m : Mem} {a K n : Nat} (h : HasBytes m a K) (hn : n ≤ K) :
+    HasBytes m a n := by
+  obtain ⟨vs, hvs⟩ := h
+  refine ⟨vs.take n, ?_⟩
+  have hK : readBytes m a K = readBytes m a (n + (K - n)) := by
+    rw [Nat.add_sub_cancel' hn]
+  rw [hK] at hvs
+  exact (readBytes_split m a n (K - n) hvs).1
+
+/-- The low `64`-bit reading of a `Nat` below the address bound. -/
+theorem ofNat64_toNat {m : Nat} (h : m < 2 ^ 64) : (BitVec.ofNat 64 m).toNat = m := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+
+/-- **The arm's block offset.**  `%shl = shl i, 6` with `%i = ofNat 64 m` reads
+back as the document offset `64 * m` while that product fits the address word.
+The pipeline's block bound (`64 * blocks + 63 < 2 ^ 32`) and `m < blocks` are
+what make the hypothesis hold at the call site. -/
+theorem sh6_ofNat_toNat {m : Nat} (h : m * 64 < 2 ^ 64) :
+    (BitVec.signExtend 64 (sh6 (BitVec.ofNat 64 m))).toNat = 64 * m := by
+  have h6 : sh6 (BitVec.ofNat 64 m) = BitVec.ofNat 64 m <<< 6 := rfl
+  rw [h6, BitVec.signExtend_eq]
+  rw [BitVec.toNat_shiftLeft]
+  have hlt : (BitVec.ofNat 64 m).toNat * 2 ^ 6 < 2 ^ 64 := by
+    rw [ofNat64_toNat (by omega)]
+    simpa using h
+  rw [Nat.shiftLeft_eq, show (2 : Nat) ^ 6 = 64 from by decide, Nat.mod_eq_of_lt hlt]
+  rw [ofNat64_toNat (by omega)]
+  omega
+
+/-- The successor's block index: the arm increments `%i` by one, and the
+sixty-four-bit word and the `Nat` stay in step while the index is below the
+address bound. -/
+theorem vinc_ofNat {m : Nat} (h : m + 1 < 2 ^ 64) :
+    vinc (BitVec.ofNat 64 m) = BitVec.ofNat 64 (m + 1) := by
+  unfold vinc
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  have hone : (one : BitVec 64).toNat = 1 := by decide
+  rw [hone, Nat.mod_eq_of_lt (by omega : m < 2 ^ 64), Nat.mod_eq_of_lt h]
+
+/-- The exit test at its one value: the arm's increment reached the bound, so the
+step takes the cleanup successor.  The `r = 0` side of the dispatch reads this,
+and its negation reads the self-loop. -/
+theorem vexit_eq_one {i shr : BitVec 64} : vexit i shr = 1 ↔ vinc i = shr := by
+  by_cases h : vinc i = shr <;> simp [vexit, evalICmp, h]
+
+/-- The exit test at its zero value: the arm's increment is short of the bound,
+so the step returns to the arm's head. -/
+theorem vexit_eq_zero {i shr : BitVec 64} : vexit i shr = 0 ↔ vinc i ≠ shr := by
+  by_cases h : vinc i = shr <;> simp [vexit, evalICmp, h]
+
+/-- `ofNat` is injective below the word's bound: the arm's exit test compares two
+`Nat`s through their sixty-four-bit forms, and this is what turns the comparison
+back into an equation of counts. -/
+theorem ofNat64_eq_iff {m n : Nat} (hm : m < 2 ^ 64) (hn : n < 2 ^ 64) :
+    BitVec.ofNat 64 m = BitVec.ofNat 64 n ↔ m = n := by
+  constructor
+  · intro h
+    have := congrArg BitVec.toNat h
+    simpa [ofNat64_toNat hm, ofNat64_toNat hn] using this
+  · intro h; rw [h]
+
 /-! ### Axiom footprints
 
-The three call-site derivations are records' conjunctions and one store read;
-none adds a carrier. -/
+The call-site derivations are records' conjunctions and one store read; none adds
+a carrier. -/
 
 /-- info: 'LeanLLVM.Vellum.escapePre_of_staged_window' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -259,5 +414,53 @@ none adds a carrier. -/
 /-- info: 'LeanLLVM.Vellum.sh6_signExtend_toNat_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms sh6_signExtend_toNat_lt
+
+/-- info: 'LeanLLVM.Vellum.disjointRegions_tail' does not depend on any axioms -/
+#guard_msgs in
+#print axioms disjointRegions_tail
+
+/-- info: 'LeanLLVM.Vellum.disjointRegions_head' does not depend on any axioms -/
+#guard_msgs in
+#print axioms disjointRegions_head
+
+/-- info: 'LeanLLVM.Vellum.not_inside_of_disjoint' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms not_inside_of_disjoint
+
+/-- info: 'LeanLLVM.Vellum.readBytes_of_readByte_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_of_readByte_eq
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_of_readByte_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_of_readByte_eq
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_of_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_of_le
+
+/-- info: 'LeanLLVM.Vellum.ofNat64_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms ofNat64_toNat
+
+/-- info: 'LeanLLVM.Vellum.sh6_ofNat_toNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms sh6_ofNat_toNat
+
+/-- info: 'LeanLLVM.Vellum.vinc_ofNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vinc_ofNat
+
+/-- info: 'LeanLLVM.Vellum.vexit_eq_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vexit_eq_one
+
+/-- info: 'LeanLLVM.Vellum.vexit_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms vexit_eq_zero
+
+/-- info: 'LeanLLVM.Vellum.ofNat64_eq_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms ofNat64_eq_iff
 
 end LeanLLVM.Vellum

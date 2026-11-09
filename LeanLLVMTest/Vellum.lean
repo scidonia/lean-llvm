@@ -9997,3 +9997,17 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_split_denote' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.PipelineBodyFacts.body_split_denote
+
+/-! #### The pipeline's specification: verdict, tape, refusals -/
+
+/-- info: 'LeanLLVM.Vellum.Sigma_pipeline' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Sigma_pipeline
+
+/-- info: 'LeanLLVM.Vellum.RefusalOffset' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.RefusalOffset
+
+/-- info: 'LeanLLVM.Vellum.rejectPos' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.rejectPos
