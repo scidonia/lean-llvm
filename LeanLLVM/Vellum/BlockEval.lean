@@ -35,18 +35,24 @@ tree already uses (`b_load64`, `step_gep64`, `phi_step`) — covering the
 operand-staging instructions the pipeline's blocks use beyond the
 already-automated `binop`/`load`/`icmp`: `gep`, `phi`, `trunc`, `select`, and
 call-argument staging.  A step's value arguments are *implicit*, so the chain
-leaves them to be decided by the block's own statement: the final `rfl` unifies
-the run's environment with the builder, and that single unification fixes every
-value the chain carried.
+leaves them to be decided by the block's own statement.  A step's value
+arguments and its side goals share their metavariables, so the statement's
+builder and the side goals name one set of values rather than two; the join
+between them is made by *when* the main equation is checked, not by a formula
+that identifies the two.  The first `rfl` compares the run's environment with
+the builder while the values are still open, the side goals then fix them —
+each register read resolved against the builder fixes the value the statement
+names — and the last `rfl` closes the equation against those assignments.
 
 **What a block proof looks like.**  State
 `denoteCode calls instrs (stateAt envIn s) = some (stateAt envOut s)` where
 `envIn`/`envOut` are `cells` builders, then `block_eval`.  The tactic rewrites
-one instruction at a time, closes the main goal by `rfl` against the builder,
-and only then discharges the side goals the steps left — the semantic facts
-(`readBytes`, the call's outcome, the `getelementptr` bound) from the
-statement's hypotheses, and the register reads from the builder.  Deriving the
-side goals last is what makes the values available to them.
+one instruction at a time, discharges the side goals the steps left — the
+semantic facts (`readBytes`, the call's outcome, the `getelementptr` bound) from
+the statement's hypotheses, and the register reads from the builder — and only
+then closes the main equation by `rfl`.  Running that last check after the side
+goals is what joins the statement's values to the ones the lookups assign; a
+check before them is a check on unassigned metavariables.
 
 **What it is not.**  It does not prove a block's *statement*, only compute a
 block's `denoteCode`; the address bound, the memory facts and the call outcomes
@@ -828,16 +834,17 @@ macro "block_step" : tactic => `(tactic|
    | rw [denoteCode_callVoid3 _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_call5 _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]))
 
-/-- Close a block once its chain has run: the statement's own environment, then
-the side goals the steps left.
+/-- Close a block once its chain has run: the side goals the steps left, then
+the statement's own environment.
 
-The phases are ordered by what fixes the values.  Until the block's statement is
-closed, a step's value is a metavariable, and a side goal that reaches for it —
-`readBytes mem addr 8 = some (natToBytes v.toNat 8)`, `(idx.signExtend 64).toNat
-< 2 ^ 63`, `phiIncoming p inc = some op`, a call's argument list — cannot be
-discharged.  So the statement's builder is closed by `rfl` first, and only then
-are the side goals met: the lookups structurally from the builder, the rest from
-the statement's hypotheses. -/
+The phases are ordered by what fixes the values, and the order is the join.  A
+step's side goals and its conclusion share the step's value metavariables, so
+the register reads resolved against the builder fix the values the statement's
+cells name; the semantic facts come from the statement's hypotheses.  The main
+equation is therefore checked *after* those goals: the first `rfl` only compares
+the unfolded run with the builder, the side goals assign the values, and the
+last `rfl` closes the equation against those assignments.  Checking it earlier
+compares the builder with values that the lookups have not yet fixed. -/
 macro "block_close" : tactic => `(tactic|
   (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode]))
    all_goals (try rfl)
@@ -847,7 +854,8 @@ macro "block_close" : tactic => `(tactic|
       | block_lk
       | (simp only [phiIncoming]; rfl)
       | rfl
-      | (exact evalOperand_lit_of _ _ _)))))
+      | (exact evalOperand_lit_of _ _ _)))
+   all_goals (try rfl)))
 
 /-- A whole straight-line block: every instruction's chain step, then
 `block_close`. -/

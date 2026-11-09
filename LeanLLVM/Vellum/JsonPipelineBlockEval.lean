@@ -204,41 +204,118 @@ theorem cleanup_fromIfEnd (calls : Calls) (env : Env) (s : State) (v : BitVec 64
   simp only [lit, cleanupIn]
   block_eval
 
-/-! ### The loop body, and where this module stops
+/-! ### The loop body
 
-The loop body is `for.body.us.us`: thirty-three instructions, the `s1_masks`
-call and the `entry_pos8` call among them.  Its chain is derived: with
-`repeat block_step` the thirty-three steps rewrite, and the environment after
-them is the block's builder cell for cell.
+`for.body.us.us`: thirty-three instructions, the `s1_masks` call and the
+`entry_pos8` call among them.  Its chain is derived by `block_eval`, and its
+side goals close on the same invocation.  The two values that the earlier
+revision could not join — `%i.080.us.us` and `%k.081.us.us` in the position
+call's argument list — are the phi results the block's own builder holds: the
+automation's last `rfl` runs after the side goals, so the lookups resolve the
+values the statement names and the call's argument list is the statement's, not
+a fresh copy's.
 
-Its *side goals* are what do not close here, and the measurement is exact: the
-position call's argument list keeps two of its five values
-(`%i.080.us.us`, `%k.081.us.us`) unassigned, so
-`calls "leanllvm_json_entry_pos8" [.ptr entw, .int 64 ?, …] … = some ?` cannot be
-matched against the staging hypothesis, and the two `Value`/`CallOutcome` goals
-that the rewrite leaves stand with it.  The cause is `rw`'s instantiation: the
-hypothesis holes are elaborated with their own copies of the step's value
-metavariables, and the lookup goals that would assign the copies are discharged
-against the originals.  Naming the call's operands at the step (the block proof
-does that) does not join them.
+The incoming builder names the caller's `%n`, the block's pointer arguments,
+the three values the back edge carries into the phi nodes, and the outgoing
+`%shr`.  The outgoing builder is the block's results in the order it computes
+them.  The staging hypotheses are the caller's: the four word loads at the
+memory the `s1_masks` call leaves, the `getelementptr` bound, and the two calls'
+outcomes — the second at the memory the block's own store leaves.  No register
+read appears as a hypothesis. -/
 
-So this module proves two of the arm's three blocks and does *not* claim the
-third; `entry_denote`, `cleanup_fromIfThen` and `cleanup_fromIfEnd` are the
-sufficiency that is measured below.  The next instrument is a tactic that
-instantiates a step lemma's hypotheses *after* matching it to the goal, which
-`rw` does not offer and `simp` cannot use on `evalInstr`-shaped lemmas (the
-simplifier whnf-reduces the applied definition before indexing it).
+/-- The loop body's incoming builder: the caller's `%n`, the pointer arguments
+(`%b`, `%sc`, `%mk`, `%delim`, `%in_string`, `%ws`, `%entw`, `%ep`), the three
+values the back edge carries into the phi nodes (`%shr13.us.us`,
+`%call21.us.us`, `%inc.us.us`), and `%shr`. -/
+def usUsIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%inc.us.us", .int 64 inc), ("%call21.us.us", .int 64 c21),
+         ("%shr13.us.us", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
 
-**Measured, at this revision.**  `JsonEscapeListBody` is 1 110 lines and spends
-them on three blocks; of that, the three instruction traces (`entry_denote`,
-`ifThen_denote`, `ifEnd_denote`) are 143 lines and the rest is the per-register
-lookup hypotheses and the `show` reconciliations those traces carry.  This
-module's two closed blocks cost the theorem statements plus one `block_eval`
-each: 22 lines for `entry` (statement 12, proof 4, builders 6), 14 lines for the
-two `cleanup` statements and proofs.  Per closed block the trace is one tactic
-invocation against the bespoke idiom's ~48 lines of instruction trace per block,
-and the statements carry builders instead of lookup hypotheses.  The loop body's
-statement alone is 40 lines and its chain is one `repeat block_step`; the gap is
-the side-goal closure recorded above, not the chain.
--/
+/-- The loop body's outgoing builder: its thirty-three results, newest first.
+`ret` is the `entry_pos8` call's return value. -/
+def usUsOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr : BitVec 64) (w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond116.not", .int 1 (vexit inc shr)),
+         ("%inc.us.us", .int 64 (vinc inc)),
+         ("%call21.us.us", ret),
+         ("%ent.0.us.us", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18.us.us", .int 64 (vand18 n inc)),
+         ("%sub17.us.us", .int 64 (vsub17 n inc)),
+         ("%notmask.us.us", .int 64 (vnotmask n inc)),
+         ("%cmp15.us.us", .int 1 (vcmp n inc)),
+         ("%sub.us.us", .int 64 (vsub n inc)),
+         ("%shr13.us.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us.us", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%7", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11.us.us", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10.us.us", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9.us.us", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8.us.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us.us", .int 64 (vand w2 w3)),
+         ("%not6.us.us", .int 64 (vnot6 w3)),
+         ("%not.us.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%6", .int 64 (v6 w1 w2 w4)),
+         ("%5", .int 64 (v5 w1 w4)),
+         ("%4", .int 64 w4),
+         ("%3", .int 64 w3),
+         ("%2", .int 64 w2),
+         ("%1", .int 64 w1),
+         ("%add.ptr.us.us", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl.us.us", .int 64 (sh6 inc)),
+         ("%i.080.us.us", .int 64 inc),
+         ("%k.081.us.us", .int 64 c21),
+         ("%prevS.082.us.us", .int 64 s13)]
+    (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr)
+
+/-- **The loop body derives its chain and closes its side goals.**  Entered from
+its back edge, `for.body.us.us` computes its thirty-three results and reaches
+the last comparison with the builder's own environment.  The hypotheses are the
+caller's staging: the loads at the memory after `s1_masks`, the address bound,
+and the two calls' outcomes.  No register lookup is a hypothesis. -/
+theorem usUs_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64)
+    (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.us.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUsUs.instrs
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUsUs_instrs]
+  simp only [lit, usUsIn, usUsOut]
+  block_eval
+
+/-! **Measured, at this revision.**  `JsonEscapeListBody` is 1 110 lines and
+spends them on three blocks; of that, the three instruction traces
+(`entry_denote`, `ifThen_denote`, `ifEnd_denote`) are 143 lines and the rest is
+the per-register lookup hypotheses and the `show` reconciliations those traces
+carry.  This module's three closed blocks cost the theorem statements plus one
+`block_eval` each: 22 lines for `entry` (statement 12, proof 4, builders 6), 14
+lines for the two `cleanup` statements and proofs, and 79 lines for the loop
+body — 49 lines of incoming and outgoing builders and a 29-line theorem (a
+21-line statement and a three-line proof).  Per closed block the trace is one
+tactic invocation against
+the bespoke idiom's ~48 lines of instruction trace per block, and the statements
+carry builders instead of lookup hypotheses.  The loop body is the measurement
+that matters: its side goals close on the same invocation, with the position
+call's two phi-carried operands assigned by the builder rather than named as
+hypotheses. -/
 end LeanLLVM.Vellum.JsonPipelineBlockEval

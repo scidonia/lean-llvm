@@ -9659,3 +9659,7 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.JsonPipelineBlockEval.cleanup_fromIfEnd' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonPipelineBlockEval.cleanup_fromIfEnd
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineBlockEval.usUs_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineBlockEval.usUs_denote
