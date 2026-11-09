@@ -30,9 +30,12 @@ open LeanLLVM.JSON (Block32 IsBackslashB)
 open LeanLLVM.Vellum.JsonScanSpec
 open LeanLLVM.Vellum.JsonS1MasksIR (block64 carrySlot carry64)
 open LeanLLVM.Vellum.PipelineBodyFacts
-open LeanLLVM.Vellum.JsonEntryIR (pos8Table wordsOf)
-open LeanLLVM.Vellum.JsonPipelineIR (Γ_entry_pos8at)
-open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6 vinc one vexit)
+open LeanLLVM.Vellum.JsonEntryIR (pos8Table wordsOf readLanes32 streamPrefix)
+open LeanLLVM.Vellum.JsonPipelineIR (Γ_entry_pos8at pipelineBody PipelineUnits
+  pipelineCalls masksSym entryPos8Sym entryB8Sym escapeListSym)
+open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6 vinc one vexit vent)
+open LeanLLVM.Vellum.BlockEval (stateAt cells)
+open LeanLLVM.Vellum.JsonPipelineBlockEval (pUsUs findBlock_usus usUsIn usUsOut usUs_denote)
 
 /-! ### The block address's bound
 
@@ -386,6 +389,584 @@ theorem ofNat64_eq_iff {m n : Nat} (hm : m < 2 ^ 64) (hn : n < 2 ^ 64) :
     simpa [ofNat64_toNat hm, ofNat64_toNat hn] using this
   · intro h; rw [h]
 
+/-! ### The arm dispatch, decided
+
+`usUs_step_at` … `body_step_at` conclude a *disjunction* of successors, because
+they do not know the exit test's value.  A loop step does: the budget and the
+block index settle it, since `%shr` is the block count and `%inc` the index plus
+one.  The eight lemmas below are those four with the test's value supplied, so
+the step reaches the successor it has already decided on rather than splitting
+and discarding one branch.  Each pair is the arm at `vexit = 0` (the self-loop)
+and at `vexit = 1` (the cleanup). -/
+
+/-- **`for.body.us.us` delays at its head** when the exit test is zero. -/
+theorem usUs_step_at_head (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us.us")
+    (hagree : AgreeOn (blockUses pUsUs)
+      (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUsUs.instrs
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 0) :
+    ∃ (t' : State) (j : Nat), j ≤ 1 ∧
+      denoteCode calls pUsUs.instrs s = some t' ∧
+      AgreeOn (blockUses pUsUs)
+        (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next }) t' ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s =
+        runFuel calls k pipelineBody { t' with pc := "for.body.us.us", pre := some s.pc } := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUsUs.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pUsUs hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond116.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond116.not" (by
+      simp only [blockUses, pUsUs_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, usUsOut, cells, lookupName]
+    simp +decide
+  refine ⟨t', 1, Nat.le_refl 1, ht', hag, fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.body.us.us", pre := some s.pc } := by
+    refine step_of_blocks (b := pUsUs) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_usus
+    · exact ht'
+    · rw [pUsUs_term]
+      have h := PipelineBodyFacts.execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond116.not")
+        (t := "for.cond.cleanup") (f := "for.body.us.us")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body.us.us` leaves for the cleanup** when the exit test is one. -/
+theorem usUs_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us.us")
+    (hagree : AgreeOn (blockUses pUsUs)
+      (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUsUs.instrs
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 1) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUsUs.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pUsUs hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond116.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond116.not" (by
+      simp only [blockUses, pUsUs_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, usUsOut, cells, lookupName]
+    simp +decide
+  refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
+    fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+    refine step_of_blocks (b := pUsUs) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_usus
+    · exact ht'
+    · rw [pUsUs_term]
+      have h := PipelineBodyFacts.execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond116.not")
+        (t := "for.cond.cleanup") (f := "for.body.us.us")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body.us` delays at its head** when the exit test is zero. -/
+theorem us_step_at_head (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome)
+    (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us")
+    (hagree : AgreeOn (blockUses pUs)
+      (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+        s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+          s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 0) :
+    ∃ (t' : State) (j : Nat), j ≤ 1 ∧
+      denoteCode calls pUs.instrs s = some t' ∧
+      AgreeOn (blockUses pUs)
+        (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next }) t' ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s =
+        runFuel calls k pipelineBody { t' with pc := "for.body.us", pre := some s.pc } := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pUs hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond115.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond115.not" (by
+      simp only [blockUses, pUs_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, usOut, cells, lookupName]
+    simp +decide
+  refine ⟨t', 1, Nat.le_refl 1, ht', hag, fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.body.us", pre := some s.pc } := by
+    refine step_of_blocks (b := pUs) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_us
+    · exact ht'
+    · rw [pUs_term]
+      have h := PipelineBodyFacts.execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond115.not")
+        (t := "for.cond.cleanup") (f := "for.body.us")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body.us` leaves for the cleanup** when the exit test is one. -/
+theorem us_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome)
+    (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us")
+    (hagree : AgreeOn (blockUses pUs)
+      (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+        s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+          s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 1) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pUs hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond115.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond115.not" (by
+      simp only [blockUses, pUs_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, usOut, cells, lookupName]
+    simp +decide
+  refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
+    fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+    refine step_of_blocks (b := pUs) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_us
+    · exact ht'
+    · rw [pUs_term]
+      have h := PipelineBodyFacts.execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond115.not")
+        (t := "for.cond.cleanup") (f := "for.body.us")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body.us83` delays at its head** when the exit test is zero. -/
+theorem us83_step_at_head (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us83")
+    (hagree : AgreeOn (blockUses pUs83)
+      (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 0) :
+    ∃ (t' : State) (j : Nat), j ≤ 1 ∧
+      denoteCode calls pUs83.instrs s = some t' ∧
+      AgreeOn (blockUses pUs83)
+        (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next }) t' ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s =
+        runFuel calls k pipelineBody { t' with pc := "for.body.us83", pre := some s.pc } := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs83.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pUs83 hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond114.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond114.not" (by
+      simp only [blockUses, pUs83_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, us83Out, cells, lookupName]
+    simp +decide
+  refine ⟨t', 1, Nat.le_refl 1, ht', hag, fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.body.us83", pre := some s.pc } := by
+    refine step_of_blocks (b := pUs83) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_us83
+    · exact ht'
+    · rw [pUs83_term]
+      have h := PipelineBodyFacts.execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond114.not")
+        (t := "for.cond.cleanup") (f := "for.body.us83")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body.us83` leaves for the cleanup** when the exit test is one. -/
+theorem us83_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us83")
+    (hagree : AgreeOn (blockUses pUs83)
+      (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 1) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs83.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pUs83 hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond114.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond114.not" (by
+      simp only [blockUses, pUs83_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, us83Out, cells, lookupName]
+    simp +decide
+  refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
+    fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+    refine step_of_blocks (b := pUs83) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_us83
+    · exact ht'
+    · rw [pUs83_term]
+      have h := PipelineBodyFacts.execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond114.not")
+        (t := "for.cond.cleanup") (f := "for.body.us83")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body` delays at its head** when the exit test is zero. -/
+theorem body_step_at_head (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome)
+    (m' : CallOutcome)
+    (hpc : s.pc = "for.body")
+    (hagree : AgreeOn (blockUses pBody)
+      (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+        s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+          s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 0) :
+    ∃ (t' : State) (j : Nat), j ≤ 1 ∧
+      denoteCode calls pBody.instrs s = some t' ∧
+      AgreeOn (blockUses pBody)
+        (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next }) t' ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s =
+        runFuel calls k pipelineBody { t' with pc := "for.body", pre := some s.pc } := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pBody.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pBody hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond.not" (by
+      simp only [blockUses, pBody_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, bodyOut, cells, lookupName]
+    simp +decide
+  refine ⟨t', 1, Nat.le_refl 1, ht', hag, fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.body", pre := some s.pc } := by
+    refine step_of_blocks (b := pBody) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_body
+    · exact ht'
+    · rw [pBody_term]
+      have h := PipelineBodyFacts.execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond.not")
+        (t := "for.cond.cleanup") (f := "for.body")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- **`for.body` leaves for the cleanup** when the exit test is one. -/
+theorem body_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome)
+    (m' : CallOutcome)
+    (hpc : s.pc = "for.body")
+    (hagree : AgreeOn (blockUses pBody)
+      (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+        s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+          s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }))
+    (hb : vexit inc shr = 1) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pBody.instrs hagree
+    (fun n hn => instrsUses_subset_blockUses pBody hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond.not" (by
+      simp only [blockUses, pBody_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_cons_self ..))
+    rw [← h1]
+    simp only [stateAt, bodyOut, cells, lookupName]
+    simp +decide
+  refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
+    fun k => ?_⟩
+  have hstep : step calls pipelineBody s =
+      .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+    refine step_of_blocks (b := pBody) (s' := t') ?_ ?_ ?_
+    · simpa only [hpc] using findBlock_body
+    · exact ht'
+    · rw [pBody_term]
+      have h := PipelineBodyFacts.execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond.not")
+        (t := "for.cond.cleanup") (f := "for.body")
+        (by simp only [evalOperand, hval, hb])
+      simpa only [hpc'] using h
+  exact runFuel_one_of_step hstep k
+
+/-- One byte outside the arm's two call regions and the body's own store reads
+the same after the iteration.  The mask post's frame covers the two regions it
+writes, the entry post's the span its emitter wrote, and the body's store the
+eight bytes at the entry slot; a byte outside all four is untouched. -/
+theorem step_readByte_arm {s r1 r2 : Mem} {sc mk entw ep : Nat} {bs : List UInt8}
+    {k' : Nat}
+    (hmask : ∀ a, ¬ (sc ≤ a ∧ a < sc + 24) → ¬ (mk ≤ a ∧ a < mk + 48) →
+      readByte r1 a = readByte s a)
+    (hentry : ∀ a, a < ep ∨ ep + 4 * (k' + 8) ≤ a →
+      readByte r2 a = readByte (writeBytes r1 entw bs) a)
+    {a : Nat} (hsc : ¬ (sc ≤ a ∧ a < sc + 24)) (hmk : ¬ (mk ≤ a ∧ a < mk + 48))
+    (hent : a < ep ∨ ep + 4 * (k' + 8) ≤ a)
+    (hw : a < entw ∨ entw + bs.length ≤ a) :
+    readByte r2 a = readByte s a := by
+  rw [hentry a hent, readByte_writeBytes_outside r1 bs hw, hmask a hsc hmk]
+
+/-- The range form of `step_readByte_arm`. -/
+theorem step_readBytes_arm {s r1 r2 : Mem} {sc mk entw ep : Nat} {bs : List UInt8}
+    {k' : Nat} {a n : Nat}
+    (hmask : ∀ a, ¬ (sc ≤ a ∧ a < sc + 24) → ¬ (mk ≤ a ∧ a < mk + 48) →
+      readByte r1 a = readByte s a)
+    (hentry : ∀ a, a < ep ∨ ep + 4 * (k' + 8) ≤ a →
+      readByte r2 a = readByte (writeBytes r1 entw bs) a)
+    (hsc : ∀ k, k < n → ¬ (sc ≤ a + k ∧ a + k < sc + 24))
+    (hmk : ∀ k, k < n → ¬ (mk ≤ a + k ∧ a + k < mk + 48))
+    (hent : ∀ k, k < n → (a + k < ep ∨ ep + 4 * (k' + 8) ≤ a + k))
+    (hw : ∀ k, k < n → (a + k < entw ∨ entw + bs.length ≤ a + k)) :
+    readBytes r2 a n = readBytes s a n :=
+  readBytes_of_readByte_eq (fun k hk =>
+    step_readByte_arm hmask hentry (hsc k hk) (hmk k hk) (hent k hk) (hw k hk))
+
+/-! ### The two calls, at one block
+
+Both are here rather than in each arm because all four copies make them at the
+same arguments: the mask unit at the block's staged address, and the entry
+emitter at the word the body has just stored.  What the arms differ in is which
+emitter, and whether the escape list is called at all. -/
+
+/-- **The mask call at the loop's block.**  The four arm bodies pass the same
+three arguments, so the dispatch reads one derivation: the block's bytes from
+the staged window, the carry slot the invariant carries, the three separations
+from the staged regions, and the six words the post writes — at the arm's own
+read addresses, through the five offset equalities. -/
+theorem maskCall_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) {blocks : Nat} {s : State}
+    {S : PipelineLoopCarried}
+    (hwin : readBytes s.mem S.b (64 * blocks) = some S.doc)
+    (hsc : readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside))
+    (hiw : S.iw = BitVec.ofNat 64 S.i) (hilt : S.i < blocks)
+    (hcnt : 64 * blocks + 63 < 2 ^ 32)
+    (hdoc : S.doc.length = 64 * blocks)
+    (hdelim : S.delim = S.maskSlot + 8) (hinS : S.inString = S.maskSlot + 16)
+    (hwsS : S.ws = S.maskSlot + 24) (hbsS : S.backslash = S.maskSlot + 32)
+    (hctl : S.ctl = S.maskSlot + 40)
+    (hdist : (S.b + 64 * S.i + 64 ≤ S.sc ∨ S.sc + 24 ≤ S.b + 64 * S.i) ∧
+      (S.b + 64 * S.i + 64 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.b + 64 * S.i) ∧
+      (S.sc + 24 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.sc)) :
+    ∃ (lo hi : Block32) (st : ClassState) (r1 : CallOutcome),
+      pipelineCalls tab base s2 masksSym
+        [.ptr (S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat), .ptr S.sc, .ptr S.maskSlot]
+        s.mem s.next = some r1 ∧
+      readBytes r1.mem S.maskSlot 8 = some (natToBytes (specQuote64 lo hi st).toNat 8) ∧
+      readBytes r1.mem S.delim 8 = some (natToBytes (specDelimiter64 lo hi st).toNat 8) ∧
+      readBytes r1.mem S.inString 8 = some (natToBytes (specInString64 lo hi st).toNat 8) ∧
+      readBytes r1.mem S.ws 8 = some (natToBytes (specSpace64 lo hi st).toNat 8) ∧
+      readBytes r1.mem S.backslash 8 = some (natToBytes (specBackslash64 lo hi st).toNat 8) ∧
+      readBytes r1.mem S.ctl 8 = some (natToBytes (specControl64 lo hi st).toNat 8) ∧
+      readBytes r1.mem S.sc 24 =
+        some (carrySlot (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi st).oddRun
+          (carry64 lo hi st).inside) ∧
+      (∀ a, ¬ (S.sc ≤ a ∧ a < S.sc + 24) → ¬ (S.maskSlot ≤ a ∧ a < S.maskSlot + 48) →
+        readByte r1.mem a = readByte s.mem a) := by
+  have haddr : S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat = S.b + 64 * S.i := by
+    rw [hiw, sh6_ofNat_toNat (by omega)]
+  obtain ⟨lo, hi, hblk⟩ := blockRead_of_window (mem := s.mem) (b := S.b)
+    (blocks := blocks) (bs := S.doc) (pad := []) (m := S.i) (by simpa using hwin)
+    (by simpa using hdoc) hilt
+  -- the carry state the slot describes: its two fields are the slot's own
+  have hpre : Γ_masks.pre
+      [.ptr (S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat), .ptr S.sc, .ptr S.maskSlot]
+      s.mem s.next := by
+    rw [haddr]
+    exact masksPre_of_carrySlot (st := ⟨S.inside, S.opened && S.ppar⟩) hblk hsc rfl
+      hdist.1 hdist.2.1 hdist.2.2
+  obtain ⟨r1, hcall, hpost, -⟩ := units.masks _ s.mem s.next hpre
+  have hpostM : masksPost
+      [.ptr (S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat), .ptr S.sc, .ptr S.maskSlot]
+      s.mem r1.mem := hpost
+  obtain ⟨lo', hi', st, opened, ppar, -, hw1, hw2, hw3, hw4, hw5, hw6, hcarrySlot, -, hframe⟩ :=
+    maskWords_of_masksPost (p := S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat)
+      (c := S.sc) (maskSlot := S.maskSlot) (hargs := rfl) hdelim hinS hwsS hbsS hctl hpostM
+  exact ⟨lo', hi', st, r1, hcall, hw1, hw2, hw3, hw4, hw5, hw6, hcarrySlot, hframe⟩
+
+/-- The emitter's stream read returns one lane per requested block slot, so a
+`k'` in the post is pinned to the stream's own length. -/
+theorem step_readLanes32_length (m : Mem) (a : Nat) :
+    ∀ (n : Nat) {l : List Nat}, readLanes32 m a n = some l → l.length = n
+  | 0, l, h => by
+      simp only [readLanes32, Option.some.injEq] at h
+      subst h
+      rfl
+  | n + 1, l, h => by
+      simp only [readLanes32] at h
+      cases hb : readBytes m a 4 with
+      | none =>
+          simp only [hb, Option.bind_none] at h
+          cases h
+      | some bs =>
+          cases hr : readLanes32 m (a + 4) n with
+          | none =>
+              simp only [hb, hr, Option.bind_some, Option.map_none,
+                Option.bind_none] at h
+              cases h
+          | some rest =>
+              simp only [hb, hr, Option.bind_some, Option.map_some,
+                Option.some.injEq] at h
+              subst h
+              simp [step_readLanes32_length m (a + 4) n hr]
+
+/-- A block's position list is at most one lane per bit. -/
+theorem step_positionsOf_length (m : BitVec 64) (base : Nat) :
+    (positionsOf m base).length ≤ 64 := by
+  simp only [positionsOf, List.length_map]
+  exact BitLanes.setLanes_length_le m
+
+/-- The stream after one block is one word's positions. -/
+theorem step_streamPrefix_length_one (ent : List (BitVec 64)) (blk0 : Nat) :
+    (streamPrefix ent blk0 1).length ≤ 64 := by
+  rw [streamPrefix]
+  cases ent with
+  | nil => simp
+  | cons e es =>
+      rw [show (e :: es).take 1 = [e] from rfl]
+      simp only [List.mapIdx_cons, List.mapIdx_nil, List.flatten_cons,
+        List.flatten_nil, List.length_append, List.length_singleton, Nat.add_zero]
+      exact step_positionsOf_length e (64 * blk0)
+
+
+/-- The entry call's argument list read back: the six values the record names. -/
+theorem entryArgs_six {e0 o0 t0 : Nat} {b0 one0 k0 : BitVec 64}
+    {e o t : Nat} {blk0 nblk k : BitVec 64}
+    (h : ([.ptr e0, .int 64 b0, .int 64 one0, .ptr o0, .int 64 k0] ++ [.ptr t0] :
+        List Value) =
+      [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k, .ptr t]) :
+    e = e0 ∧ blk0 = b0 ∧ nblk = one0 ∧ o = o0 ∧ k = k0 ∧ t = t0 := by
+  have h' : ([.ptr e0, .int 64 b0, .int 64 one0, .ptr o0, .int 64 k0, .ptr t0] :
+      List Value) = [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k, .ptr t] := h
+  simp only [List.cons.injEq, List.nil_eq, Value.ptr.injEq, Value.int.injEq,
+    and_true, HEq] at h'
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h'
+  exact ⟨h1.symm, (eq_of_heq h2.2).symm, (eq_of_heq h3.2).symm, h4.symm,
+    (eq_of_heq h5.2).symm, h6.symm⟩
+
+/-- **The POS8 entry call at the loop's block**, after the body's own store.  The
+record's `pre` is the emitter's five arguments plus the staged table; the
+`readBytes` at the entry slot is the body's own store, so it is a fact the arm
+creates rather than a staging obligation.  The post is returned as the record
+states it: the count's growth bound is the caller's to read out of
+`streamPrefix`, whose one-block stream is a single word's positions. -/
+theorem pos8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) {S : PipelineLoopCarried}
+    {r1 : CallOutcome} {blocks : Nat} {lo hi : Block32} {st : ClassState}
+    (htabEq : S.tab = tab)
+    (hstored : readBytes (writeBytes r1.mem S.entw (natToBytes
+      (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+        (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) S.entw 8 =
+      some (natToBytes (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+        (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8))
+    (htab : readBytes (writeBytes r1.mem S.entw (natToBytes
+      (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+        (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) S.tab 8192 =
+      some pos8Table)
+    (hiw : S.iw = BitVec.ofNat 64 S.i) (hib : S.i + 1 ≤ blocks)
+    (hcnt : 64 * blocks + 63 < 2 ^ 32)
+    (hkw : S.kw = BitVec.ofNat 64 S.k) (hk64 : S.k < 2 ^ 64)
+    (hsepWord : S.entw + 8 ≤ S.ep ∨ S.ep + 4 * (S.k + 64 + 8) ≤ S.entw)
+    (hsepTab : S.tab + 8192 ≤ S.ep ∨ S.ep + 4 * (S.k + 64 + 8) ≤ S.tab)
+    (hroom : S.k + 64 + 9 < 2 ^ 63) :
+    ∃ (r2 : CallOutcome) (k' o : Nat),
+      pipelineCalls tab base s2 entryPos8Sym
+        [.ptr S.entw, .int 64 S.iw, .int 64 (1 : BitVec 64), .ptr S.ep, .int 64 S.kw]
+        (writeBytes r1.mem S.entw (natToBytes
+          (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+            (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) r1.next = some r2 ∧
+      r2.ret = .int 64 (BitVec.ofNat 64 k') ∧
+      (∀ a, a < o ∨ o + 4 * (k' + 8) ≤ a →
+        readByte r2.mem a = readByte (writeBytes r1.mem S.entw (natToBytes
+          (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+            (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) a) ∧
+      o = S.ep ∧
+      k' ≤ S.k + 64 := by
+  have hblkP : 64 * (S.iw.toNat + 1) + 63 < 2 ^ 32 := by
+    rw [hiw, ofNat64_toNat (by omega)]
+    omega
+  have hk0 : S.kw.toNat = S.k := by rw [hkw, ofNat64_toNat hk64]
+  have htab' : readBytes (writeBytes r1.mem S.entw (natToBytes
+      (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+        (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) tab 8192 =
+      some pos8Table := by
+    rw [← htabEq]; exact htab
+  have hpre : (Γ_entry_pos8at tab).pre
+      [.ptr S.entw, .int 64 S.iw, .int 64 (1 : BitVec 64), .ptr S.ep, .int 64 S.kw]
+      (writeBytes r1.mem S.entw (natToBytes
+        (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+          (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) r1.next := by
+    refine pos8PreAt_of_stored_word (entw := S.entw) (ep := S.ep) (tab := tab)
+      (blk0 := S.iw) (k := S.kw) (word := vent S.n S.iw (specQuote64 lo hi st)
+        (specDelimiter64 lo hi st) (specInString64 lo hi st) (specSpace64 lo hi st) S.sw)
+      (outCap := S.k + 64 + 9) hstored htab' hblkP ?_ ?_ ?_ ?_
+    · rw [hk0]; exact hsepWord
+    · rw [hk0, ← htabEq]; exact hsepTab
+    · rw [hk0]; omega
+    · rw [hk0]; exact hroom
+  obtain ⟨r2, hcall, hpost, -⟩ := units.pos8 _ _ r1.next hpre
+  have hpost' : entryPos8Post
+      ([.ptr S.entw, .int 64 S.iw, .int 64 (1 : BitVec 64), .ptr S.ep, .int 64 S.kw] ++
+        [.ptr tab])
+      (writeBytes r1.mem S.entw (natToBytes
+        (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+          (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8))
+      r2.ret r2.mem := by
+    simpa only [Γ_entry_pos8at, Γ_entry_pos8] using hpost
+  obtain ⟨e, o, t, blk0, nblk, k, ent, k', hargs, hv, hk', hread, hframe⟩ := hpost'
+  obtain ⟨-, -, hnblk, ho, hk, -⟩ := entryArgs_six hargs
+  have hkn : k.toNat = S.k := by rw [hk]; exact hk0
+  have hklen : k' - k.toNat ≤ 64 := by
+    have hl := step_readLanes32_length r2.mem (o + 4 * k.toNat) (k' - k.toNat) hread
+    have hb := step_streamPrefix_length_one ent blk0.toNat
+    rw [hnblk, show ((1 : BitVec 64)).toNat = 1 from by decide] at hl
+    omega
+  have hge : k.toNat ≤ k' := by rw [hk']; omega
+  refine ⟨r2, k', o, hcall, hv, hframe, ho, ?_⟩
+  rw [← hkn]
+  omega
+
+
 /-! ### Axiom footprints
 
 The call-site derivations are records' conjunctions and one store read; none adds
@@ -463,4 +1044,79 @@ a carrier. -/
 #guard_msgs in
 #print axioms ofNat64_eq_iff
 
+/-! ### Axiom footprints
+
+The decided dispatch is the four transported traces with the test's value
+supplied, so it adds nothing to `PipelineBodyFacts`' own footprint.  The two
+call-site derivations are one record conjunction and one record's frame; their
+`Classical.choice` is the bitvector shift arithmetic `sh6_ofNat_toNat` uses
+(`BitVec.toNat_shiftLeft`, `Nat.shiftLeft_eq`, `Nat.mod_eq_of_lt`), named here
+because a pin that records a carrier without saying where it came from hides a
+choice behind a number. -/
+
+/-- info: 'LeanLLVM.Vellum.usUs_step_at_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUs_step_at_head
+
+/-- info: 'LeanLLVM.Vellum.usUs_step_at_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUs_step_at_exit
+
+/-- info: 'LeanLLVM.Vellum.us_step_at_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us_step_at_head
+
+/-- info: 'LeanLLVM.Vellum.us_step_at_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us_step_at_exit
+
+/-- info: 'LeanLLVM.Vellum.us83_step_at_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us83_step_at_head
+
+/-- info: 'LeanLLVM.Vellum.us83_step_at_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us83_step_at_exit
+
+/-- info: 'LeanLLVM.Vellum.body_step_at_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms body_step_at_head
+
+/-- info: 'LeanLLVM.Vellum.body_step_at_exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms body_step_at_exit
+
+/-- info: 'LeanLLVM.Vellum.step_readByte_arm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms step_readByte_arm
+
+/-- info: 'LeanLLVM.Vellum.step_readBytes_arm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms step_readBytes_arm
+
+/-- info: 'LeanLLVM.Vellum.maskCall_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms maskCall_at
+
+/-- info: 'LeanLLVM.Vellum.step_readLanes32_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms step_readLanes32_length
+
+/-- info: 'LeanLLVM.Vellum.step_positionsOf_length' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms step_positionsOf_length
+
+/-- info: 'LeanLLVM.Vellum.step_streamPrefix_length_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms step_streamPrefix_length_one
+
+/-- info: 'LeanLLVM.Vellum.entryArgs_six' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms entryArgs_six
+
+/-- info: 'LeanLLVM.Vellum.pos8Call_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms pos8Call_at
+
 end LeanLLVM.Vellum
+
