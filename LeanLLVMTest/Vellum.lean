@@ -9837,3 +9837,17 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.assemblyExitWord_stuckState_false' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.assemblyExitWord_stuckState_false
+
+/-! #### The emitter's arithmetic: the word, the surrogate range, the pair value -/
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32Word_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.udIfEnd32Word_toNat
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_highSurrogate_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.udIfEnd3I_highSurrogate_iff
+
+/-- info: 'LeanLLVM.Vellum.udIfThen26I_pairValue' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.udIfThen26I_pairValue

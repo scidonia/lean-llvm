@@ -55,6 +55,7 @@ import LeanLLVM.Vellum.JsonEscapeListPositions
 import LeanLLVM.Vellum.JsonEscapeListContract
 import LeanLLVM.Vellum.JsonEscapeExpandContract
 import LeanLLVM.Vellum.JsonEscapeDecodeTrace
+import LeanLLVM.Vellum.JsonEscapeEmitIdentities
 import LeanLLVM.Vellum.JsonEscapeDecodeLoop
 import LeanLLVM.Vellum.JsonEscapeDecodeRun
 import LeanLLVM.Vellum.JsonEscapeCopyLoops
