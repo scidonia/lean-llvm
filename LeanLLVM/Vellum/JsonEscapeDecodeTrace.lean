@@ -19,7 +19,7 @@ environment through every lemma.
 
 What is here is the front of the run and both copy loops: `entry`, `land.rhs`,
 `while.body`, `while.end`, `while.body6`, `if.end`, `if.end.i`, `if.then6.i`,
-`if.end9.i`, the
+`if.end9.i`, `if.end.i115`, the
 two refusals, `us_run.exit`, `us_run.exit112`, `cleanup41`, and the two
 double-word copies with their tails
 (`while.body.i91`/`us_run_long.exit99`/`if.then.i104` and
@@ -44,7 +44,7 @@ one is used, will appear, and it belongs to the assembly rather than to these
 blocks.
 
 What is not here yet is the rest of the walk: the rest of the hex reader
-(`if.end.i115`, `if.end3.i`), the pair and UTF-8 emitter (`if.then17.i`,
+(`if.end3.i`), the pair and UTF-8 emitter (`if.then17.i`,
 `land.lhs.true22.i`, `if.then26.i`, `if.end32.i`), `cleanup32`, and the assembly —
 the budget term, the destination prefix, the frame per store, and
 `escape_expand_satisfies` with its companion.  `cleanup32`'s block name and lookup
@@ -3654,6 +3654,356 @@ end LeanLLVM.Vellum
 
 namespace LeanLLVM.Vellum
 
+open LeanLLVM
+open LeanLLVM.Vellum.JsonEscapeIR
+open LeanLLVM.Vellum.JsonEscapeIntrinsics
+open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Vellum.BitLanes
+
+def hexAddL (l : List (BitVec 8)) (c : BitVec 8) : List (BitVec 8) := l.map fun v => v + c
+def hexOrL (l : List (BitVec 8)) (c : BitVec 8) : List (BitVec 8) := l.map fun v => v ||| c
+def hexUltL (l : List (BitVec 8)) (c : BitVec 8) : List (BitVec 1) := l.map fun v => evalICmp .ult v c
+def hexZipOr (x y : List (BitVec 1)) : List (BitVec 1) := (x.zip y).map fun p => p.1 ||| p.2
+
+theorem hexAddL_length (l : List (BitVec 8)) (c : BitVec 8) : (hexAddL l c).length = l.length := by
+  simp [hexAddL]
+theorem hexOrL_length (l : List (BitVec 8)) (c : BitVec 8) : (hexOrL l c).length = l.length := by
+  simp [hexOrL]
+theorem hexUltL_length (l : List (BitVec 8)) (c : BitVec 8) : (hexUltL l c).length = l.length := by
+  simp [hexUltL]
+theorem hexZipOr_length (x y : List (BitVec 1)) : (hexZipOr x y).length = min x.length y.length := by
+  simp [hexZipOr]
+
+theorem bitcast_vec2_64_16_8 {bs : List UInt8} (hlen : bs.length = 16) :
+    bitcastVecLanes 8 16 (unpackLanes 64 2 (bytesToNat bs)) = byteLanes bs := by
+  unfold bitcastVecLanes
+  rw [packLanes_unpackLanes]
+  rw [show 2 * 64 = 128 from rfl]
+  rw [show bytesToNat bs % 2 ^ 128 = bytesToNat bs from by
+    apply Nat.mod_eq_of_lt
+    have := bytesToNat_lt bs
+    rw [hlen] at this
+    rw [show (256 : Nat) = 2 ^ 8 from by decide, ← Nat.pow_mul] at this
+    rw [show (16 * 8 : Nat) = 128 from rfl] at this
+    exact this]
+  exact byteLanes_eq_unpackLanes hlen
+
+theorem load_vec2_64 (env : Env) (s : State) (d p : String) (addr : Nat) (bs : List UInt8)
+    (hp : lookupName env p = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hr : readBytes s.mem addr 16 = some bs) :
+    evalInstr escapeCalls (withEnv env s) (.load d (.vec 2 (.int 64)) (.reg p)) =
+      some (withEnv ((d, .vec 2 64 (unpackLanes 64 2 (bytesToNat bs))) :: env) s) := by
+  rw [evalInstr_load (p := .reg p) (a := addr)
+    (by simp only [withEnv, evalOperand, hp])
+    (loadValue_vec_int (by decide) (by decide) hr)]
+  rfl
+
+theorem b_vecBitcast_2_64_16_8 (env : Env) (s : State) (d a : String)
+    (bs : List UInt8)
+    (ha : lookupName env a = some (.vec 2 64 (unpackLanes 64 2 (bytesToNat bs))))
+    (hlen : bs.length = 16) :
+    evalInstr escapeCalls (withEnv env s) (.vecBitcast d 2 64 16 8 (.reg a)) =
+      some (withEnv ((d, .vec 16 8 (byteLanes bs)) :: env) s) := by
+  rw [evalInstr_vecBitcast (hv := evalOperand_reg_of env s a _ ha)
+    (hl := vecLanes_self (unpackLanes_length 64 2 (bytesToNat bs))) (hwidth := by decide)]
+  simp only [withEnv, State.bind]
+  rw [bitcast_vec2_64_16_8 hlen]
+
+theorem b_binopVec_add_splat (env : Env) (s : State) (d a : String)
+    (x : List (BitVec 8)) (c : BitVec 8) (hlen : x.length = 16)
+    (ha : lookupName env a = some (.vec 16 8 x)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.binopVec d .add 16 8 (.reg a) (.imm (.splat 16 8 c))) =
+      some (withEnv ((d, .vec 16 8 (hexAddL x c)) :: env) s) := by
+  rw [evalInstr_binopVec (l1 := x) (l2 := List.replicate 16 c)
+    (ls := hexAddL x c) hlen (by simp)
+    (by simp only [withEnv, evalOperand, ha])
+    (by simp only [withEnv, evalOperand, Const.toValue])
+    (by
+      rw [← hlen]
+      exact zipReplicate_mapM x c (fun u v => evalBinop .add u v) (fun v => v + c) (fun v => rfl))]
+  simp only [withEnv, State.bind, hexAddL]
+
+theorem b_binopVec_or_splat (env : Env) (s : State) (d a : String)
+    (x : List (BitVec 8)) (c : BitVec 8) (hlen : x.length = 16)
+    (ha : lookupName env a = some (.vec 16 8 x)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.binopVec d .or 16 8 (.reg a) (.imm (.splat 16 8 c))) =
+      some (withEnv ((d, .vec 16 8 (hexOrL x c)) :: env) s) := by
+  rw [evalInstr_binopVec (l1 := x) (l2 := List.replicate 16 c)
+    (ls := hexOrL x c) hlen (by simp)
+    (by simp only [withEnv, evalOperand, ha])
+    (by simp only [withEnv, evalOperand, Const.toValue])
+    (by
+      rw [← hlen]
+      exact zipReplicate_mapM x c (fun u v => evalBinop .or u v) (fun v => v ||| c) (fun v => rfl))]
+  simp only [withEnv, State.bind, hexOrL]
+
+theorem b_icmpVec_ult_splat (env : Env) (s : State) (d a : String)
+    (x : List (BitVec 8)) (c : BitVec 8) (hlen : x.length = 16)
+    (ha : lookupName env a = some (.vec 16 8 x)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.icmpVec d .ult 16 8 (.reg a) (.imm (.splat 16 8 c))) =
+      some (withEnv ((d, .vec 16 1 (hexUltL x c)) :: env) s) := by
+  rw [evalInstr_icmpVec (va := .vec 16 8 x) (vb := .vec 16 8 (List.replicate 16 c))
+    (l1 := x) (l2 := List.replicate 16 c)
+    (by simp only [withEnv, evalOperand, ha])
+    (by simp only [withEnv, evalOperand, Const.toValue])
+    (vecLanes_self hlen) (vecLanes_self (by simp))]
+  rw [← hlen, zipReplicate_map]
+  simp [withEnv, State.bind, hexUltL]
+
+theorem b_binopVec_or1 (env : Env) (s : State) (d a b : String)
+    (x y : List (BitVec 1)) (hlenx : x.length = 16) (hleny : y.length = 16)
+    (ha : lookupName env a = some (.vec 16 1 x))
+    (hb : lookupName env b = some (.vec 16 1 y)) :
+    evalInstr escapeCalls (withEnv env s) (.binopVec d .or 16 1 (.reg a) (.reg b)) =
+      some (withEnv ((d, .vec 16 1 (hexZipOr x y)) :: env) s) := by
+  rw [evalInstr_binopVec (l1 := x) (l2 := y) (ls := hexZipOr x y) hlenx hleny
+    (by simp only [withEnv, evalOperand, ha])
+    (by simp only [withEnv, evalOperand, hb])
+    (by simpa [evalBinop, hexZipOr] using mapM_some_map (x.zip y) (fun p : BitVec 1 × BitVec 1 => p.1 ||| p.2))]
+  simp only [withEnv, State.bind, hexZipOr]
+
+theorem b_bitcastMask16 (env : Env) (s : State) (d a : String) (x : List (BitVec 1))
+    (hlen : x.length = 16) (ha : lookupName env a = some (.vec 16 1 x)) :
+    evalInstr escapeCalls (withEnv env s) (.bitcastMask d 16 (.reg a)) =
+      some (withEnv ((d, .int 16 (BitVec.ofNat 16 (lanesToNat x))) :: env) s) := by
+  rw [evalInstr_bitcastMask (hv := evalOperand_reg_of env s a _ ha) hlen]
+  rfl
+
+theorem evalBinopNat_and16 (x c : BitVec 16) :
+    evalBinopNat .and 16 x.toNat c.toNat = some (x.toNat &&& c.toNat) := by
+  simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat, BitVec.toNat_and]
+
+theorem b_and16_imm (env : Env) (s : State) (d a : String) (x c : BitVec 16)
+    (ha : lookupName env a = some (.int 16 x)) :
+    evalInstr escapeCalls (withEnv env s) (.binop d .and 16 (.reg a) (.imm (.int 16 c))) =
+      some (withEnv ((d, .int 16 (x &&& c)) :: env) s) := by
+  rw [evalInstr_binop (ha := evalOperand_reg_of env s a (.int 16 x) ha)
+    (hb := evalOperand_lit_of _ 16 c) (hr := evalBinopNat_and16 x c)]
+  simp only [withEnv, State.bind]
+  rw [show BitVec.ofNat 16 (x.toNat &&& c.toNat) = x &&& c from by
+    rw [← BitVec.toNat_and x c, BitVec.ofNat_toNat, BitVec.setWidth_eq]]
+
+theorem b_icmp_eq16_imm (env : Env) (s : State) (d a : String) (x c : BitVec 16)
+    (ha : lookupName env a = some (.int 16 x)) :
+    evalInstr escapeCalls (withEnv env s) (.icmp d .eq 16 (.reg a) (.imm (.int 16 c))) =
+      some (withEnv ((d, .int 1 (evalICmp .eq x c)) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s a (.int 16 x) ha)
+    (hb := evalOperand_lit_of _ 16 c)]
+  simp only [withEnv, State.bind]
+
+def udIfEndI115 : Block := blockAt usDecFunction 15 (by decide)
+
+theorem findBlock_udIfEndI115 : usDecFunction.findBlock "if.end.i115" = some udIfEndI115 := by
+  decide
+
+theorem udIfEndI115_instrs :
+    udIfEndI115.instrs =
+      [ .gep "%add.ptr1.i117" (.int 8) (.reg "%arrayidx16") (.imm (.int 64 (BitVec.ofInt 64 2))),
+        .load "%10" (.vec 2 (.int 64)) (.reg "%add.ptr1.i117"),
+        .vecBitcast "%11" 2 64 16 8 (.reg "%10"),
+        .binopVec "%sub.i169" .add 16 8 (.reg "%11") (.imm (.splat 16 8 (BitVec.ofInt 8 (-48)))),
+        .binopVec "%12" .or 16 8 (.reg "%11") (.imm (.splat 16 8 (BitVec.ofInt 8 32))),
+        .binopVec "%sub.i168" .add 16 8 (.reg "%12") (.imm (.splat 16 8 (BitVec.ofInt 8 (-97)))),
+        .icmpVec "%cmp.i192" .ult 16 8 (.reg "%sub.i169") (.imm (.splat 16 8 (BitVec.ofInt 8 10))),
+        .icmpVec "%cmp.i190" .ult 16 8 (.reg "%sub.i168") (.imm (.splat 16 8 (BitVec.ofInt 8 6))),
+        .binopVec "%or.i185258259" .or 16 1 (.reg "%cmp.i192") (.reg "%cmp.i190"),
+        .bitcastMask "%13" 16 (.reg "%or.i185258259"),
+        .binop "%14" .and 16 (.reg "%13") (.imm (.int 16 (BitVec.ofInt 16 15))),
+        .icmp "%cmp.not.i128" .eq 16 (.reg "%14") (.imm (.int 16 (BitVec.ofInt 16 15))) ] := by
+  decide
+
+theorem udIfEndI115_term :
+    udIfEndI115.term = .condbr (.reg "%cmp.not.i128") "if.end3.i" "if.then22" := by decide
+
+def udIfEndI115Env (env : Env) (addr : Nat) (bs : List UInt8) : Env :=
+  let l := byteLanes bs
+  let a := hexAddL l (BitVec.ofInt 8 (-48))
+  let b := hexOrL l (BitVec.ofInt 8 32)
+  let da := hexUltL a (BitVec.ofInt 8 10)
+  let db := hexUltL (hexAddL b (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)
+  let o := hexZipOr da db
+  let n13 := BitVec.ofNat 16 (lanesToNat o)
+  ("%cmp.not.i128", .int 1 (evalICmp .eq (n13 &&& BitVec.ofInt 16 15)
+    (BitVec.ofInt 16 15))) ::
+  ("%14", .int 16 (n13 &&& BitVec.ofInt 16 15)) ::
+  ("%13", .int 16 n13) ::
+  ("%or.i185258259", .vec 16 1 o) ::
+  ("%cmp.i190", .vec 16 1 db) ::
+  ("%cmp.i192", .vec 16 1 da) ::
+  ("%sub.i168", .vec 16 8 (hexAddL b (BitVec.ofInt 8 (-97)))) ::
+  ("%12", .vec 16 8 b) ::
+  ("%sub.i169", .vec 16 8 a) ::
+  ("%11", .vec 16 8 l) ::
+  ("%10", .vec 2 64 (unpackLanes 64 2 (bytesToNat bs))) ::
+  ("%add.ptr1.i117", .ptr (addr + 2)) :: env
+
+theorem udIfEndI115_denote (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 2) 16 = some bs) :
+    denoteCode escapeCalls udIfEndI115.instrs (withEnv env s) =
+      some (withEnv (udIfEndI115Env env addr bs) s) := by
+  rw [udIfEndI115_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_gep8_imm _ _ "%add.ptr1.i117" "%arrayidx16"
+    addr 2 (BitVec.ofInt 64 2) (by ud_lk_h haddr) (by decide) (by decide))]
+  rw [denoteCode_cons_of _ _ _ _ _ (load_vec2_64 _ _ "%10" "%add.ptr1.i117"
+    (addr + 2) bs (by ud_lk) hlen hload)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_vecBitcast_2_64_16_8 _ _ "%11" "%10" bs
+    (by ud_lk) hlen)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_add_splat _ _ "%sub.i169" "%11"
+    (byteLanes bs) (BitVec.ofInt 8 (-48)) (by rw [byteLanes_length]; exact hlen) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_or_splat _ _ "%12" "%11"
+    (byteLanes bs) (BitVec.ofInt 8 32) (by rw [byteLanes_length]; exact hlen) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_add_splat _ _ "%sub.i168" "%12"
+    (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97))
+    (by rw [hexOrL_length, byteLanes_length]; exact hlen) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmpVec_ult_splat _ _ "%cmp.i192" "%sub.i169"
+    (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10)
+    (by rw [hexAddL_length, byteLanes_length]; exact hlen) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmpVec_ult_splat _ _ "%cmp.i190" "%sub.i168"
+    (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+    (BitVec.ofInt 8 6)
+    (by rw [hexAddL_length, hexOrL_length, byteLanes_length]; exact hlen) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_or1 _ _ "%or.i185258259" "%cmp.i192" "%cmp.i190"
+    (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+    (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+      (BitVec.ofInt 8 6))
+    (by rw [hexUltL_length, hexAddL_length, byteLanes_length]; exact hlen)
+    (by rw [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length]; exact hlen)
+    (by ud_lk) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_bitcastMask16 _ _ "%13" "%or.i185258259"
+    (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+      (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+        (BitVec.ofInt 8 6)))
+    (by rw [hexZipOr_length, hexUltL_length, hexAddL_length, hexUltL_length,
+        hexAddL_length, hexOrL_length, byteLanes_length, Nat.min_self]; exact hlen)
+    (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_and16_imm _ _ "%14" "%13"
+    (BitVec.ofNat 16 (lanesToNat
+      (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+          (BitVec.ofInt 8 6)))))
+    (BitVec.ofInt 16 15) (by ud_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_eq16_imm _ _ "%cmp.not.i128" "%14"
+    (BitVec.ofNat 16 (lanesToNat
+      (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+          (BitVec.ofInt 8 6)))) &&& BitVec.ofInt 16 15)
+    (BitVec.ofInt 16 15) (by ud_lk))]
+  simp only [denoteCode, withEnv, udIfEndI115Env]
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
+open LeanLLVM
+open LeanLLVM.Vellum.JsonEscapeIR
+open LeanLLVM.Vellum.JsonEscapeIntrinsics
+open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Vellum.BitLanes
+
+theorem udIfEndI115_run (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 2) 16 = some bs) :
+    Option.map State.mem (denoteCode escapeCalls udIfEndI115.instrs (withEnv env s)) =
+        some s.mem ∧
+      (denoteCode escapeCalls udIfEndI115.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%cmp.not.i128") =
+        some (.int 1 (evalICmp .eq
+          (BitVec.ofNat 16 (lanesToNat
+            (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+              (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+                (BitVec.ofInt 8 6)))) &&& BitVec.ofInt 16 15)
+          (BitVec.ofInt 16 15))) := by
+  rw [udIfEndI115_denote env s addr bs haddr hlen hload]
+  refine ⟨?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  · simp only [Option.bind_some, withEnv, udIfEndI115Env]
+    ud_lk
+
+theorem udIfEndI115_step (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (hpc : s.pc = "if.end.i115")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 2) 16 = some bs)
+    (hcond : evalICmp .eq
+      (BitVec.ofNat 16 (lanesToNat
+        (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+          (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+            (BitVec.ofInt 8 6)))) &&& BitVec.ofInt 16 15)
+      (BitVec.ofInt 16 15) = (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEndI115Env env addr bs) s) with
+              pc := "if.end3.i", pre := some "if.end.i115" } := by
+  rw [udStep_of (withEnv env s) "if.end.i115" udIfEndI115 _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEndI115
+    (udIfEndI115_denote env s addr bs haddr hlen hload), udIfEndI115_term]
+  have hcmp : evalOperand (withEnv (udIfEndI115Env env addr bs) s) (.reg "%cmp.not.i128") =
+      some (.int 1 (evalICmp .eq
+        (BitVec.ofNat 16 (lanesToNat
+          (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+            (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+              (BitVec.ofInt 8 6)))) &&& BitVec.ofInt 16 15)
+        (BitVec.ofInt 16 15))) :=
+    evalOperand_reg_of _ s "%cmp.not.i128" _ (by simp only [udIfEndI115Env]; ud_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+theorem udIfEndI115_step_zero (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (hpc : s.pc = "if.end.i115")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 2) 16 = some bs)
+    (hcond : evalICmp .eq
+      (BitVec.ofNat 16 (lanesToNat
+        (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+          (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+            (BitVec.ofInt 8 6)))) &&& BitVec.ofInt 16 15)
+      (BitVec.ofInt 16 15) = (0 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEndI115Env env addr bs) s) with
+              pc := "if.then22", pre := some "if.end.i115" } := by
+  rw [udStep_of (withEnv env s) "if.end.i115" udIfEndI115 _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEndI115
+    (udIfEndI115_denote env s addr bs haddr hlen hload), udIfEndI115_term]
+  have hcmp : evalOperand (withEnv (udIfEndI115Env env addr bs) s) (.reg "%cmp.not.i128") =
+      some (.int 1 (evalICmp .eq
+        (BitVec.ofNat 16 (lanesToNat
+          (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+            (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+              (BitVec.ofInt 8 6)))) &&& BitVec.ofInt 16 15)
+        (BitVec.ofInt 16 15))) :=
+    evalOperand_reg_of _ s "%cmp.not.i128" _ (by simp only [udIfEndI115Env]; ud_lk)
+  rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+/-- info: 'LeanLLVM.Vellum.udIfEndI115_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEndI115_denote
+
+/-- info: 'LeanLLVM.Vellum.udIfEndI115_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEndI115_run
+
+/-- info: 'LeanLLVM.Vellum.udIfEndI115_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEndI115_step
+
+/-- info: 'LeanLLVM.Vellum.udIfEndI115_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEndI115_step_zero
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
 /-! ### Axiom footprints: the escape table and its reader -/
 
 /-- info: 'LeanLLVM.Vellum.unescapeTable_getElem?' depends on axioms: [propext] -/
@@ -3731,5 +4081,1389 @@ namespace LeanLLVM.Vellum
 /-- info: 'LeanLLVM.Vellum.udIfThen6I_step' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms udIfThen6I_step
+
+end LeanLLVM.Vellum
+
+set_option autoImplicit false
+set_option maxRecDepth 8000
+open LeanLLVM
+open LeanLLVM.Vellum
+open LeanLLVM.Vellum.JsonEscapeIR
+open LeanLLVM.Vellum.JsonEscapeIntrinsics
+open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Vellum.BitLanes
+
+namespace LeanLLVM.Vellum
+
+/-! ### The lane-list alignment -/
+
+/-- `l[n]?` is the `getD` lane when the index is in range. -/
+theorem getD?_eq {α : Type} {l : List α} {n : Nat} {d : α} (h : n < l.length) :
+    l[n]? = some (l.getD n d) := by
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h, Option.getD_some]
+
+/-- A one-bit value is zero or one. -/
+theorem bv1_cases (x : BitVec 1) : x = 0 ∨ x = 1 := by
+  have h := x.isLt
+  have h' : x.toNat = 0 ∨ x.toNat = 1 := by omega
+  rcases h' with h0 | h1
+  · left; apply BitVec.eq_of_toNat_eq; simpa using h0
+  · right; apply BitVec.eq_of_toNat_eq; simpa using h1
+
+/-- A lane's two emitted tests, `or`-ed, are the byte's `hexLaneTest`. -/
+theorem lane_test_eq (x : BitVec 8) :
+    evalICmp .ult (x + BitVec.ofInt 8 (-48)) (BitVec.ofInt 8 10) |||
+      evalICmp .ult ((x ||| BitVec.ofInt 8 32) + BitVec.ofInt 8 (-97)) (BitVec.ofInt 8 6) =
+      BitVec.ofBool (hexLaneTest x) := by
+  decide +revert
+
+/-- The digit tests, as the single map the byte list gives. -/
+theorem hexLanes_digit (l : List (BitVec 8)) :
+    hexUltL (hexAddL l (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10) =
+      l.map (fun v => evalICmp .ult (v + BitVec.ofInt 8 (-48)) (BitVec.ofInt 8 10)) := by
+  simp [hexUltL, hexAddL, List.map_map]
+
+/-- The letter tests, as the single map the byte list gives. -/
+theorem hexLanes_letter (l : List (BitVec 8)) :
+    hexUltL (hexAddL (hexOrL l (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+        (BitVec.ofInt 8 6) =
+      l.map (fun v => evalICmp .ult ((v ||| BitVec.ofInt 8 32) + BitVec.ofInt 8 (-97))
+        (BitVec.ofInt 8 6)) := by
+  simp [hexUltL, hexAddL, hexOrL, List.map_map]
+
+/-- `or`-ing two lane lists of one byte list is one map. -/
+theorem hexZipOr_map_map {l : List (BitVec 8)} (f g : BitVec 8 → BitVec 1) :
+    hexZipOr (l.map f) (l.map g) = l.map fun x => f x ||| g x := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+      show (f x ||| g x) :: hexZipOr (xs.map f) (xs.map g) =
+        (f x ||| g x) :: xs.map (fun x => f x ||| g x)
+      rw [ih]
+
+/-- **The lane-list alignment.**  The lane tests the hex reader emits, at the
+abbreviated lane lists its own arithmetic builds, are `hexTestLanes`'s list. -/
+theorem hexTestLanes_emit (l : List (BitVec 8)) :
+    hexZipOr (hexUltL (hexAddL l (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL l (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97)))
+          (BitVec.ofInt 8 6)) =
+      hexTestLanes l := by
+  rw [hexLanes_digit, hexLanes_letter, hexZipOr_map_map]
+  simp only [hexTestLanes]
+  apply List.map_congr_left
+  intro x _
+  exact lane_test_eq x
+
+/-- The block's mask word's low nibble is the four loaded bytes' tests. -/
+theorem hexLanes_low_four {bs : List UInt8} {x0 x1 x2 x3 : BitVec 8}
+    {rest : List (BitVec 8)} (hl : byteLanes bs = x0 :: x1 :: x2 :: x3 :: rest) :
+    lanesToNat (hexZipOr (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48)))
+          (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))) % 16 =
+      (if hexLaneTest x0 then 1 else 0) + 2 * (if hexLaneTest x1 then 1 else 0) +
+      4 * (if hexLaneTest x2 then 1 else 0) + 8 * (if hexLaneTest x3 then 1 else 0) := by
+  rw [hexTestLanes_emit, hl, hexTest_low_four]
+
+/-! ### Generic instruction shapes -/
+
+theorem evalBinopNat_eq_map (op : BinOp) (w : Nat) (x y : BitVec w) :
+    evalBinopNat op w x.toNat y.toNat = (evalBinop op x y).map BitVec.toNat := by
+  simp [evalBinopNat, BitVec.ofNat_toNat]
+
+/-- A constant vector operand reads as its own lane list. -/
+theorem evalOperand_vector_of (s : State) (w n : Nat) (y : List (BitVec w))
+    (hlen : y.length = n) :
+    evalOperand s (.imm (.vector w y)) = some (.vec n w y) := by
+  simp only [evalOperand, Const.toValue, hlen]
+
+/-- `%d = op iw %a, <c>`. -/
+theorem b_binop_imm (env : Env) (s : State) (d a : String) (op : BinOp) (w : Nat)
+    (x c r : BitVec w) (hr : evalBinop op x c = some r)
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr escapeCalls (withEnv env s) (.binop d op w (.reg a) (.imm (.int w c))) =
+      some (withEnv ((d, .int w r) :: env) s) := by
+  rw [evalInstr_binop (ha := evalOperand_reg_of env s a (.int w x) ha)
+    (hb := evalOperand_lit_of _ w c)
+    (hr := by rw [evalBinopNat_eq_map, hr]; rfl)]
+  simp only [withEnv, State.bind, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- `%d = op iw %a, %b`. -/
+theorem b_binop_reg (env : Env) (s : State) (d a b : String) (op : BinOp) (w : Nat)
+    (x y r : BitVec w) (hr : evalBinop op x y = some r)
+    (ha : lookupName env a = some (.int w x))
+    (hb : lookupName env b = some (.int w y)) :
+    evalInstr escapeCalls (withEnv env s) (.binop d op w (.reg a) (.reg b)) =
+      some (withEnv ((d, .int w r) :: env) s) := by
+  rw [evalInstr_binop (ha := evalOperand_reg_of env s a (.int w x) ha)
+    (hb := evalOperand_reg_of env s b (.int w y) hb)
+    (hr := by rw [evalBinopNat_eq_map, hr]; rfl)]
+  simp only [withEnv, State.bind, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- `%d = icmp p iw %a, <c>`. -/
+theorem b_icmp_imm (env : Env) (s : State) (d a : String) (p : IPred) (w : Nat)
+    (x c : BitVec w) (ha : lookupName env a = some (.int w x)) :
+    evalInstr escapeCalls (withEnv env s) (.icmp d p w (.reg a) (.imm (.int w c))) =
+      some (withEnv ((d, .int 1 (evalICmp p x c)) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s a (.int w x) ha)
+    (hb := evalOperand_lit_of _ w c)]
+  simp only [withEnv, State.bind, evalICmpNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- `%d = icmp p iw %a, %b`. -/
+theorem b_icmp_reg (env : Env) (s : State) (d a b : String) (p : IPred) (w : Nat)
+    (x y : BitVec w) (ha : lookupName env a = some (.int w x))
+    (hb : lookupName env b = some (.int w y)) :
+    evalInstr escapeCalls (withEnv env s) (.icmp d p w (.reg a) (.reg b)) =
+      some (withEnv ((d, .int 1 (evalICmp p x y)) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s a (.int w x) ha)
+    (hb := evalOperand_reg_of env s b (.int w y) hb)]
+  simp only [withEnv, State.bind, evalICmpNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- A scalar select whose condition register holds `cb`. -/
+theorem b_select_reg (env : Env) (s : State) (d c a b : String) (ty : Ty)
+    (cb : BitVec 1) (va vb : Value)
+    (hc : lookupName env c = some (.int 1 cb))
+    (ha : lookupName env a = some va) (hb : lookupName env b = some vb) :
+    evalInstr escapeCalls (withEnv env s) (.select d ty (.reg c) (.reg a) (.reg b)) =
+      some (withEnv ((d, if cb = (1 : BitVec 1) then va else vb) :: env) s) := by
+  rw [evalInstr, show (evalOperand (withEnv env s) (.reg c)) = some (.int 1 cb) from hc,
+    show (evalOperand (withEnv env s) (.reg a)) = some va from ha,
+    show (evalOperand (withEnv env s) (.reg b)) = some vb from hb]
+  rcases bv1_cases cb with h | h <;> simp [h, withEnv, State.bind]
+
+/-- A lane read out of a vector register. -/
+theorem b_extract_lane (env : Env) (s : State) (d a : String) (n w wi : Nat)
+    (x : List (BitVec w)) (k : BitVec wi) (v : BitVec w) (hlen : x.length = n)
+    (ha : lookupName env a = some (.vec n w x)) (hk : x[k.toNat]? = some v) :
+    evalInstr escapeCalls (withEnv env s) (.extractelement d n w (.reg a) (.imm (.int wi k))) =
+      some (withEnv ((d, .int w v) :: env) s) := by
+  rw [evalInstr_extractelement (hv := evalOperand_reg_of env s a _ ha)
+    (hl := vecLanes_self hlen) (hi := evalOperand_lit_of _ wi k) (hx := hk)]
+  simp only [withEnv, State.bind]
+
+/-- The lanes a lane-wise `and` of a constant vector binds. -/
+theorem b_binopVec_and_vec (env : Env) (s : State) (d a : String) (n w : Nat)
+    (x y : List (BitVec w)) (hlenx : x.length = n) (hleny : y.length = n)
+    (ha : lookupName env a = some (.vec n w x)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.binopVec d .and n w (.reg a) (.imm (.vector w y))) =
+      some (withEnv ((d, .vec n w ((x.zip y).map fun p => p.1 &&& p.2)) :: env) s) := by
+  rw [evalInstr_binopVec (l1 := x) (l2 := y) (ls := (x.zip y).map fun p => p.1 &&& p.2)
+    hlenx hleny
+    (evalOperand_reg_of env s a (.vec n w x) ha)
+    (evalOperand_vector_of (withEnv env s) w n y hleny)
+    (by simpa [evalBinop] using
+      mapM_some_map (x.zip y) (fun p : BitVec w × BitVec w => p.1 &&& p.2))]
+  simp only [withEnv, State.bind]
+
+/-- A lane-wise `add` of two vector registers. -/
+theorem b_binopVec_add_reg (env : Env) (s : State) (d a b : String) (n w : Nat)
+    (x y : List (BitVec w)) (hlenx : x.length = n) (hleny : y.length = n)
+    (ha : lookupName env a = some (.vec n w x))
+    (hb : lookupName env b = some (.vec n w y)) :
+    evalInstr escapeCalls (withEnv env s) (.binopVec d .add n w (.reg a) (.reg b)) =
+      some (withEnv ((d, .vec n w ((x.zip y).map fun p => p.1 + p.2)) :: env) s) := by
+  rw [evalInstr_binopVec (l1 := x) (l2 := y) (ls := (x.zip y).map fun p => p.1 + p.2)
+    hlenx hleny
+    (evalOperand_reg_of env s a (.vec n w x) ha)
+    (evalOperand_reg_of env s b (.vec n w y) hb)
+    (by simpa [evalBinop] using
+      mapM_some_map (x.zip y) (fun p : BitVec w × BitVec w => p.1 + p.2))]
+  simp only [withEnv, State.bind]
+
+/-- A lane-wise select of two constant vectors at a mask register. -/
+theorem b_select_vec (env : Env) (s : State) (d c : String)
+    (cs : List (BitVec 1)) (a b : List (BitVec 8))
+    (hlen : cs.length = 16) (hlena : a.length = 16) (hlenb : b.length = 16)
+    (hc : lookupName env c = some (.vec 16 1 cs)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.select d (.vec 16 (.int 8)) (.reg c) (.imm (.vector 8 a)) (.imm (.vector 8 b))) =
+      some (withEnv ((d, .vec 16 8 (selectLanes cs a b)) :: env) s) := by
+  rw [evalInstr,
+    show evalOperand (withEnv env s) (.reg c) = some (.vec 16 1 cs) from hc,
+    show evalOperand (withEnv env s) (.imm (.vector 8 a)) = some (.vec 16 8 a) from
+      evalOperand_vector_of (withEnv env s) 8 16 a hlena,
+    show evalOperand (withEnv env s) (.imm (.vector 8 b)) = some (.vec 16 8 b) from
+      evalOperand_vector_of (withEnv env s) 8 16 b hlenb]
+  simp only [withEnv, State.bind, hlen, vecLanes_self hlena, vecLanes_self hlenb, reduceIte]
+
+/-- The unsigned byte multiply-add at the body's two operands. -/
+theorem b_call_pmaddUbSw (env : Env) (s : State) (d a : String) (b : Operand)
+    (x y : List (BitVec 8))
+    (ha : lookupName env a = some (.vec 16 8 x))
+    (hb : evalOperand (withEnv env s) b = some (.vec 16 8 y)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.call d (.vec 8 (.int 16)) "llvm.x86.ssse3.pmadd.ub.sw.128"
+          [(.vec 16 (.int 8), .reg a), (.vec 16 (.int 8), b)]) =
+      some (withEnv ((d, .vec 8 16 (pmaddUbSw x y)) :: env) s) := by
+  rw [evalInstr_call (s := withEnv env s) (ty := .vec 8 (.int 16))
+    (ha := evalOperands_cons (evalOperand_reg_of env s a (.vec 16 8 x) ha)
+      (evalOperands_cons hb (by rfl)))
+    (hc := escapeCalls_pmaddUbSw x y s.mem s.next)]
+  simp only [withEnv, State.bind]
+
+/-- The signed word multiply-add at the body's two operands. -/
+theorem b_call_pmaddWd (env : Env) (s : State) (d a : String) (b : Operand)
+    (x y : List (BitVec 16))
+    (ha : lookupName env a = some (.vec 8 16 x))
+    (hb : evalOperand (withEnv env s) b = some (.vec 8 16 y)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.call d (.vec 4 (.int 32)) "llvm.x86.sse2.pmadd.wd"
+          [(.vec 8 (.int 16), .reg a), (.vec 8 (.int 16), b)]) =
+      some (withEnv ((d, .vec 4 32 (pmaddWd x y)) :: env) s) := by
+  rw [evalInstr_call (s := withEnv env s) (ty := .vec 4 (.int 32))
+    (ha := evalOperands_cons (evalOperand_reg_of env s a (.vec 8 16 x) ha)
+      (evalOperands_cons hb (by rfl)))
+    (hc := escapeCalls_pmaddWd x y s.mem s.next)]
+  simp only [withEnv, State.bind]
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
+/-! ### The hex reader's guard shapes -/
+
+macro "hex_lk" : tactic => `(tactic|
+  ((repeat rw [lookupName_cons_ne _ _ (by decide)]) <;>
+   (first | (rw [lookupName_cons_self]; rfl) | rfl)))
+
+macro "hex_lk_h " h:term : tactic => `(tactic|
+  ((repeat rw [lookupName_cons_ne _ _ (by decide)]) <;>
+   (first | (rw [lookupName_cons_self]; rfl) | exact $h)))
+
+theorem selectLanes_length {w : Nat} (cs : List (BitVec 1)) (a b : List (BitVec w)) :
+    (selectLanes cs a b).length = min cs.length (min a.length b.length) := by
+  simp [selectLanes, List.length_map, List.length_zip]
+
+/-- A `<16 x i8>` load at sixteen readable bytes. -/
+theorem load_vec16_8 (env : Env) (s : State) (d p : String) (addr : Nat) (bs : List UInt8)
+    (hp : lookupName env p = some (.ptr addr))
+    (hr : readBytes s.mem addr 16 = some bs) :
+    evalInstr escapeCalls (withEnv env s) (.load d (.vec 16 (.int 8)) (.reg p)) =
+      some (withEnv ((d, .vec 16 8 (byteLanes bs)) :: env) s) := by
+  exact evalInstr_load (s := withEnv env s) (d := d) (ty := .vec 16 (.int 8))
+    (p := .reg p) (a := addr) (v := .vec 16 8 (byteLanes bs))
+    (evalOperand_reg_of env s p (.ptr addr) hp) (loadValue_vec_i8 (n := 16) hr)
+
+/-- The `%17` mask's lanes: fifteen for the four low lanes and zero after. -/
+def hxLowMask : List (BitVec 8) :=
+  [BitVec.ofInt 8 15, BitVec.ofInt 8 15, BitVec.ofInt 8 15, BitVec.ofInt 8 15,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0]
+
+/-- The `%18` select's true arm: nine in the four low lanes. -/
+def hxNine : List (BitVec 8) :=
+  [BitVec.ofInt 8 9, BitVec.ofInt 8 9, BitVec.ofInt 8 9, BitVec.ofInt 8 9,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0]
+
+/-- The `%18` select's false arm. -/
+def hxZero : List (BitVec 8) :=
+  [BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0,
+   BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0, BitVec.ofInt 8 0]
+
+/-- `%17`: the loaded bytes' low nibbles. -/
+def hxLow (l : List (BitVec 8)) : List (BitVec 8) :=
+  (l.zip hxLowMask).map fun p => p.1 &&& p.2
+
+/-- `%18`: nine wherever the letter test holds. -/
+def hxNineSel (c : List (BitVec 1)) : List (BitVec 8) := selectLanes c hxNine hxZero
+
+/-- `%add.i202`: each low nibble with its nine. -/
+def hxPadd (l : List (BitVec 8)) (c : List (BitVec 1)) : List (BitVec 8) :=
+  ((hxNineSel c).zip (hxLow l)).map fun p => p.1 + p.2
+
+/-- `%vecext.i207`: the multiply-add chain's lane 0, the code unit. -/
+def hxCode (l : List (BitVec 8)) (c : List (BitVec 1)) : BitVec 32 :=
+  (pmaddWd (pmaddUbSw (hxPadd l c) hexW8) hexW16).getD 0 0
+
+/-! ### `if.end3.i`
+
+The guard the hex reader falls through to: the code unit's high bits at
+`0xD800`, room for twelve more bytes, and the two trailing bytes `\` and `u`. -/
+
+def udIfEnd3I : Block := blockAt usDecFunction 16 (by decide)
+
+theorem findBlock_udIfEnd3I :
+    usDecFunction.findBlock "if.end3.i" = some udIfEnd3I := by decide
+
+theorem udIfEnd3I_instrs :
+    udIfEnd3I.instrs =
+      [ .vecBitcast "%bc318" 2 64 16 8 (.reg "%10"),
+        .extractelement "%15" 16 8 (.reg "%bc318") (.imm (.int 64 (BitVec.ofInt 64 5))),
+        .vecBitcast "%bc" 2 64 16 8 (.reg "%10"),
+        .extractelement "%16" 16 8 (.reg "%bc") (.imm (.int 64 (BitVec.ofInt 64 4))),
+        .binopVec "%17" .and 16 8 (.reg "%11") (.imm (.vector 8 hxLowMask)),
+        .select "%18" (.vec 16 (.int 8)) (.reg "%cmp.i190")
+          (.imm (.vector 8 hxNine)) (.imm (.vector 8 hxZero)),
+        .binopVec "%add.i202" .add 16 8 (.reg "%18") (.reg "%17"),
+        .call "%19" (.vec 8 (.int 16)) "llvm.x86.ssse3.pmadd.ub.sw.128"
+          [(.vec 16 (.int 8), .reg "%add.i202"), (.vec 16 (.int 8), .imm (.vector 8 hexW8))],
+        .call "%20" (.vec 4 (.int 32)) "llvm.x86.sse2.pmadd.wd"
+          [(.vec 8 (.int 16), .reg "%19"), (.vec 8 (.int 16), .imm (.vector 16 hexW16))],
+        .extractelement "%vecext.i207" 4 32 (.reg "%20") (.imm (.int 64 (BitVec.ofInt 64 0))),
+        .binop "%and27.i" .and 32 (.reg "%vecext.i207")
+          (.imm (.int 32 (BitVec.ofInt 32 65535))),
+        .binop "%21" .and 32 (.reg "%vecext.i207")
+          (.imm (.int 32 (BitVec.ofInt 32 64512))),
+        .icmp "%cmp4.i118" .eq 32 (.reg "%21") (.imm (.int 32 (BitVec.ofInt 32 55296))),
+        .binop "%add5.i" .add 64 (.reg "%sub") (.imm (.int 64 (BitVec.ofInt 64 12))),
+        .icmp "%cmp6.not.i" .ule 64 (.reg "%add5.i") (.reg "%n"),
+        .binop "%or.cond.i.not336" .and 1 (.reg "%cmp6.not.i") (.reg "%cmp4.i118"),
+        .icmp "%cmp9.i" .eq 8 (.reg "%16") (.imm (.int 8 (BitVec.ofInt 8 92))),
+        .binop "%or.cond" .and 1 (.reg "%or.cond.i.not336") (.reg "%cmp9.i"),
+        .icmp "%cmp15.i" .eq 8 (.reg "%15") (.imm (.int 8 (BitVec.ofInt 8 117))),
+        .binop "%or.cond334" .and 1 (.reg "%or.cond") (.reg "%cmp15.i") ] := by
+  decide
+
+theorem udIfEnd3I_term :
+    udIfEnd3I.term = .condbr (.reg "%or.cond334") "if.then17.i" "if.end32.i" := by decide
+
+/-- The block's branch value: the code unit's high bits, twelve bytes of room, and
+the two trailing bytes. -/
+def udIfEnd3IGuard (bs : List UInt8) (c : List (BitVec 1)) (sub n : BitVec 64) : BitVec 1 :=
+  (((evalICmp .ule (sub + BitVec.ofInt 64 12) n) &&&
+    (evalICmp .eq (hxCode (byteLanes bs) c &&& BitVec.ofInt 32 64512)
+      (BitVec.ofInt 32 55296))) &&&
+    (evalICmp .eq ((byteLanes bs).getD 4 0) (BitVec.ofInt 8 92))) &&&
+    (evalICmp .eq ((byteLanes bs).getD 5 0) (BitVec.ofInt 8 117))
+
+/-- The cells the block binds, at the lane lists its own arithmetic produces. -/
+def udIfEnd3IEnv (env : Env) (bs : List UInt8) (c : List (BitVec 1))
+    (sub n : BitVec 64) : Env :=
+  let l := byteLanes bs
+  let cp := hxCode l c
+  let hi := cp &&& BitVec.ofInt 32 64512
+  let h4 := evalICmp .eq hi (BitVec.ofInt 32 55296)
+  let h6 := evalICmp .ule (sub + BitVec.ofInt 64 12) n
+  let h9 := evalICmp .eq (l.getD 4 0) (BitVec.ofInt 8 92)
+  let h15 := evalICmp .eq (l.getD 5 0) (BitVec.ofInt 8 117)
+  let hb := h6 &&& h4
+  let hc := hb &&& h9
+  ("%or.cond334", .int 1 (hc &&& h15)) ::
+    ("%cmp15.i", .int 1 h15) ::
+    ("%or.cond", .int 1 hc) ::
+    ("%cmp9.i", .int 1 h9) ::
+    ("%or.cond.i.not336", .int 1 hb) ::
+    ("%cmp6.not.i", .int 1 h6) ::
+    ("%add5.i", .int 64 (sub + BitVec.ofInt 64 12)) ::
+    ("%cmp4.i118", .int 1 h4) ::
+    ("%21", .int 32 hi) ::
+    ("%and27.i", .int 32 (cp &&& BitVec.ofInt 32 65535)) ::
+    ("%vecext.i207", .int 32 cp) ::
+    ("%20", .vec 4 32 (pmaddWd (pmaddUbSw (hxPadd l c) hexW8) hexW16)) ::
+    ("%19", .vec 8 16 (pmaddUbSw (hxPadd l c) hexW8)) ::
+    ("%add.i202", .vec 16 8 (hxPadd l c)) ::
+    ("%18", .vec 16 8 (hxNineSel c)) ::
+    ("%17", .vec 16 8 (hxLow l)) ::
+    ("%16", .int 8 (l.getD 4 0)) ::
+    ("%bc", .vec 16 8 l) ::
+    ("%15", .int 8 (l.getD 5 0)) ::
+    ("%bc318", .vec 16 8 l) :: env
+
+theorem udIfEnd3I_denote (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (c : List (BitVec 1)) (sub n : BitVec 64)
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (h10 : lookupName env "%10" = some (.vec 2 64 (unpackLanes 64 2 (bytesToNat bs))))
+    (h11 : lookupName env "%11" = some (.vec 16 8 (byteLanes bs)))
+    (hc190 : lookupName env "%cmp.i190" = some (.vec 16 1 c))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hlen : bs.length = 16) (hc16 : c.length = 16) :
+    denoteCode escapeCalls udIfEnd3I.instrs (withEnv env s) =
+      some (withEnv (udIfEnd3IEnv env bs c sub n) s) := by
+  let l : List (BitVec 8) := byteLanes bs
+  have hl : l.length = 16 := by simp only [l, byteLanes, List.length_map, hlen]
+  have hmask : hxLowMask.length = 16 := by decide
+  have hnine : hxNine.length = 16 := by decide
+  have hzero : hxZero.length = 16 := by decide
+  have hu16 : hexW8.length = 16 := by decide
+  have hw8 : hexW16.length = 8 := by decide
+  have hlow16 : (hxLow l).length = 16 := by
+    simp [hxLow, hl, hmask]
+  have hsel16 : (hxNineSel c).length = 16 := by
+    simp [hxNineSel, selectLanes_length, hc16, hnine, hzero]
+  have hp16 : (hxPadd l c).length = 16 := by
+    simp [hxPadd, hsel16, hlow16]
+  have hub8 : (pmaddUbSw (hxPadd l c) hexW8).length = 8 :=
+    pmaddUbSw_length_sixteen hp16 hu16
+  have hwd4 : (pmaddWd (pmaddUbSw (hxPadd l c) hexW8) hexW16).length = 4 :=
+    pmaddWd_length_eight hub8 hw8
+  rw [udIfEnd3I_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_vecBitcast_2_64_16_8 _ _ "%bc318" "%10" bs
+    (by hex_lk_h h10) hlen)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_extract_lane _ _ "%15" "%bc318" 16 8 64
+    l (BitVec.ofInt 64 5) (l.getD 5 0) hl (by hex_lk)
+    (getD?_eq (by rw [hl]; decide)))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_vecBitcast_2_64_16_8 _ _ "%bc" "%10" bs
+    (by hex_lk_h h10) hlen)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_extract_lane _ _ "%16" "%bc" 16 8 64
+    l (BitVec.ofInt 64 4) (l.getD 4 0) hl (by hex_lk)
+    (getD?_eq (by rw [hl]; decide)))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_and_vec _ _ "%17" "%11" 16 8
+    l hxLowMask hl hmask (by hex_lk_h h11))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_select_vec _ _ "%18" "%cmp.i190"
+    c hxNine hxZero hc16 hnine hzero (by hex_lk_h hc190))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_add_reg _ _ "%add.i202" "%18" "%17"
+    16 8 (hxNineSel c) (hxLow l) hsel16 hlow16 (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_call_pmaddUbSw _ _ "%19" "%add.i202"
+    (.imm (.vector 8 hexW8)) (hxPadd l c) hexW8 (by hex_lk)
+    (by simp [evalOperand, Const.toValue, hu16]))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_call_pmaddWd _ _ "%20" "%19"
+    (.imm (.vector 16 hexW16)) (pmaddUbSw (hxPadd l c) hexW8) hexW16 (by hex_lk)
+    (by simp [evalOperand, Const.toValue, hw8]))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_extract_lane _ _ "%vecext.i207" "%20" 4 32 64
+    (pmaddWd (pmaddUbSw (hxPadd l c) hexW8) hexW16) (BitVec.ofInt 64 0)
+    ((pmaddWd (pmaddUbSw (hxPadd l c) hexW8) hexW16).getD 0 0) hwd4 (by hex_lk)
+    (getD?_eq (by rw [hwd4]; decide)))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%and27.i" "%vecext.i207" .and 32
+    (hxCode l c) (BitVec.ofInt 32 65535) ((hxCode l c) &&& BitVec.ofInt 32 65535) rfl
+    (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%21" "%vecext.i207" .and 32
+    (hxCode l c) (BitVec.ofInt 32 64512) ((hxCode l c) &&& BitVec.ofInt 32 64512) rfl
+    (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp4.i118" "%21" .eq 32
+    ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%add5.i" "%sub" .add 64
+    sub (BitVec.ofInt 64 12) (sub + BitVec.ofInt 64 12) rfl (by hex_lk_h hsub))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_reg _ _ "%cmp6.not.i" "%add5.i" "%n" .ule 64
+    (sub + BitVec.ofInt 64 12) n (by hex_lk) (by hex_lk_h hn))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or.cond.i.not336"
+    "%cmp6.not.i" "%cmp4.i118" .and 1
+    (evalICmp .ule (sub + BitVec.ofInt 64 12) n)
+    (evalICmp .eq ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296))
+    ((evalICmp .ule (sub + BitVec.ofInt 64 12) n) &&&
+      (evalICmp .eq ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296)))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp9.i" "%16" .eq 8
+    (l.getD 4 0) (BitVec.ofInt 8 92) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or.cond"
+    "%or.cond.i.not336" "%cmp9.i" .and 1
+    ((evalICmp .ule (sub + BitVec.ofInt 64 12) n) &&&
+      (evalICmp .eq ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296)))
+    (evalICmp .eq (l.getD 4 0) (BitVec.ofInt 8 92))
+    (((evalICmp .ule (sub + BitVec.ofInt 64 12) n) &&&
+      (evalICmp .eq ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296))) &&&
+      (evalICmp .eq (l.getD 4 0) (BitVec.ofInt 8 92)))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp15.i" "%15" .eq 8
+    (l.getD 5 0) (BitVec.ofInt 8 117) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or.cond334"
+    "%or.cond" "%cmp15.i" .and 1
+    (((evalICmp .ule (sub + BitVec.ofInt 64 12) n) &&&
+      (evalICmp .eq ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296))) &&&
+      (evalICmp .eq (l.getD 4 0) (BitVec.ofInt 8 92)))
+    (evalICmp .eq (l.getD 5 0) (BitVec.ofInt 8 117))
+    ((((evalICmp .ule (sub + BitVec.ofInt 64 12) n) &&&
+      (evalICmp .eq ((hxCode l c) &&& BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296))) &&&
+      (evalICmp .eq (l.getD 4 0) (BitVec.ofInt 8 92))) &&&
+      (evalICmp .eq (l.getD 5 0) (BitVec.ofInt 8 117)))
+    rfl (by hex_lk) (by hex_lk))]
+  simp only [denoteCode, withEnv, udIfEnd3IEnv, udIfEnd3IGuard]
+  try rfl
+
+theorem udIfEnd3I_run (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (c : List (BitVec 1)) (sub n : BitVec 64)
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (h10 : lookupName env "%10" = some (.vec 2 64 (unpackLanes 64 2 (bytesToNat bs))))
+    (h11 : lookupName env "%11" = some (.vec 16 8 (byteLanes bs)))
+    (hc190 : lookupName env "%cmp.i190" = some (.vec 16 1 c))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hlen : bs.length = 16) (hc16 : c.length = 16) :
+    Option.map State.mem (denoteCode escapeCalls udIfEnd3I.instrs (withEnv env s)) =
+        some s.mem ∧
+      (denoteCode escapeCalls udIfEnd3I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%and27.i") =
+        some (.int 32 (hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535)) ∧
+      (denoteCode escapeCalls udIfEnd3I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%or.cond334") =
+        some (.int 1 (udIfEnd3IGuard bs c sub n)) := by
+  rw [udIfEnd3I_denote env s addr bs c sub n haddr h10 h11 hc190 hsub hn hlen hc16]
+  refine ⟨?_, ?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  · simp only [Option.bind_some, withEnv, udIfEnd3IEnv]
+    hex_lk
+  · simp only [Option.bind_some, withEnv, udIfEnd3IEnv]
+    hex_lk
+
+theorem udIfEnd3I_step (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (c : List (BitVec 1)) (sub n : BitVec 64)
+    (hpc : s.pc = "if.end3.i")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (h10 : lookupName env "%10" = some (.vec 2 64 (unpackLanes 64 2 (bytesToNat bs))))
+    (h11 : lookupName env "%11" = some (.vec 16 8 (byteLanes bs)))
+    (hc190 : lookupName env "%cmp.i190" = some (.vec 16 1 c))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hlen : bs.length = 16) (hc16 : c.length = 16)
+    (hcond : udIfEnd3IGuard bs c sub n = (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEnd3IEnv env bs c sub n) s) with
+              pc := "if.then17.i", pre := some "if.end3.i" } := by
+  rw [udStep_of (withEnv env s) "if.end3.i" udIfEnd3I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEnd3I
+    (udIfEnd3I_denote env s addr bs c sub n haddr h10 h11 hc190 hsub hn hlen hc16),
+    udIfEnd3I_term]
+  have hcmp : evalOperand (withEnv (udIfEnd3IEnv env bs c sub n) s)
+      (.reg "%or.cond334") =
+      some (.int 1 (udIfEnd3IGuard bs c sub n)) :=
+    evalOperand_reg_of _ s "%or.cond334" _ (by simp only [udIfEnd3IEnv]; hex_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
+/-! ### `if.then17.i`
+
+The four lane tests at the second half of the escape's bytes: the same three
+arithmetic steps and two compares `if.end.i115` makes, then the mask word. -/
+
+def udIfThen17I : Block := blockAt usDecFunction 17 (by decide)
+
+theorem findBlock_udIfThen17I :
+    usDecFunction.findBlock "if.then17.i" = some udIfThen17I := by decide
+
+theorem udIfThen17I_instrs :
+    udIfThen17I.instrs =
+      [ .gep "%add.ptr19.i" (.int 8) (.reg "%arrayidx16")
+          (.imm (.int 64 (BitVec.ofInt 64 8))),
+        .load "%22" (.vec 16 (.int 8)) (.reg "%add.ptr19.i"),
+        .binopVec "%sub.i167" .add 16 8 (.reg "%22")
+          (.imm (.splat 16 8 (BitVec.ofInt 8 (-48)))),
+        .binopVec "%23" .or 16 8 (.reg "%22") (.imm (.splat 16 8 (BitVec.ofInt 8 32))),
+        .binopVec "%sub.i166" .add 16 8 (.reg "%23")
+          (.imm (.splat 16 8 (BitVec.ofInt 8 (-97)))),
+        .icmpVec "%cmp.i188" .ult 16 8 (.reg "%sub.i167")
+          (.imm (.splat 16 8 (BitVec.ofInt 8 10))),
+        .icmpVec "%cmp.i187" .ult 16 8 (.reg "%sub.i166")
+          (.imm (.splat 16 8 (BitVec.ofInt 8 6))),
+        .binopVec "%or.i260261" .or 16 1 (.reg "%cmp.i188") (.reg "%cmp.i187"),
+        .bitcastMask "%24" 16 (.reg "%or.i260261"),
+        .binop "%25" .and 16 (.reg "%24") (.imm (.int 16 (BitVec.ofInt 16 15))),
+        .icmp "%cmp.not.i150" .eq 16 (.reg "%25") (.imm (.int 16 (BitVec.ofInt 16 15))) ] := by
+  decide
+
+theorem udIfThen17I_term :
+    udIfThen17I.term = .condbr (.reg "%cmp.not.i150") "land.lhs.true22.i" "if.end32.i" := by
+  decide
+
+def udIfThen17IEnv (env : Env) (addr : Nat) (bs : List UInt8) : Env :=
+  let l := byteLanes bs
+  let a := hexAddL l (BitVec.ofInt 8 (-48))
+  let b := hexOrL l (BitVec.ofInt 8 32)
+  let c := hexAddL b (BitVec.ofInt 8 (-97))
+  let da := hexUltL a (BitVec.ofInt 8 10)
+  let db := hexUltL c (BitVec.ofInt 8 6)
+  let o := hexZipOr da db
+  let n := BitVec.ofNat 16 (lanesToNat o)
+  ("%cmp.not.i150",
+      .int 1 (evalICmp .eq (n &&& BitVec.ofInt 16 15) (BitVec.ofInt 16 15))) ::
+    ("%25", .int 16 (n &&& BitVec.ofInt 16 15)) ::
+    ("%24", .int 16 n) ::
+    ("%or.i260261", .vec 16 1 o) ::
+    ("%cmp.i187", .vec 16 1 db) ::
+    ("%cmp.i188", .vec 16 1 da) ::
+    ("%sub.i166", .vec 16 8 c) ::
+    ("%23", .vec 16 8 b) ::
+    ("%sub.i167", .vec 16 8 a) ::
+    ("%22", .vec 16 8 l) ::
+    ("%add.ptr19.i", .ptr (addr + 8)) :: env
+
+theorem udIfThen17I_denote (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 8) 16 = some bs) :
+    denoteCode escapeCalls udIfThen17I.instrs (withEnv env s) =
+      some (withEnv (udIfThen17IEnv env addr bs) s) := by
+  let l : List (BitVec 8) := byteLanes bs
+  let a : List (BitVec 8) := hexAddL l (BitVec.ofInt 8 (-48))
+  let b : List (BitVec 8) := hexOrL l (BitVec.ofInt 8 32)
+  let c : List (BitVec 8) := hexAddL b (BitVec.ofInt 8 (-97))
+  let da : List (BitVec 1) := hexUltL a (BitVec.ofInt 8 10)
+  let db : List (BitVec 1) := hexUltL c (BitVec.ofInt 8 6)
+  let o : List (BitVec 1) := hexZipOr da db
+  have hl : l.length = 16 := by
+    simp only [l, byteLanes, List.length_map, hlen]
+  have ha16 : a.length = 16 := by simp only [a, hexAddL, List.length_map, hl]
+  have hb16 : b.length = 16 := by simp only [b, hexOrL, List.length_map, hl]
+  have hc16 : c.length = 16 := by simp only [c, hexAddL, List.length_map, hb16]
+  have hda16 : da.length = 16 := by simp only [da, hexUltL, List.length_map, ha16]
+  have hdb16 : db.length = 16 := by simp only [db, hexUltL, List.length_map, hc16]
+  have ho16 : o.length = 16 := by
+    simp only [o, hexZipOr, List.length_map, List.length_zip, hda16, hdb16, Nat.min_self]
+  rw [udIfThen17I_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_gep8_imm _ _ "%add.ptr19.i" "%arrayidx16"
+    addr 8 (BitVec.ofInt 64 8) (by hex_lk_h haddr) (by decide) (by decide))]
+  rw [denoteCode_cons_of _ _ _ _ _ (load_vec16_8 _ _ "%22" "%add.ptr19.i"
+    (addr + 8) bs (by hex_lk) hload)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_add_splat _ _ "%sub.i167" "%22"
+    l (BitVec.ofInt 8 (-48)) hl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_or_splat _ _ "%23" "%22"
+    l (BitVec.ofInt 8 32) hl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_add_splat _ _ "%sub.i166" "%23"
+    b (BitVec.ofInt 8 (-97)) hb16 (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmpVec_ult_splat _ _ "%cmp.i188" "%sub.i167"
+    a (BitVec.ofInt 8 10) ha16 (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmpVec_ult_splat _ _ "%cmp.i187" "%sub.i166"
+    c (BitVec.ofInt 8 6) hc16 (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_or1 _ _ "%or.i260261" "%cmp.i188"
+    "%cmp.i187" da db hda16 hdb16 (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_bitcastMask16 _ _ "%24" "%or.i260261"
+    o ho16 (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_and16_imm _ _ "%25" "%24"
+    (BitVec.ofNat 16 (lanesToNat o)) (BitVec.ofInt 16 15) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_eq16_imm _ _ "%cmp.not.i150" "%25"
+    (BitVec.ofNat 16 (lanesToNat o) &&& BitVec.ofInt 16 15) (BitVec.ofInt 16 15)
+    (by hex_lk))]
+  simp only [denoteCode, withEnv, udIfThen17IEnv]
+  try rfl
+
+theorem udIfThen17I_run (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 8) 16 = some bs) :
+    Option.map State.mem (denoteCode escapeCalls udIfThen17I.instrs (withEnv env s)) =
+        some s.mem ∧
+      (denoteCode escapeCalls udIfThen17I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%22") = some (.vec 16 8 (byteLanes bs)) ∧
+      (denoteCode escapeCalls udIfThen17I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%cmp.i187") =
+        some (.vec 16 1
+          (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+            (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))) ∧
+      (denoteCode escapeCalls udIfThen17I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%cmp.not.i150") =
+        some (.int 1 (evalICmp .eq
+          (BitVec.ofNat 16 (lanesToNat (hexZipOr
+              (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48)))
+                (BitVec.ofInt 8 10))
+              (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+                (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+            BitVec.ofInt 16 15)
+          (BitVec.ofInt 16 15))) := by
+  rw [udIfThen17I_denote env s addr bs haddr hlen hload]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  all_goals (simp only [Option.bind_some, withEnv, udIfThen17IEnv] <;> hex_lk)
+
+theorem udIfThen17I_step (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (hpc : s.pc = "if.then17.i")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 8) 16 = some bs)
+    (hcond : evalICmp .eq
+        (BitVec.ofNat 16 (lanesToNat (hexZipOr
+            (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48)))
+              (BitVec.ofInt 8 10))
+            (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+              (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+          BitVec.ofInt 16 15)
+        (BitVec.ofInt 16 15) = (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfThen17IEnv env addr bs) s) with
+              pc := "land.lhs.true22.i", pre := some "if.then17.i" } := by
+  rw [udStep_of (withEnv env s) "if.then17.i" udIfThen17I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfThen17I
+    (udIfThen17I_denote env s addr bs haddr hlen hload), udIfThen17I_term]
+  have hcmp : evalOperand (withEnv (udIfThen17IEnv env addr bs) s)
+      (.reg "%cmp.not.i150") =
+      some (.int 1 (evalICmp .eq
+        (BitVec.ofNat 16 (lanesToNat (hexZipOr
+            (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48)))
+              (BitVec.ofInt 8 10))
+            (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+              (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+          BitVec.ofInt 16 15)
+        (BitVec.ofInt 16 15))) :=
+    evalOperand_reg_of _ s "%cmp.not.i150" _ (by simp only [udIfThen17IEnv]; hex_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+theorem udIfThen17I_step_zero (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (hpc : s.pc = "if.then17.i")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 8) 16 = some bs)
+    (hcond : evalICmp .eq
+        (BitVec.ofNat 16 (lanesToNat (hexZipOr
+            (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48)))
+              (BitVec.ofInt 8 10))
+            (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+              (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+          BitVec.ofInt 16 15)
+        (BitVec.ofInt 16 15) = (0 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfThen17IEnv env addr bs) s) with
+              pc := "if.end32.i", pre := some "if.then17.i" } := by
+  rw [udStep_of (withEnv env s) "if.then17.i" udIfThen17I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfThen17I
+    (udIfThen17I_denote env s addr bs haddr hlen hload), udIfThen17I_term]
+  have hcmp : evalOperand (withEnv (udIfThen17IEnv env addr bs) s)
+      (.reg "%cmp.not.i150") =
+      some (.int 1 (evalICmp .eq
+        (BitVec.ofNat 16 (lanesToNat (hexZipOr
+            (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48)))
+              (BitVec.ofInt 8 10))
+            (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+              (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+          BitVec.ofInt 16 15)
+        (BitVec.ofInt 16 15))) :=
+    evalOperand_reg_of _ s "%cmp.not.i150" _ (by simp only [udIfThen17IEnv]; hex_lk)
+  rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+/-! ### `land.lhs.true22.i`
+
+The low nibbles of the second half's bytes, nine where the letter test holds, and
+the two multiply-adds' lane 0 read as a surrogate's low ten bits. -/
+
+def udLandLhsTrue22I : Block := blockAt usDecFunction 18 (by decide)
+
+theorem findBlock_udLandLhsTrue22I :
+    usDecFunction.findBlock "land.lhs.true22.i" = some udLandLhsTrue22I := by decide
+
+theorem udLandLhsTrue22I_instrs :
+    udLandLhsTrue22I.instrs =
+      [ .binopVec "%26" .and 16 8 (.reg "%22") (.imm (.vector 8 hxLowMask)),
+        .select "%27" (.vec 16 (.int 8)) (.reg "%cmp.i187")
+          (.imm (.vector 8 hxNine)) (.imm (.vector 8 hxZero)),
+        .binopVec "%add.i201" .add 16 8 (.reg "%27") (.reg "%26"),
+        .call "%28" (.vec 8 (.int 16)) "llvm.x86.ssse3.pmadd.ub.sw.128"
+          [(.vec 16 (.int 8), .reg "%add.i201"), (.vec 16 (.int 8), .imm (.vector 8 hexW8))],
+        .call "%29" (.vec 4 (.int 32)) "llvm.x86.sse2.pmadd.wd"
+          [(.vec 8 (.int 16), .reg "%28"), (.vec 8 (.int 16), .imm (.vector 16 hexW16))],
+        .extractelement "%vecext.i" 4 32 (.reg "%29") (.imm (.int 64 (BitVec.ofInt 64 0))),
+        .binop "%and27.i164" .and 32 (.reg "%vecext.i")
+          (.imm (.int 32 (BitVec.ofInt 32 65535))),
+        .binop "%sub23.i" .add 32 (.reg "%and27.i164")
+          (.imm (.int 32 (BitVec.ofInt 32 (-56320)))),
+        .icmp "%cmp24.i" .ult 32 (.reg "%sub23.i")
+          (.imm (.int 32 (BitVec.ofInt 32 1024))) ] := by
+  decide
+
+theorem udLandLhsTrue22I_term :
+    udLandLhsTrue22I.term = .condbr (.reg "%cmp24.i") "if.then26.i" "if.end32.i" := by
+  decide
+
+def udLandLhsTrue22IEnv (env : Env) (bs : List UInt8) (cl : List (BitVec 1)) : Env :=
+  let l := byteLanes bs
+  let cp := hxCode l cl
+  let a27 := cp &&& BitVec.ofInt 32 65535
+  let s23 := a27 + BitVec.ofInt 32 (-56320)
+  ("%cmp24.i", .int 1 (evalICmp .ult s23 (BitVec.ofInt 32 1024))) ::
+    ("%sub23.i", .int 32 s23) ::
+    ("%and27.i164", .int 32 a27) ::
+    ("%vecext.i", .int 32 cp) ::
+    ("%29", .vec 4 32 (pmaddWd (pmaddUbSw (hxPadd l cl) hexW8) hexW16)) ::
+    ("%28", .vec 8 16 (pmaddUbSw (hxPadd l cl) hexW8)) ::
+    ("%add.i201", .vec 16 8 (hxPadd l cl)) ::
+    ("%27", .vec 16 8 (hxNineSel cl)) ::
+    ("%26", .vec 16 8 (hxLow l)) :: env
+
+theorem udLandLhsTrue22I_denote (env : Env) (s : State) (bs : List UInt8)
+    (cl : List (BitVec 1))
+    (h22 : lookupName env "%22" = some (.vec 16 8 (byteLanes bs)))
+    (hc187 : lookupName env "%cmp.i187" = some (.vec 16 1 cl))
+    (hlen : bs.length = 16) (hc16 : cl.length = 16) :
+    denoteCode escapeCalls udLandLhsTrue22I.instrs (withEnv env s) =
+      some (withEnv (udLandLhsTrue22IEnv env bs cl) s) := by
+  let l : List (BitVec 8) := byteLanes bs
+  have hl : l.length = 16 := by simp only [l, byteLanes, List.length_map, hlen]
+  have hmask : hxLowMask.length = 16 := by decide
+  have hnine : hxNine.length = 16 := by decide
+  have hzero : hxZero.length = 16 := by decide
+  have hu16 : hexW8.length = 16 := by decide
+  have hw8 : hexW16.length = 8 := by decide
+  have hlow16 : (hxLow l).length = 16 := by simp [hxLow, hl, hmask]
+  have hsel16 : (hxNineSel cl).length = 16 := by
+    simp [hxNineSel, selectLanes_length, hc16, hnine, hzero]
+  have hp16 : (hxPadd l cl).length = 16 := by simp [hxPadd, hsel16, hlow16]
+  have hub8 : (pmaddUbSw (hxPadd l cl) hexW8).length = 8 :=
+    pmaddUbSw_length_sixteen hp16 hu16
+  have hwd4 : (pmaddWd (pmaddUbSw (hxPadd l cl) hexW8) hexW16).length = 4 :=
+    pmaddWd_length_eight hub8 hw8
+  rw [udLandLhsTrue22I_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_and_vec _ _ "%26" "%22" 16 8
+    l hxLowMask hl hmask (by hex_lk_h h22))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_select_vec _ _ "%27" "%cmp.i187"
+    cl hxNine hxZero hc16 hnine hzero (by hex_lk_h hc187))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binopVec_add_reg _ _ "%add.i201" "%27" "%26"
+    16 8 (hxNineSel cl) (hxLow l) hsel16 hlow16 (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_call_pmaddUbSw _ _ "%28" "%add.i201"
+    (.imm (.vector 8 hexW8)) (hxPadd l cl) hexW8 (by hex_lk)
+    (evalOperand_vector_of _ 8 16 hexW8 hu16))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_call_pmaddWd _ _ "%29" "%28"
+    (.imm (.vector 16 hexW16)) (pmaddUbSw (hxPadd l cl) hexW8) hexW16 (by hex_lk)
+    (evalOperand_vector_of _ 16 8 hexW16 hw8))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_extract_lane _ _ "%vecext.i" "%29" 4 32 64
+    (pmaddWd (pmaddUbSw (hxPadd l cl) hexW8) hexW16) (BitVec.ofInt 64 0)
+    ((pmaddWd (pmaddUbSw (hxPadd l cl) hexW8) hexW16).getD 0 0) hwd4 (by hex_lk)
+    (getD?_eq (by rw [hwd4]; decide)))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%and27.i164" "%vecext.i" .and 32
+    (hxCode l cl) (BitVec.ofInt 32 65535) ((hxCode l cl) &&& BitVec.ofInt 32 65535)
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%sub23.i" "%and27.i164" .add 32
+    ((hxCode l cl) &&& BitVec.ofInt 32 65535) (BitVec.ofInt 32 (-56320))
+    (((hxCode l cl) &&& BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp24.i" "%sub23.i" .ult 32
+    (((hxCode l cl) &&& BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
+    (BitVec.ofInt 32 1024) (by hex_lk))]
+  simp only [denoteCode, withEnv, udLandLhsTrue22IEnv]
+  try rfl
+
+theorem udLandLhsTrue22I_run (env : Env) (s : State) (bs : List UInt8)
+    (cl : List (BitVec 1))
+    (h22 : lookupName env "%22" = some (.vec 16 8 (byteLanes bs)))
+    (hc187 : lookupName env "%cmp.i187" = some (.vec 16 1 cl))
+    (hlen : bs.length = 16) (hc16 : cl.length = 16) :
+    Option.map State.mem
+        (denoteCode escapeCalls udLandLhsTrue22I.instrs (withEnv env s)) = some s.mem ∧
+      (denoteCode escapeCalls udLandLhsTrue22I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%and27.i164") =
+        some (.int 32 (hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535)) ∧
+      (denoteCode escapeCalls udLandLhsTrue22I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%sub23.i") =
+        some (.int 32 ((hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535) +
+          BitVec.ofInt 32 (-56320))) ∧
+      (denoteCode escapeCalls udLandLhsTrue22I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%cmp24.i") =
+        some (.int 1 (evalICmp .ult
+          ((hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535) +
+            BitVec.ofInt 32 (-56320)) (BitVec.ofInt 32 1024))) := by
+  rw [udLandLhsTrue22I_denote env s bs cl h22 hc187 hlen hc16]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  all_goals (simp only [Option.bind_some, withEnv, udLandLhsTrue22IEnv] <;> hex_lk)
+
+theorem udLandLhsTrue22I_step (env : Env) (s : State) (bs : List UInt8)
+    (cl : List (BitVec 1))
+    (hpc : s.pc = "land.lhs.true22.i")
+    (h22 : lookupName env "%22" = some (.vec 16 8 (byteLanes bs)))
+    (hc187 : lookupName env "%cmp.i187" = some (.vec 16 1 cl))
+    (hlen : bs.length = 16) (hc16 : cl.length = 16)
+    (hcond : evalICmp .ult
+        ((hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535) +
+          BitVec.ofInt 32 (-56320)) (BitVec.ofInt 32 1024) = (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udLandLhsTrue22IEnv env bs cl) s) with
+              pc := "if.then26.i", pre := some "land.lhs.true22.i" } := by
+  rw [udStep_of (withEnv env s) "land.lhs.true22.i" udLandLhsTrue22I _
+    (by rw [withEnv]; exact hpc) findBlock_udLandLhsTrue22I
+    (udLandLhsTrue22I_denote env s bs cl h22 hc187 hlen hc16), udLandLhsTrue22I_term]
+  have hcmp : evalOperand (withEnv (udLandLhsTrue22IEnv env bs cl) s) (.reg "%cmp24.i") =
+      some (.int 1 (evalICmp .ult
+        ((hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535) +
+          BitVec.ofInt 32 (-56320)) (BitVec.ofInt 32 1024))) :=
+    evalOperand_reg_of _ s "%cmp24.i" _ (by simp only [udLandLhsTrue22IEnv]; hex_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+theorem udLandLhsTrue22I_step_zero (env : Env) (s : State) (bs : List UInt8)
+    (cl : List (BitVec 1))
+    (hpc : s.pc = "land.lhs.true22.i")
+    (h22 : lookupName env "%22" = some (.vec 16 8 (byteLanes bs)))
+    (hc187 : lookupName env "%cmp.i187" = some (.vec 16 1 cl))
+    (hlen : bs.length = 16) (hc16 : cl.length = 16)
+    (hcond : evalICmp .ult
+        ((hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535) +
+          BitVec.ofInt 32 (-56320)) (BitVec.ofInt 32 1024) = (0 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udLandLhsTrue22IEnv env bs cl) s) with
+              pc := "if.end32.i", pre := some "land.lhs.true22.i" } := by
+  rw [udStep_of (withEnv env s) "land.lhs.true22.i" udLandLhsTrue22I _
+    (by rw [withEnv]; exact hpc) findBlock_udLandLhsTrue22I
+    (udLandLhsTrue22I_denote env s bs cl h22 hc187 hlen hc16), udLandLhsTrue22I_term]
+  have hcmp : evalOperand (withEnv (udLandLhsTrue22IEnv env bs cl) s) (.reg "%cmp24.i") =
+      some (.int 1 (evalICmp .ult
+        ((hxCode (byteLanes bs) cl &&& BitVec.ofInt 32 65535) +
+          BitVec.ofInt 32 (-56320)) (BitVec.ofInt 32 1024))) :=
+    evalOperand_reg_of _ s "%cmp24.i" _ (by simp only [udLandLhsTrue22IEnv]; hex_lk)
+  rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+/-! ### `if.then26.i`
+
+The second code unit's bits folded into the first: the low twelve bits of the
+surrogate pair. -/
+
+def udIfThen26I : Block := blockAt usDecFunction 19 (by decide)
+
+theorem findBlock_udIfThen26I :
+    usDecFunction.findBlock "if.then26.i" = some udIfThen26I := by decide
+
+theorem udIfThen26I_instrs :
+    udIfThen26I.instrs =
+      [ .binop "%sub27.i" .shl 32 (.reg "%and27.i")
+          (.imm (.int 32 (BitVec.ofInt 32 10))),
+        .binop "%add28.i" .add 32 (.reg "%sub27.i")
+          (.imm (.int 32 (BitVec.ofInt 32 (-56557568)))),
+        .binop "%add30.i" .or 32 (.reg "%sub23.i") (.reg "%add28.i") ] := by
+  decide
+
+theorem udIfThen26I_term : udIfThen26I.term = .br "if.end32.i" := by decide
+
+def udIfThen26IEnv (env : Env) (cp s23 : BitVec 32) : Env :=
+  ("%add30.i", .int 32 (s23 ||| ((cp <<< BitVec.ofInt 32 10) +
+      BitVec.ofInt 32 (-56557568)))) ::
+    ("%add28.i", .int 32 ((cp <<< BitVec.ofInt 32 10) +
+      BitVec.ofInt 32 (-56557568))) ::
+    ("%sub27.i", .int 32 (cp <<< BitVec.ofInt 32 10)) :: env
+
+theorem udIfThen26I_denote (env : Env) (s : State) (cp s23 : BitVec 32)
+    (hcp : lookupName env "%and27.i" = some (.int 32 cp))
+    (hs23 : lookupName env "%sub23.i" = some (.int 32 s23)) :
+    denoteCode escapeCalls udIfThen26I.instrs (withEnv env s) =
+      some (withEnv (udIfThen26IEnv env cp s23) s) := by
+  rw [udIfThen26I_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%sub27.i" "%and27.i" .shl 32
+    cp (BitVec.ofInt 32 10) (cp <<< BitVec.ofInt 32 10) rfl (by hex_lk_h hcp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%add28.i" "%sub27.i" .add 32
+    (cp <<< BitVec.ofInt 32 10) (BitVec.ofInt 32 (-56557568))
+    ((cp <<< BitVec.ofInt 32 10) + BitVec.ofInt 32 (-56557568)) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%add30.i" "%sub23.i" "%add28.i"
+    .or 32 s23 ((cp <<< BitVec.ofInt 32 10) + BitVec.ofInt 32 (-56557568))
+    (s23 ||| ((cp <<< BitVec.ofInt 32 10) + BitVec.ofInt 32 (-56557568)))
+    rfl (by hex_lk_h hs23) (by hex_lk))]
+  simp only [denoteCode, withEnv, udIfThen26IEnv]
+  try rfl
+
+theorem udIfThen26I_run (env : Env) (s : State) (cp s23 : BitVec 32)
+    (hcp : lookupName env "%and27.i" = some (.int 32 cp))
+    (hs23 : lookupName env "%sub23.i" = some (.int 32 s23)) :
+    Option.map State.mem (denoteCode escapeCalls udIfThen26I.instrs (withEnv env s)) =
+        some s.mem ∧
+      (denoteCode escapeCalls udIfThen26I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%add30.i") =
+        some (.int 32 (s23 ||| ((cp <<< BitVec.ofInt 32 10) +
+          BitVec.ofInt 32 (-56557568)))) := by
+  rw [udIfThen26I_denote env s cp s23 hcp hs23]
+  refine ⟨?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  · simp only [Option.bind_some, withEnv, udIfThen26IEnv]
+    hex_lk
+
+theorem udIfThen26I_step (env : Env) (s : State) (cp s23 : BitVec 32)
+    (hpc : s.pc = "if.then26.i")
+    (hcp : lookupName env "%and27.i" = some (.int 32 cp))
+    (hs23 : lookupName env "%sub23.i" = some (.int 32 s23)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfThen26IEnv env cp s23) s) with
+              pc := "if.end32.i", pre := some "if.then26.i" } := by
+  rw [udStep_of (withEnv env s) "if.then26.i" udIfThen26I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfThen26I
+    (udIfThen26I_denote env s cp s23 hcp hs23), udIfThen26I_term]
+  simp only [execTerm, withEnv, hpc]
+
+/-! ### `cleanup32`
+
+The loop's advance: the destination index moved by the unit's length, and the
+loop's test at the next position. -/
+
+def udCleanup32IncomingJ : List (String × Operand) :=
+  [("if.then6.i", .reg "%add8.i"), ("if.end32.i", .reg "%add.i125")]
+
+def udCleanup32IncomingAdv : List (String × Operand) :=
+  [("if.then6.i", .imm (.int 64 (BitVec.ofInt 64 2))),
+   ("if.end32.i", .reg "%adv.1.i")]
+
+theorem udCleanup32_instrs :
+    udCleanup32.instrs =
+      [ .phi "%j.3" (.int 64) udCleanup32IncomingJ,
+        .phi "%adv.2" (.int 64) udCleanup32IncomingAdv,
+        .binop "%add24" .add 64 (.reg "%adv.2") (.reg "%sub"),
+        .icmp "%cmp25" .eq 64 (.reg "%adv.2") (.imm (.int 64 (BitVec.ofInt 64 12))),
+        .zext "%conv27" 1 64 (.reg "%cmp25"),
+        .binop "%add28" .add 64 (.reg "%inc11") (.reg "%conv27"),
+        .icmp "%cmp4" .ult 64 (.reg "%add28") (.reg "%nxp") ] := by
+  decide
+
+theorem udCleanup32_term :
+    udCleanup32.term = .condbr (.reg "%cmp4") "while.body6" "while.end35" := by
+  decide
+
+def udCleanup32Env (env : Env) (j adv sub inc11 nxp : BitVec 64) : Env :=
+  let conv := BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat
+  let add := inc11 + conv
+  ("%cmp4", .int 1 (evalICmp .ult add nxp)) ::
+    ("%add28", .int 64 add) ::
+    ("%conv27", .int 64 conv) ::
+    ("%cmp25", .int 1 (evalICmp .eq adv (BitVec.ofInt 64 12))) ::
+    ("%add24", .int 64 (adv + sub)) ::
+    ("%adv.2", .int 64 adv) ::
+    ("%j.3", .int 64 j) :: env
+
+theorem udCleanup32_denote (env : Env) (s : State) (prev : String) (opj opa : Operand)
+    (j adv sub inc11 nxp : BitVec 64)
+    (hpre : s.pre = some prev)
+    (hj : phiIncoming prev udCleanup32IncomingJ = some opj)
+    (ha : phiIncoming prev udCleanup32IncomingAdv = some opa)
+    (hopj : evalOperand (withEnv env s) opj = some (.int 64 j))
+    (hopa : evalOperand (withEnv (("%j.3", .int 64 j) :: env) s) opa =
+      some (.int 64 adv))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp)) :
+    denoteCode escapeCalls udCleanup32.instrs (withEnv env s) =
+      some (withEnv (udCleanup32Env env j adv sub inc11 nxp) s) := by
+  let conv : BitVec 64 := BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat
+  rw [udCleanup32_instrs]
+  have h1 : evalInstr escapeCalls (withEnv env s)
+      (.phi "%j.3" (.int 64) udCleanup32IncomingJ) =
+      some (withEnv (("%j.3", .int 64 j) :: env) s) := by
+    rw [evalInstr_phi (s := withEnv env s) (d := "%j.3") (ty := .int 64)
+      (inc := udCleanup32IncomingJ) hpre hj hopj]
+    rfl
+  rw [denoteCode_cons_of _ _ _ _ _ h1]
+  have h2 : evalInstr escapeCalls (withEnv (("%j.3", .int 64 j) :: env) s)
+      (.phi "%adv.2" (.int 64) udCleanup32IncomingAdv) =
+      some (withEnv (("%adv.2", .int 64 adv) :: ("%j.3", .int 64 j) :: env) s) := by
+    rw [evalInstr_phi (s := withEnv (("%j.3", .int 64 j) :: env) s) (d := "%adv.2")
+      (ty := .int 64) (inc := udCleanup32IncomingAdv) hpre ha hopa]
+    rfl
+  rw [denoteCode_cons_of _ _ _ _ _ h2]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_add64 _ _
+    "%add24" "%adv.2" "%sub" adv sub (by hex_lk) (by hex_lk_h hsub))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_eq64_imm _ _
+    "%cmp25" "%adv.2" adv (BitVec.ofInt 64 12) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_zext
+    (d := "%conv27") (wIn := 1) (wOut := 64) (v := .reg "%cmp25")
+    (x := evalICmp .eq adv (BitVec.ofInt 64 12)) (by hex_lk))]
+  rw [show (withEnv (("%cmp25", .int 1 (evalICmp .eq adv (BitVec.ofInt 64 12))) ::
+        ("%add24", .int 64 (adv + sub)) :: ("%adv.2", .int 64 adv) ::
+        ("%j.3", .int 64 j) :: env) s).bind "%conv27"
+        (.int 64 (BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat)) =
+      withEnv (("%conv27", .int 64 conv) ::
+        ("%cmp25", .int 1 (evalICmp .eq adv (BitVec.ofInt 64 12))) ::
+        ("%add24", .int 64 (adv + sub)) :: ("%adv.2", .int 64 adv) ::
+        ("%j.3", .int 64 j) :: env) s from rfl]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_add64 _ _
+    "%add28" "%inc11" "%conv27" inc11 conv (by hex_lk_h hinc11) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ult64 _ _
+    "%cmp4" "%add28" "%nxp" (inc11 + conv) nxp (by hex_lk) (by hex_lk_h hnxp))]
+  simp only [denoteCode, withEnv, udCleanup32Env]
+  try rfl
+
+theorem udCleanup32_run (env : Env) (s : State) (prev : String) (opj opa : Operand)
+    (j adv sub inc11 nxp : BitVec 64)
+    (hpre : s.pre = some prev)
+    (hj : phiIncoming prev udCleanup32IncomingJ = some opj)
+    (ha : phiIncoming prev udCleanup32IncomingAdv = some opa)
+    (hopj : evalOperand (withEnv env s) opj = some (.int 64 j))
+    (hopa : evalOperand (withEnv (("%j.3", .int 64 j) :: env) s) opa =
+      some (.int 64 adv))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp)) :
+    Option.map State.mem (denoteCode escapeCalls udCleanup32.instrs (withEnv env s)) =
+        some s.mem ∧
+      (denoteCode escapeCalls udCleanup32.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%j.3") = some (.int 64 j) ∧
+      (denoteCode escapeCalls udCleanup32.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%adv.2") = some (.int 64 adv) ∧
+      (denoteCode escapeCalls udCleanup32.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%add28") =
+        some (.int 64 (inc11 + BitVec.ofNat 64
+          (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat)) ∧
+      (denoteCode escapeCalls udCleanup32.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%cmp4") =
+        some (.int 1 (evalICmp .ult
+          (inc11 + BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat) nxp)) := by
+  rw [udCleanup32_denote env s prev opj opa j adv sub inc11 nxp
+    hpre hj ha hopj hopa hsub hinc11 hnxp]
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  all_goals (simp only [Option.bind_some, withEnv, udCleanup32Env] <;> hex_lk)
+
+theorem udCleanup32_step (env : Env) (s : State) (prev : String) (opj opa : Operand)
+    (j adv sub inc11 nxp : BitVec 64)
+    (hpc : s.pc = "cleanup32")
+    (hpre : s.pre = some prev)
+    (hj : phiIncoming prev udCleanup32IncomingJ = some opj)
+    (ha : phiIncoming prev udCleanup32IncomingAdv = some opa)
+    (hopj : evalOperand (withEnv env s) opj = some (.int 64 j))
+    (hopa : evalOperand (withEnv (("%j.3", .int 64 j) :: env) s) opa =
+      some (.int 64 adv))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hcond : evalICmp .ult
+        (inc11 + BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat) nxp =
+        (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udCleanup32Env env j adv sub inc11 nxp) s) with
+              pc := "while.body6", pre := some "cleanup32" } := by
+  rw [udStep_of (withEnv env s) "cleanup32" udCleanup32 _
+    (by rw [withEnv]; exact hpc) findBlock_udCleanup32
+    (udCleanup32_denote env s prev opj opa j adv sub inc11 nxp
+      hpre hj ha hopj hopa hsub hinc11 hnxp), udCleanup32_term]
+  have hcmp : evalOperand (withEnv (udCleanup32Env env j adv sub inc11 nxp) s)
+      (.reg "%cmp4") =
+      some (.int 1 (evalICmp .ult
+        (inc11 + BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat) nxp)) :=
+    evalOperand_reg_of _ s "%cmp4" _ (by simp only [udCleanup32Env]; hex_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+theorem udCleanup32_step_zero (env : Env) (s : State) (prev : String) (opj opa : Operand)
+    (j adv sub inc11 nxp : BitVec 64)
+    (hpc : s.pc = "cleanup32")
+    (hpre : s.pre = some prev)
+    (hj : phiIncoming prev udCleanup32IncomingJ = some opj)
+    (ha : phiIncoming prev udCleanup32IncomingAdv = some opa)
+    (hopj : evalOperand (withEnv env s) opj = some (.int 64 j))
+    (hopa : evalOperand (withEnv (("%j.3", .int 64 j) :: env) s) opa =
+      some (.int 64 adv))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hcond : evalICmp .ult
+        (inc11 + BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat) nxp =
+        (0 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udCleanup32Env env j adv sub inc11 nxp) s) with
+              pc := "while.end35", pre := some "cleanup32" } := by
+  rw [udStep_of (withEnv env s) "cleanup32" udCleanup32 _
+    (by rw [withEnv]; exact hpc) findBlock_udCleanup32
+    (udCleanup32_denote env s prev opj opa j adv sub inc11 nxp
+      hpre hj ha hopj hopa hsub hinc11 hnxp), udCleanup32_term]
+  have hcmp : evalOperand (withEnv (udCleanup32Env env j adv sub inc11 nxp) s)
+      (.reg "%cmp4") =
+      some (.int 1 (evalICmp .ult
+        (inc11 + BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat) nxp)) :=
+    evalOperand_reg_of _ s "%cmp4" _ (by simp only [udCleanup32Env]; hex_lk)
+  rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+end LeanLLVM.Vellum
+
+
+namespace LeanLLVM.Vellum
+
+/-! ### Axiom footprints: the hex reader's guard and its successors -/
+
+/-- info: 'LeanLLVM.Vellum.getD?_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms getD?_eq
+
+/-- info: 'LeanLLVM.Vellum.bv1_cases' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bv1_cases
+
+/-- info: 'LeanLLVM.Vellum.lane_test_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms lane_test_eq
+
+/-- info: 'LeanLLVM.Vellum.hexLanes_digit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexLanes_digit
+
+/-- info: 'LeanLLVM.Vellum.hexLanes_letter' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexLanes_letter
+
+/-- info: 'LeanLLVM.Vellum.hexZipOr_map_map' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexZipOr_map_map
+
+/-- info: 'LeanLLVM.Vellum.hexTestLanes_emit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexTestLanes_emit
+
+/-- info: 'LeanLLVM.Vellum.hexLanes_low_four' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexLanes_low_four
+
+/-- info: 'LeanLLVM.Vellum.selectLanes_length' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms selectLanes_length
+
+/-- info: 'LeanLLVM.Vellum.load_vec16_8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms load_vec16_8
+
+/-- info: 'LeanLLVM.Vellum.evalOperand_vector_of' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms evalOperand_vector_of
+
+/-- info: 'LeanLLVM.Vellum.b_binop_imm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_binop_imm
+
+/-- info: 'LeanLLVM.Vellum.b_binop_reg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_binop_reg
+
+/-- info: 'LeanLLVM.Vellum.b_icmp_imm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_icmp_imm
+
+/-- info: 'LeanLLVM.Vellum.b_icmp_reg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_icmp_reg
+
+/-- info: 'LeanLLVM.Vellum.b_select_reg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_select_reg
+
+/-- info: 'LeanLLVM.Vellum.b_extract_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_extract_lane
+
+/-- info: 'LeanLLVM.Vellum.b_binopVec_and_vec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_binopVec_and_vec
+
+/-- info: 'LeanLLVM.Vellum.b_binopVec_add_reg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_binopVec_add_reg
+
+/-- info: 'LeanLLVM.Vellum.b_select_vec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_select_vec
+
+/-- info: 'LeanLLVM.Vellum.b_call_pmaddUbSw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_call_pmaddUbSw
+
+/-- info: 'LeanLLVM.Vellum.b_call_pmaddWd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_call_pmaddWd
+
+/-- info: 'LeanLLVM.Vellum.findBlock_udIfEnd3I' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms findBlock_udIfEnd3I
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_instrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfEnd3I_instrs
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_term' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfEnd3I_term
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd3I_denote
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd3I_run
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd3I_step
+
+/-- info: 'LeanLLVM.Vellum.findBlock_udIfThen17I' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms findBlock_udIfThen17I
+
+/-- info: 'LeanLLVM.Vellum.udIfThen17I_instrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfThen17I_instrs
+
+/-- info: 'LeanLLVM.Vellum.udIfThen17I_term' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfThen17I_term
+
+/-- info: 'LeanLLVM.Vellum.udIfThen17I_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen17I_denote
+
+/-- info: 'LeanLLVM.Vellum.udIfThen17I_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen17I_run
+
+/-- info: 'LeanLLVM.Vellum.udIfThen17I_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen17I_step
+
+/-- info: 'LeanLLVM.Vellum.udIfThen17I_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen17I_step_zero
+
+/-- info: 'LeanLLVM.Vellum.findBlock_udLandLhsTrue22I' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms findBlock_udLandLhsTrue22I
+
+/-- info: 'LeanLLVM.Vellum.udLandLhsTrue22I_instrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udLandLhsTrue22I_instrs
+
+/-- info: 'LeanLLVM.Vellum.udLandLhsTrue22I_term' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udLandLhsTrue22I_term
+
+/-- info: 'LeanLLVM.Vellum.udLandLhsTrue22I_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udLandLhsTrue22I_denote
+
+/-- info: 'LeanLLVM.Vellum.udLandLhsTrue22I_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udLandLhsTrue22I_run
+
+/-- info: 'LeanLLVM.Vellum.udLandLhsTrue22I_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udLandLhsTrue22I_step
+
+/-- info: 'LeanLLVM.Vellum.udLandLhsTrue22I_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udLandLhsTrue22I_step_zero
+
+/-- info: 'LeanLLVM.Vellum.findBlock_udIfThen26I' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms findBlock_udIfThen26I
+
+/-- info: 'LeanLLVM.Vellum.udIfThen26I_instrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfThen26I_instrs
+
+/-- info: 'LeanLLVM.Vellum.udIfThen26I_term' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfThen26I_term
+
+/-- info: 'LeanLLVM.Vellum.udIfThen26I_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen26I_denote
+
+/-- info: 'LeanLLVM.Vellum.udIfThen26I_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen26I_run
+
+/-- info: 'LeanLLVM.Vellum.udIfThen26I_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfThen26I_step
+
+/-- info: 'LeanLLVM.Vellum.udCleanup32_instrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udCleanup32_instrs
+
+/-- info: 'LeanLLVM.Vellum.udCleanup32_term' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udCleanup32_term
+
+/-- info: 'LeanLLVM.Vellum.udCleanup32_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udCleanup32_denote
+
+/-- info: 'LeanLLVM.Vellum.udCleanup32_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udCleanup32_run
+
+/-- info: 'LeanLLVM.Vellum.udCleanup32_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udCleanup32_step
+
+/-- info: 'LeanLLVM.Vellum.udCleanup32_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udCleanup32_step_zero
 
 end LeanLLVM.Vellum
