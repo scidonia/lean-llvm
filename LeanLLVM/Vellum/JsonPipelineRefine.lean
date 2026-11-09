@@ -51,10 +51,14 @@ the preceding iteration wrote; and the UTF-8 stage's is the window the staging's
 invariant's carried cursors, so each belongs with the arm trace that carries them.
 
 **Nothing here identifies the verdict with the reference parser.**  That is
-`Σ_pipeline`'s and D2's, as `JsonPipelineContract`'s docstring says.
+`Σ_pipeline`'s and D2's, as `JsonPipelineContract`'s docstring says.  The
+finalisation at the end of this module carries the identification as the named
+hypothesis `ParserHalf` and derives the specification's post from the units'
+record around it.
 -/
 import LeanLLVM.Vellum.JsonPipelineContract
 import LeanLLVM.Vellum.JsonPipelineBlockEval
+import LeanLLVM.Vellum.JsonPipelineSpec
 import LeanLLVM.Vellum.LoopFuel
 
 set_option autoImplicit false
@@ -830,5 +834,223 @@ themselves, not this module. -/
 /-- info: 'LeanLLVM.Vellum.masksCall_at_block' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms masksCall_at_block
+
+open LeanLLVM.JSON
+open LeanLLVM.Vellum.JsonEntryIR
+
+/-! ### The finalisation: the units' record to the specification's post
+
+`Satisfies` reads its pre and its post in the same place — `Γ.pre args mem next →
+completion ∧ ∀ o, Beh … o → Γ.post args mem next o` — so the caller's staging is
+in scope wherever the post is consumed.  The bridge below is stated at that shape:
+the units' post, the staging, and the parser-side half that no units' post names.
+
+**Why the parser half is a hypothesis and not derived.**  `pipelineUnitsPost`
+names the four cursors, the two-valued verdict, the decoded and event extents, the
+refusal word's presence and the frame.  It names neither the document nor `base`
+— its argument pattern drops both — and it names neither `parseBytes` nor
+`decodeTape`; `EventStreamRel` is a parameter (`JsonPipelineSpec.lean`).  So a
+composition of the units' posts cannot produce the specification's document
+clause, its acceptance equivalence, its accepted tape and value, or its refusal
+offset.  Those are the reference parser's answers, and the records that carry them
+are C95's `EventStreamRel`, C96's `Γ_stage2` and `tape_valid` — none of them a
+unit in `Γ_pipeline_units`.
+
+**The document clause is recovered from the staging.**  `pipelineStaging` reads
+the padded window `readBytes mem base (64 * pipelineBlocks bs.length)`; the
+specification reads the exact-length document, and `readBytes_split` gives the
+prefix, so that clause is a consequence of the pre rather than of the parser half.
+Everything else in `Sigma_pipeline` that is a fact about the caller's buffers —
+the cursors, the verdict's two values, the extents, the frame — is derived from
+`pipelineUnitsPost` below, including the frame's widened escape extent
+(`batchReserve`). -/
+
+/-- **The parser-side half of `Sigma_pipeline`, at the run's reported extent.**
+
+The three conjuncts `pipelineUnitsPost` cannot supply: the verdict's equivalence
+with the reference parser's acceptance, the accepted tape with its value and
+validity, and the refusal word's offset.  `m` is the state the run returned, `bs`
+the document the caller staged, and `dst`, `ev`, `err` the caller's slots.  The
+extents are premises rather than binders because the specification's own outer
+witnesses are the run's, so this is stated at whatever extent the run reports.
+
+`arena` and `evs` are the bytes at those extents, which the units' post already
+names by `ndst'` and `nev'`; this half adds only what is said about them, so a
+caller does not prove the extents twice. -/
+def ParserHalf (eventRel : EventStreamRel) (bs : List UInt8)
+    (verdict : BitVec 64) (m : Mem) (dst ev err : Nat) : Prop :=
+  ∀ (ndst' nev' : Nat) (arena evs : List UInt8),
+    readBytes m dst ndst' = some arena →
+    readBytes m ev nev' = some evs →
+    (verdict = 1 ↔
+      ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t) ∧
+    (verdict = 1 → ∃ (t : Tape) (v : LeanLLVM.JSON.Value),
+        parseBytes Limits.default (ByteString.literal bs) = .ok t ∧
+        t.input = ByteString.literal bs ∧
+        decodeTape t = some v ∧
+        eventRel bs arena evs t.tokens ∧
+        spansWellFormed t = true ∧
+        ValidDocument (ByteString.literal bs) v) ∧
+    (∀ e : Nat, readBytes m err 8 = some (wordBytes 8 e) → RefusalOffset bs e)
+
+/-- **The finalisation, at the shape `Satisfies` consumes.**
+
+From the staging, the units' post and one parser half at the staged document, the
+specification's post.  `hsem` is quantified over the document and the run's state
+because both are the units' post's witnesses, not this record's parameters; the
+`readBytes` premise pins the document to the one the staging holds at `base`. -/
+theorem pipeline_units_finalisation {eventRel : EventStreamRel} {base : Nat}
+    {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
+    (hpre : pipelineStaging base args mem)
+    (hpost : pipelineUnitsPost args mem next o)
+    (hsem : ∀ (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
+        (dst ev err : Nat),
+      readBytes mem base bs.length = some bs →
+      ParserHalf eventRel bs verdict m dst ev err) :
+    Sigma_pipeline eventRel base args mem next o := by
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hlen,
+    hbound, hwin, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0, hepcap,
+    hxpbytes, hdstcap, hdstbytes, hevbytes, hevroom, hndst0, hnev0, hroomk,
+    hroomx, h32, harm, hreads, hdisj⟩ := hpre
+  subst hargs
+  simp only [pipelineUnitsPost] at hpost
+  split at hpost
+  · exact hpost
+  · rename_i _o0 verdict m'
+    obtain ⟨hverdict, nk', nxp', ndst', nev', ent, ps, out, evs, hnk, hnxp, hndst,
+      hnev, hent, hxp, hdst, hev, herr, hunch⟩ := hpost
+    have hbl : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
+    have hK : bs.length + (64 * pipelineBlocks bs.length - bs.length) =
+        64 * pipelineBlocks bs.length := by omega
+    have hwin' : readBytes mem base
+        (bs.length + (64 * pipelineBlocks bs.length - bs.length)) = some
+          (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) := by
+      rw [hK]; exact hwin
+    have hdoclen : readBytes mem base bs.length = some bs := by
+      have hsplit := readBytes_split mem base bs.length
+        (64 * pipelineBlocks bs.length - bs.length) hwin'
+      rw [hsplit.1]
+      simp
+    have hdoc : readBytes mem base n.toNat = some bs := by
+      rw [hlen]; exact hdoclen
+    obtain ⟨hacc, haccepted, hrefused⟩ :=
+      hsem bs verdict m' dst ev err hdoclen ndst' nev' out evs hdst hev
+    unfold Sigma_pipeline
+    refine ⟨bs, nk', nxp', ndst', nev', hlen, hdoc, hnk, hnxp, hndst, hnev,
+      hverdict, hacc, ?_, ?_, ?_⟩
+    · intro h1
+      obtain ⟨t, v, ht, hin, hdec, hrel, hspan, hvalid⟩ := haccepted h1
+      exact ⟨t, v, out, evs, ht, hin, hdec, hdst, hev, hrel, hspan, hvalid⟩
+    · intro h0
+      obtain ⟨e, he⟩ := herr h0
+      exact ⟨e, he, hrefused e he⟩
+    · simpa [batchReserve] using hunch.2
+  · exact hpost.elim
+
+/-- **The specification's record from the units' record, without `mono`.**
+
+`Satisfies`'s second conjunct has the pre in scope, and `Γ_pipeline` reads the
+body's staging and budget by name, so the finalisation is applied where the post
+is consumed: no post-to-post implication at `Satisfies.mono`'s shape, whose
+hypothesis is stated without the pre, is available or needed.  The completion
+conjunct transfers unchanged because both records' budgets are `pipelineBudget`
+by definition. -/
+theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
+    {eventRel : EventStreamRel} {base : Nat}
+    (hunits : Satisfies calls f (Γ_pipeline_units base))
+    (hsem : ∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
+        (dst ev err : Nat),
+      readBytes mem base bs.length = some bs →
+      ParserHalf eventRel bs verdict m dst ev err) :
+    Satisfies calls f (Γ_pipeline eventRel base) := by
+  intro args mem next hpre
+  have hstage : pipelineStaging base args mem := hpre.1
+  obtain ⟨hcom, hpost⟩ := hunits args mem next hstage
+  refine ⟨hcom, ?_⟩
+  intro o ho
+  exact pipeline_units_finalisation (eventRel := eventRel) (base := base)
+    (args := args) (mem := mem) (next := next) (o := o) hstage (hpost o ho)
+    (hsem mem)
+
+/-! ### The post alone does not imply the specification
+
+The premise the bridge above does not have is not optional: `pipelineUnitsPost`
+holds of a memory whose document is unreadable, so no `post → Sigma_pipeline`
+implication exists at `Satisfies.mono`'s shape whatever the parser half says.  The
+witness below is a shaped argument list and 104 zero bytes: every cursor slot and
+prefix the units' post reads is present, the document at `1000` is not, and every
+frame region is intact.  `Sigma_pipeline`'s first clause — the exact-length read
+at `base` — is then false, which is the clause that does not follow. -/
+
+/-- The witness memory: `n` zero bytes at addresses `0 … n-1`. -/
+private def zeroCells (n : Nat) : Mem := (List.range n).map fun i => (i, (0 : UInt8))
+
+/-- The witness arguments: the ABI's twenty slots, the document at `1000` with
+length `4`, and every slot the units' post reads inside `zeroCells 104`. -/
+private def gapArgs : List Value :=
+  [.ptr 1000, .int 64 4, .ptr 0, .ptr 8, .ptr 16, .ptr 24, .int 64 0, .ptr 32,
+   .ptr 40, .int 64 0, .ptr 48, .ptr 56, .ptr 64, .int 64 0, .ptr 72, .ptr 80,
+   .int 64 0, .ptr 88, .ptr 96, .int 64 0]
+
+/-- **The units' post does not imply the specification's post.**  The `Then` this
+constructs is the whole of `Sigma_pipeline`; the failing conjunct is its document
+clause, `readBytes mem base n.toNat = some bs`, which no clause of
+`pipelineUnitsPost` reaches. -/
+theorem pipelineUnitsPost_not_imp_Sigma :
+    ∃ (eventRel : EventStreamRel) (base : Nat) (args : List Value) (mem : Mem)
+      (next : Nat) (o : Outcome),
+      pipelineUnitsPost args mem next o ∧
+      ¬ Sigma_pipeline eventRel base args mem next o := by
+  refine ⟨fun _ _ _ _ => False, 1000, gapArgs, zeroCells 104, 1,
+    .ret (some (.int 64 0)) (zeroCells 104), ?_, ?_⟩
+  · unfold pipelineUnitsPost
+    refine ⟨Or.inl rfl, 0, 0, 0, 0, [], [], [], [], ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      ?_, ?_, ?_⟩
+    · decide
+    · decide
+    · decide
+    · decide
+    · rfl
+    · rfl
+    · rfl
+    · rfl
+    · intro _
+      exact ⟨0, by decide⟩
+    · intro h
+      exact absurd h (by decide)
+    · intro a _
+      rfl
+  · intro h
+    unfold Sigma_pipeline at h
+    obtain ⟨bs, nk', nxp', ndst', nev', hlen, hread, -⟩ := h
+    have hnone : readBytes (zeroCells 104) 1000 ((4 : BitVec 64).toNat) = none := by
+      decide
+    rw [hnone] at hread
+    cases hread
+
+/-! ### Axiom footprints
+
+The finalisation consumes the staging's own reading, `readBytes_split` and the
+units' post; the parser half is a hypothesis, so the bridge adds no principle the
+parser records do not carry.  Every declaration below sits at the development's
+ceiling, `[propext, Quot.sound]`, measured rather than assumed; the counterexample
+is no exception, though its witnesses are closed `Nat` and `List` computations. -/
+
+/-- info: 'LeanLLVM.Vellum.ParserHalf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ParserHalf
+
+/-- info: 'LeanLLVM.Vellum.pipeline_units_finalisation' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipeline_units_finalisation
+
+/-- info: 'LeanLLVM.Vellum.pipeline_satisfies_of_parser' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipeline_satisfies_of_parser
+
+/-- info: 'LeanLLVM.Vellum.pipelineUnitsPost_not_imp_Sigma' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineUnitsPost_not_imp_Sigma
 
 end LeanLLVM.Vellum
