@@ -504,11 +504,24 @@ def assemblyExitWord (args : List Value) (mem : Mem) (next : Nat)
 
 /-! ### The two arm statements -/
 
-/-- **The iteration arm**, at the staged invariant: one position's copy, its
-escape, and the return to the latch with the index advanced. -/
-def assemblyLatchStep (body : List UInt8) (st : ClassState) (dst nps : Nat)
+/-- **The iteration arm**, at the staged invariant and the caller's staging: one
+position's copy, its escape, and the return to the latch with the index advanced.
+
+The staging is a parameter rather than something the invariant implies, because
+the arm derives its two reads from it: `while.body6`'s position load needs the
+list `ExpandStaging` names at `*xp`, and the emitter's table read needs the table
+`ExpandStaging` names at `%tab`.  `ExpandStaging.latch_reads` transfers both across
+the latch's frame, so the arm gets them where the staging is in scope.  A step
+whose hypothesis is `AssemblyLatchInv` alone could not reach either read, and a
+run stated that way would be a theorem about one producer's staging rather than
+about the caller's.  `.refuse` and `.seed` take the same staging, so the three
+runs are one shape. -/
+def assemblyLatchStep (args : List Value) (mem : Mem) (next : Nat)
+    (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab pos0 n : Nat) (ps : List Nat)
-    (err xj : Nat) (mem : Mem) (cost : Nat) : Prop :=
+    (err xj : Nat)
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj) (cost : Nat) : Prop :=
   ∀ (r : Nat) (s : State) (c : Nat),
     AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s →
     (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false →
@@ -643,8 +656,8 @@ def assemblyBoundLoop (args : List Value) (mem : Mem) (next : Nat)
       err xj) (cost : Nat) (hcost : 1 ≤ cost)
     (hrefuse : assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n
       ps err xj hstaging cost)
-    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps err xj mem
-      cost) :
+    (hloop : assemblyLatchStep args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj hstaging cost) :
     BoundLoop escapeCalls usDecFunction where
   head := "cleanup32"
   exitBlock := "while.end35"
@@ -688,8 +701,8 @@ theorem assemblyBoundLoop_run_at (args : List Value) (mem : Mem) (next : Nat)
       err xj) (cost : Nat) (hcost : 1 ≤ cost)
     (hrefuse : assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n
       ps err xj hstaging cost)
-    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps err xj mem
-      cost)
+    (hloop : assemblyLatchStep args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj hstaging cost)
     (s : State) (c : Nat) (k : Nat)
     (hinv : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem nps c s)
     {o : Outcome}

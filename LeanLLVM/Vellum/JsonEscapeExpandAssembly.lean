@@ -71,8 +71,9 @@ structure ExpandArms (args : List Value) (mem : Mem) (next : Nat) where
     tab pos0 (expandBodyLen args) ps err xj
   /-- **The iteration arm**: the run from the latch back to the latch, crossing
   `while.body6`, `if.end`, the copy at `while.body.i91` and the escape emitter. -/
-  loop : assemblyLatchStep body st dst (expandPosCount args) goal pb xp tab pos0
-    (expandBodyLen args) ps err xj mem (decodeIterCost (expandBodyLen args))
+  loop : assemblyLatchStep args mem next body st dst (expandPosCount args) goal pb xp
+    tab pos0 (expandBodyLen args) ps err xj staging
+    (decodeIterCost (expandBodyLen args))
   /-- **The refusal arm**: the run from the latch to `cleanup41` at a position that
   refuses, crossing the same blocks as the iteration. -/
   refuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal pb
@@ -152,8 +153,9 @@ def expandFacts_of_runs (args : List Value) (mem : Mem) (next : Nat)
     (ps : List Nat) (pos0 : Nat) (pb xp tab err xj : Nat)
     (hstaging : ExpandStaging args mem next body st dst (expandPosCount args) goal pb
       xp tab pos0 (expandBodyLen args) ps err xj)
-    (hloop : assemblyLatchStep body st dst (expandPosCount args) goal pb xp tab pos0
-      (expandBodyLen args) ps err xj mem (decodeIterCost (expandBodyLen args)))
+    (hloop : assemblyLatchStep args mem next body st dst (expandPosCount args) goal pb
+      xp tab pos0 (expandBodyLen args) ps err xj hstaging
+      (decodeIterCost (expandBodyLen args)))
     (hrefuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal
       pb xp tab pos0 (expandBodyLen args) ps err xj hstaging
       (decodeIterCost (expandBodyLen args)))
@@ -337,48 +339,69 @@ theorem ExpandStaging.latch_reads
 /-! ### What the three fields still need
 
 `loop`, `refuse` and `seedLatch` are the bundle's remaining content, and the
-obstacle to each is one seam rather than three.
+obstacle to each is the same composition rather than three separate ones.
 
-**The iteration's run is not composed.**  `decodeLatch_step_enter`
-(`JsonEscapeDecodeRun`) takes the latch to `while.body6`, and
-`JsonEscapeDecodeTrace`/`JsonEscapeCompose` carry a step for every block from
-`while.body6` to `cleanup32` — `udWhileBody6_step`, `udIfEnd_step`,
-`udCopyBody_step`/`udCopyTail_step`/`udCopyTailIf_step` (with the copy-loop fuel at
-`copyBodyLoop_run_at`), `udRunExit_step`, `udIfEnd21_step`, `udIfEndI_step`,
-`udIfThen6I_step`, `udIfEnd9I_step`, `udIfEndI115_step`, `udIfEnd3I_step`,
-`udIfThen17I_step`, `udLandLhsTrue22I_step`, `udIfThen26I_step`,
-`udIfEnd32I_step`.  `udIfEnd32I_to_whileBody6` composes that block's last two
-steps, and nothing composes the chain: the `runFuel escapeCalls … usDecFunction`
-facts in the tree are the two-step lemma and the two copy loops, and none runs
-`cleanup32` back to `cleanup32`.  `loop` and the seed's latch arm need that chain;
-`refuse` needs its prefix to `us_run.exit` and the refusal branches out of it.
+**The iteration arm now carries the staging, which is what its proof reads.**
+`assemblyLatchStep` takes `ExpandStaging` beside the invariant, because the arm
+derives two reads from it and from nothing else: `while.body6` loads the position
+`%add28` names out of the caller's list (`readBytes_positionsBytes`, at the entry
+the staging's `ps` names and inside the window its range clause bounds), and
+`if.end.i` loads the escape table's image of the body's byte
+(`emitterTest_of_table`, at `tab + b.toNat`).  `ExpandStaging.latch_reads`
+transfers the record's body and table reads across the latch's frame to the memory
+the blocks read, so those two facts are available wherever the staging is in scope.
+A step stated at `AssemblyLatchInv` alone can reach neither — that invariant
+mentions `body` only inside `DecodeInv.walk`, and carries no read of the position
+stream or the table — so the staging is part of the statement, not an extra
+hypothesis beside it.  `.refuse` and `.seed` take the same staging, and the three
+runs are now one shape.
 
-**The emitter's gate cells are identified; the iteration's chain is not
-composed.**  The bridge above turns `escapeAt` and `decodeRefuses` into state-level
-facts about the table and the body's bytes, so `DecodeInv.step_*`'s `escapeAt`
-hypothesis and the emitter blocks' `hcond` now have one object to agree on.
-`ExpandStaging.latch_reads` carries the record's body and table reads across the
-latch's frame to the state the blocks read, so the emitter's `hb`/`ht` (and the
-copy loops' source read) are available **wherever the staging is in scope**.
-`assemblyLatchStep`'s hypothesis is `AssemblyLatchInv` alone, and that invariant
-mentions `body` only inside `DecodeInv.walk`: it does not carry `readBytes mem b n =
-some body`, `readBytes mem tab 256 = some unescapeTable` or the spacing that puts
-both outside the destination extent.  So the field is not a standalone theorem at
-its own signature — it is inhabited only in a producer that holds `ExpandStaging`,
-as `assemblyRefusalArm` already does.  That is a statement-shape question for the
-planner, not something this module can decide by adding a hypothesis.  Past that,
-the composition needs the chain itself: each step's cell hypotheses must be read
-out of the successor state `AssemblyLatchInv` describes — the emitter's
-`%8`/`%sub`/`%n` cells from the preceding block's environment — and the
-`DecodeInv` (byte cursor, output prefix, remaining positions) must be transferred
-across each branch.  The fuel primitive for the chain is now
-`runFuel_prefix_trans`/`runFuel_prefix_some` in `Semantics`; before this change the
-longest composed run in the tree was two steps.  `refuse` additionally needs the
-prefix from the latch through the same blocks to `if.then20`/`if.then22`, then
-`udIfThen20_step`/`udIfThen22_step` and the exit word; `seedLatch` needs the
-pre-scan's three blocks (`udEntry_step`, `udLandRhs_step`, `udWhileBody_step`)
-composed to the latch, and shares the iteration's first step.  Neither field is a
-statement defect: each quantifies over exactly the run the bound names. -/
+**The chain is not composed.**  The run `loop` and the seed's latch arm need is
+`cleanup32 → while.body6 → if.end →` (the copy at `while.body.i91`, or straight to
+`us_run_long.exit99` when `if.end`'s test is zero) `→ us_run_long.exit99 →
+if.then.i104 → us_run.exit → if.end21 → if.end.i`, and then the emitter's paths:
+the simple escape returns to `cleanup32` from `if.then6.i`, and the `\u` arms
+(`if.end9.i`, `if.end.i115`, `if.end3.i`, `if.then17.i`, `land.lhs.true22.i`,
+`if.then26.i`) return through `if.end32.i`.  The block steps for every one of them
+exist — `udWhileBody6_step_one`, `udIfEnd_step` and its zero arm,
+`copyBodyLoop_run_at`, `udCopyTail_step`, `udCopyTailIf_step`, `udRunExit_step_one`,
+`udIfEnd21_step`, `udIfEndI_step`, `udIfThen6I_step`, `udIfEnd9I_step`,
+`udIfEndI115_step`, `udIfEnd3I_step`, `udIfThen17I_step`, `udLandLhsTrue22I_step`,
+`udIfThen26I_step`, `udIfEnd32I_step`, with `udIfEnd32I_to_whileBody6` composing
+that block and the latch's own step back into the next iteration's first block.
+What is missing is the composition itself, and its work is named rather than left
+to be discovered:
+
+* a step lemma's witness state is opaque (`decodeLatch_step_enter`'s conclusion
+  carries no defining equation for the state it returns), so each intermediate
+  state has to be introduced by the composition itself — `let e := …` at the
+  block's own environment builder — with the step read off it and its cell
+  hypotheses discharged from the builder (`ud_lk`) or from the preceding state's
+  cells;
+* the arithmetic the blocks compute (`%add28`, `%add24`, `%sub13`, `%conv8`, and
+  the encoder at `if.end32.i`) has to be tied to the preceding state's cells and
+  the staging's `pos0 + n ≤ 2 ^ 32`;
+* `if.end` branches on `%sub13 > 64`, so the copy is present or absent and the two
+  arms must reach `us_run_long.exit99` with different fuel;
+* each `\u` arm carries its own `DecodeInv` transfer — `step_simple`, `step_six`
+  and `step_pair` are the laws, but the branch's `escapeAt` hypothesis has to be
+  produced from `emitter_gate_is_escapeAt` and the two `\u` facts, at the byte
+  offsets the copy left the cursor at, and the refusing byte takes `if.then22` out
+  to `cleanup41`, which is `.refuse`'s branch.
+
+`refuse` additionally needs the prefix from the latch through the same blocks to
+`if.then20`/`if.then22`, then `udIfThen20_step`/`udIfThen22_step` and the exit word;
+`seedLatch` needs the pre-scan's three blocks (`udEntry_step`, `udLandRhs_step`,
+`udWhileBody_step`) composed to the latch, and shares the iteration's first step.
+Neither is a statement defect: each quantifies over exactly the run the bound
+names.  The fuel primitive for the chain is `runFuel_prefix_trans` /
+`runFuel_prefix_some` in `Semantics`.
+
+**A hole with no error is possible here, and a pin is the instrument.**  Elaborating
+a candidate composition can succeed with a branch replaced by `sorry` while the
+build reports only a warning, so no composition above may be trusted without
+`#print axioms` at `[propext, Quot.sound]` or a named carrier.  That is why the
+footprints below are pinned. -/
 
 /-! ### Axiom footprints
 

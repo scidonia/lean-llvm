@@ -198,8 +198,8 @@ theorem run_stages {start : State} {P : Outcome → Prop} {args : List Value}
     (hcost : 1 ≤ cost)
     (hrefuse : assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n
       ps err xj hstaging cost)
-    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps err xj mem
-      cost)
+    (hloop : assemblyLatchStep args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj hstaging cost)
     (hseed :
       (∃ (s : State) (c j : Nat), j ≤ preScanFuel nps + cost ∧
         AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem nps c s ∧
@@ -277,9 +277,11 @@ structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
   staging : ExpandStaging args mem next body st dst (expandPosCount args) goal pb xp
     tab pos0 (expandBodyLen args) ps err xj
   /-- **The iteration arm**: the run from the latch back to the latch, crossing
-  the two copy loops and the escape emitter. -/
-  loop : assemblyLatchStep body st dst (expandPosCount args) goal pb xp tab pos0
-    (expandBodyLen args) ps err xj mem (decodeIterCost (expandBodyLen args))
+  the two copy loops and the escape emitter.  It carries the caller's staging,
+  which is where the position load and the emitter's table read come from. -/
+  loop : assemblyLatchStep args mem next body st dst (expandPosCount args) goal pb xp
+    tab pos0 (expandBodyLen args) ps err xj staging
+    (decodeIterCost (expandBodyLen args))
   /-- **The refusal arm**: the run from the latch to `cleanup41` at a position that
   refuses, crossing the same blocks as the iteration. -/
   refuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal pb
