@@ -54,3 +54,4 @@ import LeanLLVM.Vellum.JsonEscapeListWriter
 import LeanLLVM.Vellum.JsonEscapeListPositions
 import LeanLLVM.Vellum.JsonEscapeListContract
 import LeanLLVM.Vellum.JsonEscapeExpandContract
+import LeanLLVM.Vellum.JsonEscapeDecodeTrace
