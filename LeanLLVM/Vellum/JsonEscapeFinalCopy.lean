@@ -452,6 +452,28 @@ theorem copyBodyEnv_sub (env : Env) (src dst : Nat) (k : BitVec 64)
       lookupName env copyBodyNames.subreg := by
   simp only [copyBodyNames, udCopyBodyEnv]; ud_lk
 
+/-- The copy's own body base, carried unchanged.  The copy reads `%p` through
+`%add.ptr` and never rebinds it, so a consumer that needs the base after the loop
+reads the caller's cell. -/
+theorem copyBodyEnv_pcell (env : Env) (src dst : Nat) (k : BitVec 64)
+    (bs1 bs2 : List UInt8) (subv : BitVec 64) :
+    lookupName (udCopyBodyEnv env src dst k bs1 bs2 subv) "%p" = lookupName env "%p" := by
+  simp only [udCopyBodyEnv]; ud_lk
+
+/-- The copy's destination base, carried unchanged: `%dst` is the caller's register
+and `%add.ptr12` the base the copy forms from it. -/
+theorem copyBodyEnv_dstcell (env : Env) (src dst : Nat) (k : BitVec 64)
+    (bs1 bs2 : List UInt8) (subv : BitVec 64) :
+    lookupName (udCopyBodyEnv env src dst k bs1 bs2 subv) "%dst" = lookupName env "%dst" := by
+  simp only [udCopyBodyEnv]; ud_lk
+
+/-- The copy's prefix counter, carried unchanged: the copy reads `%j.0294` through
+`%add.ptr12` and never rebinds it. -/
+theorem copyBodyEnv_jcell (env : Env) (src dst : Nat) (k : BitVec 64)
+    (bs1 bs2 : List UInt8) (subv : BitVec 64) :
+    lookupName (udCopyBodyEnv env src dst k bs1 bs2 subv) "%j.0294" = lookupName env "%j.0294" := by
+  simp only [udCopyBodyEnv]; ud_lk
+
 /-- **The copy after a position, with the caller's prefix and frame carried.** -/
 def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (dst0 j : Nat)
     (out : List UInt8) (m0 : Mem) (regw : Nat)
@@ -882,6 +904,18 @@ principle, so each carries the development's ceiling. -/
 /-- info: 'LeanLLVM.Vellum.copyBodyEnv_sub' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms copyBodyEnv_sub
+
+/-- info: 'LeanLLVM.Vellum.copyBodyEnv_pcell' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms copyBodyEnv_pcell
+
+/-- info: 'LeanLLVM.Vellum.copyBodyEnv_dstcell' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms copyBodyEnv_dstcell
+
+/-- info: 'LeanLLVM.Vellum.copyBodyEnv_jcell' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms copyBodyEnv_jcell
 
 /-- info: 'LeanLLVM.Vellum.copyBodyPrefixLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
