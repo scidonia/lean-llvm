@@ -49,3 +49,5 @@ import LeanLLVM.Vellum.JsonEscapeListBody
 import LeanLLVM.Vellum.LoopFuel
 import LeanLLVM.Vellum.JsonEscapeListLoop
 import LeanLLVM.Vellum.JsonEscapeListRun
+import LeanLLVM.Vellum.JsonEscapeListMemo
+import LeanLLVM.Vellum.JsonEscapeListWriter
