@@ -36,5 +36,10 @@ import LeanLLVM.Vellum.JsonUtf8IR
 import LeanLLVM.Vellum.JsonUtf8Steps
 import LeanLLVM.Vellum.JsonUtf8Spec
 import LeanLLVM.Vellum.JsonUnitContracts
+import LeanLLVM.Vellum.JsonEscapeIntrinsics
+import LeanLLVM.Vellum.JsonEscapeIR
+import LeanLLVM.Vellum.JsonEscapeSpec
+import LeanLLVM.Vellum.JsonEscapeSteps
 import LeanLLVM.Vellum.JsonEscapeBatch
 import LeanLLVM.Vellum.JsonEscapeListInvariant
+import LeanLLVM.Vellum.JsonEscapeListFixpoint

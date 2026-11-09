@@ -60,6 +60,7 @@ import LeanLLVM.Vellum.JsonEscapeBatch
 import LeanLLVM.Vellum.JsonEscapeSpec
 import LeanLLVM.Vellum.JsonS1MasksIR
 import LeanLLVM.Vellum.Refinement
+import LeanLLVM.Vellum.JsonEscapeListInvariant
 
 namespace LeanLLVM.Vellum
 
@@ -83,20 +84,8 @@ byte the store reached is inside one of them. -/
 def UnchangedOutside (mem m : Mem) (regions : List (Nat × Nat)) : Prop :=
   ∀ a, (∀ r ∈ regions, ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) → readByte m a = readByte mem a
 
-/-- A little-endian array of positions, one `w`-byte entry each: the bytes a
-position stream occupies. -/
-def positionsBytes (w : Nat) (ps : List Nat) : List UInt8 :=
-  (ps.map fun p => natToBytes p w).flatten
-
-/-- An unsigned word as the bytes a slot holds. -/
-def wordBytes (w : Nat) (v : Nat) : List UInt8 := natToBytes v w
-
 /-- A boolean flag as the eight bytes a caller's carry slot holds. -/
 def flagBytes (b : Bool) : List UInt8 := natToBytes (if b then 1 else 0) 8
-
-/-- The document offset of a block's first byte: the position base the list entry
-point is given, `blk0 << 6`. -/
-def blockAddr (blk0 : BitVec 64) : Nat := blk0.toNat * 64
 
 /-- The reserve the measured batch writes past the true count: eight entries of
 four bytes. -/

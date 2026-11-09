@@ -81,6 +81,18 @@ outside a string and with an even backslash run. -/
 def escapePositions (bs : List UInt8) : List Nat :=
   escapePositionsFrom bs ⟨false, false⟩
 
+/-- A little-endian array of positions, one `w`-byte entry each: the bytes a
+position stream occupies. -/
+def positionsBytes (w : Nat) (ps : List Nat) : List UInt8 :=
+  (ps.map fun p => natToBytes p w).flatten
+
+/-- An unsigned word as the bytes a slot holds. -/
+def wordBytes (w : Nat) (v : Nat) : List UInt8 := natToBytes v w
+
+/-- The document offset of a block's first byte: the position base the list entry
+point is given, `blk0 << 6`. -/
+def blockAddr (blk0 : BitVec 64) : Nat := blk0.toNat * 64
+
 /-- A landed lookup indexes the list. -/
 theorem lt_length_of_getElem?_eq_some {bs : List UInt8} {k : Nat} {b : UInt8}
     (h : bs[k]? = some b) : k < bs.length := by

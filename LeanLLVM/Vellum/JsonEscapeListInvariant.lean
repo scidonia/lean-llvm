@@ -37,8 +37,9 @@ proved, and it is stated as the obstacle rather than assumed: see the note at
 the end of this file.  No declaration here takes the bridge as a hypothesis, so
 nothing in this module claims the record's post of the body.
 -/
-import LeanLLVM.Vellum.JsonEscapeSteps
+import LeanLLVM.Vellum.JsonEscapeSpec
 import LeanLLVM.Vellum.JsonEscapeBatch
+import LeanLLVM.Vellum.JsonEscapeIntrinsics
 import LeanLLVM.Vellum.BitLanes
 
 namespace LeanLLVM.Vellum
