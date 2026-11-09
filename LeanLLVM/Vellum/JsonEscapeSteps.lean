@@ -23,14 +23,17 @@ Three things are stated here and nothing else:
   argument and the clause promises its content at `unescapeTable`, the rule's own
   table rather than a transcription.
 
-* The two `post`s.  The list's pairs with the arm the caller chose — and the arm is
-  a *selection between two clauses*, never a claim about a document's escapes: the
-  suppressed arm says the count is zero and claims no position, and it says
-  **nothing** about whether the document carries an escape.  The measurement of the
-  unit refutes that reading on seven documents, so a record that assumed it would
-  be false of the measured code.  The expander's names the decoded bytes, the list
-  cursor it leaves, and — on a refusal — the body-relative offset, which is a stated
-  outcome rather than an absence.
+* The two `post`s.  The list's is the clause the entry point itself runs: the
+  count advances by this body's escape positions and those positions are written at
+  the caller's stream cursor.  It is stated without a gate arm, because the entry
+  point has **no gate input** — the density gate is the pipeline's staging, supplied
+  there rather than computed here.  There is deliberately no suppressed clause in
+  this record: the measurement of the unit refutes "a document with a suppressed
+  list carries no escape" on seven of twenty-one documents, and the pinned body
+  emits for a block whose escape word is non-zero whatever the gate class, so a
+  clause asserting the count unchanged is false of the measured code.  The
+  expander's names the decoded bytes, the list cursor it leaves, and — on a refusal
+  — the body-relative offset, which is a stated outcome rather than an absence.
 
 * The unchanged conjunct, as the *extent* the run writes and no wider.  The
   measured eight-entry batch stores past the true count, so those bytes are inside
@@ -141,11 +144,11 @@ def unescapeTable : List UInt8 :=
 
 /-! ### The position list's record
 
-Two arms, one record: the arm is a parameter, so the clause a run must meet is
-chosen by the caller and the difference between the arms is the contract's content
-rather than a case analysis buried in a proof. -/
+One record, one clause: the entry point has no gate input, so the clause is the one
+its body runs.  The gate a caller may apply is that caller's staging, not a
+parameter of this record. -/
 
-/-- The list's claim about the memory it leaves, in the built arm: the eight-entry
+/-- The list's claim about the memory it leaves: the eight-entry
 reserve the first batch writes is at `xp + 4 * xn0`, so the entries the run *claims*
 start where the caller's count says the stream ends.  The positions are the block's
 own, lifted by `blockAddr blk0`, because the store's positions are document offsets
@@ -153,7 +156,7 @@ and the specification's are block lanes.
 
 The unchanged conjunct is over the extent the run wrote, which includes the batch
 reserve the run touched. -/
-def escapePositionsBuiltPost (args : List Value) (mem m : Mem) : Prop :=
+def escapePositionsPost (args : List Value) (mem m : Mem) : Prop :=
   ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
     (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
     args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
@@ -170,20 +173,10 @@ def escapePositionsBuiltPost (args : List Value) (mem m : Mem) : Prop :=
       some (positionsBytes 4 (blockPositions blk0 lo hi st)) ∧
     UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (xn, 8), (carry, 16)]
 
-/-- The list's claim in the suppressed arm: the count is zero and no position is
-claimed.  It says **nothing** about the document's bytes, and that silence is a
-clause: a record that asserted the document carries no escape would be false of the
-measured code, which suppresses the list for documents that do carry one. -/
-def escapePositionsSuppressedPost (args : List Value) (mem m : Mem) : Prop :=
-  ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (xn0 : Nat),
-    args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
-      .ptr carry] ∧
-    readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
-    readBytes m xn 8 = some (wordBytes 8 xn0) ∧
-    UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (carry, 16)]
+/-- The position list's boundary record.
 
-/-- The position list's boundary record, at an arm the caller chose.
-
+There is no arm: the pinned entry point has no gate input, so this record is the one
+clause its body runs, and the gate a caller may apply is that caller's own staging.
 Its `pre` is the caller's staging: the three masks are the block's classifier
 words, the carry slot holds the pair the previous block left with the run parity
 they spell, and the stream has room for the block's maximum plus the batch reserve.
@@ -195,7 +188,7 @@ The block itself is named in the caller's store because the claim is about **tha
 block's positions, and the specification reads them off its bytes; the entry point
 does not read the block, so this clause is not a readability obligation the body
 has. -/
-def Γ_escape_positions (budget : List Value → Mem → Nat) (arm : Bool) : MemContract where
+def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
   pre := fun args mem _ =>
     ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
@@ -218,31 +211,21 @@ def Γ_escape_positions (budget : List Value → Mem → Nat) (arm : Bool) : Mem
   post := fun args mem _ o =>
     match o with
     | .ub => False
-    | .ret _ m =>
-        if arm then escapePositionsBuiltPost args mem m
-        else escapePositionsSuppressedPost args mem m
+    | .ret _ m => escapePositionsPost args mem m
 
-/-- The list record refuses `ub` in both arms: its `post` is `False` at that
-outcome, so "the record forbids undefined behaviour" is a proposition. -/
-theorem escape_positions_ub_false (budget : List Value → Mem → Nat) (arm : Bool)
+/-- The list record refuses `ub`: its `post` is `False` at that outcome, so "the
+record forbids undefined behaviour" is a proposition. -/
+theorem escape_positions_ub_false (budget : List Value → Mem → Nat)
     (args : List Value) (mem : Mem) (next : Nat) :
-    ¬ (Γ_escape_positions budget arm).post args mem next .ub := by
+    ¬ (Γ_escape_positions budget).post args mem next .ub := by
   intro h; exact h
 
 /-- The list record's guarantee ignores the returned value, because the entry point
 returns `void` and everything it says is about the memory it leaves. -/
-theorem escape_positions_valueIrrelevant (budget : List Value → Mem → Nat) (arm : Bool) :
-    ValueIrrelevant (Γ_escape_positions budget arm) := by
+theorem escape_positions_valueIrrelevant (budget : List Value → Mem → Nat) :
+    ValueIrrelevant (Γ_escape_positions budget) := by
   intro args mem next v v' m
-  cases arm <;> rfl
-
-/-- The suppressed arm's clause leaves the count where the caller put it: no
-position is appended, which is the whole of the arm's claim about the stream. -/
-theorem escape_positions_suppressed_count {args : List Value} {mem m : Mem}
-    (h : escapePositionsSuppressedPost args mem m) :
-    ∃ (xn : Nat) (xn0 : Nat), readBytes m xn 8 = some (wordBytes 8 xn0) := by
-  obtain ⟨xp, xn, carry, blk0, bs, ctl, im, xn0, _, _, hcount, _⟩ := h
-  exact ⟨xn, xn0, hcount⟩
+  rfl
 
 /-! ### The expander's record -/
 
@@ -391,10 +374,6 @@ theorem escape_expand_post_value {args : List Value} {mem m : Mem} {v : Value}
 /-- info: 'LeanLLVM.Vellum.escape_positions_valueIrrelevant' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escape_positions_valueIrrelevant
-
-/-- info: 'LeanLLVM.Vellum.escape_positions_suppressed_count' does not depend on any axioms -/
-#guard_msgs in
-#print axioms escape_positions_suppressed_count
 
 /-- info: 'LeanLLVM.Vellum.escape_expand_ub_false' depends on axioms: [propext] -/
 #guard_msgs in

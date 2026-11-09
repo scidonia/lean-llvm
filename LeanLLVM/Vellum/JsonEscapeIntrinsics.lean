@@ -60,7 +60,7 @@ allocator cursor unchanged, because none of the five reads or writes memory.
 at `false` the model is exactly LLVM's, and at `true` LLVM makes the zero word
 poison while this model gives it the width.  It is admissible here because a
 cleared word's count reaches only the batch reserve past the emitted positions:
-`escapePositionsBuiltPost` (`JsonEscapeSteps.lean`) claims the positions up to
+`escapePositionsPost` (`JsonEscapeSteps.lean`) claims the positions up to
 `escapePositionsFrom`'s length, and its unchanged conjunct covers the reserve as
 written extent, so no clause of the list record reads a value the poison could
 have produced.  The three new spellings have no flag, so nothing is bounded for

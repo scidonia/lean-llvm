@@ -9272,3 +9272,29 @@ that checks the fixture pin above. -/
 /-- info: 'LeanLLVM.Vellum.xl_batch_satisfies' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.xl_batch_satisfies
+
+/-! ### The escape list's loop invariant and batch call site
+
+`JsonEscapeListInvariant` states the batch loop's state and turns
+`xl_batch_satisfies` into the call-site claim.  The pins are read here because
+this file is compiled from source on every evidence run. -/
+
+/-- info: 'LeanLLVM.Vellum.classCarryAt_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.classCarryAt_append
+
+/-- info: 'LeanLLVM.Vellum.classCarryAt_oddRun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.classCarryAt_oddRun
+
+/-- info: 'LeanLLVM.Vellum.parityAt_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.parityAt_append
+
+/-- info: 'LeanLLVM.Vellum.xl_batch_call_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.xl_batch_call_eq
+
+/-- info: 'LeanLLVM.Vellum.ListLoopInv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ListLoopInv
