@@ -88,6 +88,34 @@ correspondence, and it installs nothing; neither the pass proofs nor the
 executable relation use it.  The handler is proof-facing and noncomputable,
 because the frame is an arbitrary proposition; the routes above are untouched.
 
+## The JSON demonstration
+
+The framework's subject is LLVM IR.  Everything above concerns the syntax, the
+semantics, the refinement relation and the passes over it.
+
+There is also a worked demonstration under `LeanLLVM/JSON/`, `LeanLLVM/Vellum/`
+and `kernel/json/`: a real SIMD parser for a subset of JSON, taken from C
+through its emitted IR into the framework, with each translation unit carrying
+its own record, its own `Satisfies` theorem, and a certified composition for the
+assembled pipeline.  It exists to exercise the framework end to end on a
+program large enough to be interesting — a unit that is thousands of
+instructions long, a loop whose exit is a refusal rather than a fixpoint, and
+memory regions that alias — and it is measured against `simdjson` on the
+documents that parser is usually benchmarked on.
+
+**It is a proof of concept, not the subject of the repository.**  A defect in the
+demonstration is a defect in the demonstration; the framework's claims are the
+ones in `DESIGN.md`.  Two things it established that the framework itself now
+relies on are general and live outside it: that an invariant must carry every
+consequence of a precondition its own proof uses — including a region's
+presence across a reserve, not merely the bytes written — and that a claim
+quantified across stages different stages own is a scope error.
+
+The demonstration is also the honest illustration of the framework's boundary.
+Its units are proved against their emitted IR, and its assembled pipeline is
+proved from those units' records; that chain begins at a textual emission and
+ends at the model, and no theorem relates Lean's compiled code to either end.
+
 ## Build
 
 The toolchain is Lean `v4.35.0` from the flake.  Run every command through
@@ -227,3 +255,9 @@ are unchanged.
 `reference/vellvm/src/rocq/` contains the VeLLVM Coq sources (MIT) at revision
 `de5b3249`; `reference/vellvm/src/ml/libvellvm/` contains its OCaml parser.  They
 are read-only study material and are not part of the Lean build.
+
+## Licence
+
+Apache License 2.0 — see `LICENSE`.  The VeLLVM sources vendored under
+`reference/vellvm/` for study are not covered by it and are not built; see
+`reference/README.md` for their provenance and terms.
