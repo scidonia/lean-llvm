@@ -43,7 +43,7 @@ the staging instead of assumed.
 
 **What this module does not contain.**  The two copies are the walk's per-position
 and final moves, but the run that *crosses* them is not stated here.  The walk's
-iteration arm (`LatchStepLoopTwo`, `JsonEscapeDecodeRun`) is
+iteration arm (`assemblyLatchStep`, `JsonEscapeExpandStaged`) is
 `while.body6 → if.end → this copy → its tail → us_run.exit → the escape emitter →
 while.end35 → the second copy → its tail → cleanup32`.  Its copies now contribute
 their proved fuel at `while.body.i91` and `while.body.i` — `copyBodyLoop_run_at`

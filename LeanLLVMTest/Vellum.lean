@@ -9580,18 +9580,6 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.decodeTwoExitWord
 
-/-- info: 'LeanLLVM.Vellum.LatchStepLoopTwo' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.LatchStepLoopTwo
-
-/-- info: 'LeanLLVM.Vellum.decodeLatchTwoExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.decodeLatchTwoExit
-
-/-- info: 'LeanLLVM.Vellum.decodeLatchTwoExit_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.decodeLatchTwoExit_run_at
-
 /-- info: 'LeanLLVM.Vellum.expandBodyLen' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.expandBodyLen

@@ -40,9 +40,12 @@ loop consumes.  The iteration arm's run from the latch back to the latch crosses
 the two copy loops and the escape emitter, and the copy loops' own `BoundLoop`
 instances are the same assembly one level down.  The refusal arm's run crosses the
 same blocks and leaves at `cleanup41`; it is the one the record's refusal outcome
-needs.  `hrefuse` (the refusal arm) and `LatchStepLoopTwo` (the iteration arm) name
-them, and the docstrings above the instance name the exact block at which each
-composition stops.
+needs.  Neither arm can be stated here: the iteration arm is `assemblyLatchStep`
+and the refusal arm `assemblyRefusalArm`, in `JsonEscapeExpandStaged.lean`,
+because each reads the caller's staging and `LatchInv` carries none.  `hrefuse`
+remains the binder convention for an instance that takes the refusal arm as a
+hypothesis, and the docstrings above those definitions name the exact block at
+which each composition stops.
 -/
 import LeanLLVM.Vellum.JsonEscapeDecodeTrace
 import LeanLLVM.Vellum.JsonEscapeDecodeLoop
@@ -402,10 +405,12 @@ iteration budget.  The budget pair `c ≤ nps ∧ nps ≤ c + r` is what makes t
 measure the budget rather than the difference, because one iteration advances the
 position index by one or two while spending exactly one unit.
 
-The exit test is `cleanup32`'s own branch; both of the loop's exits and both arm
-facts are stated in the two-exit instance below, which is the only instance here
-because a single-exit one would cover `while.end35` and silently omit the refusal
-at `cleanup41`. -/
+The exit test is `cleanup32`'s own branch.  The two-exit instance that consumes
+this invariant — one `BoundLoop` over both exits, because a single-exit one would
+cover `while.end35` and silently omit the refusal at `cleanup41` — is
+`assemblyBoundLoop` in `JsonEscapeExpandStaged.lean`; it is stated there because
+the arms it is handed read the caller's staging, which this invariant does not
+carry. -/
 
 /-- The latch invariant at an iteration budget: the walk's cells, and the distance
 to the bound measured as a budget pair. -/
@@ -555,16 +560,16 @@ theorem decodeLatch_step_enter {body : List UInt8} {st : ClassState} {dst nps : 
     · exact hpos0cell
     · exact hncell
 
-/-! ### The refusal instance's boundary
+/-! ### The refusal's boundary
 
 The loop's second exit — `cleanup41` on a refusal — is a normal outcome the record
-covers, so the loop needs an instance whose exit names it.  Its exit test is the
-disjunction "at the bound or the head position refuses", and its boundary at
-budget zero is **vacuous rather than relied on**: at budget zero the invariant
-forces `c = nps`, the remaining list is empty, and the walk is a decode, so no
-state carrying a refused goal satisfies the invariant there.  That is stated here
-so the second instance's `exit_at_zero` is discharged by a lemma rather than by an
-argument in prose. -/
+covers, so the instance that leaves in two ways names it: `assemblyBoundLoop` in
+`JsonEscapeExpandStaged.lean`, whose exit test is the disjunction "at the bound or
+the head position refuses".  Its boundary at budget zero is **vacuous rather than
+relied on**: at budget zero the invariant forces `c = nps`, the remaining list is
+empty, and the walk is a decode, so no state carrying a refused goal satisfies the
+invariant there.  The lemma below records that, so the refusal edge at budget zero
+is impossible rather than merely uncovered. -/
 
 /-- A refused goal cannot be carried at budget zero: the budget forces the index to
 the bound, where the walk has nothing left to refuse. -/
@@ -581,21 +586,28 @@ theorem latch_refused_budget_zero_absurd {body : List UInt8} {st : ClassState}
 /-! ### The two-exit loop
 
 The loop leaves in two ways: `while.end35` when the position index reaches the
-list's length, and `cleanup41` when the walk refuses at a position.  A single
-`BoundLoop` covers both, because `Exit` is a predicate and `atBound` a `Bool`
-disjunction: one induction, and the caller's continuation splits once at `Exit`.
+list's length, and `cleanup41` when the walk refuses at a position.  One instance
+covers both — `assemblyBoundLoop` in `JsonEscapeExpandStaged.lean` — because
+`Exit` is a predicate and `atBound` a `Bool` disjunction: one induction, and the
+caller's continuation splits once at `Exit`.  It is stated there rather than here
+because the arms it is handed read the caller's staging, which `LatchInv` does not
+carry.
 
 `decodeRefuses` is the head position's refusal as the body decides it — a control
 byte, or a byte `escapeAt` names no escape for.  `decodeTwoExit` names the pair of
-targets and `decodeTwoExitWord` the data at each: the success state's walk and
-cells, or the refusal state's cursor and offset.
+targets, and `decodeTwoExitWord` the data at each: the success state's walk and
+cells, or the refusal state's cursor and offset.  The instance consumes the staged
+form, `assemblyExitWord`, which adds the caller's destinations and the exit's index
+equality.
 
 The bound case of `step_exit` is proved, from `decodeLatch_step_exit`.  The refusal
 case is the named hypothesis `hrefuse` with exactly the shape the field consumes,
 because its run is the iteration assembly `while.body6 → … → cleanup41`, which the
-copy loops' own inductions are still part of.  `step_loop` is the named residual
-`LatchStepLoopTwo`.  Neither is a `sorry`, and both are fields of the instance, so
-the loop's fuel and its exit split are stated without them. -/
+copy loops' own inductions are still part of.  `step_loop` is the named residual,
+and the iteration arm that would fill it cannot be stated at `LatchInv` — the first
+block after the latch reads the position stream, which that invariant does not
+carry — which is why the staged instance in `JsonEscapeExpandStaged.lean` supplies
+it as `assemblyLatchStep`.  Neither is a `sorry`. -/
 
 /-- The head position's refusal: a control byte, or a position `escapeAt` names no
 escape for.  Read from the staged list at the index the latch carries. -/
@@ -676,85 +688,6 @@ def decodeTwoExitWord (body : List UInt8) (st : ClassState) (dst nps : Nat)
   (∃ c, DecodeLatchExit body st dst nps goal c e) ∨ DecodeRefusalExit e ∨
     DecodeEntryExit body st dst nps goal e
 
-/-- The iteration arm at the disjunctive exit test. -/
-def LatchStepLoopTwo (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (cost : Nat) (ps : List Nat) (pos0 : Nat) : Prop :=
-  ∀ (r : Nat) (s : State) (c : Nat),
-    LatchInv body st dst nps goal (r + 1) s c →
-    (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false →
-    ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = "cleanup32" ∧ c < c' ∧
-      LatchInv body st dst nps goal r e c' ∧
-      ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
-        runFuel escapeCalls k usDecFunction e
-
-/-- **The decoder's walk, both exits in one instance.**  The bound is the list's
-length, the head the latch, and `Exit` the pair of targets.  The bound case of the
-exit arm is proved; the refusal case and the iteration are the named hypotheses. -/
-def decodeLatchTwoExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (cost : Nat) (ps : List Nat) (pos0 : Nat)
-    (hcost : 1 ≤ cost)
-    (hrefuse : ∀ (r : Nat) (s : State) (c : Nat),
-      LatchInv body st dst nps goal r s c →
-      (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = true → ¬ nps ≤ c →
-      ∃ (e : State) (j : Nat), j ≤ cost ∧ decodeTwoExit e ∧
-        decodeTwoExitWord body st dst nps goal e ∧
-        ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
-          runFuel escapeCalls k usDecFunction e)
-    (hloop : LatchStepLoopTwo body st dst nps goal cost ps pos0) :
-    BoundLoop escapeCalls usDecFunction where
-  head := "cleanup32"
-  exitBlock := "while.end35"
-  N := nps
-  cost := cost
-  Inv := LatchInv body st dst nps goal
-  atBound := fun _ c => decide (nps ≤ c) || decodeRefuses body ps pos0 c
-  Exit := decodeTwoExit
-  ExitWord := decodeTwoExitWord body st dst nps goal
-  step_exit := by
-    intro r s c h hat
-    by_cases hb : nps ≤ c
-    · obtain ⟨e, j, hj, hpc, hexit, hrun⟩ :=
-        decodeLatch_step_exit h.1 (decide_eq_true hb)
-      exact ⟨e, j, by omega, Or.inl hpc, Or.inl ⟨c, hexit⟩, hrun⟩
-    · have hrf : decodeRefuses body ps pos0 c = true := by
-        cases hr : decodeRefuses body ps pos0 c with
-        | false =>
-            rw [hr] at hat
-            simp [hb, hr] at hat
-        | true => rfl
-      exact hrefuse r s c h hat hb
-  step_loop := hloop
-  exit_at_zero := by
-    intro s c h
-    have hb := latchInv_budget h
-    simp [decide_eq_true (by omega : nps ≤ c)]
-  budget := by
-    intro r s c h
-    exact latchInv_budget h
-
-/-- **The two-exit loop's fuel.**  With both arms, the latch reaches a state `Exit`
-admits within `(nps + 1) * cost` control steps, and a continuation that splits once
-at `Exit` lifts to the whole walk. -/
-theorem decodeLatchTwoExit_run_at (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (cost : Nat) (ps : List Nat) (pos0 : Nat)
-    (hcost : 1 ≤ cost)
-    (hrefuse : ∀ (r : Nat) (s : State) (c : Nat),
-      LatchInv body st dst nps goal r s c →
-      (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = true → ¬ nps ≤ c →
-      ∃ (e : State) (j : Nat), j ≤ cost ∧ decodeTwoExit e ∧
-        decodeTwoExitWord body st dst nps goal e ∧
-        ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
-          runFuel escapeCalls k usDecFunction e)
-    (hloop : LatchStepLoopTwo body st dst nps goal cost ps pos0)
-    (s : State) (c : Nat) (k : Nat)
-    (hinv : LatchInv body st dst nps goal nps s c) {o : Outcome}
-    (hcont : ∀ (e : State), decodeTwoExit e →
-      decodeTwoExitWord body st dst nps goal e →
-      runFuel escapeCalls k usDecFunction e = some o) :
-    runFuel escapeCalls ((nps + 1) * cost + k) usDecFunction s = some o :=
-  (decodeLatchTwoExit body st dst nps goal cost ps pos0 hcost hrefuse hloop).run_at
-    s c hinv k hcont
-
 /-! ### Axiom footprints -/
 
 -- The staging predicate is a definition, not a theorem.
@@ -829,18 +762,6 @@ theorem decodeLatchTwoExit_run_at (body : List UInt8) (st : ClassState) (dst nps
 /-- info: 'LeanLLVM.Vellum.decodeTwoExitWord' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms decodeTwoExitWord
-
-/-- info: 'LeanLLVM.Vellum.LatchStepLoopTwo' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LatchStepLoopTwo
-
-/-- info: 'LeanLLVM.Vellum.decodeLatchTwoExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms decodeLatchTwoExit
-
-/-- info: 'LeanLLVM.Vellum.decodeLatchTwoExit_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms decodeLatchTwoExit_run_at
 
 /-- info: 'LeanLLVM.Vellum.decodeWalkFuel_contribution' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
