@@ -96,7 +96,21 @@ forms `%sub38 = %n - %i.0.lcssa` in 64-bit arithmetic, so a cursor past the body
 wraps the subtraction and the copy's residual is `2 ^ 64 - (i - n)`; the walk itself
 does not exclude that (`latchExit_admits_cursor_past_body`).  The run's cursor stays
 inside the body because each step advances by an escape's own width, so the bound is
-true of the run and is carried here at the latch's own binder. -/
+true of the run and is carried here at the latch's own binder.
+
+**The cursor stands behind the head position, and the clause is a relation rather
+than a bound.**  `DecodeInv.prefix_le_cursor` bounds the decoded prefix by the
+cursor; nothing bounds the cursor by the position it is about to decode, and the
+walk does not exclude a cursor past it (`escapeDecodeGo` copies `take (q - i)`,
+which is empty for `q < i`).  The blocks do exclude it, by wrapping: `if.end` forms
+`%sub13 = %sub - %i.0295` with `%sub` the head position and `%i.0295` the cursor, so
+at a cursor past the head the copy's residual is `2 ^ 64 - 1` and no bound inside
+`decodeIterCost` can exhaust the copy's visits.  The state that exhibits the wrap
+is `wrapState` (`JsonEscapeExpandAssembly`), and this clause is what puts it outside
+the invariant: `Spaced`'s head premise is `i ≤ q`, so `assemblyLatchInv_cursor_le_head`
+recovers the relation at the head, the copy's residual `q - i` is a subtraction of
+naturals, and the successor's spacing is `Spaced.step` at the escape the emitter
+consumed. -/
 def AssemblyLatchInv (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
     (err xj : Nat) (mem : Mem) (r c : Nat) (s : State) : Prop :=
@@ -109,6 +123,7 @@ def AssemblyLatchInv (body : List UInt8) (st : ClassState) (dst nps : Nat)
   lookupName s.env "%err" = some (.ptr err) ∧
   lookupName s.env "%xj" = some (.ptr xj) ∧
   (∀ i : Nat, latchCursor s = some i → i ≤ n) ∧
+  (∀ i : Nat, latchCursor s = some i → Spaced body i ((escAt body st 0).drop c)) ∧
   UnchangedOutside mem s.mem [(dst, n + 64)]
 
 /-- The staged latch under the pinnings. -/
@@ -182,7 +197,7 @@ theorem assemblyLatchInv_frame {body : List UInt8} {st : ClassState} {dst nps : 
     {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
       mem r c s) :
     UnchangedOutside mem s.mem [(dst, n + 64)] :=
-  h.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2
 
 /-- **The cursor's bound**, at the latch: the byte cursor the next step forms is
 inside the body, so `while.end35`'s subtraction does not wrap. -/
@@ -193,6 +208,117 @@ theorem assemblyLatchInv_cursor {body : List UInt8} {st : ClassState} {dst nps :
       mem r c s) :
     ∀ i : Nat, latchCursor s = some i → i ≤ n :=
   h.2.2.2.2.2.2.2.2.1
+
+/-- **The cursor stands behind the position it is about to decode.**  The walk's
+remaining positions are spaced from that cursor: the same `Spaced` the decoded
+length rests on, stated at the latch's own cursor.
+
+It is a relation between two quantities the invariant already carries and not a
+bound on either.  `DecodeInv.prefix_le_cursor` bounds the decoded prefix by the
+cursor and says nothing about the cursor's relation to the *head* position, so a
+cursor past the head satisfies every other clause; `if.end` then forms
+`%sub13 = %sub - %i.0295` with `%sub` the head and `%i.0295` the cursor, a 64-bit
+subtraction that wraps to `2 ^ 64 - 1` and gives the copy a residual no bound
+inside `decodeIterCost` can exhaust.  The state exhibiting the wrap is `wrapState`
+in `JsonEscapeExpandAssembly`, and it is outside this invariant by this clause. -/
+theorem assemblyLatchInv_spaced {body : List UInt8} {st : ClassState} {dst nps : Nat}
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
+    ∀ i : Nat, latchCursor s = some i → Spaced body i ((escAt body st 0).drop c) :=
+  h.2.2.2.2.2.2.2.2.2.1
+
+/-- **A spaced list puts the cursor behind its head.**  The constructors' only
+cursor-sensitive premise is `i ≤ q`, so from a non-empty spaced list the head
+position is at or past the cursor.  This is the form the iteration arm reads: the
+copy's residual `q - i` is a subtraction of naturals only because this holds. -/
+theorem Spaced.head_le {bs : List UInt8} {i q : Nat} {qs : List Nat}
+    (h : Spaced bs i (q :: qs)) : i ≤ q := by
+  cases h with
+  | control _ _ _ _ hiq _ _ => exact hiq
+  | refuse _ _ _ hiq _ _ => exact hiq
+  | step _ _ _ _ _ _ hiq _ _ _ _ _ => exact hiq
+
+/-- **The arm's form of the spacing**: a latch state's cursor is at or behind the
+head position its index names. -/
+theorem assemblyLatchInv_cursor_le_head {body : List UInt8} {st : ClassState}
+    {dst nps : Nat} {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat}
+    {err xj : Nat} {mem : Mem} {r c : Nat} {s : State}
+    (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem r c s)
+    {i q : Nat} (hi : latchCursor s = some i)
+    (hq : (escAt body st 0)[c]? = some q) : i ≤ q := by
+  have hsp := assemblyLatchInv_spaced h i hi
+  have hc : c < (escAt body st 0).length := by
+    rw [List.getElem?_eq_some_iff] at hq
+    exact hq.1
+  have hq' : (escAt body st 0)[c]'hc = q := by
+    have h1 : (escAt body st 0)[c]? = some ((escAt body st 0)[c]'hc) :=
+      List.getElem?_eq_getElem hc
+    rw [h1] at hq
+    exact Option.some.inj hq
+  rw [List.drop_eq_getElem_cons hc, hq'] at hsp
+  exact Spaced.head_le hsp
+
+/-- **The spacing the next latch inherits.**  At a position the emitter decodes,
+the walk's list continues at `q + adv`, with one entry dropped after a surrogate
+pair: `Spaced` says so in its `step` constructor, and the three refusals' premises
+are contradicted by the emitter's own facts (the byte is not a control byte and
+`escapeAt` names an escape).  This is what carries the latch's spacing clause to
+the successor: the cursor moves to `q + adv` and the remaining list is exactly the
+one the successor decodes. -/
+theorem Spaced.step_tail {bs : List UInt8} {i q : Nat} {qs : List Nat} {adv : Nat}
+    {bytes : List UInt8} {b : UInt8}
+    (h : Spaced bs i (q :: qs)) (hb : bs[q]? = some b) (hctl : IsControlB b = false)
+    (hesc : escapeAt bs q = some (bytes, adv)) :
+    Spaced bs (q + adv) (if adv = 12 then qs.drop 1 else qs) := by
+  cases h with
+  | control _ _ _ b' _ hb' hctl' =>
+      rw [hb'] at hb
+      cases Option.some.inj hb
+      rw [hctl'] at hctl
+      exact absurd hctl (by simp)
+  | refuse _ _ _ _ hlt hnone =>
+      rw [hnone] at hesc
+      exact absurd hesc (by simp)
+  | step _ _ _ adv' bytes' b' _ hb' hctl' hesc' hlen hadv ih =>
+      rw [hb'] at hb
+      cases Option.some.inj hb
+      rw [hesc'] at hesc
+      cases Option.some.inj hesc
+      exact ih
+
+/-- **The successor latch's spacing, from this latch's.**  The emitter consumes the
+head position with its own advance; the successor's index is `c + 1` for a
+two-character or six-byte escape and `c + 2` for a surrogate pair, and its cursor is
+`q + adv`.  The remaining list is the one `Spaced.step_tail` names, at that index. -/
+theorem assemblyLatchInv_spaced_succ {body : List UInt8} {st : ClassState}
+    {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat} {pos0 n : Nat}
+    {ps : List Nat} {err xj : Nat} {mem : Mem} {r c : Nat} {s : State}
+    (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem r c s)
+    {i q adv : Nat} {bytes : List UInt8} {b' : UInt8}
+    (hi : latchCursor s = some i) (hq : (escAt body st 0)[c]? = some q)
+    (hb : body[q]? = some b') (hctl : IsControlB b' = false)
+    (hesc : escapeAt body q = some (bytes, adv)) :
+    Spaced body (q + adv)
+      ((escAt body st 0).drop (c + 1 + (if adv = 12 then 1 else 0))) := by
+  have hsp := assemblyLatchInv_spaced h i hi
+  have hc : c < (escAt body st 0).length := by
+    rw [List.getElem?_eq_some_iff] at hq
+    exact hq.1
+  have hq' : (escAt body st 0)[c]'hc = q := by
+    have h1 : (escAt body st 0)[c]? = some ((escAt body st 0)[c]'hc) :=
+      List.getElem?_eq_getElem hc
+    rw [h1] at hq
+    exact Option.some.inj hq
+  rw [List.drop_eq_getElem_cons hc, hq'] at hsp
+  have hnext := Spaced.step_tail hsp hb hctl hesc
+  by_cases h12 : adv = 12
+  · simp only [h12, ite_true] at hnext ⊢
+    rw [List.drop_drop] at hnext
+    exact hnext
+  · simp only [h12, ite_false] at hnext ⊢
+    exact hnext
 
 /-- The pinning forces `DecodeLatch`'s `%p` existential: the two values are equal,
 so the extension refines the decode invariant rather than competing with it. -/
@@ -746,5 +872,29 @@ theorem assemblyBoundLoop_run_at (args : List Value) (mem : Mem) (next : Nat)
 /-- info: 'LeanLLVM.Vellum.assemblyBoundLoop_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms assemblyBoundLoop_run_at
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_cursor' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_cursor
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_spaced' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_spaced
+
+/-- info: 'LeanLLVM.Vellum.Spaced.head_le' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Spaced.head_le
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_cursor_le_head' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_cursor_le_head
+
+/-- info: 'LeanLLVM.Vellum.Spaced.step_tail' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Spaced.step_tail
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_spaced_succ' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_spaced_succ
 
 end LeanLLVM.Vellum

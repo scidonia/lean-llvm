@@ -1042,4 +1042,504 @@ evaluates over `EscapeOutcome` and `ClassState` (`refusalState_staging`). -/
 /-- info: 'LeanLLVM.Vellum.assemblyLatchInv_excludes_failing_copy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms assemblyLatchInv_excludes_failing_copy
+
+/-- **The latch's first two blocks, composed.**  From the latch at a live guard —
+the index is below the list's length and the head position does not refuse —
+`cleanup32` and `while.body6` run in two control steps and leave the state at
+`if.end` with the block's own cells: the next index `%k.1296 = %inc11 + %adv == 12`,
+the byte cursor `%i.0295 = %adv + %sub`, the prefix length `%j.0294`, and the
+position read `%conv8`, whose value is the list entry at the index.  The staging is
+what makes the read a value rather than a hypothesis, and the spacing clause is what
+puts the cursor at or behind that entry's body-relative position `q`. -/
+theorem latch_to_ifEnd
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome}
+    {b xp tab : Nat} {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    {r c : Nat} {s : State}
+    (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s)
+    (hguard : (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false) :
+    ∃ (e : State) (i q : Nat) (out : List UInt8) (sub adv inc11 nxp jv : BitVec 64)
+      (v : BitVec 32) (addv : BitVec 64),
+      e.pc = "if.end" ∧ e.pre = some "while.body6" ∧ e.mem = s.mem ∧
+      (escAt body st 0)[c]? = some q ∧ i ≤ q ∧ (adv + sub).toNat = i ∧
+      lookupName e.env "%k.1296" = some (.int 64 (decodeNextIdx inc11 adv)) ∧
+      lookupName e.env "%i.0295" = some (.int 64 (adv + sub)) ∧
+      lookupName e.env "%j.0294" = some (.int 64 jv) ∧
+      lookupName e.env "%conv8" = some (.int 64 (BitVec.ofNat 64 v.toNat)) ∧
+      lookupName e.env "%sub" = some (.int 64 sub) ∧
+      lookupName e.env "%inc11" = some (.int 64 inc11) ∧
+      lookupName e.env "%nxp" = some (.int 64 nxp) ∧
+      lookupName e.env "%p" = some (.ptr b) ∧
+      lookupName e.env "%dst" = some (.ptr dst) ∧
+      lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+      lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      lookupName e.env "%xp" = some (.ptr xp) ∧
+      lookupName e.env "%tab" = some (.ptr tab) ∧
+      lookupName e.env "%err" = some (.ptr err) ∧
+      lookupName e.env "%xj" = some (.ptr xj) ∧
+      lookupName e.env "%add" = some (.int 64 addv) ∧ addv.toNat = pos0 + n ∧
+      ∀ k, runFuel escapeCalls (2 + k) usDecFunction s =
+        runFuel escapeCalls k usDecFunction e := by
+  -- the invariant, at the latch
+  have hkeep := h
+  obtain ⟨hstaged, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b, hxj_b, hcur, hspaced,
+    hframe⟩ := hkeep
+  obtain ⟨hlatch, ⟨addv, hds, haddcell⟩⟩ := hstaged
+  obtain ⟨hdec, hbudget⟩ := hlatch
+  obtain ⟨i, out, prev, sub, inc11, adv, jv, nxp, paddr, xpaddr, tabaddr, erraddr,
+    xjaddr, pos0v, addv', nv, hpc, hwalk, hcle, hpre, hsubc, hinc11c, hnxpc, hnxpnat,
+    hphi, hnext, hi, hjlen, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
+    hpos0cell, haddcall, hncell⟩ := hdec
+  -- the guard says the index is live
+  have hnle : ¬ nps ≤ c := by
+    intro hle
+    rw [decide_eq_true hle] at hguard
+    exact absurd hguard (by simp)
+  have hclt : c < nps := by omega
+  -- the staging's facts at the caller's binders
+  obtain ⟨hstream, hpslen, hrange, haddnat⟩ := hds
+  obtain ⟨-, -, -, hbody0, h32, -, hmap, -, -, -, -⟩ := hstaging
+  have hinlen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbody0
+  have hnpsn : nps ≤ n := by
+    have hlen := hwalk.length
+    have hle := escAt_length_le body st 0
+    omega
+  -- the pinnings force the latch's existentials
+  have hxpaddr : xpaddr = xp := by
+    rw [hxp_b] at hxpcell
+    exact (Value.ptr.inj (Option.some.inj hxpcell)).symm
+  have htabaddr : tabaddr = tab := by
+    rw [htab_b] at htabcell
+    exact (Value.ptr.inj (Option.some.inj htabcell)).symm
+  have herraddr : erraddr = err := by
+    rw [herr_b] at herrcell
+    exact (Value.ptr.inj (Option.some.inj herrcell)).symm
+  have hxjaddr : xjaddr = xj := by
+    rw [hxj_b] at hxjcell
+    exact (Value.ptr.inj (Option.some.inj hxjcell)).symm
+  -- the stream's entry at `c` is the load `while.body6` makes
+  have hlenps : nps = ps.length := hpslen.symm
+  have hcps : c < ps.length := by omega
+  have hread := readBytes_positionsBytes hstream hlenps hcps
+  have hqbound := hrange c (ps[c]'hcps) (List.getElem?_eq_getElem hcps)
+  have hq32 : ps[c]'hcps < 2 ^ 32 := by omega
+  let v : BitVec 32 := BitVec.ofNat 32 (ps[c]'hcps)
+  have hvnat : v.toNat = ps[c]'hcps := by
+    show (BitVec.ofNat 32 (ps[c]'hcps)).toNat = _
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have hload : readBytes s.mem (xp + 4 * c) 4 = some (natToBytes v.toNat 4) := by
+    rw [hvnat]
+    exact hread
+  -- the head position, body-relative
+  have hhead : (escAt body st 0)[c]? = some (ps[c]'hcps - pos0) := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.getElem?_map,
+      List.getElem?_eq_getElem hcps]
+    rfl
+  have hcurval : latchCursor s = some (adv + sub).toNat := by
+    rcases hphi with ⟨hprev, _, ha⟩ | ⟨hprev, _, hadv⟩
+    · simp only [latchCursor, hpre, hprev, hsubc, ha]
+    · rw [hadv]
+      simp only [latchCursor, hpre, hprev, hsubc]
+  have hile : (adv + sub).toNat ≤ ps[c]'hcps - pos0 :=
+    assemblyLatchInv_cursor_le_head h hcurval hhead
+  have hkval : (decodeNextIdx inc11 adv).toNat = c := hnext
+  have hk63 : (decodeNextIdx inc11 adv).toNat < 2 ^ 63 := by omega
+  have hcond : evalICmp .ugt addv (BitVec.ofNat 64 v.toNat) = (1 : BitVec 1) := by
+    refine (evalICmp_ugt_one_iff_toNat _ _).2 ?_
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), hvnat, haddnat]
+    omega
+  -- the two steps
+  let e1 : State :=
+    { (withEnv (udCleanup32Env s.env jv adv sub inc11 nxp) s) with
+        pc := "while.body6", pre := some "cleanup32" }
+  have hstep1 : step escapeCalls usDecFunction s = .jump e1 := by
+    rcases hphi with ⟨hprev, hj, ha⟩ | ⟨hprev, hj, hadv⟩
+    · subst hprev
+      have h1 := udCleanup32_step s.env s "if.end32.i" (.reg "%add.i125")
+        (.reg "%adv.1.i") jv adv sub inc11 nxp hpc hpre
+        latch_phi_operand_emitter latch_phi_operand_emitter_adv
+        (evalOperand_reg_eq s.env s "%add.i125" (.int 64 jv) hj)
+        (by
+          rw [evalOperand_reg_eq (("%j.3", .int 64 jv) :: s.env) s "%adv.1.i"
+            (.int 64 adv) (by rw [lookupName_cons_ne _ _ (by decide)]; exact ha)])
+        hsubc hinc11c hnxpc (by
+          refine (evalICmp_ult_one_iff _ _).2 ?_
+          change (decodeNextIdx inc11 adv).toNat < nxp.toNat
+          rw [hnext, hnxpnat]
+          exact hclt)
+      have hs : withEnv s.env s = s := rfl
+      rw [hs] at h1
+      exact h1
+    · subst hprev
+      have h1 := udCleanup32_step s.env s "if.then6.i" (.reg "%add8.i")
+        (.imm (.int 64 (BitVec.ofInt 64 2))) jv adv sub inc11 nxp hpc hpre
+        latch_phi_operand_simple latch_phi_operand_simple_adv
+        (evalOperand_reg_eq s.env s "%add8.i" (.int 64 jv) hj)
+        (by rw [hadv]; rfl)
+        hsubc hinc11c hnxpc (by
+          refine (evalICmp_ult_one_iff _ _).2 ?_
+          change (decodeNextIdx inc11 adv).toNat < nxp.toNat
+          rw [hnext, hnxpnat]
+          exact hclt)
+      have hs : withEnv s.env s = s := rfl
+      rw [hs] at h1
+      exact h1
+  let e2 : State :=
+    { (withEnv (udWhileBody6Env (udCleanup32Env s.env jv adv sub inc11 nxp) xp
+        (decodeNextIdx inc11 adv) (adv + sub) jv v addv) s) with
+        pc := "if.end", pre := some "while.body6" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 := by
+    have h1 := udWhileBody6_step_one (udCleanup32Env s.env jv adv sub inc11 nxp)
+      { s with pc := "while.body6", pre := some "cleanup32" }
+      "cleanup32" (.reg "%add28") (.reg "%add24") (.reg "%j.3") xp
+      (decodeNextIdx inc11 adv) (adv + sub) jv v addv
+      rfl rfl
+      (by decide)
+      (by
+        exact evalOperand_reg_eq (udCleanup32Env s.env jv adv sub inc11 nxp) s
+          "%add28" (.int 64 (decodeNextIdx inc11 adv)) (by
+            show lookupName (udCleanup32Env s.env jv adv sub inc11 nxp) "%add28" =
+              some (.int 64 (decodeNextIdx inc11 adv))
+            simp only [decodeNextIdx, decodePairBit, udCleanup32Env]; ud_lk))
+      (by decide)
+      (by
+        exact evalOperand_reg_eq (udCleanup32Env s.env jv adv sub inc11 nxp) s
+          "%add24" (.int 64 (adv + sub)) (by
+            simp only [udCleanup32Env]; ud_lk))
+      (by decide)
+      (by
+        exact evalOperand_reg_eq (udCleanup32Env s.env jv adv sub inc11 nxp) s
+          "%j.3" (.int 64 jv) (by
+            simp only [udCleanup32Env]; ud_lk))
+      (by simp only [withEnv, udCleanup32Env]; ud_lk_h hxp_b)
+      (by simp only [withEnv, udCleanup32Env]; ud_lk_h haddcell)
+      hk63 (signExtend_self_toNat (decodeNextIdx inc11 adv))
+      (by
+        show readBytes s.mem (xp + (decodeNextIdx inc11 adv).toNat * 4) 4 = _
+        rw [hkval, Nat.mul_comm]
+        exact hload)
+      hcond
+    exact h1
+  refine ⟨e2, i, ps[c]'hcps - pos0, out, sub, adv, inc11, nxp, jv, v, addv, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · exact hhead
+  · exact hi ▸ hile
+  · exact hi
+  · simp only [e2, withEnv, udWhileBody6Env]; ud_lk
+  · simp only [e2, withEnv, udWhileBody6Env]; ud_lk
+  · simp only [e2, withEnv, udWhileBody6Env]; ud_lk
+  · simp only [e2, withEnv, udWhileBody6Env]; ud_lk
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hsubc
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hinc11c
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hnxpc
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hp_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hdstcell
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hpos0_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hn_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hxp_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h htab_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h herr_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h hxj_b
+  · simp only [e2, withEnv, udWhileBody6Env, udCleanup32Env]; ud_lk_h haddcell
+  · exact haddnat
+  · intro k
+    rw [show 2 + k = (1 + k) + 1 from by omega, udRun_jump hstep1]
+    rw [show 1 + k = k + 1 from by omega, udRun_jump hstep2]
+
+/-! ### The wrap state: a cursor past the head position
+
+`if.end` forms `%sub13 = %sub - %i.0295` in 64-bit arithmetic, with `%sub` the
+head position (`%conv8 - %pos0`) and `%i.0295` the walk's byte cursor.  At a cursor
+past the head the subtraction wraps to `2 ^ 64 - 1`, so the copy that follows is
+given a residual no bound inside `decodeIterCost` can exhaust; every other clause
+of the latch invariant holds at such a state, because the walk is defined at any
+cursor (`escapeDecodeGo` copies `take (q - i)`, empty for `q < i`) and
+`DecodeInv.prefix_le_cursor` bounds only the decoded prefix by the cursor.
+
+The state below is that state, on a six-byte body with one position: at
+`cleanup32`, `%sub = 3` and `%adv.1.i = 2` put the cursor at `5` while the head
+position is `4`.  `AssemblyLatchInvUnspaced` is the invariant before the spacing
+clause, and `wrapState_unspaced` shows the state satisfied all of it, so the
+exclusion below is a statement about a state that was admitted rather than about an
+arbitrary one.  The arithmetic facts beside it are what the copy then cannot meet:
+the block's residual is `2 ^ 64 - 1`, no `Nat` residual below `2 ^ 63` is that
+word, and `copyDisjoint` fails at it. -/
+
+/-- The latch invariant before the spacing clause: `AssemblyLatchInv`'s conjuncts
+up to the cursor-behind-head relation.  Kept so the state that forced the clause is
+a checkable statement rather than a paragraph. -/
+def AssemblyLatchInvUnspaced (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (r c : Nat) (s : State) : Prop :=
+  StagedLatchInv body st dst nps goal xp pos0 n ps r c s ∧
+  lookupName s.env "%p" = some (.ptr b) ∧
+  lookupName s.env "%xp" = some (.ptr xp) ∧
+  lookupName s.env "%tab" = some (.ptr tab) ∧
+  lookupName s.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName s.env "%err" = some (.ptr err) ∧
+  lookupName s.env "%xj" = some (.ptr xj) ∧
+  (∀ i : Nat, latchCursor s = some i → i ≤ n) ∧
+  UnchangedOutside mem s.mem [(dst, n + 64)]
+
+/-- The body: four `a`, then `\ n`.  Its own position list is `[4]`. -/
+def wrapBody : List UInt8 := [0x61, 0x61, 0x61, 0x61, 0x5C, 0x6E]
+
+theorem wrapBody_positions : escAt wrapBody ⟨true, false⟩ 0 = [4] := by decide
+
+/-- The witness memory: zeros, the table at `1000`, the stream at `700`, the body
+at `464`. -/
+def wrapMem : Mem :=
+  writeBytes
+    (writeBytes (writeBytes (zeroMem 1600) 1000 unescapeTable)
+      700 (positionsBytes 4 [4]))
+    464 wrapBody
+
+theorem wrapMem_body : readBytes wrapMem 464 6 = some wrapBody := by
+  unfold wrapMem
+  exact readBytes_writeBytes_same _ _
+
+theorem wrapMem_stream : readBytes wrapMem 700 4 = some (positionsBytes 4 [4]) := by
+  unfold wrapMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _ (by decide)]
+  exact readBytes_writeBytes_same _ _
+
+theorem wrapMem_table : readBytes wrapMem 1000 256 = some unescapeTable := by
+  unfold wrapMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _ (by decide)]
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _ (by decide)]
+  rw [show 256 = unescapeTable.length from unescapeTable_length.symm]
+  exact readBytes_writeBytes_same _ _
+
+/-- The latch's cells: `%sub = 3`, `%adv.1.i = 2`, so the cursor is `5`. -/
+def wrapState : State :=
+  modelState
+    [("%sub", .int 64 3), ("%inc11", .int 64 0), ("%nxp", .int 64 1),
+     ("%add.i125", .int 64 0), ("%adv.1.i", .int 64 2), ("%p", .ptr 464),
+     ("%dst", .ptr 200), ("%xp", .ptr 700), ("%tab", .ptr 1000),
+     ("%err", .ptr 900), ("%xj", .ptr 950), ("%pos0", .int 64 0),
+     ("%add", .int 64 6), ("%n", .int 64 6)]
+    wrapMem "cleanup32" (some "if.end32.i")
+
+theorem wrapState_cursor : latchCursor wrapState = some 5 := by
+  decide
+
+theorem wrapState_walk : escapeDecodeGo wrapBody 5 0 [4] [] = .decoded [0x0A] 1 := by
+  decide
+
+theorem wrapState_decodeInv :
+    DecodeInv wrapBody ⟨true, false⟩ wrapMem 200 1 5 0 [] (.decoded [0x0A] 1) where
+  walk := wrapState_walk
+  stored := rfl
+  length := by rw [wrapBody_positions]; rfl
+  prefix_le_cursor := by decide
+
+theorem wrapState_staging :
+    DecodeStaging wrapMem 1 700 0 6 [4] (6 : BitVec 64) := by
+  refine ⟨wrapMem_stream, rfl, ?_, by decide⟩
+  intro j q hq
+  cases j with
+  | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hq
+      subst hq
+      omega
+  | succ k =>
+      simp only [List.getElem?_cons_succ] at hq
+      cases hq
+
+/-- **The state satisfied the invariant before the spacing clause.**  The walk at
+cursor `5` on the one-position list is the decode of the empty remainder, the
+stored prefix is empty, the staging reads, the cells hold, the cursor is inside the
+body, and the frame is the identity. -/
+theorem wrapState_unspaced :
+    AssemblyLatchInvUnspaced wrapBody ⟨true, false⟩ 200 1 (.decoded [0x0A] 1) 464 700
+      1000 0 6 [4] 900 950 wrapMem 1 0 wrapState := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ⟨6, wrapState_staging, ?_⟩⟩
+    · refine ⟨?_, by omega⟩
+      refine ⟨5, [], "if.end32.i", 3, 0, 2, 0, 1, 464, 700, 1000, 900, 950, 0, 6, 6,
+        rfl, wrapState_decodeInv, by decide, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · decide
+      · left
+        exact ⟨rfl, by simp [wrapState, modelState, lookupName],
+          by simp [wrapState, modelState, lookupName]⟩
+      · decide
+      · simp [wrapState, modelState, lookupName]
+      · rfl
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+      · simp [wrapState, modelState, lookupName]
+    · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · simp [wrapState, modelState, lookupName]
+  · intro i hi
+    rw [wrapState_cursor] at hi
+    have h : i = 5 := (Option.some.inj hi).symm
+    subst h
+    omega
+  · intro a _
+    rfl
+
+/-- **The cursor is past the head position.**  The invariant's cursor is `5`; the
+walk's one position is `4`. -/
+theorem wrapState_cursor_past_head :
+    latchCursor wrapState = some 5 ∧ (escAt wrapBody ⟨true, false⟩ 0)[0]? = some 4 :=
+  ⟨wrapState_cursor, by rw [wrapBody_positions]; rfl⟩
+
+/-- **The state is outside the invariant that carries the spacing.**  `Spaced`'s
+head premise is `i ≤ q`, and here `5 ≤ 4` is false. -/
+theorem wrapState_not_assemblyLatchInv :
+    ¬ AssemblyLatchInv wrapBody ⟨true, false⟩ 200 1 (.decoded [0x0A] 1) 464 700 1000
+        0 6 [4] 900 950 wrapMem 1 0 wrapState := by
+  intro h
+  have hsp := assemblyLatchInv_spaced h 5 wrapState_cursor
+  simp only [List.drop_zero, wrapBody_positions] at hsp
+  have := Spaced.head_le hsp
+  omega
+
+/-- **The copy's residual cannot be the block's cell.**  `if.end` forms
+`%sub13 = %sub - %i.0295` in 64-bit arithmetic; here that is `4 - 5 = 2 ^ 64 - 1`.
+`CopyInv`'s residual is a `Nat` carried as `BitVec.ofNat 64 sub` with `sub < 2 ^ 63`,
+and no such `sub` is that word. -/
+theorem wrapState_copy_residual_wraps :
+    ∀ sub : Nat, sub < 2 ^ 63 → BitVec.ofNat 64 sub ≠ (4 : BitVec 64) - (5 : BitVec 64) := by
+  intro sub hlt h
+  have h1 : (BitVec.ofNat 64 sub).toNat = ((4 : BitVec 64) - (5 : BitVec 64)).toNat := by
+    rw [h]
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega : sub < 2 ^ 64)] at h1
+  have h2 : ((4 : BitVec 64) - (5 : BitVec 64)).toNat = 2 ^ 64 - 1 := by decide
+  rw [h2] at h1
+  omega
+
+/-- **The copy's disjointness fails at the wrapped residual.**  At the parameters
+`if.end` would form — source base `%p + %i.0295 = 464 + 5`, destination base
+`%dst + %j.0294 = 200`, residual `2 ^ 64 - 1` — neither disjunct holds. -/
+theorem wrapState_disjoint_false :
+    ¬ copyDisjoint (464 + 5) (200 + 0) (2 ^ 64 - 1) := by
+  unfold copyDisjoint
+  decide
+
+/-- **The iteration arm's guard is false at the wrap state**: the index is below
+the list's length and the head position is a valid escape. -/
+theorem wrapState_guard :
+    (decide (1 ≤ 0) || decodeRefuses wrapBody [4] 0 0) = false := by
+  decide
+
+/-- **The state the spacing clause excludes.**  It satisfied the invariant's other
+conjuncts, its guard is false — so the iteration arm quantifies over it — and the
+copy's residual at its parameters is `2 ^ 64 - 1`, which is not a `Nat` residual
+below the sign-extension bound. -/
+theorem assemblyLatchInv_excludes_wrap_state :
+    AssemblyLatchInvUnspaced wrapBody ⟨true, false⟩ 200 1 (.decoded [0x0A] 1) 464 700
+        1000 0 6 [4] 900 950 wrapMem 1 0 wrapState ∧
+      latchCursor wrapState = some 5 ∧
+      (escAt wrapBody ⟨true, false⟩ 0)[0]? = some 4 ∧
+      (decide (1 ≤ 0) || decodeRefuses wrapBody [4] 0 0) = false ∧
+      ¬ AssemblyLatchInv wrapBody ⟨true, false⟩ 200 1 (.decoded [0x0A] 1) 464 700
+        1000 0 6 [4] 900 950 wrapMem 1 0 wrapState ∧
+      ¬ copyDisjoint (464 + 5) (200 + 0) (2 ^ 64 - 1) :=
+  ⟨wrapState_unspaced, wrapState_cursor_past_head.1, wrapState_cursor_past_head.2,
+    wrapState_guard, wrapState_not_assemblyLatchInv, wrapState_disjoint_false⟩
+
+/-! #### The wrap state's footprints -/
+
+/-- info: 'LeanLLVM.Vellum.AssemblyLatchInvUnspaced' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms AssemblyLatchInvUnspaced
+
+/-- info: 'LeanLLVM.Vellum.wrapBody' does not depend on any axioms -/
+#guard_msgs in
+#print axioms wrapBody
+
+/-- info: 'LeanLLVM.Vellum.wrapBody_positions' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms wrapBody_positions
+
+/-- info: 'LeanLLVM.Vellum.wrapMem' does not depend on any axioms -/
+#guard_msgs in
+#print axioms wrapMem
+
+/-- info: 'LeanLLVM.Vellum.wrapMem_body' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapMem_body
+
+/-- info: 'LeanLLVM.Vellum.wrapMem_stream' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapMem_stream
+
+/-- info: 'LeanLLVM.Vellum.wrapMem_table' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapMem_table
+
+/-- info: 'LeanLLVM.Vellum.wrapState' does not depend on any axioms -/
+#guard_msgs in
+#print axioms wrapState
+
+/-- info: 'LeanLLVM.Vellum.wrapState_cursor' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms wrapState_cursor
+
+/-- info: 'LeanLLVM.Vellum.wrapState_walk' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms wrapState_walk
+
+/-- info: 'LeanLLVM.Vellum.wrapState_decodeInv' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms wrapState_decodeInv
+
+/-- info: 'LeanLLVM.Vellum.wrapState_staging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapState_staging
+
+/-- info: 'LeanLLVM.Vellum.wrapState_unspaced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapState_unspaced
+
+/-- info: 'LeanLLVM.Vellum.wrapState_cursor_past_head' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms wrapState_cursor_past_head
+
+/-- info: 'LeanLLVM.Vellum.wrapState_not_assemblyLatchInv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapState_not_assemblyLatchInv
+
+/-- info: 'LeanLLVM.Vellum.wrapState_copy_residual_wraps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms wrapState_copy_residual_wraps
+
+/-- info: 'LeanLLVM.Vellum.wrapState_disjoint_false' does not depend on any axioms -/
+#guard_msgs in
+#print axioms wrapState_disjoint_false
+
+/-- info: 'LeanLLVM.Vellum.wrapState_guard' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms wrapState_guard
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_excludes_wrap_state' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_excludes_wrap_state
+
+/-- info: 'LeanLLVM.Vellum.latch_to_ifEnd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms latch_to_ifEnd
 end LeanLLVM.Vellum
