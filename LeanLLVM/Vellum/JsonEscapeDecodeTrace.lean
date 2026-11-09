@@ -43,12 +43,21 @@ the equality is a caller's.  Discharging it at the boundary is where a carrier, 
 one is used, will appear, and it belongs to the assembly rather than to these
 blocks.
 
-What is not here yet is the rest of the walk: the rest of the hex reader
+The rest of the walk is here too, each block in the same shape: the hex reader
 (`if.end3.i`), the pair and UTF-8 emitter (`if.then17.i`,
-`land.lhs.true22.i`, `if.then26.i`, `if.end32.i`), `cleanup32`, and the assembly —
-the budget term, the destination prefix, the frame per store, and
-`escape_expand_satisfies` with its companion.  `cleanup32`'s block name and lookup
-are stated so the next group starts there.
+`land.lhs.true22.i`, `if.then26.i`), the block that packs an escape's word and
+stores it (`if.end32.i`), and `cleanup32`.  `if.end32.i` is the block whose run
+leaves the four bytes of the packed word (`udIfEnd32Word cp`) at `%dst + %add15`
+rather than the input memory, and `store32_frame`/`udIfEnd32I_frame` are its
+store frame; `readBytes_writeBytes_extend` composes that store with a prefix the
+caller already holds, and `udIfEnd32I_decode` is the pair together, conditional on
+the word-to-encoding equation its docstring records.
+
+What is not here yet is the assembly above the trace: the budget term as a
+function of the arguments and the caller's memory, the destination prefix
+composed across the stores, and `escape_expand_satisfies` with its companion.
+The blocks' steps take the sign-extension width equality as a hypothesis, so the
+assembly is also where that hypothesis is discharged.
 
 Every theorem is pinned where it is proved; the pins are the module's instrument.
 -/
@@ -2597,6 +2606,7 @@ theorem udIfThen6I_step (env : Env) (s : State) (daddr : Nat) (out : BitVec 64)
     (by rw [withEnv]; exact hpc) findBlock_udIfThen6I
     (udIfThen6I_denote env s daddr out t hdst hout ht how ho63), udIfThen6I_term]
   simp only [execTerm, withEnv, hpc]
+
 
 
 end LeanLLVM.Vellum
@@ -5248,6 +5258,670 @@ end LeanLLVM.Vellum
 
 namespace LeanLLVM.Vellum
 
+/-! ### `if.end32.i`
+
+The escape's bytes packed into a word and stored: the three length tests select
+the one-, two-, three- or four-byte packing, and the same tests select the
+length the cursor advances by. -/
+
+def udIfEnd32I : Block := blockAt usDecFunction 20 (by decide)
+
+theorem findBlock_udIfEnd32I :
+    usDecFunction.findBlock "if.end32.i" = some udIfEnd32I := by decide
+
+def udIfEnd32IIncomingCp : List (String × Operand) :=
+  [("if.end3.i", .reg "%and27.i"), ("if.then26.i", .reg "%add30.i"),
+   ("land.lhs.true22.i", .reg "%and27.i"), ("if.then17.i", .reg "%and27.i")]
+
+def udIfEnd32IIncomingAdv : List (String × Operand) :=
+  [("if.end3.i", .imm (.int 64 (BitVec.ofInt 64 6))),
+   ("if.then26.i", .imm (.int 64 (BitVec.ofInt 64 12))),
+   ("land.lhs.true22.i", .imm (.int 64 (BitVec.ofInt 64 6))),
+   ("if.then17.i", .imm (.int 64 (BitVec.ofInt 64 6)))]
+
+theorem udIfEnd32I_instrs :
+    udIfEnd32I.instrs =
+      [ .phi "%cp.i.3" (.int 32) udIfEnd32IIncomingCp,
+        .phi "%adv.1.i" (.int 64) udIfEnd32IIncomingAdv,
+        .binop "%shr.i" .lshr 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (6)))),
+        .binop "%and.i208" .and 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (63)))),
+        .binop "%or1.i" .or 32 (.reg "%and.i208") (.imm (.int 32 (BitVec.ofInt 32 (128)))),
+        .binop "%shl.i" .shl 32 (.reg "%or1.i") (.imm (.int 32 (BitVec.ofInt 32 (8)))),
+        .binop "%or.i209" .or 32 (.reg "%shr.i") (.reg "%shl.i"),
+        .binop "%or2.i" .or 32 (.reg "%or.i209") (.imm (.int 32 (BitVec.ofInt 32 (192)))),
+        .binop "%shr3.i" .lshr 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (12)))),
+        .binop "%and6.i" .and 32 (.reg "%shr.i") (.imm (.int 32 (BitVec.ofInt 32 (63)))),
+        .binop "%or7.i" .or 32 (.reg "%and6.i") (.imm (.int 32 (BitVec.ofInt 32 (128)))),
+        .binop "%shl8.i" .shl 32 (.reg "%or7.i") (.imm (.int 32 (BitVec.ofInt 32 (8)))),
+        .binop "%shl12.i" .shl 32 (.reg "%or1.i") (.imm (.int 32 (BitVec.ofInt 32 (16)))),
+        .binop "%30" .or 32 (.reg "%shl8.i") (.reg "%shl12.i"),
+        .binop "%or9.i" .or 32 (.reg "%shr3.i") (.reg "%30"),
+        .binop "%or13.i" .or 32 (.reg "%or9.i") (.imm (.int 32 (BitVec.ofInt 32 (224)))),
+        .binop "%shr14.i" .lshr 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (18)))),
+        .binop "%and17.i" .shl 32 (.reg "%shr3.i") (.imm (.int 32 (BitVec.ofInt 32 (8)))),
+        .binop "%or18.i" .and 32 (.reg "%and17.i") (.imm (.int 32 (BitVec.ofInt 32 (16128)))),
+        .binop "%shl19.i" .or 32 (.reg "%shr14.i") (.reg "%or18.i"),
+        .binop "%shl24.i" .shl 32 (.reg "%or7.i") (.imm (.int 32 (BitVec.ofInt 32 (16)))),
+        .binop "%or20.i" .or 32 (.reg "%shl19.i") (.reg "%shl24.i"),
+        .binop "%shl28.i" .shl 32 (.reg "%or1.i") (.imm (.int 32 (BitVec.ofInt 32 (24)))),
+        .binop "%or25.i" .or 32 (.reg "%or20.i") (.reg "%shl28.i"),
+        .binop "%or29.i" .or 32 (.reg "%or25.i") (.imm (.int 32 (BitVec.ofInt 32 (33008)))),
+        .icmp "%cmp.i210" .ugt 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (127)))),
+        .icmp "%cmp30.i" .ugt 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (2047)))),
+        .zext "%conv31.i" 1 64 (.reg "%cmp30.i"),
+        .icmp "%cmp32.i" .ugt 32 (.reg "%cp.i.3") (.imm (.int 32 (BitVec.ofInt 32 (65535)))),
+        .zext "%conv33.i" 1 64 (.reg "%cmp32.i"),
+        .select "%cond.i" (.int 32) (.reg "%cmp.i210") (.reg "%or2.i") (.reg "%cp.i.3"),
+        .select "%cond38.i" (.int 32) (.reg "%cmp30.i") (.reg "%or13.i") (.reg "%cond.i"),
+        .select "%cond43.i" (.int 32) (.reg "%cmp32.i") (.reg "%or29.i") (.reg "%cond38.i"),
+        .select "%add.i211" (.int 64) (.reg "%cmp.i210") (.imm (.int 64 (BitVec.ofInt 64 2))) (.imm (.int 64 (BitVec.ofInt 64 1))),
+        .gep "%add.ptr.i124" (.int 8) (.reg "%dst") (.reg "%add15"),
+        .store (.int 32) (.reg "%cond43.i") (.reg "%add.ptr.i124"),
+        .binop "%add44.i" .add 64 (.reg "%add15") (.reg "%conv31.i"),
+        .binop "%add45.i" .add 64 (.reg "%add44.i") (.reg "%add.i211"),
+        .binop "%add.i125" .add 64 (.reg "%add45.i") (.reg "%conv33.i") ] := by
+  decide
+
+theorem udIfEnd32I_term : udIfEnd32I.term = .br "cleanup32" := by decide
+
+/-- The two-byte form's word: nine in the high byte of the low pair. -/
+def udIfEnd32Or2 (cp : BitVec 32) : BitVec 32 :=
+  ((cp >>> BitVec.ofInt 32 6) |||
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 8)) |||
+    BitVec.ofInt 32 192
+
+/-- The three-byte form's word. -/
+def udIfEnd32Or13 (cp : BitVec 32) : BitVec 32 :=
+  ((cp >>> BitVec.ofInt 32 12) |||
+    (((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 8) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16))) |||
+    BitVec.ofInt 32 224
+
+/-- The four-byte form's word. -/
+def udIfEnd32Or29 (cp : BitVec 32) : BitVec 32 :=
+  (((cp >>> BitVec.ofInt 32 18) |||
+    (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)) |||
+    ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+      BitVec.ofInt 32 16)) |||
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 24) |||
+    BitVec.ofInt 32 33008
+
+/-- The first select's word: two bytes once the unit is above `0x7F`. -/
+def udIfEnd32S1 (cp : BitVec 32) : BitVec 32 :=
+  if evalICmp .ugt cp (BitVec.ofInt 32 127) = (1 : BitVec 1) then udIfEnd32Or2 cp else cp
+
+/-- The second select's word: three bytes once the unit is above `0x7FF`. -/
+def udIfEnd32S2 (cp : BitVec 32) : BitVec 32 :=
+  if evalICmp .ugt cp (BitVec.ofInt 32 2047) = (1 : BitVec 1) then udIfEnd32Or13 cp
+  else udIfEnd32S1 cp
+
+/-- **The stored word**: the packing the three tests select, as one term. -/
+def udIfEnd32Word (cp : BitVec 32) : BitVec 32 :=
+  if evalICmp .ugt cp (BitVec.ofInt 32 65535) = (1 : BitVec 1) then udIfEnd32Or29 cp
+  else udIfEnd32S2 cp
+
+/-- The advance the same test selects: two bytes below `0x80`, one above. -/
+def udIfEnd32Adv (cp : BitVec 32) : BitVec 64 :=
+  if evalICmp .ugt cp (BitVec.ofInt 32 127) = (1 : BitVec 1) then BitVec.ofInt 64 2
+  else BitVec.ofInt 64 1
+
+/-! ### The block's two scalar instructions the trace needs
+
+A scalar select keeps its condition in the value: the cell is the selected word,
+so the branch stays an `if` over BitVec values and the store's word is one term.
+`b_select_op`'s verdict is the same instruction at a `Value`-level `if`; here the
+`if` is pushed inside the integer, which is what lets `storeValue` see a word. -/
+
+/-- `%d = select i1 %c, i32 %a, i32 %b`. -/
+theorem b_select_i32 (env : Env) (s : State) (d c a b : String) (cb : BitVec 1)
+    (x y : BitVec 32)
+    (hc : lookupName env c = some (.int 1 cb))
+    (ha : lookupName env a = some (.int 32 x))
+    (hb : lookupName env b = some (.int 32 y)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.select d (.int 32) (.reg c) (.reg a) (.reg b)) =
+      some (withEnv ((d, .int 32 (if cb = (1 : BitVec 1) then x else y)) :: env) s) := by
+  rw [evalInstr,
+    show evalOperand (withEnv env s) (.reg c) = some (.int 1 cb) from hc,
+    show evalOperand (withEnv env s) (.reg a) = some (.int 32 x) from ha,
+    show evalOperand (withEnv env s) (.reg b) = some (.int 32 y) from hb]
+  rcases bv1_cases cb with h | h <;> simp [h, withEnv, State.bind]
+
+/-- `%d = select i1 %c, i64 <x>, i64 <y>`, at whatever the arms read as. -/
+theorem b_select_i64_op (env : Env) (s : State) (d c : String) (a b : Operand)
+    (cb : BitVec 1) (x y : BitVec 64)
+    (hc : lookupName env c = some (.int 1 cb))
+    (ha : evalOperand (withEnv env s) a = some (.int 64 x))
+    (hb : evalOperand (withEnv env s) b = some (.int 64 y)) :
+    evalInstr escapeCalls (withEnv env s) (.select d (.int 64) (.reg c) a b) =
+      some (withEnv ((d, .int 64 (if cb = (1 : BitVec 1) then x else y)) :: env) s) := by
+  rw [evalInstr,
+    show evalOperand (withEnv env s) (.reg c) = some (.int 1 cb) from hc, ha, hb]
+  rcases bv1_cases cb with h | h <;> simp [h, withEnv, State.bind]
+
+/-- `%d = zext i1 %src to i64`, in the environment shape the block builds. -/
+theorem b_zext1_64w (env : Env) (s : State) (d src : String) (x : BitVec 1)
+    (h : lookupName env src = some (.int 1 x)) :
+    evalInstr escapeCalls (withEnv env s) (.zext d 1 64 (.reg src)) =
+      some (withEnv ((d, .int 64 (BitVec.ofNat 64 x.toNat)) :: env) s) := by
+  rw [evalInstr_zext (hv := evalOperand_reg_of env s src (.int 1 x) h)]
+  simp only [withEnv, State.bind]
+
+def udIfEnd32IEnv (env : Env) (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat) : Env :=
+  let shr := cp >>> BitVec.ofInt 32 6
+  let m := cp &&& BitVec.ofInt 32 63
+  let or1 := m ||| BitVec.ofInt 32 128
+  let shl := or1 <<< BitVec.ofInt 32 8
+  let or0 := shr ||| shl
+  let or2 := or0 ||| BitVec.ofInt 32 192
+  let shr3 := cp >>> BitVec.ofInt 32 12
+  let and6 := shr &&& BitVec.ofInt 32 63
+  let or7 := and6 ||| BitVec.ofInt 32 128
+  let shl8 := or7 <<< BitVec.ofInt 32 8
+  let shl12 := or1 <<< BitVec.ofInt 32 16
+  let o30 := shl8 ||| shl12
+  let or9 := shr3 ||| o30
+  let or13 := or9 ||| BitVec.ofInt 32 224
+  let shr14 := cp >>> BitVec.ofInt 32 18
+  let and17 := shr3 <<< BitVec.ofInt 32 8
+  let or18 := and17 &&& BitVec.ofInt 32 16128
+  let shl19 := shr14 ||| or18
+  let shl24 := or7 <<< BitVec.ofInt 32 16
+  let or20 := shl19 ||| shl24
+  let shl28 := or1 <<< BitVec.ofInt 32 24
+  let or25 := or20 ||| shl28
+  let or29 := or25 ||| BitVec.ofInt 32 33008
+  let c1 := evalICmp .ugt cp (BitVec.ofInt 32 127)
+  let c2 := evalICmp .ugt cp (BitVec.ofInt 32 2047)
+  let c3 := evalICmp .ugt cp (BitVec.ofInt 32 65535)
+  let z1 := BitVec.ofNat 64 c2.toNat
+  let z3 := BitVec.ofNat 64 c3.toNat
+  let a211 := udIfEnd32Adv cp
+  let a44 := x + z1
+  let a45 := a44 + a211
+  let a125 := a45 + z3
+  ("%add.i125", .int 64 a125) ::
+    ("%add45.i", .int 64 a45) ::
+    ("%add44.i", .int 64 a44) ::
+    ("%add.ptr.i124", .ptr (dsta + k)) ::
+    ("%add.i211", .int 64 a211) ::
+    ("%cond43.i", .int 32 (udIfEnd32Word cp)) ::
+    ("%cond38.i", .int 32 (udIfEnd32S2 cp)) ::
+    ("%cond.i", .int 32 (udIfEnd32S1 cp)) ::
+    ("%conv33.i", .int 64 z3) ::
+    ("%cmp32.i", .int 1 c3) ::
+    ("%conv31.i", .int 64 z1) ::
+    ("%cmp30.i", .int 1 c2) ::
+    ("%cmp.i210", .int 1 c1) ::
+    ("%or29.i", .int 32 or29) ::
+    ("%or25.i", .int 32 or25) ::
+    ("%shl28.i", .int 32 shl28) ::
+    ("%or20.i", .int 32 or20) ::
+    ("%shl24.i", .int 32 shl24) ::
+    ("%shl19.i", .int 32 shl19) ::
+    ("%or18.i", .int 32 or18) ::
+    ("%and17.i", .int 32 and17) ::
+    ("%shr14.i", .int 32 shr14) ::
+    ("%or13.i", .int 32 or13) ::
+    ("%or9.i", .int 32 or9) ::
+    ("%30", .int 32 o30) ::
+    ("%shl12.i", .int 32 shl12) ::
+    ("%shl8.i", .int 32 shl8) ::
+    ("%or7.i", .int 32 or7) ::
+    ("%and6.i", .int 32 and6) ::
+    ("%shr3.i", .int 32 shr3) ::
+    ("%or2.i", .int 32 or2) ::
+    ("%or.i209", .int 32 or0) ::
+    ("%shl.i", .int 32 shl) ::
+    ("%or1.i", .int 32 or1) ::
+    ("%and.i208", .int 32 m) ::
+    ("%shr.i", .int 32 shr) ::
+    ("%adv.1.i", .int 64 adv) ::
+    ("%cp.i.3", .int 32 cp) :: env
+
+/-- The state the block's store leaves: the packed word at `dst + k`, and nothing
+else changed. -/
+def udIfEnd32IWritten (s : State) (dsta k : Nat) (cp : BitVec 32) : State :=
+  { s with mem := writeBytes s.mem (dsta + k) (natToBytes (udIfEnd32Word cp).toNat 4) }
+
+theorem udIfEnd32I_denote (env : Env) (s : State) (prev : String) (opc opa : Operand)
+    (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat)
+    (hpre : s.pre = some prev)
+    (hc : phiIncoming prev udIfEnd32IIncomingCp = some opc)
+    (ha : phiIncoming prev udIfEnd32IIncomingAdv = some opa)
+    (hopc : evalOperand (withEnv env s) opc = some (.int 32 cp))
+    (hopa : evalOperand (withEnv (("%cp.i.3", .int 32 cp) :: env) s) opa =
+      some (.int 64 adv))
+    (hdst : lookupName env "%dst" = some (.ptr dsta))
+    (hadd15 : lookupName env "%add15" = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s) =
+      some (withEnv (udIfEnd32IEnv env cp adv x dsta k) (udIfEnd32IWritten s dsta k cp))
+  := by
+  rw [udIfEnd32I_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (show evalInstr escapeCalls (withEnv env s)
+      (.phi "%cp.i.3" (.int 32) udIfEnd32IIncomingCp) =
+      some (withEnv (("%cp.i.3", .int 32 cp) :: env) s) from by
+    rw [evalInstr_phi (s := withEnv env s) (d := "%cp.i.3") (ty := .int 32)
+      (inc := udIfEnd32IIncomingCp) hpre hc hopc]; rfl)]
+  rw [denoteCode_cons_of _ _ _ _ _ (show evalInstr escapeCalls
+      (withEnv (("%cp.i.3", .int 32 cp) :: env) s)
+      (.phi "%adv.1.i" (.int 64) udIfEnd32IIncomingAdv) =
+      some (withEnv (("%adv.1.i", .int 64 adv) :: ("%cp.i.3", .int 32 cp) :: env) s)
+      from by
+    rw [evalInstr_phi (s := withEnv (("%cp.i.3", .int 32 cp) :: env) s) (d := "%adv.1.i")
+      (ty := .int 64) (inc := udIfEnd32IIncomingAdv) hpre ha hopa]; rfl)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shr.i" "%cp.i.3" .lshr 32
+    cp (BitVec.ofInt 32 6) (cp >>> BitVec.ofInt 32 6) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%and.i208" "%cp.i.3" .and 32
+    cp (BitVec.ofInt 32 63) (cp &&& BitVec.ofInt 32 63) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%or1.i" "%and.i208" .or 32
+    (cp &&& BitVec.ofInt 32 63) (BitVec.ofInt 32 128)
+    ((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shl.i" "%or1.i" .shl 32
+    ((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) (BitVec.ofInt 32 8)
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 8)
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or.i209" "%shr.i" "%shl.i" .or 32
+    (cp >>> BitVec.ofInt 32 6)
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 8)
+    ((cp >>> BitVec.ofInt 32 6) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 8))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%or2.i" "%or.i209" .or 32
+    ((cp >>> BitVec.ofInt 32 6) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 8))
+    (BitVec.ofInt 32 192)
+    (((cp >>> BitVec.ofInt 32 6) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 8)) |||
+      BitVec.ofInt 32 192) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shr3.i" "%cp.i.3" .lshr 32
+    cp (BitVec.ofInt 32 12) (cp >>> BitVec.ofInt 32 12) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%and6.i" "%shr.i" .and 32
+    (cp >>> BitVec.ofInt 32 6) (BitVec.ofInt 32 63)
+    ((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%or7.i" "%and6.i" .or 32
+    ((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) (BitVec.ofInt 32 128)
+    (((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128)
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shl8.i" "%or7.i" .shl 32
+    (((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128)
+    (BitVec.ofInt 32 8)
+    ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+      BitVec.ofInt 32 8) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shl12.i" "%or1.i" .shl 32
+    ((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) (BitVec.ofInt 32 16)
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16)
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%30" "%shl8.i" "%shl12.i" .or 32
+    ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+      BitVec.ofInt 32 8)
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16)
+    (((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 8) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or9.i" "%shr3.i" "%30" .or 32
+    (cp >>> BitVec.ofInt 32 12)
+    (((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 8) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16))
+    ((cp >>> BitVec.ofInt 32 12) |||
+      (((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+          BitVec.ofInt 32 8) |||
+        (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16)))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%or13.i" "%or9.i" .or 32
+    ((cp >>> BitVec.ofInt 32 12) |||
+      (((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+          BitVec.ofInt 32 8) |||
+        (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16)))
+    (BitVec.ofInt 32 224)
+    (((cp >>> BitVec.ofInt 32 12) |||
+      (((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+          BitVec.ofInt 32 8) |||
+        (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 16))) |||
+      BitVec.ofInt 32 224) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shr14.i" "%cp.i.3" .lshr 32
+    cp (BitVec.ofInt 32 18) (cp >>> BitVec.ofInt 32 18) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%and17.i" "%shr3.i" .shl 32
+    (cp >>> BitVec.ofInt 32 12) (BitVec.ofInt 32 8)
+    ((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%or18.i" "%and17.i" .and 32
+    ((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) (BitVec.ofInt 32 16128)
+    (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%shl19.i" "%shr14.i" "%or18.i" .or 32
+    (cp >>> BitVec.ofInt 32 18)
+    (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)
+    ((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shl24.i" "%or7.i" .shl 32
+    (((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128)
+    (BitVec.ofInt 32 16)
+    ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+      BitVec.ofInt 32 16) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or20.i" "%shl19.i" "%shl24.i" .or 32
+    ((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128))
+    ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+      BitVec.ofInt 32 16)
+    (((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)) |||
+      ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 16))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%shl28.i" "%or1.i" .shl 32
+    ((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) (BitVec.ofInt 32 24)
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 24)
+    rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_reg _ _ "%or25.i" "%or20.i" "%shl28.i" .or 32
+    (((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)) |||
+      ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 16))
+    (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 24)
+    ((((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)) |||
+      ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 16)) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 24))
+    rfl (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_binop_imm _ _ "%or29.i" "%or25.i" .or 32
+    ((((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)) |||
+      ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 16)) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 24))
+    (BitVec.ofInt 32 33008)
+    (((((cp >>> BitVec.ofInt 32 18) |||
+      (((cp >>> BitVec.ofInt 32 12) <<< BitVec.ofInt 32 8) &&& BitVec.ofInt 32 16128)) |||
+      ((((cp >>> BitVec.ofInt 32 6) &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<<
+        BitVec.ofInt 32 16)) |||
+      (((cp &&& BitVec.ofInt 32 63) ||| BitVec.ofInt 32 128) <<< BitVec.ofInt 32 24)) |||
+      BitVec.ofInt 32 33008) rfl (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp.i210" "%cp.i.3" .ugt 32
+    cp (BitVec.ofInt 32 127) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp30.i" "%cp.i.3" .ugt 32
+    cp (BitVec.ofInt 32 2047) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_zext1_64w _ _ "%conv31.i" "%cmp30.i"
+    (evalICmp .ugt cp (BitVec.ofInt 32 2047)) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_imm _ _ "%cmp32.i" "%cp.i.3" .ugt 32
+    cp (BitVec.ofInt 32 65535) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_zext1_64w _ _ "%conv33.i" "%cmp32.i"
+    (evalICmp .ugt cp (BitVec.ofInt 32 65535)) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_select_i32 _ _ "%cond.i" "%cmp.i210"
+    "%or2.i" "%cp.i.3" (evalICmp .ugt cp (BitVec.ofInt 32 127))
+    (udIfEnd32Or2 cp)
+    cp (by hex_lk) (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_select_i32 _ _ "%cond38.i" "%cmp30.i"
+    "%or13.i" "%cond.i" (evalICmp .ugt cp (BitVec.ofInt 32 2047))
+    (udIfEnd32Or13 cp) (udIfEnd32S1 cp)
+    (by hex_lk) (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_select_i32 _ _ "%cond43.i" "%cmp32.i"
+    "%or29.i" "%cond38.i" (evalICmp .ugt cp (BitVec.ofInt 32 65535))
+    (udIfEnd32Or29 cp) (udIfEnd32S2 cp)
+    (by hex_lk) (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_select_i64_op _ _ "%add.i211" "%cmp.i210"
+    (.imm (.int 64 (BitVec.ofInt 64 2))) (.imm (.int 64 (BitVec.ofInt 64 1)))
+    (evalICmp .ugt cp (BitVec.ofInt 32 127))
+    (BitVec.ofInt 64 2) (BitVec.ofInt 64 1)
+    (by hex_lk)
+    (by exact evalOperand_lit_of _ 64 _)
+    (by exact evalOperand_lit_of _ 64 _))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_gep8_reg _ _ "%add.ptr.i124" "%dst" "%add15"
+    dsta x k (by hex_lk_h hdst) (by hex_lk_h hadd15) hk hpos)]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_store32 _ _ "%cond43.i" "%add.ptr.i124"
+    (udIfEnd32Word cp) (dsta + k) (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_add64 _ _ "%add44.i" "%add15" "%conv31.i"
+    x (BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat)
+    (by hex_lk_h hadd15) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_add64 _ _ "%add45.i" "%add44.i" "%add.i211"
+    (x + BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat)
+    (udIfEnd32Adv cp)
+    (by hex_lk) (by hex_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_add64 _ _ "%add.i125" "%add45.i" "%conv33.i"
+    ((x + BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat) +
+      (if evalICmp .ugt cp (BitVec.ofInt 32 127) = (1 : BitVec 1) then
+        (BitVec.ofInt 64 2) else (BitVec.ofInt 64 1)))
+    (BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 65535)).toNat)
+    (by hex_lk) (by hex_lk))]
+  simp only [denoteCode, withEnv, udIfEnd32IEnv]
+  try rfl
+
+theorem udIfEnd32I_run (env : Env) (s : State) (prev : String) (opc opa : Operand)
+    (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat)
+    (hpre : s.pre = some prev)
+    (hc : phiIncoming prev udIfEnd32IIncomingCp = some opc)
+    (ha : phiIncoming prev udIfEnd32IIncomingAdv = some opa)
+    (hopc : evalOperand (withEnv env s) opc = some (.int 32 cp))
+    (hopa : evalOperand (withEnv (("%cp.i.3", .int 32 cp) :: env) s) opa =
+      some (.int 64 adv))
+    (hdst : lookupName env "%dst" = some (.ptr dsta))
+    (hadd15 : lookupName env "%add15" = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    Option.map State.mem (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s)) =
+        some (udIfEnd32IWritten s dsta k cp).mem ∧
+      (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%cond43.i") =
+        some (.int 32 (udIfEnd32Word cp)) ∧
+      (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%add.i211") =
+        some (.int 64 (udIfEnd32Adv cp)) ∧
+      (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%add.ptr.i124") =
+        some (.ptr (dsta + k)) ∧
+      (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%adv.1.i") = some (.int 64 adv) ∧
+      (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%add.i125") =
+        some (.int 64 (x + BitVec.ofNat 64
+            (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat +
+          (if evalICmp .ugt cp (BitVec.ofInt 32 127) = (1 : BitVec 1) then
+            (BitVec.ofInt 64 2) else (BitVec.ofInt 64 1)) +
+          BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 65535)).toNat)) := by
+  rw [udIfEnd32I_denote env s prev opc opa cp adv x dsta k
+    hpre hc ha hopc hopa hdst hadd15 hk hpos]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [Option.map_some, withEnv, udIfEnd32IWritten]
+  all_goals (simp only [Option.bind_some, withEnv, udIfEnd32IEnv] <;> hex_lk)
+
+theorem udIfEnd32I_step (env : Env) (s : State) (prev : String) (opc opa : Operand)
+    (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat)
+    (hpc : s.pc = "if.end32.i")
+    (hpre : s.pre = some prev)
+    (hc : phiIncoming prev udIfEnd32IIncomingCp = some opc)
+    (ha : phiIncoming prev udIfEnd32IIncomingAdv = some opa)
+    (hopc : evalOperand (withEnv env s) opc = some (.int 32 cp))
+    (hopa : evalOperand (withEnv (("%cp.i.3", .int 32 cp) :: env) s) opa =
+      some (.int 64 adv))
+    (hdst : lookupName env "%dst" = some (.ptr dsta))
+    (hadd15 : lookupName env "%add15" = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEnd32IEnv env cp adv x dsta k)
+                (udIfEnd32IWritten s dsta k cp)) with
+              pc := "cleanup32", pre := some "if.end32.i" } := by
+  rw [udStep_of (withEnv env s) "if.end32.i" udIfEnd32I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEnd32I
+    (udIfEnd32I_denote env s prev opc opa cp adv x dsta k
+      hpre hc ha hopc hopa hdst hadd15 hk hpos), udIfEnd32I_term]
+  simp only [execTerm, withEnv, hpc, udIfEnd32IWritten]
+
+/-! ### The store's frame
+
+The block writes four bytes at its own address and nothing else, so every byte
+outside that window is the caller's. -/
+
+/-- **The frame of one store**, at whatever bytes it writes: a write at `a0` leaves
+every byte outside its own range as it found it. -/
+theorem writeBytes_frame (mem : Mem) (a0 : Nat) (bs : List UInt8) :
+    UnchangedOutside mem (writeBytes mem a0 bs) [(a0, bs.length)] := by
+  intro a ha
+  apply readByte_writeBytes_outside
+  by_cases h : a < a0
+  · exact Or.inl h
+  · right
+    apply Nat.le_of_not_lt
+    intro h4
+    exact ha (a0, bs.length) (by simp) ⟨by omega, h4⟩
+
+/-- A four-byte store leaves every byte outside its four bytes as it found it. -/
+theorem store32_frame (mem : Mem) (a0 : Nat) (w : BitVec 32) :
+    UnchangedOutside mem (writeBytes mem a0 (natToBytes w.toNat 4)) [(a0, 4)] := by
+  rw [show (4 : Nat) = (natToBytes w.toNat 4).length from by rw [natToBytes_length]]
+  exact writeBytes_frame mem a0 (natToBytes w.toNat 4)
+
+/-- **The block's frame**: the run writes the four bytes of its packed word at
+`%dst + %add15` and leaves every other byte of the caller's store as it was. -/
+theorem udIfEnd32I_frame (env : Env) (s : State) (prev : String) (opc opa : Operand)
+    (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat)
+    (hpre : s.pre = some prev)
+    (hc : phiIncoming prev udIfEnd32IIncomingCp = some opc)
+    (ha : phiIncoming prev udIfEnd32IIncomingAdv = some opa)
+    (hopc : evalOperand (withEnv env s) opc = some (.int 32 cp))
+    (hopa : evalOperand (withEnv (("%cp.i.3", .int 32 cp) :: env) s) opa =
+      some (.int 64 adv))
+    (hdst : lookupName env "%dst" = some (.ptr dsta))
+    (hadd15 : lookupName env "%add15" = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    UnchangedOutside s.mem
+      ((Option.map State.mem (denoteCode escapeCalls udIfEnd32I.instrs
+        (withEnv env s))).getD s.mem) [(dsta + k, 4)] := by
+  rw [(udIfEnd32I_run env s prev opc opa cp adv x dsta k
+    hpre hc ha hopc hopa hdst hadd15 hk hpos).1]
+  exact store32_frame s.mem (dsta + k) (udIfEnd32Word cp)
+
+/-- A four-byte store at `dst + k` extends a prefix the caller already holds at
+`dst` by the first `enc.length` bytes it writes. -/
+theorem readBytes_writeBytes_extend {m : Mem} {dst k : Nat} {out enc : List UInt8}
+    (w : Nat) (hout : readBytes m dst k = some out) (hlen : enc.length ≤ 4)
+    (hw : (natToBytes w 4).take enc.length = enc) :
+    readBytes (writeBytes m (dst + k) (natToBytes w 4)) dst (k + enc.length) =
+      some (out ++ enc) := by
+  have hbelow : readBytes (writeBytes m (dst + k) (natToBytes w 4)) dst k = some out := by
+    rw [readBytes_writeBytes_below m (natToBytes w 4) k dst (dst + k) (by omega)]
+    exact hout
+  have hfull := readBytes_writeBytes_same m (natToBytes w 4) (addr := dst + k)
+  have hsplit := readBytes_split (writeBytes m (dst + k) (natToBytes w 4)) (dst + k)
+    enc.length (4 - enc.length)
+    (by rw [show enc.length + (4 - enc.length) = 4 from by omega]; exact hfull)
+  have hat : readBytes (writeBytes m (dst + k) (natToBytes w 4)) (dst + k) enc.length =
+      some enc := by
+    rw [hsplit.1, hw]
+  exact JsonEntrySteps.readBytes_append (m := writeBytes m (dst + k) (natToBytes w 4))
+    k dst out enc.length enc hbelow hat
+
+/-- **The block's store, composed with the prefix and the frame.**  From a state
+whose store already holds the decoded prefix `out` at `%dst`, the block leaves the
+caller's prefix extended by the escape's encoding, and changes nothing outside the
+four bytes it wrote.
+
+`hword` is the bridge between the body's packed word and the specification's
+encoding, and it is the one equation this trace does not close.  The body's word is
+a twenty-instruction fold over the unit's bit-fields; the encoding's bytes are those
+fields at their shifts.  The equation splits by the unit's range: below `0x80` and
+below `0x800` each close by enumerating the surviving width, the sixteen-bit range
+enumerates 65 536 units (measured at 2m42s of kernel reduction), and the four-byte
+range would enumerate 1 048 576, which is past the bound this repository puts on a
+probe's time.  A nat-level decomposition in place of the enumeration needs an
+`or`-to-`add` lemma for operands with disjoint bits; the names tried in this
+toolchain (`Nat.lor_eq_add_of_and_eq_zero` and its neighbours) are not declared, so
+that route needs the lemma proved first. -/
+theorem udIfEnd32I_decode (env : Env) (s : State) (prev : String) (opc opa : Operand)
+    (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat) (out : List UInt8)
+    (hpre : s.pre = some prev)
+    (hc : phiIncoming prev udIfEnd32IIncomingCp = some opc)
+    (ha : phiIncoming prev udIfEnd32IIncomingAdv = some opa)
+    (hopc : evalOperand (withEnv env s) opc = some (.int 32 cp))
+    (hopa : evalOperand (withEnv (("%cp.i.3", .int 32 cp) :: env) s) opa =
+      some (.int 64 adv))
+    (hdst : lookupName env "%dst" = some (.ptr dsta))
+    (hadd15 : lookupName env "%add15" = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
+    (hkout : out.length = k)
+    (hout : readBytes s.mem dsta out.length = some out)
+    (hword : (udIfEnd32Word cp).toNat = bytesToNat (utf8Encode cp.toNat))
+    (hcp : cp.toNat < 0x110000) :
+    readBytes ((Option.map State.mem
+          (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s))).getD s.mem)
+        dsta (out.length + (utf8Encode cp.toNat).length) =
+      some (out ++ utf8Encode cp.toNat) ∧
+    UnchangedOutside s.mem
+      ((Option.map State.mem (denoteCode escapeCalls udIfEnd32I.instrs
+        (withEnv env s))).getD s.mem) [(dsta + k, 4)] := by
+  have hmem : (Option.map State.mem
+      (denoteCode escapeCalls udIfEnd32I.instrs (withEnv env s))).getD s.mem =
+      writeBytes s.mem (dsta + k) (natToBytes (udIfEnd32Word cp).toNat 4) := by
+    rw [(udIfEnd32I_run env s prev opc opa cp adv x dsta k
+      hpre hc ha hopc hopa hdst hadd15 hk hpos).1]
+    rfl
+  refine ⟨?_, udIfEnd32I_frame env s prev opc opa cp adv x dsta k
+    hpre hc ha hopc hopa hdst hadd15 hk hpos⟩
+  rw [hmem, hword, hkout]
+  refine readBytes_writeBytes_extend (bytesToNat (utf8Encode cp.toNat)) ?_
+    (utf8Encode_length_le_four _) (utf8Word_bytes cp.toNat hcp)
+  rw [← hkout]
+  exact hout
+
+/-- **The two steps from `if.end32.i` to the loop head.**  The block's store and
+cursor advance are exactly what `cleanup32` reads, so the pair of steps composes:
+the run from the block's entry reaches `while.body6` with the advance `j`, and the
+memory the store wrote is the memory the loop carries. -/
+theorem udIfEnd32I_to_whileBody6 (env : Env) (s : State) (prev : String)
+    (opc opa : Operand) (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat)
+    (j sub inc11 nxp : BitVec 64)
+    (hpc : s.pc = "if.end32.i")
+    (hpre : s.pre = some prev)
+    (hc : phiIncoming prev udIfEnd32IIncomingCp = some opc)
+    (ha : phiIncoming prev udIfEnd32IIncomingAdv = some opa)
+    (hopc : evalOperand (withEnv env s) opc = some (.int 32 cp))
+    (hopa : evalOperand (withEnv (("%cp.i.3", .int 32 cp) :: env) s) opa =
+      some (.int 64 adv))
+    (hdst : lookupName env "%dst" = some (.ptr dsta))
+    (hadd15 : lookupName env "%add15" = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
+    (hjv : lookupName (udIfEnd32IEnv env cp adv x dsta k) "%add.i125" =
+      some (.int 64 j))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hcond : evalICmp .ult
+        (inc11 + BitVec.ofNat 64 (evalICmp .eq adv (BitVec.ofInt 64 12)).toNat) nxp =
+        (1 : BitVec 1)) :
+    ∀ m, runFuel escapeCalls (2 + m) usDecFunction (withEnv env s) =
+      runFuel escapeCalls m usDecFunction
+        { (withEnv (udCleanup32Env (udIfEnd32IEnv env cp adv x dsta k) j adv sub inc11 nxp)
+            (udIfEnd32IWritten s dsta k cp)) with
+          pc := "while.body6", pre := some "cleanup32" } := by
+  intro m
+  let s1 : State := { (withEnv (udIfEnd32IEnv env cp adv x dsta k)
+      (udIfEnd32IWritten s dsta k cp)) with pc := "cleanup32", pre := some "if.end32.i" }
+  have h1 : step escapeCalls usDecFunction (withEnv env s) = .jump s1 :=
+    udIfEnd32I_step env s prev opc opa cp adv x dsta k hpc hpre hc ha hopc hopa
+      hdst hadd15 hk hpos
+  have hadv : lookupName
+      (udIfEnd32IEnv env cp adv x dsta k) "%adv.1.i" = some (.int 64 adv) := by
+    simp only [udIfEnd32IEnv]; hex_lk
+  have h2 : step escapeCalls usDecFunction s1 =
+      .jump { (withEnv (udCleanup32Env (udIfEnd32IEnv env cp adv x dsta k) j adv sub inc11 nxp)
+                (udIfEnd32IWritten s dsta k cp)) with
+              pc := "while.body6", pre := some "cleanup32" } :=
+    udCleanup32_step (udIfEnd32IEnv env cp adv x dsta k)
+      s1 "if.end32.i" (.reg "%add.i125") (.reg "%adv.1.i")
+      j adv sub inc11 nxp rfl rfl (by decide) (by decide) hjv hadv
+      (by simp only [udIfEnd32IEnv]; hex_lk_h hsub)
+      (by simp only [udIfEnd32IEnv]; hex_lk_h hinc11)
+      (by simp only [udIfEnd32IEnv]; hex_lk_h hnxp) hcond
+  rw [show 2 + m = (1 + m) + 1 from by omega, udRun_jump h1]
+  rw [show 1 + m = m + 1 from by omega, udRun_jump h2]
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
 /-! ### Axiom footprints: the hex reader's guard and its successors -/
 
 /-- info: 'LeanLLVM.Vellum.getD?_eq' depends on axioms: [propext] -/
@@ -5465,5 +6139,68 @@ namespace LeanLLVM.Vellum
 /-- info: 'LeanLLVM.Vellum.udCleanup32_step_zero' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms udCleanup32_step_zero
+
+/-- info: 'LeanLLVM.Vellum.store32_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms store32_frame
+
+/-- info: 'LeanLLVM.Vellum.b_select_i32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_select_i32
+
+/-- info: 'LeanLLVM.Vellum.b_select_i64_op' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_select_i64_op
+
+/-- info: 'LeanLLVM.Vellum.b_zext1_64w' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms b_zext1_64w
+
+/-- info: 'LeanLLVM.Vellum.findBlock_udIfEnd32I' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms findBlock_udIfEnd32I
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_instrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfEnd32I_instrs
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_term' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms udIfEnd32I_term
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd32I_denote
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd32I_run
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd32I_step
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd32I_frame
+
+/-- info: 'LeanLLVM.Vellum.readBytes_writeBytes_extend' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_writeBytes_extend
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_decode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd32I_decode
+
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd32I_to_whileBody6' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd32I_to_whileBody6
+
+
+/-- info: 'LeanLLVM.Vellum.writeBytes_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms writeBytes_frame
+
 
 end LeanLLVM.Vellum
