@@ -50,7 +50,7 @@ import LeanLLVM.Vellum.JsonEscapeListMemo
 import LeanLLVM.Vellum.JsonEscapeBatchEntries
 
 set_option maxRecDepth 8000
-set_option maxHeartbeats 800000
+set_option maxHeartbeats 4000000
 
 namespace LeanLLVM.Vellum
 
@@ -1062,5 +1062,1003 @@ theorem lstIfEnd4_cursor_eq (xp c0 : Nat) (esc : BitVec 64) (h : ctpop esc > 8) 
 /-- info: 'LeanLLVM.Vellum.lstIfEnd4_cursor_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms lstIfEnd4_cursor_eq
+
+
+/-! ### `while.body.i.i`, the eight-at-a-time writer
+
+The writer loop's twenty-five instruction lines are the remaining-block shape: the
+exit test compares the *residual* word with zero rather than with its own next
+iterate, so `CarriedLoop` is not the induction.  Each iteration hands `@xl_batch`
+the current residual, advances the count by the entries the batch claimed, stores
+it, clears those lanes with eight `c + (-1) & c` steps, and branches on the
+cleared word.
+
+The call is resolved at `escapeListCalls Γ_xl_batch`, so the run below is stated
+at that environment.  Every other instruction in the block is calls-independent,
+so the instruction shapes the earlier modules prove at `escapeCalls` apply here
+unchanged. -/
+
+/-- The entries the batch claims: the population count against eight, read back
+as a natural. -/
+def lstBatchCount (esc : BitVec 64) : Nat :=
+  (umin (BitVec.ofNat 32 (ctpop esc)) (BitVec.ofNat 32 8)).toNat
+
+/-- The `umin` the count reads, as the natural number of entries. -/
+theorem lstBatchCount_eq (esc : BitVec 64) : lstBatchCount esc = min (ctpop esc) 8 := by
+  have hc : ctpop esc < 2 ^ 32 := by
+    have h2 := ctpop_eq_setLanes_length esc
+    have h3 := setLanes_length_le esc
+    omega
+  have h8 : (8 : Nat) < 2 ^ 32 := by decide
+  have h1 : (BitVec.ofNat 32 (ctpop esc)).toNat = ctpop esc := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hc]
+  have h2 : (BitVec.ofNat 32 8 : BitVec 32).toNat = 8 := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h8]
+  unfold lstBatchCount umin
+  rw [h1, h2]
+  by_cases h : ctpop esc ≤ 8
+  · rw [ite_eq_left h, h1, Nat.min_eq_left h]
+  · rw [ite_eq_right h, h2, Nat.min_eq_right (by omega)]
+
+/-- The batch claims at most eight entries. -/
+theorem lstBatchCount_le (esc : BitVec 64) : lstBatchCount esc ≤ 8 := by
+  rw [lstBatchCount_eq]
+  omega
+
+/-- A read below the batch's writes is the read it was. -/
+theorem readBytes_batchMem_below (base : BitVec 32) (esc : BitVec 64) (o : Nat)
+    (mem : Mem) :
+    ∀ (n a : Nat), a + n ≤ o →
+      readBytes (batchMem base esc o mem) a n = readBytes mem a n
+  | 0, a, _ => by simp only [readBytes]
+  | n + 1, a, h => by
+      simp only [readBytes]
+      rw [batchMem_unchanged base esc o mem (Or.inl (by omega))]
+      rw [readBytes_batchMem_below base esc o mem n (a + 1) (by omega)]
+
+/-- A read above the batch's writes is the read it was. -/
+theorem readBytes_batchMem_above (base : BitVec 32) (esc : BitVec 64) (o : Nat)
+    (mem : Mem) :
+    ∀ (n a : Nat), o + 32 ≤ a →
+      readBytes (batchMem base esc o mem) a n = readBytes mem a n
+  | 0, a, _ => by simp only [readBytes]
+  | n + 1, a, h => by
+      simp only [readBytes]
+      rw [batchMem_unchanged base esc o mem (Or.inr h)]
+      rw [readBytes_batchMem_above base esc o mem n (a + 1) (by omega)]
+
+/-- The batch's first `k` entries, read back at `o`. -/
+theorem batchMem_prefix (base : BitVec 32) (esc : BitVec 64) (o : Nat) (mem : Mem) :
+    ∀ k, k ≤ 8 →
+      readBytes (batchMem base esc o mem) o (4 * k) = some (batchEntries base esc k) := by
+  intro k
+  induction k with
+  | zero => intro _; rfl
+  | succ k ih =>
+      intro hk
+      have hk8 : k < 8 := by omega
+      have h1 : readBytes (batchMem base esc o mem) o (4 * k) =
+          some (batchEntries base esc k) := ih (by omega)
+      have h2 : readBytes (batchMem base esc o mem) (o + 4 * k) 4 =
+          some (batchBytes base esc k) := batchMem_entry base esc o mem (i := k) hk8
+      have h := LeanLLVM.Vellum.JsonEntrySteps.readBytes_append (batchMem base esc o mem)
+        (4 * k) o (batchEntries base esc k) 4 (batchBytes base esc k) h1 h2
+      rw [show 4 * (k + 1) = 4 * k + 4 from by omega]
+      simpa only [batchEntries] using h
+
+/-- **The claimed entries are the claimed lanes.**  Each of the first `k` entries
+is the base plus the `k`-th set lane, so the batch's bytes are the position
+stream's. -/
+theorem batchEntries_positions (base : BitVec 32) (esc : BitVec 64) :
+    ∀ k, k ≤ min (ctpop esc) 8 → base.toNat + 64 ≤ 2 ^ 32 →
+      batchEntries base esc k =
+        positionsBytes 4 ((setLanes esc).take k |>.map fun lane => base.toNat + lane) := by
+  intro k
+  induction k with
+  | zero => intro _ _; rfl
+  | succ k ih =>
+      intro hk hcap
+      have hk' : k ≤ min (ctpop esc) 8 := by omega
+      have hkmin : k < min (ctpop esc) 8 := by omega
+      have hlt : k < (setLanes esc).length := by
+        rw [← ctpop_eq_setLanes_length]
+        exact (Nat.lt_min.mp hkmin).1
+      have hget : (setLanes esc).getD k 0 = (setLanes esc)[k] := by
+        rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hlt]
+        rfl
+      rw [show batchEntries base esc (k + 1) =
+          batchEntries base esc k ++ batchBytes base esc k from rfl]
+      rw [ih hk' hcap, batchBytes_eq base esc hkmin hcap, hget]
+      have htake : (setLanes esc).take (k + 1) =
+          (setLanes esc).take k ++ [(setLanes esc).getD k 0] := by
+        rw [List.take_add_one, List.getElem?_eq_getElem hlt, hget]
+        rfl
+      rw [htake, hget]
+      simp only [positionsBytes, List.map_append, List.flatten_append, List.map_cons,
+        List.map_nil, List.flatten_cons, List.flatten_nil, List.append_nil]
+
+/-- The stream's bytes as the record reads them: the position list's little-endian
+entries. -/
+theorem positionsBytes_append (w : Nat) (a b : List Nat) :
+    positionsBytes w (a ++ b) = positionsBytes w a ++ positionsBytes w b := by
+  simp only [positionsBytes, List.map_append, List.flatten_append]
+
+/-- The first `used + k` positions split at `used`. -/
+theorem take_append_drop_take {α : Type} (l : List α) (used k : Nat) :
+    l.take used ++ (l.drop used).take k = l.take (used + k) := by
+  rw [List.take_add]
+
+/-- Dropping eight from a list is dropping the minimum of its length and eight. -/
+theorem drop_eight_eq_drop_min {α : Type} (l : List α) :
+    l.drop 8 = l.drop (min l.length 8) := by
+  rcases Nat.lt_or_ge l.length 8 with h | h
+  · rw [Nat.min_eq_left (by omega), List.drop_eq_nil_of_le (by omega),
+      List.drop_eq_nil_of_le (by omega)]
+  · rw [Nat.min_eq_right h]
+
+/-- A word whose set lanes are an increasing list's members reads back at each
+lane as membership in that list.  This is the reverse of
+`setLanes_eq_of_lane_mem`, and it is what turns a successor's set-lane equality
+into `ListLoopInv`'s first conjunct. -/
+theorem lane_mem_of_setLanes {w : BitVec 64} {l : List Nat}
+    (h : setLanes w = l) (hlt : ∀ k ∈ l, k < 64) :
+    ∀ k, k < 64 → w.getLsbD k = decide (k ∈ l) := by
+  intro k hk
+  have hmem : k ∈ l ↔ w.getLsbD k = true := by
+    rw [← h, mem_setLanes]
+    exact ⟨fun hh => hh.2, fun hh => ⟨hk, hh⟩⟩
+  by_cases hb : w.getLsbD k = true
+  · rw [hb, decide_eq_true (hmem.mpr hb)]
+  · have hbf : w.getLsbD k = false := by simpa using hb
+    have hnot : ¬ (k ∈ l) := by
+      intro hh
+      have htrue : w.getLsbD k = true := hmem.mp hh
+      rw [hbf] at htrue
+      exact absurd htrue (by simp)
+    rw [hbf, decide_eq_false hnot]
+
+/-- The lanes a clear of eight drops: the residual's set lanes after the batch are
+exactly the positions not yet emitted. -/
+theorem setLanes_clearLow_positions (w : BitVec 64) (position : List Nat) (used : Nat)
+    (h : setLanes w = position.drop used) :
+    setLanes (clearLow w 8) = position.drop (used + min (ctpop w) 8) := by
+  have hlen : (position.drop used).length = ctpop w := by
+    rw [ctpop_eq_setLanes_length, h]
+  rw [setLanes_clearLow w 8, h, drop_eight_eq_drop_min, hlen, List.drop_drop]
+
+/-- The count's word after a batch: the caller's count plus the entries the batch
+claimed, at sixty-four bits. -/
+theorem lstBatchCountWord_toNat (c0 : Nat) (esc : BitVec 64) :
+    (BitVec.ofNat 64 c0 + BitVec.ofNat 64 (lstBatchCount esc)).toNat =
+      (c0 + lstBatchCount esc) % 2 ^ 64 := by
+  rw [ofNat64_add, BitVec.toNat_ofNat]
+
+/-- The truncation of the position base does not truncate, so the batch's base
+value is the block's address. -/
+theorem lxBase_toNat_eq (blk0 : BitVec 64) (h : blk0.toNat * 64 + 64 < 2 ^ 32) :
+    (lxBase blk0).toNat = blockAddr blk0 := by
+  have hlt : blk0.toNat < 2 ^ 32 := by omega
+  unfold lxBase blockAddr
+  rw [shiftLeft_six_toNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlt, Nat.mod_eq_of_lt hlt,
+    Nat.mod_eq_of_lt (by omega)]
+
+/-- The two `phi` incoming lists of the writer's head block. -/
+def lstWhileIncomingO : List (String × Operand) :=
+  [("while.body.i.i", .reg "%add.ptr8.i.i"),
+   ("while.body.preheader.i.i", .reg "%add.ptr5.i.i")]
+
+def lstWhileIncomingC : List (String × Operand) :=
+  [("while.body.i.i", .reg "%and18.7.i.i"),
+   ("while.body.preheader.i.i", .reg "%and.7.i.i")]
+
+theorem lstWhileBody_instrs :
+    lstWhileBody.instrs =
+      [ .phi "%o.044.i.i" (.ptr) lstWhileIncomingO,
+        .phi "%c.143.i.i" (.int 64) lstWhileIncomingC,
+        .call "%call7.i.i" (.int 32) "xl_batch"
+          [(.int 64, .reg "%c.143.i.i"), (.int 32, .reg "%conv"),
+           (.ptr, .reg "%o.044.i.i")],
+        .zext "%idx.ext.i.i" 32 64 (.reg "%call7.i.i"),
+        .load "%13" (.int 64) (.reg "%xn"),
+        .binop "%add10.i.i" .add 64 (.reg "%13") (.reg "%idx.ext.i.i"),
+        .store (.int 64) (.reg "%add10.i.i") (.reg "%xn"),
+        .binop "%sub17.i.i" .add 64 (.reg "%c.143.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.i.i" .and 64 (.reg "%sub17.i.i") (.reg "%c.143.i.i"),
+        .binop "%sub17.1.i.i" .add 64 (.reg "%and18.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.1.i.i" .and 64 (.reg "%sub17.1.i.i") (.reg "%and18.i.i"),
+        .binop "%sub17.2.i.i" .add 64 (.reg "%and18.1.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.2.i.i" .and 64 (.reg "%sub17.2.i.i") (.reg "%and18.1.i.i"),
+        .binop "%sub17.3.i.i" .add 64 (.reg "%and18.2.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.3.i.i" .and 64 (.reg "%sub17.3.i.i") (.reg "%and18.2.i.i"),
+        .binop "%sub17.4.i.i" .add 64 (.reg "%and18.3.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.4.i.i" .and 64 (.reg "%sub17.4.i.i") (.reg "%and18.3.i.i"),
+        .binop "%sub17.5.i.i" .add 64 (.reg "%and18.4.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.5.i.i" .and 64 (.reg "%sub17.5.i.i") (.reg "%and18.4.i.i"),
+        .binop "%sub17.6.i.i" .add 64 (.reg "%and18.5.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.6.i.i" .and 64 (.reg "%sub17.6.i.i") (.reg "%and18.5.i.i"),
+        .binop "%sub17.7.i.i" .add 64 (.reg "%and18.6.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 (-1)))),
+        .binop "%and18.7.i.i" .and 64 (.reg "%sub17.7.i.i") (.reg "%and18.6.i.i"),
+        .gep "%add.ptr8.i.i" (.int 32) (.reg "%o.044.i.i") (.reg "%idx.ext.i.i"),
+        .icmp "%tobool6.not.i.i" .eq 64 (.reg "%and18.7.i.i")
+          (.imm (.int 64 (BitVec.ofInt 64 0)))] := by
+  decide
+
+theorem lstWhileBody_term :
+    lstWhileBody.term =
+      .condbr (.reg "%tobool6.not.i.i") "xl_emit.exit" "while.body.i.i" := by
+  decide
+
+/-- The block's pure instructions at an arbitrary call environment: `evalInstr`
+consults `calls` only in the `.call` arms, so the shapes the earlier modules prove
+at `escapeCalls` hold at `escapeListCalls Γ_xl_batch` too.  Stated once per shape
+rather than transported, because the transport's defeq is not available while the
+instruction and state are still metavariables. -/
+theorem wb_zext32_64 (calls : Calls) (env : Env) (s : State) (d src : String)
+    (x : BitVec 32) (h : lookupName env src = some (.int 32 x)) :
+    evalInstr calls (withEnv env s) (.zext d 32 64 (.reg src)) =
+      some (withEnv ((d, .int 64 (BitVec.ofNat 64 x.toNat)) :: env) s) := by
+  rw [evalInstr_zext (hv := evalOperand_reg_of env s src (.int 32 x) h)]
+  simp only [withEnv, State.bind]
+
+theorem wb_load64_nat (calls : Calls) (env : Env) (s : State) (d p : String) (a xn0 : Nat)
+    (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes s.mem a 8 = some (natToBytes xn0 8)) :
+    evalInstr calls (withEnv env s) (.load d (.int 64) (.reg p)) =
+      some (withEnv ((d, .int 64 (BitVec.ofNat 64 xn0)) :: env) s) := by
+  have hval : loadValue s.mem (.int 64) a = some (.int 64 (BitVec.ofNat 64 xn0)) := by
+    rw [loadValue_i64_of_readBytes hv]
+    have hb : bytesToNat (natToBytes xn0 8) = xn0 % 256 ^ 8 := natToBytes_toNat xn0 8
+    rw [hb, show (256 : Nat) ^ 8 = 2 ^ 64 from by decide]
+    rw [show BitVec.ofNat 64 (xn0 % 2 ^ 64) = BitVec.ofNat 64 xn0 from by
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_mod]]
+  exact evalInstr_load (hp := evalOperand_reg_of env s p (.ptr a) hp) (hv := hval)
+
+theorem wb_load64_mem (calls : Calls) (env : Env) (s : State) (m : Mem)
+    (d p : String) (a xn0 : Nat)
+    (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes m a 8 = some (natToBytes xn0 8)) :
+    evalInstr calls (withEnv env { s with mem := m }) (.load d (.int 64) (.reg p)) =
+      some (withEnv ((d, .int 64 (BitVec.ofNat 64 xn0)) :: env) { s with mem := m }) := by
+  have hval : loadValue m (.int 64) a = some (.int 64 (BitVec.ofNat 64 xn0)) := by
+    rw [loadValue_i64_of_readBytes hv]
+    have hb : bytesToNat (natToBytes xn0 8) = xn0 % 256 ^ 8 := natToBytes_toNat xn0 8
+    rw [hb, show (256 : Nat) ^ 8 = 2 ^ 64 from by decide]
+    rw [show BitVec.ofNat 64 (xn0 % 2 ^ 64) = BitVec.ofNat 64 xn0 from by
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_mod]]
+  exact evalInstr_load (hp := evalOperand_reg_of env { s with mem := m } p (.ptr a) hp)
+    (hv := hval)
+
+theorem wb_store64_mem (calls : Calls) (env : Env) (s : State) (m : Mem) (r p : String)
+    (x : BitVec 64) (a : Nat)
+    (hv : lookupName env r = some (.int 64 x))
+    (hp : lookupName env p = some (.ptr a)) :
+    evalInstr calls (withEnv env { s with mem := m })
+        (.store (.int 64) (.reg r) (.reg p)) =
+      some (withEnv env { s with mem := writeBytes m a (natToBytes x.toNat 8) }) := by
+  refine evalInstr_store (s := withEnv env { s with mem := m })
+    (s' := withEnv env { s with mem := writeBytes m a (natToBytes x.toNat 8) })
+    (vv := .int 64 x) (a := a) ?_ ?_ ?_
+  · exact evalOperand_reg_of env { s with mem := m } r (.int 64 x) hv
+  · exact evalOperand_reg_of env { s with mem := m } p (.ptr a) hp
+  · simp [storeValue, withEnv]
+
+theorem wb_gep4_reg64 (calls : Calls) (env : Env) (s : State) (d base off : String) (a : Nat)
+    (x : BitVec 64) (k : Nat)
+    (hb : lookupName env base = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 x))
+    (hk : (x.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    evalInstr calls (withEnv env s) (.gep d (.int 32) (.reg base) (.reg off)) =
+      some (withEnv ((d, .ptr (a + k * 4)) :: env) s) := by
+  rw [evalInstr_gep (hb := evalOperand_reg_of env s base (.ptr a) hb)
+    (ho := evalOperand_reg_of env s off (.int 64 x) ho) (hpos := by rw [hk]; exact hpos)]
+  simp only [withEnv, State.bind, hk, Ty.sizeBytes]
+
+theorem wb_add64 (calls : Calls) (env : Env) (s : State) (d a b : String) (x y : BitVec 64)
+    (ha : lookupName env a = some (.int 64 x)) (hb : lookupName env b = some (.int 64 y)) :
+    evalInstr calls (withEnv env s) (.binop d .add 64 (.reg a) (.reg b)) =
+      some (withEnv ((d, .int 64 (x + y)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, withEnv, State.bind]
+    using evalInstr_binop (r := (x + y).toNat)
+      (ha := evalOperand_reg_of env s a (.int 64 x) ha)
+      (hb := evalOperand_reg_of env s b (.int 64 y) hb)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat, BitVec.setWidth_eq])
+
+theorem wb_add64_imm (calls : Calls) (env : Env) (s : State) (d src : String)
+    (x c : BitVec 64) (h : lookupName env src = some (.int 64 x)) :
+    evalInstr calls (withEnv env s)
+        (.binop d .add 64 (.reg src) (.imm (.int 64 c))) =
+      some (withEnv ((d, .int 64 (x + c)) :: env) s) := by
+  rw [evalInstr_binop (r := (x + c).toNat)
+    (ha := evalOperand_reg_of env s src (.int 64 x) h)
+    (hb := evalOperand_lit_of _ 64 c)
+    (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])]
+  simp only [BitVec.ofNat_toNat, BitVec.setWidth_eq, withEnv, State.bind]
+
+theorem wb_and64 (calls : Calls) (env : Env) (s : State) (d a b : String)
+    (x y : BitVec 64)
+    (ha : lookupName env a = some (.int 64 x)) (hb : lookupName env b = some (.int 64 y)) :
+    evalInstr calls (withEnv env s) (.binop d .and 64 (.reg a) (.reg b)) =
+      some (withEnv ((d, .int 64 (x &&& y)) :: env) s) := by
+  rw [evalInstr_binop (r := (x &&& y).toNat)
+    (ha := evalOperand_reg_of env s a (.int 64 x) ha)
+    (hb := evalOperand_reg_of env s b (.int 64 y) hb)
+    (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])]
+  simp only [BitVec.ofNat_toNat, BitVec.setWidth_eq, withEnv, State.bind]
+
+theorem wb_icmp_eq64_imm (calls : Calls) (env : Env) (s : State) (d a : String)
+    (x c : BitVec 64) (h : lookupName env a = some (.int 64 x)) :
+    evalInstr calls (withEnv env s)
+        (.icmp d .eq 64 (.reg a) (.imm (.int 64 c))) =
+      some (withEnv ((d, .int 1 (evalICmp .eq x c)) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s a (.int 64 x) h)
+    (hb := evalOperand_lit_of _ 64 c)]
+  simp only [withEnv, State.bind]
+
+/-- **`while.body.i.i`'s straight-line run.**  The two `phi`s select the cursor and
+the residual, `@xl_batch` writes the batch and returns its claim, the count is
+advanced and stored, eight clears reduce the residual to `clearLow w 8`, and the
+cursor advances by the claim.
+
+The conclusion names the memory and the three cells the successor reads, in the
+form the induction consumes. -/
+theorem lstWhileBody_run (env : Env) (s : State) (w : BitVec 64) (base : BitVec 32)
+    (o c0 xn : Nat) (p : String) (oo oc : Operand)
+    (hpre : (withEnv env s).pre = some p)
+    (hoo : phiIncoming p lstWhileIncomingO = some oo)
+    (hoc : phiIncoming p lstWhileIncomingC = some oc)
+    (hvo : evalOperand (withEnv env s) oo = some (.ptr o))
+    (hvc : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: env) s) oc =
+      some (.int 64 w))
+    (hconv : lookupName env "%conv" = some (.int 32 base))
+    (hxn : lookupName env "%xn" = some (.ptr xn))
+    (hload : readBytes (batchMem base w o s.mem) xn 8 = some (natToBytes c0 8)) :
+    Option.map State.mem
+        (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)) =
+        some (writeBytes (batchMem base w o s.mem) xn
+          (natToBytes (c0 + lstBatchCount w) 8)) ∧
+      (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%and18.7.i.i") = some (.int 64 (cSt8 w)) ∧
+      (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%add.ptr8.i.i") =
+          some (.ptr (o + 4 * lstBatchCount w)) ∧
+      (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%tobool6.not.i.i") =
+          some (.int 1 (evalICmp .eq (cSt8 w) (BitVec.ofInt 64 0))) ∧
+      (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
+          (fun st => st.pc) = some ((withEnv env s).pc) ∧
+      (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%conv") = lookupName env "%conv" ∧
+      (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%xn") = lookupName env "%xn" := by
+  rw [lstWhileBody_instrs]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (evalInstr_phi (s := withEnv env s) hpre hoo hvo)]
+  rw [show (withEnv env s).bind "%o.044.i.i" (.ptr o) = withEnv (("%o.044.i.i", .ptr o) :: env) s
+    from rfl]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (evalInstr_phi (s := withEnv (("%o.044.i.i", .ptr o) :: env) s) hpre hoc hvc)]
+  rw [show (withEnv (("%o.044.i.i", .ptr o) :: env) s).bind "%c.143.i.i" (.int 64 w) =
+    withEnv (("%c.143.i.i", .int 64 w) :: ("%o.044.i.i", .ptr o) :: env) s from rfl]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (b_call_batch _ _ "%call7.i.i" "%c.143.i.i" "%o.044.i.i" w base o
+      (by b_lk lookupName_cons_self) (by b_lk hconv)
+      (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_zext32_64 _ _ _ "%idx.ext.i.i" "%call7.i.i" _
+      (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_load64_mem (escapeListCalls Γ_xl_batch)
+      (("%idx.ext.i.i", .int 64
+          (BitVec.ofNat 64 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).toNat)) ::
+        ("%call7.i.i", .int 32 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8))) ::
+        ("%c.143.i.i", .int 64 w) :: ("%o.044.i.i", .ptr o) :: env)
+      s (batchMem base w o s.mem) "%13" "%xn" xn c0 (by b_lk hxn) hload)]
+  have hk : (BitVec.signExtend 64
+      (BitVec.ofNat 64 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).toNat)).toNat =
+      lstBatchCount w := by
+    unfold lstBatchCount
+    rw [show BitVec.signExtend 64
+        (BitVec.ofNat 64 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).toNat) =
+        BitVec.ofNat 64 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).toNat
+      from by simp,
+      BitVec.toNat_ofNat]
+    exact Nat.mod_eq_of_lt (by
+      have := (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).isLt
+      omega)
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64 _ _ _ "%add10.i.i" "%13" "%idx.ext.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_store64_mem _ _ _ _ "%add10.i.i" "%xn" _ xn
+      (by b_lk lookupName_cons_self) (by b_lk hxn))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.i.i" "%c.143.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.i.i" "%sub17.i.i" "%c.143.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.1.i.i" "%and18.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.1.i.i" "%sub17.1.i.i" "%and18.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.2.i.i" "%and18.1.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.2.i.i" "%sub17.2.i.i" "%and18.1.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.3.i.i" "%and18.2.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.3.i.i" "%sub17.3.i.i" "%and18.2.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.4.i.i" "%and18.3.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.4.i.i" "%sub17.4.i.i" "%and18.3.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.5.i.i" "%and18.4.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.5.i.i" "%sub17.5.i.i" "%and18.4.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.6.i.i" "%and18.5.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.6.i.i" "%sub17.6.i.i" "%and18.5.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_add64_imm _ _ _ "%sub17.7.i.i" "%and18.6.i.i" _
+      (BitVec.ofInt 64 (-1)) (by b_lk lookupName_cons_self))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_and64 _ _ _ "%and18.7.i.i" "%sub17.7.i.i" "%and18.6.i.i" _
+      _ (by b_lk lookupName_cons_self) (by b_lk (lookupName_cons_ne _ _ (by decide))))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_gep4_reg64 _ _ _ "%add.ptr8.i.i" "%o.044.i.i" "%idx.ext.i.i" o _
+      (lstBatchCount w) (by b_lk lookupName_cons_self)
+      (by b_lk (lookupName_cons_ne _ _ (by decide))) hk
+      (by have := lstBatchCount_le w; omega))]
+  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
+    (wb_icmp_eq64_imm _ _ _ "%tobool6.not.i.i" "%and18.7.i.i" _
+      (BitVec.ofInt 64 0) (by b_lk (by b_lk lookupName_cons_self)))]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [denoteCode, Option.map_some, withEnv]
+    rw [show (BitVec.ofNat 64 c0 +
+          BitVec.ofNat 64 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).toNat).toNat =
+        (c0 + lstBatchCount w) % 2 ^ 64 from by
+      rw [ofNat64_add, BitVec.toNat_ofNat]
+      rfl,
+      natToBytes_mod_two_pow]
+  · simp only [denoteCode, Option.bind_some, withEnv]
+    ie4_lk
+  · simp only [denoteCode, Option.bind_some, withEnv]
+    ie4_lk
+    rw [Nat.mul_comm]
+  · simp only [denoteCode, Option.bind_some, withEnv]
+    rw [lookupName_cons_self]
+    simp only [cSt8, cSt]
+  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, Option.bind_some, withEnv]
+    ie4_lk
+  · simp only [denoteCode, Option.bind_some, withEnv]
+    ie4_lk
+
+/-- One block's step at an arbitrary call environment. -/
+theorem step_of_calls (calls : Calls) (s : State) (name : String) (b : Block) (s' : State)
+    (hpc : s.pc = name) (hfind : escapeListFunction.findBlock name = some b)
+    (hbody : denoteCode calls b.instrs s = some s') :
+    step calls escapeListFunction s = execTerm s' b.term := by
+  simp [step, hpc, hfind, hbody]
+
+/-- A jump spends one step of fuel, at an arbitrary call environment. -/
+theorem runFuel_jump_calls {calls : Calls} {s s' : State} {n : Nat} {f : Function}
+    (h : step calls f s = .jump s') :
+    runFuel calls (n + 1) f s = runFuel calls n f s' := by
+  simp [runFuel, h]
+
+/-- **`while.body.i.i`'s one control step.**  The block runs a batch, advances the
+count and the cursor, clears eight lanes, and branches on the cleared word. -/
+theorem lstWhileBody_step (env : Env) (s : State) (w : BitVec 64) (base : BitVec 32)
+    (o c0 xn : Nat) (p : String) (oo oc : Operand)
+    (hpc : (withEnv env s).pc = "while.body.i.i")
+    (hpre : (withEnv env s).pre = some p)
+    (hoo : phiIncoming p lstWhileIncomingO = some oo)
+    (hoc : phiIncoming p lstWhileIncomingC = some oc)
+    (hvo : evalOperand (withEnv env s) oo = some (.ptr o))
+    (hvc : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: env) s) oc =
+      some (.int 64 w))
+    (hconv : lookupName env "%conv" = some (.int 32 base))
+    (hxn : lookupName env "%xn" = some (.ptr xn))
+    (hload : readBytes (batchMem base w o s.mem) xn 8 = some (natToBytes c0 8)) :
+    ∃ (e : State),
+      step (escapeListCalls Γ_xl_batch) escapeListFunction (withEnv env s) = .jump e ∧
+      e.pc = (if clearLow w 8 = 0 then "xl_emit.exit" else "while.body.i.i") ∧
+      e.mem = writeBytes (batchMem base w o s.mem) xn
+        (natToBytes (c0 + lstBatchCount w) 8) ∧
+      e.pre = some "while.body.i.i" ∧
+      lookupName e.env "%and18.7.i.i" = some (.int 64 (clearLow w 8)) ∧
+      lookupName e.env "%add.ptr8.i.i" = some (.ptr (o + 4 * lstBatchCount w)) ∧
+      lookupName e.env "%tobool6.not.i.i" =
+        some (.int 1 (evalICmp .eq (clearLow w 8) (BitVec.ofInt 64 0))) ∧
+      lookupName e.env "%conv" = lookupName env "%conv" ∧
+      lookupName e.env "%xn" = lookupName env "%xn" := by
+  obtain ⟨hmem, hand, haddr, hcmp, hpcc, hconvf, hxnf⟩ :=
+    lstWhileBody_run env s w base o c0 xn p oo oc hpre hoo hoc hvo hvc hconv hxn hload
+  obtain ⟨st, hst, hstmem⟩ := Option.map_eq_some_iff.mp hmem
+  have hand' : lookupName st.env "%and18.7.i.i" = some (.int 64 (cSt8 w)) := by
+    simpa only [hst, Option.bind_some] using hand
+  have haddr' : lookupName st.env "%add.ptr8.i.i" =
+      some (.ptr (o + 4 * lstBatchCount w)) := by
+    simpa only [hst, Option.bind_some] using haddr
+  have hcmp' : lookupName st.env "%tobool6.not.i.i" =
+      some (.int 1 (evalICmp .eq (cSt8 w) (BitVec.ofInt 64 0))) := by
+    simpa only [hst, Option.bind_some] using hcmp
+  have hpcst : st.pc = "while.body.i.i" := by
+    have h : some st.pc = some ((withEnv env s).pc) := by
+      simpa only [hst, Option.bind_some] using hpcc
+    rw [show st.pc = (withEnv env s).pc from Option.some.injEq _ _ |>.mp h, hpc]
+  have hstep : step (escapeListCalls Γ_xl_batch) escapeListFunction (withEnv env s) =
+      execTerm st lstWhileBody.term :=
+    step_of_calls _ _ _ _ _ hpc findBlock_whileBody hst
+  have hval : evalOperand st (.reg "%tobool6.not.i.i") =
+      some (.int 1 (evalICmp .eq (cSt8 w) (BitVec.ofInt 64 0))) := by
+    show lookupName st.env "%tobool6.not.i.i" = _
+    exact hcmp'
+  have hof : (BitVec.ofInt 64 0 : BitVec 64) = 0 := by decide
+  rw [hstep, lstWhileBody_term]
+  by_cases hz : clearLow w 8 = 0
+  · have hcz : cSt8 w = 0 := by rw [cSt8_eq_clearLow]; exact hz
+    have hv : evalICmp .eq (cSt8 w) (BitVec.ofInt 64 0) = (1 : BitVec 1) := by
+      rw [hcz, hof]
+      exact (evalICmp_eq_one_iff _ _).mpr rfl
+    rw [execTerm_condbr_one _ _ _ _ _ hval hv]
+    refine ⟨{ st with pc := "xl_emit.exit", pre := some st.pc }, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rw [ite_eq_left hz]
+    · exact hstmem
+    · show (some st.pc) = some "while.body.i.i"
+      rw [hpcst]
+    · rw [← cSt8_eq_clearLow]; exact hand'
+    · exact haddr'
+    · rw [← cSt8_eq_clearLow]; exact hcmp'
+    · simpa only [hst, Option.bind_some] using hconvf
+    · simpa only [hst, Option.bind_some] using hxnf
+  · have hv : evalICmp .eq (cSt8 w) (BitVec.ofInt 64 0) = (0 : BitVec 1) := by
+      rw [cSt8_eq_clearLow, hof]
+      exact (evalICmp_eq_zero_iff _ _).mpr hz
+    rw [execTerm_condbr_zero _ _ _ _ _ hval hv]
+    refine ⟨{ st with pc := "while.body.i.i", pre := some st.pc }, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rw [ite_eq_right hz]
+    · exact hstmem
+    · show (some st.pc) = some "while.body.i.i"
+      rw [hpcst]
+    · rw [← cSt8_eq_clearLow]; exact hand'
+    · exact haddr'
+    · rw [← cSt8_eq_clearLow]; exact hcmp'
+    · simpa only [hst, Option.bind_some] using hconvf
+    · simpa only [hst, Option.bind_some] using hxnf
+
+/-! ### The writer loop's invariant and its remaining-block induction -/
+
+/-- The zero word's population count. -/
+theorem ctpop_zero64 : ctpop (0 : BitVec 64) = 0 := by
+  rw [ctpop_eq_setLanes_length]
+  simp [setLanes, getLsbD_zero_64]
+
+/-- An operand other than a `%o` register reads the same in the environment the
+first `phi` extends. -/
+theorem evalOperand_cons_of_ne (env : Env) (s : State) (k : String) (v : Value)
+    (oc : Operand) (w : Value)
+    (hne : ∀ n, oc = .reg n → n ≠ k)
+    (h : evalOperand (withEnv env s) oc = some w) :
+    evalOperand (withEnv ((k, v) :: env) s) oc = some w := by
+  cases oc with
+  | reg n =>
+      simp only [evalOperand, withEnv] at h ⊢
+      rw [lookupName_cons_ne v env (Ne.symm (hne n rfl))]
+      exact h
+  | imm c => simpa only [evalOperand] using h
+
+/-- The writer loop's state at its head: the residual word, the cursor, the
+record's staging, and the two `phi` cells the block reads. -/
+def lstWriterInv (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (base : BitVec 32) (used o : Nat) (s : State) (w : BitVec 64) : Prop :=
+  s.pc = "while.body.i.i" ∧
+  (∃ (p : String) (oo oc : Operand),
+    s.pre = some p ∧
+    phiIncoming p lstWhileIncomingO = some oo ∧
+    phiIncoming p lstWhileIncomingC = some oc ∧
+    evalOperand s oo = some (.ptr o) ∧
+    evalOperand s oc = some (.int 64 w) ∧
+    (oc = .reg "%and18.7.i.i" ∨ oc = .reg "%and.7.i.i")) ∧
+  ListLoopInv blk0 xp xn xn0 used w position s.mem ∧
+  o = xp + 4 * xn0 + 4 * used ∧
+  (xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn) ∧
+  lookupName s.env "%conv" = some (.int 32 base) ∧
+  lookupName s.env "%xn" = some (.ptr xn) ∧
+  position.Pairwise (· < ·) ∧
+  (∀ k ∈ position, k < 64) ∧
+  base = lxBase blk0 ∧
+  blk0.toNat * 64 + 64 < 2 ^ 32
+
+/-- What the writer loop leaves at `xl_emit.exit`. -/
+def lstWriterExit (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (s : State) : Prop :=
+  s.pc = "xl_emit.exit" ∧
+  readBytes s.mem xn 8 = some (wordBytes 8 (xn0 + position.length)) ∧
+  readBytes s.mem (xp + 4 * xn0) (4 * position.length) =
+    some (positionsBytes 4 (position.map fun k => blockAddr blk0 + k))
+
+/-- `ListLoopInv`'s lane predicate is the set-lane equality. -/
+theorem setLanes_eq_drop_of_inv {w : BitVec 64} {position : List Nat} {used : Nat}
+    (hpair : position.Pairwise (· < ·))
+    (hlt : ∀ k ∈ position, k < 64)
+    (h : ∀ k, k < 64 → w.getLsbD k = decide (k ∈ position.drop used)) :
+    setLanes w = position.drop used :=
+  setLanes_eq_of_lane_mem (List.Pairwise.drop (i := used) hpair)
+    (fun k hk => hlt k (List.mem_of_mem_drop hk)) h
+
+/-- The claimed prefix after one batch: the old entries are unchanged, the new
+ones are the batch's, and the count store is outside the stream. -/
+theorem lstWriter_prefix
+    (blk0 : BitVec 64) (base : BitVec 32) (w : BitVec 64)
+    (xp xn xn0 o used k c : Nat) (position : List Nat) (mem : Mem)
+    (hbase : base.toNat = blockAddr blk0)
+    (hcap : base.toNat + 64 ≤ 2 ^ 32)
+    (hk : k = min (ctpop w) 8)
+    (hlen : used + k ≤ position.length)
+    (hplen : position.length ≤ 64)
+    (hlanes : setLanes w = position.drop used)
+    (ho : o = xp + 4 * xn0 + 4 * used)
+    (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
+    (hprefix : readBytes mem (xp + 4 * xn0) (4 * used) =
+      some (positionsBytes 4 ((position.take used).map fun j => blockAddr blk0 + j))) :
+    readBytes (writeBytes (batchMem base w o mem) xn (natToBytes c 8))
+      (xp + 4 * xn0) (4 * (used + k)) =
+      some (positionsBytes 4 ((position.take (used + k)).map fun j => blockAddr blk0 + j)) := by
+  have h64 : used + k ≤ 64 := by omega
+  have hframe : ((xp + 4 * xn0) + 4 * (used + k) ≤ xn) ∨ (xn + 8 ≤ xp + 4 * xn0) := by
+    rcases hkeep with h | h
+    · right; omega
+    · left
+      have : xp + 4 * xn0 + 4 * (used + k) ≤ xp + 4 * blockMax xn0 := by
+        unfold blockMax batchReserve; omega
+      omega
+  have hcount : readBytes (writeBytes (batchMem base w o mem) xn (natToBytes c 8))
+      (xp + 4 * xn0) (4 * (used + k)) =
+      readBytes (batchMem base w o mem) (xp + 4 * xn0) (4 * (used + k)) := by
+    rcases hframe with h | h
+    · exact readBytes_writeBytes_below _ _ _ _ _ h
+    · rw [readBytes_writeBytes_above _ _ _ _ xn (by rw [natToBytes_length]; exact h)]
+  rw [hcount]
+  have hpre : readBytes (batchMem base w o mem) (xp + 4 * xn0) (4 * used) =
+      some (positionsBytes 4 ((position.take used).map fun j => blockAddr blk0 + j)) := by
+    rw [readBytes_batchMem_below base w o mem (4 * used) (xp + 4 * xn0) (by omega)]
+    exact hprefix
+  have hnew : readBytes (batchMem base w o mem) (xp + 4 * xn0 + 4 * used) (4 * k) =
+      some (positionsBytes 4 (((position.drop used).take k).map
+        fun j => blockAddr blk0 + j)) := by
+    rw [← ho]
+    rw [batchMem_prefix base w o mem k (by omega)]
+    rw [batchEntries_positions base w k (by omega) hcap, hlanes, hbase]
+  have happ := LeanLLVM.Vellum.JsonEntrySteps.readBytes_append
+    (batchMem base w o mem) (4 * used) (xp + 4 * xn0)
+    (positionsBytes 4 ((position.take used).map fun j => blockAddr blk0 + j)) (4 * k)
+    (positionsBytes 4 (((position.drop used).take k).map fun j => blockAddr blk0 + j))
+    hpre hnew
+  rw [show 4 * (used + k) = 4 * used + 4 * k from by omega]
+  rw [happ]
+  congr 1
+  rw [← positionsBytes_append, ← List.map_append, List.take_add]
+
+
+/-- The count cell after a batch: the store at `xn` reads back as the count. -/
+theorem lstWriter_count_read (base : BitVec 32) (w : BitVec 64) (o xn c : Nat)
+    (mem : Mem) :
+    readBytes (writeBytes (batchMem base w o mem) xn (natToBytes c 8)) xn 8 =
+      some (wordBytes 8 c) := by
+  have h := readBytes_writeBytes_same (batchMem base w o mem) (natToBytes c 8) (addr := xn)
+  rw [natToBytes_length] at h
+  exact h
+
+/-- The writer loop's exit arm: one batch, then `xl_emit.exit` with the whole
+position list and the final count. -/
+theorem lstWriter_step_exit (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (base : BitVec 32) (used o : Nat) (s : State) (w : BitVec 64)
+    (hinv : lstWriterInv blk0 xp xn xn0 position base used o s w)
+    (hz : clearLow w 8 = 0) :
+    ∃ e : State, step (escapeListCalls Γ_xl_batch) escapeListFunction s = .jump e ∧
+      lstWriterExit blk0 xp xn xn0 position e := by
+  obtain ⟨hpc, ⟨p, oo, oc, hpre, hoo, hoc, hvo, hvc, hocv⟩, hLLI, hcur, hkeep,
+    hconv, hxn, hpair, hplt, hbase, hcap⟩ := hinv
+  obtain ⟨hlanes, hprefix, hcount, husedle, hplen⟩ := hLLI
+  have hbridge := setLanes_eq_drop_of_inv hpair hplt hlanes
+  have hσ : s = withEnv s.env s := (withEnv_self s).symm
+  rw [hσ] at hpc hpre hvo hvc hconv hxn ⊢
+  have hdisj : xn + 8 ≤ o ∨ o + 32 ≤ xn := by
+    rcases hkeep with h | h
+    · left; rw [hcur]; omega
+    · right
+      have h64 : used ≤ 64 := Nat.le_trans husedle hplen
+      have : xp + 4 * xn0 + 4 * used + 32 ≤ xp + 4 * blockMax xn0 := by
+        unfold blockMax batchReserve; omega
+      omega
+  have hne : ∀ n, oc = .reg n → n ≠ "%o.044.i.i" := by
+    intro n hn
+    rcases hocv with h | h <;> rw [hn] at h <;>
+      (injection h with h'; rw [h']; decide)
+  have hvc' : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: s.env) s) oc =
+      some (.int 64 w) :=
+    evalOperand_cons_of_ne s.env s "%o.044.i.i" (.ptr o) oc (.int 64 w) hne hvc
+  have hload : readBytes (batchMem base w o s.mem) xn 8 =
+      some (natToBytes (xn0 + used) 8) := by
+    have hc := hcount
+    rw [show wordBytes 8 (xn0 + used) = natToBytes (xn0 + used) 8 from rfl] at hc
+    rcases hdisj with h | h
+    · rw [readBytes_batchMem_below base w o s.mem 8 xn h]; exact hc
+    · rw [readBytes_batchMem_above base w o s.mem 8 xn h]; exact hc
+  obtain ⟨e, hstep, hpcE, hmemE, hpreE, handE, haddrE, hcmpE, hconvE, hxnE⟩ :=
+    lstWhileBody_step s.env s w base o (xn0 + used) xn p oo oc hpc hpre hoo hoc
+      hvo hvc' hconv hxn hload
+  have hcle : ctpop w ≤ 8 := by
+    have h := ctpop_clearLow w 8
+    rw [hz, ctpop_zero64] at h
+    omega
+  have hk : lstBatchCount w = ctpop w := by
+    rw [lstBatchCount_eq, Nat.min_eq_left hcle]
+  have hlen : ctpop w = position.length - used := by
+    rw [ctpop_eq_setLanes_length, hbridge, List.length_drop]
+  have hused' : used + lstBatchCount w = position.length := by rw [hk]; omega
+  have hbase' : base.toNat = blockAddr blk0 := by
+    rw [hbase]; exact lxBase_toNat_eq blk0 hcap
+  have hcap' : base.toNat + 64 ≤ 2 ^ 32 := by
+    rw [hbase']; unfold blockAddr; omega
+  have hval : xn0 + used + lstBatchCount w = xn0 + position.length := by omega
+  refine ⟨e, hstep, ?_, ?_, ?_⟩
+  · rw [hpcE, ite_eq_left hz]
+  · rw [hmemE, lstWriter_count_read, hval]
+  · rw [hmemE]
+    have hp := lstWriter_prefix blk0 base w xp xn xn0 o used (lstBatchCount w)
+      (xn0 + used + lstBatchCount w) position s.mem hbase' hcap' 
+      (lstBatchCount_eq w) (by omega) hplen hbridge hcur hkeep hprefix
+    rw [← hused', hp, hused', List.take_length]
+
+/-- The writer loop's back edge: one batch, and the successor invariant with the
+cleared word, the advanced cursor and the advanced count. -/
+theorem lstWriter_step_loop (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (base : BitVec 32) (used o : Nat) (s : State) (w : BitVec 64)
+    (hinv : lstWriterInv blk0 xp xn xn0 position base used o s w)
+    (hz : clearLow w 8 ≠ 0) :
+    ∃ e : State, step (escapeListCalls Γ_xl_batch) escapeListFunction s = .jump e ∧
+      lstWriterInv blk0 xp xn xn0 position base (used + lstBatchCount w)
+        (o + 4 * lstBatchCount w) e (clearLow w 8) := by
+  obtain ⟨hpc, ⟨p, oo, oc, hpre, hoo, hoc, hvo, hvc, hocv⟩, hLLI, hcur, hkeep,
+    hconv, hxn, hpair, hplt, hbase, hcap⟩ := hinv
+  obtain ⟨hlanes, hprefix, hcount, husedle, hplen⟩ := hLLI
+  have hbridge := setLanes_eq_drop_of_inv hpair hplt hlanes
+  have hσ : s = withEnv s.env s := (withEnv_self s).symm
+  rw [hσ] at hpc hpre hvo hvc hconv hxn ⊢
+  have hdisj : xn + 8 ≤ o ∨ o + 32 ≤ xn := by
+    rcases hkeep with h | h
+    · left; rw [hcur]; omega
+    · right
+      have h64 : used ≤ 64 := Nat.le_trans husedle hplen
+      have : xp + 4 * xn0 + 4 * used + 32 ≤ xp + 4 * blockMax xn0 := by
+        unfold blockMax batchReserve; omega
+      omega
+  have hne : ∀ n, oc = .reg n → n ≠ "%o.044.i.i" := by
+    intro n hn
+    rcases hocv with h | h <;> rw [hn] at h <;>
+      (injection h with h'; rw [h']; decide)
+  have hvc' : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: s.env) s) oc =
+      some (.int 64 w) :=
+    evalOperand_cons_of_ne s.env s "%o.044.i.i" (.ptr o) oc (.int 64 w) hne hvc
+  have hload : readBytes (batchMem base w o s.mem) xn 8 =
+      some (natToBytes (xn0 + used) 8) := by
+    have hc := hcount
+    rw [show wordBytes 8 (xn0 + used) = natToBytes (xn0 + used) 8 from rfl] at hc
+    rcases hdisj with h | h
+    · rw [readBytes_batchMem_below base w o s.mem 8 xn h]; exact hc
+    · rw [readBytes_batchMem_above base w o s.mem 8 xn h]; exact hc
+  obtain ⟨e, hstep, hpcE, hmemE, hpreE, handE, haddrE, hcmpE, hconvE, hxnE⟩ :=
+    lstWhileBody_step s.env s w base o (xn0 + used) xn p oo oc hpc hpre hoo hoc
+      hvo hvc' hconv hxn hload
+  have hlen : ctpop w = position.length - used := by
+    rw [ctpop_eq_setLanes_length, hbridge, List.length_drop]
+  have hgt : 8 < ctpop w := by
+    rcases Nat.lt_or_ge 8 (ctpop w) with h | h
+    · exact h
+    · exfalso
+      have hdrop : (position.drop used).length = ctpop w := by
+        rw [ctpop_eq_setLanes_length, hbridge]
+      have hle8 : (position.drop used).length ≤ 8 := by rw [hdrop]; exact h
+      have hnil : setLanes (clearLow w 8) = [] := by
+        rw [setLanes_clearLow w 8, hbridge, List.drop_eq_nil_of_le hle8]
+      exact hz (eq_zero_of_setLanes_nil hnil)
+  have hk : lstBatchCount w = 8 := by
+    rw [lstBatchCount_eq, Nat.min_eq_right (by omega)]
+  have hsum : used + lstBatchCount w ≤ position.length := by
+    have h8le : 8 ≤ ctpop w := by omega
+    have hle : used + ctpop w ≤ position.length := by
+      rw [hlen, Nat.add_comm, Nat.sub_add_cancel husedle]
+      exact Nat.le_refl _
+    omega
+  have hbase' : base.toNat = blockAddr blk0 := by
+    rw [hbase]; exact lxBase_toNat_eq blk0 hcap
+  have hcap' : base.toNat + 64 ≤ 2 ^ 32 := by
+    rw [hbase']; unfold blockAddr; omega
+  have hset : setLanes (clearLow w 8) = position.drop (used + lstBatchCount w) := by
+    rw [setLanes_clearLow_positions w position used hbridge, lstBatchCount_eq]
+  refine ⟨e, hstep, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hpcE, ite_eq_right hz]
+  · refine ⟨"while.body.i.i", .reg "%add.ptr8.i.i", .reg "%and18.7.i.i", hpreE, ?_, ?_,
+      ?_, ?_, Or.inl rfl⟩
+    · decide
+    · decide
+    · simpa only [evalOperand] using haddrE
+    · simpa only [evalOperand] using handE
+  · refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · intro j hj
+      exact lane_mem_of_setLanes hset (fun a ha => hplt a (List.mem_of_mem_drop ha)) j hj
+    · rw [hmemE]
+      exact lstWriter_prefix blk0 base w xp xn xn0 o used (lstBatchCount w)
+        (xn0 + used + lstBatchCount w) position s.mem hbase' hcap'
+        (lstBatchCount_eq w) hsum hplen hbridge hcur hkeep hprefix
+    · have hv : xn0 + used + lstBatchCount w = xn0 + (used + lstBatchCount w) := by omega
+      rw [hmemE, lstWriter_count_read, hv]
+    · exact hsum
+    · exact hplen
+  · rw [hcur]; omega
+  · exact hkeep
+  · exact hconvE.trans hconv
+  · exact hxnE.trans hxn
+  · exact hpair
+  · exact hplt
+  · exact hbase
+  · exact hcap
+
+/-- **The writer loop, closed on the remaining-block induction.**  From the head
+with at most `8 * r` residual lanes, the run reaches `xl_emit.exit` within `r + 1`
+control steps and leaves the record's memory: the count `xn0 + position.length`
+and the whole position stream at `xp + 4 * xn0`. -/
+theorem lstWriter_run (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (base : BitVec 32) :
+    ∀ (r used o : Nat) (s : State) (w : BitVec 64),
+      lstWriterInv blk0 xp xn xn0 position base used o s w →
+      ctpop w ≤ 8 * r →
+      ∃ (e : State) (j : Nat), j ≤ r + 1 ∧
+        lstWriterExit blk0 xp xn xn0 position e ∧
+        ∀ m, runFuel (escapeListCalls Γ_xl_batch) (j + m) escapeListFunction s =
+          runFuel (escapeListCalls Γ_xl_batch) m escapeListFunction e := by
+  intro r
+  induction r with
+  | zero =>
+      rintro used o s w hInv hBnd
+      have hInvKeep := hInv
+      obtain ⟨_hpc, ⟨_p, _oo, _oc, _hpre, _hoo, _hoc, _hvo, _hvc, _hocv⟩, hLLI, _hcur,
+        _hkeep, _hconv, _hxn, hpair, hplt, _hbase, _hcap⟩ := hInv
+      obtain ⟨hlanes, _hprefix, _hcount, _husedle, _hplen⟩ := hLLI
+      have hbridge := setLanes_eq_drop_of_inv hpair hplt hlanes
+      have hdrop : (position.drop used).length = ctpop w := by
+        rw [ctpop_eq_setLanes_length, hbridge]
+      have hc0 : ctpop w = 0 := by omega
+      have hz : clearLow w 8 = 0 := by
+        apply eq_zero_of_setLanes_nil
+        rw [setLanes_clearLow w 8, hbridge,
+          List.drop_eq_nil_of_le (as := position.drop used) (i := 8)
+            (by rw [hdrop]; omega)]
+      obtain ⟨e, hstep, hexit⟩ := lstWriter_step_exit blk0 xp xn xn0 position base
+        used o s w hInvKeep hz
+      exact ⟨e, 1, by omega, hexit, fun m => by
+        rw [show 1 + m = m + 1 from by omega]
+        exact runFuel_jump_calls hstep⟩
+  | succ r ih =>
+      rintro used o s w hInv hBnd
+      by_cases hz : clearLow w 8 = 0
+      · obtain ⟨e, hstep, hexit⟩ := lstWriter_step_exit blk0 xp xn xn0 position base
+          used o s w hInv hz
+        exact ⟨e, 1, by omega, hexit, fun m => by
+          rw [show 1 + m = m + 1 from by omega]
+          exact runFuel_jump_calls hstep⟩
+      · obtain ⟨e, hstep, hinv'⟩ := lstWriter_step_loop blk0 xp xn xn0 position base
+          used o s w hInv hz
+        have hb' : ctpop (clearLow w 8) ≤ 8 * r := by
+          rw [ctpop_clearLow w 8]; omega
+        obtain ⟨e', j', hj', hexit', hrun'⟩ :=
+          ih (used + lstBatchCount w) (o + 4 * lstBatchCount w) e (clearLow w 8)
+            hinv' hb'
+        refine ⟨e', j' + 1, by omega, hexit', fun m => ?_⟩
+        rw [show j' + 1 + m = (j' + m) + 1 from by omega, runFuel_jump_calls hstep]
+        exact hrun' m
+
+
+/-- **The writer loop at its bound.**  Eight iterations suffice for the block's
+sixty-four lanes, so from the head the loop's whole cost is nine control steps:
+one per batch round plus the exit test's own step.  The record's budget over this
+loop is therefore `9 + (the exit continuation's)`, a term of the arguments and
+not a trip count. -/
+theorem lstWriter_run_at (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (base : BitVec 32) (used o : Nat) (s : State) (w : BitVec 64) (k : Nat)
+    (hinv : lstWriterInv blk0 xp xn xn0 position base used o s w) {o' : Outcome}
+    (hcont : ∀ (e : State) (_j : Nat), lstWriterExit blk0 xp xn xn0 position e →
+      runFuel (escapeListCalls Γ_xl_batch) k escapeListFunction e = some o') :
+    runFuel (escapeListCalls Γ_xl_batch) (9 + k) escapeListFunction s = some o' := by
+  have hct : ctpop w ≤ 8 * 8 := by
+    obtain ⟨_hpc, ⟨_p, _oo, _oc, _hpre, _hoo, _hoc, _hvo, _hvc, _hocv⟩, hLLI, _hcur,
+      _hkeep, _hconv, _hxn, hpair, hplt, _hbase, _hcap⟩ := hinv
+    obtain ⟨hlanes, _hprefix, _hcount, _husedle, hplen⟩ := hLLI
+    have hbridge := setLanes_eq_drop_of_inv hpair hplt hlanes
+    rw [ctpop_eq_setLanes_length, hbridge]
+    have := List.length_drop (i := used) (l := position)
+    omega
+  obtain ⟨e, j, hj, hexit, hrun⟩ :=
+    lstWriter_run blk0 xp xn xn0 position base 8 used o s w hinv hct
+  have hone : runFuel (escapeListCalls Γ_xl_batch) (j + k) escapeListFunction s =
+      some o' := by
+    rw [hrun k]
+    exact hcont e j hexit
+  exact runFuel_mono_le (by omega) hone
+
+/-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Vellum.lstWhileBody_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWhileBody_run
+
+/-- info: 'LeanLLVM.Vellum.lstWhileBody_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWhileBody_step
+
+/-- info: 'LeanLLVM.Vellum.lstWriter_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWriter_run
+
+/-- info: 'LeanLLVM.Vellum.lstWriter_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWriter_run_at
+
+/-- info: 'LeanLLVM.Vellum.lstWriter_step_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWriter_step_loop
+
+/-- info: 'LeanLLVM.Vellum.lstWriter_step_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWriter_step_exit
+
+/-- info: 'LeanLLVM.Vellum.lstWriter_prefix' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWriter_prefix
+
+/-- info: 'LeanLLVM.Vellum.batchEntries_positions' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms batchEntries_positions
+
+/-- info: 'LeanLLVM.Vellum.lane_mem_of_setLanes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms lane_mem_of_setLanes
+
+/-- info: 'LeanLLVM.Vellum.setLanes_clearLow_positions' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms setLanes_clearLow_positions
+
+/-- info: 'LeanLLVM.Vellum.lxBase_toNat_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms lxBase_toNat_eq
 
 end LeanLLVM.Vellum
