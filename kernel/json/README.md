@@ -665,44 +665,80 @@ nix develop -c bash kernel/json/bench/paired.sh --unit pipeline
 nix develop -c bash kernel/json/bench/paired.sh --unit pipeline --core 2 --core 5
 ```
 
-The harness compiles both forms into one binary, runs every document under
-`probes/bench/json/` through both sides once, and requires exact agreement on
-the verdict, the first error offset, the entry count, the escape count, the
-arena and event extents and the bytes of all four buffers before the clock
-starts.  Each round runs both sides twice, once in each order, and averages each
-side, so a drift inside the round cancels in the difference.  The reported
-number is the median of (staged - one-TU) ns/block over the rounds; one block is
-64 document bytes.
+The arm builds five binaries: the four pairs the decision is read from, and an
+exchange of the baseline's two sides.  Each pair is linked into one binary,
+because a cross-binary comparison is not a comparison
+(`docs/json-pipeline-performance.md` §7.2), so each row's two sides share one
+process and one window:
 
+|row|first side|second side|what it answers|
+|---|---|---|---|
+|`baseline`|staged-plain|one-TU-plain|the staging as first measured|
+|`arrangement`|one-TU-plain|staged-plain|the baseline's two forms with their roles exchanged: the arrangement term|
+|`decision`|staged-LTO|staged-plain|did the link-time build change what the code costs|
+|`reach`|staged-LTO|one-TU-LTO|does the staged build reach the inlined form, both configured alike|
+|`control`|one-TU-LTO|one-TU-plain|does LTO move a form whose boundaries are already inlined|
+
+The four forms are one source.  The staged form is `pipeline.c` and the five
+units as translation units; the one-TU form is the same six files compiled as
+one translation unit; the two LTO forms are those same builds compiled to
+bitcode with `-flto` and linked with the whole measured line plus `-flto`,
+because `-march` and `-falign-loops` are codegen decisions taken at the link
+and an LTO link without them would codegen a different target.  No source file
+differs between the rows; the ABI renames on the side that needs them — so one
+binary can hold both sides — are the whole adaptation.
+
+Every binary runs every document under `probes/bench/json/` through both sides
+once, and requires exact agreement on the verdict, the first error offset, the
+entry count, the escape count, the arena and event extents and the bytes of all
+four buffers before the clock starts.  Each round runs both sides twice, once in
+each order, and averages each side, so a drift inside the round cancels in the
+In every binary the first side is `probe_pipeline_staged` and the second
+`probe_pipeline_inlined`; the shell passes the pair's labels, and the harness's
+median is `d = first - second` ns/block, so **`d > 0` means the first side is
+slower**.  One block is 64 document bytes.
+
+- **The verdict is derived from the difference, and the arithmetic is
+  checked.**  The harness computes `d = first - second`, fails a claimed row only
+  when `d > +0.5`, prints both sides' columns with their labels, and refuses the
+  run (exit 3) when a verdict or a direction disagrees with the columns it
+  printed.  This replaces an earlier form in which, at `907bc61`,
+  `bench/paired-pipeline.c:551` computed `d = y - x` while `:584-585` failed on
+  the claim `:500` stated as `staged - one-TU <= +0.5`: a row could print
+  `FAIL: staged is slower` with the staged column the smaller one.  The
+  pre-fix rows are therefore read from their columns rather than from that word;
+  the defect is recorded because it is why the instrument now checks its own
+  verdict, and it was found by the timing arm's own output.
 - **The arm.**  The caller's selector is `arm 0`: the POS8 emitter, no escape
   list, the gated UTF-8 path.  That is the decision the measured table takes
   for a plain document with POS8 selected, and it is a caller's selector rather
   than a classifier, so both forms run the same arms.
-- **The bound is one-sided.**  The staged form may not be slower than the one-TU
-  form by more than 0.5 ns/block; a row on the favourable side is not a
-  regression.  Both estimators are printed: the median with its
-  distribution-free 95% interval from the order statistics, and the mean with
-  its normal-approximation interval, beside the per-round standard deviation and
-  the one-sided rolling-window rate at the record's fifteen-round window.
 - **301 rounds.**  The round count is this unit's default, because the row's
   per-round spread can exceed the bound (the escape arm's high-round finding).
   A row with fewer rounds, or a document under one full 4 KiB block, is an
   observation and carries no delta claim: one block divides the fixed
   per-document term by its block count, which is the rule the escape arm's
   one-block input already follows.
-- **What the compiler kept.**  The shell prints the call census of each form, so
-  the difference measured is the one the compiler left and not one a comment
-  claims.  At clang 21.1.8 with the measured line the one-TU form inlines four
-  of the six unit boundaries (the mask unit, the two entry emitters, the UTF-8
-  stage) and keeps the escape list and stage 2 as calls; the staged form keeps
-  all six.  The staged form's census must equal the pinned emission's, and the
-  one-TU form must have inlined at least one boundary or the arm refuses to
-  time a comparison that would measure placement alone.
-- **Build and target beside every row.**  The report prints the compiler, its
-  line, the target triple and the two objects' digests; each row repeats the
-  build identifier and the CPU it ran on with the core class read from
-  `CPUID.1Ah.EAX[31:24]`.  The core is named on the row, not only in the shell's
-  banner.
+- **What the linker kept.**  The census is read from the final object, because a
+  pre-link LTO object is bitcode and the calls it keeps are not the calls the
+  linker leaves.  At clang 21.1.8 the plain staged form keeps all six boundaries
+  (its census is the pinned emission's); the one-TU plain form inlines four —
+  the mask unit, both entry emitters and the UTF-8 stage — and keeps the escape
+  list and stage 2; the staged form linked with LTO inlines five into
+  `probe_pipeline_staged`, leaving the escape list as two calls; and the one-TU
+  form linked with LTO inlines all six.  The shell prints the table boundary by
+  boundary, with the caller's symbol beside it, and refuses the measurement when
+  the LTO link inlined nothing — a build flag whose effect is not shown is not a
+  measurement.
+- **Build and target beside every row.**  The report prints the compiler, the
+  compile line, the LTO link line, the target triple and the seven objects'
+  digests; each row repeats the build identifier, which names its pair, and the
+  CPU it ran on with the core class read from `CPUID.1Ah.EAX[31:24]`.  The core
+  is named on the row, not only in the shell's banner.  The one-TU sources are
+  compiled by their file name from the work directory, because clang writes the
+  source path into bitcode: a relative name keeps an LTO object's digest the
+  same from one run to the next, where an absolute path under a fresh temporary
+  directory would change it and the digest would identify nothing.
 - **The window's edges.**  The shell snapshots the load average, the running
   processes and the build tools immediately before and after each timing run,
   excluding its own ancestors.  A snapshot cannot prove that the window between
@@ -710,11 +746,16 @@ number is the median of (staged - one-TU) ns/block over the rounds; one block is
   as such, and the label is printed with the rows; a clean label is only the
   absence of a named build at the two edges.
 
-Both forms are compiled with `-falign-functions=4096` so every function starts a
-page, and the shell asserts that the two pipeline symbols do.  The comparison
-still includes placement: the staged and one-TU forms place their code
-differently, and a difference that survives the census is a difference of the
-two forms, not noise.
+Every form is compiled with `-falign-functions=4096` so every function starts a
+page, and the shell asserts that both pipeline symbols of every binary do.  The
+comparison still includes placement: the forms place their code differently, and
+a difference that survives the census is a difference of the two forms, not
+noise.  Identical text at different addresses is known to move a row by more
+than the bound, so the arrangement term is a row rather than an assumption: the
+`arrangement` pair is the baseline's two sides with their symbol roles exchanged
+and linked from the same objects, so its difference is what the placement of
+these two forms contributes.  A baseline-sized difference the exchange does not
+survive is arrangement, not code.
 
 ### The pipeline's identity arms
 
@@ -741,9 +782,10 @@ of the source and remove one call from a copy of the fixture; both are reported.
 1. **The one-TU form is the compiler's choice.**  It is the same source compiled
    as one translation unit, not a forced-inline form; which boundaries it
    inlines is a property of the compiler and is printed rather than assumed.
-2. **The arm measures different code.**  The staged form's cost is the cost of
-   composable boundaries, so a row is a statement about the two forms and not a
-   refutation of either; the record's ratios remain the one-TU form's.
+2. **The arm measures different code.**  The staged form's boundaries are
+   composable call sites; whether they cost or save on a given build is what the
+   row and its census report, and the row is a statement about the two forms,
+   not a refutation of either.  The record's ratios remain the one-TU form's.
 3. **The pipeline's arms are the caller's.**  The density gate that selects an
    emitter and the escape list per document is not in this unit, and the arm
    passes one selector for every document.  A document whose recorded class
