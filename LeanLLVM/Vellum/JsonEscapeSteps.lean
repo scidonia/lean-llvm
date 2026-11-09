@@ -258,7 +258,15 @@ theorem escape_positions_valueIrrelevant (budget : List Value → Mem → Nat) :
 
 /-- The decode's answer, in the two outcomes the measured signature distinguishes:
 the decoded bytes with the cursor, or a refusal at a body-relative offset with the
-same cursor. -/
+same cursor.
+
+**The walk is the resumable one, because the ABI carries the cursor in.**  `*xj` is
+the caller's position index, and the body starts its walk there: a staging with
+`k0 > 0` copies the bytes before the first unprocessed position raw and decodes from
+that position onward.  `escapeDecodeGo body 0 k0 (positions.drop k0) []` is exactly
+that walk, and the count it returns is the `k0 + (positions this call took)` that
+`*xj` leaves — so a fresh call is the `k0 = 0` case of this clause and not the
+definition the clause is written at. -/
 def escapeExpandPost (args : List Value) (mem m : Mem) (v : Value) : Prop :=
   ∃ (b n dst err xp xj : Nat) (nps pos0 tab : Nat) (body : List UInt8) (ps : List Nat)
     (err0 : Nat) (k0 : Nat),
@@ -270,7 +278,7 @@ def escapeExpandPost (args : List Value) (mem m : Mem) (v : Value) : Prop :=
     readBytes mem err 8 = some (wordBytes 8 err0) ∧
     readBytes mem xj 8 = some (wordBytes 8 k0) ∧
     k0 ≤ nps ∧
-    (match escapeDecode body (ps.map fun q => q - pos0) with
+    (match escapeDecodeGo body 0 k0 ((ps.map fun q => q - pos0).drop k0) [] with
      | .decoded out k =>
          v = .int 64 (BitVec.ofNat 64 out.length) ∧
          readBytes m dst out.length = some out ∧
@@ -304,12 +312,16 @@ wrong decode.
 The destination's extent is `dst` through the decoded length plus sixty-four bytes,
 and the record asks for `dst + n + 64`: the number `kernel/json/escape.h` promises
 the caller allocates, and not a bound the caller chooses.  That number is the extent
-the body reaches only because a decode never writes more than the body holds, which
-is `escapeDecode_length_le` under the spacing `Spaced`.
+the body reaches only because a decode never writes more than the body holds: a raw
+copy writes exactly the bytes it advances past, and every escape form is at most as
+long as the bytes it consumes, so the written length is at most `n` for a resumed
+call as well as a fresh one.  The fresh call's form of that inequality is
+`escapeDecode_length_le` under the spacing `Spaced`, and the spacing argument is
+local to each position, so which positions the call starts at does not enter it.
 
 **The spacing is derived, and `escapeExpand_spaced` is the witness.** A body's
 own position list is spaced, which is what makes `escapeDecode_length_le` apply to
-the decode this clause claims: no byte between a position and the bytes its escape
+the fresh call's decode: no byte between a position and the bytes its escape
 consumes is a control byte or a run-starting backslash — the escape character is one
 of `"\/bfnrtu`, all above `0x1F`, and where it is a backslash its predecessor was
 one too, so the run parity refuses it; the hexadecimal digits are `0-9A-Fa-f`, none
@@ -336,6 +348,18 @@ The range condition is also what keeps the measured list-driven path's underflow
 of the contract: an entry inside an escape the previous one consumed would be an
 entry the rebased list does not have, so the clause refuses that staging rather than
 the proof having to notice it.
+
+**The end offset fits the position width: `pos0 + n ≤ 2 ^ 32`.** The body forms
+`%add = pos0 + n` with a 64-bit add and reads each position through a `uint32` load,
+while this record's `n`, `pos0` and `nps` are Nats used untruncated. One bound
+settles all of it: the add cannot wrap, every entry is below `2 ^ 32` because
+`pos0 ≤ q < pos0 + n`, and `n`, `pos0` and `nps` are the canonical arguments (`nps`
+too, since `ps.length = (escapePositionsFrom body st).length ≤ n`). Without it a
+caller could stage a position the body reads truncated or an end offset the add
+wraps, and the walk the record claims would not be the walk the body takes — the
+same defect the list record's `blk0 * 64 + 64 < 2 ^ 32` excludes from the list side.
+A pipeline that walks blocks in order satisfies it at every call: its `pos0` is the
+list's block base and `n` is at most the block's sixty-four bytes.
 -/
 def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
@@ -354,6 +378,12 @@ def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
       nps = ps.length ∧
       (∀ q ∈ ps, pos0 ≤ q ∧ q < pos0 + n) ∧
       ps.map (fun q => q - pos0) = escapePositionsFrom body ⟨true, false⟩ ∧
+      -- the body's end offset fits the position width: `%add = pos0 + n` is a
+      -- 64-bit add and every position is read through a `uint32` load, so this
+      -- one bound makes the add unwrap, every entry fit its word, and `n`,
+      -- `pos0` and `nps` canonical Nat arguments.  The list record's
+      -- `blk0 * 64 + 64 < 2 ^ 32` is the same fact from the list side.
+      pos0 + n ≤ 2 ^ 32 ∧
       -- the cursor is a cursor
       readBytes mem xj 8 = some (wordBytes 8 k0) ∧ k0 ≤ nps ∧
       readBytes mem err 8 = some (wordBytes 8 err0) ∧

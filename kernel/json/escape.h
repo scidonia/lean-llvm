@@ -94,10 +94,16 @@
        The vendored comment at `usdec.h:390-392`, "up to 31 bytes past the
        run", is accurate for a non-empty run in the measured form and
        understates the empty copy (32) and the unselected form (63).
-     - `*xj <= nxp`, `pos0 + n` does not wrap, and `dst` does not overlap
-       `b` or `xp`.  The unit copies runs with vector loads and stores, so an
-       overlapping destination changes both operands; nothing here claims what
-       happens when they overlap.
+     - **`pos0 + n <= 2^32`**, `*xj <= nxp`, and `dst` does not overlap `b` or
+       `xp`.  The end offset fits the position width because `pos0`, `n` and
+       every entry of `xp` are `uint32` quantities: the unit forms `pos0 + n`
+       with a 64-bit add and reads each entry with a `uint32` load, so a larger
+       end offset or a wider entry would truncate in the body and not in the
+       specification the unit is proved against.  A caller that walks blocks in
+       order has it at every call: `pos0` is the block's base and `n` is at most
+       the block's sixty-four bytes.  The unit copies runs with vector loads and
+       stores, so an overlapping destination changes both operands; nothing here
+       claims what happens when they overlap.
 
    See README.md for the unit's provenance, its limits and its identity arms. */
 #ifndef LEANLLVM_KERNEL_JSON_ESCAPE_H
