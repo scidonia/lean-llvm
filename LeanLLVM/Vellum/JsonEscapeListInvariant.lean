@@ -31,11 +31,14 @@ adding the returned count and advancing by it.
 carry fold composes over a concatenation (`classCarryAt_append`), and the run
 parity is a fold over the bytes (`classCarryAt_oddRun`, `parityAt_append`).
 They are the two facts a bridge from the body's three mask words to the
-specification's lane rule needs.  The bridge itself — and with it the equality
-of the body's `do.body.i` doubling closure with the parity word — is not yet
-proved, and it is stated as the obstacle rather than assumed: see the note at
-the end of this file.  No declaration here takes the bridge as a hypothesis, so
-nothing in this module claims the record's post of the body.
+specification's lane rule needs.  The doubling map's own account is proved in
+`JsonEscapeListFixpoint`: `stepWord_specRunStarts` states that
+`specRunStarts` is a fixed point of the map, and
+`stepN_escapeSeed_specRunStarts` states that 32 iterations from the body's
+boundary seed reach it.  What remains is the body-side trace, the 64-lane lane
+rule and the batch loop's arithmetic, listed at the end of this file.  No
+declaration here takes any of those as a hypothesis, so nothing in this module
+claims the record's post of the body.
 -/
 import LeanLLVM.Vellum.JsonEscapeSpec
 import LeanLLVM.Vellum.JsonEscapeBatch
@@ -301,29 +304,31 @@ theorem xl_batch_call_eq (esc : BitVec 64) (base : BitVec 32) (o : Nat)
 #print axioms specPositionWord
 
 
-/-! ### The obstacle, stated
+/-! ### The remaining bridge
 
-The invariant is preserved by the batch loop once the residual word's set lanes
-are the positions the batch writes, and that is where the proof currently
-stops, in `do.body.i` rather than in the batch loop:
+The doubling map's two halves are proved in `JsonEscapeListFixpoint`; what is
+still owed is the body-side work that consumes them, and none of it is assumed
+here:
 
 * The entry blocks and `do.body.i` build `%and31 = (e.2 | %ctl) & %im`, where
-  `e.2` is the fixed point of `e ↦ e | ((e << 2) & ((bs << 1) & bs))` seeded
-  with the first lanes of each backslash run (and the boundary lane the
-  `if.then.i` arm corrects).  The claim that this fixed point is
-  `specRunStarts bs (opened && prevs)` is the missing lemma.  Its two halves are:
-  (i) `specRunStarts` is a fixed point of that map, and (ii) every lane of
-  `specRunStarts` is reached from the seed within 32 iterations, because an
-  iteration moves a lane by two and a lane is below 64.  Neither exists in the
-  tree, and both are statements about the doubling map rather than about the
-  escape rule.
-  The reduction to the batch loop is already available:
-  `classCarryAt_oddRun` and `parityAt_append` give the parity field at a lane,
-  and `classCarryAt_append` gives the high half's entry carry, so once the two
-  fixed-point facts hold the lane rule follows from
-  `isEscapeLane_eq_escapeWords`/`isEscapeLane_eq_escapeWord` per half.
-* Nothing in this module assumes the missing lemma.  `ListLoopInv` and the two
-  call-site lemmas are independent of it, and the batch loop's arithmetic is
-  what a proof of `escape_positions_satisfies` would consume next. -/
+  `e.2` is 32 iterations of `stepWord` from the boundary seed.  The trace that
+  reads `runFuel` through `entry`, `if.then.i`, `if.end.i`, `do.body.i` and
+  `xl_lanes.exit` and lands on `escapeSeed = specRunStarts bs (opened && prevs)`
+  is not in this module.
+* The lane rule: `setLanes (specPositionWord bs ctl im odd0)` is
+  `escapePositionsFrom (block64 lo hi) st` when the three mask words are the
+  block's, which needs `classCarryAt_append`, `classCarryAt_oddRun` and
+  `parityAt_append` per half plus `isEscapeLane_eq_escapeWord`.  The folds are
+  here; the per-half assembly is not.
+* The batch store: the first `min (ctpop esc) 8` entries the batch writes are
+  `base + (setLanes esc)[i]`, and `clearStep^8` drops exactly those lanes, so a
+  loop step may replace the residual word by the cleared one and advance the
+  count by the returned minimum.
+* `ListLoopInv` preservation through the two backward edges, and the post
+  assembly from the invariant at the exit.
+
+Nothing in this module assumes any of these.  `ListLoopInv`, the two folds and
+the call-site lemmas are independent of them, and they are what a proof of
+`escape_positions_satisfies` consumes next. -/
 
 end LeanLLVM.Vellum
