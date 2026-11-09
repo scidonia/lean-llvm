@@ -44,7 +44,8 @@ tree does not yet pin, and a record proved about a body that is not the measured
 one would be a statement about a different unit.
 -/
 import LeanLLVM.Vellum.JsonEscapeSpec
-import LeanLLVM.Vellum.JsonUnitContracts
+import LeanLLVM.Vellum.JsonS1MasksIR
+import LeanLLVM.Vellum.Refinement
 
 namespace LeanLLVM.Vellum
 
@@ -206,7 +207,7 @@ def escapeExpandPost (args : List Value) (mem m : Mem) (v : Value) : Prop :=
     readBytes mem err 8 = some (wordBytes 8 err0) ∧
     readBytes mem xj 8 = some (wordBytes 8 k0) ∧
     k0 ≤ nps ∧
-    (match escapeDecode body ps with
+    (match escapeDecode body (ps.map fun q => q - pos0) with
      | .decoded out k =>
          v = .int 64 (BitVec.ofNat 64 out.length) ∧
          readBytes m dst out.length = some out ∧
@@ -227,40 +228,61 @@ of this unit forced.  The list clause is the exact one: `xp` holds this body's
 thirty-two bytes past `b + n`.
 
 The destination's extent is `dst` through the decoded length plus sixty-four bytes,
-and the record asks the caller for `dst + n + 64`: every form `escapeAt` produces is
-at most as long as the bytes it consumes — one byte from a two-byte escape, at most
-three from six, at most four from twelve — so the decoded extent is inside `n` and
-the caller's promise covers it.  That reading is taken off the escape forms; no
-lemma about `escapeDecode`'s length is stated here, and this `pre` is a promise the
-caller makes rather than a claim the record proves.
+and the caller names the room it holds: `dmax` is that room, the caller promises the
+decode writes at most `dmax`, and the store covers `dst + dmax + 64`.  A caller that
+knows the body's own list is spaced as the body's positions are can take `dmax = n`,
+because `escapeDecode_length_le` bounds the decode by the body's length under exactly
+that spacing — and taking the spacing from `escapePositionsFrom` is the step still
+owed, so the record states the caller's promise rather than the inequality it would
+prefer to derive.
 
 The store regions are also stated apart from the body, because a decode that wrote
 over its own input would satisfy the byte claims while destroying the caller's
 document.
+
+**`pos0` stays in the boundary.** The list clause is a relation between the
+caller's list and the body: every entry of `ps` lies inside `[pos0, pos0 + n)`, and
+`ps` with `pos0` subtracted is exactly the body's `escapePositions`. That covers any
+offset the ABI admits — a document-level list at a block offset is a `pre` this
+record admits, not a caller outside it — and it discharges at `pos0 = 0` as its own
+special case. `escapeDecode` stays free of `pos0`, because the body's positions are
+what the specification is about; the offset is the caller's, and this clause is
+where it is stated.
+
+The range condition is also what keeps the measured list-driven path's underflow out
+of the contract: an entry inside an escape the previous one consumed would be an
+entry the rebased list does not have, so the clause refuses that staging rather than
+the proof having to notice it.
 -/
 def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
   pre := fun args mem _ =>
-    ∃ (b n dst err xp xj : Nat) (nps pos0 : Nat) (body : List UInt8) (ps : List Nat)
+    ∃ (b n dst err xp xj : Nat) (nps pos0 dmax : Nat) (body : List UInt8) (ps : List Nat)
       (err0 : Nat) (k0 : Nat),
       args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
         .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
       -- the body
       readBytes mem b n = some body ∧
-      -- the list is exactly this body's escape positions
+      -- the list is exactly this body's escape positions, rebased onto the body:
+      -- every entry inside the body's window, and what is left after subtracting
+      -- the window's offset is the body's own position list
       readBytes mem xp (4 * nps) = some (positionsBytes 4 ps) ∧
-      ps = escapePositionsFrom body ⟨true, false⟩ ∧
+      nps = ps.length ∧
+      (∀ q ∈ ps, pos0 ≤ q ∧ q < pos0 + n) ∧
+      ps.map (fun q => q - pos0) = escapePositionsFrom body ⟨true, false⟩ ∧
       -- the cursor is a cursor
       readBytes mem xj 8 = some (wordBytes 8 k0) ∧ k0 ≤ nps ∧
       readBytes mem err 8 = some (wordBytes 8 err0) ∧
-      pos0 = 0 ∧
       -- thirty-two readable bytes past the body
       HasBytes mem (b + n) 32 ∧
-      -- the destination extent, sixty-four bytes past the decoded extent
-      HasBytes mem dst (n + 64) ∧
+      -- the destination extent: the caller names the room it holds for the decode
+      -- and promises sixty-four bytes past whatever the decode wrote
+      (∀ out k, escapeDecode body (ps.map fun q => q - pos0) = .decoded out k →
+        out.length ≤ dmax) ∧
+      HasBytes mem dst (dmax + 64) ∧
       -- and the store regions apart from the body and from the list
-      (b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b) ∧
-      (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp)
+      (b + n + 32 ≤ dst ∨ dst + dmax + 64 ≤ b) ∧
+      (xp + 4 * nps ≤ dst ∨ dst + dmax + 64 ≤ xp)
   post := fun args mem _ o =>
     match o with
     | .ret (some v) m => escapeExpandPost args mem m v

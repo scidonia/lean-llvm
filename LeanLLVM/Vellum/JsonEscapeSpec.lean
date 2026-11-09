@@ -113,6 +113,17 @@ theorem escapePositionsFrom_lt {bs : List UInt8} {st : ClassState} {k : Nat}
   obtain ⟨b, hb, _⟩ := escapePositionsFrom_mem.mp h
   exact lt_length_of_getElem?_eq_some hb
 
+/-- A list is empty exactly when nothing is a member. -/
+theorem eq_nil_iff_forall_not_mem {l : List Nat} : l = [] ↔ ∀ x, x ∉ l := by
+  constructor
+  · intro h x hx
+    rw [h] at hx
+    exact absurd hx (by simp)
+  · intro h
+    cases l with
+    | nil => rfl
+    | cons a as => exact absurd (h a (by simp)) (by simp)
+
 /-- A run with no escape has no positions.  This is the direction that leaves the
 suppressed arm's clause sayable without asserting anything about the document's
 bytes: the suppressed arm claims the count is zero, never that this holds. -/
@@ -120,20 +131,16 @@ theorem escapePositionsFrom_eq_nil_iff {bs : List UInt8} {st : ClassState} :
     escapePositionsFrom bs st = [] ↔
       ∀ (k : Nat) (b : UInt8), bs[k]? = some b →
         IsEscapeLane (classCarryAt bs st k) b = false := by
-  unfold escapePositionsFrom
-  rw [List.filter_eq_nil_iff]
+  rw [eq_nil_iff_forall_not_mem]
   constructor
   · intro h k b hb
-    have hk : k ∈ List.range bs.length :=
-      List.mem_range.mpr (lt_length_of_getElem?_eq_some hb)
-    have hne := h k hk
-    rw [hb] at hne
-    cases hv : IsEscapeLane (classCarryAt bs st k) b <;> simp_all
-  · intro h a ha
-    rw [List.mem_range] at ha
-    have hb : bs[a]? = some bs[a] := List.getElem?_eq_getElem ha
-    rw [hb]
-    simp [h a bs[a] hb]
+    cases hv : IsEscapeLane (classCarryAt bs st k) b with
+    | false => rfl
+    | true => exact absurd (escapePositionsFrom_mem.mpr ⟨b, hb, hv⟩) (h k)
+  · intro h k hk
+    obtain ⟨b, hb, hv⟩ := escapePositionsFrom_mem.mp hk
+    rw [h k b hb] at hv
+    exact absurd hv (by simp)
 
 /-- **The position rule read at a lane of the classifier's masks.**  The
 in-string mask restricts the lanes, the control mask supplies the control lanes,
@@ -706,6 +713,100 @@ theorem escapeCodePoints_encode (cps : List Nat) (h : ∀ c ∈ cps, c ≤ 0x10F
   rw [escapeCodePointsGo_encode cps h [] (((cps.map utf8Encode).flatten).length + 1) hlt]
   simp
 
+/-! ### The decode's length
+
+Every form the decode writes is at most as long as the bytes its escape consumes, and
+a body's escape positions are far enough apart that the copies do not overlap, so a
+decode never writes more bytes than the body holds.  The second half is a hypothesis
+here: `Spaced` names the spacing the bound uses — the cursor behind each position,
+and the next position at least as far along as the bytes the escape consumed.  A
+list that is this body's escape positions has it; a list that is not may not, and the
+bound is false for such a list — `[0, 0, 0]` on `\n` writes three bytes over a
+two-byte body — which is why the spacing is stated and not assumed. -/
+
+/-- The spacing the length bound uses, one constructor per shape the walk takes at a
+position: the cursor is behind the position, an escape's output fits in the bytes it
+consumes and those bytes are inside the body, and the walk continues on the list it
+really continues on, one entry dropped after a surrogate pair. -/
+inductive Spaced (bs : List UInt8) : Nat → List Nat → Prop where
+  /-- No positions left. -/
+  | nil (i : Nat) : Spaced bs i []
+  /-- A control byte: the walk refuses there, so it writes nothing further. -/
+  | control (i q : Nat) (qs : List Nat) (b : UInt8) :
+      i ≤ q → bs[q]? = some b → IsControlB b = true → Spaced bs i (q :: qs)
+  /-- An escape that is not one: the walk refuses there too. -/
+  | refuse (i q : Nat) (qs : List Nat) :
+      i ≤ q → q < bs.length → escapeAt bs q = none → Spaced bs i (q :: qs)
+  /-- A decoded escape: its output is no longer than the bytes it consumes, those
+  bytes are inside the body, and the walk continues past them. -/
+  | step (i q : Nat) (qs : List Nat) (adv : Nat) (bytes : List UInt8) (b : UInt8) :
+      i ≤ q → bs[q]? = some b → IsControlB b = false → escapeAt bs q = some (bytes, adv) →
+      bytes.length ≤ adv → q + adv ≤ bs.length →
+      Spaced bs (q + adv) (if adv = 12 then qs.drop 1 else qs) → Spaced bs i (q :: qs)
+
+/-- **A decode never writes more than the body holds.**  The quantity carried is
+`written + (body length - cursor)`: a raw copy moves bytes from the second summand to
+the first, and a decoded escape adds at most the bytes it consumes to the first while
+removing exactly those from the second. -/
+theorem escapeDecodeGo_length_le (bs : List UInt8) :
+    ∀ {i : Nat} {ps : List Nat}, Spaced bs i ps →
+      ∀ (pos : Nat) (out out' : List UInt8) (ks : Nat),
+        escapeDecodeGo bs i pos ps out = .decoded out' ks →
+        out'.length ≤ out.length + (bs.length - i) := by
+  intro i ps hsp
+  induction hsp with
+  | nil i =>
+      intro pos out out' ks hrun
+      simp only [escapeDecodeGo] at hrun
+      cases hrun
+      simp only [List.length_append, List.length_drop]
+      omega
+  | control i q qs b hi hb hctl =>
+      intro pos out out' ks hrun
+      have hlt : q < bs.length := lt_length_of_getElem?_eq_some hb
+      simp only [escapeDecodeGo, if_neg (show ¬ (bs.length ≤ q) from by omega), hb, hctl]
+        at hrun
+      exact absurd hrun (by simp)
+  | refuse i q qs hi hlt href =>
+      intro pos out out' ks hrun
+      have hbq : bs[q]? = some bs[q] := List.getElem?_eq_getElem hlt
+      simp only [escapeDecodeGo, if_neg (show ¬ (bs.length ≤ q) from by omega), hbq, href]
+        at hrun
+      split at hrun <;> simp_all
+  | step i q qs adv bytes b hi hb hctl hesc hlen hadv ihsp ih =>
+      intro pos out out' ks hrun
+      have hlt : q < bs.length := lt_length_of_getElem?_eq_some hb
+      have hcopy : ((bs.drop i).take (q - i)).length = q - i := by
+        rw [List.length_take, List.length_drop]
+        omega
+      simp only [escapeDecodeGo, if_neg (show ¬ (bs.length ≤ q) from by omega), hb,
+        if_neg (show ¬ (IsControlB b = true) from by rw [hctl]; simp), hesc] at hrun
+      by_cases h12 : adv = 12
+      · rw [if_pos h12] at hrun ih
+        cases qs with
+        | nil =>
+            simp only [List.drop] at ih
+            have hstep := ih (pos + 2) (out ++ (bs.drop i).take (q - i) ++ bytes) out' ks hrun
+            simp only [List.length_append, hcopy] at hstep ⊢
+            omega
+        | cons q' qs' =>
+            simp only [List.drop_succ_cons, List.drop_zero] at ih
+            have hstep := ih (pos + 2) (out ++ (bs.drop i).take (q - i) ++ bytes) out' ks hrun
+            simp only [List.length_append, hcopy] at hstep ⊢
+            omega
+      · rw [if_neg h12] at hrun ih
+        have hstep := ih (pos + 1) (out ++ (bs.drop i).take (q - i) ++ bytes) out' ks hrun
+        simp only [List.length_append, hcopy] at hstep ⊢
+        omega
+
+/-- A body decoded against its positions writes no more than the body holds, when the
+positions are spaced as the body's own are. -/
+theorem escapeDecode_length_le {bs : List UInt8} {ps : List Nat} (hsp : Spaced bs 0 ps)
+    {out : List UInt8} {k : Nat} (h : escapeDecode bs ps = .decoded out k) :
+    out.length ≤ bs.length := by
+  have := escapeDecodeGo_length_le bs hsp 0 [] out k h
+  simpa using this
+
 /-! ### Fixtures for the rule -/
 
 -- The backslash of a `\n` inside a string is a position; the quotes around it
@@ -757,7 +858,7 @@ theorem escapeCodePoints_encode (cps : List Nat) (h : ∀ c ∈ cps, c ≤ 0x10F
 #guard_msgs in
 #print axioms isEscapeLane_eq_masks
 
-/-- info: 'LeanLLVM.Vellum.escapePositionsFrom_eq_nil_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.escapePositionsFrom_eq_nil_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escapePositionsFrom_eq_nil_iff
 
@@ -772,5 +873,13 @@ theorem escapeCodePoints_encode (cps : List Nat) (h : ∀ c ∈ cps, c ≤ 0x10F
 /-- info: 'LeanLLVM.Vellum.utf8Encode_surrogate' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms utf8Encode_surrogate
+
+/-- info: 'LeanLLVM.Vellum.escapeDecodeGo_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeDecodeGo_length_le
+
+/-- info: 'LeanLLVM.Vellum.escapeDecode_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeDecode_length_le
 
 end LeanLLVM.Vellum
