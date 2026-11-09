@@ -156,11 +156,29 @@ terms of the caller's arguments. -/
 def decodeWalkFuel (nps n : Nat) : Nat := (nps + 1) * decodeIterCost n
 
 /-- The expander's fuel, as a term of the argument list and the caller's memory.
-The body is four straight-line or counted stages: `entry` and the pre-scan's
-per-position steps, the position walk, the final copy's vector trips, and the
-return.  The scan advances the position cursor once per iteration and its bound is
-the list's length, so its contribution is `(nps + 1) * 3`; the final copy moves
-sixty-four bytes a trip, so its contribution is `n / 64 + 3`.
+The body is five straight-line or counted stages: `entry` and the pre-scan's
+per-position steps, the walk's **first iteration** — the entry reaches the walk's
+latch only through a position, so that iteration is the entry's cost and not the
+loop's — the position walk's remaining iterations, the final copy's vector trips,
+and the return.  The scan advances the position cursor once per iteration and its
+bound is the list's length, so its contribution is `(nps + 1) * 3`; the entry's own
+iteration is one `decodeIterCost n`; the final copy moves sixty-four bytes a trip,
+so its contribution is `n / 64 + 3`.
+
+**The entry's iteration is a summand of its own, and that is forced rather than
+convenient.**  The walk's own summand `(nps + 1) * decodeIterCost n` already
+over-counts the loop's iterations by one, so the natural repair is to hand the loop
+`nps - c` instead of `nps` and let that slack absorb the entry's.  `BoundLoop` does
+not admit it: its `budget` field requires `Inv r s c → c ≤ N ∧ N ≤ c + r`, while the
+latch invariant's pair is stated at `nxp` (`nps ≤ c + r`), so an instance whose `N`
+is the remaining distance would have to re-base the counter mid-run, and the
+invariant's own `%add28` link is what the block steps read.  Growing the budget by
+one `decodeIterCost` is the sound alternative: fuel is monotone, the term is still a
+reading of the arguments, and no invariant or theorem statement moves.  The growth
+is measured rather than asserted: `tests/escape-budget-growth.lean` subtracts the
+four-stage value from this one at a grid of argument lists and finds
+`decodeIterCost n` at every row, which is what distinguishes a named stage from a
+margin.
 
 The memory parameter is deliberately not read: every stage's trip count is decided
 by the arguments under the record's `pre`, and a budget that read the memory would
@@ -169,21 +187,24 @@ itself writes.  It stays a parameter because `MemContract.budget` takes one. -/
 def escapeExpandBudget (args : List Value) (_mem : Mem) : Nat :=
   match args with
   | [.ptr _, .int 64 nv, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 npsv, .int 64 _, .ptr _] =>
-      (npsv.toNat + 1) * 3 + decodeWalkFuel npsv.toNat nv.toNat + (nv.toNat / 64 + 3) + 4
+      (npsv.toNat + 1) * 3 + decodeIterCost nv.toNat +
+        decodeWalkFuel npsv.toNat nv.toNat + (nv.toNat / 64 + 3) + 4
   | _ => 0
 
-/-- The budget's decomposition: the four stages of the body add up to it. -/
+/-- The budget's decomposition: the five stages of the body add up to it. -/
 theorem escapeExpandBudget_decomp (n nps : Nat) (hn : n < 2 ^ 64) (hnps : nps < 2 ^ 64) :
     escapeExpandBudget [.ptr 0, .int 64 (BitVec.ofNat 64 n), .ptr 0, .ptr 0, .ptr 0,
       .ptr 0, .int 64 (BitVec.ofNat 64 nps), .int 64 0, .ptr 0] [] =
-      (nps + 1) * 3 + decodeWalkFuel nps n + (n / 64 + 3) + 4 := by
+      (nps + 1) * 3 + decodeIterCost n +
+        decodeWalkFuel nps n + (n / 64 + 3) + 4 := by
   simp only [escapeExpandBudget, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn,
     Nat.mod_eq_of_lt hnps]
 
 /-- The position walk's contribution is inside the body's budget. -/
 theorem decodeWalkFuel_le_budget {n nps : Nat} :
     decodeWalkFuel nps n ≤
-      (nps + 1) * 3 + decodeWalkFuel nps n + (n / 64 + 3) + 4 := by
+      (nps + 1) * 3 + decodeIterCost n +
+        decodeWalkFuel nps n + (n / 64 + 3) + 4 := by
   omega
 
 /-! ### The latch invariant
@@ -585,10 +606,27 @@ def DecodeRefusalExit (e : State) : Prop :=
     lookupName e.env "%sub" = some (.int 64 off) ∧
     lookupName e.env "%inc11" = some (.int 64 k)
 
-/-- The data at whichever exit the loop took. -/
+/-- **The entry's exit edge.**  When the caller's cursor is already at the list's
+end, `while.end` sends the walk straight to `while.end35` and the latch is never
+visited.  That state's `phi` operands are `while.end`'s own — `%k.0.lcssa` carries
+`nxp` — so the walk it carries is at `(i, nps, out)` and the word names the cell
+that edge supplies rather than the latch's `%j.3`/`%add24`/`%add28`.
+
+Without this word the exit predicate would admit only the latch's edge, and a
+staging whose list is exhausted before the walk starts — every body with no
+escape — would have no exit state to reach. -/
+def DecodeEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (e : State) : Prop :=
+  e.pc = "while.end35" ∧
+  (∃ (i : Nat) (out : List UInt8), DecodeInv body st e.mem dst nps i nps out goal) ∧
+  lookupName e.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
+
+/-- The data at whichever exit the loop took: the latch's edge, the refusal, or the
+entry's own edge when the list was exhausted before the walk started. -/
 def decodeTwoExitWord (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (e : State) : Prop :=
-  (∃ c, DecodeLatchExit body st dst nps goal c e) ∨ DecodeRefusalExit e
+  (∃ c, DecodeLatchExit body st dst nps goal c e) ∨ DecodeRefusalExit e ∨
+    DecodeEntryExit body st dst nps goal e
 
 /-- The iteration arm at the disjunctive exit test. -/
 def LatchStepLoopTwo (body : List UInt8) (st : ClassState) (dst nps : Nat)
@@ -727,6 +765,10 @@ theorem decodeLatchTwoExit_run_at (body : List UInt8) (st : ClassState) (dst nps
 /-- info: 'LeanLLVM.Vellum.DecodeRefusalExit' does not depend on any axioms -/
 #guard_msgs in
 #print axioms DecodeRefusalExit
+
+/-- info: 'LeanLLVM.Vellum.DecodeEntryExit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms DecodeEntryExit
 
 /-- info: 'LeanLLVM.Vellum.decodeTwoExitWord' depends on axioms: [propext] -/
 #guard_msgs in

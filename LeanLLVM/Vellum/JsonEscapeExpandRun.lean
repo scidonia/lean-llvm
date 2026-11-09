@@ -12,9 +12,10 @@ arms, the seed and the continuation are facts about the same run.
 
 **The budget's own terms.**  `escapeExpandBudget` reads two numbers out of the
 argument list — the body's length and the position count — and each stage's
-allowance is one summand of it: the pre-scan's `(nps + 1) * 3`, the walk's
-`decodeWalkFuel nps n`, and the final copy's `n / 64 + 3` plus the return's four
-control steps.  `expandBodyLen`, `expandPosCount` and `expandExitFuel` name those
+allowance is one summand of it: the pre-scan's `(nps + 1) * 3`, the entry's first
+iteration (`decodeIterCost n`, because the walk's latch is reached only through a
+position), the walk's `decodeWalkFuel nps n`, and the final copy's `n / 64 + 3`
+plus the return's four control steps.  `expandBodyLen`, `expandPosCount` and `expandExitFuel` name those
 readings so the stages and the record use one vocabulary; the composition's
 arithmetic is then `omega` on the budget's own decomposition rather than a fact
 about the run.
@@ -83,16 +84,65 @@ record's own surface, and at the staging the loop's invariant names.  The seed
 reaches `LatchInv` at the whole bound — the state `BoundLoop.run` starts from —
 and the exit continuation takes whichever exit the loop reached. -/
 
-/-- **The entry stage.**  From the record's own entry state, within the pre-scan's
-allowance `(nps + 1) * 3`, the run reaches the latch at the whole bound. -/
+/-! ### The entry stage's own terms
+
+The entry's allowance is measured in the trace's own blocks rather than written as
+a closed form.  `entryBlocks` is the entry's own stretch to `while.end` — the
+`entry` block, `land.rhs`'s first visit, and `while.end` — and
+`preScanPerPosition` is what one position the scan passes over adds: `while.body`,
+then the `land.rhs` it returns to.  The record's staging bounds the passes-over at
+zero (every entry lies inside the body's window), so the empty-list path is
+`entryBlocks` alone.
+
+The budget's `(nps + 1) * 3` summand is the closed form that bounds their sum, and
+that is a corollary (`preScanFuel_le`), not the statement: a third entry path then
+appears as a missing term here instead of as an unsatisfiable bound nobody tried.
+-/
+
+/-- The entry's own blocks to `while.end`. -/
+def entryBlocks : Nat := 3
+
+/-- One position the pre-scan passes over: `while.body` and the `land.rhs` it
+returns to. -/
+def preScanPerPosition : Nat := 2
+
+/-- The pre-scan's allowance at `k` positions passed over. -/
+def preScanFuel (k : Nat) : Nat := entryBlocks + preScanPerPosition * k
+
+/-- The closed form the budget carries bounds the derived terms. -/
+theorem preScanFuel_le {k nps : Nat} (hk : k ≤ nps) :
+    preScanFuel k ≤ (nps + 1) * 3 := by
+  unfold preScanFuel entryBlocks preScanPerPosition
+  omega
+
+/-- **The entry stage, in two arms.**
+
+The latch arm is the pre-scan plus one iteration: the walk's head is `cleanup32`,
+and the entry reaches it only through a position, so the first iteration is the
+entry's own cost and not the loop's.
+
+The empty arm is the staging whose list has nothing left to walk (`k0 = nps`,
+which covers every body with no escape, `nps = 0`): the entry leaves for
+`while.end35` at `while.end` and never reaches the latch.  Its state carries the
+walk at `(0, nps, [])` — the whole body copied, which is `decoded body nps` — and
+its `phi` operands are `while.end`'s own, so the arm is stated at the cells that
+edge supplies rather than at the latch's. -/
 def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
     (st : ClassState) (dst : Nat) (goal : EscapeOutcome) : Prop :=
-  ∃ (s : State) (c j : Nat),
-    j ≤ (expandPosCount args + 1) * 3 ∧
-    LatchInv body st dst (expandPosCount args) goal (expandPosCount args) s c ∧
-    ∀ k, runFuel escapeCalls (j + k) usDecFunction
-        (EntryState usDecFunction args mem next) =
-      runFuel escapeCalls k usDecFunction s
+  (∃ (s : State) (c j : Nat),
+      j ≤ preScanFuel (expandPosCount args) + decodeIterCost (expandBodyLen args) ∧
+      LatchInv body st dst (expandPosCount args) goal (expandPosCount args) s c ∧
+      ∀ k, runFuel escapeCalls (j + k) usDecFunction
+          (EntryState usDecFunction args mem next) =
+        runFuel escapeCalls k usDecFunction s)
+  ∨ (∃ (e : State) (j : Nat),
+      j ≤ entryBlocks ∧
+      e.pc = "while.end35" ∧
+      goal = .decoded body (expandPosCount args) ∧
+      decodeTwoExitWord body st dst (expandPosCount args) goal e ∧
+      ∀ k, runFuel escapeCalls (j + k) usDecFunction
+          (EntryState usDecFunction args mem next) =
+        runFuel escapeCalls k usDecFunction e)
 
 /-- **The exit stage.**  From either exit of that staging — the decoded walk at
 `while.end35`, or the refusal at `cleanup41` — the run completes at the record's
@@ -130,26 +180,42 @@ theorem run_stages {start : State} {P : Outcome → Prop} {body : List UInt8}
         ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
           runFuel escapeCalls k usDecFunction e)
     (hloop : LatchStepLoopTwo body st dst nps goal (decodeIterCost n) ps pos0)
-    (hseed : ∃ (s : State) (c j : Nat), j ≤ (nps + 1) * 3 ∧
-      LatchInv body st dst nps goal nps s c ∧
-      ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
-        runFuel escapeCalls k usDecFunction s)
+    (hseed :
+      (∃ (s : State) (c j : Nat), j ≤ preScanFuel nps + decodeIterCost n ∧
+        LatchInv body st dst nps goal nps s c ∧
+        ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
+          runFuel escapeCalls k usDecFunction s)
+      ∨ (∃ (e : State) (j : Nat), j ≤ entryBlocks ∧ e.pc = "while.end35" ∧
+        goal = .decoded body nps ∧
+        decodeTwoExitWord body st dst nps goal e ∧
+        ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
+          runFuel escapeCalls k usDecFunction e))
     (hexit : ∀ (e : State), decodeTwoExit e →
       decodeTwoExitWord body st dst nps goal e →
       ∃ (o : Outcome), runFuel escapeCalls exitFuel usDecFunction e = some o ∧ P o) :
     ∃ (o : Outcome) (K : Nat),
-      K ≤ (nps + 1) * 3 + (nps + 1) * decodeIterCost n + exitFuel ∧
+      K ≤ preScanFuel nps + decodeIterCost n +
+        (nps + 1) * decodeIterCost n + exitFuel ∧
       runFuel escapeCalls K usDecFunction start = some o ∧ P o := by
-  obtain ⟨s, c, j, hj, hinv, hrun⟩ := hseed
-  obtain ⟨e, jl, hjl, hexi, hword, hrunl⟩ :=
-    (decodeLatchTwoExit body st dst nps goal (decodeIterCost n) ps pos0 hcost
-      hrefuse hloop).run s c hinv exitFuel
-  simp only [decodeLatchTwoExit] at hjl
-  obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
-  refine ⟨o, j + (jl + exitFuel), ?_, ?_, hPo⟩
-  · omega
-  · rw [hrun (jl + exitFuel), hrunl]
-    exact ho
+  rcases hseed with ⟨s, c, j, hj, hinv, hrun⟩ | ⟨e, j, hj, hpc, _hgoal, hword, hrun⟩
+  · obtain ⟨e, jl, hjl, hexi, hword, hrunl⟩ :=
+      (decodeLatchTwoExit body st dst nps goal (decodeIterCost n) ps pos0 hcost
+        hrefuse hloop).run s c hinv exitFuel
+    simp only [decodeLatchTwoExit] at hjl
+    obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
+    refine ⟨o, j + (jl + exitFuel), ?_, ?_, hPo⟩
+    · have hjl' : jl ≤ (nps + 1) * decodeIterCost n := by
+        simpa [Nat.mul_one] using hjl
+      omega
+    · rw [hrun (jl + exitFuel), hrunl]
+      exact ho
+  · have hexi : decodeTwoExit e := Or.inl hpc
+    obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
+    refine ⟨o, j + exitFuel, ?_, ?_, hPo⟩
+    · unfold preScanFuel entryBlocks preScanPerPosition at *
+      omega
+    · rw [hrun exitFuel]
+      exact ho
 
 /-! ### The four facts, at one staging
 
@@ -188,7 +254,9 @@ structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
       decodeTwoExit e ∧ decodeTwoExitWord body st dst (expandPosCount args) goal e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
         runFuel escapeCalls k usDecFunction e
-  /-- **The entry half-iteration**: `while.end` / `while.body6` to the latch. -/
+  /-- **The entry stage, in its two arms**: the pre-scan plus one iteration to the
+  latch, or — when the list has nothing left to walk — the pre-scan straight to
+  `while.end35`. -/
   seed : ExpandSeed args mem next body st dst goal
   /-- **The exit continuations**: `while.end35`'s final copy and return, and
   `cleanup41`'s refusal return. -/
@@ -223,7 +291,7 @@ theorem escape_expand_satisfies
       (nps := expandPosCount args) (n := expandBodyLen args)
       (exitFuel := expandExitFuel args) hcost hrefuse hloop hseed hexit
   have hbudget : escapeExpandBudget args mem =
-      (expandPosCount args + 1) * 3 +
+      (expandPosCount args + 1) * 3 + decodeIterCost (expandBodyLen args) +
       (expandPosCount args + 1) * decodeIterCost (expandBodyLen args) +
       expandExitFuel args := by
     obtain ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, ps, err0, k0,
@@ -236,8 +304,16 @@ theorem escape_expand_satisfies
     omega
   have hcomp : runFuel escapeCalls (escapeExpandBudget args mem) usDecFunction
       (EntryState usDecFunction args mem next) = some o := by
-    rw [hbudget]
-    exact runFuel_mono_le hK hrun
+    have hle : preScanFuel (expandPosCount args) +
+        decodeIterCost (expandBodyLen args) +
+        (expandPosCount args + 1) * decodeIterCost (expandBodyLen args) +
+        expandExitFuel args ≤ escapeExpandBudget args mem := by
+      rw [hbudget]
+      have hscan : preScanFuel (expandPosCount args) ≤
+          (expandPosCount args + 1) * 3 :=
+        preScanFuel_le (Nat.le_refl _)
+      omega
+    exact runFuel_mono_le (Nat.le_trans hK hle) hrun
   refine ⟨?_, ?_⟩
   · cases o with
     | ub => exact absurd hpost (escape_expand_ub_false escapeExpandBudget args mem next)

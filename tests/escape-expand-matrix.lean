@@ -269,4 +269,54 @@ def quoteTabVerdicts : List (String × String × String) :=
 
 #eval quoteTabVerdicts
 
+
+/-! ### The entry's routes: the matrix's fifth category
+
+The first four categories vary regions, lengths, offsets and cursor values, so none
+of them can show *which control path* the entry takes.  This one enumerates the
+entry's paths: `k0 = nps` is the empty walk — the entry leaves for `while.end35` at
+`while.end` and never reaches the latch `cleanup32` — and `k0 < nps` is the walk
+that reaches the latch through one full iteration.  A third entry path belongs
+here, in the generator, not in a paragraph.
+
+The oracle is the run's own block sequence, read a step at a time, so a row's route
+is measured rather than predicted from the staging. -/
+
+/-- The blocks a run visits, in order. -/
+def blockTrace : Nat → State → List String
+  | 0, _ => []
+  | n + 1, s =>
+    match step escapeCalls usDecFunction s with
+    | .jump s' => s.pc :: blockTrace n s'
+    | .ub => [s.pc ++ "!ub"]
+    | .ret _ _ => [s.pc ++ "!ret"]
+
+/-- The route the entry takes at a row: `latch` if it reached `cleanup32`,
+`empty` if it left for `while.end35` without it, `other` otherwise. -/
+def Row.route (r : Row) : String :=
+  let tr := blockTrace 60 (EntryState usDecFunction r.args r.mem 1)
+  if tr.contains "cleanup32" then "latch"
+  else if tr.contains "while.end35" then "empty"
+  else "other"
+
+/-- The rows whose cursor is at the list's end. -/
+def emptyRows : List Row := rows.filter fun r => r.k0 == r.ps.length
+
+/-- The rows whose cursor leaves positions unprocessed. -/
+def latchRows : List Row := rows.filter fun r => decide (r.k0 < r.ps.length)
+
+-- The empty walk never reaches the latch.
+#guard emptyRows.all fun r => r.route == "empty"
+
+-- The routes the generator produces, and the rows of each.
+#eval (rows.map (fun r => r.route)).eraseDups
+#eval (rows.length, emptyRows.length, latchRows.length)
+#eval (rows.filter (fun r => r.route == "other")).map (fun r => r.label)
+
+-- The latch arm's rows, and the ones whose first walked position refuses (they
+-- leave at `cleanup41` instead, and that is the refusal arm's row set).
+def latchNoLatch : List Row := latchRows.filter fun r => r.route != "latch"
+
+#eval latchNoLatch.map (fun r => (r.label, r.route))
+
 end EscapeMatrix

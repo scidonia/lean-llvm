@@ -59,4 +59,5 @@ import LeanLLVM.Vellum.JsonEscapeDecodeLoop
 import LeanLLVM.Vellum.JsonEscapeDecodeRun
 import LeanLLVM.Vellum.JsonEscapeCopyLoops
 import LeanLLVM.Vellum.JsonEscapeExpandRun
+import LeanLLVM.Vellum.JsonEscapeCompose
 import LeanLLVM.Vellum.JsonPipelineIR
