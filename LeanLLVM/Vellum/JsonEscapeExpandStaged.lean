@@ -45,37 +45,55 @@ open LeanLLVM.Vellum.JsonScanSpec
 
 /-! ### The staged invariant the arms consume -/
 
-/-- The latch with the caller's staging and the five register cells that staging
-and the record's `pre` are about.  A cell holds one value, so the pinnings are
-not a second claim beside `DecodeLatch`'s: they force its existentials equal
-(`assemblyLatchInv_paddr_eq`). -/
+/-- The latch with the caller's staging, the five register cells that staging and
+the record's `pre` are about, and the **frame**.
+
+A cell holds one value, so the pinnings are not a second claim beside
+`DecodeLatch`'s: they force its existentials equal (`assemblyLatchInv_paddr_eq`).
+
+The frame is the one fact the walk's state cannot supply about itself.  The
+record's `post` compares the caller's *initial* memory with the memory the run
+leaves (`UnchangedOutside mem m regions`), and no exit word is a relation between
+two memories; a word written from the exit state alone can therefore satisfy every
+clause while saying nothing about what the run changed.  The invariant is where the
+arms establish it, block by block, so a block whose writes leave the destination
+extent has to say so rather than pass the obligation to whoever reads the exit. -/
 def AssemblyLatchInv (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
-    (r c : Nat) (s : State) : Prop :=
+    (err xj : Nat) (mem : Mem) (r c : Nat) (s : State) : Prop :=
   StagedLatchInv body st dst nps goal xp pos0 n ps r c s ∧
   lookupName s.env "%p" = some (.ptr b) ∧
   lookupName s.env "%xp" = some (.ptr xp) ∧
   lookupName s.env "%tab" = some (.ptr tab) ∧
   lookupName s.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
-  lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n))
+  lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName s.env "%err" = some (.ptr err) ∧
+  lookupName s.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem s.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
 
 /-- The staged latch under the pinnings. -/
 theorem assemblyLatchInv_staged {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
     StagedLatchInv body st dst nps goal xp pos0 n ps r c s := h.1
 
 /-- The latch's own invariant. -/
 theorem assemblyLatchInv_latch {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
     LatchInv body st dst nps goal r s c :=
   stagedLatchInv_latch h.1
 
 /-- The caller's staging, with the `%add` cell beside it. -/
 theorem assemblyLatchInv_staging {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
     ∃ addv : BitVec 64,
       DecodeStaging s.mem nps xp pos0 n ps addv ∧
       lookupName s.env "%add" = some (.int 64 addv) :=
@@ -83,27 +101,57 @@ theorem assemblyLatchInv_staging {body : List UInt8} {st : ClassState} {dst nps 
 
 /-- The latch's budget pair. -/
 theorem assemblyLatchInv_budget {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
     c ≤ nps ∧ nps ≤ c + r :=
   stagedLatchInv_budget h.1
 
 /-- The five parameter cells. -/
 theorem assemblyLatchInv_params {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s) :
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
     lookupName s.env "%p" = some (.ptr b) ∧
       lookupName s.env "%xp" = some (.ptr xp) ∧
       lookupName s.env "%tab" = some (.ptr tab) ∧
       lookupName s.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
       lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) :=
-  ⟨h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2⟩
+  ⟨h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1⟩
+
+/-- The two destination slots.  The exit words' store clauses are about the
+caller's slots, so the invariant names them rather than leaving `DecodeLatch`'s
+existentials free. -/
+theorem assemblyLatchInv_dest {body : List UInt8} {st : ClassState} {dst nps : Nat}
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
+    lookupName s.env "%err" = some (.ptr err) ∧
+      lookupName s.env "%xj" = some (.ptr xj) :=
+  ⟨h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1⟩
+
+/-- **The frame**: everything outside the destination extent, the position list,
+the cursor slot and the offset slot reads as it did in the caller's memory.  This
+is the fact the exit word cannot derive from the exit state, and the reason it
+rides in the invariant: the arms establish it as they proceed. -/
+theorem assemblyLatchInv_frame {body : List UInt8} {st : ClassState} {dst nps : Nat}
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
+    UnchangedOutside mem s.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)] :=
+  h.2.2.2.2.2.2.2.2
 
 /-- The pinning forces `DecodeLatch`'s `%p` existential: the two values are equal,
 so the extension refines the decode invariant rather than competing with it. -/
 theorem assemblyLatchInv_paddr_eq {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s)
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s)
     {paddr : Nat} (hp : lookupName s.env "%p" = some (.ptr paddr)) : paddr = b := by
   have hb : lookupName s.env "%p" = some (.ptr b) := h.2.1
   rw [hp] at hb
@@ -111,29 +159,197 @@ theorem assemblyLatchInv_paddr_eq {body : List UInt8} {st : ClassState} {dst nps
 
 /-! ### The exit word the consumer needs
 
-The decoded exit gains the index the exit proves, and the refusal exit gains the
-destinations and the two stores the refusal path performed before `cleanup41`.
-`err` and `xj` are the record's, so they are parameters of the word. -/
+The previous word described **a state**: it named the block, the walk's cells and,
+for the refusal, the two stores, and nothing about *the run that produced the
+state or the caller who asked for it*.  That is why it admitted states the body
+never reaches, and why the record's `post` — which matches the **initial**
+staging's walk and the caller's **initial** memory — could not hold at them.  The
+words below are relational instead: each branch is stated at the caller's staging
+(`args mem body ps pos0 n b xp tab err xj`), pinned to the target block's
+predecessor, and tied to the walk the post matches.  `ExpandStaging` names the
+record's own `pre` and identifies the word's witnesses with the call's.
 
-/-- The decoded exit: `DecodeLatchExit`'s data, whose own body records that the
-index it left is `nps`. -/
+**The branches follow the pinned `phi` tables**, not a guess at the reachable set:
+`cleanup41`'s incoming list names `us_run.exit112`, `if.then20` and `if.then22`
+(`JsonEscapeIR.lean:608`), and `while.end35`'s names `while.end`, `while.body6`,
+`cleanup32` and `while.body` (`:555-559`).  All seven are present.  The two that an
+admissible staging cannot reach — `while.body6`, which the loop enters only on
+`ps[c] ≥ pos0 + n`, and `while.body`, which the pre-scan enters only on
+`ps[k] < pos0` — carry that witness in the branch, so the exclusion is the
+staging's range clause (`DecodeStaging`'s third conjunct) contradicting it, stated
+as a theorem, rather than an omission from the disjunction.
+
+**`us_run.exit112` is not a refusal edge.**  It stores the cursor and computes
+`%add40 = %sub38 + %j.0.lcssa`, which `cleanup41`'s `phi` returns: that is where a
+successful call's length is concluded, so `AssemblySuccessExit` carries the post's
+decoded branch and a refusal-only predecessor set would leave the success path with
+no word at all.
+
+**The frame is not derivable here.**  `UnchangedOutside mem e.mem regions` relates
+the caller's initial memory to the exit state's; it is carried by `ExpandStaging`
+through `AssemblyLatchInv` and restated at each branch, because no branch can
+obtain it from the state alone. -/
+
+/-- The caller's staging, at the word's own witnesses.
+
+The first conjunct is the record's `pre` **by name**, so nothing is invented.  The
+second is the argument list at those witnesses: it is what identifies them with the
+call rather than leaving them free, and without it a branch could speak about a
+different destination, cursor or offset slot than the caller's — the same
+state-only defect one level up.  `DecodeStaging` then names the staging predicate
+the exclusion theorems consume, and the last conjunct is the walk the record's
+`post` matches, so the word and the post are about one run. -/
+def ExpandStaging (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
+    (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome) (b xp tab : Nat)
+    (pos0 n : Nat) (ps : List Nat) (err xj : Nat) : Prop :=
+  (Γ_escape_expand escapeExpandBudget).pre args mem next ∧
+  args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
+    .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0),
+    .ptr tab] ∧
+  readBytes mem b n = some body ∧
+  (∃ addv : BitVec 64, DecodeStaging mem nps xp pos0 n ps addv) ∧
+  ps.map (fun q => q - pos0) = escapePositionsFrom body st ∧
+  st = ⟨true, false⟩ ∧
+  (b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b) ∧
+  (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp) ∧
+  DecodeNoAlias n dst err xj tab ∧
+  (∃ k0 : Nat, readBytes mem xj 8 = some (wordBytes 8 k0) ∧ k0 ≤ nps ∧
+    goal = escapeDecodeGo body 0 k0 ((ps.map (fun q => q - pos0)).drop k0) [])
+
+/-- The decoded exit, on `cleanup32`'s edge: the walk at the bound, the exit
+block's cells, and the frame. -/
 def AssemblyLatchExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (c : Nat) (e : State) : Prop :=
-  DecodeLatchExit body st dst nps goal c e
-
-/-- The refusal exit: `DecodeRefusalExit`'s data — the two stores included — with
-its existential destinations tied to the record's. -/
-def AssemblyRefusalExit (err xj : Nat) (e : State) : Prop :=
-  DecodeRefusalExit e ∧
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "while.end35" ∧ e.pre = some "cleanup32" ∧
+  (∃ c : Nat, DecodeLatchExit body st dst nps goal c e) ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   lookupName e.env "%err" = some (.ptr err) ∧
-  lookupName e.env "%xj" = some (.ptr xj)
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
 
-/-- The exit word's three edges, with the two strengthened forms. -/
-def assemblyExitWord (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (err xj : Nat) (e : State) : Prop :=
-  (∃ c, AssemblyLatchExit body st dst nps goal c e) ∨
-  AssemblyRefusalExit err xj e ∨
-  DecodeEntryExit body st dst nps goal e
+/-- The entry's exit, on `while.end`'s edge: the walk has nothing left to decode,
+so `while.end`'s cursor is the list's length and `while.end35`'s two copy bases
+will be its zero constants.  The cells named here are the predecessor's, because
+the state is the exit block's *entry*: `%j.0.lcssa` and `%i.0.lcssa` do not exist
+until the block steps. -/
+def AssemblyEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "while.end35" ∧ e.pre = some "while.end" ∧
+  DecodeEntryExit body st dst nps goal e ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- **`while.body6`'s edge**, admitted with the witness that makes it live: the
+position the loop loaded lies at or past the window's end.  Under an admissible
+staging the range clause contracts that witness, which is the exclusion theorem's
+content; the branch is here so that no edge is omitted by construction. -/
+def AssemblyWhileBody6Exit (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "while.end35" ∧ e.pre = some "while.body6" ∧
+  (∃ (c q : Nat), ps[c]? = some q ∧ pos0 + n ≤ q ∧
+    lookupName e.env "%k.1296" = some (.int 64 (BitVec.ofNat 64 c)) ∧
+    lookupName e.env "%conv8" = some (.int 64 (BitVec.ofNat 64 q))) ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- **`while.body`'s edge**, admitted with the witness that makes it live: the
+pre-scan loaded a position below the window's start.  The range clause's lower
+bound contracts it under an admissible staging. -/
+def AssemblyWhileBodyExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "while.end35" ∧ e.pre = some "while.body" ∧
+  (∃ (k q : Nat), ps[k]? = some q ∧ q < pos0 ∧
+    lookupName e.env "%k.0287" = some (.int 64 (BitVec.ofNat 64 k)) ∧
+    lookupName e.env "%conv" = some (.int 64 (BitVec.ofNat 64 q))) ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- **The success conclusion**, on `us_run.exit112`'s edge.  The returned value is
+`%add40`, the decoded length the walk names; the cursor slot holds the walk's
+count, and the offset slot is untouched.  This is the edge a predecessor set made
+of refusals alone would have dropped, and with it the record's `v = out.length`
+clause. -/
+def AssemblySuccessExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "cleanup41" ∧ e.pre = some "us_run.exit112" ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  (∃ (out : List UInt8) (k : Nat),
+    goal = .decoded out k ∧
+    lookupName e.env "%add40" = some (.int 64 (BitVec.ofNat 64 out.length)) ∧
+    readBytes e.mem dst out.length = some out ∧
+    readBytes e.mem xj 8 = some (wordBytes 8 k) ∧
+    readBytes e.mem err 8 = readBytes mem err 8) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- **The refusal's exit**, on `if.then20`'s or `if.then22`'s edge.
+
+`DecodeRefusalExit` is the *state-shaped* conjunct, and it stays that: it records
+the block, the two cells and the two stores, and it names no staging.  The tie that
+makes it a statement about this run is here — the predecessor disjunction, the
+destinations pinned to the caller's slots, and `goal = .refused off k` at the
+state's own `%sub`/`%inc11`, which is what connects the branch to the walk the
+record's `post` matches.  A reader must not take the generic name for the whole
+fact. -/
+def AssemblyRefusalExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  DecodeRefusalExit e ∧
+  (e.pre = some "if.then20" ∨ e.pre = some "if.then22") ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  (∃ (off k : BitVec 64),
+    lookupName e.env "%sub" = some (.int 64 off) ∧
+    lookupName e.env "%inc11" = some (.int 64 k) ∧
+    goal = .refused off.toNat k.toNat) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- **The exit word**: the caller's staging, and one branch per `phi` edge of the
+two exit blocks.  The branch list is the pinned tables' incoming lists, not a
+reachable-set claim; the reachable set is the exclusion theorems' subject. -/
+def assemblyExitWord (args : List Value) (mem : Mem) (next : Nat)
+    (body : List UInt8) (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome)
+    (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat) (err xj : Nat)
+    (e : State) : Prop :=
+  ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj ∧
+  (AssemblyLatchExit body st dst nps goal b xp tab pos0 n ps err xj mem e ∨
+   AssemblyEntryExit body st dst nps goal b xp tab pos0 n ps err xj mem e ∨
+   AssemblyWhileBody6Exit body st dst nps goal b xp tab pos0 n ps err xj mem e ∨
+   AssemblyWhileBodyExit body st dst nps goal b xp tab pos0 n ps err xj mem e ∨
+   AssemblySuccessExit body st dst nps goal b xp tab pos0 n ps err xj mem e ∨
+   AssemblyRefusalExit body st dst nps goal b xp tab pos0 n ps err xj mem e)
 
 /-! ### The two arm statements -/
 
@@ -141,44 +357,114 @@ def assemblyExitWord (body : List UInt8) (st : ClassState) (dst nps : Nat)
 escape, and the return to the latch with the index advanced. -/
 def assemblyLatchStep (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab pos0 n : Nat) (ps : List Nat)
-    (cost : Nat) : Prop :=
+    (err xj : Nat) (mem : Mem) (cost : Nat) : Prop :=
   ∀ (r : Nat) (s : State) (c : Nat),
-    AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps (r + 1) c s →
+    AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s →
     (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false →
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = "cleanup32" ∧
       c < c' ∧
-      AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c' e ∧
+      AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem r c' e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
         runFuel escapeCalls k usDecFunction e
 
 /-- **The refusal arm**, at the staged invariant: the refusal's stores and its
 exit at `cleanup41`, with the exit word's strengthened refusal form. -/
-def assemblyRefusalArm (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (b xp tab pos0 n : Nat) (ps : List Nat) (err xj : Nat)
-    (cost : Nat) : Prop :=
+def assemblyRefusalArm (args : List Value) (mem : Mem) (next : Nat)
+    (body : List UInt8) (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome)
+    (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat) (err xj : Nat)
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj) (cost : Nat) : Prop :=
   ∀ (r : Nat) (s : State) (c : Nat),
-    AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s →
+    AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem r c s →
     (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = true → ¬ nps ≤ c →
     ∃ (e : State) (j : Nat), j ≤ cost ∧ decodeTwoExit e ∧
-      assemblyExitWord body st dst nps goal err xj e ∧
+      assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
         runFuel escapeCalls k usDecFunction e
 
 /-! ### The decoded exit at the arm
 
 `DecodeLatch` carries `c ≤ nps`; the exit test being false is `nps ≤ c`; the two
-give the index the exit's store carries. -/
+give the index the exit's store carries.  The step is re-derived here rather than
+projected from `decodeLatch_step_exit`, because the word now names the exit state's
+cells as the caller's: the state the step returns has to be in hand for those
+pinnings to be proved, and the earlier lemma returns it existentially. -/
 theorem assemblyLatchStepExit {body : List UInt8} {st : ClassState} {dst nps : Nat}
-    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {r c : Nat}
-    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s)
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s)
     (hb : decide (nps ≤ c) = true) :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "while.end35" ∧
-      AssemblyLatchExit body st dst nps goal c e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      AssemblyLatchExit body st dst nps goal b xp tab pos0 n ps err xj mem e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
         runFuel escapeCalls k usDecFunction e := by
-  obtain ⟨e, j, hj, hpc, hexit, hrun⟩ :=
-    decodeLatch_step_exit (assemblyLatchInv_latch h).1 hb
-  exact ⟨e, j, hj, hpc, hexit, hrun⟩
+  obtain ⟨hp_b, hxp_b, htab_b, hpos0_b, hn_b⟩ := assemblyLatchInv_params h
+  obtain ⟨herr_b, hxj_b⟩ := assemblyLatchInv_dest h
+  have hframe := assemblyLatchInv_frame h
+  obtain ⟨i, out, prev, sub, inc11, adv, jv, nxp, paddr, xpaddr, tabaddr, erraddr,
+    xjaddr, pos0v, addv, nv, hpc, hwalk, hcle, hpre, hsub, hinc11, hnxp, hnps, hphi,
+    hnext, hi, hjlen, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
+    hpos0cell, haddcall, hncell⟩ := (assemblyLatchInv_latch h).1
+  have hge : ¬ (decodeNextIdx inc11 adv).toNat < nxp.toNat := by
+    rw [hnext, hnps]
+    exact Nat.not_lt_of_ge (of_decide_eq_true hb)
+  have hcond : evalICmp .ult (decodeNextIdx inc11 adv) nxp = (0 : BitVec 1) :=
+    (evalICmp_ult_zero_iff _ _).2 hge
+  have hceq : c = nps := by
+    have hge' : nps ≤ c := of_decide_eq_true hb
+    omega
+  rcases hphi with ⟨hprev, hj, ha⟩ | ⟨hprev, hj, hadv⟩
+  · subst hprev
+    let e : State :=
+      { (withEnv (udCleanup32Env s.env jv adv sub inc11 nxp) s) with
+          pc := "while.end35", pre := some "cleanup32" }
+    have hstep : step escapeCalls usDecFunction s = .jump e := by
+      have h1 := udCleanup32_step_zero s.env s "if.end32.i" (.reg "%add.i125")
+        (.reg "%adv.1.i") jv adv sub inc11 nxp hpc hpre
+        latch_phi_operand_emitter latch_phi_operand_emitter_adv
+        (evalOperand_reg_eq s.env s "%add.i125" (.int 64 jv) hj)
+        (by
+          rw [evalOperand_reg_eq (("%j.3", .int 64 jv) :: s.env) s "%adv.1.i"
+            (.int 64 adv) (by rw [lookupName_cons_ne _ _ (by decide)]; exact ha)])
+        hsub hinc11 hnxp hcond
+      have hs : withEnv s.env s = s := rfl
+      rw [hs] at h1
+      exact h1
+    refine ⟨e, 1, by omega, ?_, fun k => runFuel_jump_prefix hstep k⟩
+    refine ⟨rfl, rfl, ⟨c, i, out, jv, adv + sub, decodeNextIdx inc11 adv, paddr,
+      xpaddr, tabaddr, erraddr, xjaddr, pos0v, addv, nv, rfl, ?_, hceq, ?_, hjlen,
+      ?_, hi, ?_, hnext, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
+      hpos0cell, haddcall, hncell⟩, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
+      hxj_b, hframe⟩
+    · rw [show e.mem = s.mem from rfl]; exact hwalk
+    · simp only [e, withEnv, udCleanup32Env]; ud_lk
+    · simp only [e, withEnv, udCleanup32Env]; ud_lk
+    · simp only [e, withEnv, udCleanup32Env, decodeNextIdx, decodePairBit]; ud_lk
+  · subst hprev
+    let e : State :=
+      { (withEnv (udCleanup32Env s.env jv adv sub inc11 nxp) s) with
+          pc := "while.end35", pre := some "cleanup32" }
+    have hstep : step escapeCalls usDecFunction s = .jump e := by
+      have h1 := udCleanup32_step_zero s.env s "if.then6.i" (.reg "%add8.i")
+        (.imm (.int 64 (BitVec.ofInt 64 2))) jv adv sub inc11 nxp hpc hpre
+        latch_phi_operand_simple latch_phi_operand_simple_adv
+        (evalOperand_reg_eq s.env s "%add8.i" (.int 64 jv) hj)
+        (by rw [hadv]; rfl)
+        hsub hinc11 hnxp hcond
+      have hs : withEnv s.env s = s := rfl
+      rw [hs] at h1
+      exact h1
+    refine ⟨e, 1, by omega, ?_, fun k => runFuel_jump_prefix hstep k⟩
+    refine ⟨rfl, rfl, ⟨c, i, out, jv, adv + sub, decodeNextIdx inc11 adv, paddr,
+      xpaddr, tabaddr, erraddr, xjaddr, pos0v, addv, nv, rfl, ?_, hceq, ?_, hjlen,
+      ?_, hi, ?_, hnext, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
+      hpos0cell, haddcall, hncell⟩, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
+      hxj_b, hframe⟩
+    · rw [show e.mem = s.mem from rfl]; exact hwalk
+    · simp only [e, withEnv, udCleanup32Env]; ud_lk
+    · simp only [e, withEnv, udCleanup32Env]; ud_lk
+    · simp only [e, withEnv, udCleanup32Env, decodeNextIdx, decodePairBit]; ud_lk
 
 
 /-! ### The two-exit instance at the staged invariant
@@ -188,26 +474,32 @@ the list's length, the head the latch, the exit test the disjunction "at the bou
 or the head position refuses", and the exit word the strengthened three-edge one.
 The exit arm's bound case is `assemblyLatchStepExit`; the refusal case is the
 caller's arm. -/
-def assemblyBoundLoop (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (b xp tab pos0 n : Nat) (ps : List Nat) (err xj : Nat)
-    (cost : Nat) (hcost : 1 ≤ cost)
-    (hrefuse : assemblyRefusalArm body st dst nps goal b xp tab pos0 n ps err xj cost)
-    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps cost) :
+def assemblyBoundLoop (args : List Value) (mem : Mem) (next : Nat)
+    (body : List UInt8) (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome)
+    (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat) (err xj : Nat)
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj) (cost : Nat) (hcost : 1 ≤ cost)
+    (hrefuse : assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n
+      ps err xj hstaging cost)
+    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps err xj mem
+      cost) :
     BoundLoop escapeCalls usDecFunction where
   head := "cleanup32"
   exitBlock := "while.end35"
   N := nps
   cost := cost
-  Inv := fun r s c => AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps r c s
+  Inv := fun r s c =>
+    AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem r c s
   atBound := fun _ c => decide (nps ≤ c) || decodeRefuses body ps pos0 c
   Exit := decodeTwoExit
-  ExitWord := assemblyExitWord body st dst nps goal err xj
+  ExitWord := assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps
+    err xj
   step_exit := by
     intro r s c h hat
     by_cases hb : nps ≤ c
-    · obtain ⟨e, j, hj, hpc, hexit, hrun⟩ :=
+    · obtain ⟨e, j, hj, hexit, hrun⟩ :=
         assemblyLatchStepExit h (decide_eq_true hb)
-      exact ⟨e, j, by omega, Or.inl hpc, Or.inl ⟨c, hexit⟩, hrun⟩
+      exact ⟨e, j, by omega, Or.inl hexit.1, ⟨hstaging, Or.inl hexit⟩, hrun⟩
     · have hrf : decodeRefuses body ps pos0 c = true := by
         cases hr : decodeRefuses body ps pos0 c with
         | false =>
@@ -227,20 +519,24 @@ def assemblyBoundLoop (body : List UInt8) (st : ClassState) (dst nps : Nat)
 /-- **The staged walk's fuel**: from the latch at the whole bound, the run reaches
 an exit state the word admits within `(nps + 1) * cost`, and a continuation that
 splits once at the exit lifts to the whole walk. -/
-theorem assemblyBoundLoop_run_at (body : List UInt8) (st : ClassState) (dst nps : Nat)
+theorem assemblyBoundLoop_run_at (args : List Value) (mem : Mem) (next : Nat)
+    (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab pos0 n : Nat) (ps : List Nat) (err xj : Nat)
-    (cost : Nat) (hcost : 1 ≤ cost)
-    (hrefuse : assemblyRefusalArm body st dst nps goal b xp tab pos0 n ps err xj cost)
-    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps cost)
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj) (cost : Nat) (hcost : 1 ≤ cost)
+    (hrefuse : assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n
+      ps err xj hstaging cost)
+    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps err xj mem
+      cost)
     (s : State) (c : Nat) (k : Nat)
-    (hinv : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps nps c s)
+    (hinv : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem nps c s)
     {o : Outcome}
     (hcont : ∀ (e : State), decodeTwoExit e →
-      assemblyExitWord body st dst nps goal err xj e →
+      assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj e →
       runFuel escapeCalls k usDecFunction e = some o) :
     runFuel escapeCalls ((nps + 1) * cost + k) usDecFunction s = some o :=
-  (assemblyBoundLoop body st dst nps goal b xp tab pos0 n ps err xj cost hcost
-    hrefuse hloop).run_at s c hinv k hcont
+  (assemblyBoundLoop args mem next body st dst nps goal b xp tab pos0 n ps err xj
+    hstaging cost hcost hrefuse hloop).run_at s c hinv k hcont
 
 /-! ### Axiom footprints -/
 
@@ -263,14 +559,6 @@ theorem assemblyBoundLoop_run_at (body : List UInt8) (st : ClassState) (dst nps 
 /-- info: 'LeanLLVM.Vellum.AssemblyLatchExit' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms AssemblyLatchExit
-
-/-- info: 'LeanLLVM.Vellum.AssemblyRefusalExit' does not depend on any axioms -/
-#guard_msgs in
-#print axioms AssemblyRefusalExit
-
-/-- info: 'LeanLLVM.Vellum.assemblyExitWord' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms assemblyExitWord
 
 /-- info: 'LeanLLVM.Vellum.assemblyLatchStepExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

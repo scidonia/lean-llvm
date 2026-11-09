@@ -102,7 +102,7 @@ edge supplies — and the goal is the seed's `.decoded body nps`. -/
 theorem emptySeedRun
     {args : List Value} {mem : Mem} {next : Nat}
     {b n dst err xp xj nps pos0 tab k0 : Nat}
-    {body : List UInt8}
+    {body : List UInt8} {ps : List Nat}
     (hargs : args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err,
       .ptr xp, .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0),
       .ptr tab])
@@ -111,10 +111,13 @@ theorem emptySeedRun
     (hk0 : k0 = nps)
     (hnps64 : nps < 2 ^ 64)
     (goal : EscapeOutcome)
-    (hgoal : goal = .decoded body nps) :
+    (hgoal : goal = .decoded body nps)
+    (hstaging : ExpandStaging args mem next body ⟨true, false⟩ dst nps goal b xp tab
+      pos0 n ps err xj) :
     ∃ (e : State) (j : Nat), j ≤ entryBlocks ∧ e.pc = "while.end35" ∧
       goal = .decoded body nps ∧
-      assemblyExitWord body ⟨true, false⟩ dst nps goal err xj e ∧
+      assemblyExitWord args mem next body ⟨true, false⟩ dst nps goal b xp tab pos0 n ps
+        err xj e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
         (EntryState usDecFunction args mem next) = runFuel escapeCalls k usDecFunction e := by
   -- the caller's cursor is at the list's end, so both entry tests are false
@@ -173,25 +176,38 @@ theorem emptySeedRun
     rw [show withEnv s1.env s1 = s1 from rfl] at h
     exact h
   refine ⟨s2, 2, by decide, rfl, hgoal, ?_, ?_⟩
-  · -- the exit word: `DecodeEntryExit` at the seed's walk
-    refine Or.inr (Or.inr ⟨rfl, ⟨0, [], ?_, ?_, ?_⟩, ?_⟩)
-    · -- the walk from the list's end is the goal
-      show escapeDecodeGo body 0 nps ((escAt body ⟨true, false⟩ 0).drop nps) [] = goal
-      have hnil : (escAt body ⟨true, false⟩ 0).drop nps = [] := by
-        rw [List.drop_eq_nil_of_le]
-        omega
-      rw [hnil, escapeDecodeGo_nil, List.nil_append, List.drop_zero]
-      exact hgoal.symm
-    · -- nothing was written, so the empty prefix is in the store
-      show readBytes s2.mem dst 0 = some []
+  · -- the exit word: the caller's staging and `while.end`'s edge
+    refine ⟨hstaging, Or.inr (Or.inl ?_)⟩
+    refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · -- `DecodeEntryExit` at the seed's walk
+      refine ⟨rfl, ⟨0, [], ?_, ?_, ?_⟩, ?_⟩
+      · -- the walk from the list's end is the goal
+        show escapeDecodeGo body 0 nps ((escAt body ⟨true, false⟩ 0).drop nps) [] = goal
+        have hnil : (escAt body ⟨true, false⟩ 0).drop nps = [] := by
+          rw [List.drop_eq_nil_of_le]
+          omega
+        rw [hnil, escapeDecodeGo_nil, List.nil_append, List.drop_zero]
+        exact hgoal.symm
+      · -- nothing was written, so the empty prefix is in the store
+        show readBytes s2.mem dst 0 = some []
+        rfl
+      · -- the list's length, which is `nps` by the staging
+        exact hnpslen
+      · -- the `%k.0.lcssa` cell the `while.end` edge supplies
+        show lookupName s2.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
+        simp only [s2, udWhileEndEnv, withEnv]
+        rw [lookupName_cons_ne _ _ (by decide), hk0]
+        exact lookupName_cons_self _ _ _
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
+    · -- the frame: no block on this path wrote anything
+      intro a _
       rfl
-    · -- the list's length, which is `nps` by the staging
-      exact hnpslen
-    · -- the `%k.0.lcssa` cell the `while.end` edge supplies
-      show lookupName s2.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
-      simp only [s2, udWhileEndEnv, withEnv]
-      rw [lookupName_cons_ne _ _ (by decide), hk0]
-      exact lookupName_cons_self _ _ _
   · -- two control steps
     intro k
     rw [show 2 + k = 1 + (1 + k) from by omega]
@@ -242,6 +258,193 @@ theorem refusalReturn (s : State) (hs : s.pc = "cleanup41")
 /-- info: 'LeanLLVM.Vellum.refusalReturn' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms refusalReturn
+
+/-! ### `.exit` attempt: the two `cleanup41` continuations
+
+`ExpandExit` quantifies over the six branches.  Four of them — the two refusals and
+`us_run.exit112` — are one control step from the return, and their continuations
+are proved here: the return, the post's `.refused` / `.decoded` branch, and the
+frame.  That reduces `.exit` to the two `while.end35` branches, whose continuation
+is the final copy's whole run.
+
+The one identification the post needs is that the word's pointer slots are the
+caller's; `args_ptr_slots` proves it from the argument list both sides are pinned
+by.  Nothing else about the pre is restated. -/
+
+/-- The record's argument list pins the pointer slots.  `getElem?` congruece is
+used rather than a sixteen-way injection, so a change to the list's shape shows up
+as a failing goal in one place. -/
+theorem args_ptr_slots {b b' n n' dst dst' err err' xp xp' xj xj' nps nps'
+    pos0 pos0' tab tab' : Nat}
+    (h : ([.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp, .ptr xj,
+      .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0), .ptr tab] : List Value)
+      = [.ptr b', .int 64 (BitVec.ofNat 64 n'), .ptr dst', .ptr err', .ptr xp',
+      .ptr xj', .int 64 (BitVec.ofNat 64 nps'), .int 64 (BitVec.ofNat 64 pos0'),
+      .ptr tab']) :
+    b = b' ∧ dst = dst' ∧ err = err' ∧ xp = xp' ∧ xj = xj' ∧ tab = tab' := by
+  have h0 := congrArg (fun l : List Value => l[0]?) h
+  have h2 := congrArg (fun l : List Value => l[2]?) h
+  have h3 := congrArg (fun l : List Value => l[3]?) h
+  have h4 := congrArg (fun l : List Value => l[4]?) h
+  have h5 := congrArg (fun l : List Value => l[5]?) h
+  have h8 := congrArg (fun l : List Value => l[8]?) h
+  simp at h0 h2 h3 h4 h5 h8
+  exact ⟨h0, h2, h3, h4, h5, h8⟩
+
+/-- `cleanup41` at either refusal predecessor returns `-1`. -/
+theorem cleanup41Return (s : State) (hs : s.pc = "cleanup41")
+    (hpre : s.pre = some "if.then20" ∨ s.pre = some "if.then22") :
+    runFuel escapeCalls 1 usDecFunction s =
+      some (.ret (some (.int 64 (BitVec.ofInt 64 (-1)))) s.mem) := by
+  rcases hpre with hp | hp
+  · have hinc : phiIncoming "if.then20" udCleanup41Incoming =
+        some (.imm (.int 64 (BitVec.ofInt 64 (-1)))) := by decide
+    have hop : evalOperand (withEnv s.env s) (.imm (.int 64 (BitVec.ofInt 64 (-1)))) =
+        some (.int 64 (BitVec.ofInt 64 (-1))) := rfl
+    have h := udCleanup41_step s.env s "if.then20"
+      (.imm (.int 64 (BitVec.ofInt 64 (-1)))) (BitVec.ofInt 64 (-1)) hs hp hinc hop
+    rw [show withEnv s.env s = s from rfl] at h
+    simp only [runFuel, h]; rfl
+  · exact refusalReturn s hs hp
+
+/-- `cleanup41` at the success predecessor returns `%add40`. -/
+theorem cleanup41SuccessReturn (s : State) (hs : s.pc = "cleanup41")
+    (hpre : s.pre = some "us_run.exit112") (add40 : BitVec 64)
+    (hcell : lookupName s.env "%add40" = some (.int 64 add40)) :
+    runFuel escapeCalls 1 usDecFunction s =
+      some (.ret (some (.int 64 add40)) s.mem) := by
+  have hinc : phiIncoming "us_run.exit112" udCleanup41Incoming =
+      some (.reg "%add40") := by decide
+  have hop : evalOperand (withEnv s.env s) (.reg "%add40") = some (.int 64 add40) := by
+    simp only [withEnv, evalOperand, hcell]
+  have h := udCleanup41_step s.env s "us_run.exit112" (.reg "%add40") add40 hs hpre hinc hop
+  rw [show withEnv s.env s = s from rfl] at h
+  simp only [runFuel, h]; rfl
+
+/-- The pre's own witnesses agree with the word's on the pointer slots. -/
+theorem staging_ptr_slots {args : List Value} {b xp tab dst err xj nps pos0 n : Nat}
+    (hargs : args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err,
+      .ptr xp, .ptr xj, .int 64 (BitVec.ofNat 64 nps),
+      .int 64 (BitVec.ofNat 64 pos0), .ptr tab])
+    {b' n' dst' err' xp' xj' nps' pos0' tab' : Nat}
+    (hargs' : args = [.ptr b', .int 64 (BitVec.ofNat 64 n'), .ptr dst', .ptr err',
+      .ptr xp', .ptr xj', .int 64 (BitVec.ofNat 64 nps'),
+      .int 64 (BitVec.ofNat 64 pos0'), .ptr tab']) :
+    b' = b ∧ dst' = dst ∧ err' = err ∧ xp' = xp ∧ xj' = xj ∧ tab' = tab :=
+  args_ptr_slots (hargs'.symm.trans hargs)
+
+/-- **The refusal continuation satisfies the post.**  The walk's refusal at the
+state's own `%sub`/`%inc11` is the post's refusal, the two stores are the branch's,
+and the return touches no memory. -/
+theorem refusalExit_post
+    {args : List Value} {mem : Mem} {next : Nat} {body : List UInt8}
+    {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat}
+    {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    (e : State)
+    (h : AssemblyRefusalExit body st dst nps goal b xp tab pos0 n ps err xj mem e) :
+    ∃ o : Outcome,
+      runFuel escapeCalls (expandExitFuel args) usDecFunction e = some o ∧
+      (Γ_escape_expand escapeExpandBudget).post args mem next o := by
+  obtain ⟨hdref, hpre20, herrcell, hxjcell, hoffk, hframe⟩ := h
+  obtain ⟨off, k, hsub, hinc, hgoaleq⟩ := hoffk
+  obtain ⟨epc, eoff, ek, eerr, exj, esub, einc', eerrv, exjv, eread, eread'⟩ := hdref
+  have hoffeq : eoff = off := by
+    have hv : (Value.int 64 eoff) = (Value.int 64 off) :=
+      Option.some.inj (esub.symm.trans hsub)
+    cases hv; rfl
+  have hikeq : ek = k := by
+    have hv : (Value.int 64 ek) = (Value.int 64 k) :=
+      Option.some.inj (einc'.symm.trans hinc)
+    cases hv; rfl
+  have herreq : eerr = err := by
+    have hv : (Value.ptr eerr) = (Value.ptr err) :=
+      Option.some.inj (eerrv.symm.trans herrcell)
+    cases hv; rfl
+  have hxjeq : exj = xj := by
+    have hv : (Value.ptr exj) = (Value.ptr xj) :=
+      Option.some.inj (exjv.symm.trans hxjcell)
+    cases hv; rfl
+  rw [herreq] at eread
+  rw [hxjeq] at eread'
+  rw [hoffeq] at eread
+  rw [hikeq] at eread'
+  obtain ⟨hpre, hargs, hbody, hdec, hrebase, hst, -, -, -, hwalk⟩ := hstaging
+  obtain ⟨addv, hstage⟩ := hdec
+  obtain ⟨hposbytes, hpslen, hrange, haddv⟩ := hstage
+  obtain ⟨k0, hk0read, hk0le, hwalkeq⟩ := hwalk
+  obtain ⟨b', n', dst', err', xp', xj', nps', pos0', tab', body', ps', err0', k0',
+    hargs', hbody', hposbytes', hpslen', hrange', hmap', hwidth', hk0r', hk0le',
+    herr0', htab', hhas32, hhasdst, hbo, hxo, htbo, hebo, hexo, hxdo⟩ := hpre
+  obtain ⟨-, -, herreq', -, -, -⟩ := staging_ptr_slots hargs hargs'
+  rw [herreq'] at herr0'
+  have hfuel : 1 ≤ expandExitFuel args := by unfold expandExitFuel; omega
+  have hrun := cleanup41Return e epc hpre20
+  refine ⟨_, runFuel_mono_le hfuel hrun, ?_⟩
+  simp only [Γ_escape_expand, escapeExpandPost]
+  refine ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, ps, err0', k0,
+    hargs, hbody, hposbytes, herr0', hk0read, hk0le, ?_⟩
+  rw [← hwalkeq, hgoaleq]
+  exact ⟨by decide, eread, eread', hframe⟩
+
+/-- **The success continuation satisfies the post.**  `%add40` is the decoded
+length, the cursor slot holds the walk's count, and the offset slot is untouched. -/
+theorem successExit_post
+    {args : List Value} {mem : Mem} {next : Nat} {body : List UInt8}
+    {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat}
+    {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    (e : State)
+    (h : AssemblySuccessExit body st dst nps goal b xp tab pos0 n ps err xj mem e) :
+    ∃ o : Outcome,
+      runFuel escapeCalls (expandExitFuel args) usDecFunction e = some o ∧
+      (Γ_escape_expand escapeExpandBudget).post args mem next o := by
+  obtain ⟨epc, hpre, hpcell, hxpcell, htabcell, hpos0cell, hncell, herrcell,
+    hxjcell, hout, hframe⟩ := h
+  obtain ⟨out, k, hgoaleq, hadd40, hdstread, hxjread, herread⟩ := hout
+  obtain ⟨hstagingPre, hargs, hbody, hdec, hrebase, hst, -, -, -, hwalk⟩ := hstaging
+  obtain ⟨addv, hstage⟩ := hdec
+  obtain ⟨hposbytes, hpslen, hrange, haddv⟩ := hstage
+  obtain ⟨k0, hk0read, hk0le, hwalkeq⟩ := hwalk
+  obtain ⟨b', n', dst', err', xp', xj', nps', pos0', tab', body', ps', err0', k0',
+    hargs', hbody', hposbytes', hpslen', hrange', hmap', hwidth', hk0r', hk0le',
+    herr0', htab', hhas32, hhasdst, hbo, hxo, htbo, hebo, hexo, hxdo⟩ := hstagingPre
+  obtain ⟨-, -, herreq', -, -, -⟩ := staging_ptr_slots hargs hargs'
+  rw [herreq'] at herr0'
+  have hfuel : 1 ≤ expandExitFuel args := by unfold expandExitFuel; omega
+  have hrun := cleanup41SuccessReturn e epc hpre _ hadd40
+  refine ⟨_, runFuel_mono_le hfuel hrun, ?_⟩
+  simp only [Γ_escape_expand, escapeExpandPost]
+  refine ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, ps, err0', k0,
+    hargs, hbody, hposbytes, herr0', hk0read, hk0le, ?_⟩
+  rw [← hwalkeq, hgoaleq]
+  exact ⟨rfl, hdstread, hxjread, herread.trans herr0', hframe⟩
+
+/-! ### Axiom footprints: the `.exit` attempt's landed half -/
+
+/-- info: 'LeanLLVM.Vellum.args_ptr_slots' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms args_ptr_slots
+
+/-- info: 'LeanLLVM.Vellum.staging_ptr_slots' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms staging_ptr_slots
+
+/-- info: 'LeanLLVM.Vellum.cleanup41Return' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms cleanup41Return
+
+/-- info: 'LeanLLVM.Vellum.cleanup41SuccessReturn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms cleanup41SuccessReturn
+
+/-- info: 'LeanLLVM.Vellum.refusalExit_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalExit_post
+
+/-- info: 'LeanLLVM.Vellum.successExit_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms successExit_post
 
 /-! ### The exit stage's quantifier admits a state the walk never visits
 
@@ -399,42 +602,60 @@ theorem runFuel_stuck (err xj k : Nat) :
     runFuel escapeCalls (k + 1) usDecFunction (stuckState err xj) = some .ub := by
   simp only [runFuel, stuckState_step]
 
-/-- **The exit stage is false at every staging.**  The state above satisfies
-`decodeTwoExit` and the exit word's refusal edge, yet every run from it is `.ub`
-and the record's `post` is `False` there, so the continuation `ExpandExit`
-demands does not exist.  `body`, `st`, `dst`, `goal` and the record's
-destinations are arbitrary: the refusal edge's cells are the state's own, so no
-choice of them excludes the refuting state. -/
-theorem expandExit_false (args : List Value) (mem : Mem) (next : Nat)
-    (body : List UInt8) (st : ClassState) (dst : Nat) (goal : EscapeOutcome)
-    (err xj : Nat) :
-    ¬ ExpandExit args mem next body st dst goal err xj := by
-  intro h
-  have hexit : decodeTwoExit (stuckState err xj) := Or.inr rfl
-  have hword : assemblyExitWord body st dst (expandPosCount args) goal err xj
-      (stuckState err xj) :=
-    Or.inr (Or.inl ⟨stuckState_refusal err xj, stuckState_err err xj,
-      stuckState_xj err xj⟩)
-  obtain ⟨o, ho, hpost⟩ := h (stuckState err xj) hexit hword
-  have hk : expandExitFuel args = (expandExitFuel args - 1) + 1 := by
-    unfold expandExitFuel; omega
-  have hub : runFuel escapeCalls (expandExitFuel args) usDecFunction
-      (stuckState err xj) = some .ub := by
-    rw [hk]; exact runFuel_stuck err xj _
-  rw [hub] at ho
-  have ho' : o = .ub := (Option.some.inj ho).symm
-  subst ho'
-  exact escape_expand_ub_false escapeExpandBudget args mem next hpost
+/-- **The refutation, kept as the reason the words carry a predecessor.**  The
+state above satisfies the state-shaped word `DecodeRefusalExit` and its run is
+`.ub` at every fuel, which is what made the earlier exit word false at every
+staging (`expandExit_false`, `expandFacts_uninhabited`, now withdrawn because the
+statement they refuted no longer exists).  The repaired branch requires the
+predecessor its block's `phi` reads; the witness has none, so the word that
+replaces the false one excludes exactly this state.  The witness stays because a
+refutation that disappears teaches the next reader nothing. -/
+theorem stuckState_no_pre (err xj : Nat) : (stuckState err xj).pre = none := rfl
 
-/-- **The expander's bundle is uninhabited.**  `ExpandExit` is a field of
-`ExpandFacts`, and it is false at every staging, so no provider exists and
-`escape_expand_satisfies`'s hypothesis cannot be met — the record is not entitled
-about `usDecFunction` until the exit word names the predecessor its block's `phi`
-reads. -/
-theorem expandFacts_uninhabited (args : List Value) (mem : Mem) (next : Nat) :
-    ExpandFacts args mem next → False := by
-  intro hf
-  exact expandExit_false args mem next hf.body hf.st hf.dst hf.goal hf.err hf.xj hf.exit
+/-- The repaired refusal branch excludes the refuting state: it has no
+predecessor, and the branch names one of the two refusal edges. -/
+theorem stuckState_refusalExit_false (body : List UInt8) (st : ClassState)
+    (dst nps : Nat) (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat)
+    (ps : List Nat) (err xj : Nat) (mem : Mem) :
+    ¬ AssemblyRefusalExit body st dst nps goal b xp tab pos0 n ps err xj mem
+      (stuckState err xj) := by
+  intro h
+  have hpre : (stuckState err xj).pre = some "if.then20" ∨
+      (stuckState err xj).pre = some "if.then22" := h.2.1
+  rw [stuckState_no_pre] at hpre
+  rcases hpre with h | h
+  · cases h
+  · cases h
+
+/-- **The exit word excludes the refuting state.**  Every branch names a
+predecessor, and the state has none; this is the concrete form of the statement
+the widened word repairs. -/
+theorem assemblyExitWord_stuckState_false (args : List Value) (mem : Mem)
+    (next : Nat) (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) :
+    ¬ assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj
+      (stuckState err xj) := by
+  intro h
+  have hnone := stuckState_no_pre err xj
+  rcases h.2 with hL | hE | h6 | hB | hS | hR
+  · simp only [AssemblyLatchExit] at hL
+    rw [hnone] at hL
+    cases hL.2.1
+  · simp only [AssemblyEntryExit] at hE
+    rw [hnone] at hE
+    cases hE.2.1
+  · simp only [AssemblyWhileBody6Exit] at h6
+    rw [hnone] at h6
+    cases h6.2.1
+  · simp only [AssemblyWhileBodyExit] at hB
+    rw [hnone] at hB
+    cases hB.2.1
+  · simp only [AssemblySuccessExit] at hS
+    rw [hnone] at hS
+    cases hS.2.1
+  · exact stuckState_refusalExit_false body st dst nps goal b xp tab pos0 n ps err xj
+      mem hR
 
 /-! ### The two `while.end35` edges the staging kills
 
@@ -495,6 +716,233 @@ theorem staging_whileBody6_test {M : Mem} {nps xp pos0 n : Nat} {ps : List Nat}
   · exact absurd h hne
   · exact h
 
+/-! ### Acceptance: every edge is admitted, and only unreachable states are excluded
+
+The word's branch list is the two `phi` tables' incoming lists.  Two things have
+to be true of it and neither is visible in a build: **that no edge was dropped**
+(a branch with no model is decorative, and a disjunction missing a reachable edge
+says something false about the body), and **that the branches the staging cannot
+reach are excluded by the staging's own range clause rather than by construction**
+(an exclusion that is not a theorem is an assertion about the body).
+
+The admission theorems below exhibit a model for each of the seven edges — a
+staging, a memory and a state satisfying that branch — with the *inadmissible*
+stagings the two dead edges need, since that is exactly what "the branch is
+present" means.  The exclusion theorems then prove both dead branches empty under
+`DecodeStaging`, whose third conjunct is the range clause. -/
+
+/-- The state a branch's model is built at: a literal environment and memory. -/
+def modelState (env : Env) (mem : Mem) (pc : String) (pre : Option String) : State where
+  env := env
+  mem := mem
+  next := 0
+  pc := pc
+  pre := pre
+
+/-- The `cleanup32` edge's cells, and the two pins `DecodeLatchExit` itself takes
+from the caller. -/
+def latchModelEnv (dst : Nat) : Env :=
+  [("%j.3", .int 64 0), ("%add24", .int 64 0), ("%add28", .int 64 0),
+   ("%p", .ptr 0), ("%dst", .ptr dst), ("%xp", .ptr 0), ("%tab", .ptr 0),
+   ("%err", .ptr 0), ("%xj", .ptr 0), ("%pos0", .int 64 0), ("%add", .int 64 0),
+   ("%n", .int 64 0)]
+
+/-- **The decoded edge is admitted.**  The empty body at `nps = 0`: `cleanup32`'s
+exit test is false, the walk is the empty decode, and the block's entry state
+carries the cells the branch names. -/
+theorem admits_latchEdge :
+    ∃ e : State,
+      AssemblyLatchExit [] ⟨true, false⟩ 0 0 (.decoded [] 0) 0 0 0 0 0 [] 0 0 []
+        e := by
+  refine ⟨modelState (latchModelEnv 0) [] "while.end35" (some "cleanup32"), ?_⟩
+  unfold AssemblyLatchExit
+  refine ⟨rfl, rfl, ⟨0, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · unfold DecodeLatchExit
+    refine ⟨0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, rfl, ⟨rfl, rfl, rfl⟩, rfl, ?_, rfl,
+      ?_, rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    all_goals solve | rfl | (simp only [modelState]; ud_lk)
+  all_goals solve
+    | rfl
+    | (simp only [modelState]; ud_lk)
+    | (simp [UnchangedOutside, modelState])
+
+/-- **The entry edge is admitted.**  `while.end`'s cursor is the list's length and
+the run left the memory untouched. -/
+theorem admits_entryEdge :
+    ∃ e : State,
+      AssemblyEntryExit [] ⟨true, false⟩ 0 0 (.decoded [] 0) 0 0 0 0 0 [] 0 0 []
+        e := by
+  refine ⟨modelState
+    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 0), ("%xp", .ptr 0), ("%tab", .ptr 0),
+     ("%pos0", .int 64 0), ("%n", .int 64 0), ("%err", .ptr 0), ("%xj", .ptr 0)]
+    [] "while.end35" (some "while.end"), ?_⟩
+  unfold AssemblyEntryExit
+  refine ⟨rfl, rfl, ⟨rfl, ⟨0, [], rfl, rfl, rfl⟩, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_⟩
+  all_goals solve
+    | rfl
+    | (simp only [modelState]; ud_lk)
+    | (simp [UnchangedOutside, modelState])
+
+/-- **`while.body6`'s edge is admitted**, at the inadmissible staging that makes it
+live: the position at `%k.1296` lies at the window's end. -/
+theorem admits_whileBody6Edge :
+    ∃ e : State,
+      AssemblyWhileBody6Exit [] ⟨true, false⟩ 0 0 (.decoded [] 0) 0 0 0 1 1 [2]
+        0 0 [] e := by
+  refine ⟨modelState
+    [("%k.1296", .int 64 0), ("%conv8", .int 64 2), ("%p", .ptr 0), ("%xp", .ptr 0),
+     ("%tab", .ptr 0), ("%pos0", .int 64 1), ("%n", .int 64 1), ("%err", .ptr 0),
+     ("%xj", .ptr 0)]
+    [] "while.end35" (some "while.body6"), ?_⟩
+  unfold AssemblyWhileBody6Exit
+  refine ⟨rfl, rfl, ⟨0, 2, rfl, by omega, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals solve
+    | rfl
+    | (simp only [modelState]; ud_lk)
+    | (simp [UnchangedOutside, modelState])
+
+/-- **`while.body`'s edge is admitted**, at the inadmissible staging that makes it
+live: the pre-scan's position lies below the window's start. -/
+theorem admits_whileBodyEdge :
+    ∃ e : State,
+      AssemblyWhileBodyExit [] ⟨true, false⟩ 0 0 (.decoded [] 0) 0 0 0 1 1 [0]
+        0 0 [] e := by
+  refine ⟨modelState
+    [("%k.0287", .int 64 0), ("%conv", .int 64 0), ("%p", .ptr 0), ("%xp", .ptr 0),
+     ("%tab", .ptr 0), ("%pos0", .int 64 1), ("%n", .int 64 1), ("%err", .ptr 0),
+     ("%xj", .ptr 0)]
+    [] "while.end35" (some "while.body"), ?_⟩
+  unfold AssemblyWhileBodyExit
+  refine ⟨rfl, rfl, ⟨0, 0, rfl, by omega, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals solve
+    | rfl
+    | (simp only [modelState]; ud_lk)
+    | (simp [UnchangedOutside, modelState])
+
+/-- The `zeroMem` model answers the eight-byte slot reads. -/
+theorem readBytes_zeroMem_zero_eight :
+    readBytes (zeroMem 8) 0 8 = some (wordBytes 8 0) := by
+  rw [readBytes_zeroMem 8 8 0 (by omega)]
+  congr 1
+
+/-- **The success edge is admitted**: `us_run.exit112`'s state returns the decoded
+length and the cursor slot holds the walk's count. -/
+theorem admits_successEdge :
+    ∃ e : State,
+      AssemblySuccessExit [] ⟨true, false⟩ 0 0 (.decoded [] 0) 0 0 0 0 0 [] 0 0
+        (zeroMem 8) e := by
+  refine ⟨modelState
+    [("%p", .ptr 0), ("%xp", .ptr 0), ("%tab", .ptr 0), ("%pos0", .int 64 0),
+     ("%n", .int 64 0), ("%err", .ptr 0), ("%xj", .ptr 0), ("%add40", .int 64 0)]
+    (zeroMem 8) "cleanup41" (some "us_run.exit112"), ?_⟩
+  unfold AssemblySuccessExit
+  refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals solve
+    | rfl
+    | (simp only [modelState]; ud_lk)
+    | (refine ⟨[], 0, rfl, rfl, rfl, readBytes_zeroMem_zero_eight,
+        by first | rfl | trivial⟩)
+    | (simp [UnchangedOutside, modelState])
+
+/-- **The refusal edge is admitted**, at each of its two predecessors. -/
+theorem admits_refusalEdge (pre : String) (hpre : pre = "if.then20" ∨ pre = "if.then22") :
+    ∃ e : State,
+      AssemblyRefusalExit [] ⟨true, false⟩ 0 0 (.refused 0 0) 0 0 0 0 0 [] 0 0
+        (zeroMem 8) e := by
+  have hpd : pre = "if.then20" ∨ pre = "if.then22" := hpre
+  refine ⟨modelState
+    [("%sub", .int 64 0), ("%inc11", .int 64 0), ("%err", .ptr 0), ("%xj", .ptr 0)]
+    (zeroMem 8) "cleanup41" (some pre), ?_⟩
+  unfold AssemblyRefusalExit
+  refine ⟨⟨rfl, ⟨0, 0, 0, 0, ?_, ?_, ?_, ?_, ?_, ?_⟩⟩, ?_, ?_, ?_,
+    ⟨0, 0, ?_, ?_, rfl⟩, ?_⟩
+  all_goals solve
+    | rfl
+    | (simp only [modelState]; ud_lk)
+    | (rw [show (modelState _ (zeroMem 8) _ _).mem = zeroMem 8 from rfl,
+          readBytes_zeroMem 8 8 0 (by omega), wordBytes_zero_eight])
+    | (simp [UnchangedOutside, modelState])
+    | (rcases hpre with rfl | rfl <;> simp [modelState])
+
+/-! ### The exclusion theorems: the two dead edges are empty at an admissible
+staging
+
+`DecodeStaging`'s third conjunct is the range: every entry of the list lies in
+`[pos0, pos0 + n)`.  Each dead branch carries the witness its edge's test would
+produce, and the range contracts it — this is the direction §15.72 requires to be a
+theorem rather than an omission. -/
+
+/-- **`while.body6`'s branch is empty at an admissible staging.** -/
+theorem assemblyWhileBody6Exit_vacuous {addv : BitVec 64} {M : Mem}
+    {nps xp0 pos0 n : Nat} {ps : List Nat}
+    (hstage : DecodeStaging M nps xp0 pos0 n ps addv)
+    {body : List UInt8} {st : ClassState} {dst : Nat} {goal : EscapeOutcome}
+    {b xp tab : Nat} {err xj : Nat} {mem : Mem} {e : State}
+    (h : AssemblyWhileBody6Exit body st dst nps goal b xp tab pos0 n ps err xj mem e) :
+    False := by
+  obtain ⟨-, -, ⟨c, q, hq, hge, -⟩, -⟩ := h
+  obtain ⟨hlo, hhi⟩ := hstage.2.2.1 c q hq
+  omega
+
+/-- **`while.body`'s branch is empty at an admissible staging.** -/
+theorem assemblyWhileBodyExit_vacuous {addv : BitVec 64} {M : Mem}
+    {nps xp0 pos0 n : Nat} {ps : List Nat}
+    (hstage : DecodeStaging M nps xp0 pos0 n ps addv)
+    {body : List UInt8} {st : ClassState} {dst : Nat} {goal : EscapeOutcome}
+    {b xp tab : Nat} {err xj : Nat} {mem : Mem} {e : State}
+    (h : AssemblyWhileBodyExit body st dst nps goal b xp tab pos0 n ps err xj mem e) :
+    False := by
+  obtain ⟨-, -, ⟨k, q, hq, hlt, -⟩, -⟩ := h
+  obtain ⟨hlo, hhi⟩ := hstage.2.2.1 k q hq
+  omega
+
+/-! ### Axiom footprints: the two acceptance theorems
+
+Every acceptance theorem is pinned at the development's ceiling.  The admission
+models read `readBytes` and the `zeroMem` stack, and the exclusion theorems destructure
+`DecodeStaging`; nothing here introduces a new axiom. -/
+
+/-- info: 'LeanLLVM.Vellum.modelState' does not depend on any axioms -/
+#guard_msgs in
+#print axioms modelState
+
+/-- info: 'LeanLLVM.Vellum.readBytes_zeroMem_zero_eight' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_zeroMem_zero_eight
+
+/-- info: 'LeanLLVM.Vellum.admits_latchEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admits_latchEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_entryEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admits_entryEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_whileBody6Edge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admits_whileBody6Edge
+
+/-- info: 'LeanLLVM.Vellum.admits_whileBodyEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admits_whileBodyEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_successEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admits_successEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_refusalEdge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms admits_refusalEdge
+
+/-- info: 'LeanLLVM.Vellum.assemblyWhileBody6Exit_vacuous' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyWhileBody6Exit_vacuous
+
+/-- info: 'LeanLLVM.Vellum.assemblyWhileBodyExit_vacuous' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyWhileBodyExit_vacuous
+
 /-! ### Axiom footprints: the exit stage's refutation -/
 
 /-- info: 'LeanLLVM.Vellum.zeroMem' does not depend on any axioms -/
@@ -513,13 +961,17 @@ theorem staging_whileBody6_test {M : Mem} {nps xp pos0 n : Nat} {ps : List Nat}
 #guard_msgs in
 #print axioms stuckState_step
 
-/-- info: 'LeanLLVM.Vellum.expandExit_false' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.stuckState_no_pre' does not depend on any axioms -/
 #guard_msgs in
-#print axioms expandExit_false
+#print axioms stuckState_no_pre
 
-/-- info: 'LeanLLVM.Vellum.expandFacts_uninhabited' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.stuckState_refusalExit_false' does not depend on any axioms -/
 #guard_msgs in
-#print axioms expandFacts_uninhabited
+#print axioms stuckState_refusalExit_false
+
+/-- info: 'LeanLLVM.Vellum.assemblyExitWord_stuckState_false' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms assemblyExitWord_stuckState_false
 
 /-- info: 'LeanLLVM.Vellum.staging_land_rhs_test' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

@@ -9717,3 +9717,123 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.DecodeRefusalExit_mem_ne_nil' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.DecodeRefusalExit_mem_ne_nil
+
+/-! ### The relational exit word and the two acceptance theorems -/
+
+/-- info: 'LeanLLVM.Vellum.ExpandStaging' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ExpandStaging
+
+/-- info: 'LeanLLVM.Vellum.AssemblyLatchExit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyLatchExit
+
+/-- info: 'LeanLLVM.Vellum.AssemblyEntryExit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyEntryExit
+
+/-- info: 'LeanLLVM.Vellum.AssemblyWhileBody6Exit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyWhileBody6Exit
+
+/-- info: 'LeanLLVM.Vellum.AssemblyWhileBodyExit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyWhileBodyExit
+
+/-- info: 'LeanLLVM.Vellum.AssemblySuccessExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblySuccessExit
+
+/-- info: 'LeanLLVM.Vellum.AssemblyRefusalExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyRefusalExit
+
+/-- info: 'LeanLLVM.Vellum.assemblyExitWord' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyExitWord
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_dest' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchInv_dest
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_frame' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchInv_frame
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchStep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchStep
+
+/-- info: 'LeanLLVM.Vellum.assemblyRefusalArm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyRefusalArm
+
+/-! #### Acceptance (a): every `phi` edge is admitted -/
+
+/-- info: 'LeanLLVM.Vellum.admits_latchEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.admits_latchEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_entryEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.admits_entryEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_whileBody6Edge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.admits_whileBody6Edge
+
+/-- info: 'LeanLLVM.Vellum.admits_whileBodyEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.admits_whileBodyEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_successEdge' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.admits_successEdge
+
+/-- info: 'LeanLLVM.Vellum.admits_refusalEdge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.admits_refusalEdge
+
+/-! #### Acceptance (b): the two dead edges are excluded by the range clause -/
+
+/-- info: 'LeanLLVM.Vellum.assemblyWhileBody6Exit_vacuous' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyWhileBody6Exit_vacuous
+
+/-- info: 'LeanLLVM.Vellum.assemblyWhileBodyExit_vacuous' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyWhileBodyExit_vacuous
+
+/-! #### `.exit`: the landed half, and the refutation kept as the reason -/
+
+/-- info: 'LeanLLVM.Vellum.args_ptr_slots' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.args_ptr_slots
+
+/-- info: 'LeanLLVM.Vellum.staging_ptr_slots' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.staging_ptr_slots
+
+/-- info: 'LeanLLVM.Vellum.cleanup41Return' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.cleanup41Return
+
+/-- info: 'LeanLLVM.Vellum.cleanup41SuccessReturn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.cleanup41SuccessReturn
+
+/-- info: 'LeanLLVM.Vellum.refusalExit_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.refusalExit_post
+
+/-- info: 'LeanLLVM.Vellum.successExit_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.successExit_post
+
+/-- info: 'LeanLLVM.Vellum.stuckState_refusalExit_false' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stuckState_refusalExit_false
+
+/-- info: 'LeanLLVM.Vellum.assemblyExitWord_stuckState_false' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyExitWord_stuckState_false

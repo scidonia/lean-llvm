@@ -143,11 +143,13 @@ its `phi` operands are `while.end`'s own, so the arm is stated at the cells that
 edge supplies rather than at the latch's. -/
 def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
     (st : ClassState) (dst : Nat) (goal : EscapeOutcome)
-    (b xp tab err xj pos0 : Nat) (ps : List Nat) : Prop :=
+    (b xp tab err xj pos0 : Nat) (ps : List Nat)
+    (hstaging : ExpandStaging args mem next body st dst (expandPosCount args) goal b xp
+      tab pos0 (expandBodyLen args) ps err xj) : Prop :=
   (∃ (s : State) (c j : Nat),
       j ≤ preScanFuel (expandPosCount args) + decodeIterCost (expandBodyLen args) ∧
       AssemblyLatchInv body st dst (expandPosCount args) goal b xp tab pos0
-        (expandBodyLen args) ps (expandPosCount args) c s ∧
+        (expandBodyLen args) ps err xj mem (expandPosCount args) c s ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
           (EntryState usDecFunction args mem next) =
         runFuel escapeCalls k usDecFunction s)
@@ -155,7 +157,8 @@ def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
       j ≤ entryBlocks ∧
       e.pc = "while.end35" ∧
       goal = .decoded body (expandPosCount args) ∧
-      assemblyExitWord body st dst (expandPosCount args) goal err xj e ∧
+      assemblyExitWord args mem next body st dst (expandPosCount args) goal b xp tab
+        pos0 (expandBodyLen args) ps err xj e ∧
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
           (EntryState usDecFunction args mem next) =
         runFuel escapeCalls k usDecFunction e)
@@ -165,9 +168,10 @@ def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
 post within the final copy's allowance.  The split at the two exits is here and
 nowhere else. -/
 def ExpandExit (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
-    (st : ClassState) (dst : Nat) (goal : EscapeOutcome) (err xj : Nat) : Prop :=
+    (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome) (b xp tab : Nat)
+    (pos0 n : Nat) (ps : List Nat) (err xj : Nat) : Prop :=
   ∀ (e : State), decodeTwoExit e →
-    assemblyExitWord body st dst (expandPosCount args) goal err xj e →
+    assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj e →
     ∃ (o : Outcome), runFuel escapeCalls (expandExitFuel args) usDecFunction e = some o ∧
       (Γ_escape_expand escapeExpandBudget).post args mem next o
 
@@ -183,25 +187,31 @@ continuation supplies the outcome and the property.
 Nothing here reads the body's blocks: the only thing consumed about the loop is its
 `run`, at `assemblyBoundLoop`'s instance and its own `cost`, so the composition is
 the arithmetic of the three allowances rather than a second analysis of the walk. -/
-theorem run_stages {start : State} {P : Outcome → Prop} {body : List UInt8}
+theorem run_stages {start : State} {P : Outcome → Prop} {args : List Value}
+    {mem : Mem} {next : Nat} {body : List UInt8}
     {st : ClassState} {dst nps n : Nat} {goal : EscapeOutcome}
     {b xp tab err xj pos0 : Nat} {ps : List Nat}
     {cost exitFuel : Nat}
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps
+      err xj)
     (hcost : 1 ≤ cost)
-    (hrefuse : assemblyRefusalArm body st dst nps goal b xp tab pos0 n ps err xj cost)
-    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps cost)
+    (hrefuse : assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n
+      ps err xj hstaging cost)
+    (hloop : assemblyLatchStep body st dst nps goal b xp tab pos0 n ps err xj mem
+      cost)
     (hseed :
       (∃ (s : State) (c j : Nat), j ≤ preScanFuel nps + cost ∧
-        AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps nps c s ∧
+        AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem nps c s ∧
         ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
           runFuel escapeCalls k usDecFunction s)
       ∨ (∃ (e : State) (j : Nat), j ≤ entryBlocks ∧ e.pc = "while.end35" ∧
         goal = .decoded body nps ∧
-        assemblyExitWord body st dst nps goal err xj e ∧
+        assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj
+          e ∧
         ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
           runFuel escapeCalls k usDecFunction e))
     (hexit : ∀ (e : State), decodeTwoExit e →
-      assemblyExitWord body st dst nps goal err xj e →
+      assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj e →
       ∃ (o : Outcome), runFuel escapeCalls exitFuel usDecFunction e = some o ∧ P o) :
     ∃ (o : Outcome) (K : Nat),
       K ≤ preScanFuel nps + cost +
@@ -209,8 +219,8 @@ theorem run_stages {start : State} {P : Outcome → Prop} {body : List UInt8}
       runFuel escapeCalls K usDecFunction start = some o ∧ P o := by
   rcases hseed with ⟨s, c, j, hj, hinv, hrun⟩ | ⟨e, j, hj, hpc, _hgoal, hword, hrun⟩
   · obtain ⟨e, jl, hjl, hexi, hword, hrunl⟩ :=
-      (assemblyBoundLoop body st dst nps goal b xp tab pos0 n ps err xj cost hcost
-        hrefuse hloop).run s c hinv exitFuel
+      (assemblyBoundLoop args mem next body st dst nps goal b xp tab pos0 n ps err xj
+        hstaging cost hcost hrefuse hloop).run s c hinv exitFuel
     simp only [assemblyBoundLoop] at hjl
     obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
     refine ⟨o, j + (jl + exitFuel), ?_, ?_, hPo⟩
@@ -260,21 +270,28 @@ structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
   err : Nat
   /-- The cursor slot's base, which the refusal and the success path store to. -/
   xj : Nat
+  /-- **The caller's staging**, named by the record's own `pre` and identified with
+  these witnesses: the producer supplies it from its `hpre`, and every exit word and
+  arm is stated at it. -/
+  staging : ExpandStaging args mem next body st dst (expandPosCount args) goal pb xp
+    tab pos0 (expandBodyLen args) ps err xj
   /-- **The iteration arm**: the run from the latch back to the latch, crossing
   the two copy loops and the escape emitter. -/
   loop : assemblyLatchStep body st dst (expandPosCount args) goal pb xp tab pos0
-    (expandBodyLen args) ps (decodeIterCost (expandBodyLen args))
+    (expandBodyLen args) ps err xj mem (decodeIterCost (expandBodyLen args))
   /-- **The refusal arm**: the run from the latch to `cleanup41` at a position that
   refuses, crossing the same blocks as the iteration. -/
-  refuse : assemblyRefusalArm body st dst (expandPosCount args) goal pb xp tab pos0
-    (expandBodyLen args) ps err xj (decodeIterCost (expandBodyLen args))
+  refuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal pb
+    xp tab pos0 (expandBodyLen args) ps err xj staging
+    (decodeIterCost (expandBodyLen args))
   /-- **The entry stage, in its two arms**: the pre-scan plus one iteration to the
   latch, or — when the list has nothing left to walk — the pre-scan straight to
   `while.end35`. -/
-  seed : ExpandSeed args mem next body st dst goal pb xp tab err xj pos0 ps
+  seed : ExpandSeed args mem next body st dst goal pb xp tab err xj pos0 ps staging
   /-- **The exit continuations**: `while.end35`'s final copy and return, and
-  `cleanup41`'s refusal return. -/
-  exit : ExpandExit args mem next body st dst goal err xj
+  `cleanup41`'s refusal and success returns. -/
+  exit : ExpandExit args mem next body st dst (expandPosCount args) goal pb xp tab
+    pos0 (expandBodyLen args) ps err xj
 
 /-! ### The record's instance -/
 
@@ -294,8 +311,8 @@ theorem escape_expand_satisfies
       ExpandFacts args mem next) :
     Satisfies escapeCalls usDecFunction (Γ_escape_expand escapeExpandBudget) := by
   intro args mem next hpre
-  obtain ⟨body, st, dst, goal, ps, pos0, pb, xp, tab, err, xj, hloop, hrefuse,
-    hseed, hexit⟩ := hfacts args mem next hpre
+  obtain ⟨body, st, dst, goal, ps, pos0, pb, xp, tab, err, xj, hstaging, hloop,
+    hrefuse, hseed, hexit⟩ := hfacts args mem next hpre
   have hcost : 1 ≤ decodeIterCost (expandBodyLen args) := by
     unfold decodeIterCost
     omega
@@ -304,8 +321,9 @@ theorem escape_expand_satisfies
       (P := (Γ_escape_expand escapeExpandBudget).post args mem next)
       (nps := expandPosCount args) (n := expandBodyLen args)
       (b := pb) (xp := xp) (tab := tab) (err := err) (xj := xj)
-      (pos0 := pos0) (ps := ps)
-      (exitFuel := expandExitFuel args) hcost hrefuse hloop hseed hexit
+      (pos0 := pos0) (ps := ps) (mem := mem) (next := next) (args := args)
+      (st := st) (body := body) (goal := goal) (dst := dst)
+      hstaging hcost hrefuse hloop hseed hexit
   have hbudget : escapeExpandBudget args mem =
       (expandPosCount args + 1) * 3 + decodeIterCost (expandBodyLen args) +
       (expandPosCount args + 1) * decodeIterCost (expandBodyLen args) +
