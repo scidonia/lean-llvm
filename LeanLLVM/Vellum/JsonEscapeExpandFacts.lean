@@ -24,8 +24,9 @@ rediscovered.
 
 **What is proved here.**  The empty-list entry run: when the caller's cursor is
 already at the list's end, `entry` and `while.end` reach `while.end35` in two
-control steps and leave the exit word `DecodeEntryExit` names, with the goal the
-walk's own seed produces.  It is the second arm of `ExpandSeed`, closed from the
+control steps and leave the pinning `AssemblyEntryExit` records — the walk's own
+seed at cursor `0`, index `nps` and an empty store — with the goal the walk's seed
+produces.  It is the second arm of `ExpandSeed`, closed from the
 trace's two steps and the caller's cursor read, and it needs no iteration at all.
 -/
 import LeanLLVM.Vellum.JsonEscapeExpandRun
@@ -96,9 +97,11 @@ theorem entryState_cells {args : List Value} {mem : Mem} {next : Nat}
 
 The caller's cursor is at the list's end, so `entry`'s test is false and
 `while.end`'s is false too: the run reaches `while.end35` in two control steps,
-never visiting the latch.  The state carries the exit word's `DecodeEntryExit`
-variant — the walk's own seed at `(0, nps, [])` and the `%k.0.lcssa` cell the
-edge supplies — and the goal is the seed's `.decoded body nps`. -/
+never visiting the latch.  The state carries the exit word's entry branch — the
+walk's own seed at `(0, nps, [])` and the `%k.0.lcssa` cell the edge supplies — and
+the goal is the seed's `.decoded body nps`.  The branch is pinned at that seed
+rather than quantified over the walk's `i` and `out`, which the block ignores; see
+`AssemblyEntryExit` for the state the generic form wrongly admitted. -/
 theorem emptySeedRun
     {args : List Value} {mem : Mem} {next : Nat}
     {b n dst err xp xj nps pos0 tab k0 : Nat}
@@ -178,9 +181,9 @@ theorem emptySeedRun
   refine ⟨s2, 2, by decide, rfl, hgoal, ?_, ?_⟩
   · -- the exit word: the caller's staging and `while.end`'s edge
     refine ⟨hstaging, Or.inr (Or.inl ?_)⟩
-    refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · -- `DecodeEntryExit` at the seed's walk
-      refine ⟨rfl, ⟨0, [], ?_, ?_, ?_⟩, ?_⟩
+    refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · -- the seed's walk: nothing written, nothing decoded, `nps` positions left
+      refine ⟨?_, ?_, ?_⟩
       · -- the walk from the list's end is the goal
         show escapeDecodeGo body 0 nps ((escAt body ⟨true, false⟩ 0).drop nps) [] = goal
         have hnil : (escAt body ⟨true, false⟩ 0).drop nps = [] := by
@@ -193,11 +196,11 @@ theorem emptySeedRun
         rfl
       · -- the list's length, which is `nps` by the staging
         exact hnpslen
-      · -- the `%k.0.lcssa` cell the `while.end` edge supplies
-        show lookupName s2.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
-        simp only [s2, udWhileEndEnv, withEnv]
-        rw [lookupName_cons_ne _ _ (by decide), hk0]
-        exact lookupName_cons_self _ _ _
+    · -- the `%k.0.lcssa` cell the `while.end` edge supplies
+      show lookupName s2.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
+      simp only [s2, udWhileEndEnv, withEnv]
+      rw [lookupName_cons_ne _ _ (by decide), hk0]
+      exact lookupName_cons_self _ _ _
     · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
     · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
     · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
@@ -739,6 +742,27 @@ def modelState (env : Env) (mem : Mem) (pc : String) (pre : Option String) : Sta
   pc := pc
   pre := pre
 
+/-- **The generic entry word admits a cursor its own block ignores.**  With the
+body `[0x61, 0x5C, 0x6E]`, `n = 3`, one position and `k0 = 0`, the staging's goal
+is `.decoded [0x61, 0x0A] 1`.  The generic `DecodeEntryExit` is satisfiable at
+cursor `3` and prefix `[0x61, 0x0A]`, because nothing there ties the invariant's
+cursor and prefix to the `%i.0.lcssa`/`%j.0.lcssa` the entry's `phi`s supply (`0`
+and `0`).  The continuation would then copy `sub = 3 - 0 = 3` bytes from the body's
+first byte and return `%add40 = 3`, while the goal it carries names two bytes — the
+post's `v = out.length` and `readBytes dst out.length = out` both fail.  This is
+the state `AssemblyEntryExit`'s pinned form excludes; the witness is kept so the
+reason for the pinning is executable rather than prose. -/
+theorem decodeEntryExit_admits_ignored_cursor :
+    ∃ e : State,
+      DecodeEntryExit [0x61, 0x5C, 0x6E] ⟨true, false⟩ 0 1 (.decoded [0x61, 0x0A] 1) e := by
+  refine ⟨modelState [("%k.0.lcssa", .int 64 1)] [(0, 0x61), (1, 0x0A)]
+    "while.end35" (some "while.end"), rfl, ⟨3, [0x61, 0x0A], ?_⟩, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · decide
+    · decide
+    · decide
+  · rfl
+
 /-- The `cleanup32` edge's cells, and the two pins `DecodeLatchExit` itself takes
 from the caller. -/
 def latchModelEnv (dst : Nat) : Env :=
@@ -777,8 +801,15 @@ theorem admits_entryEdge :
      ("%pos0", .int 64 0), ("%n", .int 64 0), ("%err", .ptr 0), ("%xj", .ptr 0)]
     [] "while.end35" (some "while.end"), ?_⟩
   unfold AssemblyEntryExit
-  refine ⟨rfl, rfl, ⟨rfl, ⟨0, [], rfl, rfl, rfl⟩, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_⟩
+  refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- the seed's walk at the empty body
+    refine ⟨?_, ?_, ?_⟩
+    · show escapeDecodeGo [] 0 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
+      have hnil : escAt [] ⟨true, false⟩ 0 = [] := by simp [escAt]
+      rw [hnil]
+      simpa using (escapeDecodeGo_nil ([] : List UInt8) 0 0 [])
+    · rfl
+    · rfl
   all_goals solve
     | rfl
     | (simp only [modelState]; ud_lk)
@@ -910,6 +941,10 @@ models read `readBytes` and the `zeroMem` stack, and the exclusion theorems dest
 /-- info: 'LeanLLVM.Vellum.readBytes_zeroMem_zero_eight' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms readBytes_zeroMem_zero_eight
+
+/-- info: 'LeanLLVM.Vellum.decodeEntryExit_admits_ignored_cursor' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms decodeEntryExit_admits_ignored_cursor
 
 /-- info: 'LeanLLVM.Vellum.admits_latchEdge' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

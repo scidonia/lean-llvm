@@ -38,8 +38,9 @@ stepped from the plain latch; the pinnings are equalities of the same cells, so
 they force the existentials rather than competing with them
 (`assemblyLatchInv_paddr_eq`).  The exit word is `assemblyExitWord`: the decoded
 edge records the index the exit proves (`c = nps`), the refusal edge records the
-two stores the refusal performed before `cleanup41`, and the entry edge is
-`DecodeEntryExit` unchanged.
+two stores the refusal performed before `cleanup41`, and the entry edge is the
+walk's seed — cursor `0`, index `nps`, an empty store — which is what the entry
+block's two `phi`s supply.
 
 **What is proved and what is assumed.**  `run_stages` is the composition: three
 prefix facts give one run bounded by the sum of their allowances.  It consumes

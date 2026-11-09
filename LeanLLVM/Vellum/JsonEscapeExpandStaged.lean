@@ -299,12 +299,27 @@ def AssemblyLatchExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
 so `while.end`'s cursor is the list's length and `while.end35`'s two copy bases
 will be its zero constants.  The cells named here are the predecessor's, because
 the state is the exit block's *entry*: `%j.0.lcssa` and `%i.0.lcssa` do not exist
-until the block steps. -/
+until the block steps.
+
+The walk is pinned at the seed's shape — cursor `0`, index `nps`, nothing written
+— rather than left as a `DecodeInv` at an arbitrary cursor and prefix.  The block
+ignores the invariant's `i` and `out`: `while.end35`'s two entry `phi`s supply
+`0` for both `%i.0.lcssa` and `%j.0.lcssa`, so the final copy always starts at the
+body's first byte and the destination's base, whatever the invariant records.  An
+exit word that quantifies over `i` and `out` therefore admits states the run never
+produces and that its own continuation cannot reach the post from: with
+`body = [0x61, 0x5C, 0x6E]`, `st = ⟨true, false⟩`, `n = 3`, `ps = [1]`,
+`pos0 = 0` and `k0 = 0` the staging's goal is `.decoded [0x61, 0x0A] 1`; the
+generic word is satisfiable at `i = 3` and `out = [0x61, 0x0A]`, where the block
+copies `sub = n - 0 = 3` bytes from the body's first byte and returns
+`%add40 = 3`, while the goal's output length is `2`.  The seed's own shape is what
+`emptySeedRun` constructs, and it is what the continuation reads. -/
 def AssemblyEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
     (err xj : Nat) (mem : Mem) (e : State) : Prop :=
   e.pc = "while.end35" ∧ e.pre = some "while.end" ∧
-  DecodeEntryExit body st dst nps goal e ∧
+  DecodeInv body st e.mem dst nps 0 nps [] goal ∧
+  lookupName e.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps)) ∧
   lookupName e.env "%p" = some (.ptr b) ∧
   lookupName e.env "%xp" = some (.ptr xp) ∧
   lookupName e.env "%tab" = some (.ptr tab) ∧
