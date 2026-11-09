@@ -5820,16 +5820,21 @@ caller's prefix extended by the escape's encoding, and changes nothing outside t
 four bytes it wrote.
 
 `hword` is the bridge between the body's packed word and the specification's
-encoding, and it is the one equation this trace does not close.  The body's word is
-a twenty-instruction fold over the unit's bit-fields; the encoding's bytes are those
-fields at their shifts.  The equation splits by the unit's range: below `0x80` and
-below `0x800` each close by enumerating the surviving width, the sixteen-bit range
-enumerates 65 536 units (measured at 2m42s of kernel reduction), and the four-byte
-range would enumerate 1 048 576, which is past the bound this repository puts on a
-probe's time.  A nat-level decomposition in place of the enumeration needs an
-`or`-to-`add` lemma for operands with disjoint bits; the names tried in this
-toolchain (`Nat.lor_eq_add_of_and_eq_zero` and its neighbours) are not declared, so
-that route needs the lemma proved first. -/
+encoding.  **It is proved, and an earlier revision of this comment said it was
+not.**  The proof lives in `JsonEscapeEmitIdentities` — `udIfEnd32Word_toNat`,
+beside `udIfEnd3I_highSurrogate_iff` and `udIfThen26I_pairValue` — and that module
+imports this one, so the arithmetic cannot be stated where the step is.  What a
+consumer of these steps must do is therefore **import `JsonEscapeEmitIdentities` and
+hand the three equations to `udIfEnd32I_decode` and the emitter steps**; the
+obligation is the import, not the arithmetic.
+
+The earlier revision's account is kept rather than erased, because its history is
+why the import is easy to forget — and because the route it called blocked is the
+one that was taken: `Nat.lor_eq_add_of_and_eq_zero` *is* declared in this toolchain,
+and the equation closes by splitting on the unit's range — `utf8Encode`'s own ranges
+against `udIfEnd32Word`'s own selects — and reading each packed word as a sum of
+bytes at disjoint shifts.  The four-byte range's 1 048 576 units are the reason
+enumeration was refused, not a reason the equation is open. -/
 theorem udIfEnd32I_decode (env : Env) (s : State) (prev : String) (opc opa : Operand)
     (cp : BitVec 32) (adv x : BitVec 64) (dsta k : Nat) (out : List UInt8)
     (hpre : s.pre = some prev)

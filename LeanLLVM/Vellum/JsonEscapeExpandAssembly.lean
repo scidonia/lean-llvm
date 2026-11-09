@@ -240,6 +240,117 @@ theorem escapeAt_of_u_pair {body : List UInt8} {q cp cp' adv : Nat} {c : UInt8}
   rw [h1]
   simp [hc, simpleEscape_u, h4, hst]
 
+/-! ### The emitter's three walk transfers
+
+Each escape form advances the walk by one relation, and `DecodeInv.step_simple`,
+`step_six` and `step_pair` (`JsonEscapeExpandContract`) state it.  The iteration arm
+needs the *invariant* at the new cursor rather than the outcome equation alone, and
+the three laws do not give it: `DecodeInv` also carries the store and the cursor
+bound.  The transfers below are one shape at three states — the walk field is the
+law read backwards, the store field is the emitter's write (a hypothesis, because the
+write belongs to the block and this lemma is not the block), and the cursor bound is
+the encoding being no longer than the bytes the escape consumed.
+
+The cursor's monotonicity (`i ≤ q`) is a hypothesis rather than a consequence: the
+walk's list is spaced, but spacing is a property of the staging this lemma does not
+carry, and the arm supplies it where the list's range is in scope. -/
+
+/-- **The two-character transfer.**  The cursor advances two bytes, the index one,
+and the prefix gains the bytes copied plus the escape's own byte. -/
+theorem DecodeInv.step_simple_inv {body : List UInt8} {st : ClassState} {M M' : Mem}
+    {dst nps i k n : Nat} {out : List UInt8} {goal : EscapeOutcome} {q : Nat}
+    {b c1 e : UInt8}
+    (hinv : DecodeInv body st M dst nps i k out goal)
+    (hhead : (escAt body st 0).drop k = q :: (escAt body st 0).drop (k + 1))
+    (hb : body[q]? = some b) (hlt : q < body.length)
+    (hctl : IsControlB b = false)
+    (h1 : body[q + 1]? = some c1) (hs : simpleEscape c1 = some e)
+    (hqi : i ≤ q) (hq2 : q + 2 ≤ n)
+    (hstored : readBytes M' dst
+      (out ++ (body.drop i).take (q - i) ++ [e]).length =
+        some (out ++ (body.drop i).take (q - i) ++ [e])) :
+    DecodeInv body st M' dst nps (q + 2) (k + 1)
+      (out ++ (body.drop i).take (q - i) ++ [e]) goal := by
+  refine ⟨(hinv.step_simple hhead hb hlt hctl h1 hs).symm, hstored, hinv.length, ?_⟩
+  rw [List.length_append, List.length_append, List.length_singleton]
+  have htake : ((body.drop i).take (q - i)).length ≤ q - i := by
+    rw [List.length_take]
+    exact Nat.min_le_left _ _
+  have hpre := hinv.prefix_le_cursor
+  omega
+
+/-- **The six-byte transfer.**  A `\u` whose code unit stands alone advances the
+cursor six bytes and the index one; the prefix gains the copied bytes and the
+unit's encoding. -/
+theorem DecodeInv.step_six_inv {body : List UInt8} {st : ClassState} {M M' : Mem}
+    {dst nps i k n : Nat} {out : List UInt8} {goal : EscapeOutcome} {q : Nat}
+    {b c1 : UInt8} {cp : Nat}
+    (hinv : DecodeInv body st M dst nps i k out goal)
+    (hhead : (escAt body st 0).drop k = q :: (escAt body st 0).drop (k + 1))
+    (hb : body[q]? = some b) (hlt : q < body.length)
+    (hctl : IsControlB b = false)
+    (h1 : body[q + 1]? = some 0x75) (hx : hex4 body (q + 2) = some cp)
+    (ht : surrogateTail body q cp = none)
+    (hqi : i ≤ q) (hq6 : q + 6 ≤ n)
+    (hstored : readBytes M' dst
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp).length =
+        some (out ++ (body.drop i).take (q - i) ++ utf8Encode cp)) :
+    DecodeInv body st M' dst nps (q + 6) (k + 1)
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp) goal := by
+  refine ⟨(hinv.step_six hhead hb hlt hctl h1 hx ht).symm, hstored, hinv.length, ?_⟩
+  rw [List.length_append, List.length_append]
+  have htake : ((body.drop i).take (q - i)).length ≤ q - i := by
+    rw [List.length_take]
+    exact Nat.min_le_left _ _
+  have henc := utf8Encode_length_le_four cp
+  have hpre := hinv.prefix_le_cursor
+  omega
+
+/-- **The surrogate-pair transfer.**  The pair advances the cursor twelve bytes and
+the index by two — the second `\u` is a position of its own — and appends the pair's
+code point. -/
+theorem DecodeInv.step_pair_inv {body : List UInt8} {st : ClassState} {M M' : Mem}
+    {dst nps i k n : Nat} {out : List UInt8} {goal : EscapeOutcome} {q : Nat}
+    {b c1 : UInt8} {cp cp' : Nat}
+    (hinv : DecodeInv body st M dst nps i k out goal)
+    (hhead : (escAt body st 0).drop k = q :: (escAt body st 0).drop (k + 1))
+    (hb : body[q]? = some b) (hlt : q < body.length)
+    (hctl : IsControlB b = false)
+    (h1 : body[q + 1]? = some 0x75) (hx : hex4 body (q + 2) = some cp)
+    (ht : surrogateTail body q cp = some (cp', 12))
+    (hqi : i ≤ q) (hq12 : q + 12 ≤ n)
+    (hstored : readBytes M' dst
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp').length =
+        some (out ++ (body.drop i).take (q - i) ++ utf8Encode cp')) :
+    DecodeInv body st M' dst nps (q + 12) (k + 2)
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp') goal := by
+  refine ⟨(hinv.step_pair hhead hb hlt hctl h1 hx ht).symm, hstored, hinv.length, ?_⟩
+  rw [List.length_append, List.length_append]
+  have htake : ((body.drop i).take (q - i)).length ≤ q - i := by
+    rw [List.length_take]
+    exact Nat.min_le_left _ _
+  have henc := utf8Encode_length_le_four cp'
+  have hpre := hinv.prefix_le_cursor
+  omega
+
+/-! ### Axiom footprints: the emitter's three transfers
+
+The transfers consume `DecodeInv.step_*` and the encoding's length bound, and add
+no principle: each is an invariant constructor over a law already pinned at the
+development's ceiling. -/
+
+/-- info: 'LeanLLVM.Vellum.DecodeInv.step_simple_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms DecodeInv.step_simple_inv
+
+/-- info: 'LeanLLVM.Vellum.DecodeInv.step_six_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms DecodeInv.step_six_inv
+
+/-- info: 'LeanLLVM.Vellum.DecodeInv.step_pair_inv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms DecodeInv.step_pair_inv
+
 /-- **The emitter's first gate is the walk's decision.**  From the record's table
 clause and the body's byte after the escape position, the block's table read and
 its signed gate are the table's answer at that byte, and the walk reads the same
