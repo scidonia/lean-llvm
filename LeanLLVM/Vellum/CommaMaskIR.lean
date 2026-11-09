@@ -402,11 +402,15 @@ theorem evalInstr_select_reg_imm (calls : Calls) (s : State) (d r r₁ : String)
   | none => simp
   | some v =>
     cases lookupName s.env r₁ with
-    | none => simp
+    | none =>
+      repeat' split
+      all_goals first | rfl | simp_all
     | some v₁ =>
       cases v with
       | ptr a => simp
-      | vec n' w' lanes => simp
+      | vec n' w' lanes =>
+        repeat' split
+        all_goals first | rfl | simp_all
       | int w c =>
         by_cases hw : w = 1
         · subst hw
@@ -427,14 +431,20 @@ theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String
   | none => simp
   | some v =>
     cases lookupName s.env r₁ with
-    | none => simp
+    | none =>
+      repeat' split
+      all_goals first | rfl | simp_all
     | some v₁ =>
       cases lookupName s.env r₂ with
-      | none => simp
+      | none =>
+        repeat' split
+        all_goals first | rfl | simp_all
       | some v₂ =>
         cases v with
         | ptr a => simp
-        | vec n' w' lanes => simp
+        | vec n' w' lanes =>
+          repeat' split
+          all_goals first | rfl | simp_all
         | int w c =>
           by_cases hw : w = 1
           · subst hw

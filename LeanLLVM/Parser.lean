@@ -1158,14 +1158,47 @@ def parseValueInstr (dst : String) : P Stmt := do
       | .void => P.fail "icmp on a void type is not modelled"
       | .vec _ _ => P.fail "icmp on a vector of non-integer lanes is not modelled"
   | "select" =>
+      -- Two forms share one constructor.  A scalar `i1` condition selects a
+      -- whole value; a `<n x i1>` condition selects lane by lane from two
+      -- operands of one `<n x iw>` type.  The condition's type is not a field,
+      -- because it is exactly `<n x i1>` for a vector result and `i1` for a
+      -- scalar one, so the parser reads it and checks it against that rule —
+      -- which is what makes the printer's emission re-parse.
       let (condTy, c) ← parseTypedOperand
       P.expect ","
       let (ty, a) ← parseTypedOperand
       P.expect ","
-      let (_, b) ← parseTypedOperand
-      if condTy ≠ .int 1 then P.fail "select condition must be i1"
-      else if let .vec _ _ := ty then P.fail "select of a vector value is not modelled"
-      else pure (.instr (.select dst ty c a b))
+      let (rhsTy, b) ← parseTypedOperand
+      match condTy with
+      | .int 1 =>
+          if let .vec _ _ := ty then
+            P.fail "select of a vector value with a scalar i1 condition is not \
+                modelled: a vector select needs a <n x i1> condition"
+          else if ty ≠ rhsTy then
+            P.fail s!"select operands must have the same type, got {ty.render} \
+                and {rhsTy.render}"
+          else pure (.instr (.select dst ty c a b))
+      | .vec n (.int 1) =>
+          match ty, rhsTy with
+          | .vec m (.int w), .vec m' (.int w') =>
+              if m ≠ n then
+                P.fail s!"select condition has {n} lanes but its operands have \
+                    {m}: a vector select's lane counts must agree"
+              else if m' ≠ m then
+                P.fail s!"select operands have different lane counts, {m} and \
+                    {m'}: a vector select's operands must have the same type"
+              else if w' ≠ w then
+                P.fail s!"select operands must have the same type, got \
+                    <{m} x i{w}> and <{m'} x i{w'}>"
+              else pure (.instr (.select dst ty c a b))
+          | _, _ =>
+              P.fail "select with a <n x i1> condition requires vector operands \
+                  of the same lane count"
+      | .vec _ _ =>
+          P.fail s!"select condition must be <n x i1>, got {condTy.render}: a \
+              vector condition's element type must be i1"
+      | _ =>
+          P.fail s!"select condition must be i1, got {condTy.render}"
   | "trunc" => parseCast dst fun d wi wo v => .trunc d wi wo v
   | "zext" => parseCast dst fun d wi wo v => .zext d wi wo v
   | "sext" => parseCast dst fun d wi wo v => .sext d wi wo v

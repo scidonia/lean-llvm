@@ -228,13 +228,22 @@ of this unit forced.  The list clause is the exact one: `xp` holds this body's
 thirty-two bytes past `b + n`.
 
 The destination's extent is `dst` through the decoded length plus sixty-four bytes,
-and the caller names the room it holds: `dmax` is that room, the caller promises the
-decode writes at most `dmax`, and the store covers `dst + dmax + 64`.  A caller that
-knows the body's own list is spaced as the body's positions are can take `dmax = n`,
-because `escapeDecode_length_le` bounds the decode by the body's length under exactly
-that spacing — and taking the spacing from `escapePositionsFrom` is the step still
-owed, so the record states the caller's promise rather than the inequality it would
-prefer to derive.
+and the record asks for `dst + n + 64`: the number `kernel/json/escape.h` promises
+the caller allocates, and not a bound the caller chooses.  That number is the extent
+the body reaches only because a decode never writes more than the body holds, which
+is `escapeDecode_length_le` under the spacing `Spaced`.
+
+**The spacing itself is not yet derived, and this clause leans on it.** What is
+missing is `Spaced body 0 (escapePositionsFrom body ⟨true, false⟩)`, and it needs the
+escape-span analysis: no byte between a position and the bytes its escape consumes is
+a control byte or a run-starting backslash — the escape character is one of
+`"\/bfnrtu`, all above `0x1F`, and where it is a backslash its predecessor was one
+too, so the run parity refuses it; the hexadecimal digits are `0-9A-Fa-f`, none of
+them either; and the only position inside a surrogate pair's twelve bytes is the
+second `\u` at `q + 6`, which the walk drops.  Stating `n + 64` rather than a
+smaller, caller-chosen extent is deliberate: a contract narrower than the store the
+body reaches is the one defect no `post` can repair, so the clause is stated at the
+ABI's boundary and the derivation is owed as a proof, not as a narrower claim.
 
 The store regions are also stated apart from the body, because a decode that wrote
 over its own input would satisfy the byte claims while destroying the caller's
@@ -257,7 +266,7 @@ the proof having to notice it.
 def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
   pre := fun args mem _ =>
-    ∃ (b n dst err xp xj : Nat) (nps pos0 dmax : Nat) (body : List UInt8) (ps : List Nat)
+    ∃ (b n dst err xp xj : Nat) (nps pos0 : Nat) (body : List UInt8) (ps : List Nat)
       (err0 : Nat) (k0 : Nat),
       args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
         .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
@@ -275,14 +284,12 @@ def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
       readBytes mem err 8 = some (wordBytes 8 err0) ∧
       -- thirty-two readable bytes past the body
       HasBytes mem (b + n) 32 ∧
-      -- the destination extent: the caller names the room it holds for the decode
-      -- and promises sixty-four bytes past whatever the decode wrote
-      (∀ out k, escapeDecode body (ps.map fun q => q - pos0) = .decoded out k →
-        out.length ≤ dmax) ∧
-      HasBytes mem dst (dmax + 64) ∧
+      -- the destination extent: the body's length plus sixty-four bytes, which is
+      -- the number the header promises the caller allocates
+      HasBytes mem dst (n + 64) ∧
       -- and the store regions apart from the body and from the list
-      (b + n + 32 ≤ dst ∨ dst + dmax + 64 ≤ b) ∧
-      (xp + 4 * nps ≤ dst ∨ dst + dmax + 64 ≤ xp)
+      (b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b) ∧
+      (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp)
   post := fun args mem _ o =>
     match o with
     | .ret (some v) m => escapeExpandPost args mem m v

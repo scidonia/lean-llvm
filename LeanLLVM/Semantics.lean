@@ -229,6 +229,14 @@ def Value.vecLanes (n w : Nat) : Value → Option (List (BitVec w))
       else none
   | _ => none
 
+/-- Lane-wise selection: lane `j` of the result is `a[j]` when the condition's
+lane `j` is set and `b[j]` when it is clear.  The three lists are zipped in
+lockstep, so the result is as long as the shortest; the instruction's shape
+check gives all three the same length. -/
+def selectLanes {w : Nat} (cs : List (BitVec 1)) (a b : List (BitVec w)) :
+    List (BitVec w) :=
+  (cs.zip (a.zip b)).map fun (c, ab) => if c = 1 then ab.1 else ab.2
+
 /-- Little-endian lane packing: lane `k` becomes bit `k` of the natural. -/
 def lanesToNat : List (BitVec 1) → Nat
   | [] => 0
@@ -388,13 +396,35 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       | some (.ptr x), some (.ptr y) =>
           (evalICmpPtr pred x y).map fun r => s.bind d (.int 1 r)
       | _, _ => none
-  | .select d _ty c a b =>
-      match evalOperand s c, evalOperand s a, evalOperand s b with
-      | some (.int 1 bit), some va, some vb =>
-          if bit = (1 : BitVec 1) then some (s.bind d va)
-          else if bit = (0 : BitVec 1) then some (s.bind d vb)
-          else none
-      | _, _, _ => none
+  | .select d ty c a b =>
+      -- Two forms share the constructor and the condition's value decides
+      -- between them, so the scalar reading is the one it always was.  A
+      -- `<n x i1>` condition selects lane by lane: lane `j` is `a[j]` where the
+      -- condition's lane is set and `b[j]` where it is clear.  The result type
+      -- fixes the operand shape `<n x iw>`, and a value of any other shape is
+      -- `ub` — the parser refuses that text, so it is the hand-built-AST case.
+      match evalOperand s c with
+      | some (.int 1 bit) =>
+          match evalOperand s a, evalOperand s b with
+          | some va, some vb =>
+              if bit = (1 : BitVec 1) then some (s.bind d va)
+              else if bit = (0 : BitVec 1) then some (s.bind d vb)
+              else none
+          | _, _ => none
+      | some (.vec nc 1 cs) =>
+          match ty with
+          | .vec n (.int w) =>
+              if nc = n then
+                match evalOperand s a, evalOperand s b with
+                | some va, some vb =>
+                    match va.vecLanes n w, vb.vecLanes n w with
+                    | some la, some lb =>
+                        some (s.bind d (.vec n w (selectLanes cs la lb)))
+                    | _, _ => none
+                | _, _ => none
+              else none
+          | _ => none
+      | _ => none
   | .trunc d wIn wOut v =>
       match evalOperand s v with
       | some (.int w' x) =>
@@ -1125,7 +1155,32 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
                            rfl)
             | succ j => rfl
         | ptr a => rfl
-        | vec n w l => rfl
+        | vec n w l =>
+          -- A vector condition selects lane by lane only at lane width 1; a
+          -- wider or narrower condition value matches no arm and yields `none`,
+          -- and every vector-valued arm is independent of the predecessor
+          -- field, so both sides agree after the shape checks.
+          cases w with
+          | zero => rfl
+          | succ k =>
+            cases k with
+            | zero =>
+              simp only [Nat.zero_add]
+              try dsimp only
+              cases ty with
+              | vec m elem =>
+                cases elem with
+                | int ws =>
+                  try dsimp only
+                  repeat' split
+                  all_goals rfl
+                | ptr => rfl
+                | void => rfl
+                | vec _ _ => rfl
+              | int _ => rfl
+              | ptr => rfl
+              | void => rfl
+            | succ j => rfl
   | trunc d wIn wOut v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with

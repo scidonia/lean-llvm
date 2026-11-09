@@ -99,7 +99,15 @@ def Instr.render : Instr → String
   | .icmpPtr d pred a b =>
       s!"  {d} = icmp {pred.render} ptr {a.token}, {b.token}"
   | .select d ty c a b =>
-      s!"  {d} = select i1 {c.token}, {a.render ty}, {b.render ty}"
+      -- The condition's type is not a field: a vector result `<n x iw>` takes a
+      -- `<n x i1>` condition and a scalar result an `i1`.  Emitting it from the
+      -- result type is what makes the printed form re-parse to the same
+      -- instruction, because the parser checks the condition against the same
+      -- rule.
+      let condTy : Ty := match ty with
+        | .vec n _ => .vec n (.int 1)
+        | _ => .int 1
+      s!"  {d} = select {condTy.render} {c.token}, {a.render ty}, {b.render ty}"
   | .trunc d wIn wOut v =>
       s!"  {d} = trunc i{wIn} {v.token} to i{wOut}"
   | .zext d wIn wOut v =>

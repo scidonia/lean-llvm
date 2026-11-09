@@ -26,6 +26,22 @@ inductive Instr where
   every accepted operand is a pointer, which the parser checks against the
   function's register types, so the printer emits `ptr`. -/
   | icmpPtr (dst : String) (pred : IPred) (lhs rhs : Operand)
+  /-- A selection.  Two forms share this constructor, distinguished by the
+  result type `ty` and by the condition's value:
+
+  * a scalar select, `select i1 %c, iw %a, iw %b`, takes a whole value from
+    one operand and has `ty` a scalar type;
+  * a vector select, `select <n x i1> %c, <n x iw> %a, <n x iw> %b`, takes
+    **lane `j`** from `a` when the condition's lane `j` is set and from `b`
+    when it is clear, and has `ty` the operand type `<n x iw>`.  The condition's
+    type is not a field: it is `<n x i1>` whenever `ty` is a vector, which is
+    what the printer emits and what the parser checks.  LLVM's `select` on a
+    vector condition is vectorised — element-wise by construction — not a
+    uniform test of the whole mask, so there is no all-lanes reading here.
+
+  The element type of a vector operand is an integer lane width, because that
+  is the only vector element type `Value` carries; a `ty` of any other shape has
+  no vector reading and the semantics refuses it. -/
   | select (dst : String) (ty : Ty) (cond lhs rhs : Operand)
   | trunc (dst : String) (wIn wOut : Nat) (v : Operand)
   | zext (dst : String) (wIn wOut : Nat) (v : Operand)
