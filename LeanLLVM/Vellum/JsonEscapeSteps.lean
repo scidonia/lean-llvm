@@ -87,6 +87,43 @@ def UnchangedOutside (mem m : Mem) (regions : List (Nat × Nat)) : Prop :=
 /-- A boolean flag as the eight bytes a caller's carry slot holds. -/
 def flagBytes (b : Bool) : List UInt8 := natToBytes (if b then 1 else 0) 8
 
+/-- The run carry both units hand on: the sixteen-byte pair of run-open and run
+parity words, with the classifier state's `oddRun` equal to their conjunction.
+
+The width is the escape list's, because that is the slot the next iteration reads:
+`xl_lanes.exit` stores two words at `carry` and the list record's `pre` reads
+those sixteen bytes.  The mask unit's `%sc` slot is twenty-four bytes
+(`carrySlot`), whose first two words are this pair; `carryPair_of_carrySlot`
+derives the pair from that clause, so the two records name one definition without
+claiming a width the escape list does not write.  `st.oddRun = opened && ppar` is
+a conjunct of the predicate, not a convention beside it: a caller that supplies
+the pair has supplied the parity the next block's lanes are entered with. -/
+def carryPair (mem : Mem) (a : Nat) (st : ClassState) (opened ppar : Bool) : Prop :=
+  readBytes mem a 16 = some (flagBytes opened ++ flagBytes ppar) ∧
+  st.oddRun = (opened && ppar)
+
+/-- The mask unit's `%sc` clause supplies the pair at its first sixteen bytes.
+`carrySlot` is the two flag words followed by the in-string word, so a read of
+the twenty-four-byte slot is a read of the pair at its start; the mask record's
+`%sc` clause and this one therefore name one definition, and the in-string word
+is the only part of its slot the escape list does not share. -/
+theorem carryPair_of_carrySlot {mem : Mem} {a : Nat} {st : ClassState}
+    {opened ppar inside : Bool}
+    (h : readBytes mem a 24 = some (carrySlot opened ppar inside))
+    (hodd : st.oddRun = (opened && ppar)) : carryPair mem a st opened ppar := by
+  have h24 : readBytes mem a (16 + 8) = some (carrySlot opened ppar inside) := by
+    rwa [show (16 + 8 : Nat) = 24 from rfl]
+  obtain ⟨h16, -⟩ := readBytes_split mem a 16 8 h24
+  have htake : (carrySlot opened ppar inside).take 16 =
+      flagBytes opened ++ flagBytes ppar := by
+    have hlen : (flagBytes opened ++ flagBytes ppar).length = 16 := by
+      simp [flagBytes, natToBytes_length]
+    rw [show carrySlot opened ppar inside =
+      flagBytes opened ++ (flagBytes ppar ++
+        natToBytes (if inside then 0xFFFFFFFFFFFFFFFF else 0) 8) from rfl,
+      ← List.append_assoc, ← hlen, List.take_left]
+  exact ⟨by rw [h16, htake], hodd⟩
+
 /-- The reserve the measured batch writes past the true count: eight entries of
 four bytes. -/
 def batchReserve : Nat := 8
@@ -143,6 +180,15 @@ start where the caller's count says the stream ends.  The positions are the bloc
 own, lifted by `blockAddr blk0`, because the store's positions are document offsets
 and the specification's are block lanes.
 
+The carry clause is the pair the run writes back and the next block's call reads:
+the run stores the block's outgoing run-open and run-parity words at `carry`, and
+`carryPair` names that pair with the state it belongs to.  The outgoing state is
+the one `carry64 lo hi st` names — the same pair the mask unit writes into its
+`%sc` slot — so the two records name one definition rather than spelling the pair
+twice.  The pre's third exclusion is what makes the clause true: without it a
+`carry` inside the stream's capacity is overwritten by the batch's stores and the
+pair the run wrote is not what memory holds.
+
 The unchanged conjunct is over the extent the run wrote, which includes the batch
 reserve the run touched. -/
 def escapePositionsPost (args : List Value) (mem m : Mem) : Prop :=
@@ -153,13 +199,14 @@ def escapePositionsPost (args : List Value) (mem m : Mem) : Prop :=
     readBytes mem (blockAddr blk0) 64 = some (block64 lo hi) ∧
     bs = specBackslash64 lo hi st ∧ ctl = specControl64 lo hi st ∧
     im = specInString64 lo hi st ∧
-    st.oddRun = (prevb && prevs) ∧
-    readBytes mem carry 16 = some (flagBytes prevb ++ flagBytes prevs) ∧
+    carryPair mem carry st prevb prevs ∧
     readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
     readBytes m xn 8 = some (wordBytes 8 (xn0 +
       (escapePositionsFrom (block64 lo hi) st).length)) ∧
     readBytes m (xp + 4 * xn0) (4 * (escapePositionsFrom (block64 lo hi) st).length) =
       some (positionsBytes 4 (blockPositions blk0 lo hi st)) ∧
+    carryPair m carry (carry64 lo hi st) (IsBackslashB (hi ⟨31, by decide⟩))
+      (carry64 lo hi st).oddRun ∧
     UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (xn, 8), (carry, 16)]
 
 /-- The position list's boundary record.
@@ -178,20 +225,23 @@ block's positions, and the specification reads them off its bytes; the entry poi
 does not read the block, so this clause is not a readability obligation the body
 has.
 
-**The count's slot is disjoint from the other two, and the exclusion is partial on
-purpose.** The body stores the outgoing carry at `carry` and `carry + 8` before it
+**The count's slot is disjoint from the other two, and the carry's from the
+stream.** The body stores the outgoing carry at `carry` and `carry + 8` before it
 reads the count, and the batch loop both reads the count and writes the stream, so a
 count slot that is also the carry slot is overwritten by the carry's first store — the
 value `if.end.i4` then reads is not the caller's count — and a count slot inside the
-stream's capacity is overwritten by a batch. **`carry` versus `xp` needs no clause**:
-the carry's stores precede every batch store, and every byte the claim names is
-rewritten by a batch afterwards, so a shared byte carries the batch's value and not
-the carry's. **The block versus `xp` needs none either**: the positions are a function
-of the block in the caller's *input* memory, and the run's memory is never read for
-it. The clause is the minimum that makes `post` true rather than the full pairwise
-exclusion, because a staging promise the proof does not need is a caller obligation
-that should not be asked for; it is stated here, with the two exclusions that are not
-made and their reasons, so that a later reader does not uniformise it.
+stream's capacity is overwritten by a batch. **`carry` versus `xp` needs a clause
+because `post` now claims the pair the run stores:** the stores precede every batch
+store, so a carry byte inside the stream's written extent carries the batch's value
+and not the pair, and the next block's call would read a pair the run never wrote.
+The counterexample is `carry = xp = 1000`, `xn = 2000`, `xn0 = 0`, where the other
+two exclusions hold and the first batch writes at `xp + 4 * xn0 = 1000`; the third
+disjunction is exactly `pipelineRegions`' `DisjointRegions` promise, so the clause
+adds no burden the pipeline does not already stage. **The block versus `xp` needs
+none**: the positions are a function of the block in the caller's *input* memory,
+and the run's memory is never read for it. The clauses are the minimum that makes
+`post` true; the two exclusions that are not made are recorded with their reasons,
+so that a later reader does not uniformise it.
 
 **The count is a pointer-arith obligation, not a capacity one.** `if.end.i4` forms
 `%xp + 4 * %xn` with a `getelementptr`, whose 64-bit index the model sign-extends
@@ -216,8 +266,7 @@ def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract wher
       bs = specBackslash64 lo hi st ∧ ctl = specControl64 lo hi st ∧
       im = specInString64 lo hi st ∧
       -- the carry pair, and the parity the block's first lane is entered with
-      st.oddRun = (prevb && prevs) ∧
-      readBytes mem carry 16 = some (flagBytes prevb ++ flagBytes prevs) ∧
+      carryPair mem carry st prevb prevs ∧
       -- the count in, and the capacity: this block's sixty-four lanes plus the
       -- eight-entry batch reserve
       readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
@@ -232,6 +281,12 @@ def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract wher
       -- overwrite the count the body reads back
       (xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn) ∧
       (carry + 16 ≤ xn ∨ xn + 8 ≤ carry) ∧
+      -- the carry's slot is disjoint from the stream's capacity too: the post
+      -- claims the pair the run stores there, and a batch store in the carry's
+      -- sixteen bytes would overwrite it.  The pipeline already promises this
+      -- (`pipelineRegions`' `DisjointRegions`), so the clause asks for nothing
+      -- its caller does not stage.
+      (carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry) ∧
       HasBytes mem xp (4 * blockMax xn0) ∧
       -- the position base is a `uint32` that does not truncate
       blk0.toNat * 64 + 64 < 2 ^ 32
@@ -1286,6 +1341,14 @@ theorem escapeExpand_spaced_drop {body : List UInt8} {ps : List Nat} {pos0 : Nat
 /-- info: 'LeanLLVM.Vellum.escapeAt_cases' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms escapeAt_cases
+
+/-- info: 'LeanLLVM.Vellum.carryPair' does not depend on any axioms -/
+#guard_msgs in
+#print axioms carryPair
+
+/-- info: 'LeanLLVM.Vellum.carryPair_of_carrySlot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms carryPair_of_carrySlot
 
 
 end LeanLLVM.Vellum

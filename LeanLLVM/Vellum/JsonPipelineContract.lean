@@ -144,6 +144,51 @@ lands; the regions above are the caller's promise this record can make now. -/
 def DisjointRegions (rs : List (Nat × Nat)) : Prop :=
   rs.Pairwise fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1
 
+/-! ### The cursors' room
+
+The two per-block units that advance a cursor — POS8's entry emitter and the
+escape list — each state their 64-bit domain as a clause of their own `pre`:
+`k + 64 * ent.length + 9 < 2 ^ 63` and `xn0 < 2 ^ 63`.  Both are the same
+arithmetic at the same document, so they are stated here once, as the room a
+cursor needs to survive the whole document's growth.  A call site that carries
+`cursorRoom count blocks reserve` reads either unit's clause off
+`cursorRoom_bounds` and does not restate the other unit's sum.
+-/
+
+/-- A cursor that starts at `count`, advances by at most one block's sixty-four
+lanes per block, and has `reserve` slots past the last true value stays inside
+the 64-bit address domain. -/
+def cursorRoom (count blocks reserve : Nat) : Prop :=
+  count + 64 * blocks + reserve < 2 ^ 63
+
+/-- **One room clause, both units' cursor preconditions.**  A call at block `i`
+that covers `nblk` more blocks receives a count at most `count + 64 * i`; POS8's
+`pre` asks `k + 64 * nblk + 9 < 2 ^ 63` of it, and the escape list's asks
+`xn0 < 2 ^ 63` with no reserve.  Both follow from the same room clause, which is
+why the staging states the room and not either record's sum. -/
+theorem cursorRoom_bounds {count blocks reserve i nblk : Nat}
+    (h : cursorRoom count blocks reserve) (hin : i + nblk ≤ blocks)
+    (hres : 9 ≤ reserve) :
+    count + 64 * i + 64 * nblk + 9 < 2 ^ 63 ∧ count + 64 * i < 2 ^ 63 := by
+  have hroom : count + 64 * blocks + reserve < 2 ^ 63 := h
+  have hroom' : count + (64 * blocks + reserve) < 2 ^ 63 := by
+    simpa only [Nat.add_assoc] using hroom
+  have hmul : 64 * (i + nblk) ≤ 64 * blocks := Nat.mul_le_mul_left 64 hin
+  have hsum : 64 * i + 64 * nblk + 9 ≤ 64 * blocks + reserve := by
+    calc
+      64 * i + 64 * nblk + 9 = 64 * (i + nblk) + 9 := by rw [Nat.mul_add]
+      _ ≤ 64 * blocks + 9 := Nat.add_le_add_right hmul 9
+      _ ≤ 64 * blocks + reserve := Nat.add_le_add_left hres _
+  have hpos8 : count + (64 * i + 64 * nblk + 9) < 2 ^ 63 :=
+    Nat.lt_of_le_of_lt (Nat.add_le_add_left hsum count) hroom'
+  have hi : i ≤ blocks := Nat.le_trans (Nat.le_add_right i nblk) hin
+  have hmi : 64 * i ≤ 64 * blocks := Nat.mul_le_mul_left 64 hi
+  have hesc : count + 64 * i < 2 ^ 63 :=
+    Nat.lt_of_le_of_lt
+      (Nat.le_trans (Nat.add_le_add_left hmi count) (Nat.le_add_right _ reserve))
+      hroom
+  exact ⟨by simpa only [Nat.add_assoc] using hpos8, hesc⟩
+
 /-! ### The staging precondition -/
 
 /-- The caller's staging promise, at the pipeline's twenty-argument ABI.  Each
@@ -170,9 +215,11 @@ clause names the unit record it is read from:
   the last block's incoming count plus the batch reserve;
 * the arena capacity is the `ndst0 + n + 64` extent the expander reaches from its
   cursor (C126), and the event stream is the caller's `ev` at its ABI capacity;
-* the 64-bit domains are the records' own: the escape list's cursor is
-  sign-extended into an address (`xn0 < 2 ^ 63`), and the entry position base is
-  a `uint32` that does not truncate;
+* the 64-bit domains are the units' own, stated once: `cursorRoom` bounds both
+  growing cursors over the whole document, so POS8's
+  `k + 64 * ent.length + 9 < 2 ^ 63` and the escape list's `xn0 < 2 ^ 63` follow
+  by `cursorRoom_bounds` rather than being restated here; the entry position base
+  is a `uint32` that does not truncate;
 * the arm word is a selector, and its reserved bits are zero (`pipeline.h`).
 -/
 def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
@@ -209,9 +256,11 @@ def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
     0 < bs.length ∧
     -- the entry table: 8 KiB = 1024 u64 words, `pos8Table`
     readBytes mem tab 8192 = some pos8Table ∧
-    -- the two carry slots, all zero for the document's first block
+    -- the two carry slots, all zero for the document's first block; the escape
+    -- list's is `carryPair`, the same definition the mask unit's `%sc` slot names
+    -- at its first two words
     readBytes mem sc 24 = some (carrySlot false false false) ∧
-    readBytes mem xcarry 16 = some (flagBytes false ++ flagBytes false) ∧
+    carryPair mem xcarry ⟨false, false⟩ false false ∧
     -- the counts, read in by the pipeline and by the escape list
     readBytes mem nk 8 = some (wordBytes 8 nk0) ∧
     readBytes mem nxp 8 = some (wordBytes 8 nxp0) ∧
@@ -227,15 +276,52 @@ def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
     -- the stage-2 cursors, read in (the refusal slot is in the read set below)
     readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
     readBytes mem nev 8 = some (wordBytes 8 nev0) ∧
-    -- the units' 64-bit domains
-    nk0 < 2 ^ 63 ∧
-    nxp0 < 2 ^ 63 ∧
+    -- the two growing cursors' 64-bit room over the whole document.  The
+    -- initial cursors' own bounds do not survive the growth: with `nk0 < 2 ^ 63`
+    -- and a capacity at `2 ^ 63 + 100`, one block already hands POS8 a count of
+    -- `2 ^ 63 + 63` — the witness beside this record.  The room is what the
+    -- next iteration's calls consume, and both units' clauses read it through
+    -- `cursorRoom_bounds`.
+    cursorRoom nk0 (pipelineBlocks bs.length) 9 ∧
+    cursorRoom nxp0 (pipelineBlocks bs.length) 9 ∧
     64 * pipelineBlocks bs.length + 63 < 2 ^ 32 ∧
     -- the arm selector, bits three and above reserved and zero
     arm.toNat < 8 ∧
     -- the read set, and the staged objects' separation
     (∀ r ∈ pipelineReads tab nk0 nxp0 args, HasBytes mem r.1 r.2) ∧
     DisjointRegions (pipelineRegions tab nk0 nxp0 ndst0 args)
+
+/-! ### The room clause's witness
+
+Kept beside the staging rather than in a later module, because it is the reason
+the clause is written the way it is: the clauses the staging used to state about
+the entry count admitted a state whose second iteration hands POS8 a count at or
+above `2 ^ 63`.  The state below satisfies the initial-cursor bound, the block
+count's `uint32` bound and the capacity clause, and fails the room.
+-/
+
+/-- **The room clause is not implied by the staging's other count clauses.**  A
+one-block document with `nk0 = 2 ^ 63 - 1` and a capacity at `2 ^ 63 + 100`
+satisfies `nk0 < 2 ^ 63`, `64 * blocks + 63 < 2 ^ 32` and
+`nk0 + 64 * blocks + 9 ≤ epcap.toNat`, and the count the next block's POS8 call
+receives is at or above `2 ^ 63`, which its `pre` refuses.  The same arithmetic
+applies to the escape count with `nxp0` in place of `nk0`, which is why the
+staging states the room for both. -/
+theorem cursorRoom_not_implied_by_old_staging :
+    ∃ (nk0 blocks : Nat) (epcap : BitVec 64),
+      nk0 < 2 ^ 63 ∧ 64 * blocks + 63 < 2 ^ 32 ∧
+      nk0 + 64 * blocks + 9 ≤ epcap.toNat ∧
+      ¬ cursorRoom nk0 blocks 9 := by
+  refine ⟨2 ^ 63 - 1, 1, BitVec.ofNat 64 (2 ^ 63 + 100), ?_, ?_, ?_, ?_⟩
+  · decide
+  · decide
+  · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide)]
+    decide
+  · have hlt : ¬ (2 ^ 63 - 1 + 64 * 1 + 9 < 2 ^ 63) := by
+      have h72 : 2 ^ 63 - 1 + 64 * 1 + 9 = 2 ^ 63 + 72 := by decide
+      rw [h72]
+      exact Nat.not_lt_of_ge (Nat.le_add_right _ 72)
+    simpa only [cursorRoom] using hlt
 
 /-! ### The post -/
 
@@ -307,5 +393,23 @@ def Γ_pipeline_units : MemContract where
    .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
    .int 64 0]).length == 13
 #guard (pipelineReads 1024 0 0 []).length == 0
+
+/-! ### Axiom footprints
+
+The room derivation carries no axioms, and the witness only `propext` (its
+`decide` closes a closed comparison).
+-/
+
+/-- info: 'LeanLLVM.Vellum.cursorRoom' does not depend on any axioms -/
+#guard_msgs in
+#print axioms cursorRoom
+
+/-- info: 'LeanLLVM.Vellum.cursorRoom_bounds' does not depend on any axioms -/
+#guard_msgs in
+#print axioms cursorRoom_bounds
+
+/-- info: 'LeanLLVM.Vellum.cursorRoom_not_implied_by_old_staging' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms cursorRoom_not_implied_by_old_staging
 
 end LeanLLVM.Vellum

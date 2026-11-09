@@ -9973,3 +9973,17 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.staging_count_bound_not_implied' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.PipelineBodyFacts.staging_count_bound_not_implied
+
+/-! #### The two records that could not be falsified until now -/
+
+/-- info: 'LeanLLVM.Vellum.cursorRoom_bounds' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.cursorRoom_bounds
+
+/-- info: 'LeanLLVM.Vellum.cursorRoom_not_implied_by_old_staging' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.cursorRoom_not_implied_by_old_staging
+
+/-- info: 'LeanLLVM.Vellum.carryPair_of_carrySlot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.carryPair_of_carrySlot
