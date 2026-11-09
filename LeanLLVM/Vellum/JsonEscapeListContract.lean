@@ -14,6 +14,9 @@ stated where it is used rather than in one conjunction:
   carry stores), and a remaining-block induction over the writer loop that
   carries it — the loop's exit fact says nothing about the memory it did not
   claim;
+* the same constructors as presence, and the same induction carrying it: the
+  record's exclusion names the whole capacity, so what a caller staged there is
+  handed on as presence rather than as a byte equality;
 * the writer's entry, with the inline batch's stream and count readbacks as
   *components*, because refining a supplied term against the unfolded
   `ListLoopInv`/`ListWriterInv` conjunction is what times out;
@@ -166,6 +169,46 @@ theorem unchangedOutside_lxMem2 {mem0 m : Mem} {regions : List (Nat × Nat)}
     exact ⟨r, hr, by omega, by rw [natToBytes_length]; omega⟩
   · obtain ⟨r, hr, hlo, hhi⟩ := hin
     exact ⟨r, hr, by omega, by rw [natToBytes_length]; omega⟩
+
+/-! ### The same constructors, as presence
+
+The exits a unit's post describes as *touched* extents are still present
+afterwards: the body only stores, and a store adds cells rather than removing
+them.  So each constructor the frame above is stated for has a presence form too,
+and the record's capacity clause travels the same path its unchanged-outside
+clause does. -/
+
+/-- The inline batch's writes preserve every present region. -/
+theorem hasBytes_inlWrites {mem : Mem} {a K : Nat} (h : HasBytes mem a K) :
+    ∀ (base : BitVec 32) (esc : BitVec 64) (o n : Nat),
+      HasBytes (inlWrites base esc o n mem) a K
+  | base, esc, o, 0 => h
+  | base, esc, o, n + 1 => by
+      show HasBytes (writeBytes (inlWrites base esc o n mem) (o + 4 * n)
+        (inlBytes base esc n)) a K
+      exact hasBytes_writeBytes (hasBytes_inlWrites h base esc o n)
+
+/-- The inline batch's block writes the eight inline entries and the count. -/
+theorem hasBytes_lstIfEnd4Mem {mem : Mem} {a K : Nat} (h : HasBytes mem a K)
+    (base : BitVec 32) (esc : BitVec 64) (o xn count : Nat) :
+    HasBytes (lstIfEnd4Mem base esc o xn count mem) a K := by
+  unfold lstIfEnd4Mem
+  exact hasBytes_writeBytes (hasBytes_inlWrites h base esc o 8)
+
+/-- The out-of-line batch's eight entries. -/
+theorem hasBytes_batchMem {mem : Mem} {a K : Nat} (h : HasBytes mem a K)
+    (base : BitVec 32) (esc : BitVec 64) (o : Nat) :
+    HasBytes (batchMem base esc o mem) a K := by
+  unfold batchMem
+  repeat apply hasBytes_writeBytes
+  exact h
+
+/-- The exit block's two carry stores. -/
+theorem hasBytes_lxMem2 {mem : Mem} {a K : Nat} (h : HasBytes mem a K)
+    (bs w : BitVec 64) (carry : Nat) : HasBytes (lxMem2 mem bs w carry) a K := by
+  unfold lxMem2 lxMem1
+  repeat apply hasBytes_writeBytes
+  exact h
 
 /-! ### The writer's entry
 
@@ -321,10 +364,27 @@ theorem lstWriter_step_carry (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (positio
   · rw [readBytes_batchMem_below base w o s.mem 16 carry h]
   · rw [readBytes_batchMem_above base w o s.mem 16 carry h]
 
+/-- A writer step preserves every present region: its memory is the batch at `o`
+and the count at `xn`, and both are stores. -/
+theorem lstWriter_step_presence (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List Nat)
+    (base : BitVec 32) (used o : Nat) (s : State) (w : BitVec 64)
+    (hinv : lstWriterInv blk0 xp xn xn0 position base used o s w)
+    (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
+    ∀ (e : State), step (escapeListCalls Γ_xl_batch) escapeListFunction s = .jump e →
+      HasBytes e.mem xp (4 * blockMax xn0) := by
+  obtain ⟨e', hstep', hmem⟩ := lstWriter_step_mem blk0 xp xn xn0 position base used o s w hinv
+  intro e hstep
+  rw [hstep] at hstep'
+  have heq : e = e' := Ctrl.jump.inj hstep'
+  subst e'
+  rw [hmem]
+  exact hasBytes_writeBytes (hasBytes_batchMem hhas base w o)
+
 /-- **The writer loop, carrying the frame.**  The same remaining-block induction
 as `lstWriter_run`, with the memory's agreement with the input outside the three
 regions in the invariant; the exit fact alone says nothing about the bytes the
-loop did not claim. -/
+loop did not claim.  The presence conjunct rides the same induction: every step's
+memory is a batch store and a count store, and neither removes a byte. -/
 theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position : List Nat)
     (base : BitVec 32) (mem0 : Mem) (carryBytes : List UInt8)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
@@ -334,15 +394,17 @@ theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position
       UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0) →
       readBytes s.mem carry 16 = some carryBytes →
       ctpop w ≤ 8 * r →
+      HasBytes s.mem xp (4 * blockMax xn0) →
       ∃ (e : State) (j : Nat), j ≤ r + 1 ∧ lstWriterExit blk0 xp xn xn0 position e ∧
         UnchangedOutside mem0 e.mem (escapeRegions xp xn carry xn0) ∧
         readBytes e.mem carry 16 = some carryBytes ∧
+        HasBytes e.mem xp (4 * blockMax xn0) ∧
         ∀ m, runFuel (escapeListCalls Γ_xl_batch) (j + m) escapeListFunction s =
           runFuel (escapeListCalls Γ_xl_batch) m escapeListFunction e := by
   intro r
   induction r with
   | zero =>
-      rintro used o s w hInv hframe hcarry hBnd
+      rintro used o s w hInv hframe hcarry hBnd hhas
       have hInv0 := hInv
       obtain ⟨_hpc, ⟨_p, _oo, _oc, _hpre, _hoo, _hoc, _hvo, _hvc, _hocv⟩, hLLI, _hcur,
         _hkeep, _hconv, _hxn, hpair, hplt, _hbase, _hcap⟩ := hInv0
@@ -366,11 +428,13 @@ theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position
       have hcarry' : readBytes e.mem carry 16 = some carryBytes := by
         rw [lstWriter_step_carry blk0 xp xn xn0 carry position base used o s w hInv hcx hcarr e hstep]
         exact hcarry
-      refine ⟨e, 1, by omega, hexit, hframe', hcarry', fun m => ?_⟩
+      have hhas' : HasBytes e.mem xp (4 * blockMax xn0) :=
+        lstWriter_step_presence blk0 xp xn xn0 position base used o s w hInv hhas e hstep
+      refine ⟨e, 1, by omega, hexit, hframe', hcarry', hhas', fun m => ?_⟩
       rw [show 1 + m = m + 1 from by omega]
       exact runFuel_jump_calls hstep
   | succ r ih =>
-      rintro used o s w hInv hframe hcarry hBnd
+      rintro used o s w hInv hframe hcarry hBnd hhas
       have hInv0 := hInv
       by_cases hz : clearLow w 8 = 0
       · obtain ⟨e, hstep, hexit⟩ := lstWriter_step_exit blk0 xp xn xn0 position base
@@ -384,7 +448,9 @@ theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position
         have hcarry' : readBytes e.mem carry 16 = some carryBytes := by
           rw [lstWriter_step_carry blk0 xp xn xn0 carry position base used o s w hInv hcx hcarr e hstep]
           exact hcarry
-        refine ⟨e, 1, by omega, hexit, hframe', hcarry', fun m => ?_⟩
+        have hhas' : HasBytes e.mem xp (4 * blockMax xn0) :=
+          lstWriter_step_presence blk0 xp xn xn0 position base used o s w hInv hhas e hstep
+        refine ⟨e, 1, by omega, hexit, hframe', hcarry', hhas', fun m => ?_⟩
         rw [show 1 + m = m + 1 from by omega]
         exact runFuel_jump_calls hstep
       · obtain ⟨e, hstep, hinv'⟩ := lstWriter_step_loop blk0 xp xn xn0 position base
@@ -400,10 +466,12 @@ theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position
           exact hcarry
         have hb' : ctpop (clearLow w 8) ≤ 8 * r := by
           rw [ctpop_clearLow w 8]; omega
-        obtain ⟨e'', j', hj', hexit', hframe'', hcarry'', hrun'⟩ :=
+        have hhas' : HasBytes e.mem xp (4 * blockMax xn0) :=
+          lstWriter_step_presence blk0 xp xn xn0 position base used o s w hInv hhas e hstep
+        obtain ⟨e'', j', hj', hexit', hframe'', hcarry'', hhas'', hrun'⟩ :=
           ih (used + lstBatchCount w) (o + 4 * lstBatchCount w) e (clearLow w 8)
-            hinv' hframe' hcarry' hb'
-        refine ⟨e'', j' + 1, by omega, hexit', hframe'', hcarry'', fun m => ?_⟩
+            hinv' hframe' hcarry' hb' hhas'
+        refine ⟨e'', j' + 1, by omega, hexit', hframe'', hcarry'', hhas'', fun m => ?_⟩
         rw [show j' + 1 + m = (j' + m) + 1 from by omega, runFuel_jump_calls hstep]
         exact hrun' m
 
@@ -493,13 +561,21 @@ def lxSuccessor (env : Env) (s : State) (bs ctl im blk0 w : BitVec 64) (carry : 
              pre := some "xl_lanes.exit" }
 
 /-- The record's memory claim, as one predicate over the final memory: the count,
-the position stream, the carry pair the run stores, and the frame. -/
+the position stream, the carry pair the run stores, the presence of the extent the
+record's exclusion names, and the frame.
+
+The presence conjunct is what the successor reads: the record's exclusion lists
+`(xp, 4 * blockMax xn0)` as touched, so a caller cannot carry a capacity across the
+call by byte equality, and the bytes below the written span are present only because
+the body only stores.  Its extent is exactly the exclusion's, because that is the
+region the record declines to describe byte by byte. -/
 def EscapeReach (blk0 : BitVec 64) (xp xn carry xn0 : Nat) (position : List Nat)
     (carryBytes : List UInt8) (mem0 M : Mem) : Prop :=
   readBytes M xn 8 = some (wordBytes 8 (xn0 + position.length)) ∧
   readBytes M (xp + 4 * xn0) (4 * position.length) =
     some (positionsBytes 4 (position.map fun k => blockAddr blk0 + k)) ∧
   readBytes M carry 16 = some carryBytes ∧
+  HasBytes M xp (4 * blockMax xn0) ∧
   UnchangedOutside mem0 M (escapeRegions xp xn carry xn0)
 
 /-- The carry region is a region. -/
@@ -528,7 +604,8 @@ theorem exitSegment_zero {Γ : MemContract} (env : Env) (s : State)
     (hbridge : setLanes (lxWord ctl im w) = position)
     (hcount : readBytes s.mem xn 8 = some (wordBytes 8 xn0))
     (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0)) :
+    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0))
+    (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
     runFuel (escapeListCalls Γ) 1 escapeListFunction
         (lxSuccessor env s bs ctl im blk0 w carry) =
       some (.ret none (lxMem2 s.mem bs w carry)) ∧
@@ -542,13 +619,14 @@ theorem exitSegment_zero {Γ : MemContract} (env : Env) (s : State)
   have hpos : position = [] := by rw [← hbridge, hzero]; exact setLanes_zero64
   refine ⟨hrun, ?_⟩
   unfold EscapeReach
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · rw [hpos, List.length_nil, Nat.add_zero]
     rw [readBytes_lxMem2_off s.mem bs w carry xn 8 (Or.symm hcarr)]
     exact hcount
   · rw [hpos]
     rfl
   · exact readBytes_lxMem2_carry s.mem bs w carry
+  · exact hasBytes_lxMem2 hhas bs w carry
   · exact unchangedOutside_lxMem2
       ⟨(carry, 16), mem_escapeRegions_carry xp xn carry xn0, by omega, by omega⟩ hframe
 
@@ -599,7 +677,8 @@ theorem exitSegment_skip {Γ : MemContract} (env : Env) (s : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0)) :
+    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0))
+    (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
     let M := lstIfEnd4Mem (lxBase blk0) (lxWord ctl im w) (xp + xn0 * 4) xn
       (lstIfEnd4Count xn0 (lxWord ctl im w)) (lxMem2 s.mem bs w carry)
     runFuel (escapeListCalls Γ) 2 escapeListFunction
@@ -655,7 +734,7 @@ theorem exitSegment_skip {Γ : MemContract} (env : Env) (s : State)
   have hk : position.length ≤ min (ctpop (lxWord ctl im w)) 8 := by
     rw [hctp]
     exact Nat.le_min.mpr ⟨Nat.le_refl _, by omega⟩
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · rw [lstIfEnd4Mem_count, hcountEq]
   · rw [Nat.mul_comm 4 xn0]
     rw [lstIfEnd4Mem_positions blk0 (lxWord ctl im w) (xp + xn0 * 4) xn
@@ -678,6 +757,8 @@ theorem exitSegment_skip {Γ : MemContract} (env : Env) (s : State)
       (lstIfEnd4Count xn0 (lxWord ctl im w)) (lxMem2 s.mem bs w carry) 16 carry h1
       hcarr]
     exact readBytes_lxMem2_carry s.mem bs w carry
+  · exact hasBytes_lstIfEnd4Mem (hasBytes_lxMem2 hhas bs w carry) (lxBase blk0)
+      (lxWord ctl im w) (xp + xn0 * 4) xn (lstIfEnd4Count xn0 (lxWord ctl im w))
   · refine unchangedOutside_lstIfEnd4Mem ?_ ?_ (unchangedOutside_lxMem2 ?_ hframe)
     · refine ⟨(xp, 4 * blockMax xn0), mem_escapeRegions_stream xp xn carry xn0,
         by omega, ?_⟩
@@ -770,7 +851,8 @@ theorem writerTail (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
     (hframe : UnchangedOutside mem0 s3.mem (escapeRegions xp xn carry xn0))
     (hcarry : readBytes s3.mem carry 16 = some carryBytes)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
-    (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry) :
+    (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry)
+    (hhas : HasBytes s3.mem xp (4 * blockMax xn0)) :
     ∃ M, runFuel (escapeListCalls Γ_xl_batch) 10 escapeListFunction s3 =
         some (.ret none M) ∧
       EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M := by
@@ -783,15 +865,15 @@ theorem writerTail (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
     rw [ctpop_eq_setLanes_length, hbridge]
     have := List.length_drop (i := 8) (l := position)
     omega
-  obtain ⟨e, j, hj, hexit, hframe', hcarry', hrun⟩ :=
+  obtain ⟨e, j, hj, hexit, hframe', hcarry', hhas', hrun⟩ :=
     lstWriter_run_frame blk0 xp xn xn0 carry position base mem0 carryBytes hcx hcarr
-      8 8 (xp + 4 * xn0 + 32) s3 w hinv hframe hcarry hct
+      8 8 (xp + 4 * xn0 + 32) s3 w hinv hframe hcarry hct hhas
   have hret := emit_exit_at (Γ := Γ_xl_batch) e hexit.1
   have h1 : runFuel (escapeListCalls Γ_xl_batch) (j + 1) escapeListFunction s3 =
       some (.ret none e.mem) := by
     rw [hrun 1]
     exact hret
-  exact ⟨e.mem, runFuel_mono_le (by omega) h1, hexit.2.1, hexit.2.2, hcarry', hframe'⟩
+  exact ⟨e.mem, runFuel_mono_le (by omega) h1, hexit.2.1, hexit.2.2, hcarry', hhas', hframe'⟩
 
 /-- **From the batch's exit to the return.**  Twelve control steps: the first
 preheader, the second, then the writer loop and the return. -/
@@ -813,7 +895,8 @@ theorem writerHeadAt (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
     (hframe1 : UnchangedOutside mem0 e1.mem (escapeRegions xp xn carry xn0))
     (hcarry1 : readBytes e1.mem carry 16 = some carryBytes)
-    (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry) :
+    (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry)
+    (hhas1 : HasBytes e1.mem xp (4 * blockMax xn0)) :
     ∃ M, runFuel (escapeListCalls Γ_xl_batch) 12 escapeListFunction e1 =
         some (.ret none M) ∧
       EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M := by
@@ -825,10 +908,13 @@ theorem writerHeadAt (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
   have hcarry3 : readBytes
       (wpSucc (fp17 e1.env esc) (fpSucc e1.env e1 esc) (xp + xn0 * 4)).mem
       carry 16 = some carryBytes := hcarry1
+  have hhas3 : HasBytes
+      (wpSucc (fp17 e1.env esc) (fpSucc e1.env e1 esc) (xp + xn0 * 4)).mem
+      xp (4 * blockMax xn0) := hhas1
   obtain ⟨M, hrun10, hreach⟩ :=
     writerTail blk0 xp xn xn0 carry position (lxBase blk0) mem0
       (wpSucc (fp17 e1.env esc) (fpSucc e1.env e1 esc) (xp + xn0 * 4))
-      (clearLow esc 8) carryBytes hinv hframe3 hcarry3 hcx hcarr
+      (clearLow esc 8) carryBytes hinv hframe3 hcarry3 hcx hcarr hhas3
   have hpc2 : (withEnv (fp17 e1.env esc) (fpSucc e1.env e1 esc)).pc =
       "while.body.preheader.i.i" := by
     show (fpSucc e1.env e1 esc).pc = "while.body.preheader.i.i"
@@ -865,7 +951,8 @@ theorem exitSegment_writer (env : Env) (s : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0)) :
+    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry xn0))
+    (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
     ∃ M, runFuel (escapeListCalls Γ_xl_batch) 13 escapeListFunction
         (lxSuccessor env s bs ctl im blk0 w carry) = some (.ret none M) ∧
       EscapeReach blk0 xp xn carry xn0 position (lxCarry bs w) mem0 M := by
@@ -940,10 +1027,14 @@ theorem exitSegment_writer (env : Env) (s : State)
       (lstIfEnd4Count xn0 (lxWord ctl im w)) (lxMem2 s.mem bs w carry) 16 carry h1
       hcarr]
     exact readBytes_lxMem2_carry s.mem bs w carry
+  have hhas1 : HasBytes e1.mem xp (4 * blockMax xn0) := by
+    rw [hmem1]
+    exact hasBytes_lstIfEnd4Mem (hasBytes_lxMem2 hhas bs w carry) (lxBase blk0)
+      (lxWord ctl im w) (xp + xn0 * 4) xn (lstIfEnd4Count xn0 (lxWord ctl im w))
   obtain ⟨M, hrun12, hreach⟩ :=
     writerHeadAt blk0 xp xn xn0 carry position (lxWord ctl im w) e1 mem0 (lxCarry bs w)
       hpc1' haddr handi hconv1 hxn1 hprefix1 hcount1 hgt hbridge hkeep hcx hblkcap
-      hframe1 hcarry1 hcarr
+      hframe1 hcarry1 hcarr hhas1
   refine ⟨M, ?_, hreach⟩
   rw [show (13 : Nat) = 12 + 1 from by omega]
   unfold lxSuccessor
@@ -982,6 +1073,7 @@ theorem exitCont_zero (env : Env) (e : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
     (hframe : UnchangedOutside mem0 e.mem (escapeRegions xp xn carry xn0))
+    (hhas : HasBytes e.mem xp (4 * blockMax xn0))
     (hzero : lxWord ctl im w = 0) :
     runFuel (escapeListCalls Γ_xl_batch) 2 escapeListFunction e =
       some (.ret none (lxMem2 e.mem bs w carry)) ∧
@@ -993,7 +1085,7 @@ theorem exitCont_zero (env : Env) (e : State)
     rw [hstate]; exact hop
   obtain ⟨h1, hreach⟩ :=
     exitSegment_zero (Γ := Γ_xl_batch) env e bs ctl im blk0 w carry xp xn xn0 position mem0
-      hzero hbridge hcount hcarr hframe
+      hzero hbridge hcount hcarr hframe hhas
   have hem := emit_at (Γ := Γ_xl_batch) env e bs ctl im blk0 w carry p op
     hpc hpre hinc hop' hbs hctl him hblk hcarry harr 1
     (by simpa only [lxSuccessor] using h1)
@@ -1027,6 +1119,7 @@ theorem exitCont_skip (env : Env) (e : State)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
     (hframe : UnchangedOutside mem0 e.mem (escapeRegions xp xn carry xn0))
+    (hhas : HasBytes e.mem xp (4 * blockMax xn0))
     (hne : lxWord ctl im w ≠ 0)
     (hskip : ¬ ctpop (lxWord ctl im w) > 8) :
     let M := lstIfEnd4Mem (lxBase blk0) (lxWord ctl im w) (xp + xn0 * 4) xn
@@ -1040,7 +1133,7 @@ theorem exitCont_skip (env : Env) (e : State)
     rw [hstate]; exact hop
   obtain ⟨h2, hreach⟩ :=
     exitSegment_skip (Γ := Γ_xl_batch) env e bs ctl im blk0 w carry xp xn xn0 position mem0
-      hne hskip hbridge hxn0 hxp hxn hcarr hcount hkeep hcx hblkcap hframe
+      hne hskip hbridge hxn0 hxp hxn hcarr hcount hkeep hcx hblkcap hframe hhas
   have hem := emit_at (Γ := Γ_xl_batch) env e bs ctl im blk0 w carry p op
     hpc hpre hinc hop' hbs hctl him hblk hcarry harr 2
     (by simpa only [lxSuccessor] using h2)
@@ -1074,6 +1167,7 @@ theorem exitCont_writer (env : Env) (e : State)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
     (hframe : UnchangedOutside mem0 e.mem (escapeRegions xp xn carry xn0))
+    (hhas : HasBytes e.mem xp (4 * blockMax xn0))
     (hne : lxWord ctl im w ≠ 0)
     (hgt : ctpop (lxWord ctl im w) > 8) :
     ∃ M, runFuel (escapeListCalls Γ_xl_batch) 14 escapeListFunction e = some (.ret none M) ∧
@@ -1084,7 +1178,7 @@ theorem exitCont_writer (env : Env) (e : State)
     rw [hstate]; exact hop
   obtain ⟨M, h13, hreach⟩ :=
     exitSegment_writer env e bs ctl im blk0 w carry xp xn xn0 position mem0
-      hne hgt hbridge hxn0 hxp hxn hcarr hcount hkeep hcx hblkcap hframe
+      hne hgt hbridge hxn0 hxp hxn hcarr hcount hkeep hcx hblkcap hframe hhas
   have hem := emit_at (Γ := Γ_xl_batch) env e bs ctl im blk0 w carry p op
     hpc hpre hinc hop' hbs hctl him hblk hcarry harr 13
     (by simpa only [lxSuccessor] using h13)
@@ -1396,7 +1490,10 @@ theorem lxWord_ctpop_le (bs ctl im : BitVec 64) (odd0 : Bool) :
 
 /-- **From the seed chain's exit state to the record's memory claim**, with the
 budget met.  The three arms of the position word's test select the continuation
-and its cost; the seeds' own cost is passed as `seedN`. -/
+and its cost; the seeds' own cost is passed as `seedN`.  The capacity the caller
+staged is handed to the arm as presence, because the arm reaches the exit state at
+the caller's own memory: the lanes loop stores nothing, so `AtExit`'s
+`s.mem = mem0` is what supplies it. -/
 theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
     (bs ctl im blk0 : BitVec 64) (prevb prevs : Bool)
     (xp xn carry xn0 : Nat) (position : List Nat) (seedN : Nat)
@@ -1425,6 +1522,7 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
     (hcount : readBytes mem xn 8 = some (wordBytes 8 xn0))
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
+    (hhas : HasBytes mem xp (4 * blockMax xn0))
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32) :
     ∃ (k : Nat) (M : Mem), seedN + k ≤ escapePositionsBudget args mem ∧
       runFuel (escapeListCalls Γ_xl_batch) k escapeListFunction σ =
@@ -1444,10 +1542,12 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
         hcarryE, harrE, hframeE⟩ := ha
       have hcntE : readBytes e.mem xn 8 = some (wordBytes 8 xn0) := by
         rw [hmemE]; exact hcount
+      have hhasE : HasBytes e.mem xp (4 * blockMax xn0) := by
+        rw [hmemE]; exact hhas
       obtain ⟨hrunE, hreachE⟩ :=
         exitCont_zero env e bs ctl im blk0 (specRunStarts bs (prevb && prevs))
           carry xp xn xn0 position mem hpcE henvE hpE hbsE hctlE himE hblkE hxpE
-          hxnE hcarryE harrE hbridge hxn0 hcarr hcntE hkeep hblkcap hframeE hzero
+          hxnE hcarryE harrE hbridge hxn0 hcarr hcntE hkeep hblkcap hframeE hhasE hzero
       exact ⟨2, lxMem2 e.mem bs (specRunStarts bs (prevb && prevs)) carry,
         Nat.le_refl 2, hrunE, hreachE⟩
     obtain ⟨k, M, hk, hrun, hreach⟩ :=
@@ -1468,10 +1568,13 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
           hcarryE, harrE, hframeE⟩ := ha
         have hcntE : readBytes e.mem xn 8 = some (wordBytes 8 xn0) := by
           rw [hmemE]; exact hcount
+        have hhasE : HasBytes e.mem xp (4 * blockMax xn0) := by
+          rw [hmemE]; exact hhas
         obtain ⟨M', hrunE, hreachE⟩ :=
           exitCont_writer env e bs ctl im blk0 (specRunStarts bs (prevb && prevs))
             carry xp xn xn0 position mem hpcE henvE hpE hbsE hctlE himE hblkE hxpE
-            hxnE hcarryE harrE hbridge hxn0 hcarr hcntE hkeep hcx hblkcap hframeE hzero hgt
+            hxnE hcarryE harrE hbridge hxn0 hcarr hcntE hkeep hcx hblkcap hframeE hhasE
+            hzero hgt
         exact ⟨14, M', Nat.le_refl 14, hrunE, hreachE⟩
       obtain ⟨k, M, hk, hrun, hreach⟩ :=
         runFromSeed σ mem bs ctl im blk0 prevb prevs xp xn carry xn0 position 14
@@ -1490,10 +1593,13 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
           hcarryE, harrE, hframeE⟩ := ha
         have hcntE : readBytes e.mem xn 8 = some (wordBytes 8 xn0) := by
           rw [hmemE]; exact hcount
+        have hhasE : HasBytes e.mem xp (4 * blockMax xn0) := by
+          rw [hmemE]; exact hhas
         obtain ⟨hrunE, hreachE⟩ :=
           exitCont_skip env e bs ctl im blk0 (specRunStarts bs (prevb && prevs))
             carry xp xn xn0 position mem hpcE henvE hpE hbsE hctlE himE hblkE hxpE
-            hxnE hcarryE harrE hbridge hxn0 hcarr hcntE hkeep hcx hblkcap hframeE hzero hgt
+            hxnE hcarryE harrE hbridge hxn0 hcarr hcntE hkeep hcx hblkcap hframeE hhasE
+            hzero hgt
         exact ⟨3, _, Nat.le_refl 3, hrunE, hreachE⟩
       obtain ⟨k, M, hk, hrun, hreach⟩ :=
         runFromSeed σ mem bs ctl im blk0 prevb prevs xp xn carry xn0 position 3
@@ -1699,7 +1805,7 @@ theorem escape_positions_satisfies (base : Nat) :
     obtain ⟨k, M, hb, hrun, hreach⟩ :=
       finishSeed args mem σ bs ctl im blk0 prevb prevs xp xn carry xn0 position 2
         (by omega) hb41 hb48 hpcσ hpreσ hmemσ hbσ hcσ hiσ hkσ hxpσ hxnσ hcarσ haσ
-        hseedV hand7σ hbridge hxn0 hcarr hcount hdisj hcx hblkcap
+        hseedV hand7σ hbridge hxn0 hcarr hcount hdisj hcx hhas hblkcap
     have hcomp : runFuel (escapeListCalls Γ_xl_batch) (escapePositionsBudget args mem)
         escapeListFunction (EntryState escapeListFunction args mem next) =
           some (.ret none M) :=
@@ -1722,7 +1828,7 @@ theorem escape_positions_satisfies (base : Nat) :
         exact hreach.2.2.1
       exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, prevb, prevs, xn0,
         rfl, hblock, hbs, hctl, him, hpair, hcount,
-        hreach.1, hreach.2.1, hout, hreach.2.2.2⟩
+        hreach.1, hreach.2.1, hout, hreach.2.2.2.1, hreach.2.2.2.2⟩
   · let σ : State :=
       site (ie13 (ifThenEnv (entryEnv (EntryState escapeListFunction args mem next).env bs
               (prevBackslashWord prevb) carry) bs (prevBackslashWord prevs)
@@ -1761,7 +1867,7 @@ theorem escape_positions_satisfies (base : Nat) :
     obtain ⟨k, M, hb, hrun, hreach⟩ :=
       finishSeed args mem σ bs ctl im blk0 prevb prevs xp xn carry xn0 position 3
         (by omega) hb41 hb48 hpcσ hpreσ hmemσ hbσ hcσ hiσ hkσ hxpσ hxnσ hcarσ haσ
-        hseedV hand7σ hbridge hxn0 hcarr hcount hdisj hcx hblkcap
+        hseedV hand7σ hbridge hxn0 hcarr hcount hdisj hcx hhas hblkcap
     have hcomp : runFuel (escapeListCalls Γ_xl_batch) (escapePositionsBudget args mem)
         escapeListFunction (EntryState escapeListFunction args mem next) =
           some (.ret none M) :=
@@ -1784,7 +1890,7 @@ theorem escape_positions_satisfies (base : Nat) :
         exact hreach.2.2.1
       exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, prevb, prevs, xn0,
         rfl, hblock, hbs, hctl, him, hpair, hcount,
-        hreach.1, hreach.2.1, hout, hreach.2.2.2⟩
+        hreach.1, hreach.2.1, hout, hreach.2.2.2.1, hreach.2.2.2.2⟩
 
 /-! ### Axiom footprints
 
@@ -1848,6 +1954,26 @@ which is those two carriers and `propext`/`Quot.sound`.
 /-- info: 'LeanLLVM.Vellum.unchangedOutside_lxMem2' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms unchangedOutside_lxMem2
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_inlWrites' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_inlWrites
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_lstIfEnd4Mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_lstIfEnd4Mem
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_batchMem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_batchMem
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_lxMem2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_lxMem2
+
+/-- info: 'LeanLLVM.Vellum.lstWriter_step_presence' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lstWriter_step_presence
 
 /-- info: 'LeanLLVM.Vellum.writerInv_entry' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

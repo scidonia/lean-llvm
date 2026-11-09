@@ -79,6 +79,54 @@ a region it hands over is that the region exists. -/
 def HasBytes (mem : Mem) (a k : Nat) : Prop :=
   ∃ vs, readBytes mem a k = some vs
 
+/-- A write adds a cell or replaces one, so a byte present before a write is
+present after it.  This is the fact that makes a capacity survive a run: the body
+of a unit only ever stores, and a store never removes a byte the caller staged. -/
+theorem readByte_writeByte_present (m : Mem) (addr : Nat) (c : UInt8) {a : Nat} {b : UInt8}
+    (h : readByte m a = some b) : ∃ b', readByte (writeByte m addr c) a = some b' := by
+  by_cases hae : a = addr
+  · subst hae; exact ⟨c, readByte_writeByte_same m a c⟩
+  · exact ⟨b, by rw [readByte_writeByte_other m c (Ne.symm hae)]; exact h⟩
+
+/-- A single write preserves every byte of a present range. -/
+theorem readBytes_writeByte_present (m : Mem) (addr : Nat) (c : UInt8) :
+    ∀ (n a : Nat) (vs : List UInt8), readBytes m a n = some vs →
+      ∃ vs', readBytes (writeByte m addr c) a n = some vs'
+  | 0, _, _, _ => ⟨[], rfl⟩
+  | n + 1, a, vs, h => by
+      simp only [readBytes] at h
+      cases hb : readByte m a with
+      | none => simp [hb] at h
+      | some b =>
+          cases hr : readBytes m (a + 1) n with
+          | none => simp [hb, hr] at h
+          | some bs =>
+              simp only [hb, hr, Option.some.injEq] at h
+              subst h
+              obtain ⟨b', hb'⟩ := readByte_writeByte_present m addr c hb
+              obtain ⟨bs', hbs'⟩ := readBytes_writeByte_present m addr c n (a + 1) bs hr
+              exact ⟨b' :: bs', by simp only [readBytes, hb', hbs']⟩
+
+/-- A write sequence preserves every byte of a present range. -/
+theorem readBytes_writeBytes_present (m : Mem) :
+    ∀ (bs : List UInt8) (start n a : Nat) (vs : List UInt8),
+      readBytes m a n = some vs →
+      ∃ vs', readBytes (writeBytes m start bs) a n = some vs'
+  | [], _, _, _, vs, h => ⟨vs, h⟩
+  | c :: bs, start, n, a, vs, h => by
+      obtain ⟨vs1, h1⟩ := readBytes_writeByte_present m start c n a vs h
+      exact readBytes_writeBytes_present (writeByte m start c) bs (start + 1) n a vs1 h1
+
+/-- **Presence survives a write.**  A region the caller staged is still there after
+any store, at whatever address: `writeByte` either replaces a cell (the address is
+already there) or appends one, so the only effect on presence is to add.  This is
+what carries a record's capacity clause from its `pre` to its `post` when the
+record's own extent is described by an exclusion rather than by a byte equality. -/
+theorem hasBytes_writeBytes {m : Mem} {a k : Nat} (h : HasBytes m a k)
+    {start : Nat} {bs : List UInt8} : HasBytes (writeBytes m start bs) a k := by
+  obtain ⟨vs, hvs⟩ := h
+  exact readBytes_writeBytes_present m bs start k a vs hvs
+
 /-- Every byte outside `regions` reads as it did before the run.  A region is an
 address and a length; the extent a run wrote is the list of regions it names, and a
 byte the store reached is inside one of them. -/
@@ -202,6 +250,25 @@ twice.  The pre's third exclusion is what makes the clause true: without it a
 `carry` inside the stream's capacity is overwritten by the batch's stores and the
 pair the run wrote is not what memory holds.
 
+**The excluded extent is present, and that is the other half of the exclusion.**
+Naming `(xp, 4 * blockMax xn0)` in `UnchangedOutside` is a promise about every byte
+outside it and about none inside: the exclusion is exactly what lets the post be
+silent there.  The written span is only the block's own `4 * len` bytes at
+`xp + 4 * xn0`; the bytes between that span and the extent's end are the batch's
+padded reserve, and the bytes below the span are the capacity earlier blocks
+staged.  Neither is described by a byte equality, so without this clause the run's
+own successor has no capacity to stand on: a presence carried into the call cannot
+survive a post that declines to describe the region.  The record therefore concedes
+presence of exactly the extent its exclusion names, which the run has — the body
+only stores, and a store adds cells rather than removing them, so the capacity the
+caller staged is still there afterwards (`hasBytes_writeBytes`).
+
+**Narrowing the exclusion to the written span would not replace the clause**, and
+is recorded here so that it is not retried: the next call's extent exceeds this
+one by the block's own `4 * len` bytes, which lie outside both the current pre's
+extent and the written span, so presence in that window would have no supplier at
+all — a narrower exclusion moves the gap rather than closing it.
+
 The unchanged conjunct is over the extent the run wrote, which includes the batch
 reserve the run touched. -/
 def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
@@ -220,6 +287,7 @@ def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
       some (positionsBytes 4 (blockPositions blk0 lo hi st)) ∧
     carryPair m carry (carry64 lo hi st) (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi st).oddRun ∧
+    HasBytes m xp (4 * blockMax xn0) ∧
     UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (xn, 8), (carry, 16)]
 
 /-- The position list's boundary record.
@@ -230,8 +298,8 @@ Its `pre` is the caller's staging: the three masks are the block's classifier
 words, the carry slot holds the pair the previous block left with the run parity
 they spell, and the stream has room for the block's maximum plus the batch reserve.
 The count is read in and out of its own slot; the reserve is inside the capacity and
-outside the stream, so `pre` promises the room and `post` claims nothing about the
-reserve's values.
+outside the stream, so `pre` promises the room and `post` claims the reserve's
+presence but not its values.
 
 **The block clause reads at `base + blockAddr blk0`, and the base is a parameter.**
 The three masks are the classifier words of the block staged at that address, so the
@@ -550,6 +618,26 @@ theorem escape_expand_post_value {args : List Value} {mem m : Mem} {v : Value}
 /-- info: 'LeanLLVM.Vellum.blockPositions' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms blockPositions
+
+/-- info: 'LeanLLVM.Vellum.escapePositionsPost' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapePositionsPost
+
+/-- info: 'LeanLLVM.Vellum.readByte_writeByte_present' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms readByte_writeByte_present
+
+/-- info: 'LeanLLVM.Vellum.readBytes_writeByte_present' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms readBytes_writeByte_present
+
+/-- info: 'LeanLLVM.Vellum.readBytes_writeBytes_present' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms readBytes_writeBytes_present
+
+/-- info: 'LeanLLVM.Vellum.hasBytes_writeBytes' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms hasBytes_writeBytes
 
 
 /-! ### The spacing of a body's own position list
