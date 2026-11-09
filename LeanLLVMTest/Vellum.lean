@@ -9298,3 +9298,49 @@ this file is compiled from source on every evidence run. -/
 /-- info: 'LeanLLVM.Vellum.ListLoopInv' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.ListLoopInv
+
+/-! The list block's remaining two modules, at the ceiling.
+
+`JsonEscapeListFixpoint` carries the `xl_lanes` doubling map in one lemma in two
+halves: the rule's word is the map's fixed point, and thirty-two iterations from
+the entry blocks' seed reach it.  `JsonEscapeBatchEntries` carries the batch's
+store: the entry formula inside the population count, the exact eight-entry write
+at `%o`, and the frame outside those thirty-two bytes.  Each fact is pinned at what
+it holds without a carrier: `propext` and `Quot.sound`, and nothing from
+`Classical`. -/
+
+/-- info: 'LeanLLVM.Vellum.stepWord_specRunStarts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stepWord_specRunStarts
+
+/-- info: 'LeanLLVM.Vellum.stepN_escapeSeed_specRunStarts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stepN_escapeSeed_specRunStarts
+
+/-- info: 'LeanLLVM.Vellum.stepN_fixed_eq_specRunStarts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stepN_fixed_eq_specRunStarts
+
+/-- info: 'LeanLLVM.Vellum.stepN_32_is_fixed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stepN_32_is_fixed
+
+/-- info: 'LeanLLVM.Vellum.batchMem_entry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.batchMem_entry
+
+/-- info: 'LeanLLVM.Vellum.batchMem_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.batchMem_read
+
+/-- info: 'LeanLLVM.Vellum.batchMem_unchanged' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.batchMem_unchanged
+
+/-- info: 'LeanLLVM.Vellum.batchMem_entry_value' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.batchMem_entry_value
+
+/-- info: 'LeanLLVM.Vellum.setLanes_batchChain_eight' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.setLanes_batchChain_eight

@@ -509,6 +509,76 @@ theorem stepN_escapeSeed_specRunStarts (bs : BitVec 64) (prevb prevs : Bool) :
     cases h2 : (specRunStarts bs (prevb && prevs)).getLsbD k <;> simp_all
 
 
+/-! ### The first fixed iterate is the rule's word
+
+`do.body.i` leaves the loop on `%cmp24.not.i = icmp eq %or23.i, %e.1.i`: the first
+iterate of the map that the map fixes.  The thirty-two-iteration equality bounds a
+word and does not identify that exit word, and the difference is observable rather
+than academic — a two-lane backslash run is already fixed after one iteration, so
+most inputs leave the loop long before step thirty-two.  What identifies the exit
+word is leastness: a fixed point above the seed contains every lane the rule marks,
+so the first one is the rule's own word. -/
+
+/-- **A fixed iterate contains the rule's word.**  By minimality on the first marked
+lane it lacks: lane zero and one come from the seed, and a marked lane from two up
+is either a seed lane or two above a marked lane, which the map would add — so a
+fixed iterate cannot lack a marked lane. -/
+theorem spec_sub_of_fixed {bs : BitVec 64} {prevb prevs : Bool} {i : Nat}
+    (hfix : stepWord bs (stepN bs i (escapeSeed bs prevb prevs)) =
+      stepN bs i (escapeSeed bs prevb prevs)) :
+    LaneSub (specRunStarts bs (prevb && prevs)) (stepN bs i (escapeSeed bs prevb prevs)) := by
+  intro k
+  induction k using Nat.strongRecOn with
+  | _ k ih =>
+    intro hk64 hspec
+    by_cases hk0 : k = 0
+    · subst hk0
+      have hs0 : (escapeSeed bs prevb prevs).getLsbD 0 = true := by
+        rw [escapeSeed_lane_zero]
+        rwa [specRunStarts_getLsbD (k := 0) (by decide)] at hspec
+      exact stepN_self_sub bs _ i 0 hk64 hs0
+    · by_cases hk1 : k = 1
+      · subst hk1
+        have hspec1 := hspec
+        rw [specRunStarts_getLsbD (k := 1) (by decide)] at hspec1
+        have hs1 : (escapeSeed bs prevb prevs).getLsbD 1 = true := by
+          rw [escapeSeed_lane_one]
+          rw [specRunStarts_not_parity_one] at hspec1
+          exact hspec1
+        exact stepN_self_sub bs _ i 1 hk64 hs1
+      · obtain ⟨j, rfl⟩ : ∃ j, k = j + 2 := ⟨k - 2, by omega⟩
+        rcases spec_seed_step (j := j) (by omega) hspec with hseed | ⟨hspecj, ha⟩
+        · exact stepN_self_sub bs _ i (j + 2) hk64 hseed
+        · have hxj : (stepN bs i (escapeSeed bs prevb prevs)).getLsbD j = true :=
+            ih j (by omega) (by omega) hspecj
+          have hstep := stepWord_getLsbD (bs := bs)
+            (x := stepN bs i (escapeSeed bs prevb prevs)) (k := j + 2)
+            (by omega) hk64 hxj ha
+          rwa [hfix] at hstep
+
+/-- **The loop's exit word is the rule's word**, at whatever iterate the map first
+fixes: the exit test is the map's own fixed-point test, so the word the loop leaves
+is the rule's word whether it arrives early or at thirty-two. -/
+theorem stepN_fixed_eq_specRunStarts (bs : BitVec 64) (prevb prevs : Bool) (i : Nat)
+    (hfix : stepWord bs (stepN bs i (escapeSeed bs prevb prevs)) =
+      stepN bs i (escapeSeed bs prevb prevs)) :
+    stepN bs i (escapeSeed bs prevb prevs) = specRunStarts bs (prevb && prevs) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  have hsub := stepN_spec_sub bs prevb prevs i k hk
+  have hsup := spec_sub_of_fixed hfix k hk
+  cases h1 : (stepN bs i (escapeSeed bs prevb prevs)).getLsbD k <;>
+    cases h2 : (specRunStarts bs (prevb && prevs)).getLsbD k <;> simp_all
+
+/-- **The loop terminates within thirty-two iterations**: step thirty-two is a
+fixed point, so the first fixed iterate exists and is no later than it.  Together
+with `stepN_fixed_eq_specRunStarts` this is the pair the loop's exit needs: an iterate
+that is fixed, and the identification of any such iterate with the rule's word. -/
+theorem stepN_32_is_fixed (bs : BitVec 64) (prevb prevs : Bool) :
+    stepWord bs (stepN bs 32 (escapeSeed bs prevb prevs)) =
+      stepN bs 32 (escapeSeed bs prevb prevs) := by
+  rw [stepN_escapeSeed_specRunStarts, stepWord_specRunStarts]
+
 /-! ### Axiom footprints -/
 
 /-- info: 'LeanLLVM.Vellum.stepWord_specRunStarts' depends on axioms: [propext, Quot.sound] -/
@@ -518,5 +588,13 @@ theorem stepN_escapeSeed_specRunStarts (bs : BitVec 64) (prevb prevs : Bool) :
 /-- info: 'LeanLLVM.Vellum.stepN_escapeSeed_specRunStarts' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stepN_escapeSeed_specRunStarts
+
+/-- info: 'LeanLLVM.Vellum.stepN_fixed_eq_specRunStarts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms stepN_fixed_eq_specRunStarts
+
+/-- info: 'LeanLLVM.Vellum.stepN_32_is_fixed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms stepN_32_is_fixed
 
 end LeanLLVM.Vellum
