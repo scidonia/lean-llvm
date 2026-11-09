@@ -40,6 +40,11 @@
        slot run past the true count, so the last up to eight slots are inside
        the buffer and outside the stream.  Only `*xn` entries are the stream;
        read the count and not the slots after it.
+     - `*xn < 2^63`: the count is a cursor the unit adds to the stream base and
+       sign-extends into an address, so a count with the high bit set leaves the
+       range the address arithmetic is defined on.  A caller that starts each
+       block's count at zero and advances it by at most 64 per block never
+       approaches the bound.
      - `blk0 < 2^32 / 64`: the position base is `(uint32_t)(blk0 << 6)`, so a
        document at or above 2^32 bytes truncates.  This is the entry stream's
        width limit as well.

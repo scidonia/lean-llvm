@@ -193,6 +193,15 @@ exclusion, because a staging promise the proof does not need is a caller obligat
 that should not be asked for; it is stated here, with the two exclusions that are not
 made and their reasons, so that a later reader does not uniformise it.
 
+**The count is a pointer-arith obligation, not a capacity one.** `if.end.i4` forms
+`%xp + 4 * %xn` with a `getelementptr`, whose 64-bit index the model sign-extends
+and accepts on its forward arm only below `2 ^ 63`; a count with the high bit set
+would take the backward arm or be refused, so the record requires
+`xn0 < 2 ^ 63` and the clause sits with `pre`'s other domain promises. The
+capacity side is the separate `HasBytes mem xp (4 * blockMax xn0)` clause, which
+the bound does not touch. A pipeline that starts each block's count at zero and
+advances it by at most sixty-four never approaches this bound.
+
 The staged input is otherwise the caller's: the unit is not defined on overlapping
 slots, and the record says so rather than modelling the alias. -/
 def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract where
@@ -212,6 +221,12 @@ def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract wher
       -- the count in, and the capacity: this block's sixty-four lanes plus the
       -- eight-entry batch reserve
       readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
+      -- the count is a cursor the body sign-extends into an address: the first
+      -- batch computes `%xp + 4 * %xn`, and the model's `getelementptr` accepts
+      -- a 64-bit index only below `2 ^ 63` on the forward arm, so a count with
+      -- the high bit set is outside the unit's defined domain rather than a
+      -- staging this record admits
+      xn0 < 2 ^ 63 ∧
       -- the count's slot is disjoint from the stream's capacity and from the
       -- carry: the carry's stores and the batch's stores would otherwise
       -- overwrite the count the body reads back
