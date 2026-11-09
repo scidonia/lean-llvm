@@ -82,6 +82,25 @@
 #          **from the final object**, so the boundaries the linker inlined are
 #          the ones reported, and a document under one full 4 KiB block is an
 #          observation.  This unit's default round count is 301.
+#   reference the assembled pipeline against the pinned external reference,
+#          simdjson On-Demand, over the seven documents of the measured record,
+#          both arms entered from one binary.  The reference version is
+#          established before any row is compared: the header and the library
+#          must be simdjson 4.6.11, the release the scratch harness that
+#          produced the record's ratios is linked against, so a row is labelled
+#          against that named reference rather than presented as the record's
+#          reproduction.  The corpus is `bench/reference-corpus.tsv`: the seven
+#          documents, the arm the record's decision table selects for each on
+#          each core class, the record's ratio and each document's digest.  A
+#          missing document is reported with its digest -- the exact artefact
+#          the harness lacks -- and a substituted file is refused before it is
+#          measured.  The ratio is pipeline/reference ns per block, below 1.0
+#          faster; every round runs both arms twice in both orders and averages
+#          each side, so a drift inside the round cancels.  This unit's default
+#          round count is 15, the record's median window.  `REFERENCE_CORPUS`
+#          overrides the manifest path; `SIMDJSON_LIB` and `SIMDJSON_DEV`
+#          override the detected reference directories, and the version check
+#          applies to whatever they name.
 #
 # `--self-control` runs the measured unit against itself.  It must report
 # exactly 0.0, which tests the harness's dispatch and subtraction — the two
@@ -107,7 +126,10 @@
 # 3 on a setup fault (an absent input, tool or corpus, a build failure, a
 # misaligned probe, a timed source that does not reach the extracted unit, an
 # LTO flag that inlined nothing, or a verdict that contradicts its own columns),
-# so a missing dependency is never read as a measurement.  The pipeline unit's
+# so a missing dependency is never read as a measurement.  The reference unit
+# exits 3 when the reference is not the pinned release, when a corpus document
+# is absent or its digest differs, or when either arm refuses a document; 0
+# when every document is measured, whatever the ratio.  The pipeline unit's
 # rows follow the same rule: 0 when every claimed row is within the one-sided
 # d = first - second <= +0.5 bound, 1 when a row is outside it, and 3 on a
 # setup fault or a self-check failure.
@@ -119,6 +141,24 @@ measured=$repo/kernel/json/measured
 kernel_dir=$repo/kernel/json
 corpus=$repo/tests/json-s1-masks/corpus
 cc=clang
+# The reference's own compiler, not the repository's.  A reference is a binary,
+# and its codegen is part of it: the scratch harness the record's ratios are
+# measured against was built with `g++ -O3 -march=x86-64-v3 -std=c++17`, and
+# the same reference arm built with clang measures 2.3x faster on `citm` — a
+# different reference under the same version number.  So the C++ harness is
+# g++ at that line, while the pipeline's C objects stay at the measured clang
+# line; the link uses the C++ driver for libstdc++.
+cc_cxx=g++
+# The pinned reference: the release the scratch harness that produced the
+# record's ratios is linked against — its RUNPATH resolves to
+# `…-simdjson-4.6.11/lib`, and its build line names the same store path.  The
+# version is checked against the header before the build and against the
+# header's enum again at run time, so a comparison cannot silently be against a
+# different reference.  `SIMDJSON_LIB` and `SIMDJSON_DEV` override the detected
+# store directories; the version check applies to whatever they name.
+reference_version=4.6.11
+simdjson_lib=${SIMDJSON_LIB:-}
+simdjson_dev=${SIMDJSON_DEV:-}
 
 # The measured compiler line (`build49.sh:17`) and P2 set (`build49.sh:21`).
 cflags=(-O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64)
@@ -198,8 +238,23 @@ case "$unit" in
             "$kernel_dir/stage2.c" "$kernel_dir/stage2.h" \
             "$repo/probes/bench/json")
     ;;
+  reference)
+    # One binary: the staged pipeline — the model's form — and the reference
+    # parser, both entered from the same harness.  The corpus manifest is the
+    # harness's input; the documents it names live outside the checkout and are
+    # pinned by digest, so the arm measures the record's seven documents rather
+    # than whatever file happens to sit at a path.
+    src=$here/paired-reference.cc
+    manifest=${REFERENCE_CORPUS:-$here/reference-corpus.tsv}
+    inputs=("$src" "$manifest" "$kernel_dir/pipeline.c" "$kernel_dir/pipeline.h" \
+            "$kernel_dir/s1_block.c" "$kernel_dir/s1_block.h" \
+            "$kernel_dir/entry.c" "$kernel_dir/entry.h" \
+            "$kernel_dir/utf8.c" "$kernel_dir/utf8.h" \
+            "$kernel_dir/escape.c" "$kernel_dir/escape.h" \
+            "$kernel_dir/stage2.c" "$kernel_dir/stage2.h")
+    ;;
   *)
-    printf 'SETUP: unit %s has no paired timing arm; implemented units: s1 entry utf8 escape pipeline\n' "$unit" >&2
+    printf 'SETUP: unit %s has no paired timing arm; implemented units: s1 entry utf8 escape pipeline reference\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -208,13 +263,57 @@ esac
 # round count for a high-noise row); every other unit keeps the default it has
 # always had.
 if [ -z "$rounds" ]; then
-  if [ "$unit" = pipeline ]; then rounds=301; else rounds=11; fi
+  if [ "$unit" = pipeline ]; then rounds=301
+  elif [ "$unit" = reference ]; then rounds=15
+  else rounds=11; fi
 fi
 
 for path in "${inputs[@]}"; do
   [ -e "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
 done
 command -v "$cc" >/dev/null 2>&1 || { printf 'SETUP: no %s on PATH\n' "$cc" >&2; exit 3; }
+if [ "$unit" = reference ]; then
+  command -v "$cc_cxx" >/dev/null 2>&1 || {
+    printf 'SETUP: no %s on PATH; the reference is a C++ library\n' "$cc_cxx" >&2
+    exit 3
+  }
+  if [ -z "$simdjson_lib" ]; then
+    simdjson_lib=$(ls -d /nix/store/*-simdjson-"$reference_version" 2>/dev/null | head -n 1)
+  fi
+  if [ -z "$simdjson_dev" ]; then
+    simdjson_dev=$(ls -d /nix/store/*-simdjson-"$reference_version"-dev 2>/dev/null | head -n 1)
+  fi
+  if [ -z "$simdjson_lib" ] || [ ! -f "$simdjson_lib/lib/libsimdjson.so" ]; then
+    printf 'SETUP: absent: the pinned reference library simdjson %s\n' "$reference_version" >&2
+    printf 'SETUP: expected *-simdjson-%s/lib/libsimdjson.so in the store, or SIMDJSON_LIB\n' \
+      "$reference_version" >&2
+    exit 3
+  fi
+  if [ -z "$simdjson_dev" ] || [ ! -f "$simdjson_dev/include/simdjson.h" ]; then
+    printf 'SETUP: absent: the pinned reference headers simdjson %s\n' "$reference_version" >&2
+    printf 'SETUP: expected *-simdjson-%s-dev/include/simdjson.h, or SIMDJSON_DEV\n' \
+      "$reference_version" >&2
+    exit 3
+  fi
+  # The version question is answered before any row is compared: the header's
+  # enum must name the pinned release, and the binary checks the same enum
+  # again at run time (an override that names another release is refused, not
+  # measured).
+  ref_major=$(sed -n 's/.*SIMDJSON_VERSION_MAJOR = \([0-9][0-9]*\).*/\1/p' \
+    "$simdjson_dev/include/simdjson.h" | head -n 1)
+  ref_minor=$(sed -n 's/.*SIMDJSON_VERSION_MINOR = \([0-9][0-9]*\).*/\1/p' \
+    "$simdjson_dev/include/simdjson.h" | head -n 1)
+  ref_revision=$(sed -n 's/.*SIMDJSON_VERSION_REVISION = \([0-9][0-9]*\).*/\1/p' \
+    "$simdjson_dev/include/simdjson.h" | head -n 1)
+  if [ "$ref_major.$ref_minor.$ref_revision" != "$reference_version" ]; then
+    printf 'SETUP: the reference header is simdjson %s.%s.%s, not the pinned %s\n' \
+      "$ref_major" "$ref_minor" "$ref_revision" "$reference_version" >&2
+    printf 'SETUP: a comparison against another release is a comparison against an unknown\n' >&2
+    exit 3
+  fi
+  printf 'reference   simdjson %s (header enum and library: %s/lib/libsimdjson.so)\n' \
+    "$reference_version" "$simdjson_lib"
+fi
 if [ "${#cores[@]}" -gt 0 ] && ! command -v taskset >/dev/null 2>&1; then
   printf 'SETUP: --core needs taskset on PATH\n' >&2
   exit 3
@@ -231,6 +330,18 @@ build() { # <output> <args...>
   local out=$1
   shift
   if ! "$cc" "$@" -o "$out" 2>"$work/build.err"; then
+    printf 'SETUP: %s did not build\n' "$out" >&2
+    awk 'NR <= 40' "$work/build.err" >&2
+    exit 3
+  fi
+}
+
+# build_cxx <output> <args...> -- the same, with the C++ driver: the reference
+# arm's translation unit is C++, because the reference library's API is.
+build_cxx() { # <output> <args...>
+  local out=$1
+  shift
+  if ! "$cc_cxx" "$@" -o "$out" 2>"$work/build.err"; then
     printf 'SETUP: %s did not build\n' "$out" >&2
     awk 'NR <= 40' "$work/build.err" >&2
     exit 3
@@ -460,6 +571,27 @@ elif [ "$unit" = pipeline ]; then
   # either build.
   build "$work/arrangement" -O2 "$work/main.o" "$work/native/inlined-plain.o" \
     "$work/native/inl-staged.o" "${native_inl_units[@]}"
+elif [ "$unit" = reference ]; then
+  # The pipeline is the staged form the model's records are stated at: the same
+  # six files, each unit its own translation unit, at the measured compiler
+  # line.  The harness is one C++ translation unit at the reference build's own
+  # codegen (`-O3 -march=x86-64-v3`, the line the scratch reference binary was
+  # built with), and it is linked against the pinned library.  The two sides are
+  # entered from that one binary, so a row is one process's comparison of the
+  # two arms and not a subtraction across builds.
+  mkdir -p "$work/native" || exit 3
+  for u in s1_block entry utf8 escape stage2; do
+    build "$work/native/$u.o" "${cflags[@]}" -falign-functions=4096 \
+      -I "$kernel_dir" -c "$kernel_dir/$u.c"
+  done
+  build "$work/native/pipeline.o" "${cflags[@]}" -falign-functions=4096 \
+    -I "$kernel_dir" -c "$kernel_dir/pipeline.c"
+  build_cxx "$work/reference" -O3 -march=x86-64-v3 -std=c++17 \
+    -I "$kernel_dir" -I "$simdjson_dev/include" "$src" \
+    "$work/native/pipeline.o" "$work/native/s1_block.o" \
+    "$work/native/entry.o" "$work/native/utf8.o" "$work/native/escape.o" \
+    "$work/native/stage2.o" \
+    -L "$simdjson_lib/lib" -lsimdjson -Wl,-rpath,"$simdjson_lib/lib"
 else
   # 4 KiB function alignment on both probe TUs: the kernels are measured text
   # and cannot carry an attribute, so the geometry is set by the flag, equally
@@ -655,6 +787,31 @@ if command -v nm >/dev/null 2>&1; then
     printf '  inlined %s of six; staged-plain second inlined %s of six\n' \
       "$(inlined_count "$arr_staged" leanllvm_json_)" \
       "$(inlined_count "$arr_inl" probe_inl_)"
+  elif [ "$unit" = reference ]; then
+    # The timed pipeline must start a page, as every other arm's probes do, and
+    # its call census must name the six unit boundaries: the row's pipeline side
+    # is the assembly, and a function that kept no call to a unit would be a
+    # different binary than the one the model describes.
+    probe_addrs=$(nm "$work/reference" | awk '$3 ~ /^leanllvm_json_pipeline$/ { print $1, $3 }')
+    if [ "$(printf '%s\n' "$probe_addrs" | grep -c . || true)" -ne 1 ]; then
+      printf 'SETUP: expected the pipeline symbol once, found: %s\n' "$(echo $probe_addrs)" >&2
+      exit 3
+    fi
+    bad=$(printf '%s\n' "$probe_addrs" | awk '$1 !~ /000$/ { print $1, $2 }')
+    if [ -n "$bad" ]; then
+      printf 'SETUP: the pipeline symbol does not start a page: %s\n' "$(echo $bad)" >&2
+      exit 3
+    fi
+    printf 'pipeline address (page-aligned):\n'
+    printf '%s\n' "$probe_addrs" | awk '{ printf "  %s %s\n", $1, $2 }'
+    pipeline_census=$(final_census "$work/reference" leanllvm_json_pipeline)
+    if [ "$(inlined_count "$pipeline_census" leanllvm_json_)" -ne 0 ]; then
+      printf 'SETUP: the timed pipeline kept no call to a unit boundary; it is not the\n' >&2
+      printf 'SETUP: staged assembly the row claims to measure\n' >&2
+      exit 3
+    fi
+    printf 'the timed pipeline keeps all six unit calls:\n'
+    printf '%s\n' "$pipeline_census" | awk '{ printf "  %-32s %s\n", $1, $2 }'
   else
     probe_addrs=$(nm "$work/paired" | awk '$3 ~ /^probe_entry_(measured|extracted)_(pos8|b8)$/ { print $1, $3 }')
     if [ "$(printf '%s\n' "$probe_addrs" | grep -c . || true)" -ne 4 ]; then
@@ -827,6 +984,46 @@ elif [ "$unit" = pipeline ]; then
   printf 'timed pipeline reaches the units (docs/json-pipeline-performance.md 7.1):\n'
   printf '  the staged body calls all six unit ABIs; each one-TU source holds all six\n'
   printf '  definitions and the pipeline in one translation unit\n'
+elif [ "$unit" = reference ]; then
+  # §7.1 on the pipeline side of the row: the timed function's preprocessed
+  # body must reach the six units, or the row measures a binary that does not
+  # contain the assembly.  The reference side is simdjson's own `iterate`, whose
+  # reach is the library the binary links; the harness prints the implementation
+  # name at run time.
+  "$cc" "${cflags[@]}" -falign-functions=4096 -I "$kernel_dir" \
+    -E -P "$kernel_dir/pipeline.c" > "$work/timed.i" 2>"$work/timed.err" || {
+    printf 'SETUP: the staged pipeline did not preprocess\n' >&2
+    awk 'NR <= 20' "$work/timed.err" >&2
+    exit 3
+  }
+  body=$(awk -v name="leanllvm_json_pipeline" '
+    state == 0 && index($0, name "(") > 0 { state = 1; next }
+    state == 1 && $0 !~ /\{/ && $0 ~ /;[ \t]*$/ { state = 0; next }
+    state == 1 && $0 ~ /\{/ { state = 2 }
+    state == 2 {
+      print
+      probe = $0
+      o = gsub(/\{/, "", probe); c = gsub(/\}/, "", probe)
+      depth += o - c
+      if (o > 0) opened = 1
+      if (opened && depth == 0) exit
+    }
+  ' "$work/timed.i")
+  if [ -z "$body" ]; then
+    printf 'SETUP: the timed pipeline body was not found in its preprocessed text\n' >&2
+    exit 3
+  fi
+  for callee in leanllvm_json_s1_masks leanllvm_json_entry_pos8 \
+                leanllvm_json_entry_b8 leanllvm_json_escape_list \
+                leanllvm_json_utf8 leanllvm_json_stage2; do
+    if ! printf '%s\n' "$body" | grep -qF "$callee("; then
+      printf 'SETUP: the timed pipeline does not call %s\n' "$callee" >&2
+      printf 'SETUP: docs/json-pipeline-performance.md 7.1: the timed path must reach the new code\n' >&2
+      exit 3
+    fi
+  done
+  printf 'timed pipeline reaches the units (docs/json-pipeline-performance.md 7.1):\n'
+  printf '  the staged body calls all six unit ABIs\n'
 fi
 
 printf 'unit        %s\n' "$unit"
@@ -846,6 +1043,24 @@ if [ "$unit" = pipeline ]; then
   printf 'compiler    %s %s\n' "$cc" "$cc_version"
   printf 'compiler-line %s %s -falign-functions=4096\n' "$cc" "${cflags[*]}"
   printf 'lto-link    %s %s -falign-functions=4096 -flto\n' "$cc" "${cflags[*]}"
+  printf 'target      %s\n' "$cc_target"
+  build_prefix="$cc-$cc_version/$cc_target/measured-line+falign4096"
+elif [ "$unit" = reference ]; then
+  printf 'binary      %s\n' "$work/reference"
+  printf 'binary sha256 %s\n' "$(sha256sum "$work/reference" | cut -d' ' -f1)"
+  for u in pipeline s1_block entry utf8 escape stage2; do
+    printf 'obj sha256 native/%-10s %s\n' "$u.o" \
+      "$(sha256sum "$work/native/$u.o" | cut -d' ' -f1)"
+  done
+  cc_version=$("$cc" -dumpversion 2>/dev/null || printf 'unknown')
+  cc_target=$("$cc" -dumpmachine 2>/dev/null || printf 'unknown')
+  cxx_version=$("$cc_cxx" -dumpversion 2>/dev/null || printf 'unknown')
+  printf 'compiler    %s %s, %s %s\n' "$cc" "$cc_version" "$cc_cxx" "$cxx_version"
+  printf 'compiler-line %s %s -falign-functions=4096\n' "$cc" "${cflags[*]}"
+  printf 'harness-line  %s -O3 -march=x86-64-v3 -std=c++17 (the reference build'"'"'s line)\n' \
+    "$cc_cxx"
+  printf 'reference   simdjson %s (%s/lib/libsimdjson.so)\n' \
+    "$reference_version" "$simdjson_lib"
   printf 'target      %s\n' "$cc_target"
   build_prefix="$cc-$cc_version/$cc_target/measured-line+falign4096"
 else
@@ -874,8 +1089,38 @@ elif [ "$unit" = pipeline ]; then
     exit 3
   }
   for f in "${documents[@]}"; do args+=(--document "$f"); done
+elif [ "$unit" = reference ]; then
+  # The corpus is the harness's to read; the shell's job is to establish that
+  # the bytes are the record's before a row is measured.  A document that is
+  # absent is named with its digest — the exact artefact the harness lacks — and
+  # a file whose digest differs is refused, because a substituted document is
+  # not the record's document and its ratio is not the record's row.
+  while IFS=$'\t' read -r c_name c_armE c_armP c_re c_rp c_sha c_path; do
+    case "$c_name" in ''|'#'*|name) continue ;; esac
+    [ -n "$c_sha" ] && [ "$c_sha" != "-" ] || {
+      printf 'SETUP: corpus row %s carries no digest\n' "$c_name" >&2
+      exit 3
+    }
+    if [ ! -f "$c_path" ]; then
+      printf 'SETUP: absent: document %s (%s, sha256 %s)\n' \
+        "$c_name" "$c_path" "$c_sha" >&2
+      printf 'SETUP: the reference corpus is outside the checkout; this row names\n' >&2
+      printf 'SETUP: the exact artefact the harness lacks rather than measuring six\n' >&2
+      exit 3
+    fi
+    got=$(sha256sum "$c_path" | cut -d' ' -f1)
+    if [ "$got" != "$c_sha" ]; then
+      printf 'SETUP: document %s is not the pinned bytes\n' "$c_name" >&2
+      printf 'SETUP: %s\n       sha256 %s (pinned %s)\n' "$c_path" "$got" "$c_sha" >&2
+      exit 3
+    fi
+    printf 'corpus      %-10s %s\n' "$c_name" "$c_path"
+  done < "$manifest"
+  args+=(--corpus "$manifest" --rounds "$rounds")
 fi
-args+=(--arms --rounds "$rounds")
+if [ "$unit" != reference ]; then
+  args+=(--arms --rounds "$rounds")
+fi
 [ "$self_control" -eq 1 ] && args+=(--self-control)
 
 # A snapshot of the window's edges: the load average, the running processes and
@@ -956,6 +1201,31 @@ if [ "$unit" = pipeline ]; then
          status=3 ;;
     esac
   done
+elif [ "$unit" = reference ]; then
+  # One binary, both arms.  The report prints the reference version, the core
+  # class and the arm each document took, so a row names its reference and its
+  # selector as well as its numbers.
+  printf '\nreference arm: pipeline against simdjson On-Demand, both entered from\n'
+  printf 'one binary.  ratio = pipeline / reference ns per block, below 1.0 faster.\n'
+  st=0
+  if [ "${#cores[@]}" -eq 0 ]; then
+    snapshot reference-before || interference=1
+    "$work/reference" "${args[@]}" --build "$build_prefix/reference" || st=$?
+    snapshot reference-after || interference=1
+  else
+    for core in "${cores[@]}"; do
+      printf '\n== pinned to CPU %s\n' "$core"
+      snapshot "reference-cpu$core-before" || interference=1
+      taskset -c "$core" "$work/reference" "${args[@]}" \
+        --build "$build_prefix/reference" || st=$?
+      snapshot "reference-cpu$core-after" || interference=1
+    done
+  fi
+  case "$st" in
+    0) : ;;
+    *) printf 'SETUP: the reference arm refused the measurement (exit %s)\n' "$st" >&2
+       status=3 ;;
+  esac
 else
   if [ "${#cores[@]}" -eq 0 ]; then
     "$work/paired" "${args[@]}" || status=$?
@@ -967,7 +1237,7 @@ else
   fi
 fi
 
-if [ "$unit" = pipeline ]; then
+if [ "$unit" = pipeline ] || [ "$unit" = reference ]; then
   if [ "$interference" -eq 1 ]; then
     printf 'interference: a build process was present at a window edge; these rows are\n'
     printf '              labelled, not presented as clean\n'
@@ -987,6 +1257,10 @@ if [ "$status" -eq 0 ]; then
     printf '\nthe four rows are reported above with their columns, d = first - second and\n'
     printf 'direction; the harness verdict is derived from that same d, and its\n'
     printf 'self-check fails a verdict that contradicts the columns.\n'
+  elif [ "$unit" = reference ]; then
+    printf '\nthe rows above name their arm, their reference, their core class and their\n'
+    printf 'reference version; the ratio is pipeline/reference, and each row prints the\n'
+    printf 'per-round range beside its median.\n'
   else
     printf '\nok: the extracted unit is within +/-0.5 ns/block of the measured one\n'
   fi

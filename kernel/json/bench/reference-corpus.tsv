@@ -1,0 +1,37 @@
+# The seven documents of the measured record, and the arms it records for them.
+#
+# `docs/json-pipeline-performance.md` §2 names these seven, §5 records the
+# decision each document's class selects, and §3 records the P2 ratio the
+# measured pipeline reached against simdjson On-Demand.  This file is the
+# corpus the reference arm reads: a row names the document, the arm the
+# recorded decision table selects for it on each core class, the documented
+# ratio to compare against, and the bytes' digest.
+#
+# The bytes live outside the checkout, as §15.49 of the plan records (the
+# corpus is the standard document set, not a fixture of this tree).  A digest
+# is what makes an outside file one document rather than whatever is there
+# today: the arm refuses a file whose digest differs, and names the row when a
+# document is absent.  `canada`, `citm` and `twitter` are the 64-byte-aligned
+# copies the measurements read; the other four are the generated documents.
+#
+# Columns, tab-separated:
+#   name      the record's name for the document
+#   arm_E     the arm on the E-core class (CPUID.1Ah.EAX[31:24] = 0x20)
+#   arm_P     the arm on the P-core class (CPUID.1Ah.EAX[31:24] = 0x40)
+#   record_E  the record's P2 ratio on the E-core (this pipeline / On-Demand)
+#   record_P  the record's P2 ratio on the P-core
+#   sha256    the document bytes' digest
+#   path      where the document is read from
+#
+# An arm is the caller's selector `pipeline.h` documents, not a classifier:
+# bit 0 selects B8 (set) or POS8, bit 1 builds the escape list, bit 2 makes the
+# UTF-8 stage ungated.  The record's decision table is the selector's
+# parameter; `paired.sh --unit reference` prints the arm beside every row.
+name	arm_E	arm_P	record_E	record_P	sha256	path
+canonical	6	6	1.044	0.922	e485aa87320a579d1136253a855ac4c65e156b597935f193024a796b75e1883e	/tmp/scidonia-spike2/workload.json
+citm	1	1	0.843	0.555	4f37b2bedff64e54f2a03ed3abe6df0814e9e175cc5054efb14eb8c4d13b215b	/tmp/scidonia-spike12/corpus_aligned/citm_catalog_aligned.json
+twitter	2	2	0.847	0.611	3a699981f1c6f3af2216ecb6e1fc1a6d46fa8cdaf1f43db137f54feff8931df7	/tmp/scidonia-spike12/corpus_aligned/twitter_aligned.json
+canada	0	1	1.023	0.946	f4eaf293032de5e6ac6cc5eb245f39a682dc86910a011b3b68bdcf2b6fb2b880	/tmp/scidonia-spike12/corpus_aligned/canada_aligned.json
+dense	0	0	1.027	1.037	567758aaa6785c8e1e42e2171c77dbc792ae897a2f0ff492dc21a2259da7bfa5	/tmp/scidonia-spike2/wl_dense.json
+longstr	3	3	0.721	0.586	12473b128d534e29456b5bff4f58faf626b4051a2f83fd0c7d9c1586c59c22ff	/tmp/scidonia-spike2/wl_longstr.json
+escdense	2	2	0.816	0.759	bbc2495c3dbe6177b03be01241fac235705f67742765e45b104aac322f145013	/tmp/scidonia-spike24/corpus/esc_dense.json
