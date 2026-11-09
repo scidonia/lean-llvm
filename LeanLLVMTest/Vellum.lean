@@ -9931,3 +9931,17 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.evalOperands_agree' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.PipelineBodyFacts.evalOperands_agree
+
+/-! #### The expander's producer: three runs, and the exit derived -/
+
+/-- info: 'LeanLLVM.Vellum.expandFacts_of_arms' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.expandFacts_of_arms
+
+/-- info: 'LeanLLVM.Vellum.expandFacts_of_runs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.expandFacts_of_runs
+
+/-- info: 'LeanLLVM.Vellum.escape_expand_satisfies_of_arms' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.escape_expand_satisfies_of_arms

@@ -64,6 +64,7 @@ import LeanLLVM.Vellum.JsonEscapeExpandRun
 import LeanLLVM.Vellum.JsonEscapeCompose
 import LeanLLVM.Vellum.JsonEscapeExpandStaged
 import LeanLLVM.Vellum.JsonEscapeExpandFacts
+import LeanLLVM.Vellum.JsonEscapeExpandAssembly
 import LeanLLVM.Vellum.JsonPipelineContract
 import LeanLLVM.Vellum.JsonPipelineIR
 -- The generic block evaluator (slice A3) and its artifact.
