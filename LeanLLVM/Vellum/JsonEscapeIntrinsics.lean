@@ -25,11 +25,10 @@ forced a rebuild, whereas the evidence file is compiled from source on every run
 
 Each arm matches the shape the call spells, and the arguments keep the call's
 order: `umin`'s two operands in order, and the multiply-adds' unsigned-then-signed
-(PMADDUBSW) and signed-then-signed (PMADDWD) orders.  For the two shared spellings
-`checkIntrinsicShape` is what fixes the admitted shape; for the three new ones it
-has no rule, so the environment is what refuses another shape — a call it has no
-arm for is `ub` — and `Parser.lean`'s `checkIntrinsicShape` docstring records that
-split.  The step lemmas that read one call at a time — the head of each
+(PMADDUBSW) and signed-then-signed (PMADDWD) orders.  `checkIntrinsicShape` fixes
+each admitted shape, so a call at another shape is refused by name before it
+reaches this environment, and an arm here that no call can reach is not how a
+wrong shape is met.  The step lemmas that read one call at a time — the head of each
 escape-body step — are in `tests/escape-intrinsics.lean`, which is where this
 vocabulary's sufficiency is demonstrated rather than claimed.
 -/

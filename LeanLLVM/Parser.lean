@@ -589,7 +589,14 @@ the intrinsic it refused, and the accepted form is the one the emission uses:
   bound that makes the model's determined value there admissible.  `ctlz … i1
   true` has no such bound and stays refused, so the asymmetry is the admission
   rule and not an inconsistency: a spelling is admitted with an obligation that
-  bounds its poison, and that one has none.
+  bounds its poison, and that one has none;
+* `llvm.umin.i32`: `i32 (i32, i32)` — the unsigned minimum, two operands and no
+  flag;
+* `llvm.x86.sse2.pmadd.wd`: `<4 x i32> (<8 x i16>, <8 x i16>)` — signed word
+  multiply-add, two operands and no flag;
+* `llvm.x86.ssse3.pmadd.ub.sw.128`: `<8 x i16> (<16 x i8>, <16 x i8>)` —
+  unsigned-byte times signed-byte multiply-add, the products summed and widened
+  to words, two operands and no flag.
 
 `usub.sat.v32i8` and `ptestz.256` are exact: each states its whole meaning at
 the symbol and operand types, and neither carries a flag or poison.  The
@@ -602,22 +609,12 @@ inventory is what records an unmodelled intrinsic reaching the text.  The
 families listed above are refused at every other width or suffix, by name, rather
 than left to that record.
 
-Three spellings are modelled and **not** shape-checked here: `llvm.umin.i32`
-(`i32 (i32, i32)`), `llvm.x86.sse2.pmadd.wd`
-(`<4 x i32> (<8 x i16>, <8 x i16>)`) and `llvm.x86.ssse3.pmadd.ub.sw.128`
-(`<8 x i16> (<16 x i8>, <16 x i8>)`).  Their models and bindings are
-`BitLanes`' and `JsonEscapeIntrinsics.escapeCalls`', which matches exactly those
-shapes; another shape of the same symbol is therefore accepted by this check and
-`ub` at that environment rather than refused here, so a `llvm.umin.i64` or a
-three-argument `pmadd.wd` parses and is undefined rather than being named.  That
-is the fail-closed direction — nothing is read as something it is not — but it is
-a later one, and the shape rule for these three is not yet stated.
-
-`umax` at every width, and `umin` at every width other than `i32`, are bound by no
-environment in the tree, and no capture under `probes/` calls them: the only
-`@llvm.umin` call sites in the emissions are the two `i32` calls in
-`json-escape.candidate.ll`.  A call to one of them is `ub`, and this check has no
-rule for them either, so they are unresolved rather than refused by name. -/
+`umax` at every width is bound by no environment in the tree and called by no
+capture under `probes/`, so a call to one is `ub`; the shape check has no rule for
+`umax`, so it is unresolved rather than refused by name.  `umin` at any width
+other than `i32` is refused by name, and `llvm.umin.i32`,
+`llvm.x86.sse2.pmadd.wd` and `llvm.x86.ssse3.pmadd.ub.sw.128` are refused by the
+shape rule at another arity, another operand type or another result type. -/
 def checkIntrinsicShape (callee : String) (retTy : Ty)
     (args : List (Ty × Operand)) : Except String Unit :=
   let argTys : List Ty := args.map fun a => a.1
@@ -687,6 +684,12 @@ def checkIntrinsicShape (callee : String) (retTy : Ty)
               .error "the intrinsic @llvm.cttz.i64's second argument must be the \
                   immediate i1 true or i1 false: the flag is a literal, not a \
                   register, and both values are modelled"
+  | "llvm.umin.i32" =>
+      shape 2 (.int 32) [.int 32, .int 32]
+  | "llvm.x86.sse2.pmadd.wd" =>
+      shape 2 (.vec 4 (.int 32)) [.vec 8 (.int 16), .vec 8 (.int 16)]
+  | "llvm.x86.ssse3.pmadd.ub.sw.128" =>
+      shape 2 (.vec 8 (.int 16)) [.vec 16 (.int 8), .vec 16 (.int 8)]
   | s =>
       if s.startsWith "llvm.x86.bmi.pext." then
         .error s!"the intrinsic @{s} is not modelled: the pext model is the \
@@ -713,6 +716,17 @@ def checkIntrinsicShape (callee : String) (retTy : Ty)
         .error s!"the intrinsic @{s} is not modelled: the zero test is \
             @llvm.x86.avx.ptestz.256, at <4 x i64> with two operands and an \
             i32 result"
+      else if s.startsWith "llvm.umin." then
+        .error s!"the intrinsic @{s} is not modelled: the unsigned minimum is \
+            @llvm.umin.i32, at i32 with two operands"
+      else if s.startsWith "llvm.x86.sse2.pmadd." then
+        .error s!"the intrinsic @{s} is not modelled: the signed multiply-add \
+            is @llvm.x86.sse2.pmadd.wd, at <8 x i16> with two operands and a \
+            <4 x i32> result"
+      else if s.startsWith "llvm.x86.ssse3.pmadd." then
+        .error s!"the intrinsic @{s} is not modelled: the unsigned-byte times \
+            signed-byte multiply-add is @llvm.x86.ssse3.pmadd.ub.sw.128, at \
+            <16 x i8> with two operands and a <8 x i16> result"
       else .ok ()
 
 /-- The call instruction, with or without a destination register:
@@ -762,13 +776,11 @@ openness: `checkIntrinsicShape` validates each one's symbol, arity, operand
 types and immediate, so a `pshuf.b` of the wrong arity, a `pclmulqdq` at an
 immediate other than 0, a `pext.32`, a `pdep.32`, a `ctpop.i16`, a `cttz` whose
 flag is not an immediate `i1`, a `ctlz` with the flag `i1 true`, a
-`usub.sat.v16i8` (or a `usub.sat` of the wrong arity or operand types) and a
-`ptest.256` or a `ptestz.128` are refused by name instead of reaching the
-semantics as calls no environment can resolve meaningfully.
-`JsonEscapeIntrinsics.escapeCalls` binds three further spellings — `llvm.umin.i32`,
-`llvm.x86.sse2.pmadd.wd` and `llvm.x86.ssse3.pmadd.ub.sw.128` — for which this
-check has no rule, so a call to one of them at another shape passes the parser and
-is `ub` at that environment rather than a parse error.  Any other callee is
+`usub.sat.v16i8` (or a `usub.sat` of the wrong arity or operand types), a
+`ptest.256` or a `ptestz.128`, an `umin.i64`, and an `umin.i32`, `pmadd.wd` or
+`pmadd.ub.sw.128` at another arity, another operand type or another result type
+are refused by name instead of reaching the semantics as calls no environment can
+resolve meaningfully.  Any other callee is
 still resolved by the environment alone; that fall-through is deliberate, and a
 call target no environment resolves is `ub` rather than silently read. -/
 def parseCall (dst : Option String) : P Stmt := do

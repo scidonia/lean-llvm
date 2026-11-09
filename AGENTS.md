@@ -403,29 +403,29 @@ needs the other two to match.
   that side is exercised as an accepted control in `tests/vector-s1.lean`
   (accepted, printed, re-parsed and evaluated) and in `tests/json-s1-parser.lean`
   — where a vector `ashr` is refused; a vector `load` at integer lanes whose
-  total width is whole bytes; and the ten intrinsic spellings
+  total width is whole bytes; and the thirteen intrinsic spellings
   `checkIntrinsicShape` has a rule for —
   `llvm.x86.avx2.pshuf.b` at two arguments, `llvm.x86.pclmulqdq` at immediate 0,
   `llvm.x86.bmi.pext.64`, `llvm.x86.bmi.pdep.64`, `llvm.ctlz.i64` with the
   non-poison flag, `llvm.ctpop.i32`, `llvm.ctpop.i64`, `llvm.cttz.i64` at both
-  flag values, `llvm.usub.sat.v32i8` at two `<32 x i8>` operands, and
+  flag values, `llvm.usub.sat.v32i8` at two `<32 x i8>` operands,
   `llvm.x86.avx.ptestz.256` at two `<4 x i64>` operands with an `i32` result,
-  the last two carrying no flag — each validated at symbol, arity, type and
+  `llvm.umin.i32`, `llvm.x86.sse2.pmadd.wd` and
+  `llvm.x86.ssse3.pmadd.ub.sw.128`, the latter three at two operands and no flag
+  — each validated at symbol, arity, type and
   immediate, with its neighbouring spelling refused.  The two `cttz` flags are
   not symmetric:
   `i1 false` is exact at the zero word, and `i1 true` is admitted because the
   entry claims read no lane the poison can reach, the bound stated once in
   `LeanLLVM/Vellum/BitLanes.lean` — and the escape unit's list record carries the
   same bound over its batch reserve — while `ctlz … i1 true` has no such bound
-  and stays refused.  Three modelled spellings have no shape rule here: the
-  escape unit's `llvm.umin.i32`, `llvm.x86.sse2.pmadd.wd` and
-  `llvm.x86.ssse3.pmadd.ub.sw.128` are matched at exactly the measured shapes by
-  `JsonEscapeIntrinsics.escapeCalls`, so another shape of one of them parses and
-  is `ub` at that environment rather than a parse error; `umax` at every width and
-  `umin` at every width other than `i32` are bound by no environment and called by
-  no capture under `probes/` — the only `@llvm.umin` sites in the emissions are the
-  two `i32` calls in `json-escape.candidate.ll` — so a call to one is `ub` and is
-  not refused by name either.  `tests/vector-s1.lean` checks every acceptance and its refusal
+  and stays refused.  `umax` at every width is bound by no environment and
+  called by no capture under `probes/`, so a call to one is `ub`, and the shape
+  check has no rule for it: `umax` is unresolved rather than refused by name.
+  `umin` at any width other than `i32` is refused by name, and the escape unit's
+  `llvm.umin.i32`, `llvm.x86.sse2.pmadd.wd` and
+  `llvm.x86.ssse3.pmadd.ub.sw.128` are refused by the shape rule at another
+  arity, another operand type or another result type.  `tests/vector-s1.lean` checks every acceptance and its refusal
   in one run, `tests/vector-entry.lean` does the same for the widened store and
   the entry intrinsics, `tests/vector-utf8.lean` for the two UTF-8 spellings and
   their refusals, and `probes/install/ir/json-s1-masks.candidate.ll` is the

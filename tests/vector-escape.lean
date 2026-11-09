@@ -26,6 +26,15 @@ not `i1`.
 lane-wise definition `selectLanes`, on the shapes the instruction fixes.  Its
 axiom footprint is pinned below.
 
+The escape unit's three intrinsic call spellings are checked the same way, in
+the same run: `llvm.umin.i32` at `i32 (i32, i32)`,
+`llvm.x86.sse2.pmadd.wd` at `<4 x i32> (<8 x i16>, <8 x i16>)` and
+`llvm.x86.ssse3.pmadd.ub.sw.128` at `<8 x i16> (<16 x i8>, <16 x i8>)`, each
+accepted at the emitted shape, printed back to itself, and refused by name at
+another width, arity, operand type or result type — including the neighbouring
+symbols `llvm.umin.i64`, `llvm.x86.ssse3.pmadd.ub.sw` and
+`llvm.x86.sse2.pmadd.ub.sw.128`.
+
 Elaborated by `nix develop -c lake env lean tests/vector-escape.lean`.  A
 `#guard` that does not hold stops elaboration with a nonzero exit status; no
 compiler, proof checker, service, clock or network is reached.
@@ -245,5 +254,93 @@ info: 'VectorEscape.evalInstr_select_lanes' depends on axioms: [propext, Quot.so
 #guard selectLanes ([1, 0, 1, 0] : List (BitVec 1))
     ([10, 11, 12, 13] : List (BitVec 8)) ([20, 21, 22, 23] : List (BitVec 8))
   = ([10, 21, 12, 23] : List (BitVec 8))
+
+/-! ### The three intrinsic spellings the escape unit calls -/
+
+/-- `%r = call i32 @llvm.umin.i32(i32 %a, i32 %b)`. -/
+def uminBody : String :=
+  "  %r = call i32 @llvm.umin.i32(i32 %a, i32 %b)"
+
+/-- `%r = call <4 x i32> @llvm.x86.sse2.pmadd.wd(<8 x i16> %a, <8 x i16> %b)`. -/
+def pmaddWdBody : String :=
+  "  %r = call <4 x i32> @llvm.x86.sse2.pmadd.wd(<8 x i16> %a, <8 x i16> %b)"
+
+/-- `%r = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<16 x i8> %a, <16 x i8> %b)`. -/
+def pmaddUbSwBody : String :=
+  "  %r = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<16 x i8> %a, <16 x i8> %b)"
+
+-- The emitted shape parses, prints back to itself, and carries the result type
+-- the shape rule pins.
+#guard accepted uminBody
+#guard reparses uminBody
+#guard match instrsOf uminBody with
+  | some [i] => i.resultTy = some (.int 32)
+  | _ => false
+
+#guard accepted pmaddWdBody
+#guard reparses pmaddWdBody
+#guard match instrsOf pmaddWdBody with
+  | some [i] => i.resultTy = some (.vec 4 (.int 32))
+  | _ => false
+
+#guard accepted pmaddUbSwBody
+#guard reparses pmaddUbSwBody
+#guard match instrsOf pmaddUbSwBody with
+  | some [i] => i.resultTy = some (.vec 8 (.int 16))
+  | _ => false
+
+/-! #### Every neighbouring spelling is refused by name -/
+
+-- `umin` at another width: the rule covers `i32`, and the width is part of the
+-- intrinsic's name.
+#guard refusedWith "  %r = call i64 @llvm.umin.i64(i64 %a, i64 %b)"
+  ["llvm.umin.i64"]
+
+-- `umin.i32` at another arity.
+#guard refusedWith "  %r = call i32 @llvm.umin.i32(i32 %a)"
+  ["llvm.umin.i32", "exactly 2"]
+
+-- `umin.i32` at another operand type.
+#guard refusedWith "  %r = call i32 @llvm.umin.i32(i64 %a, i64 %b)"
+  ["llvm.umin.i32", "operand types"]
+
+-- `umin.i32` at another result type.
+#guard refusedWith "  %r = call i64 @llvm.umin.i32(i32 %a, i32 %b)"
+  ["llvm.umin.i32", "result type"]
+
+-- `pmadd.wd` with three arguments.
+#guard refusedWith
+  "  %r = call <4 x i32> @llvm.x86.sse2.pmadd.wd(<8 x i16> %a, <8 x i16> %b, <8 x i16> %c)"
+  ["llvm.x86.sse2.pmadd.wd", "exactly 2"]
+
+-- `pmadd.wd` at another element type.
+#guard refusedWith
+  "  %r = call <4 x i32> @llvm.x86.sse2.pmadd.wd(<4 x i16> %a, <4 x i16> %b)"
+  ["llvm.x86.sse2.pmadd.wd", "operand types"]
+
+-- `pmadd.wd` at another result type.
+#guard refusedWith
+  "  %r = call <8 x i16> @llvm.x86.sse2.pmadd.wd(<8 x i16> %a, <8 x i16> %b)"
+  ["llvm.x86.sse2.pmadd.wd", "result type"]
+
+-- `pmadd.ub.sw.128` with three arguments.
+#guard refusedWith
+  "  %r = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<16 x i8> %a, <16 x i8> %b, <16 x i8> %c)"
+  ["llvm.x86.ssse3.pmadd.ub.sw.128", "exactly 2"]
+
+-- `pmadd.ub.sw.128` at another element type.
+#guard refusedWith
+  "  %r = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<8 x i8> %a, <8 x i8> %b)"
+  ["llvm.x86.ssse3.pmadd.ub.sw.128", "operand types"]
+
+-- The neighbouring symbols, not just wrong shapes of the modelled ones:
+-- `pmadd.ub.sw` without `.128`, and the unsigned-byte form under the signed
+-- prefix.
+#guard refusedWith
+  "  %r = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw(<16 x i8> %a, <16 x i8> %b)"
+  ["llvm.x86.ssse3.pmadd.ub.sw"]
+#guard refusedWith
+  "  %r = call <4 x i32> @llvm.x86.sse2.pmadd.ub.sw.128(<16 x i8> %a, <16 x i8> %b)"
+  ["llvm.x86.sse2.pmadd.ub.sw.128"]
 
 end VectorEscape

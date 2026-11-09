@@ -709,9 +709,9 @@ def pmaddWdLane (x₀ x₁ y₀ y₁ : BitVec 16) : BitVec 32 :=
 /-- `llvm.x86.sse2.pmadd.wd`: signed word multiply-add.  Word lanes `2j` and
 `2j + 1` of each operand are multiplied pairwise, the two products are summed, and
 the sum is `i32` lane `j` — wrapping, because the instruction neither saturates
-nor traps.  The emission calls it at `<8 x i16>` → `<4 x i32>`, and that is the
-shape the environment's arm matches; the parser has no shape rule for the
-spelling, so a call at another shape is unresolved rather than refused. -/
+nor traps.  The emission calls it at `<8 x i16>` → `<4 x i32>`, which is the
+shape `checkIntrinsicShape` admits; a call at another arity, operand type or
+result type is refused by name. -/
 def pmaddWd (x y : List (BitVec 16)) : List (BitVec 32) :=
   List.zipWith (fun (x₀, x₁) (y₀, y₁) => pmaddWdLane x₀ x₁ y₀ y₁) (pairsOf x) (pairsOf y)
 
@@ -775,9 +775,9 @@ def pmaddUbSwLane (x₀ x₁ y₀ y₁ : BitVec 8) : BitVec 16 :=
 with a saturated signed-word result.  Byte lanes `2j` and `2j + 1` of each operand
 are multiplied pairwise — the first operand's read unsigned, the second's signed —
 the two products are summed, and the sum saturates into signed word lane `j`.  The
-emission calls it at `<16 x i8>` → `<8 x i16>`, and that is the shape the
-environment's arm matches; the parser has no shape rule for the spelling, so a
-call at another shape is unresolved rather than refused. -/
+emission calls it at `<16 x i8>` → `<8 x i16>`, which is the shape
+`checkIntrinsicShape` admits; a call at another arity, operand type or result
+type is refused by name. -/
 def pmaddUbSw (x y : List (BitVec 8)) : List (BitVec 16) :=
   List.zipWith (fun (x₀, x₁) (y₀, y₁) => pmaddUbSwLane x₀ x₁ y₀ y₁) (pairsOf x) (pairsOf y)
 
