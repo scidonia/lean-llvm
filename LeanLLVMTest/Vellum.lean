@@ -9955,3 +9955,21 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.denoteCode_agree' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.denoteCode_agree
+
+/-! #### The body's iteration: traces moved to the states the run leaves -/
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.denoteCode_pc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.denoteCode_pc
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usUs_step_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.usUs_step_at
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_step_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.body_step_at
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.staging_count_bound_not_implied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.staging_count_bound_not_implied
