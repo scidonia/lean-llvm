@@ -393,15 +393,347 @@ to be discovered:
 `if.then20`/`if.then22`, then `udIfThen20_step`/`udIfThen22_step` and the exit word;
 `seedLatch` needs the pre-scan's three blocks (`udEntry_step`, `udLandRhs_step`,
 `udWhileBody_step`) composed to the latch, and shares the iteration's first step.
-Neither is a statement defect: each quantifies over exactly the run the bound
-names.  The fuel primitive for the chain is `runFuel_prefix_trans` /
+The fuel primitive for the chain is `runFuel_prefix_trans` /
 `runFuel_prefix_some` in `Semantics`.
+
+**The chain stops at the copy, and it stops on a statement, not on volume.**
+Composing the first two blocks executes (`cleanup32` then `while.body6`, with the
+step witnesses introduced as `let`-bound states and their cells discharged from
+the environment builders, as the bullets above describe).  The third block's two
+arms reach `us_run_long.exit99`; the copy arm is where the hypotheses no longer
+assemble, and the reason is the invariant's, not the composition's.
+
+`if.end` forms the copy's destination base as `%add.ptr12 = %dst + %j.0294`, whose
+value is `dst + out.length`, and `CopyInv` asks for `copyDisjoint src dst sub` at
+that base.  In the staging where the body follows the destination
+(`dst + n + 64 ≤ b`), the only disjunct that can hold is
+`(dst + out.length) + sub + 64 ≤ b + i`, and it needs `out.length ≤ i`.  Nothing
+in `AssemblyLatchInv` states that.  `DecodeInv` carries three fields, and its
+`walk` does not constrain the prefix at all when the goal is a refusal: a refusal
+outcome drops `out`, so the invariant admits a latch with an arbitrarily long
+prefix at any cursor — `escapeDecodeGo_refusal_ignores_prefix` below is that fact
+on the pinned body, and `decodeInv_prefix_unbounded` is the existential it yields.
+The only prefix bound in the tree is `DecodeInv.out_length_le_cursor`
+(`JsonEscapeFinalCopy`), and it is stated at `k = nps` — the exit — which the
+iteration's `c < nps` cannot supply.  So the copy's `copyDisjoint`, the emitter's
+store extent (`dst + %add15`, needed for the returned state's frame), and the
+destination prefix all wait on one clause the invariant does not have:
+`out.length ≤ i` at the latch.  That is a statement change, and it reaches
+`LatchInv`/`DecodeLatch` in `JsonEscapeDecodeRun`, so it is put to the planner
+rather than patched here.  `copyDisjoint_prefix_unbounded` is the arithmetic
+witness at the parameters a `n = 200` staging with `q - pos0 = 100` gives, and
+`assemblyLatchInv_admits_failing_copy` below is the state: a latch the invariant
+admits at `c = 1 < nps = 4`, whose guard is false, at which the copy's
+disjointness is false.  The state's walk refuses at `150`, which is why the prefix
+is unconstrained there; a conjunct bounding the prefix is therefore needed
+unconditionally, not only in the decoded case.
+
+Note that the two claims above about `refuse` and `seedLatch` being volume only
+were written before this was executed, and the paragraph `refuse` needs — the
+shared prefix — passes through the same copy when the refusing position is past a
+long run, so it inherits the same missing clause.
 
 **A hole with no error is possible here, and a pin is the instrument.**  Elaborating
 a candidate composition can succeed with a branch replaced by `sorry` while the
 build reports only a warning, so no composition above may be trusted without
 `#print axioms` at `[propext, Quot.sound]` or a named carrier.  That is why the
 footprints below are pinned. -/
+
+/-! ### The copy's obstruction, executed
+
+Two facts, each stated at the strength the argument uses and no further.  The
+first is the reason `DecodeInv.walk` cannot bound the prefix: at a refusal the
+outcome is produced without reading `out`.  The second is the arithmetic at the
+copy's parameters, so the inequality `copyDisjoint` asks for is refuted on numbers
+rather than argued in prose. -/
+
+/-- **A refusing walk does not read the prefix.**  The byte at position `2` of this
+body is a control byte, so the walk refuses there and returns the same outcome for
+every `out` — `DecodeInv.walk` therefore holds of a state carrying any prefix
+whatever, at the same cursor and index. -/
+theorem escapeDecodeGo_refusal_ignores_prefix (out : List UInt8) :
+    escapeDecodeGo [0x41, 0x42, 0x01] 0 1 [2] out = .refused 2 2 := by
+  have hb : ([0x41, 0x42, 0x01] : List UInt8)[2]? = some 0x01 := by decide
+  have hlt : 2 < ([0x41, 0x42, 0x01] : List UInt8).length := by decide
+  have hctl : IsControlB (0x01 : UInt8) = true := by decide
+  exact escapeDecodeGo_step_control hb hlt hctl
+
+/-- The existential form: the walk at one cursor and index admits a prefix longer
+than that cursor, so no field of `DecodeInv` bounds it. -/
+theorem decodeInv_prefix_unbounded :
+    ∃ (out : List UInt8),
+      escapeDecodeGo [0x41, 0x42, 0x01] 0 1 [2] out = .refused 2 2 ∧ 0 < out.length :=
+  ⟨List.replicate 50 0x20, escapeDecodeGo_refusal_ignores_prefix _, by simp⟩
+
+/-- **The copy's disjointness is not free.**  At the copy the destination base is
+`dst + out.length`; here `dst = 100`, `out.length = 264` (the `n + 64` extent a
+`n = 200` staging names), the residual is `100` and the source base is `364`
+(`b = dst + n + 64` with `i = 0`).  Neither disjunct of `copyDisjoint` holds. -/
+theorem copyDisjoint_prefix_unbounded :
+    ¬ copyDisjoint 364 364 100 := by
+  unfold copyDisjoint
+  decide
+
+/-! ### The refusal-parameter witness
+
+A latch state the iteration arm's hypotheses admit, at which the copy's
+`copyDisjoint` is false.  The body is `\n`, a run of `a`, `\n`, a run of `a`, then
+a backslash followed by a control byte and a run of `a`: its escape positions are
+`[0, 100, 150, 151]`.  The caller's walk is fresh, so the goal is a refusal at
+`150`, and a refusal does not read the prefix — `walk` is therefore satisfied by a
+prefix of `264` bytes, the whole destination extent.
+
+At the latch `c = 1` the head position is the valid escape at `100`, so
+`decodeRefuses` is false and this is a state the iteration arm quantifies over.
+`if.end` then forms `sub13 = 100 - 2 = 98` (above one block, so the copy runs) with
+source base `b + i = 466` and destination base `dst + out.length = 464`, where
+neither disjunct of `copyDisjoint` holds. -/
+
+/-- The body: `\n`, `a`^98, `\n`, `a`^48, `\` then a control byte, `a`^48.  Length
+`200`; positions `[0, 100, 150, 151]`. -/
+def refusalBody : List UInt8 :=
+  [0x5C, 0x6E] ++ List.replicate 98 0x61 ++ [0x5C, 0x6E] ++ List.replicate 48 0x61 ++
+    [0x5C, 0x01] ++ List.replicate 48 0x61
+
+theorem refusalBody_length : refusalBody.length = 200 := by decide
+
+/-- The position stream the staging reads. -/
+def refusalStream : List UInt8 := positionsBytes 4 [0, 100, 150, 151]
+
+theorem refusalStream_length : refusalStream.length = 16 := by
+  unfold refusalStream
+  rw [positionsBytes_length]
+  decide
+
+/-- The witness memory: zeros, the table at `1000`, the stream at `700`, the body
+at `464`. -/
+def refusalMem : Mem :=
+  writeBytes (writeBytes (writeBytes (zeroMem 1500) 1000 unescapeTable) 700 refusalStream)
+    464 refusalBody
+
+theorem refusalMem_dst : readBytes refusalMem 200 264 = some (List.replicate 264 0) := by
+  unfold refusalMem
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 200 + 264 ≤ 464)]
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 200 + 264 ≤ 700)]
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 200 + 264 ≤ 1000)]
+  exact readBytes_zeroMem 264 1500 200 (by omega)
+
+theorem refusalMem_body : readBytes refusalMem 464 200 = some refusalBody := by
+  unfold refusalMem
+  rw [show 200 = refusalBody.length from refusalBody_length.symm]
+  exact readBytes_writeBytes_same _ _ (addr := 464)
+
+theorem refusalMem_stream : readBytes refusalMem 700 16 = some (positionsBytes 4 [0, 100, 150, 151]) := by
+  unfold refusalMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalBody_length]; omega)]
+  rw [show 16 = refusalStream.length from refusalStream_length.symm]
+  exact readBytes_writeBytes_same _ _ (addr := 700)
+
+theorem refusalMem_table : readBytes refusalMem 1000 256 = some unescapeTable := by
+  unfold refusalMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalBody_length]; omega)]
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalStream_length]; omega)]
+  rw [show 256 = unescapeTable.length from unescapeTable_length.symm]
+  exact readBytes_writeBytes_same _ _ (addr := 1000)
+
+theorem refusalMem_tail : readBytes refusalMem 664 32 = some (List.replicate 32 0) := by
+  unfold refusalMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalBody_length]; omega)]
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 664 + 32 ≤ 700)]
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 664 + 32 ≤ 1000)]
+  exact readBytes_zeroMem 32 1500 664 (by omega)
+
+theorem refusalMem_err : readBytes refusalMem 900 8 = some (wordBytes 8 0) := by
+  unfold refusalMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalBody_length]; omega)]
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalStream_length]; omega)]
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 900 + 8 ≤ 1000)]
+  rw [readBytes_zeroMem 8 1500 900 (by omega), wordBytes_rep_eight]
+
+theorem refusalMem_xj : readBytes refusalMem 950 8 = some (wordBytes 8 0) := by
+  unfold refusalMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalBody_length]; omega)]
+  rw [JsonEntrySteps.readBytes_writeBytes_above _ _ _ _ _
+    (by rw [refusalStream_length]; omega)]
+  rw [readBytes_writeBytes_below _ _ _ _ _ (by omega : 950 + 8 ≤ 1000)]
+  rw [readBytes_zeroMem 8 1500 950 (by omega), wordBytes_rep_eight]
+
+theorem refusalBody_positions :
+    escapePositionsFrom refusalBody ⟨true, false⟩ = [0, 100, 150, 151] := by decide
+
+theorem refusalBody_escAt : escAt refusalBody ⟨true, false⟩ 0 = [0, 100, 150, 151] := by
+  rw [← escapePositionsFrom_eq_escAt]
+  exact refusalBody_positions
+
+theorem refusalBody_escapeAt_100 : escapeAt refusalBody 100 = some ([0x0A], 2) := by decide
+
+theorem refusalBody_escapeAt_150 : escapeAt refusalBody 150 = none := by decide
+
+/-- The caller's fresh walk refuses at `150`. -/
+theorem refusalGoal : escapeDecodeGo refusalBody 0 0 [0, 100, 150, 151] [] = .refused 150 3 := by
+  decide
+
+/-- The walk from the latch's cursor refuses at the same place for every prefix. -/
+theorem refusalWalk (out : List UInt8) :
+    escapeDecodeGo refusalBody 2 1 [100, 150, 151] out = .refused 150 3 := by
+  have h1 : escapeDecodeGo refusalBody 2 1 [100, 150, 151] out =
+      escapeDecodeGo refusalBody 102 2 [150, 151]
+        (out ++ (refusalBody.drop 2).take 98 ++ [0x0A]) := by
+    refine escapeDecodeGo_step_simple (i := 2) (q := 100) (k := 1) (qs := [150, 151])
+      (out := out) (b := 0x5C) (e := 0x0A) ?_ ?_ ?_ refusalBody_escapeAt_100
+    · decide
+    · decide
+    · decide
+  rw [h1]
+  refine escapeDecodeGo_step_refuse (i := 102) (q := 150) (k := 2) (qs := [151])
+    (out := out ++ (refusalBody.drop 2).take 98 ++ [0x0A]) (b := 0x5C) ?_ ?_ ?_ ?_
+  · decide
+  · decide
+  · decide
+  · exact refusalBody_escapeAt_150
+
+/-- The latch's cells. -/
+def refusalState : State :=
+  modelState
+    [("%sub", .int 64 0), ("%inc11", .int 64 1), ("%nxp", .int 64 4),
+     ("%add8.i", .int 64 264), ("%p", .ptr 464), ("%dst", .ptr 200),
+     ("%xp", .ptr 700), ("%tab", .ptr 1000), ("%err", .ptr 900),
+     ("%xj", .ptr 950), ("%pos0", .int 64 (BitVec.ofNat 64 0)),
+     ("%n", .int 64 (BitVec.ofNat 64 200)),
+     ("%add", .int 64 (BitVec.ofNat 64 200))]
+    refusalMem "cleanup32" (some "if.then6.i")
+
+theorem refusalState_cursor : latchCursor refusalState = some 2 := by
+  simp [latchCursor, refusalState, modelState]
+
+/-- The staging the iteration arm takes. -/
+theorem refusalState_staging :
+    ExpandStaging [.ptr 464, .int 64 (BitVec.ofNat 64 200), .ptr 200, .ptr 900,
+      .ptr 700, .ptr 950, .int 64 (BitVec.ofNat 64 4), .int 64 0, .ptr 1000]
+      refusalMem 0 refusalBody ⟨true, false⟩ 200 4 (.refused 150 3) 464 700 1000 0 200
+      [0, 100, 150, 151] 900 950 := by
+  unfold ExpandStaging Γ_escape_expand_at
+  refine ⟨?_, rfl, rfl, refusalMem_body, by omega, ?_, ?_, ?_, by omega, by omega, ?_⟩
+  · refine ⟨464, 200, 200, 900, 700, 950, 4, 0, 1000, refusalBody, [0, 100, 150, 151],
+      0, 0, rfl, refusalMem_body, refusalMem_stream, rfl, ?_, ?_, by omega, refusalMem_xj, by omega,
+      refusalMem_err, refusalMem_table, ⟨_, refusalMem_tail⟩, ⟨_, refusalMem_dst⟩, by omega, by omega,
+      by omega, by omega, by omega, by omega⟩
+    · intro q hq
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+      rcases hq with rfl | rfl | rfl | rfl <;> omega
+    · rw [refusalBody_positions]
+      rfl
+  · refine ⟨BitVec.ofNat 64 200, refusalMem_stream, rfl, ?_, by decide⟩
+    intro j q hq
+    rcases Nat.lt_or_ge j 4 with hj | hj
+    · have h : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 := by omega
+      rcases h with rfl | rfl | rfl | rfl <;> simp at hq <;> omega
+    · have hnone : ([0, 100, 150, 151] : List Nat)[j]? = none :=
+        List.getElem?_eq_none_iff.2 (by simpa using hj)
+      rw [hnone] at hq
+      cases hq
+  · rw [refusalBody_positions]
+    rfl
+  · unfold DecodeNoAlias
+    refine ⟨by omega, by omega, by omega, by omega⟩
+  · refine ⟨0, refusalMem_xj, by omega, ?_⟩
+    show EscapeOutcome.refused 150 3 =
+      escapeDecodeGo refusalBody 0 0 (List.map (fun q => q - 0) [0, 100, 150, 151]) []
+    simp only [List.map_cons, List.map_nil, Nat.sub_zero]
+    exact refusalGoal.symm
+
+/-- The invariant at the witness state. -/
+theorem refusalState_inv :
+    AssemblyLatchInv refusalBody ⟨true, false⟩ 200 4 (.refused 150 3) 464 700 1000 0 200
+      [0, 100, 150, 151] 900 950 refusalMem 3 1 refusalState := by
+  obtain ⟨addv0, hprop⟩ := refusalState_staging.2.2.2.2.2.1
+  have haddv0 : addv0 = BitVec.ofNat 64 200 := by
+    apply BitVec.toNat_inj.mp
+    rw [hprop.2.2.2, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide)]
+  have hinv : DecodeInv refusalBody ⟨true, false⟩ refusalMem 200 4 2 1
+      (List.replicate 264 0) (.refused 150 3) := by
+    refine ⟨?_, ?_, ?_⟩
+    · rw [refusalBody_escAt]
+      exact refusalWalk _
+    · rw [show (List.replicate 264 0 : List UInt8).length = 264 from by simp]
+      exact refusalMem_dst
+    · rw [refusalBody_escAt]
+      rfl
+  have hjn : (264 : BitVec 64).toNat = (List.replicate 264 0 : List UInt8).length := by
+    simp
+  have hcellAdd8 : lookupName refusalState.env "%add8.i" = some (.int 64 264) := by
+    simp [refusalState, modelState, lookupName]
+  have hncell : lookupName refusalState.env "%n" = some (.int 64 (BitVec.ofNat 64 200)) := by
+    simp [refusalState, modelState, lookupName]
+  have hphi : ("if.then6.i" = "if.end32.i" ∧
+        lookupName refusalState.env "%add.i125" = some (.int 64 264) ∧
+        lookupName refusalState.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 2))) ∨
+      ("if.then6.i" = "if.then6.i" ∧
+        lookupName refusalState.env "%add8.i" = some (.int 64 264) ∧
+        (BitVec.ofInt 64 2) = BitVec.ofInt 64 2) :=
+    Or.inr (And.intro rfl (And.intro hcellAdd8 rfl))
+  have hlatch : LatchInv refusalBody ⟨true, false⟩ 200 4 (.refused 150 3) 3 refusalState 1 := by
+    refine ⟨?_, by omega⟩
+    refine ⟨2, List.replicate 264 0, "if.then6.i", 0, 1, BitVec.ofInt 64 2, 264, 4,
+      464, 700, 1000, 900, 950, BitVec.ofNat 64 0, BitVec.ofNat 64 200,
+      BitVec.ofNat 64 200, rfl, hinv, by decide, rfl, rfl, rfl, rfl, by decide,
+      hphi, by decide, by decide, hjn, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, hncell⟩
+
+  have haddcell : lookupName refusalState.env "%add" = some (.int 64 addv0) := by
+    rw [haddv0]; simp [refusalState, modelState, lookupName]
+  have hex : ∃ addv : BitVec 64,
+      DecodeStaging refusalState.mem 4 700 0 200 [0, 100, 150, 151] addv ∧
+        lookupName refusalState.env "%add" = some (.int 64 addv) :=
+    Exists.intro addv0 (And.intro hprop haddcell)
+  have hstaged : StagedLatchInv refusalBody ⟨true, false⟩ 200 4 (.refused 150 3) 700 0 200
+      [0, 100, 150, 151] 3 1 refusalState :=
+    And.intro hlatch hex
+  refine ⟨hstaged, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [refusalState, modelState, lookupName]
+  · simp [refusalState, modelState, lookupName]
+  · simp [refusalState, modelState, lookupName]
+  · simp [refusalState, modelState, lookupName]
+  · simp [refusalState, modelState, lookupName]
+  · simp [refusalState, modelState, lookupName]
+  · simp [refusalState, modelState, lookupName]
+  · intro i hi
+    rw [refusalState_cursor] at hi
+    injection hi with h
+    omega
+  · intro a h
+    rfl
+
+/-- **The copy's disjointness fails at an invariant state.**  The parameters are
+`if.end`'s at this latch: source base `%p + %i.0295 = 464 + 2`, destination base
+`%dst + %j.0294 = 200 + 264`, residual `%sub - %i.0295 = 100 - 2`. -/
+theorem refusalState_copyDisjoint_false : ¬ copyDisjoint (464 + 2) (200 + 264) 98 := by
+  unfold copyDisjoint
+  decide
+
+/-- The iteration arm's guard is false at the witness: `1 < 4` and the head
+position `100` is a valid escape. -/
+theorem refusalState_guard :
+    (decide (4 ≤ 1) || decodeRefuses refusalBody [0, 100, 150, 151] 0 1) = false := by
+  decide
+
+/-- **The iteration arm's hypotheses hold at a state whose copy cannot run.**  The
+state satisfies `AssemblyLatchInv` at budget `3` with `c = 1 < nps = 4`; the arm's
+guard is false; and at `if.end`'s copy parameters the disjointness `CopyInv` asks
+for is false.  So the copy's hypothesis cannot be discharged from the invariant,
+and the clause it needs is the prefix bound `out.length ≤ i`. -/
+theorem assemblyLatchInv_admits_failing_copy :
+    AssemblyLatchInv refusalBody ⟨true, false⟩ 200 4 (.refused 150 3) 464 700 1000 0 200
+        [0, 100, 150, 151] 900 950 refusalMem 3 1 refusalState ∧
+      (decide (4 ≤ 1) || decodeRefuses refusalBody [0, 100, 150, 151] 0 1) = false ∧
+      ¬ copyDisjoint (464 + 2) (200 + 264) 98 :=
+  ⟨refusalState_inv, refusalState_guard, refusalState_copyDisjoint_false⟩
 
 /-! ### Axiom footprints
 
@@ -461,4 +793,124 @@ lemma here that carries it, and the rest of the bridge stays at `[propext]`. -/
 #guard_msgs in
 #print axioms ExpandStaging.latch_reads
 
+/-- info: 'LeanLLVM.Vellum.escapeDecodeGo_refusal_ignores_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeDecodeGo_refusal_ignores_prefix
+
+/-- info: 'LeanLLVM.Vellum.decodeInv_prefix_unbounded' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms decodeInv_prefix_unbounded
+
+/-- info: 'LeanLLVM.Vellum.copyDisjoint_prefix_unbounded' does not depend on any axioms -/
+#guard_msgs in
+#print axioms copyDisjoint_prefix_unbounded
+
+
+/-! #### The witness's footprints
+
+A `decide` over the body's bytes and the block steps' own lemmas introduce nothing:
+the whole witness is at the module's ceiling, `[propext, Classical.choice,
+Quot.sound]`, with `Classical.choice` reaching only the propositions `decide`
+evaluates over `EscapeOutcome` and `ClassState` (`refusalState_staging`,
+`refusalState_inv`, `assemblyLatchInv_admits_failing_copy`). -/
+
+/-- info: 'LeanLLVM.Vellum.refusalBody' does not depend on any axioms -/
+#guard_msgs in
+#print axioms refusalBody
+
+/-- info: 'LeanLLVM.Vellum.refusalBody_length' does not depend on any axioms -/
+#guard_msgs in
+#print axioms refusalBody_length
+
+/-- info: 'LeanLLVM.Vellum.refusalStream' does not depend on any axioms -/
+#guard_msgs in
+#print axioms refusalStream
+
+/-- info: 'LeanLLVM.Vellum.refusalStream_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalStream_length
+
+/-- info: 'LeanLLVM.Vellum.refusalMem' does not depend on any axioms -/
+#guard_msgs in
+#print axioms refusalMem
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_dst' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_dst
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_body' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_body
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_stream' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_stream
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_table' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_table
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_tail
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_err' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_err
+
+/-- info: 'LeanLLVM.Vellum.refusalMem_xj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalMem_xj
+
+/-- info: 'LeanLLVM.Vellum.refusalBody_positions' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalBody_positions
+
+/-- info: 'LeanLLVM.Vellum.refusalBody_escAt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalBody_escAt
+
+/-- info: 'LeanLLVM.Vellum.refusalBody_escapeAt_100' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalBody_escapeAt_100
+
+/-- info: 'LeanLLVM.Vellum.refusalBody_escapeAt_150' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalBody_escapeAt_150
+
+/-- info: 'LeanLLVM.Vellum.refusalGoal' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalGoal
+
+/-- info: 'LeanLLVM.Vellum.refusalWalk' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalWalk
+
+/-- info: 'LeanLLVM.Vellum.refusalState' does not depend on any axioms -/
+#guard_msgs in
+#print axioms refusalState
+
+/-- info: 'LeanLLVM.Vellum.refusalState_cursor' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalState_cursor
+
+/-- info: 'LeanLLVM.Vellum.refusalState_staging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalState_staging
+
+/-- info: 'LeanLLVM.Vellum.refusalState_inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalState_inv
+
+/-- info: 'LeanLLVM.Vellum.refusalState_copyDisjoint_false' does not depend on any axioms -/
+#guard_msgs in
+#print axioms refusalState_copyDisjoint_false
+
+/-- info: 'LeanLLVM.Vellum.refusalState_guard' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms refusalState_guard
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_admits_failing_copy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_admits_failing_copy
 end LeanLLVM.Vellum
