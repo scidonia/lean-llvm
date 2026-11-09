@@ -67,6 +67,17 @@
 #          `dens_`, `us_mask_any`, `us_dec_m`, `us_dec_x_inl`/`out`, `us_body`,
 #          `sp43_`/`sp44_`).  `--arms-only` asserts `leanllvm_json_stage2` is the
 #          only public symbol it defines.
+#   pipeline the assembled caller, `kernel/json/pipeline.c`, against the pinned
+#          emission's inventory.  The pipeline is not extracted text: it is the
+#          caller the per-unit records are stated at, so its source-level claim
+#          is its **call census** -- `leanllvm_json_pipeline`'s body calls
+#          exactly the six unit ABIs `probes/install/ir/json-pipeline.inventory`
+#          names, each once -- and the mutation control changes one call's
+#          target, which the census must report.  `--arms-only` compiles it,
+#          runs the units' measurement-vocabulary detector with its positive
+#          control, and asserts its one public symbol.  `--link-census` is
+#          accepted for this unit too: the place in the assembled link is the
+#          pipeline's own claim.
 #
 # Modes (default: --identity --mutate):
 #   --identity    extract the entities `kernel/json/README.md` lists from the
@@ -245,8 +256,14 @@ case "$unit" in
                  "$measured/strz.c" "$measured/numf_el1.h" "$measured/numel_el.h" \
                  "$measured/epow_table.h" "$measured/usdec.h")
     ;;
+  pipeline)
+    kernel=$repo/kernel/json/pipeline.c
+    oracle=""
+    input_paths=("$kernel" "$repo/kernel/json/pipeline.h" "$readme" \
+                 "$repo/probes/install/ir/json-pipeline.inventory")
+    ;;
   *)
-    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape stage2\n' "$unit" >&2
+    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape stage2 pipeline\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -386,9 +403,19 @@ case "$unit" in
     xl_exempt=""
     detector_unit=$detector_stage2
     ;;
+  pipeline)
+    # The caller has no measured text to copy: its claim is the call census,
+    # and the arms below read the pinned inventory rather than an entity list.
+    entity_specs=""
+    deletion_specs=""
+    extra_specs=""
+    defs_re="leanllvm_json_[a-z0-9_]+"
+    xl_exempt=""
+    detector_unit=$detector
+    ;;
 esac
 
-if [ -z "$entity_specs" ]; then
+if [ -z "$entity_specs" ] && [ "$unit" != pipeline ]; then
   printf 'SETUP: the %s identity list names no entities\n' "$unit" >&2
   exit 3
 fi
@@ -396,8 +423,12 @@ fi
 # translation unit and must hold nothing else.
 if [ "$run_stage_tu" -eq 0 ]; then
   printf 'unit:          %s\n' "$unit"
-  printf 'identity list: %s\n' "$entity_specs"
-  printf 'delete list:   %s\n' "$deletion_specs"
+  if [ "$unit" = pipeline ]; then
+    printf 'claim:         the call census of leanllvm_json_pipeline\n'
+  else
+    printf 'identity list: %s\n' "$entity_specs"
+    printf 'delete list:   %s\n' "$deletion_specs"
+  fi
 fi
 
 # source_file <source> -- the vendored file an entity or a deletion row came from.
@@ -1025,8 +1056,106 @@ EOF
 # The list is bilateral: a definition in the kernel that it does not name is a
 # copy the diff above never looked at.  The exceptions are the unit's new text,
 # which README.md and the unit's header declare, and they are data.
+# --- the pipeline's source-level claim --------------------------------------
+
+# pipeline_callees -- the six call targets the pinned inventory names.
+pipeline_callees() {
+  sed -n 's/^call @//p' "$repo/probes/install/ir/json-pipeline.inventory" \
+    | LC_ALL=C sort
+}
+
+# pipeline_census <preprocessed> -- the calls `leanllvm_json_pipeline` makes, as
+# `<name> <count>` lines.  The declaration in `pipeline.h` is skipped; only the
+# definition's body is read.
+pipeline_census() { # <file>
+  awk -v self="leanllvm_json_pipeline" '
+    state == 0 && index($0, self "(") > 0 { state = 1; next }
+    state == 1 && $0 !~ /\{/ && $0 ~ /;[ \t]*$/ { state = 0; next }
+    state == 1 && $0 ~ /\{/ { state = 2 }
+    state == 2 {
+      line = $0
+      while (match(line, /leanllvm_json_[a-z0-9_]+[ \t]*\(/)) {
+        n = substr(line, RSTART, RLENGTH)
+        sub(/[ \t]*\($/, "", n)
+        if (n != self) c[n]++
+        line = substr(line, RSTART + RLENGTH)
+      }
+      probe = $0
+      o = gsub(/\{/, "", probe); cl = gsub(/\}/, "", probe)
+      depth += o - cl
+      if (o > 0) opened = 1
+      if (opened && depth == 0) exit
+    }
+    END { for (n in c) print n, c[n] }
+  ' "$1" | LC_ALL=C sort
+}
+
+# pipeline_expected -- the pinned six, each once, in the census's shape.
+pipeline_expected() {
+  pipeline_callees | awk '{ print $1, 1 }' | LC_ALL=C sort
+}
+
+arm_identity_pipeline() {
+  local got want
+  printf '\n== Arm A (%s): the call census, against the pinned inventory\n' "$unit"
+  if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$kernel" \
+      > "$work/pipeline.i"; then
+    printf 'SETUP: the pipeline did not preprocess\n' >&2
+    return 3
+  fi
+  got=$(pipeline_census "$work/pipeline.i")
+  want=$(pipeline_expected)
+  if [ "$got" != "$want" ]; then
+    printf 'DIFF: the pipeline'"'"'s call census is not the pinned six\n' >&2
+    printf '      pinned: %s\n' "$(echo $want)" >&2
+    printf '      census: %s\n' "$(echo $got)" >&2
+    return 1
+  fi
+  printf 'ok: the body calls exactly the six unit ABIs, each once:\n'
+  printf '%s\n' "$got" | awk '{ printf "    %-32s %s\n", $1, $2 }'
+  return 0
+}
+
+arm_mutate_pipeline() {
+  local mut got want
+  printf '\n== Control: one call target changed in a copy of the pipeline\n'
+  mut=$work/pipeline.control.c
+  awk '
+    { if (!done && index($0, "leanllvm_json_entry_pos8(entw") > 0) {
+        sub(/leanllvm_json_entry_pos8\(entw/, "leanllvm_json_entry_b8(entw")
+        done = 1
+      }
+      print }
+    END { if (!done) exit 1 }
+  ' "$kernel" > "$mut" || {
+    printf 'SETUP: the census control did not apply\n' >&2
+    return 3
+  }
+  if cmp -s "$kernel" "$mut"; then
+    printf 'SETUP: the census control could not rewrite the call\n' >&2
+    return 3
+  fi
+  if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$mut" \
+      > "$work/pipeline.control.i"; then
+    printf 'SETUP: the control copy did not preprocess\n' >&2
+    return 3
+  fi
+  got=$(pipeline_census "$work/pipeline.control.i")
+  want=$(pipeline_expected)
+  if [ "$got" = "$want" ]; then
+    printf 'FAIL: the census did not see the changed call target\n' >&2
+    return 1
+  fi
+  printf 'ok: the control is reported as a different census: %s\n' "$(echo $got)"
+  return 0
+}
+
 arm_identity() {
   local rc defs extra re
+  if [ "$unit" = pipeline ]; then
+    arm_identity_pipeline
+    return $?
+  fi
   printf '\n== Arm A (%s): token identity, against %s\n' "$unit" "$kernel"
   compare_entities "$kernel" identity
   rc=$?
@@ -1095,6 +1224,10 @@ fold_status() {
 
 arm_mutate() {
   local rc=0 status st
+  if [ "$unit" = pipeline ]; then
+    arm_mutate_pipeline
+    return $?
+  fi
   printf '\n== Control: text rewritten in a copy of the unit (%s)\n' "$kernel"
   printf '   the comparison must report a difference; its diff follows\n'
 
@@ -1228,6 +1361,9 @@ EOF
       printf 'ok: the preprocessed unit names none of the deleted measurement arms\n'
       printf '    (S2_VAL/S2_STR/S2_EV and the walk itself are this unit'"'"'s subject)\n'
       ;;
+    pipeline)
+      printf 'ok: the preprocessed caller names none of the measurement vocabulary\n'
+      ;;
   esac
 
   if [ "$unit" = entry ]; then
@@ -1352,6 +1488,47 @@ EOF
     printf 'ok: the unit defines exactly its one ABI symbol\n'
   fi
 
+  if [ "$unit" = pipeline ]; then
+    # The detector's positive control: the caller is not extracted text, so a
+    # detector that matches nothing and a caller that carries no measurement
+    # vocabulary are the same log without it.
+    { cat "$kernel"; printf '\nint dens_pipeline_control;\n'; } > "$work/kernel.dens.c"
+    "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$work/kernel.dens.c" \
+      > "$work/kernel.dens.i" || {
+      printf 'SETUP: the detector control did not preprocess\n' >&2
+      return 3
+    }
+    hits=$(grep -oE "$detector_unit" "$work/kernel.dens.i" | sort -u || true)
+    if [ -z "$hits" ]; then
+      printf 'FAIL: the detector names nothing in a copy that inserts a dens_ name\n' >&2
+      return 1
+    fi
+    printf 'ok: control: the same detector names %s in a copy that inserts one\n' \
+      "$(echo $hits)"
+    # The call census, from the same preprocessed unit the detector reads.
+    got=$(pipeline_census "$work/kernel.i")
+    want=$(pipeline_expected)
+    if [ "$got" != "$want" ]; then
+      printf 'FAIL: the pipeline'"'"'s call census is not the pinned six\n' >&2
+      printf '      pinned: %s\n' "$(echo $want)" >&2
+      printf '      census: %s\n' "$(echo $got)" >&2
+      return 1
+    fi
+    printf 'ok: the body calls exactly the six unit ABIs, each once\n'
+    if ! command -v nm >/dev/null 2>&1; then
+      printf 'SETUP: no nm on PATH; the public-symbol assertion needs it\n' >&2
+      return 3
+    fi
+    hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
+    hits=${hits% }
+    if [ "$hits" != "leanllvm_json_pipeline" ]; then
+      printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
+      printf 'FAIL: expected exactly leanllvm_json_pipeline\n' >&2
+      return 1
+    fi
+    printf 'ok: the unit defines exactly its one ABI symbol\n'
+  fi
+
   hits=$(grep -oE "$detector" "$work/control.i" | sort -u || true)
   count=$(printf '%s\n' "$hits" | grep -c . || true)
   if [ "$count" -eq 0 ]; then
@@ -1386,7 +1563,12 @@ EOF
 link_c_library='__memcpy_chk __stack_chk_fail __vfprintf_chk exit free malloc memcpy memset stderr strtod'
 
 arm_link_census() {
-  local u name undef project extra
+  local u name undef project extra want_sym
+  if [ "$unit" = pipeline ]; then
+    want_sym=leanllvm_json_pipeline
+  else
+    want_sym=leanllvm_json_stage2
+  fi
   printf '\n== C1 (%s): the assembled link leaves no undefined project symbol\n' "$unit"
   for u in s1_block entry utf8 escape stage2 pipeline; do
     "$cc" "${cflags[@]}" -I "$repo/kernel/json" -c "$repo/kernel/json/$u.c" \
@@ -1400,13 +1582,17 @@ arm_link_census() {
     printf 'FAIL: ld -r over the six objects did not combine them\n' >&2
     return 1
   }
-  printf 'ok: ld -r combined the five units, this unit and the pipeline\n'
+  if [ "$unit" = pipeline ]; then
+    printf 'ok: ld -r combined the five units and the pipeline\n'
+  else
+    printf 'ok: ld -r combined the five units, this unit and the pipeline\n'
+  fi
 
   name=$(nm --defined-only "$work/assembled.o" | awk '$2 ~ /^[TtDdBbRr]$/ { print $3 }')
   case "$name" in
-    *leanllvm_json_stage2*) printf 'ok: leanllvm_json_stage2 is defined in the assembled object\n' ;;
+    *"$want_sym"*) printf 'ok: %s is defined in the assembled object\n' "$want_sym" ;;
     *)
-      printf 'FAIL: leanllvm_json_stage2 is not defined in the assembled object\n' >&2
+      printf 'FAIL: %s is not defined in the assembled object\n' "$want_sym" >&2
       return 1
       ;;
   esac
@@ -1620,9 +1806,10 @@ if [ "$run_identity" -eq 1 ]; then arm_identity || exit $?; fi
 if [ "$run_mutate" -eq 1 ]; then arm_mutate || exit $?; fi
 if [ "$run_arms" -eq 1 ]; then arm_arms_only || exit $?; fi
 if [ "$run_link" -eq 1 ]; then
-  if [ "$unit" != stage2 ]; then
-    printf 'SETUP: --link-census is the stage2 unit (a unit that does not take part\n' >&2
-    printf 'SETUP: in the assembled link is a setup fault, not a pass) (exit 3)\n' >&2
+  if [ "$unit" != stage2 ] && [ "$unit" != pipeline ]; then
+    printf 'SETUP: --link-census is the stage2 and pipeline units (a unit that\n' >&2
+    printf 'SETUP: does not take part in the assembled link is a setup fault, not\n' >&2
+    printf 'SETUP: a pass) (exit 3)\n' >&2
     exit 3
   fi
   arm_link_census || exit $?

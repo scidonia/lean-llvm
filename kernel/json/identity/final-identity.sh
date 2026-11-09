@@ -5,6 +5,7 @@
 #   nix develop -c bash kernel/json/identity/final-identity.sh s1
 #   nix develop -c bash kernel/json/identity/final-identity.sh utf8
 #   nix develop -c bash kernel/json/identity/final-identity.sh escape
+#   nix develop -c bash kernel/json/identity/final-identity.sh pipeline
 #   nix develop -c bash kernel/json/identity/final-identity.sh entry --tree-only
 #
 # The three arms, in this order:
@@ -16,8 +17,9 @@
 #   3. the unit's paired timing arm (`bench/paired.sh --unit <unit>`).
 #
 # `s1` (the classification mask unit), `entry` (the entry unit), `utf8` (the
-# UTF-8 validity unit) and `escape` (the escape list and its expander) are the
-# units that have all three.  Any other unit is a
+# UTF-8 validity unit), `escape` (the escape list and its expander) and
+# `pipeline` (the assembled caller, and its two timing forms) are the units
+# that have all three.  Any other unit is a
 # setup fault and exits 3 naming it, because an arm that does not exist cannot
 # pass; a control runs that path on every invocation, since no implemented unit
 # reaches it in normal use.
@@ -65,9 +67,9 @@ done
 dispatch() {
   local u=$1
   case "$u" in
-    s1|entry|utf8|escape) : ;;
+    s1|entry|utf8|escape|pipeline) : ;;
     *)
-      printf 'SETUP: unit %s has no identity arms here; implemented units: s1 entry utf8 escape\n' "$u" >&2
+      printf 'SETUP: unit %s has no identity arms here; implemented units: s1 entry utf8 escape pipeline\n' "$u" >&2
       return 3
       ;;
   esac
@@ -111,7 +113,7 @@ refusal_control() {
 
 if [ -z "$unit" ]; then
   usage
-  printf 'final-identity: give a unit: s1, entry, utf8 or escape\n' >&2
+  printf 'final-identity: give a unit: s1, entry, utf8, escape or pipeline\n' >&2
   exit 3
 fi
 

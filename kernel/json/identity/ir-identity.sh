@@ -39,6 +39,18 @@
 #          out-of-line `us_dec_x` — and the arm asserts each lifted module
 #          defines exactly those three and no other.
 #
+#   pipeline the assembled caller, `kernel/json/pipeline.c`.  It is not
+#          extracted text, so the arm's claim is the relation between the three
+#          texts that must agree: the emission of the source, the object built
+#          from that same source, and the pinned fixture
+#          `probes/install/ir/json-pipeline.candidate.ll`.  Their call censuses
+#          -- the multiset of the six unit ABIs the body calls -- must be
+#          equal, which is what makes "the object the theorem is about is the
+#          object the timing arm measures" a checked relation rather than a
+#          sentence.  Its two controls change one call target in a copy of the
+#          source, and remove one call from a copy of the fixture; both must be
+#          reported.
+#
 # All three units: both sides are compiled with the measured compiler line
 # (`build49.sh:17`); `s1` adds the P2 `-D` set (`build49.sh:21`), `entry` the
 # measured one (`build49.sh:19-21`) with `S1F_UTF8` left at its default because
@@ -105,6 +117,7 @@ cc=clang
 cflags=(-O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64)
 
 unit=s1
+pipeline=0
 run_identity=0
 run_controls=0
 tree_only=0
@@ -193,8 +206,23 @@ case "$unit" in
     by_name=1
     generated=0
     ;;
+  pipeline)
+    kernel=$repo/kernel/json/pipeline.c
+    # The pipeline has no measured counterpart: the three texts the arm relates
+    # are the source's emission, its object, and the pinned fixture, and the
+    # module is not lifted because the comparison is over the whole body.
+    oracle=""
+    probe_src=""
+    probe=leanllvm_json_pipeline
+    defs=()
+    lift=(-func=leanllvm_json_pipeline)
+    lift_functions="leanllvm_json_pipeline"
+    by_name=0
+    generated=0
+    pipeline=1
+    ;;
   *)
-    printf 'SETUP: unit %s has no IR identity arm; implemented units: s1 entry utf8 escape\n' "$unit" >&2
+    printf 'SETUP: unit %s has no IR identity arm; implemented units: s1 entry utf8 escape pipeline\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -206,6 +234,7 @@ measured=$repo/kernel/json/measured
 [ "$generated" -eq 1 ] && inputs+=("$measured/s1fuse.h" "$measured/u8kl.h")
 [ "$unit" = escape ] && inputs+=("$measured/s1fuse.h" "$measured/xlist.h" \
                                  "$measured/usdec.h" "$measured/uj.c")
+[ "$pipeline" -eq 1 ] && inputs+=("$repo/probes/install/ir/json-pipeline.candidate.ll")
 
 for path in "${inputs[@]}"; do
   [ -e "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
@@ -519,8 +548,155 @@ build_stage_side() { # <name> [extra include dir]
   fi
 }
 
+# --- the pipeline's three texts --------------------------------------------
+
+# ir_census <module> -- the project call targets the module carries, as
+# `<name> <count>` lines.
+ir_census() { # <file.ll>
+  awk '
+    /call .*@leanllvm_json_/ {
+      line = $0
+      while (match(line, /@leanllvm_json_[a-z0-9_]+/)) {
+        n = substr(line, RSTART + 1, RLENGTH - 1)
+        c[n]++
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    END { for (n in c) print n, c[n] }
+  ' "$1" | LC_ALL=C sort
+}
+
+# object_census <object> -- the project call targets the object carries.  A
+# call across the object's sections is a PLT32 relocation, and the pipeline
+# calls no library function, so this is its census and not a filter.
+object_census() { # <object>
+  readelf -rW "$1" | awk '
+    $3 == "R_X86_64_PLT32" && $5 ~ /^leanllvm_json_/ {
+      n = $5
+      sub(/-.*$/, "", n)
+      c[n]++
+    }
+    END { for (n in c) print n, c[n] }
+  ' | LC_ALL=C sort
+}
+
+arm_identity_pipeline() {
+  local emission pinned object
+  printf '\n== Arm B (%s): the emission, the object, and the pinned fixture\n' "$unit"
+  for tool in readelf nm; do
+    command -v "$tool" >/dev/null 2>&1 || {
+      printf 'SETUP: no %s on PATH\n' "$tool" >&2
+      return 3
+    }
+  done
+  if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -S -emit-llvm \
+      -o "$work/pipeline.ll" "$kernel"; then
+    printf 'SETUP: the pipeline did not emit IR\n' >&2
+    return 3
+  fi
+  if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -c \
+      -o "$work/pipeline.o" "$kernel"; then
+    printf 'SETUP: the pipeline did not compile\n' >&2
+    return 3
+  fi
+  emission=$(ir_census "$work/pipeline.ll")
+  pinned=$(ir_census "$repo/probes/install/ir/json-pipeline.candidate.ll")
+  object=$(object_census "$work/pipeline.o")
+  if [ -z "$emission" ] || [ -z "$pinned" ] || [ -z "$object" ]; then
+    printf 'SETUP: one of the three call censuses is empty\n' >&2
+    return 3
+  fi
+  if [ "$emission" != "$pinned" ]; then
+    printf 'FAIL: the pinned fixture is not the emission of %s\n' "$kernel" >&2
+    diff -u <(printf '%s\n' "$pinned") <(printf '%s\n' "$emission") \
+      | awk 'NR <= 20' >&2
+    return 1
+  fi
+  printf 'ok: the pinned fixture'"'"'s call census is the emission'"'"'s\n'
+  if [ "$object" != "$emission" ]; then
+    printf 'FAIL: the object built from the same source has a different call census\n' >&2
+    diff -u <(printf '%s\n' "$emission") <(printf '%s\n' "$object") \
+      | awk 'NR <= 20' >&2
+    return 1
+  fi
+  printf 'ok: the object built from that same source has the same call census\n'
+  printf '   the census (the sites the emission has after loop unswitching):\n'
+  printf '%s\n' "$emission" | awk '{ printf "     %-32s %s\n", $1, $2 }'
+  if ! nm --defined-only "$work/pipeline.o" \
+      | awk '$3 == "leanllvm_json_pipeline" { found = 1 } END { exit !found }'; then
+    printf 'SETUP: the object does not define leanllvm_json_pipeline\n' >&2
+    return 3
+  fi
+  printf 'ok: the object defines leanllvm_json_pipeline\n'
+  return 0
+}
+
+arm_controls_pipeline() {
+  local mut got pinned rc=0
+  if [ ! -s "$work/pipeline.ll" ]; then
+    if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -S -emit-llvm \
+        -o "$work/pipeline.ll" "$kernel"; then
+      printf 'SETUP: the pipeline did not emit IR\n' >&2
+      return 3
+    fi
+  fi
+  pinned=$(ir_census "$work/pipeline.ll")
+
+  printf '\n== Control: one call target changed in a copy of the source\n'
+  mut=$work/pipeline.control.c
+  awk '
+    { if (!done && index($0, "leanllvm_json_entry_pos8(entw") > 0) {
+        sub(/leanllvm_json_entry_pos8\(entw/, "leanllvm_json_entry_b8(entw")
+        done = 1
+      }
+      print }
+    END { if (!done) exit 1 }
+  ' "$kernel" > "$mut" || {
+    printf 'SETUP: the source control did not apply\n' >&2
+    return 3
+  }
+  if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -S -emit-llvm \
+      -o "$work/pipeline.control.ll" "$mut"; then
+    printf 'SETUP: the source control did not emit IR\n' >&2
+    return 3
+  fi
+  got=$(ir_census "$work/pipeline.control.ll")
+  if [ "$got" = "$pinned" ]; then
+    printf 'FAIL: the census did not see the changed call target\n' >&2
+    rc=1
+  else
+    printf 'ok: the changed call target is reported as a different census\n'
+    printf '   %s\n' "$(echo $got)"
+  fi
+
+  printf '\n== Control: one call removed from a copy of the pinned fixture\n'
+  mut=$work/pipeline.fixture.ll
+  awk '
+    { if (!done && index($0, "call") > 0 &&
+          index($0, "@leanllvm_json_utf8(") > 0) { done = 1; next }
+      print }
+    END { if (!done) exit 1 }
+  ' "$repo/probes/install/ir/json-pipeline.candidate.ll" > "$mut" || {
+    printf 'SETUP: the fixture control did not apply\n' >&2
+    return 3
+  }
+  got=$(ir_census "$mut")
+  if [ "$got" = "$pinned" ]; then
+    printf 'FAIL: the fixture comparison did not see the removed call\n' >&2
+    rc=1
+  else
+    printf 'ok: the removed call is reported as a different census\n'
+    printf '   %s\n' "$(echo $got)"
+  fi
+  return "$rc"
+}
+
 arm_identity() {
   local a b ca cb
+  if [ "$pipeline" -eq 1 ]; then
+    arm_identity_pipeline
+    return $?
+  fi
   printf '\n== Arm B (%s): emitted-code identity\n' "$unit"
   if [ "$generated" -eq 1 ]; then
     a=$(build_stage_side measured) || return 3
@@ -703,6 +879,10 @@ arm_controls_escape() {
 }
 
 arm_controls() {
+  if [ "$pipeline" -eq 1 ]; then
+    arm_controls_pipeline
+    return $?
+  fi
   if [ "$generated" -eq 1 ]; then
     arm_controls_utf8
     return $?

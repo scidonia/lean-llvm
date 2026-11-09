@@ -616,6 +616,139 @@ direction, and the choice is the user's.
 4. **No aliasing claim.**  The caller owns `xp`, `dst` and the document; nothing
    here states what happens if they overlap.
 
+## The assembled pipeline
+
+`kernel/json/pipeline.c` is the caller the units above were hoisted for: the
+block loop that runs the mask unit over every 64-byte block, composes the entry
+word, hands it to the selected entry emitter, appends the block's escape
+positions where the gate selects that arm, and then hands the entry stream to
+stage 2.  It reaches each unit through the external entry point that unit's
+header declares, so the pipeline's own text is the three lines of stage 1 the
+units do not carry: the scalar word `S` and its run starts, the entry word's
+composition, and the tail clamp.  `pipeline.h` states the ABI, the caller's
+staging and the arm selector.
+
+### The staging is the model's, and the one-TU form is the measured one
+
+The pipeline is assembled as **separate translation units with the units'
+external ABIs**.  That is the form the per-unit records are stated at: the
+block loop is the caller, and each unit boundary is a call site a per-unit
+record is consumed at.  An inlined body of thousands of instructions admits no
+compositional proof, so the staged form is not a performance choice; it is the
+form the refinement relation is about.
+
+The recorded ratios in `docs/json-pipeline-performance.md`, in contrast, were
+measured on the **one-TU form**: the same six files compiled as a single
+translation unit, with `-O3` free to inline across what the staged form keeps
+apart.  The two forms are therefore not interchangeable for a ratio, and the
+timing arm measures the difference rather than transferring the record.
+`docs/json-pipeline-performance.md` states no simdjson release, so this arm
+claims no ratio against that reference at all: it compares two builds of this
+repository's own source, and continuity with the recorded table is not assumed.
+
+### The entry table is the caller's
+
+`pipeline.c` never initialises `xl_pos8`, the entry unit's table: the pos8
+emitter reads it, and a run whose table is not built produces an empty entry
+stream and refuses every document at offset 0.  Each side's table is
+file-static inside its own translation unit, so each side has one, and the
+caller fills both before the first pipeline call -- the constructor idiom
+`bench/paired-entry.c:79` uses.  `bench/paired-pipeline.c` does this for both
+forms, compares the two 8 KiB copies (they are the same table), and refuses the
+measurement if either is missing.  `pipeline.h` states the precondition where a
+caller reads it.
+
+### The timing arm
+
+```bash
+nix develop -c bash kernel/json/bench/paired.sh --unit pipeline
+nix develop -c bash kernel/json/bench/paired.sh --unit pipeline --core 2 --core 5
+```
+
+The harness compiles both forms into one binary, runs every document under
+`probes/bench/json/` through both sides once, and requires exact agreement on
+the verdict, the first error offset, the entry count, the escape count, the
+arena and event extents and the bytes of all four buffers before the clock
+starts.  Each round runs both sides twice, once in each order, and averages each
+side, so a drift inside the round cancels in the difference.  The reported
+number is the median of (staged - one-TU) ns/block over the rounds; one block is
+64 document bytes.
+
+- **The arm.**  The caller's selector is `arm 0`: the POS8 emitter, no escape
+  list, the gated UTF-8 path.  That is the decision the measured table takes
+  for a plain document with POS8 selected, and it is a caller's selector rather
+  than a classifier, so both forms run the same arms.
+- **The bound is one-sided.**  The staged form may not be slower than the one-TU
+  form by more than 0.5 ns/block; a row on the favourable side is not a
+  regression.  Both estimators are printed: the median with its
+  distribution-free 95% interval from the order statistics, and the mean with
+  its normal-approximation interval, beside the per-round standard deviation and
+  the one-sided rolling-window rate at the record's fifteen-round window.
+- **301 rounds.**  The round count is this unit's default, because the row's
+  per-round spread can exceed the bound (the escape arm's high-round finding).
+  A row with fewer rounds, or a document under one full 4 KiB block, is an
+  observation and carries no delta claim: one block divides the fixed
+  per-document term by its block count, which is the rule the escape arm's
+  one-block input already follows.
+- **What the compiler kept.**  The shell prints the call census of each form, so
+  the difference measured is the one the compiler left and not one a comment
+  claims.  At clang 21.1.8 with the measured line the one-TU form inlines four
+  of the six unit boundaries (the mask unit, the two entry emitters, the UTF-8
+  stage) and keeps the escape list and stage 2 as calls; the staged form keeps
+  all six.  The staged form's census must equal the pinned emission's, and the
+  one-TU form must have inlined at least one boundary or the arm refuses to
+  time a comparison that would measure placement alone.
+- **Build and target beside every row.**  The report prints the compiler, its
+  line, the target triple and the two objects' digests; each row repeats the
+  build identifier and the CPU it ran on with the core class read from
+  `CPUID.1Ah.EAX[31:24]`.  The core is named on the row, not only in the shell's
+  banner.
+- **The window's edges.**  The shell snapshots the load average, the running
+  processes and the build tools immediately before and after each timing run,
+  excluding its own ancestors.  A snapshot cannot prove that the window between
+  them was quiet, so a run whose edge snapshots name a build process is labelled
+  as such, and the label is printed with the rows; a clean label is only the
+  absence of a named build at the two edges.
+
+Both forms are compiled with `-falign-functions=4096` so every function starts a
+page, and the shell asserts that the two pipeline symbols do.  The comparison
+still includes placement: the staged and one-TU forms place their code
+differently, and a difference that survives the census is a difference of the
+two forms, not noise.
+
+### The pipeline's identity arms
+
+`source-identity.sh --unit pipeline` reads the call census of
+`leanllvm_json_pipeline`'s body from its preprocessed definition: exactly the
+six ABIs `probes/install/ir/json-pipeline.inventory` names, each once.  Its
+control changes one call's target and requires the census to report it.
+`--arms-only` compiles the caller, runs the units' measurement-vocabulary
+detector with its positive control, and asserts the one public symbol.
+`--link-census` is accepted here too: the pipeline's place in the assembled
+link is its own claim, and the arm asserts that `ld -r` over the six objects
+leaves no undefined project symbol and defines `leanllvm_json_pipeline`.
+
+`ir-identity.sh --unit pipeline` relates the three texts that must agree: the
+emission of `pipeline.c`, the object built from that same source, and the pinned
+fixture `probes/install/ir/json-pipeline.candidate.ll`.  Their call censuses
+(the multiset of the six ABIs, after loop unswitching) must be equal.  That is
+what makes "the object the theorem is about is the object the timing arm
+measures" a checked relation.  Its two controls change one call target in a copy
+of the source and remove one call from a copy of the fixture; both are reported.
+
+### Limits
+
+1. **The one-TU form is the compiler's choice.**  It is the same source compiled
+   as one translation unit, not a forced-inline form; which boundaries it
+   inlines is a property of the compiler and is printed rather than assumed.
+2. **The arm measures different code.**  The staged form's cost is the cost of
+   composable boundaries, so a row is a statement about the two forms and not a
+   refutation of either; the record's ratios remain the one-TU form's.
+3. **The pipeline's arms are the caller's.**  The density gate that selects an
+   emitter and the escape list per document is not in this unit, and the arm
+   passes one selector for every document.  A document whose recorded class
+   would select another emitter is outside this arm's row.
+
 ## The checks
 
 ```bash
@@ -650,6 +783,12 @@ nix develop -c bash kernel/json/bench/paired.sh --unit utf8            # UTF-8 u
 nix develop -c bash kernel/json/identity/final-identity.sh entry       # the entry unit's three arms, one command
 nix develop -c bash kernel/json/identity/final-identity.sh utf8        # the UTF-8 unit's three arms, one command
 nix develop -c bash kernel/json/identity/final-identity.sh escape      # the escape unit's three arms, one command
+nix develop -c bash kernel/json/identity/source-identity.sh --unit pipeline # the caller's call census + control
+nix develop -c bash kernel/json/identity/source-identity.sh --unit pipeline --arms-only # the caller's TU, detector and symbol
+nix develop -c bash kernel/json/identity/source-identity.sh --unit pipeline --link-census # the assembled link
+nix develop -c bash kernel/json/identity/ir-identity.sh --unit pipeline     # emission, object and fixture census + two controls
+nix develop -c bash kernel/json/bench/paired.sh --unit pipeline             # staged vs one-TU timing, 301 rounds
+nix develop -c bash kernel/json/identity/final-identity.sh pipeline         # the pipeline's three arms, one command
 ```
 
 `final-identity.sh <unit>` is the dispatcher: it runs the unit's token identity,
