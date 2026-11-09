@@ -53,6 +53,7 @@ ninth argument with the table clause — so that an instance proved at the pinne
 is a statement about the measured unit.
 -/
 import LeanLLVM.Vellum.JsonEscapeIR
+import LeanLLVM.Vellum.JsonEscapeBatch
 import LeanLLVM.Vellum.JsonEscapeSpec
 import LeanLLVM.Vellum.JsonS1MasksIR
 import LeanLLVM.Vellum.Refinement

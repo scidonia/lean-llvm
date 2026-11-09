@@ -9249,3 +9249,26 @@ that can change independently of every module that reads it. -/
   ["%bs", "%ctl", "%im", "%blk0", "%xp", "%xn", "%carry"]
 #guard JsonEscapeIR.usDecFunction.params.map (fun p => p.1) =
   ["%p", "%n", "%dst", "%err", "%xp", "%xj", "%nxp", "%pos0", "%tab"]
+
+/-! ### The batch's record and its instance
+
+`JsonEscapeBatch` states `Γ_xl_batch` and proves it of the pinned batch body; the
+pins below are read here because this file is compiled from source on every
+evidence run, so the axioms the batch rests on are checked by the same command
+that checks the fixture pin above. -/
+
+/-- info: 'LeanLLVM.Vellum.batch_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.batch_run
+
+/-- info: 'LeanLLVM.Vellum.batchCount_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.batchCount_eq
+
+/-- info: 'LeanLLVM.Vellum.Γ_xl_batch' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.Γ_xl_batch
+
+/-- info: 'LeanLLVM.Vellum.xl_batch_satisfies' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.xl_batch_satisfies
