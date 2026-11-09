@@ -9663,3 +9663,41 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.JsonPipelineBlockEval.usUs_denote' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonPipelineBlockEval.usUs_denote
+
+/-! ### The expander's staged invariant and the empty-list entry run -/
+
+/-- info: 'LeanLLVM.Vellum.AssemblyLatchInv' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.AssemblyLatchInv
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_latch' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchInv_latch
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_params' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchInv_params
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_paddr_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.assemblyLatchInv_paddr_eq
+
+/-- info: 'LeanLLVM.Vellum.escAt_length_le' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.escAt_length_le
+
+/-- info: 'LeanLLVM.Vellum.entryState_env' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entryState_env
+
+/-- info: 'LeanLLVM.Vellum.entryState_cells' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entryState_cells
+
+/-- info: 'LeanLLVM.Vellum.emptySeedRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.emptySeedRun
+
+/-- info: 'LeanLLVM.Vellum.refusalReturn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.refusalReturn
