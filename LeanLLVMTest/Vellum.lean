@@ -9451,3 +9451,62 @@ measure.  Each fact is pinned at what it holds without a carrier. -/
 /-- info: 'LeanLLVM.Vellum.lanes_run_at' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.lanes_run_at
+
+/-! ### `JsonEscapeListRun` — the run after the lanes loop
+
+The module sits above `JsonEscapeListLoop`, so its imports run one way:
+`Run → ListLoop → ListBody → Steps`.  The pins are the trace's: the staging's byte
+facts, the or/add identity the inlined first batch needs, and the four blocks after
+the lanes loop. -/
+
+/-- info: 'LeanLLVM.Vellum.carry_words' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.carry_words
+
+/-- info: 'LeanLLVM.Vellum.b_load64_nat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.b_load64_nat
+
+/-- info: 'LeanLLVM.Vellum.b_store64_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.b_store64_mem
+
+/-- info: 'LeanLLVM.Vellum.b_gep4_reg32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.b_gep4_reg32
+
+/-- info: 'LeanLLVM.Vellum.b_gep4_reg64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.b_gep4_reg64
+
+/-- info: 'LeanLLVM.Vellum.b_zext32_64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.b_zext32_64
+
+/-- info: 'LeanLLVM.Vellum.nat_lor_mul_two_pow_add' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.nat_lor_mul_two_pow_add
+
+/-- info: 'LeanLLVM.Vellum.bv32_or_lane_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.bv32_or_lane_toNat
+
+/-- info: 'LeanLLVM.Vellum.lstLanesExit_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstLanesExit_step
+
+/-- info: 'LeanLLVM.Vellum.cSt8_eq_clearLow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.cSt8_eq_clearLow
+
+/-- info: 'LeanLLVM.Vellum.lstForPre_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstForPre_step
+
+/-- info: 'LeanLLVM.Vellum.lstWhilePre_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstWhilePre_step
+
+/-- info: 'LeanLLVM.Vellum.lstEmitExit_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstEmitExit_step

@@ -176,7 +176,25 @@ reserve's values.
 The block itself is named in the caller's store because the claim is about **that**
 block's positions, and the specification reads them off its bytes; the entry point
 does not read the block, so this clause is not a readability obligation the body
-has. -/
+has.
+
+**The count's slot is disjoint from the other two, and the exclusion is partial on
+purpose.** The body stores the outgoing carry at `carry` and `carry + 8` before it
+reads the count, and the batch loop both reads the count and writes the stream, so a
+count slot that is also the carry slot is overwritten by the carry's first store — the
+value `if.end.i4` then reads is not the caller's count — and a count slot inside the
+stream's capacity is overwritten by a batch. **`carry` versus `xp` needs no clause**:
+the carry's stores precede every batch store, and every byte the claim names is
+rewritten by a batch afterwards, so a shared byte carries the batch's value and not
+the carry's. **The block versus `xp` needs none either**: the positions are a function
+of the block in the caller's *input* memory, and the run's memory is never read for
+it. The clause is the minimum that makes `post` true rather than the full pairwise
+exclusion, because a staging promise the proof does not need is a caller obligation
+that should not be asked for; it is stated here, with the two exclusions that are not
+made and their reasons, so that a later reader does not uniformise it.
+
+The staged input is otherwise the caller's: the unit is not defined on overlapping
+slots, and the record says so rather than modelling the alias. -/
 def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
   pre := fun args mem _ =>
@@ -194,6 +212,11 @@ def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract wher
       -- the count in, and the capacity: this block's sixty-four lanes plus the
       -- eight-entry batch reserve
       readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
+      -- the count's slot is disjoint from the stream's capacity and from the
+      -- carry: the carry's stores and the batch's stores would otherwise
+      -- overwrite the count the body reads back
+      (xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn) ∧
+      (carry + 16 ≤ xn ∨ xn + 8 ≤ carry) ∧
       HasBytes mem xp (4 * blockMax xn0) ∧
       -- the position base is a `uint32` that does not truncate
       blk0.toNat * 64 + 64 < 2 ^ 32
@@ -1128,5 +1151,6 @@ theorem escapeExpand_spaced {body : List UInt8} {ps : List Nat} {pos0 : Nat}
 /-- info: 'LeanLLVM.Vellum.escapeAt_cases' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms escapeAt_cases
+
 
 end LeanLLVM.Vellum
