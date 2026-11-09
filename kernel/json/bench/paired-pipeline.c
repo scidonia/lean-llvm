@@ -70,16 +70,28 @@
 
    ## The report
 
+   The harness calls the two sides `first` (`probe_pipeline_staged`) and
+   `second` (`probe_pipeline_inlined`).  The shell renames which build fills
+   each role for each pair -- baseline, decision, reach and the arrangement
+   control -- and passes the pair's labels, so a row says which two builds its
+   columns are.  The difference is **`d = first - second` ns/block**: `d > 0`
+   means the first side is slower.  Each row prints both columns, the
+   difference and its direction, and the state word is derived from the same
+   `d`, so a verdict can be checked against its own arithmetic.  A self-check
+   fails the arm if a row's verdict or direction disagrees with its printed
+   columns: a FAIL whose first column is not the larger is the class, and it
+   is reported as a harness fault (exit 3), never printed as a verdict.
+
    Each round runs both sides twice, once in each order, and averages each
    side, so a drift inside the round lands on both and cancels in the
-   difference.  The report is the median of (staged - one-TU) ns/block over
-   the rounds, with a distribution-free 95% interval for the median from the
-   order statistics, the mean with its normal-approximation interval, the
-   per-round standard deviation and the one-sided rolling-window rate at the
-   record's fifteen-round window.  The claim is one-sided, as `README.md`
-   states it: the staged form may not be slower than the one-TU form by more
-   than 0.5 ns/block.  A row with fewer than 301 rounds is an observation and
-   carries no claim; the shell's default for this unit is 301.
+   difference.  The report is the median of `d` ns/block over the rounds, with
+   a distribution-free 95% interval for the median from the order statistics,
+   the mean with its normal-approximation interval, the per-round standard
+   deviation and the one-sided rolling-window rate at the record's
+   fifteen-round window.  The claim is one-sided: `d <= +0.5` ns/block, so the
+   first side may not be slower than the second by more than 0.5 ns/block.  A
+   row with fewer than 301 rounds is an observation and carries no claim; the
+   shell's default for this unit is 301.
 
    `--self-control` runs the one-TU side against itself and requires exactly
    0.0, which checks the harness's dispatch and subtraction rather than the
@@ -398,12 +410,15 @@ static int rolling_rate(const double *d, int n, int *windows) {
 static void usage(void) {
     fprintf(stderr,
             "usage: paired-pipeline --document <file> [--document <file>...] "
-            "[--rounds N] [--build <id>] [--arms] [--self-control]\n");
+            "[--rounds N] [--build <id>] [--pair <name>] "
+            "[--first-label <label>] [--second-label <label>] [--arms] "
+            "[--self-control]\n");
 }
 
 int main(int argc, char **argv) {
     int rounds = CLAIM_ROUNDS, self_control = 0, arms = 0;
-    const char *build = "unstated";
+    const char *build = "unstated", *pair = "pair";
+    const char *first_label = "first", *second_label = "second";
     input inputs[64];
     size_t ninputs = 0;
 
@@ -421,6 +436,12 @@ int main(int argc, char **argv) {
             rounds = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--build") == 0 && i + 1 < argc) {
             build = argv[++i];
+        } else if (strcmp(argv[i], "--pair") == 0 && i + 1 < argc) {
+            pair = argv[++i];
+        } else if (strcmp(argv[i], "--first-label") == 0 && i + 1 < argc) {
+            first_label = argv[++i];
+        } else if (strcmp(argv[i], "--second-label") == 0 && i + 1 < argc) {
+            second_label = argv[++i];
         } else if (strcmp(argv[i], "--arms") == 0) {
             arms = 1;
         } else if (strcmp(argv[i], "--self-control") == 0) {
@@ -496,21 +517,25 @@ int main(int argc, char **argv) {
         }
     }
 
-    printf("# paired timing: the staged pipeline against the same source as one translation unit\n");
-    printf("# ns/block: one block is 64 document bytes; the claim is one-sided, staged - one-TU <= +%.1f\n",
+    printf("# paired timing: the two sides of one pair, one act per document\n");
+    printf("# ns/block: one block is 64 document bytes\n");
+    printf("# d = first - second; d > 0 means the first side is slower.  The claim is one-sided: d <= +%.1f\n",
            BOUND);
     printf("# one act is one pipeline call over one document, every cursor at zero\n");
     printf("# the staged form is the model's; the one-TU form is the measured form\n");
     printf("# arm %llu (POS8 emitter, no escape list, gated UTF-8)\n",
            (unsigned long long)ARM);
     printf("# the entry table was filled by the caller: leanllvm_json_entry_table and probe_inl_entry_table, 2 x 8 KiB, before the first call\n");
+    printf("pair %s\n", pair);
+    printf("first %s\n", first_label);
+    printf("second %s\n", second_label);
     printf("build %s\n", build);
     printf("core-class %u\n", core_class());
     printf("sched-cpu %d\n", sched_getcpu());
     printf("rounds %d\n", rounds);
     printf("self-control %s\n", self_control ? "yes" : "no");
 
-    int failed = 0;
+    int failed = 0, selfcheck = 0;
     for (size_t k = 0; k < ninputs; k++) {
         pipeline_fn fa = probe_pipeline_staged;
         pipeline_fn fb = self_control ? fa : probe_pipeline_inlined;
@@ -548,7 +573,7 @@ int main(int argc, char **argv) {
             }
             av[r] = x;
             bv[r] = y;
-            d[r] = y - x;
+            d[r] = x - y;   /* first - second: d > 0 means the first side is slower */
         }
 
         {
@@ -573,29 +598,70 @@ int main(int argc, char **argv) {
             mean_lo = mean - 1.96 * sd / dsqrt((double)rounds);
             mean_hi = mean + 1.96 * sd / dsqrt((double)rounds);
 
-            printf("%-20s arm %llu cpu %d class %d staged %9.3f one-TU %9.3f "
-                   "blocks %llu rounds %d build %s\n",
-                   inputs[k].name, (unsigned long long)ARM, cpu, cl, ma, mb,
-                   (unsigned long long)inputs[k].nb, rounds, build);
-            if (self_control) {
-                state = med == 0.0 ? "self-control exact" : "self-control FAIL";
-            } else if (!bounded) {
-                state = "observation: no delta claim (rounds < 301 or document under one block)";
-            } else if (med > BOUND) {
-                state = "FAIL: staged is slower by more than +0.5 ns/block";
-                failed = 1;
-            } else {
-                state = "within +0.5 ns/block (one-sided)";
-            }
-            printf("%-20s median %8.3f ci95 [%8.3f %8.3f] (order statistics, "
-                   "rank %d of %d) mean %8.3f mean95 [%8.3f %8.3f] sd %8.3f "
-                   "roll%d %d/%d %s\n",
-                   inputs[k].name, med, lo, hi, kk, rounds, mean, mean_lo,
-                   mean_hi, sd, ROLL_WINDOW, bad, windows, state);
-            if (self_control && med != 0.0) {
-                fprintf(stderr, "FAIL: self-control reported %.6f, not 0.0\n",
-                        med);
-                failed = 1;
+            {
+                int resolvable = (lo > 0.0) || (hi < 0.0);
+                int claim_fail = 0;
+                const char *direction =
+                    med > 0.0 ? "first slower"
+                    : med < 0.0 ? "first faster" : "equal";
+
+                if (self_control) {
+                    state = med == 0.0 ? "self-control exact"
+                                       : "self-control FAIL";
+                    if (med != 0.0) {
+                        fprintf(stderr,
+                                "FAIL: self-control reported %.6f, not 0.0\n",
+                                med);
+                        failed = 1;
+                    }
+                } else if (!bounded) {
+                    state = "observation: no delta claim (rounds < 301 or "
+                            "document under one block)";
+                } else if (med > BOUND) {
+                    state = "FAIL: the first side is slower by more than "
+                            "+0.5 ns/block";
+                    claim_fail = 1;
+                    failed = 1;
+                } else {
+                    state = "within +0.5 ns/block (one-sided)";
+                }
+
+                /* The verdict must agree with the columns it prints.  A FAIL
+                   whose first column is not the larger is the class this
+                   check exists for: it is a harness fault (exit 3), never a
+                   verdict. */
+                if (!self_control && med != 0.0) {
+                    if (claim_fail && !(ma > mb)) {
+                        fprintf(stderr,
+                                "SELF-CHECK: %s: d = %+.3f says the first side "
+                                "is slower, but first(%s) = %.3f is not above "
+                                "second(%s) = %.3f\n",
+                                inputs[k].name, med, first_label, ma,
+                                second_label, mb);
+                        selfcheck = 1;
+                    }
+                    if (resolvable && ((med > 0.0) != (ma > mb))) {
+                        fprintf(stderr,
+                                "SELF-CHECK: %s: the direction and the columns "
+                                "disagree (d = %+.3f, first = %.3f, "
+                                "second = %.3f)\n",
+                                inputs[k].name, med, ma, mb);
+                        selfcheck = 1;
+                    }
+                }
+
+                printf("%-20s pair %-9s cpu %d class %d first(%s) %9.3f "
+                       "second(%s) %9.3f blocks %llu rounds %d build %s\n",
+                       inputs[k].name, pair, cpu, cl, first_label, ma,
+                       second_label, mb, (unsigned long long)inputs[k].nb,
+                       rounds, build);
+                printf("%-20s difference first-second %+8.3f ns/block "
+                       "ci95 [%8.3f %8.3f] rank %d/%d mean %+8.3f "
+                       "mean95 [%8.3f %8.3f] sd %8.3f roll%d %d/%d "
+                       "direction %s resolvable %s %s\n",
+                       inputs[k].name, med, lo, hi, kk, rounds, mean, mean_lo,
+                       mean_hi, sd, ROLL_WINDOW, bad, windows, direction,
+                       resolvable ? "yes" : "no", state);
             }
             free(sorted);
         }
@@ -603,10 +669,17 @@ int main(int argc, char **argv) {
         free(av);
         free(bv);
     }
+    if (selfcheck) {
+        fprintf(stderr,
+                "FAIL: the harness's verdict and its columns disagreed; the "
+                "arm reports no verdict from this run\n");
+        return 3;
+    }
     if (self_control && !failed) {
         printf("ok: the harness reports 0.0 against itself\n");
     } else if (!failed) {
-        printf("ok: every claimed document is within +0.5 ns/block of the one-TU form (one-sided)\n");
+        printf("ok: every claimed row is within the one-sided +0.5 ns/block "
+               "bound (d = first - second)\n");
     }
     return failed ? 1 : 0;
 }
