@@ -72,5 +72,6 @@ import LeanLLVM.Vellum.BlockEval
 import LeanLLVM.Vellum.JsonPipelineBlockEval
 import LeanLLVM.Vellum.JsonPipelineRefine
 import LeanLLVM.Vellum.JsonPipelineSpec
+import LeanLLVM.FramePredicate
 import LeanLLVM.Vellum.PipelineBodyFacts
 import LeanLLVM.Vellum.PipelineBodyStep

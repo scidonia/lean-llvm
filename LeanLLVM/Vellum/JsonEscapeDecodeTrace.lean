@@ -1842,6 +1842,15 @@ theorem udRunExit_instrs :
 theorem udRunExit_term :
     udRunExit.term = .condbr (.reg "%cmp18") "if.then20" "if.end21" := by decide
 
+/-- `us_run.exit`'s environment, at one value for its two operand registers.
+
+**Its single `subv` is narrower than the block.**  The block reads `%add15 = %sub13 +
+%j.0294` from the *residual* and `%arrayidx16 = %p + %sub` from the *head position*;
+on the decoder's own iteration these are `q - i` and `q`, which agree only at cursor
+zero, and the loop's cursor advances.  So the steps below — and the environment above
+— state `us_run.exit` only at that one state; the iteration's exit needs the block's
+step at both values, which `udRunExit_stepS_zero` in `JsonEscapeExpandAssembly`
+states.  The consumers of the single-value form are the cursor-zero edge alone. -/
 def udRunExitEnv (env : Env) (paddr : Nat) (subv j : BitVec 64) (b : BitVec 8) : Env :=
   ("%cmp18", .int 1 (evalICmp .ult b (BitVec.ofInt 8 32))) ::
     ("%7", .int 8 b) ::

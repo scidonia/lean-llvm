@@ -1740,6 +1740,9 @@ theorem ifEnd_copyArm
         ((body.drop i ++ extra).take ((q - i) + 32)) e ∧
       readBytes e.mem dst out.length = some out ∧
       UnchangedOutside mem e.mem [(dst, n + 64)] ∧
+      lookupName e.env "%p" = some (.ptr b) ∧
+      lookupName e.env "%dst" = some (.ptr dst) ∧
+      lookupName e.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 out.length)) ∧
       (∀ k, runFuel escapeCalls (j + k) usDecFunction s = runFuel escapeCalls k usDecFunction e) := by
   have hbodyL : body.length = n := JsonEntrySteps.readBytes_length s.mem b n hbody
   have hextralen : extra.length = 32 :=
@@ -1815,17 +1818,18 @@ theorem ifEnd_copyArm
       omega
   obtain ⟨eL, jL, hrest⟩ :=
     (copyBodyPrefixLoop (b + i) (dst + out.length) (q - i)
-      ((body.drop i ++ extra).take ((q - i) + 32)) dst out.length out s.mem (n + 64)
+      ((body.drop i ++ extra).take ((q - i) + 32)) b dst out.length out s.mem (n + 64)
       (by omega) (by omega)).run_from (copyIterBound (q - i)) e3 0
-      ⟨hinvC, hinv.stored, fun a _ => rfl⟩
+      ⟨hinvC, hinv.stored, fun a _ => rfl, hp, hdstc, hj4⟩
   obtain ⟨hjL, hpcL, hwL, hrunL⟩ := hrest
-  obtain ⟨hw1, hprefL, hframeL⟩ := hwL
+  obtain ⟨hw1, hprefL, hframeL, hpL, hdL, hjcellL⟩ := hwL
   obtain ⟨hpcL', hpreL, hknext, hsnext, hsrcLb, hdstLb, hsubLb, hdstreadL, hsrcLb2⟩ := hw1
   have hjL' : jL ≤ copyIterBound (q - i) + 1 := by
     have := hjL; simpa [copyBodyPrefixLoop, Nat.mul_one] using this
   exact ⟨eL, 1 + jL, by omega,
     ⟨hpcL', hpreL, hknext, hsnext, hsrcLb, hdstLb, hsubLb, hdstreadL, hsrcLb2⟩,
-    hprefL, UnchangedOutside.comp hframe hframeL (fun r hr => hr), fun k => by
+    hprefL, UnchangedOutside.comp hframe hframeL (fun r hr => hr), hpL, hdL, hjcellL,
+    fun k => by
       rw [show 1 + jL + k = 1 + (jL + k) from by omega]
       exact (runFuel_jump_prefix hstep3 (jL + k)).trans (hrunL k)⟩
 

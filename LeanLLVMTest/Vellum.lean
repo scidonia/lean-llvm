@@ -10029,3 +10029,21 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.pipelineUnitsPost_not_imp_Sigma' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.pipelineUnitsPost_not_imp_Sigma
+
+/-! #### The frame vocabulary: a region claim is changed-here and present-here -/
+
+/-- info: 'LeanLLVM.owns_iff' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.owns_iff
+
+/-- info: 'LeanLLVM.omission_not_owns' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.omission_not_owns
+
+/-- info: 'LeanLLVM.narrowExtent_refuted' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.narrowExtent_refuted
+
+/-- info: 'LeanLLVM.unchangedOutside_iff_inRegions' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.unchangedOutside_iff_inRegions
