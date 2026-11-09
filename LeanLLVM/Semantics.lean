@@ -1017,6 +1017,31 @@ theorem runFuel_outcome_unique {calls : Calls} {f : Function} {s : State}
     rw [h1] at hn
     exact (Option.some.inj hn).symm
 
+/-- **A run prefix composes.**  `runFuel` carries a continuation as its last
+argument, so a segment is stated as the equality `runFuel (n + k) f s =
+runFuel k f e`: the segment from `s` reaches `e` in `n` control steps and leaves
+whatever follows untouched.  Two such segments compose into one, with the fuel
+additive and the continuation's own budget carried unchanged. -/
+theorem runFuel_prefix_trans {calls : Calls} {f : Function} {s e e' : State}
+    {n m : Nat}
+    (h1 : ∀ k, runFuel calls (n + k) f s = runFuel calls k f e)
+    (h2 : ∀ k, runFuel calls (m + k) f e = runFuel calls k f e') :
+    ∀ k, runFuel calls (n + m + k) f s = runFuel calls k f e' := by
+  intro k
+  rw [Nat.add_assoc, h1 (m + k), h2 k]
+
+/-- **A prefix composed with a completed continuation.**  The run from `s`
+reaches `e` within `n` control steps, and the run from `e` completes at `o`
+within `m`; the run from `s` therefore completes at the same outcome within
+`n + m`.  This is the form a chain of block steps ends in when the exit block's
+trace supplies the `some o`. -/
+theorem runFuel_prefix_some {calls : Calls} {f : Function} {s e : State}
+    {n m : Nat} {o : Outcome}
+    (h : ∀ k, runFuel calls (n + k) f s = runFuel calls k f e)
+    (he : runFuel calls m f e = some o) :
+    runFuel calls (n + m) f s = some o := by
+  rw [h m, he]
+
 /-! ### Non-interference
 
 The `phi` constructor reads the state's predecessor field, and a jump writes it.

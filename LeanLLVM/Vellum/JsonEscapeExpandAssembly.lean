@@ -179,6 +179,161 @@ theorem escape_expand_satisfies_of_arms
     Satisfies escapeCalls usDecFunction (Γ_escape_expand escapeExpandBudget) :=
   escape_expand_satisfies fun args mem next hpre => expandFacts_of_arms (h args mem next hpre)
 
+/-! ### The emitter's state-level identification with `escapeAt`
+
+Every emitter block step takes its branch value as a hypothesis (`hcond` in
+`udIfEndI_step`, `udIfEnd9I_step`, `udIfThen26I_step`, …), and the invariant that
+discharges them is `DecodeInv.walk`, whose `step_simple`/`step_six`/`step_pair`
+need `escapeAt body q = some …`.  The arithmetic halves are proved — `hex4_hxCode`
+and `surrogateTail_none_of_guard`/`_none_of_hex4_none`/`_none_of_lo_out`/
+`_some_of_pair` (`JsonEscapeCompose`), `udIfEnd32Word_toNat`,
+`udIfEnd3I_highSurrogate_iff`, `udIfThen26I_pairValue`
+(`JsonEscapeEmitIdentities`) — but none of them mentions a state: they read the
+block's `BitVec` forms.  The lemmas below are the state-level identification.  They
+take the record's own table clause (`readBytes M tab 256 = some unescapeTable`) and
+the body's byte after the escape position, read the block's `%9` cell out of the
+table, and conclude `escapeAt`'s answer at that position.  `emitter_gate_is_escapeAt`
+is the two-character escape's gate and its replacement byte;
+`emitter_refusal_gate` is the refusal's gate against `IsControlB` and
+`escapeAt = none`; the `\u` arm's two outcomes are `escapeAt_of_u_six` and
+`escapeAt_of_u_pair`, which the hex and surrogate laws feed. -/
+
+/-- `u` is not a two-character escape, so the table maps it to `0xFF`. -/
+theorem simpleEscape_u : simpleEscape (0x75 : UInt8) = none := by decide
+
+/-- A byte the table maps to a two-character escape is that escape at the walk. -/
+theorem escapeAt_of_simple {body : List UInt8} {q : Nat} {c e : UInt8}
+    (h1 : body[q + 1]? = some c) (hs : simpleEscape c = some e) :
+    escapeAt body q = some ([e], 2) := by
+  unfold escapeAt
+  rw [h1]
+  simp [hs]
+
+/-- A byte the table maps nowhere, and which is not `u`, is no escape at the walk. -/
+theorem escapeAt_of_none {body : List UInt8} {q : Nat} {c : UInt8}
+    (h1 : body[q + 1]? = some c) (hs : simpleEscape c = none) (hc : c ≠ 0x75) :
+    escapeAt body q = none := by
+  unfold escapeAt
+  rw [h1]
+  simp [hs, hc]
+
+/-- A `\u` whose four digits are hexadecimal and whose code unit is not the first
+half of a pair is the six-byte form. -/
+theorem escapeAt_of_u_six {body : List UInt8} {q cp : Nat} {c : UInt8}
+    (h1 : body[q + 1]? = some c) (hc : c = 0x75)
+    (h4 : hex4 body (q + 2) = some cp) (hst : surrogateTail body q cp = none) :
+    escapeAt body q = some (utf8Encode cp, 6) := by
+  unfold escapeAt
+  rw [h1]
+  simp [hc, simpleEscape_u, h4, hst]
+
+/-- A `\u` whose code unit begins a surrogate pair is the pair's code point and
+its twelve bytes. -/
+theorem escapeAt_of_u_pair {body : List UInt8} {q cp cp' adv : Nat} {c : UInt8}
+    (h1 : body[q + 1]? = some c) (hc : c = 0x75)
+    (h4 : hex4 body (q + 2) = some cp)
+    (hst : surrogateTail body q cp = some (cp', adv)) :
+    escapeAt body q = some (utf8Encode cp', adv) := by
+  unfold escapeAt
+  rw [h1]
+  simp [hc, simpleEscape_u, h4, hst]
+
+/-- **The emitter's first gate is the walk's decision.**  From the record's table
+clause and the body's byte after the escape position, the block's table read and
+its signed gate are the table's answer at that byte, and the walk reads the same
+two-character escape.  The `BitVec` value `t` is the block's `%9` cell; `e` is the
+replacement byte `escapeAt` returns. -/
+theorem emitter_gate_is_escapeAt {M : Mem} {tab : Nat} {body : List UInt8}
+    {q : Nat} {c e : UInt8}
+    (htab : readBytes M tab 256 = some unescapeTable)
+    (h1 : body[q + 1]? = some c) (hs : simpleEscape c = some e) :
+    ∃ t : BitVec 8,
+      readBytes M (tab + c.toNat) 1 = some (natToBytes t.toNat 1) ∧
+      t.toNat = e.toNat ∧
+      evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (1 : BitVec 1) ∧
+      escapeAt body q = some ([e], 2) := by
+  obtain ⟨t, htval, htread, htest⟩ := emitterTest_of_table (M := M) (tab := tab) c htab
+  have hs' : simpleEscape c ≠ none := by rw [hs]; exact Option.some_ne_none e
+  have hg : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (1 : BitVec 1) := htest.2 hs'
+  have hval : (UInt8.ofNat t.toNat) = (simpleEscape c).getD 0xFF := by
+    have h := unescapeTable_getElem? c
+    rw [h] at htval
+    exact (Option.some.inj htval).symm
+  have hte : t.toNat = e.toNat := by
+    have h' := congrArg UInt8.toNat hval
+    rw [hs] at h'
+    simpa using h'
+  exact ⟨t, htread, hte, hg, escapeAt_of_simple h1 hs⟩
+
+/-- The refusal gate, unfolded: with the head position and its byte pinned, the
+body's refusal test is `IsControlB` at the byte or `escapeAt`'s `none` at the
+body-relative offset. -/
+theorem decodeRefuses_eq_gate {body : List UInt8} {ps : List Nat} {pos0 c q : Nat}
+    {b : UInt8} (hp : ps[c]? = some q) (hq : ¬ q < pos0)
+    (hb : body[q - pos0]? = some b) :
+    decodeRefuses body ps pos0 c =
+      (IsControlB b || (escapeAt body (q - pos0)).isNone) := by
+  unfold decodeRefuses
+  rw [hp]
+  simp [hq, hb]
+
+/-- **The refusal's gate is `IsControlB` or `escapeAt = none`.** -/
+theorem emitter_refusal_gate {body : List UInt8} {ps : List Nat} {pos0 c q : Nat}
+    {b : UInt8} (hp : ps[c]? = some q) (hq : ¬ q < pos0)
+    (hb : body[q - pos0]? = some b) :
+    decodeRefuses body ps pos0 c = true ↔
+      IsControlB b = true ∨ escapeAt body (q - pos0) = none := by
+  rw [decodeRefuses_eq_gate hp hq hb, Bool.or_eq_true]
+  constructor
+  · rintro (h | h)
+    · exact Or.inl h
+    · exact Or.inr (by simpa using h)
+  · rintro (h | h)
+    · exact Or.inl h
+    · exact Or.inr (by simpa using h)
+
+/-- **The record's body and table reads at a state's own memory.**  The iteration's
+blocks read the body and the escape table out of the state they start from; the
+record promises both at the caller's memory, and the frame is what carries them to
+a state that agrees outside the destination extent.  This is the transfer the
+emitter bridge and the copy loops need at the latch; it is stated at `ExpandStaging`
+because the arm statements that do not carry the staging cannot apply it. -/
+theorem ExpandStaging.latch_reads
+    {args : List Value} {mem : Mem} {next : Nat} {body : List UInt8}
+    {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat}
+    {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (h : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    {s : State} (hframe : UnchangedOutside mem s.mem [(dst, n + 64)]) :
+    readBytes s.mem b n = some body ∧ readBytes s.mem tab 256 = some unescapeTable := by
+  obtain ⟨hpre, hargs, -, hbody, hpos0n, hrest⟩ := h
+  obtain ⟨-, -, -, -, hspB, -⟩ := hrest
+  obtain ⟨b', n', dst', err', xp', xj', nps', pos0', tab', body', ps', err0', k0',
+    hargs', hbody', -, -, -, -, hwidth', -, -, -, htab, -, -, hspB', -, hspTab, -,
+    -, -⟩ := hpre
+  obtain ⟨hb', hdst', -, -, -, htab'⟩ := staging_ptr_slots hargs hargs'
+  have hnlt : n < 2 ^ 64 := by omega
+  have hn'lt : n' < 2 ^ 64 := by omega
+  have hn' : n' = n := (staging_len_eq hargs hargs' hnlt hn'lt).symm
+  rw [hb', hn'] at hbody'
+  have hbody_eq : body' = body := Option.some.inj (hbody'.symm.trans hbody)
+  rw [hbody_eq] at hbody'
+  rw [hb', hdst', hn'] at hspB'
+  rw [htab'] at htab
+  rw [htab', hdst', hn'] at hspTab
+  refine ⟨?_, ?_⟩
+  · exact (readBytes_of_UnchangedOutside hframe (fun x hx1 hx2 r hr => by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+      obtain ⟨rfl, rfl⟩ := hr
+      rcases hspB with hle | hle
+      · omega
+      · omega)).trans hbody'
+  · exact (readBytes_of_UnchangedOutside hframe (fun x hx1 hx2 r hr => by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+      obtain ⟨rfl, rfl⟩ := hr
+      rcases hspTab with hle | hle
+      · omega
+      · omega)).trans htab
+
 /-! ### What the three fields still need
 
 `loop`, `refuse` and `seedLatch` are the bundle's remaining content, and the
@@ -198,31 +353,42 @@ facts in the tree are the two-step lemma and the two copy loops, and none runs
 `cleanup32` back to `cleanup32`.  `loop` and the seed's latch arm need that chain;
 `refuse` needs its prefix to `us_run.exit` and the refusal branches out of it.
 
-**The emitter's state-level identification with `escapeAt` is absent.**  Every
-emitter block step takes its branch value as a hypothesis (`hcond` in
-`udIfEndI_step`, `udIfEnd9I_step`, `udIfThen26I_step`, …), and the invariant that
-would discharge them is `DecodeInv.walk`, whose `step_simple`/`step_six`/`step_pair`
-need `escapeAt body q = some …`.  The arithmetic halves are proved — `hex4_hxCode`
-and `surrogateTail_none_of_guard`/`_none_of_hex4_none`/`_none_of_lo_out`/
-`_some_of_pair` (`JsonEscapeCompose`), `udIfEnd32Word_toNat`,
-`udIfEnd3I_highSurrogate_iff`, `udIfThen26I_pairValue`
-(`JsonEscapeEmitIdentities`) — but nothing identifies them at a state: `escapeAt`
-occurs in the tree's theorem statements only as a *hypothesis* of the walk's step
-laws (`escapeDecodeGo_step_*`, `DecodeInv.step_*` in
-`JsonEscapeExpandContract`), never in a conclusion outside `JsonEscapeSpec` and
-`JsonEscapeSteps`.  The missing lemma is that bridge — the block's `%8`, `%9`,
-`%and27.i` and gate bits identified with `escapeAt body q` and
-`surrogateTail body q cp` — and the refusal arm needs its `none` side, where
-`decodeRefuses` likewise appears only as a definition.  Neither absence is a
-statement defect in the fields above: each field quantifies over exactly the run
-the bound names. -/
+**The emitter's gate cells are identified; the iteration's chain is not
+composed.**  The bridge above turns `escapeAt` and `decodeRefuses` into state-level
+facts about the table and the body's bytes, so `DecodeInv.step_*`'s `escapeAt`
+hypothesis and the emitter blocks' `hcond` now have one object to agree on.
+`ExpandStaging.latch_reads` carries the record's body and table reads across the
+latch's frame to the state the blocks read, so the emitter's `hb`/`ht` (and the
+copy loops' source read) are available **wherever the staging is in scope**.
+`assemblyLatchStep`'s hypothesis is `AssemblyLatchInv` alone, and that invariant
+mentions `body` only inside `DecodeInv.walk`: it does not carry `readBytes mem b n =
+some body`, `readBytes mem tab 256 = some unescapeTable` or the spacing that puts
+both outside the destination extent.  So the field is not a standalone theorem at
+its own signature — it is inhabited only in a producer that holds `ExpandStaging`,
+as `assemblyRefusalArm` already does.  That is a statement-shape question for the
+planner, not something this module can decide by adding a hypothesis.  Past that,
+the composition needs the chain itself: each step's cell hypotheses must be read
+out of the successor state `AssemblyLatchInv` describes — the emitter's
+`%8`/`%sub`/`%n` cells from the preceding block's environment — and the
+`DecodeInv` (byte cursor, output prefix, remaining positions) must be transferred
+across each branch.  The fuel primitive for the chain is now
+`runFuel_prefix_trans`/`runFuel_prefix_some` in `Semantics`; before this change the
+longest composed run in the tree was two steps.  `refuse` additionally needs the
+prefix from the latch through the same blocks to `if.then20`/`if.then22`, then
+`udIfThen20_step`/`udIfThen22_step` and the exit word; `seedLatch` needs the
+pre-scan's three blocks (`udEntry_step`, `udLandRhs_step`, `udWhileBody_step`)
+composed to the latch, and shares the iteration's first step.  Neither field is a
+statement defect: each quantifies over exactly the run the bound names. -/
 
 /-! ### Axiom footprints
 
 The assembly adds no principle: `expandExit_satisfied` and `emptySeedRun` carry the
 footprints the development already has, and building a structure on top of them
 adds nothing.  The named carrier is `expandExit_satisfied`, whose `Classical.choice`
-is the exit words' staging destructuring rather than this module's. -/
+is the exit words' staging destructuring rather than this module's.  The bridge's
+one `Classical.choice` is `evalICmp_sgt_negone_one_iff`'s (`JsonEscapeDecodeTrace`)
+reading of an eight-bit word's `toInt`; `emitter_gate_is_escapeAt` is the only
+lemma here that carries it, and the rest of the bridge stays at `[propext]`. -/
 
 /-- info: 'LeanLLVM.Vellum.expandFacts_of_arms' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -235,5 +401,41 @@ is the exit words' staging destructuring rather than this module's. -/
 /-- info: 'LeanLLVM.Vellum.escape_expand_satisfies_of_arms' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms escape_expand_satisfies_of_arms
+
+/-- info: 'LeanLLVM.Vellum.simpleEscape_u' does not depend on any axioms -/
+#guard_msgs in
+#print axioms simpleEscape_u
+
+/-- info: 'LeanLLVM.Vellum.escapeAt_of_simple' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escapeAt_of_simple
+
+/-- info: 'LeanLLVM.Vellum.escapeAt_of_none' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escapeAt_of_none
+
+/-- info: 'LeanLLVM.Vellum.escapeAt_of_u_six' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escapeAt_of_u_six
+
+/-- info: 'LeanLLVM.Vellum.escapeAt_of_u_pair' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escapeAt_of_u_pair
+
+/-- info: 'LeanLLVM.Vellum.decodeRefuses_eq_gate' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms decodeRefuses_eq_gate
+
+/-- info: 'LeanLLVM.Vellum.emitter_gate_is_escapeAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms emitter_gate_is_escapeAt
+
+/-- info: 'LeanLLVM.Vellum.emitter_refusal_gate' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms emitter_refusal_gate
+
+/-- info: 'LeanLLVM.Vellum.ExpandStaging.latch_reads' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ExpandStaging.latch_reads
 
 end LeanLLVM.Vellum
