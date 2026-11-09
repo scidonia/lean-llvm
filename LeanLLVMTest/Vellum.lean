@@ -9576,10 +9576,6 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.DecodeRefusalExit
 
-/-- info: 'LeanLLVM.Vellum.decodeTwoExitWord' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.decodeTwoExitWord
-
 /-- info: 'LeanLLVM.Vellum.expandBodyLen' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.expandBodyLen

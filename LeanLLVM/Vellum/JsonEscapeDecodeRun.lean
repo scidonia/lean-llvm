@@ -595,10 +595,10 @@ carry.
 
 `decodeRefuses` is the head position's refusal as the body decides it — a control
 byte, or a byte `escapeAt` names no escape for.  `decodeTwoExit` names the pair of
-targets, and `decodeTwoExitWord` the data at each: the success state's walk and
-cells, or the refusal state's cursor and offset.  The instance consumes the staged
-form, `assemblyExitWord`, which adds the caller's destinations and the exit's index
-equality.
+targets, and `assemblyExitWord` (`JsonEscapeExpandStaged.lean`) the data at each:
+the success state's walk with the index the exit proves, or the refusal state's
+cursor, offset and the two stores it made, with the caller's `%err`/`%xj`.  There
+is one word for those three edges, not two.
 
 The bound case of `step_exit` is proved, from `decodeLatch_step_exit`.  The refusal
 case is the named hypothesis `hrefuse` with exactly the shape the field consumes,
@@ -681,13 +681,6 @@ def DecodeEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
   (∃ (i : Nat) (out : List UInt8), DecodeInv body st e.mem dst nps i nps out goal) ∧
   lookupName e.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
 
-/-- The data at whichever exit the loop took: the latch's edge, the refusal, or the
-entry's own edge when the list was exhausted before the walk started. -/
-def decodeTwoExitWord (body : List UInt8) (st : ClassState) (dst nps : Nat)
-    (goal : EscapeOutcome) (e : State) : Prop :=
-  (∃ c, DecodeLatchExit body st dst nps goal c e) ∨ DecodeRefusalExit e ∨
-    DecodeEntryExit body st dst nps goal e
-
 /-! ### Axiom footprints -/
 
 -- The staging predicate is a definition, not a theorem.
@@ -758,10 +751,6 @@ def decodeTwoExitWord (body : List UInt8) (st : ClassState) (dst nps : Nat)
 /-- info: 'LeanLLVM.Vellum.DecodeEntryExit' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms DecodeEntryExit
-
-/-- info: 'LeanLLVM.Vellum.decodeTwoExitWord' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms decodeTwoExitWord
 
 /-- info: 'LeanLLVM.Vellum.decodeWalkFuel_contribution' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
