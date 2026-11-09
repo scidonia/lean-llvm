@@ -569,7 +569,7 @@ theorem surrogateTail_bounds {bs : List UInt8} {q cp cp' a : Nat}
   unfold surrogateTail at h
   split at h
   · rename_i hc
-    exact hc.2.1
+    exact hc.2.2.1
   · simp at h
 
 theorem surrogateTail_bytes {bs : List UInt8} {q cp cp' a : Nat}
@@ -578,7 +578,8 @@ theorem surrogateTail_bytes {bs : List UInt8} {q cp cp' a : Nat}
   unfold surrogateTail at h
   split at h
   · rename_i hc
-    obtain ⟨h6, h7⟩ : bs[q+6]? = some 0x5C ∧ bs[q+7]? = some 0x75 := ⟨hc.2.2.1, hc.2.2.2⟩
+    obtain ⟨h6, h7⟩ : bs[q+6]? = some 0x5C ∧ bs[q+7]? = some 0x75 :=
+      ⟨hc.2.2.2.1, hc.2.2.2.2⟩
     refine ⟨h6, h7, ?_⟩
     split at h
     · rename_i lo hl

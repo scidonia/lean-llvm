@@ -252,11 +252,11 @@ The answer is returned whole — the code point the pair spells and the twelve b
 and the six-byte fallback is `escapeAt`'s, which is why a pair whose second half is
 absent or out of range needs no separate case here. -/
 def surrogateTail (bs : List UInt8) (k cp : Nat) : Option (Nat × Nat) :=
-  if cp - 0xD800 < 0x400 ∧ k + 12 ≤ bs.length ∧ bs[k + 6]? = some 0x5C ∧
+  if 0xD800 ≤ cp ∧ cp ≤ 0xDBFF ∧ k + 12 ≤ bs.length ∧ bs[k + 6]? = some 0x5C ∧
       bs[k + 7]? = some 0x75 then
     match hex4 bs (k + 8) with
     | some lo =>
-        if lo - 0xDC00 < 0x400 then
+        if 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF then
           some (0x10000 + (cp - 0xD800) * 0x400 + (lo - 0xDC00), 12)
         else none
     | none => none

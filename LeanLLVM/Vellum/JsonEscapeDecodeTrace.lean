@@ -18,13 +18,20 @@ composes by rewriting one expression into the next rather than by carrying a who
 environment through every lemma.
 
 What is here is the front of the run and both copy loops: `entry`, `land.rhs`,
-`while.body`, `while.end`, `while.body6`, `if.end`, `if.end.i`, `if.then6.i`, the
+`while.body`, `while.end`, `while.body6`, `if.end`, `if.end.i`, `if.then6.i`,
+`if.end9.i`, the
 two refusals, `us_run.exit`, `us_run.exit112`, `cleanup41`, and the two
 double-word copies with their tails
 (`while.body.i91`/`us_run_long.exit99`/`if.then.i104` and
 `while.body.i`/`us_run_long.exit`/`if.then.i109`).  Each block is a `denoteCode`
 fact naming its memory expression and a run fact naming the cells its successors
 read, and each branch is the `condbr` arm at the value the block computed.
+
+The hex reader's tests and its value are bridged to the specification's own
+vocabulary in the same module: `hexDigit_lane` and `hexLaneTest_iff` identify a
+lane test with `hexDigit`'s success, `hexTest_low_four` identifies the masked
+four-lane aggregate with the four tests, and `pmadd_hexFour`/`hex4_pmadd`
+identify the two multiply-adds' lane 0 with `hex4`'s code unit.
 
 The copies rest on one identity — `packLanes_copy32`, that a `<4 x i64>` load's
 lanes stored back are the bytes it read — so a copy's memory is the bytes it moved
@@ -36,8 +43,8 @@ the equality is a caller's.  Discharging it at the boundary is where a carrier, 
 one is used, will appear, and it belongs to the assembly rather than to these
 blocks.
 
-What is not here yet is the rest of the walk: the hex reader (`if.end9.i`,
-`if.end.i115`, `if.end3.i`), the pair and UTF-8 emitter (`if.then17.i`,
+What is not here yet is the rest of the walk: the rest of the hex reader
+(`if.end.i115`, `if.end3.i`), the pair and UTF-8 emitter (`if.then17.i`,
 `land.lhs.true22.i`, `if.then26.i`, `if.end32.i`), `cleanup32`, and the assembly —
 the budget term, the destination prefix, the frame per store, and
 `escape_expand_satisfies` with its companion.  `cleanup32`'s block name and lookup
@@ -3140,6 +3147,508 @@ namespace LeanLLVM.Vellum
 /-- info: 'LeanLLVM.Vellum.udCopyTailIfN_term' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms udCopyTailIfN_term
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
+open LeanLLVM.Vellum.BitLanes
+
+/-! ### The hex bridge
+
+`if.end.i115` tests four byte lanes with the emitted range arithmetic and computes
+the code unit with two multiply-adds.  The predicates here are the specification's
+`hexDigit` and `hex4`: the lane test is `hexDigit`'s success (`hexDigit_lane`,
+`hexLaneTest_iff`), the four-lane aggregate is the conjunction of the four tests
+(`hexTest_low_four`), and the multiply-adds' lane 0 masked to sixteen bits is
+`hex4`'s value (`pmadd_hexFour`, `hex4_pmadd`). -/
+
+/-- The emitted test at one byte lane: a digit, or a letter after the `| 32`. -/
+def hexLaneTest (x : BitVec 8) : Bool :=
+  BitVec.ult (x + BitVec.ofInt 8 (-48)) (BitVec.ofInt 8 10) ||
+  BitVec.ult ((x ||| BitVec.ofInt 8 32) + BitVec.ofInt 8 (-97)) (BitVec.ofInt 8 6)
+
+/-- The nibble a hex lane contributes: its low four bits, plus nine for a letter. -/
+def hexNib (x : BitVec 8) : Nat :=
+  (x &&& BitVec.ofInt 8 15).toNat +
+    (if BitVec.ult ((x ||| BitVec.ofInt 8 32) + BitVec.ofInt 8 (-97)) (BitVec.ofInt 8 6)
+     then 9 else 0)
+
+/-- The nibble as the byte the emitted `select` and `and` build. -/
+def hexNib8 (x : BitVec 8) : BitVec 8 :=
+  (x &&& BitVec.ofInt 8 15) +
+    (if BitVec.ult ((x ||| BitVec.ofInt 8 32) + BitVec.ofInt 8 (-97)) (BitVec.ofInt 8 6)
+     then 9 else 0)
+
+/-- The lane-test vector, one lane per byte. -/
+def hexTestLanes (l : List (BitVec 8)) : List (BitVec 1) :=
+  l.map (fun x => BitVec.ofBool (hexLaneTest x))
+
+/-- The code unit four nibble lanes spell. -/
+def hexFour (x0 x1 x2 x3 : BitVec 8) : Nat :=
+  hexNib x0 * 4096 + hexNib x1 * 256 + hexNib x2 * 16 + hexNib x3
+
+theorem ofBool_eq_one (b : Bool) : (BitVec.ofBool b = (1 : BitVec 1)) ↔ b = true := by
+  cases b <;> simp
+
+/-- A lane's test is `hexDigit`'s own success. -/
+theorem hexDigit_lane (x : BitVec 8) :
+    hexDigit (UInt8.ofBitVec x) =
+      (if hexLaneTest x then some (hexNib x) else none) := by
+  decide +revert
+
+/-- A lane's test succeeds exactly when `hexDigit` does. -/
+theorem hexLaneTest_iff (x : BitVec 8) :
+    hexLaneTest x = true ↔ hexDigit (UInt8.ofBitVec x) ≠ none := by
+  rw [hexDigit_lane]
+  by_cases h : hexLaneTest x <;> simp [h]
+
+theorem hexNib_eq (x : BitVec 8) : hexNib x = (hexNib8 x).toNat := by
+  decide +revert
+
+theorem hexNib_lt {x : BitVec 8} (h : hexLaneTest x = true) : hexNib x < 16 := by
+  decide +revert
+
+theorem hexFour_eq_nib (l : List (BitVec 8)) :
+    hexFour (l.getD 0 0) (l.getD 1 0) (l.getD 2 0) (l.getD 3 0) =
+      4096 * (hexNib8 (l.getD 0 0)).toNat + 256 * (hexNib8 (l.getD 1 0)).toNat +
+        16 * (hexNib8 (l.getD 2 0)).toNat + (hexNib8 (l.getD 3 0)).toNat := by
+  simp [hexFour, hexNib_eq]
+  omega
+
+theorem ofInt_toNat_of_range {w : Nat} {k : Int} (h0 : 0 ≤ k) (h1 : k < (2 ^ w : Int)) :
+    (BitVec.ofInt w k).toNat = k.toNat := by
+  rw [BitVec.toNat_ofInt]
+  exact congrArg Int.toNat (Int.emod_eq_of_lt h0 h1)
+
+theorem ofInt_eq_ofNat_of_range {w : Nat} {k : Int} (h0 : 0 ≤ k) (h1 : k < (2 ^ w : Int)) :
+    BitVec.ofInt w k = BitVec.ofNat w k.toNat := by
+  apply BitVec.eq_of_toNat_eq
+  rw [ofInt_toNat_of_range h0 h1, BitVec.toNat_ofNat]
+  have hk : k.toNat < 2 ^ w := by
+    have hk' : (↑(k.toNat) : Int) < (↑(2 ^ w) : Int) := by
+      rw [Int.toNat_of_nonneg h0]; exact h1
+    exact_mod_cast hk'
+  exact (Nat.mod_eq_of_lt hk).symm
+
+theorem hK0 {x0 x1 : BitVec 8} (h0 : x0.toNat < 16) (h1 : x1.toNat < 16) :
+    (0 : Int) ≤ (x0.toNat : Int) * 16 + (x1.toNat : Int) * 1 := by omega
+theorem hKhi {x0 x1 : BitVec 8} (h0 : x0.toNat < 16) (h1 : x1.toNat < 16) :
+    (x0.toNat : Int) * 16 + (x1.toNat : Int) * 1 ≤ 32767 := by omega
+theorem hKlo {x0 x1 : BitVec 8} (h0 : x0.toNat < 16) (h1 : x1.toNat < 16) :
+    -32768 ≤ (x0.toNat : Int) * 16 + (x1.toNat : Int) * 1 := by omega
+theorem hKlt {x0 x1 : BitVec 8} (h0 : x0.toNat < 16) (h1 : x1.toNat < 16) :
+    (x0.toNat : Int) * 16 + (x1.toNat : Int) * 1 < (2 ^ 16 : Int) := by omega
+theorem hKn {x0 x1 : BitVec 8} (h0 : x0.toNat < 16) (h1 : x1.toNat < 16) :
+    ((x0.toNat : Int) * 16 + (x1.toNat : Int) * 1).toNat = 16 * x0.toNat + x1.toNat := by omega
+
+theorem pmaddUbSwLane_small {x0 x1 : BitVec 8} (h0 : x0.toNat < 16) (h1 : x1.toNat < 16) :
+    pmaddUbSwLane x0 x1 (BitVec.ofNat 8 16) (BitVec.ofNat 8 1) =
+      BitVec.ofNat 16 (16 * x0.toNat + x1.toNat) := by
+  unfold pmaddUbSwLane
+  rw [show (BitVec.ofNat 8 16).toInt = 16 from by decide,
+      show (BitVec.ofNat 8 1).toInt = 1 from by decide]
+  rw [satI16_of_range (hKhi h0 h1) (hKlo h0 h1)]
+  rw [ofInt_eq_ofNat_of_range (w := 16) (hK0 h0 h1) (hKlt h0 h1)]
+  rw [hKn h0 h1]
+
+theorem wK0 {w0 w1 : BitVec 16} (h0 : w0.toNat < 256) (h1 : w1.toNat < 256) :
+    (0 : Int) ≤ (w0.toNat : Int) * 256 + (w1.toNat : Int) * 1 := by omega
+theorem wKlt {w0 w1 : BitVec 16} (h0 : w0.toNat < 256) (h1 : w1.toNat < 256) :
+    (w0.toNat : Int) * 256 + (w1.toNat : Int) * 1 < (2 ^ 32 : Int) := by omega
+theorem wKn {w0 w1 : BitVec 16} (h0 : w0.toNat < 256) (h1 : w1.toNat < 256) :
+    ((w0.toNat : Int) * 256 + (w1.toNat : Int) * 1).toNat = 256 * w0.toNat + w1.toNat := by omega
+
+theorem pmaddWdLane_small {w0 w1 : BitVec 16} (h0 : w0.toNat < 256) (h1 : w1.toNat < 256) :
+    pmaddWdLane w0 w1 (BitVec.ofNat 16 256) (BitVec.ofNat 16 1) =
+      BitVec.ofNat 32 (256 * w0.toNat + w1.toNat) := by
+  unfold pmaddWdLane
+  rw [show (BitVec.ofNat 16 256).toInt = 256 from by decide,
+      show (BitVec.ofNat 16 1).toInt = 1 from by decide]
+  have i0 : w0.toInt = (w0.toNat : Int) := by
+    rw [BitVec.toInt_eq_toNat_of_lt]; omega
+  have i1 : w1.toInt = (w1.toNat : Int) := by
+    rw [BitVec.toInt_eq_toNat_of_lt]; omega
+  rw [i0, i1]
+  rw [ofInt_eq_ofNat_of_range (w := 32) (wK0 h0 h1) (wKlt h0 h1)]
+  rw [wKn h0 h1]
+
+/-- Masking a value below `2 ^ 16` with `65535` is the identity.  The carrier is
+`Nat.and_two_pow_sub_one_eq_mod`'s `Classical.choice`. -/
+theorem and65535_ofNat {v : Nat} (h : v < 65536) :
+    (BitVec.ofNat 32 v) &&& (BitVec.ofNat 32 65535) = BitVec.ofNat 32 v := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  rw [show 65535 % 2 ^ 32 = 65535 from Nat.mod_eq_of_lt (by decide)]
+  rw [show v % 2 ^ 32 = v from Nat.mod_eq_of_lt (by omega)]
+  rw [show (65535 : Nat) = 2 ^ 16 - 1 from by decide]
+  rw [Nat.and_two_pow_sub_one_eq_mod]
+  exact Nat.mod_eq_of_lt h
+
+def hexW8 : List (BitVec 8) :=
+  [16, 1, 16, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0].map fun n => BitVec.ofNat 8 n
+
+def hexW16 : List (BitVec 16) :=
+  [256, 1, 0, 0, 0, 0, 0, 0].map fun n => BitVec.ofNat 16 n
+
+def nibVec (n0 n1 n2 n3 : BitVec 8) : List (BitVec 8) :=
+  [n0, n1, n2, n3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+theorem hexW8_eq : hexW8 =
+    (BitVec.ofNat 8 16) :: (BitVec.ofNat 8 1) ::
+    (BitVec.ofNat 8 16) :: (BitVec.ofNat 8 1) ::
+    [0,0,0,0,0,0,0,0,0,0,0,0] := rfl
+
+theorem hexW16_eq : hexW16 =
+    (BitVec.ofNat 16 256) :: (BitVec.ofNat 16 1) :: [0,0,0,0,0,0] := rfl
+
+theorem hexReduceUbSw (n0 n1 n2 n3 : BitVec 8) :
+    pmaddUbSw (nibVec n0 n1 n2 n3) hexW8 =
+      [pmaddUbSwLane n0 n1 (BitVec.ofNat 8 16) (BitVec.ofNat 8 1),
+       pmaddUbSwLane n2 n3 (BitVec.ofNat 8 16) (BitVec.ofNat 8 1),
+       0, 0, 0, 0, 0, 0] := by
+  rw [hexW8_eq]
+  change pmaddUbSw (n0 :: n1 :: n2 :: n3 :: [0,0,0,0,0,0,0,0,0,0,0,0])
+    ((BitVec.ofNat 8 16) :: (BitVec.ofNat 8 1) :: (BitVec.ofNat 8 16) ::
+     (BitVec.ofNat 8 1) :: [0,0,0,0,0,0,0,0,0,0,0,0]) = _
+  rw [pmaddUbSw_cons]
+  rw [pmaddUbSw_cons]
+  have h : pmaddUbSw [0,0,0,0,0,0,0,0,0,0,0,0] [0,0,0,0,0,0,0,0,0,0,0,0] =
+      [0,0,0,0,0,0] := by decide
+  rw [h]
+
+theorem hexReduceWd (w0 w1 : BitVec 16) :
+    pmaddWd (w0 :: w1 :: [0,0,0,0,0,0]) hexW16 =
+      [pmaddWdLane w0 w1 (BitVec.ofNat 16 256) (BitVec.ofNat 16 1), 0, 0, 0] := by
+  rw [hexW16_eq]
+  rw [pmaddWd_cons]
+  have h : pmaddWd [0,0,0,0,0,0] [0,0,0,0,0,0] = [0,0,0] := by decide
+  rw [h]
+
+/-- The two multiply-adds on four nibble lanes are `hex4`'s value. -/
+theorem pmadd_hexFour (n0 n1 n2 n3 : BitVec 8)
+    (h0 : n0.toNat < 16) (h1 : n1.toNat < 16) (h2 : n2.toNat < 16) (h3 : n3.toNat < 16) :
+    ((pmaddWd (pmaddUbSw (nibVec n0 n1 n2 n3) hexW8) hexW16)[0]!) &&&
+        (BitVec.ofNat 32 65535) =
+      BitVec.ofNat 32 (4096 * n0.toNat + 256 * n1.toNat + 16 * n2.toNat + n3.toNat) := by
+  rw [hexReduceUbSw]
+  rw [hexReduceWd]
+  rw [pmaddUbSwLane_small h0 h1, pmaddUbSwLane_small h2 h3]
+  change pmaddWdLane (BitVec.ofNat 16 (16 * n0.toNat + n1.toNat))
+      (BitVec.ofNat 16 (16 * n2.toNat + n3.toNat))
+      (BitVec.ofNat 16 256) (BitVec.ofNat 16 1) &&& (BitVec.ofNat 32 65535) =
+    BitVec.ofNat 32 (4096 * n0.toNat + 256 * n1.toNat + 16 * n2.toNat + n3.toNat)
+  have b0 : (BitVec.ofNat 16 (16 * n0.toNat + n1.toNat)).toNat < 256 := by
+    rw [BitVec.toNat_ofNat]
+    have hv : 16 * n0.toNat + n1.toNat < 256 := by omega
+    omega
+  have b1 : (BitVec.ofNat 16 (16 * n2.toNat + n3.toNat)).toNat < 256 := by
+    rw [BitVec.toNat_ofNat]
+    have hv : 16 * n2.toNat + n3.toNat < 256 := by omega
+    omega
+  rw [pmaddWdLane_small b0 b1]
+  have e0 : (BitVec.ofNat 16 (16 * n0.toNat + n1.toNat)).toNat = 16 * n0.toNat + n1.toNat := by
+    rw [BitVec.toNat_ofNat]
+    have hv : 16 * n0.toNat + n1.toNat < 256 := by omega
+    omega
+  have e1 : (BitVec.ofNat 16 (16 * n2.toNat + n3.toNat)).toNat = 16 * n2.toNat + n3.toNat := by
+    rw [BitVec.toNat_ofNat]
+    have hv : 16 * n2.toNat + n3.toNat < 256 := by omega
+    omega
+  rw [e0, e1]
+  rw [show 256 * (16 * n0.toNat + n1.toNat) + (16 * n2.toNat + n3.toNat) =
+      4096 * n0.toNat + 256 * n1.toNat + 16 * n2.toNat + n3.toNat from by omega]
+  rw [and65535_ofNat (by omega)]
+
+/-- With the four lane tests satisfied, `hex4` is the pmadd chain's value. -/
+theorem hex4_of_lane_test {bs : List UInt8} {q : Nat} {l : List (BitVec 8)}
+    (hbytes : ∀ i, i < 16 → bs[q + i]? = some (UInt8.ofBitVec (l.getD i 0)))
+    (h0 : hexLaneTest (l.getD 0 0) = true) (h1 : hexLaneTest (l.getD 1 0) = true)
+    (h2 : hexLaneTest (l.getD 2 0) = true) (h3 : hexLaneTest (l.getD 3 0) = true) :
+    hex4 bs q = some (hexFour (l.getD 0 0) (l.getD 1 0) (l.getD 2 0) (l.getD 3 0)) := by
+  unfold hex4
+  rw [show bs[q]? = some (UInt8.ofBitVec (l.getD 0 0)) from by
+        simpa using hbytes 0 (by decide),
+      show bs[q+1]? = some (UInt8.ofBitVec (l.getD 1 0)) from by
+        simpa using hbytes 1 (by decide),
+      show bs[q+2]? = some (UInt8.ofBitVec (l.getD 2 0)) from by
+        simpa using hbytes 2 (by decide),
+      show bs[q+3]? = some (UInt8.ofBitVec (l.getD 3 0)) from by
+        simpa using hbytes 3 (by decide)]
+  simp only [hexDigit_lane, h0, h1, h2, h3]
+  rfl
+
+/-- A failing lane test is `hex4`'s refusal. -/
+theorem hex4_none_of_lane_test {bs : List UInt8} {q : Nat} {l : List (BitVec 8)}
+    (hbytes : ∀ i, i < 16 → bs[q + i]? = some (UInt8.ofBitVec (l.getD i 0)))
+    (h : hexLaneTest (l.getD 0 0) = false ∨ hexLaneTest (l.getD 1 0) = false ∨
+         hexLaneTest (l.getD 2 0) = false ∨ hexLaneTest (l.getD 3 0) = false) :
+    hex4 bs q = none := by
+  unfold hex4
+  rw [show bs[q]? = some (UInt8.ofBitVec (l.getD 0 0)) from by simpa using hbytes 0 (by decide),
+      show bs[q+1]? = some (UInt8.ofBitVec (l.getD 1 0)) from by simpa using hbytes 1 (by decide),
+      show bs[q+2]? = some (UInt8.ofBitVec (l.getD 2 0)) from by simpa using hbytes 2 (by decide),
+      show bs[q+3]? = some (UInt8.ofBitVec (l.getD 3 0)) from by simpa using hbytes 3 (by decide)]
+  simp only [hexDigit_lane]
+  simp only [List.getD] at h
+  rcases h with h|h|h|h <;> (split <;> simp_all)
+
+/-- The four low lanes of the body's mask are the four bytes' tests. -/
+theorem hexTest_low_four (x0 x1 x2 x3 : BitVec 8) (rest : List (BitVec 8)) :
+    (lanesToNat (hexTestLanes (x0 :: x1 :: x2 :: x3 :: rest))) % 16 =
+      (if hexLaneTest x0 then 1 else 0) + 2 * (if hexLaneTest x1 then 1 else 0) +
+      4 * (if hexLaneTest x2 then 1 else 0) + 8 * (if hexLaneTest x3 then 1 else 0) := by
+  have hEq : lanesToNat (hexTestLanes (x0 :: x1 :: x2 :: x3 :: rest)) =
+      16 * lanesToNat (hexTestLanes rest) +
+      ((if hexLaneTest x0 then 1 else 0) + 2 * (if hexLaneTest x1 then 1 else 0) +
+       4 * (if hexLaneTest x2 then 1 else 0) + 8 * (if hexLaneTest x3 then 1 else 0)) := by
+    simp only [hexTestLanes, List.map_cons, lanesToNat, ofBool_eq_one]
+    omega
+  rw [hEq, Nat.mul_comm 16]
+  rw [Nat.mul_add_mod_self_right]
+  have hlt : (if hexLaneTest x0 then 1 else 0) + 2 * (if hexLaneTest x1 then 1 else 0) +
+      4 * (if hexLaneTest x2 then 1 else 0) + 8 * (if hexLaneTest x3 then 1 else 0) < 16 := by
+    split <;> split <;> split <;> split <;> omega
+  exact Nat.mod_eq_of_lt hlt
+
+theorem hexTest_four_eq_fifteen (b0 b1 b2 b3 : Bool) :
+    ((if b0 then 1 else 0) + 2 * (if b1 then 1 else 0) +
+     4 * (if b2 then 1 else 0) + 8 * (if b3 then 1 else 0) = 15) ↔
+      (b0 = true ∧ b1 = true ∧ b2 = true ∧ b3 = true) := by
+  cases b0 <;> cases b1 <;> cases b2 <;> cases b3 <;> decide
+
+/-- **The hex bridge.**  From the four lane tests, `hex4` is the code unit the
+pmadd chain's lane 0 masked with `65535` carries. -/
+theorem hex4_pmadd {bs : List UInt8} {q : Nat} {l : List (BitVec 8)}
+    (hbytes : ∀ i, i < 16 → bs[q + i]? = some (UInt8.ofBitVec (l.getD i 0)))
+    (h0 : hexLaneTest (l.getD 0 0) = true) (h1 : hexLaneTest (l.getD 1 0) = true)
+    (h2 : hexLaneTest (l.getD 2 0) = true) (h3 : hexLaneTest (l.getD 3 0) = true) :
+    hex4 bs q = some
+      (((pmaddWd (pmaddUbSw
+          (nibVec (hexNib8 (l.getD 0 0)) (hexNib8 (l.getD 1 0))
+                  (hexNib8 (l.getD 2 0)) (hexNib8 (l.getD 3 0))) hexW8) hexW16)[0]!) &&&
+        (BitVec.ofInt 32 65535)).toNat := by
+  rw [hex4_of_lane_test hbytes h0 h1 h2 h3]
+  have n0 : (hexNib8 (l.getD 0 0)).toNat < 16 := by
+    rw [← hexNib_eq]; exact hexNib_lt h0
+  have n1 : (hexNib8 (l.getD 1 0)).toNat < 16 := by
+    rw [← hexNib_eq]; exact hexNib_lt h1
+  have n2 : (hexNib8 (l.getD 2 0)).toNat < 16 := by
+    rw [← hexNib_eq]; exact hexNib_lt h2
+  have n3 : (hexNib8 (l.getD 3 0)).toNat < 16 := by
+    rw [← hexNib_eq]; exact hexNib_lt h3
+  rw [show (BitVec.ofInt 32 65535) = (BitVec.ofNat 32 65535) from BitVec.ofInt_ofNat 32 65535]
+  rw [pmadd_hexFour _ _ _ _ n0 n1 n2 n3]
+  rw [BitVec.toNat_ofNat]
+  have hV : 4096 * (hexNib8 (l.getD 0 0)).toNat + 256 * (hexNib8 (l.getD 1 0)).toNat +
+      16 * (hexNib8 (l.getD 2 0)).toNat + (hexNib8 (l.getD 3 0)).toNat < 2 ^ 32 := by
+    have a0 := (hexNib8 (l.getD 0 0)).isLt
+    have a1 := (hexNib8 (l.getD 1 0)).isLt
+    have a2 := (hexNib8 (l.getD 2 0)).isLt
+    have a3 := (hexNib8 (l.getD 3 0)).isLt
+    simp only [BitVec.isLt] at a0 a1 a2 a3
+    omega
+  rw [Nat.mod_eq_of_lt hV]
+  rw [hexFour_eq_nib]
+
+/-- info: 'LeanLLVM.Vellum.hexDigit_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexDigit_lane
+
+/-- info: 'LeanLLVM.Vellum.hexLaneTest_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexLaneTest_iff
+
+/-- info: 'LeanLLVM.Vellum.hex4_of_lane_test' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hex4_of_lane_test
+
+/-- info: 'LeanLLVM.Vellum.hex4_none_of_lane_test' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hex4_none_of_lane_test
+
+/-- info: 'LeanLLVM.Vellum.hexTest_low_four' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hexTest_low_four
+
+/-- info: 'LeanLLVM.Vellum.pmadd_hexFour' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms pmadd_hexFour
+
+/-- info: 'LeanLLVM.Vellum.hex4_pmadd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms hex4_pmadd
+
+end LeanLLVM.Vellum
+
+namespace LeanLLVM.Vellum
+
+open LeanLLVM
+open LeanLLVM.Vellum.JsonEscapeIR
+open LeanLLVM.Vellum.JsonEscapeIntrinsics
+open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Vellum.BitLanes
+
+/-! ### `if.end9.i`
+
+The `\u` guard: the second body byte is `u`, the escape's six bytes fit, and the
+branch taken depends on both. -/
+
+theorem b_icmp_ne8_imm (env : Env) (s : State) (d a : String) (x c : BitVec 8)
+    (ha : lookupName env a = some (.int 8 x)) :
+    evalInstr escapeCalls (withEnv env s)
+        (.icmp d .ne 8 (.reg a) (.imm (.int 8 c))) =
+      some (withEnv ((d, .int 1 (evalICmp .ne x c)) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s a (.int 8 x) ha)
+    (hb := evalOperand_lit_of _ 8 c)]
+  simp only [withEnv, State.bind]
+
+theorem b_icmp_ugt64r (env : Env) (s : State) (d a b : String) (x y : BitVec 64)
+    (ha : lookupName env a = some (.int 64 x)) (hb : lookupName env b = some (.int 64 y)) :
+    evalInstr escapeCalls (withEnv env s) (.icmp d .ugt 64 (.reg a) (.reg b)) =
+      some (withEnv ((d, .int 1 (evalICmp .ugt x y)) :: env) s) := by
+  rw [evalInstr_icmp (ha := evalOperand_reg_of env s a (.int 64 x) ha)
+    (hb := evalOperand_reg_of env s b (.int 64 y) hb)]
+  simp only [withEnv, State.bind]
+
+theorem evalBinopNat_or1 (x y : BitVec 1) :
+    evalBinopNat .or 1 x.toNat y.toNat = some (x.toNat ||| y.toNat) := by
+  simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat, BitVec.toNat_or]
+
+theorem b_or1 (env : Env) (s : State) (d a b : String) (x y : BitVec 1)
+    (ha : lookupName env a = some (.int 1 x)) (hb : lookupName env b = some (.int 1 y)) :
+    evalInstr escapeCalls (withEnv env s) (.binop d .or 1 (.reg a) (.reg b)) =
+      some (withEnv ((d, .int 1 (x ||| y)) :: env) s) := by
+  rw [evalInstr_binop (ha := evalOperand_reg_of env s a (.int 1 x) ha)
+    (hb := evalOperand_reg_of env s b (.int 1 y) hb)
+    (hr := evalBinopNat_or1 x y)]
+  simp only [withEnv, State.bind]
+  rw [show BitVec.ofNat 1 (x.toNat ||| y.toNat) = x ||| y from by
+    rw [← BitVec.toNat_or x y, BitVec.ofNat_toNat, BitVec.setWidth_eq]]
+
+def udIfEnd9I : Block := blockAt usDecFunction 14 (by decide)
+
+theorem findBlock_udIfEnd9I : usDecFunction.findBlock "if.end9.i" = some udIfEnd9I := by
+  decide
+
+theorem udIfEnd9I_instrs :
+    udIfEnd9I.instrs =
+      [ .icmp "%cmp10.not.i" .ne 8 (.reg "%8") (.imm (.int 8 (BitVec.ofInt 8 117))),
+        .binop "%add.i113" .add 64 (.reg "%sub") (.imm (.int 64 (BitVec.ofInt 64 6))),
+        .icmp "%cmp.i114" .ugt 64 (.reg "%add.i113") (.reg "%n"),
+        .binop "%or.cond335" .or 1 (.reg "%cmp10.not.i") (.reg "%cmp.i114") ] := by
+  decide
+
+theorem udIfEnd9I_term :
+    udIfEnd9I.term = .condbr (.reg "%or.cond335") "if.then22" "if.end.i115" := by decide
+
+def udIfEnd9IEnv (env : Env) (off : BitVec 64) (c1 c2 : BitVec 1) : Env :=
+  ("%or.cond335", .int 1 (c1 ||| c2)) ::
+    ("%cmp.i114", .int 1 c2) ::
+    ("%add.i113", .int 64 off) ::
+    ("%cmp10.not.i", .int 1 c1) :: env
+
+theorem udIfEnd9I_denote (env : Env) (s : State) (sub n : BitVec 64) (b : BitVec 8)
+    (h8 : lookupName env "%8" = some (.int 8 b))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n)) :
+    denoteCode escapeCalls udIfEnd9I.instrs (withEnv env s) =
+      some (withEnv (udIfEnd9IEnv env (sub + BitVec.ofInt 64 6)
+        (evalICmp .ne b (BitVec.ofInt 8 117))
+        (evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) s) := by
+  rw [udIfEnd9I_instrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ne8_imm _ _ "%cmp10.not.i" "%8" b
+    (BitVec.ofInt 8 117) (by ud_lk_h h8))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_add64_imm _ _
+    "%add.i113" "%sub" sub (BitVec.ofInt 64 6) (by ud_lk_h hsub))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ugt64r _ _
+    "%cmp.i114" "%add.i113" "%n" (sub + BitVec.ofInt 64 6) n (by ud_lk) (by ud_lk_h hn))]
+  rw [denoteCode_cons_of _ _ _ _ _ (b_or1 _ _
+    "%or.cond335" "%cmp10.not.i" "%cmp.i114"
+    (evalICmp .ne b (BitVec.ofInt 8 117))
+    (evalICmp .ugt (sub + BitVec.ofInt 64 6) n) (by ud_lk) (by ud_lk))]
+  simp only [denoteCode, withEnv, udIfEnd9IEnv]
+
+theorem udIfEnd9I_run (env : Env) (s : State) (sub n : BitVec 64) (b : BitVec 8)
+    (h8 : lookupName env "%8" = some (.int 8 b))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n)) :
+    Option.map State.mem (denoteCode escapeCalls udIfEnd9I.instrs (withEnv env s)) =
+        some s.mem ∧
+      (denoteCode escapeCalls udIfEnd9I.instrs (withEnv env s)).bind
+          (fun st => lookupName st.env "%or.cond335") =
+        some (.int 1 (evalICmp .ne b (BitVec.ofInt 8 117) |||
+                       evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) := by
+  rw [udIfEnd9I_denote env s sub n b h8 hsub hn]
+  refine ⟨?_, ?_⟩
+  · simp only [Option.map_some, withEnv]
+  · simp only [Option.bind_some, withEnv, udIfEnd9IEnv]
+    ud_lk
+
+theorem udIfEnd9I_step (env : Env) (s : State) (sub n : BitVec 64) (b : BitVec 8)
+    (hpc : s.pc = "if.end9.i")
+    (h8 : lookupName env "%8" = some (.int 8 b))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hcond : (evalICmp .ne b (BitVec.ofInt 8 117) |||
+              evalICmp .ugt (sub + BitVec.ofInt 64 6) n) = (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEnd9IEnv env (sub + BitVec.ofInt 64 6)
+                (evalICmp .ne b (BitVec.ofInt 8 117))
+                (evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) s) with
+              pc := "if.then22", pre := some "if.end9.i" } := by
+  rw [udStep_of (withEnv env s) "if.end9.i" udIfEnd9I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEnd9I
+    (udIfEnd9I_denote env s sub n b h8 hsub hn), udIfEnd9I_term]
+  have hcmp : evalOperand (withEnv (udIfEnd9IEnv env (sub + BitVec.ofInt 64 6)
+      (evalICmp .ne b (BitVec.ofInt 8 117))
+      (evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) s) (.reg "%or.cond335") =
+      some (.int 1 (evalICmp .ne b (BitVec.ofInt 8 117) |||
+                     evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) :=
+    evalOperand_reg_of _ s "%or.cond335" _ (by simp only [udIfEnd9IEnv]; ud_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+theorem udIfEnd9I_step_zero (env : Env) (s : State) (sub n : BitVec 64) (b : BitVec 8)
+    (hpc : s.pc = "if.end9.i")
+    (h8 : lookupName env "%8" = some (.int 8 b))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hcond : (evalICmp .ne b (BitVec.ofInt 8 117) |||
+              evalICmp .ugt (sub + BitVec.ofInt 64 6) n) = (0 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEnd9IEnv env (sub + BitVec.ofInt 64 6)
+                (evalICmp .ne b (BitVec.ofInt 8 117))
+                (evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) s) with
+              pc := "if.end.i115", pre := some "if.end9.i" } := by
+  rw [udStep_of (withEnv env s) "if.end9.i" udIfEnd9I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEnd9I
+    (udIfEnd9I_denote env s sub n b h8 hsub hn), udIfEnd9I_term]
+  have hcmp : evalOperand (withEnv (udIfEnd9IEnv env (sub + BitVec.ofInt 64 6)
+      (evalICmp .ne b (BitVec.ofInt 8 117))
+      (evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) s) (.reg "%or.cond335") =
+      some (.int 1 (evalICmp .ne b (BitVec.ofInt 8 117) |||
+                     evalICmp .ugt (sub + BitVec.ofInt 64 6) n)) :=
+    evalOperand_reg_of _ s "%or.cond335" _ (by simp only [udIfEnd9IEnv]; ud_lk)
+  rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd9I_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd9I_denote
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd9I_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd9I_run
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd9I_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd9I_step
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd9I_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd9I_step_zero
 
 end LeanLLVM.Vellum
 
