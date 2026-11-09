@@ -84,9 +84,10 @@ Nothing here is an axiom, and nothing reaches `BitVec.allOnes` through a core
 lemma that carries `Classical.choice` — the module's own lane lemma and
 `BitVec.toNat_allOnes` are the two routes it takes; the module's footprint is
 `[propext, Quot.sound]`.  The lane algebra that a body and its specification share
-— the packing's distribution, a fold's lane, the lane list's zero test, and the
-`i8` bound — is stated in the section at the end, and it depends on nothing in
-this repository below `LeanLLVM.Semantics` and `LeanLLVM.Memory`.
+— the packing's distribution, a fold's lane, the lane list's zero test, the `i8`
+bound, and the disjoint-lane sum — is stated in the section at the end, and it
+depends on nothing in this repository below `LeanLLVM.Semantics` and
+`LeanLLVM.Memory`.
 -/
 import LeanLLVM.Semantics
 import LeanLLVM.Memory
@@ -1251,4 +1252,89 @@ theorem and80_eq_zero_iff_control :
     ¬ ((0x100 : BitVec 16) &&& 0x80 = 0 ↔ (0x100 : BitVec 16).toNat < 0x80) := by
   decide
 
+/-! #### The disjoint-lane sum
+
+A body's packed word is a sum of bit fields, and a specification's bytes are the
+same fields read back, so the step that crosses between them is "a lane set in
+exactly one operand contributes itself to the sum".  The toolchain has the
+bitwise operations but no lemma relating `|||` to `+` on disjoint operands — the
+names a consumer reaches for, `Nat.lor_eq_add_of_and_eq_zero` and its
+neighbours, are undeclared.  So the fact is proved here, in `Nat`'s own namespace
+under the name the consumer asks for, because it is lane arithmetic: the or of
+disjoint fields is their sum, which is what a packed word and a lane list both
+need, and which is why it belongs beside the packing distribution above rather
+than in the one consumer that first needs it.  Enumeration is not an alternative
+at the widths involved: the width-by-width `decide` is exponential — measured at
+2m42s for sixteen bits and past this repository's probe bound at twenty-four — so
+the bitwise recursion below is the route. -/
 end LeanLLVM.Vellum.BitLanes
+
+namespace Nat
+
+/-- Set bits in disjoint masks add: when `a` and `b` share no set bit, `a ||| b`
+is `a + b`.  The toolchain declares neither this lemma nor a neighbour of it, and
+a consumer cannot enumerate its way to it, so it is proved once here for every
+width.  The proof peels the low bit of each operand — `Nat.and_div_two` and
+`Nat.or_div_two` carry the halves, the strong induction adds them, and
+`Nat.and_mod_two_eq_one`/`Nat.or_mod_two_eq_one` read the low bit — so it carries
+only `[propext, Quot.sound]`, the module's ceiling. -/
+theorem lor_eq_add_of_and_eq_zero (a b : Nat) (h : a &&& b = 0) : a ||| b = a + b := by
+  suffices ∀ n, ∀ a b : Nat, a + b = n → a &&& b = 0 → a ||| b = a + b by
+    exact this (a + b) a b rfl h
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro a b hn h
+    rcases a with _ | a <;> rcases b with _ | b
+    · rfl
+    · simp
+    · simp
+    · have hlt : (a + 1) / 2 + (b + 1) / 2 < n := by
+        have h1 : (a + 1) / 2 < a + 1 := Nat.div_lt_self (Nat.succ_pos a) (by decide)
+        have h2 : (b + 1) / 2 < b + 1 := Nat.div_lt_self (Nat.succ_pos b) (by decide)
+        omega
+      have hland : (a + 1) / 2 &&& (b + 1) / 2 = 0 := by
+        have hd := Nat.and_div_two (a := a + 1) (b := b + 1)
+        rw [h] at hd
+        simpa using hd.symm
+      have hsum : (a + 1) / 2 ||| (b + 1) / 2 = (a + 1) / 2 + (b + 1) / 2 :=
+        ih ((a + 1) / 2 + (b + 1) / 2) hlt ((a + 1) / 2) ((b + 1) / 2) rfl hland
+      have hordiv : ((a + 1) ||| (b + 1)) / 2 = (a + 1) / 2 + (b + 1) / 2 := by
+        rw [Nat.or_div_two, hsum]
+      have hne : ¬ ((a + 1) % 2 = 1 ∧ (b + 1) % 2 = 1) := by
+        intro hc
+        have hm : ((a + 1) &&& (b + 1)) % 2 = 1 := Nat.and_mod_two_eq_one.mpr hc
+        rw [h] at hm
+        simp at hm
+      have hr : ((a + 1) ||| (b + 1)) % 2 = (a + 1) % 2 + (b + 1) % 2 := by
+        rcases Nat.mod_two_eq_zero_or_one (a + 1) with ha | ha <;>
+          rcases Nat.mod_two_eq_zero_or_one (b + 1) with hb | hb
+        · have hzero : ¬ (((a + 1) ||| (b + 1)) % 2 = 1) := by
+            rw [Nat.or_mod_two_eq_one]
+            omega
+          rcases Nat.mod_two_eq_zero_or_one ((a + 1) ||| (b + 1)) with hz | ho
+          · omega
+          · exact absurd ho hzero
+        · have hone : ((a + 1) ||| (b + 1)) % 2 = 1 :=
+            Nat.or_mod_two_eq_one.mpr (Or.inr hb)
+          omega
+        · have hone : ((a + 1) ||| (b + 1)) % 2 = 1 :=
+            Nat.or_mod_two_eq_one.mpr (Or.inl ha)
+          omega
+        · exact absurd ⟨ha, hb⟩ hne
+      have hx : 2 * (((a + 1) ||| (b + 1)) / 2) + ((a + 1) ||| (b + 1)) % 2 =
+          (a + 1) ||| (b + 1) := Nat.div_add_mod _ _
+      rw [hordiv, hr] at hx
+      have h1 : 2 * ((a + 1) / 2) + (a + 1) % 2 = a + 1 := Nat.div_add_mod _ _
+      have h2 : 2 * ((b + 1) / 2) + (b + 1) % 2 = b + 1 := Nat.div_add_mod _ _
+      omega
+
+/-- info: 'Nat.lor_eq_add_of_and_eq_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms lor_eq_add_of_and_eq_zero
+
+/-- The disjointness hypothesis is load-bearing: overlapping masks do not add. -/
+theorem lor_eq_add_of_and_eq_zero_control :
+    (0xFF : Nat) ||| 0xFF ≠ 0xFF + 0xFF := by decide
+
+end Nat
