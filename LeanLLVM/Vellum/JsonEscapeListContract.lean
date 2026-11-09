@@ -1601,13 +1601,13 @@ theorem lxCarry_spec (lo hi : Block32) (st : ClassState) (prevb prevs : Bool)
 /-! ### The record's instance -/
 
 /-- **The escape position list refines its specification.**  From a staging the
-record admits, the run of the pinned entry point completes at the record's budget
-and every behaviour it has satisfies the record's post: the count advanced by the
-block's positions, the positions written at the stream cursor, and every byte
-outside the three regions unchanged. -/
-theorem escape_positions_satisfies :
+record admits at the caller's document base `base`, the run of the pinned entry point
+completes at the record's budget and every behaviour it has satisfies the record's
+post: the count advanced by the block's positions, the positions written at the
+stream cursor, and every byte outside the three regions unchanged. -/
+theorem escape_positions_satisfies (base : Nat) :
     Satisfies (escapeListCalls Γ_xl_batch) escapeListFunction
-      (Γ_escape_positions escapePositionsBudget) := by
+      (Γ_escape_positions base escapePositionsBudget) := by
   intro args mem next hpre
   obtain ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, prevb, prevs, xn0,
     hargs, hblock, hbs, hctl, him, hpair, hcount, hxn0, hdisj, hcarr, hcx,

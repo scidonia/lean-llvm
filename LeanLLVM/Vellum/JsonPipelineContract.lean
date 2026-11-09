@@ -103,12 +103,12 @@ as a parameter, §15.41) and the 1024-`u64` `xl_pos8` the caller initialises in
 listed once with its extent.  `HasBytes` is the promise a caller can make about
 a region in this memory model; an extent the proof needs and this list omits
 would be an unreadable read, which is the F2-class defect §15.15 records. -/
-def pipelineReads (tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × Nat) :=
+def pipelineReads (base tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × Nat) :=
   match args with
-  | [.ptr b, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
+  | [.ptr _, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr _, .int 64 _,
      .ptr ndst, .ptr _, .int 64 _, .ptr nev, .ptr err, .int 64 _] =>
-      [(b - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
+      [(base - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
        (entw, 8), (ep, 4 * (nk0 + 64 * pipelineBlocks n.toNat + 9)), (nk, 8),
        (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8)), (nxp, 8),
        (xcarry, 16), (ndst, 8), (nev, 8), (err, 8)]
@@ -120,12 +120,12 @@ def pipelineReads (tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × Nat) :
 it.  The entry stream's and escape list's extents are the windows the units
 write, not their full capacities: a caller is not asked to keep bytes apart that
 no clause reaches. -/
-def pipelineRegions (tab nk0 nxp0 ndst0 : Nat) (args : List Value) : List (Nat × Nat) :=
+def pipelineRegions (base tab nk0 nxp0 ndst0 : Nat) (args : List Value) : List (Nat × Nat) :=
   match args with
-  | [.ptr b, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
+  | [.ptr _, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
      .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err, .int 64 _] =>
-      [(b - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
+      [(base - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
        (entw, 8), (ep, 4 * (nk0 + 64 * pipelineBlocks n.toNat + 9)), (nk, 8),
        (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8)), (nxp, 8),
        (xcarry, 16), (dst, ndst0 + n.toNat + 64), (ndst, 8),
@@ -222,26 +222,26 @@ clause names the unit record it is read from:
   is a `uint32` that does not truncate;
 * the arm word is a selector, and its reserved bits are zero (`pipeline.h`).
 -/
-def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
-  ∃ (b sc mk entw ep nk xp nxp xcarry dst ndst ev nev err tab nk0 nxp0 ndst0
+def pipelineStaging (base : Nat) (args : List Value) (mem : Mem) : Prop :=
+  ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err tab nk0 nxp0 ndst0
       nev0 : Nat)
     (n epcap xpcap dstcap evcap arm : BitVec 64) (bs : List UInt8),
-    args = [.ptr b, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
+    args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
       .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
       .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
       .int 64 arm] ∧
     -- the document, its limit, and the zero-padded window the last block reads
     n.toNat = bs.length ∧
     bs.length ≤ (Limits.default).maxInput ∧
-    readBytes mem b (64 * pipelineBlocks bs.length) =
+    readBytes mem base (64 * pipelineBlocks bs.length) =
       some (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) ∧
     -- the UTF-8 stage's window begins three bytes below the document, and those
     -- bytes are zero: `Γ_utf8.pre` stages
-    -- `readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs n nb)` and
+    -- `readBytes mem (base - 3) (3 + 64 * nb) = some (utf8Window bs n nb)` and
     -- `utf8Window bs n nb` is `[0, 0, 0] ++ bs ++ padding`, so this clause and
     -- the document window above are that one window byte for byte
-    3 ≤ b ∧
-    readBytes mem (b - 3) 3 = some (List.replicate 3 0) ∧
+    3 ≤ base ∧
+    readBytes mem (base - 3) 3 = some (List.replicate 3 0) ∧
     -- the stage is not defined on an empty document: `Γ_utf8.pre` requires
     -- `0 < n` and its post requires it too, while the entry test
     -- (`%cmp79.not = (n + 63) < 64`) sends a zero-length document straight past
@@ -288,8 +288,8 @@ def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
     -- the arm selector, bits three and above reserved and zero
     arm.toNat < 8 ∧
     -- the read set, and the staged objects' separation
-    (∀ r ∈ pipelineReads tab nk0 nxp0 args, HasBytes mem r.1 r.2) ∧
-    DisjointRegions (pipelineRegions tab nk0 nxp0 ndst0 args)
+    (∀ r ∈ pipelineReads base tab nk0 nxp0 args, HasBytes mem r.1 r.2) ∧
+    DisjointRegions (pipelineRegions base tab nk0 nxp0 ndst0 args)
 
 /-! ### The room clause's witness
 
@@ -374,9 +374,9 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
 arguments-only counted budget, and the boundary projection of the loop-exit
 invariant with the tail's per-unit facts.  It is `Γ_pipeline_units`, not the
 specification record; see the module docstring. -/
-def Γ_pipeline_units : MemContract where
+def Γ_pipeline_units (base : Nat) : MemContract where
   budget := pipelineBudget
-  pre := fun args mem _ => pipelineStaging args mem
+  pre := fun args mem _ => pipelineStaging base args mem
   post := pipelineUnitsPost
 
 /-! ### Sanity checks on the statement's arithmetic -/
@@ -387,12 +387,12 @@ def Γ_pipeline_units : MemContract where
 
 -- A shaped argument list gives the thirteen regions, including the entry
 -- table once at 8 KiB; an unshaped one gives none.
-#guard (pipelineReads 1024 0 0
+#guard (pipelineReads 0 1024 0 0
   [.ptr 0, .int 64 1, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
    .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
    .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
    .int 64 0]).length == 13
-#guard (pipelineReads 1024 0 0 []).length == 0
+#guard (pipelineReads 0 1024 0 0 []).length == 0
 
 /-! ### Axiom footprints
 

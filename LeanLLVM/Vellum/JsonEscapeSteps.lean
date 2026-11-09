@@ -51,9 +51,10 @@ against `probes/install/ir/json-escape.candidate.ll` by `#guard`.  The `Satisfie
 instances that read these records at those bodies are **not** stated in this module
 yet; the pin is what lets such an instance name the measured body rather than an
 authored one, and the records above are stated at the corrected boundary — the
-list's stream claim at `xp + 4 * xn0` with the block base added, and the expander's
-ninth argument with the table clause — so that an instance proved at the pinned body
-is a statement about the measured unit.
+list's stream claim at `xp + 4 * xn0` with the block base added, its block read at
+`base + blockAddr blk0` with the document base a record parameter, and the
+expander's ninth argument with the table clause — so that an instance proved at the
+pinned body is a statement about the measured unit.
 -/
 import LeanLLVM.Vellum.JsonEscapeIR
 import LeanLLVM.Vellum.JsonEscapeBatch
@@ -180,6 +181,18 @@ start where the caller's count says the stream ends.  The positions are the bloc
 own, lifted by `blockAddr blk0`, because the store's positions are document offsets
 and the specification's are block lanes.
 
+**The block is read at the caller's base.**  `base + blockAddr blk0` is the
+absolute address of the block whose classifier words the three masks are, and the
+positions and outgoing carry are read off `block64 lo hi`.  `blockAddr blk0` is the
+block's document *offset*, because the positions the store carries are document
+offsets; `base` is where the caller staged the document.  The pinned entry point
+never reads the block — it takes the three masks — so this clause is a staging
+obligation on the caller for a region the *specification* needs, not a record of an
+access the body makes.  The base is a parameter for exactly that reason: the body's
+arguments do not carry it, and without it the clause would read `blockAddr blk0` as
+an absolute address, which at the pipeline's staging (`b ≥ 3`, loop index as
+`blk0`) is the three-byte-shifted window at the first block.
+
 The carry clause is the pair the run writes back and the next block's call reads:
 the run stores the block's outgoing run-open and run-parity words at `carry`, and
 `carryPair` names that pair with the state it belongs to.  The outgoing state is
@@ -191,12 +204,12 @@ pair the run wrote is not what memory holds.
 
 The unchanged conjunct is over the extent the run wrote, which includes the batch
 reserve the run touched. -/
-def escapePositionsPost (args : List Value) (mem m : Mem) : Prop :=
+def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
   ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
     (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
     args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
       .ptr carry] ∧
-    readBytes mem (blockAddr blk0) 64 = some (block64 lo hi) ∧
+    readBytes mem (base + blockAddr blk0) 64 = some (block64 lo hi) ∧
     bs = specBackslash64 lo hi st ∧ ctl = specControl64 lo hi st ∧
     im = specInString64 lo hi st ∧
     carryPair mem carry st prevb prevs ∧
@@ -220,10 +233,18 @@ The count is read in and out of its own slot; the reserve is inside the capacity
 outside the stream, so `pre` promises the room and `post` claims nothing about the
 reserve's values.
 
-The block itself is named in the caller's store because the claim is about **that**
-block's positions, and the specification reads them off its bytes; the entry point
-does not read the block, so this clause is not a readability obligation the body
-has.
+**The block clause reads at `base + blockAddr blk0`, and the base is a parameter.**
+The three masks are the classifier words of the block staged at that address, so the
+claim is about **that** block's positions and the specification reads them off its
+bytes.  The pinned entry point does not read the block, so the clause is not an
+access the body makes: it is a staging obligation on the caller for a region the
+specification needs, and `base` is what makes it a region rather than an offset.
+`blockAddr blk0 = blk0.toNat * 64` is the block's document offset — what the stored
+positions are — while `readBytes` takes an absolute address, so at the pipeline's
+staging (`b` with `3 ≤ b`, loop index as `blk0`) the clause without `base` names the
+three-byte-shifted window at the first block, whose backslash word is not the
+masks' block.  The pipeline passes its `b`, whose staging covers the document, so
+the clause is satisfiable exactly where the unit is called.
 
 **The count's slot is disjoint from the other two, and the carry's from the
 stream.** The body stores the outgoing carry at `carry` and `carry + 8` before it
@@ -254,15 +275,16 @@ advances it by at most sixty-four never approaches this bound.
 
 The staged input is otherwise the caller's: the unit is not defined on overlapping
 slots, and the record says so rather than modelling the alias. -/
-def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract where
+def Γ_escape_positions (base : Nat) (budget : List Value → Mem → Nat) : MemContract where
   budget := budget
   pre := fun args mem _ =>
     ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
       (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
       args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
         .ptr carry] ∧
-      -- the three masks are this block's classifier words
-      readBytes mem (blockAddr blk0) 64 = some (block64 lo hi) ∧
+      -- the three masks are the classifier words of the block staged at the
+      -- caller's base, read at the block's document offset from it
+      readBytes mem (base + blockAddr blk0) 64 = some (block64 lo hi) ∧
       bs = specBackslash64 lo hi st ∧ ctl = specControl64 lo hi st ∧
       im = specInString64 lo hi st ∧
       -- the carry pair, and the parity the block's first lane is entered with
@@ -293,19 +315,20 @@ def Γ_escape_positions (budget : List Value → Mem → Nat) : MemContract wher
   post := fun args mem _ o =>
     match o with
     | .ub => False
-    | .ret _ m => escapePositionsPost args mem m
+    | .ret _ m => escapePositionsPost base args mem m
 
 /-- The list record refuses `ub`: its `post` is `False` at that outcome, so "the
 record forbids undefined behaviour" is a proposition. -/
-theorem escape_positions_ub_false (budget : List Value → Mem → Nat)
+theorem escape_positions_ub_false (base : Nat) (budget : List Value → Mem → Nat)
     (args : List Value) (mem : Mem) (next : Nat) :
-    ¬ (Γ_escape_positions budget).post args mem next .ub := by
+    ¬ (Γ_escape_positions base budget).post args mem next .ub := by
   intro h; exact h
 
 /-- The list record's guarantee ignores the returned value, because the entry point
 returns `void` and everything it says is about the memory it leaves. -/
-theorem escape_positions_valueIrrelevant (budget : List Value → Mem → Nat) :
-    ValueIrrelevant (Γ_escape_positions budget) := by
+theorem escape_positions_valueIrrelevant (base : Nat)
+    (budget : List Value → Mem → Nat) :
+    ValueIrrelevant (Γ_escape_positions base budget) := by
   intro args mem next v v' m
   rfl
 

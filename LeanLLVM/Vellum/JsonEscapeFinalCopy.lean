@@ -720,7 +720,7 @@ theorem entryExit_admits_clobbered_err :
         0 0 [] 800 900 exitWitnessMem e ∧
       readBytes e.mem 800 8 ≠ readBytes exitWitnessMem 800 8 := by
   refine ⟨entryClobberedErrState, ?_, ?_⟩
-  · refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨rfl, rfl, ⟨?_, ?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- the walk's seed
       show escapeDecodeGo [] 0 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
       rw [exitWitness_escAt, List.drop_zero]
@@ -728,6 +728,8 @@ theorem entryExit_admits_clobbered_err :
     · rfl
     · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
       rw [exitWitness_escAt]; rfl
+    · -- the empty prefix at cursor zero
+      exact Nat.zero_le _
     all_goals (first
       | exact entryClobberedErr_frame
       | rfl
@@ -803,7 +805,7 @@ theorem latchExit_admits_cursor_past_body :
   · -- the walk's exit data, at cursor `5`
     refine ⟨0, 5, [], BitVec.ofNat 64 0, BitVec.ofNat 64 5, BitVec.ofNat 64 0,
       100, 700, 400, 800, 900, BitVec.ofNat 64 0, 0, BitVec.ofNat 64 0, ?_⟩
-    refine ⟨rfl, ⟨?_, ?_, ?_⟩, rfl, rfl, (by decide), rfl, (by decide), rfl,
+    refine ⟨rfl, ⟨?_, ?_, ?_, ?_⟩, rfl, rfl, (by decide), rfl, (by decide), rfl,
       (by decide), rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · show escapeDecodeGo [] 5 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
       rw [exitWitness_escAt, List.drop_zero]
@@ -811,6 +813,8 @@ theorem latchExit_admits_cursor_past_body :
     · rfl
     · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
       rw [exitWitness_escAt]; rfl
+    · -- the empty prefix at cursor five
+      exact Nat.zero_le _
   all_goals solve
     | exact hframe
     | (simp only [latchCursorPastBodyState, modelState, lookupName]; simp)
@@ -1008,7 +1012,7 @@ theorem bodyExit_admits_clobbered_body :
         (.decoded bodyWitnessBody 0) 100 500 400 0 4 [] 101 300 bodyWitnessMem e ∧
       readBytes e.mem 100 4 ≠ some bodyWitnessBody := by
   refine ⟨bodyClobberedWitnessState, ?_, ?_⟩
-  · refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · refine ⟨rfl, rfl, ⟨?_, ?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- the walk's seed: the body, nothing stored, no positions
       show escapeDecodeGo bodyWitnessBody 0 0
         ((escAt bodyWitnessBody ⟨true, false⟩ 0).drop 0) [] =
@@ -1019,6 +1023,8 @@ theorem bodyExit_admits_clobbered_body :
     · show (escAt bodyWitnessBody ⟨true, false⟩ 0).length = 0
       rw [bodyWitness_escAt]
       rfl
+    · -- the empty prefix at cursor zero
+      exact Nat.zero_le _
     all_goals (first
       | exact bodyClobberedWitness_frame
       | rfl
@@ -1113,7 +1119,7 @@ theorem entryExit_admits_free_dst :
       lookupName e.env "%dst" = some (.ptr 232) := by
   refine ⟨entryDstWitnessState, ?_, entryDstWitness_dst⟩
   unfold AssemblyEntryExitFreeDst
-  refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
+  refine ⟨rfl, rfl, ⟨?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
   · -- the seed's walk: the body, nothing stored, no positions
     show escapeDecodeGo bodyWitnessBody 0 0
       ((escAt bodyWitnessBody ⟨true, false⟩ 0).drop 0) [] =
@@ -1124,6 +1130,8 @@ theorem entryExit_admits_free_dst :
   · show (escAt bodyWitnessBody ⟨true, false⟩ 0).length = 0
     rw [bodyWitness_escAt]
     rfl
+  · -- the empty prefix at cursor zero
+    exact Nat.zero_le _
   · intro a _
     rfl
 

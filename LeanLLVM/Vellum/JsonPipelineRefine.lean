@@ -11,7 +11,7 @@ per-unit obligations it consumes are a **named bundle** — `PipelineUnits` — 
 **Why the bundle and not six hypotheses.**  A per-unit refinement list says each
 unit is fine and says nothing about the assembled program: a per-block call with
 the wrong argument staging satisfies all six unit theorems.  The bundle is
-therefore read at the pipeline's own call environment — `pipelineCalls tab s2`,
+therefore read at the pipeline's own call environment — `pipelineCalls tab base s2`,
 which resolves each symbol to that unit's body, environment and record — so a
 member is a fact about the pipeline's call site, and the induction below is the
 only place a unit is consumed.
@@ -174,32 +174,32 @@ environment is not unfolded at a call site, so these are what identify the
 selection a member's `CallSatisfies` is stated at.  `pipelineCalls_masks` is
 `JsonPipelineIR`'s own; the five here are its siblings. -/
 
-theorem pipelineCalls_pos8 (tab : Nat) (s2 : Calls) :
-    pipelineCalls tab s2 entryPos8Sym = envForPos8 tab entryCalls entryPos8Sym := by
+theorem pipelineCalls_pos8 (tab base : Nat) (s2 : Calls) :
+    pipelineCalls tab base s2 entryPos8Sym = envForPos8 tab entryCalls entryPos8Sym := by
   funext args mem next
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,
     utf8Sym, stage2Sym]
   rfl
 
-theorem pipelineCalls_b8 (tab : Nat) (s2 : Calls) :
-    pipelineCalls tab s2 entryB8Sym =
+theorem pipelineCalls_b8 (tab base : Nat) (s2 : Calls) :
+    pipelineCalls tab base s2 entryB8Sym =
       envForUnit entryB8Sym Γ_entry_b8 entryCalls entryB8Function entryB8Sym := by
   funext args mem next
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,
     utf8Sym, stage2Sym]
   rfl
 
-theorem pipelineCalls_escape (tab : Nat) (s2 : Calls) :
-    pipelineCalls tab s2 escapeListSym =
-      envForUnit escapeListSym (Γ_escape_positions escapePositionsBudget)
+theorem pipelineCalls_escape (tab base : Nat) (s2 : Calls) :
+    pipelineCalls tab base s2 escapeListSym =
+      envForUnit escapeListSym (Γ_escape_positions base escapePositionsBudget)
         (escapeListCalls Γ_xl_batch) escapeListFunction escapeListSym := by
   funext args mem next
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,
     utf8Sym, stage2Sym]
   rfl
 
-theorem pipelineCalls_utf8 (tab : Nat) (s2 : Calls) :
-    pipelineCalls tab s2 utf8Sym =
+theorem pipelineCalls_utf8 (tab base : Nat) (s2 : Calls) :
+    pipelineCalls tab base s2 utf8Sym =
       envForUnit utf8Sym Γ_utf8 utf8Calls utf8Function utf8Sym := by
   funext args mem next
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,
@@ -209,8 +209,8 @@ theorem pipelineCalls_utf8 (tab : Nat) (s2 : Calls) :
 /-- The stage-2 slot's branch: the pipeline's environment forwards the symbol to
 the caller's selection unchanged, so the slot's own `CallSatisfies` is a member
 of the pipeline's bundle without re-derivation. -/
-theorem pipelineCalls_stage2 (tab : Nat) (s2 : Calls) :
-    pipelineCalls tab s2 stage2Sym = s2 stage2Sym := by
+theorem pipelineCalls_stage2 (tab base : Nat) (s2 : Calls) :
+    pipelineCalls tab base s2 stage2Sym = s2 stage2Sym := by
   funext args mem next
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,
     utf8Sym, stage2Sym]
@@ -220,10 +220,13 @@ theorem pipelineCalls_stage2 (tab : Nat) (s2 : Calls) :
 
 /-- **The pipeline's per-unit obligations, as one named bundle.**
 
-Each field is a unit's `CallSatisfies` read at `pipelineCalls tab s2` — the
-environment the body calls through — so a member is the guarantee at the
-pipeline's own call site: the arguments the body passes, the record's budget for
-them, and the record's post at the outcome.  The stage-2 slot is indexed by the
+Each field is a unit's `CallSatisfies` read at `pipelineCalls tab base s2` — the
+environment the body calls through, whose `base` is the document's — so a member
+is the guarantee at the pipeline's own call site: the arguments the body passes,
+the record's budget for them, and the record's post at the outcome.  The escape
+list's record is the one field indexed by `base`: its block clause reads the
+document at `base + blockAddr blk0`, and the base is `pipeline.h`'s first
+argument rather than a reading of the call's own list.  The stage-2 slot is indexed by the
 caller's `Γ2` because that unit's body and record are not in this tree.
 
 `stage2_verdict_bounded` is the one clause that is not a `CallSatisfies`: the
@@ -232,23 +235,23 @@ on the `if.end34` arm that word is stage 2's return value.  `CallSatisfies`
 exposes `Γ2.post` and nothing about the word, so the content the post's disjunct
 needs is stated as its own named clause rather than read into `Γ2`'s post or
 re-derived at the call site. -/
-structure PipelineUnits (tab : Nat) (s2 : Calls) (Γ2 : MemContract) where
+structure PipelineUnits (tab base : Nat) (s2 : Calls) (Γ2 : MemContract) where
   /-- The mask unit, at `[.ptr p, .ptr sc, .ptr mk]`.  Void-returning, so the
   bridge is `satisfies_calls_void`. -/
-  masks : CallSatisfies (pipelineCalls tab s2) Γ_masks masksSym
+  masks : CallSatisfies (pipelineCalls tab base s2) Γ_masks masksSym
   /-- The POS8 entry emitter, at the five arguments the body passes; the staged
   table is appended by `envForPos8`. -/
-  pos8 : CallSatisfies (pipelineCalls tab s2) (Γ_entry_pos8at tab) entryPos8Sym
+  pos8 : CallSatisfies (pipelineCalls tab base s2) (Γ_entry_pos8at tab) entryPos8Sym
   /-- The B8 entry emitter, at the five arguments the body passes. -/
-  b8 : CallSatisfies (pipelineCalls tab s2) Γ_entry_b8 entryB8Sym
+  b8 : CallSatisfies (pipelineCalls tab base s2) Γ_entry_b8 entryB8Sym
   /-- The escape-position list, at `[bs, ctl, im, blk0, xp, nxp, xcarry]`.
   Void-returning. -/
-  escape : CallSatisfies (pipelineCalls tab s2)
-    (Γ_escape_positions escapePositionsBudget) escapeListSym
+  escape : CallSatisfies (pipelineCalls tab base s2)
+    (Γ_escape_positions base escapePositionsBudget) escapeListSym
   /-- The UTF-8 stage, at `[b, n, gate]`. -/
-  utf8 : CallSatisfies (pipelineCalls tab s2) Γ_utf8 utf8Sym
+  utf8 : CallSatisfies (pipelineCalls tab base s2) Γ_utf8 utf8Sym
   /-- The stage-2 slot, at the caller's selection and record. -/
-  stage2 : CallSatisfies (pipelineCalls tab s2) Γ2 stage2Sym
+  stage2 : CallSatisfies (pipelineCalls tab base s2) Γ2 stage2Sym
   /-- The verdict stage 2 returns is the ABI's accept/refuse word. -/
   stage2_verdict_bounded : ∀ (args : List Value) (mem : Mem) (next : Nat)
     (v : Value) (m : Mem), Γ2.post args mem next (.ret (some v) m) →
@@ -266,29 +269,30 @@ five arguments.
 
 The sixth member and the verdict clause are the caller's: the stage-2 slot has no
 body in this tree, so no theorem here can supply them. -/
-theorem pipelineUnits_of_records (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
+theorem pipelineUnits_of_records (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (h2 : CallSatisfies s2 Γ2 stage2Sym)
     (h2v : ∀ (args : List Value) (mem : Mem) (next : Nat) (v : Value) (m : Mem),
       Γ2.post args mem next (.ret (some v) m) →
       ∃ k : BitVec 64, v = .int 64 k ∧ (k = 0 ∨ k = 1)) :
-    PipelineUnits tab s2 Γ2 where
-  masks := CallSatisfies_congr (pipelineCalls_masks tab s2)
+    PipelineUnits tab base s2 Γ2 where
+  masks := CallSatisfies_congr (pipelineCalls_masks tab base s2)
     (satisfies_calls_void (calls := s1Calls) (body := s1MasksFunction)
       (Γ := Γ_masks) (sym := masksSym) masks_satisfies masks_valueIrrelevant)
-  pos8 := CallSatisfies_congr (pipelineCalls_pos8 tab s2)
+  pos8 := CallSatisfies_congr (pipelineCalls_pos8 tab base s2)
     (satisfies_calls_pos8 tab entry_pos8_satisfies (by decide))
-  b8 := CallSatisfies_congr (pipelineCalls_b8 tab s2)
+  b8 := CallSatisfies_congr (pipelineCalls_b8 tab base s2)
     (satisfies_calls (calls := entryCalls) (body := entryB8Function)
       (Γ := Γ_entry_b8) (sym := entryB8Sym) entry_b8_satisfies (by decide))
-  escape := CallSatisfies_congr (pipelineCalls_escape tab s2)
+  escape := CallSatisfies_congr (pipelineCalls_escape tab base s2)
     (satisfies_calls_void (calls := escapeListCalls Γ_xl_batch)
       (body := escapeListFunction)
-      (Γ := Γ_escape_positions escapePositionsBudget) (sym := escapeListSym)
-      escape_positions_satisfies (escape_positions_valueIrrelevant escapePositionsBudget))
-  utf8 := CallSatisfies_congr (pipelineCalls_utf8 tab s2)
+      (Γ := Γ_escape_positions base escapePositionsBudget) (sym := escapeListSym)
+      (escape_positions_satisfies base)
+      (escape_positions_valueIrrelevant base escapePositionsBudget))
+  utf8 := CallSatisfies_congr (pipelineCalls_utf8 tab base s2)
     (satisfies_calls (calls := utf8Calls) (body := utf8Function)
       (Γ := Γ_utf8) (sym := utf8Sym) utf8_satisfies (by decide))
-  stage2 := CallSatisfies_congr (pipelineCalls_stage2 tab s2) h2
+  stage2 := CallSatisfies_congr (pipelineCalls_stage2 tab base s2) h2
   stage2_verdict_bounded := h2v
 
 end LeanLLVM.Vellum.JsonPipelineIR
@@ -479,29 +483,62 @@ def pipelineArgLen (args : List Value) : Nat :=
 /-- The staging's argument shape, as the body's twenty arguments.  Stated so a
 consumer of `pipelineStaging` gets the shape without the twenty-five clauses;
 `pipelineBudget`'s match and this one are the same list. -/
-theorem pipelineStaging_args {args : List Value} {mem : Mem}
-    (h : pipelineStaging args mem) :
-    ∃ (b sc mk entw ep nk xp nxp xcarry dst ndst ev nev err : Nat)
+theorem pipelineStaging_args {base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging base args mem) :
+    ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err : Nat)
       (n epcap xpcap dstcap evcap arm : BitVec 64),
-      args = [.ptr b, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
+      args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
         .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
         .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
         .int 64 arm] := by
-  obtain ⟨b, sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, -⟩ := h
-  exact ⟨b, sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
+  exact ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     n, epcap, xpcap, dstcap, evcap, arm, hargs⟩
+
+/-- **The staging determines the base, and it is the document's address.**
+
+The base is a parameter of `Γ_pipeline_units` and of `pipelineCalls` because
+`Satisfies` fixes the call environment before it quantifies over the arguments,
+so it cannot be read out of the argument list there.  It is *not* therefore an
+asserted value: the staging's own clauses say what it is — the ABI's first
+argument (`.ptr base`), the address the padded document window is read at, and
+the address whose three preceding bytes the UTF-8 window occupies — and this
+lemma hands a caller exactly those.  The escape list's record is indexed by the
+same number, and its block clause reads `base + blockAddr blk0`; a base chosen by
+inspection rather than taken from here is the defect that clause exists to stop.
+
+The slot order is the pinned ABI's, not assumed: `pipelineBody.params` opens with
+`("%b", Ty.ptr)` and `pipeline.h` says the document is `b .. b + n - 1`.
+-/
+theorem pipelineStaging_base {base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging base args mem) :
+    ∃ (n : BitVec 64) (bs : List UInt8),
+      3 ≤ base ∧
+      readBytes mem (base - 3) 3 = some (List.replicate 3 0) ∧
+      readBytes mem base (64 * pipelineBlocks bs.length) = some
+        (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) ∧
+      ∃ rest : List Value, args = .ptr base :: .int 64 n :: rest := by
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
+    hargs, _hnlen, _hmax, hwin, h3, hpre3, -⟩ := h
+  exact ⟨n, bs, h3, hpre3, hwin, _, by rw [hargs]⟩
+
+-- The ABI's first slot is the document, which is the base the record takes: the
+-- pinned AST's parameter list and `pipeline.h`'s "the document is `b .. b + n -
+-- 1`" agree, and the staging's first argument clause is `.ptr base` at that slot.
+#guard decide (pipelineBody.params.head? = some ("%b", Ty.ptr))
 
 /-- **The record's budget at the document the staging names.**  `pipelineBudget`
 is the arguments-only bound `4 * blocks + 16`; this is that term with `blocks`
 read off the same argument list, which is what the composition's arithmetic
 needs. -/
-theorem pipelineBudget_of_staging {args : List Value} {mem : Mem}
-    (h : pipelineStaging args mem) :
+theorem pipelineBudget_of_staging {base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging base args mem) :
     pipelineBudget args mem =
       pipelineBlockAllowance * pipelineBlocks (pipelineArgLen args) +
         pipelineFinalisationAllowance := by
-  obtain ⟨b, sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     n, epcap, xpcap, dstcap, evcap, arm, hargs⟩ := pipelineStaging_args h
   subst hargs
   rfl
@@ -527,10 +564,10 @@ a substitution of the record once it exists, and `exit` below is stated at the
 arbitrary slot until then.  A record invented here so the tail would go through
 would state stage 2's write set where it is convenient rather than where it is
 measured, which is the adapter ruling's error in the other direction. -/
-structure PipelineBodyFacts (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
+structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (args : List Value) (mem : Mem) (next : Nat) where
   /-- The block loop, as one induction over the four arm-specialised copies. -/
-  loop : PipelineLoop (pipelineCalls tab s2) pipelineBody
+  loop : PipelineLoop (pipelineCalls tab base s2) pipelineBody
   /-- Its iteration bound is the document's block count. -/
   N_eq : loop.N = pipelineBlocks (pipelineArgLen args)
   /-- Its per-iteration cost is inside the record's per-block allowance. -/
@@ -539,17 +576,17 @@ structure PipelineBodyFacts (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
   zero-block document, the exit the entry test takes). -/
   seed : ∃ (e : State) (j : Nat), j ≤ 3 ∧
     ((loop.N = 0 ∧ loop.Exit e) ∨ loop.Inv loop.N e) ∧
-    ∀ k, runFuel (pipelineCalls tab s2) (j + k) pipelineBody
+    ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
-      runFuel (pipelineCalls tab s2) k pipelineBody e
+      runFuel (pipelineCalls tab base s2) k pipelineBody e
   /-- The tail: from any exit state, the verdict and the record's post.  Stated
   at the arbitrary stage-2 slot `Γ2`; the pin to `Γ_stage2` is deferred to that
   record's landing, as the structure's docstring says. -/
   exit : ∀ (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
-      runFuel (pipelineCalls tab s2) 3 pipelineBody e =
+      runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
         some (.ret (some (.int 64 verdict)) m) ∧
-      Γ_pipeline_units.post args mem next (.ret (some (.int 64 verdict)) m)
+      (Γ_pipeline_units base).post args mem next (.ret (some (.int 64 verdict)) m)
 
 /-- **The assembled pipeline satisfies its unit-level record.**
 
@@ -562,15 +599,21 @@ at the bundle's `cost ≤ 4`.
 
 The post is consumed once, at the exit state the loop leaves: every other
 behaviour of the run is the same outcome by `runFuel_outcome_unique`, so the
-record's post at that outcome is the post at all of them. -/
+record's post at that outcome is the post at all of them.
+
+The base is quantified here rather than read off the arguments: `Satisfies` fixes
+the call environment, so the escape-list record the body is judged against must be
+chosen before the argument list is opened.  The staging ties it back — its first
+argument clause is `.ptr base`, the ABI's document slot — so a base the caller's
+arguments disagree with admits nothing. -/
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
-    (units : PipelineUnits tab s2 Γ2)
-    (hbody : ∀ (args : List Value) (mem : Mem) (next : Nat),
-      Γ_pipeline_units.pre args mem next → PipelineUnits tab s2 Γ2 →
-      PipelineBodyFacts tab s2 Γ2 args mem next) :
-    Satisfies (pipelineCalls tab s2) pipelineBody Γ_pipeline_units := by
-  intro args mem next hpre
-  obtain ⟨loop, hN, hcost, seed, hexit⟩ := hbody args mem next hpre units
+    (units : ∀ base, PipelineUnits tab base s2 Γ2)
+    (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
+      (Γ_pipeline_units base).pre args mem next → PipelineUnits tab base s2 Γ2 →
+      PipelineBodyFacts tab base s2 Γ2 args mem next) :
+    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody (Γ_pipeline_units base) := by
+  intro base args mem next hpre
+  obtain ⟨loop, hN, hcost, seed, hexit⟩ := hbody base args mem next hpre (units base)
   obtain ⟨e0, j0, hj0, hseed, hrun0⟩ := seed
   have hbudget := pipelineBudget_of_staging hpre
   -- the record's own arithmetic, in the block count the loop carries
@@ -579,17 +622,17 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     simp only [pipelineBlockAllowance, pipelineFinalisationAllowance]
   -- the composed outcome, once, from whichever way the seed reaches the loop
   have finish : ∀ (verdict : BitVec 64) (m : Mem) (fuel : Nat),
-      runFuel (pipelineCalls tab s2) fuel pipelineBody
+      runFuel (pipelineCalls tab base s2) fuel pipelineBody
         (EntryState pipelineBody args mem next) =
         some (.ret (some (.int 64 verdict)) m) →
       fuel ≤ pipelineBudget args mem →
-      Γ_pipeline_units.post args mem next (.ret (some (.int 64 verdict)) m) →
-      (∃ v m', runFuel (pipelineCalls tab s2) (pipelineBudget args mem) pipelineBody
+      (Γ_pipeline_units base).post args mem next (.ret (some (.int 64 verdict)) m) →
+      (∃ v m', runFuel (pipelineCalls tab base s2) (pipelineBudget args mem) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret v m')) ∧
-      ∀ o, BehFromState (pipelineCalls tab s2) pipelineBody
-        (EntryState pipelineBody args mem next) o → Γ_pipeline_units.post args mem next o := by
+      ∀ o, BehFromState (pipelineCalls tab base s2) pipelineBody
+        (EntryState pipelineBody args mem next) o → (Γ_pipeline_units base).post args mem next o := by
     intro verdict m fuel hrun hle hpost
-    have hb : runFuel (pipelineCalls tab s2) (pipelineBudget args mem) pipelineBody
+    have hb : runFuel (pipelineCalls tab base s2) (pipelineBudget args mem) pipelineBody
         (EntryState pipelineBody args mem next) =
         some (.ret (some (.int 64 verdict)) m) := runFuel_mono_le hle hrun
     refine ⟨⟨some (.int 64 verdict), m, hb⟩, ?_⟩
@@ -603,7 +646,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
   rcases hseed with ⟨hN0, hexit0⟩ | hinv
   · -- the zero-block document: the entry test leaves for the cleanup
     obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e0 hexit0
-    have hrunJ : runFuel (pipelineCalls tab s2) (j0 + 3) pipelineBody
+    have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + 3) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 3]
       exact hrun3
@@ -612,7 +655,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
   · -- the loop, at its bound, and the tail
     obtain ⟨e1, j1, hj1, hexit1, hrun1⟩ := loop.run e0 hinv 3
     obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e1 hexit1
-    have hrunJ : runFuel (pipelineCalls tab s2) (j0 + (j1 + 3)) pipelineBody
+    have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + (j1 + 3)) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 (j1 + 3), hrun1]
       exact hrun3
@@ -629,11 +672,11 @@ the arguments the body passes — `masksPre_of_stagingWindow` — the pipeline's
 environment resolves the call and returns an outcome whose post holds, with the
 allocator reservation the record promises.  This is the shape every member is
 used in: the `pre` from the staging, the record's post out. -/
-theorem masksCall_at_block {tab : Nat} {s2 : Calls} {Γ2 : MemContract}
-    (units : PipelineUnits tab s2 Γ2) {mem : Mem} {next p sc mk : Nat}
+theorem masksCall_at_block {tab base : Nat} {s2 : Calls} {Γ2 : MemContract}
+    (units : PipelineUnits tab base s2 Γ2) {mem : Mem} {next p sc mk : Nat}
     (hpre : Γ_masks.pre [.ptr p, .ptr sc, .ptr mk] mem next) :
     ∃ r : CallOutcome,
-      pipelineCalls tab s2 masksSym [.ptr p, .ptr sc, .ptr mk] mem next = some r ∧
+      pipelineCalls tab base s2 masksSym [.ptr p, .ptr sc, .ptr mk] mem next = some r ∧
       Γ_masks.post [.ptr p, .ptr sc, .ptr mk] mem next (.ret (some r.ret) r.mem) ∧
       next ≤ r.next :=
   units.masks [.ptr p, .ptr sc, .ptr mk] mem next hpre
@@ -647,11 +690,12 @@ theorem pipeline_satisfies_of_records (tab : Nat) (s2 : Calls) (Γ2 : MemContrac
     (h2v : ∀ (args : List Value) (mem : Mem) (next : Nat) (v : Value) (m : Mem),
       Γ2.post args mem next (.ret (some v) m) →
       ∃ k : BitVec 64, v = .int 64 k ∧ (k = 0 ∨ k = 1))
-    (hbody : ∀ (args : List Value) (mem : Mem) (next : Nat),
-      Γ_pipeline_units.pre args mem next → PipelineUnits tab s2 Γ2 →
-      PipelineBodyFacts tab s2 Γ2 args mem next) :
-    Satisfies (pipelineCalls tab s2) pipelineBody Γ_pipeline_units :=
-  pipeline_satisfies_of_units tab s2 Γ2 (pipelineUnits_of_records tab s2 Γ2 h2 h2v) hbody
+    (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
+      (Γ_pipeline_units base).pre args mem next → PipelineUnits tab base s2 Γ2 →
+      PipelineBodyFacts tab base s2 Γ2 args mem next) :
+    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody (Γ_pipeline_units base) :=
+  pipeline_satisfies_of_units tab s2 Γ2
+    (fun base => pipelineUnits_of_records tab base s2 Γ2 h2 h2v) hbody
 
 /-! ### Axiom footprints
 

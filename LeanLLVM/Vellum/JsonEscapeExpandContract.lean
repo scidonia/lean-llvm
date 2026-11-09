@@ -101,7 +101,13 @@ The count is the position *index*, not a call-relative count, which is what the
 measured signature carries: `*xj` enters at the caller's `k0` and leaves at the
 index the last processed position reached.  A staging that resumes at `k0 > 0`
 therefore seeds the invariant at `k = k0` with the list already dropped, and the
-walk's own accumulated count is the `k0 + consumed` the record's `*xj` clause names. -/
+walk's own accumulated count is the `k0 + consumed` the record's `*xj` clause names.
+
+The prefix is bounded by the cursor: `prefix_le_cursor` says the decoded bytes never
+run past the bytes consumed, which is the relation a caller needs before it copies
+the body's remainder after the prefix.  It is a field rather than a consequence of
+`walk`, because a refusal drops the prefix and so satisfies `walk` with any prefix
+at all; the clause therefore holds unconditionally or not at all. -/
 
 structure DecodeInv (body : List UInt8) (st : ClassState) (M : Mem) (dst nps : Nat)
     (i k : Nat) (out : List UInt8) (goal : EscapeOutcome) : Prop where
@@ -112,6 +118,17 @@ structure DecodeInv (body : List UInt8) (st : ClassState) (M : Mem) (dst nps : N
   stored : readBytes M dst out.length = some out
   /-- The document's position list is `nps` long. -/
   length : (escAt body st 0).length = nps
+  /-- **The decoded prefix never runs past the byte cursor.**  Every step appends at
+  most the bytes it consumes, so a reachable state has written no more than it has
+  read; the `Spaced` hypothesis carries the per-step inequality.
+
+  It is a field rather than a consequence of `walk` because a refusal drops the
+  prefix: `escapeDecodeGo` returns the same refused outcome for every `out` at a
+  refusing position, so any prefix satisfies `walk` there
+  (`escapeDecodeGo_refusal_ignores_prefix`).  The clause is therefore needed
+  unconditionally, and it is the bound the copy at the latch reads as
+  `out.length + (n - i) ≤ n` (`DecodeInv.capacity`). -/
+  prefix_le_cursor : out.length ≤ i
 
 /-- **The invariant's seed.**  The loop is entered with the byte cursor at zero and
 nothing written, and with the position index at the caller's `k0`: the walk from
@@ -124,6 +141,7 @@ theorem decodeInv_seed {body : List UInt8} {st : ClassState} {M : Mem} {dst nps 
   walk := rfl
   stored := rfl
   length := hlist
+  prefix_le_cursor := Nat.zero_le _
 
 /-- **The step at a refusal.**  The walk refuses at the same offset and with the
 same count the body's `%err` and `%xj` stores carry. -/

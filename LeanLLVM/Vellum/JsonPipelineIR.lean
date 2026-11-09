@@ -1202,9 +1202,17 @@ theorem satisfies_calls_pos8 (tab : Nat) {calls : Calls}
 resolved by `envForUnit` at its own body, its own intrinsic environment, its own
 record's `(args, mem)`-indexed budget and a reservation of `0`.
 
-The escape list's record is `Γ_escape_positions escapePositionsBudget` — the
-record's budget is the run's own fuel term, named by the list's theorem — and
-its intrinsic environment resolves the batch at `Γ_xl_batch`.
+The escape list's record is `Γ_escape_positions base escapePositionsBudget` — its
+block clause reads the document at `base + blockAddr blk0`, so the record is
+indexed by the document's base, and its budget is the run's own fuel term, named
+by the list's theorem — and its intrinsic environment resolves the batch at
+`Γ_xl_batch`.
+
+`base` is a parameter rather than a reading of the arguments because `Satisfies`
+fixes the call environment before it quantifies over arguments: the record a call
+site is judged by must be chosen outside the argument list.  The pipeline's own
+staging then ties `base` to the ABI's first slot, which is where `pipeline.h`
+puts the document (`b .. b + n - 1`).
 
 `stage2Sel` is the stage-2 slot: that unit's body and record are not in this
 tree, so a caller supplies its selection, and `pipelineCalls` is parametric in
@@ -1219,7 +1227,8 @@ records' argument clauses are the ABIs their headers declare.
 Every branch is `envForUnit`'s own answer for its symbol, so a callee outside
 these seven is `none` — the census above is what makes that unreachable in the
 pinned body. -/
-def pipelineCalls (tab : Nat) (stage2Sel : Calls) : Calls := fun callee args mem next =>
+def pipelineCalls (tab base : Nat) (stage2Sel : Calls) : Calls :=
+  fun callee args mem next =>
   if callee = masksSym then
     envForUnit masksSym Γ_masks s1Calls s1MasksFunction callee args mem next
   else if callee = entryPos8Sym then
@@ -1227,7 +1236,7 @@ def pipelineCalls (tab : Nat) (stage2Sel : Calls) : Calls := fun callee args mem
   else if callee = entryB8Sym then
     envForUnit entryB8Sym Γ_entry_b8 entryCalls entryB8Function callee args mem next
   else if callee = escapeListSym then
-    envForUnit escapeListSym (Γ_escape_positions escapePositionsBudget)
+    envForUnit escapeListSym (Γ_escape_positions base escapePositionsBudget)
       (escapeListCalls Γ_xl_batch) escapeListFunction callee args mem next
   else if callee = utf8Sym then
     envForUnit utf8Sym Γ_utf8 utf8Calls utf8Function callee args mem next
@@ -1239,8 +1248,8 @@ def pipelineCalls (tab : Nat) (stage2Sel : Calls) : Calls := fun callee args mem
 /-- The mask branch is the selection `envForUnit` builds for the mask unit: the
 environment names the units the body calls, and the first of them resolves at
 its own record rather than falling through. -/
-theorem pipelineCalls_masks (tab : Nat) (stage2Sel : Calls) :
-    pipelineCalls tab stage2Sel masksSym =
+theorem pipelineCalls_masks (tab base : Nat) (stage2Sel : Calls) :
+    pipelineCalls tab base stage2Sel masksSym =
       envForUnit masksSym Γ_masks s1Calls s1MasksFunction masksSym := by
   funext args mem next
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,

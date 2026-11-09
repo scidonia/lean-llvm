@@ -439,6 +439,19 @@ theorem latchInv_exit_at_zero {body : List UInt8} {st : ClassState} {dst nps : N
   have hb := latchInv_budget h
   exact decide_eq_true (by omega)
 
+/-- **The capacity form the copy reads.**  The walk's prefix never passes its
+cursor, so with the cursor inside the body the decoded prefix plus the residual the
+copy moves fits the body.  This is `prefix_le_cursor` and nothing else: the copy's
+destination extent at `if.end` is `out.length + (n - i)` bytes, which is at most
+`n`, so a caller that owns `n` bytes at the destination owns the whole of what the
+copy writes. -/
+theorem DecodeInv.capacity {body : List UInt8} {st : ClassState} {M : Mem}
+    {dst nps i k : Nat} {out : List UInt8} {goal : EscapeOutcome} {n : Nat}
+    (hinv : DecodeInv body st M dst nps i k out goal) (hi : i ≤ n) :
+    out.length + (n - i) ≤ n := by
+  have h := hinv.prefix_le_cursor
+  omega
+
 /-- The walk's contribution to the expander's budget: `(nps + 1) * decodeIterCost n`
 is a summand of `escapeExpandBudget` at the caller's arguments. -/
 theorem decodeWalkFuel_contribution {n nps : Nat} (hn : n < 2 ^ 64) (hnps : nps < 2 ^ 64) :
@@ -708,6 +721,10 @@ def DecodeEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
 /-- info: 'LeanLLVM.Vellum.latchInv_exit_at_zero' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms latchInv_exit_at_zero
+
+/-- info: 'LeanLLVM.Vellum.DecodeInv.capacity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms DecodeInv.capacity
 
 /-- info: 'LeanLLVM.Vellum.signExtend_self_toNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

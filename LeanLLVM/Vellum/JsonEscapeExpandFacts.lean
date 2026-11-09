@@ -183,7 +183,7 @@ theorem emptySeedRun
     refine ⟨hstaging, Or.inr (Or.inl ?_)⟩
     refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- the seed's walk: nothing written, nothing decoded, `nps` positions left
-      refine ⟨?_, ?_, ?_⟩
+      refine ⟨?_, ?_, ?_, ?_⟩
       · -- the walk from the list's end is the goal
         show escapeDecodeGo body 0 nps ((escAt body ⟨true, false⟩ 0).drop nps) [] = goal
         have hnil : (escAt body ⟨true, false⟩ 0).drop nps = [] := by
@@ -196,6 +196,8 @@ theorem emptySeedRun
         rfl
       · -- the list's length, which is `nps` by the staging
         exact hnpslen
+      · -- the empty prefix at cursor zero
+        exact Nat.zero_le _
     · -- the `%k.0.lcssa` cell the `while.end` edge supplies
       show lookupName s2.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps))
       simp only [s2, udWhileEndEnv, withEnv]
@@ -802,7 +804,8 @@ theorem decodeEntryExit_admits_ignored_cursor :
       DecodeEntryExit [0x61, 0x5C, 0x6E] ⟨true, false⟩ 0 1 (.decoded [0x61, 0x0A] 1) e := by
   refine ⟨modelState [("%k.0.lcssa", .int 64 1)] [(0, 0x61), (1, 0x0A)]
     "while.end35" (some "while.end"), rfl, ⟨3, [0x61, 0x0A], ?_⟩, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
+    · decide
     · decide
     · decide
     · decide
@@ -827,7 +830,8 @@ theorem admits_latchEdge :
   unfold AssemblyLatchExit
   refine ⟨rfl, rfl, ⟨0, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · unfold DecodeLatchExit
-    refine ⟨0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, rfl, ⟨rfl, rfl, rfl⟩, rfl, ?_, rfl,
+    refine ⟨0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, rfl,
+      ⟨rfl, rfl, rfl, Nat.zero_le 0⟩, rfl, ?_, rfl,
       ?_, rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals solve | rfl | (simp only [modelState]; ud_lk)
   · exact ⟨0, by simp only [latchModelEnv]; ud_lk, by decide⟩
@@ -850,13 +854,14 @@ theorem admits_entryEdge :
   unfold AssemblyEntryExit
   refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- the seed's walk at the empty body
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
     · show escapeDecodeGo [] 0 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
       have hnil : escAt [] ⟨true, false⟩ 0 = [] := by simp [escAt]
       rw [hnil]
       simpa using (escapeDecodeGo_nil ([] : List UInt8) 0 0 [])
     · rfl
     · rfl
+    · exact Nat.zero_le _
   all_goals solve
     | rfl
     | (simp only [modelState]; ud_lk)

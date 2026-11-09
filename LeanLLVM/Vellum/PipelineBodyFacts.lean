@@ -2240,13 +2240,44 @@ open LeanLLVM.Vellum.PipelineBodyFacts
 open LeanLLVM.Vellum.JsonPipelineBlockEval (pUsUs usUsIn usUsOut)
 open LeanLLVM.Vellum.BlockEval (stateAt)
 
-/-! ### The escape record's block clause, read as an address
+/-! ### The escape record's block clause: the base it needs, and what was retired
 
-`Γ_escape_positions.pre` reads the block at `blockAddr blk0 = blk0.toNat * 64` — a
-document *offset* — through `readBytes`, an *absolute address*.  The pipeline's
-staging places the document at `b` with `3 ≤ b` and passes the loop index as
-`blk0`.  At `b = 3` the staging's own clauses determine the read at address `0`
-to the shifted window, so the escape `pre` is refused there. -/
+`Γ_escape_positions.pre`'s block clause is `readBytes mem (base + blockAddr blk0) 64`:
+the block's document *offset* (`blockAddr blk0 = blk0.toNat * 64`) plus the
+document base, which is a value parameter of the record.  The base is a staging
+obligation on the caller, not an access the body makes — the unit takes its three
+masks from the caller — and it is the shape `entry`'s record already uses for
+`tab`.
+
+**What the two surviving facts measure.**  Read at the offset alone, as the record
+did before the base became a parameter, the clause is refused wherever the
+pipeline stages the document above zero: `escapeWindow_at_three` shows that at
+`b = 3` the staging's own prefix and window clauses determine the read at address
+`0` to the *shifted* window, and `escapeShifted_backslash_differ` shows the two
+blocks' backslash words differ.  Both are facts about the staging and the blocks,
+true independently of how the record states its clause, and they stay as the
+measurement of why the offset form was unmeetable.
+
+**What was retired, and why that is not evidence deleted.**  Two theorems here
+said the `pre` is refused at the pipeline's staging:
+`escapePre_refused_by_the_staged_window` and
+`pipelineLoopInv_escape_conjunct_unseeded`, together with their helpers
+`block64_inj` and `value_int_eq_iff`, whose only consumer was the refutation.
+Both were **correct about the record as it was** — the clause read at the offset
+alone — and are **wrong about the record as it is**: with the clause at
+`base + blockAddr blk0` the base is the caller's, and the pipeline's base is `b`,
+so the clause names the block the masks describe.  Keeping them alive, even at a
+frozen copy of the old record, would preserve a false claim as evidence about a
+record that no longer exists.  What replaces them is the positive face,
+`escapeBlockClause_of_staged_window`: at `base = b` the clause is the staging
+window's `m`-th block, which `blockRead_of_window` already supplies.  The earlier
+affirmative control, `escapePre_block_clause_satisfiable`, is that same positive
+content before the base existed — an existential about `blockAddr 0` with no base,
+which asserts nothing about the clause as re-based — so
+`escapeBlockClause_of_staged_window` supersedes it rather than sitting beside it.
+The re-basing and that control — the clause holds once the address is right — are
+the reason the refutations are gone: the fault was the address, not the
+obligation. -/
 
 /-- Sixty-four bytes with a single backslash at lane 5: a document whose
 backslash word is not the shifted window's. -/
@@ -2324,42 +2355,40 @@ theorem escapeWindow_at_three {mem : Mem} {lo hi : Block32}
   obtain ⟨hpre, -⟩ := readBytes_split mem 0 64 3 h67
   exact hpre
 
-/-- **The block clause is not vacuous.**  When the block *is* at the address the
-offset names, the clause holds at once — so the refusal below is about the
-staging's base and not about a clause nothing can meet.  This is the same
-detector's affirmative control, in the same section. -/
-theorem escapePre_block_clause_satisfiable :
-    ∃ (mem : Mem) (lo hi : Block32),
-      readBytes mem (blockAddr (BitVec.ofNat 64 0)) 64 = some (block64 lo hi) := by
-  refine ⟨writeBytes [] 0 escapeWitnessBlock,
-    blockLo escapeWitnessDoc escapeWitnessDoc_length,
-    blockHi escapeWitnessDoc escapeWitnessDoc_length, ?_⟩
-  have h := readBytes_writeBytes_same (m := ([] : Mem)) escapeWitnessBlock (addr := 0)
-  rw [escapeWitnessBlock_length] at h
-  simpa [blockAddr, escapeWitnessBlock] using h
+/-- **The block clause is the staged window's block.**  With the document base
+`base = b`, the record's clause `readBytes mem (base + blockAddr blk0) 64` at the
+`m`-th block is the read `blockRead_of_window` already supplies: the staging's
+window, cut at sixty-four bytes.  This is the positive face of the base the
+record needs — the clause names the block the masks describe, and the caller
+stages exactly that region (`pipelineRegions` lists `(b - 3, 3 + 64 * blocks)`,
+which contains `b + 64 * m`).  The `2 ^ 64` bound on `m` is the staging's own
+`64 * blocks + 63 < 2 ^ 32`, so the offset and the address agree. -/
+theorem escapeBlockClause_of_staged_window {mem : Mem} {b blocks : Nat}
+    {bs pad : List UInt8} {m : Nat}
+    (hwin : readBytes mem b (64 * blocks) = some (bs ++ pad))
+    (hlen : (bs ++ pad).length = 64 * blocks) (hm : m < blocks)
+    (hm64 : m < 2 ^ 64) :
+    ∃ (lo hi : Block32),
+      readBytes mem (b + blockAddr (BitVec.ofNat 64 m)) 64 = some (block64 lo hi) := by
+  obtain ⟨lo, hi, h⟩ := blockRead_of_window hwin hlen hm
+  refine ⟨lo, hi, ?_⟩
+  have hoff : blockAddr (BitVec.ofNat 64 m) = 64 * m := by
+    simp only [blockAddr, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm64]
+    exact Nat.mul_comm m 64
+  rwa [hoff]
 
-theorem block64_inj {lo hi lo' hi' : Block32} (h : block64 lo hi = block64 lo' hi') :
-    lo = lo' ∧ hi = hi' := by
-  constructor
-  · funext i
-    have hlt : i.val < 32 := i.isLt
-    have := congrArg (fun l => l[i.val]?) h
-    simpa only [block64_getElem?_lo hlt, ofFn_getElem?_of_lt hlt, Option.some.injEq]
-      using this
-  · funext i
-    have hlt : i.val < 32 := i.isLt
-    have := congrArg (fun l => l[i.val + 32]?) h
-    simpa only [block64_getElem?_hi hlt, ofFn_getElem?_of_lt hlt, Option.some.injEq]
-      using this
-
-/-- The escape record's `pre`, at the clauses a call site reads. -/
-theorem escape_pre_shape {budget : List Value → Mem → Nat} {args : List Value} {mem : Mem}
-    {next : Nat} (h : (Γ_escape_positions budget).pre args mem next) :
+/-- The escape record's `pre`, at the clauses the pipeline's call site reads.  The
+block clause is at the document base: `base + blockAddr blk0`, the block the
+masks describe.  This is the shape the loop step's escape call site destructures,
+and it is the one clause the record's block value is bound by. -/
+theorem escape_pre_shape {base : Nat} {budget : List Value → Mem → Nat}
+    {args : List Value} {mem : Mem} {next : Nat}
+    (h : (Γ_escape_positions base budget).pre args mem next) :
     ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
       (st : ClassState),
       args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
         .ptr carry] ∧
-      readBytes mem (blockAddr blk0) 64 = some (block64 lo hi) ∧
+      readBytes mem (base + blockAddr blk0) 64 = some (block64 lo hi) ∧
       bs = specBackslash64 lo hi st ∧
       ctl = specControl64 lo hi st ∧
       im = specInString64 lo hi st := by
@@ -2367,50 +2396,22 @@ theorem escape_pre_shape {budget : List Value → Mem → Nat} {args : List Valu
     hargs, hblock, hbs, hctl, him, -⟩ := h
   exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, hargs, hblock, hbs, hctl, him⟩
 
-/-- Integer values are injective at their width. -/
-theorem value_int_eq_iff {w : Nat} {a b : BitVec w} :
-    (Value.int w a = Value.int w b) ↔ a = b := by
-  constructor
-  · intro h; injection h
-  · intro h; rw [h]
-
-/-- **The escape record refuses the staged document.**  With the document at
-address `3` and the three zero bytes below it, the block clause's read at
-`blockAddr 0 = 0` is the shifted window, whose backslash word is not the block's;
-the `pre` therefore asks for two different blocks at once. -/
-theorem escapePre_refused_by_the_staged_window {mem : Mem} {bs ctl im : BitVec 64}
-    {st' : ClassState} {xp xn carry next : Nat}
-    (hprefix : readBytes mem 0 3 = some [0, 0, 0])
-    (hwin : readBytes mem 3 64 = some escapeWitnessBlock)
-    (hbs : bs = specBackslash64 (blockLo escapeWitnessDoc escapeWitnessDoc_length)
-      (blockHi escapeWitnessDoc escapeWitnessDoc_length) st') :
-    ¬ (Γ_escape_positions (fun _ _ => 0)).pre
-      [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 0, .ptr xp, .ptr xn, .ptr carry]
-      mem next := by
-  intro h
-  obtain ⟨xp', xn', carry', blk0, bs', ctl', im', lo, hi, st, hargs, hblock, hbs', -, -⟩ :=
-    escape_pre_shape h
-  simp only [List.cons.injEq, and_true, value_int_eq_iff, Value.ptr.injEq] at hargs
-  obtain ⟨hbsEq, -, -, hblkEq, -, -, -⟩ := hargs
-  have hzero : blockAddr blk0 = 0 := by
-    rw [← hblkEq]
-    simp [blockAddr]
-  rw [hzero] at hblock
-  have hshift : readBytes mem 0 64 = some escapeShiftedDoc := by
-    simpa [escapeShiftedDoc, escapeWitnessBlock] using escapeWindow_at_three hprefix hwin
-  have heq : block64 lo hi = escapeShiftedDoc := by
-    have hs : some (block64 lo hi) = some escapeShiftedDoc := by rw [← hblock, hshift]
-    exact Option.some.inj hs
-  obtain ⟨rfl, rfl⟩ := block64_inj (heq.trans escapeShiftedDoc_eq_halves.symm)
-  refine escapeShifted_backslash_differ st st' ?_
-  rw [← hbs, hbsEq, hbs']
-
-
 /-! ### The loop instance: the arm, the carried state, the invariant
 
-The instance is `PipelineLoop (pipelineCalls tab s2) pipelineBody` with the
+The instance is `PipelineLoop (pipelineCalls tab base s2) pipelineBody` with the
 iteration bound `pipelineBlocks n`, per-iteration cost one, and `pipelineLoopInv`
-below.  Its `step` is the four arm traces at the run's own state; the conjunct
+below.  The call record is where the document base reaches the units: the escape
+list's record takes the base as a value parameter, so `pipelineCalls` carries
+`base` in the environment the escape call site reads — `pipelineCalls tab s2` is
+the pre-base form and no longer exists.  `base` is the caller's document pointer:
+the staging record's `b` and the invariant's `S.b`, the address the staged
+document begins at, read off the staging rather than assumed by this file.  The
+base is the **theorem's** parameter,
+not the invariant's: `pipelineLoopInv` speaks about the state and the arm the body
+runs, and the calls enter through `step`'s hypotheses — the four arm lemmas below
+(`usUs_step_at` … `body_step_at`) and `pipelineLoop_exitObligation` each take
+`calls : Calls` as a parameter — so no conjunct of the invariant mentions them.
+Its `step` is the four arm traces at the run's own state; the conjunct
 list is what those traces read, checked one conjunct at a time against the step
 that consumes it and the post or frame that hands it on:
 
@@ -2436,31 +2437,34 @@ entry word's readability are created by the body's own store and the emitters'
 writes and consumed by no arm step.  Each of the three was in the first draft of
 this list and is removed here as dead weight rather than kept for completeness.
 
-**One clause has no supplier, and it is why the instance does not close.**
-`Γ_escape_positions.pre`'s block clause is `readBytes mem (blockAddr blk0) 64`,
-and `blockAddr blk0 = blk0.toNat * 64` is the block's *document offset*, not its
-address.  The pipeline passes the loop index as `blk0` and stages the document at
-`b` with `3 ≤ b`, so at the first block (`blk0 = 0`) the clause reads address
-`0`.  `escapePre_refused_by_the_staged_window` below proves the refusal: at
-`b = 3` the staging's prefix and window clauses determine that read to the
-shifted window, and its backslash word is not the block's, so the `pre` asks for
-two different blocks at once — the signature clause, executed.  The gate-on arms
-(`for.body.us`, `for.body`) therefore have no escape conjunct a step can
-preserve, and the seed cannot establish one either.  It is a statement change to
-the escape record, reported to the planner rather than worked around here; the
-gate-off arms' conjuncts are the ones above, all with a supplier.
+**The escape record's block clause, and the base the gate-on arms needed.**  The
+clause is `readBytes mem (base + blockAddr blk0) 64`, and its base is a value
+parameter of the record: the caller stages the region the specification reads
+(the shape `entry`'s record uses for `tab`), not an access the arm performs,
+since the unit takes its block from the three masks.  Read at the offset alone
+the clause is refused wherever the document is staged above zero, which is what
+`escapeWindow_at_three` and `escapeShifted_backslash_differ` measure and what the
+retired refutations recorded — the two facts stay, the refutations do not (see
+the section above).
 
-**Ruled, and why this section stays.** The record's block clause is dropped from
-both `pre` and `post`: the list's own header says the block is read from the
-caller's masks only and the unit never reads `b`, so the clause obliged the caller
-for a memory access the body does not perform, and re-basing it to
-`base + blockAddr blk0` would make that false claim true.  The specification link
-survives as a *value* — the block's bytes become a parameter of the record and the
-position base is arithmetic inside the post — which is the owning coder's edit in
-`JsonEscapeSteps.lean`/`JsonEscapeListContract.lean`.  This section is the
-executed evidence for that decision and for the gate-on arms' missing conjuncts,
-and it stays in the module: an omission recorded with its measurement is the only
-form in which the record can carry a gap. -/
+**Every clause the gate-on arms' escape call asks for now has a supplier.**  For
+`for.body.us` and `for.body`: the block clause comes from this invariant's window
+conjunct through `escapeBlockClause_of_staged_window` at `base = S.b` and
+`blk0 = S.iw`, with `S.iw = ofNat 64 S.i`, `S.i < blocks` from
+`S.i + (r + 1) = blocks`, the window's length from `readBytes_length`, and the
+index below `2 ^ 64` from `pipelineStaging`'s `64 * blocks + 63 < 2 ^ 32`; the
+carry pair, both `cursorRoom` clauses, `HasBytes xp` and the three exclusions come
+from this invariant's own conjuncts.  `escape_pre_shape` is the destructuring the
+call site reads them through.
+
+**What the step still owes.**  No clause of the record is left without a supplier
+on the gate-on arms; what remains open is the **step proof** for the four arms and
+the seed, which this module does not assemble.  Its inputs are the arm traces and
+the staging record, and the one fact it needs that is not a conjunct above is the
+`2 ^ 64` bound on the block index, which lives in `pipelineStaging`'s block-count
+clause rather than in this invariant.  The step therefore does not close inside
+this file — not because a clause of the record is unmeetable, but because the
+composition is the instance's own work. -/
 
 /-- The four unswitched copies of the loop body, by the arm the entry selection
 took: bit 0 selects the entry emitter, bit 1 the escape list's gate. -/
@@ -2644,48 +2648,29 @@ theorem pipelineLoop_exitObligation (calls : Calls) (blocks : Nat) (s : State)
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e :=
   ⟨s, 0, Nat.le_refl 0, h, fun k => by rw [Nat.zero_add]⟩
 
-/-- **The invariant's gate-on conjunct, and the clause that refuses it.**  For the
-arms that call the escape list the invariant carries no fact that yields the
-record's block clause: the clause reads `blockAddr blk0 = blk0.toNat * 64`, the
-block's document offset, as an absolute address, while the staging places the
-block at `b + 64 * i` with `3 ≤ b`.  At the first block and `b = 3` the read the
-clause asks for is the shifted window, so the `pre` is refused (the theorem
-below).  The conjunct is therefore absent from `pipelineLoopInv` rather than
-present without a supplier: a conjunct no step preserves is a defect, and adding
-one that no staging can seed would move the defect into the proof. -/
-theorem pipelineLoopInv_escape_conjunct_unseeded :
-    ∀ (budget : List Value → Mem → Nat) (mem : Mem) (next : Nat) (bs ctl im : BitVec 64)
-      (st' : ClassState) (xp xn carry : Nat),
-      readBytes mem 0 3 = some ([0, 0, 0] : List UInt8) →
-      readBytes mem 3 64 = some ((block64 (blockLo escapeWitnessDoc
-        escapeWitnessDoc_length) (blockHi escapeWitnessDoc
-        escapeWitnessDoc_length) : List UInt8)) →
-      bs = specBackslash64 (blockLo escapeWitnessDoc escapeWitnessDoc_length)
-        (blockHi escapeWitnessDoc escapeWitnessDoc_length) st' →
-      ¬ (Γ_escape_positions budget).pre
-        [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 0, .ptr xp, .ptr xn, .ptr carry]
-        mem next := by
-  intro budget mem next bs ctl im st' xp xn carry hprefix hwin hbs
-  exact escapePre_refused_by_the_staged_window (mem := mem) (bs := bs) (ctl := ctl)
-    (im := im) (st' := st') (xp := xp) (xn := xn) (carry := carry) (next := next)
-    hprefix hwin hbs
-
-
-
 /-! ### Axiom footprints
 
-The refusal is a kernel computation over one sixty-four-byte document, its
-three-byte shift and the record's `pre`; the invariant is a definition.  Nothing
-here adds a carrier: the whole section is at `[propext, Quot.sound]`, and the
-builder dispatch is a definition and depends on nothing. -/
+The block-clause statement is a window read (`blockRead_of_window`) and the
+call-site destructuring is the record's own conjunction; the two facts about the
+shifted window are kernel computations over one sixty-four-byte document; the
+invariant and the builder dispatch are definitions.  Nothing here adds a
+carrier: the section is at `[propext, Quot.sound]` or below. -/
 
-/-- info: 'LeanLLVM.Vellum.escapePre_refused_by_the_staged_window' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.escapeBlockClause_of_staged_window' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms escapePre_refused_by_the_staged_window
+#print axioms escapeBlockClause_of_staged_window
 
-/-- info: 'LeanLLVM.Vellum.pipelineLoopInv_escape_conjunct_unseeded' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.escape_pre_shape' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms pipelineLoopInv_escape_conjunct_unseeded
+#print axioms escape_pre_shape
+
+/-- info: 'LeanLLVM.Vellum.escapeShifted_backslash_differ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeShifted_backslash_differ
+
+/-- info: 'LeanLLVM.Vellum.escapeWindow_at_three' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeWindow_at_three
 
 /-- info: 'LeanLLVM.Vellum.PipelineBodyArm.inBuilder' does not depend on any axioms -/
 #guard_msgs in
@@ -2702,17 +2687,5 @@ builder dispatch is a definition and depends on nothing. -/
 /-- info: 'LeanLLVM.Vellum.pipelineLoop_exitObligation' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pipelineLoop_exitObligation
-
-/-- info: 'LeanLLVM.Vellum.escapeShifted_backslash_differ' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms escapeShifted_backslash_differ
-
-/-- info: 'LeanLLVM.Vellum.escapeWindow_at_three' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms escapeWindow_at_three
-
-/-- info: 'LeanLLVM.Vellum.escapePre_block_clause_satisfiable' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms escapePre_block_clause_satisfiable
 
 end LeanLLVM.Vellum
