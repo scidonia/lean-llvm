@@ -156,7 +156,9 @@ clause names the unit record it is read from:
 * the three bytes below the document are the UTF-8 stage's window, which
   `Γ_utf8.pre` reads at `b - 3` as `[0, 0, 0] ++ bs ++ padding`; and the document
   is non-empty because that record's `pre` and post both require `0 < n`, while
-  the entry test sends a zero-length document past the loop to the stage;
+  the entry test sends a zero-length document past the loop to the stage — so the
+  empty document is outside this record's domain, not a case on which a verdict
+  is promised;
 * the entry table is `Γ_entry_pos8.pre`'s `pos8Table` clause, the same region
   §15.51 gives the caller to initialise;
 * the carry slots are the inputs the mask and escape-list records read for a
@@ -194,8 +196,16 @@ def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
     3 ≤ b ∧
     readBytes mem (b - 3) 3 = some (List.replicate 3 0) ∧
     -- the stage is not defined on an empty document: `Γ_utf8.pre` requires
-    -- `0 < n`, and the entry test sends a zero-length document straight past the
-    -- loop to the stage, so the staging excludes the length the body cannot run
+    -- `0 < n` and its post requires it too, while the entry test
+    -- (`%cmp79.not = (n + 63) < 64`) sends a zero-length document straight past
+    -- the loop to `for.cond.cleanup`, where the stage is called all the same.
+    -- **The consequence is part of the clause.**  The empty document is outside
+    -- this record's domain, so nothing is claimed about it: neither acceptance
+    -- nor refusal at length zero is covered, and a reader who takes a refusal at
+    -- zero as promised by `Γ_pipeline_units` is reading the record wrong.  The
+    -- bound is `Γ_utf8`'s and the pipeline's staging carries it because the call
+    -- site needs it; if that record widens to admit `n = 0`, this clause goes
+    -- rather than standing as a limit the pipeline no longer has.
     0 < bs.length ∧
     -- the entry table: 8 KiB = 1024 u64 words, `pos8Table`
     readBytes mem tab 8192 = some pos8Table ∧

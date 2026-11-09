@@ -68,3 +68,4 @@ import LeanLLVM.Vellum.JsonPipelineIR
 -- The generic block evaluator (slice A3) and its artifact.
 import LeanLLVM.Vellum.BlockEval
 import LeanLLVM.Vellum.JsonPipelineBlockEval
+import LeanLLVM.Vellum.JsonPipelineRefine

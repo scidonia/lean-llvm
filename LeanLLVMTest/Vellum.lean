@@ -9851,3 +9851,21 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.udIfThen26I_pairValue' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.udIfThen26I_pairValue
+
+/-! #### The assembled pipeline: one induction, the unit bundle, the claim -/
+
+/-- info: 'LeanLLVM.Vellum.PipelineLoop.run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineLoop.run
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineUnits_of_records' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineUnits_of_records
+
+/-- info: 'LeanLLVM.Vellum.pipeline_satisfies_of_units' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.pipeline_satisfies_of_units
+
+/-- info: 'LeanLLVM.Vellum.pipeline_satisfies_of_records' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.pipeline_satisfies_of_records
