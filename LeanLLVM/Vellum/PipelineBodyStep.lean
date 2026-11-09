@@ -26,12 +26,124 @@ set_option maxRecDepth 16000
 namespace LeanLLVM.Vellum
 
 open LeanLLVM
-open LeanLLVM.JSON (Block32)
+open LeanLLVM.JSON (Block32 IsBackslashB)
 open LeanLLVM.Vellum.JsonScanSpec
-open LeanLLVM.Vellum.JsonS1MasksIR (block64 carrySlot)
+open LeanLLVM.Vellum.JsonS1MasksIR (block64 carrySlot carry64)
 open LeanLLVM.Vellum.PipelineBodyFacts
 open LeanLLVM.Vellum.JsonEntryIR (pos8Table wordsOf)
 open LeanLLVM.Vellum.JsonPipelineIR (Γ_entry_pos8at)
+open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6)
+
+/-! ### The block address's bound
+
+The arm computes `%shl = shl i, 6` and `gep i8, %b, %shl`; the builder's `hpos`
+asks `(signExtend 64 (sh6 i)).toNat < 2 ^ 63`.  That is the staging's own bound
+at the loop's index: the block index is below the block count, and the count's
+`64 * blocks + 63 < 2 ^ 32` keeps the shift inside the address domain. -/
+
+/-- **The block's byte offset is a forward `getelementptr` index.**  From the
+index's bound and the staging's block-count bound.  Its carrier is named rather
+than hidden: `Classical.choice` arrives with the `Nat`/`BitVec` shift lemmas the
+arithmetic uses (`Nat.shiftLeft_eq`, `Nat.mod_eq_of_lt`, `BitVec.toNat_shiftLeft`),
+not from a witness chosen in the statement — the statement is a closed
+inequality over the index and the block count. -/
+theorem sh6_signExtend_toNat_lt {i : BitVec 64} {blocks : Nat}
+    (hi : i.toNat < blocks) (hblk : 64 * blocks + 63 < 2 ^ 32) :
+    (BitVec.signExtend 64 (sh6 i)).toNat < 2 ^ 63 := by
+  have h6 : sh6 i = i <<< 6 := rfl
+  rw [h6, BitVec.signExtend_eq]
+  rw [BitVec.toNat_shiftLeft]
+  have hlt : i.toNat * 2 ^ 6 < 2 ^ 64 := by
+    have hb : blocks ≤ 2 ^ 32 := by omega
+    have : i.toNat * 64 < 2 ^ 32 * 64 := by
+      calc i.toNat * 64 < blocks * 64 := by omega
+        _ ≤ 2 ^ 32 * 64 := by omega
+    simpa [Nat.pow_succ] using by omega
+  rw [Nat.shiftLeft_eq, show (2 : Nat) ^ 6 = 64 from by decide,
+    Nat.mod_eq_of_lt hlt]
+  omega
+
+/-! ### The entry emitter's consequence: the count's growth
+
+The loop's successor needs the count's *room*, not its contents: POS8's post pins
+`k' = k + Σ ctpop ent`, and one block's words hold at most sixty-four lanes each,
+so the growth is at most `64 * ent.length`.  With the call site's `nblk = 1` and
+the record's `nblk.toNat = ent.length` this is `k' ≤ k + 64`, which is what
+`cursorRoom`'s successor step consumes. -/
+
+/-- **The entry emitter's count does not outgrow its words.**  A sum of popcounts
+is at most sixty-four per word. -/
+theorem entryPost_count_le {args : List Value} {mem m : Mem} {v : Value}
+    (hpost : entryPos8Post args mem v m) :
+    ∃ (k : BitVec 64) (ent : List (BitVec 64)) (k' : Nat),
+      v = .int 64 (BitVec.ofNat 64 k') ∧ k' ≤ k.toNat + 64 * ent.length := by
+  obtain ⟨e, o, tab, blk0, nblk, k, ent, k', -, hv, hk', -, -⟩ := hpost
+  refine ⟨k, ent, k', hv, ?_⟩
+  rw [hk']
+  have hsum : ∀ (l : List (BitVec 64)), (l.map BitLanes.ctpop).sum ≤ 64 * l.length := by
+    intro l
+    induction l with
+    | nil => simp
+    | cons x xs ih =>
+        simp only [List.map_cons, List.sum_cons, List.length_cons]
+        have hx : BitLanes.ctpop x ≤ 64 := by
+          rw [BitLanes.ctpop_eq_setLanes_length]
+          exact BitLanes.setLanes_length_le x
+        have : 64 * (xs.length + 1) = 64 * xs.length + 64 := by omega
+        omega
+  have := hsum ent
+  omega
+
+/-! ### One mask post, six words
+
+The four arm bodies differ in *which* of the mask stage's six words they consume —
+the gate-off arms read four, the gate-on arms six — and not in what the stage
+wrote.  So the six are named once, here, at the addresses the traces read: the
+invariant's five offset conjuncts are the connection between the slots the post
+writes (`maskSlot`, `+8` … `+40`) and the fields the builders pass
+(`delim`, `inString`, `ws`, `backslash`, `ctl`).  A per-arm projection would
+restate this one post four times, and each restatement would be a place for the
+four to drift apart. -/
+
+/-- **The mask unit's `post`, at the arm's six words.**  `hargs` and the five
+offset equalities are the invariant's: `S.maskSlot`/`S.delim`/… and their
+`maskSlot + 8k` forms.  The frame is the post's own, at the store regions. -/
+theorem maskWords_of_masksPost {args : List Value} {mem m : Mem}
+    {p c maskSlot delim inString ws backslash ctl : Nat}
+    (hargs : args = [.ptr p, .ptr c, .ptr maskSlot])
+    (hdelim : delim = maskSlot + 8)
+    (hin : inString = maskSlot + 16)
+    (hws : ws = maskSlot + 24)
+    (hbs : backslash = maskSlot + 32)
+    (hctl : ctl = maskSlot + 40)
+    (hpost : masksPost args mem m) :
+    ∃ (lo hi : Block32) (st : ClassState) (opened ppar : Bool),
+      readBytes mem p 64 = some (block64 lo hi) ∧
+      readBytes m maskSlot 8 = some (natToBytes (specQuote64 lo hi st).toNat 8) ∧
+      readBytes m delim 8 = some (natToBytes (specDelimiter64 lo hi st).toNat 8) ∧
+      readBytes m inString 8 = some (natToBytes (specInString64 lo hi st).toNat 8) ∧
+      readBytes m ws 8 = some (natToBytes (specSpace64 lo hi st).toNat 8) ∧
+      readBytes m backslash 8 = some (natToBytes (specBackslash64 lo hi st).toNat 8) ∧
+      readBytes m ctl 8 = some (natToBytes (specControl64 lo hi st).toNat 8) ∧
+      readBytes m c 24 = some (carrySlot (IsBackslashB (hi ⟨31, by decide⟩))
+        (carry64 lo hi st).oddRun (carry64 lo hi st).inside) ∧
+      st.oddRun = (opened && ppar) ∧
+      (∀ a, ¬ (c ≤ a ∧ a < c + 24) → ¬ (maskSlot ≤ a ∧ a < maskSlot + 48) →
+        readByte m a = readByte mem a) := by
+  obtain ⟨p', c', o, lo, hi, st, opened, ppar, hargs', hblk, hcarry, hodd, hw1, hw2, hw3,
+    hw4, hw5, hw6, hcarry', hframe⟩ := hpost
+  have hsame : ([.ptr p, .ptr c, .ptr maskSlot] : List Value) = [.ptr p', .ptr c', .ptr o] :=
+    hargs.symm.trans hargs'
+  simp only [List.cons.injEq, and_true, Value.ptr.injEq] at hsame
+  obtain ⟨rfl, rfl, rfl⟩ := hsame
+  refine ⟨lo, hi, st, opened, ppar, hblk, hw1, ?_, ?_, ?_, ?_, ?_, hcarry', hodd, ?_⟩
+  · rw [hdelim]; exact hw2
+  · rw [hin]; exact hw3
+  · rw [hws]; exact hw4
+  · rw [hbs]; exact hw5
+  · rw [hctl]; exact hw6
+  · intro a hc ho
+    exact hframe a hc (by simpa using ho)
 
 /-! ### The escape list's pre, at the document base
 
@@ -81,8 +193,12 @@ own write.  The table, the block bound, the two separations and the count's room
 are the staging's and the invariant's. -/
 
 /-- **The entry emitter's `pre` at the pipeline's call site, after the store.**
+
 `hstored` is `readBytes_writeBytes_same` at the body's store, which is why the
-emitter's entry-word clause is not a staging obligation. -/
+emitter's entry-word clause is not a staging obligation: a precondition the body
+creates for itself is the strongest kind of call site there is, and this record's
+`e` clause is exactly that — the arm stores the entry word and then hands the
+emitter the slot it just wrote. -/
 theorem pos8Pre_of_stored_word {mem : Mem} {entw ep tab : Nat}
     {blk0 k : BitVec 64} {word : BitVec 64} {outCap : Nat}
     (hstored : readBytes mem entw 8 = some (natToBytes word.toNat 8))
@@ -131,5 +247,17 @@ none adds a carrier. -/
 /-- info: 'LeanLLVM.Vellum.pos8PreAt_of_stored_word' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pos8PreAt_of_stored_word
+
+/-- info: 'LeanLLVM.Vellum.maskWords_of_masksPost' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms maskWords_of_masksPost
+
+/-- info: 'LeanLLVM.Vellum.entryPost_count_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms entryPost_count_le
+
+/-- info: 'LeanLLVM.Vellum.sh6_signExtend_toNat_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms sh6_signExtend_toNat_lt
 
 end LeanLLVM.Vellum

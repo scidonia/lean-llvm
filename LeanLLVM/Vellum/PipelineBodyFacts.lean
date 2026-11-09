@@ -2594,6 +2594,15 @@ the budget spent it is the loop's exit block, which is the shape
 * the window — `masksPre_at`'s block read, and the arms' four mask words
   through the mask unit's post;
 * the mask carry slot and `stM.oddRun` — `masksPre_at`'s carry clause;
+* the five offsets the selection block derives from the mask slot —
+  `delim = maskSlot + 8` through `ctl = maskSlot + 40`.  These are the arm
+  traces' **read addresses**, and the mask unit's post writes at exactly those
+  words, so without them the mask-word projection cannot identify the address a
+  trace reads with the address the post wrote.  They are static, so every step
+  hands them on untouched (the loop writes slots, not these fields), and the
+  seed establishes them from `lrPh_denote`/`lrPhOut` — the block that computes
+  them.  Carried rather than derived per step: five steps each reaching outside
+  the state for one pre-loop block's post is the defect, not the derivation;
 * the escape carry pair — the escape list's `pre` carry clause (gate-on arms);
 * the two `cursorRoom` clauses — POS8's `k + 64 * nblk + 9 < 2 ^ 63` and the
   escape list's `xn0 < 2 ^ 63` through `cursorRoom_bounds`;
@@ -2616,6 +2625,13 @@ def pipelineLoopInv (blocks : Nat) : Nat → State → Prop
         readBytes s.mem S.b (64 * blocks) = some S.doc ∧
         readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside) ∧
         S.stM.oddRun = (S.opened && S.ppar) ∧
+        -- the five offsets the selection block derives from the mask slot: the
+        -- arm traces' read addresses, which the mask unit's post writes
+        S.delim = S.maskSlot + 8 ∧
+        S.inString = S.maskSlot + 16 ∧
+        S.ws = S.maskSlot + 24 ∧
+        S.backslash = S.maskSlot + 32 ∧
+        S.ctl = S.maskSlot + 40 ∧
         (S.arm.hasEscape = true →
           carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
         cursorRoom S.k (blocks - S.i) 9 ∧
