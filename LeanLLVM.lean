@@ -46,3 +46,5 @@ import LeanLLVM.Vellum.JsonEscapeListFixpoint
 import LeanLLVM.Vellum.JsonEscapeListLanes
 import LeanLLVM.Vellum.JsonEscapeBatchEntries
 import LeanLLVM.Vellum.JsonEscapeListBody
+import LeanLLVM.Vellum.LoopFuel
+import LeanLLVM.Vellum.JsonEscapeListLoop

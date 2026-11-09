@@ -9399,3 +9399,55 @@ file is compiled from source on every evidence run. -/
 /-- info: 'LeanLLVM.Vellum.LRun.runFuel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.LRun.runFuel
+
+/-! ### The loop fuel layer
+
+`LoopFuel` carries the fuel induction for a loop whose exit test reads its own
+carried word: a `runFuel` measure that is the iteration bound, and a step that
+consumes the invariant and nothing about the exit word.  `JsonEscapeListLoop`
+closes the escape list's `xl_lanes` loop on it, with the lane width's bound as the
+measure.  Each fact is pinned at what it holds without a carrier. -/
+
+/-- info: 'LeanLLVM.Vellum.CarriedLoop.run_from' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CarriedLoop.run_from
+
+/-- info: 'LeanLLVM.Vellum.CarriedLoop.run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CarriedLoop.run
+
+/-- info: 'LeanLLVM.Vellum.CarriedLoop.run_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.CarriedLoop.run_at
+
+/-- info: 'LeanLLVM.Vellum.lstDoBody_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstDoBody_denote
+
+/-- info: 'LeanLLVM.Vellum.lstDoBody_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstDoBody_step
+
+/-- info: 'LeanLLVM.Vellum.bitVec_one_eq_zero_or_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.bitVec_one_eq_zero_or_one
+
+/-- info: 'LeanLLVM.Vellum.lstLanesInv_entry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstLanesInv_entry
+
+/-- info: 'LeanLLVM.Vellum.lstLanesLoop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lstLanesLoop
+
+/-- info: 'LeanLLVM.Vellum.lanes_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lanes_run
+
+/-- info: 'LeanLLVM.Vellum.lanes_run_from_head' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lanes_run_from_head
+
+/-- info: 'LeanLLVM.Vellum.lanes_run_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.lanes_run_at
