@@ -19,14 +19,25 @@ the record promises past its end.  `DecodeInv.out_length_le_cursor` is the relat
 between `%i.0.lcssa` and `%j.0.lcssa` the continuation needs — the decoded prefix is
 no longer than its cursor — stated from the staging's spacing.
 
-**What is here and what is not.**  The copy loop and the two source facts are
-proved.  `DecodeInv.out_length_le_cursor` takes the spacing of the *resumed* list —
-the staging list after its first `k0` entries — as a hypothesis: the list the
-staging decodes is `(ps.map …).drop k0`, and `Spaced` is not suffix-closed on the
-nose, because a `control`/`refuse` constructor's tail is unconstrained.  Deriving
-that spacing needs the walk's own non-refusal, which is not in this module.  The
-suffix from `us_run_long.exit` through `us_run.exit112` and `cleanup41`, and the
-two `while.end35` branch continuations that consume it, are not written here.
+**What is here and what is not.**  The copy loop, the two source facts and the
+relation `DecodeInv.out_length_le_cursor` states are proved, and the relation is
+*derived* rather than assumed: the list the staging decodes is `(ps.map …).drop k0`,
+`Spaced` is not suffix-closed on the nose — a `control`/`refuse` constructor's tail is
+unconstrained — but a suffix of the body's own position list is still a cursor list,
+and `JsonEscapeSteps.escAt_drop_spaced` is that fact (`Spaced.mono` lowers the cursor
+back to the resumed walk's own zero; it lives beside `Spaced` in `JsonEscapeSpec`).
+
+The suffix itself — `while.end35` into the copy, `us_run_long.exit` through
+`if.then.i109` and `us_run.exit112` into `cleanup41`, and the two `while.end35`
+branch continuations that consume it — is *not* written, and the reason is not a
+lemma: the exit words do not carry what it reads.  The final copy needs the body's
+bytes and its thirty-two trailing bytes at the *exit* state's memory, the offset
+slot's read, and (at the latch) a byte cursor inside the body, and the words'
+clauses are silent on all three — `entryExit_admits_clobbered_err` and
+`latchExit_admits_cursor_past_body` are states that satisfy `assemblyExitWord` and
+differ from what the run leaves in exactly one of them.  `finalCopy_fuel_le` is the
+arithmetic that composition ends in, so the segment's allowance is not what is
+missing.
 -/
 import LeanLLVM.Vellum.JsonEscapeExpandFacts
 
@@ -72,20 +83,6 @@ theorem readBytes_copy2Mem_prefix {mem : Mem} {dst dst0 j d : Nat}
   rw [readBytes_writeBytes_below _ _ j dst0 d h0]
   exact hout
 
-/-- A write inside a region leaves every byte outside the region as it was, so a
-frame over that region carries through it. -/
-theorem UnchangedOutside.writeBytes_inside {m0 m : Mem} {lo w a : Nat} {bs : List UInt8}
-    (h : UnchangedOutside m0 m [(lo, w)]) (ha : lo ≤ a) (hb : a + bs.length ≤ lo + w) :
-    UnchangedOutside m0 (writeBytes m a bs) [(lo, w)] := by
-  intro x hx
-  have hx' : ¬ (lo ≤ x ∧ x < lo + w) := hx (lo, w) (by simp) 
-  rw [readByte_writeBytes_outside m bs (show x < a ∨ a + bs.length ≤ x by omega)]
-  exact h x (by
-    intro r hr
-    simp only [List.mem_singleton] at hr
-    subst hr
-    exact hx')
-
 /-- The head's back-edge counter cell. -/
 theorem copyNEnv_knext (env : Env) (src dst : Nat) (k : BitVec 64) (bs1 bs2 : List UInt8)
     (subv : BitVec 64) :
@@ -120,6 +117,39 @@ theorem copyNEnv_sub (env : Env) (src dst : Nat) (k : BitVec 64) (bs1 bs2 : List
     lookupName (udCopyBodyNEnv env src dst k bs1 bs2 subv) copyBodyNNames.subreg =
       lookupName env copyBodyNNames.subreg := by
   simp only [udCopyBodyNEnv]; ud_lk
+
+/-- Two frames compose when the first's regions are among the second's: a byte
+outside the first's regions is outside the second's too, so the second leaves it as
+the run found it and the first leaves it as the caller had it. -/
+theorem UnchangedOutside.comp {m0 m1 m2 : Mem} {R₁ R₂ : List (Nat × Nat)}
+    (h1 : UnchangedOutside m0 m1 R₁) (h2 : UnchangedOutside m1 m2 R₂)
+    (hsub : ∀ r ∈ R₂, r ∈ R₁) : UnchangedOutside m0 m2 R₁ :=
+  fun a ha => (h2 a (fun r hr => ha r (hsub r hr))).trans (h1 a ha)
+
+/-- **A store inside one of the regions leaves the frame.**  The written bytes are
+inside a region the frame already excludes, so every byte the frame talks about is
+outside the store. -/
+theorem UnchangedOutside.writeBytes_in {m0 m : Mem} {regions : List (Nat × Nat)}
+    {a : Nat} {bs : List UInt8} (h : UnchangedOutside m0 m regions)
+    (hin : ∃ r ∈ regions, r.1 ≤ a ∧ a + bs.length ≤ r.1 + r.2) :
+    UnchangedOutside m0 (writeBytes m a bs) regions := by
+  intro x hx
+  have houtside : x < a ∨ a + bs.length ≤ x := by
+    rcases Nat.lt_or_ge x a with hlt | hge
+    · exact Or.inl hlt
+    · refine Or.inr (Nat.le_of_not_lt ?_)
+      intro hlt
+      obtain ⟨r, hr, hlo, hhi⟩ := hin
+      exact hx r hr ⟨by omega, by omega⟩
+  rw [readByte_writeBytes_outside m bs houtside]
+  exact h x hx
+
+/-- A write inside a region leaves every byte outside the region as it was, so a
+frame over that region carries through it. -/
+theorem UnchangedOutside.writeBytes_inside {m0 m : Mem} {lo w a : Nat} {bs : List UInt8}
+    (h : UnchangedOutside m0 m [(lo, w)]) (ha : lo ≤ a) (hb : a + bs.length ≤ lo + w) :
+    UnchangedOutside m0 (writeBytes m a bs) [(lo, w)] :=
+  UnchangedOutside.writeBytes_in h ⟨(lo, w), by simp, ha, hb⟩
 
 /-- **The final copy's loop, with the caller's prefix carried.**  `CopyInv` states
 the copy's own prefix at the block's `%dst`; this instance conjoins the bytes the
@@ -367,27 +397,16 @@ theorem finalSource_take {body extra : List UInt8} {n i k : Nat}
 
 /-! ### The decoded prefix is no longer than its cursor -/
 
-/-- A list spaced at a cursor is still spaced at a smaller one. -/
-theorem Spaced.mono {bs : List UInt8} : ∀ {i : Nat} {ps : List Nat},
-    Spaced bs i ps → ∀ {i' : Nat}, i' ≤ i → Spaced bs i' ps
-  | _, _, Spaced.nil i, i', _ => Spaced.nil i'
-  | _, _, Spaced.control i q qs b hiq hb hctl, i', hi =>
-      Spaced.control i' q qs b (by omega) hb hctl
-  | _, _, Spaced.refuse i q qs hiq hlt hnone, i', hi =>
-      Spaced.refuse i' q qs (by omega) hlt hnone
-  | _, _, Spaced.step i q qs adv bytes b hiq hb hctl hesc hlen hadv ih, i', hi =>
-      Spaced.step i' q qs adv bytes b (by omega) hb hctl hesc hlen hadv
-        (Spaced.mono ih (by omega))
-
 /-- **The decoded prefix fits its cursor, from the staging's spacing.**  The
 staging's walk and the exit's walk are the same decode written two ways:
 `goal = .decoded (out ++ body.drop i) k`, and a walk whose position list is spaced
-writes at most the body's length.  The spacing of the *resumed* list — the staging
-list after its first `k0` entries — is a hypothesis here rather than derived: the
-list the staging decodes is `(ps.map …).drop k0`, and `Spaced` is not suffix-closed
-on the nose (a `control`/`refuse` constructor's tail is unconstrained), so the
-drop needs the walk's own non-refusal, not the relation alone.  That derivation is
-the remaining obligation; everything below it is stated at this fact. -/
+writes at most the body's length.  The list the staging decodes is
+`(ps.map …).drop k0` — a *suffix* of the caller's list — and `Spaced` is not
+suffix-closed on the nose (a `control`/`refuse` constructor's tail is unconstrained);
+what carries the spacing across the drop is that the list is the body's own position
+list, so every suffix of it is the cursor list at a later lane and
+`escAt_drop_spaced` supplies the spacing.  The record's list clause is the only
+thing read here beyond the invariant and the goal's own shape. -/
 theorem DecodeInv.out_length_le_cursor {body : List UInt8} {st : ClassState}
     {M mem : Mem} {dst nps i k : Nat} {out : List UInt8} {goal : EscapeOutcome}
     {b n pos0 k0 : Nat} {ps : List Nat}
@@ -395,8 +414,10 @@ theorem DecodeInv.out_length_le_cursor {body : List UInt8} {st : ClassState}
     (hbody : readBytes mem b n = some body)
     (hwalkeq : goal = escapeDecodeGo body 0 k0
       ((ps.map (fun q => q - pos0)).drop k0) [])
-    (hsp : Spaced body 0 ((ps.map (fun q => q - pos0)).drop k0)) :
+    (hmap : ps.map (fun q => q - pos0) = escapePositionsFrom body st) :
     out.length ≤ i := by
+  have hsp : Spaced body 0 ((ps.map (fun q => q - pos0)).drop k0) :=
+    escapeExpand_spaced_drop hmap k0
   have hblen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbody
   have hgoal := DecodeInv.exit hinv hk
   have hdec : escapeDecodeGo body 0 k0 ((ps.map (fun q => q - pos0)).drop k0) [] =
@@ -415,12 +436,297 @@ theorem DecodeInv.out_length_le_cursor {body : List UInt8} {st : ClassState}
     omega
 
 
-/-! ### Axiom footprints
+/-! ### Reads outside the run's regions
 
-The pins are the module's instrument.  `copyPreLoop` and
-`UnchangedOutside.writeBytes_inside` carry the one `Classical.choice` the copy
-already carries — `BitVec.signExtend_eq`, the sign-extension width equality the
-trace's step facts take as a hypothesis — and nothing else leaves the ceiling. -/
+The frame the exit words carry is a per-byte statement, and the final copy reads
+regions the run does not write — the body and its thirty-two trailing bytes, the
+offset slot.  These are the two lemmas that turn the frame into reads, and the two
+that keep it across a store.
+-/
+
+/-- **Two reads of one range agree byte by byte.**  The read is a fold over the
+per-byte form, so a pointwise equality on the range is a whole-read equality. -/
+theorem readBytes_congr (m m' : Mem) :
+    ∀ (k : Nat) {a : Nat}, (∀ x, a ≤ x → x < a + k → readByte m x = readByte m' x) →
+      readBytes m a k = readBytes m' a k
+  | 0, a, _ => rfl
+  | k + 1, a, h => by
+      simp only [readBytes]
+      rw [h a (by omega) (by omega)]
+      cases hb : readByte m' a with
+      | none => rfl
+      | some b =>
+          rw [readBytes_congr m m' k (a := a + 1)
+            (fun x h1 h2 => h x (by omega) (by omega))]
+
+/-- **A read outside the run's regions is the caller's read.**  A whole range read
+is the per-byte form of `UnchangedOutside`: if every address the read touches is
+outside every region, the bytes are the caller's. -/
+theorem readBytes_of_UnchangedOutside {m0 m : Mem} {regions : List (Nat × Nat)}
+    {a k : Nat} (h : UnchangedOutside m0 m regions)
+    (hout : ∀ x, a ≤ x → x < a + k → ∀ r ∈ regions, ¬ (r.1 ≤ x ∧ x < r.1 + r.2)) :
+    readBytes m a k = readBytes m0 a k :=
+  readBytes_congr m m0 k (fun x h1 h2 => h x (hout x h1 h2))
+
+/-! ### The final copy's arithmetic
+
+`while.end35` forms `%sub38 = %n - %i.0.lcssa` in 64-bit arithmetic and
+`us_run.exit112` forms `%add40 = %sub38 + %j.0.lcssa`.  At a cursor inside the body
+both are the `Nat` operations the record's `post` names, which is what these facts
+state; outside it the subtraction wraps, which is the clause the latch's word does
+not carry. -/
+
+/-- **The residual's `Nat` reading.** -/
+theorem ofNat_sub_toNat {n i : Nat} (hi : i ≤ n) (hn : n < 2 ^ 64) :
+    (BitVec.ofNat 64 n - BitVec.ofNat 64 i).toNat = n - i := by
+  have hn' : (BitVec.ofNat 64 n).toNat = n := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn]
+  have hi' : (BitVec.ofNat 64 i).toNat = i := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have hle : BitVec.ofNat 64 i ≤ BitVec.ofNat 64 n := by
+    rw [BitVec.le_def, hi', hn']
+    omega
+  rw [BitVec.toNat_sub_of_le hle, hn', hi']
+
+/-- The residual at a cursor inside the body, in the form the copy's invariant
+carries. -/
+theorem ofNat_sub_ofNat {n i : Nat} (hi : i ≤ n) (hn : n < 2 ^ 64) :
+    BitVec.ofNat 64 n - BitVec.ofNat 64 i = BitVec.ofNat 64 (n - i) := by
+  refine BitVec.toNat_inj.1 ?_
+  rw [ofNat_sub_toNat hi hn, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+
+/-- A body's remainder is the source range's first `n - i` bytes. -/
+theorem take_left_of_body {body extra : List UInt8} {i n : Nat}
+    (hblen : body.length = n) (hi : i ≤ n) :
+    (body.drop i ++ extra).take (n - i) = body.drop i := by
+  rw [List.take_append, List.length_drop, hblen,
+    show n - i - (n - i) = 0 from by omega, List.take_zero, List.append_nil,
+    List.take_of_length_le (by rw [List.length_drop, hblen]; omega)]
+
+
+/-! ### What the two `while.end35` branches do not carry
+
+The final copy reads, at an exit state, three things the exit words do not mention,
+and each is needed by the continuation:
+
+* **the body's bytes, and its thirty-two trailing bytes**, at the *exit* state's
+  memory — the copy's source range.  The frame the words carry excludes
+  `(dst, n + 64)` and nothing else about the body's own region: the staging relates
+  the body to the destination only, so a body byte that falls inside another region
+  the frame excludes (the position list, the offset slot, the cursor) may differ at
+  the exit memory and the words cannot tell;
+* **the offset slot's read**, which the record's post reads back.  `(err, 8)` is one
+  of the frame's regions, so the frame says nothing about it, and the success path
+  never writes the slot — whatever the exit memory holds there is what the run
+  returns;
+* **at the latch, a byte cursor inside the body**.  `while.end35` forms
+  `%sub38 = %n - %i.0.lcssa`, and `DecodeLatchExit`'s walk cursor is unbounded, so a
+  cursor past `n` wraps the subtraction and the residual the copy is handed is
+  `2 ^ 64 - (i - n)`.
+
+The two witnesses below are reached at one staging, so what separates them from a
+state the run leaves is exactly the clause named.  The staging is the same for both
+because none of its clauses mentions any of the three: an empty body at `100`, an
+empty position list at `700`, the rule's table at `400`, the offset slot at `800`,
+the cursor at `900` and the destination at `200`, in a zero memory with the table
+written at `400`.
+-/
+
+/-- The memory both witnesses are stated at. -/
+def exitWitnessMem : Mem := writeBytes (zeroMem 1000) 400 unescapeTable
+
+/-- The caller's argument list: the empty body at `100`, the destination at `200`,
+the table at `400`, the empty list at `700`, the offset slot at `800` and the cursor
+at `900`. -/
+def exitWitnessArgs : List Value :=
+  [.ptr 100, .int 64 (BitVec.ofNat 64 0), .ptr 200, .ptr 800, .ptr 700,
+   .ptr 900, .int 64 (BitVec.ofNat 64 0), .int 64 (BitVec.ofNat 64 0), .ptr 400]
+
+/-- A read below the table, out of the zero memory. -/
+theorem exitWitness_zeros {a k : Nat} (h : a + k ≤ 400) :
+    readBytes exitWitnessMem a k = some (List.replicate k (0 : UInt8)) := by
+  unfold exitWitnessMem
+  rw [readBytes_writeBytes_below (zeroMem 1000) unescapeTable k a 400 h]
+  exact readBytes_zeroMem k 1000 a (by omega)
+
+/-- A read above the table, out of the zero memory. -/
+theorem exitWitness_zeros_high {a k : Nat} (hlow : 656 ≤ a) (hN : a + k ≤ 1000) :
+    readBytes exitWitnessMem a k = some (List.replicate k (0 : UInt8)) := by
+  unfold exitWitnessMem
+  rw [JsonEntrySteps.readBytes_writeBytes_above (zeroMem 1000) unescapeTable k a 400
+    (by rw [unescapeTable_length]; omega)]
+  exact readBytes_zeroMem k 1000 a (by omega)
+
+/-- The table's own read. -/
+theorem exitWitness_table :
+    readBytes exitWitnessMem 400 256 = some unescapeTable := by
+  unfold exitWitnessMem
+  simpa [unescapeTable_length] using
+    readBytes_writeBytes_same (zeroMem 1000) unescapeTable (addr := 400)
+
+/-- The zero word's own eight bytes. -/
+theorem wordBytes_rep_eight : wordBytes 8 0 = List.replicate 8 (0 : UInt8) := by decide
+
+/-- The empty position list is the body's own. -/
+theorem exitWitness_escAt : escAt ([] : List UInt8) ⟨true, false⟩ 0 = [] := by
+  simp [escAt]
+
+/-- **The staging both witnesses are reached from.** -/
+theorem exitWitness_staging :
+    ExpandStaging exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
+      (.decoded [] 0) 100 700 400 0 0 [] 800 900 := by
+  unfold ExpandStaging Γ_escape_expand_at
+  have hz32 : readBytes exitWitnessMem 100 32 = some (List.replicate 32 (0 : UInt8)) :=
+    exitWitness_zeros (by omega)
+  have hz64 : ∃ vs, readBytes exitWitnessMem 200 64 = some vs :=
+    ⟨_, exitWitness_zeros (by omega)⟩
+  have hz8e : readBytes exitWitnessMem 800 8 = some (wordBytes 8 0) := by
+    rw [exitWitness_zeros_high (by omega) (by omega), wordBytes_rep_eight]
+  have hz8x : readBytes exitWitnessMem 900 8 = some (wordBytes 8 0) := by
+    rw [exitWitness_zeros_high (by omega) (by omega), wordBytes_rep_eight]
+  have hpre : readBytes exitWitnessMem 100 0 = some [] := rfl
+  have hxp0 : readBytes exitWitnessMem 700 0 = some (positionsBytes 4 []) := rfl
+  refine ⟨?_, rfl, rfl, hpre, by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- the record's `pre`
+    refine ⟨100, 0, 200, 800, 700, 900, 0, 0, 400, [], [], 0, 0, rfl, hpre,
+      hxp0, rfl, (fun q hq => absurd hq (by simp)), (by simp [escapePositionsFrom, escAt]),
+      (by omega), hz8x, (by omega), hz8e, exitWitness_table, ⟨_, hz32⟩, hz64,
+      (by omega), (by omega), (by omega), (by omega), (by omega), (by omega)⟩
+  · -- `DecodeStaging`
+    exact ⟨0, hxp0, rfl, (fun j q hq => absurd hq (by simp)), rfl⟩
+  · simp [escapePositionsFrom, escAt]
+  · unfold DecodeNoAlias
+    refine ⟨by omega, by omega, by omega, by omega⟩
+  · omega
+  · omega
+  · refine ⟨0, hz8x, by omega, ?_⟩
+    simp [escapeDecodeGo_nil]
+
+/-- **The entry branch admits an offset slot the run will not overwrite.**  The
+state is the word's entry edge at the witness staging, with the offset slot's eight
+bytes replaced: the frame names `(err, 8)` as a region, so the word does not read the
+slot, and the success path writes only the destination and the cursor. -/
+theorem entryExit_admits_clobbered_err :
+    ∃ e : State,
+      assemblyExitWord exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
+        (.decoded [] 0) 100 700 400 0 0 [] 800 900 e ∧
+      readBytes e.mem 800 8 ≠ readBytes exitWitnessMem 800 8 := by
+  have hframe : UnchangedOutside exitWitnessMem
+      (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
+      [(200, 0 + 64), (700, 4 * 0), (900, 8), (800, 8)] := by
+    intro a ha
+    have hd : a < 800 ∨ 800 + 8 ≤ a := by
+      rcases Nat.lt_or_ge a 800 with h | h
+      · exact Or.inl h
+      · exact Or.inr (by
+          have := ha (800, 8) (by simp)
+          omega)
+    rw [readByte_writeBytes_outside _ _ (by simpa using hd)]
+  refine ⟨modelState
+    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 100), ("%xp", .ptr 700),
+     ("%tab", .ptr 400), ("%pos0", .int 64 0), ("%n", .int 64 0),
+     ("%err", .ptr 800), ("%xj", .ptr 900), ("%dst", .ptr 200)]
+    (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
+    "while.end35" (some "while.end"), ⟨?_, ?_⟩⟩
+  · -- the word
+    refine ⟨exitWitness_staging, Or.inr (Or.inl ?_)⟩
+    refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · -- the walk's seed
+      show escapeDecodeGo [] 0 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
+      rw [exitWitness_escAt, List.drop_zero]
+      exact escapeDecodeGo_nil ([] : List UInt8) 0 0 []
+    · rfl
+    · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
+      rw [exitWitness_escAt]; rfl
+    all_goals (first | exact hframe | rfl | (simp only [modelState, lookupName]; simp))
+  · -- the slot differs
+    intro hcontra
+    have hmem : (modelState
+        [("%k.0.lcssa", .int 64 0), ("%p", .ptr 100), ("%xp", .ptr 700),
+         ("%tab", .ptr 400), ("%pos0", .int 64 0), ("%n", .int 64 0),
+         ("%err", .ptr 800), ("%xj", .ptr 900), ("%dst", .ptr 200)]
+        (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
+        "while.end35" (some "while.end")).mem
+        = writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)) := rfl
+    have h1 : readBytes (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
+        800 8 = some (List.replicate 8 (7 : UInt8)) := by
+      simpa using readBytes_writeBytes_same exitWitnessMem
+        (List.replicate 8 (7 : UInt8)) (addr := 800)
+    have h2 : readBytes exitWitnessMem 800 8 = some (List.replicate 8 (0 : UInt8)) :=
+      exitWitness_zeros_high (by omega) (by omega)
+    rw [hmem, h1, h2] at hcontra
+    exact absurd hcontra (by decide)
+
+/-- **The latch branch admits a byte cursor past the body.**  At the same staging, a
+state whose `%add24` — the cell `while.end35` copies into `%i.0.lcssa` — is `5` for a
+zero-length body satisfies the word: the walk at cursor `5` has the same outcome
+(`.decoded [] 0`), because the trailing copy's `body.drop 5` is empty.  `while.end35`
+then forms `%sub38 = 0 - 5`, and the copy's residual wraps. -/
+theorem latchExit_admits_cursor_past_body :
+    ∃ e : State,
+      assemblyExitWord exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
+        (.decoded [] 0) 100 700 400 0 0 [] 800 900 e ∧
+      lookupName e.env "%add24" = some (.int 64 (BitVec.ofNat 64 5)) := by
+  have hframe : UnchangedOutside exitWitnessMem exitWitnessMem
+      [(200, 0 + 64), (700, 4 * 0), (900, 8), (800, 8)] := fun a _ => rfl
+  refine ⟨modelState
+    [("%j.3", .int 64 0), ("%add24", .int 64 (BitVec.ofNat 64 5)),
+     ("%add28", .int 64 0), ("%p", .ptr 100), ("%dst", .ptr 200),
+     ("%xp", .ptr 700), ("%tab", .ptr 400), ("%err", .ptr 800),
+     ("%xj", .ptr 900), ("%pos0", .int 64 0), ("%add", .int 64 0),
+     ("%n", .int 64 0)]
+    exitWitnessMem "while.end35" (some "cleanup32"), ⟨?_, ?_⟩⟩
+  · -- the word
+    refine ⟨exitWitness_staging, Or.inl ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rfl
+    · rfl
+    · -- the walk's exit data, at cursor `5`
+      refine ⟨0, 5, [], BitVec.ofNat 64 0, BitVec.ofNat 64 5, BitVec.ofNat 64 0,
+        100, 700, 400, 800, 900, BitVec.ofNat 64 0, 0, BitVec.ofNat 64 0, ?_⟩
+      refine ⟨rfl, ⟨?_, ?_, ?_⟩, rfl, rfl, (by decide), rfl, (by decide), rfl,
+        (by decide), rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      · show escapeDecodeGo [] 5 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
+        rw [exitWitness_escAt, List.drop_zero]
+        exact escapeDecodeGo_nil ([] : List UInt8) 0 0 []
+      · rfl
+      · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
+        rw [exitWitness_escAt]; rfl
+    · simp only [modelState, lookupName]; simp
+    · simp only [modelState, lookupName]; simp
+    · simp only [modelState, lookupName]; simp
+    · simp only [modelState, lookupName]; simp
+    · simp only [modelState, lookupName]; simp
+    · simp only [modelState, lookupName]; simp
+    · simp only [modelState, lookupName]; simp
+    · exact hframe
+  · -- `%add24` is the cursor
+    simp only [modelState, lookupName]
+    simp
+
+/-! ### The exit's allowance
+
+The final copy's whole contribution is its trip bound plus the return: `while.end35`
+into the copy, `copyIterBound (n - i) + 1` steps round it, the tail's two or three
+steps, and `cleanup41`'s return.  The residual is at most the body's length, so
+`copyIterBound_le_div` places the bound inside `n / 64 + 1`, and the total inside the
+`n / 64 + 7` the exit budget names — the arithmetic the composition's last stage
+consumes.
+-/
+
+/-- **The exit's allowance covers the final copy and the return.** -/
+theorem finalCopy_fuel_le {n i : Nat} (hi : i ≤ n) :
+    copyIterBound (n - i) + 6 ≤ n / 64 + 7 := by
+  have hle := copyIterBound_le_div (n := n) (Nat.sub_le n i)
+  unfold copyIterBound at hle ⊢
+  omega
+
+/-- The exit's allowance at the caller's own `n`. -/
+theorem expandExitFuel_eq {b n dst err xp xj nps pos0 tab : Nat} (hn : n < 2 ^ 64) :
+    expandExitFuel [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
+      .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0), .ptr tab]
+      = n / 64 + 7 := by
+  simp only [expandExitFuel, expandBodyLen, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn]
 
 /-- info: 'LeanLLVM.Vellum.readBytes_writeBytes_thirtyTwo' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -430,7 +736,7 @@ trace's step facts take as a hypothesis — and nothing else leaves the ceiling.
 #guard_msgs in
 #print axioms readBytes_copy2Mem_prefix
 
-/-- info: 'LeanLLVM.Vellum.UnchangedOutside.writeBytes_inside' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.UnchangedOutside.writeBytes_inside' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms UnchangedOutside.writeBytes_inside
 
@@ -446,12 +752,52 @@ trace's step facts take as a hypothesis — and nothing else leaves the ceiling.
 #guard_msgs in
 #print axioms finalSource_take
 
-/-- info: 'LeanLLVM.Vellum.Spaced.mono' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms Spaced.mono
-
 /-- info: 'LeanLLVM.Vellum.DecodeInv.out_length_le_cursor' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms DecodeInv.out_length_le_cursor
+
+/-- info: 'LeanLLVM.Vellum.readBytes_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_congr
+
+/-- info: 'LeanLLVM.Vellum.readBytes_of_UnchangedOutside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_of_UnchangedOutside
+
+/-- info: 'LeanLLVM.Vellum.UnchangedOutside.comp' does not depend on any axioms -/
+#guard_msgs in
+#print axioms UnchangedOutside.comp
+
+/-- info: 'LeanLLVM.Vellum.UnchangedOutside.writeBytes_in' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms UnchangedOutside.writeBytes_in
+
+/-- info: 'LeanLLVM.Vellum.ofNat_sub_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ofNat_sub_toNat
+
+/-- info: 'LeanLLVM.Vellum.ofNat_sub_ofNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ofNat_sub_ofNat
+
+/-- info: 'LeanLLVM.Vellum.take_left_of_body' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms take_left_of_body
+
+/-- info: 'LeanLLVM.Vellum.finalCopy_fuel_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms finalCopy_fuel_le
+
+/-- info: 'LeanLLVM.Vellum.expandExitFuel_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms expandExitFuel_eq
+
+/-- info: 'LeanLLVM.Vellum.entryExit_admits_clobbered_err' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms entryExit_admits_clobbered_err
+
+/-- info: 'LeanLLVM.Vellum.latchExit_admits_cursor_past_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms latchExit_admits_cursor_past_body
 
 end LeanLLVM.Vellum

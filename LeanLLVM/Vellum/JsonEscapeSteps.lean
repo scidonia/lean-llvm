@@ -1200,6 +1200,46 @@ theorem escapePositionsFrom_spaced (bs : List UInt8) :
   rw [escapePositionsFrom_eq_escAt]
   exact escAt_spaced bs ⟨true, false⟩ bs.length 0 (by omega)
 
+/-- **The cursor list after a prefix is the cursor list at a later cursor.**  A
+drop of the filtered list is the same filter read from the entry it stops at: the
+tail after a head is the cursor list at `q + 1` (`escAt_tail`), so dropping one
+entry moves the cursor to the next lane and the induction is that fact. -/
+theorem escAt_drop_exists (bs : List UInt8) (st : ClassState) :
+    ∀ (i k : Nat), ∃ i' : Nat, (escAt bs st i).drop k = escAt bs st i' := by
+  intro i k
+  induction k generalizing i with
+  | zero => exact ⟨i, rfl⟩
+  | succ k ih =>
+      cases h : escAt bs st i with
+      | nil => exact ⟨i, by simp [h]⟩
+      | cons q qs =>
+          have htail : qs = escAt bs st (q + 1) := escAt_tail h
+          obtain ⟨i', hi'⟩ := ih (q + 1)
+          refine ⟨i', ?_⟩
+          rw [List.drop_succ_cons, htail]
+          exact hi'
+
+/-- **The walk's remaining positions are spaced.**  The staging decodes
+`(ps.map …).drop k0` — the position list after its first `k0` entries — and
+`Spaced` is not suffix-closed on the nose: a `control` or `refuse` constructor's
+tail is unconstrained, so the suffix of a spaced list need not be spaced by `Spaced`
+alone.  What carries the spacing across the drop is that the list is the body's own
+position list: every cursor list is spaced (`escAt_spaced`), and a drop of one is
+the cursor list at a later lane (`escAt_drop_exists`).  The prefix monoticity that
+turns the later cursor into the resumed walk's own — the walk's byte cursor starts
+at zero regardless of how many positions the caller has already consumed — is
+`Spaced.mono`.
+
+This is the fact the final copy needs: without it the copy's destinations are not
+confined to the record's `dst + n + 64` extent, because the resumed walk's decoded
+prefix could be longer than the byte cursor it resumes at. -/
+theorem escAt_drop_spaced (bs : List UInt8) (st : ClassState) (i k : Nat) :
+    Spaced bs 0 ((escAt bs st i).drop k) := by
+  obtain ⟨i', hi'⟩ := escAt_drop_exists bs st i k
+  rw [hi']
+  exact Spaced.mono (escAt_spaced bs st (bs.length - i') i' (Nat.le_refl _))
+    (Nat.zero_le _)
+
 /-- Every `(body, ps)` the expander's record admits is spaced: the record's list
 clause identifies the decode's position list with the body's own, so the length
 bound covers the decode the record claims. -/
@@ -1209,15 +1249,39 @@ theorem escapeExpand_spaced {body : List UInt8} {ps : List Nat} {pos0 : Nat}
   rw [h]
   exact escapePositionsFrom_spaced body
 
+/-- **The resumed walk's spacing**, from the record's list clause.  A call that
+resumes at position cursor `k0` decodes the caller's list after its first `k0`
+entries, and that suffix is spaced for the same reason the whole list is: the entries
+are the body's own lanes.  Stated at the invariant's own classifier state, because
+`DecodeInv`'s walk is written at `escAt body st 0`. -/
+theorem escapeExpand_spaced_drop {body : List UInt8} {ps : List Nat} {pos0 : Nat}
+    {st : ClassState}
+    (h : ps.map (fun q => q - pos0) = escapePositionsFrom body st) (k : Nat) :
+    Spaced body 0 ((ps.map (fun q => q - pos0)).drop k) := by
+  rw [h]
+  exact escAt_drop_spaced body st 0 k
+
 -- The spacing is stated from the body's own position rule, so its footprint is the
 -- standard one: no carrier beyond `propext` and `Quot.sound`.
 /-- info: 'LeanLLVM.Vellum.escapePositionsFrom_spaced' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escapePositionsFrom_spaced
 
+/-- info: 'LeanLLVM.Vellum.escAt_drop_exists' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escAt_drop_exists
+
+/-- info: 'LeanLLVM.Vellum.escAt_drop_spaced' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escAt_drop_spaced
+
 /-- info: 'LeanLLVM.Vellum.escapeExpand_spaced' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escapeExpand_spaced
+
+/-- info: 'LeanLLVM.Vellum.escapeExpand_spaced_drop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeExpand_spaced_drop
 
 /-- info: 'LeanLLVM.Vellum.escapeAt_cases' depends on axioms: [propext] -/
 #guard_msgs in

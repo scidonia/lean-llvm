@@ -862,6 +862,26 @@ theorem escapeDecodeGo_length_le (bs : List UInt8) :
         simp only [List.length_append, hcopy] at hstep ⊢
         omega
 
+/-- **The spacing is a property of the positions, not of where the walk stands.**
+A list spaced at a cursor is spaced at any earlier one: the constructors' only
+cursor-sensitive premise is `i ≤ q`, so lowering the cursor weakens a premise and
+never breaks a case.
+
+This is the half of the spacing a resumed walk needs.  The other half is that a
+suffix of the body's position list is itself a cursor list, which is a fact about
+`escAt` rather than about `Spaced`; `JsonEscapeSteps.escAt_drop_spaced` is where
+the two meet. -/
+theorem Spaced.mono {bs : List UInt8} : ∀ {i : Nat} {ps : List Nat},
+    Spaced bs i ps → ∀ {i' : Nat}, i' ≤ i → Spaced bs i' ps
+  | _, _, Spaced.nil i, i', _ => Spaced.nil i'
+  | _, _, Spaced.control i q qs b hiq hb hctl, i', hi =>
+      Spaced.control i' q qs b (by omega) hb hctl
+  | _, _, Spaced.refuse i q qs hiq hlt hnone, i', hi =>
+      Spaced.refuse i' q qs (by omega) hlt hnone
+  | _, _, Spaced.step i q qs adv bytes b hiq hb hctl hesc hlen hadv ih, i', hi =>
+      Spaced.step i' q qs adv bytes b (by omega) hb hctl hesc hlen hadv
+        (Spaced.mono ih (by omega))
+
 /-- A body decoded against its positions writes no more than the body holds, when the
 positions are spaced as the body's own are. -/
 theorem escapeDecode_length_le {bs : List UInt8} {ps : List Nat} (hsp : Spaced bs 0 ps)
@@ -944,5 +964,9 @@ theorem escapeDecode_length_le {bs : List UInt8} {ps : List Nat} (hsp : Spaced b
 /-- info: 'LeanLLVM.Vellum.escapeDecode_length_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escapeDecode_length_le
+
+/-- info: 'LeanLLVM.Vellum.Spaced.mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Spaced.mono
 
 end LeanLLVM.Vellum
