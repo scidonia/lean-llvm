@@ -9879,3 +9879,29 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.expandExit_satisfied' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.expandExit_satisfied
+
+/-! #### The pipeline's body: the four arms, the tail, and the steps -/
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.us_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.us_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.us83_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.us83_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.body_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.condCleanup_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.condCleanup_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usUs_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.usUs_step
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.body_step

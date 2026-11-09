@@ -70,3 +70,4 @@ import LeanLLVM.Vellum.JsonPipelineIR
 import LeanLLVM.Vellum.BlockEval
 import LeanLLVM.Vellum.JsonPipelineBlockEval
 import LeanLLVM.Vellum.JsonPipelineRefine
+import LeanLLVM.Vellum.PipelineBodyFacts
