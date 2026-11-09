@@ -166,8 +166,10 @@ never reaches, and why the record's `post` — which matches the **initial**
 staging's walk and the caller's **initial** memory — could not hold at them.  The
 words below are relational instead: each branch is stated at the caller's staging
 (`args mem body ps pos0 n b xp tab err xj`), pinned to the target block's
-predecessor, and tied to the walk the post matches.  `ExpandStaging` names the
-record's own `pre` and identifies the word's witnesses with the call's.
+predecessor, and tied to the walk the post matches.  `Γ_escape_expand_at` is that
+staging: the record's `pre` **by name**, the equations that align its witnesses
+with these binders, and the clauses whose `Nat`-level form the record's witnesses
+cannot transport; `ExpandStaging` is its synonym at the same binders.
 
 **The branches follow the pinned `phi` tables**, not a guess at the reachable set:
 `cleanup41`'s incoming list names `us_run.exit112`, `if.then20` and `if.then22`
@@ -190,31 +192,92 @@ the caller's initial memory to the exit state's; it is carried by `ExpandStaging
 through `AssemblyLatchInv` and restated at each branch, because no branch can
 obtain it from the state alone. -/
 
-/-- The caller's staging, at the word's own witnesses.
+/-- **The caller's staging at the expander's own binders** — the record's `pre`,
+the equations that align its witnesses with these binders, and the clauses whose
+`Nat`-level form does not transport out of it.
 
-The first conjunct is the record's `pre` **by name**, so nothing is invented.  The
-second is the argument list at those witnesses: it is what identifies them with the
-call rather than leaving them free, and without it a branch could speak about a
-different destination, cursor or offset slot than the caller's — the same
-state-only defect one level up.  `DecodeStaging` then names the staging predicate
-the exclusion theorems consume, and the last conjunct is the walk the record's
-`post` matches, so the word and the post are about one run. -/
-def ExpandStaging (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
+The conjunction has three groups, and the grouping is the statement's content
+rather than a layout choice:
+
+* **The record's `pre`, by name.**  `(Γ_escape_expand escapeExpandBudget).pre args
+  mem next` is the caller's staging exactly as `JsonEscapeSteps.lean` states it;
+  `JsonEscapeSteps.lean` remains its only wording, and this predicate adds no
+  second spelling of it.
+* **The alignment equations.**  `args = …` at these binders and `st =
+  ⟨true, false⟩`.  These are new content: the `pre` binds its own witnesses, so
+  nothing in it names `b`, `n`, `dst`, `err`, `xp`, `xj`, `nps`, `pos0`, `tab` or
+  `st`.  The argument equation is what identifies the binders with the call's
+  slots — without it a branch could speak about a different destination, cursor or
+  offset slot than the caller's — and `st = ⟨true, false⟩` is what carries the
+  `pre`'s rebased list from the record's rig to this word's classifier state.
+* **The clauses whose `Nat`-level form does not transport out of the `pre`.**
+  `BitVec.ofNat 64` is **not injective**.  The two argument equations make the
+  pointer slots equal — `Value.ptr` is injective, so `b`, `dst`, `err`, `xp`, `xj`
+  and `tab` cross as equalities — but they make the numeric slots equal only
+  modulo `2 ^ 64`, so the `pre`'s `n`, `nps` and `pos0` witnesses say nothing about
+  the values of these binders.  Every clause the exit proof reads at `n`, `nps`,
+  `pos0` or the cursor `k0` is therefore stated here, at these binders: the body
+  read `readBytes mem b n = some body`; the width bound `pos0 + n ≤ 2 ^ 32` that
+  makes the body's 64-bit `%add = pos0 + n` unwrap and every position fit the
+  `uint32` the body loads; `DecodeStaging`, the list read at `4 * nps` with its
+  length, its range at `pos0`/`n` and its end offset; the rebased list
+  `ps.map (fun q => q - pos0) = escapePositionsFrom body st`; `DecodeNoAlias` and
+  the two spacing disjunctions, whose destination extent is `n + 64`; and the
+  cursor slot's read `readBytes mem xj 8 = some (wordBytes 8 k0)` with its bound
+  `k0 ≤ nps` and the walk tie — the `pre` does not name `goal` at all, so the
+  identification of the caller's outcome with the staging's walk can only be
+  stated here.
+
+One `pre` clause is deliberately **absent**, and the absence is part of the
+statement: the offset slot's read `readBytes mem err 8 = some (wordBytes 8 err0)`
+transports, because `err` occupies a `Value.ptr` slot and the `pre`'s read is the
+same read at these binders; its witness `err0` is not nameable here, so the exit
+branches state the offset slot's preservation as the memory equation `readBytes
+e.mem err 8 = readBytes mem err 8` rather than by identifying `err0` across the
+coercion.  The `pre`'s remaining clauses are not restated either: no consumer reads
+them at these binders, and copying them here at `Nat` slots is the duplication this
+split removes.
+
+The decision the split records: **a clause restated is duplication; an alignment
+equation is new content; a clause whose `Nat`-level form does not transport is
+neither, and must be said again.**  That is why the `Γ_entry_pos8at` precedent is
+followed by naming rather than by re-definition.  That adapter existed because a
+capture changed a unit's ABI, and its rule was to consume through an adapter rather
+than edit the ABI; here the record is unchanged and the mismatch is a lossy
+coercion at the slot, so re-indexing the record's clauses wholesale would copy them
+at `Nat` slots.  The precedent's spirit applies (consume through an adapter); its
+letter does not (rewrite the record). -/
+def Γ_escape_expand_at (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
     (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome) (b xp tab : Nat)
     (pos0 n : Nat) (ps : List Nat) (err xj : Nat) : Prop :=
+  -- 1. the record's `pre`, by name
   (Γ_escape_expand escapeExpandBudget).pre args mem next ∧
+  -- 2. the alignment equations (new content)
   args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
     .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0),
     .ptr tab] ∧
+  st = ⟨true, false⟩ ∧
+  -- 3. the clauses whose `Nat`-level form the `pre` cannot transport
   readBytes mem b n = some body ∧
+  pos0 + n ≤ 2 ^ 32 ∧
   (∃ addv : BitVec 64, DecodeStaging mem nps xp pos0 n ps addv) ∧
   ps.map (fun q => q - pos0) = escapePositionsFrom body st ∧
-  st = ⟨true, false⟩ ∧
+  DecodeNoAlias n dst err xj tab ∧
   (b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b) ∧
   (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp) ∧
-  DecodeNoAlias n dst err xj tab ∧
   (∃ k0 : Nat, readBytes mem xj 8 = some (wordBytes 8 k0) ∧ k0 ≤ nps ∧
     goal = escapeDecodeGo body 0 k0 ((ps.map (fun q => q - pos0)).drop k0) [])
+
+/-- The caller's staging at the exit word's witnesses: a synonym for
+`Γ_escape_expand_at`, not a second definition.  `abbrev` is the synonym form the
+language offers — it is definitionally the adapter above, so there is one adapter
+with one home, and a reader who unfolds either name reaches the same three groups.
+Every exit branch and arm is stated at this name; see `Γ_escape_expand_at` for what
+each group is and why. -/
+abbrev ExpandStaging (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
+    (st : ClassState) (dst nps : Nat) (goal : EscapeOutcome) (b xp tab : Nat)
+    (pos0 n : Nat) (ps : List Nat) (err xj : Nat) : Prop :=
+  Γ_escape_expand_at args mem next body st dst nps goal b xp tab pos0 n ps err xj
 
 /-- The decoded exit, on `cleanup32`'s edge: the walk at the bound, the exit
 block's cells, and the frame. -/

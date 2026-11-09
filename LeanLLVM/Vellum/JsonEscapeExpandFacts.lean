@@ -369,7 +369,7 @@ theorem refusalExit_post
   rw [hxjeq] at eread'
   rw [hoffeq] at eread
   rw [hikeq] at eread'
-  obtain ⟨hpre, hargs, hbody, hdec, hrebase, hst, -, -, -, hwalk⟩ := hstaging
+  obtain ⟨hpre, hargs, -, hbody, -, hdec, -, -, -, -, hwalk⟩ := hstaging
   obtain ⟨addv, hstage⟩ := hdec
   obtain ⟨hposbytes, hpslen, hrange, haddv⟩ := hstage
   obtain ⟨k0, hk0read, hk0le, hwalkeq⟩ := hwalk
@@ -402,7 +402,7 @@ theorem successExit_post
   obtain ⟨epc, hpre, hpcell, hxpcell, htabcell, hpos0cell, hncell, herrcell,
     hxjcell, hout, hframe⟩ := h
   obtain ⟨out, k, hgoaleq, hadd40, hdstread, hxjread, herread⟩ := hout
-  obtain ⟨hstagingPre, hargs, hbody, hdec, hrebase, hst, -, -, -, hwalk⟩ := hstaging
+  obtain ⟨hstagingPre, hargs, -, hbody, -, hdec, -, -, -, -, hwalk⟩ := hstaging
   obtain ⟨addv, hstage⟩ := hdec
   obtain ⟨hposbytes, hpslen, hrange, haddv⟩ := hstage
   obtain ⟨k0, hk0read, hk0le, hwalkeq⟩ := hwalk
