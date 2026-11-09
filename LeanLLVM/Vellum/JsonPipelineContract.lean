@@ -214,7 +214,11 @@ clause names the unit record it is read from:
 * the escape-list capacity is `Γ_escape_positions.pre`'s `HasBytes` clause at
   the last block's incoming count plus the batch reserve;
 * the arena capacity is the `ndst0 + n + 64` extent the expander reaches from its
-  cursor (C126), and the event stream is the caller's `ev` at its ABI capacity;
+  cursor (C126), and the event stream is the caller's `ev` at its ABI capacity
+  **and its write room**: presence alone is not what stage 2's append needs, so
+  the clause is the header's written-buffer promise at the encoding's worst
+  case, `nev0 + 13 * bs.length ≤ evcap` (`stage2.h:13-21`), and it lives here:
+  the specification's pre reads it off this staging rather than repeating it;
 * the 64-bit domains are the units' own, stated once: `cursorRoom` bounds both
   growing cursors over the whole document, so POS8's
   `k + 64 * ent.length + 9 < 2 ^ 63` and the escape list's `xn0 < 2 ^ 63` follow
@@ -272,7 +276,15 @@ def pipelineStaging (base : Nat) (args : List Value) (mem : Mem) : Prop :=
     -- each from its own cursor
     ndst0 + n.toNat + 64 ≤ dstcap.toNat ∧
     HasBytes mem dst (ndst0 + n.toNat + 64) ∧
+    -- the event stream's presence *and* its room.  Presence alone admits a
+    -- caller whose `evcap` is smaller than the stream stage 2 would append, and
+    -- the measured body traps on that rather than overrunning; so the staging
+    -- carries the header's written-buffer promise at the encoding's worst case
+    -- — at most one record per input byte, at most thirteen bytes per record —
+    -- and it lives here, so the specification's pre reads it off this staging
+    -- rather than restating it.
     HasBytes mem ev evcap.toNat ∧
+    nev0 + 13 * bs.length ≤ evcap.toNat ∧
     -- the stage-2 cursors, read in (the refusal slot is in the read set below)
     readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
     readBytes mem nev 8 = some (wordBytes 8 nev0) ∧
@@ -337,7 +349,36 @@ counts and prefixes and the tail units' own post shapes, read at this body's
 arguments; the semantic content — that the stream decodes to `decodeTape`'s
 value, that the verdict is `parseBytes`'s — is `Σ_pipeline`'s and deliberately
 not restated here.  `.ub` is refused by the `match`, and a non-`i64` return or a
-void return is outside the shape `retsValued pipelineBody` pins. -/
+void return is outside the shape `retsValued pipelineBody` pins.
+
+**The unchanged extents are the units' whole touched extents, reserve included.**
+A callee that stores eight entries past the count it reports, or a vector past
+the decoded extent, has written those bytes whatever it reports, and a frame
+naming only the counted extent is false exactly where a reserve is written: it
+would leave a byte the run moved outside every extent the post names.  So each of
+the three extents below is the unit's own width and not a figure chosen here:
+the entry emitter's frame reaches `o + 4 * (k' + 8)`
+(`JsonEntrySteps.lean:31-34`, where the eight is its sentinel lane), giving
+`(ep, 4 * (nk' + 8))`; the escape batch reserves eight entries past its block's
+count (`batchReserve`, the same `8` its post's `4 * blockMax xn0` is built from),
+and because a block writes at most from its incoming count through its outgoing
+count plus that reserve while the counts only grow, the run's writes reach at
+most `nxp' + 8` entries, giving `(xp, 4 * (nxp' + batchReserve))`; and the
+decoder writes `US_SLACK`, sixty-four bytes, past the decoded extent
+(`kernel/json/stage2.h`), giving `(dst, ndst' + 64)`.
+
+**The pattern the two widened records share, named where a reader meets its
+members.**  `pipelineStaging` above stated the event stream's presence
+(`HasBytes mem ev evcap.toNat`) without the room stage 2 appends into;
+`escapePositionsPost` named the batch's whole extent in its exclusion while
+declining to describe it, so its own successor had no presence to stand on, and
+its post carries `HasBytes m xp (4 * blockMax xn0)` as the other half of that
+exclusion; and the extents below were the counted output rather than the touched
+region.  **Every region a record names is the callee's whole touched extent,
+including its reserve, and every staging a record requires is presence *and* room
+to write.**  A reader about to narrow one of these regions to the count a callee
+returns should read the other two first: that narrowing is exactly the defect
+each of them carried. -/
 def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
     (o : Outcome) : Prop :=
   match o with
@@ -362,9 +403,9 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
               ∃ e : Nat, readBytes m err 8 = some (wordBytes 8 e)) ∧
             (verdict = 1 → readBytes m err 8 = readBytes mem err 8) ∧
             UnchangedOutside mem m
-              [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * nk'), (nk, 8),
-               (xp, 4 * nxp'), (nxp, 8), (xcarry, 16), (dst, ndst'), (ndst, 8),
-               (ev, nev'), (nev, 8), (err, 8)]
+              [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
+               (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16),
+               (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
       | _ => False
   | _ => False
 

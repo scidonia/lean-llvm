@@ -28,10 +28,10 @@ already states, read at the pipeline's twenty-argument ABI
 (`pipeline.h:33-37`, `pipelineBody.params`):
 
 * **the argument shape** — `pipeline.h:33-37` and the staging's own pattern
-  (`JsonPipelineContract.lean:225`);
+  (`JsonPipelineContract.lean:229`);
 * **the input relation** `readBytes mem base n = some bs` with
   `n = bs.length` — the staging's document clause
-  (`JsonPipelineContract.lean:225-232`), which stages the padded window and the
+  (`JsonPipelineContract.lean:238-240`), which stages the padded window and the
   exact-length read inside it; `Sigma_pipeline` restates the exact-length form
   because the parser's predicate is stated over `bs`, not over the padding
   (`C102`);
@@ -114,12 +114,14 @@ already states, read at the pipeline's twenty-argument ABI
   caller's (`pipeline.h:13-25`, `stage2.h:10-30`), the body has no `alloca` and
   no `llvm.memset` (`JsonPipelineIR.lean`'s `allocaTypes = []`), and a caller
   that under-reserves is outside every unit's `pre` (§11.2).  The staging bounds
-  the entry stream, the escape list and the arena; it does not bound `evcap`
-  below, so `pipelineSpecPre` carries the header's event capacity promise
-  (`stage2.h:13-21`) as the worst case of the encoding: at most one record per
-  input byte and at most thirteen bytes per record,
-  `nev0 + 13 * bs.length ≤ evcap`.  A caller that under-reserves is thereby
-  outside this record's domain rather than a case whose behaviour is claimed.
+  the entry stream, the escape list, the arena and the event stream.  The event
+  clause is the header's written-buffer promise (`stage2.h:13-21`) at the
+  encoding's worst case — at most one record per input byte and at most thirteen
+  bytes per record, `nev0 + 13 * bs.length ≤ evcap` — and it **lives in
+  `pipelineStaging`** (`JsonPipelineContract.lean`), which this record's pre
+  conjoins first, so this pre is no wider than the measured code's domain.  A
+  caller that under-reserves is thereby outside this record's domain rather than
+  a case whose behaviour is claimed.
 
 # What a proof of this record would need
 
@@ -153,15 +155,18 @@ are named here so the record is not read as proved:
    `Correct.lean:4123-4145`): `decodeTape t = some v` and the validity conjuncts
    are not properties of an arbitrary tape; they come from the parser's own
    correctness theorem applied to `parseBytes ... = .ok t`.
-5. **The event capacity clause belongs in the staging too.**  `pipelineSpecPre`
-   states the header's promise, `nev0 + 13 * bs.length ≤ evcap`, because the
-   staging (`JsonPipelineContract.lean:225`) bounds the entry stream, the escape
-   list and the arena but not `evcap`; a caller with a too-small event buffer is
-   admitted by the staging and the measured stage 2 traps (`stage2.h:13-21`).
-   The bound is in the specification's domain, so D2's `Satisfies.mono` usage
-   needs only the units record at this narrower domain; the body's record should
-   carry the same clause so that its own domain matches the measured code, which
-   is a note for the staging's owner rather than a second promise here.
+5. **The event capacity clause lives in the staging, not here.**  The staging
+   (`JsonPipelineContract.lean:229`) bounds the entry stream, the escape list,
+   the arena and the event stream, the last with the header's written-buffer
+   promise at the encoding's worst case, `nev0 + 13 * bs.length ≤ evcap`
+   (`stage2.h:13-21`).  It was once stated here alone, and this record's note
+   asked the staging's owner to carry it: a too-small event buffer was admitted
+   by the staging while the measured stage 2 traps, so the body's record did not
+   state the bound that makes its own domain the measured code's.  **The note is
+   discharged and the clause is not repeated in `pipelineSpecPre`**, because one
+   fact stated in two records is two spellings that drift — the staging is this
+   pre's first conjunct, so D2's `Satisfies.mono` step needs only
+   `pipelineSpecPre → pipelineStaging`, which remains a projection.
 6. **The mono step.**  `Satisfies.mono` needs
    `pipelineSpecPre → pipelineStaging` (a projection of the conjunction),
    `pipelineBudget ≤ pipelineBudget` (`Nat.le_refl`), and the post implication
@@ -202,8 +207,8 @@ abbrev EventStreamRel :=
 /-! ### The ABI projections the statement's non-post clauses read
 
 These name one field each out of the twenty-argument list at
-`pipeline.h:33-37`.  They exist so the pre's exclusions can name the document
-and the event capacity without projecting through an existential; the post's
+`pipeline.h:33-37`.  They exist so the pre can name the document and the event
+capacity without projecting through an existential; the post's
 pattern reads the same fields and is checked against the same shape by the
 `#guard`s below. -/
 
@@ -282,14 +287,20 @@ def RefusalOffset (bs : List UInt8) (e : Nat) : Prop :=
 /-! ### The specification precondition -/
 
 /-- The caller's promise for the specification record: the staging the body's
-record already asks for, plus the parser's policy exclusions and the event
-capacity the header promises, named in the module docstring.  The staging is read
-by name from `Γ_pipeline_units` (`JsonPipelineContract.lean:225`) — the
-specification claims nothing about a caller that record would not admit, and the
-empty document is outside its domain; the depth and token clauses are the
-parser's own limits (`Parse.lean:30-35`), which the pipeline's ABI does not
-carry; the event capacity is `stage2.h:13-21`'s written-buffer promise made
-concrete at the encoding's worst case. -/
+record already asks for, plus the parser's policy exclusions, named in the
+module docstring.  The staging is read by name from `Γ_pipeline_units`
+(`JsonPipelineContract.lean:229`) — the specification claims nothing about a
+caller that record would not admit, and the empty document is outside its
+domain; the depth and token clauses are the parser's own limits
+(`Parse.lean:30-35`), which the pipeline's ABI does not carry.
+
+**The event capacity is not restated here.**  It is a conjunct of
+`pipelineStaging`, so it arrives with this definition's first conjunct; the
+binder below names the same ABI slot and the same slot value, since
+`pipelineEvCapacity`/`pipelineNevSlot` read the `evcap` argument and the `nev`
+cursor slot that the staging binds.  Stating the inequality here as well would be
+a second spelling of one fact, so a proof that needs it reads it off the staging.
+-/
 def pipelineSpecPre (base : Nat) (args : List Value) (mem : Mem)
     (_next : Nat) : Prop :=
   pipelineStaging base args mem ∧
@@ -299,7 +310,6 @@ def pipelineSpecPre (base : Nat) (args : List Value) (mem : Mem)
     pipelineNevSlot args = some nev ∧
     readBytes mem base bs.length = some bs ∧
     readBytes mem nev 8 = some (wordBytes 8 nev0) ∧
-    nev0 + 13 * bs.length ≤ evcap ∧
     (∀ e : ParseError,
       parseBytes Limits.default (ByteString.literal bs) = .error e →
         e ≠ .depthExceeded ∧ e ≠ .outOfCapacity)
