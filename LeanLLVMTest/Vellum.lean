@@ -9510,3 +9510,64 @@ the lanes loop. -/
 /-- info: 'LeanLLVM.Vellum.lstEmitExit_step' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.lstEmitExit_step
+
+/-! ### The decoder's loop instance, staging exclusions and budget
+
+The block appended for `JsonEscapeDecodeRun.lean`; it begins at line 9514 and is
+contiguous to the end of this file. -/
+
+/-- info: 'LeanLLVM.Vellum.DecodeNoAlias' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DecodeNoAlias
+
+/-- info: 'LeanLLVM.Vellum.decodeNextIdx' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeNextIdx
+
+/-- info: 'LeanLLVM.Vellum.evalICmp_ult_zero_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.evalICmp_ult_zero_iff
+
+/-- info: 'LeanLLVM.Vellum.escapeExpandBudget' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.escapeExpandBudget
+
+/-- info: 'LeanLLVM.Vellum.escapeExpandBudget_decomp' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.escapeExpandBudget_decomp
+
+/-- info: 'LeanLLVM.Vellum.signExtend_self_toNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.signExtend_self_toNat
+
+/-- info: 'LeanLLVM.Vellum.decodeLatch_step_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeLatch_step_exit
+
+/-- info: 'LeanLLVM.Vellum.latchInv_budget' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.latchInv_budget
+
+/-- info: 'LeanLLVM.Vellum.latchInv_exit_at_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.latchInv_exit_at_zero
+
+/-- info: 'LeanLLVM.Vellum.decodeLatchBoundLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeLatchBoundLoop
+
+/-- info: 'LeanLLVM.Vellum.decodeBoundLoop_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeBoundLoop_run_at
+
+/-- info: 'LeanLLVM.Vellum.decodeLatch_step_enter' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeLatch_step_enter
+
+/-- info: 'LeanLLVM.Vellum.latch_refused_budget_zero_absurd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.latch_refused_budget_zero_absurd
+
+/-- info: 'LeanLLVM.Vellum.decodeWalkFuel_contribution' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeWalkFuel_contribution
