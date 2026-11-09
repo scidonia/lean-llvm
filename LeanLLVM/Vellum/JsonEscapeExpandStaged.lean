@@ -13,9 +13,9 @@ record's `pre` are about.
 
 The two arm statements and the exit word below are the consumer-side forms of
 this milestone's arms.  They live here, below `JsonEscapeExpandRun`, because the
-decode module's own definitions are body-generic: `LatchStepLoopTwo` cannot be
-stated at `AssemblyLatchInv` (the name is not in scope there), and `%err`/`%xj`
-are the record's destinations, not the decode module's to know.
+decode module's own arm definition is body-generic: it cannot be stated at
+`AssemblyLatchInv` (the name is not in scope there), and `%err`/`%xj` are the
+record's destinations, not the decode module's to know.
 
 **The exit word, and what this module adds to it.**  The decoded exit stores
 `%k.1.lcssa = %add28` at `%xj` in `us_run.exit112` (`JsonEscapeIR.lean:602`),
