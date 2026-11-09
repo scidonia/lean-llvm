@@ -219,6 +219,13 @@ the bound, the head's exit test, the per-iteration step, and the invariant:
   because a body may leave **before** the bound: the decoder leaves when the
   position has passed the body's end, the writer when its residual lanes fit the
   final batch, and a refusal leaves at the position that refused;
+* `Exit e` is the predicate on the states the loop may leave in, and it **names
+  every exit the body takes**.  Its default is the one block `exitBlock` names; a
+  loop that also refuses — the decoder leaves at `while.end35` on success and at
+  `cleanup41` on a refusal — sets `Exit` to the disjunction of the targets and
+  makes `atBound` the disjunction of their tests.  One instance then covers both
+  exits and `step_exit` is proved once, at the disjunctive test, rather than a
+  second instance whose boundary at budget zero has to be argued separately;
 * `step_exit` and `step_loop` are one iteration in its two arms.
 
 One iteration is the **run** between successive visits to the head, not a single
@@ -236,7 +243,9 @@ budget and not `N - c` itself. -/
 structure BoundLoop (calls : Calls) (f : Function) where
   /-- The block the loop's iteration is entered at: the loop's test block. -/
   head : String
-  /-- The block the loop leaves for. -/
+  /-- The block a one-exit loop leaves for.  `Exit` below defaults to the states at
+  this block; an instance with several exit targets leaves this as the success
+  target and overrides `Exit` with their disjunction. -/
   exitBlock : String
   /-- The bound the carried counter is compared against: a term of the caller's
   arguments. -/
@@ -247,14 +256,20 @@ structure BoundLoop (calls : Calls) (f : Function) where
   `head` carrying the counter `c`. -/
   Inv : Nat → State → Nat → Prop
   /-- The head's exit test: the branch value its terminator reads, at the state
-  and the carried counter. -/
+  and the carried counter.  An instance that leaves in several ways makes this
+  the disjunction of their tests, so one `step_exit` covers all of them. -/
   atBound : State → Nat → Bool
+  /-- The states the loop may leave in.  The default is the one block `exitBlock`
+  names; an instance with a success target and a refusal target sets it to their
+  disjunction.  Making the exit a predicate rather than a block name is what lets
+  `atBound`'s disjunctive test and `Exit` together name every way out. -/
+  Exit : State → Prop := fun e => e.pc = exitBlock
   /-- What the state the loop leaves satisfies. -/
   ExitWord : State → Prop
-  /-- The exit arm: the head's test holds, and the iteration reaches `exitBlock`
-  within `cost` control steps. -/
+  /-- The exit arm: the head's test holds, and the iteration reaches a state that
+  `Exit` admits within `cost` control steps. -/
   step_exit : ∀ (r : Nat) (s : State) (c : Nat), Inv r s c → atBound s c = true →
-    ∃ (e : State) (j : Nat), j ≤ cost ∧ e.pc = exitBlock ∧ ExitWord e ∧
+    ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧ ExitWord e ∧
       ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
   /-- The back edge: the test fails, the iteration re-enters `head` within `cost`
   control steps carrying a strictly larger counter, and spends one unit of the
@@ -269,13 +284,14 @@ structure BoundLoop (calls : Calls) (f : Function) where
   budget : ∀ (r : Nat) (s : State) (c : Nat), Inv r s c → c ≤ N ∧ N ≤ c + r
 
 /-- **The induction.**  From an invariant state with `r` iterations of budget, the
-run reaches the exit block within `(r + 1) * cost` control steps.  The recursion
-consumes the two arms only; the bound appears as the budget, and the counter's
-strict advance is what lets the budget fall by one per iteration however far the
-counter jumps. -/
+run reaches an exit state — one `Exit` admits — within `(r + 1) * cost` control
+steps.  The recursion consumes the two arms only; the bound appears as the budget,
+and the counter's strict advance is what lets the budget fall by one per iteration
+however far the counter jumps.  The exit stays a predicate rather than a block
+name, so a loop with a success target and a refusal target is one induction. -/
 theorem BoundLoop.run_from (L : BoundLoop calls f) :
     ∀ (r : Nat) (s : State) (c : Nat), L.Inv r s c →
-      ∃ (e : State) (j : Nat), j ≤ (r + 1) * L.cost ∧ e.pc = L.exitBlock ∧
+      ∃ (e : State) (j : Nat), j ≤ (r + 1) * L.cost ∧ L.Exit e ∧
         L.ExitWord e ∧
         ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
   | 0, s, c, h => by
@@ -308,7 +324,7 @@ a record's budget over this loop is a function of `(args, mem)` and not of the t
 count the run happened to take. -/
 theorem BoundLoop.run (L : BoundLoop calls f) (s : State) (c : Nat)
     (h : L.Inv L.N s c) (k : Nat) :
-    ∃ (e : State) (j : Nat), j ≤ (L.N + 1) * L.cost ∧ e.pc = L.exitBlock ∧
+    ∃ (e : State) (j : Nat), j ≤ (L.N + 1) * L.cost ∧ L.Exit e ∧
       L.ExitWord e ∧
       runFuel calls (j + k) f s = runFuel calls k f e := by
   obtain ⟨e, j, hj, hpc, hexit, hrun⟩ := L.run_from L.N s c h
@@ -321,12 +337,14 @@ completed outcome from the exit state therefore has one from the head at
 record state its completion at `Γ.budget args mem` — a term of the arguments —
 instead of at a number only the run knows.
 
-`hcont` is the exit block's trace: the caller's completion from the state the loop
-leaves, at its own fuel.  Only a *completed* continuation can be lifted, because
-the exit is a jump and `runFuel` past it executes the next block. -/
+`hcont` is the exit state's trace: the caller's completion from any state `Exit`
+admits, at its own fuel.  Only a *completed* continuation can be lifted, because
+the exit is a jump and `runFuel` past it executes the next block.  An instance
+with several exits states this continuation once and case-splits at `Exit`, and
+that is the whole of the case split — the induction above does not see it. -/
 theorem BoundLoop.run_at (L : BoundLoop calls f) (s : State) (c : Nat)
     (h : L.Inv L.N s c) (k : Nat) {o : Outcome}
-    (hcont : ∀ (e : State), e.pc = L.exitBlock → L.ExitWord e →
+    (hcont : ∀ (e : State), L.Exit e → L.ExitWord e →
         runFuel calls k f e = some o) :
     runFuel calls ((L.N + 1) * L.cost + k) f s = some o := by
   obtain ⟨e, j, hj, hpc, hexit, hrun⟩ := L.run s c h k

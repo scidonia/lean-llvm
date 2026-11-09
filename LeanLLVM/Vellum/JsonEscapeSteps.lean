@@ -335,6 +335,24 @@ The store regions are also stated apart from the body, because a decode that wro
 over its own input would satisfy the byte claims while destroying the caller's
 document.
 
+**Four further exclusions were added by executing the body, not by reading it.**
+A staging the earlier `pre` admitted was run on the pinned body and the `post` was
+false at it: `tab` inside the destination extent (the raw copy's sixty-four-byte
+write reaches the table entry a later `\"` escape reads), `err` inside it (the copy
+overwrites the offset the `post` claims unchanged), `err` and `xj` the same slot
+(the trailing cursor store overwrites the caller's offset), and `xj` inside the
+claimed prefix (the cursor store is the last write of every successful path, so it
+overwrites decoded bytes and no ordering saves the pair).  The clauses are stated
+over the extents the body touches — `tab + 256`, `err + 8`, `xj + 8` and
+`dst + n + 64` — rather than the base pointers, because an overlap of the bases
+alone changes nothing; what matters is whether the written window reaches a region
+the body later reads or the `post` reads back.  The falsifying stagings are the
+rows of `tests/escape-expand-matrix.lean`.  Strengthening a `pre` is safe for a
+consumer that proves `pre → …`, but every place that *constructs* this `pre` must
+discharge the new clauses: the pipeline's call site does so when it stages the
+destination, the table, the offset slot and the cursor as disjoint extents, and a
+caller that does not is outside the record rather than silently admitted.
+
 **`pos0` stays in the boundary.** The list clause is a relation between the
 caller's list and the body: every entry of `ps` lies inside `[pos0, pos0 + n)`, and
 `ps` with `pos0` subtracted is exactly the body's `escapePositions`. That covers any
@@ -396,7 +414,14 @@ def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
       HasBytes mem dst (n + 64) ∧
       -- and the store regions apart from the body and from the list
       (b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b) ∧
-      (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp)
+      (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp) ∧
+      -- the table, the offset slot and the cursor, apart from the destination
+      -- extent: each of these rows was executed on the pinned body at a staging
+      -- the earlier `pre` admitted, and the `post` was false at it
+      (tab + 256 ≤ dst ∨ dst + n + 64 ≤ tab) ∧
+      (err + 8 ≤ dst ∨ dst + n + 64 ≤ err) ∧
+      (err + 8 ≤ xj ∨ xj + 8 ≤ err) ∧
+      (xj + 8 ≤ dst ∨ dst + n + 64 ≤ xj)
   post := fun args mem _ o =>
     match o with
     | .ret (some v) m => escapeExpandPost args mem m v

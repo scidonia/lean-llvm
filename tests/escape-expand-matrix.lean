@@ -109,7 +109,11 @@ def Row.admitted (r : Row) : Bool :=
   (readBytes r.mem (r.b + r.n) 32).isSome &&
   (readBytes r.mem r.dst (r.n + 64)).isSome &&
   (decide (r.b + r.n + 32 ≤ r.dst) || decide (r.dst + r.n + 64 ≤ r.b)) &&
-  (decide (r.xp + 4 * r.ps.length ≤ r.dst) || decide (r.dst + r.n + 64 ≤ r.xp))
+  (decide (r.xp + 4 * r.ps.length ≤ r.dst) || decide (r.dst + r.n + 64 ≤ r.xp)) &&
+  (decide (r.tab + 256 ≤ r.dst) || decide (r.dst + r.n + 64 ≤ r.tab)) &&
+  (decide (r.err + 8 ≤ r.dst) || decide (r.dst + r.n + 64 ≤ r.err)) &&
+  (decide (r.err + 8 ≤ r.xj) || decide (r.xj + 8 ≤ r.err)) &&
+  (decide (r.xj + 8 ≤ r.dst) || decide (r.dst + r.n + 64 ≤ r.xj))
 
 /-! ### The post at the row's witnesses -/
 
