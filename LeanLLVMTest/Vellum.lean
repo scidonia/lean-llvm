@@ -9344,3 +9344,58 @@ it holds without a carrier: `propext` and `Quot.sound`, and nothing from
 /-- info: 'LeanLLVM.Vellum.setLanes_batchChain_eight' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.setLanes_batchChain_eight
+
+/-! ### The escape list's entry trace
+
+`JsonEscapeListLanes` identifies the loop's word with the position rule;
+`JsonEscapeListBody` proves the three entry blocks' instruction runs and their
+control steps, and states the seed equality.  The pins are read here because this
+file is compiled from source on every evidence run. -/
+
+/-- info: 'LeanLLVM.Vellum.setLanes_specPositionWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.setLanes_specPositionWord
+
+/-- info: 'LeanLLVM.Vellum.stepWord_fixed_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stepWord_fixed_iff
+
+/-- info: 'LeanLLVM.Vellum.seed_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.seed_eq
+
+/-- info: 'LeanLLVM.Vellum.entry_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_denote
+
+/-- info: 'LeanLLVM.Vellum.ifThen_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ifThen_denote
+
+/-- info: 'LeanLLVM.Vellum.ifEnd_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ifEnd_denote
+
+/-- info: 'LeanLLVM.Vellum.entry_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.entry_step
+
+/-- info: 'LeanLLVM.Vellum.ifThen_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ifThen_step
+
+/-- info: 'LeanLLVM.Vellum.ifEnd_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ifEnd_step
+
+/-- info: 'LeanLLVM.Vellum.seed_then_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.seed_then_run
+
+/-- info: 'LeanLLVM.Vellum.seed_entry_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.seed_entry_run
+
+/-- info: 'LeanLLVM.Vellum.LRun.runFuel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.LRun.runFuel
