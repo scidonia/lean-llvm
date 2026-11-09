@@ -9645,3 +9645,17 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_masks' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_masks
+
+/-! ### The generic block evaluator, and the pos8 no-gate arm's closed blocks -/
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineBlockEval.entry_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineBlockEval.entry_denote
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineBlockEval.cleanup_fromIfThen' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineBlockEval.cleanup_fromIfThen
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineBlockEval.cleanup_fromIfEnd' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineBlockEval.cleanup_fromIfEnd
