@@ -9619,3 +9619,29 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.escape_expand_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.escape_expand_satisfies
+
+/-! ### The assembled pipeline's fixture, census and call environment -/
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineBody' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineBody
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.Γ_entry_pos8at' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.Γ_entry_pos8at
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.envForPos8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.envForPos8
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.satisfies_calls_pos8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.satisfies_calls_pos8
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls
+
+/-- info: 'LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_masks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.JsonPipelineIR.pipelineCalls_masks
