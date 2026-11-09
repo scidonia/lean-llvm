@@ -37,24 +37,20 @@ including the caller's own cells that `EntryState` already binds.  Two
 consecutive traces therefore state their states over different environment
 lists, and no trace applies to the state the previous block leaves.  What two
 such states do share is what the block reads, so the bridge is stated that way:
-`instrNames`/`instrsNames` are a block's read set, `AgreeOn ns t s` is "same
-memory, allocator base and predecessor, and the same value for every name in
-`ns`", and the transport facts are `evalOperand_agree`,
-`operands`-level `evalOperands_agree`, `operand_agree_of`, and the `AgreeOn`
-constructors for each state operation `evalInstr` performs (`bind`,
-`withMemBytes`, `call`, `callVoid`, `alloca`).  The agreement is over the block's
-own read set and not over all names, so it is discharged from the staging rather
-than from a promise no staging makes.
+`AgreeOn ns t s` is `State.AgreeOn` — "same memory, allocator base and
+predecessor, and the same value for every name in `ns`" — instantiated at the
+read set `instrsUses` computes for a block, and the transport is
+`denoteCode_transport`: a completed trace at one state gives a completed one at
+any state that agrees on that read set.  The per-instruction step behind it
+(`evalInstr_agree`) and its preservation lemmas live beside the semantics, in
+`LeanLLVM.Semantics`, because a congruence over environments is a fact about
+`evalInstr` rather than about this pipeline; the `AgreeOn` constructors kept here
+are the names this module's axiom pins read.
 
-**What is not here, and its exact obstacle.**  The per-instruction transport —
-"`evalInstr` at `t` succeeds where it does at `s`, and the results agree" — is
-the lemma that turns those pieces into `denoteCode` transport, and it is not
-proved.  Its shape is fixed and recorded at the note before the control steps;
-what blocks it is that `select`, `store` and `gep` branch on a `Bool`-valued
-`decide` condition that `split` does not split, and that `call`, `callVoid` and
-`phi` bind a `Value` whose `CallOutcome`/`phi` shape must be named before
-`AgreeOn.bind` applies.  With that lemma in place the three `PipelineBodyFacts`
-fields follow in the order `loop`, `seed`, `exit`.
+**What is not here.**  The three `PipelineBodyFacts` fields — the loop
+instance, the seed and the tail.  The transport that used to be their missing
+prerequisite is now in the tree; what remains for each field is the staging it
+carries, not a missing lemma.
 -/
 import LeanLLVM.Vellum.JsonPipelineBlockEval
 import LeanLLVM.Vellum.JsonPipelineRefine
@@ -1097,20 +1093,15 @@ the allocator base and the predecessor field directly.  So the transport fact is
   agree in the same way.
 
 That is the fact carried here, with the agreement stated over the block's own
-read set — `instrsNames` — and not over all names, so it is discharged from the
+read set — `instrsUses` — and not over all names, so it is discharged from the
 staging's read set rather than from a promise no staging makes.  The relation is
 `AgreeOn`; `denoteCode_transport` is the form a trace consumer uses: a completed
 denotation at the canonical state transports to any state that agrees with it,
 and the result agrees with the trace's outcome. -/
 
-/-- The register names an operand reads. -/
-def operandNames : Operand → List String
-  | .reg n => [n]
-  | .imm _ => []
-
-/-- The register names an argument list reads. -/
-def operandsNames (args : List (Ty × Operand)) : List String :=
-  args.flatMap fun x => operandNames x.2
+/-- The register names an operand reads: `Operand.regs`, at the name this
+module's read-set projection states it at. -/
+abbrev operandNames (op : Operand) : List String := op.regs
 
 /-- The operands an instruction evaluates, in evaluation order. -/
 def instrOperands : Instr → List Operand
@@ -1141,154 +1132,69 @@ names every incoming operand because which one is read depends on the predecesso
 field, which `AgreeOn` carries equal. -/
 def instrNames (i : Instr) : List String := (instrOperands i).flatMap operandNames
 
-/-- The register names a straight-line instruction list reads. -/
-def instrsNames : List Instr → List String
-  | [] => []
-  | i :: is => instrNames i ++ instrsNames is
-
 /-- An operand's names are among its instruction's read set. -/
 theorem operand_mem_reads {i : Instr} {op : Operand} (hm : op ∈ instrOperands i)
     {n : String} (hn : n ∈ operandNames op) : n ∈ instrNames i :=
   List.mem_flatMap.mpr ⟨op, hm, hn⟩
 
-/-- **Two states agree on what a block reads.**  Same memory, allocator base and
-predecessor, and the same value for every register name in the read set.  The
-program counter is not part of it: `denoteCode` does not read it. -/
-def AgreeOn (ns : List String) (t s : State) : Prop :=
-  t.mem = s.mem ∧ t.next = s.next ∧ t.pre = s.pre ∧
-    ∀ n ∈ ns, lookupName t.env n = lookupName s.env n
+/-- **Two states agree on what a block reads.**  `State.AgreeOn` names the
+relation and `State.AgreeOn.bind` and its siblings carry its preservation: a
+congruence over environments is a fact about `evalInstr`, so it is stated beside
+the semantics (`LeanLLVM.Semantics`) and instantiated here at the read set a
+block actually has. -/
+abbrev AgreeOn (ns : List String) (t s : State) : Prop := State.AgreeOn ns t s
 
-theorem AgreeOn.symm {ns : List String} {t s : State} (h : AgreeOn ns t s) :
-    AgreeOn ns s t :=
-  ⟨h.1.symm, h.2.1.symm, h.2.2.1.symm, fun n hn => (h.2.2.2 n hn).symm⟩
+/-- The predecessor selector's operand is one of the incoming list's. -/
+theorem phiIncoming_mem {p : String} {inc : List (String × Operand)} {op : Operand}
+    (h : phiIncoming p inc = some op) : op ∈ inc.map (·.2) :=
+  LeanLLVM.phiIncoming_mem h
 
-theorem AgreeOn.mono {ns' ns : List String} {t s : State}
-    (hsub : ∀ n ∈ ns', n ∈ ns) (h : AgreeOn ns t s) : AgreeOn ns' t s :=
-  ⟨h.1, h.2.1, h.2.2.1, fun n hn => h.2.2.2 n (hsub n hn)⟩
-
-/-- Binding one cell on both sides preserves agreement. -/
+/-- The preservation facts, at the names this module and its axiom pins read.
+The proofs are the fragment's. -/
 theorem AgreeOn.bind {ns : List String} {t s : State} {d : String} {v : Value}
-    (h : AgreeOn ns t s) : AgreeOn ns (t.bind d v) (s.bind d v) := by
-  obtain ⟨hm, hn, hp, hl⟩ := h
-  refine ⟨hm, hn, hp, fun n hn' => ?_⟩
-  simp only [State.bind, lookupName]
-  by_cases hdn : d = n
-  · rw [ite_eq_left hdn, ite_eq_left hdn]
-  · rw [ite_eq_right hdn, ite_eq_right hdn]
-    exact hl n hn'
+    (h : AgreeOn ns t s) : AgreeOn ns (t.bind d v) (s.bind d v) :=
+  State.AgreeOn.bind h
 
-/-- The memory a store writes, at the same address and the same bytes on both
-sides: the write's byte list is the value's, so the equality of the memories is
-the equality of what was there. -/
-theorem AgreeOn.withMemBytes {ns : List String} {t s : State} {addr : Nat}
-    {bs : List UInt8} (h : AgreeOn ns t s) :
-    AgreeOn ns { t with mem := writeBytes t.mem addr bs }
-              { s with mem := writeBytes s.mem addr bs } :=
-  ⟨by rw [h.1], h.2.1, h.2.2.1, h.2.2.2⟩
-
-/-- The state a call leaves: a bound result, its memory, its allocator base. -/
 theorem AgreeOn.call {ns : List String} {t s : State} {d : String} {r : CallOutcome}
     (h : AgreeOn ns t s) :
     AgreeOn ns { t with env := (d, r.ret) :: t.env, mem := r.mem, next := r.next }
-              { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next } := by
-  obtain ⟨hm, hn, hp, hl⟩ := h
-  refine ⟨rfl, rfl, hp, fun n hn' => ?_⟩
-  simp only [lookupName]
-  by_cases hdn : d = n
-  · rw [ite_eq_left hdn, ite_eq_left hdn]
-  · rw [ite_eq_right hdn, ite_eq_right hdn]
-    exact hl n hn'
+      { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next } :=
+  State.AgreeOn.call h
 
-/-- The state a void call leaves: memory and allocator base only. -/
 theorem AgreeOn.callVoid {ns : List String} {t s : State} {r : CallOutcome}
     (h : AgreeOn ns t s) :
     AgreeOn ns { t with mem := r.mem, next := r.next }
-              { s with mem := r.mem, next := r.next } :=
-  ⟨rfl, rfl, h.2.2.1, h.2.2.2⟩
+      { s with mem := r.mem, next := r.next } :=
+  State.AgreeOn.callVoid h
 
-/-- The state an `alloca` leaves: a pointer to the allocator base, and the base
-bumped by the size.  The two pointers are equal because the bases are. -/
 theorem AgreeOn.alloca {ns : List String} {t s : State} {d : String} {ty : Ty}
     (h : AgreeOn ns t s) :
     AgreeOn ns
       { t with env := (d, .ptr t.next) :: t.env, next := t.next + ty.sizeBytes }
-      { s with env := (d, .ptr s.next) :: s.env, next := s.next + ty.sizeBytes } := by
-  obtain ⟨hm, hn, hp, hl⟩ := h
-  refine ⟨hm, ?_, hp, fun n hn' => ?_⟩
-  · rw [hn]
-  · simp only [lookupName]
-    by_cases hdn : d = n
-    · subst hdn
-      rw [ite_eq_left rfl, ite_eq_left rfl, hn]
-    · rw [ite_eq_right hdn, ite_eq_right hdn]
-      exact hl n hn'
+      { s with env := (d, .ptr s.next) :: s.env, next := s.next + ty.sizeBytes } :=
+  State.AgreeOn.alloca h
 
-/-- **An operand reads the same at two states that agree on its names.** -/
 theorem evalOperand_agree {t s : State} {op : Operand}
     (h : ∀ n ∈ operandNames op, lookupName t.env n = lookupName s.env n) :
-    evalOperand t op = evalOperand s op := by
-  cases op with
-  | reg n => simpa only [evalOperand] using h n (by simp only [operandNames]; exact List.mem_singleton_self n)
-  | imm c => rfl
-
-/-- An operand's reads at two states that agree on the block's read set. -/
-theorem operand_agree_of {t s : State} {ns : List String} {i : Instr}
-    (op : Operand)
-    (hlook : ∀ n ∈ ns, lookupName t.env n = lookupName s.env n)
-    (hread : ∀ n ∈ instrNames i, n ∈ ns)
-    (hm : op ∈ instrOperands i) :
     evalOperand t op = evalOperand s op :=
-  evalOperand_agree fun n hn => hlook n (hread n (operand_mem_reads hm hn))
+  LeanLLVM.evalOperand_agree h
 
-/-- Arguments read the same at two states that agree on every argument's names. -/
 theorem evalOperands_agree {t s : State} :
     ∀ (args : List (Ty × Operand)),
       (∀ op ∈ args.map (·.2), evalOperand t op = evalOperand s op) →
-      evalOperands t args = evalOperands s args
-  | [], _ => rfl
-  | (_, op) :: rest, h => by
-      have h1 : evalOperand t op = evalOperand s op := h op (by simp)
-      have h2 : evalOperands t rest = evalOperands s rest :=
-        evalOperands_agree rest fun q hq => h q (by
-          obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hq
-          exact List.mem_map.mpr ⟨a, List.mem_cons_of_mem _ ha, rfl⟩)
-      simp only [evalOperands, h1, h2]
+      evalOperands t args = evalOperands s args :=
+  LeanLLVM.evalOperands_agree
 
-/-- The predecessor selector's operand is one of the incoming list's. -/
-theorem phiIncoming_mem {p : String} {inc : List (String × Operand)} {op : Operand}
-    (h : phiIncoming p inc = some op) : op ∈ inc.map (·.2) := by
-  induction inc with
-  | nil => simp [phiIncoming] at h
-  | cons x rest ih =>
-      obtain ⟨l, o⟩ := x
-      simp only [phiIncoming] at h
-      split at h
-      · cases h
-        simp
-      · exact List.mem_cons_of_mem _ (ih h)
-
-/-! ### What the transport lemma still needs
-
-`evalInstr`'s per-constructor transport is the lemma the bridge is missing, and
-its shape is fixed by the two facts above: rewrite the operands by
-`operand_agree_of` (and the arguments by `evalOperands_agree`), rewrite `mem`,
-`next` and `pre` by the relation, then split the run's match and rebuild
-`AgreeOn` from the branch's state operation (`AgreeOn.bind`, `withMemBytes`,
-`call`, `callVoid`, `alloca`).  The pattern closes the operand-only `bind` constructors
-as written — `binop`, `icmp`, `icmpPtr`, `trunc`, `zext` and `sext` were taken
-through it and compile — and the rest need one extra step each, recorded here so
-the next writer starts from the obstacle rather than from it:
-
-* `select`, `store` and `gep` branch on a `Bool`-valued `decide` condition
-  (`if decide p then … else …`, displayed as `Bool.rec … (decide p)`), which
-  `split` does not split; the branch must be taken by `by_cases` on `p` and the
-  `ite` rewritten by `ite_eq_left`/`ite_eq_right` at the branch's own terms.
-* `call`, `callVoid` and `phi` bind or select a value whose type is `Value`, so
-  the transport's conclusion needs the outcome's fields named (`CallOutcome.ret`
-  is not syntactically an `int`) before `AgreeOn.bind` applies.
-
-A `split`-only proof therefore cannot be total; the two extra steps above are
-what a complete lemma needs, and they are per-constructor, not generic. -/
+/-- **A block trace transports to any state that agrees on the block's read
+set.**  A completed `denoteCode` at one state gives a completed one at a state
+that agrees on the names the block reads — `instrsUses` — and the two outcomes
+agree in the same way.  This is the form a trace consumer uses: the builders
+prepend every register a block reads, so the state the previous block leaves is
+never syntactically the state the next trace is stated at. -/
+theorem denoteCode_transport {calls : Calls} {is : List Instr} {s s' t : State}
+    (h : AgreeOn (instrsUses is) s t) (hs : denoteCode calls is s = some s') :
+    ∃ t', denoteCode calls is t = some t' ∧ AgreeOn (instrsUses is) s' t' :=
+  denoteCode_agree calls is h (fun _ hn => hn) hs
 
 /-! ### The control steps
 

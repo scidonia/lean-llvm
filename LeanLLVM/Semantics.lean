@@ -1663,4 +1663,858 @@ theorem runFuel_init_setPre {calls : Calls} {f : Function} (hf : f.phiFree = tru
       runFuel calls n f (initState f args) :=
   runFuel_setPre hf n (initState f args) q
 
+section Agreement
+
+set_option autoImplicit false
+
+/-! ### Agreement on a read set, and instruction transport
+
+`evalInstr` reads a state only through `lookupName`, the memory, the allocator
+base and the predecessor.  Two states that agree on those — the lookups at every
+name in a read set, the other three exactly — execute every instruction the same
+way, and the results agree in the same way.  That is the lemma a caller uses to
+move a block trace stated over one environment to another environment that binds
+the registers the block reads; it is stated here, beside `evalInstr`, because the
+case analysis is the instruction grammar's and not any one caller's.
+
+* `State.AgreeOn ns s t` is the relation, over a list of register names.
+* `Instr.uses` is the read set an instruction can consult — the fragment's own
+  computation, so no consumer re-derives one.
+* `evalInstr_agree` is the per-instruction transport; `denoteCode_agree` below is
+  its straight-line-list form.
+
+Two corners of `evalInstr` need more than splitting the instruction's own shape,
+and they are recorded here because every consumer meets them:
+
+* `select`, `store` and `gep` decide a branch on a *value* read from an operand
+  (`if bit = 1`, the shape test inside `storeValue`, the sign test inside `gep`).
+  Once the operand evaluations are rewritten to the second state, the run's match
+  still tests literals: `select`'s condition width and lane width against `1`,
+  `storeValue`'s lane shape.  A `split` cannot reduce a match whose scrutinee's
+  width is a variable, so the width is enumerated to `0`, `1` and at least `2`
+  (`select_of_intBit`, `select_of_lanes`) and the residual shape tests are split
+  one at a time.  The instruction's own shape does not determine the branch.
+* `call`, `callVoid` and `phi` bind a `Value` whose shape is not syntactically
+  an `int` or a `ptr` (`CallOutcome.ret`, the operand `phiIncoming` selects), so
+  `s.bind d r.ret` is not a term the relation can be rebuilt from directly.
+  Name the outcome's fields first: `State.AgreeOn.call`, `.callVoid` and `.bind`
+  are applied to the fields, never to the bare result. -/
+
+/-- Every one-bit value is zero or one: the case split a data-dependent `select`
+needs, because the instruction's own test is `bit = 1` and its other arm is
+`bit = 0`, so the two values exhaust the condition. -/
+private theorem bitVec1_eq_zero_or_one (b : BitVec 1) : b = 0 ∨ b = 1 := by
+  have hb : b = BitVec.ofNat 1 b.toNat := by
+    rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
+  rw [hb]
+  have hlt : b.toNat = 0 ∨ b.toNat = 1 := by omega
+  rcases hlt with h | h <;> rw [h] <;> decide
+
+/-- **Two states agree on a read set.**  Same memory, allocator base and
+predecessor, and the same value for every register name in the set.  The program
+counter is not part of it: `denoteCode` does not read it. -/
+def State.AgreeOn (ns : List String) (s t : State) : Prop :=
+  s.mem = t.mem ∧ s.next = t.next ∧ s.pre = t.pre ∧
+    ∀ n ∈ ns, lookupName s.env n = lookupName t.env n
+
+theorem State.AgreeOn.refl (ns : List String) (s : State) : State.AgreeOn ns s s :=
+  ⟨rfl, rfl, rfl, fun _ _ => rfl⟩
+
+theorem State.AgreeOn.symm {ns : List String} {s t : State} (h : State.AgreeOn ns s t) :
+    State.AgreeOn ns t s :=
+  ⟨h.1.symm, h.2.1.symm, h.2.2.1.symm, fun n hn => (h.2.2.2 n hn).symm⟩
+
+theorem State.AgreeOn.mono {ns' ns : List String} {s t : State}
+    (hsub : ∀ n ∈ ns', n ∈ ns) (h : State.AgreeOn ns s t) : State.AgreeOn ns' s t :=
+  ⟨h.1, h.2.1, h.2.2.1, fun n hn => h.2.2.2 n (hsub n hn)⟩
+
+/-- Binding one cell on both sides preserves agreement. -/
+theorem State.AgreeOn.bind {ns : List String} {s t : State} {d : String} {v : Value}
+    (h : State.AgreeOn ns s t) : State.AgreeOn ns (s.bind d v) (t.bind d v) := by
+  obtain ⟨hm, hn, hp, hl⟩ := h
+  refine ⟨hm, hn, hp, fun n hn' => ?_⟩
+  simp only [State.bind, lookupName]
+  by_cases hdn : d = n
+  · rw [ite_eq_left hdn, ite_eq_left hdn]
+  · rw [ite_eq_right hdn, ite_eq_right hdn]
+    exact hl n hn'
+
+/-- The memory a store writes, at the same address and the same bytes on both
+sides: the write's byte list is the value's, so the equality of the memories is
+the equality of what was there. -/
+theorem State.AgreeOn.withMemBytes {ns : List String} {s t : State} {addr : Nat}
+    {bs : List UInt8} (h : State.AgreeOn ns s t) :
+    State.AgreeOn ns { s with mem := writeBytes s.mem addr bs }
+      { t with mem := writeBytes t.mem addr bs } :=
+  ⟨by rw [h.1], h.2.1, h.2.2.1, h.2.2.2⟩
+
+/-- The state a call leaves: a bound result, its memory, its allocator base.  The
+result's fields are named by the caller, because `CallOutcome.ret` is not
+syntactically a value of the instruction's type. -/
+theorem State.AgreeOn.call {ns : List String} {s t : State} {d : String}
+    {r : CallOutcome} (h : State.AgreeOn ns s t) :
+    State.AgreeOn ns { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next }
+      { t with env := (d, r.ret) :: t.env, mem := r.mem, next := r.next } := by
+  obtain ⟨hm, hn, hp, hl⟩ := h
+  refine ⟨rfl, rfl, hp, fun n hn' => ?_⟩
+  simp only [lookupName]
+  by_cases hdn : d = n
+  · rw [ite_eq_left hdn, ite_eq_left hdn]
+  · rw [ite_eq_right hdn, ite_eq_right hdn]
+    exact hl n hn'
+
+/-- The state a void call leaves: memory and allocator base only. -/
+theorem State.AgreeOn.callVoid {ns : List String} {s t : State} {r : CallOutcome}
+    (h : State.AgreeOn ns s t) :
+    State.AgreeOn ns { s with mem := r.mem, next := r.next }
+      { t with mem := r.mem, next := r.next } :=
+  ⟨rfl, rfl, h.2.2.1, h.2.2.2⟩
+
+/-- The state an `alloca` leaves: a pointer to the allocator base, and the base
+bumped by the size.  The two pointers are equal because the bases are. -/
+theorem State.AgreeOn.alloca {ns : List String} {s t : State} {d : String} {ty : Ty}
+    (h : State.AgreeOn ns s t) :
+    State.AgreeOn ns
+      { s with env := (d, .ptr s.next) :: s.env, next := s.next + ty.sizeBytes }
+      { t with env := (d, .ptr t.next) :: t.env, next := t.next + ty.sizeBytes } := by
+  obtain ⟨hm, hn, hp, hl⟩ := h
+  refine ⟨hm, ?_, hp, fun n hn' => ?_⟩
+  · rw [hn]
+  · simp only [lookupName]
+    by_cases hdn : d = n
+    · subst hdn
+      rw [ite_eq_left rfl, ite_eq_left rfl, hn]
+    · rw [ite_eq_right hdn, ite_eq_right hdn]
+      exact hl n hn'
+
+/-- **An operand reads the same at two states that agree on its names.** -/
+theorem evalOperand_agree {s t : State} {op : Operand}
+    (h : ∀ n ∈ Operand.regs op, lookupName s.env n = lookupName t.env n) :
+    evalOperand s op = evalOperand t op := by
+  cases op with
+  | reg n =>
+      simpa only [evalOperand] using h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)
+  | imm c => rfl
+
+/-- An operand the instruction evaluates reads the same at two states that agree
+on the instruction's read set. -/
+theorem evalOperand_agree_of_uses {s t : State} {i : Instr} {op : Operand}
+    (hl : ∀ n ∈ Instr.uses i, lookupName s.env n = lookupName t.env n)
+    (hsub : ∀ n ∈ Operand.regs op, n ∈ Instr.uses i) :
+    evalOperand s op = evalOperand t op :=
+  evalOperand_agree fun n hn => hl n (hsub n hn)
+
+/-- Arguments read the same at two states that agree on every argument's names. -/
+theorem evalOperands_agree {s t : State} :
+    ∀ (args : List (Ty × Operand)),
+      (∀ op ∈ args.map (·.2), evalOperand s op = evalOperand t op) →
+      evalOperands s args = evalOperands t args
+  | [], _ => rfl
+  | (_, op) :: rest, h => by
+      have h1 : evalOperand s op = evalOperand t op := h op (by simp)
+      have h2 : evalOperands s rest = evalOperands t rest :=
+        evalOperands_agree rest fun q hq => h q (by
+          obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hq
+          exact List.mem_map.mpr ⟨a, List.mem_cons_of_mem _ ha, rfl⟩)
+      simp only [evalOperands, h1, h2]
+
+/-- The predecessor selector's operand is one of the incoming list's. -/
+theorem phiIncoming_mem {p : String} {inc : List (String × Operand)} {op : Operand}
+    (h : phiIncoming p inc = some op) : op ∈ inc.map (·.2) := by
+  induction inc with
+  | nil => simp [phiIncoming] at h
+  | cons x rest ih =>
+      obtain ⟨l, o⟩ := x
+      simp only [phiIncoming] at h
+      split at h
+      · cases h
+        simp
+      · exact List.mem_cons_of_mem _ (ih h)
+
+/-- The operand a `phi` selects contributes its registers to the instruction's
+read set. -/
+theorem phi_operand_regs_uses {d : String} {ty : Ty} {inc : List (String × Operand)}
+    {p : String} {op : Operand} (hinc : phiIncoming p inc = some op) {n : String}
+    (hn : n ∈ Operand.regs op) : n ∈ Instr.uses (.phi d ty inc) := by
+  obtain ⟨⟨l, o⟩, hmem, ho⟩ := List.mem_map.mp (phiIncoming_mem hinc)
+  rw [← ho] at hn
+  exact List.mem_flatten.mpr ⟨o.regs, List.mem_map.mpr ⟨(l, o), hmem, rfl⟩, hn⟩
+
+/-- **A store's success and its written bytes depend only on the memory.**  The
+shape tests `storeValue` performs read the type and the value, never the state,
+so two states that agree on their memory both succeed and agree afterwards. -/
+theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Value}
+    {addr : Nat} (h : State.AgreeOn ns s t)
+    (hs : storeValue s ty v addr = some s') :
+    ∃ t', storeValue t ty v addr = some t' ∧ State.AgreeOn ns s' t' := by
+  have hm : s.mem = t.mem := h.1
+  have hn : s.next = t.next := h.2.1
+  have hp : s.pre = t.pre := h.2.2.1
+  have hl : ∀ n ∈ ns, lookupName s.env n = lookupName t.env n := h.2.2.2
+  cases ty with
+  | int w =>
+    cases v with
+    | int w' x =>
+      by_cases hw : w' = w
+      · simp only [storeValue, ite_eq_left hw] at hs
+        cases hs
+        let t' : State := { t with mem := writeBytes t.mem addr (natToBytes x.toNat ((w + 7) / 8)) }
+        refine ⟨t', ?_, ⟨by rw [hm], hn, hp, hl⟩⟩
+        simp only [storeValue, ite_eq_left hw, t']
+      · simp only [storeValue] at hs
+        rw [ite_eq_right hw] at hs
+        cases hs
+    | ptr a => simp only [storeValue] at hs; cases hs
+    | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+  | ptr =>
+    cases v with
+    | ptr a =>
+      simp only [storeValue] at hs
+      cases hs
+      let t' : State := { t with mem := writeBytes t.mem addr (natToBytes a 8) }
+      refine ⟨t', ?_, ⟨by rw [hm], hn, hp, hl⟩⟩
+      simp only [storeValue, t']
+    | int w x => simp only [storeValue] at hs; cases hs
+    | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+  | void => simp only [storeValue] at hs; cases hs
+  | vec n elem =>
+    cases elem with
+    | int w =>
+      cases v with
+      | vec n' w' lanes =>
+        by_cases hc : n' = n ∧ w' = w ∧ lanes.length = n ∧ n * w % 8 = 0
+        · simp only [storeValue, ite_eq_left hc] at hs
+          cases hs
+          let t' : State := { t with mem := writeBytes t.mem addr (natToBytes (packLanes lanes) (n * w / 8)) }
+          refine ⟨t', ?_, ⟨by rw [hm], hn, hp, hl⟩⟩
+          simp only [storeValue, ite_eq_left hc, t']
+        · simp only [storeValue] at hs
+          rw [ite_eq_right hc] at hs
+          cases hs
+      | int w' x => simp only [storeValue] at hs; cases hs
+      | ptr a => simp only [storeValue] at hs; cases hs
+    | ptr => cases v <;> simp only [storeValue] at hs <;> cases hs
+    | void => cases v <;> simp only [storeValue] at hs <;> cases hs
+    | vec n2 e2 => cases v <;> simp only [storeValue] at hs <;> cases hs
+
+
+/-- **A single-width integer condition.**  `select`'s first arm binds the
+selected operand and does not consult the result type, so this analysis serves
+every `ty`.  The condition's width is split to 0, 1 and at least 2, because the
+arm tests it against the literal 1 and the match only computes at a literal:
+below 1 and above 1 no arm applies.  The `bit` is a single bit, so a set bit
+binds `a` and a clear bit binds `b`; no other bit exists. -/
+private theorem select_of_intBit (calls : Calls) {ns : List String} {d : String}
+    {ty : Ty} {c a b : Operand} {s t s' : State} {wc : Nat} {x : BitVec wc}
+    (h : State.AgreeOn ns s t)
+    (hc : evalOperand s c = evalOperand t c)
+    (ha : evalOperand s a = evalOperand t a)
+    (hb : evalOperand s b = evalOperand t b)
+    (hcv : evalOperand t c = some (.int wc x))
+    (hs : evalInstr calls s (.select d ty c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d ty c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  simp only [evalInstr, hc, ha, hb, hcv] at hs
+  by_cases hw : wc = 1
+  · subst hw
+    rcases hva : evalOperand t a with _ | va
+    · simp [hva] at hs
+    · rcases hvb : evalOperand t b with _ | vb
+      · simp [hva, hvb] at hs
+      · rcases bitVec1_eq_zero_or_one x with hx | hx
+        · subst hx
+          simp only [hva, hvb] at hs
+          cases hs
+          exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+        · subst hx
+          simp only [hva, hvb] at hs
+          cases hs
+          exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+  · rcases wc with _ | k
+    · simp at hs
+    · rcases k with _ | j
+      · exact absurd rfl hw
+      · simp at hs
+
+/-- **A lane condition.**  At a vector-of-integer result type the second arm
+applies: the condition's width must be the literal 1, its lane count must be the
+result's, and both operands must carry the result's lane shape; the result then
+selects lane by lane.  The condition's width is split as in
+`select_of_intBit`. -/
+private theorem select_of_lanes (calls : Calls) {ns : List String} {d : String}
+    {nv wi : Nat} {c a b : Operand} {s t s' : State} {vn vw : Nat}
+    {vs : List (BitVec vw)}
+    (h : State.AgreeOn ns s t)
+    (hc : evalOperand s c = evalOperand t c)
+    (ha : evalOperand s a = evalOperand t a)
+    (hb : evalOperand s b = evalOperand t b)
+    (hcv : evalOperand t c = some (.vec vn vw vs))
+    (hs : evalInstr calls s (.select d (Ty.vec nv (Ty.int wi)) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv (Ty.int wi)) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  simp only [evalInstr, hc, ha, hb, hcv] at hs
+  rcases vw with _ | k
+  · simp at hs
+  · rcases k with _ | j
+    · by_cases hnc : vn = nv
+      · subst vn
+        rcases hva : evalOperand t a with _ | va
+        · simp [hva] at hs
+        · rcases hvb : evalOperand t b with _ | vb
+          · simp [hva, hvb] at hs
+          · rcases hla : va.vecLanes nv wi with _ | la
+            · simp [hva, hvb, hla] at hs
+            · rcases hlb : vb.vecLanes nv wi with _ | lb
+              · simp [hva, hvb, hla, hlb] at hs
+              · simp only [hva, hvb, hla, hlb] at hs
+                cases hs
+                exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+      · simp [hnc] at hs
+    · simp at hs
+
+/-- The `select` transport at a scalar integer result type. -/
+theorem select_int (calls : Calls) {ns : List String} {d : String} {wt : Nat}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.int wt) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.int wt) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.int wt) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.int wt) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at a pointer result type. -/
+theorem select_ptr (calls : Calls) {ns : List String} {d : String}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.ptr) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.ptr) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.ptr) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.ptr) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the void result type. -/
+theorem select_void (calls : Calls) {ns : List String} {d : String}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.void) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.void) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.void) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.void) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at a vector-of-integer result type. -/
+theorem select_vecI (calls : Calls) {ns : List String} {d : String} {nv wi : Nat}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.int wi)) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv (Ty.int wi)) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv (Ty.int wi)) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.int wi)) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs => exact select_of_lanes calls h hc ha hb hcv hs
+
+/-- The `select` transport at a vector-of-pointer result type. -/
+theorem select_vecP (calls : Calls) {ns : List String} {d : String} {nv : Nat}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv Ty.ptr) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv Ty.ptr) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv Ty.ptr) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv Ty.ptr) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at a vector-of-void result type. -/
+theorem select_vecV (calls : Calls) {ns : List String} {d : String} {nv : Nat}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv Ty.void) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv Ty.void) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv Ty.void) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv Ty.void) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at a nested-vector result type. -/
+theorem select_vecVv (calls : Calls) {ns : List String} {d : String} {nv n2 : Nat} {e2 : Ty}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.vec n2 e2)) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv (Ty.vec n2 e2)) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv (Ty.vec n2 e2)) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.vec n2 e2)) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- **The `select` transport.**  The result type fixes which arm can apply, so
+each shape is proved at its own type and the `ty` match inside the vector arm
+reduces definitionally. -/
+theorem select_agree (calls : Calls) {ns : List String} {d : String} {ty : Ty}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d ty c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d ty c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d ty c a b) = some t' ∧ State.AgreeOn ns s' t' := by
+  cases ty with
+  | int wt => exact select_int calls h hread hs
+  | ptr => exact select_ptr calls h hread hs
+  | void => exact select_void calls h hread hs
+  | vec nv el =>
+    cases el with
+    | int wi => exact select_vecI calls h hread hs
+    | ptr => exact select_vecP calls h hread hs
+    | void => exact select_vecV calls h hread hs
+    | vec n2 e2 => exact select_vecVv calls h hread hs
+
+/-- **Consecutive-block transport: one instruction.**  If two states agree on the
+names an instruction reads, the instruction's run succeeds at the second state
+exactly where it does at the first, and the two results agree. -/
+theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : State}
+    (h : State.AgreeOn ns s t) (hread : ∀ n ∈ Instr.uses i, n ∈ ns)
+    {s' : State} (hs : evalInstr calls s i = some s') :
+    ∃ t', evalInstr calls t i = some t' ∧ State.AgreeOn ns s' t' := by
+  have hm : s.mem = t.mem := h.1
+  have hn : s.next = t.next := h.2.1
+  have hp : s.pre = t.pre := h.2.2.1
+  have hl : ∀ n ∈ Instr.uses i, lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  cases i with
+  | binop d bop w a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | icmp d pred w a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | icmpPtr d pred a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    rcases hva : evalOperand t a with _ | va
+    · simp [hva] at hs
+    · rcases hvb : evalOperand t b with _ | vb
+      · simp [hva, hvb] at hs
+      · cases va with
+        | ptr x =>
+          cases vb with
+          | ptr y =>
+            cases hr : evalICmpPtr pred x y with
+            | none => simp [hva, hvb, hr] at hs
+            | some r =>
+              simp only [hva, hvb, hr, Option.map_some, Option.some.injEq] at hs
+              cases hs
+              exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+          | int w z => simp [hva, hvb] at hs
+          | vec n w l => simp [hva, hvb] at hs
+        | int w z => simp [hva, hvb] at hs
+        | vec n w l => simp [hva, hvb] at hs
+  | select d ty c a b =>
+    exact select_agree calls h hread hs
+  | trunc d wIn wOut v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | zext d wIn wOut v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | sext d wIn wOut v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | alloca d ty align =>
+    simp only [evalInstr, Option.some.injEq] at hs
+    cases hs
+    exact ⟨_, by simp only [evalInstr], State.AgreeOn.alloca h⟩
+  | load d ty p =>
+    have hp' := evalOperand_agree_of_uses hl (op := p) (by
+      intro n hn'; cases p <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hp', hm] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | store ty v p =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    have hp' := evalOperand_agree_of_uses hl (op := p) (by
+      intro n hn'; cases p <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv, hp'] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs)
+      | (obtain ⟨t', hst, hag⟩ := storeValue_agree h hs
+         exact ⟨t', by simp [evalInstr, *], hag⟩)
+  | gep d elemTy base off =>
+    have hbase := evalOperand_agree_of_uses hl (op := base) (by
+      intro n hn'; cases base <;> simp_all [Instr.uses, Operand.regs])
+    have hoff := evalOperand_agree_of_uses hl (op := off) (by
+      intro n hn'; cases off <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hbase, hoff] at hs
+    rcases hbv : evalOperand t base with _ | vb
+    · simp [hbv] at hs
+    · rcases hov : evalOperand t off with _ | vo
+      · simp [hbv, hov] at hs
+      · cases vb with
+        | int wb y => simp [hbv, hov] at hs
+        | vec n w l => simp [hbv, hov] at hs
+        | ptr addr =>
+          cases vo with
+          | ptr z => simp [hbv, hov] at hs
+          | vec n w l => simp [hbv, hov] at hs
+          | int wi n =>
+            by_cases hpos : (BitVec.signExtend 64 n).toNat < 2 ^ 63
+            · simp only [hbv, hov, hpos] at hs
+              cases hs
+              exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+            · by_cases hneg :
+                (2 ^ 64 - (BitVec.signExtend 64 n).toNat) * elemTy.sizeBytes ≤ addr
+              · simp only [hbv, hov, hpos, hneg] at hs
+                cases hs
+                exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+              · simp [hbv, hov, hpos, hneg] at hs
+  | icmpVec d pred n w a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n' hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n' hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | binopVec d bop n w a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n' hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n' hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | bitcastMask d n v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n' hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | extractelement d n w v idx =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n' hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    have hidx := evalOperand_agree_of_uses hl (op := idx) (by
+      intro n' hn'; cases idx <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv, hidx] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | insertelement d n w v elt idx =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n' hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    have helt := evalOperand_agree_of_uses hl (op := elt) (by
+      intro n' hn'; cases elt <;> simp_all [Instr.uses, Operand.regs])
+    have hidx := evalOperand_agree_of_uses hl (op := idx) (by
+      intro n' hn'; cases idx <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv, helt, hidx] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | shuffleVec d n w a b mask =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n' hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n' hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | vecBitcast d n w m jw v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n' hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | call d ty callee args =>
+    have hargs : evalOperands s args = evalOperands t args :=
+      evalOperands_agree args fun op hop' => by
+        obtain ⟨⟨ty', op'⟩, hmem, rfl⟩ := List.mem_map.mp hop'
+        exact evalOperand_agree_of_uses hl fun n hn' =>
+          List.mem_flatten.mpr
+            ⟨op'.regs, List.mem_map.mpr ⟨(ty', op'), hmem, rfl⟩, hn'⟩
+    simp only [evalInstr, hargs, hm, hn] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp only [evalInstr, *], State.AgreeOn.call h⟩)
+      | (cases hs)
+  | callVoid callee args =>
+    have hargs : evalOperands s args = evalOperands t args :=
+      evalOperands_agree args fun op hop' => by
+        obtain ⟨⟨ty', op'⟩, hmem, rfl⟩ := List.mem_map.mp hop'
+        exact evalOperand_agree_of_uses hl fun n hn' =>
+          List.mem_flatten.mpr
+            ⟨op'.regs, List.mem_map.mpr ⟨(ty', op'), hmem, rfl⟩, hn'⟩
+    simp only [evalInstr, hargs, hm, hn] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp only [evalInstr, *], State.AgreeOn.callVoid h⟩)
+      | (cases hs)
+  | phi d ty inc =>
+    simp only [evalInstr, hp] at hs
+    split at hs
+    · cases hs
+    · rename_i htpre
+      split at hs
+      · cases hs
+      · rename_i hinc
+        rw [evalOperand_agree_of_uses hl
+          (fun n hn' => phi_operand_regs_uses hinc hn')] at hs
+        rw [Option.map_eq_some_iff] at hs
+        obtain ⟨v, hv, hs⟩ := hs
+        cases hs
+        exact ⟨_, by simp [evalInstr, htpre, hinc, hv, Option.map_some],
+          State.AgreeOn.bind h⟩
+
+end Agreement
+
+/-- The register names a straight-line instruction list reads. -/
+def instrsUses : List Instr → List String
+  | [] => []
+  | i :: is => i.uses ++ instrsUses is
+
+/-- **Consecutive-block transport: a straight-line list.**  A completed
+`denoteCode` at one state transports to any state that agrees on the list's read
+set, and the two outcomes agree on that set.  This is `evalInstr_agree` once per
+instruction, with the read set unchanged by the step: every instruction only
+binds a destination, and a destination is not in the list's read set. -/
+theorem denoteCode_agree (calls : Calls) (is : List Instr) {ns : List String}
+    {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ instrsUses is, n ∈ ns)
+    (hs : denoteCode calls is s = some s') :
+    ∃ t', denoteCode calls is t = some t' ∧ State.AgreeOn ns s' t' := by
+  induction is generalizing ns s t s' with
+  | nil =>
+      simp only [denoteCode, Option.some.injEq] at hs
+      cases hs
+      exact ⟨t, rfl, h⟩
+  | cons i is ih =>
+      have hread_i : ∀ n ∈ Instr.uses i, n ∈ ns :=
+        fun n hn => hread n (List.mem_append_left _ hn)
+      have hread_is : ∀ n ∈ instrsUses is, n ∈ ns :=
+        fun n hn => hread n (List.mem_append_right _ hn)
+      simp only [denoteCode] at hs
+      split at hs
+      · cases hs
+      · rename_i s1 hstep
+        obtain ⟨t1, ht1, hag1⟩ := evalInstr_agree calls h hread_i hstep
+        obtain ⟨t2, ht2, hag2⟩ := ih hag1 hread_is hs
+        exact ⟨t2, by simp only [denoteCode, ht1, ht2], hag2⟩
+
 end LeanLLVM

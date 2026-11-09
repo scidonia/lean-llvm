@@ -9945,3 +9945,13 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.escape_expand_satisfies_of_arms' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.escape_expand_satisfies_of_arms
+
+/-! #### Instruction transport: agreement implies the same result -/
+
+/-- info: 'LeanLLVM.evalInstr_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_agree
+
+/-- info: 'LeanLLVM.denoteCode_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.denoteCode_agree
