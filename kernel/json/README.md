@@ -580,6 +580,26 @@ except `arm:escapes-64`, which one block divides a fixed call and placement
 term by and which is therefore reported only as an observation; the summary
 names the bounded set, not "every input".
 
+Three things the bound does not say.  **The timing comparison includes placement**:
+the two objects' instruction text is identical — the identity arms check it and
+the objects' sizes match — so a difference this arm reports is where the code
+lands, not what it does, and a placement-driven difference is not a defect of
+the extraction.  **The claim is one-sided**: the extracted body is not slower
+than the measured one by more than 0.5 ns per block, `extracted − measured ≤
++0.5`, so a row on the favourable side is not a regression (the check line in
+`paired-escape.c` is still two-sided and reports such a row as `FAIL` until it
+is updated).  Because the per-round spread can exceed the bound, a 15-round row
+is triaged with its high-round interval and its one-sided rolling-window rate
+before it is read as a regression.  **On identical-text rows the arm measures
+layout**: when the two objects' instruction text is identical, a difference
+this arm reports is the placement difference — a deterministic bias, not noise,
+and one the bound cannot absorb — so the arm's real role is the comparison
+across different code (the staged build against the inlined one); on an
+identical-text row it measures where the code lands.  Padding the extracted
+object so the call distances match is the placement-equalising option: it is
+recorded and not taken, because it changes what the arm measures in the other
+direction, and the choice is the user's.
+
 ### Limits
 
 1. **The per-document gate is not here.**  Whether a document gets a list at all

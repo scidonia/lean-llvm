@@ -938,6 +938,10 @@ uint64_t leanllvm_json_stage2(const uint8_t *b, uint64_t n,
     z.ev.len = (size_t)*nev;
     z.ev.cap = (size_t)evcap;
 
+    /* The mode `pipeline.c`'s call site passes — the set §8.3's post needs.  The
+       measured text constant-propagates the same set at its own call site, so
+       the body stays the measured walk; a caller-chosen mode is a wrapper
+       change, not a body edit. */
     uint64_t r = s2_walk(&s, S2_VAL | S2_STR | S2_EV, &z, &e);
     *ndst = (uint64_t)z.alen;
     *nev = (uint64_t)z.ev.len;
