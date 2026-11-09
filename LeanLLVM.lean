@@ -57,3 +57,4 @@ import LeanLLVM.Vellum.JsonEscapeExpandContract
 import LeanLLVM.Vellum.JsonEscapeDecodeTrace
 import LeanLLVM.Vellum.JsonEscapeDecodeLoop
 import LeanLLVM.Vellum.JsonEscapeDecodeRun
+import LeanLLVM.Vellum.JsonEscapeExpandRun

@@ -9552,14 +9552,6 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.latchInv_exit_at_zero
 
-/-- info: 'LeanLLVM.Vellum.decodeLatchBoundLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.decodeLatchBoundLoop
-
-/-- info: 'LeanLLVM.Vellum.decodeBoundLoop_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.decodeBoundLoop_run_at
-
 /-- info: 'LeanLLVM.Vellum.decodeLatch_step_enter' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.decodeLatch_step_enter
@@ -9571,3 +9563,59 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.decodeWalkFuel_contribution' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.decodeWalkFuel_contribution
+
+/-- info: 'LeanLLVM.Vellum.decodeRefuses' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeRefuses
+
+/-- info: 'LeanLLVM.Vellum.decodeTwoExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeTwoExit
+
+/-- info: 'LeanLLVM.Vellum.DecodeRefusalExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.DecodeRefusalExit
+
+/-- info: 'LeanLLVM.Vellum.decodeTwoExitWord' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeTwoExitWord
+
+/-- info: 'LeanLLVM.Vellum.LatchStepLoopTwo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.LatchStepLoopTwo
+
+/-- info: 'LeanLLVM.Vellum.decodeLatchTwoExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeLatchTwoExit
+
+/-- info: 'LeanLLVM.Vellum.decodeLatchTwoExit_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.decodeLatchTwoExit_run_at
+
+/-- info: 'LeanLLVM.Vellum.expandBodyLen' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.expandBodyLen
+
+/-- info: 'LeanLLVM.Vellum.expandPosCount' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.expandPosCount
+
+/-- info: 'LeanLLVM.Vellum.expandExitFuel' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.expandExitFuel
+
+/-- info: 'LeanLLVM.Vellum.ExpandSeed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ExpandSeed
+
+/-- info: 'LeanLLVM.Vellum.ExpandExit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ExpandExit
+
+/-- info: 'LeanLLVM.Vellum.run_stages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.run_stages
+
+/-- info: 'LeanLLVM.Vellum.escape_expand_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.escape_expand_satisfies

@@ -1,0 +1,292 @@
+/-
+The expander's record, composed from the decoder's two-exit loop.
+
+`JsonEscapeDecodeRun` proves the walk's fuel as a term of the arguments and leaves
+two arm facts named.  This module composes the body's run around that loop:
+`entry` and the pre-scan reach the latch, the two-exit induction walks the position
+list to one of its exits, and the exit continuation carries the state to the
+record's post.  What is proved here is that they compose into `Satisfies` at
+`escapeExpandBudget`, with nothing left implicit; the four facts the loop analysis
+names are hypotheses of that theorem, stated in one bundle at one staging so the
+arms, the seed and the continuation are facts about the same run.
+
+**The budget's own terms.**  `escapeExpandBudget` reads two numbers out of the
+argument list — the body's length and the position count — and each stage's
+allowance is one summand of it: the pre-scan's `(nps + 1) * 3`, the walk's
+`decodeWalkFuel nps n`, and the final copy's `n / 64 + 3` plus the return's four
+control steps.  `expandBodyLen`, `expandPosCount` and `expandExitFuel` name those
+readings so the stages and the record use one vocabulary; the composition's
+arithmetic is then `omega` on the budget's own decomposition rather than a fact
+about the run.
+
+**The stages are stated over the record's own surface.**  `ExpandSeed` and
+`ExpandExit` take the argument list, the memory and the next id, so a hypothesis
+about them is a hypothesis about the record's own `pre` and not about an invented
+staging.  `ExpandSeed` carries the `LatchInv` at the whole bound — the state
+`BoundLoop.run` starts from — and `ExpandExit` carries the two exit targets' data
+(`decodeTwoExit` / `decodeTwoExitWord`) and the post, because the two exits leave
+different continuations and the split is taken once, between them.
+
+**What is proved and what is assumed.**  `run_stages` is the composition: three
+prefix facts give one run bounded by the sum of their allowances.  It consumes the
+loop instance's `BoundLoop.run` and nothing else about the body, so the exit split
+is one case split inside the continuation hypothesis rather than a case in the
+induction.  `escape_expand_satisfies` instantiates it at `EntryState` and derives
+the record's two conjuncts from `runFuel_outcome_unique`: completion at the budget
+is the composed run raised to it, and the post at every behaviour is the post at
+the composed outcome, the others being that same outcome.
+
+The four facts left as hypotheses are the ones the loop analysis names: the
+iteration arm, the refusal arm, the entry half-iteration, and the two exit
+continuations.  No `sorry`, no `admit` and no `native_decide` stands behind any of
+them; the file states them and their composition, and every theorem it proves is
+pinned at the footprint the development already carries.
+-/
+import LeanLLVM.Vellum.JsonEscapeDecodeRun
+import LeanLLVM.Vellum.JsonEscapeSteps
+
+set_option autoImplicit false
+set_option maxRecDepth 16000
+
+namespace LeanLLVM.Vellum
+
+open LeanLLVM
+open LeanLLVM.Vellum.JsonEscapeIR
+open LeanLLVM.Vellum.JsonEscapeIntrinsics
+open LeanLLVM.Vellum.JsonScanSpec
+
+/-! ### The budget's own terms -/
+
+/-- The body's length as the record's argument list carries it: the second
+argument, `%n`, read at its own width. -/
+def expandBodyLen (args : List Value) : Nat :=
+  match args with
+  | [_, .int 64 nv, _, _, _, _, _, _, _] => nv.toNat
+  | _ => 0
+
+/-- The position count as the record's argument list carries it: the seventh
+argument, `%nps`, read at its own width. -/
+def expandPosCount (args : List Value) : Nat :=
+  match args with
+  | [_, _, _, _, _, _, .int 64 npsv, _, _] => npsv.toNat
+  | _ => 0
+
+/-- The final copy and return's allowance: `n / 64 + 3` vector trips for the
+sixty-four-byte copy, and the four control steps of the return.  It is the last
+two summands of `escapeExpandBudget`, in the same vocabulary. -/
+def expandExitFuel (args : List Value) : Nat := expandBodyLen args / 64 + 3 + 4
+
+/-! ### The two run stages
+
+Both are stated at the argument list, the memory and the next id, which is the
+record's own surface, and at the staging the loop's invariant names.  The seed
+reaches `LatchInv` at the whole bound — the state `BoundLoop.run` starts from —
+and the exit continuation takes whichever exit the loop reached. -/
+
+/-- **The entry stage.**  From the record's own entry state, within the pre-scan's
+allowance `(nps + 1) * 3`, the run reaches the latch at the whole bound. -/
+def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
+    (st : ClassState) (dst : Nat) (goal : EscapeOutcome) : Prop :=
+  ∃ (s : State) (c j : Nat),
+    j ≤ (expandPosCount args + 1) * 3 ∧
+    LatchInv body st dst (expandPosCount args) goal (expandPosCount args) s c ∧
+    ∀ k, runFuel escapeCalls (j + k) usDecFunction
+        (EntryState usDecFunction args mem next) =
+      runFuel escapeCalls k usDecFunction s
+
+/-- **The exit stage.**  From either exit of that staging — the decoded walk at
+`while.end35`, or the refusal at `cleanup41` — the run completes at the record's
+post within the final copy's allowance.  The split at the two exits is here and
+nowhere else. -/
+def ExpandExit (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
+    (st : ClassState) (dst : Nat) (goal : EscapeOutcome) : Prop :=
+  ∀ (e : State), decodeTwoExit e →
+    decodeTwoExitWord body st dst (expandPosCount args) goal e →
+    ∃ (o : Outcome), runFuel escapeCalls (expandExitFuel args) usDecFunction e = some o ∧
+      (Γ_escape_expand escapeExpandBudget).post args mem next o
+
+/-! ### The composition -/
+
+/-- **Three stages compose into one run.**  The seed reaches the latch within
+`(nps + 1) * 3`, the loop's induction reaches an exit within
+`(nps + 1) * decodeIterCost n`, and the continuation finishes within `exitFuel`.
+The conclusion is the run from the start state at the sum of the three
+allowances: the loop's own `BoundLoop.run` supplies the prefix, and the
+continuation supplies the outcome and the property.
+
+Nothing here reads the body's blocks: the only thing consumed about the loop is its
+`run`, at `decodeLatchTwoExit`'s instance and its own `decodeIterCost n`, so the
+composition is the arithmetic of the three allowances rather than a second analysis
+of the walk. -/
+theorem run_stages {start : State} {P : Outcome → Prop} {body : List UInt8}
+    {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome} {ps : List Nat}
+    {pos0 n exitFuel : Nat}
+    (hcost : 1 ≤ decodeIterCost n)
+    (hrefuse : ∀ (r : Nat) (s : State) (c : Nat),
+      LatchInv body st dst nps goal r s c →
+      (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = true → ¬ nps ≤ c →
+      ∃ (e : State) (j : Nat), j ≤ decodeIterCost n ∧ decodeTwoExit e ∧
+        decodeTwoExitWord body st dst nps goal e ∧
+        ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
+          runFuel escapeCalls k usDecFunction e)
+    (hloop : LatchStepLoopTwo body st dst nps goal (decodeIterCost n) ps pos0)
+    (hseed : ∃ (s : State) (c j : Nat), j ≤ (nps + 1) * 3 ∧
+      LatchInv body st dst nps goal nps s c ∧
+      ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
+        runFuel escapeCalls k usDecFunction s)
+    (hexit : ∀ (e : State), decodeTwoExit e →
+      decodeTwoExitWord body st dst nps goal e →
+      ∃ (o : Outcome), runFuel escapeCalls exitFuel usDecFunction e = some o ∧ P o) :
+    ∃ (o : Outcome) (K : Nat),
+      K ≤ (nps + 1) * 3 + (nps + 1) * decodeIterCost n + exitFuel ∧
+      runFuel escapeCalls K usDecFunction start = some o ∧ P o := by
+  obtain ⟨s, c, j, hj, hinv, hrun⟩ := hseed
+  obtain ⟨e, jl, hjl, hexi, hword, hrunl⟩ :=
+    (decodeLatchTwoExit body st dst nps goal (decodeIterCost n) ps pos0 hcost
+      hrefuse hloop).run s c hinv exitFuel
+  simp only [decodeLatchTwoExit] at hjl
+  obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
+  refine ⟨o, j + (jl + exitFuel), ?_, ?_, hPo⟩
+  · omega
+  · rw [hrun (jl + exitFuel), hrunl]
+    exact ho
+
+/-! ### The four facts, at one staging
+
+The arms, the seed and the continuation must all be about the same run: the loop
+instance's exit predicate names `body`, `st`, `dst`, `nps` and `goal`, and the
+continuation reads the states it leaves.  One structure binds them, so a bundle is
+a statement about one staging rather than four independent claims, and `ps` and
+`pos0` appear where the body's own test does — in the two arms. -/
+
+/-- **The decoder's four remaining facts**, at one staging: the iteration arm, the
+refusal arm, the entry half-iteration, and the two exit continuations. -/
+structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
+  /-- The body the run decodes. -/
+  body : List UInt8
+  /-- The classifier state the position list is read off. -/
+  st : ClassState
+  /-- The destination base. -/
+  dst : Nat
+  /-- The outcome the caller's staging names. -/
+  goal : EscapeOutcome
+  /-- The caller's position list, as `*xp` holds it. -/
+  ps : List Nat
+  /-- The document offset of the body's first byte. -/
+  pos0 : Nat
+  /-- **The iteration arm**: the run from the latch back to the latch, crossing
+  the two copy loops and the escape emitter. -/
+  loop : LatchStepLoopTwo body st dst (expandPosCount args) goal
+    (decodeIterCost (expandBodyLen args)) ps pos0
+  /-- **The refusal arm**: the run from the latch to `cleanup41` at a position that
+  refuses, crossing the same blocks as the iteration. -/
+  refuse : ∀ (r : Nat) (s : State) (c : Nat),
+    LatchInv body st dst (expandPosCount args) goal r s c →
+    (decide (expandPosCount args ≤ c) || decodeRefuses body ps pos0 c) = true →
+    ¬ expandPosCount args ≤ c →
+    ∃ (e : State) (j : Nat), j ≤ decodeIterCost (expandBodyLen args) ∧
+      decodeTwoExit e ∧ decodeTwoExitWord body st dst (expandPosCount args) goal e ∧
+      ∀ k, runFuel escapeCalls (j + k) usDecFunction s =
+        runFuel escapeCalls k usDecFunction e
+  /-- **The entry half-iteration**: `while.end` / `while.body6` to the latch. -/
+  seed : ExpandSeed args mem next body st dst goal
+  /-- **The exit continuations**: `while.end35`'s final copy and return, and
+  `cleanup41`'s refusal return. -/
+  exit : ExpandExit args mem next body st dst goal
+
+/-! ### The record's instance -/
+
+/-- **The escape expander refines its record.**  From a staging the record admits,
+the run of the pinned expander completes at the record's budget and every
+behaviour it has satisfies the record's post: the decoded bytes at the cursor (or
+the refusal's two stores), the returned count, and every byte outside the written
+regions unchanged.
+
+The bundle is the only hypothesis.  Its four fields are the decoder analysis's own
+residuals, at the record's witnesses, so the statement assumes nothing about a
+staging the record does not admit, and nothing about the body beyond the loop
+instance and the two continuations. -/
+theorem escape_expand_satisfies
+    (hfacts : ∀ (args : List Value) (mem : Mem) (next : Nat),
+      (Γ_escape_expand escapeExpandBudget).pre args mem next →
+      ExpandFacts args mem next) :
+    Satisfies escapeCalls usDecFunction (Γ_escape_expand escapeExpandBudget) := by
+  intro args mem next hpre
+  obtain ⟨body, st, dst, goal, ps, pos0, hloop, hrefuse, hseed, hexit⟩ :=
+    hfacts args mem next hpre
+  have hcost : 1 ≤ decodeIterCost (expandBodyLen args) := by
+    unfold decodeIterCost
+    omega
+  obtain ⟨o, K, hK, hrun, hpost⟩ :=
+    run_stages (start := EntryState usDecFunction args mem next)
+      (P := (Γ_escape_expand escapeExpandBudget).post args mem next)
+      (nps := expandPosCount args) (n := expandBodyLen args)
+      (exitFuel := expandExitFuel args) hcost hrefuse hloop hseed hexit
+  have hbudget : escapeExpandBudget args mem =
+      (expandPosCount args + 1) * 3 +
+      (expandPosCount args + 1) * decodeIterCost (expandBodyLen args) +
+      expandExitFuel args := by
+    obtain ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, ps, err0, k0,
+      hargs, _hbody, _hxp, _hlen, _hrange, _hmap, _hcap, _hxj, _hxjle, _herr,
+      _htab, _htail, _hdst, _hbdst, _hxpdst, _htabdst, _herrdst, _herrxj,
+      _hxjdst⟩ := hpre
+    rw [hargs]
+    simp only [expandPosCount, expandBodyLen, expandExitFuel, escapeExpandBudget,
+      decodeWalkFuel]
+    omega
+  have hcomp : runFuel escapeCalls (escapeExpandBudget args mem) usDecFunction
+      (EntryState usDecFunction args mem next) = some o := by
+    rw [hbudget]
+    exact runFuel_mono_le hK hrun
+  refine ⟨?_, ?_⟩
+  · cases o with
+    | ub => exact absurd hpost (escape_expand_ub_false escapeExpandBudget args mem next)
+    | ret v m =>
+        cases v with
+        | none => simp [Γ_escape_expand] at hpost
+        | some v => exact ⟨v, m, hcomp⟩
+  · intro o' ho'
+    rcases ho' with ⟨_m', hm'⟩ | ⟨_m', hm'⟩
+    · have hEq : Outcome.ub = o := runFuel_outcome_unique hm' hcomp
+      rw [← hEq] at hpost
+      exact absurd hpost (escape_expand_ub_false escapeExpandBudget args mem next)
+    · have hEq : o' = o := runFuel_outcome_unique hm' hcomp
+      rw [hEq]
+      exact hpost
+
+/-! ### Axiom footprints
+
+`run_stages` and the record's instance carry `Classical.choice` because the loop
+instance they consume does: `decodeLatchTwoExit` inherits it from
+`evalICmp_ult_zero_iff`'s `BitVec.ult`, the same carrier `JsonEscapeDecodeRun`
+already names for the exit arm.  The rest is the development's own ceiling. -/
+
+/-- info: 'LeanLLVM.Vellum.expandBodyLen' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms expandBodyLen
+
+/-- info: 'LeanLLVM.Vellum.expandPosCount' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms expandPosCount
+
+/-- info: 'LeanLLVM.Vellum.expandExitFuel' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms expandExitFuel
+
+/-- info: 'LeanLLVM.Vellum.ExpandSeed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ExpandSeed
+
+/-- info: 'LeanLLVM.Vellum.ExpandExit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ExpandExit
+
+/-- info: 'LeanLLVM.Vellum.run_stages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms run_stages
+
+/-- info: 'LeanLLVM.Vellum.escape_expand_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_expand_satisfies
+
+end LeanLLVM.Vellum
