@@ -2,7 +2,7 @@
 
 ## What the set is
 
-Seventeen files, copied byte for byte from the measured scratch tree
+Thirty-seven files, copied byte for byte from the measured scratch tree
 `/tmp/scidonia-spike45/src` and pinned by `SHA256SUMS`.  The `pulled by` column
 names the file that includes each one in the measured tree, not the unit that
 ends up using it: where a header is reached only through another header, the
@@ -28,6 +28,50 @@ which the file is read.
 |`usdec_x_body.inc`|`667da9db8b72a08a767f2376daed32185c6aeed58f64f415cb7939963301987f`|one copy of the list decoder's body, parameterised by `USDEC_NAME`, `USDEC_ATTR` and `USDEC_ESCFN`, so a build can hold several shapes with one text|`usdec_gate.h:61,72,81`, `usdec_variants43.h` at thirteen sites, `usdec_variants44.h:25,31`|
 |`usdec_x_kind.inc`|`045e1357105c100beee2dacde9172a36890cdcd63b88a990aa38ff7d60d2b227`|the same body with the escape kind carried in, whose escape step reads the kind record rather than the bytes|`usdec_variants44.h:38,44,50,57,63`|
 |`uj.c`|`11155f19663c22ee43a00ae5b844262860b25ee2046c32aea856cf89633bd263`|`UJ_UNESC` (the simple-escape map, `:30`), `UJ_HEX` (`:37`), `uj_enc` (`:49`) and `uj_enc_word` (`:127`); also the fused unescaper `uj_decode` and the SIMD run helpers, which no unit of this repository calls — the file is pinned whole because a digest pins a file, not a selection from it.  It includes only `<stdint.h>`, `<string.h>` and `<immintrin.h>`, so the set's closure closes at it|`p16.c:57` in the measured chain; nothing inside this set pulls it, and `usdec.h`'s escape step and encoder reference three of its four names at the measured `US_ENC=0` — `UJ_HEX` (`:240`, `:350-351`, `:359-360`), `UJ_UNESC` (`:338`, `:349`, `:378`, `:428`, `:659`) and `uj_enc_word` (`:290`, `:300`, `:447`); `uj_enc` (`:295`) is not compiled at the measured flags: `US_EMIT4=1` selects the `#if US_EMIT4` arm of `us_emit` (`:288`) before the `#elif US_ENC` arm (`:293`); reaching `:295` takes `-DUS_EMIT4=0 -DUS_ENC=1`|
+|`s2port.h`|`4e785ea0c70e770852e323e182c428e9e5ea213bfb39b73f955035f4d3029d9e`|the stage-2 unit: the `S2` cursor record (input, raw index, derived entry stream `ep`, and the `xp`/`em`/`uk` escape planes), `s2_init`, the entry-stream builder `s2_build`, the value-position tests `s2_value_pos`/`s2_after_value`, the string-body handler `s2_string_body` and its consuming form `s2_string_touch`, and the loop `s2_walk`; the flags `S2_VAL`/`S2_STR`/`S2_EV`, the `S2_XP`/`S2_XM` planes and the `S2_DEC_GATE` selector|`sb34.c:29`, after `sb34.c:28` includes `p16.c`; the stage-2 unit's own text in `kernel/json/stage2.c` is taken from the file|
+|`p16.c`|`b8c669d74b6e1780af7a469e792d6e39b98092d114f5ee0492d9d1b7a6075a2c`|the cursor over the stage-1 index stream: the packing forms `IXP`/`IXK`, the kind enum `K_*`, the token and cursor records `OdTok`/`OdCur` with their `od_reset*` forms, failure reporting `od_fail`, the span accumulate helpers `touch_bytes`/`touch_u64`, the value-position tests, the scalar path `od_scalar_value`, the gap recovery `od_gap_recover` and the walk `od_walk`; it includes `p6.c` (`:33`), the `num*` chain (`:42`, `:44`, `:52`, `:54`, under `NUMF_EL`/`NUMF_NOINLINE`), `uj.c` (`:57`), `str3.c` (`:58`), `zesc.c` (`:59`), `zf.c` (`:60`), `str3body.inc` (`:447`), `strz.c` (`:448`), the emitter `emit24.c` (`:664`) and the five walk arms (`:658`, `:662`, `:663`, `:665`, `:666`)|`sb34.c:28`; nothing inside this set pulls it|
+|`p6.c`|`b542d9656aa03ccb8f85d2d43fe25a2ffbe707aa9cb3f6847f4ac2eeb21a5b72`|the reference parser and harness: `Err`/`err_set`; the output buffer `Out` with `out_init`/`out_reserve`/`out_raw`/`out_tag`/`out_u32`/`out_u64` and the `hup` checksum; the event tags `T_*`; `dbits`, `is_ws`, `is_delim`, `lit_check`, `to_double`, `num_scan`; the nesting limit `MAXD`, the container constants `C_OBJ`/`C_ARR`, the decoded-string scratch `g_sbuf`, the tape/DOM consumers, and `main`, which the puller renames `p6_original_main`|`p16.c:33`|
+|`strz.c`|`d6db00a6b1e7b0664275085f0cea9b25bfac36fd2276911bd37a915498616672`|zero-copy string bodies: the `ZOut` event sink with its reused arena and `z_init`/`z_free`/`z_reset`, `z_arena_reserve`, the plain-body sentinel `Z_NONE`, the special finder `z_scan`, the control-byte finder `z_scan_ctl`, the body handlers `od_string_body_z`/`od_string_body_z_cls` and the event expander `z_expand`|`p16.c:448`; `walkz_body.inc:271` and `walkzk_body.inc:166` call its body handlers|
+|`numf_el1.h`|`0cccfa3ecf7e058eabc684c2df7898ef8d3509ded91033b87b568e4cfbb79c94`|the tiered number scan's inline tier: `num_fast_el1`, its eight-digit reader `num_d8_el1`, the power tables `NUMF_EL1_POW10`/`NUMF_EL1_P10` and the diagnostic counters `g_nume1_el`/`g_nume1_slow`; it includes `numel.h` (`:18`) and `numel_el.h` (`:19`)|`p16.c:44`, under `NUMF_EL` and not `NUMF_NOINLINE`; it is `numf.h`'s counterpart|
+|`numel.h`|`a4da03f77dc937359d795d234087664d269200bb7e186fca37cbfa591cae6f03`|`num_el`, the 128-bit exact decimal-to-double for a mantissa below 10^19 and `q` in the table range, with the remainder-versus-half-ulp comparison and the cannot-decide return|`numf_el1.h:18`; it includes `epow_table.h` (`:18`)|
+|`numel_el.h`|`2f12ddc91adf6d1320ee5d8822c3092ea0276b278b2049ae382f06a7ed25d5d7`|the deferred Eisel–Lemire entry `num_el_el1`, inlined or out of line through `EL_ENTRY` under `EL_ENTRY_NOINLINE`, and `num_el_el1c`, which computes the low product half only inside the guard window|`numf_el1.h:19`|
+|`epow_table.h`|`954e93961f751417aaf495cbd0661094a8000e67919553664a7e7da752a25370`|the `EPow` record, the 91-entry `EPOW` table of 128-bit normalised significands of 10^q for `q` in [-45,45], and the range bounds `EPOW_MIN`/`EPOW_MAX`|`numel.h:18`|
+|`str3.c`|`1627129aa2c65c78e6ea5049c89856e21ee651396789b9ea878f1c27417cce6b`|the string-body decode kernels `uj3_plain` and `uj3_simple` with their mask helpers `uj3_ctl_mask`/`uj3_keep`, selected by the stage-1 escape class; a body carrying `\u` still falls back to `uj_decode`/`uj_decode_acc`|`p16.c:58`|
+|`str3body.inc`|`3e9ce13cae4f7f6e198c38b78cb8c4af3bdff34524cd17bd6bc51ca3a9637f91`|`od_str_path`/`od_str_dispatch`, which read a body's escape class from the stage-1 masks without re-reading input bytes, and the handler `od_string_body_e` that sends the body to the plain, simple-escape or `\u` kernel|`p16.c:447`|
+|`zesc.c`|`cb9ef94a46a099f70ca44907156c6a3bed374299fdb35a988b2040590019b1ce`|chunked escape materialisation: the simple-escape map `ZE_UNESC`, the 64-byte special mask `ze_block_mask`, the vector run copy `ze_run`, the escape step `ze_esc` and the kernel `ze_decode`|`p16.c:59`|
+|`zf.c`|`444735b9911facb38a55295a86c65b0680466f296f011a48b2da5250c589e25d`|the fused validate-and-copy string-body pass: the escape validators `zf_esc_val`/`zf_esc_cp` and the thirteen kernels generated from `zf_impl.inc` — `zf_val32`/`zf_val64`/`zf_val64f`, `zf_span32`/`zf_span64`/`zf_span64f`, `zf_cp64`, `zf_val32b`/`zf_val64b`, `zf_span32b`/`zf_span64b`, `zf_span_t` and `zf_val64c` — and the window/escape counters|`p16.c:60`; it includes `zf_impl.inc` at `:474`, `:484`, `:496`, `:507`, `:517`, `:529`, `:541`, `:552`, `:562`, `:572`, `:582`, `:595`, `:607`|
+|`zf_impl.inc`|`0fe151e576fe82f932f2c4946a68ca04e2b5d791267bf0f043f69b84f9713a15`|one copy of the fused body loop, parameterised by `ZF_NAME`, `ZF_COPY` (0 validate, 1 materialise, 2 lazily materialise) and `ZF_W` (32 or 64), with the `ZF_FAST`/`ZF_ESC`/`ZF_NOVAL` arms and the whole-window mask consumption|`zf.c` at the thirteen sites named in the row above|
+|`emit24.c`|`5380fca48714abb3491239c3cb793e275195c3e9e0a8e12753f8248bce10510b`|the gated emitter with the token kind folded into an entry's spare bits: `E24_SHIFT`, the `E24_KIND` table, `e24_entry` and `scan_cand_kind`|`p16.c:664`; the `PACK_SHIFT == 5` cursor form (`IXP`/`IXK`) reads its entries|
+|`walk_body.inc`|`1e436365cff81dec2b69c5e3cc60d12d60ddc9811d72504280db4e376b1cb91e`|`od_walk`'s body, parameterised by `WNAME`/`WSTEP`/`WGAPRE`/`WSTR`, so the grammar, value and error code exists once per tokenizer|`walk_e.inc:11` and `walk_s.inc:90`|
+|`walk_e.inc`|`f1eb6b458af7c76638113bc85dbb169bb0371518f46c93a2f3559158819ab1ef`|`od_walk_e`: the `od_step_s` tokenizer with the three-path string body `od_string_body_e` inlined through `walk_body.inc`|`p16.c:666`|
+|`walk_m.inc`|`06442c2286e5c341f9cd98c6b4c6b53cdb30506216cec31cb84b6001d28de77d`|the masks-direct tokenizer and walk: the whitespace skip `od_ws_skip` with its byte, SSE2 and AVX2 `MASK_SWAR` forms, and `od_step_m`/`od_walk_m`, which take token positions from the candidate mask and drop the index stream|`p16.c:658`|
+|`walk_s.inc`|`d2ea25ed293d95c6acf2d9f6608a3ba2c71357f3c49ad083c0caf40062cd9751`|`od_walk_s`: the `od_step_s` tokenizer with the SIMD whitespace skip, the byte-chain scalar classifier `od_scalar_kind_chain`, and the `NO_VISITED` counter arm|`p16.c:662`|
+|`walkz_body.inc`|`e1aaf5dbb6754dedb35a08ce74c82efad8522f764407e736b490670f076353ac`|`od_walk_z`/`od_walk_z_cls`, the `od_step_s` grammar with zero-copy string bodies into a `ZOut` sink, and the `PF_NEXT` prefetch arm|`p16.c:663`; also `wm.c:36`|
+|`walkzk_body.inc`|`9f87ef3817a6fcf1b0733d0d16120b5f19cac85bed6ce6804202f2487c43bdc8`|`od_step_sk` and `od_walk_zk`, which read a token's kind from the packed entry (`ent >> E24_SHIFT`, kind in the low five bits) instead of loading the input byte and the kind table|`p16.c:665`|
+
+The stage-2 unit's text is read from `s2port.h`, `p16.c`, `strz.c`, `p6.c` and
+the `numf`/`numel` chain: `s2port.h` holds the loop and its cursor, and every
+block the loop calls — the reference parser's records and output buffer, the
+index cursor, the number conversion, the zero-copy body and the escape
+materialisers — is reached from `p16.c`, which is why those files are pinned
+whole beside it.  The closure was established by compiling rather than by
+enumeration: a translation unit holding `#define P9_NO_MAIN 1`,
+`#include "p16.c"` and `#include "s2port.h"` was built with the measured
+compiler line `clang -O3 -march=x86-64-v3 -mpclmul -std=gnu11
+-Wno-initializer-overrides -Wno-macro-redefined` (clang 21.1.8) at the
+configuration `-DNUMF_EL -DSTAGE_PROBE -DS1F_DENS=1 -DS1F_EXP2=11
+-DS1F_UTF8=7 -DS1F_KL_DOC=1 -DPSTAGE=32 -DPMODE=2 -DS1F_XS=5 -DS2_XP=1
+-DS2_DEC_GATE=2 -DS1F_XS_DYN=1 -DUS_EMIT4=1`, and `clang -E -H`'s local file
+list was read.  That list names exactly the twenty files this vendoring adds
+plus the five already pinned (`dens.h`, `usdec.h`, `usdec_gate.h`,
+`usdec_x_body.inc`, `uj.c`) and no other local file.  The three `numf*` headers
+the list does not name are excluded for that reason: the measured configuration
+defines `NUMF_EL` and not `NUMF_NOINLINE`, so `p16.c:44` reads `numf_el1.h`
+while `:42`, `:52` and `:54` are not taken, and `numf.h`, `numf_ni.h` and
+`numf_el1_ni.h` are the arms of a configuration no unit of this repository
+builds.  The evidence run at `abdfb8d` was `sha256sum -c SHA256SUMS` and the
+compile above, both clean: every digest row reports `OK`, and the compile writes
+`tu.o` and exits 0.
 
 `usdec.h` is the file whose closure forced `uj.c` into the set: a translation
 unit holding the header at the measured flags (with the libc and intrinsic
@@ -54,7 +98,7 @@ so a one-byte run reaches `dst + 63`.  Both reads of this file must therefore
 stage **64 writable bytes past the decoded extent**; a unit or probe built on the
 comment alone would reserve half of what the file can write.
 
-Four units are read out of these files, not one: the mask unit (`s1f_masks` and
+Four stage-1 units are read out of these files, not one: the mask unit (`s1f_masks` and
 its four helpers, the two tables and the `S1F` type, all in `s1fuse.h`), the
 entry unit (`xl_pos8` and its initialiser from `xlist.h`, the two entry kernels
 and their block-loop macro from `s1fuse.h`), the UTF-8 unit (`u8kl.h`'s six
@@ -72,7 +116,7 @@ compiler line `clang -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64
 `-DPSTAGE=32 -DPMODE=2 -DS1F_XS=5 -DS2_XP=1 -DS2_DEC_GATE=2 -DS1F_XS_DYN=1`,
 plus `-DUS_EMIT4=1` for the escape step.  The scratch tree is not
 version-controlled, so the digests above are its revision: a copy of the tree
-whose seventeen files hash to these values is the tree these units were
+whose thirty-seven files hash to these values is the tree these units were
 extracted from.
 
 The emission that configuration produces has `target datalayout =

@@ -44,6 +44,29 @@
 #          statements to locate by line.  Its arm detector refuses `dens_`,
 #          `S1F_`, `SP_` and `sp_` and accepts `xl_`, `us_` and `uj_`, which are
 #          this unit's subject.  `--arms-only` asserts its two public symbols.
+#   stage2 the stage-2 unit, `kernel/json/stage2.c`, against the forty-six
+#          definitions `README.md`'s `stage2-entities:` line names across
+#          `measured/s2port.h`, `measured/p16.c`, `measured/p6.c`,
+#          `measured/strz.c`, `measured/numf_el1.h`, `measured/numel_el.h`,
+#          `measured/epow_table.h` and `measured/usdec.h`, with the walk's
+#          deleted arms (`stage2-delete:`) applied to the measured side.  The
+#          unit's structs (`S2`, `ZOut`, `Err`, `Out`, `OdCur`, `OdTok`) and its
+#          enums (`T_*`, `K_*`, `C_*`) are carried verbatim but are not entities:
+#          the extractor has no shape for a `typedef struct { … } NAME;`, and a
+#          listed entity that cannot be extracted is a setup fault.  Three
+#          definitions are declared new text (`stage2-extra:`): the ABI wrapper,
+#          and the two reserves, whose reallocation is the caller's capacity
+#          here.  `s2_string_body` is declared new text for the same reason: its
+#          escaped-body decode is the escape unit's ABI call, not a copy of
+#          `us_dec_x`, and the list form's unreachable no-list fallback is
+#          deleted with it.  Its behaviour is compared against the measured
+#          text by the differential harness, not by tokens.
+#          Its arm detector refuses the deleted measurement vocabulary
+#          (`S2_XM`, `S2_NO_DECODE`, `US_FUSED`, `S2_LOOP_*`, `S2_FASTDISP`,
+#          `S2_NOBOUNDS`, `S2_DEC_GATE`, `SP_MODES`/`SP43_MODES`/`SP44_MODES`,
+#          `dens_`, `us_mask_any`, `us_dec_m`, `us_dec_x_inl`/`out`, `us_body`,
+#          `sp43_`/`sp44_`).  `--arms-only` asserts `leanllvm_json_stage2` is the
+#          only public symbol it defines.
 #
 # Modes (default: --identity --mutate):
 #   --identity    extract the entities `kernel/json/README.md` lists from the
@@ -74,6 +97,18 @@
 #                 s1 unit's claim only: the entry unit's entities exist only at
 #                 `S1F_EXP2=11`, so asking for this mode with `--unit entry` is
 #                 a setup fault rather than a silent vacuous pass.
+#   --link-census C1: the unit's place in the assembled link.  The five stage-1
+#                 units, this unit and the pipeline are compiled at the measured
+#                 compiler line and combined with `ld -r`; the arm requires no
+#                 undefined *project* symbol (a name starting `leanllvm_json_`),
+#                 this unit's ABI symbol to be defined, and every remaining
+#                 undefined name to be in the recorded C library class.  That
+#                 class is data below; a name outside it -- in particular
+#                 `malloc`, `exit`, `stderr` or `strtod`, which the slow number
+#                 path's `to_double` can reach -- is a widening of the unit's
+#                 domain and has to be recorded rather than absorbed.  It is
+#                 the stage-2 unit's arm: a unit that does not take part in the
+#                 assembled link is a setup fault, not a pass.
 #   --tree-only   refuse any input path outside the repository (exit 3).  Under
 #                 it, --vendor refuses while the scratch tree exists, because
 #                 the live diff asks to read a path outside the repository.
@@ -134,6 +169,10 @@ detector_utf8='\b(dens_|S1F_|SP_|sp_)[A-Za-z0-9_]*'
 # decoder) and `uj_` (its tables and encoder) are this unit's subject; the rest
 # of the measured vocabulary stays refused.
 detector_escape='\b(dens_|S1F_|SP_|sp_)[A-Za-z0-9_]*'
+# The stage-2 unit's own detector: the measurement vocabulary its measured text
+# carries in arms this unit deleted.  It is the arms' names, not the unit's
+# subject, so it stays narrow: `S2_VAL`/`S2_STR`/`S2_EV` are the unit's own.
+detector_stage2='\b(S2_XM|S2_NO_DECODE|US_FUSED|S2_LOOP_(ONLY|NOSW)|S2_FASTDISP|S2_NOBOUNDS|S2_DEC_GATE|SP_MODES|SP43_MODES|SP44_MODES|dens_|us_mask_any|us_dec_m|us_dec_x_inl|us_dec_x_out|us_dec_x_inl2|us_body|sp43_|sp44_|sp_dec|sp_list)\b'
 # The vendored header's own name shape, for the completeness check: every
 # definition `u8kl.h` carries, whichever list accounts for it.
 detector_kl='\b(kl_[A-Za-z0-9_]*|KLCARRY)'
@@ -143,6 +182,7 @@ run_mutate=0
 run_arms=0
 run_vendor=0
 run_preprocess=0
+run_link=0
 run_stage_tu=0
 tree_only=0
 any_mode=0
@@ -160,8 +200,9 @@ while [ "$#" -gt 0 ]; do
     --arms-only) run_arms=1; any_mode=1 ;;
     --vendor) run_vendor=1; any_mode=1 ;;
     --preprocess) run_preprocess=1; any_mode=1 ;;
+    --link-census) run_link=1; any_mode=1 ;;
     --stage-tu) run_stage_tu=1; any_mode=1 ;;
-    --all) run_identity=1; run_mutate=1; run_arms=1; run_vendor=1; run_preprocess=1; any_mode=1 ;;
+    --all) run_identity=1; run_mutate=1; run_arms=1; run_vendor=1; run_preprocess=1; run_link=1; any_mode=1 ;;
     --tree-only) tree_only=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'source-identity: unknown argument %s\n' "$1" >&2; exit 3 ;;
@@ -196,8 +237,16 @@ case "$unit" in
     input_paths=("$kernel" "$repo/kernel/json/escape.h" "$measured/xlist.h" \
                  "$measured/usdec.h" "$measured/uj.c" "$readme")
     ;;
+  stage2)
+    kernel=$repo/kernel/json/stage2.c
+    oracle=""
+    input_paths=("$kernel" "$repo/kernel/json/stage2.h" "$readme" \
+                 "$measured/s2port.h" "$measured/p16.c" "$measured/p6.c" \
+                 "$measured/strz.c" "$measured/numf_el1.h" "$measured/numel_el.h" \
+                 "$measured/epow_table.h" "$measured/usdec.h")
+    ;;
   *)
-    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape\n' "$unit" >&2
+    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape stage2\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -329,6 +378,14 @@ case "$unit" in
     xl_exempt=""
     detector_unit=$detector_escape
     ;;
+  stage2)
+    entity_specs=$(list_field stage2-entities)
+    deletion_specs=$(list_field stage2-delete)
+    extra_specs=$(list_field stage2-extra)
+    defs_re="s2_[a-z0-9_]+|od_[a-z0-9_]+|out_[a-z0-9_]+|err_[a-z0-9_]+|z_[a-z0-9_]+|num_[a-z0-9_]+|el_[a-z0-9_]+|num_d8_[a-z0-9_]+|EPOW|EPOW_[A-Z]+|NUMF_[A-Za-z0-9_]+|US_SLACK|MAXD|PRIME|IXP|EL_ENTRY|EL_MASK|EL_HALF|dbits|is_ws|lit_check|to_double|num_scan|hup|leanllvm_json_stage2"
+    xl_exempt=""
+    detector_unit=$detector_stage2
+    ;;
 esac
 
 if [ -z "$entity_specs" ]; then
@@ -351,6 +408,13 @@ source_file() { # <source>
     u8kl) printf '%s' "$measured/u8kl.h" ;;
     usdec) printf '%s' "$measured/usdec.h" ;;
     uj) printf '%s' "$measured/uj.c" ;;
+    s2port) printf '%s' "$measured/s2port.h" ;;
+    p16) printf '%s' "$measured/p16.c" ;;
+    p6) printf '%s' "$measured/p6.c" ;;
+    strz) printf '%s' "$measured/strz.c" ;;
+    numf1) printf '%s' "$measured/numf_el1.h" ;;
+    numel_el) printf '%s' "$measured/numel_el.h" ;;
+    epow) printf '%s' "$measured/epow_table.h" ;;
     *) printf 'SETUP: the identity list names an unknown source %s\n' "$1" >&2; return 3 ;;
   esac
 }
@@ -378,8 +442,17 @@ deletions_for() { # <source>
 #   - a declaration ending in `;` (a table, a flag): that line;
 #   - a macro invocation (`S1F_DEFINE_KERNEL(s1f_k_pos8, s1f_ke_pos8)`): that
 #     line.
-extract_entity() { # <file> <entity> <skip-list>
-  awk -v name="$2" -v skip="$3" '
+extract_entity() { # <file> <entity[@line]> <skip-list>
+  awk -v spec="$2" -v skip="$3" '
+    BEGIN {
+      # A measured file can define one name twice -- an alternative macro arm
+      # before the taken one.  `<entity>@<line>` names the taken definition by
+      # its line, which the digest of that file pins; a spec without it
+      # searches for the first definition.
+      at = 0; name = spec
+      i = index(spec, "@")
+      if (i > 0) { name = substr(spec, 1, i - 1); at = substr(spec, i + 1) + 0 }
+    }
     { line[NR] = $0 }
     END {
       n = split(skip, parts, " ")
@@ -395,10 +468,17 @@ extract_entity() { # <file> <entity> <skip-list>
       # prefix shared, which is identity against the wrong definition.
       word = "(^|[^A-Za-z0-9_])" name "([^A-Za-z0-9_]|$)"
       start = 0
-      for (l = 1; l <= NR; l++) {
-        if (line[l] ~ /^#define[ \t]/ && line[l] ~ word) { start = l; break }
-        if (line[l] ~ /^[^ \t#\/]/ && line[l] ~ word &&
-            (index(line[l], "(") > 0 || index(line[l], "[") > 0)) { start = l; break }
+      if (at > 0) {
+        if (line[at] ~ /^#define[ \t]/ && line[at] ~ word) start = at
+        else if (line[at] ~ /^[^ \t#\/]/ && line[at] ~ word &&
+                 (index(line[at], "(") > 0 || index(line[at], "[") > 0)) start = at
+        if (!start) { printf "no definition of %s at %s:%d\n", name, FILENAME, at > "/dev/stderr"; exit 1 }
+      } else {
+        for (l = 1; l <= NR; l++) {
+          if (line[l] ~ /^#define[ \t]/ && line[l] ~ word) { start = l; break }
+          if (line[l] ~ /^[^ \t#\/]/ && line[l] ~ word &&
+              (index(line[l], "(") > 0 || index(line[l], "[") > 0)) { start = l; break }
+        }
       }
       if (!start) { printf "no definition of %s in %s\n", name, FILENAME > "/dev/stderr"; exit 1 }
       define = (line[start] ~ /^#define[ \t]/)
@@ -430,13 +510,25 @@ normalise() {
 # expansion, forced by one invocation appended to the definition — the same
 # invocation on both sides, so it adds no difference and the comparison is of
 # what the macro means.
+#
+# The probe's arity is two, which is the shape the function-like macros of the
+# measured set take (`S1F_DEFINE_KERNEL(NAME, BLOCK)`), and an object-like
+# macro's expansion still parses as a call expression when the value is
+# parenthesised.  A *one-parameter* function-like macro (`IXP(v)`) rejects that
+# invocation, and the preprocessor's refusal must not be read as an absent
+# entity: the probe is retried with one argument, so the comparison still holds
+# for both shapes.
 normalise_entity() { # <entity>
-  local entity=$1 text
+  local entity=$1 text out
   text=$(cat)
   case "$text" in
     '#define'*)
-      { printf '%s\n' "$text"; printf '%s(PROBE_NAME, PROBE_BLOCK)\n' "$entity"; } \
-        | normalise
+      if out=$({ printf '%s\n' "$text"; printf '%s(PROBE_NAME, PROBE_BLOCK)\n' "$entity"; } \
+                 | normalise); then
+        printf '%s\n' "$out"
+      else
+        { printf '%s\n' "$text"; printf '%s(PROBE_NAME)\n' "$entity"; } | normalise
+      fi
       ;;
     *) printf '%s\n' "$text" | normalise ;;
   esac
@@ -450,11 +542,11 @@ compare_entities() {
     src=${spec%%:*}
     entity=${spec#*:}
     if ! meas=$(extract_entity "$(source_file "$src")" "$entity" "$(deletions_for "$src")" \
-        | normalise_entity "$entity"); then
+        | normalise_entity "${entity%%@*}"); then
       printf 'SETUP: cannot extract %s from %s\n' "$entity" "$(source_file "$src")" >&2
       return 3
     fi
-    if ! kern=$(extract_entity "$kfile" "$entity" "" | normalise_entity "$entity"); then
+    if ! kern=$(extract_entity "$kfile" "${entity%%@*}" "" | normalise_entity "${entity%%@*}"); then
       printf 'SETUP: cannot extract %s from %s\n' "$entity" "$kfile" >&2
       return 3
     fi
@@ -970,7 +1062,7 @@ arm_identity() {
     }
   ' "$kernel" | LC_ALL=C sort -u)
   extra=$(printf '%s\n' $entity_specs $extra_specs \
-    | sed 's/^[^:]*://' | LC_ALL=C sort -u \
+    | sed -e 's/^[^:]*://' -e 's/@[0-9][0-9]*$//' | LC_ALL=C sort -u \
     | LC_ALL=C comm -13 - <(printf '%s\n' "$defs"))
   if [ -n "$extra" ]; then
     printf 'DIFF: the unit defines %s, which the identity list does not name\n' \
@@ -1013,6 +1105,7 @@ arm_mutate() {
     entry) local needle='0xFFu' replacement='0xFEu' subject=s1f_ke_pos8 ;;
     utf8) local needle='0xe7,' replacement='0xe5,' subject=kl_t1 ;;
     escape) local needle='0x8000000000000000ULL' replacement='0x8000000000000001ULL' subject=xl_batch ;;
+    stage2) local needle='#define MAXD 520' replacement='#define MAXD 521' subject=MAXD ;;
   esac
   local mut=$work/unit.numeral.c
   awk -v needle="$needle" -v replacement="$replacement" '
@@ -1091,13 +1184,29 @@ arm_arms_only() {
    what the control below reads is the measurement vocabulary in the measured
    header, not this unit's own names.  It is never committed. */
 EOF
-  printf '#include <stdio.h>\n#include <stdlib.h>\n#include <stdint.h>\n#include "s1fuse.h"\n' \
-    > "$work/pre.control.c"
-  "$cc" "${cflags[@]}" "${measured_defs[@]}" -I "$work/stub" -I "$measured" \
-    -E -P "$work/pre.control.c" > "$work/control.i" || {
-    printf 'SETUP: the measured header did not preprocess\n' >&2
-    return 3
-  }
+  if [ "$unit" = stage2 ]; then
+    # This unit's measured side is the closure TU: `p16.c` first (its text is
+    # what the walk's helpers live in) and then `s2port.h`, both at the
+    # measured configuration, from the vendored copy.  `NUMF_EL` joins the
+    # `-D` set here because it is on the measured compiler line
+    # (`build49.sh:17`), not in the `$S1 $U8 $P2` set, and it is what selects
+    # `numf_el1.h` over the unmeasured `numf.h`.
+    printf '#define P9_NO_MAIN 1\n#include "p16.c"\n#include "s2port.h"\n' \
+      > "$work/pre.control.c"
+    "$cc" "${cflags[@]}" "${measured_defs[@]}" -DNUMF_EL -I "$measured" \
+      -E -P "$work/pre.control.c" > "$work/control.i" || {
+      printf 'SETUP: the vendored stage-2 closure did not preprocess\n' >&2
+      return 3
+    }
+  else
+    printf '#include <stdio.h>\n#include <stdlib.h>\n#include <stdint.h>\n#include "s1fuse.h"\n' \
+      > "$work/pre.control.c"
+    "$cc" "${cflags[@]}" "${measured_defs[@]}" -I "$work/stub" -I "$measured" \
+      -E -P "$work/pre.control.c" > "$work/control.i" || {
+      printf 'SETUP: the measured header did not preprocess\n' >&2
+      return 3
+    }
+  fi
 
   hits=$(grep -oE "$detector_unit" "$work/kernel.i" | sort -u || true)
   if [ -n "$hits" ]; then
@@ -1114,6 +1223,10 @@ EOF
     escape)
       printf 'ok: the preprocessed unit names none of dens_/S1F_/SP_/sp_\n'
       printf '    (xl_, us_ and uj_ are this unit'"'"'s subject, so its detector accepts them)\n'
+      ;;
+    stage2)
+      printf 'ok: the preprocessed unit names none of the deleted measurement arms\n'
+      printf '    (S2_VAL/S2_STR/S2_EV and the walk itself are this unit'"'"'s subject)\n'
       ;;
   esac
 
@@ -1206,6 +1319,39 @@ EOF
     printf 'ok: the unit defines exactly its two ABI symbols\n'
   fi
 
+  if [ "$unit" = stage2 ]; then
+    # The detector's positive control: a copy of the unit with one of the
+    # deleted arms' names inserted must be named.  Without it, a detector that
+    # matches nothing and a unit that carries no arm are the same log.
+    { cat "$kernel"; printf '\nint us_dec_x_out;\n'; } > "$work/kernel.dens.c"
+    "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$work/kernel.dens.c" \
+      > "$work/kernel.dens.i" || {
+      printf 'SETUP: the detector control did not preprocess\n' >&2
+      return 3
+    }
+    hits=$(grep -oE "$detector_unit" "$work/kernel.dens.i" | sort -u || true)
+    case "$hits" in
+      *us_dec_x_out*) printf 'ok: control: the detector names an inserted us_dec_x_out\n' ;;
+      *)
+        printf 'FAIL: the detector named {%s} in a copy that inserts us_dec_x_out\n' "$hits" >&2
+        return 1
+        ;;
+    esac
+    # The ABI is one function, so the object's public symbols are exactly it.
+    if ! command -v nm >/dev/null 2>&1; then
+      printf 'SETUP: no nm on PATH; the public-symbol assertion needs it\n' >&2
+      return 3
+    fi
+    hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
+    hits=${hits% }
+    if [ "$hits" != "leanllvm_json_stage2" ]; then
+      printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
+      printf 'FAIL: expected exactly leanllvm_json_stage2\n' >&2
+      return 1
+    fi
+    printf 'ok: the unit defines exactly its one ABI symbol\n'
+  fi
+
   hits=$(grep -oE "$detector" "$work/control.i" | sort -u || true)
   count=$(printf '%s\n' "$hits" | grep -c . || true)
   if [ "$count" -eq 0 ]; then
@@ -1230,6 +1376,61 @@ EOF
     fi
     printf 'ok: the measured TU names %s xl_ identifiers, so the exemption is not vacuous\n' "$count"
   fi
+}
+
+# --- C1: the assembled link -------------------------------------------------
+
+# The undefined names the assembled object may carry: the C library's, and the
+# ones the slow number path's `to_double` and the fortified copies reach.  This
+# is the recorded class, not a filter: a name outside it fails the arm.
+link_c_library='__memcpy_chk __stack_chk_fail __vfprintf_chk exit free malloc memcpy memset stderr strtod'
+
+arm_link_census() {
+  local u name undef project extra
+  printf '\n== C1 (%s): the assembled link leaves no undefined project symbol\n' "$unit"
+  for u in s1_block entry utf8 escape stage2 pipeline; do
+    "$cc" "${cflags[@]}" -I "$repo/kernel/json" -c "$repo/kernel/json/$u.c" \
+      -o "$work/$u.o" || {
+      printf 'FAIL: %s did not compile at the measured line\n' "$u" >&2
+      return 1
+    }
+  done
+  ld -r "$work/s1_block.o" "$work/entry.o" "$work/utf8.o" "$work/escape.o" \
+        "$work/stage2.o" "$work/pipeline.o" -o "$work/assembled.o" || {
+    printf 'FAIL: ld -r over the six objects did not combine them\n' >&2
+    return 1
+  }
+  printf 'ok: ld -r combined the five units, this unit and the pipeline\n'
+
+  name=$(nm --defined-only "$work/assembled.o" | awk '$2 ~ /^[TtDdBbRr]$/ { print $3 }')
+  case "$name" in
+    *leanllvm_json_stage2*) printf 'ok: leanllvm_json_stage2 is defined in the assembled object\n' ;;
+    *)
+      printf 'FAIL: leanllvm_json_stage2 is not defined in the assembled object\n' >&2
+      return 1
+      ;;
+  esac
+
+  undef=$(nm -u "$work/assembled.o" | awk '{ print $NF }' | LC_ALL=C sort -u)
+  project=$(printf '%s\n' "$undef" | grep -E '^leanllvm_json_' || true)
+  if [ -n "$project" ]; then
+    printf 'FAIL: the assembled link leaves undefined project symbols:\n%s\n' "$project" >&2
+    return 1
+  fi
+  printf 'ok: no undefined project symbol\n'
+
+  extra=$(LC_ALL=C comm -13 \
+            <(printf '%s\n' $link_c_library | LC_ALL=C sort -u) \
+            <(printf '%s\n' "$undef"))
+  if [ -n "$extra" ]; then
+    printf 'FAIL: the assembled link leaves names outside the recorded class:\n%s\n' \
+      "$extra" >&2
+    printf 'FAIL: record the reason before widening the class\n' >&2
+    return 1
+  fi
+  printf 'ok: every undefined name is in the recorded C library class: %s\n' \
+    "$(echo $undef)"
+  return 0
 }
 
 # --- C4: the vendored set is the measured set ------------------------------
@@ -1418,6 +1619,14 @@ fi
 if [ "$run_identity" -eq 1 ]; then arm_identity || exit $?; fi
 if [ "$run_mutate" -eq 1 ]; then arm_mutate || exit $?; fi
 if [ "$run_arms" -eq 1 ]; then arm_arms_only || exit $?; fi
+if [ "$run_link" -eq 1 ]; then
+  if [ "$unit" != stage2 ]; then
+    printf 'SETUP: --link-census is the stage2 unit (a unit that does not take part\n' >&2
+    printf 'SETUP: in the assembled link is a setup fault, not a pass) (exit 3)\n' >&2
+    exit 3
+  fi
+  arm_link_census || exit $?
+fi
 if [ "$run_vendor" -eq 1 ]; then arm_vendor || exit $?; fi
 if [ "$run_preprocess" -eq 1 ]; then arm_preprocess || exit $?; fi
 printf '\nok: source identity holds (%s)\n' "$unit"

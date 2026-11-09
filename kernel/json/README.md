@@ -93,6 +93,9 @@ utf8-permutation: KLCARRY kl_carry_init kl_err32 kl_err_vec kl_block_vec kl_bloc
 escape-entities: xlist:xl_lanes xlist:xl_batch xlist:xl_emit_batch xlist:xl_emit usdec:US_FAIL usdec:us_hex4_pshufb usdec:us_hex4 usdec:us_emit usdec:us_esc_u usdec:us_esc usdec:us_run usdec:us_run_long usdec:us_dec_x uj:UJ_UNESC uj:uj_enc_word
 escape-delete: xlist:301 xlist:303-313 xlist:315 usdec:288 usdec:293-304 usdec:334-375 usdec:387 usdec:399-403 usdec:407-410 usdec:275 usdec:277-279 usdec:862-868 usdec:876-878 usdec:879 usdec:881 usdec:883-885 usdec:891-893 usdec:898 usdec:906 usdec:909 usdec:911 usdec:913
 escape-extra: leanllvm_json_escape_list leanllvm_json_escape_expand
+stage2-entities: s2port:S2_VAL s2port:S2_STR s2port:S2_EV s2port:s2_init s2port:s2_value_pos s2port:s2_after_value s2port:s2_string_touch s2port:s2_walk p16:IXP@106 p16:NUMF_SLOW p16:num_fast p16:od_fail p16:touch_bytes p16:touch_u64 p16:od_gap_recover p16:od_scalar_value p6:PRIME p6:err_set p6:out_init p6:hup p6:out_raw p6:out_tag p6:out_u64 p6:dbits p6:is_ws p6:lit_check p6:num_scan p6:to_double p6:MAXD strz:z_init numf1:NUMF_SIMD numf1:NUMF_EL1_POW10 numf1:NUMF_EL1_P10 numf1:num_d8_el1 numf1:num_fast_el1@60 numel_el:EL_ENTRY@61 numel_el:EL_MASK numel_el:EL_HALF numel_el:el_pack numel_el:el_exact numel_el:num_el_el1 epow:EPOW epow:EPOW_MIN epow:EPOW_MAX usdec:US_SLACK
+stage2-delete: s2port:438 s2port:442 s2port:444-488 s2port:494-521 s2port:580 s2port:582 s2port:608 s2port:611-614 s2port:650-652 s2port:654 s2port:701
+stage2-extra: leanllvm_json_stage2 s2_string_body z_arena_reserve out_reserve
 <!-- identity-list:end -->
 
 The four deletions are the two conditional arms inside `s1f_masks`, resolved to
