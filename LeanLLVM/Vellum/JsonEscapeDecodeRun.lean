@@ -566,22 +566,15 @@ The loop's second exit — `cleanup41` on a refusal — is a normal outcome the 
 covers, so the instance that leaves in two ways names it: `assemblyBoundLoop` in
 `JsonEscapeExpandStaged.lean`, whose exit test is the disjunction "at the bound or
 the head position refuses".  Its boundary at budget zero is **vacuous rather than
-relied on**: at budget zero the invariant forces `c = nps`, the remaining list is
-empty, and the walk is a decode, so no state carrying a refused goal satisfies the
-invariant there.  The lemma below records that, so the refusal edge at budget zero
-is impossible rather than merely uncovered. -/
-
-/-- A refused goal cannot be carried at budget zero: the budget forces the index to
-the bound, where the walk has nothing left to refuse. -/
-theorem latch_refused_budget_zero_absurd {body : List UInt8} {st : ClassState}
-    {dst nps : Nat} {goal : EscapeOutcome} {s : State} {c : Nat} {off k : Nat}
-    (hgoal : goal = .refused off k) (h : LatchInv body st dst nps goal 0 s c) : False := by
-  have hb := latchInv_budget h
-  have hc : c = nps := by omega
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hwalk, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩ := h.1
-  have hdec := DecodeInv.exit hwalk hc
-  rw [hgoal] at hdec
-  exact EscapeOutcome.noConfusion hdec
+relied on**: the budget pair forces `c ≤ nps ∧ nps ≤ c`, so the exit test's bound
+branch holds outright, and a state carrying a refused goal cannot be at the latch
+there at all — its walk would have to end with an empty position list yet report a
+refusal, which `DecodeInv.exit` rules out.  That is why the instance's
+`exit_at_zero` needs nothing beyond the budget pair: a separate elimination lemma
+would have no field to serve, since the field that could take one needs
+`atBound s c = true`, which the pair already gives, while such a lemma's
+conclusion is `False` — an elimination lemma is dead when no field admits its
+premise. -/
 
 /-! ### The two-exit loop
 
@@ -723,10 +716,6 @@ def DecodeEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
 /-- info: 'LeanLLVM.Vellum.decodeLatch_step_enter' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms decodeLatch_step_enter
-
-/-- info: 'LeanLLVM.Vellum.latch_refused_budget_zero_absurd' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms latch_refused_budget_zero_absurd
 
 /-- info: 'LeanLLVM.Vellum.decodeRefuses' depends on axioms: [propext] -/
 #guard_msgs in

@@ -9556,10 +9556,6 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.decodeLatch_step_enter
 
-/-- info: 'LeanLLVM.Vellum.latch_refused_budget_zero_absurd' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Vellum.latch_refused_budget_zero_absurd
-
 /-- info: 'LeanLLVM.Vellum.decodeWalkFuel_contribution' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.decodeWalkFuel_contribution
