@@ -45,8 +45,31 @@ open LeanLLVM.Vellum.JsonScanSpec
 
 /-! ### The staged invariant the arms consume -/
 
+/-- The byte cursor the latch's own step will form, read off the state alone.
+
+`cleanup32` forms `%add24 = %adv.2 + %sub`, where `%sub` is the residual the
+previous iteration left and `%adv.2` is the `phi` selecting the escape's advance
+(`%adv.1.i` on the emitter edge, the constant two on the simple-escape edge).  The
+block therefore *determines* the value from cells it reads, but `DecodeLatch`'s
+existentials do not expose it: the walk is stated at an index the invariant
+mentions only inside `DecodeInv`, and `DecodeInv` is not injective in that index
+(an empty remainder makes every cursor decode the same outcome).  The cursor is
+therefore a function of the state, and the boundedness clause below can name it
+without a second copy of the cell pins. -/
+def latchCursor (s : State) : Option Nat :=
+  match s.pre with
+  | some "if.end32.i" =>
+      match lookupName s.env "%sub", lookupName s.env "%adv.1.i" with
+      | some (.int 64 sub), some (.int 64 adv) => some (adv + sub).toNat
+      | _, _ => none
+  | some "if.then6.i" =>
+      match lookupName s.env "%sub" with
+      | some (.int 64 sub) => some (BitVec.ofInt 64 2 + sub).toNat
+      | _ => none
+  | _ => none
+
 /-- The latch with the caller's staging, the five register cells that staging and
-the record's `pre` are about, and the **frame**.
+the record's `pre` are about, the cursor's bound, and the **frame**.
 
 A cell holds one value, so the pinnings are not a second claim beside
 `DecodeLatch`'s: they force its existentials equal (`assemblyLatchInv_paddr_eq`).
@@ -57,7 +80,23 @@ leaves (`UnchangedOutside mem m regions`), and no exit word is a relation betwee
 two memories; a word written from the exit state alone can therefore satisfy every
 clause while saying nothing about what the run changed.  The invariant is where the
 arms establish it, block by block, so a block whose writes leave the destination
-extent has to say so rather than pass the obligation to whoever reads the exit. -/
+extent has to say so rather than pass the obligation to whoever reads the exit.
+
+**The region list is the extent the walk has written, not the record's.**  At the
+latch the run has produced the decoded prefix in the destination and nothing else:
+the offset slot, the cursor slot and the position list are written only by the exit
+blocks.  Naming them as regions anyway would say nothing about the offset slot,
+which is what let `entryExit_admits_clobbered_err` satisfy the word at a state whose
+slot the run never touches, and it would leave a body byte inside a named region
+unconstrained at the exit.  The narrower list implies the record's wider one, so
+the continuation weakens it; the record's own frame is not changed.
+
+**The cursor's bound is a consequence the block does not carry.**  `while.end35`
+forms `%sub38 = %n - %i.0.lcssa` in 64-bit arithmetic, so a cursor past the body
+wraps the subtraction and the copy's residual is `2 ^ 64 - (i - n)`; the walk itself
+does not exclude that (`latchExit_admits_cursor_past_body`).  The run's cursor stays
+inside the body because each step advances by an escape's own width, so the bound is
+true of the run and is carried here at the latch's own binder. -/
 def AssemblyLatchInv (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
     (err xj : Nat) (mem : Mem) (r c : Nat) (s : State) : Prop :=
@@ -69,7 +108,8 @@ def AssemblyLatchInv (body : List UInt8) (st : ClassState) (dst nps : Nat)
   lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   lookupName s.env "%err" = some (.ptr err) ∧
   lookupName s.env "%xj" = some (.ptr xj) ∧
-  UnchangedOutside mem s.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+  (∀ i : Nat, latchCursor s = some i → i ≤ n) ∧
+  UnchangedOutside mem s.mem [(dst, n + 64)]
 
 /-- The staged latch under the pinnings. -/
 theorem assemblyLatchInv_staged {body : List UInt8} {st : ClassState} {dst nps : Nat}
@@ -133,17 +173,26 @@ theorem assemblyLatchInv_dest {body : List UInt8} {st : ClassState} {dst nps : N
       lookupName s.env "%xj" = some (.ptr xj) :=
   ⟨h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1⟩
 
-/-- **The frame**: everything outside the destination extent, the position list,
-the cursor slot and the offset slot reads as it did in the caller's memory.  This
-is the fact the exit word cannot derive from the exit state, and the reason it
-rides in the invariant: the arms establish it as they proceed. -/
+/-- **The frame**: everything outside the destination extent reads as it did in the
+caller's memory.  This is the fact the exit word cannot derive from the exit state,
+and the reason it rides in the invariant: the arms establish it as they proceed. -/
 theorem assemblyLatchInv_frame {body : List UInt8} {st : ClassState} {dst nps : Nat}
     {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
     {mem : Mem} {r c : Nat}
     {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
       mem r c s) :
-    UnchangedOutside mem s.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)] :=
-  h.2.2.2.2.2.2.2.2
+    UnchangedOutside mem s.mem [(dst, n + 64)] :=
+  h.2.2.2.2.2.2.2.2.2
+
+/-- **The cursor's bound**, at the latch: the byte cursor the next step forms is
+inside the body, so `while.end35`'s subtraction does not wrap. -/
+theorem assemblyLatchInv_cursor {body : List UInt8} {st : ClassState} {dst nps : Nat}
+    {goal : EscapeOutcome} {b xp tab pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    {mem : Mem} {r c : Nat}
+    {s : State} (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj
+      mem r c s) :
+    ∀ i : Nat, latchCursor s = some i → i ≤ n :=
+  h.2.2.2.2.2.2.2.2.1
 
 /-- The pinning forces `DecodeLatch`'s `%p` existential: the two values are equal,
 so the extension refines the decode invariant rather than competing with it. -/
@@ -280,12 +329,25 @@ abbrev ExpandStaging (args : List Value) (mem : Mem) (next : Nat) (body : List U
   Γ_escape_expand_at args mem next body st dst nps goal b xp tab pos0 n ps err xj
 
 /-- The decoded exit, on `cleanup32`'s edge: the walk at the bound, the exit
-block's cells, and the frame. -/
+block's cells, the byte cursor's bound, and the frame.
+
+`%add24` is the cell `while.end35`'s `phi` copies into `%i.0.lcssa`, and the block
+forms `%sub38 = %n - %i.0.lcssa` from it in 64-bit arithmetic.  The bound is stated
+at that cell because it is what keeps the subtraction the block's `Nat` reading;
+without it the word admits a cursor past the body, whose residual wraps
+(`latchExit_admits_cursor_past_body`).
+
+The frame names only the destination extent, because at this edge the run has
+written nothing else.  That is what makes the offset slot's preservation, and the
+body's own bytes at this memory, consequences of the branch rather than facts
+nothing states. -/
 def AssemblyLatchExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
     (err xj : Nat) (mem : Mem) (e : State) : Prop :=
   e.pc = "while.end35" ∧ e.pre = some "cleanup32" ∧
   (∃ c : Nat, DecodeLatchExit body st dst nps goal c e) ∧
+  (∃ add24 : BitVec 64, lookupName e.env "%add24" = some (.int 64 add24) ∧
+    add24.toNat ≤ n) ∧
   lookupName e.env "%p" = some (.ptr b) ∧
   lookupName e.env "%xp" = some (.ptr xp) ∧
   lookupName e.env "%tab" = some (.ptr tab) ∧
@@ -293,7 +355,7 @@ def AssemblyLatchExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
   lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   lookupName e.env "%err" = some (.ptr err) ∧
   lookupName e.env "%xj" = some (.ptr xj) ∧
-  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+  UnchangedOutside mem e.mem [(dst, n + 64)]
 
 /-- The entry's exit, on `while.end`'s edge: the walk has nothing left to decode,
 so `while.end`'s cursor is the list's length and `while.end35`'s two copy bases
@@ -327,7 +389,7 @@ def AssemblyEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
   lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   lookupName e.env "%err" = some (.ptr err) ∧
   lookupName e.env "%xj" = some (.ptr xj) ∧
-  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+  UnchangedOutside mem e.mem [(dst, n + 64)]
 
 /-- **`while.body6`'s edge**, admitted with the witness that makes it live: the
 position the loop loaded lies at or past the window's end.  Under an admissible
@@ -510,15 +572,20 @@ theorem assemblyLatchStepExit {body : List UInt8} {st : ClassState} {dst nps : N
       rw [hs] at h1
       exact h1
     refine ⟨e, 1, by omega, ?_, fun k => runFuel_jump_prefix hstep k⟩
+    have hcur : latchCursor s = some i := by
+      simp only [latchCursor, hpre, hsub, ha, hi]
     refine ⟨rfl, rfl, ⟨c, i, out, jv, adv + sub, decodeNextIdx inc11 adv, paddr,
       xpaddr, tabaddr, erraddr, xjaddr, pos0v, addv, nv, rfl, ?_, hceq, ?_, hjlen,
       ?_, hi, ?_, hnext, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
-      hpos0cell, haddcall, hncell⟩, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
+      hpos0cell, haddcall, hncell⟩, ?_, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
       hxj_b, hframe⟩
     · rw [show e.mem = s.mem from rfl]; exact hwalk
     · simp only [e, withEnv, udCleanup32Env]; ud_lk
     · simp only [e, withEnv, udCleanup32Env]; ud_lk
     · simp only [e, withEnv, udCleanup32Env, decodeNextIdx, decodePairBit]; ud_lk
+    · refine ⟨adv + sub, ?_, ?_⟩
+      · simp only [e, withEnv, udCleanup32Env]; ud_lk
+      · rw [hi]; exact assemblyLatchInv_cursor h i hcur
   · subst hprev
     let e : State :=
       { (withEnv (udCleanup32Env s.env jv adv sub inc11 nxp) s) with
@@ -534,15 +601,21 @@ theorem assemblyLatchStepExit {body : List UInt8} {st : ClassState} {dst nps : N
       rw [hs] at h1
       exact h1
     refine ⟨e, 1, by omega, ?_, fun k => runFuel_jump_prefix hstep k⟩
+    have hcur : latchCursor s = some i := by
+      simp only [latchCursor, hpre, hsub]
+      rw [← hadv, hi]
     refine ⟨rfl, rfl, ⟨c, i, out, jv, adv + sub, decodeNextIdx inc11 adv, paddr,
       xpaddr, tabaddr, erraddr, xjaddr, pos0v, addv, nv, rfl, ?_, hceq, ?_, hjlen,
       ?_, hi, ?_, hnext, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
-      hpos0cell, haddcall, hncell⟩, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
+      hpos0cell, haddcall, hncell⟩, ?_, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
       hxj_b, hframe⟩
     · rw [show e.mem = s.mem from rfl]; exact hwalk
     · simp only [e, withEnv, udCleanup32Env]; ud_lk
     · simp only [e, withEnv, udCleanup32Env]; ud_lk
     · simp only [e, withEnv, udCleanup32Env, decodeNextIdx, decodePairBit]; ud_lk
+    · refine ⟨adv + sub, ?_, ?_⟩
+      · simp only [e, withEnv, udCleanup32Env]; ud_lk
+      · rw [hi]; exact assemblyLatchInv_cursor h i hcur
 
 
 /-! ### The two-exit instance at the staged invariant

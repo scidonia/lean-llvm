@@ -602,35 +602,89 @@ theorem exitWitness_staging :
   · refine ⟨0, hz8x, by omega, ?_⟩
     simp [escapeDecodeGo_nil]
 
+/-- **The entry branch as the exit word stated it before the written extent was
+pinned.**  The frame names the position list, the cursor slot and the offset slot
+among its regions, so it says nothing about any of them, and the branch states no
+read of the body's own bytes.
+
+This is the shape `entryExit_admits_clobbered_err` and
+`bodyExit_admits_clobbered_body` are stated at, and no consumer reads it: the exit
+word's own branch is `AssemblyEntryExit`, whose frame is the destination extent
+alone.  The two witnesses stay as the executable reason for that pinning. -/
+def AssemblyEntryExitFrameOnly (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "while.end35" ∧ e.pre = some "while.end" ∧
+  DecodeInv body st e.mem dst nps 0 nps [] goal ∧
+  lookupName e.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps)) ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- **The latch branch without the cursor's bound.**  The frame again names the
+position list, the cursor slot and the offset slot, and `%add24` is free.  This is
+the shape `latchExit_admits_cursor_past_body` is stated at. -/
+def AssemblyLatchExitUnbounded (body : List UInt8) (st : ClassState) (dst nps : Nat)
+    (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
+    (err xj : Nat) (mem : Mem) (e : State) : Prop :=
+  e.pc = "while.end35" ∧ e.pre = some "cleanup32" ∧
+  (∃ c : Nat, DecodeLatchExit body st dst nps goal c e) ∧
+  lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%xp" = some (.ptr xp) ∧
+  lookupName e.env "%tab" = some (.ptr tab) ∧
+  lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  UnchangedOutside mem e.mem [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+
+/-- The entry-edge state whose offset slot holds `7`s where the caller holds
+zeros: the walk's seed, the `while.end35` cells, and the frame's regions. -/
+def entryClobberedErrState : State :=
+  modelState
+    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 100), ("%xp", .ptr 700),
+     ("%tab", .ptr 400), ("%pos0", .int 64 0), ("%n", .int 64 0),
+     ("%err", .ptr 800), ("%xj", .ptr 900), ("%dst", .ptr 200)]
+    (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
+    "while.end35" (some "while.end")
+
+theorem entryClobberedErr_frame :
+    UnchangedOutside exitWitnessMem entryClobberedErrState.mem
+      [(200, 0 + 64), (700, 4 * 0), (900, 8), (800, 8)] := by
+  intro a ha
+  have hd : a < 800 ∨ 800 + 8 ≤ a := by
+    rcases Nat.lt_or_ge a 800 with h | h
+    · exact Or.inl h
+    · exact Or.inr (by
+        have := ha (800, 8) (by simp)
+        omega)
+  rw [show entryClobberedErrState.mem
+      = writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)) from rfl,
+    readByte_writeBytes_outside _ _ (by simpa using hd)]
+
+theorem entryClobberedErr_slot :
+    readBytes entryClobberedErrState.mem 800 8
+      = some (List.replicate 8 (7 : UInt8)) := by
+  unfold entryClobberedErrState modelState
+  exact readBytes_writeBytes_same exitWitnessMem (List.replicate 8 (7 : UInt8))
+    (addr := 800)
+
 /-- **The entry branch admits an offset slot the run will not overwrite.**  The
 state is the word's entry edge at the witness staging, with the offset slot's eight
 bytes replaced: the frame names `(err, 8)` as a region, so the word does not read the
 slot, and the success path writes only the destination and the cursor. -/
 theorem entryExit_admits_clobbered_err :
     ∃ e : State,
-      assemblyExitWord exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
-        (.decoded [] 0) 100 700 400 0 0 [] 800 900 e ∧
+      AssemblyEntryExitFrameOnly [] ⟨true, false⟩ 200 0 (.decoded [] 0) 100 700 400
+        0 0 [] 800 900 exitWitnessMem e ∧
       readBytes e.mem 800 8 ≠ readBytes exitWitnessMem 800 8 := by
-  have hframe : UnchangedOutside exitWitnessMem
-      (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
-      [(200, 0 + 64), (700, 4 * 0), (900, 8), (800, 8)] := by
-    intro a ha
-    have hd : a < 800 ∨ 800 + 8 ≤ a := by
-      rcases Nat.lt_or_ge a 800 with h | h
-      · exact Or.inl h
-      · exact Or.inr (by
-          have := ha (800, 8) (by simp)
-          omega)
-    rw [readByte_writeBytes_outside _ _ (by simpa using hd)]
-  refine ⟨modelState
-    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 100), ("%xp", .ptr 700),
-     ("%tab", .ptr 400), ("%pos0", .int 64 0), ("%n", .int 64 0),
-     ("%err", .ptr 800), ("%xj", .ptr 900), ("%dst", .ptr 200)]
-    (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
-    "while.end35" (some "while.end"), ⟨?_, ?_⟩⟩
-  · -- the word
-    refine ⟨exitWitness_staging, Or.inr (Or.inl ?_)⟩
-    refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨entryClobberedErrState, ?_, ?_⟩
+  · refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- the walk's seed
       show escapeDecodeGo [] 0 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
       rw [exitWitness_escAt, List.drop_zero]
@@ -638,24 +692,63 @@ theorem entryExit_admits_clobbered_err :
     · rfl
     · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
       rw [exitWitness_escAt]; rfl
-    all_goals (first | exact hframe | rfl | (simp only [modelState, lookupName]; simp))
+    all_goals (first
+      | exact entryClobberedErr_frame
+      | rfl
+      | (simp only [entryClobberedErrState, modelState, lookupName]; simp))
   · -- the slot differs
     intro hcontra
-    have hmem : (modelState
-        [("%k.0.lcssa", .int 64 0), ("%p", .ptr 100), ("%xp", .ptr 700),
-         ("%tab", .ptr 400), ("%pos0", .int 64 0), ("%n", .int 64 0),
-         ("%err", .ptr 800), ("%xj", .ptr 900), ("%dst", .ptr 200)]
-        (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
-        "while.end35" (some "while.end")).mem
-        = writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)) := rfl
-    have h1 : readBytes (writeBytes exitWitnessMem 800 (List.replicate 8 (7 : UInt8)))
-        800 8 = some (List.replicate 8 (7 : UInt8)) := by
-      simpa using readBytes_writeBytes_same exitWitnessMem
-        (List.replicate 8 (7 : UInt8)) (addr := 800)
     have h2 : readBytes exitWitnessMem 800 8 = some (List.replicate 8 (0 : UInt8)) :=
       exitWitness_zeros_high (by omega) (by omega)
-    rw [hmem, h1, h2] at hcontra
+    rw [entryClobberedErr_slot, h2] at hcontra
     exact absurd hcontra (by decide)
+
+/-- **The repaired entry branch excludes the clobbered offset slot.**  The frame now
+names only the destination extent, so the slot's bytes are the caller's by
+`UnchangedOutside`, and the word cannot admit a state that rewrites them. -/
+theorem entryExit_clobbered_err_excluded :
+    ¬ assemblyExitWord exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
+        (.decoded [] 0) 100 700 400 0 0 [] 800 900 entryClobberedErrState := by
+  intro h
+  have h2 : readBytes exitWitnessMem 800 8 = some (List.replicate 8 (0 : UInt8)) :=
+    exitWitness_zeros_high (by omega) (by omega)
+  rcases h.2 with hL | hE | h6 | hB | hS | hR
+  · obtain ⟨-, hpre, -⟩ := hL
+    exact absurd hpre (by decide)
+  · -- the repaired entry branch's frame relates the slot
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hfr⟩ := hE
+    have hread := readBytes_of_UnchangedOutside hfr
+      (a := 800) (k := 8) (fun x h1 h2 r hr => by
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+        subst hr
+        omega)
+    rw [entryClobberedErr_slot, h2] at hread
+    exact absurd hread (by decide)
+  · obtain ⟨-, hpre, -⟩ := h6
+    exact absurd hpre (by decide)
+  · obtain ⟨-, hpre, -⟩ := hB
+    exact absurd hpre (by decide)
+  · obtain ⟨hpc, -⟩ := hS
+    exact absurd hpc (by decide)
+  · obtain ⟨hdref, -⟩ := hR
+    obtain ⟨hpc, -⟩ := hdref
+    exact absurd hpc (by decide)
+
+/-- The latch-edge state whose `%add24` is `5` for a zero-length body. -/
+def latchCursorPastBodyState : State :=
+  modelState
+    [("%j.3", .int 64 0), ("%add24", .int 64 (BitVec.ofNat 64 5)),
+     ("%add28", .int 64 0), ("%p", .ptr 100), ("%dst", .ptr 200),
+     ("%xp", .ptr 700), ("%tab", .ptr 400), ("%err", .ptr 800),
+     ("%xj", .ptr 900), ("%pos0", .int 64 0), ("%add", .int 64 0),
+     ("%n", .int 64 0)]
+    exitWitnessMem "while.end35" (some "cleanup32")
+
+theorem latchCursorPastBody_add24 :
+    lookupName latchCursorPastBodyState.env "%add24"
+      = some (.int 64 (BitVec.ofNat 64 5)) := by
+  simp only [latchCursorPastBodyState, modelState, lookupName]
+  simp
 
 /-- **The latch branch admits a byte cursor past the body.**  At the same staging, a
 state whose `%add24` — the cell `while.end35` copies into `%i.0.lcssa` — is `5` for a
@@ -664,45 +757,266 @@ zero-length body satisfies the word: the walk at cursor `5` has the same outcome
 then forms `%sub38 = 0 - 5`, and the copy's residual wraps. -/
 theorem latchExit_admits_cursor_past_body :
     ∃ e : State,
-      assemblyExitWord exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
-        (.decoded [] 0) 100 700 400 0 0 [] 800 900 e ∧
+      AssemblyLatchExitUnbounded [] ⟨true, false⟩ 200 0 (.decoded [] 0) 100 700 400
+        0 0 [] 800 900 exitWitnessMem e ∧
       lookupName e.env "%add24" = some (.int 64 (BitVec.ofNat 64 5)) := by
-  have hframe : UnchangedOutside exitWitnessMem exitWitnessMem
+  have hframe : UnchangedOutside exitWitnessMem latchCursorPastBodyState.mem
       [(200, 0 + 64), (700, 4 * 0), (900, 8), (800, 8)] := fun a _ => rfl
-  refine ⟨modelState
-    [("%j.3", .int 64 0), ("%add24", .int 64 (BitVec.ofNat 64 5)),
-     ("%add28", .int 64 0), ("%p", .ptr 100), ("%dst", .ptr 200),
-     ("%xp", .ptr 700), ("%tab", .ptr 400), ("%err", .ptr 800),
-     ("%xj", .ptr 900), ("%pos0", .int 64 0), ("%add", .int 64 0),
-     ("%n", .int 64 0)]
-    exitWitnessMem "while.end35" (some "cleanup32"), ⟨?_, ?_⟩⟩
-  · -- the word
-    refine ⟨exitWitness_staging, Or.inl ?_⟩
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨latchCursorPastBodyState, ?_, latchCursorPastBody_add24⟩
+  refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- the walk's exit data, at cursor `5`
+    refine ⟨0, 5, [], BitVec.ofNat 64 0, BitVec.ofNat 64 5, BitVec.ofNat 64 0,
+      100, 700, 400, 800, 900, BitVec.ofNat 64 0, 0, BitVec.ofNat 64 0, ?_⟩
+    refine ⟨rfl, ⟨?_, ?_, ?_⟩, rfl, rfl, (by decide), rfl, (by decide), rfl,
+      (by decide), rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · show escapeDecodeGo [] 5 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
+      rw [exitWitness_escAt, List.drop_zero]
+      exact escapeDecodeGo_nil ([] : List UInt8) 0 0 []
     · rfl
+    · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
+      rw [exitWitness_escAt]; rfl
+  all_goals solve
+    | exact hframe
+    | (simp only [latchCursorPastBodyState, modelState, lookupName]; simp)
+
+/-- **The repaired latch branch excludes the cursor past the body.**  The branch now
+bounds `%add24` by `n`, and the witness's cell is `5` where `n` is `0`. -/
+theorem latchExit_cursor_excluded :
+    ¬ assemblyExitWord exitWitnessArgs exitWitnessMem 0 [] ⟨true, false⟩ 200 0
+        (.decoded [] 0) 100 700 400 0 0 [] 800 900 latchCursorPastBodyState := by
+  intro h
+  rcases h.2 with hL | hE | h6 | hB | hS | hR
+  · obtain ⟨-, -, -, ⟨add24, hcell, hle⟩, -⟩ := hL
+    rw [latchCursorPastBody_add24] at hcell
+    have hadd : (BitVec.ofNat 64 5 : BitVec 64) = add24 := by
+      injection hcell with hv
+      injection hv with _ h
+    rw [← hadd] at hle
+    exact absurd hle (by decide)
+  · obtain ⟨-, hpre, -⟩ := hE
+    exact absurd hpre (by decide)
+  · obtain ⟨-, hpre, -⟩ := h6
+    exact absurd hpre (by decide)
+  · obtain ⟨-, hpre, -⟩ := hB
+    exact absurd hpre (by decide)
+  · obtain ⟨hpc, -⟩ := hS
+    exact absurd hpc (by decide)
+  · obtain ⟨hdref, -⟩ := hR
+    obtain ⟨hpc, -⟩ := hdref
+    exact absurd hpc (by decide)
+
+/-! ### The body's own bytes at the exit memory
+
+The continuation from `while.end35` is the final copy, and the copy's source range
+is read at the **exit state's** memory: `body.drop i` from `b + i` and the
+thirty-two bytes the record promises past the body's end.  The frame was the only
+clause relating the exit memory to the caller's, and it named the position list,
+the cursor slot and the offset slot as regions, so a body byte that falls inside
+one of them was free at the exit — even though the run writes none of them before
+`while.end35`.  The witness below is such a state: a four-byte body at `100`, an
+empty position list, and the offset slot at `101`, inside the body's own bytes.  The
+run writes the offset slot only on a refusal, so the caller's body must read back
+unchanged; the wide frame admits a state where it does not.
+
+The narrower frame — the destination extent alone — is what excludes it. -/
+
+/-- The body the body-bytes witness decodes: a quote, which takes the classifier
+out of the string, and three control bytes that are therefore not escape
+positions. -/
+def bodyWitnessBody : List UInt8 := [0x22, 0x00, 0x00, 0x00]
+
+/-- The witness memory: the exit witness's memory with the body written at `100`. -/
+def bodyWitnessMem : Mem := writeBytes exitWitnessMem 100 bodyWitnessBody
+
+/-- A read past the body's four bytes is the exit witness's read. -/
+theorem bodyWitness_above {a k : Nat} (h : 104 ≤ a) :
+    readBytes bodyWitnessMem a k = readBytes exitWitnessMem a k := by
+  unfold bodyWitnessMem
+  exact JsonEntrySteps.readBytes_writeBytes_above exitWitnessMem bodyWitnessBody k a 100
+    (by simp [bodyWitnessBody]; omega)
+
+theorem bodyWitness_body : readBytes bodyWitnessMem 100 4 = some bodyWitnessBody := by
+  unfold bodyWitnessMem
+  have hlen : bodyWitnessBody.length = 4 := rfl
+  rw [← hlen]
+  exact readBytes_writeBytes_same exitWitnessMem bodyWitnessBody (addr := 100)
+
+/-- The offset slot at `101` lies inside the body's own four bytes; the three bytes
+it shares with them are zeros, so the slot still reads the zero word. -/
+theorem bodyWitness_err : readBytes bodyWitnessMem 101 8 = some (wordBytes 8 0) := by
+  obtain ⟨-, htail⟩ := readBytes_split bodyWitnessMem 100 1 3 (bs := bodyWitnessBody) (by
+    rw [show (1 : Nat) + 3 = 4 from rfl]; exact bodyWitness_body)
+  have h3 : readBytes bodyWitnessMem 101 3 = some [0, 0, 0] := by
+    simpa [bodyWitnessBody] using htail
+  have h5 : readBytes bodyWitnessMem 104 5 = some (List.replicate 5 0) := by
+    rw [bodyWitness_above (by omega)]
+    exact exitWitness_zeros (by omega)
+  have h8 := JsonEntrySteps.readBytes_append bodyWitnessMem 3 101 [0, 0, 0] 5
+    (List.replicate 5 0) h3 h5
+  rw [show (3 : Nat) + 5 = 8 from rfl] at h8
+  rw [h8, wordBytes_rep_eight]
+  rfl
+
+theorem bodyWitness_xj : readBytes bodyWitnessMem 300 8 = some (wordBytes 8 0) := by
+  rw [bodyWitness_above (by omega), exitWitness_zeros (by omega), wordBytes_rep_eight]
+
+theorem bodyWitness_table :
+    readBytes bodyWitnessMem 400 256 = some unescapeTable := by
+  rw [bodyWitness_above (by omega)]
+  exact exitWitness_table
+
+theorem bodyWitness_tail : ∃ bs, readBytes bodyWitnessMem 104 32 = some bs :=
+  ⟨_, by rw [bodyWitness_above (by omega)]; exact exitWitness_zeros (by omega)⟩
+
+theorem bodyWitness_dst : ∃ bs, readBytes bodyWitnessMem 200 68 = some bs :=
+  ⟨_, by rw [bodyWitness_above (by omega)]; exact exitWitness_zeros (by omega)⟩
+
+/-- The caller's argument list at the body-bytes witness. -/
+def bodyWitnessArgs : List Value :=
+  [.ptr 100, .int 64 (BitVec.ofNat 64 4), .ptr 200, .ptr 101, .ptr 500,
+   .ptr 300, .int 64 (BitVec.ofNat 64 0), .int 64 (BitVec.ofNat 64 0), .ptr 400]
+
+theorem bodyWitness_escAt :
+    escAt bodyWitnessBody ⟨true, false⟩ 0 = [] := by decide
+
+theorem bodyWitness_positions :
+    escapePositionsFrom bodyWitnessBody ⟨true, false⟩ = [] := by decide
+
+theorem bodyWitness_staging :
+    ExpandStaging bodyWitnessArgs bodyWitnessMem 0 bodyWitnessBody ⟨true, false⟩ 200 0
+      (.decoded bodyWitnessBody 0) 100 500 400 0 4 [] 101 300 := by
+  unfold ExpandStaging Γ_escape_expand_at
+  refine ⟨?_, rfl, rfl, bodyWitness_body, by omega, ?_, ?_, ?_, by omega, by omega, ?_⟩
+  · -- the record's `pre`
+    refine ⟨100, 4, 200, 101, 500, 300, 0, 0, 400, bodyWitnessBody, [], 0, 0, rfl,
+      bodyWitness_body, ?_, rfl, (fun q hq => absurd hq (by simp)), ?_, by omega,
+      bodyWitness_xj, by omega, bodyWitness_err, bodyWitness_table,
+      bodyWitness_tail, bodyWitness_dst, by omega, by omega, by omega, by omega,
+      by omega, by omega⟩
     · rfl
-    · -- the walk's exit data, at cursor `5`
-      refine ⟨0, 5, [], BitVec.ofNat 64 0, BitVec.ofNat 64 5, BitVec.ofNat 64 0,
-        100, 700, 400, 800, 900, BitVec.ofNat 64 0, 0, BitVec.ofNat 64 0, ?_⟩
-      refine ⟨rfl, ⟨?_, ?_, ?_⟩, rfl, rfl, (by decide), rfl, (by decide), rfl,
-        (by decide), rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-      · show escapeDecodeGo [] 5 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0
-        rw [exitWitness_escAt, List.drop_zero]
-        exact escapeDecodeGo_nil ([] : List UInt8) 0 0 []
-      · rfl
-      · show (escAt ([] : List UInt8) ⟨true, false⟩ 0).length = 0
-        rw [exitWitness_escAt]; rfl
-    · simp only [modelState, lookupName]; simp
-    · simp only [modelState, lookupName]; simp
-    · simp only [modelState, lookupName]; simp
-    · simp only [modelState, lookupName]; simp
-    · simp only [modelState, lookupName]; simp
-    · simp only [modelState, lookupName]; simp
-    · simp only [modelState, lookupName]; simp
-    · exact hframe
-  · -- `%add24` is the cursor
-    simp only [modelState, lookupName]
-    simp
+    · show ([] : List Nat).map (fun q => q - 0)
+          = escapePositionsFrom bodyWitnessBody ⟨true, false⟩
+      rw [bodyWitness_positions]
+      rfl
+  · -- `DecodeStaging`
+    refine ⟨BitVec.ofNat 64 4, ?_, rfl, (fun j q hq => absurd hq (by simp)), by decide⟩
+    rfl
+  · show ([] : List Nat).map (fun q => q - 0)
+        = escapePositionsFrom bodyWitnessBody ⟨true, false⟩
+    rw [bodyWitness_positions]
+    rfl
+  · unfold DecodeNoAlias
+    refine ⟨by omega, by omega, by omega, by omega⟩
+  · refine ⟨0, bodyWitness_xj, by omega, ?_⟩
+    simp [List.drop_zero, escapeDecodeGo_nil]
+
+/-- The body-bytes state: the same exit edge, with the eight bytes at the offset
+slot replaced by `0xFF` — inside the body's own four bytes, so the body's read
+differs from the caller's. -/
+def bodyClobberedWitnessState : State :=
+  modelState
+    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 100), ("%xp", .ptr 500),
+     ("%tab", .ptr 400), ("%pos0", .int 64 0), ("%n", .int 64 4),
+     ("%err", .ptr 101), ("%xj", .ptr 300), ("%dst", .ptr 200)]
+    (writeBytes bodyWitnessMem 101 (List.replicate 8 (0xFF : UInt8)))
+    "while.end35" (some "while.end")
+
+theorem bodyClobberedWitness_frame :
+    UnchangedOutside bodyWitnessMem bodyClobberedWitnessState.mem
+      [(200, 4 + 64), (500, 4 * 0), (300, 8), (101, 8)] := by
+  intro a ha
+  have hd : a < 101 ∨ 101 + 8 ≤ a := by
+    rcases Nat.lt_or_ge a 101 with h | h
+    · exact Or.inl h
+    · exact Or.inr (by
+        have := ha (101, 8) (by simp)
+        omega)
+  rw [show bodyClobberedWitnessState.mem
+      = writeBytes bodyWitnessMem 101 (List.replicate 8 (0xFF : UInt8)) from rfl,
+    readByte_writeBytes_outside _ _ (by simpa using hd)]
+
+/-- The clobbered state's body read: the first body byte survives the write at
+`101`, and the next three are the write's own bytes. -/
+theorem bodyClobberedWitness_body :
+    readBytes bodyClobberedWitnessState.mem 100 4
+      = some ([0x22, 0xFF, 0xFF, 0xFF] : List UInt8) := by
+  have h0 : readBytes bodyClobberedWitnessState.mem 100 1 = some [0x22] := by
+    rw [show bodyClobberedWitnessState.mem
+        = writeBytes bodyWitnessMem 101 (List.replicate 8 (0xFF : UInt8)) from rfl,
+      readBytes_writeBytes_below bodyWitnessMem _ 1 100 101 (by omega)]
+    obtain ⟨h1, -⟩ := readBytes_split bodyWitnessMem 100 1 3
+      (bs := bodyWitnessBody) (by
+        rw [show (1 : Nat) + 3 = 4 from rfl]; exact bodyWitness_body)
+    simpa [bodyWitnessBody] using h1
+  have h3 : readBytes bodyClobberedWitnessState.mem 101 3
+      = some (List.replicate 3 (0xFF : UInt8)) := by
+    rw [show bodyClobberedWitnessState.mem
+        = writeBytes bodyWitnessMem 101 (List.replicate 8 (0xFF : UInt8)) from rfl]
+    obtain ⟨h1, -⟩ := readBytes_split
+      (writeBytes bodyWitnessMem 101 (List.replicate 8 (0xFF : UInt8))) 101 3 5
+      (bs := List.replicate 8 (0xFF : UInt8)) (readBytes_writeBytes_same _ _)
+    simpa using h1
+  have hw := JsonEntrySteps.readBytes_append bodyClobberedWitnessState.mem 1 100 [0x22] 3
+    (List.replicate 3 (0xFF : UInt8)) h0 h3
+  rw [show (1 : Nat) + 3 = 4 from rfl] at hw
+  rw [hw]
+  rfl
+
+/-- **The entry branch admits a body read the run does not leave.**  The offset slot
+sits inside the body's own four bytes, and the frame names it as a region, so the
+word admits a state whose body read at the exit memory differs from the caller's.
+The continuation's source range is exactly that read. -/
+theorem bodyExit_admits_clobbered_body :
+    ∃ e : State,
+      AssemblyEntryExitFrameOnly bodyWitnessBody ⟨true, false⟩ 200 0
+        (.decoded bodyWitnessBody 0) 100 500 400 0 4 [] 101 300 bodyWitnessMem e ∧
+      readBytes e.mem 100 4 ≠ some bodyWitnessBody := by
+  refine ⟨bodyClobberedWitnessState, ?_, ?_⟩
+  · refine ⟨rfl, rfl, ⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · -- the walk's seed: the body, nothing stored, no positions
+      show escapeDecodeGo bodyWitnessBody 0 0
+        ((escAt bodyWitnessBody ⟨true, false⟩ 0).drop 0) [] =
+          .decoded bodyWitnessBody 0
+      rw [bodyWitness_escAt]
+      simp [escapeDecodeGo_nil]
+    · rfl
+    · show (escAt bodyWitnessBody ⟨true, false⟩ 0).length = 0
+      rw [bodyWitness_escAt]
+      rfl
+    all_goals (first
+      | exact bodyClobberedWitness_frame
+      | rfl
+      | (simp only [bodyClobberedWitnessState, modelState, lookupName]; simp))
+  · rw [bodyClobberedWitness_body]
+    decide
+/-- **The repaired entry branch excludes the clobbered body.**  Its frame names only
+the destination extent, so every byte of the body's four-byte read is the caller's,
+and `body.drop 0` is the body the staging names. -/
+theorem bodyExit_clobbered_body_excluded :
+    ¬ assemblyExitWord bodyWitnessArgs bodyWitnessMem 0 bodyWitnessBody ⟨true, false⟩
+        200 0 (.decoded bodyWitnessBody 0) 100 500 400 0 4 [] 101 300
+        bodyClobberedWitnessState := by
+  intro h
+  rcases h.2 with hL | hE | h6 | hB | hS | hR
+  · obtain ⟨-, hpre, -⟩ := hL
+    exact absurd hpre (by decide)
+  · obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hfr⟩ := hE
+    have hread := readBytes_of_UnchangedOutside hfr
+      (a := 100) (k := 4) (fun x h1 h2 r hr => by
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+        subst hr
+        omega)
+    rw [bodyWitness_body, bodyClobberedWitness_body] at hread
+    exact absurd hread (by decide)
+  · obtain ⟨-, hpre, -⟩ := h6
+    exact absurd hpre (by decide)
+  · obtain ⟨-, hpre, -⟩ := hB
+    exact absurd hpre (by decide)
+  · obtain ⟨hpc, -⟩ := hS
+    exact absurd hpc (by decide)
+  · obtain ⟨hdref, -⟩ := hR
+    obtain ⟨hpc, -⟩ := hdref
+    exact absurd hpc (by decide)
 
 /-! ### The exit's allowance
 
@@ -727,6 +1041,42 @@ theorem expandExitFuel_eq {b n dst err xp xj nps pos0 tab : Nat} (hn : n < 2 ^ 6
       .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0), .ptr tab]
       = n / 64 + 7 := by
   simp only [expandExitFuel, expandBodyLen, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn]
+
+/-- **A narrower frame implies a wider one.**  A frame over fewer regions says more:
+a byte outside the wider list is outside the narrower one too, so the narrower
+frame's equality is the wider frame's.  The exit word's region list is the
+destination extent alone, and the record's `post` names four. -/
+theorem UnchangedOutside.mono {m0 m : Mem} {R R' : List (Nat × Nat)}
+    (h : UnchangedOutside m0 m R') (hsub : ∀ r ∈ R', r ∈ R) :
+    UnchangedOutside m0 m R :=
+  fun a ha => h a (fun r hr => ha r (hsub r hr))
+
+/-- **The body reads as the caller's at the exit memory.**  The body's extent is
+disjoint from the destination extent the run writes; the exit word's frame is that
+extent alone. -/
+theorem exitBody_read {mem M : Mem} {b n dst : Nat} {body : List UInt8}
+    (hdisj : b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b)
+    (hframe : UnchangedOutside mem M [(dst, n + 64)])
+    (hbody : readBytes mem b n = some body) :
+    readBytes M b n = some body := by
+  rw [readBytes_of_UnchangedOutside hframe (a := b) (k := n) (fun x h1 h2 r hr => by
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    subst hr
+    omega)]
+  exact hbody
+
+/-- **The thirty-two bytes past the body read as the caller's at the exit
+memory.** -/
+theorem exitTail_read {mem M : Mem} {b n dst : Nat}
+    (hdisj : b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b)
+    (hframe : UnchangedOutside mem M [(dst, n + 64)])
+    {extra : List UInt8} (hextra : readBytes mem (b + n) 32 = some extra) :
+    readBytes M (b + n) 32 = some extra := by
+  rw [readBytes_of_UnchangedOutside hframe (a := b + n) (k := 32) (fun x h1 h2 r hr => by
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    subst hr
+    omega)]
+  exact hextra
 
 /-- info: 'LeanLLVM.Vellum.readBytes_writeBytes_thirtyTwo' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -799,5 +1149,21 @@ theorem expandExitFuel_eq {b n dst err xp xj nps pos0 tab : Nat} (hn : n < 2 ^ 6
 /-- info: 'LeanLLVM.Vellum.latchExit_admits_cursor_past_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms latchExit_admits_cursor_past_body
+
+/-- info: 'LeanLLVM.Vellum.entryExit_clobbered_err_excluded' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms entryExit_clobbered_err_excluded
+
+/-- info: 'LeanLLVM.Vellum.latchExit_cursor_excluded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms latchExit_cursor_excluded
+
+/-- info: 'LeanLLVM.Vellum.bodyExit_admits_clobbered_body' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms bodyExit_admits_clobbered_body
+
+/-- info: 'LeanLLVM.Vellum.bodyExit_clobbered_body_excluded' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bodyExit_clobbered_body_excluded
 
 end LeanLLVM.Vellum

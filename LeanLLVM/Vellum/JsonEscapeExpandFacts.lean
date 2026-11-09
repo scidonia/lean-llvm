@@ -336,6 +336,49 @@ theorem staging_ptr_slots {args : List Value} {b xp tab dst err xj nps pos0 n : 
     b' = b ∧ dst' = dst ∧ err' = err ∧ xp' = xp ∧ xj' = xj ∧ tab' = tab :=
   args_ptr_slots (hargs'.symm.trans hargs)
 
+/-- The body's length at the adapter's binder is the `pre`'s, when both are
+canonical: the argument equation identifies the two `BitVec` slots and the width
+bound makes each a `Nat` below `2 ^ 64`. -/
+theorem staging_len_eq {args : List Value} {b n dst err xp xj nps pos0 tab : Nat}
+    (hargs : args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err,
+      .ptr xp, .ptr xj, .int 64 (BitVec.ofNat 64 nps),
+      .int 64 (BitVec.ofNat 64 pos0), .ptr tab])
+    {b' n' dst' err' xp' xj' nps' pos0' tab' : Nat}
+    (hargs' : args = [.ptr b', .int 64 (BitVec.ofNat 64 n'), .ptr dst', .ptr err',
+      .ptr xp', .ptr xj', .int 64 (BitVec.ofNat 64 nps'),
+      .int 64 (BitVec.ofNat 64 pos0'), .ptr tab'])
+    (hn : n < 2 ^ 64) (hn' : n' < 2 ^ 64) : n = n' := by
+  have h1 := congrArg (fun l : List Value => l[1]?) (hargs'.symm.trans hargs)
+  simp only [List.getElem?_cons_succ, List.getElem?_cons_zero] at h1
+  have hv : (BitVec.ofNat 64 n : BitVec 64) = BitVec.ofNat 64 n' := by
+    have h2 := Option.some.inj h1
+    exact eq_of_heq (Value.int.inj h2).2.symm
+  have h1' : (BitVec.ofNat 64 n).toNat = n := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn]
+  have h2' : (BitVec.ofNat 64 n').toNat = n' := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn']
+  have := congrArg BitVec.toNat hv
+  rw [h1', h2'] at this
+  exact this
+
+/-- **The thirty-two bytes past the body, at the adapter's own `n`.**  The record's
+`pre` promises them at its witness; the argument equation and the width bound make
+that witness the same `Nat`, so the promise is this binder's. -/
+theorem ExpandStaging.tail_read
+    {args : List Value} {mem : Mem} {next : Nat} {body : List UInt8}
+    {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat}
+    {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (h : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj) :
+    ∃ extra, readBytes mem (b + n) 32 = some extra := by
+  obtain ⟨hpre, hargs, -, -, hn32, -⟩ := h
+  obtain ⟨b', n', dst', err', xp', xj', nps', pos0', tab', body', ps', err0', k0',
+    hargs', hbody', hposbytes', hpslen', hrange', hmap', hwidth', hk0r', hk0le',
+    herr0', htab', hhas32, hhasdst, -⟩ := hpre
+  obtain ⟨hb', -, -, -, -, -⟩ := staging_ptr_slots hargs hargs'
+  have hn' : n' = n := (staging_len_eq hargs hargs' (by omega) (by omega)).symm
+  obtain ⟨extra, hextra⟩ := hhas32
+  exact ⟨extra, by rw [← hb', ← hn']; exact hextra⟩
+
 /-- **The refusal continuation satisfies the post.**  The walk's refusal at the
 state's own `%sub`/`%inc11` is the post's refusal, the two stores are the branch's,
 and the return touches no memory. -/
@@ -780,11 +823,12 @@ theorem admits_latchEdge :
         e := by
   refine ⟨modelState (latchModelEnv 0) [] "while.end35" (some "cleanup32"), ?_⟩
   unfold AssemblyLatchExit
-  refine ⟨rfl, rfl, ⟨0, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨rfl, rfl, ⟨0, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · unfold DecodeLatchExit
     refine ⟨0, [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, rfl, ⟨rfl, rfl, rfl⟩, rfl, ?_, rfl,
       ?_, rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals solve | rfl | (simp only [modelState]; ud_lk)
+  · exact ⟨0, by simp only [latchModelEnv]; ud_lk, by decide⟩
   all_goals solve
     | rfl
     | (simp only [modelState]; ud_lk)
