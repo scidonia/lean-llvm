@@ -375,7 +375,17 @@ produces and that its own continuation cannot reach the post from: with
 generic word is satisfiable at `i = 3` and `out = [0x61, 0x0A]`, where the block
 copies `sub = n - 0 = 3` bytes from the body's first byte and returns
 `%add40 = 3`, while the goal's output length is `2`.  The seed's own shape is what
-`emptySeedRun` constructs, and it is what the continuation reads. -/
+`emptySeedRun` constructs, and it is what the continuation reads.
+
+`%dst` is pinned for the same reason and by the same evidence.  `while.end35`
+forms the final copy's destination as `%add.ptr37 = %dst + %j.0.lcssa`, so the
+block reads the cell and the register is part of the edge; the walk's `stored`
+clause and the frame name the *number* `dst`, not the register, and nothing else
+in the branch ties one to the other.  A state whose every other cell is right and
+whose `%dst` is `dst + 32` therefore satisfies the branch, while the run copies
+the body at `dst + 32` and the post reads the caller's bytes at `dst`: the write
+is inside the destination extent, so the frame holds and the post is false.  The
+sibling branch needs no such clause because `DecodeLatchExit` pins `%dst` itself. -/
 def AssemblyEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
     (goal : EscapeOutcome) (b xp tab : Nat) (pos0 n : Nat) (ps : List Nat)
     (err xj : Nat) (mem : Mem) (e : State) : Prop :=
@@ -383,6 +393,7 @@ def AssemblyEntryExit (body : List UInt8) (st : ClassState) (dst nps : Nat)
   DecodeInv body st e.mem dst nps 0 nps [] goal ∧
   lookupName e.env "%k.0.lcssa" = some (.int 64 (BitVec.ofNat 64 nps)) ∧
   lookupName e.env "%p" = some (.ptr b) ∧
+  lookupName e.env "%dst" = some (.ptr dst) ∧
   lookupName e.env "%xp" = some (.ptr xp) ∧
   lookupName e.env "%tab" = some (.ptr tab) ∧
   lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧

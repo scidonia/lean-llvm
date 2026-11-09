@@ -181,7 +181,7 @@ theorem emptySeedRun
   refine ⟨s2, 2, by decide, rfl, hgoal, ?_, ?_⟩
   · -- the exit word: the caller's staging and `while.end`'s edge
     refine ⟨hstaging, Or.inr (Or.inl ?_)⟩
-    refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- the seed's walk: nothing written, nothing decoded, `nps` positions left
       refine ⟨?_, ?_, ?_⟩
       · -- the walk from the list's end is the goal
@@ -201,6 +201,8 @@ theorem emptySeedRun
       simp only [s2, udWhileEndEnv, withEnv]
       rw [lookupName_cons_ne _ _ (by decide), hk0]
       exact lookupName_cons_self _ _ _
+    · -- `%p` and `%dst`, both the caller's parameters
+      simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
     · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
     · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
     · simp only [s2, udWhileEndEnv, withEnv, s1, udEntryEnv, entryState_env hargs]; ud_lk
@@ -841,11 +843,12 @@ theorem admits_entryEdge :
       AssemblyEntryExit [] ⟨true, false⟩ 0 0 (.decoded [] 0) 0 0 0 0 0 [] 0 0 []
         e := by
   refine ⟨modelState
-    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 0), ("%xp", .ptr 0), ("%tab", .ptr 0),
-     ("%pos0", .int 64 0), ("%n", .int 64 0), ("%err", .ptr 0), ("%xj", .ptr 0)]
+    [("%k.0.lcssa", .int 64 0), ("%p", .ptr 0), ("%dst", .ptr 0), ("%xp", .ptr 0),
+     ("%tab", .ptr 0), ("%pos0", .int 64 0), ("%n", .int 64 0), ("%err", .ptr 0),
+     ("%xj", .ptr 0)]
     [] "while.end35" (some "while.end"), ?_⟩
   unfold AssemblyEntryExit
-  refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- the seed's walk at the empty body
     refine ⟨?_, ?_, ?_⟩
     · show escapeDecodeGo [] 0 0 ((escAt [] ⟨true, false⟩ 0).drop 0) [] = .decoded [] 0

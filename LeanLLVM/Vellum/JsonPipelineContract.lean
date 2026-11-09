@@ -79,7 +79,10 @@ the arguments this body passes, plus the two regions the pipeline's staging owns
 
 * the document at `b`, padded to its block count — the mask unit reads each
   64-byte block (`Γ_masks.pre`), the UTF-8 stage its window (`Γ_utf8.pre`), and
-  stage 2 the document itself;
+  stage 2 the document itself.  The listed extent is the UTF-8 window's, because
+  it is the widest: `utf8Window bs n nb = [0, 0, 0] ++ bs ++ padding` is read at
+  `b - 3` for `3 + 64 * nb` bytes, so the three bytes below the document are part
+  of the region and the mask unit's blocks are inside it;
 * the pos8 table at `tab`, all 8 KiB — `Γ_entry_pos8.pre` reads
   `readBytes mem tab 8192 = some pos8Table`;
 * the mask unit's carry slot `sc` (24 bytes, `Γ_masks.pre`) and its mask slot
@@ -105,7 +108,7 @@ def pipelineReads (tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × Nat) :
   | [.ptr b, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr _, .int 64 _,
      .ptr ndst, .ptr _, .int 64 _, .ptr nev, .ptr err, .int 64 _] =>
-      [(b, 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
+      [(b - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
        (entw, 8), (ep, 4 * (nk0 + 64 * pipelineBlocks n.toNat + 9)), (nk, 8),
        (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8)), (nxp, 8),
        (xcarry, 16), (ndst, 8), (nev, 8), (err, 8)]
@@ -122,7 +125,7 @@ def pipelineRegions (tab nk0 nxp0 ndst0 : Nat) (args : List Value) : List (Nat �
   | [.ptr b, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
      .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err, .int 64 _] =>
-      [(b, 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
+      [(b - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
        (entw, 8), (ep, 4 * (nk0 + 64 * pipelineBlocks n.toNat + 9)), (nk, 8),
        (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8)), (nxp, 8),
        (xcarry, 16), (dst, ndst0 + n.toNat + 64), (ndst, 8),
@@ -150,6 +153,10 @@ clause names the unit record it is read from:
 * the document and its padded window are the mask record's 64-byte block read
   lifted over the whole run, and the bound is `Limits.default.maxInput`, the
   limit `Σ_pipeline` is stated at (`Parse.lean:34`);
+* the three bytes below the document are the UTF-8 stage's window, which
+  `Γ_utf8.pre` reads at `b - 3` as `[0, 0, 0] ++ bs ++ padding`; and the document
+  is non-empty because that record's `pre` and post both require `0 < n`, while
+  the entry test sends a zero-length document past the loop to the stage;
 * the entry table is `Γ_entry_pos8.pre`'s `pos8Table` clause, the same region
   §15.51 gives the caller to initialise;
 * the carry slots are the inputs the mask and escape-list records read for a
@@ -179,6 +186,17 @@ def pipelineStaging (args : List Value) (mem : Mem) : Prop :=
     bs.length ≤ (Limits.default).maxInput ∧
     readBytes mem b (64 * pipelineBlocks bs.length) =
       some (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) ∧
+    -- the UTF-8 stage's window begins three bytes below the document, and those
+    -- bytes are zero: `Γ_utf8.pre` stages
+    -- `readBytes mem (b - 3) (3 + 64 * nb) = some (utf8Window bs n nb)` and
+    -- `utf8Window bs n nb` is `[0, 0, 0] ++ bs ++ padding`, so this clause and
+    -- the document window above are that one window byte for byte
+    3 ≤ b ∧
+    readBytes mem (b - 3) 3 = some (List.replicate 3 0) ∧
+    -- the stage is not defined on an empty document: `Γ_utf8.pre` requires
+    -- `0 < n`, and the entry test sends a zero-length document straight past the
+    -- loop to the stage, so the staging excludes the length the body cannot run
+    0 < bs.length ∧
     -- the entry table: 8 KiB = 1024 u64 words, `pos8Table`
     readBytes mem tab 8192 = some pos8Table ∧
     -- the two carry slots, all zero for the document's first block
