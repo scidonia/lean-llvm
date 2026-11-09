@@ -9,6 +9,8 @@ import LeanLLVM.Vellum.Pclmul
 import LeanLLVM.Vellum.JsonS1MasksSteps
 import LeanLLVM.Vellum.JsonB8Steps
 import LeanLLVM.Vellum.JsonUnitContracts
+import LeanLLVM.Vellum.JsonEscapeSpec
+import LeanLLVM.Vellum.JsonEscapeSteps
 
 open LeanLLVM.Vellum
 

@@ -1,0 +1,310 @@
+/-
+The escape unit's boundary records, at its two entry points.
+
+The unit answers two questions and this module states what a caller may rely on for
+each: the position list a block's masks give (`leanllvm_json_escape_list`), and the
+decode of a string body against such a list
+(`leanllvm_json_escape_expand`).  `Γ_escape` is the pair's collective name; the
+records are separate because `Satisfies` is read at one body, and the two entry
+points have different argument lists and different claims.
+
+Three things are stated here and nothing else:
+
+* The two `pre`s.  Every clause is an obligation **the caller** carries, and each
+  one is named where it is written.  The expander's `pre` carries the three the
+  measurement of the unit forced: the list is exactly this body's
+  `escapePositions` — not a buffer of that capacity, because the list-driven path
+  does not range-test an entry against its cursor and an entry inside an escape the
+  previous one consumed underflows the run length; **thirty-two readable bytes past
+  `b + n`**, because the run copy's first load is unconditional; and the
+  destination extent, **sixty-four bytes past the decoded extent**, because the
+  stored form writes a whole vector there.
+
+* The two `post`s.  The list's pairs with the arm the caller chose — and the arm is
+  a *selection between two clauses*, never a claim about a document's escapes: the
+  suppressed arm says the count is zero and claims no position, and it says
+  **nothing** about whether the document carries an escape.  The measurement of the
+  unit refutes that reading on seven documents, so a record that assumed it would
+  be false of the measured code.  The expander's names the decoded bytes, the list
+  cursor it leaves, and — on a refusal — the body-relative offset, which is a stated
+  outcome rather than an absence.
+
+* The unchanged conjunct, as the *extent* the run writes and no wider.  The
+  measured eight-entry batch stores past the true count, so those bytes are inside
+  the extent and this conjunct is silent about their values; `pre` separately tells
+  the caller not to read them.
+
+Each record takes its `budget` as a parameter.  The fuel is the run's own step
+count, which is read off the pinned body of the unit; it is not a constant of the
+contract, and a number written here before the body exists would be a promise with
+nothing behind it.
+
+No `Satisfies` instance is stated in this module yet: each is read at a body the
+tree does not yet pin, and a record proved about a body that is not the measured
+one would be a statement about a different unit.
+-/
+import LeanLLVM.Vellum.JsonEscapeSpec
+import LeanLLVM.Vellum.JsonUnitContracts
+
+namespace LeanLLVM.Vellum
+
+open LeanLLVM
+open LeanLLVM.JSON
+open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Vellum.JsonScanSpec
+
+/-! ### Reading a store region -/
+
+/-- The bytes at `a … a + k` are present in the caller's store.  This is the form a
+capacity or an extent obligation takes in this memory model: a write replaces a cell
+that is there and extends the map when it is not, so what a caller can promise about
+a region it hands over is that the region exists. -/
+def HasBytes (mem : Mem) (a k : Nat) : Prop :=
+  ∃ vs, readBytes mem a k = some vs
+
+/-- Every byte outside `regions` reads as it did before the run.  A region is an
+address and a length; the extent a run wrote is the list of regions it names, and a
+byte the store reached is inside one of them. -/
+def UnchangedOutside (mem m : Mem) (regions : List (Nat × Nat)) : Prop :=
+  ∀ a, (∀ r ∈ regions, ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) → readByte m a = readByte mem a
+
+/-- A little-endian array of positions, one `w`-byte entry each: the bytes a
+position stream occupies. -/
+def positionsBytes (w : Nat) (ps : List Nat) : List UInt8 :=
+  (ps.map fun p => natToBytes p w).flatten
+
+/-- An unsigned word as the bytes a slot holds. -/
+def wordBytes (w : Nat) (v : Nat) : List UInt8 := natToBytes v w
+
+/-- A boolean flag as the eight bytes a caller's carry slot holds. -/
+def flagBytes (b : Bool) : List UInt8 := natToBytes (if b then 1 else 0) 8
+
+/-- The document offset of a block's first byte: the position base the list entry
+point is given, `blk0 << 6`. -/
+def blockAddr (blk0 : BitVec 64) : Nat := blk0.toNat * 64
+
+/-- The reserve the measured batch writes past the true count: eight entries of
+four bytes. -/
+def batchReserve : Nat := 8
+
+/-- One block's positions occupy at most sixty-four entries. -/
+def blockMax (xn0 : Nat) : Nat := xn0 + 64 + batchReserve
+
+/-! ### The position list's record
+
+Two arms, one record: the arm is a parameter, so the clause a run must meet is
+chosen by the caller and the difference between the arms is the contract's content
+rather than a case analysis buried in a proof. -/
+
+/-- The list's claim about the memory it leaves, in the built arm: the positions the
+caller's stream now holds are exactly this block's escape positions, in order, and
+the count is the true count.  The unchanged conjunct is over the extent the run
+wrote, which includes the batch reserve the run touched. -/
+def escapePositionsBuiltPost (args : List Value) (mem m : Mem) : Prop :=
+  ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
+    (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
+    args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
+      .ptr carry] ∧
+    readBytes mem (blockAddr blk0) 64 = some (block64 lo hi) ∧
+    bs = specBackslash64 lo hi st ∧ ctl = specControl64 lo hi st ∧
+    im = specInString64 lo hi st ∧
+    st.oddRun = (prevb && prevs) ∧
+    readBytes mem carry 16 = some (flagBytes prevb ++ flagBytes prevs) ∧
+    readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
+    readBytes m xn 8 = some (wordBytes 8 (xn0 +
+      (escapePositionsFrom (block64 lo hi) st).length)) ∧
+    readBytes m xp (4 * (escapePositionsFrom (block64 lo hi) st).length) =
+      some (positionsBytes 4 (escapePositionsFrom (block64 lo hi) st)) ∧
+    UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (xn, 8), (carry, 16)]
+
+/-- The list's claim in the suppressed arm: the count is zero and no position is
+claimed.  It says **nothing** about the document's bytes, and that silence is a
+clause: a record that asserted the document carries no escape would be false of the
+measured code, which suppresses the list for documents that do carry one. -/
+def escapePositionsSuppressedPost (args : List Value) (mem m : Mem) : Prop :=
+  ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (xn0 : Nat),
+    args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
+      .ptr carry] ∧
+    readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
+    readBytes m xn 8 = some (wordBytes 8 xn0) ∧
+    UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (carry, 16)]
+
+/-- The position list's boundary record, at an arm the caller chose.
+
+Its `pre` is the caller's staging: the three masks are the block's classifier
+words, the carry slot holds the pair the previous block left with the run parity
+they spell, and the stream has room for the block's maximum plus the batch reserve.
+The count is read in and out of its own slot; the reserve is inside the capacity and
+outside the stream, so `pre` promises the room and `post` claims nothing about the
+reserve's values.
+
+The block itself is named in the caller's store because the claim is about **that**
+block's positions, and the specification reads them off its bytes; the entry point
+does not read the block, so this clause is not a readability obligation the body
+has. -/
+def Γ_escape_positions (budget : List Value → Mem → Nat) (arm : Bool) : MemContract where
+  budget := budget
+  pre := fun args mem _ =>
+    ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
+      (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
+      args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
+        .ptr carry] ∧
+      -- the three masks are this block's classifier words
+      readBytes mem (blockAddr blk0) 64 = some (block64 lo hi) ∧
+      bs = specBackslash64 lo hi st ∧ ctl = specControl64 lo hi st ∧
+      im = specInString64 lo hi st ∧
+      -- the carry pair, and the parity the block's first lane is entered with
+      st.oddRun = (prevb && prevs) ∧
+      readBytes mem carry 16 = some (flagBytes prevb ++ flagBytes prevs) ∧
+      -- the count in, and the capacity: this block's sixty-four lanes plus the
+      -- eight-entry batch reserve
+      readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
+      HasBytes mem xp (4 * blockMax xn0) ∧
+      -- the position base is a `uint32` that does not truncate
+      blk0.toNat * 64 + 64 < 2 ^ 32
+  post := fun args mem _ o =>
+    match o with
+    | .ub => False
+    | .ret _ m =>
+        if arm then escapePositionsBuiltPost args mem m
+        else escapePositionsSuppressedPost args mem m
+
+/-- The list record refuses `ub` in both arms: its `post` is `False` at that
+outcome, so "the record forbids undefined behaviour" is a proposition. -/
+theorem escape_positions_ub_false (budget : List Value → Mem → Nat) (arm : Bool)
+    (args : List Value) (mem : Mem) (next : Nat) :
+    ¬ (Γ_escape_positions budget arm).post args mem next .ub := by
+  intro h; exact h
+
+/-- The list record's guarantee ignores the returned value, because the entry point
+returns `void` and everything it says is about the memory it leaves. -/
+theorem escape_positions_valueIrrelevant (budget : List Value → Mem → Nat) (arm : Bool) :
+    ValueIrrelevant (Γ_escape_positions budget arm) := by
+  intro args mem next v v' m
+  cases arm <;> rfl
+
+/-- The suppressed arm's clause leaves the count where the caller put it: no
+position is appended, which is the whole of the arm's claim about the stream. -/
+theorem escape_positions_suppressed_count {args : List Value} {mem m : Mem}
+    (h : escapePositionsSuppressedPost args mem m) :
+    ∃ (xn : Nat) (xn0 : Nat), readBytes m xn 8 = some (wordBytes 8 xn0) := by
+  obtain ⟨xp, xn, carry, blk0, bs, ctl, im, xn0, _, _, hcount, _⟩ := h
+  exact ⟨xn, xn0, hcount⟩
+
+/-! ### The expander's record -/
+
+/-- The decode's answer, in the two outcomes the measured signature distinguishes:
+the decoded bytes with the cursor, or a refusal at a body-relative offset with the
+same cursor. -/
+def escapeExpandPost (args : List Value) (mem m : Mem) (v : Value) : Prop :=
+  ∃ (b n dst err xp xj : Nat) (nps pos0 : Nat) (body : List UInt8) (ps : List Nat)
+    (err0 : Nat) (k0 : Nat),
+    args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
+      .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
+    readBytes mem b n = some body ∧
+    readBytes mem xp (4 * nps) = some (positionsBytes 4 ps) ∧
+    readBytes mem err 8 = some (wordBytes 8 err0) ∧
+    readBytes mem xj 8 = some (wordBytes 8 k0) ∧
+    k0 ≤ nps ∧
+    (match escapeDecode body ps with
+     | .decoded out k =>
+         v = .int 64 (BitVec.ofNat 64 out.length) ∧
+         readBytes m dst out.length = some out ∧
+         readBytes m xj 8 = some (wordBytes 8 k) ∧
+         readBytes m err 8 = some (wordBytes 8 err0) ∧
+         UnchangedOutside mem m [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)]
+     | .refused off k =>
+         v = .int 64 (BitVec.allOnes 64) ∧
+         readBytes m err 8 = some (wordBytes 8 off) ∧
+         readBytes m xj 8 = some (wordBytes 8 k) ∧
+         UnchangedOutside mem m [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)])
+
+/-- The expander's boundary record.
+
+Its `pre` is the caller's staging and carries all three obligations the measurement
+of this unit forced.  The list clause is the exact one: `xp` holds this body's
+`escapePositions`, in order, and `*xj` is a cursor into it.  Readability reaches
+thirty-two bytes past `b + n`.
+
+The destination's extent is `dst` through the decoded length plus sixty-four bytes,
+and the record asks the caller for `dst + n + 64`: every form `escapeAt` produces is
+at most as long as the bytes it consumes — one byte from a two-byte escape, at most
+three from six, at most four from twelve — so the decoded extent is inside `n` and
+the caller's promise covers it.  That reading is taken off the escape forms; no
+lemma about `escapeDecode`'s length is stated here, and this `pre` is a promise the
+caller makes rather than a claim the record proves.
+
+The store regions are also stated apart from the body, because a decode that wrote
+over its own input would satisfy the byte claims while destroying the caller's
+document.
+-/
+def Γ_escape_expand (budget : List Value → Mem → Nat) : MemContract where
+  budget := budget
+  pre := fun args mem _ =>
+    ∃ (b n dst err xp xj : Nat) (nps pos0 : Nat) (body : List UInt8) (ps : List Nat)
+      (err0 : Nat) (k0 : Nat),
+      args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
+        .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
+      -- the body
+      readBytes mem b n = some body ∧
+      -- the list is exactly this body's escape positions
+      readBytes mem xp (4 * nps) = some (positionsBytes 4 ps) ∧
+      ps = escapePositionsFrom body ⟨true, false⟩ ∧
+      -- the cursor is a cursor
+      readBytes mem xj 8 = some (wordBytes 8 k0) ∧ k0 ≤ nps ∧
+      readBytes mem err 8 = some (wordBytes 8 err0) ∧
+      pos0 = 0 ∧
+      -- thirty-two readable bytes past the body
+      HasBytes mem (b + n) 32 ∧
+      -- the destination extent, sixty-four bytes past the decoded extent
+      HasBytes mem dst (n + 64) ∧
+      -- and the store regions apart from the body and from the list
+      (b + n + 32 ≤ dst ∨ dst + n + 64 ≤ b) ∧
+      (xp + 4 * nps ≤ dst ∨ dst + n + 64 ≤ xp)
+  post := fun args mem _ o =>
+    match o with
+    | .ret (some v) m => escapeExpandPost args mem m v
+    | _ => False
+
+/-- The expander's record refuses `ub`: its `post` is `False` at that outcome. -/
+theorem escape_expand_ub_false (budget : List Value → Mem → Nat) (args : List Value)
+    (mem : Mem) (next : Nat) :
+    ¬ (Γ_escape_expand budget).post args mem next .ub := by
+  intro h; exact h
+
+/-- The expander's record is **not** value-irrelevant: the decoded length, or the
+refusal marker, is the return value.  That is what tells the two entry points apart
+in the bridges — the list's record takes the void bridge and this one the value
+bridge. -/
+theorem escape_expand_post_value {args : List Value} {mem m : Mem} {v : Value}
+    (h : escapeExpandPost args mem m v) :
+    ∃ (b n dst err xp xj nps pos0 : Nat) (body : List UInt8),
+      args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr dst, .ptr err, .ptr xp,
+        .ptr xj, .int 64 (BitVec.ofNat 64 nps), .int 64 (BitVec.ofNat 64 pos0)] ∧
+      readBytes mem b n = some body := by
+  obtain ⟨b, n, dst, err, xp, xj, nps, pos0, body, ps, err0, k0, hargs, hbody, _⟩ := h
+  exact ⟨b, n, dst, err, xp, xj, nps, pos0, body, hargs, hbody⟩
+
+/-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Vellum.escape_positions_ub_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_positions_ub_false
+
+/-- info: 'LeanLLVM.Vellum.escape_positions_valueIrrelevant' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_positions_valueIrrelevant
+
+/-- info: 'LeanLLVM.Vellum.escape_positions_suppressed_count' does not depend on any axioms -/
+#guard_msgs in
+#print axioms escape_positions_suppressed_count
+
+/-- info: 'LeanLLVM.Vellum.escape_expand_ub_false' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escape_expand_ub_false
+
+/-- info: 'LeanLLVM.Vellum.escape_expand_post_value' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escape_expand_post_value
+
+end LeanLLVM.Vellum

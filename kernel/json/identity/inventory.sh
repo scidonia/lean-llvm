@@ -5,9 +5,10 @@
 #   nix develop -c bash kernel/json/identity/inventory.sh
 #   nix develop -c bash kernel/json/identity/inventory.sh --unit s1
 #   nix develop -c bash kernel/json/identity/inventory.sh --unit entry
+#   nix develop -c bash kernel/json/identity/inventory.sh --unit escape
 #
 # The unit (`--unit s1` is the default, so an invocation with no arguments keeps
-# its meaning and its exit codes).  Three units are gated:
+# its meaning and its exit codes).  Four units are gated:
 #
 #   s1     the classification mask unit.  Its capture is
 #          probes/install/ir/capture-s1-masks.sh and its artefacts are the
@@ -29,6 +30,21 @@
 #          literal vector operands and its emission carries the unit's own
 #          parameter names, so the capture refuses rather than rewrites if
 #          either appears.
+#   escape the escape unit.  Its capture is
+#          probes/install/ir/capture-escape.sh and its artefacts are the fixture
+#          `json-escape.candidate.ll` — four `define` blocks, because the list
+#          calls an out-of-line batch and the expander calls the `noinline`
+#          decoder — and the four inventories `json-escape.strip.tsv`,
+#          `….rewrites.tsv`, `….table.tsv` and `….inventory`.  This unit has one
+#          table (`UJ_UNESC`, the 256-byte simple-escape map), so its table
+#          inventory records two rewrites: the one `getelementptr` read becomes
+#          a read through `%tab`, and the call from the expander to the reader
+#          passes the base.  Its parse criterion is the one this gate reports
+#          red today: the emission contains a lane-wise `select` over `<16 x i1>`,
+#          which `LeanLLVM/Parser.lean:1160-1166` refuses by name, and the slice
+#          that widens the fragment clears it.  A capture slice is not complete
+#          until its fixture parses, so this criterion is a prescribed red and
+#          not an omission.
 #
 # This gate holds no class list of its own, because the classes are the capture's
 # formats and a list kept here would be the hand-kept list this gate exists to
@@ -70,7 +86,18 @@
 #              outside the fixture's inventory, and the two spellings the stage
 #              calls — `@llvm.usub.sat.v32i8` and `@llvm.x86.avx.ptestz.256` —
 #              are named by the same detector and named in the committed
-#              inventory.  A unit whose control arm is missing passes zero
+#              inventory.
+#       escape a text carrying `llvm.bitreverse.i64`, a real intrinsic outside
+#              this unit's call set, is reported by the same detector and is
+#              outside the fixture's inventory, and the three spellings the unit
+#              calls that no `Calls` environment binds —
+#              `@llvm.umin.i32`, `@llvm.x86.sse2.pmadd.wd` and
+#              `@llvm.x86.ssse3.pmadd.ub.sw.128` — are named by the same detector
+#              and named in the committed inventory.  The capture's table
+#              attributor accepts a pair that differs only in the table read, the
+#              passing call and the parameter list, and refuses a pair whose
+#              differing line is neither, naming the line as unattributed.
+#              A unit whose control arm is missing passes zero
 #              controls silently, because this file's controls switch has no
 #              default.
 #
@@ -125,8 +152,15 @@ case "$unit" in
     inventories=("$ir/json-utf8.strip.tsv" "$ir/json-utf8.rewrites.tsv" \
                  "$ir/json-utf8.inventory")
     ;;
+  escape)
+    capture=$ir/capture-escape.sh
+    fixture=$ir/json-escape.candidate.ll
+    kernel=$repo/kernel/json/escape.c
+    inventories=("$ir/json-escape.strip.tsv" "$ir/json-escape.rewrites.tsv" \
+                 "$ir/json-escape.table.tsv" "$ir/json-escape.inventory")
+    ;;
   *)
-    printf 'SETUP: unit %s has no inventory gate; implemented: s1, entry, utf8\n' "$unit" >&2
+    printf 'SETUP: unit %s has no inventory gate; implemented: s1, entry, utf8, escape\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -430,10 +464,115 @@ EOF
   printf '          and the fixture inventory names them\n'
 }
 
+controls_escape() {
+  local seen ngep ncall ln
+  local inventory=${inventories[3]}
+
+  # Control 1: a real intrinsic outside the unit's call set.  It is a spelling
+  # the fragment would meet as an unmodelled call, so the same detector must
+  # report it and the fixture's inventory must not name it.
+  cat > "$work/bitreverse.ll" <<'EOF'
+define i64 @probe(i64 %x) {
+entry:
+  %0 = call i64 @llvm.bitreverse.i64(i64 %x)
+  ret i64 %0
+}
+EOF
+  seen=$(detect "$work/bitreverse.ll" | grep -c '@llvm\.bitreverse\.i64' || true)
+  [ "$seen" -gt 0 ] ||
+    fail "(d) control 1: the detector did not report llvm.bitreverse.i64 in a text that contains it"
+  if grep -q 'llvm\.bitreverse' "$inventory"; then
+    fail "(d) control 1: the fixture's inventory names llvm.bitreverse.i64; the control text is not outside it"
+  fi
+  printf 'ok: (d) control 1: the detector reports llvm.bitreverse.i64 in a text carrying it,\n'
+  printf '          and the fixture inventory does not name it\n'
+
+  # Control 2: the three spellings the unit calls that no `Calls` environment
+  # binds are inside — reported by the same detector, named by the committed
+  # inventory, and named by the inventory's own derived header.
+  cat > "$work/escape-intrinsics.ll" <<'EOF'
+define void @probe(<8 x i16> %a, <8 x i16> %b, <16 x i8> %c, <16 x i8> %d, i32 %e, i32 %f) {
+entry:
+  %0 = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<16 x i8> %c, <16 x i8> %d)
+  %1 = call <4 x i32> @llvm.x86.sse2.pmadd.wd(<8 x i16> %a, <8 x i16> %b)
+  %2 = call i32 @llvm.umin.i32(i32 %e, i32 %f)
+  ret void
+}
+EOF
+  for s in llvm.umin.i32 llvm.x86.sse2.pmadd.wd llvm.x86.ssse3.pmadd.ub.sw.128; do
+    seen=$(detect "$work/escape-intrinsics.ll" | grep -cx "call @$s" || true)
+    [ "$seen" -ge 1 ] ||
+      fail "(d) control 2: the detector did not report @$s in a text carrying it"
+    grep -qx "call @$s" "$inventory" ||
+      fail "(d) control 2: the fixture's inventory does not name @$s"
+    grep -q "^#   no model: .*$s" "$inventory" ||
+      fail "(d) control 2: the inventory's own derived header does not name @$s as unmodelled"
+  done
+  printf 'ok: (d) control 2: the detector reports the three unmodelled spellings in a text\n'
+  printf '          carrying them, and both the inventory and its header name them\n'
+
+  # Control 3: the table attributor's two outcomes, on texts derived from the
+  # committed fixture.  The decoder's block is the read; the expander's is the
+  # call that passes the base.  Each inverted pair differs only in the recorded
+  # rewrite and must be attributed; a tampered pair must be refused, naming the
+  # line.
+  awk '/^define .*@us_dec_x\(/,/^\}/' "$fixture" > "$work/dec.ll"
+  [ -s "$work/dec.ll" ] || fail "(d) control 3: the fixture holds no @us_dec_x block"
+  ngep=$(grep -c 'getelementptr inbounds i8, ptr %tab, i64 ' "$work/dec.ll" || true)
+  [ "$ngep" -ge 1 ] || fail "(d) control 3: the decoder's fixture block reads no table"
+
+  sed -e 's/, ptr %tab) {/) {/' \
+      -e 's|getelementptr inbounds i8, ptr %tab, i64 |getelementptr inbounds [256 x i8], ptr @UJ_UNESC, i64 0, i64 |' \
+      "$work/dec.ll" > "$work/dec.emitted.ll"
+  [ "$(grep -c 'ptr @UJ_UNESC, i64 0, i64' "$work/dec.emitted.ll" || true)" -eq "$ngep" ] ||
+    fail "(d) control 3: the inverted decoder has a different number of table reads"
+
+  if ! bash "$capture" --attribute "$work/dec.emitted.ll" "$work/dec.ll" > "$work/attr.rows" 2> "$work/attr.err"; then
+    sed -n '1,10p' "$work/attr.err" >&2
+    fail "(d) control 3: the attributor refused a pair that differs only in the table read"
+  fi
+  [ "$(grep -c '^gep	' "$work/attr.rows" || true)" -eq "$ngep" ] ||
+    fail "(d) control 3: the attributor accounted for $(grep -c '^gep	' "$work/attr.rows" || true) table read(s); the pair differs in $ngep"
+
+  awk '/^define .*@leanllvm_json_escape_expand\(/,/^\}/' "$fixture" > "$work/exp.ll"
+  [ -s "$work/exp.ll" ] || fail "(d) control 3: the fixture holds no expander block"
+  ncall=$(grep -c ', ptr %tab)$' "$work/exp.ll" || true)
+  [ "$ncall" -ge 1 ] || fail "(d) control 3: the expander never passes the table base"
+  sed -e 's/, ptr %tab) {/) {/' -e 's/, ptr %tab)$/)/' "$work/exp.ll" > "$work/exp.emitted.ll"
+  if ! bash "$capture" --attribute "$work/exp.emitted.ll" "$work/exp.ll" > "$work/attr.call.rows" 2> "$work/attr.call.err"; then
+    sed -n '1,10p' "$work/attr.call.err" >&2
+    fail "(d) control 3: the attributor refused a pair that differs only in the passing call and the parameter list"
+  fi
+  [ "$(grep -c '^call	' "$work/attr.call.rows" || true)" -eq "$ncall" ] ||
+    fail "(d) control 3: the attributor accounted for $(grep -c '^call	' "$work/attr.call.rows" || true) passing call(s); the pair differs in $ncall"
+
+  ln=$(awk '/icmp ult i8/ { print NR; exit }' "$work/dec.ll")
+  [ -n "$ln" ] || fail "(d) control 3: the decoder has no line to tamper with"
+  awk -v n="$ln" 'NR == n { sub(/, 32$/, ", 33") } { print }' "$work/dec.ll"     > "$work/dec.tampered.ll"
+  cmp -s "$work/dec.ll" "$work/dec.tampered.ll" &&
+    fail "(d) control 3: the tamper did not change the line; it is not evidence"
+  if bash "$capture" --attribute "$work/dec.emitted.ll" "$work/dec.tampered.ll" \
+      > "$work/attr.tampered.rows" 2> "$work/attr.tampered.err"; then
+    fail "(d) control 3: the attributor accepted a pair whose differing line is neither rewrite"
+  fi
+  if ! grep -q 'unattributed' "$work/attr.tampered.err"; then
+    sed -n '1,10p' "$work/attr.tampered.err" >&2
+    fail "(d) control 3: the attributor refused the tampered pair without reporting the line as unattributed"
+  fi
+  if ! grep -q "line $ln " "$work/attr.tampered.err"; then
+    sed -n '1,10p' "$work/attr.tampered.err" >&2
+    fail "(d) control 3: the attributor's refusal does not name line $ln"
+  fi
+  printf 'ok: (d) control 3: the attributor accounts for %s table read(s) and %s passing\n' "$ngep" "$ncall"
+  printf '          call(s) of pairs that differ only there, and refuses a pair whose differing\n'
+  printf '          line is neither, naming line %s as unattributed\n' "$ln"
+}
+
 case "$unit" in
   s1) controls_s1 ;;
   entry) controls_entry ;;
   utf8) controls_utf8 ;;
+  escape) controls_escape ;;
 esac
 
 printf '\nok: the fixture is the kernel emission, its inventories are its own, it parses,\n'
