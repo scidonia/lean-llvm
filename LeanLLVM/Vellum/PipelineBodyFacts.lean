@@ -1,0 +1,1312 @@
+/-
+The assembled pipeline's body facts: the arm traces, the loop instance, the seed
+and the tail.
+
+`JsonPipelineBlockEval` closes one arm of the loop body — the copy `arm & 1 = 0`,
+`arm & 2 = 0` selects, `for.body.us.us` — as the automation's sufficiency
+measurement.  The body has four copies, because the emission unswitches the loop
+once per value of the `arm` selector's low two bits: `arm & 1` selects the entry
+emitter (POS8 at zero, B8 at one) and `arm & 2` the escape-list gate (off at zero,
+on at one).  The three remaining copies are `for.body.us` (POS8, gate on),
+`for.body.us83` (B8, gate off) and `for.body` (B8, gate on), and this module
+closes them the same way: the instruction lists are pinned back to
+`JsonPipelineIR`'s AST by `decide`, the incoming and outgoing builders name the
+block's own cells, and one `block_eval` invocation derives the chain and closes
+its side goals.
+
+**What the arm traces carry and what stays the caller's.**  A block proof is
+`denoteCode calls block.instrs (stateAt envIn s) = some (stateAt envOut s')`.
+What remains a hypothesis is the semantic staging no block proof can discharge —
+the memory the loads read, the `getelementptr` address bound, and the call
+outcomes; and the outcomes are hypotheses here because the units behind them are
+the caller's records, consumed one level up by the loop instance.  No register
+lookup is a hypothesis: the builders hold the values the statement names.
+
+**The dispatch blocks and the tail.**  The seed crosses the entry test's two
+selection blocks before the loop's first iteration, and the tail crosses the
+loop's exit, the UTF-8 stage's call, the refusal branches and the final `phi`;
+those blocks' traces are here too, and their call and 32-bit-arithmetic shapes
+are the chain steps the first arm's blocks do not contain.  A traced block plus
+its terminator is one control step, so each of the four arms also comes with its
+iteration lemma: one `runFuel` prefix from the arm's head to either the exit or
+the next iteration's head, at cost one, in the shape `PipelineLoop.step` asks for.
+
+**What is not here, and its cause.**  The three `PipelineBodyFacts` fields —
+the `PipelineLoop` instance, the seed and the tail — are not assembled in this
+module, and the reason is structural rather than missing work: a block trace is
+stated at `stateAt envIn s`, and the builders *prepend* every register the block
+reads, including the caller's own cells that `EntryState` already binds.  So two
+consecutive traces state their states over different environment lists, and no
+trace applies to the state the previous block leaves.  Composing them needs
+either a `denoteCode` congruence over environments that agree on `lookupName`
+(then a trace transports to any state carrying the same register values, which is
+what a loop invariant names) or every trace restated at the invariant's own
+lookups.  The arm and tail facts below are the block-level content either
+composition consumes; the environment bridge is the missing connective.
+-/
+import LeanLLVM.Vellum.JsonPipelineBlockEval
+import LeanLLVM.Vellum.JsonPipelineRefine
+
+set_option autoImplicit false
+set_option maxRecDepth 16000
+
+namespace LeanLLVM.Vellum
+
+open LeanLLVM
+open LeanLLVM.Vellum.JsonPipelineIR (pipelineBody lit)
+
+namespace PipelineBodyFacts
+
+open LeanLLVM.Vellum.BlockEval
+open LeanLLVM.Vellum.JsonPipelineBlockEval
+
+/-! ### The three remaining loop-body blocks
+
+The blocks by index in the pinned AST, as `JsonPipelineBlockEval` names its own
+three: `blockAt` is the AST's list, and `decide` pins each name to its index. -/
+
+/-- POS8 with the escape-list gate on. -/
+def pUs := blockAt pipelineBody 4 (by decide)
+
+/-- B8 with the escape-list gate off. -/
+def pUs83 := blockAt pipelineBody 6 (by decide)
+
+/-- B8 with the escape-list gate on. -/
+def pBody := blockAt pipelineBody 8 (by decide)
+
+theorem findBlock_us : pipelineBody.findBlock "for.body.us" = some pUs := by decide
+
+theorem findBlock_us83 : pipelineBody.findBlock "for.body.us83" = some pUs83 := by
+  decide
+
+theorem findBlock_body : pipelineBody.findBlock "for.body" = some pBody := by decide
+
+/-! ### The pinned instruction lists
+
+Restated from `JsonPipelineIR.pipelineBody` and decided back against it, as the
+first arm's three blocks are: a change to the fixture that moved an instruction
+fails here rather than becoming a proof obligation elsewhere. -/
+
+theorem pUs_instrs :
+    pUs.instrs =
+      [Instr.phi "%prevS.082.us" (Ty.int 64)
+          [("for.body.us", Operand.reg "%shr13.us"),
+           ("for.body.lr.ph.split.us", lit 64 0)],
+       Instr.phi "%k.081.us" (Ty.int 64)
+          [("for.body.us", Operand.reg "%call21.us"),
+           ("for.body.lr.ph.split.us", Operand.reg "%0")],
+       Instr.phi "%i.080.us" (Ty.int 64)
+          [("for.body.us", Operand.reg "%inc.us"),
+           ("for.body.lr.ph.split.us", lit 64 0)],
+       Instr.binop "%shl.us" (BinOp.shl) 64 (Operand.reg "%i.080.us") (lit 64 6),
+       Instr.gep "%add.ptr.us" (Ty.int 8) (Operand.reg "%b") (Operand.reg "%shl.us"),
+       Instr.callVoid "leanllvm_json_s1_masks"
+          [(Ty.ptr, Operand.reg "%add.ptr.us"), (Ty.ptr, Operand.reg "%sc"),
+           (Ty.ptr, Operand.reg "%mk")],
+       Instr.load "%8" (Ty.int 64) (Operand.reg "%mk"),
+       Instr.load "%9" (Ty.int 64) (Operand.reg "%delim"),
+       Instr.load "%10" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.load "%11" (Ty.int 64) (Operand.reg "%ws"),
+       Instr.binop "%12" (BinOp.or) 64 (Operand.reg "%8") (Operand.reg "%11"),
+       Instr.binop "%13" (BinOp.or) 64 (Operand.reg "%12") (Operand.reg "%9"),
+       Instr.binop "%or2.us" (BinOp.or) 64 (Operand.reg "%13") (Operand.reg "%10"),
+       Instr.binop "%not.us" (BinOp.xor) 64 (Operand.reg "%or2.us") (lit 64 (-1)),
+       Instr.binop "%not6.us" (BinOp.xor) 64 (Operand.reg "%10") (lit 64 (-1)),
+       Instr.binop "%and.us" (BinOp.and) 64 (Operand.reg "%9") (Operand.reg "%not6.us"),
+       Instr.binop "%shl8.us" (BinOp.shl) 64 (Operand.reg "%not.us") (lit 64 1),
+       Instr.binop "%or9.us" (BinOp.or) 64 (Operand.reg "%shl8.us")
+          (Operand.reg "%prevS.082.us"),
+       Instr.binop "%not10.us" (BinOp.xor) 64 (Operand.reg "%or9.us") (lit 64 (-1)),
+       Instr.binop "%and11.us" (BinOp.and) 64 (Operand.reg "%not10.us")
+          (Operand.reg "%not.us"),
+       Instr.binop "%14" (BinOp.or) 64 (Operand.reg "%and.us") (Operand.reg "%and11.us"),
+       Instr.binop "%or12.us" (BinOp.or) 64 (Operand.reg "%14") (Operand.reg "%8"),
+       Instr.binop "%shr13.us" (BinOp.lshr) 64 (Operand.reg "%not.us") (lit 64 63),
+       Instr.binop "%sub.us" (BinOp.sub) 64 (Operand.reg "%n") (Operand.reg "%shl.us"),
+       Instr.icmp "%cmp15.us" (IPred.ult) 64 (Operand.reg "%sub.us") (lit 64 64),
+       Instr.binop "%notmask.us" (BinOp.shl) 64 (lit 64 (-1)) (Operand.reg "%sub.us"),
+       Instr.binop "%sub17.us" (BinOp.xor) 64 (Operand.reg "%notmask.us") (lit 64 (-1)),
+       Instr.select "%and18.us" (Ty.int 64) (Operand.reg "%cmp15.us")
+          (Operand.reg "%sub17.us") (lit 64 (-1)),
+       Instr.binop "%ent.0.us" (BinOp.and) 64 (Operand.reg "%or12.us")
+          (Operand.reg "%and18.us"),
+       Instr.store (Ty.int 64) (Operand.reg "%ent.0.us") (Operand.reg "%entw"),
+       Instr.call "%call21.us" (Ty.int 64) "leanllvm_json_entry_pos8"
+          [(Ty.ptr, Operand.reg "%entw"), (Ty.int 64, Operand.reg "%i.080.us"),
+           (Ty.int 64, lit 64 1), (Ty.ptr, Operand.reg "%ep"),
+           (Ty.int 64, Operand.reg "%k.081.us")],
+       Instr.load "%15" (Ty.int 64) (Operand.reg "%backslash"),
+       Instr.load "%16" (Ty.int 64) (Operand.reg "%ctl"),
+       Instr.load "%17" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.callVoid "leanllvm_json_escape_list"
+          [(Ty.int 64, Operand.reg "%15"), (Ty.int 64, Operand.reg "%16"),
+           (Ty.int 64, Operand.reg "%17"), (Ty.int 64, Operand.reg "%i.080.us"),
+           (Ty.ptr, Operand.reg "%xp"), (Ty.ptr, Operand.reg "%nxp"),
+           (Ty.ptr, Operand.reg "%xcarry")],
+       Instr.binop "%inc.us" (BinOp.add) 64 (Operand.reg "%i.080.us") (lit 64 1),
+       Instr.icmp "%exitcond115.not" (IPred.eq) 64 (Operand.reg "%inc.us")
+          (Operand.reg "%shr")] := by
+  decide
+
+theorem pUs83_instrs :
+    pUs83.instrs =
+      [Instr.phi "%prevS.082.us84" (Ty.int 64)
+          [("for.body.us83", Operand.reg "%shr13.us98"),
+           ("for.body.lr.ph.split", lit 64 0)],
+       Instr.phi "%k.081.us85" (Ty.int 64)
+          [("for.body.us83", Operand.reg "%call.us"),
+           ("for.body.lr.ph.split", Operand.reg "%0")],
+       Instr.phi "%i.080.us86" (Ty.int 64)
+          [("for.body.us83", Operand.reg "%inc.us106"),
+           ("for.body.lr.ph.split", lit 64 0)],
+       Instr.binop "%shl.us87" (BinOp.shl) 64 (Operand.reg "%i.080.us86") (lit 64 6),
+       Instr.gep "%add.ptr.us88" (Ty.int 8) (Operand.reg "%b")
+          (Operand.reg "%shl.us87"),
+       Instr.callVoid "leanllvm_json_s1_masks"
+          [(Ty.ptr, Operand.reg "%add.ptr.us88"), (Ty.ptr, Operand.reg "%sc"),
+           (Ty.ptr, Operand.reg "%mk")],
+       Instr.load "%18" (Ty.int 64) (Operand.reg "%mk"),
+       Instr.load "%19" (Ty.int 64) (Operand.reg "%delim"),
+       Instr.load "%20" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.load "%21" (Ty.int 64) (Operand.reg "%ws"),
+       Instr.binop "%22" (BinOp.or) 64 (Operand.reg "%18") (Operand.reg "%21"),
+       Instr.binop "%23" (BinOp.or) 64 (Operand.reg "%22") (Operand.reg "%19"),
+       Instr.binop "%or2.us89" (BinOp.or) 64 (Operand.reg "%23")
+          (Operand.reg "%20"),
+       Instr.binop "%not.us90" (BinOp.xor) 64 (Operand.reg "%or2.us89") (lit 64 (-1)),
+       Instr.binop "%not6.us91" (BinOp.xor) 64 (Operand.reg "%20") (lit 64 (-1)),
+       Instr.binop "%and.us92" (BinOp.and) 64 (Operand.reg "%19")
+          (Operand.reg "%not6.us91"),
+       Instr.binop "%shl8.us93" (BinOp.shl) 64 (Operand.reg "%not.us90") (lit 64 1),
+       Instr.binop "%or9.us94" (BinOp.or) 64 (Operand.reg "%shl8.us93")
+          (Operand.reg "%prevS.082.us84"),
+       Instr.binop "%not10.us95" (BinOp.xor) 64 (Operand.reg "%or9.us94") (lit 64 (-1)),
+       Instr.binop "%and11.us96" (BinOp.and) 64 (Operand.reg "%not10.us95")
+          (Operand.reg "%not.us90"),
+       Instr.binop "%24" (BinOp.or) 64 (Operand.reg "%and.us92")
+          (Operand.reg "%and11.us96"),
+       Instr.binop "%or12.us97" (BinOp.or) 64 (Operand.reg "%24") (Operand.reg "%18"),
+       Instr.binop "%shr13.us98" (BinOp.lshr) 64 (Operand.reg "%not.us90") (lit 64 63),
+       Instr.binop "%sub.us99" (BinOp.sub) 64 (Operand.reg "%n")
+          (Operand.reg "%shl.us87"),
+       Instr.icmp "%cmp15.us100" (IPred.ult) 64 (Operand.reg "%sub.us99") (lit 64 64),
+       Instr.binop "%notmask.us101" (BinOp.shl) 64 (lit 64 (-1))
+          (Operand.reg "%sub.us99"),
+       Instr.binop "%sub17.us102" (BinOp.xor) 64 (Operand.reg "%notmask.us101")
+          (lit 64 (-1)),
+       Instr.select "%and18.us103" (Ty.int 64) (Operand.reg "%cmp15.us100")
+          (Operand.reg "%sub17.us102") (lit 64 (-1)),
+       Instr.binop "%ent.0.us104" (BinOp.and) 64 (Operand.reg "%or12.us97")
+          (Operand.reg "%and18.us103"),
+       Instr.store (Ty.int 64) (Operand.reg "%ent.0.us104") (Operand.reg "%entw"),
+       Instr.call "%call.us" (Ty.int 64) "leanllvm_json_entry_b8"
+          [(Ty.ptr, Operand.reg "%entw"), (Ty.int 64, Operand.reg "%i.080.us86"),
+           (Ty.int 64, lit 64 1), (Ty.ptr, Operand.reg "%ep"),
+           (Ty.int 64, Operand.reg "%k.081.us85")],
+       Instr.binop "%inc.us106" (BinOp.add) 64 (Operand.reg "%i.080.us86")
+          (lit 64 1),
+       Instr.icmp "%exitcond114.not" (IPred.eq) 64 (Operand.reg "%inc.us106")
+          (Operand.reg "%shr")] := by
+  decide
+
+theorem pBody_instrs :
+    pBody.instrs =
+      [Instr.phi "%prevS.082" (Ty.int 64)
+          [("for.body", Operand.reg "%shr13"), ("for.body.lr.ph.split", lit 64 0)],
+       Instr.phi "%k.081" (Ty.int 64)
+          [("for.body", Operand.reg "%call"),
+           ("for.body.lr.ph.split", Operand.reg "%0")],
+       Instr.phi "%i.080" (Ty.int 64)
+          [("for.body", Operand.reg "%inc"),
+           ("for.body.lr.ph.split", lit 64 0)],
+       Instr.binop "%shl" (BinOp.shl) 64 (Operand.reg "%i.080") (lit 64 6),
+       Instr.gep "%add.ptr" (Ty.int 8) (Operand.reg "%b") (Operand.reg "%shl"),
+       Instr.callVoid "leanllvm_json_s1_masks"
+          [(Ty.ptr, Operand.reg "%add.ptr"), (Ty.ptr, Operand.reg "%sc"),
+           (Ty.ptr, Operand.reg "%mk")],
+       Instr.load "%27" (Ty.int 64) (Operand.reg "%mk"),
+       Instr.load "%28" (Ty.int 64) (Operand.reg "%delim"),
+       Instr.load "%29" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.load "%30" (Ty.int 64) (Operand.reg "%ws"),
+       Instr.binop "%31" (BinOp.or) 64 (Operand.reg "%27") (Operand.reg "%30"),
+       Instr.binop "%32" (BinOp.or) 64 (Operand.reg "%31") (Operand.reg "%28"),
+       Instr.binop "%or2" (BinOp.or) 64 (Operand.reg "%32") (Operand.reg "%29"),
+       Instr.binop "%not" (BinOp.xor) 64 (Operand.reg "%or2") (lit 64 (-1)),
+       Instr.binop "%not6" (BinOp.xor) 64 (Operand.reg "%29") (lit 64 (-1)),
+       Instr.binop "%and" (BinOp.and) 64 (Operand.reg "%28") (Operand.reg "%not6"),
+       Instr.binop "%shl8" (BinOp.shl) 64 (Operand.reg "%not") (lit 64 1),
+       Instr.binop "%or9" (BinOp.or) 64 (Operand.reg "%shl8")
+          (Operand.reg "%prevS.082"),
+       Instr.binop "%not10" (BinOp.xor) 64 (Operand.reg "%or9") (lit 64 (-1)),
+       Instr.binop "%and11" (BinOp.and) 64 (Operand.reg "%not10")
+          (Operand.reg "%not"),
+       Instr.binop "%33" (BinOp.or) 64 (Operand.reg "%and") (Operand.reg "%and11"),
+       Instr.binop "%or12" (BinOp.or) 64 (Operand.reg "%33") (Operand.reg "%27"),
+       Instr.binop "%shr13" (BinOp.lshr) 64 (Operand.reg "%not") (lit 64 63),
+       Instr.binop "%sub" (BinOp.sub) 64 (Operand.reg "%n") (Operand.reg "%shl"),
+       Instr.icmp "%cmp15" (IPred.ult) 64 (Operand.reg "%sub") (lit 64 64),
+       Instr.binop "%notmask" (BinOp.shl) 64 (lit 64 (-1)) (Operand.reg "%sub"),
+       Instr.binop "%sub17" (BinOp.xor) 64 (Operand.reg "%notmask") (lit 64 (-1)),
+       Instr.select "%and18" (Ty.int 64) (Operand.reg "%cmp15")
+          (Operand.reg "%sub17") (lit 64 (-1)),
+       Instr.binop "%ent.0" (BinOp.and) 64 (Operand.reg "%or12")
+          (Operand.reg "%and18"),
+       Instr.store (Ty.int 64) (Operand.reg "%ent.0") (Operand.reg "%entw"),
+       Instr.call "%call" (Ty.int 64) "leanllvm_json_entry_b8"
+          [(Ty.ptr, Operand.reg "%entw"), (Ty.int 64, Operand.reg "%i.080"),
+           (Ty.int 64, lit 64 1), (Ty.ptr, Operand.reg "%ep"),
+           (Ty.int 64, Operand.reg "%k.081")],
+       Instr.load "%34" (Ty.int 64) (Operand.reg "%backslash"),
+       Instr.load "%35" (Ty.int 64) (Operand.reg "%ctl"),
+       Instr.load "%36" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.callVoid "leanllvm_json_escape_list"
+          [(Ty.int 64, Operand.reg "%34"), (Ty.int 64, Operand.reg "%35"),
+           (Ty.int 64, Operand.reg "%36"), (Ty.int 64, Operand.reg "%i.080"),
+           (Ty.ptr, Operand.reg "%xp"), (Ty.ptr, Operand.reg "%nxp"),
+           (Ty.ptr, Operand.reg "%xcarry")],
+       Instr.binop "%inc" (BinOp.add) 64 (Operand.reg "%i.080") (lit 64 1),
+       Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
+          (Operand.reg "%shr")] := by
+  decide
+
+/-- The POS8-with-gate body's terminator. -/
+theorem pUs_term :
+    pUs.term = Term.condbr (Operand.reg "%exitcond115.not") "for.cond.cleanup"
+      "for.body.us" := by decide
+
+/-- The B8-no-gate body's terminator. -/
+theorem pUs83_term :
+    pUs83.term = Term.condbr (Operand.reg "%exitcond114.not") "for.cond.cleanup"
+      "for.body.us83" := by decide
+
+/-- The B8-with-gate body's terminator. -/
+theorem pBody_term :
+    pBody.term = Term.condbr (Operand.reg "%exitcond.not") "for.cond.cleanup"
+      "for.body" := by decide
+
+/-! ### The further chain steps the gate-on arms and the tail contain
+
+`BlockEval`'s chain steps are the shapes the first arm's blocks contain: a
+three-pointer void call, a five-argument call whose third argument is a literal,
+`getelementptr` at a register index, and 64-bit arithmetic.  The gate-on arms add
+the escape list's seven-argument void call; the dispatch blocks add
+`getelementptr` at a literal index; and the tail adds UTF-8's three-argument call,
+stage 2's thirteen-argument call, and `for.cond.cleanup`'s 32-bit shift and mask.
+Those shapes are stated here, one chain step each, so a block that contains them
+is still one `pipeline_block_eval` invocation.  The two 32-bit steps are the
+64-bit ones at an arbitrary width, which is what `for.cond.cleanup`'s `%26` and
+`%conv` need. -/
+
+/-- `%d = lshr iW %a, <c>`, at any width. -/
+theorem step_lshr_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr calls (stateAt env s) (.binop d .lshr w (.reg a) (.imm (.int w c))) =
+      some (stateAt ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using LeanLLVM.Vellum.JsonS1MasksIR.evalInstr_binop (r := (x >>> c.toNat).toNat)
+      (ha := LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := LeanLLVM.Vellum.BlockEval.evalOperand_lit_of _ w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+/-- `%d = and iW %a, <c>`, at any width. -/
+theorem step_and_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr calls (stateAt env s) (.binop d .and w (.reg a) (.imm (.int w c))) =
+      some (stateAt ((d, .int w (x &&& c)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using LeanLLVM.Vellum.JsonS1MasksIR.evalInstr_binop (r := (x &&& c).toNat)
+      (ha := LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := LeanLLVM.Vellum.BlockEval.evalOperand_lit_of _ w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+theorem denoteCode_lshr_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .lshr w (.reg a) (.imm (.int w c)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  rw [LeanLLVM.Vellum.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_lshr_imm_w calls env s d a w ha)]
+
+theorem denoteCode_and_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .and w (.reg a) (.imm (.int w c)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x &&& c)) :: env) s) := by
+  rw [LeanLLVM.Vellum.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_and_imm_w calls env s d a w ha)]
+
+/-- `%d = getelementptr i8, ptr %base, <c>`, at a literal index below `2 ^ 63`. -/
+theorem step_gep8_lit (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} {w : Nat} {n : BitVec w}
+    (hb : lookupName env base = some (.ptr a))
+    (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls (stateAt env s) (.gep d (.int 8) (.reg base) (.imm (.int w n))) =
+      some (stateAt ((d, .ptr (a + (n.signExtend 64).toNat)) :: env) s) := by
+  rw [LeanLLVM.evalInstr_gep_i8 (hb := LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s base (.ptr a) hb)
+    (ho := LeanLLVM.Vellum.BlockEval.evalOperand_lit_of _ w n) (hpos := hpos)]
+  simp only [stateAt, State.bind]
+
+theorem denoteCode_gep8_lit (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} {w : Nat} {n : BitVec w}
+    (hb : lookupName env base = some (.ptr a))
+    (hpos : (n.signExtend 64).toNat < 2 ^ 63) (is : List Instr) :
+    denoteCode calls (.gep d (.int 8) (.reg base) (.imm (.int w n)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a + (n.signExtend 64).toNat)) :: env) s) := by
+  rw [LeanLLVM.Vellum.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_gep8_lit calls env s d base hb hpos)]
+
+/-- The escape list's call: seven arguments, four masks then three pointers,
+returning nothing. -/
+theorem step_callVoid_escape (calls : Calls) (env : Env) (s : State)
+    (callee : String) (o1 o2 o3 o4 o5 o6 o7 : String)
+    {v1 v2 v3 v4 : BitVec 64} {p1 p2 p3 : Nat} {r : CallOutcome}
+    (h1 : lookupName env o1 = some (.int 64 v1))
+    (h2 : lookupName env o2 = some (.int 64 v2))
+    (h3 : lookupName env o3 = some (.int 64 v3))
+    (h4 : lookupName env o4 = some (.int 64 v4))
+    (h5 : lookupName env o5 = some (.ptr p1))
+    (h6 : lookupName env o6 = some (.ptr p2))
+    (h7 : lookupName env o7 = some (.ptr p3))
+    (hc : calls callee [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+      .ptr p1, .ptr p2, .ptr p3] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, .reg o1), (Ty.int 64, .reg o2),
+          (Ty.int 64, .reg o3), (Ty.int 64, .reg o4), (Ty.ptr, .reg o5),
+          (Ty.ptr, .reg o6), (Ty.ptr, .reg o7)]) =
+      some (stateAt env { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, .reg o1), (Ty.int 64, .reg o2), (Ty.int 64, .reg o3),
+       (Ty.int 64, .reg o4), (Ty.ptr, .reg o5), (Ty.ptr, .reg o6),
+       (Ty.ptr, .reg o7)] =
+      some [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+        .ptr p1, .ptr p2, .ptr p3] := by
+    simp only [evalOperands,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o1 (.int 64 v1) h1,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o2 (.int 64 v2) h2,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o3 (.int 64 v3) h3,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o4 (.int 64 v4) h4,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o5 (.ptr p1) h5,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o6 (.ptr p2) h6,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s o7 (.ptr p3) h7]
+  have hc' : calls callee [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+      .ptr p1, .ptr p2, .ptr p3] (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+theorem denoteCode_callVoid_escape (calls : Calls) (env : Env) (s : State)
+    (callee : String) (o1 o2 o3 o4 o5 o6 o7 : String)
+    {v1 v2 v3 v4 : BitVec 64} {p1 p2 p3 : Nat} {r : CallOutcome}
+    (h1 : lookupName env o1 = some (.int 64 v1))
+    (h2 : lookupName env o2 = some (.int 64 v2))
+    (h3 : lookupName env o3 = some (.int 64 v3))
+    (h4 : lookupName env o4 = some (.int 64 v4))
+    (h5 : lookupName env o5 = some (.ptr p1))
+    (h6 : lookupName env o6 = some (.ptr p2))
+    (h7 : lookupName env o7 = some (.ptr p3))
+    (hc : calls callee [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+      .ptr p1, .ptr p2, .ptr p3] s.mem s.next = some r) (is : List Instr) :
+    denoteCode calls
+        (.callVoid callee [(Ty.int 64, .reg o1), (Ty.int 64, .reg o2),
+          (Ty.int 64, .reg o3), (Ty.int 64, .reg o4), (Ty.ptr, .reg o5),
+          (Ty.ptr, .reg o6), (Ty.ptr, .reg o7)] :: is) (stateAt env s) =
+      denoteCode calls is (stateAt env { s with mem := r.mem, next := r.next }) := by
+  rw [LeanLLVM.Vellum.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_callVoid_escape calls env s callee o1 o2 o3
+    o4 o5 o6 o7 h1 h2 h3 h4 h5 h6 h7 hc)]
+
+/-- UTF-8's call: a byte base, the length, and the 32-bit gate. -/
+theorem step_call_utf8 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (bp np gp : String) {p : Nat} {n : BitVec 64} {g : BitVec 32} {r : CallOutcome}
+    (hb : lookupName env bp = some (.ptr p))
+    (hn : lookupName env np = some (.int 64 n))
+    (hg : lookupName env gp = some (.int 32 g))
+    (hc : calls callee [.ptr p, .int 64 n, .int 32 g] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.call d (Ty.int 64) callee [(Ty.ptr, .reg bp), (Ty.int 64, .reg np),
+          (Ty.int 32, .reg gp)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, .reg bp), (Ty.int 64, .reg np), (Ty.int 32, .reg gp)] =
+      some [.ptr p, .int 64 n, .int 32 g] := by
+    simp only [evalOperands,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s bp (.ptr p) hb,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s np (.int 64 n) hn,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s gp (.int 32 g) hg]
+  have hc' : calls callee [.ptr p, .int 64 n, .int 32 g]
+      (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+theorem denoteCode_call_utf8 (calls : Calls) (env : Env) (s : State)
+    (d callee : String) (bp np gp : String)
+    {p : Nat} {n : BitVec 64} {g : BitVec 32} {r : CallOutcome}
+    (hb : lookupName env bp = some (.ptr p))
+    (hn : lookupName env np = some (.int 64 n))
+    (hg : lookupName env gp = some (.int 32 g))
+    (hc : calls callee [.ptr p, .int 64 n, .int 32 g] s.mem s.next = some r)
+    (is : List Instr) :
+    denoteCode calls
+        (.call d (Ty.int 64) callee [(Ty.ptr, .reg bp), (Ty.int 64, .reg np),
+          (Ty.int 32, .reg gp)] :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  rw [LeanLLVM.Vellum.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_call_utf8 calls env s d callee bp np gp
+    hb hn hg hc)]
+
+/-- Stage 2's call: the document, the entry stream and its cursor, the escape
+list and its cursor, the arena and the event stream, each with its capacity or
+cursor slot, and the refusal slot — thirteen arguments, all registers. -/
+theorem step_call_stage2 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (rb rn rep rk rxp r37 rdst rdcap rndst rev recap rnev rerr : String)
+    {pb pe px pd pn pev pnev perr : Nat} {n k x37 dcap ecap : BitVec 64}
+    {r : CallOutcome}
+    (h1 : lookupName env rb = some (.ptr pb))
+    (h2 : lookupName env rn = some (.int 64 n))
+    (h3 : lookupName env rep = some (.ptr pe))
+    (h4 : lookupName env rk = some (.int 64 k))
+    (h5 : lookupName env rxp = some (.ptr px))
+    (h6 : lookupName env r37 = some (.int 64 x37))
+    (h7 : lookupName env rdst = some (.ptr pd))
+    (h8 : lookupName env rdcap = some (.int 64 dcap))
+    (h9 : lookupName env rndst = some (.ptr pn))
+    (h10 : lookupName env rev = some (.ptr pev))
+    (h11 : lookupName env recap = some (.int 64 ecap))
+    (h12 : lookupName env rnev = some (.ptr pnev))
+    (h13 : lookupName env rerr = some (.ptr perr))
+    (hc : calls callee [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px,
+      .int 64 x37, .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap,
+      .ptr pnev, .ptr perr] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.call d (Ty.int 64) callee
+          [(Ty.ptr, .reg rb), (Ty.int 64, .reg rn), (Ty.ptr, .reg rep),
+           (Ty.int 64, .reg rk), (Ty.ptr, .reg rxp), (Ty.int 64, .reg r37),
+           (Ty.ptr, .reg rdst), (Ty.int 64, .reg rdcap), (Ty.ptr, .reg rndst),
+           (Ty.ptr, .reg rev), (Ty.int 64, .reg recap), (Ty.ptr, .reg rnev),
+           (Ty.ptr, .reg rerr)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, .reg rb), (Ty.int 64, .reg rn), (Ty.ptr, .reg rep),
+       (Ty.int 64, .reg rk), (Ty.ptr, .reg rxp), (Ty.int 64, .reg r37),
+       (Ty.ptr, .reg rdst), (Ty.int 64, .reg rdcap), (Ty.ptr, .reg rndst),
+       (Ty.ptr, .reg rev), (Ty.int 64, .reg recap), (Ty.ptr, .reg rnev),
+       (Ty.ptr, .reg rerr)] =
+      some [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px, .int 64 x37,
+        .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap, .ptr pnev,
+        .ptr perr] := by
+    simp only [evalOperands,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rb (.ptr pb) h1,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rn (.int 64 n) h2,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rep (.ptr pe) h3,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rk (.int 64 k) h4,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rxp (.ptr px) h5,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s r37 (.int 64 x37) h6,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rdst (.ptr pd) h7,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rdcap (.int 64 dcap) h8,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rndst (.ptr pn) h9,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rev (.ptr pev) h10,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s recap (.int 64 ecap) h11,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rnev (.ptr pnev) h12,
+      LeanLLVM.Vellum.BlockEval.evalOperand_reg_of env s rerr (.ptr perr) h13]
+  have hc' : calls callee [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px,
+      .int 64 x37, .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap,
+      .ptr pnev, .ptr perr] (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+theorem denoteCode_call_stage2 (calls : Calls) (env : Env) (s : State)
+    (d callee : String) (rb rn rep rk rxp r37 rdst rdcap rndst rev recap rnev rerr : String)
+    {pb pe px pd pn pev pnev perr : Nat} {n k x37 dcap ecap : BitVec 64}
+    {r : CallOutcome}
+    (h1 : lookupName env rb = some (.ptr pb))
+    (h2 : lookupName env rn = some (.int 64 n))
+    (h3 : lookupName env rep = some (.ptr pe))
+    (h4 : lookupName env rk = some (.int 64 k))
+    (h5 : lookupName env rxp = some (.ptr px))
+    (h6 : lookupName env r37 = some (.int 64 x37))
+    (h7 : lookupName env rdst = some (.ptr pd))
+    (h8 : lookupName env rdcap = some (.int 64 dcap))
+    (h9 : lookupName env rndst = some (.ptr pn))
+    (h10 : lookupName env rev = some (.ptr pev))
+    (h11 : lookupName env recap = some (.int 64 ecap))
+    (h12 : lookupName env rnev = some (.ptr pnev))
+    (h13 : lookupName env rerr = some (.ptr perr))
+    (hc : calls callee [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px,
+      .int 64 x37, .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap,
+      .ptr pnev, .ptr perr] s.mem s.next = some r) (is : List Instr) :
+    denoteCode calls
+        (.call d (Ty.int 64) callee
+          [(Ty.ptr, .reg rb), (Ty.int 64, .reg rn), (Ty.ptr, .reg rep),
+           (Ty.int 64, .reg rk), (Ty.ptr, .reg rxp), (Ty.int 64, .reg r37),
+           (Ty.ptr, .reg rdst), (Ty.int 64, .reg rdcap), (Ty.ptr, .reg rndst),
+           (Ty.ptr, .reg rev), (Ty.int 64, .reg recap), (Ty.ptr, .reg rnev),
+           (Ty.ptr, .reg rerr)] :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  rw [LeanLLVM.Vellum.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_call_stage2 calls env s d callee rb rn rep
+    rk rxp r37 rdst rdcap rndst rev recap rnev rerr h1 h2 h3 h4 h5 h6 h7 h8 h9
+    h10 h11 h12 h13 hc)]
+
+/-- The chain steps `BlockEval`'s `block_step` has, plus the five above. -/
+macro "pipeline_block_step" : tactic => `(tactic|
+  (first
+   | rw [denoteCode_callVoid_escape]
+   | rw [denoteCode_call_utf8]
+   | rw [denoteCode_call_stage2]
+   | rw [denoteCode_gep8_lit]
+   | rw [denoteCode_lshr_imm_w]
+   | rw [denoteCode_and_imm_w]
+   | block_step))
+
+/-- `block_close` with the literal-address bounds decided: a `getelementptr` at
+a literal index leaves `(c.signExtend 64).toNat < 2 ^ 63`, a concrete comparison
+that `block_close`'s phases have no decision step for. -/
+macro "pipeline_block_close" : tactic => `(tactic|
+  (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode]))
+   all_goals (try rfl)
+   all_goals (try (first
+     | assumption
+     | block_lk
+     | decide
+     | (simp only [phiIncoming]; rfl)
+     | rfl
+     | (exact LeanLLVM.Vellum.BlockEval.evalOperand_lit_of _ _ _)))
+   all_goals (try rfl)))
+
+/-- A whole block with the further shapes: `pipeline_block_step` to the last
+instruction, then `pipeline_block_close`. -/
+macro "pipeline_block_eval" : tactic => `(tactic|
+  (repeat pipeline_block_step
+   pipeline_block_close))
+
+/-! ### The POS8-with-gate arm, `for.body.us`
+
+The block's shape is the first arm's with the escape list's three loads and its
+void call inserted between the entry call and the increment: the gate is on, so
+the same three mask words the entry kernel derived are read back as the list's
+`bs`/`ctl`/`im` arguments.  The builders name the block's own cells — `%8`–`%17`
+where the first arm has `%1`–`%7` and no escape arm — and the statement's
+hypotheses are the caller's staging: four loads after the mask call, three after
+the entry call, the address bound, and the three calls' outcomes. -/
+
+/-- The POS8-with-gate body's incoming builder. -/
+def usIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%inc.us", .int 64 inc), ("%call21.us", .int 64 c21),
+         ("%shr13.us", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- The POS8-with-gate body's outgoing builder: its results newest first, `r2` and
+`r3` the entry and escape-list calls' returns (the second is `void`, so it binds
+no cell and only its memory is observable). -/
+def usOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64)
+    (w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond115.not", .int 1 (vexit inc shr)),
+         ("%inc.us", .int 64 (vinc inc)),
+         ("%17", .int 64 w7), ("%16", .int 64 w6), ("%15", .int 64 w5),
+         ("%call21.us", ret),
+         ("%ent.0.us", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18.us", .int 64 (vand18 n inc)),
+         ("%sub17.us", .int 64 (vsub17 n inc)),
+         ("%notmask.us", .int 64 (vnotmask n inc)),
+         ("%cmp15.us", .int 1 (vcmp n inc)),
+         ("%sub.us", .int 64 (vsub n inc)),
+         ("%shr13.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%14", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11.us", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10.us", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9.us", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us", .int 64 (vand w2 w3)),
+         ("%not6.us", .int 64 (vnot6 w3)),
+         ("%not.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%13", .int 64 (v6 w1 w2 w4)), ("%12", .int 64 (v5 w1 w4)),
+         ("%11", .int 64 w4), ("%10", .int 64 w3), ("%9", .int 64 w2),
+         ("%8", .int 64 w1),
+         ("%add.ptr.us", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl.us", .int 64 (sh6 inc)),
+         ("%i.080.us", .int 64 inc),
+         ("%k.081.us", .int 64 c21),
+         ("%prevS.082.us", .int 64 s13)]
+    (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+      s13 c21 inc shr)
+
+/-- **The POS8-with-gate body derives its chain and closes its side goals.** -/
+theorem us_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 inc, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pUs_instrs]
+  simp only [lit, usIn, usOut]
+  pipeline_block_eval
+
+/-! ### The B8-no-gate arm, `for.body.us83`
+
+The same shape with the entry emitter switched: `leanllvm_json_entry_b8` at the
+same five arguments, and no escape list, so the block's cells are `%18`–`%24` and
+the entry result is `%call.us`. -/
+
+/-- The B8-no-gate body's incoming builder. -/
+def us83In (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%inc.us106", .int 64 inc), ("%call.us", .int 64 c21),
+         ("%shr13.us98", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- The B8-no-gate body's outgoing builder. -/
+def us83Out (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr : BitVec 64) (w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond114.not", .int 1 (vexit inc shr)),
+         ("%inc.us106", .int 64 (vinc inc)),
+         ("%call.us", ret),
+         ("%ent.0.us104", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18.us103", .int 64 (vand18 n inc)),
+         ("%sub17.us102", .int 64 (vsub17 n inc)),
+         ("%notmask.us101", .int 64 (vnotmask n inc)),
+         ("%cmp15.us100", .int 1 (vcmp n inc)),
+         ("%sub.us99", .int 64 (vsub n inc)),
+         ("%shr13.us98", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us97", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%24", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11.us96", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10.us95", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9.us94", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8.us93", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us92", .int 64 (vand w2 w3)),
+         ("%not6.us91", .int 64 (vnot6 w3)),
+         ("%not.us90", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us89", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%23", .int 64 (v6 w1 w2 w4)), ("%22", .int 64 (v5 w1 w4)),
+         ("%21", .int 64 w4), ("%20", .int 64 w3), ("%19", .int 64 w2),
+         ("%18", .int 64 w1),
+         ("%add.ptr.us88", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl.us87", .int 64 (sh6 inc)),
+         ("%i.080.us86", .int 64 inc),
+         ("%k.081.us85", .int 64 c21),
+         ("%prevS.082.us84", .int 64 s13)]
+    (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr)
+
+/-- **The B8-no-gate body derives its chain and closes its side goals.** -/
+theorem us83_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.us83")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUs83_instrs]
+  simp only [lit, us83In, us83Out]
+  pipeline_block_eval
+
+/-! ### The B8-with-gate arm, `for.body`
+
+The B8 emitter with the escape list appended: the block's cells are `%27`–`%36`,
+the entry result is `%call`, and the list reads `%34`–`%36`. -/
+
+/-- The B8-with-gate body's incoming builder. -/
+def bodyIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%inc", .int 64 inc), ("%call", .int 64 c21),
+         ("%shr13", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- The B8-with-gate body's outgoing builder. -/
+def bodyOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64)
+    (w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond.not", .int 1 (vexit inc shr)),
+         ("%inc", .int 64 (vinc inc)),
+         ("%36", .int 64 w7), ("%35", .int 64 w6), ("%34", .int 64 w5),
+         ("%call", ret),
+         ("%ent.0", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18", .int 64 (vand18 n inc)),
+         ("%sub17", .int 64 (vsub17 n inc)),
+         ("%notmask", .int 64 (vnotmask n inc)),
+         ("%cmp15", .int 1 (vcmp n inc)),
+         ("%sub", .int 64 (vsub n inc)),
+         ("%shr13", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%33", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and", .int 64 (vand w2 w3)),
+         ("%not6", .int 64 (vnot6 w3)),
+         ("%not", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%32", .int 64 (v6 w1 w2 w4)), ("%31", .int 64 (v5 w1 w4)),
+         ("%30", .int 64 w4), ("%29", .int 64 w3), ("%28", .int 64 w2),
+         ("%27", .int 64 w1),
+         ("%add.ptr", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl", .int 64 (sh6 inc)),
+         ("%i.080", .int 64 inc),
+         ("%k.081", .int 64 c21),
+         ("%prevS.082", .int 64 s13)]
+    (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+      s13 c21 inc shr)
+
+/-- **The B8-with-gate body derives its chain and closes its side goals.** -/
+theorem body_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 inc, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pBody_instrs]
+  simp only [lit, bodyIn, bodyOut]
+  pipeline_block_eval
+
+/-! ### The dispatch blocks and the tail
+
+The seed crosses the entry test's two selection blocks before the loop's first
+iteration, and the tail crosses the loop's exit, the UTF-8 stage's call, the two
+refusal branches and the final `phi`.  Those blocks' instruction lists are pinned
+here, and their traces are `pipeline_block_eval` facts like the arm traces': the
+one shape the dispatch adds is `getelementptr` at a literal index (`%delim`,
+`%in_string`, `%ws`, `%backslash`, `%ctl` are all `%mk` plus a constant), and the
+tail adds the 32-bit shift and mask `for.cond.cleanup` forms its gate from, the
+UTF-8 call, and stage 2's thirteen-argument call. -/
+
+def pLrPh := blockAt pipelineBody 1 (by decide)
+def pSplitUs := blockAt pipelineBody 2 (by decide)
+def pSplit := blockAt pipelineBody 5 (by decide)
+def pCond := blockAt pipelineBody 7 (by decide)
+def pIfThen := blockAt pipelineBody 9 (by decide)
+def pIfEnd := blockAt pipelineBody 10 (by decide)
+
+theorem findBlock_lrPh :
+    pipelineBody.findBlock "for.body.lr.ph" = some pLrPh := by decide
+
+theorem findBlock_splitUs :
+    pipelineBody.findBlock "for.body.lr.ph.split.us" = some pSplitUs := by decide
+
+theorem findBlock_split :
+    pipelineBody.findBlock "for.body.lr.ph.split" = some pSplit := by decide
+
+theorem findBlock_cond :
+    pipelineBody.findBlock "for.cond.cleanup" = some pCond := by decide
+
+theorem findBlock_ifThen :
+    pipelineBody.findBlock "if.then33" = some pIfThen := by decide
+
+theorem findBlock_ifEnd :
+    pipelineBody.findBlock "if.end34" = some pIfEnd := by decide
+
+/-- `for.cond.cleanup`'s `phi`: one incoming entry per loop-exit edge. -/
+def cleanupPhi : List (String × Operand) :=
+  [("entry", Operand.reg "%0"),
+   ("for.body.us.us", Operand.reg "%call21.us.us"),
+   ("for.body.us", Operand.reg "%call21.us"),
+   ("for.body.us83", Operand.reg "%call.us"),
+   ("for.body", Operand.reg "%call")]
+
+theorem pLrPh_instrs :
+    pLrPh.instrs =
+      [Instr.gep "%delim" (Ty.int 8) (Operand.reg "%mk") (lit 64 8),
+       Instr.gep "%in_string" (Ty.int 8) (Operand.reg "%mk") (lit 64 16),
+       Instr.gep "%ws" (Ty.int 8) (Operand.reg "%mk") (lit 64 24),
+       Instr.binop "%and19" (BinOp.and) 64 (Operand.reg "%arm") (lit 64 1),
+       Instr.icmp "%tobool.not" (IPred.eq) 64 (Operand.reg "%and19") (lit 64 0),
+       Instr.binop "%and23" (BinOp.and) 64 (Operand.reg "%arm") (lit 64 2),
+       Instr.icmp "%tobool24.not" (IPred.eq) 64 (Operand.reg "%and23") (lit 64 0),
+       Instr.gep "%backslash" (Ty.int 8) (Operand.reg "%mk") (lit 64 32),
+       Instr.gep "%ctl" (Ty.int 8) (Operand.reg "%mk") (lit 64 40)] := by
+  decide
+
+theorem pSplitUs_instrs : pSplitUs.instrs = [] := by decide
+
+theorem pSplit_instrs : pSplit.instrs = [] := by decide
+
+theorem pCond_instrs :
+    pCond.instrs =
+      [Instr.phi "%k.0.lcssa" (Ty.int 64) cleanupPhi,
+       Instr.store (Ty.int 64) (Operand.reg "%k.0.lcssa") (Operand.reg "%nk"),
+       Instr.trunc "%25" 64 32 (Operand.reg "%arm"),
+       Instr.binop "%26" (BinOp.lshr) 32 (Operand.reg "%25") (lit 32 2),
+       Instr.binop "%conv" (BinOp.and) 32 (Operand.reg "%26") (lit 32 1),
+       Instr.call "%call30" (Ty.int 64) "leanllvm_json_utf8"
+          [(Ty.ptr, Operand.reg "%b"), (Ty.int 64, Operand.reg "%n"),
+           (Ty.int 32, Operand.reg "%conv")],
+       Instr.icmp "%cmp31.not" (IPred.eq) 64 (Operand.reg "%call30") (lit 64 0)] := by
+  decide
+
+theorem pIfThen_instrs :
+    pIfThen.instrs =
+      [Instr.store (Ty.int 64) (Operand.reg "%n") (Operand.reg "%err")] := by
+  decide
+
+theorem pIfEnd_instrs :
+    pIfEnd.instrs =
+      [Instr.load "%37" (Ty.int 64) (Operand.reg "%nxp"),
+       Instr.call "%call35" (Ty.int 64) "leanllvm_json_stage2"
+          [(Ty.ptr, Operand.reg "%b"), (Ty.int 64, Operand.reg "%n"),
+           (Ty.ptr, Operand.reg "%ep"), (Ty.int 64, Operand.reg "%k.0.lcssa"),
+           (Ty.ptr, Operand.reg "%xp"), (Ty.int 64, Operand.reg "%37"),
+           (Ty.ptr, Operand.reg "%dst"), (Ty.int 64, Operand.reg "%dstcap"),
+           (Ty.ptr, Operand.reg "%ndst"), (Ty.ptr, Operand.reg "%ev"),
+           (Ty.int 64, Operand.reg "%evcap"), (Ty.ptr, Operand.reg "%nev"),
+           (Ty.ptr, Operand.reg "%err")]] := by
+  decide
+
+theorem pEntry_term :
+    pEntry.term = Term.condbr (Operand.reg "%cmp79.not") "for.cond.cleanup"
+      "for.body.lr.ph" := by decide
+
+theorem pLrPh_term :
+    pLrPh.term = Term.condbr (Operand.reg "%tobool.not") "for.body.lr.ph.split.us"
+      "for.body.lr.ph.split" := by decide
+
+theorem pSplitUs_term :
+    pSplitUs.term = Term.condbr (Operand.reg "%tobool24.not") "for.body.us.us"
+      "for.body.us" := by decide
+
+theorem pSplit_term :
+    pSplit.term = Term.condbr (Operand.reg "%tobool24.not") "for.body.us83"
+      "for.body" := by decide
+
+theorem pCond_term :
+    pCond.term = Term.condbr (Operand.reg "%cmp31.not") "if.end34" "if.then33" := by
+  decide
+
+theorem pIfThen_term : pIfThen.term = Term.br "cleanup" := by decide
+
+theorem pIfEnd_term : pIfEnd.term = Term.br "cleanup" := by decide
+
+/-! ### The dispatch block's trace -/
+
+/-- The selection block's incoming builder: the two parameters it reads. -/
+def lrPhIn (env : Env) (mk : Nat) (arm : BitVec 64) : Env :=
+  cells [("%arm", .int 64 arm), ("%mk", .ptr mk)] env
+
+/-- The selection block's outgoing builder: the five byte offsets and the two
+selector tests. -/
+def lrPhOut (env : Env) (mk : Nat) (arm : BitVec 64) : Env :=
+  cells [("%ctl", .ptr (mk + 40)),
+         ("%backslash", .ptr (mk + 32)),
+         ("%tobool24.not", .int 1 (evalICmp .eq (arm &&& litv 64 2) (litv 64 0))),
+         ("%and23", .int 64 (arm &&& litv 64 2)),
+         ("%tobool.not", .int 1 (evalICmp .eq (arm &&& litv 64 1) (litv 64 0))),
+         ("%and19", .int 64 (arm &&& litv 64 1)),
+         ("%ws", .ptr (mk + 24)),
+         ("%in_string", .ptr (mk + 16)),
+         ("%delim", .ptr (mk + 8))]
+    (lrPhIn env mk arm)
+
+/-- **The selection block computes the two gates and the five byte offsets.** -/
+theorem lrPh_denote (calls : Calls) (env : Env) (s : State) (mk : Nat)
+    (arm : BitVec 64) :
+    denoteCode calls pLrPh.instrs (stateAt (lrPhIn env mk arm) s) =
+      some (stateAt (lrPhOut env mk arm) s) := by
+  rw [pLrPh_instrs]
+  simp only [lit, litv, lrPhIn, lrPhOut]
+  pipeline_block_eval
+
+/-! ### The tail's blocks -/
+
+/-- The gate `for.cond.cleanup` forms from the selector: `(arm >>> 2) & 1` at
+thirty-two bits. -/
+def condGate (arm : BitVec 64) : BitVec 32 :=
+  ((BitVec.ofNat 32 (arm.toNat % 2 ^ 32)) >>> 2) &&& 1
+
+/-- The exit block's incoming builder: the loop-exit's selected count under its
+own name, the document, the selector and the count slot. -/
+def condIn (env : Env) (sel : String) (kv : BitVec 64) (b nk : Nat)
+    (arm n : BitVec 64) : Env :=
+  cells [("%n", .int 64 n), ("%b", .ptr b), ("%arm", .int 64 arm),
+         ("%nk", .ptr nk), (sel, .int 64 kv)] env
+
+/-- The exit block's outgoing builder. -/
+def condOut (env : Env) (sel : String) (kv : BitVec 64) (b nk : Nat)
+    (arm n verdict : BitVec 64) (ret : Value) : Env :=
+  cells [("%cmp31.not", .int 1 (evalICmp .eq verdict (litv 64 0))),
+         ("%call30", ret),
+         ("%conv", .int 32 (condGate arm)),
+         ("%26", .int 32 ((BitVec.ofNat 32 (arm.toNat % 2 ^ 32)) >>> 2)),
+         ("%25", .int 32 (BitVec.ofNat 32 (arm.toNat % 2 ^ 32))),
+         ("%k.0.lcssa", .int 64 kv)]
+    (condIn env sel kv b nk arm n)
+
+/-- **The exit block selects the count, stores it, and calls the UTF-8 stage.**
+The `phi` reads the predecessor the exit came from, so its incoming operand is
+named by `hinc`; the store writes the selected count to `%nk`, and the stage's
+gate is `condGate arm`.  The stage's result is `i64`, and its value is the `bit`
+the exit test reads, so the call is opened to its three fields and its return is
+the word `hret` names. -/
+theorem condCleanup_denote (calls : Calls) (env : Env) (s : State)
+    (sel p : String) (kv : BitVec 64) (b nk : Nat) (arm n : BitVec 64)
+    (verdict : BitVec 64) (m30 : Mem) (n30 : Nat)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p cleanupPhi = some (.reg sel))
+    (hop : evalOperand (stateAt (condIn env sel kv b nk arm n) s) (.reg sel)
+      = some (.int 64 kv))
+    (hcall : calls "leanllvm_json_utf8" [.ptr b, .int 64 n, .int 32 (condGate arm)]
+      (writeBytes s.mem nk (natToBytes kv.toNat 8)) s.next = some ⟨.int 64 verdict, m30, n30⟩) :
+    denoteCode calls pCond.instrs (stateAt (condIn env sel kv b nk arm n) s) =
+      some (stateAt (condOut env sel kv b nk arm n verdict (.int 64 verdict))
+        { s with mem := m30, next := n30 }) := by
+  rw [pCond_instrs]
+  simp only [lit, litv, condGate, condIn, condOut]
+  pipeline_block_eval
+
+/-- The refusal branch's incoming builder. -/
+def ifThenIn (env : Env) (n : BitVec 64) (err : Nat) : Env :=
+  cells [("%err", .ptr err), ("%n", .int 64 n)] env
+
+/-- **The refusal branch stores the document length in the offset slot.** -/
+theorem ifThen_denote (calls : Calls) (env : Env) (s : State)
+    (n : BitVec 64) (err : Nat) :
+    denoteCode calls pIfThen.instrs (stateAt (ifThenIn env n err) s) =
+      some (stateAt (ifThenIn env n err)
+        { s with mem := writeBytes s.mem err (natToBytes n.toNat 8) }) := by
+  rw [pIfThen_instrs]
+  simp only [ifThenIn]
+  pipeline_block_eval
+
+/-- The success branch's incoming builder: the escape count slot it loads and the
+twelve arguments stage 2 takes. -/
+def ifEndIn (env : Env) (b ep xp dst ndst ev nev err nxp : Nat)
+    (n k dcap ecap : BitVec 64) : Env :=
+  cells [("%err", .ptr err), ("%nev", .ptr nev), ("%evcap", .int 64 ecap),
+         ("%ev", .ptr ev), ("%ndst", .ptr ndst), ("%dstcap", .int 64 dcap),
+         ("%dst", .ptr dst), ("%xp", .ptr xp), ("%k.0.lcssa", .int 64 k),
+         ("%ep", .ptr ep), ("%n", .int 64 n), ("%b", .ptr b),
+         ("%nxp", .ptr nxp)] env
+
+/-- The success branch's outgoing builder. -/
+def ifEndOut (env : Env) (b ep xp dst ndst ev nev err nxp : Nat)
+    (n k dcap ecap x37 : BitVec 64) (ret : Value) : Env :=
+  cells [("%call35", ret), ("%37", .int 64 x37)]
+    (ifEndIn env b ep xp dst ndst ev nev err nxp n k dcap ecap)
+
+/-- **The success branch loads the escape count and calls stage 2.** -/
+theorem ifEnd_denote (calls : Calls) (env : Env) (s : State)
+    (b ep xp dst ndst ev nev err nxp : Nat)
+    (n k x37 dcap ecap : BitVec 64) (r35 : CallOutcome)
+    (hld : readBytes s.mem nxp 8 = some (natToBytes x37.toNat 8))
+    (hcall : calls "leanllvm_json_stage2"
+      [.ptr b, .int 64 n, .ptr ep, .int 64 k, .ptr xp, .int 64 x37, .ptr dst,
+       .int 64 dcap, .ptr ndst, .ptr ev, .int 64 ecap, .ptr nev, .ptr err]
+      s.mem s.next = some r35) :
+    denoteCode calls pIfEnd.instrs
+        (stateAt (ifEndIn env b ep xp dst ndst ev nev err nxp n k dcap ecap) s) =
+      some (stateAt (ifEndOut env b ep xp dst ndst ev nev err nxp n k dcap ecap x37
+        r35.ret) { s with mem := r35.mem, next := r35.next }) := by
+  rw [pIfEnd_instrs]
+  simp only [ifEndIn, ifEndOut]
+  pipeline_block_eval
+
+/-! ### The control steps
+
+A block trace is a `denoteCode` fact; a control step is that fact followed by the
+block's terminator.  The four `execTerm` facts below are the terminator shapes
+the pipeline's blocks use — a conditional jump at a decided one-bit value, an
+unconditional jump, and a valued return — and `step_of_blocks` is the step those
+facts produce: the block's found by name, its instructions denoted, its terminator
+executed.  They are what turns any trace in this module into one `step`, and so
+into the `runFuel` prefixes a loop instance consumes. -/
+
+theorem execTerm_condbr_one {s : State} {c : Operand} {t f : String}
+    (h : evalOperand s c = some (.int 1 1)) :
+    execTerm s (.condbr c t f) = .jump { s with pc := t, pre := some s.pc } := by
+  simp [execTerm, h]
+
+theorem execTerm_condbr_zero {s : State} {c : Operand} {t f : String}
+    (h : evalOperand s c = some (.int 1 0)) :
+    execTerm s (.condbr c t f) = .jump { s with pc := f, pre := some s.pc } := by
+  simp [execTerm, h]
+
+theorem execTerm_br (s : State) (d : String) :
+    execTerm s (.br d) = .jump { s with pc := d, pre := some s.pc } := rfl
+
+theorem execTerm_ret_int {s : State} {o : Operand} {x : BitVec 64}
+    (h : evalOperand s o = some (.int 64 x)) :
+    execTerm s (.ret (Ty.int 64) (some o)) = .ret (some (.int 64 x)) s := by
+  simp [execTerm, h]
+
+/-- **One control step from a block's trace.**  The block is found at the state's
+program counter, its instructions denote to `s'`, and its terminator is `c`. -/
+theorem step_of_blocks {calls : Calls} {f : Function} {s s' : State} {b : Block}
+    {c : Ctrl} (hfind : f.findBlock s.pc = some b)
+    (hcode : denoteCode calls b.instrs s = some s')
+    (hterm : execTerm s' b.term = c) :
+    step calls f s = c := by
+  simp only [step, hfind, hcode, hterm]
+
+/-! ### One iteration, as the loop instance's step
+
+`PipelineLoop.step` asks for a `runFuel` prefix of bounded cost from one invariant
+state to the next, with the next state's block left to the invariant.  Each arm's
+iteration is one control step: the arm's block trace, then its terminator, whose
+test `%exitcond…` compares the carried increment with `%shr`.  The block's
+denotation arrives as the trace fact, so the step adds the terminator and nothing
+else, and a step is stated here for all four arms in `step`'s own shape — an exit
+state or the next iteration's head, at cost one.  The call's return is carried as
+the outcome `r`, whose memory and allocator base the step adopts. -/
+
+/-- The first arm's terminator: the POS8-no-gate copy's exit test. -/
+theorem pUsUs_term :
+    pUsUs.term = Term.condbr (Operand.reg "%exitcond116.not") "for.cond.cleanup"
+      "for.body.us.us" := by decide
+
+/-- A one-step jump lifts to the fuel recursion's head. -/
+theorem runFuel_one_of_step {calls : Calls} {f : Function} {s e : State}
+    (h : step calls f s = .jump e) (k : Nat) :
+    runFuel calls (1 + k) f s = runFuel calls k f e := by
+  rw [show 1 + k = k + 1 from by omega]
+  simp only [runFuel, h]
+
+/-- **The `for.body.us.us` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem usUs_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us.us")
+    (hcode : denoteCode calls pUsUs.instrs
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us.us") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body.us.us", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body.us.us", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUsUs) (s' := stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_usus
+      · exact hcode
+      · rw [pUsUs_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, usUsOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUsUs) (s' := stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_usus
+      · exact hcode
+      · rw [pUsUs_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, usUsOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body.us` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem us_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us")
+    (hcode : denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body.us", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body.us", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs) (s' := stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us
+      · exact hcode
+      · rw [pUs_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, usOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs) (s' := stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us
+      · exact hcode
+      · rw [pUs_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, usOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body.us83` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem us83_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us83")
+    (hcode : denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us83") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body.us83", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body.us83", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs83) (s' := stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us83
+      · exact hcode
+      · rw [pUs83_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, us83Out, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs83) (s' := stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us83
+      · exact hcode
+      · rw [pUs83_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, us83Out, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem body_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body")
+    (hcode : denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body", pre := some s.pc }) := by
+      refine step_of_blocks (b := pBody) (s' := stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_body
+      · exact hcode
+      · rw [pBody_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, bodyOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pBody) (s' := stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_body
+      · exact hcode
+      · rw [pBody_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, bodyOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+end PipelineBodyFacts
+
+end LeanLLVM.Vellum
