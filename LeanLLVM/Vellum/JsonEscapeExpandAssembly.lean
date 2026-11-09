@@ -1702,6 +1702,474 @@ theorem udRunExit_stepS_zero (env : Env) (s : State) (paddr : Nat)
   rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
   simp only [withEnv, hpc]
 
+/-! ### The tail's continuation through the middle
+
+`us_run.exit` is the join of the tail's two edges.  It loads the body's byte at the
+head position `%sub` and tests it against the control range, and `if.end21` then tests
+that the byte after the escape is inside the body.  The two steps are one run here, at
+the two operands `us_run.exit` keeps apart — the residual `%sub13` and the head
+position `%sub` — which is why this composes `udRunExit_stepS_zero` and not the
+trace's one-value form.
+
+The cells are stated as the blocks' own arithmetic writes them: `%add15` is the
+residual plus the prefix length and `%add.i100` is the head position plus one, so a
+caller that instantiates those at the canonical `ofNat` values reads them back in the
+same vocabulary.  `%cmp.not.i` carries `if.end21`'s own test, which is the predicate a
+caller proves from the body's length and the head's bound. -/
+theorem udRunExit_to_ifEndI (env : Env) (s : State) (paddr : Nat)
+    (sub13v subv j nv : BitVec 64) (b : BitVec 8)
+    (hpc : s.pc = "us_run.exit")
+    (hsub13 : lookupName env "%sub13" = some (.int 64 sub13v))
+    (hj : lookupName env "%j.0294" = some (.int 64 j))
+    (hp : lookupName env "%p" = some (.ptr paddr))
+    (hsub : lookupName env "%sub" = some (.int 64 subv))
+    (hsw : (subv.signExtend 64).toNat = subv.toNat)
+    (hs63 : subv.toNat < 2 ^ 63)
+    (hr : readBytes s.mem (paddr + subv.toNat) 1 = some (natToBytes b.toNat 1))
+    (hcond : evalICmp .ult b (BitVec.ofInt 8 32) = (0 : BitVec 1))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hcond2 : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (1 : BitVec 1)) :
+    ∃ (e : State) (k : Nat),
+      k ≤ 2 ∧ e.pc = "if.end.i" ∧ e.pre = some "if.end21" ∧ e.mem = s.mem ∧
+      lookupName e.env "%add15" = some (.int 64 (sub13v + j)) ∧
+      lookupName e.env "%arrayidx16" = some (.ptr (paddr + subv.toNat)) ∧
+      lookupName e.env "%7" = some (.int 8 b) ∧
+      lookupName e.env "%add.i100" = some (.int 64 (subv + BitVec.ofInt 64 1)) ∧
+      lookupName e.env "%cmp.not.i" =
+        some (.int 1 (evalICmp .ult (subv + BitVec.ofInt 64 1) nv)) ∧
+      lookupName e.env "%sub" = some (.int 64 subv) ∧
+      lookupName e.env "%n" = some (.int 64 nv) ∧
+      lookupName e.env "%p" = some (.ptr paddr) ∧
+      lookupName e.env "%sub13" = some (.int 64 sub13v) ∧
+      lookupName e.env "%j.0294" = some (.int 64 j) ∧
+      (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
+        runFuel escapeCalls z usDecFunction e) := by
+  let e1 : State :=
+    { (withEnv (udRunExitEnvS env paddr sub13v subv j b) s) with
+        pc := "if.end21", pre := some "us_run.exit" }
+  have hstep1 : step escapeCalls usDecFunction (withEnv env s) = .jump e1 :=
+    udRunExit_stepS_zero env s paddr sub13v subv j b hpc hsub13 hj hp hsub hsw hs63 hr
+      hcond
+  let e2 : State :=
+    { (withEnv (udIfEnd21Env (udRunExitEnvS env paddr sub13v subv j b) subv nv) s) with
+        pc := "if.end.i", pre := some "if.end21" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 :=
+    udIfEnd21_step (udRunExitEnvS env paddr sub13v subv j b)
+      { s with pc := "if.end21", pre := some "us_run.exit" } subv nv rfl
+      (by simp only [udRunExitEnvS]; ud_lk_h hsub)
+      (by simp only [udRunExitEnvS]; ud_lk_h hn)
+      hcond2
+  refine ⟨e2, 2, by omega, rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_⟩
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hsub
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hn
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hp
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hsub13
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hj
+  · intro z
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep2]
+
+/-! #### Axiom footprints: the tail's continuation -/
+
+/-- info: 'LeanLLVM.Vellum.udRunExit_to_ifEndI' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udRunExit_to_ifEndI
+
+/-! ### The middle's second block and the simple escape's arm
+
+`if.end.i` reads the byte after the escape and the table's image of it, and when the
+table answers a two-character escape the arm runs `if.then6.i`, which stores the
+replacement byte at the destination cursor and advances it by one.  Both steps are
+here, and the state they leave is `cleanup32` with its two `phi`s taken from the
+simple-escape edge: `%j.3` is `%add8.i` and `%adv.2` is the literal two, which is what
+`cleanup32`'s own step reads.
+
+The store's address is `%dst + %add15`, and `%add15` is the block's own residual-plus-
+prefix cell, so the memory is the statement's, not a new vocabulary. -/
+theorem ifEndI_to_simple (env : Env) (s : State) (paddr tab daddr : Nat)
+    (off outv sub inc11 nxp : BitVec 64) (c t : BitVec 8)
+    (hpc : s.pc = "if.end.i")
+    (hp : lookupName env "%p" = some (.ptr paddr))
+    (hoff : lookupName env "%add.i100" = some (.int 64 off))
+    (htab : lookupName env "%tab" = some (.ptr tab))
+    (hdst : lookupName env "%dst" = some (.ptr daddr))
+    (hout : lookupName env "%add15" = some (.int 64 outv))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hoffw : (off.signExtend 64).toNat = off.toNat) (hoff63 : off.toNat < 2 ^ 63)
+    (hb : readBytes s.mem (paddr + off.toNat) 1 = some (natToBytes c.toNat 1))
+    (ht : readBytes s.mem (tab + c.toNat) 1 = some (natToBytes t.toNat 1))
+    (hgw : ((BitVec.ofNat 64 c.toNat).signExtend 64).toNat = c.toNat)
+    (hcond4 : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (1 : BitVec 1))
+    (how : (outv.signExtend 64).toNat = outv.toNat) (ho63 : outv.toNat < 2 ^ 63) :
+    ∃ (e : State) (k : Nat),
+      k ≤ 2 ∧ e.pc = "cleanup32" ∧ e.pre = some "if.then6.i" ∧
+      e.mem = writeBytes s.mem (daddr + outv.toNat) (natToBytes t.toNat 1) ∧
+      lookupName e.env "%add8.i" = some (.int 64 (outv + BitVec.ofInt 64 1)) ∧
+      lookupName e.env "%9" = some (.int 8 t) ∧
+      lookupName e.env "%8" = some (.int 8 c) ∧
+      lookupName e.env "%add.i100" = some (.int 64 off) ∧
+      lookupName e.env "%sub" = some (.int 64 sub) ∧
+      lookupName e.env "%inc11" = some (.int 64 inc11) ∧
+      lookupName e.env "%nxp" = some (.int 64 nxp) ∧
+      lookupName e.env "%dst" = some (.ptr daddr) ∧
+      (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
+        runFuel escapeCalls z usDecFunction e) := by
+  let e1 : State :=
+    { (withEnv (udIfEndIEnv env paddr tab off c t) s) with
+        pc := "if.then6.i", pre := some "if.end.i" }
+  have hstep1 : step escapeCalls usDecFunction (withEnv env s) = .jump e1 :=
+    udIfEndI_step env s paddr tab off c t hpc hp hoff htab hoffw hoff63 hb ht hgw hcond4
+  let e2 : State :=
+    { (withEnv (udIfThen6IEnv (udIfEndIEnv env paddr tab off c t) daddr outv)
+        { s with mem := writeBytes s.mem (daddr + outv.toNat) (natToBytes t.toNat 1) }) with
+        pc := "cleanup32", pre := some "if.then6.i" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 := by
+    have h1 := udIfThen6I_step (udIfEndIEnv env paddr tab off c t)
+      { s with pc := "if.then6.i", pre := some "if.end.i" } daddr outv t rfl
+      (by simp only [udIfEndIEnv]; ud_lk_h hdst)
+      (by simp only [udIfEndIEnv]; ud_lk_h hout)
+      (by simp only [udIfEndIEnv]; ud_lk)
+      how ho63
+    exact h1
+  refine ⟨e2, 2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · omega
+  · rfl
+  · rfl
+  · rfl
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk_h hoff
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk_h hsub
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk_h hinc11
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk_h hnxp
+  · simp only [e2, withEnv, udIfThen6IEnv, udIfEndIEnv]; ud_lk_h hdst
+  · intro z
+    have h1 := runFuel_jump_prefix hstep1 (1 + z)
+    have h2 := runFuel_jump_prefix hstep2 z
+    rw [show 2 + z = 1 + (1 + z) from by omega]
+    exact h1.trans h2
+
+/-- info: 'LeanLLVM.Vellum.ifEndI_to_simple' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ifEndI_to_simple
+
+/-- **The `\u` entry of the emitter's chain.**  When the table maps the byte after the
+escape to no two-character escape, `if.end.i` takes `if.end9.i`, which reads the byte
+again: not `u`, or six bytes past the escape do not fit, is the refusal's edge, and
+the other answer sends the run to the hex reader.  The two steps are here, at the
+cells the hex reader reads: `%8` is the byte itself, `%add.i113` is the head position
+plus six, and `%or.cond335` is the guard the branch took.
+
+The arithmetic the `u` byte and the fit bound supply is the caller's: `%8`'s value and
+`%or.cond335`'s zero are hypotheses, because they are the emitter's gate decision and
+not a property of these two blocks' steps. -/
+theorem ifEndI_to_u_entry (env : Env) (s : State) (paddr tab : Nat)
+    (off sub nv : BitVec 64) (c t : BitVec 8)
+    (hpc : s.pc = "if.end.i")
+    (hp : lookupName env "%p" = some (.ptr paddr))
+    (hoff : lookupName env "%add.i100" = some (.int 64 off))
+    (htab : lookupName env "%tab" = some (.ptr tab))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hoffw : (off.signExtend 64).toNat = off.toNat) (hoff63 : off.toNat < 2 ^ 63)
+    (hb : readBytes s.mem (paddr + off.toNat) 1 = some (natToBytes c.toNat 1))
+    (ht : readBytes s.mem (tab + c.toNat) 1 = some (natToBytes t.toNat 1))
+    (hgw : ((BitVec.ofNat 64 c.toNat).signExtend 64).toNat = c.toNat)
+    (hcond4 : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (0 : BitVec 1))
+    (hcond9 : (evalICmp .ne c (BitVec.ofInt 8 117) |||
+      evalICmp .ugt (sub + BitVec.ofInt 64 6) nv) = (0 : BitVec 1)) :
+    ∃ (e : State) (k : Nat),
+      k ≤ 2 ∧ e.pc = "if.end.i115" ∧ e.pre = some "if.end9.i" ∧ e.mem = s.mem ∧
+      lookupName e.env "%8" = some (.int 8 c) ∧
+      lookupName e.env "%add.i113" = some (.int 64 (sub + BitVec.ofInt 64 6)) ∧
+      lookupName e.env "%add.i100" = some (.int 64 off) ∧
+      lookupName e.env "%9" = some (.int 8 t) ∧
+      lookupName e.env "%sub" = some (.int 64 sub) ∧
+      lookupName e.env "%n" = some (.int 64 nv) ∧
+      (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
+        runFuel escapeCalls z usDecFunction e) := by
+  let e1 : State :=
+    { (withEnv (udIfEndIEnv env paddr tab off c t) s) with
+        pc := "if.end9.i", pre := some "if.end.i" }
+  have hstep1 : step escapeCalls usDecFunction (withEnv env s) = .jump e1 :=
+    udIfEndI_step_zero env s paddr tab off c t hpc hp hoff htab hoffw hoff63 hb ht hgw
+      hcond4
+  let e2 : State :=
+    { (withEnv (udIfEnd9IEnv (udIfEndIEnv env paddr tab off c t) (sub + BitVec.ofInt 64 6)
+        (evalICmp .ne c (BitVec.ofInt 8 117))
+        (evalICmp .ugt (sub + BitVec.ofInt 64 6) nv)) s) with
+        pc := "if.end.i115", pre := some "if.end9.i" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 := by
+    have h1 := udIfEnd9I_step_zero (udIfEndIEnv env paddr tab off c t)
+      { s with pc := "if.end9.i", pre := some "if.end.i" } sub nv c rfl
+      (by simp only [udIfEndIEnv]; ud_lk)
+      (by simp only [udIfEndIEnv]; ud_lk_h hsub)
+      (by simp only [udIfEndIEnv]; ud_lk_h hn) hcond9
+    exact h1
+  refine ⟨e2, 2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · omega
+  · rfl
+  · rfl
+  · rfl
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h hoff
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h hsub
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h hn
+  · intro z
+    have h1 := runFuel_jump_prefix hstep1 (1 + z)
+    have h2 := runFuel_jump_prefix hstep2 z
+    rw [show 2 + z = 1 + (1 + z) from by omega]
+    exact h1.trans h2
+
+/-- info: 'LeanLLVM.Vellum.ifEndI_to_u_entry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ifEndI_to_u_entry
+
+/-- **`if.end3.i`'s zero arm.**  The guard false is the six-byte form: the code unit
+did not open a surrogate pair (or the twelve bytes do not fit, or the next two bytes
+are not `\` `u`), so the run goes straight to the block that packs and stores the
+word.  The trace states the guard's one-arm only, and this is its sibling at the same
+environment builder, which is the shape `udIfEnd21_step_zero` supplies for the middle. -/
+theorem udIfEnd3I_step_zero (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (c : List (BitVec 1)) (sub n : BitVec 64)
+    (hpc : s.pc = "if.end3.i")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (h10 : lookupName env "%10" = some (.vec 2 64 (unpackLanes 64 2 (bytesToNat bs))))
+    (h11 : lookupName env "%11" = some (.vec 16 8 (byteLanes bs)))
+    (hc190 : lookupName env "%cmp.i190" = some (.vec 16 1 c))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hlen : bs.length = 16) (hc16 : c.length = 16)
+    (hcond : udIfEnd3IGuard bs c sub n = (0 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udIfEnd3IEnv env bs c sub n) s) with
+              pc := "if.end32.i", pre := some "if.end3.i" } := by
+  rw [udStep_of (withEnv env s) "if.end3.i" udIfEnd3I _
+    (by rw [withEnv]; exact hpc) findBlock_udIfEnd3I
+    (udIfEnd3I_denote env s addr bs c sub n haddr h10 h11 hc190 hsub hn hlen hc16),
+    udIfEnd3I_term]
+  have hcmp : evalOperand (withEnv (udIfEnd3IEnv env bs c sub n) s)
+      (.reg "%or.cond334") =
+      some (.int 1 (udIfEnd3IGuard bs c sub n)) :=
+    evalOperand_reg_of _ s "%or.cond334" _ (by simp only [udIfEnd3IEnv]; hex_lk)
+  rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3I_step_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd3I_step_zero
+
+/-- **The hex reader's guard and the store, composed.**  From `if.end.i115` — the
+sixteen bytes after the escape already in hand — `if.end3.i` tests the code unit's
+high bits, the twelve bytes of room and the two trailing bytes, and `if.end32.i`
+packs the unit's bytes into a word and stores them at `%dst + %add15`.  The
+six-byte form is the guard's zero arm; the pair's twelve-byte arm runs
+`if.then17.i`/`land.lhs.true22.i`/`if.then26.i` instead, which is a separate
+statement.
+
+The block's own cells are as their builders write them: `%and27.i` is the code unit's
+low sixteen bits, `%adv.1.i` is the advance the phi supplied (`6` on this edge), and
+`%add.i125` is the published length arithmetic at the packed word's width. -/
+theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
+    (sub nv add15 : BitVec 64) (daddr k : Nat)
+    (c db : List (BitVec 1))
+    (hpc : s.pc = "if.end.i115")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hdst : lookupName env "%dst" = some (.ptr daddr))
+    (hadd15 : lookupName env "%add15" = some (.int 64 add15))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 (0 : BitVec 64)))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 2) 16 = some bs)
+    (hdb : db = hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))
+    (hcond115 : evalICmp .eq
+      (BitVec.ofNat 16 (lanesToNat (hexZipOr
+        (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+        BitVec.ofInt 16 15) (BitVec.ofInt 16 15) = (1 : BitVec 1))
+    (hcond3 : udIfEnd3IGuard bs db sub nv = (0 : BitVec 1))
+    (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    ∃ (e : State), e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
+      e.mem = writeBytes s.mem (daddr + k)
+        (natToBytes (udIfEnd32Word (hxCode (byteLanes bs) db &&&
+          BitVec.ofInt 32 65535)).toNat 4) ∧
+      lookupName e.env "%add.i125" = some (.int 64
+        (add15 + BitVec.ofNat 64 (evalICmp .ugt (hxCode (byteLanes bs) db &&&
+          BitVec.ofInt 32 65535) (BitVec.ofInt 32 2047)).toNat +
+          udIfEnd32Adv (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535) +
+          BitVec.ofNat 64 (evalICmp .ugt (hxCode (byteLanes bs) db &&&
+            BitVec.ofInt 32 65535) (BitVec.ofInt 32 65535)).toNat)) ∧
+      lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 6)) ∧
+      lookupName e.env "%sub" = some (.int 64 sub) ∧
+      lookupName e.env "%dst" = some (.ptr daddr) := by
+  have hc16 : db.length = 16 := by
+    rw [hdb]
+    simp only [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length, hlen]
+  let e1 : State :=
+    { (withEnv (udIfEndI115Env env addr bs) s) with
+        pc := "if.end3.i", pre := some "if.end.i115" }
+  have hstep1 : step escapeCalls usDecFunction (withEnv env s) = .jump e1 :=
+    udIfEndI115_step env s addr bs hpc haddr hlen hload hcond115
+  let e2 : State :=
+    { (withEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) s) with
+        pc := "if.end32.i", pre := some "if.end3.i" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 := by
+    have h1 := udIfEnd3I_step_zero (udIfEndI115Env env addr bs)
+      { s with pc := "if.end3.i", pre := some "if.end.i115" } addr bs db sub nv rfl
+      (by simp only [udIfEndI115Env]; ud_lk_h haddr)
+      (by simp only [udIfEndI115Env]; ud_lk)
+      (by simp only [udIfEndI115Env]; ud_lk)
+      (by simp only [udIfEndI115Env]; rw [hdb]; ud_lk)
+      (by simp only [udIfEndI115Env]; ud_lk_h hsub)
+      (by simp only [udIfEndI115Env]; ud_lk_h hn)
+      hlen hc16 hcond3
+    exact h1
+  let e3 : State :=
+    { (withEnv (udIfEnd32IEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv)
+        (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)
+        (BitVec.ofInt 64 6) add15 daddr k)
+        (udIfEnd32IWritten s daddr k (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535))) with
+        pc := "cleanup32", pre := some "if.end32.i" }
+  have hstep3 : step escapeCalls usDecFunction e2 = .jump e3 := by
+    have h1 := udIfEnd32I_step
+      (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv)
+      { s with pc := "if.end32.i", pre := some "if.end3.i" } "if.end3.i"
+      (.reg "%and27.i") (.imm (.int 64 (BitVec.ofInt 64 6)))
+      (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535) (BitVec.ofInt 64 6) add15
+      daddr k rfl rfl (by decide)
+      (by
+        show phiIncoming "if.end3.i" udIfEnd32IIncomingAdv =
+          some (.imm (.int 64 (BitVec.ofInt 64 6)))
+        decide)
+      (by
+        show evalOperand (withEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) s)
+          (.reg "%and27.i") = some (.int 32 (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535))
+        simp only [udIfEnd3IEnv, udIfEndI115Env]; hex_lk)
+      (by
+        show evalOperand (withEnv (("%cp.i.3", .int 32 (hxCode (byteLanes bs) db &&&
+          BitVec.ofInt 32 65535)) :: udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) s)
+          (.imm (.int 64 (BitVec.ofInt 64 6))) = some (.int 64 (BitVec.ofInt 64 6))
+        simp [evalOperand, Const.toValue])
+      (by simp only [udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hdst)
+      (by simp only [udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hadd15)
+      hk hpos
+    exact h1
+  refine ⟨e3, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · rfl
+  · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; hex_lk
+  · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; hex_lk
+  · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hsub
+  · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hdst
+
+/-- info: 'LeanLLVM.Vellum.hex_to_ifEnd32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hex_to_ifEnd32
+
+/-- **The middle's refusal branch.**  `if.end21`'s zero arm sends the run to
+`if.then22`, which performs the refusal's two stores — the offset at `%err` and the
+index at `%xj` — and then reaches `cleanup41`.  The two steps are here with the
+memory they leave, which is the word the exit's refusal branch reads: the caller's
+staging supplies the two slot bases, and this lemma names the writes it made. -/
+theorem ifEnd21_to_refusal (env : Env) (s : State) (subv nv inc11 : BitVec 64)
+    (err xj : Nat)
+    (hpc : s.pc = "if.end21")
+    (hsub : lookupName env "%sub" = some (.int 64 subv))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hinc11 : lookupName env "%inc11" = some (.int 64 inc11))
+    (herr : lookupName env "%err" = some (.ptr err))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hcond : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (0 : BitVec 1)) :
+    ∃ (e : State) (k : Nat),
+      k ≤ 2 ∧ e.pc = "cleanup41" ∧ e.pre = some "if.then22" ∧
+      e.mem = udRefusalMem s.mem subv.toNat err inc11.toNat xj ∧
+      lookupName e.env "%sub" = some (.int 64 subv) ∧
+      lookupName e.env "%inc11" = some (.int 64 inc11) ∧
+      lookupName e.env "%err" = some (.ptr err) ∧
+      lookupName e.env "%xj" = some (.ptr xj) ∧
+      (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
+        runFuel escapeCalls z usDecFunction e) := by
+  let e1 : State :=
+    { (withEnv (udIfEnd21Env env subv nv) s) with
+        pc := "if.then22", pre := some "if.end21" }
+  have hstep1 : step escapeCalls usDecFunction (withEnv env s) = .jump e1 :=
+    udIfEnd21_step_zero env s subv nv hpc hsub hn hcond
+  let e2 : State :=
+    { (withEnv (udIfEnd21Env env subv nv)
+        { s with mem := udRefusalMem s.mem subv.toNat err inc11.toNat xj }) with
+        pc := "cleanup41", pre := some "if.then22" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 := by
+    have h1 := udIfThen22_step (udIfEnd21Env env subv nv)
+      { s with pc := "if.then22", pre := some "if.end21" } subv inc11 err xj rfl
+      (by simp only [udIfEnd21Env]; ud_lk_h hsub)
+      (by simp only [udIfEnd21Env]; ud_lk_h hinc11)
+      (by simp only [udIfEnd21Env]; ud_lk_h herr)
+      (by simp only [udIfEnd21Env]; ud_lk_h hxj)
+    exact h1
+  refine ⟨e2, 2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · omega
+  · rfl
+  · rfl
+  · rfl
+  · simp only [e2, withEnv, udIfEnd21Env]; ud_lk_h hsub
+  · simp only [e2, withEnv, udIfEnd21Env]; ud_lk_h hinc11
+  · simp only [e2, withEnv, udIfEnd21Env]; ud_lk_h herr
+  · simp only [e2, withEnv, udIfEnd21Env]; ud_lk_h hxj
+  · intro z
+    have h1 := runFuel_jump_prefix hstep1 (1 + z)
+    have h2 := runFuel_jump_prefix hstep2 z
+    rw [show 2 + z = 1 + (1 + z) from by omega]
+    exact h1.trans h2
+
+/-- info: 'LeanLLVM.Vellum.ifEnd21_to_refusal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ifEnd21_to_refusal
+
+/-- **The successor latch's staging is the current one.**  The emitter writes inside
+the destination extent, so every byte the position stream occupies is the caller's:
+the stream read, its length, each entry's window and the body's end offset all survive
+the iteration.  The disjointness is the staging's own (the record excludes the stream
+from the destination extent), stated here in the two-disjunct form the clauses use.
+
+This is the staging half of the successor `AssemblyLatchInv`, and the reason the
+invariant's non-memory conjuncts — the pinnings and the walk — are the only ones an
+iteration changes. -/
+theorem successor_staging {M m : Mem} {nps xp pos0 n : Nat} {ps : List Nat}
+    {addv : BitVec 64} {dst : Nat}
+    (hstage : DecodeStaging M nps xp pos0 n ps addv)
+    (hframe : UnchangedOutside M m [(dst, n + 64)])
+    (hdisj : xp + 4 * nps ≤ dst ∨ dst + (n + 64) ≤ xp) :
+    DecodeStaging m nps xp pos0 n ps addv := by
+  obtain ⟨hstream, hlen, hrange, hadd⟩ := hstage
+  refine ⟨?_, hlen, hrange, hadd⟩
+  rw [readBytes_of_UnchangedOutside hframe]
+  · exact hstream
+  · intro x hx1 hx2 r hr
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    obtain ⟨rfl, rfl⟩ := hr
+    rcases hdisj with hd | hd
+    · omega
+    · omega
+
+/-- info: 'LeanLLVM.Vellum.successor_staging' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms successor_staging
+
 /-! ### `if.end`'s two arms, composed to the copy's exit word
 
 The block's residual test sends the run round the sixty-four-byte copy when it is
