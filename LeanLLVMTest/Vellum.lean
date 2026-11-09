@@ -9905,3 +9905,29 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_step' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.PipelineBodyFacts.body_step
+
+/-! #### The transport bridge: agreement over a block's own read set -/
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.operand_mem_reads' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.operand_mem_reads
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.AgreeOn.bind' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.AgreeOn.bind
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.AgreeOn.call' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.AgreeOn.call
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.AgreeOn.alloca' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.AgreeOn.alloca
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.evalOperand_agree' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.evalOperand_agree
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.evalOperands_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.evalOperands_agree
