@@ -515,7 +515,18 @@ to the loop's first iteration — and the zero-block document's exit, which the
 entry test takes before the loop — with the prefix shape the loop's own induction
 consumes.  `exit` is the tail: from any state the loop leaves in, the cleanup,
 the UTF-8 call, the arm selection and stage 2 (or the zero it returns) reach a
-verdict at the record's post. -/
+verdict at the record's post.
+
+**`Γ2` is the stage-2 slot, and pinning it is `Γ_stage2`'s to make.**  The
+parameter is not a modelling convenience: the tail's post clauses about `dst`,
+`ev`, `ndst`, `nev` and the refusal arm's `err` are facts about the memory the
+stage-2 run leaves, and an arbitrary record implies none of them.  The record
+that states those facts, `Γ_stage2`, does not exist in this tree, so the pin is
+**deferred** to the slice that lands that record — deferred, not missing: it is
+a substitution of the record once it exists, and `exit` below is stated at the
+arbitrary slot until then.  A record invented here so the tail would go through
+would state stage 2's write set where it is convenient rather than where it is
+measured, which is the adapter ruling's error in the other direction. -/
 structure PipelineBodyFacts (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (args : List Value) (mem : Mem) (next : Nat) where
   /-- The block loop, as one induction over the four arm-specialised copies. -/
@@ -531,7 +542,9 @@ structure PipelineBodyFacts (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     ∀ k, runFuel (pipelineCalls tab s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
       runFuel (pipelineCalls tab s2) k pipelineBody e
-  /-- The tail: from any exit state, the verdict and the record's post. -/
+  /-- The tail: from any exit state, the verdict and the record's post.  Stated
+  at the arbitrary stage-2 slot `Γ2`; the pin to `Γ_stage2` is deferred to that
+  record's landing, as the structure's docstring says. -/
   exit : ∀ (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab s2) 3 pipelineBody e =

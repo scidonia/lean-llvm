@@ -843,6 +843,312 @@ theorem body_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
   simp only [lit, bodyIn, bodyOut]
   pipeline_block_eval
 
+/-! ### The first iteration: the split predecessor
+
+The seed's third step leaves `for.body.lr.ph.split.us` or `for.body.lr.ph.split`
+for one of the four arm heads, and the arm traces above are stated at the back
+edge.  At the first iteration every `phi` selects the split operand instead:
+`%prevS` and `%i` take the literal zero and `%k` takes `%0`, the incoming count
+the entry block loaded from `%nk`.  The four traces below state the same blocks
+at that arrival, so the values the invariant's first state carries are read from
+a trace rather than assumed.
+
+The builders bind what the split path reads and nothing else.  The back edge's
+three names (`%shr13`, `%call21`, `%inc` and their per-arm spellings) are in the
+block's static read set through the self-loop `phi` entries, so binding them in
+the first iteration's builder would make it disagree with the dispatch state,
+which binds none of them; leaving them unbound on both sides is what lets
+`AgreeOn` carry the trace to the state the split block leaves. -/
+
+/-- `for.body.us.us`'s incoming builder at the split predecessor: `%0` (the
+count the entry block loaded) and the cells the split path reads. -/
+def usUsSplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body.us.us`'s outgoing builder at the split predecessor. -/
+def usUsSplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond116.not", .int 1 (vexit 0 shr)),
+         ("%inc.us.us", .int 64 (vinc 0)),
+         ("%call21.us.us", ret),
+         ("%ent.0.us.us", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18.us.us", .int 64 (vand18 n 0)),
+         ("%sub17.us.us", .int 64 (vsub17 n 0)),
+         ("%notmask.us.us", .int 64 (vnotmask n 0)),
+         ("%cmp15.us.us", .int 1 (vcmp n 0)),
+         ("%sub.us.us", .int 64 (vsub n 0)),
+         ("%shr13.us.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us.us", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%7", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11.us.us", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10.us.us", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9.us.us", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8.us.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us.us", .int 64 (vand w2 w3)),
+         ("%not6.us.us", .int 64 (vnot6 w3)),
+         ("%not.us.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%6", .int 64 (v6 w1 w2 w4)),
+         ("%5", .int 64 (v5 w1 w4)),
+         ("%4", .int 64 w4), ("%3", .int 64 w3), ("%2", .int 64 w2),
+         ("%1", .int 64 w1),
+         ("%add.ptr.us.us", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl.us.us", .int 64 (sh6 0)),
+         ("%i.080.us.us", .int 64 0),
+         ("%k.081.us.us", .int 64 w0),
+         ("%prevS.082.us.us", .int 64 0)]
+    (usUsSplitIn env n b sc mk delim inString ws entw ep w0 shr)
+
+/-- **`for.body.us.us` from the split predecessor.**  Every `phi` takes the
+split operand, so the carried triple is `(0, %0, 0)`. -/
+theorem usUs_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUsUs.instrs
+        (stateAt (usUsSplitIn env n b sc mk delim inString ws entw ep w0 shr) s) =
+      some (stateAt (usUsSplitOut env n b sc mk delim inString ws entw ep w0 shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUsUs_instrs]
+  simp only [lit, usUsSplitIn, usUsSplitOut]
+  pipeline_block_eval
+
+/-- `for.body.us`'s incoming builder at the split predecessor. -/
+def usSplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body.us`'s outgoing builder at the split predecessor. -/
+def usSplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (ret : Value) : Env :=
+  cells [("%exitcond115.not", .int 1 (vexit 0 shr)),
+         ("%inc.us", .int 64 (vinc 0)),
+         ("%17", .int 64 w7), ("%16", .int 64 w6), ("%15", .int 64 w5),
+         ("%call21.us", ret),
+         ("%ent.0.us", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18.us", .int 64 (vand18 n 0)),
+         ("%sub17.us", .int 64 (vsub17 n 0)),
+         ("%notmask.us", .int 64 (vnotmask n 0)),
+         ("%cmp15.us", .int 1 (vcmp n 0)),
+         ("%sub.us", .int 64 (vsub n 0)),
+         ("%shr13.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%14", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11.us", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10.us", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9.us", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us", .int 64 (vand w2 w3)),
+         ("%not6.us", .int 64 (vnot6 w3)),
+         ("%not.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%13", .int 64 (v6 w1 w2 w4)), ("%12", .int 64 (v5 w1 w4)),
+         ("%11", .int 64 w4), ("%10", .int 64 w3), ("%9", .int 64 w2),
+         ("%8", .int 64 w1),
+         ("%add.ptr.us", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl.us", .int 64 (sh6 0)),
+         ("%i.080.us", .int 64 0),
+         ("%k.081.us", .int 64 w0),
+         ("%prevS.082.us", .int 64 0)]
+    (usSplitIn env n b sc mk delim inString ws backslash ctl entw ep
+      xp nxp xcarry w0 shr)
+
+/-- **`for.body.us` from the split predecessor.** -/
+theorem us_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 0, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pUs.instrs
+        (stateAt (usSplitIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry w0 shr) s) =
+      some (stateAt (usSplitOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pUs_instrs]
+  simp only [lit, usSplitIn, usSplitOut]
+  pipeline_block_eval
+
+/-- `for.body.us83`'s incoming builder at the split predecessor. -/
+def us83SplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body.us83`'s outgoing builder at the split predecessor. -/
+def us83SplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond114.not", .int 1 (vexit 0 shr)),
+         ("%inc.us106", .int 64 (vinc 0)),
+         ("%call.us", ret),
+         ("%ent.0.us104", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18.us103", .int 64 (vand18 n 0)),
+         ("%sub17.us102", .int 64 (vsub17 n 0)),
+         ("%notmask.us101", .int 64 (vnotmask n 0)),
+         ("%cmp15.us100", .int 1 (vcmp n 0)),
+         ("%sub.us99", .int 64 (vsub n 0)),
+         ("%shr13.us98", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us97", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%24", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11.us96", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10.us95", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9.us94", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8.us93", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us92", .int 64 (vand w2 w3)),
+         ("%not6.us91", .int 64 (vnot6 w3)),
+         ("%not.us90", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us89", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%23", .int 64 (v6 w1 w2 w4)), ("%22", .int 64 (v5 w1 w4)),
+         ("%21", .int 64 w4), ("%20", .int 64 w3), ("%19", .int 64 w2),
+         ("%18", .int 64 w1),
+         ("%add.ptr.us88", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl.us87", .int 64 (sh6 0)),
+         ("%i.080.us86", .int 64 0),
+         ("%k.081.us85", .int 64 w0),
+         ("%prevS.082.us84", .int 64 0)]
+    (us83SplitIn env n b sc mk delim inString ws entw ep w0 shr)
+
+/-- **`for.body.us83` from the split predecessor.** -/
+theorem us83_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUs83.instrs
+        (stateAt (us83SplitIn env n b sc mk delim inString ws entw ep w0 shr) s) =
+      some (stateAt (us83SplitOut env n b sc mk delim inString ws entw ep w0 shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUs83_instrs]
+  simp only [lit, us83SplitIn, us83SplitOut]
+  pipeline_block_eval
+
+/-- `for.body`'s incoming builder at the split predecessor. -/
+def bodySplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body`'s outgoing builder at the split predecessor. -/
+def bodySplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (ret : Value) : Env :=
+  cells [("%exitcond.not", .int 1 (vexit 0 shr)),
+         ("%inc", .int 64 (vinc 0)),
+         ("%36", .int 64 w7), ("%35", .int 64 w6), ("%34", .int 64 w5),
+         ("%call", ret),
+         ("%ent.0", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18", .int 64 (vand18 n 0)),
+         ("%sub17", .int 64 (vsub17 n 0)),
+         ("%notmask", .int 64 (vnotmask n 0)),
+         ("%cmp15", .int 1 (vcmp n 0)),
+         ("%sub", .int 64 (vsub n 0)),
+         ("%shr13", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%33", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and", .int 64 (vand w2 w3)),
+         ("%not6", .int 64 (vnot6 w3)),
+         ("%not", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%32", .int 64 (v6 w1 w2 w4)), ("%31", .int 64 (v5 w1 w4)),
+         ("%30", .int 64 w4), ("%29", .int 64 w3), ("%28", .int 64 w2),
+         ("%27", .int 64 w1),
+         ("%add.ptr", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl", .int 64 (sh6 0)),
+         ("%i.080", .int 64 0),
+         ("%k.081", .int 64 w0),
+         ("%prevS.082", .int 64 0)]
+    (bodySplitIn env n b sc mk delim inString ws backslash ctl entw ep
+      xp nxp xcarry w0 shr)
+
+/-- **`for.body` from the split predecessor.** -/
+theorem body_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 0, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pBody.instrs
+        (stateAt (bodySplitIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry w0 shr) s) =
+      some (stateAt (bodySplitOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pBody_instrs]
+  simp only [lit, bodySplitIn, bodySplitOut]
+  pipeline_block_eval
+
 /-! ### The dispatch blocks and the tail
 
 The seed crosses the entry test's two selection blocks before the loop's first
@@ -1801,56 +2107,62 @@ or position stream is **not** needed: what the invariant must carry is the two
 counts, their capacity bounds and readability at `ep` and `xp`, and readability
 survives a run that only writes bytes.  Two things are nevertheless missing:
 
-* `escapePositionsPost` says the carry region may change — it is one of the
-  `UnchangedOutside` regions — and **no clause states what the run writes
-  there**.  The next iteration's escape call requires
-  `readBytes mem carry 16 = some (flagBytes prevb ++ flagBytes prevs)` together
-  with `st.oddRun = prevb && prevs` for a classifier state `st` whose three mask
-  values are the words the mask call just wrote; `st` is the state the mask
-  record's own post produced, so the parity clause is a statement about that
-  state's `oddRun`.  Eliminating the escape post leaves only
-  `readBytes mem carry' 16 = …` on the *input* memory and the frame over a list
-  that contains the carry region, so the pair cannot be carried forward.  The
-  body writes into `xcarry` the same pair the mask unit writes into `sc`; the two
-  records do not say so.
-* the counts' growth needs the bound discussed next.
+* the carry pair is supplied by the escape list's own post.  The run stores the
+  block's outgoing run-open and run-parity words at `carry`, and
+  `escapePositionsPost` states them as `carryPair m carry (carry64 lo hi st)
+  (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi st).oddRun` — the same
+  definition the mask record's `%sc` clause supplies through
+  `carryPair_of_carrySlot`.  The pre's carry-versus-stream exclusion keeps the
+  batch's stores off that slot, so the pair the next iteration's escape call
+  reads is a consequence of the post rather than an obligation with no
+  supplier.
+* the counts' growth needs the room clause discussed next.
 
 **The staging's arithmetic.**  The POS8 record's `pre` requires
 `k + 64 * ent.length + 9 < 2 ^ 63` at the entry count the body passes, and the
-escape record's requires `xn0 < 2 ^ 63`; `pipelineStaging` bounds
-`nk0 + 64 * pipelineBlocks n + 9 ≤ epcap.toNat` and `nk0 < 2 ^ 63`, which together
-do not put the grown counts below `2 ^ 63`.  `staging_count_bound_not_implied`
-below is the witness: one block, `nk0 = 2 ^ 63 - 1`, and a capacity of
-`2 ^ 63 + 100` satisfy every clause the staging states about the entry count,
-and the count the second iteration passes is above the bound the POS8 record
-asks for.  The escape count has the same shape, with `nxp0` and the positions
-`64 * blocks` add in place of `nk0`.
+escape record's requires `xn0 < 2 ^ 63`; the initial cursors' own bounds do not
+survive growth, so `pipelineStaging` states the room once — `cursorRoom nk0
+blocks 9` and `cursorRoom nxp0 blocks 9` — and both units' clauses follow from it
+by `cursorRoom_bounds`.  `staging_count_bound_not_implied` below is the witness
+the room clause answers: one block, `nk0 = 2 ^ 63 - 1`, and a capacity of
+`2 ^ 63 + 100` satisfy the initial-cursor bound, the block count's `uint32` bound
+and the capacity clause, and the count the second iteration passes is above the
+bound the POS8 record asks for.  The escape count has the same shape, with
+`nxp0` and the positions `64 * blocks` add in place of `nk0`.
 
 **The seed.**  The three steps to the loop head are `entry`, `for.body.lr.ph` and
 one of the two split blocks, and the traces for those are here
 (`entry_denote`, `lrPh_denote`, and the split blocks' empty instruction lists).
-What is missing is the *first* iteration's trace: the arm traces are stated for a
-self-loop predecessor, and the first iteration enters from
-`for.body.lr.ph.split.us` / `for.body.lr.ph.split`, where every `phi` selects the
-other incoming operand.  A seed that lands at the loop head must therefore either
-carry four split-predecessor traces, or fold the first iteration into the seed —
-which exceeds the three steps `PipelineBodyFacts.seed` allows.
+The first iteration's traces are here too: `usUs_split_denote`,
+`us_split_denote`, `us83_split_denote` and `body_split_denote` state the four
+arm heads at the split predecessor, where every `phi` selects the split operand
+and the carried triple is `(0, %0, 0)`.  What remains for the `seed` field is
+not a trace: it is the join of the three dispatch traces across their builders —
+the `AgreeOn` facts the loop's cell half above describes — together with the
+loop instance's own `Inv`, which is the `PipelineLoop` the caller supplies.  No
+instance for this body exists in the tree, so the field stays a hypothesis of the
+composition until one does.
 
 **The tail.**  `for.cond.cleanup`, `if.then33`, `if.end34` and `cleanup` are
 traced here, and the tail's own stores and calls are consequent.  The post's
 clauses about `dst`, `ev`, `ndst`, `nev` and `err` are facts about the memory the
 stage-2 call leaves, and `PipelineBodyFacts` is parametric in the stage-2 record
 `Γ2` with only `CallSatisfies` and the verdict's range as its hypotheses; those
-clauses are not consequences of an arbitrary `Γ2`.  A tail field is therefore
-available once `Γ2` is the stage-2 record and the record's own post shapes are
-consumed, and not before. -/
+clauses are not consequences of an arbitrary `Γ2`.  The pin that would supply
+them is `Γ2 := Γ_stage2`, and it is **deferred, not missing**: `Γ_stage2` does not
+exist in this tree, so `PipelineBodyFacts.exit` is stated at the arbitrary slot
+until the slice that lands that record substitutes it and consumes the post
+shapes it states.  A record invented here would state stage 2's write set where
+it is convenient rather than where it is measured. -/
 
-/-- **The staging's count clauses do not bound the grown entry count.**  A
-one-block document with `nk0 = 2 ^ 63 - 1` and a capacity at `2 ^ 63 + 100`
-satisfies the two clauses `pipelineStaging` states about the entry count, and the
-count the second iteration passes is at or above `2 ^ 63` — which the POS8
-record's `pre` refuses (`k + 64 * ent.length + 9 < 2 ^ 63` at `ent.length = 1`).
-The same argument applies to the escape count with `nxp0` in place of `nk0`. -/
+/-- **The initial cursors' bounds do not imply the room.**  A one-block document
+with `nk0 = 2 ^ 63 - 1` and a capacity at `2 ^ 63 + 100` satisfies
+`nk0 < 2 ^ 63`, the block count's `uint32` bound and the entry-stream capacity
+clause, and the count the second iteration passes is at or above `2 ^ 63` —
+which the POS8 record's `pre` refuses
+(`k + 64 * ent.length + 9 < 2 ^ 63` at `ent.length = 1`).  The same construction
+fails `cursorRoom nk0 blocks 9`, and the same argument applies to the escape
+count with `nxp0` in place of `nk0`. -/
 theorem staging_count_bound_not_implied :
     ∃ (nk0 blocks : Nat) (epcap : BitVec 64),
       nk0 < 2 ^ 63 ∧ 64 * blocks + 63 < 2 ^ 32 ∧
@@ -1862,6 +2174,60 @@ theorem staging_count_bound_not_implied :
   · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
     omega
   · omega
+
+/-! ### Axiom footprints
+
+The split predecessor's builders are cell lists, and its four traces are
+`pipeline_block_eval` facts like the arm traces: neither adds to the module's
+footprint. -/
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usUsSplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms usUsSplitIn
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usUsSplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUsSplitOut
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usSplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms usSplitIn
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usSplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usSplitOut
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.us83SplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms us83SplitIn
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.us83SplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us83SplitOut
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.bodySplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms bodySplitIn
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.bodySplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bodySplitOut
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usUs_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUs_split_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.us_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us_split_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.us83_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us83_split_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms body_split_denote
 
 end PipelineBodyFacts
 

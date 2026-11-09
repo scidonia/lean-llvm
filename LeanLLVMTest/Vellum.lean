@@ -9987,3 +9987,13 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.carryPair_of_carrySlot' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.carryPair_of_carrySlot
+
+/-! #### The first iteration, entered from the split blocks -/
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.usUs_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.usUs_split_denote
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyFacts.body_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.PipelineBodyFacts.body_split_denote
