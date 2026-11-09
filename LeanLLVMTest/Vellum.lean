@@ -10011,3 +10011,21 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Vellum.rejectPos' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.Vellum.rejectPos
+
+/-! #### The finalisation: what the units' post does and does not imply -/
+
+/-- info: 'LeanLLVM.Vellum.ParserHalf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.ParserHalf
+
+/-- info: 'LeanLLVM.Vellum.pipeline_units_finalisation' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.pipeline_units_finalisation
+
+/-- info: 'LeanLLVM.Vellum.pipeline_satisfies_of_parser' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.pipeline_satisfies_of_parser
+
+/-- info: 'LeanLLVM.Vellum.pipelineUnitsPost_not_imp_Sigma' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.pipelineUnitsPost_not_imp_Sigma
