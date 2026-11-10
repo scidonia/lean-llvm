@@ -637,6 +637,20 @@ record is consumed at.  An inlined body of thousands of instructions admits no
 compositional proof, so the staged form is not a performance choice; it is the
 form the refinement relation is about.
 
+That is where the relation is stated, and it is not a claim that a unit's body
+is *proved* against its record.  Stage 2's number conversion is where the
+difference is visible.  Its `to_double` is the unit's own text, not
+the measured `p6.c` function: `stage2-entities:` does not list `p6:to_double`
+and `stage2-extra:` names it, which is the identity list saying the body is new
+code.  The unit's record (`LeanLLVM/Vellum/JsonStage2Contract.lean`) states the
+ABI boundary — the staging, the two cursors, the refusal slot and the frame —
+and its pre puts no bound on a number token's length, because the body has no
+length bound either.  Whether the conversion's results are `strtodSpec`'s is
+an obligation, not a result: `LeanLLVM/StrtodRefine.lean` states it (the window
+and sticky-bit argument, with no platform axiom), `LeanLLVM/JSON/Strtod.lean`
+states what the refinement owes, and nothing in this tree proves it.
+`tests/json-strtod/long.sh` is the evidence about the conversion itself.
+
 The recorded ratios in `docs/json-pipeline-performance.md`, in contrast, were
 measured on the **one-TU form**: the same six files compiled as a single
 translation unit, with `-O3` free to inline across what the staged form keeps

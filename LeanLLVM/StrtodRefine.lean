@@ -1,9 +1,10 @@
 /-
 `strtodSpec` is the specification; the emitted stage-2 number path is the code.
 This module states the refinement obligation between them and nothing else: it
-does not model the emitted body, and it proves no run of it.  The one theorem
-below proves that the statement's classes partition the well-formed lexemes —
-the statement's shape, not the conversion.
+does not model the emitted body, and it proves no run of it.  `branch_cover` and
+`branch_disjoint` prove that the statement's classes partition the well-formed
+lexemes, and `emittedConversionRefines_universal` reads the statement at that
+partition — the statement's shape, not the conversion.
 
 ## The statement
 
@@ -43,10 +44,12 @@ is absent is the same argument for the *emitted* side, whose branches are:
   window and the exact low-half multiply.  This is **not** a single correctly
   rounded operation and does not form `P` and `d`; its exactness is the first
   obstruction (below).
-* **tier 3** (everything else, and every tier-2 refusal): `num_scan` copies the
-  token and calls the C library's `strtod` (`to_double`'s own `nd ≤ 15` integer
-  fast path is the exact case).  Its correctness is a property of the platform,
-  not of this tree.
+* **tier 3** (everything else, and every tier-2 refusal): the unit's own
+  `to_double` — a bounded window of significant digits, one bit saying whether
+  any digit past it is nonzero, and one nearest-even rounding from the retained
+  digits, their exponent and that bit.  Its correctness is a proof obligation of
+  this tree rather than a property of the platform; `What a proof would need`
+  below states it and says why no platform axiom enters.
 
 ## The first obstruction, executed
 
@@ -56,9 +59,10 @@ ties correctly: `9007199254740993` (`2 ^ 53 + 1`, a tie between `2 ^ 53` and
 `2 ^ 53 + 2`) reaches tier 2's exact path (`window = 1`) and returns `2 ^ 53` on
 both sides.  A `q < 0` tie is *refused* by the kernel's exactness test and
 handed to the fallback: `4503599627370496.5` (`2 ^ 52 + 0.5`) reaches
-`el_exact` with `undec = 1`, is handed to `num_scan`/`strtod`, and returns
-`2 ^ 52` on both sides.  The tie therefore splits into "decided by tier 2" (a
-tier-2 exactness obligation) and "handed to the fallback" (a tier-3 obligation).
+`el_exact` with `undec = 1`, is handed to the fallback's own conversion
+(`to_double`), and returns `2 ^ 52` on both sides.  The tie therefore splits
+into "decided by tier 2" (a tier-2 exactness obligation) and "handed to the
+fallback" (a tier-3 obligation).
 
 The first in-tree obstruction is the **tier-2 exactness test for 17–19
 significant digits**, and the input that shows it is `1.0000000000000002`: a
@@ -73,8 +77,10 @@ skipped low multiply and the 91-entry table as well.
 The fallback is the outer obstruction, reached by every input the kernel
 refuses: the subnormal tie `2.4703282292062327e-324` (range), the `q < 0` tie
 `4503599627370496.5` (undecidable), the long lexemes and the overflow cases
-(`1e309`).  It is not a first obstruction because it is an assumption about the
-C library, not a proof obligation this tree can discharge.
+(`1e309`).  It is not a first obstruction because it is unproved rather than
+mis-shaped, and the obligation it carries is stated under `What a proof would
+need` below: the emitted `to_double` computes the value from the lexeme, so
+there is no platform rounding assumption left to discharge.
 
 ## Does the statement survive its first case?
 
@@ -107,17 +113,45 @@ alone.
    decision equals `roundMag mant (10 ^ -eff)`'s, and that `el_exact`'s low half
    settles the window it claims to settle.  This needs the 91 table entries and
    the error bound; it is the first obstruction and the largest in-tree work.
-4. **Tier 3: the fallback.**  Proving glibc's `strtod` correctly rounded is
-   outside this tree; the options are a platform axiom, or a port of `Pff`'s
-   verified decimal parser (a substantial development) onto `FP.Basic`.  Either
-   is a specification decision, not something to absorb silently.
+4. **Tier 3: the fallback, and why the obligation is in-tree.**  The emitted
+   `to_double` copies nothing and calls no C library.  It reads at most 768
+   significant digits into a bounded window, keeps one sticky bit for whether
+   any digit past them is nonzero, and rounds once, nearest with ties to even,
+   from the retained digits `M`, their decimal exponent `S` and that bit.
+
+   The window's size is the arithmetic of the boundary it has to represent.  A
+   rounding decision compares the value with a binary64 value or with a
+   midpoint of two adjacent ones, and every such boundary is
+   `(2m + 1) * 2 ^ (e - 1)` with `2m + 1 < 2 ^ 54` and `e - 1 ≥ -1075`, i.e.
+   `(2m + 1) * 5 ^ 1075 / 10 ^ 1075`, whose decimal expansion has at most 768
+   significant digits (`log10 ((2 ^ 54 - 1) * 5 ^ 1075) = 767.65`).  So every
+   boundary is represented exactly inside the window, and the comparison
+   against it is integer arithmetic after the denominators are cleared.
+
+   The tail enters through the sticky bit alone, and that is all the comparison
+   needs of it.  A nonzero tail puts the value strictly above the retained
+   decimal, so the value is never *equal* to a binary64 value or to a midpoint;
+   every such boundary is an exact decimal of at most 768 significant digits, so
+   **a tie implies the sticky bit is clear**.  With the bit clear the value is
+   the exact decimal `M * 10 ^ S` and both sides of the comparison are exact;
+   with it set the value lies strictly between `M * 10 ^ S` and
+   `(M + 1) * 10 ^ S`, so a comparison that finds `M * 10 ^ S` at a boundary
+   still places the value strictly above that boundary.
+
+   So this tier's obligation is: the walk's exact comparisons, at the retained
+   window and the sticky bit, bracket `roundMag`'s candidate — **one
+   nearest-even rounding from `(M, S, sticky)` is the value**.  That is a proof
+   about this tree's own code, **and no platform axiom is needed for this tier
+   any more**.  It is an obligation, not a result: nothing here proves it, and
+   the conversion is not proved.
 
 **Verdict.**  A full proof is a port of a known argument onto `FP.Basic`, not an
 open problem — but it is a multi-stage development, and `Pff` itself is
 substantial.  This module therefore states the obligation with the classes made
 explicit and does not claim it.  The honest interim form is a refinement
-conditional on (a) the tier-2 kernel's bound and (b) the platform's `strtod`
-rounding, with (b) written as an assumption rather than hidden in the fallback.
+conditional on (a) the tier-2 kernel's bound and (b) the tier-3 bracketing
+argument above; both are proof work in this tree, and neither is a platform
+assumption.
 
 ## The executed evidence
 
@@ -142,9 +176,8 @@ one fails exactly on the tie.
 
 There is no `sorry`, `admit` or `native_decide` below.  The declarations'
 axioms are pinned at the end of the file.  Nothing here is a claim about the
-emitted body: `EmittedConversionRefines` is a proposition, and
-`emittedConversionRefines_universal` is the only theorem, proving that the
-statement's branches cover the well-formed lexemes.
+emitted body: `EmittedConversionRefines` is a proposition, and the three
+theorems below prove only that its branches cover the well-formed lexemes.
 -/
 import LeanLLVM.JSON.Strtod
 

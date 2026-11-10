@@ -54,13 +54,17 @@ the record writes.
 
 **What is not here.**  The refinement — that `num_fast`'s tier 1 (a `double`
 multiply or divide by an exact `10 ^ eff`), its tier 2 (`num_el`'s 128-bit
-multiply against `epow_table.h`'s normalised `10 ^ eff` with its
-"undecidable → `strtod`" fallback) and its tier 3 (`num_scan` copying into a
-64-byte buffer and calling `strtod`) computes this function — is a separate
-slice, and the last paragraph of this file names what it needs.  This module
-proves no run of any emitted code computes anything.  The corpus check
-(`tests/json-strtod/`) is evidence about the specification's agreement with
-glibc's `strtod`, not a proof about the emitted body.
+multiply against `epow_table.h`'s normalised `10 ^ eff`, with its undecidable
+cases handed to the next tier) and its tier 3 (the unit's own conversion: a
+768-digit window of significant digits, one sticky bit for the digits past it,
+and one nearest-even rounding from the three) computes this function — is a
+separate slice, and `NumberArmOwed`'s docstring names what it needs.  This
+module proves no run of any emitted code computes anything.  The corpus checks
+(`tests/json-strtod/`) use glibc's `strtod` as an oracle, not as an assumption
+about how a tier is implemented: `check.sh` is evidence about the
+specification's agreement with it, and `long.sh` is evidence about the emitted
+conversion's agreement with it on the lexemes whose length or whose tail
+decides the rounding.  Neither is a proof about either side.
 
 There is no `sorry`, `admit` or `native_decide` below, and the declarations'
 axioms are pinned at the end of the file.
@@ -1394,18 +1398,20 @@ theorem numberArm_isCode {evs : List UInt8} {off : Nat} {d : Decimal}
 emitted conversion's bits equal `strtodSpec`'s on every lexeme the parser
 accepts.  It is not proved here and no emitted run is modelled: `num_fast`'s
 tier 1 is a `double` multiply or divide by an exact power of ten, its tier 2 a
-128-bit multiply against `epow_table.h`'s normalised significands with the
-`strtod` fallback, and its tier 3 `num_scan`'s `strtod` call.  Proving these
-compute `strtodSpec` needs, in this module's terms: (a) the tier-1 identity —
-`(mant : double) * 10 ^ k` with both operands exact below `2 ^ 53` is one IEEE
-operation, so it is the correctly rounded value of the exact product, which is
-`roundMag`'s bracket for those `(P, d)`; (b) the tier-2 bound — the 128-bit
-product's error is below a half-ulp except in the reported-ambiguous cases, so
-`roundMag`'s two candidate distances are decided by its comparison and the
-ambiguous cases are exactly the ones that fall back; (c) the tier-3 identity —
-`strtod` rounds correctly, which is a property of the C library and not of this
-tree, so that tier is an assumption about the platform or is dropped from the
-domain. -/
+128-bit multiply against `epow_table.h`'s normalised significands with its
+undecidable cases handed on, and its tier 3 the unit's own conversion — a
+bounded window of significant digits, one sticky bit for the digits past it, and
+one nearest-even rounding from the three.  Proving these compute `strtodSpec`
+needs, in this module's terms: (a) the tier-1 identity — `(mant : double) *
+10 ^ k` with both operands exact below `2 ^ 53` is one IEEE operation, so it is
+the correctly rounded value of the exact product, which is `roundMag`'s bracket
+for those `(P, d)`; (b) the tier-2 bound — the 128-bit product's error is below
+a half-ulp except in the reported-ambiguous cases, so `roundMag`'s two candidate
+distances are decided by its comparison and the ambiguous cases are exactly the
+ones that fall through; (c) the tier-3 identity — the fallback's one nearest-even
+rounding from its retained window and its sticky bit is `roundMag`'s, which is a
+proof about this tree's own code and needs no platform axiom.  All three are
+obligations here, not results. -/
 def NumberArmOwed (numFastBits : Bytes → Nat) : Prop :=
   ∀ (d : Decimal), RfcNumber d.lexeme → numFastBits d.lexeme = (strtodSpec d).toBits
 

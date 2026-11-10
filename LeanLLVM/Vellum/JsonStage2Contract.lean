@@ -75,14 +75,16 @@ refusal (`stage2.h:21-24`).
 * **the entry stream** — `stage2.h:56-58`: `ep` with count `nep` holds the entry
   positions in document order, one 32-bit word each, so
   `readLanes32 mem ep nep = some ent` (the `JsonEntryIR` reader the pipeline's
-  post also uses) and three content clauses the walk's own reads need:
+  post also uses) and two content clauses the walk's own reads need:
   `ent.Pairwise (· < ·)` (document order, and distinct — two entries at one
-  position do not exist), `∀ q ∈ ent, q < n` (the walk reads `b[q]`, the closing
-  quote's index and the first-whitespace scan, all inside the document), and the
-  number-token domain below.  These are *safety* clauses, not a description of
-  the stream: a caller whose entry stream held a position outside the document,
-  or two positions out of order, would drive reads outside the region it staged
-  and a `close - p - 1` that underflows;
+  position do not exist) and `∀ q ∈ ent, q < n` (the walk reads `b[q]`, the
+  closing quote's index and the first-whitespace scan, all inside the document).
+  These are *safety* clauses, not a description of the stream: a caller whose
+  entry stream held a position outside the document, or two positions out of
+  order, would drive reads outside the region it staged and a `close - p - 1`
+  that underflows.  The number token is **not** bounded here: the conversion
+  reads at most 768 significant digits and records the rest in one sticky bit, so
+  a token's length is the document's and not a clause of the record;
 * **the escape-position list** — `stage2.h:58-60`: `xp` with count `nxp`, read by
   the decoder through `4 * nxp` bytes, so `HasBytes mem xp (4 * nxp)`.  A
   document with no escapes passes `nxp = 0`, which this admits (`4 * 0 = 0`).
@@ -123,37 +125,6 @@ refusal (`stage2.h:21-24`).
   arena over its own entry stream would satisfy every byte claim while destroying
   the caller's staging, so the separation is part of the pre rather than a hope
   about the body.
-
-## A number token longer than the slow path's copy is outside the domain
-
-`stage2.h:26-38` states the limit and this record states it as a clause: the
-walk's number conversion ends in the reference's `num_scan`/`to_double`, which
-copies the token into `measured/p6.c`'s `char tmp[64]` under its `n < sizeof tmp`
-test and allocates when the token does not fit.  A memory map with no heap models
-neither the allocation nor the `exit` on exhaustion, so **number tokens shorter
-than sixty-four bytes** are the domain — and the clause is stated as the token's
-own length (`Stage2NumbersFit`), read from the document's bytes at staging time.
-
-**The gap between entries is not the token's length, and a clause stated over it
-is false of an ordinary document.**  `[1` followed by a hundred spaces and `,]`
-puts entries at `0, 1, 102, 103`: the number-start entry at `1` has a distance of
-`101` to the next entry while its token is the single byte `1`.  A promise that
-the distance to the next entry is below sixty-four therefore refuses a document
-the walk reads, and no staging can make it true of every document a caller
-stages — so it would have excluded the ordinary case rather than the model's
-edge.  The document is `stage2GapDoc` below, with its two numbers executed beside
-the clause.
-
-What the number scan actually needs is the token's reach: it stops at the first
-byte that ends a scalar — whitespace or a structural byte (`stage2.c`'s
-`od_scalar_value` scan, and `num_scan`'s copy) — and the bytes after that stop
-are never read.  `stage2NumberLen` is that length for the bytes at an entry, so
-the clause is statable at staging time over the document and the entry positions
-together, and its threshold is the same `stage2NumberCopy = 64` the fallback's
-own `tmp[64]` uses: the unit's domain edge and the pipeline's staging domain are
-one condition rather than two that could drift.  The clause is over the entries
-whose first byte is a number start (`-` or a digit, `od_scalar_value`'s test); it
-says nothing about what the number *means*.
 
 # The post
 
@@ -272,13 +243,13 @@ sub-extents (`nep ≤ nk0 + 64 * blocks` and `nxp ≤ xpExtent = xn0 + 64 * bloc
 8`, both carried by the loop invariant).
 
 **The entry stream's contents are not.**  `Γ_stage2.pre` needs
-`readLanes32 mem ep nep = some ent` with `ent` in document order, inside the
-document, and with the number-token distances below the copy's size — the three
-clauses the walk's own reads make safety conditions.  `pipelineUnitsPost` states
+`readLanes32 mem ep nep = some ent` with `ent` in document order and inside the
+document — the two clauses the walk's own reads make safety conditions.
+`pipelineUnitsPost` states
 `readLanes32 m ep nk' = some ent` with `ent` existential and nothing said about
 it, and `pipelineLoopInv` carries `S.doc`, the two counts and their `HasBytes`/
 `DisjointRegions` extents but not the stream's bytes.  So the tail's derivation of
-this call's pre needs those three clauses carried by the loop's invariant, where
+this call's pre needs those two clauses carried by the loop's invariant, where
 the entry emitters' own posts (`entryPos8Post`, `entryB8Post`:
 `readLanes32 m (o + 4 * k) (k' - k) = streamPrefix ent blk0 nblk`) can supply
 them; that is `PipelineBodyFacts.lean`/`PipelineBodyStep.lean` work and not this
@@ -321,11 +292,6 @@ length bytes and eight span-or-arena bytes for a key or a string
 (`stage2.c:837-841`); a number's nine and a structural byte's one are narrower. -/
 def stage2RecordBytes : Nat := 13
 
-/-- The slow path's stack copy: `measured/p6.c`'s `char tmp[64]` under its
-`n < sizeof tmp` test, the limit `stage2.h:26-38` states.  A token at or beyond
-it can allocate, which the memory map does not model. -/
-def stage2NumberCopy : Nat := 64
-
 /-- The document fits its 32-bit entry positions (`stage2.h:56-58`, `:91`). -/
 def stage2MaxDocument : Nat := 2 ^ 32
 
@@ -337,73 +303,6 @@ thirty-two readable bytes past its end.  The walk's own scans need no more: ever
 `b[q]` it reads has `q < n`, and the number path's eight-byte load is guarded by
 `i + 8 ≤ n` within the token (`num_d8_el1`). -/
 def stage2ReadTail : Nat := 32
-
-/-! ### The number-token domain
-
-The walk's token for an entry is bounded by the next entry's position
-(`stage2.c`'s `t.end`/`ip`), so the caller's promise is a statement about the
-entry stream's consecutive distances — the only place the token's length is
-visible before the run. -/
-
-/-- Whether a byte begins a number token: `od_scalar_value`'s test,
-`c == '-' || ('0' <= c && c <= '9')`. -/
-def stage2IsNumberStart (c : UInt8) : Bool :=
-  decide (c = 0x2D) || (decide (0x30 ≤ c) && decide (c ≤ 0x39))
-
-/-- Whether a byte ends a scalar token: whitespace, or one of the structural
-bytes the walk's switch takes its own arm for (`stage2.c`'s `od_scalar_value`
-scan stops there, and `num_scan` copies no further). -/
-def stage2EndsNumber (c : UInt8) : Bool :=
-  decide (c = 0x20) || decide (c = 0x09) || decide (c = 0x0A) ||
-    decide (c = 0x0D) || decide (c = 0x2C) || decide (c = 0x3A) ||
-    decide (c = 0x7B) || decide (c = 0x7D) || decide (c = 0x5B) || decide (c = 0x5D)
-
-/-- The number token's length at `p`: the run of bytes from `p` up to the first
-byte that ends a scalar, or the document's end.  This is the length the fallback
-copies into `tmp[64]`, read from the document rather than from the distance to
-the next entry. -/
-def stage2NumberLen (bs : List UInt8) (p : Nat) : Nat :=
-  ((bs.drop p).takeWhile (fun c => !stage2EndsNumber c)).length
-
-/-- The counterexample the gap promise fails on: `[1`, a hundred spaces, `,]`.
-Its entries are `0, 1, 102, 103`; the number-start entry at `1` is one byte long
-and a hundred and one bytes from the next entry. -/
-def stage2GapDoc : List UInt8 :=
-  [0x5B, 0x31] ++ List.replicate 100 0x20 ++ [0x2C, 0x5D]
-
-theorem stage2GapDoc_length : stage2GapDoc.length = 104 := by decide
-
-/-- The document's byte at `1` is the number start `1`, and its token is that one
-byte — the two numbers the gap promise and the token-length promise disagree
-about. -/
-theorem stage2GapDoc_token :
-    stage2GapDoc[1]? = some 0x31 ∧ stage2IsNumberStart 0x31 = true ∧
-      stage2NumberLen stage2GapDoc 1 = 1 ∧ 102 - 1 = 101 := by
-  refine ⟨by decide, by decide, by decide, by decide⟩
-
--- The two promises, at the counterexample: the token is one byte and the gap is
--- a hundred and one, so the gap promise would refuse this document and the
--- token-length promise admits it.  Executed, not asserted in prose.
-#guard decide (stage2NumberLen stage2GapDoc 1 < stage2NumberCopy)
-#guard decide (¬ (102 - 1 < stage2NumberCopy))
-#guard decide (stage2NumberLen stage2GapDoc 0 = 0)
-
-/-- **Every number token in the document fits the walk's slow-path copy**
-(`stage2.h:26-38`): for each entry whose first byte is a number start, the token
-that begins there is shorter than `stage2NumberCopy`.
-
-The bound is the token's own length (`stage2NumberLen`), which is what the
-fallback copies into `tmp[64]`: the scan stops at the first whitespace or
-structural byte and never reads past it.  It is *not* the distance to the next
-entry — `stage2GapDoc` is the witness, an ordinary document whose number-start
-entry has a hundred-and-one-byte gap and a one-byte token — so a promise stated
-over entry distances would refuse documents the walk reads.  A number's internal
-bytes are not entries (`stage2.h:56-58`), which is why the entry list alone cannot
-name the token: the clause reads the document's bytes at the entry position. -/
-def Stage2NumbersFit (bs : List UInt8) (ent : List Nat) : Prop :=
-  ∀ (i p : Nat) (c : UInt8),
-    ent[i]? = some p → bs[p]? = some c → stage2IsNumberStart c = true →
-      stage2NumberLen bs p < stage2NumberCopy
 
 /-! ### The staged extents and the frame -/
 
@@ -484,8 +383,6 @@ def stage2Pre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
     readLanes32 mem ep nep = some ent ∧
     ent.Pairwise (· < ·) ∧
     (∀ q ∈ ent, q < n) ∧
-    -- and the number-token domain (`stage2.h:26-38`)
-    Stage2NumbersFit bs ent ∧
     -- the escape-position list's bytes (`stage2.h:58-60`)
     HasBytes mem xp (4 * nxp) ∧
     -- the arena: capacity and the decoder's reserve (`stage2.h:13-24`, `:49-52`)
@@ -691,7 +588,7 @@ theorem stage2Pre_cursor_bounds {args : List Value} {mem : Mem} {next : Nat}
     ∃ (n nep dstcap evcap ndst0 nev0 : Nat),
       ndst0 ≤ dstcap ∧ nev0 ≤ evcap ∧ nep ≤ n := by
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
-    ndst0, nev0, _hargs, _hdoc, _htail, hent, horder, hlt, _hfit, _hxp, _hdstpres,
+    ndst0, nev0, _hargs, _hdoc, _htail, hent, horder, hlt, _hxp, _hdstpres,
     hdst, _hevpres, hev, _hndst, _hnev, _herr, _hmax, _hdisj⟩ := h
   refine ⟨n, nep, dstcap, evcap, ndst0, nev0, by omega, by omega, ?_⟩
   rw [← readLanes32_length mem ep nep ent hent]
@@ -757,20 +654,19 @@ theorem stage2Mem_disjoint :
 
 /-- **Control (i): the record's pre is inhabited.**  The empty document at the
 witness memory: every extent has the length the pre asks, the entry stream is
-empty so the two content clauses and the number-token domain are vacuous, the
-document's read-past tail is staged, and the cursors read zero.  The record
-therefore promises something rather than refusing every caller. -/
+empty so its two content clauses are vacuous, the document's read-past tail is
+staged, and the cursors read zero.  The record therefore promises something
+rather than refusing every caller. -/
 theorem stage2_pre_inhabited :
     Γ_stage2.pre
       [.ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 32,
        .int 64 64, .ptr 96, .ptr 0, .int 64 0, .ptr 104, .ptr 112]
       stage2Mem 1 := by
   refine ⟨0, 0, 0, 0, 0, 0, 32, 64, 96, 0, 0, 104, 112, [], [], 0, 0, rfl,
-    rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact ⟨List.replicate stage2ReadTail 0, stage2Mem_tail⟩
   · simp
   · simp
-  · simp [Stage2NumbersFit]
   · exact ⟨[], rfl⟩
   · exact ⟨List.replicate 64 0, stage2Mem_arena⟩
   · decide
@@ -846,13 +742,6 @@ theorem pipeline_satisfies_at_stage2 (tab : Nat) (s2 : Calls)
 #guard ([.ptr 0, .int 64 7, .ptr 8, .int 64 5, .ptr 16, .int 64 3, .ptr 32,
   .int 64 4096, .ptr 40, .ptr 48, .int 64 4096, .ptr 56, .ptr 64] : List Value).length = 13
 
--- A number start is `-` or a digit, and a structural byte is neither.
-#guard stage2IsNumberStart 0x2D = true
-#guard stage2IsNumberStart 0x30 = true
-#guard stage2IsNumberStart 0x39 = true
-#guard stage2IsNumberStart 0x7B = false
-#guard stage2IsNumberStart 0x2B = false
-
 -- The encoding's numbers and the staged region list.
 #guard stage2RecordBytes = 13
 #guard stage2ArenaReserve = 64
@@ -887,10 +776,6 @@ rests on are the extraction steps' lemmas — `String.ofList_injective`,
 #guard_msgs in
 #print axioms stage2RecordBytes
 
-/-- info: 'LeanLLVM.Vellum.stage2NumberCopy' does not depend on any axioms -/
-#guard_msgs in
-#print axioms stage2NumberCopy
-
 /-- info: 'LeanLLVM.Vellum.stage2MaxDocument' does not depend on any axioms -/
 #guard_msgs in
 #print axioms stage2MaxDocument
@@ -898,34 +783,6 @@ rests on are the extraction steps' lemmas — `String.ofList_injective`,
 /-- info: 'LeanLLVM.Vellum.stage2ReadTail' does not depend on any axioms -/
 #guard_msgs in
 #print axioms stage2ReadTail
-
-/-- info: 'LeanLLVM.Vellum.stage2IsNumberStart' does not depend on any axioms -/
-#guard_msgs in
-#print axioms stage2IsNumberStart
-
-/-- info: 'LeanLLVM.Vellum.Stage2NumbersFit' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms Stage2NumbersFit
-
-/-- info: 'LeanLLVM.Vellum.stage2EndsNumber' does not depend on any axioms -/
-#guard_msgs in
-#print axioms stage2EndsNumber
-
-/-- info: 'LeanLLVM.Vellum.stage2NumberLen' does not depend on any axioms -/
-#guard_msgs in
-#print axioms stage2NumberLen
-
-/-- info: 'LeanLLVM.Vellum.stage2GapDoc' does not depend on any axioms -/
-#guard_msgs in
-#print axioms stage2GapDoc
-
-/-- info: 'LeanLLVM.Vellum.stage2GapDoc_token' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms stage2GapDoc_token
-
-/-- info: 'LeanLLVM.Vellum.Stage2NumbersFit' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms Stage2NumbersFit
 
 /-- info: 'LeanLLVM.Vellum.stage2Regions' does not depend on any axioms -/
 #guard_msgs in
@@ -959,7 +816,7 @@ rests on are the extraction steps' lemmas — `String.ofList_injective`,
 #guard_msgs in
 #print axioms stage2Budget
 
-/-- info: 'LeanLLVM.Vellum.stage2Pre' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Vellum.stage2Pre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms stage2Pre
 
