@@ -44,7 +44,7 @@
 #          statements to locate by line.  Its arm detector refuses `dens_`,
 #          `S1F_`, `SP_` and `sp_` and accepts `xl_`, `us_` and `uj_`, which are
 #          this unit's subject.  `--arms-only` asserts its two public symbols.
-#   stage2 the stage-2 unit, `kernel/json/stage2.c`, against the forty-six
+#   stage2 the stage-2 unit, `kernel/json/stage2.c`, against the forty-five
 #          definitions `README.md`'s `stage2-entities:` line names across
 #          `measured/s2port.h`, `measured/p16.c`, `measured/p6.c`,
 #          `measured/strz.c`, `measured/numf_el1.h`, `measured/numel_el.h`,
@@ -53,10 +53,12 @@
 #          unit's structs (`S2`, `ZOut`, `Err`, `Out`, `OdCur`, `OdTok`) and its
 #          enums (`T_*`, `K_*`, `C_*`) are carried verbatim but are not entities:
 #          the extractor has no shape for a `typedef struct { … } NAME;`, and a
-#          listed entity that cannot be extracted is a setup fault.  Three
+#          listed entity that cannot be extracted is a setup fault.  Four
 #          definitions are declared new text (`stage2-extra:`): the ABI wrapper,
-#          and the two reserves, whose reallocation is the caller's capacity
-#          here.  `s2_string_body` is declared new text for the same reason: its
+#          the two reserves, whose reallocation is the caller's capacity here,
+#          and `to_double`, whose conversion is this unit's own rather than the
+#          measured copy into a stack buffer and the C library's `strtod`.
+#          `s2_string_body` is declared new text for the same reason: its
 #          escaped-body decode is the escape unit's ABI call, not a copy of
 #          `us_dec_x`, and the list form's unreachable no-list fallback is
 #          deleted with it.  Its behaviour is compared against the measured
@@ -114,12 +116,10 @@
 #                 undefined *project* symbol (a name starting `leanllvm_json_`),
 #                 this unit's ABI symbol to be defined, and every remaining
 #                 undefined name to be in the recorded C library class.  That
-#                 class is data below; a name outside it -- in particular
-#                 `malloc`, `exit`, `stderr` or `strtod`, which the slow number
-#                 path's `to_double` can reach -- is a widening of the unit's
-#                 domain and has to be recorded rather than absorbed.  It is
-#                 the stage-2 unit's arm: a unit that does not take part in the
-#                 assembled link is a setup fault, not a pass.
+#                 class is data below; a name outside it is a widening of the
+#                 unit's domain and has to be recorded rather than absorbed.
+#                 It is the stage-2 unit's arm: a unit that does not take part
+#                 in the assembled link is a setup fault, not a pass.
 #   --tree-only   refuse any input path outside the repository (exit 3).  Under
 #                 it, --vendor refuses while the scratch tree exists, because
 #                 the live diff asks to read a path outside the repository.
@@ -1558,9 +1558,10 @@ EOF
 # --- C1: the assembled link -------------------------------------------------
 
 # The undefined names the assembled object may carry: the C library's, and the
-# ones the slow number path's `to_double` and the fortified copies reach.  This
-# is the recorded class, not a filter: a name outside it fails the arm.
-link_c_library='__memcpy_chk __stack_chk_fail __vfprintf_chk exit free malloc memcpy memset stderr strtod'
+# fortified copies'.  This is the recorded class, not a filter: a name outside
+# it fails the arm.  The number conversion allocates nothing and calls nothing,
+# so the allocator, the process terminators and `strtod` are not in it.
+link_c_library='__memcpy_chk __stack_chk_fail memcpy memset'
 
 arm_link_census() {
   local u name undef project extra want_sym

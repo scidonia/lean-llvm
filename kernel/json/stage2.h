@@ -23,26 +23,31 @@
    the unit's domain, and the refusal channel below is a *parse* refusal, never
    a capacity one.
 
-   ## A number token longer than the slow path's copy is outside the domain
+   ## A number token has no length bound
 
-   The walk's number conversion is the measured tiered path, and its third tier
-   is the reference's `num_scan`/`to_double`: the token is copied into a stack
-   buffer and converted with `strtod`, and a token that does not fit that copy
-   is handled by allocating one.  The copy's size is the source's
-   (`measured/p6.c`'s `char tmp[64]` and its `n < sizeof tmp` test), so the
-   modelled run's domain is **number tokens shorter than that copy**.  At or
-   beyond it the measured body can allocate and, on exhaustion, report and
-   exit; a memory map with no heap models neither, so the limit is stated here
-   and no run inside the domain reaches it.  The path is carried rather than
-   changed: a bounded buffer would truncate or refuse a valid number, which is
-   a behaviour the record would then have to explain as its own.
+   The walk's number conversion is the tiered path, and its third tier is this
+   unit's own `to_double`: it reads at most 768 significant digits into a fixed
+   buffer, records in one sticky bit whether any digit past them is nonzero,
+   and rounds once from the exact value of the retained digits and that bit.
+   It allocates nothing, so the token's length is the document's and not a
+   resource: no token is truncated, refused, or made to allocate, and the
+   domain has no token-length edge.
+
+   The buffer bounds the *decimal window*, not the token.  The digits past it
+   change the result only through the sticky bit, and 768 is the number that
+   makes that exact: every binary64 value and every midpoint of two adjacent
+   ones needs at most 768 significant decimal digits (`log10((2^54-1)*5^1075)
+   = 767.65`), so every boundary a rounding decision is made against is
+   represented inside the window and the sticky bit only has to say whether the
+   value is strictly above the retained decimal.
 
    ## The undefined symbols the object leaves
 
    For the unit's own object these are the C library's `memcpy`, `memset`, the
-   fortified copies, the stack protector, and -- from the slow path above --
-   `malloc`, `free`, `strtod`, `stderr`, the formatted-output call and `exit`.
-   No project symbol is undefined.  The identity arm checks the project half;
+   fortified copies and the stack protector.  No project symbol is undefined,
+   and no allocator, process terminator or library conversion appears at all:
+   the number conversion above allocates nothing and calls nothing.  The
+   identity arm checks the project half;
    a name outside this list appearing there is a widening of the domain and
    must be recorded, not absorbed.
 

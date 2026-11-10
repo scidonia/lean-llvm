@@ -12,9 +12,9 @@
    signatures, so the token diff and the IR diff compare the measured functions
    rather than a re-spelling of them.
 
-   Three adaptations, each a representation change forced by the ABI
-   `stage2.h` declares and each recorded in README.md rather than made
-   silently:
+   Three representation adaptations, each forced by the ABI `stage2.h`
+   declares, and one change of the conversion itself; all four are recorded in
+   README.md rather than made silently:
 
      - the arena and the event stream are the caller's.  `ZOut.ar/alen/acap`
        bind to `dst`, `*ndst` and `dstcap`, and `Out.b/len/cap` of `z->ev` bind
@@ -34,6 +34,13 @@
        S2_EV`, so the walk validates, validates string bodies and materialises
        events, which is the post `pipeline.h` describes.
 
+     - the number conversion's third tier is this unit's own rather than the C
+       library's.  The measured `to_double` copied the lexeme into a 64-byte
+       buffer and called `strtod`, allocating the copy when the lexeme did not
+       fit; `to_double` here reads at most 768 significant digits plus one
+       sticky bit and rounds once, so it allocates nothing and admits no length
+       bound.  Its body is therefore new text, not the measured function's.
+
    Nothing else is new text.  `leanllvm_json_stage2` at the end of this file is
    the ABI wrapper: it stages the caller's buffers into the measured `ZOut` and
    reports the walk's own verdict and refusal offset. */
@@ -43,8 +50,6 @@
 
 #include <immintrin.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* The shipped decoder's slack (`usdec.h:497-500`, `US_EMIT4=1`), which the
@@ -138,35 +143,10 @@ static uint64_t dbits(double d) {
 static inline int is_ws(uint8_t c) {
     return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
-static double to_double(const uint8_t *p, uint64_t n) {
-    /* exact fast path for JSON integers of at most 15 digits */
-    {
-        uint64_t i = 0;
-        int neg = 0, nd = 0;
-        if (i < n && p[i] == '-') { neg = 1; i++; }
-        uint64_t v = 0;
-        while (i < n && p[i] >= '0' && p[i] <= '9') {
-            if (++nd > 15) break;
-            v = v * 10 + (uint64_t)(p[i] - '0');
-            i++;
-        }
-        if (i == n && nd > 0 && nd <= 15)
-            return neg ? -(double)v : (double)v;
-    }
-    char tmp[64];
-    if (n < sizeof tmp) {
-        memcpy(tmp, p, n);
-        tmp[n] = 0;
-        return strtod(tmp, NULL);
-    }
-    char *h = (char *)malloc(n + 1);
-    if (!h) { fprintf(stderr, "oom\n"); exit(2); }
-    memcpy(h, p, n);
-    h[n] = 0;
-    double d = strtod(h, NULL);
-    free(h);
-    return d;
-}
+/* The slow path's conversion.  Its definition is with the conversion tiers,
+   after the power tables it shares with them; it is forward-declared here
+   because `num_scan` is the measured text and its call site does not move. */
+static double to_double(const uint8_t *p, uint64_t n);
 
 /* RFC 8259 number grammar; *err = first offending index inside p. */
 static int num_scan(const uint8_t *p, uint64_t n, double *out, size_t *err) {
@@ -472,6 +452,368 @@ __attribute__((always_inline)) static inline int num_fast_el1(const uint8_t *p, 
     if (!NUMF_SLOW(p, n, &d, err)) return 0;
     *out = d;
     return 1;
+}
+
+/* ------------------------------------------- the fallback's conversion -- */
+
+/* `num_fast`'s third tier: the correctly rounded (nearest, ties-to-even)
+   binary64 value of a number lexeme the tiered kernels declined, computed from
+   the lexeme alone, with no allocation and no length bound.
+
+   ## What the measured third tier did, and why it is replaced
+
+   `measured/p6.c`'s `to_double` copied the lexeme into a 64-byte stack buffer
+   and called the C library's `strtod`, allocating the copy when the lexeme did
+   not fit.  The length is the document's, so that allocation was input-sized,
+   and its exhaustion terminated the process; and the result was the platform's
+   `strtod`, which the unit's statement cannot see.  This conversion keeps the
+   first of those properties out of the unit and the second out of the result.
+
+   ## The retained window is 768 significant digits
+
+   Rounding `x` is decided by comparing `x` with binary64 values and with
+   midpoints of adjacent binary64 values.  Each of those has a finite decimal
+   expansion, and the longest needs at most 768 significant digits: a midpoint
+   is `(2m+1)*2^(e-1)` with `2m+1 < 2^54` and `e-1 >= -1075`, i.e.
+   `(2m+1)*5^1075 / 10^1075`, and `log10((2^54-1)*5^1075) = 767.65`.  So a
+   window of 768 retained digits holds every boundary exactly; the digits past
+   it can only say whether the value is strictly above the retained decimal,
+   and that is one sticky bit.
+
+   Past the window nothing is refused and nothing is truncated in the sense
+   that changes a rounding decision: the tail's weight is carried in the
+   exponent, and the sticky bit is the whole of the tail's contribution.  A
+   tie is then recognisable, because every midpoint is a decimal of at most 768
+   significant digits while a value with a nonzero digit past the window is
+   not -- so a tie requires the sticky bit clear.
+
+   ## The invariant used
+
+   Write the retained digits as an integer `M` and the weight of `M`'s last
+   digit as `10^S`, and let `d` be the discarded tail, so the magnitude is
+
+       V = M*10^S + d,        0 <= d < 10^S,     d > 0 iff sticky.
+
+   A boundary `B = J*2^eB` is compared with `V` by scaling both by `10^-S`:
+
+       V*10^-S = M + d*10^-S                       (the tail is < 1)
+       B*10^-S = J*5^-S * 2^(eB-S)
+
+   When the sticky bit is set, the window is full (`R = STK_DIGITS`), so
+   `S = f - 767` for a value whose leading decimal digit is at exponent `f`,
+   and `eB + 767 - f >= 0`: the boundaries compared against are within two ulps
+   of the value, so `f - eB <= 767`, and the worst case -- a value in the low
+   binades near `2^-1021`, whose down-midpoint is `(2^54-1)*2^-1075` -- has
+   `f = -308`, `eB = -1075` and shift `-1075 + 767 + 308 = 0`.  So the right
+   side is an integer `T`, and the comparison is `M` against `T`: below is
+   `V < B`, above is `V > B`, and equal is `V > B` exactly because the tail is
+   nonzero.
+
+   That is `J_j(x)`, shift-right-with-jamming (FloatLib's "rounding after
+   jamming"): the discarded tail is replaced by the single jam bit `j`, and the
+   nearest-even decision of the jammed value is the original's when the jam
+   lands below the guard position.  Here every boundary the decision is made at
+   is represented exactly inside the window, so the jam's only job is to
+   distinguish "equal to the retained decimal" from "strictly above it" -- and
+   one rounding from the retained digits plus that bit is the whole computation.
+   When the sticky bit is clear the value is the exact decimal `M*10^S`, and
+   the comparison clears both denominators exactly.
+
+   ## What the walk does
+
+   The value is rounded by bracketing it: start from a double-precision
+   approximation, then compare `V` exactly with the candidate, and with the
+   midpoint above or below it, moving one binary64 step at a time until `V`
+   lies in the candidate's rounding interval.  A comparison at a midpoint that
+   returns equal is a tie, and the candidate with the even trailing significand
+   wins.  The approximation is only a starting point: every decision is made by
+   the exact comparison, so its error costs steps, never correctness. */
+
+#define STK_DIGITS 768
+
+/* Limbs enough for every operand: the largest is a 768-digit significand
+   (2552 bits) shifted by the 1075-bit denominator clearance, or the scaled
+   boundary `J*5^k*2^shift`, both under 3840 bits; 96 limbs is 6144. */
+#define STK_LIMBS 96
+
+typedef struct { uint64_t w[STK_LIMBS]; int n; } StkBn;
+
+static void stk_zero(StkBn *a) { a->n = 0; }
+
+static void stk_from_u64(StkBn *a, uint64_t v) {
+    a->w[0] = v;
+    a->n = v != 0;
+}
+
+static void stk_copy(StkBn *d, const StkBn *s) {
+    d->n = s->n;
+    if (s->n) memcpy(d->w, s->w, (size_t)s->n * sizeof s->w[0]);
+}
+
+/* a <- a*m + add, in place. */
+static void stk_mul_add(StkBn *a, uint64_t m, uint64_t add) {
+    unsigned __int128 carry = add;
+    for (int i = 0; i < a->n; i++) {
+        carry += (unsigned __int128)a->w[i] * m;
+        a->w[i] = (uint64_t)carry;
+        carry >>= 64;
+    }
+    while (carry) { a->w[a->n++] = (uint64_t)carry; carry >>= 64; }
+}
+
+static void stk_mul_u64(StkBn *a, uint64_t m) { stk_mul_add(a, m, 0); }
+
+/* a <- a << bits, for the shifts the comparisons make (at most the 1075-bit
+   denominator clearance plus a boundary's own exponent). */
+static void stk_shl(StkBn *a, unsigned bits) {
+    if (bits == 0 || a->n == 0) return;
+    unsigned limbs = bits / 64, rem = bits % 64;
+    if (rem) {
+        uint64_t carry = 0;
+        for (int i = 0; i < a->n; i++) {
+            uint64_t v = a->w[i];
+            a->w[i] = (v << rem) | carry;
+            carry = v >> (64 - rem);
+        }
+        if (carry) a->w[a->n++] = carry;
+    }
+    if (limbs) {
+        for (int i = a->n - 1; i >= 0; i--) a->w[i + (int)limbs] = a->w[i];
+        for (unsigned i = 0; i < limbs; i++) a->w[i] = 0;
+        a->n += (int)limbs;
+    }
+}
+
+/* The order of two nonnegative bignums. */
+static int stk_cmp_bn(const StkBn *a, const StkBn *b) {
+    if (a->n != b->n) return a->n < b->n ? -1 : 1;
+    for (int i = a->n - 1; i >= 0; i--)
+        if (a->w[i] != b->w[i]) return a->w[i] < b->w[i] ? -1 : 1;
+    return 0;
+}
+
+typedef struct {
+    StkBn m;        /* the retained digits, as an integer */
+    StkBn pow;      /* 5^-S when sticky, else 10^-S (or 1 when S = 0) */
+    int64_t S;      /* the retained digits' decimal exponent */
+    int sticky;     /* some digit past the window is nonzero */
+} Stk;
+
+/* `stk_cmp` -- the sign of `V - B`, where `V = M*10^S + d` is the lexeme's
+   magnitude (`d < 10^S`, `d > 0` iff sticky) and `B = J*2^eB` is a binary64
+   value or a midpoint of two.  The invariant it relies on: with the sticky bit
+   set, `S < 0` and `k = -S` satisfy `eB + k >= 0`, so `B*10^k` is an integer
+   and `V*10^k = M + d*10^k` has an integral part `M` and a tail below 1.  With
+   the sticky bit clear the value is the exact decimal `M*10^S` and both
+   denominators are cleared by the shifts. */
+static int stk_cmp(const Stk *v, uint64_t J, int64_t eB) {
+    StkBn a, b;
+    if (v->sticky) {
+        stk_copy(&b, &v->pow);
+        stk_mul_u64(&b, J);
+        stk_shl(&b, (unsigned)(eB - v->S));
+        /* M against T; equal means the tail lifts V above B. */
+        return stk_cmp_bn(&v->m, &b) < 0 ? -1 : 1;
+    }
+    stk_copy(&a, &v->m);
+    if (eB < 0) stk_shl(&a, (unsigned)-eB);
+    stk_copy(&b, &v->pow);
+    stk_mul_u64(&b, J);
+    if (eB > 0) stk_shl(&b, (unsigned)eB);
+    return stk_cmp_bn(&a, &b);
+}
+
+/* 5^0..5^26; 5^27 is the largest power of five below 2^64. */
+static const uint64_t STK_P5[27] = {
+    1ULL, 5ULL, 25ULL, 125ULL, 625ULL, 3125ULL, 15625ULL, 78125ULL,
+    390625ULL, 1953125ULL, 9765625ULL, 48828125ULL, 244140625ULL,
+    1220703125ULL, 6103515625ULL, 30517578125ULL, 152587890625ULL,
+    762939453125ULL, 3814697265625ULL, 19073486328125ULL,
+    95367431640625ULL, 476837158203125ULL, 2384185791015625ULL,
+    11920928955078125ULL, 59604644775390625ULL, 298023223876953125ULL,
+    1490116119384765625ULL
+};
+
+static double stk_from_bits(uint64_t u) {
+    double d;
+    memcpy(&d, &u, 8);
+    return d;
+}
+
+/* The lexeme `p[0..n)` is one `num_scan` accepted: an optional '-', an `int`
+   part, an optional fraction, and an optional exponent.  `num_scan` has
+   already refused everything else, so this reads the digits again rather than
+   re-testing the grammar. */
+static double to_double(const uint8_t *p, uint64_t n) {
+    const uint64_t inf_bits = 0x7ff0000000000000ULL;
+    const uint64_t max_bits = 0x7fefffffffffffffULL;
+    const uint64_t frac_mask = (1ULL << 52) - 1;
+
+    uint64_t i = 0;
+    int neg = 0;
+    if (i < n && p[i] == '-') { neg = 1; i++; }
+
+    uint8_t dig[STK_DIGITS];
+    uint64_t R = 0;             /* retained significant digits */
+    uint64_t T = 0;             /* all digits, leading zeros included */
+    uint64_t F = 0;             /* digits after the '.' */
+    uint64_t lead = 0;          /* digits before the first nonzero one */
+    uint64_t top = 0, topn = 0; /* the leading at most 19 digits, as an integer */
+    int in_frac = 0, seen = 0, sticky = 0;
+
+    for (; i < n; i++) {
+        uint8_t c = p[i];
+        if (c >= '0' && c <= '9') {
+            uint8_t d = (uint8_t)(c - '0');
+            T++;
+            if (in_frac) F++;
+            if (!seen) {
+                if (d == 0) { lead++; continue; }
+                seen = 1;
+            }
+            if (R < STK_DIGITS) {
+                dig[R++] = d;
+                if (topn < 19) { top = top * 10 + d; topn++; }
+            } else if (d != 0) {
+                sticky = 1;
+            }
+        } else if (c == '.') {
+            in_frac = 1;
+        } else {
+            break;                       /* the exponent marker */
+        }
+    }
+    if (!seen) return neg ? -0.0 : 0.0;  /* every digit is zero */
+
+    int64_t exp10 = 0;
+    if (i < n) {                         /* 'e' or 'E' */
+        int esign = 0;
+        i++;
+        if (i < n && (p[i] == '+' || p[i] == '-')) { esign = (p[i] == '-'); i++; }
+        int64_t e = 0;
+        for (; i < n; i++)
+            if (e < 1000000) e = e * 10 + (int64_t)(p[i] - '0');
+        exp10 = esign ? -e : e;
+    }
+
+    /* V = M*10^S with M the R retained digits; f is the leading digit's
+       decimal exponent, so V is in [10^f, 10^(f+1)). */
+    int64_t S = exp10 - (int64_t)F + (int64_t)(T - lead - R);
+    int64_t f = (int64_t)(R - 1) + S;
+
+    /* Two decisive magnitude clamps, so no wrong finite value can come out of
+       an exponent that leaves the format: 10^309 is above the overflow
+       threshold, and anything below 10^-324 is below half the smallest
+       subnormal, so it rounds to zero.  The nearest-even rule decides both. */
+    if (f >= 309) return neg ? -stk_from_bits(inf_bits) : stk_from_bits(inf_bits);
+    if (f <= -325) return neg ? -0.0 : 0.0;
+
+    Stk v;
+    v.sticky = sticky;
+    v.S = S;
+
+    stk_zero(&v.m);
+    {
+        uint64_t chunk = 0;
+        int cn = 0;
+        for (uint64_t j = 0; j < R; j++) {
+            chunk = chunk * 10 + dig[j];
+            if (++cn == 19) {
+                stk_mul_add(&v.m, NUMF_EL1_P10[19], chunk);
+                chunk = 0; cn = 0;
+            }
+        }
+        if (cn) stk_mul_add(&v.m, NUMF_EL1_P10[cn], chunk);
+    }
+
+    stk_from_u64(&v.pow, 1);
+    if (sticky) {
+        /* 5^-S.  A sticky bit is set only when the lexeme had more than
+           STK_DIGITS significant digits, and `f = 767 + S <= 308` for a value
+           in range, so S < 0 here. */
+        int64_t k = -S;
+        while (k >= 27) { stk_mul_u64(&v.pow, 7450580596923828125ULL); k -= 27; }
+        if (k) stk_mul_u64(&v.pow, STK_P5[k]);
+    } else if (S < 0) {
+        int64_t k = -S;
+        while (k >= 19) { stk_mul_u64(&v.pow, NUMF_EL1_P10[19]); k -= 19; }
+        if (k) stk_mul_u64(&v.pow, NUMF_EL1_P10[k]);
+    } else {
+        /* An exact decimal with a nonnegative exponent: fold 10^S into the
+           significand, so the comparison has one form. */
+        int64_t k = S;
+        while (k >= 19) { stk_mul_u64(&v.m, NUMF_EL1_P10[19]); k -= 19; }
+        if (k) stk_mul_u64(&v.m, NUMF_EL1_P10[k]);
+        v.S = 0;
+    }
+
+    /* The starting point: the leading at most 19 digits, scaled by exact
+       powers of ten.  Its error is a few ulps, which costs steps in the walk
+       and nothing else. */
+    int64_t e10 = f - (int64_t)(topn - 1);
+    double d = (double)top;
+    while (e10 > 0) {
+        int c = e10 > 22 ? 22 : (int)e10;
+        d *= NUMF_EL1_POW10[c];
+        e10 -= c;
+        if (dbits(d) >= inf_bits) break;
+    }
+    while (e10 < 0) {
+        int c = e10 < -22 ? 22 : (int)-e10;
+        d /= NUMF_EL1_POW10[c];
+        e10 += c;
+        if (d == 0.0) break;
+    }
+
+    uint64_t b = dbits(d);
+    for (;;) {
+        if (b == 0) {
+            /* Zero's upper boundary is half the smallest subnormal; a tie
+               there is between 0 and 2^-1074 and zero is the even one. */
+            if (stk_cmp(&v, 1, -1075) > 0) { b = 1; continue; }
+            break;
+        }
+        if (b >= inf_bits) {
+            /* Infinity's lower boundary is the overflow threshold, and a tie
+               there is infinity (the largest finite value's significand is
+               odd). */
+            if (stk_cmp(&v, (1ULL << 54) - 1, 970) < 0) { b = max_bits; continue; }
+            b = inf_bits;
+            break;
+        }
+        uint64_t be = (b >> 52) & 0x7ff;
+        uint64_t m = (be == 0) ? (b & frac_mask) : ((1ULL << 52) | (b & frac_mask));
+        int64_t e = (be == 0) ? -1074 : (int64_t)be - 1075;
+        int s = stk_cmp(&v, m, e);
+        if (s == 0) break;               /* V is this double exactly */
+        if (s > 0) {
+            /* The boundary above: (2m+1)*2^(e-1), also at a binade top. */
+            int su = stk_cmp(&v, 2 * m + 1, e - 1);
+            if (su < 0) break;           /* below it: this candidate */
+            if (su == 0) {               /* a tie: the even significand wins */
+                if (m & 1) b++;
+                break;
+            }
+            b++;
+            continue;
+        }
+        /* The boundary below, in the shape its binade gives it. */
+        uint64_t J;
+        int64_t eB;
+        if (be == 0 || m > (1ULL << 52)) { J = 2 * m - 1; eB = e - 1; }
+        else if (be == 1) { J = (1ULL << 53) - 1; eB = -1075; }
+        else { J = (1ULL << 54) - 1; eB = e - 2; }
+        int sd = stk_cmp(&v, J, eB);
+        if (sd > 0) break;               /* above it: this candidate */
+        if (sd == 0) {                   /* a tie: the even significand wins */
+            if (m & 1) b--;
+            break;
+        }
+        b--;
+    }
+
+    double r = stk_from_bits(b);
+    return neg ? -r : r;
 }
 
 /* The alias the call sites use, after the function it names, so
