@@ -2411,7 +2411,9 @@ The arithmetic the `u` byte and the fit bound supply is the caller's: `%8`'s val
 `%or.cond335`'s zero are hypotheses, because they are the emitter's gate decision and
 not a property of these two blocks' steps. -/
 theorem ifEndI_to_u_entry (env : Env) (s : State) (paddr tab : Nat)
-    (off sub nv : BitVec 64) (c t : BitVec 8)
+    (off sub nv : BitVec 64) (c t : BitVec 8) (outv : BitVec 64) (addr : Nat)
+    (hout : lookupName env "%add15" = some (.int 64 outv))
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
     (hpc : s.pc = "if.end.i")
     (hp : lookupName env "%p" = some (.ptr paddr))
     (hoff : lookupName env "%add.i100" = some (.int 64 off))
@@ -2435,6 +2437,8 @@ theorem ifEndI_to_u_entry (env : Env) (s : State) (paddr tab : Nat)
       lookupName e.env "%9" = some (.int 8 t) ∧
       lookupName e.env "%sub" = some (.int 64 sub) ∧
       lookupName e.env "%n" = some (.int 64 nv) ∧
+      lookupName e.env "%add15" = some (.int 64 outv) ∧
+      lookupName e.env "%arrayidx16" = some (.ptr addr) ∧
       (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
         runFuel escapeCalls z usDecFunction e) ∧
       CellFrame e.env pb xp tab err xj dst pos0v nv jv nxpv addv incv := by
@@ -2456,7 +2460,7 @@ theorem ifEndI_to_u_entry (env : Env) (s : State) (paddr tab : Nat)
       (by simp only [udIfEndIEnv]; ud_lk_h hsub)
       (by simp only [udIfEndIEnv]; ud_lk_h hn) hcond9
     exact h1
-  refine ⟨e2, 2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨e2, 2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · omega
   · rfl
   · rfl
@@ -2467,6 +2471,8 @@ theorem ifEndI_to_u_entry (env : Env) (s : State) (paddr tab : Nat)
   · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk
   · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h hsub
   · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h hn
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h hout
+  · simp only [e2, withEnv, udIfEnd9IEnv, udIfEndIEnv]; ud_lk_h haddr
   · intro z
     have h1 := runFuel_jump_prefix hstep1 (1 + z)
     have h2 := runFuel_jump_prefix hstep2 z
