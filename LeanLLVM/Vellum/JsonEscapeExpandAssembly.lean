@@ -24,6 +24,7 @@ than inside the completion condition.
 -/
 import LeanLLVM.Vellum.JsonEscapeExpandFacts
 import LeanLLVM.Vellum.JsonEscapeFinalCopy
+import LeanLLVM.Vellum.JsonEscapeEmitIdentities
 
 set_option autoImplicit false
 set_option maxRecDepth 16000
@@ -2501,6 +2502,54 @@ theorem pairArm_to_cleanup32 (env : Env) (s : State) (addr : Nat)
 #guard_msgs in
 #print axioms pairArmValue
 
+/-- **The pair's stored word is the specification's encoding of its code point.**
+
+The pair arm packs the two code units into one word (`pairArmValue`) and stores the
+four bytes `udIfEnd32Word` selects out of it; the walk writes the bytes
+`utf8Encode cp'` of the same code point.  This is the composition of the two
+halves already proved: `udIfThen26I_pairValue` reads the pair's `Nat` value off the
+masked units, and `udIfEnd32Word_toNat` reads the store's bytes off that value.
+
+The two hypotheses are the units' **hex identifications**, which is the form
+`hex4_hxCode` concludes at each of the two `\u` digit runs (`if.end.i115` for the
+high unit, `if.then17.i` for the low one): the block's masked `hxCode` word is the
+unit `hex4` found.  The masked word is what the blocks' own `%and27.i` holds, so a
+consumer applies this lemma with `hex4_hxCode`'s result rather than re-deriving the
+lane arithmetic. -/
+theorem pairArmValue_word {bs bs2 : List UInt8} {db : List (BitVec 1)}
+    {hi lo cp' : Nat}
+    (hhi : (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535).toNat = hi)
+    (hlo : (hxCode (byteLanes bs2) (hexUltL (hexAddL (hexOrL (byteLanes bs2)
+      (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)) &&&
+      BitVec.ofInt 32 65535).toNat = lo)
+    (hrhi : 0xD800 ≤ hi ∧ hi ≤ 0xDBFF)
+    (hrlo : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF)
+    (hcp : cp' = 0x10000 + (hi - 0xD800) * 0x400 + (lo - 0xDC00)) :
+    (udIfEnd32Word (pairArmValue bs bs2 db)).toNat = bytesToNat (utf8Encode cp') := by
+  have hdouble : ∀ x : BitVec 32,
+      x &&& BitVec.ofInt 32 65535 &&& BitVec.ofInt 32 65535 =
+        x &&& BitVec.ofInt 32 65535 := by
+    intro x
+    rw [BitVec.and_assoc, BitVec.and_self]
+  have hval : (pairArmValue bs bs2 db).toNat = cp' := by
+    have h := udIfThen26I_pairValue
+      (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)
+      (hxCode (byteLanes bs2) (hexUltL (hexAddL (hexOrL (byteLanes bs2)
+        (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)) &&&
+        BitVec.ofInt 32 65535)
+      (by rw [hhi]; exact hrhi) (by rw [hlo]; exact hrlo)
+    rw [hhi, hlo] at h
+    rw [hcp]
+    simpa only [pairArmValue, hdouble] using h
+  calc (udIfEnd32Word (pairArmValue bs bs2 db)).toNat
+      = bytesToNat (utf8Encode (pairArmValue bs bs2 db).toNat) :=
+        udIfEnd32Word_toNat _ (by rw [hval]; omega)
+    _ = bytesToNat (utf8Encode cp') := by rw [hval]
+
+/-- info: 'LeanLLVM.Vellum.pairArmValue_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pairArmValue_word
+
 /-- info: 'LeanLLVM.Vellum.pairArm_to_cleanup32' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pairArm_to_cleanup32
@@ -3101,6 +3150,437 @@ theorem srcBtake {body extra : List UInt8} {i n q : Nat} (hblen : body.length = 
     (hiq : i ≤ q) (hqn : q < n) :
     ((body.drop i ++ extra).take ((q - i) + 32)).take (q - i) = (body.drop i).take (q - i) :=
   take_take_source hblen (by omega)
+
+/-! ### The tail's two blocks, composed at the exit's own operands
+
+`if.end`'s two arms both leave the run at `us_run_long.exit99`, and they leave
+*different* values in the block's two `phi`s: the copy's next counter and its
+residual on the copy edge, the zero constant and `%sub13` on `if.end`'s.  The tail
+therefore takes its two operands as parameters — `k` and `sub13` — and each arm
+instantiates them, which is why this is one lemma at the block rather than one per
+edge.  `udCopyTail_run_zero`/`_one` are the two steps; what this adds is the state
+they leave read as the cells the next block reads: the caller's prefix, the frame
+over the destination extent, and the register frame (`CellFrame` plus `%sub`,
+`%inc11` and `%sub13`, which the tail's environment builders prepend nothing to).
+
+**Carrier.**  The footprint is `[propext, Classical.choice, Quot.sound]`; the choice
+enters through the two blocks' `%add.ptr` steps at `hkw`, which is
+`BitVec.signExtend_eq` — the carrier the copy's own steps already name. -/
+theorem copyTail_to_usRunExit
+    {mem : Mem} {body extra B out : List UInt8} {b dst n i q pos0 : Nat}
+    {s : State} {prev : String} (opk ops : Operand) (k sub13 : BitVec 64)
+    {pb xp tab err xj : Nat} {incv : BitVec 64}
+    (hblen : body.length = n) (hBlen : B.length = (q - i) + 32)
+    (hpc : s.pc = "us_run_long.exit99") (hprev : s.pre = some prev)
+    (hinck : phiIncoming prev udCopyTailIncomingK = some opk)
+    (hopk : evalOperand (withEnv s.env s) opk = some (.int 64 k))
+    (hincs : phiIncoming prev udCopyTailIncomingS = some ops)
+    (hops : evalOperand (withEnv (("%k.0.i86.lcssa", .int 64 k) :: s.env) s) ops =
+      some (.int 64 sub13))
+    (hsrcb : lookupName s.env "%add.ptr" = some (.ptr (b + i)))
+    (hdstb : lookupName s.env "%add.ptr12" = some (.ptr (dst + out.length)))
+    (hkN : k.toNat ≤ q - i) (hk63 : k.toNat < 2 ^ 63)
+    (hsubN : sub13.toNat = (q - i) - k.toNat)
+    (hpref : readBytes s.mem dst out.length = some out)
+    (hdstread : readBytes s.mem (dst + out.length) k.toNat = some (List.take k.toNat B))
+    (hsrcfull : readBytes s.mem (b + i) ((q - i) + 32) = some B)
+    (hcf : CellFrame s.env pb xp tab err xj dst (BitVec.ofNat 64 pos0)
+      (BitVec.ofNat 64 n) (BitVec.ofNat 64 out.length))
+    (hsubc : lookupName s.env "%sub" = some (.int 64 (BitVec.ofNat 64 q)))
+    (hincell : lookupName s.env "%inc11" = some (.int 64 incv))
+    (hsub13c : lookupName s.env "%sub13" = some (.int 64 (BitVec.ofNat 64 (q - i))))
+    (hframe : UnchangedOutside mem s.mem [(dst, n + 64)])
+    (hdisj : copyDisjoint (b + i) (dst + out.length) (q - i))
+    (houtle : out.length ≤ i) (hiq : i ≤ q) (hqn : q < n) :
+    ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = "us_run.exit" ∧
+      readBytes e.mem dst out.length = some out ∧
+      UnchangedOutside mem e.mem [(dst, n + 64)] ∧
+      CellFrame e.env pb xp tab err xj dst (BitVec.ofNat 64 pos0)
+        (BitVec.ofNat 64 n) (BitVec.ofNat 64 out.length) ∧
+      lookupName e.env "%sub" = some (.int 64 (BitVec.ofNat 64 q)) ∧
+      lookupName e.env "%inc11" = some (.int 64 incv) ∧
+      lookupName e.env "%sub13" = some (.int 64 (BitVec.ofNat 64 (q - i))) ∧
+      (∀ k', runFuel escapeCalls (j + k') usDecFunction s =
+        runFuel escapeCalls k' usDecFunction e) := by
+  let bs1 : List UInt8 := (B.drop k.toNat).take 32
+  have href1 : readBytes s.mem (b + i + k.toNat) 32 = some bs1 :=
+    copySrc_read hsrcfull hkN
+  have hlen1 : bs1.length = 32 := by
+    refine copyChunk_length ?_
+    rw [hBlen]; omega
+  have hkw : (k.signExtend 64).toNat = k.toNat := signExtend_self_toNat k
+  have hdstk : out.length + k.toNat ≤ n := by omega
+  -- the first write lies inside the destination extent, so the frame passes it
+  have hinside : UnchangedOutside mem
+      (writeBytes s.mem (dst + out.length + k.toNat) bs1) [(dst, n + 64)] :=
+    UnchangedOutside.writeBytes_inside hframe (by omega) (by omega)
+  by_cases hgt : 32 < sub13.toNat
+  · -- the residual reaches the second block: two steps to `us_run.exit`
+    let bs2 : List UInt8 := (B.drop (k.toNat + 32)).take 32
+    have hk32 : k.toNat + 32 ≤ q - i := by omega
+    have hlen2 : bs2.length = 32 := by
+      refine copyChunk_length ?_
+      rw [hBlen]; omega
+    have hfr : (b + i + k.toNat + 32) + 32 ≤ dst + out.length + k.toNat ∨
+        (dst + out.length + k.toNat) + bs1.length ≤ b + i + k.toNat + 32 := by
+      rw [hlen1]
+      rcases hdisj with hd | hd
+      · right; omega
+      · left; omega
+    have hr2 : readBytes (writeBytes s.mem (dst + out.length + k.toNat) bs1)
+        (b + i + k.toNat + 32) 32 = some bs2 := by
+      rw [JsonEntrySteps.readBytes_writeBytes_frame _ _ _ _ _ hfr]
+      exact copySrc_read_mid (B := B) hsrcfull hk32
+    have hcond : evalICmp .ugt sub13 (BitVec.ofInt 64 32) = (1 : BitVec 1) :=
+      (evalICmp_ugt_one_iff_toNat _ _).2 (by
+        rw [show (BitVec.ofInt 64 32).toNat = 32 from by decide]; exact hgt)
+    let mF : Mem := udCopy2Mem s.mem (dst + out.length + k.toNat) bs1 bs2
+    let Fin : State :=
+      { (withEnv (udCopyTailIfEnv
+          (udCopyTailEnv s.env (b + i) (dst + out.length) k bs1 sub13)
+          (b + i) (dst + out.length) k bs2) { s with mem := mF }) with
+          pc := "us_run.exit", pre := some "if.then.i104" }
+    have hrun := udCopyTail_run_one s.env s prev opk ops (b + i) (dst + out.length) k
+      bs1 bs2 sub13 hpc hprev hinck hopk hincs hops hsrcb hdstb hk63 hkw href1 hlen1
+      hr2 hlen2 hcond
+    refine ⟨Fin, 2, by omega, rfl, ?_, ?_, ?_, ?_, ?_, ?_, fun k' => hrun k'⟩
+    · show readBytes (udCopy2Mem s.mem (dst + out.length + k.toNat) bs1 bs2)
+        dst out.length = some out
+      simp only [udCopy2Mem]
+      rw [readBytes_writeBytes_below _ _ _ _ _ (by omega)]
+      rw [readBytes_writeBytes_below _ _ _ _ _ (by omega)]
+      exact hpref
+    · show UnchangedOutside mem
+        (udCopy2Mem s.mem (dst + out.length + k.toNat) bs1 bs2) [(dst, n + 64)]
+      simp only [udCopy2Mem]
+      exact UnchangedOutside.writeBytes_inside hinside (by omega) (by omega)
+    · exact CellFrame.tailIfEnv _ _ _ _ _ (CellFrame.tailEnv s.env (b + i)
+        (dst + out.length) k bs1 sub13 hcf)
+    · show lookupName (udCopyTailIfEnv (udCopyTailEnv s.env (b + i) (dst + out.length) k
+        bs1 sub13) (b + i) (dst + out.length) k bs2) "%sub" =
+        some (.int 64 (BitVec.ofNat 64 q))
+      simp only [udCopyTailIfEnv, udCopyTailEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hsubc
+    · show lookupName (udCopyTailIfEnv (udCopyTailEnv s.env (b + i) (dst + out.length) k
+        bs1 sub13) (b + i) (dst + out.length) k bs2) "%inc11" = some (.int 64 incv)
+      simp only [udCopyTailIfEnv, udCopyTailEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hincell
+    · show lookupName (udCopyTailIfEnv (udCopyTailEnv s.env (b + i) (dst + out.length) k
+        bs1 sub13) (b + i) (dst + out.length) k bs2) "%sub13" =
+        some (.int 64 (BitVec.ofNat 64 (q - i)))
+      simp only [udCopyTailIfEnv, udCopyTailEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hsub13c
+  · -- the residual fits: one step to `us_run.exit`
+    have hcond : evalICmp .ugt sub13 (BitVec.ofInt 64 32) = (0 : BitVec 1) :=
+      (evalICmp_ugt_zero_iff _ _).2 (by
+        rw [show (BitVec.ofInt 64 32).toNat = 32 from by decide]; omega)
+    let mO : Mem := writeBytes s.mem (dst + out.length + k.toNat) bs1
+    let One : State :=
+      { (withEnv (udCopyTailEnv s.env (b + i) (dst + out.length) k bs1 sub13)
+          { s with mem := mO }) with
+          pc := "us_run.exit", pre := some "us_run_long.exit99" }
+    have hrun := udCopyTail_run_zero s.env s prev opk ops (b + i) (dst + out.length) k
+      bs1 sub13 hpc hprev hinck hopk hincs hops hsrcb hdstb hk63 hkw href1 hlen1 hcond
+    refine ⟨One, 1, by omega, rfl, ?_, ?_, ?_, ?_, ?_, ?_, fun k' => hrun k'⟩
+    · show readBytes (writeBytes s.mem (dst + out.length + k.toNat) bs1)
+        dst out.length = some out
+      rw [readBytes_writeBytes_below _ _ _ _ _ (by omega)]
+      exact hpref
+    · show UnchangedOutside mem
+        (writeBytes s.mem (dst + out.length + k.toNat) bs1) [(dst, n + 64)]
+      exact hinside
+    · exact CellFrame.tailEnv s.env (b + i) (dst + out.length) k bs1 sub13 hcf
+    · show lookupName (udCopyTailEnv s.env (b + i) (dst + out.length) k bs1 sub13)
+        "%sub" = some (.int 64 (BitVec.ofNat 64 q))
+      simp only [udCopyTailEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hsubc
+    · show lookupName (udCopyTailEnv s.env (b + i) (dst + out.length) k bs1 sub13)
+        "%inc11" = some (.int 64 incv)
+      simp only [udCopyTailEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hincell
+    · show lookupName (udCopyTailEnv s.env (b + i) (dst + out.length) k bs1 sub13)
+        "%sub13" = some (.int 64 (BitVec.ofNat 64 (q - i)))
+      simp only [udCopyTailEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hsub13c
+
+/-- info: 'LeanLLVM.Vellum.copyTail_to_usRunExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms copyTail_to_usRunExit
+
+/-! ### The middle: the latch to `us_run.exit`
+
+The iteration arm and the refusal arm share their first half: the latch's two
+blocks (`latch_to_ifEnd`), one of `if.end`'s arms, and the tail.  This is that half
+composed once, ending at the block the two continuations start from:
+`us_run.exit`'s own step (`udRunExit_stepS_zero`) reads `%sub13`, `%j.0294`, `%p`
+and `%sub` and the body's byte at the head, and `if.end21`'s refusal arm reads
+`%sub`, `%n`, `%inc11`, `%err` and `%xj` — all of them stated here, at the values
+the blocks compute.
+
+**The two arms leave different operands at the same block.**  `if.end`'s copy edge
+supplies the copy's residual and its next counter, its zero edge the constant and
+`%sub13`; the tail's `phi`s read them, which is why the tail is instantiated twice
+rather than given one value.  The fuel bound is the copy arm's, and it bounds both:
+the zero edge's single control step is less than the copy's.
+
+The destination prefix read and the frame are carried because the exit word the
+records compare is about the caller's memory, not the state's.
+
+**Carrier.**  The footprint is `[propext, Classical.choice, Quot.sound]`: the two
+`if.end` arms and `latch_to_ifEnd` carry it, through the copy's `%add.ptr` steps at
+`BitVec.signExtend_eq`. -/
+theorem latch_to_runExit
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome}
+    {b xp tab : Nat} {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    {r c : Nat} {s : State}
+    (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s)
+    (hguard : (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false) :
+    ∃ (e : State) (i q : Nat) (out : List UInt8) (inc11 adv : BitVec 64) (j : Nat),
+      j ≤ 2 + (copyIterBound (q - i) + 2) + 2 ∧
+      e.pc = "us_run.exit" ∧ (escAt body st 0)[c]? = some q ∧ i ≤ q ∧ q < n ∧
+      readBytes e.mem (b + q) 1 = some (natToBytes (body.getD q 0).toNat 1) ∧
+      body[q]? = some (body.getD q 0) ∧
+      lookupName e.env "%sub" = some (.int 64 (BitVec.ofNat 64 q)) ∧
+      lookupName e.env "%sub13" = some (.int 64 (BitVec.ofNat 64 (q - i))) ∧
+      lookupName e.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 out.length)) ∧
+      lookupName e.env "%p" = some (.ptr b) ∧
+      lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      lookupName e.env "%inc11" =
+        some (.int 64 (decodeNextIdx inc11 adv + BitVec.ofInt 64 1)) ∧
+      lookupName e.env "%err" = some (.ptr err) ∧
+      lookupName e.env "%xj" = some (.ptr xj) ∧
+      lookupName e.env "%tab" = some (.ptr tab) ∧
+      lookupName e.env "%xp" = some (.ptr xp) ∧
+      lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+      lookupName e.env "%dst" = some (.ptr dst) ∧
+      UnchangedOutside mem e.mem [(dst, n + 64)] ∧
+      readBytes e.mem dst out.length = some out ∧
+      (∀ k, runFuel escapeCalls (j + k) usDecFunction s =
+        runFuel escapeCalls k usDecFunction e) := by
+  -- the record's clauses, at the caller's binders
+  have hstg := hstaging
+  obtain ⟨-, -, -, hbodyS, hpos0n, -, -, -, hdisjB, -, -⟩ := hstg
+  have hblen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbodyS
+  -- the latch's two blocks
+  obtain ⟨e2, i, q, out, sub, adv, inc11, nxp, jv, v, addv,
+    hpc2, hpre2, hmem2, hq, hiq, hadvsub, hk2, hi5, hj4, hconv, hvpos, hsub2,
+    hinc112, hnxp2, hp2, hdst2, hpos02, hn2, hxp2, htab2, herr2, hxj2, hadd2,
+    haddnat, hjv, hprefix2, houtle, hwalk2, hrun2⟩ :=
+    latch_to_ifEnd hstaging h hguard
+  have hqbody : q < body.length := (mem_escAt.mp (List.mem_of_getElem? hq)).2.1
+  have hqn : q < n := by rw [← hblen]; exact hqbody
+  -- the frame at the latch, and the reads the arms take
+  have hframe0 := assemblyLatchInv_frame h
+  have hframe2 : UnchangedOutside mem e2.mem [(dst, n + 64)] := by
+    rw [hmem2]; exact hframe0
+  obtain ⟨hbodyL, -⟩ := ExpandStaging.latch_reads hstaging hframe0
+  obtain ⟨extra, hextraL, hextralen⟩ := ExpandStaging.latch_tail hstaging hframe0
+  have hbodyE2 : readBytes e2.mem b n = some body := by rw [hmem2]; exact hbodyL
+  have hextraE2 : readBytes e2.mem (b + n) 32 = some extra := by rw [hmem2]; exact hextraL
+  have hextraOut : ∀ x, b + n ≤ x → x < b + n + 32 →
+      ∀ r ∈ [(dst, n + 64)], ¬ (r.1 ≤ x ∧ x < r.1 + r.2) := by
+    intro x hx1 hx2 r hr
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    obtain ⟨rfl, rfl⟩ := hr
+    rcases hdisjB with hd | hd <;> omega
+  have hextraMem : readBytes mem (b + n) 32 = some extra := by
+    rw [← readBytes_of_UnchangedOutside hframe0 hextraOut]
+    exact hextraL
+  have hprefixE2 : readBytes e2.mem dst out.length = some out := hwalk2.stored
+  have hsubv : adv + sub = BitVec.ofNat 64 i := by
+    rw [bv64_eq_ofNat_toNat (x := adv + sub) (by omega), hadvsub]
+  have hi5' : lookupName e2.env "%i.0295" = some (.int 64 (BitVec.ofNat 64 i)) := by
+    rw [hi5, hsubv]
+  have hc8' : lookupName e2.env "%conv8" =
+      some (.int 64 (BitVec.ofNat 64 (pos0 + q))) := by
+    rw [hconv, hvpos]
+  have hjcell : jv = BitVec.ofNat 64 out.length := by
+    rw [bv64_eq_ofNat_toNat (x := jv) (by omega), hjv]
+  have hjcell2 : lookupName e2.env "%j.0294" =
+      some (.int 64 (BitVec.ofNat 64 out.length)) := by
+    rw [hj4, hjcell]
+  -- the register frame the copy's exit word does not name
+  let Cells : Env → Prop := fun env =>
+    CellFrame env b xp tab err xj dst (BitVec.ofNat 64 pos0) (BitVec.ofNat 64 n)
+      (BitVec.ofNat 64 out.length) ∧
+    lookupName env "%sub" = some (.int 64 (BitVec.ofNat 64 q)) ∧
+    lookupName env "%inc11" =
+      some (.int 64 (decodeNextIdx inc11 adv + BitVec.ofInt 64 1))
+  have hCellsC : ∀ (env : Env) (src dst' : Nat) (k : BitVec 64) (bs1 bs2 : List UInt8)
+      (subv : BitVec 64), Cells env → Cells (udCopyBodyEnv env src dst' k bs1 bs2 subv) := by
+    intro env src dst' k bs1 bs2 subv hc
+    obtain ⟨hcf, hsubc, hincc⟩ := hc
+    refine ⟨CellFrame.copyBodyEnv env src dst' k bs1 bs2 subv hcf, ?_, ?_⟩
+    · simp only [udCopyBodyEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hsubc
+    · simp only [udCopyBodyEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hincc
+  have hcells3 : Cells (udIfEndEnv e2.env b dst (decodeNextIdx inc11 adv)
+      (BitVec.ofNat 64 i) (BitVec.ofNat 64 out.length) (BitVec.ofNat 64 (pos0 + q))
+      (BitVec.ofNat 64 pos0)) := by
+    refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+    · simp only [udIfEndEnv]; ud_lk_h hp2
+    · simp only [udIfEndEnv]; ud_lk_h hxp2
+    · simp only [udIfEndEnv]; ud_lk_h htab2
+    · simp only [udIfEndEnv]; ud_lk_h herr2
+    · simp only [udIfEndEnv]; ud_lk_h hxj2
+    · simp only [udIfEndEnv]; ud_lk_h hdst2
+    · simp only [udIfEndEnv]; ud_lk_h hpos02
+    · simp only [udIfEndEnv]; ud_lk_h hn2
+    · simp only [udIfEndEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [hj4, hjcell]
+    · simp only [udIfEndEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [ifEnd_env_sub_eq (by omega)]
+      rw [lookupName_cons_self]
+    · simp only [udIfEndEnv]
+      ud_lk
+  -- the copy's disjointness is the record's, at the copy's own bases
+  have hdisjC : copyDisjoint (b + i) (dst + out.length) (q - i) := by
+    unfold copyDisjoint
+    omega
+  -- the body's range is outside the destination extent, so the frame carries reads
+  have houtside : ∀ x, b + i ≤ x → x < b + i + ((q - i) + 32) →
+      ∀ r ∈ [(dst, n + 64)], ¬ (r.1 ≤ x ∧ x < r.1 + r.2) := by
+    intro x hx1 hx2 r hr
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    obtain ⟨rfl, rfl⟩ := hr
+    rcases hdisjB with hd | hd <;> omega
+  have hbyteOut : ∀ x, b + q ≤ x → x < b + q + 1 →
+      ∀ r ∈ [(dst, n + 64)], ¬ (r.1 ≤ x ∧ x < r.1 + r.2) := by
+    intro x hx1 hx2 r hr
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    obtain ⟨rfl, rfl⟩ := hr
+    rcases hdisjB with hd | hd <;> omega
+  -- the source range from the cursor, at the caller's own memory
+  have hsrcfullMem : readBytes mem (b + i) ((q - i) + 32) =
+      some ((body.drop i ++ extra).take ((q - i) + 32)) := by
+    have hin : i ≤ n := Nat.le_trans hiq (Nat.le_of_lt hqn)
+    have hfull := (finalSource_read (i := i) hbodyS hin hextraMem).1
+    exact source_read_slice hblen hfull (Nat.le_refl i) (by omega) (by omega)
+  by_cases hgt : 64 < q - i
+  · -- the copy arm
+    obtain ⟨eL, jL, hjL, hcw, hprefL, hfrL, hpL, hdL, hjcellL, hcellsL, hrunL⟩ :=
+      ifEnd_copyArm (q := q) (extra := extra) hpc2 hpre2 hwalk2 hiq hqn hpos0n hdisjB
+        hframe2 hbodyE2 hextraE2 hk2 hc8' hpos02 hp2 hi5' hdst2 hjcell2 hgt Cells
+        hCellsC hcells3
+    obtain ⟨hpcLw, hpreLw, hknext, hsnext, hsrcbL, hdstbL, hsubcL, hdstreadL,
+      hsrcfullL⟩ := hcw
+    have hBlen : ((body.drop i ++ extra).take ((q - i) + 32)).length = (q - i) + 32 :=
+      srcBlen hblen hextralen hiq hqn
+    have hkNat : (BitVec.ofNat 64 (64 * copyIterBound (q - i) + 64)).toNat =
+        64 * copyIterBound (q - i) + 64 :=
+      ofNat64_toNat (by have := copyIterBound_mul_le (sub := q - i); omega)
+    -- the copy's exit counter is at or below the residual: `q - i ≥ 128` puts the
+    -- loop's ceiling below `q - i - 64`, and below it the residual is under 128
+    have hkexit : 64 * copyIterBound (q - i) + 64 ≤ q - i := by
+      have hle : 64 * copyIterBound (q - i) ≤ q - i - 64 := by
+        rw [copyIterBound]
+        rcases Nat.lt_or_ge (q - i) 128 with hlt | hge
+        · have hz : q - i - 128 = 0 := by omega
+          rw [hz]
+          simp
+        · have hd : q - i - 128 + 63 = q - i - 65 := by omega
+          rw [hd]
+          have := Nat.div_mul_le_self (q - i - 65) 64
+          omega
+      omega
+    have hsubNat : (BitVec.ofNat 64
+        ((q - i) - (64 * copyIterBound (q - i) + 64))).toNat =
+        (q - i) - (64 * copyIterBound (q - i) + 64) :=
+      ofNat64_toNat (by have := copyIterBound_mul_le (sub := q - i); omega)
+    obtain ⟨eT, jT, hjT, hpcT, hprefT, hfrT, hcfT, hsubT, hincT, hsub13T, hrunT⟩ :=
+      copyTail_to_usRunExit (mem := mem) (extra := extra)
+        (.reg "%add.i98") (.reg "%sub.i87")
+        (BitVec.ofNat 64 (64 * copyIterBound (q - i) + 64))
+        (BitVec.ofNat 64 ((q - i) - (64 * copyIterBound (q - i) + 64)))
+        (pb := b) (xp := xp) (tab := tab) (err := err) (xj := xj)
+        (incv := decodeNextIdx inc11 adv + BitVec.ofInt 64 1)
+        hblen hBlen hpcLw hpreLw (by decide)
+        (evalOperand_reg_eq eL.env eL "%add.i98" _ hknext) (by decide)
+        (by
+          show evalOperand (withEnv (("%k.0.i86.lcssa",
+            .int 64 (BitVec.ofNat 64 (64 * copyIterBound (q - i) + 64))) :: eL.env) eL)
+            (.reg "%sub.i87") = some (.int 64 (BitVec.ofNat 64
+              ((q - i) - (64 * copyIterBound (q - i) + 64))))
+          rw [evalOperand_reg_eq (("%k.0.i86.lcssa", .int 64 (BitVec.ofNat 64
+            (64 * copyIterBound (q - i) + 64))) :: eL.env) eL "%sub.i87" _ (by
+              rw [lookupName_cons_ne _ _ (by decide)]; exact hsnext)])
+        hsrcbL hdstbL
+        (by rw [hkNat]; exact hkexit)
+        (by rw [hkNat]; omega)
+        (by rw [hsubNat, hkNat])
+        hprefL
+        (by rw [hkNat]; exact hdstreadL)
+        hsrcfullL hcellsL.1 hcellsL.2.1 hcellsL.2.2 hsubcL hfrL hdisjC houtle hiq hqn
+    refine ⟨eT, i, q, out, inc11, adv, 2 + jL + jT, ?_, hpcT, hq, hiq, hqn, ?_,
+      body_getElem?_getD hqbody, hsubT, hsub13T, hcfT.jcell, hcfT.pcell, hcfT.ncell,
+      hincT, hcfT.errcell, hcfT.xjcell, hcfT.tabcell, hcfT.xpcell, hcfT.pos0cell,
+      hcfT.dstcell, hfrT, hprefT, ?_⟩
+    · omega
+    · rw [readBytes_of_UnchangedOutside hfrT hbyteOut]
+      exact byte_read_of_body hbodyS hqn
+    · intro k
+      exact runFuel_prefix_trans (runFuel_prefix_trans hrun2 hrunL) hrunT k
+  · -- `if.end`'s zero arm: one control step to the same block
+    obtain ⟨e0L, j0L, hj0L, hpc0, hpre0, hk0, hs0, hsub13c0, hsrcb0, hdstb0,
+      hpref0, hfr0, hcells0, hrun0⟩ :=
+      ifEnd_zeroArm (body := body) (st := st) (dst := dst) (nps := nps) (goal := goal)
+        (b := b) (pos0 := pos0) (n := n) (s := e2) (i := i) (q := q) (c := c)
+        (out := out) (extra := extra) (inc11 := inc11) (adv := adv) (mem := mem) hpc2 hpre2 hiq hqn hpos0n hframe2 hbodyE2 hk2 hc8' hpos02
+        hp2 hi5' hdst2 hjcell2 houtle (by omega) hprefixE2 Cells hcells3
+    have hBlen : ((body.drop i ++ extra).take ((q - i) + 32)).length = (q - i) + 32 :=
+      srcBlen hblen hextralen hiq hqn
+    have hsrcfull0 : readBytes e0L.mem (b + i) ((q - i) + 32) =
+        some ((body.drop i ++ extra).take ((q - i) + 32)) := by
+      rw [readBytes_of_UnchangedOutside hfr0 houtside]
+      exact hsrcfullMem
+    obtain ⟨eT, jT, hjT, hpcT, hprefT, hfrT, hcfT, hsubT, hincT, hsub13T, hrunT⟩ :=
+      copyTail_to_usRunExit (mem := mem) (extra := extra)
+        (.imm (.int 64 (BitVec.ofInt 64 0))) (.reg "%sub13")
+        (BitVec.ofInt 64 0) (BitVec.ofNat 64 (q - i))
+        (pb := b) (xp := xp) (tab := tab) (err := err) (xj := xj)
+        (incv := decodeNextIdx inc11 adv + BitVec.ofInt 64 1)
+        hblen hBlen hpc0 hpre0 hk0
+        (by simp [evalOperand, Const.toValue]) hs0
+        (by
+          show evalOperand (withEnv (("%k.0.i86.lcssa", .int 64 (BitVec.ofInt 64 0)) ::
+            e0L.env) e0L) (.reg "%sub13") = some (.int 64 (BitVec.ofNat 64 (q - i)))
+          rw [evalOperand_reg_eq (("%k.0.i86.lcssa", .int 64 (BitVec.ofInt 64 0)) ::
+            e0L.env) e0L "%sub13" _ (by
+              rw [lookupName_cons_ne _ _ (by decide)]; exact hsub13c0)])
+        hsrcb0 hdstb0
+        (by rw [show (BitVec.ofInt 64 0).toNat = 0 from by decide]; omega)
+        (by rw [show (BitVec.ofInt 64 0).toNat = 0 from by decide]; omega)
+        (by rw [ofNat64_toNat (by omega),
+          show (BitVec.ofInt 64 0).toNat = 0 from by decide]; omega)
+        hpref0
+        (by rw [show (BitVec.ofInt 64 0).toNat = 0 from by decide]; rfl)
+        hsrcfull0 hcells0.1 hcells0.2.1 hcells0.2.2 hsub13c0 hfr0 hdisjC houtle hiq hqn
+    refine ⟨eT, i, q, out, inc11, adv, 2 + j0L + jT, ?_, hpcT, hq, hiq, hqn, ?_,
+      body_getElem?_getD hqbody, hsubT, hsub13T, hcfT.jcell, hcfT.pcell, hcfT.ncell,
+      hincT, hcfT.errcell, hcfT.xjcell, hcfT.tabcell, hcfT.xpcell, hcfT.pos0cell,
+      hcfT.dstcell, hfrT, hprefT, ?_⟩
+    · omega
+    · rw [readBytes_of_UnchangedOutside hfrT hbyteOut]
+      exact byte_read_of_body hbodyS hqn
+    · intro k
+      exact runFuel_prefix_trans (runFuel_prefix_trans hrun2 hrun0) hrunT k
+
+/-- info: 'LeanLLVM.Vellum.latch_to_runExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms latch_to_runExit
 
 /-! #### Axiom footprints: the carried frame -/
 
