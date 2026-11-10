@@ -2714,6 +2714,38 @@ def PipelineBodyArm.inBuilder (a : PipelineBodyArm) (env : Env)
       bodyIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
         S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr
 
+/-- The split block an arm's first iteration is entered from: which of the two
+selection blocks the entry test chose, by the arm the selector picked. -/
+def PipelineBodyArm.splitPre : PipelineBodyArm → String
+  | .pos8NoGate => "for.body.lr.ph.split.us"
+  | .pos8Gate => "for.body.lr.ph.split.us"
+  | .b8NoGate => "for.body.lr.ph.split"
+  | .b8Gate => "for.body.lr.ph.split"
+
+/-- **The first iteration's incoming builder.**  The state the split block leaves
+is at the arm's head with the split block as its predecessor, and every `phi` takes
+the split operand: `%prevS` and `%i` are the literal zero and `%k` is `%0`, the
+count the entry block loaded.  So this builder binds `%0` and *not* the back edge's
+three names — the state's environment has no value for those, which is what makes
+`AgreeOn` satisfiable here and unsatisfiable at the back-edge builder.  The
+argument order is the split traces' (`PipelineBodyFacts.usUsSplitIn` and its three
+siblings), which take the incoming count and `%shr`. -/
+def PipelineBodyArm.splitIn (a : PipelineBodyArm) (env : Env)
+    (S : PipelineLoopCarried) : Env :=
+  match a with
+  | .pos8NoGate =>
+      usUsSplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep
+        S.kw S.shr
+  | .pos8Gate =>
+      usSplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
+        S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr
+  | .b8NoGate =>
+      us83SplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep
+        S.kw S.shr
+  | .b8Gate =>
+      bodySplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
+        S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr
+
 /-- The states the loop may leave in: the exit block, carrying the entry stream
 it has appended.
 
@@ -2733,10 +2765,17 @@ def pipelineLoopExit (s : State) : Prop :=
     S.ent.Pairwise (· < ·) ∧
     (∀ q ∈ S.ent, q < 64 * S.i)
 
-/-- **The loop invariant.**  With `r + 1` iterations of budget the state is the
-entry of the loop's next iteration at the arm the document's selector chose; with
-the budget spent it is the loop's exit block, which is the shape
-`PipelineLoop.exit` consumes.  `base` and `tab` are the call environment's fixed
+/-- **The loop invariant's back-edge shape.**  With `r + 1` iterations of budget
+the state is the entry of an iteration that follows the arm's own back edge; with
+the budget spent this predicate admits nothing, because the invariant's spent
+budget is the loop's exit block and that is `pipelineLoopInv`'s zero branch.  The
+invariant itself is the disjunction `pipelineLoopInv` below: this shape *or* the
+split shape `pipelineLoopInvSplit`, because the loop's first iteration is entered
+from a split block and the state there is no back-edge successor.  Each shape
+states the conjunct list in full, so a step reading one of them has every fact it
+consumes and takes none from the other.
+
+`base` and `tab` are the call environment's fixed
 values — `pipelineCalls base tab` chooses the escape record and the POS8
 record before the argument list opens — so the invariant names them rather than
 leaving the step to infer an address from the state.  Every conjunct names the
@@ -2852,8 +2891,8 @@ step that reads it:
   whole list once is what makes the store at `entw`, the entry stream and the
   table's preservation derivable from the same conjunct rather than from a
   separate promise per frame. -/
-def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
-  | 0, s => pipelineLoopExit s
+def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
+  | 0, _ => False
   | r + 1, s =>
       ∃ (S : PipelineLoopCarried),
         s.pc = S.arm.head ∧
@@ -2928,6 +2967,107 @@ def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
            (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.nxp, 8),
            (S.xp, 4 * S.xpExtent), (S.xcarry, 16)]
 
+/-- **The loop invariant's split shape.**  The state the loop's *first* iteration
+starts in: the arm's head as the program counter, the split block as the
+predecessor, every `phi` at its split operand — `%i = 0`, `%prevS = 0`, `%k = %0` —
+and the agreement at the split builder `usUsSplitIn` (and its three siblings),
+whose traces are `usUs_split_denote` … `body_split_denote`.
+
+**Why a second shape, and not one agreement for both entries.**  The back-edge
+builder binds `%inc…`, `%call21…` and `%shr13…`, and the split block's successor
+binds none of them, so `AgreeOn` at that builder is false at the state the seed
+reaches while the agreement at the split builder is true there.  The reverse holds
+after an iteration: a successor's `%0` is unbound and the back edge's three names
+are bound.  One agreement cannot be both, so the invariant is a disjunction — and
+each disjunct states the whole conjunct list rather than the two shape conjuncts
+alone, because a disjunction that shares its other conjuncts is one statement with
+two spellings.
+
+`S.sw = 0` is the first iteration's `%prevS` phi operand.  It is stated because no
+environment cell pins it — the split builder leaves `%prevS…` unbound, and the
+successor's builder binds it only after an iteration — while the entry call's
+store (`vent … S.sw`) reads it.
+
+The remaining conjuncts are `pipelineLoopInvBack`'s, in the same order and stated
+in full for the reason above; the docstring there gives each one's consumer and
+hander-on. -/
+def pipelineLoopInvSplit (base tab blocks : Nat) : Nat → State → Prop
+  | 0, _ => False
+  | r + 1, s =>
+      ∃ (S : PipelineLoopCarried),
+        s.pc = S.arm.head ∧
+        s.pre = some S.arm.splitPre ∧
+        S.i = 0 ∧
+        S.sw = 0 ∧
+        S.i + (r + 1) = blocks ∧
+        S.shr = BitVec.ofNat 64 blocks ∧
+        S.iw = BitVec.ofNat 64 S.i ∧
+        AgreeOn (blockUses S.arm.block) (stateAt (S.arm.splitIn s.env S) s) s ∧
+        S.b = base ∧
+        readBytes s.mem S.b (64 * blocks) = some S.doc ∧
+        readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside) ∧
+        S.stM.oddRun = (S.opened && S.ppar) ∧
+        S.delim = S.maskSlot + 8 ∧
+        S.inString = S.maskSlot + 16 ∧
+        S.ws = S.maskSlot + 24 ∧
+        S.backslash = S.maskSlot + 32 ∧
+        S.ctl = S.maskSlot + 40 ∧
+        S.tab = tab ∧
+        readBytes s.mem S.tab 8192 = some pos8Table ∧
+        S.kw = BitVec.ofNat 64 S.k ∧
+        readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
+        S.xpExtent = S.xn0 + 64 * blocks + 8 ∧
+        S.k ≤ S.k0 + 64 * S.i ∧
+        S.xn ≤ S.xn0 + 64 * S.i ∧
+        blocks = pipelineBlocks S.n.toNat ∧
+        S.k0 ≤ S.k ∧
+        readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
+        S.ent.Pairwise (· < ·) ∧
+        (∀ q ∈ S.ent, q < 64 * S.i) ∧
+        (S.arm.hasEscape = true →
+          carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
+        (S.arm.hasEscape = true →
+          S.opened = S.prevb ∧ S.ppar = S.prevs) ∧
+        cursorRoom S.k (blocks - S.i) 9 ∧
+        cursorRoom S.xn (blocks - S.i) 9 ∧
+        HasBytes s.mem S.xp (4 * S.xpExtent) ∧
+        DisjointRegions
+          [(S.b, 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
+           (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.nxp, 8),
+           (S.xp, 4 * S.xpExtent), (S.xcarry, 16)]
+
+/-- **The loop invariant.**  With `r + 1` iterations of budget the state is an
+iteration entry in one of the two shapes the loop can be entered in — the split
+shape at the first iteration and the back-edge shape above it; with the budget
+spent it is the loop's exit block, which is the shape `PipelineLoop.exit`
+consumes.
+
+**Why a disjunction, rather than a preliminary split invariant.**  The seed reaches
+a split block's successor, and no back-edge shape describes that state: the
+invariant that only holds after a step is not one a loop can be entered with.
+`PipelineLoop`'s `step` and `exit` are the only fields a second instance would
+change, and a second instance would duplicate the loop and its exit for a case a
+disjunction absorbs — and would leave two invariants that must be shown to agree at
+the handoff, which is the same statement twice.  So the entry shape goes into the
+invariant, where the step reads it, and the four arm steps each carry a first
+iteration for the split disjunct (`*_split_step`) beside the back-edge ones they
+already had. -/
+def pipelineLoopInv (base tab blocks : Nat) : Nat → State → Prop
+  | 0, s => pipelineLoopExit s
+  | r + 1, s =>
+      pipelineLoopInvSplit base tab blocks (r + 1) s ∨
+        pipelineLoopInvBack base tab blocks (r + 1) s
+
+/-- **A live-budget invariant state is at one of the four arms' heads.**  Both
+shapes state it, so a step dispatches on the arm before it reads which shape the
+state is in. -/
+theorem pipelineLoopInv_pc {base tab blocks r : Nat} {s : State}
+    (h : pipelineLoopInv base tab blocks (r + 1) s) :
+    ∃ S : PipelineLoopCarried, s.pc = S.arm.head := by
+  rcases h with ⟨S, hp, -⟩ | ⟨S, hp, -⟩
+  · exact ⟨S, hp⟩
+  · exact ⟨S, hp⟩
+
 /-- At a spent budget the invariant is the exit predicate, which is the shape
 `PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
 theorem pipelineLoopInv_zero (base tab : Nat) {blocks : Nat} {s : State}
@@ -2972,6 +3112,26 @@ carrier: the section is at `[propext, Quot.sound]` or below. -/
 /-- info: 'LeanLLVM.Vellum.PipelineBodyArm.inBuilder' does not depend on any axioms -/
 #guard_msgs in
 #print axioms PipelineBodyArm.inBuilder
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyArm.splitPre' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.splitPre
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyArm.splitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.splitIn
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoopInvBack' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInvBack
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoopInvSplit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInvSplit
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoopInv_pc' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInv_pc
 
 /-- info: 'LeanLLVM.Vellum.pipelineLoopInv' depends on axioms: [propext] -/
 #guard_msgs in

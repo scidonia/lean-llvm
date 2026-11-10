@@ -639,15 +639,21 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
       runFuel (pipelineCalls tab base s2) k pipelineBody e
-  /-- The tail: from any exit state, the verdict and the record's post.  The
-  post's stage-2 clauses are `Γ_stage2`'s, but the field does not name the slot:
-  `Γ2` is phantom here, and what remains is the proof that `pipelineBody`'s three
-  tail blocks reach that post — the body analysis's, not a record's. -/
-  exit : ∀ (e : State), loop.Exit e →
+  /-- The tail: from any exit state, the verdict and **the post the consumer binds**.
+  The field takes the post as a parameter rather than naming `Γ_pipeline_units`'s
+  because what the tail's three blocks establish is the run's outcome and the memory
+  it leaves, and the record's `dst`/`ndst`/`ev`/`nev`/`err` clauses are the stage-2
+  call's — facts no record but `Γ_stage2` states, and `Γ_stage2` is downstream of
+  this module (`JsonStage2Contract` imports `PipelineBodyFacts`), so naming it here
+  is an import cycle.  At the slot parameter `Γ2` no arbitrary `Γ2.post` implies
+  those clauses even with `h2`, which is why the record could not simply be
+  substituted: the parameter is the post, and the consumer that holds the record
+  binds it.  `Γ2` therefore stays phantom. -/
+  exit : ∀ (post : List Value → Mem → Nat → Outcome → Prop) (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
         some (.ret (some (.int 64 verdict)) m) ∧
-      (Γ_pipeline_units base).post args mem next (.ret (some (.int 64 verdict)) m)
+      post args mem next (.ret (some (.int 64 verdict)) m)
 
 /-- **The assembled pipeline satisfies its unit-level record.**
 
@@ -666,7 +672,25 @@ The base is quantified here rather than read off the arguments: `Satisfies` fixe
 the call environment, so the escape-list record the body is judged against must be
 chosen before the argument list is opened.  The staging ties it back — its first
 argument clause is `.ptr base`, the ABI's document slot — so a base the caller's
-arguments disagree with admits nothing. -/
+arguments disagree with admits nothing.
+
+**What `hbody` still owes, so that the hypothesis is not read as a gap.**  Its
+`loop` and `cost_le` are proved (`PipelineBodyStep.pipelineLoop`, whose `step` is the
+four arms' steps per entry shape), `N_eq` is the staging's block count, and `seed`'s
+three control steps are proved; the two members that are not are named with their
+clauses rather than left as "the body analysis":
+
+* the seed's invariant state needs the staged regions' separation at the
+  invariant's own region list, and that list is not a sub-list of the staging's
+  `pipelineRegions` — the window is named from the document rather than three
+  bytes below it, and the escape stream before its count — so the transport is a
+  decision about the invariant's list rather than a projection;
+* `exit`'s conclusion at `Γ_pipeline_units`'s post needs the *whole* entry stream at
+  the final count (`pipelineUnitsPost`'s `readLanes32 m ep nk'`), while
+  `pipelineLoopExit` carries only the part appended after the caller's prefix
+  (`ep + 4 * k0` onwards) and the staging says nothing about the bytes before it.
+  That is the clause this field does not follow from the loop's exit; the post's
+  stage-2 read-backs are the same boundary seen from the other side. -/
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : ∀ base, PipelineUnits tab base s2 Γ2)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
@@ -706,7 +730,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hpost
   rcases hseed with ⟨hN0, hexit0⟩ | hinv
   · -- the zero-block document: the entry test leaves for the cleanup
-    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e0 hexit0
+    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units base).post e0 hexit0
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + 3) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 3]
@@ -715,7 +739,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     omega
   · -- the loop, at its bound, and the tail
     obtain ⟨e1, j1, hj1, hexit1, hrun1⟩ := loop.run e0 hinv 3
-    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e1 hexit1
+    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units base).post e1 hexit1
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + (j1 + 3)) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 (j1 + 3), hrun1]
