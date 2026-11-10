@@ -1352,21 +1352,23 @@ transport's agreement must then be read backwards through the incoming builder
 (`agreeOn_succ`).  The remaining region conjuncts are read through one unit post's
 byte frame composed with the body's own store (`readBytes_of_entry_frame`).
 
-**What is here, and what is not.**  Two of the four arms are assembled: the
-`for.body.us.us` and `for.body.us83` steps, each as twenty-eight named conjunct
-lemmas at the successor the arm leaves, proved and pinned separately.  The two
-gate-on arms are not, and the reason is a statement rather than a proof: the
-escape list's `post` used to bind its own representative of the count it reads back,
-so every width it stated was a function of a witness the caller could not order
-against its own count; `escapePositionsPost` now carries `xn0 < 2 ^ 64`, which pins
-the representative, and the call site is the work that clause unblocks.  The
-machinery it consumes is here: `block64_inj`, `pair_flags` (the carry link's two
-slots read off the same sixteen bytes, so the mask unit's flags and the list's are
-provably one pair), `natToBytes_mod`/`wordBytes8_eq_of_mod`, `escape_capacity` and
-`readBytes_unchangedOutside`.  Until the gate-on call site lands, `PipelineLoop.step`
-has no term, so the loop instance is not assembled and `pipeline_satisfies_of_units`
-keeps its `hbody` hypothesis: the post's `dst`/`ndst`/`ev`/`nev`/`err` clauses and
-the verdict come from the stage-2 record, and no arbitrary `Γ2` implies them.
+**All four arms are assembled**, each as twenty-eight named conjuncts at the
+successor the arm leaves, proved and pinned separately.  The gate-on pair reads its
+extra conjuncts off the escape list: the count's word is pinned by
+`escapePositionsPost`'s `xn0 < 2 ^ 64` — without it every width the post stated was
+a function of a representative the caller could not order against its own count —
+and the two carry slots' pair by `pair_flags` (the same sixteen bytes read by the
+mask unit and the list) together with `carry64_oddRun_congr`.
+`block64_inj` is what makes the list's block the mask unit's, `escape_capacity` and
+`readBytes_unchangedOutside` carry the staged stream and the static regions through
+the list's run.
+
+**What the assembled loop does and does not close.**  `pipelineLoop` is the
+`PipelineLoop` the four steps dispatch into, so the block loop's own induction
+runs.  `pipeline_satisfies_of_units` nevertheless keeps its `hbody` hypothesis:
+the pipeline's post's `dst`/`ndst`/`ev`/`nev`/`err` clauses and the verdict come
+from the stage-2 record, `Γ_stage2` does not exist in this tree, and no arbitrary
+`Γ2` implies them.  The loop closing is not the pipeline closing.
 -/
 
 /-! ### Literal-list membership, for the staged region list -/
@@ -2474,6 +2476,1334 @@ theorem escape_capacity {r2 r3 : Mem} {xp xn xcarry xn0 extent : Nat}
 
 
 
+/-! ### The gate-on arms: the list's exclusion, and the call site
+
+The two arms that call the escape list differ from the two that do not in one
+call and in what its post promises.  What all four share is the frame machinery
+above — the mask unit's two store regions, the body's own store, and the entry
+emitter's written extent — so the gate-on successor's facts are that frame
+composed with the list's exclusion, stated once here for both arms.
+
+The exclusion's extent is `4 * blockMax xn0` at the count the caller passes, while
+the staged capacity the invariant carries is `4 * S.xpExtent`; `blockMax xn0 ≤
+S.xpExtent` is what makes the first a sub-range of the second, and the count's
+growth bound is what makes it true at every block. -/
+
+/-- The outgoing parity is a function of the parity the block is entered with, so
+two states that agree there leave the same carry parity. -/
+theorem carry64_oddRun_congr {lo hi : Block32} {st st' : ClassState}
+    (h : st.oddRun = st'.oddRun) :
+    (carry64 lo hi st).oddRun = (carry64 lo hi st').oddRun := by
+  rw [carry64_oddRun_eq, carry64_oddRun_eq, h]
+
+/-- A byte outside the escape list's three regions reads as it did: the post's
+exclusion is the frame the successor's static regions survive by. -/
+theorem escapeOutside {r2 r3 : Mem} {S : PipelineLoopCarried} {xn0 : Nat}
+    (hesc : UnchangedOutside r2 r3
+      [(S.xp, 4 * blockMax xn0), (S.nxp, 8), (S.xcarry, 16)])
+    {a : Nat}
+    (hxp : a < S.xp ∨ S.xp + 4 * blockMax xn0 ≤ a)
+    (hnxp : a < S.nxp ∨ S.nxp + 8 ≤ a)
+    (hxc : a < S.xcarry ∨ S.xcarry + 16 ≤ a) :
+    readByte r3 a = readByte r2 a := by
+  refine hesc a ?_
+  intro r hr
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · rintro ⟨h1, h2⟩; rcases hxp with h | h <;> omega
+  · rintro ⟨h1, h2⟩; rcases hnxp with h | h <;> omega
+  · rintro ⟨h1, h2⟩; rcases hxc with h | h <;> omega
+
+/-- The range form of `escapeOutside`. -/
+theorem escapeReadBytes {r2 r3 : Mem} {S : PipelineLoopCarried} {xn0 : Nat}
+    (hesc : UnchangedOutside r2 r3
+      [(S.xp, 4 * blockMax xn0), (S.nxp, 8), (S.xcarry, 16)])
+    {a n : Nat}
+    (hxp : a + n ≤ S.xp ∨ S.xp + 4 * blockMax xn0 ≤ a)
+    (hnxp : a + n ≤ S.nxp ∨ S.nxp + 8 ≤ a)
+    (hxc : a + n ≤ S.xcarry ∨ S.xcarry + 16 ≤ a) :
+    readBytes r3 a n = readBytes r2 a n :=
+  readBytes_of_readByte_eq (fun k hk => escapeOutside hesc
+    (by rcases hxp with h | h
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega))
+    (by rcases hnxp with h | h
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega))
+    (by rcases hxc with h | h
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega)))
+
+/-- The presence form of `escapeOutside`. -/
+theorem escapeHasBytes {r2 r3 : Mem} {S : PipelineLoopCarried} {xn0 K a : Nat}
+    (hesc : UnchangedOutside r2 r3
+      [(S.xp, 4 * blockMax xn0), (S.nxp, 8), (S.xcarry, 16)])
+    (hxp : a + K ≤ S.xp ∨ S.xp + 4 * blockMax xn0 ≤ a)
+    (hnxp : a + K ≤ S.nxp ∨ S.nxp + 8 ≤ a)
+    (hxc : a + K ≤ S.xcarry ∨ S.xcarry + 16 ≤ a)
+    (h : HasBytes r2 a K) : HasBytes r3 a K :=
+  hasBytes_of_readByte_eq h (fun k hk => escapeOutside hesc
+    (by rcases hxp with h' | h'
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega))
+    (by rcases hnxp with h' | h'
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega))
+    (by rcases hxc with h' | h'
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega)))
+
+/-- The staged window survives the escape list's run: its three regions are
+disjoint from the document at `blockMax`'s extent. -/
+theorem gateSucc_window {S : PipelineLoopCarried} {blocks : Nat} {r2 r3 : Mem}
+    {xn0 : Nat}
+    (Ssep : StagedSep S blocks) (hbm : blockMax xn0 ≤ S.xpExtent)
+    (hesc : UnchangedOutside r2 r3
+      [(S.xp, 4 * blockMax xn0), (S.nxp, 8), (S.xcarry, 16)])
+    (hwin : readBytes r2 S.b (64 * blocks) = some S.doc) :
+    readBytes r3 S.b (64 * blocks) = some S.doc := by
+  have hxp : S.b + 64 * blocks ≤ S.xp ∨ S.xp + 4 * blockMax xn0 ≤ S.b := by
+    rcases Ssep.win_xp with h | h
+    · exact Or.inl h
+    · exact Or.inr (by omega)
+  have hnxp : S.b + 64 * blocks ≤ S.nxp ∨ S.nxp + 8 ≤ S.b := Ssep.win_nxp
+  have hxc : S.b + 64 * blocks ≤ S.xcarry ∨ S.xcarry + 16 ≤ S.b := Ssep.win_xc
+  exact (escapeReadBytes hesc hxp hnxp hxc).trans hwin
+
+/-- The staged table survives the escape list's run. -/
+theorem gateSucc_table {S : PipelineLoopCarried} {blocks : Nat} {r2 r3 : Mem}
+    {xn0 : Nat}
+    (Ssep : StagedSep S blocks) (hbm : blockMax xn0 ≤ S.xpExtent)
+    (hesc : UnchangedOutside r2 r3
+      [(S.xp, 4 * blockMax xn0), (S.nxp, 8), (S.xcarry, 16)])
+    (htab : readBytes r2 S.tab 8192 = some pos8Table) :
+    readBytes r3 S.tab 8192 = some pos8Table := by
+  have hxp : S.tab + 8192 ≤ S.xp ∨ S.xp + 4 * blockMax xn0 ≤ S.tab := by
+    rcases Ssep.tab_xp with h | h
+    · exact Or.inl h
+    · exact Or.inr (by omega)
+  exact (escapeReadBytes hesc hxp Ssep.tab_nxp Ssep.tab_xc).trans htab
+
+/-- The mask unit's carry slot survives the escape list's run. -/
+theorem gateSucc_scSlot {S : PipelineLoopCarried} {blocks : Nat} {r2 r3 : Mem}
+    {xn0 : Nat} {op pp ins : Bool}
+    (Ssep : StagedSep S blocks) (hbm : blockMax xn0 ≤ S.xpExtent)
+    (hesc : UnchangedOutside r2 r3
+      [(S.xp, 4 * blockMax xn0), (S.nxp, 8), (S.xcarry, 16)])
+    (hsc : readBytes r2 S.sc 24 = some (carrySlot op pp ins)) :
+    readBytes r3 S.sc 24 = some (carrySlot op pp ins) := by
+  have hxp : S.sc + 24 ≤ S.xp ∨ S.xp + 4 * blockMax xn0 ≤ S.sc := by
+    rcases Ssep.sc_xp with h | h
+    · exact Or.inl h
+    · exact Or.inr (by omega)
+  exact (escapeReadBytes hesc hxp Ssep.sc_nxp Ssep.sc_xc).trans hsc
+
+/-- The staged block's two halves survive the mask unit's stores, the body's own
+store and the entry emitter's writes, at the index's document offset. -/
+theorem gateBlock_at {S : PipelineLoopCarried} {blocks : Nat} {s r1 r2 : Mem}
+    {ext : Nat} {bs : List UInt8} {lo hi : Block32}
+    (Ssep : StagedSep S blocks) (hbs : bs.length = 8)
+    (hext : ext ≤ S.k0 + 64 * blocks + 9) (hilt : S.i < blocks)
+    (hmask : ∀ x, ¬ (S.sc ≤ x ∧ x < S.sc + 24) →
+      ¬ (S.maskSlot ≤ x ∧ x < S.maskSlot + 48) → readByte r1 x = readByte s x)
+    (hentry : ∀ x, x < S.ep ∨ S.ep + 4 * ext ≤ x →
+      readByte r2 x = readByte (writeBytes r1 S.entw bs) x)
+    (hblk : readBytes s (S.b + 64 * S.i) 64 = some (block64 lo hi)) :
+    readBytes r2 (S.b + 64 * S.i) 64 = some (block64 lo hi) := by
+  have hsc := disjoint_of_sub (a' := S.b + 64 * S.i) (n' := 64) (by omega) (by omega)
+    Ssep.win_sc
+  have hmk := disjoint_of_sub (a' := S.b + 64 * S.i) (n' := 64) (by omega) (by omega)
+    Ssep.win_mk
+  have hep : S.b + 64 * S.i + 64 ≤ S.ep ∨ S.ep + 4 * ext ≤ S.b + 64 * S.i := by
+    rcases Ssep.win_ep with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by omega)
+  have hew : S.b + 64 * S.i + 64 ≤ S.entw ∨ S.entw + bs.length ≤ S.b + 64 * S.i := by
+    rcases Ssep.win_ent with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by rw [hbs]; omega)
+  rw [readBytes_mask_store_entry_of_disj hmask hentry hsc hmk hep hew, hblk]
+
+/-- **The escape list's call at the pipeline's block.**  The record's `pre` is
+`escapePre_of_staged_window` at the three words the arm loaded, and its `post` is
+destructured to the four facts the successor reads: the advanced count, the
+outgoing pair, the capacity at the block's own extent, and the exclusion.
+
+The post names its own classifier state, which need not be the mask unit's; what
+the successor needs is not the state but the outgoing *parity*, and that is pinned
+by the pair the two records both read — the post's incoming `carryPair` and the
+caller's are the same sixteen bytes, so `pair_flags` makes their flags one pair
+and `carry64_oddRun_congr` carries the equality through the block.  That is the
+`opened = prevb ∧ ppar = prevs` conjunct the invariant carries, used where it is
+needed rather than assumed into the records. -/
+theorem escapeCall_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) {blocks : Nat} {S : PipelineLoopCarried}
+    {r2 : CallOutcome} {lo hi : Block32} {stm : ClassState}
+    {w5 w6 w7 : BitVec 64}
+    (hcap : 64 * blocks + 63 < 2 ^ 32)
+    (hiw : S.iw = BitVec.ofNat 64 S.i) (hilt : S.i < blocks)
+    (hblk : readBytes r2.mem (base + blockAddr (BitVec.ofNat 64 S.i)) 64 =
+      some (block64 lo hi))
+    (hbs : w5 = specBackslash64 lo hi stm)
+    (hctl : w6 = specControl64 lo hi stm)
+    (him : w7 = specInString64 lo hi stm)
+    (hcarry : carryPair r2.mem S.xcarry stm S.prevb S.prevs)
+    (hcount : readBytes r2.mem S.nxp 8 = some (wordBytes 8 S.xn))
+    (hxn0 : S.xn < 2 ^ 63)
+    (hdCount : S.nxp + 8 ≤ S.xp ∨ S.xp + 4 * blockMax S.xn ≤ S.nxp)
+    (hdCarry : S.xcarry + 16 ≤ S.nxp ∨ S.nxp + 8 ≤ S.xcarry)
+    (hdStream : S.xcarry + 16 ≤ S.xp ∨ S.xp + 4 * blockMax S.xn ≤ S.xcarry)
+    (hhas : HasBytes r2.mem S.xp (4 * blockMax S.xn)) :
+    ∃ (r3 : CallOutcome) (ste : ClassState) (len : Nat),
+      pipelineCalls tab base s2 escapeListSym
+        [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 S.iw, .ptr S.xp, .ptr S.nxp,
+         .ptr S.xcarry] r2.mem r2.next = some r3 ∧
+      readBytes r3.mem S.nxp 8 = some (wordBytes 8 (S.xn + len)) ∧
+      len ≤ 64 ∧
+      carryPair r3.mem S.xcarry ste (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun ∧
+      ste.oddRun = (carry64 lo hi stm).oddRun ∧
+      HasBytes r3.mem S.xp (4 * blockMax S.xn) ∧
+      UnchangedOutside r2.mem r3.mem
+        [(S.xp, 4 * blockMax S.xn), (S.nxp, 8), (S.xcarry, 16)] := by
+  have hi64 : S.i < 2 ^ 64 := by omega
+  have hcapArg : (BitVec.ofNat 64 S.i).toNat * 64 + 64 < 2 ^ 32 := by
+    rw [ofNat64_toNat hi64]
+    omega
+  have hpre : (Γ_escape_positions base escapePositionsBudget).pre
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 S.iw, .ptr S.xp, .ptr S.nxp,
+       .ptr S.xcarry] r2.mem r2.next := by
+    rw [hiw]
+    refine escapePre_of_staged_window base escapePositionsBudget
+      (next := r2.next) (m := S.i) (lo := lo) (hi := hi) (st := stm)
+      (prevb := S.prevb) (prevs := S.prevs) (xp := S.xp) (xn := S.nxp)
+      (carry := S.xcarry) (xn0 := S.xn) ?_ ?_ ?_ ?_ hcarry hcount hxn0 hdCount
+      hdCarry hdStream hhas hcapArg
+    · exact hblk
+    · exact hbs
+    · exact hctl
+    · exact him
+  obtain ⟨r3, hcall, hpost, -⟩ := units.escape _ r2.mem r2.next hpre
+  obtain ⟨xp', xn', carry', blk0', bs', ctl', im', lo', hi', st', prevb', prevs',
+    xn0', hargs, hblk', hbs', hctl', him', hcarry', hcount', hxn0', hcountOut,
+    -, hcarryOut, hhasOut, hframe⟩ := hpost
+  -- the seven arguments read back: an integer argument's injection survives as a
+  -- heterogeneous equality, its width equation having reduced to `True`
+  simp only [List.cons.injEq, List.nil_eq, Value.ptr.injEq, Value.int.injEq,
+    and_true, HEq] at hargs
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hargs
+  have hbsEq : bs' = w5 := (eq_of_heq h1.2).symm
+  have hctlEq : ctl' = w6 := (eq_of_heq h2.2).symm
+  have himEq : im' = w7 := (eq_of_heq h3.2).symm
+  have hblk0Eq : blk0' = BitVec.ofNat 64 S.i := by rw [← eq_of_heq h4.2, hiw]
+  have hxpEq : xp' = S.xp := h5.symm
+  have hxnEq : xn' = S.nxp := h6.symm
+  have hcarryAddrEq : carry' = S.xcarry := h7.symm
+  have hbsEq' : bs' = specBackslash64 lo hi stm := hbsEq.trans hbs
+  have hctlEq' : ctl' = specControl64 lo hi stm := hctlEq.trans hctl
+  have himEq' : im' = specInString64 lo hi stm := himEq.trans him
+  rw [hxpEq] at hframe hhasOut
+  rw [hxnEq] at hframe hcountOut
+  rw [hcarryAddrEq] at hframe hcarry' hcarryOut
+  -- the block's halves are the ones the mask unit's post named
+  have hblkEq : block64 lo' hi' = block64 lo hi := by
+    rw [hblk0Eq] at hblk'
+    rw [hblk'] at hblk
+    exact Option.some.inj hblk
+  obtain ⟨hlo, hhi⟩ := block64_inj hblkEq
+  rw [hlo, hhi] at hcarryOut hcountOut
+  -- the incoming pair is the caller's, so the two states' parities agree
+  have hpairEq : prevb' = S.prevb ∧ prevs' = S.prevs :=
+    pair_flags hcarry'.1 hcarry.1
+  have hstEq : st'.oddRun = stm.oddRun := by
+    rw [hcarry'.2, hcarry.2, hpairEq.1, hpairEq.2]
+  have hparity : (carry64 lo hi st').oddRun = (carry64 lo hi stm).oddRun :=
+    carry64_oddRun_congr hstEq
+  -- the count's representative is the caller's, so the extents agree
+  have hcntEq : xn0' = S.xn := by
+    have hbytes : wordBytes 8 xn0' = wordBytes 8 S.xn := by
+      rw [hxnEq, hcount] at hcount'
+      exact (Option.some.inj hcount').symm
+    exact natToBytes8_inj hxn0' (by omega) hbytes
+  rw [hcntEq] at hcountOut hhasOut hframe
+  -- the record's `31 < 32` witness is not the caller's; the lane is the same
+  have hfin : (⟨31, escapePositionsPost._proof_1⟩ : Fin 32) = ⟨31, by decide⟩ :=
+    Fin.ext rfl
+  rw [hfin] at hcarryOut
+  exact ⟨r3, carry64 lo hi st', _, by simpa only [hiw] using hcall, hcountOut,
+    escapePositionsFrom_length_le_block lo hi st', hcarryOut, hparity, hhasOut, hframe⟩
+
+/-! ### One gate-on iteration's calls, named one fact per field
+
+The two gate-on arms make the same five-step iteration: the mask unit at the
+block's staged address, the body's own store of the entry word, one of the two
+emitters at the slot it wrote, the three words the block loads back for its
+report, and the escape list at those words.  A successor's conjunct reads one of
+those facts, so the bundle is a structure with a field apiece rather than one
+conjunction: a field's name says which conjunct consumes it, and a change to one
+step of the iteration cannot silently renumber the rest. -/
+structure GateCalls (calls : Calls) (entrySym : String) (S : PipelineLoopCarried)
+    (blocks : Nat) (s : State) : Type where
+  /-- The block the iteration reads, as two halves.  Each field is declared on a
+  line of its own: a multi-name field group's later names leak into the next
+  field's type as binders, which silently turns a field into a function. -/
+  lo : Block32
+  hi : Block32
+  /-- The mask unit's incoming classifier state, and the escape list's outgoing
+  one: the two records name their own witnesses, and only the outgoing parity is
+  shared. -/
+  stm : ClassState
+  ste : ClassState
+  /-- The three calls' outcomes. -/
+  r1 : CallOutcome
+  r2 : CallOutcome
+  r3 : CallOutcome
+  /-- The entry emitter's count, the extent its record writes, and the block's own
+  number of escape positions: the two emitters reserve seven and eight entries, so
+  the extent is a field rather than a constant. -/
+  k' : Nat
+  entryExt : Nat
+  len : Nat
+  /-- The seven words the arm loads: the mask unit's four and the report's three,
+  the in-string word being read twice. -/
+  w1 : BitVec 64
+  w2 : BitVec 64
+  w3 : BitVec 64
+  w4 : BitVec 64
+  w5 : BitVec 64
+  w6 : BitVec 64
+  w7 : BitVec 64
+  /-- The mask unit's call at the block's staged address. -/
+  blockCall : calls JsonPipelineIR.masksSym
+    [.ptr (S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat), .ptr S.sc, .ptr S.maskSlot]
+    s.mem s.next = some r1
+  /-- Its frame: everything outside the two slots it writes. -/
+  blockFrame : ∀ x, ¬ (S.sc ≤ x ∧ x < S.sc + 24) →
+    ¬ (S.maskSlot ≤ x ∧ x < S.maskSlot + 48) → readByte r1.mem x = readByte s.mem x
+  /-- The four words the arm loads from the mask unit's post. -/
+  ld1 : readBytes r1.mem S.maskSlot 8 = some (natToBytes w1.toNat 8)
+  ld2 : readBytes r1.mem S.delim 8 = some (natToBytes w2.toNat 8)
+  ld3 : readBytes r1.mem S.inString 8 = some (natToBytes w3.toNat 8)
+  ld4 : readBytes r1.mem S.ws 8 = some (natToBytes w4.toNat 8)
+  /-- The slot's outgoing pair, which is the successor's mask carry. -/
+  scSlot : readBytes r1.mem S.sc 24 = some (carrySlot
+    (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun
+    (carry64 lo hi stm).inside)
+  /-- The entry emitter's call, after the body's own store. -/
+  entryCall : calls entrySym
+    [.ptr S.entw, .int 64 S.iw, .int 64 (1 : BitVec 64), .ptr S.ep, .int 64 S.kw]
+    (writeBytes r1.mem S.entw (natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8))
+    r1.next = some r2
+  /-- Its returned count. -/
+  entryRet : r2.ret = .int 64 (BitVec.ofNat 64 k')
+  /-- Its frame, at the extent its own record reserves for one block. -/
+  entryFrame : ∀ x, x < S.ep ∨ S.ep + 4 * entryExt ≤ x →
+    readByte r2.mem x = readByte (writeBytes r1.mem S.entw
+      (natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8)) x
+  /-- The extent sits inside the staged entry stream, so the frames compose. -/
+  entryExtLe : entryExt ≤ S.k0 + 64 * blocks + 9
+  /-- The count grows by at most one block's sixty-four lanes. -/
+  kgrow : k' ≤ S.k + 64
+  /-- The three words the escape list is called at, read after the emitter. -/
+  ld5 : readBytes r2.mem S.backslash 8 = some (natToBytes w5.toNat 8)
+  ld6 : readBytes r2.mem S.ctl 8 = some (natToBytes w6.toNat 8)
+  ld7 : readBytes r2.mem S.inString 8 = some (natToBytes w7.toNat 8)
+  /-- The escape list's call at those words and the arm's pointers. -/
+  escapeCall : calls JsonPipelineIR.escapeListSym
+    [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 S.iw, .ptr S.xp, .ptr S.nxp,
+     .ptr S.xcarry] r2.mem r2.next = some r3
+  /-- Its exclusion, at the block's own extent: the frame the successor's static
+  regions survive by. -/
+  escapeFrame : UnchangedOutside r2.mem r3.mem
+    [(S.xp, 4 * blockMax S.xn), (S.nxp, 8), (S.xcarry, 16)]
+  /-- The count it leaves, advanced by the block's positions. -/
+  escapeCount : readBytes r3.mem S.nxp 8 = some (wordBytes 8 (S.xn + len))
+  /-- A block's positions number at most sixty-four, so the count's growth bound
+  survives the list as it survived the emitter. -/
+  lenLe : len ≤ 64
+  /-- The outgoing carry pair, at the state the list names. -/
+  escapeCarry : carryPair r3.mem S.xcarry ste
+    (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun
+  /-- The list's own state leaves the block with the mask unit's outgoing parity:
+  the two records' incoming pairs are the same sixteen bytes. -/
+  parity : ste.oddRun = (carry64 lo hi stm).oddRun
+  /-- The staged stream's whole capacity, carried through the list. -/
+  escapeCapacity : HasBytes r3.mem S.xp (4 * S.xpExtent)
+  /-- The window, the table and the mask unit's carry slot, untouched. -/
+  window : readBytes r3.mem S.b (64 * blocks) = some S.doc
+  table : readBytes r3.mem S.tab 8192 = some pos8Table
+  scSlot3 : readBytes r3.mem S.sc 24 = some (carrySlot
+    (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun
+    (carry64 lo hi stm).inside)
+
+/-- **One gate-on iteration after its entry emitter.**  The loads, the escape
+list's call and what survives it are the same at both gate-on arms; the arms
+differ in which emitter ran, at which symbol and at which reserve.  So the trace
+after the emitter takes the emitter's three facts — its call, its returned count
+and its frame at its own extent — and derives the rest once.
+
+Two identifications are the work rather than the calls: the block the list is
+given is the one the mask unit's post named (`gateBlock_at` at the index's
+offset, then `block64_inj`, since the record reads the block itself rather than
+taking the halves), and the list's outgoing parity is the mask unit's
+(`escapeCall_at` reads the two records' shared incoming pair). -/
+theorem gateCalls_after_entry (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) {blocks : Nat} {s : State}
+    {S : PipelineLoopCarried} {entrySym : String}
+    {lo hi : Block32} {stm : ClassState} {r1 r2 : CallOutcome}
+    {k' entryExt : Nat}
+    (hcap : 64 * blocks + 63 < 2 ^ 32)
+    (hiw : S.iw = BitVec.ofNat 64 S.i) (hilt : S.i < blocks)
+    (hib : S.i + 1 ≤ blocks) (hb : S.b = base)
+    (hwin : readBytes s.mem S.b (64 * blocks) = some S.doc)
+    (hsc : readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside))
+    (hcarry : carryPair s.mem S.xcarry S.stE S.prevb S.prevs)
+    (hflags : S.opened = S.prevb ∧ S.ppar = S.prevs)
+    (hinS : S.inString = S.maskSlot + 16) (hbsS : S.backslash = S.maskSlot + 32)
+    (hctl : S.ctl = S.maskSlot + 40)
+    (Ssep : StagedSep S blocks)
+    (htab : readBytes s.mem S.tab 8192 = some pos8Table)
+    (hkgrow : S.k ≤ S.k0 + 64 * S.i) (hxngrow : S.xn ≤ S.xn0 + 64 * S.i)
+    (hroomk : cursorRoom S.k (blocks - S.i) 9)
+    (hroomxn : cursorRoom S.xn (blocks - S.i) 9)
+    (hcnt : readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn))
+    (hhas : HasBytes s.mem S.xp (4 * S.xpExtent))
+    (hxpExtent : S.xpExtent = S.xn0 + 64 * blocks + 8)
+    (hcall1 : (pipelineCalls tab base s2) JsonPipelineIR.masksSym
+      [.ptr (S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat), .ptr S.sc, .ptr S.maskSlot]
+      s.mem s.next = some r1)
+    (hmaskFrame : ∀ x, ¬ (S.sc ≤ x ∧ x < S.sc + 24) →
+      ¬ (S.maskSlot ≤ x ∧ x < S.maskSlot + 48) → readByte r1.mem x = readByte s.mem x)
+    (hw1 : readBytes r1.mem S.maskSlot 8 = some (natToBytes (specQuote64 lo hi stm).toNat 8))
+    (hw2 : readBytes r1.mem S.delim 8 = some (natToBytes (specDelimiter64 lo hi stm).toNat 8))
+    (hw3 : readBytes r1.mem S.inString 8 = some (natToBytes (specInString64 lo hi stm).toNat 8))
+    (hw4 : readBytes r1.mem S.ws 8 = some (natToBytes (specSpace64 lo hi stm).toNat 8))
+    (hw5 : readBytes r1.mem S.backslash 8 = some (natToBytes (specBackslash64 lo hi stm).toNat 8))
+    (hw6 : readBytes r1.mem S.ctl 8 = some (natToBytes (specControl64 lo hi stm).toNat 8))
+    (hscPost : readBytes r1.mem S.sc 24 = some (carrySlot
+      (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun
+      (carry64 lo hi stm).inside))
+    (hparM : stm.oddRun = (S.opened && S.ppar))
+    (hblkAt : readBytes s.mem (S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat) 64 =
+      some (block64 lo hi))
+    (hentryCall : (pipelineCalls tab base s2) entrySym
+      [.ptr S.entw, .int 64 S.iw, .int 64 (1 : BitVec 64), .ptr S.ep, .int 64 S.kw]
+      (writeBytes r1.mem S.entw (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8)) r1.next = some r2)
+    (hentryRet : r2.ret = .int 64 (BitVec.ofNat 64 k'))
+    (hentFrame : ∀ x, x < S.ep ∨ S.ep + 4 * entryExt ≤ x →
+      readByte r2.mem x = readByte (writeBytes r1.mem S.entw
+        (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+          (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)) x)
+    (hkgrow' : k' ≤ S.k + 64)
+    (hentExtLe : entryExt ≤ S.k0 + 64 * blocks + 9) :
+    Nonempty (GateCalls (pipelineCalls tab base s2) entrySym S blocks s) := by
+  have hbslen : (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+      (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+      (specSpace64 lo hi stm) S.sw).toNat 8).length = 8 := natToBytes_length ..
+  have hstored : readBytes (writeBytes r1.mem S.entw
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)) S.entw 8 =
+      some (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8) := by
+    have h := readBytes_writeBytes_same r1.mem
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)
+      (addr := S.entw)
+    rw [hbslen] at h
+    exact h
+  have htab' : readBytes (writeBytes r1.mem S.entw
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)) S.tab 8192 =
+      some pos8Table := by
+    have hew : S.tab + 8192 ≤ S.entw ∨
+        S.entw + (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+          (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+          (specSpace64 lo hi stm) S.sw).toNat 8).length ≤ S.tab := by
+      rcases Ssep.tab_ent with h | h
+      · exact Or.inl h
+      · exact Or.inr (by rw [hbslen]; exact h)
+    refine Eq.trans ?_ htab
+    exact readBytes_of_readByte_eq (fun k hk => by
+      rw [readByte_writeBytes_outside r1.mem _ (by
+            rcases hew with h | h
+            · exact Or.inl (by omega)
+            · exact Or.inr (by omega)),
+        hmaskFrame _ (not_inside_of_disjoint Ssep.tab_sc hk)
+          (not_inside_of_disjoint Ssep.tab_mk hk)])
+  have hep5 : S.backslash + 8 ≤ S.ep ∨ S.ep + 4 * (entryExt) ≤ S.backslash := by
+    rcases Ssep.mk_ep with h | h
+    · omega
+    · exact Or.inr (by omega)
+  have hew5 : S.backslash + 8 ≤ S.entw ∨
+      S.entw + (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8).length ≤ S.backslash := by
+    rcases Ssep.mk_ent with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by rw [hbslen]; omega)
+  have hld5 : readBytes r2.mem S.backslash 8 =
+      some (natToBytes (specBackslash64 lo hi stm).toNat 8) := by
+    rw [readBytes_entry_frame (ext := entryExt) hentFrame hep5 hew5, hw5]
+  have hep6 : S.ctl + 8 ≤ S.ep ∨ S.ep + 4 * (entryExt) ≤ S.ctl := by
+    rcases Ssep.mk_ep with h | h
+    · omega
+    · exact Or.inr (by omega)
+  have hew6 : S.ctl + 8 ≤ S.entw ∨
+      S.entw + (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8).length ≤ S.ctl := by
+    rcases Ssep.mk_ent with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by rw [hbslen]; omega)
+  have hld6 : readBytes r2.mem S.ctl 8 =
+      some (natToBytes (specControl64 lo hi stm).toNat 8) := by
+    rw [readBytes_entry_frame (ext := entryExt) hentFrame hep6 hew6, hw6]
+  have hep7 : S.inString + 8 ≤ S.ep ∨ S.ep + 4 * (entryExt) ≤ S.inString := by
+    rcases Ssep.mk_ep with h | h
+    · omega
+    · exact Or.inr (by omega)
+  have hew7 : S.inString + 8 ≤ S.entw ∨
+      S.entw + (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8).length ≤ S.inString := by
+    rcases Ssep.mk_ent with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by rw [hbslen]; omega)
+  have hld7 : readBytes r2.mem S.inString 8 =
+      some (natToBytes (specInString64 lo hi stm).toNat 8) := by
+    rw [readBytes_entry_frame (ext := entryExt) hentFrame hep7 hew7, hw3]
+  -- the block, at the offset the record reads it at
+  have hblkR2 : readBytes r2.mem (S.b + 64 * S.i) 64 = some (block64 lo hi) :=
+    gateBlock_at (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := entryExt)
+      (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8)
+      Ssep hbslen hentExtLe hilt hmaskFrame hentFrame (by
+        have haddr : S.b + (BitVec.signExtend 64 (sh6 S.iw)).toNat = S.b + 64 * S.i := by
+          rw [hiw, sh6_ofNat_toNat (by omega)]
+        rw [← haddr]
+        exact hblkAt)
+  have hblkBase : readBytes r2.mem (base + blockAddr (BitVec.ofNat 64 S.i)) 64 =
+      some (block64 lo hi) := by
+    have hba : blockAddr (BitVec.ofNat 64 S.i) = 64 * S.i := by
+      unfold blockAddr
+      rw [ofNat64_toNat (by omega)]
+      omega
+    rw [← hb, hba]
+    exact hblkR2
+  -- the pair the list reads is the one the invariant carries, at the memory the
+  -- emitter left: its sixteen bytes are outside every store of the iteration
+  have hcarryR2 : carryPair r2.mem S.xcarry stm S.prevb S.prevs := by
+    have hxcBytes : readBytes r2.mem S.xcarry 16 =
+        some (flagBytes S.prevb ++ flagBytes S.prevs) := by
+      have hep : S.xcarry + 16 ≤ S.ep ∨ S.ep + 4 * (entryExt) ≤ S.xcarry := by
+        rcases Ssep.ep_xc with h | h
+        · exact Or.inr (by omega)
+        · exact Or.inl h
+      have hew : S.xcarry + 16 ≤ S.entw ∨
+          S.entw + (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+            (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+            (specSpace64 lo hi stm) S.sw).toNat 8).length ≤ S.xcarry := by
+        rcases Ssep.ent_xc with h | h
+        · exact Or.inr (by rw [hbslen]; omega)
+        · exact Or.inl h
+      rw [readBytes_mask_store_entry_of_disj hmaskFrame hentFrame
+        (sep_comm Ssep.sc_xc) (sep_comm Ssep.mk_xc) hep hew, hcarry.1]
+    refine ⟨hxcBytes, ?_⟩
+    rw [hparM, hflags.1, hflags.2]
+  -- the count's room, and the block's extent inside the staged capacity
+  have hxn0 : S.xn < 2 ^ 63 := by
+    have h := hroomxn
+    unfold cursorRoom at h
+    omega
+  have hbm' : S.xn + 72 ≤ S.xpExtent := by
+    have h := hxngrow
+    rw [hxpExtent]
+    omega
+  have hbm : blockMax S.xn ≤ S.xpExtent := by
+    unfold blockMax
+    exact hbm'
+  have hdCount : S.nxp + 8 ≤ S.xp ∨ S.xp + 4 * blockMax S.xn ≤ S.nxp := by
+    rcases Ssep.nxp_xp with h | h
+    · exact Or.inl h
+    · exact Or.inr (by unfold blockMax batchReserve; omega)
+  have hdCarry : S.xcarry + 16 ≤ S.nxp ∨ S.nxp + 8 ≤ S.xcarry := by
+    rcases Ssep.nxp_xc with h | h
+    · exact Or.inr h
+    · exact Or.inl h
+  have hdStream : S.xcarry + 16 ≤ S.xp ∨ S.xp + 4 * blockMax S.xn ≤ S.xcarry := by
+    rcases Ssep.xp_xc with h | h
+    · exact Or.inr (by unfold blockMax batchReserve; omega)
+    · exact Or.inl h
+  have hhasR2 : HasBytes r2.mem S.xp (4 * blockMax S.xn) := by
+    refine hasBytes_of_le (a := S.xp) (K := 4 * S.xpExtent)
+      (usUsSucc_capacity (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+        (r2 := r2.mem) (ext := entryExt)
+        (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+          (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+          (specSpace64 lo hi stm) S.sw).toNat 8)
+        Ssep hbslen hentExtLe hmaskFrame hentFrame hhas) ?_
+    unfold blockMax batchReserve
+    omega
+  have hcnt2 : readBytes r2.mem S.nxp 8 = some (wordBytes 8 S.xn) :=
+    usUsSucc_count (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := entryExt)
+      (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8)
+      Ssep hbslen hentExtLe hmaskFrame hentFrame hcnt
+  obtain ⟨r3, ste, len, hcall3, hescCount, hlen, hescCarry, hparity, hhasPost,
+    hframe⟩ :=
+    escapeCall_at (tab := tab) (base := base) (s2 := s2) (Γ2 := Γ2) units
+      (S := S) (r2 := r2) (lo := lo) (hi := hi) (stm := stm)
+      (w5 := specBackslash64 lo hi stm) (w6 := specControl64 lo hi stm)
+      (w7 := specInString64 lo hi stm)
+      hcap hiw hilt hblkBase rfl rfl rfl hcarryR2 hcnt2 hxn0 hdCount hdCarry hdStream
+      hhasR2
+  -- what survives the list: the window, the table, the mask slot and the stream
+  have hwin2 : readBytes r2.mem S.b (64 * blocks) = some S.doc :=
+    usUsSucc_window (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := entryExt)
+      (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8)
+      Ssep hbslen hentExtLe hmaskFrame hentFrame hwin
+  have htab2 : readBytes r2.mem S.tab 8192 = some pos8Table :=
+    usUsSucc_table (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := entryExt)
+      (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8)
+      Ssep hbslen hentExtLe hmaskFrame hentFrame htab
+  have hsc2 : readBytes r2.mem S.sc 24 = some (carrySlot
+      (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun
+      (carry64 lo hi stm).inside) :=
+    usUsSucc_carrySlot (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := entryExt)
+      (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8)
+      (op := IsBackslashB (hi ⟨31, by decide⟩)) (p := (carry64 lo hi stm).oddRun)
+      (ins := (carry64 lo hi stm).inside)
+      Ssep hbslen hentExtLe hentFrame hscPost
+  refine ⟨{
+    lo := lo, hi := hi, stm := stm, ste := ste, r1 := r1, r2 := r2, r3 := r3,
+    k' := k', entryExt := entryExt, len := len,
+    w1 := specQuote64 lo hi stm, w2 := specDelimiter64 lo hi stm,
+    w3 := specInString64 lo hi stm, w4 := specSpace64 lo hi stm,
+    w5 := specBackslash64 lo hi stm, w6 := specControl64 lo hi stm,
+    w7 := specInString64 lo hi stm,
+    blockCall := hcall1, blockFrame := hmaskFrame, ld1 := hw1, ld2 := hw2,
+    ld3 := hw3, ld4 := hw4, scSlot := hscPost, entryCall := hentryCall,
+    entryRet := hentryRet, entryFrame := hentFrame, entryExtLe := hentExtLe,
+    kgrow := hkgrow', ld5 := hld5, ld6 := hld6, ld7 := hld7,
+    escapeCall := hcall3, escapeFrame := hframe,
+    escapeCount := hescCount, lenLe := hlen, escapeCarry := hescCarry,
+    parity := hparity, escapeCapacity := ?_, window := ?_, table := ?_,
+    scSlot3 := ?_ }⟩
+  · -- the staged capacity, extended to the call's own extent
+    refine escape_capacity (r2 := r2.mem) (r3 := r3.mem) (xp := S.xp)
+      (xn := S.nxp) (xcarry := S.xcarry) (xn0 := S.xn)
+      (extent := S.xpExtent) hframe hhasPost ?_ hbm ?_ ?_
+    · exact usUsSucc_capacity (S := S) (blocks := blocks) (s := s.mem)
+        (r1 := r1.mem) (r2 := r2.mem) (ext := entryExt)
+        (bs := natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+          (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+          (specSpace64 lo hi stm) S.sw).toNat 8)
+        Ssep hbslen hentExtLe hmaskFrame hentFrame hhas
+    · rcases Ssep.nxp_xp with h | h
+      · exact Or.inr h
+      · exact Or.inl h
+    · rcases Ssep.xp_xc with h | h
+      · exact Or.inl h
+      · exact Or.inr h
+  · exact gateSucc_window (S := S) (blocks := blocks) Ssep hbm hframe hwin2
+  · exact gateSucc_table (S := S) (blocks := blocks) Ssep hbm hframe htab2
+  · exact gateSucc_scSlot (S := S) (blocks := blocks) Ssep hbm hframe hsc2
+
+  -- hhbm is the extent hypothesis the three static survivors take
+
+/-- **One POS8-with-gate iteration's calls.**  The mask unit at the block's staged
+address, the body's own store of the entry word, the POS8 emitter at the slot the
+body wrote, and then `gateCalls_after_entry` at the emitter's facts. -/
+theorem us_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) {blocks : Nat} {s : State}
+    {S : PipelineLoopCarried}
+    (hcap : 64 * blocks + 63 < 2 ^ 32)
+    (hiw : S.iw = BitVec.ofNat 64 S.i) (hilt : S.i < blocks)
+    (hib : S.i + 1 ≤ blocks) (hb : S.b = base)
+    (hwin : readBytes s.mem S.b (64 * blocks) = some S.doc)
+    (hsc : readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside))
+    (hcarry : carryPair s.mem S.xcarry S.stE S.prevb S.prevs)
+    (hflags : S.opened = S.prevb ∧ S.ppar = S.prevs)
+    (hdelim : S.delim = S.maskSlot + 8) (hinS : S.inString = S.maskSlot + 16)
+    (hwsS : S.ws = S.maskSlot + 24) (hbsS : S.backslash = S.maskSlot + 32)
+    (hctl : S.ctl = S.maskSlot + 40) (Ssep : StagedSep S blocks)
+    (htabEq : S.tab = tab)
+    (htab : readBytes s.mem S.tab 8192 = some pos8Table)
+    (hkw : S.kw = BitVec.ofNat 64 S.k)
+    (hkgrow : S.k ≤ S.k0 + 64 * S.i) (hxngrow : S.xn ≤ S.xn0 + 64 * S.i)
+    (hroomk : cursorRoom S.k (blocks - S.i) 9)
+    (hroomxn : cursorRoom S.xn (blocks - S.i) 9)
+    (hcnt : readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn))
+    (hhas : HasBytes s.mem S.xp (4 * S.xpExtent))
+    (hxpExtent : S.xpExtent = S.xn0 + 64 * blocks + 8) :
+    Nonempty (GateCalls (pipelineCalls tab base s2) JsonPipelineIR.entryPos8Sym S blocks s) := by
+  have hdoc : S.doc.length = 64 * blocks := by
+    have := readBytes_len hwin
+    simpa using this
+  have hdist : (S.b + 64 * S.i + 64 ≤ S.sc ∨ S.sc + 24 ≤ S.b + 64 * S.i) ∧
+      (S.b + 64 * S.i + 64 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.b + 64 * S.i) ∧
+      (S.sc + 24 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.sc) :=
+    ⟨disjoint_of_sub (a' := S.b + 64 * S.i) (n' := 64) (by omega) (by omega) Ssep.win_sc,
+     disjoint_of_sub (a' := S.b + 64 * S.i) (n' := 64) (by omega) (by omega) Ssep.win_mk,
+     Ssep.sc_mk⟩
+  obtain ⟨lo, hi, stm, r1, hcall1, hw1, hw2, hw3, hw4, hw5, hw6, hscPost, hmaskFrame,
+    hparM, hblkAt⟩ :=
+    maskCall_at tab base s2 Γ2 units (S := S) hwin hsc hiw hilt hcap hdoc hdelim hinS
+      hwsS hbsS hctl hdist
+  have hbslen : (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+      (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+      (specSpace64 lo hi stm) S.sw).toNat 8).length = 8 := natToBytes_length ..
+  have hstored : readBytes (writeBytes r1.mem S.entw
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)) S.entw 8 =
+      some (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8) := by
+    have h := readBytes_writeBytes_same r1.mem
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)
+      (addr := S.entw)
+    rw [hbslen] at h
+    exact h
+  have htab' : readBytes (writeBytes r1.mem S.entw
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)) S.tab 8192 =
+      some pos8Table := by
+    have hew : S.tab + 8192 ≤ S.entw ∨
+        S.entw + (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+          (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+          (specSpace64 lo hi stm) S.sw).toNat 8).length ≤ S.tab := by
+      rcases Ssep.tab_ent with h | h
+      · exact Or.inl h
+      · exact Or.inr (by rw [hbslen]; exact h)
+    refine Eq.trans ?_ htab
+    exact readBytes_of_readByte_eq (fun k hk => by
+      rw [readByte_writeBytes_outside r1.mem _ (by
+            rcases hew with h | h
+            · exact Or.inl (by omega)
+            · exact Or.inr (by omega)),
+        hmaskFrame _ (not_inside_of_disjoint Ssep.tab_sc hk)
+          (not_inside_of_disjoint Ssep.tab_mk hk)])
+  have hk64 : S.k < 2 ^ 64 := by
+    have h := hroomk
+    unfold cursorRoom at h
+    omega
+  have hsepWord : S.entw + 8 ≤ S.ep ∨ S.ep + 4 * (S.k + 64 + 8) ≤ S.entw := by
+    rcases Ssep.ent_ep with h | h
+    · exact Or.inl h
+    · exact Or.inr (by omega)
+  have hsepTab : S.tab + 8192 ≤ S.ep ∨ S.ep + 4 * (S.k + 64 + 8) ≤ S.tab := by
+    rcases Ssep.tab_ep with h | h
+    · exact Or.inl h
+    · exact Or.inr (by omega)
+  have hroom : S.k + 64 + 9 < 2 ^ 63 := by
+    have h := hroomk
+    unfold cursorRoom at h
+    omega
+  obtain ⟨r2, k', o, hcall2, hret2, hentFrame, ho, hk'le⟩ :=
+    pos8Call_at tab base s2 Γ2 units (S := S) (lo := lo) (hi := hi) (st := stm)
+      htabEq hstored htab' hiw hib hcap hkw hk64 hsepWord hsepTab hroom
+  rw [ho] at hentFrame
+  have hextK : k' + 8 ≤ S.k0 + 64 * blocks + 9 := by omega
+  exact gateCalls_after_entry tab base s2 Γ2 units (S := S)
+    (entrySym := JsonPipelineIR.entryPos8Sym) (lo := lo) (hi := hi) (stm := stm)
+    (r1 := r1) (r2 := r2) (k' := k') (entryExt := k' + 8)
+    hcap hiw hilt hib hb hwin hsc hcarry hflags hinS hbsS hctl Ssep htab hkgrow
+    hxngrow hroomk hroomxn hcnt hhas hxpExtent hcall1 hmaskFrame hw1 hw2 hw3 hw4 hw5
+    hw6 hscPost hparM hblkAt hcall2 hret2 hentFrame hk'le hextK
+
+/-- **One B8-with-gate iteration's calls.**  The same iteration at the B8 emitter,
+whose record reserves seven entries rather than eight; the entry call is the only
+difference, and the rest is `gateCalls_after_entry`. -/
+theorem body_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) {blocks : Nat} {s : State}
+    {S : PipelineLoopCarried}
+    (hcap : 64 * blocks + 63 < 2 ^ 32)
+    (hiw : S.iw = BitVec.ofNat 64 S.i) (hilt : S.i < blocks)
+    (hib : S.i + 1 ≤ blocks) (hb : S.b = base)
+    (hwin : readBytes s.mem S.b (64 * blocks) = some S.doc)
+    (hsc : readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside))
+    (hcarry : carryPair s.mem S.xcarry S.stE S.prevb S.prevs)
+    (hflags : S.opened = S.prevb ∧ S.ppar = S.prevs)
+    (hdelim : S.delim = S.maskSlot + 8) (hinS : S.inString = S.maskSlot + 16)
+    (hwsS : S.ws = S.maskSlot + 24) (hbsS : S.backslash = S.maskSlot + 32)
+    (hctl : S.ctl = S.maskSlot + 40) (Ssep : StagedSep S blocks)
+    (htab : readBytes s.mem S.tab 8192 = some pos8Table)
+    (hkw : S.kw = BitVec.ofNat 64 S.k)
+    (hkgrow : S.k ≤ S.k0 + 64 * S.i) (hxngrow : S.xn ≤ S.xn0 + 64 * S.i)
+    (hroomk : cursorRoom S.k (blocks - S.i) 9)
+    (hroomxn : cursorRoom S.xn (blocks - S.i) 9)
+    (hcnt : readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn))
+    (hhas : HasBytes s.mem S.xp (4 * S.xpExtent))
+    (hxpExtent : S.xpExtent = S.xn0 + 64 * blocks + 8) :
+    Nonempty (GateCalls (pipelineCalls tab base s2) JsonPipelineIR.entryB8Sym S blocks s) := by
+  have hdoc : S.doc.length = 64 * blocks := by
+    have := readBytes_len hwin
+    simpa using this
+  have hdist : (S.b + 64 * S.i + 64 ≤ S.sc ∨ S.sc + 24 ≤ S.b + 64 * S.i) ∧
+      (S.b + 64 * S.i + 64 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.b + 64 * S.i) ∧
+      (S.sc + 24 ≤ S.maskSlot ∨ S.maskSlot + 48 ≤ S.sc) :=
+    ⟨disjoint_of_sub (a' := S.b + 64 * S.i) (n' := 64) (by omega) (by omega) Ssep.win_sc,
+     disjoint_of_sub (a' := S.b + 64 * S.i) (n' := 64) (by omega) (by omega) Ssep.win_mk,
+     Ssep.sc_mk⟩
+  obtain ⟨lo, hi, stm, r1, hcall1, hw1, hw2, hw3, hw4, hw5, hw6, hscPost, hmaskFrame,
+    hparM, hblkAt⟩ :=
+    maskCall_at tab base s2 Γ2 units (S := S) hwin hsc hiw hilt hcap hdoc hdelim hinS
+      hwsS hbsS hctl hdist
+  have hbslen : (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+      (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+      (specSpace64 lo hi stm) S.sw).toNat 8).length = 8 := natToBytes_length ..
+  have hstored : readBytes (writeBytes r1.mem S.entw
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)) S.entw 8 =
+      some (natToBytes (vent S.n S.iw (specQuote64 lo hi stm)
+        (specDelimiter64 lo hi stm) (specInString64 lo hi stm)
+        (specSpace64 lo hi stm) S.sw).toNat 8) := by
+    have h := readBytes_writeBytes_same r1.mem
+      (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
+        (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw).toNat 8)
+      (addr := S.entw)
+    rw [hbslen] at h
+    exact h
+  have hk64 : S.k < 2 ^ 64 := by
+    have h := hroomk
+    unfold cursorRoom at h
+    omega
+  have hsepWord : S.entw + 8 ≤ S.ep ∨ S.ep + 4 * (S.k + 64 + 8) ≤ S.entw := by
+    rcases Ssep.ent_ep with h | h
+    · exact Or.inl h
+    · exact Or.inr (by omega)
+  have hroom : S.k + 64 + 9 < 2 ^ 63 := by
+    have h := hroomk
+    unfold cursorRoom at h
+    omega
+  obtain ⟨r2, k', o, hcall2, hret2, hentFrame, ho, hk'le⟩ :=
+    b8Call_at tab base s2 Γ2 units (S := S) (lo := lo) (hi := hi) (st := stm)
+      hstored hiw hib hcap hkw hk64 hsepWord hroom
+  rw [ho] at hentFrame
+  have hextK : k' + 7 ≤ S.k0 + 64 * blocks + 9 := by omega
+  exact gateCalls_after_entry tab base s2 Γ2 units (S := S)
+    (entrySym := JsonPipelineIR.entryB8Sym) (lo := lo) (hi := hi) (stm := stm)
+    (r1 := r1) (r2 := r2) (k' := k') (entryExt := k' + 7)
+    hcap hiw hilt hib hb hwin hsc hcarry hflags hinS hbsS hctl Ssep htab hkgrow
+    hxngrow hroomk hroomxn hcnt hhas hxpExtent hcall1 hmaskFrame hw1 hw2 hw3 hw4 hw5
+    hw6 hscPost hparM hblkAt hcall2 hret2 hentFrame hk'le hextK
+
+/-! ### The gate-on successors, and their cell half
+
+The two gate-on arms leave a carried state with the four conjuncts the earlier two
+do not carry: the escape list's count, its outgoing state, and the pair the two
+slots agree on.  The mask unit's pair and the list's are separate arguments
+because they come from separate posts: `opened`/`ppar` are the `%sc` slot's, and
+`prevb`/`prevs` the `%xcarry` slot's, and the invariant's `opened = prevb` clause
+is where the two are proved one pair. -/
+
+/-- The carried state a `for.body.us` iteration leaves. -/
+def usSucc (S : PipelineLoopCarried) (ins bm pm : Bool) (k' xn : Nat)
+    (sw : BitVec 64) (stE : ClassState) (eb ep : Bool) : PipelineLoopCarried :=
+  { S with arm := .pos8Gate, i := S.i + 1, iw := vinc S.iw, sw := sw, kw := BitVec.ofNat 64 k', stM := ⟨ins, bm && pm⟩, opened := bm, ppar := pm, inside := ins, k := k', xn := xn, stE := stE, prevb := eb, prevs := ep }
+
+/-- The carried state a `for.body` iteration leaves. -/
+def bodySucc (S : PipelineLoopCarried) (ins bm pm : Bool) (k' xn : Nat)
+    (sw : BitVec 64) (stE : ClassState) (eb ep : Bool) : PipelineLoopCarried :=
+  { S with arm := .b8Gate, i := S.i + 1, iw := vinc S.iw, sw := sw, kw := BitVec.ofNat 64 k', stM := ⟨ins, bm && pm⟩, opened := bm, ppar := pm, inside := ins, k := k', xn := xn, stE := stE, prevb := eb, prevs := ep }
+
+/-- The gate-on arm's outgoing builder holds a value for every cell the next
+iteration's incoming builder binds. -/
+theorem us_cells_agree' (env : Env) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 c21' inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (ret : Value)
+    (hret : ret = .int 64 c21') :
+    ∀ p ∈ [("%shr", .int 64 shr), ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp),
+           ("%xp", .ptr xp), ("%inc.us", .int 64 (vinc inc)),
+           ("%call21.us", .int 64 c21'),
+           ("%shr13.us", .int 64 (vshr13 w1 w2 w3 w4)), ("%ep", .ptr ep),
+           ("%entw", .ptr entw), ("%ctl", .ptr ctl), ("%backslash", .ptr backslash),
+           ("%ws", .ptr ws), ("%in_string", .ptr inString), ("%delim", .ptr delim),
+           ("%mk", .ptr mk), ("%sc", .ptr sc), ("%b", .ptr b),
+           ("%n", .int 64 n)],
+      lookupName (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 ret) p.1 = some p.2 := by
+  intro p hp
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals (try rw [hret])
+  all_goals block_lk
+
+/-- **The POS8-with-gate successor's agreement**, read back through `agreeOn_succ`. -/
+theorem usSucc_agree {S : PipelineLoopCarried} {e : State} {env : Env}
+    {k' : Nat} {w1 w2 w3 w4 w5 w6 w7 : BitVec 64} {ret : Value}
+    (hret : ret = .int 64 (BitVec.ofNat 64 k'))
+    (hag : State.AgreeOn (blockUses pUs)
+      (stateAt (usOut env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+        S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6
+        w7 ret) e) e) :
+    State.AgreeOn (blockUses pUs)
+      (stateAt (usIn e.env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+        S.ctl S.entw S.ep S.xp S.nxp S.xcarry (vshr13 w1 w2 w3 w4)
+        (BitVec.ofNat 64 k') (vinc S.iw) S.shr) e) e := by
+  refine agreeOn_succ (fun p hp => ?_) hag
+  exact us_cells_agree' env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+    S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw (BitVec.ofNat 64 k') S.iw S.shr
+    w1 w2 w3 w4 w5 w6 w7 ret hret p hp
+
+/-- The B8-with-gate arm's outgoing builder holds a value for every cell the next
+iteration's incoming builder binds. -/
+theorem body_cells_agree' (env : Env) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 c21' inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (ret : Value)
+    (hret : ret = .int 64 c21') :
+    ∀ p ∈ [("%shr", .int 64 shr), ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp),
+           ("%xp", .ptr xp), ("%inc", .int 64 (vinc inc)),
+           ("%call", .int 64 c21'),
+           ("%shr13", .int 64 (vshr13 w1 w2 w3 w4)), ("%ep", .ptr ep),
+           ("%entw", .ptr entw), ("%ctl", .ptr ctl), ("%backslash", .ptr backslash),
+           ("%ws", .ptr ws), ("%in_string", .ptr inString), ("%delim", .ptr delim),
+           ("%mk", .ptr mk), ("%sc", .ptr sc), ("%b", .ptr b),
+           ("%n", .int 64 n)],
+      lookupName (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 ret) p.1 = some p.2 := by
+  intro p hp
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals (try rw [hret])
+  all_goals block_lk
+
+/-- **The B8-with-gate successor's agreement**, read back through `agreeOn_succ`. -/
+theorem bodySucc_agree {S : PipelineLoopCarried} {e : State} {env : Env}
+    {k' : Nat} {w1 w2 w3 w4 w5 w6 w7 : BitVec 64} {ret : Value}
+    (hret : ret = .int 64 (BitVec.ofNat 64 k'))
+    (hag : State.AgreeOn (blockUses pBody)
+      (stateAt (bodyOut env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+        S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6
+        w7 ret) e) e) :
+    State.AgreeOn (blockUses pBody)
+      (stateAt (bodyIn e.env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+        S.ctl S.entw S.ep S.xp S.nxp S.xcarry (vshr13 w1 w2 w3 w4)
+        (BitVec.ofNat 64 k') (vinc S.iw) S.shr) e) e := by
+  refine agreeOn_succ (fun p hp => ?_) hag
+  exact body_cells_agree' env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+    S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw (BitVec.ofNat 64 k') S.iw S.shr
+    w1 w2 w3 w4 w5 w6 w7 ret hret p hp
+
+/-- **A `for.body.us` iteration that delays.**  With more than one iteration of
+budget left the exit test is zero and the arm branches to itself; the successor's
+twenty-eight clauses are the invariant's own projections, the call bundle's fields,
+and the frames that leave every static region in place. -/
+theorem us_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) (blocks n : Nat)
+    (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
+    (h : pipelineLoopInv base tab blocks (n + 1) s)
+    (hn : 0 < n) (hpc0 : s.pc = "for.body.us") :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv base tab blocks n e ∧
+      ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
+        runFuel (pipelineCalls tab base s2) k pipelineBody e := by
+  cases n with
+  | zero => exact absurd hn (by omega)
+  | succ n' =>
+  obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
+    hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hcarry, hflags,
+    hroomk, hroomxn, hhas, hdisj⟩ := h
+  have harm : S.arm = .pos8Gate := by
+    revert hpc0
+    rw [hpcS]
+    cases S.arm <;> simp [PipelineBodyArm.head]
+  rw [harm] at hpcS hpre' hagree hcarry hflags
+  have hcarryI : carryPair s.mem S.xcarry S.stE S.prevb S.prevs := hcarry rfl
+  have hflagsI : S.opened = S.prevb ∧ S.ppar = S.prevs := hflags rfl
+  have hsep : StagedSep S blocks := stagedSep hdisj
+  have hilt : S.i < blocks := by omega
+  obtain ⟨g⟩ := us_calls tab base s2 Γ2 units (S := S) hcap hiw hilt (by omega) hb hwin
+    hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htabEq htab hkw hkgrow hxngrow
+    hroomk hroomxn hcnt hhas hxpExt
+  obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w1, w2, w3, w4, w5, w6, w7,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hentFrame,
+    hextLe, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescCount, hlenLe, hescCarry,
+    hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
+  have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
+    sh6_signExtend_toNat_lt (i := S.iw) (hblk := hcap) (by
+      rw [hiw, ofNat64_toNat (by omega)]
+      exact hilt)
+  have hcode := us_denote (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot
+    S.delim S.inString S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw
+    S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r1 r2 r3 hpre' hld1 hld2 hld3 hld4 hpos hcall1
+    hcall2 hld5 hld6 hld7 hcall3
+  have hvexit : vexit S.iw S.shr = 0 := by
+    rw [vexit_eq_zero]
+    intro hcon
+    rw [hiw, vinc_ofNat (by omega), hshr] at hcon
+    exact (by omega : S.i + 1 ≠ blocks) ((ofNat64_eq_iff (by omega) (by omega)).mp hcon)
+  obtain ⟨t', jt, hjt, hden, hag, hrun⟩ := us_step_at_head (pipelineCalls tab base s2)
+    s.env s S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl S.entw
+    S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r2 r3 hpcS
+    hagree hcode hvexit
+  let e : State := { t' with pc := "for.body.us", pre := some s.pc }
+  have hmem : e.mem = r3.mem := hag.1.symm
+  have hagE : State.AgreeOn (blockUses pUs)
+      (stateAt (usOut s.env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+        S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7
+        r2.ret) e) e :=
+    ⟨rfl, rfl, rfl, fun x hx => hag.2.2.2 x hx⟩
+  refine ⟨e, jt, hjt, ?_, hrun⟩
+  refine ⟨usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
+    (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) ste
+    (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rfl
+  · show some s.pc = some "for.body.us"
+    rw [hpc0]
+  · show S.i + 1 + (n' + 1) = blocks
+    omega
+  · exact hshr
+  · show vinc S.iw = BitVec.ofNat 64 (S.i + 1)
+    rw [hiw, vinc_ofNat (by omega)]
+  · show State.AgreeOn (blockUses pUs) (stateAt (usIn e.env S.n S.b S.sc S.maskSlot
+      S.delim S.inString S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry
+      (vshr13 w1 w2 w3 w4) (BitVec.ofNat 64 k') (vinc S.iw) S.shr) e) e
+    exact usSucc_agree hret2 hagE
+  · exact hb
+  · rw [hmem]; exact hwinR3
+  · rw [hmem]; exact hscR3
+  · rfl
+  · exact hdelim
+  · exact hinS
+  · exact hwsS
+  · exact hbsS
+  · exact hctl
+  · exact htabEq
+  · rw [hmem]; exact htabR3
+  · rfl
+  · rw [hmem]; exact hescCount
+  · exact hxpExt
+  · show k' ≤ S.k0 + 64 * (S.i + 1)
+    omega
+  · show S.xn + len ≤ S.xn0 + 64 * (S.i + 1)
+    omega
+  · intro _
+    rw [hmem]
+    exact hescCarry
+  · intro _
+    refine ⟨rfl, ?_⟩
+    show (carry64 lo hi stm).oddRun = ste.oddRun
+    exact hparity.symm
+  · show cursorRoom k' (blocks - (S.i + 1)) 9
+    have hh := hroomk
+    unfold cursorRoom at hh ⊢
+    omega
+  · show cursorRoom (S.xn + len) (blocks - (S.i + 1)) 9
+    have hh := hroomxn
+    unfold cursorRoom at hh ⊢
+    omega
+  · rw [hmem]
+    exact hescCap
+  · exact hdisj
+
+/-- **A `for.body` iteration that delays.**  The B8 emitter's arm, at the same
+successor shape: only the entry call differs. -/
+theorem body_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) (blocks n : Nat)
+    (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
+    (h : pipelineLoopInv base tab blocks (n + 1) s)
+    (hn : 0 < n) (hpc0 : s.pc = "for.body") :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv base tab blocks n e ∧
+      ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
+        runFuel (pipelineCalls tab base s2) k pipelineBody e := by
+  cases n with
+  | zero => exact absurd hn (by omega)
+  | succ n' =>
+  obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
+    hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hcarry, hflags,
+    hroomk, hroomxn, hhas, hdisj⟩ := h
+  have harm : S.arm = .b8Gate := by
+    revert hpc0
+    rw [hpcS]
+    cases S.arm <;> simp [PipelineBodyArm.head]
+  rw [harm] at hpcS hpre' hagree hcarry hflags
+  have hcarryI : carryPair s.mem S.xcarry S.stE S.prevb S.prevs := hcarry rfl
+  have hflagsI : S.opened = S.prevb ∧ S.ppar = S.prevs := hflags rfl
+  have hsep : StagedSep S blocks := stagedSep hdisj
+  have hilt : S.i < blocks := by omega
+  obtain ⟨g⟩ := body_calls tab base s2 Γ2 units (S := S) hcap hiw hilt (by omega) hb hwin
+    hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htab hkw hkgrow hxngrow
+    hroomk hroomxn hcnt hhas hxpExt
+  obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w1, w2, w3, w4, w5, w6, w7,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hentFrame,
+    hextLe, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescCount, hlenLe, hescCarry,
+    hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
+  have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
+    sh6_signExtend_toNat_lt (i := S.iw) (hblk := hcap) (by
+      rw [hiw, ofNat64_toNat (by omega)]
+      exact hilt)
+  have hcode := body_denote (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot
+    S.delim S.inString S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw
+    S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r1 r2 r3 hpre' hld1 hld2 hld3 hld4 hpos hcall1
+    hcall2 hld5 hld6 hld7 hcall3
+  have hvexit : vexit S.iw S.shr = 0 := by
+    rw [vexit_eq_zero]
+    intro hcon
+    rw [hiw, vinc_ofNat (by omega), hshr] at hcon
+    exact (by omega : S.i + 1 ≠ blocks) ((ofNat64_eq_iff (by omega) (by omega)).mp hcon)
+  obtain ⟨t', jt, hjt, hden, hag, hrun⟩ := body_step_at_head (pipelineCalls tab base s2)
+    s.env s S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl S.entw
+    S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r2 r3 hpcS
+    hagree hcode hvexit
+  let e : State := { t' with pc := "for.body", pre := some s.pc }
+  have hmem : e.mem = r3.mem := hag.1.symm
+  have hagE : State.AgreeOn (blockUses pBody)
+      (stateAt (bodyOut s.env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash
+        S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7
+        r2.ret) e) e :=
+    ⟨rfl, rfl, rfl, fun x hx => hag.2.2.2 x hx⟩
+  refine ⟨e, jt, hjt, ?_, hrun⟩
+  refine ⟨bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
+    (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) ste
+    (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rfl
+  · show some s.pc = some "for.body"
+    rw [hpc0]
+  · show S.i + 1 + (n' + 1) = blocks
+    omega
+  · exact hshr
+  · show vinc S.iw = BitVec.ofNat 64 (S.i + 1)
+    rw [hiw, vinc_ofNat (by omega)]
+  · show State.AgreeOn (blockUses pBody) (stateAt (bodyIn e.env S.n S.b S.sc S.maskSlot
+      S.delim S.inString S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry
+      (vshr13 w1 w2 w3 w4) (BitVec.ofNat 64 k') (vinc S.iw) S.shr) e) e
+    exact bodySucc_agree hret2 hagE
+  · exact hb
+  · rw [hmem]; exact hwinR3
+  · rw [hmem]; exact hscR3
+  · rfl
+  · exact hdelim
+  · exact hinS
+  · exact hwsS
+  · exact hbsS
+  · exact hctl
+  · exact htabEq
+  · rw [hmem]; exact htabR3
+  · rfl
+  · rw [hmem]; exact hescCount
+  · exact hxpExt
+  · show k' ≤ S.k0 + 64 * (S.i + 1)
+    omega
+  · show S.xn + len ≤ S.xn0 + 64 * (S.i + 1)
+    omega
+  · intro _
+    rw [hmem]
+    exact hescCarry
+  · intro _
+    refine ⟨rfl, ?_⟩
+    show (carry64 lo hi stm).oddRun = ste.oddRun
+    exact hparity.symm
+  · show cursorRoom k' (blocks - (S.i + 1)) 9
+    have hh := hroomk
+    unfold cursorRoom at hh ⊢
+    omega
+  · show cursorRoom (S.xn + len) (blocks - (S.i + 1)) 9
+    have hh := hroomxn
+    unfold cursorRoom at hh ⊢
+    omega
+  · rw [hmem]
+    exact hescCap
+  · exact hdisj
+
+/-- **A `for.body.us` iteration that leaves.**  With one iteration of budget left
+the exit test is one, the arm's increment reached the block count, and the
+successor is the cleanup — the loop's exit, which the invariant admits at `0`. -/
+theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
+    (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
+    (h : pipelineLoopInv base tab blocks 1 s)
+    (hpc0 : s.pc = "for.body.us") :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv base tab blocks 0 e ∧
+      ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
+        runFuel (pipelineCalls tab base s2) k pipelineBody e := by
+  obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
+    hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hcarry, hflags,
+    hroomk, hroomxn, hhas, hdisj⟩ := h
+  have harm : S.arm = .pos8Gate := by
+    revert hpc0
+    rw [hpcS]
+    cases S.arm <;> simp [PipelineBodyArm.head]
+  rw [harm] at hpcS hpre' hagree hcarry hflags
+  have hcarryI : carryPair s.mem S.xcarry S.stE S.prevb S.prevs := hcarry rfl
+  have hflagsI : S.opened = S.prevb ∧ S.ppar = S.prevs := hflags rfl
+  have hsep : StagedSep S blocks := stagedSep hdisj
+  have hilt : S.i < blocks := by omega
+  obtain ⟨g⟩ := us_calls tab base s2 Γ2 units (S := S) hcap hiw hilt (by omega) hb hwin
+    hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htabEq htab hkw hkgrow hxngrow
+    hroomk hroomxn hcnt hhas hxpExt
+  obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w1, w2, w3, w4, w5, w6, w7,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hentFrame,
+    hextLe, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescCount, hlenLe, hescCarry,
+    hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
+  have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
+    sh6_signExtend_toNat_lt (i := S.iw) (hblk := hcap) (by
+      rw [hiw, ofNat64_toNat (by omega)]
+      exact hilt)
+  have hcode := us_denote (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot
+    S.delim S.inString S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw
+    S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r1 r2 r3 hpre' hld1 hld2 hld3 hld4 hpos hcall1
+    hcall2 hld5 hld6 hld7 hcall3
+  have hvexit : vexit S.iw S.shr = 1 := by
+    rw [vexit_eq_one]
+    rw [hiw, vinc_ofNat (by omega), hshr]
+    exact (ofNat64_eq_iff (by omega) (by omega)).mpr (by omega)
+  obtain ⟨e, je, hje, hpcE, hrunE⟩ := us_step_at_exit (pipelineCalls tab base s2)
+    s.env s S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl S.entw
+    S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r2 r3 hpcS
+    hagree hcode hvexit
+  exact ⟨e, je, hje, hpcE, hrunE⟩
+
+/-- **A `for.body` iteration that leaves.**  The B8 emitter's arm at its exit. -/
+theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
+    (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
+    (h : pipelineLoopInv base tab blocks 1 s)
+    (hpc0 : s.pc = "for.body") :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv base tab blocks 0 e ∧
+      ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
+        runFuel (pipelineCalls tab base s2) k pipelineBody e := by
+  obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
+    hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hcarry, hflags,
+    hroomk, hroomxn, hhas, hdisj⟩ := h
+  have harm : S.arm = .b8Gate := by
+    revert hpc0
+    rw [hpcS]
+    cases S.arm <;> simp [PipelineBodyArm.head]
+  rw [harm] at hpcS hpre' hagree hcarry hflags
+  have hcarryI : carryPair s.mem S.xcarry S.stE S.prevb S.prevs := hcarry rfl
+  have hflagsI : S.opened = S.prevb ∧ S.ppar = S.prevs := hflags rfl
+  have hsep : StagedSep S blocks := stagedSep hdisj
+  have hilt : S.i < blocks := by omega
+  obtain ⟨g⟩ := body_calls tab base s2 Γ2 units (S := S) hcap hiw hilt (by omega) hb hwin
+    hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htab hkw hkgrow hxngrow
+    hroomk hroomxn hcnt hhas hxpExt
+  obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w1, w2, w3, w4, w5, w6, w7,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hentFrame,
+    hextLe, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescCount, hlenLe, hescCarry,
+    hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
+  have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
+    sh6_signExtend_toNat_lt (i := S.iw) (hblk := hcap) (by
+      rw [hiw, ofNat64_toNat (by omega)]
+      exact hilt)
+  have hcode := body_denote (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot
+    S.delim S.inString S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw
+    S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r1 r2 r3 hpre' hld1 hld2 hld3 hld4 hpos hcall1
+    hcall2 hld5 hld6 hld7 hcall3
+  have hvexit : vexit S.iw S.shr = 1 := by
+    rw [vexit_eq_one]
+    rw [hiw, vinc_ofNat (by omega), hshr]
+    exact (ofNat64_eq_iff (by omega) (by omega)).mpr (by omega)
+  obtain ⟨e, je, hje, hpcE, hrunE⟩ := body_step_at_exit (pipelineCalls tab base s2)
+    s.env s S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl S.entw
+    S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r2 r3 hpcS
+    hagree hcode hvexit
+  exact ⟨e, je, hje, hpcE, hrunE⟩
+
+/-! ### The loop instance
+
+The four arms' steps are stated above at one successor apiece; the instance's
+`step` is the dispatch on the arm the invariant carries, and `exit` is the spent
+budget.  The block bound `hcap` is a **parameter** of the instance rather than a
+conjunct of the invariant: it is a fact about the block count the staging supplies
+(`pipelineStaging`'s `64 * pipelineBlocks (bs.length) + 63 < 2 ^ 32`), and the
+invariant is about the state the loop runs, not about its arguments.  So the loop
+is a `PipelineLoop` for every block count the staging admits, and the bound is
+discharged where the loop is used. -/
+
+/-- **One loop iteration, at whichever arm the state is in.**  The arm's head is
+the state's program counter, so the dispatch reads the arm off the invariant and
+hands the state to that arm's step; the budget is `r` iterations left, so a spent
+budget is the exit step and a live one the head step. -/
+theorem pipelineLoop_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
+    (hcap : 64 * blocks + 63 < 2 ^ 32) (r : Nat) (s : State)
+    (h : pipelineLoopInv base tab blocks (r + 1) s) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv base tab blocks r e ∧
+      ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
+        runFuel (pipelineCalls tab base s2) k pipelineBody e := by
+  cases r with
+  | zero =>
+      have hh : pipelineLoopInv base tab blocks 1 s := h
+      obtain ⟨S, hpc, hpre, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
+        hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hcarry,
+        hflags, hroomk, hroomxn, hhas, hdisj⟩ := h
+      have hcases : S.arm = .pos8NoGate ∨ S.arm = .pos8Gate ∨
+          S.arm = .b8NoGate ∨ S.arm = .b8Gate := by
+        cases S.arm <;> simp
+      rcases hcases with h | h | h | h
+      · rw [h] at hpc
+        exact usUs_step_exit tab base s2 Γ2 units blocks hcap s hh hpc
+      · rw [h] at hpc
+        exact us_step_exit tab base s2 Γ2 units blocks hcap s hh hpc
+      · rw [h] at hpc
+        exact us83_step_exit tab base s2 Γ2 units blocks hcap s hh hpc
+      · rw [h] at hpc
+        exact body_step_exit tab base s2 Γ2 units blocks hcap s hh hpc
+  | succ r' =>
+      have hh : pipelineLoopInv base tab blocks (r' + 1 + 1) s := h
+      obtain ⟨S, hpc, hpre, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
+        hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hcarry,
+        hflags, hroomk, hroomxn, hhas, hdisj⟩ := h
+      have hcases : S.arm = .pos8NoGate ∨ S.arm = .pos8Gate ∨
+          S.arm = .b8NoGate ∨ S.arm = .b8Gate := by
+        cases S.arm <;> simp
+      rcases hcases with h | h | h | h
+      · rw [h] at hpc
+        exact usUs_step_head tab base s2 Γ2 units blocks (r' + 1) hcap s hh (by omega) hpc
+      · rw [h] at hpc
+        exact us_step_head tab base s2 Γ2 units blocks (r' + 1) hcap s hh (by omega) hpc
+      · rw [h] at hpc
+        exact us83_step_head tab base s2 Γ2 units blocks (r' + 1) hcap s hh (by omega) hpc
+      · rw [h] at hpc
+        exact body_step_head tab base s2 Γ2 units blocks (r' + 1) hcap s hh (by omega) hpc
+
+/-- **The pipeline's block loop, as `PipelineLoop` asks for it.**  The bound is the
+document's block count, one control step per iteration, the invariant
+`pipelineLoopInv` and the exit `pipelineLoopExit`.
+
+`pipeline_satisfies` keeps its `hbody` hypothesis at this instance: `PipelineBodyFacts.exit`
+is stated at the arbitrary stage-2 slot and `Γ_stage2` does not exist in this tree,
+so the loop's own induction — which is all this structure states — is not the
+pipeline's refinement.  The loop closes; the pipeline does not, and the gap is the
+stage-2 record. -/
+def pipelineLoop (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
+    (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
+    (hcap : 64 * blocks + 63 < 2 ^ 32) :
+    PipelineLoop (pipelineCalls tab base s2) pipelineBody where
+  N := blocks
+  cost := 1
+  Inv := pipelineLoopInv base tab blocks
+  Exit := pipelineLoopExit
+  step := fun r s h => pipelineLoop_step tab base s2 Γ2 units blocks hcap r s h
+  exit := fun s h => by
+    obtain ⟨e, j, hj, hex, hrun⟩ :=
+      pipelineLoop_exitObligation (pipelineCalls tab base s2) base tab blocks s h
+    exact ⟨e, j, by omega, hex, hrun⟩
+
 /-! ### Axiom footprints of the loop step
 
 The step is one control step per arm: the units' records at the pipeline's own call
@@ -2629,5 +3959,115 @@ bitvector shift arithmetic `sh6_ofNat_toNat` names.
 /-- info: 'LeanLLVM.Vellum.StagedSep' does not depend on any axioms -/
 #guard_msgs in
 #print axioms StagedSep
+
+/-! ### Axiom footprints of the gate-on arms and the loop instance
+
+The list's frames are `UnchangedOutside` and `readBytes` equalities, the call site
+is one record's conjunction and one exclusion, and the successors are definitions.
+The `Classical.choice` in the call bundles and the steps is `maskCall_at`'s and
+`pos8Call_at`'s — the bitvector shift arithmetic `sh6_ofNat_toNat` names, not a
+witness chosen in any statement here.
+-/
+
+/-- info: 'LeanLLVM.Vellum.carry64_oddRun_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms carry64_oddRun_congr
+
+/-- info: 'LeanLLVM.Vellum.escapeOutside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeOutside
+
+/-- info: 'LeanLLVM.Vellum.escapeReadBytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeReadBytes
+
+/-- info: 'LeanLLVM.Vellum.escapeHasBytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeHasBytes
+
+/-- info: 'LeanLLVM.Vellum.gateSucc_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms gateSucc_window
+
+/-- info: 'LeanLLVM.Vellum.gateSucc_table' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms gateSucc_table
+
+/-- info: 'LeanLLVM.Vellum.gateSucc_scSlot' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms gateSucc_scSlot
+
+/-- info: 'LeanLLVM.Vellum.gateBlock_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms gateBlock_at
+
+/-- info: 'LeanLLVM.Vellum.escapeCall_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeCall_at
+
+/-- info: 'LeanLLVM.Vellum.GateCalls' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms GateCalls
+
+/-- info: 'LeanLLVM.Vellum.gateCalls_after_entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms gateCalls_after_entry
+
+/-- info: 'LeanLLVM.Vellum.us_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms us_calls
+
+/-- info: 'LeanLLVM.Vellum.body_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms body_calls
+
+/-- info: 'LeanLLVM.Vellum.usSucc' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms usSucc
+
+/-- info: 'LeanLLVM.Vellum.bodySucc' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms bodySucc
+
+/-- info: 'LeanLLVM.Vellum.us_cells_agree'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us_cells_agree'
+
+/-- info: 'LeanLLVM.Vellum.usSucc_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usSucc_agree
+
+/-- info: 'LeanLLVM.Vellum.body_cells_agree'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms body_cells_agree'
+
+/-- info: 'LeanLLVM.Vellum.bodySucc_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bodySucc_agree
+
+/-- info: 'LeanLLVM.Vellum.us_step_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms us_step_head
+
+/-- info: 'LeanLLVM.Vellum.us_step_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms us_step_exit
+
+/-- info: 'LeanLLVM.Vellum.body_step_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms body_step_head
+
+/-- info: 'LeanLLVM.Vellum.body_step_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms body_step_exit
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoop_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineLoop_step
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineLoop
+
 
 end LeanLLVM.Vellum
