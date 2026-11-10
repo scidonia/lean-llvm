@@ -33,7 +33,7 @@ open LeanLLVM.Vellum.PipelineBodyFacts
 open LeanLLVM.Vellum.JsonEntryIR (pos8Table wordsOf readLanes32 streamPrefix)
 open LeanLLVM.Vellum.JsonPipelineIR (Γ_entry_pos8at pipelineBody PipelineUnits
   pipelineCalls masksSym entryPos8Sym entryB8Sym escapeListSym)
-open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6 vinc one vexit vent)
+open LeanLLVM.Vellum.JsonPipelineBlockEval (sh6 vinc one vexit vent vshr13)
 open LeanLLVM.Vellum.BlockEval (stateAt cells)
 open LeanLLVM.Vellum.JsonPipelineBlockEval (pUsUs findBlock_usus usUsIn usUsOut usUs_denote)
 
@@ -1043,6 +1043,171 @@ a carrier. -/
 /-- info: 'LeanLLVM.Vellum.ofNat64_eq_iff' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms ofNat64_eq_iff
+
+/-! ### The successor invariant's cell half
+
+`pipelineLoopInv`'s successor is a `PipelineLoopCarried` rebuilt from the units'
+posts.  Two facts at the carried state are the whole difficulty of re-establishing
+its *register* conjuncts: the successor's incoming builder must be found, cell by
+cell, in the outgoing builder the arm's trace leaves (`usUs_cells_agree` is the
+`for.body.us.us` arm's list, at the values the successor carries), and the
+transport's agreement must then be read backwards through the incoming builder
+(`agreeOn_succ`).  The remaining region conjuncts are read through one unit post's
+byte frame composed with the body's own store (`readBytes_of_entry_frame`).
+
+**What is not here, and why not.**  The four-arm `PipelineLoop.step` dispatch is
+not assembled in this module.  The two no-gate arms need only the facts above; the
+two gate-on arms' escape call takes **one** classifier state for both the mask
+words the block loaded and the staged carry pair, so it consumes the invariant's
+carry-slot link (the `opened = prevb ∧ ppar = prevs` conjunct of
+`pipelineLoopInv`), and its successor needs the fixed-capacity presence extended
+through `escapePositionsPost`'s own `HasBytes`.  Until those two arms are proved,
+`PipelineLoop.step` has no term and `pipeline_satisfies_of_units` keeps the
+`hbody` hypothesis: the post's `dst`/`ndst`/`ev`/`nev`/`err` clauses and the
+verdict come from the stage-2 record, and no arbitrary `Γ2` implies them.
+-/
+
+/-! ### Literal-list membership, for the staged region list -/
+
+macro "lm1" : tactic => `(tactic| apply List.mem_cons_self)
+macro "lm2" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm1))
+macro "lm3" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm2))
+macro "lm4" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm3))
+macro "lm5" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm4))
+macro "lm6" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm5))
+macro "lm7" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm6))
+macro "lm8" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm7))
+macro "lm9" : tactic => `(tactic| (apply List.mem_cons_of_mem; lm8))
+
+/-! ### Lookups through a builder -/
+
+theorem lookupName_cells_of_some :
+    ∀ (cs : List (String × Value)) (n : String) (env : Env) {v : Value},
+      lookupName cs n = some v → lookupName (cells cs env) n = some v
+  | [], n, env, v, h => by simp only [lookupName_nil] at h; cases h
+  | (k, w) :: cs, n, env, v, h => by
+      by_cases hkn : k = n
+      · subst hkn
+        simp only [lookupName_cons_self] at h
+        cases h
+        exact lookupName_cons_self k w (cells cs env)
+      · simp only [lookupName_cons_ne w cs hkn] at h
+        simp only [cells, lookupName_cons_ne w (cells cs env) hkn]
+        exact lookupName_cells_of_some cs n env h
+
+theorem not_mem_names_of_lookup_none :
+    ∀ (cs : List (String × Value)) (n : String), lookupName cs n = none →
+      n ∉ cs.map (fun p => p.1)
+  | [], n, _ => by simp
+  | (k, w) :: cs, n, h => by
+      by_cases hkn : k = n
+      · subst hkn
+        simp only [lookupName_cons_self] at h; cases h
+      · simp only [lookupName_cons_ne w cs hkn] at h
+        intro hmem
+        rcases List.mem_cons.mp hmem with h1 | h2
+        · exact hkn h1.symm
+        · exact not_mem_names_of_lookup_none cs n h h2
+
+theorem mem_of_lookupName_some :
+    ∀ (cs : List (String × Value)) (n : String) {v : Value},
+      lookupName cs n = some v → (n, v) ∈ cs
+  | [], n, v, h => by simp only [lookupName_nil] at h; cases h
+  | (k, w) :: cs, n, v, h => by
+      by_cases hkn : k = n
+      · subst hkn
+        simp only [lookupName_cons_self] at h
+        cases h
+        exact List.mem_cons_self ..
+      · simp only [lookupName_cons_ne w cs hkn] at h
+        exact List.mem_cons_of_mem _ (mem_of_lookupName_some cs n h)
+
+/-- **The successor's agreement, from the transport's.**  Every cell of the
+incoming builder is found with the same value in the outgoing builder, and the
+transport relates the outgoing builder to the state it left, so the incoming
+builder at that state agrees with it at every name. -/
+theorem agreeOn_succ {ns : List String} {inCells : List (String × Value)} {outEnv : Env}
+    {s s' : State}
+    (hL : ∀ p ∈ inCells, lookupName outEnv p.1 = some p.2)
+    (hag : State.AgreeOn ns (stateAt outEnv s) s') :
+    State.AgreeOn ns (stateAt (cells inCells s'.env) s') s' := by
+  refine ⟨rfl, rfl, rfl, ?_⟩
+  intro n hn
+  show lookupName (cells inCells s'.env) n = lookupName s'.env n
+  by_cases hnone : lookupName inCells n = none
+  · rw [lookupName_cells_of_notin inCells n s'.env
+      (not_mem_names_of_lookup_none inCells n hnone)]
+  · obtain ⟨v, hv⟩ := Option.ne_none_iff_exists'.mp hnone
+    rw [lookupName_cells_of_some inCells n s'.env hv,
+      ← hL (n, v) (mem_of_lookupName_some inCells n hv)]
+    exact hag.2.2.2 n hn
+
+/-- A range read through a unit post's byte frame and a store outside it. -/
+theorem readBytes_of_entry_frame {mem m : Mem} {ep entw : Nat} {bs : List UInt8} {k' : Nat}
+    (hframe : ∀ a, a < ep ∨ ep + 4 * (k' + 8) ≤ a →
+      readByte m a = readByte (writeBytes mem entw bs) a)
+    {a n : Nat} (hep : a + n ≤ ep ∨ ep + 4 * (k' + 8) ≤ a)
+    (hew : a + n ≤ entw ∨ entw + bs.length ≤ a) :
+    readBytes m a n = readBytes mem a n := by
+  refine readBytes_of_readByte_eq (fun k hk => ?_)
+  have hd : a + k < ep ∨ ep + 4 * (k' + 8) ≤ a + k := by rcases hep with h | h <;> omega
+  rw [hframe (a + k) hd]
+  exact readByte_writeBytes_outside mem bs (by rcases hew with h | h <;> omega)
+
+/-! ### The `for.body.us.us` arm's incoming cells -/
+
+theorem usUs_cells_agree (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (ret : Value) (hret : ret = .int 64 c21) :
+    ∀ p ∈ [("%shr", .int 64 shr), ("%inc.us.us", .int 64 (vinc inc)),
+           ("%call21.us.us", .int 64 c21), ("%shr13.us.us", .int 64 (vshr13 w1 w2 w3 w4)),
+           ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+           ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+           ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)],
+      lookupName (cells (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr
+        w1 w2 w3 w4 ret) env) p.1 = some p.2 := by
+  intro p hp
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals (try rw [hret])
+  all_goals block_lk
+
+
+/-! ### The step -/
+
+/-! ### Axiom footprints of the successor's cell half
+
+The lookup and agreement facts are the builder's own `lookupName` recursion, and
+the region read is one post's byte frame composed with a store; none adds a
+carrier.  The arm's cell list is `block_lk` at literal cells, which is the same
+footprint.
+
+-/
+
+/-- info: 'LeanLLVM.Vellum.lookupName_cells_of_some' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms lookupName_cells_of_some
+
+/-- info: 'LeanLLVM.Vellum.not_mem_names_of_lookup_none' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms not_mem_names_of_lookup_none
+
+/-- info: 'LeanLLVM.Vellum.mem_of_lookupName_some' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms mem_of_lookupName_some
+
+/-- info: 'LeanLLVM.Vellum.agreeOn_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms agreeOn_succ
+
+/-- info: 'LeanLLVM.Vellum.readBytes_of_entry_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readBytes_of_entry_frame
+
+/-- info: 'LeanLLVM.Vellum.usUs_cells_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUs_cells_agree
 
 /-! ### Axiom footprints
 

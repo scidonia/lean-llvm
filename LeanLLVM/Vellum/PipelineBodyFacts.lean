@@ -2424,6 +2424,7 @@ that consumes it and the post or frame that hands it on:
 |`readBytes s.mem b (64 * blocks) = some doc`|`masksPre_at`'s block read at `b + 64 * i`, and the arms' four mask words through the mask unit's post|every unit record's unchanged-outside conjunct, at the region separations also carried|
 |`readBytes s.mem sc 24 = some (carrySlot …)`, `stM.oddRun = (opened && ppar)`|`masksPre_at`'s carry clause|`masksPost`'s write at `c`|
 |`carryPair s.mem xcarry stE prevb prevs` (gate-on arms)|the escape list's `pre` carry clause|`escapePositionsPost`'s `carryPair m carry …`, which the post's own third exclusion makes true|
+|`opened = prevb ∧ ppar = prevs` (gate-on arms)|the escape list's `pre`, whose single classifier state serves both the three loaded mask words and the staged carry pair|both posts on the gate-on arms: the mask post writes `carry64 lo hi st` at `%sc` and `escapePositionsPost` writes the same pair at `%xcarry`, so the two slots agree; at the seed both staged slots are zero|
 |`cursorRoom k (blocks - i) 9`, `cursorRoom xn (blocks - i) 9`|POS8's `k + 64 * nblk + 9 < 2 ^ 63` and the escape list's `xn0 < 2 ^ 63`, via `cursorRoom_bounds`|the count's growth (at most sixty-four per block) against one fewer block left|
 |`HasBytes s.mem xp (4 * blockMax xn)`|the escape list's `pre` capacity clause|the batch's writes at `xp + 4 * xn` and the post's unchanged-outside conjunct|
 |the three mask separations, at the staged window's extent|`masksPre_at`'s three disjunctions|static: they name addresses, not bytes|
@@ -2623,6 +2624,14 @@ step that reads it:
   them.  Carried rather than derived per step: five steps each reaching outside
   the state for one pre-loop block's post is the defect, not the derivation;
 * the escape carry pair — the escape list's `pre` carry clause (gate-on arms);
+* the two carry slots' flags agree, `opened = prevb ∧ ppar = prevs` (gate-on
+  arms) — the escape record's `pre` takes one classifier state for both the three
+  loaded mask words and the staged carry pair, so a witness exists only when the
+  mask unit's `%sc` slot and the escape list's `%xcarry` slot hold the same pair.
+  It is a relation between two written slots, not a property of either.  The
+  seed has both staged slots zero; on a gate-on step both posts write the same
+  outgoing pair (`carry64 lo hi st`, at `%sc` and at `%xcarry`), which is what
+  hands it on, and on a gate-off step the clause is vacuous;
 * the two `cursorRoom` clauses — POS8's `k + 64 * nblk + 9 < 2 ^ 63` and the
   escape list's `xn0 < 2 ^ 63` through `cursorRoom_bounds`;
 * `S.kw = ofNat 64 S.k` — the entry emitter's `pre` takes its count as the
@@ -2716,6 +2725,17 @@ def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         S.xn ≤ S.xn0 + 64 * S.i ∧
         (S.arm.hasEscape = true →
           carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
+        -- **the two carry slots describe one carry** on the arms that use both.
+        -- The mask unit's `%sc` slot and the escape list's `%xcarry` slot are
+        -- written by two different units and are separated regions, so nothing
+        -- about one follows from the other; but the escape record's `pre` takes
+        -- **one** classifier state for both the three loaded mask words and the
+        -- staged carry pair, and that witness exists only if the two slots'
+        -- flags agree.  Stated conditionally because on a gate-off arm `%xcarry`
+        -- is never written and the pair is only meaningful under `hasEscape` —
+        -- the same shape `carryPair` itself uses above.
+        (S.arm.hasEscape = true →
+          S.opened = S.prevb ∧ S.ppar = S.prevs) ∧
         cursorRoom S.k (blocks - S.i) 9 ∧
         cursorRoom S.xn (blocks - S.i) 9 ∧
         HasBytes s.mem S.xp (4 * S.xpExtent) ∧
