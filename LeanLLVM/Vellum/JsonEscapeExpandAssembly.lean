@@ -2534,7 +2534,6 @@ theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
     (hadd15 : lookupName env "%add15" = some (.int 64 add15))
     (hsub : lookupName env "%sub" = some (.int 64 sub))
     (hn : lookupName env "%n" = some (.int 64 nv))
-    (hinc11 : lookupName env "%inc11" = some (.int 64 (0 : BitVec 64)))
     (hlen : bs.length = 16)
     (hload : readBytes s.mem (addr + 2) 16 = some bs)
     (hdb : db = hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
@@ -2547,9 +2546,8 @@ theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
         BitVec.ofInt 16 15) (BitVec.ofInt 16 15) = (1 : BitVec 1))
     (hcond3 : udIfEnd3IGuard bs db sub nv = (0 : BitVec 1))
     (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
-    {pb xp tab err xj : Nat} {pos0v jv nxpv : BitVec 64}
-    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv add15
-      (BitVec.ofInt 64 0)) :
+    {pb xp tab err xj : Nat} {pos0v jv nxpv addv incv : BitVec 64}
+    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv addv incv) :
     ∃ (e : State), e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
       e.mem = writeBytes s.mem (daddr + k)
         (natToBytes (udIfEnd32Word (hxCode (byteLanes bs) db &&&
@@ -2563,8 +2561,9 @@ theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
       lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 6)) ∧
       lookupName e.env "%sub" = some (.int 64 sub) ∧
       lookupName e.env "%dst" = some (.ptr daddr) ∧
-      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv add15
-        (BitVec.ofInt 64 0) := by
+      (∀ z, runFuel escapeCalls (3 + z) usDecFunction (withEnv env s) =
+        runFuel escapeCalls z usDecFunction e) ∧
+      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
   have hc16 : db.length = 16 := by
     rw [hdb]
     simp only [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length, hlen]
@@ -2617,7 +2616,7 @@ theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
       (by simp only [udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hadd15)
       hk hpos
     exact h1
-  refine ⟨e3, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨e3, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rfl
   · rfl
   · rfl
@@ -2625,10 +2624,14 @@ theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
   · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; hex_lk
   · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hsub
   · simp only [e3, withEnv, udIfEnd32IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hdst
+  · intro z
+    rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep2]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep3]
   · exact CellFrame.ifEnd32IEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv)
       _ (BitVec.ofInt 64 6) add15 daddr k
       (CellFrame.ifEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv
-        (CellFrame.ifEndI115Env env addr bs hcf))
+        (CellFrame.ifEndI115Env env addr bs (addv := addv) (incv := incv) hcf))
 
 /-- info: 'LeanLLVM.Vellum.hex_to_ifEnd32' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -2696,19 +2699,25 @@ theorem pairArm_to_cleanup32 (env : Env) (s : State) (addr : Nat)
         BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
       (BitVec.ofInt 32 1024) = (1 : BitVec 1))
     (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
-    {pb xp tab err xj : Nat} {pos0v jv nxpv incv : BitVec 64}
-    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv) :
+    {pb xp tab err xj : Nat} {pos0v jv nxpv addv incv : BitVec 64}
+    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv addv incv) :
     ∃ (e : State),
       e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
       e.mem = writeBytes s.mem (daddr + k)
         (natToBytes (udIfEnd32Word (pairArmValue bs bs2 db)).toNat 4) ∧
       lookupName e.env "%cp.i.3" = some (.int 32 (pairArmValue bs bs2 db)) ∧
       lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 12)) ∧
+      lookupName e.env "%add.i125" = some (.int 64
+        (add15 + BitVec.ofNat 64 (evalICmp .ugt (pairArmValue bs bs2 db)
+          (BitVec.ofInt 32 2047)).toNat +
+          udIfEnd32Adv (pairArmValue bs bs2 db) +
+          BitVec.ofNat 64 (evalICmp .ugt (pairArmValue bs bs2 db)
+            (BitVec.ofInt 32 65535)).toNat)) ∧
       lookupName e.env "%sub" = some (.int 64 sub) ∧
       lookupName e.env "%dst" = some (.ptr daddr) ∧
       (∀ z, runFuel escapeCalls (6 + z) usDecFunction (withEnv env s) =
         runFuel escapeCalls z usDecFunction e) ∧
-      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv := by
+      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
   have hc16 : db.length = 16 := by
     rw [hdb]
     simp only [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length, hlen]
@@ -2827,7 +2836,7 @@ theorem pairArm_to_cleanup32 (env : Env) (s : State) (addr : Nat)
   have hdstcell : lookupName e6.env "%dst" = some (.ptr daddr) := by
     simp only [e6, withEnv, udIfEnd32IEnv, udIfThen26IEnv, udLandLhsTrue22IEnv,
       udIfThen17IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hdst
-  have hcf6 : CellFrame e6.env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv := by
+  have hcf6 : CellFrame e6.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
     simp only [e6, withEnv]
     exact CellFrame.ifEnd32IEnv
       (udIfThen26IEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
@@ -2842,14 +2851,15 @@ theorem pairArm_to_cleanup32 (env : Env) (s : State) (addr : Nat)
           (CellFrame.ifThen17IEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv)
             addr bs2
             (CellFrame.ifEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv
-              (CellFrame.ifEndI115Env env addr bs hcf)))))
-  exact ⟨e6, rfl, rfl, hmem, hcpcell, hadvcell, hsubcell, hdstcell, fun z => by
+              (CellFrame.ifEndI115Env env addr bs (addv := addv) (incv := incv) hcf)))))
+  refine ⟨e6, rfl, rfl, hmem, hcpcell, hadvcell, ?_, hsubcell, hdstcell, fun z => by
     rw [show 6 + z = (5 + z) + 1 from by omega, udRun_jump hstep1]
     rw [show 5 + z = (4 + z) + 1 from by omega, udRun_jump hstep2]
     rw [show 4 + z = (3 + z) + 1 from by omega, udRun_jump hstep3]
     rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep4]
     rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep5]
     rw [show 1 + z = z + 1 from by omega, udRun_jump hstep6], hcf6⟩
+  simp only [e6, withEnv, udIfEnd32IEnv, udIfThen26IEnv]; ud_lk
 
 /-- info: 'LeanLLVM.Vellum.pairArmValue' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -2945,15 +2955,19 @@ theorem ifThen17I_zero_to_cleanup32 (env : Env) (s : State) (addr : Nat)
           (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))))) &&&
         (BitVec.ofInt 16 15)) (BitVec.ofInt 16 15) = (0 : BitVec 1))
     (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
-    {pb xp tab err xj : Nat} {pos0v jv nxpv incv : BitVec 64}
-    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv) :
+    {pb xp tab err xj : Nat} {pos0v jv nxpv addv incv : BitVec 64}
+    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv addv incv) :
     ∃ (e : State), e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
       e.mem = writeBytes s.mem (daddr + k) (natToBytes (udIfEnd32Word cp).toNat 4) ∧
       lookupName e.env "%cp.i.3" = some (.int 32 cp) ∧
       lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 6)) ∧
+      lookupName e.env "%add.i125" = some (.int 64
+        (add15 + BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat +
+          udIfEnd32Adv cp +
+          BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 65535)).toNat)) ∧
       lookupName e.env "%sub" = some (.int 64 sub) ∧
       lookupName e.env "%dst" = some (.ptr daddr) ∧
-      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv ∧
+      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv ∧
       (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
         runFuel escapeCalls z usDecFunction e) := by
   let e1 : State :=
@@ -2987,11 +3001,12 @@ theorem ifThen17I_zero_to_cleanup32 (env : Env) (s : State) (addr : Nat)
     simp only [e2, withEnv, udIfEnd32IEnv, udIfThen17IEnv]; ud_lk_h hsub
   have hdstcell : lookupName e2.env "%dst" = some (.ptr daddr) := by
     simp only [e2, withEnv, udIfEnd32IEnv, udIfThen17IEnv]; ud_lk_h hdst
-  have hcfE : CellFrame e2.env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv := by
+  have hcfE : CellFrame e2.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
     simp only [e2, withEnv]
     exact CellFrame.ifEnd32IEnv (udIfThen17IEnv env addr bs2) cp (BitVec.ofInt 64 6)
-      add15 daddr k (CellFrame.ifThen17IEnv env addr bs2 hcf)
-  refine ⟨e2, rfl, rfl, rfl, ?_, ?_, hsubcell, hdstcell, hcfE, ?_⟩
+      add15 daddr k (CellFrame.ifThen17IEnv env addr bs2 (addv := addv) (incv := incv) hcf)
+  refine ⟨e2, rfl, rfl, rfl, ?_, ?_, ?_, hsubcell, hdstcell, hcfE, ?_⟩
+  · simp only [e2, withEnv, udIfEnd32IEnv]; ud_lk
   · simp only [e2, withEnv, udIfEnd32IEnv]; ud_lk
   · simp only [e2, withEnv, udIfEnd32IEnv]; ud_lk
   · intro z
@@ -3023,15 +3038,19 @@ theorem landLhsTrue22I_zero_to_cleanup32 (env : Env) (s : State)
       ((hxCode (byteLanes bs2) cl &&& BitVec.ofInt 32 65535) +
         BitVec.ofInt 32 (-56320)) (BitVec.ofInt 32 1024) = (0 : BitVec 1))
     (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
-    {pb xp tab err xj : Nat} {pos0v jv nxpv incv : BitVec 64}
-    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv) :
+    {pb xp tab err xj : Nat} {pos0v jv nxpv addv incv : BitVec 64}
+    (hcf : CellFrame env pb xp tab err xj daddr pos0v nv jv nxpv addv incv) :
     ∃ (e : State), e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
       e.mem = writeBytes s.mem (daddr + k) (natToBytes (udIfEnd32Word cp).toNat 4) ∧
       lookupName e.env "%cp.i.3" = some (.int 32 cp) ∧
       lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 6)) ∧
+      lookupName e.env "%add.i125" = some (.int 64
+        (add15 + BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat +
+          udIfEnd32Adv cp +
+          BitVec.ofNat 64 (evalICmp .ugt cp (BitVec.ofInt 32 65535)).toNat)) ∧
       lookupName e.env "%sub" = some (.int 64 sub) ∧
       lookupName e.env "%dst" = some (.ptr daddr) ∧
-      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv ∧
+      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv ∧
       (∀ z, runFuel escapeCalls (2 + z) usDecFunction (withEnv env s) =
         runFuel escapeCalls z usDecFunction e) := by
   let e1 : State :=
@@ -3065,11 +3084,12 @@ theorem landLhsTrue22I_zero_to_cleanup32 (env : Env) (s : State)
     simp only [e2, withEnv, udIfEnd32IEnv, udLandLhsTrue22IEnv]; ud_lk_h hsub
   have hdstcell : lookupName e2.env "%dst" = some (.ptr daddr) := by
     simp only [e2, withEnv, udIfEnd32IEnv, udLandLhsTrue22IEnv]; ud_lk_h hdst
-  have hcfE : CellFrame e2.env pb xp tab err xj daddr pos0v nv jv nxpv add15 incv := by
+  have hcfE : CellFrame e2.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
     simp only [e2, withEnv]
     exact CellFrame.ifEnd32IEnv (udLandLhsTrue22IEnv env bs2 cl) cp (BitVec.ofInt 64 6)
-      add15 daddr k (CellFrame.landLhsTrue22IEnv env bs2 cl hcf)
-  refine ⟨e2, rfl, rfl, rfl, ?_, ?_, hsubcell, hdstcell, hcfE, ?_⟩
+      add15 daddr k (CellFrame.landLhsTrue22IEnv env bs2 cl (addv := addv) (incv := incv) hcf)
+  refine ⟨e2, rfl, rfl, rfl, ?_, ?_, ?_, hsubcell, hdstcell, hcfE, ?_⟩
+  · simp only [e2, withEnv, udIfEnd32IEnv]; ud_lk
   · simp only [e2, withEnv, udIfEnd32IEnv]; ud_lk
   · simp only [e2, withEnv, udIfEnd32IEnv]; ud_lk
   · intro z
@@ -5924,5 +5944,822 @@ theorem assemblyRefusalArm_satisfied
 /-- info: 'LeanLLVM.Vellum.assemblyRefusalArm_satisfied' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms assemblyRefusalArm_satisfied
+
+/-! ### The emitter's gate bits, identified with the walk's own facts
+
+`if.end3.i` computes four bits — the unit's high six bits at `0xD800`, room for
+twelve more bytes, and the two trailing bytes `\` and `u` — and those four are
+`surrogateTail`'s guard exactly.  `if.then17.i`'s mask word is the second window's
+four lanes, which is `hex4` at the second escape's digits, and `land.lhs.true22.i`'s
+compare is the low-surrogate range.  `hexReaderGuard_zero_of_hex4_none` and
+`hexReaderGuard_one_of_hex4_some` are the second window's two directions; the
+lemmas here are the first block's and the third's, in the form the emitter's
+composition reads at a state.
+
+The identification is needed because the block's branch values are hypotheses of
+its step lemmas, and the walk's shape is what the staging and `goal` determine: a
+step at a state must decide the same branch the walk did. -/
+
+/-- A `BitVec 32` at its own `Nat` reading. -/
+theorem bv32_eq_ofNat_toNat (x : BitVec 32) : x = BitVec.ofNat 32 x.toNat := by
+  refine BitVec.eq_of_toNat_eq ?_
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt x.isLt]
+
+/-- The masked low sixteen bits are below `0x10000`. -/
+theorem and65535_toNat_lt (x : BitVec 32) :
+    (x &&& BitVec.ofInt 32 65535).toNat < 0x10000 := by
+  rw [BitVec.toNat_and, show (BitVec.ofInt 32 65535).toNat = 65535 from by decide,
+    show (65535 : Nat) = 2 ^ 16 - 1 from by decide, Nat.and_two_pow_sub_one_eq_mod]
+  exact Nat.mod_lt _ (by decide)
+
+/-- The mask word's lane is the byte's own lane: `byteLanes` is the identity on
+values, so its `getD` is the byte's. -/
+theorem byteLanes_getD_eq (bs : List UInt8) {i : Nat} (hi : i < bs.length) :
+    (byteLanes bs).getD i 0 = BitVec.ofNat 8 (bs.getD i 0).toNat := by
+  rw [byteLanes, getD_map (fun b : UInt8 => BitVec.ofNat 8 b.toNat) bs 0 0 hi]
+
+/-- **The first gate's four bits**, as the propositions they test. -/
+theorem udIfEnd3IGuard_eq_one_iff (bs : List UInt8) (c : List (BitVec 1))
+    (sub n : BitVec 64) :
+    udIfEnd3IGuard bs c sub n = (1 : BitVec 1) ↔
+      ((sub + BitVec.ofInt 64 12).toNat ≤ n.toNat ∧
+       (hxCode (byteLanes bs) c &&& BitVec.ofInt 32 64512).toNat = 55296 ∧
+       (byteLanes bs).getD 4 0 = BitVec.ofInt 8 92 ∧
+       (byteLanes bs).getD 5 0 = BitVec.ofInt 8 117) := by
+  unfold udIfEnd3IGuard
+  rw [and_one_iff, and_one_iff, and_one_iff, evalICmp_ule_one_iff,
+    evalICmp_eq_one_iff, evalICmp_eq_one_iff, evalICmp_eq_one_iff]
+  constructor
+  · rintro ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩
+    exact ⟨h1, by rw [h2]; decide, h3, h4⟩
+  · rintro ⟨h1, h2, h3, h4⟩
+    exact ⟨⟨⟨h1, BitVec.eq_of_toNat_eq (by rw [h2]; decide)⟩, h3⟩, h4⟩
+
+/-- **The pair rule's guard is the first block's guard one.**  The window's lanes
+are the body's bytes at `q + 2`, the masked word is the code unit `hex4` reads, and
+the room, the high six bits and the two trailing bytes are `SurrogateGuard`'s four
+conjuncts.  Only the window's first six lanes are read: the digits are four and the
+pair's `\` and `u` are the next two. -/
+theorem surrogateGuard_of_guard_one {body bs : List UInt8} {c : List (BitVec 1)}
+    {sub nv : BitVec 64} {q cp N : Nat}
+    (hlen : 6 ≤ bs.length)
+    (hbytes : ∀ i, i < 6 → body[q + 2 + i]? = some (bs.getD i 0))
+    (hsub : sub = BitVec.ofNat 64 q) (hnv : nv = BitVec.ofNat 64 N)
+    (hq12 : q + 12 < 2 ^ 64) (hN64 : N < 2 ^ 64)
+    (hblen : body.length = N)
+    (hcp : (hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535).toNat = cp)
+    (hg : udIfEnd3IGuard bs c sub nv = (1 : BitVec 1)) :
+    SurrogateGuard body q cp := by
+  obtain ⟨h1, h2, h3, h4⟩ := (udIfEnd3IGuard_eq_one_iff bs c sub nv).1 hg
+  have hassoc : ((hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535) &&&
+      BitVec.ofInt 32 64512) = hxCode (byteLanes bs) c &&& BitVec.ofInt 32 64512 := by
+    rw [BitVec.and_assoc,
+      show (BitVec.ofInt 32 65535) &&& (BitVec.ofInt 32 64512) = BitVec.ofInt 32 64512
+        from by decide]
+  have hbv : evalICmp .eq ((hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535) &&&
+      BitVec.ofInt 32 64512) (BitVec.ofInt 32 55296) = (1 : BitVec 1) := by
+    refine (evalICmp_eq_one_iff _ _).2 ?_
+    rw [hassoc]
+    apply BitVec.eq_of_toNat_eq
+    rw [h2]
+    decide
+  have hsurr := (udIfEnd3I_highSurrogate_iff _ (and65535_toNat_lt _)).1 hbv
+  rw [hcp] at hsurr
+  refine ⟨hsurr.1, hsurr.2, ?_, ?_, ?_⟩
+  · rw [hblen]
+    rw [hsub, hnv, BitVec.toNat_add, ofNat64_toNat (by omega),
+      show (BitVec.ofInt 64 12).toNat = 12 from by decide, Nat.mod_eq_of_lt hq12,
+      ofNat64_toNat hN64] at h1
+    exact h1
+  · have hb4 : bs.getD 4 0 = (0x5C : UInt8) := by
+      have h := h3
+      rw [byteLanes_getD_eq bs (by omega)] at h
+      have h' := congrArg BitVec.toNat h
+      rw [BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt (by have := (bs.getD 4 0).toNat_lt; omega),
+        show (BitVec.ofInt 8 92).toNat = 92 from by decide] at h'
+      exact UInt8.toNat_inj.mp h'
+    have h := hbytes 4 (by omega)
+    rw [show q + 2 + 4 = q + 6 from by omega, hb4] at h
+    exact h
+  · have hb5 : bs.getD 5 0 = (0x75 : UInt8) := by
+      have h := h4
+      rw [byteLanes_getD_eq bs (by omega)] at h
+      have h' := congrArg BitVec.toNat h
+      rw [BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt (by have := (bs.getD 5 0).toNat_lt; omega),
+        show (BitVec.ofInt 8 117).toNat = 117 from by decide] at h'
+      exact UInt8.toNat_inj.mp h'
+    have h := hbytes 5 (by omega)
+    rw [show q + 2 + 5 = q + 7 from by omega, hb5] at h
+    exact h
+
+/-- **The first block's guard one is the pair rule's guard.**  The converse
+direction, at the same facts: `SurrogateGuard`'s room is the block's twelve-byte
+compare, its high six bits the masked word, and its two trailing bytes the window's
+fourth and fifth lanes. -/
+theorem guard_one_of_surrogateGuard {body bs : List UInt8} {c : List (BitVec 1)}
+    {sub nv : BitVec 64} {q cp N : Nat}
+    (hlen : 6 ≤ bs.length)
+    (hbytes : ∀ i, i < 6 → body[q + 2 + i]? = some (bs.getD i 0))
+    (hsub : sub = BitVec.ofNat 64 q) (hnv : nv = BitVec.ofNat 64 N)
+    (hq12 : q + 12 < 2 ^ 64) (hN64 : N < 2 ^ 64)
+    (hblen : body.length = N)
+    (hcp : (hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535).toNat = cp)
+    (hg : SurrogateGuard body q cp) :
+    udIfEnd3IGuard bs c sub nv = (1 : BitVec 1) := by
+  obtain ⟨hD800, hDBFF, hroom, hq6, hq7⟩ := hg
+  refine (udIfEnd3IGuard_eq_one_iff bs c sub nv).2 ⟨?_, ?_, ?_, ?_⟩
+  · rw [hsub, hnv, BitVec.toNat_add, ofNat64_toNat (by omega),
+      show (BitVec.ofInt 64 12).toNat = 12 from by decide, Nat.mod_eq_of_lt hq12,
+      ofNat64_toNat hN64]
+    rw [hblen] at hroom
+    exact hroom
+  · have hbv := (udIfEnd3I_highSurrogate_iff _
+      (and65535_toNat_lt (hxCode (byteLanes bs) c))).2
+      ⟨by rw [hcp]; exact hD800, by rw [hcp]; exact hDBFF⟩
+    have hbveq := (evalICmp_eq_one_iff _ _).1 hbv
+    have hassoc : ((hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535) &&&
+        BitVec.ofInt 32 64512) = hxCode (byteLanes bs) c &&& BitVec.ofInt 32 64512 := by
+      rw [BitVec.and_assoc,
+        show (BitVec.ofInt 32 65535) &&& (BitVec.ofInt 32 64512) = BitVec.ofInt 32 64512
+          from by decide]
+    rw [← hassoc, hbveq]
+    decide
+  · have hb4 : bs.getD 4 0 = (0x5C : UInt8) := by
+      have h := hbytes 4 (by omega)
+      rw [show q + 2 + 4 = q + 6 from by omega, hq6] at h
+      exact (Option.some.inj h).symm
+    rw [byteLanes_getD_eq bs (by omega), hb4]
+    decide
+  · have hb5 : bs.getD 5 0 = (0x75 : UInt8) := by
+      have h := hbytes 5 (by omega)
+      rw [show q + 2 + 5 = q + 7 from by omega, hq7] at h
+      exact (Option.some.inj h).symm
+    rw [byteLanes_getD_eq bs (by omega), hb5]
+    decide
+
+/-- **The low-surrogate compare**, at the code unit `hex4` read: the block's
+`%cmp24.i` is the range `DC00`–`DFFF` at the second unit. -/
+theorem lowSurrogateTest_one_iff (lo : Nat) (hlo16 : lo < 0x10000) :
+    evalICmp .ult (BitVec.ofNat 32 lo + BitVec.ofInt 32 (-56320))
+        (BitVec.ofInt 32 1024) = (1 : BitVec 1) ↔
+      0xDC00 ≤ lo ∧ lo ≤ 0xDFFF := by
+  have hX : (56320 : Nat) = 0xDC00 := by decide
+  have hY : (57343 : Nat) = 0xDFFF := by decide
+  have hmod : (BitVec.ofNat 32 lo + BitVec.ofInt 32 (-56320)).toNat =
+      if 56320 ≤ lo then lo - 56320 else lo + 2 ^ 32 - 56320 := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by omega : lo < 2 ^ 32),
+      show (BitVec.ofInt 32 (-56320)).toNat = 2 ^ 32 - 56320 from by decide]
+    by_cases hge : 56320 ≤ lo
+    · rw [if_pos hge,
+        show lo + (2 ^ 32 - 56320) = (lo - 56320) + 2 ^ 32 from by omega]
+      omega
+    · rw [if_neg hge]
+      rw [Nat.mod_eq_of_lt (by omega)]
+      omega
+  rw [evalICmp_ult_one_iff, hmod,
+    show ((BitVec.ofInt 32 1024)).toNat = 1024 from by decide, hX, hY]
+  by_cases hge : 56320 ≤ lo
+  · rw [if_pos hge]
+    constructor
+    · intro h; constructor <;> omega
+    · rintro ⟨-, h2⟩; omega
+  · rw [if_neg hge]
+    constructor
+    · intro h; omega
+    · rintro ⟨h1, -⟩; omega
+
+/-- info: 'LeanLLVM.Vellum.bv32_eq_ofNat_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms bv32_eq_ofNat_toNat
+
+/-- info: 'LeanLLVM.Vellum.and65535_toNat_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms and65535_toNat_lt
+
+/-- info: 'LeanLLVM.Vellum.byteLanes_getD_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms byteLanes_getD_eq
+
+/-- info: 'LeanLLVM.Vellum.udIfEnd3IGuard_eq_one_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udIfEnd3IGuard_eq_one_iff
+
+/-- info: 'LeanLLVM.Vellum.surrogateGuard_of_guard_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms surrogateGuard_of_guard_one
+
+/-- info: 'LeanLLVM.Vellum.guard_one_of_surrogateGuard' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms guard_one_of_surrogateGuard
+
+/-- info: 'LeanLLVM.Vellum.lowSurrogateTest_one_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms lowSurrogateTest_one_iff
+
+/-! ### The emitter's advance is the encoding's length
+
+`if.end32.i` advances the destination cursor by a word the three selects build: the
+two-byte form above `0x7F`, one more byte above `0x7FF`, and one more above
+`0xFFFF`.  Those are `utf8Encode`'s ranges, so the advance is the write's own
+length — which is what makes the emitter's `%add.i125` the walk's prefix growth. -/
+theorem utf8Advance_sum (cp : BitVec 32) (hcp : cp.toNat < 0x110000) :
+    (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat +
+      (udIfEnd32Adv cp).toNat +
+      (evalICmp .ugt cp (BitVec.ofInt 32 65535)).toNat =
+      (utf8Encode cp.toNat).length := by
+  have h2047 : (BitVec.ofInt 32 2047).toNat = 2047 := by decide
+  have h65535 : (BitVec.ofInt 32 65535).toNat = 65535 := by decide
+  have h127 : (BitVec.ofInt 32 127).toNat = 127 := by decide
+  have hA : (evalICmp .ugt cp (BitVec.ofInt 32 2047)).toNat =
+      if 2047 < cp.toNat then 1 else 0 := by
+    by_cases hlt : 2047 < cp.toNat
+    · have h1 : evalICmp .ugt cp (BitVec.ofInt 32 2047) = (1 : BitVec 1) :=
+        (evalICmp_ugt_one_iff_toNat cp (BitVec.ofInt 32 2047)).2 (by rw [h2047]; exact hlt)
+      rw [h1, if_pos hlt]; decide
+    · have h0 : evalICmp .ugt cp (BitVec.ofInt 32 2047) = (0 : BitVec 1) :=
+        (evalICmp_ugt_zero_iff cp (BitVec.ofInt 32 2047)).2 (by rw [h2047]; exact hlt)
+      rw [h0, if_neg hlt]; decide
+  have hB : (evalICmp .ugt cp (BitVec.ofInt 32 65535)).toNat =
+      if 65535 < cp.toNat then 1 else 0 := by
+    by_cases hlt : 65535 < cp.toNat
+    · have h1 : evalICmp .ugt cp (BitVec.ofInt 32 65535) = (1 : BitVec 1) :=
+        (evalICmp_ugt_one_iff_toNat cp (BitVec.ofInt 32 65535)).2 (by rw [h65535]; exact hlt)
+      rw [h1, if_pos hlt]; decide
+    · have h0 : evalICmp .ugt cp (BitVec.ofInt 32 65535) = (0 : BitVec 1) :=
+        (evalICmp_ugt_zero_iff cp (BitVec.ofInt 32 65535)).2 (by rw [h65535]; exact hlt)
+      rw [h0, if_neg hlt]; decide
+  have hAdv : (udIfEnd32Adv cp).toNat = if 127 < cp.toNat then 2 else 1 := by
+    unfold udIfEnd32Adv
+    by_cases hlt : 127 < cp.toNat
+    · have h1 : evalICmp .ugt cp (BitVec.ofInt 32 127) = (1 : BitVec 1) :=
+        (evalICmp_ugt_one_iff_toNat cp (BitVec.ofInt 32 127)).2 (by rw [h127]; exact hlt)
+      rw [h1, if_pos (by decide : ((1 : BitVec 1) = 1)), if_pos hlt]
+      decide
+    · have h0 : evalICmp .ugt cp (BitVec.ofInt 32 127) = (0 : BitVec 1) :=
+        (evalICmp_ugt_zero_iff cp (BitVec.ofInt 32 127)).2 (by rw [h127]; exact hlt)
+      rw [h0, if_neg (by decide : ¬ ((0 : BitVec 1) = 1)), if_neg hlt]
+      decide
+  rw [hA, hB, hAdv]
+  by_cases h1 : cp.toNat < 0x80
+  · have e1 : ¬ (2047 < cp.toNat) := by omega
+    have e2 : ¬ (127 < cp.toNat) := by omega
+    have e3 : ¬ (65535 < cp.toNat) := by omega
+    rw [if_neg e1, if_neg e2, if_neg e3, utf8Encode_eq_one h1]
+    rfl
+  · by_cases h2 : cp.toNat < 0x800
+    · have e1 : ¬ (2047 < cp.toNat) := by omega
+      have e2 : 127 < cp.toNat := by omega
+      have e3 : ¬ (65535 < cp.toNat) := by omega
+      rw [if_neg e1, if_pos e2, if_neg e3, utf8Encode_eq_two h1 h2]
+      rfl
+    · by_cases h3 : cp.toNat < 0x10000
+      · have e1 : 2047 < cp.toNat := by omega
+        have e2 : 127 < cp.toNat := by omega
+        have e3 : ¬ (65535 < cp.toNat) := by omega
+        rw [if_pos e1, if_pos e2, if_neg e3, utf8Encode_eq_three h1 h2 h3]
+        rfl
+      · have e1 : 2047 < cp.toNat := by omega
+        have e2 : 127 < cp.toNat := by omega
+        have e3 : 65535 < cp.toNat := by omega
+        rw [if_pos e1, if_pos e2, if_pos e3, utf8Encode_eq_four h1 h2 h3]
+        rfl
+
+/-- info: 'LeanLLVM.Vellum.utf8Advance_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms utf8Advance_sum
+
+/-! ### The hex bridge at the four lanes a body has
+
+`hex4_hxCode` identifies the block's `%and27.i` with `hex4`'s code unit, but it asks
+for the sixteen lanes' body bytes.  A body's tail has no sixteen bytes past the
+escape, so that hypothesis is unavailable exactly where the composition needs the
+identity: the four digits are what `hex4` reads, and the mask word's remaining lanes
+are the zeros the packing multiplies by nothing.  This is the same proof at the four
+lanes it uses, with `hex4_of_lane_test_four` in place of the sixteen-lane form. -/
+theorem hex4_hxCode_four {body : List UInt8} {q : Nat} {bs : List (BitVec 8)}
+    {c : List (BitVec 1)}
+    (hbytes : ∀ i, i < 4 → body[q + i]? = some (UInt8.ofBitVec (bs.getD i 0)))
+    (hbl : bs.length = 16) (hcl : c.length = 16)
+    (hcue : ∀ i, i < 4 → c.getD i 0 = BitVec.ofBool (hexLetterTest (bs.getD i 0)))
+    (h0 : hexLaneTest (bs.getD 0 0) = true)
+    (h1 : hexLaneTest (bs.getD 1 0) = true)
+    (h2 : hexLaneTest (bs.getD 2 0) = true)
+    (h3 : hexLaneTest (bs.getD 3 0) = true) :
+    hex4 body q = some (((hxCode bs c) &&& BitVec.ofInt 32 65535).toNat) := by
+  rw [hex4_of_lane_test_four hbytes h0 h1 h2 h3]
+  congr 1
+  have hlen : 4 ≤ (hxPadd bs c).length := by
+    rw [hxPadd, List.length_map, List.length_zip, hxNineSel, selectLanes_length,
+      hxLow, List.length_map, List.length_zip, hxLowMask_len, hxNine_len, hxZero_len]
+    omega
+  have hl0 := hxPadd_lane (bs := bs) (c := c) 0 (by decide) hbl hcl
+  have hl1 := hxPadd_lane (bs := bs) (c := c) 1 (by decide) hbl hcl
+  have hl2 := hxPadd_lane (bs := bs) (c := c) 2 (by decide) hbl hcl
+  have hl3 := hxPadd_lane (bs := bs) (c := c) 3 (by decide) hbl hcl
+  have hn0 : hexNib (bs.getD 0 0) = ((if c.getD 0 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 0 0 &&& BitVec.ofInt 8 15)).toNat :=
+    hexNib_lane (hcue 0 (by decide))
+  have hn1 : hexNib (bs.getD 1 0) = ((if c.getD 1 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 1 0 &&& BitVec.ofInt 8 15)).toNat :=
+    hexNib_lane (hcue 1 (by decide))
+  have hn2 : hexNib (bs.getD 2 0) = ((if c.getD 2 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 2 0 &&& BitVec.ofInt 8 15)).toNat :=
+    hexNib_lane (hcue 2 (by decide))
+  have hn3 : hexNib (bs.getD 3 0) = ((if c.getD 3 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 3 0 &&& BitVec.ofInt 8 15)).toNat :=
+    hexNib_lane (hcue 3 (by decide))
+  have hnib0 : ((if c.getD 0 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 0 0 &&& BitVec.ofInt 8 15)).toNat < 16 := by rw [← hn0]; exact hexNib_lt h0
+  have hnib1 : ((if c.getD 1 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 1 0 &&& BitVec.ofInt 8 15)).toNat < 16 := by rw [← hn1]; exact hexNib_lt h1
+  have hnib2 : ((if c.getD 2 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 2 0 &&& BitVec.ofInt 8 15)).toNat < 16 := by rw [← hn2]; exact hexNib_lt h2
+  have hnib3 : ((if c.getD 3 0 = 1 then (9 : BitVec 8) else 0) +
+      (bs.getD 3 0 &&& BitVec.ofInt 8 15)).toNat < 16 := by rw [← hn3]; exact hexNib_lt h3
+  have hfour : hexFour (bs.getD 0 0) (bs.getD 1 0) (bs.getD 2 0) (bs.getD 3 0) =
+      4096 * hexNib (bs.getD 0 0) + 256 * hexNib (bs.getD 1 0) +
+        16 * hexNib (bs.getD 2 0) + hexNib (bs.getD 3 0) := by
+    simp only [hexFour]; omega
+  rw [hfour]
+  rw [hxCode, cons4 0 (hxPadd bs c) hlen, hexW8_eq, hexW16_eq,
+    LeanLLVM.Vellum.BitLanes.pmaddUbSw_cons,
+    LeanLLVM.Vellum.BitLanes.pmaddUbSw_cons,
+    LeanLLVM.Vellum.BitLanes.pmaddWd_cons, List.getD_cons_zero]
+  rw [hl0, hl1, hl2, hl3]
+  rw [pmaddUbSwLane_small hnib0 hnib1, pmaddUbSwLane_small hnib2 hnib3,
+    pmaddWdLane_small (by rw [BitVec.toNat_ofNat]; omega)
+      (by rw [BitVec.toNat_ofNat]; omega)]
+  rw [← hn0, ← hn1, ← hn2, ← hn3]
+  have e1 : (BitVec.ofNat 16 (16 * hexNib (bs.getD 0 0) + hexNib (bs.getD 1 0))).toNat =
+      16 * hexNib (bs.getD 0 0) + hexNib (bs.getD 1 0) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]; omega
+  have e2 : (BitVec.ofNat 16 (16 * hexNib (bs.getD 2 0) + hexNib (bs.getD 3 0))).toNat =
+      16 * hexNib (bs.getD 2 0) + hexNib (bs.getD 3 0) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]; omega
+  rw [e1, e2]
+  rw [show (BitVec.ofInt 32 65535) = (BitVec.ofNat 32 65535) from BitVec.ofInt_ofNat 32 65535]
+  rw [and65535_ofNat (by omega), BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  omega
+
+/-- info: 'LeanLLVM.Vellum.hex4_hxCode_four' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms hex4_hxCode_four
+
+/-! ### The six-byte `\u` arm, at the walk's own facts
+
+`if.end.i115` is reached with the four digits' lanes and the second unit's window in
+hand, and the walk decides which of `if.end3.i`'s gates the block takes: the guard
+one is `surrogateTail`'s guard, and the second unit is either no `hex4` at `q + 8` or
+a code unit outside the low-surrogate range.  Both reach `if.end32.i`'s store, whose
+word and advance are the walk's own encoding of `hex4`'s code unit. -/
+
+abbrev HexReaderGuard (bs : List UInt8) : BitVec 1 :=
+  evalICmp .eq
+    ((BitVec.ofNat 16 (lanesToNat (hexZipOr
+      (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+      (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+        (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))))) &&&
+      (BitVec.ofInt 16 15)) (BitVec.ofInt 16 15)
+
+abbrev SecondLetterLanes (bs2 : List UInt8) : List (BitVec 1) :=
+  hexUltL (hexAddL (hexOrL (byteLanes bs2) (BitVec.ofInt 8 32))
+    (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)
+
+theorem hex4_of_window_guard_one {body bs : List UInt8} {k0 : Nat} {c : List (BitVec 1)}
+    (hlen : bs.length = 16)
+    (hbytes : ∀ i, i < 4 → body[k0 + i]? = some (bs.getD i 0))
+    (hdb : c = hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))
+    (hguard : HexReaderGuard bs = (1 : BitVec 1)) :
+    hex4 body k0 = some ((hxCode (byteLanes bs) c &&& BitVec.ofInt 32 65535).toNat) := by
+  have hclen : c.length = 16 := by
+    rw [hdb]
+    simp only [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length, hlen]
+  have hblen16 : (byteLanes bs).length = 16 := by rw [byteLanes_length, hlen]
+  have hmod : lanesToNat (hexZipOr
+      (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+      (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+        (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))) % 16 = 15 := by
+    have heq : (BitVec.ofNat 16 (lanesToNat (hexZipOr
+        (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))))) &&&
+        (BitVec.ofInt 16 15) = BitVec.ofInt 16 15 :=
+      (evalICmp_eq_one_iff _ _).1 hguard
+    have h := congrArg BitVec.toNat heq
+    rw [and15_ofNat, BitVec.toNat_ofNat,
+      show (BitVec.ofInt 16 15).toNat = 15 from by decide] at h
+    rwa [Nat.mod_eq_of_lt (by omega)] at h
+  obtain ⟨x0, x1, x2, x3, rest, hsl⟩ := byteLanes_four (by rw [hlen]; decide)
+  have hfour := hexLanes_low_four (bs := bs) (x0 := x0) (x1 := x1) (x2 := x2)
+    (x3 := x3) (rest := rest) hsl
+  rw [hmod] at hfour
+  obtain ⟨hx0, hx1, hx2, hx3⟩ :=
+    (hexTest_four_eq_fifteen (hexLaneTest x0) (hexLaneTest x1) (hexLaneTest x2)
+      (hexLaneTest x3)).1 hfour.symm
+  have hcue : ∀ i, i < 4 → c.getD i 0 =
+      BitVec.ofBool (hexLetterTest ((byteLanes bs).getD i 0)) :=
+    fun i hi => hexLetterLanes_getD c hdb (by rw [hblen16]; omega)
+  have hbytes4 : ∀ i, i < 4 → body[k0 + i]? =
+      some (UInt8.ofBitVec ((byteLanes bs).getD i 0)) := by
+    intro i hi
+    rw [ofBitVec_byteLanes_getD]
+    exact hbytes i hi
+  exact hex4_hxCode_four hbytes4 hblen16 hclen hcue (by rw [hsl]; exact hx0)
+    (by rw [hsl]; exact hx1) (by rw [hsl]; exact hx2) (by rw [hsl]; exact hx3)
+
+def ifEnd32Cell (add15 : BitVec 64) (cpBv : BitVec 32) : BitVec 64 :=
+  add15 + BitVec.ofNat 64 (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat +
+    udIfEnd32Adv cpBv +
+    BitVec.ofNat 64 (evalICmp .ugt cpBv (BitVec.ofInt 32 65535)).toNat
+
+theorem toNat_add_of_lt {x y : BitVec 64} (h : x.toNat + y.toNat < 2 ^ 64) :
+    (x + y).toNat = x.toNat + y.toNat := by
+  rw [BitVec.toNat_add, Nat.mod_eq_of_lt h]
+
+theorem ifEnd32Cell_toNat {add15 : BitVec 64} {cpBv : BitVec 32} (k : Nat)
+    (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
+    (hcp : cpBv.toNat < 0x110000) :
+    (ifEnd32Cell add15 cpBv).toNat = add15.toNat + (utf8Encode cpBv.toNat).length := by
+  have hsum := utf8Advance_sum cpBv hcp
+  have hA : (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat ≤ 1 := by
+    rcases bv1_cases (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)) with h | h <;>
+      rw [h] <;> decide
+  have hB : (evalICmp .ugt cpBv (BitVec.ofInt 32 65535)).toNat ≤ 1 := by
+    rcases bv1_cases (evalICmp .ugt cpBv (BitVec.ofInt 32 65535)) with h | h <;>
+      rw [h] <;> decide
+  have hAdv : (udIfEnd32Adv cpBv).toNat ≤ 2 := by
+    unfold udIfEnd32Adv
+    split <;> decide
+  have hlt : add15.toNat < 2 ^ 63 := by
+    have h := signExtend_self_toNat add15
+    rw [h] at hk; omega
+  have e1 : (BitVec.ofNat 64 (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat).toNat =
+      (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have e2 : (BitVec.ofNat 64 (evalICmp .ugt cpBv (BitVec.ofInt 32 65535)).toNat).toNat =
+      (evalICmp .ugt cpBv (BitVec.ofInt 32 65535)).toNat := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have h1 : (add15 + BitVec.ofNat 64
+      (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat).toNat =
+      add15.toNat + (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat := by
+    rw [toNat_add_of_lt (by rw [e1]; omega), e1]
+  have h2 : ((add15 + BitVec.ofNat 64
+      (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat) + udIfEnd32Adv cpBv).toNat =
+      add15.toNat + (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat +
+        (udIfEnd32Adv cpBv).toNat := by
+    rw [toNat_add_of_lt (by rw [h1]; omega), h1]
+  have h3 : (ifEnd32Cell add15 cpBv).toNat =
+      add15.toNat + (evalICmp .ugt cpBv (BitVec.ofInt 32 2047)).toNat +
+        (udIfEnd32Adv cpBv).toNat +
+        (evalICmp .ugt cpBv (BitVec.ofInt 32 65535)).toNat := by
+    simp only [ifEnd32Cell]
+    rw [toNat_add_of_lt (by rw [h2, e2]; omega), h2, e2]
+  rw [h3]
+  omega
+
+/-- The six-byte `\u` arm, whichever of `if.end3.i`'s gates the window's bytes take. -/
+theorem i115_six_to_cleanup32
+    {body : List UInt8} {bs bs2 : List UInt8} {db : List (BitVec 1)}
+    {u : State} {addr b xp tab err xj daddr pos0 n q cp k pb : Nat}
+    {subv add15 nv incv pos0v jv nxpv addv : BitVec 64}
+    (hpc : u.pc = "if.end.i115")
+    (haddr : lookupName u.env "%arrayidx16" = some (.ptr addr))
+    (haddrq : addr = b + q)
+    (hdst : lookupName u.env "%dst" = some (.ptr daddr))
+    (hadd15 : lookupName u.env "%add15" = some (.int 64 add15))
+    (hsub : lookupName u.env "%sub" = some (.int 64 subv))
+    (hn : lookupName u.env "%n" = some (.int 64 nv))
+    (hcf : CellFrame u.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv)
+    (hdb : db = hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))
+    (hlen : bs.length = 16) (hload : readBytes u.mem (addr + 2) 16 = some bs)
+    (hs2len : bs2.length = 16) (hs2load : readBytes u.mem (addr + 8) 16 = some bs2)
+    (hcond115 : HexReaderGuard bs = (1 : BitVec 1))
+    (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
+    (hbodyR : readBytes u.mem b n = some body)
+    (hbytes4 : ∀ i, i < 4 → body[q + 2 + i]? = some (bs.getD i 0))
+    (hq6 : q + 6 ≤ n)
+    (hq12 : q + 12 < 2 ^ 64) (hn64 : n < 2 ^ 64)
+    (hsubv : subv = BitVec.ofNat 64 q) (hnv : nv = BitVec.ofNat 64 n)
+    (hblen : body.length = n)
+    (hcp4 : hex4 body (q + 2) = some cp)
+    (hcnone : surrogateTail body q cp = none) :
+    ∃ (e : State) (j : Nat),
+      j ≤ 6 ∧ e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
+      (∀ z, runFuel escapeCalls (j + z) usDecFunction u =
+        runFuel escapeCalls z usDecFunction e) ∧
+      lookupName e.env "%sub" = some (.int 64 subv) ∧
+      lookupName e.env "%dst" = some (.ptr daddr) ∧
+      lookupName e.env "%add.i125" = some (.int 64
+        (ifEnd32Cell add15 (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535))) ∧
+      (ifEnd32Cell add15 (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)).toNat =
+        add15.toNat + (utf8Encode cp).length ∧
+      lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 6)) ∧
+      e.mem = writeBytes u.mem (daddr + k) (natToBytes (bytesToNat (utf8Encode cp)) 4) ∧
+      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
+  have hcpv : (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535).toNat = cp := by
+    have h := hex4_of_window_guard_one (k0 := q + 2) hlen hbytes4 hdb hcond115
+    exact Option.some.inj (h.symm.trans hcp4)
+  have hcp16 : cp < 0x10000 := by rw [← hcpv]; exact and65535_toNat_lt _
+  have hcpb16 : (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535).toNat < 0x110000 := by
+    rw [hcpv]; omega
+  have hword : (udIfEnd32Word (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)).toNat =
+      bytesToNat (utf8Encode cp) := by
+    rw [udIfEnd32Word_toNat _ hcpb16, hcpv]
+  have hcell := ifEnd32Cell_toNat k hk hpos hcpb16
+  rw [hcpv] at hcell
+  by_cases hg3 : udIfEnd3IGuard bs db subv nv = (1 : BitVec 1)
+  · -- the guard one: room and the two trailing bytes, then the rejection arms
+    have hroom : q + 12 ≤ n := by
+      have h1 := (udIfEnd3IGuard_eq_one_iff bs db subv nv).1 hg3 |>.1
+      rw [hsubv, hnv, BitVec.toNat_add, ofNat64_toNat (by omega),
+        show (BitVec.ofInt 64 12).toNat = 12 from by decide, Nat.mod_eq_of_lt hq12,
+        ofNat64_toNat hn64] at h1
+      omega
+    have hbytes1 : ∀ i, i < 6 → body[q + 2 + i]? = some (bs.getD i 0) := by
+      intro i hi
+      refine window_lane_body_eq hbodyR hblen ?_ (by omega) (by omega)
+      rw [← haddrq]; exact hload
+    have hsurr := surrogateGuard_of_guard_one (hlen := by rw [hlen]; decide) hbytes1
+      hsubv hnv hq12 hn64 hblen hcpv hg3
+    let v1 : State :=
+      { (withEnv (udIfEndI115Env u.env addr bs) u) with
+          pc := "if.end3.i", pre := some "if.end.i115" }
+    have hstep1 : step escapeCalls usDecFunction u = .jump v1 := by
+      have h := udIfEndI115_step u.env u addr bs hpc haddr hlen hload hcond115
+      rwa [show withEnv u.env u = u from rfl] at h
+    let v2 : State :=
+      { (withEnv (udIfEnd3IEnv (udIfEndI115Env u.env addr bs) bs db subv nv) u) with
+          pc := "if.then17.i", pre := some "if.end3.i" }
+    have hstep2 : step escapeCalls usDecFunction v1 = .jump v2 := by
+      have h := udIfEnd3I_step (udIfEndI115Env u.env addr bs)
+        { u with pc := "if.end3.i", pre := some "if.end.i115" } addr bs db subv nv rfl
+        (by simp only [udIfEndI115Env]; ud_lk_h haddr)
+        (by simp only [udIfEndI115Env]; ud_lk)
+        (by simp only [udIfEndI115Env]; ud_lk)
+        (by simp only [udIfEndI115Env]; rw [hdb]; ud_lk)
+        (by simp only [udIfEndI115Env]; ud_lk_h hsub)
+        (by simp only [udIfEndI115Env]; ud_lk_h hn)
+        hlen (by rw [hdb]; simp only [hexUltL_length, hexAddL_length, hexOrL_length,
+          byteLanes_length, hlen]) hg3
+      exact h
+    have hcf2 : CellFrame v2.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv :=
+      CellFrame.ifEnd3IEnv (udIfEndI115Env u.env addr bs) bs db subv nv
+        (CellFrame.ifEndI115Env u.env addr bs hcf)
+    have hcpcell : lookupName v2.env "%and27.i" = some (.int 32
+        (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)) := by
+      simp only [v2, withEnv, udIfEnd3IEnv]; ud_lk
+    have hbytes2 : ∀ i, i < 4 → body[q + 8 + i]? = some (bs2.getD i 0) := by
+      intro i hi
+      refine window_lane_body_eq (q := q + 6) hbodyR hblen ?_ (by omega) (by omega)
+      rw [show b + (q + 6) + 2 = addr + 8 from by omega]
+      exact hs2load
+    cases hlo : hex4 body (q + 8) with
+    | none =>
+      have hcond17 : HexReaderGuard bs2 = (0 : BitVec 1) :=
+        hexReaderGuard_zero_of_hex4_none (by rw [hs2len]; decide) hbytes2 hlo
+      obtain ⟨e, hpcE, hpreE, hmemE, _, hadvE, haddE, hsubE, hdstE, hcfE, hrunE⟩ :=
+        ifThen17I_zero_to_cleanup32 v2.env v2 addr bs2
+          (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535) subv add15 nv daddr k
+          rfl (by simp only [v2, withEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h haddr)
+          hcpcell
+          (by simp only [v2, withEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hdst)
+          (by simp only [v2, withEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hadd15)
+          (by simp only [v2, withEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hsub)
+          hs2len hs2load hcond17 hk hpos hcf2
+      refine ⟨e, 4, by omega, hpcE, hpreE, ?_, hsubE, hdstE, haddE, hcell, hadvE,
+        ?_, hcfE⟩
+      · intro z
+        rw [show 4 + z = (3 + z) + 1 from by omega, udRun_jump hstep1]
+        rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep2]
+        exact hrunE z
+      · rw [hmemE, hword]; rfl
+    | some lo =>
+      by_cases hrange : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF
+      · exfalso
+        exact absurd (surrogateTail_some_of_pair (bs := body) (k := q) (cp := cp)
+          (lo := lo) (cp' := 0x10000 + (cp - 0xD800) * 0x400 + (lo - 0xDC00))
+          hsurr hlo hrange rfl) (by rw [hcnone]; simp)
+      · have hcond17 : HexReaderGuard bs2 = (1 : BitVec 1) :=
+          hexReaderGuard_one_of_hex4_some (by rw [hs2len]; decide) hbytes2 hlo
+        let w1 : State :=
+          { (withEnv (udIfThen17IEnv v2.env addr bs2) v2) with
+              pc := "land.lhs.true22.i", pre := some "if.then17.i" }
+        have hstep3 : step escapeCalls usDecFunction v2 = .jump w1 := by
+          have h := udIfThen17I_step v2.env v2 addr bs2 rfl
+            (by simp only [v2, withEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h haddr)
+            hs2len hs2load hcond17
+          rwa [show withEnv v2.env v2 = v2 from rfl] at h
+        have hcf3 : CellFrame w1.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv :=
+          CellFrame.ifThen17IEnv v2.env addr bs2 hcf2
+        have hcpcell2 : lookupName w1.env "%and27.i" = some (.int 32
+            (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)) := by
+          simp only [w1, withEnv, udIfThen17IEnv]; ud_lk
+        have hcpv2 : (hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+            BitVec.ofInt 32 65535).toNat = lo := by
+          have h := hex4_of_window_guard_one (k0 := q + 8) hs2len hbytes2 rfl hcond17
+          exact Option.some.inj (h.symm.trans hlo)
+        have hcond22 : evalICmp .ult
+            ((hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+              BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
+            (BitVec.ofInt 32 1024) = (0 : BitVec 1) := by
+          have hone : evalICmp .ult
+              ((hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+                BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
+              (BitVec.ofInt 32 1024) = (1 : BitVec 1) ↔
+              (0xDC00 ≤ lo ∧ lo ≤ 0xDFFF) := by
+            rw [show (hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+                BitVec.ofInt 32 65535) = BitVec.ofNat 32 lo from by
+              rw [bv32_eq_ofNat_toNat (hxCode (byteLanes bs2)
+                (SecondLetterLanes bs2) &&& BitVec.ofInt 32 65535), hcpv2]]
+            exact lowSurrogateTest_one_iff lo (by rw [← hcpv2]; exact and65535_toNat_lt _)
+          exact bv1_eq_zero_of_ne_one (fun h1 => hrange (hone.1 h1))
+        obtain ⟨e, hpcE, hpreE, hmemE, _, hadvE, haddE, hsubE, hdstE, hcfE, hrunE⟩ :=
+          landLhsTrue22I_zero_to_cleanup32 w1.env w1 bs2 (SecondLetterLanes bs2)
+            (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535) subv add15 nv daddr k
+            rfl
+            (by simp only [w1, withEnv, udIfThen17IEnv]; ud_lk)
+            (by simp only [w1, withEnv, udIfThen17IEnv]; ud_lk)
+            hcpcell2
+            (by simp only [w1, withEnv, udIfThen17IEnv, v2, withEnv]; ud_lk_h hdst)
+            (by simp only [w1, withEnv, udIfThen17IEnv, v2, withEnv]; ud_lk_h hadd15)
+            (by simp only [w1, withEnv, udIfThen17IEnv, v2, withEnv]; ud_lk_h hsub)
+            hs2len (by simp only [SecondLetterLanes, hexUltL_length, hexAddL_length,
+              hexOrL_length, byteLanes_length, hs2len])
+            hcond22 hk hpos hcf3
+        refine ⟨e, 5, by omega, hpcE, hpreE, ?_, hsubE, hdstE, haddE, hcell, hadvE,
+          ?_, hcfE⟩
+        · intro z
+          rw [show 5 + z = (4 + z) + 1 from by omega, udRun_jump hstep1]
+          rw [show 4 + z = (3 + z) + 1 from by omega, udRun_jump hstep2]
+          rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep3]
+          exact hrunE z
+        · rw [hmemE, hword]; rfl
+  · -- the guard false: the plain six-byte store
+    have hg0 : udIfEnd3IGuard bs db subv nv = (0 : BitVec 1) := bv1_eq_zero_of_ne_one hg3
+    obtain ⟨e, hpcE, hpreE, hmemE, haddE, hadvE, hsubE, hdstE, hrunE, hcfE⟩ :=
+      hex_to_ifEnd32 u.env u addr bs subv nv add15 daddr k db db
+        hpc haddr hdst hadd15 hsub hn hlen hload hdb hcond115 hg0 hk hpos hcf
+    refine ⟨e, 3, by omega, hpcE, hpreE, ?_, hsubE, hdstE, haddE, hcell, hadvE,
+      ?_, hcfE⟩
+    · intro z
+      simpa [show withEnv u.env u = u from rfl] using hrunE z
+    · rw [hmemE, hword]
+
+
+/-! #### Axiom footprints: the emitter arm
+
+The `Classical.choice` carrier is the arithmetic's: `Nat.mod_eq_of_lt` and
+`BitVec.toNat_add` are the library lemmas that pull it in, the same carrier
+`JsonEscapeDecodeRun` names for its exit arm. -/
+
+/-- info: 'LeanLLVM.Vellum.HexReaderGuard' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms HexReaderGuard
+
+/-- info: 'LeanLLVM.Vellum.SecondLetterLanes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms SecondLetterLanes
+
+/-- info: 'LeanLLVM.Vellum.hex4_of_window_guard_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms hex4_of_window_guard_one
+
+/-- info: 'LeanLLVM.Vellum.ifEnd32Cell' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms ifEnd32Cell
+
+/-- info: 'LeanLLVM.Vellum.toNat_add_of_lt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms toNat_add_of_lt
+
+/-- info: 'LeanLLVM.Vellum.ifEnd32Cell_toNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ifEnd32Cell_toNat
+
+/-- info: 'LeanLLVM.Vellum.i115_six_to_cleanup32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms i115_six_to_cleanup32
+
+
+/-- The pair arm, from `surrogateTail`'s `some`: both later gates are the walk's own. -/
+theorem i115_pair_to_cleanup32
+    {body : List UInt8} {bs bs2 : List UInt8} {db : List (BitVec 1)}
+    {u : State} {addr b xp tab err xj daddr pos0 n q cp cpHi k pb : Nat}
+    {subv add15 nv incv pos0v jv nxpv addv : BitVec 64}
+    (hpc : u.pc = "if.end.i115")
+    (haddr : lookupName u.env "%arrayidx16" = some (.ptr addr))
+    (haddrq : addr = b + q)
+    (hdst : lookupName u.env "%dst" = some (.ptr daddr))
+    (hadd15 : lookupName u.env "%add15" = some (.int 64 add15))
+    (hsub : lookupName u.env "%sub" = some (.int 64 subv))
+    (hn : lookupName u.env "%n" = some (.int 64 nv))
+    (hcf : CellFrame u.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv)
+    (hdb : db = hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))
+    (hlen : bs.length = 16) (hload : readBytes u.mem (addr + 2) 16 = some bs)
+    (hs2len : bs2.length = 16) (hs2load : readBytes u.mem (addr + 8) 16 = some bs2)
+    (hcond115 : HexReaderGuard bs = (1 : BitVec 1))
+    (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63)
+    (hbodyR : readBytes u.mem b n = some body)
+    (hbytes4 : ∀ i, i < 4 → body[q + 2 + i]? = some (bs.getD i 0))
+    (hbytes1 : ∀ i, i < 6 → body[q + 2 + i]? = some (bs.getD i 0))
+    (hbytes2 : ∀ i, i < 4 → body[q + 8 + i]? = some (bs2.getD i 0))
+    (hq6 : q + 6 ≤ n)
+    (hq12 : q + 12 < 2 ^ 64) (hn64 : n < 2 ^ 64)
+    (hsubv : subv = BitVec.ofNat 64 q) (hnv : nv = BitVec.ofNat 64 n)
+    (hblen : body.length = n)
+    (hcp4 : hex4 body (q + 2) = some cp)
+    (hsome : surrogateTail body q cp = some (cpHi, 12)) :
+    ∃ (e : State) (j : Nat),
+      j ≤ 6 ∧ e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
+      (∀ z, runFuel escapeCalls (j + z) usDecFunction u =
+        runFuel escapeCalls z usDecFunction e) ∧
+      lookupName e.env "%sub" = some (.int 64 subv) ∧
+      lookupName e.env "%dst" = some (.ptr daddr) ∧
+      lookupName e.env "%add.i125" = some (.int 64
+        (ifEnd32Cell add15 (pairArmValue bs bs2 db))) ∧
+      (ifEnd32Cell add15 (pairArmValue bs bs2 db)).toNat =
+        add15.toNat + (utf8Encode cpHi).length ∧
+      lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 12)) ∧
+      e.mem = writeBytes u.mem (daddr + k)
+        (natToBytes (bytesToNat (utf8Encode cpHi)) 4) ∧
+      CellFrame e.env pb xp tab err xj daddr pos0v nv jv nxpv addv incv := by
+  have hcpv : (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535).toNat = cp := by
+    have h := hex4_of_window_guard_one (k0 := q + 2) hlen hbytes4 hdb hcond115
+    exact Option.some.inj (h.symm.trans hcp4)
+  have hsurr : SurrogateGuard body q cp := by
+    by_cases h : SurrogateGuard body q cp
+    · exact h
+    · rw [surrogateTail_none_of_guard h] at hsome
+      exact absurd hsome (by simp)
+  obtain ⟨hhiLo, hhiHi, hr, hq6', hq7⟩ := hsurr
+  have hsecond : ∃ lo, hex4 body (q + 8) = some lo ∧ 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF ∧
+      cpHi = 0x10000 + (cp - 0xD800) * 0x400 + (lo - 0xDC00) := by
+    unfold surrogateTail at hsome
+    rw [if_pos (show 0xD800 ≤ cp ∧ cp ≤ 0xDBFF ∧ q + 12 ≤ body.length ∧
+      body[q + 6]? = some 0x5C ∧ body[q + 7]? = some 0x75 from
+      ⟨hhiLo, hhiHi, hr, hq6', hq7⟩)] at hsome
+    cases hx : hex4 body (q + 8) with
+    | none => rw [hx] at hsome; exact absurd hsome (by simp)
+    | some lo =>
+      rw [hx] at hsome
+      simp only [] at hsome
+      by_cases hr2 : 0xDC00 ≤ lo ∧ lo ≤ 0xDFFF
+      · rw [if_pos hr2] at hsome
+        exact ⟨lo, rfl, hr2.1, hr2.2, (Prod.mk.inj (Option.some.inj hsome)).1.symm⟩
+      · rw [if_neg hr2] at hsome
+        exact absurd hsome (by simp)
+  obtain ⟨lo, hlo, hlo1, hlo2, hcpHi⟩ := hsecond
+  have hcond3 : udIfEnd3IGuard bs db subv nv = (1 : BitVec 1) :=
+    guard_one_of_surrogateGuard (hlen := by rw [hlen]; decide) hbytes1 hsubv hnv hq12
+      hn64 hblen hcpv ⟨hhiLo, hhiHi, hr, hq6', hq7⟩
+  have hcond17 : HexReaderGuard bs2 = (1 : BitVec 1) :=
+    hexReaderGuard_one_of_hex4_some (by rw [hs2len]; decide) hbytes2 hlo
+  have hlov : (hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+      BitVec.ofInt 32 65535).toNat = lo := by
+    have h := hex4_of_window_guard_one (k0 := q + 8) hs2len hbytes2 rfl hcond17
+    exact Option.some.inj (h.symm.trans hlo)
+  have hcond22 : evalICmp .ult
+      ((hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+        BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
+      (BitVec.ofInt 32 1024) = (1 : BitVec 1) := by
+    rw [show (hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+        BitVec.ofInt 32 65535) = BitVec.ofNat 32 lo from by
+      rw [bv32_eq_ofNat_toNat (hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&&
+        BitVec.ofInt 32 65535), hlov]]
+    exact (lowSurrogateTest_one_iff lo (by rw [← hlov]; exact and65535_toNat_lt _)).2
+      ⟨hlo1, hlo2⟩
+  have hval : (pairArmValue bs bs2 db).toNat = cpHi := by
+    have h := udIfThen26I_pairValue
+      (hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535)
+      (hxCode (byteLanes bs2) (SecondLetterLanes bs2) &&& BitVec.ofInt 32 65535)
+      (by rw [hcpv]; exact ⟨hhiLo, hhiHi⟩) (by rw [hlov]; exact ⟨hlo1, hlo2⟩)
+    rw [hcpv, hlov] at h
+    rw [hcpHi]
+    simpa only [pairArmValue, BitVec.and_assoc, BitVec.and_self] using h
+  have hvalBound : (pairArmValue bs bs2 db).toNat < 0x110000 := by
+    rw [hval]; omega
+  have hword := pairArmValue_word (bs := bs) (bs2 := bs2) (db := db)
+    (hi := cp) (lo := lo) (cp' := cpHi) hcpv hlov ⟨hhiLo, hhiHi⟩ ⟨hlo1, hlo2⟩ hcpHi
+  have hcell := ifEnd32Cell_toNat (cpBv := pairArmValue bs bs2 db) k hk hpos hvalBound
+  rw [hval] at hcell
+  obtain ⟨e, hpcE, hpreE, hmemE, _, hadvE, haddE, hsubE, hdstE, hrunE, hcfE⟩ :=
+    pairArm_to_cleanup32 u.env u addr bs bs2 subv nv add15 daddr k db
+      hpc haddr hdst hadd15 hsub hn hlen hload hdb hcond115 hcond3
+      hs2len hs2load hcond17 hcond22 hk hpos hcf
+  refine ⟨e, 6, ?_, hpcE, hpreE, ?_, hsubE, hdstE, haddE, hcell, hadvE, ?_, hcfE⟩
+  · omega
+  · intro z
+    simpa [show withEnv u.env u = u from rfl] using hrunE z
+  · rw [hmemE, hword]
+
+/-- info: 'LeanLLVM.Vellum.i115_pair_to_cleanup32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms i115_pair_to_cleanup32
 
 end LeanLLVM.Vellum
