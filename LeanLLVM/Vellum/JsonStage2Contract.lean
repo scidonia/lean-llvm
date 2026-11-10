@@ -131,13 +131,29 @@ walk's number conversion ends in the reference's `num_scan`/`to_double`, which
 copies the token into `measured/p6.c`'s `char tmp[64]` under its `n < sizeof tmp`
 test and allocates when the token does not fit.  A memory map with no heap models
 neither the allocation nor the `exit` on exhaustion, so **number tokens shorter
-than sixty-four bytes** are the domain, and `Stage2NumbersFit` is that promise in
-the only vocabulary a caller can make it in: the walk's token for an entry at `p`
-ends at the next entry's position, or at the first whitespace before it, or at the
-document's end — all at most the distance to the next entry (`stage2.c`'s
-`t.end = ee` with `ee ≤ ip`) — so the distance to the next entry bounds the copy.
-The clause is over the entries whose first byte is a number start (`-` or a
-digit, `od_scalar_value`'s test); it says nothing about what the number *means*.
+than sixty-four bytes** are the domain — and the clause is stated as the token's
+own length (`Stage2NumbersFit`), read from the document's bytes at staging time.
+
+**The gap between entries is not the token's length, and a clause stated over it
+is false of an ordinary document.**  `[1` followed by a hundred spaces and `,]`
+puts entries at `0, 1, 102, 103`: the number-start entry at `1` has a distance of
+`101` to the next entry while its token is the single byte `1`.  A promise that
+the distance to the next entry is below sixty-four therefore refuses a document
+the walk reads, and no staging can make it true of every document a caller
+stages — so it would have excluded the ordinary case rather than the model's
+edge.  The document is `stage2GapDoc` below, with its two numbers executed beside
+the clause.
+
+What the number scan actually needs is the token's reach: it stops at the first
+byte that ends a scalar — whitespace or a structural byte (`stage2.c`'s
+`od_scalar_value` scan, and `num_scan`'s copy) — and the bytes after that stop
+are never read.  `stage2NumberLen` is that length for the bytes at an entry, so
+the clause is statable at staging time over the document and the entry positions
+together, and its threshold is the same `stage2NumberCopy = 64` the fallback's
+own `tmp[64]` uses: the unit's domain edge and the pipeline's staging domain are
+one condition rather than two that could drift.  The clause is over the entries
+whose first byte is a number start (`-` or a digit, `od_scalar_value`'s test); it
+says nothing about what the number *means*.
 
 # The post
 
@@ -334,23 +350,60 @@ visible before the run. -/
 def stage2IsNumberStart (c : UInt8) : Bool :=
   decide (c = 0x2D) || (decide (0x30 ≤ c) && decide (c ≤ 0x39))
 
-/-- **Every number token in the document fits the walk's slow-path copy**
-(`stage2.h:26-38`): for each entry whose first byte is a number start, the
-distance to the next entry — or to the document's end for the last entry — is
-shorter than `stage2NumberCopy`.
+/-- Whether a byte ends a scalar token: whitespace, or one of the structural
+bytes the walk's switch takes its own arm for (`stage2.c`'s `od_scalar_value`
+scan stops there, and `num_scan` copies no further). -/
+def stage2EndsNumber (c : UInt8) : Bool :=
+  decide (c = 0x20) || decide (c = 0x09) || decide (c = 0x0A) ||
+    decide (c = 0x0D) || decide (c = 0x2C) || decide (c = 0x3A) ||
+    decide (c = 0x7B) || decide (c = 0x7D) || decide (c = 0x5B) || decide (c = 0x5D)
 
-The bound is the token's: the walk's token ends at the next entry position when
-the byte before it is not whitespace, and at the first whitespace before it
-otherwise, so in either case its length is at most the distance to the next entry
-(`stage2.c`'s `t.end = ee` with `ee ≤ ip`).  A number's internal bytes are not
-structural and so are not entries (`stage2.h:56-58`), which is what makes the
-distance the bound rather than a coincidence of one document. -/
+/-- The number token's length at `p`: the run of bytes from `p` up to the first
+byte that ends a scalar, or the document's end.  This is the length the fallback
+copies into `tmp[64]`, read from the document rather than from the distance to
+the next entry. -/
+def stage2NumberLen (bs : List UInt8) (p : Nat) : Nat :=
+  ((bs.drop p).takeWhile (fun c => !stage2EndsNumber c)).length
+
+/-- The counterexample the gap promise fails on: `[1`, a hundred spaces, `,]`.
+Its entries are `0, 1, 102, 103`; the number-start entry at `1` is one byte long
+and a hundred and one bytes from the next entry. -/
+def stage2GapDoc : List UInt8 :=
+  [0x5B, 0x31] ++ List.replicate 100 0x20 ++ [0x2C, 0x5D]
+
+theorem stage2GapDoc_length : stage2GapDoc.length = 104 := by decide
+
+/-- The document's byte at `1` is the number start `1`, and its token is that one
+byte — the two numbers the gap promise and the token-length promise disagree
+about. -/
+theorem stage2GapDoc_token :
+    stage2GapDoc[1]? = some 0x31 ∧ stage2IsNumberStart 0x31 = true ∧
+      stage2NumberLen stage2GapDoc 1 = 1 ∧ 102 - 1 = 101 := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+-- The two promises, at the counterexample: the token is one byte and the gap is
+-- a hundred and one, so the gap promise would refuse this document and the
+-- token-length promise admits it.  Executed, not asserted in prose.
+#guard decide (stage2NumberLen stage2GapDoc 1 < stage2NumberCopy)
+#guard decide (¬ (102 - 1 < stage2NumberCopy))
+#guard decide (stage2NumberLen stage2GapDoc 0 = 0)
+
+/-- **Every number token in the document fits the walk's slow-path copy**
+(`stage2.h:26-38`): for each entry whose first byte is a number start, the token
+that begins there is shorter than `stage2NumberCopy`.
+
+The bound is the token's own length (`stage2NumberLen`), which is what the
+fallback copies into `tmp[64]`: the scan stops at the first whitespace or
+structural byte and never reads past it.  It is *not* the distance to the next
+entry — `stage2GapDoc` is the witness, an ordinary document whose number-start
+entry has a hundred-and-one-byte gap and a one-byte token — so a promise stated
+over entry distances would refuse documents the walk reads.  A number's internal
+bytes are not entries (`stage2.h:56-58`), which is why the entry list alone cannot
+name the token: the clause reads the document's bytes at the entry position. -/
 def Stage2NumbersFit (bs : List UInt8) (ent : List Nat) : Prop :=
   ∀ (i p : Nat) (c : UInt8),
     ent[i]? = some p → bs[p]? = some c → stage2IsNumberStart c = true →
-      match ent[i + 1]? with
-      | some q => q - p < stage2NumberCopy
-      | none => bs.length - p < stage2NumberCopy
+      stage2NumberLen bs p < stage2NumberCopy
 
 /-! ### The staged extents and the frame -/
 
@@ -843,6 +896,26 @@ bundle as a hypothesis, so it is one step below that carrier. -/
 /-- info: 'LeanLLVM.Vellum.stage2IsNumberStart' does not depend on any axioms -/
 #guard_msgs in
 #print axioms stage2IsNumberStart
+
+/-- info: 'LeanLLVM.Vellum.Stage2NumbersFit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Stage2NumbersFit
+
+/-- info: 'LeanLLVM.Vellum.stage2EndsNumber' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2EndsNumber
+
+/-- info: 'LeanLLVM.Vellum.stage2NumberLen' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2NumberLen
+
+/-- info: 'LeanLLVM.Vellum.stage2GapDoc' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2GapDoc
+
+/-- info: 'LeanLLVM.Vellum.stage2GapDoc_token' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms stage2GapDoc_token
 
 /-- info: 'LeanLLVM.Vellum.Stage2NumbersFit' depends on axioms: [propext] -/
 #guard_msgs in

@@ -47,13 +47,17 @@ any state that agrees on that read set.  The per-instruction step behind it
 `evalInstr` rather than about this pipeline; the `AgreeOn` constructors kept here
 are the names this module's axiom pins read.
 
-**What is not here.**  The three `PipelineBodyFacts` fields — the loop
-instance, the seed and the tail.  What is here for them is the arm dispatch: the
-four traces moved by `denoteCode_agree` to the state a step actually hands on,
-one iteration each, and the semantics facts that move needs (`denoteCode_pc`,
-`blockUses`).  The fields' remaining obligations are stated clause by clause at
-the end of the module, beside the lemmas that consume them, so a later reader
-starts from the obstruction rather than rediscovering it.
+**What is here for the instance, and what is not.**  The loop instance and its
+invariant are here, with the entry stream and the block count as carried facts;
+the four arm steps are `PipelineBodyStep`'s, and `pipelineLoop` is assembled
+there.  What is not here is the seed (the three control steps from the entry
+block to the loop's first iteration) and the tail (`PipelineBodyFacts.exit`),
+and the exit predicate is the interface between them: it states at
+`for.cond.cleanup` the stream facts the tail's stage-2 call needs, and it is
+`pipelineLoopInv 0` by definition rather than a second spelling of it.  The
+obstructions are stated where the definitions are — the exit predicate's
+docstring names what the handoff does not reach, and the invariant's names the
+clause each conjunct answers to.
 -/
 import LeanLLVM.Vellum.JsonPipelineBlockEval
 import LeanLLVM.Vellum.JsonPipelineRefine
@@ -67,6 +71,8 @@ namespace LeanLLVM.Vellum
 
 open LeanLLVM
 open LeanLLVM.Vellum.JsonPipelineIR (pipelineBody lit)
+open LeanLLVM.Vellum.JsonEntryIR (readLanes32 streamPrefix)
+open LeanLLVM.Vellum.JsonScanSpec (positionsOf)
 
 namespace PipelineBodyFacts
 
@@ -2397,6 +2403,94 @@ theorem escape_pre_shape {base : Nat} {budget : List Value → Mem → Nat}
     hargs, hblock, hbs, hctl, him, -⟩ := h
   exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, hargs, hblock, hbs, hctl, him⟩
 
+/-! ### The entry stream's order and its bound
+
+The stage-2 walk indexes the document at every position the entry stream names,
+and it reads the stream in the order stage 1 wrote it (`stage2.h:56-58`, `:91`),
+so the two facts the loop carries about the stream it has appended are that its
+positions increase strictly and that each lies inside the blocks read so far.
+Both are `positionsOf` read off `setLanes`: the lane list is strictly increasing
+(`BitLanes.setLanes_pairwise`) and every lane is inside the word
+(`BitLanes.mem_setLanes`), and a block's positions are its lanes offset by the
+block's base.
+
+The loop appends one block at a time, and the emitter's post names the appended
+list as `streamPrefix ent blk0 nblk` with `nblk.toNat = ent.length` — the
+`nblk` argument is the literal `1` at both call sites, so the appended list is
+one word's positions at its own block base.  The three facts below are that
+case, stated at the word rather than at the existential the post leaves. -/
+
+theorem positionsOf_pairwise (m : BitVec 64) (base : Nat) :
+    (positionsOf m base).Pairwise (· < ·) := by
+  unfold positionsOf
+  exact List.Pairwise.map (fun k : Nat => base + k) (fun a b h => by omega)
+    (BitLanes.setLanes_pairwise m)
+
+theorem positionsOf_bounds (m : BitVec 64) (base : Nat) :
+    ∀ q ∈ positionsOf m base, base ≤ q ∧ q < base + 64 := by
+  intro q hq
+  simp only [positionsOf, List.mem_map] at hq
+  obtain ⟨k, hk, rfl⟩ := hq
+  have hlt : k < 64 := (BitLanes.mem_setLanes.mp hk).1
+  omega
+
+/-- One block's prefix is its word's positions at the block's base: the `nblk`
+argument is a literal `1`, so the post's `streamPrefix ent blk0 nblk.toNat` is
+this. -/
+theorem streamPrefix_one_eq (w : BitVec 64) (blk0 : Nat) :
+    streamPrefix [w] blk0 1 = positionsOf w (64 * blk0) := by
+  simp [streamPrefix]
+
+theorem streamPrefix_one_pairwise (w : BitVec 64) (blk0 : Nat) :
+    (streamPrefix [w] blk0 1).Pairwise (· < ·) := by
+  rw [streamPrefix_one_eq]
+  exact positionsOf_pairwise w (64 * blk0)
+
+/-- One block's positions lie inside that block. -/
+theorem streamPrefix_one_bounds (w : BitVec 64) (blk0 : Nat) :
+    ∀ q ∈ streamPrefix [w] blk0 1, 64 * blk0 ≤ q ∧ q < 64 * (blk0 + 1) := by
+  intro q hq
+  rw [streamPrefix_one_eq] at hq
+  have h := positionsOf_bounds w (64 * blk0) q hq
+  omega
+
+/-- **The appended stream stays ordered.**  A prefix whose positions increase
+strictly and stop before block `i`, followed by block `i`'s positions, is
+strictly increasing: every new position is at least `64 * i`. -/
+theorem streamPairwise_append {l : List Nat} {w : BitVec 64} {i : Nat}
+    (hl : l.Pairwise (· < ·)) (hb : ∀ q ∈ l, q < 64 * i) :
+    (l ++ streamPrefix [w] i 1).Pairwise (· < ·) := by
+  rw [streamPrefix_one_eq]
+  refine List.pairwise_append.mpr ⟨hl, positionsOf_pairwise w (64 * i), ?_⟩
+  intro a ha b hb'
+  have h1 := hb a ha
+  have h2 := (positionsOf_bounds w (64 * i) b hb').1
+  omega
+
+/-- **The appended stream stays inside the blocks read so far.**  At block `i`'s
+successor the stream's positions are all below `64 * (i + 1)`, which is the
+bound the exit predicate and the stage-2 side read. -/
+theorem streamBound_append {l : List Nat} {w : BitVec 64} {i : Nat}
+    (hb : ∀ q ∈ l, q < 64 * i) :
+    ∀ q ∈ l ++ streamPrefix [w] i 1, q < 64 * (i + 1) := by
+  intro q hq
+  rw [streamPrefix_one_eq] at hq
+  rcases List.mem_append.mp hq with h | h
+  · have := hb q h; omega
+  · have := (positionsOf_bounds w (64 * i) q h).2; omega
+
+/-- The post's existential is one word, because the appended word count is the
+literal `1` and the post pins the mask list's length to it. -/
+theorem eq_singleton_of_length_one {ent : List (BitVec 64)}
+    (h : ent.length = 1) : ∃ v, ent = [v] := by
+  cases ent with
+  | nil => simp at h
+  | cons v vs =>
+      refine ⟨v, ?_⟩
+      cases vs with
+      | nil => rfl
+      | cons u us => simp at h
+
 /-! ### The loop instance: the arm, the carried state, the invariant
 
 The instance is `PipelineLoop (pipelineCalls tab base s2) pipelineBody` with the
@@ -2429,6 +2523,8 @@ that consumes it and the post or frame that hands it on:
 |`HasBytes s.mem xp (4 * blockMax xn)`|the escape list's `pre` capacity clause|the batch's writes at `xp + 4 * xn` and the post's unchanged-outside conjunct|
 |the three mask separations, at the staged window's extent|`masksPre_at`'s three disjunctions|static: they name addresses, not bytes|
 |the three escape exclusions, at the stream's staged capacity|the escape list's count and carry exclusions|static, and stated at the capacity because a per-block extent is not preserved by the count's growth|
+|`blocks = pipelineBlocks S.n.toNat`|nothing in a step — it is the state's own length argument, and the instance's `N_eq` and this predicate are what make the loop's bound a function of the document|static: the loop writes slots and never `%n`; the seed takes it from the staging's `.int 64 n` slot|
+|`S.k0 ≤ S.k`, `readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent`, `S.ent.Pairwise (· < ·)`, `∀ q ∈ S.ent, q < 64 * S.i`|the exit predicate, which hands the stream to the tail's stage-2 call (`Γ_stage2.pre`'s document order, its `q < n` and its number clause)|the entry emitter's post: it names the appended lanes as `streamPrefix ent blk0 nblk` with `nblk = 1`, so `streamPrefix_one_pairwise`/`_bounds` give the block's two facts and `streamPairwise_append`/`streamBound_append` compose them; the exit steps carry the same facts to `for.cond.cleanup`|
 
 **What is deliberately absent, and why each absence is not an omission.**
 The run state's register lookups are the transport agreement's own content, and
@@ -2459,14 +2555,32 @@ carry pair, both `cursorRoom` clauses, `HasBytes xp` and the three exclusions co
 from this invariant's own conjuncts.  `escape_pre_shape` is the destructuring the
 call site reads them through.
 
-**What the step still owes.**  No clause of the record is left without a supplier
-on the gate-on arms; what remains open is the **step proof** for the four arms and
-the seed, which this module does not assemble.  Its inputs are the arm traces and
-the staging record, and the one fact it needs that is not a conjunct above is the
-`2 ^ 64` bound on the block index, which lives in `pipelineStaging`'s block-count
-clause rather than in this invariant.  The step therefore does not close inside
-this file — not because a clause of the record is unmeetable, but because the
-composition is the instance's own work. -/
+**The step and the exit handoff.**  Every clause of the record has a supplier on
+the four arms, and the arm steps (`PipelineBodyStep`) are the dispatch over them.
+The one fact a step needs that is not a conjunct above is the `2 ^ 64` bound on
+the block index, which lives in `pipelineStaging`'s block-count clause rather than
+in this invariant — the loop is about the state, not the arguments, so the bound
+stays a supplier in the proof environment.
+
+**The exit states the stream, because a step's successor carries it and a spent
+budget would otherwise lose it.**  `pipelineLoopInv 0` *is* `pipelineLoopExit`, by
+definition, and that predicate carries the appended stream's read, its order and
+its bound at `for.cond.cleanup` — the facts `PipelineBodyFacts.exit`'s consumer
+reads at the tail's stage-2 call.  The exit steps produce them from the last
+iteration's own successor, so the handoff is the same three facts rather than a
+second statement of them: one predicate, one spelling, no place for the two to
+drift apart.
+
+**What the handoff does and does not reach.**  The read starts at
+`S.ep + 4 * S.k0`, so the bytes the caller staged before the loop's first
+iteration are not claimed: `pipelineStaging` says nothing about them, and a
+conjunct about them would be unmeetable at the seed.  What the tail therefore
+still needs from elsewhere is (i) the same three facts over the *whole* stream,
+which a caller's initial prefix would have to supply, and (ii) `∀ q ∈ ent, q < n`
+at the document's own length rather than at `64 * blocks`, which is the last
+block's lim-mask argument and belongs to the per-arm entry-word identity rather
+than to this predicate.  Both are named here because a consumer that reads the
+exit as complete would be reading it wrong. -/
 
 /-- The four unswitched copies of the loop body, by the arm the entry selection
 took: bit 0 selects the entry emitter, bit 1 the escape list's gate. -/
@@ -2513,9 +2627,16 @@ here is anything a step can derive or does not read:
 * the iteration's block as two halves — it is `blockRead_of_window`'s read of the
   staged window at `64 * i`, so carrying it would be a second statement of the
   window clause;
-* the entry stream's and the entry word's readability — the body's own store and
-  the emitters' writes create those bytes, and every unit record's frame leaves
-  them readable, so no arm step consumes a carried clause about them. -/
+* the entry word's readability — the body's own store creates that byte range,
+  and every unit record's frame leaves it readable, so no arm step consumes a
+  carried clause about it.
+
+What *is* carried about the entry stream is its order and its bound (`ent`, and
+the three conjuncts the invariant states about it): those are facts about which
+positions the stream names, which the bytes alone do not determine — a stream
+read back is a list, and which list it is is the loop's own history.  The count
+and the extent are not duplicated: the read is stated at `S.k - S.k0` entries from
+`S.ep + 4 * S.k0`, so the prefix before the first iteration is not claimed. -/
 structure PipelineLoopCarried where
   /-- Which of the four unswitched copies this iteration runs. -/
   arm : PipelineBodyArm
@@ -2568,6 +2689,11 @@ structure PipelineLoopCarried where
   /-- The first iteration's count, kept because `cursorRoom` is stated from it. -/
   k0 : Nat
   xn0 : Nat
+  /-- The entry stream the loop has appended: the positions the emitters wrote,
+  from the first iteration's cursor onwards, in the order they wrote them.  One
+  object rather than an existential rebuilt per step: the successor inherits the
+  stream it extends, and the exit hands the same object to the tail. -/
+  ent : List Nat
 
 /-- The arm's incoming builder, at the carried values: the four traces are stated
 one per arm, so the agreement the transport consumes is stated at the same
@@ -2587,6 +2713,25 @@ def PipelineBodyArm.inBuilder (a : PipelineBodyArm) (env : Env)
   | .b8Gate =>
       bodyIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
         S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr
+
+/-- The states the loop may leave in: the exit block, carrying the entry stream
+it has appended.
+
+The stream facts are part of the exit rather than something the tail
+reconstructs, because they are not recoverable from the state: the memory holds
+the bytes, but which positions the stream names, in what order, is the loop's own
+history — the emitters wrote them block by block and no read of the exit state
+says where the writes began.  `PipelineBodyFacts.exit`'s consumer reads the
+stream at the tail's stage-2 call, so the exit is where the facts are handed on.
+`pipelineLoopInv` at a spent budget *is* this predicate, by its own definition, so
+the two are one statement rather than two that a later edit could drift apart. -/
+def pipelineLoopExit (s : State) : Prop :=
+  ∃ (S : PipelineLoopCarried),
+    s.pc = "for.cond.cleanup" ∧
+    S.k0 ≤ S.k ∧
+    readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
+    S.ent.Pairwise (· < ·) ∧
+    (∀ q ∈ S.ent, q < 64 * S.i)
 
 /-- **The loop invariant.**  With `r + 1` iterations of budget the state is the
 entry of the loop's next iteration at the arm the document's selector chose; with
@@ -2674,6 +2819,26 @@ step that reads it:
   entry bound on and `escapePositionsPost`'s count clause the escape bound, each
   growing the count by at most sixty-four per block, while the fixed extent is
   static;
+* `blocks = pipelineBlocks S.n.toNat` — the iteration bound is the document's
+  own block count, read from the length argument the state carries.  Static: the
+  loop never writes `%n`, and the seed reads it off the staging's `.int 64 n`
+  slot.  Carried rather than derived because the instance's `N_eq` and the exit's
+  bound are about the same value, and a state-only predicate cannot reach the
+  argument list to say so;
+* **the entry stream, as one object** — `S.ent`, read at
+  `(S.ep + 4 * S.k0, S.k - S.k0)`, with `S.k0 ≤ S.k`, strictly increasing, and
+  every position below `64 * S.i`.  Its consumers are the exit predicate's stream
+  facts and, through those, the tail's stage-2 call, whose `pre` reads the stream
+  in document order and inside the document (`stage2.h:56-58`, `:91`).  Handed on
+  by the entry emitter's post: it states the appended lanes as
+  `streamPrefix ent blk0 nblk` with `nblk.toNat = ent.length`, and `nblk` is the
+  literal `1` at both call sites, so the appended list is one word's positions at
+  its own block base — `streamPrefix_one_pairwise`/`streamPrefix_one_bounds` give
+  the three facts, and `streamPairwise_append`/`streamBound_append` compose them
+  with the predecessor's.  The seed establishes the three by `S.k = S.k0` — the
+  read is empty and the bound vacuous — so the prefix before the first iteration
+  is not a claim.  Carried rather than derived because the bytes are the
+  emitters' and no read of the state recovers which positions the stream names;
 * the staged regions' separation — `DisjointRegions` at the document, the table,
   the mask carry slot, the mask slot, the entry word, the entry stream, the escape
   count, the escape stream and the escape carry.  The units' posts leave
@@ -2688,7 +2853,7 @@ step that reads it:
   table's preservation derivable from the same conjunct rather than from a
   separate promise per frame. -/
 def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
-  | 0, s => s.pc = "for.cond.cleanup"
+  | 0, s => pipelineLoopExit s
   | r + 1, s =>
       ∃ (S : PipelineLoopCarried),
         s.pc = S.arm.head ∧
@@ -2723,6 +2888,25 @@ def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         -- one byte, which is the whole reason the staged extent has a `+9`.
         S.k ≤ S.k0 + 64 * S.i ∧
         S.xn ≤ S.xn0 + 64 * S.i ∧
+        -- the block count is the document's own.  `%shr` is the staging's block
+        -- count and `pipelineBlocks` is `(n + 63) / 64`, so the loop's iteration
+        -- bound is a function of the length argument the state carries rather
+        -- than a number alongside it — which is what lets the instance's `N_eq`
+        -- and the exit's bound be about the same value.
+        blocks = pipelineBlocks S.n.toNat ∧
+        -- **the entry stream, as one object.**  The prefix before the first
+        -- iteration's cursor is not claimed (the staging says nothing about it),
+        -- so the read is the appended part: `S.k - S.k0` four-byte lanes from
+        -- `S.ep + 4 * S.k0`.  `S.k0 ≤ S.k` is what makes that range the one the
+        -- emitters wrote, and the three facts after it are what `Γ_stage2.pre`
+        -- reads of the stream (`stage2.h:56-58`, `:91`): the positions increase
+        -- strictly, and each lies inside the blocks read so far.  Carried rather
+        -- than derived because the bytes are the emitters' and no read of the
+        -- state recovers which of them the stream names.
+        S.k0 ≤ S.k ∧
+        readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
+        S.ent.Pairwise (· < ·) ∧
+        (∀ q ∈ S.ent, q < 64 * S.i) ∧
         (S.arm.hasEscape = true →
           carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
         -- **the two carry slots describe one carry** on the arms that use both.
@@ -2743,10 +2927,6 @@ def pipelineLoopInv (base tab : Nat) (blocks : Nat) : Nat → State → Prop
           [(S.b, 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
            (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.nxp, 8),
            (S.xp, 4 * S.xpExtent), (S.xcarry, 16)]
-
-/-- The states the loop may leave in: the exit block, which carries the loop's
-counts to the tail. -/
-def pipelineLoopExit (s : State) : Prop := s.pc = "for.cond.cleanup"
 
 /-- At a spent budget the invariant is the exit predicate, which is the shape
 `PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
@@ -2796,6 +2976,42 @@ carrier: the section is at `[propext, Quot.sound]` or below. -/
 /-- info: 'LeanLLVM.Vellum.pipelineLoopInv' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pipelineLoopInv
+
+/-- info: 'LeanLLVM.Vellum.positionsOf_pairwise' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_pairwise
+
+/-- info: 'LeanLLVM.Vellum.positionsOf_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_bounds
+
+/-- info: 'LeanLLVM.Vellum.streamPrefix_one_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPrefix_one_eq
+
+/-- info: 'LeanLLVM.Vellum.streamPrefix_one_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPrefix_one_pairwise
+
+/-- info: 'LeanLLVM.Vellum.streamPrefix_one_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPrefix_one_bounds
+
+/-- info: 'LeanLLVM.Vellum.streamPairwise_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPairwise_append
+
+/-- info: 'LeanLLVM.Vellum.streamBound_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamBound_append
+
+/-- info: 'LeanLLVM.Vellum.eq_singleton_of_length_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms eq_singleton_of_length_one
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoopExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms pipelineLoopExit
 
 /-- info: 'LeanLLVM.Vellum.pipelineLoopInv_zero' depends on axioms: [propext] -/
 #guard_msgs in
