@@ -80,28 +80,32 @@ of the caller's arguments, and the loop's whole fuel is `(N + 1) * cost`. -/
 /-- An induction over a block loop whose body block depends on a value the loop
 carries: the arm-specialised body in four copies.
 
-`Inv r s` is the invariant with `r` iterations of budget left, `Exit` names every
-state the loop may leave in (a disjunction when the loop has a success path and a
-refusal path, or four heads when the body is unswitched), and the two arms are
-`runFuel` prefixes at an exact count bounded by `cost`.  Nothing names a block:
-which block a state is at is the invariant's business. -/
+`Inv mem r s` is the invariant with `r` iterations of budget left at the caller's
+memory `mem`, `Exit` names every state the loop may leave in (a disjunction when the
+loop has a success path and a refusal path, or four heads when the body is
+unswitched), and the two arms are `runFuel` prefixes at an exact count bounded by
+`cost`.  Nothing names a block: which block a state is at is the invariant's
+business. -/
 structure PipelineLoop (calls : Calls) (f : Function) where
   /-- The loop's iteration bound, a term of the caller's arguments. -/
   N : Nat
   /-- The per-iteration control-step bound, a term of the caller's arguments. -/
   cost : Nat
   /-- The invariant: with `r` iterations of budget left, the state is the loop's
-  next iteration, carrying whatever the arm selected needs. -/
-  Inv : Nat → State → Prop
+  next iteration, carrying whatever the arm selected needs.  The caller's memory
+  is an index and not part of the state, because the loop's frame — what the run
+  leaves of the caller's staging where it wrote nothing — is a relation between
+  that memory and the state's, and a state cannot name it. -/
+  Inv : Mem → Nat → State → Prop
   /-- The states the loop may leave in. -/
   Exit : State → Prop
   /-- One iteration: from a state with `r + 1` iterations left, the run reaches a
   state with `r` left within `cost` control steps. -/
-  step : ∀ (r : Nat) (s : State), Inv (r + 1) s →
-    ∃ (e : State) (j : Nat), j ≤ cost ∧ Inv r e ∧
+  step : ∀ (mem : Mem) (r : Nat) (s : State), Inv mem (r + 1) s →
+    ∃ (e : State) (j : Nat), j ≤ cost ∧ Inv mem r e ∧
       ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
   /-- The last iteration reaches a state `Exit` admits. -/
-  exit : ∀ (s : State), Inv 0 s →
+  exit : ∀ (mem : Mem) (s : State), Inv mem 0 s →
     ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧
       ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
 
@@ -109,16 +113,17 @@ structure PipelineLoop (calls : Calls) (f : Function) where
 the run reaches an exit state within `(r + 1) * cost` control steps.  The
 recursion consumes the two arms only; the arm the entry block selected appears
 wherever the invariant puts it, so the four copies are one induction. -/
-theorem PipelineLoop.run_from {calls : Calls} {f : Function} (L : PipelineLoop calls f) :
-    ∀ (r : Nat) (s : State), L.Inv r s →
+theorem PipelineLoop.run_from {calls : Calls} {f : Function} (L : PipelineLoop calls f)
+    (mem : Mem) :
+    ∀ (r : Nat) (s : State), L.Inv mem r s →
       ∃ (e : State) (j : Nat), j ≤ (r + 1) * L.cost ∧ L.Exit e ∧
         ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
   | 0, s, h => by
-      obtain ⟨e, j, hj, hexit, hrun⟩ := L.exit s h
+      obtain ⟨e, j, hj, hexit, hrun⟩ := L.exit mem s h
       exact ⟨e, j, by simpa using hj, hexit, hrun⟩
   | r + 1, s, h => by
-      obtain ⟨e, j, hj, hinv, hrun⟩ := L.step r s h
-      obtain ⟨e', j', hj', hexit', hrun'⟩ := L.run_from r e hinv
+      obtain ⟨e, j, hj, hinv, hrun⟩ := L.step mem r s h
+      obtain ⟨e', j', hj', hexit', hrun'⟩ := L.run_from mem r e hinv
       refine ⟨e', j + j', ?_, hexit', fun k => ?_⟩
       · rw [Nat.succ_mul]
         omega
@@ -128,10 +133,10 @@ theorem PipelineLoop.run_from {calls : Calls} {f : Function} (L : PipelineLoop c
 /-- The loop from its head, at the whole bound as its budget: the run reaches an
 exit state within `(N + 1) * cost` control steps. -/
 theorem PipelineLoop.run {calls : Calls} {f : Function} (L : PipelineLoop calls f)
-    (s : State) (h : L.Inv L.N s) (k : Nat) :
+    (mem : Mem) (s : State) (h : L.Inv mem L.N s) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (L.N + 1) * L.cost ∧ L.Exit e ∧
       runFuel calls (j + k) f s = runFuel calls k f e := by
-  obtain ⟨e, j, hj, hexit, hrun⟩ := L.run_from L.N s h
+  obtain ⟨e, j, hj, hexit, hrun⟩ := L.run_from mem L.N s h
   exact ⟨e, j, hj, hexit, hrun k⟩
 
 /-- A budget at the bound, not at the trip count: a completed continuation from
@@ -139,10 +144,10 @@ any exit state lifts to the loop's head at `(N + 1) * cost + k`.  Only a
 completed continuation can be lifted, because the exit is a jump and `runFuel`
 past it executes the next block. -/
 theorem PipelineLoop.run_at {calls : Calls} {f : Function} (L : PipelineLoop calls f)
-    (s : State) (h : L.Inv L.N s) (k : Nat) {o : Outcome}
+    (mem : Mem) (s : State) (h : L.Inv mem L.N s) (k : Nat) {o : Outcome}
     (hcont : ∀ (e : State), L.Exit e → runFuel calls k f e = some o) :
     runFuel calls ((L.N + 1) * L.cost + k) f s = some o := by
-  obtain ⟨e, j, hj, hexit, hrun⟩ := L.run s h k
+  obtain ⟨e, j, hj, hexit, hrun⟩ := L.run mem s h k
   have hone : runFuel calls (j + k) f s = some o := by
     rw [hrun]
     exact hcont e hexit
@@ -635,7 +640,7 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   /-- The entry, the arm selection, and the loop's first iteration (or, for a
   zero-block document, the exit the entry test takes). -/
   seed : ∃ (e : State) (j : Nat), j ≤ 3 ∧
-    ((loop.N = 0 ∧ loop.Exit e) ∨ loop.Inv loop.N e) ∧
+    ((loop.N = 0 ∧ loop.Exit e) ∨ loop.Inv mem loop.N e) ∧
     ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
       runFuel (pipelineCalls tab base s2) k pipelineBody e
@@ -658,10 +663,10 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   proved — `PipelineBodyStep.pipelineExit_run` runs `for.cond.cleanup`, the branch
   and `cleanup` from an exit state and returns a verdict with the branch's memory
   — at the cells the exit block reads and at stage-2's `pre`.  `loop.Exit` is
-  `pipelineLoopExit`, which names the program counter and the entry stream and
-  binds no register (`PipelineBodyStep.pipelineLoopExit_env_free`), so this field
-  is a claim about an exit predicate that carries them, and the inhabitation waits
-  on that predicate rather than on the tail's proof. -/
+  `pipelineLoopExit`, which names the program counter, the predecessor, the entry
+  stream and the tail's nine cells (`PipelineBodyStep.pipelineLoopExit_cells`); it
+  does not name the exiting count, and that is the one hypothesis of the run this
+  field still owes. -/
   exit : ∀ (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
@@ -703,9 +708,10 @@ clause rather than left as "the body analysis":
   steps are proved — `PipelineBodyStep.pipelineExit_run`, one `denoteCode` trace per
   block at the exit state's own environment, composed into the three-fuel run, with
   the stage-2 record consumed at the call site — at the *cells* the exit state must
-  carry and at stage-2's `pre`, which `pipelineLoopExit` does not supply
-  (`PipelineBodyStep.pipelineLoopExit_env_free`); that predicate is what this field
-  still waits on.  What the loop's exit *does* hand on is the whole entry stream:
+  carry and at stage-2's `pre`.  `pipelineLoopExit` supplies the nine cells and the
+  predecessor (`PipelineBodyStep.pipelineLoopExit_cells`), not the exiting count or
+  the two calls' inputs, so those three hypotheses of `pipelineExit_run` are what
+  this field waits on.  What the loop's exit *does* hand on is the whole entry stream:
   the staging names the caller's prefix, the invariant carries it beside the
   appended part, and `PipelineBodyStep.pipelineExit_stream` composes them at the
   exit's own count, so the post's `readLanes32 m ep nk'` is derivable from the pre
@@ -757,7 +763,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     refine finish verdict m (j0 + 3) hrunJ ?_ hpost3
     omega
   · -- the loop, at its bound, and the tail
-    obtain ⟨e1, j1, hj1, hexit1, hrun1⟩ := loop.run e0 hinv 3
+    obtain ⟨e1, j1, hj1, hexit1, hrun1⟩ := loop.run mem e0 hinv 3
     obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e1 hexit1
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + (j1 + 3)) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
