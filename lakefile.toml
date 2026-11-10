@@ -4,8 +4,9 @@ defaultTargets = ["leanllvm", "ITree"]
 
 # The interaction-tree library is proved against mathlib's QPF support; the
 # revision is pinned so a build resolves the same sources everywhere.  Every
-# module reaches mathlib only through `ITree/Internal/PFunctor.lean`, the one
-# adapter that imports it directly.
+# module reaches mathlib only through an adapter under `ITree/Internal/` --
+# `PFunctor.lean` for the tree carrier, `FloatingPoint.lean` for the
+# arithmetic -- and `tests/itree-boundary.sh` asserts that set.
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"

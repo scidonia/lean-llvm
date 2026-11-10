@@ -102,9 +102,9 @@ alone.
    `lakefile.toml`) is Mario Carneiro's port of Flocq's approach and carries the
    exact core: `ValidFinite`, `Float.toRat`, and the correctly-rounded division
    primitive `divNatLtTwoPow`.  `Pff`'s architecture can be ported onto it.
-   **`Mathlib.*` may not appear outside `ITree/Internal/PFunctor.lean`
-   (`AGENTS.md`), so a new adapter under `ITree/Internal/` is needed; that is a
-   planner decision, and this module imports only `LeanLLVM.JSON.Strtod`.**
+   **`Mathlib.*` may not appear outside an adapter under `ITree/Internal/`
+   (`AGENTS.md`); `ITree/Internal/FloatingPoint.lean` is that adapter, and
+   this module imports only `LeanLLVM.JSON.Strtod`.**
 2. **Tier 1: port `Pff`'s round-once argument.**  The operands are exact and
    the operation is single, so `divNatLtTwoPow`/`ValidFinite`/`toRat` give the
    same rounding `roundMag` names.  This is the known, tractable part.

@@ -520,8 +520,11 @@ needs the other two to match.
 - Keep mathlib behind its adapter.  A new module anywhere in the package
   imports `ITree.Core`/`ITree.Coinduction` (or a module above them), never
   `Mathlib.*`, and clients name trees through `ITree.Core` rather than
-  `PFunctor.M`, `MIntl` or `CofixA`.  Only `ITree/Internal/PFunctor.lean` may
-  import mathlib directly: `Mathlib.*` may not appear in any other file.  No
+  `PFunctor.M`, `MIntl` or `CofixA`.  Only the adapters under
+  `ITree/Internal/` import mathlib directly -- `PFunctor.lean` for the tree
+  carrier and `FloatingPoint.lean` for the floating-point arithmetic -- and
+  `tests/itree-boundary.sh` holds that list as a set, so a further adapter is a
+  deliberate edit to the check rather than a drift.  No
   module under `ITree/` or `ITree.lean` may import a `LeanLLVM` module, so
   `lake build ITree` builds without the instantiation.
 - The generic library has two focused checks beside the builds:
