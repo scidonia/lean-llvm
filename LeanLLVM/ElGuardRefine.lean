@@ -41,15 +41,62 @@ and the facts the decision rests on:
   words, so the tie is their vanishing and the emitted `up` there is the even
   significand.
 
-It does not prove the obligation.  What remains is the significand itself —
-that `roundMag`'s `sig` (or its successor, on a round-up) is the emitted `m`,
-which is `normalCode`'s two comparisons of the remainder against the ulp — and
-the range/refusal cases (`el_pack`'s exponent test and the `q < 0` refusal at a
-zero-valued tie).  The table check is kernel evaluation over the ninety-one
-rows, so a proof of the obligation at a symbolic `q` reads the row's facts
-through `row_of_epowAt` rather than splitting on `q`.  `#eval` at the end
-reproduces the emitted kernel's own output on the boundary witnesses, so the
-definitions are the emitted test rather than a paraphrase of it.
+It does not prove the obligation.  The statement is
+`0 < w → w < 2 ^ 64 → elTier2Code w q = some c →
+roundMag (valueTicks w q).1 (valueTicks w q).2 = .fin c`: the word bound is the
+emitted `uint64_t w`, and the unbounded reading is refuted
+(`not_elGuardRefinesUnbounded`), so the boundary is written down rather than
+left to an absent hypothesis.  What remains is the significand itself — that
+`roundMag`'s `sig` (or its successor, on a round-up) is the emitted `m`, which
+is `normalCode`'s two comparisons of the remainder against the ulp.  Three
+pieces of it are named here because they are what a proof still needs:
+
+* no lemma connects `P / (d * ulp)` to `Rhi / 2 ^ sh`.  `exact_split` gives the
+  product's split and `binade_valueTicks_*` its binade, but the division
+  identity — `sig = m`, and `P % (d * ulp)` compared against `d * ulp / 2` — is
+  stated nowhere, and it is what turns the slice's `hp` into the remainder the
+  specification rounds on;
+* `tie_exact_iff` takes `g : Nat`, and the truncated row's contribution is
+  `W * f` with `f = (eN % eD) / eD`, which is not an integer for `q < 0`
+  (`eD = 10 ^ (-q)`).  The tie and the `hp = hh - 1` case therefore need a
+  denominator-scaled form, `D * disc + W * R` against the same threshold;
+* the branch outside the window reads `ub` and `m` from `Ahi`, without the low
+  half's carry, while the true binade bit is `Rhi`'s.  They differ exactly when
+  `Ahi = 2 ^ 63 - 1` and the low half carries, and there the emitted code is
+  right only because `elPack`'s `ov` moves the exponent by one.  That case is
+  reachable (`carry_case_reachable`): at `q = -43` and
+  `w = 16543612251060553498` the guard cuts from `2 ^ 63 - 1` while the rebuilt
+  word is `2 ^ 63`.
+
+The range cases are not refinement cases, and they are empty on both sides.
+`roundMag_eq_normalCode` puts every value the guard sees inside the normal
+lattice: the table's largest power of ten is below `2 ^ 150`, so `w * 10 ^ q`
+lies between `10 ^ -45` and `2 ^ 214`, and the tick value between `2 ^ 1074` and
+`2 ^ 1288` — above the subnormal lattice and below the overflow threshold.  So
+the specification never answers `.inf` and never takes the subnormal branch:
+overflow to infinity and underflow to zero are unreachable from these inputs
+rather than refusals to be matched.  The guard's own range test cannot refuse
+either (`elPack_range`): the slice's `ub` is at most one and its significand at
+most `2 ^ 53` (`hi64_lt`, `exactRhi_lt`, `slice_le`), which puts
+`eu = 180 + sh + e - lz` in `[-150, 214]`, inside `[-1022, 1023]`.  The only
+refusal left is the `q < 0` tie, and a hypothesis `elTier2Code w q = some c`
+excludes it by construction.
+
+A sample over the narrowed domain agreed with `roundMag` on every pair: the
+mantissas were `0, 1, 2, 7, 34, 1023, 2 ^ 52 - 1, 2 ^ 52, 2 ^ 52 + 1, 10 ^ 17,
+10 ^ 18, 10 ^ 19 - 1, 2 ^ 63 - 1, 2 ^ 63, 2 ^ 63 + 1, 2 ^ 64 - 1, 2 ^ 64 - 2,
+3 * 2 ^ 62 + 12345, 2 ^ 62 + 7, 1234567890123456789, 9999999999999999999`,
+together with `(k * 6364136223846793005 + 1442695040888963407) % 2 ^ 64` and
+`((k * 2862933555777941757 + 3037000493) % 2 ^ 53) * 2 ^ 11 + 513` for
+`k < 60`, against all 91 exponents — 12831 pairs, every one decided.  That is a
+measurement over a sample, not a proof, and it does not stand in for the three
+pieces above.
+
+The table check is kernel evaluation over the ninety-one rows, so a proof of the
+obligation at a symbolic `q` reads the row's facts through `row_of_epowAt`
+rather than splitting on `q`.  `#eval` at the end reproduces the emitted
+kernel's own output on the boundary witnesses, so the definitions are the
+emitted test rather than a paraphrase of it.
 -/
 import LeanLLVM.JSON.Strtod
 
@@ -325,11 +372,48 @@ def valueTicks (w : Nat) (q : Int) : Nat × Nat :=
   if 0 ≤ q then (w * 10 ^ q.toNat * 2 ^ 1074, 1)
   else (w * 2 ^ 1074, 10 ^ q.natAbs)
 
-/-- **The obligation**: on every `(w, q)` the guard decides, the fields it
-returns are `roundMag`'s magnitude for the exact value. -/
+/-- **The obligation**: on every `(w, q)` the guard decides, with `w` a
+sixty-four-bit mantissa as the emitted kernel's `uint64_t` parameter, the fields
+it returns are `roundMag`'s magnitude for the exact value.
+
+The word bound is the emitted interface's, not a convenience: `num_el_el1` takes
+`uint64_t w`, and `Wnorm`'s two bounds, `exact_split`'s no-wrap argument and the
+whole slice reading are stated for a sixty-four-bit word.  The unbounded reading
+is `ElGuardRefinesUnbounded`, and it is false
+(`not_elGuardRefinesUnbounded`). -/
 def ElGuardRefinesOn : Prop :=
+  ∀ (w : Nat) (q : Int) (c : Code), 0 < w → w < 2 ^ 64 →
+    elTier2Code w q = some c →
+      roundMag (valueTicks w q).1 (valueTicks w q).2 = .fin c
+
+/-- The same obligation with no word bound: every `Nat` mantissa.  There the
+guard's "sixty-four-bit words" are not words, and the statement fails. -/
+def ElGuardRefinesUnbounded : Prop :=
   ∀ (w : Nat) (q : Int) (c : Code), elTier2Code w q = some c →
     roundMag (valueTicks w q).1 (valueTicks w q).2 = .fin c
+
+/- The witness's `roundMag` needs the overflow threshold `2 ^ 2098` and the
+binade search's two thousand finder steps, so evaluation runs with the exponent
+and recursion limits raised. -/
+set_option maxRecDepth 10000 in
+set_option exponentiation.threshold 2200 in
+/-- **The word bound is load-bearing.**  At `w = 2 ^ 66` the slice is read from
+`Ahi = W * hi / 2 ^ 64 = 2 ^ 65`, a sixty-six-bit "word", so `ub = 4` and the
+slice is cut at `2 ^ 14` instead of `2 ^ 10`.  The guard still decides — it
+emits `⟨1090, 2 ^ 52 + 2 ^ 51⟩`, whose value is `1.5 · 2 ^ 67` — while the exact
+value `2 ^ 66` is `⟨1089, 2 ^ 52⟩`.  So the domain is the kernel's, and the
+omission of the bound is not harmless: the two magnitudes differ by a factor of
+three. -/
+theorem not_elGuardRefinesUnbounded : ¬ ElGuardRefinesUnbounded := by
+  intro h
+  have hg : elTier2Code (2 ^ 66) 0 = some ⟨1090, 2 ^ 52 + 2 ^ 51⟩ := by decide
+  have hs : roundMag (valueTicks (2 ^ 66) 0).1 (valueTicks (2 ^ 66) 0).2 =
+      .fin ⟨1089, 2 ^ 52⟩ := by
+    decide
+  have hbad := h (2 ^ 66) 0 ⟨1090, 2 ^ 52 + 2 ^ 51⟩ hg
+  rw [hs] at hbad
+  have hE : (1089 : Nat) = 1090 := congrArg Code.expField (Mag.fin.inj hbad)
+  exact absurd hE (by decide)
 
 /-! ### What the shape rests on
 
@@ -531,6 +615,18 @@ theorem word_add {alo c : Nat} (halo : alo < 2 ^ 64) (hc : c < 2 ^ 64) :
     simp only [Nat.mul_one] at hdec
     split <;> omega
 
+/-- A product of two sixty-four-bit words has a sixty-four-bit high word: the
+quotient is below `2 ^ 64` because the product is below `2 ^ 128`. -/
+theorem hi64_lt {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) : hi64 a b < 2 ^ 64 := by
+  unfold hi64
+  rw [Nat.div_lt_iff_lt_mul (by decide)]
+  have h1 : a * b ≤ (2 ^ 64 - 1) * (2 ^ 64 - 1) :=
+    Nat.mul_le_mul (by omega) (by omega)
+  have h2 : (2 ^ 64 - 1) * (2 ^ 64 - 1) < 2 ^ 64 * 2 ^ 64 :=
+    Nat.mul_lt_mul_of_lt_of_le (by omega : 2 ^ 64 - 1 < 2 ^ 64)
+      (by omega : 2 ^ 64 - 1 ≤ 2 ^ 64) (by decide)
+  exact Nat.lt_of_le_of_lt h1 h2
+
 /-- `el_exact`'s low word: `Alo + c` truncated to sixty-four bits. -/
 def exactRlo (W hi lo : Nat) : Nat := (lo64 W hi + hi64 W lo) % 2 ^ 64
 
@@ -550,15 +646,7 @@ theorem exact_split {W hi lo : Nat} (hW : W < 2 ^ 64) (hhi : hi < 2 ^ 64)
   have hA := hi64_add_lo64 (a := W) (b := hi)
   have hB := hi64_add_lo64 (a := W) (b := lo)
   have halo : lo64 W hi < 2 ^ 64 := Nat.mod_lt _ (by decide)
-  have hc : hi64 W lo < 2 ^ 64 := by
-    unfold hi64
-    rw [Nat.div_lt_iff_lt_mul (by decide)]
-    have h1 : W * lo ≤ (2 ^ 64 - 1) * (2 ^ 64 - 1) :=
-      Nat.mul_le_mul (by omega) (by omega)
-    have h2 : (2 ^ 64 - 1) * (2 ^ 64 - 1) < 2 ^ 64 * 2 ^ 64 :=
-      Nat.mul_lt_mul_of_lt_of_le (by omega : 2 ^ 64 - 1 < 2 ^ 64)
-        (by omega : 2 ^ 64 - 1 ≤ 2 ^ 64) (by decide)
-    exact Nat.lt_of_le_of_lt h1 h2
+  have hc : hi64 W lo < 2 ^ 64 := hi64_lt hW hlo
   have hadd : lo64 W hi + hi64 W lo =
       exactRlo W hi lo +
         (if exactRlo W hi lo < lo64 W hi then 1 else 0) * 2 ^ 64 :=
@@ -794,6 +882,24 @@ theorem prod_exists {W H P s : Nat} (hs : s < 1900) (h : W * H < 2 ^ 192)
     Nat.mul_le_mul_left 1 (Nat.pow_le_pow_right (by decide) (Nat.le_succ _))
   exact Nat.lt_of_lt_of_le h1 h2
 
+/-! The search's index arithmetic, stated away from any existential hypothesis.
+
+`ω` builds its atom list out of the whole local context, and a context holding
+`∃ B, …` puts `Exists.choose` in that list: `choose` is `Classical.choose`, so
+an `ω` call made beside an existential hypothesis carries `Classical.choice`.
+These three identities are the only arithmetic the two compositional binade
+theorems need, so they are proved here — where no existential is in scope — and
+applied by rewriting. -/
+
+/-- `191 + s + 1` is the search's next index, `192 + s`. -/
+theorem idx191 (s : Nat) : 191 + s + 1 = 192 + s := by omega
+
+/-- `190 + s + 1` is the search's next index, `191 + s`. -/
+theorem idx190 (s : Nat) : 190 + s + 1 = 191 + s := by omega
+
+/-- `191 + s` is `190 + s + 1`: the unit added at the top of the binade. -/
+theorem idx190_succ (s : Nat) : 191 + s = 190 + s + 1 := by omega
+
 /-- **The binade of the product.**  If the exact value in ticks is
 `W * H * 2 ^ s` with `2 ^ 190 ≤ W * H < 2 ^ 192`, the binade is `190 + s`, or
 `191 + s` when the product reaches `2 ^ 191`. -/
@@ -808,17 +914,19 @@ theorem binade_prod {W H P s : Nat} (hWlo : 2 ^ 63 ≤ W) (hWhi : W < 2 ^ 64)
   · have hlow : 1 * 2 ^ (191 + s) ≤ P := prod_lower hcut hP
     have hup : P < 1 * 2 ^ (192 + s) := prod_upper hWHhi hP
     have hupB : P < 1 * 2 ^ (191 + s + 1) := by
-      rwa [← show 191 + s + 1 = 192 + s from by omega] at hup
+      rw [idx191]
+      exact hup
     have h := binade_unique hex hlow hupB
     rw [h]
     have hc : (if 2 ^ 191 ≤ W * H then 1 else 0) = 1 := by simp [hcut]
     rw [hc]
-    omega
+    exact idx190_succ s
   · have hWHlt : W * H < 2 ^ 191 := Nat.lt_of_not_le hcut
     have hlow : 1 * 2 ^ (190 + s) ≤ P := prod_lower hWHlo hP
     have hup : P < 1 * 2 ^ (191 + s) := prod_upper hWHlt hP
     have hupB : P < 1 * 2 ^ (190 + s + 1) := by
-      rwa [← show 190 + s + 1 = 191 + s from by omega] at hup
+      rw [idx190]
+      exact hup
     have h := binade_unique hex hlow hupB
     rw [h]
     have hc : (if 2 ^ 191 ≤ W * H then 1 else 0) = 0 := by simp [hcut]
@@ -890,12 +998,13 @@ theorem binade_quot {W H d k P s : Nat} (hWlo : 2 ^ 63 ≤ W)
     have hkup : W * 2 ^ k < d * 2 ^ 192 := quot_192 hWhi hHhi hhi hWpos
     have hup : P < d * 2 ^ (192 + s) := quot_upper hkup hP
     have hupB : P < d * 2 ^ (191 + s + 1) := by
-      rwa [← show 191 + s + 1 = 192 + s from by omega] at hup
+      rw [idx191]
+      exact hup
     have h := binade_unique hex hlow hupB
     rw [h]
     have hc : (if 2 ^ 191 * d ≤ W * 2 ^ k then 1 else 0) = 1 := by simp [hcut]
     rw [hc]
-    omega
+    exact idx190_succ s
   · have hbase : d * 2 ^ 190 ≤ W * 2 ^ k := by
       have h1 : 2 ^ 190 ≤ W * H := binade_lower_190 hWlo hHlo
       calc d * 2 ^ 190 ≤ d * (W * H) := Nat.mul_le_mul_left d h1
@@ -907,7 +1016,8 @@ theorem binade_quot {W H d k P s : Nat} (hWlo : 2 ^ 63 ≤ W)
       rwa [Nat.mul_comm (2 ^ 191) d] at h1
     have hup : P < d * 2 ^ (191 + s) := quot_upper hkup hP
     have hupB : P < d * 2 ^ (190 + s + 1) := by
-      rwa [← show 190 + s + 1 = 191 + s from by omega] at hup
+      rw [idx190]
+      exact hup
     have h := binade_unique hex hlow hupB
     rw [h]
     have hc : (if 2 ^ 191 * d ≤ W * 2 ^ k then 1 else 0) = 0 := by simp [hcut]
@@ -1118,21 +1228,262 @@ theorem tie_exact_iff {W hi lo g m ub : Nat} (hW : W < 2 ^ 64) (hhi : hi < 2 ^ 6
     simp
 
 
+/-! ### The specification never leaves the normal lattice
+
+`roundMag` answers `.inf` at or above `overflowTicks = 2 ^ 2098 - 2 ^ 2044` and
+takes the subnormal branch below `2 ^ 52` ticks.  For a row of this table and a
+sixty-four-bit mantissa neither branch is reachable: `10 ^ q` for `q ≤ 45` is
+below `2 ^ 150`, so the value `w * 10 ^ q` lies between `10 ^ -45` and
+`2 ^ 214`, which in ticks is between `2 ^ 1074` and `2 ^ 1288` — `2 ^ 1022`
+above the subnormal lattice, and below `2 ^ 2097 ≤ overflowTicks` by a factor of
+at least `2 ^ 809`.  So the answer is always `normalCode`'s, and the
+obligation's only remaining content is the significand. -/
+
+/-- An exponent inside the table: `epowAt` splits on exactly that condition. -/
+theorem epowAt_bounds {q : Int} {t : EPow} (h : epowAt q = some t) :
+    -45 ≤ q ∧ q ≤ 45 := by
+  unfold epowAt at h
+  split at h
+  · exact ‹-45 ≤ q ∧ q ≤ 45›
+  · exact absurd h (by simp)
+
+/-- `10 ^ 45 < 2 ^ 150`: the table's largest power of ten, and the bound the
+value estimates below rest on. -/
+theorem pow10_45_lt : (10 : Nat) ^ 45 < 2 ^ 150 := by decide
+
+/-- The rebuilt high word is a sixty-four-bit word: it is below the product's
+own high word, and the product is below `2 ^ 192`. -/
+theorem exactRhi_lt {W hi lo : Nat} (hW : W < 2 ^ 64) (hhi : hi < 2 ^ 64)
+    (hlo : lo < 2 ^ 64) : exactRhi W hi lo < 2 ^ 64 := by
+  have hsplit := exact_split hW hhi hlo
+  have hX : hi * 2 ^ 64 + lo < 2 ^ 128 := by
+    have h1 : hi * 2 ^ 64 ≤ (2 ^ 64 - 1) * 2 ^ 64 :=
+      Nat.mul_le_mul_right _ (by omega)
+    have h2 : (2 ^ 64 - 1) * 2 ^ 64 = 2 ^ 128 - 2 ^ 64 := by
+      rw [Nat.sub_mul, Nat.one_mul, ← pow64_128]
+    omega
+  have hWH : W * (hi * 2 ^ 64 + lo) < 2 ^ 64 * 2 ^ 128 :=
+    Nat.mul_lt_mul_of_le_of_lt (by omega) hX (Nat.two_pow_pos 64)
+  have hle : exactRhi W hi lo * 2 ^ 128 ≤ W * (hi * 2 ^ 64 + lo) := by
+    rw [hsplit]
+    exact Nat.le_trans
+      (Nat.le_add_right (exactRhi W hi lo * 2 ^ 128) (exactRlo W hi lo * 2 ^ 64))
+      (Nat.le_add_right (exactRhi W hi lo * 2 ^ 128 + exactRlo W hi lo * 2 ^ 64)
+        (lo64 W lo))
+  have hlt : exactRhi W hi lo * 2 ^ 128 < 2 ^ 64 * 2 ^ 128 :=
+    Nat.lt_of_le_of_lt hle hWH
+  exact lt_of_mul_lt_mul_right hlt
+
+/-- **The slice's significand is at most `2 ^ 53`.**  For any word `A` below
+`2 ^ 64`, the guard's `m = A / 2 ^ (10 + A / 2 ^ 63)` is at most `2 ^ 53`:
+`A / 2 ^ 63` is the word's top bit, so the cut is `2 ^ 10` on a word below
+`2 ^ 63` and `2 ^ 11` on one that reaches it. -/
+theorem slice_le {A : Nat} (hA : A < 2 ^ 64) : A / 2 ^ (10 + A / 2 ^ 63) ≤ 2 ^ 53 := by
+  have hub2 : A / 2 ^ 63 < 2 := by
+    rw [Nat.div_lt_iff_lt_mul (by decide)]
+    have h2 : (2 : Nat) * 2 ^ 63 = 2 ^ 64 := by rw [Nat.mul_comm, ← Nat.pow_succ]
+    omega
+  have hub : A / 2 ^ 63 ≤ 1 := by omega
+  rcases Nat.lt_or_ge (A / 2 ^ 63) 1 with h0 | h1
+  · have hz : A / 2 ^ 63 = 0 := by omega
+    have hlt : A < 2 ^ 63 := by
+      have hlt1 : A / 2 ^ 63 < 1 := by omega
+      rw [Nat.div_lt_iff_lt_mul (by decide)] at hlt1
+      simpa using hlt1
+    rw [hz, Nat.add_zero]
+    have hstep : A / 2 ^ 10 < 2 ^ 53 + 1 := by
+      rw [Nat.div_lt_iff_lt_mul (by decide)]
+      have h2 : (2 ^ 53 + 1) * 2 ^ 10 = 2 ^ 63 + 2 ^ 10 := by
+        rw [Nat.add_mul, Nat.one_mul, ← Nat.pow_add]
+      omega
+    omega
+  · have hone : A / 2 ^ 63 = 1 := by omega
+    rw [hone]
+    have hstep : A / 2 ^ 11 < 2 ^ 53 + 1 := by
+      rw [Nat.div_lt_iff_lt_mul (by decide)]
+      have h2 : (2 ^ 53 + 1) * 2 ^ 11 = 2 ^ 64 + 2 ^ 11 := by
+        rw [Nat.add_mul, Nat.one_mul, ← Nat.pow_add]
+      omega
+    omega
+
+/-- The `Ahi`-without-the-carry case is reachable, not hypothetical: at
+`q = -43` and `w = 16543612251060553498` the guard's slice is cut from
+`2 ^ 63 - 1` — so its `ub` is `0` and `sh` is `10` — while the low half carries
+the rebuilt word to `2 ^ 63`, whose top bit is `1`.  The true binade bit is the
+rebuilt word's, so the branch reads the wrong `ub`; `el_pack`'s `ov` is what
+keeps the emitted code right there. -/
+theorem carry_case_reachable :
+    (match epowAt (-43) with
+      | some t =>
+          hi64 (Wnorm 16543612251060553498) t.hi = 2 ^ 63 - 1 &&
+            exactRhi (Wnorm 16543612251060553498) t.hi t.lo = 2 ^ 63
+      | none => false) = true := by decide
+
+set_option exponentiation.threshold 2200 in
+/-- `2 ^ 2097 ≤ overflowTicks`: the threshold is more than half of `2 ^ 2098`,
+which is all the overflow bound needs. -/
+theorem overflowTicks_ge : (2 : Nat) ^ 2097 ≤ overflowTicks := by
+  unfold overflowTicks
+  decide
+
+set_option exponentiation.threshold 1300 in
+/-- **The specification stays in the normal lattice.**  With a sixty-four-bit
+mantissa and an exponent the table has a row for, `roundMag` takes neither the
+overflow nor the subnormal branch, so its answer is `normalCode`'s. -/
+theorem roundMag_eq_normalCode {w : Nat} {q : Int} {t : EPow}
+    (hw0 : 0 < w) (hw : w < 2 ^ 64) (hq : epowAt q = some t) :
+    roundMag (valueTicks w q).1 (valueTicks w q).2 =
+      .fin (normalCode (valueTicks w q).1 (valueTicks w q).2) := by
+  obtain ⟨hqlo, hqhi⟩ := epowAt_bounds hq
+  have h10pow : ∀ n : Nat, n ≤ 45 → 10 ^ n < 2 ^ 150 := fun n hn =>
+    Nat.lt_of_le_of_lt (Nat.pow_le_pow_right (by decide) hn) pow10_45_lt
+  have h10pos : ∀ n : Nat, 1 ≤ 10 ^ n := fun n =>
+    Nat.succ_le_of_lt (Nat.pow_pos (by decide))
+  have hw1 : 1 ≤ w := hw0
+  have h1288 : (2 : Nat) ^ 1288 < 2 ^ 2097 := two_pow_lt_of_lt (by decide)
+  have h1138 : (2 : Nat) ^ 1138 < 2 ^ 2097 := two_pow_lt_of_lt (by decide)
+  have h202 : (2 : Nat) ^ 202 < 2 ^ 1074 := two_pow_lt_of_lt (by decide)
+  by_cases hq0 : 0 ≤ q
+  · have hqn : q.toNat ≤ 45 := by
+      have hcast : ((q.toNat : Nat) : Int) = q := Int.toNat_of_nonneg hq0
+      omega
+    have hP : (valueTicks w q).1 = w * 10 ^ q.toNat * 2 ^ 1074 := by
+      unfold valueTicks
+      rw [ite_eq_left hq0]
+    have hd : (valueTicks w q).2 = 1 := by
+      unfold valueTicks
+      rw [ite_eq_left hq0]
+    have hPlt : (valueTicks w q).1 < overflowTicks := by
+      rw [hP]
+      have h1 : w * 10 ^ q.toNat < 2 ^ 64 * 2 ^ 150 := by
+        calc w * 10 ^ q.toNat < 2 ^ 64 * 10 ^ q.toNat :=
+              Nat.mul_lt_mul_of_pos_right hw (Nat.pow_pos (by decide))
+          _ < 2 ^ 64 * 2 ^ 150 :=
+              Nat.mul_lt_mul_of_pos_left (h10pow _ hqn) (two_pow_pos 64)
+      have h2 : w * 10 ^ q.toNat * 2 ^ 1074 < 2 ^ 64 * 2 ^ 150 * 2 ^ 1074 :=
+        Nat.mul_lt_mul_of_pos_right h1 (two_pow_pos 1074)
+      have h3 : (2 : Nat) ^ 64 * 2 ^ 150 * 2 ^ 1074 = 2 ^ 1288 := by
+        rw [← Nat.pow_add, ← Nat.pow_add]
+      exact Nat.lt_of_lt_of_le (h3 ▸ h2)
+        (Nat.le_trans (Nat.le_of_lt h1288) overflowTicks_ge)
+    have hPge : 2 ^ 1074 ≤ (valueTicks w q).1 := by
+      rw [hP]
+      calc (2 : Nat) ^ 1074 = 1 * 1 * 2 ^ 1074 := by rw [Nat.one_mul]
+        _ ≤ w * 10 ^ q.toNat * 2 ^ 1074 :=
+            Nat.mul_le_mul_right _ (Nat.mul_le_mul hw1 (h10pos _))
+    rw [hd]
+    have h1 : ¬ (overflowTicks * 1 ≤ (valueTicks w q).1) := by
+      rw [Nat.mul_one]
+      exact Nat.not_le.mpr hPlt
+    have h2 : ¬ ((valueTicks w q).1 < 1 * 2 ^ 52) := by
+      rw [Nat.one_mul]
+      exact Nat.not_lt.mpr (Nat.le_trans (two_pow_le_iff.mpr (by decide)) hPge)
+    unfold roundMag
+    rw [ite_eq_right h1, ite_eq_right h2]
+  · have habs : q.natAbs = (-q).toNat := by omega
+    have hqn : (-q).toNat ≤ 45 := by
+      have hcast : (((-q).toNat : Nat) : Int) = -q := Int.toNat_of_nonneg (by omega)
+      omega
+    have hP : (valueTicks w q).1 = w * 2 ^ 1074 := by
+      unfold valueTicks
+      rw [ite_eq_right hq0]
+    have hd : (valueTicks w q).2 = 10 ^ (-q).toNat := by
+      unfold valueTicks
+      rw [ite_eq_right hq0, habs]
+    have hPle : (valueTicks w q).1 ≤ 2 ^ 64 * 2 ^ 1074 := by
+      rw [hP]
+      exact Nat.mul_le_mul_right _ (Nat.le_of_lt hw)
+    have hPge : 2 ^ 1074 ≤ (valueTicks w q).1 := by
+      rw [hP]
+      calc (2 : Nat) ^ 1074 = 1 * 2 ^ 1074 := (Nat.one_mul _).symm
+        _ ≤ w * 2 ^ 1074 := Nat.mul_le_mul_right _ hw1
+    rw [hd]
+    have hPlt : (valueTicks w q).1 < overflowTicks * 10 ^ (-q).toNat := by
+      have h1 : (2 : Nat) ^ 64 * 2 ^ 1074 = 2 ^ 1138 := by rw [← Nat.pow_add]
+      have h3 : (valueTicks w q).1 < 2 ^ 1138 := by
+        have h4 : (valueTicks w q).1 < 2 ^ 64 * 2 ^ 1074 := by
+          rw [hP]
+          exact Nat.mul_lt_mul_of_pos_right hw (two_pow_pos 1074)
+        exact h1 ▸ h4
+      have h2 : overflowTicks ≤ overflowTicks * 10 ^ (-q).toNat := by
+        simpa using Nat.mul_le_mul_left overflowTicks (h10pos (-q).toNat)
+      exact Nat.lt_of_lt_of_le h3
+        (Nat.le_trans (Nat.le_of_lt h1138) (Nat.le_trans overflowTicks_ge h2))
+    have hsub : 10 ^ (-q).toNat * 2 ^ 52 < 2 ^ 1074 := by
+      have h2 : (2 : Nat) ^ 150 * 2 ^ 52 = 2 ^ 202 := by rw [← Nat.pow_add]
+      have h3 : 10 ^ (-q).toNat * 2 ^ 52 < 2 ^ 150 * 2 ^ 52 :=
+        Nat.mul_lt_mul_of_pos_right (h10pow _ hqn) (two_pow_pos 52)
+      exact Nat.lt_of_lt_of_le (h2 ▸ h3) (Nat.le_of_lt h202)
+    have h1 : ¬ (overflowTicks * 10 ^ (-q).toNat ≤ (valueTicks w q).1) :=
+      Nat.not_le.mpr hPlt
+    have h2 : ¬ ((valueTicks w q).1 < 10 ^ (-q).toNat * 2 ^ 52) :=
+      Nat.not_lt.mpr (Nat.le_trans (Nat.le_of_lt hsub) hPge)
+    unfold roundMag
+    rw [ite_eq_right h1, ite_eq_right h2]
+
+/-- **`el_pack`'s exponent test never refuses on the guard's inputs.**  The
+significand is at most `2 ^ 53` before the round-up (`m ≤ 2 ^ 53`, `up ≤ 1`), so
+it is at most `2 ^ 53 + 1` after it and `ov = mm / 2 ^ 53 ≤ 1`; the slice word
+`ub ≤ 1`, so `sh = 10 + ub + ov ≤ 12`.  With a row exponent in `[-277, 22]` and
+a normalising shift at most `63`, `eu = 180 + sh + e - lz` lies in
+`[-150, 214]`, well inside the emitted `[-1022, 1023]`, and `el_pack` returns a
+code rather than handing the value to the slower tier.
+
+The call sites satisfy the bounds: `ub` is a quotient by `2 ^ 63` of a word
+below `2 ^ 64` (`hi64_lt`, `exactRhi_lt`), `up` is `0` or `1` by construction,
+and `m` is that word divided by `2 ^ (10 + ub)`, which `slice_le` bounds by
+`2 ^ 53`. -/
+theorem elPack_range {p : Pack} (hm : p.m ≤ 2 ^ 53) (hup : p.up ≤ 1)
+    (hub : p.ub ≤ 1) (he1 : -277 ≤ p.e) (he2 : p.e ≤ 22) (hlz : p.lz ≤ 63) :
+    (elPack p).isSome := by
+  have hsh : 10 + p.ub + (p.m + p.up) / 2 ^ 53 ≤ 12 := by
+    have hmm : p.m + p.up ≤ 2 ^ 53 + 1 := by omega
+    have h2 : (2 : Nat) * 2 ^ 53 = 2 ^ 54 := by rw [Nat.mul_comm, ← Nat.pow_succ]
+    have hov : (p.m + p.up) / 2 ^ 53 < 2 := by
+      rw [Nat.div_lt_iff_lt_mul (by decide)]
+      omega
+    omega
+  have hcast : ((p.lz : Nat) : Int) ≤ 63 := by omega
+  have hlo : (-1022 : Int) ≤
+      180 + ((10 + p.ub + (p.m + p.up) / 2 ^ 53 : Nat) : Int) + p.e - (p.lz : Int) := by
+    omega
+  have hhi : 180 + ((10 + p.ub + (p.m + p.up) / 2 ^ 53 : Nat) : Int) + p.e - (p.lz : Int)
+      ≤ 1023 := by
+    omega
+  unfold elPack
+  dsimp only
+  split
+  · rfl
+  · rename_i hne
+    exact absurd ⟨hlo, hhi⟩ hne
+
+
 /-! ### Axiom footprint
 
-Every declaration is pinned.  The statement is computable, and the arithmetic
-stays at the standard footprint: `omega` closes linear arithmetic without
-`Classical.choice` when the goal does not need it, and `decide`-free rewriting
-adds nothing.
+Every declaration's footprint is a subset of `[propext, Quot.sound]`.  The
+statement is computable, and the arithmetic stays at the standard footprint:
+`omega` closes linear arithmetic without `Classical.choice` when its context
+holds no existential, and `decide`-free rewriting adds nothing.
 
-Four declarations carry `Classical.choice`, and they are named here rather than
-left to be discovered: `binade_prod`, `binade_quot`,
-`binade_valueTicks_nonneg` and `binade_valueTicks_neg`.  The ingredients are all
-at the standard footprint — `binade_unique`, `prod_lower`, `prod_upper`,
-`prod_exists`, `quot_lower`, `quot_upper`, `quot_192`, `quot_exists` and
-`valueTicks_nonneg` — so the choice enters in the composed presentation of the
-threshold (`2 ^ 191 ≤ W * H`, or `2 ^ 191 * d ≤ W * 2 ^ k`), not in any table
-row, product identity or value identity. -/
+The composed binade theorems once carried `Classical.choice`:
+`binade_prod`, `binade_quot` and, through them,
+`binade_valueTicks_nonneg` and `binade_valueTicks_neg`.  The carrier was
+`omega`, not any lemma: `ω` builds its atom list from the whole local context,
+and a context holding the search's witness
+`hex : ∃ B, B < 2100 ∧ P < 1 * 2 ^ (B + 1)` puts `Exists.choose` — that is,
+`Classical.choose` — into that list.  The `ω` calls
+that sat beside `hex` were only three index identities, so they are stated
+above as `idx191`, `idx190` and `idx190_succ`, where no existential is in
+scope, and applied by rewriting.  With that, the four theorems are at
+`[propext, Quot.sound]` alongside the rest.
+
+Stated positively as the rule this module follows: an `ω` call is made where its
+local context holds no `∃` hypothesis.  Measured: the same `ω` goal closes at
+`[propext, Quot.sound]` with an empty context and gains `Classical.choice` with
+only `hex : ∃ B, B < 2100 ∧ P < 1 * 2 ^ (B + 1)` added beside it, whose proof
+term mentions `hex.choose`.  `binade_unique` destructures `hex` through
+`binade_spec` instead of through `ω`, which is why it never carried the
+axiom. -/
 
 #print axioms LeanLLVM.ElGuardRefine.epowAt
 #print axioms LeanLLVM.ElGuardRefine.lz
@@ -1147,6 +1498,16 @@ row, product identity or value identity. -/
 #print axioms LeanLLVM.ElGuardRefine.elTier2Code
 #print axioms LeanLLVM.ElGuardRefine.valueTicks
 #print axioms LeanLLVM.ElGuardRefine.ElGuardRefinesOn
+#print axioms LeanLLVM.ElGuardRefine.ElGuardRefinesUnbounded
+#print axioms LeanLLVM.ElGuardRefine.not_elGuardRefinesUnbounded
+#print axioms LeanLLVM.ElGuardRefine.epowAt_bounds
+#print axioms LeanLLVM.ElGuardRefine.pow10_45_lt
+#print axioms LeanLLVM.ElGuardRefine.overflowTicks_ge
+#print axioms LeanLLVM.ElGuardRefine.exactRhi_lt
+#print axioms LeanLLVM.ElGuardRefine.slice_le
+#print axioms LeanLLVM.ElGuardRefine.roundMag_eq_normalCode
+#print axioms LeanLLVM.ElGuardRefine.elPack_range
+#print axioms LeanLLVM.ElGuardRefine.carry_case_reachable
 #print axioms LeanLLVM.ElGuardRefine.rem_lt_half
 #print axioms LeanLLVM.ElGuardRefine.half_le_rem
 #print axioms LeanLLVM.ElGuardRefine.discarded_lt
@@ -1154,6 +1515,7 @@ row, product identity or value identity. -/
 #print axioms LeanLLVM.ElGuardRefine.epow_rows
 #print axioms LeanLLVM.ElGuardRefine.rowB_row
 #print axioms LeanLLVM.ElGuardRefine.row_of_epowAt
+#print axioms LeanLLVM.ElGuardRefine.hi64_lt
 #print axioms LeanLLVM.ElGuardRefine.hi64_add_lo64
 #print axioms LeanLLVM.ElGuardRefine.word_add
 #print axioms LeanLLVM.ElGuardRefine.exact_split
@@ -1174,6 +1536,9 @@ row, product identity or value identity. -/
 #print axioms LeanLLVM.ElGuardRefine.prod_lower
 #print axioms LeanLLVM.ElGuardRefine.prod_upper
 #print axioms LeanLLVM.ElGuardRefine.prod_exists
+#print axioms LeanLLVM.ElGuardRefine.idx191
+#print axioms LeanLLVM.ElGuardRefine.idx190
+#print axioms LeanLLVM.ElGuardRefine.idx190_succ
 #print axioms LeanLLVM.ElGuardRefine.quot_lower
 #print axioms LeanLLVM.ElGuardRefine.quot_upper
 #print axioms LeanLLVM.ElGuardRefine.quot_192
@@ -1211,6 +1576,24 @@ def witnesses : List (Nat × Int) :=
 /-- What the guard decides for a witness, in the encoding's bits. -/
 def witnessBits (w : Nat) (q : Int) : Option Nat :=
   (elTier2Code w q).map codeBits
+
+/-- What `roundMag` decides for a witness, in the same bits. -/
+def witnessSpecBits (w : Nat) (q : Int) : Option Nat :=
+  match roundMag (valueTicks w q).1 (valueTicks w q).2 with
+  | .inf => none
+  | .fin c => some (codeBits c)
+
+/-- The guard's bits and the specification's, for a witness: `none` where the
+guard refuses, and otherwise whether they are the same code. -/
+def witnessAgrees (w : Nat) (q : Int) : Bool :=
+  match witnessBits w q with
+  | none => true
+  | some b => witnessSpecBits w q == some b
+
+-- Wherever the guard decides a witness, it decides what `roundMag` does.
+#eval witnesses.all (fun (w, q) => witnessAgrees w q)
+-- Each witness's two answers, so a disagreement is visible rather than counted.
+#eval witnesses.map (fun (w, q) => (w, q, witnessBits w q, witnessSpecBits w q))
 
 #eval witnesses.map (fun (w, q) => (w, q, witnessBits w q))
 #eval witnessBits 34 (-36)
