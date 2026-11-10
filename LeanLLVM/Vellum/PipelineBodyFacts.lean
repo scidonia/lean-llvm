@@ -2571,16 +2571,17 @@ iteration's own successor, so the handoff is the same three facts rather than a
 second statement of them: one predicate, one spelling, no place for the two to
 drift apart.
 
-**What the handoff does and does not reach.**  The read starts at
-`S.ep + 4 * S.k0`, so the bytes the caller staged before the loop's first
-iteration are not claimed: `pipelineStaging` says nothing about them, and a
-conjunct about them would be unmeetable at the seed.  What the tail therefore
-still needs from elsewhere is (i) the same three facts over the *whole* stream,
-which a caller's initial prefix would have to supply, and (ii) `∀ q ∈ ent, q < n`
-at the document's own length rather than at `64 * blocks`, which is the last
-block's lim-mask argument and belongs to the per-arm entry-word identity rather
-than to this predicate.  Both are named here because a consumer that reads the
-exit as complete would be reading it wrong. -/
+**What the handoff reaches, and what it still owes.**  The stream is carried in
+two reads: the caller's prefix at `S.ep` under `S.k0`, and the part the loop's
+emitters appended from `S.ep + 4 * S.k0` under `S.k - S.k0`.  Neither
+reconstructs the other — the prefix is written before the loop and only the
+staging names it, the appended part is the emitters' history and only the loop's
+own steps name it — so both are conjuncts and their concatenation is the whole
+stream the tail's stage-2 call reads.  What the tail still needs from elsewhere is
+`∀ q ∈ ent, q < n` at the document's own length rather than at `64 * blocks`,
+which is the last block's lim-mask argument and belongs to the per-arm entry-word
+identity rather than to this predicate.  Named here because a consumer that reads
+the exit as complete would be reading it wrong. -/
 
 /-- The four unswitched copies of the loop body, by the arm the entry selection
 took: bit 0 selects the entry emitter, bit 1 the escape list's gate. -/
@@ -2689,6 +2690,13 @@ structure PipelineLoopCarried where
   /-- The first iteration's count, kept because `cursorRoom` is stated from it. -/
   k0 : Nat
   xn0 : Nat
+  /-- The entry stream's prefix: the positions the caller staged at `ep` under the
+  count `k0`, before the loop's first iteration.  Carried rather than derived: the
+  emitters write from their incoming count onwards, so the lanes below `k0` are the
+  caller's and a step hands them on through the same frames that leave the rest of
+  the staged stream alone — but no read of a state recovers which positions they
+  are, and the staging is the only memory they were ever written in. -/
+  ent0 : List Nat
   /-- The entry stream the loop has appended: the positions the emitters wrote,
   from the first iteration's cursor onwards, in the order they wrote them.  One
   object rather than an existential rebuilt per step: the successor inherits the
@@ -2746,24 +2754,57 @@ def PipelineBodyArm.splitIn (a : PipelineBodyArm) (env : Env)
       bodySplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
         S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr
 
-/-- The states the loop may leave in: the exit block, carrying the entry stream
-it has appended.
+/-- The states the loop may leave in: the exit block, carrying the entry stream —
+the caller's prefix and the part the loop appended.
 
 The stream facts are part of the exit rather than something the tail
 reconstructs, because they are not recoverable from the state: the memory holds
 the bytes, but which positions the stream names, in what order, is the loop's own
 history — the emitters wrote them block by block and no read of the exit state
-says where the writes began.  `PipelineBodyFacts.exit`'s consumer reads the
-stream at the tail's stage-2 call, so the exit is where the facts are handed on.
+says where the writes began.  The prefix is the same kind of fact from the other
+side of the loop: it was written before the first iteration, so the staging is
+the memory that names it and every step hands it on unchanged; the exit carries it
+for the same reason it carries the appended part, namely that the tail's stage-2
+call reads the whole stream and this state is where the whole stream is last
+known.  `PipelineBodyFacts.exit`'s consumer reads the stream at the tail's
+stage-2 call, so the exit is where the facts are handed on.
 `pipelineLoopInv` at a spent budget *is* this predicate, by its own definition, so
 the two are one statement rather than two that a later edit could drift apart. -/
 def pipelineLoopExit (s : State) : Prop :=
   ∃ (S : PipelineLoopCarried),
     s.pc = "for.cond.cleanup" ∧
     S.k0 ≤ S.k ∧
+    readLanes32 s.mem S.ep S.k0 = some S.ent0 ∧
     readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
     S.ent.Pairwise (· < ·) ∧
     (∀ q ∈ S.ent, q < 64 * S.i)
+
+/-- **The exit predicate determines no byte of the state it stands on.**
+
+The stream conjuncts are read at the carried count `S.k` and the carried prefix
+count `S.k0`, and both are the loop's own numbers: the predicate names no address's
+contents for any read of a positive number of lanes.  The witness is the empty
+memory with both counts zero — the read of no lanes is `some []` in any memory, so
+the exit block is satisfiable there — and it is why the caller's prefix reaches the
+exit as a carried conjunct rather than as a projection: a fact about the staging's
+memory cannot be transported to a state the predicate does not tie to it, and the
+tie runs from the staging through the seed, not through this predicate. -/
+theorem pipelineLoopExit_reads_nothing :
+    ∃ (s : State) (ep : Nat),
+      pipelineLoopExit s ∧ readLanes32 s.mem ep 3 = none := by
+  refine ⟨{ env := [], mem := [], next := 0, pc := "for.cond.cleanup", pre := none }, 0,
+    ⟨{ arm := .pos8NoGate, i := 0, iw := 0, sw := 0, kw := 0, shr := 0, b := 0,
+       doc := [], n := 0, sc := 0, stM := ⟨false, false⟩, opened := false,
+       ppar := false, inside := false, maskSlot := 0, delim := 0, inString := 0,
+       ws := 0, backslash := 0, ctl := 0, entw := 0, ep := 0, tab := 0, xp := 0,
+       nxp := 0, xcarry := 0, stE := ⟨false, false⟩, prevb := false, prevs := false,
+       k := 0, xn := 0, xpExtent := 0, k0 := 0, xn0 := 0, ent0 := [], ent := [] },
+     rfl, Nat.le_refl 0, ?_, ?_, ?_, ?_⟩, ?_⟩
+  · simp [readLanes32]
+  · simp [readLanes32]
+  · simp
+  · simp
+  · simp [readLanes32, readBytes, readByte]
 
 /-- The regions the loop's separation is stated over, in the staging's order.
 
@@ -2957,16 +2998,24 @@ def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         -- than a number alongside it — which is what lets the instance's `N_eq`
         -- and the exit's bound be about the same value.
         blocks = pipelineBlocks S.n.toNat ∧
-        -- **the entry stream, as one object.**  The prefix before the first
-        -- iteration's cursor is not claimed (the staging says nothing about it),
-        -- so the read is the appended part: `S.k - S.k0` four-byte lanes from
-        -- `S.ep + 4 * S.k0`.  `S.k0 ≤ S.k` is what makes that range the one the
-        -- emitters wrote, and the three facts after it are what `Γ_stage2.pre`
-        -- reads of the stream (`stage2.h:56-58`, `:91`): the positions increase
-        -- strictly, and each lies inside the blocks read so far.  Carried rather
-        -- than derived because the bytes are the emitters' and no read of the
-        -- state recovers which of them the stream names.
+        -- **the entry stream, in its two halves.**  The caller's prefix at
+        -- `S.ep` under `S.k0` is static — the emitters write from their incoming
+        -- count onwards, so every step hands those lanes on — and the appended
+        -- part is `S.k - S.k0` four-byte lanes from `S.ep + 4 * S.k0`, which is
+        -- the range the emitters wrote.  `S.k0 ≤ S.k` is what makes the second
+        -- range start where the caller's bytes end, and the three facts after it
+        -- are what `Γ_stage2.pre` reads of the appended part
+        -- (`stage2.h:56-58`, `:91`): the positions increase strictly, and each
+        -- lies inside the blocks read so far.  Carried rather than derived
+        -- because the bytes are the caller's and the emitters' and no read of the
+        -- state recovers which positions either names.
         S.k0 ≤ S.k ∧
+        -- the caller's prefix.  Static: the loop's emitters write from their
+        -- incoming count onwards, so the lanes below `k0` are the staging's bytes
+        -- and every step hands them on through its own frames.  Carried because
+        -- the exit's stage-2 call reads the whole stream and the appended part
+        -- alone does not reconstruct it.
+        readLanes32 s.mem S.ep S.k0 = some S.ent0 ∧
         readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
         S.ent.Pairwise (· < ·) ∧
         (∀ q ∈ S.ent, q < 64 * S.i) ∧
@@ -3042,6 +3091,12 @@ def pipelineLoopInvSplit (base tab blocks : Nat) : Nat → State → Prop
         S.xn ≤ S.xn0 + 64 * S.i ∧
         blocks = pipelineBlocks S.n.toNat ∧
         S.k0 ≤ S.k ∧
+        -- the caller's prefix.  Static: the loop's emitters write from their
+        -- incoming count onwards, so the lanes below `k0` are the staging's bytes
+        -- and every step hands them on through its own frames.  Carried because
+        -- the exit's stage-2 call reads the whole stream and the appended part
+        -- alone does not reconstruct it.
+        readLanes32 s.mem S.ep S.k0 = some S.ent0 ∧
         readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
         S.ent.Pairwise (· < ·) ∧
         (∀ q ∈ S.ent, q < 64 * S.i) ∧
@@ -3190,6 +3245,10 @@ carrier: the section is at `[propext, Quot.sound]` or below. -/
 /-- info: 'LeanLLVM.Vellum.pipelineLoopExit' does not depend on any axioms -/
 #guard_msgs in
 #print axioms pipelineLoopExit
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoopExit_reads_nothing' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineLoopExit_reads_nothing
 
 /-- info: 'LeanLLVM.Vellum.pipelineLoopInv_zero' depends on axioms: [propext] -/
 #guard_msgs in

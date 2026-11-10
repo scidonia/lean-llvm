@@ -235,6 +235,16 @@ clause names the unit record it is read from:
 * the counts are the records' cursor slots, read in;
 * the entry-stream capacity is `Γ_entry_pos8.pre`'s `k + 64 * nblk + 9 ≤ outCap`
   at one block per iteration and at most sixty-four entries per block;
+* the entry stream's prefix is the caller's, and it is named here because this
+  record is the only one that can name bytes written before the loop: `ep` holds
+  `nk0` four-byte entry positions when the body is entered, so
+  `readLanes32 mem ep nk0 = some ent0`.  The loop's own state carries only what
+  its emitters appended — from `nk0` onwards — and neither part is derivable
+  from the other, so the whole stream the tail's stage-2 call reads is this
+  prefix beside the appended part.  The clause is the lanes the count names and
+  nothing more: it claims no order and no relation to the document's blocks,
+  because those are the appended part's guarantees and an arbitrary caller's
+  prefix need have neither;
 * the escape-list capacity is `Γ_escape_positions.pre`'s `HasBytes` clause at
   the last block's incoming count plus the batch reserve;
 * the arena capacity is the `ndst0 + n + 64` extent the expander reaches from its
@@ -253,7 +263,8 @@ clause names the unit record it is read from:
 def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
   ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err nk0 nxp0 ndst0
       nev0 : Nat)
-    (n epcap xpcap dstcap evcap arm : BitVec 64) (bs : List UInt8),
+    (n epcap xpcap dstcap evcap arm : BitVec 64) (bs : List UInt8)
+    (ent0 : List Nat),
     args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
       .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
       .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
@@ -308,6 +319,13 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     -- the counts, read in by the pipeline and by the escape list
     readBytes mem nk 8 = some (wordBytes 8 nk0) ∧
     readBytes mem nxp 8 = some (wordBytes 8 nxp0) ∧
+    -- **the entry stream the caller staged.**  `nk0` lanes of four bytes each at
+    -- `ep` are the positions written before the loop's first iteration; the
+    -- loop's emitters append from that count, so the exit state's read of what
+    -- they appended is disjoint from this one and says nothing about it.  Named
+    -- here, at the count the count slot itself carries, because a clause stated
+    -- at any other count would be a promise about bytes no caller writes.
+    readLanes32 mem ep nk0 = some ent0 ∧
     -- the entry stream's capacity, lifted over the whole document
     nk0 + 64 * pipelineBlocks bs.length + 9 ≤ epcap.toNat ∧
     -- the escape list's capacity, with the batch reserve at every block

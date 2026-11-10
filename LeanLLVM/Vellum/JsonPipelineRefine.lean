@@ -499,7 +499,7 @@ theorem pipelineStaging_args {tab base : Nat} {args : List Value} {mem : Mem}
         .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
         .int 64 arm] := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, -⟩ := h
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0, hargs, -⟩ := h
   exact ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     n, epcap, xpcap, dstcap, evcap, arm, hargs⟩
 
@@ -529,7 +529,7 @@ theorem pipelineStaging_base {tab base : Nat} {args : List Value} {mem : Mem}
       HasBytes mem (base + 64 * pipelineBlocks bs.length) 32 ∧
       ∃ rest : List Value, args = .ptr base :: .int 64 n :: rest := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0,
     hargs, _hnlen, _hmax, hwin, htail, h3, hpre3, -⟩ := h
   exact ⟨n, bs, h3, hpre3, hwin, htail, _, by rw [hargs]⟩
 
@@ -545,7 +545,7 @@ theorem pipelineStaging_tail {tab base : Nat} {args : List Value} {mem : Mem}
     (h : pipelineStaging tab base args mem) :
     ∃ bs : List UInt8, HasBytes mem (base + bs.length) 32 := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0,
     hargs, _hlen, _hmax, hwin, htail, -⟩ := h
   refine ⟨bs, ?_⟩
   have hw : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
@@ -677,20 +677,20 @@ arguments disagree with admits nothing.
 **What `hbody` still owes, so that the hypothesis is not read as a gap.**  Its
 `loop` and `cost_le` are proved (`PipelineBodyStep.pipelineLoop`, whose `step` is the
 four arms' steps per entry shape), `N_eq` is the staging's block count, and `seed`'s
-three control steps are proved; the two members that are not are named with their
-clauses rather than left as "the body analysis":
+three control steps are proved (`PipelineBodyStep.pipelineSeed`, whose invariant
+state carries the staging's regions); the member that is not is named with its
+clause rather than left as "the body analysis":
 
-* the seed's invariant state needs the staged regions' separation at the
-  invariant's own region list, and that list is not a sub-list of the staging's
-  `pipelineRegions` — the window is named from the document rather than three
-  bytes below it, and the escape stream before its count — so the transport is a
-  decision about the invariant's list rather than a projection;
-* `exit`'s conclusion at `Γ_pipeline_units`'s post needs the *whole* entry stream at
-  the final count (`pipelineUnitsPost`'s `readLanes32 m ep nk'`), while
-  `pipelineLoopExit` carries only the part appended after the caller's prefix
-  (`ep + 4 * k0` onwards) and the staging says nothing about the bytes before it.
-  That is the clause this field does not follow from the loop's exit; the post's
-  stage-2 read-backs are the same boundary seen from the other side. -/
+* `exit`'s conclusion at `Γ_pipeline_units`'s post is the tail's: the cleanup
+  block's store and its UTF-8 call, the two refusal branches, and the stage-2 call
+  whose post is what the `dst`/`ndst`/`ev`/`nev`/`err` clauses are about.  That need
+  is the run's, not the loop exit's, and the field takes the post as a parameter
+  because no arbitrary record at the slot implies it (see the field's own note).
+  What the loop's exit *does* now hand on is the whole entry stream: the staging
+  names the caller's prefix, the invariant carries it beside the appended part, and
+  `PipelineBodyStep.pipelineExit_stream` composes them at the exit's own count, so
+  the post's `readLanes32 m ep nk'` is derivable from the pre instead of being the
+  clause the exit could not reach. -/
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : ∀ base, PipelineUnits tab base s2 Γ2)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
@@ -994,8 +994,9 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
       ParserHalf eventRel bs verdict m dst ev err) :
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hlen,
-    hbound, hwin, _htail, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0, hepcap,
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0, hargs,
+    hlen, hbound, hwin, _htail, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0,
+    _hent0, hepcap,
     hxpbytes, hdstcap, hdstbytes, hevbytes, hevroom, hndst0, hnev0, hroomk,
     hroomx, h32, harm, hreads, hdisj⟩ := hpre
   subst hargs
