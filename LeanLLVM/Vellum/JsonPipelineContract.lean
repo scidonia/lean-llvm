@@ -418,25 +418,32 @@ the three extents below is the unit's own width and not a figure chosen here:
 the entry emitter's frame reaches `o + 4 * (k' + 8)`
 (`JsonEntrySteps.lean:31-34`, where the eight is its sentinel lane), giving
 `(ep, 4 * (nk' + 8))`; the escape batch reserves eight entries past its block's
-count (`batchReserve`, the same `8` its post's `4 * blockMax xn0` is built from),
-and because a block writes at most from its incoming count through its outgoing
-count plus that reserve while the counts only grow, the run's writes reach at
-most `nxp' + 8` entries, giving `(xp, 4 * (nxp' + batchReserve))`; and the
-decoder writes `US_SLACK`, sixty-four bytes, past the decoded extent
-(`kernel/json/stage2.h`), giving `(dst, ndst' + 64)`.
+count (`batchReserve`), and the list record's frame names exactly the block's
+touched extent — `(xp, 4 * touchedPositions xn0 len)`, its incoming count, its own
+positions and that reserve — so composing the blocks' frames while the counts only
+grow reaches at most `nxp' + batchReserve` entries, giving
+`(xp, 4 * (nxp' + batchReserve))`; and the decoder writes `US_SLACK`,
+sixty-four bytes, past the decoded extent (`kernel/json/stage2.h`), giving
+`(dst, ndst' + 64)`.
 
 **The pattern the two widened records share, named where a reader meets its
 members.**  `pipelineStaging` above stated the event stream's presence
-(`HasBytes mem ev evcap.toNat`) without the room stage 2 appends into;
-`escapePositionsPost` named the batch's whole extent in its exclusion while
-declining to describe it, so its own successor had no presence to stand on, and
-its post carries `HasBytes m xp (4 * blockMax xn0)` as the other half of that
-exclusion; and the extents below were the counted output rather than the touched
-region.  **Every region a record names is the callee's whole touched extent,
-including its reserve, and every staging a record requires is presence *and* room
-to write.**  A reader about to narrow one of these regions to the count a callee
-returns should read the other two first: that narrowing is exactly the defect
-each of them carried. -/
+(`HasBytes mem ev evcap.toNat`) without the room stage 2 appends into; and the
+extents below were the counted output rather than the touched region.
+`escapePositionsPost` is the third member of that family, in its other direction:
+its frame named the stream's *capacity* while its own presence clause
+(`HasBytes m xp (4 * blockMax xn0)`) names the capacity too, so the two clauses
+said the same width — one demanding silence over bytes the run never wrote and one
+promising they are present — and the block's touched extent, the only width the run
+kept, appeared nowhere.  It names the touched extent now, with the capacity left to
+the presence clause.  **Every region a record names is the callee's whole touched
+extent, including its reserve, and every staging a record requires is presence
+*and* room to write.**  A reader about to narrow one of these regions to the count a
+callee returns should read the other two first: that narrowing is exactly the
+defect each of them carried, because a frame *below* the touched extent leaves the
+reserve outside every region the post names.  A frame *above* it is the opposite
+defect — a silence the run never kept — and the escape record carried both readings
+until the two clauses were separated. -/
 def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
     (o : Outcome) : Prop :=
   match o with

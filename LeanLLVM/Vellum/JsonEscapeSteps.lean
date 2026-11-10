@@ -133,6 +133,21 @@ byte the store reached is inside one of them. -/
 def UnchangedOutside (mem m : Mem) (regions : List (Nat × Nat)) : Prop :=
   ∀ a, (∀ r ∈ regions, ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) → readByte m a = readByte mem a
 
+/-- **A frame over a narrow region list implies one over a wider list**, when every
+byte the wider list excludes is a byte the narrow list excludes.  The predicate
+talks about the *union of the regions*, not about the list: a region list whose
+covered set is larger is a weaker statement, and a run that kept silence over the
+narrow covered set kept it over the larger one too.  `mono` is the special case
+where the wider list's regions are literally members of the narrow list; this is
+the case where they are the same region list's extents with different widths,
+which no membership argument can express. -/
+theorem UnchangedOutside.widen {m0 m : Mem} {R R' : List (Nat × Nat)}
+    (h : UnchangedOutside m0 m R')
+    (hsub : ∀ a, (∀ r ∈ R, ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) →
+      ∀ r ∈ R', ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) :
+    UnchangedOutside m0 m R :=
+  fun a ha => h a (hsub a ha)
+
 /-- A boolean flag as the eight bytes a caller's carry slot holds. -/
 def flagBytes (b : Bool) : List UInt8 := natToBytes (if b then 1 else 0) 8
 
@@ -179,6 +194,37 @@ def batchReserve : Nat := 8
 
 /-- One block's positions occupy at most sixty-four entries. -/
 def blockMax (xn0 : Nat) : Nat := xn0 + 64 + batchReserve
+
+/-- The entries a block's run **touches** in the position stream: the count it is
+entered with, the positions it emits, and the eight-entry reserve its last batch
+writes past them.  The batch stores all eight of its entries at the cursor
+whatever the block counts, so the touched extent is the counted one plus the
+reserve; that sum, and not the capacity `blockMax`, is the frame's stream region.
+At the block's maximum it is the capacity, and otherwise it is what the run's
+stores actually reached. -/
+def touchedPositions (xn0 len : Nat) : Nat := xn0 + len + batchReserve
+
+/-- **The capacity's silence follows from the touched extent's.**  The record's
+frame names the run's touched extent; a consumer that orders its own region against
+the *capacity* `blockMax xn0` reads the silence it needs from that frame, because a
+byte outside the capacity is beyond the touched end as well.  This is the widening
+the pipeline's staged-capacity clauses do — deliberate, and in one place — and it
+needs the block's entry bound `len ≤ 64`, the only thing between the two extents. -/
+theorem escapeFrame_capacity {mem m : Mem} {xp xn carry xn0 len : Nat} (hlen : len ≤ 64)
+    (h : UnchangedOutside mem m
+      [(xp, 4 * touchedPositions xn0 len), (xn, 8), (carry, 16)]) :
+    UnchangedOutside mem m [(xp, 4 * blockMax xn0), (xn, 8), (carry, 16)] := by
+  have hle : touchedPositions xn0 len ≤ blockMax xn0 := by
+    unfold touchedPositions blockMax
+    omega
+  refine UnchangedOutside.widen h ?_
+  intro a ha r hr
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hr ⊢
+  rcases hr with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · rintro ⟨h1, h2⟩
+    exact ha (xp, 4 * blockMax xn0) (by simp) ⟨h1, by omega⟩
+  · exact fun hc => ha (xn, 8) (by simp) hc
+  · exact fun hc => ha (carry, 16) (by simp) hc
 
 /-- The positions a block's run emits, as the store holds them: the block's own
 escape positions, in order, lifted to the document by the position base.  The
@@ -259,27 +305,31 @@ holding the caller's count could not order its own extent against them.  The bou
 is what makes the width a function of the word; it is a fact about the count, not a
 convenience for a proof.
 
-**The excluded extent is present, and that is the other half of the exclusion.**
-Naming `(xp, 4 * blockMax xn0)` in `UnchangedOutside` is a promise about every byte
-outside it and about none inside: the exclusion is exactly what lets the post be
-silent there.  The written span is only the block's own `4 * len` bytes at
-`xp + 4 * xn0`; the bytes between that span and the extent's end are the batch's
-padded reserve, and the bytes below the span are the capacity earlier blocks
-staged.  Neither is described by a byte equality, so without this clause the run's
-own successor has no capacity to stand on: a presence carried into the call cannot
-survive a post that declines to describe the region.  The record therefore concedes
-presence of exactly the extent its exclusion names, which the run has — the body
-only stores, and a store adds cells rather than removing them, so the capacity the
-caller staged is still there afterwards (`hasBytes_writeBytes`).
+**The frame is the run's touched extent.**  Naming
+`(xp, 4 * touchedPositions xn0 len)` in `UnchangedOutside` is a promise about every
+byte outside it and about none inside, and it is the extent the stores reached:
+each batch stores its eight entries at the cursor whatever the block counts, so the
+last one writes the reserve up to eight entries beyond `xn0 + len`.  The counted
+span below is described by byte equality; the reserve is inside the frame and is
+not described, which is what makes the frame true and the record silent there.
+Naming only the counted span would be false — those reserve bytes are written, with
+values the record does not promise — and naming the capacity would claim a silence
+the run does not keep: the bytes between the touched end and the capacity end are
+never stored, and the run's successor has to be able to conclude that from this
+post rather than restage it.
 
-**Narrowing the exclusion to the written span would not replace the clause**, and
-is recorded here so that it is not retried: the next call's extent exceeds this
-one by the block's own `4 * len` bytes, which lie outside both the current pre's
-extent and the written span, so presence in that window would have no supplier at
-all — a narrower exclusion moves the gap rather than closing it.
+**The presence clause states the capacity, and it is a different extent.**  `HasBytes
+m xp (4 * blockMax xn0)` is the capacity the caller staged, restated as presence:
+the body only stores, and a store adds cells rather than removing them, so what the
+caller staged is still there afterwards (`hasBytes_writeBytes`) and the next call's
+extent — `blockMax xn0 ≤ xpExtent` at the pipeline's staging — is inside it.  The
+frame does not imply presence and presence does not imply the frame; a successor
+needs both, one to carry the capacity forward and one to leave its own static
+regions where they were.  The two extents were one before this record was
+corrected, which is exactly what made the frame claim a capacity-wide silence.
 
-The unchanged conjunct is over the extent the run wrote, which includes the batch
-reserve the run touched. -/
+The unchanged conjunct therefore covers the written span **and** the batch reserve
+the run touched, and stops there. -/
 def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
   ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
     (st : ClassState) (prevb prevs : Bool) (xn0 : Nat),
@@ -301,7 +351,9 @@ def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
     carryPair m carry (carry64 lo hi st) (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi st).oddRun ∧
     HasBytes m xp (4 * blockMax xn0) ∧
-    UnchangedOutside mem m [(xp, 4 * (blockMax xn0)), (xn, 8), (carry, 16)]
+    UnchangedOutside mem m
+      [(xp, 4 * touchedPositions xn0 (escapePositionsFrom (block64 lo hi) st).length),
+       (xn, 8), (carry, 16)]
 
 /-- The position list's boundary record.
 
@@ -651,6 +703,18 @@ theorem escape_expand_post_value {args : List Value} {mem m : Mem} {v : Value}
 /-- info: 'LeanLLVM.Vellum.hasBytes_writeBytes' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms hasBytes_writeBytes
+
+/-- info: 'LeanLLVM.Vellum.UnchangedOutside.widen' does not depend on any axioms -/
+#guard_msgs in
+#print axioms UnchangedOutside.widen
+
+/-- info: 'LeanLLVM.Vellum.touchedPositions' does not depend on any axioms -/
+#guard_msgs in
+#print axioms touchedPositions
+
+/-- info: 'LeanLLVM.Vellum.escapeFrame_capacity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeFrame_capacity
 
 
 /-! ### The spacing of a body's own position list

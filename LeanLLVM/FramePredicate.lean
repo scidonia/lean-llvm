@@ -330,15 +330,20 @@ theorem frame_rule {W : Nat → Prop} {mem m : Mem} (h : UnchangedOn W mem m)
 
 /-! ### The historical defects -/
 
-/-- The escape positions post's reserve window: the stream's capacity `xp` to
-`xp + 4 * blockMax xn0`, which includes the batch's eight-entry reserve.  The
-record excludes exactly this window from unchanged, so a predicate is the one
-object that can own it. -/
+/-- The **capacity** window of the escape positions stream: `xp` to
+`xp + 4 * blockMax xn0`, which includes the batch's eight-entry reserve.  It is the
+window the record's frame named *before* that frame was corrected: the record now
+names the run's touched extent (`Vellum.touchedPositions`, the counted positions
+plus the reserve), which is this window's prefix and shorter whenever the block
+counts fewer than its maximum.  The theorems below are about the capacity-wide
+shape, which is why this definition keeps `blockMax`. -/
 def reserveWindow (xp xn0 : Nat) : Nat → Prop :=
   fun a => xp ≤ a ∧ a < xp + 4 * Vellum.blockMax xn0
 
-/-- The escape positions post's frame predicate: the stream capacity (the
-reserve included), the count's slot and the carry's sixteen bytes. -/
+/-- The capacity-wide frame predicate: the stream's capacity (the reserve
+included), the count's slot and the carry's sixteen bytes.  An earlier shape of the
+escape positions post named exactly this; the record names the touched extent now,
+so this is the wider frame those theorems are about. -/
 def escapeFrame (xp xn carry xn0 : Nat) : Nat → Prop :=
   inRegions [(xp, 4 * Vellum.blockMax xn0), (xn, 8), (carry, 16)]
 
@@ -347,11 +352,12 @@ theorem reserveWindow_mem_escapeFrame (xp xn carry xn0 a : Nat)
     (h : reserveWindow xp xn0 a) : escapeFrame xp xn carry xn0 a :=
   ⟨(xp, 4 * Vellum.blockMax xn0), by simp, h⟩
 
-/-- **The reserve cannot be excluded and left unowned.**  If the post owns the
-frame predicate, every location of the reserve window is present.  This is the
-half the escape positions post initially omitted: the exclusion named the whole
-capacity, but no predicate promised the reserve's presence, so the run's own
-successor had no capacity to stand on. -/
+/-- **The reserve cannot be excluded and left unowned.**  If a post owns the
+capacity-wide frame predicate, every location of the reserve window is present.
+This is the half the escape positions post initially omitted: its exclusion named
+the whole capacity, but no predicate promised the reserve's presence, so the run's
+own successor had no capacity to stand on.  The record states that presence as a
+clause of its own now, at the capacity, beside a frame at the touched extent. -/
 theorem escapeFrame_owns_reserve {xp xn carry xn0 : Nat} {mem m : Mem}
     (h : Owns (escapeFrame xp xn carry xn0) mem m) :
     ∀ a, reserveWindow xp xn0 a → present m a :=
@@ -360,9 +366,8 @@ theorem escapeFrame_owns_reserve {xp xn carry xn0 : Nat} {mem m : Mem}
 /-- The witness memory: one byte written at address zero. -/
 def omissionMem : Mem := [(0, 7)]
 
-/-- The escape positions post's frame predicate, at a stream base of zero, a
-capacity of `4 * blockMax 0`, and the two slots at 100 and 200 (both inside the
-capacity). -/
+/-- The capacity-wide frame predicate, at a stream base of zero, a capacity of
+`4 * blockMax 0`, and the two slots at 100 and 200 (both inside the capacity). -/
 theorem omission_writesOnly :
     UnchangedOn (escapeFrame 0 100 200 0) [] omissionMem := by
   intro a ha
@@ -391,11 +396,11 @@ theorem omission_not_present_one : ¬ present omissionMem 1 := by
   rw [hnone] at hb
   cases hb
 
-/-- **The escape positions post's omission, stated directly.**  The frame clause
-holds — the run changes only inside the escape frame — and the reserve window's
-presence does not.  That conjunction is the gap the post carried: the exclusion
-is satisfied without the presence half, so the post alone does not hand its
-successor a capacity. -/
+/-- **The earlier post's omission, stated directly.**  The capacity-wide frame
+clause holds — the run changes only inside that frame — and the reserve window's
+presence does not.  That conjunction is the gap that shape carried: the exclusion
+is satisfied without the presence half, so it alone does not hand its successor a
+capacity. -/
 theorem reserve_omission_witness :
     UnchangedOn (escapeFrame 0 100 200 0) [] omissionMem ∧
       ¬ (∀ a, reserveWindow 0 0 a → present omissionMem a) := by
@@ -408,12 +413,12 @@ theorem reserve_omission_witness :
     unfold Vellum.blockMax Vellum.batchReserve
     decide
 
-/-- **The escape positions post's omission is not an owned region.**  The run
-changes only inside the frame predicate, but the reserve window is not present,
-so the post cannot claim `Owns`; the omission is exactly the weaker
-`UnchangedOn` half.  `Owns` could not have omitted the presence clause, because
-it is one predicate with both halves; the old list vocabulary had a second object
-in which the reserve could be named and then promised by nothing. -/
+/-- **The earlier post's omission is not an owned region.**  The run changes only
+inside the capacity-wide frame predicate, but the reserve window is not present, so
+that shape cannot claim `Owns`; the omission is exactly the weaker `UnchangedOn`
+half.  `Owns` could not have omitted the presence clause, because it is one
+predicate with both halves; the old list vocabulary had a second object in which
+the reserve could be named and then promised by nothing. -/
 theorem omission_not_owns :
     ¬ Owns (escapeFrame 0 100 200 0) [] omissionMem := by
   intro h
@@ -463,8 +468,10 @@ theorem stagedCapacity_present : HasBytes stagedCapacity 0 4 := by
 /-- **The narrow-extent defect, at the escape batch's first reserve byte.**  The
 counted prefix is `(0, 4)`; the batch writes its first reserve byte at address
 four, outside the narrow frame.  The run refutes the narrow claim at the byte it
-wrote, which is the omission the pipeline post carried: an extent narrower than
-the writes leaves a moved byte outside every region the post names. -/
+wrote, which is the omission the pipeline post carried: an extent narrower than the
+writes leaves a moved byte outside every region the post names.  This is why the
+corrected record's frame stops at the *touched* extent — the counted positions plus
+the reserve — and not at the counted prefix. -/
 theorem narrowExtent_refuted :
     ¬ UnchangedOn (inRegion (0, 4)) [] (writeBytes [] 4 [0]) := by
   apply not_unchangedOn_of_changed (W := inRegion (0, 4)) (a := 4)

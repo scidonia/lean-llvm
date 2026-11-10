@@ -3065,9 +3065,12 @@ theorem hasBytes_of_forall (m : Mem) : ∀ (M a : Nat),
       exact ⟨b :: vs, by simp only [readBytes, hb', hvs]⟩
 
 /-- **The escape stream's capacity, extended to the staged extent.**  The record
-promises presence of the block's per-call capacity and byte equality outside its
-three regions, so the staged extent's tail is the caller's bytes and the two
-together are the whole staged stream. -/
+promises presence of the block's per-call capacity, and byte equality outside its
+three regions at the extent the batch touched.  The caller passes the capacity-wide
+form — `escapeFrame_capacity` derives it from the record's frame at the block's own
+count, and every staged-capacity clause here orders its regions against
+`blockMax` — so the staged extent's tail is the caller's bytes and the two together
+are the whole staged stream. -/
 theorem escape_capacity {r2 r3 : Mem} {xp xn xcarry xn0 extent : Nat}
     (hu : UnchangedOutside r2 r3 [(xp, 4 * blockMax xn0), (xn, 8), (xcarry, 16)])
     (hpost : HasBytes r3 xp (4 * blockMax xn0))
@@ -3100,10 +3103,12 @@ above — the mask unit's two store regions, the body's own store, and the entry
 emitter's written extent — so the gate-on successor's facts are that frame
 composed with the list's exclusion, stated once here for both arms.
 
-The exclusion's extent is `4 * blockMax xn0` at the count the caller passes, while
-the staged capacity the invariant carries is `4 * S.xpExtent`; `blockMax xn0 ≤
-S.xpExtent` is what makes the first a sub-range of the second, and the count's
-growth bound is what makes it true at every block. -/
+The exclusion these steps carry is the block's *touched* extent, widened to the
+capacity by `escapeFrame_capacity` at the call site: the record's frame names
+`4 * touchedPositions xn0 len` and the staged capacity the invariant carries is
+`4 * S.xpExtent`, so `blockMax xn0 ≤ S.xpExtent` plus the block's own entry bound
+is what makes the carried extent a sub-range of the staged one, and the count's
+growth bound is what makes the capacity relation true at every block. -/
 
 /-- The outgoing parity is a function of the parity the block is entered with, so
 two states that agree there leave the same carry parity. -/
@@ -3377,7 +3382,7 @@ theorem escapeCall_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [hblk'] at hblk
     exact Option.some.inj hblk
   obtain ⟨hlo, hhi⟩ := block64_inj hblkEq
-  rw [hlo, hhi] at hcarryOut hcountOut
+  rw [hlo, hhi] at hcarryOut hcountOut hframe
   -- the incoming pair is the caller's, so the two states' parities agree
   have hpairEq : prevb' = S.prevb ∧ prevs' = S.prevs :=
     pair_flags hcarry'.1 hcarry.1
@@ -3396,8 +3401,17 @@ theorem escapeCall_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hfin : (⟨31, escapePositionsPost._proof_1⟩ : Fin 32) = ⟨31, by decide⟩ :=
     Fin.ext rfl
   rw [hfin] at hcarryOut
+  -- the record's frame is the block's touched extent; the staged capacity's
+  -- silence is that frame's widening, and the block's bound is what makes the
+  -- touched end fall inside the capacity
+  have hframeCap : UnchangedOutside r2.mem r3.mem
+      [(S.xp, 4 * blockMax S.xn), (S.nxp, 8), (S.xcarry, 16)] :=
+    escapeFrame_capacity (xn0 := S.xn)
+      (len := (escapePositionsFrom (block64 lo hi) st').length)
+      (escapePositionsFrom_length_le_block lo hi st') hframe
   exact ⟨r3, carry64 lo hi st', _, by simpa only [hiw] using hcall, hcountOut,
-    escapePositionsFrom_length_le_block lo hi st', hcarryOut, hparity, hhasOut, hframe⟩
+    escapePositionsFrom_length_le_block lo hi st', hcarryOut, hparity, hhasOut,
+    hframeCap⟩
 
 /-! ### One gate-on iteration's calls, named one fact per field
 
@@ -7871,7 +7885,9 @@ bitvector shift arithmetic `sh6_ofNat_toNat` names.
 /-! ### Axiom footprints of the gate-on arms and the loop instance
 
 The list's frames are `UnchangedOutside` and `readBytes` equalities, the call site
-is one record's conjunction and one exclusion, and the successors are definitions.
+is one record's conjunction, one exclusion at the extent the batch touched and one
+widening of it to the capacity the staged clauses order against
+(`escapeFrame_capacity`), and the successors are definitions.
 The `Classical.choice` in the call bundles and the steps is `maskCall_at`'s and
 `pos8Call_at`'s — the bitvector shift arithmetic `sh6_ofNat_toNat` names, not a
 witness chosen in any statement here.
