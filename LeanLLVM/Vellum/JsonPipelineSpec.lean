@@ -28,10 +28,10 @@ already states, read at the pipeline's twenty-argument ABI
 (`pipeline.h:33-37`, `pipelineBody.params`):
 
 * **the argument shape** — `pipeline.h:33-37` and the staging's own pattern
-  (`JsonPipelineContract.lean:229`);
+  (`JsonPipelineContract.lean:246`);
 * **the input relation** `readBytes mem base n = some bs` with
   `n = bs.length` — the staging's document clause
-  (`JsonPipelineContract.lean:238-240`), which stages the padded window and the
+  (`JsonPipelineContract.lean:257-258`), which stages the padded window and the
   exact-length read inside it; `Sigma_pipeline` restates the exact-length form
   because the parser's predicate is stated over `bs`, not over the padding
   (`C102`);
@@ -63,7 +63,7 @@ already states, read at the pipeline's twenty-argument ABI
   span-or-arena field for a key or a string; `stage2.c:127-128`, `:837-842`).
   `EventStreamRel` below is C95's relation between that record stream and
   `Tape`'s tokens, and is a *parameter* of this record for the reason
-  `JsonPipelineIR.lean:52-56` gives for `stage2Sel`: `JsonStage2Spec.lean` is
+  `JsonPipelineIR.lean:52-62` gives for `stage2Sel`: `JsonStage2Spec.lean` is
   not in this tree at this revision.  With it, the plan's "the event stream's
   decode equals `decodeTape`'s value" is the consequence of the relation and
   `decodeTape t = some v`, not a second decoder stated here;
@@ -147,16 +147,21 @@ are named here so the record is not read as proved:
    than `Value` equality.  That clause is the reason the relation is a parameter
    here and not a definition: it is C95's deliverable, and stating it a second
    time would be two specifications of one stream.
-3. **`Γ_stage2` and `stage2_satisfies`** (`C96`), absent at this revision: the
-   pipeline's stage-2 call site is a slot (`JsonPipelineIR.lean:1170-1250`), and
-   the finalisation lemma consumes its post.  Until it exists the record is
-   stated and not proved.
+3. **`stage2_satisfies`** (`C96`), absent at this revision: the pipeline's
+   stage-2 call site is a slot (`JsonPipelineIR.lean:1221-1250`), and the
+   finalisation lemma consumes its post.  **The record itself is not absent** —
+   `JsonStage2Contract` states `Γ_stage2` and builds the pipeline's bundle at it
+   (`pipeline_satisfies_at_stage2`), which proves the bundle's verdict clause from
+   the post rather than taking it as a hypothesis.  What is still missing is the
+   body: `stage2Body`, `stage2Calls` and the `stage2_satisfies` instance, so no
+   run is proved to reach that post.  Until they exist the record is stated and
+   not proved.
 4. **`tape_valid`/`decodeTape_correct`** (`TapeCorrect.lean:1041-1043`,
    `Correct.lean:4123-4145`): `decodeTape t = some v` and the validity conjuncts
    are not properties of an arbitrary tape; they come from the parser's own
    correctness theorem applied to `parseBytes ... = .ok t`.
 5. **The event capacity clause lives in the staging, not here.**  The staging
-   (`JsonPipelineContract.lean:229`) bounds the entry stream, the escape list,
+   (`JsonPipelineContract.lean:246`) bounds the entry stream, the escape list,
    the arena and the event stream, the last with the header's written-buffer
    promise at the encoding's worst case, `nev0 + 13 * bs.length ≤ evcap`
    (`stage2.h:13-21`).  It was once stated here alone, and this record's note
@@ -193,7 +198,7 @@ open LeanLLVM.Vellum.JsonUtf8IR
 `stage2.h:68-75` fixes the record encoding; C95's `JsonStage2Spec` states what a
 record stream means against `Tape`'s tokens.  That module is not in this tree at
 this revision, so the relation enters this record as a parameter — the same
-deferral `stage2Sel` has (`JsonPipelineIR.lean:52-56`).  The terminal theorem
+deferral `stage2Sel` has (`JsonPipelineIR.lean:52-62`).  The terminal theorem
 instantiates it with C95's relation, at which point the parameter is not free.
 -/
 
@@ -289,7 +294,7 @@ def RefusalOffset (bs : List UInt8) (e : Nat) : Prop :=
 /-- The caller's promise for the specification record: the staging the body's
 record already asks for, plus the parser's policy exclusions, named in the
 module docstring.  The staging is read by name from `Γ_pipeline_units`
-(`JsonPipelineContract.lean:229`) — the specification claims nothing about a
+(`JsonPipelineContract.lean:246`) — the specification claims nothing about a
 caller that record would not admit, and the empty document is outside its
 domain; the depth and token clauses are the parser's own limits
 (`Parse.lean:30-35`), which the pipeline's ABI does not carry.

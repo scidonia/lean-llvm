@@ -230,8 +230,11 @@ is the guarantee at the pipeline's own call site: the arguments the body passes,
 the record's budget for them, and the record's post at the outcome.  The escape
 list's record is the one field indexed by `base`: its block clause reads the
 document at `base + blockAddr blk0`, and the base is `pipeline.h`'s first
-argument rather than a reading of the call's own list.  The stage-2 slot is indexed by the
-caller's `Γ2` because that unit's body and record are not in this tree.
+argument rather than a reading of the call's own list.  The stage-2 slot is
+indexed by the caller's `Γ2` because that unit's *body* is not in this tree;
+`JsonStage2Contract` holds the record (`Γ_stage2`), and
+`pipeline_satisfies_at_stage2` builds this bundle at it, so what the caller still
+supplies is the selection — `stage2Body`, `stage2Calls` and `stage2_satisfies`.
 
 `stage2_verdict_bounded` is the one clause that is not a `CallSatisfies`: the
 pipeline's post asserts the returned verdict is the ABI's accept/refuse word, and
@@ -506,9 +509,10 @@ The base is a parameter of `Γ_pipeline_units` and of `pipelineCalls` because
 `Satisfies` fixes the call environment before it quantifies over the arguments,
 so it cannot be read out of the argument list there.  It is *not* therefore an
 asserted value: the staging's own clauses say what it is — the ABI's first
-argument (`.ptr base`), the address the padded document window is read at, and
-the address whose three preceding bytes the UTF-8 window occupies — and this
-lemma hands a caller exactly those.  The escape list's record is indexed by the
+argument (`.ptr base`), the address the padded document window is read at and
+whose read-past tail is staged, and the address whose three preceding bytes the
+UTF-8 window occupies — and this lemma hands a caller exactly those.  The escape
+list's record is indexed by the
 same number, and its block clause reads `base + blockAddr blk0`; a base chosen by
 inspection rather than taken from here is the defect that clause exists to stop.
 
@@ -522,11 +526,53 @@ theorem pipelineStaging_base {base : Nat} {args : List Value} {mem : Mem}
       readBytes mem (base - 3) 3 = some (List.replicate 3 0) ∧
       readBytes mem base (64 * pipelineBlocks bs.length) = some
         (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) ∧
+      HasBytes mem (base + 64 * pipelineBlocks bs.length) 32 ∧
       ∃ rest : List Value, args = .ptr base :: .int 64 n :: rest := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
-    hargs, _hnlen, _hmax, hwin, h3, hpre3, -⟩ := h
-  exact ⟨n, bs, h3, hpre3, hwin, _, by rw [hargs]⟩
+    hargs, _hnlen, _hmax, hwin, htail, h3, hpre3, -⟩ := h
+  exact ⟨n, bs, h3, hpre3, hwin, htail, _, by rw [hargs]⟩
+
+/-- **The staging stages what the decoder reads past the document.**  The padded
+window covers `base .. base + 64 * blocks`, the staging's tail clause covers
+`base + 64 * blocks .. + 32`, and the document ends at `base + bs.length` with
+`bs.length ≤ 64 * blocks`; a read across that boundary composes the two, so the
+thirty-two bytes `Γ_stage2.pre` asks at `b + n` are read back from the staging
+alone.  This is the extent `pipelineStaging` used to leave out: its window is
+exactly the padded document, and the decoder's last read is the escape
+expander's read-past. -/
+theorem pipelineStaging_tail {base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging base args mem) :
+    ∃ bs : List UInt8, HasBytes mem (base + bs.length) 32 := by
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
+    hargs, _hlen, _hmax, hwin, htail, -⟩ := h
+  refine ⟨bs, ?_⟩
+  have hw : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
+  have hK : bs.length + (64 * pipelineBlocks bs.length - bs.length) =
+      64 * pipelineBlocks bs.length := by omega
+  have hwin' : readBytes mem base
+      (bs.length + (64 * pipelineBlocks bs.length - bs.length)) =
+      some (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) := by
+    rw [hK]; exact hwin
+  obtain ⟨_, hmid⟩ :=
+    readBytes_split mem base bs.length (64 * pipelineBlocks bs.length - bs.length) hwin'
+  obtain ⟨vs, hvs⟩ := htail
+  have haddr : base + bs.length + (64 * pipelineBlocks bs.length - bs.length) =
+      base + 64 * pipelineBlocks bs.length := by omega
+  have hcat : readBytes mem (base + bs.length)
+      ((64 * pipelineBlocks bs.length - bs.length) + 32) =
+      some (((bs ++ List.replicate
+        (64 * pipelineBlocks bs.length - bs.length) 0).drop bs.length) ++ vs) := by
+    refine JsonEntrySteps.readBytes_append mem
+      (64 * pipelineBlocks bs.length - bs.length) (base + bs.length) _ 32 vs hmid ?_
+    rw [haddr]; exact hvs
+  refine ⟨(((bs ++ List.replicate
+    (64 * pipelineBlocks bs.length - bs.length) 0).drop bs.length) ++ vs).take 32, ?_⟩
+  rw [show (64 * pipelineBlocks bs.length - bs.length) + 32 =
+      32 + (64 * pipelineBlocks bs.length - bs.length) from by omega] at hcat
+  exact (readBytes_split mem (base + bs.length) 32
+    (64 * pipelineBlocks bs.length - bs.length) hcat).1
 
 -- The ABI's first slot is the document, which is the base the record takes: the
 -- pinned AST's parameter list and `pipeline.h`'s "the document is `b .. b + n -
@@ -558,16 +604,26 @@ consumes.  `exit` is the tail: from any state the loop leaves in, the cleanup,
 the UTF-8 call, the arm selection and stage 2 (or the zero it returns) reach a
 verdict at the record's post.
 
-**`Γ2` is the stage-2 slot, and pinning it is `Γ_stage2`'s to make.**  The
-parameter is not a modelling convenience: the tail's post clauses about `dst`,
-`ev`, `ndst`, `nev` and the refusal arm's `err` are facts about the memory the
-stage-2 run leaves, and an arbitrary record implies none of them.  The record
-that states those facts, `Γ_stage2`, does not exist in this tree, so the pin is
-**deferred** to the slice that lands that record — deferred, not missing: it is
-a substitution of the record once it exists, and `exit` below is stated at the
-arbitrary slot until then.  A record invented here so the tail would go through
-would state stage 2's write set where it is convenient rather than where it is
-measured, which is the adapter ruling's error in the other direction. -/
+**`Γ2` is the stage-2 slot, and the record that fills it is `JsonStage2Contract`'s
+`Γ_stage2`.**  The parameter is phantom in the fields below: `loop`, `N_eq`,
+`cost_le`, `seed` and `exit` are statements about `pipelineCalls tab base s2` and
+`pipelineBody`, and none of them names `Γ2`.  `JsonStage2Contract`'s
+`pipelineBodyFacts_of_record` states exactly that, so substituting `Γ_stage2` for
+the slot is a rename, and `pipeline_satisfies_at_stage2` makes it.
+
+**What the record's arrival closes, and what it does not.**  It closes the
+bundle's stage-2 clause: `PipelineUnits`' `stage2_verdict_bounded` was a
+hypothesis while the record did not exist, and at `Γ_stage2` it is proved from
+the post (`stage2_verdict_bounded`), so a bundle at that record needs only the
+stage-2 selection.  It does not close `hbody`, and it cannot: `loop`, `seed` and
+`exit` are proofs about `pipelineBody`'s own blocks that the run reaches the post
+`Γ_pipeline_units` states — the record states that post, not the proof — and the
+stage-2 clauses inside it are about the memory the stage-2 run leaves, which the
+tail's traces establish.  It also does not supply the selection, because the body
+is still absent: `stage2Body`, `stage2Calls` and `stage2_satisfies`.  A record
+invented here so the tail would go through would state stage 2's write set where
+it is convenient rather than where it is measured, which is the adapter ruling's
+error in the other direction. -/
 structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (args : List Value) (mem : Mem) (next : Nat) where
   /-- The block loop, as one induction over the four arm-specialised copies. -/
@@ -583,9 +639,10 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
       runFuel (pipelineCalls tab base s2) k pipelineBody e
-  /-- The tail: from any exit state, the verdict and the record's post.  Stated
-  at the arbitrary stage-2 slot `Γ2`; the pin to `Γ_stage2` is deferred to that
-  record's landing, as the structure's docstring says. -/
+  /-- The tail: from any exit state, the verdict and the record's post.  The
+  post's stage-2 clauses are `Γ_stage2`'s, but the field does not name the slot:
+  `Γ2` is phantom here, and what remains is the proof that `pipelineBody`'s three
+  tail blocks reach that post — the body analysis's, not a record's. -/
   exit : ∀ (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
@@ -811,6 +868,10 @@ themselves, not this module. -/
 #guard_msgs in
 #print axioms pipelineStaging_base
 
+/-- info: 'LeanLLVM.Vellum.pipelineStaging_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineStaging_tail
+
 /-- info: 'LeanLLVM.Vellum.pipelineBudget_of_staging' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pipelineBudget_of_staging
@@ -910,7 +971,7 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {base : Nat}
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hlen,
-    hbound, hwin, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0, hepcap,
+    hbound, hwin, _htail, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0, hepcap,
     hxpbytes, hdstcap, hdstbytes, hevbytes, hevroom, hndst0, hnev0, hroomk,
     hroomx, h32, harm, hreads, hdisj⟩ := hpre
   subst hargs

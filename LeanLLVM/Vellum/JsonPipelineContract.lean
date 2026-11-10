@@ -75,14 +75,20 @@ def pipelineBudget (args : List Value) (_mem : Mem) : Nat :=
 /-! ### The read set -/
 
 /-- The extents the run reads, as the union of the units' own read clauses at
-the arguments this body passes, plus the two regions the pipeline's staging owns:
+the arguments this body passes, plus the regions the pipeline's staging owns
+(the padded window and the table; the document's read-past tail is the staging's
+own clause beside this list):
 
 * the document at `b`, padded to its block count — the mask unit reads each
   64-byte block (`Γ_masks.pre`), the UTF-8 stage its window (`Γ_utf8.pre`), and
   stage 2 the document itself.  The listed extent is the UTF-8 window's, because
-  it is the widest: `utf8Window bs n nb = [0, 0, 0] ++ bs ++ padding` is read at
-  `b - 3` for `3 + 64 * nb` bytes, so the three bytes below the document are part
-  of the region and the mask unit's blocks are inside it;
+  it is the widest of the two windows: `utf8Window bs n nb = [0, 0, 0] ++ bs ++
+  padding` is read at `b - 3` for `3 + 64 * nb` bytes, so the three bytes below
+  the document are part of the region and the mask unit's blocks are inside it.
+  The decoder's read-past tail is not summed into this entry: the list is the
+  units' read clauses at the padded window, and the tail is a presence promise
+  no unit clause names, so it is the staging's own `HasBytes` clause beside this
+  list at the extent `Γ_stage2.pre` asks of the call site;
 * the pos8 table at `tab`, all 8 KiB — `Γ_entry_pos8.pre` reads
   `readBytes mem tab 8192 = some pos8Table`;
 * the mask unit's carry slot `sc` (24 bytes, `Γ_masks.pre`) and its mask slot
@@ -119,13 +125,17 @@ def pipelineReads (base tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × N
 /-- The objects the caller stages, each at the extent the record claims about
 it.  The entry stream's and escape list's extents are the windows the units
 write, not their full capacities: a caller is not asked to keep bytes apart that
-no clause reaches. -/
+no clause reaches.  The document's entry is the UTF-8 window's extent, and the
+pair beside it is the read-past tail the staging's `HasBytes` clause claims: the
+decoder reads those thirty-two bytes, so no writable object may be staged there,
+which is what the separate pair states rather than widening the window's. -/
 def pipelineRegions (base tab nk0 nxp0 ndst0 : Nat) (args : List Value) : List (Nat × Nat) :=
   match args with
   | [.ptr _, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
      .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err, .int 64 _] =>
-      [(base - 3, 3 + 64 * pipelineBlocks n.toNat), (tab, 8192), (sc, 24), (mk, 48),
+      [(base - 3, 3 + 64 * pipelineBlocks n.toNat), (base + 64 * pipelineBlocks n.toNat, 32),
+       (tab, 8192), (sc, 24), (mk, 48),
        (entw, 8), (ep, 4 * (nk0 + 64 * pipelineBlocks n.toNat + 9)), (nk, 8),
        (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8)), (nxp, 8),
        (xcarry, 16), (dst, ndst0 + n.toNat + 64), (ndst, 8),
@@ -139,8 +149,10 @@ input block, the carry and the mask slot; the entry emitters' entry-word and
 table exclusions against the entry stream; `Γ_escape_positions.pre`'s count
 against the stream and the carry — together with `pipeline.h`'s statement that
 the four scratch objects are real caller-sized memory objects.  The stage-2
-slot's own exclusions are consumed from the pipeline's staging when `Γ_stage2`
-lands; the regions above are the caller's promise this record can make now. -/
+slot's own exclusions and the document's read-past tail are the pipeline's: the
+tail's pair above is separated from every writable object, and the remaining
+stage-2 extents (`stage2Regions`) are separated once they are seen to be these
+objects' sub-extents. -/
 def DisjointRegions (rs : List (Nat × Nat)) : Prop :=
   rs.Pairwise fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1
 
@@ -198,6 +210,13 @@ clause names the unit record it is read from:
 * the document and its padded window are the mask record's 64-byte block read
   lifted over the whole run, and the bound is `Limits.default.maxInput`, the
   limit `Σ_pipeline` is stated at (`Parse.lean:34`);
+* the document's read-past tail is the escape expander's `HasBytes mem (b + n)
+  32` (`Γ_escape_expand.pre`, read one level below at stage 2's `b + n`), staged
+  at the padded window's end because the block window alone leaves fewer than
+  thirty-two bytes past a document whose length is a multiple of sixty-four; it
+  is presence only — no clause reads those bytes — so it is stated as a
+  `HasBytes` clause and not as a wider window, which the mask and UTF-8 calls
+  read block for block;
 * the three bytes below the document are the UTF-8 stage's window, which
   `Γ_utf8.pre` reads at `b - 3` as `[0, 0, 0] ++ bs ++ padding`; and the document
   is non-empty because that record's `pre` and post both require `0 < n`, while
@@ -239,6 +258,22 @@ def pipelineStaging (base : Nat) (args : List Value) (mem : Mem) : Prop :=
     bs.length ≤ (Limits.default).maxInput ∧
     readBytes mem base (64 * pipelineBlocks bs.length) =
       some (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) ∧
+    -- the document's read-past tail.  The last read past the document is the
+    -- escape expander's, `HasBytes mem (b + n) 32` (`Γ_escape_expand.pre`), so
+    -- a body ending at the document's last byte needs thirty-two readable bytes
+    -- past it.  The padded window above does not carry them: it ends at
+    -- `64 * pipelineBlocks bs.length`, and `#guard decide (64 * pipelineBlocks 64
+    -- < 64 + 32)` holds, so a sixty-four-byte document stages one block and the
+    -- decoder reads past its end.  This is the reserve window's defect class in
+    -- the other direction — a region the body touches and the staging left
+    -- unstaged — so it is staged here rather than narrowed out of the unit's
+    -- clause.  The number is `JsonStage2Contract`'s `stage2ReadTail`; that
+    -- module imports this one, so the extent is written out rather than read
+    -- through the import, and the two `#guard`s beside each definition keep them
+    -- equal.  It is a presence promise and not a wider read window: the window
+    -- is what the mask and UTF-8 calls read, block for block, and its last block
+    -- is `bs ++ padding` exactly; no clause reads these bytes' contents.
+    HasBytes mem (base + 64 * pipelineBlocks bs.length) 32 ∧
     -- the UTF-8 stage's window begins three bytes below the document, and those
     -- bytes are zero: `Γ_utf8.pre` stages
     -- `readBytes mem (base - 3) (3 + 64 * nb) = some (utf8Window bs n nb)` and
@@ -434,6 +469,22 @@ def Γ_pipeline_units (base : Nat) : MemContract where
    .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
    .int 64 0]).length == 13
 #guard (pipelineReads 0 1024 0 0 []).length == 0
+
+-- The staged document is two adjacent extents: the UTF-8 window's padded block,
+-- ending at `base + 64 * blocks`, and the read-past tail that begins there.  At
+-- `base = 64` and a sixty-four-byte document the window is `61 .. 128` and the
+-- tail `128 .. 160`, which is where the decoder's read past the padded window
+-- lands — the arithmetic the staging's `HasBytes` clause stages.
+#guard decide ((pipelineRegions 64 4096 0 0 0
+  [.ptr 0, .int 64 64, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
+   .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
+   .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
+   .int 64 0]).take 2 = [(61, 67), (128, 32)])
+#guard (pipelineRegions 64 4096 0 0 0
+  [.ptr 0, .int 64 1, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
+   .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
+   .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
+   .int 64 0]).length == 16
 
 /-! ### Axiom footprints
 

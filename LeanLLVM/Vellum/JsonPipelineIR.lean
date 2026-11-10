@@ -50,10 +50,14 @@ themselves indexed: its budget is `escapePositionsBudget` and its batch call is
 resolved at `Γ_xl_batch`.
 
 The seventh callee, `@leanllvm_json_stage2`, has no body in this tree, so its
-selection is a **parameter** of the environment: `stage2Sel`.  A caller supplies
-it with that unit's own selection — `envForUnit stage2Sym Γ_stage2 stage2Calls
-stage2Body` once the body exists — and `pipeline_satisfies_of_units` takes the
-corresponding `CallSatisfies` as one of its seven hypotheses.  A body that called
+selection is a **parameter** of the environment: `stage2Sel`.  Its record does
+exist — `JsonStage2Contract` defines `Γ_stage2` and builds the bundle at it with
+`pipeline_satisfies_at_stage2` — but a record is not a selection.  A caller
+supplies the selection with `envForUnit stage2Sym Γ_stage2 stage2Calls
+stage2Body` once the body exists, and `pipeline_satisfies_of_units` takes the
+corresponding `CallSatisfies` as one of its seven hypotheses.  What is still
+absent is the body itself: `stage2Body`, `stage2Calls` and a
+`stage2_satisfies` instance.  A body that called
 a symbol no slot resolved would be a `ub` at that call rather than a compile
 error, which is why the census guards are `#guard`s: a callee outside the six
 plus the slot fails elaboration.
@@ -1214,9 +1218,11 @@ site is judged by must be chosen outside the argument list.  The pipeline's own
 staging then ties `base` to the ABI's first slot, which is where `pipeline.h`
 puts the document (`b .. b + n - 1`).
 
-`stage2Sel` is the stage-2 slot: that unit's body and record are not in this
-tree, so a caller supplies its selection, and `pipelineCalls` is parametric in
-it.  The theorem states the stage-2 fact as one hypothesis.
+`stage2Sel` is the stage-2 slot: that unit's body is not in this tree, so a
+caller supplies its selection, and `pipelineCalls` is parametric in it.  Its
+record is `JsonStage2Contract`'s `Γ_stage2`, and `pipeline_satisfies_at_stage2`
+builds the pipeline's bundle at it from that selection; the theorem states the
+stage-2 fact as one hypothesis.
 
 `tab` is the staged table base the POS8 record reads, appended by the adapter
 because the capture made the emitter's static table a parameter (see
