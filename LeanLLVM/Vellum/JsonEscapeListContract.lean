@@ -1827,7 +1827,7 @@ theorem escape_positions_satisfies (base : Nat) :
         rw [hcarryEq]
         exact hreach.2.2.1
       exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, prevb, prevs, xn0,
-        rfl, hblock, hbs, hctl, him, hpair, hcount,
+        rfl, hblock, hbs, hctl, him, hpair, hcount, (by omega),
         hreach.1, hreach.2.1, hout, hreach.2.2.2.1, hreach.2.2.2.2⟩
   · let σ : State :=
       site (ie13 (ifThenEnv (entryEnv (EntryState escapeListFunction args mem next).env bs
@@ -1889,7 +1889,7 @@ theorem escape_positions_satisfies (base : Nat) :
         rw [hcarryEq]
         exact hreach.2.2.1
       exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, prevb, prevs, xn0,
-        rfl, hblock, hbs, hctl, him, hpair, hcount,
+        rfl, hblock, hbs, hctl, him, hpair, hcount, (by omega),
         hreach.1, hreach.2.1, hout, hreach.2.2.2.1, hreach.2.2.2.2⟩
 
 /-! ### Axiom footprints

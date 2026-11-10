@@ -250,6 +250,15 @@ twice.  The pre's third exclusion is what makes the clause true: without it a
 `carry` inside the stream's capacity is overwritten by the batch's stores and the
 pair the run wrote is not what memory holds.
 
+**The count's representative is bounded, and that is a statement about the word.**
+The slot holds eight bytes, so `natToBytes` is modular: a value and its residue
+modulo `2 ^ 64` are the *same* word in memory.  Without the bound the record admits
+two representatives of one word, and every extent it states — `4 * blockMax xn0`,
+`4 * xn0` — would depend on which representative a witness chose, so a consumer
+holding the caller's count could not order its own extent against them.  The bound
+is what makes the width a function of the word; it is a fact about the count, not a
+convenience for a proof.
+
 **The excluded extent is present, and that is the other half of the exclusion.**
 Naming `(xp, 4 * blockMax xn0)` in `UnchangedOutside` is a promise about every byte
 outside it and about none inside: the exclusion is exactly what lets the post be
@@ -281,6 +290,10 @@ def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
     im = specInString64 lo hi st ∧
     carryPair mem carry st prevb prevs ∧
     readBytes mem xn 8 = some (wordBytes 8 xn0) ∧
+    -- the count's representative is the word it denotes: the slot is eight bytes,
+    -- so a value and its residue modulo `2 ^ 64` are one word, and only a bounded
+    -- representative makes the extents below functions of that word
+    xn0 < 2 ^ 64 ∧
     readBytes m xn 8 = some (wordBytes 8 (xn0 +
       (escapePositionsFrom (block64 lo hi) st).length)) ∧
     readBytes m (xp + 4 * xn0) (4 * (escapePositionsFrom (block64 lo hi) st).length) =
