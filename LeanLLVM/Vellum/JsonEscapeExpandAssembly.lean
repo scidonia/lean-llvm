@@ -1,26 +1,29 @@
 /-
-The expander's bundle, assembled from the three runs it still takes.
+The expander's bundle, assembled from the three runs it takes, and discharged.
 
-`JsonEscapeExpandRun` states the claim with `ExpandFacts` as its hypothesis, and
-two of the bundle's five proof fields are already discharged: the exit
+`JsonEscapeExpandRun` states the claim with `ExpandFacts` as its hypothesis.
+Three of the bundle's four proof fields are proved elsewhere: the exit
 continuation (`expandExit_satisfied`, unconditional in the staging its word
-carries) and the seed's empty-list arm (`emptySeedRun`).  This module assembles
-the bundle from the rest, so a consumer's hypothesis is the staging and exactly
-the three body runs:
+carries), the iteration arm (`assemblyLatchStep_satisfied`) and the refusal arm
+(`assemblyRefusalArm_satisfied`).  This module assembles the bundle from those and
+the entry's three arms, so a consumer's hypothesis is the record's own `pre` and
+nothing else:
 
-* `loop` — the iteration arm, `assemblyLatchStep`;
-* `refuse` — the refusal arm, `assemblyRefusalArm`;
-* the non-empty seed arm — the pre-scan plus one iteration to the latch.
+* `loop` — the iteration arm, `assemblyLatchStep`, from `assemblyLatchStep_satisfied`;
+* `refuse` — the refusal arm, `assemblyRefusalArm`, from `assemblyRefusalArm_satisfied`;
+* `seed` — the entry stage's three arms (`ExpandSeed`): the pre-scan plus one
+  iteration to the latch (`seedLatchRun`), the empty-list exit (`emptySeedRun`),
+  and the first position's refusal at `cleanup41` (`seedRefusalRun`).
 
-`exit` is **derived** here rather than carried as a hypothesis: `expandExit_satisfied`
-proves `ExpandExit` at any staging the exit word admits, so a carried field would be
-an obligation nobody has to discharge.  `seed` is derived for the same reason in its
-empty arm: the assembly splits on the caller's cursor `k0`, sends `k0 = nps` to
-`emptySeedRun`, and takes the latch arm from the hypothesis otherwise.
+`exit` is **derived** here rather than carried as a hypothesis:
+`expandExit_satisfied` proves `ExpandExit` at any staging the exit word admits, so
+a carried field would be an obligation nobody has to discharge.
 
-The bundle is not widened: `ExpandFacts` keeps the fields `JsonEscapeExpandRun`
-states, and the three residuals live in `ExpandArms`, beside the consumer rather
-than inside the completion condition.
+The arms are stated at one staging, so a producer supplies the staging and not a
+run: `ExpandArms` is the three residuals beside the consumer, `expandStaging_of_pre`
+builds the staging from the record's `pre`, and `expandFacts_inhabited` closes the
+bundle at that staging.  `ExpandFacts` keeps the fields `JsonEscapeExpandRun`
+states — the bundle is not widened.
 -/
 import LeanLLVM.Vellum.JsonEscapeExpandFacts
 import LeanLLVM.Vellum.JsonEscapeFinalCopy
@@ -41,8 +44,10 @@ open LeanLLVM.Vellum.JsonScanSpec
 
 Every witness is the one `ExpandFacts` names, and `staging` is the record's `pre`
 at those witnesses, so each run below is a statement about the caller's own
-staging.  The exit continuation is absent because it is proved; the empty seed arm
-is absent because it is proved. -/
+staging.  The exit continuation is absent because it is proved.  The seed is the
+whole three-armed `ExpandSeed` and not one arm of it: which edge the entry takes is
+the staging's own decision, so a field naming one arm would be a statement about
+some stagings only. -/
 structure ExpandArms (args : List Value) (mem : Mem) (next : Nat) where
   /-- The body the run decodes. -/
   body : List UInt8
@@ -80,20 +85,17 @@ structure ExpandArms (args : List Value) (mem : Mem) (next : Nat) where
   refuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal pb
     xp tab pos0 (expandBodyLen args) ps err xj staging
     (decodeIterCost (expandBodyLen args))
-  /-- **The entry stage's latch arm**: the pre-scan plus one iteration to the latch.
-  The empty-list arm is `emptySeedRun`, so a producer supplies this one only. -/
-  seedLatch : ∃ (s : State) (c j : Nat),
-    j ≤ preScanFuel (expandPosCount args) + decodeIterCost (expandBodyLen args) ∧
-    AssemblyLatchInv body st dst (expandPosCount args) goal pb xp tab pos0
-      (expandBodyLen args) ps err xj mem (expandPosCount args) c s ∧
-    ∀ k, runFuel escapeCalls (j + k) usDecFunction
-        (EntryState usDecFunction args mem next) =
-      runFuel escapeCalls k usDecFunction s
+  /-- **The entry stage**: the whole three-armed `ExpandSeed` at this staging —
+  the pre-scan plus one iteration to the latch, the empty-list exit, or the first
+  position's refusal at `cleanup41`.  The field is the statement rather than its
+  latch arm alone, because the staging's cursor decides which edge the entry takes
+  and the empty and refusing stagings are the record's own. -/
+  seedLatch : ExpandSeed args mem next body st dst goal pb xp tab err xj pos0 ps staging
 
-/-- **The bundle from the three runs.**  `exit` is `expandExit_satisfied` and the
-seed's empty arm is `emptySeedRun`; the latch arm is the hypothesis.  The split on
-the caller's cursor is exhaustive because the staging bounds it by the list's
-length and the record's `pre` names it at the cursor slot. -/
+/-- **The bundle from the three runs.**  `exit` is `expandExit_satisfied`; the
+seed is the hypothesis, which is the whole three-armed statement at this staging,
+so the constructor makes no split of its own and the cursor's case is the
+producer's. -/
 def expandFacts_of_arms {args : List Value} {mem : Mem} {next : Nat}
     (h : ExpandArms args mem next) : ExpandFacts args mem next := by
   obtain ⟨body, st, dst, goal, ps, pos0, pb, xp, tab, err, xj, hstaging, hloop,
@@ -101,7 +103,7 @@ def expandFacts_of_arms {args : List Value} {mem : Mem} {next : Nat}
   -- the classifier state is the one the staging fixes, so the fields read at it
   have hst : st = (⟨true, false⟩ : ClassState) := hstaging.2.2.1
   subst hst
-  refine
+  exact
     { body := body
       st := ⟨true, false⟩
       dst := dst
@@ -116,35 +118,8 @@ def expandFacts_of_arms {args : List Value} {mem : Mem} {next : Nat}
       staging := hstaging
       loop := hloop
       refuse := hrefuse
-      seed := ?_
+      seed := hseed
       exit := expandExit_satisfied }
-  -- the seed is a proposition, so the staging's existentials eliminate here
-  have hstage := hstaging
-  obtain ⟨-, hargs, -, hbodyE, h32, hdec, hmap, -, -, -, hwalk⟩ := hstage
-  obtain ⟨-, -, hpslen, -, -⟩ := hdec
-  obtain ⟨k0, hxj, -, hgoalwalk⟩ := hwalk
-  have hnpslen : (escAt body ⟨true, false⟩ 0).length = expandPosCount args := by
-    show (escapePositionsFrom body ⟨true, false⟩).length = expandPosCount args
-    rw [← hmap, List.length_map]
-    exact hpslen
-  have hn64 : expandBodyLen args < 2 ^ 64 := by omega
-  have hnpsle : expandPosCount args ≤ expandBodyLen args := by
-    have hble := escAt_length_le body ⟨true, false⟩ 0
-    have hblen : body.length = expandBodyLen args :=
-      JsonEntrySteps.readBytes_length mem pb (expandBodyLen args) hbodyE
-    omega
-  have hnps64 : expandPosCount args < 2 ^ 64 := by omega
-  by_cases hk : k0 = expandPosCount args
-  · have hdrop : (escAt body ⟨true, false⟩ 0).drop (expandPosCount args) = [] := by
-      rw [List.drop_eq_nil_of_le]
-      omega
-    have hgoal : goal = .decoded body (expandPosCount args) := by
-      rw [hgoalwalk, hk, hmap, show escapePositionsFrom body ⟨true, false⟩ =
-        escAt body ⟨true, false⟩ 0 from rfl, hdrop, escapeDecodeGo_nil,
-        List.nil_append, List.drop_zero]
-    exact Or.inr (emptySeedRun (mem := mem) (next := next) hargs hxj hnpslen hk hnps64
-      goal hgoal hstaging)
-  · exact Or.inl hseed
 
 /-- **The bundle from the three runs**, at explicit binders.  A consumer that
 carries the witnesses as parameters rather than as a structure uses this form; the
@@ -160,13 +135,8 @@ def expandFacts_of_runs (args : List Value) (mem : Mem) (next : Nat)
     (hrefuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal
       pb xp tab pos0 (expandBodyLen args) ps err xj hstaging
       (decodeIterCost (expandBodyLen args)))
-    (hseed : ∃ (s : State) (c j : Nat),
-      j ≤ preScanFuel (expandPosCount args) + decodeIterCost (expandBodyLen args) ∧
-      AssemblyLatchInv body st dst (expandPosCount args) goal pb xp tab pos0
-        (expandBodyLen args) ps err xj mem (expandPosCount args) c s ∧
-      ∀ k, runFuel escapeCalls (j + k) usDecFunction
-          (EntryState usDecFunction args mem next) =
-        runFuel escapeCalls k usDecFunction s) :
+    (hseed : ExpandSeed args mem next body st dst goal pb xp tab err xj pos0 ps
+      hstaging) :
     ExpandFacts args mem next :=
   expandFacts_of_arms
     { body := body, st := st, dst := dst, goal := goal, ps := ps, pos0 := pos0,
@@ -524,10 +494,15 @@ theorem ExpandStaging.latch_reads
       · omega
       · omega)).trans htab
 
-/-! ### What the three fields still need
+/-! ### The three fields, and how each is discharged
 
-`loop`, `refuse` and `seedLatch` are the bundle's remaining content, and the
-obstacle to each is the same composition rather than three separate ones.
+`loop`, `refuse` and `seedLatch` were the bundle's remaining content, and the
+obstacle to each was the same composition rather than three separate ones.  All
+three are now theorems: `assemblyLatchStep_satisfied` is the iteration arm,
+`assemblyRefusalArm_satisfied` the refusal arm, and the seed is `seedRun_of_staging`
+— `seedLatchRun`, `emptySeedRun` and `seedRefusalRun` joined at the caller's cursor
+and the head's refusal test.  `expandExit_satisfied` was already unconditional, so
+`expandFacts_inhabited` closes the bundle at the record's `pre`.
 
 **The iteration arm now carries the staging, which is what its proof reads.**
 `assemblyLatchStep` takes `ExpandStaging` beside the invariant, because the arm
@@ -544,7 +519,8 @@ stream or the table — so the staging is part of the statement, not an extra
 hypothesis beside it.  `.refuse` and `.seed` take the same staging, and the three
 runs are now one shape.
 
-**The chain is not composed.**  The run `loop` and the seed's latch arm need is
+**The chain is composed, in two factors.**  The run `loop` and the seed's latch arm
+cross is
 `cleanup32 → while.body6 → if.end →` (the copy at `while.body.i91`, or straight to
 `us_run_long.exit99` when `if.end`'s test is zero) `→ us_run_long.exit99 →
 if.then.i104 → us_run.exit → if.end21 → if.end.i`, and then the emitter's paths:
@@ -557,8 +533,8 @@ exist — `udWhileBody6_step_one`, `udIfEnd_step` and its zero arm,
 `udIfEndI115_step`, `udIfEnd3I_step`, `udIfThen17I_step`, `udLandLhsTrue22I_step`,
 `udIfThen26I_step`, `udIfEnd32I_step`, with `udIfEnd32I_to_whileBody6` composing
 that block and the latch's own step back into the next iteration's first block.
-What is missing is the composition itself, and its work is named rather than left
-to be discovered:
+The composition's work is named rather than left to be discovered, and each item
+below is discharged by one of this module's factor lemmas:
 
 * a step lemma's witness state is opaque (`decodeLatch_step_enter`'s conclusion
   carries no defining equation for the state it returns), so each intermediate
@@ -577,12 +553,13 @@ to be discovered:
   offsets the copy left the cursor at, and the refusing byte takes `if.then22` out
   to `cleanup41`, which is `.refuse`'s branch.
 
-`refuse` additionally needs the prefix from the latch through the same blocks to
-`if.then20`/`if.then22`, then `udIfThen20_step`/`udIfThen22_step` and the exit word;
-`seedLatch` needs the pre-scan's three blocks (`udEntry_step`, `udLandRhs_step`,
-`udWhileBody_step`) composed to the latch, and shares the iteration's first step.
-The fuel primitive for the chain is `runFuel_prefix_trans` /
-`runFuel_prefix_some` in `Semantics`.
+`refuse` is `refusalArm_routes` plus `assemblyRefusalExit_of_reached`: the prefix
+from the latch to `us_run.exit`, then `if.then20`/`if.then22`'s two stores and the
+exit word.  The seed's latch arm is `entry_to_ifEnd` followed by `ifEnd_to_usRunExit`
+at `j0 = 4` and then `usRunExit_to_latch`; its refusal sibling is the same prefix
+followed by the refusal routes, at `goal = .refused` with the walk's own offset and
+count.  The fuel primitive for every chain is `runFuel_prefix_trans` in
+`Semantics`.
 
 **The chain stopped at the copy, and it stopped on a statement, not on volume.**
 Composing the first two blocks executes (`cleanup32` then `while.body6`, with the
@@ -618,10 +595,15 @@ refusal-parameter witness below is a state that satisfied the invariant at exact
 those parameters before the clause; it is now outside the invariant, and
 `assemblyLatchInv_excludes_failing_copy` is that exclusion.
 
-Note that the two claims above about `refuse` and `seedLatch` being volume only
-were written before this was executed, and the paragraph `refuse` needs — the
-shared prefix — passes through the same copy when the refusing position is past a
-long run, so it reads the same clause.
+`refuse`'s prefix passes through the same copy when the refusing position is past a
+long run, so it reads the same clause.  The seed's third arm came from the same
+place, and it is executed: a staging the `pre` admits (`k0 = 0 ≤ nps = 1`, validity
+unasked) has its first iteration refuse at the emitter — `escapeDecodeGo` on
+`[0x5C, 0x71]` is `.refused 0 1`, `escapeAt` answers `none` at the position and the
+position list is `[0]` — so `cleanup32` is never reached and neither arm above can
+cover it.  The entry's successor set names it: `while.end` leaves for `while.end35`,
+`while.body6` for `cleanup32` when the head does not refuse, and the emitter's
+refusal for `cleanup41`.  That is why the seed is three arms and not two.
 
 **A hole with no error is possible here, and a pin is the instrument.**  Elaborating
 a candidate composition can succeed with a branch replaced by `sorry` while the
@@ -7830,5 +7812,494 @@ theorem assemblyLatchStep_satisfied
 /-- info: 'LeanLLVM.Vellum.runExit_to_cleanup32' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms runExit_to_cleanup32
+
+/-! ### The record's `pre` as a staging
+
+`ExpandFacts` and every arm are stated at a staging, while the record's `pre` names
+its witnesses existentially.  The adapter below is that staging at the `pre`'s own
+witnesses, with the two numbers the stages are written at — `expandBodyLen args` and
+`expandPosCount args` — equated to the witnesses they replace.  The equations are
+proved rather than assumed because the argument list carries the numbers in
+`BitVec.ofNat 64` slots, which agree with their witnesses only modulo `2 ^ 64`; the
+record's width bound `pos0 + n ≤ 2 ^ 32` is what makes the modulo vanish.
+
+The three groups are `Γ_escape_expand_at`'s own: the record's `pre` by name, the
+alignment equations, and the clauses its `Nat`-level form cannot transport. -/
+theorem expandStaging_of_pre {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : (Γ_escape_expand escapeExpandBudget).pre args mem next) :
+    ∃ (body : List UInt8) (st : ClassState) (dst : Nat) (goal : EscapeOutcome)
+      (b xp tab err xj pos0 : Nat) (ps : List Nat),
+      ExpandStaging args mem next body st dst (expandPosCount args) goal b xp tab pos0
+        (expandBodyLen args) ps err xj := by
+  have hpre' := hpre
+  obtain ⟨b, n, dst, err, xp, xj, nps, pos0, tab, body, ps, _err0, k0, hargs, hbody,
+    hstream, hlen, hrange, hmap, hcap, hxj, hk0le, _herr, _htab, _htail, _hdst, hbdst,
+    hxpdst, htabdst, herrdst, herrxj, hxjdst⟩ := hpre
+  have hblen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbody
+  have hn64 : n < 2 ^ 64 := by omega
+  have hnpsle : nps ≤ n := by
+    have h2 : nps ≤ body.length := by
+      rw [hlen, ← List.length_map (f := fun q => q - pos0), hmap]
+      exact escAt_length_le body ⟨true, false⟩ 0
+    omega
+  have hnps64 : nps < 2 ^ 64 := by omega
+  have hn : expandBodyLen args = n := by
+    rw [hargs]
+    simp only [expandBodyLen]
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]
+  have hnps : expandPosCount args = nps := by
+    rw [hargs]
+    simp only [expandPosCount]
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnps64]
+  refine ⟨body, ⟨true, false⟩, dst,
+    escapeDecodeGo body 0 k0 ((ps.map (fun q => q - pos0)).drop k0) [],
+    b, xp, tab, err, xj, pos0, ps, ?_⟩
+  refine ⟨hpre', by rw [hn, hnps]; exact hargs, rfl, ?_, ?_, ?_, hmap, ?_, ?_, ?_, ?_⟩
+  · rw [hn]; exact hbody
+  · rw [hn]; exact hcap
+  · refine ⟨BitVec.ofNat 64 (pos0 + n), ?_, ?_, ?_, ?_⟩
+    · rw [hnps]; exact hstream
+    · rw [hnps]; exact hlen.symm
+    · intro j q hj
+      obtain ⟨h1, h2⟩ := hrange q (List.mem_of_getElem? hj)
+      exact ⟨h1, by rw [hn]; exact h2⟩
+    · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), hn]
+  · unfold DecodeNoAlias
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · rw [hn]; exact htabdst
+    · rw [hn]; exact herrdst
+    · exact herrxj
+    · rw [hn]; exact hxjdst
+  · rw [hn]; exact hbdst
+  · rw [hnps, hn]; exact hxpdst
+  · exact ⟨k0, hxj, by rw [hnps]; exact hk0le, rfl⟩
+
+/-- **The entry's stretch to the emitter's entry.**  `entry_to_ifEnd` and
+`ifEnd_to_usRunExit` composed: from `EntryState` the run reaches `us_run.exit` at
+the caller's first position within the pre-scan's own steps plus the middle's, and
+the cells it leaves are the ones `usRunExit_to_latch` and the refusal routes read.
+
+The middle is the same lemma the latch arm uses, at `j0 = 4` — the entry's four
+control steps — so the seed and the loop share one statement about the copy and the
+tail.  `goal` is not an input: the staging's walk clause names it at the cursor, and
+the exit state's `DecodeInv` is the walk's seed at that cursor with nothing
+decoded. -/
+theorem entry_to_usRunExit
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {dst nps : Nat} {goal : EscapeOutcome}
+    {b xp tab err xj pos0 n k0 : Nat} {ps : List Nat}
+    (hstaging : ExpandStaging args mem next body ⟨true, false⟩ dst nps goal b xp tab
+      pos0 n ps err xj)
+    (hxj : readBytes mem xj 8 = some (wordBytes 8 k0))
+    (hgoalE : goal = escapeDecodeGo body 0 k0
+      ((ps.map (fun q => q - pos0)).drop k0) [])
+    (hk0n : k0 < nps) :
+    ∃ (e : State) (i q : Nat) (out : List UInt8) (inc11 adv : BitVec 64) (j : Nat),
+      j ≤ 4 + (copyIterBound (q - i) + 2) + 2 ∧
+      e.pc = "us_run.exit" ∧ (escAt body ⟨true, false⟩ 0)[k0]? = some q ∧ i ≤ q ∧
+      q < n ∧
+      readBytes e.mem (b + q) 1 = some (natToBytes (body.getD q 0).toNat 1) ∧
+      body[q]? = some (body.getD q 0) ∧
+      lookupName e.env "%sub" = some (.int 64 (BitVec.ofNat 64 q)) ∧
+      lookupName e.env "%sub13" = some (.int 64 (BitVec.ofNat 64 (q - i))) ∧
+      lookupName e.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 out.length)) ∧
+      lookupName e.env "%p" = some (.ptr b) ∧
+      lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      lookupName e.env "%inc11" =
+        some (.int 64 (decodeNextIdx inc11 adv + BitVec.ofInt 64 1)) ∧
+      lookupName e.env "%err" = some (.ptr err) ∧
+      lookupName e.env "%xj" = some (.ptr xj) ∧
+      lookupName e.env "%tab" = some (.ptr tab) ∧
+      lookupName e.env "%xp" = some (.ptr xp) ∧
+      lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+      lookupName e.env "%dst" = some (.ptr dst) ∧
+      UnchangedOutside mem e.mem [(dst, n + 64)] ∧
+      readBytes e.mem dst out.length = some out ∧
+      (decodeNextIdx inc11 adv).toNat = k0 ∧
+      (∀ k, runFuel escapeCalls (j + k) usDecFunction
+          (EntryState usDecFunction args mem next) =
+        runFuel escapeCalls k usDecFunction e) ∧
+      readBytes e.mem dst (out ++ (body.drop i).take (q - i)).length =
+        some (out ++ (body.drop i).take (q - i)) ∧
+      DecodeInv body ⟨true, false⟩ e.mem dst nps i k0 out goal ∧
+      lookupName e.env "%nxp" = some (.int 64 (BitVec.ofNat 64 nps)) ∧
+      (∃ addv : BitVec 64, lookupName e.env "%add" = some (.int 64 addv) ∧
+        addv.toNat = pos0 + n) := by
+  have hstg := hstaging
+  obtain ⟨-, -, -, hbodyS, hpos0n, hdec, hmap, -, _, -, -⟩ := hstaging
+  obtain ⟨_addv0, _hstream, hpslen, hrange, _hadd0⟩ := hdec
+  have hblen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbodyS
+  have hn64 : n < 2 ^ 64 := by omega
+  have hnpsle : nps ≤ n := by
+    have h2 : nps ≤ body.length := by
+      rw [← hpslen, ← List.length_map (f := fun q => q - pos0), hmap]
+      exact escAt_length_le body ⟨true, false⟩ 0
+    omega
+  have hnps64 : nps < 2 ^ 64 := by omega
+  have hk0v : k0 < 2 ^ 64 := by omega
+  have hk063 : k0 < 2 ^ 63 := by omega
+  have hlist : (escAt body ⟨true, false⟩ 0).length = nps := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.length_map, hpslen]
+  obtain ⟨e2, qdoc, he2pc, he2pre, he2mem, hqps, hqp0, hqpn, hq32, hkcell, hicell,
+    hjcell, hconvcell, haddcell0, hxpcell, hpos0cell, hnxpcell, hncell, hpcell,
+    hdstcell, herrcell, hxjcell, htabcell, hrun4⟩ :=
+    entry_to_ifEnd hstg hxj hk0n hk063 hnps64
+  have hqbody : qdoc - pos0 < n := by omega
+  have hhead : (escAt body ⟨true, false⟩ 0)[k0]? = some (qdoc - pos0) := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.getElem?_map, hqps]
+    rfl
+  have hvn : (BitVec.ofNat 32 qdoc : BitVec 32).toNat = qdoc := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hq32]
+  have hdv : decodeNextIdx (BitVec.ofNat 64 k0) (BitVec.ofInt 64 0) =
+      BitVec.ofNat 64 k0 := by
+    simp [decodeNextIdx, decodePairBit, evalICmp]
+  have hzero : (BitVec.ofInt 64 0 + BitVec.ofInt 64 0 : BitVec 64) = BitVec.ofInt 64 0 := by
+    decide
+  have haddsub : (BitVec.ofInt 64 0 + BitVec.ofInt 64 0 : BitVec 64).toNat = 0 := by
+    rw [hzero]; decide
+  have haddnat : (BitVec.ofNat 64 pos0 + BitVec.ofNat 64 n).toNat = pos0 + n := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt hn64, Nat.mod_eq_of_lt (by omega)]
+  have hjv0 : (BitVec.ofInt 64 0 : BitVec 64).toNat = ([] : List UInt8).length := by decide
+  have hwalk2 : DecodeInv body ⟨true, false⟩ e2.mem dst nps 0 k0 [] goal := by
+    have hEq : goal = escapeDecodeGo body 0 k0 ((escAt body ⟨true, false⟩ 0).drop k0) [] := by
+      rw [hgoalE, hmap, escapePositionsFrom_eq_escAt]
+    rw [he2mem, hEq]
+    exact decodeInv_seed hlist
+  exact ifEnd_to_usRunExit (c := k0) (i := 0) (j0 := 4) (out := [])
+    (start := EntryState usDecFunction args mem next) (e2 := e2)
+    (sub := BitVec.ofInt 64 0) (adv := BitVec.ofInt 64 0)
+    (inc11 := BitVec.ofNat 64 k0) (nxp := BitVec.ofNat 64 nps)
+    (jv := BitVec.ofInt 64 0) (v := BitVec.ofNat 32 qdoc)
+    (addv := BitVec.ofNat 64 pos0 + BitVec.ofNat 64 n)
+    hstg he2pc he2pre (by rw [he2mem]; intro a _; rfl) hqbody hhead (Nat.zero_le _)
+    haddsub (by rw [hdv]; exact hkcell) (by rw [hzero]; exact hicell) hjcell
+    (by rw [hvn]; exact hconvcell) (by rw [hvn]; omega) hnxpcell hpcell hdstcell
+    hpos0cell hncell hxpcell htabcell herrcell hxjcell haddcell0 haddnat hjv0
+    (Nat.zero_le _) hwalk2 (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnps64])
+    (by rw [hdv, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk0v]) hrun4
+
+/-! ### The entry's three arms, proved
+
+`ExpandSeed` is the entry stage's three edges, and each is one composition of the
+lemmas above: the latch arm is `entry_to_usRunExit` followed by `usRunExit_to_latch`;
+the refusal arm is the same prefix followed by the four refusal routes and
+`assemblyRefusalExit_of_reached`; the empty arm is `emptySeedRun`.  The three
+statements are at one staging, so `seedRun_of_staging` is their case split and
+`expandArms_inhabited` is the bundle at the record's `pre`. -/
+
+/-- **The entry's latch arm.**  From `EntryState`, with the caller's cursor below
+the list's length and the head position not refusing, the run reaches `cleanup32` at
+the whole bound's latch invariant: the pre-scan and the middle to `us_run.exit`, then
+the emitter's non-refusing arms back to the latch.  The spacing the successor
+inherits is the entry's own (`escAt_drop_spaced` at cursor zero), because there is no
+predecessor latch to carry it. -/
+theorem seedLatchRun
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {dst nps : Nat} {goal : EscapeOutcome}
+    {b xp tab err xj pos0 n k0 : Nat} {ps : List Nat}
+    (hstaging : ExpandStaging args mem next body ⟨true, false⟩ dst nps goal b xp tab
+      pos0 n ps err xj)
+    (hxj : readBytes mem xj 8 = some (wordBytes 8 k0))
+    (hgoalE : goal = escapeDecodeGo body 0 k0
+      ((ps.map (fun q => q - pos0)).drop k0) [])
+    (hk0n : k0 < nps)
+    (href : decodeRefuses body ps pos0 k0 = false) :
+    ∃ (s : State) (c j : Nat),
+      j ≤ preScanFuel nps + decodeIterCost n ∧
+      AssemblyLatchInv body ⟨true, false⟩ dst nps goal b xp tab pos0 n ps err xj mem nps
+        c s ∧
+      ∀ k, runFuel escapeCalls (j + k) usDecFunction
+          (EntryState usDecFunction args mem next) = runFuel escapeCalls k usDecFunction s := by
+  have hstg := hstaging
+  obtain ⟨-, -, -, -, _hpos0n, hdec, hmap, -, -, -, -⟩ := hstaging
+  obtain ⟨_addv0, _hstream, hpslen, hrange, _hadd0⟩ := hdec
+  obtain ⟨e, i, q, out, inc11, adv, j0, hj0, hepc, hqE, hiq, hqn, hbyteE, hqbody,
+    hsubE, hsub13E, hjE, hpE, hnE, hincE, herrE, hxjE, htabE, hxpE, hpos0E, hdstE,
+    hframeE, _hstoredE, hkidxE, hrunE, hcovE, hwalkE, hnxpE, haddE⟩ :=
+    entry_to_usRunExit hstg hxj hgoalE hk0n
+  have hcps : k0 < ps.length := by omega
+  have hp : ps[k0]? = some (ps[k0]'hcps) := List.getElem?_eq_getElem hcps
+  obtain ⟨hpge, _hpn⟩ := hrange k0 (ps[k0]'hcps) hp
+  have hqbodyLt : q < body.length := (mem_escAt.mp (List.mem_of_getElem? hqE)).2.1
+  have hheadP : (escAt body ⟨true, false⟩ 0)[k0]? = some (ps[k0]'hcps - pos0) := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.getElem?_map, hp]
+    rfl
+  have hqeq : ps[k0]'hcps - pos0 = q := by
+    rw [hheadP] at hqE
+    exact Option.some.inj hqE
+  have hgate : decodeRefuses body ps pos0 k0 =
+      (IsControlB (body.getD q 0) || (escapeAt body q).isNone) := by
+    unfold decodeRefuses
+    rw [hp]
+    simp only [if_neg (by omega : ¬ ps[k0]'hcps < pos0), hqeq,
+      body_getElem?_getD hqbodyLt]
+  rw [hgate] at href
+  have hctl : IsControlB (body.getD q 0) = false := (Bool.or_eq_false_iff.mp href).1
+  have hnone : (escapeAt body q).isNone = false := (Bool.or_eq_false_iff.mp href).2
+  have hsome : escapeAt body q ≠ none := by
+    intro hz
+    rw [hz] at hnone
+    exact absurd hnone (by decide)
+  obtain ⟨addv, haddcellE, haddnatE⟩ := haddE
+  have hcfE : CellFrame e.env b xp tab err xj dst (BitVec.ofNat 64 pos0)
+      (BitVec.ofNat 64 n) (BitVec.ofNat 64 out.length) (BitVec.ofNat 64 nps) addv
+      (decodeNextIdx inc11 adv + BitVec.ofInt 64 1) :=
+    { pcell := hpE, xpcell := hxpE, tabcell := htabE, errcell := herrE, xjcell := hxjE,
+      dstcell := hdstE, pos0cell := hpos0E, ncell := hnE, jcell := hjE,
+      nxpcell := hnxpE, addcell := haddcellE, incell := hincE }
+  obtain ⟨e', c', j, hj, _hpc', hclt, hsucc, hrun'⟩ :=
+    usRunExit_to_latch (r := nps) (i0 := 0) hstg hepc hqE hiq hqn hctl hqbody hsubE
+      hsub13E hcfE hsome hk0n hkidxE hwalkE hframeE hcovE
+      (escAt_drop_spaced body ⟨true, false⟩ 0 k0) (by omega) haddnatE
+  refine ⟨e', c', j0 + j, ?_, hsucc, ?_⟩
+  · have hb := copyIterBound_le_div (sub := q - i) (n := n) (by omega)
+    unfold decodeIterCost preScanFuel entryBlocks preScanPerPosition
+    unfold copyIterBound at hj0 hb
+    omega
+  · intro k
+    exact runFuel_prefix_trans hrunE hrun' k
+
+/-- **The entry's refusal arm.**  From `EntryState`, with the caller's cursor below
+the list's length and the head position refusing, the run reaches `cleanup41` at the
+walk's own refusal offset and count: the pre-scan and the middle to `us_run.exit`,
+then the four refusal routes and the word's refusal branch.  The `goal` is `.refused`
+at those two numbers — the position the trace gives, not a chosen one — and the two
+exits' predicate makes the state one `ExpandExit`'s refusal continuation already
+reads. -/
+theorem seedRefusalRun
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {dst nps : Nat} {goal : EscapeOutcome}
+    {b xp tab err xj pos0 n k0 : Nat} {ps : List Nat}
+    (hstaging : ExpandStaging args mem next body ⟨true, false⟩ dst nps goal b xp tab
+      pos0 n ps err xj)
+    (hxj : readBytes mem xj 8 = some (wordBytes 8 k0))
+    (hgoalE : goal = escapeDecodeGo body 0 k0
+      ((ps.map (fun q => q - pos0)).drop k0) [])
+    (hk0n : k0 < nps)
+    (href : decodeRefuses body ps pos0 k0 = true) :
+    ∃ (e : State) (j off k : Nat),
+      j ≤ preScanFuel nps + decodeIterCost n ∧
+      e.pc = "cleanup41" ∧
+      goal = .refused off k ∧
+      decodeTwoExit e ∧
+      assemblyExitWord args mem next body ⟨true, false⟩ dst nps goal b xp tab pos0 n ps
+        err xj e ∧
+      ∀ k', runFuel escapeCalls (j + k') usDecFunction
+          (EntryState usDecFunction args mem next) = runFuel escapeCalls k' usDecFunction e := by
+  have hstg := hstaging
+  obtain ⟨-, -, -, hbodyS, _hpos0n, hdec, hmap, hnoalias, -, -, -⟩ := hstaging
+  obtain ⟨_addv0, _hstream, hpslen, hrange, _hadd0⟩ := hdec
+  have hblen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbodyS
+  obtain ⟨e, i, q, out, inc11, adv, j0, hj0, hepc, hqE, hiq, hqn, hbyteE, hqbody,
+    hsubE, hsub13E, hjE, hpE, hnE, hincE, herrE, hxjE, htabE, hxpE, hpos0E, hdstE,
+    hframeE, _hstoredE, hkidxE, hrunE, hcovE, hwalkE, hnxpE, _haddE⟩ :=
+    entry_to_usRunExit hstg hxj hgoalE hk0n
+  have hn64 : n < 2 ^ 64 := by omega
+  have hnpsle : nps ≤ n := by
+    have h2 : nps ≤ body.length := by
+      rw [← hpslen, ← List.length_map (f := fun q => q - pos0), hmap]
+      exact escAt_length_le body ⟨true, false⟩ 0
+    omega
+  have hcps : k0 < ps.length := by omega
+  have hp : ps[k0]? = some (ps[k0]'hcps) := List.getElem?_eq_getElem hcps
+  obtain ⟨hpge, _hpn⟩ := hrange k0 (ps[k0]'hcps) hp
+  have hqbodyLt : q < body.length := (mem_escAt.mp (List.mem_of_getElem? hqE)).2.1
+  have hheadP : (escAt body ⟨true, false⟩ 0)[k0]? = some (ps[k0]'hcps - pos0) := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.getElem?_map, hp]
+    rfl
+  have hqeq : ps[k0]'hcps - pos0 = q := by
+    rw [hheadP] at hqE
+    exact Option.some.inj hqE
+  have hgate : decodeRefuses body ps pos0 k0 =
+      (IsControlB (body.getD q 0) || (escapeAt body q).isNone) := by
+    unfold decodeRefuses
+    rw [hp]
+    simp only [if_neg (by omega : ¬ ps[k0]'hcps < pos0), hqeq,
+      body_getElem?_getD hqbodyLt]
+  rw [hgate] at href
+  have hgateQ : IsControlB (body.getD q 0) = true ∨ (escapeAt body q).isNone = true :=
+    Bool.or_eq_true_iff.mp href
+  -- the walk's own refusal, at the position and the count the trace gives
+  have hrw : goal = .refused q (k0 + 1) := by
+    by_cases hctl : IsControlB (body.getD q 0) = true
+    · exact DecodeInv.step_control hwalkE (escAt_head_drop hqE) hqbody hqbodyLt hctl
+    · have hctl' : IsControlB (body.getD q 0) = false := by
+        cases hv : IsControlB (body.getD q 0) with
+        | false => rfl
+        | true => exact absurd hv hctl
+      have hesc : escapeAt body q = none := by
+        rcases hgateQ with hc1 | hc1
+        · exact absurd hc1 hctl
+        · cases hv : escapeAt body q with
+          | none => rfl
+          | some p => rw [hv] at hc1; exact absurd hc1 (by simp)
+      exact DecodeInv.step_refuse hwalkE (escAt_head_drop hqE) hqbody hqbodyLt hctl' hesc
+  -- the operands the tails are stated at
+  have hq64 : q < 2 ^ 64 := by omega
+  have hsubvn : (BitVec.ofNat 64 q).toNat = q := ofNat64_toNat hq64
+  have hnvn : (BitVec.ofNat 64 n).toNat = n := ofNat64_toNat hn64
+  have hoff1n : ((BitVec.ofNat 64 q + BitVec.ofInt 64 1)).toNat = q + 1 := by
+    rw [BitVec.toNat_add, hsubvn, show (BitVec.ofInt 64 1).toNat = 1 from by decide,
+      Nat.mod_eq_of_lt (by omega)]
+  have hoff6n : ((BitVec.ofNat 64 q + BitVec.ofInt 64 6)).toNat = q + 6 := by
+    rw [BitVec.toNat_add, hsubvn, show (BitVec.ofInt 64 6).toNat = 6 from by decide,
+      Nat.mod_eq_of_lt (by omega)]
+  have hoff163 : ((BitVec.ofNat 64 q + BitVec.ofInt 64 1)).toNat < 2 ^ 63 := by
+    rw [hoff1n]; omega
+  let bv : BitVec 8 := BitVec.ofNat 8 (body.getD q 0).toNat
+  have hbvn : bv.toNat = (body.getD q 0).toNat := by
+    show (BitVec.ofNat 8 (body.getD q 0).toNat).toNat = _
+    rw [BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by have := (body.getD q 0).toNat_lt; omega)]
+  have hcells : RunExitCells e b (BitVec.ofNat 64 (q - i)) (BitVec.ofNat 64 q)
+      (BitVec.ofNat 64 out.length)
+      (decodeNextIdx inc11 adv + BitVec.ofInt 64 1) (BitVec.ofNat 64 n) bv dst tab err
+      xj :=
+    { pc := hepc, sub13 := hsub13E, jc := hjE, pc_p := hpE, sub := hsubE, nc := hnE,
+      inc := hincE, errc := herrE, xjc := hxjE, dstc := hdstE, tabc := htabE,
+      byte := by rw [hsubvn, hbvn]; exact hbyteE }
+  obtain ⟨hbodyLatch, htabRead⟩ := ExpandStaging.latch_reads hstg hframeE
+  obtain ⟨e', fuel, hR, _hfuel⟩ := refusalArm_routes (q := q) hstg hframeE hblen
+    hbodyLatch htabRead hcells hsubvn hnvn hoff1n hoff6n hbvn hoff163 hgateQ
+  have hc1 : k0 + 1 < 2 ^ 64 := by omega
+  have hkN : (decodeNextIdx inc11 adv + BitVec.ofInt 64 1).toNat = k0 + 1 := by
+    rw [BitVec.toNat_add, hkidxE, show (BitVec.ofInt 64 1).toNat = 1 from by decide,
+      Nat.mod_eq_of_lt hc1]
+  have hgoal' : goal = .refused (BitVec.ofNat 64 q).toNat
+      (decodeNextIdx inc11 adv + BitVec.ofInt 64 1).toNat := by
+    rw [hsubvn, hkN]; exact hrw
+  have hword := assemblyRefusalExit_of_reached hstg hnoalias hframeE hR hgoal'
+  refine ⟨e', j0 + fuel, q, k0 + 1, ?_, hR.1, hrw, Or.inr hR.1, hword, ?_⟩
+  · have hb := copyIterBound_le_div (sub := q - i) (n := n) (by omega)
+    unfold decodeIterCost preScanFuel entryBlocks preScanPerPosition
+    unfold copyIterBound at hj0 hb
+    omega
+  · intro k'
+    rw [show j0 + fuel + k' = j0 + (fuel + k') from by omega]
+    exact (hrunE (fuel + k')).trans (hR.2.2.2.2.2.2.2 k')
+
+/-- **The entry stage, proved.**  `ExpandSeed` at any staging: the caller's cursor
+decides the edge — `k0 = nps` sends the run to `while.end35`, and below it the head's
+refusal test decides between the latch and `cleanup41` — so the three arms cover the
+entry's successor set rather than three stagings a producer happened to try. -/
+theorem seedRun_of_staging
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {st : ClassState} {dst : Nat} {goal : EscapeOutcome}
+    {b xp tab : Nat} {pos0 : Nat} {ps : List Nat} {err xj : Nat}
+    (hstaging : ExpandStaging args mem next body st dst (expandPosCount args) goal b xp
+      tab pos0 (expandBodyLen args) ps err xj) :
+    ExpandSeed args mem next body st dst goal b xp tab err xj pos0 ps hstaging := by
+  have hstg := hstaging
+  have hst : st = (⟨true, false⟩ : ClassState) := hstaging.2.2.1
+  subst hst
+  obtain ⟨-, hargs, -, hbodyS, hpos0n, hdec, hmap, -, -, -,
+    ⟨k0, hxj, hk0le, hgoalE⟩⟩ := hstaging
+  obtain ⟨_addvD, _hstreamD, hpslen, _hrangeD, _haddD⟩ := hdec
+  have hblen : body.length = expandBodyLen args :=
+    JsonEntrySteps.readBytes_length mem b (expandBodyLen args) hbodyS
+  have hn64 : expandBodyLen args < 2 ^ 64 := by omega
+  have hnps64 : expandPosCount args < 2 ^ 64 := by
+    have hle : expandPosCount args ≤ expandBodyLen args := by
+      rw [← hpslen, ← List.length_map (f := fun q => q - pos0), hmap]
+      calc (escapePositionsFrom body ⟨true, false⟩).length ≤ body.length :=
+            escAt_length_le body ⟨true, false⟩ 0
+        _ = expandBodyLen args := hblen
+    omega
+  have hnpslen : (escAt body ⟨true, false⟩ 0).length = expandPosCount args := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.length_map, hpslen]
+  by_cases hk : k0 = expandPosCount args
+  · have hdrop : (escAt body ⟨true, false⟩ 0).drop (expandPosCount args) = [] := by
+      rw [List.drop_eq_nil_of_le]
+      omega
+    have hgoal : goal = .decoded body (expandPosCount args) := by
+      rw [hgoalE, hmap, escapePositionsFrom_eq_escAt, hk, hdrop, escapeDecodeGo_nil,
+        List.nil_append, List.drop_zero]
+    exact Or.inr (Or.inl (emptySeedRun hargs hxj hnpslen hk hnps64 goal hgoal hstg))
+  · have hk0n : k0 < expandPosCount args := by omega
+    cases hr : decodeRefuses body ps pos0 k0
+    · exact Or.inl (seedLatchRun hstg hxj hgoalE hk0n hr)
+    · exact Or.inr (Or.inr (seedRefusalRun hstg hxj hgoalE hk0n hr))
+
+/-- **The three runs, from the record's `pre`.**  The staging is
+`expandStaging_of_pre`'s, the loop and refusal arms are their own theorems at it, and
+the seed is the three-arm statement.  The result is `Nonempty` because the staging's
+witnesses come from a `pre` — a `Prop` — and a structure in `Type` cannot be built by
+eliminating one; the term below is `Classical.choice` of this fact. -/
+theorem expandArms_nonempty (args : List Value) (mem : Mem) (next : Nat)
+    (hpre : (Γ_escape_expand escapeExpandBudget).pre args mem next) :
+    Nonempty (ExpandArms args mem next) := by
+  obtain ⟨body, st, dst, goal, b, xp, tab, err, xj, pos0, ps, hstaging⟩ :=
+    expandStaging_of_pre hpre
+  exact
+    ⟨{ body := body, st := st, dst := dst, goal := goal, ps := ps, pos0 := pos0,
+       pb := b, xp := xp, tab := tab, err := err, xj := xj, staging := hstaging,
+       loop := assemblyLatchStep_satisfied hstaging,
+       refuse := assemblyRefusalArm_satisfied hstaging,
+       seedLatch := seedRun_of_staging hstaging }⟩
+
+/-- **The three runs**, as a bundle: the chose term of the fact above. -/
+noncomputable def expandArms_inhabited (args : List Value) (mem : Mem) (next : Nat)
+    (hpre : (Γ_escape_expand escapeExpandBudget).pre args mem next) :
+    ExpandArms args mem next :=
+  Classical.choice (expandArms_nonempty args mem next hpre)
+
+/-- **The expander's completion condition is inhabited** at every staging the record
+admits: the bundle `escape_expand_satisfies` takes, built from the arms. -/
+noncomputable def expandFacts_inhabited (args : List Value) (mem : Mem) (next : Nat)
+    (hpre : (Γ_escape_expand escapeExpandBudget).pre args mem next) :
+    ExpandFacts args mem next :=
+  expandFacts_of_arms (expandArms_inhabited args mem next hpre)
+
+/-- **The escape expander refines its record, unconditionally**: `escape_expand_satisfies`
+at the bundle the arms inhabit, with no hypothesis beside the record's own `pre`. -/
+theorem escape_expand_satisfies_unconditional :
+    Satisfies escapeCalls usDecFunction (Γ_escape_expand escapeExpandBudget) :=
+  escape_expand_satisfies_of_arms fun args mem next hpre =>
+    expandArms_inhabited args mem next hpre
+
+/-! #### Axiom footprints: the entry arms and the bundle
+
+The entry's compositions add no principle: `expandStaging_of_pre` is `[propext,
+Quot.sound]`, and the arms are the development's own ceiling — `Classical.choice`
+from the walk's exit test and the refusal's staging, as the loop and refusal arms
+already carry it.  `expandArms_nonempty` and the two bundle builders are at the same
+footprint, `Classical.choice` now also naming the `pre`'s witness extraction. -/
+
+/-- info: 'LeanLLVM.Vellum.expandStaging_of_pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms expandStaging_of_pre
+
+/-- info: 'LeanLLVM.Vellum.entry_to_usRunExit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms entry_to_usRunExit
+
+/-- info: 'LeanLLVM.Vellum.seedLatchRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms seedLatchRun
+
+/-- info: 'LeanLLVM.Vellum.seedRefusalRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms seedRefusalRun
+
+/-- info: 'LeanLLVM.Vellum.seedRun_of_staging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms seedRun_of_staging
+
+/-- info: 'LeanLLVM.Vellum.expandArms_nonempty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms expandArms_nonempty
+
+/-- info: 'LeanLLVM.Vellum.expandArms_inhabited' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms expandArms_inhabited
+
+/-- info: 'LeanLLVM.Vellum.expandFacts_inhabited' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms expandFacts_inhabited
+
+/-- info: 'LeanLLVM.Vellum.escape_expand_satisfies_unconditional' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_expand_satisfies_unconditional
 
 end LeanLLVM.Vellum

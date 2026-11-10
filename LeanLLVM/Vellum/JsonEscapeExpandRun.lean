@@ -25,9 +25,11 @@ about the run.
 own witnesses `b xp tab err xj pos0 ps`, so a hypothesis about them is a
 hypothesis about the record's own `pre` and not about an invented staging.
 `ExpandSeed` carries `AssemblyLatchInv` at the whole bound — the state
-`BoundLoop.run` starts from — and `ExpandExit` carries the two exit targets' data
-(`decodeTwoExit` / `assemblyExitWord`) and the post, because the two exits leave
-different continuations and the split is taken once, between them.
+`BoundLoop.run` starts from — in its latch arm, the entry's exit state in its
+empty arm, and `cleanup41` with the two exits' data in its refusal arm; `ExpandExit`
+carries the two exit targets' data (`decodeTwoExit` / `assemblyExitWord`) and the
+post, because the two exits leave different continuations and the split is taken
+once, between them.
 
 **The invariant is the staged one.**  `JsonEscapeExpandStaged` defines
 `AssemblyLatchInv` as `StagedLatchInv` (`JsonEscapeCopyLoops`, which the copy
@@ -51,11 +53,13 @@ the record's two conjuncts from `runFuel_outcome_unique`: completion at the budg
 is the composed run raised to it, and the post at every behaviour is the post at
 the composed outcome, the others being that same outcome.
 
-The four facts left as hypotheses are the ones the loop analysis names: the
-iteration arm, the refusal arm, the entry half-iteration, and the two exit
-continuations.  No `sorry`, no `admit` and no `native_decide` stands behind any of
-them; the file states them and their composition, and every theorem it proves is
-pinned at the footprint the development already carries.
+The four facts are the ones the loop analysis names: the iteration arm, the refusal
+arm, the entry stage's three arms, and the two exit continuations.  No `sorry`, no
+`admit` and no `native_decide` stands behind any of them; this file states them and
+their composition, and every theorem it proves is pinned at the footprint the
+development already carries.  Their discharge is `JsonEscapeExpandAssembly`'s:
+`expandFacts_inhabited` builds the bundle at the record's own `pre`, which is what
+makes `escape_expand_satisfies` unconditional there (`escape_expand_satisfies_unconditional`).
 -/
 import LeanLLVM.Vellum.JsonEscapeDecodeRun
 import LeanLLVM.Vellum.JsonEscapeSteps
@@ -92,12 +96,12 @@ sixty-four-byte copy, and the four control steps of the return.  It is the last
 two summands of `escapeExpandBudget`, in the same vocabulary. -/
 def expandExitFuel (args : List Value) : Nat := expandBodyLen args / 64 + 3 + 4
 
-/-! ### The two run stages
+/-! ### The run stages
 
 Both are stated at the argument list, the memory and the next id, which is the
 record's own surface, and at the staging the loop's invariant names.  The seed
-reaches `LatchInv` at the whole bound — the state `BoundLoop.run` starts from —
-and the exit continuation takes whichever exit the loop reached. -/
+reaches `LatchInv` at the whole bound — the state `BoundLoop.run` starts from — in
+its latch arm, and the exit continuation takes whichever exit the run reached. -/
 
 /-! ### The entry stage's own terms
 
@@ -130,7 +134,7 @@ theorem preScanFuel_le {k nps : Nat} (hk : k ≤ nps) :
   unfold preScanFuel entryBlocks preScanPerPosition
   omega
 
-/-- **The entry stage, in two arms.**
+/-- **The entry stage, in three arms — one per edge of the entry's own blocks.**
 
 The latch arm is the pre-scan plus one iteration: the walk's head is `cleanup32`,
 and the entry reaches it only through a position, so the first iteration is the
@@ -141,7 +145,23 @@ which covers every body with no escape, `nps = 0`): the entry leaves for
 `while.end35` at `while.end` and never reaches the latch.  Its state carries the
 walk at `(0, nps, [])` — the whole body copied, which is `decoded body nps` — and
 its `phi` operands are `while.end`'s own, so the arm is stated at the cells that
-edge supplies rather than at the latch's. -/
+edge supplies rather than at the latch's.
+
+The refusal arm is the same first iteration refusing at the emitter: the walk head
+is a control byte or a position `escapeAt` names no escape for, and `if.then20` or
+`if.then22` stores the offset and the count and leaves for `cleanup41`, so
+`cleanup32` is never reached and neither arm above can hold.  The record's `pre`
+admits it — it asks nothing about the body's validity — so the arm is content
+rather than an exclusion, and its `goal` is `.refused` at the position the walk
+names.  The state carries the two exits' data (`decodeTwoExit`, `assemblyExitWord`),
+which is what `ExpandExit`'s existing decoded/refused split consumes; no new
+continuation is needed.
+
+The arms are enumerated from the entry's successor set, not discovered one at a
+time: `while.end` leaves for `while.end35` (empty), `while.body6` for `cleanup32`
+when its first position does not refuse (latch), and the emitter's refusal leaves
+for `cleanup41` (refusal).  A fourth edge would appear here as a missing case
+rather than as a staging nobody tried. -/
 def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
     (st : ClassState) (dst : Nat) (goal : EscapeOutcome)
     (b xp tab err xj pos0 : Nat) (ps : List Nat)
@@ -163,6 +183,16 @@ def ExpandSeed (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
       ∀ k, runFuel escapeCalls (j + k) usDecFunction
           (EntryState usDecFunction args mem next) =
         runFuel escapeCalls k usDecFunction e)
+  ∨ (∃ (e : State) (j off k : Nat),
+      j ≤ preScanFuel (expandPosCount args) + decodeIterCost (expandBodyLen args) ∧
+      e.pc = "cleanup41" ∧
+      goal = .refused off k ∧
+      decodeTwoExit e ∧
+      assemblyExitWord args mem next body st dst (expandPosCount args) goal b xp tab
+        pos0 (expandBodyLen args) ps err xj e ∧
+      ∀ k', runFuel escapeCalls (j + k') usDecFunction
+          (EntryState usDecFunction args mem next) =
+        runFuel escapeCalls k' usDecFunction e)
 
 /-- **The exit stage.**  From either exit of that staging — the decoded walk at
 `while.end35`, or the refusal at `cleanup41` — the run completes at the record's
@@ -178,11 +208,15 @@ def ExpandExit (args : List Value) (mem : Mem) (next : Nat) (body : List UInt8)
 
 /-! ### The composition -/
 
-/-- **Three stages compose into one run.**  The seed reaches the latch within
-`(nps + 1) * 3`, the loop's induction reaches an exit within
-`(nps + 1) * decodeIterCost n`, and the continuation finishes within `exitFuel`.
-The conclusion is the run from the start state at the sum of the three
-allowances: the loop's own `BoundLoop.run` supplies the prefix, and the
+/-- **Three stages compose into one run.**  The seed's three arms each leave a
+state the continuation reads — the latch within `preScanFuel nps + cost`, whose
+walk the loop's induction continues; `while.end35` at `while.end`'s edge; or
+`cleanup41` at the first position's refusal, whose two exits the continuation
+already splits — the loop's induction reaches a second exit within
+`(nps + 1) * decodeIterCost n` when the seed reached the latch, and the
+continuation finishes within `exitFuel`.  The conclusion is the run from the start
+state at the sum of the allowances: the loop's own `BoundLoop.run` supplies the
+prefix of the latch arm, the entry arms carry their own state directly, and the
 continuation supplies the outcome and the property.
 
 Nothing here reads the body's blocks: the only thing consumed about the loop is its
@@ -210,7 +244,13 @@ theorem run_stages {start : State} {P : Outcome → Prop} {args : List Value}
         assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj
           e ∧
         ∀ k, runFuel escapeCalls (j + k) usDecFunction start =
-          runFuel escapeCalls k usDecFunction e))
+          runFuel escapeCalls k usDecFunction e)
+      ∨ (∃ (e : State) (j off k : Nat), j ≤ preScanFuel nps + cost ∧
+        e.pc = "cleanup41" ∧ goal = .refused off k ∧ decodeTwoExit e ∧
+        assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj
+          e ∧
+        ∀ k', runFuel escapeCalls (j + k') usDecFunction start =
+          runFuel escapeCalls k' usDecFunction e))
     (hexit : ∀ (e : State), decodeTwoExit e →
       assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj e →
       ∃ (o : Outcome), runFuel escapeCalls exitFuel usDecFunction e = some o ∧ P o) :
@@ -218,7 +258,8 @@ theorem run_stages {start : State} {P : Outcome → Prop} {args : List Value}
       K ≤ preScanFuel nps + cost +
         (nps + 1) * cost + exitFuel ∧
       runFuel escapeCalls K usDecFunction start = some o ∧ P o := by
-  rcases hseed with ⟨s, c, j, hj, hinv, hrun⟩ | ⟨e, j, hj, hpc, _hgoal, hword, hrun⟩
+  rcases hseed with ⟨s, c, j, hj, hinv, hrun⟩ | ⟨e, j, hj, hpc, _hgoal, hword, hrun⟩ |
+    ⟨e, j, _off, _k, hj, hpc, _hoff, hexi, hword, hrun⟩
   · obtain ⟨e, jl, hjl, hexi, hword, hrunl⟩ :=
       (assemblyBoundLoop args mem next body st dst nps goal b xp tab pos0 n ps err xj
         hstaging cost hcost hrefuse hloop).run s c hinv exitFuel
@@ -230,8 +271,14 @@ theorem run_stages {start : State} {P : Outcome → Prop} {args : List Value}
       omega
     · rw [hrun (jl + exitFuel), hrunl]
       exact ho
-  · have hexi : decodeTwoExit e := Or.inl hpc
-    obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
+  · have he : decodeTwoExit e := Or.inl hpc
+    obtain ⟨o, ho, hPo⟩ := hexit e he hword
+    refine ⟨o, j + exitFuel, ?_, ?_, hPo⟩
+    · unfold preScanFuel entryBlocks preScanPerPosition at *
+      omega
+    · rw [hrun exitFuel]
+      exact ho
+  · obtain ⟨o, ho, hPo⟩ := hexit e hexi hword
     refine ⟨o, j + exitFuel, ?_, ?_, hPo⟩
     · unfold preScanFuel entryBlocks preScanPerPosition at *
       omega
@@ -244,10 +291,10 @@ The arms, the seed and the continuation must all be about the same run: the loop
 instance's exit predicate names `body`, `st`, `dst`, `nps` and `goal`, and the
 continuation reads the states it leaves.  One structure binds them, so a bundle is
 a statement about one staging rather than four independent claims, and `ps` and
-`pos0` appear where the body's own test does — in the two arms. -/
+`pos0` appear where the body's own test does — in the arms. -/
 
-/-- **The decoder's four remaining facts**, at one staging: the iteration arm, the
-refusal arm, the entry half-iteration, and the two exit continuations. -/
+/-- **The decoder's four facts**, at one staging: the iteration arm, the refusal arm,
+the entry stage in its three arms, and the two exit continuations. -/
 structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
   /-- The body the run decodes. -/
   body : List UInt8
@@ -287,9 +334,9 @@ structure ExpandFacts (args : List Value) (mem : Mem) (next : Nat) where
   refuse : assemblyRefusalArm args mem next body st dst (expandPosCount args) goal pb
     xp tab pos0 (expandBodyLen args) ps err xj staging
     (decodeIterCost (expandBodyLen args))
-  /-- **The entry stage, in its two arms**: the pre-scan plus one iteration to the
-  latch, or — when the list has nothing left to walk — the pre-scan straight to
-  `while.end35`. -/
+  /-- **The entry stage, in its three arms**: the pre-scan plus one iteration to
+  the latch, the pre-scan straight to `while.end35` when the list has nothing left
+  to walk, or the first iteration's refusal at `cleanup41`. -/
   seed : ExpandSeed args mem next body st dst goal pb xp tab err xj pos0 ps staging
   /-- **The exit continuations**: `while.end35`'s final copy and return, and
   `cleanup41`'s refusal and success returns. -/
