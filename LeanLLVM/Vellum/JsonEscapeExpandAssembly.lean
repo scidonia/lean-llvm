@@ -3682,4 +3682,1082 @@ theorem latch_to_runExit
 #guard_msgs in
 #print axioms srcBtake
 
+/-! ### The refusal arm's four routes -/
+
+/-- Sign extension at equal width on a byte's `ofNat 64` form, which is the
+`%idxprom` hypothesis of the emitter's byte loads. -/
+theorem signExtend_ofNat64_byte (c : BitVec 8) :
+    ((BitVec.ofNat 64 c.toNat).signExtend 64).toNat = c.toNat := by
+  rw [signExtend_self_toNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (by have := c.isLt; omega)]
+
+/-- A width-one word that is not one is zero, which is the form a block's branch
+value takes when its guard is refuted. -/
+theorem bv1_eq_zero_of_ne_one {v : BitVec 1} (h : v ≠ 1) : v = 0 := by
+  have hv := v.isLt
+  have htoNat : v.toNat ≠ 1 := fun h1 => h (BitVec.eq_of_toNat_eq (by simp [h1]))
+  have : v.toNat = 0 := by omega
+  exact BitVec.eq_of_toNat_eq (by simp [this])
+
+theorem bv1_eq_one_of_ne_zero {v : BitVec 1} (h : v ≠ 0) : v = 1 := by
+  have hv := v.isLt
+  have htoNat : v.toNat ≠ 0 := fun h1 => h (BitVec.eq_of_toNat_eq (by simp [h1]))
+  have : v.toNat = 1 := by omega
+  exact BitVec.eq_of_toNat_eq (by simp [this])
+
+/-- A width-one word's `= 0` reading, as the negation of its `= 1` reading. -/
+theorem bv1_eq_zero_iff_ne_one (v : BitVec 1) : v = 0 ↔ v ≠ 1 := by
+  constructor
+  · intro h0 h1; rw [h0] at h1; exact absurd h1 (by decide)
+  · exact bv1_eq_zero_of_ne_one
+
+/-- A disjunction at width one is one when either summand is. -/
+theorem or1_eq_one_iff (x y : BitVec 1) : (x ||| y) = 1 ↔ x = 1 ∨ y = 1 := by
+  constructor
+  · intro h
+    by_cases hx : x = 1
+    · exact Or.inl hx
+    · refine Or.inr (bv1_eq_one_of_ne_zero ?_)
+      intro hy
+      have hx0 : x = 0 := bv1_eq_zero_of_ne_one hx
+      rw [hx0, hy] at h
+      exact absurd h (by decide)
+  · rintro (h | h)
+    · rw [h]
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_or, show (1 : BitVec 1).toNat = 1 from rfl]
+      have hy := y.isLt
+      have : y.toNat = 0 ∨ y.toNat = 1 := by omega
+      rcases this with h' | h' <;> rw [h'] <;> decide
+    · rw [h, BitVec.or_comm]
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_or, show (1 : BitVec 1).toNat = 1 from rfl]
+      have hx := x.isLt
+      have : x.toNat = 0 ∨ x.toNat = 1 := by omega
+      rcases this with h' | h' <;> rw [h'] <;> decide
+
+/-- The inequality test at width one, as its proposition. -/
+theorem evalICmp_ne_one_iff {w : Nat} (x y : BitVec w) :
+    evalICmp .ne x y = (1 : BitVec 1) ↔ x ≠ y := by
+  rw [show evalICmp .ne x y = BitVec.ofBool (decide (x ≠ y)) from rfl]
+  exact ofBool_decide_one_iff _
+
+theorem evalICmp_ne_zero_iff {w : Nat} (x y : BitVec w) :
+    evalICmp .ne x y = (0 : BitVec 1) ↔ x = y := by
+  rw [show evalICmp .ne x y = BitVec.ofBool (decide (x ≠ y)) from rfl,
+    ofBool_decide_zero_iff (x ≠ y)]
+  constructor
+  · intro h
+    by_cases hx : x = y
+    · exact hx
+    · exact absurd hx h
+  · intro h hx
+    exact hx h
+
+/-- The signed compare against `-1` at zero: the byte's high bit is set. -/
+theorem evalICmp_sgt_negone_zero_iff (t : BitVec 8) :
+    evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (0 : BitVec 1) ↔ 128 ≤ t.toNat := by
+  have h := evalICmp_sgt_negone_one_iff t
+  have hz : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (0 : BitVec 1) ↔
+      ¬ (evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (1 : BitVec 1)) :=
+    bv1_eq_zero_iff_ne_one _
+  rw [hz]
+  constructor
+  · intro hne
+    apply Nat.le_of_not_lt
+    intro hlt
+    exact hne (h.2 hlt)
+  · intro hge h1
+    exact absurd (h.1 h1) (by omega)
+
+/-- The low nibble of a sixteen-bit word, as the mask the hex reader applies. -/
+theorem and15_ofNat (v : Nat) :
+    (BitVec.ofNat 16 v) &&& (BitVec.ofInt 16 15) = BitVec.ofNat 16 (v % 16) := by
+  rw [show (BitVec.ofInt 16 15) = (BitVec.ofNat 16 15) from BitVec.ofInt_ofNat 16 15]
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    show (15 : Nat) % 2 ^ 16 = 15 from by decide]
+  rw [show (15 : Nat) = 2 ^ 4 - 1 from by decide, Nat.and_two_pow_sub_one_eq_mod]
+  rw [Nat.mod_mod_of_dvd _ (show 2 ^ 4 ∣ 2 ^ 16 from by decide)]
+  exact (Nat.mod_eq_of_lt (by omega)).symm
+
+/-! ### The refusal's exit, as the arm's word reads it -/
+
+/-- **The refusal's exit state**, and the run prefix that reaches it: the block,
+the predecessor edge, the two stores at the values the walk names, and the fuel.
+
+The offset and the index are parameters rather than existentials inside the
+predicate, because the consumer has to match them against the walk's refusal out-
+come: an existential here would leave the two numbers unrelated. -/
+def RefusalExitAt (s e : State) (err xj : Nat) (off k : BitVec 64) (fuel : Nat) : Prop :=
+  e.pc = "cleanup41" ∧
+  (e.pre = some "if.then20" ∨ e.pre = some "if.then22") ∧
+  lookupName e.env "%sub" = some (.int 64 off) ∧
+  lookupName e.env "%inc11" = some (.int 64 k) ∧
+  lookupName e.env "%err" = some (.ptr err) ∧
+  lookupName e.env "%xj" = some (.ptr xj) ∧
+  e.mem = udRefusalMem s.mem off.toNat err k.toNat xj ∧
+  (∀ z, runFuel escapeCalls (fuel + z) usDecFunction s =
+    runFuel escapeCalls z usDecFunction e)
+
+/-- **The cells `us_run.exit` leaves**, as every block after it reads them: the head
+position and its residual, the prefix length, the caller's registers, the two
+destination slots, the index cell, and the byte the control test loads. -/
+structure RunExitCells (e : State) (paddr : Nat) (sub13v subv j inc11v nv : BitVec 64)
+    (b : BitVec 8) (dst tab err xj : Nat) : Prop where
+  pc : e.pc = "us_run.exit"
+  sub13 : lookupName e.env "%sub13" = some (.int 64 sub13v)
+  jc : lookupName e.env "%j.0294" = some (.int 64 j)
+  pc_p : lookupName e.env "%p" = some (.ptr paddr)
+  sub : lookupName e.env "%sub" = some (.int 64 subv)
+  nc : lookupName e.env "%n" = some (.int 64 nv)
+  inc : lookupName e.env "%inc11" = some (.int 64 inc11v)
+  errc : lookupName e.env "%err" = some (.ptr err)
+  xjc : lookupName e.env "%xj" = some (.ptr xj)
+  dstc : lookupName e.env "%dst" = some (.ptr dst)
+  tabc : lookupName e.env "%tab" = some (.ptr tab)
+  byte : readBytes e.mem (paddr + subv.toNat) 1 = some (natToBytes b.toNat 1)
+
+/-- **Route (a): a control byte at the head.**  `us_run.exit`'s control test takes
+`if.then20`, which performs the two stores and leaves for `cleanup41`. -/
+theorem usRunExit_control_to_refusal {e : State} {paddr err xj dst tab : Nat}
+    {sub13v subv j inc11v nv : BitVec 64} {b : BitVec 8}
+    (hc : RunExitCells e paddr sub13v subv j inc11v nv b dst tab err xj)
+    (h63 : subv.toNat < 2 ^ 63)
+    (hcond : evalICmp .ult b (BitVec.ofInt 8 32) = (1 : BitVec 1)) :
+    ∃ e' : State, RefusalExitAt e e' err xj subv inc11v 2 := by
+  let e2 : State :=
+    { (withEnv (udRunExitEnvS e.env paddr sub13v subv j b)
+        { e with mem := udRefusalMem e.mem subv.toNat err inc11v.toNat xj }) with
+        pc := "cleanup41", pre := some "if.then20" }
+  have hstep1 : step escapeCalls usDecFunction e = .jump
+      { (withEnv (udRunExitEnvS e.env paddr sub13v subv j b) e) with
+          pc := "if.then20", pre := some "us_run.exit" } := by
+    have h := udRunExit_stepS_one e.env e paddr sub13v subv j b hc.pc hc.sub13 hc.jc
+      hc.pc_p hc.sub (signExtend_self_toNat subv) h63 hc.byte hcond
+    rwa [show withEnv e.env e = e from rfl] at h
+  have hstep2 : step escapeCalls usDecFunction
+      { (withEnv (udRunExitEnvS e.env paddr sub13v subv j b) e) with
+          pc := "if.then20", pre := some "us_run.exit" } = .jump e2 :=
+    udIfThen20_step (udRunExitEnvS e.env paddr sub13v subv j b)
+      { e with pc := "if.then20", pre := some "us_run.exit" } subv inc11v err xj rfl
+      (by simp only [udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [udRunExitEnvS]; ud_lk_h hc.inc)
+      (by simp only [udRunExitEnvS]; ud_lk_h hc.errc)
+      (by simp only [udRunExitEnvS]; ud_lk_h hc.xjc)
+  refine ⟨e2, rfl, Or.inl rfl, ?_, ?_, ?_, ?_, rfl, ?_⟩
+  · simp only [e2, withEnv, udRunExitEnvS]; ud_lk_h hc.sub
+  · simp only [e2, withEnv, udRunExitEnvS]; ud_lk_h hc.inc
+  · simp only [e2, withEnv, udRunExitEnvS]; ud_lk_h hc.errc
+  · simp only [e2, withEnv, udRunExitEnvS]; ud_lk_h hc.xjc
+  · intro z
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep2]
+
+/-- **Route (c2): the escape is the last byte of the body.**  `us_run.exit` takes
+`if.end21` on the backslash and `if.end21` refuses, because the byte after it is at or
+past the body's end; `if.then22` stores and leaves for `cleanup41`. -/
+theorem usRunExit_alone_to_refusal {e : State} {paddr err xj dst tab : Nat}
+    {sub13v subv j inc11v nv : BitVec 64} {b : BitVec 8}
+    (hc : RunExitCells e paddr sub13v subv j inc11v nv b dst tab err xj)
+    (h63 : subv.toNat < 2 ^ 63)
+    (hcond0 : evalICmp .ult b (BitVec.ofInt 8 32) = (0 : BitVec 1))
+    (hcond2 : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (0 : BitVec 1)) :
+    ∃ e' : State, RefusalExitAt e e' err xj subv inc11v 3 := by
+  let e2 : State :=
+    { (withEnv (udIfEnd21Env (udRunExitEnvS e.env paddr sub13v subv j b) subv nv)
+        { e with mem := udRefusalMem e.mem subv.toNat err inc11v.toNat xj }) with
+        pc := "cleanup41", pre := some "if.then22" }
+  have hstep1 : step escapeCalls usDecFunction e = .jump
+      { (withEnv (udRunExitEnvS e.env paddr sub13v subv j b) e) with
+          pc := "if.end21", pre := some "us_run.exit" } := by
+    have h := udRunExit_stepS_zero e.env e paddr sub13v subv j b hc.pc hc.sub13 hc.jc
+      hc.pc_p hc.sub (signExtend_self_toNat subv) h63 hc.byte hcond0
+    rwa [show withEnv e.env e = e from rfl] at h
+  have hstep2 : step escapeCalls usDecFunction
+      { (withEnv (udRunExitEnvS e.env paddr sub13v subv j b) e) with
+          pc := "if.end21", pre := some "us_run.exit" } = .jump
+      { (withEnv (udIfEnd21Env (udRunExitEnvS e.env paddr sub13v subv j b) subv nv) e)
+        with pc := "if.then22", pre := some "if.end21" } :=
+    udIfEnd21_step_zero (udRunExitEnvS e.env paddr sub13v subv j b)
+      { e with pc := "if.end21", pre := some "us_run.exit" } subv nv rfl
+      (by simp only [udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [udRunExitEnvS]; ud_lk_h hc.nc) hcond2
+  have hstep3 : step escapeCalls usDecFunction
+      { (withEnv (udIfEnd21Env (udRunExitEnvS e.env paddr sub13v subv j b) subv nv) e)
+        with pc := "if.then22", pre := some "if.end21" } = .jump e2 :=
+    udIfThen22_step (udIfEnd21Env (udRunExitEnvS e.env paddr sub13v subv j b) subv nv)
+      { e with pc := "if.then22", pre := some "if.end21" } subv inc11v err xj rfl
+      (by simp only [udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.inc)
+      (by simp only [udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.errc)
+      (by simp only [udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.xjc)
+  refine ⟨e2, rfl, Or.inr rfl, ?_, ?_, ?_, ?_, rfl, ?_⟩
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.sub
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.inc
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.errc
+  · simp only [e2, withEnv, udIfEnd21Env, udRunExitEnvS]; ud_lk_h hc.xjc
+  · intro z
+    rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep2]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep3]
+
+/-- **Route (c1): the escape is not one the emitter can read.**  `us_run.exit` takes
+`if.end21` on the backslash, `if.end21` finds the second byte inside the body, and
+`if.end.i` finds no two-character escape at it — so `if.end9.i` reads the byte again
+and refuses: it is not `u`, or six bytes past the escape do not fit.  `if.then22`
+stores and leaves for `cleanup41`.
+
+The two branch values are the caller's, because they are the emitter's decisions and
+not these blocks' arithmetic: the table's answer at the second byte (`hcond4`) and
+`if.end9.i`'s own guard (`hcond9`). -/
+theorem usRunExit_second_to_refusal {e : State} {paddr err xj dst tab : Nat}
+    {sub13v subv j inc11v nv : BitVec 64} {b : BitVec 8} {c1 : UInt8} {t : BitVec 8}
+    (hc : RunExitCells e paddr sub13v subv j inc11v nv b dst tab err xj)
+    (h63 : subv.toNat < 2 ^ 63)
+    (hoff63 : (subv + BitVec.ofInt 64 1).toNat < 2 ^ 63)
+    (hcond0 : evalICmp .ult b (BitVec.ofInt 8 32) = (0 : BitVec 1))
+    (hcond2 : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (1 : BitVec 1))
+    (h2 : readBytes e.mem (paddr + (subv + BitVec.ofInt 64 1).toNat) 1 =
+      some (natToBytes c1.toNat 1))
+    (ht : readBytes e.mem (tab + c1.toNat) 1 = some (natToBytes t.toNat 1))
+    (hcond4 : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (0 : BitVec 1))
+    (hcond9 : (evalICmp .ne (BitVec.ofNat 8 c1.toNat) (BitVec.ofInt 8 117) |||
+      evalICmp .ugt (subv + BitVec.ofInt 64 6) nv) = (1 : BitVec 1)) :
+    ∃ e' : State, RefusalExitAt e e' err xj subv inc11v 5 := by
+  let E1 := udRunExitEnvS e.env paddr sub13v subv j b
+  let off := subv + BitVec.ofInt 64 1
+  let c1v : BitVec 8 := BitVec.ofNat 8 c1.toNat
+  have hc1vn : c1v.toNat = c1.toNat := by
+    show (BitVec.ofNat 8 c1.toNat).toNat = _
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by have := c1.toNat_lt; omega)]
+  let E2 := udIfEndIEnv (udIfEnd21Env E1 subv nv) paddr tab off c1v t
+  let E3 := udIfEnd9IEnv E2 (subv + BitVec.ofInt 64 6)
+    (evalICmp .ne c1v (BitVec.ofInt 8 117)) (evalICmp .ugt (subv + BitVec.ofInt 64 6) nv)
+  let e5 : State :=
+    { (withEnv E3 { e with mem := udRefusalMem e.mem subv.toNat err inc11v.toNat xj })
+        with pc := "cleanup41", pre := some "if.then22" }
+  have hstep1 : step escapeCalls usDecFunction e = .jump
+      { (withEnv E1 e) with pc := "if.end21", pre := some "us_run.exit" } := by
+    have h := udRunExit_stepS_zero e.env e paddr sub13v subv j b hc.pc hc.sub13 hc.jc
+      hc.pc_p hc.sub (signExtend_self_toNat subv) h63 hc.byte hcond0
+    rwa [show withEnv e.env e = e from rfl] at h
+  have hstep2 : step escapeCalls usDecFunction
+      { (withEnv E1 e) with pc := "if.end21", pre := some "us_run.exit" } = .jump
+      { (withEnv (udIfEnd21Env E1 subv nv) e) with
+          pc := "if.end.i", pre := some "if.end21" } :=
+    udIfEnd21_step E1 { e with pc := "if.end21", pre := some "us_run.exit" } subv nv rfl
+      (by simp only [E1, udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [E1, udRunExitEnvS]; ud_lk_h hc.nc) hcond2
+  have hstep3 : step escapeCalls usDecFunction
+      { (withEnv (udIfEnd21Env E1 subv nv) e) with
+          pc := "if.end.i", pre := some "if.end21" } = .jump
+      { (withEnv E2 e) with pc := "if.end9.i", pre := some "if.end.i" } :=
+    udIfEndI_step_zero (udIfEnd21Env E1 subv nv)
+      { e with pc := "if.end.i", pre := some "if.end21" } paddr tab off c1v t rfl
+      (by simp only [udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.pc_p)
+      (by simp only [udIfEnd21Env, udRunExitEnvS]; ud_lk)
+      (by simp only [udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.tabc)
+      (signExtend_self_toNat off) hoff63 (by rw [hc1vn]; exact h2)
+      (by rw [hc1vn]; exact ht) (signExtend_ofNat64_byte c1v) hcond4
+  have hstep4 : step escapeCalls usDecFunction
+      { (withEnv E2 e) with pc := "if.end9.i", pre := some "if.end.i" } = .jump
+      { (withEnv E3 e) with pc := "if.then22", pre := some "if.end9.i" } :=
+    udIfEnd9I_step E2
+      { e with pc := "if.end9.i", pre := some "if.end.i" } subv nv c1v rfl
+      (by simp only [E2, udIfEndIEnv]; ud_lk)
+      (by simp only [E2, udIfEndIEnv, udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [E2, udIfEndIEnv, udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.nc)
+      hcond9
+  have hstep5 : step escapeCalls usDecFunction
+      { (withEnv E3 e) with pc := "if.then22", pre := some "if.end9.i" } = .jump e5 :=
+    udIfThen22_step E3 { e with pc := "if.then22", pre := some "if.end9.i" } subv inc11v
+      err xj rfl
+      (by simp only [E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+        udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+        udRunExitEnvS]; ud_lk_h hc.inc)
+      (by simp only [E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+        udRunExitEnvS]; ud_lk_h hc.errc)
+      (by simp only [E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+        udRunExitEnvS]; ud_lk_h hc.xjc)
+  refine ⟨e5, rfl, Or.inr rfl, ?_, ?_, ?_, ?_, rfl, ?_⟩
+  · simp only [e5, withEnv, E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+      udRunExitEnvS]; ud_lk_h hc.sub
+  · simp only [e5, withEnv, E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+      udRunExitEnvS]; ud_lk_h hc.inc
+  · simp only [e5, withEnv, E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+      udRunExitEnvS]; ud_lk_h hc.errc
+  · simp only [e5, withEnv, E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+      udRunExitEnvS]; ud_lk_h hc.xjc
+  · intro z
+    rw [show 5 + z = (4 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 4 + z = (3 + z) + 1 from by omega, udRun_jump hstep2]
+    rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep3]
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep4]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep5]
+
+/-! ### The hex reader's refusal gate
+
+The emitter's `\u` reader refuses when one of the four digits is not hexadecimal,
+and the walk refuses at the same position because `hex4` answers `none` there.  The
+bridge below is the negative direction of `hex4_of_lane_test`: the block's guard
+reads the four lanes' tests out of its mask word, so a `hex4 = none` forces the
+guard's zero arm.  The positive direction is `hex4_hxCode`'s, which the accepted
+`\u` path consumes. -/
+
+/-- `hex4`'s value from the four lane tests alone, which is the window the block
+reads: the emitter's mask covers sixteen bytes and the digits are the first four. -/
+theorem hex4_of_lane_test_four {bs : List UInt8} {q : Nat} {l : List (BitVec 8)}
+    (hbytes : ∀ i, i < 4 → bs[q + i]? = some (UInt8.ofBitVec (l.getD i 0)))
+    (h0 : hexLaneTest (l.getD 0 0) = true) (h1 : hexLaneTest (l.getD 1 0) = true)
+    (h2 : hexLaneTest (l.getD 2 0) = true) (h3 : hexLaneTest (l.getD 3 0) = true) :
+    hex4 bs q = some (hexFour (l.getD 0 0) (l.getD 1 0) (l.getD 2 0) (l.getD 3 0)) := by
+  unfold hex4
+  rw [show bs[q]? = some (UInt8.ofBitVec (l.getD 0 0)) from hbytes 0 (by decide),
+      show bs[q+1]? = some (UInt8.ofBitVec (l.getD 1 0)) from hbytes 1 (by decide),
+      show bs[q+2]? = some (UInt8.ofBitVec (l.getD 2 0)) from hbytes 2 (by decide),
+      show bs[q+3]? = some (UInt8.ofBitVec (l.getD 3 0)) from hbytes 3 (by decide)]
+  simp only [hexDigit_lane, h0, h1, h2, h3]
+  rfl
+
+/-- The loaded byte's lane is the byte again, so the lane list and the sixteen-byte
+window name the same four bytes. -/
+theorem ofBitVec_byteLanes_getD (bs : List UInt8) (i : Nat) :
+    UInt8.ofBitVec ((byteLanes bs).getD i 0) = bs.getD i 0 := by
+  induction bs generalizing i with
+  | nil => simp [byteLanes]
+  | cons b rest ih =>
+      cases i with
+      | zero => simp [byteLanes]
+      | succ j =>
+          show UInt8.ofBitVec ((byteLanes rest).getD j 0) = rest.getD j 0
+          exact ih j
+
+/-- Four lanes' worth of a byte list, as the four-and-rest shape the mask's low
+nibble is stated at. -/
+theorem byteLanes_four {bs : List UInt8} (hlen : 4 ≤ bs.length) :
+    ∃ (x0 x1 x2 x3 : BitVec 8) (rest : List (BitVec 8)),
+      byteLanes bs = x0 :: x1 :: x2 :: x3 :: rest := by
+  cases bs with
+  | nil => simp at hlen
+  | cons b0 bs1 =>
+    cases bs1 with
+    | nil => simp at hlen
+    | cons b1 bs2 =>
+      cases bs2 with
+      | nil => simp at hlen
+      | cons b2 bs3 =>
+        cases bs3 with
+        | nil => simp at hlen
+        | cons b3 rest =>
+            exact ⟨BitVec.ofNat 8 b0.toNat, BitVec.ofNat 8 b1.toNat,
+              BitVec.ofNat 8 b2.toNat, BitVec.ofNat 8 b3.toNat, byteLanes rest,
+              by simp [byteLanes]⟩
+
+/-- **A non-hexadecimal digit is the emitter's refusal.**  The block's guard is
+`(%13 &&& 15) = 15` over the mask word the four loaded bytes build, so the guard's
+one arm says all four digits are hexadecimal and `hex4` answers `some`: with
+`hex4 … = none` the block takes its zero arm, which is `if.then22`. -/
+theorem hexReaderGuard_zero_of_hex4_none {body : List UInt8} {k0 : Nat}
+    {bs : List UInt8}
+    (hlen : 4 ≤ bs.length)
+    (hbytes : ∀ i, i < 4 → body[k0 + i]? = some (bs.getD i 0))
+    (hnone : hex4 body k0 = none) :
+    evalICmp .eq
+      ((BitVec.ofNat 16 (lanesToNat (hexZipOr
+        (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))))) &&&
+        (BitVec.ofInt 16 15)) (BitVec.ofInt 16 15) = (0 : BitVec 1) := by
+  refine bv1_eq_zero_of_ne_one ?_
+  intro h1
+  obtain ⟨x0, x1, x2, x3, rest, hsl⟩ := byteLanes_four hlen
+  have heq : (BitVec.ofNat 16 (lanesToNat (hexZipOr
+      (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+      (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+        (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))))) &&&
+      (BitVec.ofInt 16 15) = BitVec.ofInt 16 15 := (evalICmp_eq_one_iff _ _).1 h1
+  have hmod : lanesToNat (hexZipOr
+      (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+      (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+        (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))) % 16 = 15 := by
+    have h := congrArg BitVec.toNat heq
+    rw [and15_ofNat, BitVec.toNat_ofNat,
+      show (BitVec.ofInt 16 15).toNat = 15 from by decide] at h
+    rwa [Nat.mod_eq_of_lt (by omega)] at h
+  have hfour := hexLanes_low_four (bs := bs) (x0 := x0) (x1 := x1) (x2 := x2)
+    (x3 := x3) (rest := rest) hsl
+  rw [hmod] at hfour
+  have hall := (hexTest_four_eq_fifteen (hexLaneTest x0) (hexLaneTest x1)
+    (hexLaneTest x2) (hexLaneTest x3)).1 hfour.symm
+  obtain ⟨hx0, hx1, hx2, hx3⟩ := hall
+  have hbytes' : ∀ i, i < 4 → body[k0 + i]? =
+      some (UInt8.ofBitVec ((byteLanes bs).getD i 0)) := by
+    intro i hi
+    rw [ofBitVec_byteLanes_getD]
+    exact hbytes i hi
+  have hsome := hex4_of_lane_test_four (bs := body) (q := k0) (l := byteLanes bs)
+    hbytes' (by rw [hsl]; exact hx0) (by rw [hsl]; exact hx1)
+    (by rw [hsl]; exact hx2) (by rw [hsl]; exact hx3)
+  rw [hsome] at hnone
+  exact absurd hnone (by simp)
+
+/-- **Route (b): a `\u` whose digits are not hexadecimal.**  The run reaches the hex
+reader through `if.end9.i`'s zero arm — the second byte is `u` and six bytes past the
+escape fit — and the reader's guard is the four loaded digits' tests.  A non-hex
+digit is `hex4`'s `none`, so the guard's zero arm takes `if.then22`, which stores and
+leaves for `cleanup41`.
+
+The window is the sixteen bytes at the escape plus two, and `hbytes` names the four
+digits inside it: the guard is a statement about those four lanes, and `hex4`'s
+refusal at the same position is what makes the arm necessary. -/
+theorem usRunExit_hex_to_refusal {e : State} {paddr err xj dst tab : Nat}
+    {sub13v subv j inc11v nv : BitVec 64} {b : BitVec 8} {c1 : UInt8} {t : BitVec 8}
+    (hc : RunExitCells e paddr sub13v subv j inc11v nv b dst tab err xj)
+    (h63 : subv.toNat < 2 ^ 63)
+    (hoff63 : (subv + BitVec.ofInt 64 1).toNat < 2 ^ 63)
+    (hcond0 : evalICmp .ult b (BitVec.ofInt 8 32) = (0 : BitVec 1))
+    (hcond2 : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (1 : BitVec 1))
+    (h2 : readBytes e.mem (paddr + (subv + BitVec.ofInt 64 1).toNat) 1 =
+      some (natToBytes c1.toNat 1))
+    (ht : readBytes e.mem (tab + c1.toNat) 1 = some (natToBytes t.toNat 1))
+    (hcond4 : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (0 : BitVec 1))
+    (hcond9 : (evalICmp .ne (BitVec.ofNat 8 c1.toNat) (BitVec.ofInt 8 117) |||
+      evalICmp .ugt (subv + BitVec.ofInt 64 6) nv) = (0 : BitVec 1))
+    {body : List UInt8} {k0 : Nat} {bs : List UInt8}
+    (hlen : bs.length = 16)
+    (hbs : readBytes e.mem (paddr + subv.toNat + 2) 16 = some bs)
+    (hbytes : ∀ i, i < 4 → body[k0 + i]? = some (bs.getD i 0))
+    (hnone : hex4 body k0 = none) :
+    ∃ e' : State, RefusalExitAt e e' err xj subv inc11v 6 := by
+  let E1 := udRunExitEnvS e.env paddr sub13v subv j b
+  let off := subv + BitVec.ofInt 64 1
+  let c1v : BitVec 8 := BitVec.ofNat 8 c1.toNat
+  have hc1vn : c1v.toNat = c1.toNat := by
+    show (BitVec.ofNat 8 c1.toNat).toNat = _
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by have := c1.toNat_lt; omega)]
+  let E2 := udIfEndIEnv (udIfEnd21Env E1 subv nv) paddr tab off c1v t
+  let E3 := udIfEnd9IEnv E2 (subv + BitVec.ofInt 64 6)
+    (evalICmp .ne c1v (BitVec.ofInt 8 117)) (evalICmp .ugt (subv + BitVec.ofInt 64 6) nv)
+  let E4 := udIfEndI115Env E3 (paddr + subv.toNat) bs
+  let e6 : State :=
+    { (withEnv E4 { e with mem := udRefusalMem e.mem subv.toNat err inc11v.toNat xj })
+        with pc := "cleanup41", pre := some "if.then22" }
+  have hguard : evalICmp .eq
+      ((BitVec.ofNat 16 (lanesToNat (hexZipOr
+        (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))))) &&&
+        (BitVec.ofInt 16 15)) (BitVec.ofInt 16 15) = (0 : BitVec 1) :=
+    hexReaderGuard_zero_of_hex4_none (by rw [hlen]; decide) hbytes hnone
+  have hstep1 : step escapeCalls usDecFunction e = .jump
+      { (withEnv E1 e) with pc := "if.end21", pre := some "us_run.exit" } := by
+    have h := udRunExit_stepS_zero e.env e paddr sub13v subv j b hc.pc hc.sub13 hc.jc
+      hc.pc_p hc.sub (signExtend_self_toNat subv) h63 hc.byte hcond0
+    rwa [show withEnv e.env e = e from rfl] at h
+  have hstep2 : step escapeCalls usDecFunction
+      { (withEnv E1 e) with pc := "if.end21", pre := some "us_run.exit" } = .jump
+      { (withEnv (udIfEnd21Env E1 subv nv) e) with
+          pc := "if.end.i", pre := some "if.end21" } :=
+    udIfEnd21_step E1 { e with pc := "if.end21", pre := some "us_run.exit" } subv nv rfl
+      (by simp only [E1, udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [E1, udRunExitEnvS]; ud_lk_h hc.nc) hcond2
+  have hstep3 : step escapeCalls usDecFunction
+      { (withEnv (udIfEnd21Env E1 subv nv) e) with
+          pc := "if.end.i", pre := some "if.end21" } = .jump
+      { (withEnv E2 e) with pc := "if.end9.i", pre := some "if.end.i" } :=
+    udIfEndI_step_zero (udIfEnd21Env E1 subv nv)
+      { e with pc := "if.end.i", pre := some "if.end21" } paddr tab off c1v t rfl
+      (by simp only [udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.pc_p)
+      (by simp only [udIfEnd21Env, udRunExitEnvS]; ud_lk)
+      (by simp only [udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.tabc)
+      (signExtend_self_toNat off) hoff63 (by rw [hc1vn]; exact h2)
+      (by rw [hc1vn]; exact ht) (signExtend_ofNat64_byte c1v) hcond4
+  have hstep4 : step escapeCalls usDecFunction
+      { (withEnv E2 e) with pc := "if.end9.i", pre := some "if.end.i" } = .jump
+      { (withEnv E3 e) with pc := "if.end.i115", pre := some "if.end9.i" } :=
+    udIfEnd9I_step_zero E2
+      { e with pc := "if.end9.i", pre := some "if.end.i" } subv nv c1v rfl
+      (by simp only [E2, udIfEndIEnv]; ud_lk)
+      (by simp only [E2, udIfEndIEnv, udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [E2, udIfEndIEnv, udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.nc)
+      hcond9
+  have hstep5 : step escapeCalls usDecFunction
+      { (withEnv E3 e) with pc := "if.end.i115", pre := some "if.end9.i" } = .jump
+      { (withEnv E4 e) with pc := "if.then22", pre := some "if.end.i115" } :=
+    udIfEndI115_step_zero E3
+      { e with pc := "if.end.i115", pre := some "if.end9.i" } (paddr + subv.toNat) bs rfl
+      (by simp only [E3, udIfEnd9IEnv, E2, udIfEndIEnv, udIfEnd21Env, E1,
+        udRunExitEnvS]; ud_lk_h hc.pc_p)
+      hlen hbs hguard
+  have hstep6 : step escapeCalls usDecFunction
+      { (withEnv E4 e) with pc := "if.then22", pre := some "if.end.i115" } = .jump e6 :=
+    udIfThen22_step E4 { e with pc := "if.then22", pre := some "if.end.i115" } subv inc11v
+      err xj rfl
+      (by simp only [E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+        udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.sub)
+      (by simp only [E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+        udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.inc)
+      (by simp only [E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+        udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.errc)
+      (by simp only [E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+        udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.xjc)
+  refine ⟨e6, rfl, Or.inr rfl, ?_, ?_, ?_, ?_, rfl, ?_⟩
+  · simp only [e6, withEnv, E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+      udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.sub
+  · simp only [e6, withEnv, E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+      udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.inc
+  · simp only [e6, withEnv, E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+      udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.errc
+  · simp only [e6, withEnv, E4, udIfEndI115Env, E3, udIfEnd9IEnv, E2, udIfEndIEnv,
+      udIfEnd21Env, E1, udRunExitEnvS]; ud_lk_h hc.xjc
+  · intro z
+    rw [show 6 + z = (5 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 5 + z = (4 + z) + 1 from by omega, udRun_jump hstep2]
+    rw [show 4 + z = (3 + z) + 1 from by omega, udRun_jump hstep3]
+    rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep4]
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep5]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep6]
+
+/-! ### The refusal arm, composed from the four routes
+
+`assemblyRefusalArm` is the bundle's `.refuse` field, and it is one statement about
+four paths rather than one path: `decodeRefuses` is true exactly when the head byte
+is a control byte or `escapeAt` names no escape there, and the emitter reaches
+`cleanup41` by four different blocks for those two reasons.  The dispatch is on the
+body's bytes, not on the run, and each leaf is one of the four tails above:
+
+* a control byte — `us_run.exit`'s `if.then20`;
+* `\` with no byte after it — `if.end21`'s zero arm;
+* `\` whose second byte is not `u`, or whose six bytes do not fit — `if.end9.i`'s;
+* `\u` whose four digits are not hexadecimal — `if.end.i115`'s.
+
+The emitter's two decoding leaves — the two-character escape and the two `\u` forms —
+are `escapeAt = some …` at the head, which the walk's own refusal excludes.
+
+The proof is cut at the two seams the exit word has, and the cut is load-bearing
+rather than stylistic: the arm's own statement is a five-conjunct word whose
+disjunction mentions `ExpandStaging`, and elaborating the dispatch against it
+re-unfolds that term at every branch.  `refusalArm_routes` needs none of it, and
+`assemblyRefusalExit_of_reached` is the one step that does. -/
+
+/-- `hex4` answers `none` wherever `escapeAt` does at a `\u` whose digits run from
+`q + 2`.  The arm has the walk's refusal rather than the digits', so this is the
+direction the hex reader's guard needs. -/
+theorem hex4_none_of_escapeAt_none {body : List UInt8} {q : Nat}
+    (h1 : body[q+1]? = some (0x75 : UInt8)) (h : escapeAt body q = none) :
+    hex4 body (q + 2) = none := by
+  cases hx : hex4 body (q + 2) with
+  | none => rfl
+  | some cp =>
+      exfalso
+      have h' : escapeAt body q ≠ none := by
+        unfold escapeAt
+        rw [h1]
+        dsimp only
+        rw [simpleEscape_u]
+        simp only [ite_true]
+        rw [hx]
+        dsimp only
+        cases hst : surrogateTail body q cp <;> simp
+      exact h' h
+
+/-- A sixteen-byte window of the body and its tail reads the body's own bytes back
+inside the body's extent. -/
+theorem take_append_getD {body extra : List UInt8} {k i : Nat}
+    (hk : k + i < body.length) (hi : i < 16) :
+    (((body.drop k ++ extra)).take 16).getD i 0 = body[k + i] := by
+  rw [List.getD_eq_getElem?_getD, List.getElem?_take, ite_eq_left hi,
+    List.getElem?_append_left (by rw [List.length_drop]; omega),
+    List.getElem?_drop, List.getElem?_eq_getElem hk, Option.getD_some]
+
+/-- A control byte is below thirty-two, at the block's own width. -/
+theorem isControlB_true_toNat {b : UInt8} (h : IsControlB b = true) : b.toNat < 32 := by
+  have h31 : ((0x1F : UInt8)).toNat = 31 := by decide
+  have hb : b ≤ 0x1F := of_decide_eq_true h
+  rw [UInt8.le_iff_toNat_le, h31] at hb
+  omega
+
+/-- A byte the control test rejects is at least thirty-two. -/
+theorem isControlB_false_toNat {b : UInt8} (h : IsControlB b = false) : 32 ≤ b.toNat := by
+  have h31 : ((0x1F : UInt8)).toNat = 31 := by decide
+  by_cases hlt : b.toNat < 32
+  · have hb : b ≤ 0x1F := by
+      rw [UInt8.le_iff_toNat_le, h31]
+      omega
+    have htrue : IsControlB b = true := by
+      rw [IsControlB]
+      exact decide_eq_true hb
+    rw [htrue] at h
+    exact absurd h (by decide)
+  · omega
+
+/-- **The four routes, dispatched on the body's bytes.**  From the `us_run.exit`
+cells, the record's body and table reads at that state's memory, and the head's
+refusal, the run reaches `cleanup41` within six steps — one tail's allowance — at the
+word's refusal branch. -/
+theorem refusalArm_routes
+    {args : List Value} {mem : Mem} {next : Nat} {body : List UInt8} {st : ClassState}
+    {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat} {pos0 n : Nat}
+    {ps : List Nat} {err xj : Nat} {e : State} {q : Nat}
+    {sub13v subv jb inc11v nv : BitVec 64} {bv : BitVec 8}
+    (hstg : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    (hframeE : UnchangedOutside mem e.mem [(dst, n + 64)])
+    (hblen : body.length = n)
+    (hbodyLatch : readBytes e.mem b n = some body)
+    (htabRead : readBytes e.mem tab 256 = some unescapeTable)
+    (hcells : RunExitCells e b sub13v subv jb inc11v nv bv dst tab err xj)
+    (hsubvn : subv.toNat = q) (hnvn : nv.toNat = n)
+    (hoff1n : (subv + BitVec.ofInt 64 1).toNat = q + 1)
+    (hoff6n : (subv + BitVec.ofInt 64 6).toNat = q + 6)
+    (hbvn : bv.toNat = (body.getD q 0).toNat)
+    (hoff163 : (subv + BitVec.ofInt 64 1).toNat < 2 ^ 63)
+    (hgateQ : IsControlB (body.getD q 0) = true ∨ (escapeAt body q).isNone = true) :
+    ∃ (e' : State) (fuel : Nat),
+      RefusalExitAt e e' err xj subv inc11v fuel ∧ fuel ≤ 6 := by
+  by_cases hctl : IsControlB (body.getD q 0) = true
+  · -- (a) the head byte is a control byte
+    have hcond : evalICmp .ult bv (BitVec.ofInt 8 32) = (1 : BitVec 1) := by
+      refine (evalICmp_ult_one_iff _ _).2 ?_
+      rw [hbvn, show ((BitVec.ofInt 8 32)).toNat = 32 from by decide]
+      exact isControlB_true_toNat hctl
+    obtain ⟨e', hR⟩ := usRunExit_control_to_refusal hcells
+      (by rw [hsubvn]; omega) hcond
+    exact ⟨e', 2, hR, by omega⟩
+  · have hctl' : IsControlB (body.getD q 0) = false := by
+      cases hv : IsControlB (body.getD q 0) with
+      | false => rfl
+      | true => exact absurd hv hctl
+    have hb0nat : 32 ≤ (body.getD q 0).toNat := isControlB_false_toNat hctl'
+    have hcond0 : evalICmp .ult bv (BitVec.ofInt 8 32) = (0 : BitVec 1) := by
+      refine (evalICmp_ult_zero_iff _ _).2 ?_
+      rw [hbvn, show ((BitVec.ofInt 8 32)).toNat = 32 from by decide]
+      omega
+    have hesc : escapeAt body q = none := by
+      rcases hgateQ with hc1 | hc1
+      · exact absurd hc1 hctl
+      · cases hv : escapeAt body q with
+        | none => rfl
+        | some p => rw [hv] at hc1; exact absurd hc1 (by simp)
+    by_cases hq1 : q + 1 < n
+    · -- the second byte is inside the body
+      let c1b : UInt8 := body.getD (q + 1) 0
+      have hq1lt : q + 1 < body.length := by rw [hblen]; exact hq1
+      have hc1 : body[q + 1]? = some c1b := body_getElem?_getD hq1lt
+      have hcond2 : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (1 : BitVec 1) := by
+        refine (evalICmp_ult_one_iff _ _).2 ?_
+        rw [hoff1n, hnvn]; omega
+      have h2 : readBytes e.mem (b + (subv + BitVec.ofInt 64 1).toNat) 1 =
+          some (natToBytes c1b.toNat 1) := by
+        rw [hoff1n]
+        exact readBytes_one_getD hbodyLatch hq1
+      obtain ⟨t, _, ht, hiff⟩ := emitterTest_of_table (M := e.mem) (tab := tab) c1b
+        htabRead
+      by_cases hsimple : simpleEscape c1b = none
+      · -- `if.end9.i` is reached, and its guard decides the route
+        have hcond4 : evalICmp .sgt t (BitVec.ofInt 8 (-1)) = (0 : BitVec 1) :=
+          bv1_eq_zero_of_ne_one (fun h1 => hiff.1 h1 hsimple)
+        by_cases hcu : c1b = 0x75
+        · by_cases hq6 : q + 6 ≤ n
+          · -- (b) the digits are not hexadecimal
+            have h1u : body[q + 1]? = some (0x75 : UInt8) := by rw [← hcu]; exact hc1
+            have hnone : hex4 body (q + 2) = none :=
+              hex4_none_of_escapeAt_none h1u hesc
+            have hcond9 : (evalICmp .ne (BitVec.ofNat 8 c1b.toNat)
+                  (BitVec.ofInt 8 117) |||
+                evalICmp .ugt (subv + BitVec.ofInt 64 6) nv) = (0 : BitVec 1) := by
+              have h1 : evalICmp .ne (BitVec.ofNat 8 c1b.toNat)
+                  (BitVec.ofInt 8 117) = (0 : BitVec 1) :=
+                (evalICmp_ne_zero_iff _ _).2 (by
+                  apply BitVec.eq_of_toNat_eq
+                  rw [BitVec.toNat_ofNat,
+                    Nat.mod_eq_of_lt (by have := c1b.toNat_lt; omega), hcu]
+                  decide)
+              have h2' : evalICmp .ugt (subv + BitVec.ofInt 64 6) nv = (0 : BitVec 1) :=
+                (evalICmp_ugt_zero_iff _ _).2 (by rw [hoff6n, hnvn]; omega)
+              rw [h1, h2']
+              decide
+            obtain ⟨extra, hextraE, hextralen⟩ := ExpandStaging.latch_tail hstg hframeE
+            have hfull := (finalSource_read (mem := e.mem) (b := b) (n := n)
+              (i := q + 2) hbodyLatch (by omega) hextraE).1
+            have hfull16 : readBytes e.mem (b + (q + 2))
+                (16 + ((n - (q + 2)) + 32 - 16)) =
+                some (body.drop (q + 2) ++ extra) := by
+              rw [show 16 + ((n - (q + 2)) + 32 - 16) = (n - (q + 2)) + 32
+                from by omega]
+              exact hfull
+            obtain ⟨h16, _⟩ := readBytes_split e.mem (b + (q + 2)) 16
+              ((n - (q + 2)) + 32 - 16) hfull16
+            let win := ((body.drop (q + 2) ++ extra)).take 16
+            have h16' : readBytes e.mem (b + subv.toNat + 2) 16 = some win := by
+              rw [hsubvn, Nat.add_assoc]
+              exact h16
+            have hlen16 : win.length = 16 := by
+              rw [List.length_take, Nat.min_eq_left (by
+                rw [List.length_append, List.length_drop, hblen, hextralen]; omega)]
+            obtain ⟨e', hR⟩ := usRunExit_hex_to_refusal
+              (bs := win) (body := body) (k0 := q + 2)
+              hcells (by rw [hsubvn]; omega) hoff163 hcond0 hcond2 h2 ht hcond4 hcond9
+              hlen16 h16'
+              (by
+                intro i hi
+                have hlt : q + 2 + i < body.length := by rw [hblen]; omega
+                have htake : win.getD i 0 = body[q + 2 + i] := by
+                  show ((body.drop (q + 2) ++ extra).take 16).getD i 0 =
+                    body[q + 2 + i]
+                  exact take_append_getD (by omega) (by omega)
+                rw [htake]
+                exact List.getElem?_eq_getElem hlt)
+              hnone
+            exact ⟨e', 6, hR, by omega⟩
+          · -- (c1) six bytes past the escape do not fit
+            have hcond9 : (evalICmp .ne (BitVec.ofNat 8 c1b.toNat)
+                  (BitVec.ofInt 8 117) |||
+                evalICmp .ugt (subv + BitVec.ofInt 64 6) nv) = (1 : BitVec 1) := by
+              have h2' : evalICmp .ugt (subv + BitVec.ofInt 64 6) nv = (1 : BitVec 1) :=
+                (evalICmp_ugt_one_iff_toNat _ _).2 (by rw [hoff6n, hnvn]; omega)
+              exact (or1_eq_one_iff _ _).2 (Or.inr h2')
+            obtain ⟨e', hR⟩ := usRunExit_second_to_refusal hcells
+              (by rw [hsubvn]; omega) hoff163 hcond0 hcond2 h2 ht hcond4 hcond9
+            exact ⟨e', 5, hR, by omega⟩
+        · -- (c1) the second byte is not `u`
+          have hcond9 : (evalICmp .ne (BitVec.ofNat 8 c1b.toNat)
+                (BitVec.ofInt 8 117) |||
+              evalICmp .ugt (subv + BitVec.ofInt 64 6) nv) = (1 : BitVec 1) := by
+            have h1 : evalICmp .ne (BitVec.ofNat 8 c1b.toNat)
+                (BitVec.ofInt 8 117) = (1 : BitVec 1) :=
+              (evalICmp_ne_one_iff _ _).2 (fun hc => hcu (by
+                have hv := congrArg BitVec.toNat hc
+                rw [BitVec.toNat_ofNat,
+                  Nat.mod_eq_of_lt (by have := c1b.toNat_lt; omega),
+                  show ((BitVec.ofInt 8 117)).toNat = 117 from by decide] at hv
+                apply UInt8.toNat_inj.mp
+                rw [show (0x75 : UInt8).toNat = 117 from by decide]
+                exact hv))
+            exact (or1_eq_one_iff _ _).2 (Or.inl h1)
+          obtain ⟨e', hR⟩ := usRunExit_second_to_refusal hcells
+            (by rw [hsubvn]; omega) hoff163 hcond0 hcond2 h2 ht hcond4 hcond9
+          exact ⟨e', 5, hR, by omega⟩
+      · -- a two-character escape: the walk decodes, so this is no refusal
+        have hs : ∃ e0 : UInt8, simpleEscape c1b = some e0 := by
+          cases hv : simpleEscape c1b with
+          | none => exact absurd hv hsimple
+          | some e0 => exact ⟨e0, rfl⟩
+        obtain ⟨e0, hs⟩ := hs
+        exact absurd (escapeAt_of_simple hc1 hs) (by rw [hesc]; simp)
+    · -- (c2) the escape is the body's last byte
+      have hcond2 : evalICmp .ult (subv + BitVec.ofInt 64 1) nv = (0 : BitVec 1) := by
+        refine (evalICmp_ult_zero_iff _ _).2 ?_
+        rw [hoff1n, hnvn]; omega
+      obtain ⟨e', hR⟩ := usRunExit_alone_to_refusal hcells
+        (by rw [hsubvn]; omega) hcond0 hcond2
+      exact ⟨e', 3, hR, by omega⟩
+
+/-- **The word's refusal branch, from the reached state.**  The two stores at the
+walk's offset and index, the destinations the record names, and the frame: the
+latch's extent widened to the record's four regions and then carried through the
+stores, which are inside two of them. -/
+theorem assemblyRefusalExit_of_reached
+    {args : List Value} {mem : Mem} {next : Nat} {body : List UInt8} {st : ClassState}
+    {dst nps : Nat} {goal : EscapeOutcome} {b xp tab : Nat} {pos0 n : Nat}
+    {ps : List Nat} {err xj : Nat} {s e : State} {off k : BitVec 64} {j : Nat}
+    (hstg : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
+    (hnoalias : DecodeNoAlias n dst err xj tab)
+    (hframe : UnchangedOutside mem s.mem [(dst, n + 64)])
+    (hR : RefusalExitAt s e err xj off k j)
+    (hgoal : goal = .refused off.toNat k.toNat) :
+    assemblyExitWord args mem next body st dst nps goal b xp tab pos0 n ps err xj e := by
+  obtain ⟨hEpc, hEpre, hEsub, hEinc, hEerr, hExj, hEmem, hErun⟩ := hR
+  -- the two stores' bytes, at the destinations the record names
+  have hreadErr : readBytes e.mem err 8 = some (wordBytes 8 off.toNat) := by
+    rw [hEmem]
+    show readBytes (writeBytes (writeBytes s.mem err (natToBytes off.toNat 8))
+      xj (natToBytes k.toNat 8)) err 8 = some (wordBytes 8 off.toNat)
+    rcases hnoalias.2.2.1 with hd | hd
+    · rw [readBytes_writeBytes_below _ _ 8 err xj (by omega)]
+      simpa [wordBytes, natToBytes_length] using
+        readBytes_writeBytes_same s.mem (natToBytes off.toNat 8)
+    · rw [JsonEntrySteps.readBytes_writeBytes_above _ (natToBytes k.toNat 8) 8 err xj
+        (by rw [natToBytes_length]; omega)]
+      simpa [wordBytes, natToBytes_length] using
+        readBytes_writeBytes_same s.mem (natToBytes off.toNat 8)
+  have hreadXj : readBytes e.mem xj 8 = some (wordBytes 8 k.toNat) := by
+    rw [hEmem]
+    show readBytes (writeBytes (writeBytes s.mem err (natToBytes off.toNat 8))
+      xj (natToBytes k.toNat 8)) xj 8 = some (wordBytes 8 k.toNat)
+    simpa [wordBytes, natToBytes_length] using
+      readBytes_writeBytes_same _ (natToBytes k.toNat 8)
+  -- the frame: the latch's extent, widened, then carried through the two stores
+  have hframeW : UnchangedOutside mem s.mem
+      [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)] :=
+    UnchangedOutside.mono hframe (by
+      intro r hr
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+      subst hr
+      simp)
+  have hstore1 : UnchangedOutside s.mem (writeBytes s.mem err (natToBytes off.toNat 8))
+      [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)] :=
+    UnchangedOutside.writeBytes_in (m0 := s.mem) (m := s.mem) (fun _ _ => rfl)
+      ⟨(err, 8), by simp, by simp, by simp [natToBytes_length]⟩
+  have hstore2 : UnchangedOutside (writeBytes s.mem err (natToBytes off.toNat 8))
+      (writeBytes (writeBytes s.mem err (natToBytes off.toNat 8))
+        xj (natToBytes k.toNat 8))
+      [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)] :=
+    UnchangedOutside.writeBytes_in (m0 := _) (m := _) (fun _ _ => rfl)
+      ⟨(xj, 8), by simp, by simp, by simp [natToBytes_length]⟩
+  have hframeAll : UnchangedOutside mem e.mem
+      [(dst, n + 64), (xp, 4 * nps), (xj, 8), (err, 8)] := by
+    rw [hEmem]
+    exact UnchangedOutside.comp hframeW (UnchangedOutside.comp hstore1 hstore2
+      (fun _ hr => hr)) (fun _ hr => hr)
+  have hdr : DecodeRefusalExit e :=
+    ⟨hEpc, off, k, err, xj, hEsub, hEinc, hEerr, hExj, hreadErr, hreadXj⟩
+  have hword : AssemblyRefusalExit body st dst nps goal b xp tab pos0 n ps err xj
+      mem e :=
+    ⟨hdr, hEpre, hEerr, hExj, ⟨off, k, hEsub, hEinc, hgoal⟩, hframeAll⟩
+  exact ⟨hstg, Or.inr (Or.inr (Or.inr (Or.inr (Or.inr hword))))⟩
+
+/-- **The refusal arm is discharged.**  At the caller's staging, from any latch state
+whose head refuses, the run reaches `cleanup41` within one iteration's allowance, at
+the exit word's refusal branch. -/
+theorem assemblyRefusalArm_satisfied
+    {args : List Value} {mem : Mem} {next : Nat}
+    {body : List UInt8} {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome}
+    {b xp tab : Nat} {pos0 n : Nat} {ps : List Nat} {err xj : Nat}
+    (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj) :
+    assemblyRefusalArm args mem next body st dst nps goal b xp tab pos0 n ps err xj
+      hstaging (decodeIterCost n) := by
+  intro r s c h href hnle
+  -- `obtain` replaces the hypothesis it destructs, so the staging is kept beside it
+  have hstg := hstaging
+  -- the staging, the walk and the frame at the latch
+  obtain ⟨_, _, _, hbodyS, hwidth, _, hmap, hnoalias, hdisjB, _, _⟩ := hstaging
+  have hblen : body.length = n := JsonEntrySteps.readBytes_length mem b n hbodyS
+  -- the middle is stated one iteration in, and the arm's exit test makes `r` positive
+  obtain ⟨hcle0, hbudget0⟩ := assemblyLatchInv_budget h
+  have hclt : c < nps := by omega
+  have hrpos : r ≠ 0 := by omega
+  obtain ⟨r', hr'⟩ := Nat.exists_eq_succ_of_ne_zero hrpos
+  rw [hr'] at h
+  obtain ⟨_, hds, _⟩ := assemblyLatchInv_staging h
+  obtain ⟨_, hpslen, hrange, _⟩ := hds
+  obtain ⟨i0, out0, hwalk⟩ := stagedLatchInv_decodeInv (assemblyLatchInv_staged h)
+  have hcur := assemblyLatchInv_frame h
+  -- the head position, its byte, and the record's refusal test at them
+  have hcps : c < ps.length := by omega
+  have hp : ps[c]? = some (ps[c]'hcps) := List.getElem?_eq_getElem hcps
+  obtain ⟨_, hpn⟩ := hrange c (ps[c]'hcps) hp
+  have hpge : ¬ ps[c]'hcps < pos0 := by omega
+  have hb0lt : ps[c]'hcps - pos0 < body.length := by rw [hblen]; omega
+  have hb0 : body[ps[c]'hcps - pos0]? = some (body.getD (ps[c]'hcps - pos0) 0) :=
+    body_getElem?_getD hb0lt
+  have hgate : decodeRefuses body ps pos0 c =
+      (IsControlB (body.getD (ps[c]'hcps - pos0) 0) ||
+        (escapeAt body (ps[c]'hcps - pos0)).isNone) :=
+    decodeRefuses_eq_gate hp hpge hb0
+  rw [hgate] at href
+  -- the middle, from the latch to `us_run.exit`
+  obtain ⟨e, i, q, out, inc11, adv, j0, hj0, hepc, hqE, hiq, hqn, hbyteE, hqbody,
+    hsubE, hsub13E, hjE, hpE, hnE, hincE, herrE, hxjE, htabE, _, _, hdstE,
+    hframeE, _, hinc, hrunE⟩ := latch_to_runExit hstg h hnle
+  -- the entry at the cursor is the head, so `q` is its body-relative position
+  have hheadP : (escAt body st 0)[c]? = some (ps[c]'hcps - pos0) := by
+    rw [← escapePositionsFrom_eq_escAt, ← hmap, List.getElem?_map,
+      List.getElem?_eq_getElem hcps]
+    rfl
+  have hqeq : ps[c]'hcps - pos0 = q := by
+    rw [hheadP] at hqE
+    exact Option.some.inj hqE
+  have hlt : q < body.length := by rw [hblen]; omega
+  have hgateQ : IsControlB (body.getD q 0) = true ∨
+      (escapeAt body q).isNone = true := by
+    have h := href
+    rw [decide_eq_false hnle] at h
+    have h' : IsControlB (body.getD q 0) = true ∨ escapeAt body q = none := by
+      simpa [hgate, hqeq] using h
+    rcases h' with h1 | h1
+    · exact Or.inl h1
+    · exact Or.inr (by rw [h1]; rfl)
+  -- the walk's own refusal: which offset, and which index
+  have hrw : goal = .refused q (c + 1) := by
+    by_cases hctl : IsControlB (body.getD q 0) = true
+    · exact DecodeInv.step_control hwalk (escAt_head_drop hqE) hqbody hlt hctl
+    · have hctl' : IsControlB (body.getD q 0) = false := by
+        cases hv : IsControlB (body.getD q 0) with
+        | false => rfl
+        | true => exact absurd hv hctl
+      have hesc : escapeAt body q = none := by
+        rcases hgateQ with hc1 | hc1
+        · exact absurd hc1 hctl
+        · cases hv : escapeAt body q with
+          | none => rfl
+          | some p => rw [hv] at hc1; exact absurd hc1 (by simp)
+      exact DecodeInv.step_refuse hwalk (escAt_head_drop hqE) hqbody hlt hctl' hesc
+  -- the arithmetic the tails' operands are stated at
+  have hn32 : n ≤ 2 ^ 32 := by omega
+  have hq64 : q < 2 ^ 64 := by omega
+  have hq63 : q < 2 ^ 63 := by omega
+  have hn64 : n < 2 ^ 64 := by omega
+  have hsubvn : (BitVec.ofNat 64 q).toNat = q := ofNat64_toNat hq64
+  have hnvn : (BitVec.ofNat 64 n).toNat = n := ofNat64_toNat hn64
+  have hoff1n : ((BitVec.ofNat 64 q + BitVec.ofInt 64 1)).toNat = q + 1 := by
+    rw [BitVec.toNat_add, hsubvn, show (BitVec.ofInt 64 1).toNat = 1 from by decide,
+      Nat.mod_eq_of_lt (by omega)]
+  have hoff6n : ((BitVec.ofNat 64 q + BitVec.ofInt 64 6)).toNat = q + 6 := by
+    rw [BitVec.toNat_add, hsubvn, show (BitVec.ofInt 64 6).toNat = 6 from by decide,
+      Nat.mod_eq_of_lt (by omega)]
+  have hoff163 : ((BitVec.ofNat 64 q + BitVec.ofInt 64 1)).toNat < 2 ^ 63 := by
+    rw [hoff1n]; omega
+  -- the byte `us_run.exit` loads is the head byte
+  let bv : BitVec 8 := BitVec.ofNat 8 (body.getD q 0).toNat
+  have hbvn : bv.toNat = (body.getD q 0).toNat := by
+    show (BitVec.ofNat 8 (body.getD q 0).toNat).toNat = _
+    rw [BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by have := (body.getD q 0).toNat_lt; omega)]
+  have hcells : RunExitCells e b (BitVec.ofNat 64 (q - i)) (BitVec.ofNat 64 q)
+      (BitVec.ofNat 64 out.length)
+      (decodeNextIdx inc11 adv + BitVec.ofInt 64 1) (BitVec.ofNat 64 n) bv dst tab
+      err xj :=
+    { pc := hepc, sub13 := hsub13E, jc := hjE, pc_p := hpE, sub := hsubE, nc := hnE,
+      inc := hincE, errc := herrE, xjc := hxjE, dstc := hdstE, tabc := htabE,
+      byte := by rw [hsubvn, hbvn]; exact hbyteE }
+  -- the body and the escape table at the exit state's memory
+  obtain ⟨hbodyLatch, htabRead⟩ := ExpandStaging.latch_reads hstg hframeE
+  -- the four routes
+  obtain ⟨e', fuel, hR, hfuel⟩ := refusalArm_routes (q := q) hstg hframeE hblen
+    hbodyLatch htabRead hcells hsubvn hnvn hoff1n hoff6n hbvn hoff163 hgateQ
+  -- the word's refusal branch, at the walk's own offset and index
+  have hcbound : c < 2 ^ 64 := by
+    rw [← hinc]
+    exact (decodeNextIdx inc11 adv).isLt
+  have hnpsle : nps ≤ n := by
+    have h1 : nps = (escapePositionsFrom body st).length := by
+      rw [← hpslen, ← hmap, List.length_map]
+    rw [h1, show escapePositionsFrom body st = escAt body st 0 from rfl, ← hblen]
+    exact escAt_length_le body st 0
+  have hc1 : c + 1 < 2 ^ 64 := by omega
+  have hmod : (c + 1) % 2 ^ 64 = c + 1 := Nat.mod_eq_of_lt hc1
+  have hkN : (decodeNextIdx inc11 adv + BitVec.ofInt 64 1).toNat = c + 1 := by
+    rw [BitVec.toNat_add, hinc, show (BitVec.ofInt 64 1).toNat = 1 from by decide, hmod]
+  have hgoal' : goal = .refused (BitVec.ofNat 64 q).toNat
+      (decodeNextIdx inc11 adv + BitVec.ofInt 64 1).toNat := by
+    rw [hsubvn, hkN]; exact hrw
+  have hword := assemblyRefusalExit_of_reached hstg hnoalias hframeE hR hgoal'
+  -- the exit, and the cost one iteration's allowance
+  refine ⟨e', j0 + fuel, ?_, Or.inr hR.1, hword, ?_⟩
+  · have hb := copyIterBound_le_div (sub := q - i) (n := n) (by omega)
+    unfold copyIterBound at hj0 hb
+    unfold decodeIterCost
+    omega
+  · intro z
+    rw [show j0 + fuel + z = j0 + (fuel + z) from by omega]
+    exact (hrunE (fuel + z)).trans (hR.2.2.2.2.2.2.2 z)
+
+/-! #### Axiom footprints: the refusal routes -/
+
+/-- info: 'LeanLLVM.Vellum.signExtend_ofNat64_byte' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms signExtend_ofNat64_byte
+
+/-- info: 'LeanLLVM.Vellum.bv1_eq_zero_of_ne_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bv1_eq_zero_of_ne_one
+
+/-- info: 'LeanLLVM.Vellum.bv1_eq_one_of_ne_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bv1_eq_one_of_ne_zero
+
+/-- info: 'LeanLLVM.Vellum.bv1_eq_zero_iff_ne_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bv1_eq_zero_iff_ne_one
+
+/-- info: 'LeanLLVM.Vellum.or1_eq_one_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms or1_eq_one_iff
+
+/-- info: 'LeanLLVM.Vellum.evalICmp_ne_one_iff' does not depend on any axioms -/
+#guard_msgs in
+#print axioms evalICmp_ne_one_iff
+
+/-- info: 'LeanLLVM.Vellum.evalICmp_ne_zero_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms evalICmp_ne_zero_iff
+
+/-- info: 'LeanLLVM.Vellum.evalICmp_sgt_negone_zero_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms evalICmp_sgt_negone_zero_iff
+
+/-- info: 'LeanLLVM.Vellum.and15_ofNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms and15_ofNat
+
+/-- info: 'LeanLLVM.Vellum.RefusalExitAt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms RefusalExitAt
+
+/-- info: 'LeanLLVM.Vellum.RunExitCells' does not depend on any axioms -/
+#guard_msgs in
+#print axioms RunExitCells
+
+/-- info: 'LeanLLVM.Vellum.usRunExit_control_to_refusal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms usRunExit_control_to_refusal
+
+/-- info: 'LeanLLVM.Vellum.usRunExit_alone_to_refusal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms usRunExit_alone_to_refusal
+
+/-- info: 'LeanLLVM.Vellum.usRunExit_second_to_refusal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms usRunExit_second_to_refusal
+
+/-- info: 'LeanLLVM.Vellum.hex4_of_lane_test_four' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hex4_of_lane_test_four
+
+/-- info: 'LeanLLVM.Vellum.ofBitVec_byteLanes_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ofBitVec_byteLanes_getD
+
+/-- info: 'LeanLLVM.Vellum.byteLanes_four' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms byteLanes_four
+
+/-- info: 'LeanLLVM.Vellum.hexReaderGuard_zero_of_hex4_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms hexReaderGuard_zero_of_hex4_none
+
+/-- info: 'LeanLLVM.Vellum.usRunExit_hex_to_refusal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms usRunExit_hex_to_refusal
+
+/-- info: 'LeanLLVM.Vellum.hex4_none_of_escapeAt_none' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms hex4_none_of_escapeAt_none
+
+/-- info: 'LeanLLVM.Vellum.take_append_getD' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms take_append_getD
+
+/-- info: 'LeanLLVM.Vellum.isControlB_true_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms isControlB_true_toNat
+
+/-- info: 'LeanLLVM.Vellum.isControlB_false_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms isControlB_false_toNat
+
+/-- info: 'LeanLLVM.Vellum.refusalArm_routes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms refusalArm_routes
+
+/-- info: 'LeanLLVM.Vellum.assemblyRefusalExit_of_reached' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyRefusalExit_of_reached
+
+/-- info: 'LeanLLVM.Vellum.assemblyRefusalArm_satisfied' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyRefusalArm_satisfied
+
 end LeanLLVM.Vellum
