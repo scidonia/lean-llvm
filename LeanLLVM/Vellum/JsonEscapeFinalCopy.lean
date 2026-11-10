@@ -474,10 +474,20 @@ theorem copyBodyEnv_jcell (env : Env) (src dst : Nat) (k : BitVec 64)
     lookupName (udCopyBodyEnv env src dst k bs1 bs2 subv) "%j.0294" = lookupName env "%j.0294" := by
   simp only [udCopyBodyEnv]; ud_lk
 
-/-- **The copy after a position, with the caller's prefix and frame carried.** -/
+/-- **The copy after a position, with the caller's prefix and frame carried.**
+
+`Cells` is the caller's register frame: the cells the blocks *after* the copy read
+and this loop only passes over.  The copy's own word names the counters it writes;
+a cell it never writes is carried here, because the exit environment is opaque and
+a consumer holding the exit state alone cannot recover the cell otherwise.  The
+persistence hypothesis is one lemma about the block's environment builder, so the
+frame is stated once and the loop does not name each cell. -/
 def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
     (out : List UInt8) (m0 : Mem) (regw : Nat)
-    (hshift : dst0 + j = dst) (hfit : j + sub + 64 ≤ regw) :
+    (hshift : dst0 + j = dst) (hfit : j + sub + 64 ≤ regw)
+    (Cells : Env → Prop)
+    (hCells : ∀ (env : Env) (src dst : Nat) (k : BitVec 64) (bs1 bs2 : List UInt8)
+      (subv : BitVec 64), Cells env → Cells (udCopyBodyEnv env src dst k bs1 bs2 subv)) :
     BoundLoop escapeCalls usDecFunction where
   head := copyBodyNames.head
   exitBlock := copyBodyNames.tail
@@ -489,7 +499,8 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
       UnchangedOutside m0 s.mem [(dst0, regw)] ∧
       lookupName s.env "%p" = some (.ptr pb) ∧
       lookupName s.env "%dst" = some (.ptr dst0) ∧
-      lookupName s.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 j))
+      lookupName s.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 j)) ∧
+      Cells s.env
   atBound := copyAtBound sub
   Exit := fun e => e.pc = copyBodyNames.tail
   ExitWord := fun e =>
@@ -498,10 +509,11 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
       UnchangedOutside m0 e.mem [(dst0, regw)] ∧
       lookupName e.env "%p" = some (.ptr pb) ∧
       lookupName e.env "%dst" = some (.ptr dst0) ∧
-      lookupName e.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 j))
+      lookupName e.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 j)) ∧
+      Cells e.env
   step_exit := by
     intro r s c h hat
-    obtain ⟨hcopy, hpref, hframe, hp0, hd0, hj0⟩ := h
+    obtain ⟨hcopy, hpref, hframe, hp0, hd0, hj0, hcells⟩ := h
     obtain ⟨prev, op, k, hpc, hprev, hinc, hop, hkval, hsrc, hdst, hsubc, hwhole,
       hBlen, hprefix, hdisj, hsub63, hgate, hlo, _⟩ := hcopy
     have hat' : copyIterBound sub ≤ c := by
@@ -551,7 +563,7 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
         hl1 hl2 htest
     refine ⟨e, 1, by omega, ?_, ?_, fun k' => runFuel_jump_prefix hstep k'⟩
     · rw [he, CopyStepState_pc]
-    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · rw [he, CopyStepState_pc]
         · rw [he, CopyStepState_pre]
@@ -592,9 +604,11 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
       · rw [he, CopyStepState_env, copyBodyEnv_pcell]; exact hp0
       · rw [he, CopyStepState_env, copyBodyEnv_dstcell]; exact hd0
       · rw [he, CopyStepState_env, copyBodyEnv_jcell]; exact hj0
+      · rw [he, CopyStepState_env]
+        exact hCells _ _ _ _ _ _ _ hcells
   step_loop := by
     intro r s c h hat
-    obtain ⟨hcopy, hpref, hframe, hp0, hd0, hj0⟩ := h
+    obtain ⟨hcopy, hpref, hframe, hp0, hd0, hj0, hcells⟩ := h
     obtain ⟨prev, op, k, hpc, hprev, hinc, hop, hkval, hsrc, hdst, hsubc, hwhole,
       hBlen, hprefix, hdisj, hsub63, hgate, hlo, _⟩ := hcopy
     have hat' : ¬ copyIterBound sub ≤ c := by
@@ -645,7 +659,7 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
     refine ⟨e, c + 1, 1, by omega, ?_, by omega, ?_,
       fun k' => runFuel_jump_prefix hstep k'⟩
     · rw [he, CopyStepState_pc]
-    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨copyBodyNames.head, .reg copyBodyNames.knext, k + BitVec.ofInt 64 64, rfl, rfl,
           copyBodyNames_head_phi, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · rw [he]
@@ -684,15 +698,17 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
       · rw [he, CopyStepState_env, copyBodyEnv_pcell]; exact hp0
       · rw [he, CopyStepState_env, copyBodyEnv_dstcell]; exact hd0
       · rw [he, CopyStepState_env, copyBodyEnv_jcell]; exact hj0
+      · rw [he, CopyStepState_env]
+        exact hCells _ _ _ _ _ _ _ hcells
   exit_at_zero := by
     intro s c h
-    obtain ⟨hcopy, _, _, _, _, _⟩ := h
+    obtain ⟨hcopy, _, _, _, _, _, _⟩ := h
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hhi⟩ := hcopy
     show decide (copyIterBound sub ≤ c) = true
     exact decide_eq_true (by omega)
   budget := by
     intro r s c h
-    obtain ⟨hcopy, _, _, _, _, _⟩ := h
+    obtain ⟨hcopy, _, _, _, _, _, _⟩ := h
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hlo, hhi⟩ := hcopy
     exact ⟨hlo, hhi⟩
 
@@ -703,6 +719,9 @@ leaving the exit word beside the prefix and the frame. -/
 theorem copyBodyPrefix_run_at (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
     (out : List UInt8) (m0 : Mem) (regw : Nat)
     (hshift : dst0 + j = dst) (hfit : j + sub + 64 ≤ regw)
+    (Cells : Env → Prop)
+    (hCells : ∀ (env : Env) (src dst : Nat) (k : BitVec 64) (bs1 bs2 : List UInt8)
+      (subv : BitVec 64), Cells env → Cells (udCopyBodyEnv env src dst k bs1 bs2 subv))
     (s : State) (c : Nat)
     (hinv : CopyInv copyBodyNames src dst sub B (copyIterBound sub) c s)
     (hpref : readBytes s.mem dst0 j = some out)
@@ -710,6 +729,7 @@ theorem copyBodyPrefix_run_at (src dst sub : Nat) (B : List UInt8) (pb dst0 j : 
     (hpc0 : lookupName s.env "%p" = some (.ptr pb))
     (hd0 : lookupName s.env "%dst" = some (.ptr dst0))
     (hj0 : lookupName s.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 j)))
+    (hcells0 : Cells s.env)
     (k : Nat) {o : Outcome}
     (hcont : ∀ (e : State), e.pc = copyBodyNames.tail →
       CopyExitWord copyBodyNames src dst sub B e →
@@ -718,12 +738,14 @@ theorem copyBodyPrefix_run_at (src dst sub : Nat) (B : List UInt8) (pb dst0 j : 
       lookupName e.env "%p" = some (.ptr pb) →
       lookupName e.env "%dst" = some (.ptr dst0) →
       lookupName e.env "%j.0294" = some (.int 64 (BitVec.ofNat 64 j)) →
+      Cells e.env →
       runFuel escapeCalls k usDecFunction e = some o) :
     runFuel escapeCalls (copyIterBound sub + 1 + k) usDecFunction s = some o := by
-  have h := (copyBodyPrefixLoop src dst sub B pb dst0 j out m0 regw hshift hfit).run_at
-    s c ⟨hinv, hpref, hframe, hpc0, hd0, hj0⟩ k
+  have h := (copyBodyPrefixLoop src dst sub B pb dst0 j out m0 regw hshift hfit Cells
+    hCells).run_at
+    s c ⟨hinv, hpref, hframe, hpc0, hd0, hj0, hcells0⟩ k
     (fun e hepc hw => hcont e hepc hw.1 hw.2.1 hw.2.2.1 hw.2.2.2.1 hw.2.2.2.2.1
-      hw.2.2.2.2.2)
+      hw.2.2.2.2.2.1 hw.2.2.2.2.2.2)
   simpa [copyBodyPrefixLoop, Nat.mul_one] using h
 
 /-! ### The first copy's tail
