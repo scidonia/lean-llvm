@@ -71,7 +71,7 @@ namespace LeanLLVM.Vellum
 
 open LeanLLVM
 open LeanLLVM.Vellum.JsonPipelineIR (pipelineBody lit)
-open LeanLLVM.Vellum.JsonEntryIR (readLanes32 streamPrefix)
+open LeanLLVM.Vellum.JsonEntryIR (readLanes32 streamPrefix wordsOf)
 open LeanLLVM.Vellum.JsonScanSpec (positionsOf)
 
 namespace PipelineBodyFacts
@@ -2518,6 +2518,253 @@ theorem streamBound_append {l : List Nat} {w : BitVec 64} {i : Nat}
   · have := hb q h; omega
   · have := (positionsOf_bounds w (64 * i) q h).2; omega
 
+/-! ### The appended stream stays inside the document
+
+`streamBound_append` bounds the stream by the blocks read so far — `64 * (i + 1)`
+— which is the bound the loop's own steps can carry.  The tail's stage-2 call
+reads a tighter one: every position is below the document's length `%n`
+(`stage2.h:56-58`, `:91`).  The two are not the same fact: at a
+sixty-four-byte document the carried bound is one block and the pre's is the
+document, and a one-byte document whose block word names lane five has a
+position `5` that no bound below `64 * 1` excludes but `n = 1` does (`#eval
+streamPrefix [(1 : BitVec 64) <<< 5] 0 1 = [5]`).
+
+So the bound is proved where it is created, from the entry word's own arithmetic:
+`%ent.0 = %or12 & %and18` (`JsonPipelineBlockEval.vent`), and `%and18` is
+`%sub17` — the tail mask `limMask` at the block's remaining length — when fewer
+than sixty-four bytes remain, and all-ones otherwise.  `entry_tail_eq` reads the
+masked word's positions as the block's positions filtered at `%n`, and the
+all-ones arm needs nothing but `64 * i + 64 ≤ n`.  The word the emitter read is
+the word the body stored (`word_eq_of_readBytes`): the emitter's post names its
+mask list as `readBytes mem e (8 * ent.length) = some (wordsOf ent)` and `nblk`
+is the literal `1`, so the appended stream is `streamPrefix [vent …] i 1` and not
+an existential mask word.  The two arithmetic hypotheses are not free
+parameters: a block below the count starts inside the document
+(`blockBase_lt_doc`) and its base is an address (`blockBase_lt_two64`), both from
+the invariant's own `S.i < blocks`, `blocks = pipelineBlocks S.n.toNat` and the
+staging's `64 * blocks + 63 < 2 ^ 32`.
+
+**What this section does not do is thread the bound into the exit predicate.**
+`pipelineLoopExit` still states `∀ q ∈ S.ent, q < 64 * S.i`, and its producer —
+each of the eight arm exits — would have to hand the composed bound on, which
+means the arms' steps carry `vent`'s word identity and the two bounds as conjuncts.
+The lemmas above are what that handoff consumes; the handoff itself is not
+landed. -/
+
+/-- A `Bool` read as a one-bit word at one. -/
+theorem ofBool_eq_one (b : Bool) : (BitVec.ofBool b = (1 : BitVec 1)) ↔ b = true := by
+  cases b <;> decide
+
+/-- A one-bit word that is not one is zero. -/
+theorem bitvec1_eq_zero_of_ne_one (x : BitVec 1) (h : x ≠ 1) : x = 0 := by
+  apply BitVec.toNat_eq.mpr
+  have hlt := x.isLt
+  have h1 : x.toNat ≠ 1 := fun hc => h (BitVec.toNat_eq.mpr (by rw [hc]; rfl))
+  show x.toNat = 0
+  omega
+
+/-- The literal sixty-four, at `toNat`. -/
+theorem litv_64_toNat : (JsonPipelineBlockEval.litv 64 64).toNat = 64 := by decide
+
+/-- `%cmp15` is the block's remaining length below sixty-four. -/
+theorem vcmp_eq_one (n i : BitVec 64) :
+    JsonPipelineBlockEval.vcmp n i = (1 : BitVec 1) ↔
+      (JsonPipelineBlockEval.vsub n i).toNat < 64 := by
+  show BitVec.ofBool
+      (BitVec.ult (JsonPipelineBlockEval.vsub n i) (JsonPipelineBlockEval.litv 64 64)) =
+      (1 : BitVec 1) ↔ _
+  rw [ofBool_eq_one, BitVec.ult_iff_toNat_lt, litv_64_toNat]
+
+/-- `%cmp15` is false exactly when a whole sixty-four bytes remain. -/
+theorem vcmp_eq_zero (n i : BitVec 64) :
+    JsonPipelineBlockEval.vcmp n i = (0 : BitVec 1) ↔
+      ¬ (JsonPipelineBlockEval.vsub n i).toNat < 64 := by
+  constructor
+  · intro h hlt
+    have h' : JsonPipelineBlockEval.vcmp n i ≠ 1 := by rw [h]; decide
+    exact h' ((vcmp_eq_one n i).mpr hlt)
+  · intro h
+    exact bitvec1_eq_zero_of_ne_one _ (fun h1 => h ((vcmp_eq_one n i).mp h1))
+
+/-- The tail mask's lanes are the lanes below `lim`, whatever `lim` is.  The
+library's `BitVec.getLsbD_allOnes` carries `Classical.choice`; `allOnes`'s lane
+lemma does not, and is what this uses. -/
+theorem limMask_lane (lim k : Nat) (hk : k < 64) :
+    (limMask lim).getLsbD k = decide (k < lim) := by
+  by_cases h : lim < 64
+  · exact JsonEntryIR.limMask_getLsbD lim k (by omega) hk
+  · rw [limMask, if_neg h]
+    have hall : BitVec.ofInt 64 (-1) = BitVec.allOnes 64 := by decide
+    rw [hall, BitLanes.allOnes_getLsbD_of_lt hk, decide_eq_true (by omega)]
+
+/-- `%sub17`'s lanes are the lanes below the block's remaining length. -/
+theorem vsub17_lane (n i : BitVec 64) (k : Nat) (hk : k < 64) :
+    (JsonPipelineBlockEval.vsub17 n i).getLsbD k =
+      decide (k < (JsonPipelineBlockEval.vsub n i).toNat) := by
+  unfold JsonPipelineBlockEval.vsub17 JsonPipelineBlockEval.vnotmask
+  have hneg : JsonPipelineBlockEval.negOne = BitVec.allOnes 64 := by decide
+  rw [BitVec.getLsbD_xor, BitVec.getLsbD_shiftLeft, hneg]
+  rw [BitLanes.allOnes_getLsbD_of_lt (by omega)]
+  rw [BitLanes.allOnes_getLsbD_of_lt hk]
+  rw [decide_eq_true hk]
+  simp only [Bool.true_and, Bool.and_true, Bool.xor_true, Bool.not_not]
+
+/-- `%sub17` is the tail mask at the block's remaining length. -/
+theorem vsub17_eq_limMask (n i : BitVec 64) :
+    JsonPipelineBlockEval.vsub17 n i =
+      limMask ((JsonPipelineBlockEval.vsub n i).toNat) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  rw [vsub17_lane n i k hk, limMask_lane ((JsonPipelineBlockEval.vsub n i).toNat) k hk]
+
+/-- The block's byte base `%i <<< 6` at `toNat`. -/
+theorem sh6_toNat (i : BitVec 64) (h : 64 * i.toNat < 2 ^ 64) :
+    (JsonPipelineBlockEval.sh6 i).toNat = 64 * i.toNat := by
+  have h6 : (BitVec.ofInt 64 6).toNat = 6 := by decide
+  simp only [JsonPipelineBlockEval.sh6, JsonPipelineBlockEval.litv]
+  rw [BitVec.toNat_shiftLeft, h6, Nat.shiftLeft_eq,
+    show i.toNat * 2 ^ 6 = 64 * i.toNat from by
+      rw [show (2 : Nat) ^ 6 = 64 from by decide, Nat.mul_comm],
+    Nat.mod_eq_of_lt h]
+
+/-- `%n - %i <<< 6` at `toNat`, for a block that starts inside the document. -/
+theorem vsub_toNat {n i : BitVec 64} (h64 : 64 * i.toNat < 2 ^ 64)
+    (hi : 64 * i.toNat ≤ n.toNat) :
+    (JsonPipelineBlockEval.vsub n i).toNat = n.toNat - 64 * i.toNat := by
+  simp only [JsonPipelineBlockEval.vsub]
+  rw [BitVec.toNat_sub, sh6_toNat i h64]
+  have hn := n.isLt
+  have h1 : 2 ^ 64 - 64 * i.toNat + n.toNat = (n.toNat - 64 * i.toNat) + 2 ^ 64 := by
+    omega
+  rw [h1, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+
+/-- An `and` with the all-ones word is the word.  The library's
+`BitVec.and_allOnes` carries `Classical.choice`; this one does not. -/
+theorem and_allOnes64 (x : BitVec 64) : x &&& BitVec.allOnes 64 = x := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  rw [BitVec.getLsbD_and, BitLanes.allOnes_getLsbD_of_lt hk]
+  simp
+
+/-- A mask's positions are as many as its set lanes. -/
+theorem positionsOf_length (m : BitVec 64) (b : Nat) :
+    (positionsOf m b).length = BitLanes.ctpop m := by
+  simp [positionsOf, BitLanes.ctpop_eq_setLanes_length]
+
+/-- A masked word's positions at the block base lie below the document's end. -/
+theorem positionsOf_and_limMask_lt (m : BitVec 64) (b n : Nat) (hb : b ≤ n)
+    (hn : n ≤ b + 64) : ∀ q ∈ positionsOf (m &&& limMask (n - b)) b, q < n := by
+  intro q hq
+  have htake := JsonEntryIR.entry_tail_eq m b n hb hn
+  have hlen : (positionsOf (m &&& limMask (n - b)) b).length
+      = BitLanes.ctpop (m &&& limMask (n - b)) := positionsOf_length _ _
+  rw [← hlen, List.take_length] at htake
+  rw [htake] at hq
+  exact of_decide_eq_true (List.mem_filter.mp hq).2
+
+/-- **The entry word's positions lie inside the document.**  `%ent.0` is `%or12`
+masked by `%and18`: the tail mask when the block starts inside the document and
+all-ones when a whole sixty-four bytes remain, so every position it names is
+below `%n`. -/
+theorem vent_positions_lt (n i w1 w2 w3 w4 s13 : BitVec 64)
+    (h64 : 64 * i.toNat < 2 ^ 64) (hi : 64 * i.toNat ≤ n.toNat) :
+    ∀ q ∈ positionsOf (JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13) (64 * i.toNat),
+      q < n.toNat := by
+  have hL := vsub_toNat (n := n) (i := i) h64 hi
+  intro q hq
+  by_cases hc : JsonPipelineBlockEval.vcmp n i = (1 : BitVec 1)
+  · have hlt : (JsonPipelineBlockEval.vsub n i).toNat < 64 := (vcmp_eq_one _ _).mp hc
+    have hwin : JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13
+        = JsonPipelineBlockEval.vor12 w1 w2 w3 w4 s13 &&& limMask (n.toNat - 64 * i.toNat) := by
+      simp only [JsonPipelineBlockEval.vent, JsonPipelineBlockEval.vand18]
+      rw [if_pos hc, vsub17_eq_limMask, hL]
+    rw [hwin] at hq
+    exact positionsOf_and_limMask_lt _ _ _ hi (by omega) q hq
+  · have hc0 : JsonPipelineBlockEval.vcmp n i = 0 := bitvec1_eq_zero_of_ne_one _ hc
+    have hge : 64 ≤ n.toNat - 64 * i.toNat := by
+      have h0 := (vcmp_eq_zero _ _).mp hc0
+      rw [hL] at h0
+      omega
+    have hwin : JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13
+        = JsonPipelineBlockEval.vor12 w1 w2 w3 w4 s13 := by
+      simp only [JsonPipelineBlockEval.vent, JsonPipelineBlockEval.vand18]
+      rw [if_neg hc]
+      have hneg : JsonPipelineBlockEval.negOne = BitVec.allOnes 64 := by decide
+      rw [hneg, and_allOnes64]
+    rw [hwin] at hq
+    have hb := (positionsOf_bounds (JsonPipelineBlockEval.vor12 w1 w2 w3 w4 s13)
+      (64 * i.toNat) q hq).2
+    omega
+
+/-- A one-entry mask list is one word. -/
+theorem singleton_of_length_one {ent : List (BitVec 64)} (h : ent.length = 1) :
+    ∃ v, ent = [v] := by
+  match ent with
+  | [] => exact absurd h (by decide)
+  | [_] => exact ⟨_, rfl⟩
+  | _ :: _ :: _ =>
+      exact Nat.noConfusion (Nat.succ.inj (h : Nat.succ (Nat.succ _) = 1))
+
+/-- **The word the emitter read is the word the body stored.**  The emitter's post
+names the words it read, and the body's own store put one word there; with
+`nblk` the literal `1` the mask list is that word. -/
+theorem word_eq_of_readBytes {mem : Mem} {a : Nat} {ent : List (BitVec 64)}
+    {w : BitVec 64} (hlen : ent.length = 1)
+    (h : readBytes mem a (8 * ent.length) = some (wordsOf ent))
+    (hw : readBytes mem a 8 = some (natToBytes w.toNat 8)) : ent = [w] := by
+  obtain ⟨v, rfl⟩ := singleton_of_length_one hlen
+  have hlen1 : 8 * [v].length = 8 := rfl
+  rw [hlen1] at h
+  have hwv : wordsOf [v] = natToBytes w.toNat 8 := by
+    rw [h] at hw
+    exact Option.some.inj hw
+  have hv : natToBytes v.toNat 8 = natToBytes w.toNat 8 := by
+    rw [← hwv]
+    simp [wordsOf]
+  have hbytes : v.toNat % 256 ^ 8 = w.toNat % 256 ^ 8 := by
+    have := congrArg bytesToNat hv
+    rwa [natToBytes_toNat, natToBytes_toNat] at this
+  have h256 : 256 ^ 8 = 2 ^ 64 := by decide
+  have hvl := v.isLt
+  have hwl := w.isLt
+  rw [h256, Nat.mod_eq_of_lt hvl, Nat.mod_eq_of_lt hwl] at hbytes
+  have hveq : v = w := BitVec.toNat_eq.mpr hbytes
+  rw [hveq]
+
+/-- **The stream the emitters appended lies inside the document.**  The block's
+own positions are below `%n` (`vent_positions_lt`) and the blocks before it are
+below `64 * i`, so the composed stream is below `%n` — the bound the tail's
+stage-2 call reads. -/
+theorem streamDocBound_append {l : List Nat} {n i w1 w2 w3 w4 s13 : BitVec 64}
+    (hb : ∀ q ∈ l, q < 64 * i.toNat)
+    (h64 : 64 * i.toNat < 2 ^ 64) (hi : 64 * i.toNat ≤ n.toNat) :
+    ∀ q ∈ l ++ streamPrefix [JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13] i.toNat 1,
+      q < n.toNat := by
+  intro q hq
+  rcases List.mem_append.mp hq with h | h
+  · have := hb q h; omega
+  · rw [streamPrefix_one_eq] at h
+    exact vent_positions_lt n i w1 w2 w3 w4 s13 h64 hi q h
+
+/-- **A block index below the block count starts inside the document.**  The
+count is `(n + 63) / 64`, so the last block's base is at most `n - 1`; this is
+`streamDocBound_append`'s `64 * i ≤ n` and `blockBase_lt_two64`'s bound read off
+the invariant's own `S.i < blocks` and `blocks = pipelineBlocks S.n.toNat`. -/
+theorem blockBase_lt_doc {n : BitVec 64} {i blocks : Nat}
+    (hblocks : blocks = pipelineBlocks n.toNat) (hi : i < blocks) :
+    64 * i < n.toNat := by
+  have hblocks' : 64 * blocks = 64 * ((n.toNat + 63) / 64) := by
+    rw [hblocks, pipelineBlocks]
+  have hdm : 64 * ((n.toNat + 63) / 64) + (n.toNat + 63) % 64 = n.toNat + 63 :=
+    Nat.div_add_mod _ _
+  have hmod : (n.toNat + 63) % 64 < 64 := Nat.mod_lt _ (by decide)
+  omega
+
+/-- A block base is an address, not a wrapped word: the staging's
+`64 * blocks + 63 < 2 ^ 32` bounds every index below the count. -/
+theorem blockBase_lt_two64 {i blocks : Nat} (hcap : 64 * blocks + 63 < 2 ^ 32)
+    (hi : i < blocks) : 64 * i < 2 ^ 64 := by omega
+
 /-- The post's existential is one word, because the appended word count is the
 literal `1` and the post pins the mask list's length to it. -/
 theorem eq_singleton_of_length_one {ent : List (BitVec 64)}
@@ -2617,10 +2864,19 @@ reconstructs the other — the prefix is written before the loop and only the
 staging names it, the appended part is the emitters' history and only the loop's
 own steps name it — so both are conjuncts and their concatenation is the whole
 stream the tail's stage-2 call reads.  What the tail still needs from elsewhere is
-`∀ q ∈ ent, q < n` at the document's own length rather than at `64 * blocks`,
-which is the last block's lim-mask argument and belongs to the per-arm entry-word
-identity rather than to this predicate.  Named here because a consumer that reads
-the exit as complete would be reading it wrong. -/
+`∀ q ∈ ent, q < n` at the document's own length rather than at `64 * blocks`.
+**That bound is now proved, and it is not this predicate's.**  It is
+`streamDocBound_append`: the last block's positions are its entry word's
+(`word_eq_of_readBytes`), that word is `%or12 & %and18` masked by the tail mask
+(`vent_positions_lt`), and its base is inside the document
+(`blockBase_lt_doc`).  What this predicate still states is the *block* bound
+`∀ q ∈ S.ent, q < 64 * S.i`, so a consumer that reads the exit as carrying the
+document bound would be reading it wrong: the composed bound is the arms' to hand
+on, and the exit predicate is where it would have to be stated to reach the tail
+without the arm steps' hypotheses.  Named here because the difference between the
+two bounds is not a tightening a reader would guess: at a sixty-four-byte document
+they are `q < 64` and `q < n`, and a one-byte document's block word names lane
+five, which only the second excludes. -/
 
 /-- The four unswitched copies of the loop body, by the arm the entry selection
 took: bit 0 selects the entry emitter, bit 1 the escape list's gate. -/
@@ -3305,5 +3561,81 @@ carrier: the section is at `[propext, Quot.sound]` or below. -/
 /-- info: 'LeanLLVM.Vellum.pipelineLoop_exitObligation' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pipelineLoop_exitObligation
+
+/-- info: 'LeanLLVM.Vellum.ofBool_eq_one' does not depend on any axioms -/
+#guard_msgs in
+#print axioms ofBool_eq_one
+
+/-- info: 'LeanLLVM.Vellum.bitvec1_eq_zero_of_ne_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bitvec1_eq_zero_of_ne_one
+
+/-- info: 'LeanLLVM.Vellum.litv_64_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms litv_64_toNat
+
+/-- info: 'LeanLLVM.Vellum.vcmp_eq_one' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms vcmp_eq_one
+
+/-- info: 'LeanLLVM.Vellum.vcmp_eq_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vcmp_eq_zero
+
+/-- info: 'LeanLLVM.Vellum.limMask_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms limMask_lane
+
+/-- info: 'LeanLLVM.Vellum.vsub17_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vsub17_lane
+
+/-- info: 'LeanLLVM.Vellum.vsub17_eq_limMask' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vsub17_eq_limMask
+
+/-- info: 'LeanLLVM.Vellum.sh6_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms sh6_toNat
+
+/-- info: 'LeanLLVM.Vellum.vsub_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vsub_toNat
+
+/-- info: 'LeanLLVM.Vellum.and_allOnes64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms and_allOnes64
+
+/-- info: 'LeanLLVM.Vellum.positionsOf_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_length
+
+/-- info: 'LeanLLVM.Vellum.positionsOf_and_limMask_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_and_limMask_lt
+
+/-- info: 'LeanLLVM.Vellum.vent_positions_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms vent_positions_lt
+
+/-- info: 'LeanLLVM.Vellum.singleton_of_length_one' does not depend on any axioms -/
+#guard_msgs in
+#print axioms singleton_of_length_one
+
+/-- info: 'LeanLLVM.Vellum.word_eq_of_readBytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms word_eq_of_readBytes
+
+/-- info: 'LeanLLVM.Vellum.streamDocBound_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamDocBound_append
+
+/-- info: 'LeanLLVM.Vellum.blockBase_lt_doc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms blockBase_lt_doc
+
+/-- info: 'LeanLLVM.Vellum.blockBase_lt_two64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms blockBase_lt_two64
 
 end LeanLLVM.Vellum
