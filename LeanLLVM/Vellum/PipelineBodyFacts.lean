@@ -2765,6 +2765,28 @@ def pipelineLoopExit (s : State) : Prop :=
     S.ent.Pairwise (· < ·) ∧
     (∀ q ∈ S.ent, q < 64 * S.i)
 
+/-- The regions the loop's separation is stated over, in the staging's order.
+
+Its window is the caller's, named from three bytes below the document because
+that is the extent `Γ_utf8.pre` reads and `pipelineRegions` stages; its escape
+stream precedes its count slot, which is the staging's order.  With the window
+so named and the entries in that order the list is an exact `List.Sublist` of
+`pipelineRegions`' output at the staging's witnesses — the entries no step reads
+(the read-past tail, the entry count slot and the stage-2 slots) are omitted —
+so the caller's `DisjointRegions` transports here by `List.Pairwise.sublist`
+rather than by one fact per pair.  A list aligned only elsewhere would have to be
+projected pair by pair, which is the enumeration this order removes. -/
+def pipelineLoopRegions (S : PipelineLoopCarried) (blocks : Nat) : List (Nat × Nat) :=
+  [(S.b - 3, 3 + 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
+   (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.xp, 4 * S.xpExtent),
+   (S.nxp, 8), (S.xcarry, 16)]
+
+/-- Separation of a list follows from separation of any list it is a sub-list
+of.  This is how the loop's list inherits the caller's promise. -/
+theorem disjointRegions_of_sublist {rs ss : List (Nat × Nat)}
+    (h : DisjointRegions ss) (hs : rs.Sublist ss) : DisjointRegions rs :=
+  List.Pairwise.sublist hs h
+
 /-- **The loop invariant's back-edge shape.**  With `r + 1` iterations of budget
 the state is the entry of an iteration that follows the arm's own back edge; with
 the budget spent this predicate admits nothing, because the invariant's spent
@@ -2878,15 +2900,17 @@ step that reads it:
   read is empty and the bound vacuous — so the prefix before the first iteration
   is not a claim.  Carried rather than derived because the bytes are the
   emitters' and no read of the state recovers which positions the stream names;
-* the staged regions' separation — `DisjointRegions` at the document, the table,
-  the mask carry slot, the mask slot, the entry word, the entry stream, the escape
-  count, the escape stream and the escape carry.  The units' posts leave
-  everything outside their own store regions unchanged, so the window, the mask
-  carry slot, the mask words, the table and the escape carry pair survive an
+* the staged regions' separation — `DisjointRegions` at the staged window, the
+  table, the mask carry slot, the mask slot, the entry word, the entry stream,
+  the escape stream, the escape count and the escape carry.  The units' posts
+  leave everything outside their own store regions unchanged, so the window, the
+  mask carry slot, the mask words, the table and the escape carry pair survive an
   iteration only if those regions are pairwise disjoint from every region the
   iteration writes.  They are static, so every step hands them on untouched, and
   the seed takes them from `pipelineStaging`'s own `DisjointRegions` at the
-  staging's witnesses.  The mask unit's three separations and the escape list's
+  staging's witnesses: the list is `pipelineLoopRegions`, an exact sub-list of
+  `pipelineRegions`, so the transport is `disjointRegions_of_sublist` and not a
+  projection per pair.  The mask unit's three separations and the escape list's
   three exclusions are the pairs this list shares with those records; stating the
   whole list once is what makes the store at `entw`, the entry stream and the
   table's preservation derivable from the same conjunct rather than from a
@@ -2962,10 +2986,7 @@ def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         cursorRoom S.k (blocks - S.i) 9 ∧
         cursorRoom S.xn (blocks - S.i) 9 ∧
         HasBytes s.mem S.xp (4 * S.xpExtent) ∧
-        DisjointRegions
-          [(S.b, 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
-           (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.nxp, 8),
-           (S.xp, 4 * S.xpExtent), (S.xcarry, 16)]
+        DisjointRegions (pipelineLoopRegions S blocks)
 
 /-- **The loop invariant's split shape.**  The state the loop's *first* iteration
 starts in: the arm's head as the program counter, the split block as the
@@ -3031,10 +3052,7 @@ def pipelineLoopInvSplit (base tab blocks : Nat) : Nat → State → Prop
         cursorRoom S.k (blocks - S.i) 9 ∧
         cursorRoom S.xn (blocks - S.i) 9 ∧
         HasBytes s.mem S.xp (4 * S.xpExtent) ∧
-        DisjointRegions
-          [(S.b, 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
-           (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.nxp, 8),
-           (S.xp, 4 * S.xpExtent), (S.xcarry, 16)]
+        DisjointRegions (pipelineLoopRegions S blocks)
 
 /-- **The loop invariant.**  With `r + 1` iterations of budget the state is an
 iteration entry in one of the two shapes the loop can be entered in — the split

@@ -833,11 +833,11 @@ unit records' `Classical.choice` through `pipelineUnits_at_stage2`, as
 theorem pipeline_satisfies_at_stage2 (tab : Nat) (s2 : Calls)
     (h2 : CallSatisfies s2 Γ_stage2 JsonPipelineIR.stage2Sym)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
-      (Γ_pipeline_units base).pre args mem next →
+      (Γ_pipeline_units tab base).pre args mem next →
       JsonPipelineIR.PipelineUnits tab base s2 Γ_stage2 →
       PipelineBodyFacts tab base s2 Γ_stage2 args mem next) :
     ∀ base, Satisfies (JsonPipelineIR.pipelineCalls tab base s2)
-      JsonPipelineIR.pipelineBody (Γ_pipeline_units base) :=
+      JsonPipelineIR.pipelineBody (Γ_pipeline_units tab base) :=
   pipeline_satisfies_of_units tab s2 Γ_stage2 (fun _ => pipelineUnits_at_stage2 h2) hbody
 
 /-! ### Sanity checks on the statement's shapes -/

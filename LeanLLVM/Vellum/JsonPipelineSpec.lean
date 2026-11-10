@@ -306,9 +306,9 @@ binder below names the same ABI slot and the same slot value, since
 cursor slot that the staging binds.  Stating the inequality here as well would be
 a second spelling of one fact, so a proof that needs it reads it off the staging.
 -/
-def pipelineSpecPre (base : Nat) (args : List Value) (mem : Mem)
+def pipelineSpecPre (tab base : Nat) (args : List Value) (mem : Mem)
     (_next : Nat) : Prop :=
-  pipelineStaging base args mem ∧
+  pipelineStaging tab base args mem ∧
   ∃ (bs : List UInt8) (nev0 evcap nev : Nat),
     pipelineDocLength args = some bs.length ∧
     pipelineEvCapacity args = some evcap ∧
@@ -395,9 +395,9 @@ name, with the parser's predicate as the post.  D2 obtains
 `Satisfies pipelineCalls pipelineBody (Γ_pipeline eventRel base)` from
 `Γ_pipeline_units`'s instance and `Satisfies.mono`, whose post hypothesis is the
 finalisation lemma; `eventRel` is then C95's relation. -/
-def Γ_pipeline (eventRel : EventStreamRel) (base : Nat) : MemContract where
+def Γ_pipeline (eventRel : EventStreamRel) (tab base : Nat) : MemContract where
   budget := pipelineBudget
-  pre := pipelineSpecPre base
+  pre := pipelineSpecPre tab base
   post := Sigma_pipeline eventRel base
 
 /-! ### Sanity checks on the statement's data and its ABI projections -/

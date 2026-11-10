@@ -224,7 +224,12 @@ clause names the unit record it is read from:
   empty document is outside this record's domain, not a case on which a verdict
   is promised;
 * the entry table is `Γ_entry_pos8.pre`'s `pos8Table` clause, the same region
-  §15.51 gives the caller to initialise;
+  §15.51 gives the caller to initialise.  Its address is the parameter `tab`,
+  not a witness: `pipelineCalls tab base` appends the table to the POS8 call's
+  arguments, so the staging must name the address the call environment reads —
+  an existential here would promise a table at some address while the entry call
+  reads another, and the entry record's `pre` would be unsatisfiable at every
+  memory that staged the table somewhere else;
 * the carry slots are the inputs the mask and escape-list records read for a
   document's first block (`pipeline.h`: both zero);
 * the counts are the records' cursor slots, read in;
@@ -245,8 +250,8 @@ clause names the unit record it is read from:
   is a `uint32` that does not truncate;
 * the arm word is a selector, and its reserved bits are zero (`pipeline.h`).
 -/
-def pipelineStaging (base : Nat) (args : List Value) (mem : Mem) : Prop :=
-  ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err tab nk0 nxp0 ndst0
+def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
+  ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err nk0 nxp0 ndst0
       nev0 : Nat)
     (n epcap xpcap dstcap evcap arm : BitVec 64) (bs : List UInt8),
     args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
@@ -449,10 +454,15 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
 /-- The assembled pipeline's unit-level record: the staging above, the
 arguments-only counted budget, and the boundary projection of the loop-exit
 invariant with the tail's per-unit facts.  It is `Γ_pipeline_units`, not the
-specification record; see the module docstring. -/
-def Γ_pipeline_units (base : Nat) : MemContract where
+specification record; see the module docstring.
+
+Both the table and the document are parameters because `Satisfies` fixes the
+call environment before it quantifies over arguments: `pipelineCalls tab base`
+chooses the POS8 table and the escape record's base, so the pre must promise the
+table at that `tab`, and the staging now names it. -/
+def Γ_pipeline_units (tab base : Nat) : MemContract where
   budget := pipelineBudget
-  pre := fun args mem _ => pipelineStaging base args mem
+  pre := fun args mem _ => pipelineStaging tab base args mem
   post := pipelineUnitsPost
 
 /-! ### Sanity checks on the statement's arithmetic -/

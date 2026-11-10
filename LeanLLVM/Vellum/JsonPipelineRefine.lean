@@ -490,15 +490,15 @@ def pipelineArgLen (args : List Value) : Nat :=
 /-- The staging's argument shape, as the body's twenty arguments.  Stated so a
 consumer of `pipelineStaging` gets the shape without the twenty-five clauses;
 `pipelineBudget`'s match and this one are the same list. -/
-theorem pipelineStaging_args {base : Nat} {args : List Value} {mem : Mem}
-    (h : pipelineStaging base args mem) :
+theorem pipelineStaging_args {tab base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging tab base args mem) :
     ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err : Nat)
       (n epcap xpcap dstcap evcap arm : BitVec 64),
       args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
         .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
         .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
         .int 64 arm] := by
-  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, -⟩ := h
   exact ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     n, epcap, xpcap, dstcap, evcap, arm, hargs⟩
@@ -519,8 +519,8 @@ inspection rather than taken from here is the defect that clause exists to stop.
 The slot order is the pinned ABI's, not assumed: `pipelineBody.params` opens with
 `("%b", Ty.ptr)` and `pipeline.h` says the document is `b .. b + n - 1`.
 -/
-theorem pipelineStaging_base {base : Nat} {args : List Value} {mem : Mem}
-    (h : pipelineStaging base args mem) :
+theorem pipelineStaging_base {tab base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging tab base args mem) :
     ∃ (n : BitVec 64) (bs : List UInt8),
       3 ≤ base ∧
       readBytes mem (base - 3) 3 = some (List.replicate 3 0) ∧
@@ -528,7 +528,7 @@ theorem pipelineStaging_base {base : Nat} {args : List Value} {mem : Mem}
         (bs ++ List.replicate (64 * pipelineBlocks bs.length - bs.length) 0) ∧
       HasBytes mem (base + 64 * pipelineBlocks bs.length) 32 ∧
       ∃ rest : List Value, args = .ptr base :: .int 64 n :: rest := by
-  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
     hargs, _hnlen, _hmax, hwin, htail, h3, hpre3, -⟩ := h
   exact ⟨n, bs, h3, hpre3, hwin, htail, _, by rw [hargs]⟩
@@ -541,10 +541,10 @@ thirty-two bytes `Γ_stage2.pre` asks at `b + n` are read back from the staging
 alone.  This is the extent `pipelineStaging` used to leave out: its window is
 exactly the padded document, and the decoder's last read is the escape
 expander's read-past. -/
-theorem pipelineStaging_tail {base : Nat} {args : List Value} {mem : Mem}
-    (h : pipelineStaging base args mem) :
+theorem pipelineStaging_tail {tab base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging tab base args mem) :
     ∃ bs : List UInt8, HasBytes mem (base + bs.length) 32 := by
-  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
     hargs, _hlen, _hmax, hwin, htail, -⟩ := h
   refine ⟨bs, ?_⟩
@@ -583,8 +583,8 @@ theorem pipelineStaging_tail {base : Nat} {args : List Value} {mem : Mem}
 is the arguments-only bound `4 * blocks + 16`; this is that term with `blocks`
 read off the same argument list, which is what the composition's arithmetic
 needs. -/
-theorem pipelineBudget_of_staging {base : Nat} {args : List Value} {mem : Mem}
-    (h : pipelineStaging base args mem) :
+theorem pipelineBudget_of_staging {tab base : Nat} {args : List Value} {mem : Mem}
+    (h : pipelineStaging tab base args mem) :
     pipelineBudget args mem =
       pipelineBlockAllowance * pipelineBlocks (pipelineArgLen args) +
         pipelineFinalisationAllowance := by
@@ -694,9 +694,9 @@ clauses rather than left as "the body analysis":
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : ∀ base, PipelineUnits tab base s2 Γ2)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
-      (Γ_pipeline_units base).pre args mem next → PipelineUnits tab base s2 Γ2 →
+      (Γ_pipeline_units tab base).pre args mem next → PipelineUnits tab base s2 Γ2 →
       PipelineBodyFacts tab base s2 Γ2 args mem next) :
-    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody (Γ_pipeline_units base) := by
+    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody (Γ_pipeline_units tab base) := by
   intro base args mem next hpre
   obtain ⟨loop, hN, hcost, seed, hexit⟩ := hbody base args mem next hpre (units base)
   obtain ⟨e0, j0, hj0, hseed, hrun0⟩ := seed
@@ -711,11 +711,11 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
         (EntryState pipelineBody args mem next) =
         some (.ret (some (.int 64 verdict)) m) →
       fuel ≤ pipelineBudget args mem →
-      (Γ_pipeline_units base).post args mem next (.ret (some (.int 64 verdict)) m) →
+      (Γ_pipeline_units tab base).post args mem next (.ret (some (.int 64 verdict)) m) →
       (∃ v m', runFuel (pipelineCalls tab base s2) (pipelineBudget args mem) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret v m')) ∧
       ∀ o, BehFromState (pipelineCalls tab base s2) pipelineBody
-        (EntryState pipelineBody args mem next) o → (Γ_pipeline_units base).post args mem next o := by
+        (EntryState pipelineBody args mem next) o → (Γ_pipeline_units tab base).post args mem next o := by
     intro verdict m fuel hrun hle hpost
     have hb : runFuel (pipelineCalls tab base s2) (pipelineBudget args mem) pipelineBody
         (EntryState pipelineBody args mem next) =
@@ -730,7 +730,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hpost
   rcases hseed with ⟨hN0, hexit0⟩ | hinv
   · -- the zero-block document: the entry test leaves for the cleanup
-    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units base).post e0 hexit0
+    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units tab base).post e0 hexit0
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + 3) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 3]
@@ -739,7 +739,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     omega
   · -- the loop, at its bound, and the tail
     obtain ⟨e1, j1, hj1, hexit1, hrun1⟩ := loop.run e0 hinv 3
-    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units base).post e1 hexit1
+    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units tab base).post e1 hexit1
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + (j1 + 3)) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 (j1 + 3), hrun1]
@@ -776,9 +776,9 @@ theorem pipeline_satisfies_of_records (tab : Nat) (s2 : Calls) (Γ2 : MemContrac
       Γ2.post args mem next (.ret (some v) m) →
       ∃ k : BitVec 64, v = .int 64 k ∧ (k = 0 ∨ k = 1))
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
-      (Γ_pipeline_units base).pre args mem next → PipelineUnits tab base s2 Γ2 →
+      (Γ_pipeline_units tab base).pre args mem next → PipelineUnits tab base s2 Γ2 →
       PipelineBodyFacts tab base s2 Γ2 args mem next) :
-    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody (Γ_pipeline_units base) :=
+    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody (Γ_pipeline_units tab base) :=
   pipeline_satisfies_of_units tab s2 Γ2
     (fun base => pipelineUnits_of_records tab base s2 Γ2 h2 h2v) hbody
 
@@ -984,16 +984,16 @@ From the staging, the units' post and one parser half at the staged document, th
 specification's post.  `hsem` is quantified over the document and the run's state
 because both are the units' post's witnesses, not this record's parameters; the
 `readBytes` premise pins the document to the one the staging holds at `base`. -/
-theorem pipeline_units_finalisation {eventRel : EventStreamRel} {base : Nat}
+theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
-    (hpre : pipelineStaging base args mem)
+    (hpre : pipelineStaging tab base args mem)
     (hpost : pipelineUnitsPost args mem next o)
     (hsem : ∀ (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
         (dst ev err : Nat),
       readBytes mem base bs.length = some bs →
       ParserHalf eventRel bs verdict m dst ev err) :
     Sigma_pipeline eventRel base args mem next o := by
-  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, tab,
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hlen,
     hbound, hwin, _htail, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0, hepcap,
     hxpbytes, hdstcap, hdstbytes, hevbytes, hevroom, hndst0, hnev0, hroomk,
@@ -1042,15 +1042,15 @@ hypothesis is stated without the pre, is available or needed.  The completion
 conjunct transfers unchanged because both records' budgets are `pipelineBudget`
 by definition. -/
 theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
-    {eventRel : EventStreamRel} {base : Nat}
-    (hunits : Satisfies calls f (Γ_pipeline_units base))
+    {eventRel : EventStreamRel} {tab base : Nat}
+    (hunits : Satisfies calls f (Γ_pipeline_units tab base))
     (hsem : ∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
         (dst ev err : Nat),
       readBytes mem base bs.length = some bs →
       ParserHalf eventRel bs verdict m dst ev err) :
-    Satisfies calls f (Γ_pipeline eventRel base) := by
+    Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
-  have hstage : pipelineStaging base args mem := hpre.1
+  have hstage : pipelineStaging tab base args mem := hpre.1
   obtain ⟨hcom, hpost⟩ := hunits args mem next hstage
   refine ⟨hcom, ?_⟩
   intro o ho
