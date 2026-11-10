@@ -41,32 +41,39 @@ and the facts the decision rests on:
   words, so the tie is their vanishing and the emitted `up` there is the even
   significand.
 
-It does not prove the obligation.  The statement is
+It does not yet prove the obligation.  The statement is
 `0 < w → w < 2 ^ 64 → elTier2Code w q = some c →
 roundMag (valueTicks w q).1 (valueTicks w q).2 = .fin c`: the word bound is the
 emitted `uint64_t w`, and the unbounded reading is refuted
 (`not_elGuardRefinesUnbounded`), so the boundary is written down rather than
-left to an absent hypothesis.  What remains is the significand itself — that
-`roundMag`'s `sig` (or its successor, on a round-up) is the emitted `m`, which
-is `normalCode`'s two comparisons of the remainder against the ulp.  Three
-pieces of it are named here because they are what a proof still needs:
+left to an absent hypothesis.  The significand itself — that `roundMag`'s `sig`
+(or its successor, on a round-up) is the emitted `m`, which is `normalCode`'s
+two comparisons of the remainder against the ulp — needs three pieces, and all
+three are proved below:
 
-* no lemma connects `P / (d * ulp)` to `Rhi / 2 ^ sh`.  `exact_split` gives the
-  product's split and `binade_valueTicks_*` its binade, but the division
-  identity — `sig = m`, and `P % (d * ulp)` compared against `d * ulp / 2` — is
-  stated nowhere, and it is what turns the slice's `hp` into the remainder the
-  specification rounds on;
-* `tie_exact_iff` takes `g : Nat`, and the truncated row's contribution is
-  `W * f` with `f = (eN % eD) / eD`, which is not an integer for `q < 0`
-  (`eD = 10 ^ (-q)`).  The tie and the `hp = hh - 1` case therefore need a
-  denominator-scaled form, `D * disc + W * R` against the same threshold;
-* the branch outside the window reads `ub` and `m` from `Ahi`, without the low
-  half's carry, while the true binade bit is `Rhi`'s.  They differ exactly when
-  `Ahi = 2 ^ 63 - 1` and the low half carries, and there the emitted code is
-  right only because `elPack`'s `ov` moves the exponent by one.  That case is
-  reachable (`carry_case_reachable`): at `q = -43` and
-  `w = 16543612251060553498` the guard cuts from `2 ^ 63 - 1` while the rebuilt
-  word is `2 ^ 63`.
+* the division identity: `quot_split` reads the high word's own slice and
+  `quot_residue_neg` bounds what lies below it; `sig_eq_m_nonneg` and
+  `sig_eq_m_neg` put `P / (d * ulp)` at `Rhi / 2 ^ sh` for the two signs of
+  `q`.  `upDec` and `normalCode_eq_form` rewrite the specification's answer as
+  the pack `el_pack` builds, and `decomp_nonneg` / `decomp_neg` with
+  `half_lt`/`half_gt`/`half_eq`/`half_le` and `mod_lt_half`/`mod_gt_half`/
+  `mod_eq_half` turn the remainder comparison back into the slice's `hp`;
+* the denominator-scaled form for `q < 0`: `decomp_neg` carries `W * R` in the
+  remainder, and `at_edge_scaled`, `close_shift` and `below_far_scaled` (with
+  the nonnegative `above_far`, `at_edge`, `below_close`, `below_far`) state the
+  tie and the `hp = hh - 1` case as `D * M + W * R` against `D * 2 ^ 128`;
+* the low half's carry: `rhi_le_of_ub_zero` shows the window excludes
+  `Rhi = 2 ^ 63 - 1`, `bit_one` and `bit_zero` identify the rebuilt word's
+  binade bit, and `pack_carry_agrees` shows that in the carry case
+  `elPack`'s `ov` supplies exactly the exponent the slice's missing `ub` would
+  have supplied while its significand wraps to the same `2 ^ 52`.
+
+The emitted body is factored as `elCore`/`elInner`/`elFar`, with
+`elTier2Code_reduce` the definitional unfolding, so a branch can be reasoned
+about without inlining the whole term.  The identity itself is not yet
+assembled: what remains is relating the first slice read from `Ahi` to the
+rebuilt slice read from `Rhi` across the low half's carry, and closing each
+branch's pack equality against `normalCode_eq_form` in the four `hp` cases.
 
 The range cases are not refinement cases, and they are empty on both sides.
 `roundMag_eq_normalCode` puts every value the guard sees inside the normal
@@ -1458,6 +1465,861 @@ theorem elPack_range {p : Pack} (hm : p.m ≤ 2 ^ 53) (hup : p.up ≤ 1)
     exact absurd ⟨hlo, hhi⟩ hne
 
 
+
+theorem pow2_pos (k : Nat) : 0 < 2 ^ k := Nat.two_pow_pos k
+theorem pow2_ne_zero (k : Nat) : (2 : Nat) ^ k ≠ 0 := Nat.ne_of_gt (pow2_pos k)
+theorem div_pow_cancel {a c s : Nat} (hc : 0 < c) : (a * 2 ^ s) / (c * 2 ^ s) = a / c :=
+  Nat.mul_div_mul_right a c (pow2_pos s)
+theorem mul_cancel_right_le {a b c : Nat} (hc : 0 < c) : a * c ≤ b * c ↔ a ≤ b :=
+  ⟨fun h => Nat.le_of_mul_le_mul_right h hc, fun h => Nat.mul_le_mul_right c h⟩
+theorem add_mod_pow52 {n : Nat} (hlo : 2 ^ 52 ≤ n) (hhi : n < 2 ^ 53) :
+    2 ^ 52 + n % 2 ^ 52 = n := by
+  have h2 : (2 : Nat) ^ 53 = 2 * 2 ^ 52 := by
+    rw [show (53 : Nat) = 52 + 1 from rfl, Nat.pow_add, Nat.pow_one, Nat.mul_comm]
+  have hdiv : n / 2 ^ 52 = 1 := by
+    apply Nat.div_eq_of_lt_le (k := 1)
+    · omega
+    · omega
+  have hmod := Nat.div_add_mod n (2 ^ 52)
+  rw [hdiv] at hmod
+  omega
+
+theorem eD_pos (q : Int) (t : EPow) : 0 < eD q t := by
+  unfold eD; exact Nat.mul_pos (Nat.pow_pos (by decide)) (Nat.pow_pos (by decide))
+theorem eN_pos (q : Int) (t : EPow) : 0 < eN q t := by
+  unfold eN; exact Nat.mul_pos (Nat.pow_pos (by decide)) (Nat.pow_pos (by decide))
+theorem row_split {q : Int} {t : EPow} (h : t.Fits q) :
+    eN q t = eH t * eD q t + eN q t % eD q t := by
+  unfold EPow.Fits at h
+  have hd := Nat.div_add_mod (eN q t) (eD q t)
+  rw [Nat.mul_comm (eD q t)] at hd
+  rw [← h] at hd
+  exact hd.symm
+theorem row_R_lt {q : Int} {t : EPow} : eN q t % eD q t < eD q t := Nat.mod_lt _ (eD_pos q t)
+theorem row_R_zero {q : Int} {t : EPow} (hfit : t.Fits q) (hneq : t.Neq q) (hq : 0 ≤ q) :
+    eN q t % eD q t = 0 := by
+  have hsplit := row_split hfit
+  unfold EPow.Neq at hneq
+  rw [hneq] at hsplit
+  omega
+theorem row_R_pos {q : Int} {t : EPow} (hrow : t.Row q) (hq : q < 0) :
+    0 < eN q t % eD q t := hrow.2.2.2.2.1 hq
+theorem Wf_lt {W R D : Nat} (hW : W < 2 ^ 64) (hR : R < D) (hD : 0 < D) :
+    W * R < 2 ^ 64 * D := by
+  have h1 : W * R ≤ (2 ^ 64 - 1) * D := Nat.mul_le_mul (by omega) (by omega)
+  have h2 : (2 ^ 64 - 1) * D < 2 ^ 64 * D := Nat.mul_lt_mul_of_pos_right (by omega) hD
+  exact Nat.lt_of_le_of_lt h1 h2
+theorem eH_lower_row {q : Int} {t : EPow} (hrow : t.Row q) : 2 ^ 127 ≤ eH t :=
+  eH_lower hrow.1.1
+theorem eH_upper_row {q : Int} {t : EPow} (hrow : t.Row q) : eH t < 2 ^ 128 :=
+  eH_upper hrow.1.2.1 hrow.1.2.2
+
+/-- For a truncated row the tick value's numerator is `W * eN * 2^s`. -/
+theorem valueTicks_neg {w : Nat} {q : Int} {t : EPow} {s : Nat}
+    (hq : q < 0) (hrow : t.Row q)
+    (hs : (s : Int) = 1074 + t.e - (lz w : Int)) :
+    (valueTicks w q).1 = Wnorm w * eN q t * 2 ^ s := by
+  obtain ⟨-, -, -, -, -, hnege⟩ := hrow
+  have heneg : t.e < 0 := hnege hq
+  have hqnn : ¬ (0 ≤ q) := by omega
+  have hP1 : (valueTicks w q).1 = w * 2 ^ 1074 := by
+    unfold valueTicks; rw [ite_eq_right hqnn]
+  have hslz : (s : Nat) + (-t.e).toNat + lz w = 1074 := by omega
+  have hP : (valueTicks w q).1 = Wnorm w * 2 ^ (s + (-t.e).toNat) := by
+    rw [hP1]
+    unfold Wnorm
+    rw [show (1074 : Nat) = lz w + (s + (-t.e).toNat) from by omega, Nat.pow_add]
+    ac_rfl
+  have hN : eN q t = 2 ^ (-t.e).toNat := by
+    unfold eN
+    rw [Int.toNat_of_nonpos (by omega : q ≤ 0), Nat.pow_zero, Nat.one_mul]
+  rw [hP, hN, Nat.pow_add]
+  ac_rfl
+
+theorem valueTicks_d_neg {w : Nat} {q : Int} {t : EPow}
+    (hq : q < 0) (hrow : t.Row q) :
+    (valueTicks w q).2 = eD q t := by
+  obtain ⟨-, -, -, -, -, hnege⟩ := hrow
+  have heneg : t.e < 0 := hnege hq
+  have hqnn : ¬ (0 ≤ q) := by omega
+  have hqabs : q.natAbs = (-q).toNat := by omega
+  unfold valueTicks
+  rw [ite_eq_right hqnn, hqabs]
+  unfold eD
+  rw [Int.toNat_of_nonpos (by omega : t.e ≤ 0), Nat.pow_zero, Nat.mul_one]
+
+theorem valueTicks_d_nonneg {w : Nat} {q : Int} (hq : 0 ≤ q) :
+    (valueTicks w q).2 = 1 := by
+  unfold valueTicks; rw [ite_eq_left hq]
+
+/-- **The binade of the tick value, uniformly.**  `B = 190 + s + b` where `b`
+is the indicator `2 ^ 191 * eD ≤ W * eN`. -/
+theorem binade_valueTicks {w : Nat} {q : Int} {t : EPow} {s : Nat}
+    (hw0 : 0 < w) (hw : w < 2 ^ 64) (hrow : t.Row q)
+    (hs : (s : Int) = 1074 + t.e - (lz w : Int)) (hsl : s < 1900) :
+    binade (valueTicks w q).1 (valueTicks w q).2 =
+      190 + s + (if 2 ^ 191 * eD q t ≤ Wnorm w * eN q t then 1 else 0) := by
+  by_cases hq : 0 ≤ q
+  · have hb := binade_valueTicks_nonneg hw0 hw hq hrow hs hsl
+    have hneq : t.Neq q := hrow.2.2.2.1 hq
+    have heq : (2 ^ 191 * eD q t ≤ Wnorm w * eN q t) ↔ (2 ^ 191 ≤ Wnorm w * eH t) := by
+      rw [← hneq, ← Nat.mul_assoc]
+      exact mul_cancel_right_le (eD_pos q t)
+    rw [hb]
+    by_cases h : 2 ^ 191 * eD q t ≤ Wnorm w * eN q t
+    · rw [ite_eq_left h, ite_eq_left (heq.mp h)]
+    · rw [ite_eq_right h, ite_eq_right (fun hh => h (heq.mpr hh))]
+  · have hqneg : q < 0 := by omega
+    have hb := binade_valueTicks_neg hw0 hw hqneg hrow hs hsl
+    have heneg : t.e < 0 := hrow.2.2.2.2.2 hqneg
+    have heq : (2 ^ 191 * 10 ^ (-q).toNat ≤ Wnorm w * 2 ^ (-t.e).toNat) ↔
+        (2 ^ 191 * eD q t ≤ Wnorm w * eN q t) := by
+      simp only [eD, eN, Int.toNat_of_nonpos (by omega : q ≤ 0),
+        Int.toNat_of_nonpos (by omega : t.e ≤ 0), Nat.pow_zero, Nat.mul_one, Nat.one_mul]
+    rw [hb]
+    by_cases h : 2 ^ 191 * 10 ^ (-q).toNat ≤ Wnorm w * 2 ^ (-t.e).toNat
+    · rw [ite_eq_left h, ite_eq_left (heq.mp h)]
+    · rw [ite_eq_right h, ite_eq_right (fun hh => h (heq.mpr hh))]
+
+/-! ### The division identity -/
+
+/-- `(Rhi * 2^128 + M) / 2^(138+b) = Rhi / 2^(10+b)`: the high word reads its
+own slice, and anything below it is below one unit of the cut. -/
+theorem quot_split {Rhi M b : Nat} (hM : M < 2 ^ 128) :
+    (Rhi * 2 ^ 128 + M) / 2 ^ (138 + b) = Rhi / 2 ^ (10 + b) := by
+  have hpow : (2 : Nat) ^ (138 + b) = 2 ^ (10 + b) * 2 ^ 128 := by
+    rw [show 138 + b = (10 + b) + 128 from by omega, Nat.pow_add]
+  have hdec := Nat.div_add_mod Rhi (2 ^ (10 + b))
+  have hhp : Rhi % 2 ^ (10 + b) < 2 ^ (10 + b) := Nat.mod_lt _ (pow2_pos _)
+  have hres : (Rhi % 2 ^ (10 + b)) * 2 ^ 128 + M < 2 ^ (10 + b) * 2 ^ 128 := by
+    have h1 : ((Rhi % 2 ^ (10 + b)) + 1) * 2 ^ 128 ≤ 2 ^ (10 + b) * 2 ^ 128 :=
+      Nat.mul_le_mul_right _ (by omega)
+    have h2 : (Rhi % 2 ^ (10 + b)) * 2 ^ 128 + M < ((Rhi % 2 ^ (10 + b)) + 1) * 2 ^ 128 := by
+      rw [Nat.add_mul, Nat.one_mul]; omega
+    exact Nat.lt_of_lt_of_le h2 h1
+  have hpos : 0 < 2 ^ (10 + b) * 2 ^ 128 :=
+    Nat.mul_pos (pow2_pos _) (pow2_pos _)
+  have hnum : (Rhi % 2 ^ (10 + b)) * 2 ^ 128 + M
+        + (Rhi / 2 ^ (10 + b)) * (2 ^ (10 + b) * 2 ^ 128)
+      = Rhi * 2 ^ 128 + M := by
+    have h1 : (Rhi / 2 ^ (10 + b)) * (2 ^ (10 + b) * 2 ^ 128)
+        = ((Rhi / 2 ^ (10 + b)) * 2 ^ (10 + b)) * 2 ^ 128 := by rw [Nat.mul_assoc]
+    rw [h1]
+    have h2 : (Rhi % 2 ^ (10 + b)) * 2 ^ 128 + M
+          + ((Rhi / 2 ^ (10 + b)) * 2 ^ (10 + b)) * 2 ^ 128
+        = ((Rhi % 2 ^ (10 + b)) + (Rhi / 2 ^ (10 + b)) * 2 ^ (10 + b)) * 2 ^ 128 + M := by
+      rw [Nat.add_mul]
+      ac_rfl
+    have h3 : (Rhi % 2 ^ (10 + b)) + (Rhi / 2 ^ (10 + b)) * 2 ^ (10 + b) = Rhi := by
+      rw [Nat.add_comm, Nat.mul_comm (Rhi / 2 ^ (10 + b)) (2 ^ (10 + b)), hdec]
+    rw [h2, h3]
+  rw [hpow, ← hnum, Nat.add_mul_div_right _ _ hpos, Nat.div_eq_of_lt hres, Nat.zero_add]
+
+/-- The spec's significand for a nonnegative row is the slice's `m`. -/
+theorem sig_eq_m_nonneg {w : Nat} {q : Int} {t : EPow} {s b : Nat}
+    (hw0 : 0 < w) (hw : w < 2 ^ 64) (hrow : t.Row q) (hq : 0 ≤ q)
+    (hs : (s : Int) = 1074 + t.e - (lz w : Int)) (hsl : s < 1900)
+    (hB : binade (valueTicks w q).1 (valueTicks w q).2 = 190 + s + b) :
+    (valueTicks w q).1 /
+      ((valueTicks w q).2 * ulp (valueTicks w q).1 (valueTicks w q).2)
+      = exactRhi (Wnorm w) t.hi t.lo / 2 ^ (10 + b) := by
+  have hP := valueTicks_nonneg hq hrow hs
+  have hd := valueTicks_d_nonneg (w := w) hq
+  have hWs : Wnorm w < 2 ^ 64 := Wnorm_upper hw0 hw
+  have hu : ulp (valueTicks w q).1 (valueTicks w q).2 = 2 ^ (138 + s + b) := by
+    unfold ulp
+    rw [hB]
+    congr 1; omega
+  rw [hu, hP, hd, Nat.one_mul]
+  rw [show 138 + s + b = (138 + b) + s from by omega, Nat.pow_add]
+  rw [div_pow_cancel (pow2_pos _)]
+  have hsplit := exact_split hWs hrow.1.2.1 hrow.1.2.2
+  have hM : exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo < 2 ^ 128 := by
+    have h1 : exactRlo (Wnorm w) t.hi t.lo < 2 ^ 64 := Nat.mod_lt _ (pow2_pos 64)
+    have h2 : lo64 (Wnorm w) t.lo < 2 ^ 64 := Nat.mod_lt _ (pow2_pos 64)
+    have h3 : exactRlo (Wnorm w) t.hi t.lo ≤ 2 ^ 64 - 1 := by omega
+    have h4 : lo64 (Wnorm w) t.lo ≤ 2 ^ 64 - 1 := by omega
+    have h5 : exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 ≤ (2 ^ 64 - 1) * 2 ^ 64 :=
+      Nat.mul_le_mul_right _ h3
+    have h6 : (2 ^ 64 - 1) * 2 ^ 64 = 2 ^ 128 - 2 ^ 64 := by
+      rw [Nat.sub_mul, Nat.one_mul, pow64_128]
+    omega
+  rw [show eH t = t.hi * 2 ^ 64 + t.lo from rfl, hsplit,
+    show exactRhi (Wnorm w) t.hi t.lo * 2 ^ 128
+        + exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo
+      = exactRhi (Wnorm w) t.hi t.lo * 2 ^ 128
+        + (exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo)
+      from by rw [Nat.add_assoc]]
+  exact quot_split hM
+
+/-- The residue of the truncated row's quotient stays inside one unit, so the
+sliced high word still reads the floor. -/
+theorem quot_residue_neg {W Rhi M D hp b : Nat} (hD : 0 < D)
+    (hRR : W * Rhi < 2 ^ 64 * D) (hM : M < 2 ^ 128)
+    (hhp : hp + 2 ≤ 2 ^ (10 + b)) :
+    D * (hp * 2 ^ 128) + D * M + W * Rhi < D * (2 ^ (10 + b) * 2 ^ 128) := by
+  have h64 : (2 : Nat) ^ 64 < 2 ^ 128 := by
+    have h : (2 : Nat) ^ 64 * 1 < 2 ^ 64 * 2 ^ 64 :=
+      Nat.mul_lt_mul_of_pos_left (by decide : 1 < 2 ^ 64) (pow2_pos 64)
+    rw [Nat.mul_one, ← pow64_128] at h
+    exact h
+  have h1 : hp * 2 ^ 128 + M + 2 ^ 64 < 2 ^ (10 + b) * 2 ^ 128 := by
+    have hph : (hp + 2) * 2 ^ 128 ≤ 2 ^ (10 + b) * 2 ^ 128 :=
+      Nat.mul_le_mul_right _ hhp
+    have hMle : M ≤ 2 ^ 128 - 1 := by omega
+    have h3 : hp * 2 ^ 128 + M + 2 ^ 64 < (hp + 2) * 2 ^ 128 := by
+      rw [Nat.add_mul]
+      omega
+    exact Nat.lt_of_lt_of_le h3 hph
+  have he : D * (hp * 2 ^ 128) + D * M + 2 ^ 64 * D
+      = D * (hp * 2 ^ 128 + M + 2 ^ 64) := by
+    rw [Nat.mul_add, Nat.mul_add, Nat.mul_comm (2 ^ 64) D]
+  have h4 : D * (hp * 2 ^ 128) + D * M + W * Rhi
+      < D * (hp * 2 ^ 128 + M + 2 ^ 64) := by
+    have h := Nat.add_lt_add_left hRR (D * (hp * 2 ^ 128) + D * M)
+    rwa [he] at h
+  have h6 : D * (hp * 2 ^ 128 + M + 2 ^ 64) < D * (2 ^ (10 + b) * 2 ^ 128) :=
+    Nat.mul_lt_mul_of_pos_left h1 hD
+  exact Nat.lt_trans h4 h6
+
+/-- The spec's significand for a truncated row, in-window: the slice's `m`. -/
+theorem sig_eq_m_neg {w : Nat} {q : Int} {t : EPow} {s b : Nat}
+    (hw0 : 0 < w) (hw : w < 2 ^ 64) (hrow : t.Row q) (hq : q < 0)
+    (hs : (s : Int) = 1074 + t.e - (lz w : Int)) (hsl : s < 1900)
+    (hB : binade (valueTicks w q).1 (valueTicks w q).2 = 190 + s + b)
+    (hhp : exactRhi (Wnorm w) t.hi t.lo % 2 ^ (10 + b) + 2 ≤ 2 ^ (10 + b)) :
+    (valueTicks w q).1 /
+      ((valueTicks w q).2 * ulp (valueTicks w q).1 (valueTicks w q).2)
+      = exactRhi (Wnorm w) t.hi t.lo / 2 ^ (10 + b) := by
+  have hP := valueTicks_neg hq hrow hs
+  have hd := valueTicks_d_neg (w := w) hq hrow
+  have hWs : Wnorm w < 2 ^ 64 := Wnorm_upper hw0 hw
+  have hD := eD_pos q t
+  have hu : ulp (valueTicks w q).1 (valueTicks w q).2 = 2 ^ (138 + s + b) := by
+    unfold ulp
+    rw [hB]
+    congr 1; omega
+  rw [hu, hP, hd]
+  rw [show 138 + s + b = (138 + b) + s from by omega, Nat.pow_add]
+  rw [show eD q t * (2 ^ (138 + b) * 2 ^ s) = (eD q t * 2 ^ (138 + b)) * 2 ^ s from by
+    rw [Nat.mul_assoc]]
+  rw [div_pow_cancel (Nat.mul_pos hD (pow2_pos _))]
+  -- goal: (W * eN) / (eD * 2^(138+b)) = Rhi / 2^(10+b)
+  have hsplit := exact_split hWs hrow.1.2.1 hrow.1.2.2
+  have hM : exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo < 2 ^ 128 := by
+    have h1 : exactRlo (Wnorm w) t.hi t.lo < 2 ^ 64 := Nat.mod_lt _ (pow2_pos 64)
+    have h2 : lo64 (Wnorm w) t.lo < 2 ^ 64 := Nat.mod_lt _ (pow2_pos 64)
+    have h3 : exactRlo (Wnorm w) t.hi t.lo ≤ 2 ^ 64 - 1 := by omega
+    have h4 : lo64 (Wnorm w) t.lo ≤ 2 ^ 64 - 1 := by omega
+    have h5 : exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 ≤ (2 ^ 64 - 1) * 2 ^ 64 :=
+      Nat.mul_le_mul_right _ h3
+    have h6 : (2 ^ 64 - 1) * 2 ^ 64 = 2 ^ 128 - 2 ^ 64 := by
+      rw [Nat.sub_mul, Nat.one_mul, pow64_128]
+    omega
+  have hRhi : exactRhi (Wnorm w) t.hi t.lo < 2 ^ 64 := exactRhi_lt hWs hrow.1.2.1 hrow.1.2.2
+  -- write eN = eH * eD + R, W*eN = D*(W*eH) + W*R
+  have hNsplit := row_split hrow.2.2.1
+  -- R < D
+  have hRlt : eN q t % eD q t < eD q t := row_R_lt
+  have hWR : Wnorm w * (eN q t % eD q t) < 2 ^ 64 * eD q t :=
+    Wf_lt hWs hRlt hD
+  -- W*eH = Rhi * 2^128 + M
+  have hWH : Wnorm w * eH t = exactRhi (Wnorm w) t.hi t.lo * 2 ^ 128
+      + (exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo) := by
+    rw [show eH t = t.hi * 2 ^ 64 + t.lo from rfl, hsplit, Nat.add_assoc]
+  -- the guard's slice
+  have hdecRhi : exactRhi (Wnorm w) t.hi t.lo
+      = exactRhi (Wnorm w) t.hi t.lo / 2 ^ (10 + b) * 2 ^ (10 + b)
+        + exactRhi (Wnorm w) t.hi t.lo % 2 ^ (10 + b) := by
+    have := Nat.div_add_mod (exactRhi (Wnorm w) t.hi t.lo) (2 ^ (10 + b))
+    rw [Nat.mul_comm] at this
+    exact this.symm
+  -- now build the division
+  have hC : (2 : Nat) ^ (138 + b) = 2 ^ (10 + b) * 2 ^ 128 := by
+    rw [show 138 + b = (10 + b) + 128 from by omega, Nat.pow_add]
+  have hnum : Wnorm w * eN q t
+      = (eD q t * ((exactRhi (Wnorm w) t.hi t.lo % 2 ^ (10 + b)) * 2 ^ 128)
+            + eD q t * (exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo)
+            + Wnorm w * (eN q t % eD q t))
+        + (exactRhi (Wnorm w) t.hi t.lo / 2 ^ (10 + b)) * (eD q t * (2 ^ (10 + b) * 2 ^ 128)) := by
+    have hWN : Wnorm w * eN q t
+        = eD q t * (Wnorm w * eH t) + Wnorm w * (eN q t % eD q t) := by
+      conv => lhs; rw [hNsplit]
+      rw [Nat.mul_add, ← Nat.mul_assoc]
+      ac_rfl
+    calc Wnorm w * eN q t
+        = eD q t * (Wnorm w * eH t) + Wnorm w * (eN q t % eD q t) := hWN
+      _ = eD q t * (exactRhi (Wnorm w) t.hi t.lo * 2 ^ 128
+              + (exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo))
+            + Wnorm w * (eN q t % eD q t) := by rw [hWH]
+      _ = eD q t * (((exactRhi (Wnorm w) t.hi t.lo / 2 ^ (10 + b)) * 2 ^ (10 + b)
+              + exactRhi (Wnorm w) t.hi t.lo % 2 ^ (10 + b)) * 2 ^ 128
+              + (exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo))
+            + Wnorm w * (eN q t % eD q t) := by
+        conv => lhs; rw [hdecRhi]
+      _ = _ := by
+        simp only [Nat.add_mul, Nat.mul_add, Nat.mul_assoc]
+        ac_rfl
+  have hres : eD q t * ((exactRhi (Wnorm w) t.hi t.lo % 2 ^ (10 + b)) * 2 ^ 128)
+      + eD q t * (exactRlo (Wnorm w) t.hi t.lo * 2 ^ 64 + lo64 (Wnorm w) t.lo)
+      + Wnorm w * (eN q t % eD q t) < eD q t * (2 ^ (10 + b) * 2 ^ 128) :=
+    quot_residue_neg hD hWR hM hhp
+  rw [hC, hnum]
+  rw [Nat.add_mul_div_right _ _ (Nat.mul_pos hD (Nat.mul_pos (pow2_pos _) (pow2_pos _)))]
+  rw [Nat.div_eq_of_lt hres, Nat.zero_add]
+
+
+/-! ### The decision as a pack -/
+
+theorem lt_of_mul_lt_mul_left_nat {a b c : Nat} (h : c * a < c * b) (hc : 0 < c) : a < b := by
+  rcases Nat.lt_or_ge a b with hlt | hge
+  · exact hlt
+  · exact absurd h (Nat.not_lt.mpr (Nat.mul_le_mul_left c hge))
+
+/-- The rounded-up bit the specification applies: `0` below the half, `1`
+above, and the significand's parity at an exact tie. -/
+def upDec (P d : Nat) : Nat :=
+  if 2 * (P % (d * ulp P d)) < d * ulp P d then 0
+  else if d * ulp P d < 2 * (P % (d * ulp P d)) then 1
+  else P / (d * ulp P d) % 2
+
+theorem upDec_zero {P d : Nat} (h : 2 * (P % (d * ulp P d)) < d * ulp P d) :
+    upDec P d = 0 := by
+  unfold upDec; rw [ite_eq_left h]
+
+theorem upDec_one {P d : Nat} (h1 : ¬ 2 * (P % (d * ulp P d)) < d * ulp P d)
+    (h2 : d * ulp P d < 2 * (P % (d * ulp P d))) : upDec P d = 1 := by
+  unfold upDec; rw [ite_eq_right h1, ite_eq_left h2]
+
+theorem upDec_par {P d : Nat} (h1 : ¬ 2 * (P % (d * ulp P d)) < d * ulp P d)
+    (h2 : ¬ d * ulp P d < 2 * (P % (d * ulp P d))) :
+    upDec P d = P / (d * ulp P d) % 2 := by
+  unfold upDec; rw [ite_eq_right h1, ite_eq_right h2]
+
+/-- `normalCode` as the pack `el_pack` builds it, whenever the significand is
+in the normal range. -/
+theorem normalCode_eq_form {P d : Nat} (hB : 52 ≤ binade P d)
+    (hlo : 2 ^ 52 ≤ P / (d * ulp P d)) (hhi : P / (d * ulp P d) < 2 ^ 53) :
+    normalCode P d =
+      ⟨binade P d - 51 + (P / (d * ulp P d) + upDec P d) / 2 ^ 53,
+        2 ^ 52 + (P / (d * ulp P d) + upDec P d) % 2 ^ 52⟩ := by
+  have hm0 : (2 : Nat) ^ 53 % 2 ^ 52 = 0 := by
+    rw [show (53 : Nat) = 52 + 1 from rfl, Nat.pow_add, Nat.pow_one]
+  unfold normalCode
+  dsimp only
+  generalize hq0 : P / (d * ulp P d) = q0 at hlo hhi ⊢
+  generalize hr : P % (d * ulp P d) = r
+  by_cases h1 : 2 * r < d * ulp P d
+  · rw [ite_eq_left h1]
+    have hpar : upDec P d = 0 := upDec_zero (by rw [hr]; exact h1)
+    have hq0lt : q0 / 2 ^ 53 = 0 := Nat.div_eq_of_lt (by omega)
+    simp only [hpar, Nat.add_zero, hq0lt, add_mod_pow52 hlo hhi]
+  · by_cases h2 : d * ulp P d < 2 * r
+    · rw [ite_eq_right h1, ite_eq_left h2]
+      have hpar : upDec P d = 1 := upDec_one (by rw [hr]; exact h1) (by rw [hr]; exact h2)
+      by_cases h3 : q0 + 1 = 2 ^ 53
+      · rw [ite_eq_left h3]
+        have hq1 : (q0 + 1) / 2 ^ 53 = 1 := by rw [h3, Nat.div_self (pow2_pos _)]
+        simp only [hpar, hq1, h3, hm0, Nat.add_zero,
+          show binade P d - 51 + 1 = binade P d - 50 from by omega]
+      · rw [ite_eq_right h3]
+        have hq0lt : (q0 + 1) / 2 ^ 53 = 0 := Nat.div_eq_of_lt (by omega)
+        have hq0' : 2 ^ 52 + (q0 + 1) % 2 ^ 52 = q0 + 1 :=
+          add_mod_pow52 (by omega) (by omega)
+        simp only [hpar, hq0lt, Nat.add_zero, hq0']
+    · rw [ite_eq_right h1, ite_eq_right h2]
+      have hpar : upDec P d = q0 % 2 := by
+        rw [← hq0]
+        exact upDec_par (by rw [hr]; exact h1) (by rw [hr]; exact h2)
+      by_cases h4 : q0 % 2 = 0
+      · rw [ite_eq_left h4]
+        have hq0lt : q0 / 2 ^ 53 = 0 := Nat.div_eq_of_lt (by omega)
+        simp only [hpar, h4, Nat.add_zero, hq0lt, add_mod_pow52 hlo hhi]
+      · rw [ite_eq_right h4]
+        by_cases h3 : q0 + 1 = 2 ^ 53
+        · rw [ite_eq_left h3]
+          have hp1 : q0 % 2 = 1 := by omega
+          have hq1 : (q0 + 1) / 2 ^ 53 = 1 := by rw [h3, Nat.div_self (pow2_pos _)]
+          simp only [hpar, hp1, hq1, h3, hm0, Nat.add_zero,
+            show binade P d - 51 + 1 = binade P d - 50 from by omega]
+        · rw [ite_eq_right h3]
+          have hp1 : q0 % 2 = 1 := by omega
+          have hq0lt : (q0 + 1) / 2 ^ 53 = 0 := Nat.div_eq_of_lt (by omega)
+          have hq0' : 2 ^ 52 + (q0 + 1) % 2 ^ 52 = q0 + 1 :=
+            add_mod_pow52 (by omega) (by omega)
+          simp only [hpar, hp1, hq0lt, Nat.add_zero, hq0']
+
+
+/-! ### The 192-bit half comparison -/
+
+theorem pow2_mul_pow2 (a b : Nat) : (2 : Nat) ^ a * 2 ^ b = 2 ^ (a + b) :=
+  (Nat.pow_add 2 a b).symm
+
+theorem two_mul_pow (s : Nat) : 2 * (2 : Nat) ^ s = 2 ^ (s + 1) := by
+  rw [Nat.pow_succ, Nat.mul_comm]
+
+theorem hh_mul128 (b : Nat) : (2 : Nat) ^ (9 + b) * 2 ^ 128 = 2 ^ (137 + b) := by
+  rw [← Nat.pow_add]; congr 1; omega
+
+/-- `2^(138+s+b) = 2^(s+1) * 2^(137+b)`. -/
+theorem Z_factor (s b : Nat) :
+    (2 : Nat) ^ (138 + s + b) = 2 ^ (s + 1) * 2 ^ (137 + b) := by
+  rw [← Nat.pow_add]; congr 1; omega
+
+/-- **The nonnegative decomposition.**  `2 P = 2 m Z + 2^(s+1) (hp·2^128 + M)`. -/
+theorem decomp_nonneg {W H Rhi M hp m b s P : Nat}
+    (hP : P = W * H * 2 ^ s) (hWH : W * H = Rhi * 2 ^ 128 + M)
+    (hdec : Rhi = m * 2 ^ (10 + b) + hp) :
+    2 * P = 2 * m * 2 ^ (138 + s + b) + 2 ^ (s + 1) * (hp * 2 ^ 128 + M) := by
+  have h138 : (2 : Nat) ^ (138 + b) = 2 * 2 ^ (137 + b) := by
+    rw [show 138 + b = (137 + b) + 1 from by omega, Nat.pow_add, Nat.pow_one, Nat.mul_comm]
+  have hmul : (2 : Nat) ^ (10 + b) * 2 ^ 128 = 2 ^ (138 + b) := by
+    rw [← Nat.pow_add]; congr 1; omega
+  have e1 : 2 * (W * H * 2 ^ s) = 2 ^ (s + 1) * (W * H) := by
+    rw [show 2 * (W * H * 2 ^ s) = (W * H) * (2 * 2 ^ s) from by
+      simp only [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]]
+    rw [two_mul_pow, Nat.mul_comm]
+  have h1 : 2 * P = 2 ^ (s + 1) * (W * H) := by rw [hP, e1]
+  have harg : (m * 2 ^ (10 + b) + hp) * 2 ^ 128 + M
+      = m * 2 ^ (138 + b) + (hp * 2 ^ 128 + M) := by
+    rw [Nat.add_mul, Nat.mul_assoc, hmul]
+    omega
+  have h2 : 2 ^ (s + 1) * (W * H) = 2 ^ (s + 1) * (m * 2 ^ (138 + b) + (hp * 2 ^ 128 + M)) := by
+    rw [hWH, hdec, harg]
+  have hstep : 2 ^ (s + 1) * (m * 2 ^ (138 + b)) = 2 * m * 2 ^ (138 + s + b) := by
+    rw [Z_factor, h138]
+    simp only [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]
+  have h3 : 2 ^ (s + 1) * (m * 2 ^ (138 + b) + (hp * 2 ^ 128 + M))
+      = 2 * m * 2 ^ (138 + s + b) + 2 ^ (s + 1) * (hp * 2 ^ 128 + M) := by
+    rw [← hstep, ← Nat.mul_add]
+  rw [h1, h2, h3]
+
+/-- **The truncated decomposition.**  `2 P = 2 m Z + 2^(s+1) (D(hp·2^128+M) + W·R)`. -/
+theorem decomp_neg {W H D R Rhi M hp m b s P : Nat}
+    (hP : P = W * (H * D + R) * 2 ^ s) (hWH : W * H = Rhi * 2 ^ 128 + M)
+    (hdec : Rhi = m * 2 ^ (10 + b) + hp) :
+    2 * P = 2 * m * (D * 2 ^ (138 + s + b))
+      + 2 ^ (s + 1) * (D * (hp * 2 ^ 128 + M) + W * R) := by
+  have h138 : (2 : Nat) ^ (138 + b) = 2 * 2 ^ (137 + b) := by
+    rw [show 138 + b = (137 + b) + 1 from by omega, Nat.pow_add, Nat.pow_one, Nat.mul_comm]
+  have hmul : (2 : Nat) ^ (10 + b) * 2 ^ 128 = 2 ^ (138 + b) := by
+    rw [← Nat.pow_add]; congr 1; omega
+  have e1 : 2 * (W * (H * D + R) * 2 ^ s) = 2 ^ (s + 1) * (W * (H * D + R)) := by
+    rw [show 2 * (W * (H * D + R) * 2 ^ s)
+        = W * (H * D + R) * (2 * 2 ^ s) from by
+        simp only [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]]
+    rw [two_mul_pow, Nat.mul_comm]
+  have h1 : 2 * P = 2 ^ (s + 1) * (W * (H * D + R)) := by rw [hP, e1]
+  have hWNR : W * (H * D + R) = D * (W * H) + W * R := by
+    rw [Nat.mul_add, ← Nat.mul_assoc, Nat.mul_comm (W * H) D]
+  have harg : (m * 2 ^ (10 + b) + hp) * 2 ^ 128 + M
+      = m * 2 ^ (138 + b) + (hp * 2 ^ 128 + M) := by
+    rw [Nat.add_mul, Nat.mul_assoc, hmul]
+    omega
+  have hargD : D * ((m * 2 ^ (10 + b) + hp) * 2 ^ 128 + M) + W * R
+      = D * (m * 2 ^ (138 + b) + (hp * 2 ^ 128 + M)) + W * R := by
+    rw [harg]
+  have hstep : 2 ^ (s + 1) * (D * (m * 2 ^ (138 + b))) = 2 * m * (D * 2 ^ (138 + s + b)) := by
+    rw [Z_factor, h138]
+    simp only [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]
+  have h3 : 2 ^ (s + 1) * (D * (m * 2 ^ (138 + b) + (hp * 2 ^ 128 + M)) + W * R)
+      = 2 * m * (D * 2 ^ (138 + s + b))
+        + 2 ^ (s + 1) * (D * (hp * 2 ^ 128 + M) + W * R) := by
+    rw [← hstep, ← Nat.mul_add]
+    congr 1
+    rw [Nat.mul_add]
+    omega
+  rw [h1, hWNR, hWH, hdec, hargD, h3]
+
+/-- With `2P = 2mZ + 2^(s+1)·T` and `Z = 2^(s+1)·T'`, the half comparison is
+`T` against `T'`. -/
+theorem half_lt {P Z m s T T' : Nat} (hP : 2 * P = 2 * m * Z + 2 ^ (s + 1) * T)
+    (hZ : Z = 2 ^ (s + 1) * T') (h : T < T') : 2 * P < (2 * m + 1) * Z := by
+  have hZ' : (2 * m + 1) * Z = 2 * m * Z + Z := by rw [Nat.add_mul, Nat.one_mul]
+  have h2 : 2 ^ (s + 1) * T < 2 ^ (s + 1) * T' := Nat.mul_lt_mul_of_pos_left h (pow2_pos _)
+  omega
+
+theorem half_gt {P Z m s T T' : Nat} (hP : 2 * P = 2 * m * Z + 2 ^ (s + 1) * T)
+    (hZ : Z = 2 ^ (s + 1) * T') (h : T' < T) : (2 * m + 1) * Z < 2 * P := by
+  have hZ' : (2 * m + 1) * Z = 2 * m * Z + Z := by rw [Nat.add_mul, Nat.one_mul]
+  have h2 : 2 ^ (s + 1) * T' < 2 ^ (s + 1) * T := Nat.mul_lt_mul_of_pos_left h (pow2_pos _)
+  omega
+
+theorem half_eq {P Z m s T T' : Nat} (hP : 2 * P = 2 * m * Z + 2 ^ (s + 1) * T)
+    (hZ : Z = 2 ^ (s + 1) * T') (h : T = T') : 2 * P = (2 * m + 1) * Z := by
+  have hZ' : (2 * m + 1) * Z = 2 * m * Z + Z := by rw [Nat.add_mul, Nat.one_mul]
+  have h2 : 2 ^ (s + 1) * T = 2 ^ (s + 1) * T' := by rw [h]
+  omega
+
+theorem half_le {P Z m s T T' : Nat} (hP : 2 * P = 2 * m * Z + 2 ^ (s + 1) * T)
+    (hZ : Z = 2 ^ (s + 1) * T') (h : T' ≤ T) : (2 * m + 1) * Z ≤ 2 * P := by
+  have hZ' : (2 * m + 1) * Z = 2 * m * Z + Z := by rw [Nat.add_mul, Nat.one_mul]
+  have h2 : 2 ^ (s + 1) * T' ≤ 2 ^ (s + 1) * T := Nat.mul_le_mul_left _ h
+  omega
+
+/-- The remainder below the half is below the ulp. -/
+theorem mod_lt_half {P Z m : Nat} (hm : P / Z = m) (h : 2 * P < (2 * m + 1) * Z) :
+    2 * (P % Z) < Z := by
+  have hle : m * Z ≤ P := by rw [← hm]; exact Nat.div_mul_le_self P Z
+  have hmod : P % Z = P - m * Z := by
+    rw [Nat.mod_eq_sub_mul_div, hm, Nat.mul_comm]
+  have hP : P = m * Z + (P % Z) := by rw [hmod]; omega
+  have hZ' : (2 * m + 1) * Z = 2 * (m * Z) + Z := by
+    rw [Nat.add_mul, Nat.mul_assoc, Nat.one_mul]
+  rw [hZ'] at h
+  omega
+
+theorem mod_gt_half {P Z m : Nat} (hm : P / Z = m) (h : (2 * m + 1) * Z < 2 * P) :
+    Z < 2 * (P % Z) := by
+  have hle : m * Z ≤ P := by rw [← hm]; exact Nat.div_mul_le_self P Z
+  have hmod : P % Z = P - m * Z := by
+    rw [Nat.mod_eq_sub_mul_div, hm, Nat.mul_comm]
+  have hP : P = m * Z + (P % Z) := by rw [hmod]; omega
+  have hZ' : (2 * m + 1) * Z = 2 * (m * Z) + Z := by
+    rw [Nat.add_mul, Nat.mul_assoc, Nat.one_mul]
+  rw [hZ'] at h
+  omega
+
+theorem mod_eq_half {P Z m : Nat} (hm : P / Z = m) (h : 2 * P = (2 * m + 1) * Z) :
+    2 * (P % Z) = Z := by
+  have hle : m * Z ≤ P := by rw [← hm]; exact Nat.div_mul_le_self P Z
+  have hmod : P % Z = P - m * Z := by
+    rw [Nat.mod_eq_sub_mul_div, hm, Nat.mul_comm]
+  have hP : P = m * Z + (P % Z) := by rw [hmod]; omega
+  have hZ' : (2 * m + 1) * Z = 2 * (m * Z) + Z := by
+    rw [Nat.add_mul, Nat.mul_assoc, Nat.one_mul]
+  rw [hZ'] at h
+  omega
+
+/-! ### The numeric edges -/
+
+theorem hh_pos (b : Nat) : 2 ≤ 2 ^ (9 + b) := by
+  have h1 : 2 ≤ (2 : Nat) ^ 9 := by decide
+  exact Nat.le_trans h1 (Nat.pow_le_pow_right (by decide) (by omega))
+
+theorem above_far {hp M b : Nat} (h : 2 ^ (9 + b) + 1 ≤ hp) :
+    2 ^ (137 + b) < hp * 2 ^ 128 + M := by
+  rw [← hh_mul128 b]
+  have h2 : (2 ^ (9 + b) + 1) * 2 ^ 128 ≤ hp * 2 ^ 128 := Nat.mul_le_mul_right _ h
+  have h3 : 2 ^ (9 + b) * 2 ^ 128 + 2 ^ 128 ≤ (2 ^ (9 + b) + 1) * 2 ^ 128 := by
+    rw [Nat.add_mul, Nat.one_mul]
+    exact Nat.le_refl _
+  omega
+
+theorem at_edge {hp b : Nat} (h : hp = 2 ^ (9 + b)) : hp * 2 ^ 128 = 2 ^ (137 + b) := by
+  rw [h]; exact hh_mul128 b
+
+theorem below_close {hp M b : Nat} (h : hp = 2 ^ (9 + b) - 1) (hM : M < 2 ^ 128) :
+    hp * 2 ^ 128 + M < 2 ^ (137 + b) := by
+  rw [← hh_mul128 b, h, Nat.sub_mul, Nat.one_mul]
+  have hX : (2 : Nat) ^ 128 ≤ 2 ^ (9 + b) * 2 ^ 128 := by
+    simpa using Nat.mul_le_mul_right ((2 : Nat) ^ 128) (Nat.one_le_two_pow (n := 9 + b))
+  omega
+
+theorem below_far {hp M b : Nat} (h : hp + 2 ≤ 2 ^ (9 + b)) (hM : M < 2 ^ 128) :
+    hp * 2 ^ 128 + M < 2 ^ (137 + b) := by
+  rw [← hh_mul128 b]
+  have h2 : (hp + 2) * 2 ^ 128 ≤ 2 ^ (9 + b) * 2 ^ 128 := Nat.mul_le_mul_right _ h
+  have h3 : hp * 2 ^ 128 + M < (hp + 2) * 2 ^ 128 := by
+    rw [Nat.add_mul]
+    omega
+  exact Nat.lt_of_lt_of_le h3 h2
+
+/-! ### The binade bit from the rebuilt word -/
+
+/-- The window's exclusion of `Rhi = 2^63 - 1` turns `ub = 0` into
+`Rhi ≤ 2^63 - 2`. -/
+theorem rhi_le_of_ub_zero {Rhi ub sh hp hh : Nat} (hub : ub = Rhi / 2 ^ 63)
+    (hsh : sh = 10 + ub) (hhp : hp = Rhi % 2 ^ sh) (hhh : hh = 2 ^ (9 + ub))
+    (hzero : ub = 0) (hwin : hh - 2 ≤ hp ∧ hp ≤ hh) : Rhi ≤ 2 ^ 63 - 2 := by
+  subst hzero
+  have hub0 : Rhi / 2 ^ 63 = 0 := by rw [← hub]
+  have hlt : Rhi < 2 ^ 63 := by
+    rcases Nat.lt_or_ge Rhi (2 ^ 63) with h | h
+    · exact h
+    · exfalso
+      have hge : 1 ≤ Rhi / 2 ^ 63 := by
+        rw [Nat.le_div_iff_mul_le (by decide : 0 < 2 ^ 63)]
+        simpa using h
+      omega
+  have hne : Rhi ≠ 2 ^ 63 - 1 := by
+    intro he
+    have hsh10 : sh = 10 := by rw [hsh]
+    have hhh512 : hh = 512 := by rw [hhh]
+    have hph : hp = 1023 := by rw [hhp, he, hsh10]
+    omega
+  rcases Nat.lt_or_ge Rhi (2 ^ 63 - 1) with h | h
+  · omega
+  · exfalso
+    exact hne (by omega)
+
+theorem bit_one {W H D R Rhi M : Nat} (hWH : W * H = Rhi * 2 ^ 128 + M)
+    (h : 2 ^ 63 ≤ Rhi) : 2 ^ 191 * D ≤ W * (H * D + R) := by
+  have hWNR : W * (H * D + R) = D * (W * H) + W * R := by
+    rw [Nat.mul_add, ← Nat.mul_assoc, Nat.mul_comm (W * H) D]
+  rw [hWNR]
+  have h1 : 2 ^ 191 ≤ W * H := by
+    rw [hWH]
+    have h191 : (2 : Nat) ^ 191 = 2 ^ 63 * 2 ^ 128 := by rw [← Nat.pow_add]
+    rw [h191]
+    exact Nat.le_trans (Nat.mul_le_mul_right _ h) (Nat.le_add_right _ _)
+  have h2 : 2 ^ 191 * D ≤ D * (W * H) := by
+    rw [Nat.mul_comm]; exact Nat.mul_le_mul_left D h1
+  exact Nat.le_trans h2 (Nat.le_add_right _ _)
+
+theorem bit_zero {W H D R Rhi M : Nat} (hW : W < 2 ^ 64) (hD : 0 < D)
+    (hR : R < D) (hM : M < 2 ^ 128) (hWH : W * H = Rhi * 2 ^ 128 + M)
+    (hRhi : Rhi ≤ 2 ^ 63 - 2) : W * (H * D + R) < 2 ^ 191 * D := by
+  have hWNR : W * (H * D + R) = D * (W * H) + W * R := by
+    rw [Nat.mul_add, ← Nat.mul_assoc, Nat.mul_comm (W * H) D]
+  rw [hWNR]
+  have hA : W * H ≤ (2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1) := by
+    rw [hWH]
+    have h1 : Rhi * 2 ^ 128 ≤ (2 ^ 63 - 2) * 2 ^ 128 := Nat.mul_le_mul_right _ hRhi
+    have h2 : M ≤ 2 ^ 128 - 1 := by omega
+    exact Nat.add_le_add h1 h2
+  have hDm : D * (W * H) ≤ D * ((2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1)) :=
+    Nat.mul_le_mul_left D hA
+  have hWRlt : W * R < 2 ^ 64 * D := Wf_lt hW hR hD
+  have hkey : (2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1) + 2 ^ 64 < 2 ^ 191 := by
+    have h191 : (2 : Nat) ^ 191 = 2 ^ 63 * 2 ^ 128 := by rw [← Nat.pow_add]
+    rw [h191]
+    have e1 : (2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1) + 2 ^ 64
+        = (2 ^ 63 - 1) * 2 ^ 128 + (2 ^ 64 - 1) := by
+      have h1 : (2 ^ 63 - 2) * 2 ^ 128 + 2 ^ 128 = (2 ^ 63 - 1) * 2 ^ 128 := by
+        rw [show (2 ^ 63 - 1 : Nat) = (2 ^ 63 - 2) + 1 from by omega, Nat.add_mul,
+          Nat.one_mul]
+      have h2 : (1 : Nat) ≤ 2 ^ 128 := Nat.one_le_two_pow
+      have h3 : (1 : Nat) ≤ 2 ^ 64 := Nat.one_le_two_pow
+      omega
+    rw [e1]
+    have h1 : (2 ^ 63 - 1) * 2 ^ 128 + 2 ^ 128 = 2 ^ 63 * 2 ^ 128 := by
+      rw [show (2 ^ 63 : Nat) = (2 ^ 63 - 1) + 1 from by omega, Nat.add_mul, Nat.one_mul]
+    have h64 : (2 : Nat) ^ 64 < 2 ^ 128 := by
+      have h : (2 : Nat) ^ 64 * 1 < 2 ^ 64 * 2 ^ 64 :=
+        Nat.mul_lt_mul_of_pos_left (show 1 < 2 ^ 64 by decide) (Nat.two_pow_pos 64)
+      rw [Nat.mul_one, ← pow64_128] at h
+      exact h
+    omega
+  have he : D * ((2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1)) + 2 ^ 64 * D
+      = D * ((2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1) + 2 ^ 64) := by
+    rw [Nat.mul_add D ((2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1)) (2 ^ 64),
+      Nat.mul_comm (2 ^ 64) D]
+  calc D * (W * H) + W * R
+      < D * ((2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1)) + 2 ^ 64 * D :=
+        Nat.add_lt_add_of_le_of_lt hDm hWRlt
+    _ = D * ((2 ^ 63 - 2) * 2 ^ 128 + (2 ^ 128 - 1) + 2 ^ 64) := he
+    _ < D * 2 ^ 191 := Nat.mul_lt_mul_of_pos_left hkey hD
+    _ = 2 ^ 191 * D := Nat.mul_comm _ _
+
+
+/-! ### The truncated row's scaled edges -/
+
+theorem pow64_lt_128 : (2 : Nat) ^ 64 < 2 ^ 128 := by
+  have h : (2 : Nat) ^ 64 * 1 < 2 ^ 64 * 2 ^ 64 :=
+    Nat.mul_lt_mul_of_pos_left (show 1 < 2 ^ 64 by decide) (Nat.two_pow_pos 64)
+  rw [Nat.mul_one, ← pow64_128] at h
+  exact h
+
+theorem above_scaled {W D R hp M b : Nat} (hD : 0 < D) (h : 2 ^ (9 + b) + 1 ≤ hp) :
+    D * 2 ^ (137 + b) ≤ D * (hp * 2 ^ 128 + M) + W * R := by
+  have h1 : 2 ^ (137 + b) ≤ hp * 2 ^ 128 + M := Nat.le_of_lt (above_far (M := M) h)
+  calc D * 2 ^ (137 + b) ≤ D * (hp * 2 ^ 128 + M) := Nat.mul_le_mul_left D h1
+    _ ≤ D * (hp * 2 ^ 128 + M) + W * R := Nat.le_add_right _ _
+
+theorem at_edge_scaled {W D R hp M b : Nat} (h : hp = 2 ^ (9 + b)) :
+    D * (hp * 2 ^ 128 + M) + W * R = D * 2 ^ (137 + b) + (D * M + W * R) := by
+  rw [h, Nat.mul_add, hh_mul128 b]
+  omega
+
+/-- At the close edge the comparison with the ulp is the comparison of the
+discarded part with `D * 2^128`. -/
+theorem close_shift {D M W R hp b : Nat} (h : hp = 2 ^ (9 + b) - 1) :
+    D * (hp * 2 ^ 128 + M) + W * R + D * 2 ^ 128 = D * 2 ^ (137 + b) + (D * M + W * R) := by
+  have he : ((2 ^ (9 + b) - 1) * 2 ^ 128 + M) + 2 ^ 128 = 2 ^ (9 + b) * 2 ^ 128 + M := by
+    rw [Nat.sub_mul, Nat.one_mul]
+    have hpos : (2 : Nat) ^ 128 ≤ 2 ^ (9 + b) * 2 ^ 128 := by
+      simpa using Nat.mul_le_mul_right ((2 : Nat) ^ 128) (Nat.one_le_two_pow (n := 9 + b))
+    omega
+  rw [h]
+  rw [show D * (((2 ^ (9 + b) - 1) * 2 ^ 128 + M)) + W * R + D * 2 ^ 128
+      = (D * (((2 ^ (9 + b) - 1) * 2 ^ 128 + M)) + D * 2 ^ 128) + W * R from by omega]
+  rw [← Nat.mul_add, he, hh_mul128 b, Nat.mul_add]
+  omega
+
+theorem below_far_scaled {D M W R hp b : Nat} (hD : 0 < D) (hM : M < 2 ^ 128)
+    (hWR : W * R < 2 ^ 64 * D) (h : hp + 2 ≤ 2 ^ (9 + b)) :
+    D * (hp * 2 ^ 128 + M) + W * R < D * 2 ^ (137 + b) := by
+  have hgap : hp * 2 ^ 128 + M + 2 ^ 64 < 2 ^ (9 + b) * 2 ^ 128 := by
+    have h2 : (hp + 2) * 2 ^ 128 ≤ 2 ^ (9 + b) * 2 ^ 128 := Nat.mul_le_mul_right _ h
+    have h3 : hp * 2 ^ 128 + M + 2 ^ 64 < (hp + 2) * 2 ^ 128 := by
+      rw [Nat.add_mul]
+      have h64 : (2 : Nat) ^ 64 < 2 ^ 128 := pow64_lt_128
+      omega
+    exact Nat.lt_of_lt_of_le h3 h2
+  have h1 : D * (hp * 2 ^ 128 + M) + D * 2 ^ 64 < D * (2 ^ (9 + b) * 2 ^ 128) := by
+    rw [← Nat.mul_add]
+    exact Nat.mul_lt_mul_of_pos_left hgap hD
+  have h2 : D * (hp * 2 ^ 128 + M) + W * R < D * (2 ^ (9 + b) * 2 ^ 128) := by
+    have h64 : 2 ^ 64 * D = D * 2 ^ 64 := Nat.mul_comm _ _
+    have hWR' : W * R < D * 2 ^ 64 := by rw [← h64]; exact hWR
+    exact Nat.lt_of_lt_of_le (Nat.add_lt_add_left hWR' _) (Nat.le_of_lt h1)
+  rw [← hh_mul128 b]
+  exact h2
+
+
+/-! ### The significand complement -/
+
+theorem sig_bounds {P d : Nat} (hd : 0 < d)
+    (hex : ∃ B', B' < 2100 ∧ P < d * 2 ^ (B' + 1)) (hB : 52 ≤ binade P d) :
+    2 ^ 52 ≤ P / (d * ulp P d) ∧ P / (d * ulp P d) < 2 ^ 53 := by
+  obtain ⟨B0, hB0, hP0⟩ := hex
+  have hspec := binade_spec ⟨B0, hB0, hP0⟩
+  have hupos : 0 < d * ulp P d := Nat.mul_pos hd (pow2_pos _)
+  have hu : ulp P d = 2 ^ (binade P d - 52) := rfl
+  have hmul : ∀ k : Nat, (2 : Nat) ^ k * (d * ulp P d) = d * 2 ^ (binade P d - 52 + k) := by
+    intro k
+    rw [hu, ← Nat.mul_assoc, Nat.mul_comm ((2 : Nat) ^ k) d, Nat.mul_assoc, ← Nat.pow_add,
+      Nat.add_comm]
+  constructor
+  · rw [Nat.le_div_iff_mul_le hupos]
+    have hmin := hspec.2 (binade P d - 1) (by omega)
+    have he : binade P d - 1 + 1 = binade P d := by omega
+    rw [he] at hmin
+    rw [hmul, show binade P d - 52 + 52 = binade P d from by omega]
+    exact hmin
+  · rw [Nat.div_lt_iff_lt_mul hupos]
+    rw [hmul, show binade P d - 52 + 53 = binade P d + 1 from by omega]
+    exact hspec.1
+
+/-- The high word's significand stays in the normal range. -/
+theorem W_H_lt {W H : Nat} (hW : W < 2 ^ 64) (hH : H < 2 ^ 128) : W * H < 2 ^ 192 := by
+  have h1 : W * H ≤ (2 ^ 64 - 1) * (2 ^ 128 - 1) :=
+    Nat.mul_le_mul (by omega) (by omega)
+  have h2 : (2 ^ 64 - 1) * (2 ^ 128 - 1) < 2 ^ 64 * 2 ^ 128 :=
+    Nat.mul_lt_mul_of_lt_of_le (by omega) (by omega) (pow2_pos _)
+  have h3 : (2 : Nat) ^ 192 = 2 ^ 64 * 2 ^ 128 := by rw [← Nat.pow_add]
+  omega
+
+theorem W_H1_le {W H : Nat} (hW : W < 2 ^ 64) (hH : H < 2 ^ 128) :
+    W * (H + 1) ≤ 2 ^ 192 := by
+  have h1 : W * (H + 1) ≤ (2 ^ 64 - 1) * 2 ^ 128 :=
+    Nat.mul_le_mul (by omega) (by omega)
+  have h2 : (2 ^ 64 - 1) * 2 ^ 128 < 2 ^ 64 * 2 ^ 128 :=
+    Nat.mul_lt_mul_of_pos_right (by omega) (pow2_pos _)
+  have h3 : (2 : Nat) ^ 192 = 2 ^ 64 * 2 ^ 128 := by rw [← Nat.pow_add]
+  omega
+
+
+/-! ### The guard's body, split at the window test -/
+
+def elUndec (hp hh Rlo L : Nat) : Bool :=
+  (decide (hp = hh) && decide (Rlo ||| L = 0)) ||
+    (decide (hp = hh - 1) && decide (Rlo = 2 ^ 64 - 1))
+
+def elUp (m hp hh Rlo L : Nat) : Nat :=
+  if hp > hh then 1
+  else if decide (hp = hh) && decide ((Rlo ||| L) ≠ 0 ∨ m % 2 = 1) then 1 else 0
+
+def elInner (s : Slice) (c L : Nat) (e : Int) (lz : Nat) (q : Int) : Option Code :=
+  let Rlo := (s.Alo + c) % 2 ^ 64
+  let Rhi := (s.Ahi + (if Rlo < s.Alo then 1 else 0)) % 2 ^ 64
+  let ub := Rhi / 2 ^ 63
+  let sh := 10 + ub
+  let m := Rhi / 2 ^ sh
+  let hp := Rhi % 2 ^ sh
+  let hh := 2 ^ (9 + ub)
+  if elUndec hp hh Rlo L && decide (q < 0) then none
+  else elPack { m := m, up := elUp m hp hh Rlo L, ub := ub, e := e, lz := lz }
+
+def elFar (s : Slice) (e : Int) (lz : Nat) : Option Code :=
+  elPack { m := s.Ahi / 2 ^ s.sh, up := if s.hp > s.hh then 1 else 0,
+           ub := s.ub, e := e, lz := lz }
+
+def elCore (W : Nat) (hi lo : Nat) (e : Int) (lz : Nat) (q : Int) : Option Code :=
+  let s := sliceOf W hi
+  if inWindow s.hp s.hh then elInner s (hi64 W lo) (lo64 W lo) e lz q
+  else elFar s e lz
+
+theorem elTier2Code_reduce (w : Nat) (q : Int) :
+    elTier2Code w q =
+      (match epowAt q with
+       | none => none
+       | some t =>
+         if w = 0 then some { expField := 0, mant := 0 }
+         else elCore (Wnorm w) t.hi t.lo t.e (lz w) q) := rfl
+
+theorem lor_eq_zero_left {a b : Nat} (h : (a ||| b) = 0) : a = 0 := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  have h0 : a.testBit i = false := by
+    have h1 : (a ||| b).testBit i = false := by rw [h, Nat.zero_testBit]
+    rw [Nat.testBit_or] at h1
+    simp only [Bool.or_eq_false_iff] at h1
+    exact h1.1
+  rw [h0, Nat.zero_testBit]
+
+theorem lor_eq_zero_iff {a b : Nat} : (a ||| b) = 0 ↔ a = 0 ∧ b = 0 := by
+  constructor
+  · intro h
+    exact ⟨lor_eq_zero_left h, by rw [Nat.or_comm] at h; exact lor_eq_zero_left h⟩
+  · rintro ⟨rfl, rfl⟩; rfl
+
+theorem elUp_above {m hp hh Rlo L : Nat} (h : hh < hp) : elUp m hp hh Rlo L = 1 := by
+  unfold elUp; rw [ite_eq_left h]
+
+theorem elUp_below {m hp hh Rlo L : Nat} (h1 : ¬ hh < hp) (h2 : hp ≠ hh) :
+    elUp m hp hh Rlo L = 0 := by
+  unfold elUp
+  have hc : ¬ ((decide (hp = hh) && decide ((Rlo ||| L) ≠ 0 ∨ m % 2 = 1)) = true) := by
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    rintro ⟨h, -⟩
+    exact h2 h
+  rw [ite_eq_right h1, ite_eq_right hc]
+
+theorem elUp_tie_zero {m hp hh Rlo L : Nat} (h1 : hp = hh) (h2 : (Rlo ||| L) = 0) :
+    elUp m hp hh Rlo L = m % 2 := by
+  unfold elUp
+  have hcond : (decide (hp = hh) && decide ((Rlo ||| L) ≠ 0 ∨ m % 2 = 1)) = decide (m % 2 = 1) := by
+    rw [h1, h2]
+    simp
+  rw [ite_eq_right (by omega), hcond]
+  by_cases h : m % 2 = 1
+  · rw [ite_eq_left (by simpa using h)]; omega
+  · rw [ite_eq_right (by simpa using h)]; omega
+
+theorem elUp_tie_ne {m hp hh Rlo L : Nat} (h1 : hp = hh) (h2 : (Rlo ||| L) ≠ 0) :
+    elUp m hp hh Rlo L = 1 := by
+  unfold elUp
+  have hcond : (decide (hp = hh) && decide ((Rlo ||| L) ≠ 0 ∨ m % 2 = 1)) = true := by
+    rw [h1]; simp [h2]
+  rw [ite_eq_right (by omega), ite_eq_left (by simpa using hcond)]
+
+
+/-- **The low half's carry and `el_pack`'s `ov`.**  Read from `Ahi` alone the
+slice has `ub = 0` and `m = 2 ^ 53 - 1` while the rebuilt word is `2 ^ 63`;
+the round-up gives `mm = 2 ^ 53`, so `ov = 1`.  The encoding `el_pack` builds
+is then the specification's `⟨B - 51, 2 ^ 52⟩`: `ov` adds exactly the exponent
+the missing binade bit would have added, and the significand wraps. -/
+theorem pack_carry_agrees {e : Int} {s : Nat} {lzw : Nat}
+    (hs : (s : Int) = 1074 + e - (lzw : Int)) :
+    (⟨(180 + ((11 : Nat) : Int) + e - (lzw : Int) + 1023).toNat,
+        2 ^ 52 + (2 ^ 53) % 2 ^ 52⟩ : Code)
+      = ⟨(190 + s + 1) - 51 + (2 ^ 52) / 2 ^ 53, 2 ^ 52 + (2 ^ 52) % 2 ^ 52⟩ := by
+  have h1 : (2 : Nat) ^ 52 / 2 ^ 53 = 0 := by
+    rw [show (53 : Nat) = 52 + 1 from rfl, Nat.pow_add, Nat.pow_one, Nat.mul_comm]
+  have h2 : (2 : Nat) ^ 53 % 2 ^ 52 = 0 := by
+    rw [show (53 : Nat) = 52 + 1 from rfl, Nat.pow_add, Nat.pow_one]
+  rw [h1]
+  rw [h2]
+  simp only [Nat.add_zero]
+  congr 1
+  have h4 : (180 + ((11 : Nat) : Int) + e - (lzw : Int) + 1023) = ((140 + s : Nat) : Int) := by
+    omega
+  rw [h4, Int.toNat_natCast]
+  omega
+
+
 /-! ### Axiom footprint
 
 Every declaration's footprint is a subset of `[propext, Quot.sound]`.  The
@@ -1551,6 +2413,40 @@ axiom. -/
 #print axioms LeanLLVM.ElGuardRefine.tie_midpoint
 #print axioms LeanLLVM.ElGuardRefine.tie_edge
 #print axioms LeanLLVM.ElGuardRefine.tie_exact_iff
+#print axioms LeanLLVM.ElGuardRefine.valueTicks_neg
+#print axioms LeanLLVM.ElGuardRefine.valueTicks_d_neg
+#print axioms LeanLLVM.ElGuardRefine.valueTicks_d_nonneg
+#print axioms LeanLLVM.ElGuardRefine.binade_valueTicks
+#print axioms LeanLLVM.ElGuardRefine.quot_split
+#print axioms LeanLLVM.ElGuardRefine.sig_eq_m_nonneg
+#print axioms LeanLLVM.ElGuardRefine.quot_residue_neg
+#print axioms LeanLLVM.ElGuardRefine.sig_eq_m_neg
+#print axioms LeanLLVM.ElGuardRefine.upDec
+#print axioms LeanLLVM.ElGuardRefine.normalCode_eq_form
+#print axioms LeanLLVM.ElGuardRefine.decomp_nonneg
+#print axioms LeanLLVM.ElGuardRefine.decomp_neg
+#print axioms LeanLLVM.ElGuardRefine.half_lt
+#print axioms LeanLLVM.ElGuardRefine.half_gt
+#print axioms LeanLLVM.ElGuardRefine.half_eq
+#print axioms LeanLLVM.ElGuardRefine.half_le
+#print axioms LeanLLVM.ElGuardRefine.mod_lt_half
+#print axioms LeanLLVM.ElGuardRefine.mod_gt_half
+#print axioms LeanLLVM.ElGuardRefine.mod_eq_half
+#print axioms LeanLLVM.ElGuardRefine.above_far
+#print axioms LeanLLVM.ElGuardRefine.at_edge
+#print axioms LeanLLVM.ElGuardRefine.below_close
+#print axioms LeanLLVM.ElGuardRefine.below_far
+#print axioms LeanLLVM.ElGuardRefine.above_scaled
+#print axioms LeanLLVM.ElGuardRefine.at_edge_scaled
+#print axioms LeanLLVM.ElGuardRefine.close_shift
+#print axioms LeanLLVM.ElGuardRefine.below_far_scaled
+#print axioms LeanLLVM.ElGuardRefine.rhi_le_of_ub_zero
+#print axioms LeanLLVM.ElGuardRefine.bit_one
+#print axioms LeanLLVM.ElGuardRefine.bit_zero
+#print axioms LeanLLVM.ElGuardRefine.pack_carry_agrees
+#print axioms LeanLLVM.ElGuardRefine.sig_bounds
+#print axioms LeanLLVM.ElGuardRefine.lor_eq_zero_iff
+#print axioms LeanLLVM.ElGuardRefine.elTier2Code_reduce
 
 /-! ### The statement against the emitted kernel
 
