@@ -840,10 +840,11 @@ theorem lstIfEnd4Mem_count (blk0 : BitVec 64) (esc : BitVec 64) (o xn count : Na
 
 /-! ### Axiom footprints
 
-Three carry `Classical.choice`, and its carrier is `Nat.mod_mul_right_div_self`
-— the division lemma `natToBytes_mod_pow` uses, the carrier the writer's own
-lemmas already name.  Each of the three consumes the inline batch's or the
-writer's step lemma, so it inherits exactly that footprint and nothing else. -/
+Three carry `Classical.choice`, and each inherits the writer's single carrier:
+`BitVec.signExtend_eq`, the identity that sign-extending a word to its own width
+changes nothing, consumed by `lstIfEnd4_run` and `lstWriter_run`.  `lstIfEnd4_run`
+reaches `lstIfEnd4_step_calls` and `batch_at` directly and `writer_at` through
+`lstWriter_run`; none of the three adds a carrier of its own. -/
 
 /-- info: 'LeanLLVM.Vellum.escapeListCalls_of_ne_xlBatch' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

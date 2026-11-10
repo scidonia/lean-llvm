@@ -866,12 +866,18 @@ theorem pipeline_satisfies_at_stage2 (tab : Nat) (s2 : Calls)
 
 /-! ### Axiom footprints
 
-Every declaration above is at `[propext, Quot.sound]` or below, with one named
-carrier: `pipelineUnits_at_stage2` inherits `Classical.choice` from the unit
-records through `pipelineUnits_of_records`, exactly as `JsonPipelineRefine`'s
-axiom section records for the bundle it builds — the carrier is the five unit
-`Satisfies` theorems, not this module.  `pipeline_satisfies_at_stage2` takes the
-bundle as a hypothesis, so it is one step below that carrier. -/
+Every declaration above is at `[propext, Quot.sound]` or below except the two that
+carry `Classical.choice` — and neither adds it.  `pipelineUnits_at_stage2`
+inherits it from the unit records through `pipelineUnits_of_records`, exactly as
+`JsonPipelineRefine`'s axiom section records for the bundle it builds: the
+carrier is the five unit `Satisfies` theorems, not this module.
+`pipeline_satisfies_at_stage2` calls `pipelineUnits_at_stage2` for its `Γ2`
+bundle, so it carries the same set rather than one step below it.  What that set
+rests on are the extraction steps' lemmas — `String.ofList_injective`,
+`BitVec.signExtend_eq`, `Nat.and_two_pow_sub_one_eq_mod`,
+`Nat.testBit_two_pow_sub_one`, `List.getElem_mapIdx` and the two
+`BitVec.msb_*` order lemmas — and the list modules' `lstWhileBody_run` and
+`lstIfEnd4_run`. -/
 
 /-- info: 'LeanLLVM.Vellum.stage2ArenaReserve' does not depend on any axioms -/
 #guard_msgs in

@@ -478,9 +478,11 @@ theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position
 
 /-! ### Reading around the exit block's carry stores -/
 
-/-- The zero word has no set lanes. -/
+/-- The zero word has no set lanes — `JsonEntrySteps.setLanes_zero` at
+sixty-four bits, which `filter_eq_nil_of_all_false` proves without the
+`Classical.choice` that `List.filter_eq_nil_iff` carries. -/
 theorem setLanes_zero64 : setLanes (0 : BitVec 64) = [] := by
-  simp [setLanes, getLsbD_zero_64]
+  exact LeanLLVM.Vellum.JsonEntrySteps.setLanes_zero
 
 /-- A read at a range outside the carry's sixteen bytes is unaffected by the exit
 block's two stores. -/
@@ -1554,7 +1556,8 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
       runFromSeed σ mem bs ctl im blk0 prevb prevs xp xn carry xn0 position 2
         hpc hpre hmemσ hbsσ hctlσ himσ hblkσ hxpσ hxnσ hcarryσ harrσ hseedV hmaskV
         hbridge hxn0 hcarr hcount hkeep hcx hblkcap hcont
-    exact ⟨k, M, by omega, hrun, hreach⟩
+    exact ⟨k, M, Nat.le_trans (Nat.add_le_add hseedN hk)
+      (Nat.le_trans (by decide : 3 + (31 + 2) ≤ 41) hb41), hrun, hreach⟩
   · by_cases hgt : ctpop (lxWord ctl im (specRunStarts bs (prevb && prevs))) > 8
     · have hcont : ∀ (env : Env) (e : State),
           AtExit env e mem bs ctl im blk0 (specRunStarts bs (prevb && prevs)) carry xp xn xn0 →
@@ -1580,7 +1583,8 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
         runFromSeed σ mem bs ctl im blk0 prevb prevs xp xn carry xn0 position 14
           hpc hpre hmemσ hbsσ hctlσ himσ hblkσ hxpσ hxnσ hcarryσ harrσ hseedV hmaskV
           hbridge hxn0 hcarr hcount hkeep hcx hblkcap hcont
-      exact ⟨k, M, by omega, hrun, hreach⟩
+      exact ⟨k, M, Nat.le_trans (Nat.add_le_add hseedN hk)
+        (Nat.le_trans (by decide : 3 + (31 + 14) ≤ 48) (hb48 hgt)), hrun, hreach⟩
     · have hcont : ∀ (env : Env) (e : State),
           AtExit env e mem bs ctl im blk0 (specRunStarts bs (prevb && prevs)) carry xp xn xn0 →
           ∃ (k : Nat) (M : Mem), k ≤ 3 ∧
@@ -1605,7 +1609,8 @@ theorem finishSeed (args : List Value) (mem : Mem) (σ : State)
         runFromSeed σ mem bs ctl im blk0 prevb prevs xp xn carry xn0 position 3
           hpc hpre hmemσ hbsσ hctlσ himσ hblkσ hxpσ hxnσ hcarryσ harrσ hseedV hmaskV
           hbridge hxn0 hcarr hcount hkeep hcx hblkcap hcont
-      exact ⟨k, M, by omega, hrun, hreach⟩
+      exact ⟨k, M, Nat.le_trans (Nat.add_le_add hseedN hk)
+        (Nat.le_trans (by decide : 3 + (31 + 3) ≤ 41) hb41), hrun, hreach⟩
 
 
 /-! ### The seed environments' array slot -/
@@ -1894,14 +1899,17 @@ theorem escape_positions_satisfies (base : Nat) :
 
 /-! ### Axiom footprints
 
-Two carriers appear below and each is named once.  `Classical.choice` reaches the
-count's store and readback through `natToBytes_mod_pow`, whose carrier is the
-repository's `Nat.mod_mul_right_div_self` (the same carrier the writer's own pins
-name); it reaches the zero word's lane arithmetic through `ctpop_zero64`, which is
-`setLanes`'s `List.getLsbD` route at the zero word.  No declaration here adds an
-axiom: `escape_positions_satisfies` carries exactly the union of its pieces',
-which is those two carriers and `propext`/`Quot.sound`.
--/
+One carrier remains below and this module does not add it: `BitVec.signExtend_eq`,
+the identity that sign-extending a word to its own width changes nothing.  The
+writer's `lstWhileBody_run` and `lstIfEnd4_run` consume it, so it reaches
+`lstWriter_step_mem` through `lstWhileBody_step`, and `exitSegment_skip` and
+`exitSegment_writer` through `batch_at` and `lstIfEnd4_step_calls`.  Nothing here
+is wider than its pieces: the zero word's lanes are
+`JsonEntrySteps.setLanes_zero`, the count's store and readback are the writer's
+`natToBytes_mod_pow` — both stated without the core lemmas they mirror — and
+`finishSeed`'s three budget bounds are `Nat.le_trans` chains over `hseedN` and the
+run's own `k` bound rather than the `omega` case splits that reach
+`Classical.propDecidable`. -/
 
 /-- info: 'LeanLLVM.Vellum.escapePositionsFrom_pairwise' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -1999,7 +2007,7 @@ which is those two carriers and `propext`/`Quot.sound`.
 #guard_msgs in
 #print axioms lstWriter_run_frame
 
-/-- info: 'LeanLLVM.Vellum.setLanes_zero64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.setLanes_zero64' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms setLanes_zero64
 
@@ -2027,7 +2035,7 @@ which is those two carriers and `propext`/`Quot.sound`.
 #guard_msgs in
 #print axioms mem_escapeRegions_stream
 
-/-- info: 'LeanLLVM.Vellum.exitSegment_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.exitSegment_zero' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms exitSegment_zero
 
@@ -2055,7 +2063,7 @@ which is those two carriers and `propext`/`Quot.sound`.
 #guard_msgs in
 #print axioms exitSegment_skip
 
-/-- info: 'LeanLLVM.Vellum.clearLow_ne_zero_of_ctpop_gt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.clearLow_ne_zero_of_ctpop_gt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms clearLow_ne_zero_of_ctpop_gt
 
@@ -2079,7 +2087,7 @@ which is those two carriers and `propext`/`Quot.sound`.
 #guard_msgs in
 #print axioms exitSegment_writer
 
-/-- info: 'LeanLLVM.Vellum.exitCont_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.exitCont_zero' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms exitCont_zero
 

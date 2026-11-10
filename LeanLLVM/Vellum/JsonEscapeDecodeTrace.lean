@@ -2333,10 +2333,15 @@ byte and `0xFF` elsewhere, so the compare's bit is the rule's own test — and t
 is the bridge this group states, separately from the block, because the block's
 trace is about the byte it loaded and the bridge is about what the table means.
 
-The bridge's signed comparison is where the one `Classical.choice` carrier of this
-module enters: `BitVec.toInt` on an eight-bit word is a case split whose `Int`
-arithmetic goes through the library's classical order lemmas.  The pin below names
-it; the block lemmas do not use the bridge and stay at `[propext, Quot.sound]`. -/
+The bridge's signed comparison carries one of this module's two `Classical.choice`
+carriers, and it is the proof's rather than a lemma's: `evalICmp_sgt_negone_one_iff`
+unfolds `BitVec.toInt` on an eight-bit word into its two branches and closes each
+with `omega`, which reaches `Decidable.byContradiction` on the goal's `↔` —
+`Classical.propDecidable` — in the two branch helpers it generates.
+`unescapeTable_test` inherits exactly that carrier and nothing else.  The module's
+other carrier is `Nat.and_two_pow_sub_one_eq_mod`, named at `and65535_ofNat` and
+inherited by `pmadd_hexFour` and `hex4_pmadd`.  The block lemmas use neither and
+stay at `[propext, Quot.sound]`. -/
 
 /-- The table's entry at a byte is that byte's escape image, or `0xFF`. -/
 theorem unescapeTable_getElem? (b : UInt8) :
@@ -3490,6 +3495,10 @@ theorem hex4_pmadd {bs : List UInt8} {q : Nat} {l : List (BitVec 8)}
 #guard_msgs in
 #print axioms hexTest_low_four
 
+/-! The two multiply-adds inherit `and65535_ofNat`'s carrier — the mask to sixteen
+bits is `Nat.and_two_pow_sub_one_eq_mod`, whose own proof carries
+`Classical.choice` through `Nat.testBit_two_pow_sub_one` — and add nothing to it. -/
+
 /-- info: 'LeanLLVM.Vellum.pmadd_hexFour' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms pmadd_hexFour
@@ -4023,7 +4032,12 @@ end LeanLLVM.Vellum
 
 namespace LeanLLVM.Vellum
 
-/-! ### Axiom footprints: the escape table and its reader -/
+/-! ### Axiom footprints: the escape table and its reader
+
+`evalICmp_sgt_negone_one_iff` and `unescapeTable_test` carry
+`Classical.propDecidable`, which the `split <;> omega` in the former's proof
+reaches; every other declaration in this group is at `[propext]` or
+`[propext, Quot.sound]`. -/
 
 /-- info: 'LeanLLVM.Vellum.unescapeTable_getElem?' depends on axioms: [propext] -/
 #guard_msgs in

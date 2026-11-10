@@ -255,6 +255,39 @@ theorem ofNat64_add (a b : Nat) :
   apply BitVec.eq_of_toNat_eq
   simp [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.add_mod]
 
+/-- A quotient below the bound its product gives.  The strict-product form
+`Nat.div_lt_of_lt_mul` carries `Classical.choice`; this one is
+`Nat.div_lt_iff_lt_mul` at the factor's positivity, so it carries neither. -/
+theorem div_lt_of_lt_mul {m n k : Nat} (h : m < n * k) : m / n < k := by
+  rcases Nat.eq_zero_or_pos n with hn | hn
+  · subst hn
+    rw [Nat.zero_mul] at h
+    exact absurd h (Nat.not_lt_zero m)
+  · rw [Nat.div_lt_iff_lt_mul hn, Nat.mul_comm]
+    exact h
+
+/-- **A residue's quotient by the leading factor.**  `m % (n * k) / n` is
+`m / n % k`.  `Nat.mod_mul_right_div_self` states the same equation and carries
+`Classical.choice` through `Nat.div_lt_of_lt_mul`; this proof goes through
+`Nat.div_add_mod`, `Nat.mul_add_div` and `Nat.add_mul_mod_self_left`, none of
+which do. -/
+theorem mod_mul_right_div_self (m n k : Nat) : m % (n * k) / n = m / n % k := by
+  rcases Nat.eq_zero_or_pos n with hn | hn
+  · subst hn; simp
+  rcases Nat.eq_zero_or_pos k with hk | hk
+  · subst hk; simp
+  have hpos : 0 < n * k := Nat.mul_pos hn hk
+  have hdivmod : n * k * (m / (n * k)) + m % (n * k) = m := Nat.div_add_mod m (n * k)
+  have hrlt : m % (n * k) < n * k := Nat.mod_lt m hpos
+  have hlt : m % (n * k) / n < k := div_lt_of_lt_mul hrlt
+  have hcongr : (n * (k * (m / (n * k))) + m % (n * k)) / n = m / n := by
+    rw [← Nat.mul_assoc, hdivmod]
+  have hdiv : m / n = k * (m / (n * k)) + (m % (n * k)) / n := by
+    rw [← hcongr, Nat.mul_add_div hn]
+  have hmod : (k * (m / (n * k)) + (m % (n * k)) / n) % k = (m % (n * k)) / n := by
+    rw [Nat.add_comm, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hlt]
+  rw [hdiv, hmod]
+
 /-- **`natToBytes` sees only the low bytes a width keeps.**  Writing a value and
 writing its residue at a power of two are the same bytes. -/
 theorem natToBytes_mod_pow (v k n : Nat) (hn : k ≤ n) :
@@ -270,7 +303,7 @@ theorem natToBytes_mod_pow (v k n : Nat) (hn : k ≤ n) :
       have hmod : (v % 256 ^ n) % 256 = v % 256 := by
         rw [hpow, Nat.mod_mul_right_mod]
       have hdiv : (v % 256 ^ n) / 256 = (v / 256) % 256 ^ (n - 1) := by
-        rw [hpow, Nat.mod_mul_right_div_self]
+        rw [hpow, mod_mul_right_div_self]
       rw [hmod, hdiv, ih (v / 256) (n - 1) (by omega)]
 
 /-- Eight bytes of a 64-bit word are the same eight bytes of its residue. -/
@@ -762,11 +795,14 @@ theorem lstIfEnd4_cellCount_bytes (c0 : Nat) (esc : BitVec 64) :
 
 /-! ### Axiom footprints
 
-Two of these carry `Classical.choice`.  Its carrier is
-`Nat.mod_mul_right_div_self`, the division lemma `natToBytes_mod_pow` uses to see
-that `natToBytes` reads only the low bytes a width keeps; the repository already
-names it at the same place in the masks' module.  Nothing else in this module
-opens a choice. -/
+The writer's loop and the inline batch carry one `Classical.choice`, and it is
+not this module's arithmetic: `lstWhileBody_run` and `lstIfEnd4_run` sign-extend a
+word to its own width with `BitVec.signExtend_eq`, whose proof reaches
+`BitVec.signExtend_eq_setWidth_of_le`'s classical case split.  Every other
+declaration here is at `[propext, Quot.sound]` or below: the division, the residue
+split and the list split are stated locally (`div_lt_of_lt_mul`,
+`mod_mul_right_div_self`, `take_add`) precisely so the core forms' carriers stay
+outside this module's footprint. -/
 
 /-- info: 'LeanLLVM.Vellum.lstIfEnd4_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -788,11 +824,11 @@ opens a choice. -/
 #guard_msgs in
 #print axioms lstIfEnd4Mem_unchanged
 
-/-- info: 'LeanLLVM.Vellum.lstIfEnd4_cellCount_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.lstIfEnd4_cellCount_bytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms lstIfEnd4_cellCount_bytes
 
-/-- info: 'LeanLLVM.Vellum.natToBytes_mod_pow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.natToBytes_mod_pow' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms natToBytes_mod_pow
 
@@ -869,7 +905,7 @@ theorem b_call_batch (env : Env) (s : State) (d c o : String) (esc : BitVec 64)
 #guard_msgs in
 #print axioms ofNat64_add
 
-/-- info: 'LeanLLVM.Vellum.natToBytes_mod_two_pow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.natToBytes_mod_two_pow' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms natToBytes_mod_two_pow
 
@@ -877,7 +913,7 @@ theorem b_call_batch (env : Env) (s : State) (d c o : String) (esc : BitVec 64)
 #guard_msgs in
 #print axioms lstIfEnd4_count_compose
 
-/-- info: 'LeanLLVM.Vellum.lstIfEnd4_count_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.lstIfEnd4_count_bytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms lstIfEnd4_count_bytes
 
@@ -1183,10 +1219,24 @@ theorem positionsBytes_append (w : Nat) (a b : List Nat) :
     positionsBytes w (a ++ b) = positionsBytes w a ++ positionsBytes w b := by
   simp only [positionsBytes, List.map_append, List.flatten_append]
 
+/-- Taking `i + j` entries is taking `i` and then `j` of the rest.  `List.take_add`
+states this and carries `Classical.choice` through `List.take_eq_take_iff`; this
+proof is the list induction on `i`, so it carries nothing. -/
+theorem take_add {α : Type} (l : List α) (i j : Nat) :
+    l.take (i + j) = l.take i ++ (l.drop i).take j := by
+  induction l generalizing i j with
+  | nil => simp
+  | cons a t ih =>
+    cases i with
+    | zero => simp
+    | succ i =>
+      rw [Nat.succ_add, List.take_succ_cons, List.drop_succ_cons]
+      exact congrArg (fun x => a :: x) (ih i j)
+
 /-- The first `used + k` positions split at `used`. -/
 theorem take_append_drop_take {α : Type} (l : List α) (used k : Nat) :
     l.take used ++ (l.drop used).take k = l.take (used + k) := by
-  rw [List.take_add]
+  rw [take_add]
 
 /-- Dropping eight from a list is dropping the minimum of its length and eight. -/
 theorem drop_eight_eq_drop_min {α : Type} (l : List α) :
@@ -1655,10 +1705,13 @@ theorem lstWhileBody_step (env : Env) (s : State) (w : BitVec 64) (base : BitVec
 
 /-! ### The writer loop's invariant and its remaining-block induction -/
 
-/-- The zero word's population count. -/
+/-- The zero word's population count.  The zero word's lanes are
+`JsonEntrySteps.setLanes_zero` — filtering by a test no entry passes leaves
+nothing — rather than `simp`, whose `List.filter_eq_nil_iff` carries
+`Classical.choice`. -/
 theorem ctpop_zero64 : ctpop (0 : BitVec 64) = 0 := by
-  rw [ctpop_eq_setLanes_length]
-  simp [setLanes, getLsbD_zero_64]
+  rw [ctpop_eq_setLanes_length, LeanLLVM.Vellum.JsonEntrySteps.setLanes_zero]
+  rfl
 
 /-- An operand other than a `%o` register reads the same in the environment the
 first `phi` extends. -/
@@ -1764,7 +1817,7 @@ theorem lstWriter_prefix
   rw [show 4 * (used + k) = 4 * used + 4 * k from by omega]
   rw [happ]
   congr 1
-  rw [← positionsBytes_append, ← List.map_append, List.take_add]
+  rw [← positionsBytes_append, ← List.map_append, take_add]
 
 
 /-- The count cell after a batch: the store at `xn` reads back as the count. -/
@@ -2041,7 +2094,7 @@ theorem lstWriter_run_at (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List N
 #guard_msgs in
 #print axioms lstWriter_step_exit
 
-/-- info: 'LeanLLVM.Vellum.lstWriter_prefix' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Vellum.lstWriter_prefix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms lstWriter_prefix
 
