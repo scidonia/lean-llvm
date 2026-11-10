@@ -22,6 +22,7 @@ import LeanLLVM.Vellum.PipelineBodyFacts
 
 set_option autoImplicit false
 set_option maxRecDepth 16000
+set_option maxHeartbeats 1000000
 
 namespace LeanLLVM.Vellum
 
@@ -939,7 +940,8 @@ theorem usUs_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pUsUs) (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call21.us.us" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUsUs.instrs hagree
     (fun n hn => instrsUses_subset_armUses pUsUs hn) hcode
@@ -951,10 +953,16 @@ theorem usUs_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64
     rw [← h1]
     simp only [stateAt, usUsOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) "%call21.us.us" = some r.ret := by
+    simp only [usUsOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call21.us.us" = some r.ret :=
+    (hag.2.2.2 "%call21.us.us" (countReg_mem_armUses .pos8NoGate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pUsUs hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -1032,7 +1040,8 @@ theorem us_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pUs) (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call21.us" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs.instrs hagree
     (fun n hn => instrsUses_subset_armUses pUs hn) hcode
@@ -1044,10 +1053,16 @@ theorem us_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
     rw [← h1]
     simp only [stateAt, usOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) "%call21.us" = some r.ret := by
+    simp only [usOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call21.us" = some r.ret :=
+    (hag.2.2.2 "%call21.us" (countReg_mem_armUses .pos8Gate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pUs hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -1117,7 +1132,8 @@ theorem us83_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pUs83) (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call.us" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs83.instrs hagree
     (fun n hn => instrsUses_subset_armUses pUs83 hn) hcode
@@ -1129,10 +1145,16 @@ theorem us83_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64
     rw [← h1]
     simp only [stateAt, us83Out, cells, lookupName]
     simp +decide
+  have hbld : lookupName (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret) "%call.us" = some r.ret := by
+    simp only [us83Out]
+    block_lk
+  have hcntE : lookupName t'.env "%call.us" = some r.ret :=
+    (hag.2.2.2 "%call.us" (countReg_mem_armUses .b8NoGate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pUs83 hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -1210,7 +1232,8 @@ theorem body_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pBody) (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pBody.instrs hagree
     (fun n hn => instrsUses_subset_armUses pBody hn) hcode
@@ -1222,10 +1245,16 @@ theorem body_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVec 64
     rw [← h1]
     simp only [stateAt, bodyOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret) "%call" = some r.ret := by
+    simp only [bodyOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call" = some r.ret :=
+    (hag.2.2.2 "%call" (countReg_mem_armUses .b8Gate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pBody hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -2469,7 +2498,7 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [vexit_eq_one]
     rw [hiw, vinc_ofNat (by omega), hshr]
     exact (ofNat64_eq_iff (by omega) (by omega)).mpr (by omega)
-  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := usUs_step_at_exit (pipelineCalls tab base s2) s.env s S.n
+  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := usUs_step_at_exit (pipelineCalls tab base s2) s.env s S.n
     S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep S.sw S.kw S.iw S.shr w1 w2 w3
     w4 r2 r2 hpcS hagree hcode hvexit
   have hsuccStream : readLanes32 e.mem (S.ep + 4 * S.k0) (k' - S.k0) =
@@ -2492,13 +2521,17 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hpreE' : e.pre = some "for.body.us.us" := by rw [hpreE, hpc0]
   have htailE : tailCells (usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
-    refine tailCells_of_agree ?_ hagE
+    refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
     simp only [usUsOut]
     refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, usUsSucc, harm, PipelineBodyArm.hasEscape] using htail) ?_
     tail_cells_absent
-  exact ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
+  refine ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w,
-    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+  · rfl
+  · show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
+    rw [hcntE, hret2]
+
 
 
 /-! ### The `for.body.us83` iteration -/
@@ -2892,7 +2925,7 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [vexit_eq_one]
     rw [hiw, vinc_ofNat (by omega), hshr]
     exact (ofNat64_eq_iff (by omega) (by omega)).mpr (by omega)
-  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := us83_step_at_exit (pipelineCalls tab base s2) s.env s
+  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := us83_step_at_exit (pipelineCalls tab base s2) s.env s
     S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep S.sw S.kw S.iw S.shr w1
     w2 w3 w4 r2 r2 hpcS hagree hcode hvexit
   have hsuccStream : readLanes32 e.mem (S.ep + 4 * S.k0) (k' - S.k0) =
@@ -2915,13 +2948,17 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hpreE' : e.pre = some "for.body.us83" := by rw [hpreE, hpc0]
   have htailE : tailCells (us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
-    refine tailCells_of_agree ?_ hagE
+    refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
     simp only [us83Out]
     refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, us83Succ, harm, PipelineBodyArm.hasEscape] using htail) ?_
     tail_cells_absent
-  exact ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
+  refine ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w,
-    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+  · rfl
+  · show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
+    rw [hcntE, hret2]
+
 
 
 
@@ -4414,7 +4451,7 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [vexit_eq_one]
     rw [hiw, vinc_ofNat (by omega), hshr]
     exact (ofNat64_eq_iff (by omega) (by omega)).mpr (by omega)
-  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := us_step_at_exit (pipelineCalls tab base s2)
+  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := us_step_at_exit (pipelineCalls tab base s2)
     s.env s S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl S.entw
     S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r2 r3 hpcS
     hagree hcode hvexit
@@ -4455,14 +4492,18 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have htailE : tailCells (usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun) e.env := by
-    refine tailCells_of_agree ?_ hagE
+    refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
     simp only [usOut]
     refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, usSucc, harm, PipelineBodyArm.hasEscape] using htail) ?_
     tail_cells_absent
-  exact ⟨e, je, hje, ⟨usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
+  refine ⟨e, je, hje, ⟨usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun,
-    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+  · rfl
+  · show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
+    rw [hcntE, hret2]
+
 
 /-- **A `for.body` iteration that leaves.**  The B8 emitter's arm at its exit. -/
 theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
@@ -4504,7 +4545,7 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [vexit_eq_one]
     rw [hiw, vinc_ofNat (by omega), hshr]
     exact (ofNat64_eq_iff (by omega) (by omega)).mpr (by omega)
-  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := body_step_at_exit (pipelineCalls tab base s2)
+  obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := body_step_at_exit (pipelineCalls tab base s2)
     s.env s S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl S.entw
     S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr w1 w2 w3 w4 w5 w6 w7 r2 r3 hpcS
     hagree hcode hvexit
@@ -4545,14 +4586,18 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have htailE : tailCells (bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun) e.env := by
-    refine tailCells_of_agree ?_ hagE
+    refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
     simp only [bodyOut]
     refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, bodySucc, harm, PipelineBodyArm.hasEscape] using htail) ?_
     tail_cells_absent
-  exact ⟨e, je, hje, ⟨bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
+  refine ⟨e, je, hje, ⟨bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun,
-    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+    hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+  · rfl
+  · show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
+    rw [hcntE, hret2]
+
 
 /-! ### The split path's increment word
 
@@ -4661,7 +4706,8 @@ theorem usUs_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : Bit
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (usUsSplitOut env n b sc mk delim inString ws entw ep w0 shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pUsUs) (stateAt (usUsSplitOut env n b sc mk delim inString ws entw ep w0 shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call21.us.us" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUsUs.instrs hagree
     (fun n hn => instrsUses_subset_armUses pUsUs hn) hcode
@@ -4673,10 +4719,16 @@ theorem usUs_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : Bit
     rw [← h1]
     simp only [stateAt, usUsSplitOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (usUsSplitOut env n b sc mk delim inString ws entw ep w0 shr w1 w2 w3 w4 r.ret) "%call21.us.us" = some r.ret := by
+    simp only [usUsSplitOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call21.us.us" = some r.ret :=
+    (hag.2.2.2 "%call21.us.us" (countReg_mem_armUses .pos8NoGate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pUsUs hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -4787,7 +4839,7 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have hvexit : vexit 0 S.shr = 1 := by
         rw [hshr, hblk1]
         exact (vexit_zero_at_ofNat (b := 1) (by decide)).mpr rfl
-      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := usUs_split_step_at_exit
+      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := usUs_split_step_at_exit
         (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot S.delim S.inString
         S.ws S.entw S.ep S.kw S.shr w1 w2 w3 w4 r2 r2 hpcS hagree hcode hvexit
       have hsuccStream : readLanes32 e.mem (S.ep + 4 * S.k0) (k' - S.k0) =
@@ -4810,15 +4862,19 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have hpreE' : e.pre = some "for.body.us.us" := by rw [hpreE, hpc0]
       have htailE : tailCells (usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
-        refine tailCells_of_agree ?_ hagE
+        refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
         simp only [usUsSplitOut]
         refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, usUsSucc, harm, PipelineBodyArm.hasEscape] using htail) ?_
         tail_cells_absent
-      exact ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside
+      refine ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (vshr13 w1 w2 w3 w4) w,
         hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+      · rfl
+      · show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
+        rw [hcntE, hret2]
+
   | succ r' =>
       have hvexit : vexit 0 S.shr = 0 := by
         rw [vexit_eq_zero, hshr]
@@ -4992,7 +5048,8 @@ theorem us83_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : Bit
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (us83SplitOut env n b sc mk delim inString ws entw ep w0 shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pUs83) (stateAt (us83SplitOut env n b sc mk delim inString ws entw ep w0 shr w1 w2 w3 w4 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call.us" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs83.instrs hagree
     (fun n hn => instrsUses_subset_armUses pUs83 hn) hcode
@@ -5004,10 +5061,16 @@ theorem us83_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : Bit
     rw [← h1]
     simp only [stateAt, us83SplitOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (us83SplitOut env n b sc mk delim inString ws entw ep w0 shr w1 w2 w3 w4 r.ret) "%call.us" = some r.ret := by
+    simp only [us83SplitOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call.us" = some r.ret :=
+    (hag.2.2.2 "%call.us" (countReg_mem_armUses .b8NoGate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pUs83 hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -5110,7 +5173,7 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have hvexit : vexit 0 S.shr = 1 := by
         rw [hshr, hblk1]
         exact (vexit_zero_at_ofNat (b := 1) (by decide)).mpr rfl
-      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := us83_split_step_at_exit
+      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := us83_split_step_at_exit
         (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot S.delim S.inString
         S.ws S.entw S.ep S.kw S.shr w1 w2 w3 w4 r2 r2 hpcS hagree hcode hvexit
       have hsuccStream : readLanes32 e.mem (S.ep + 4 * S.k0) (k' - S.k0) =
@@ -5133,15 +5196,19 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have hpreE' : e.pre = some "for.body.us83" := by rw [hpreE, hpc0]
       have htailE : tailCells (us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
-        refine tailCells_of_agree ?_ hagE
+        refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
         simp only [us83SplitOut]
         refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, us83Succ, harm, PipelineBodyArm.hasEscape] using htail) ?_
         tail_cells_absent
-      exact ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside
+      refine ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (vshr13 w1 w2 w3 w4) w,
         hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+      · rfl
+      · show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
+        rw [hcntE, hret2]
+
   | succ r' =>
       have hvexit : vexit 0 S.shr = 0 := by
         rw [vexit_eq_zero, hshr]
@@ -5322,7 +5389,8 @@ theorem us_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVe
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (usSplitOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pUs) (stateAt (usSplitOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call21.us" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs.instrs hagree
     (fun n hn => instrsUses_subset_armUses pUs hn) hcode
@@ -5334,10 +5402,16 @@ theorem us_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : BitVe
     rw [← h1]
     simp only [stateAt, usSplitOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (usSplitOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r.ret) "%call21.us" = some r.ret := by
+    simp only [usSplitOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call21.us" = some r.ret :=
+    (hag.2.2.2 "%call21.us" (countReg_mem_armUses .pos8Gate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pUs hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -5453,7 +5527,7 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have hvexit : vexit 0 S.shr = 1 := by
         rw [hshr, hblk1]
         exact (vexit_zero_at_ofNat (b := 1) (by decide)).mpr rfl
-      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := us_split_step_at_exit
+      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := us_split_step_at_exit
         (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot S.delim S.inString
         S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr w1 w2 w3 w4 w5
         w6 w7 r2 r3 hpcS hagree hcode hvexit
@@ -5494,16 +5568,20 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have htailE : tailCells (usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
         (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun) e.env := by
-        refine tailCells_of_agree ?_ hagE
+        refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
         simp only [usSplitOut]
         refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, usSucc, harm, PipelineBodyArm.hasEscape] using htail) ?_
         tail_cells_absent
-      exact ⟨e, je, hje, ⟨usSucc S (carry64 lo hi stm).inside
+      refine ⟨e, je, hje, ⟨usSucc S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (S.xn + len) (vshr13 w1 w2 w3 w4) w ste (IsBackslashB (hi ⟨31, by decide⟩))
           ste.oddRun,
         hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+      · rfl
+      · show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
+        rw [hcntE, hret2]
+
   | succ r' =>
       have hvexit : vexit 0 S.shr = 0 := by
         rw [vexit_eq_zero, hshr]
@@ -5696,7 +5774,8 @@ theorem body_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : Bit
     ∃ (e : State) (j : Nat), j ≤ 1 ∧ e.pc = "for.cond.cleanup" ∧
       e.mem = m'.mem ∧
       e.pre = some s.pc ∧
-      AgreeOn tailRegs (stateAt (bodySplitOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      AgreeOn (armUses pBody) (stateAt (bodySplitOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r.ret) { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) e ∧
+      lookupName e.env "%call" = some r.ret ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
   obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pBody.instrs hagree
     (fun n hn => instrsUses_subset_armUses pBody hn) hcode
@@ -5708,10 +5787,16 @@ theorem body_split_step_at_exit (calls : Calls) (env : Env) (s : State) (n : Bit
     rw [← h1]
     simp only [stateAt, bodySplitOut, cells, lookupName]
     simp +decide
+  have hbld : lookupName (bodySplitOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r.ret) "%call" = some r.ret := by
+    simp only [bodySplitOut]
+    block_lk
+  have hcntE : lookupName t'.env "%call" = some r.ret :=
+    (hag.2.2.2 "%call" (countReg_mem_armUses .b8Gate)).symm.trans hbld
   refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1, rfl,
     hag.1.symm,
     rfl,
-    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x (tailRegs_subset_armUses pBody hx)⟩,
+    ⟨hag.1, hag.2.1, rfl, fun x hx => hag.2.2.2 x hx⟩,
+    hcntE,
     fun k => ?_⟩
   have hstep : step calls pipelineBody s =
       .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
@@ -5828,7 +5913,7 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have hvexit : vexit 0 S.shr = 1 := by
         rw [hshr, hblk1]
         exact (vexit_zero_at_ofNat (b := 1) (by decide)).mpr rfl
-      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hrunE⟩ := body_split_step_at_exit
+      obtain ⟨e, je, hje, hpcE, hmemE, hpreE, hagE, hcntE, hrunE⟩ := body_split_step_at_exit
         (pipelineCalls tab base s2) s.env s S.n S.b S.sc S.maskSlot S.delim S.inString
         S.ws S.backslash S.ctl S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr w1 w2 w3 w4 w5
         w6 w7 r2 r3 hpcS hagree hcode hvexit
@@ -5869,16 +5954,20 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       have htailE : tailCells (bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
         (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun) e.env := by
-        refine tailCells_of_agree ?_ hagE
+        refine tailCells_of_agree ?_ (AgreeOn_tailRegs hagE)
         simp only [bodySplitOut]
         refine tailCells_builder (AgreeOn_tailRegs hagree) (by simpa only [tailCells, bodySucc, harm, PipelineBodyArm.hasEscape] using htail) ?_
         tail_cells_absent
-      exact ⟨e, je, hje, ⟨bodySucc S (carry64 lo hi stm).inside
+      refine ⟨e, je, hje, ⟨bodySucc S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (S.xn + len) (vshr13 w1 w2 w3 w4) w ste (IsBackslashB (hi ⟨31, by decide⟩))
           ste.oddRun,
         hpcE, Nat.le_trans hk0le hkbase, hent0', hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE⟩, hrunE⟩
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+      · rfl
+      · show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
+        rw [hcntE, hret2]
+
   | succ r' =>
       have hvexit : vexit 0 S.shr = 0 := by
         rw [vexit_eq_zero, hshr]
@@ -6738,7 +6827,7 @@ register" statement it was, and the predecessor field is part of it too. -/
 theorem pipelineLoopExit_cells {s : State} (h : pipelineLoopExit s) :
     ∃ S : PipelineLoopCarried, s.pre = some S.arm.head ∧ tailCells S s.env := by
   obtain ⟨S, -, -, -, -, -, -, hpre, htail⟩ := h
-  exact ⟨S, hpre, htail⟩
+  exact ⟨S, hpre, htail.1⟩
 
 /-! ### Axiom footprints
 

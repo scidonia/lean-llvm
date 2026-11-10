@@ -1880,11 +1880,21 @@ def tailRegs : List String :=
   ["%nk", "%dst", "%dstcap", "%ndst", "%ev", "%evcap", "%nev", "%err", "%arm",
    "%xp", "%nxp"]
 
-/-- The names a step transports over: the block's own read set together with the
-tail's cells.  The tail's names are free at every arm's incoming builder — it
-binds none of them — so widening the transport relation to them costs nothing at
-the state a step is entered in and hands the successor the cells. -/
-def armUses (b : Block) : List String := tailRegs ++ blockUses b
+/-- **The four exit-edge count registers**, the cleanup `phi`'s incoming entries
+for the arms.  An arm's *outgoing* builder binds one of them — the emitter's
+return word — and its incoming builder binds that one too, as the phi's incoming
+value; the other three it does not bind, so the transport relation may carry the
+whole set at no cost. -/
+def countRegs : List String :=
+  ["%call21.us.us", "%call21.us", "%call.us", "%call"]
+
+/-- The names a step transports over: the block's own read set, the tail's cells,
+and the exit edges' count registers.  The tail's names and the count registers are
+free at every arm's incoming builder where it binds none of them — and where it
+binds its own count register it binds the carried count word, which is the value
+the state holds — so widening the transport relation to them costs nothing at the
+state a step is entered in, and hands the successor the cells and the count. -/
+def armUses (b : Block) : List String := tailRegs ++ countRegs ++ blockUses b
 
 theorem instrsUses_subset_armUses (b : Block) {n : String}
     (h : n ∈ instrsUses b.instrs) : n ∈ armUses b :=
@@ -2931,6 +2941,29 @@ def PipelineBodyArm.hasEscape : PipelineBodyArm → Bool
   | .b8NoGate => false
   | .b8Gate => true
 
+/-- The register each arm's exit edge hands the cleanup `phi`: the emitter's own
+return word, which is the count the exit block stores in `%nk` and stage 2 reads
+the entry stream at.  One name per arm because the four unswitched copies bind
+four different names. -/
+def PipelineBodyArm.countReg : PipelineBodyArm → String
+  | .pos8NoGate => "%call21.us.us"
+  | .pos8Gate => "%call21.us"
+  | .b8NoGate => "%call.us"
+  | .b8Gate => "%call"
+
+theorem countReg_mem_countRegs (a : PipelineBodyArm) : a.countReg ∈ countRegs := by
+  cases a
+  · exact List.mem_cons_self ..
+  · exact List.mem_cons_of_mem _ (List.mem_cons_self ..)
+  · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+  · exact List.mem_cons_of_mem _
+      (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))
+
+/-- The arm's count register is among the names a step transports over. -/
+theorem countReg_mem_armUses (a : PipelineBodyArm) : a.countReg ∈ armUses a.block :=
+  List.mem_append_right tailRegs
+    (List.mem_append_left (blockUses a.block) (countReg_mem_countRegs a))
+
 /-- The values the loop carries from one iteration to the next, and the shape
 the run was staged at.
 
@@ -3067,7 +3100,7 @@ def tailCells (S : PipelineLoopCarried) (env : Env) : Prop :=
 /-- The tail's names are among the names a step transports over. -/
 theorem tailRegs_subset_armUses (b : Block) {n : String} (h : n ∈ tailRegs) :
     n ∈ armUses b :=
-  List.mem_append_left _ h
+  List.mem_append_left (countRegs ++ blockUses b) h
 
 /-- The tail's agreement, from a step's: the transport covers the tail's names. -/
 theorem AgreeOn_tailRegs {b : Block} {t s : State} (h : AgreeOn (armUses b) t s) :
@@ -3206,6 +3239,21 @@ def PipelineBodyArm.splitIn (a : PipelineBodyArm) (env : Env)
       bodySplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
         S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr
 
+/-- **The count the exiting edge selected.**  `S.kw` is the arm's own return
+word — the value the exit `phi` reads, which the arm's outgoing builder binds at
+`PipelineBodyArm.countReg` — and it is the loop's count, so the exit block's store
+and the post's count clause speak of `S.k`.  The register side is the state's own
+environment, which is the arm's outgoing builder; the loop's invariant carries it
+through the transport relation (`countReg_mem_armUses`).
+
+This is the one datum the exiting edge carries that the memory does not: the word
+is a register, so no read of the exit state recovers it, and the loop's own count
+`S.k` is what the exit block stores.  A tail that took it as a hypothesis would be
+taking the premise its own state carries. -/
+def PipelineLoopCount (S : PipelineLoopCarried) (s : State) : Prop :=
+  S.kw = BitVec.ofNat 64 S.k ∧
+    lookupName s.env S.arm.countReg = some (.int 64 S.kw)
+
 /-- The states the loop may leave in: the exit block, carrying the entry stream —
 the caller's prefix and the part the loop appended.
 
@@ -3223,22 +3271,20 @@ stage-2 call, so the exit is where the facts are handed on.
 `pipelineLoopInv` at a spent budget *is* this predicate, by its own definition, so
 the two are one statement rather than two that a later edit could drift apart.
 
-**What the predicate carries, and what it does not.**  Its last two conjuncts are
-the predecessor (`s.pre = some S.arm.head`, which fixes the exit phi's incoming
-selector) and `tailCells S s.env`: the nine slots the exit block's store and
+**What the predicate carries, and what it does not.**  Its last three conjuncts
+are the predecessor (`s.pre = some S.arm.head`, which fixes the exit phi's incoming
+selector), `tailCells S s.env`: the nine slots the exit block's store and
 stage-2 call read — the entry count slot, the arena and its capacity, the two
 cursors, the event stream and its capacity, the refusal slot, the arm selector —
-and the escape list's two stream slots on the gate-on arms.  No arm block reads or
-binds those names, so a step hands them on by reading through to the environment
-it was entered in (`tailCells_builder`), and `PipelineBodyStep.pipelineLoopExit_cells`
-is the projection a consumer uses.
+and the escape list's two stream slots on the gate-on arms, and
+`PipelineLoopCount S s`: the count the exiting edge selected, which the exit
+`phi` reads at the arm's own register.  No arm block reads or binds those names,
+so a step hands them on by reading through to the environment it was entered in
+(`tailCells_builder`), and `PipelineBodyStep.pipelineLoopExit_cells` is the
+projection a consumer uses.
 
-What it does *not* carry is the count the exiting edge selected: the exit phi's
-incoming operand is the arm's own return word (`%call21.us.us` and its three
-siblings), which the arm's builder binds, so `PipelineBodyStep.pipelineExit_run`
-still takes that value as a hypothesis.  Nor does it carry the two calls' inputs,
-which are the state's memory: the predicate names the entry stream and no other
-address's contents. -/
+What it does *not* carry is the two calls' inputs, which are the state's memory:
+the predicate names the entry stream and no other address's contents. -/
 def pipelineLoopExit (s : State) : Prop :=
   ∃ (S : PipelineLoopCarried),
     s.pc = "for.cond.cleanup" ∧
@@ -3248,7 +3294,28 @@ def pipelineLoopExit (s : State) : Prop :=
     S.ent.Pairwise (· < ·) ∧
     (∀ q ∈ S.ent, q < 64 * S.i) ∧
     s.pre = some S.arm.head ∧
-    tailCells S s.env
+    tailCells S s.env ∧
+    PipelineLoopCount S s
+
+/-- info: 'LeanLLVM.Vellum.PipelineBodyArm.countReg' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.countReg
+
+/-- info: 'LeanLLVM.Vellum.countReg_mem_countRegs' does not depend on any axioms -/
+#guard_msgs in
+#print axioms countReg_mem_countRegs
+
+/-- info: 'LeanLLVM.Vellum.countReg_mem_armUses' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms countReg_mem_armUses
+
+/-- info: 'LeanLLVM.Vellum.PipelineLoopCount' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineLoopCount
+
+/-- info: 'LeanLLVM.Vellum.pipelineLoopExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms pipelineLoopExit
 
 /-- **The exit predicate determines no byte of the state it stands on.**
 
@@ -3266,7 +3333,7 @@ theorem pipelineLoopExit_reads_nothing :
   let s0 : State :=
     { env := [("%nk", .ptr 0), ("%dst", .ptr 0), ("%dstcap", .int 64 0),
         ("%ndst", .ptr 0), ("%ev", .ptr 0), ("%evcap", .int 64 0), ("%nev", .ptr 0),
-        ("%err", .ptr 0), ("%arm", .int 64 0)],
+        ("%err", .ptr 0), ("%arm", .int 64 0), ("%call21.us.us", .int 64 0)],
       mem := [], next := 0, pc := "for.cond.cleanup", pre := some "for.body.us.us" }
   refine ⟨s0, 0,
     ⟨{ arm := .pos8NoGate, i := 0, iw := 0, sw := 0, kw := 0, shr := 0, b := 0,
@@ -3277,7 +3344,7 @@ theorem pipelineLoopExit_reads_nothing :
        k := 0, xn := 0, xpExtent := 0, k0 := 0, xn0 := 0, ent0 := [], ent := [],
        nk := 0, dst := 0, dstcap := 0, ndst := 0, ev := 0, evcap := 0, nev := 0,
        err := 0, armSel := 0 },
-     rfl, Nat.le_refl 0, ?_, ?_, ?_, ?_, rfl, ?_⟩, ?_⟩
+     rfl, Nat.le_refl 0, ?_, ?_, ?_, ?_, rfl, ?_, ?_⟩, ?_⟩
   · simp [readLanes32]
   · simp [readLanes32]
   · simp
@@ -3295,6 +3362,9 @@ theorem pipelineLoopExit_reads_nothing :
     · block_lk
     · intro hc; exact Bool.noConfusion hc
     · intro hc; exact Bool.noConfusion hc
+  · refine ⟨rfl, ?_⟩
+    simp only [s0, PipelineBodyArm.countReg]
+    block_lk
   · simp [s0, readLanes32, readBytes, readByte]
 
 /-- The regions the loop's separation is stated over, in the staging's order.
