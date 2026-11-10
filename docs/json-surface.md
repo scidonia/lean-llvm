@@ -148,10 +148,12 @@ them as discharged:
    `pipeline_satisfies` keeps a hypothesis for them.  Deferred, not missing.
 2. **`ParserHalf`'s number conjunct is unbuilt.**  The emitted event records a
    number as **eight bytes of a double**; the model keeps the **source lexeme**.
-   Relating them needs a lexeme-to-double model (`num_fast`/`strtod`), which is
-   not in Lean and has no counterpart in VeLLVM.  The record states the
-   correspondence as a parameter (`EventStreamRel`) rather than asserting an
-   equality that is false.
+   `LeanLLVM.JSON.Strtod` states the lexeme-to-double specification
+   (`strtodSpec`, with its rounding property, and the record's payload as
+   `toBits (strtodSpec ·)`), but the emitted `num_fast`/`strtod` conversion is
+   not shown to compute it — no run of emitted code is modelled and there is no
+   counterpart in VeLLVM.  The record states the correspondence as a parameter
+   (`EventStreamRel`) rather than asserting an equality that is false.
 3. **The refused document's offset is per stage.**  `RefusalOffset` distinguishes a
    UTF-8-owned refusal, where the caller reports the document's end, from a
    walk-owned one, which carries the parser's own position — because the two
