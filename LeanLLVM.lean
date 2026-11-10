@@ -73,6 +73,7 @@ import LeanLLVM.Vellum.JsonPipelineBlockEval
 import LeanLLVM.Vellum.JsonPipelineRefine
 import LeanLLVM.Vellum.JsonPipelineSpec
 import LeanLLVM.FramePredicate
+import LeanLLVM.Permissions
 import LeanLLVM.Vellum.PipelineBodyFacts
 import LeanLLVM.Vellum.PipelineBodyStep
 import LeanLLVM.Vellum.JsonStage2Contract
