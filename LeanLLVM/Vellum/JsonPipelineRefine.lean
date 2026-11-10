@@ -670,13 +670,13 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   and `cleanup` from an exit state and returns a verdict with the branch's memory
   — at the cells the exit block reads and at stage-2's `pre`.  `loop.Exit mem` is
   `pipelineLoopExit mem`, which names the program counter, the predecessor, the
-  entry stream, the tail's cells, the exiting count and the frame at `mem`
+  entry stream (with its document and block bounds), the tail's cells, the exiting
+  count, the escape count's slot and growth, and the frame at `mem`
   (`PipelineBodyStep.pipelineLoopExit_cells`, `PipelineLoopCount`); what it does
   not name is the two calls' inputs — the UTF-8 call's window and stage-2's `pre`
-  — and those are the hypotheses of the run this field still owes.  A tail stated
-  at `pipelineLoopExit` alone therefore carries them as hypotheses; a tail at a
-  predicate that carries them is the exit-extension target
-  `PipelineDischarge.pipelineLoopExitStage2`. -/
+  — and those are the hypotheses of the run this field still owes.  A tail is
+  therefore stated at `pipelineLoopExit` and carries them as its own hypotheses;
+  `PipelineDischarge.PipelineTailTarget` is that statement. -/
   exit : ∀ (e : State), loop.Exit mem e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =

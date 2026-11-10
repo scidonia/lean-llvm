@@ -250,18 +250,17 @@ prefix of the tail's extent, so the clause is the staging's own read at
 sixty-four-byte document stages one block, and the decoder's read-past reaches
 `b + 94`, which the window alone does not cover — not a gap the record leaves.
 
-**The entry stream is carried, but not at the document's length.**
-`Γ_stage2.pre` needs `readLanes32 mem ep nep = some ent` with `ent` strictly
-increasing and inside the document.  The loop's invariant carries the read at
-`S.k` lanes, the order and the *block* bound `∀ q ∈ S.ent, q < 64 * S.i`
+**The entry stream is carried, with both bounds.**  `Γ_stage2.pre` needs
+`readLanes32 mem ep nep = some ent` with `ent` strictly increasing and inside the
+document.  The loop's invariant carries the read at `S.k` lanes, the order and the
+*block* bound `∀ q ∈ S.ent, q < 64 * S.i`
 (`PipelineBodyFacts.pipelineLoopInv`), and the staging pins the count slot to the
 empty stream, so the read is the emitters' appended part and nothing below it.
 The document bound `∀ q ∈ S.ent, q < S.n.toNat` is the arms' — it is
-`streamDocBound_append`, from the last block's entry word — and it is **not** a
-conjunct of `pipelineLoopExit`, which the loop hands the tail.  So the tail's
-derivation of this call's pre is where that bound has to arrive, and
-`PipelineDischarge.lean` states the target predicate that carries it.  Dropping
-the clause here instead would make the record false of a caller whose entry stream
+`streamDocBound_append`, from the last block's entry word — and `pipelineLoopExit`
+carries it beside the block bound, so the tail's derivation of this call's pre
+reads both off the exit state it is handed rather than assuming either.  Dropping
+the clause instead would make the record false of a caller whose entry stream
 named a byte outside the document it staged, which is the defect the clause
 exists to exclude.
 -/

@@ -48,16 +48,19 @@ any state that agrees on that read set.  The per-instruction step behind it
 are the names this module's axiom pins read.
 
 **What is here for the instance, and what is not.**  The loop instance and its
-invariant are here, with the entry stream and the block count as carried facts;
-the four arm steps are `PipelineBodyStep`'s, and `pipelineLoop` is assembled
-there.  What is not here is the seed (the three control steps from the entry
-block to the loop's first iteration) and the tail (`PipelineBodyFacts.exit`),
-and the exit predicate is the interface between them: it states at
-`for.cond.cleanup` the stream facts the tail's stage-2 call needs, and it is
+invariant are here, with the entry stream and its block bound, the block count and
+the escape count's slot content and growth as carried facts; the exit adds the
+entry stream's document bound; the four arm steps
+are `PipelineBodyStep`'s, and `pipelineLoop` is assembled there.  What is not here
+is the seed (the three control steps from the entry block to the loop's first
+iteration) and the tail (`PipelineBodyFacts.exit`), and the exit predicate is the
+interface between them: it states at `for.cond.cleanup` every fact the tail's
+stage-2 call reads — the stream's order, its document bound and its block bound,
+the count the exit stores, and the escape count's slot and growth — and it is
 `pipelineLoopInv 0` by definition rather than a second spelling of it.  The
-obstructions are stated where the definitions are — the exit predicate's
-docstring names what the handoff does not reach, and the invariant's names the
-clause each conjunct answers to.
+obstructions are stated where the definitions are: the exit predicate's docstring
+names which facts it carries and which inputs remain the tail's own hypotheses,
+and the invariant's names the clause each conjunct answers to.
 -/
 import LeanLLVM.Vellum.JsonPipelineBlockEval
 import LeanLLVM.Vellum.JsonPipelineRefine
@@ -2582,12 +2585,14 @@ parameters: a block below the count starts inside the document
 the invariant's own `S.i < blocks`, `blocks = pipelineBlocks S.n.toNat` and the
 staging's `64 * blocks + 63 < 2 ^ 32`.
 
-**What this section does not do is thread the bound into the exit predicate.**
-`pipelineLoopExit` still states `∀ q ∈ S.ent, q < 64 * S.i`, and its producer —
-each of the eight arm exits — would have to hand the composed bound on, which
-means the arms' steps carry `vent`'s word identity and the two bounds as conjuncts.
-The lemmas above are what that handoff consumes; the handoff itself is not
-landed. -/
+**The handoff is landed.**  `pipelineLoopExit` carries the composed document bound
+beside the block bound, and the eight arm exits are where it arrives: each
+successor's stream is `S.ent ++ streamPrefix [vent …] S.i 1`, `streamDocBound_append`
+bounds the prefix by the predecessor's block bound and the block's own positions by
+`vent_positions_lt`, and `PipelineBodyStep.streamDocSucc` is that composition at
+the carried block index.  The word identity it needs — the emitter's `ent` is the
+body's stored `vent` bytes — is `word_eq_of_readBytes` at the emitter's own post,
+returned by `pos8Call_at`/`b8Call_at` and carried through the four arm call bundles. -/
 
 /-- A `Bool` read as a one-bit word at one. -/
 theorem ofBool_eq_one (b : Bool) : (BitVec.ofBool b = (1 : BitVec 1)) ↔ b = true := by
@@ -2888,33 +2893,31 @@ stays a supplier in the proof environment.
 
 **The exit states the stream, because a step's successor carries it and a spent
 budget would otherwise lose it.**  `pipelineLoopInv 0` *is* `pipelineLoopExit`, by
-definition, and that predicate carries the appended stream's read, its order and
-its bound at `for.cond.cleanup` — the facts `PipelineBodyFacts.exit`'s consumer
-reads at the tail's stage-2 call.  The exit steps produce them from the last
-iteration's own successor, so the handoff is the same three facts rather than a
-second statement of them: one predicate, one spelling, no place for the two to
-drift apart.
+definition, and that predicate carries the appended stream's read, its order, its
+document bound and its block bound at `for.cond.cleanup` — the facts
+`PipelineBodyFacts.exit`'s consumer reads at the tail's stage-2 call.  The exit
+steps produce them from the last iteration's own successor, so the handoff is the
+same facts rather than a second statement of them: one predicate, one spelling, no
+place for the two to drift apart.
 
 **What the handoff reaches, and what it still owes.**  The stream is one read at
 the loop's own count: `readLanes32 s.mem S.ep S.k`, because the staging pins the
 count slot to the empty stream's count and the emitters append from that cursor
 onwards.  So there is no caller-staged part and no second, count-offset read: the
 read is the whole stream the tail's stage-2 call reads, and neither the offset nor
-the length is a second statement to drift apart from it.  What the tail still
-needs from elsewhere is `∀ q ∈ ent, q < n` at the document's own length rather
-than at `64 * blocks`.
-**That bound is now proved, and it is not this predicate's.**  It is
-`streamDocBound_append`: the last block's positions are its entry word's
-(`word_eq_of_readBytes`), that word is `%or12 & %and18` masked by the tail mask
-(`vent_positions_lt`), and its base is inside the document
-(`blockBase_lt_doc`).  What this predicate still states is the *block* bound
-`∀ q ∈ S.ent, q < 64 * S.i`, so a consumer that reads the exit as carrying the
-document bound would be reading it wrong: the composed bound is the arms' to hand
-on, and the exit predicate is where it would have to be stated to reach the tail
-without the arm steps' hypotheses.  Named here because the difference between the
-two bounds is not a tightening a reader would guess: at a sixty-four-byte document
-they are `q < 64` and `q < n`, and a one-byte document's block word names lane
-five, which only the second excludes. -/
+the length is a second statement to drift apart from it.
+
+**Both bounds are the predicate's, and they are not the same bound.**  The block
+bound `∀ q ∈ S.ent, q < 64 * S.i` is the successor's own at every iteration; the
+document bound `∀ q ∈ S.ent, q < S.n.toNat` is the one `Γ_stage2.pre` asks for,
+and it is proved by the arms rather than assumed: `streamDocBound_append` composes
+the predecessor's block bound with the block's own positions, the word identity
+comes from the emitter's post (`word_eq_of_readBytes`), and the base is inside the
+document (`blockBase_lt_doc`).  The two differ at a partial last block: at a
+sixty-four-byte document they are `q < 64` and `q < n`, and a one-byte document's
+block word names lane five, which only the second excludes.  Both reach
+`pipelineLoopExit` through the exit steps, so the tail reads them off the state it
+is handed. -/
 
 /-- The four unswitched copies of the loop body, by the arm the entry selection
 took: bit 0 selects the entry emitter, bit 1 the escape list's gate. -/
@@ -3313,6 +3316,21 @@ arm block reads or binds those names, so a step hands them on by reading through
 to the environment it was entered in (`tailCells_builder`), and
 `PipelineBodyStep.pipelineLoopExit_cells` is the projection a consumer uses.
 
+**The stream's two bounds and the escape count's two facts are stated here
+because the tail reads them.**  The *document* bound `∀ q ∈ S.ent, q < S.n.toNat`
+sits beside the block bound: `Γ_stage2.pre` asks for the document's own length,
+and the block bound is weaker at a partial last block (a one-byte document has
+one block).  It is the arms' — `PipelineBodyStep.streamDocSucc` composes the
+predecessor's block bound with the last entry word's own positions, using the
+word identity the emitter's post supplies — and the four exits and the four split
+steps' budget-one branches hand it on.  The escape count's slot content
+`readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn)` is the word the tail's
+stage-2 call passes as its escape count; the cell name alone leaves that argument
+unconstrained.  Its growth `S.xn ≤ S.xn0 + 64 * S.i` is what keeps the count
+inside the staged extent.  Both are live-invariant conjuncts that survive the
+last iteration (the emitter's and the escape list's count clauses) and are
+re-derived at the exit step.
+
 The last conjunct is the frame: at the caller's `mem`, every byte outside
 `pipelineLoopWrites S` reads as it did when the loop was entered.  It is what
 carries the caller's staging through the loop — the document, the table, the
@@ -3320,17 +3338,21 @@ arena, the event stream and the cursors are the caller's bytes, and the tail rea
 them at the memory it is handed — and it is stated at `mem` rather than at the
 state because the state cannot name the memory it was entered at.
 
-What it does *not* carry is the two calls' inputs, which are the state's memory:
-the predicate names the entry stream and no other address's contents. -/
+What it does *not* carry is the two calls' inputs, which are the staging's
+memory: the predicate names the entry stream and no other address's contents, so
+the tail's UTF-8 window and stage-2's `pre` are the target's own hypotheses. -/
 def pipelineLoopExit (mem : Mem) (s : State) : Prop :=
   ∃ (S : PipelineLoopCarried),
     s.pc = "for.cond.cleanup" ∧
     readLanes32 s.mem S.ep S.k = some S.ent ∧
     S.ent.Pairwise (· < ·) ∧
+    (∀ q ∈ S.ent, q < S.n.toNat) ∧
     (∀ q ∈ S.ent, q < 64 * S.i) ∧
     s.pre = some S.arm.head ∧
     tailCells S s.env ∧
     PipelineLoopCount S s ∧
+    readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
+    S.xn ≤ S.xn0 + 64 * S.i ∧
     UnchangedOutside mem s.mem (pipelineLoopWrites S)
 
 /-- info: 'LeanLLVM.Vellum.PipelineBodyArm.countReg' does not depend on any axioms -/
@@ -3395,7 +3417,7 @@ The `.ub` this state's first control step produces is
 it: a bundle whose `exit` field quantified over this state would be asked for a
 return no fuel can produce. -/
 theorem gapState_not_exit (mem : Mem) : ¬ pipelineLoopExit mem gapState := by
-  rintro ⟨S, -, -, -, -, -, hcells, -⟩
+  rintro ⟨S, -, -, -, -, -, -, hcells, -⟩
   simp only [tailCells] at hcells
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hb, -, -⟩ := hcells
   rw [gapState_no_b] at hb

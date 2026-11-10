@@ -642,6 +642,29 @@ theorem streamSucc {m : Mem} {S : PipelineLoopCarried} {k' : Nat} {w : BitVec 64
   rw [hcnt] at hap
   exact ⟨hap, streamPairwise_append hord hbnd, streamBound_append hbnd⟩
 
+/-- **The successor's appended stream lies inside the document.**  The predecessor
+stream's positions are below `64 * S.i` — the block bound the invariant carries —
+and that is inside the document because the block is a live one; the block's own
+word names only positions inside it (`vent_positions_lt`), and it is the word the
+body stored, so `hwEq` reads it as `vent`'s.  The result is the bound the exit
+predicate carries and the tail's stage-2 call reads. -/
+theorem streamDocSucc {S : PipelineLoopCarried} {w w1 w2 w3 w4 s13 : BitVec 64}
+    (hiw : S.iw = BitVec.ofNat 64 S.i)
+    (hwEq : w = JsonPipelineBlockEval.vent S.n S.iw w1 w2 w3 w4 s13)
+    (hbnd : ∀ q ∈ S.ent, q < 64 * S.i)
+    (h64 : 64 * S.i < 2 ^ 64) (hi : 64 * S.i ≤ S.n.toNat) :
+    ∀ q ∈ S.ent ++ streamPrefix [w] S.i 1, q < S.n.toNat := by
+  have hnat : (BitVec.ofNat 64 S.i).toNat = S.i := by
+    have hn : S.i < 2 ^ 64 :=
+      Nat.lt_of_le_of_lt (Nat.le_mul_of_pos_left S.i (by decide : 0 < 64)) h64
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn]
+  rw [hwEq, hiw]
+  have h := streamDocBound_append (l := S.ent) (n := S.n) (i := BitVec.ofNat 64 S.i)
+    (w1 := w1) (w2 := w2) (w3 := w3) (w4 := w4) (s13 := s13)
+    (by simpa only [hnat] using hbnd) (by simpa only [hnat] using h64)
+    (by simpa only [hnat] using hi)
+  simpa only [hnat] using h
+
 /-! ### Range preservation through an arm's writes -/
 
 /-- A range preserved through the mask unit's two store regions, the body's own
@@ -1453,7 +1476,9 @@ theorem pos8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
             (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) a) ∧
       o = S.ep ∧
-      S.k ≤ k' ∧ k' ≤ S.k + 64 := by
+      S.k ≤ k' ∧ k' ≤ S.k + 64 ∧
+      w = JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+        (specInString64 lo hi st) (specSpace64 lo hi st) S.sw := by
   have hblkP : 64 * (S.iw.toNat + 1) + 63 < 2 ^ 32 := by
     rw [hiw, ofNat64_toNat (by omega)]
     omega
@@ -1487,10 +1512,19 @@ theorem pos8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     simpa only [Γ_entry_pos8at, Γ_entry_pos8] using hpost
   obtain ⟨e, o, t, blk0, nblk, k, ent, k', hargs, hv, hk', hread, hnbP, hentP,
     hframe⟩ := hpost'
-  obtain ⟨-, hblkEq, hnblk, ho, hk, -⟩ := entryArgs_six hargs
+  obtain ⟨he, hblkEq, hnblk, ho, hk, -⟩ := entryArgs_six hargs
   have hkn : k.toNat = S.k := by rw [hk]; exact hk0
   have hlen1 : ent.length = 1 := by rw [← hnbP, hnblk]; decide
   obtain ⟨w, hw⟩ := eq_singleton_of_length_one hlen1
+  have hwEq : w = JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi st)
+      (specDelimiter64 lo hi st) (specInString64 lo hi st) (specSpace64 lo hi st) S.sw := by
+    have hentWord : ent = [JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi st)
+        (specDelimiter64 lo hi st) (specInString64 lo hi st) (specSpace64 lo hi st) S.sw] := by
+      refine word_eq_of_readBytes hlen1 ?_ hstored
+      rw [he] at hentP
+      exact hentP
+    rw [hw] at hentWord
+    exact (List.cons.inj hentWord).1
   have hblk0 : blk0.toNat = S.i := by
     rw [hblkEq, hiw]
     exact ofNat64_toNat (by omega)
@@ -1506,7 +1540,7 @@ theorem pos8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     omega
   have hge : k.toNat ≤ k' := by rw [hk']; omega
   rw [ho, hkn] at hframe
-  refine ⟨r2, k', o, w, hcall, hv, hreadNew, hframe, ho, ?_, ?_⟩
+  refine ⟨r2, k', o, w, hcall, hv, hreadNew, hframe, ho, ?_, ?_, hwEq⟩
   · rw [← hkn]; exact hge
   · rw [← hkn]; omega
 
@@ -2078,7 +2112,8 @@ theorem usUs_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       S.k ≤ k' ∧ k' ≤ S.k + 64 ∧
       readBytes r2.mem S.backslash 8 = some (natToBytes w5.toNat 8) ∧
       readBytes r2.mem S.ctl 8 = some (natToBytes w6.toNat 8) ∧
-      readBytes r2.mem S.inString 8 = some (natToBytes w7.toNat 8) := by
+      readBytes r2.mem S.inString 8 = some (natToBytes w7.toNat 8) ∧
+      w = JsonPipelineBlockEval.vent S.n S.iw w1 w2 w3 w4 S.sw := by
   have hdoc : S.doc.length = 64 * blocks := by
     have := readBytes_len hwin
     simpa using this
@@ -2143,7 +2178,7 @@ theorem usUs_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     have h := hroomk
     unfold cursorRoom at h
     omega
-  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le⟩ :=
+  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le, hwEq⟩ :=
     pos8Call_at tab base s2 Γ2 units (S := S) (lo := lo) (hi := hi) (st := stm)
       htabEq hstored htab' hiw (by omega) hcap hkw hk64 hsepWord hsepTab hroom
   have hextK : k' + 8 ≤ 64 * blocks + 9 := by omega
@@ -2192,7 +2227,7 @@ theorem usUs_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   exact ⟨lo, hi, stm, r1, r2, k', w, specQuote64 lo hi stm, specDelimiter64 lo hi stm,
     specInString64 lo hi stm, specSpace64 lo hi stm, specBackslash64 lo hi stm,
     specControl64 lo hi stm, specInString64 lo hi stm, hcall1, hmaskFrame, hw1, hw2, hw3,
-    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hld5, hld6, hld7⟩
+    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hld5, hld6, hld7, hwEq⟩
 
 
 /-! ### The successor's facts, one name per conjunct -/
@@ -2377,7 +2412,7 @@ theorem usUs_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hilt : S.i < blocks := by omega
   obtain ⟨lo, hi, stm, r1, r2, k', w, w1, w2, w3, w4, w5, w6, w7, hcall1, hmaskFrame, hw1,
     hw2, hw3, hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hld5, hld6,
-    hld7⟩ :=
+    hld7, hwEq⟩ :=
     usUs_calls tab base s2 Γ2 units (S := S) hcap hiw hilt hwin hsc hdelim hinS hwsS hbsS
       hctl hsep htabEq htab hkw hkgrow hroomk
   have hbslen : (natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8).length = 8 :=
@@ -2509,7 +2544,7 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hilt : S.i < blocks := by omega
   obtain ⟨lo, hi, stm, r1, r2, k', w, w1, w2, w3, w4, w5, w6, w7, hcall1, hmaskFrame, hw1,
     hw2, hw3, hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hld5, hld6,
-    hld7⟩ :=
+    hld7, hwEq⟩ :=
     usUs_calls tab base s2 Γ2 units (S := S) hcap hiw hilt hwin hsc hdelim hinS hwsS hbsS
       hctl hsep htabEq htab hkw hkgrow hroomk
   have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
@@ -2537,6 +2572,9 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         (bs := natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8) hsep
         (natToBytes_length ..) (by omega) hmaskFrame hentFrame hstream)
       hreadNew hord hbnd
+  have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+    (w4 := w4) (s13 := S.sw) hiw hwEq hbnd
+    (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
   have hpreE' : e.pre = some "for.body.us.us" := by rw [hpreE, hpc0]
   have htailE : tailCells (usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
@@ -2546,10 +2584,18 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     tail_cells_absent
   refine ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, ?_⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
+  · rw [hmemE]
+    exact usUsSucc_count (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := k' + 8)
+      (bs := natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8)
+      hsep (natToBytes_length ..) (by omega) hmaskFrame (frame_loose hentFrame) hcnt
+  · show S.xn ≤ S.xn0 + 64 * (S.i + 1)
+    omega
   · rw [hmemE]
     exact usUsSucc_frame hframe hmaskFrame hentFrame (natToBytes_length ..) hkbase (by omega)
 
@@ -2585,7 +2631,9 @@ theorem b8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         readByte r2.mem a = readByte (writeBytes r1.mem S.entw (natToBytes
           (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
             (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) a) ∧
-      o = S.ep ∧ S.k ≤ k' ∧ k' ≤ S.k + 64 := by
+      o = S.ep ∧ S.k ≤ k' ∧ k' ≤ S.k + 64 ∧
+      w = JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+        (specInString64 lo hi st) (specSpace64 lo hi st) S.sw := by
   have hblkP : 64 * (S.iw.toNat + 1) + 63 < 2 ^ 32 := by
     rw [hiw, ofNat64_toNat (by omega)]
     omega
@@ -2622,6 +2670,15 @@ theorem b8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hkn : k.toNat = S.k := by rw [hkEq]; exact hk0
   have hlen1 : ent.length = 1 := by rw [← hnbP, hnblk]; decide
   obtain ⟨w, hw⟩ := eq_singleton_of_length_one hlen1
+  have hwEq : w = JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi st)
+      (specDelimiter64 lo hi st) (specInString64 lo hi st) (specSpace64 lo hi st) S.sw := by
+    have hentWord : ent = [JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi st)
+        (specDelimiter64 lo hi st) (specInString64 lo hi st) (specSpace64 lo hi st) S.sw] := by
+      refine word_eq_of_readBytes hlen1 ?_ hstored
+      rw [← h1] at hentP
+      exact hentP
+    rw [hw] at hentWord
+    exact (List.cons.inj hentWord).1
   have hblk0 : blk0.toNat = S.i := by
     have hb : blk0 = S.iw := (eq_of_heq h2.2).symm
     rw [hb, hiw]
@@ -2638,7 +2695,7 @@ theorem b8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     omega
   have hge : k.toNat ≤ k' := by rw [hk']; omega
   rw [ho, hkn] at hframe
-  refine ⟨r2, k', o, w, hcall, hv, hreadNew, hframe, ho, ?_, ?_⟩
+  refine ⟨r2, k', o, w, hcall, hv, hreadNew, hframe, ho, ?_, ?_, hwEq⟩
   · rw [← hkn]; exact hge
   · rw [← hkn]; omega
 
@@ -2732,7 +2789,8 @@ theorem us83_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       (∀ x, x < S.ep + 4 * S.k ∨ S.ep + 4 * (k' + 7) ≤ x →
         readByte r2.mem x = readByte (writeBytes r1.mem S.entw
           (natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8)) x) ∧
-      S.k ≤ k' ∧ k' ≤ S.k + 64 := by
+      S.k ≤ k' ∧ k' ≤ S.k + 64 ∧
+      w = JsonPipelineBlockEval.vent S.n S.iw w1 w2 w3 w4 S.sw := by
   have hdoc : S.doc.length = 64 * blocks := by
     have := readBytes_len hwin
     simpa using this
@@ -2773,12 +2831,12 @@ theorem us83_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     have h := hroomk
     unfold cursorRoom at h
     omega
-  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le⟩ :=
+  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le, hwEq⟩ :=
     b8Call_at tab base s2 Γ2 units (S := S) (lo := lo) (hi := hi) (st := stm)
       (r1 := r1) hstored hiw (by omega) hcap hkw hk64 hsepWord hroom
   exact ⟨lo, hi, stm, r1, r2, k', w, specQuote64 lo hi stm, specDelimiter64 lo hi stm,
     specInString64 lo hi stm, specSpace64 lo hi stm, hcall1, hmaskFrame, hw1, hw2, hw3,
-    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le⟩
+    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hwEq⟩
 
 /-- The B8 arm's outgoing builder holds every cell the next iteration binds. -/
 theorem us83_cells_agree' (env : Env) (n : BitVec 64)
@@ -2838,7 +2896,7 @@ theorem us83_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hsep : StagedSep S blocks := stagedSep hdisj
   have hilt : S.i < blocks := by omega
   obtain ⟨lo, hi, stm, r1, r2, k', w, w1, w2, w3, w4, hcall1, hmaskFrame, hw1, hw2, hw3,
-    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le⟩ :=
+    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hwEq⟩ :=
     us83_calls tab base s2 Γ2 units (S := S) hcap hiw hilt hwin hsc hdelim hinS hwsS hbsS
       hctl hsep hkw hkgrow hroomk
   have hbslen : (natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8).length = 8 :=
@@ -2971,7 +3029,7 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hsep : StagedSep S blocks := stagedSep hdisj
   have hilt : S.i < blocks := by omega
   obtain ⟨lo, hi, stm, r1, r2, k', w, w1, w2, w3, w4, hcall1, hmaskFrame, hw1, hw2, hw3,
-    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le⟩ :=
+    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hwEq⟩ :=
     us83_calls tab base s2 Γ2 units (S := S) hcap hiw hilt hwin hsc hdelim hinS hwsS hbsS
       hctl hsep hkw hkgrow hroomk
   have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
@@ -2999,6 +3057,9 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         (bs := natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8) hsep
         (natToBytes_length ..) (by omega) hmaskFrame hentFrame hstream)
       hreadNew hord hbnd
+  have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+    (w4 := w4) (s13 := S.sw) hiw hwEq hbnd
+    (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
   have hpreE' : e.pre = some "for.body.us83" := by rw [hpreE, hpc0]
   have htailE : tailCells (us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
@@ -3008,10 +3069,18 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     tail_cells_absent
   refine ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, ?_⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
+  · rw [hmemE]
+    exact usUsSucc_count (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+      (r2 := r2.mem) (ext := k' + 7)
+      (bs := natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8)
+      hsep (natToBytes_length ..) (by omega) hmaskFrame (frame_loose hentFrame) hcnt
+  · show S.xn ≤ S.xn0 + 64 * (S.i + 1)
+    omega
   · rw [hmemE]
     exact us83Succ_frame hframe hmaskFrame hentFrame (natToBytes_length ..) hkbase (by omega)
 
@@ -3524,6 +3593,11 @@ structure GateCalls (calls : Calls) (entrySym : String) (S : PipelineLoopCarried
   stream extends by. -/
   newLanes : readLanes32 r2.mem (S.ep + 4 * S.k) (k' - S.k) =
     some (streamPrefix [w8] S.i 1)
+  /-- **The appended word is the one the body stored.**  The emitter's post names
+  the lane stream as one word's positions, and that word is the bytes at `%entw`
+  — `vent`'s word, which the arm stored before the call.  So `w8` is `vent`'s
+  word, which is what lets the appended positions be bounded by the document. -/
+  w8Eq : w8 = JsonPipelineBlockEval.vent S.n S.iw w1 w2 w3 w4 S.sw
   /-- Its frame, at the extent its own record reserves for one block. -/
   entryFrame : ∀ x, x < S.ep + 4 * S.k ∨ S.ep + 4 * entryExt ≤ x →
     readByte r2.mem x = readByte (writeBytes r1.mem S.entw
@@ -3634,6 +3708,8 @@ theorem gateCalls_after_entry (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (hw8 : BitVec 64)
     (hnewLanes : readLanes32 r2.mem (S.ep + 4 * S.k) (k' - S.k) =
       some (streamPrefix [hw8] S.i 1))
+    (hw8Eq : hw8 = JsonPipelineBlockEval.vent S.n S.iw (specQuote64 lo hi stm)
+      (specDelimiter64 lo hi stm) (specInString64 lo hi stm) (specSpace64 lo hi stm) S.sw)
     (hentFrame : ∀ x, x < S.ep + 4 * S.k ∨ S.ep + 4 * entryExt ≤ x →
       readByte r2.mem x = readByte (writeBytes r1.mem S.entw
         (natToBytes (vent S.n S.iw (specQuote64 lo hi stm) (specDelimiter64 lo hi stm)
@@ -3841,7 +3917,7 @@ theorem gateCalls_after_entry (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     w7 := specInString64 lo hi stm,
     blockCall := hcall1, blockFrame := hmaskFrame, ld1 := hw1, ld2 := hw2,
     ld3 := hw3, ld4 := hw4, scSlot := hscPost, entryCall := hentryCall,
-    entryRet := hentryRet, newLanes := hnewLanes, entryFrame := hentFrame,
+    entryRet := hentryRet, newLanes := hnewLanes, w8Eq := hw8Eq, entryFrame := hentFrame,
     entryExtLe := hentExtLe, entryExtLe8 := hextLe8,
     kbase := hkbase, kgrow := hkgrow', ld5 := hld5, ld6 := hld6, ld7 := hld7,
     escapeCall := hcall3, escapeFrame := hframe, escapeFrameTight := hframeTight,
@@ -3959,7 +4035,7 @@ theorem us_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     have h := hroomk
     unfold cursorRoom at h
     omega
-  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le⟩ :=
+  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le, hwEq⟩ :=
     pos8Call_at tab base s2 Γ2 units (S := S) (lo := lo) (hi := hi) (st := stm)
       htabEq hstored htab' hiw hib hcap hkw hk64 hsepWord hsepTab hroom
   have hextK : k' + 8 ≤ 64 * blocks + 9 := by omega
@@ -3968,7 +4044,7 @@ theorem us_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (r1 := r1) (r2 := r2) (k' := k') (entryExt := k' + 8)
     hcap hiw hilt hib hb hwin hsc hcarry hflags hinS hbsS hctl Ssep htab hkgrow
     hxngrow hroomk hroomxn hcnt hhas hxpExtent (by omega) hcall1 hmaskFrame hw1 hw2 hw3
-    hw4 hw5 hw6 hscPost hparM hblkAt hcall2 hret2 w hreadNew hentFrame hkbase hk'le
+    hw4 hw5 hw6 hscPost hparM hblkAt hcall2 hret2 w hreadNew hwEq hentFrame hkbase hk'le
     hextK
 
 /-- **One B8-with-gate iteration's calls.**  The same iteration at the B8 emitter,
@@ -4036,7 +4112,7 @@ theorem body_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     have h := hroomk
     unfold cursorRoom at h
     omega
-  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le⟩ :=
+  obtain ⟨r2, k', o, w, hcall2, hret2, hreadNew, hentFrame, ho, hkbase, hk'le, hwEq⟩ :=
     b8Call_at tab base s2 Γ2 units (S := S) (lo := lo) (hi := hi) (st := stm)
       hstored hiw hib hcap hkw hk64 hsepWord hroom
   have hextK : k' + 7 ≤ 64 * blocks + 9 := by omega
@@ -4045,7 +4121,7 @@ theorem body_calls (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (r1 := r1) (r2 := r2) (k' := k') (entryExt := k' + 7)
     hcap hiw hilt hib hb hwin hsc hcarry hflags hinS hbsS hctl Ssep htab hkgrow
     hxngrow hroomk hroomxn hcnt hhas hxpExtent (by omega) hcall1 hmaskFrame hw1 hw2 hw3
-    hw4 hw5 hw6 hscPost hparM hblkAt hcall2 hret2 w hreadNew hentFrame hkbase hk'le
+    hw4 hw5 hw6 hscPost hparM hblkAt hcall2 hret2 w hreadNew hwEq hentFrame hkbase hk'le
     hextK
 
 /-! ### The gate-on successors, and their cell half
@@ -4308,7 +4384,7 @@ theorem us_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htabEq htab hkw hkgrow hxngrow
     hroomk hroomxn hcnt hhas hxpExt
   obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w, w1, w2, w3, w4, w5, w6, w7,
-    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hentFrame,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hw8Eq, hentFrame,
     hextLe, hextLe8, hkbase, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescTight, hescCount, hlenLe, hescCarry,
     hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
   have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
@@ -4464,7 +4540,7 @@ theorem body_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htab hkw hkgrow hxngrow
     hroomk hroomxn hcnt hhas hxpExt
   obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w, w1, w2, w3, w4, w5, w6, w7,
-    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hentFrame,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hw8Eq, hentFrame,
     hextLe, hextLe8, hkbase, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescTight, hescCount, hlenLe, hescCarry,
     hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
   have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
@@ -4618,7 +4694,7 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htabEq htab hkw hkgrow hxngrow
     hroomk hroomxn hcnt hhas hxpExt
   obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w, w1, w2, w3, w4, w5, w6, w7,
-    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hentFrame,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hw8Eq, hentFrame,
     hextLe, hextLe8, hkbase, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescTight, hescCount, hlenLe, hescCarry,
     hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
   have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
@@ -4663,6 +4739,9 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       (∀ q ∈ S.ent ++ streamPrefix [w] S.i 1, q < 64 * (S.i + 1)) := by
     rw [hmemE]
     exact streamSucc hkbase hR3 hnew3 hord hbnd
+  have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+    (w4 := w4) (s13 := S.sw) hiw hw8Eq hbnd
+    (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
   have hpreE' : e.pre = some "for.body.us" := by rw [hpreE, hpc0]
   have htailE : tailCells (usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
@@ -4674,10 +4753,16 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   refine ⟨e, je, hje, ⟨usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, ?_⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
+  · rw [hmemE]
+    exact hescCount
+  · show S.xn + len ≤ S.xn0 + 64 * (S.i + 1)
+    have := hlenLe
+    omega
   · rw [hmemE]
     exact usSucc_frame hframe hmaskFrame hentFrame hescTight (natToBytes_length ..) hkbase
       (by omega) (by omega)
@@ -4707,7 +4792,7 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htab hkw hkgrow hxngrow
     hroomk hroomxn hcnt hhas hxpExt
   obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w, w1, w2, w3, w4, w5, w6, w7,
-    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hentFrame,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hw8Eq, hentFrame,
     hextLe, hextLe8, hkbase, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescTight, hescCount, hlenLe, hescCarry,
     hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
   have hpos : (BitVec.signExtend 64 (sh6 S.iw)).toNat < 2 ^ 63 :=
@@ -4752,6 +4837,9 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       (∀ q ∈ S.ent ++ streamPrefix [w] S.i 1, q < 64 * (S.i + 1)) := by
     rw [hmemE]
     exact streamSucc hkbase hR3 hnew3 hord hbnd
+  have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+    (w4 := w4) (s13 := S.sw) hiw hw8Eq hbnd
+    (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
   have hpreE' : e.pre = some "for.body" := by rw [hpreE, hpc0]
   have htailE : tailCells (bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
@@ -4763,10 +4851,16 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   refine ⟨e, je, hje, ⟨bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, ?_⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
+  · rw [hmemE]
+    exact hescCount
+  · show S.xn + len ≤ S.xn0 + 64 * (S.i + 1)
+    have := hlenLe
+    omega
   · rw [hmemE]
     exact bodySucc_frame hframe hmaskFrame hentFrame hescTight (natToBytes_length ..) hkbase
       (by omega) (by omega)
@@ -4988,7 +5082,7 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hilt : S.i < blocks := by omega
   obtain ⟨lo, hi, stm, r1, r2, k', w, w1, w2, w3, w4, w5, w6, w7, hcall1, hmaskFrame, hw1,
     hw2, hw3, hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hld5, hld6,
-    hld7⟩ :=
+    hld7, hwEq⟩ :=
     usUs_calls tab base s2 Γ2 units (S := S) hcap hiw hilt hwin hsc hdelim hinS hwsS hbsS
       hctl hsep htabEq htab hkw hkgrow hroomk
   have hvent : vent S.n 0 w1 w2 w3 w4 S.sw = vent S.n 0 w1 w2 w3 w4 0 := by
@@ -5025,6 +5119,9 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
             (bs := natToBytes (vent S.n 0 w1 w2 w3 w4 0).toNat 8) hsep
             hbslen (by omega) hmaskFrame hentFrame' hstream)
           hreadNew hord hbnd
+      have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+        (w4 := w4) (s13 := S.sw) hiw hwEq hbnd
+        (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
       have hpreE' : e.pre = some "for.body.us.us" := by rw [hpreE, hpc0]
       have htailE : tailCells (usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
@@ -5035,11 +5132,18 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       refine ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (vshr13 w1 w2 w3 w4) w,
-        hpcE, hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
+      · rw [hmemE]
+        exact usUsSucc_count (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+          (r2 := r2.mem) (ext := k' + 8)
+          (bs := natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8)
+          hsep hbslen hextK hmaskFrame (frame_loose hentFrame) hcnt
+      · show S.xn ≤ S.xn0 + 64 * (S.i + 1)
+        omega
       · rw [hmemE]
         exact usUsSucc_frame hframe hmaskFrame hentFrame' (natToBytes_length ..) hkbase (by omega)
 
@@ -5313,7 +5417,7 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hsep : StagedSep S blocks := stagedSep hdisj
   have hilt : S.i < blocks := by omega
   obtain ⟨lo, hi, stm, r1, r2, k', w, w1, w2, w3, w4, hcall1, hmaskFrame, hw1, hw2, hw3,
-    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le⟩ :=
+    hw4, hscPost, hcall2, hret2, hreadNew, hentFrame, hkbase, hk'le, hwEq⟩ :=
     us83_calls tab base s2 Γ2 units (S := S) hcap hiw hilt hwin hsc hdelim hinS hwsS hbsS
       hctl hsep hkw hkgrow hroomk
   have hvent : vent S.n 0 w1 w2 w3 w4 S.sw = vent S.n 0 w1 w2 w3 w4 0 := by
@@ -5350,6 +5454,9 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
             (bs := natToBytes (vent S.n 0 w1 w2 w3 w4 0).toNat 8) hsep
             hbslen (by omega) hmaskFrame hentFrame' hstream)
           hreadNew hord hbnd
+      have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+        (w4 := w4) (s13 := S.sw) hiw hwEq hbnd
+        (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
       have hpreE' : e.pre = some "for.body.us83" := by rw [hpreE, hpc0]
       have htailE : tailCells (us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w) e.env := by
@@ -5360,11 +5467,18 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       refine ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (vshr13 w1 w2 w3 w4) w,
-        hpcE, hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
+      · rw [hmemE]
+        exact usUsSucc_count (S := S) (blocks := blocks) (s := s.mem) (r1 := r1.mem)
+          (r2 := r2.mem) (ext := k' + 7)
+          (bs := natToBytes (vent S.n S.iw w1 w2 w3 w4 S.sw).toNat 8)
+          hsep hbslen hextK hmaskFrame (frame_loose hentFrame) hcnt
+      · show S.xn ≤ S.xn0 + 64 * (S.i + 1)
+        omega
       · rw [hmemE]
         exact us83Succ_frame hframe hmaskFrame hentFrame' (natToBytes_length ..) hkbase (by omega)
 
@@ -5656,7 +5770,7 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htabEq htab hkw hkgrow hxngrow
     hroomk hroomxn hcnt hhas hxpExt
   obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w, w1, w2, w3, w4, w5, w6, w7,
-    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hentFrame,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hw8Eq, hentFrame,
     hextLe, hextLe8, hkbase, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescTight, hescCount, hlenLe, hescCarry,
     hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
   have hvent : vent S.n 0 w1 w2 w3 w4 S.sw = vent S.n 0 w1 w2 w3 w4 0 := by
@@ -5711,6 +5825,9 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (∀ q ∈ S.ent ++ streamPrefix [w] S.i 1, q < 64 * (S.i + 1)) := by
         rw [hmemE]
         exact streamSucc hkbase hR3 hnew3 hord hbnd
+      have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+        (w4 := w4) (s13 := S.sw) hiw hw8Eq hbnd
+        (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
       have hpreE' : e.pre = some "for.body.us" := by rw [hpreE, hpc0]
       have htailE : tailCells (usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
@@ -5723,11 +5840,16 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (S.xn + len) (vshr13 w1 w2 w3 w4) w ste (IsBackslashB (hi ⟨31, by decide⟩))
           ste.oddRun,
-        hpcE, hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
+      · rw [hmemE]
+        exact hescCount
+      · show S.xn + len ≤ S.xn0 + 64 * (S.i + 1)
+        have := hlenLe
+        omega
       · rw [hmemE]
         exact usSucc_frame hframe hmaskFrame hentFrame' hescTight (natToBytes_length ..) hkbase
           (by omega) (by omega)
@@ -6033,7 +6155,7 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     hsc hcarryI hflagsI hdelim hinS hwsS hbsS hctl hsep htab hkw hkgrow hxngrow
     hroomk hroomxn hcnt hhas hxpExt
   obtain ⟨lo, hi, stm, ste, r1, r2, r3, k', entryExt, len, w, w1, w2, w3, w4, w5, w6, w7,
-    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hentFrame,
+    hcall1, hmaskFrame, hld1, hld2, hld3, hld4, hscPost, hcall2, hret2, hnewLanes, hw8Eq, hentFrame,
     hextLe, hextLe8, hkbase, hkgrow', hld5, hld6, hld7, hcall3, hescFrame, hescTight, hescCount, hlenLe, hescCarry,
     hparity, hescCap, hwinR3, htabR3, hscR3⟩ := g
   have hvent : vent S.n 0 w1 w2 w3 w4 S.sw = vent S.n 0 w1 w2 w3 w4 0 := by
@@ -6088,6 +6210,9 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (∀ q ∈ S.ent ++ streamPrefix [w] S.i 1, q < 64 * (S.i + 1)) := by
         rw [hmemE]
         exact streamSucc hkbase hR3 hnew3 hord hbnd
+      have hsuccDoc := streamDocSucc (S := S) (w := w) (w1 := w1) (w2 := w2) (w3 := w3)
+        (w4 := w4) (s13 := S.sw) hiw hw8Eq hbnd
+        (blockBase_lt_two64 hcap hilt) (Nat.le_of_lt (blockBase_lt_doc hblocks hilt))
       have hpreE' : e.pre = some "for.body" := by rw [hpreE, hpc0]
       have htailE : tailCells (bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
         (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
@@ -6100,11 +6225,16 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (S.xn + len) (vshr13 w1 w2 w3 w4) w ste (IsBackslashB (hi ⟨31, by decide⟩))
           ste.oddRun,
-        hpcE, hsuccStream.1, hsuccStream.2.1,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_⟩, hrunE⟩
+        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
+      · rw [hmemE]
+        exact hescCount
+      · show S.xn + len ≤ S.xn0 + 64 * (S.i + 1)
+        have := hlenLe
+        omega
       · rw [hmemE]
         exact bodySucc_frame hframe hmaskFrame hentFrame' hescTight (natToBytes_length ..) hkbase
           (by omega) (by omega)
@@ -6326,18 +6456,20 @@ the tail's *premise* rather than its run: the three tail steps are
 record is consumed there as its own `pre` at the call's argument list.  The field's
 parameterised `post` was false rather than unproved and is retired for the record's
 own predicate; what remains is
-the premise — `loop.Exit` = `pipelineLoopExit`, which carries the entry stream, the
-predecessor and the tail's nine cells (`pipelineLoopExit_cells`).  What the
-predicate does not carry is the count the exiting edge selected and the two calls'
-inputs, so `pipelineExit_run`'s `hsel`, `hcall` and `hpre2` are what the
-inhabitation still owes.  The first iteration
+the premise — `loop.Exit` = `pipelineLoopExit`, which carries the entry stream (with
+its document and block bounds), the predecessor, the tail's nine cells
+(`pipelineLoopExit_cells`) and the exit's own count.  What the
+predicate does not carry is the two calls'
+inputs — the UTF-8 window and stage-2's `pre` — because they are the caller's
+staging rather than the state, so `pipelineExit_run`'s `hcall` and `hpre2` are what
+the tail's statement supplies.  The first iteration
 is closed by the invariant's own shape: `pipelineLoopInv` is the disjunction of the
 split shape (the state the seed's three steps reach) and the back-edge shape (every
 successor), so `step` has a first iteration and the four `*_split_step` lemmas
 supply it.
 
 What the loop does state is the stream's handoff: `pipelineLoopExit` carries the
-whole entry stream's read, its order and its bound at `for.cond.cleanup`, and
+whole entry stream's read, its order and both bounds at `for.cond.cleanup`, and
 `pipelineLoopInv 0` is that predicate by definition, so the last iteration's
 successor and the tail's premise are one statement.  The stream begins at the
 loop — the staging pins the count slot to the empty stream — so the exit's stream
@@ -6368,7 +6500,7 @@ stated so a consumer does not open the predicate. -/
 /-- **The exit hands the tail the whole stream.** -/
 theorem pipelineExit_stream {mem : Mem} {s : State} (h : pipelineLoopExit mem s) :
     ∃ (S : PipelineLoopCarried), readLanes32 s.mem S.ep S.k = some S.ent := by
-  obtain ⟨S, _hpc, hent, _hord, _hbnd, _hpre, _hcells, _hcnt, _hframe⟩ := h
+  obtain ⟨S, _hpc, hent, -⟩ := h
   exact ⟨S, hent⟩
 
 /-! ### The tail: the exit block, the two branches and stage 2
@@ -6913,22 +7045,26 @@ theorem pipelineExit_run (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
 /-! ### What the exit predicate carries, and what it does not, executed
 
 The three steps above are the tail's run at an exit state that **carries the cells
-the three blocks read** and the two calls' inputs.  The instance's `Exit` is
-`pipelineLoopExit`, and that predicate now names the exit state's environment at
-the nine cells and the predecessor while naming its memory only through the entry
-stream, so what the tail still needs is recorded here rather than left implicit.
-Two facts follow from the predicate's own statement.
+the three blocks read**, the exit's count and the escape count's slot, and the two
+calls' inputs are the run's hypotheses.  The instance's `Exit` is
+`pipelineLoopExit`, and that predicate names the exit state's environment at the
+nine cells and the predecessor, the entry stream with both of its bounds, the exit
+count and the escape count's slot and growth, while naming its memory only through
+the entry stream and the count slot, so what the tail still needs is recorded here
+rather than left implicit.  Two facts follow from the predicate's own statement.
 
 * **The post cannot be a parameter.**  The field's conclusion is
   `post args mem next (.ret … verdict … m)`, quantified over every
   `post : List Value → Mem → Nat → Outcome → Prop`; `fun _ _ _ _ => False` is one
   of them, so the field is false at every exit state the predicate admits — and
   the predicate admits one.
-* **The predicate carries the nine cells, and not the count.**  `pipelineLoopExit_cells`
-  gives the nine slots and the predecessor; the exit phi's incoming operand is the
-  arm's own return word (`%call21.us.us` and its siblings), so `hsel` stays a
-  hypothesis, and the count slot's store and stage-2's call inputs are the state's
-  memory rather than a conjunct of `loop.Exit`.
+* **The predicate carries the nine cells, the count and the escape count's slot.**
+  `pipelineLoopExit_cells` gives the nine slots and the predecessor;
+  `PipelineLoopCount` is the exit phi's incoming operand at the arm's own return
+  word (`%call21.us.us` and its siblings), so `hsel` is derivable, and the escape
+  count's slot content is the word stage-2's call passes.  What remains the
+  state's memory rather than a conjunct is stage-2's `pre` and the UTF-8 window,
+  which are the caller's staging.
 
 Both are stated as facts about the predicate, because the run they quantify over
 is the one `pipelineExit_run` completes. -/
@@ -6940,7 +7076,7 @@ empty environment is therefore refused: the predicate is no longer the "names no
 register" statement it was, and the predecessor field is part of it too. -/
 theorem pipelineLoopExit_cells {mem : Mem} {s : State} (h : pipelineLoopExit mem s) :
     ∃ S : PipelineLoopCarried, s.pre = some S.arm.head ∧ tailCells S s.env := by
-  obtain ⟨S, -, -, -, -, hpre, htail, -, -⟩ := h
+  obtain ⟨S, -, -, -, -, -, hpre, htail, -⟩ := h
   exact ⟨S, hpre, htail⟩
 
 /-! ### Axiom footprints
@@ -8096,6 +8232,10 @@ witness chosen in any statement here.
 /-- info: 'LeanLLVM.Vellum.streamSucc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms streamSucc
+
+/-- info: 'LeanLLVM.Vellum.streamDocSucc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamDocSucc
 
 /-- info: 'LeanLLVM.Vellum.readLanes32_escape_at' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
