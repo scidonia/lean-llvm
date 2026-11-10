@@ -5786,15 +5786,15 @@ document's block count, one control step per iteration, the invariant
 `pipelineLoopInv` and the exit `pipelineLoopExit`.
 
 `pipeline_satisfies` keeps its `hbody` hypothesis at this instance, and the gap is
-the tail's *statement* rather than its run: the three tail steps are
+the tail's *premise* rather than its run: the three tail steps are
 `pipelineExit_run` below, at the cells the exit state carries, and the stage-2
-record is consumed there as its own `pre` at the call's argument list.  What
-`PipelineBodyFacts.exit` cannot be at this instance is its own field shape: it
-quantifies `post` over every predicate, which `exit_universal_post_false` refutes
-at any exit state the predicate admits, and its premise is `pipelineLoopExit`,
-which carries the entry stream and no register — `pipelineLoopExit_env_free` — so
-no tail cell follows from it.  Both are statement changes in
-`JsonPipelineRefine.lean`, which this instance does not make.  The first iteration
+record is consumed there as its own `pre` at the call's argument list.  The field's
+parameterised `post` was false rather than unproved and is retired for the record's
+own predicate (`exit_universal_post_false` records the refutation); what remains is
+the premise — `loop.Exit` = `pipelineLoopExit`, which carries the entry stream and
+no register (`pipelineLoopExit_env_free`), so a premise that carries the cells is
+what the field's inhabitation waits on, and that is a statement this instance does
+not make.  The first iteration
 is closed by the invariant's own shape: `pipelineLoopInv` is the disjunction of the
 split shape (the state the seed's three steps reach) and the back-edge shape (every
 successor), so `step` has a first iteration and the four `*_split_step` lemmas
@@ -6400,12 +6400,12 @@ statement.
 Both are stated as facts about the predicate, because the run they quantify over
 is the one `pipelineExit_run` completes. -/
 
-/-- **The field's `post` parameter is not inhabitable at its stated shape.**  If
-the field's conclusion held for every `post` and every exit state — which is what
-its `∀ (post) (e)` prefix says — then instantiating `post` at the identically
-false predicate contradicts the exit state the predicate admits.  The field is
-therefore false as written, and the parameter is what it takes to state the
-tail's post at the record's own predicate instead. -/
+/-- **The retired `post` parameter was false, not unproved.**  The field used to
+conclude `post args mem next …` for every `post` and every exit state — its
+`∀ (post) (e)` prefix — and instantiating `post` at the identically false
+predicate contradicts the exit state the predicate admits.  That is why the
+parameter is gone and the field now concludes the record's own post; this theorem
+is the executed record of the shape it replaced. -/
 theorem exit_universal_post_false (calls : Calls) (args : List Value) (mem : Mem)
     (next : Nat)
     (H : ∀ (post : List Value → Mem → Nat → Outcome → Prop) (e : State),

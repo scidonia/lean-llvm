@@ -639,37 +639,34 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
       runFuel (pipelineCalls tab base s2) k pipelineBody e
-  /-- The tail: from any exit state, the verdict and **the post the consumer binds**.
-  The field takes the post as a parameter rather than naming `Γ_pipeline_units`'s
-  because what the tail's three blocks establish is the run's outcome and the memory
-  it leaves, and the record's `dst`/`ndst`/`ev`/`nev`/`err` clauses are the stage-2
-  call's — facts no record but `Γ_stage2` states, and `Γ_stage2` is downstream of
-  this module (`JsonStage2Contract` imports `PipelineBodyFacts`), so naming it here
-  is an import cycle.  At the slot parameter `Γ2` no arbitrary `Γ2.post` implies
-  those clauses even with `h2`, which is why the record could not simply be
-  substituted: the parameter is the post, and the consumer that holds the record
-  binds it.  `Γ2` therefore stays phantom.
+  /-- The tail: from any exit state, the verdict and **the record's own post**.
 
-  **This shape is not inhabited, and the two reasons are executed rather than
-  argued.**  The tail's three steps are proved — `PipelineBodyStep.pipelineExit_run`
-  runs `for.cond.cleanup`, the branch and `cleanup` from an exit state and returns
-  a verdict with the branch's memory — but they are proved at the exit state's
-  carried cells, and this field's prefix supplies neither of the things that run
-  reads.  `post` is quantified over every predicate of its type, and
-  `fun _ _ _ _ => False` is one of them, so the field is false wherever `loop.Exit`
-  is satisfiable (`PipelineBodyStep.exit_universal_post_false`); `loop.Exit` is
+  **The post is the record's, not a parameter.**  An earlier shape took
+  `post : List Value → Mem → Nat → Outcome → Prop` as a parameter and concluded
+  `post args mem next …`; that field is false rather than unproved, because
+  `fun _ _ _ _ => False` is one of the predicates it quantified over and
+  `loop.Exit` is satisfiable (`PipelineBodyStep.exit_universal_post_false`).  What
+  the tail's three blocks establish is the run's outcome and the memory it leaves,
+  and the record's `dst`/`ndst`/`ev`/`nev`/`err` clauses are the stage-2 call's own
+  post, so the conclusion names `Γ_pipeline_units` and the *proof* is where the
+  stage-2 record must be visible: `Γ_stage2` is downstream of this module
+  (`JsonStage2Contract` imports `PipelineBodyFacts`), so a bundle at an arbitrary
+  `Γ2` cannot discharge this field, and the field is discharged at `Γ_stage2`.
+  `Γ2` therefore stays phantom in every other field.
+
+  **What the run needs, and what the predicate supplies.**  The three steps are
+  proved — `PipelineBodyStep.pipelineExit_run` runs `for.cond.cleanup`, the branch
+  and `cleanup` from an exit state and returns a verdict with the branch's memory
+  — at the cells the exit block reads and at stage-2's `pre`.  `loop.Exit` is
   `pipelineLoopExit`, which names the program counter and the entry stream and
-  binds no register, so no cell the three blocks read follows from it
-  (`PipelineBodyStep.pipelineLoopExit_env_free`).  The signature — the post as a
-  structure parameter or the record's own predicate, and an exit predicate that
-  carries those cells — is the statement change this field is waiting on; what is
-  already proved is the run and the stage-2 record's consumption at the call site
-  (`pipelineExit_accept`). -/
-  exit : ∀ (post : List Value → Mem → Nat → Outcome → Prop) (e : State), loop.Exit e →
+  binds no register (`PipelineBodyStep.pipelineLoopExit_env_free`), so this field
+  is a claim about an exit predicate that carries them, and the inhabitation waits
+  on that predicate rather than on the tail's proof. -/
+  exit : ∀ (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
         some (.ret (some (.int 64 verdict)) m) ∧
-      post args mem next (.ret (some (.int 64 verdict)) m)
+      (Γ_pipeline_units tab base).post args mem next (.ret (some (.int 64 verdict)) m)
 
 /-- **The assembled pipeline satisfies its unit-level record.**
 
@@ -700,18 +697,19 @@ clause rather than left as "the body analysis":
 * `exit`'s conclusion at `Γ_pipeline_units`'s post is the tail's: the cleanup
   block's store and its UTF-8 call, the two refusal branches, and the stage-2 call
   whose post is what the `dst`/`ndst`/`ev`/`nev`/`err` clauses are about.  That need
-  is the run's, not the loop exit's, and the field takes the post as a parameter
-  because no arbitrary record at the slot implies it (see the field's own note).
-  The three steps are now proved — `PipelineBodyStep.pipelineExit_run`, one
-  `denoteCode` trace per block at the exit state's own environment, composed into
-  the three-fuel run, with the stage-2 record consumed at the call site — but at
-  the *cells* the exit state must carry, which `pipelineLoopExit` does not; the
-  field's own note records the two executed reasons its stated prefix cannot supply
-  them.  What the loop's exit *does* hand on is the whole entry stream: the staging
-  names the caller's prefix, the invariant carries it beside the appended part, and
-  `PipelineBodyStep.pipelineExit_stream` composes them at the exit's own count, so
-  the post's `readLanes32 m ep nk'` is derivable from the pre instead of being the
-  clause the exit could not reach. -/
+  is the run's, not the loop exit's, and the post is now the record's own rather
+  than a parameter of the field: the parameterised shape was false, not unproved
+  (`PipelineBodyStep.exit_universal_post_false`), and it is retired.  The three
+  steps are proved — `PipelineBodyStep.pipelineExit_run`, one `denoteCode` trace per
+  block at the exit state's own environment, composed into the three-fuel run, with
+  the stage-2 record consumed at the call site — at the *cells* the exit state must
+  carry and at stage-2's `pre`, which `pipelineLoopExit` does not supply
+  (`PipelineBodyStep.pipelineLoopExit_env_free`); that predicate is what this field
+  still waits on.  What the loop's exit *does* hand on is the whole entry stream:
+  the staging names the caller's prefix, the invariant carries it beside the
+  appended part, and `PipelineBodyStep.pipelineExit_stream` composes them at the
+  exit's own count, so the post's `readLanes32 m ep nk'` is derivable from the pre
+  instead of being the clause the exit could not reach. -/
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : ∀ base, PipelineUnits tab base s2 Γ2)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
@@ -751,7 +749,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hpost
   rcases hseed with ⟨hN0, hexit0⟩ | hinv
   · -- the zero-block document: the entry test leaves for the cleanup
-    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units tab base).post e0 hexit0
+    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e0 hexit0
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + 3) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 3]
@@ -760,7 +758,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     omega
   · -- the loop, at its bound, and the tail
     obtain ⟨e1, j1, hj1, hexit1, hrun1⟩ := loop.run e0 hinv 3
-    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit (Γ_pipeline_units tab base).post e1 hexit1
+    obtain ⟨verdict, m, hrun3, hpost3⟩ := hexit e1 hexit1
     have hrunJ : runFuel (pipelineCalls tab base s2) (j0 + (j1 + 3)) pipelineBody
         (EntryState pipelineBody args mem next) = some (.ret (some (.int 64 verdict)) m) := by
       rw [hrun0 (j1 + 3), hrun1]
