@@ -240,6 +240,74 @@ theorem escapeAt_of_u_pair {body : List UInt8} {q cp cp' adv : Nat} {c : UInt8}
   rw [h1]
   simp [hc, simpleEscape_u, h4, hst]
 
+/-! ### A surrogate pair's second position
+
+`DecodeInv.step_pair` advances the position cursor by two — the second `\u` is a
+position of its own — and returns the walk at `k + 2` without asking the list for
+that second entry.  The successor latch's `c ≤ nps` therefore cannot come from the
+law; it comes from the encoding.  The pair's first half puts the second `\u`'s
+backslash at `q + 6`, that backslash is a lane (`lane_pair_sixth`: its own run
+parity is even, because the four digits between the two escapes reset it, and the
+string state is unchanged), and nothing between the first escape and it is a
+position (`no_lane_twelve`).  So the cursor list read from `q + 1` heads at
+`q + 6` (`escAt_cons`), and the list at the caller's cursor carries a second entry.
+-/
+
+/-- **The pair's successor cursor is inside the list.**  The cursor advanced past a
+surrogate pair is at most the list's length: the pair supplies one further position
+at `q + 6`, and the list read at the caller's cursor has that entry behind its own
+head. -/
+theorem escAt_pair_succ_le {body : List UInt8} {st : ClassState} {c q cp cp' : Nat}
+    (hlist : (escAt body st 0)[c]? = some q)
+    (hb : body[q]? = some 0x5C) (h1 : body[q + 1]? = some 0x75)
+    (hx : hex4 body (q + 2) = some cp)
+    (ht : surrogateTail body q cp = some (cp', 12)) :
+    c + 2 ≤ (escAt body st 0).length := by
+  have hlt : c < (escAt body st 0).length := by
+    rcases Nat.lt_or_ge c (escAt body st 0).length with h | h
+    · exact h
+    · rw [List.getElem?_eq_none h] at hlist
+      exact absurd hlist (by simp)
+  -- the cursor list at `c` is the head and its tail
+  have hget : (escAt body st 0)[c]'hlt = q := by
+    have h' := hlist
+    rw [List.getElem?_eq_getElem hlt] at h'
+    exact Option.some.inj h'
+  have hhead : (escAt body st 0).drop c = q :: (escAt body st 0).drop (c + 1) := by
+    rw [List.drop_eq_getElem_cons hlt, hget]
+  -- the tail is the cursor list at the next lane, because a drop is one
+  obtain ⟨i', hi'⟩ := escAt_drop_exists body st 0 c
+  have hcons : escAt body st i' = q :: (escAt body st 0).drop (c + 1) := by
+    rw [← hi']
+    exact hhead
+  have htail : (escAt body st 0).drop (c + 1) = escAt body st (q + 1) :=
+    escAt_tail hcons
+  -- the head is a run-starting backslash, so the pair's sixth byte is a lane
+  have hq : laneAt body st q = true := escAt_head_lane hcons
+  have hnb : IsControlB (0x5C : UInt8) = false := by decide
+  obtain ⟨-, -, hins⟩ := lane_backslash_of hb hq hnb
+  obtain ⟨h6c, -, -, -⟩ := surrogateTail_bytes ht
+  have hsix : laneAt body st (q + 6) = true := lane_pair_sixth hb hins h1 hx h6c
+  have hpair : escAt body st (q + 1) = (q + 6) :: escAt body st (q + 12) :=
+    escAt_cons (by omega) (by omega) hsix (no_lane_twelve h1 hx ht)
+  have hlen : 2 ≤ ((escAt body st 0).drop c).length := by
+    rw [hhead, htail, hpair]
+    simp
+  rw [List.length_drop] at hlen
+  omega
+
+/-- **The pair's successor cursor is inside the caller's count**, at the list's
+length as the staging names it. -/
+theorem escAt_pair_succ_le_nps {body : List UInt8} {st : ClassState} {c q cp cp' nps : Nat}
+    (hlen : (escAt body st 0).length = nps)
+    (hlist : (escAt body st 0)[c]? = some q)
+    (hb : body[q]? = some 0x5C) (h1 : body[q + 1]? = some 0x75)
+    (hx : hex4 body (q + 2) = some cp)
+    (ht : surrogateTail body q cp = some (cp', 12)) :
+    c + 2 ≤ nps := by
+  have h := escAt_pair_succ_le hlist hb h1 hx ht
+  omega
+
 /-! ### The emitter's three walk transfers
 
 Each escape form advances the walk by one relation, and `DecodeInv.step_simple`,
@@ -350,6 +418,14 @@ development's ceiling. -/
 /-- info: 'LeanLLVM.Vellum.DecodeInv.step_pair_inv' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms DecodeInv.step_pair_inv
+
+/-- info: 'LeanLLVM.Vellum.escAt_pair_succ_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escAt_pair_succ_le
+
+/-- info: 'LeanLLVM.Vellum.escAt_pair_succ_le_nps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escAt_pair_succ_le_nps
 
 /-- **The emitter's first gate is the walk's decision.**  From the record's table
 clause and the body's byte after the escape position, the block's table read and
@@ -1586,6 +1662,139 @@ residual (`take_take_source`), and the per-byte read of a range that reads back
 theorem natToBytes_one_eq (b : UInt8) : natToBytes b.toNat 1 = [b] := by
   simp [natToBytes]
 
+/-! ### The transfers attached to their compositions
+
+The three laws above take the store field as a hypothesis.  The blocks are what
+supply it: the simple escape's one-byte store and the `\u` arm's four-byte word
+store, each written *after* the prefix the copy put at `%dst`.  The lemmas here are
+the attachments — the block's write read back as the prefix extended by the
+escape's bytes — together with the head equation and the two cursor bounds the laws
+ask for.
+
+The prefix is `out ++ (body.drop i).take (q - i)`: the walk's decoded prefix and
+the bytes the copy moved from the body up to the head position.  A caller supplies
+it as `hcover`, which is what the copy arms' `readBytes` conjunct is.
+-/
+
+/-- **The cursor list's head, as the drop equation the laws read.**  A position at
+index `c` splits the list there. -/
+theorem escAt_head_drop {body : List UInt8} {st : ClassState} {c q : Nat}
+    (hlist : (escAt body st 0)[c]? = some q) :
+    (escAt body st 0).drop c = q :: (escAt body st 0).drop (c + 1) := by
+  have hlt : c < (escAt body st 0).length := by
+    rcases Nat.lt_or_ge c (escAt body st 0).length with h | h
+    · exact h
+    · rw [List.getElem?_eq_none h] at hlist
+      exact absurd hlist (by simp)
+  have hget : (escAt body st 0)[c]'hlt = q := by
+    have h' := hlist
+    rw [List.getElem?_eq_getElem hlt] at h'
+    exact Option.some.inj h'
+  rw [List.drop_eq_getElem_cons hlt, hget]
+
+/-- **A one-byte store extends the prefix the caller already holds.** -/
+theorem readBytes_writeBytes_one_extend {m : Mem} {dst k : Nat} {out : List UInt8}
+    {b : UInt8} (hout : readBytes m dst k = some out) :
+    readBytes (writeBytes m (dst + k) [b]) dst (k + 1) = some (out ++ [b]) := by
+  have hbelow : readBytes (writeBytes m (dst + k) [b]) dst k = some out := by
+    rw [readBytes_writeBytes_below m [b] k dst (dst + k) (by omega)]
+    exact hout
+  have hsame := readBytes_writeBytes_same m [b] (addr := dst + k)
+  have hsplit := JsonEntrySteps.readBytes_append (m := writeBytes m (dst + k) [b])
+    k dst out 1 [b] hbelow hsame
+  simpa using hsplit
+
+/-- **The two-character arm's successor invariant.**  `if.then6.i` writes the
+replacement byte at `%dst + %add15` — the prefix's own end — and the walk continues
+two bytes on with the index advanced by one. -/
+theorem DecodeInv.simple_succ {body : List UInt8} {st : ClassState} {M : Mem}
+    {dst nps i c n : Nat} {out : List UInt8} {goal : EscapeOutcome}
+    {q : Nat} {b c1 e t : UInt8}
+    (hinv : DecodeInv body st M dst nps i c out goal)
+    (hhead : (escAt body st 0).drop c = q :: (escAt body st 0).drop (c + 1))
+    (hb : body[q]? = some b) (hlt : q < body.length)
+    (hctl : IsControlB b = false)
+    (h1 : body[q + 1]? = some c1) (hs : simpleEscape c1 = some e)
+    (hiq : i ≤ q) (hq2 : q + 2 ≤ n)
+    (hcover : readBytes M dst (out ++ (body.drop i).take (q - i)).length =
+      some (out ++ (body.drop i).take (q - i)))
+    (ht : t = e) :
+    DecodeInv body st
+      (writeBytes M (dst + (out ++ (body.drop i).take (q - i)).length)
+        (natToBytes t.toNat 1)) dst nps (q + 2) (c + 1)
+      (out ++ (body.drop i).take (q - i) ++ [e]) goal := by
+  have hbyte : natToBytes t.toNat 1 = [e] := by rw [natToBytes_one_eq, ht]
+  refine DecodeInv.step_simple_inv hinv hhead hb hlt hctl h1 hs hiq hq2 ?_
+  have hlen : (out ++ (body.drop i).take (q - i) ++ [e]).length =
+      (out ++ (body.drop i).take (q - i)).length + 1 := by
+    rw [List.length_append]
+    rfl
+  rw [hbyte, hlen]
+  exact readBytes_writeBytes_one_extend (b := e) hcover
+
+/-- **The six-byte `\u` arm's successor invariant.**  `if.end32.i` writes the unit's
+own UTF-8 encoding as one four-byte word at `%dst + %add15`, so the store field is
+the block's `udIfEnd32I_decode` read; the index advances by one. -/
+theorem DecodeInv.six_succ {body : List UInt8} {st : ClassState} {M M' : Mem}
+    {dst nps i c n : Nat} {out : List UInt8} {goal : EscapeOutcome}
+    {q cp : Nat} {b : UInt8}
+    (hinv : DecodeInv body st M dst nps i c out goal)
+    (hhead : (escAt body st 0).drop c = q :: (escAt body st 0).drop (c + 1))
+    (hb : body[q]? = some b) (hlt : q < body.length)
+    (hctl : IsControlB b = false)
+    (h1 : body[q + 1]? = some 0x75) (hx : hex4 body (q + 2) = some cp)
+    (ht : surrogateTail body q cp = none)
+    (hiq : i ≤ q) (hq6 : q + 6 ≤ n)
+    (hstore : readBytes M' dst
+      ((out ++ (body.drop i).take (q - i)).length + (utf8Encode cp).length) =
+        some ((out ++ (body.drop i).take (q - i)) ++ utf8Encode cp)) :
+    DecodeInv body st M' dst nps (q + 6) (c + 1)
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp) goal := by
+  have hstored : readBytes M' dst
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp).length =
+        some (out ++ (body.drop i).take (q - i) ++ utf8Encode cp) := by
+    rw [List.length_append]
+    exact hstore
+  exact DecodeInv.step_six_inv (c1 := 0x75) hinv hhead hb hlt hctl h1 hx ht hiq hq6
+    hstored
+
+/-- **The pair arm's successor invariant.**  The pair's code point is one word too,
+and the index advances by two: the second `\u` is a position of its own.  The cursor
+bound `c + 2 ≤ nps` is *not* the law's: `escAt_pair_succ_le` derives it from the
+encoding, and the caller supplies it as `hcle`. -/
+theorem DecodeInv.pair_succ {body : List UInt8} {st : ClassState} {M M' : Mem}
+    {dst nps i c n : Nat} {out : List UInt8} {goal : EscapeOutcome}
+    {q cp cp' : Nat} {b : UInt8}
+    (hinv : DecodeInv body st M dst nps i c out goal)
+    (hhead : (escAt body st 0).drop c = q :: (escAt body st 0).drop (c + 1))
+    (hb : body[q]? = some b) (hlt : q < body.length)
+    (hctl : IsControlB b = false)
+    (h1 : body[q + 1]? = some 0x75) (hx : hex4 body (q + 2) = some cp)
+    (ht : surrogateTail body q cp = some (cp', 12))
+    (hiq : i ≤ q) (hq12 : q + 12 ≤ n)
+    (hstore : readBytes M' dst
+      ((out ++ (body.drop i).take (q - i)).length + (utf8Encode cp').length) =
+        some ((out ++ (body.drop i).take (q - i)) ++ utf8Encode cp')) :
+    DecodeInv body st M' dst nps (q + 12) (c + 2)
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp') goal := by
+  have hstored : readBytes M' dst
+      (out ++ (body.drop i).take (q - i) ++ utf8Encode cp').length =
+        some (out ++ (body.drop i).take (q - i) ++ utf8Encode cp') := by
+    rw [List.length_append]
+    exact hstore
+  exact DecodeInv.step_pair_inv (c1 := 0x75) hinv hhead hb hlt hctl h1 hx ht hiq hq12
+    hstored
+
+/-- info: 'LeanLLVM.Vellum.DecodeInv.six_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms DecodeInv.six_succ
+
+/-- info: 'LeanLLVM.Vellum.DecodeInv.pair_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms DecodeInv.pair_succ
+
+
+
 theorem readBytes_one_of_readByte {m : Mem} {a : Nat} {b : UInt8}
     (h : readByte m a = some b) : readBytes m a 1 = some (natToBytes b.toNat 1) := by
   rw [LeanLLVM.Vellum.JsonEntrySteps.readBytes_one, h, natToBytes_one_eq]
@@ -2081,6 +2290,212 @@ theorem hex_to_ifEnd32 (env : Env) (s : State) (addr : Nat) (bs : List UInt8)
 #guard_msgs in
 #print axioms hex_to_ifEnd32
 
+/-- **The pair's word value**, as the four blocks form it: the second unit's low ten
+bits below the first unit's, shifted up and offset, the two lanes disjoint.
+
+`%and27.i` is the first unit's low sixteen bits (from `if.end3.i`), `%sub23.i` is
+the second unit's offset from `DC00` (from `land.lhs.true22.i`), and `%add30.i`
+combines them.  The expression is the phi's operand on the `if.then26.i` edge. -/
+def pairArmValue (bs bs2 : List UInt8) (db : List (BitVec 1)) : BitVec 32 :=
+  let cl2 := hexUltL (hexAddL (hexOrL (byteLanes bs2) (BitVec.ofInt 8 32))
+    (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)
+  let hi := hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535
+  let lo := hxCode (byteLanes bs2) cl2 &&& BitVec.ofInt 32 65535
+  (lo + BitVec.ofInt 32 (-56320)) |||
+    ((hi <<< (BitVec.ofInt 32 10)) + BitVec.ofInt 32 (-56557568))
+
+/-- **The pair arm.**  `if.end3.i`'s one-arm sends the run into the surrogate pair's
+four blocks and out at the latch: `if.then17.i` reads the second `\u`'s digits,
+`land.lhs.true22.i` folds them to the low ten bits and tests the low-surrogate
+range, `if.then26.i` combines the two units, and `if.end32.i` stores the pair's
+packed word at `%dst + %add15` with the twelve-byte advance the phi supplies.
+
+The composition is the *run*: the state's cells are the builders' own, and the
+memory is the one store `if.end32.i` makes.  `%cp.i.3` is the pair's code point
+`udIfThen26I_pairValue` names, which is what the walk transfer below it reads.
+
+The four gates are hypotheses, because they are the branch decisions and not a
+property of these blocks' steps: `hcond3` is the high-surrogate range and the twelve
+bytes' room, `hcond17` is the four digits being hexadecimal, `hcond22` is the second
+unit's low-surrogate range. -/
+theorem pairArm_to_cleanup32 (env : Env) (s : State) (addr : Nat)
+    (bs bs2 : List UInt8) (sub nv add15 : BitVec 64) (daddr k : Nat)
+    (db : List (BitVec 1))
+    (hpc : s.pc = "if.end.i115")
+    (haddr : lookupName env "%arrayidx16" = some (.ptr addr))
+    (hdst : lookupName env "%dst" = some (.ptr daddr))
+    (hadd15 : lookupName env "%add15" = some (.int 64 add15))
+    (hsub : lookupName env "%sub" = some (.int 64 sub))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hlen : bs.length = 16)
+    (hload : readBytes s.mem (addr + 2) 16 = some bs)
+    (hdb : db = hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6))
+    (hcond115 : evalICmp .eq
+      (BitVec.ofNat 16 (lanesToNat (hexZipOr
+        (hexUltL (hexAddL (byteLanes bs) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+        BitVec.ofInt 16 15) (BitVec.ofInt 16 15) = (1 : BitVec 1))
+    (hcond3 : udIfEnd3IGuard bs db sub nv = (1 : BitVec 1))
+    (hlen2 : bs2.length = 16)
+    (hload2 : readBytes s.mem (addr + 8) 16 = some bs2)
+    (hcond17 : evalICmp .eq
+      (BitVec.ofNat 16 (lanesToNat (hexZipOr
+        (hexUltL (hexAddL (byteLanes bs2) (BitVec.ofInt 8 (-48))) (BitVec.ofInt 8 10))
+        (hexUltL (hexAddL (hexOrL (byteLanes bs2) (BitVec.ofInt 8 32))
+          (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)))) &&&
+        BitVec.ofInt 16 15) (BitVec.ofInt 16 15) = (1 : BitVec 1))
+    (hcond22 : evalICmp .ult
+      ((hxCode (byteLanes bs2) (hexUltL (hexAddL (hexOrL (byteLanes bs2)
+          (BitVec.ofInt 8 32)) (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)) &&&
+        BitVec.ofInt 32 65535) + BitVec.ofInt 32 (-56320))
+      (BitVec.ofInt 32 1024) = (1 : BitVec 1))
+    (hk : (add15.signExtend 64).toNat = k) (hpos : k < 2 ^ 63) :
+    ∃ (e : State),
+      e.pc = "cleanup32" ∧ e.pre = some "if.end32.i" ∧
+      e.mem = writeBytes s.mem (daddr + k)
+        (natToBytes (udIfEnd32Word (pairArmValue bs bs2 db)).toNat 4) ∧
+      lookupName e.env "%cp.i.3" = some (.int 32 (pairArmValue bs bs2 db)) ∧
+      lookupName e.env "%adv.1.i" = some (.int 64 (BitVec.ofInt 64 12)) ∧
+      lookupName e.env "%sub" = some (.int 64 sub) ∧
+      lookupName e.env "%dst" = some (.ptr daddr) ∧
+      (∀ z, runFuel escapeCalls (6 + z) usDecFunction (withEnv env s) =
+        runFuel escapeCalls z usDecFunction e) := by
+  have hc16 : db.length = 16 := by
+    rw [hdb]
+    simp only [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length, hlen]
+  have hdl2 : (hexUltL (hexAddL (hexOrL (byteLanes bs2) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)).length = 16 := by
+    simp only [hexUltL_length, hexAddL_length, hexOrL_length, byteLanes_length, hlen2]
+  let e1 : State :=
+    { (withEnv (udIfEndI115Env env addr bs) s) with
+        pc := "if.end3.i", pre := some "if.end.i115" }
+  have hstep1 : step escapeCalls usDecFunction (withEnv env s) = .jump e1 :=
+    udIfEndI115_step env s addr bs hpc haddr hlen hload hcond115
+  let e2 : State :=
+    { (withEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) s) with
+        pc := "if.then17.i", pre := some "if.end3.i" }
+  have hstep2 : step escapeCalls usDecFunction e1 = .jump e2 := by
+    have h1 := udIfEnd3I_step (udIfEndI115Env env addr bs)
+      { s with pc := "if.end3.i", pre := some "if.end.i115" } addr bs db sub nv rfl
+      (by simp only [udIfEndI115Env]; ud_lk_h haddr)
+      (by simp only [udIfEndI115Env]; ud_lk)
+      (by simp only [udIfEndI115Env]; ud_lk)
+      (by simp only [udIfEndI115Env]; rw [hdb]; ud_lk)
+      (by simp only [udIfEndI115Env]; ud_lk_h hsub)
+      (by simp only [udIfEndI115Env]; ud_lk_h hn)
+      hlen hc16 hcond3
+    exact h1
+  let e3 : State :=
+    { (withEnv (udIfThen17IEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv)
+        addr bs2) s) with
+        pc := "land.lhs.true22.i", pre := some "if.then17.i" }
+  have hstep3 : step escapeCalls usDecFunction e2 = .jump e3 := by
+    have h1 := udIfThen17I_step
+      (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv)
+      { s with pc := "if.then17.i", pre := some "if.end3.i" } addr bs2 rfl
+      (by simp only [udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h haddr)
+      hlen2 hload2 hcond17
+    exact h1
+  let cl2 : List (BitVec 1) :=
+    hexUltL (hexAddL (hexOrL (byteLanes bs2) (BitVec.ofInt 8 32))
+      (BitVec.ofInt 8 (-97))) (BitVec.ofInt 8 6)
+  let e4 : State :=
+    { (withEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
+        (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2) s) with
+        pc := "if.then26.i", pre := some "land.lhs.true22.i" }
+  have hstep4 : step escapeCalls usDecFunction e3 = .jump e4 := by
+    have h1 := udLandLhsTrue22I_step
+      (udIfThen17IEnv (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2)
+      { s with pc := "land.lhs.true22.i", pre := some "if.then17.i" } bs2 cl2 rfl
+      (by simp only [udIfThen17IEnv]; hex_lk)
+      (by simp only [udIfThen17IEnv]; hex_lk)
+      hlen2 hdl2 hcond22
+    exact h1
+  let hi : BitVec 32 := hxCode (byteLanes bs) db &&& BitVec.ofInt 32 65535
+  let lo : BitVec 32 := hxCode (byteLanes bs2) cl2 &&& BitVec.ofInt 32 65535
+  let s23 : BitVec 32 := lo + BitVec.ofInt 32 (-56320)
+  let cp : BitVec 32 := pairArmValue bs bs2 db
+  have hcpv : cp = s23 ||| ((hi <<< (BitVec.ofInt 32 10)) +
+      BitVec.ofInt 32 (-56557568)) := rfl
+  let e5 : State :=
+    { (withEnv (udIfThen26IEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
+        (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2)
+        hi s23) s) with
+        pc := "if.end32.i", pre := some "if.then26.i" }
+  have hstep5 : step escapeCalls usDecFunction e4 = .jump e5 := by
+    have h1 := udIfThen26I_step
+      (udLandLhsTrue22IEnv (udIfThen17IEnv
+        (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2)
+      { s with pc := "if.then26.i", pre := some "land.lhs.true22.i" } hi s23 rfl
+      (by simp only [udLandLhsTrue22IEnv]; hex_lk)
+      (by simp only [udLandLhsTrue22IEnv]; hex_lk)
+    exact h1
+  let e6 : State :=
+    { (withEnv (udIfEnd32IEnv (udIfThen26IEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
+        (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2)
+        hi s23) cp (BitVec.ofInt 64 12) add15 daddr k)
+        (udIfEnd32IWritten s daddr k cp)) with
+        pc := "cleanup32", pre := some "if.end32.i" }
+  have hstep6 : step escapeCalls usDecFunction e5 = .jump e6 := by
+    have h1 := udIfEnd32I_step
+      (udIfThen26IEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
+        (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2)
+        hi s23)
+      { s with pc := "if.end32.i", pre := some "if.then26.i" } "if.then26.i"
+      (.reg "%add30.i") (.imm (.int 64 (BitVec.ofInt 64 12))) cp
+      (BitVec.ofInt 64 12) add15 daddr k rfl rfl (by decide) (by decide)
+      (by
+        show evalOperand (withEnv (udIfThen26IEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
+          (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2)
+          hi s23) s) (.reg "%add30.i") = some (.int 32 cp)
+        simp only [hcpv, s23, lo, hi, udIfThen26IEnv]; hex_lk)
+      (by
+        show evalOperand (withEnv (("%cp.i.3", .int 32 cp) ::
+          udIfThen26IEnv (udLandLhsTrue22IEnv (udIfThen17IEnv
+            (udIfEnd3IEnv (udIfEndI115Env env addr bs) bs db sub nv) addr bs2) bs2 cl2)
+            hi s23) s) (.imm (.int 64 (BitVec.ofInt 64 12))) =
+          some (.int 64 (BitVec.ofInt 64 12))
+        simp [evalOperand, Const.toValue])
+      (by simp only [udIfThen26IEnv, udLandLhsTrue22IEnv, udIfThen17IEnv, udIfEnd3IEnv,
+        udIfEndI115Env]; ud_lk_h hdst)
+      (by simp only [udIfThen26IEnv, udLandLhsTrue22IEnv, udIfThen17IEnv, udIfEnd3IEnv,
+        udIfEndI115Env]; ud_lk_h hadd15)
+      hk hpos
+    exact h1
+  have hmem : e6.mem = writeBytes s.mem (daddr + k)
+      (natToBytes (udIfEnd32Word (pairArmValue bs bs2 db)).toNat 4) := by
+    simp only [e6, udIfEnd32IWritten]
+    rfl
+  have hcpcell : lookupName e6.env "%cp.i.3" =
+      some (.int 32 (pairArmValue bs bs2 db)) := by
+    simp only [e6, withEnv, udIfEnd32IEnv, udIfThen26IEnv]; ud_lk
+  have hadvcell : lookupName e6.env "%adv.1.i" =
+      some (.int 64 (BitVec.ofInt 64 12)) := by
+    simp only [e6, withEnv, udIfEnd32IEnv, udIfThen26IEnv]; ud_lk
+  have hsubcell : lookupName e6.env "%sub" = some (.int 64 sub) := by
+    simp only [e6, withEnv, udIfEnd32IEnv, udIfThen26IEnv, udLandLhsTrue22IEnv,
+      udIfThen17IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hsub
+  have hdstcell : lookupName e6.env "%dst" = some (.ptr daddr) := by
+    simp only [e6, withEnv, udIfEnd32IEnv, udIfThen26IEnv, udLandLhsTrue22IEnv,
+      udIfThen17IEnv, udIfEnd3IEnv, udIfEndI115Env]; ud_lk_h hdst
+  exact ⟨e6, rfl, rfl, hmem, hcpcell, hadvcell, hsubcell, hdstcell, fun z => by
+    rw [show 6 + z = (5 + z) + 1 from by omega, udRun_jump hstep1]
+    rw [show 5 + z = (4 + z) + 1 from by omega, udRun_jump hstep2]
+    rw [show 4 + z = (3 + z) + 1 from by omega, udRun_jump hstep3]
+    rw [show 3 + z = (2 + z) + 1 from by omega, udRun_jump hstep4]
+    rw [show 2 + z = (1 + z) + 1 from by omega, udRun_jump hstep5]
+    rw [show 1 + z = z + 1 from by omega, udRun_jump hstep6]⟩
+
+/-- info: 'LeanLLVM.Vellum.pairArmValue' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pairArmValue
+
+/-- info: 'LeanLLVM.Vellum.pairArm_to_cleanup32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pairArm_to_cleanup32
+
 /-- **The middle's refusal branch.**  `if.end21`'s zero arm sends the run to
 `if.then22`, which performs the refusal's two stores — the offset at `%err` and the
 index at `%xj` — and then reaches `cleanup41`.  The two steps are here with the
@@ -2169,6 +2584,94 @@ theorem successor_staging {M m : Mem} {nps xp pos0 n : Nat} {ps : List Nat}
 /-- info: 'LeanLLVM.Vellum.successor_staging' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms successor_staging
+
+/-- **The successor latch's invariant.**  One iteration's outputs are the next
+latch's premisses: the emitter's `DecodeInv` transfer is the walk, the cells the
+phi and the middle's blocks leave are the `DecodeLatch` fields, the staging survives
+the emitter's write (`successor_staging`), the spacing is inherited
+(`assemblyLatchInv_spaced_succ`), and the budget closes because the cursor advanced.
+
+This is the assembly the iteration arm consumes: `P`-side hypotheses are the run's
+own cells and the transfer's results, and everything `AssemblyLatchInv` states is
+derived here rather than restated.  In particular the *cursor bound* `c' ≤ nps` is a
+hypothesis, not a consequence of `DecodeInv.step_pair`; the surrogate pair's is
+`escAt_pair_succ_le_nps`, and a two-character or six-byte escape's is `c < nps`.
+
+The pinnings are the run's, not the caller's invention: the emitter blocks read the
+same `%p`, `%xp`, `%tab`, `%pos0`, `%n`, `%err` and `%xj` cells and write none of
+them, so the successor's are the predecessor's, carried by the ``hpin`` hypotheses
+against the successor state. -/
+theorem assemblyLatchInv_succ {body : List UInt8} {st : ClassState} {dst nps : Nat}
+    {goal : EscapeOutcome} {b xp tab : Nat} {pos0 n : Nat} {ps : List Nat}
+    {err xj : Nat} {mem : Mem} {r c : Nat} {s e : State}
+    (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s)
+    {i q adv i' c' : Nat} {bytes : List UInt8} {b' : UInt8} {out' : List UInt8}
+    {prev : String} {sub inc11 nxp advv j addv : BitVec 64}
+    (hpc : e.pc = "cleanup32")
+    (hpre : e.pre = some prev)
+    (hphi : (prev = "if.end32.i" ∧ lookupName e.env "%add.i125" = some (.int 64 j) ∧
+        lookupName e.env "%adv.1.i" = some (.int 64 advv)) ∨
+      (prev = "if.then6.i" ∧ lookupName e.env "%add8.i" = some (.int 64 j) ∧
+        advv = BitVec.ofInt 64 2))
+    (hsubc : lookupName e.env "%sub" = some (.int 64 sub))
+    (hinc11c : lookupName e.env "%inc11" = some (.int 64 inc11))
+    (hnxpc : lookupName e.env "%nxp" = some (.int 64 nxp)) (hnxpv : nxp.toNat = nps)
+    (hnext : (decodeNextIdx inc11 advv).toNat = c')
+    (hadvsub : (advv + sub).toNat = i') (hi' : q + adv = i')
+    (hjlen : j.toNat = out'.length)
+    (hwalk : DecodeInv body st e.mem dst nps i' c' out' goal)
+    (hcle : c' ≤ nps) (hcgt : c < c')
+    (hcurE : ∀ k : Nat, latchCursor e = some k → k ≤ n)
+    (hi : latchCursor s = some i) (hq : (escAt body st 0)[c]? = some q)
+    (hb : body[q]? = some b') (hctl : IsControlB b' = false)
+    (hesc : escapeAt body q = some (bytes, adv))
+    (hc'eq : c' = c + 1 + (if adv = 12 then 1 else 0))
+    (hstage : DecodeStaging e.mem nps xp pos0 n ps addv)
+    (haddcell : lookupName e.env "%add" = some (.int 64 addv))
+    (hp_b : lookupName e.env "%p" = some (.ptr b))
+    (hxp_b : lookupName e.env "%xp" = some (.ptr xp))
+    (htab_b : lookupName e.env "%tab" = some (.ptr tab))
+    (hpos0_b : lookupName e.env "%pos0" = some (.int 64 (BitVec.ofNat 64 pos0)))
+    (hn_b : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (herr_b : lookupName e.env "%err" = some (.ptr err))
+    (hxj_b : lookupName e.env "%xj" = some (.ptr xj))
+    (hdst_b : lookupName e.env "%dst" = some (.ptr dst))
+    (hframe : UnchangedOutside mem e.mem [(dst, n + 64)]) :
+    AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem r c' e := by
+  -- the budget: the cursor moved on, so one step of it is spent
+  have hbudget : nps ≤ c' + r := by
+    have hb := assemblyLatchInv_budget h
+    omega
+  -- the spacing is inherited at the emitter's own escape
+  have hspd : Spaced body (q + adv) ((escAt body st 0).drop c') := by
+    have hs := assemblyLatchInv_spaced_succ h hi hq hb hctl hesc
+    rw [hc'eq]
+    exact hs
+  -- the successor's cursor is the walk's, so the spacing clause reads at either
+  have hcurV : ∀ k : Nat, latchCursor e = some k → k = i' := by
+    intro k hk
+    rcases hphi with ⟨rfl, _, ha⟩ | ⟨rfl, _, ha⟩
+    · simp only [latchCursor, hpre, hsubc, ha] at hk
+      have h1 : k = (advv + sub).toNat := (Option.some.inj hk).symm
+      rw [h1]
+      exact hadvsub
+    · simp only [latchCursor, hpre, hsubc] at hk
+      have h1 : k = (BitVec.ofInt 64 2 + sub).toNat := (Option.some.inj hk).symm
+      rw [h1, ← ha]
+      exact hadvsub
+  refine ⟨⟨⟨⟨i', out', prev, sub, inc11, advv, j, nxp, b, xp, tab, err, xj,
+      BitVec.ofNat 64 pos0, addv, BitVec.ofNat 64 n,
+      hpc, hwalk, hcle, hpre, hsubc, hinc11c, hnxpc, hnxpv, hphi, hnext, hadvsub,
+      hjlen, hp_b, hdst_b, hxp_b, htab_b, herr_b, hxj_b, hpos0_b, haddcell, hn_b⟩,
+      hbudget⟩, addv, hstage, haddcell⟩, hp_b, hxp_b, htab_b, hpos0_b, hn_b, herr_b,
+    hxj_b, hcurE, ?_, hframe⟩
+  intro k hk
+  rw [hcurV k hk, ← hi']
+  exact hspd
+
+/-- info: 'LeanLLVM.Vellum.assemblyLatchInv_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms assemblyLatchInv_succ
 
 /-! ### `if.end`'s two arms, composed to the copy's exit word
 
