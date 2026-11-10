@@ -6,11 +6,13 @@
 #   1. no generic `ITree` source imports a `LeanLLVM` module, directly or
 #      through another local `ITree` module, so `lake build ITree` builds
 #      without the LLVM instantiation;
-#   2. exactly one repository source imports mathlib directly, the adapter
-#      `ITree/Internal/PFunctor.lean`, and every other module reaches mathlib
-#      through it;
+#   2. exactly two repository sources import mathlib directly, the adapters
+#      `ITree/Internal/FloatingPoint.lean` and `ITree/Internal/PFunctor.lean`,
+#      and every other module reaches mathlib through one of them; the
+#      floating-point adapter also exports the carrier's three constructors, so
+#      a client can build a value without naming mathlib's namespace;
 #   3. the generic modules import nothing outside `ITree.*`, mathlib (only the
-#      adapter) and Lean's own core libraries, and the host layer reaches the
+#      adapters) and Lean's own core libraries, and the host layer reaches the
 #      generic library through its public entrypoints.
 #
 # Each claim is a filter over module names, defined once below.  Before every
@@ -71,6 +73,19 @@ generic_internal_hits() { grep -E '^ITree\.Internal(\.|$)' || true; }
 # A direct mathlib importer.
 mathlib_hits() { grep -E '^Mathlib\.' || true; }
 
+# The names on the `export FP.Float (...)` lines of the files given, one per
+# line and sorted, restricted to the carrier's constructors.  Line comments are
+# removed first, so a commented-out export is not counted.  Unlike the
+# detectors above this one reads files rather than stdin, because the claim it
+# serves is about a file's own export list rather than about module names.
+exported_float_ctors() {
+  sed -E 's/--.*$//' "$@" \
+    | grep -E '^[[:space:]]*export[[:space:]]+FP\.Float[[:space:]]*\(' \
+    | sed -E 's/^[^(]*\(//; s/\).*$//' \
+    | tr -s '[:space:]' '\n' \
+    | grep -Ex 'inf|nan|finite' | sort -u
+}
+
 mapfile -t generic_files < <(printf '%s\n' ITree.lean; find ITree -name '*.lean' | sort)
 mapfile -t host_files < <(printf '%s\n' LeanLLVM/ITree.lean; find LeanLLVM/ITree -name '*.lean' | sort)
 mapfile -t all_files < <(
@@ -106,9 +121,26 @@ hits=$(imports_of "$tmp" | generic_internal_hits | wc -l)
 [ "$hits" -eq 0 ] || report "control: the generic-internal detector flagged an entrypoint import"
 echo "control: generic-internal detector catches 'import ITree.Internal.PFunctor' and passes 'import ITree.Core'"
 
-adapter_mathlib=$(imports_of ITree/Internal/PFunctor.lean | mathlib_hits | wc -l)
-[ "$adapter_mathlib" -ge 1 ] || report "control: the mathlib detector found nothing in ITree/Internal/PFunctor.lean"
-echo "control: mathlib detector finds $adapter_mathlib direct mathlib imports in ITree/Internal/PFunctor.lean"
+adapters=(
+  ./ITree/Internal/FloatingPoint.lean
+  ./ITree/Internal/PFunctor.lean
+)
+for adapter in "${adapters[@]}"; do
+  adapter_mathlib=$(imports_of "${adapter#./}" | mathlib_hits | wc -l)
+  [ "$adapter_mathlib" -ge 1 ] \
+    || report "control: the mathlib detector found nothing in $adapter"
+  echo "control: mathlib detector finds $adapter_mathlib direct mathlib imports in $adapter"
+done
+
+printf 'export FP.Float (inf nan finite)\n' > "$tmp"
+hits=$(exported_float_ctors "$tmp" | tr '\n' ' ')
+[ "$hits" = "finite inf nan " ] \
+  || report "control: the float-constructor detector missed an in-memory 'export FP.Float (inf nan finite)' (found: '$hits')"
+printf -- '-- export FP.Float (inf nan finite)\nexport FP.Float (inf)\n' > "$tmp"
+hits=$(exported_float_ctors "$tmp" | tr '\n' ' ')
+[ "$hits" = "inf " ] \
+  || report "control: the float-constructor detector reported '$hits' for 'export FP.Float (inf)' beside a commented-out full export"
+echo "control: float-constructor detector finds all three constructors on a full export and only 'inf' on a partial one"
 
 # --- 1. no generic LeanLLVM import ------------------------------------------
 for f in "${generic_files[@]}"; do
@@ -124,17 +156,33 @@ for f in "${generic_files[@]}"; do
   [ -z "$bad" ] || report "$f imports a module outside the generic boundary: $bad"
 done
 
-# --- 3. exactly one direct mathlib importer ---------------------------------
+# --- 3. exactly the two direct mathlib importers ----------------------------
+# The inventory is the set of adapter files, in sorted order, and the assertion
+# compares against it as a whole: a third importer, or a missing one, changes
+# the string and fails.  The adapters' own direct imports are the control
+# above, so the detector is shown to fire before this absence is claimed.
+expected_direct=" ./ITree/Internal/FloatingPoint.lean ./ITree/Internal/PFunctor.lean"
 direct=""
 for f in "${all_files[@]}"; do
   if imports_of "$f" | mathlib_hits | grep -q .; then
     direct="$direct $f"
   fi
 done
-if [ "$direct" != " ./ITree/Internal/PFunctor.lean" ]; then
-  report "direct mathlib importers:${direct:- none} (expected ./ITree/Internal/PFunctor.lean only)"
+if [ "$direct" != "$expected_direct" ]; then
+  report "direct mathlib importers:${direct:- none} (expected${expected_direct} only)"
 fi
 echo "direct mathlib importers:${direct:- none}"
+
+# The floating-point adapter's surface claim: a client builds values through
+# the exported constructors, never through `FP.Float.finite`.  The control
+# above shows the detector finds all three on a full export and only one on a
+# partial one, so this presence assertion is not made by a filter that matches
+# anything.
+float_ctors=$(exported_float_ctors ITree/Internal/FloatingPoint.lean | tr '\n' ' ')
+if [ "$float_ctors" != "finite inf nan " ]; then
+  report "ITree/Internal/FloatingPoint.lean exports '${float_ctors}' from FP.Float (expected 'finite inf nan ')"
+fi
+echo "floating-point adapter exports from FP.Float: $float_ctors"
 
 # --- 4. the host layer reaches the generic library through its entrypoints ---
 for f in "${host_files[@]}"; do

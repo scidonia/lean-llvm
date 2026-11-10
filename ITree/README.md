@@ -24,24 +24,34 @@ Public clients import `ITree` (or the two modules they need):
 | `ITree/EffectAlgebra.lean` | the tree-valued `Handler` and its directly guarded interpreter `interp`, with the five exact ret/tau/vis/bind/composition laws, handler composition and the transition guards |
 | `ITree/Effect.lean` | the **other** interpreter: the one-step `Handler` and its computable `interp`, with `interp_ret`, `interp_tau` and the two handler-conditional event equations |
 
-`ITree/Internal/{PFunctor,Basic}.lean` are **unsupported implementation modules
-by convention**, not by access control: Lean's namespaces are open, so a client
-can still reach their declarations transitively.  Import `ITree`,
-`ITree.Core` or `ITree.Coinduction`; do not import an `Internal` module and do
-not name `PFunctor.M` in a client.
+`ITree/Internal/{PFunctor,Basic,FloatingPoint}.lean` are **unsupported
+implementation modules by convention**, not by access control: Lean's namespaces
+are open, so a client can still reach their declarations transitively.  Import
+`ITree`, `ITree.Core` or `ITree.Coinduction`; do not import an `Internal` module
+and do not name `PFunctor.M` in a client.
 
 ## Import boundary
 
-Exactly one module imports mathlib directly:
+Exactly two modules import mathlib directly:
 
 * `ITree/Internal/PFunctor.lean` — `Mathlib.Data.QPF.Univariate.Basic` and
   `Mathlib.Data.Vector3`, plus the `Vector3`/`Fin2` helpers the encoding needs.
+* `ITree/Internal/FloatingPoint.lean` — `Mathlib.Data.FP.Basic`, re-exported for
+  the floating-point model: the format's `FloatCfg` and its `prec`/`emax`/`emin`
+  projections, the `ValidFinite` well-formedness predicate, the carrier (as
+  `FloatingPoint`, since the mathlib name `Float` would hide Lean's own), its
+  constructors `inf`/`nan`/`finite`, `isFinite`, the exact value `toRat`, and
+  the comparison primitive `divNatLtTwoPow`.  Nothing is redefined or wrapped
+  there, so a client writes the mathlib statement it needs without importing
+  mathlib — and can build a value with the exported constructors rather than
+  naming `FP.Float.finite`.
 
-Every other module in the package, generic or host, reaches mathlib through it.
-No generic module imports anything outside `ITree.*`, `Mathlib.*` (only the
-adapter) and Lean's own core libraries.  `tests/itree-boundary.sh` checks those
-claims against the actual `import` declarations, with a positive control on the
-same detector before each absence claim; `tests/itree-import.lean` elaborates a
+Every other module in the package, generic or host, reaches mathlib through one
+of them.  No generic module imports anything outside `ITree.*`, `Mathlib.*`
+(only the adapters) and Lean's own core libraries.  `tests/itree-boundary.sh`
+checks those claims against the actual `import` declarations, comparing the
+mathlib importer inventory as a whole, with a positive control on the same
+detector before each absence claim; `tests/itree-import.lean` elaborates a
 client that imports `ITree` only.
 
 All libraries live in this one root package: this is a separate Lake *library
@@ -164,7 +174,7 @@ The upstream MIT licence is reproduced in `ITree/LICENSE`.  Local deviations:
 * `ITree.Effect.Handler` and its `interp` are new here, and are the one-step,
   computable fold described above rather than upstream's monadic interpreter;
 * declarations are placed under the `ITree` namespace, and the mathlib
-  dependency is funnelled through the single adapter.
+  dependency is funnelled through the two adapters in `ITree/Internal/`.
 
 The read-only VeLLVM reference subtree under `reference/vellvm/` is unrelated to
 this library.
