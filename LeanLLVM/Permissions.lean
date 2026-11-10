@@ -47,6 +47,66 @@ cannot be dropped (dropping one leaves no claim rather than a weaker pre), and t
 one that remains is a hypothesis between two claims' own declared sets rather than
 a disjunction of hand-computed extents in a record's `pre`.  It is not a
 separation logic: four clauses stay four where four writers meet four regions.
+
+### Ownership, and what it changes
+
+The region claim above is a *permission*: it says what a unit may change and what
+it promises present, and the disjointness it needs is a predicate an author writes
+and a lemma takes as an argument.  The rest of this module states the byte as a
+*resource*:
+
+* `PointsTo a b mem` is one byte's value.  Its footprint is the address it names,
+  so a claim's owned set is computed from the claim rather than declared beside it
+  — that is the difference between ownership and presence.
+* `Star P Q` is `*`: two claims on heaps that share no address compose into the
+  claim on their union.  The split is part of the composed claim, so
+  `PointsTo a v * PointsTo a w` is *uninhabited*, for every memory and every pair
+  of values (`star_pointsTo_uninhabited`); `*` is commutative and associative, and
+  `EmptyHeap` is the unit at a points-to claim (`pointsTo_star_empty_iff`).  `sep`
+  took the separation as an argument; here there is no composition to state without
+  it.
+* Exclusivity has two readings, and they are kept apart.  The structural one is
+  `pointsTo_exclusive`: two claims about one memory's byte agree, because the
+  memory is a function — no hypothesis and no composition.  The standard one is
+  `star_pointsTo_agree`: `PointsTo a v * PointsTo a w` gives `v = w`, because the
+  composed claim has no inhabitant rather than because the caller said the sets are
+  apart.  `star_pointsTo_apart_inhabited` is the control: at two addresses the same
+  composition is inhabited, so the refutation is the shared byte.
+* A write at an owned byte yields the claim at the new value
+  (`pointsTo_writeByte`, `star_pointsTo_write`); a write at another byte leaves the
+  claim (`PointsTo.writeByte`); a write at a byte the claim does not own yields no
+  claim about that byte — `unowned_byte_not_claimed` exhibits two memories carrying
+  the same claim and disagreeing there.  The store's byte is a fresh claim on the
+  new memory, not an update of the composed one, and the composed claim's footprint
+  excludes the write.
+* The frame rule is read off `*` rather than assumed: `star_pointsTo_write` updates
+  the first part's owned byte and leaves the second claim in place.  Its memory
+  effect is the `UnchangedOn` the property-based rule consumes
+  (`pointsTo_write_unchangedOn`), so the old rule is that write read through
+  `DependsOutside` (`frame_rule_of_write`); `frame_rule_of_claim` and
+  `frame_rule_sep` keep their statements unchanged.
+* `Carries W mem` is the set-valued claim, and its composition *derives* the
+  separation: `star_carries_disjoint` takes `Carries W * Carries V` to
+  `Disjoint W V`, and `Carries W * Carries W` has no inhabitant wherever `W` names
+  a byte.
+
+### What this does not buy
+
+The separation inside `*` is a conjunct of the composed claim, not a message from
+nowhere: over a total memory there is no other way to say that two claims are about
+different bytes.  What changes is who writes it.  The footprint now comes from the
+claim's own addresses, so nothing can declare a region narrower or wider than what
+the claim is about, and `Carries W * Carries V` yields the disjointness rather than
+requiring it.
+
+It does not derive the fourth clause.  `xj`/`dst` is a pair of writes by one run,
+and a run legitimately owns both regions it writes: a byte written twice is one
+byte holding the second value.  `runOwned_meeting_regions_inhabited` exhibits the
+run's claim over the union of the two regions at a staging where they meet, and
+`cursorWindow_carries_notStar` shows the two-claim composition refused there — a
+refusal, which is not a separation.  So `xj`/`dst` stays a staging hypothesis under
+ownership exactly as it did under `Rights`, and the count of derived clauses is
+unchanged.
 -/
 import LeanLLVM.FramePredicate
 
@@ -280,6 +340,430 @@ theorem frame_rule_of_claim {P K W : Nat → Prop} {mem m : Mem}
     Q mem ↔ Q m :=
   hQ h.writes
 
+/-! ### Ownership: the byte as a resource -/
+
+/-- A claim on one byte's value.  This is the atom the region vocabulary cannot
+state: `Rights P K W` says a unit *may* change `W`, while a `PointsTo` claim says a
+byte *is* a value, and the value is read out of the memory rather than declared.
+Its footprint is the address it names, so a claim's owned set comes from the claim
+instead of from an author's region predicate. -/
+def PointsTo (a : Nat) (b : UInt8) (mem : Mem) : Prop := readByte mem a = some b
+
+/-- **Value exclusivity, without a hypothesis.**  The memory is a function, so two
+claims about one byte are one claim: a second claim at the same address cannot
+carry a different value.  Nothing about disjointness is assumed — both claims are
+about the same memory, and the read cannot answer twice. -/
+theorem pointsTo_exclusive {a : Nat} {v w : UInt8} {mem : Mem}
+    (hv : PointsTo a v mem) (hw : PointsTo a w mem) : v = w := by
+  unfold PointsTo at hv hw
+  rw [hv] at hw
+  exact Option.some.inj hw
+
+/-- Two memories share no address: whatever one answers, the other does not.  This
+is the disjointness a heap split carries, and it is about the bytes themselves
+rather than about a region predicate an author wrote by hand. -/
+def MemApart (m1 m2 : Mem) : Prop := ∀ a, readByte m1 a ≠ none → readByte m2 a = none
+
+/-- Two memories answer the same at every address.  Splitting a memory does not fix
+a list order: the composed claim is about the bytes, so it names a memory up to
+this relation. -/
+def Agrees (m1 m2 : Mem) : Prop := ∀ a, readByte m1 a = readByte m2 a
+
+/-- Reading a concatenation is reading the prefix, and falling through to the
+suffix when the prefix has nothing at that address. -/
+theorem readByte_append (m1 m2 : Mem) (a : Nat) :
+    readByte (m1 ++ m2) a =
+      (match readByte m1 a with
+       | none => readByte m2 a
+       | some b => some b) := by
+  induction m1 with
+  | nil => simp [readByte]
+  | cons cell rest ih =>
+      obtain ⟨x, y⟩ := cell
+      by_cases hx : x = a
+      · simp [readByte, hx]
+      · simp [readByte, hx, ih]
+
+/-- A byte the prefix answers is the byte the concatenation answers. -/
+theorem readByte_append_of_some {m1 m2 : Mem} {a : Nat} {b : UInt8}
+    (h : readByte m1 a = some b) : readByte (m1 ++ m2) a = some b := by
+  rw [readByte_append, h]
+
+/-- A byte the prefix does not answer is answered by the suffix. -/
+theorem readByte_append_of_none {m1 m2 : Mem} {a : Nat}
+    (h : readByte m1 a = none) : readByte (m1 ++ m2) a = readByte m2 a := by
+  rw [readByte_append, h]
+
+/-- Disjointness is symmetric. -/
+theorem MemApart.symm {m1 m2 : Mem} (h : MemApart m1 m2) : MemApart m2 m1 := by
+  intro a h2
+  by_cases h1 : readByte m1 a = none
+  · exact h1
+  · exact absurd (h a h1) h2
+
+/-- A split's left part stays apart from the right after a write to a byte the left
+part already carried: the write changes a value, not which addresses are read. -/
+theorem MemApart.writeByte_left {m1 m2 : Mem} {a : Nat} {b : UInt8}
+    (h : MemApart m1 m2) (ha : readByte m1 a ≠ none) :
+    MemApart (writeByte m1 a b) m2 := by
+  intro x hx
+  by_cases hxa : x = a
+  · simpa [hxa] using h a ha
+  · have hx' : readByte m1 x ≠ none := by
+      intro hc
+      apply hx
+      rw [readByte_writeByte_other m1 b (Ne.symm hxa)]
+      exact hc
+    exact h x hx'
+
+/-- The left part of a split may stay apart from a concatenated right side. -/
+theorem MemApart.append_right {m12 m3 m1 m2 : Mem} (h13 : MemApart m12 m3)
+    (h12 : MemApart m1 m2) (hag : Agrees m12 (m1 ++ m2)) :
+    MemApart m1 (m2 ++ m3) := by
+  intro a ha
+  have hm2 : readByte m2 a = none := h12 a ha
+  have hm12 : readByte m12 a ≠ none := by
+    rw [hag a]
+    cases hm : readByte m1 a with
+    | none => exact absurd hm ha
+    | some b => rw [readByte_append_of_some hm]; intro hc; cases hc
+  have hm3 : readByte m3 a = none := h13 a hm12
+  rw [readByte_append, hm2, hm3]
+
+/-- The right part of a split is apart from what the left part's side is apart
+from, which is how a nested composition's inner split stays a split. -/
+theorem MemApart.of_append_left {m12 m3 m1 m2 : Mem} (h13 : MemApart m12 m3)
+    (hag : Agrees m12 (m1 ++ m2)) : MemApart m2 m3 := by
+  intro a ha
+  have h12 : readByte (m1 ++ m2) a ≠ none := by
+    cases hm : readByte m1 a with
+    | none => rw [readByte_append, hm]; exact ha
+    | some b => rw [readByte_append, hm]; intro hc; cases hc
+  have hm12 : readByte m12 a ≠ none := by
+    rw [hag a]
+    exact h12
+  exact h13 a hm12
+
+/-- Apartness transfers across an agreeing memory. -/
+theorem MemApart.congr_left {m12 m3 n : Mem} (h : MemApart m12 m3) (hag : Agrees m12 n) :
+    MemApart n m3 := by
+  intro a hn
+  have hm12 : readByte m12 a ≠ none := by
+    rwa [hag a]
+  exact h a hm12
+
+/-- Agreement with itself. -/
+theorem Agrees.refl (m : Mem) : Agrees m m := fun _ => rfl
+
+/-- Agreement is symmetric. -/
+theorem Agrees.symm {m1 m2 : Mem} (h : Agrees m1 m2) : Agrees m2 m1 := fun a => (h a).symm
+
+/-- Agreement is transitive. -/
+theorem Agrees.trans {m1 m2 m3 : Mem} (h1 : Agrees m1 m2) (h2 : Agrees m2 m3) :
+    Agrees m1 m3 := fun a => (h1 a).trans (h2 a)
+
+/-- A write to one address reads the same in two agreeing memories: the written
+value is the same on both sides, and every other address is the old agreement. -/
+theorem Agrees.writeByte {m1 m2 : Mem} (h : Agrees m1 m2) (a : Nat) (b : UInt8) :
+    Agrees (writeByte m1 a b) (writeByte m2 a b) := by
+  intro x
+  by_cases hx : x = a
+  · subst hx
+    rw [readByte_writeByte_same, readByte_writeByte_same]
+  · rw [readByte_writeByte_other m1 b (Ne.symm hx),
+        readByte_writeByte_other m2 b (Ne.symm hx)]
+    exact h x
+
+/-- Agreement carries into a common suffix. -/
+theorem Agrees.append_left {m1 m2 : Mem} (h : Agrees m1 m2) (r : Mem) :
+    Agrees (m1 ++ r) (m2 ++ r) := by
+  intro a
+  rw [readByte_append, readByte_append]
+  cases hm : readByte m1 a with
+  | none =>
+      have hm2 : readByte m2 a = none := by rw [← h a]; exact hm
+      rw [hm2]
+  | some b =>
+      have hm2 : readByte m2 a = some b := by rw [← h a]; exact hm
+      rw [hm2]
+
+/-- Reversing two disjoint parts does not change what the union answers, which is
+what makes the composition commutative over bytes rather than over lists. -/
+theorem agrees_append_swap {m1 m2 : Mem} (h : MemApart m1 m2) :
+    Agrees (m1 ++ m2) (m2 ++ m1) := by
+  intro a
+  rw [readByte_append, readByte_append]
+  cases h1 : readByte m1 a with
+  | none =>
+      cases h2 : readByte m2 a with
+      | none => rfl
+      | some b => rfl
+  | some b =>
+      have h2 : readByte m2 a = none := h a (by rw [h1]; intro hc; cases hc)
+      rw [h2]
+
+/-- **`*`.**  Two claims on two heaps that share no address compose into the claim
+on their union.  The split carries the disjointness as part of the composed claim,
+so a composition of two claims that own one address is not a weaker claim: it has
+no inhabitant, and no caller is asked to supply a separation before composing. -/
+def Star (P Q : Mem → Prop) (mem : Mem) : Prop :=
+  ∃ m1 m2, MemApart m1 m2 ∧ P m1 ∧ Q m2 ∧ Agrees mem (m1 ++ m2)
+
+/-- `*` does not care which side is written first. -/
+theorem Star.comm {P Q : Mem → Prop} {mem : Mem} (h : Star P Q mem) : Star Q P mem := by
+  obtain ⟨m1, m2, hap, hp, hq, hag⟩ := h
+  exact ⟨m2, m1, hap.symm, hq, hp, hag.trans (agrees_append_swap hap)⟩
+
+/-- `*` groups.  The split is over bytes, so a nested composition is the flat one. -/
+theorem Star.assoc {P Q R : Mem → Prop} {mem : Mem}
+    (h : Star (fun m => Star P Q m) R mem) : Star P (fun m => Star Q R m) mem := by
+  obtain ⟨m12, m3, hap13, ⟨m1, m2, hap12, hp, hq, hag12⟩, hr, hag⟩ := h
+  refine ⟨m1, m2 ++ m3, ?_, hp, ?_, ?_⟩
+  · exact MemApart.append_right hap13 hap12 hag12
+  · exact ⟨m2, m3, MemApart.of_append_left hap13 hag12, hq, hr, Agrees.refl (m2 ++ m3)⟩
+  · have hstep : Agrees (m12 ++ m3) ((m1 ++ m2) ++ m3) := Agrees.append_left hag12 m3
+    have hcomp : Agrees mem ((m1 ++ m2) ++ m3) := hag.trans hstep
+    rw [List.append_assoc] at hcomp
+    exact hcomp
+
+/-- The composition answers with its first part's byte. -/
+theorem Star.pointsTo_left {Q : Mem → Prop} {mem : Mem} {a : Nat} {b : UInt8}
+    (h : Star (PointsTo a b) Q mem) : PointsTo a b mem := by
+  obtain ⟨m1, m2, hap, h1, h2, hag⟩ := h
+  unfold PointsTo at h1 ⊢
+  rw [hag a]
+  exact readByte_append_of_some h1
+
+/-- The composition answers with its second part's byte. -/
+theorem Star.pointsTo_right {P : Mem → Prop} {mem : Mem} {a : Nat} {b : UInt8}
+    (h : Star P (PointsTo a b) mem) : PointsTo a b mem :=
+  h.comm.pointsTo_left
+
+/-- A memory that holds no byte at all: the unit of `*`. -/
+def EmptyHeap (mem : Mem) : Prop := ∀ a, readByte mem a = none
+
+/-- A claim on one byte is a composed claim with nothing beside it. -/
+theorem pointsTo_star_empty {a : Nat} {b : UInt8} {mem : Mem}
+    (h : PointsTo a b mem) : Star (PointsTo a b) EmptyHeap mem := by
+  refine ⟨mem, [], ?_, h, ?_, ?_⟩
+  · intro x _
+    rfl
+  · intro x
+    rfl
+  · rw [List.append_nil]
+    exact Agrees.refl mem
+
+/-- The unit law, read at the atom. -/
+theorem pointsTo_star_empty_iff {a : Nat} {b : UInt8} {mem : Mem} :
+    Star (PointsTo a b) EmptyHeap mem ↔ PointsTo a b mem :=
+  ⟨Star.pointsTo_left, pointsTo_star_empty⟩
+
+/-! #### Exclusivity by construction -/
+
+/-- **Two claims on one byte do not compose.**  The composed claim has no
+inhabitant at any memory, for any values: each part owns the address, and the
+split's parts share no address.  This is the separation `sep` takes as an argument
+becoming structure — a record cannot state the composition at all, so there is no
+side condition to forget. -/
+theorem star_pointsTo_uninhabited (a : Nat) (v w : UInt8) (mem : Mem) :
+    ¬ Star (PointsTo a v) (PointsTo a w) mem := by
+  rintro ⟨m1, m2, hap, h1, h2, -⟩
+  unfold PointsTo at h1 h2
+  have h1' : readByte m1 a ≠ none := by rw [h1]; intro hc; cases hc
+  have h2' : readByte m2 a = none := hap a h1'
+  rw [h2'] at h2
+  cases h2
+
+/-- The exclusivity law of the atom: `x ↦ v * x ↦ w` gives `v = w`.  Its content
+here is the theorem above — the composed claim is uninhabited, so the equality is
+not a premise anyone supplies.  The non-vacuous reading of the same fact is
+`pointsTo_exclusive`, which needs no composition: two claims about one memory's
+byte cannot disagree. -/
+theorem star_pointsTo_agree {a : Nat} {v w : UInt8} {mem : Mem}
+    (h : Star (PointsTo a v) (PointsTo a w) mem) : v = w :=
+  absurd h (star_pointsTo_uninhabited a v w mem)
+
+/-- Two singleton heaps with different addresses are apart. -/
+theorem memApart_singleton {a c : Nat} {v w : UInt8} (h : a ≠ c) :
+    MemApart [(a, v)] [(c, w)] := by
+  intro x hx
+  by_cases hxa : x = a
+  · have hcx : ¬ (c = x) := fun hc => h (hxa.symm.trans hc.symm)
+    simp [readByte, hcx]
+  · have hnone : readByte [(a, v)] x = none := by
+      simp [readByte, Ne.symm hxa]
+    exact absurd hnone hx
+
+/-- The control for the two theorems above: at two addresses the same composition
+is inhabited, so the refutation is the shared address and not the shape of `*`. -/
+theorem star_pointsTo_apart_inhabited (a c : Nat) (v w : UInt8) (h : a ≠ c) :
+    Star (PointsTo a v) (PointsTo c w) [(a, v), (c, w)] := by
+  refine ⟨[(a, v)], [(c, w)], memApart_singleton h, ?_, ?_, ?_⟩
+  · simp [PointsTo, readByte]
+  · simp [PointsTo, readByte]
+  · exact Agrees.refl _
+
+/-! #### Ownership as a set of bytes -/
+
+/-- A claim that a memory carries every byte of `W`, naming no value and saying
+nothing about the rest.  `PointsTo` is this plus a value, and `present` is this at
+one address: the difference is that `W` is the claim's own footprint. -/
+def Carries (W : Nat → Prop) (mem : Mem) : Prop := ∀ a, W a → readByte mem a ≠ none
+
+/-- A points-to claim carries the address it names. -/
+theorem PointsTo.carries {a : Nat} {b : UInt8} {mem : Mem} (h : PointsTo a b mem) :
+    Carries (fun x => x = a) mem := by
+  intro x hx
+  subst hx
+  unfold PointsTo at h
+  rw [h]
+  intro hc
+  cases hc
+
+/-- A points-to claim is a present byte, in the presence vocabulary. -/
+theorem PointsTo.present {a : Nat} {b : UInt8} {mem : Mem} (h : PointsTo a b mem) :
+    present mem a :=
+  ⟨b, h⟩
+
+/-- A carried set is present. -/
+theorem Carries.present {W : Nat → Prop} {mem : Mem} (h : Carries W mem) :
+    ∀ a, W a → present mem a := by
+  intro a ha
+  cases hm : readByte mem a with
+  | none => exact absurd hm (h a ha)
+  | some b => exact ⟨b, hm⟩
+
+/-- **Exclusivity derived, not assumed.**  Two composed ownership claims are
+disjoint: each set's bytes are read out of its own part of the split, and the parts
+share no address.  The disjointness is a consequence of `*`, so a record states the
+claims and reads the separation off them. -/
+theorem star_carries_disjoint {W V : Nat → Prop} {mem : Mem}
+    (h : Star (Carries W) (Carries V) mem) : Disjoint W V := by
+  obtain ⟨m1, m2, hap, h1, h2, -⟩ := h
+  intro a hw hv
+  exact absurd (hap a (h1 a hw)) (h2 a hv)
+
+/-- **`Carries W * Carries W` has no inhabitant** where `W` names a byte: each part
+would have to own that byte.  Aliasing is impossible rather than excluded. -/
+theorem star_carries_self_uninhabited {W : Nat → Prop} {mem : Mem} {a : Nat}
+    (ha : W a) : ¬ Star (Carries W) (Carries W) mem :=
+  fun h => star_carries_disjoint h a ha ha
+
+/-- The control: at two different sets the composition is inhabited, so the
+refutation above is the shared byte. -/
+theorem star_carries_inhabited :
+    Star (Carries (fun a => a = 0)) (Carries (fun a => a = 1)) [(0, 1), (1, 2)] := by
+  refine ⟨[(0, 1)], [(1, 2)], memApart_singleton (by decide), ?_, ?_, ?_⟩
+  · intro x hx
+    subst hx
+    simp [readByte]
+  · intro x hx
+    subst hx
+    simp [readByte]
+  · exact Agrees.refl _
+
+/-- The composition carries a set its part carried. -/
+theorem Star.carries_left {W : Nat → Prop} {Q : Mem → Prop} {mem : Mem}
+    (h : Star (Carries W) Q mem) : Carries W mem := by
+  obtain ⟨m1, m2, hap, h1, h2, hag⟩ := h
+  intro a ha
+  have hx : readByte m1 a ≠ none := h1 a ha
+  rw [hag a, readByte_append]
+  cases hm : readByte m1 a with
+  | none => exact absurd hm hx
+  | some b => intro hc; cases hc
+
+/-! #### Write rules -/
+
+/-- **A write at a byte is that byte's claim.**  The store is what puts the bytes
+there, so the claim does not need the old one; what the old claim buys is the rest
+of the composition (`star_pointsTo_write`). -/
+theorem pointsTo_writeByte (mem : Mem) (a : Nat) (b : UInt8) :
+    PointsTo a b (writeByte mem a b) :=
+  readByte_writeByte_same mem a b
+
+/-- A write at another address leaves the claim: the atom's frame. -/
+theorem PointsTo.writeByte {a : Nat} {b : UInt8} {mem : Mem} (c : Nat) (v : UInt8)
+    (hne : c ≠ a) (h : PointsTo a b mem) : PointsTo a b (writeByte mem c v) := by
+  unfold PointsTo at h ⊢
+  rw [readByte_writeByte_other mem v hne]
+  exact h
+
+/-- **A write at an unowned byte is not a claim about that byte.**  These two
+memories carry the same claim at address zero and disagree at address five, so no
+rule reads five out of a claim that does not name it.  What happens instead: the
+store makes a *fresh* claim at the written byte on the new memory
+(`pointsTo_writeByte`), the old claim's own bytes are unchanged (`PointsTo.writeByte`),
+and the composed claim's footprint excludes the write — there is no update of a
+claim to a byte it did not own. -/
+theorem unowned_byte_not_claimed :
+    ∃ (mem₁ mem₂ : Mem), PointsTo 0 1 mem₁ ∧ PointsTo 0 1 mem₂ ∧
+      readByte mem₁ 5 ≠ readByte mem₂ 5 := by
+  refine ⟨[(0, 1)], [(0, 1), (5, 2)], ?_, ?_, ?_⟩
+  · simp [PointsTo, readByte]
+  · simp [PointsTo, readByte]
+  · decide
+
+/-- Writing inside the first part of a composition leaves the second part alone. -/
+theorem star_writeByte_outside {Q : Mem → Prop} {mem : Mem} {a : Nat} {b : UInt8}
+    (h : Star (PointsTo a b) Q mem) (c : Nat) {v : UInt8} (hne : c ≠ a) :
+    readByte (writeByte mem c v) a = some b :=
+  h.pointsTo_left.writeByte c v hne
+
+/-- A write inside the first part is a write inside the prefix of the split, so the
+split survives it: the write substitutes the prefix's cell and leaves the suffix
+where it was. -/
+theorem writeByte_append_left {m1 m2 : Mem} {a : Nat} {b : UInt8}
+    (ha : readByte m1 a ≠ none) :
+    writeByte (m1 ++ m2) a b = writeByte m1 a b ++ m2 := by
+  induction m1 with
+  | nil => exact absurd rfl ha
+  | cons cell rest ih =>
+      obtain ⟨x, y⟩ := cell
+      by_cases hx : x = a
+      · subst hx
+        simp [writeByte]
+      · have ha' : readByte rest a ≠ none := by
+          intro hc
+          apply ha
+          simp [readByte, hx, hc]
+        simp [writeByte, hx, ih ha']
+
+/-- **The frame rule from the resource.**  A write at a byte the first part owns
+updates that claim and leaves the composition otherwise the same: the second claim
+is still the same claim about the same bytes.  Nothing is assumed about the memory
+as a whole, which is what makes this a rule of the claim rather than a property the
+caller supplies. -/
+theorem star_pointsTo_write {Q : Mem → Prop} {mem : Mem} {a : Nat} {b b' : UInt8}
+    (h : Star (PointsTo a b) Q mem) :
+    Star (PointsTo a b') Q (writeByte mem a b') := by
+  obtain ⟨m1, m2, hap, h1, h2, hag⟩ := h
+  unfold PointsTo at h1
+  have hown : readByte m1 a ≠ none := by rw [h1]; intro hc; cases hc
+  refine ⟨writeByte m1 a b', m2, hap.writeByte_left hown, ?_, h2, ?_⟩
+  · exact readByte_writeByte_same m1 a b'
+  · have hstep : Agrees (writeByte mem a b') (writeByte (m1 ++ m2) a b') :=
+      hag.writeByte a b'
+    rw [writeByte_append_left hown] at hstep
+    exact hstep
+
+/-- A write is a change at one address only: the `UnchangedOn` every frame rule in
+this module already consumes. -/
+theorem pointsTo_write_unchangedOn (mem : Mem) (a : Nat) (b : UInt8) :
+    UnchangedOn (fun x => x = a) mem (writeByte mem a b) := by
+  intro x hx
+  exact readByte_writeByte_other mem b (fun hc : a = x => hx hc.symm)
+
+/-- **The old frame rule, recovered as a projection.**  The write's resource effect
+is the `UnchangedOn` the property-based rule takes as its hypothesis, so the rule
+that predates this vocabulary is this one read at `DependsOutside`; nothing that
+consumed the property form regresses.  `frame_rule_of_claim` and `frame_rule_sep`
+are the same projection at a `Rights` claim's own writable set. -/
+theorem frame_rule_of_write (mem : Mem) (a : Nat) (b : UInt8) {R : Mem → Prop}
+    (hR : DependsOutside (fun x => x = a) R) :
+    R mem ↔ R (writeByte mem a b) :=
+  frame_rule (pointsTo_write_unchangedOn mem a b) hR
+
 /-! ### The historical defect, in this vocabulary -/
 
 /-- The extent the decoder writes through `dst`: the decoded prefix plus the
@@ -470,6 +954,40 @@ theorem cursorWindowNotDerived :
     exact hd 0 ⟨Nat.le_refl 0, Nat.lt_add_of_pos_right (by decide : 0 < 1)⟩
       ⟨Nat.le_refl 0, Nat.lt_add_of_pos_right (by decide : 0 < 1)⟩
 
+/-! #### Ownership does not separate the run's own writers -/
+
+/-- **A run owns both regions it writes, even where they meet.**  The claim over
+the union of the destination window and the cursor slot is inhabited at a staging
+where the cursor lies inside the window: ownership is a claim about a byte's value,
+and a byte written twice by the same run is one byte holding the second value.  So
+nothing in the ownership algebra forces `xj` apart from `dst`. -/
+theorem runOwned_meeting_regions_inhabited (n dst xj : Nat)
+    (hhi : xj < dst + (n + 64)) :
+    ∃ mem : Mem, Carries (fun a => destinationWindow n dst a ∨ cursorSlot xj a) mem := by
+  refine ⟨filled 0 (dst + (n + 64) + 8), ?_⟩
+  intro a ha
+  have hbytes : HasBytes (filled 0 (dst + (n + 64) + 8)) 0 (dst + (n + 64) + 8) :=
+    hasBytes_filled 0 (dst + (n + 64) + 8)
+  have ha' : a < dst + (n + 64) + 8 := by
+    rcases ha with hd | hc
+    · exact Nat.lt_trans hd.2 (Nat.lt_add_of_pos_right (by decide : 0 < 8))
+    · exact Nat.lt_trans hc.2 (Nat.add_lt_add_right hhi 8)
+  obtain ⟨b, hb⟩ := hbytes a ha'
+  rw [Nat.zero_add] at hb
+  intro hc
+  rw [hb] at hc
+  cases hc
+
+/-- **The two claims do not compose as `*` where the regions meet**, and that
+refusal is not a separation: `*` refuses the composition of a claim with itself as
+well (`star_carries_self_uninhabited`).  So `xj`/`dst` stays a staging hypothesis —
+the pair is not derived by the region vocabulary (`cursorWindowNotDerived`) and is
+not derived by ownership either. -/
+theorem cursorWindow_carries_notStar (n dst xj : Nat) (hlo : dst ≤ xj)
+    (hhi : xj < dst + (n + 64)) (mem : Mem) :
+    ¬ Star (Carries (cursorSlot xj)) (Carries (destinationWindow n dst)) mem :=
+  fun h => cursorInsideWindow_notSep n dst xj hlo hhi (star_carries_disjoint h)
+
 /-! ### Axiom footprints
 
 Every declaration above reports its footprint.  The expected ceiling is
@@ -500,6 +1018,52 @@ does not need. -/
 #print axioms frame_rule_derived
 #print axioms frame_rule_sep_composed
 #print axioms frame_rule_of_claim
+#print axioms PointsTo
+#print axioms pointsTo_exclusive
+#print axioms MemApart
+#print axioms Agrees
+#print axioms MemApart.symm
+#print axioms MemApart.writeByte_left
+#print axioms MemApart.append_right
+#print axioms MemApart.of_append_left
+#print axioms MemApart.congr_left
+#print axioms Agrees.refl
+#print axioms Agrees.symm
+#print axioms Agrees.trans
+#print axioms Agrees.writeByte
+#print axioms Agrees.append_left
+#print axioms readByte_append
+#print axioms readByte_append_of_some
+#print axioms readByte_append_of_none
+#print axioms agrees_append_swap
+#print axioms Star
+#print axioms Star.comm
+#print axioms Star.assoc
+#print axioms Star.pointsTo_left
+#print axioms Star.pointsTo_right
+#print axioms EmptyHeap
+#print axioms pointsTo_star_empty
+#print axioms pointsTo_star_empty_iff
+#print axioms star_pointsTo_uninhabited
+#print axioms star_pointsTo_agree
+#print axioms star_pointsTo_apart_inhabited
+#print axioms memApart_singleton
+#print axioms Carries
+#print axioms PointsTo.carries
+#print axioms PointsTo.present
+#print axioms Carries.present
+#print axioms star_carries_disjoint
+#print axioms star_carries_self_uninhabited
+#print axioms star_carries_inhabited
+#print axioms Star.carries_left
+#print axioms pointsTo_writeByte
+#print axioms PointsTo.writeByte
+#print axioms unowned_byte_not_claimed
+#print axioms star_writeByte_outside
+#print axioms writeByte_append_left
+#print axioms star_pointsTo_write
+#print axioms pointsTo_write_unchangedOn
+#print axioms frame_rule_of_write
 #print axioms destinationWindow
 #print axioms offsetSlot
 #print axioms cursorSlot
@@ -517,5 +1081,7 @@ does not need. -/
 #print axioms decodeStagingMem
 #print axioms decodeClaim_staging_inhabited
 #print axioms cursorWindowNotDerived
+#print axioms runOwned_meeting_regions_inhabited
+#print axioms cursorWindow_carries_notStar
 
 end LeanLLVM
