@@ -77,3 +77,7 @@ import LeanLLVM.Permissions
 import LeanLLVM.Vellum.PipelineBodyFacts
 import LeanLLVM.Vellum.PipelineBodyStep
 import LeanLLVM.Vellum.JsonStage2Contract
+import LeanLLVM.Vellum.PipelineDischarge
+import LeanLLVM.StrtodRefine
+import LeanLLVM.StrtodTier1
+import LeanLLVM.ElGuardRefine
