@@ -648,7 +648,23 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   is an import cycle.  At the slot parameter `Γ2` no arbitrary `Γ2.post` implies
   those clauses even with `h2`, which is why the record could not simply be
   substituted: the parameter is the post, and the consumer that holds the record
-  binds it.  `Γ2` therefore stays phantom. -/
+  binds it.  `Γ2` therefore stays phantom.
+
+  **This shape is not inhabited, and the two reasons are executed rather than
+  argued.**  The tail's three steps are proved — `PipelineBodyStep.pipelineExit_run`
+  runs `for.cond.cleanup`, the branch and `cleanup` from an exit state and returns
+  a verdict with the branch's memory — but they are proved at the exit state's
+  carried cells, and this field's prefix supplies neither of the things that run
+  reads.  `post` is quantified over every predicate of its type, and
+  `fun _ _ _ _ => False` is one of them, so the field is false wherever `loop.Exit`
+  is satisfiable (`PipelineBodyStep.exit_universal_post_false`); `loop.Exit` is
+  `pipelineLoopExit`, which names the program counter and the entry stream and
+  binds no register, so no cell the three blocks read follows from it
+  (`PipelineBodyStep.pipelineLoopExit_env_free`).  The signature — the post as a
+  structure parameter or the record's own predicate, and an exit predicate that
+  carries those cells — is the statement change this field is waiting on; what is
+  already proved is the run and the stage-2 record's consumption at the call site
+  (`pipelineExit_accept`). -/
   exit : ∀ (post : List Value → Mem → Nat → Outcome → Prop) (e : State), loop.Exit e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
@@ -686,7 +702,12 @@ clause rather than left as "the body analysis":
   whose post is what the `dst`/`ndst`/`ev`/`nev`/`err` clauses are about.  That need
   is the run's, not the loop exit's, and the field takes the post as a parameter
   because no arbitrary record at the slot implies it (see the field's own note).
-  What the loop's exit *does* now hand on is the whole entry stream: the staging
+  The three steps are now proved — `PipelineBodyStep.pipelineExit_run`, one
+  `denoteCode` trace per block at the exit state's own environment, composed into
+  the three-fuel run, with the stage-2 record consumed at the call site — but at
+  the *cells* the exit state must carry, which `pipelineLoopExit` does not; the
+  field's own note records the two executed reasons its stated prefix cannot supply
+  them.  What the loop's exit *does* hand on is the whole entry stream: the staging
   names the caller's prefix, the invariant carries it beside the appended part, and
   `PipelineBodyStep.pipelineExit_stream` composes them at the exit's own count, so
   the post's `readLanes32 m ep nk'` is derivable from the pre instead of being the

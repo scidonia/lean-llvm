@@ -1379,7 +1379,46 @@ def ifEndOut (env : Env) (b ep xp dst ndst ev nev err nxp : Nat)
   cells [("%call35", ret), ("%37", .int 64 x37)]
     (ifEndIn env b ep xp dst ndst ev nev err nxp n k dcap ecap)
 
-/-- **The success branch loads the escape count and calls stage 2.** -/
+/-- **The final `phi` and the return.**  Both tail branches join here: the verdict
+word is the refusal's literal zero on `if.then33` and stage 2's return on
+`if.end34`, and the block returns it.  The `phi` reads the predecessor the branch
+came from, so the selected operand is a hypothesis, as it is at the exit block. -/
+def pCleanup := blockAt pipelineBody 11 (by decide)
+
+theorem findBlock_cleanup :
+    pipelineBody.findBlock "cleanup" = some pCleanup := by decide
+
+/-- The final block's `phi`: one incoming entry per branch. -/
+def cleanupIncoming : List (String × Operand) :=
+  [("if.then33", lit 64 0), ("if.end34", Operand.reg "%call35")]
+
+theorem pCleanup_instrs :
+    pCleanup.instrs = [Instr.phi "%retval.0" (Ty.int 64) cleanupIncoming] := by
+  decide
+
+theorem pCleanup_term :
+    pCleanup.term = Term.ret (Ty.int 64) (some (Operand.reg "%retval.0")) := by
+  decide
+
+/-- The final block's outgoing builder: the selected verdict word. -/
+def cleanupIn (env : Env) (v : BitVec 64) : Env :=
+  cells [("%retval.0", .int 64 v)] env
+
+/-- **The final `phi` selects the verdict the branches join on.**  The block is
+one `phi`; the selected operand is named by the branch the state came from, and
+the returned word is its value. -/
+theorem cleanup_denote (calls : Calls) (env : Env) (s : State) (p : String)
+    (op : Operand) (v : BitVec 64)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p cleanupIncoming = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 64 v)) :
+    denoteCode calls pCleanup.instrs (stateAt env s) =
+      some (stateAt (cleanupIn env v) s) := by
+  rw [pCleanup_instrs]
+  simp only [cleanupIn]
+  pipeline_block_eval
+
+/-- The success branch loads the escape count and calls stage 2. -/
 theorem ifEnd_denote (calls : Calls) (env : Env) (s : State)
     (b ep xp dst ndst ev nev err nxp : Nat)
     (n k x37 dcap ecap : BitVec 64) (r35 : CallOutcome)
@@ -2769,7 +2808,16 @@ call reads the whole stream and this state is where the whole stream is last
 known.  `PipelineBodyFacts.exit`'s consumer reads the stream at the tail's
 stage-2 call, so the exit is where the facts are handed on.
 `pipelineLoopInv` at a spent budget *is* this predicate, by its own definition, so
-the two are one statement rather than two that a later edit could drift apart. -/
+the two are one statement rather than two that a later edit could drift apart.
+
+**What the predicate does not carry is the three blocks' cells.**  The tail's run
+(`PipelineBodyStep.pipelineExit_run`) also reads the count slot, the document and
+its length, the selector, the escape list's two slots, stage 2's nine arguments and
+the count the exiting edge selected — none of them a consequence of the conjuncts
+above, and the empty environment is a witness
+(`PipelineBodyStep.pipelineLoopExit_env_free`).  So the tail's run is stated at
+those cells as hypotheses, and a consumer that wants them from this predicate is
+asking for a conjunct list this definition does not have. -/
 def pipelineLoopExit (s : State) : Prop :=
   ∃ (S : PipelineLoopCarried),
     s.pc = "for.cond.cleanup" ∧
