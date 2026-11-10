@@ -1127,7 +1127,22 @@ the index is below the list's length and the head position does not refuse —
 the byte cursor `%i.0295 = %adv + %sub`, the prefix length `%j.0294`, and the
 position read `%conv8`, whose value is the list entry at the index.  The staging is
 what makes the read a value rather than a hypothesis, and the spacing clause is what
-puts the cursor at or behind that entry's body-relative position `q`. -/
+puts the cursor at or behind that entry's body-relative position `q`.
+
+**The hypothesis is the index's liveness, not the loop's exit test.**  Both blocks
+read only `¬ nps ≤ c`: `cleanup32`'s `%cmp4` is the liveness test, and `while.body6`
+loads the position at the index.  The exit test's second disjunct — the head does
+not refuse — is no premise of either step, so the theorem takes `¬ nps ≤ c` and the
+two-arm consumers both supply it: the iteration's the loop's `= false` arm, the
+refusal's its `¬ nps ≤ c`.  A compound hypothesis would have made the refusal arm
+uninstantiable while saying nothing more about these blocks.
+
+**The index's `Nat` reading is exported.**  `%k.1296` names the next index as a
+`BitVec`, and the successor it equals is `decodeNextIdx inc11 adv`, whose `Nat`
+reading `= c` is the walk's own cursor relation.  The refusal exit's index clause is
+`goal = .refused off.toNat k.toNat` at a state that carries this cell as its
+`%inc11`, so its consumer has to relate the two numbers rather than the words; the
+conjunct is `DecodeLatch`'s, carried here once instead of re-derived per consumer. -/
 theorem latch_to_ifEnd
     {args : List Value} {mem : Mem} {next : Nat}
     {body : List UInt8} {st : ClassState} {dst nps : Nat} {goal : EscapeOutcome}
@@ -1135,7 +1150,7 @@ theorem latch_to_ifEnd
     (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
     {r c : Nat} {s : State}
     (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s)
-    (hguard : (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false) :
+    (hnle : ¬ nps ≤ c) :
     ∃ (e : State) (i q : Nat) (out : List UInt8) (sub adv inc11 nxp jv : BitVec 64)
       (v : BitVec 32) (addv : BitVec 64),
       e.pc = "if.end" ∧ e.pre = some "while.body6" ∧ e.mem = s.mem ∧
@@ -1161,6 +1176,7 @@ theorem latch_to_ifEnd
       readBytes e.mem dst out.length = some out ∧
       out.length ≤ i ∧
       DecodeInv body st e.mem dst nps i c out goal ∧
+      (decodeNextIdx inc11 adv).toNat = c ∧
       ∀ k, runFuel escapeCalls (2 + k) usDecFunction s =
         runFuel escapeCalls k usDecFunction e := by
   -- the invariant, at the latch
@@ -1173,11 +1189,7 @@ theorem latch_to_ifEnd
     xjaddr, pos0v, addv', nv, hpc, hwalk, hcle, hpre, hsubc, hinc11c, hnxpc, hnxpnat,
     hphi, hnext, hi, hjlen, hpcell, hdstcell, hxpcell, htabcell, herrcell, hxjcell,
     hpos0cell, haddcall, hncell⟩ := hdec
-  -- the guard says the index is live
-  have hnle : ¬ nps ≤ c := by
-    intro hle
-    rw [decide_eq_true hle] at hguard
-    exact absurd hguard (by simp)
+  -- the hypothesis says the index is live
   have hclt : c < nps := by omega
   -- the staging's facts at the caller's binders
   obtain ⟨hstream, hpslen, hrange, haddnat⟩ := hds
@@ -1305,7 +1317,7 @@ theorem latch_to_ifEnd
     exact h1
   refine ⟨e2, i, ps[c]'hcps - pos0, out, sub, adv, inc11, nxp, jv, v, addv, ?_⟩
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rfl
   · rfl
   · rfl
@@ -1335,6 +1347,7 @@ theorem latch_to_ifEnd
   · rw [show e2.mem = s.mem from rfl]; exact hwalk.stored
   · exact hwalk.prefix_le_cursor
   · rw [show e2.mem = s.mem from rfl]; exact hwalk
+  · exact hkval
   · intro k
     rw [show 2 + k = (1 + k) + 1 from by omega, udRun_jump hstep1]
     rw [show 1 + k = k + 1 from by omega, udRun_jump hstep2]
@@ -1919,6 +1932,42 @@ theorem udRunExit_stepS_zero (env : Env) (s : State) (paddr : Nat)
       some (.int 1 (evalICmp .ult b (BitVec.ofInt 8 32))) :=
     evalOperand_reg_of _ s "%cmp18" _ (by simp only [udRunExitEnvS]; ud_lk)
   rw [udCondbr_zero _ _ _ _ _ hcmp hcond]
+  simp only [withEnv, hpc]
+
+/-- `us_run.exit`'s step into `if.then20`: the body's byte at the head is a control
+byte, so the refusal's first store block is reached from the same two-value
+environment `udRunExit_stepS_zero` uses.
+
+**Both arms need the two-value form.**  The trace's `udRunExit_step_one` and
+`udRunExit_step` bind `%sub13` and `%sub` to one value, which holds only at cursor
+zero (the residual is `q - i` and the head position `q`), so neither can serve the
+iteration's cursor: the decoded exit composes the zero arm here
+(`udRunExit_to_ifEndI`), and the refusal composed from `us_run.exit` needs this one.
+The two arms are the block's whole branch, and they are stated at the same
+environment so a consumer chooses by the block's `%cmp18` alone. -/
+theorem udRunExit_stepS_one (env : Env) (s : State) (paddr : Nat)
+    (sub13v subv j : BitVec 64) (b : BitVec 8)
+    (hpc : s.pc = "us_run.exit")
+    (hsub13 : lookupName env "%sub13" = some (.int 64 sub13v))
+    (hj : lookupName env "%j.0294" = some (.int 64 j))
+    (hp : lookupName env "%p" = some (.ptr paddr))
+    (hsub : lookupName env "%sub" = some (.int 64 subv))
+    (hsw : (subv.signExtend 64).toNat = subv.toNat)
+    (hs63 : subv.toNat < 2 ^ 63)
+    (hr : readBytes s.mem (paddr + subv.toNat) 1 = some (natToBytes b.toNat 1))
+    (hcond : evalICmp .ult b (BitVec.ofInt 8 32) = (1 : BitVec 1)) :
+    step escapeCalls usDecFunction (withEnv env s) =
+      .jump { (withEnv (udRunExitEnvS env paddr sub13v subv j b) s) with
+              pc := "if.then20", pre := some "us_run.exit" } := by
+  rw [udStep_of (withEnv env s) "us_run.exit" udRunExit _
+    (by rw [withEnv]; exact hpc) findBlock_udRunExit
+    (udRunExit_denoteS env s paddr sub13v subv j b hsub13 hj hp hsub hsw hs63 hr),
+    udRunExit_term]
+  have hcmp : evalOperand (withEnv (udRunExitEnvS env paddr sub13v subv j b) s)
+      (.reg "%cmp18") =
+      some (.int 1 (evalICmp .ult b (BitVec.ofInt 8 32))) :=
+    evalOperand_reg_of _ s "%cmp18" _ (by simp only [udRunExitEnvS]; ud_lk)
+  rw [udCondbr_one _ _ _ _ _ hcmp hcond]
   simp only [withEnv, hpc]
 
 /-! ### The tail's continuation through the middle
@@ -2995,6 +3044,10 @@ theorem ifEnd_zeroArm
 #guard_msgs in
 #print axioms udRunExit_stepS_zero
 
+/-- info: 'LeanLLVM.Vellum.udRunExit_stepS_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms udRunExit_stepS_one
+
 /-- info: 'LeanLLVM.Vellum.ifEnd_copyArm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms ifEnd_copyArm
@@ -3342,7 +3395,7 @@ theorem latch_to_runExit
     (hstaging : ExpandStaging args mem next body st dst nps goal b xp tab pos0 n ps err xj)
     {r c : Nat} {s : State}
     (h : AssemblyLatchInv body st dst nps goal b xp tab pos0 n ps err xj mem (r + 1) c s)
-    (hguard : (decide (nps ≤ c) || decodeRefuses body ps pos0 c) = false) :
+    (hnle : ¬ nps ≤ c) :
     ∃ (e : State) (i q : Nat) (out : List UInt8) (inc11 adv : BitVec 64) (j : Nat),
       j ≤ 2 + (copyIterBound (q - i) + 2) + 2 ∧
       e.pc = "us_run.exit" ∧ (escAt body st 0)[c]? = some q ∧ i ≤ q ∧ q < n ∧
@@ -3363,6 +3416,7 @@ theorem latch_to_runExit
       lookupName e.env "%dst" = some (.ptr dst) ∧
       UnchangedOutside mem e.mem [(dst, n + 64)] ∧
       readBytes e.mem dst out.length = some out ∧
+      (decodeNextIdx inc11 adv).toNat = c ∧
       (∀ k, runFuel escapeCalls (j + k) usDecFunction s =
         runFuel escapeCalls k usDecFunction e) := by
   -- the record's clauses, at the caller's binders
@@ -3373,8 +3427,8 @@ theorem latch_to_runExit
   obtain ⟨e2, i, q, out, sub, adv, inc11, nxp, jv, v, addv,
     hpc2, hpre2, hmem2, hq, hiq, hadvsub, hk2, hi5, hj4, hconv, hvpos, hsub2,
     hinc112, hnxp2, hp2, hdst2, hpos02, hn2, hxp2, htab2, herr2, hxj2, hadd2,
-    haddnat, hjv, hprefix2, houtle, hwalk2, hrun2⟩ :=
-    latch_to_ifEnd hstaging h hguard
+    haddnat, hjv, hprefix2, houtle, hwalk2, hkidx, hrun2⟩ :=
+    latch_to_ifEnd hstaging h hnle
   have hqbody : q < body.length := (mem_escAt.mp (List.mem_of_getElem? hq)).2.1
   have hqn : q < n := by rw [← hblen]; exact hqbody
   -- the frame at the latch, and the reads the arms take
@@ -3527,7 +3581,7 @@ theorem latch_to_runExit
     refine ⟨eT, i, q, out, inc11, adv, 2 + jL + jT, ?_, hpcT, hq, hiq, hqn, ?_,
       body_getElem?_getD hqbody, hsubT, hsub13T, hcfT.jcell, hcfT.pcell, hcfT.ncell,
       hincT, hcfT.errcell, hcfT.xjcell, hcfT.tabcell, hcfT.xpcell, hcfT.pos0cell,
-      hcfT.dstcell, hfrT, hprefT, ?_⟩
+      hcfT.dstcell, hfrT, hprefT, hkidx, ?_⟩
     · omega
     · rw [readBytes_of_UnchangedOutside hfrT hbyteOut]
       exact byte_read_of_body hbodyS hqn
@@ -3571,7 +3625,7 @@ theorem latch_to_runExit
     refine ⟨eT, i, q, out, inc11, adv, 2 + j0L + jT, ?_, hpcT, hq, hiq, hqn, ?_,
       body_getElem?_getD hqbody, hsubT, hsub13T, hcfT.jcell, hcfT.pcell, hcfT.ncell,
       hincT, hcfT.errcell, hcfT.xjcell, hcfT.tabcell, hcfT.xpcell, hcfT.pos0cell,
-      hcfT.dstcell, hfrT, hprefT, ?_⟩
+      hcfT.dstcell, hfrT, hprefT, hkidx, ?_⟩
     · omega
     · rw [readBytes_of_UnchangedOutside hfrT hbyteOut]
       exact byte_read_of_body hbodyS hqn
