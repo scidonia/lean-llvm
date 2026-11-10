@@ -10047,3 +10047,17 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.unchangedOutside_iff_inRegions' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.unchangedOutside_iff_inRegions
+
+/-! #### Stage two's record: the last unit without one -/
+
+/-- info: 'LeanLLVM.Vellum.stage2_verdict_bounded' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stage2_verdict_bounded
+
+/-- info: 'LeanLLVM.Vellum.stage2_pre_inhabited' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.stage2_pre_inhabited
+
+/-- info: 'LeanLLVM.Vellum.pipeline_satisfies_at_stage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Vellum.pipeline_satisfies_at_stage2

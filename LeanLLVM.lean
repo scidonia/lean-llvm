@@ -75,3 +75,4 @@ import LeanLLVM.Vellum.JsonPipelineSpec
 import LeanLLVM.FramePredicate
 import LeanLLVM.Vellum.PipelineBodyFacts
 import LeanLLVM.Vellum.PipelineBodyStep
+import LeanLLVM.Vellum.JsonStage2Contract
