@@ -1867,18 +1867,23 @@ theorem termUses_subset_blockUses (b : Block) {n : String}
     (h : n ∈ b.term.uses) : n ∈ blockUses b :=
   List.mem_append_right _ h
 
-/-- **The tail's register names.**  The nine values the exit block's store and
-stage-2 call read — the count slot, the arena and its capacity, the two cursors,
-the event stream and its capacity, the refusal slot, and the arm selector — and
-the escape list's two stream slots, which only the gate-on arms stage.
+/-- **The tail's register names.**  The values the exit block's store, its UTF-8
+call and its stage-2 call read — the count slot, the arena and its capacity, the
+two cursors, the event stream and its capacity, the refusal slot, the arm
+selector, the two escape stream slots, and the document, its length and the entry
+stream's base.
 
 None of these is read or bound by an arm's instructions (measured: zero
 occurrences in the four pinned instruction lists), so a trace neither supplies
 nor disturbs them; they are the cells the *tail* reads, and the loop carries them
-so that the exit state is a state the tail's three blocks can run on. -/
+so that the exit state is a state the tail's three blocks can run on.  The escape
+slots are read on every arm rather than on the gate-on arms alone: the exit
+block's stage-2 call passes them whatever the arm staged, so a state that does
+not bind them cannot run the tail at all, and the cells a state must carry are
+the tail's read set and not the arm's. -/
 def tailRegs : List String :=
   ["%nk", "%dst", "%dstcap", "%ndst", "%ev", "%evcap", "%nev", "%err", "%arm",
-   "%xp", "%nxp"]
+   "%xp", "%nxp", "%b", "%n", "%ep"]
 
 /-- **The four exit-edge count registers**, the cleanup `phi`'s incoming entries
 for the arms.  An arm's *outgoing* builder binds one of them — the emitter's
@@ -2843,7 +2848,7 @@ that consumes it and the post or frame that hands it on:
 |the three mask separations, at the staged window's extent|`masksPre_at`'s three disjunctions|static: they name addresses, not bytes|
 |the three escape exclusions, at the stream's staged capacity|the escape list's count and carry exclusions|static, and stated at the capacity because a per-block extent is not preserved by the count's growth|
 |`blocks = pipelineBlocks S.n.toNat`|nothing in a step — it is the state's own length argument, and the instance's `N_eq` and this predicate are what make the loop's bound a function of the document|static: the loop writes slots and never `%n`; the seed takes it from the staging's `.int 64 n` slot|
-|`S.k0 ≤ S.k`, `readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent`, `S.ent.Pairwise (· < ·)`, `∀ q ∈ S.ent, q < 64 * S.i`|the exit predicate, which hands the stream to the tail's stage-2 call (`Γ_stage2.pre`'s document order, its `q < n` and its number clause)|the entry emitter's post: it names the appended lanes as `streamPrefix ent blk0 nblk` with `nblk = 1`, so `streamPrefix_one_pairwise`/`_bounds` give the block's two facts and `streamPairwise_append`/`streamBound_append` compose them; the exit steps carry the same facts to `for.cond.cleanup`|
+|`readLanes32 s.mem S.ep S.k = some S.ent`, `S.ent.Pairwise (· < ·)`, `∀ q ∈ S.ent, q < 64 * S.i`|the exit predicate, which hands the stream to the tail's stage-2 call (`Γ_stage2.pre`'s document order and its number clause)|the entry emitter's post: it names the appended lanes as `streamPrefix ent blk0 nblk` with `nblk = 1`, so `streamPrefix_one_pairwise`/`_bounds` give the block's two facts and `streamPairwise_append`/`streamBound_append` compose them; the exit steps carry the same facts to `for.cond.cleanup`|
 
 **What is deliberately absent, and why each absence is not an omission.**
 The run state's register lookups are the transport agreement's own content, and
@@ -2890,14 +2895,14 @@ iteration's own successor, so the handoff is the same three facts rather than a
 second statement of them: one predicate, one spelling, no place for the two to
 drift apart.
 
-**What the handoff reaches, and what it still owes.**  The stream is carried in
-two reads: the caller's prefix at `S.ep` under `S.k0`, and the part the loop's
-emitters appended from `S.ep + 4 * S.k0` under `S.k - S.k0`.  Neither
-reconstructs the other — the prefix is written before the loop and only the
-staging names it, the appended part is the emitters' history and only the loop's
-own steps name it — so both are conjuncts and their concatenation is the whole
-stream the tail's stage-2 call reads.  What the tail still needs from elsewhere is
-`∀ q ∈ ent, q < n` at the document's own length rather than at `64 * blocks`.
+**What the handoff reaches, and what it still owes.**  The stream is one read at
+the loop's own count: `readLanes32 s.mem S.ep S.k`, because the staging pins the
+count slot to the empty stream's count and the emitters append from that cursor
+onwards.  So there is no caller-staged part and no second, count-offset read: the
+read is the whole stream the tail's stage-2 call reads, and neither the offset nor
+the length is a second statement to drift apart from it.  What the tail still
+needs from elsewhere is `∀ q ∈ ent, q < n` at the document's own length rather
+than at `64 * blocks`.
 **That bound is now proved, and it is not this predicate's.**  It is
 `streamDocBound_append`: the last block's positions are its entry word's
 (`word_eq_of_readBytes`), that word is `%or12 & %and18` masked by the tail mask
@@ -2983,12 +2988,12 @@ here is anything a step can derive or does not read:
   and every unit record's frame leaves it readable, so no arm step consumes a
   carried clause about it.
 
-What *is* carried about the entry stream is its order and its bound (`ent`, and
-the three conjuncts the invariant states about it): those are facts about which
-positions the stream names, which the bytes alone do not determine — a stream
-read back is a list, and which list it is is the loop's own history.  The count
-and the extent are not duplicated: the read is stated at `S.k - S.k0` entries from
-`S.ep + 4 * S.k0`, so the prefix before the first iteration is not claimed. -/
+What *is* carried about the entry stream is its bytes, its order and its bound
+(`ent`, and the three conjuncts the invariant states about it): those are facts
+about which positions the stream names, which the bytes alone do not determine —
+a stream read back is a list, and which list it is is the loop's own history.  The
+count and the extent are not duplicated: the read is stated at `S.k` entries from
+`S.ep`, with the loop's entry count zero, so no caller-staged part is claimed. -/
 structure PipelineLoopCarried where
   /-- Which of the four unswitched copies this iteration runs. -/
   arm : PipelineBodyArm
@@ -3038,20 +3043,16 @@ structure PipelineLoopCarried where
   the escape record's exclusions are stated at, because a per-block extent is not
   preserved by the count's growth. -/
   xpExtent : Nat
-  /-- The first iteration's count, kept because `cursorRoom` is stated from it. -/
-  k0 : Nat
+  /-- The escape count's first value, kept because `cursorRoom` is stated from it. -/
   xn0 : Nat
-  /-- The entry stream's prefix: the positions the caller staged at `ep` under the
-  count `k0`, before the loop's first iteration.  Carried rather than derived: the
-  emitters write from their incoming count onwards, so the lanes below `k0` are the
-  caller's and a step hands them on through the same frames that leave the rest of
-  the staged stream alone — but no read of a state recovers which positions they
-  are, and the staging is the only memory they were ever written in. -/
-  ent0 : List Nat
   /-- The entry stream the loop has appended: the positions the emitters wrote,
   from the first iteration's cursor onwards, in the order they wrote them.  One
   object rather than an existential rebuilt per step: the successor inherits the
-  stream it extends, and the exit hands the same object to the tail. -/
+  stream it extends, and the exit hands the same object to the tail.
+
+  The loop's entry count starts at zero — the staging's count slot reads as the
+  empty stream's count — so this object is the whole stream the tail's stage-2
+  call reads, and no caller-staged prefix sits below it. -/
   ent : List Nat
   /-- The entry count slot `%nk`: the exit block stores the exiting count there
   and stage 2 reads the entry stream at that count. -/
@@ -3082,8 +3083,14 @@ This is the part of the exit state the loop's invariant cannot derive from the
 memory: the tail reads registers, and a loop state's environment is the chain of
 builders the four arms wrote.  The arm's instructions neither read nor bind these
 names, so a step carries them by reading through to the environment it was
-entered in; the two stream slots are conditional because only the gate-on arms
-stage them. -/
+entered in.  Every conjunct is unconditional: the tail's three blocks read all of
+them on every arm, so a conditional cell would be a state the tail cannot run on.
+
+Thirteen cells is what excludes an exit state that binds the slots and none of the
+memory's addresses: `gapState` — an environment of nine zero cells in an empty
+memory — satisfies every stream and cell clause of the old predicate, and it is
+the reason the exit carries `%b`, `%n` and `%ep`.  With them a state whose
+environment does not name the document cannot claim to be an exit. -/
 def tailCells (S : PipelineLoopCarried) (env : Env) : Prop :=
   lookupName env "%nk" = some (.ptr S.nk) ∧
   lookupName env "%dst" = some (.ptr S.dst) ∧
@@ -3094,8 +3101,11 @@ def tailCells (S : PipelineLoopCarried) (env : Env) : Prop :=
   lookupName env "%nev" = some (.ptr S.nev) ∧
   lookupName env "%err" = some (.ptr S.err) ∧
   lookupName env "%arm" = some (.int 64 S.armSel) ∧
-  (S.arm.hasEscape = true → lookupName env "%xp" = some (.ptr S.xp)) ∧
-  (S.arm.hasEscape = true → lookupName env "%nxp" = some (.ptr S.nxp))
+  lookupName env "%xp" = some (.ptr S.xp) ∧
+  lookupName env "%nxp" = some (.ptr S.nxp) ∧
+  lookupName env "%b" = some (.ptr S.b) ∧
+  lookupName env "%n" = some (.int 64 S.n) ∧
+  lookupName env "%ep" = some (.ptr S.ep)
 
 /-- The tail's names are among the names a step transports over. -/
 theorem tailRegs_subset_armUses (b : Block) {n : String} (h : n ∈ tailRegs) :
@@ -3116,7 +3126,7 @@ theorem tailCells_builder {S : PipelineLoopCarried} {s : State} {envIn : Env}
     (hagree : AgreeOn tailRegs (stateAt envIn s) s) (h : tailCells S s.env)
     (hx : ∀ n ∈ tailRegs, n ∉ cs.map (fun p => p.1)) :
     tailCells S (cells cs envIn) := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14⟩ := h
   have lin : ∀ n ∈ tailRegs, lookupName envIn n = lookupName s.env n :=
     fun n hn => hagree.2.2.2 n hn
   have lout : ∀ n ∈ tailRegs, lookupName (cells cs envIn) n = lookupName envIn n :=
@@ -3132,13 +3142,16 @@ theorem tailCells_builder {S : PipelineLoopCarried} {s : State} {envIn : Env}
     (lk "%nev" (by decide)).trans h7,
     (lk "%err" (by decide)).trans h8,
     (lk "%arm" (by decide)).trans h9,
-    fun hc => (lk "%xp" (by decide)).trans (h10 hc),
-    fun hc => (lk "%nxp" (by decide)).trans (h11 hc)⟩
+    (lk "%xp" (by decide)).trans h10,
+    (lk "%nxp" (by decide)).trans h11,
+    (lk "%b" (by decide)).trans h12,
+    (lk "%n" (by decide)).trans h13,
+    (lk "%ep" (by decide)).trans h14⟩
 
 /-- **The cells at a state the transport relates to them.** -/
 theorem tailCells_of_agree {S : PipelineLoopCarried} {a b : State}
     (h : tailCells S a.env) (hag : AgreeOn tailRegs a b) : tailCells S b.env := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := h
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14⟩ := h
   have lk : ∀ n ∈ tailRegs, lookupName b.env n = lookupName a.env n :=
     fun n hn => (hag.2.2.2 n hn).symm
   exact ⟨(lk "%nk" (by decide)).trans h1,
@@ -3150,8 +3163,11 @@ theorem tailCells_of_agree {S : PipelineLoopCarried} {a b : State}
     (lk "%nev" (by decide)).trans h7,
     (lk "%err" (by decide)).trans h8,
     (lk "%arm" (by decide)).trans h9,
-    fun hc => (lk "%xp" (by decide)).trans (h10 hc),
-    fun hc => (lk "%nxp" (by decide)).trans (h11 hc)⟩
+    (lk "%xp" (by decide)).trans h10,
+    (lk "%nxp" (by decide)).trans h11,
+    (lk "%b" (by decide)).trans h12,
+    (lk "%n" (by decide)).trans h13,
+    (lk "%ep" (by decide)).trans h14⟩
 
 /-- The tail's names are absent from any arm's outgoing cell list: none of the
 four blocks reads or binds them, so a builder over one of those blocks has no
@@ -3163,7 +3179,8 @@ pin below, and not a fact the mathematics chooses. -/
 macro "tail_cells_absent" : tactic => `(tactic|
   (intro x hx
    simp only [tailRegs, List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false] at hx
-   rcases hx with hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx
+   rcases hx with hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx
+     | hx
    all_goals (rw [hx] at *; simp)))
 
 /-! ### Axiom footprints of the cells -/
@@ -3254,48 +3271,67 @@ def PipelineLoopCount (S : PipelineLoopCarried) (s : State) : Prop :=
   S.kw = BitVec.ofNat 64 S.k ∧
     lookupName s.env S.arm.countReg = some (.int 64 S.kw)
 
-/-- The states the loop may leave in: the exit block, carrying the entry stream —
-the caller's prefix and the part the loop appended.
+/-- **The loop's counted write extent.**  The regions an iteration may have
+written, at the state's own counters: the mask unit's carry and mask slots, the
+entry word's store, the entry emitter's touched extent, the entry count slot, the
+escape list's touched extent, its count slot and its carry slot.
+
+This is the exit's frame, and it is exactly `Γ_pipeline_units.post`'s
+`UnchangedOutside` list without the tail's five entries: appending them gives the
+post's list verbatim at `nk' = S.k`, `nxp' = S.xn` (the discharge module states
+that equality).  The two counted extents are the emitters' own touched widths —
+`4 * (k + 8)`, the entry store's sentinel lane, and `4 * (xn + batchReserve)`, the
+escape batch's reserve — so a byte outside this list is a byte no iteration wrote.
+
+It is a function of the state, so the frame moves with the counts: a successor's
+list covers at least its predecessor's, which is what lets a step carry its
+hypothesis's frame forward. -/
+def pipelineLoopWrites (S : PipelineLoopCarried) : List (Nat × Nat) :=
+  [(S.sc, 24), (S.maskSlot, 48), (S.entw, 8), (S.ep, 4 * (S.k + 8)), (S.nk, 8),
+   (S.xp, 4 * (S.xn + batchReserve)), (S.nxp, 8), (S.xcarry, 16)]
+
+/-- **The states the loop may leave in, at the caller's memory**: the exit block,
+carrying the entry stream and the frame.
 
 The stream facts are part of the exit rather than something the tail
 reconstructs, because they are not recoverable from the state: the memory holds
 the bytes, but which positions the stream names, in what order, is the loop's own
 history — the emitters wrote them block by block and no read of the exit state
-says where the writes began.  The prefix is the same kind of fact from the other
-side of the loop: it was written before the first iteration, so the staging is
-the memory that names it and every step hands it on unchanged; the exit carries it
-for the same reason it carries the appended part, namely that the tail's stage-2
-call reads the whole stream and this state is where the whole stream is last
-known.  `PipelineBodyFacts.exit`'s consumer reads the stream at the tail's
-stage-2 call, so the exit is where the facts are handed on.
+says where the writes began.  The loop's entry count starts at zero, so the stream
+is wholly the loop's: there is no caller-staged prefix below it, and the read is
+`readLanes32 s.mem S.ep S.k`.  `PipelineBodyFacts.exit`'s consumer reads the
+stream at the tail's stage-2 call, so the exit is where the fact is handed on.
 `pipelineLoopInv` at a spent budget *is* this predicate, by its own definition, so
 the two are one statement rather than two that a later edit could drift apart.
 
-**What the predicate carries, and what it does not.**  Its last three conjuncts
-are the predecessor (`s.pre = some S.arm.head`, which fixes the exit phi's incoming
-selector), `tailCells S s.env`: the nine slots the exit block's store and
-stage-2 call read — the entry count slot, the arena and its capacity, the two
-cursors, the event stream and its capacity, the refusal slot, the arm selector —
-and the escape list's two stream slots on the gate-on arms, and
-`PipelineLoopCount S s`: the count the exiting edge selected, which the exit
-`phi` reads at the arm's own register.  No arm block reads or binds those names,
-so a step hands them on by reading through to the environment it was entered in
-(`tailCells_builder`), and `PipelineBodyStep.pipelineLoopExit_cells` is the
-projection a consumer uses.
+**What the predicate carries, and what it does not.**  The three register
+conjuncts are the predecessor (`s.pre = some S.arm.head`, which fixes the exit
+phi's incoming selector), `tailCells S s.env` — the cells the exit block's store,
+UTF-8 call and stage-2 call read — and `PipelineLoopCount S s`: the count the
+exiting edge selected, which the exit `phi` reads at the arm's own register.  No
+arm block reads or binds those names, so a step hands them on by reading through
+to the environment it was entered in (`tailCells_builder`), and
+`PipelineBodyStep.pipelineLoopExit_cells` is the projection a consumer uses.
+
+The last conjunct is the frame: at the caller's `mem`, every byte outside
+`pipelineLoopWrites S` reads as it did when the loop was entered.  It is what
+carries the caller's staging through the loop — the document, the table, the
+arena, the event stream and the cursors are the caller's bytes, and the tail reads
+them at the memory it is handed — and it is stated at `mem` rather than at the
+state because the state cannot name the memory it was entered at.
 
 What it does *not* carry is the two calls' inputs, which are the state's memory:
 the predicate names the entry stream and no other address's contents. -/
-def pipelineLoopExit (s : State) : Prop :=
+def pipelineLoopExit (mem : Mem) (s : State) : Prop :=
   ∃ (S : PipelineLoopCarried),
     s.pc = "for.cond.cleanup" ∧
-    S.k0 ≤ S.k ∧
-    readLanes32 s.mem S.ep S.k0 = some S.ent0 ∧
-    readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
+    readLanes32 s.mem S.ep S.k = some S.ent ∧
     S.ent.Pairwise (· < ·) ∧
     (∀ q ∈ S.ent, q < 64 * S.i) ∧
     s.pre = some S.arm.head ∧
     tailCells S s.env ∧
-    PipelineLoopCount S s
+    PipelineLoopCount S s ∧
+    UnchangedOutside mem s.mem (pipelineLoopWrites S)
 
 /-- info: 'LeanLLVM.Vellum.PipelineBodyArm.countReg' does not depend on any axioms -/
 #guard_msgs in
@@ -3313,59 +3349,57 @@ def pipelineLoopExit (s : State) : Prop :=
 #guard_msgs in
 #print axioms PipelineLoopCount
 
+/-- info: 'LeanLLVM.Vellum.pipelineLoopWrites' does not depend on any axioms -/
+#guard_msgs in
+#print axioms pipelineLoopWrites
+
 /-- info: 'LeanLLVM.Vellum.pipelineLoopExit' does not depend on any axioms -/
 #guard_msgs in
 #print axioms pipelineLoopExit
 
-/-- **The exit predicate determines no byte of the state it stands on.**
+/-- `gapState`'s carried state: every field zero. -/
+def gapCarried : PipelineLoopCarried :=
+  { arm := .pos8NoGate, i := 0, iw := 0, sw := 0, kw := 0, shr := 0, b := 0,
+    doc := [], n := 0, sc := 0, stM := ⟨false, false⟩, opened := false,
+    ppar := false, inside := false, maskSlot := 0, delim := 0, inString := 0,
+    ws := 0, backslash := 0, ctl := 0, entw := 0, ep := 0, tab := 0, xp := 0,
+    nxp := 0, xcarry := 0, stE := ⟨false, false⟩, prevb := false, prevs := false,
+    k := 0, xn := 0, xpExtent := 0, xn0 := 0, ent := [],
+    nk := 0, dst := 0, dstcap := 0, ndst := 0, ev := 0, evcap := 0, nev := 0,
+    err := 0, armSel := 0 }
 
-The stream conjuncts are read at the carried count `S.k` and the carried prefix
-count `S.k0`, and both are the loop's own numbers: the predicate names no address's
-contents for any read of a positive number of lanes.  The witness is the empty
-memory with both counts zero — the read of no lanes is `some []` in any memory, so
-the exit block is satisfiable there — and it is why the caller's prefix reaches the
-exit as a carried conjunct rather than as a projection: a fact about the staging's
-memory cannot be transported to a state the predicate does not tie to it, and the
-tie runs from the staging through the seed, not through this predicate. -/
-theorem pipelineLoopExit_reads_nothing :
-    ∃ (s : State) (ep : Nat),
-      pipelineLoopExit s ∧ readLanes32 s.mem ep 3 = none := by
-  let s0 : State :=
-    { env := [("%nk", .ptr 0), ("%dst", .ptr 0), ("%dstcap", .int 64 0),
-        ("%ndst", .ptr 0), ("%ev", .ptr 0), ("%evcap", .int 64 0), ("%nev", .ptr 0),
-        ("%err", .ptr 0), ("%arm", .int 64 0), ("%call21.us.us", .int 64 0)],
-      mem := [], next := 0, pc := "for.cond.cleanup", pre := some "for.body.us.us" }
-  refine ⟨s0, 0,
-    ⟨{ arm := .pos8NoGate, i := 0, iw := 0, sw := 0, kw := 0, shr := 0, b := 0,
-       doc := [], n := 0, sc := 0, stM := ⟨false, false⟩, opened := false,
-       ppar := false, inside := false, maskSlot := 0, delim := 0, inString := 0,
-       ws := 0, backslash := 0, ctl := 0, entw := 0, ep := 0, tab := 0, xp := 0,
-       nxp := 0, xcarry := 0, stE := ⟨false, false⟩, prevb := false, prevs := false,
-       k := 0, xn := 0, xpExtent := 0, k0 := 0, xn0 := 0, ent0 := [], ent := [],
-       nk := 0, dst := 0, dstcap := 0, ndst := 0, ev := 0, evcap := 0, nev := 0,
-       err := 0, armSel := 0 },
-     rfl, Nat.le_refl 0, ?_, ?_, ?_, ?_, rfl, ?_, ?_⟩, ?_⟩
-  · simp [readLanes32]
-  · simp [readLanes32]
-  · simp
-  · simp
-  · simp only [s0, tailCells, PipelineBodyArm.hasEscape]
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · block_lk
-    · block_lk
-    · block_lk
-    · block_lk
-    · block_lk
-    · block_lk
-    · block_lk
-    · block_lk
-    · block_lk
-    · intro hc; exact Bool.noConfusion hc
-    · intro hc; exact Bool.noConfusion hc
-  · refine ⟨rfl, ?_⟩
-    simp only [s0, PipelineBodyArm.countReg]
-    block_lk
-  · simp [s0, readLanes32, readBytes, readByte]
+/-- **The empty exit state**: the tail's nine zero cells in an empty memory, at
+the exit block's program counter.  This is the witness the retyped predicate must
+refuse; the retired `pipelineLoopExit_reads_nothing` showed the state-only
+predicate accepting it. -/
+def gapState : State :=
+  { env := [("%nk", .ptr 0), ("%dst", .ptr 0), ("%dstcap", .int 64 0),
+      ("%ndst", .ptr 0), ("%ev", .ptr 0), ("%evcap", .int 64 0), ("%nev", .ptr 0),
+      ("%err", .ptr 0), ("%arm", .int 64 0), ("%call21.us.us", .int 64 0)],
+    mem := [], next := 0, pc := "for.cond.cleanup", pre := some "for.body.us.us" }
+
+/-- `%b` is not among the exit state's cells. -/
+theorem gapState_no_b : lookupName gapState.env "%b" = none := by
+  simp only [gapState]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  rfl
+
+/-- **`gapState` is not an exit at any caller memory.**  The exit's cell conjunct
+requires `%b`, the document's base: the tail's UTF-8 call reads it, so a state
+whose environment does not name the document cannot be an exit at any `mem`.  The
+state-only predicate admitted this witness, and the refusal is why the exit's
+cells are the tail's whole read set.
+
+The `.ub` this state's first control step produces is
+`PipelineBodyStep.gapState_step`, and it is the reason the predicate may not admit
+it: a bundle whose `exit` field quantified over this state would be asked for a
+return no fuel can produce. -/
+theorem gapState_not_exit (mem : Mem) : ¬ pipelineLoopExit mem gapState := by
+  rintro ⟨S, -, -, -, -, -, hcells, -⟩
+  simp only [tailCells] at hcells
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hb, -, -⟩ := hcells
+  rw [gapState_no_b] at hb
+  cases hb
 
 /-- The regions the loop's separation is stated over, in the staging's order.
 
@@ -3380,8 +3414,113 @@ rather than by one fact per pair.  A list aligned only elsewhere would have to b
 projected pair by pair, which is the enumeration this order removes. -/
 def pipelineLoopRegions (S : PipelineLoopCarried) (blocks : Nat) : List (Nat × Nat) :=
   [(S.b - 3, 3 + 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
-   (S.entw, 8), (S.ep, 4 * (S.k0 + 64 * blocks + 9)), (S.xp, 4 * S.xpExtent),
+   (S.entw, 8), (S.ep, 4 * (64 * blocks + 9)), (S.xp, 4 * S.xpExtent),
    (S.nxp, 8), (S.xcarry, 16)]
+
+/-- Every region of `pipelineLoopWrites`, as a membership fact: the eight entries
+the frame's containment arguments name. -/
+theorem mem_loopWrites_sc (S : PipelineLoopCarried) :
+    (S.sc, 24) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_maskSlot (S : PipelineLoopCarried) :
+    (S.maskSlot, 48) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_entw (S : PipelineLoopCarried) :
+    (S.entw, 8) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_ep (S : PipelineLoopCarried) :
+    (S.ep, 4 * (S.k + 8)) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_nk (S : PipelineLoopCarried) :
+    (S.nk, 8) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_xp (S : PipelineLoopCarried) :
+    (S.xp, 4 * (S.xn + batchReserve)) ∈ pipelineLoopWrites S := by
+  simp [pipelineLoopWrites]
+theorem mem_loopWrites_nxp (S : PipelineLoopCarried) :
+    (S.nxp, 8) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_xcarry (S : PipelineLoopCarried) :
+    (S.xcarry, 16) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+
+/-- **A frame over a list implies one over any list that covers it.**  Every
+region of the hypothesis list lies inside a region of the conclusion's list, so a
+byte outside the conclusion's covered set is outside the hypothesis's too.  This
+is how a step's own frames — each over the few regions its unit named — become a
+frame over the loop's whole write extent. -/
+theorem UnchangedOutside.cover {m0 m : Mem} {R R' : List (Nat × Nat)}
+    (h : UnchangedOutside m0 m R')
+    (hsub : ∀ r' ∈ R', ∃ r ∈ R, r.1 ≤ r'.1 ∧ r'.1 + r'.2 ≤ r.1 + r.2) :
+    UnchangedOutside m0 m R :=
+  fun a ha => h a (fun r' hr' => by
+    obtain ⟨r, hr, h1, h2⟩ := hsub r' hr'
+    exact fun hin => ha r hr ⟨Nat.le_trans h1 hin.1, Nat.lt_of_lt_of_le hin.2 h2⟩)
+
+/-- Frames over one region list compose: the second's equality is the first's
+conclusion, at every byte outside the list. -/
+theorem UnchangedOutside.trans {m0 m1 m2 : Mem} {R : List (Nat × Nat)}
+    (h1 : UnchangedOutside m0 m1 R) (h2 : UnchangedOutside m1 m2 R) :
+    UnchangedOutside m0 m2 R :=
+  fun a ha => (h2 a ha).trans (h1 a ha)
+
+/-- The mask unit's frame, as a region list. -/
+theorem unchangedOutside_mask {m0 m : Mem} {a b : Nat}
+    (h : ∀ x, ¬ (a ≤ x ∧ x < a + 24) → ¬ (b ≤ x ∧ x < b + 48) →
+      readByte m x = readByte m0 x) :
+    UnchangedOutside m0 m [(a, 24), (b, 48)] :=
+  fun x hx => h x (fun h1 => hx (a, 24) (by simp) h1)
+    (fun h2 => hx (b, 48) (by simp) h2)
+
+/-- The entry emitter's frame, as a region list.  Its record leaves every byte
+below the appended lanes and every byte past its own extent alone; the region is
+the extent from the stream's base, which contains the untouched gap the two
+clauses name. -/
+theorem unchangedOutside_entry {m0 m : Mem} {a k ext : Nat}
+    (h : ∀ x, x < a + 4 * k ∨ a + 4 * ext ≤ x → readByte m x = readByte m0 x) :
+    UnchangedOutside m0 m [(a, 4 * ext)] := by
+  intro x hx
+  refine h x ?_
+  rcases Nat.lt_or_ge x (a + 4 * k) with hlt | hge
+  · exact Or.inl hlt
+  · refine Or.inr ?_
+    rcases Nat.lt_or_ge x (a + 4 * ext) with hin | hout
+    · exact absurd ⟨by omega, hin⟩ (hx (a, 4 * ext) (by simp))
+    · exact hout
+
+/-- A write sequence's frame, as a region list. -/
+theorem unchangedOutside_writeBytes_own (m : Mem) (start : Nat) (bs : List UInt8) :
+    UnchangedOutside m (writeBytes m start bs) [(start, bs.length)] := by
+  intro a ha
+  exact readByte_writeBytes_outside m bs (by
+    rcases Nat.lt_or_ge a start with h | h
+    · exact Or.inl h
+    · refine Or.inr ?_
+      rcases Nat.lt_or_ge a (start + bs.length) with hin | hout
+      · exact absurd ⟨h, hin⟩ (ha (start, bs.length) (by simp))
+      · exact hout)
+
+/-- **The frame moves with the counts.**  A successor whose static addresses are
+the predecessor's and whose two cursors only grew covers every region the
+predecessor's write list names, so a frame over the predecessor's list is a frame
+over the successor's. -/
+theorem pipelineLoopWrites_cover {S S' : PipelineLoopCarried}
+    (hsc : S'.sc = S.sc) (hmk : S'.maskSlot = S.maskSlot) (hew : S'.entw = S.entw)
+    (hep : S'.ep = S.ep) (hk : S.k ≤ S'.k) (hnk : S'.nk = S.nk)
+    (hxp : S'.xp = S.xp) (hxn : S.xn ≤ S'.xn) (hnxp : S'.nxp = S.nxp)
+    (hxc : S'.xcarry = S.xcarry) :
+    ∀ r' ∈ pipelineLoopWrites S, ∃ r ∈ pipelineLoopWrites S',
+      r.1 ≤ r'.1 ∧ r'.1 + r'.2 ≤ r.1 + r.2 := by
+  intro r' hr'
+  simp only [pipelineLoopWrites, List.mem_cons, List.not_mem_nil, or_false] at hr'
+  rcases hr' with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · exact ⟨_, mem_loopWrites_sc S', by simp [hsc], by simp [hsc]⟩
+  · exact ⟨_, mem_loopWrites_maskSlot S', by simp [hmk], by simp [hmk]⟩
+  · exact ⟨_, mem_loopWrites_entw S', by simp [hew], by simp [hew]⟩
+  · refine ⟨_, mem_loopWrites_ep S', by simp [hep], ?_⟩
+    simp only [hep]
+    omega
+  · exact ⟨_, mem_loopWrites_nk S', by simp [hnk], by simp [hnk]⟩
+  · refine ⟨_, mem_loopWrites_xp S', by simp [hxp], ?_⟩
+    simp only [hxp]
+    unfold batchReserve
+    omega
+  · exact ⟨_, mem_loopWrites_nxp S', by simp [hnxp], by simp [hnxp]⟩
+  · exact ⟨_, mem_loopWrites_xcarry S', by simp [hxc], by simp [hxc]⟩
 
 /-- Separation of a list follows from separation of any list it is a sub-list
 of.  This is how the loop's list inherits the caller's promise. -/
@@ -3465,7 +3604,7 @@ step that reads it:
   it at four arms is the defect the invariant exists to remove;
 * the fixed capacity `HasBytes s.mem S.xp (4 * S.xpExtent)` with
   `S.xpExtent = S.xn0 + 64 * blocks + 8`, and the two count-growth bounds
-  `S.k ≤ S.k0 + 64 * S.i`, `S.xn ≤ S.xn0 + 64 * S.i` — the
+  `S.k ≤ 64 * S.i`, `S.xn ≤ S.xn0 + 64 * S.i` — the
   escape list's capacity clause is stated at `4 * blockMax xn0`, an extent that
   *grows* with the count, and its post promises only bytes inside that extent.
   So a carried `HasBytes` at the per-call extent promises nothing about the bytes
@@ -3475,32 +3614,32 @@ step that reads it:
   escape count's growth bound is what keeps the prefix inside the fixed extent at
   every block.  The entry count's bound has a different consumer: the entry
   emitter's `entw`-versus-`ep` separation asks `ep + 4*(S.k + 72) ≤ entw` inside
-  a staged `ep` extent of `4*(S.k0 + 64*blocks + 9)`, and with
-  `S.i + (r+1) = blocks` the bound leaves `S.k0 + 64*blocks + 8` at `r = 0` —
-  one byte inside the `+9`.  The seed takes all three from the staging (counts at
-  their initial cursors, `S.i = 0`); `entryPos8Post`'s count clause hands the
-  entry bound on and `escapePositionsPost`'s count clause the escape bound, each
-  growing the count by at most sixty-four per block, while the fixed extent is
-  static;
+  a staged `ep` extent of `4*(64*blocks + 9)`, and with `S.i + (r+1) = blocks`
+  the bound leaves `64*blocks + 8` at `r = 0` — one byte inside the `+9`.  The
+  seed takes all three from the staging (both counts at their initial cursors,
+  `S.i = 0`); `entryPos8Post`'s count clause hands the entry bound on and
+  `escapePositionsPost`'s count clause the escape bound, each growing the count by
+  at most sixty-four per block, while the fixed extent is static;
 * `blocks = pipelineBlocks S.n.toNat` — the iteration bound is the document's
   own block count, read from the length argument the state carries.  Static: the
   loop never writes `%n`, and the seed reads it off the staging's `.int 64 n`
   slot.  Carried rather than derived because the instance's `N_eq` and the exit's
   bound are about the same value, and a state-only predicate cannot reach the
   argument list to say so;
-* **the entry stream, as one object** — `S.ent`, read at
-  `(S.ep + 4 * S.k0, S.k - S.k0)`, with `S.k0 ≤ S.k`, strictly increasing, and
-  every position below `64 * S.i`.  Its consumers are the exit predicate's stream
-  facts and, through those, the tail's stage-2 call, whose `pre` reads the stream
-  in document order and inside the document (`stage2.h:56-58`, `:91`).  Handed on
+* **the entry stream, as one object** — `S.ent`, read at `S.k` lanes from
+  `S.ep`, strictly increasing, and every position below `64 * S.i`.  Its
+  consumers are the exit predicate's stream facts and, through those, the tail's
+  stage-2 call, whose `pre` reads the stream in document order and inside the
+  document (`stage2.h:56-58`, `:91`).  Handed on
   by the entry emitter's post: it states the appended lanes as
   `streamPrefix ent blk0 nblk` with `nblk.toNat = ent.length`, and `nblk` is the
   literal `1` at both call sites, so the appended list is one word's positions at
   its own block base — `streamPrefix_one_pairwise`/`streamPrefix_one_bounds` give
   the three facts, and `streamPairwise_append`/`streamBound_append` compose them
-  with the predecessor's.  The seed establishes the three by `S.k = S.k0` — the
-  read is empty and the bound vacuous — so the prefix before the first iteration
-  is not a claim.  Carried rather than derived because the bytes are the
+  with the predecessor's.  The seed establishes them at `S.k = 0` — the read is
+  empty and both bounds vacuous — because the staging pins the count slot to the
+  empty stream's count, so there is no caller-staged part for the loop to carry.
+  Carried rather than derived because the bytes are the
   emitters' and no read of the state recovers which positions the stream names;
 * the staged regions' separation — `DisjointRegions` at the staged window, the
   table, the mask carry slot, the mask slot, the entry word, the entry stream,
@@ -3517,7 +3656,8 @@ step that reads it:
   whole list once is what makes the store at `entw`, the entry stream and the
   table's preservation derivable from the same conjunct rather than from a
   separate promise per frame. -/
-def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
+def pipelineLoopInvBack (mem : Mem) (base tab : Nat) (blocks : Nat) :
+    Nat → State → Prop
   | 0, _ => False
   | r + 1, s =>
       ∃ (S : PipelineLoopCarried),
@@ -3551,7 +3691,7 @@ def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         -- gives `S.k + 72 ≤ S.k0 + 64 * blocks - 64 * (r+1) + 72`, so at
         -- `r = 0` the margin is `S.k0 + 64 * blocks + 8` against the `+9` —
         -- one byte, which is the whole reason the staged extent has a `+9`.
-        S.k ≤ S.k0 + 64 * S.i ∧
+        S.k ≤ 64 * S.i ∧
         S.xn ≤ S.xn0 + 64 * S.i ∧
         -- the block count is the document's own.  `%shr` is the staging's block
         -- count and `pipelineBlocks` is `(n + 63) / 64`, so the loop's iteration
@@ -3559,25 +3699,15 @@ def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         -- than a number alongside it — which is what lets the instance's `N_eq`
         -- and the exit's bound be about the same value.
         blocks = pipelineBlocks S.n.toNat ∧
-        -- **the entry stream, in its two halves.**  The caller's prefix at
-        -- `S.ep` under `S.k0` is static — the emitters write from their incoming
-        -- count onwards, so every step hands those lanes on — and the appended
-        -- part is `S.k - S.k0` four-byte lanes from `S.ep + 4 * S.k0`, which is
-        -- the range the emitters wrote.  `S.k0 ≤ S.k` is what makes the second
-        -- range start where the caller's bytes end, and the three facts after it
-        -- are what `Γ_stage2.pre` reads of the appended part
+        -- **the entry stream.**  The loop's entry count is zero — the staging's
+        -- count slot reads as the empty stream's count — so the stream is the
+        -- whole `S.k` four-byte lanes at `S.ep`, the range the emitters wrote.
+        -- The two facts after it are what `Γ_stage2.pre` reads
         -- (`stage2.h:56-58`, `:91`): the positions increase strictly, and each
         -- lies inside the blocks read so far.  Carried rather than derived
-        -- because the bytes are the caller's and the emitters' and no read of the
-        -- state recovers which positions either names.
-        S.k0 ≤ S.k ∧
-        -- the caller's prefix.  Static: the loop's emitters write from their
-        -- incoming count onwards, so the lanes below `k0` are the staging's bytes
-        -- and every step hands them on through its own frames.  Carried because
-        -- the exit's stage-2 call reads the whole stream and the appended part
-        -- alone does not reconstruct it.
-        readLanes32 s.mem S.ep S.k0 = some S.ent0 ∧
-        readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
+        -- because the bytes are the emitters' and no read of the state recovers
+        -- which positions they name.
+        readLanes32 s.mem S.ep S.k = some S.ent ∧
         S.ent.Pairwise (· < ·) ∧
         (∀ q ∈ S.ent, q < 64 * S.i) ∧
         (S.arm.hasEscape = true →
@@ -3597,7 +3727,12 @@ def pipelineLoopInvBack (base tab : Nat) (blocks : Nat) : Nat → State → Prop
         cursorRoom S.xn (blocks - S.i) 9 ∧
         HasBytes s.mem S.xp (4 * S.xpExtent) ∧
         DisjointRegions (pipelineLoopRegions S blocks) ∧
-        tailCells S s.env
+        tailCells S s.env ∧
+        -- the frame: every byte the caller staged outside the loop's write
+        -- extent reads as it did when the loop was entered.  A step's own
+        -- frames are what hand it on, and the exit's frame is what the tail's
+        -- post reads the caller's staging through.
+        UnchangedOutside mem s.mem (pipelineLoopWrites S)
 
 /-- **The loop invariant's split shape.**  The state the loop's *first* iteration
 starts in: the arm's head as the program counter, the split block as the
@@ -3623,7 +3758,7 @@ store (`vent … S.sw`) reads it.
 The remaining conjuncts are `pipelineLoopInvBack`'s, in the same order and stated
 in full for the reason above; the docstring there gives each one's consumer and
 hander-on. -/
-def pipelineLoopInvSplit (base tab blocks : Nat) : Nat → State → Prop
+def pipelineLoopInvSplit (mem : Mem) (base tab blocks : Nat) : Nat → State → Prop
   | 0, _ => False
   | r + 1, s =>
       ∃ (S : PipelineLoopCarried),
@@ -3649,17 +3784,12 @@ def pipelineLoopInvSplit (base tab blocks : Nat) : Nat → State → Prop
         S.kw = BitVec.ofNat 64 S.k ∧
         readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
         S.xpExtent = S.xn0 + 64 * blocks + 8 ∧
-        S.k ≤ S.k0 + 64 * S.i ∧
+        S.k ≤ 64 * S.i ∧
         S.xn ≤ S.xn0 + 64 * S.i ∧
         blocks = pipelineBlocks S.n.toNat ∧
-        S.k0 ≤ S.k ∧
-        -- the caller's prefix.  Static: the loop's emitters write from their
-        -- incoming count onwards, so the lanes below `k0` are the staging's bytes
-        -- and every step hands them on through its own frames.  Carried because
-        -- the exit's stage-2 call reads the whole stream and the appended part
-        -- alone does not reconstruct it.
-        readLanes32 s.mem S.ep S.k0 = some S.ent0 ∧
-        readLanes32 s.mem (S.ep + 4 * S.k0) (S.k - S.k0) = some S.ent ∧
+        -- the entry stream at the split entry: the loop's entry count is zero, so
+        -- the read is empty and the two order facts below are vacuous.
+        readLanes32 s.mem S.ep S.k = some S.ent ∧
         S.ent.Pairwise (· < ·) ∧
         (∀ q ∈ S.ent, q < 64 * S.i) ∧
         (S.arm.hasEscape = true →
@@ -3670,7 +3800,12 @@ def pipelineLoopInvSplit (base tab blocks : Nat) : Nat → State → Prop
         cursorRoom S.xn (blocks - S.i) 9 ∧
         HasBytes s.mem S.xp (4 * S.xpExtent) ∧
         DisjointRegions (pipelineLoopRegions S blocks) ∧
-        tailCells S s.env
+        tailCells S s.env ∧
+        -- the frame: every byte the caller staged outside the loop's write
+        -- extent reads as it did when the loop was entered.  A step's own
+        -- frames are what hand it on, and the exit's frame is what the tail's
+        -- post reads the caller's staging through.
+        UnchangedOutside mem s.mem (pipelineLoopWrites S)
 
 /-- **The loop invariant.**  With `r + 1` iterations of budget the state is an
 iteration entry in one of the two shapes the loop can be entered in — the split
@@ -3688,17 +3823,17 @@ the handoff, which is the same statement twice.  So the entry shape goes into th
 invariant, where the step reads it, and the four arm steps each carry a first
 iteration for the split disjunct (`*_split_step`) beside the back-edge ones they
 already had. -/
-def pipelineLoopInv (base tab blocks : Nat) : Nat → State → Prop
-  | 0, s => pipelineLoopExit s
+def pipelineLoopInv (mem : Mem) (base tab blocks : Nat) : Nat → State → Prop
+  | 0, s => pipelineLoopExit mem s
   | r + 1, s =>
-      pipelineLoopInvSplit base tab blocks (r + 1) s ∨
-        pipelineLoopInvBack base tab blocks (r + 1) s
+      pipelineLoopInvSplit mem base tab blocks (r + 1) s ∨
+        pipelineLoopInvBack mem base tab blocks (r + 1) s
 
 /-- **A live-budget invariant state is at one of the four arms' heads.**  Both
 shapes state it, so a step dispatches on the arm before it reads which shape the
 state is in. -/
-theorem pipelineLoopInv_pc {base tab blocks r : Nat} {s : State}
-    (h : pipelineLoopInv base tab blocks (r + 1) s) :
+theorem pipelineLoopInv_pc {mem : Mem} {base tab blocks r : Nat} {s : State}
+    (h : pipelineLoopInv mem base tab blocks (r + 1) s) :
     ∃ S : PipelineLoopCarried, s.pc = S.arm.head := by
   rcases h with ⟨S, hp, -⟩ | ⟨S, hp, -⟩
   · exact ⟨S, hp⟩
@@ -3706,18 +3841,18 @@ theorem pipelineLoopInv_pc {base tab blocks r : Nat} {s : State}
 
 /-- At a spent budget the invariant is the exit predicate, which is the shape
 `PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
-theorem pipelineLoopInv_zero (base tab : Nat) {blocks : Nat} {s : State}
-    (h : pipelineLoopInv base tab blocks 0 s) : pipelineLoopExit s := h
+theorem pipelineLoopInv_zero (mem : Mem) (base tab : Nat) {blocks : Nat} {s : State}
+    (h : pipelineLoopInv mem base tab blocks 0 s) : pipelineLoopExit mem s := h
 
 /-- **`PipelineLoop.exit`'s obligation, discharged.**  A spent budget is the loop's
 exit block, so from any state the invariant admits at `r = 0` the loop's exit is
 already reached and the prefix is the zero-length one.  The last iteration is
 therefore `step`'s at `r = 0` — where the arm's own exit test fires and the
 successor is `for.cond.cleanup` — and not `exit`'s. -/
-theorem pipelineLoop_exitObligation (calls : Calls) (base tab : Nat) (blocks : Nat)
-    (s : State)
-    (h : pipelineLoopInv base tab blocks 0 s) :
-    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit e ∧
+theorem pipelineLoop_exitObligation (calls : Calls) (mem : Mem) (base tab : Nat)
+    (blocks : Nat) (s : State)
+    (h : pipelineLoopInv mem base tab blocks 0 s) :
+    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit mem e ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e :=
   ⟨s, 0, Nat.le_refl 0, h, fun k => by rw [Nat.zero_add]⟩
 
@@ -3808,10 +3943,6 @@ carrier: the section is at `[propext, Quot.sound]` or below. -/
 /-- info: 'LeanLLVM.Vellum.pipelineLoopExit' does not depend on any axioms -/
 #guard_msgs in
 #print axioms pipelineLoopExit
-
-/-- info: 'LeanLLVM.Vellum.pipelineLoopExit_reads_nothing' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms pipelineLoopExit_reads_nothing
 
 /-- info: 'LeanLLVM.Vellum.pipelineLoopInv_zero' depends on axioms: [propext] -/
 #guard_msgs in

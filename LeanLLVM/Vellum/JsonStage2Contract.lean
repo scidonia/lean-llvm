@@ -231,7 +231,7 @@ selection `CallSatisfies s2 Γ_stage2 stage2Sym`, because that needs
 `stage2Body`/`stage2Calls` and a `stage2_satisfies` instance (C96), and neither
 is in this tree.
 
-## The one clause of the pre a pipeline call site cannot derive yet
+## What a pipeline call site derives, and what it does not
 
 Four of the pre's five groups are consequences of the pipeline's own staging, by
 projection: `HasBytes` and the two capacities are `pipelineStaging`'s clauses at
@@ -239,35 +239,31 @@ the same numbers (including `nev0 + 13 * n ≤ evcap`, verbatim), the document
 window and `n ≤ 2 ^ 32` follow from its `64 * pipelineBlocks n + 63 < 2 ^ 32`, the
 cursor slots from its two reads, and `DisjointRegions` from its
 `pipelineRegions`/`DisjointRegions` once the stage-2 extents are seen to be
-sub-extents (`nep ≤ nk0 + 64 * blocks` and `nxp ≤ xpExtent = xn0 + 64 * blocks +
-8`, both carried by the loop invariant).
+sub-extents (`ep`'s lanes inside `64 * blocks` by `S.k ≤ 64 * S.i`, and
+`nxp ≤ xpExtent = xn0 + 64 * blocks + 8` by `S.xn ≤ S.xn0 + 64 * S.i`).
 
-**The entry stream's contents are not.**  `Γ_stage2.pre` needs
-`readLanes32 mem ep nep = some ent` with `ent` in document order and inside the
-document — the two clauses the walk's own reads make safety conditions.
-`pipelineUnitsPost` states
-`readLanes32 m ep nk' = some ent` with `ent` existential and nothing said about
-it, and `pipelineLoopInv` carries `S.doc`, the two counts and their `HasBytes`/
-`DisjointRegions` extents but not the stream's bytes.  So the tail's derivation of
-this call's pre needs those two clauses carried by the loop's invariant, where
-the entry emitters' own posts (`entryPos8Post`, `entryB8Post`:
-`readLanes32 m (o + 4 * k) (k' - k) = streamPrefix ent blk0 nblk`) can supply
-them; that is `PipelineBodyFacts.lean`/`PipelineBodyStep.lean` work and not this
-record's.  The alternative — dropping the clauses here — would make the record
-false of a caller whose entry stream named a byte outside the document it staged,
-which is the defect the clauses exist to exclude.
+**The document's read-past tail is now staged.**  `Γ_stage2.pre` needs
+`HasBytes mem (b + n) stage2ReadTail`, and `pipelineStaging` states
+`HasBytes mem (base + 64 * pipelineBlocks bs.length) 32`: the padded window is a
+prefix of the tail's extent, so the clause is the staging's own read at
+`base + n`.  The `#guard` below is the arithmetic that made it a clause — a
+sixty-four-byte document stages one block, and the decoder's read-past reaches
+`b + 94`, which the window alone does not cover — not a gap the record leaves.
 
-**And the document's read-past tail is one clause the staging does not always
-carry.**  `pipelineStaging` stages the document as
-`readBytes mem base (64 * pipelineBlocks n) = some (bs ++ padding)`, so the
-presence it gives past the document is `64 * pipelineBlocks n - n` bytes, which
-is any value in `0 … 63`.  `Γ_stage2.pre` needs thirty-two.  A sixty-four-byte
-document whose last string body ends at byte 62 is the witness: one block gives
-64 staged bytes and the decoder's read-past reaches `b + 94` (the `#guard` below
-is that arithmetic, executed).  Closing it is a staging change — the window at
-`64 * pipelineBlocks n + 32`, or a `HasBytes mem (base + 64 * pipelineBlocks n)
-32` clause — in `JsonPipelineContract.lean`'s `pipelineStaging`, which this slice
-does not own; narrowing this clause instead would be false of the body.
+**The entry stream is carried, but not at the document's length.**
+`Γ_stage2.pre` needs `readLanes32 mem ep nep = some ent` with `ent` strictly
+increasing and inside the document.  The loop's invariant carries the read at
+`S.k` lanes, the order and the *block* bound `∀ q ∈ S.ent, q < 64 * S.i`
+(`PipelineBodyFacts.pipelineLoopInv`), and the staging pins the count slot to the
+empty stream, so the read is the emitters' appended part and nothing below it.
+The document bound `∀ q ∈ S.ent, q < S.n.toNat` is the arms' — it is
+`streamDocBound_append`, from the last block's entry word — and it is **not** a
+conjunct of `pipelineLoopExit`, which the loop hands the tail.  So the tail's
+derivation of this call's pre is where that bound has to arrive, and
+`PipelineDischarge.lean` states the target predicate that carries it.  Dropping
+the clause here instead would make the record false of a caller whose entry stream
+named a byte outside the document it staged, which is the defect the clause
+exists to exclude.
 -/
 import LeanLLVM.FramePredicate
 import LeanLLVM.Vellum.PipelineBodyFacts

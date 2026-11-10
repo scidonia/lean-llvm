@@ -235,16 +235,20 @@ clause names the unit record it is read from:
 * the counts are the records' cursor slots, read in;
 * the entry-stream capacity is `Γ_entry_pos8.pre`'s `k + 64 * nblk + 9 ≤ outCap`
   at one block per iteration and at most sixty-four entries per block;
-* the entry stream's prefix is the caller's, and it is named here because this
-  record is the only one that can name bytes written before the loop: `ep` holds
-  `nk0` four-byte entry positions when the body is entered, so
-  `readLanes32 mem ep nk0 = some ent0`.  The loop's own state carries only what
-  its emitters appended — from `nk0` onwards — and neither part is derivable
-  from the other, so the whole stream the tail's stage-2 call reads is this
-  prefix beside the appended part.  The clause is the lanes the count names and
-  nothing more: it claims no order and no relation to the document's blocks,
-  because those are the appended part's guarantees and an arbitrary caller's
-  prefix need have neither;
+* the entry count is zero, and there is therefore no caller-staged prefix.  The
+  entry stream the tail's stage-2 call reads is wholly the loop's — its emitters
+  append from the count onwards — so the staging states the count slot as the
+  empty stream's count (`readBytes mem nk 8 = some (wordBytes 8 0)`) rather than
+  accepting a caller's lanes below it.  A prefix the caller supplied would have
+  to be ordered and bounded against the appended part, and the staging is not a
+  place those facts can be stated: an arbitrary prefix's order is a property of
+  the caller's bytes, and the loop's appended positions are computed.  The
+  counterexample is one stored count word: `ent0 = [5]` is ordered and inside a
+  sixty-four-byte document, while the first appended position of a block whose
+  byte 3 is structural is 3, so the stream `[5] ++ [3]` stage 2 would read is not
+  increasing.  Requiring the zero count is what excludes that staging, and
+  `wordBytes_zero_ne_five` is the arithmetic: a slot holding five does not read
+  as the empty stream's count;
 * the escape-list capacity is `Γ_escape_positions.pre`'s `HasBytes` clause at
   the last block's incoming count plus the batch reserve;
 * the arena capacity is the `ndst0 + n + 64` extent the expander reaches from its
@@ -261,10 +265,9 @@ clause names the unit record it is read from:
 * the arm word is a selector, and its reserved bits are zero (`pipeline.h`).
 -/
 def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
-  ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err nk0 nxp0 ndst0
+  ∃ (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err nxp0 ndst0
       nev0 : Nat)
-    (n epcap xpcap dstcap evcap arm : BitVec 64) (bs : List UInt8)
-    (ent0 : List Nat),
+    (n epcap xpcap dstcap evcap arm : BitVec 64) (bs : List UInt8),
     args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
       .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
       .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
@@ -317,17 +320,14 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     readBytes mem sc 24 = some (carrySlot false false false) ∧
     carryPair mem xcarry ⟨false, false⟩ false false ∧
     -- the counts, read in by the pipeline and by the escape list
-    readBytes mem nk 8 = some (wordBytes 8 nk0) ∧
+    -- the count the loop starts at is zero: the caller stages the entry stream
+    -- from its first lane, so the count slot reads as the empty stream's count.
+    readBytes mem nk 8 = some (wordBytes 8 0) ∧
     readBytes mem nxp 8 = some (wordBytes 8 nxp0) ∧
-    -- **the entry stream the caller staged.**  `nk0` lanes of four bytes each at
-    -- `ep` are the positions written before the loop's first iteration; the
-    -- loop's emitters append from that count, so the exit state's read of what
-    -- they appended is disjoint from this one and says nothing about it.  Named
-    -- here, at the count the count slot itself carries, because a clause stated
-    -- at any other count would be a promise about bytes no caller writes.
-    readLanes32 mem ep nk0 = some ent0 ∧
-    -- the entry stream's capacity, lifted over the whole document
-    nk0 + 64 * pipelineBlocks bs.length + 9 ≤ epcap.toNat ∧
+    -- the entry stream's capacity, lifted over the whole document.  The count
+    -- the loop starts at is the slot's zero above, so the capacity is the block
+    -- count's lanes plus the emitter's nine-entry reserve and no caller prefix.
+    64 * pipelineBlocks bs.length + 9 ≤ epcap.toNat ∧
     -- the escape list's capacity, with the batch reserve at every block
     HasBytes mem xp (4 * (nxp0 + 64 * pipelineBlocks bs.length + 8)) ∧
     -- the arena the expander reaches and the event stream the caller sizes,
@@ -352,14 +352,55 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     -- `2 ^ 63 + 63` — the witness beside this record.  The room is what the
     -- next iteration's calls consume, and both units' clauses read it through
     -- `cursorRoom_bounds`.
-    cursorRoom nk0 (pipelineBlocks bs.length) 9 ∧
+    cursorRoom 0 (pipelineBlocks bs.length) 9 ∧
     cursorRoom nxp0 (pipelineBlocks bs.length) 9 ∧
     64 * pipelineBlocks bs.length + 63 < 2 ^ 32 ∧
     -- the arm selector, bits three and above reserved and zero
     arm.toNat < 8 ∧
     -- the read set, and the staged objects' separation
-    (∀ r ∈ pipelineReads base tab nk0 nxp0 args, HasBytes mem r.1 r.2) ∧
-    DisjointRegions (pipelineRegions base tab nk0 nxp0 ndst0 args)
+    (∀ r ∈ pipelineReads base tab 0 nxp0 args, HasBytes mem r.1 r.2) ∧
+    DisjointRegions (pipelineRegions base tab 0 nxp0 ndst0 args)
+
+/-! ### The count slot's witness
+
+Kept beside the staging, as the room clause's is, because it is why the count
+clause reads zero rather than accepting a caller's prefix: a stored count is the
+caller's own word, and one entry stored below the emitters' first position makes
+the stream the tail reads decreasing.
+-/
+
+/-- **A word holding five is not the empty stream's count.**  The staging states
+the count slot as `wordBytes 8 0`; this is the arithmetic that makes a slot
+holding five a different eight bytes. -/
+theorem wordBytes_zero_ne_five : wordBytes 8 5 ≠ wordBytes 8 0 := by decide
+
+/-- **The `[5]`-at-block-3 staging is refused.**  The count slot is the argument
+list's eighth slot, and `pipelineStaging` pins that slot's eight bytes to the
+empty stream's count.  A caller that stages one entry there — the `ent0 = [5]`
+witness, whose next appended position is 3, so the stream the tail would read is
+`[5, 3]` — therefore stages no pipeline at all: the slot's two readings are the
+same eight bytes, and `wordBytes_zero_ne_five` is why they cannot be both five and
+zero.  The refusal is at the record's own count clause and not at the entry lanes,
+which is what makes the empty-count staging a clause rather than a convention the
+call site could decline. -/
+theorem prefix_slot_refused {tab base : Nat} {mem : Mem} {nk : Nat}
+    {sc mk entw ep xp nxp xcarry dst ndst ev nev err : Nat}
+    {n epcap xpcap dstcap evcap arm : BitVec 64}
+    (hst : pipelineStaging tab base
+      [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
+       .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 dstcap,
+       .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err, .int 64 arm] mem)
+    (hfive : readBytes mem nk 8 = some (wordBytes 8 5)) : False := by
+  obtain ⟨sc', mk', entw', ep', nk', xp', nxp', xcarry', dst', ndst', ev', nev', err',
+    nxp0, ndst0, nev0, n', epcap', xpcap', dstcap', evcap', arm', bs, hargs, _hn, _hlim,
+    _hwin, _htail, _hb3, _hzero3, _hpos, _htab, _hsc, _hcarry, hcount, -⟩ := hst
+  -- the eighth slot's address is the one the staging's count clause names
+  have hslot : nk = nk' := by
+    have hptr := congrArg (fun l : List Value => (l.drop 7).head?) hargs
+    simpa using hptr
+  rw [← hslot] at hcount
+  rw [hfive] at hcount
+  exact wordBytes_zero_ne_five (Option.some.inj hcount)
 
 /-! ### The room clause's witness
 
@@ -538,5 +579,13 @@ The room derivation carries no axioms, and the witness only `propext` (its
 /-- info: 'LeanLLVM.Vellum.cursorRoom_not_implied_by_old_staging' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms cursorRoom_not_implied_by_old_staging
+
+/-- info: 'LeanLLVM.Vellum.wordBytes_zero_ne_five' does not depend on any axioms -/
+#guard_msgs in
+#print axioms wordBytes_zero_ne_five
+
+/-- info: 'LeanLLVM.Vellum.prefix_slot_refused' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms prefix_slot_refused
 
 end LeanLLVM.Vellum

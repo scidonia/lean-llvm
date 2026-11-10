@@ -81,11 +81,18 @@ of the caller's arguments, and the loop's whole fuel is `(N + 1) * cost`. -/
 carries: the arm-specialised body in four copies.
 
 `Inv mem r s` is the invariant with `r` iterations of budget left at the caller's
-memory `mem`, `Exit` names every state the loop may leave in (a disjunction when the
-loop has a success path and a refusal path, or four heads when the body is
-unswitched), and the two arms are `runFuel` prefixes at an exact count bounded by
-`cost`.  Nothing names a block: which block a state is at is the invariant's
-business. -/
+memory `mem`, `Exit mem s` names every state the loop may leave in (a disjunction
+when the loop has a success path and a refusal path, or four heads when the body is
+unswitched) *at* that same caller's memory, and the two arms are `runFuel` prefixes
+at an exact count bounded by `cost`.  Nothing names a block: which block a state is
+at is the invariant's business.
+
+`Exit` takes the caller's memory because what the exit promises is a relation
+between the memory the loop was entered at and the memory it leaves: the bytes
+outside the loop's own writes are the caller's.  Stated at the state alone the
+predicate says nothing about that relation, and an exit state in an empty memory —
+one whose registers are bound and whose memory holds nothing — satisfies it while
+no tail block can run from it. -/
 structure PipelineLoop (calls : Calls) (f : Function) where
   /-- The loop's iteration bound, a term of the caller's arguments. -/
   N : Nat
@@ -97,16 +104,16 @@ structure PipelineLoop (calls : Calls) (f : Function) where
   leaves of the caller's staging where it wrote nothing — is a relation between
   that memory and the state's, and a state cannot name it. -/
   Inv : Mem → Nat → State → Prop
-  /-- The states the loop may leave in. -/
-  Exit : State → Prop
+  /-- The states the loop may leave in, at the caller's memory. -/
+  Exit : Mem → State → Prop
   /-- One iteration: from a state with `r + 1` iterations left, the run reaches a
   state with `r` left within `cost` control steps. -/
   step : ∀ (mem : Mem) (r : Nat) (s : State), Inv mem (r + 1) s →
     ∃ (e : State) (j : Nat), j ≤ cost ∧ Inv mem r e ∧
       ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
-  /-- The last iteration reaches a state `Exit` admits. -/
+  /-- The last iteration reaches a state `Exit` admits, at the same memory. -/
   exit : ∀ (mem : Mem) (s : State), Inv mem 0 s →
-    ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧
+    ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit mem e ∧
       ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
 
 /-- **The induction.**  From an invariant state with `r` iterations of budget,
@@ -116,7 +123,7 @@ wherever the invariant puts it, so the four copies are one induction. -/
 theorem PipelineLoop.run_from {calls : Calls} {f : Function} (L : PipelineLoop calls f)
     (mem : Mem) :
     ∀ (r : Nat) (s : State), L.Inv mem r s →
-      ∃ (e : State) (j : Nat), j ≤ (r + 1) * L.cost ∧ L.Exit e ∧
+      ∃ (e : State) (j : Nat), j ≤ (r + 1) * L.cost ∧ L.Exit mem e ∧
         ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
   | 0, s, h => by
       obtain ⟨e, j, hj, hexit, hrun⟩ := L.exit mem s h
@@ -134,7 +141,7 @@ theorem PipelineLoop.run_from {calls : Calls} {f : Function} (L : PipelineLoop c
 exit state within `(N + 1) * cost` control steps. -/
 theorem PipelineLoop.run {calls : Calls} {f : Function} (L : PipelineLoop calls f)
     (mem : Mem) (s : State) (h : L.Inv mem L.N s) (k : Nat) :
-    ∃ (e : State) (j : Nat), j ≤ (L.N + 1) * L.cost ∧ L.Exit e ∧
+    ∃ (e : State) (j : Nat), j ≤ (L.N + 1) * L.cost ∧ L.Exit mem e ∧
       runFuel calls (j + k) f s = runFuel calls k f e := by
   obtain ⟨e, j, hj, hexit, hrun⟩ := L.run_from mem L.N s h
   exact ⟨e, j, hj, hexit, hrun k⟩
@@ -145,7 +152,7 @@ completed continuation can be lifted, because the exit is a jump and `runFuel`
 past it executes the next block. -/
 theorem PipelineLoop.run_at {calls : Calls} {f : Function} (L : PipelineLoop calls f)
     (mem : Mem) (s : State) (h : L.Inv mem L.N s) (k : Nat) {o : Outcome}
-    (hcont : ∀ (e : State), L.Exit e → runFuel calls k f e = some o) :
+    (hcont : ∀ (e : State), L.Exit mem e → runFuel calls k f e = some o) :
     runFuel calls ((L.N + 1) * L.cost + k) f s = some o := by
   obtain ⟨e, j, hj, hexit, hrun⟩ := L.run mem s h k
   have hone : runFuel calls (j + k) f s = some o := by
@@ -504,7 +511,7 @@ theorem pipelineStaging_args {tab base : Nat} {args : List Value} {mem : Mem}
         .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
         .int 64 arm] := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0, hargs, -⟩ := h
+    nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, -⟩ := h
   exact ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     n, epcap, xpcap, dstcap, evcap, arm, hargs⟩
 
@@ -534,7 +541,7 @@ theorem pipelineStaging_base {tab base : Nat} {args : List Value} {mem : Mem}
       HasBytes mem (base + 64 * pipelineBlocks bs.length) 32 ∧
       ∃ rest : List Value, args = .ptr base :: .int 64 n :: rest := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0,
+    nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
     hargs, _hnlen, _hmax, hwin, htail, h3, hpre3, -⟩ := h
   exact ⟨n, bs, h3, hpre3, hwin, htail, _, by rw [hargs]⟩
 
@@ -550,7 +557,7 @@ theorem pipelineStaging_tail {tab base : Nat} {args : List Value} {mem : Mem}
     (h : pipelineStaging tab base args mem) :
     ∃ bs : List UInt8, HasBytes mem (base + bs.length) 32 := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0,
+    nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
     hargs, _hlen, _hmax, hwin, htail, -⟩ := h
   refine ⟨bs, ?_⟩
   have hw : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
@@ -640,7 +647,7 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   /-- The entry, the arm selection, and the loop's first iteration (or, for a
   zero-block document, the exit the entry test takes). -/
   seed : ∃ (e : State) (j : Nat), j ≤ 3 ∧
-    ((loop.N = 0 ∧ loop.Exit e) ∨ loop.Inv mem loop.N e) ∧
+    ((loop.N = 0 ∧ loop.Exit mem e) ∨ loop.Inv mem loop.N e) ∧
     ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
       (EntryState pipelineBody args mem next) =
       runFuel (pipelineCalls tab base s2) k pipelineBody e
@@ -649,10 +656,9 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   **The post is the record's, not a parameter.**  An earlier shape took
   `post : List Value → Mem → Nat → Outcome → Prop` as a parameter and concluded
   `post args mem next …`; that field is false rather than unproved, because
-  `fun _ _ _ _ => False` is one of the predicates it quantified over and
-  `loop.Exit` is satisfiable (`PipelineBodyStep.exit_universal_post_false`).  What
-  the tail's three blocks establish is the run's outcome and the memory it leaves,
-  and the record's `dst`/`ndst`/`ev`/`nev`/`err` clauses are the stage-2 call's own
+  `fun _ _ _ _ => False` is one of the predicates it quantified over.  What the
+  tail's three blocks establish is the run's outcome and the memory it leaves, and
+  the record's `dst`/`ndst`/`ev`/`nev`/`err` clauses are the stage-2 call's own
   post, so the conclusion names `Γ_pipeline_units` and the *proof* is where the
   stage-2 record must be visible: `Γ_stage2` is downstream of this module
   (`JsonStage2Contract` imports `PipelineBodyFacts`), so a bundle at an arbitrary
@@ -662,12 +668,16 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   **What the run needs, and what the predicate supplies.**  The three steps are
   proved — `PipelineBodyStep.pipelineExit_run` runs `for.cond.cleanup`, the branch
   and `cleanup` from an exit state and returns a verdict with the branch's memory
-  — at the cells the exit block reads and at stage-2's `pre`.  `loop.Exit` is
-  `pipelineLoopExit`, which names the program counter, the predecessor, the entry
-  stream and the tail's nine cells (`PipelineBodyStep.pipelineLoopExit_cells`); it
-  does not name the exiting count, and that is the one hypothesis of the run this
-  field still owes. -/
-  exit : ∀ (e : State), loop.Exit e →
+  — at the cells the exit block reads and at stage-2's `pre`.  `loop.Exit mem` is
+  `pipelineLoopExit mem`, which names the program counter, the predecessor, the
+  entry stream, the tail's cells, the exiting count and the frame at `mem`
+  (`PipelineBodyStep.pipelineLoopExit_cells`, `PipelineLoopCount`); what it does
+  not name is the two calls' inputs — the UTF-8 call's window and stage-2's `pre`
+  — and those are the hypotheses of the run this field still owes.  A tail stated
+  at `pipelineLoopExit` alone therefore carries them as hypotheses; a tail at a
+  predicate that carries them is the exit-extension target
+  `PipelineDischarge.pipelineLoopExitStage2`. -/
+  exit : ∀ (e : State), loop.Exit mem e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
         some (.ret (some (.int 64 verdict)) m) ∧
@@ -704,18 +714,19 @@ clause rather than left as "the body analysis":
   whose post is what the `dst`/`ndst`/`ev`/`nev`/`err` clauses are about.  That need
   is the run's, not the loop exit's, and the post is now the record's own rather
   than a parameter of the field: the parameterised shape was false, not unproved
-  (`PipelineBodyStep.exit_universal_post_false`), and it is retired.  The three
+  and it is retired.  The three
   steps are proved — `PipelineBodyStep.pipelineExit_run`, one `denoteCode` trace per
   block at the exit state's own environment, composed into the three-fuel run, with
   the stage-2 record consumed at the call site — at the *cells* the exit state must
-  carry and at stage-2's `pre`.  `pipelineLoopExit` supplies the nine cells and the
-  predecessor (`PipelineBodyStep.pipelineLoopExit_cells`), not the exiting count or
-  the two calls' inputs, so those three hypotheses of `pipelineExit_run` are what
-  this field waits on.  What the loop's exit *does* hand on is the whole entry stream:
-  the staging names the caller's prefix, the invariant carries it beside the
-  appended part, and `PipelineBodyStep.pipelineExit_stream` composes them at the
-  exit's own count, so the post's `readLanes32 m ep nk'` is derivable from the pre
-  instead of being the clause the exit could not reach. -/
+  carry and at stage-2's `pre`.  `pipelineLoopExit` supplies the fourteen cells,
+  the predecessor and the exiting count (`PipelineBodyStep.pipelineLoopExit_cells`,
+  `PipelineLoopCount`), so `hsel` is derivable; what it does not supply is the two
+  calls' inputs, and `pipelineExit_run`'s `hcall` and `hpre2` are what this field
+  waits on.  What the loop's exit *does* hand on is the entry stream: the staging
+  pins the count slot to the empty stream, the loop's emitters append onto nothing,
+  and `PipelineBodyStep.pipelineExit_stream` states the read at the exit's own
+  count, so the post's `readLanes32 m ep nk'` is derivable from the pre instead of
+  being a clause the exit could not reach. -/
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : ∀ base, PipelineUnits tab base s2 Γ2)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
@@ -1019,9 +1030,9 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
       ParserHalf eventRel bs verdict m dst ev err) :
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nk0, nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, _ent0, hargs,
+    nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs,
     hlen, hbound, hwin, _htail, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0,
-    _hent0, hepcap,
+    hepcap,
     hxpbytes, hdstcap, hdstbytes, hevbytes, hevroom, hndst0, hnev0, hroomk,
     hroomx, h32, harm, hreads, hdisj⟩ := hpre
   subst hargs
