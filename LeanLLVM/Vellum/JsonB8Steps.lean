@@ -4489,7 +4489,11 @@ theorem entry_b8_refines (ent : List (BitVec 64)) (blk0 nblk k : Nat) (mem : Mem
           = some (.ret (some (.int 64 (BitVec.ofNat 64 k'))) mem') ∧
       k' = k + (ent.map ctpop).sum ∧
       readLanes32 mem' (o + 4 * k) (k' - k) = streamPrefix ent blk0 nblk ∧
-      (∀ a, a < o ∨ o + 4 * (k' + 7) ≤ a → readByte mem' a = readByte mem a) := by
+      -- the frame starts at the *written* extent's base, not at the buffer's: the
+      -- lanes the call appends are written from `o + 4 * k`, so the prefix written
+      -- by an earlier call is untouched.  `b8MemFold_frame` proves exactly this
+      -- hypothesis (`p + n ≤ o + 4 * k ∨ …`), so the statement is the fold's own.
+      (∀ a, a < o + 4 * k ∨ o + 4 * (k' + 7) ≤ a → readByte mem' a = readByte mem a) := by
   let S0 : State := { (initState entryB8Function
     [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k]) with mem := mem }
   obtain ⟨hpc0, hent0, hblk0, hNb, hout0, hk0⟩ := b8_init blk0 nblk k mem e o

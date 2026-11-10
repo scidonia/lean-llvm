@@ -742,7 +742,18 @@ def entryPos8Post (args : List Value) (mem : Mem) (v : Value) (m : Mem) : Prop :
     k' = k.toNat + (ent.map BitLanes.ctpop).sum ∧
     readLanes32 m (o + 4 * k.toNat) (k' - k.toNat)
       = streamPrefix ent blk0.toNat nblk.toNat ∧
-    (∀ a, a < o ∨ o + 4 * (k' + 8) ≤ a → readByte m a = readByte mem a)
+    -- the mask words the call read, named: the stream's positions are lanes of
+    -- *these* words.  Without it a consumer holds a stream whose positions are
+    -- `streamPrefix ent …` for an existential `ent` it cannot bound, although the
+    -- written lanes determine `ent` in fact — an existential unique in fact is
+    -- still not a fact the record states.
+    nblk.toNat = ent.length ∧
+    readBytes mem e (8 * ent.length) = some (wordsOf ent) ∧
+    -- the frame starts at the *written* extent's base: the lanes are written from
+    -- `o + 4 * k`, so the prefix an earlier call wrote is untouched.  Stated at the
+    -- headline's own hypothesis, a loosening of it would refuse the composition.
+    (∀ a, a < o + 4 * k.toNat ∨ o + 4 * (k' + 8) ≤ a →
+      readByte m a = readByte mem a)
 
 /-- The POS8 emitter's boundary record.  Its budget is the headline theorem's
 own `3 * nblk + 3`, and its `pre` names every hypothesis of that theorem, with
@@ -776,7 +787,12 @@ def entryB8Post (args : List Value) (mem : Mem) (v : Value) (m : Mem) : Prop :=
     k' = k.toNat + (ent.map BitLanes.ctpop).sum ∧
     readLanes32 m (o + 4 * k.toNat) (k' - k.toNat)
       = streamPrefix ent blk0.toNat nblk.toNat ∧
-    (∀ a, a < o ∨ o + 4 * (k' + 7) ≤ a → readByte m a = readByte mem a)
+    -- the mask words the call read, named (see the POS8 post).
+    nblk.toNat = ent.length ∧
+    readBytes mem e (8 * ent.length) = some (wordsOf ent) ∧
+    -- the frame starts at the written extent's base (see the POS8 post).
+    (∀ a, a < o + 4 * k.toNat ∨ o + 4 * (k' + 7) ≤ a →
+      readByte m a = readByte mem a)
 
 /-- The B8 emitter's boundary record.  Its budget folds over the words read out
 of memory, which is why the field takes the memory as well as the arguments. -/
@@ -858,7 +874,8 @@ theorem entry_pos8_satisfies : Satisfies entryCalls entryPos8Function Γ_entry_p
       k' = k.toNat + (ent.map BitLanes.ctpop).sum ∧
       readLanes32 mem' (o + 4 * k.toNat) (k' - k.toNat)
         = streamPrefix ent blk0.toNat nblk.toNat ∧
-      (∀ a, a < o ∨ o + 4 * (k' + 8) ≤ a → readByte mem' a = readByte mem a) := by
+      (∀ a, a < o + 4 * k.toNat ∨ o + 4 * (k' + 8) ≤ a →
+        readByte mem' a = readByte mem a) := by
     exact entry_pos8_refines ent blk0.toNat nblk.toNat k.toNat mem e o tab outCap hnb hblk hent htab hdisj hcap hk63 -- negative-build-anchor
   obtain ⟨k', mem', hrun, hk', hread, hunch⟩ := hheadline
   have hbudget : Γ_entry_pos8.budget
@@ -908,7 +925,7 @@ theorem entry_pos8_satisfies : Satisfies entryCalls entryPos8Function Γ_entry_p
     · rw [entry_pos8_next_independent _ mem n next 1] at hr
       have h := hsingle n out hr
       subst h
-      exact ⟨e, o, tab, blk0, nblk, k, ent, k', rfl, rfl, hk', hread, hunch⟩
+      exact ⟨e, o, tab, blk0, nblk, k, ent, k', rfl, rfl, hk', hread, hnb, hent, hunch⟩
 
 /-- **The B8 emitter satisfies its record**, with its memory-indexed budget
 turned into the headline's own `ent` by `wordsAt_eq`. -/
@@ -967,7 +984,7 @@ theorem entry_b8_satisfies : Satisfies entryCalls entryB8Function Γ_entry_b8 :=
     · rw [entry_b8_next_independent _ mem n next 1] at hr
       have h := hsingle n out hr
       subst h
-      exact ⟨e, o, blk0, nblk, k, ent, k', rfl, rfl, hk', hread, hunch⟩
+      exact ⟨e, o, blk0, nblk, k, ent, k', rfl, rfl, hk', hread, hnb, hent, hunch⟩
 
 /-! ### The UTF-8 stage satisfies its record -/
 

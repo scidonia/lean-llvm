@@ -3106,6 +3106,44 @@ theorem readByte_congr_of_readBytes_one (m m' : Mem) (a : Nat)
       | none => rw [hb, hb2] at h; simp at h
       | some c => rw [hb, hb2] at h; simpa using h
 
+/-- Two memories that agree byte for byte over a range read the same range.  The
+form a frame is consumed at: a post's `readByte` agreement on `[a, a + n)` is what
+carries an earlier read across the call. -/
+theorem readBytes_congr_bytes {m m' : Mem} {a n : Nat}
+    (h : ∀ j, j < n → readByte m' (a + j) = readByte m (a + j)) :
+    readBytes m' a n = readBytes m a n := by
+  induction n generalizing a with
+  | zero => rfl
+  | succ n ih =>
+      have h0 : readByte m' a = readByte m a := by simpa using h 0 (by omega)
+      simp only [readBytes]
+      rw [h0]
+      cases readByte m a with
+      | none => rfl
+      | some b =>
+          rw [ih (a := a + 1) (fun j hj => by
+            rw [show a + 1 + j = a + (j + 1) from by omega]
+            exact h (j + 1) (by omega))]
+
+/-- `readLanes32` is determined by the bytes below its extent: the lanes are the
+four-byte groups of the range, so a byte agreement there gives the same words. -/
+theorem readLanes32_congr_bytes {m m' : Mem} {a k : Nat}
+    (h : ∀ j, j < 4 * k → readByte m' (a + j) = readByte m (a + j)) :
+    readLanes32 m' a k = readLanes32 m a k := by
+  induction k generalizing a with
+  | zero => rfl
+  | succ k ih =>
+      have h4 : readBytes m' a 4 = readBytes m a 4 :=
+        readBytes_congr_bytes (fun j hj => h j (by omega))
+      simp only [readLanes32]
+      rw [h4]
+      cases hb : readBytes m a 4 with
+      | none => rfl
+      | some bs =>
+          rw [ih (a := a + 4) (fun j hj => by
+            rw [show a + 4 + j = a + (4 + j) from by omega]
+            exact h (4 + j) (by omega))]
+
 theorem entry_pos8_refines (ent : List (BitVec 64)) (blk0 nblk k : Nat) (mem : Mem)
     (e o tab outCap : Nat)
     (hnblk : nblk = ent.length)
@@ -3123,7 +3161,11 @@ theorem entry_pos8_refines (ent : List (BitVec 64)) (blk0 nblk k : Nat) (mem : M
           = some (.ret (some (.int 64 (BitVec.ofNat 64 k'))) mem') ∧
       k' = k + (ent.map ctpop).sum ∧
       readLanes32 mem' (o + 4 * k) (k' - k) = streamPrefix ent blk0 nblk ∧
-      (∀ a, a < o ∨ o + 4 * (k' + 8) ≤ a → readByte mem' a = readByte mem a) := by
+      -- the frame starts at the *written* extent's base, not at the buffer's: the
+      -- lanes the call appends are written from `o + 4 * k`, so the prefix written
+      -- by an earlier call is untouched.  `pos8MemFold_frame` proves exactly this
+      -- hypothesis (`p + n ≤ o + 4 * k ∨ …`), so the statement is the fold's own.
+      (∀ a, a < o + 4 * k ∨ o + 4 * (k' + 8) ≤ a → readByte mem' a = readByte mem a) := by
   let S0 : State := { (initState entryPos8Function
     [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k, .ptr tab]) with mem := mem }
   obtain ⟨hpc0, hent0, hblk0, hNb, hout0, hk0, htab0⟩ := pos8_init ent blk0 nblk k mem e o tab

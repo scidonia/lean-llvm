@@ -1250,7 +1250,8 @@ theorem pos8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8))
       r2.ret r2.mem := by
     simpa only [Γ_entry_pos8at, Γ_entry_pos8] using hpost
-  obtain ⟨e, o, t, blk0, nblk, k, ent, k', hargs, hv, hk', hread, hframe⟩ := hpost'
+  obtain ⟨e, o, t, blk0, nblk, k, ent, k', hargs, hv, hk', hread, hnbP, hentP,
+    hframe⟩ := hpost'
   obtain ⟨-, -, hnblk, ho, hk, -⟩ := entryArgs_six hargs
   have hkn : k.toNat = S.k := by rw [hk]; exact hk0
   have hklen : k' - k.toNat ≤ 64 := by
@@ -1259,7 +1260,13 @@ theorem pos8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [hnblk, show ((1 : BitVec 64)).toNat = 1 from by decide] at hl
     omega
   have hge : k.toNat ≤ k' := by rw [hk']; omega
-  refine ⟨r2, k', o, hcall, hv, hframe, ho, ?_⟩
+  have hframeL : ∀ a, a < o ∨ o + 4 * (k' + 8) ≤ a →
+      readByte r2.mem a = readByte (writeBytes r1.mem S.entw
+        (natToBytes (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+          (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) a := by
+    intro a ha
+    exact hframe a (ha.elim (fun h => Or.inl (by omega)) Or.inr)
+  refine ⟨r2, k', o, hcall, hv, hframeL, ho, ?_⟩
   rw [← hkn]
   omega
 
@@ -2076,7 +2083,8 @@ theorem b8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
           (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8))
       r2.ret r2.mem := hpost
-  obtain ⟨e, o, blk0, nblk, k, ent, k', hargs, hv, hk', hread, hframe⟩ := hpost'
+  obtain ⟨e, o, blk0, nblk, k, ent, k', hargs, hv, hk', hread, hnbP, hentP,
+    hframe⟩ := hpost'
   have hargs' : ([.ptr S.entw, .int 64 S.iw, .int 64 (1 : BitVec 64), .ptr S.ep,
       .int 64 S.kw] : List Value) =
       [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] := hargs
@@ -2093,7 +2101,13 @@ theorem b8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     rw [hnblk, show ((1 : BitVec 64)).toNat = 1 from by decide] at hl
     omega
   have hge : k.toNat ≤ k' := by rw [hk']; omega
-  refine ⟨r2, k', o, hcall, hv, hframe, ho, ?_⟩
+  have hframeL : ∀ a, a < o ∨ o + 4 * (k' + 7) ≤ a →
+      readByte r2.mem a = readByte (writeBytes r1.mem S.entw
+        (natToBytes (vent S.n S.iw (specQuote64 lo hi st) (specDelimiter64 lo hi st)
+          (specInString64 lo hi st) (specSpace64 lo hi st) S.sw).toNat 8)) a := by
+    intro a ha
+    exact hframe a (ha.elim (fun h => Or.inl (by omega)) Or.inr)
+  refine ⟨r2, k', o, hcall, hv, hframeL, ho, ?_⟩
   rw [← hkn]
   omega
 
