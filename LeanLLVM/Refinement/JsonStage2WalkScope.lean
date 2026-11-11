@@ -41,7 +41,20 @@ the summands themselves:
 * `inner : Nat` — the remaining inner work at the block, the measure's second
   component;
 * `sp : Nat` — the nesting depth, the index the two container stacks are written
-  at and the value `%sp.i.0248` holds at the loop head.
+  at and the value `%sp.i.0248` holds at the loop head;
+* `stage : WalkStage G` — the adapter's staging of the walk's own objects
+  (`%c.i`, `%ctype.i`, `%cst.i`, `%t352.i`, `%s`, `%z`, `%e`) and the caller's two
+  count slots, with the presence and separation `stage2StagedPre` states.  It is
+  fixed for the run, so it rides the carry rather than becoming a second index;
+  the log's four fields are read at its `%z`.
+
+The invariant also carries the log's four fields the reserves read —
+`log_len` at `%z + 8` is `evlen`, `log_cap` at `%z + 16` is `evcap`, `log_alen`
+at `%z + 48` is `alen`, and `log_acap` at `%z + 56` is `dstcap` — so
+`if.end256.i`'s comparison of `alen + len + 64` against the word at `%z + 56` is
+about the carried cursor and the staged capacity rather than an unread cell.  The
+seed takes the four as `WalkSeedState` hypotheses (the initialisation's stores),
+and every proved arm carries them through unchanged memory.
 
 `WalkGeom` is `stage2Pre`'s staging, named field for field.  A geometry is not
 assumed: `WalkGeom.nonempty` unpacks any `Γ_stage2.pre` into one, so the invariant
@@ -346,6 +359,43 @@ theorem WalkGeom.nep_le {m0 : Mem} (G : WalkGeom m0) : G.nep ≤ G.n := by
 
 /-! ### The carry and the invariant -/
 
+/-- **The staging the walk's own objects have at the adapter.**  `WalkGeom` is
+`stage2Pre`'s thirteen-argument staging; the flattened body also receives the
+eight objects the constraint flattening appends, plus the caller's two count
+slots.  They are fixed for the run, so the carry holds them: `stage2StagedPre`
+gives their presence and separation, and the log's fields are read at the log's
+own address (`stage2.c`'s `ZOut` at `%z`).
+
+The two count slots are here for the reason `stage2StagedPre` states them: the
+adapter separates them from the seven scratch objects, and a caller reads them
+back after the run, so the staging that the port speaks about is the seventeen-
+object one. -/
+structure WalkStage {m0 : Mem} (G : WalkGeom m0) where
+  /-- The cursor record `%c.i`. -/
+  c : Nat
+  /-- The type stack `%ctype.i`. -/
+  ctype : Nat
+  /-- The state stack `%cst.i`. -/
+  cst : Nat
+  /-- The scalar token `%t352.i`. -/
+  tok : Nat
+  /-- The walk's own staging record `%s`. -/
+  s : Nat
+  /-- The log `%z`. -/
+  z : Nat
+  /-- The refusal record `%e`. -/
+  e : Nat
+  /-- The caller's entry-count slot. -/
+  nkSlot : Nat
+  /-- The caller's escape-count slot. -/
+  nxpSlot : Nat
+  /-- The staged objects are separate, as `stage2StagedPre` states them. -/
+  separate : DisjointRegions
+    (stage2StagedRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev G.evcap
+      G.ndst G.nev G.err c ctype cst tok s z e nkSlot nxpSlot)
+  /-- The seven objects the walk writes are present in the staged memory. -/
+  present : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e, HasBytes m0 r.1 r.2
+
 /-- What the loop carries between iterations.  The extents are a list because a
 cursor is their sum and a sum does not name its summands (`Stage2Run`'s
 definition records the obstruction). -/
@@ -374,6 +424,8 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   `%sp.i.0248`'s value at the loop head's `phi`; the merge at `cleanup478.i` is
   the edge that moves it. -/
   sp : Nat
+  /-- The adapter's staging of the walk's own objects, fixed for the run. -/
+  stage : WalkStage G
 
 /-- A scan's counter at a block that reads it: the counter register holds `i`,
 the scan's own bound register holds `c`, and the remaining inner work is `c - i`.
@@ -498,6 +550,23 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   depth's counterpart of `blockIndex`, and it is why an arm that leaves the depth
   alone carries it in one step. -/
   depth_reg : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp))
+  /-- **The log's event length is the carried event cursor.**  `out_reserve`'s
+  check reads the word at `%z + 8` (`%len`) against the word at `%z + 16`, and the
+  walk's own record path advances it by thirteen; the staging fixes the field at
+  `%z + 8`, so the reserve is about the cursor the carry names rather than about
+  an unread word.  The `gep` is `JsonStage2IR`'s (`entry`'s `%len = %z + 8`). -/
+  log_len : readBytes s.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen)
+  /-- **The log's event capacity is the staged one** (the word at `%z + 16`,
+  `%cap`). -/
+  log_cap : readBytes s.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
+  /-- **The log's arena cursor is the carried arena cursor.**  `z_arena_reserve`
+  reads the word at `%z + 48` (`%alen`) and adds the body's length and the
+  decoder's slack to it; `if.end256.i` compares that sum against `%z + 56`. -/
+  log_alen : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+  /-- **The log's arena capacity is the staged one** (the word at `%z + 56`,
+  `%acap`).  With `log_alen` this is the clause `if.end256.i` needs: the word the
+  reserve compares against is `dstcap`, not an unconstrained memory cell. -/
+  log_acap : readBytes s.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
   /-- The walk owns the two prefixes it has written: changes only inside them,
   and they are present in the memory the run has produced.  The claim runs from
   the staged memory to the run's own, which is the direction `Owns`'s presence
@@ -546,7 +615,7 @@ initialisation's first obligation: see *The entry loop's first obligation*. -/
 /-- The loop head's carry: the initial entry index, the staged cursors, no
 records, no extents, no record in flight, no refusal, no nesting depth, and the
 whole dispatch's inner allowance. -/
-def walkSeed {m0 : Mem} (G : WalkGeom m0) : WalkCarry G where
+def walkSeed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : WalkCarry G where
   k := 0
   alen := G.ndst0
   evlen := G.nev0
@@ -558,36 +627,42 @@ def walkSeed {m0 : Mem} (G : WalkGeom m0) : WalkCarry G where
   block := "NodeBlock21"
   inner := walkInnerCap G
   sp := 0
+  stage := S
 
 /-- The state the initialisation hands the loop: the header's block after its two
-`phi`s selected the first entry position and the empty nesting, and the two
-cursors as the caller staged them. -/
-def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (s : State) : Prop :=
+`phi`s selected the first entry position and the empty nesting, the two cursors
+as the caller staged them, and the log's four fields as the staging fixed them
+(the initialisation's `entry` stores `z->ev.b/len/cap` and `z->ar/alen/acap`). -/
+def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : Prop :=
   s.pc = "NodeBlock21" ∧
     lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)) ∧
     lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)) ∧
-    Owns (inRegions [(G.dst, G.ndst0), (G.ev, G.nev0)]) m0 s.mem
+    Owns (inRegions [(G.dst, G.ndst0), (G.ev, G.nev0)]) m0 s.mem ∧
+    readBytes s.mem (S.z + 8) 8 = some (wordBytes 8 G.nev0) ∧
+    readBytes s.mem (S.z + 16) 8 = some (wordBytes 8 G.evcap) ∧
+    readBytes s.mem (S.z + 48) 8 = some (wordBytes 8 G.ndst0) ∧
+    readBytes s.mem (S.z + 56) 8 = some (wordBytes 8 G.dstcap)
 
 /-- **The cap at the seed is the allowance itself**, so the clause that the outer
 arm's strictness reads is satisfied by construction rather than by a register
 bound. -/
-theorem walkSeed_inner_cap {m0 : Mem} (G : WalkGeom m0) :
-    (walkSeed G).inner ≤ walkInnerCap G :=
+theorem walkSeed_inner_cap {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    (walkSeed G S).inner ≤ walkInnerCap G :=
   Nat.le_refl _
 
 /-- **The depth at the seed is zero, and zero indexes the stacks.**  The loop
 head's `phi` takes the constant `0` from `while.body.i.lr.ph`, which is
 `WalkSeedState`'s third clause; the capacity clause is the stacks' extent. -/
-theorem walkSeed_depth_cap {m0 : Mem} (G : WalkGeom m0) :
-    (walkSeed G).sp ≤ stage2StackExtent := by
+theorem walkSeed_depth_cap {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    (walkSeed G S).sp ≤ stage2StackExtent := by
   simp [walkSeed, stage2StackExtent]
 
 /-- **The invariant at the loop head.**  `walkSeed` satisfies every clause of
 `WalkInv` at a `WalkSeedState`, so the seed's production is the initialisation's
-four facts and nothing else. -/
-theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) {s : State}
-    (h : WalkSeedState G s) : WalkInv G (walkSeed G) s := by
-  obtain ⟨hpc, hk, hsp, hown⟩ := h
+facts and nothing else. -/
+theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
+    (h : WalkSeedState G S s) : WalkInv G (walkSeed G S) s := by
+  obtain ⟨hpc, hk, hsp, hown, hlen, hcap, halen, hacap⟩ := h
   refine
     { pc_eq := hpc
       blockIndex := hk
@@ -600,9 +675,13 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) {s : State}
       spans_inside := by simp [walkSeed]
       pending_at := ?_
       eoff_le := Nat.zero_le _
-      inner_cap := walkSeed_inner_cap G
-      depth_cap := walkSeed_depth_cap G
+      inner_cap := walkSeed_inner_cap G S
+      depth_cap := walkSeed_depth_cap G S
       depth_reg := hsp
+      log_len := hlen
+      log_cap := hcap
+      log_alen := halen
+      log_acap := hacap
       owning := hown
       blockLocal := ?_ }
   · intro p off hp
@@ -778,6 +857,10 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           omega
         depth_cap := hInv.depth_cap
         depth_reg := by rw [hsp]; exact hInv.depth_reg
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
         owning := hInv.owning
         blockLocal := ?_ }
     dsimp only [WalkLocal, C']
@@ -1107,6 +1190,10 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
           omega
         depth_cap := hInv.depth_cap
         depth_reg := by rw [hsp]; exact hInv.depth_reg
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
         owning := ?_
         blockLocal := ?_ }
     · rw [hk]; exact hInv.blockIndex
@@ -1537,39 +1624,47 @@ theorem owns_cst_write {mem m : Mem} {dst alen ev evlen c ctype cst tok s z e sp
 
 /-! #### What resists, in order
 
-Three clauses stand between this invariant and the dispatch, and **none of them is
+Three things stand between this invariant and the dispatch, and **none of them is
 one of the three the lead named** — the nesting and the two reserves are all
 *downstream* of the first:
 
-1. **The register and slot facts the dispatch reads.**  `WalkInv` carries the two
-   cursors as *values* (`alen`, `evlen`) but no clause ties the log's fields to
-   them, so neither reserve can be checked: `if.end256.i`'s `%add.i82 =
-   (%add.i) + %z.val36` compares `alen + len + 64` against the word at `%z + 56`,
-   and no clause says that word is `dstcap` (the `#guard`s above are where the two
-   addresses come from).  The same holds for the event reserve's `%len`/`%cap` at
-   `%z + 8`/`%z + 16`, and for the reads the loop head performs: `%3` and `%5`
+1. **The register facts the dispatch reads.**  The log's four fields are now a
+   clause of the invariant (`log_len`, `log_cap`, `log_alen`, `log_acap`), read at
+   `%z + 8/16/48/56` with the `#guard`s above as the addresses' provenance, so
+   `if.end256.i`'s `%add.i82 = (%add.i) + %z.val36` compares `alen + len + 64`
+   against the word the staging fixed as `dstcap`.  What is still not carried is
+   the two pointer registers the loop head and the nesting arm read: `%3` and `%5`
    (the document and entry stream bases, loaded in `entry`), `%k11.i`
-   (`%c.i + 32`), `%ar` (`%z + 40`), the seven `%off1.i.i*` refusal slots
-   (`%e + 8`), and `%ctype.i`/`%cst.i` as pointers.  The nesting arm is the same
-   case one step in: `if.end24.i` indexes `%ctype.i`/`%cst.i` through
-   `zext %sp.i.0248`, and the invariant names the *value* of the depth — this
-   slice's clause — but not the two pointer registers.
+   (`%c.i + 32`), `%ar` (`%z + 40`), and `%ctype.i`/`%cst.i` as pointers.
+   `if.end24.i` indexes `%ctype.i`/`%cst.i` through `zext %sp.i.0248`, and the
+   invariant names the *value* of the depth — this slice's clause — but not the
+   two pointer registers.
 2. **The dispatch's own completion**, which is where the nesting and both reserves
-   are decided; `WalkLocal` is `True` at every block between them.
+   are decided; `WalkLocal` is `True` at every block between them.  The forward
+   edges `while.body.i` and `if.end24.i` are also where the *frame* question
+   lands: both stores are outside the invariant's narrow region, so their
+   preservation needs the wide `stage2WalkFrame` claim, and `Owns` is not monotone
+   (`WalkInv.report` cannot project a wide claim to the narrow one the record's
+   post reads).  The clause set is no longer the obstruction there; the record's
+   post is.
 3. **The six sub-unit contracts.**  `s2_init`, `s2_value_pos`, `s2_after_value`,
    `s2_string_body`, `od_scalar_value` and `num_fast_el1` all fall through
    `stage2Calls` to the parameter `sub`, and the `#guard` in `JsonStage2IR` pins
-   that list.  A selection answering `none` at `s2_init` is `ub` at the entry
-   block's first unit call, so the completion conjunct is false there; and the tree
-   holds no selection that answers the six with their records.
+   that list.  `stage2SubCalls` (`JsonStage2Body`) answers all six from their
+   bodies in `kernel/json/stage2.c`, so a selection answering `none` at `s2_init`
+   is no longer the only choice: the six calls of the pinned body have a model,
+   and `stage2Calls_s2_init` … `stage2Calls_num_fast_el1` are the reductions from
+   the walk's environment to it.
 
 So `Stage2WalkObligation` is not assembled.  What this slice adds is the record
 the loop's stores need (`stage2WalkWrites`, `stage2StagedPre`, the three
-`owns_*_write` instances) and the nesting clause carried through every proved
-edge; what it reports is that the dispatch needs a register-and-slot clause set
-before any of the three named obligations can be attempted — and that the record's
-frame, which is now named, still cannot be the invariant's claim until the
-pipeline's staging separates its count slots from the walk's scratch.
+`owns_*_write` instances), the nesting clause carried through every proved edge,
+the staging and its log fields in the invariant, and the six sub-units' selection.
+What it reports is that the dispatch's forward edges are a record-post question
+before they are an arm question — the record's frame, now nameable at the
+adapter's seventeen staged objects, still cannot be the invariant's claim until
+`stage2Post` names the seven, and that widening is `PipelineDischarge`'s transport
+as much as this module's.
 -/
 
 /-! ### The back edge: `cleanup478.i`'s merge
@@ -1728,6 +1823,10 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
           rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
             lookupName_cons_ne _ _ (by decide)]
           exact hInv.depth_reg
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
         owning := by dsimp only [e, State.bind]; exact hInv.owning
         blockLocal := by simp [WalkLocal] }
     dsimp only [e, State.bind]

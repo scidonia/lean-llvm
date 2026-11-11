@@ -123,6 +123,7 @@ module does not add to or weaken.
 -/
 import LeanLLVM.Refinement.JsonStage2Contract
 import LeanLLVM.Refinement.JsonStage2IR
+import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.StrtodReader
 import LeanLLVM.ElGuardRefine
 
@@ -1862,6 +1863,340 @@ theorem numberRecord_bytes (d : Decimal) :
       [[UInt8.ofNat stage2TagNum], wordBytes 8 (strtodSpec d).toBits] :=
   rfl
 
+/-! ### The six sub-units, modelled
+
+`stage2Calls` (`JsonStage2IR`) resolves the two lifetime markers, the two
+`memset`s and the trap, and sends the remaining six symbols to its parameter
+`sub`.  The census guards there pin that list.  `stage2SubCalls` is a selection
+that answers those six from their bodies in `kernel/json/stage2.c` — the source
+this module already pins by text (`stage2Src`), and the source the emitted fixture
+leaves out of line.
+
+What the models are, and what they are not, is stated with each one.  The three
+state helpers are read out of their bodies directly.  `s2_init` is the `S2`
+record's field-by-field initialisation.  The number path re-uses the models this
+module already proved (`numFastEmitted` and its `strtodSpec` clause), and the
+string path re-uses the escape unit's specification (`escapeDecodeGo`) for the
+escaped form.  None is a refinement of the C function's instructions: each is the
+function's observable at its call boundary, which is what a `Calls` selection is.
+The instruction-level distance is the pipeline's existing body-faithfulness seam,
+named at the end of this section. -/
+
+open LeanLLVM.Refinement.JsonStage2IR (stage2Calls)
+
+
+/-- A little-endian word read as a `Nat`: the shape the body's `load i64/i32`
+has. -/
+def stage2ReadWord (mem : Mem) (a w : Nat) : Option Nat :=
+  (readBytes mem a w).map bytesToNat
+
+/-- A sequence of `(address, bytes)` stores, applied in order.  It is the shape
+`stage2.c`'s straight-line field initialisers have. -/
+def stage2WriteStores (mem : Mem) : List (Nat × List UInt8) → Mem
+  | [] => mem
+  | (a, bs) :: rest => stage2WriteStores (writeBytes mem a bs) rest
+
+/-- `s2_init`'s stores at the `S2` record's own offsets (`kernel/json/stage2.c`,
+`S2`): the five arguments, the fields the measured initialiser clears, and the
+escape planes it sets to `NULL`. -/
+def s2InitStores (s b n nb ep : Nat) : List (Nat × List UInt8) :=
+  [(s + 0, wordBytes 8 b), (s + 8, wordBytes 8 n), (s + 16, wordBytes 8 nb),
+   (s + 24, wordBytes 8 0), (s + 32, wordBytes 8 0), (s + 40, wordBytes 8 0),
+   (s + 48, wordBytes 8 ep), (s + 56, wordBytes 8 0), (s + 64, wordBytes 8 0),
+   (s + 72, wordBytes 8 0), (s + 80, wordBytes 8 0), (s + 88, wordBytes 8 0),
+   (s + 96, wordBytes 8 0), (s + 104, wordBytes 8 0), (s + 112, wordBytes 8 0)]
+
+/-- **`s2_init`**: the staging record at `s`, from the five arguments the emitted
+call passes.  A call with any other argument list is not this unit's and answers
+`none` (the semantics' `ub`). -/
+def stage2Init (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.ptr s, .ptr b, .int 64 n, .int 64 nb, .ptr ep] =>
+      some { ret := voidRet,
+             mem := stage2WriteStores mem (s2InitStores s b n.toNat nb.toNat ep),
+             next := next }
+  | _ => none
+
+/-- **`s2_value_pos`'s test**, read out of the body: at depth zero the root is
+still open exactly when no value has been consumed; above it the top container's
+state decides — an object accepts a value at state 2 (after its colon), an array
+at state 0 or 2.  `none` is a read outside the staged stacks. -/
+def stage2ValuePos (mem : Mem) (sp rootDone ct cs : Nat) : Option Nat :=
+  if sp = 0 then some (if rootDone = 0 then 1 else 0)
+  else
+    match readByte mem (ct + (sp - 1)), readByte mem (cs + (sp - 1)) with
+    | some ctv, some csv =>
+        some (if ctv.toNat = 1 then (if csv.toNat = 2 then 1 else 0)
+              else (if csv.toNat = 0 ∨ csv.toNat = 2 then 1 else 0))
+    | _, _ => none
+
+/-- **`s2_value_pos`** at the emitted call's four arguments. -/
+def stage2ValuePosCall (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.int 32 sp, .int 32 rd, .ptr ct, .ptr cs] =>
+      (stage2ValuePos mem sp.toNat rd.toNat ct cs).map fun v =>
+        { ret := .int 32 (BitVec.ofNat 32 v), mem := mem, next := next }
+  | _ => none
+
+/-- **`s2_after_value`**: mark the root done at depth zero, or set the top
+container's state after a value — `3` after an object member, `1` after an array
+element.  `none` is a read outside the staged type stack. -/
+def stage2AfterValue (mem : Mem) (sp rootDone ct cs : Nat) : Option Mem :=
+  if sp = 0 then some (writeBytes mem rootDone (wordBytes 4 1))
+  else
+    match readByte mem (ct + (sp - 1)) with
+    | some ctv =>
+        some (writeBytes mem (cs + (sp - 1))
+          [UInt8.ofNat (if ctv.toNat = 1 then 3 else 1)])
+    | none => none
+
+/-- **`s2_after_value`** at the emitted call's four arguments. -/
+def stage2AfterValueCall (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.int 32 sp, .ptr rd, .ptr ct, .ptr cs] =>
+      (stage2AfterValue mem sp.toNat rd ct cs).map fun m =>
+        { ret := voidRet, mem := m, next := next }
+  | _ => none
+
+/-- `od_fail`'s visible store: the record's `ok` word and its offset.  The
+message pointer is not read by any clause the walk's record names, and the
+fixture passes `null` for it. -/
+def stage2ErrSet (mem : Mem) (e off : Nat) : Mem :=
+  writeBytes (writeBytes mem e (wordBytes 4 0)) (e + 8) (wordBytes 8 off)
+
+/-- The literal bytes `od_scalar_value` validates, by token kind. -/
+def stage2Literal (kind : Nat) : Option (List UInt8) :=
+  if kind = 8 then some [0x74, 0x72, 0x75, 0x65]        -- "true"
+  else if kind = 9 then some [0x66, 0x61, 0x6C, 0x73, 0x65]  -- "false"
+  else if kind = 10 then some [0x6E, 0x75, 0x6C, 0x6C]  -- "null"
+  else none
+
+/-- **`od_scalar_value`**, at the emitted call's three arguments: the cursor, the
+token and the event stream's `Out` record.  A number's lexeme is the token's
+`[pos, end)` window, and its record is `numberRecord` of the conversion this
+module already specifies; a literal's record is its tag, after the literal
+check; an unclassified token and a failed literal write the refusal offset.
+
+The body's fourth parameter (`acc`) is dropped by the emitted call, so the
+model has no accumulator: every path it can take is the emitting one. -/
+def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
+  match stage2ReadWord mem c 8, stage2ReadWord mem (c + 1112) 8,
+        stage2ReadWord mem t 8, stage2ReadWord mem (t + 8) 8,
+        stage2ReadWord mem (t + 16) 4 with
+  | some base, some e, some pos, some endp, some kind =>
+      if kind = 0 then
+        some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSet mem e pos,
+               next := next }
+      else if kind = 7 then
+        match readBytes mem (base + pos) (endp - pos) with
+        | none => none
+        | some lex =>
+            match stage2ReadWord mem o 8, stage2ReadWord mem (o + 8) 8,
+                  stage2ReadWord mem (o + 16) 8 with
+            | some buf, some len, some cap =>
+                match emitBlobs mem buf len cap
+                    (numberRecord (numFastEmitted (ByteString.literal lex)).toBits) with
+                | some p => some { ret := .int 32 (BitVec.ofNat 32 1), mem := p.1,
+                                   next := next }
+                | none => none
+            | _, _, _ => none
+      else
+        match stage2Literal kind with
+        | none =>
+            some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSet mem e pos,
+                   next := next }
+        | some lit =>
+            match readBytes mem (base + pos) lit.length with
+            | some got =>
+                if got = lit then
+                  match stage2ReadWord mem o 8, stage2ReadWord mem (o + 8) 8,
+                        stage2ReadWord mem (o + 16) 8 with
+                  | some buf, some len, some cap =>
+                      match outTag mem buf len cap kind with
+                      | some p => some { ret := .int 32 (BitVec.ofNat 32 1), mem := p.1,
+                                         next := next }
+                      | none => none
+                  | _, _, _ => none
+                else
+                  some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSet mem e pos,
+                         next := next }
+            | none => none
+  | _, _, _, _, _ => none
+
+/-- **`od_scalar_value`** at the emitted call's three arguments. -/
+def stage2ScalarValueCall (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.ptr c, .ptr t, .ptr o] => stage2ScalarValue mem c t o next
+  | _ => none
+
+/-- **`s2_string_body`**: the body's two forms.  The cursor is scanned forward to
+the body's first position; with no position inside `[pos0, pos0 + len)` the body
+is its own materialisation (form 1, `outn = len`), and otherwise the escaped form
+is the escape unit's own rule at the body's positions (form 2, `outn` the decoded
+length), with a refusal at the expander's offset (form 0).
+
+The cursor write back is the global index `j1 + k` the body's pointer would hold;
+`j1` is where the scan left it.  A call that resumes *inside* a body is outside
+this model — the walk never does, because `xj` is carried across bodies, not
+restarted within one — and the `pre` of the escape unit states that restriction
+for the same reason. -/
+def stage2StringBody (mem : Mem) (c p len dst outn xp xj nxp : Nat) :
+    Option (Mem × Nat) :=
+  match stage2ReadWord mem c 8, stage2ReadWord mem xj 8, readLanes32 mem xp nxp with
+  | some base, some j0, some ps =>
+      let pos0 := p - base
+      let j1 := j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length
+      let inBody := (ps.drop j1).takeWhile (fun q => q < pos0 + len)
+      if inBody.isEmpty then
+        some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (wordBytes 8 len), 1)
+      else
+        match readBytes mem p len with
+        | none => none
+        | some body =>
+            match escapeDecodeGo body 0 0 (inBody.map (fun q => q - pos0)) [] with
+            | .decoded out k =>
+                some (writeBytes
+                        (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
+                        outn (wordBytes 8 out.length), 2)
+            | .refused off k =>
+                match stage2ReadWord mem (c + 1112) 8 with
+                | some e => some (writeBytes (stage2ErrSet mem e (pos0 + off))
+                                   xj (wordBytes 8 (j1 + k)), 0)
+                | none => none
+  | _, _, _ => none
+
+/-- **`s2_string_body`** at the emitted call's eight arguments. -/
+def stage2StringBodyCall (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj, .int 64 nxp] =>
+      (stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat).map fun (m, form) =>
+        { ret := .int 32 (BitVec.ofNat 32 form), mem := m, next := next }
+  | _ => none
+
+/-- **`num_fast_el1`**: the lexeme's eight-byte result and a zero offset on the
+path the walk takes.  The conversion is `numFastEmitted`, whose `strtodSpec`
+clause this module proves; the emitted function's refusal exits are not modelled
+(their offsets are the scanner's own, and the walk's calling condition is a
+`K_NUM` token). -/
+def stage2NumFast (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.ptr p, .int 64 n, .ptr out, .ptr err] =>
+      match readBytes mem p n.toNat with
+      | none => none
+      | some lex =>
+          some { ret := .int 32 (BitVec.ofNat 32 1),
+                 mem := writeBytes
+                   (writeBytes mem out
+                     (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits))
+                   err (wordBytes 8 0),
+                 next := next }
+  | _ => none
+
+/-- **The six sub-units' selection**: every symbol `stage2Calls` forwards. -/
+def stage2SubCalls : Calls :=
+  fun callee args mem next =>
+    if callee = "s2_init" then stage2Init args mem next
+    else if callee = "s2_value_pos" then stage2ValuePosCall args mem next
+    else if callee = "s2_after_value" then stage2AfterValueCall args mem next
+    else if callee = "s2_string_body" then stage2StringBodyCall args mem next
+    else if callee = "od_scalar_value" then stage2ScalarValueCall args mem next
+    else if callee = "num_fast_el1" then stage2NumFast args mem next
+    else none
+
+-- The selection answers the six symbols `stage2Calls` forwards, and only those.
+theorem stage2Calls_s2_init (args : List Value) (mem : Mem) (next : Nat) :
+    stage2Calls stage2SubCalls "s2_init" args mem next = stage2Init args mem next := rfl
+
+theorem stage2Calls_s2_value_pos (args : List Value) (mem : Mem) (next : Nat) :
+    stage2Calls stage2SubCalls "s2_value_pos" args mem next =
+      stage2ValuePosCall args mem next := rfl
+
+theorem stage2Calls_s2_after_value (args : List Value) (mem : Mem) (next : Nat) :
+    stage2Calls stage2SubCalls "s2_after_value" args mem next =
+      stage2AfterValueCall args mem next := rfl
+
+theorem stage2Calls_s2_string_body (args : List Value) (mem : Mem) (next : Nat) :
+    stage2Calls stage2SubCalls "s2_string_body" args mem next =
+      stage2StringBodyCall args mem next := rfl
+
+theorem stage2Calls_od_scalar_value (args : List Value) (mem : Mem) (next : Nat) :
+    stage2Calls stage2SubCalls "od_scalar_value" args mem next =
+      stage2ScalarValueCall args mem next := rfl
+
+theorem stage2Calls_num_fast_el1 (args : List Value) (mem : Mem) (next : Nat) :
+    stage2Calls stage2SubCalls "num_fast_el1" args mem next =
+      stage2NumFast args mem next := rfl
+
+/-- **`s2_init` answers its emitted call at every staging.**  It reads no memory,
+so nothing gates it. -/
+theorem stage2Init_answers (s b n nb ep : Nat) (mem : Mem) (next : Nat) :
+    ∃ r, stage2Init [.ptr s, .ptr b, .int 64 n, .int 64 nb, .ptr ep] mem next = some r :=
+  ⟨_, rfl⟩
+
+/-- **`s2_value_pos` answers when its two stack bytes are staged.** -/
+theorem stage2ValuePos_answers (mem : Mem) (sp rd ct cs : Nat)
+    (hsp : sp ≠ 0) {c s : UInt8}
+    (hc : readByte mem (ct + (sp - 1)) = some c)
+    (hs : readByte mem (cs + (sp - 1)) = some s) :
+    ∃ v, stage2ValuePos mem sp rd ct cs = some v := by
+  simp only [stage2ValuePos, if_neg hsp, hc, hs]
+  exact ⟨_, rfl⟩
+
+/-- **`s2_value_pos` at depth zero answers without reading.** -/
+theorem stage2ValuePos_zero (mem : Mem) (rd ct cs : Nat) :
+    ∃ v, stage2ValuePos mem 0 rd ct cs = some v :=
+  ⟨_, rfl⟩
+
+/-- **`s2_after_value` answers when its type-stack byte is staged.** -/
+theorem stage2AfterValue_answers (mem : Mem) (sp rd ct cs : Nat)
+    (hsp : sp ≠ 0) {c : UInt8} (hc : readByte mem (ct + (sp - 1)) = some c) :
+    ∃ m, stage2AfterValue mem sp rd ct cs = some m := by
+  simp only [stage2AfterValue, if_neg hsp, hc]
+  exact ⟨_, rfl⟩
+
+/-- **`s2_string_body` answers when its cursor, list and body are staged**; which
+form it takes depends on the list, but every branch the model has is `some`. -/
+theorem stage2StringBody_answers (mem : Mem) (c p len dst outn xp xj nxp : Nat)
+    {base j0 e : Nat} {ps : List Nat} {body : List UInt8}
+    (hb : stage2ReadWord mem c 8 = some base)
+    (hj : stage2ReadWord mem xj 8 = some j0)
+    (hp : readLanes32 mem xp nxp = some ps)
+    (hbody : readBytes mem p len = some body)
+    (herr : stage2ReadWord mem (c + 1112) 8 = some e) :
+    ∃ r, stage2StringBody mem c p len dst outn xp xj nxp = some r := by
+  simp only [stage2StringBody, hb, hj, hp, hbody, herr]
+  repeat' split
+  all_goals exact ⟨_, rfl⟩
+
+/-- **`num_fast_el1` answers when its lexeme is staged.** -/
+theorem stage2NumFast_answers (p : Nat) (n : BitVec 64) (out err : Nat)
+    (mem : Mem) (next : Nat) {lex : List UInt8}
+    (h : readBytes mem p n.toNat = some lex) :
+    ∃ r, stage2NumFast [.ptr p, .int 64 n, .ptr out, .ptr err] mem next = some r := by
+  simp only [stage2NumFast, h]
+  exact ⟨_, rfl⟩
+
+/-- **The walk's obligation at the modelled sub-units, assembled from its two
+conjuncts.**  `stage2WalkObligation_iff_completion` says the obligation is the
+completion budget at the pinned body beside the post of the outcome it reaches;
+this is that equivalence at `stage2SubCalls`, so neither conjunct can be false
+because a callee fell through to `none`.
+
+It does not discharge either conjunct.  Completion is the loop's per-arm trace,
+and the post is the report of that trace; what changes here is the selection the
+trace runs under, which now answers all six sub-units. -/
+theorem stage2WalkObligation_at_subCalls
+    (d c ctype cst tok s z e nkSlot nxpSlot : Nat)
+    (hcom : Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls)
+    (hpost : ∀ args mem next,
+      (JsonStage2IR.Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
+      ∀ o, BehFromState (stage2Calls stage2SubCalls) JsonStage2IR.stage2Body
+          (EntryState JsonStage2IR.stage2Body args mem next) o →
+        (JsonStage2IR.Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
+    JsonStage2IR.Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
+  (stage2WalkObligation_iff_completion
+    d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls).2 ⟨hcom, hpost⟩
+
 /-! ### The pin, and what it moves
 
 `s2_walk`'s emitted body is pinned in `LeanLLVM/Refinement/JsonStage2IR.lean`, and
@@ -1910,5 +2245,17 @@ modules' own pins record. -/
 #print axioms numFastEmitted_refines
 #print axioms numFastEmitted_strtodSpec
 #print axioms stage2Body_retsValued_at_pin
+#print axioms stage2Calls_s2_init
+#print axioms stage2Calls_s2_value_pos
+#print axioms stage2Calls_s2_after_value
+#print axioms stage2Calls_s2_string_body
+#print axioms stage2Calls_od_scalar_value
+#print axioms stage2Calls_num_fast_el1
+#print axioms stage2Init_answers
+#print axioms stage2ValuePos_answers
+#print axioms stage2AfterValue_answers
+#print axioms stage2StringBody_answers
+#print axioms stage2NumFast_answers
+#print axioms stage2WalkObligation_at_subCalls
 
 end LeanLLVM.Refinement
