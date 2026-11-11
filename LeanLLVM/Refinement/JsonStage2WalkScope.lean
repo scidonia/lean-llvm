@@ -1646,8 +1646,13 @@ arguments' words' values — `one word with two widths is one number`, the same
 move the two capacities make).  The two count slots (`S.nk`, `S.nxp`) do not:
 they are the pipeline's, not stage-2's arguments, and no clause of the record can
 name them.  `PipelineDischarge.Stage2SlotKeeps` is that statement, taken as a
-hypothesis and documented as the model's missing stack discipline — the same gap
-`SigmaFrame` records at the specification (`JsonPipelineSpec`).
+hypothesis and documented as the model's missing stack discipline; it is the
+composite's only frame-wise conditional clause.  `JsonPipelineSpec.SigmaFrame` is
+no longer a premise beside it: it is a *definition* now — a `CallerView` naming the
+caller's thirteen regions, with the seven staged objects existentially bound — so
+the finalisation derives it rather than assuming it.  An existential footprint
+does not by itself say the document is untouched, which is the limit
+`SigmaFrame`'s own docstring records.
 
 **The nesting clause is carried.**  `WalkInv.depth_reg` names the register —
 `%sp.i.0248` holds the carry's `sp` — and `WalkInv.depth_cap` bounds it by
