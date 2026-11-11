@@ -245,12 +245,15 @@ n_ni=$(grep -c '__attribute__((noinline))' "$work/stage2.noinline.c" || true)
 [ "$n_al" -eq 2 ] ||
   fail "the transformed source carries $n_al 'always_inline' occurrences; the transform leaves the comment and s2_walk's attribute, so 2"
 [ "$n_ni" -eq 12 ] ||
-  fail "the transformed source carries $n_ni 'noinline' occurrences; the always_inline set is 12"
+  fail "the transformed source carries $n_ni 'noinline' occurrences; the always_inline set is 11 helpers plus the EL_ENTRY macro definition"
 grep -A1 '^__attribute__((always_inline)) static inline uint64_t$' "$work/stage2.noinline.c" |
   grep -q '^s2_walk(' ||
   fail "the one forced-inline function is not s2_walk"
 
-awk '/__attribute__\(\(noinline\)\)/ {
+# The EL_ENTRY define carries the twelfth noinline occurrence but names no
+# symbol; without the #define guard its continuation line is misread as a
+# function name.
+awk '/__attribute__\(\(noinline\)\)/ && !/^#define/ {
        line = $0
        sub(/.*__attribute__\(\(noinline\)\)/, "", line)
        while (line !~ /\(/) { if ((getline nxt) <= 0) exit 1; line = line " " nxt }
@@ -258,8 +261,8 @@ awk '/__attribute__\(\(noinline\)\)/ {
          print substr(line, RSTART, RLENGTH - 1)
      }' "$work/stage2.noinline.c" | sort > "$work/noinline.names" || true
 n_noinline=$(wc -l < "$work/noinline.names" | tr -d ' ')
-[ "$n_noinline" -eq 12 ] ||
-  fail "read $n_noinline noinline symbol name(s), not 12"
+[ "$n_noinline" -eq 11 ] ||
+  fail "read $n_noinline noinline symbol name(s); the 11 helpers name symbols and the EL_ENTRY macro does not"
 
 # ---------------------------------------------------------------------------
 # The emission, and the naming flag's claim
@@ -846,10 +849,10 @@ fi
     "__attribute__((always_inline)) static inline uint64_t s2_walk(...)" \
     "the same, and it is the only forced-inline function" 1 \
     "the mode is a constant at the wrapper's call site, so inlining the walk folds the branches that mode does not take; every other helper is noinline, which is why the walk's text is the body and the helpers are calls"
-  printf '%s\t%s\t%s\t%s\t%d\t%s\n' r2 "noinline (12 helpers)" \
-    "$(paste -sd' ' "$work/noinline.names")" \
-    "each a call in the fixture" 12 \
-    "their bodies are outside this fragment (binary64, vector word kernels) or are units of their own; each is resolved by the fixture's Calls environment at the record or tier theorem that states its contract"
+  printf '%s\t%s\t%s\t%s\t%d\t%s\n' r2 "noinline (11 helpers and the EL_ENTRY macro)" \
+    "$(paste -sd' ' "$work/noinline.names"), and the EL_ENTRY macro definition" \
+    "each helper a call in the fixture" 12 \
+    "their bodies are outside this fragment (binary64, vector word kernels) or are units of their own; each is resolved by the fixture's Calls environment at the record or tier theorem that states its contract; the count is twelve occurrences: the eleven helpers plus the macro definition, which names no symbol"
   printf '%s\t%s\t%s\t%s\t%d\t%s\n' r3 "callee definitions" \
     "the emission's \`define internal\` blocks" \
     "the matching \`declare\` line" \
