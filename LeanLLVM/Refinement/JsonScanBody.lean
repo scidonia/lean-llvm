@@ -10,7 +10,8 @@ statement about the body is `JsonScanIR.scanWindowStatement` and is **not yet
 proved**: `JsonScanIR.lean` proves the prefix facts the statement rests on and
 states the band hypothesis the prose elided, and `JsonScanLane.lean` derives the
 lane's instruction chain — `ruleInstrs`'s 120 instructions and the two paths
-composed — leaving the arithmetic bridge, the loop induction and the footprint
+composed — leaving the arithmetic bridge (proved on its pending-requirement arm
+in `JsonScanLane.ruleBridge_pending`), the loop induction and the footprint
 clause.  The frame also stops at the caller's state
 region, whose content the body writes as the rule's own words rather than as the
 encoding's; that boundary is measured and the statement that pinned the slot's

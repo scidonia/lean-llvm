@@ -98,14 +98,16 @@ and `store i32`.  `laneHeadMaskedSkipBits_rule_step` and
 `laneHeadPlainSkipBits_rule_step` then compose the 23 and 8 instructions before
 the rule with those 120.
 
-**What is not here.**  The arithmetic bridge (`decodeState` of the four words the
-rule leaves is `bodyStep` of the four it read, under the `act` gate; the mask
-half is `maskStep`), the `laneStep` lemma the loop induction consumes, the
+**Where the bridge stands.**  The identification of the four words the rule
+leaves with the carry the model steps — `decodeState` of them is `bodyStep` of
+the four it read, under the `act` gate, with `maskStep` as the mask half — is
+**proved on its pending-requirement arm** as `ruleBridge_pending`, against the
+rule's own predicates.  The no-requirement arm's nine branches are stated and
+decomposed but not proved; the section below records what they still need and
+why.  **Not here at all:** the `laneStep` lemma the loop induction consumes, the
 induction over `valid ≤ 32`, and the statement's footprint clause.
 `scanWindowLLVM_refines` is still the statement `scanWindowStatement` and nothing
-here claims it; the chain's own last step stores the stop word, which is the word
-the model names, and the bridge is what identifies the four words the rule leaves
-with the carry the model steps.
+here claims it.
 -/
 import LeanLLVM.Refinement.JsonScanIR
 import LeanLLVM.Refinement.BlockEval
@@ -115,6 +117,7 @@ namespace LeanLLVM.Refinement.JsonScanLane
 open LeanLLVM
 open LeanLLVM.JSON
 open LeanLLVM.Refinement.JsonScanModel
+open LeanLLVM.Refinement.JsonScanABI (decodeState byteOf)
 open LeanLLVM.Refinement.JsonScanIR (maskPref maskPref_succ maskPref_eq_maskOfList)
 open LeanLLVM.Refinement.JsonScanBody (scanWindowBody scanWindowBaselineBody ruleInstrs
   laneHead maskedSkipBits plainSkipBits structLo structHi)
@@ -1770,5 +1773,541 @@ theorem laneHeadPlainSkipBits_rule_step (calls : Calls) (s : State) (env : Env)
     (by builder_lk) (by builder_lk)
     hM0 hF hNw hLo hHi hStp
 
+
+/-! ### The arithmetic bridge
+
+The rule leaves four words in the slot; the model steps one `BodyState`.  This
+section is the identification, at the granularity the statement needs:
+`decodeState` of the four words the rule leaves is the state `bodyStep` steps
+the carry to, under the `act` gate.  `maskStep` above is the mask half; this is
+the rule's own arithmetic.
+
+**Shape of the proof.**  `bodyStep` is a decision tree over the decoded state
+and the byte, and the rule computes each of its four words by a `select` chain
+over the same conditions.  The tree is therefore split the model's way, one
+leaf per arm — a pending requirement (in range and out), the run parity, the
+quote (closing and opening), the backslash, the control byte, the content
+lanes, and the lead byte's nine classes — and each leaf computes the four
+words and then decodes them.
+
+Two normalization facts make the words computable by rewriting rather than by a
+per-instruction chain: every predicate of the rule is restated as an `if` on the
+proposition it tests (`vMre_ite`, `vOdd_ite`, …), because the semantics builds
+them as `BitVec.ofBool (decide p)` and a hypothesis about `p` cannot reduce
+`decide p`; and the `&&&`/`^^^` of those one-bit `if`s is folded by
+`bit_ite_and_ite`/`bit_ite_xor_one`, so a `select` chain collapses to the truth
+of its conditions.
+
+**What is here and what is not.**  `ruleBridge_pending` is the pending-
+requirement arm, proved: while `nw ≠ 0` the byte either continues the
+requirement — `nw` drops by one, the bounds become `[0x80, 0xBF]`, the flags
+are unchanged — or it does not, and the words are the carry again.  It is the
+arm the lane reaches with a requirement outstanding, and it is proved against
+the emitted `ruleInstrs`' own predicates, not a re-description of them.
+
+The no-requirement arm's nine branches are **not** proved here.  The
+decomposition is stated and is the tree above; what a proof of those branches
+still needs is that `bodyStep`'s control test is a *`Bool`* conjunction
+(`st.inside && decide (b < 0x20)`) rather than a propositional one, so the
+`if`-condition a leaf discharges is `(a && decide p) = true` rather than `a = true
+∧ p`, and that `getLsbD` of a `select`-chain word must be pushed through its
+`if`s by `rw [getLsbD_if_prop]`, because `simp` does not consume that lemma.  With those two in place each remaining leaf is the same
+computation as `ruleBridge_pending`'s.  The bridge as a whole, the lane step,
+the induction over `valid ≤ 32`, the footprint clause and
+`scanWindowStatementOf scanWindowBody` are still outstanding, and
+`scanWindowLLVM_refines` remains unclaimed. -/
+
+set_option maxRecDepth 20000
+
+/-! ### One-bit comparisons -/
+
+theorem ofBool_inj {c d : Bool} : (BitVec.ofBool c = BitVec.ofBool d) ↔ c = d := by
+  cases c <;> cases d <;> decide
+
+theorem ofBool_eq_one (c : Bool) : (BitVec.ofBool c = (1 : BitVec 1)) ↔ c = true := by
+  rw [show (1 : BitVec 1) = BitVec.ofBool true from rfl, ofBool_inj]
+
+theorem ofBool_eq_zero (c : Bool) : (BitVec.ofBool c = (0 : BitVec 1)) ↔ c = false := by
+  rw [show (0 : BitVec 1) = BitVec.ofBool false from rfl, ofBool_inj]
+
+theorem bit_and_one (x y : BitVec 1) : (x &&& y) = 1 ↔ x = 1 ∧ y = 1 := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one y with h' | h' <;>
+    rw [h, h'] <;> decide
+
+theorem bit_xor_one (x y : BitVec 1) : (x ^^^ y) = 1 ↔ x ≠ y := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one y with h' | h' <;>
+    rw [h, h'] <;> decide
+
+theorem bit_ite_one (c : Bool) : ((if c then (1 : BitVec 1) else 0) = 1) ↔ c = true := by
+  cases c <;> decide
+
+theorem bit_ite_zero (c : Bool) : ((if c then (1 : BitVec 1) else 0) = 0) ↔ c = false := by
+  cases c <;> decide
+
+/-! ### Bits of the flags word -/
+
+theorem and_one_eq (x : Nat) : x &&& 1 = if x.testBit 0 then 1 else 0 := by
+  rw [show (1 : Nat) = 2 ^ 1 - 1 from by decide, Nat.and_two_pow_sub_one_eq_mod,
+    Nat.testBit_zero]
+  have := Nat.mod_two_eq_zero_or_one x
+  by_cases h : x % 2 = 1
+  · simp [h]
+  · have h0 : x % 2 = 0 := by omega
+    simp [h0]
+
+theorem testBit_two (i : Nat) : (2 : Nat).testBit i = decide (i = 1) := by
+  rw [show (2 : Nat) = 2 ^ 1 from by decide, Nat.testBit_two_pow]
+  simp [eq_comm]
+
+theorem and_two_eq (x : Nat) : x &&& 2 = if x.testBit 1 then 2 else 0 := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  rw [Nat.testBit_and, testBit_two]
+  by_cases hi : i = 1
+  · subst hi
+    by_cases ht : x.testBit 1
+    · rw [ite_eq_left ht, testBit_two]; simp [ht]
+    · rw [ite_eq_right ht, Nat.zero_testBit]; simp [ht]
+  · have hd : decide (i = 1) = false := by simp [hi]
+    rw [hd, Bool.and_false]
+    by_cases ht : x.testBit 1
+    · rw [ite_eq_left ht, testBit_two]; simp [hi]
+    · rw [ite_eq_right ht, Nat.zero_testBit]
+
+theorem and_one_ne_zero (x : Nat) : x &&& 1 ≠ 0 ↔ x.testBit 0 = true := by
+  rw [and_one_eq]
+  by_cases h : x.testBit 0 <;> simp [h]
+
+theorem and_two_ne_zero (x : Nat) : x &&& 2 ≠ 0 ↔ x.testBit 1 = true := by
+  rw [and_two_eq]
+  by_cases h : x.testBit 1 <;> simp [h]
+
+theorem vec_and_one_toNat (f : BitVec 32) : (f &&& 1).toNat = f.toNat &&& 1 := by
+  rw [BitVec.toNat_and]; simp
+
+theorem vec_and_two_toNat (f : BitVec 32) : (f &&& 2).toNat = f.toNat &&& 2 := by
+  rw [BitVec.toNat_and]; simp
+
+theorem vec_and_one_ne_zero (f : BitVec 32) : (f &&& 1) ≠ 0 ↔ f.getLsbD 0 = true := by
+  have h : ((f &&& 1) = 0) ↔ ((f &&& 1).toNat = 0) := by
+    rw [BitVec.toNat_eq]
+    rfl
+  rw [Ne, h, vec_and_one_toNat]
+  show f.toNat &&& 1 ≠ 0 ↔ f.toNat.testBit 0 = true
+  exact and_one_ne_zero f.toNat
+
+theorem vec_and_two_ne_zero (f : BitVec 32) : (f &&& 2) ≠ 0 ↔ f.getLsbD 1 = true := by
+  have h : ((f &&& 2) = 0) ↔ ((f &&& 2).toNat = 0) := by
+    rw [BitVec.toNat_eq]
+    rfl
+  rw [Ne, h, vec_and_two_toNat]
+  show f.toNat &&& 2 ≠ 0 ↔ f.toNat.testBit 1 = true
+  exact and_two_ne_zero f.toNat
+
+theorem vInn_eq (f : BitVec 32) : vInn f = 1 ↔ f.getLsbD 0 = true := by
+  have h : vInn f = BitVec.ofBool (decide ((f &&& 1) ≠ 0)) := rfl
+  rw [h, ofBool_eq_one]
+  exact Iff.trans (by simp) (vec_and_one_ne_zero f)
+
+theorem vOdd_eq (f : BitVec 32) : vOdd f = 1 ↔ f.getLsbD 1 = true := by
+  have h : vOdd f = BitVec.ofBool (decide ((f &&& 2) ≠ 0)) := rfl
+  rw [h, ofBool_eq_one]
+  exact Iff.trans (by simp) (vec_and_two_ne_zero f)
+
+theorem vMre_eq (nw : BitVec 32) : vMre nw = 1 ↔ nw ≠ 0 := by
+  have h : vMre nw = BitVec.ofBool (decide (nw ≠ 0)) := rfl
+  rw [h, ofBool_eq_one]
+  exact Iff.trans (by simp) Iff.rfl
+
+theorem vNmre_eq (nw : BitVec 32) : vNmre nw = 1 ↔ nw = 0 := by
+  have h : vNmre nw = BitVec.ofBool (decide (nw = 0)) := rfl
+  rw [h, ofBool_eq_one]
+  exact Iff.trans (by simp) Iff.rfl
+
+theorem vLive_eq (stp : BitVec 32) : vLive stp = 1 ↔ stp = 0 := by
+  have h : vLive stp = BitVec.ofBool (decide (stp = 0)) := rfl
+  rw [h, ofBool_eq_one]
+  exact Iff.trans (by simp) Iff.rfl
+
+theorem vByte_toNat (b : UInt8) : (vByte b).toNat = b.toNat := by
+  simp only [vByte, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (UInt8.toNat_lt b)]
+
+theorem vB32_toNat (b : UInt8) : (vB32 b).toNat = b.toNat := by
+  have hb : b.toNat < 2 ^ 8 := UInt8.toNat_lt b
+  have h2 : b.toNat < 2 ^ 32 := by omega
+  simp only [vB32, vByte, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hb, Nat.mod_eq_of_lt h2]
+
+theorem vAsc_eq (b : UInt8) : vAsc b = 1 ↔ b < 0x80 := by
+  have h : vAsc b = BitVec.ofBool (decide ((vByte b).toNat < 128)) := rfl
+  rw [h, ofBool_eq_one, vByte_toNat, UInt8.lt_iff_toNat_lt]
+  simp
+
+theorem vLov_toNat (lo : BitVec 32) : (vLov lo).toNat = lo.toNat % 256 := by
+  have h : (vLov lo).toNat = lo.toNat &&& 255 := by
+    rw [vLov, BitVec.toNat_and]; rfl
+  rw [h, show (255 : Nat) = 2 ^ 8 - 1 from by decide, Nat.and_two_pow_sub_one_eq_mod]
+
+theorem vHiv_toNat (hi : BitVec 32) : (vHiv hi).toNat = hi.toNat % 256 := by
+  have h : (vHiv hi).toNat = hi.toNat &&& 255 := by
+    rw [vHiv, BitVec.toNat_and]; rfl
+  rw [h, show (255 : Nat) = 2 ^ 8 - 1 from by decide, Nat.and_two_pow_sub_one_eq_mod]
+
+/-! ### Bytes, through the finite domain -/
+
+theorem vQ4_eq (b : UInt8) : vQ4 b = (if IsQuoteB b then 1 else 0) := by
+  have hall : (List.range 256).all
+      (fun n => decide (vQ4 (UInt8.ofNat n) = (if IsQuoteB (UInt8.ofNat n) then 1 else 0)))
+      = true := by decide
+  have hmem : b.toNat ∈ List.range 256 := List.mem_range.mpr (by have := b.toNat_lt; omega)
+  rw [← UInt8.ofNat_toNat (x := b)]
+  exact of_decide_eq_true ((List.all_eq_true.mp hall) b.toNat hmem)
+
+theorem vS4_eq (b : UInt8) : vS4 b = (if IsBackslashB b then 1 else 0) := by
+  have hall : (List.range 256).all
+      (fun n => decide (vS4 (UInt8.ofNat n) = (if IsBackslashB (UInt8.ofNat n) then 1 else 0)))
+      = true := by decide
+  have hmem : b.toNat ∈ List.range 256 := List.mem_range.mpr (by have := b.toNat_lt; omega)
+  rw [← UInt8.ofNat_toNat (x := b)]
+  exact of_decide_eq_true ((List.all_eq_true.mp hall) b.toNat hmem)
+
+theorem vC4_eq (b : UInt8) : vC4 b = (if decide (b < 0x20) then 1 else 0) := by
+  have hall : (List.range 256).all
+      (fun n => decide (vC4 (UInt8.ofNat n) = (if decide (UInt8.ofNat n < 0x20) then 1 else 0)))
+      = true := by decide
+  have hmem : b.toNat ∈ List.range 256 := List.mem_range.mpr (by have := b.toNat_lt; omega)
+  rw [← UInt8.ofNat_toNat (x := b)]
+  exact of_decide_eq_true ((List.all_eq_true.mp hall) b.toNat hmem)
+
+/-- The nine lead classes, as the rule's count and bounds: the byte's own value
+picks them, and the rule's three selects pick the same ones. -/
+theorem leadClass_agrees (b : UInt8) (hlo : 194 ≤ b) (hhi : b ≤ 244) :
+    Utf8Need.step .none b =
+      some (.more (vNc b).toNat (byteOf (vLc b)) (byteOf (vHc b))) := by
+  have hall : (List.range 256).all (fun n => decide
+      (194 ≤ UInt8.ofNat n → UInt8.ofNat n ≤ 244 →
+        Utf8Need.step .none (UInt8.ofNat n) =
+          some (.more (vNc (UInt8.ofNat n)).toNat (byteOf (vLc (UInt8.ofNat n)))
+            (byteOf (vHc (UInt8.ofNat n)))))) = true := by decide
+  have hmem : b.toNat ∈ List.range 256 := List.mem_range.mpr (by have := b.toNat_lt; omega)
+  rw [← UInt8.ofNat_toNat (x := b)]
+  have h := (List.all_eq_true.mp hall) b.toNat hmem
+  exact of_decide_eq_true h (by simpa using hlo) (by simpa using hhi)
+
+theorem noLeadClass_agrees (b : UInt8) (hlo : 128 ≤ b) (hout : ¬ (194 ≤ b ∧ b ≤ 244)) :
+    Utf8Need.step .none b = (Option.none : Option Utf8Need) := by
+  have hall : (List.range 256).all (fun n => decide
+      (128 ≤ UInt8.ofNat n → ¬ (194 ≤ UInt8.ofNat n ∧ UInt8.ofNat n ≤ 244) →
+        Utf8Need.step .none (UInt8.ofNat n) = (Option.none : Option Utf8Need))) = true := by decide
+  have hmem : b.toNat ∈ List.range 256 := List.mem_range.mpr (by have := b.toNat_lt; omega)
+  rw [← UInt8.ofNat_toNat (x := b)]
+  have h := (List.all_eq_true.mp hall) b.toNat hmem
+  exact of_decide_eq_true h (by simpa using hlo) (by simpa using hout)
+
+theorem step_none_ascii (b : UInt8) (h : b < 0x80) :
+    Utf8Need.step .none b = some Utf8Need.none := by
+  have hall : (List.range 256).all (fun n => decide
+      (UInt8.ofNat n < 0x80 → Utf8Need.step .none (UInt8.ofNat n) = some Utf8Need.none))
+      = true := by decide
+  have hmem : b.toNat ∈ List.range 256 := List.mem_range.mpr (by have := b.toNat_lt; omega)
+  rw [← UInt8.ofNat_toNat (x := b)]
+  have hh := (List.all_eq_true.mp hall) b.toNat hmem
+  exact of_decide_eq_true hh (by simpa using h)
+
+/-! ### Slot words -/
+
+theorem byteOf_and_255 (w : BitVec 32) : byteOf (w &&& BitVec.ofNat 32 255) = byteOf w := by
+  show byteOf (vLov w) = byteOf w
+  unfold byteOf
+  rw [vLov_toNat]
+  have h : UInt8.ofNat w.toNat = UInt8.ofNat (w.toNat % 256) := by
+    apply UInt8.toNat_inj.mp
+    unfold UInt8.ofNat
+    show (BitVec.ofNat 8 w.toNat).toNat = (BitVec.ofNat 8 (w.toNat % 256)).toNat
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    exact (Nat.mod_mod w.toNat 256).symm
+  rw [h]
+
+theorem decodeState_trunc (f nw lo hi : BitVec 32) :
+    decodeState ⟨f, nw, lo &&& BitVec.ofNat 32 255, hi &&& BitVec.ofNat 32 255⟩ =
+      decodeState ⟨f, nw, lo, hi⟩ := by
+  simp only [decodeState, byteOf_and_255]
+
+theorem toNat_one32 : (1 : BitVec 32).toNat = 1 := by decide
+
+theorem sub_one_toNat {nw : BitVec 32} (h : nw ≠ 0) : (nw - 1).toNat = nw.toNat - 1 := by
+  have hnz : nw.toNat ≠ 0 := by
+    intro hz
+    exact h (BitVec.toNat_eq.mpr (by simpa using hz))
+  have h1 : (1 : BitVec 32) ≤ nw := by
+    rw [BitVec.le_def, toNat_one32]
+    omega
+  rw [BitVec.toNat_sub_of_le h1, toNat_one32]
+
+theorem decodeState_count (f nw : BitVec 32) (hnw : nw ≠ 0) :
+    decodeState ⟨f, nw - 1, BitVec.ofNat 32 128, BitVec.ofNat 32 191⟩ =
+      (⟨f.getLsbD 0, f.getLsbD 1,
+        (if nw.toNat ≤ 1 then Utf8Need.none
+         else Utf8Need.more (nw.toNat - 1) 0x80 0xBF)⟩ : BodyState) := by
+  have hn1 : 1 ≤ nw.toNat := by
+    have : nw.toNat ≠ 0 := by
+      intro hz
+      exact hnw (BitVec.toNat_eq.mpr (by simpa using hz))
+    omega
+  simp only [decodeState, byteOf, BitVec.toNat_ofNat]
+  rw [sub_one_toNat hnw]
+  by_cases h : nw.toNat ≤ 1
+  · have h1 : nw.toNat - 1 = 0 := by omega
+    simp [h, h1]
+  · have h1 : nw.toNat - 1 ≠ 0 := by omega
+    simp [h, h1]
+
+theorem decodeState_of_count (f count lo hi : BitVec 32) (n : Nat) (lo' hi' : UInt8)
+    (hnc : count.toNat = n) (hn0 : n ≠ 0) (hlo : lo' = byteOf lo) (hhi : hi' = byteOf hi) :
+    decodeState ⟨f, count, lo, hi⟩ =
+      (⟨f.getLsbD 0, f.getLsbD 1, .more n lo' hi'⟩ : BodyState) := by
+  simp only [decodeState, hnc, hlo, hhi, if_neg hn0]
+
+theorem byteOf_toNat (w : BitVec 32) : (byteOf w).toNat = w.toNat % 256 := by
+  unfold byteOf
+  exact UInt8.toNat_ofNat
+
+/-! ### The rule's predicates as plain `if`s
+
+The semantics builds every comparison as `BitVec.ofBool (decide p)`, whose
+`if` cannot be reduced by a hypothesis about `p`.  Each predicate below is
+restated as an `if` on the proposition, so a leaf proof's hypotheses decide it. -/
+
+theorem bit_ite_of (p : Prop) [Decidable p] :
+    BitVec.ofBool (decide p) = (if p then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  by_cases h : p <;> simp [h, BitVec.ofBool]
+
+theorem bit_ite_and_ite (p q : Prop) [Decidable p] [Decidable q] :
+    ((if p then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) &&&
+      (if q then BitVec.ofNat 1 1 else BitVec.ofNat 1 0)) =
+      (if p ∧ q then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  by_cases hp : p <;> by_cases hq : q <;> simp [hp, hq]
+
+theorem bit_ite_xor_one (p : Prop) [Decidable p] :
+    ((if p then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) ^^^ BitVec.ofNat 1 1) =
+      (if ¬p then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  by_cases hp : p <;> simp [hp]
+
+theorem ite_one_eq_one (p : Prop) [Decidable p] :
+    ((if p then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) = BitVec.ofNat 1 1) ↔ p := by
+  by_cases h : p <;> simp [h]
+
+theorem ite_one_eq_zero (p : Prop) [Decidable p] :
+    ((if p then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) = BitVec.ofNat 1 0) ↔ ¬p := by
+  by_cases h : p <;> simp [h]
+
+theorem bit_one_and (x : BitVec 1) : BitVec.ofNat 1 1 &&& x = x := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rw [h] <;> decide
+
+theorem bit_and_one_r (x : BitVec 1) : x &&& BitVec.ofNat 1 1 = x := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rw [h] <;> decide
+
+theorem bit_zero_and (x : BitVec 1) : BitVec.ofNat 1 0 &&& x = BitVec.ofNat 1 0 := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rw [h] <;> decide
+
+theorem bit_and_zero_r (x : BitVec 1) : x &&& BitVec.ofNat 1 0 = BitVec.ofNat 1 0 := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rw [h] <;> decide
+
+theorem vMre_ite (nw : BitVec 32) : vMre nw = (if nw = 0 then BitVec.ofNat 1 0 else BitVec.ofNat 1 1) := by
+  rw [show vMre nw = BitVec.ofBool (decide (nw ≠ 0)) from rfl, bit_ite_of]
+  by_cases h : nw = 0 <;> simp [h]
+
+theorem vNmre_ite (nw : BitVec 32) : vNmre nw = (if nw = 0 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) :=
+  (show vNmre nw = BitVec.ofBool (decide (nw = 0)) from rfl).trans (bit_ite_of _)
+
+theorem vInn_ite (f : BitVec 32) : vInn f = (if f.getLsbD 0 = true then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  rw [show vInn f = BitVec.ofBool (decide ((f &&& 1) ≠ 0)) from rfl, bit_ite_of]
+  by_cases h : f.getLsbD 0 = true
+  · rw [if_pos ((vec_and_one_ne_zero f).mpr h), if_pos h]
+  · rw [if_neg (fun hh => h ((vec_and_one_ne_zero f).mp hh)), if_neg h]
+
+theorem vOdd_ite (f : BitVec 32) : vOdd f = (if f.getLsbD 1 = true then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  rw [show vOdd f = BitVec.ofBool (decide ((f &&& 2) ≠ 0)) from rfl, bit_ite_of]
+  by_cases h : f.getLsbD 1 = true
+  · rw [if_pos ((vec_and_two_ne_zero f).mpr h), if_pos h]
+  · rw [if_neg (fun hh => h ((vec_and_two_ne_zero f).mp hh)), if_neg h]
+
+theorem vLive_ite (stp : BitVec 32) : vLive stp = (if stp = 0 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) :=
+  (show vLive stp = BitVec.ofBool (decide (stp = 0)) from rfl).trans (bit_ite_of _)
+
+theorem vAsc_ite (b : UInt8) : vAsc b = (if b < 0x80 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  have h : vAsc b = BitVec.ofBool (decide ((vByte b).toNat < 128)) := rfl
+  rw [h, vByte_toNat, bit_ite_of]
+  by_cases hb : b < 0x80
+  · rw [if_pos (show b.toNat < 128 from by rw [UInt8.lt_iff_toNat_lt] at hb; simpa using hb),
+      if_pos hb]
+  · rw [if_neg (show ¬ (b.toNat < 128) from by rw [UInt8.lt_iff_toNat_lt] at hb; simpa using hb),
+      if_neg hb]
+
+theorem vQ4_ite (b : UInt8) : vQ4 b = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := vQ4_eq b
+
+theorem vS4_ite (b : UInt8) : vS4 b = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := vS4_eq b
+
+theorem vC4_ite (b : UInt8) : vC4 b = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  rw [vC4_eq]
+  by_cases h : b < 0x20 <;> simp [h]
+
+theorem vLge_ite (b : UInt8) : vLge b = (if 194 ≤ b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  have h : vLge b = BitVec.ofBool (decide (194 ≤ (vByte b).toNat)) := rfl
+  rw [h, vByte_toNat, bit_ite_of]
+  by_cases hb : 194 ≤ b
+  · rw [if_pos (show 194 ≤ b.toNat from by rw [UInt8.le_iff_toNat_le] at hb; simpa using hb),
+      if_pos hb]
+  · rw [if_neg (show ¬ (194 ≤ b.toNat) from by
+      rw [UInt8.le_iff_toNat_le] at hb; simpa using hb), if_neg hb]
+
+theorem vLle_ite (b : UInt8) : vLle b = (if b ≤ 244 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) := by
+  have h : vLle b = BitVec.ofBool (decide ((vByte b).toNat ≤ 244)) := rfl
+  rw [h, vByte_toNat, bit_ite_of]
+  by_cases hb : b ≤ 244
+  · rw [if_pos (show b.toNat ≤ 244 from by rw [UInt8.le_iff_toNat_le] at hb; simpa using hb),
+      if_pos hb]
+  · rw [if_neg (show ¬ (b.toNat ≤ 244) from by
+      rw [UInt8.le_iff_toNat_le] at hb; simpa using hb), if_neg hb]
+
+theorem vIlo_ite (b : UInt8) (lo : BitVec 32) : vIlo b lo = (if byteOf lo ≤ b then 1 else 0) := by
+  have h : vIlo b lo = BitVec.ofBool (decide ((vLov lo).toNat ≤ (vB32 b).toNat)) := rfl
+  rw [h, vB32_toNat, vLov_toNat, bit_ite_of]
+  by_cases hb : byteOf lo ≤ b
+  · have h1 : lo.toNat % 256 ≤ b.toNat := by
+      rw [UInt8.le_iff_toNat_le, byteOf_toNat] at hb
+      exact hb
+    rw [if_pos h1, if_pos hb]
+    decide
+  · have h1 : ¬ (lo.toNat % 256 ≤ b.toNat) := by
+      rw [UInt8.le_iff_toNat_le, byteOf_toNat] at hb
+      exact hb
+    rw [if_neg h1, if_neg hb]
+    decide
+
+theorem vIhi_ite (b : UInt8) (hi : BitVec 32) : vIhi b hi = (if b ≤ byteOf hi then 1 else 0) := by
+  have h : vIhi b hi = BitVec.ofBool (decide ((vB32 b).toNat ≤ (vHiv hi).toNat)) := rfl
+  rw [h, vB32_toNat, vHiv_toNat, bit_ite_of]
+  by_cases hb : b ≤ byteOf hi
+  · have h1 : b.toNat ≤ hi.toNat % 256 := by
+      rw [UInt8.le_iff_toNat_le, byteOf_toNat] at hb
+      exact hb
+    rw [if_pos h1, if_pos hb]
+    decide
+  · have h1 : ¬ (b.toNat ≤ hi.toNat % 256) := by
+      rw [UInt8.le_iff_toNat_le, byteOf_toNat] at hb
+      exact hb
+    rw [if_neg h1, if_neg hb]
+    decide
+
+
+@[simp] theorem getLsbD_two_zero : (BitVec.ofNat 32 2).getLsbD 0 = false := by decide
+@[simp] theorem getLsbD_two_one : (BitVec.ofNat 32 2).getLsbD 1 = true := by decide
+@[simp] theorem getLsbD_one_zero : (BitVec.ofNat 32 1).getLsbD 0 = true := by decide
+@[simp] theorem getLsbD_one_one : (BitVec.ofNat 32 1).getLsbD 1 = false := by decide
+@[simp] theorem getLsbD_if_prop {w : Nat} (p : Prop) [Decidable p] (x y : BitVec w) (i : Nat) :
+    (if p then x else y).getLsbD i = if p then x.getLsbD i else y.getLsbD i := by
+  by_cases h : p <;> simp [h]
+
+theorem IsQuoteB_eq (b : UInt8) : IsQuoteB b = true ↔ b = 0x22 := by
+  unfold IsQuoteB
+  by_cases h : b = 0x22 <;> simp [h]
+
+theorem IsBackslashB_eq (b : UInt8) : IsBackslashB b = true ↔ b = 0x5C := by
+  unfold IsBackslashB
+  by_cases h : b = 0x5C <;> simp [h]
+
+theorem vFout_of_act (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    vFout stp b f nw lo hi qb sb cb = vF3 f nw qb sb := by
+  rw [vFout, if_pos hact]
+
+theorem vCout_of_act (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    vCout stp b f nw lo hi qb sb cb = vCw1 b f nw lo hi qb sb cb := by
+  rw [vCout, if_pos hact]
+
+theorem vLout_of_act (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    vLout stp b f nw lo hi qb sb cb = vLw1 b f nw lo hi qb sb cb := by
+  rw [vLout, if_pos hact]
+
+theorem vHout_of_act (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    vHout stp b f nw lo hi qb sb cb = vHw1 b f nw lo hi qb sb cb := by
+  rw [vHout, if_pos hact]
+
+
+macro "lane_simp" hs:( Lean.Parser.Tactic.simpLemma ),* : tactic =>
+  `(tactic| simp [vB64, vBt, vG64, vG128, vT0, vT1, vSh, vSb1, vStb, vMaskNext,
+     vLov, vHiv, vB32, vIrg, vNirg, vUok, vUbad, vNod, vNodd, vNpm, vAq, vAqo, vAqc, vNinn,
+     vNq, vNpq, vAbs, vAbsin, vNbs, vNpb, vIb, vNcb, vActl, vLeadb, vNasc, vLead,
+     vLok, vNlok, vLbad, vLset, vSk0, vSk1, vSk2, vSk3, vSk4, vSkip,
+     vB3, vB2, vN3v, vNc, vE0, vF0, vLc0, vLc, vQ1b, vQ2b, vHc0, vHc,
+     vLane1, vWcl, vWct, vWbd, vBad8, vSw0, vSw1, vSw2, vRas, vRas2, vRaise,
+     vStp0, vStpn, vNact, vNw0, vFc0, vF1, vFq1, vF2, vFb1, vF3, vCw0, vCw1,
+     vLw0, vLw1, vHw0, vHw1,
+     vMre_ite, vNmre_ite, vInn_ite, vOdd_ite, vLive_ite, vAsc_ite, vQ4_ite, vS4_ite,
+     vC4_ite, vLge_ite, vLle_ite, vIlo_ite, vIhi_ite,
+     ite_one_eq_one, ite_one_eq_zero, bit_ite_and_ite, bit_ite_xor_one,
+     bit_one_and, bit_and_one_r, bit_zero_and, bit_and_zero_r,
+     BitVec.getLsbD_and, BitVec.getLsbD_or, BitVec.getLsbD_xor, $hs,*])
+
+set_option maxHeartbeats 8000000 in
+/-- **The bridge, on the pending-requirement arm.**  While a UTF-8 requirement
+is outstanding the rule's four words decode to the state `bodyStep` steps the
+carry to when the byte continues the requirement, and to the carry again when it
+does not.  This is the arm the lane reaches with `nw ≠ 0`; the no-requirement
+arm's nine branches are not proved here. -/
+theorem ruleBridge_pending (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hstp : stp = 0) (hskip : vSkip b f nw qb sb cb = BitVec.ofNat 1 0)
+    (hnw : nw.toNat ≠ 0) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (match bodyStep (decodeState ⟨f, nw, lo, hi⟩) b with
+       | .cont st' => st'
+       | .closed => decodeState ⟨f, nw, lo, hi⟩
+       | .refused _ => decodeState ⟨f, nw, lo, hi⟩) := by
+  have hlive : vLive stp = 1 := by
+    rw [vLive_ite, if_pos hstp]; decide
+  have hnact : vNact b f nw qb sb cb = 1 := by
+    rw [vNact, hskip]; decide
+  have hact : vAct stp b f nw qb sb cb = 1 := by
+    rw [vAct, hlive, hnact]; decide
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  have hdec : decodeState ⟨f, nw, lo, hi⟩ = ⟨f.getLsbD 0, f.getLsbD 1,
+      (if nw.toNat = 0 then Utf8Need.none
+       else Utf8Need.more nw.toNat (byteOf lo) (byteOf hi))⟩ := rfl
+  rw [hdec, if_neg hnw]
+  by_cases hin : byteOf lo ≤ b ∧ b ≤ byteOf hi
+  · have hstep : bodyStep ⟨f.getLsbD 0, f.getLsbD 1,
+        Utf8Need.more nw.toNat (byteOf lo) (byteOf hi)⟩ b =
+        .cont ⟨f.getLsbD 0, f.getLsbD 1,
+          (if nw.toNat ≤ 1 then Utf8Need.none
+           else Utf8Need.more (nw.toNat - 1) 0x80 0xBF)⟩ := by
+      have hne : Utf8Need.more nw.toNat (byteOf lo) (byteOf hi) ≠ Utf8Need.none := by simp
+      simp only [bodyStep, Utf8Need.step, if_pos hne, if_pos hin]
+    rw [hstep]
+    have hnw0 : nw ≠ BitVec.ofNat 32 0 := fun h => hnw (by rw [h]; rfl)
+    lane_simp hnw, hnw0, hin
+    exact decodeState_count f nw hnw0
+  · have hstep : bodyStep ⟨f.getLsbD 0, f.getLsbD 1,
+        Utf8Need.more nw.toNat (byteOf lo) (byteOf hi)⟩ b = .refused .badUtf8 := by
+      have hne : Utf8Need.more nw.toNat (byteOf lo) (byteOf hi) ≠ Utf8Need.none := by simp
+      simp only [bodyStep, Utf8Need.step, if_pos hne, if_neg hin]
+    rw [hstep]
+    have hnw0 : nw ≠ BitVec.ofNat 32 0 := fun h => hnw (by rw [h]; rfl)
+    lane_simp hnw, hnw0, hin
+    rw [decodeState_trunc, hdec, if_neg hnw]
+    rfl
 
 end LeanLLVM.Refinement.JsonScanLane
