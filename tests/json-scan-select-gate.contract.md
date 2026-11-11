@@ -83,14 +83,17 @@ manifest's `json_scan_theorem` and `json_scan_contract`.  The manifest's global
 `LeanLLVM.Refinement.CommaMaskIR.IR_refines` and `LeanLLVM.Refinement.commaContract` for
 the baseline and the candidate.  The certificate's `axioms` field is the named
 theorem's pinned footprint in `LeanLLVMTest/` — **and nothing else**.  At this
-revision the pin does not exist, because the theorem the manifest names is not a
-declaration: `scanWindowLLVM_refines` appears in `JsonScanLane`'s module docstring
-and in `LeanLLVMTest/Refinement.lean`'s list of outstanding work.  So the gate
-**refuses and names the missing pin** rather than reading the selector's
-expectation in its place; the fixture cannot be built, and JS1 and JS2 are
-unreachable until the scanner theorem exists.  A gate that substituted the
-selector's set would have produced a certificate for a unit whose theorem is
-prose.
+revision the pin does not exist, and the reason is stronger than a missing
+statement: the statement is now a declaration, `JsonScanIR.scanWindowStatement`,
+and it is **refuted** — `scanWindowStatement_false` proves its negation at a
+witness that satisfies every hypothesis.  Two body defects account for it: the
+stop word's first-selection chain tests the bad-lead bit where the model tests
+the bad-continuation path, and the band hypothesis the docstring elides is
+load-bearing.  So the gate **refuses and names the missing pin** rather than
+reading the selector's expectation in its place; the fixture cannot be built, and
+JS1 and JS2 are unreachable until the scanner's body is corrected and the theorem
+restated.  A gate that substituted the selector's set would have produced a
+certificate for a unit whose theorem is false.
 
 ### JS1 — a strict `json_scan` request with a matching certificate installs the unit
 
