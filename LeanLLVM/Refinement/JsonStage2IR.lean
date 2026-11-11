@@ -1396,11 +1396,36 @@ def retCount (f : Function) : Nat :=
     | .ret _ _ => true
     | _ => false).length
 
+/-- The `llvm.lifetime.start` extents a body declares, as the register and the
+byte count it allocates.  The stage-2 record names the seven appended objects at
+these extents (`stage2StagedWrites`), so this is the instrument that keeps the
+record's numbers the body's: a fixture that resized an object fails the
+`#guard`s below at elaboration. -/
+def lifetimeExtents (f : Function) : List (String × Nat) :=
+  (f.blocks.flatMap (·.instrs)).filterMap fun i =>
+    match i with
+    | .callVoid "llvm.lifetime.start.p0"
+        [(Ty.int 64, Operand.imm (.int 64 s)), (Ty.ptr, Operand.reg r)] =>
+        some (r, s.toNat)
+    | _ => none
+
 #guard decide (stage2Body.blocks.length = 165)
 #guard decide ((stage2Body.blocks.flatMap (·.instrs)).length = 441)
 #guard decide (allocaTypes stage2Body = [Ty.int 64, Ty.int 32, Ty.int 64, Ty.int 64])
 #guard retCount stage2Body = 1
 #guard retsValued stage2Body
+
+-- The seven appended objects the walk writes are allocated for exactly the
+-- extents `stage2StagedWrites` names.  Each is the body's own `lifetime.start`,
+-- so a fixture that resized one of them fails here rather than leaving the
+-- record describing an object the body no longer has.
+#guard (lifetimeExtents stage2Body).lookup "%c.i" == some stage2CursorExtent
+#guard (lifetimeExtents stage2Body).lookup "%ctype.i" == some stage2StackExtent
+#guard (lifetimeExtents stage2Body).lookup "%cst.i" == some stage2StackExtent
+#guard (lifetimeExtents stage2Body).lookup "%t352.i" == some stage2TokenExtent
+#guard (lifetimeExtents stage2Body).lookup "%s" == some stage2StateExtent
+#guard (lifetimeExtents stage2Body).lookup "%z" == some stage2LogExtent
+#guard (lifetimeExtents stage2Body).lookup "%e" == some stage2ErrorExtent
 
 /-- **The pinned body returns a value at every `ret`.**  The bridge to a call site
 needs it, and reading it off the pinned AST rather than asserting it is the
@@ -1431,6 +1456,17 @@ def hasAddImm (f : Function) (w v : Nat) : Bool :=
 #guard hasAddImm stage2Body 64 13     -- the event record's thirteen bytes
 #guard callCount stage2Body "llvm.trap" = 4
 #guard (callTargets stage2Body).count "llvm.memset.p0.i64" = 2
+
+-- The six symbols that fall through to the sub-unit selection, in the body's own
+-- first-call order.  `stage2Calls` resolves the lifetime markers, the two
+-- `memset`s and the trap; everything else is the parameter `sub`.  So the body's
+-- completion depends on `sub` at exactly these six and no others — which is why
+-- `Stage2WalkObligation` is not a statement about the pinned text alone.
+#guard (callTargets stage2Body).eraseDups.filter (fun s =>
+    s != "llvm.lifetime.start.p0" && s != "llvm.lifetime.end.p0" &&
+    s != "llvm.memset.p0.i64" && s != "llvm.trap") =
+  ["s2_init", "s2_value_pos", "s2_after_value", "s2_string_body",
+   "od_scalar_value", "num_fast_el1"]
 
 /-! ### The call environment
 
@@ -1481,10 +1517,12 @@ theorem stage2Calls_trap {sub : Calls} {args : List Value} {mem : Mem} {next : N
 
 `stage2.h` declares thirteen slots; the pinned body takes twenty-one.  The adapter
 is a definition, not a step: `stage2Args` appends the eight staging objects, and
-`Γ_stage2at` reads the record at the thirteen-slot prefix.  The eight objects'
-own staging is not a clause of the adapter — it is what the walk obligation's
-`Satisfies` hypothesis (stated at `Γ_stage2at`) is *about*, so a selection that
-satisfies it has, by that fact, whatever the body needs of those objects. -/
+`Γ_stage2at` reads the record's budget and post at the thirteen-slot prefix.  The
+eight objects' staging **is** a clause of the adapter (`stage2StagedPre`), because
+seven of them are written by the body: `%c.i`'s `k` field is the loop's first
+store (`while.body.i`), so a record that left them unstaged would contradict its
+own ownership claim one step in.  The thirteen-argument ABI cannot name them, so
+the adapter is the only place the staging can say it. -/
 
 /-- The eight staging objects, as the addresses the body receives. -/
 def stage2StagingArgs (d c ctype cst tok s z e : Nat) : List Value :=
@@ -1494,13 +1532,20 @@ def stage2StagingArgs (d c ctype cst tok s z e : Nat) : List Value :=
 def stage2Args (a13 : List Value) (d c ctype cst tok s z e : Nat) : List Value :=
   a13 ++ stage2StagingArgs d c ctype cst tok s z e
 
-/-- The record at the flattened body: the budget and both halves read at the
+/-- The record at the flattened body: the budget and the post read at the
 thirteen-slot prefix, and the precondition holds when the arguments are the ABI's
-followed by the eight staging objects. -/
+followed by the eight staging objects **and those objects are staged**.  Seven of
+the eight are written by the body — `%c.i`'s `k` field is the loop's first store —
+so the adapter cannot leave their staging unstated: `stage2StagedPre` gives
+presence at each of the seven extents and the separation of every staged object
+from every other, which is what the loop's region claim needs and what
+`Γ_stage2.pre`, at thirteen arguments, has no way to name. -/
 def Γ_stage2at (d c ctype cst tok s z e : Nat) : MemContract where
   budget := fun args mem => Γ_stage2.budget (args.take 13) mem
   pre := fun args mem next =>
-    ∃ a13, args = stage2Args a13 d c ctype cst tok s z e ∧ Γ_stage2.pre a13 mem next
+    ∃ a13, args = stage2Args a13 d c ctype cst tok s z e ∧
+      Γ_stage2.pre a13 mem next ∧
+      stage2StagedPre a13 mem c ctype cst tok s z e
   post := fun args mem next o => Γ_stage2.post (args.take 13) mem next o
 
 /-- The adapter's prefix is the ABI's argument list. -/
@@ -1509,15 +1554,18 @@ theorem stage2Args_take13 (a13 : List Value) (h : a13.length = 13)
     (stage2Args a13 d c ctype cst tok s z e).take 13 = a13 := by
   simp [stage2Args, stage2StagingArgs, h]
 
-/-- **The record's precondition is the adapter's.**  A caller whose thirteen
-arguments are in `Γ_stage2.pre` is in `Γ_stage2at.pre` at the appended form, with
-no side condition on the eight objects: the adapter constrains none, and the
-walk's obligation carries whatever they need. -/
+/-- **The record's precondition is the adapter's, and it constrains the eight
+appended objects.**  A caller whose thirteen arguments are in `Γ_stage2.pre` is in
+`Γ_stage2at.pre` at the appended form once the seven the walk writes are staged at
+their extents and every staged object is separate from every other.  That second
+hypothesis is not optional: `Γ_stage2.pre` names thirteen objects and the body
+writes seven more, so the adapter is the only place the staging can say it. -/
 theorem Γ_stage2at_pre {a13 : List Value} {mem : Mem} {next : Nat}
-    {d c ctype cst tok s z e : Nat} (h : Γ_stage2.pre a13 mem next) :
+    {d c ctype cst tok s z e : Nat} (h : Γ_stage2.pre a13 mem next)
+    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e) :
     (Γ_stage2at d c ctype cst tok s z e).pre
       (stage2Args a13 d c ctype cst tok s z e) mem next :=
-  ⟨a13, rfl, h⟩
+  ⟨a13, rfl, h, hstaged⟩
 
 /-! ### The bridge to a call site
 
@@ -1542,14 +1590,19 @@ theorem stage2Pre_length {args : List Value} {mem : Mem} {next : Nat}
   subst hargs
   rfl
 
-/-- **The walk resolves at the record, given its obligation and its pin.**  The
-`Satisfies` hypothesis is the walk's own obligation at the adapter's record — the
-thing this slice names and does not discharge; `retsValued` is read off the pinned
-AST by `stage2Body_retsValued`, so the only hypothesis a caller supplies is the
-walk. -/
+/-- **The walk resolves at the record, given its obligation, its pin, and the
+appended objects' staging.**  The `Satisfies` hypothesis is the walk's own
+obligation at the adapter's record — the thing this slice names and does not
+discharge; `retsValued` is read off the pinned AST by `stage2Body_retsValued`; and
+the staging hypothesis is the caller's: at thirteen arguments the ABI cannot name
+the seven objects the body writes, so the promise that they are staged is theirs'
+to make and is stated once here rather than per call. -/
 theorem satisfies_calls_stage2 (d c ctype cst tok s z e : Nat) {sub : Calls}
     (hwalk : Satisfies (stage2Calls sub) stage2Body
-      (Γ_stage2at d c ctype cst tok s z e)) :
+      (Γ_stage2at d c ctype cst tok s z e))
+    (hstaged : ∀ {args : List Value} {mem : Mem} {next : Nat},
+      Γ_stage2.pre args mem next →
+        stage2StagedPre args mem c ctype cst tok s z e) :
     CallSatisfies (envForStage2 d c ctype cst tok s z e sub) Γ_stage2
       "leanllvm_json_stage2" := by
   intro args mem next hpre
@@ -1557,7 +1610,7 @@ theorem satisfies_calls_stage2 (d c ctype cst tok s z e : Nat) {sub : Calls}
     satisfies_calls (calls := stage2Calls sub) (body := stage2Body)
       (Γ := Γ_stage2at d c ctype cst tok s z e) (sym := "leanllvm_json_stage2")
       hwalk stage2Body_retsValued (stage2Args args d c ctype cst tok s z e) mem next
-      (Γ_stage2at_pre hpre)
+      (Γ_stage2at_pre hpre (hstaged hpre))
   have htake : (stage2Args args d c ctype cst tok s z e).take 13 = args :=
     stage2Args_take13 args (stage2Pre_length hpre) d c ctype cst tok s z e
   exact ⟨r, by simpa [envForStage2] using hsome, by simpa [Γ_stage2at, htake] using hpost,
@@ -1578,13 +1631,15 @@ def Stage2WalkObligation (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
   Satisfies (stage2Calls sub) stage2Body (Γ_stage2at d c ctype cst tok s z e)
 
 /-- **The walk's obligation yields the record's post.**  At an argument list in
-`Γ_stage2.pre`, the obligation at the adapter's arguments completes the pinned
-body, and the outcome it reaches satisfies `Γ_stage2`'s post at the ABI's own
-thirteen values: the two are one proposition, related by `stage2Args_take13`, so a
-proof of the walk needs no second statement of what it owes. -/
+`Γ_stage2.pre` whose seven appended objects are staged, the obligation at the
+adapter's arguments completes the pinned body, and the outcome it reaches
+satisfies `Γ_stage2`'s post at the ABI's own thirteen values: the two are one
+proposition, related by `stage2Args_take13`, so a proof of the walk needs no
+second statement of what it owes. -/
 theorem stage2_walk_yields_record {d c ctype cst tok s z e : Nat} {sub : Calls}
     (hwalk : Stage2WalkObligation d c ctype cst tok s z e sub)
-    {a13 : List Value} {mem : Mem} {next : Nat} (hpre : Γ_stage2.pre a13 mem next) :
+    {a13 : List Value} {mem : Mem} {next : Nat} (hpre : Γ_stage2.pre a13 mem next)
+    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e) :
     ∃ v m,
       runFuel (stage2Calls sub)
           ((Γ_stage2at d c ctype cst tok s z e).budget
@@ -1593,7 +1648,7 @@ theorem stage2_walk_yields_record {d c ctype cst tok s z e : Nat} {sub : Calls}
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
         some (.ret v m) ∧
       Γ_stage2.post a13 mem next (.ret v m) := by
-  obtain ⟨hcom, hpost⟩ := hwalk _ _ _ (Γ_stage2at_pre hpre)
+  obtain ⟨hcom, hpost⟩ := hwalk _ _ _ (Γ_stage2at_pre hpre hstaged)
   obtain ⟨v, m, hrun⟩ := hcom
   refine ⟨v, m, hrun, ?_⟩
   have htake : (stage2Args a13 d c ctype cst tok s z e).take 13 = a13 :=

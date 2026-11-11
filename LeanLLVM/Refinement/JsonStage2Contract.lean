@@ -324,9 +324,166 @@ def stage2Writes (dst ndst' ev nev' ndst nev err : Nat) : List (Nat × Nat) :=
   [(dst, ndst' + stage2ArenaReserve), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
 
 /-- The frame as a predicate on locations, so the post's memory clause can be the
-region claim `Owns` rather than a list beside a second list. -/
+region claim `Owns` rather than a list beside a second list.
+
+**Its scope is the ABI's five write regions, and that is a fact about the wrapper,
+not about the flattened walk.**  `stage2Run_boundary` produces it from the walk's
+report at the extents the wrapper itself stores; the flattened body additionally
+writes the seven appended objects, whose frame is `stage2WalkFrame`.  So this
+frame is **not** the frame of `stage2Body`: an `Owns` at it does not survive the
+loop's first store (`%c.i + 32`).  Naming the seven here is blocked, not
+overlooked: the post is at the ABI's thirteen arguments, and the seven are the
+body's own parameters, so `stage2Boundary` has no witness for them and
+`Γ_stage2.pre` cannot stage them (`stage2StagedPre` states that staging at the
+adapter, `Γ_stage2at`).  `satisfies_calls_stage2` therefore yields the walk's
+record only under a caller-supplied staging of the seven, and the pipeline's
+staging does not name them — the separation of its own count slots from the walk's
+scratch is the missing clause, and it is one step outside this record. -/
 def stage2Frame (dst ndst' ev nev' ndst nev err : Nat) : Nat → Prop :=
   inRegions (stage2Writes dst ndst' ev nev' ndst nev err)
+
+/-! ### The appended objects the walk writes
+
+`stage2.h` declares thirteen slots and the emitted body takes twenty-one: the
+flattening appends eight staging objects (`stage2StagingArgs`), and the walk
+writes seven of them.  They are the **cursor record** `%c.i` (the five scalar
+fields at `+0/8/16/24/32`, the `memset` over `+40` and the `%e` pointer at
+`+1112`), the **two container stacks** `%ctype.i`/`%cst.i` (one byte per depth,
+bounded by the `MAXD` check's `519`), the **token** `%t352.i` (the position, the
+end, the kind and the gap), the **decoder state** `%s` (`%nep`, `%xp`, `%nxp` at
+`+56/72/80`), the **log** `%z` (the event pointer, its length and capacity, the
+hash, the arena's pointer, cursor and capacity) and the **error record** `%e`
+(the refusal offset at `+8`).  `%d.i` is appended too and written by neither the
+walk nor the initialisation.
+
+The extents below are the body's own `llvm.lifetime.start` sizes, read off the
+pinned AST by the `#guard`s in `JsonStage2IR`.  A frame that stops at
+`stage2Writes` omits every one of these objects, so no `Owns` at that frame
+survives the loop's first store — `while.body.i`'s write of its advanced index to
+`%c.i + 32`.  `stage2WalkFrame` is the frame that names them; `stage2Frame` is its
+prefix, which is why the record's post is a projection of the walk's claim and not
+a second region that can drift from it. -/
+
+/-- The cursor record `%c.i`. -/
+def stage2CursorExtent : Nat := 1192
+
+/-- Each container stack `%ctype.i`/`%cst.i`. -/
+def stage2StackExtent : Nat := 520
+
+/-- The token `%t352.i`. -/
+def stage2TokenExtent : Nat := 24
+
+/-- The decoder state `%s`. -/
+def stage2StateExtent : Nat := 120
+
+/-- The log `%z`. -/
+def stage2LogExtent : Nat := 64
+
+/-- The error record `%e`. -/
+def stage2ErrorExtent : Nat := 24
+
+/-- The seven appended objects the walk writes, at their extents, in the order
+`stage2StagingArgs` receives them. -/
+def stage2StagedWrites (c ctype cst tok s z e : Nat) : List (Nat × Nat) :=
+  [(c, stage2CursorExtent), (ctype, stage2StackExtent), (cst, stage2StackExtent),
+   (tok, stage2TokenExtent), (s, stage2StateExtent), (z, stage2LogExtent),
+   (e, stage2ErrorExtent)]
+
+/-- **The walk's whole touched extent**: the ABI's five write regions and the seven
+appended objects.  This is the extent the loop's region claim is about. -/
+def stage2WalkWrites (dst ndst' ev nev' ndst nev err c ctype cst tok s z e : Nat) :
+    List (Nat × Nat) :=
+  stage2Writes dst ndst' ev nev' ndst nev err ++
+    stage2StagedWrites c ctype cst tok s z e
+
+/-- **The walk's frame**: the region claim's predicate at the run's whole touched
+extent.  `stage2Frame` is its prefix (`stage2Writes_subset_walkWrites`).
+
+**Why the seven are in the frame, and why that is the correct statement rather
+than a widening that suits a proof.**  The eight appended parameters exist in the
+pinned text because the flattening turned structures and arrays into parameters:
+in the emitted `s2_walk` they are **stack slots**, and the caller never sees them.
+So the ABI's five regions are the caller's objects and the seven are the walk's own
+work space.  A frame that names both is **true of the pinned text** — the text
+really does store to `%c.i + 32`, `%ctype.i[sp]`, `%z + 8` and the rest — and
+**conservative about the source**, where those stores are to a frame the caller
+cannot observe either way.  The narrow frame is not "smaller"; it is false of the
+text it is stated about. -/
+def stage2WalkFrame (dst ndst' ev nev' ndst nev err c ctype cst tok s z e : Nat) :
+    Nat → Prop :=
+  inRegions (stage2WalkWrites dst ndst' ev nev' ndst nev err c ctype cst tok s z e)
+
+/-- The staged objects of `Γ_stage2at`: the thirteen ABI objects of
+`stage2Regions` and the seven appended ones.  Every pair is separate, which is
+what makes the walk's writes to the seven miss the arena and the event stream (and
+each other), and what keeps the document, the entry stream and the escape list
+readable while the walk writes. -/
+def stage2WalkRegions (b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+    c ctype cst tok s z e : Nat) : List (Nat × Nat) :=
+  stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err ++
+    stage2StagedWrites c ctype cst tok s z e
+
+/-- **The staging the flattened body's precondition asks of the appended
+objects**: the seven the walk writes are present at their extents, and every
+staged object — the thirteen ABI objects and the seven — is separate from every
+other.  It is stated at the argument list the record receives, so the numbers are
+the record's own; `ndst0` is read from the arena's cursor slot, exactly as
+`stage2Pre` reads it. -/
+def stage2StagedPre (args : List Value) (mem : Mem) (c ctype cst tok s z e : Nat) : Prop :=
+  (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, HasBytes mem r.1 r.2) ∧
+  match args with
+  | [.ptr b, .int 64 n, .ptr ep, .int 64 nep, .ptr xp, .int 64 nxp, .ptr dst,
+     .int 64 _, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err] =>
+      ∃ ndst0, readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
+        DisjointRegions
+          (stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0
+            ev evcap.toNat ndst nev err c ctype cst tok s z e)
+  | _ => False
+
+/-- The ABI frame is a prefix of the walk's. -/
+theorem stage2Writes_subset_walkWrites {dst ndst' ev nev' ndst nev err
+    c ctype cst tok s z e : Nat} :
+    ∀ r ∈ stage2Writes dst ndst' ev nev' ndst nev err,
+      r ∈ stage2WalkWrites dst ndst' ev nev' ndst nev err c ctype cst tok s z e :=
+  fun _ hr => List.mem_append_left _ hr
+
+/-- **A listed extent is present under the region claim.**  This is the only
+projection a region claim admits: presence is monotone in the region, so a listed
+interval's bytes are present; the unchanged half is *not* monotone in either
+direction, which is exactly why the record's frame had to be widened rather than
+projected.  `Owns (stage2WalkFrame …)` does **not** yield
+`Owns (stage2Frame …)`: the walk changes the seven appended objects, and those lie
+outside the narrow frame's unchanged half. -/
+theorem owns_extent_present {mem m : Mem} {rs : List (Nat × Nat)} {r : Nat × Nat}
+    (h : Owns (inRegions rs) mem m) (hr : r ∈ rs) : HasBytes m r.1 r.2 :=
+  readBytes_of_hasBytes m r.1 r.2 fun k hk =>
+    h.present (r.1 + k) ⟨r, hr, Nat.le_add_right _ _, Nat.add_lt_add_left hk _⟩
+
+/-- The seven staged objects' extents are the ones the record names, so a caller
+that has the staging has presence at each of them. -/
+theorem stage2StagedPre_present {args : List Value} {mem : Mem}
+    {c ctype cst tok s z e : Nat} (h : stage2StagedPre args mem c ctype cst tok s z e) :
+    HasBytes mem c stage2CursorExtent ∧ HasBytes mem ctype stage2StackExtent ∧
+      HasBytes mem cst stage2StackExtent ∧ HasBytes mem tok stage2TokenExtent ∧
+      HasBytes mem s stage2StateExtent ∧ HasBytes mem z stage2LogExtent ∧
+      HasBytes mem e stage2ErrorExtent := by
+  obtain ⟨hpres, -⟩ := h
+  have hc : (c, stage2CursorExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  have hctype : (ctype, stage2StackExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  have hcst : (cst, stage2StackExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  have htok : (tok, stage2TokenExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  have hst : (s, stage2StateExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  have hz : (z, stage2LogExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  have he : (e, stage2ErrorExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
+    simp [stage2StagedWrites]
+  exact ⟨hpres _ hc, hpres _ hctype, hpres _ hcst, hpres _ htok, hpres _ hst,
+    hpres _ hz, hpres _ he⟩
 
 /-! ### The budget -/
 
@@ -931,5 +1088,37 @@ rests on are the extraction steps' lemmas — `String.ofList_injective`,
 /-- info: 'LeanLLVM.Refinement.pipeline_satisfies_at_stage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms pipeline_satisfies_at_stage2
+
+/-- info: 'LeanLLVM.Refinement.stage2StagedWrites' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2StagedWrites
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkWrites' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2WalkWrites
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkFrame' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2WalkFrame
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkRegions' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2WalkRegions
+
+/-- info: 'LeanLLVM.Refinement.stage2StagedPre' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms stage2StagedPre
+
+/-- info: 'LeanLLVM.Refinement.stage2Writes_subset_walkWrites' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2Writes_subset_walkWrites
+
+/-- info: 'LeanLLVM.Refinement.owns_extent_present' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms owns_extent_present
+
+/-- info: 'LeanLLVM.Refinement.stage2StagedPre_present' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms stage2StagedPre_present
 
 end LeanLLVM.Refinement

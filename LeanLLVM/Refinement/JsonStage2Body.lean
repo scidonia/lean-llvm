@@ -1249,9 +1249,13 @@ theorem Γ_stage2at_budget (d c ctype cst tok s z e : Nat) {a13 : List Value}
   rw [stage2Args_take13 a13 hlen]
 
 /-- **The walk's completion at the record's own budget**, at the ABI's thirteen
-arguments.  Stated and not claimed: what discharges it is the loop. -/
+arguments, with the seven appended objects staged.  Stated and not claimed: what
+discharges it is the loop.  The staging hypothesis is not decorativeness — the
+body's first store is to `%c.i`, so a completion statement that did not stage the
+appended objects would be about a body whose stores could not be justified. -/
 def Stage2WalkCompletes (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
   ∀ a13 mem next, Γ_stage2.pre a13 mem next →
+    stage2StagedPre a13 mem c ctype cst tok s z e →
     ∃ v m, runFuel (stage2Calls sub) (stage2Budget a13 mem) stage2Body
       (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
       = some (.ret v m)
@@ -1259,7 +1263,7 @@ def Stage2WalkCompletes (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
 /-- **The standalone completion statement is the obligation's first conjunct**,
 beside the post's second.  The two directions are the adapter's precondition and
 `stage2Args_take13`: a caller's arguments are the flattened ones read at the
-thirteen-slot prefix, and the budget goes with them. -/
+thirteen-slot prefix, the staging goes with them, and the budget goes with both. -/
 theorem stage2WalkObligation_iff_completion (d c ctype cst tok s z e : Nat) (sub : Calls) :
     Stage2WalkObligation d c ctype cst tok s z e sub ↔
       Stage2WalkCompletes d c ctype cst tok s z e sub ∧
@@ -1270,10 +1274,11 @@ theorem stage2WalkObligation_iff_completion (d c ctype cst tok s z e : Nat) (sub
   constructor
   · intro h
     refine ⟨?_, ?_⟩
-    · intro a13 mem next hpre
+    · intro a13 mem next hpre hstaged
       have hlen : a13.length = 13 := stage2Pre_length hpre
       obtain ⟨v, m, hrun⟩ :=
-        (h (stage2Args a13 d c ctype cst tok s z e) mem next (Γ_stage2at_pre hpre)).1
+        (h (stage2Args a13 d c ctype cst tok s z e) mem next
+          (Γ_stage2at_pre hpre hstaged)).1
       refine ⟨v, m, ?_⟩
       simp only [Γ_stage2at] at hrun
       rw [stage2Args_take13 a13 hlen] at hrun
@@ -1281,12 +1286,12 @@ theorem stage2WalkObligation_iff_completion (d c ctype cst tok s z e : Nat) (sub
     · intro args mem next hpre o hbeh
       exact (h args mem next hpre).2 o hbeh
   · intro ⟨hcom, hpost⟩ args mem next hpre
-    obtain ⟨a13, hargs, hpre13⟩ := hpre
+    obtain ⟨a13, hargs, hpre13, hstaged⟩ := hpre
     subst hargs
     have hlen : a13.length = 13 := stage2Pre_length hpre13
     refine ⟨?_, hpost (stage2Args a13 d c ctype cst tok s z e) mem next
-      ⟨a13, rfl, hpre13⟩⟩
-    obtain ⟨v, m, hrun⟩ := hcom a13 mem next hpre13
+      ⟨a13, rfl, hpre13, hstaged⟩⟩
+    obtain ⟨v, m, hrun⟩ := hcom a13 mem next hpre13 hstaged
     refine ⟨v, m, ?_⟩
     simp only [Γ_stage2at]
     rw [stage2Args_take13 a13 hlen]
