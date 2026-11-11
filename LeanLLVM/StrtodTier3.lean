@@ -65,9 +65,23 @@ is `kernel/json/stage2.c:457-531`, and this module is the model of that path.
    walk's boundary comparisons (`overflow_test_eq`), so every decision the walk
    makes is the one this module proves exact.  The model of the path,
    `tier3Mag`, is those clamps and that one rounding, and
-   `tier3Mag_eq_roundMag` proves it on `roundMag`.  The walk's *traversal* --
-   the step-up/step-down loop over candidates -- is not modelled; see
-   `What is not proved` below.
+   `tier3Mag_eq_roundMag` proves it on `roundMag`.
+
+5. **The walk's traversal.**  The loop itself is modelled over bit patterns
+   (`walkStep`, from `stage2.c:769-813`): the decode, the boundary selection,
+   the step of one pattern, and the two escapes.  `bound2_up`, `bound2_down`
+   and `bound2_overflow` prove its boundaries are the `stk_cmp` boundaries the
+   code forms, and `valLtBoundary_iff_cmpWalk` reads each of them as a sign.
+   The stopping criterion is the rounding interval (`inInterval`), and it
+   selects one candidate: `inInterval_uniq`.  `step_fin_stop_self` and
+   `step_fin_stop_of_mem` make the body stop exactly at that candidate,
+   `step_fin_stop_next` and `step_fin_stop_pred` make the two tie branches hand
+   a midpoint to the even significand, `step_fin_move_next` and
+   `step_fin_move_pred` make each step move toward the interval, and
+   `stop_fin_interval`, `stop_zero_only` and `step_top_stop` read a stop back
+   as membership.  What still separates the loop from `tier3Mag` is the
+   identification of this lattice with `roundMag`'s, and the recursion down the
+   distance to the answer; see `What is not proved` below.
 
 ## The statement
 
@@ -1503,29 +1517,35 @@ theorem emittedRefinesOn_tier3 (read : Bytes → Option Decimal)
 The statement of record is proved for the model below, and three things stay
 outside it:
 
-* **The walk's traversal.**  The emitted conversion moves a candidate one
-  binary64 step at a time until the value lies in its rounding interval
-  (`kernel/json/stage2.c:766-833`).  This module models the magnitude
-  (`tier3Mag`) rather than that loop, so the loop's *termination at the
-  rounding* is not discharged here.  What is proved is its decision half: every
-  comparison it makes is one of the `stk_cmp` boundaries specified here
-  (`stkCmp_sticky_spec'`, `stkCmp_nosticky_spec`, `overflow_test_eq`).
+* **Two steps of the walk's traversal.**  The loop is modelled (`walkStep`,
+  `walkTicks`, `bound2`, `inInterval`, from `kernel/json/stage2.c:766-833`),
+  and the model's decision half is proved: the boundaries it compares against
+  are the `stk_cmp` boundaries this module specifies (`bound2_up`,
+  `bound2_down`, `bound2_overflow`, `valLtBoundary_iff_cmpWalk`), the interval
+  it stops in is a single candidate's (`inInterval_uniq`,
+  `inInterval_not_top`), the body stops exactly there
+  (`step_fin_stop_self`, `step_fin_stop_of_mem`), a midpoint tie is handed to
+  the even significand (`step_fin_stop_next`, `step_fin_stop_pred`), and every
+  step moves toward the interval (`step_fin_move_next`, `step_fin_move_pred`).
+  Two steps are still missing, and the new section's closing note states them.
 
-  Closing it needs a model of the loop over bit patterns -- the decode
-  `(be, frac) -> Code`, the boundary selection the emitted code makes
-  (`be = 0` or `m > 2 ^ 52` gives `(2 * m - 1, e - 1)`; `be = 1` gives
-  `(2 ^ 53 - 1, -1075)`; otherwise `(2 ^ 54 - 1, e - 2)`), the step `b +- 1`,
-  and the two escapes at `0` and at `infinity` -- together with the statement
+  The first is **naming the target**: `inInterval P d (bitsOf c)` for
+  `roundMag P d = .fin c`.  Its inequalities follow from `roundMag_nearest` at
+  the two neighbouring ticks, through the `distNum`--midpoint equivalence; its
+  tie clause is `roundMag_midpoint_even`, whose hypothesis needs `roundMag`'s
+  lattice to be the emitted ladder's at the value -- `binade P d = be + 51`,
+  hence `ulp P d = walkGap` and `lo P d` equal to the candidate's tick value.
+  That is arithmetic this module does not spell: the walk is over the pattern's
+  fields and `roundMag` over `binade`, `ulp`, `sig`, `lo` and `hi`.
 
-    every non-stopping step moves the candidate exactly one lattice point
-    toward `roundMag`'s answer, and the candidate it stops at is the one whose
-    rounding interval contains the value, a tie at a midpoint going to the even
-    significand,
-
-  which is `roundMag`'s own selection.  This obligation is self-contained:
-  unlike the proximity estimate below, it does not mention the platform's
-  arithmetic, because the step count is bounded by the distance from the start
-  to the answer whatever that start is.
+  The second is **the recursion**: `walkStep` is defined, but the walk itself is
+  not, so `walkStep` is not yet run to its stop.  The induction needs no more
+  than the three facts above -- a stop is the interval's candidate, a step up is
+  the value above the upper midpoint, a step down below the lower one -- each a
+  strict decrease of `(tgt - b) + (b - tgt)`; hence the step count is bounded by
+  the distance from `dbits(d)` to the answer whatever that start is, which is
+  the note's termination statement.  This part is self-contained: unlike the
+  proximity estimate below, it does not mention the platform's arithmetic.
 
 * **The reader.**  `to_double` reads the lexeme's bytes; the decomposition it
   accumulates is `Decimal.mantissa` and `Decimal.exponent`, which the window
@@ -1554,6 +1574,1830 @@ outside it:
   arithmetic, which this tree does not model -- the same class of
   outside-the-tree step tier 1 names for its single operation.
 -/
+
+/-! ### The ladder of bit patterns
+
+`kernel/json/stage2.c:768` starts the walk at the pattern of the double
+`dbits(d)` and steps it one pattern at a time (`b++` at lines 794 and 797,
+`b--` at lines 809 and 812) until a boundary test stops it (lines 770-782 for
+the two ends of the format, and 788, 792, 795, 807, 810 in the body).  The
+pattern's fields are the format's own: `(b >> 52) & 0x7ff` is the biased
+exponent, `b & ((1 << 52) - 1)` the trailing significand, and a zero exponent
+field means the leading bit is implicit. -/
+
+/-- The significand field's width, `1 << 52`. -/
+def sigBits : Nat := 2 ^ 52
+
+/-- `0x7ff0000000000000`, the pattern of an infinity: the largest exponent
+field with a zero significand. -/
+def infBits : Nat := 2047 * 2 ^ 52
+
+/-- `0x7fefffffffffffff`, the largest finite magnitude's pattern. -/
+def maxBits : Nat := infBits - 1
+
+theorem sigBits_eq : sigBits = 2 ^ 52 := rfl
+
+theorem infBits_eq : infBits = 2047 * 2 ^ 52 := rfl
+
+theorem maxBits_eq : maxBits = 2046 * 2 ^ 52 + (2 ^ 52 - 1) := by
+  have hsplit : (2047 : Nat) * 2 ^ 52 = 2046 * 2 ^ 52 + 2 ^ 52 := by
+    rw [show (2047 : Nat) = 2046 + 1 from by decide, Nat.add_mul, Nat.one_mul]
+  simp only [maxBits, infBits]
+  omega
+
+theorem infBits_pos : 0 < infBits := by
+  simp only [infBits]
+  exact Nat.mul_pos (by decide) (Nat.pow_pos (by decide))
+
+theorem maxBits_lt_infBits : maxBits < infBits := by
+  have hpos : 0 < infBits := by
+    simp only [infBits]
+    exact Nat.mul_pos (by decide) (Nat.pow_pos (by decide))
+  simp only [maxBits]
+  omega
+
+theorem maxBits_succ : maxBits + 1 = infBits := by
+  have hpos : 0 < infBits := by
+    simp only [infBits]
+    exact Nat.mul_pos (by decide) (Nat.pow_pos (by decide))
+  simp only [maxBits]
+  omega
+
+/-- The biased exponent field: the pattern's bits 52 to 62. -/
+def walkExp (b : Nat) : Nat := (b / 2 ^ 52) % 2048
+
+/-- The trailing significand field: the pattern's low 52 bits. -/
+def walkFrac (b : Nat) : Nat := b % 2 ^ 52
+
+/-- The significand the pattern denotes: the fraction field for a subnormal,
+with the implicit leading bit for a normal. -/
+def walkMant (b : Nat) : Nat :=
+  if walkExp b = 0 then walkFrac b else 2 ^ 52 + walkFrac b
+
+/-- The encoding the pattern denotes, in the specification's own fields. -/
+def walkCode (b : Nat) : Code := ⟨walkExp b, walkMant b⟩
+
+/-- The pattern's magnitude in ticks.  A pattern past the finite range reads
+through the same formula, so a pattern of the infinity field is `2 ^ 2098` in
+ticks -- the tick value of `2 ^ 1024`, which is what makes the ladder
+continuous across the top of the finite range. -/
+def walkTicks (b : Nat) : Nat := (walkCode b).ticks
+
+/-- The ladder's step at `b`: `t (b + 1) - t b`, one ulp of the binade the
+pattern sits in. -/
+def walkGap (b : Nat) : Nat := if walkExp b = 0 then 1 else 2 ^ (walkExp b - 1)
+
+/-! #### Quotient and remainder at a step
+
+The pattern's exponent and fraction fields are `b`'s quotient and remainder at
+`2 ^ 52`, so a step of the pattern moves the fraction by one and carries into
+the exponent at the field's edge. -/
+
+theorem div_add_one_of_mod_lt {a n : Nat} (hn : 0 < n) (h : a % n + 1 < n) :
+    (a + 1) / n = a / n := by
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have hdec : (a % n + 1) + n * (a / n) = a + 1 := by
+    rw [show (a % n + 1) + n * (a / n) = (n * (a / n) + a % n) + 1 from by ac_rfl, h1]
+  rw [← hdec, Nat.add_mul_div_left _ _ hn, Nat.div_eq_of_lt h, Nat.zero_add]
+
+theorem mod_add_one_of_mod_lt {a n : Nat} (h : a % n + 1 < n) :
+    (a + 1) % n = a % n + 1 := by
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have hdec : (a % n + 1) + n * (a / n) = a + 1 := by
+    rw [show (a % n + 1) + n * (a / n) = (n * (a / n) + a % n) + 1 from by ac_rfl, h1]
+  rw [← hdec, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt h]
+
+theorem div_add_one_of_mod_top {a n : Nat} (hn : 1 < n) (h : a % n = n - 1) :
+    (a + 1) / n = a / n + 1 := by
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have hmul : n * (a / n + 1) = a + 1 := by
+    rw [Nat.mul_add, Nat.mul_one]
+    have h2 : n * (a / n) + n = n * (a / n) + a % n + 1 := by omega
+    rw [h2, h1]
+  rw [← hmul, Nat.mul_div_right (a / n + 1) (by omega : 0 < n)]
+
+theorem mod_add_one_of_mod_top {a n : Nat} (hn : 0 < n) (h : a % n = n - 1) :
+    (a + 1) % n = 0 := by
+  have hmod : (a + 1) % n = (a % n + 1) % n := by
+    rw [Nat.add_mod]
+    rcases Nat.lt_or_ge 1 n with h2 | h2
+    · rw [Nat.mod_eq_of_lt h2]
+    · have h1 : n = 1 := by omega
+      subst h1
+      simp only [Nat.mod_one, Nat.add_zero]
+  rw [hmod, h, Nat.sub_add_cancel (by omega : 1 ≤ n), Nat.mod_self]
+
+theorem mod_sub_one_of_mod_pos {a n : Nat} (hn : 0 < n) (h : 0 < a % n) :
+    (a - 1) % n = a % n - 1 := by
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have key : (a % n - 1) + n * (a / n) + 1 = a := by
+    rw [show (a % n - 1) + n * (a / n) + 1 = (a % n - 1 + 1) + n * (a / n) from by
+        ac_rfl,
+      Nat.sub_add_cancel (by omega : 1 ≤ a % n), Nat.add_comm, h1]
+  have hdec : (a % n - 1) + n * (a / n) = a - 1 := Nat.eq_sub_of_add_eq key
+  rw [← hdec, Nat.add_mul_mod_self_left,
+    Nat.mod_eq_of_lt (by have := Nat.mod_lt a hn; omega)]
+
+theorem div_sub_one_of_mod_pos {a n : Nat} (hn : 0 < n) (ha : 0 < a) (h : 0 < a % n) :
+    (a - 1) / n = a / n := by
+  have hm := mod_sub_one_of_mod_pos hn h
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have h2 : n * ((a - 1) / n) + (a - 1) % n = a - 1 := Nat.div_add_mod (a - 1) n
+  rw [hm] at h2
+  have h2' : n * ((a - 1) / n) + a % n = a := by omega
+  have hq : n * ((a - 1) / n) = n * (a / n) := by omega
+  exact Nat.eq_of_mul_eq_mul_left hn hq
+
+theorem mul_div_exact {a n : Nat} (h1 : n * (a / n) + a % n = a) (h : a % n = 0) :
+    n * (a / n) = a := by omega
+
+theorem div_sub_one_of_mod_zero {a n : Nat} (hn : 1 < n) (ha : 0 < a) (h : a % n = 0) :
+    (a - 1) / n = a / n - 1 := by
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have hmul : n * (a / n) = a := mul_div_exact h1 h
+  have hq : 0 < a / n := by
+    rcases Nat.eq_zero_or_pos (a / n) with hz | hp
+    · rw [hz, Nat.mul_zero] at hmul
+      omega
+    · exact hp
+  have hnmul : n * (a / n - 1) = a - n := by
+    rw [Nat.mul_sub_left_distrib, Nat.mul_one, hmul]
+  have hle : n ≤ a := by
+    calc n = n * 1 := (Nat.mul_one n).symm
+      _ ≤ n * (a / n) := Nat.mul_le_mul_left n hq
+      _ = a := hmul
+  have hdec : n - 1 + n * (a / n - 1) = a - 1 := by
+    rw [hnmul]
+    omega
+  rw [← hdec, Nat.add_mul_div_left _ _ (by omega : 0 < n),
+    Nat.div_eq_of_lt (by omega), Nat.zero_add]
+
+theorem mod_sub_one_of_mod_zero {a n : Nat} (hn : 1 < n) (ha : 0 < a) (h : a % n = 0) :
+    (a - 1) % n = n - 1 := by
+  have h1 : n * (a / n) + a % n = a := Nat.div_add_mod a n
+  have hmul : n * (a / n) = a := mul_div_exact h1 h
+  have hq : 0 < a / n := by
+    rcases Nat.eq_zero_or_pos (a / n) with hz | hp
+    · rw [hz, Nat.mul_zero] at hmul
+      omega
+    · exact hp
+  have hnmul : n * (a / n - 1) = a - n := by
+    rw [Nat.mul_sub_left_distrib, Nat.mul_one, hmul]
+  have hle : n ≤ a := by
+    calc n = n * 1 := (Nat.mul_one n).symm
+      _ ≤ n * (a / n) := Nat.mul_le_mul_left n hq
+      _ = a := hmul
+  have hdec : n - 1 + n * (a / n - 1) = a - 1 := by
+    rw [hnmul]
+    omega
+  rw [← hdec, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt (by omega)]
+
+theorem walkExp_lt (b : Nat) : walkExp b < 2048 :=
+  Nat.mod_lt _ (by decide)
+
+theorem walkFrac_lt (b : Nat) : walkFrac b < 2 ^ 52 :=
+  Nat.mod_lt _ (Nat.pow_pos (by decide))
+
+theorem walkGap_pos (b : Nat) : 0 < walkGap b := by
+  unfold walkGap
+  split
+  · decide
+  · exact Nat.pow_pos (by decide)
+
+theorem walkMant_eq_zero {b : Nat} (h : walkExp b = 0) : walkMant b = walkFrac b := by
+  simp only [walkMant, h, reduceIte]
+
+theorem walkMant_eq_normal {b : Nat} (h : walkExp b ≠ 0) :
+    walkMant b = 2 ^ 52 + walkFrac b := by
+  simp only [walkMant, h, reduceIte]
+
+theorem walkTicks_eq_zero {b : Nat} (h : walkExp b = 0) : walkTicks b = walkFrac b := by
+  simp only [walkTicks, walkCode, Code.ticks, h, reduceIte, walkMant]
+
+theorem walkTicks_eq_normal {b : Nat} (h : walkExp b ≠ 0) :
+    walkTicks b = (2 ^ 52 + walkFrac b) * 2 ^ (walkExp b - 1) := by
+  simp only [walkTicks, walkCode, Code.ticks, h, reduceIte, walkMant]
+
+theorem walkGap_eq_zero {b : Nat} (h : walkExp b = 0) : walkGap b = 1 := by
+  simp only [walkGap, h, reduceIte]
+
+theorem walkGap_eq_normal {b : Nat} (h : walkExp b ≠ 0) :
+    walkGap b = 2 ^ (walkExp b - 1) := by
+  simp only [walkGap, h, reduceIte]
+
+theorem walkExp_def_of_lt {b : Nat} (hb : b < infBits) : walkExp b = b / 2 ^ 52 := by
+  unfold walkExp
+  rw [Nat.mod_eq_of_lt]
+  rw [Nat.div_lt_iff_lt_mul (Nat.pow_pos (by decide))]
+  calc b < 2047 * 2 ^ 52 := hb
+    _ ≤ 2048 * 2 ^ 52 := Nat.mul_le_mul_right _ (by decide)
+
+theorem walkExp_lt_2047 {b : Nat} (hb : b < infBits) : walkExp b < 2047 := by
+  rw [walkExp_def_of_lt hb, Nat.div_lt_iff_lt_mul (Nat.pow_pos (by decide))]
+  simpa only [infBits] using hb
+
+theorem walk_bits_decomp {b : Nat} (hb : b < infBits) :
+    walkExp b * 2 ^ 52 + walkFrac b = b := by
+  have h := Nat.div_add_mod b (2 ^ 52)
+  rw [Nat.mul_comm] at h
+  rw [walkExp_def_of_lt hb]
+  simpa only [walkFrac] using h
+
+theorem walkFrac_succ_of_frac_lt {b : Nat} (h : walkFrac b < 2 ^ 52 - 1) :
+    walkFrac (b + 1) = walkFrac b + 1 := by
+  have hlt : walkFrac b + 1 < 2 ^ 52 := by
+    have := walkFrac_lt b
+    omega
+  exact mod_add_one_of_mod_lt hlt
+
+theorem walkExp_succ_of_frac_lt {b : Nat} (h : walkFrac b < 2 ^ 52 - 1) :
+    walkExp (b + 1) = walkExp b := by
+  have hlt : walkFrac b + 1 < 2 ^ 52 := by
+    have := walkFrac_lt b
+    omega
+  unfold walkExp
+  rw [div_add_one_of_mod_lt (by decide : 0 < 2 ^ 52) hlt]
+
+theorem walkFrac_succ_of_frac_top {b : Nat} (h : walkFrac b = 2 ^ 52 - 1) :
+    walkFrac (b + 1) = 0 := by
+  simpa only [walkFrac] using mod_add_one_of_mod_top (by decide : 0 < 2 ^ 52) h
+
+theorem walkExp_succ_of_frac_top {b : Nat} (h : walkFrac b = 2 ^ 52 - 1)
+    (hb : b < infBits) : walkExp (b + 1) = walkExp b + 1 := by
+  have hlt : b / 2 ^ 52 + 1 < 2048 := by
+    have hle := walkExp_lt_2047 hb
+    rw [walkExp_def_of_lt hb] at hle
+    omega
+  unfold walkExp
+  rw [div_add_one_of_mod_top (by decide : 1 < 2 ^ 52) h,
+    mod_add_one_of_mod_lt (by omega : b / 2 ^ 52 % 2048 + 1 < 2048)]
+
+theorem walkFrac_pred_of_frac_pos {b : Nat} (h : 0 < walkFrac b) :
+    walkFrac (b - 1) = walkFrac b - 1 := by
+  simpa only [walkFrac] using mod_sub_one_of_mod_pos (by decide : 0 < 2 ^ 52) h
+
+theorem walkExp_pred_of_frac_pos {b : Nat} (h : 0 < walkFrac b) (hb : b < infBits) :
+    walkExp (b - 1) = walkExp b := by
+  have hpos : walkFrac b ≤ b := by
+    have := walk_bits_decomp hb
+    have hz : 0 ≤ walkExp b * 2 ^ 52 := Nat.zero_le _
+    omega
+  unfold walkExp
+  rw [div_sub_one_of_mod_pos (by decide : 0 < 2 ^ 52) (by omega) h]
+
+theorem walkFrac_pred_of_frac_zero {b : Nat} (h0 : 0 < b) (h : walkFrac b = 0) :
+    walkFrac (b - 1) = 2 ^ 52 - 1 := by
+  simpa only [walkFrac] using mod_sub_one_of_mod_zero (by decide : 1 < 2 ^ 52) h0 h
+
+theorem walkExp_pred_of_frac_zero {b : Nat} (h0 : 0 < b) (h : walkFrac b = 0)
+    (hb : b < infBits) : walkExp (b - 1) = walkExp b - 1 := by
+  have hpos : 0 < walkExp b := by
+    rcases Nat.eq_zero_or_pos (walkExp b) with hz | hp
+    · exfalso
+      have := walk_bits_decomp hb
+      rw [h, hz, Nat.zero_mul, Nat.zero_add] at this
+      omega
+    · exact hp
+  have hb2048 : b / 2 ^ 52 < 2048 := by
+    rw [← walkExp_def_of_lt hb]
+    exact walkExp_lt b
+  unfold walkExp
+  rw [div_sub_one_of_mod_zero (by decide : 1 < 2 ^ 52) (by omega) h,
+    Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+
+theorem walkExp_pred_le_2047 {b : Nat} (hb : b < infBits) (h0 : 0 < b) :
+    walkExp (b - 1) < 2047 := by
+  by_cases hz : walkFrac b = 0
+  · rw [walkExp_pred_of_frac_zero h0 hz hb]
+    have := walkExp_lt_2047 hb
+    omega
+  · have hp : 0 < walkFrac b := Nat.pos_of_ne_zero hz
+    rw [walkExp_pred_of_frac_pos hp hb]
+    exact walkExp_lt_2047 hb
+
+theorem two_pow_53_eq : (2 : Nat) ^ 53 = 2 ^ 52 + 2 ^ 52 := by
+  rw [show 53 = 52 + 1 from by decide, Nat.pow_succ, Nat.mul_two]
+
+theorem two_pow_52_add_pred : 2 ^ 52 + (2 ^ 52 - 1) = 2 ^ 53 - 1 := by
+  rw [← Nat.add_sub_assoc (by decide : 1 ≤ 2 ^ 52), two_pow_53_eq]
+
+theorem walkFrac_lt_pred {b : Nat} (h : walkFrac b ≠ 2 ^ 52 - 1) :
+    walkFrac b < 2 ^ 52 - 1 := by
+  have h1 : 2 ^ 52 - 1 + 1 = 2 ^ 52 := Nat.sub_one_add_one (by decide)
+  have h2 : walkFrac b < 2 ^ 52 := walkFrac_lt b
+  rw [← h1] at h2
+  exact Nat.lt_of_le_of_ne (Nat.le_of_lt_succ h2) h
+
+theorem two_pow_mul_shift {be : Nat} (h : 0 < be) :
+    2 ^ 52 * 2 ^ be = 2 ^ 53 * 2 ^ (be - 1) := by
+  rw [← Nat.pow_add, ← Nat.pow_add]
+  congr 1
+  omega
+
+theorem walkTicks_succ {b : Nat} (hb : b < infBits) :
+    walkTicks (b + 1) = walkTicks b + walkGap b := by
+  by_cases htop : walkFrac b = 2 ^ 52 - 1
+  · have hexp : walkExp (b + 1) = walkExp b + 1 := walkExp_succ_of_frac_top htop hb
+    have hfr : walkFrac (b + 1) = 0 := walkFrac_succ_of_frac_top htop
+    have hne : walkExp (b + 1) ≠ 0 := by rw [hexp]; exact Nat.succ_ne_zero _
+    rw [walkTicks_eq_normal hne, hfr, Nat.add_zero, hexp,
+      show walkExp b + 1 - 1 = walkExp b from by omega]
+    by_cases h0 : walkExp b = 0
+    · rw [walkGap_eq_zero h0, walkTicks_eq_zero h0, h0, Nat.pow_zero, Nat.mul_one,
+        htop]
+      exact (Nat.sub_one_add_one (by decide : (2 : Nat) ^ 52 ≠ 0)).symm
+    · rw [walkGap_eq_normal h0, walkTicks_eq_normal h0, htop, two_pow_52_add_pred,
+        two_pow_mul_shift (Nat.pos_of_ne_zero h0)]
+      rw [← Nat.succ_mul]
+      exact congrArg (· * 2 ^ (walkExp b - 1)) (Nat.succ_eq_add_one (2 ^ 53 - 1) ▸ by rfl)
+  · have hlt : walkFrac b < 2 ^ 52 - 1 := walkFrac_lt_pred htop
+    have hexp : walkExp (b + 1) = walkExp b := walkExp_succ_of_frac_lt hlt
+    have hfr : walkFrac (b + 1) = walkFrac b + 1 := walkFrac_succ_of_frac_lt hlt
+    by_cases h0 : walkExp b = 0
+    · rw [walkTicks_eq_zero (by rw [hexp]; exact h0), hfr, walkTicks_eq_zero h0,
+        walkGap_eq_zero h0]
+    · rw [walkTicks_eq_normal (by rw [hexp]; exact h0), hfr, hexp,
+        walkTicks_eq_normal h0, walkGap_eq_normal h0,
+        show 2 ^ 52 + (walkFrac b + 1) = (2 ^ 52 + walkFrac b) + 1 from by ac_rfl,
+        Nat.add_mul, Nat.one_mul]
+
+theorem walkTicks_pred {b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkTicks b = walkTicks (b - 1) + walkGap (b - 1) := by
+  have hstep := walkTicks_succ (b := b - 1) (by omega : b - 1 < infBits)
+  rwa [Nat.sub_add_cancel h0] at hstep
+
+
+/-! #### The significand's parity across a step -/
+
+theorem add_sub_one_of_lt {c r : Nat} (h : 0 < r) : c + (r - 1) = c + r - 1 := by omega
+
+theorem two_pow_52_mod_two : 2 ^ 52 % 2 = 0 := by decide
+
+theorem two_pow_52_add_mod_two (x : Nat) : (2 ^ 52 + x) % 2 = x % 2 := by
+  rw [Nat.add_mod, two_pow_52_mod_two, Nat.zero_add,
+    Nat.mod_eq_of_lt (Nat.mod_lt x (by decide))]
+
+theorem two_pow_52_pred_mod_two : (2 ^ 52 - 1) % 2 = 1 := by decide
+
+theorem two_pow_53_pred_mod_two : (2 ^ 53 - 1) % 2 = 1 := by decide
+
+theorem two_pow_54_eq : (2 : Nat) ^ 54 = 2 ^ 53 + 2 ^ 53 := by
+  rw [show 54 = 53 + 1 from by decide, Nat.pow_succ, Nat.mul_two]
+
+theorem two_pow_2098_eq : (2 : Nat) ^ 2098 = 2 ^ 53 * 2 ^ 2045 := by
+  rw [← Nat.pow_add]
+
+theorem walkMant_succ {b : Nat} (hb : b < infBits) :
+    walkMant (b + 1) = walkMant b + 1 ∨ walkMant (b + 1) = 2 ^ 52 := by
+  by_cases htop : walkFrac b = 2 ^ 52 - 1
+  · right
+    have hexp : walkExp (b + 1) = walkExp b + 1 := walkExp_succ_of_frac_top htop hb
+    have hfr : walkFrac (b + 1) = 0 := walkFrac_succ_of_frac_top htop
+    have hne : walkExp (b + 1) ≠ 0 := by rw [hexp]; exact Nat.succ_ne_zero _
+    rw [walkMant_eq_normal hne, hfr, Nat.add_zero]
+  · left
+    have hlt : walkFrac b < 2 ^ 52 - 1 := walkFrac_lt_pred htop
+    have hexp : walkExp (b + 1) = walkExp b := walkExp_succ_of_frac_lt hlt
+    have hfr : walkFrac (b + 1) = walkFrac b + 1 := walkFrac_succ_of_frac_lt hlt
+    by_cases h0 : walkExp b = 0
+    · rw [walkMant_eq_zero (by rw [hexp]; exact h0), walkMant_eq_zero h0, hfr]
+    · rw [walkMant_eq_normal (by rw [hexp]; exact h0), walkMant_eq_normal h0, hfr]
+      ac_rfl
+
+theorem walkMant_pred {b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkMant (b - 1) = walkMant b - 1 ∨ walkMant (b - 1) = 2 ^ 53 - 1 := by
+  by_cases hz : walkFrac b = 0
+  · have hexp : walkExp (b - 1) = walkExp b - 1 := walkExp_pred_of_frac_zero h0 hz hb
+    have hfr : walkFrac (b - 1) = 2 ^ 52 - 1 := walkFrac_pred_of_frac_zero h0 hz
+    by_cases hb1 : walkExp b = 1
+    · left
+      have hne : walkExp (b - 1) = 0 := by rw [hexp, hb1]
+      have hbne : walkExp b ≠ 0 := by omega
+      rw [walkMant_eq_zero hne, hfr, walkMant_eq_normal hbne, hz, Nat.add_zero]
+    · right
+      have hbne : walkExp b ≠ 0 := by
+        intro hz0
+        exfalso
+        have hdec := walk_bits_decomp hb
+        rw [hz0, hz, Nat.zero_mul, Nat.zero_add] at hdec
+        omega
+      have hne : walkExp (b - 1) ≠ 0 := by rw [hexp]; omega
+      rw [walkMant_eq_normal hne, hfr]
+      exact two_pow_52_add_pred
+  · have hp : 0 < walkFrac b := Nat.pos_of_ne_zero hz
+    left
+    have hexp : walkExp (b - 1) = walkExp b := walkExp_pred_of_frac_pos hp hb
+    have hfr : walkFrac (b - 1) = walkFrac b - 1 := walkFrac_pred_of_frac_pos hp
+    by_cases h0' : walkExp b = 0
+    · rw [walkMant_eq_zero (by rw [hexp]; exact h0'), walkMant_eq_zero h0', hfr]
+    · rw [walkMant_eq_normal (by rw [hexp]; exact h0'), walkMant_eq_normal h0', hfr,
+        add_sub_one_of_lt hp]
+
+theorem walkMant_succ_even {b : Nat} (hb : b < infBits) (h : walkMant b % 2 ≠ 0) :
+    walkMant (b + 1) % 2 = 0 := by
+  rcases walkMant_succ hb with h1 | h1
+  · rw [h1]; omega
+  · rw [h1, two_pow_52_mod_two]
+
+theorem walkMant_succ_not_both_even {b : Nat} (hb : b < infBits) :
+    ¬ (walkMant b % 2 = 0 ∧ walkMant (b + 1) % 2 = 0) := by
+  rintro ⟨h1, h2⟩
+  by_cases htop : walkFrac b = 2 ^ 52 - 1
+  · have hexp : walkExp (b + 1) = walkExp b + 1 := walkExp_succ_of_frac_top htop hb
+    have hfr : walkFrac (b + 1) = 0 := walkFrac_succ_of_frac_top htop
+    have hne : walkExp (b + 1) ≠ 0 := by rw [hexp]; exact Nat.succ_ne_zero _
+    rw [walkMant_eq_normal hne, hfr, Nat.add_zero] at h2
+    by_cases h0 : walkExp b = 0
+    · rw [walkMant_eq_zero h0, htop] at h1
+      rw [two_pow_52_pred_mod_two] at h1
+      exact absurd h1 (by decide)
+    · rw [walkMant_eq_normal h0, htop, two_pow_52_add_pred] at h1
+      rw [two_pow_53_pred_mod_two] at h1
+      exact absurd h1 (by decide)
+  · have hlt : walkFrac b < 2 ^ 52 - 1 := walkFrac_lt_pred htop
+    have hexp : walkExp (b + 1) = walkExp b := walkExp_succ_of_frac_lt hlt
+    have hfr : walkFrac (b + 1) = walkFrac b + 1 := walkFrac_succ_of_frac_lt hlt
+    by_cases h0 : walkExp b = 0
+    · rw [walkMant_eq_zero h0] at h1
+      rw [walkMant_eq_zero (by rw [hexp]; exact h0), hfr] at h2
+      omega
+    · rw [walkMant_eq_normal h0, two_pow_52_add_mod_two] at h1
+      rw [walkMant_eq_normal (by rw [hexp]; exact h0), hfr,
+        two_pow_52_add_mod_two] at h2
+      omega
+
+theorem walkMant_pred_even {b : Nat} (hb : b < infBits)
+    (h : walkMant b % 2 ≠ 0) : walkMant (b - 1) % 2 = 0 := by
+  by_cases hz : walkFrac b = 0
+  · exfalso
+    by_cases hb1 : walkExp b = 0
+    · rw [walkMant_eq_zero hb1, hz] at h
+      exact h (by decide)
+    · rw [walkMant_eq_normal hb1, hz, Nat.add_zero, two_pow_52_mod_two] at h
+      exact h rfl
+  · have hp : 0 < walkFrac b := Nat.pos_of_ne_zero hz
+    have hexp : walkExp (b - 1) = walkExp b := walkExp_pred_of_frac_pos hp hb
+    have hfr : walkFrac (b - 1) = walkFrac b - 1 := walkFrac_pred_of_frac_pos hp
+    by_cases h0' : walkExp b = 0
+    · have hne' : walkExp (b - 1) = 0 := by rw [hexp, h0']
+      rw [walkMant_eq_zero hne', hfr]
+      rw [walkMant_eq_zero h0'] at h
+      omega
+    · have hne' : walkExp (b - 1) ≠ 0 := by rw [hexp]; omega
+      rw [walkMant_eq_normal hne', hfr, two_pow_52_add_mod_two]
+      rw [walkMant_eq_normal h0'] at h
+      rw [two_pow_52_add_mod_two] at h
+      omega
+
+/-! #### The ladder is strictly increasing -/
+
+theorem walkTicks_lt_succ {b : Nat} (hb : b < infBits) :
+    walkTicks b < walkTicks (b + 1) := by
+  rw [walkTicks_succ hb]
+  have := walkGap_pos b
+  omega
+
+theorem walkTicks_le_of_le {b b' : Nat} (h : b ≤ b') (hb' : b' ≤ infBits) :
+    walkTicks b ≤ walkTicks b' := by
+  induction b' using Nat.strongRecOn with
+  | ind n ih =>
+    rcases Nat.lt_or_ge b n with hlt | hge
+    · have hstep : walkTicks (n - 1) < walkTicks n := by
+        have hs := walkTicks_lt_succ (b := n - 1) (by omega : n - 1 < infBits)
+        rwa [Nat.sub_add_cancel (by omega : 1 ≤ n)] at hs
+      have hrec := ih (n - 1) (by omega) (by omega) (by omega)
+      omega
+    · have hbn : n = b := by omega
+      subst hbn
+      exact Nat.le_refl _
+
+theorem walkTicks_lt_of_lt {b b' : Nat} (h : b < b') (hb' : b' ≤ infBits) :
+    walkTicks b < walkTicks b' := by
+  have h1 : walkTicks b < walkTicks (b + 1) := walkTicks_lt_succ (by omega)
+  have h2 : walkTicks (b + 1) ≤ walkTicks b' := walkTicks_le_of_le (by omega) hb'
+  omega
+
+/-- Twice the midpoint above `b`: `t b + t (b + 1)`. -/
+def upTwice (b : Nat) : Nat := walkTicks b + walkTicks (b + 1)
+
+/-- Twice the midpoint below `b`: `t (b - 1) + t b`. -/
+def downTwice (b : Nat) : Nat := walkTicks (b - 1) + walkTicks b
+
+theorem downTwice_succ (b : Nat) : downTwice (b + 1) = upTwice b := by
+  simp only [downTwice, upTwice, Nat.succ_sub_one]
+
+theorem upTwice_lt_of_lt {b b' : Nat} (h : b < b') (hb' : b' < infBits) :
+    upTwice b < upTwice b' := by
+  unfold upTwice
+  exact Nat.add_lt_add (walkTicks_lt_of_lt h (by omega))
+    (walkTicks_lt_of_lt (by omega) (by omega))
+
+theorem upTwice_le_of_le {b b' : Nat} (h : b ≤ b') (hb' : b' < infBits) :
+    upTwice b ≤ upTwice b' := by
+  rcases Nat.eq_or_lt_of_le h with rfl | hlt
+  · exact Nat.le_refl _
+  · exact Nat.le_of_lt (upTwice_lt_of_lt hlt hb')
+
+theorem walkExp_infBits : walkExp infBits = 2047 := by
+  unfold walkExp infBits
+  rw [Nat.mul_comm, Nat.mul_div_right _ (Nat.pow_pos (by decide)),
+    Nat.mod_eq_of_lt (by decide)]
+
+theorem walkFrac_infBits : walkFrac infBits = 0 := by
+  unfold walkFrac infBits
+  rw [Nat.mul_comm, Nat.mul_mod_right]
+
+theorem walkTicks_infBits : walkTicks infBits = 2 ^ 2098 := by
+  rw [walkTicks_eq_normal (by rw [walkExp_infBits]; decide), walkFrac_infBits,
+    Nat.add_zero, walkExp_infBits, show 2047 - 1 = 2046 from rfl, ← Nat.pow_add]
+
+theorem walkExp_maxBits : walkExp maxBits = 2046 := by
+  have hdec : maxBits = 2 ^ 52 * 2046 + (2 ^ 52 - 1) := by
+    rw [maxBits_eq, Nat.mul_comm 2046 (2 ^ 52)]
+  unfold walkExp
+  rw [hdec, Nat.mul_add_div (by decide : 0 < 2 ^ 52), Nat.div_eq_of_lt (by omega),
+    Nat.add_zero, Nat.mod_eq_of_lt (by decide)]
+
+theorem walkFrac_maxBits : walkFrac maxBits = 2 ^ 52 - 1 := by
+  have hdec : maxBits = (2 ^ 52 - 1) + 2 ^ 52 * 2046 := by
+    rw [maxBits_eq, Nat.mul_comm 2046 (2 ^ 52), Nat.add_comm]
+  unfold walkFrac
+  rw [hdec, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt (by decide)]
+
+theorem walkMant_maxBits : walkMant maxBits = 2 ^ 53 - 1 := by
+  rw [walkMant_eq_normal (by rw [walkExp_maxBits]; decide), walkFrac_maxBits,
+    two_pow_52_add_pred]
+
+theorem walkTicks_maxBits : walkTicks maxBits = maxMagTicks := by
+  rw [walkTicks_eq_normal (by rw [walkExp_maxBits]; decide), walkFrac_maxBits,
+    walkExp_maxBits, two_pow_52_add_pred, show 2046 - 1 = 2045 from rfl, maxMagTicks]
+
+theorem upTwice_maxBits : upTwice maxBits = 2 * overflowTicks := by
+  unfold upTwice
+  rw [walkTicks_maxBits, maxBits_succ, walkTicks_infBits, maxMagTicks,
+    two_pow_2098_eq, two_overflowTicks, ← Nat.add_mul, two_pow_54_eq]
+  congr 1
+
+theorem upTwice_le_top {b : Nat} (hb : b ≤ maxBits) : upTwice b ≤ 2 * overflowTicks := by
+  rw [← upTwice_maxBits]
+  exact upTwice_le_of_le hb maxBits_lt_infBits
+
+/-! ### The boundaries the emitted code compares against
+
+The body's three comparisons (`stage2.c:787`, `:791`, `:806`) are against the
+candidate's own tick value and its two midpoints.  The midpoint above is
+`(2m + 1) * 2^(e - 1)` in every binade (`:791`); the midpoint below is the same
+shape except at the bottom of a normal binade, where the previous binade's ulp
+is the one to halve, so the code selects the shape by the binade
+(`:803-805`).  `bound2` reads a boundary `J * 2^eB` at twice the tick scale,
+which is the scale at which the boundary is the midpoint of two candidate
+ticks. -/
+
+/-- The comparison's exponent `e` (`stage2.c:786`): `be - 1075` for a normal,
+`-1074` for a subnormal. -/
+def walkE (b : Nat) : Int := if walkExp b = 0 then -1074 else (walkExp b : Int) - 1075
+
+theorem walkE_eq_zero {b : Nat} (h : walkExp b = 0) : walkE b = -1074 := by
+  simp only [walkE, h, reduceIte]
+
+theorem walkE_eq_normal {b : Nat} (h : walkExp b ≠ 0) :
+    walkE b = (walkExp b : Int) - 1075 := by
+  simp only [walkE, h, reduceIte]
+
+/-- `stage2.c:791`: the boundary above's significand, `2 * m + 1`. -/
+def upJ (b : Nat) : Nat := 2 * walkMant b + 1
+
+/-- `stage2.c:791`: the boundary above's exponent, `e - 1`. -/
+def upE (b : Nat) : Int := walkE b - 1
+
+/-- `stage2.c:803`: whether the boundary below is half an ulp of the
+candidate's own binade. -/
+def downSub (b : Nat) : Prop := walkExp b = 0 ∨ 0 < walkFrac b
+
+instance downSub_decidable (b : Nat) : Decidable (downSub b) :=
+  inferInstanceAs (Decidable (walkExp b = 0 ∨ 0 < walkFrac b))
+
+/-- `stage2.c:803-805`: the boundary below's significand. -/
+def downJ (b : Nat) : Nat :=
+  if downSub b then 2 * walkMant b - 1
+  else if walkExp b = 1 then 2 ^ 53 - 1
+  else 2 ^ 54 - 1
+
+/-- `stage2.c:803-805`: the boundary below's exponent. -/
+def downE (b : Nat) : Int :=
+  if downSub b then walkE b - 1
+  else if walkExp b = 1 then -1075
+  else walkE b - 2
+
+/-- A boundary `J * 2^eB` at twice the tick scale.  Every boundary the walk
+forms has `eB >= -1075`, so this is an integer. -/
+def bound2 (J : Nat) (eB : Int) : Nat := J * 2 ^ (eB + 1075).toNat
+
+theorem upE_toNat_zero {b : Nat} (h : walkExp b = 0) : (upE b + 1075).toNat = 0 := by
+  rw [upE, walkE_eq_zero h]
+  decide
+
+theorem upE_toNat_normal {b : Nat} (h : walkExp b ≠ 0) :
+    (upE b + 1075).toNat = walkExp b - 1 := by
+  have hb1 : 1 ≤ walkExp b := Nat.one_le_iff_ne_zero.mpr h
+  apply Int.natCast_inj.mp
+  rw [Int.toNat_of_nonneg (by rw [upE, walkE_eq_normal h]; omega),
+    Int.natCast_sub hb1, upE, walkE_eq_normal h]
+  omega
+
+theorem downE_toNat_sub {b : Nat} (h : walkExp b = 0) : (downE b + 1075).toNat = 0 := by
+  have hsub : downSub b := Or.inl h
+  rw [downE, ite_eq_left hsub, walkE_eq_zero h]
+  decide
+
+theorem downE_toNat_frac {b : Nat} (h0 : walkExp b ≠ 0) (hf : 0 < walkFrac b) :
+    (downE b + 1075).toNat = walkExp b - 1 := by
+  have hsub : downSub b := Or.inr hf
+  have hb1 : 1 ≤ walkExp b := Nat.one_le_iff_ne_zero.mpr h0
+  rw [downE, ite_eq_left hsub]
+  apply Int.natCast_inj.mp
+  rw [Int.toNat_of_nonneg (by rw [walkE_eq_normal h0]; omega), Int.natCast_sub hb1]
+  rw [walkE_eq_normal h0]
+  omega
+
+theorem downE_toNat_one {b : Nat} (h1 : walkExp b = 1) (hf : ¬ 0 < walkFrac b) :
+    (downE b + 1075).toNat = 0 := by
+  have hsub : ¬ downSub b := by
+    intro h
+    rcases h with h | h
+    · omega
+    · exact hf h
+  rw [downE, ite_eq_right hsub, ite_eq_left h1]
+  decide
+
+theorem downE_toNat_two {b : Nat} (h2 : 2 ≤ walkExp b) (hf : ¬ 0 < walkFrac b) :
+    (downE b + 1075).toNat = walkExp b - 2 := by
+  have hsub : ¬ downSub b := by
+    intro h
+    rcases h with h | h
+    · omega
+    · exact hf h
+  have h1 : ¬ walkExp b = 1 := by omega
+  rw [downE, ite_eq_right hsub, ite_eq_right h1]
+  apply Int.natCast_inj.mp
+  rw [Int.toNat_of_nonneg (by rw [walkE_eq_normal (by omega)]; omega),
+    Int.natCast_sub (by omega)]
+  rw [walkE_eq_normal (by omega)]
+  omega
+
+theorem bound2_up {b : Nat} (hb : b < infBits) : bound2 (upJ b) (upE b) = upTwice b := by
+  have hsucc := walkTicks_succ hb
+  by_cases h0 : walkExp b = 0
+  · rw [bound2, upJ, walkMant_eq_zero h0, upE_toNat_zero h0, Nat.pow_zero, Nat.mul_one,
+      upTwice, hsucc, walkTicks_eq_zero h0, walkGap_eq_zero h0]
+    omega
+  · rw [bound2, upJ, walkMant_eq_normal h0, upE_toNat_normal h0, upTwice, hsucc,
+      walkTicks_eq_normal h0, walkGap_eq_normal h0]
+    rw [show 2 * (2 ^ 52 + walkFrac b) + 1 = (2 ^ 52 + walkFrac b) + 1 + (2 ^ 52 + walkFrac b)
+        from by omega, Nat.add_mul, Nat.add_mul, Nat.one_mul]
+    ac_rfl
+
+theorem pred_double_mul {A k : Nat} (h : 0 < A) :
+    (2 * A - 1) * k = (A - 1) * k + A * k := by
+  rw [← Nat.add_mul]
+  congr 1
+  omega
+
+theorem top_double_mul (k : Nat) :
+    (2 ^ 54 - 1) * k = (2 ^ 53 - 1) * k + 2 ^ 53 * k := by
+  rw [← Nat.add_mul, two_pow_54_eq]
+  congr 1
+
+theorem two_pow_shift_down {be : Nat} (h : 2 ≤ be) :
+    2 ^ 52 * 2 ^ (be - 1) = 2 ^ 53 * 2 ^ (be - 2) := by
+  rw [← Nat.pow_add, ← Nat.pow_add]
+  congr 1
+  omega
+
+theorem walkTicks_two_pow_52 : walkTicks (2 ^ 52) = 2 ^ 52 := by
+  have hexp : walkExp (2 ^ 52) = 1 := by
+    unfold walkExp
+    rw [Nat.div_self (by decide : 0 < 2 ^ 52), Nat.mod_eq_of_lt (by decide)]
+  have hfr : walkFrac (2 ^ 52) = 0 := by
+    unfold walkFrac
+    exact Nat.mod_self _
+  rw [walkTicks_eq_normal (by rw [hexp]; decide), hfr, Nat.add_zero, hexp,
+    show 1 - 1 = 0 from rfl, Nat.pow_zero, Nat.mul_one]
+
+theorem bound2_down {b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    bound2 (downJ b) (downE b) = downTwice b := by
+  by_cases hz : walkFrac b = 0
+  · have hpos : 0 < walkExp b := by
+      rcases Nat.eq_zero_or_pos (walkExp b) with h | h
+      · exfalso
+        have hdec := walk_bits_decomp hb
+        rw [h, hz, Nat.zero_mul, Nat.zero_add] at hdec
+        omega
+      · exact h
+    have hsub : ¬ downSub b := by
+      intro hs
+      rcases hs with hs | hs
+      · omega
+      · omega
+    have hfr : walkFrac (b - 1) = 2 ^ 52 - 1 := walkFrac_pred_of_frac_zero h0 hz
+    have hexp' : walkExp (b - 1) = walkExp b - 1 := walkExp_pred_of_frac_zero h0 hz hb
+    by_cases hb1 : walkExp b = 1
+    · have hnat : (downE b + 1075).toNat = 0 := downE_toNat_one hb1 (by omega)
+      have hJ : downJ b = 2 ^ 53 - 1 := by
+        simp only [downJ, ite_eq_right hsub, ite_eq_left hb1]
+      have hb_eq : b = 2 ^ 52 := by
+        have hdec := walk_bits_decomp hb
+        rw [hb1, hz, Nat.one_mul, Nat.add_zero] at hdec
+        omega
+      have hz0 : walkExp (b - 1) = 0 := by rw [hexp', hb1, show 1 - 1 = 0 from rfl]
+      rw [bound2, hnat, Nat.pow_zero, Nat.mul_one, hJ, downTwice,
+        walkTicks_eq_zero hz0, hfr, hb_eq, walkTicks_two_pow_52]
+      exact two_pow_52_add_pred
+    · have hb2 : 2 ≤ walkExp b := by omega
+      have hnat : (downE b + 1075).toNat = walkExp b - 2 := downE_toNat_two hb2 (by omega)
+      have hJ : downJ b = 2 ^ 54 - 1 := by
+        simp only [downJ, ite_eq_right hsub, ite_eq_right hb1]
+      have hne' : walkExp (b - 1) ≠ 0 := by rw [hexp']; omega
+      rw [bound2, hnat, hJ, downTwice, walkTicks_eq_normal hne', hfr, hexp',
+        walkTicks_eq_normal (by omega),
+        show walkExp b - 1 - 1 = walkExp b - 2 from by omega, two_pow_52_add_pred, hz,
+        Nat.add_zero]
+      rw [top_double_mul, two_pow_shift_down hb2]
+  · have hf : 0 < walkFrac b := Nat.pos_of_ne_zero hz
+    have hfr : walkFrac (b - 1) = walkFrac b - 1 := walkFrac_pred_of_frac_pos hf
+    have hexp' : walkExp (b - 1) = walkExp b := walkExp_pred_of_frac_pos hf hb
+    by_cases hb0 : walkExp b = 0
+    · have hsub : downSub b := Or.inl hb0
+      have hnat : (downE b + 1075).toNat = 0 := downE_toNat_sub hb0
+      have hJ : downJ b = 2 * walkFrac b - 1 := by
+        simp only [downJ, ite_eq_left hsub, walkMant_eq_zero hb0]
+      have hz0 : walkExp (b - 1) = 0 := by rw [hexp', hb0]
+      rw [bound2, hnat, Nat.pow_zero, Nat.mul_one, hJ, downTwice,
+        walkTicks_eq_zero hz0, hfr, walkTicks_eq_zero hb0]
+      omega
+    · have hsub : downSub b := Or.inr hf
+      have hnat : (downE b + 1075).toNat = walkExp b - 1 := downE_toNat_frac hb0 hf
+      have hJ : downJ b = 2 * (2 ^ 52 + walkFrac b) - 1 := by
+        simp only [downJ, ite_eq_left hsub, walkMant_eq_normal hb0]
+      have hne' : walkExp (b - 1) ≠ 0 := by rw [hexp']; exact hb0
+      rw [bound2, hnat, hJ, downTwice, walkTicks_eq_normal hne', hfr, hexp',
+        walkTicks_eq_normal hb0]
+      rw [pred_double_mul (by omega : 0 < 2 ^ 52 + walkFrac b), add_sub_one_of_lt hf]
+
+theorem bound2_overflow : bound2 (2 ^ 54 - 1) 970 = 2 * overflowTicks := by
+  rw [bound2, show ((970 : Int) + 1075).toNat = 2045 from by decide, two_overflowTicks]
+
+
+
+/-! ### The comparison the walk makes
+
+`stk_cmp` returns the sign of the value against its boundary
+(`stkCmp_sticky_spec'`, `stkCmp_nosticky_spec`), so the walk's decisions are
+those of a three-way comparison at the boundary's tick value.  `cmpWalk` states
+that comparison at twice the tick scale, which is where `bound2` reads every
+boundary of the loop: `valLtBoundary_iff_cmpWalk` and
+`valEqBoundary_iff_cmpWalk` identify the two. -/
+
+/-- The sign of the value `P / d` against the boundary whose doubled tick value
+is `B2`. -/
+def cmpWalk (P d : Nat) (B2 : Nat) : Int := cmpNat (2 * P) (B2 * d)
+
+theorem cmpWalk_lt {P d B2 : Nat} : cmpWalk P d B2 = -1 ↔ 2 * P < B2 * d :=
+  (cmpNat_spec _ _).1
+
+theorem cmpWalk_eq {P d B2 : Nat} : cmpWalk P d B2 = 0 ↔ 2 * P = B2 * d :=
+  (cmpNat_spec _ _).2.1
+
+theorem cmpWalk_gt {P d B2 : Nat} : cmpWalk P d B2 = 1 ↔ B2 * d < 2 * P := by
+  have h := (cmpNat_spec (2 * P) (B2 * d)).2.2
+  rw [cmpWalk]
+  constructor
+  · intro h1
+    rcases h.mp h1 with ⟨h2, h3⟩
+    omega
+  · intro h1
+    exact h.mpr ⟨by omega, by omega⟩
+
+theorem mul_two_pow_1075 (x : Nat) : 2 * (x * 2 ^ 1074) = x * 2 ^ 1075 := by
+  rw [show (2 : Nat) ^ 1075 = 2 ^ 1074 * 2 from by
+    rw [show 1075 = 1074 + 1 from by decide, Nat.pow_succ]]
+  ac_rfl
+
+theorem two_pow_1075_eq_mul {eB : Nat} : 2 ^ (eB + 1075) = 2 ^ eB * 2 ^ 1075 :=
+  Nat.pow_add ..
+
+theorem two_pow_1075_split {k : Nat} (hk : k ≤ 1075) :
+    2 ^ (1075 - k) * 2 ^ k = 2 ^ 1075 := by
+  rw [← Nat.pow_add, Nat.sub_add_cancel hk]
+
+/-- The boundary's doubled tick value, as a comparison: `valLtBoundary` is the
+same comparison cleared at the value's own scale. -/
+theorem valLtBoundary_iff_cmpWalk {m : Nat} {E : Int} {J : Nat} {eB : Int}
+    (hle : -1075 ≤ eB) :
+    valLtBoundary m E J eB ↔
+      2 * (magTicks m E).1 < bound2 J eB * (magTicks m E).2 := by
+  by_cases hE : 0 ≤ E <;> by_cases heB : 0 ≤ eB
+  · -- a nonnegative decimal exponent, a nonnegative boundary exponent
+    have hP : (magTicks m E).1 = m * 10 ^ E.toNat * 2 ^ 1074 := by
+      unfold magTicks; rw [ite_eq_left hE]
+    have hD : (magTicks m E).2 = 1 := by unfold magTicks; rw [ite_eq_left hE]
+    have hn : (eB + 1075).toNat = eB.toNat + 1075 := by
+      apply Int.natCast_inj.mp
+      rw [Int.toNat_of_nonneg (by omega), Int.natCast_add, Int.toNat_of_nonneg heB]
+      omega
+    have hEb : ((eB.toNat : Nat) : Int) = eB := Int.toNat_of_nonneg heB
+    unfold valLtBoundary
+    rw [ite_eq_left hE, ite_eq_left heB, hP, hD, Nat.mul_one, bound2, hn]
+    rw [two_pow_1075_eq_mul, mul_two_pow_1075,
+      show J * (2 ^ eB.toNat * 2 ^ 1075) = (J * 2 ^ eB.toNat) * 2 ^ 1075 from by ac_rfl]
+    exact lt_iff_mul_lt_mul_right (two_pow_pos 1075)
+  · -- a nonnegative decimal exponent, a negative boundary exponent
+    have hP : (magTicks m E).1 = m * 10 ^ E.toNat * 2 ^ 1074 := by
+      unfold magTicks; rw [ite_eq_left hE]
+    have hD : (magTicks m E).2 = 1 := by unfold magTicks; rw [ite_eq_left hE]
+    have hne : eB < 0 := by omega
+    have hk : eB.natAbs ≤ 1075 := by
+      have := natAbs_of_neg hne
+      omega
+    have hn : (eB + 1075).toNat = 1075 - eB.natAbs := by
+      apply Int.natCast_inj.mp
+      rw [Int.toNat_of_nonneg (by omega), Int.natCast_sub hk, natAbs_of_neg hne]
+      omega
+    unfold valLtBoundary
+    rw [ite_eq_left hE, ite_eq_right (by omega : ¬ 0 ≤ eB), hP, hD, Nat.mul_one,
+      bound2, hn, mul_two_pow_1075]
+    rw [show J * 2 ^ (1075 - eB.natAbs) = J * 2 ^ (1075 - eB.natAbs) from rfl]
+    rw [show m * 10 ^ E.toNat * 2 ^ 1075
+        = (m * 10 ^ E.toNat * 2 ^ eB.natAbs) * 2 ^ (1075 - eB.natAbs) from by
+      rw [show (2 : Nat) ^ 1075 = 2 ^ (1075 - eB.natAbs) * 2 ^ eB.natAbs from
+        (two_pow_1075_split hk).symm]
+      ac_rfl]
+    exact lt_iff_mul_lt_mul_right (two_pow_pos (1075 - eB.natAbs))
+  · -- a negative decimal exponent, a nonnegative boundary exponent
+    have hP : (magTicks m E).1 = m * 2 ^ 1074 := by
+      unfold magTicks; rw [ite_eq_right (by omega : ¬ 0 ≤ E)]
+    have hD : (magTicks m E).2 = 10 ^ E.natAbs := by
+      unfold magTicks; rw [ite_eq_right (by omega : ¬ 0 ≤ E)]
+    have hn : (eB + 1075).toNat = eB.toNat + 1075 := by
+      apply Int.natCast_inj.mp
+      rw [Int.toNat_of_nonneg (by omega), Int.natCast_add, Int.toNat_of_nonneg heB]
+      omega
+    unfold valLtBoundary
+    rw [ite_eq_right (by omega : ¬ 0 ≤ E), ite_eq_left heB, hP, hD, bound2, hn,
+      two_pow_1075_eq_mul, mul_two_pow_1075]
+    rw [show J * (2 ^ eB.toNat * 2 ^ 1075) * 10 ^ E.natAbs
+        = (J * 2 ^ eB.toNat * 10 ^ E.natAbs) * 2 ^ 1075 from by ac_rfl]
+    exact lt_iff_mul_lt_mul_right (two_pow_pos 1075)
+  · -- a negative decimal exponent, a negative boundary exponent
+    have hP : (magTicks m E).1 = m * 2 ^ 1074 := by
+      unfold magTicks; rw [ite_eq_right (by omega : ¬ 0 ≤ E)]
+    have hD : (magTicks m E).2 = 10 ^ E.natAbs := by
+      unfold magTicks; rw [ite_eq_right (by omega : ¬ 0 ≤ E)]
+    have hne : eB < 0 := by omega
+    have hk : eB.natAbs ≤ 1075 := by
+      have := natAbs_of_neg hne
+      omega
+    have hn : (eB + 1075).toNat = 1075 - eB.natAbs := by
+      apply Int.natCast_inj.mp
+      rw [Int.toNat_of_nonneg (by omega), Int.natCast_sub hk, natAbs_of_neg hne]
+      omega
+    unfold valLtBoundary
+    rw [ite_eq_right (by omega : ¬ 0 ≤ E), ite_eq_right (by omega : ¬ 0 ≤ eB), hP, hD,
+      bound2, hn, mul_two_pow_1075]
+    rw [show m * 2 ^ 1075 = (m * 2 ^ eB.natAbs) * 2 ^ (1075 - eB.natAbs) from by
+        rw [show (2 : Nat) ^ 1075 = 2 ^ (1075 - eB.natAbs) * 2 ^ eB.natAbs from
+          (two_pow_1075_split hk).symm]
+        ac_rfl,
+      show J * 2 ^ (1075 - eB.natAbs) * 10 ^ E.natAbs
+        = (J * 10 ^ E.natAbs) * 2 ^ (1075 - eB.natAbs) from by ac_rfl]
+    exact lt_iff_mul_lt_mul_right (two_pow_pos (1075 - eB.natAbs))
+
+
+
+/-! ### The walk's step
+
+`walkStep` is the loop body of `stage2.c:769-813`, over the pattern `b`: the two
+escapes at the ends of the format (`:770-782`), the exact test (`:787`), and the
+two half-ulp tests with their tie branches (`:789-812`).  A step's result is
+either the candidate it stops at or the candidate it moves to.
+
+`inInterval` is the rounding interval: the value at or above the candidate's
+lower midpoint and at or below its upper one, with a tie at either going to the
+even significand.  `inTop` is the interval of infinity. -/
+
+/-- What the body at `b` does. -/
+inductive WalkResult where
+  | stop (b : Nat)
+  | move (b : Nat)
+deriving DecidableEq, Repr
+
+/-- The candidate's rounding interval contains the value. -/
+def inInterval (P d b : Nat) : Prop :=
+  downTwice b * d ≤ 2 * P ∧ 2 * P ≤ upTwice b * d ∧
+    (downTwice b * d = 2 * P → walkMant b % 2 = 0) ∧
+    (upTwice b * d = 2 * P → walkMant b % 2 = 0)
+
+/-- The value is at or above the overflow threshold: infinity's interval. -/
+def inTop (P d : Nat) : Prop := overflowTicks * d ≤ P
+
+/-- The loop body at `b`, as `stage2.c:769-813` writes it. -/
+def walkStep (P d : Nat) (b : Nat) : WalkResult :=
+  if b = 0 then
+    (if 0 < cmpWalk P d (upTwice 0) then .move 1 else .stop 0)
+  else if infBits ≤ b then
+    (if cmpWalk P d (2 * overflowTicks) < 0 then .move maxBits else .stop infBits)
+  else
+    if cmpWalk P d (2 * walkTicks b) = 0 then .stop b
+    else if 0 < cmpWalk P d (2 * walkTicks b) then
+      (if cmpWalk P d (upTwice b) < 0 then .stop b
+       else if cmpWalk P d (upTwice b) = 0 then
+         (if walkMant b % 2 = 0 then .stop b else .stop (b + 1))
+       else .move (b + 1))
+    else
+      (if 0 < cmpWalk P d (downTwice b) then .stop b
+       else if cmpWalk P d (downTwice b) = 0 then
+         (if walkMant b % 2 = 0 then .stop b else .stop (b - 1))
+       else .move (b - 1))
+
+theorem cmpWalk_mem (P d B2 : Nat) :
+    cmpWalk P d B2 = -1 ∨ cmpWalk P d B2 = 0 ∨ cmpWalk P d B2 = 1 := by
+  unfold cmpWalk cmpNat
+  split
+  · exact Or.inl rfl
+  · split
+    · exact Or.inr (Or.inl rfl)
+    · exact Or.inr (Or.inr rfl)
+
+theorem cmpWalk_lt' {P d B2 : Nat} (h : cmpWalk P d B2 < 0) : 2 * P < B2 * d := by
+  rcases cmpWalk_mem P d B2 with h' | h' | h'
+  · exact cmpWalk_lt.mp h'
+  · rw [h'] at h
+    exact absurd h (by decide)
+  · rw [h'] at h
+    exact absurd h (by decide)
+
+theorem cmpWalk_gt' {P d B2 : Nat} (h : 0 < cmpWalk P d B2) : B2 * d < 2 * P := by
+  rcases cmpWalk_mem P d B2 with h' | h' | h'
+  · rw [h'] at h
+    exact absurd h (by decide)
+  · rw [h'] at h
+    exact absurd h (by decide)
+  · exact cmpWalk_gt.mp h'
+
+theorem cmpWalk_nonpos {P d B2 : Nat} (h : ¬ 0 < cmpWalk P d B2) : 2 * P ≤ B2 * d := by
+  rcases cmpWalk_mem P d B2 with h' | h' | h'
+  · exact Nat.le_of_lt (cmpWalk_lt.mp h')
+  · exact Nat.le_of_eq (cmpWalk_eq.mp h')
+  · rw [h'] at h
+    exact absurd h (by decide)
+
+theorem cmpWalk_nonneg {P d B2 : Nat} (h : ¬ cmpWalk P d B2 < 0) : B2 * d ≤ 2 * P := by
+  rcases cmpWalk_mem P d B2 with h' | h' | h'
+  · rw [h'] at h
+    exact absurd h (by decide)
+  · exact Nat.le_of_eq (cmpWalk_eq.mp h').symm
+  · exact Nat.le_of_lt (cmpWalk_gt.mp h')
+
+theorem walkTicks_zero : walkTicks 0 = 0 := by
+  have h : walkExp 0 = 0 := by unfold walkExp; decide
+  rw [walkTicks_eq_zero h]
+  unfold walkFrac
+  exact Nat.zero_mod _
+
+theorem downTwice_zero : downTwice 0 = 0 := by
+  unfold downTwice
+  rw [walkTicks_zero]
+
+theorem walkMant_zero : walkMant 0 = 0 := by
+  have h : walkExp 0 = 0 := by unfold walkExp; decide
+  rw [walkMant_eq_zero h]
+  unfold walkFrac
+  exact Nat.zero_mod _
+
+/-- A candidate's own tick value is strictly inside its interval. -/
+theorem walkTicks_lt_upTwice {b : Nat} (hb : b < infBits) :
+    2 * walkTicks b < upTwice b := by
+  unfold upTwice
+  have := walkTicks_lt_succ hb
+  omega
+
+theorem walkTicks_pred_lt {b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkTicks (b - 1) < walkTicks b := by
+  have h := walkTicks_pred h0 hb
+  have := walkGap_pos (b - 1)
+  omega
+
+theorem downTwice_lt_ticks {b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    downTwice b < 2 * walkTicks b := by
+  unfold downTwice
+  have := walkTicks_pred_lt h0 hb
+  omega
+
+theorem walkStep_fin {P d b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkStep P d b =
+      (if cmpWalk P d (2 * walkTicks b) = 0 then .stop b
+       else if 0 < cmpWalk P d (2 * walkTicks b) then
+         (if cmpWalk P d (upTwice b) < 0 then .stop b
+          else if cmpWalk P d (upTwice b) = 0 then
+            (if walkMant b % 2 = 0 then .stop b else .stop (b + 1))
+          else .move (b + 1))
+       else
+         (if 0 < cmpWalk P d (downTwice b) then .stop b
+          else if cmpWalk P d (downTwice b) = 0 then
+            (if walkMant b % 2 = 0 then .stop b else .stop (b - 1))
+          else .move (b - 1))) := by
+  unfold walkStep
+  rw [ite_eq_right (by omega : ¬ b = 0), ite_eq_right (by omega : ¬ infBits ≤ b)]
+
+theorem step_zero_stop {P d : Nat} (h : walkStep P d 0 = .stop 0) : inInterval P d 0 := by
+  have hle : 2 * P ≤ upTwice 0 * d := by
+    unfold walkStep at h
+    rw [ite_eq_left rfl] at h
+    by_cases hc : 0 < cmpWalk P d (upTwice 0)
+    · rw [ite_eq_left hc] at h
+      exact absurd h (by intro hh; cases hh)
+    · rw [ite_eq_right hc] at h
+      exact cmpWalk_nonpos hc
+  unfold inInterval
+  refine ⟨by rw [downTwice_zero, Nat.zero_mul]; exact Nat.zero_le _, hle, ?_, ?_⟩
+  · intro hh
+    show walkMant 0 % 2 = 0
+    rw [walkMant_zero]
+  · intro hh
+    show walkMant 0 % 2 = 0
+    rw [walkMant_zero]
+
+theorem step_zero_move {P d : Nat} (h : walkStep P d 0 = .move 1) :
+    upTwice 0 * d < 2 * P := by
+  unfold walkStep at h
+  rw [ite_eq_left rfl] at h
+  by_cases hc : 0 < cmpWalk P d (upTwice 0)
+  · rw [ite_eq_left hc] at h
+    exact cmpWalk_gt' hc
+  · rw [ite_eq_right hc] at h
+    exact absurd h (by intro hh; cases hh)
+
+theorem step_top_stop {P d b : Nat} (hb : infBits ≤ b) (h : walkStep P d b = .stop infBits) :
+    inTop P d := by
+  have hpos := infBits_pos
+  unfold walkStep at h
+  rw [ite_eq_right (by omega : ¬ b = 0), ite_eq_left hb] at h
+  by_cases hc : cmpWalk P d (2 * overflowTicks) < 0
+  · rw [ite_eq_left hc] at h
+    exact absurd h (by intro hh; cases hh)
+  · rw [ite_eq_right hc] at h
+    have h2 : 2 * (overflowTicks * d) ≤ 2 * P := by
+      have h3 := cmpWalk_nonneg hc
+      rwa [Nat.mul_assoc] at h3
+    unfold inTop
+    exact Nat.le_of_mul_le_mul_left h2 (by decide : 0 < 2)
+
+theorem step_top_move {P d b : Nat} (hb : infBits ≤ b) (h : walkStep P d b = .move maxBits) :
+    2 * P < 2 * overflowTicks * d := by
+  have hpos := infBits_pos
+  unfold walkStep at h
+  rw [ite_eq_right (by omega : ¬ b = 0), ite_eq_left hb] at h
+  by_cases hc : cmpWalk P d (2 * overflowTicks) < 0
+  · rw [ite_eq_left hc] at h
+    exact cmpWalk_lt' hc
+  · rw [ite_eq_right hc] at h
+    exact absurd h (by intro hh; cases hh)
+
+
+
+/-! #### The body's five verdicts -/
+
+theorem downTwice_mul_le {P d b : Nat} (h0 : 0 < b) (hb : b < infBits)
+    (h : 2 * walkTicks b * d ≤ 2 * P) : downTwice b * d ≤ 2 * P :=
+  Nat.le_trans (Nat.mul_le_mul_right d (Nat.le_of_lt (downTwice_lt_ticks h0 hb))) h
+
+theorem ticks_mul_le_up {P d b : Nat} (hb : b < infBits)
+    (h : 2 * P ≤ 2 * walkTicks b * d) : 2 * P ≤ upTwice b * d :=
+  Nat.le_trans h (Nat.mul_le_mul_right d (Nat.le_of_lt (walkTicks_lt_upTwice hb)))
+
+theorem downTwice_mul_lt {d b : Nat} (hd : 0 < d) (h0 : 0 < b) (hb : b < infBits) :
+    downTwice b * d < 2 * walkTicks b * d :=
+  Nat.mul_lt_mul_of_pos_right (downTwice_lt_ticks h0 hb) hd
+
+theorem ticks_mul_lt_up {d b : Nat} (hd : 0 < d) (hb : b < infBits) :
+    2 * walkTicks b * d < upTwice b * d :=
+  Nat.mul_lt_mul_of_pos_right (walkTicks_lt_upTwice hb) hd
+
+theorem WalkResult.stop_ne_stop_of_ne {a b : Nat} (h : a ≠ b) :
+    (WalkResult.stop a : WalkResult) ≠ .stop b :=
+  fun hh => h (WalkResult.stop.inj hh)
+
+theorem WalkResult.stop_ne_move (a b : Nat) : (WalkResult.stop a : WalkResult) ≠ .move b := by
+  intro h
+  cases h
+
+theorem WalkResult.move_ne_stop (a b : Nat) : (WalkResult.move a : WalkResult) ≠ .stop b := by
+  intro h
+  cases h
+
+theorem WalkResult.move_ne_move_of_ne {a b : Nat} (h : a ≠ b) :
+    (WalkResult.move a : WalkResult) ≠ .move b :=
+  fun hh => h (WalkResult.move.inj hh)
+
+/-- A stop at the candidate itself puts the value in the candidate's interval. -/
+theorem step_fin_stop_self {P d b : Nat} (hd : 0 < d) (h0 : 0 < b) (hb : b < infBits) :
+    walkStep P d b = .stop b → inInterval P d b := by
+  intro h
+  rw [walkStep_fin h0 hb] at h
+  have hdn0 : downTwice b * d < 2 * walkTicks b * d := downTwice_mul_lt hd h0 hb
+  have hup0 : 2 * walkTicks b * d < upTwice b * d := ticks_mul_lt_up hd hb
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    have heq : 2 * P = 2 * walkTicks b * d := cmpWalk_eq.mp hs
+    have hdn : downTwice b * d < 2 * P := by rw [heq]; exact hdn0
+    have hup : 2 * P < upTwice b * d := by rw [heq]; exact hup0
+    exact ⟨Nat.le_of_lt hdn, Nat.le_of_lt hup, fun hh => absurd hh (ne_of_lt hdn),
+      fun hh => absurd hh (ne_of_gt hup)⟩
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    have hgt : 2 * walkTicks b * d < 2 * P := cmpWalk_gt' hs2
+    have hdn : downTwice b * d < 2 * P := Nat.lt_of_lt_of_le hdn0 (Nat.le_of_lt hgt)
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      have hup : 2 * P < upTwice b * d := cmpWalk_lt' hu
+      exact ⟨Nat.le_of_lt hdn, Nat.le_of_lt hup, fun hh => absurd hh (ne_of_lt hdn),
+        fun hh => absurd hh (ne_of_gt hup)⟩
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      have heq : 2 * P = upTwice b * d := cmpWalk_eq.mp hu2
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact ⟨Nat.le_of_lt hdn, Nat.le_of_eq heq, fun hh => absurd hh (ne_of_lt hdn),
+          fun hh => he⟩
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hu2] at h
+    exact absurd h (WalkResult.move_ne_stop (b + 1) b)
+  · rw [ite_eq_right hs2] at h
+    have hlt : 2 * P < 2 * walkTicks b * d := by
+      have hpos : cmpWalk P d (2 * walkTicks b) < 0 := by omega
+      exact cmpWalk_lt' hpos
+    have hup : 2 * P < upTwice b * d := Nat.lt_of_lt_of_le hlt (Nat.le_of_lt hup0)
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1] at h
+      have hdn : downTwice b * d < 2 * P := cmpWalk_gt' hd1
+      exact ⟨Nat.le_of_lt hdn, Nat.le_of_lt hup, fun hh => absurd hh (ne_of_lt hdn),
+        fun hh => absurd hh (ne_of_gt hup)⟩
+    rw [ite_eq_right hd1] at h
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2] at h
+      have heq : 2 * P = downTwice b * d := cmpWalk_eq.mp hd2
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact ⟨Nat.le_of_eq heq.symm, Nat.le_of_lt hup, fun hh => he,
+          fun hh => absurd hh (ne_of_gt hup)⟩
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hd2] at h
+    exact absurd h (WalkResult.move_ne_stop (b - 1) b)
+
+/-- A stop at the candidate above happens only at the upper midpoint, and only
+when the candidate's significand is odd. -/
+theorem step_fin_stop_next {P d b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkStep P d b = .stop (b + 1) →
+      upTwice b * d = 2 * P ∧ walkMant b % 2 ≠ 0 := by
+  intro h
+  rw [walkStep_fin h0 hb] at h
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      refine ⟨(cmpWalk_eq.mp hu2).symm, ?_⟩
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+      · exact he
+    rw [ite_eq_right hu2] at h
+    exact absurd h (WalkResult.move_ne_stop (b + 1) (b + 1))
+  · rw [ite_eq_right hs2] at h
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1] at h
+      exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hd1] at h
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hd2] at h
+    exact absurd h (WalkResult.move_ne_stop (b - 1) (b + 1))
+
+/-- A stop at the candidate below happens only at the lower midpoint, and only
+when the candidate's significand is odd. -/
+theorem step_fin_stop_pred {P d b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkStep P d b = .stop (b - 1) →
+      downTwice b * d = 2 * P ∧ walkMant b % 2 ≠ 0 := by
+  intro h
+  rw [walkStep_fin h0 hb] at h
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hu2] at h
+    exact absurd h (WalkResult.move_ne_stop (b + 1) (b - 1))
+  · rw [ite_eq_right hs2] at h
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1] at h
+      exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+    rw [ite_eq_right hd1] at h
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2] at h
+      refine ⟨(cmpWalk_eq.mp hd2).symm, ?_⟩
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_stop_of_ne (by omega))
+      · exact he
+    rw [ite_eq_right hd2] at h
+    exact absurd h (WalkResult.move_ne_stop (b - 1) (b - 1))
+
+/-- A step up is the value strictly above the upper midpoint. -/
+theorem step_fin_move_next {P d b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkStep P d b = .move (b + 1) → upTwice b * d < 2 * P := by
+  intro h
+  rw [walkStep_fin h0 hb] at h
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    exact absurd h (WalkResult.stop_ne_move b (b + 1))
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      exact absurd h (WalkResult.stop_ne_move b (b + 1))
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_move b (b + 1))
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_move (b + 1) (b + 1))
+    rw [ite_eq_right hu2] at h
+    have hpos : 0 < cmpWalk P d (upTwice b) := by omega
+    exact cmpWalk_gt' hpos
+  · rw [ite_eq_right hs2] at h
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1] at h
+      exact absurd h (WalkResult.stop_ne_move b (b + 1))
+    rw [ite_eq_right hd1] at h
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_move b (b + 1))
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_move (b - 1) (b + 1))
+    rw [ite_eq_right hd2] at h
+    exact absurd h (WalkResult.move_ne_move_of_ne (by omega))
+
+/-- A step down is the value strictly below the lower midpoint. -/
+theorem step_fin_move_pred {P d b : Nat} (h0 : 0 < b) (hb : b < infBits) :
+    walkStep P d b = .move (b - 1) → 2 * P < downTwice b * d := by
+  intro h
+  rw [walkStep_fin h0 hb] at h
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    exact absurd h (WalkResult.stop_ne_move b (b - 1))
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      exact absurd h (WalkResult.stop_ne_move b (b - 1))
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_move b (b - 1))
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_move (b + 1) (b - 1))
+    rw [ite_eq_right hu2] at h
+    exact absurd h (WalkResult.move_ne_move_of_ne (by omega))
+  · rw [ite_eq_right hs2] at h
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1] at h
+      exact absurd h (WalkResult.stop_ne_move b (b - 1))
+    rw [ite_eq_right hd1] at h
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_move b (b - 1))
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_move (b - 1) (b - 1))
+    rw [ite_eq_right hd2] at h
+    have hneg : cmpWalk P d (downTwice b) < 0 := by omega
+    exact cmpWalk_lt' hneg
+
+/-- A candidate whose interval contains the value is where the body stops. -/
+theorem step_fin_stop_of_mem {P d b : Nat} (h0 : 0 < b) (hb : b < infBits)
+    (hi : inInterval P d b) : walkStep P d b = .stop b := by
+  obtain ⟨h1, h2, h3, h4⟩ := hi
+  rw [walkStep_fin h0 hb]
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs]
+  rw [ite_eq_right hs]
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2]
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu]
+    rw [ite_eq_right hu]
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2]
+      have heq : 2 * P = upTwice b * d := cmpWalk_eq.mp hu2
+      rw [ite_eq_left (h4 heq.symm)]
+    rw [ite_eq_right hu2]
+    have hpos : 0 < cmpWalk P d (upTwice b) := by omega
+    have := cmpWalk_gt' hpos
+    omega
+  · rw [ite_eq_right hs2]
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1]
+    rw [ite_eq_right hd1]
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2]
+      have heq : 2 * P = downTwice b * d := cmpWalk_eq.mp hd2
+      rw [ite_eq_left (h3 heq.symm)]
+    rw [ite_eq_right hd2]
+    have hneg : cmpWalk P d (downTwice b) < 0 := by omega
+    have := cmpWalk_lt' hneg
+    omega
+
+
+
+/-! #### The interval is one candidate's -/
+
+theorem upTwice_lt_downTwice {b b' : Nat} (h : b + 1 < b') (hb' : b' < infBits) :
+    upTwice b < downTwice b' := by
+  unfold upTwice downTwice
+  have h1 : walkTicks b < walkTicks b' := walkTicks_lt_of_lt (by omega) (by omega)
+  have h2 : walkTicks (b + 1) ≤ walkTicks (b' - 1) :=
+    walkTicks_le_of_le (by omega) (by omega)
+  omega
+
+theorem downTwice_le_upTwice {b : Nat} (hb : b < infBits) : downTwice b ≤ upTwice b := by
+  unfold downTwice upTwice
+  have h1 : walkTicks (b - 1) ≤ walkTicks (b + 1) := walkTicks_le_of_le (by omega) (by omega)
+  omega
+
+theorem downTwice_lt_upTwice {b : Nat} (hb0 : 0 < b) (hb : b < infBits) :
+    downTwice b < upTwice b := by
+  unfold downTwice upTwice
+  have h1 : walkTicks (b - 1) < walkTicks (b + 1) :=
+    walkTicks_lt_of_lt (by omega) (by omega)
+  omega
+
+/-- The candidate whose interval contains the value is unique. -/
+theorem inInterval_uniq {P d b b' : Nat} (hd : 0 < d) (hb : b < infBits)
+    (hb' : b' < infBits) (h : inInterval P d b) (h' : inInterval P d b') : b = b' := by
+  rcases Nat.lt_trichotomy b b' with hlt | heq | hgt
+  · obtain ⟨-, h2, -, h4⟩ := h
+    obtain ⟨h1', -, h3', -⟩ := h'
+    rcases Nat.lt_or_ge (b + 1) b' with hgap | hadj
+    · have hlt : upTwice b * d < downTwice b' * d :=
+        Nat.mul_lt_mul_of_pos_right (upTwice_lt_downTwice hgap hb') hd
+      have hle : downTwice b' * d ≤ upTwice b * d := le_trans h1' h2
+      exact absurd hle (Nat.not_le.mpr hlt)
+    · have hb1 : b + 1 = b' := by omega
+      have hle : downTwice b' * d = upTwice b * d := by rw [← hb1, downTwice_succ]
+      have heq2 : upTwice b * d = 2 * P := by
+        rw [hle] at h1'
+        exact le_antisymm h1' h2
+      have hmant : walkMant (b + 1) % 2 = 0 := by
+        have h'1 : walkMant b' % 2 = 0 := h3' (by rw [hle]; exact heq2)
+        rwa [← hb1] at h'1
+      exact absurd ⟨h4 heq2, hmant⟩ (walkMant_succ_not_both_even hb)
+  · exact heq
+  · obtain ⟨h1, -, h3, -⟩ := h
+    obtain ⟨-, h2', -, h4'⟩ := h'
+    rcases Nat.lt_or_ge (b' + 1) b with hgap | hadj
+    · have hlt : upTwice b' * d < downTwice b * d :=
+        Nat.mul_lt_mul_of_pos_right (upTwice_lt_downTwice hgap hb) hd
+      have hle : downTwice b * d ≤ upTwice b' * d := le_trans h1 h2'
+      exact absurd hle (Nat.not_le.mpr hlt)
+    · have hb1 : b' + 1 = b := by omega
+      have hle : downTwice b * d = upTwice b' * d := by rw [← hb1, downTwice_succ]
+      have heq2 : upTwice b' * d = 2 * P := by
+        rw [hle] at h1
+        exact le_antisymm h1 h2'
+      have hmant : walkMant (b' + 1) % 2 = 0 := by
+        have h1' : walkMant b % 2 = 0 := h3 (by rw [hle]; exact heq2)
+        rwa [← hb1] at h1'
+      have hmant' : walkMant b' % 2 = 0 := h4' heq2
+      exact absurd ⟨hmant', hmant⟩ (walkMant_succ_not_both_even hb')
+
+theorem upTwice_eq_top {b : Nat} (hb : b ≤ maxBits) (h : upTwice b = 2 * overflowTicks) :
+    b = maxBits := by
+  by_cases hlt : b = maxBits
+  · exact hlt
+  · exfalso
+    have hlt' : b < maxBits := by omega
+    have hge := upTwice_lt_of_lt hlt' maxBits_lt_infBits
+    rw [upTwice_maxBits] at hge
+    exact absurd hge (by rw [h]; exact Nat.lt_irrefl _)
+
+/-- Infinity's interval is disjoint from every finite candidate's. -/
+theorem inInterval_not_top {P d b : Nat} (hd : 0 < d) (hb : b < infBits)
+    (h : inInterval P d b) : ¬ inTop P d := by
+  intro ht
+  obtain ⟨-, h2, -, h4⟩ := h
+  have hble : b ≤ maxBits := by
+    have hmax : maxBits = infBits - 1 := rfl
+    omega
+  have htop : 2 * (overflowTicks * d) ≤ 2 * P := Nat.mul_le_mul_left 2 ht
+  have hle : upTwice b * d ≤ 2 * (overflowTicks * d) := by
+    have h1 := upTwice_le_top hble
+    have h2' := Nat.mul_le_mul_right d h1
+    rwa [Nat.mul_assoc] at h2'
+  have heq2 : upTwice b * d = 2 * P := le_antisymm (le_trans hle htop) h2
+  have hP : 2 * P = 2 * (overflowTicks * d) :=
+    le_antisymm (by rw [← heq2]; exact hle) htop
+  have hb_eq : b = maxBits := by
+    apply upTwice_eq_top hble
+    exact Nat.mul_right_cancel hd (by rw [heq2, hP, Nat.mul_assoc])
+  subst hb_eq
+  have hm := h4 heq2
+  rw [walkMant_maxBits, two_pow_53_pred_mod_two] at hm
+  exact absurd hm (by decide)
+
+/-- The zero escape stops only at zero. -/
+theorem stop_zero_only {P d b' : Nat} (h : walkStep P d 0 = .stop b') : b' = 0 := by
+  unfold walkStep at h
+  rw [ite_eq_left rfl] at h
+  by_cases hc : 0 < cmpWalk P d (upTwice 0)
+  · rw [ite_eq_left hc] at h
+    exact absurd h (WalkResult.move_ne_stop 1 b')
+  · rw [ite_eq_right hc] at h
+    exact (WalkResult.stop.inj h).symm
+
+/-- The finite body's stop is its own candidate, the one above, or the one
+below. -/
+theorem stop_fin_mem {P d b : Nat} (hb0 : 0 < b) (hb : b < infBits)
+    {b' : Nat} (h : walkStep P d b = .stop b') :
+    b' = b - 1 ∨ b' = b ∨ b' = b + 1 := by
+  by_cases h1 : b' = b
+  · exact Or.inr (Or.inl h1)
+  by_cases h2 : b' = b + 1
+  · exact Or.inr (Or.inr h2)
+  by_cases h3 : b' = b - 1
+  · exact Or.inl h3
+  exfalso
+  rw [walkStep_fin hb0 hb] at h
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    exact h1 (WalkResult.stop.inj h).symm
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      exact h1 (WalkResult.stop.inj h).symm
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact h1 (WalkResult.stop.inj h).symm
+      · rw [ite_eq_right he] at h
+        exact h2 (WalkResult.stop.inj h).symm
+    rw [ite_eq_right hu2] at h
+    exact absurd h (WalkResult.move_ne_stop (b + 1) b')
+  · rw [ite_eq_right hs2] at h
+    by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+    · rw [ite_eq_left hd1] at h
+      exact h1 (WalkResult.stop.inj h).symm
+    rw [ite_eq_right hd1] at h
+    by_cases hd2 : cmpWalk P d (downTwice b) = 0
+    · rw [ite_eq_left hd2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact h1 (WalkResult.stop.inj h).symm
+      · rw [ite_eq_right he] at h
+        exact h3 (WalkResult.stop.inj h).symm
+    rw [ite_eq_right hd2] at h
+    exact absurd h (WalkResult.move_ne_stop (b - 1) b')
+
+/-- The interval at the candidate the body stops at: the step tests supply its
+two ends, and a tie supplies the even significand. -/
+theorem stop_fin_interval {P d b : Nat} (hd : 0 < d) (hb0 : 0 < b) (hb : b < infBits)
+    {b' : Nat} (h : walkStep P d b = .stop b') (hb' : b' < infBits) :
+    inInterval P d b' := by
+  rcases stop_fin_mem hb0 hb h with h1 | h2 | h3
+  · -- the candidate below
+    rw [h1]
+    rcases step_fin_stop_pred hb0 hb (h1 ▸ h) with ⟨htie, hodd⟩
+    have hb1 : b - 1 + 1 = b := Nat.sub_add_cancel (by omega)
+    have hsucc : downTwice b = upTwice (b - 1) := by
+      rw [← hb1]; exact downTwice_succ (b - 1)
+    rw [hsucc] at htie
+    by_cases hb_eq : b = 1
+    · subst hb_eq
+      have hz : upTwice 0 * d = 2 * P := htie
+      refine ⟨by rw [downTwice_zero, Nat.zero_mul]; exact Nat.zero_le _,
+        le_of_eq hz.symm, ?_, ?_⟩
+      · intro hh
+        show walkMant 0 % 2 = 0
+        rw [walkMant_zero]
+      · intro hh
+        show walkMant 0 % 2 = 0
+        rw [walkMant_zero]
+    · have hpos : 0 < b - 1 := by omega
+      have hb'fin : b - 1 < infBits := by omega
+      have hlt : downTwice (b - 1) < upTwice (b - 1) := downTwice_lt_upTwice hpos hb'fin
+      have hlt' := Nat.mul_lt_mul_of_pos_right hlt hd
+      refine ⟨le_of_lt (lt_of_lt_of_le hlt' (le_of_eq htie)), le_of_eq htie.symm, ?_, ?_⟩
+      · intro hh
+        have h2' : upTwice (b - 1) * d = 2 * P := htie
+        rw [h2'] at hlt'
+        exact absurd hh (ne_of_lt hlt')
+      · intro hh
+        exact walkMant_pred_even hb hodd
+  · -- the candidate itself
+    rw [h2]
+    exact step_fin_stop_self hd hb0 hb (h2 ▸ h)
+  · -- the candidate above
+    rw [h3]
+    rcases step_fin_stop_next hb0 hb (h3 ▸ h) with ⟨htie, hodd⟩
+    have hsucc : downTwice (b + 1) = upTwice b := downTwice_succ b
+    have hb'fin : b + 1 < infBits := by omega
+    have hlt : upTwice b < upTwice (b + 1) := upTwice_lt_of_lt (by omega) hb'fin
+    have hlt' := Nat.mul_lt_mul_of_pos_right hlt hd
+    refine ⟨by rw [hsucc]; exact le_of_eq htie, ?_, ?_, ?_⟩
+    · exact le_of_lt (by rw [← htie]; exact hlt')
+    · intro hh
+      rw [hsucc] at hh
+      exact walkMant_succ_even hb hodd
+    · intro hh
+      rw [htie] at hlt'
+      exact absurd hh (ne_of_gt hlt')
+
+
+
+
+
+/-! ### What this section settles, and what it does not
+
+Settled:
+
+* **The ladder.**  `walkTicks` is the emitted decode `(be, frac) -> Code` read
+  in ticks, and `walkTicks_succ` is the step: the pattern's tick value rises by
+  one ulp of its binade, `walkGap`, including the carry at the top of a binade.
+  `walkTicks_lt_of_lt` makes the ladder strictly increasing, which is how the
+  walk's order over patterns is the order over values.
+
+* **The boundaries are the emitted ones.**  `bound2_up`, `bound2_down` and
+  `bound2_overflow` prove that `upTwice`, `downTwice` and `2 * overflowTicks`
+  are exactly the `stk_cmp` boundaries `stage2.c:773`, `:780`, `:791` and
+  `:803-805` form, read at twice the tick scale.  The code's own
+  `(2 * m +- 1, e - 1)`, the constant `((1 << 53) - 1, -1075)` and
+  `((1 << 54) - 1, e - 2)` selections all land on the midpoint of the two
+  candidate ticks they sit between.
+
+* **The comparison.**  `valLtBoundary_iff_cmpWalk` reads the specification's
+  cleared comparison at the same boundary, so `cmpWalk` is the sign of
+  `V - B`, and the `stkCmp` specifications proved above say the emitted
+  `stk_cmp` returns that sign.
+
+* **The body's five verdicts.**  `step_fin_stop_self` (a stop at the candidate
+  means the value is in its interval), `step_fin_stop_next` and
+  `step_fin_stop_pred` (a stop at a neighbour means the value is at that
+  midpoint and the candidate's significand is odd, which is where the tie is
+  handed to the even significand), `step_fin_move_next` and
+  `step_fin_move_pred` (a move means the value is strictly past the midpoint in
+  that direction), and `step_fin_stop_of_mem` (the converse: the interval's
+  candidate is where the body stops).  The two escapes are `step_zero_stop`,
+  `step_zero_move`, `step_top_stop` and `step_top_move`.
+
+* **The stopping criterion is the interval, and it selects one candidate.**
+  `inInterval_uniq` proves that at most one candidate's interval contains the
+  value: two intervals are either separated by a whole interval, or adjacent and
+  sharing a midpoint, and then the parity of the two significands forbids both
+  being even.  `inInterval_not_top` proves infinity's interval is disjoint from
+  every finite one.  `stop_fin_interval`, `stop_zero_only` and `step_top_stop`
+  read the stops back: every candidate the body stops at has the value in its
+  interval, or the value is at or above the overflow threshold.
+
+Left open, and what it needs:
+
+* **The interval at the specification's answer.**  Naming the answer `tgt` needs
+  `inInterval P d (bitsOf c)` for `roundMag P d = .fin c`.  The two inequalities
+  come from `roundMag_nearest` at the two neighbouring ticks of `c`
+  (`isB64Mag_ticks` supplies their `IsB64Mag`), through the equivalence between
+  `distNum` and the midpoint comparison.  The tie clause is
+  `roundMag_midpoint_even`, whose hypothesis `P - lo * d = hi * d - P` needs
+  `roundMag`'s lattice to be the emitted ladder's at the value: `ulp P d` equal
+  to `walkGap` and `lo P d` equal to the candidate's tick value, both following
+  from `binade P d = walkExp b + 51`, which the two strict bounds
+  `2 ^ (walkExp b + 51) <= walkTicks b` and
+  `walkTicks (b + 1) <= 2 ^ (walkExp b + 52)` give.  That identification is what
+  is not spelled here: `roundMag` is stated over `binade`, `ulp`, `sig`, `lo`
+  and `hi`, and the walk over the pattern's fields, and the two are one lattice
+  only through those bounds.
+
+* **The descent.**  With a `tgt` whose interval contains the value, the step
+  count is the distance from the start: a stop is at `tgt` (`stop_fin_mem`,
+  `stop_fin_interval` and `inInterval_uniq`), a step up happens only when
+  `upTwice b * d < 2 * P` (`step_fin_move_next`) and then the answer is above
+  `b`, a step down only when `2 * P < downTwice b * d`
+  (`step_fin_move_pred`) and then the answer is below.  Each of those is a
+  strict decrease of `(tgt - b) + (b - tgt)`, so a recursion on that distance
+  runs the body to `tgt` -- the note's termination statement, bounded by the
+  distance from `dbits(d)` to the answer and nothing else.  What is written
+  here is the three facts that induction consumes; the recursion itself is not
+  written out.
+
+-/
+
+/-! ### Axiom footprint of the walk
+
+Every declaration here is pinned: the ladder, the boundaries and the five
+verdicts are integer arithmetic, so they are expected at `[propext]` or with no
+axioms. -/
+
+#print axioms LeanLLVM.StrtodTier3.sigBits
+#print axioms LeanLLVM.StrtodTier3.infBits
+#print axioms LeanLLVM.StrtodTier3.maxBits
+#print axioms LeanLLVM.StrtodTier3.sigBits_eq
+#print axioms LeanLLVM.StrtodTier3.infBits_eq
+#print axioms LeanLLVM.StrtodTier3.maxBits_eq
+#print axioms LeanLLVM.StrtodTier3.infBits_pos
+#print axioms LeanLLVM.StrtodTier3.maxBits_lt_infBits
+#print axioms LeanLLVM.StrtodTier3.maxBits_succ
+#print axioms LeanLLVM.StrtodTier3.walkExp
+#print axioms LeanLLVM.StrtodTier3.walkFrac
+#print axioms LeanLLVM.StrtodTier3.walkMant
+#print axioms LeanLLVM.StrtodTier3.walkCode
+#print axioms LeanLLVM.StrtodTier3.walkTicks
+#print axioms LeanLLVM.StrtodTier3.walkGap
+#print axioms LeanLLVM.StrtodTier3.div_add_one_of_mod_lt
+#print axioms LeanLLVM.StrtodTier3.mod_add_one_of_mod_lt
+#print axioms LeanLLVM.StrtodTier3.div_add_one_of_mod_top
+#print axioms LeanLLVM.StrtodTier3.mod_add_one_of_mod_top
+#print axioms LeanLLVM.StrtodTier3.mod_sub_one_of_mod_pos
+#print axioms LeanLLVM.StrtodTier3.div_sub_one_of_mod_pos
+#print axioms LeanLLVM.StrtodTier3.mul_div_exact
+#print axioms LeanLLVM.StrtodTier3.div_sub_one_of_mod_zero
+#print axioms LeanLLVM.StrtodTier3.mod_sub_one_of_mod_zero
+#print axioms LeanLLVM.StrtodTier3.walkExp_lt
+#print axioms LeanLLVM.StrtodTier3.walkFrac_lt
+#print axioms LeanLLVM.StrtodTier3.walkGap_pos
+#print axioms LeanLLVM.StrtodTier3.walkMant_eq_zero
+#print axioms LeanLLVM.StrtodTier3.walkMant_eq_normal
+#print axioms LeanLLVM.StrtodTier3.walkTicks_eq_zero
+#print axioms LeanLLVM.StrtodTier3.walkTicks_eq_normal
+#print axioms LeanLLVM.StrtodTier3.walkGap_eq_zero
+#print axioms LeanLLVM.StrtodTier3.walkGap_eq_normal
+#print axioms LeanLLVM.StrtodTier3.walkExp_def_of_lt
+#print axioms LeanLLVM.StrtodTier3.walkExp_lt_2047
+#print axioms LeanLLVM.StrtodTier3.walk_bits_decomp
+#print axioms LeanLLVM.StrtodTier3.walkFrac_succ_of_frac_lt
+#print axioms LeanLLVM.StrtodTier3.walkExp_succ_of_frac_lt
+#print axioms LeanLLVM.StrtodTier3.walkFrac_succ_of_frac_top
+#print axioms LeanLLVM.StrtodTier3.walkExp_succ_of_frac_top
+#print axioms LeanLLVM.StrtodTier3.walkFrac_pred_of_frac_pos
+#print axioms LeanLLVM.StrtodTier3.walkExp_pred_of_frac_pos
+#print axioms LeanLLVM.StrtodTier3.walkFrac_pred_of_frac_zero
+#print axioms LeanLLVM.StrtodTier3.walkExp_pred_of_frac_zero
+#print axioms LeanLLVM.StrtodTier3.walkExp_pred_le_2047
+#print axioms LeanLLVM.StrtodTier3.two_pow_53_eq
+#print axioms LeanLLVM.StrtodTier3.two_pow_52_add_pred
+#print axioms LeanLLVM.StrtodTier3.walkFrac_lt_pred
+#print axioms LeanLLVM.StrtodTier3.two_pow_mul_shift
+#print axioms LeanLLVM.StrtodTier3.walkTicks_succ
+#print axioms LeanLLVM.StrtodTier3.walkTicks_pred
+#print axioms LeanLLVM.StrtodTier3.add_sub_one_of_lt
+#print axioms LeanLLVM.StrtodTier3.two_pow_52_mod_two
+#print axioms LeanLLVM.StrtodTier3.two_pow_52_add_mod_two
+#print axioms LeanLLVM.StrtodTier3.two_pow_52_pred_mod_two
+#print axioms LeanLLVM.StrtodTier3.two_pow_53_pred_mod_two
+#print axioms LeanLLVM.StrtodTier3.two_pow_54_eq
+#print axioms LeanLLVM.StrtodTier3.two_pow_2098_eq
+#print axioms LeanLLVM.StrtodTier3.walkMant_succ
+#print axioms LeanLLVM.StrtodTier3.walkMant_pred
+#print axioms LeanLLVM.StrtodTier3.walkMant_succ_even
+#print axioms LeanLLVM.StrtodTier3.walkMant_succ_not_both_even
+#print axioms LeanLLVM.StrtodTier3.walkMant_pred_even
+#print axioms LeanLLVM.StrtodTier3.walkTicks_lt_succ
+#print axioms LeanLLVM.StrtodTier3.walkTicks_le_of_le
+#print axioms LeanLLVM.StrtodTier3.walkTicks_lt_of_lt
+#print axioms LeanLLVM.StrtodTier3.upTwice
+#print axioms LeanLLVM.StrtodTier3.downTwice
+#print axioms LeanLLVM.StrtodTier3.downTwice_succ
+#print axioms LeanLLVM.StrtodTier3.upTwice_lt_of_lt
+#print axioms LeanLLVM.StrtodTier3.upTwice_le_of_le
+#print axioms LeanLLVM.StrtodTier3.walkExp_infBits
+#print axioms LeanLLVM.StrtodTier3.walkFrac_infBits
+#print axioms LeanLLVM.StrtodTier3.walkTicks_infBits
+#print axioms LeanLLVM.StrtodTier3.walkExp_maxBits
+#print axioms LeanLLVM.StrtodTier3.walkFrac_maxBits
+#print axioms LeanLLVM.StrtodTier3.walkMant_maxBits
+#print axioms LeanLLVM.StrtodTier3.walkTicks_maxBits
+#print axioms LeanLLVM.StrtodTier3.upTwice_maxBits
+#print axioms LeanLLVM.StrtodTier3.upTwice_le_top
+#print axioms LeanLLVM.StrtodTier3.walkE
+#print axioms LeanLLVM.StrtodTier3.walkE_eq_zero
+#print axioms LeanLLVM.StrtodTier3.walkE_eq_normal
+#print axioms LeanLLVM.StrtodTier3.upJ
+#print axioms LeanLLVM.StrtodTier3.upE
+#print axioms LeanLLVM.StrtodTier3.downSub
+#print axioms LeanLLVM.StrtodTier3.downJ
+#print axioms LeanLLVM.StrtodTier3.downE
+#print axioms LeanLLVM.StrtodTier3.bound2
+#print axioms LeanLLVM.StrtodTier3.upE_toNat_zero
+#print axioms LeanLLVM.StrtodTier3.upE_toNat_normal
+#print axioms LeanLLVM.StrtodTier3.downE_toNat_sub
+#print axioms LeanLLVM.StrtodTier3.downE_toNat_frac
+#print axioms LeanLLVM.StrtodTier3.downE_toNat_one
+#print axioms LeanLLVM.StrtodTier3.downE_toNat_two
+#print axioms LeanLLVM.StrtodTier3.bound2_up
+#print axioms LeanLLVM.StrtodTier3.pred_double_mul
+#print axioms LeanLLVM.StrtodTier3.top_double_mul
+#print axioms LeanLLVM.StrtodTier3.two_pow_shift_down
+#print axioms LeanLLVM.StrtodTier3.walkTicks_two_pow_52
+#print axioms LeanLLVM.StrtodTier3.bound2_down
+#print axioms LeanLLVM.StrtodTier3.bound2_overflow
+#print axioms LeanLLVM.StrtodTier3.cmpWalk
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_lt
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_eq
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_gt
+#print axioms LeanLLVM.StrtodTier3.mul_two_pow_1075
+#print axioms LeanLLVM.StrtodTier3.two_pow_1075_eq_mul
+#print axioms LeanLLVM.StrtodTier3.two_pow_1075_split
+#print axioms LeanLLVM.StrtodTier3.valLtBoundary_iff_cmpWalk
+#print axioms LeanLLVM.StrtodTier3.WalkResult
+#print axioms LeanLLVM.StrtodTier3.inInterval
+#print axioms LeanLLVM.StrtodTier3.inTop
+#print axioms LeanLLVM.StrtodTier3.walkStep
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_mem
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_lt
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_gt
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_nonpos
+#print axioms LeanLLVM.StrtodTier3.cmpWalk_nonneg
+#print axioms LeanLLVM.StrtodTier3.walkTicks_zero
+#print axioms LeanLLVM.StrtodTier3.downTwice_zero
+#print axioms LeanLLVM.StrtodTier3.walkMant_zero
+#print axioms LeanLLVM.StrtodTier3.walkTicks_lt_upTwice
+#print axioms LeanLLVM.StrtodTier3.walkTicks_pred_lt
+#print axioms LeanLLVM.StrtodTier3.downTwice_lt_ticks
+#print axioms LeanLLVM.StrtodTier3.walkStep_fin
+#print axioms LeanLLVM.StrtodTier3.step_zero_stop
+#print axioms LeanLLVM.StrtodTier3.step_zero_move
+#print axioms LeanLLVM.StrtodTier3.step_top_stop
+#print axioms LeanLLVM.StrtodTier3.step_top_move
+#print axioms LeanLLVM.StrtodTier3.downTwice_mul_le
+#print axioms LeanLLVM.StrtodTier3.ticks_mul_le_up
+#print axioms LeanLLVM.StrtodTier3.downTwice_mul_lt
+#print axioms LeanLLVM.StrtodTier3.ticks_mul_lt_up
+#print axioms LeanLLVM.StrtodTier3.WalkResult.stop_ne_stop_of_ne
+#print axioms LeanLLVM.StrtodTier3.WalkResult.stop_ne_move
+#print axioms LeanLLVM.StrtodTier3.WalkResult.move_ne_stop
+#print axioms LeanLLVM.StrtodTier3.WalkResult.move_ne_move_of_ne
+#print axioms LeanLLVM.StrtodTier3.step_fin_stop_self
+#print axioms LeanLLVM.StrtodTier3.step_fin_stop_next
+#print axioms LeanLLVM.StrtodTier3.step_fin_stop_pred
+#print axioms LeanLLVM.StrtodTier3.step_fin_move_next
+#print axioms LeanLLVM.StrtodTier3.step_fin_move_pred
+#print axioms LeanLLVM.StrtodTier3.step_fin_stop_of_mem
+#print axioms LeanLLVM.StrtodTier3.upTwice_lt_downTwice
+#print axioms LeanLLVM.StrtodTier3.downTwice_le_upTwice
+#print axioms LeanLLVM.StrtodTier3.downTwice_lt_upTwice
+#print axioms LeanLLVM.StrtodTier3.inInterval_uniq
+#print axioms LeanLLVM.StrtodTier3.upTwice_eq_top
+#print axioms LeanLLVM.StrtodTier3.inInterval_not_top
+#print axioms LeanLLVM.StrtodTier3.stop_zero_only
+#print axioms LeanLLVM.StrtodTier3.stop_fin_mem
+#print axioms LeanLLVM.StrtodTier3.stop_fin_interval
 
 /-! ### Checks
 
