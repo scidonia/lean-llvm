@@ -84,12 +84,13 @@ manifest's `json_scan_theorem` and `json_scan_contract`.  The manifest's global
 the baseline and the candidate.  The certificate's `axioms` field is the named
 theorem's pinned footprint in `LeanLLVMTest/` — **and nothing else**.  At this
 revision the pin does not exist, and the reason is stronger than a missing
-statement: the statement is now a declaration, `JsonScanIR.scanWindowStatement`,
-and it is **refuted** — `scanWindowStatement_false` proves its negation at a
-witness that satisfies every hypothesis.  Two body defects account for it: the
-stop word's first-selection chain tests the bad-lead bit where the model tests
-the bad-continuation path, and the band hypothesis the docstring elides is
-load-bearing.  So the gate **refuses and names the missing pin** rather than
+statement: statement: the statement is now a declaration, `JsonScanIR.scanWindowStatement`,
+and it is **unproved**.  The refutation `scanWindowStatement_false` is about the
+body **before** its stop word was fixed; that defect was real — the chain tested
+the bad-lead bit where the model tests the bad-continuation path — and the
+statement's band hypothesis was load-bearing.  The emitted body's statement was
+then corrected rather than refuted: its frame stops at the state region the
+unit's own footprint declares.  So the gate **refuses and names the missing pin** rather than
 reading the selector's expectation in its place; the fixture cannot be built, and
 JS1 and JS2 are unreachable until the scanner's body is corrected and the theorem
 restated.  A gate that substituted the selector's set would have produced a

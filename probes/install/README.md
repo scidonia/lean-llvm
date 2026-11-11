@@ -51,11 +51,13 @@ This probe exercises the installation point described in
   known to `select.sh` and to the producer, which name its own theorem
   (`json_scan_theorem`), boundary (`json_scan_contract`) and symbol
   (`json_scan_symbol`), but no certificate can be issued for it: the refinement
-  statement is `JsonScanIR.scanWindowStatement`, and
-  `JsonScanIR.scanWindowStatement_false` proves its negation — the emitted
-  body's stop word reports `control` where the model refuses with `badUtf8` on a
-  continuation byte outside its requirement, and the prose statement's
-  band-disjointness hypothesis is load-bearing. A scanner request is refused at
+  statement is `JsonScanIR.scanWindowStatement`, and it is unproved.  The
+  refutation `JsonScanIR.scanWindowStatement_false` is about the body before the
+  stop word's fix — it reported `control` where the model refuses with `badUtf8`
+  on a continuation byte outside its requirement, and the prose statement's
+  band-disjointness hypothesis is load-bearing.  The emitted body's statement was
+  then corrected rather than refuted: its frame stops at the state region the
+  unit's footprint declares.  A scanner request is refused at
   the covering theorem, and its gate `tests/json-scan-select-gate.sh` refuses at
   the missing `#print axioms` pin before it reaches the selector.
 - `build.sh` builds everything in a private staging directory and publishes

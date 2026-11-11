@@ -97,8 +97,11 @@ revision.
    shape a new unit takes — its own object, fixture, marker, caller, symbol,
    theorem and contract — and the scanner unit took that shape. The scanner's
    expected declarations are named but nothing certifies them: its refinement
-   statement `JsonScanIR.scanWindowStatement` is refuted
-   (`JsonScanIR.scanWindowStatement_false`), so the producer refuses the unit at
+   statement `JsonScanIR.scanWindowStatement` is unproved.  The refutation
+   `JsonScanIR.scanWindowStatement_false` is about the body *before* the stop
+   word's fix, and the emitted body's statement was corrected (its frame stops at
+   the state region the unit's footprint declares) rather than refuted.  So the
+   producer refuses the unit at
    the covering theorem and `tests/json-scan-select-gate.sh` refuses at the
    missing `#print axioms` pin. A second JSON unit would still need its own
    expected declarations and a new unit case, not merely a certificate.

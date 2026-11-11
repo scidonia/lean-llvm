@@ -40,8 +40,9 @@ certificate names, so its axiom footprint is checked against the same budget and
 unioned into the serialized `axioms` field; a `sorry`-proved witness cannot ride
 along with a clean covering theorem.  The window scanner names the §5 record
 `jsonScanContract` and the statement `scanWindowStatement`; the covering theorem
-must be a theorem of that statement, and as the body stands there is none —
-`scanWindowStatement_false` refutes the statement — so a scanner certificate is
+must be a theorem of that statement, and as the body stands there is none: the
+statement is unproved, and the refutation `scanWindowStatement_false` is about
+the body before its stop word was fixed — so a scanner certificate is
 refused at the theorem rather than certified from the statement's text.
 The unit dispatch is one table (`theoremNameFor`, `contractNameFor`), not a
 fall-through: a unit the producer does not know has no covering theorem and no
