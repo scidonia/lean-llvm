@@ -2679,9 +2679,6 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
     have he277 : (-277 : Int) ≤ t.e := hrow.2.1.1
     have he22 : t.e ≤ 22 := hrow.2.1.2
     have hfits : t.Fits q := hrow.2.2.1
-    have hne : 0 ≤ q → t.Neq q := hrow.2.2.2.1
-    have hRpos : q < 0 → 0 < eN q t % eD q t := hrow.2.2.2.2.1
-    have heneg : q < 0 → t.e < 0 := hrow.2.2.2.2.2
     have hlz : lz w ≤ 63 := lz_le_63 w
     have hs0 : 0 ≤ 1074 + t.e - (lz w : Int) := by
       have := hrow.2.1.1
@@ -3209,7 +3206,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                   have hTeq := at_edge_scaled (W := Wnorm w) (R := R) (M := M) (D := D)
                     (b := b) hpe
                   have hpos : 0 < D * M + Wnorm w * R := by
-                    have hRpos' : 0 < R := by rw [← hRv]; exact hRpos hqneg
+                    have hRpos' : 0 < R := by rw [← hRv]; exact hrow.2.2.2.2.1 hqneg
                     have hWpos : 0 < Wnorm w := by omega
                     have h1 : 0 < Wnorm w * R := Nat.mul_pos hWpos hRpos'
                     omega
@@ -3230,12 +3227,19 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
             (code_agree (s := s) (e := t.e) (lzw := lz w) hs hmant hov)
         · exact absurd hg (by simp)
     · -- ================= far =================
+      -- The conditional facts in this branch are `if` equations and
+      -- disjunctions, never implications or negated conjunctions; see
+      -- "Axiom footprint" for why.
       rename_i hnotwin0
-      have hfar : ¬ (hh0 - 2 ≤ hp0 ∧ hp0 ≤ hh0) := by
-        intro hc
-        have h1 : inWindow hp0 hh0 = true := (inWindow_iff hhh0pos hhh0le hhp0_lt).mpr hc
-        rw [h1] at hnotwin0
-        exact absurd hnotwin0 (by simp)
+      have hfar : ¬ (hh0 - 2 ≤ hp0) ∨ ¬ (hp0 ≤ hh0) := by
+        have hwin' : ¬ (hh0 - 2 ≤ hp0 ∧ hp0 ≤ hh0) := by
+          intro hc
+          have h1 : inWindow hp0 hh0 = true := (inWindow_iff hhh0pos hhh0le hhp0_lt).mpr hc
+          rw [h1] at hnotwin0
+          exact absurd hnotwin0 (by simp)
+        by_cases h : hh0 - 2 ≤ hp0
+        · exact Or.inr (fun h2 => hwin' ⟨h, h2⟩)
+        · exact Or.inl h
       unfold elFar at hg
       dsimp only at hg
       obtain ⟨mf, hmf⟩ : ∃ A, Ahi / 2 ^ sh0 = A := ⟨_, rfl⟩
@@ -3286,34 +3290,32 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
           rw [show 10 + b = (9 + b) + 1 from by omega, Nat.pow_succ, Nat.mul_comm]
         obtain ⟨D, hD⟩ : ∃ A, (if 0 ≤ q then 1 else eD q t) = A := ⟨_, rfl⟩
         obtain ⟨R, hRv⟩ : ∃ A, (if 0 ≤ q then 0 else eN q t % eD q t) = A := ⟨_, rfl⟩
-        have hD1 : 0 ≤ q → D = 1 := by intro hq; rw [← hD]; simp [hq]
-        have hDe : ¬ 0 ≤ q → D = eD q t := by intro hq; rw [← hD]; simp [hq]
-        have hR0 : 0 ≤ q → R = 0 := by intro hq; rw [← hRv]; simp [hq]
-        have hRe : ¬ 0 ≤ q → R = eN q t % eD q t := by intro hq; rw [← hRv]; simp [hq]
+        have hDv : D = if 0 ≤ q then 1 else eD q t := hD.symm
+        have hRv' : R = if 0 ≤ q then 0 else eN q t % eD q t := hRv.symm
         have hDpos' : 0 < D := by
           by_cases hq : 0 ≤ q
-          · rw [hD1 hq]; omega
-          · rw [hDe hq]; exact hDpos
+          · rw [hDv, ite_eq_left hq]; omega
+          · rw [hDv, ite_eq_right hq]; exact hDpos
         have hWfR' : Wnorm w * R < 2 ^ 64 * D := by
           by_cases hq : 0 ≤ q
-          · rw [hR0 hq, hD1 hq, Nat.mul_zero, Nat.mul_one]; exact pow2_pos 64
-          · rw [hRe hq, hDe hq]; exact hWfR
+          · rw [hRv', ite_eq_left hq, hDv, ite_eq_left hq, Nat.mul_zero, Nat.mul_one]; exact pow2_pos 64
+          · rw [hRv', ite_eq_right hq, hDv, ite_eq_right hq]; exact hWfR
         have hPQ : P = Wnorm w * (eH t * D + R) * 2 ^ s := by
           by_cases hq : 0 ≤ q
-          · rw [hD1 hq, hR0 hq, Nat.mul_one, Nat.add_zero, ← hP1]
+          · rw [hDv, ite_eq_left hq, hRv', ite_eq_left hq, Nat.mul_one, Nat.add_zero, ← hP1]
             exact valueTicks_nonneg hq hrow hs
-          · rw [hDe hq, hRe hq, ← hNsplit, ← hP1]
+          · rw [hDv, ite_eq_right hq, hRv', ite_eq_right hq, ← hNsplit, ← hP1]
             exact valueTicks_neg (by omega) hrow hs
         have hPdec : 2 * P = 2 * q0 * (D * 2 ^ (138 + s + b))
             + 2 ^ (s + 1) * (D * (hpx * 2 ^ 128 + M) + Wnorm w * R) := by
           by_cases hq : 0 ≤ q
-          · rw [hD1 hq, hR0 hq] at hPQ
+          · rw [hDv, ite_eq_left hq, hRv', ite_eq_left hq] at hPQ
             simp only [Nat.mul_one, Nat.add_zero] at hPQ
-            rw [hD1 hq, hR0 hq]
+            rw [hDv, ite_eq_left hq, hRv', ite_eq_left hq]
             simp only [Nat.one_mul, Nat.mul_zero, Nat.add_zero]
             exact decomp_nonneg hPQ hWH' hdecr
-          · rw [hDe hq, hRe hq] at hPQ
-            rw [hDe hq, hRe hq]
+          · rw [hDv, ite_eq_right hq, hRv', ite_eq_right hq] at hPQ
+            rw [hDv, ite_eq_right hq, hRv', ite_eq_right hq]
             exact decomp_neg (W := Wnorm w) (H := eH t) (D := eD q t) (R := eN q t % eD q t)
               (Rhi := exactRhi (Wnorm w) t.hi t.lo) (M := M) (hp := hpx) (m := q0) (b := b)
               (s := s) (P := P) hPQ hWH' hdecr
@@ -3323,19 +3325,22 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
         have hdZ : D * (2 : Nat) ^ (138 + s + b) = d * ulp P d := by
           by_cases hq : 0 ≤ q
           · have hd1 : d = 1 := by rw [← hP2]; exact valueTicks_d_nonneg hq
-            rw [hD1 hq, ulp_eq hB, hd1, Nat.one_mul]
+            rw [hDv, ite_eq_left hq, ulp_eq hB, hd1, Nat.one_mul]
           · have hdD : d = eD q t := by rw [← hP2]; exact valueTicks_d_neg (by omega) hrow
-            rw [hDe hq, ulp_eq hB, hdD]
-        have hSig : hpx + 2 ≤ 2 ^ (10 + b) → P / (d * ulp P d) = q0 := by
-          intro hpxp
-          by_cases hq : 0 ≤ q
-          · have h := sig_eq_m_nonneg hw0 hw hrow hq hs hsl (by rw [hP1, hP2]; exact hB)
-            rw [hP1, hP2] at h
-            rw [h, hq0]
-          · have h := sig_eq_m_neg hw0 hw hrow (by omega) hs hsl
-              (by rw [hP1, hP2]; exact hB) (by rw [hhpx]; exact hpxp)
-            rw [hP1, hP2] at h
-            rw [h, hq0]
+            rw [hDv, ite_eq_right hq, ulp_eq hB, hdD]
+        have hSigv : P / (d * ulp P d)
+            = if hpx + 2 ≤ 2 ^ (10 + b) then q0 else P / (d * ulp P d) := by
+          by_cases hpxp : hpx + 2 ≤ 2 ^ (10 + b)
+          · rw [ite_eq_left hpxp]
+            by_cases hq : 0 ≤ q
+            · have h := sig_eq_m_nonneg hw0 hw hrow hq hs hsl (by rw [hP1, hP2]; exact hB)
+              rw [hP1, hP2] at h
+              rw [h, hq0]
+            · have h := sig_eq_m_neg hw0 hw hrow (by omega) hs hsl
+                (by rw [hP1, hP2]; exact hB) (by rw [hhpx]; exact hpxp)
+              rw [hP1, hP2] at h
+              rw [h, hq0]
+          · rw [ite_eq_right hpxp]
         have hfull : P / (d * ulp P d) + upDec P d = 2 ^ 52 ∨ b = ub0 := by
           by_cases hbe : b = ub0
           · exact Or.inr hbe
@@ -3383,7 +3388,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
               have hpxv : hpx = 0 := by rw [← hhpx, hR1, hb1]
               have hpxp : hpx + 2 ≤ 2 ^ (10 + b) := by rw [hpxv, hb1]; omega
               have hm : P / (D * 2 ^ (138 + s + b)) = q0 := by
-                rw [hdZ]; exact hSig hpxp
+                rw [hdZ, hSigv, ite_eq_left hpxp]
               have hT : D * (hpx * 2 ^ 128 + M) + Wnorm w * R < D * 2 ^ (137 + b) :=
                 below_far_scaled hDpos' hMlt' hWfR' (by rw [hpxv, hb1]; omega)
               have hms := mm_zero hdZ hPdec hZeq hm hT
@@ -3406,14 +3411,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                 Nat.add_comm (mf * 2 ^ (10 + b)) (hp0 + cy),
                 Nat.add_mul_div_right _ _ (pow2_pos _)]
             have hcyv : cy = 0 ∨ cy = 1 := by omega
-            have huf0 : hp0 ≤ hh0 → uf = 0 := by
-              intro h
-              rw [← huf]
-              exact ite_eq_right (by omega)
-            have huf1 : hh0 < hp0 → uf = 1 := by
-              intro h
-              rw [← huf]
-              exact ite_eq_left (by omega)
+            have hufv : uf = if hp0 > hh0 then 1 else 0 := huf.symm
             by_cases hpfx : hpx = 2 ^ (10 + b) - 1
             · have hsum : hp0 + cy = 2 ^ (10 + b) - 1 := by
                 have h1 : (hp0 + cy) % 2 ^ (10 + b) = 2 ^ (10 + b) - 1 := by
@@ -3444,8 +3442,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                 mm_succ hdZ hZpos hPdec hZeq hTgt hTlt3
               rw [hk0, Nat.zero_mul, Nat.add_zero, huf1', hms, hq0mf]
             · have hpxp : hpx + 2 ≤ 2 ^ (10 + b) := by omega
-              have hmq : P / (d * ulp P d) = q0 := hSig hpxp
-              have hm : P / (D * 2 ^ (138 + s + b)) = q0 := by rw [hdZ]; exact hmq
+              have hm : P / (D * 2 ^ (138 + s + b)) = q0 := by rw [hdZ, hSigv, ite_eq_left hpxp]
               rcases hcyv with hcy0 | hcy1
               · have hpx0 : hpx = hp0 := by
                   rw [hmodE, hcy0, Nat.add_zero, Nat.mod_eq_of_lt hhp0lt]
@@ -3456,7 +3453,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                     below_far_scaled hDpos' hMlt' hWfR'
                       (by rw [hpx0]; rw [hhh0b] at hbelow; omega)
                   have hms := mm_zero hdZ hPdec hZeq hm hT
-                  have huf0' : uf = 0 := huf0 (by omega)
+                  have huf0' : uf = 0 := by rw [hufv]; exact ite_eq_right (by omega)
                   rw [hk0, Nat.zero_mul, Nat.add_zero, huf0', hms, hq0v, Nat.add_zero]
                 · have hge : 2 ^ (9 + b) + 1 ≤ hpx := by
                     rw [hpx0]; rw [hhh0b] at habove; omega
@@ -3465,7 +3462,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                   have hTlt3 : D * (hpx * 2 ^ 128 + M) + Wnorm w * R
                       < 3 * (D * 2 ^ (137 + b)) := Tlt3_neg_above hDpos' hWfR' hMlt' hpxp
                   have hms := mm_succ hdZ hZpos hPdec hZeq hTgt hTlt3
-                  have huf1' : uf = 1 := huf1 (by rw [hhh0b]; omega)
+                  have huf1' : uf = 1 := by rw [hufv]; exact ite_eq_left (by rw [hhh0b]; omega)
                   rw [hk0, Nat.zero_mul, Nat.add_zero, huf1', hms, hq0v]
               · by_cases hpf0 : hp0 = 2 ^ (10 + b) - 1
                 · have hpx0 : hpx = 0 := by
@@ -3477,11 +3474,11 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                       show (2 : Nat) ^ (10 + b) - 1 + 1 = 2 ^ (10 + b) from by omega,
                       Nat.div_self (pow2_pos _), Nat.add_comm]
                   have hpxp : hpx + 2 ≤ 2 ^ (10 + b) := by rw [hpx0]; omega
-                  have hm : P / (D * 2 ^ (138 + s + b)) = q0 := by rw [hdZ]; exact hSig hpxp
+                  have hm : P / (D * 2 ^ (138 + s + b)) = q0 := by rw [hdZ, hSigv, ite_eq_left hpxp]
                   have hT : D * (hpx * 2 ^ 128 + M) + Wnorm w * R < D * 2 ^ (137 + b) :=
                     below_far_scaled hDpos' hMlt' hWfR' (by rw [hpx0]; omega)
                   have hms := mm_zero hdZ hPdec hZeq hm hT
-                  have huf1' : uf = 1 := huf1 (by rw [hhh0b]; omega)
+                  have huf1' : uf = 1 := by rw [hufv]; exact ite_eq_left (by rw [hhh0b]; omega)
                   rw [hk0, Nat.zero_mul, Nat.add_zero, huf1', hms, hq0v]
                 · have hhplt : hp0 + 1 < 2 ^ (10 + b) := by omega
                   have hpx1 : hpx = hp0 + 1 := by rw [hmodE, hcy1, Nat.mod_eq_of_lt hhplt]
@@ -3492,7 +3489,7 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                       below_far_scaled hDpos' hMlt' hWfR'
                         (by rw [hpx1]; rw [hhh0b] at hbelow; omega)
                     have hms := mm_zero hdZ hPdec hZeq hm hT
-                    have huf0' : uf = 0 := huf0 (by omega)
+                    have huf0' : uf = 0 := by rw [hufv]; exact ite_eq_right (by omega)
                     rw [hk0, Nat.zero_mul, Nat.add_zero, huf0', hms, hq0v, Nat.add_zero]
                   · have hge : 2 ^ (9 + b) + 1 ≤ hpx := by
                       rw [hpx1]; rw [hhh0b] at habove; omega
@@ -3502,13 +3499,13 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
                     · have hTlt3 : D * (hpx * 2 ^ 128 + M) + Wnorm w * R
                           < 3 * (D * 2 ^ (137 + b)) := Tlt3_neg_full hDpos' hWfR' hMlt' hpxf
                       have hms := mm_succ hdZ hZpos hPdec hZeq hTgt hTlt3
-                      have huf1' : uf = 1 := huf1 (by rw [hhh0b]; omega)
+                      have huf1' : uf = 1 := by rw [hufv]; exact ite_eq_left (by rw [hhh0b]; omega)
                       rw [hk0, Nat.zero_mul, Nat.add_zero, huf1', hms, hq0v]
                     · have hpxp2 : hpx + 2 ≤ 2 ^ (10 + b) := by omega
                       have hTlt3 : D * (hpx * 2 ^ 128 + M) + Wnorm w * R
                           < 3 * (D * 2 ^ (137 + b)) := Tlt3_neg_above hDpos' hWfR' hMlt' hpxp2
                       have hms := mm_succ hdZ hZpos hPdec hZeq hTgt hTlt3
-                      have huf1' : uf = 1 := huf1 (by rw [hhh0b]; omega)
+                      have huf1' : uf = 1 := by rw [hufv]; exact ite_eq_left (by rw [hhh0b]; omega)
                       rw [hk0, Nat.zero_mul, Nat.add_zero, huf1', hms, hq0v]
           · have hz0 : ub0 = 0 := by
               rcases Nat.lt_or_ge ub0 1 with h | h
@@ -3583,7 +3580,8 @@ theorem elGuardRefinesOn : ElGuardRefinesOn := by
 Every declaration's footprint is a subset of `[propext, Quot.sound]`.  The
 statement is computable, and the arithmetic stays at the standard footprint:
 `omega` closes linear arithmetic without `Classical.choice` when its context
-holds no existential, and `decide`-free rewriting adds nothing.
+holds no existential, no propositional implication and no negated conjunction,
+and `decide`-free rewriting adds nothing.
 
 The composed binade theorems once carried `Classical.choice`:
 `binade_prod`, `binade_quot` and, through them,
@@ -3604,6 +3602,26 @@ only `hex : ∃ B, B < 2100 ∧ P < 1 * 2 ^ (B + 1)` added beside it, whose proo
 term mentions `hex.choose`.  `binade_unique` destructures `hex` through
 `binade_spec` instead of through `ω`, which is why it never carried the
 axiom. -/
+
+/-! `ω`'s other carrier of `Classical.choice` is not `Exists.choose` but
+`Classical.propDecidable`.  Its frontend reads a hypothesis `P → Q` through
+`Decidable.not_or_of_imp` and a hypothesis `¬(P ∧ Q)` through
+`Decidable.or_not_not_of_not_and`, and supplies `Classical.propDecidable P` to
+both explicitly rather than synthesising an instance; so an `ω` call whose
+local context holds a propositional implication or a negated conjunction
+carries the axiom whatever its goal is.  The far branch's `ω` calls sat beside
+`0 ≤ q → D = 1`, `hpx + 2 ≤ 2 ^ (10 + b) → P / (d * ulp P d) = q0`,
+`hp0 ≤ hh0 → uf = 0` and `¬(hh0 - 2 ≤ hp0 ∧ hp0 ≤ hh0)`.  Those facts are now
+the `if` equations `hDv`, `hRv'`, `hSigv` and `hufv` and the disjunction
+`hfar`, whose `Decidable`s are the arithmetic ones, and `elGuardRefinesOn` is
+at `[propext, Quot.sound]` with them.
+
+Measured: with those four hypotheses in the branch's context, one of its
+sub-proofs held 65 applications of `Classical.propDecidable` — beneath
+`Decidable.not_or_of_imp`, `Decidable.or_not_not_of_not_and`, and inside `ω`'s
+constraint machinery `Decidable.of_not_not`.  After the restatement the axiom
+report above, which reaches the auxiliary proof terms the value references,
+lists none. -/
 
 #print axioms LeanLLVM.ElGuardRefine.epowAt
 #print axioms LeanLLVM.ElGuardRefine.lz
