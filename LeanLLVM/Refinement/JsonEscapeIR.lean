@@ -30,7 +30,7 @@ The fixture's own header records both rewrites.
 -/
 import LeanLLVM.Parser
 import LeanLLVM.Refinement.JsonEscapeIntrinsics
-import LeanLLVM.Refinement.Refinement
+import LeanLLVM.Refinement.Relation
 
 namespace LeanLLVM.Refinement.JsonEscapeIR
 

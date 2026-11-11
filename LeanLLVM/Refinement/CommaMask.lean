@@ -10,7 +10,7 @@ that both meet the lane-wise specification, and hence that
 are in `CommaMaskKernel.lean`, which uses a kernel-checked byte-lane argument
 rather than `bv_decide`.
 -/
-import LeanLLVM.Refinement.Refinement
+import LeanLLVM.Refinement.Relation
 
 namespace LeanLLVM.Refinement
 

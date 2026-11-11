@@ -71,7 +71,7 @@ them.
 -/
 import LeanLLVM.Memory
 import LeanLLVM.Parser
-import LeanLLVM.Refinement.Refinement
+import LeanLLVM.Refinement.Relation
 import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeListContract
 

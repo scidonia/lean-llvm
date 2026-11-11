@@ -11,7 +11,7 @@ import LeanLLVM.Transform.FoldBranches
 import LeanLLVM.Transform.StrengthReduce
 import LeanLLVM.Pipeline
 import LeanLLVM.CallRefinement
-import LeanLLVM.Refinement.Refinement
+import LeanLLVM.Refinement.Relation
 import LeanLLVM.Refinement.CommaMask
 import LeanLLVM.Refinement.CommaMaskKernel
 import LeanLLVM.Refinement.CommaMaskIR

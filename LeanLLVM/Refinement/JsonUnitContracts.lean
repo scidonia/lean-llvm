@@ -24,7 +24,7 @@ import LeanLLVM.Refinement.JsonS1MasksSteps
 import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonB8Steps
 import LeanLLVM.Refinement.JsonUtf8Steps
-import LeanLLVM.Refinement.Refinement
+import LeanLLVM.Refinement.Relation
 
 namespace LeanLLVM.Refinement
 

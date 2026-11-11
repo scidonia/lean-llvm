@@ -9147,7 +9147,7 @@ either place. -/
 
 /-! ### The memory-aware relation's declarations
 
-`LeanLLVM/Refinement/Refinement.lean` adds the relation and the two bridges.  Each
+`LeanLLVM/Refinement/Relation.lean` adds the relation and the two bridges.  Each
 declaration C81 enumerates is pinned here, and the two bridges with them, so the
 "nothing it adds is unpinned" clause is checked by the build rather than stated
 in prose.  `wordsAt_eq` lives beside the extractor it decodes and is pinned in the

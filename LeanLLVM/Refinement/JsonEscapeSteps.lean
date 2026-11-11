@@ -60,7 +60,7 @@ import LeanLLVM.Refinement.JsonEscapeIR
 import LeanLLVM.Refinement.JsonEscapeBatch
 import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.Refinement.JsonS1MasksIR
-import LeanLLVM.Refinement.Refinement
+import LeanLLVM.Refinement.Relation
 import LeanLLVM.Refinement.JsonEscapeListInvariant
 
 namespace LeanLLVM.Refinement
