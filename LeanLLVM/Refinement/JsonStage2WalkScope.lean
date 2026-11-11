@@ -1,13 +1,13 @@
 /-
-The stage-2 walk's loop invariants, its measure, and the smallest back edge
+The stage-2 walk's loop invariants, its measure, and five of its six back edges
 proved against them.
 
 `Stage2WalkObligation` (`JsonStage2IR`) is `Satisfies` for the pinned 165-block
 body, and its first conjunct is completion at `stage2Budget`
 (`stage2WalkObligation_iff_completion`).  `runFuel` is fuel-indexed, so the proof
 that resists is the loop: an invariant preserved by every arm, and a measure that
-decreases on every back edge.  This module scopes that proof and discharges one
-arm of it.  It does not claim the obligation.
+decreases on every back edge.  This module scopes that proof and discharges the
+literal comparison's arm and the four scans'.  It does not claim the obligation.
 
 ## What the loop carries
 
@@ -59,9 +59,27 @@ inner component's bound as the radix.  `n + 5` is the bound on the inner work at
 any back edge: the scans `land.rhs.i`, `land.rhs.i103`, `land.rhs71.i` and
 `land.rhs457.i` walk the document, so at most `n`; the literal comparison
 `for.body.i.i` is bounded by `min (ee - idx) ln` with `ln` four or five at
-`if.end48.i`'s phi, so at most `n + 5`.  That every inner arm stays under the cap
-is what the remaining five arms must show; the outer arm is strict on the factor
-because `inner` resets to at most the cap, which is why the radix is `cap + 1`.
+`if.end48.i`'s phi, so at most `n + 5`.
+
+The four scans' arms show the decrease and not the cap, and the difference
+matters.  Each of them decreases `inner` by one at a fixed `k`, so the radix plays
+no part on those edges.  What no arm can show is `inner ≤ walkInnerCap G` itself:
+`WalkInv` bounds each scan's own bound register only by `2 ^ 64`, so the cap is
+not a consequence of the invariant, and an arm that claimed it from the invariant
+alone would be claiming more than it holds.  The bound is nevertheless the right
+value, and the reason is in the body: each scan's bound is one of two words.
+`%cond350.i` is either `%4` — the word `entry` loads from the state's own slot at
+offset 8 — or `%conv347.i`, a `zext` of a 32-bit lane of the entry stream read at
+`%inc.i`; `%cond.i` is either `%4` or `%conv.i`, the same lane read.  A lane is an
+entry position, and every entry position is below `n` (`WalkGeom.inside`), while
+`nep ≤ n` (`WalkGeom.nep_le`) is what puts the lane's index inside the stream.  So
+a scan's remaining work is `c - i` with `c` an entry position — at most `n`, inside
+`n + 5` with five to spare.  The slot `%4` is read is where `s2_init` leaves the
+document length, and that layout is not part of `WalkGeom`: it is the seeding
+edges' work, together with the clause the outer arm's strict reset needs and the
+invariant does not yet carry, `inner ≤ walkInnerCap G`.  The outer arm is strict
+on the factor because `inner` resets to at most the cap, which is why the radix is
+`cap + 1`.
 
 The arm proved below does not consume the cap's value: it decreases the inner
 component at a fixed `k`, and the outer term is the same on both sides.
@@ -93,18 +111,43 @@ guards mark — the **nesting** state (`sp`, `ctype`, `cst`, and the `sp >= MAXD
 refusal) and the **two reserves** (`z_arena_reserve` before a decoded body and
 `out_reserve(&z->ev, 13)` before each record), each of which can take a refusal
 arm and leave the cursors, the refusal bit and the refusal offset as the record
-must report them.  The four scans are the middle: their measures are the
-document-bounded ones, and they read staged memory but do not write it.
+must report them.
+
+The four scans are the middle, and their four arms are proved below against the
+same `WalkInv`, one at a time:
+
+| arm | source block | landing block | measure step |
+| --- | ------------ | ------------- | ------------ |
+| `whitespace_scan` | `while.body370.i` | `land.rhs.i` | `inner : c - i ↦ c - (i + 1)` |
+| `string_scan` | `while.body.i104` | `land.rhs.i103` | `inner : c - i ↦ c - (i + 1)` |
+| `escape_scan` | `while.body76.i` | `land.rhs71.i` | `inner : c - i ↦ c - (i + 1)` |
+| `extraToken_scan` | `while.body462.i` | `land.rhs457.i` | `inner : c - i ↦ c - (i + 1)` |
+
+Each is the same latch: the counter steps by one, the scan's own bound is tested
+for equality, and the test is clear because the counter is still short of it.
+The latch block itself is pinned (`scanWhitespace_find` and its three
+companions), the landing block's `phi` is read out of the body by `#guard`
+(`scanLandSelect`), and the arms read their counter and bound from `WalkLocal`
+and write the landing facts back into it.  They read staged memory — each landing
+block loads a document byte — but none writes it, so the memory claim and the
+carried extents are untouched.  `k` is not read, so the measure's outer factor is
+the same on both sides and the decrease is the inner component's.
 
 ## What is not here
 
 `Stage2WalkObligation` is not proved.  This module supplies the invariant
-statement, the measure, and one arm; the other five arms, the seed from `entry`
-to `while.body.i`, the exit states, and the composition with `Stage2Run`'s six
-clauses remain.  In particular, `WalkLocal` pins the inner component only at the
-two blocks this arm reaches; the other arms must pin it at their own back-edge
-sources, and until they do the measure is a statement about this edge and not a
-well-founded bound on the whole control flow.
+statement, the measure, five of the six arms, and the block-local facts at the
+ten blocks those arms reach; the entry loop's arm, the seed from `entry` to
+`while.body.i`, the exit states, and the composition with `Stage2Run`'s six
+clauses remain.  `WalkLocal` is still `True` at every block outside those ten, so
+well-foundedness over the whole control flow is not established until the entry
+loop's arm pins its own blocks.
+
+The cap is the other gap, and it is a clause rather than an arm: `WalkInv` does
+not carry `inner ≤ walkInnerCap G`, so no arm can derive the outer arm's strict
+reset from the invariant as it stands.  The value `n + 5` is justified by the
+scan bounds above, not exceeded by any of them, and adding the clause (and its
+seeding proof) is what the outer arm needs.
 -/
 import LeanLLVM.Refinement.JsonStage2Body
 import LeanLLVM.Refinement.JsonEscapeListBody
@@ -270,10 +313,42 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   /-- The remaining inner work at that block. -/
   inner : Nat
 
+/-- A scan's counter at a block that reads it: the counter register holds `i`,
+the scan's own bound register holds `c`, and the remaining inner work is `c - i`.
+Every scan tests its counter for equality with that bound, so the two registers
+are what both its guard and its measure are read from. -/
+def ScanCount (s : State) (phi cond : String) (inner : Nat) : Prop :=
+  ∃ i c : Nat, inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧
+    lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) ∧
+    lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
+
+/-- The same at a scan's landing block.  The counter is the increment the latch
+wrote — `BlockEval`'s `phi` selects it because the predecessor names the latch —
+and the bound register is the one the latch read. -/
+def ScanLanded (s : State) (src inc cond : String) (inner : Nat) : Prop :=
+  ∃ i c : Nat, inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧
+    s.pre = some src ∧
+    lookupName s.env inc = some (.int 64 (BitVec.ofNat 64 i)) ∧
+    lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
+
+/-- A scan's latch guard, at the carry.  Whatever counter and bound the local fact
+pins, the increment is still short of the bound, so the latch's equality test is
+clear and the back edge — not the exit — is the edge it takes.  The guard is
+stated over the local fact's own witness rather than beside it: a caller has the
+registers in hand, so it never has a second existential to reconcile with the
+first. -/
+def ScanGuard (s : State) (phi cond : String) (inner : Nat) : Prop :=
+  ∀ i c : Nat, inner = c - i →
+    lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
+    lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+    i + 1 < c
+
 /-- The block-local half of the invariant: the inner component and the registers
-it is read from, at the two blocks the proved arm reaches.  At every other block
-it is `True`; pinning it there is the remaining arms' work, and the module
-docstring says so rather than claiming a bound it does not have. -/
+it is read from, at the ten blocks the five proved arms reach — the literal
+comparison's two and each of the four scans' latch and landing.  At every other
+block it is `True`; pinning it there is the remaining arm's work (the entry
+loop's), and the module docstring says so rather than claiming a bound it does
+not have. -/
 def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop :=
   if C.block = "for.inc.i.i" then
     ∃ i c : Nat, C.inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧
@@ -284,11 +359,29 @@ def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop 
       s.pre = some "for.inc.i.i" ∧
       lookupName s.env "%inc.i.i" = some (.int 64 (BitVec.ofNat 64 i)) ∧
       lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c))
+  else if C.block = "while.body370.i" then
+    ScanCount s "%ee.0.i238" "%cond350.i" C.inner
+  else if C.block = "land.rhs.i" then
+    ScanLanded s "while.body370.i" "%inc371.i" "%cond350.i" C.inner
+  else if C.block = "while.body.i104" then
+    ScanCount s "%ee.011.i" "%cond.i" C.inner
+  else if C.block = "land.rhs.i103" then
+    ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner
+  else if C.block = "while.body76.i" then
+    ScanCount s "%s2.020.i" "%cond.i" C.inner
+  else if C.block = "land.rhs71.i" then
+    ScanLanded s "while.body76.i" "%inc77.i" "%cond.i" C.inner
+  else if C.block = "while.body462.i" then
+    ScanCount s "%q.0.i246" "%cond350.i" C.inner
+  else if C.block = "land.rhs457.i" then
+    ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner
   else True
 
 /-- **The walk's invariant.**  Everything the loop carries, at the block it is at,
 and the memory it has written.  This is the predicate every one of the six arms
-must preserve; `forInc_step` proves the smallest one does. -/
+must preserve; `forInc_step` proves the literal comparison's arm does and
+`whitespace_scan`, `string_scan`, `escape_scan` and `extraToken_scan` prove the
+four scans' do. -/
 structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop where
   /-- The run is at the carried block. -/
   pc_eq : s.pc = C.block
@@ -537,6 +630,399 @@ theorem forInc_arm {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   obtain ⟨i, c, hinner, hlt, hcw, hi, hc⟩ := hguard
   exact forInc_step G C s i c hInv hblock hi hc hinner hlt hcw
 
+/-! ### The four scans
+
+Each scan's back edge has the same shape, and it is the smallest shape in the
+body after the literal comparison: a latch that steps a counter by one, tests it
+for equality against the scan's own bound, and — when the test is clear — jumps
+back to the block that holds the counter's `phi`.  `while.body370.i → land.rhs.i`
+(the whitespace skip), `while.body.i104 → land.rhs.i103` (the string scan),
+`while.body76.i → land.rhs71.i` (the escape scan) and `while.body462.i →
+land.rhs457.i` (the extra-token scan) are that block at four sets of names.
+
+They read staged memory — each landing block loads a document byte — but none
+writes it, so the memory claim is carried through unchanged, and the step is the
+two instructions at the state's own environment.  The measure's outer factor is
+the same on both sides because `k` is not read; the inner component falls by one.
+-/
+
+/-- A scan's latch, as a block: the counter steps by one, the bound is tested for
+equality, and a clear test takes the back edge to `land`.  The `exit` arm is what
+the test takes when the counter reaches the bound, and it is a different block in
+each scan, so both successors are the edge's names. -/
+def scanBlock (src inc phi test cond exit land : String) : Block :=
+  { name := src,
+    instrs := [
+      Instr.binop inc BinOp.add 64 (Operand.reg phi)
+        (Operand.imm (.int 64 (BitVec.ofNat 64 1))),
+      Instr.icmp test IPred.eq 64 (Operand.reg inc) (Operand.reg cond)],
+    term := Term.condbr (Operand.reg test) exit land }
+
+/-- The whitespace skip's latch is the pinned body's block. -/
+theorem scanWhitespace_find :
+    stage2Body.findBlock "while.body370.i" =
+      some (scanBlock "while.body370.i" "%inc371.i" "%ee.0.i238" "%exitcond.not"
+        "%cond350.i" "if.end372.i" "land.rhs.i") := by
+  simp [stage2Body, Function.findBlock, findBlockList, scanBlock]
+
+/-- The string scan's latch is the pinned body's block. -/
+theorem scanString_find :
+    stage2Body.findBlock "while.body.i104" =
+      some (scanBlock "while.body.i104" "%inc.i105" "%ee.011.i" "%exitcond.not.i"
+        "%cond.i" "cleanup474.i" "land.rhs.i103") := by
+  simp [stage2Body, Function.findBlock, findBlockList, scanBlock]
+
+/-- The escape scan's latch is the pinned body's block. -/
+theorem scanEscape_find :
+    stage2Body.findBlock "while.body76.i" =
+      some (scanBlock "while.body76.i" "%inc77.i" "%s2.020.i" "%exitcond24.not.i"
+        "%cond.i" "while.end78.i" "land.rhs71.i") := by
+  simp [stage2Body, Function.findBlock, findBlockList, scanBlock]
+
+/-- The extra-token scan's latch is the pinned body's block. -/
+theorem scanExtraToken_find :
+    stage2Body.findBlock "while.body462.i" =
+      some (scanBlock "while.body462.i" "%inc463.i" "%q.0.i246" "%exitcond298.not"
+        "%cond350.i" "if.end473.i" "land.rhs457.i") := by
+  simp [stage2Body, Function.findBlock, findBlockList, scanBlock]
+
+/-- The landing block's leading `phi`, read out of the pinned body, and the
+operand it selects from the latch.  The outer `none` is a missing block or a
+first instruction that is not a `phi`; the inner one is a predecessor the block
+does not list.  The `#guard`s below are the instrument: each evaluates the body,
+so a landing fact written for a predecessor or an increment the body does not
+list fails at elaboration instead of being assumed. -/
+def scanLandSelect (land src : String) : Option (Option Operand) :=
+  match stage2Body.findBlock land with
+  | none => none
+  | some b =>
+      match b.instrs.head? with
+      | some (.phi _ _ inc) => some (phiIncoming src inc)
+      | _ => none
+
+-- The whitespace skip lands on a `phi` that selects `%inc371.i` from
+-- `while.body370.i`.
+#guard scanLandSelect "land.rhs.i" "while.body370.i" = some (some (.reg "%inc371.i"))
+
+-- The string scan lands on a `phi` that selects `%inc.i105` from
+-- `while.body.i104`.
+#guard scanLandSelect "land.rhs.i103" "while.body.i104" = some (some (.reg "%inc.i105"))
+
+-- The escape scan lands on a `phi` that selects `%inc77.i` from `while.body76.i`.
+#guard scanLandSelect "land.rhs71.i" "while.body76.i" = some (some (.reg "%inc77.i"))
+
+-- The extra-token scan lands on a `phi` that selects `%inc463.i` from
+-- `while.body462.i`.
+#guard scanLandSelect "land.rhs457.i" "while.body462.i" = some (some (.reg "%inc463.i"))
+
+/-! #### `WalkLocal` at the scans' blocks
+
+Each unfolding names the branch `WalkLocal` takes at that block, so an arm reads
+its register facts from the invariant and writes the landing facts back into it
+without unfolding the whole chain. -/
+
+/-- `WalkLocal` at the whitespace skip's latch. -/
+theorem WalkLocal.whitespace {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : C.block = "while.body370.i") :
+    WalkLocal C s = ScanCount s "%ee.0.i238" "%cond350.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the whitespace skip's landing block. -/
+theorem WalkLocal.whitespaceLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : C.block = "land.rhs.i") :
+    WalkLocal C s = ScanLanded s "while.body370.i" "%inc371.i" "%cond350.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the string scan's latch. -/
+theorem WalkLocal.stringScan {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : C.block = "while.body.i104") :
+    WalkLocal C s = ScanCount s "%ee.011.i" "%cond.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the string scan's landing block. -/
+theorem WalkLocal.stringScanLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : C.block = "land.rhs.i103") :
+    WalkLocal C s = ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the escape scan's latch. -/
+theorem WalkLocal.escape {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : C.block = "while.body76.i") :
+    WalkLocal C s = ScanCount s "%s2.020.i" "%cond.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the escape scan's landing block. -/
+theorem WalkLocal.escapeLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : C.block = "land.rhs71.i") :
+    WalkLocal C s = ScanLanded s "while.body76.i" "%inc77.i" "%cond.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the extra-token scan's latch. -/
+theorem WalkLocal.extraToken {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : C.block = "while.body462.i") :
+    WalkLocal C s = ScanCount s "%q.0.i246" "%cond350.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- `WalkLocal` at the extra-token scan's landing block. -/
+theorem WalkLocal.extraTokenLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : C.block = "land.rhs457.i") :
+    WalkLocal C s = ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner := by
+  simp [WalkLocal, h]
+
+/-- The whitespace skip's register facts, out of the invariant. -/
+theorem WalkInv.whitespace {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) (hblock : C.block = "while.body370.i") :
+    ScanCount s "%ee.0.i238" "%cond350.i" C.inner := by
+  simpa [WalkLocal.whitespace hblock] using h.blockLocal
+
+/-- The string scan's register facts, out of the invariant. -/
+theorem WalkInv.stringScan {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) (hblock : C.block = "while.body.i104") :
+    ScanCount s "%ee.011.i" "%cond.i" C.inner := by
+  simpa [WalkLocal.stringScan hblock] using h.blockLocal
+
+/-- The escape scan's register facts, out of the invariant. -/
+theorem WalkInv.escape {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) (hblock : C.block = "while.body76.i") :
+    ScanCount s "%s2.020.i" "%cond.i" C.inner := by
+  simpa [WalkLocal.escape hblock] using h.blockLocal
+
+/-- The extra-token scan's register facts, out of the invariant. -/
+theorem WalkInv.extraToken {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) (hblock : C.block = "while.body462.i") :
+    ScanCount s "%q.0.i246" "%cond350.i" C.inner := by
+  simpa [WalkLocal.extraToken hblock] using h.blockLocal
+
+/-! #### The scans' steps -/
+
+/-- A scan's step, at the state's own environment: the counter increments and the
+bound is tested for equality.  The equality is false because the counter is still
+short of the bound, so the latch's test is clear and its back edge is the edge it
+takes. -/
+theorem scan_denote (calls : Calls) (s : State) (inc phi test cond : String) (i c : Nat)
+    (hinc_cond : inc ≠ cond)
+    (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hlt : i + 1 < c) (hcw : c < 2 ^ 64) :
+    denoteCode calls
+      [Instr.binop inc BinOp.add 64 (Operand.reg phi)
+         (Operand.imm (.int 64 (BitVec.ofNat 64 1))),
+       Instr.icmp test IPred.eq 64 (Operand.reg inc) (Operand.reg cond)] s =
+      some ((s.bind inc (.int 64 (BitVec.ofNat 64 (i + 1)))).bind
+        test (.int 1 (0 : BitVec 1))) := by
+  rw [denoteCode_add_one calls s inc phi (x := BitVec.ofNat 64 i) hi]
+  rw [denoteCode_icmp_eq calls
+      (s.bind inc (.int 64 (BitVec.ofNat 64 i + BitVec.ofNat 64 1)))
+      test inc cond
+      (x := BitVec.ofNat 64 i + BitVec.ofNat 64 1) (y := BitVec.ofNat 64 c)
+      (by simp only [State.bind, lookupName_cons_self])
+      (by
+        simp only [State.bind]
+        rw [lookupName_cons_ne _ _ hinc_cond]
+        exact hc)]
+  have hadd : BitVec.ofNat 64 i + BitVec.ofNat 64 1 = BitVec.ofNat 64 (i + 1) := by
+    rw [← BitVec.ofNat_add (n := 64) i 1]
+  have hne : BitVec.ofNat 64 (i + 1) ≠ BitVec.ofNat 64 c := by
+    intro heq
+    have h1 : (BitVec.ofNat 64 (i + 1)).toNat = i + 1 := by
+      rw [BitVec.toNat_ofNat]
+      omega
+    have h2 : (BitVec.ofNat 64 c).toNat = c := by
+      rw [BitVec.toNat_ofNat]
+      omega
+    rw [heq, h2] at h1
+    omega
+  simp only [hadd]
+  rw [show evalICmp IPred.eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c) = 0 from
+    (evalICmp_eq_zero_iff _ _).mpr hne]
+  simp only [denoteCode, denoteRun, State.bindAll]
+
+/-- A scan's terminator: a clear test jumps to the landing block, binding the
+increment and naming the latch as the predecessor. -/
+theorem scan_term {calls : Calls} (s : State) (i c : Nat)
+    (src land phi inc test cond exit : String)
+    (hpc : s.pc = src)
+    (hfind : stage2Body.findBlock src = some (scanBlock src inc phi test cond exit land))
+    (hinc_cond : inc ≠ cond)
+    (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hlt : i + 1 < c) (hcw : c < 2 ^ 64) :
+    step calls stage2Body s =
+      .jump { ((s.bind inc (.int 64 (BitVec.ofNat 64 (i + 1)))).bind
+                test (.int 1 (0 : BitVec 1))) with
+              pc := land
+              pre := some src } := by
+  simp only [step, hpc, hfind, scanBlock]
+  rw [scan_denote calls s inc phi test cond i c hinc_cond hi hc hlt hcw]
+  dsimp only
+  rw [execTerm_condbr_zero _ _ _ _ _
+      (by simp only [State.bind, evalOperand, lookupName_cons_self]) rfl]
+  simp only [State.bind, hpc]
+
+/-- **A scan's arm.**  From the invariant at a scan's latch, one control step
+reaches that scan's landing block with every carried field preserved, the extents
+and the memory untouched, and the measure strictly smaller: `k` is unchanged, so
+the outer factor is the same, and the inner component falls from `c - i` to
+`c - (i + 1)`.
+
+The landing block's local facts are the last hypothesis' content: the caller
+supplies them from the landing block's own `WalkLocal` branch, so the arm is
+about the block the body jumps to and not about an assumed landing. -/
+theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (i c : Nat) (src land phi inc test cond exit : String)
+    (hInv : WalkInv G C s) (hblock : C.block = src)
+    (hfind : stage2Body.findBlock src = some (scanBlock src inc phi test cond exit land))
+    (hinc_cond : inc ≠ cond) (htest_cond : test ≠ cond) (htest_inc : test ≠ inc)
+    (hinc_k : inc ≠ "%k.0.i249") (htest_k : test ≠ "%k.0.i249")
+    (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hinner : C.inner = c - i) (hlt : i + 1 < c) (hcw : c < 2 ^ 64)
+    (hland : ∀ (e : State), e.pre = some src →
+      lookupName e.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) →
+      lookupName e.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      WalkLocal (G := G) { C with block := land, inner := c - (i + 1) } e) :
+    ∃ (e : State),
+      step calls stage2Body s = .jump e ∧
+      WalkInv G { C with block := land, inner := c - (i + 1) } e ∧
+      walkMeasure G { C with block := land, inner := c - (i + 1) } < walkMeasure G C ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  have hpc : s.pc = src := by rw [hInv.pc_eq, hblock]
+  let e : State :=
+    { ((s.bind inc (.int 64 (BitVec.ofNat 64 (i + 1)))).bind
+        test (.int 1 (0 : BitVec 1))) with
+      pc := land
+      pre := some src }
+  have hstep : step calls stage2Body s = .jump e :=
+    scan_term s i c src land phi inc test cond exit hpc hfind hinc_cond hi hc hlt hcw
+  have hinc : lookupName e.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    dsimp only [e, State.bind]
+    rw [lookupName_cons_ne _ _ htest_inc, lookupName_cons_self]
+  have hcond : lookupName e.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
+    dsimp only [e, State.bind]
+    rw [lookupName_cons_ne _ _ htest_cond, lookupName_cons_ne _ _ hinc_cond]
+    exact hc
+  have hk : lookupName e.env "%k.0.i249" = lookupName s.env "%k.0.i249" := by
+    dsimp only [e, State.bind]
+    rw [lookupName_cons_ne _ _ htest_k, lookupName_cons_ne _ _ hinc_k]
+  refine ⟨e, hstep, ?_, ?_, ?_⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := ?_
+        k_le := hInv.k_le
+        records_le := hInv.records_le
+        evlen_eq := hInv.evlen_eq
+        alen_le_sum := hInv.alen_le_sum
+        spans_order := hInv.spans_order
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        eoff_le := hInv.eoff_le
+        owning := ?_
+        blockLocal := ?_ }
+    · rw [hk]; exact hInv.blockIndex
+    · dsimp only [e]; exact hInv.owning
+    · exact hland e rfl hinc hcond
+  · dsimp only [walkMeasure]
+    rw [hinner]
+    exact Nat.add_lt_add_left (by omega) _
+  · intro k
+    rw [show 1 + k = k + 1 from by omega]
+    simp only [runFuel, hstep]
+
+/-! #### The four arms -/
+
+/-- **The whitespace skip's back edge**, `while.body370.i → land.rhs.i`.  The
+counter `%ee.0.i238` goes from `i` to `i + 1` and the test `%inc371.i =
+%cond350.i` is clear because `i + 1 < c`; the measure keeps its outer factor and
+loses one from the inner component. -/
+theorem whitespace_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
+    (hguard : ScanGuard s "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ (e : State) (C' : WalkCarry G),
+      WalkInv G C' e ∧ C'.block = "land.rhs.i" ∧
+      walkMeasure G C' < walkMeasure G C ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.whitespace hInv hblock
+  have hnext : i + 1 < c := hguard i c hinner hi hc
+  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+    scan_step G C s i c "while.body370.i" "land.rhs.i" "%ee.0.i238" "%inc371.i"
+      "%exitcond.not" "%cond350.i" "if.end372.i" hInv hblock scanWhitespace_find
+      (by decide) (by decide) (by decide) (by decide) (by decide) hi hc hinner hnext hcw
+      (by
+        intro e hpre hinc hcond
+        rw [WalkLocal.whitespaceLanded rfl]
+        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+
+/-- **The string scan's back edge**, `while.body.i104 → land.rhs.i103`.  The
+counter `%ee.011.i` goes from `i` to `i + 1` and the test `%inc.i105 = %cond.i`
+is clear because `i + 1 < c`; the latch's exit arm is `cleanup474.i` and it is not
+the edge taken.  The measure keeps its outer factor and loses one from the inner
+component. -/
+theorem string_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body.i104")
+    (hguard : ScanGuard s "%ee.011.i" "%cond.i" C.inner) :
+    ∃ (e : State) (C' : WalkCarry G),
+      WalkInv G C' e ∧ C'.block = "land.rhs.i103" ∧
+      walkMeasure G C' < walkMeasure G C ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.stringScan hInv hblock
+  have hnext : i + 1 < c := hguard i c hinner hi hc
+  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+    scan_step G C s i c "while.body.i104" "land.rhs.i103" "%ee.011.i" "%inc.i105"
+      "%exitcond.not.i" "%cond.i" "cleanup474.i" hInv hblock scanString_find
+      (by decide) (by decide) (by decide) (by decide) (by decide) hi hc hinner hnext hcw
+      (by
+        intro e hpre hinc hcond
+        rw [WalkLocal.stringScanLanded rfl]
+        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+
+/-- **The escape scan's back edge**, `while.body76.i → land.rhs71.i`.  The counter
+`%s2.020.i` goes from `i` to `i + 1` and the test `%inc77.i = %cond.i` is clear
+because `i + 1 < c`; the measure keeps its outer factor and loses one from the
+inner component. -/
+theorem escape_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body76.i")
+    (hguard : ScanGuard s "%s2.020.i" "%cond.i" C.inner) :
+    ∃ (e : State) (C' : WalkCarry G),
+      WalkInv G C' e ∧ C'.block = "land.rhs71.i" ∧
+      walkMeasure G C' < walkMeasure G C ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.escape hInv hblock
+  have hnext : i + 1 < c := hguard i c hinner hi hc
+  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+    scan_step G C s i c "while.body76.i" "land.rhs71.i" "%s2.020.i" "%inc77.i"
+      "%exitcond24.not.i" "%cond.i" "while.end78.i" hInv hblock scanEscape_find
+      (by decide) (by decide) (by decide) (by decide) (by decide) hi hc hinner hnext hcw
+      (by
+        intro e hpre hinc hcond
+        rw [WalkLocal.escapeLanded rfl]
+        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+
+/-- **The extra-token scan's back edge**, `while.body462.i → land.rhs457.i`.  The
+counter `%q.0.i246` goes from `i` to `i + 1` and the test `%inc463.i =
+%cond350.i` is clear because `i + 1 < c`; the measure keeps its outer factor and
+loses one from the inner component. -/
+theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
+    (hguard : ScanGuard s "%q.0.i246" "%cond350.i" C.inner) :
+    ∃ (e : State) (C' : WalkCarry G),
+      WalkInv G C' e ∧ C'.block = "land.rhs457.i" ∧
+      walkMeasure G C' < walkMeasure G C ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.extraToken hInv hblock
+  have hnext : i + 1 < c := hguard i c hinner hi hc
+  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+    scan_step G C s i c "while.body462.i" "land.rhs457.i" "%q.0.i246" "%inc463.i"
+      "%exitcond298.not" "%cond350.i" "if.end473.i" hInv hblock scanExtraToken_find
+      (by decide) (by decide) (by decide) (by decide) (by decide) hi hc hinner hnext hcw
+      (by
+        intro e hpre hinc hcond
+        rw [WalkLocal.extraTokenLanded rfl]
+        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+
 /-! ### The instrument -/
 
 /-- info: 'LeanLLVM.Refinement.WalkGeom.nonempty' depends on axioms: [propext] -/
@@ -586,6 +1072,98 @@ theorem forInc_arm {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
 /-- info: 'LeanLLVM.Refinement.forInc_arm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.forInc_arm
+
+/-- info: 'LeanLLVM.Refinement.scanWhitespace_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scanWhitespace_find
+
+/-- info: 'LeanLLVM.Refinement.scanString_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scanString_find
+
+/-- info: 'LeanLLVM.Refinement.scanEscape_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scanEscape_find
+
+/-- info: 'LeanLLVM.Refinement.scanExtraToken_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scanExtraToken_find
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.whitespace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.whitespace
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.whitespaceLanded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.whitespaceLanded
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.stringScan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.stringScan
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.stringScanLanded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.stringScanLanded
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.escape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.escape
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.escapeLanded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.escapeLanded
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.extraToken' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.extraToken
+
+/-- info: 'LeanLLVM.Refinement.WalkLocal.extraTokenLanded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkLocal.extraTokenLanded
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.whitespace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.whitespace
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.stringScan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.stringScan
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.escape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.escape
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.extraToken' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.extraToken
+
+/-- info: 'LeanLLVM.Refinement.scan_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scan_denote
+
+/-- info: 'LeanLLVM.Refinement.scan_term' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scan_term
+
+/-- info: 'LeanLLVM.Refinement.scan_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.scan_step
+
+/-- info: 'LeanLLVM.Refinement.whitespace_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.whitespace_scan
+
+/-- info: 'LeanLLVM.Refinement.string_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.string_scan
+
+/-- info: 'LeanLLVM.Refinement.escape_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.escape_scan
+
+/-- info: 'LeanLLVM.Refinement.extraToken_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.extraToken_scan
 
 
 end LeanLLVM.Refinement
