@@ -421,22 +421,26 @@ fi
 # The certificate's field values are derived from the files the manifest names,
 # from the toolchain the selector observes and from the pinned proof data, so a
 # fixture value cannot silently disagree with the input it claims.  Each
-# certificate carries the checked axiom set of the theorem it names: the pin
-# under LeanLLVMTest/ when the theorem is pinned, and otherwise the selector's
-# one checked set, read from the selector rather than retyped.
+# certificate carries the checked axiom set of the theorem it names, read from
+# that theorem's own `#print axioms` pin under LeanLLVMTest/.  A theorem with no
+# pin has no known footprint, and there is nothing to carry for it: the fixture
+# is refused with the missing pin's name and the directory it belongs in.  It is
+# never substituted, because another declaration's checked set is a value that
+# reads as a footprint while being about a different theorem.
 pinned_axioms() { # theorem short name
-  sed -n "s/.*'LeanLLVM\.[A-Za-z0-9_.]*\.$1' depends on axioms: \[\([^]]*\)\].*/\1/p" \
-    "$repo"/LeanLLVMTest/*.lean |
-    tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
-    LC_ALL=C sort | paste -sd, -
-}
-selector_axioms() {
-  sed -n 's/^expected_axioms=//p' "$selector_source" | sed -n '1p'
-}
-certificate_axioms() { # theorem short name
+  # Lean wraps a rendered `#print axioms` message at its print width, so the
+  # pin can span several source lines.  Join them before matching: a reader that
+  # assumes one line stops matching, silently, the moment the name or the set
+  # crosses the width.
   local axioms
-  axioms=$(pinned_axioms "$1")
-  [ -n "$axioms" ] || axioms=$(selector_axioms)
+  axioms=$(
+    cat "$repo"/LeanLLVMTest/*.lean |
+      tr '\n' ' ' |
+      sed -n "s/.*'LeanLLVM\.[A-Za-z0-9_.]*\.$1' depends on axioms: \[\([^]]*\)\].*/\1/p" |
+      tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
+      LC_ALL=C sort | paste -sd, -
+  )
+  [ -n "$axioms" ] || return 1
   printf '%s' "$axioms"
 }
 # The toolchain revision is the SHA-256 of a fixed nine-line record: a header,
@@ -527,12 +531,18 @@ manifest_value() { # key
 # that unit in the manifest, and the axiom set is that theorem's checked
 # footprint.
 write_certificate() { # path artifact-unit certificate-unit theorem-key contract-key
-  local path=$1 art_unit=$2 cert_unit=$3 theorem_key=$4 contract_key=$5 axioms_value
-  axioms_value=$(certificate_axioms \
-    "$(manifest_value "$theorem_key" | sed 's/.*\.//')")
+  local path=$1 art_unit=$2 cert_unit=$3 theorem_key=$4 contract_key=$5
+  local theorem axioms_value
+  theorem=$(manifest_value "$theorem_key")
+  if ! axioms_value=$(pinned_axioms "${theorem##*.}"); then
+    echo "SETUP: no '#print axioms' pin for $theorem in $repo/LeanLLVMTest/" >&2
+    echo "SETUP: the certificate's axioms field is that theorem's checked footprint," >&2
+    echo "SETUP: and no other declaration's set stands in for a theorem without one" >&2
+    exit 3
+  fi
   if ! printf '%s' "$axioms_value" |
        grep -Eq '^[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*$'; then
-    echo "SETUP: cannot read the axiom set for $art_unit" >&2
+    echo "SETUP: the pin for $theorem does not name an axiom set" >&2
     exit 3
   fi
   {

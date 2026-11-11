@@ -118,6 +118,16 @@ low eight bits of the `i32`; both possible answers are below 256.
 
 ## F3 — the `getelementptr` round trip
 
+**Refuted.**  The finding's live clause was that the printer adds `inbounds` to
+every `getelementptr`, so a round trip gave the printed program a definedness the
+source did not have.  The printer writes an ordinary `getelementptr` now —
+`LeanLLVM/Printer.lean`'s header states that rule, and the check below observes
+the text — so the round trip adds no flag.
+
+The parser still accepts `inbounds` and drops it, because the instruction has no
+field for it.  That direction loses a promise instead of adding one, and the
+text LLVM consumes is the printed one.
+
 `tests/counterexamples/gep-roundtrip.ll`:
 
 ```llvm
@@ -132,31 +142,32 @@ entry:
 }
 ```
 
-The parser accepts and drops `inbounds`; the printer emits it again on every
-GEP.  Parsing this file and printing it gives, verbatim:
+Parsing this file and printing it gives, verbatim:
 
 ```llvm
 define i8 @roundtrip_gep() {
 entry:
   %p = alloca i8
-  store i8 7, ptr %p
-  %q = getelementptr inbounds i8, ptr %p, i64 2
-  %r = getelementptr inbounds i8, ptr %q, i64 18446744073709551614
-  %v = load i8, ptr %r
+  store i8 7, ptr %p, align 1
+  %q = getelementptr i8, ptr %p, i64 2
+  %r = getelementptr i8, ptr %q, i64 18446744073709551614
+  %v = load i8, ptr %r, align 1
   ret i8 %v
 }
 ```
 
-Both GEPs acquire `inbounds`, where the source wrote none.  (`-2` prints as its
-`i64` bit pattern `18446744073709551614`; the value is the same.)  The
-re-parsed module equals the parsed one, so the addition is invisible to the
-AST-level round trip.
+Neither GEP carries `inbounds`, so the round trip preserves the absence this
+fixture is about.  The text differs elsewhere, in two ways that add no promise:
+`-2` prints as its `i64` bit pattern `18446744073709551614`, the same value, and
+each `load` and `store` names `align 1` rather than leaving the modifier to the
+type's ABI alignment, which the AST does not carry.  The re-parsed module equals
+the parsed one, so neither difference is visible to the AST-level round trip.
 
 **Definedness is the criterion.**  `%p` names a one-byte allocation, so the
-first GEP's index `2` leaves the object; under LLVM's `inbounds` rule that
-result is poison, and the printed program has a definedness the source does not
-have.  The observed return does not show this, and the check records why both
-forms assemble and both optimise to the same constant:
+first GEP's index `2` leaves the object; under LLVM's `inbounds` rule that result
+is poison, and a printed `inbounds` would give the program a definedness the
+source does not have.  The observed return cannot see that, and the check records
+why both forms assemble and both optimise to the same constant:
 
 ```text
 llvm-as source 0
@@ -165,16 +176,20 @@ opt-source-return ret i8 7
 opt-printed-return ret i8 7
 ```
 
-So the added flag is a semantic change, not a syntax error, and a test that only
+So the flag would be a semantic change, not a syntax error, and a test that only
 runs the program cannot distinguish the two texts.  The regression input is
 therefore the text: the printed form must not carry an `inbounds` the source did
 not write.  Its detector runs on a positive control in the same run
 (`getelementptr inbounds …` is found), on the source (absent), and on the printed
-text (present); the script exits nonzero while the last disagrees with the
-source.
+text (absent); a printed `inbounds` turns the verdict into `RESULT: F3
+CONFIRMED` and exits nonzero.
 
-The run reports `source-has-inbounds false`, `printed-has-inbounds true`,
-`reparse-same true`, and the model's observation `model 7`.
+The run reports `source-has-inbounds false`, `printed-has-inbounds false`,
+`reparse-same true`, the model's observation `model 7`, and `RESULT: F3 REFUTED`
+with exit zero.
 
 This check covers the `inbounds` clause of the finding.  The index-width and
-alignment losses the finding also names are not exercised here.
+alignment losses it also names are settled in the printer rather than by this
+check: an index written as a register is printed at the width that register's
+own definition binds, and the alignment the AST does not carry is named `align 1`
+rather than left to the type's ABI alignment.  Neither is exercised here.

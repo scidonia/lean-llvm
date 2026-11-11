@@ -627,13 +627,18 @@ manifest_value() { # key
 # The artifact's field values are derived from the files the manifest names,
 # from the toolchain the selector observes, and from the pinned proof data, so
 # a fixture value cannot silently disagree with the production rule it claims.
+# Lean wraps a rendered `#print axioms` message at its print width, so the pin
+# can span several source lines.  Join them before matching: a reader that
+# assumes one line stops matching, silently, the moment the name or the set
+# crosses the width.
 axioms=$(
-  sed -n 's/.*IR_refines. depends on axioms: \[\(.*\)\]/\1/p' \
-    "$repo/LeanLLVMTest/Refinement.lean" |
+  tr '\n' ' ' < "$repo/LeanLLVMTest/Refinement.lean" |
+    sed -n "s/.*'LeanLLVM\.[A-Za-z0-9_.]*\.IR_refines' depends on axioms: \[\([^]]*\)\].*/\1/p" |
     tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
     LC_ALL=C sort | paste -sd, -
 )
-[ -n "$axioms" ] || setup_fail "cannot read the pinned axiom set"
+[ -n "$axioms" ] ||
+  setup_fail "no '#print axioms' pin for LeanLLVM.Refinement.CommaMaskIR.IR_refines in $repo/LeanLLVMTest/Refinement.lean"
 # The toolchain revision is the SHA-256 of a fixed nine-line record: a header,
 # then the digest of each revision-bearing pin file and of each version
 # command's stdout, in that order, every line terminated by one LF.  A single

@@ -79,8 +79,13 @@ grep -q "∃ k' mem'," "$log" \
   || report "the residual goal is not the headline's conclusion"
 
 # 3. The diagnostics must name the wrapper's declaration and the carrier the hole
-#    introduces, so the failure is attributed rather than merely present.
-grep -q "LeanLLVM\.Refinement\.${wrapper}' depends on axioms: \[propext, sorryAx, Quot\.sound\]" "$log" \
+#    introduces, so the failure is attributed rather than merely present.  Lean
+#    wraps a rendered `#print axioms` message at its print width, so the
+#    diagnostic can span several log lines; join them before matching, or a
+#    longer declaration name stops the match without saying so.
+flat_log=$(tr '\n' ' ' < "$log" | tr -s ' ')
+printf '%s' "$flat_log" |
+  grep -q "LeanLLVM\.Refinement\.${wrapper}' depends on axioms: \[propext, sorryAx, Quot\.sound\]" \
   || report "no pin diagnostic names LeanLLVM.Refinement.${wrapper} with the sorryAx carrier"
 
 # 4. It must not fail elsewhere: every error that names a source file must name
