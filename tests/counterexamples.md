@@ -1,27 +1,30 @@
 # Counterexamples to the three source findings
 
 Three executable checks, one per finding of
-`docs/lean-llvm-correctness-critique-and-repair-plan-b40bbe4.md`.  Nothing here
-repairs a definition, states a new semantics, or changes a theorem: F1 adds one
-negative lemma and F2/F3 add failing-then-passing regression inputs.
+`docs/lean-llvm-correctness-critique-and-repair-plan-b40bbe4.md`.  F2/F3 are
+failing-then-passing regression inputs and change nothing themselves.  F1 is the
+proof side: two negative lemmas pin the premises the parser composition retired,
+and one instantiation check shows the replacement premise holds at two actual
+runs.
 
     nix develop -c bash tests/counterexamples/check.sh
 
-The driver builds `LeanLLVMTest` for F1 and runs the other two scripts.  F2 and
-F3 exit nonzero while the defect they name is present; the driver then exits
-nonzero and prints one summary line per finding.  The driver's
-`index`/`HEAD` lines and each script's `HEAD`/mtime lines belong to the
-invocation, so a transcript says which revision produced it.
+The driver builds `LeanLLVMTest` for F1's negative lemmas, elaborates the F1
+instantiation, and runs the other two scripts.  F2 and F3 exit nonzero while the
+defect they name is present; the driver then exits nonzero and prints one
+summary line per finding.  The driver's `index`/`HEAD` lines and each script's
+`HEAD`/mtime lines belong to the invocation, so a transcript says which revision
+produced it.
 
 | finding | subject | check | path |
 |---|---|---|---|
-| F1 | the proof | the universal `hsem` implies `False` | `LeanLLVMTest/Counterexamples.lean` |
+| F1 | the proof | the retired universal `hsem` implies `False`, and the replacement holds at two runs | `LeanLLVMTest/Counterexamples.lean`, `tests/counterexamples/parser-half-outcome.lean` |
 | F2 | the semantics | the swap program, model against clang | `tests/counterexamples/phi-swap.sh` |
 | F3 | parser and printer | the GEP round trip, assembled by `llvm-as` | `tests/counterexamples/gep-roundtrip.sh` |
 
-## F1 — the final parser premise is unsatisfiable
+## F1 — the final parser premise was unsatisfiable
 
-`pipeline_satisfies_of_parser` takes
+`pipeline_satisfies_of_parser` and `pipeline_units_finalisation` took
 
 ```lean
 hsem : ∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
@@ -38,10 +41,17 @@ verdict = 1 ↔ ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) 
 
 The quantifier ranges over `verdict`, so the same input supplies the acceptance
 equivalence at `1` and at `0`: the first instance says the parser accepts, the
-second says it refuses.
+second says it refuses.  Nothing in the premise connects the verdict, the
+returned memory or the slots to an execution.
 
-`LeanLLVMTest/Counterexamples.lean` states and proves the negation at an
-arbitrary `eventRel` and `base`:
+Both declarations now take `ParserHalfForOutcome eventRel base args mem o`, which
+reads the verdict, the returned memory and the caller's three slots out of `o`
+and the document out of `args` and `mem`.  A run that returned `1` supplies the
+half at `1` and says nothing at `0`.
+
+**The retired shape implies `False`.**  `LeanLLVMTest/Counterexamples.lean`
+states and proves both negations, at an arbitrary `eventRel` (and, for the
+finalisation's, an arbitrary staging memory and `base`):
 
 ```lean
 theorem pipeline_parser_hsem_false (eventRel : EventStreamRel) (base : Nat) :
@@ -49,27 +59,66 @@ theorem pipeline_parser_hsem_false (eventRel : EventStreamRel) (base : Nat) :
         (dst ev err : Nat),
         readBytes mem base bs.length = some bs →
         ParserHalf eventRel bs verdict m dst ev err)
+
+theorem pipeline_units_finalisation_hsem_false (eventRel : EventStreamRel)
+    (mem : Mem) (base : Nat) :
+    ¬ (∀ (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
+        (dst ev err : Nat),
+        readBytes mem base bs.length = some bs →
+        ParserHalf eventRel bs verdict m dst ev err)
 ```
 
-The proof instantiates `hsem` on the empty document and the empty memory, reads
-the equivalence at `verdict = 1` and at `verdict = 0`, and derives the
+Each proof instantiates its hypothesis on the empty document, reads the
+equivalence at `verdict = 1` and at `verdict = 0`, and derives the
 contradiction.
 
-**The input read.** `hsem`'s own `readBytes` hypothesis supplies it; the empty
-document satisfies it in every memory and at every base, because
+**The input read.**  The hypothesis's own `readBytes` premise supplies it; the
+empty document satisfies it in every memory and at every base, because
 `readBytes m a 0 = some []` is `readBytes`'s first branch.  No concrete `Mem`,
 no concrete `base`, and no evaluation of the parser's answer is needed.  The
-lemma is stated at every `eventRel` and `base`, so it applies at whatever
-instance the composition uses.
+lemmas hold at every `eventRel`, so they apply at whatever instance the
+composition uses.
 
-The module pins the declaration's axiom footprint:
-`[propext, Quot.sound]`, the development's ceiling.  It lives in
-`LeanLLVMTest/` rather than in the library because `LeanLLVM.lean` is the
-library's root module and is not edited; `LeanLLVMTest` imports `LeanLLVM` from
-outside, and `lake build LeanLLVMTest` elaborates the module and its pin.
+The modules pin both axiom footprints at `[propext, Quot.sound]`, the
+development's ceiling.  They live in `LeanLLVMTest/` rather than in the library
+because `LeanLLVM.lean` is the library's root module and is not edited;
+`LeanLLVMTest` imports `LeanLLVM` from outside, and `lake build LeanLLVMTest`
+elaborates the module and its pins.
 
 The property is about the premise, not about the parser: it says the hypothesis
 cannot be discharged, not that the parser gives a wrong answer.
+
+**The replacement is instantiated at two actual runs.**
+`tests/counterexamples/parser-half-outcome.lean` proves
+`∃ o, runFuel noCalls 1 f (EntryState f args mem 1) = some o ∧
+ParserHalfForOutcome … o` twice, at a one-block function whose entry returns the
+verdict:
+
+* accepting — `1` over the document `null`; the tape, its decode, its span
+  discipline and its validity come from `parseRef_complete`, `decodeTape_correct`
+  and `tape_valid`, so the acceptance equivalence is proved rather than assumed;
+* refusing — `0` over a byte-order mark, which `parseBytes` refuses at its own
+  branch (`bom_refused`, decided).
+
+The outcome in each theorem is the run's result, not a chosen one.  The
+event/arena relation there is prefix-closed (each readable prefix of a buffer is
+a prefix of the bytes the run reported at that slot), because `ParserHalf`
+applies the relation at every readable prefix; its docstring records why that
+quantification is what lets an independently produced parser half apply at the
+units' post's witnesses, and that a relation distinguishing prefixes therefore
+cannot be used at an accepting verdict.
+
+    nix develop -c probes/install/mem-capped.sh --cap 6G -- \
+      lake env lean tests/counterexamples/parser-half-outcome.lean
+
+Exits `0` with no diagnostic from the file (the dev shell's own banner and its
+`Git tree … is dirty` warning are the invocation's), and every `#print axioms`
+pin in the file matched its recorded `#guard_msgs` value — the two instantiations
+at `[propext, Quot.sound]`.  The driver's F1 line on this revision is
+
+```text
+F1 proved: the retired premise implies False, and the replacement holds at both runs
+```
 
 ## F2 — the two-register `phi` swap
 

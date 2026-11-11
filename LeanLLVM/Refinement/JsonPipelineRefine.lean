@@ -53,8 +53,19 @@ invariant's carried cursors, so each belongs with the arm trace that carries the
 **Nothing here identifies the verdict with the reference parser.**  That is
 `Σ_pipeline`'s and D2's, as `JsonPipelineContract`'s docstring says.  The
 finalisation at the end of this module carries the identification as the named
-hypothesis `ParserHalf` and derives the specification's post from the units'
-record around it.
+predicate `ParserHalfForOutcome` and derives the specification's post from the
+units' record around it.
+
+**The parser predicate is indexed by the outcome, not by its verdict.**  An
+earlier statement of the bridge took the parser half quantified over the
+document, the returned memory *and the verdict*: one readable document then
+supplied the acceptance equivalence at `1` and at `0`, so the premise was
+inhabited by nothing — `LeanLLVMTest.Counterexamples.pipeline_parser_hsem_false`
+is the regression that says so, and
+`pipeline_units_finalisation_hsem_false` states the same for the finalisation's
+own retired premise.  `ParserHalfForOutcome` reads the verdict, the returned
+memory and the caller's slots out of the run's outcome and argument list, so a
+run that returned `1` supplies the half at `1` and says nothing at `0`.
 -/
 import LeanLLVM.Refinement.JsonPipelineContract
 import LeanLLVM.Refinement.JsonPipelineBlockEval
@@ -991,13 +1002,24 @@ the cursors, the verdict's two values, the extents, the frame — is derived fro
 The three conjuncts `pipelineUnitsPost` cannot supply: the verdict's equivalence
 with the reference parser's acceptance, the accepted tape with its value and
 validity, and the refusal word's offset.  `m` is the state the run returned, `bs`
-the document the caller staged, and `dst`, `ev`, `err` the caller's slots.  The
-extents are premises rather than binders because the specification's own outer
-witnesses are the run's, so this is stated at whatever extent the run reports.
+the document the caller staged, and `dst`, `ev`, `err` the caller's slots.
 
-`arena` and `evs` are the bytes at those extents, which the units' post already
-names by `ndst'` and `nev'`; this half adds only what is said about them, so a
-caller does not prove the extents twice. -/
+`arena` and `evs` are read at the extents the run reports, which the units' post
+already names by `ndst'` and `nev'`; this half adds only what is said about them.
+
+**A recorded limitation of this shape.**  The extent pair is universally
+quantified with the two `readBytes` premises, not bound, because the finalisation
+below and `Sigma_pipeline` name the extents as *their* witnesses while this half
+is produced independently of them; a binder would leave the two witness sets to
+be identified, and the only thing connecting them — the eight-byte word in a
+cursor slot — identifies a value modulo `2 ^ 64`, not a length.  The cost is that
+the event/arena relation is required at *every* readable prefix of the two
+buffers, including the empty one.  A relation that distinguishes prefixes
+therefore makes the accepting case unsatisfiable, and the instantiation in
+`tests/counterexamples/parser-half-outcome.lean` uses one that does not
+distinguish them.  Stating the relation at one extent needs the extents to be
+named by both sides, which is a change to the units' post's shape rather than to
+this predicate. -/
 def ParserHalf (eventRel : EventStreamRel) (bs : List UInt8)
     (verdict : BitVec 64) (m : Mem) (dst ev err : Nat) : Prop :=
   ∀ (ndst' nev' : Nat) (arena evs : List UInt8),
@@ -1014,20 +1036,51 @@ def ParserHalf (eventRel : EventStreamRel) (bs : List UInt8)
         ValidDocument (ByteString.literal bs) v) ∧
     (∀ e : Nat, readBytes m err 8 = some (wordBytes 8 e) → RefusalOffset bs e)
 
+/-- **The parser half at one outcome of the run.**
+
+`o` is an outcome of the run, `args` the caller's argument list, `mem` the memory
+the run started in and `base` the document's address.  The verdict, the returned
+memory and — through the argument list — the caller's three slots are the ones
+*this outcome* carries: `verdict` is a field of `o` and not a quantified
+variable, so the predicate says nothing about a verdict no execution produced.
+
+The document is the one the argument list's length and the starting memory name.
+Both are pinned rather than quantified: the length fixes the read and the read
+fixes the bytes, so the `∃ bs` has at most one inhabitant per outcome.
+
+**Why this is not the retired premise.**  The retired premise quantified the
+verdict (and the returned memory and the slots) freely over a readable document;
+`pipeline_parser_hsem_false` proves it implies `False`.  Here every one of those
+values is a projection of `o`, and `o` is supplied by the run: a caller holding
+`BehFromState … o` cannot choose a verdict the execution did not return.  The
+producer of this predicate is stage two's body theorem — the record `Γ_stage2`
+and `EventStreamRel` — and it is a hypothesis here only because that theorem is
+not in this file. -/
+def ParserHalfForOutcome (eventRel : EventStreamRel) (base : Nat)
+    (args : List Value) (mem : Mem) (o : Outcome) : Prop :=
+  match o, args with
+  | .ret (some (.int 64 verdict)) m,
+    [.ptr _, .int 64 n, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 _, .ptr _, .ptr _,
+     .int 64 _, .ptr _, .ptr _, .ptr dst, .int 64 _, .ptr _, .ptr ev, .int 64 _,
+     .ptr _, .ptr err, .int 64 _] =>
+      ∃ bs : List UInt8,
+        n.toNat = bs.length ∧
+        readBytes mem base n.toNat = some bs ∧
+        ParserHalf eventRel bs verdict m dst ev err
+  | _, _ => False
+
 /-- **The finalisation, at the shape `Satisfies` consumes.**
 
-From the staging, the units' post and one parser half at the staged document, the
-specification's post.  `hsem` is quantified over the document and the run's state
-because both are the units' post's witnesses, not this record's parameters; the
-`readBytes` premise pins the document to the one the staging holds at `base`. -/
+From the staging, the units' post and the parser half at that same outcome, the
+specification's post.  `hsem` is indexed by the outcome because the units' post
+is: the verdict, the returned memory and the slots are that post's witnesses, and
+the parser half reads them off the same `o`.  The document it carries is the one
+the staging holds at `base`, which the length and the read identify. -/
 theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
     (hpre : pipelineStaging tab base args mem)
     (hpost : pipelineUnitsPost args mem next o)
-    (hsem : ∀ (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-        (dst ev err : Nat),
-      readBytes mem base bs.length = some bs →
-      ParserHalf eventRel bs verdict m dst ev err) :
+    (hsem : ParserHalfForOutcome eventRel base args mem o) :
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs,
@@ -1056,8 +1109,15 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
       simp
     have hdoc : readBytes mem base n.toNat = some bs := by
       rw [hlen]; exact hdoclen
+    -- the outcome's own document, identified with the staging's by the read
+    obtain ⟨bs', hlen', hread', hhalf⟩ := hsem
+    have hbs : bs' = bs := by
+      rw [← hlen] at hdoclen
+      rw [hread'] at hdoclen
+      exact Option.some.inj hdoclen
+    rw [hbs] at hhalf
     obtain ⟨hacc, haccepted, hrefused⟩ :=
-      hsem bs verdict m' dst ev err hdoclen ndst' nev' out evs hdst hev
+      hhalf ndst' nev' out evs hdst hev
     unfold Sigma_pipeline
     refine ⟨bs, nk', nxp', ndst', nev', hlen, hdoc, hnk, hnxp, hndst, hnev,
       hverdict, hacc, ?_, ?_, ?_⟩
@@ -1077,14 +1137,23 @@ body's staging and budget by name, so the finalisation is applied where the post
 is consumed: no post-to-post implication at `Satisfies.mono`'s shape, whose
 hypothesis is stated without the pre, is available or needed.  The completion
 conjunct transfers unchanged because both records' budgets are `pipelineBudget`
-by definition. -/
+by definition.
+
+**The parser half is a hypothesis at the run's own behaviours.**  `hsem` is
+indexed by the outcome and gated by `BehFromState` at the pre's entry state: it
+is asked for at the outcomes this run can produce, and only there.  That is what
+the retired premise was not — it quantified the verdict freely, so one document
+supplied the acceptance equivalence at `1` and at `0`
+(`LeanLLVMTest.Counterexamples.pipeline_parser_hsem_false`).  The producer is
+stage two's body theorem, which is not in this file; nothing here assumes the
+parser's answer for an outcome the execution did not return. -/
 theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
     {eventRel : EventStreamRel} {tab base : Nat}
     (hunits : Satisfies calls f (Γ_pipeline_units tab base))
-    (hsem : ∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-        (dst ev err : Nat),
-      readBytes mem base bs.length = some bs →
-      ParserHalf eventRel bs verdict m dst ev err) :
+    (hsem : ∀ (args : List Value) (mem : Mem) (next : Nat) (o : Outcome),
+      pipelineStaging tab base args mem →
+      BehFromState calls f (EntryState f args mem next) o →
+      ParserHalfForOutcome eventRel base args mem o) :
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
@@ -1093,7 +1162,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
   intro o ho
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)
     (args := args) (mem := mem) (next := next) (o := o) hstage (hpost o ho)
-    (hsem mem)
+    (hsem args mem next o hstage ho)
 
 /-! ### The post alone does not imply the specification
 
@@ -1162,6 +1231,10 @@ is no exception, though its witnesses are closed `Nat` and `List` computations. 
 /-- info: 'LeanLLVM.Refinement.ParserHalf' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms ParserHalf
+
+/-- info: 'LeanLLVM.Refinement.ParserHalfForOutcome' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms ParserHalfForOutcome
 
 /-- info: 'LeanLLVM.Refinement.pipeline_units_finalisation' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
