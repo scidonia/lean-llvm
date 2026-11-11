@@ -60,10 +60,66 @@ def sampleLayout : RouteLayout :=
 
 -- The divergent corpus rows are the parser's policy refusals: a lone surrogate
 -- escape and a noncharacter are RFC texts the reference refuses, and the native
--- object accepts them (the route check reports the set).
-#guard (match parseBytes Limits.default (ByteString.literal "\"\\uD800\"".toUTF8.toList) with
-  | .error (.invalid (.unpairedSurrogate _)) => true
-  | _ => false)
-#guard (match parseBytes Limits.default (ByteString.literal "\"\\uFDD0\"".toUTF8.toList) with
-  | .error (.invalid (.noncharacter _)) => true
-  | _ => false)
+-- object accepts them.  The route refuses them with the reference's reason, so
+-- the class is pinned here: each row carries the document's bytes, exactly as
+-- `tests/json/corpus/<name>` holds them, and the refusal `documentRefusal`
+-- reports.  `check.sh` asserts the executable route's refusals against the same
+-- fourteen names.
+
+/-- The reference's policy class, as the corpus names it: the document's bytes
+and the refusal the route must report for them. -/
+def policyRows : List (String × List UInt8 × RouteRefusal) :=
+  [ ("lone-dead.json", [0x22, 0x5C, 0x75, 0x44, 0x45, 0x41, 0x44, 0x22],
+      .unpairedSurrogate 1),
+    ("lone-d800.json", [0x22, 0x5C, 0x75, 0x44, 0x38, 0x30, 0x30, 0x22],
+      .unpairedSurrogate 1),
+    ("lone-dc00.json", [0x22, 0x5C, 0x75, 0x44, 0x43, 0x30, 0x30, 0x22],
+      .unpairedSurrogate 1),
+    ("double-high.json",
+      [0x22, 0x5C, 0x75, 0x44, 0x38, 0x30, 0x30, 0x5C, 0x75, 0x44, 0x38, 0x30,
+        0x30, 0x22], .unpairedSurrogate 1),
+    ("high-char.json", [0x22, 0x5C, 0x75, 0x44, 0x38, 0x30, 0x30, 0x61, 0x22],
+      .unpairedSurrogate 1),
+    ("reversed-pair.json",
+      [0x22, 0x5C, 0x75, 0x44, 0x43, 0x30, 0x30, 0x5C, 0x75, 0x44, 0x38, 0x30,
+        0x30, 0x22], .unpairedSurrogate 1),
+    ("nc-fdd0.json", [0x22, 0x5C, 0x75, 0x46, 0x44, 0x44, 0x30, 0x22],
+      .noncharacter 1),
+    ("nc-fffe.json", [0x22, 0x5C, 0x75, 0x46, 0x46, 0x46, 0x45, 0x22],
+      .noncharacter 1),
+    ("nc-ffff.json", [0x22, 0x5C, 0x75, 0x46, 0x46, 0x46, 0x46, 0x22],
+      .noncharacter 1),
+    ("nc-pair-max.json",
+      [0x22, 0x5C, 0x75, 0x44, 0x42, 0x46, 0x46, 0x5C, 0x75, 0x44, 0x46, 0x46,
+        0x46, 0x22], .noncharacter 1),
+    ("nc-raw-fdd0.json", [0x22, 0xEF, 0xB7, 0x90, 0x22], .noncharacter 1),
+    ("nc-raw-fffe.json", [0x22, 0xEF, 0xBF, 0xBE, 0x22], .noncharacter 1),
+    ("nc-raw-10ffff.json", [0x22, 0xF4, 0x8F, 0xBF, 0xBF, 0x22], .noncharacter 1),
+    ("nc-raw-1fffe.json", [0x22, 0xF0, 0x9F, 0xBF, 0xBE, 0x22], .noncharacter 1) ]
+
+/-- `checkRoute` refuses `doc` with exactly `r`. -/
+def refusedWith (l : RouteLayout) (doc : List UInt8) (r : RouteRefusal) : Bool :=
+  match checkRoute l doc with
+  | .error r' => r' == r
+  | .ok _ => false
+
+/-- The reference parser itself names exactly `r`'s reason and byte. -/
+def referenceRefusalIs (doc : List UInt8) (r : RouteRefusal) : Bool :=
+  match parseBytes Limits.default (ByteString.literal doc), r with
+  | .error (.invalid (.unpairedSurrogate k)), .unpairedSurrogate k' => k == k'
+  | .error (.invalid (.noncharacter k)), .noncharacter k' => k == k'
+  | _, _ => false
+
+-- The class is fourteen rows, every one refused with its reason and byte, and
+-- the reference parser's own verdict agrees — the refusal is the reference's,
+-- not a blanket rule.
+#guard policyRows.length = 14
+#guard policyRows.all (fun (_, doc, r) => documentRefusal doc == some r)
+#guard policyRows.all (fun (_, doc, r) => refusedWith sampleLayout doc r)
+#guard policyRows.all (fun (_, doc, r) => referenceRefusalIs doc r)
+
+-- Control for the detector: a document the reference accepts is not refused
+-- with any policy reason, so the guards above distinguish the class.
+#guard policyRows.all (fun (_, _, r) =>
+  documentRefusal "{}".toUTF8.toList != some r ∧
+  !refusedWith sampleLayout "{}".toUTF8.toList r)
