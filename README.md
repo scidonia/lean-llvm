@@ -116,6 +116,45 @@ Its units are proved against their emitted IR, and its assembled pipeline is
 proved from those units' records; that chain begins at a textual emission and
 ends at the model, and no theorem relates Lean's compiled code to either end.
 
+**Nothing in this repository is a theorem about time**, so the numbers below are
+of two kinds and are labelled as such. The ratios are measurements of the
+native pipeline against `simdjson` On-Demand, taken on one host in a scratch
+tree, medians of 11–15 rounds, both binaries pinned to one core with the same
+alignment flags; they are a record of observed runs and are not reproducible
+from this tree (`docs/json-pipeline-performance.md` gives the harness's shape
+so a rebuild can repeat the comparisons). The throughput is a measurement of
+the Lean model in this tree, from `probes/bench/json-bench.sh`.
+
+Ratios to On-Demand under the two contracts that mean most; **below 1.0 is
+faster**, `E` and `P` are the host's two core classes.
+
+| file | entries/block | P2 E | P2 P | P0 E | P0 P |
+|---|---:|---:|---:|---:|---:|
+| `canonical` | 6.8 | 1.044 | **0.922** | 0.945 | **0.814** |
+| `citm` | 7.9 | 0.843 | **0.555** | 0.746 | **0.452** |
+| `twitter` | 7.9 | 0.847 | **0.611** | 0.704 | **0.528** |
+| `canada` | 9.9 | 1.023 | **0.946** | 0.910 | **0.849** |
+| `dense` | 26.4 | 1.027 | 1.037 | 0.829 | **0.873** |
+| `longstr` | 1.3 | 0.721 | **0.586** | 0.296 | **0.236** |
+| `escdense` | 7.4 | 0.816 | **0.759** | 0.648 | **0.719** |
+
+`P2` — full extraction, exact error offset, every string validated — is faster on
+six of seven on the faster core, by 4–45%, with `dense` the single loss at 3.7%;
+`P0` is faster on all seven on both classes. The margin is core-specific and the
+*decisions* are not: the stage-1 advantage over the alternative arm is 1.7–3.9
+ns/block on the slower class and 0.2–0.9 on the faster one.
+
+The Lean parser's own model, parsed by `parseDocument` in this tree, costs
+**35.5 ns/byte at 64 KiB** and 48.0 at 4–16 KiB, with a 4 µs floor on a
+one-byte document — that is, about 21–28 MB/s, and the cost per byte falls
+with size. The benchmark's documents are `{"a":1234,"b":"hello"}` repeated, so
+that figure describes the parser on tier-1 numbers and says nothing about the
+conversion's fallback path.
+
+What none of this establishes: that the numbers generalise past one host, one
+governor setting and AVX2 code paths; that a different reference parser or
+corpus would rank the same way; or that any timing follows from the proofs.
+
 ## Build
 
 The toolchain is Lean `v4.35.0` from the flake.  Run every command through
