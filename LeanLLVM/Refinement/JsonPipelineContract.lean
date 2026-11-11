@@ -125,20 +125,25 @@ def pipelineReads (base tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × N
 /-- The objects the caller stages, each at the extent the record claims about
 it.  The entry stream's and escape list's extents are the windows the units
 write, not their full capacities: a caller is not asked to keep bytes apart that
-no clause reaches.  The document's entry is the UTF-8 window's extent, and the
-pair beside it is the read-past tail the staging's `HasBytes` clause claims: the
-decoder reads those thirty-two bytes, so no writable object may be staged there,
-which is what the separate pair states rather than widening the window's. -/
-def pipelineRegions (base tab nk0 nxp0 ndst0 : Nat) (args : List Value) : List (Nat × Nat) :=
+no clause reaches.  The arena's entry is its **capacity** `dstcap`, the same
+extent its presence clause promises: stage 2's call reads the whole arena, the
+loop's own write list (`pipelineLoopWrites`) must be shown to miss the bytes the
+tail hands the run, and a separation at the expander's reached extent would leave
+the bytes between that extent and the capacity unstaged and unwritable by
+nothing.  The document's entry is the UTF-8 window's extent, and the pair beside
+it is the read-past tail the staging's `HasBytes` clause claims: the decoder
+reads those thirty-two bytes, so no writable object may be staged there, which is
+what the separate pair states rather than widening the window's. -/
+def pipelineRegions (base tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × Nat) :=
   match args with
   | [.ptr _, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
-     .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
+     .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 dstcap,
      .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err, .int 64 _] =>
       [(base - 3, 3 + 64 * pipelineBlocks n.toNat), (base + 64 * pipelineBlocks n.toNat, 32),
        (tab, 8192), (sc, 24), (mk, 48),
        (entw, 8), (ep, 4 * (nk0 + 64 * pipelineBlocks n.toNat + 9)), (nk, 8),
        (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8)), (nxp, 8),
-       (xcarry, 16), (dst, ndst0 + n.toNat + 64), (ndst, 8),
+       (xcarry, 16), (dst, dstcap.toNat), (ndst, 8),
        (ev, evcap.toNat), (nev, 8), (err, 8)]
   | _ => []
 
@@ -251,8 +256,14 @@ clause names the unit record it is read from:
   as the empty stream's count;
 * the escape-list capacity is `Γ_escape_positions.pre`'s `HasBytes` clause at
   the last block's incoming count plus the batch reserve;
-* the arena capacity is the `ndst0 + n + 64` extent the expander reaches from its
-  cursor (C126), and the event stream is the caller's `ev` at its ABI capacity
+* the arena is the caller's `dst` at its ABI capacity `dstcap`, with the
+  expander's reached extent `ndst0 + n + 64` inside it (C126).  The promise is
+  the capacity and not the reached extent because stage 2's own record reads the
+  capacity (`stage2.h:49-52`): the narrower clause admitted a caller whose arena
+  ended at the reached extent while its `dstcap` argument named more, which
+  stage 2's `pre` refuses, so the staging could not hand that call its
+  precondition.  The reached extent stays as the lower bound that puts it inside
+  the capacity; and the event stream is the caller's `ev` at its ABI capacity
   **and its write room**: presence alone is not what stage 2's append needs, so
   the clause is the header's written-buffer promise at the encoding's worst
   case, `nev0 + 13 * bs.length ≤ evcap` (`stage2.h:13-21`), and it lives here:
@@ -330,10 +341,18 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     64 * pipelineBlocks bs.length + 9 ≤ epcap.toNat ∧
     -- the escape list's capacity, with the batch reserve at every block
     HasBytes mem xp (4 * (nxp0 + 64 * pipelineBlocks bs.length + 8)) ∧
-    -- the arena the expander reaches and the event stream the caller sizes,
-    -- each from its own cursor
+    -- the arena at its capacity, and the expanse the expander reaches inside it.
+    -- The presence clause is the capacity because that is what stage 2's record
+    -- reads (`Γ_stage2.pre`'s `HasBytes mem dst dstcap`), and a promise at the
+    -- reached extent alone would leave the tail's call without its
+    -- precondition.  The reached extent stays as the bound that puts it inside
+    -- the capacity (`hasBytes_of_le`).  `pipelineRegions` stages the arena at
+    -- the same capacity: the loop's write extents are separated from the staged
+    -- entries, and a separation at the reached extent only would leave the bytes
+    -- between it and the capacity unprotected, so the tail could not carry this
+    -- promise past the loop.
     ndst0 + n.toNat + 64 ≤ dstcap.toNat ∧
-    HasBytes mem dst (ndst0 + n.toNat + 64) ∧
+    HasBytes mem dst dstcap.toNat ∧
     -- the event stream's presence *and* its room.  Presence alone admits a
     -- caller whose `evcap` is smaller than the stream stage 2 would append, and
     -- the measured body traps on that rather than overrunning; so the staging
@@ -359,7 +378,7 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     arm.toNat < 8 ∧
     -- the read set, and the staged objects' separation
     (∀ r ∈ pipelineReads base tab 0 nxp0 args, HasBytes mem r.1 r.2) ∧
-    DisjointRegions (pipelineRegions base tab 0 nxp0 ndst0 args)
+    DisjointRegions (pipelineRegions base tab 0 nxp0 args)
 
 /-! ### The count slot's witness
 
@@ -658,12 +677,12 @@ def Γ_pipeline_units (tab base : Nat) : MemContract where
 -- `base = 64` and a sixty-four-byte document the window is `61 .. 128` and the
 -- tail `128 .. 160`, which is where the decoder's read past the padded window
 -- lands — the arithmetic the staging's `HasBytes` clause stages.
-#guard decide ((pipelineRegions 64 4096 0 0 0
+#guard decide ((pipelineRegions 64 4096 0 0
   [.ptr 0, .int 64 64, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
    .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
    .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
    .int 64 0]).take 2 = [(61, 67), (128, 32)])
-#guard (pipelineRegions 64 4096 0 0 0
+#guard (pipelineRegions 64 4096 0 0
   [.ptr 0, .int 64 1, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
    .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
    .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
