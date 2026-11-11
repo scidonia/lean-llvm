@@ -6968,6 +6968,72 @@ def stage2Args (b ep xp dst ndst ev nev err : Nat) (n kv x37 dcap ecap : BitVec 
   [.ptr b, .int 64 n, .ptr ep, .int 64 kv, .ptr xp, .int 64 x37, .ptr dst,
    .int 64 dcap, .ptr ndst, .ptr ev, .int 64 ecap, .ptr nev, .ptr err]
 
+/-- **The tail on the acceptance branch, at the stage-2 call's own outcome.**  The
+three control steps reach the cleanup block with stage 2's memory, so the caller
+that has to read the post at that memory names the outcome rather than taking it
+existentially. -/
+theorem pipelineExit_accept_at (tab base : Nat) (s2 : Calls)
+    (e : State) (p sel : String) (kv : BitVec 64)
+    (b nk xp nxp ep dst ndst ev nev err : Nat)
+    (n arm dstcap evcap x37 : BitVec 64) (m30 : Mem) (n30 : Nat)
+    (r35 : CallOutcome)
+    (hpce : e.pc = "for.cond.cleanup")
+    (hpre : e.pre = some p)
+    (hinc : phiIncoming p cleanupPhi = some (.reg sel))
+    (hsel : evalOperand (stateAt e.env e) (.reg sel) = some (.int 64 kv))
+    (hnk : lookupName e.env "%nk" = some (.ptr nk))
+    (hb : lookupName e.env "%b" = some (.ptr b))
+    (hn : lookupName e.env "%n" = some (.int 64 n))
+    (harm : lookupName e.env "%arm" = some (.int 64 arm))
+    (hxp : lookupName e.env "%xp" = some (.ptr xp))
+    (hnxp : lookupName e.env "%nxp" = some (.ptr nxp))
+    (hep : lookupName e.env "%ep" = some (.ptr ep))
+    (hdst : lookupName e.env "%dst" = some (.ptr dst))
+    (hdcap : lookupName e.env "%dstcap" = some (.int 64 dstcap))
+    (hndst : lookupName e.env "%ndst" = some (.ptr ndst))
+    (hev : lookupName e.env "%ev" = some (.ptr ev))
+    (hecap : lookupName e.env "%evcap" = some (.int 64 evcap))
+    (hnev : lookupName e.env "%nev" = some (.ptr nev))
+    (herr : lookupName e.env "%err" = some (.ptr err))
+    (hcall : pipelineCalls tab base s2 "leanllvm_json_utf8"
+      [.ptr b, .int 64 n, .int 32 (tailGate arm)]
+      (writeBytes e.mem nk (natToBytes kv.toNat 8)) e.next =
+      some ⟨.int 64 0, m30, n30⟩)
+    (hld : readBytes m30 nxp 8 = some (natToBytes x37.toNat 8))
+    (hcall2 : pipelineCalls tab base s2 "leanllvm_json_stage2"
+      (stage2Args b ep xp dst ndst ev nev err n kv x37 dstcap evcap) m30 n30 =
+      some r35) :
+    runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
+      some (.ret (some r35.ret) r35.mem) := by
+  have hbit : evalICmp .eq (0 : BitVec 64) (BitVec.ofInt 64 0) = 1 := by decide
+  have hstep1 := condCleanup_step (calls := pipelineCalls tab base s2) e p sel kv b nk arm n
+    (0 : BitVec 64) m30 n30 hpce hpre hinc hsel hnk hb hn harm hcall hbit
+  have hk : lookupName (condOutTail e.env arm kv (0 : BitVec 64)) "%k.0.lcssa" =
+      some (.int 64 kv) := lookup_condOutTail_k
+  have hstep2 := tailIfEnd_step (calls := pipelineCalls tab base s2)
+    { e with env := condOutTail e.env arm kv (0 : BitVec 64), mem := m30, next := n30, pc := "if.end34", pre := some e.pc }
+    ep xp nxp dst ndst ev nev err b n kv x37 dstcap evcap r35 (by rfl)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hb)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hn)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hep)
+    hk
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hxp)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hnxp)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hdst)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hdcap)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hndst)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hev)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hecap)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hnev)
+    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) herr)
+    hld hcall2
+  have hstep3 := tailCleanup_step (calls := pipelineCalls tab base s2)
+    { e with env := ifEndTail (condOutTail e.env arm kv (0 : BitVec 64)) r35.ret x37, mem := r35.mem, next := r35.next, pc := "cleanup", pre := some "if.end34" }
+    "if.end34" (Operand.reg "%call35") r35.ret (by rfl) (by rfl) (by rfl)
+    (by show lookupName (("%call35", r35.ret) :: ("%37", .int 64 x37) :: condOutTail e.env arm kv (0 : BitVec 64)) "%call35" = some r35.ret
+        simp)
+  exact runFuel_three hstep1 hstep2 hstep3
+
 /-- **The tail on the acceptance branch.**  UTF-8 passes, so the exit block's
 successor is `if.end34`: it loads the escape list's count, calls stage 2 at the
 count the exit block wrote, and the final `phi` returns stage 2's word.  The
@@ -7005,40 +7071,14 @@ theorem pipelineExit_accept (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ∃ (k : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
         some (.ret (some (.int 64 k)) m) ∧ (k = 0 ∨ k = 1) := by
-  have hbit : evalICmp .eq (0 : BitVec 64) (BitVec.ofInt 64 0) = 1 := by decide
-  have hstep1 := condCleanup_step (calls := pipelineCalls tab base s2) e p sel kv b nk arm n
-    (0 : BitVec 64) m30 n30 hpce hpre hinc hsel hnk hb hn harm hcall hbit
   obtain ⟨r35, hcall2, hpost2, -⟩ := units.stage2 _ m30 n30 hpre2
-  have hk : lookupName (condOutTail e.env arm kv (0 : BitVec 64)) "%k.0.lcssa" =
-      some (.int 64 kv) := lookup_condOutTail_k
-  have hstep2 := tailIfEnd_step (calls := pipelineCalls tab base s2)
-    { e with env := condOutTail e.env arm kv (0 : BitVec 64), mem := m30, next := n30, pc := "if.end34", pre := some e.pc }
-    ep xp nxp dst ndst ev nev err b n kv x37 dstcap evcap r35 (by rfl)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hb)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hn)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hep)
-    hk
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hxp)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hnxp)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hdst)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hdcap)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hndst)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hev)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hecap)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) hnev)
-    (lookup_condOutTail_of (verdict := (0 : BitVec 64)) (by decide) herr)
-    hld hcall2
-  have hstep3 := tailCleanup_step (calls := pipelineCalls tab base s2)
-    { e with env := ifEndTail (condOutTail e.env arm kv (0 : BitVec 64)) r35.ret x37, mem := r35.mem, next := r35.next, pc := "cleanup", pre := some "if.end34" }
-    "if.end34" (Operand.reg "%call35") r35.ret (by rfl) (by rfl) (by rfl)
-    (by show lookupName (("%call35", r35.ret) :: ("%37", .int 64 x37) :: condOutTail e.env arm kv (0 : BitVec 64)) "%call35" = some r35.ret
-        simp)
-  have hrun := runFuel_three hstep1 hstep2 hstep3
   obtain ⟨k, hk', hv⟩ :=
     units.stage2_verdict_bounded _ m30 n30 r35.ret r35.mem hpost2
   refine ⟨k, r35.mem, ?_, hv⟩
-  rw [hk'] at hrun
-  exact hrun
+  rw [← hk']
+  exact pipelineExit_accept_at tab base s2 e p sel kv b nk xp nxp ep dst ndst ev nev
+    err n arm dstcap evcap x37 m30 n30 r35 hpce hpre hinc hsel hnk hb hn harm hxp
+    hnxp hep hdst hdcap hndst hev hecap hnev herr hcall hld hcall2
 
 /-- **The tail on the refusal branch.**  UTF-8 fails, so the exit block's
 successor is `if.then33`: it stores the document's length in the refusal slot and

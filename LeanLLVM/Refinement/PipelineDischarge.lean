@@ -54,19 +54,33 @@ predicate.
 
 `PipelineTailTarget` is the `exit` field's conclusion at that predicate: the
 run's three steps and the record's own post.  **It is still supplied by the
-caller** in this tree.  The retype above removes the structural obstruction — the
-predicate can now name the caller, so the UTF-8 window, `Γ_stage2.pre` and the
-post's frame are statements about addresses the state carries — but the
-assembly of the run and the post at the exit's witnesses is the remaining work,
-and the two calls' preconditions are where it starts: the UTF-8 window is
-`[0,0,0] ++ S.doc` at `S.b - 3`, and stage 2's staging is the pipeline staging's
-clauses at `S`'s fields, with its `DisjointRegions` derived from
-`pipelineRegions` once the loop's write extents are seen to be sub-extents
-(`S.k ≤ 64 * S.i` from the entry stream's order and length, `S.xn ≤ S.xn0 + 64 *
-S.i` and `S.xn0 = nxp0` from the carried slot and bound).  `pipelineExit_run`
-supplies the three control steps; `PipelineUnits.utf8` and `PipelineUnits.stage2`
-supply the call outcomes and their posts; `positionsBytes` is where the escape
-list's read becomes the post's witness.
+caller** in this tree, and what remains is one clause, named in the residue note
+above the target: stage 2's post pins its two reported extents only through
+eight-byte slot words, so `pipelineOutputExtents`'s `ndst' < 2 ^ 64` does not
+follow from `Γ_stage2.post` at the staging's witnesses.
+
+What is proved is the rest of the tail's *premises*:
+
+* `stage2Pre_of_exit` — `Γ_stage2.pre` at the exit state's memory with the
+  exiting count stored: the document read, its read-past tail, the entry stream
+  at the exiting count, the escape list, the arena and event capacities, the two
+  cursor slots, the refusal slot, the `uint32` document bound, and the eight
+  staged objects' 28 pairwise separations (`DisjointRegions (stage2Regions …)`,
+  assembled from the caller's `pipelineRegions` promise with the count growths
+  `S.k ≤ 64 * S.i` and `S.xn ≤ S.xn0 + 64 * S.i`);
+* `utf8Pre_of_staging` — `Γ_utf8.pre` at the same memory, with the window
+  `[0, 0, 0] ++ S.doc` read as `utf8Window`;
+* `tailGate_zero_or_one` — the arm's gate is the ABI's flag;
+* `positionsBytes_surjective` — every `4 * k`-byte escape stream is a
+  `positionsBytes` stream, which is where the post's `ps` witness comes from.
+
+The two call outcomes and their posts (`PipelineUnits.utf8`,
+`PipelineUnits.stage2`), the three control steps
+(`PipelineBodyStep.pipelineExit_run`) and the frame composition are the rest of
+the assembly; `PipelineBodyStep.pipelineExit_accept_at` exposes the acceptance
+branch's memory so a post can be read at stage 2's own outcome.  That assembly is
+not carried out here, because it cannot conclude: the extents clause it must
+produce is the one the residue note shows is not derivable.
 
 Nothing here narrows a record or weakens a post: the tail's target is stated at
 the same predicate the loop hands over, now with the caller's arguments in it.
@@ -75,6 +89,7 @@ import LeanLLVM.Refinement.JsonStage2Contract
 import LeanLLVM.Refinement.PipelineBodyStep
 
 set_option autoImplicit false
+set_option maxHeartbeats 2000000
 
 namespace LeanLLVM.Refinement
 
@@ -327,7 +342,8 @@ theorem loop_frame_of_staging {tab base : Nat} {args : List Value} {mem m : Mem}
     (readBytes m S.ndst 8 = readBytes mem S.ndst 8) ∧
     HasBytes m S.ev S.evcap.toNat ∧
     (readBytes m S.nev 8 = readBytes mem S.nev 8) ∧
-    HasBytes m S.err 8 := by
+    HasBytes m S.err 8 ∧
+    (readBytes m S.err 8 = readBytes mem S.err 8) := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
     nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
     hzero3, hpos, htab, hsc, hcarry, hcount, hnxp, hepcap, hxp, hdstcap, hdst, hev,
@@ -579,7 +595,7 @@ theorem loop_frame_of_staging {tab base : Nat} {args : List Value} {mem m : Mem}
       exact by
         simpa using disjointRegions_pair _ 10 15 (by decide) _ _ rfl rfl hdisj
 
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · refine readBytes_of_loop_frame hframe (obj := (S.b - 3, 3 + 64 * pipelineBlocks S.n.toNat)) hwinobj (fun k hk => ?_)
     omega
   · refine hasBytes_of_loop_frame hframe (obj := (S.b + 64 * pipelineBlocks S.n.toNat, 32)) htailobj (fun k hk => ?_) htail'
@@ -593,6 +609,8 @@ theorem loop_frame_of_staging {tab base : Nat} {args : List Value} {mem m : Mem}
   · refine readBytes_of_loop_frame hframe (obj := (S.nev, 8)) hnevobj (fun k hk => ?_)
     omega
   · refine hasBytes_of_loop_frame hframe (obj := (S.err, 8)) herrobj (fun k hk => ?_) herr8
+    omega
+  · refine readBytes_of_loop_frame hframe (obj := (S.err, 8)) herrobj (fun k hk => ?_)
     omega
 
 /-- **An arena capacity is not a lower-bound consequence.**  Stage 2's record reads
@@ -612,6 +630,571 @@ theorem hasBytes_capacity_not_implied_by_bound :
     rw [hnone] at hvs
     cases hvs
 
+/-! ### Piece 2: stage 2's staging at the loop's exit
+
+The tail's first call needs `Γ_stage2.pre` at the memory the exit block leaves
+`if.end34` in: the exit state's memory with the exiting count stored at `%nk`.
+Every clause is either the caller's staging (`pipelineStaging`) read through the
+loop's frame, the loop's own exit facts, or the staging's capacity clauses.
+
+The two extents whose staged width differs from the record's are the entry stream
+and the escape list: the record reads `k` and `xd` entries, the staging separates
+the whole capacity.  Both are sub-extents, which is why the discharge needs
+`S.k ≤ 64 * S.i` and `S.xn ≤ S.xn0 + 64 * S.i`.  The document is a *union*: the
+record names `(b, n + 32)` and the staging names the window and the read-past tail
+as two entries, so its separation is `disjoint_doc_of_window_tail`.
+
+The frame carries the caller's staged bytes to the exit state's memory; the store
+at `%nk` is inside `pipelineLoopWrites`, so the seven staged objects it must miss
+are separated from it by the same pairwise promise. -/
+
+/-- A present range reads back from an interior offset.  Presence of `L` bytes at
+`a` gives presence of `K` bytes at `a + n` when `n + K ≤ L`. -/
+theorem hasBytes_shift_of_read {m : Mem} {a L n K : Nat} (hnK : n + K ≤ L)
+    {bs : List UInt8} (h : readBytes m a L = some bs) : HasBytes m (a + n) K := by
+  have hL : L = n + (L - n) := by omega
+  obtain ⟨-, h2⟩ := readBytes_split m a n (L - n) (by rw [← hL]; exact h)
+  have hd : L - n = K + (L - n - K) := by omega
+  rw [hd] at h2
+  exact ⟨_, (readBytes_split m (a + n) K (L - n - K) h2).1⟩
+
+/-- **A read is unchanged by a store it misses.**  The lane reader through a
+`writeBytes` whose range misses every lane's four bytes. -/
+theorem readLanes32_writeBytes_disjoint {m : Mem} {start : Nat} {ws : List UInt8}
+    {addr k : Nat}
+    (h : ∀ j : Nat, j < k → addr + 4 * j + 4 ≤ start ∨ start + ws.length ≤ addr + 4 * j) :
+    readLanes32 (writeBytes m start ws) addr k = readLanes32 m addr k := by
+  refine JsonEntrySteps.readLanes32_congr_bytes (fun j hj => ?_)
+  have hj4 : j / 4 < k := by omega
+  have hjr : j = 4 * (j / 4) + j % 4 := (Nat.div_add_mod j 4).symm
+  have hmod : j % 4 < 4 := Nat.mod_lt _ (by decide)
+  refine readByte_writeBytes_outside m ws ?_
+  rcases h (j / 4) hj4 with h' | h'
+  · left; omega
+  · right; omega
+
+/-- **Stage 2's `pre` at the loop's exit.**  The document read, its read-past
+tail, the entry stream at the exiting count, the escape list at the escape
+count, the arena and event capacities, the two cursor slots, the refusal slot,
+the document's `uint32` bound and the eight staged objects' separation.
+
+`sm` is the exit state's memory and the conclusion's memory is that state's with
+the exiting count stored at `%nk` — the memory `for.cond.cleanup` hands
+`if.end34`.  `hld` is the escape count's load, so `x37` is the value the
+record's sixth slot receives. -/
+theorem stage2Pre_of_exit
+    {tab base : Nat} {args : List Value} {mem sm : Mem} {next : Nat}
+    {S : PipelineLoopCarried} {kv x37 : BitVec 64}
+    (hst : pipelineStaging tab base args mem) (htie : exitArgs S args)
+    (hkgr : S.k ≤ 64 * S.i) (hib : S.i ≤ pipelineBlocks S.n.toNat)
+    (hxgr : S.xn ≤ S.xn0 + 64 * S.i)
+    (hsxn : readBytes sm S.nxp 8 = some (wordBytes 8 S.xn))
+    (hslot : readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0))
+    (hxn0lt : S.xn0 < 2 ^ 63)
+    (hframe : UnchangedOutside mem sm (pipelineLoopWrites S))
+    (hstream : readLanes32 sm S.ep S.k = some S.ent)
+    (hord : S.ent.Pairwise (· < ·))
+    (hbnd : ∀ q ∈ S.ent, q < S.n.toNat)
+    (hsxp : HasBytes sm S.xp (4 * S.xn))
+    (hkv : kv = BitVec.ofNat 64 S.k)
+    (hld : readBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.nxp 8 =
+      some (natToBytes x37.toNat 8)) :
+    Γ_stage2.pre
+      (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n kv x37
+        S.dstcap S.evcap)
+      (writeBytes sm S.nk (natToBytes kv.toNat 8)) next := by
+  -- the frame's projections at the seven staged objects
+  obtain ⟨hdoc, htailpos, hdstpos, hndstpos, hevpos, hnevpos, herrpos, herrread⟩ :=
+    loop_frame_of_staging hst htie hkgr hib hxgr hslot hxn0lt hframe
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
+    nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
+    hzero3, hpos, htab, hsc, hcarry, hcount, hnxp, hepcap, hxp, hdstcap, hdst, hev,
+    hnev, hndst, hnev', hroomk, hroomxn, hblk, harm, hreads, hdisj⟩ := hst
+  subst hargs
+  simp only [exitArgs] at htie
+  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    rfl, rfl⟩ := htie
+  -- the caller's separation, at the list the region definitions reduce to
+  simp only [pipelineRegions, Nat.zero_add] at hdisj
+  -- the escape count's first value is the staging's, so its growth bounds the count
+  have hrn : nxp0 + 64 * pipelineBlocks bs.length + 9 < 2 ^ 63 := hroomxn
+  have hnx0eq : S.xn0 = nxp0 :=
+    slotExtent_eq (x := S.xn0) (y := nxp0) (by omega) (by omega) hslot hnxp
+  have hnB : pipelineBlocks S.n.toNat = pipelineBlocks bs.length := by rw [hn]
+  have hble : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
+  have hkB : S.k ≤ 64 * pipelineBlocks S.n.toNat := by omega
+  have hxnB : S.xn ≤ nxp0 + 64 * pipelineBlocks S.n.toNat := by omega
+  have hxn64 : S.xn < 2 ^ 64 := by
+    have h1 : 64 * S.i ≤ 64 * pipelineBlocks S.n.toNat := Nat.mul_le_mul_left 64 hib
+    omega
+  -- the store at the count slot misses each object the record reads
+  have sep_doc_nk : S.b + (S.n.toNat + 32) ≤ S.nk ∨ S.nk + 8 ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.nk ∨
+        S.nk + 8 ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 7 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.nk ∨
+        S.nk + 8 ≤ S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 7 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.nk)
+      (W := 8) (Wbig := 8) (by omega) (by omega)
+      (by have := le_blocks_mul S.n.toNat; omega) (by omega) (by omega)
+  have sep_nk_ndst : S.nk + 8 ≤ S.ndst ∨ S.ndst + 8 ≤ S.nk := by
+    simpa using disjointRegions_pair _ 7 12 (by decide) _ _ rfl rfl hdisj
+  have sep_nk_nev : S.nk + 8 ≤ S.nev ∨ S.nev + 8 ≤ S.nk := by
+    simpa using disjointRegions_pair _ 7 14 (by decide) _ _ rfl rfl hdisj
+  have sep_nk_nxp : S.nk + 8 ≤ S.nxp ∨ S.nxp + 8 ≤ S.nk := by
+    simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj
+  have sep_ep_nk : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.nk ∨
+      S.nk + 8 ≤ S.ep := by
+    simpa using disjointRegions_pair _ 6 7 (by decide) _ _ rfl rfl hdisj
+  -- the escape count's load is the exit's own slot content
+  have hld_sm : readBytes sm S.nxp 8 = some (natToBytes x37.toNat 8) := by
+    refine ((readBytes_writeBytes_of_disjoint (m := sm) (start := S.nk)
+      (bs := natToBytes kv.toNat 8) (a := S.nxp) (N := 8) ?_).symm).trans hld
+    rw [natToBytes_length]
+    omega
+  have hx37 : x37.toNat = S.xn := by
+    have hw := Option.some.inj (hsxn.symm.trans hld_sm)
+    have hres := wordBytes_residue hw
+    rw [Nat.mod_eq_of_lt hxn64, Nat.mod_eq_of_lt (by omega)] at hres
+    exact hres.symm
+  -- the document's read, at the caller's memory as the staging states it
+  obtain ⟨hbsmem, -⟩ := readBytes_split mem S.b bs.length
+    (64 * pipelineBlocks bs.length - bs.length) (by
+      rw [Nat.add_sub_of_le hble]; exact hwin)
+  rw [List.take_left] at hbsmem
+  -- and at the exit state's memory, through the loop's frame
+  have hwinN : readBytes mem S.b (64 * pipelineBlocks S.n.toNat) =
+      some (bs ++ List.replicate (64 * pipelineBlocks S.n.toNat - bs.length) 0) := by
+    rw [hnB]; exact hwin
+  have hsmL : readBytes sm S.b (64 * pipelineBlocks S.n.toNat) =
+      some (bs ++ List.replicate (64 * pipelineBlocks S.n.toNat - bs.length) 0) :=
+    hdoc.trans hwinN
+  have hbsm : readBytes sm S.b bs.length = some bs := by
+    obtain ⟨h1, -⟩ := readBytes_split sm S.b bs.length
+      (64 * pipelineBlocks S.n.toNat - bs.length) (by
+        rw [Nat.add_sub_of_le (by rw [hnB]; exact hble)]; exact hsmL)
+    rwa [List.take_left] at h1
+  -- and at the memory the count slot's store leaves
+  have hdoc_ms : readBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.b
+      S.n.toNat = some bs := by
+    refine (readBytes_writeBytes_of_disjoint (m := sm) (start := S.nk)
+      (bs := natToBytes kv.toNat 8) (a := S.b) (N := S.n.toNat) ?_).trans ?_
+    · rw [natToBytes_length]; omega
+    · rw [hn]; exact hbsm
+  -- the read-past tail, at the exit state's memory, at the document's end
+  have htail_sm : HasBytes sm (S.b + S.n.toNat) 32 := by
+    obtain ⟨tvs, htvs⟩ := htailpos
+    have happ := JsonEntrySteps.readBytes_append sm (64 * pipelineBlocks S.n.toNat) S.b
+      (bs ++ List.replicate (64 * pipelineBlocks S.n.toNat - bs.length) 0) 32 tvs
+      hsmL htvs
+    refine hasBytes_shift_of_read (a := S.b)
+      (L := 64 * pipelineBlocks S.n.toNat + 32) (n := S.n.toNat) (K := 32) ?_ happ
+    omega
+  -- the entry stream, through the store's separation from its capacity
+  have hlanes : readLanes32 (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.ep S.k =
+      some S.ent := by
+    have hcong := readLanes32_writeBytes_disjoint (m := sm) (start := S.nk)
+      (ws := natToBytes kv.toNat 8) (addr := S.ep) (k := S.k) (fun j hj => by
+        rw [natToBytes_length]
+        omega)
+    exact hcong.trans hstream
+  -- the escape list's staged presence, at the count the load read
+  have hesc_sm : HasBytes sm S.xp (4 * x37.toNat) := by rw [hx37]; exact hsxp
+  -- everything the store at the count slot must leave alone
+  have hesc_ms : HasBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.xp
+      (4 * x37.toNat) := hasBytes_writeBytes hesc_sm
+  have htail_ms : HasBytes (writeBytes sm S.nk (natToBytes kv.toNat 8))
+      (S.b + S.n.toNat) 32 := hasBytes_writeBytes htail_sm
+  have hdst_ms : HasBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.dst
+      S.dstcap.toNat := hasBytes_writeBytes hdstpos
+  have hev_ms : HasBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.ev
+      S.evcap.toNat := hasBytes_writeBytes hevpos
+  have herr_ms : HasBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.err 8 :=
+    hasBytes_writeBytes herrpos
+  have hndst_ms : readBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.ndst 8 =
+      some (wordBytes 8 ndst0) := by
+    refine (readBytes_writeBytes_of_disjoint (start := S.nk)
+      (bs := natToBytes kv.toNat 8) (a := S.ndst) (N := 8) ?_).trans ?_
+    · rw [natToBytes_length]; omega
+    · exact hndstpos.trans hndst
+  have hnev_ms : readBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.nev 8 =
+      some (wordBytes 8 nev0) := by
+    refine (readBytes_writeBytes_of_disjoint (m := sm) (start := S.nk)
+      (bs := natToBytes kv.toNat 8) (a := S.nev) (N := 8) ?_).trans ?_
+    · rw [natToBytes_length]; omega
+    · exact hnevpos.trans hnev'
+  -- the caller's pairwise promise, as the document's separation from the seven
+  have sep_doc_ep : S.b + (S.n.toNat + 32) ≤ S.ep ∨ S.ep + 4 * S.k ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.ep ∨
+        S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 6 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.ep ∨
+        S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤
+          S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 6 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.ep)
+      (W := 4 * S.k) (Wbig := 4 * (64 * pipelineBlocks S.n.toNat + 9))
+      (by omega) (by omega) (by have := le_blocks_mul S.n.toNat; omega)
+      (by omega) (by omega)
+  have sep_doc_xp : S.b + (S.n.toNat + 32) ≤ S.xp ∨ S.xp + 4 * S.xn ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.xp ∨
+        S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 8 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.xp ∨
+        S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤
+          S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 8 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.xp)
+      (W := 4 * S.xn) (Wbig := 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8))
+      (by omega) (by omega) (by have := le_blocks_mul S.n.toNat; omega)
+      (by omega) (by omega)
+  have sep_doc_dst : S.b + (S.n.toNat + 32) ≤ S.dst ∨
+      S.dst + (ndst0 + S.n.toNat + 64) ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.dst ∨
+        S.dst + S.dstcap.toNat ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 11 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.dst ∨
+        S.dst + S.dstcap.toNat ≤ S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 11 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.dst)
+      (W := ndst0 + S.n.toNat + 64) (Wbig := S.dstcap.toNat)
+      (by omega) (by omega) (by have := le_blocks_mul S.n.toNat; omega)
+      (by omega) (by omega)
+  have sep_doc_ev : S.b + (S.n.toNat + 32) ≤ S.ev ∨
+      S.ev + S.evcap.toNat ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.ev ∨
+        S.ev + S.evcap.toNat ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 13 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.ev ∨
+        S.ev + S.evcap.toNat ≤ S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 13 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.ev)
+      (W := S.evcap.toNat) (Wbig := S.evcap.toNat)
+      (by omega) (by omega) (by have := le_blocks_mul S.n.toNat; omega)
+      (by omega) (by omega)
+  have sep_doc_ndst : S.b + (S.n.toNat + 32) ≤ S.ndst ∨ S.ndst + 8 ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.ndst ∨
+        S.ndst + 8 ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 12 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.ndst ∨
+        S.ndst + 8 ≤ S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 12 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.ndst)
+      (W := 8) (Wbig := 8) (by omega) (by omega)
+      (by have := le_blocks_mul S.n.toNat; omega) (by omega) (by omega)
+  have sep_doc_nev : S.b + (S.n.toNat + 32) ≤ S.nev ∨ S.nev + 8 ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.nev ∨
+        S.nev + 8 ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 14 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.nev ∨
+        S.nev + 8 ≤ S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 14 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.nev)
+      (W := 8) (Wbig := 8) (by omega) (by omega)
+      (by have := le_blocks_mul S.n.toNat; omega) (by omega) (by omega)
+  have sep_doc_err : S.b + (S.n.toNat + 32) ≤ S.err ∨ S.err + 8 ≤ S.b := by
+    have h0 : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.err ∨
+        S.err + 8 ≤ S.b - 3 := by
+      simpa using disjointRegions_pair _ 0 15 (by decide) _ _ rfl rfl hdisj
+    have h1 : (S.b + 64 * pipelineBlocks S.n.toNat) + 32 ≤ S.err ∨
+        S.err + 8 ≤ S.b + 64 * pipelineBlocks S.n.toNat := by
+      simpa using disjointRegions_pair _ 1 15 (by decide) _ _ rfl rfl hdisj
+    exact disjoint_doc_of_window_tail (base := S.b)
+      (blocks := pipelineBlocks S.n.toNat) (n := S.n.toNat) (x := S.err)
+      (W := 8) (Wbig := 8) (by omega) (by omega)
+      (by have := le_blocks_mul S.n.toNat; omega) (by omega) (by omega)
+  -- the eight staged objects, pairwise
+  have hdisj2 : DisjointRegions
+      (stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0 S.ev
+        S.evcap.toNat S.ndst S.nev S.err) := by
+    rw [show stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0 S.ev
+        S.evcap.toNat S.ndst S.nev S.err =
+      [(S.b, S.n.toNat + 32), (S.ep, 4 * S.k), (S.xp, 4 * S.xn),
+       (S.dst, ndst0 + S.n.toNat + 64), (S.ev, S.evcap.toNat),
+       (S.ndst, 8), (S.nev, 8), (S.err, 8)] from rfl]
+    refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+      (List.Pairwise.cons ?_ (List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+      (List.Pairwise.cons ?_ (List.Pairwise.cons ?_ List.Pairwise.nil)))))))
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      · exact sep_doc_ep
+      · exact sep_doc_xp
+      · exact sep_doc_dst
+      · exact sep_doc_ev
+      · exact sep_doc_ndst
+      · exact sep_doc_nev
+      · exact sep_doc_err
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl | rfl | rfl | rfl | rfl
+      · have h : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.xp ∨
+            S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.ep := by
+          simpa using disjointRegions_pair _ 6 8 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.dst ∨
+            S.dst + S.dstcap.toNat ≤ S.ep := by
+          simpa using disjointRegions_pair _ 6 11 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.ev ∨
+            S.ev + S.evcap.toNat ≤ S.ep := by
+          simpa using disjointRegions_pair _ 6 13 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.ndst ∨
+            S.ndst + 8 ≤ S.ep := by
+          simpa using disjointRegions_pair _ 6 12 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.nev ∨
+            S.nev + 8 ≤ S.ep := by
+          simpa using disjointRegions_pair _ 6 14 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.err ∨
+            S.err + 8 ≤ S.ep := by
+          simpa using disjointRegions_pair _ 6 15 (by decide) _ _ rfl rfl hdisj
+        omega
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl | rfl | rfl | rfl
+      · have h : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.dst ∨
+            S.dst + S.dstcap.toNat ≤ S.xp := by
+          simpa using disjointRegions_pair _ 8 11 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.ev ∨
+            S.ev + S.evcap.toNat ≤ S.xp := by
+          simpa using disjointRegions_pair _ 8 13 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.ndst ∨
+            S.ndst + 8 ≤ S.xp := by
+          simpa using disjointRegions_pair _ 8 12 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.nev ∨
+            S.nev + 8 ≤ S.xp := by
+          simpa using disjointRegions_pair _ 8 14 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.err ∨
+            S.err + 8 ≤ S.xp := by
+          simpa using disjointRegions_pair _ 8 15 (by decide) _ _ rfl rfl hdisj
+        omega
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl | rfl | rfl
+      · have h : S.dst + S.dstcap.toNat ≤ S.ev ∨
+            S.ev + S.evcap.toNat ≤ S.dst := by
+          simpa using disjointRegions_pair _ 11 13 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.dst + S.dstcap.toNat ≤ S.ndst ∨ S.ndst + 8 ≤ S.dst := by
+          simpa using disjointRegions_pair _ 11 12 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.dst + S.dstcap.toNat ≤ S.nev ∨ S.nev + 8 ≤ S.dst := by
+          simpa using disjointRegions_pair _ 11 14 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.dst + S.dstcap.toNat ≤ S.err ∨ S.err + 8 ≤ S.dst := by
+          simpa using disjointRegions_pair _ 11 15 (by decide) _ _ rfl rfl hdisj
+        omega
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl | rfl
+      · -- the event stream's capacity against the first cursor slot
+        have h : S.ndst + 8 ≤ S.ev ∨ S.ev + S.evcap.toNat ≤ S.ndst := by
+          simpa using disjointRegions_pair _ 12 13 (by decide) _ _ rfl rfl hdisj
+        rcases h with h | h
+        · exact Or.inr h
+        · exact Or.inl h
+      · have h : S.ev + S.evcap.toNat ≤ S.nev ∨ S.nev + 8 ≤ S.ev := by
+          simpa using disjointRegions_pair _ 13 14 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ev + S.evcap.toNat ≤ S.err ∨ S.err + 8 ≤ S.ev := by
+          simpa using disjointRegions_pair _ 13 15 (by decide) _ _ rfl rfl hdisj
+        omega
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl
+      · have h : S.ndst + 8 ≤ S.nev ∨ S.nev + 8 ≤ S.ndst := by
+          simpa using disjointRegions_pair _ 12 14 (by decide) _ _ rfl rfl hdisj
+        omega
+      · have h : S.ndst + 8 ≤ S.err ∨ S.err + 8 ≤ S.ndst := by
+          simpa using disjointRegions_pair _ 12 15 (by decide) _ _ rfl rfl hdisj
+        omega
+    · intro b hb
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl
+      have h : S.nev + 8 ≤ S.err ∨ S.err + 8 ≤ S.nev := by
+        simpa using disjointRegions_pair _ 14 15 (by decide) _ _ rfl rfl hdisj
+      omega
+    · intro b hb
+      simp at hb
+  refine ⟨S.b, S.n.toNat, S.ep, S.k, S.xp, x37.toNat, S.dst, S.dstcap.toNat,
+    S.ndst, S.ev, S.evcap.toNat, S.nev, S.err, bs, S.ent, ndst0, nev0,
+    ?_, hdoc_ms, htail_ms, hlanes, hord, hbnd, hesc_ms, hdst_ms, ?_, hev_ms, ?_,
+    hndst_ms, hnev_ms, herr_ms, ?_, hx37 ▸ hdisj2⟩
+  · simpa [stage2Args] using hkv
+  · simpa [stage2ArenaReserve] using hdstcap
+  · simpa [stage2RecordBytes, ← hn] using hnev
+  · simp only [stage2MaxDocument]
+    omega
+
+/-! ### Piece 3: the tail's run and post
+
+The exit's three steps are `PipelineBodyStep.pipelineExit_run`, and the record's
+post needs three further components: the UTF-8 call's own precondition (the
+window, at the exit state's memory and through the count slot's store), the
+escape list's read as a `positionsBytes` stream (every byte list of `4 * k` bytes
+is one), and the two-valuedness of the arm's gate.
+
+`pipelineOutputExtents`'s two bounds are where the assembly stops: stage 2's
+post pins its extents only through the eight-byte slot words, and its argument
+list pins the document length through `BitVec.ofNat 64`, so the record's clauses
+bound `ndst' ≤ ndst0 + n` and `nev' ≤ nev0 + 13 * n` at *its own* witnesses,
+which agree with the staging's only modulo `2 ^ 64`.  The record carries no
+`n < 2 ^ 64` (its pre does), so `ndst' < 2 ^ 64` does not follow, and
+`pipelineOutputExtents`'s bound is the one clause the tail cannot derive.  It is
+a gap in the interface rather than in the run: the record's post would need the
+document bound its pre already states.  See the residue note at the end of the
+module. -/
+
+/-- **Every byte list of a position stream's width is one.**  A list of `w * k`
+bytes splits into `k` words of `w` bytes, and each word is the encoding of the
+value its bytes denote, so the list is `positionsBytes w ps` for the list of
+those values.  This is what turns the stage-2 pre's `HasBytes` at the escape
+stream into the post's `readBytes … = some (positionsBytes 4 ps)` witness. -/
+theorem positionsBytes_surjective (w : Nat) : ∀ (k : Nat) (bs : List UInt8),
+    bs.length = w * k → ∃ ps : List Nat, positionsBytes w ps = bs ∧ ps.length = k
+  | 0, bs, h => by
+      have hnil : bs = [] := List.eq_nil_of_length_eq_zero (by simpa using h)
+      subst hnil
+      exact ⟨[], rfl, rfl⟩
+  | k + 1, bs, h => by
+      have hble : w ≤ bs.length := by
+        rw [h]
+        calc w = w * 1 := (Nat.mul_one w).symm
+          _ ≤ w * (k + 1) := Nat.mul_le_mul_left w (by omega)
+      have hlen : (bs.take w).length = w := by
+        rw [List.length_take, Nat.min_eq_left hble]
+      have hdrop : (bs.drop w).length = w * k := by
+        rw [List.length_drop, h, Nat.mul_succ]
+        omega
+      obtain ⟨ps1, hps1, hlen1⟩ := positionsBytes_surjective w k (bs.drop w) hdrop
+      refine ⟨bytesToNat (bs.take w) :: ps1, ?_, ?_⟩
+      · have hrt : natToBytes (bytesToNat (bs.take w)) w = bs.take w := by
+          have h := JsonEntrySteps.natToBytes_bytesToNat (bs.take w)
+          rwa [hlen] at h
+        show natToBytes (bytesToNat (bs.take w)) w ++ positionsBytes w ps1 = bs
+        rw [hrt, hps1]
+        exact List.take_append_drop w bs
+      · simp only [List.length_cons, hlen1]
+
+/-- **The escape gate is the ABI's flag.**  `for.cond.cleanup` masks the arm
+selector with one bit, so the UTF-8 stage receives `0` or `1` at either width the
+selector's reserved bits allow. -/
+theorem tailGate_zero_or_one (arm : BitVec 64) : tailGate arm = 0 ∨ tailGate arm = 1 := by
+  have h : (tailGate arm).toNat ≤ 1 := by
+    rw [tailGate, BitVec.toNat_and]
+    have h1 : (BitVec.ofInt 32 1).toNat = 1 := by decide
+    rw [h1]
+    exact Nat.and_le_right
+  rcases Nat.eq_zero_or_pos (tailGate arm).toNat with h0 | hp
+  · left
+    exact BitVec.toNat_inj.mp (by rw [h0]; decide)
+  · right
+    have h1 : (tailGate arm).toNat = 1 := by omega
+    exact BitVec.toNat_inj.mp (by rw [h1]; decide)
+
+/-- **The UTF-8 stage's `pre` at the loop's exit.**  The window is the caller's:
+three zeros at `b - 3`, the padded document at `b`, and the stage reads them as
+one `utf8Window`.  The count slot's store at `%nk` misses the window, so the
+call's memory carries it, and the record's own `3 ≤ b`, `0 < n` and block bounds
+are the staging's. -/
+theorem utf8Pre_of_staging {tab base : Nat} {args : List Value} {mem sm : Mem}
+    {next : Nat} {S : PipelineLoopCarried} {kv : BitVec 64}
+    (hst : pipelineStaging tab base args mem) (htie : exitArgs S args)
+    (hwin_sm : readBytes sm (S.b - 3) (3 + 64 * pipelineBlocks S.n.toNat) =
+      readBytes mem (S.b - 3) (3 + 64 * pipelineBlocks S.n.toNat)) :
+    Γ_utf8.pre [.ptr S.b, .int 64 S.n, .int 32 (tailGate S.armSel)]
+      (writeBytes sm S.nk (natToBytes kv.toNat 8)) next := by
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
+    nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
+    hzero3, hpos, htab, hsc, hcarry, hcount, hnxp, hepcap, hxp, hdstcap, hdst, hev,
+    hnev, hndst, hnev', hroomk, hroomxn, hblk, harm, hreads, hdisj⟩ := hst
+  subst hargs
+  simp only [exitArgs] at htie
+  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    rfl, rfl⟩ := htie
+  have hnB : pipelineBlocks S.n.toNat = pipelineBlocks bs.length := by rw [hn]
+  have hble : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
+  simp only [pipelineRegions, Nat.zero_add] at hdisj
+  have hsep : (S.b - 3) + (3 + 64 * pipelineBlocks S.n.toNat) ≤ S.nk ∨
+      S.nk + 8 ≤ S.b - 3 := by
+    simpa using disjointRegions_pair _ 0 7 (by decide) _ _ rfl rfl hdisj
+  -- the window at the caller's memory
+  have hwindow_mem : readBytes mem (S.b - 3) (3 + 64 * pipelineBlocks S.n.toNat) =
+      some (JsonUtf8IR.utf8Window (LeanLLVM.JSON.ByteString.literal bs).toList S.n.toNat
+        (pipelineBlocks S.n.toNat)) := by
+    have hdoc : readBytes mem ((S.b - 3) + 3) (64 * pipelineBlocks S.n.toNat) =
+        some (bs ++ List.replicate (64 * pipelineBlocks S.n.toNat - bs.length) 0) := by
+      rw [show (S.b - 3) + 3 = S.b from by omega, hnB]
+      exact hwin
+    have happ := JsonEntrySteps.readBytes_append mem 3 (S.b - 3) (List.replicate 3 0)
+      (64 * pipelineBlocks S.n.toNat)
+      (bs ++ List.replicate (64 * pipelineBlocks S.n.toNat - bs.length) 0) hzero3 hdoc
+    rw [happ]
+    simp only [JsonUtf8IR.utf8Window, LeanLLVM.JSON.ByteString.toList_literal, hn, List.append_assoc]
+  -- and at the memory the count slot's store leaves
+  have hwindow_ms : readBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) (S.b - 3)
+      (3 + 64 * pipelineBlocks S.n.toNat) =
+      some (JsonUtf8IR.utf8Window (LeanLLVM.JSON.ByteString.literal bs).toList S.n.toNat
+        (pipelineBlocks S.n.toNat)) := by
+    refine (readBytes_writeBytes_of_disjoint (m := sm) (start := S.nk)
+      (bs := natToBytes kv.toNat 8) (a := S.b - 3)
+      (N := 3 + 64 * pipelineBlocks S.n.toNat) ?_).trans ?_
+    · rw [natToBytes_length]; omega
+    · exact hwin_sm.trans hwindow_mem
+  have hn64 : S.n.toNat + 63 < 2 ^ 64 := by
+    have := hble
+    omega
+  have hn63 : S.n.toNat < 2 ^ 63 := by
+    have := hble
+    omega
+  have hpos' : 0 < S.n.toNat := by omega
+  rcases tailGate_zero_or_one S.armSel with hg | hg
+  · refine ⟨S.b, S.n, tailGate S.armSel, false, LeanLLVM.JSON.ByteString.literal bs,
+      pipelineBlocks S.n.toNat, rfl, ?_, ?_, rfl, hb3, hn64, hn63, hwindow_ms, hpos'⟩
+    · rw [hg]; rfl
+    · simp [LeanLLVM.JSON.ByteString.length_eq_size, LeanLLVM.JSON.ByteString.size_literal, hn]
+  · refine ⟨S.b, S.n, tailGate S.armSel, true, LeanLLVM.JSON.ByteString.literal bs,
+      pipelineBlocks S.n.toNat, rfl, ?_, ?_, rfl, hb3, hn64, hn63, hwindow_ms, hpos'⟩
+    · rw [hg]; rfl
+    · simp [LeanLLVM.JSON.ByteString.length_eq_size, LeanLLVM.JSON.ByteString.size_literal, hn]
+
+/-! ### The residue
+
+The tail's run and the frame composition around it are assembled from the three
+components above and `PipelineBodyStep`'s branch traces; what does not close is
+`pipelineOutputExtents`'s bound at stage 2's two reported extents.
+
+`stage2Boundary` pins `ndst'` and `nev'` through eight-byte slot words, and its
+argument list pins the document length through `BitVec.ofNat 64 n`.  Both are
+`2 ^ 64`-periodic: the record's clauses hold at `(n, ndst0, nev0, ndst', nev')`
+and at `(n + 2 ^ 64, ndst0 + 2 ^ 64, …)` for the same memory whenever the slot
+words and the arena prefix agree, and its only upper bound is
+`ndst' ≤ ndst0 + n`.  Since the staging's `n < 2 ^ 32` is a *pre* clause and the
+post states no document bound, `ndst' < 2 ^ 64` — the bound `pipelineOutputExtents`
+needs to make its slot word decide its value — is not derivable from
+`Γ_stage2.post` at the staging's witnesses.  The record's post would need the
+document bound its pre states; adding it is a change to `JsonStage2Contract`,
+which is outside this change's file set, and supplying it as a hypothesis here
+would be a hypothesis of the target's own shape.  So the tail is not stated as a
+theorem at `Γ_stage2`: `PipelineTailTarget` remains the named obligation, with
+the pieces above done.
+-/
+
 /-! ### The tail's target -/
 
 /-- **The tail's target**: the field `PipelineBodyFacts.exit` states at
@@ -621,13 +1204,12 @@ window, stage 2's staging and the post's frame at the caller's addresses.
 
 The statement is the run's three steps and the record's own post.
 `PipelineBodyStep.pipelineExit_run` supplies the steps once the two call
-preconditions hold; this module does not yet supply them, so the target is a
-*hypothesis* of `pipelineBodyFacts_of_exitStage2`, as it was before the retype.
-What the retype changed is that the hypothesis is now statable: the predicate's
-`exitArgs` identifies `S`'s addresses with the argument list's, and its document
-read, escape-slot content and count bounds are the state facts the preconditions
-are derived from.  The remaining obligation is the derivation itself, not a gap
-in what the predicate names. -/
+preconditions hold; both preconditions are proved above
+(`utf8Pre_of_staging`, `stage2Pre_of_exit`), and the post's escape-stream witness
+is `positionsBytes_surjective`.  This module does not supply the target, so it
+remains a *hypothesis* of `pipelineBodyFacts_of_exitStage2`.  What is left is the
+post's two extent bounds — see the residue note above — which is why the rest of
+the assembly is not carried out: it would have to conclude at the extents. -/
 def PipelineTailTarget (tab base : Nat) (s2 : Calls)
     (args : List Value) (mem : Mem) (next : Nat) : Prop :=
   ∀ e : State, pipelineLoopExit mem args e →
@@ -745,6 +1327,30 @@ loop's producers.
 /-- info: 'LeanLLVM.Refinement.hasBytes_capacity_not_implied_by_bound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms hasBytes_capacity_not_implied_by_bound
+
+/-- info: 'LeanLLVM.Refinement.hasBytes_shift_of_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms hasBytes_shift_of_read
+
+/-- info: 'LeanLLVM.Refinement.readLanes32_writeBytes_disjoint' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms readLanes32_writeBytes_disjoint
+
+/-- info: 'LeanLLVM.Refinement.stage2Pre_of_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms stage2Pre_of_exit
+
+/-- info: 'LeanLLVM.Refinement.positionsBytes_surjective' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsBytes_surjective
+
+/-- info: 'LeanLLVM.Refinement.tailGate_zero_or_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms tailGate_zero_or_one
+
+/-- info: 'LeanLLVM.Refinement.utf8Pre_of_staging' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms utf8Pre_of_staging
 
 /-- info: 'LeanLLVM.Refinement.PipelineTailTarget' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
