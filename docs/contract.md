@@ -188,22 +188,132 @@ does not yet bind source commits, declarations, call-site assumptions or
 external contracts; the rest lives in the manifest. Hashes prevent stale
 pairing; they do not prove importer or exporter correctness.
 
-## 7. Trust ledger (initial position)
+## 7. Trust ledger
 
-Trusted, and named wherever a result depends on them:
+What a result here inherits when it is read as a claim about an installed
+artifact, at revision `a706a17`. One row per trusted step, with the basis it
+rests on and the artifact in this tree that carries it. The bases are a closed
+vocabulary:
 
-1. The Lean kernel and the approved axioms — the standard footprint
-   `[propext, Classical.choice, Quot.sound]`.
-2. The semantic definitions as an audited statement of intended LLVM behaviour;
-   their agreement with the real LLVM is an assurance obligation, not a result.
-3. Lean lowering, clang and the downstream LLVM backend, and the linker.
-4. The manifest shell, and the local integrity of the repository it runs in.
-5. Any FFI or extern bridge between the Lean function and the compiled unit,
-   until a theorem connects them.
+- **proved** — a kernel-checked theorem in this repository.
+- **assumed** — a definition or a fact outside the kernel: reviewed, not proved.
+- **checked by an executable pin** — a compiled `#guard`, `decide` or script
+  that stops the run when the text or the bytes disagree.
+- **outside the kernel's reach** — a step no Lean term can express, recorded so
+  that a reader can audit it.
 
-Nothing else is trusted. In particular, the certificate is a hash-and-rebuild
-bridge: it binds the checked proof artifact to the bytes installed, and it proves
-nothing about lowering, linking or machine instructions.
+A claim is licensed only by the rows its evidence column names. A clean axiom
+footprint licenses row 1 and nothing below it.
+
+| # | Layer | What is trusted here | Basis | Evidence in this tree |
+|---|---|---|---|---|
+| 1 | Proof logic | The Lean kernel and the three approved axioms; no project axiom is declared | proved | Every soundness theorem is pinned with `#guard_msgs in #print axioms`, in `LeanLLVMTest/` or beside the theorem in its own module: `LeanLLVMTest/Json.lean` (the six parser theorems, `scanBlock_correct`, `scan_simd_refines_scalar`), `LeanLLVMTest/Refinement.lean` (`IR_refines`, `loop_refines_candidate_within`, `depth_count_refines`, `classifySeam_refines`, `replaceScanner_sound`, `replaceScanner_ret`, `s1_masks_refines`, `entry_pos8_refines`, `entry_b8_refines`, `utf8_stage_refines`, `escape_expand_satisfies_of_arms`), and `JsonEscapeExpandAssembly.lean` (`escape_expand_satisfies_unconditional`, `expandArms_inhabited`). Footprint `[propext, Classical.choice, Quot.sound]`; no `axiom` declaration exists under `LeanLLVM/` or `LeanLLVMTest/` |
+| 2 | Specification | `LeanLLVM/JSON/Spec.lean`'s inductive relations as the intended reading of RFC 8259 with RFC 3629, and `Policy` as the only narrowing of the language | assumed | §1.1's clause map is the audit, and it is prose: `RfcText` is a hand-transcribed relation, not derived from a machine-readable grammar. `accepted_is_rfc_text` concludes `RfcText` from acceptance alone; `rfc_text_accepted_on_policy` additionally hypothesises `Policy` and the resource limits, so no unconditional RFC 8259 §9 claim is made |
+| 3 | LLVM semantics | `LeanLLVM/Semantics.lean`'s fuel semantics and `Calls` environment as the intended LLVM behaviour of the modelled fragment | assumed | The fragment is enumerated in `docs/capabilities.md`, "Language and IR coverage", with the construct in the fixture that each form serves. `phi` has paired evidence (`tests/phi-fragment.lean`) and a differential observation (`tests/phi-differential.sh`, which records itself as an observation, not a proof). No conformance theorem exists, and every refinement theorem is stated under this semantics, not under LLVM's |
+| 4 | Intrinsics models | `LeanLLVM/Refinement/BitLanes.lean`'s lane definitions (eleven spellings, ten definitions) and the per-unit `Calls` environments (`s1Calls`, `entryCalls`, `utf8Calls`, `escapeCalls`, and `Pclmul.clmul` for `pclmulqdq`) as the meaning of the instructions a fixture calls | assumed | `Parser.checkIntrinsicShape` fixes each admitted shape; the bound set is compared with the fixture's measured call set by `tests/escape-intrinsics.lean` (with a negative control) for the escape unit only. Flags and poison are written at the arm: `cttz` deliberately differs from LLVM at `is_zero_poison=true` and is admissible only because no clause reads that lane. No model is proved equal to hardware, and target-feature lowering is recorded by the capture, not modelled |
+| 5 | Fixture normalisation | That reducing an emission or a printed body to the syntax the parser models leaves the computed value unchanged | outside the kernel's reach | Per-item records exist for six units: `json-{entry,escape,s1-masks,utf8,pipeline}.{strip,rewrites}.tsv` and `stage2.{strip,rewrites}.tsv`. The comma-mask pair's removal list is in `capture.sh`; the classifier's is in `capture-json.sh` and the fixture header, by class rather than per item. Captures refuse constructs outside the fragment (`refuse_unmodelled`) and the result is checked with `opt -passes=verify`. Each removal is a per-item claim, not a proof; entry's `nuw`, `nsw`, `nneg` and `disjoint` are stripped with the widening recorded as "not re-established". `loop.ll`, `json-scan-body.ll` and `json-caller.ll` are printer output with nothing stripped |
+| 6 | Fixture-to-AST association | The parser, `include_str`, and the executable pin that bind each proof's literal AST to the committed fixture bytes | checked by an executable pin | `#guard decide` over `parseModule src` in `JsonClassifyIR.lean`, `JsonEntryIR.lean`, `JsonEscapeIR.lean`, `JsonS1MasksIR.lean`, `JsonUtf8IR.lean` and `JsonSeam.lean`; the depth pin is restated in `LeanLLVMTest/Refinement.lean`. `probes/install/check.sh` mutates the candidate and loop fixtures and requires the guard to fail. Fixtures are not `lake build` inputs, so the pin is read only when its module is elaborated; the certificate producer re-elaborates the module from source, and that is what makes the pin current on the installation path |
+| 7 | Printer | That `LeanLLVM/Printer.lean`'s text means to real LLVM what the AST means here, and is accepted by it | checked by an executable pin | The three F3 decisions are written at the printer: no `inbounds`; a register index at the width its definition binds; `align 1` on load and store, with an `alloca`'s alignment printed as parsed. `LoopEmit.lean` refuses to print unless its output parses back to the same function; `json-caller.ll` and `json-scan-body.ll` are printed and pinned. Round trips are pinned in `LeanLLVMTest/Core.lean`; `llvm-as` acceptance is exercised in `tests/phi-differential.sh` and `opt -passes=verify` in the captures. The printer is inside the artifact path for `loop`, whose installed object is built from printed text |
+| 8 | Native compilation | That clang, the LLVM backend and assembler, and `ld` preserve the fixture's meaning, and that a rebuild reproduces the object | outside the kernel's reach | `probes/install/build.sh` compiles each unit with `clang -c` and links its marker with `ld -r`; `probes/install/select.sh` rebuilds from the fixtures under the same basenames and requires the same object hash. Captures and installations record their flags and target (`-O2 -mavx2` for the classifier; `target_features=none`, triple and data layout in the manifest); `probes/install/toolchain-id.sh` pins the Lean, clang and ld versions. A byte-equal rebuild shows the object is that fixture's output; it says nothing about the instructions the machine executes |
+| 9 | Lean execution bridge | That a Lean caller's `@[extern]` call reaches the certified symbol with a compatible ABI | outside the kernel's reach | Comma-mask seam only: `probes/install/Caller.lean` and `probes/app/App.lean` declare the symbol `opaque`; `probes/app/build.sh` compiles with `lean -c` then `leanc`, requires the call to survive (`app.ll` and `nm -u`), and `probes/app/check.sh` links it against the candidate, baseline and loop units, runs each, and compares answers. No theorem connects the extern declaration to the body, and the ABI agreement is observed at link and run. The JSON route has no Lean caller: `JsonSeam.scanCaller` is a Lean AST printed through the framework printer, so its compiled form is not Lean's compiler's output |
+| 10 | Installation | The certificate producer and selector as written, the hashes they compare, and the shell manifest | outside the kernel's reach | `InstallCertificate.lean` writes seventeen fields; `probes/install/select.sh` compares each with the file it names, rebuilds the units, re-elaborates the proof module and reproduces the certificate. Gates: `tests/m3-certificate-gate.sh` (47 runs), `tests/m4-loop-install-gate.sh`, `tests/m4-depth-install-gate.sh`. `tests/json-scan-select-gate.sh` is the JSON selection gate and currently stops at setup, refusing the fixture at the missing `scanWindowLLVM_refines` pin, so no JSON selection gate passes. The certificate does not bind source commits, declarations, call-site assumptions or external contracts (§6), and the manifest is executed as shell. A hash binds bytes, not their semantics |
+
+### 7.1 Where the tree is weaker than a clean ledger suggests
+
+Each of these is a deliberate record, not an oversight, and each narrows what a
+claim over the rows may assert.
+
+1. **Intrinsic conformance is assumed per instruction, and coverage is checked
+   for one unit.** Lane order, signedness and the poison corner are written into
+   the lane definitions, and the flag divergence is documented; but no model is
+   proved against hardware, and the inventory-versus-environment comparison is
+   compiled only in `tests/escape-intrinsics.lean`. `JsonEntryIR`,
+   `JsonS1MasksIR`, `JsonPipelineIR` and `JsonStage2IR` name their inventory
+   files in prose without a compiled comparison against the set their
+   environment binds, and `JsonUtf8IR` names none.
+2. **Normalisation is per item for six units and per class for the rest.**
+   `capture.sh` and `capture-json.sh` record their removals as a class list with
+   a reason each; only the six measured kernels have a row per removed token.
+   Stripping `nuw`, `nsw`, `nneg` or `disjoint` is recorded as widening and
+   explicitly not re-established, so the refinement statement is about the
+   stripped text and no theorem answers for the flag it removed.
+3. **The fixture pin is executable and can be stale.** Because a fixture is not
+   a `lake build` input, a green `lake build` does not show that the pin read the
+   current text. The mutation controls run in `probes/install/check.sh`; the
+   depth mutation is described there and not committed. Re-elaboration by the
+   certificate producer is the route that restores freshness, and it exists only
+   for the units the producer knows.
+4. **The printer is repaired by decision and pin, not by a semantic theorem.**
+   F3's three cases are settled, and the printed text is accepted by `llvm-as`
+   where a route exercises it, but no theorem gives printed text its real LLVM
+   meaning. One exporter loss remains outside those three: `Function.render`
+   writes an unadorned `define`, so linkage, visibility and calling convention
+   cannot be printed — the AST has no field for them. The fixtures printed here
+   start from an AST that carries no such field, so nothing is lost on the
+   artifact path, but a parsed external source with `internal` linkage would not
+   round-trip to text with the same linkage. For `loop` the printer is on the
+   artifact path.
+5. **The Lean execution bridge exists for the comma-mask seam only.** Its ABI
+   correspondence is observed by link and run. No JSON body has a Lean caller,
+   and the seam's caller is printer output rather than compiler output.
+6. **Installation covers four units, none of them JSON.** `select.sh` knows
+   `json_scan`, but `JsonScanIR.scanWindowLLVM_refines` is a name no theorem
+   inhabits (the instruction-level step of `scanWindowStatement` is open), so the
+   producer refuses the unit and the gate refuses it at the missing axiom pin.
+   The classifier is not in the selector's table at all. The only installed
+   replacement in the tree is the comma-mask seam, which is not a JSON
+   operation.
+7. **Semantic conformance has no theorem.** The model's fragment is enumerated
+   and its captures refuse what it does not model; over-approximating source and
+   target does not by itself transport a refinement to real LLVM, and no
+   per-kernel adequacy statement replaces that argument.
+
+### 7.2 The claim this ledger licenses
+
+> A specified Lean JSON operation replaced by a particular SIMD implementation,
+> proved equivalent under explicit input and staging conditions in an audited
+> LLVM fragment, with compiler, runtime and artifact-binding assumptions listed
+> separately.
+
+The rows above license this claim only in the following parts.
+
+| Clause | Status at `a706a17` |
+|---|---|
+| a specified Lean JSON operation | Met for one operation: the block layer's masked classification, `maskOf` (the `maskOfList` scalar transition) over a 32-byte window, which is what `scanBlock_correct` relates the block operation to. The parse — the operation a product needs — is not the subject of any installed result |
+| replaced by a particular SIMD implementation | Met at the model for `json-classify.candidate.ll`, whose bytes are pinned and whose capture records `-O2 -mavx2`. Not met as a deployment: the classifier is not a selector unit and no certificate covers it |
+| proved equivalent under explicit input and staging conditions | Met as a directional refinement, not symmetric equivalence: `scannerLLVM_refines` holds for every block readable at the argument, with the caller's memory unchanged, and `classifySeam_refines` and `replaceScanner_sound` carry it through the staging caller. The reference is the verified Lean transition; the baseline-body half is open because the fragment has no pointer arithmetic, so no scalar byte-walking body can be written in it |
+| in an audited LLVM fragment | Met for fixture membership: the fragment is enumerated, the captures refuse what it does not model, and the fixture's construct inventory is measured. Model conformance to real LLVM remains an assumption (row 3) |
+| compiler, runtime and artifact-binding assumptions listed separately | Met by rows 8–10 for the comma-mask seam, which has a real Lean caller and an installation record. For every JSON body the class is empty: there is no Lean caller, hence no runtime in the path, and no JSON unit is installed, hence no artifact binding |
+
+Clauses not yet met: the deployment of any JSON body; equivalence against a
+baseline LLVM body; replacement through the parser (`docs/capabilities.md`
+records "Refinement of the parser through the classifier" as missing); and an
+artifact binding for a JSON unit. What the ledger licenses today is the
+block-layer refinement, and separately the comma-mask installation through the
+seam whose bridge is row 9.
+
+### 7.3 Why the axiom list is insufficient
+
+Row 1 is about the theorem, and the theorem is about a literal AST. Associating
+that AST with the committed source text takes the parser and a successful
+executable pin (row 6). Associating the fixture with the emission takes the
+capture script and its per-item removals (row 5). Associating the fixture with
+the installed object takes clang, `ld` and a rebuild comparison (row 8).
+Associating the object with a Lean call takes the extern bridge (row 9), and
+associating all of it with the certificate takes the producer, the selector and
+the hashes (row 10). None of these adds a logical axiom to the theorem — the
+proof term is still kernel-checked — and all of them add trusted machinery to a
+claim about installed bytes. A `#print axioms` line answers only the first
+question.
+
+### 7.4 Evidence that is not a trusted step
+
+Tactics and imported proofs are not rows: their output is a kernel-checked proof
+term. The differential transcript (`probes/install/build/differential.txt`), the
+corpus windows in `tests/json-classify/check.sh`, the benchmark numbers in
+`docs/json-pipeline-performance.md` and the medians in `probes/bench` are
+observations and measurements. They support no row and license no clause; they
+are named where they are used so they cannot be mistaken for one.
 
 ## 8. Out of scope for the first contract
 
