@@ -9,30 +9,38 @@ and bench scripts, not of the Lean library."  `build.sh` is the link step, in
 the shape `probes/app/build.sh` uses for the comma-mask seam.
 
 The staging is `LeanLLVM.JsonCallRoute.stagedStore`'s shape, in bytes: the
-window is `[0,0,0] ++ doc ++ zero padding ++ 32` readable tail bytes, the table
-is initialised by `leanllvm_json_entry_table`, and the four growing buffers are
-sized at the record's capacities.  The shell refuses the empty document and one
-over the input bound before any call, and it refuses the reference parser's
-character policy after the call: the object's observation is printed on stdout,
-and a document the object accepted that the reference refuses for a lone
-surrogate or a noncharacter is refused on stderr with the reference's reason and
-byte, at exit 2.  The policy scan is `scanDocument` below; the parser's depth and
-token exclusions belong to `LeanLLVM.JsonCallRoute.checkRoute`, which needs the
-reference parser and so is checked by `DomainCheck.lean` under `lake env lean`.
+window is `[0,0,0] ++ doc ++ zero padding ++ 32` readable tail bytes, and the
+four growing buffers are sized at the record's capacities.  The POS8 table is
+not staged here: the entry unit reads its own static table, and the adapter's
+setup fills it (`route_init` in `shim.c`), so this program has no initialiser to
+call and no dummy return to consume.
+
+The adapter returns a tagged result: the observation's six words and its two
+payloads for the two classes where the object ran, and a tag naming the class
+otherwise — an unmet staging precondition before the call, an allocation
+failure, or a returned cursor past its capacity.  The first two classes print
+the object's observation; the last three are reported on stderr with the failed
+precondition and the expected and observed numbers, at exit 3, 4 and 5.
+
+The shell refuses the empty document and one over the input bound before any
+call, and it refuses the reference parser's character policy after the call: the
+object's observation is printed on stdout, and a document the object accepted
+that the reference refuses for a lone surrogate or a noncharacter is refused on
+stderr with the reference's reason and byte, at exit 2.  The policy scan is
+`scanDocument` below; the parser's depth and token exclusions belong to
+`LeanLLVM.JsonCallRoute.checkRoute`, which needs the reference parser and so is
+checked by `DomainCheck.lean` under `lake env lean`.
 -/
 
-/-- The adapter: it copies the caller's `ByteArray`s into the object's ABI,
-calls `leanllvm_json_pipeline`, and returns the result bytes. -/
+/-- The adapter: it validates the staging, copies the caller's `ByteArray`s into
+the object's ABI, calls `leanllvm_json_pipeline`, and returns the tagged result
+`shim.c` defines. -/
 @[extern "leanllvm_json_route"]
 opaque route (window : ByteArray) (n : UInt64)
   (sc mkSlot entw : ByteArray) (ep : ByteArray) (epcap : UInt64) (nk : ByteArray)
   (xp : ByteArray) (xpcap : UInt64) (nxp xcarry dst : ByteArray)
   (dstcap : UInt64) (ndst : ByteArray) (ev : ByteArray) (evcap : UInt64)
   (nev err : ByteArray) (arm : UInt64) : ByteArray
-
-/-- Fills the caller's 8 KiB from the unit's own POS8 table, initialising it. -/
-@[extern "leanllvm_json_route_table"]
-opaque entryTable (dst : ByteArray) : UInt64
 
 def zeros (n : Nat) : ByteArray := ByteArray.mk (Array.replicate n (0 : UInt8))
 
@@ -255,6 +263,66 @@ def scanDocument (bs : Array UInt8) : Nat → Nat → Option PolicyRefusal
 def policyRefusal (doc : ByteArray) : Option PolicyRefusal :=
   scanDocument doc.data doc.size 0
 
+/-! ### The adapter's tagged result
+
+`shim.c` returns ten header words and then the payloads: `tag detail want got`,
+then `verdict nk nxp ndst nev err`.  The tags that name a failure carry the
+failed precondition's index and its expected and observed numbers, so the report
+says what failed rather than that something did. -/
+
+/-- The header's size: ten words. -/
+def headerBytes : Nat := 80
+
+/-- The adapter tagged the object's acceptance. -/
+def tagObserved : Nat := 0
+
+/-- The adapter tagged the object's refusal. -/
+def tagRefused : Nat := 1
+
+/-- What the adapter's precondition index names, in `shim.c`'s order. -/
+def preconditionName : Nat → String
+  | 1 => "the window's bytes past its 3-byte base"
+  | 2 => "the mask unit's 24-byte carry slot"
+  | 3 => "the mask unit's 48-byte output slot"
+  | 4 => "the entry word's 8-byte slot"
+  | 5 => "the entry stream's buffer at its capacity"
+  | 6 => "the entry stream's cursor slot"
+  | 7 => "the escape list's buffer at its capacity"
+  | 8 => "the escape list's count slot"
+  | 9 => "the escape list's 16-byte carry slot"
+  | 10 => "the arena at its capacity"
+  | 11 => "the arena's cursor slot"
+  | 12 => "the event stream at its capacity"
+  | 13 => "the event stream's count slot"
+  | 14 => "the refusal record's error slot"
+  | 15 => "the reserved arm bits"
+  | 16 => "the entry stream's cursor"
+  | 17 => "the escape list's count"
+  | 18 => "the arena's cursor"
+  | 19 => "the event stream's count"
+  | 20 => "the two payload lengths"
+  | _ => "a precondition the adapter did not name"
+
+/-- Report a failure tag and return that class's exit status: 3 for an unmet
+staging precondition, 4 for an allocation failure, 5 for an internal contract
+violation. -/
+def reportAdapterFailure (result : ByteArray) (tag : Nat) : IO UInt32 := do
+  let detail := be64 result 8
+  let want := be64 result 16
+  let got := be64 result 24
+  if tag = 2 then
+    IO.eprintln s!"route: unsupported domain: {preconditionName detail}: \
+      expected {want}, observed {got}"
+    return 3
+  else if tag = 3 then
+    IO.eprintln s!"route: allocation failure: the adapter could not copy a \
+      {want}-byte staging buffer"
+    return 4
+  else
+    IO.eprintln s!"route: internal contract violation: {preconditionName detail}: \
+      capacity {want}, returned {got}"
+    return 5
+
 /-- The reason the wrapper reports, naming the reference's refusal and byte. -/
 def PolicyRefusal.message : PolicyRefusal → String
   | .unpairedSurrogate pos =>
@@ -283,26 +351,34 @@ def run (path : String) : IO UInt32 := do
   let dstcap := n + 64
   let evcap := 13 * n + 128
   let window := (zeros 3).append doc |>.append (zeros (64 * nb - n)) |>.append (zeros 32)
-  let tab := zeros 8192
-  -- the initialiser's result is used so a pure-call DCE cannot drop it
-  if entryTable tab = 0 then
-    IO.eprintln "route: the POS8 table initialiser failed"
-    return 2
   let result := route window (UInt64.ofNat n)
     (zeros 24) (zeros 48) (zeros 8)
     (zeros (4 * epcap)) (UInt64.ofNat epcap) (zeros 8)
     (zeros (4 * xpcap)) (UInt64.ofNat xpcap) (zeros 8) (zeros 16)
     (zeros dstcap) (UInt64.ofNat dstcap) (zeros 8)
     (zeros evcap) (UInt64.ofNat evcap) (zeros 8) (zeros 8) 2
-  let verdict := be64 result 0
-  let nk := be64 result 8
-  let nxp := be64 result 16
-  let ndst := be64 result 24
-  let nev := be64 result 32
-  let err := be64 result 40
+  if result.size < headerBytes then
+    IO.eprintln s!"route: internal contract violation: the adapter returned \
+      {result.size} bytes, fewer than its {headerBytes}-byte header"
+    return 5
+  let tag := be64 result 0
+  if tag != tagObserved && tag != tagRefused then
+    return ← reportAdapterFailure result tag
+  let verdict := be64 result 32
+  let nk := be64 result 40
+  let nxp := be64 result 48
+  let ndst := be64 result 56
+  let nev := be64 result 64
+  let err := be64 result 72
+  -- The header names the payload's extent; a result of another length has lost
+  -- or gained bytes, and printing it as the observation would hide that.
+  if result.size ≠ headerBytes + ndst + nev then
+    IO.eprintln s!"route: internal contract violation: the result is \
+      {result.size} bytes, and its header names {headerBytes + ndst + nev}"
+    return 5
   IO.println s!"verdict={verdict} nk={nk} nxp={nxp} ndst={ndst} nev={nev} err={err}"
-  let arena := ByteArray.mk (Array.mk ((result.toList.drop 48).take ndst))
-  let events := ByteArray.mk (Array.mk ((result.toList.drop (48 + ndst)).take nev))
+  let arena := ByteArray.mk (Array.mk ((result.toList.drop headerBytes).take ndst))
+  let events := ByteArray.mk (Array.mk ((result.toList.drop (headerBytes + ndst)).take nev))
   IO.println s!"arena={hex arena}"
   IO.println s!"events={hex events}"
   -- The reference parser is stricter than RFC 8259 on characters, and the ABI

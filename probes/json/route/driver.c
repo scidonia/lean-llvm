@@ -1,10 +1,12 @@
 /* driver.c -- the C caller the Lean route's staging is compared against.
  *
  * It stages the document exactly as `LeanLLVM.JsonCallRoute.stagedStore` does
- * and calls `leanllvm_json_pipeline` directly, printing the same first line as
- * `RouteMain.lean`.  The check compares the two: agreement is evidence that the
- * Lean wrapper builds the staging the record demands, and that its output is the
- * object's rather than a Lean-side recomputation.
+ * and calls `leanllvm_json_pipeline` directly, printing the same three lines as
+ * `RouteMain.lean`: the observation, the arena and the event stream.  The check
+ * compares all three, byte for byte: agreement is evidence that the Lean
+ * wrapper builds the staging the record demands, and that its output is the
+ * object's rather than a Lean-side recomputation.  Comparing the observation
+ * alone would let equal lengths and verdicts conceal different values.
  */
 #include <stdio.h>
 #include <stdint.h>
@@ -13,6 +15,14 @@
 
 #include "pipeline.h"
 #include "entry.h"
+
+/* One payload line, in `RouteMain.lean`'s form: the label, then two lowercase
+   hex digits per byte. */
+static void print_hex(const char *label, const uint8_t *p, uint64_t n) {
+    printf("%s=", label);
+    for (uint64_t i = 0; i < n; i++) printf("%02x", p[i]);
+    printf("\n");
+}
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -72,5 +82,7 @@ int main(int argc, char **argv) {
            (unsigned long long)verdict, (unsigned long long)*nk,
            (unsigned long long)*nxp, (unsigned long long)*ndst,
            (unsigned long long)*nev, (unsigned long long)*err);
+    print_hex("arena", dst, *ndst);
+    print_hex("events", ev, *nev);
     return 0;
 }

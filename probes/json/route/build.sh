@@ -34,6 +34,13 @@ if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_pipeline')" -eq 0 ]; then
   exit 1
 fi
 
+# The adapter's setup fills the entry unit's POS8 table before the call; a
+# build that lost that call leaves the table zero and every container refused.
+if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_entry_table')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_entry_table" >&2
+  exit 1
+fi
+
 leanc "$build/RouteMain.o" "$build/shim.o" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" \
@@ -41,6 +48,10 @@ leanc "$build/RouteMain.o" "$build/shim.o" \
 
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline$')" -eq 0 ]; then
   echo "build: the executable does not define leanllvm_json_pipeline" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_entry_table$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_entry_table" >&2
   exit 1
 fi
 

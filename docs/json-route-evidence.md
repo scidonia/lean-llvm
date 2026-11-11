@@ -468,3 +468,81 @@ What each shows, and what it does not:
   would report.  The timing arm's gated/ungated medians are an observation with
   no band, so they are not a witness either.  The cut reopens if a later
   milestone adds a seam that reads the unit's own branch.
+
+## The route boundary's controls (R1–R9)
+
+The route scenario now compares the arena and event bytes as well as the
+observation line, and the adapter reports a tagged result instead of clamping a
+cursor.  A green run of that comparison shows nothing on its own — two empty
+payloads agree however the object misbehaved — so each new check carries a cut
+that makes it fail, and each cut was made in a scratch root holding only
+`kernel/json`, `tests/json`, `probes/json/route` and `probes/install/ir` copied
+from the working tree.  Nothing in the repository was moved, and no cut is part
+of the change.
+
+Observed on the working tree at `4f94295` plus this change, Lean 4.35.0 and
+clang/LLVM 21.1.8 from the flake.  Every cut tree built with exit 0 before its
+scenario ran, except `R5`, whose claim is the build's own assertion.  The uncut
+control is the same copy with no cut: `build.sh` exits 0 and `check.sh` prints
+
+```text
+ok: 122 default-profile rows: route and driver agree on the observation, arena and events (60 arena byte(s) over 19 row(s), 3125 event byte(s) over 86 row(s)); accept 59, invalid 48, policy refusals 14; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128/129/520/521 agree, object accepts 128..520 and refuses 521 at 520
+```
+
+| Cut | Applied in the copy | Build | Route command | Exit | Assertion that fired |
+|---|---|---|---|---|---|
+| `R1` arena value | `shim.c`: one arena byte flipped after the call, `ndst` and every other word untouched | 0 | `check.sh` | 1 | `FAIL: esc-quote.json: value disagreement: the arena streams first differ at byte 0: route 0x23, driver 0x22`; **19** value disagreements — one per row whose arena is non-empty — then three aggregate assertions |
+| `R2` arena cursor | `pipeline.c`: `*ndst = dstcap + 1` after the call | 0 | `check.sh` | 1 | `FAIL: num-zero.json: the route reported an internal contract violation:`, then `route: internal contract violation: the arena's cursor: capacity 65, returned 66`; 120 assertions |
+| `R3` native stack bound | `stage2.c`: `#define MAXD 520` → `128` | 0 | `check.sh` | 1 | `FAIL: depth 129: the object refused a document inside its 520-frame stack (verdict 0)`, the same at 520, and `FAIL: depth 521: the refusal offset is 128, not the 521st opener at 520`; 3 assertions |
+| `R4` table never filled | `entry.c`: `xl_pos8_init` returns before filling the table | 0 | `check.sh` | 1 | `FAIL: esc-shorts.json: the object refused an accept row (verdict 0)`; 30 assertions |
+| `R5` setup does not fill the table | `shim.c`: the `leanllvm_json_entry_table` call replaced by a no-op | 1 | — | — | `build: the adapter does not import leanllvm_json_entry_table` |
+| `R6` buffer below its capacity | `RouteMain.lean`: the entry buffer sized `4 * epcap - 4` against the advertised `epcap` | 0 | `check.sh` | 1 | `FAIL: num-zero.json: the route exited 3`, then `route: unsupported domain: the entry stream's buffer at its capacity: expected 292, observed 288`; 122 assertions |
+| `R7` allocation failure | `shim.c`: the 24-byte staging copy forced to fail | 0 | `check.sh` | 1 | `FAIL: num-zero.json: the route exited 4`, then `route: allocation failure: the adapter could not copy a 24-byte staging buffer`; 130 assertions |
+| `R8` optimisation level | `build.sh`: `-O2` → `-O1` | — | `correspondence.sh` | 1 | `FAIL: build.sh carries '-O1' beyond the capture's flags; the relation is not -O2 against -O3 alone` |
+| `R9` depth guard | a copy of `DomainCheck.lean` with the acceptance side's `128` → `129` | — | `lake env lean` | 1 | the `parseBytes` acceptance guard and the `documentRefusal … = none` guard at `:37` and `:42` did not evaluate to `true` |
+
+The per-cut totals above are the run's own summary counts, and most of them are
+aggregates: a row whose comparison fails is not counted in the class it would
+have reached, so `R2`, `R4`, `R6` and `R7` also report the guards that no row
+reached.  Only `R1`'s decomposition was read off the run: the 19 arena-carrying
+rows each fail the value comparison — ten of them are policy-class rows, which
+therefore never reach the policy accounting, so the run also reports the policy
+class as 4 of 14 (the four `nc-raw-*` rows, whose arena is empty), the pinned
+class diff, and the arena-arm vacuity guard.  The assertion named in each row is
+the one that fires first and names the class.
+
+What each shows, and what it does not:
+
+- **`R1` — the payload comparison is live and metadata-preserving.** The cut
+  moves one arena value while leaving the verdict, all four cursors and the
+  lengths intact, so the failure comes from the byte comparison and names the
+  byte; before the change this row was green under the first-line comparison.
+  It does not show the *values* are right against the reference tape: the two
+  callers run the same object, and reference-level value comparison is a
+  separate requirement.
+- **`R2` — an oversized cursor is reported, not clamped.** The adapter returns
+  the internal-violation tag with the capacity and the returned count, exits 5,
+  and prints no truncated observation.  The clamp this replaces would have
+  reported `ndst = 65` for a document whose object said `66`, which is the
+  corruption reported as a shorter, well-formed result.
+- **`R3` — the depth arm depends on the native bound.** The cut lowers `MAXD`,
+  so 129 and 520 are refused by the object and the 521st opener's offset moves
+  to 128: the arm's three assertions are the ones that fire, and the corpus rows
+  are untouched.
+- **`R4`/`R5` — the POS8 table is initialised by the adapter's setup, and its
+  absence is visible twice.** `R4` leaves the call in place and cuts the table's
+  contents: the runtime red is the accept rows, refused.  `R5` removes the call:
+  the compiler then drops the import, so the build's `nm` assertion fires before
+  a scenario exists.  Neither shows that a table *value* is right; that is
+  `tests/json-entry/check.sh`'s object-versus-body arm.
+- **`R6`/`R7` — the two failure tags are reachable and distinguished.** A buffer
+  shorter than its capacity word is caught before the native call (exit 3,
+  expected and observed sizes), and a failed staging copy is its own tag (exit
+  4).  They do not show that no *other* precondition is missing: the list is the
+  ABI's, and the adapter checks the sizes and extents it is given.
+- **`R8`/`R9` — the two boundary records are gated.** `R8` is the
+  correspondence's flag relation, so a document that says "the levels are the
+  only difference" cannot outlive a change to that difference.  `R9` is the
+  reference's side of the depth boundary: `DomainCheck.lean`'s 128 guards fail
+  when the acceptance side is moved onto the refusal side, so the 128/129 pair
+  is a measured bound and not a comment.

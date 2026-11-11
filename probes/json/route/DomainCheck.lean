@@ -30,8 +30,17 @@ def sampleLayout : RouteLayout :=
 #guard documentRefusal (List.replicate 1048577 (0 : UInt8)) =
   some (.inputTooLong 1048576)
 
--- 129 nested arrays exhaust the parser's depth; the ABI carries no depth limit,
--- so the shell refuses it rather than falling through.
+-- The depth boundary's two sides.  128 nested arrays are inside the reference's
+-- bound (`Limits.default.maxDepth`), so the reference accepts them and the shell
+-- does not refuse them; 129 exhaust them, and because the ABI carries no depth
+-- limit the shell refuses that class rather than falling through to the object.
+#guard match parseBytes Limits.default
+    (ByteString.literal (List.replicate 128 (0x5B : UInt8) ++
+      List.replicate 128 (0x5D : UInt8))) with
+  | .ok _ => true
+  | .error _ => false
+#guard documentRefusal (List.replicate 128 (0x5B : UInt8) ++
+    List.replicate 128 (0x5D : UInt8)) = none
 #guard parseBytes Limits.default
     (ByteString.literal (List.replicate 129 (0x5B : UInt8) ++
       List.replicate 129 (0x5D : UInt8))) = .error .depthExceeded
