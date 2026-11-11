@@ -25,12 +25,19 @@ not the other way round.  For a readable window and a well-formed carry:
           readBytes mem' pIn valid = some bs
 
 That statement is `JsonScanIR.scanWindowStatement`, with the band hypothesis the
-prose leaves as `(hband : … base disjoint …)` supplied, and it is **false**:
-`JsonScanIR.scanWindowStatement_false` proves its negation, at two independent
-witnesses — a band placed across the window, and a continuation byte outside its
-requirement, whose refusal the body's stop-word select reports as `control` where
-the model says `badUtf8`.  The name above is therefore deliberately not taken: the
-first obligation is a change to the body's stop word, not a proof step.
+prose leaves as `(hband : … base disjoint …)` supplied as
+`JsonScanIR.scanBandDisjoint` and the frame tied to `JsonScanIR.scanBandBytes`.
+It is a proposition and not a theorem.  Two things a proof meets before it can
+start are settled: the band hypothesis is load-bearing
+(`JsonScanIR.bandOverlap_clobbers_window`, with `bandClear_preserves_window` as its
+control), and the stop word's select chain reported `control` where the model
+refuses with `badUtf8` on a byte outside a pending requirement
+(`JsonScanIR.badContinuation_reason_differs`, the record of that body, with
+`badLead_reason_agrees` as its control).  The body now chooses the `badUtf8` word
+on `%ubad ||| %lbad`, and `JsonScanIR.probeWindows_agree` states the agreement
+that produces over seven windows, the 32-byte one whose bad continuation sits at
+lane 31 included.  The name above is therefore still free for the theorem to come,
+and nothing here claims it.
 
 The body is scalar: one lane per iteration, the model's predicates as straight
 line IR, the structural mask accumulated into one `i32` by `shl`/`or`, the
@@ -57,9 +64,10 @@ induction itself.  The chain is to be generated from `JsonScanBody.ruleInstrs` b
 a committed `#eval` generator rather than hand-written: the `qN` states are
 definitions inside a proof and carry no pins, while `laneStep`, the induction and
 `scanWindowLLVM_refines` each carry a `#print axioms` pin and an `example`.  None
-of them can be discharged against the statement as it stands, because the
-statement is refuted: the chain's own last step stores the stop word, and the
-reason field it stores is the one `scanWindowStatement_false` witnesses as wrong.
+of them is here yet: `scanWindowLLVM_refines` is the statement
+`scanWindowStatement`, and the chain's own last step stores the stop word, which is
+the word the model names — an agreement to prove at every lane, not one to read off
+the windows measured so far.
 -/
 import LeanLLVM.Refinement.JsonScanIR
 

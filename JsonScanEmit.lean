@@ -9,8 +9,8 @@ dev shell's own startup banner, which is printed on the way in.
 
 The text is the header comment below followed by `LeanLLVM.Function.render` of
 `LeanLLVM.Refinement.JsonScanBody.scanWindowBody`, the AST that
-`LeanLLVM/Refinement/JsonScanIR.lean` parses the file back to and proves the
-refinement statement about.
+`LeanLLVM/Refinement/JsonScanIR.lean` parses the file back to and states the
+refinement proposition about.
 
 This is the framework's printer rendering a Lean-defined function; no `lean -c`
 C emission and no clang lowering is involved anywhere on this path, and nothing
@@ -48,11 +48,12 @@ def provenance : String :=
 ;
 ; through LeanLLVM.Function.render, the framework's own printer.
 ;
-; The refinement statement about this text is not yet proved: LeanLLVM/Refinement/
-; JsonScanIR.lean pins the text to the AST and proves the prefix facts the
-; statement rests on, and its own header records what is outstanding.  Until
-; that theorem exists, nothing here is certified, and the manifest must not
-; name this fixture.
+; The refinement statement about this text is
+; LeanLLVM.Refinement.JsonScanIR.scanWindowStatement, and it is not proved:
+; JsonScanIR pins the text to the AST, proves the prefix facts the statement
+; rests on, and records in its header the instruction-level step, the loop
+; induction and the footprint clause that remain.  Until that theorem exists,
+; nothing here is certified, and the manifest must not name this fixture.
 ;
 ; This is not the output of Lean's native compiler and not the output of clang:
 ; no `lean -c` C emission and no clang lowering is involved, and nothing in the

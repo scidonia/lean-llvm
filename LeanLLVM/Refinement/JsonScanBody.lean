@@ -6,10 +6,18 @@ This module is the one definition of both bodies.  `lake exe
 leanllvm-json-scan-emit` renders `scanWindowBody` with `LeanLLVM.Function.render`
 into `probes/install/ir/json-scan-body.ll`, and `LeanLLVM/Refinement/JsonScanIR.lean`
 parses that fixture at build time and pins it back to this AST.  The refinement
-statement about the body is **not yet proved**; `JsonScanIR.lean` proves the
-prefix facts the statement rests on and its header records what is outstanding.
-`scanWindowBaselineBody` is the scalar byte-wise counterpart; its fixture and its
-instantiation of the same statement are likewise outstanding.
+statement about the body is `JsonScanIR.scanWindowStatement` and is **not yet
+proved**: `JsonScanIR.lean` proves the prefix facts the statement rests on, states
+the band hypothesis the prose elided, and records in its header the
+instruction-level step that remains.  `scanWindowBaselineBody` is the scalar
+byte-wise counterpart; its fixture and its instantiation of the same statement are
+likewise outstanding.
+
+The stop word is one word per refusal reason the lane rule can raise, and the
+chain that chooses the `badUtf8` word tests the bad-continuation bit as well as the
+bad-lead one (`%bad8`, below): a byte outside a pending requirement is the former,
+a byte no character starts with is the latter, and testing the lead bit alone
+leaves the `badUtf8` word unreachable on every continuation byte.
 
 The definition lives here rather than in the proof module so that the emitter
 does not depend on its own output: the proof module reads the fixture through
@@ -216,12 +224,17 @@ def ruleInstrs : List Instr := [
   .icmp "%q2b" .eq 8 (.reg "%b") (lit8 244),
   .select "%hc0" (.int 32) (.reg "%q2b") (lit32 143) (lit32 191),
   .select "%hc" (.int 32) (.reg "%q1b") (lit32 159) (.reg "%hc0"),
-  -- the status word this lane raises, and the first stop
+  -- the status word this lane raises, and the first stop.  `%wbd` is the
+  -- refusal a byte outside a pending requirement raises, and the rule reaches
+  -- it two ways — a bad lead byte (`%lbad`) or a bad continuation byte
+  -- (`%ubad`) — so the chain that chooses it tests both; testing the lead bit
+  -- alone leaves `%wbd` unreachable on every continuation byte.
   .binop "%lane1" .add 32 (.reg "%k32") (lit32 1),
   .binop "%wcl" .add 32 (.reg "%lane1") (lit32 64),
   .binop "%wct" .add 32 (.reg "%lane1") (lit32 640),
   .binop "%wbd" .add 32 (.reg "%lane1") (lit32 896),
-  .select "%sw0" (.int 32) (.reg "%lbad") (.reg "%wbd") (.reg "%wct"),
+  .binop "%bad8" .or 1 (.reg "%ubad") (.reg "%lbad"),
+  .select "%sw0" (.int 32) (.reg "%bad8") (.reg "%wbd") (.reg "%wct"),
   .select "%sw1" (.int 32) (.reg "%actl") (.reg "%wct") (.reg "%sw0"),
   .select "%sw2" (.int 32) (.reg "%aqc") (.reg "%wcl") (.reg "%sw1"),
   .binop "%ras" .or 1 (.reg "%ubad") (.reg "%actl"),

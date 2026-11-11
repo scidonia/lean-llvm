@@ -13,11 +13,12 @@
 ;
 ; through LeanLLVM.Function.render, the framework's own printer.
 ;
-; The refinement statement about this text is not yet proved: LeanLLVM/Refinement/
-; JsonScanIR.lean pins the text to the AST and proves the prefix facts the
-; statement rests on, and its own header records what is outstanding.  Until
-; that theorem exists, nothing here is certified, and the manifest must not
-; name this fixture.
+; The refinement statement about this text is
+; LeanLLVM.Refinement.JsonScanIR.scanWindowStatement, and it is not proved:
+; JsonScanIR pins the text to the AST, proves the prefix facts the statement
+; rests on, and records in its header the instruction-level step, the loop
+; induction and the footprint clause that remain.  Until that theorem exists,
+; nothing here is certified, and the manifest must not name this fixture.
 ;
 ; This is not the output of Lean's native compiler and not the output of clang:
 ; no `lean -c` C emission and no clang lowering is involved, and nothing in the
@@ -170,7 +171,8 @@ body:
   %wcl = add i32 %lane1, 64
   %wct = add i32 %lane1, 640
   %wbd = add i32 %lane1, 896
-  %sw0 = select i1 %lbad, i32 %wbd, i32 %wct
+  %bad8 = or i1 %ubad, %lbad
+  %sw0 = select i1 %bad8, i32 %wbd, i32 %wct
   %sw1 = select i1 %actl, i32 %wct, i32 %sw0
   %sw2 = select i1 %aqc, i32 %wcl, i32 %sw1
   %ras = or i1 %ubad, %actl

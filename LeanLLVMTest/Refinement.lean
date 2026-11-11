@@ -2784,10 +2784,10 @@ the AST are one object at build time.  The module proves the prefix facts the
 refinement statement rests on — the mask, the stop and the carry at a window's
 first `k` lanes — and the statements below are those theorems, restated and
 pinned.  Every theorem in that module is pinned here.  The refinement statement
-is `scanWindowStatement`, and it is not a theorem: `scanWindowStatement_false`
-proves its negation, so the name a certificate would carry
-(`scanWindowLLVM_refines`) is deliberately not taken and there is nothing to pin
-under it.
+is `scanWindowStatement`, and it is not a theorem: the name a certificate would
+carry (`scanWindowLLVM_refines`) is deliberately not taken, so there is nothing to
+pin under it, and what is pinned is what a proof of it rests on — including the
+record of the stop word defect the body's select chain carried.
 -/
 
 /--
@@ -2960,7 +2960,7 @@ example (bs : List UInt8) (st : BodyState) (k : Nat)
   LeanLLVM.Refinement.JsonScanIR.firstStop_eq_some (bs := bs) (st := st) (k := k)
     hcont (stop := stop) hlane (n := n) hn
 
-/-! #### The refinement statement, and its refutation
+/-! #### The refinement statement, and the record of the stop word's defect
 
 `scanWindowStatement` is the statement `LeanLLVM/Refinement/JsonScanLane.lean`'s
 header writes, as one proposition: the body returns the model's status word,
@@ -2971,13 +2971,18 @@ it as `scanBandDisjoint`, and its frame is `scanBandBytes` rather than a typed
 `28`.  `scanBandBytes` is the width of the body's own six allocations, so it is
 pinned against the model's `Ty.sizeBytes` and not against the numeral.
 
-The statement is false, for two independent reasons, and the pins below are the
-evidence: `bandOverlap_clobbers_window`, beside its control
-`bandClear_preserves_window`, for the elided band hypothesis; and
-`badContinuation_reason_differs`, beside its control `badLead_reason_agrees`, for
-the stop word's reason field, which reports `control` where the model refuses
-with `badUtf8`.  `badContinuation_rest_agrees` is what makes the second reason the
-reason field alone and not the whole word.
+The elided band hypothesis is load-bearing, and the record of the stop word's
+defect is kept: the select chain that chose the `badUtf8` word tested `%lbad`, a
+bad *lead* byte, where a byte outside a pending requirement is a bad
+*continuation*, so `%wbd` was unreachable on that path.  `badContinuation_reason_differs`
+is that record, about `scanWindowBodyBeforeStopWordFix` — the body as it stood
+before the chain tested `%ubad` — `badLead_reason_agrees` is its control, and
+`scanWindowStatement_false` refutes the statement about that body.  The emitted
+body answers the same witness with the model's word
+(`badContinuation_reason_agrees`), agrees on all four clauses there
+(`badContinuation_rest_agrees`), and agrees on all seven windows the chain is
+measured on (`probeWindows_agree`), the 32-byte one whose bad continuation sits at
+lane 31 included.
 -/
 
 /-- The body's six allocations, at the model's own byte sizes: `%k` (8),
@@ -2989,21 +2994,47 @@ example : LeanLLVM.Refinement.JsonScanIR.scanBandBytes =
   decide
 
 /--
+info: 'LeanLLVM.Refinement.JsonScanIR.scanBandBytes' does not depend on any axioms
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.scanBandBytes
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOf' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOf
+
+/--
 info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatement' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatement
 
+-- The statement about the emitted body is the parameterised one at that body.
+example : LeanLLVM.Refinement.JsonScanIR.scanWindowStatement =
+    LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOf
+      LeanLLVM.Refinement.JsonScanBody.scanWindowBody := rfl
+
 /--
-info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false' depends on axioms: [propext, Quot.sound]
+info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowBodyBeforeStopWordFix' depends on axioms: [propext]
 -/
 #guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false
+#print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowBodyBeforeStopWordFix
 
--- The statement is refuted, not merely unproved: a witness satisfies every
--- hypothesis it states, and the body still returns the wrong status word.
-example : ¬ LeanLLVM.Refinement.JsonScanIR.scanWindowStatement :=
-  LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false
+-- The record body is derived from the emitted one by the inverse of the stop
+-- word's change: the substitution bites, and it removes exactly one instruction.
+set_option maxRecDepth 100000 in
+example : LeanLLVM.Refinement.JsonScanIR.stopWordChainBeforeUBad
+      LeanLLVM.Refinement.JsonScanBody.ruleInstrs ≠
+    LeanLLVM.Refinement.JsonScanBody.ruleInstrs := by
+  decide
+
+set_option maxRecDepth 100000 in
+example : (LeanLLVM.Refinement.JsonScanIR.stopWordChainBeforeUBad
+      LeanLLVM.Refinement.JsonScanBody.ruleInstrs).length + 1 =
+    LeanLLVM.Refinement.JsonScanBody.ruleInstrs.length := by
+  decide
 
 /--
 info: 'LeanLLVM.Refinement.JsonScanIR.bandOverlap_clobbers_window' depends on axioms: [propext, Quot.sound]
@@ -3014,8 +3045,9 @@ info: 'LeanLLVM.Refinement.JsonScanIR.bandOverlap_clobbers_window' depends on ax
 -- The band's placement is load-bearing: with the counter cell laid across the
 -- window's second byte, that is what the caller reads back where its own bytes
 -- were, so the conclusion's last clause fails.
-open LeanLLVM.Refinement.JsonScanIR in
-example : runWindow [0x61, 0x61] LeanLLVM.JSON.BodyState.body 99 2 = some [0, 0] :=
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanBody in
+example : runWindow scanWindowBody [0x61, 0x61] LeanLLVM.JSON.BodyState.body 99 2 =
+    some [0, 0] :=
   bandOverlap_clobbers_window
 
 /--
@@ -3026,8 +3058,8 @@ info: 'LeanLLVM.Refinement.JsonScanIR.bandClear_preserves_window' depends on axi
 
 -- The control for the witness above: the same read with the same detector, and
 -- only the band's placement changed, returns the window.
-open LeanLLVM.Refinement.JsonScanIR in
-example : runWindow [0x61, 0x61] LeanLLVM.JSON.BodyState.body 64 2 =
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanBody in
+example : runWindow scanWindowBody [0x61, 0x61] LeanLLVM.JSON.BodyState.body 64 2 =
     some [0x61, 0x61] :=
   bandClear_preserves_window
 
@@ -3037,16 +3069,31 @@ info: 'LeanLLVM.Refinement.JsonScanIR.badContinuation_reason_differs' depends on
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonScanIR.badContinuation_reason_differs
 
--- A continuation byte outside the requirement its lead left: the body answers
--- `0x282`, which decodes as `refuse lane 1 control`, where the model refuses with
--- `badUtf8` (`0x382`).
+-- The record: on a continuation byte outside the requirement its lead left, the
+-- pre-fix chain answered `0x282`, which decodes as `refuse lane 1 control`, where
+-- the model refuses with `badUtf8` (`0x382`).
 open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanABI
   LeanLLVM.Refinement.JsonScanModel in
-example : runValue [0xE0, 0x80] LeanLLVM.JSON.BodyState.body 64 2 =
+example : runValue scanWindowBodyBeforeStopWordFix [0xE0, 0x80]
+      LeanLLVM.JSON.BodyState.body 64 2 =
       some (.int 32 0x282) ∧
     (0x282 : BitVec 32) ≠
       encodeStatus (Status.ok (stopOf [0xE0, 0x80] LeanLLVM.JSON.BodyState.body)) :=
   badContinuation_reason_differs
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.badContinuation_reason_agrees' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.badContinuation_reason_agrees
+
+-- The same witness on the emitted body: `0x382`, the model's `badUtf8` word.
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanABI
+  LeanLLVM.Refinement.JsonScanModel LeanLLVM.Refinement.JsonScanBody in
+example : runValue scanWindowBody [0xE0, 0x80] LeanLLVM.JSON.BodyState.body 64 2 =
+    some (.int 32 (encodeStatus (Status.ok
+      (stopOf [0xE0, 0x80] LeanLLVM.JSON.BodyState.body)))) :=
+  badContinuation_reason_agrees
 
 /--
 info: 'LeanLLVM.Refinement.JsonScanIR.badLead_reason_agrees' depends on axioms: [propext, Quot.sound]
@@ -3054,11 +3101,12 @@ info: 'LeanLLVM.Refinement.JsonScanIR.badLead_reason_agrees' depends on axioms: 
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonScanIR.badLead_reason_agrees
 
--- The control for the witness above: the same comparison on a refusal the body
--- does encode correctly, so the disagreement is the select and not the check.
+-- The control for the two theorems above: the same comparison on a refusal whose
+-- reason was never in doubt, so the disagreement recorded above is the select and
+-- not the check.
 open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanABI
-  LeanLLVM.Refinement.JsonScanModel in
-example : runValue [0xC0] LeanLLVM.JSON.BodyState.body 64 1 =
+  LeanLLVM.Refinement.JsonScanModel LeanLLVM.Refinement.JsonScanBody in
+example : runValue scanWindowBody [0xC0] LeanLLVM.JSON.BodyState.body 64 1 =
     some (.int 32 (encodeStatus (Status.ok
       (stopOf [0xC0] LeanLLVM.JSON.BodyState.body)))) :=
   badLead_reason_agrees
@@ -3069,11 +3117,41 @@ info: 'LeanLLVM.Refinement.JsonScanIR.badContinuation_rest_agrees' depends on ax
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonScanIR.badContinuation_rest_agrees
 
+-- All four clauses at the corrected witness: the status word, the mask at `%out`,
+-- the carry in the slot, and the window the caller reads back.
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanBody in
+example : runSummary scanWindowBody [0xE0, 0x80] LeanLLVM.JSON.BodyState.body 64 2 =
+    some (modelSummary [0xE0, 0x80] LeanLLVM.JSON.BodyState.body) :=
+  badContinuation_rest_agrees
+
 /--
-info: 'LeanLLVM.Refinement.JsonScanIR.scanBandBytes' does not depend on any axioms
+info: 'LeanLLVM.Refinement.JsonScanIR.probeWindows_agree' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonScanIR.scanBandBytes
+#print axioms LeanLLVM.Refinement.JsonScanIR.probeWindows_agree
+
+-- The seven windows, as the statement's four clauses: the emitted body and the
+-- model agree on every one.
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanBody in
+example : probeWindows.map (fun bs =>
+      runSummary scanWindowBody bs LeanLLVM.JSON.BodyState.body 64 bs.length) =
+    probeWindows.map (fun bs =>
+      some (modelSummary bs LeanLLVM.JSON.BodyState.body)) :=
+  probeWindows_agree
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false
+
+-- The record theorem's subject is the pre-fix body, not the emitted one: every
+-- hypothesis of the statement holds at the bad-continuation witness with the band
+-- clear, and that body returns the control word where the model refuses with
+-- `badUtf8`.
+example : ¬ LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOf
+    LeanLLVM.Refinement.JsonScanIR.scanWindowBodyBeforeStopWordFix :=
+  LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false
 
 /-! ### The JSON window scanner's lane machinery
 
@@ -3085,9 +3163,10 @@ connected its arithmetic to the predicate.  `maskStep` then accumulates that
 bit: one lane's `shl`/`or` leaves the model's `maskPref` fold.  The rest of the
 instruction chain, `laneStep`, the loop induction and `scanWindowLLVM_refines`
 are outstanding; that module's header records the measured per-lane count and
-the generator the chain is to come from.  None of them can be discharged against
-the statement as it stands: `scanWindowStatement_false` refutes it above, so the
-stop word the chain's last step stores is the first thing to repair.
+the generator the chain is to come from.  None of them is here yet: the chain's
+last step stores the stop word, and the word it stores is the model's on every
+window measured above — an agreement to prove at every lane, not one to read off
+the windows.
 -/
 
 -- The table prefix is the body's own nine instructions, named here so that a
