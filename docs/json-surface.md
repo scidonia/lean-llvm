@@ -152,7 +152,7 @@ them as discharged:
    (`strtodSpec`, with its rounding property, and the record's payload as
    `toBits (strtodSpec ·)`), but the emitted `num_fast`/`strtod` conversion is
    not shown to compute it — no run of emitted code is modelled and there is no
-   counterpart in VeLLVM.  The record states the correspondence as a parameter
+   counterpart in Vellvm.  The record states the correspondence as a parameter
    (`EventStreamRel`) rather than asserting an equality that is false.
 3. **The refused document's offset is per stage.**  `RefusalOffset` distinguishes a
    UTF-8-owned refusal, where the caller reports the document's end, from a

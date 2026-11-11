@@ -6,14 +6,14 @@ by `clang`/`llc`-style front ends, apply transformations whose soundness is a
 Lean theorem, and emit textual IR that the rest of the LLVM toolchain consumes
 unchanged.
 
-The design is cribbed from [VeLLVM](https://github.com/vellvm/vellvm) — its
+The design is cribbed from [Vellvm](https://github.com/vellvm/vellvm) — its
 separation of syntax, event-based semantics, memory model and refinement — but
-the Lean development is original.  A copy of the VeLLVM sources is vendored
+the Lean development is original.  A copy of the Vellvm sources is vendored
 under `reference/vellvm/` for study; see `reference/README.md` for provenance.
 
 ## Status
 
-This repository is an initial vertical slice, not a port of VeLLVM:
+This repository is an initial vertical slice, not a port of Vellvm:
 
 | Area | What is here | What is not |
 | --- | --- | --- |
@@ -291,12 +291,12 @@ are unchanged.
 
 ## Reference materials
 
-`reference/vellvm/src/rocq/` contains the VeLLVM Coq sources (MIT) at revision
+`reference/vellvm/src/rocq/` contains the Vellvm Rocq sources (MIT) at revision
 `de5b3249`; `reference/vellvm/src/ml/libvellvm/` contains its OCaml parser.  They
 are read-only study material and are not part of the Lean build.
 
 ## Licence
 
-Apache License 2.0 — see `LICENSE`.  The VeLLVM sources vendored under
+Apache License 2.0 — see `LICENSE`.  The Vellvm sources vendored under
 `reference/vellvm/` for study are not covered by it and are not built; see
 `reference/README.md` for their provenance and terms.

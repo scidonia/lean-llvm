@@ -176,5 +176,5 @@ The upstream MIT licence is reproduced in `ITree/LICENSE`.  Local deviations:
 * declarations are placed under the `ITree` namespace, and the mathlib
   dependency is funnelled through the two adapters in `ITree/Internal/`.
 
-The read-only VeLLVM reference subtree under `reference/vellvm/` is unrelated to
+The read-only Vellvm reference subtree under `reference/vellvm/` is unrelated to
 this library.

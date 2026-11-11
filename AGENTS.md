@@ -193,7 +193,7 @@ needs the other two to match.
 - `LeanLLVMTest/` is the check library.  It imports `LeanLLVM` from outside, so
   it sees exactly the public interface, and holds `#guard` checks,
   `#guard_msgs` pins, and small theorems.
-- `reference/vellvm/` is vendored VeLLVM source for study.  It is not built,
+- `reference/vellvm/` is vendored Vellvm source for study.  It is not built,
   linted or edited.
 - `tests/` holds textual IR exercised by the driver, and executable scenarios of
   user-facing routes: `m4-loop-gate.sh` drives the installer selector with a

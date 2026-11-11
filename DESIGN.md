@@ -4,7 +4,7 @@
 
 Insert a certified optimiser between the production of textual LLVM IR and the
 LLVM back end, so that late transformations are proved correct with respect to a
-formal semantics rather than trusted.  VeLLVM supplies the architectural model:
+formal semantics rather than trusted.  Vellvm supplies the architectural model:
 a syntax, an interpretation of memory and events, and a refinement relation
 under which transformations are justified.  This repository restates that model
 in Lean 4 and grows it pass by pass.
