@@ -1918,8 +1918,13 @@ one of the three the lead named** — the nesting and the two reserves are all
    fields of the invariant: produced at the seed (`WalkSeedState` carries them)
    and preserved by `forInc_step`, `scan_step` and `walkBack_step` through
    `WalkPtrs.bind`.  `WalkInv.log_hash` carries the last memory clause the
-   nesting arm reads, the zeroed hash word at `%z + 32`.  Not carried: `%ar`
-   (`%z + 40`), which no proved block reads yet.
+   nesting arm reads, the zeroed hash word at `%z + 32`.  Two registers are read
+   by a proved block and not carried: `%ar` (`%z + 40`), which no proved block
+   reads yet, and `%8`, the document byte the header loads.  `%8` is the one
+   register fact `ifEnd24_step` takes as a hypothesis rather than from the
+   invariant, because its value is the header's read of the document at the
+   entry's position — `whileBodyOut` binds it — and that is a fact about the
+   dispatch's data flow rather than about the walk's carry.
 2. **The dispatch's own completion**, which is where the nesting and both reserves
    are decided; `WalkLocal` is `True` at every block between them.  The *frame*
    question no longer lands here: `WalkInv.owning` is the record's own region and
@@ -3813,7 +3818,8 @@ theorem WalkLink.whileBody {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
 
 /-- **The trace's second proved link: the nesting arm.**  `if.end24.i` writes the
 two container stacks and branches on the log's zeroed hash word, with the measure
-unchanged. -/
+unchanged.  Its `%8` binding is the caller's: the header loaded the document byte
+at the entry's position, and the invariant does not carry it. -/
 theorem WalkLink.ifEnd24 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end24.i")
     {b : BitVec 8} (h8 : lookupName s.env "%8" = some (.int 8 b))
