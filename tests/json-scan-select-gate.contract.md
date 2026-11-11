@@ -82,10 +82,15 @@ manifest's `json_scan_theorem` and `json_scan_contract`.  The manifest's global
 `theorem` and `contract` keep naming
 `LeanLLVM.Refinement.CommaMaskIR.IR_refines` and `LeanLLVM.Refinement.commaContract` for
 the baseline and the candidate.  The certificate's `axioms` field is the named
-theorem's pinned footprint when
-`LeanLLVMTest/` pins it — it does not at this revision — and otherwise the
-selector's one checked set, read from `select.sh` rather than retyped; once the
-scanner theorem has its pin the fixture reads that pin.
+theorem's pinned footprint in `LeanLLVMTest/` — **and nothing else**.  At this
+revision the pin does not exist, because the theorem the manifest names is not a
+declaration: `scanWindowLLVM_refines` appears in `JsonScanLane`'s module docstring
+and in `LeanLLVMTest/Refinement.lean`'s list of outstanding work.  So the gate
+**refuses and names the missing pin** rather than reading the selector's
+expectation in its place; the fixture cannot be built, and JS1 and JS2 are
+unreachable until the scanner theorem exists.  A gate that substituted the
+selector's set would have produced a certificate for a unit whose theorem is
+prose.
 
 ### JS1 — a strict `json_scan` request with a matching certificate installs the unit
 
