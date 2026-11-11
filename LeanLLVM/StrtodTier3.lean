@@ -1517,35 +1517,28 @@ theorem emittedRefinesOn_tier3 (read : Bytes → Option Decimal)
 The statement of record is proved for the model below, and three things stay
 outside it:
 
-* **Two steps of the walk's traversal.**  The loop is modelled (`walkStep`,
-  `walkTicks`, `bound2`, `inInterval`, from `kernel/json/stage2.c:766-833`),
-  and the model's decision half is proved: the boundaries it compares against
-  are the `stk_cmp` boundaries this module specifies (`bound2_up`,
-  `bound2_down`, `bound2_overflow`, `valLtBoundary_iff_cmpWalk`), the interval
-  it stops in is a single candidate's (`inInterval_uniq`,
-  `inInterval_not_top`), the body stops exactly there
-  (`step_fin_stop_self`, `step_fin_stop_of_mem`), a midpoint tie is handed to
-  the even significand (`step_fin_stop_next`, `step_fin_stop_pred`), and every
-  step moves toward the interval (`step_fin_move_next`, `step_fin_move_pred`).
-  Two steps are still missing, and the new section's closing note states them.
+* **The walk's traversal.**  The loop is modelled (`walkStep`, `walkTicks`,
+  `bound2`, `inInterval`, from `kernel/json/stage2.c:766-833`), and the model's
+  decision half is proved: the boundaries it compares against are the `stk_cmp`
+  boundaries this module specifies (`bound2_up`, `bound2_down`,
+  `bound2_overflow`, `valLtBoundary_iff_cmpWalk`), the interval it stops in is a
+  single candidate's (`inInterval_uniq`, `inInterval_not_top`), the body stops
+  exactly there (`step_fin_stop_self`, `step_fin_stop_of_mem`), a midpoint tie
+  is handed to the even significand (`step_fin_stop_next`,
+  `step_fin_stop_pred`), and every step moves toward the interval
+  (`step_fin_move_next`, `step_fin_move_pred`).
 
-  The first is **naming the target**: `inInterval P d (bitsOf c)` for
-  `roundMag P d = .fin c`.  Its inequalities follow from `roundMag_nearest` at
-  the two neighbouring ticks, through the `distNum`--midpoint equivalence; its
-  tie clause is `roundMag_midpoint_even`, whose hypothesis needs `roundMag`'s
-  lattice to be the emitted ladder's at the value -- `binade P d = be + 51`,
-  hence `ulp P d = walkGap` and `lo P d` equal to the candidate's tick value.
-  That is arithmetic this module does not spell: the walk is over the pattern's
-  fields and `roundMag` over `binade`, `ulp`, `sig`, `lo` and `hi`.
-
-  The second is **the recursion**: `walkStep` is defined, but the walk itself is
-  not, so `walkStep` is not yet run to its stop.  The induction needs no more
-  than the three facts above -- a stop is the interval's candidate, a step up is
-  the value above the upper midpoint, a step down below the lower one -- each a
-  strict decrease of `(tgt - b) + (b - tgt)`; hence the step count is bounded by
-  the distance from `dbits(d)` to the answer whatever that start is, which is
-  the note's termination statement.  This part is self-contained: unlike the
-  proximity estimate below, it does not mention the platform's arithmetic.
+  Two steps join that model to the specification's answer, and both are proved
+  below.  **The identification**: `binade_eq_of_tick_bounds` reads the binade
+  search at a pattern whose tick value is at or below the value and whose
+  successor's is above it, and `walk_lattice_eq` adds `ulp`, `lo` and `hi`, so
+  the specification's lattice and the ladder are one lattice.  **The target and
+  the descent**: `inInterval_roundMag` proves `inInterval P d (bitsOf c)` for
+  `roundMag P d = .fin c`, `walkLoop_stops_of_interval` runs the body to that
+  candidate on the measure `(tgt - b) + (b - tgt)`, `walkLoop_top` climbs to the
+  infinity pattern over the threshold, and `walkLoop_computes` states both as
+  one -- the loop halts at the pattern `roundMag`'s answer is encoded at, which
+  is `tier3Mag`'s on the lexeme's ticks (`walkLoop_computes_tier3Mag`).
 
 * **The reader.**  `to_double` reads the lexeme's bytes; the decomposition it
   accumulates is `Decimal.mantissa` and `Decimal.exponent`, which the window
@@ -3166,6 +3159,1080 @@ theorem stop_fin_interval {P d b : Nat} (hd : 0 < d) (hb0 : 0 < b) (hb : b < inf
 
 
 
+/-! ### The ladder, the specification's lattice, and the loop
+
+`binade`, `ulp`, `sig`, `lo` and `hi` state the specification's lattice at the
+exact value `P / d`; `walkExp`, `walkFrac`, `walkTicks` and `walkGap` state the
+emitted ladder over the pattern.  The two are one lattice at the value: the
+sections below identify them, name the candidate the loop's interval criterion
+picks, and run the loop to it. -/
+
+/-! #### The pattern a code names -/
+
+/-- The bit pattern whose fields are the code's: the significand itself in the
+subnormal binade, and the fraction field plus the implicit leading bit above
+it.  `walkCode (bitsOf c) = c` for every magnitude `c` of the format. -/
+def bitsOf (c : Code) : Nat :=
+  if c.expField = 0 then c.mant else c.expField * 2 ^ 52 + (c.mant - 2 ^ 52)
+
+theorem code_ext {a b : Code} (h1 : a.expField = b.expField) (h2 : a.mant = b.mant) :
+    a = b := by
+  obtain ⟨a1, a2⟩ := a
+  obtain ⟨b1, b2⟩ := b
+  simp only at h1 h2
+  rw [h1, h2]
+
+theorem bitsOf_sub {c : Code} (h : c.expField = 0) : bitsOf c = c.mant := by
+  simp only [bitsOf, h, reduceIte]
+
+theorem bitsOf_normal {c : Code} (h : c.expField ≠ 0) :
+    bitsOf c = c.expField * 2 ^ 52 + (c.mant - 2 ^ 52) := by
+  simp only [bitsOf, h, reduceIte]
+
+theorem walkExp_bitsOf {c : Code} (h : c.IsMag) : walkExp (bitsOf c) = c.expField := by
+  obtain ⟨hE, hm⟩ | ⟨hE1, hE2, hm1, hm2⟩ := h
+  · rw [bitsOf_sub hE]
+    have hdiv : c.mant / 2 ^ 52 = 0 := Nat.div_eq_of_lt hm
+    simp only [walkExp, hdiv, Nat.zero_mod]
+    exact hE.symm
+  · have hE0 : c.expField ≠ 0 := by omega
+    rw [bitsOf_normal hE0]
+    have hk : c.mant - 2 ^ 52 < 2 ^ 52 := by omega
+    have hdiv : (c.expField * 2 ^ 52 + (c.mant - 2 ^ 52)) / 2 ^ 52 = c.expField := by
+      rw [Nat.mul_comm c.expField (2 ^ 52)]
+      rw [Nat.mul_add_div (by decide : 0 < 2 ^ 52) c.expField (c.mant - 2 ^ 52)]
+      rw [Nat.div_eq_of_lt hk, Nat.add_zero]
+    simp only [walkExp, hdiv]
+    exact Nat.mod_eq_of_lt (by omega)
+
+theorem walkFrac_bitsOf_normal {c : Code} (hE : c.expField ≠ 0) (hm : 2 ^ 52 ≤ c.mant)
+    (hm2 : c.mant < 2 ^ 53) :
+    walkFrac (bitsOf c) = c.mant - 2 ^ 52 := by
+  rw [bitsOf_normal hE]
+  show (c.expField * 2 ^ 52 + (c.mant - 2 ^ 52)) % 2 ^ 52 = c.mant - 2 ^ 52
+  rw [Nat.add_comm (c.expField * 2 ^ 52) (c.mant - 2 ^ 52)]
+  rw [Nat.add_mul_mod_self_right]
+  exact Nat.mod_eq_of_lt (by omega)
+
+theorem walkMant_bitsOf {c : Code} (h : c.IsMag) : walkMant (bitsOf c) = c.mant := by
+  obtain ⟨hE, hm⟩ | ⟨hE1, hE2, hm1, hm2⟩ := h
+  · rw [walkMant_eq_zero (by rw [walkExp_bitsOf (Or.inl ⟨hE, hm⟩)]; exact hE),
+      bitsOf_sub hE]
+    show c.mant % 2 ^ 52 = c.mant
+    exact Nat.mod_eq_of_lt hm
+  · have hE0 : c.expField ≠ 0 := by omega
+    have hexp : walkExp (bitsOf c) ≠ 0 := by
+      rw [walkExp_bitsOf (Or.inr ⟨hE1, hE2, hm1, hm2⟩)]
+      exact hE0
+    rw [walkMant_eq_normal hexp, walkFrac_bitsOf_normal hE0 hm1 hm2]
+    omega
+
+theorem walkCode_bitsOf {c : Code} (h : c.IsMag) : walkCode (bitsOf c) = c := by
+  apply code_ext
+  · simp only [walkCode]
+    exact walkExp_bitsOf h
+  · simp only [walkCode]
+    exact walkMant_bitsOf h
+
+theorem walkTicks_bitsOf {c : Code} (h : c.IsMag) : walkTicks (bitsOf c) = c.ticks := by
+  unfold walkTicks
+  rw [walkCode_bitsOf h]
+
+theorem bitsOf_lt_infBits {c : Code} (h : c.IsMag) : bitsOf c < infBits := by
+  obtain ⟨hE, hm⟩ | ⟨hE1, hE2, hm1, hm2⟩ := h
+  · rw [bitsOf_sub hE]
+    have h2 : 2 ^ 52 ≤ infBits := by
+      simp only [infBits]
+      calc 2 ^ 52 = 1 * 2 ^ 52 := (Nat.one_mul _).symm
+        _ ≤ 2047 * 2 ^ 52 := Nat.mul_le_mul_right _ (by decide)
+    omega
+  · have hE0 : c.expField ≠ 0 := by omega
+    rw [bitsOf_normal hE0]
+    have hk : c.mant - 2 ^ 52 < 2 ^ 52 := by omega
+    have hmono : c.expField * 2 ^ 52 ≤ 2046 * 2 ^ 52 := Nat.mul_le_mul_right _ hE2
+    have hexpand : (2046 : Nat) * 2 ^ 52 + 2 ^ 52 = 2047 * 2 ^ 52 := by omega
+    simp only [infBits]
+    omega
+
+/-- Every finite pattern's code is a magnitude of the format. -/
+theorem walkCode_isMag {b : Nat} (hb : b < infBits) : (walkCode b).IsMag := by
+  have hexp := walkExp_lt_2047 hb
+  have hfrac := walkFrac_lt b
+  by_cases h0 : walkExp b = 0
+  · left
+    simp only [walkCode]
+    exact ⟨h0, by rw [walkMant_eq_zero h0]; exact hfrac⟩
+  · right
+    simp only [walkCode]
+    exact ⟨Nat.pos_of_ne_zero h0, by omega, by rw [walkMant_eq_normal h0]; omega,
+      by rw [walkMant_eq_normal h0]; omega⟩
+
+/-! ### The specification's lattice at a pattern -/
+
+/-- The pattern of the binade's floor lattice point: the code
+`(binade - 51, sig)` read as a pattern. -/
+def loBits (P d : Nat) : Nat := bitsOf ⟨binade P d - 51, sig P d⟩
+
+theorem lo_code_isMag {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    (⟨binade P d - 51, sig P d⟩ : Code).IsMag := by
+  obtain ⟨hB, hB', hlo, hup⟩ := binade_facts hd hno hsub
+  obtain ⟨hq1, hq2⟩ := sig_bounds hd hB hlo hup
+  refine Or.inr ⟨?_, ?_, hq1, hq2⟩
+  · show 1 ≤ binade P d - 51
+    omega
+  · show binade P d - 51 ≤ 2046
+    omega
+
+theorem walkExp_loBits {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    walkExp (loBits P d) = binade P d - 51 :=
+  walkExp_bitsOf (lo_code_isMag hd hno hsub)
+
+theorem walkMant_loBits {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    walkMant (loBits P d) = sig P d :=
+  walkMant_bitsOf (lo_code_isMag hd hno hsub)
+
+theorem loBits_lt {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    loBits P d < infBits :=
+  bitsOf_lt_infBits (lo_code_isMag hd hno hsub)
+
+theorem walkTicks_loBits {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    walkTicks (loBits P d) = lo P d := by
+  obtain ⟨hB, -⟩ := binade_facts hd hno hsub
+  show walkTicks (bitsOf ⟨binade P d - 51, sig P d⟩) = lo P d
+  rw [walkTicks_bitsOf (lo_code_isMag hd hno hsub)]
+  rw [ticks_normal (show binade P d - 51 ≠ 0 by omega)]
+  rw [show binade P d - 51 - 1 = binade P d - 52 by omega]
+  rfl
+
+theorem walkGap_loBits {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    walkGap (loBits P d) = ulp P d := by
+  obtain ⟨hB, -⟩ := binade_facts hd hno hsub
+  have hexp := walkExp_loBits hd hno hsub
+  have hne : walkExp (loBits P d) ≠ 0 := by rw [hexp]; omega
+  rw [walkGap_eq_normal hne, hexp]
+  rw [show binade P d - 51 - 1 = binade P d - 52 by omega]
+  rfl
+
+theorem walkTicks_loBits_succ {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    walkTicks (loBits P d + 1) = hi P d := by
+  rw [walkTicks_succ (loBits_lt hd hno hsub), walkTicks_loBits hd hno hsub,
+    walkGap_loBits hd hno hsub]
+  show sig P d * ulp P d + ulp P d = (sig P d + 1) * ulp P d
+  rw [Nat.add_mul, Nat.one_mul]
+
+/-! ### The ladder below the smallest normal -/
+
+theorem walkTicks_small {n : Nat} (hn : n ≤ 2 ^ 52) : walkTicks n = n := by
+  by_cases h : n < 2 ^ 52
+  · have hexp : walkExp n = 0 := by
+      simp only [walkExp, Nat.div_eq_of_lt h, Nat.zero_mod]
+    rw [walkTicks_eq_zero hexp]
+    show n % 2 ^ 52 = n
+    exact Nat.mod_eq_of_lt h
+  · have heq : n = 2 ^ 52 := by omega
+    subst heq
+    have hexp : walkExp (2 ^ 52) = 1 := by decide
+    have hfrac : walkFrac (2 ^ 52) = 0 := by decide
+    have hne : walkExp (2 ^ 52) ≠ 0 := by rw [hexp]; decide
+    simp only [walkTicks_eq_normal hne, hfrac, hexp, Nat.add_zero, Nat.sub_self,
+      Nat.pow_zero, Nat.mul_one]
+
+theorem walkMant_small {n : Nat} (hn : n ≤ 2 ^ 52) : walkMant n = n := by
+  by_cases h : n < 2 ^ 52
+  · have hexp : walkExp n = 0 := by
+      simp only [walkExp, Nat.div_eq_of_lt h, Nat.zero_mod]
+    rw [walkMant_eq_zero hexp]
+    show n % 2 ^ 52 = n
+    exact Nat.mod_eq_of_lt h
+  · have heq : n = 2 ^ 52 := by omega
+    subst heq
+    have hexp : walkExp (2 ^ 52) = 1 := by decide
+    have hfrac : walkFrac (2 ^ 52) = 0 := by decide
+    have hne : walkExp (2 ^ 52) ≠ 0 := by rw [hexp]; decide
+    simp only [walkMant_eq_normal hne, hfrac, Nat.add_zero]
+
+theorem downTwice_of_le {b : Nat} (hb : b ≤ 2 ^ 52) : downTwice b = 2 * b - 1 := by
+  unfold downTwice
+  rcases Nat.eq_zero_or_pos b with h0 | h0
+  · subst h0
+    rw [walkTicks_zero, Nat.zero_add]
+  · rw [walkTicks_small (by omega), walkTicks_small hb]
+    omega
+
+theorem upTwice_of_le {b : Nat} (hb : b + 1 ≤ 2 ^ 52) : upTwice b = 2 * b + 1 := by
+  unfold upTwice
+  rw [walkTicks_small (by omega), walkTicks_small hb]
+  omega
+
+theorem downTwice_le_ticks2 {b : Nat} (hb : b < infBits) :
+    downTwice b ≤ 2 * walkTicks b := by
+  unfold downTwice
+  have h := walkTicks_le_of_le (b := b - 1) (b' := b) (by omega) (by omega)
+  omega
+
+theorem ticks2_le_upTwice {b : Nat} (hb : b < infBits) :
+    2 * walkTicks b ≤ upTwice b := by
+  unfold upTwice
+  have h := walkTicks_le_of_le (b := b) (b' := b + 1) (by omega) (by omega)
+  omega
+
+/-- `hi` is `lo` plus the binade's ulp. -/
+theorem hi_eq_lo_add (P d : Nat) : hi P d = lo P d + ulp P d := by
+  unfold hi lo
+  rw [Nat.add_mul, Nat.one_mul]
+
+theorem add_51_sub_52 (n : Nat) : n + 51 - 52 = n - 1 := by
+  rw [show (52 : Nat) = 1 + 51 from rfl, Nat.add_sub_add_right]
+
+/-- **The binade search returns the pattern's exponent field plus fifty-one.**
+This is the identification between the ladder and the specification's lattice:
+the search looks for the least `B` with `P < d * 2 ^ (B + 1)`, and a pattern
+whose tick value is at or below the value, whose successor's is above it, and
+whose tick value and successor fit the binade's two powers of two, has exponent
+field `B - 51`. -/
+theorem binade_eq_of_tick_bounds {P d b : Nat}
+    (hle : walkTicks b * d ≤ P) (hlt : P < walkTicks (b + 1) * d)
+    (hpow : 2 ^ (walkExp b + 51) ≤ walkTicks b)
+    (hpow' : walkTicks (b + 1) ≤ 2 ^ (walkExp b + 52))
+    (hbe : walkExp b + 51 < 2100) :
+    binade P d = walkExp b + 51 := by
+  have hPup : P < d * 2 ^ (walkExp b + 52) := by
+    calc P < walkTicks (b + 1) * d := hlt
+      _ ≤ 2 ^ (walkExp b + 52) * d := Nat.mul_le_mul_right d hpow'
+      _ = d * 2 ^ (walkExp b + 52) := Nat.mul_comm _ _
+  have hex : ∃ B, B < 2100 ∧ P < d * 2 ^ (B + 1) := ⟨walkExp b + 51, hbe, hPup⟩
+  obtain ⟨hup, hmin⟩ := binade_spec hex
+  refine le_antisymm ?_ ?_
+  · apply Nat.le_of_not_lt
+    intro hlt'
+    have h := hmin (walkExp b + 51) hlt'
+    rw [show walkExp b + 51 + 1 = walkExp b + 52 from by rw [Nat.add_assoc]] at h
+    exact absurd hPup (Nat.not_lt.mpr h)
+  · apply Nat.le_of_not_lt
+    intro hlt'
+    have hle' : binade P d + 1 ≤ walkExp b + 51 := Nat.succ_le_of_lt hlt'
+    have hble : d * 2 ^ (binade P d + 1) ≤ d * 2 ^ (walkExp b + 51) :=
+      Nat.mul_le_mul_left d (two_pow_le_iff.mpr hle')
+    have hdle : d * 2 ^ (walkExp b + 51) ≤ d * walkTicks b :=
+      Nat.mul_le_mul_left d hpow
+    have hdle' : d * walkTicks b ≤ walkTicks b * d := le_of_eq (Nat.mul_comm d _)
+    exact absurd hup
+      (Nat.not_lt.mpr (le_trans hble (le_trans hdle (le_trans hdle' hle))))
+
+/-- **The lattice is the ladder's.**  A pattern whose tick value is at or below
+the exact value and whose successor's is above it, and whose tick value and
+successor fit the binade's two powers of two, sits where the specification
+rounds: `ulp` is the pattern's gap, and `lo`/`hi` are its tick value and its
+successor's. -/
+theorem walk_lattice_eq {P d b : Nat} (hd : 0 < d)
+    (hle : walkTicks b * d ≤ P) (hlt : P < walkTicks (b + 1) * d)
+    (hpow : 2 ^ (walkExp b + 51) ≤ walkTicks b)
+    (hpow' : walkTicks (b + 1) ≤ 2 ^ (walkExp b + 52))
+    (hbe1 : 1 ≤ walkExp b) (hbe : walkExp b + 51 < 2100) (hb : b < infBits) :
+    binade P d = walkExp b + 51 ∧ ulp P d = walkGap b ∧
+      lo P d = walkTicks b ∧ hi P d = walkTicks (b + 1) := by
+  have hB : binade P d = walkExp b + 51 :=
+    binade_eq_of_tick_bounds hle hlt hpow hpow' hbe
+  have hne0 : 0 < walkExp b := Nat.succ_le_iff.mp hbe1
+  have hulp : ulp P d = walkGap b := by
+    have hne : walkExp b ≠ 0 := Nat.ne_of_gt hne0
+    rw [walkGap_eq_normal hne]
+    show 2 ^ (binade P d - 52) = 2 ^ (walkExp b - 1)
+    rw [hB, add_51_sub_52]
+  -- the pattern's tick value is a multiple of the binade's ulp
+  have hne : walkExp b ≠ 0 := Nat.ne_of_gt hne0
+  have hmul : walkTicks b = walkMant b * ulp P d := by
+    rw [walkTicks_eq_normal hne, walkMant_eq_normal hne, hulp, walkGap_eq_normal hne]
+  -- and its quotient is at most the significand
+  have hmle : walkMant b ≤ sig P d := by
+    have h1 : walkMant b * (ulp P d * d) ≤ P := by
+      rw [← Nat.mul_assoc, ← hmul]
+      exact hle
+    have h2 : walkMant b * (d * ulp P d) ≤ P := by
+      rwa [Nat.mul_comm (ulp P d) d] at h1
+    rw [show sig P d = P / (d * ulp P d) from rfl]
+    exact (Nat.le_div_iff_mul_le (mul_ulp_pos hd P)).mpr h2
+  have hle_lo : walkTicks b ≤ lo P d := by
+    have h2 : walkMant b * ulp P d ≤ sig P d * ulp P d :=
+      Nat.mul_le_mul_right (ulp P d) hmle
+    rwa [← hmul] at h2
+  -- a smaller lattice point would put the successor's tick value at or below
+  -- the value, which the sandwich forbids
+  have hnlt : ¬ walkTicks b < lo P d := by
+    intro hh
+    have hltm : walkMant b < sig P d := by
+      refine lt_of_mul_lt_mul_right (c := ulp P d) ?_
+      rw [← hmul]
+      exact hh
+    have hs : (walkMant b + 1) * ulp P d ≤ sig P d * ulp P d :=
+      Nat.mul_le_mul_right (ulp P d) (Nat.succ_le_of_lt hltm)
+    have hstep : walkTicks (b + 1) = walkTicks b + walkGap b := walkTicks_succ hb
+    rw [← hulp] at hstep
+    have h1 : walkTicks (b + 1) ≤ lo P d := by
+      rw [hstep, hmul]
+      rw [Nat.add_mul, Nat.one_mul] at hs
+      exact hs
+    have h3 : walkTicks (b + 1) * d ≤ lo P d * d := Nat.mul_le_mul_right d h1
+    have h4 : lo P d * d ≤ P := lo_d_le (P := P) (d := d)
+    exact absurd hlt (Nat.not_lt.mpr (le_trans h3 h4))
+  have hlo : lo P d = walkTicks b := le_antisymm (Nat.le_of_not_lt hnlt) hle_lo
+  refine ⟨hB, hulp, hlo, ?_⟩
+  have hstep : walkTicks (b + 1) = walkTicks b + walkGap b := walkTicks_succ hb
+  have hhi := hi_eq_lo_add P d
+  rw [hulp] at hhi
+  rw [hhi, hstep, hlo]
+
+/-! ### The target: the interval at the specification's answer
+
+`inInterval P d b` says the value lies in `b`'s rounding interval, with a
+midpoint tie going to the even significand.  The specification's answer has
+exactly that: below the subnormal edge the ladder is the tick lattice itself,
+and above it the bridge above makes `lo` and `hi` the ladder's two points. -/
+
+theorem bitsOf_sub_code (q : Nat) : bitsOf (⟨0, q⟩ : Code) = q :=
+  bitsOf_sub rfl
+
+theorem bitsOf_carry_code : bitsOf (⟨1, 2 ^ 52⟩ : Code) = 2 ^ 52 := by
+  rw [bitsOf_normal (by decide : (1 : Nat) ≠ 0), Nat.sub_self, Nat.add_zero, Nat.one_mul]
+
+theorem bitsOf_sub_succ {q : Nat} :
+    bitsOf (if q + 1 = 2 ^ 52 then (⟨1, 2 ^ 52⟩ : Code) else ⟨0, q + 1⟩) = q + 1 := by
+  by_cases h : q + 1 = 2 ^ 52
+  · rw [ite_eq_left h, bitsOf_carry_code, h]
+  · rw [ite_eq_right h, bitsOf_sub_code]
+
+theorem bitsOf_normal_succ {B q : Nat} (hB : 52 ≤ B) (hq1 : 2 ^ 52 ≤ q) (hq2 : q < 2 ^ 53) :
+    bitsOf (if q + 1 = 2 ^ 53 then (⟨B - 50, 2 ^ 52⟩ : Code) else ⟨B - 51, q + 1⟩)
+      = bitsOf (⟨B - 51, q⟩ : Code) + 1 := by
+  have h1 : bitsOf (⟨B - 51, q⟩ : Code) = (B - 51) * 2 ^ 52 + (q - 2 ^ 52) := by
+    refine bitsOf_normal ?_
+    show B - 51 ≠ 0
+    omega
+  by_cases h : q + 1 = 2 ^ 53
+  · have hcarry : bitsOf (⟨B - 50, 2 ^ 52⟩ : Code) = (B - 50) * 2 ^ 52 := by
+      rw [bitsOf_normal (show B - 50 ≠ 0 by omega), Nat.sub_self, Nat.add_zero]
+    rw [ite_eq_left h, hcarry, h1]
+    have hBs : B - 50 = (B - 51) + 1 := by omega
+    have hq : q - 2 ^ 52 = 2 ^ 52 - 1 := by omega
+    have hy : 2 ^ 52 - 1 + 1 = 2 ^ 52 := Nat.sub_add_cancel (by decide : 1 ≤ 2 ^ 52)
+    rw [hBs, Nat.add_mul, Nat.one_mul, hq]
+    omega
+  · have hn : bitsOf (⟨B - 51, q + 1⟩ : Code) = (B - 51) * 2 ^ 52 + (q + 1 - 2 ^ 52) := by
+      refine bitsOf_normal ?_
+      show B - 51 ≠ 0
+      omega
+    rw [ite_eq_right h, hn, h1]
+    have hq : q + 1 - 2 ^ 52 = q - 2 ^ 52 + 1 := by omega
+    rw [hq]
+    omega
+
+/-! #### Below the subnormal edge -/
+
+theorem div_mod_eq {P d : Nat} : P / d * d + P % d = P := by
+  have := Nat.div_add_mod P d
+  rwa [Nat.mul_comm d (P / d)] at this
+
+/-- The floor significand's interval in the subnormal region: the value is at or
+below the upper midpoint, and a tie there is the even significand's. -/
+theorem inInterval_sub_lo {P d q r : Nat} (hd : 0 < d) (hq : q = P / d)
+    (hr : r = P % d) (hq2 : q < 2 ^ 52) (hle2 : 2 * r ≤ d)
+    (heven : 2 * r = d → q % 2 = 0) :
+    inInterval P d q := by
+  have hqle : q ≤ 2 ^ 52 := le_of_lt hq2
+  have hq1le : q + 1 ≤ 2 ^ 52 := Nat.succ_le_of_lt hq2
+  have hdec : q * d + r = P := by
+    rw [hq, hr]
+    exact div_mod_eq
+  have hrem : r < d := by
+    rw [hr]
+    exact Nat.mod_lt _ hd
+  have h2P : 2 * P = 2 * (q * d) + 2 * r := by rw [← hdec, Nat.mul_add]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [downTwice_of_le hqle, Nat.sub_mul, Nat.one_mul, Nat.mul_assoc]
+    exact le_trans (Nat.sub_le _ _)
+      (le_trans (Nat.le_add_right _ _) (le_of_eq h2P.symm))
+  · rw [upTwice_of_le hq1le, Nat.add_mul, Nat.one_mul, Nat.mul_assoc, h2P]
+    exact Nat.add_le_add_left hle2 _
+  · intro htie
+    rcases Nat.eq_zero_or_pos q with h0 | h0
+    · rw [h0, walkMant_zero]
+    · exfalso
+      have hXpos : 0 < 2 * (q * d) :=
+        Nat.mul_pos (by decide) (Nat.mul_pos h0 hd)
+      rw [downTwice_of_le hqle, Nat.sub_mul, Nat.one_mul, Nat.mul_assoc, h2P] at htie
+      have hlt : 2 * (q * d) - d < 2 * (q * d) := Nat.sub_lt hXpos hd
+      have hge : 2 * (q * d) ≤ 2 * (q * d) - d := by
+        rw [htie]
+        exact Nat.le_add_right _ _
+      exact absurd hge (Nat.not_le.mpr hlt)
+  · intro htie
+    have h2r : 2 * r = d := by
+      rw [upTwice_of_le hq1le, Nat.add_mul, Nat.one_mul, Nat.mul_assoc, h2P] at htie
+      exact Nat.add_left_cancel htie.symm
+    rw [walkMant_small hqle]
+    exact heven h2r
+
+/-- The ceiling significand's interval in the subnormal region: the value is at
+or above the lower midpoint, and a tie there is the even significand's. -/
+theorem inInterval_sub_hi {P d q r : Nat} (hd : 0 < d) (hq : q = P / d)
+    (hr : r = P % d) (hq2 : q < 2 ^ 52) (hge2 : d ≤ 2 * r)
+    (heven : d = 2 * r → (q + 1) % 2 = 0) :
+    inInterval P d (q + 1) := by
+  have hqle : q ≤ 2 ^ 52 := le_of_lt hq2
+  have hq1le : q + 1 ≤ 2 ^ 52 := Nat.succ_le_of_lt hq2
+  have hdec : q * d + r = P := by
+    rw [hq, hr]
+    exact div_mod_eq
+  have hrem : r < d := by
+    rw [hr]
+    exact Nat.mod_lt _ hd
+  have h2P : 2 * P = 2 * (q * d) + 2 * r := by rw [← hdec, Nat.mul_add]
+  have hqd1 : (q + 1) * d = q * d + d := by rw [Nat.add_mul, Nat.one_mul]
+  have hkey : 2 * (q + 1) - 1 = 2 * q + 1 := by omega
+  have htin : q + 1 < infBits := by
+    have h4 : 2 ^ 52 < infBits := by
+      simp only [infBits]
+      have h52 : 0 < 2 ^ 52 := by decide
+      calc 2 ^ 52 = 1 * 2 ^ 52 := (Nat.one_mul _).symm
+        _ < 2047 * 2 ^ 52 := Nat.mul_lt_mul_of_pos_right (by decide) h52
+    have h5 : q + 1 ≤ 2 ^ 52 := hq1le
+    omega
+  have ht1 : walkTicks (q + 1) = q + 1 := walkTicks_small hq1le
+  have htw : 2 * walkTicks (q + 1) ≤ upTwice (q + 1) := ticks2_le_upTwice htin
+  rw [ht1] at htw
+  have h2d : 2 * (q + 1) * d = 2 * (q * d) + 2 * d := by
+    rw [Nat.mul_assoc, hqd1, Nat.mul_add]
+  have hsmall : 2 * (q * d) + 2 * r < 2 * (q + 1) * d := by
+    rw [h2d]
+    exact Nat.add_lt_add_left (Nat.mul_lt_mul_of_pos_left hrem (by decide)) _
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [downTwice_of_le hq1le, hkey, Nat.add_mul, Nat.one_mul, Nat.mul_assoc, h2P]
+    exact Nat.add_le_add_left hge2 _
+  · rw [h2P]
+    exact le_trans (le_of_lt hsmall) (Nat.mul_le_mul_right d htw)
+  · intro htie
+    have h2r : d = 2 * r := by
+      rw [downTwice_of_le hq1le, hkey, Nat.add_mul, Nat.one_mul, Nat.mul_assoc, h2P] at htie
+      exact Nat.add_left_cancel htie
+    rw [walkMant_small hq1le]
+    exact heven h2r
+  · intro htie
+    exfalso
+    have hlt : 2 * P < upTwice (q + 1) * d := by
+      rw [h2P]
+      exact lt_of_lt_of_le hsmall (Nat.mul_le_mul_right d htw)
+    rw [htie] at hlt
+    exact absurd hlt (Nat.lt_irrefl _)
+
+/-- **The specification's answer has the interval `inInterval` names**, in the
+subnormal region: the answer is the quotient or its successor, and the branch
+that chose it is the interval's two ends and its tie clause. -/
+theorem inInterval_subCode {P d : Nat} (hd : 0 < d) (hsub : P < d * 2 ^ 52) :
+    inInterval P d (bitsOf (subCode P d)) := by
+  have hq2 : P / d < 2 ^ 52 := sub_sig_lt hd hsub
+  by_cases h1 : 2 * (P % d) < d
+  · have hcode : subCode P d = ⟨0, P / d⟩ := by simp only [subCode, h1, reduceIte]
+    rw [hcode, bitsOf_sub_code]
+    exact inInterval_sub_lo hd rfl rfl hq2 (le_of_lt h1)
+      (fun he => absurd he (Nat.ne_of_lt h1))
+  · by_cases h2 : d < 2 * (P % d)
+    · have hcode : subCode P d =
+          (if P / d + 1 = 2 ^ 52 then (⟨1, 2 ^ 52⟩ : Code) else ⟨0, P / d + 1⟩) := by
+        simp only [subCode, h1, h2, reduceIte]
+      rw [hcode, bitsOf_sub_succ]
+      exact inInterval_sub_hi hd rfl rfl hq2 (le_of_lt h2)
+        (fun he => absurd he (Nat.ne_of_lt h2))
+    · have h3 : 2 * (P % d) = d :=
+        le_antisymm (Nat.le_of_not_lt h2) (Nat.le_of_not_lt h1)
+      by_cases h4 : P / d % 2 = 0
+      · have hcode : subCode P d = ⟨0, P / d⟩ := by
+          simp only [subCode, h1, h2, h4, reduceIte]
+        rw [hcode, bitsOf_sub_code]
+        exact inInterval_sub_lo hd rfl rfl hq2 (le_of_eq h3) (fun _ => h4)
+      · have hcode : subCode P d =
+            (if P / d + 1 = 2 ^ 52 then (⟨1, 2 ^ 52⟩ : Code) else ⟨0, P / d + 1⟩) := by
+          simp only [subCode, h1, h2, h4, reduceIte]
+        rw [hcode, bitsOf_sub_succ]
+        refine inInterval_sub_hi hd rfl rfl hq2 (le_of_eq h3.symm) (fun _ => ?_)
+        have hone : P / d % 2 = 1 := by
+          rcases Nat.mod_two_eq_zero_or_one (P / d) with h | h
+          · exact absurd h h4
+          · exact h
+        show (P / d + 1) % 2 = 0
+        omega
+
+/-! #### Above the subnormal edge -/
+
+theorem normal_ticks_lo {P d : Nat} (hB : 52 ≤ binade P d) :
+    (⟨binade P d - 51, sig P d⟩ : Code).ticks = lo P d := by
+  rw [ticks_normal (show binade P d - 51 ≠ 0 by omega)]
+  rw [show binade P d - 51 - 1 = binade P d - 52 by omega]
+  rfl
+
+theorem walkTicks_loBits_sub {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    walkTicks (loBits P d + 1 - 1) = lo P d := by
+  rw [show loBits P d + 1 - 1 = loBits P d from by omega]
+  exact walkTicks_loBits hd hno hsub
+
+theorem upTwice_loBits {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    upTwice (loBits P d) = lo P d + hi P d := by
+  unfold upTwice
+  rw [walkTicks_loBits hd hno hsub, walkTicks_loBits_succ hd hno hsub]
+
+theorem downTwice_loBits_succ {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) :
+    downTwice (loBits P d + 1) = lo P d + hi P d := by
+  unfold downTwice
+  rw [walkTicks_loBits_sub hd hno hsub, walkTicks_loBits_succ hd hno hsub]
+
+theorem loBits_ge {P d : Nat} (hd : 0 < d) (hno : ¬ overflowTicks * d ≤ P)
+    (hsub : ¬ P < d * 2 ^ 52) : 2 ^ 52 ≤ loBits P d := by
+  obtain ⟨hB, hB', hblo, hbup⟩ := binade_facts hd hno hsub
+  obtain ⟨hq1, hq2⟩ := sig_bounds hd hB hblo hbup
+  have hdecomp : loBits P d = (binade P d - 51) * 2 ^ 52 + (sig P d - 2 ^ 52) :=
+    bitsOf_normal (show binade P d - 51 ≠ 0 by omega)
+  have h1 : (1 : Nat) * 2 ^ 52 ≤ (binade P d - 51) * 2 ^ 52 :=
+    Nat.mul_le_mul_right _ (by omega)
+  rw [Nat.one_mul] at h1
+  omega
+
+theorem loBits_pos {P d : Nat} (hd : 0 < d) (hno : ¬ overflowTicks * d ≤ P)
+    (hsub : ¬ P < d * 2 ^ 52) : 0 < loBits P d := by
+  have h := loBits_ge hd hno hsub
+  omega
+
+/-- The ceiling code of the normal region, as `normalCode` writes it. -/
+def ceilCode (P d : Nat) : Code :=
+  if sig P d + 1 = 2 ^ 53 then (⟨binade P d - 50, 2 ^ 52⟩ : Code)
+    else ⟨binade P d - 51, sig P d + 1⟩
+
+/-- The answer at the lattice's ceiling point: the value is above the lower
+midpoint (`normal_choice_le`) and below the upper one, and a midpoint tie is the
+even significand's (`roundMag_midpoint_even`). -/
+theorem inInterval_ceiling {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52)
+    (hc : roundMag P d = .fin (ceilCode P d)) (hcode : normalCode P d = ceilCode P d) :
+    inInterval P d (loBits P d + 1) := by
+  obtain ⟨hB, hB', hblo, hbup⟩ := binade_facts hd hno hsub
+  obtain ⟨hq1, hq2⟩ := sig_bounds hd hB hblo hbup
+  have hthi : walkTicks (loBits P d + 1) = hi P d := walkTicks_loBits_succ hd hno hsub
+  have hlole : lo P d * d ≤ P := lo_d_le P d
+  have hhigt : P < hi P d * d := lt_hi_d (mul_ulp_pos hd P)
+  have hnot : ¬ hi P d * d ≤ P := Nat.not_le.mpr hhigt
+  have hmag : (ceilCode P d).IsMag := by
+    obtain ⟨c', hc', hmag'⟩ := roundMag_isCode (P := P) (d := d) hd hno
+    rw [hc] at hc'
+    rw [Mag.fin.injEq] at hc'
+    rw [hc']
+    exact hmag'
+  have hcb : bitsOf (ceilCode P d) = loBits P d + 1 := bitsOf_normal_succ hB hq1 hq2
+  have hlt : loBits P d + 1 < infBits := by
+    rw [← hcb]
+    exact bitsOf_lt_infBits hmag
+  have hchoice := (normal_choice_le (P := P) (d := d) hd hB).1
+  have hticks : (ceilCode P d).ticks = hi P d := by
+    rw [← walkTicks_bitsOf hmag, hcb, hthi]
+  rw [hcode, hticks] at hchoice
+  simp only [distNum, hlole, hnot, reduceIte] at hchoice
+  have hdown2 : downTwice (loBits P d + 1) = lo P d + hi P d :=
+    downTwice_loBits_succ hd hno hsub
+  have hupge : 2 * walkTicks (loBits P d + 1) ≤ upTwice (loBits P d + 1) :=
+    ticks2_le_upTwice hlt
+  rw [hthi] at hupge
+  have h2P : 2 * P < 2 * (hi P d * d) :=
+    Nat.mul_lt_mul_of_pos_left hhigt (by decide : 0 < 2)
+  have hmid2 : 2 * (hi P d * d) ≤ upTwice (loBits P d + 1) * d := by
+    rw [← Nat.mul_assoc]
+    exact Nat.mul_le_mul_right d hupge
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [hdown2, Nat.add_mul]
+    omega
+  · omega
+  · intro htie
+    have hmid : P - lo P d * d = hi P d * d - P := by
+      rw [hdown2, Nat.add_mul] at htie
+      omega
+    rw [← hcb, walkMant_bitsOf hmag]
+    exact roundMag_midpoint_even hd hno hmid hc
+  · intro htie
+    exfalso
+    omega
+
+/-- **The specification's answer has the interval `inInterval` names**, in the
+normal region. -/
+theorem inInterval_normalCode {P d : Nat} (hd : 0 < d)
+    (hno : ¬ overflowTicks * d ≤ P) (hsub : ¬ P < d * 2 ^ 52) {c : Code}
+    (hc : roundMag P d = .fin c) (hcn : c = normalCode P d) :
+    inInterval P d (bitsOf c) := by
+  obtain ⟨hB, hB', hblo, hbup⟩ := binade_facts hd hno hsub
+  obtain ⟨hq1, hq2⟩ := sig_bounds hd hB hblo hbup
+  have hbits : loBits P d < infBits := loBits_lt hd hno hsub
+  have htlo : walkTicks (loBits P d) = lo P d := walkTicks_loBits hd hno hsub
+  have hlole : lo P d * d ≤ P := lo_d_le P d
+  have hhigt : P < hi P d * d := lt_hi_d (mul_ulp_pos hd P)
+  have hnot : ¬ hi P d * d ≤ P := Nat.not_le.mpr hhigt
+  have hchoice := (normal_choice_le (P := P) (d := d) hd hB).2
+  have hup2 : upTwice (loBits P d) = lo P d + hi P d := upTwice_loBits hd hno hsub
+  have floor_case : ∀ (hcode : normalCode P d = ⟨binade P d - 51, sig P d⟩)
+      (hcc : c = ⟨binade P d - 51, sig P d⟩), inInterval P d (loBits P d) := by
+    intro hcode hcc
+    have hcce : roundMag P d = .fin (⟨binade P d - 51, sig P d⟩ : Code) := by rw [hc, hcc]
+    have hd2 := hchoice
+    rw [hcode, normal_ticks_lo hB] at hd2
+    simp only [distNum, hlole, hnot, reduceIte] at hd2
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · have hle := downTwice_le_ticks2 hbits
+      rw [htlo] at hle
+      have h2 : (2 * lo P d) * d ≤ 2 * P := by
+        rw [Nat.mul_assoc]
+        exact Nat.mul_le_mul_left 2 hlole
+      exact le_trans (Nat.mul_le_mul_right d hle) h2
+    · rw [hup2, Nat.add_mul]
+      omega
+    · intro htie
+      exfalso
+      have hb0 : 0 < loBits P d := loBits_pos hd hno hsub
+      have hlt := downTwice_lt_ticks hb0 hbits
+      rw [htlo] at hlt
+      have h2 : downTwice (loBits P d) * d < (2 * lo P d) * d :=
+        Nat.mul_lt_mul_of_pos_right hlt hd
+      rw [Nat.mul_assoc] at h2
+      have h4 : 2 * (lo P d * d) ≤ 2 * P := Nat.mul_le_mul_left 2 hlole
+      omega
+    · intro htie
+      have hmid : P - lo P d * d = hi P d * d - P := by
+        rw [hup2, Nat.add_mul] at htie
+        omega
+      have heven := roundMag_midpoint_even hd hno hmid hcce
+      rw [walkMant_loBits hd hno hsub]
+      exact heven
+  by_cases h1 : 2 * (P % (d * ulp P d)) < d * ulp P d
+  · have hcode : normalCode P d = ⟨binade P d - 51, sig P d⟩ := by
+      simp only [normalCode, sig, h1, reduceIte]
+    have hcc : c = ⟨binade P d - 51, sig P d⟩ := by rw [hcn, hcode]
+    have hcb : bitsOf c = loBits P d := by rw [hcc]; rfl
+    rw [hcb]
+    exact floor_case hcode hcc
+  · by_cases h2 : d * ulp P d < 2 * (P % (d * ulp P d))
+    · have hcode : normalCode P d = ceilCode P d := by
+        simp only [ceilCode, sig, normalCode, h1, h2, reduceIte]
+        rfl
+      have hcc : c = ceilCode P d := by rw [hcn, hcode]
+      have hcb : bitsOf c = loBits P d + 1 := by rw [hcc]; exact bitsOf_normal_succ hB hq1 hq2
+      rw [hcb]
+      have hcE : roundMag P d = .fin (ceilCode P d) := by rw [hc, hcc]
+      exact inInterval_ceiling hd hno hsub hcE hcode
+    · by_cases h4 : P / (d * ulp P d) % 2 = 0
+      · have hcode : normalCode P d = ⟨binade P d - 51, sig P d⟩ := by
+          simp only [normalCode, sig, h1, h2, h4, reduceIte]
+        have hcc : c = ⟨binade P d - 51, sig P d⟩ := by rw [hcn, hcode]
+        have hcb : bitsOf c = loBits P d := by rw [hcc]; rfl
+        rw [hcb]
+        exact floor_case hcode hcc
+      · have hcode : normalCode P d = ceilCode P d := by
+          simp only [ceilCode, sig, normalCode, h1, h2, h4, reduceIte]
+          rfl
+        have hcc : c = ceilCode P d := by rw [hcn, hcode]
+        have hcb : bitsOf c = loBits P d + 1 := by rw [hcc]; exact bitsOf_normal_succ hB hq1 hq2
+        rw [hcb]
+        have hcE : roundMag P d = .fin (ceilCode P d) := by rw [hc, hcc]
+        exact inInterval_ceiling hd hno hsub hcE hcode
+
+/-- **The target.**  Under the overflow threshold, the specification's answer's
+own pattern is the candidate whose interval contains the value. -/
+theorem inInterval_roundMag {P d : Nat} (hd : 0 < d) (hno : ¬ inTop P d) {c : Code}
+    (hc : roundMag P d = .fin c) : inInterval P d (bitsOf c) := by
+  have hno' : ¬ (overflowTicks * d ≤ P) := hno
+  have hc0 : roundMag P d = .fin c := hc
+  unfold roundMag at hc
+  rw [ite_eq_right hno'] at hc
+  by_cases hsub : P < d * 2 ^ 52
+  · rw [ite_eq_left hsub] at hc
+    have hc' : c = subCode P d := (Mag.fin.inj hc).symm
+    rw [hc']
+    exact inInterval_subCode hd hsub
+  · rw [ite_eq_right hsub] at hc
+    have hcn : c = normalCode P d := (Mag.fin.inj hc).symm
+    have hmag : c.IsMag := by
+      obtain ⟨c', hc', hmag'⟩ := roundMag_isCode (P := P) (d := d) hd hno'
+      rw [hc0] at hc'
+      rw [Mag.fin.injEq] at hc'
+      rw [hc']
+      exact hmag'
+    exact inInterval_normalCode hd hno' hsub hc0 hcn
+
+/-! ### The descent
+
+The five finite verdicts are the step's; what they are consumed by is the
+recursion that runs them.  The measure is `(tgt - b) + (b - tgt)`: a stop is at
+the target (`stop_fin_interval` and `inInterval_uniq`), a step up happens only
+when the value is above the upper midpoint (`step_fin_move_next`), so the answer
+is above `b`, and a step down only when it is below the lower one
+(`step_fin_move_pred`).  Each is a strict decrease of that measure, so the run
+halts at the target from any finite pattern. -/
+
+/-- One run of the loop: `n` steps from `b`, read as the pattern it halts at;
+`none` when the steps run out before a stop. -/
+def walkLoop (P d : Nat) : Nat → Nat → Option Nat
+  | 0, b =>
+    match walkStep P d b with
+    | .stop b' => some b'
+    | .move _ => none
+  | n + 1, b =>
+    match walkStep P d b with
+    | .stop b' => some b'
+    | .move b' => walkLoop P d n b'
+
+theorem walkLoop_stop {P d n b e : Nat} (h : walkStep P d b = .stop e) :
+    walkLoop P d (n + 1) b = some e := by
+  simp only [walkLoop, h]
+
+theorem walkLoop_move {P d n b e : Nat} (h : walkStep P d b = .move e) :
+    walkLoop P d (n + 1) b = walkLoop P d n e := by
+  simp only [walkLoop, h]
+
+theorem walkStep_zero_cases (P d : Nat) :
+    walkStep P d 0 = .move 1 ∨ walkStep P d 0 = .stop 0 := by
+  unfold walkStep
+  rw [ite_eq_left rfl]
+  by_cases h : 0 < cmpWalk P d (upTwice 0)
+  · exact Or.inl (ite_eq_left h)
+  · exact Or.inr (ite_eq_right h)
+
+/-- A finite step's move goes to one of the two neighbours. -/
+theorem move_fin_mem {P d b e : Nat} (hb0 : 0 < b) (hb : b < infBits)
+    (h : walkStep P d b = .move e) : e = b - 1 ∨ e = b + 1 := by
+  rw [walkStep_fin hb0 hb] at h
+  by_cases hs : cmpWalk P d (2 * walkTicks b) = 0
+  · rw [ite_eq_left hs] at h
+    exact absurd h (WalkResult.stop_ne_move b e)
+  rw [ite_eq_right hs] at h
+  by_cases hs2 : 0 < cmpWalk P d (2 * walkTicks b)
+  · rw [ite_eq_left hs2] at h
+    by_cases hu : cmpWalk P d (upTwice b) < 0
+    · rw [ite_eq_left hu] at h
+      exact absurd h (WalkResult.stop_ne_move b e)
+    rw [ite_eq_right hu] at h
+    by_cases hu2 : cmpWalk P d (upTwice b) = 0
+    · rw [ite_eq_left hu2] at h
+      by_cases he : walkMant b % 2 = 0
+      · rw [ite_eq_left he] at h
+        exact absurd h (WalkResult.stop_ne_move b e)
+      · rw [ite_eq_right he] at h
+        exact absurd h (WalkResult.stop_ne_move (b + 1) e)
+    rw [ite_eq_right hu2] at h
+    exact Or.inr (WalkResult.move.inj h).symm
+  rw [ite_eq_right hs2] at h
+  by_cases hd1 : 0 < cmpWalk P d (downTwice b)
+  · rw [ite_eq_left hd1] at h
+    exact absurd h (WalkResult.stop_ne_move b e)
+  rw [ite_eq_right hd1] at h
+  by_cases hd2 : cmpWalk P d (downTwice b) = 0
+  · rw [ite_eq_left hd2] at h
+    by_cases he : walkMant b % 2 = 0
+    · rw [ite_eq_left he] at h
+      exact absurd h (WalkResult.stop_ne_move b e)
+    · rw [ite_eq_right he] at h
+      exact absurd h (WalkResult.stop_ne_move (b - 1) e)
+  rw [ite_eq_right hd2] at h
+  exact Or.inl (WalkResult.move.inj h).symm
+
+theorem downTwice_le_of_le {b b' : Nat} (h : b ≤ b') (hb' : b' < infBits) :
+    downTwice b ≤ downTwice b' := by
+  unfold downTwice
+  have h1 : walkTicks (b - 1) ≤ walkTicks (b' - 1) :=
+    walkTicks_le_of_le (by omega) (by omega)
+  have h2 : walkTicks b ≤ walkTicks b' := walkTicks_le_of_le h (by omega)
+  omega
+
+/-- **The descent reaches the interval's candidate.**  From any finite pattern,
+the loop stops at the candidate whose interval contains the value. -/
+theorem walkLoop_stops_of_interval {P d tgt : Nat} (hd : 0 < d)
+    (htgt : tgt < infBits) (hint : inInterval P d tgt) :
+    ∀ b, b < infBits → ∃ n, walkLoop P d n b = some tgt := by
+  suffices h : ∀ k, ∀ b, b < infBits → (tgt - b) + (b - tgt) = k →
+      ∃ n, walkLoop P d n b = some tgt from fun b hb => h _ b hb rfl
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+    intro b hb hdist
+    rcases Nat.eq_zero_or_pos b with hb0 | hb0
+    · -- the zero escape
+      subst hb0
+      rcases walkStep_zero_cases P d with hstep | hstep
+      · have hne : tgt ≠ 0 := by
+          intro h0
+          subst h0
+          have hcmp : 0 < cmpWalk P d (upTwice 0) := by
+            unfold walkStep at hstep
+            rw [ite_eq_left rfl] at hstep
+            by_contra hcon
+            rw [ite_eq_right hcon] at hstep
+            exact absurd hstep (WalkResult.stop_ne_move 0 1)
+          have hup : upTwice 0 * d < 2 * P := by
+            rcases cmpWalk_mem P d (upTwice 0) with h' | h' | h'
+            · rw [h'] at hcmp
+              exact absurd hcmp (by decide)
+            · rw [h'] at hcmp
+              exact absurd hcmp (by decide)
+            · exact cmpWalk_gt.mp h'
+          have hle : 2 * P ≤ upTwice 0 * d := hint.2.1
+          omega
+        obtain ⟨n, hn⟩ := ih (tgt - 1) (by omega) 1 (by omega) (by omega)
+        exact ⟨n + 1, by rw [walkLoop_move hstep]; exact hn⟩
+      · have hi0 := step_zero_stop hstep
+        have heq : tgt = 0 := inInterval_uniq hd htgt (by omega : 0 < infBits) hint hi0
+        refine ⟨1, ?_⟩
+        rw [heq]
+        exact walkLoop_stop hstep
+    · -- the finite body
+      have hbpos : 0 < b := hb0
+      cases hstep : walkStep P d b with
+      | stop e =>
+        rcases stop_fin_mem hbpos hb hstep with h1 | h2 | h3
+        · rw [h1] at hstep
+          have hlt : b - 1 < infBits := by omega
+          have hmem := stop_fin_interval hd hbpos hb hstep hlt
+          have heq : tgt = b - 1 := inInterval_uniq hd htgt hlt hint hmem
+          refine ⟨1, ?_⟩
+          rw [heq]
+          exact walkLoop_stop hstep
+        · rw [h2] at hstep
+          have hmem := step_fin_stop_self hd hbpos hb hstep
+          have heq : tgt = b := inInterval_uniq hd htgt hb hint hmem
+          refine ⟨1, ?_⟩
+          rw [heq]
+          exact walkLoop_stop hstep
+        · rw [h3] at hstep
+          by_cases hlt : b + 1 < infBits
+          · have hmem := stop_fin_interval hd hbpos hb hstep hlt
+            have heq : tgt = b + 1 := inInterval_uniq hd htgt hlt hint hmem
+            refine ⟨1, ?_⟩
+            rw [heq]
+            exact walkLoop_stop hstep
+          · exfalso
+            have hbeq : b = maxBits := by
+              have := maxBits_succ
+              omega
+            obtain ⟨htie, -⟩ := step_fin_stop_next hbpos hb hstep
+            have htop : inTop P d := by
+              unfold inTop
+              rw [hbeq, upTwice_maxBits, Nat.mul_assoc] at htie
+              exact Nat.le_of_mul_le_mul_left (le_of_eq htie) (by decide : 0 < 2)
+            exact inInterval_not_top hd htgt hint htop
+      | move e =>
+        rcases move_fin_mem hbpos hb hstep with h1 | h2
+        · rw [h1] at hstep
+          have hdown : 2 * P < downTwice b * d := step_fin_move_pred hbpos hb hstep
+          have hlt : tgt < b := by
+            by_contra hcon
+            have hge : b ≤ tgt := Nat.le_of_not_lt hcon
+            have hmono : downTwice b ≤ downTwice tgt := downTwice_le_of_le hge htgt
+            have h2' : downTwice b * d ≤ downTwice tgt * d := Nat.mul_le_mul_right d hmono
+            have h3 : downTwice tgt * d ≤ 2 * P := hint.1
+            omega
+          obtain ⟨n, hn⟩ := ih ((tgt - (b - 1)) + ((b - 1) - tgt)) (by omega) (b - 1)
+            (by omega) rfl
+          exact ⟨n + 1, by rw [walkLoop_move hstep]; exact hn⟩
+        · rw [h2] at hstep
+          have hup : upTwice b * d < 2 * P := step_fin_move_next hbpos hb hstep
+          have hgt : b < tgt := by
+            by_contra hcon
+            have hle : tgt ≤ b := Nat.le_of_not_lt hcon
+            have hmono : upTwice tgt ≤ upTwice b := upTwice_le_of_le hle hb
+            have h2' : upTwice tgt * d ≤ upTwice b * d := Nat.mul_le_mul_right d hmono
+            have h3 : 2 * P ≤ upTwice tgt * d := hint.2.1
+            omega
+          obtain ⟨n, hn⟩ := ih ((tgt - (b + 1)) + ((b + 1) - tgt)) (by omega) (b + 1)
+            (by omega) rfl
+          exact ⟨n + 1, by rw [walkLoop_move hstep]; exact hn⟩
+
+/-! ### Under the overflow threshold the loop climbs
+
+When the value is at or above the overflow threshold, every test the body makes
+compares against a boundary at or below twice the threshold, so the value is
+above every upper midpoint and the pattern rises one step at a time to the
+infinity pattern. -/
+
+theorem step_fin_top {P d b : Nat} (hd : 0 < d) (htop : inTop P d) (hb0 : 0 < b)
+    (hb : b < infBits) :
+    walkStep P d b = .move (b + 1) ∨ walkStep P d b = .stop infBits := by
+  have hble : b ≤ maxBits := by
+    have hmax : maxBits = infBits - 1 := rfl
+    omega
+  have hup_le : upTwice b ≤ 2 * overflowTicks := upTwice_le_top hble
+  have htop2 : 2 * overflowTicks * d ≤ 2 * P := by
+    have h := Nat.mul_le_mul_left 2 htop
+    rw [Nat.mul_assoc]
+    exact h
+  have hcmp1 : 0 < cmpWalk P d (2 * walkTicks b) := by
+    have h1 := walkTicks_lt_upTwice hb
+    have h2 : 2 * walkTicks b * d < upTwice b * d := Nat.mul_lt_mul_of_pos_right h1 hd
+    have h3 : upTwice b * d ≤ 2 * overflowTicks * d := Nat.mul_le_mul_right d hup_le
+    have h4 : cmpWalk P d (2 * walkTicks b) = 1 := cmpWalk_gt.mpr (by omega)
+    omega
+  have hne0 : ¬ cmpWalk P d (2 * walkTicks b) = 0 := by omega
+  rw [walkStep_fin hb0 hb, ite_eq_right hne0, ite_eq_left hcmp1]
+  by_cases hu : cmpWalk P d (upTwice b) < 0
+  · exfalso
+    have hneg : cmpWalk P d (upTwice b) = -1 := by
+      rcases cmpWalk_mem P d (upTwice b) with h | h | h
+      · exact h
+      · rw [h] at hu
+        exact absurd hu (by decide)
+      · rw [h] at hu
+        exact absurd hu (by decide)
+    have h1 : 2 * P < upTwice b * d := cmpWalk_lt.mp hneg
+    have h3 : upTwice b * d ≤ 2 * overflowTicks * d := Nat.mul_le_mul_right d hup_le
+    omega
+  by_cases hu2 : cmpWalk P d (upTwice b) = 0
+  · right
+    have htie : upTwice b * d = 2 * P := (cmpWalk_eq.mp hu2).symm
+    have hge : 2 * overflowTicks ≤ upTwice b := by
+      have h : 2 * overflowTicks * d ≤ upTwice b * d := by rw [htie]; exact htop2
+      exact Nat.le_of_mul_le_mul_right h hd
+    have hbmax : b = maxBits := upTwice_eq_top hble (le_antisymm hup_le hge)
+    have hodd : walkMant b % 2 ≠ 0 := by
+      rw [hbmax, walkMant_maxBits, two_pow_53_pred_mod_two]
+      decide
+    rw [ite_eq_right hu, ite_eq_left hu2, ite_eq_right hodd, hbmax, maxBits_succ]
+  · left
+    rw [ite_eq_right hu, ite_eq_right hu2]
+
+/-- The infinity pattern stops under the overflow threshold: the only test left
+is the overflow boundary, which the value is at or above. -/
+theorem step_top_stop_of_top {P d : Nat} (htop : inTop P d) :
+    walkStep P d infBits = .stop infBits := by
+  have hcmp : ¬ (cmpWalk P d (2 * overflowTicks) < 0) := by
+    intro h
+    have h1 : 2 * P < 2 * overflowTicks * d := cmpWalk_lt' h
+    have h2 : 2 * overflowTicks * d ≤ 2 * P := by
+      have h3 : 2 * overflowTicks * d ≤ 2 * overflowTicks * d := le_refl _
+      unfold inTop at htop
+      have h4 := Nat.mul_le_mul_left 2 htop
+      rw [Nat.mul_assoc]
+      exact h4
+    omega
+  unfold walkStep
+  rw [ite_eq_right (by decide : ¬ (infBits = 0))]
+  rw [ite_eq_left (by decide : infBits ≤ infBits)]
+  rw [ite_eq_right hcmp]
+
+/-- **Under the overflow threshold the loop halts at infinity.** -/
+theorem walkLoop_top {P d : Nat} (hd : 0 < d) (htop : inTop P d) :
+    ∀ b, b < infBits → ∃ n, walkLoop P d n b = some infBits := by
+  have hip : 1 < infBits := by simp only [infBits]; decide
+  suffices h : ∀ k, ∀ b, b < infBits → infBits - b = k →
+      ∃ n, walkLoop P d n b = some infBits from fun b hb => h _ b hb rfl
+  intro k
+  induction k using Nat.strongRecOn with
+  | ind k ih =>
+    intro b hb hk
+    rcases Nat.eq_zero_or_pos b with hb0 | hb0
+    · subst hb0
+      rcases walkStep_zero_cases P d with hstep | hstep
+      · obtain ⟨n, hn⟩ := ih (infBits - 1) (by omega) 1 (by omega) (by omega)
+        exact ⟨n + 1, by rw [walkLoop_move hstep]; exact hn⟩
+      · exfalso
+        have hi0 := step_zero_stop hstep
+        exact inInterval_not_top hd (by omega : 0 < infBits) hi0 htop
+    · rcases step_fin_top hd htop hb0 hb with hstep | hstep
+      · by_cases hlt : b + 1 < infBits
+        · obtain ⟨n, hn⟩ := ih (infBits - (b + 1)) (by omega) (b + 1) hlt (by omega)
+          exact ⟨n + 1, by rw [walkLoop_move hstep]; exact hn⟩
+        · have hbeq : b + 1 = infBits := by omega
+          refine ⟨2, ?_⟩
+          rw [walkLoop_move hstep, hbeq]
+          exact walkLoop_stop (step_top_stop_of_top htop)
+      · exact ⟨1, walkLoop_stop hstep⟩
+
+/-! ### What the loop computes -/
+
+/-- The pattern the specification's magnitude is emitted at. -/
+def bitsOfMag (m : Mag) : Nat :=
+  match m with
+  | .inf => infBits
+  | .fin c => bitsOf c
+
+/-- **The loop computes the specification's magnitude.**  From any finite
+pattern, some run of the loop halts at the pattern `roundMag`'s answer is
+encoded at: the infinity pattern over the threshold, and the answer's own code
+below it. -/
+theorem walkLoop_computes (P d : Nat) (hd : 0 < d) (b : Nat) (hb : b < infBits) :
+    ∃ n, walkLoop P d n b = some (bitsOfMag (roundMag P d)) := by
+  cases hrm : roundMag P d with
+  | inf =>
+    have htop : inTop P d := (roundMag_overflow_iff (P := P) (d := d) hd).mp hrm
+    obtain ⟨n, hn⟩ := walkLoop_top hd htop b hb
+    exact ⟨n, by rw [hn]; rfl⟩
+  | fin c =>
+    have hno : ¬ inTop P d := by
+      intro ht
+      have hinf := (roundMag_overflow_iff (P := P) (d := d) hd).mpr ht
+      rw [hinf] at hrm
+      exact Mag.noConfusion hrm
+    have hmag : c.IsMag := by
+      obtain ⟨c', hc', hmag'⟩ := roundMag_isCode (P := P) (d := d) hd hno
+      rw [hrm] at hc'
+      rw [Mag.fin.injEq] at hc'
+      rw [hc']
+      exact hmag'
+    have hint := inInterval_roundMag hd hno hrm
+    obtain ⟨n, hn⟩ := walkLoop_stops_of_interval hd (bitsOf_lt_infBits hmag) hint b hb
+    exact ⟨n, by rw [hn]; rfl⟩
+
+/-- The magnitude a halting pattern denotes: the infinity pattern is `inf`, and
+any finite pattern is its code. -/
+def magOfPattern (b : Nat) : Mag := if b = infBits then .inf else .fin (walkCode b)
+
+theorem magOfPattern_bitsOfMag (P d : Nat) (hd : 0 < d) :
+    magOfPattern (bitsOfMag (roundMag P d)) = roundMag P d := by
+  cases hrm : roundMag P d with
+  | inf =>
+    show magOfPattern infBits = .inf
+    unfold magOfPattern
+    rw [ite_eq_left rfl]
+  | fin c =>
+    have hno : ¬ inTop P d := by
+      intro ht
+      have hinf := (roundMag_overflow_iff (P := P) (d := d) hd).mpr ht
+      rw [hinf] at hrm
+      exact Mag.noConfusion hrm
+    have hmag : c.IsMag := by
+      obtain ⟨c', hc', hmag'⟩ := roundMag_isCode (P := P) (d := d) hd hno
+      rw [hrm] at hc'
+      rw [Mag.fin.injEq] at hc'
+      rw [hc']
+      exact hmag'
+    have hlt : bitsOf c < infBits := bitsOf_lt_infBits hmag
+    have hne : ¬ (bitsOf c = infBits) := Nat.ne_of_lt hlt
+    show magOfPattern (bitsOf c) = .fin c
+    unfold magOfPattern
+    rw [ite_eq_right hne, walkCode_bitsOf hmag]
+
+/-- **The loop computes `roundMag`, read back as a magnitude.** -/
+theorem walkLoop_mag (P d : Nat) (hd : 0 < d) (b : Nat) (hb : b < infBits) :
+    ∃ n, walkLoop P d n b = some (bitsOfMag (roundMag P d)) ∧
+      magOfPattern (bitsOfMag (roundMag P d)) = roundMag P d := by
+  obtain ⟨n, hn⟩ := walkLoop_computes P d hd b hb
+  exact ⟨n, hn, magOfPattern_bitsOfMag P d hd⟩
+
+/-- **The loop computes `tier3Mag`.**  On the lexeme's ticks, the emitted walk
+halts at the pattern `tier3Mag` encodes, from any finite start. -/
+theorem walkLoop_computes_tier3Mag (d : Decimal) (b : Nat) (hb : b < infBits) :
+    ∃ n, walkLoop d.ticks.1 d.ticks.2 n b = some (bitsOfMag (tier3Mag d)) := by
+  rw [tier3Mag_eq_roundMag]
+  exact walkLoop_computes d.ticks.1 d.ticks.2 d.ticks_den_pos b hb
+
 /-! ### What this section settles, and what it does not
 
 Settled:
@@ -3208,34 +4275,37 @@ Settled:
   read the stops back: every candidate the body stops at has the value in its
   interval, or the value is at or above the overflow threshold.
 
-Left open, and what it needs:
+* **The specification's lattice is the ladder's.**  `binade_eq_of_tick_bounds`
+  identifies the two: a pattern whose tick value is at or below the value, whose
+  successor's is above it, and whose tick value and successor fit the binade's
+  two powers of two `2 ^ (walkExp b + 51)` and `2 ^ (walkExp b + 52)` has
+  exponent field `binade P d - 51`.  `walk_lattice_eq` reads the rest of the
+  lattice there: `ulp P d` is the pattern's gap, and `lo` and `hi` are its tick
+  value and its successor's.
 
-* **The interval at the specification's answer.**  Naming the answer `tgt` needs
-  `inInterval P d (bitsOf c)` for `roundMag P d = .fin c`.  The two inequalities
-  come from `roundMag_nearest` at the two neighbouring ticks of `c`
-  (`isB64Mag_ticks` supplies their `IsB64Mag`), through the equivalence between
-  `distNum` and the midpoint comparison.  The tie clause is
-  `roundMag_midpoint_even`, whose hypothesis `P - lo * d = hi * d - P` needs
-  `roundMag`'s lattice to be the emitted ladder's at the value: `ulp P d` equal
-  to `walkGap` and `lo P d` equal to the candidate's tick value, both following
-  from `binade P d = walkExp b + 51`, which the two strict bounds
-  `2 ^ (walkExp b + 51) <= walkTicks b` and
-  `walkTicks (b + 1) <= 2 ^ (walkExp b + 52)` give.  That identification is what
-  is not spelled here: `roundMag` is stated over `binade`, `ulp`, `sig`, `lo`
-  and `hi`, and the walk over the pattern's fields, and the two are one lattice
-  only through those bounds.
+* **The interval at the specification's answer.**  `inInterval_roundMag` names
+  the target: `inInterval P d (bitsOf c)` for `roundMag P d = .fin c`, where
+  `bitsOf` reads a code back as the pattern whose fields it is.  Below the
+  subnormal edge the ladder is the tick lattice itself (`inInterval_subCode`,
+  `inInterval_sub_lo`, `inInterval_sub_hi`); above it the answer is the
+  lattice's floor or ceiling point, and `normal_choice_le`'s comparison of the
+  answer with the two is the interval's two ends
+  (`inInterval_normalCode`, `inInterval_ceiling`).  The tie clause is
+  `roundMag_midpoint_even`'s even significand.
 
-* **The descent.**  With a `tgt` whose interval contains the value, the step
-  count is the distance from the start: a stop is at `tgt` (`stop_fin_mem`,
-  `stop_fin_interval` and `inInterval_uniq`), a step up happens only when
-  `upTwice b * d < 2 * P` (`step_fin_move_next`) and then the answer is above
-  `b`, a step down only when `2 * P < downTwice b * d`
-  (`step_fin_move_pred`) and then the answer is below.  Each of those is a
-  strict decrease of `(tgt - b) + (b - tgt)`, so a recursion on that distance
-  runs the body to `tgt` -- the note's termination statement, bounded by the
-  distance from `dbits(d)` to the answer and nothing else.  What is written
-  here is the three facts that induction consumes; the recursion itself is not
-  written out.
+* **The descent, and what it computes.**  `walkLoop` runs the body, and the
+  measure `(tgt - b) + (b - tgt)` decreases at every move: a stop is the
+  interval's candidate (`stop_fin_interval` and `inInterval_uniq`), a step up
+  happens only when the value is above the upper midpoint
+  (`step_fin_move_next`), so the answer is above `b`, and a step down only when
+  it is below the lower one (`step_fin_move_pred`).
+  `walkLoop_stops_of_interval` runs the body to the candidate from any finite
+  pattern, `walkLoop_top` climbs to the infinity pattern when the value is at or
+  above the overflow threshold, and `walkLoop_computes` reads both as one
+  statement: `roundMag`'s answer is the pattern the loop halts at.
+  `walkLoop_computes_tier3Mag` reads it on the lexeme's ticks, so the magnitude
+  the emitted walk returns is `tier3Mag`'s.
+
 
 -/
 
@@ -3398,6 +4468,69 @@ axioms. -/
 #print axioms LeanLLVM.StrtodTier3.stop_zero_only
 #print axioms LeanLLVM.StrtodTier3.stop_fin_mem
 #print axioms LeanLLVM.StrtodTier3.stop_fin_interval
+#print axioms LeanLLVM.StrtodTier3.bitsOf
+#print axioms LeanLLVM.StrtodTier3.code_ext
+#print axioms LeanLLVM.StrtodTier3.bitsOf_sub
+#print axioms LeanLLVM.StrtodTier3.bitsOf_normal
+#print axioms LeanLLVM.StrtodTier3.walkExp_bitsOf
+#print axioms LeanLLVM.StrtodTier3.walkFrac_bitsOf_normal
+#print axioms LeanLLVM.StrtodTier3.walkMant_bitsOf
+#print axioms LeanLLVM.StrtodTier3.walkCode_bitsOf
+#print axioms LeanLLVM.StrtodTier3.walkTicks_bitsOf
+#print axioms LeanLLVM.StrtodTier3.bitsOf_lt_infBits
+#print axioms LeanLLVM.StrtodTier3.walkCode_isMag
+#print axioms LeanLLVM.StrtodTier3.loBits
+#print axioms LeanLLVM.StrtodTier3.lo_code_isMag
+#print axioms LeanLLVM.StrtodTier3.walkExp_loBits
+#print axioms LeanLLVM.StrtodTier3.walkMant_loBits
+#print axioms LeanLLVM.StrtodTier3.loBits_lt
+#print axioms LeanLLVM.StrtodTier3.walkTicks_loBits
+#print axioms LeanLLVM.StrtodTier3.walkGap_loBits
+#print axioms LeanLLVM.StrtodTier3.walkTicks_loBits_succ
+#print axioms LeanLLVM.StrtodTier3.walkTicks_small
+#print axioms LeanLLVM.StrtodTier3.walkMant_small
+#print axioms LeanLLVM.StrtodTier3.downTwice_of_le
+#print axioms LeanLLVM.StrtodTier3.upTwice_of_le
+#print axioms LeanLLVM.StrtodTier3.downTwice_le_ticks2
+#print axioms LeanLLVM.StrtodTier3.ticks2_le_upTwice
+#print axioms LeanLLVM.StrtodTier3.hi_eq_lo_add
+#print axioms LeanLLVM.StrtodTier3.add_51_sub_52
+#print axioms LeanLLVM.StrtodTier3.binade_eq_of_tick_bounds
+#print axioms LeanLLVM.StrtodTier3.walk_lattice_eq
+#print axioms LeanLLVM.StrtodTier3.bitsOf_sub_code
+#print axioms LeanLLVM.StrtodTier3.bitsOf_carry_code
+#print axioms LeanLLVM.StrtodTier3.bitsOf_sub_succ
+#print axioms LeanLLVM.StrtodTier3.bitsOf_normal_succ
+#print axioms LeanLLVM.StrtodTier3.div_mod_eq
+#print axioms LeanLLVM.StrtodTier3.inInterval_sub_lo
+#print axioms LeanLLVM.StrtodTier3.inInterval_sub_hi
+#print axioms LeanLLVM.StrtodTier3.inInterval_subCode
+#print axioms LeanLLVM.StrtodTier3.normal_ticks_lo
+#print axioms LeanLLVM.StrtodTier3.walkTicks_loBits_sub
+#print axioms LeanLLVM.StrtodTier3.upTwice_loBits
+#print axioms LeanLLVM.StrtodTier3.downTwice_loBits_succ
+#print axioms LeanLLVM.StrtodTier3.loBits_ge
+#print axioms LeanLLVM.StrtodTier3.loBits_pos
+#print axioms LeanLLVM.StrtodTier3.ceilCode
+#print axioms LeanLLVM.StrtodTier3.inInterval_ceiling
+#print axioms LeanLLVM.StrtodTier3.inInterval_normalCode
+#print axioms LeanLLVM.StrtodTier3.inInterval_roundMag
+#print axioms LeanLLVM.StrtodTier3.walkLoop
+#print axioms LeanLLVM.StrtodTier3.walkLoop_stop
+#print axioms LeanLLVM.StrtodTier3.walkLoop_move
+#print axioms LeanLLVM.StrtodTier3.walkStep_zero_cases
+#print axioms LeanLLVM.StrtodTier3.move_fin_mem
+#print axioms LeanLLVM.StrtodTier3.downTwice_le_of_le
+#print axioms LeanLLVM.StrtodTier3.walkLoop_stops_of_interval
+#print axioms LeanLLVM.StrtodTier3.step_fin_top
+#print axioms LeanLLVM.StrtodTier3.step_top_stop_of_top
+#print axioms LeanLLVM.StrtodTier3.walkLoop_top
+#print axioms LeanLLVM.StrtodTier3.bitsOfMag
+#print axioms LeanLLVM.StrtodTier3.walkLoop_computes
+#print axioms LeanLLVM.StrtodTier3.magOfPattern
+#print axioms LeanLLVM.StrtodTier3.magOfPattern_bitsOfMag
+#print axioms LeanLLVM.StrtodTier3.walkLoop_mag
+#print axioms LeanLLVM.StrtodTier3.walkLoop_computes_tier3Mag
 
 /-! ### Checks
 
