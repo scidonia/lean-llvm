@@ -69,12 +69,12 @@ What remains is the instruction-level step `scanWindowStatement` needs: the effe
 of the `body` block's instruction list on the five memory cells it touches, the
 loop induction over `valid ≤ 32`, and the theorem's footprint clause.  The prefix
 lemmas above are the model-side half of that step and are proved here, so that the
-outstanding half has a fixed statement to meet.  `JsonScanLane` now proves the
-chain's head there: the 23 instructions before the rule on the full-window path
-and the 8 on the scalar path, as `denoteCode` equations at the lane's own
-environment.  What that leaves outstanding is `ruleInstrs`'s 120 instructions, the
-arithmetic bridge from the four words they leave to `bodyStep`, the loop
-induction over `valid ≤ 32` and the footprint clause.
+outstanding half has a fixed statement to meet.  `JsonScanLane` proves the
+lane there: the 23 instructions before the rule on the full-window path, the 8 on
+the scalar path, `ruleInstrs`'s 120 instructions, and the two paths composed, as
+`denoteCode` equations at the lane's own environment.  What that leaves
+outstanding is the arithmetic bridge from the four words the rule leaves to
+`bodyStep`, the loop induction over `valid ≤ 32` and the footprint clause.
 
 Two properties of the body are measured rather than promised, and are what a
 reviewer of the fixture can check independently: it contains no `phi`, no
@@ -420,12 +420,12 @@ What remains is the instruction-level step `scanWindowStatement` needs: the effe
 of the `body` block's instruction list on the five memory cells it touches, the
 loop induction over `valid ≤ 32`, and the theorem's footprint clause.  The prefix
 lemmas above are the model-side half of that step and are proved here, so that the
-outstanding half has a fixed statement to meet.  `JsonScanLane` now proves the
-chain's head there: the 23 instructions before the rule on the full-window path
-and the 8 on the scalar path, as `denoteCode` equations at the lane's own
-environment.  What that leaves outstanding is `ruleInstrs`'s 120 instructions, the
-arithmetic bridge from the four words they leave to `bodyStep`, the loop
-induction over `valid ≤ 32` and the footprint clause.
+outstanding half has a fixed statement to meet.  `JsonScanLane` proves the
+lane there: the 23 instructions before the rule on the full-window path, the 8 on
+the scalar path, `ruleInstrs`'s 120 instructions, and the two paths composed, as
+`denoteCode` equations at the lane's own environment.  What that leaves
+outstanding is the arithmetic bridge from the four words the rule leaves to
+`bodyStep`, the loop induction over `valid ≤ 32` and the footprint clause.
 -/
 
 /-- The bytes the body's own allocations occupy, from the allocator base: `%k`

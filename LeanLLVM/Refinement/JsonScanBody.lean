@@ -7,9 +7,11 @@ leanllvm-json-scan-emit` renders `scanWindowBody` with `LeanLLVM.Function.render
 into `probes/install/ir/json-scan-body.ll`, and `LeanLLVM/Refinement/JsonScanIR.lean`
 parses that fixture at build time and pins it back to this AST.  The refinement
 statement about the body is `JsonScanIR.scanWindowStatement` and is **not yet
-proved**: `JsonScanIR.lean` proves the prefix facts the statement rests on, states
-the band hypothesis the prose elided, and records in its header the
-instruction-level step that remains.  The frame also stops at the caller's state
+proved**: `JsonScanIR.lean` proves the prefix facts the statement rests on and
+states the band hypothesis the prose elided, and `JsonScanLane.lean` derives the
+lane's instruction chain — `ruleInstrs`'s 120 instructions and the two paths
+composed — leaving the arithmetic bridge, the loop induction and the footprint
+clause.  The frame also stops at the caller's state
 region, whose content the body writes as the rule's own words rather than as the
 encoding's; that boundary is measured and the statement that pinned the slot's
 bytes is refuted in `JsonScanIR`.  `scanWindowBaselineBody` is the scalar
