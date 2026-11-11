@@ -575,38 +575,60 @@ radix's base in `walkMeasure` and the value the invariant's `inner_cap` clause
 bounds the inner component by, which is why it is stated before both. -/
 def walkInnerCap {m0 : Mem} (G : WalkGeom m0) : Nat := G.n + 5
 
+/-- **A scan's landing block entered from its first predecessor.**  A scan's
+landing block (`land.rhs*`) has two predecessors: its latch, on the back edge, and
+the block that enters the scan first.  Only the back edge has the latch's
+increment to read, so on the entry edge the counter is the value the landing
+block's own `phi` will select from that predecessor, and the fact is that value —
+not `ScanLanded`'s, which is about the other edge.  A landing block's local fact
+is therefore the disjunction of the two. -/
+def ScanEntered (s : State) (src counter cond : String) (inner : Nat) : Prop :=
+  ∃ i c : Nat, inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧ s.pre = some src ∧
+    lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 i)) ∧
+    lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
+
 /-- The block-local half of the invariant: the inner component and the registers
 it is read from, at the ten blocks the five proved arms reach — the literal
-comparison's two and each of the four scans' latch and landing.  At every other
-block it is `True`; pinning it there is the remaining arm's work (the entry
-loop's), and the module docstring says so rather than claiming a bound it does
-not have. -/
+comparison's two and each of the four scans' latch and landing.  A landing block
+has two predecessors, so its fact is disjunctive: `ScanLanded` on the latch's back
+edge and `ScanEntered` on the edge that first enters the scan, and the literal
+comparison's landing block is the same pair (the latch's `%inc.i.i` or
+`if.end48.i`'s zero).  At every other block it is `True`; pinning it there is the
+remaining arm's work (the entry loop's), and the module docstring says so rather
+than claiming a bound it does not have. -/
 def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop :=
   if C.block = "for.inc.i.i" then
     ∃ i c : Nat, C.inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧
       lookupName s.env "%i.029.i.i" = some (.int 64 (BitVec.ofNat 64 i)) ∧
       lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c))
   else if C.block = "for.body.i.i" then
-    ∃ i c : Nat, C.inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧
-      s.pre = some "for.inc.i.i" ∧
-      lookupName s.env "%inc.i.i" = some (.int 64 (BitVec.ofNat 64 i)) ∧
-      lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c))
+    ((∃ i c : Nat, C.inner = c - i ∧ i < c ∧ c < 2 ^ 64 ∧
+        s.pre = some "for.inc.i.i" ∧
+        lookupName s.env "%inc.i.i" = some (.int 64 (BitVec.ofNat 64 i)) ∧
+        lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c))) ∨
+      (∃ c : Nat, C.inner = c ∧ 0 < c ∧ c < 2 ^ 64 ∧
+        s.pre = some "if.end48.i" ∧
+        lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c))))
   else if C.block = "while.body370.i" then
     ScanCount s "%ee.0.i238" "%cond350.i" C.inner
   else if C.block = "land.rhs.i" then
-    ScanLanded s "while.body370.i" "%inc371.i" "%cond350.i" C.inner
+    (ScanLanded s "while.body370.i" "%inc371.i" "%cond350.i" C.inner ∨
+      ScanEntered s "land.rhs.i.preheader" "%idxprom.i" "%cond350.i" C.inner)
   else if C.block = "while.body.i104" then
     ScanCount s "%ee.011.i" "%cond.i" C.inner
   else if C.block = "land.rhs.i103" then
-    ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner
+    (ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner ∨
+      ScanEntered s "cond.end.i96" "%idxprom.i" "%cond.i" C.inner)
   else if C.block = "while.body76.i" then
     ScanCount s "%s2.020.i" "%cond.i" C.inner
   else if C.block = "land.rhs71.i" then
-    ScanLanded s "while.body76.i" "%inc77.i" "%cond.i" C.inner
+    (ScanLanded s "while.body76.i" "%inc77.i" "%cond.i" C.inner ∨
+      ScanEntered s "if.end67.i" "%ee.0.lcssa.i" "%cond.i" C.inner)
   else if C.block = "while.body462.i" then
     ScanCount s "%q.0.i246" "%cond350.i" C.inner
   else if C.block = "land.rhs457.i" then
-    ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner
+    (ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner ∨
+      ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner)
   else True
 
 /-- **The pointer registers the dispatch's blocks read**, in one place.
@@ -703,6 +725,22 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   at most one record is being assembled, and its reservation is the cursor's own
   offset. -/
   pending_at : ∀ p off, C.pending = some (p, off) → off = C.alen ∧ p < G.n
+  /-- **The record in flight is inside the arena's room at its entry position.**
+  `z_arena_reserve` checks `alen + len + 64` against the arena's capacity before
+  it decodes an entry's body, where `len` is the entry's own document extent and
+  `alen` the cursor before that body.  The check's conclusion needs the cursor to
+  be no further than the staging's offset plus the entry's position: the body
+  then fits the document's own room (`G.entries`' positions are inside it), so
+  `ndst0 + n + 64 ≤ dstcap` covers the sum.  This is the clause the **arena
+  reserve's trap** (`if.end.i83`) reads; without it `alen` may be at `ndst0 + n`
+  while a positive-length token is still to be decoded, and the trap is reachable
+  under the invariant as it stood.
+
+  Its only production is the merge's, through `pending`: a block that advances
+  `alen` (`if.else285.i`) must keep the record's offset equal to the new cursor
+  (`pending_at`) and re-prove the bound, and the merge that carries the next
+  entry's position in is where the clause is first established for a body. -/
+  pending_cursor : ∀ p off, C.pending = some (p, off) → C.alen ≤ G.ndst0 + p
   /-- The refusal offset is inside the document. -/
   eoff_le : C.eoff ≤ G.n
   /-- **The inner component is inside the dispatch's allowance.**  This is the
@@ -884,6 +922,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       spans_order := by simp [walkSeed]
       spans_inside := by simp [walkSeed]
       pending_at := ?_
+      pending_cursor := ?_
       eoff_le := Nat.zero_le _
       inner_cap := walkSeed_inner_cap G S
       depth_cap := walkSeed_depth_cap G S
@@ -896,6 +935,8 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       log_acap := hacap
       owning := hown
       blockLocal := ?_ }
+  · intro p off hp
+    simp [walkSeed] at hp
   · intro p off hp
     simp [walkSeed] at hp
   · simp [WalkLocal, walkSeed]
@@ -1063,6 +1104,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := by
           have hcap : c - i ≤ G.n + 5 := by
@@ -1086,7 +1128,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         blockLocal := ?_ }
     dsimp only [WalkLocal, C']
     rw [if_neg (by decide), if_pos rfl]
-    refine ⟨i + 1, c, rfl, hlt, hcw, rfl, ?_⟩
+    refine Or.inl ⟨i + 1, c, rfl, hlt, hcw, rfl, ?_⟩
     dsimp only [e, State.bind]
     refine ⟨?_, ?_⟩
     · rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
@@ -1214,7 +1256,8 @@ theorem WalkLocal.whitespace {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
 /-- `WalkLocal` at the whitespace skip's landing block. -/
 theorem WalkLocal.whitespaceLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : C.block = "land.rhs.i") :
-    WalkLocal C s = ScanLanded s "while.body370.i" "%inc371.i" "%cond350.i" C.inner := by
+    WalkLocal C s = (ScanLanded s "while.body370.i" "%inc371.i" "%cond350.i" C.inner ∨
+      ScanEntered s "land.rhs.i.preheader" "%idxprom.i" "%cond350.i" C.inner) := by
   simp [WalkLocal, h]
 
 /-- `WalkLocal` at the string scan's latch. -/
@@ -1226,7 +1269,8 @@ theorem WalkLocal.stringScan {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
 /-- `WalkLocal` at the string scan's landing block. -/
 theorem WalkLocal.stringScanLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : C.block = "land.rhs.i103") :
-    WalkLocal C s = ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner := by
+    WalkLocal C s = (ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner ∨
+      ScanEntered s "cond.end.i96" "%idxprom.i" "%cond.i" C.inner) := by
   simp [WalkLocal, h]
 
 /-- `WalkLocal` at the escape scan's latch. -/
@@ -1238,7 +1282,8 @@ theorem WalkLocal.escape {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
 /-- `WalkLocal` at the escape scan's landing block. -/
 theorem WalkLocal.escapeLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (h : C.block = "land.rhs71.i") :
-    WalkLocal C s = ScanLanded s "while.body76.i" "%inc77.i" "%cond.i" C.inner := by
+    WalkLocal C s = (ScanLanded s "while.body76.i" "%inc77.i" "%cond.i" C.inner ∨
+      ScanEntered s "if.end67.i" "%ee.0.lcssa.i" "%cond.i" C.inner) := by
   simp [WalkLocal, h]
 
 /-- `WalkLocal` at the extra-token scan's latch. -/
@@ -1250,7 +1295,8 @@ theorem WalkLocal.extraToken {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
 /-- `WalkLocal` at the extra-token scan's landing block. -/
 theorem WalkLocal.extraTokenLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : C.block = "land.rhs457.i") :
-    WalkLocal C s = ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner := by
+    WalkLocal C s = (ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner ∨
+      ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner) := by
   simp [WalkLocal, h]
 
 /-- The whitespace skip's register facts, out of the invariant. -/
@@ -1409,6 +1455,7 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := by
           have hcap : c - i ≤ G.n + 5 := by
@@ -1462,7 +1509,7 @@ theorem whitespace_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       (by
         intro e hpre hinc hcond
         rw [WalkLocal.whitespaceLanded rfl]
-        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+        exact Or.inl ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
   exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-- **The string scan's back edge**, `while.body.i104 → land.rhs.i103`.  The
@@ -1489,7 +1536,7 @@ theorem string_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       (by
         intro e hpre hinc hcond
         rw [WalkLocal.stringScanLanded rfl]
-        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+        exact Or.inl ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
   exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-- **The escape scan's back edge**, `while.body76.i → land.rhs71.i`.  The counter
@@ -1515,7 +1562,7 @@ theorem escape_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       (by
         intro e hpre hinc hcond
         rw [WalkLocal.escapeLanded rfl]
-        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+        exact Or.inl ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
   exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-- **The extra-token scan's back edge**, `while.body462.i → land.rhs457.i`.  The
@@ -1541,7 +1588,7 @@ theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       (by
         intro e hpre hinc hcond
         rw [WalkLocal.extraTokenLanded rfl]
-        exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
+        exact Or.inl ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
   exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-! ### The exit
@@ -2125,6 +2172,7 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := Nat.le_refl _
         depth_cap := hInv.depth_cap
@@ -3171,6 +3219,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hspc
@@ -3632,6 +3681,7 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -3870,16 +3920,18 @@ the instruction's constructor, not by the block's name.
 | E | a `phi`-headed block | 15 | 1 |
 | F | a block that calls | 19 | 0 |
 | G | `load` and compare | 14 | 0 |
-| H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 5 |
-| H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 0 |
+| H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
+| H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 1 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**Ninety-five of the 165 blocks are links**: the sixty of class A, the nine of B,
-B′'s single block, class C's eighteen refusal stores, the four scan headers and
-`for.inc.i.i` (the five of H1 that decrease the measure), and the two named arms
-`while.body.i` (E) and `if.end24.i` (D).  The remaining 70 are named below with
-their obstruction, one row each; six of them are not links at all — the seed, the
-return, and the four `unreachable` arms.
+**A hundred and one of the 165 blocks are links**: the sixty of class A, the nine
+of B, B′'s single block, class C's eighteen refusal stores, the four scan headers
+and `for.inc.i.i` (the five of H1 that decrease the measure), all ten of H1's
+`add`+`ule` leaves (`WalkLink.addImmBr` and its five below, beside the five the
+measure arms reach), `if.then281.i` (`WalkLink.if_then281_i`), and the two named
+arms `while.body.i` (E) and `if.end24.i` (D).  The remaining 64 are named below
+with their obstruction, one row each; six of them are not links at all — the seed,
+the return, and the four `unreachable` arms.
 
 The count that mattered was the number of classes, not of blocks.  A, B and B′ are
 70 blocks between them and need no memory reasoning at all: none touches memory
@@ -3970,6 +4022,24 @@ is the guard before them — `if.end.i.i`'s and `if.end.i.i55`'s event reserve,
 `if.end256.i`'s arena reserve, `if.end290.i`'s thirteen-byte reserve — never
 failing.
 
+Three of the four guards are excluded by the invariant plus the loop head's own
+guard (`C.k < G.nep`, the strictness `whileBody_step` already takes): the event
+cursor is `nev0 + sum(events)`, at most `nev0 + 13·k ≤ nev0 + 13·nep ≤ evcap`, and
+`k ≤ nep - 1 ≤ n - 1` leaves twelve bytes of slack at the widest record, so the
+`len + 1 > cap` and `len + 13 > cap` tests are clear; `walkEventReserve_clear`
+(`JsonStage2WalkRest`) is that arithmetic, stated at the invariant.  The **arena
+trap** (`if.end.i83`) is not excluded, and that is a finding about this invariant
+rather than about the body: the test is
+`alen + (entry[k+1] - entry[k] - 1) + 64 > dstcap`, and the clauses give only
+`alen ≤ ndst0 + n` and `ndst0 + n + 64 ≤ dstcap`, so the invariant does not exclude
+a cursor at `ndst0 + n` with a positive-length token, and the guard would then fail.  `WalkInv`
+now carries the clause the guard reads — `pending_cursor`, `alen ≤ ndst0 + p` for
+the record in flight at entry position `p` — and every arm preserves it, but its
+**production** is the merge's (`pending := some (p, alen)` for the entry about to
+be decoded), which is the same D/F work the record's assembly owes; until that
+lands the clause is a true strengthening that the trap does not yet consume.  The
+class of the finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
+
 ## The remainder, named
 
 The 70 blocks that are not links yet.  `class` is the census's; `what a link
@@ -4052,11 +4122,42 @@ or address that is missing.
 ## Whether the chain closes
 
 It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited: 70 of the body's 165 blocks have no link, and the six `unreachable`
-arms have no argument that they are unreachable.  What the census buys is that the
-remaining work is 70 named rows and five classes, not an open-ended set: H1 is one
-two-instruction class lemma, and the rest are the ten D addresses, the fourteen E
-merges, the nineteen F contracts and the fourteen G reads.
+inhabited: 64 of the body's 165 blocks have no link, and the arena trap's clause
+has no production yet.
+
+`JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the
+`add`'s literal at the instruction's own width) and `if.then281.i`, and states the
+three transfers the rest of the pure classes share: `WalkLink.pureCore` (a run that
+binds no carried register and whose edge is a carried or computed bit),
+`WalkLink.pureJumpCore` and `WalkLink.pureCoreCarried`.  What that module records
+as not supplied, with the reason in each row, is the **instance work** of the
+remaining G reads — writing each block's outgoing environment so its `denoteCode`
+equality is a term the class transfer can consume — and the D stores, the E merges,
+and the F calls.
+
+The two E obstructions are stated rather than papered over.  `for.body.i.i` is
+reached from `if.end48.i` as well as from `for.inc.i.i`, and its landing fact is now
+the disjunction `ScanLanded ∨ (the phi's zero)` (`WalkLocal` and the four `land.rhs*`
+landing facts are disjunctive for the same reason — their preheaders are second
+predecessors).  What the entry disjunct still needs is the **inner reset**: the edge
+into a scan sets `C.inner` to the scan's remaining work, and `WalkLink.mono` requires
+the measure not to rise across it.  A reset can raise `inner` when a later scan in
+the same iteration has more work than the earlier one left, so the entry edge is a
+link only under a measure whose inner component is a shared budget — a decision
+about the measure, not about the block.  `if.end48.i` and the five landing/merge
+blocks of E are therefore not links yet.
+
+The arena guard's remaining need and F's gap are the same kind of statement.  Each
+of the nineteen call blocks needs its callee's `CallOutcome` at the caller's
+staging; `stage2Calls` resolves the lifetime markers and `@llvm.trap` and leaves
+`s2_init`, `s2_value_pos`, `s2_after_value`, `s2_string_body`, `num_fast_el1` and
+`od_scalar_value` to the `sub` parameter, so a call block's link is a contract
+question.  The blocks that read a returned word (`if.end256.i` reads
+`%call272.i`'s successors, `if.then328.i` reads `%outn.i`) need the callee's frame
+as well as its post, and `z_arena_reserve.exit` needs the arena's reservation to
+be the cursor's — the same datum `pending_cursor` reads.  No link in this module is
+proved against a `CallOutcome` that the `sub` parameter's contract does not state,
+which is why F is reported as a contract gap rather than closed here.
 
 The step count is likewise not established.  `WalkChain.steps` reads a chain as a
 run, and a chain with 70 of its links missing has no step count to compare against
@@ -4148,6 +4249,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -4348,6 +4450,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hj
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -4865,6 +4968,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -4930,6 +5034,7 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
