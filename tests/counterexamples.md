@@ -28,12 +28,14 @@ produced it.
 
 ```lean
 hsem : ∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-    (dst ev err : Nat),
+    (dst ev err ndst' nev' : Nat),
   readBytes mem base bs.length = some bs →
-  ParserHalf eventRel bs verdict m dst ev err
+  ParserHalf eventRel bs verdict m dst ev err ndst' nev'
 ```
 
-and `ParserHalf`'s first conjunct is
+The last two binders are the arena's and the event stream's extents, which
+`ParserHalf` takes as arguments (the extent repair below); they carry no verdict,
+which is what the refutation uses.  `ParserHalf`'s first conjunct is
 
 ```lean
 verdict = 1 ↔ ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t
@@ -44,10 +46,30 @@ equivalence at `1` and at `0`: the first instance says the parser accepts, the
 second says it refuses.  Nothing in the premise connects the verdict, the
 returned memory or the slots to an execution.
 
-Both declarations now take `ParserHalfForOutcome eventRel base args mem o`, which
-reads the verdict, the returned memory and the caller's three slots out of `o`
-and the document out of `args` and `mem`.  A run that returned `1` supplies the
-half at `1` and says nothing at `0`.
+Both declarations now take
+
+```lean
+hsem : ∀ (ndst' nev' : Nat), pipelineOutputExtents args o ndst' nev' →
+  ParserHalfForOutcome eventRel base args mem ndst' nev' o
+```
+
+`ParserHalfForOutcome` reads the verdict, the returned memory and the caller's
+three slots out of `o` and the document out of `args` and `mem`; a run that
+returned `1` supplies the half at `1` and says nothing at `0`.
+
+**The extents are the record's, and that is the finding's second half.**
+`ParserHalf` used to quantify its arena and event extents, so the event/arena
+relation had to hold at *every* readable prefix of the two buffers, the empty one
+included, and a relation that distinguished prefixes made the accepting case
+unsatisfiable.  The extents are arguments now, and the units' post names them:
+`pipelineOutputExtents` (`JsonPipelineContract`) reads each from its cursor slot
+and bounds it below `2 ^ 64`.  The bound is load-bearing rather than defensive —
+a slot's eight bytes identify a value modulo `2 ^ 64`, so without it the record
+would still name every readable prefix; with it the pair is unique
+(`pipelineOutputExtents_unique`, choice-free), so the premise above is satisfiable
+at the run's own pair.  `pipeline_units_finalisation` applies it at the pair its
+post carries, and no `∀ ndst' nev'` over arbitrary extents remains on the path
+from the units' post to `Sigma_pipeline`.
 
 **The retired shape implies `False`.**  `LeanLLVMTest/Counterexamples.lean`
 states and proves both negations, at an arbitrary `eventRel` (and, for the
@@ -56,21 +78,22 @@ finalisation's, an arbitrary staging memory and `base`):
 ```lean
 theorem pipeline_parser_hsem_false (eventRel : EventStreamRel) (base : Nat) :
     ¬ (∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-        (dst ev err : Nat),
+        (dst ev err ndst' nev' : Nat),
         readBytes mem base bs.length = some bs →
-        ParserHalf eventRel bs verdict m dst ev err)
+        ParserHalf eventRel bs verdict m dst ev err ndst' nev')
 
 theorem pipeline_units_finalisation_hsem_false (eventRel : EventStreamRel)
     (mem : Mem) (base : Nat) :
     ¬ (∀ (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-        (dst ev err : Nat),
+        (dst ev err ndst' nev' : Nat),
         readBytes mem base bs.length = some bs →
-        ParserHalf eventRel bs verdict m dst ev err)
+        ParserHalf eventRel bs verdict m dst ev err ndst' nev')
 ```
 
 Each proof instantiates its hypothesis on the empty document, reads the
 equivalence at `verdict = 1` and at `verdict = 0`, and derives the
-contradiction.
+contradiction.  The extents it supplies are arbitrary, and immaterial: the
+contradiction is the free verdict's, in the first conjunct.
 
 **The input read.**  The hypothesis's own `readBytes` premise supplies it; the
 empty document satisfies it in every memory and at every base, because
@@ -91,8 +114,8 @@ cannot be discharged, not that the parser gives a wrong answer.
 **The replacement is instantiated at two actual runs.**
 `tests/counterexamples/parser-half-outcome.lean` proves
 `∃ o, runFuel noCalls 1 f (EntryState f args mem 1) = some o ∧
-ParserHalfForOutcome … o` twice, at a one-block function whose entry returns the
-verdict:
+ParserHalfForOutcome … 1 1 o` twice, at a one-block function whose entry returns
+the verdict:
 
 * accepting — `1` over the document `null`; the tape, its decode, its span
   discipline and its validity come from `parseRef_complete`, `decodeTape_correct`
@@ -100,21 +123,20 @@ verdict:
 * refusing — `0` over a byte-order mark, which `parseBytes` refuses at its own
   branch (`bom_refused`, decided).
 
-The outcome in each theorem is the run's result, not a chosen one.  The
-event/arena relation there is prefix-closed (each readable prefix of a buffer is
-a prefix of the bytes the run reported at that slot), because `ParserHalf`
-applies the relation at every readable prefix; its docstring records why that
-quantification is what lets an independently produced parser half apply at the
-units' post's witnesses, and that a relation distinguishing prefixes therefore
-cannot be used at an accepting verdict.
+The outcome in each theorem is the run's result, not a chosen one, and the half is
+stated at the extents those runs report — `1` and `1`, the value both cursor words
+hold.  With the relation stated at one extent instead of at every prefix, it can
+distinguish prefixes: a shorter prefix of either buffer fails it, which is the
+relation the earlier shape could not use.
 
     nix develop -c probes/install/mem-capped.sh --cap 6G -- \
       lake env lean tests/counterexamples/parser-half-outcome.lean
 
-Exits `0` with no diagnostic from the file (the dev shell's own banner and its
-`Git tree … is dirty` warning are the invocation's), and every `#print axioms`
-pin in the file matched its recorded `#guard_msgs` value — the two instantiations
-at `[propext, Quot.sound]`.  The driver's F1 line on this revision is
+whose dev-shell banner and `Git tree … is dirty` warning belong to the
+invocation.  The file's `#print axioms` pins are its recorded values — the two
+instantiations, `accept_half` and `refuse_half`, at `[propext, Quot.sound]` — so
+a run that elaborates the file with no diagnostic from it leaves them matching.
+The driver reports F1 as
 
 ```text
 F1 proved: the retired premise implies False, and the replacement holds at both runs

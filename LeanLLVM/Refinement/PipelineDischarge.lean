@@ -17,44 +17,59 @@ them at the staging's own block count:
 * `seed` — `PipelineBodyStep.pipelineSeed`, the three control steps from
   `EntryState` to the loop's first iteration, at the split shape.
 
-The fifth field is the tail, and it is not proved here.  `pipelineLoopExit` —
-the predicate the loop hands over — carries the exit block's program counter, the
-entry stream's read, order, document bound and block bound, the predecessor, the
-fourteen tail cells, the exiting count, the escape count slot's content, the
-escape count's growth and the frame at the caller's memory.  The three facts the
-tail's stage-2 call reads arrived with the loop's own producers rather than being
-stated beside it:
+# The exit predicate takes the caller's argument list
 
-1. **the document bound** `∀ q ∈ S.ent, q < S.n.toNat`.  `Γ_stage2.pre` asks for
-   the document's own length; at a one-byte document the block bound `64 * S.i`
-   and `n = 1` differ, so the bound is not a weakening of it.  It is the arms'
-   — `PipelineBodyStep.streamDocSucc`, from the last block's entry word, whose
-   identity with the body's store the emitter's post supplies;
-2. **the escape count slot's content**, `readBytes s.mem S.nxp 8 =
-   some (wordBytes 8 S.xn)`.  The exit names the `%nxp` *cell*, and the tail's
-   call reads the slot's word; without the content the argument the call passes
-   is unconstrained, and `HasBytes s.mem S.xp (4 * thatWord)` cannot be bounded
-   by the staging's extent `4 * (nxp0 + 64 * blocks + 8)`;
-3. **the escape count's growth**, `S.xn ≤ S.xn0 + 64 * S.i`, and with it the
-   `DisjointRegions` sub-extent argument for stage 2's extents.  It is the
-   invariant's growth clause and the escape list's own `len ≤ 64` at the exit
-   step.
+The fifth field is the tail: from any exit state, the run and the record's own
+post.  `pipelineLoopExit` is the predicate the loop hands over, and it is stated
+at the caller's memory **and at the caller's argument list**.  The argument list
+is not decoration.  The predicate's frame is `UnchangedOutside mem s.mem
+(pipelineLoopWrites S)`, whose regions are the carried record's addresses
+(`S.sc`, `S.maskSlot`, `S.entw`, `S.xcarry`, …), while every consumer downstream
+states its claims at the *caller's* (`sc`, `mk`, `entw`, `xcarry`, …): the UTF-8
+window, `Γ_stage2.pre`'s staged objects, and `Γ_pipeline_units.post`'s
+`UnchangedOutside`.  Stated at the state alone the predicate says nothing about
+which addresses are the caller's, so `S.sc` and `args.sc` were two different
+addresses until something said they were the same — and the exit predicate is the
+only thing in scope at the moment the claim is made.  `exitArgs` is that tie: the
+slot-match between the argument list and `S`, produced by the seed when it builds
+`S` from the staging's witnesses and carried by the split and back shapes, so
+every step hands it on and the tie arrives with the state rather than being
+assumed at the tail.  `PipelineLoop.Exit` and `PipelineLoop.Inv` therefore take
+the list — the retype is four-way (`Exit`, `Inv`, `step`, `exit`) because
+`PipelineLoop.exit : Inv mem args 0 s → ∃ e, Exit mem args e` cannot produce an
+argument-tied exit from an argument-free invariant.
 
-The two escape-count facts are conjuncts of `pipelineLoopInv`'s live shapes; the
-document bound is derived at each exit from the block bound the live shapes carry
-and the last block's own entry word.  The eight exit-producing steps — the four
-back-edge exits and the four split steps' budget-one branches — are where all
-three reach `pipelineLoopExit`.  So the predicate the tail reads is the one the
-loop produces: there is no seam to assume.  `PipelineTailTarget` is the `exit`
-field's conclusion at that predicate — the run's three steps and the record's own
-post — and `pipelineBodyFacts_of_exitStage2` shows that the four proved fields and
-that target are exactly what `PipelineBodyFacts` asks for.  The target is the
-tail's statement, not a gap in the loop: the run is
-`PipelineBodyStep.pipelineExit_run` at the cells and the two call inputs the
-exit's facts supply.
+# What the exit predicate carries, and what the tail still owes
+
+`pipelineLoopExit` carries the exit block's program counter, the argument-list
+match, the entry stream's read, order, document and block bounds, the
+predecessor, the fourteen tail cells, the exiting count, the escape count slot's
+content at the exit's memory, its growth, the document read at the exit's memory,
+the escape stream's presence at the exit's count, the frame at the caller's
+memory, the resumed block index's bound and the caller escape slot's *initial*
+count together with its width bound.  The two escape-count facts and the document
+read are the loop's own (the invariant's escaped slot, count growth, window read
+and emitter writes), and the eight exit-producing steps are where they reach the
+predicate.
+
+`PipelineTailTarget` is the `exit` field's conclusion at that predicate: the
+run's three steps and the record's own post.  **It is still supplied by the
+caller** in this tree.  The retype above removes the structural obstruction — the
+predicate can now name the caller, so the UTF-8 window, `Γ_stage2.pre` and the
+post's frame are statements about addresses the state carries — but the
+assembly of the run and the post at the exit's witnesses is the remaining work,
+and the two calls' preconditions are where it starts: the UTF-8 window is
+`[0,0,0] ++ S.doc` at `S.b - 3`, and stage 2's staging is the pipeline staging's
+clauses at `S`'s fields, with its `DisjointRegions` derived from
+`pipelineRegions` once the loop's write extents are seen to be sub-extents
+(`S.k ≤ 64 * S.i` from the entry stream's order and length, `S.xn ≤ S.xn0 + 64 *
+S.i` and `S.xn0 = nxp0` from the carried slot and bound).  `pipelineExit_run`
+supplies the three control steps; `PipelineUnits.utf8` and `PipelineUnits.stage2`
+supply the call outcomes and their posts; `positionsBytes` is where the escape
+list's read becomes the post's witness.
 
 Nothing here narrows a record or weakens a post: the tail's target is stated at
-the same predicate the loop hands over.
+the same predicate the loop hands over, now with the caller's arguments in it.
 -/
 import LeanLLVM.Refinement.JsonStage2Contract
 import LeanLLVM.Refinement.PipelineBodyStep
@@ -124,14 +139,22 @@ theorem pipelineLoop_of_staging_cost_le {tab base : Nat} {args : List Value} {me
 /-! ### The tail's target -/
 
 /-- **The tail's target**: the field `PipelineBodyFacts.exit` states at
-`pipelineLoopExit`, the predicate the loop hands over.  It is a statement about
-the run and the record's own post, with nothing parameterised: the tail's three
-steps are `PipelineBodyStep.pipelineExit_run`, and the two call inputs — the
-UTF-8 call's resolution and stage-2's `pre` at the store's memory — are what this
-target's proof supplies from the predicate's facts. -/
+`pipelineLoopExit`, the predicate the loop hands over — at the caller's memory
+*and* at the caller's argument list, which is what lets the target name the UTF-8
+window, stage 2's staging and the post's frame at the caller's addresses.
+
+The statement is the run's three steps and the record's own post.
+`PipelineBodyStep.pipelineExit_run` supplies the steps once the two call
+preconditions hold; this module does not yet supply them, so the target is a
+*hypothesis* of `pipelineBodyFacts_of_exitStage2`, as it was before the retype.
+What the retype changed is that the hypothesis is now statable: the predicate's
+`exitArgs` identifies `S`'s addresses with the argument list's, and its document
+read, escape-slot content and count bounds are the state facts the preconditions
+are derived from.  The remaining obligation is the derivation itself, not a gap
+in what the predicate names. -/
 def PipelineTailTarget (tab base : Nat) (s2 : Calls)
     (args : List Value) (mem : Mem) (next : Nat) : Prop :=
-  ∀ e : State, pipelineLoopExit mem e →
+  ∀ e : State, pipelineLoopExit mem args e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
         some (.ret (some (.int 64 verdict)) m) ∧
@@ -142,9 +165,10 @@ def PipelineTailTarget (tab base : Nat) (s2 : Calls)
 
 /-- **`PipelineBodyFacts` from the proved fields and the tail's target.**  The
 loop, `N_eq`, `cost_le` and the seed are the theorems above; the fifth field is
-the target at the exit predicate the loop produces.  No seam stands between them:
-`pipelineLoopExit` is the loop's own exit, so the target's domain is the field's
-domain. -/
+the target at the exit predicate the loop produces.  `pipelineLoopExit` is the
+loop's own exit and it now carries the caller's argument list, so the target's
+domain is the field's domain and is stated at the caller's addresses; the target
+itself is the caller's until the tail's assembly is proved. -/
 def pipelineBodyFacts_of_exitStage2 {tab base : Nat} {s2 : Calls}
     {Γ2 : MemContract} {args : List Value} {mem : Mem} {next : Nat}
     (hst : pipelineStaging tab base args mem) (units : PipelineUnits tab base s2 Γ2)

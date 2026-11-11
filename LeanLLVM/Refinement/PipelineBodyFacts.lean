@@ -3320,6 +3320,31 @@ def pipelineLoopWrites (S : PipelineLoopCarried) : List (Nat × Nat) :=
   [(S.sc, 24), (S.maskSlot, 48), (S.entw, 8), (S.ep, 4 * (S.k + 8)), (S.nk, 8),
    (S.xp, 4 * (S.xn + batchReserve)), (S.nxp, 8), (S.xcarry, 16)]
 
+/-- **The caller's argument list, as the carried record.**  `pipelineStaging` names
+the caller's twenty slots, the loop's `S` names the same objects by its own fields,
+and the post's frame is stated at the caller's addresses.  This predicate is the
+equality between the two: the slot-match the seed yields when it builds `S` from
+the staging's witnesses, carried unchanged by every step.
+
+**Why the exit predicate takes the argument list.**  `PipelineLoop.Exit` is
+`Mem → List Value → State → Prop` for the same reason it is `Mem → …`: a consumer
+reads what the producer does not name.  The tail's claims — the UTF-8 window, the
+stage-2 staging, the post's `UnchangedOutside` — are about the *caller's* buffers,
+and a predicate that cannot name the caller's argument list cannot state either.
+The invariant and the step therefore carry the list too: the seed is where `S` is
+built, so the seed is where the match is produced. -/
+def exitArgs (S : PipelineLoopCarried) (args : List Value) : Prop :=
+  match args with
+  | [.ptr ab, .int 64 an, .ptr asc, .ptr ams, .ptr aew, .ptr aep, .int 64 aec,
+     .ptr ank, .ptr axp, .int 64 axc, .ptr anxp, .ptr axcarr, .ptr adst,
+     .int 64 adcap, .ptr andst, .ptr aev, .int 64 aecap, .ptr anev, .ptr aerr,
+     .int 64 aarm] =>
+      ab = S.b ∧ an = S.n ∧ asc = S.sc ∧ ams = S.maskSlot ∧ aew = S.entw ∧
+      aep = S.ep ∧ ank = S.nk ∧ axp = S.xp ∧ anxp = S.nxp ∧ axcarr = S.xcarry ∧
+      adst = S.dst ∧ adcap = S.dstcap ∧ andst = S.ndst ∧ aev = S.ev ∧
+      aecap = S.evcap ∧ anev = S.nev ∧ aerr = S.err
+  | _ => False
+
 /-- **The states the loop may leave in, at the caller's memory**: the exit block,
 carrying the entry stream and the frame.
 
@@ -3365,12 +3390,28 @@ arena, the event stream and the cursors are the caller's bytes, and the tail rea
 them at the memory it is handed — and it is stated at `mem` rather than at the
 state because the state cannot name the memory it was entered at.
 
-What it does *not* carry is the two calls' inputs, which are the staging's
-memory: the predicate names the entry stream and no other address's contents, so
-the tail's UTF-8 window and stage-2's `pre` are the target's own hypotheses. -/
-def pipelineLoopExit (mem : Mem) (s : State) : Prop :=
+**The argument list, and why the predicate takes it.**  The frame above is stated
+at the *carried record's* addresses (`S.sc`, `S.maskSlot`, `S.entw`, `S.xcarry`,
+`S.ep`, `S.nk`, `S.xp`, `S.nxp`), while every consumer downstream of this
+predicate states its claims at the *caller's* (`sc`, `mk`, `entw`, `xcarry`,
+`ep`, `nk`, `xp`, `nxp`): the tail's UTF-8 window, `Γ_stage2.pre`'s staged
+objects, and `Γ_pipeline_units.post`'s `UnchangedOutside`.  Stated at the state
+alone the predicate says nothing about which addresses are the caller's, and an
+exit state whose carried record names other addresses satisfies it while the
+post's frame is a statement about a memory the run never wrote.  So the predicate
+names the caller: `exitArgs` is the slot-match between the argument list and
+`S`.  The seed produces it when it builds `S` from the staging's witnesses, and
+the split and back shapes carry it, so the tie arrives with the state rather than
+being assumed at the tail.
+
+What it still does *not* carry is the two calls' inputs' *contents* — the UTF-8
+window and stage-2's staged objects — but with the argument list in hand those
+are derivable from `pipelineStaging` at the same `mem`, which is what the
+discharge module does. -/
+def pipelineLoopExit (mem : Mem) (args : List Value) (s : State) : Prop :=
   ∃ (S : PipelineLoopCarried),
     s.pc = "for.cond.cleanup" ∧
+    exitArgs S args ∧
     readLanes32 s.mem S.ep S.k = some S.ent ∧
     S.ent.Pairwise (· < ·) ∧
     (∀ q ∈ S.ent, q < S.n.toNat) ∧
@@ -3380,7 +3421,12 @@ def pipelineLoopExit (mem : Mem) (s : State) : Prop :=
     PipelineLoopCount S s ∧
     readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
     S.xn ≤ S.xn0 + 64 * S.i ∧
-    UnchangedOutside mem s.mem (pipelineLoopWrites S)
+    readBytes s.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc ∧
+    HasBytes s.mem S.xp (4 * S.xn) ∧
+    UnchangedOutside mem s.mem (pipelineLoopWrites S) ∧
+    S.i ≤ pipelineBlocks S.n.toNat ∧
+    readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
+    S.xn0 < 2 ^ 63
 
 /-- info: 'LeanLLVM.Refinement.PipelineBodyArm.countReg' does not depend on any axioms -/
 #guard_msgs in
@@ -3402,7 +3448,7 @@ def pipelineLoopExit (mem : Mem) (s : State) : Prop :=
 #guard_msgs in
 #print axioms pipelineLoopWrites
 
-/-- info: 'LeanLLVM.Refinement.pipelineLoopExit' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.pipelineLoopExit' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pipelineLoopExit
 
@@ -3443,8 +3489,9 @@ The `.ub` this state's first control step produces is
 `PipelineBodyStep.gapState_step`, and it is the reason the predicate may not admit
 it: a bundle whose `exit` field quantified over this state would be asked for a
 return no fuel can produce. -/
-theorem gapState_not_exit (mem : Mem) : ¬ pipelineLoopExit mem gapState := by
-  rintro ⟨S, -, -, -, -, -, -, hcells, -⟩
+theorem gapState_not_exit (mem : Mem) (args : List Value) :
+    ¬ pipelineLoopExit mem args gapState := by
+  rintro ⟨S, -, -, -, -, -, -, -, hcells, -, -, -, -, -, -⟩
   simp only [tailCells] at hcells
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hb, -, -⟩ := hcells
   rw [gapState_no_b] at hb
@@ -3705,7 +3752,7 @@ step that reads it:
   whole list once is what makes the store at `entw`, the entry stream and the
   table's preservation derivable from the same conjunct rather than from a
   separate promise per frame. -/
-def pipelineLoopInvBack (mem : Mem) (base tab : Nat) (blocks : Nat) :
+def pipelineLoopInvBack (mem : Mem) (args : List Value) (base tab : Nat) (blocks : Nat) :
     Nat → State → Prop
   | 0, _ => False
   | r + 1, s =>
@@ -3781,7 +3828,10 @@ def pipelineLoopInvBack (mem : Mem) (base tab : Nat) (blocks : Nat) :
         -- extent reads as it did when the loop was entered.  A step's own
         -- frames are what hand it on, and the exit's frame is what the tail's
         -- post reads the caller's staging through.
-        UnchangedOutside mem s.mem (pipelineLoopWrites S)
+        UnchangedOutside mem s.mem (pipelineLoopWrites S) ∧
+        exitArgs S args ∧
+        readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
+        S.xn0 < 2 ^ 63
 
 /-- **The loop invariant's split shape.**  The state the loop's *first* iteration
 starts in: the arm's head as the program counter, the split block as the
@@ -3807,7 +3857,8 @@ store (`vent … S.sw`) reads it.
 The remaining conjuncts are `pipelineLoopInvBack`'s, in the same order and stated
 in full for the reason above; the docstring there gives each one's consumer and
 hander-on. -/
-def pipelineLoopInvSplit (mem : Mem) (base tab blocks : Nat) : Nat → State → Prop
+def pipelineLoopInvSplit (mem : Mem) (args : List Value) (base tab blocks : Nat) :
+    Nat → State → Prop
   | 0, _ => False
   | r + 1, s =>
       ∃ (S : PipelineLoopCarried),
@@ -3854,7 +3905,10 @@ def pipelineLoopInvSplit (mem : Mem) (base tab blocks : Nat) : Nat → State →
         -- extent reads as it did when the loop was entered.  A step's own
         -- frames are what hand it on, and the exit's frame is what the tail's
         -- post reads the caller's staging through.
-        UnchangedOutside mem s.mem (pipelineLoopWrites S)
+        UnchangedOutside mem s.mem (pipelineLoopWrites S) ∧
+        exitArgs S args ∧
+        readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
+        S.xn0 < 2 ^ 63
 
 /-- **The loop invariant.**  With `r + 1` iterations of budget the state is an
 iteration entry in one of the two shapes the loop can be entered in — the split
@@ -3872,17 +3926,18 @@ the handoff, which is the same statement twice.  So the entry shape goes into th
 invariant, where the step reads it, and the four arm steps each carry a first
 iteration for the split disjunct (`*_split_step`) beside the back-edge ones they
 already had. -/
-def pipelineLoopInv (mem : Mem) (base tab blocks : Nat) : Nat → State → Prop
-  | 0, s => pipelineLoopExit mem s
+def pipelineLoopInv (mem : Mem) (args : List Value) (base tab blocks : Nat) :
+    Nat → State → Prop
+  | 0, s => pipelineLoopExit mem args s
   | r + 1, s =>
-      pipelineLoopInvSplit mem base tab blocks (r + 1) s ∨
-        pipelineLoopInvBack mem base tab blocks (r + 1) s
+      pipelineLoopInvSplit mem args base tab blocks (r + 1) s ∨
+        pipelineLoopInvBack mem args base tab blocks (r + 1) s
 
 /-- **A live-budget invariant state is at one of the four arms' heads.**  Both
 shapes state it, so a step dispatches on the arm before it reads which shape the
 state is in. -/
-theorem pipelineLoopInv_pc {mem : Mem} {base tab blocks r : Nat} {s : State}
-    (h : pipelineLoopInv mem base tab blocks (r + 1) s) :
+theorem pipelineLoopInv_pc {mem : Mem} {args : List Value} {base tab blocks r : Nat}
+    {s : State} (h : pipelineLoopInv mem args base tab blocks (r + 1) s) :
     ∃ S : PipelineLoopCarried, s.pc = S.arm.head := by
   rcases h with ⟨S, hp, -⟩ | ⟨S, hp, -⟩
   · exact ⟨S, hp⟩
@@ -3890,18 +3945,19 @@ theorem pipelineLoopInv_pc {mem : Mem} {base tab blocks r : Nat} {s : State}
 
 /-- At a spent budget the invariant is the exit predicate, which is the shape
 `PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
-theorem pipelineLoopInv_zero (mem : Mem) (base tab : Nat) {blocks : Nat} {s : State}
-    (h : pipelineLoopInv mem base tab blocks 0 s) : pipelineLoopExit mem s := h
+theorem pipelineLoopInv_zero (mem : Mem) (args : List Value) (base tab : Nat)
+    {blocks : Nat} {s : State}
+    (h : pipelineLoopInv mem args base tab blocks 0 s) : pipelineLoopExit mem args s := h
 
 /-- **`PipelineLoop.exit`'s obligation, discharged.**  A spent budget is the loop's
 exit block, so from any state the invariant admits at `r = 0` the loop's exit is
 already reached and the prefix is the zero-length one.  The last iteration is
 therefore `step`'s at `r = 0` — where the arm's own exit test fires and the
 successor is `for.cond.cleanup` — and not `exit`'s. -/
-theorem pipelineLoop_exitObligation (calls : Calls) (mem : Mem) (base tab : Nat)
-    (blocks : Nat) (s : State)
-    (h : pipelineLoopInv mem base tab blocks 0 s) :
-    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit mem e ∧
+theorem pipelineLoop_exitObligation (calls : Calls) (mem : Mem) (args : List Value)
+    (base tab : Nat) (blocks : Nat) (s : State)
+    (h : pipelineLoopInv mem args base tab blocks 0 s) :
+    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit mem args e ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e :=
   ⟨s, 0, Nat.le_refl 0, h, fun k => by rw [Nat.zero_add]⟩
 
@@ -3989,7 +4045,7 @@ carrier: the section is at `[propext, Quot.sound]` or below. -/
 #guard_msgs in
 #print axioms eq_singleton_of_length_one
 
-/-- info: 'LeanLLVM.Refinement.pipelineLoopExit' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.pipelineLoopExit' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pipelineLoopExit
 

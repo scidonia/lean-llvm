@@ -434,6 +434,48 @@ theorem cursorRoom_not_implied_by_old_staging :
       exact Nat.not_lt_of_ge (Nat.le_add_right _ 72)
     simpa only [cursorRoom] using hlt
 
+/-! ### The extents the post names
+
+The run reports the arena's and the event stream's extents in its two cursor
+slots, and the post's reads, its frame and the specification's clauses are all
+stated at those two numbers.  A *consumer* that has to say something at them
+cannot take them from this post's existential witnesses: those are bound inside
+the post, and two existential witnesses are two numbers until something
+identifies them.  So the pair is a named component here —
+`pipelineOutputExtents` — and a reader who needs the extents names this rather
+than carrying a witness of its own.
+
+**What pins the pair, and why the bound is part of it.**  The slot's eight-byte
+word alone identifies a value modulo `2 ^ 64`: `w` and `w + 2 ^ 64` encode to
+the same eight bytes, so the word leaves the extent free in its residue class,
+and every longer readable prefix of the buffer would satisfy the post's read
+clause as well.  The bound is what makes the word decide the number: `bytesToNat`
+recovers the residue from the eight bytes, so the value below the word's width is
+unique (`pipelineOutputExtents_unique`).  A correspondence stated at these
+extents is then satisfiable at the run's own pair; without the bound it would
+still have to hold at every readable prefix, which is the shape the parser half
+carried before this clause existed.
+
+**The bound is the caller's already.**  It adds no promise to `pipelineStaging`:
+the stage-2 post's growth clauses give `ndst' ≤ ndst0 + n` and
+`nev' ≤ nev0 + 13 * n`, and the staging's capacities give
+`ndst0 + n + 64 ≤ dstcap.toNat < 2 ^ 64` and
+`nev0 + 13 * n ≤ evcap.toNat < 2 ^ 64`, so both bounds are arithmetic over
+numbers the record already names. -/
+def pipelineOutputExtents (args : List Value) (o : Outcome)
+    (ndst' nev' : Nat) : Prop :=
+  match o with
+  | .ret (some (.int 64 _)) m =>
+      match args with
+      | [.ptr _, .int 64 _, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 _,
+         .ptr _, .ptr _, .int 64 _, .ptr _, .ptr _, .ptr _, .int 64 _,
+         .ptr ndst, .ptr _, .int 64 _, .ptr nev, .ptr _, .int 64 _] =>
+          ndst' < 2 ^ 64 ∧ nev' < 2 ^ 64 ∧
+          readBytes m ndst 8 = some (wordBytes 8 ndst') ∧
+          readBytes m nev 8 = some (wordBytes 8 nev')
+      | _ => False
+  | _ => False
+
 /-! ### The post -/
 
 /-- The boundary projection of the loop-exit invariant and the tail's per-unit
@@ -484,7 +526,20 @@ callee returns should read the other two first: that narrowing is exactly the
 defect each of them carried, because a frame *below* the touched extent leaves the
 reserve outside every region the post names.  A frame *above* it is the opposite
 defect — a silence the run never kept — and the escape record carried both readings
-until the two clauses were separated. -/
+until the two clauses were separated.
+
+**The arena and event extents are named here, and named once.**  `ndst'` and
+`nev'` below were witnesses of the post only, which left a consumer that has to
+state something at them with nothing to name: the extents are the cursor slots'
+values, so a second witness is the same number only modulo `2 ^ 64`.  The post
+therefore names the pair through `pipelineOutputExtents`, whose clauses are the
+two slot reads together with the bound that makes each word decide its value, and
+a reader who needs "the extents this record reports" names that component.  The
+alternative — an equality here pinning this post's pair to whatever a second
+party calls the extents — is not smaller: it needs that party's extents to be a
+term both sides can write, and the only such term is the slot word plus the
+bound, which is what the component states.  So the component is the whole of the
+change, and it is where the next reader meets the extents. -/
 def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
     (o : Outcome) : Prop :=
   match o with
@@ -497,10 +552,9 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
           (verdict = 0 ∨ verdict = 1) ∧
           ∃ (nk' nxp' ndst' nev' : Nat) (ent : List Nat) (ps : List Nat)
             (out evs : List UInt8),
+            pipelineOutputExtents args o ndst' nev' ∧
             readBytes m nk 8 = some (wordBytes 8 nk') ∧
             readBytes m nxp 8 = some (wordBytes 8 nxp') ∧
-            readBytes m ndst 8 = some (wordBytes 8 ndst') ∧
-            readBytes m nev 8 = some (wordBytes 8 nev') ∧
             readLanes32 m ep nk' = some ent ∧
             readBytes m xp (4 * nxp') = some (positionsBytes 4 ps) ∧
             readBytes m dst ndst' = some out ∧
@@ -514,6 +568,59 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
                (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
       | _ => False
   | _ => False
+
+/-! ### The extent pair is the record's own
+
+The bound in `pipelineOutputExtents` is not decoration: it is what turns the
+slot's word into the extent.  The two lemmas below are the arithmetic — the
+decoder `bytesToNat` reads the residue back out of the eight bytes, so a word and
+a bound decide the value — and the corollary states the consequence at the shape
+the post is written in: a pair satisfying the component is *the* pair, so a
+correspondence stated at the record's extents is satisfiable at one pair rather
+than at every readable prefix. -/
+
+/-- **Eight bytes of a word decide the value's residue.**  `bytesToNat` is a
+function of the bytes, and `natToBytes_toNat` says it recovers `v % 256 ^ 8`. -/
+theorem wordBytes_residue {x y : Nat} (h : wordBytes 8 x = wordBytes 8 y) :
+    x % 2 ^ 64 = y % 2 ^ 64 := by
+  have h1 := congrArg bytesToNat h
+  simp only [wordBytes, natToBytes_toNat,
+    show (256 : Nat) ^ 8 = 2 ^ 64 from by decide] at h1
+  exact h1
+
+/-- **A slot's word and the bound decide the value.**  Two numbers below the
+word's width whose encodings are the same eight bytes are equal; above it the
+encoding is only the residue, which is why the component carries the bound. -/
+theorem slotExtent_eq {m : Mem} {slot x y : Nat} (hx : x < 2 ^ 64)
+    (hy : y < 2 ^ 64)
+    (h : readBytes m slot 8 = some (wordBytes 8 x))
+    (h' : readBytes m slot 8 = some (wordBytes 8 y)) : x = y := by
+  have hw : wordBytes 8 x = wordBytes 8 y :=
+    Option.some.inj (h.symm.trans h')
+  have hr := wordBytes_residue hw
+  rw [Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt hy] at hr
+  exact hr
+
+/-- **The pair the post names is unique.**  At the argument shape the post is
+stated at the component reads only the two cursor slots, so two pairs satisfying
+it for the same outcome agree: each extent is its slot's word below the bound. -/
+theorem pipelineOutputExtents_unique {m : Mem} {ndst nev : Nat}
+    {ndst' nev' ndst'' nev'' : Nat}
+    (h : pipelineOutputExtents
+      [.ptr 0, .int 64 0, .ptr 0, .ptr 0, .ptr 0, .ptr 0, .int 64 0, .ptr 0,
+       .ptr 0, .int 64 0, .ptr 0, .ptr 0, .ptr 0, .int 64 0, .ptr ndst,
+       .ptr 0, .int 64 0, .ptr nev, .ptr 0, .int 64 0]
+      (.ret (some (.int 64 0)) m) ndst' nev')
+    (h' : pipelineOutputExtents
+      [.ptr 0, .int 64 0, .ptr 0, .ptr 0, .ptr 0, .ptr 0, .int 64 0, .ptr 0,
+       .ptr 0, .int 64 0, .ptr 0, .ptr 0, .ptr 0, .int 64 0, .ptr ndst,
+       .ptr 0, .int 64 0, .ptr nev, .ptr 0, .int 64 0]
+      (.ret (some (.int 64 0)) m) ndst'' nev'') :
+    ndst' = ndst'' ∧ nev' = nev'' := by
+  simp only [pipelineOutputExtents] at h h'
+  obtain ⟨hx, hy, hw, hz⟩ := h
+  obtain ⟨hx', hy', hw', hz'⟩ := h'
+  exact ⟨slotExtent_eq hx hx' hw hw', slotExtent_eq hy hy' hz hz'⟩
 
 /-! ### The record -/
 
@@ -564,8 +671,10 @@ def Γ_pipeline_units (tab base : Nat) : MemContract where
 
 /-! ### Axiom footprints
 
-The room derivation carries no axioms, and the witness only `propext` (its
-`decide` closes a closed comparison).
+The room derivation carries no axioms, and the witnesses only `propext` (their
+`decide` closes a closed comparison).  The extent lemmas sit at `propext` and
+`Quot.sound` — `bytesToNat` and the division lemmas are choice-free, so pinning
+the extents adds no carrier.
 -/
 
 /-- info: 'LeanLLVM.Refinement.cursorRoom' does not depend on any axioms -/
@@ -587,5 +696,13 @@ The room derivation carries no axioms, and the witness only `propext` (its
 /-- info: 'LeanLLVM.Refinement.prefix_slot_refused' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms prefix_slot_refused
+
+/-- info: 'LeanLLVM.Refinement.pipelineOutputExtents' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineOutputExtents
+
+/-- info: 'LeanLLVM.Refinement.pipelineOutputExtents_unique' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineOutputExtents_unique
 
 end LeanLLVM.Refinement

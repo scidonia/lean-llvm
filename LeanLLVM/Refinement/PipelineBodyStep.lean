@@ -26,6 +26,11 @@ set_option maxHeartbeats 1000000
 
 namespace LeanLLVM.Refinement
 
+-- The caller's argument list is an index of the loop's invariant and exit, and
+-- every lemma below reads it: an implicit binder here threads it through the
+-- step, the exit and the seed without restating it at each call site.
+variable {args : List Value}
+
 open LeanLLVM
 open LeanLLVM.JSON (Block32 IsBackslashB)
 open LeanLLVM.Refinement.JsonScanSpec
@@ -2019,6 +2024,12 @@ def usUsSucc (S : PipelineLoopCarried) (ins o p : Bool) (k' : Nat)
     (sw w : BitVec 64) : PipelineLoopCarried :=
   { S with arm := .pos8NoGate, i := S.i + 1, iw := vinc S.iw, sw := sw, kw := BitVec.ofNat 64 k', stM := ⟨ins, o && p⟩, opened := o, ppar := p, inside := ins, k := k', ent := S.ent ++ streamPrefix [w] S.i 1 }
 
+theorem exitArgs_usUsSucc {S : PipelineLoopCarried} {args : List Value}
+    {ins o p : Bool} {k' : Nat} {sw w : BitVec 64} (h : exitArgs S args) :
+    exitArgs (usUsSucc S ins o p k' sw w) args := by
+  simpa only [exitArgs, usUsSucc] using h
+
+
 /-- **The frame a gate-off iteration carries.**  The same composition without the
 escape list: the two stream slots and the carry slot are never written, so their
 entries come from the successor's list unchanged and the incoming frame supplies
@@ -2392,9 +2403,9 @@ the frames that leave every static region in place. -/
 theorem usUs_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks n : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks (n + 1) s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks (n + 1) s)
     (hn : 0 < n) (hpc0 : s.pc = "for.body.us.us") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem base tab blocks n e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem args base tab blocks n e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   cases n with
@@ -2402,7 +2413,7 @@ theorem usUs_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   | succ n' =>
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .pos8NoGate := by
     revert hpc0
     rw [hpcS]
@@ -2461,7 +2472,7 @@ theorem usUs_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_⟩
+    ?_, exitArgs_usUsSucc hexitArgs, hnxpTie, hxn0lt⟩
   · rfl
   · show some s.pc = some "for.body.us.us"
     rw [hpc0]
@@ -2527,14 +2538,14 @@ successor is the cleanup — the loop's exit, which the invariant admits at `0`.
 theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks 1 s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks 1 s)
     (hpc0 : s.pc = "for.body.us.us") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks 0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks 0 e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .pos8NoGate := by
     revert hpc0
     rw [hpcS]
@@ -2584,8 +2595,16 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     tail_cells_absent
   refine ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
-    ?_, ?_, ?_, ?_⟩, hrunE⟩
+    hpcE, exitArgs_usUsSucc hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact usUsSucc_window (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem)
+        hsep (natToBytes_length ..) (by omega) hmaskFrame (frame_loose hentFrame) hwin, by
+      show HasBytes e.mem S.xp (4 * S.xn)
+      rw [hmemE]
+      exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
+        hmaskFrame (frame_loose hentFrame) hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -2703,6 +2722,12 @@ theorem b8Call_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
 def us83Succ (S : PipelineLoopCarried) (ins o p : Bool) (k' : Nat)
     (sw w : BitVec 64) : PipelineLoopCarried :=
   { S with arm := .b8NoGate, i := S.i + 1, iw := vinc S.iw, sw := sw, kw := BitVec.ofNat 64 k', stM := ⟨ins, o && p⟩, opened := o, ppar := p, inside := ins, k := k', ent := S.ent ++ streamPrefix [w] S.i 1 }
+
+theorem exitArgs_us83Succ {S : PipelineLoopCarried} {args : List Value}
+    {ins o p : Bool} {k' : Nat} {sw w : BitVec 64} (h : exitArgs S args) :
+    exitArgs (us83Succ S ins o p k' sw w) args := by
+  simpa only [exitArgs, us83Succ] using h
+
 
 /-- **The frame a gate-off iteration carries.**  The same composition without the
 escape list: the two stream slots and the carry slot are never written, so their
@@ -2877,9 +2902,9 @@ theorem us83Succ_agree {S : PipelineLoopCarried} {e : State} {env : Env}
 theorem us83_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks n : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks (n + 1) s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks (n + 1) s)
     (hn : 0 < n) (hpc0 : s.pc = "for.body.us83") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem base tab blocks n e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem args base tab blocks n e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   cases n with
@@ -2887,7 +2912,7 @@ theorem us83_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   | succ n' =>
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .b8NoGate := by
     revert hpc0
     rw [hpcS]
@@ -2945,7 +2970,7 @@ theorem us83_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_⟩
+    ?_, exitArgs_us83Succ hexitArgs, hnxpTie, hxn0lt⟩
   · rfl
   · show some s.pc = some "for.body.us83"
     rw [hpc0]
@@ -3013,14 +3038,14 @@ theorem us83_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
 theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks 1 s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks 1 s)
     (hpc0 : s.pc = "for.body.us83") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks 0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks 0 e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .b8NoGate := by
     revert hpc0
     rw [hpcS]
@@ -3069,8 +3094,16 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     tail_cells_absent
   refine ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (vshr13 w1 w2 w3 w4) w,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
-    ?_, ?_, ?_, ?_⟩, hrunE⟩
+    hpcE, exitArgs_us83Succ hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact usUsSucc_window (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem)
+        hsep (natToBytes_length ..) (by omega) hmaskFrame (frame_loose hentFrame) hwin, by
+      show HasBytes e.mem S.xp (4 * S.xn)
+      rw [hmemE]
+      exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
+        hmaskFrame (frame_loose hentFrame) hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -4143,6 +4176,19 @@ def bodySucc (S : PipelineLoopCarried) (ins bm pm : Bool) (k' xn : Nat)
     (sw w : BitVec 64) (stE : ClassState) (eb ep : Bool) : PipelineLoopCarried :=
   { S with arm := .b8Gate, i := S.i + 1, iw := vinc S.iw, sw := sw, kw := BitVec.ofNat 64 k', stM := ⟨ins, bm && pm⟩, opened := bm, ppar := pm, inside := ins, k := k', xn := xn, stE := stE, prevb := eb, prevs := ep, ent := S.ent ++ streamPrefix [w] S.i 1 }
 
+theorem exitArgs_usSucc {S : PipelineLoopCarried} {args : List Value}
+    {ins bm pm : Bool} {k' xn : Nat} {sw w : BitVec 64} {stE : ClassState}
+    {eb ep : Bool} (h : exitArgs S args) :
+    exitArgs (usSucc S ins bm pm k' xn sw w stE eb ep) args := by
+  simpa only [exitArgs, usSucc] using h
+
+theorem exitArgs_bodySucc {S : PipelineLoopCarried} {args : List Value}
+    {ins bm pm : Bool} {k' xn : Nat} {sw w : BitVec 64} {stE : ClassState}
+    {eb ep : Bool} (h : exitArgs S args) :
+    exitArgs (bodySucc S ins bm pm k' xn sw w stE eb ep) args := by
+  simpa only [exitArgs, bodySucc] using h
+
+
 /-- The gate-on arm's outgoing builder holds a value for every cell the next
 iteration's incoming builder binds. -/
 theorem us_cells_agree' (env : Env) (n : BitVec 64)
@@ -4360,9 +4406,9 @@ and the frames that leave every static region in place. -/
 theorem us_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks n : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks (n + 1) s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks (n + 1) s)
     (hn : 0 < n) (hpc0 : s.pc = "for.body.us") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem base tab blocks n e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem args base tab blocks n e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   cases n with
@@ -4370,7 +4416,7 @@ theorem us_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   | succ n' =>
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .pos8Gate := by
     revert hpc0
     rw [hpcS]
@@ -4453,7 +4499,7 @@ theorem us_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_⟩
+    ?_, exitArgs_usSucc hexitArgs, hnxpTie, hxn0lt⟩
   · rfl
   · show some s.pc = some "for.body.us"
     rw [hpc0]
@@ -4516,9 +4562,9 @@ successor shape: only the entry call differs. -/
 theorem body_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks n : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks (n + 1) s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks (n + 1) s)
     (hn : 0 < n) (hpc0 : s.pc = "for.body") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem base tab blocks n e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInvBack mem args base tab blocks n e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   cases n with
@@ -4526,7 +4572,7 @@ theorem body_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   | succ n' =>
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .b8Gate := by
     revert hpc0
     rw [hpcS]
@@ -4609,7 +4655,7 @@ theorem body_step_head (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_⟩
+    ?_, exitArgs_bodySucc hexitArgs, hnxpTie, hxn0lt⟩
   · rfl
   · show some s.pc = some "for.body"
     rw [hpc0]
@@ -4673,14 +4719,14 @@ successor is the cleanup — the loop's exit, which the invariant admits at `0`.
 theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks 1 s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks 1 s)
     (hpc0 : s.pc = "for.body.us") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks 0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks 0 e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .pos8Gate := by
     revert hpc0
     rw [hpcS]
@@ -4753,8 +4799,14 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   refine ⟨e, je, hje, ⟨usSucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
-    ?_, ?_, ?_, ?_⟩, hrunE⟩
+    hpcE, exitArgs_usSucc hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact hwinR3, by
+      show HasBytes e.mem S.xp (4 * (S.xn + len))
+      rw [hmemE]
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -4771,14 +4823,14 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
 theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (s : State)
-    (mem : Mem) (h : pipelineLoopInvBack mem base tab blocks 1 s)
+    (mem : Mem) (h : pipelineLoopInvBack mem args base tab blocks 1 s)
     (hpc0 : s.pc = "for.body") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks 0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks 0 e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
     hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry, hflags,
-    hroomk, hroomxn, hhas, hdisj, htail, hframe⟩ := h
+    hroomk, hroomxn, hhas, hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .b8Gate := by
     revert hpc0
     rw [hpcS]
@@ -4851,8 +4903,14 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   refine ⟨e, je, hje, ⟨bodySucc S (carry64 lo hi stm).inside (IsBackslashB (hi ⟨31, by decide⟩))
       (carry64 lo hi stm).oddRun k' (S.xn + len) (vshr13 w1 w2 w3 w4) w ste
       (IsBackslashB (hi ⟨31, by decide⟩)) ste.oddRun,
-    hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
-    ?_, ?_, ?_, ?_⟩, hrunE⟩
+    hpcE, exitArgs_bodySucc hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc, hsuccStream.2.2, hpreE', htailE,
+    ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact hwinR3, by
+      show HasBytes e.mem S.xp (4 * (S.xn + len))
+      rw [hmemE]
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -5061,15 +5119,15 @@ exit, because the exit test fires on a one-block document. -/
 theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (r : Nat) (s : State)
-    (mem : Mem) (h : pipelineLoopInvSplit mem base tab blocks (r + 1) s)
+    (mem : Mem) (h : pipelineLoopInvSplit mem args base tab blocks (r + 1) s)
     (hpc0 : s.pc = "for.body.us.us") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks r e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks r e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hi0, hsw, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd,
     hdelim, hinS, hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow,
     hblocks, hstream, hord, hbnd, hcarry, hflags, hroomk, hroomxn, hhas,
-    hdisj, htail, hframe⟩ := h
+    hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .pos8NoGate := by
     revert hpc0
     rw [hpcS]
@@ -5132,8 +5190,16 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       refine ⟨e, je, hje, ⟨usUsSucc S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (vshr13 w1 w2 w3 w4) w,
-        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
+        hpcE, exitArgs_usUsSucc hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact usUsSucc_window (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem)
+        hsep (natToBytes_length ..) (by omega) hmaskFrame (frame_loose hentFrame') hwin, by
+      show HasBytes e.mem S.xp (4 * S.xn)
+      rw [hmemE]
+      exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
+        hmaskFrame (frame_loose hentFrame') hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -5191,7 +5257,7 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-        ?_⟩
+        ?_, exitArgs_usUsSucc hexitArgs, hnxpTie, hxn0lt⟩
       · rfl
       · show some s.pc = some "for.body.us.us"
         rw [hpc0]
@@ -5397,15 +5463,15 @@ theorem us83Succ_split_agree {S : PipelineLoopCarried} {e : State} {env : Env}
 theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (r : Nat) (s : State)
-    (mem : Mem) (h : pipelineLoopInvSplit mem base tab blocks (r + 1) s)
+    (mem : Mem) (h : pipelineLoopInvSplit mem args base tab blocks (r + 1) s)
     (hpc0 : s.pc = "for.body.us83") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks r e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks r e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hi0, hsw, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd,
     hdelim, hinS, hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow,
     hblocks, hstream, hord, hbnd, hcarry, hflags, hroomk, hroomxn, hhas,
-    hdisj, htail, hframe⟩ := h
+    hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .b8NoGate := by
     revert hpc0
     rw [hpcS]
@@ -5467,8 +5533,16 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       refine ⟨e, je, hje, ⟨us83Succ S (carry64 lo hi stm).inside
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (vshr13 w1 w2 w3 w4) w,
-        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
+        hpcE, exitArgs_us83Succ hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact usUsSucc_window (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem)
+        hsep (natToBytes_length ..) (by omega) hmaskFrame (frame_loose hentFrame') hwin, by
+      show HasBytes e.mem S.xp (4 * S.xn)
+      rw [hmemE]
+      exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
+        hmaskFrame (frame_loose hentFrame') hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -5526,7 +5600,7 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-        ?_⟩
+        ?_, exitArgs_us83Succ hexitArgs, hnxpTie, hxn0lt⟩
       · rfl
       · show some s.pc = some "for.body.us83"
         rw [hpc0]
@@ -5745,15 +5819,15 @@ theorem usSucc_split_agree {S : PipelineLoopCarried} {e : State} {env : Env}
 theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (r : Nat) (s : State)
-    (mem : Mem) (h : pipelineLoopInvSplit mem base tab blocks (r + 1) s)
+    (mem : Mem) (h : pipelineLoopInvSplit mem args base tab blocks (r + 1) s)
     (hpc0 : s.pc = "for.body.us") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks r e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks r e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hi0, hsw, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd,
     hdelim, hinS, hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow,
     hblocks, hstream, hord, hbnd, hcarry, hflags, hroomk, hroomxn, hhas,
-    hdisj, htail, hframe⟩ := h
+    hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .pos8Gate := by
     revert hpc0
     rw [hpcS]
@@ -5840,8 +5914,14 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (S.xn + len) (vshr13 w1 w2 w3 w4) w ste (IsBackslashB (hi ⟨31, by decide⟩))
           ste.oddRun,
-        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
+        hpcE, exitArgs_usSucc hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact hwinR3, by
+      show HasBytes e.mem S.xp (4 * (S.xn + len))
+      rw [hmemE]
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -5917,7 +5997,7 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-        ?_⟩
+        ?_, exitArgs_usSucc hexitArgs, hnxpTie, hxn0lt⟩
       · rfl
       · show some s.pc = some "for.body.us"
         rw [hpc0]
@@ -6130,15 +6210,15 @@ theorem bodySucc_split_agree {S : PipelineLoopCarried} {e : State} {env : Env}
 theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (r : Nat) (s : State)
-    (mem : Mem) (h : pipelineLoopInvSplit mem base tab blocks (r + 1) s)
+    (mem : Mem) (h : pipelineLoopInvSplit mem args base tab blocks (r + 1) s)
     (hpc0 : s.pc = "for.body") :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks r e ∧
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks r e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   obtain ⟨S, hpcS, hpre', hi0, hsw, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd,
     hdelim, hinS, hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow,
     hblocks, hstream, hord, hbnd, hcarry, hflags, hroomk, hroomxn, hhas,
-    hdisj, htail, hframe⟩ := h
+    hdisj, htail, hframe, hexitArgs, hnxpTie, hxn0lt⟩ := h
   have harm : S.arm = .b8Gate := by
     revert hpc0
     rw [hpcS]
@@ -6225,8 +6305,14 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
           (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi stm).oddRun k'
           (S.xn + len) (vshr13 w1 w2 w3 w4) w ste (IsBackslashB (hi ⟨31, by decide⟩))
           ste.oddRun,
-        hpcE, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
-        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, ?_⟩, hrunE⟩
+        hpcE, exitArgs_bodySucc hexitArgs, hsuccStream.1, hsuccStream.2.1, hsuccDoc,
+        hsuccStream.2.2, hpreE', htailE, ?_, ?_, ?_, by
+      show readBytes e.mem S.b (64 * pipelineBlocks S.n.toNat) = some S.doc
+      rw [hmemE, ← hblocks]
+      exact hwinR3, by
+      show HasBytes e.mem S.xp (4 * (S.xn + len))
+      rw [hmemE]
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -6302,7 +6388,7 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-        ?_⟩
+        ?_, exitArgs_bodySucc hexitArgs, hnxpTie, hxn0lt⟩
       · rfl
       · show some s.pc = some "for.body"
         rw [hpc0]
@@ -6383,8 +6469,8 @@ and a live one the head step. -/
 theorem pipelineLoop_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : PipelineUnits tab base s2 Γ2) (blocks : Nat)
     (hcap : 64 * blocks + 63 < 2 ^ 32) (r : Nat) (s : State) (mem : Mem)
-    (h : pipelineLoopInv mem base tab blocks (r + 1) s) :
-    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem base tab blocks r e ∧
+    (h : pipelineLoopInv mem args base tab blocks (r + 1) s) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧ pipelineLoopInv mem args base tab blocks r e ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody s =
         runFuel (pipelineCalls tab base s2) k pipelineBody e := by
   rcases h with hsplit | hback
@@ -6404,10 +6490,10 @@ theorem pipelineLoop_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact body_split_step tab base s2 Γ2 units blocks hcap r s mem hsplit hpc
   · cases r with
     | zero =>
-        have hh : pipelineLoopInvBack mem base tab blocks 1 s := hback
+        have hh : pipelineLoopInvBack mem args base tab blocks 1 s := hback
         obtain ⟨S, hpc, hpre, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
           hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry,
-          hflags, hroomk, hroomxn, hhas, hdisj, -, -⟩ := hback
+          hflags, hroomk, hroomxn, hhas, hdisj, -, -, -⟩ := hback
         have hcases : S.arm = .pos8NoGate ∨ S.arm = .pos8Gate ∨
             S.arm = .b8NoGate ∨ S.arm = .b8Gate := by
           cases S.arm <;> simp
@@ -6421,10 +6507,10 @@ theorem pipelineLoop_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
         · rw [h] at hpc
           exact body_step_exit tab base s2 Γ2 units blocks hcap s mem hh hpc
     | succ r' =>
-        have hh : pipelineLoopInvBack mem base tab blocks (r' + 1 + 1) s := hback
+        have hh : pipelineLoopInvBack mem args base tab blocks (r' + 1 + 1) s := hback
         obtain ⟨S, hpc, hpre, hiblk, hshr, hiw, hagree, hb, hwin, hsc, hodd, hdelim, hinS,
           hwsS, hbsS, hctl, htabEq, htab, hkw, hcnt, hxpExt, hkgrow, hxngrow, hblocks, hstream, hord, hbnd, hcarry,
-          hflags, hroomk, hroomxn, hhas, hdisj, -, -⟩ := hback
+          hflags, hroomk, hroomxn, hhas, hdisj, -, -, -⟩ := hback
         have hcases : S.arm = .pos8NoGate ∨ S.arm = .pos8Gate ∨
             S.arm = .b8NoGate ∨ S.arm = .b8Gate := by
           cases S.arm <;> simp
@@ -6482,12 +6568,13 @@ def pipelineLoop (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
     PipelineLoop (pipelineCalls tab base s2) pipelineBody where
   N := blocks
   cost := 1
-  Inv := fun mem r s => pipelineLoopInv mem base tab blocks r s
-  Exit := pipelineLoopExit
-  step := fun mem r s h => pipelineLoop_step tab base s2 Γ2 units blocks hcap r s mem h
-  exit := fun mem s h => by
+  Inv := fun mem args r s => pipelineLoopInv mem args base tab blocks r s
+  Exit := fun mem args s => pipelineLoopExit mem args s
+  step := fun mem args r s h =>
+    pipelineLoop_step tab base s2 Γ2 units blocks hcap r s mem h
+  exit := fun mem args s h => by
     obtain ⟨e, j, hj, hex, hrun⟩ :=
-      pipelineLoop_exitObligation (pipelineCalls tab base s2) mem base tab blocks s h
+      pipelineLoop_exitObligation (pipelineCalls tab base s2) mem args base tab blocks s h
     exact ⟨e, j, by omega, hex, hrun⟩
 
 /-! ### The exit's stream, as one read
@@ -6498,9 +6585,9 @@ stage-2 call reads.  `pipelineExit_stream` is the projection of that conjunct,
 stated so a consumer does not open the predicate. -/
 
 /-- **The exit hands the tail the whole stream.** -/
-theorem pipelineExit_stream {mem : Mem} {s : State} (h : pipelineLoopExit mem s) :
+theorem pipelineExit_stream {mem : Mem} {s : State} (h : pipelineLoopExit mem args s) :
     ∃ (S : PipelineLoopCarried), readLanes32 s.mem S.ep S.k = some S.ent := by
-  obtain ⟨S, _hpc, hent, -⟩ := h
+  obtain ⟨S, _hpc, -, hent, -⟩ := h
   exact ⟨S, hent⟩
 
 /-! ### The tail: the exit block, the two branches and stage 2
@@ -7074,9 +7161,9 @@ registers the exit block's store, its UTF-8 call and its stage-2 call read, at t
 values the carried record supplies, so every state it admits holds them.  The
 empty environment is therefore refused: the predicate is no longer the "names no
 register" statement it was, and the predecessor field is part of it too. -/
-theorem pipelineLoopExit_cells {mem : Mem} {s : State} (h : pipelineLoopExit mem s) :
+theorem pipelineLoopExit_cells {mem : Mem} {s : State} (h : pipelineLoopExit mem args s) :
     ∃ S : PipelineLoopCarried, s.pre = some S.arm.head ∧ tailCells S s.env := by
-  obtain ⟨S, -, -, -, -, -, hpre, htail, -⟩ := h
+  obtain ⟨S, -, -, -, -, -, -, hpre, htail, -⟩ := h
   exact ⟨S, hpre, htail⟩
 
 /-! ### Axiom footprints
@@ -7128,7 +7215,7 @@ refusal), so their footprints are the unit records' and the read-back's. -/
 #print axioms pipelineExit_run
 
 
-/-- info: 'LeanLLVM.Refinement.pipelineLoopExit_cells' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.pipelineLoopExit_cells' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pipelineLoopExit_cells
 /-! ### The seed's three steps, and the shape they reach
@@ -7651,8 +7738,10 @@ theorem seedInvSplit {base tab sc mk entw ep nk xp nxp xcarry dst ndst ev nev er
     (hshr : (BitVec.ofNat 64 (r + 1)) = (n + litv 64 63) >>> (litv 64 6).toNat)
     (hdisj : DisjointRegions (pipelineLoopRegions
       (seedCarried a base tab sc mk entw ep xp nxp xcarry (r + 1) nxp0 n doc nk dst ndst ev nev err dstcap evcap sel)
-      (r + 1))) :
-    pipelineLoopInvSplit mem base tab (r + 1) (r + 1) e3 := by
+      (r + 1)))
+    (htie : exitArgs (seedCarried a base tab sc mk entw ep xp nxp xcarry (r + 1) nxp0 n doc nk dst ndst ev nev err dstcap evcap sel) args)
+    (hxn0 : nxp0 < 2 ^ 63) :
+    pipelineLoopInvSplit mem args base tab (r + 1) (r + 1) e3 := by
   refine ⟨seedCarried a base tab sc mk entw ep xp nxp xcarry (r + 1) nxp0 n doc nk dst ndst ev nev err dstcap evcap sel,
     hpc, hpre, by simp [seedCarried], by simp [seedCarried], by simp [seedCarried],
     by simp [seedCarried], by simp [seedCarried], ?_, by simp [seedCarried], ?_, ?_,
@@ -7660,7 +7749,7 @@ theorem seedInvSplit {base tab sc mk entw ep nk xp nxp xcarry dst ndst ev nev er
     by simp [seedCarried], by simp [seedCarried], by simp [seedCarried],
     by simp [seedCarried], ?_, by simp [seedCarried], ?_, by simp [seedCarried],
     ?_, ?_, ?_, ?_, by simp [seedCarried], by simp [seedCarried],
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htie, hnxp, hxn0⟩
   · exact seedAgree_split henv hshr
   · rw [hmem]; exact hwin
   · rw [hmem]; exact hsc
@@ -7700,8 +7789,8 @@ caller picks separately. -/
 theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Mem}
     {next : Nat} (hst : pipelineStaging tab base args mem) :
     ∃ (e : State) (j : Nat), j ≤ 3 ∧
-      ((pipelineBlocks (pipelineArgLen args) = 0 ∧ pipelineLoopExit mem e) ∨
-        pipelineLoopInv mem base tab (pipelineBlocks (pipelineArgLen args))
+      ((pipelineBlocks (pipelineArgLen args) = 0 ∧ pipelineLoopExit mem args e) ∨
+        pipelineLoopInv mem args base tab (pipelineBlocks (pipelineArgLen args))
           (pipelineBlocks (pipelineArgLen args)) e) ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
         (EntryState pipelineBody args mem next) =
@@ -7822,7 +7911,10 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
           .ptr xcarry, .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap,
           .ptr nev, .ptr err, .int 64 sel] = n.toNat from rfl, hn, ← hb]
       exact Or.inr (Or.inl (seedInvSplit (a := .b8Gate) hpc3 hpre3' henv3' hmem3'
-        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS))
+        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS
+        (by simp [exitArgs, seedCarried])
+        (by simpa using (cursorRoom_bounds hroomxn' (i := 0) (nblk := r + 1)
+          (by omega) (by decide)).2)))
     · -- the B8 arm without the gate
       refine ⟨e3, 3, Nat.le_refl 3, ?_, hrun⟩
       rw [show pipelineArgLen [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw,
@@ -7830,7 +7922,10 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
           .ptr xcarry, .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap,
           .ptr nev, .ptr err, .int 64 sel] = n.toNat from rfl, hn, ← hb]
       exact Or.inr (Or.inl (seedInvSplit (a := .b8NoGate) hpc3 hpre3' henv3' hmem3'
-        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS))
+        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS
+        (by simp [exitArgs, seedCarried])
+        (by simpa using (cursorRoom_bounds hroomxn' (i := 0) (nblk := r + 1)
+          (by omega) (by decide)).2)))
   · -- the POS8 split block
     obtain ⟨e2, hstep2, henv2, hpc2, hpre2, hmem2, hnext2⟩ :=
       seedLrPh_step_one (pipelineCalls tab base s2) e1 base sc mk entw ep nk xp nxp
@@ -7865,7 +7960,10 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
           .ptr xcarry, .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap,
           .ptr nev, .ptr err, .int 64 sel] = n.toNat from rfl, hn, ← hb]
       exact Or.inr (Or.inl (seedInvSplit (a := .pos8Gate) hpc3 hpre3' henv3' hmem3'
-        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS))
+        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS
+        (by simp [exitArgs, seedCarried])
+        (by simpa using (cursorRoom_bounds hroomxn' (i := 0) (nblk := r + 1)
+          (by omega) (by decide)).2)))
     · -- the POS8 arm without the gate
       refine ⟨e3, 3, Nat.le_refl 3, ?_, hrun⟩
       rw [show pipelineArgLen [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw,
@@ -7873,7 +7971,10 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
           .ptr xcarry, .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap,
           .ptr nev, .ptr err, .int 64 sel] = n.toNat from rfl, hn, ← hb]
       exact Or.inr (Or.inl (seedInvSplit (a := .pos8NoGate) hpc3 hpre3' henv3' hmem3'
-        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS))
+        hwin' hsc htab hnxp hxp' hcarry hroomk' hroomxn' hblocks hshr hdisjS
+        (by simp [exitArgs, seedCarried])
+        (by simpa using (cursorRoom_bounds hroomxn' (i := 0) (nblk := r + 1)
+          (by omega) (by decide)).2)))
 
 /-! ### Axiom footprints of the seed's three steps
 
@@ -8225,7 +8326,7 @@ witness chosen in any statement here.
 
 
 
-/-- info: 'LeanLLVM.Refinement.pipelineExit_stream' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.pipelineExit_stream' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms pipelineExit_stream
 
