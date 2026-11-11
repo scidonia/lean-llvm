@@ -1,0 +1,10 @@
+# capture-stage2.sh: the walk's local objects, flattened to parameters.
+# alloca	parameter	reason
+  %d.i = alloca double	ptr %d.i	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %c.i = alloca %struct.OdCur	ptr %c.i	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %ctype.i = alloca [520 x i8]	ptr %ctype.i	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %cst.i = alloca [520 x i8]	ptr %cst.i	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %t352.i = alloca %struct.OdTok	ptr %t352.i	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %s = alloca %struct.S2	ptr %s	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %z = alloca %struct.ZOut	ptr %z	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %e = alloca %struct.Err	ptr %e	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object

@@ -1,0 +1,44 @@
+# The stage-2 walk as emitted and committed: opcodes and call targets.
+# Regenerate with probes/install/ir/capture-stage2.sh.
+#
+# The derivation, measured at three points, in this order:
+#   the fused emission of the same source at the same flags: 1754 lines / 233 blocks,
+#     carrying binary64 (the always_inline number path);
+#   the same source with the twelve helpers noinline: 944 lines / 165 blocks, no
+#     binary64 and no vector operation -- this is the point that makes "the FP is
+#     semantic, not surface" a measurement;
+#   the fixture below, with the staging objects flattened to parameters: 937 lines,
+#     606 instruction(s), 165 block(s), 23 phi(s), 4 alloca(s), 1 `ret`.
+#
+# The body is the switch-lowered form: 10 `switch` became comparison chains.
+#
+call @llvm.lifetime.end.p0
+call @llvm.lifetime.start.p0
+call @llvm.memset.p0.i64
+call @llvm.trap
+call @num_fast_el1
+call @od_scalar_value
+call @s2_after_value
+call @s2_init
+call @s2_string_body
+call @s2_value_pos
+opcode add
+opcode alloca
+opcode and
+opcode br
+opcode call
+opcode getelementptr
+opcode icmp
+opcode load
+opcode lshr
+opcode mul
+opcode or
+opcode phi
+opcode ret
+opcode select
+opcode store
+opcode sub
+opcode trunc
+opcode unreachable
+opcode xor
+opcode zext

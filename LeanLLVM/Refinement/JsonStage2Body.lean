@@ -59,18 +59,23 @@ Proved below:
 
 Not proved, and named with the obligation each would need:
 
-* **the walk.**  `s2_walk` is 200 lines of per-entry dispatch; this module has no
-  model of it.  `Stage2Run`'s fields are exactly what a model of it must supply:
-  the arena cursor `alen` and its bound `alen ≤ ndst0 + n`, the event cursor
-  `evlen` and its bound `evlen ≤ nev0 + 13 * n`, the last reserve's slack
-  `alen + 64 ≤ dstcap`, the walk's region claim `Owns` over
-  `[(dst, alen + 64), (ev, evlen)]`, the refusal bit, and the offset's bound
+* **the walk's loop.**  `s2_walk`'s emitted body is pinned in
+  `LeanLLVM/Refinement/JsonStage2IR.lean` — `stage2Body` is
+  `probes/install/ir/stage2.candidate.ll` parsed, with the derivation recorded
+  there (the number path's binary64 helpers out of line, the eight staging objects
+  flattened to parameters) — and `stage2Calls` is the call environment the body's
+  census closes over.  The obligation is `Stage2WalkObligation`, a `Satisfies`
+  instance for that body at the adapter's record; `stage2_walk_yields_record`
+  turns it into this record's post at the ABI's thirteen arguments, and
+  `satisfies_calls_stage2` turns it into the `CallSatisfies` the pipeline's
+  stage-2 slot takes.  What is not proved is the loop: its first conjunct is a
+  completion budget for a 165-block body, and `Stage2Run`'s fields are the report
+  it produces once reached — the arena cursor `alen` and its bound
+  `alen ≤ ndst0 + n`, the event cursor `evlen` and its bound `evlen ≤ nev0 + 13 * n`,
+  the last reserve's slack `alen + 64 ≤ dstcap`, the walk's region claim `Owns`
+  over `[(dst, alen + 64), (ev, evlen)]`, the refusal bit, and the offset's bound
   `eoff ≤ n`.  Each is a clause `Γ_stage2`'s post names, so the walk's obligation
-  is stated in the record's vocabulary rather than in this module's.  The
-  obligation itself is a `Satisfies` instance for a `Function` pin of the walk,
-  which this tree does not have: there is no captured IR for `stage2.c`
-  (`probes/install/ir/` holds no `stage2` fixture), so `stage2Body` and
-  `stage2Calls` cannot be written here, and `CallSatisfies` cannot be stated.
+  is still stated in the record's vocabulary rather than in this module's.
 * **the emitters' invocation trace.**  `emitBlobs_len_le` bounds the cursor by
   `13 * n` when at most `n` blobs of at most thirteen bytes each are emitted, and
   `arenaAppend` bounds the arena by the body's own length.  That there is at most
@@ -94,6 +99,7 @@ IEEE operation with `roundMag`, which `StrtodTier1`'s docstring states and this
 module does not add to or weaken.
 -/
 import LeanLLVM.Refinement.JsonStage2Contract
+import LeanLLVM.Refinement.JsonStage2IR
 import LeanLLVM.StrtodReader
 import LeanLLVM.ElGuardRefine
 
@@ -533,8 +539,8 @@ theorem stage2Report_frame (mem : Mem) (ndst nev err : Nat) (alen evlen : Nat)
 
 /-! ### The staging and the walk's report, in the record's vocabulary
 
-`s2_walk` is not modelled here.  What a model of it would have to hand the
-wrapper is exactly the record's own post, minus the wrapper's four statements:
+`s2_walk`'s body is pinned in `JsonStage2IR`; what its loop owes the wrapper is
+exactly the record's own post, minus the wrapper's four statements:
 the two cursors it left, its refusal and that refusal's offset, the region it
 wrote, and the reserve its last arena append checked.  `Stage2Run` is that
 object, spelled in `Γ_stage2`'s pre and post vocabulary rather than this module's,
@@ -1380,6 +1386,26 @@ theorem numberRecord_bytes (d : Decimal) :
       [[UInt8.ofNat stage2TagNum], wordBytes 8 (strtodSpec d).toBits] :=
   rfl
 
+/-! ### The pin, and what it moves
+
+`s2_walk`'s emitted body is pinned in `LeanLLVM/Refinement/JsonStage2IR.lean`, and
+`Stage2WalkObligation` is this module's missing walk as a proposition about that
+body.  Two things move from assumed to read off the pin: the body returns a value
+at every `ret` (which is what lets a `Satisfies` obligation at the body become a
+`CallSatisfies` at a call site), and the obligation yields this record's post at
+the ABI's own arguments, so a proof of the loop needs no second statement of what
+it owes.  What has not moved is the loop: `Stage2Run` is still the report a model
+of the walk must produce, and the completion budget is still the first obligation
+that resists. -/
+
+/-- **The pinned body returns a value at every `ret`, re-exported where the walk's
+report is stated.**  A `Satisfies` obligation on the pinned body becomes a
+call-site selection only because every `ret` of that body carries a value, and
+that is a fact about the pinned AST rather than a hypothesis at the call site. -/
+theorem stage2Body_retsValued_at_pin :
+    retsValued LeanLLVM.Refinement.JsonStage2IR.stage2Body = true :=
+  LeanLLVM.Refinement.JsonStage2IR.stage2Body_retsValued
+
 /-! ### Axiom footprints
 
 The emitted layer's declarations are at `[propext, Quot.sound]` or below;
@@ -1391,5 +1417,6 @@ modules' own pins record. -/
 #print axioms stage2Run_boundary
 #print axioms numFastEmitted_refines
 #print axioms numFastEmitted_strtodSpec
+#print axioms stage2Body_retsValued_at_pin
 
 end LeanLLVM.Refinement
