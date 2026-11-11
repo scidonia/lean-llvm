@@ -2382,11 +2382,11 @@ theorem sExt_ofNat64 {j : Nat} (hj : j < 2 ^ 63) :
   simp [BitVec.toNat_ofNat, BitVec.signExtend]
   omega
 
-theorem toNat_ofNat64 {j : Nat} (hj : j < 2 ^ 64) :
+theorem walkToNat_ofNat64 {j : Nat} (hj : j < 2 ^ 64) :
     (BitVec.ofNat 64 j).toNat = j := by
   rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj]
 
-theorem toNat_ofNat32 {j : Nat} (hj : j < 2 ^ 32) :
+theorem walkToNat_ofNat32 {j : Nat} (hj : j < 2 ^ 32) :
     (BitVec.ofNat 32 j).toNat = j := by
   rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj]
 
@@ -2406,7 +2406,7 @@ theorem bytesToNat_lt_8 {bs : List UInt8} (h : bs.length = 1) :
   exact h'
 
 /-- **A write outside a read's range leaves the read alone.** -/
-theorem readBytes_writeBytes_outside {m : Mem} {v : List UInt8} :
+theorem walkReadBytes_writeBytes_outside {m : Mem} {v : List UInt8} :
     ∀ {start addr n : Nat}, addr + n ≤ start ∨ start + v.length ≤ addr →
       readBytes (writeBytes m start v) addr n = readBytes m addr n
   | start, addr, 0, _ => by simp [readBytes]
@@ -2414,15 +2414,15 @@ theorem readBytes_writeBytes_outside {m : Mem} {v : List UInt8} :
       have hhead : addr < start ∨ start + v.length ≤ addr := by omega
       have htail : addr + 1 + n ≤ start ∨ start + v.length ≤ addr + 1 := by omega
       rw [readBytes, readBytes, readByte_writeBytes_outside m v hhead,
-        readBytes_writeBytes_outside (m := m) (v := v) (start := start)
+        walkReadBytes_writeBytes_outside (m := m) (v := v) (start := start)
           (addr := addr + 1) (n := n) htail]
 
 /-- A one-byte read from a present byte. -/
-theorem readBytes_one_of_readByte {m : Mem} {a : Nat} {b : UInt8}
+theorem walkReadBytes_one_of_readByte {m : Mem} {a : Nat} {b : UInt8}
     (h : readByte m a = some b) : readBytes m a 1 = some [b] := by
   simp only [readBytes, h]
 
-theorem readBytes_length {m : Mem} {addr : Nat} :
+theorem walkReadBytes_length {m : Mem} {addr : Nat} :
     ∀ {n : Nat} {bs : List UInt8}, readBytes m addr n = some bs → bs.length = n
   | 0, bs, h => by
       simp only [readBytes, Option.some.injEq] at h
@@ -2437,7 +2437,7 @@ theorem readBytes_length {m : Mem} {addr : Nat} :
         · rename_i bs' hbs
           cases h
           simp only [List.length_cons]
-          rw [readBytes_length hbs]
+          rw [walkReadBytes_length hbs]
 
 theorem readLanes32_nth {m : Mem} {addr : Nat} :
     ∀ {n : Nat} {l : List Nat}, readLanes32 m addr n = some l →
@@ -2480,7 +2480,7 @@ theorem denoteCode_zext32_64_ofNat (calls : Calls) (env : Env) (s : State)
     denoteCode calls (.zext d 32 64 (.reg v) :: is) (stateAt env s) =
       denoteCode calls is (stateAt ((d, .int 64 (BitVec.ofNat 64 q)) :: env) s) := by
   rw [denoteCode_zext calls env s d v 32 64 (x := BitVec.ofNat 32 q) hv is,
-    toNat_ofNat32 hq]
+    walkToNat_ofNat32 hq]
 
 theorem denoteCode_gep8_ofNat (calls : Calls) (env : Env) (s : State)
     (d base off : String) {a j : Nat}
@@ -2555,7 +2555,7 @@ theorem denoteCode_store64_ofNat (calls : Calls) (env : Env) (s : State)
     denoteCode calls (.store (.int 64) (.reg v) (.reg p) :: is) (stateAt env s) =
       denoteCode calls is (stateAt env { s with mem := writeBytes s.mem a (wordBytes 8 j) }) := by
   rw [denoteCode_store64 calls env s v p (x := BitVec.ofNat 64 j) hv hp is,
-    toNat_ofNat64 hj]
+    walkToNat_ofNat64 hj]
   rfl
 
 theorem denoteCode_store8 (calls : Calls) (env : Env) (s : State) (v p : String)
@@ -2599,7 +2599,7 @@ theorem denoteCode_icmp_eq_imm_w (calls : Calls) (env : Env) (s : State) (d a : 
       (hb := evalOperand_lit_of (stateAt env s) w c)])]
   simp only [stateAt, State.bind]
 
-theorem denoteCode_add_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+theorem walkDenoteCode_add_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
     (w : Nat) {x c : BitVec w}
     (ha : lookupName env a = some (.int w x)) (is : List Instr) :
     denoteCode calls (.binop d .add w (.reg a) (.imm (.int w c)) :: is) (stateAt env s) =
@@ -2618,7 +2618,7 @@ theorem denoteCode_add_one_ofNat (calls : Calls) (env : Env) (s : State)
     denoteCode calls
         (.binop d .add w (.reg a) (.imm (.int w (BitVec.ofNat w 1))) :: is) (stateAt env s) =
       denoteCode calls is (stateAt ((d, .int w (BitVec.ofNat w (j + 1))) :: env) s) := by
-  rw [denoteCode_add_imm_w calls env s d a w (x := BitVec.ofNat w j)
+  rw [walkDenoteCode_add_imm_w calls env s d a w (x := BitVec.ofNat w j)
     (c := BitVec.ofNat w 1) ha is, ← BitVec.ofNat_add]
 
 theorem denoteCode_select_imm_imm_w (calls : Calls) (env : Env) (s : State)
@@ -2660,7 +2660,7 @@ macro "walk_step" : tactic => `(tactic|
    | rw [denoteCode_store8_imm _ _ _ _ _ ?_ _]
    | rw [denoteCode_icmp_eq_imm_w _ _ _ _ _ _ ?_ _]
    | rw [denoteCode_add_one_ofNat _ _ _ _ _ _ ?_ _]
-   | rw [denoteCode_add_imm_w _ _ _ _ _ _ ?_ _]
+   | rw [walkDenoteCode_add_imm_w _ _ _ _ _ _ ?_ _]
    | rw [denoteCode_select_imm_imm_w _ _ _ _ _ _ ?_ _]
    | block_step))
 
@@ -2893,7 +2893,7 @@ theorem readBytes_log_of_cursor_write {m : Mem} {c z : Nat} {v : List UInt8}
     (hcz : c + stage2CursorExtent ≤ z ∨ z + stage2LogExtent ≤ c)
     (hv : v.length ≤ 8) {off len : Nat} (hoff : off + len ≤ stage2LogExtent) :
     readBytes (writeBytes m (c + 32) v) (z + off) len = readBytes m (z + off) len := by
-  refine readBytes_writeBytes_outside (start := c + 32) ?_
+  refine walkReadBytes_writeBytes_outside (start := c + 32) ?_
   rcases hcz with hcz | hcz
   · right
     simp only [stage2CursorExtent, stage2LogExtent] at *
@@ -2908,7 +2908,7 @@ theorem readBytes_log_of_stack_write {m : Mem} {base z : Nat} {v : List UInt8} {
     (hsp : sp < stage2StackExtent) (hv : v.length ≤ 1)
     {off len : Nat} (hoff : off + len ≤ stage2LogExtent) :
     readBytes (writeBytes m (base + sp) v) (z + off) len = readBytes m (z + off) len := by
-  refine readBytes_writeBytes_outside (start := base + sp) ?_
+  refine walkReadBytes_writeBytes_outside (start := base + sp) ?_
   rcases hbz with hbz | hbz
   · right
     simp only [stage2StackExtent, stage2LogExtent] at *
@@ -3021,7 +3021,7 @@ theorem readBytes_ev_of_cursor_write {m : Mem} {c ev nev0 evcap N : Nat} {v : Li
     (hN : nev0 + N ≤ evcap) :
     readBytes (writeBytes m (c + 32) v) (ev + nev0) N = readBytes m (ev + nev0) N := by
   have hv' : stage2CursorExtent = 1192 := rfl
-  refine readBytes_writeBytes_outside (start := c + 32) ?_
+  refine walkReadBytes_writeBytes_outside (start := c + 32) ?_
   rcases hcev with hcev | hcev
   · right
     omega
@@ -3066,7 +3066,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (fun i hi => hInv.entry_outside (j := k) (by omega) (by omega))]
     exact hread0
   have hdocr : readBytes m0 (G.b + q) 1 = some [G.bs.getD q 0] :=
-    readBytes_one_of_readByte (readByte_of_readBytes G.doc (k := q) hqn)
+    walkReadBytes_one_of_readByte (readByte_of_readBytes G.doc (k := q) hqn)
   have hdoc : readBytes s.mem (G.b + q) 1 = some [G.bs.getD q 0] := by
     rw [readBytes_eq_of_UnchangedOn (mem := m0) (m := s.mem) hInv.owning.unchanged
       (a := G.b + q) (n := 1)
@@ -3074,7 +3074,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     exact hdocr
   have hq32 : q < 2 ^ 32 := by
     rw [← hbs0]
-    exact bytesToNat_lt_32 (readBytes_length hread0)
+    exact bytesToNat_lt_32 (walkReadBytes_length hread0)
   have hmax : G.n ≤ 2 ^ 32 := G.maxDoc
   have hk63 : k < 2 ^ 63 := by have h := G.nep_le; omega
   have hk64 : k + 1 < 2 ^ 64 := by have h := G.nep_le; omega
@@ -3200,9 +3200,9 @@ or below `[propext, Quot.sound]`. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkPtrs.cells_of
 
-/-- info: 'LeanLLVM.Refinement.readBytes_writeBytes_outside' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.walkReadBytes_writeBytes_outside' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.Refinement.readBytes_writeBytes_outside
+#print axioms LeanLLVM.Refinement.walkReadBytes_writeBytes_outside
 
 /-- info: 'LeanLLVM.Refinement.readLanes32_nth' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
