@@ -266,3 +266,40 @@ Bounded but unresolved, and all inside or near the placement floor:
   them; the class boundaries in §5 are meaningful for documents with similar
   structural and escape densities, and the probe's 31% overread on `citm` is a
   known inaccuracy in the instrument, not in the pipeline.
+
+## The number conversion's cost, after it stopped calling the library
+
+The fallback branch of `num_fast` used to copy the lexeme into a heap buffer
+and call the C library's conversion. It no longer does: it reads a bounded
+window of significant digits, records whether any digit past the window is
+nonzero, and rounds once. That removed three things — an allocation sized by
+whoever sent the document, a process exit when the allocation failed, and the
+platform's conversion as a premise — and it costs throughput.
+
+Measured on this host, both revisions built with the same compiler and flags
+from `kernel/json/stage2.c` at `7d5623b~1` (before) and at `7d5623b` (after),
+calls interleaved so host drift cannot be attributed to either, three runs
+each, median of the three:
+
+| input | before | after | ratio |
+|---|---|---|---|
+| `tests/json-strtod/corpus.txt`, 71 lexemes (24 first class, 11 middle, 36 fallback) | 116 ns/call | 137 ns/call | **1.18×** |
+| 102-digit number | 225 ns | 318 ns | 1.41× |
+| 1 002-digit number | 1 035 ns | 2 917 ns | **2.82×** |
+| 100 002-digit number | 82 565 ns | 182 245 ns | 2.21× |
+
+The cost is largest exactly where the old code allocated, and it is not a
+mystery: the C library's conversion is a decades-tuned implementation with its
+own fast paths, while this one does its own wide-integer arithmetic in a fixed
+96-limb frame. The window is 768 significant digits because a rounding
+decision's boundary can be that long; a lexeme shorter than that pays for a
+frame larger than it needs.
+
+What the numbers do not say: that the old path was acceptable. It ended the
+process when an allocation failed, and the allocation's size was the sender's
+choice, so a document could terminate the parser. The comparison above prices
+correctness against throughput on a host with memory to spare; it is not an
+argument for reverting.
+
+Not measured: whether a smaller frame for short lexemes, or a fast path for
+the common case, recovers the ratio. Both are available and neither is done.
