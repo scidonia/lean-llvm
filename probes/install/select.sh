@@ -8,10 +8,12 @@
 #     contract exactly and the theorem that covers the requested unit:
 #     `IR_refines` over the candidate and the baseline for those two units,
 #     the loop's own `loop_refines_candidate_within` in the manifest's
-#     `loop_theorem` field for `UNIT=loop`, and
+#     `loop_theorem` field for `UNIT=loop`,
 #     `depth_count_refines` with `depthContract` in `depth_count_theorem` and
-#     `depth_contract` for `UNIT=depth_count`, so each request is decided by
-#     its certificate;
+#     `depth_contract` for `UNIT=depth_count`, and the scanner's own
+#     `scanWindowLLVM_refines` with `jsonScanContract` in `json_scan_theorem`
+#     and `json_scan_contract` for `UNIT=json_scan`, so each request is decided
+#     by its certificate;
 #   * every recorded hash matches: caller, the unit objects, the differential
 #     transcript, and each bound unit's fixture and marker inputs;
 #   * each unit object is rebuilt from its fixtures and the rebuild matches the
@@ -125,12 +127,15 @@ reasons=()
 expected_theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
 expected_loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
 expected_depth_theorem=LeanLLVM.Refinement.DepthCountRefine.depth_count_refines
+expected_json_scan_theorem=LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines
 expected_contract=LeanLLVM.Refinement.commaContract
 expected_depth_contract=LeanLLVM.Refinement.DepthCountRefine.depthContract
+expected_json_scan_contract=LeanLLVM.Refinement.JsonScanABI.jsonScanContract
 expected_axioms=Classical.choice,Quot.sound,propext
 expected_symbol=leanllvm_comma_mask8
 expected_marker=leanllvm_impl_id
 expected_depth_symbol=depth_count
+expected_json_scan_symbol=leanllvm_json_scan_window
 
 # A tool probe whose answer does not depend on how much of the output is read.
 # `tool | grep -q` leaves as soon as it matches, so the producer can be killed
@@ -243,7 +248,8 @@ parse_certificate() { # path
       schema) [ "$value" = leanllvm-install-v1 ] || return 1 ;;
       unit)
         [ "$value" = baseline ] || [ "$value" = candidate ] ||
-          [ "$value" = loop ] || [ "$value" = depth_count ] || return 1 ;;
+          [ "$value" = loop ] || [ "$value" = depth_count ] ||
+          [ "$value" = json_scan ] || return 1 ;;
       theorem | contract)
         [[ "$value" =~ ^LeanLLVM\.[A-Za-z0-9_.]+$ ]] || return 1 ;;
       axioms) [[ "$value" =~ ^[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*$ ]] || return 1 ;;
@@ -292,6 +298,7 @@ check_certificate() { # unit
     candidate) unit_object=${candidate:-} ;;
     loop) unit_object=${loop:-} ;;
     depth_count) unit_object=${depth_count:-} ;;
+    json_scan) unit_object=${json_scan:-} ;;
     *) proof_failure=invalid; return 1 ;;
   esac
   unit_fixture=${!fixture_var:-}
@@ -337,6 +344,12 @@ check_certificate() { # unit
     expected_unit_theorem=$expected_depth_theorem
     bound_contract=${depth_contract:-}
     expected_unit_contract=$expected_depth_contract
+  fi
+  if [ "$unit" = json_scan ]; then
+    bound_theorem=${json_scan_theorem:-}
+    expected_unit_theorem=$expected_json_scan_theorem
+    bound_contract=${json_scan_contract:-}
+    expected_unit_contract=$expected_json_scan_contract
   fi
   if [ "${cert[theorem]}" != "$bound_theorem" ] ||
      [ "${cert[theorem]}" != "$expected_unit_theorem" ]; then
@@ -402,6 +415,17 @@ check_certificate() { # unit
       >/dev/null 2>"$work/depth-rebuild.log"; then
     sequence_ok=0
   fi
+  # The scanner's proof module carries `probes/install/ir/json-scan-body.ll`
+  # through `include_str` and its own fixture `#guard`, so a scanner request
+  # re-elaborates `JsonScanIR` from source for the same reason.  It imports none
+  # of the three modules above, so it is independent of their rebuilds.
+  if [ "$sequence_ok" -eq 1 ] && [ "$unit" = json_scan ] &&
+     ! (cd "$root" &&
+        rm -f .lake/build/lib/lean/LeanLLVM/Refinement/JsonScanIR.olean &&
+        lake build LeanLLVM.Refinement.JsonScanIR) \
+      >/dev/null 2>"$work/json-scan-rebuild.log"; then
+    sequence_ok=0
+  fi
   if [ "$sequence_ok" -eq 1 ] &&
      ! (cd "$root" &&
         CERT_UNIT="$unit" CERT_MANIFEST="$manifest_abs" CERT_OUT="$derived" \
@@ -421,15 +445,16 @@ check_certificate() { # unit
   return 0
 }
 
-# The request.  An unknown unit fails here; a known unit — the loop and the
-# depth counter included — is decided by the hash, rebuild, object and
-# certificate checks below.
+# The request.  An unknown unit fails here; a known unit — the loop, the depth
+# counter and the window scanner included — is decided by the hash, rebuild,
+# object and certificate checks below.
 selected_unit=
 case "$req_unit" in
   "" | candidate) selected_unit=candidate ;;
   baseline) selected_unit=baseline ;;
   loop) selected_unit=loop ;;
   depth_count) selected_unit=depth_count ;;
+  json_scan) selected_unit=json_scan ;;
   *) selected_unit= ;;
 esac
 if [ -z "$selected_unit" ]; then
@@ -459,6 +484,14 @@ if [ -n "${depth_count:-}" ]; then
   check_hash "${depth_count_marker:-}" "${depth_count_marker_sha256:-}" \
     "depth_count marker"
   check_hash "${depth_caller:-}" "${depth_caller_sha256:-}" "depth_caller hash"
+fi
+
+if [ -n "${json_scan:-}" ]; then
+  check_hash "${json_scan:-}" "${json_scan_sha256:-}" "json_scan hash"
+  check_hash "${json_scan_fixture:-}" "${json_scan_fixture_sha256:-}" \
+    "json_scan fixture"
+  check_hash "${json_scan_marker:-}" "${json_scan_marker_sha256:-}" \
+    "json_scan marker"
 fi
 
 if [ "${kind:-}" != "proof-bound" ]; then
@@ -498,10 +531,28 @@ if [ -n "${depth_count_theorem:-}" ] &&
    [ "$depth_count_theorem" != "$expected_depth_theorem" ]; then
   ok=0; reasons+=("manifest depth_count theorem $depth_count_theorem")
 fi
+if [ -n "${json_scan_symbol:-}" ] &&
+   [ "$json_scan_symbol" != "$expected_json_scan_symbol" ]; then
+  ok=0; reasons+=("manifest json_scan symbol $json_scan_symbol")
+fi
+if [ -n "${json_scan_contract:-}" ] &&
+   [ "$json_scan_contract" != "$expected_json_scan_contract" ]; then
+  ok=0; reasons+=("manifest json_scan contract $json_scan_contract")
+fi
+if [ -n "${json_scan_theorem:-}" ] &&
+   [ "$json_scan_theorem" != "$expected_json_scan_theorem" ]; then
+  ok=0; reasons+=("manifest json_scan theorem $json_scan_theorem")
+fi
 if [ "$selected_unit" = depth_count ]; then
   if [ -z "${depth_count_symbol:-}" ] || [ -z "${depth_contract:-}" ] ||
      [ -z "${depth_count_theorem:-}" ] || [ -z "${depth_caller:-}" ]; then
     ok=0; reasons+=("manifest does not bind the depth_count unit")
+  fi
+fi
+if [ "$selected_unit" = json_scan ]; then
+  if [ -z "${json_scan_symbol:-}" ] || [ -z "${json_scan_contract:-}" ] ||
+     [ -z "${json_scan_theorem:-}" ]; then
+    ok=0; reasons+=("manifest does not bind the json_scan unit")
   fi
 fi
 
@@ -524,6 +575,12 @@ if [ "$ok" -eq 1 ]; then
     if ! verify_rebuild depth_count "${depth_count_fixture:-}" \
         "${depth_count_marker:-}" "${depth_count_sha256:-}"; then
       ok=0; reasons+=("depth_count unit not rebuilt from its fixture")
+    fi
+  fi
+  if [ -n "${json_scan:-}" ]; then
+    if ! verify_rebuild json_scan "${json_scan_fixture:-}" \
+        "${json_scan_marker:-}" "${json_scan_sha256:-}"; then
+      ok=0; reasons+=("json_scan unit not rebuilt from its fixture")
     fi
   fi
 fi
@@ -585,14 +642,30 @@ if [ -n "${depth_count:-}" ]; then
     ok=0; reasons+=("depth_count marker")
   fi
 fi
+if [ -n "${json_scan:-}" ]; then
+  if ! probe 'ELF 64-bit' file -b "${json_scan:-}"; then
+    ok=0; reasons+=("json_scan is not ELF64")
+  fi
+  if ! probe " T ${expected_json_scan_symbol}" nm -g "${json_scan:-}"; then
+    ok=0; reasons+=("json_scan symbol")
+  fi
+  if ! probe ' T leanllvm_impl_id' nm -g "${json_scan:-}"; then
+    ok=0; reasons+=("json_scan marker")
+  fi
+fi
 # The caller is the object that imports the selected unit's symbol: the
 # comma-mask caller for the three mask units, the depth corpus driver for the
-# depth counter, whose ABI is not the one-word seam.
+# depth counter, whose ABI is not the one-word seam, and the seam's caller for
+# the window scanner.
 link_caller=${caller:-}
 if [ "$selected_unit" = depth_count ]; then
   link_caller=${depth_caller:-}
   if ! probe 'depth_count' nm -u "${link_caller:-}"; then
     ok=0; reasons+=("depth caller import")
+  fi
+elif [ "$selected_unit" = json_scan ]; then
+  if ! probe "$expected_json_scan_symbol" nm -u "${link_caller:-}"; then
+    ok=0; reasons+=("json_scan caller import")
   fi
 elif ! probe 'leanllvm_comma_mask8' nm -u "${link_caller:-}"; then
   ok=0; reasons+=("caller import")
@@ -615,6 +688,11 @@ if [ "$ok" -eq 1 ] && [ -z "$proof_failure" ]; then
       selected=${depth_count:-}
       covering_theorem=${depth_count_theorem:-}
       covering_contract=${depth_contract:-}
+      ;;
+    json_scan)
+      selected=${json_scan:-}
+      covering_theorem=${json_scan_theorem:-}
+      covering_contract=${json_scan_contract:-}
       ;;
   esac
   kind=$selected_unit
@@ -656,6 +734,7 @@ case "$selected_unit" in
   candidate) proof_path=${proof_candidate:-} ;;
   loop) proof_path=${proof_loop:-} ;;
   depth_count) proof_path=${proof_depth_count:-} ;;
+  json_scan) proof_path=${proof_json_scan:-} ;;
   *) proof_path= ;;
 esac
 if [ -n "$proof_path" ] && [ -f "$proof_path" ]; then
@@ -679,6 +758,7 @@ fi
   echo "candidate_sha256=${candidate_sha256:-}"
   echo "loop_sha256=${loop_sha256:-}"
   echo "depth_count_sha256=${depth_count_sha256:-}"
+  echo "json_scan_sha256=${json_scan_sha256:-}"
   echo "depth_caller_sha256=${depth_caller_sha256:-}"
   echo "differential_sha256=${differential_sha256:-}"
 } > "$req_record"

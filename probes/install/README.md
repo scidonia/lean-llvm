@@ -44,6 +44,20 @@ This probe exercises the installation point described in
   `depth_driver.c`, not the one-word comma seam, so `UNIT=depth_count` links the
   driver. The gate is `tests/m4-depth-install-gate.sh`, and the numeric route is
   `tests/depth-count/check.sh`.
+- `json_scan` is the window scanner's certified body `ir/json-scan-body.ll`,
+  printed from the `scanWindowBody` AST in
+  `LeanLLVM/Refinement/JsonScanBody.lean` by `lake exe leanllvm-json-scan-emit`
+  and pinned to that AST by `LeanLLVM/Refinement/JsonScanIR.lean`. The unit is
+  known to `select.sh` and to the producer, which name its own theorem
+  (`json_scan_theorem`), boundary (`json_scan_contract`) and symbol
+  (`json_scan_symbol`), but no certificate can be issued for it: the refinement
+  statement is `JsonScanIR.scanWindowStatement`, and
+  `JsonScanIR.scanWindowStatement_false` proves its negation — the emitted
+  body's stop word reports `control` where the model refuses with `badUtf8` on a
+  continuation byte outside its requirement, and the prose statement's
+  band-disjointness hypothesis is load-bearing. A scanner request is refused at
+  the covering theorem, and its gate `tests/json-scan-select-gate.sh` refuses at
+  the missing `#print axioms` pin before it reaches the selector.
 - `build.sh` builds everything in a private staging directory and publishes
   `differential.txt`, `proof_baseline.env`, `proof_candidate.env`,
   `proof_loop.env`, `proof_depth_count.env` and `manifest.env` only after every
@@ -53,7 +67,9 @@ This probe exercises the installation point described in
   target-feature policy (`none`: the build passes no `-march`/`-mattr`, so
   clang's triple default applies), the contract and every unit's theorem name
   (`theorem` for the candidate and the baseline, `loop_theorem` for the loop,
-  `depth_count_theorem` and `depth_contract` for the depth counter), the
+  `depth_count_theorem` and `depth_contract` for the depth counter, and
+  `json_scan_theorem`, `json_scan_contract` and `json_scan_symbol` for the
+  window scanner), the
   attribute policy, every fixture and marker hash, the caller, depth-caller and
   unit hashes, the differential transcript as ancillary evidence, and the four
   certificate paths and digests. `select.sh` recomputes the triple and data
@@ -61,23 +77,30 @@ This probe exercises the installation point described in
 - `InstallCertificate.lean` is the certificate producer. The imported proof
   graph is rebuilt from current project source, `CommaMaskIR` is re-elaborated
   from source and — for a loop certificate — so is `CommaMaskLoop`, which
-  imports it; a depth certificate re-elaborates `DepthCountRefine`. The
+  imports it; a depth certificate re-elaborates `DepthCountRefine`, and a
+  scanner certificate would re-elaborate `JsonScanIR`, which carries the scanner
+  fixture through `include_str`. The
   producer imports those fresh modules, checks the statement of the theorem
   that covers the requested unit, the contract or boundary link and the
-  axiom footprint, and writes the certificate described below. It also refuses
+  axiom footprint, and writes the certificate described below. The unit dispatch
+  is one table with no fall-through: a unit it does not know has no covering
+  theorem and no contract, and the producer refuses it by name rather than
+  certifying it under the comma-mask pair. It also refuses
   a proof module whose pinned fixture text differs from the file it hashes, so
   a stale module cannot certify changed bytes. `toolchain-id.sh` prints the
   toolchain revision the certificate records.
 - `select.sh` verifies the hashes, target and layout, requires the manifest's
   contract and the theorem that covers the requested unit (the global `theorem`
   and `contract` for the candidate and the baseline, `loop_theorem` for the
-  loop, `depth_count_theorem` and `depth_contract` for the depth counter),
+  loop, `depth_count_theorem` and `depth_contract` for the depth counter, and
+  `json_scan_theorem` and `json_scan_contract` for the window scanner),
   **rebuilds each unit from its fixtures**, parses the requested unit's
   certificate as closed data, compares every field with the object, fixture,
   marker, manifest and observed toolchain, and then rebuilds the imported proof
   graph, re-elaborates the proof module and reproduces the certificate with the
   producer, requiring the same bytes. Only then does it link the unit with its
-  caller (the depth corpus driver for `UNIT=depth_count`). An unknown unit is
+  caller (the depth corpus driver for `UNIT=depth_count`, and the seam's caller
+  for `UNIT=json_scan`, which imports the scanner's symbol). An unknown unit is
   refused; `STRICT=1` fails instead of falling back, and a non-strict request
   whose certificate is missing or rejected installs the baseline and records
   the rejection as a fallback. A strict refusal names the certificate field that

@@ -88,11 +88,17 @@ revision.
    boundary the JSON work needs is the one this repository just built.
 3. **The installation gate's per-unit mechanism generalises, but the gate as
    shipped is not unit-generic.** Per-unit theorem and contract fields exist
-   (`loop_theorem`, `depth_count_theorem`, `depth_contract`) and are checked,
-   yet `probes/install/select.sh` hardcodes the expected theorem, contract,
-   symbol, caller and marker for the four units it knows, and its request
-   dispatch and certificate `unit` arm accept exactly
-   `baseline|candidate|loop|depth_count`.  The depth unit shows the shape a new
-   unit takes — its own object, fixture, marker, caller, symbol, theorem and
-   contract — but a JSON scanner unit still needs its own expected declarations
-   and a new unit case, not merely a certificate.
+   (`loop_theorem`, `depth_count_theorem`, `depth_contract`,
+   `json_scan_theorem`, `json_scan_contract`) and are checked,
+   and `probes/install/select.sh` hardcodes the expected theorem, contract,
+   symbol, caller and marker for the five units it knows. Its request dispatch
+   and certificate `unit` arm accept exactly
+   `baseline|candidate|loop|depth_count|json_scan`; the depth unit shows the
+   shape a new unit takes — its own object, fixture, marker, caller, symbol,
+   theorem and contract — and the scanner unit took that shape. The scanner's
+   expected declarations are named but nothing certifies them: its refinement
+   statement `JsonScanIR.scanWindowStatement` is refuted
+   (`JsonScanIR.scanWindowStatement_false`), so the producer refuses the unit at
+   the covering theorem and `tests/json-scan-select-gate.sh` refuses at the
+   missing `#print axioms` pin. A second JSON unit would still need its own
+   expected declarations and a new unit case, not merely a certificate.

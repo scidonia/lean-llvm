@@ -4,12 +4,14 @@ The installation certificate producer.
 `probes/install/build.sh` and `probes/install/select.sh` elaborate this module
 with
 
-  CERT_UNIT=<baseline|candidate|loop|depth_count> CERT_MANIFEST=<absolute manifest path> \
+  CERT_UNIT=<baseline|candidate|loop|depth_count|json_scan> \
+    CERT_MANIFEST=<absolute manifest path> \
     CERT_OUT=<absolute output path> lake env lean probes/install/InstallCertificate.lean
 
 from the repository root, after re-elaborating `LeanLLVM/Refinement/CommaMaskIR.lean`
-from source and, for the loop unit, `LeanLLVM/Refinement/CommaMaskLoop.lean` too, and
-for the depth unit `LeanLLVM/Refinement/DepthCountRefine.lean`.
+from source and, for the loop unit, `LeanLLVM/Refinement/CommaMaskLoop.lean` too,
+for the depth unit `LeanLLVM/Refinement/DepthCountRefine.lean`, and for the window
+scanner `LeanLLVM/Refinement/JsonScanIR.lean`.
 The module imports those freshly built proof modules, checks the statement and
 axiom footprint of the theorem that covers the requested unit, and writes one
 canonical certificate to `CERT_OUT`:
@@ -36,7 +38,15 @@ and the producer checks the covering theorem's type against it by definitional
 equality rather than by name.  The depth witness is a proof object the
 certificate names, so its axiom footprint is checked against the same budget and
 unioned into the serialized `axioms` field; a `sorry`-proved witness cannot ride
-along with a clean covering theorem.
+along with a clean covering theorem.  The window scanner names the §5 record
+`jsonScanContract` and the statement `scanWindowStatement`; the covering theorem
+must be a theorem of that statement, and as the body stands there is none —
+`scanWindowStatement_false` refutes the statement — so a scanner certificate is
+refused at the theorem rather than certified from the statement's text.
+The unit dispatch is one table (`theoremNameFor`, `contractNameFor`), not a
+fall-through: a unit the producer does not know has no covering theorem and no
+contract, and `run_cmd` refuses it by name instead of certifying it under the
+comma-mask pair.
 Before serializing a fixture hash, the producer compares the file with the
 `include_str` string the loaded proof module carries, so a stale module whose
 guards ran against different fixture text cannot certify the current bytes.
@@ -47,6 +57,7 @@ import Lean
 import LeanLLVM.Refinement.CommaMaskIR
 import LeanLLVM.Refinement.CommaMaskLoop
 import LeanLLVM.Refinement.DepthCountRefine
+import LeanLLVM.Refinement.JsonScanIR
 import Lean.Util.CollectAxioms
 
 open Lean Elab Command
@@ -58,7 +69,7 @@ namespace InstallCertificate
 /-- The serialized schema of an installation certificate. -/
 def schemaVersion : String := "leanllvm-install-v1"
 
-/-- The theorem the certificate names. -/
+/-- The theorem the certificate names for the baseline and the candidate. -/
 def theoremName : Name := ``LeanLLVM.Refinement.CommaMaskIR.IR_refines
 
 /-- The same name as it is serialized. -/
@@ -83,19 +94,57 @@ def depthTheoremName : Name :=
 def depthTheoremText : String :=
   "LeanLLVM.Refinement.DepthCountRefine.depth_count_refines"
 
-/-- The theorem that covers a unit: the loop has its own statement, the depth
-counter has its own, and every other unit is covered by `IR_refines`, which
-relates the candidate to the baseline. -/
-def theoremNameFor (unit : String) : Name :=
-  if unit == "loop" then loopTheoremName
-  else if unit == "depth_count" then depthTheoremName
-  else theoremName
+/-- The theorem the window scanner's certificate names: the refinement of the
+emitted `@leanllvm_json_scan_window` body to the model's window step, whose
+statement is `JsonScanIR.scanWindowStatement`.  The name has no declaration
+behind it — the statement is refuted as the body stands, so no theorem of it can
+exist — and the producer refuses the unit by that absence rather than lending it
+another unit's theorem.  It is written with a single backtick because a resolved
+name literal requires the constant to exist when this module elaborates. -/
+def scanTheoremName : Name := `LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines
+
+/-- The same name as it is serialized: the field the certificate and the
+selection route's manifest carry. -/
+def scanTheoremText : String := "LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines"
+
+/-- The theorem that covers a unit, or `none` when the producer knows of none.
+`baseline` and `candidate` are covered by `IR_refines`, which relates them; the
+loop, the depth counter and the window scanner are covered by their own
+statements. -/
+def theoremNameFor (unit : String) : Option Name :=
+  match unit with
+  | "baseline" | "candidate" => some theoremName
+  | "loop" => some loopTheoremName
+  | "depth_count" => some depthTheoremName
+  | "json_scan" => some scanTheoremName
+  | _ => none
 
 /-- The serialized form of `theoremNameFor`. -/
-def theoremTextFor (unit : String) : String :=
-  if unit == "loop" then loopTheoremText
-  else if unit == "depth_count" then depthTheoremText
-  else theoremText
+def theoremTextFor (unit : String) : Option String :=
+  match unit with
+  | "baseline" | "candidate" => some theoremText
+  | "loop" => some loopTheoremText
+  | "depth_count" => some depthTheoremText
+  | "json_scan" => some scanTheoremText
+  | _ => none
+
+/-- The covering theorem and its serialized name, or `none` for a unit that has
+neither: there is no default, so an unknown unit cannot be certified under
+another unit's theorem. -/
+def coveredBy (unit : String) : Option (Name × String) :=
+  match theoremNameFor unit, theoremTextFor unit with
+  | some name, some text => some (name, text)
+  | _, _ => none
+
+/-- The manifest key a unit's theorem is bound under, when it has a field of its
+own: `baseline` and `candidate` are covered by the manifest's global `theorem`
+field. -/
+def theoremKeyFor (unit : String) : Option String :=
+  match unit with
+  | "loop" => some "loop_theorem"
+  | "depth_count" => some "depth_count_theorem"
+  | "json_scan" => some "json_scan_theorem"
+  | _ => none
 
 /-- The contract the certificate names for the comma-mask units. -/
 def contractName : Name := ``LeanLLVM.Refinement.commaContract
@@ -114,9 +163,79 @@ def depthContractName : Name :=
 def depthContractText : String :=
   "LeanLLVM.Refinement.DepthCountRefine.depthContract"
 
-/-- The contract name a unit's certificate serializes. -/
-def contractTextFor (unit : String) : String :=
-  if unit == "depth_count" then depthContractText else contractText
+/-- The window scanner's boundary: the §5 record `JsonScanABI.jsonScanContract`,
+whose extent, footprint, slot-disjointness and lifetime fields are what
+`envForScanWindow_spec` states over.  It is a `ScanContract` value rather than a
+`LeanLLVM.Refinement.Contract`, which is why `checkContract` checks its type. -/
+def scanContractName : Name := ``LeanLLVM.Refinement.JsonScanABI.jsonScanContract
+
+/-- The same name as it is serialized. -/
+def scanContractText : String := "LeanLLVM.Refinement.JsonScanABI.jsonScanContract"
+
+/-- The contract name a unit's certificate serializes: the loop and the two mask
+units share the comma contract, and the depth counter and the window scanner each
+name their own boundary. -/
+def contractNameFor (unit : String) : Option Name :=
+  match unit with
+  | "baseline" | "candidate" | "loop" => some contractName
+  | "depth_count" => some depthContractName
+  | "json_scan" => some scanContractName
+  | _ => none
+
+/-- The serialized form of `contractNameFor`. -/
+def contractTextFor (unit : String) : Option String :=
+  match unit with
+  | "baseline" | "candidate" | "loop" => some contractText
+  | "depth_count" => some depthContractText
+  | "json_scan" => some scanContractText
+  | _ => none
+
+/-- The contract and its serialized name, or `none`: refused on the same terms as
+`coveredBy`. -/
+def coveredContract (unit : String) : Option (Name × String) :=
+  match contractNameFor unit, contractTextFor unit with
+  | some name, some text => some (name, text)
+  | _, _ => none
+
+/-- The manifest key a unit's contract is bound under, when it has a field of its
+own. -/
+def contractKeyFor (unit : String) : Option String :=
+  match unit with
+  | "depth_count" => some "depth_contract"
+  | "json_scan" => some "json_scan_contract"
+  | _ => none
+
+/-! #### The dispatch, checked
+
+The control for the refusal, and for the arms it must not swallow: each known
+unit resolves to its own theorem and contract, and a name the producer does not
+know — including the near miss `json-scan` — resolves to nothing, so the
+fall-through that lent an unknown unit the comma-mask pair cannot happen. -/
+
+example : coveredBy "baseline" = some (theoremName, theoremText) := by decide
+example : coveredBy "candidate" = some (theoremName, theoremText) := by decide
+example : coveredBy "loop" = some (loopTheoremName, loopTheoremText) := by decide
+example : coveredBy "depth_count" = some (depthTheoremName, depthTheoremText) := by
+  decide
+example : coveredBy "json_scan" = some (scanTheoremName, scanTheoremText) := by decide
+example : (coveredBy "json-scan").isNone = true := by decide
+example : (coveredBy "").isNone = true := by decide
+example : coveredContract "loop" = some (contractName, contractText) := by decide
+example : coveredContract "depth_count" =
+    some (depthContractName, depthContractText) := by decide
+example : coveredContract "json_scan" =
+    some (scanContractName, scanContractText) := by decide
+example : (coveredContract "json-scan").isNone = true := by decide
+
+-- `Name.toString` is not kernel-reducible, so the spellings the certificate
+-- carries are checked by compiled evaluation: a renamed constant or a retyped
+-- field fails here rather than shipping in a certificate.
+#guard scanTheoremName.toString == scanTheoremText
+#guard scanContractName.toString == scanContractText
+#guard theoremName.toString == theoremText
+#guard loopTheoremName.toString == loopTheoremText
+#guard depthTheoremName.toString == depthTheoremText
+#guard depthContractName.toString == depthContractText
 
 /-- The witness that the depth boundary is proved, not merely named. -/
 def depthContractWitness : Name :=
@@ -303,6 +422,13 @@ def gather (m : Manifest) (unit triple layout : String) : IO Inputs := do
     unless depthFixtureText == LeanLLVM.Refinement.DepthCountRefine.src do
       throw <| IO.userError
         s!"the loaded proof module was not elaborated from the current depth fixture {unitFixturePath}"
+  -- `JsonScanIR` pins the scanner's fixture through `include_str` too, so a
+  -- scanner certificate is held to the same check.
+  if unit == "json_scan" then
+    let scanFixtureText ← IO.FS.readFile unitFixturePath
+    unless scanFixtureText == LeanLLVM.Refinement.JsonScanIR.scanWindowBodySrc do
+      throw <| IO.userError
+        s!"the loaded proof module was not elaborated from the current json_scan fixture {unitFixturePath}"
   pure {
     unitObject := (← sha256File unitObjectPath)
     unitFixture := (← sha256File unitFixturePath)
@@ -347,19 +473,26 @@ def depthProposition : TermElabM Lean.Expr := do
   Term.synthesizeSyntheticMVarsNoPostponing
   instantiateMVars expected
 
-/-- The theorem that covers `unit` must be a theorem of exactly the proposition
-the installation relies on: `IR_refines` for the candidate and the baseline, the
+/-- The theorem that covers `unit` must be a theorem of exactly the statement the
+installation relies on: `IR_refines` for the candidate and the baseline, the
 framed loop-to-candidate refinement within the loop's own allocations for the
-loop, and the kernel-to-`depthSpec` statement for the depth counter. -/
-def checkTheorem (unit : String) : TermElabM Unit := do
-  let name := theoremNameFor unit
+loop, the kernel-to-`depthSpec` statement for the depth counter, and the
+scanner's own `scanWindowStatement`.  Each is compared by definitional equality
+against a statement this module holds, so a theorem about some other proposition
+does not certify however it is named. -/
+def checkTheorem (unit : String) (name : Name) : TermElabM Unit := do
   let info ← getConstInfo name
   match info with
   | ConstantInfo.thmInfo _ => pure ()
   | _ => throwError m!"{name} is not a theorem"
+  -- The scanner's statement is a proposition definition, so a theorem of it
+  -- carries that constant as its type rather than a written-out `∀`; it is
+  -- compared with the statement itself, not with a restatement of it.
   let expected ←
     if unit == "depth_count" then
       depthProposition
+    else if unit == "json_scan" then
+      pure (Lean.mkConst ``LeanLLVM.Refinement.JsonScanIR.scanWindowStatement)
     else
       Term.elabType (←
         if unit == "loop" then
@@ -374,7 +507,7 @@ def checkTheorem (unit : String) : TermElabM Unit := do
           `(∀ calls, LeanLLVM.Refines calls
             LeanLLVM.Refinement.CommaMaskIR.candidateFunction
             LeanLLVM.Refinement.CommaMaskIR.baselineFunction))
-  unless info.type.isForall do
+  unless unit == "json_scan" || info.type.isForall do
     throwError m!"{name} is not a universally quantified statement"
   let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq info.type expected
   unless ok do
@@ -421,12 +554,24 @@ def checkDepthContract : TermElabM Unit := do
 /-- The named contract must be the contract structure's value, and the
 contract-level theorem must state the relation that links it to the two Lean
 functions.  The depth unit's boundary is the proposition `checkDepthContract`
-checks instead. -/
-def checkContract (unit : String) : TermElabM Unit := do
+checks instead, and the window scanner's is the §5 record `jsonScanContract`,
+whose type is the check. -/
+def checkContract (unit : String) (contract : Name) : TermElabM Unit := do
   if unit == "depth_count" then
     checkDepthContract
+  else if unit == "json_scan" then
+    let contractInfo ← getConstInfo contract
+    match contractInfo with
+    | ConstantInfo.defnInfo _ => pure ()
+    | ConstantInfo.opaqueInfo _ => pure ()
+    | _ => throwError m!"{contract} is not a definition"
+    let contractType ←
+      Term.elabType (← `(LeanLLVM.Refinement.JsonScanABI.ScanContract))
+    let ok ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq contractInfo.type contractType
+    unless ok do
+      throwError m!"{contract} is not a LeanLLVM.Refinement.JsonScanABI.ScanContract"
   else
-    let contractInfo ← getConstInfo contractName
+    let contractInfo ← getConstInfo contract
     match contractInfo with
     | ConstantInfo.defnInfo _ => pure ()
     | ConstantInfo.opaqueInfo _ => pure ()
@@ -488,7 +633,8 @@ def canonicalAxioms (names : List String) : List String :=
 
 /-! ### Publication -/
 
-def render (unit : String) (inputs : Inputs) (axioms : List String) : String :=
+def render (unit theoremField contractField : String) (inputs : Inputs)
+    (axioms : List String) : String :=
   let lines : List String := [
     s!"schema={schemaVersion}",
     s!"unit={unit}",
@@ -501,9 +647,9 @@ def render (unit : String) (inputs : Inputs) (axioms : List String) : String :=
     s!"candidate_fixture_sha256={inputs.candidateFixture}",
     s!"baseline_marker_sha256={inputs.baselineMarker}",
     s!"candidate_marker_sha256={inputs.candidateMarker}",
-    s!"theorem={theoremTextFor unit}",
+    s!"theorem={theoremField}",
     s!"axioms={String.intercalate "," axioms}",
-    s!"contract={contractTextFor unit}",
+    s!"contract={contractField}",
     s!"target_triple={inputs.targetTriple}",
     s!"data_layout={inputs.dataLayout}",
     s!"toolchain_revision={inputs.toolchainRevision}"
@@ -541,9 +687,12 @@ open InstallCertificate
 
 run_cmd do
   let unit ← liftIO (requireEnv "CERT_UNIT")
-  unless unit == "baseline" || unit == "candidate" || unit == "loop" ||
-      unit == "depth_count" do
-    throwError s!"CERT_UNIT must name baseline, candidate, loop or depth_count, not '{unit}'"
+  -- The unit dispatch is the certificate's own table, not a fall-through: a unit
+  -- with no covering theorem or contract is refused before any input is read.
+  let some (theoremNm, theoremTxt) := coveredBy unit
+    | throwError s!"CERT_UNIT '{unit}' has no covering theorem; refusing to certify it under {theoremText}"
+  let some (contractNm, contractTxt) := coveredContract unit
+    | throwError s!"CERT_UNIT '{unit}' has no contract; refusing to certify it under {contractText}"
   let manifestPath ← liftIO (requireEnv "CERT_MANIFEST")
   let outPath ← liftIO (requireEnv "CERT_OUT")
   liftIO do
@@ -554,23 +703,25 @@ run_cmd do
   if let some declared := manifest.lookup? "schema" then
     unless declared == schemaVersion do
       throwError s!"manifest {manifestPath} has schema '{declared}', not '{schemaVersion}'"
+  -- The manifest's global pair names the comma-mask units' statement for every
+  -- request, as it always has; a unit with a field of its own is checked beside
+  -- it below.
   let manifestTheorem ← liftIO (manifest.require "theorem")
   unless manifestTheorem == theoremText do
     throwError s!"manifest {manifestPath} names theorem '{manifestTheorem}', not '{theoremText}'"
   let manifestContract ← liftIO (manifest.require "contract")
   unless manifestContract == contractText do
     throwError s!"manifest {manifestPath} names contract '{manifestContract}', not '{contractText}'"
-  if unit == "loop" then
-    let manifestLoopTheorem ← liftIO (manifest.require "loop_theorem")
-    unless manifestLoopTheorem == loopTheoremText do
-      throwError s!"manifest {manifestPath} names loop theorem '{manifestLoopTheorem}', not '{loopTheoremText}'"
-  if unit == "depth_count" then
-    let manifestDepthTheorem ← liftIO (manifest.require "depth_count_theorem")
-    unless manifestDepthTheorem == depthTheoremText do
-      throwError s!"manifest {manifestPath} names depth theorem '{manifestDepthTheorem}', not '{depthTheoremText}'"
-    let manifestDepthContract ← liftIO (manifest.require "depth_contract")
-    unless manifestDepthContract == depthContractText do
-      throwError s!"manifest {manifestPath} names depth contract '{manifestDepthContract}', not '{depthContractText}'"
+  -- A unit with a theorem or contract field of its own must have it bound, and
+  -- bound to its own statement: the loop, the depth counter and the scanner.
+  if let some key := theoremKeyFor unit then
+    let bound ← liftIO (manifest.require key)
+    unless bound == theoremTxt do
+      throwError s!"manifest {manifestPath} names {key} '{bound}', not '{theoremTxt}'"
+  if let some key := contractKeyFor unit then
+    let bound ← liftIO (manifest.require key)
+    unless bound == contractTxt do
+      throwError s!"manifest {manifestPath} names {key} '{bound}', not '{contractTxt}'"
   let target ← liftIO (manifest.require "target")
   let triple ← liftIO (manifest.require "triple")
   unless target == triple do
@@ -581,9 +732,9 @@ run_cmd do
   unless shaped isLayoutChar layout do
     throwError s!"manifest {manifestPath} has a malformed data layout '{layout}'"
   let inputs ← liftIO (gather manifest unit triple layout)
-  liftTermElabM (checkTheorem unit)
-  liftTermElabM (checkContract unit)
-  let theoremAxioms ← checkAxioms (theoremNameFor unit)
+  liftTermElabM (checkTheorem unit theoremNm)
+  liftTermElabM (checkContract unit contractNm)
+  let theoremAxioms ← checkAxioms theoremNm
   -- The serialized field is canonical order for every unit, not only the depth
   -- counter: `Lean.collectAxioms` returns an unordered set, so the raw list is
   -- permutation-dependent, while the selector reproduces this file byte for byte
@@ -594,4 +745,4 @@ run_cmd do
       pure (canonicalAxioms (theoremAxioms ++ witnessAxioms))
     else
       pure (canonicalAxioms theoremAxioms)
-  liftIO (publish outPath (render unit inputs axioms))
+  liftIO (publish outPath (render unit theoremTxt contractTxt inputs axioms))

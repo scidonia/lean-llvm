@@ -18,17 +18,32 @@ body's loop tracks:
   and `carriedAt_eq_carryAt`, which is the model's `carryAt` at
   `stopLaneOrLength`.
 
-**What is not here.**  The refinement theorem itself — that
-`runFuel noCalls 10000 scanWindowBody` returns the model's status word, writes
-the model's mask and leaves the model's carry in the slot, changing no other
-byte outside the band its own allocations cover — together with its instantiation
-at `scanWindowBaselineBody` and the negative control, is **not yet proved**, and
-nothing in this repository certifies the body until it is.  What remains is the
-lane-level step the plan calls P4's instruction-level obligation: the effect of
-the `body` block's instruction list on the five memory cells it touches, the loop
-induction over `valid ≤ 32`, and the theorem's footprint clause.  The prefix
-lemmas above are the model-side half of that step, and they are proved here so
-that the outstanding half has a fixed statement to meet.
+**The statement, and why it is not proved.**  `scanWindowStatement` below is
+the refinement statement `JsonScanLane`'s header writes: the body returns the
+model's status word, writes the model's mask at `%out`, leaves the model's carry
+in the slot, changes no byte outside its own allocation band, and leaves the
+window it read unchanged.  It is a proposition, and `scanWindowStatement_false`
+proves its negation, for two independent reasons:
+
+* the prose leaves the band's disjointness as an ellipsis — `(hband : … base
+  disjoint …)` — and the hypothesis is load-bearing, because the body stores
+  through 28 bytes of allocation from the allocator base on every lane
+  (`bandOverlap_clobbers_window`, with `bandClear_preserves_window` as its
+  control);
+* with that hypothesis supplied and every other hypothesis met, the body's
+  status word still carries the wrong refusal reason on a continuation byte
+  outside its requirement — the select chain tests `%lbad`, a bad *lead* byte,
+  where the model's refusal is `%ubad` (`badContinuation_reason_differs`, with
+  `badLead_reason_agrees` as its control).
+
+The mask, the carry and the window agree at those witnesses
+(`badContinuation_rest_agrees`), so the first obligation is the body's
+stop-word select — a change to `scanWindowBody` and its fixture — and not a proof
+step.  What remains outstanding after it is the instruction-level half: the
+effect of the `body` block's instruction list on the five memory cells it
+touches, the loop induction over `valid ≤ 32`, and the footprint clause.  The
+prefix lemmas above are the model-side half of that step, and they are proved
+here so that the outstanding half has a fixed statement to meet.
 
 Two properties of the body are measured rather than promised, and are what a
 reviewer of the fixture can check independently: it contains no `phi`, no
@@ -319,3 +334,192 @@ theorem carriedAt_eq_carryAt {bs : List UInt8} {st : BodyState} (hlen : bs.lengt
   cases h : stopOf bs st with
   | none => rfl
   | some s => cases s <;> rfl
+
+/-! ### The refinement statement
+
+The statement `JsonScanLane`'s header writes, as one object, so that the pin, a
+certificate and a reader all name the same proposition.  It is a proposition and
+not a theorem: `scanWindowStatement_false` proves its negation, and the name a
+certificate would carry (`scanWindowLLVM_refines`) is left free for the theorem
+that proves it once the body reports the model's reason.
+
+The prose is one hypothesis short, and the shortfall is not decoration.  Its
+hypothesis list ends with `(hband : … base disjoint …)`, an ellipsis where a
+hypothesis belongs.  The body allocates six cells at the allocator base — `%k`
+(8 bytes), `%maskp` (4), `%stopp` (4) and the three lane mask words (4 each) —
+and stores through them on every lane, so the band it owns is
+`[base, base + scanBandBytes)`, and the conclusion's last clause is false when
+that band meets the window: `bandOverlap_clobbers_window` lays the band's counter
+cell across the window's second byte and reads the caller's window back as the
+counter's bytes, while `bandClear_preserves_window` — the same read, same
+detector, band clear of the window — reads it back intact.
+
+The statement is false for a second reason, and no hypothesis can repair it.  The
+body's stop word has one word per refusal reason its lane rule can raise — `%wcl`
+for a closing lane, `%wct` for a control byte, `%wbd` for a `badUtf8` — and the
+select chain that chooses between them tests `%lbad`, a bad *lead* byte, for the
+`badUtf8` word: `%sw0` is `if %lbad then %wbd else %wct`.  A byte that violates a
+pending requirement is `%ubad`, not `%lbad`, so the chain falls through to the
+control word, and `%wbd` is unreachable on that path.
+`badContinuation_reason_differs` is the witness and `badLead_reason_agrees` its
+control.  Choosing `%wbd` on `%ubad ||| %lbad` instead answers the model's word on
+both witnesses and leaves the words the body already reports unchanged, on the
+windows checked; nothing in this repository builds that body.
+-/
+
+/-- The bytes the body's own allocations occupy, from the allocator base: `%k`
+(8), `%maskp` (4), `%stopp` (4) and the three lane-mask words (4 each). -/
+def scanBandBytes : Nat := 28
+
+/-- The band the body allocates, disjoint from the caller's three regions: the
+hypothesis the prose leaves as `(hband : … base disjoint …)`. -/
+def scanBandDisjoint (base pIn pOut pState valid : Nat) : Prop :=
+  (base + scanBandBytes ≤ pIn ∨ pIn + valid ≤ base) ∧
+  (base + scanBandBytes ≤ pOut ∨ pOut + outBytes ≤ base) ∧
+  (base + scanBandBytes ≤ pState ∨ pState + stateBytes ≤ base)
+
+/-- **The refinement statement**, with the prose's elided hypothesis supplied and
+the frame tied to `scanBandBytes`. -/
+def scanWindowStatement : Prop :=
+  ∀ (bs : List UInt8) (st : BodyState) (mem : Mem)
+    (pIn pOut pState base valid : Nat),
+    valid ≤ 32 →
+    bs.length = valid →
+    readBytes mem pIn valid = some bs →
+    slotAt mem pState = some st →
+    st.WellFormed →
+    scanSlotDisjoint pIn pOut pState valid →
+    scanBandDisjoint base pIn pOut pState valid →
+    ∃ mem', runFuel noCalls 10000 scanWindowBody
+        { (initState scanWindowBody [.ptr pIn, .ptr pOut, .ptr pState,
+                                    .int 32 (BitVec.ofNat 32 valid)]) with
+          mem := mem, next := base } =
+        some (.ret (some (.int 32 (encodeStatus (Status.ok (stopOf bs st))))) mem') ∧
+      readWord mem' pOut = some (maskOfList bs) ∧
+      slotAt mem' pState = some (carryAt bs st (stopLaneOrLength bs st)) ∧
+      AgreesOutsideMem mem' (writeSlot (writeMask mem pOut (maskOfList bs)) pState
+          (encodeState (carryAt bs st (stopLaneOrLength bs st))))
+        (Band base (base + scanBandBytes)) ∧
+      readBytes mem' pIn valid = some bs
+
+/-! #### The witness harness
+
+A run over a caller's memory laid out the way the unit's ABI describes it: the
+window at 100, the carry slot at 200 holding `st`'s encoding, and the mask's word
+at 300.  Nothing is present inside the band, which is what a fresh allocation
+finds, so the only bytes a run writes outside the band are the ones the unit
+owns.
+-/
+
+/-- The carry's encoding as the slot's 16 bytes at `p`: `flags`, `count`, `lo`
+and `hi`, each little-endian. -/
+def slotBytes (p : Nat) (st : BodyState) : Mem :=
+  let s := encodeState st
+  (natToBytes s.flags.toNat 4 ++ natToBytes s.count.toNat 4 ++
+    natToBytes s.lo.toNat 4 ++ natToBytes s.hi.toNat 4).zipIdx.map
+    fun q => (p + q.2, q.1)
+
+/-- The caller's memory a witness run starts from. -/
+def witnessMem (bs : List UInt8) (st : BodyState) : Mem :=
+  bs.zipIdx.map (fun p => (100 + p.2, p.1)) ++ slotBytes 200 st ++
+    (List.range 4).map (fun i => (300 + i, 0))
+
+/-- The state a witness run starts in: the caller's memory, the window's length
+as the request's `%valid`, and the allocator base the request names. -/
+def witnessStart (bs : List UInt8) (st : BodyState) (base valid : Nat) : State :=
+  { (initState scanWindowBody [.ptr 100, .ptr 300, .ptr 200,
+      .int 32 (BitVec.ofNat 32 valid)]) with
+    mem := witnessMem bs st, next := base }
+
+/-- The value a completed witness run returns; `none` when it is undefined or
+runs out of fuel. -/
+def runValue (bs : List UInt8) (st : BodyState) (base valid : Nat) : Option Value :=
+  (runFuel noCalls 10000 scanWindowBody (witnessStart bs st base valid)).bind fun
+    | .ret v _ => v
+    | .ub => none
+
+/-- The window a completed witness run leaves at the caller's address. -/
+def runWindow (bs : List UInt8) (st : BodyState) (base valid : Nat) :
+    Option (List UInt8) :=
+  (runFuel noCalls 10000 scanWindowBody (witnessStart bs st base valid)).bind fun
+    | .ret _ m => readBytes m 100 valid
+    | .ub => none
+
+/-! #### The witnesses
+
+The runs below reduce the body through the semantics, which is deeper than the
+default recursion limit, so the block raises it once.
+-/
+
+set_option maxRecDepth 100000 in
+section
+
+/-- **The prose's elided hypothesis is load-bearing.**  With the band's counter
+cell laid across the window's second byte, the run's own stores replace the
+caller's bytes, so the conclusion's `readBytes mem' pIn valid = some bs` clause is
+false. -/
+theorem bandOverlap_clobbers_window :
+    runWindow [0x61, 0x61] BodyState.body 99 2 = some [0, 0] := by decide
+
+/-- The control for `bandOverlap_clobbers_window`: the same read, with the band
+clear of the caller's regions, returns the window.  Only the band's placement
+changed. -/
+theorem bandClear_preserves_window :
+    runWindow [0x61, 0x61] BodyState.body 64 2 = some [0x61, 0x61] := by decide
+
+/-- **The body's stop word carries the wrong refusal reason.**  On `[0xE0,
+0x80]` the model refuses at lane 1 with `badUtf8` — the requirement `0xE0` leaves
+is `[0xA0, 0xBF]` and `0x80` is outside it — while the body returns the control
+word.  Both words name lane 1 and kind `refuse`; the two-bit reason field is
+`control` where the model says `badUtf8`. -/
+theorem badContinuation_reason_differs :
+    runValue [0xE0, 0x80] BodyState.body 64 2 = some (.int 32 0x282) ∧
+      (0x282 : BitVec 32) ≠
+        encodeStatus (Status.ok (stopOf [0xE0, 0x80] BodyState.body)) := by
+  refine ⟨by decide, by decide⟩
+
+/-- The control for `badContinuation_reason_differs`: on a window whose refusal
+is a bad *lead* byte the two words agree, so the disagreement above is the body's
+select and not the comparison. -/
+theorem badLead_reason_agrees :
+    runValue [0xC0] BodyState.body 64 1 =
+      some (.int 32 (encodeStatus (Status.ok (stopOf [0xC0] BodyState.body)))) := by
+  decide
+
+/-- At the disagreeing witness everything but the status word agrees: the mask at
+`%out` is `maskOfList`, the slot is the model's carry at `stopLaneOrLength`, and
+the window is the caller's bytes. -/
+theorem badContinuation_rest_agrees :
+    (runFuel noCalls 10000 scanWindowBody
+        (witnessStart [0xE0, 0x80] BodyState.body 64 2)).bind
+        (fun
+          | .ret _ m => some (readWord m 300, slotAt m 200, readBytes m 100 2)
+          | .ub => none) =
+      some (some (maskOfList [0xE0, 0x80]),
+        some (carryAt [0xE0, 0x80] BodyState.body
+          (stopLaneOrLength [0xE0, 0x80] BodyState.body)),
+        some [0xE0, 0x80]) := by
+  decide
+
+/-- **The refinement statement is false.**  Every hypothesis of
+`scanWindowStatement` holds at the bad-continuation witness — the window is
+readable, the slot holds a well-formed carry, the three regions are disjoint and
+the band is clear of them — and the conclusion demands the model's `badUtf8` word
+where the run returns the control word. -/
+theorem scanWindowStatement_false : ¬ scanWindowStatement := by
+  intro h
+  have hconcl :=
+    h [0xE0, 0x80] BodyState.body (witnessMem [0xE0, 0x80] BodyState.body)
+      100 300 200 64 2 (by decide) (by decide) (by decide) (by decide)
+      (by simp [BodyState.WellFormed, BodyState.body, Utf8Need.WellFormed])
+      (by unfold scanSlotDisjoint outBytes stateBytes; decide)
+      (by unfold scanBandDisjoint scanBandBytes outBytes stateBytes; decide)
+  obtain ⟨mem', hrun, -⟩ := hconcl
+  have hvalue := badContinuation_reason_differs.1
+  rw [runValue, witnessStart, hrun] at hvalue
+  simp only [Option.bind, Option.some.injEq, Value.int.injEq] at hvalue
+  exact badContinuation_reason_differs.2 ((eq_of_heq hvalue.2).symm)
+
+end
+
+end LeanLLVM.Refinement.JsonScanIR
