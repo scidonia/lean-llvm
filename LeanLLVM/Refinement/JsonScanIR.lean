@@ -22,9 +22,10 @@ body's loop tracks:
 refinement statement `JsonScanLane`'s header writes, with the band hypothesis that
 prose leaves as an ellipsis supplied: the body returns the model's status word,
 writes the model's mask at `%out`, leaves the model's carry in the slot, changes no
-byte outside its own allocation band, and leaves the window it read unchanged.  It
-is a proposition and not a theorem; the name a certificate would carry
-(`scanWindowLLVM_refines`) is left free for the theorem that proves it.
+byte outside its own allocation band and the caller's state region, and leaves the
+window it read unchanged.  It is a proposition and not a theorem; the name a
+certificate would carry (`scanWindowLLVM_refines`) is left free for the theorem that
+proves it.
 
 The prose's ellipsis is one hypothesis short of the statement, and the shortfall
 is load-bearing.  The body allocates six cells at the allocator base — `%k` (8
@@ -35,6 +36,19 @@ caller's three regions.  `bandOverlap_clobbers_window` lays the band's counter c
 across the window's second byte and reads the caller's window back as the counter's
 bytes; `bandClear_preserves_window`, the same read with the band clear, reads it
 back intact.
+
+The frame's second boundary is the caller's state region, which the unit writes
+and the caller reads back as a carry.  The slot's *bytes* are the rule's own and
+not the encoding's: a lane that completes a UTF-8 requirement leaves the bounds it
+last used (`[0x80, 0xBF]`) in the slot where `encodeState` writes zero, and the
+entry slot may carry anything above the bits `decodeState` reads.
+`completionLeavesBounds` measures the first on `[0xC2, 0x80]` — at a caller whose
+slot *is* the encoding, so it is not an input-canonicality question — and shows the
+readback `slotAt` agrees there; `scanWindowStatementPinningSlotBytes_false` refutes
+the statement that pins the slot's bytes inside the frame.  The frame therefore
+stops at the band and at the state region, which is the granularity
+`JsonScanABI.scanFootprint` states: a difference anywhere in `%state` is the
+unit's, and its caller-visible content is the readback clause.
 
 The stop word is where the statement met the body rather than a proof step.  The
 body reports one word per refusal reason its lane rule can raise — `%wcl` for a
@@ -353,9 +367,9 @@ theorem carriedAt_eq_carryAt {bs : List UInt8} {st : BodyState} (hlen : bs.lengt
 prose as one object, so that a pin, a certificate and a reader all name the same
 proposition: the body returns the model's status word, writes the model's mask at
 `%out`, leaves the model's carry in the slot, changes no byte outside its own
-allocation band, and leaves the window it read unchanged.  It is a proposition and
-not a theorem; the name a certificate would carry (`scanWindowLLVM_refines`) is
-left free for the theorem that proves it.
+allocation band and the caller's state region, and leaves the window it read
+unchanged.  It is a proposition and not a theorem; the name a certificate would
+carry (`scanWindowLLVM_refines`) is left free for the theorem that proves it.
 
 The prose's hypothesis list ends with `(hband : … base disjoint …)`, an ellipsis
 where a hypothesis belongs, and the shortfall is not decoration.  The body
@@ -367,6 +381,18 @@ lane, so the band it owns is `[base, base + scanBandBytes)`, and
 second byte and reads the caller's window back as the counter's bytes, while
 `bandClear_preserves_window` — the same read, same detector, band clear of the
 window — reads it back intact.
+
+The frame's other boundary is the caller's state region.  The body stores the
+rule's four words there on every lane, and a lane that completes a UTF-8
+requirement leaves the bounds it last used in the slot's bounds words where
+`encodeState` writes zero; the entry slot's upper bits likewise come back out
+unchanged.  `completionLeavesBounds` measures the bounds on `[0xC2, 0x80]` at a
+caller whose slot holds the encoding, and the readback `slotAt` is the model's
+carry there, so the difference is the frame's rather than the readback's.
+`scanWindowStatementPinningSlotBytes_false` refutes the statement that pins the
+slot's bytes inside the frame; the frame here stops at the band and at the state
+region, which is `JsonScanABI.scanFootprint`'s granularity, and the state region's
+caller-visible content is the readback clause.
 
 The stop word is where the statement met the body rather than a proof step.  The
 body reports one word per refusal reason its lane rule can raise — `%wcl` for a
@@ -403,9 +429,64 @@ def scanBandDisjoint (base pIn pOut pState valid : Nat) : Prop :=
   (base + scanBandBytes ≤ pOut ∨ pOut + outBytes ≤ base) ∧
   (base + scanBandBytes ≤ pState ∨ pState + stateBytes ≤ base)
 
-/-- **The refinement statement about a body**, with the prose's elided hypothesis
-supplied and the frame tied to `scanBandBytes`. -/
+/-- **The refinement statement about a body**, with the prose's elided band
+hypothesis supplied, the frame tied to `scanBandBytes`, and the state region left
+to the unit at the ABI's granularity.
+
+The frame stops at the band and at the caller's state region, and the state
+region's caller-visible content is the readback clause `slotAt`.  It is not byte
+equality with the encoding: the body writes the rule's own four words into the
+slot on every lane, so a lane that completes a UTF-8 requirement leaves the bounds
+it last used in the slot where `encodeState` writes zero.
+`completionLeavesBounds` measures that at a caller whose slot holds the encoding,
+and `scanWindowStatementPinningSlotBytes_false` refutes the statement that pins
+those bytes inside the frame.  `JsonScanABI.scanFootprint` allows the same
+difference anywhere in `%state`, which is the granularity this clause keeps. -/
 def scanWindowStatementOf (f : Function) : Prop :=
+  ∀ (bs : List UInt8) (st : BodyState) (mem : Mem)
+    (pIn pOut pState base valid : Nat),
+    valid ≤ 32 →
+    bs.length = valid →
+    readBytes mem pIn valid = some bs →
+    slotAt mem pState = some st →
+    st.WellFormed →
+    scanSlotDisjoint pIn pOut pState valid →
+    scanBandDisjoint base pIn pOut pState valid →
+    ∃ mem', runFuel noCalls 10000 f
+        { (initState f [.ptr pIn, .ptr pOut, .ptr pState,
+                        .int 32 (BitVec.ofNat 32 valid)]) with
+          mem := mem, next := base } =
+        some (.ret (some (.int 32 (encodeStatus (Status.ok (stopOf bs st))))) mem') ∧
+      readWord mem' pOut = some (maskOfList bs) ∧
+      slotAt mem' pState = some (carryAt bs st (stopLaneOrLength bs st)) ∧
+      AgreesOutsideMem mem' (writeMask mem pOut (maskOfList bs))
+        (fun a => Band base (base + scanBandBytes) a ∨
+          (pState ≤ a ∧ a < pState + stateBytes)) ∧
+      readBytes mem' pIn valid = some bs
+
+/-- **The refinement statement about the emitted body**: the proposition the
+scanner's certificate would name, and the one `scanWindowLLVM_refines` is to
+prove. -/
+def scanWindowStatement : Prop := scanWindowStatementOf scanWindowBody
+
+/-! #### The statement before the frame left the state region to the unit
+
+The frame clause cannot pin the slot's bytes.  The body stores the rule's four
+words and not the encoding's: on a lane that completes a UTF-8 requirement it
+leaves the bounds it last used (`[0x80, 0xBF]`) where `encodeState` writes zero,
+and the entry slot it read may carry anything above the bits `decodeState` reads.
+`completionLeavesBounds` measures the first at a caller whose slot *is* the
+encoding, so the disagreement is not an input-canonicality question; the readback
+`slotAt` is the model's carry in both cases.  The definition below is the statement
+as it stood with the slot's bytes inside the frame, and
+`scanWindowStatementPinningSlotBytes_false` refutes it about the emitted body.
+-/
+
+/-- The statement as it stood before the frame left the state region to the unit:
+byte equality with the model's canonical slot write, outside the band.  It is the
+pre-correction shape, the subject of `scanWindowStatementPinningSlotBytes_false`
+and of nothing else: no certificate names it. -/
+def scanWindowStatementOfPinningSlotBytes (f : Function) : Prop :=
   ∀ (bs : List UInt8) (st : BodyState) (mem : Mem)
     (pIn pOut pState base valid : Nat),
     valid ≤ 32 →
@@ -426,11 +507,6 @@ def scanWindowStatementOf (f : Function) : Prop :=
           (encodeState (carryAt bs st (stopLaneOrLength bs st))))
         (Band base (base + scanBandBytes)) ∧
       readBytes mem' pIn valid = some bs
-
-/-- **The refinement statement about the emitted body**: the proposition the
-scanner's certificate would name, and the one `scanWindowLLVM_refines` is to
-prove. -/
-def scanWindowStatement : Prop := scanWindowStatementOf scanWindowBody
 
 /-! #### The body's stop word before it tested `%ubad`
 
@@ -519,6 +595,14 @@ def runWindow (f : Function) (bs : List UInt8) (st : BodyState) (base valid : Na
   (runFuel noCalls 10000 f (witnessStart f bs st base valid)).bind fun
     | .ret _ m => readBytes m 100 valid
     | .ub => none
+
+/-- The memory a completed run of `f` leaves; the empty memory when it is
+undefined or runs out of fuel. -/
+def runMem (f : Function) (bs : List UInt8) (st : BodyState) (base valid : Nat) :
+    Mem :=
+  ((runFuel noCalls 10000 f (witnessStart f bs st base valid)).bind fun
+    | .ret _ m => some m
+    | .ub => none).getD []
 
 /-- What a run leaves, as the statement's four clauses. -/
 structure Summary where
@@ -628,14 +712,46 @@ theorem probeWindows_agree :
       probeWindows.map (fun bs => some (modelSummary bs BodyState.body)) := by
   decide
 
+/-- Two byte reads agree: both absent, or both present with the same value.  The
+comparison is on the bytes' `Nat` values, which keeps the checker's axiom
+footprint the constructive one the pins below record. -/
+def sameByte : Option UInt8 → Option UInt8 → Bool
+  | none, none => true
+  | some x, some y => x.toNat == y.toNat
+  | _, _ => false
+
+/-- Whether two memories agree at every address either of them mentions, outside
+the band and the state region: the frame clause of `scanWindowStatementOf` as a
+computation.  The band and the state region are the unit's; everywhere else the
+run's memory must be the model's mask write, byte for byte.  Addresses either
+memory mentions are checked as they come — a repeated address is checked twice and
+answers the same way — so no deduplication is needed. -/
+def frameAgrees (m m' : Mem) (base pState : Nat) : Bool :=
+  (m.map (fun p => p.1) ++ m'.map (fun p => p.1)).all fun a =>
+    (base ≤ a && a < base + scanBandBytes) ||
+      (pState ≤ a && a < pState + stateBytes) ||
+      sameByte (readByte m a) (readByte m' a)
+
+set_option maxHeartbeats 16000000 in
+/-- **Every probe window meets the frame clause too.**  Outside the band and the
+state region the run's memory is the model's mask write at `%out`; the state
+region's content is the readback `probeWindows_agree` compares, and the band is the
+unit's own.  This is the clause the pinned-slot statement got wrong, checked on the
+same seven windows rather than read off one. -/
+theorem probeWindows_frame :
+    probeWindows.all (fun bs =>
+        frameAgrees (runMem scanWindowBody bs BodyState.body 64 bs.length)
+          (writeMask (witnessMem bs BodyState.body) 300 (maskOfList bs)) 64 200) = true := by
+  decide
+
 /-- **The statement was false of the body before the stop word's chain tested
 `%ubad`.**  Every hypothesis of `scanWindowStatementOf scanWindowBodyBeforeStopWordFix`
 holds at the bad-continuation witness — the window is readable, the slot holds a
 well-formed carry, the three regions are disjoint and the band is clear of them —
 and the conclusion demands the model's `badUtf8` word where that body returns the
-control word.  It is the record of the defect the chain carried; the statement
-about the emitted body states the same conclusion, which is why it is not proved
-rather than refuted. -/
+control word.  It is the record of the defect the chain carried, and it is the
+value clause it refutes: the frame's own clause is refuted separately, about the
+emitted body, by `scanWindowStatementPinningSlotBytes_false`. -/
 theorem scanWindowStatement_false :
     ¬ scanWindowStatementOf scanWindowBodyBeforeStopWordFix := by
   intro h
@@ -650,6 +766,75 @@ theorem scanWindowStatement_false :
   rw [runValue, witnessStart, hrun] at hvalue
   simp only [Option.bind, Option.some.injEq, Value.int.injEq] at hvalue
   exact badContinuation_reason_differs.2 ((eq_of_heq hvalue.2).symm)
+
+/-- **The slot the run leaves after a requirement completes.**  On `[0xC2, 0x80]`
+the caller's slot holds the encoding of the entry carry; lane 0 leaves the
+requirement `more 1 [0x80, 0xBF]` and lane 1 completes it.  The run leaves the
+bounds it last used in the slot's two bounds words — `0x80` and `0xBF` — where the
+encoding writes zero for a completed requirement.  The readback is the model's
+carry in both cases, because `slotAt` ignores the bounds when the count is zero,
+so the disagreement is the frame's and not the readback's, and it survives every
+hypothesis of the statement including the slot holding the encoding. -/
+theorem completionLeavesBounds :
+    readBytes (runMem scanWindowBody [0xC2, 0x80] BodyState.body 64 2) 200 16 =
+        some [1, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 191, 0, 0, 0] ∧
+      slotAt (runMem scanWindowBody [0xC2, 0x80] BodyState.body 64 2) 200 =
+        some (carryAt [0xC2, 0x80] BodyState.body
+          (stopLaneOrLength [0xC2, 0x80] BodyState.body)) ∧
+      readBytes (writeSlot (writeMask (witnessMem [0xC2, 0x80] BodyState.body) 300
+            (maskOfList [0xC2, 0x80])) 200
+          (encodeState (carryAt [0xC2, 0x80] BodyState.body
+            (stopLaneOrLength [0xC2, 0x80] BodyState.body)))) 200 16 =
+        some [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-- **The frame cannot pin the slot's bytes.**  Every hypothesis of
+`scanWindowStatementOfPinningSlotBytes scanWindowBody` holds at the completion
+witness — the window is readable, the slot holds a well-formed carry *and* its
+encoding, the three regions are disjoint and the band is clear of them — and the
+conclusion demands the slot's bytes be `encodeState`'s outside the band, where the
+run's are the rule's own (`completionLeavesBounds`, first and third clauses).  The
+statement is therefore refuted rather than unproved.  It is the record of the shape
+the frame had; `scanWindowStatementOf` leaves the state region to the unit and pins
+its caller-visible content by `slotAt`. -/
+theorem scanWindowStatementPinningSlotBytes_false :
+    ¬ scanWindowStatementOfPinningSlotBytes scanWindowBody := by
+  intro h
+  have hconcl :=
+    h [0xC2, 0x80] BodyState.body (witnessMem [0xC2, 0x80] BodyState.body)
+      100 300 200 64 2 (by decide) (by decide) (by decide) (by decide)
+      (by simp [BodyState.WellFormed, BodyState.body, Utf8Need.WellFormed])
+      (by unfold scanSlotDisjoint outBytes stateBytes; decide)
+      (by unfold scanBandDisjoint scanBandBytes outBytes stateBytes; decide)
+  obtain ⟨mem', hrun, -, -, hframe, -⟩ := hconcl
+  have hrun0 : runFuel noCalls 10000 scanWindowBody
+      (witnessStart scanWindowBody [0xC2, 0x80] BodyState.body 64 2) =
+      some (.ret (some (.int 32
+        (encodeStatus (Status.ok (stopOf [0xC2, 0x80] BodyState.body)))))
+        (runMem scanWindowBody [0xC2, 0x80] BodyState.body 64 2)) := by
+    decide
+  have hsame : some (Outcome.ret (some (.int 32
+        (encodeStatus (Status.ok (stopOf [0xC2, 0x80] BodyState.body))))) mem') =
+      some (Outcome.ret (some (.int 32
+        (encodeStatus (Status.ok (stopOf [0xC2, 0x80] BodyState.body)))))
+        (runMem scanWindowBody [0xC2, 0x80] BodyState.body 64 2)) :=
+    hrun.symm.trans hrun0
+  have hmem : mem' = runMem scanWindowBody [0xC2, 0x80] BodyState.body 64 2 := by
+    have h3 := Option.some.inj hsame
+    have hm := congrArg (fun o : Outcome => match o with
+      | .ret _ m => m
+      | .ub => ([] : Mem)) h3
+    simpa using hm
+  have hframeAt := hframe 208 (by unfold Band scanBandBytes; decide)
+  rw [hmem] at hframeAt
+  have hl : readByte (runMem scanWindowBody [0xC2, 0x80] BodyState.body 64 2) 208 =
+      some 128 := by decide
+  have hr : readByte (writeSlot (writeMask (witnessMem [0xC2, 0x80] BodyState.body) 300
+      (maskOfList [0xC2, 0x80])) 200
+      (encodeState (carryAt [0xC2, 0x80] BodyState.body
+        (stopLaneOrLength [0xC2, 0x80] BodyState.body)))) 208 = some 0 := by decide
+  rw [hl, hr] at hframeAt
+  exact absurd hframeAt (by decide)
 
 end
 

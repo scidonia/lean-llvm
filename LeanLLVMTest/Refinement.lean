@@ -2787,7 +2787,8 @@ pinned.  Every theorem in that module is pinned here.  The refinement statement
 is `scanWindowStatement`, and it is not a theorem: the name a certificate would
 carry (`scanWindowLLVM_refines`) is deliberately not taken, so there is nothing to
 pin under it, and what is pinned is what a proof of it rests on — including the
-record of the stop word defect the body's select chain carried.
+records of the band hypothesis the prose elided, of the frame's boundary at the
+caller's state region, and of the stop word defect the body's select chain carried.
 -/
 
 /--
@@ -2960,29 +2961,43 @@ example (bs : List UInt8) (st : BodyState) (k : Nat)
   LeanLLVM.Refinement.JsonScanIR.firstStop_eq_some (bs := bs) (st := st) (k := k)
     hcont (stop := stop) hlane (n := n) hn
 
-/-! #### The refinement statement, and the record of the stop word's defect
+/-! #### The refinement statement, and the records of its defects
 
 `scanWindowStatement` is the statement `LeanLLVM/Refinement/JsonScanLane.lean`'s
 header writes, as one proposition: the body returns the model's status word,
 writes the model's mask at `%out`, leaves the model's carry in the slot, changes
-no byte outside its own allocation band, and leaves the window it read unchanged.
-The prose leaves the band's disjointness as an ellipsis, so the statement supplies
-it as `scanBandDisjoint`, and its frame is `scanBandBytes` rather than a typed
-`28`.  `scanBandBytes` is the width of the body's own six allocations, so it is
-pinned against the model's `Ty.sizeBytes` and not against the numeral.
+no byte outside its own allocation band and the caller's state region, and leaves
+the window it read unchanged.  The prose leaves the band's disjointness as an
+ellipsis, so the statement supplies it as `scanBandDisjoint`, and its frame is
+`scanBandBytes` rather than a typed `28`.  `scanBandBytes` is the width of the
+body's own six allocations, so it is pinned against the model's `Ty.sizeBytes` and
+not against the numeral.
 
-The elided band hypothesis is load-bearing, and the record of the stop word's
-defect is kept: the select chain that chose the `badUtf8` word tested `%lbad`, a
-bad *lead* byte, where a byte outside a pending requirement is a bad
-*continuation*, so `%wbd` was unreachable on that path.  `badContinuation_reason_differs`
-is that record, about `scanWindowBodyBeforeStopWordFix` — the body as it stood
-before the chain tested `%ubad` — `badLead_reason_agrees` is its control, and
-`scanWindowStatement_false` refutes the statement about that body.  The emitted
-body answers the same witness with the model's word
-(`badContinuation_reason_agrees`), agrees on all four clauses there
-(`badContinuation_rest_agrees`), and agrees on all seven windows the chain is
-measured on (`probeWindows_agree`), the 32-byte one whose bad continuation sits at
-lane 31 included.
+Two defects the statement met before it was a proposition a body could meet are
+kept as records.  The elided band hypothesis is load-bearing.  And the frame
+cannot pin the slot's *bytes*: the body stores the rule's own four words, so a
+lane that completes a UTF-8 requirement leaves the bounds it last used where
+`encodeState` writes zero.  `completionLeavesBounds` measures that on
+`[0xC2, 0x80]` at a caller whose slot holds the encoding — where the readback
+`slotAt` is the model's carry — and
+`scanWindowStatementPinningSlotBytes_false` refutes the statement that put the
+slot's bytes inside the frame.  The statement's frame stops at the state region,
+which is `JsonScanABI.scanFootprint`'s granularity.
+
+The stop word's defect is the other record: the select chain that chose the
+`badUtf8` word tested `%lbad`, a bad *lead* byte, where a byte outside a pending
+requirement is a bad *continuation*, so `%wbd` was unreachable on that path.
+`badContinuation_reason_differs` is that record, about
+`scanWindowBodyBeforeStopWordFix` — the body as it stood before the chain tested
+`%ubad` — `badLead_reason_agrees` is its control, and `scanWindowStatement_false`
+refutes the statement about that body.  The emitted body answers the same witness
+with the model's word (`badContinuation_reason_agrees`), agrees on all four
+clauses there (`badContinuation_rest_agrees`), and agrees on all seven windows the
+chain is measured on (`probeWindows_agree`), the 32-byte one whose bad
+continuation sits at lane 31 included.  The same seven windows meet the frame
+clause (`probeWindows_frame`): outside the band and the state region each run's
+memory is the model's mask write, which is the clause the pinned-slot statement
+got wrong.
 -/
 
 /-- The body's six allocations, at the model's own byte sizes: `%k` (8),
@@ -3139,11 +3154,84 @@ example : probeWindows.map (fun bs =>
       some (modelSummary bs LeanLLVM.JSON.BodyState.body)) :=
   probeWindows_agree
 
+-- The same seven windows against the frame clause: outside the band and the
+-- caller's state region, each run's memory is the model's mask write.
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanBody
+  LeanLLVM.Refinement.JsonScanModel in
+example : probeWindows.all (fun bs =>
+    frameAgrees (runMem scanWindowBody bs LeanLLVM.JSON.BodyState.body 64 bs.length)
+      (writeMask (witnessMem bs LeanLLVM.JSON.BodyState.body) 300
+        (LeanLLVM.JSON.maskOfList bs)) 64 200) = true :=
+  probeWindows_frame
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.sameByte' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.sameByte
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.frameAgrees' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.frameAgrees
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.probeWindows_frame' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.probeWindows_frame
+
 /--
 info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatement_false
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOfPinningSlotBytes' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOfPinningSlotBytes
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.runMem' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.runMem
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.completionLeavesBounds' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.completionLeavesBounds
+
+-- The completion witness, read: the caller's slot holds the encoding of the
+-- entry carry, the run leaves the bounds it last used in the slot's bounds words
+-- (`0x80`, `0xBF`, where the encoding writes zero), and the readback is still the
+-- model's carry.
+set_option maxRecDepth 100000 in
+open LeanLLVM.Refinement.JsonScanIR LeanLLVM.Refinement.JsonScanBody
+  LeanLLVM.Refinement.JsonScanModel in
+example :
+    readBytes (runMem scanWindowBody [0xC2, 0x80] LeanLLVM.JSON.BodyState.body 64 2) 200 16 =
+        some [1, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 191, 0, 0, 0] ∧
+      slotAt (runMem scanWindowBody [0xC2, 0x80] LeanLLVM.JSON.BodyState.body 64 2) 200 =
+        some (LeanLLVM.JSON.carryAt [0xC2, 0x80] LeanLLVM.JSON.BodyState.body
+          (stopLaneOrLength [0xC2, 0x80] LeanLLVM.JSON.BodyState.body)) :=
+  ⟨completionLeavesBounds.1, completionLeavesBounds.2.1⟩
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanIR.scanWindowStatementPinningSlotBytes_false' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanIR.scanWindowStatementPinningSlotBytes_false
+
+-- The frame cannot pin the slot's bytes: the statement that put them inside it
+-- is refuted about the emitted body, at a caller whose slot holds the encoding.
+example : ¬ LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOfPinningSlotBytes
+    LeanLLVM.Refinement.JsonScanBody.scanWindowBody :=
+  LeanLLVM.Refinement.JsonScanIR.scanWindowStatementPinningSlotBytes_false
 
 -- The record theorem's subject is the pre-fix body, not the emitted one: every
 -- hypothesis of the statement holds at the bad-continuation witness with the band
@@ -3166,7 +3254,8 @@ are outstanding; that module's header records the measured per-lane count and
 the generator the chain is to come from.  None of them is here yet: the chain's
 last step stores the stop word, and the word it stores is the model's on every
 window measured above — an agreement to prove at every lane, not one to read off
-the windows.
+the windows.  The slot's four stores owe the readback `slotAt` and not
+`encodeState`'s bytes, which is the frame's boundary at the state region.
 -/
 
 -- The table prefix is the body's own nine instructions, named here so that a

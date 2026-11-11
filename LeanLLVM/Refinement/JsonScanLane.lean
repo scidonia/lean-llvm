@@ -20,18 +20,26 @@ not the other way round.  For a readable window and a well-formed carry:
             some (.ret (some (.int 32 (encodeStatus (Status.ok (stopOf bs st))))) mem') ∧
           readWord mem' pOut = some (maskOfList bs) ∧
           slotAt mem' pState = some (carryAt bs st (stopLaneOrLength bs st)) ∧
-          AgreesOutsideMem mem' (writeSlot (writeMask mem pOut (maskOfList bs)) pState
-              (encodeState (carryAt bs st (stopLaneOrLength bs st)))) (Band base (base + 28)) ∧
+          AgreesOutsideMem mem' (writeMask mem pOut (maskOfList bs))
+              (fun a => Band base (base + 28) a ∨
+                (pState ≤ a ∧ a < pState + 16)) ∧
           readBytes mem' pIn valid = some bs
 
 That statement is `JsonScanIR.scanWindowStatement`, with the band hypothesis the
 prose leaves as `(hband : … base disjoint …)` supplied as
 `JsonScanIR.scanBandDisjoint` and the frame tied to `JsonScanIR.scanBandBytes`.
-It is a proposition and not a theorem.  Two things a proof meets before it can
-start are settled: the band hypothesis is load-bearing
-(`JsonScanIR.bandOverlap_clobbers_window`, with `bandClear_preserves_window` as its
-control), and the stop word's select chain reported `control` where the model
-refuses with `badUtf8` on a byte outside a pending requirement
+The frame also stops at the caller's state region: the body stores the rule's own
+words there, so a lane that completes a UTF-8 requirement leaves the bounds it
+last used where `encodeState` writes zero, and the state region's caller-visible
+content is the readback clause.  `JsonScanIR.completionLeavesBounds` measures that
+at a caller whose slot holds the encoding, and
+`JsonScanIR.scanWindowStatementPinningSlotBytes_false` refutes the statement that
+pins the slot's bytes inside the frame.  It is a proposition and not a theorem.
+Three things a proof meets before it can start are settled: the band hypothesis is
+load-bearing (`JsonScanIR.bandOverlap_clobbers_window`, with
+`bandClear_preserves_window` as its control), the frame cannot pin the slot's bytes
+(`completionLeavesBounds`), and the stop word's select chain reported `control`
+where the model refuses with `badUtf8` on a byte outside a pending requirement
 (`JsonScanIR.badContinuation_reason_differs`, the record of that body, with
 `badLead_reason_agrees` as its control).  The body now chooses the `badUtf8` word
 on `%ubad ||| %lbad`, and `JsonScanIR.probeWindows_agree` states the agreement

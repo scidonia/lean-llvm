@@ -9,7 +9,10 @@ parses that fixture at build time and pins it back to this AST.  The refinement
 statement about the body is `JsonScanIR.scanWindowStatement` and is **not yet
 proved**: `JsonScanIR.lean` proves the prefix facts the statement rests on, states
 the band hypothesis the prose elided, and records in its header the
-instruction-level step that remains.  `scanWindowBaselineBody` is the scalar
+instruction-level step that remains.  The frame also stops at the caller's state
+region, whose content the body writes as the rule's own words rather than as the
+encoding's; that boundary is measured and the statement that pinned the slot's
+bytes is refuted in `JsonScanIR`.  `scanWindowBaselineBody` is the scalar
 byte-wise counterpart; its fixture and its instantiation of the same statement are
 likewise outstanding.
 
