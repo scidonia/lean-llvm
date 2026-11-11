@@ -6,9 +6,9 @@ Counterexamples to the semantic premises the final parser composition retired.
 correspondence as a hypothesis quantified over the document, the verdict, the
 returned memory and the caller's slots:
 
-    ∀ mem bs verdict m dst ev err,
+    ∀ mem bs verdict m dst ev err ndst' nev',
       readBytes mem base bs.length = some bs →
-      ParserHalf eventRel bs verdict m dst ev err
+      ParserHalf eventRel bs verdict m dst ev err ndst' nev'
 
 `ParserHalf` carries `verdict = 1 ↔ ∃ t, parseBytes Limits.default … = .ok t`
 as its first conjunct.  The quantifier ran over `verdict`, so one input supplied
@@ -52,21 +52,20 @@ empty memory at `verdict = 1` and at `verdict = 0`, reads the acceptance
 equivalence out of `ParserHalf` both times, and derives the contradiction. -/
 theorem pipeline_parser_hsem_false (eventRel : EventStreamRel) (base : Nat) :
     ¬ (∀ (mem : Mem) (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-        (dst ev err : Nat),
+        (dst ev err ndst' nev' : Nat),
         readBytes mem base bs.length = some bs →
-        ParserHalf eventRel bs verdict m dst ev err) := by
+        ParserHalf eventRel bs verdict m dst ev err ndst' nev') := by
   intro hsem
   -- The empty document reads in the empty memory at any base.
   have hread : readBytes ([] : Mem) base ([] : List UInt8).length = some [] := rfl
-  have hzero : readBytes ([] : Mem) 0 0 = some [] := rfl
-  have h1 := hsem ([] : Mem) [] 1 ([] : Mem) 0 0 0 hread
-  have h0 := hsem ([] : Mem) [] 0 ([] : Mem) 0 0 0 hread
+  have h1 := hsem ([] : Mem) [] 1 ([] : Mem) 0 0 0 0 0 hread
+  have h0 := hsem ([] : Mem) [] 0 ([] : Mem) 0 0 0 0 0 hread
   -- The acceptance equivalence at `1`: the parser accepts the empty document.
   have hacc : ∃ t : Tape,
       parseBytes Limits.default (ByteString.literal ([] : List UInt8)) = .ok t :=
-    (h1 0 0 [] [] hzero hzero).1.mp rfl
+    h1.1.mp rfl
   -- The acceptance equivalence at `0`: the parser does not accept it.
-  have hlt : (0 : BitVec 64) = 1 := (h0 0 0 [] [] hzero hzero).1.mpr hacc
+  have hlt : (0 : BitVec 64) = 1 := h0.1.mpr hacc
   exact absurd hlt verdict_zero_ne_one
 
 /-- **The finalisation's retired premise is false as well.**
@@ -79,18 +78,17 @@ staging: the equivalence is demanded at `verdict = 1` and at `verdict = 0`. -/
 theorem pipeline_units_finalisation_hsem_false (eventRel : EventStreamRel)
     (mem : Mem) (base : Nat) :
     ¬ (∀ (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-        (dst ev err : Nat),
+        (dst ev err ndst' nev' : Nat),
         readBytes mem base bs.length = some bs →
-        ParserHalf eventRel bs verdict m dst ev err) := by
+        ParserHalf eventRel bs verdict m dst ev err ndst' nev') := by
   intro hsem
   have hread : readBytes mem base ([] : List UInt8).length = some [] := rfl
-  have hzero : readBytes ([] : Mem) 0 0 = some [] := rfl
-  have h1 := hsem [] 1 ([] : Mem) 0 0 0 hread
-  have h0 := hsem [] 0 ([] : Mem) 0 0 0 hread
+  have h1 := hsem [] 1 ([] : Mem) 0 0 0 0 0 hread
+  have h0 := hsem [] 0 ([] : Mem) 0 0 0 0 0 hread
   have hacc : ∃ t : Tape,
       parseBytes Limits.default (ByteString.literal ([] : List UInt8)) = .ok t :=
-    (h1 0 0 [] [] hzero hzero).1.mp rfl
-  have hlt : (0 : BitVec 64) = 1 := (h0 0 0 [] [] hzero hzero).1.mpr hacc
+    h1.1.mp rfl
+  have hlt : (0 : BitVec 64) = 1 := h0.1.mpr hacc
   exact absurd hlt verdict_zero_ne_one
 
 /-! ### Axiom footprint

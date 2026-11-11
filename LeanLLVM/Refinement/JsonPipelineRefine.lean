@@ -1011,44 +1011,41 @@ the cursors, the verdict's two values, the extents, the frame — is derived fro
 `pipelineUnitsPost` below, including the frame's widened escape extent
 (`batchReserve`). -/
 
-/-- **The parser-side half of `Sigma_pipeline`, at the run's reported extent.**
+/-- **The parser-side half of `Sigma_pipeline`, at the extents the units' post
+names.**
 
 The three conjuncts `pipelineUnitsPost` cannot supply: the verdict's equivalence
 with the reference parser's acceptance, the accepted tape with its value and
 validity, and the refusal word's offset.  `m` is the state the run returned, `bs`
-the document the caller staged, and `dst`, `ev`, `err` the caller's slots.
+the document the caller staged, `dst`, `ev`, `err` the caller's slots, and
+`ndst'`, `nev'` the arena's and the event stream's extents.
 
-`arena` and `evs` are read at the extents the run reports, which the units' post
-already names by `ndst'` and `nev'`; this half adds only what is said about them.
-
-**A recorded limitation of this shape.**  The extent pair is universally
-quantified with the two `readBytes` premises, not bound, because the finalisation
-below and `Sigma_pipeline` name the extents as *their* witnesses while this half
-is produced independently of them; a binder would leave the two witness sets to
-be identified, and the only thing connecting them — the eight-byte word in a
-cursor slot — identifies a value modulo `2 ^ 64`, not a length.  The cost is that
-the event/arena relation is required at *every* readable prefix of the two
-buffers, including the empty one.  A relation that distinguishes prefixes
-therefore makes the accepting case unsatisfiable, and the instantiation in
-`tests/counterexamples/parser-half-outcome.lean` uses one that does not
-distinguish them.  Stating the relation at one extent needs the extents to be
-named by both sides, which is a change to the units' post's shape rather than to
-this predicate. -/
+**The extents are arguments, and they are the record's.**  The relation is
+stated at the pair, so the arena and event bytes it relates are the ones read
+there, and a caller supplies the pair its post names.  The record names exactly
+one pair per outcome and memory: `pipelineOutputExtents` (`JsonPipelineContract`)
+reads each extent from its cursor slot and bounds it below `2 ^ 64`, and the
+bound is what makes the slot's eight bytes decide the number rather than its
+residue (`pipelineOutputExtents_unique`).  So the hypothesis that carries this
+predicate quantifies over pairs the record admits, which is one pair, and the
+finalisation applies it at the pair its own post carries.  Nothing here is
+quantified over prefixes: a relation that distinguishes prefixes is provable at
+the run's extents, which is the case the earlier shape could not express. -/
 def ParserHalf (eventRel : EventStreamRel) (bs : List UInt8)
-    (verdict : BitVec 64) (m : Mem) (dst ev err : Nat) : Prop :=
-  ∀ (ndst' nev' : Nat) (arena evs : List UInt8),
-    readBytes m dst ndst' = some arena →
-    readBytes m ev nev' = some evs →
-    (verdict = 1 ↔
+    (verdict : BitVec 64) (m : Mem) (dst ev err ndst' nev' : Nat) : Prop :=
+  (verdict = 1 ↔
       ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t) ∧
-    (verdict = 1 → ∃ (t : Tape) (v : LeanLLVM.JSON.Value),
-        parseBytes Limits.default (ByteString.literal bs) = .ok t ∧
-        t.input = ByteString.literal bs ∧
-        decodeTape t = some v ∧
-        eventRel bs arena evs t.tokens ∧
-        spansWellFormed t = true ∧
-        ValidDocument (ByteString.literal bs) v) ∧
-    (∀ e : Nat, readBytes m err 8 = some (wordBytes 8 e) → RefusalOffset bs e)
+  (verdict = 1 →
+    ∃ (t : Tape) (v : LeanLLVM.JSON.Value) (arena evs : List UInt8),
+      parseBytes Limits.default (ByteString.literal bs) = .ok t ∧
+      t.input = ByteString.literal bs ∧
+      decodeTape t = some v ∧
+      readBytes m dst ndst' = some arena ∧
+      readBytes m ev nev' = some evs ∧
+      eventRel bs arena evs t.tokens ∧
+      spansWellFormed t = true ∧
+      ValidDocument (ByteString.literal bs) v) ∧
+  (∀ e : Nat, readBytes m err 8 = some (wordBytes 8 e) → RefusalOffset bs e)
 
 /-- **The parser half at one outcome of the run.**
 
@@ -1062,6 +1059,11 @@ The document is the one the argument list's length and the starting memory name.
 Both are pinned rather than quantified: the length fixes the read and the read
 fixes the bytes, so the `∃ bs` has at most one inhabitant per outcome.
 
+`ndst'` and `nev'` are arguments, not this predicate's witnesses: they are the
+pair the units' post names (`pipelineOutputExtents`), which its consumer supplies
+and stage two's theorem is asked for.  The producer is asked only where the record
+admits the pair, and that is one pair per outcome and memory.
+
 **Why this is not the retired premise.**  The retired premise quantified the
 verdict (and the returned memory and the slots) freely over a readable document;
 `pipeline_parser_hsem_false` proves it implies `False`.  Here every one of those
@@ -1071,7 +1073,7 @@ producer of this predicate is stage two's body theorem — the record `Γ_stage2
 and `EventStreamRel` — and it is a hypothesis here only because that theorem is
 not in this file. -/
 def ParserHalfForOutcome (eventRel : EventStreamRel) (base : Nat)
-    (args : List Value) (mem : Mem) (o : Outcome) : Prop :=
+    (args : List Value) (mem : Mem) (ndst' nev' : Nat) (o : Outcome) : Prop :=
   match o, args with
   | .ret (some (.int 64 verdict)) m,
     [.ptr _, .int 64 n, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 _, .ptr _, .ptr _,
@@ -1080,7 +1082,7 @@ def ParserHalfForOutcome (eventRel : EventStreamRel) (base : Nat)
       ∃ bs : List UInt8,
         n.toNat = bs.length ∧
         readBytes mem base n.toNat = some bs ∧
-        ParserHalf eventRel bs verdict m dst ev err
+        ParserHalf eventRel bs verdict m dst ev err ndst' nev'
   | _, _ => False
 
 /-- **The finalisation, at the shape `Satisfies` consumes.**
@@ -1089,12 +1091,18 @@ From the staging, the units' post and the parser half at that same outcome, the
 specification's post.  `hsem` is indexed by the outcome because the units' post
 is: the verdict, the returned memory and the slots are that post's witnesses, and
 the parser half reads them off the same `o`.  The document it carries is the one
-the staging holds at `base`, which the length and the read identify. -/
+the staging holds at `base`, which the length and the read identify.
+
+`hsem` takes the extents because the record names them: it is asked at a pair the
+record admits, and the post's own pair is the only one.  So the proof below
+applies it at the post's witnesses and there is no quantifier over prefixes
+anywhere on the path from the units' post to the specification's. -/
 theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
     (hpre : pipelineStaging tab base args mem)
     (hpost : pipelineUnitsPost args mem next o)
-    (hsem : ParserHalfForOutcome eventRel base args mem o) :
+    (hsem : ∀ (ndst' nev' : Nat), pipelineOutputExtents args o ndst' nev' →
+      ParserHalfForOutcome eventRel base args mem ndst' nev' o) :
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs,
@@ -1109,8 +1117,9 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
   · rename_i _o0 verdict m'
     obtain ⟨hverdict, nk', nxp', ndst', nev', ent, ps, out, evs, hext, hnk, hnxp,
       hent, hxp, hdst, hev, herr, hunch⟩ := hpost
-    simp only [pipelineOutputExtents] at hext
-    obtain ⟨-, -, hndst, hnev⟩ := hext
+    -- the extents the record names are the ones it reads back through its slots
+    have hndstSlot : readBytes m' ndst 8 = some (wordBytes 8 ndst') := hext.2.2.1
+    have hnevSlot : readBytes m' nev 8 = some (wordBytes 8 nev') := hext.2.2.2
     have hbl : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
     have hK : bs.length + (64 * pipelineBlocks bs.length - bs.length) =
         64 * pipelineBlocks bs.length := by omega
@@ -1126,19 +1135,25 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     have hdoc : readBytes mem base n.toNat = some bs := by
       rw [hlen]; exact hdoclen
     -- the outcome's own document, identified with the staging's by the read
-    obtain ⟨bs', hlen', hread', hhalf⟩ := hsem
+    obtain ⟨bs', hlen', hread', hhalf⟩ := hsem ndst' nev' hext
     have hbs : bs' = bs := by
       rw [← hlen] at hdoclen
       rw [hread'] at hdoclen
       exact Option.some.inj hdoclen
     rw [hbs] at hhalf
-    obtain ⟨hacc, haccepted, hrefused⟩ :=
-      hhalf ndst' nev' out evs hdst hev
+    obtain ⟨hacc, haccepted, hrefused⟩ := hhalf
     unfold Sigma_pipeline
-    refine ⟨bs, nk', nxp', ndst', nev', hlen, hdoc, hnk, hnxp, hndst, hnev,
-      hverdict, hacc, ?_, ?_, ?_⟩
+    refine ⟨bs, nk', nxp', ndst', nev', hlen, hdoc, hnk, hnxp, hndstSlot,
+      hnevSlot, hverdict, hacc, ?_, ?_, ?_⟩
     · intro h1
-      obtain ⟨t, v, ht, hin, hdec, hrel, hspan, hvalid⟩ := haccepted h1
+      -- the half's arena and event stream are the post's: both are the read at
+      -- the extents the record names, and a read's value is the memory's
+      obtain ⟨t, v, arena, evs', ht, hin, hdec, hdst', hev', hrel, hspan, hvalid⟩ :=
+        haccepted h1
+      have har : arena = out := Option.some.inj (hdst'.symm.trans hdst)
+      have hev'' : evs' = evs := Option.some.inj (hev'.symm.trans hev)
+      rw [har] at hrel
+      rw [hev''] at hrel
       exact ⟨t, v, out, evs, ht, hin, hdec, hdst, hev, hrel, hspan, hvalid⟩
     · intro h0
       obtain ⟨e, he⟩ := herr h0
@@ -1166,10 +1181,12 @@ parser's answer for an outcome the execution did not return. -/
 theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
     {eventRel : EventStreamRel} {tab base : Nat}
     (hunits : Satisfies calls f (Γ_pipeline_units tab base))
-    (hsem : ∀ (args : List Value) (mem : Mem) (next : Nat) (o : Outcome),
+    (hsem : ∀ (args : List Value) (mem : Mem) (next : Nat) (o : Outcome)
+      (ndst' nev' : Nat),
       pipelineStaging tab base args mem →
       BehFromState calls f (EntryState f args mem next) o →
-      ParserHalfForOutcome eventRel base args mem o) :
+      pipelineOutputExtents args o ndst' nev' →
+      ParserHalfForOutcome eventRel base args mem ndst' nev' o) :
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
@@ -1178,7 +1195,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
   intro o ho
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)
     (args := args) (mem := mem) (next := next) (o := o) hstage (hpost o ho)
-    (hsem args mem next o hstage ho)
+    (fun ndst' nev' hext => hsem args mem next o ndst' nev' hstage ho hext)
 
 /-! ### The post alone does not imply the specification
 

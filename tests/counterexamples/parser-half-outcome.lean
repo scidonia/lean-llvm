@@ -23,13 +23,12 @@ The two runs differ only in the block's returned constant and the document, and
 each theorem states its conclusion at the run's own outcome — `∃ o, runFuel … =
 some o ∧ ParserHalfForOutcome … o` — so the outcome is not chosen by hand.
 
-**The arena/event relation.**  `ParserHalf` requires the relation at every
-readable prefix of the two buffers, and its docstring records why: the extents
-are named by the units' post and by `Sigma_pipeline` rather than by this
-predicate.  The relation here is the one that survives that: each readable
-prefix is a prefix of the bytes the run reported at that slot.  The two slots
-hold one byte each and have nothing at the following address, so the readable
-prefixes are `[]` and `[b]`, and both are prefixes of `[b]`.
+**The arena/event relation.**  `ParserHalf` states the relation at the extents
+the units' post names — the pair `pipelineOutputExtents` reads from the two
+cursor slots and bounds below `2 ^ 64`.  Both runs here report extent `1`, and
+their buffers hold exactly one byte each, so the relation is exact: the arena and
+the event stream it sees are those two bytes.  Nothing is quantified over
+prefixes, which is the point of the extents being arguments.
 
 Run from the repository root:
 
@@ -49,22 +48,14 @@ open LeanLLVM.Refinement
 
 /-! ### The buffers' relation
 
-`ParserHalf` applies the event/arena relation at every readable prefix, so the
-relation below is prefix-closed: every prefix of what a slot yields is a prefix
-of what the run reported there. -/
+The relation is exact, at the extents the record names: the run's arena and event
+stream are the two staged bytes. -/
 
-/-- `xs` is a prefix of `ys`. -/
-def PrefixOf (xs ys : List UInt8) : Prop := ∃ zs, ys = xs ++ zs
-
-theorem prefixOf_nil (ys : List UInt8) : PrefixOf [] ys := ⟨ys, rfl⟩
-
-theorem prefixOf_self (ys : List UInt8) : PrefixOf ys ys := ⟨[], by simp⟩
-
-/-- The relation: whatever a buffer yields is a prefix of the run's own bytes at
-that buffer.  `bs` and the tokens are not constrained by this relation; the
-parser's answers are the other two conjuncts' business. -/
+/-- The relation: the run's arena and event stream are exactly the bytes the
+caller staged at the two slots.  `bs` and the tokens are not constrained by this
+relation; the parser's answers are the other two conjuncts' business. -/
 def reportRel (arenaBytes eventsBytes : List UInt8) : EventStreamRel :=
-  fun _ arena evs _ => PrefixOf arena arenaBytes ∧ PrefixOf evs eventsBytes
+  fun _ arena evs _ => arena = arenaBytes ∧ evs = eventsBytes
 
 /-! ### The ABI slots and the two memories
 
@@ -149,39 +140,6 @@ theorem bom_no_parse : ¬ ∃ t : Tape,
   rw [bom_refused] at h
   exact nomatch h
 
-/-! ### A buffer with only an empty and a one-byte prefix
-
-The two cursor words report extent `1`, the buffers hold one byte each, and the
-byte after each buffer's byte is absent.  So the readable prefixes of `dstSlot`
-are `[]` and `[arenaByte]` and every one of them is a prefix of the reported
-bytes. -/
-
-theorem prefixes_of (m : Mem) (a : Nat) (b : UInt8)
-    (h0 : readBytes m a 0 = some [])
-    (h1 : readBytes m a 1 = some [b])
-    (h2 : ∀ j, readBytes m a (j + 2) = none) :
-    ∀ n (xs : List UInt8), readBytes m a n = some xs → PrefixOf xs [b] := by
-  intro n
-  cases n with
-  | zero =>
-      intro xs h
-      rw [h0] at h
-      have hxs : xs = [] := (Option.some.inj h).symm
-      subst hxs
-      exact prefixOf_nil _
-  | succ k =>
-      cases k with
-      | zero =>
-          intro xs h
-          rw [h1] at h
-          have hxs : xs = [b] := (Option.some.inj h).symm
-          subst hxs
-          exact prefixOf_self _
-      | succ j =>
-          intro xs h
-          rw [h2 j] at h
-          exact nomatch h
-
 /-! ### The parser half at each document
 
 The three conjuncts `ParserHalf` carries, at the memory and slots above: the
@@ -189,30 +147,28 @@ acceptance equivalence at the run's verdict, the accepted tape and its meaning,
 and the refusal offset — the last vacuous because `errSlot` holds no word. -/
 
 /-- The accepting instance: verdict `1`, document `null`, the arena and event
-buffers reporting one byte each. -/
+buffers at the extent both runs report. -/
 theorem halfAccept : ParserHalf (reportRel [arenaByte] [eventByte]) readAccept 1
-    cellsAccept dstSlot evSlot errSlot := by
-  intro ndst' nev' arena evs h1 h2
-  have har : PrefixOf arena [arenaByte] :=
-    prefixes_of cellsAccept dstSlot arenaByte rfl rfl (fun _ => rfl) ndst' arena h1
-  have hev : PrefixOf evs [eventByte] :=
-    prefixes_of cellsAccept evSlot eventByte rfl rfl (fun _ => rfl) nev' evs h2
+    cellsAccept dstSlot evSlot errSlot 1 1 := by
   refine ⟨⟨fun _ => null_parses, fun _ => rfl⟩, ?_, ?_⟩
   · intro _
     obtain ⟨t, ht⟩ := null_parses
     obtain ⟨v, hdec, hin, hvalid⟩ :=
       decodeTape_correct Limits.default (ByteString.literal readAccept) t ht
-    exact ⟨t, v, ht, hin, hdec, ⟨har, hev⟩, (tape_valid t v hdec).1, hvalid⟩
+    exact ⟨t, v, [arenaByte], [eventByte], ht, hin, hdec,
+      (by rw [show readBytes cellsAccept dstSlot 1 = some [arenaByte] from rfl]),
+      (by rw [show readBytes cellsAccept evSlot 1 = some [eventByte] from rfl]),
+      ⟨rfl, rfl⟩, (tape_valid t v hdec).1, hvalid⟩
   · intro e he
     rw [show readBytes cellsAccept errSlot 8 = none from rfl] at he
     exact nomatch he
 
-/-- The refusing instance: verdict `0`, a byte-order mark, and the same buffers.
-The accepted conjunct is vacuous at `0`, so the buffers' relation is not consumed
-here; the refusal word is absent from `errSlot` as in the accepting case. -/
+/-- The refusing instance: verdict `0`, a byte-order mark, and the same buffers
+at extent `1`.  The accepted conjunct is vacuous at `0`, so the buffers' relation
+is not consumed here; the refusal word is absent from `errSlot` as in the
+accepting case. -/
 theorem halfRefuse : ParserHalf (reportRel [arenaByte] [eventByte]) readRefuse 0
-    cellsRefuse dstSlot evSlot errSlot := by
-  intro ndst' nev' arena evs h1 h2
+    cellsRefuse dstSlot evSlot errSlot 1 1 := by
   refine ⟨⟨fun h => absurd h (by decide), fun hex => absurd hex bom_no_parse⟩, ?_, ?_⟩
   · intro h
     exact absurd h (by decide)
@@ -228,10 +184,13 @@ theorem accept_half :
     ∃ o, runFuel noCalls 1 (retFn 1)
         (EntryState (retFn 1) (pargs 4) cellsAccept 1) = some o ∧
       ParserHalfForOutcome (reportRel [arenaByte] [eventByte]) base (pargs 4)
-        cellsAccept o := by
-  refine ⟨.ret (some (.int 64 1)) cellsAccept, rfl, ?_⟩
-  unfold ParserHalfForOutcome pargs
-  exact ⟨readAccept, rfl, rfl, halfAccept⟩
+        cellsAccept 1 1 o ∧
+      pipelineOutputExtents (pargs 4) o 1 1 := by
+  refine ⟨.ret (some (.int 64 1)) cellsAccept, rfl, ?_, ?_⟩
+  · unfold ParserHalfForOutcome pargs
+    exact ⟨readAccept, rfl, rfl, halfAccept⟩
+  · simp only [pipelineOutputExtents, pargs]
+    decide
 
 /-- The refusing execution returns `0` over a byte-order mark, and the parser
 half holds at that outcome. -/
@@ -239,19 +198,18 @@ theorem refuse_half :
     ∃ o, runFuel noCalls 1 (retFn 0)
         (EntryState (retFn 0) (pargs 3) cellsRefuse 1) = some o ∧
       ParserHalfForOutcome (reportRel [arenaByte] [eventByte]) base (pargs 3)
-        cellsRefuse o := by
-  refine ⟨.ret (some (.int 64 0)) cellsRefuse, rfl, ?_⟩
-  unfold ParserHalfForOutcome pargs
-  exact ⟨readRefuse, rfl, rfl, halfRefuse⟩
+        cellsRefuse 1 1 o ∧
+      pipelineOutputExtents (pargs 3) o 1 1 := by
+  refine ⟨.ret (some (.int 64 0)) cellsRefuse, rfl, ?_, ?_⟩
+  · unfold ParserHalfForOutcome pargs
+    exact ⟨readRefuse, rfl, rfl, halfRefuse⟩
+  · simp only [pipelineOutputExtents, pargs]
+    decide
 
 /-! ### Axiom footprints
 
 Each theorem is a closed proof over the parser's own correctness statements; no
 new principle enters.  The pins are measured rather than assumed. -/
-
-/-- info: 'LeanLLVMTest.ParserHalfOutcome.PrefixOf' does not depend on any axioms -/
-#guard_msgs in
-#print axioms PrefixOf
 
 /-- info: 'LeanLLVMTest.ParserHalfOutcome.null_parses' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
