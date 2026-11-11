@@ -614,9 +614,15 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   alen : Nat
   /-- The event stream's cursor as the walk left it. -/
   evlen : Nat
-  /-- The walk's refusal bit: `true` exactly when `s2_walk` returned `0`. -/
+  /-- The walk's refusal, as the wrapper's input: the bit `stage2Verdict` coerces
+  to the verdict word.  That it is `s2_walk`'s C return is the flattening's
+  re-indexing, not a clause — the flattened body's return is a register the
+  wrapper reads, while `Satisfies` relates an outcome and the memory it leaves,
+  so no record can state the equality. -/
   refusal : Bool
-  /-- The refusal offset `e.off`, meaningful on refusal. -/
+  /-- The refusal offset: the number the wrapper stores at the refusal slot on
+  refusal, whose store `stage2Boundary_of_parts` reads back as `errRefuse`.  The
+  record carries the number; the store is the wrapper's. -/
   eoff : Nat
   /-- The arguments are `stage2.h`'s thirteen slots. -/
   args_eq : args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
@@ -668,7 +674,11 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   present throughout: `Owns` over the two extents, which is the half of
   `stage2Frame` the wrapper does not write. -/
   walkOwning : Owns (inRegions [(dst, alen + stage2ArenaReserve), (ev, evlen)]) mem m0
-  /-- Every refusal offset is inside the document. -/
+  /-- **The stored word's bound.**  On refusal the number the wrapper stores is
+  inside the document — `stage2Boundary`'s refusal clause demands exactly this of
+  the word at the refusal slot (`verdict = 0 → ∃ e, e ≤ n ∧ readBytes m err 8 =
+  some (wordBytes 8 e)`), and this field is that demand's hypothesis.  It is a
+  property of the value the run produces, not of the path that computed it. -/
   offLe : refusal = true → eoff ≤ n
 
 namespace Stage2Run
@@ -929,12 +939,18 @@ that a loop owes its own trace and the arithmetic only:
   (`owns_reserve_of_owns_extent`,
   `Stage2Run.walkOwning_of_written`).  The record's clause names the larger
   extent, and the larger extent is what the caller stages;
-* **the refusal bit** (clause 5) and **`eoff ≤ n`** (clause 6) are the loop's own
-  and reduce to nothing here: neither is a proposition about the memory the
-  caller staged, and no other clause names `eoff`.  What a loop must show is that
-  the bit is `s2_walk`'s return — `stage2.c`'s `r ? 1 : 0`, which the wrapper's
-  side already spells `stage2Verdict` — and that the offset it stores is a
-  document position. -/
+* **the refusal bit** (clause 5) and **`eoff ≤ n`** (clause 6) are where the
+  vocabulary stops, and the reason is the evaluator's shape rather than the
+  walk's: `Satisfies` relates an outcome and the memory it leaves, and exposes
+  neither a trace nor a step count, so nothing stated here can say *how* the run
+  computed its outcome — which is what "the bit is `s2_walk`'s return" and "the
+  offset came from the scan" are.  What the post does read survives: on refusal
+  the refusal slot holds the word `eoff` (the wrapper's store, `errRefuse` in
+  `stage2Boundary_of_parts`), and `stage2Boundary`'s refusal clause demands
+  `e ≤ n` of that word — `offLe` is precisely that demand's hypothesis, and
+  `refusal` is the bit `stage2Verdict` coerces.  So clause 6 is a statement
+  about the value the run produces, and clause 5 is the flattening's
+  re-indexing: a `Bool` field, not a proposition a record could state. -/
 
 section
 
