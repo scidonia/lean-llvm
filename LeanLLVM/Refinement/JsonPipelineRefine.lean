@@ -1099,13 +1099,26 @@ the staging holds at `base`, which the length and the read identify.
 `hsem` takes the extents because the record names them: it is asked at a pair the
 record admits, and the post's own pair is the only one.  So the proof below
 applies it at the post's witnesses and there is no quantifier over prefixes
-anywhere on the path from the units' post to the specification's. -/
+anywhere on the path from the units' post to the specification's.
+
+**`hframe` is the one conjunct that does not follow, and it is a modelling limit
+rather than a proof debt.**  Everything else `Sigma_pipeline` says — the document
+read, the four cursors, the verdict's range, the acceptance equivalence, the
+accepted value and event stream, the refusal offset — is derived below from the
+units' post.  The frame is not: the composite run writes the stage-2 callee's
+seven appended objects (`stage2WalkWrites`), and this model has no fresh frame per
+call, so the units' post can only say `UnchangedOutside (narrow ++ seven)`, which
+does not imply `UnchangedOutside narrow`.  `SigmaFrame` is that statement, and it
+is true of the program (where a callee's frame is fresh) and false of the model.
+The repair is a fresh-frame semantics, not a proof; `docs/contract.md` §7 records
+it at the layer where it belongs. -/
 theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
     (hpre : pipelineStaging tab base args mem)
     (hpost : pipelineUnitsPost args mem next o)
     (hsem : ∀ (ndst' nev' : Nat), pipelineOutputExtents args o ndst' nev' →
-      ParserHalfForOutcome eventRel base args mem ndst' nev' o) :
+      ParserHalfForOutcome eventRel base args mem ndst' nev' o)
+    (hframe : SigmaFrame args o mem) :
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs,
@@ -1118,8 +1131,9 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
   split at hpost
   · exact hpost
   · rename_i _o0 verdict m'
-    obtain ⟨hverdict, nk', nxp', ndst', nev', ent, ps, out, evs, hext, hnk, hnxp,
-      hent, hxp, hdst, hev, herr, hunch⟩ := hpost
+    obtain ⟨hverdict, nk', nxp', ndst', nev', ent, ps, out, evs,
+      c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂,
+      hext, hnk, hnxp, hent, hxp, hdst, hev, herr, hunch⟩ := hpost
     -- the extents the record names are the ones it reads back through its slots
     have hndstSlot : readBytes m' ndst 8 = some (wordBytes 8 ndst') := hext.2.2.1
     have hnevSlot : readBytes m' nev 8 = some (wordBytes 8 nev') := hext.2.2.2
@@ -1161,7 +1175,7 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     · intro h0
       obtain ⟨e, he⟩ := herr h0
       exact ⟨e, he, hrefused e he⟩
-    · simpa [batchReserve] using hunch.2
+    · exact hframe
   · exact hpost.elim
 
 /-- **The specification's record from the units' record, without `mono`.**
@@ -1189,7 +1203,8 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
       pipelineStaging tab base args mem →
       BehFromState calls f (EntryState f args mem next) o →
       pipelineOutputExtents args o ndst' nev' →
-      ParserHalfForOutcome eventRel base args mem ndst' nev' o) :
+      ParserHalfForOutcome eventRel base args mem ndst' nev' o)
+    (hframe : ∀ (args : List Value) (mem : Mem) (o : Outcome), SigmaFrame args o mem) :
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
@@ -1199,6 +1214,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)
     (args := args) (mem := mem) (next := next) (o := o) hstage (hpost o ho)
     (fun ndst' nev' hext => hsem args mem next o ndst' nev' hstage ho hext)
+    (hframe args mem o)
 
 /-! ### The post alone does not imply the specification
 
@@ -1232,8 +1248,8 @@ theorem pipelineUnitsPost_not_imp_Sigma :
   refine ⟨fun _ _ _ _ => False, 1000, gapArgs, zeroCells 104, 1,
     .ret (some (.int 64 0)) (zeroCells 104), ?_, ?_⟩
   · unfold pipelineUnitsPost
-    refine ⟨Or.inl rfl, 0, 0, 0, 0, [], [], [], [], ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-      ?_, ?_⟩
+    refine ⟨Or.inl rfl, 0, 0, 0, 0, [], [], [], [], 0, 0, 0, 0, 0, 0, 0,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [pipelineOutputExtents]
       exact ⟨by decide, by decide, by decide, by decide⟩
     · decide

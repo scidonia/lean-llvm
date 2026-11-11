@@ -30,6 +30,7 @@ the padded input window the last partial block needs, and the entry-table region
 -/
 import LeanLLVM.Refinement.JsonPipelineIR
 import LeanLLVM.Refinement.JsonEscapeSteps
+import LeanLLVM.Refinement.JsonStage2Scratch
 import LeanLLVM.JSON.Parse
 
 namespace LeanLLVM.Refinement
@@ -585,8 +586,20 @@ loop's emitters write these two.  What the post does not and cannot say is that
 the tail's stage-2 call left them alone: `Γ_stage2` is a record at thirteen
 arguments that do not include these two addresses, so its post has no term for
 them.  That fact lives at the adapter instead, as the separation of the two words
-from the seven objects the walk writes (`stage2StagedPre_countSlots`), which is
-what the transport through stage two reads. -/
+from the seven objects the walk writes (`stage2StagedPre_countSlots`), and the
+pipeline's proof takes it as an explicit hypothesis — `Stage2SlotKeeps`, named in
+`PipelineDischarge` where both sides are in scope.  A post cannot supply it: the
+callee's scratch is the callee's, and this record's arguments are the caller's.
+
+**The frame names the callee's scratch too.**  The stage-2 selection writes seven
+objects the stage-2 ABI does not carry (`%c.i`, both container stacks, the token,
+`%s`, `%z`, `%e`), so a frame that stopped at the five ABI write regions would be
+false of the composite run.  The seven therefore appear as witnesses of this
+post's existential and their extents are appended to the `UnchangedOutside` list
+at the extents the body allocates (`stage2StagedWrites`).  The witnesses are the
+widened `Γ_stage2` post's: the pipeline names none of them, which is why its
+argument list does not change — the callee's scratch is the callee's business,
+and the caller's frame is a statement about the caller's objects. -/
 def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
     (o : Outcome) : Prop :=
   match o with
@@ -598,7 +611,7 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
          .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _] =>
           (verdict = 0 ∨ verdict = 1) ∧
           ∃ (nk' nxp' ndst' nev' : Nat) (ent : List Nat) (ps : List Nat)
-            (out evs : List UInt8),
+            (out evs : List UInt8) (c ctype cst tok s z e : Nat),
             pipelineOutputExtents args o ndst' nev' ∧
             readBytes m nk 8 = some (wordBytes 8 nk') ∧
             readBytes m nxp 8 = some (wordBytes 8 nxp') ∧
@@ -610,9 +623,10 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
               ∃ e : Nat, readBytes m err 8 = some (wordBytes 8 e)) ∧
             (verdict = 1 → readBytes m err 8 = readBytes mem err 8) ∧
             UnchangedOutside mem m
-              [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
-               (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16),
-               (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
+              ([(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
+                (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16),
+                (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)] ++
+               stage2StagedWrites c ctype cst tok s z e)
       | _ => False
   | _ => False
 

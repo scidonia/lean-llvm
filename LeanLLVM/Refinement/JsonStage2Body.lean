@@ -50,11 +50,14 @@ Proved below:
 * `stage2Run_boundary`: given a staging and a walk report in the record's own
   vocabulary, the emitted wrapper's stores make `Γ_stage2`'s post true — the
   verdict, both cursors with their growth bounds, the arena and event prefixes,
-  the refusal word's two sides, and the frame as `Owns`;
+  the refusal word's two sides, the frame as `Owns` over the walk's whole touched
+  extent (the five ABI regions and the seven appended objects), and the
+  seventeen-object staging that frame is drawn from;
 * the report's clauses, and the two walk facts they are read from: the reserve's
   slack (`Stage2Run.reserve_of_arenaLe`), `Owns` at the extent the post names
-  (`Stage2Run.walkOwning_of_written`, from the walk's own write extent and the
-  caller's staging), both cursors' bounds from the walk facts
+  (`Stage2Run.walkOwning_of_written`, from the walk's own write extent — the two
+  prefixes plus the seven — and the caller's staging), both cursors' bounds from
+  the walk facts
   (`Stage2Run.arenaLe_of_spans`, `Stage2Run.evLe_of_oneRecordPerEntry`), with the
   entry count (`Stage2Run.nep_le`) and the records' thirteen-bytes-per-entry sum
   (`records_total_le`, `evlen_le_of_records`) proved outright;
@@ -86,7 +89,8 @@ Not proved, and named with the obligation each would need:
   it produces once reached — the arena cursor `alen` and its bound
   `alen ≤ ndst0 + n`, the event cursor `evlen` and its bound `evlen ≤ nev0 + 13 * n`,
   the last reserve's slack `alen + 64 ≤ dstcap`, the walk's region claim `Owns`
-  over `[(dst, alen + 64), (ev, evlen)]`, the refusal bit, and the offset's bound
+  over the arena prefix, the event prefix and the seven appended objects, the
+  refusal bit, and the offset's bound
   `eoff ≤ n`.  Each is a clause `Γ_stage2`'s post names, so the walk's obligation
   is still stated in the record's vocabulary rather than in this module's.  The
   budget is stated at the ABI's arguments in *The completion budget, stated*, and
@@ -658,9 +662,33 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   errBytes : HasBytes mem err 8
   /-- The document's positions fit the entry stream's 32-bit words. -/
   maxDoc : n ≤ stage2MaxDocument
-  /-- The staged objects are separate. -/
-  separate : DisjointRegions
-    (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)
+  /-- The cursor record `%c.i` the walk writes (`%c.i + 32` is the loop's first
+  store). -/
+  c : Nat
+  /-- The type stack `%ctype.i`. -/
+  ctype : Nat
+  /-- The state stack `%cst.i`. -/
+  cst : Nat
+  /-- The scalar token `%t352.i`. -/
+  tok : Nat
+  /-- The walk's own staging record `%s`. -/
+  s : Nat
+  /-- The log `%z`. -/
+  z : Nat
+  /-- The refusal record `%e`. -/
+  e : Nat
+  /-- The caller's entry-count slot, as the adapter staged it. -/
+  nkSlot : Nat
+  /-- The caller's escape-count slot, as the adapter staged it. -/
+  nxpSlot : Nat
+  /-- **The seventeen staged objects are pairwise separate** — the thirteen ABI
+  objects, the seven the walk writes, and the caller's two count slots — at the
+  extents `stage2StagedPre` gives.  The ABI's eight regions' separation is its
+  prefix (`Stage2Run.separate`), so the clauses stated at `stage2Regions` keep
+  their meaning. -/
+  staged : DisjointRegions
+    (stage2StagedRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+      c ctype cst tok s z e nkSlot nxpSlot)
   /-- The arena cursor only appends. -/
   arenaGe : ndst0 ≤ alen
   /-- The arena grows by at most the document's own bytes. -/
@@ -671,10 +699,14 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   evLe : evlen ≤ nev0 + stage2RecordBytes * n
   /-- The last arena reserve still left the decoder's slack inside the capacity. -/
   reserve : alen + stage2ArenaReserve ≤ dstcap
-  /-- The walk wrote only its arena's extent and its event prefix, and left both
-  present throughout: `Owns` over the two extents, which is the half of
-  `stage2Frame` the wrapper does not write. -/
-  walkOwning : Owns (inRegions [(dst, alen + stage2ArenaReserve), (ev, evlen)]) mem m0
+  /-- **The walk's whole written extent, owned.**  The arena's prefix with the
+  decoder's reserve, the event stream's prefix, and the seven appended objects the
+  body writes, at the extents its `llvm.lifetime.start`s allocate.  This is
+  `stage2WalkFrame`'s region at the run's two cursors; the narrow claim over the
+  two extents alone is *false* of the body — `while.body.i` stores `%c.i + 32`
+  before any reserve is checked — which is why the frame names the seven. -/
+  walkOwning : Owns (inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++
+    stage2StagedWrites c ctype cst tok s z e)) mem m0
   /-- **The stored word's bound.**  On refusal the number the wrapper stores is
   inside the document — `stage2Boundary`'s refusal clause demands exactly this of
   the word at the refusal slot (`verdict = 0 → ∃ e, e ≤ n ∧ readBytes m err 8 =
@@ -690,22 +722,35 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   /-- **The event stream's capacity is a 64-bit number**, for the same reason:
   `stage2Boundary`'s `evcap < 2 ^ 64`. -/
   evcapLt : evcap < 2 ^ 64
+  /-- **The entry count is its argument word's value** (`stage2.h:56-58`), so
+  `stage2Boundary`'s `nep < 2 ^ 64`.  Like the two capacities, this is the ABI's
+  own statement about a 64-bit argument rather than a hypothesis about the run:
+  one word with two widths is one number. -/
+  nepLt : nep < 2 ^ 64
+  /-- **The escape count is its argument word's value**, for the same reason:
+  `stage2Boundary`'s `nxp < 2 ^ 64`. -/
+  nxpLt : nxp < 2 ^ 64
 
 namespace Stage2Run
 
 variable {args : List Value} {mem m0 : Mem}
 
+/-- **The ABI staging's separation**, read off the seventeen-object staging as its
+prefix.  Every clause stated at `stage2Regions` reads this. -/
+theorem separate (h : Stage2Run args mem m0) :
+    DisjointRegions
+      (stage2Regions h.b h.n h.ep h.nep h.xp h.nxp h.dst h.ndst0 h.ev h.evcap
+        h.ndst h.nev h.err) :=
+  disjointRegions_staged_prefix h.staged
+
 /-- **The staging is the record's precondition.**  The first half of a
 `Stage2Run` is `stage2Pre`'s thirteen witnesses and its clauses, so a walk that
 produced this report was called inside the record's domain. -/
-theorem pre (h : Stage2Run args mem m0) (next : Nat) : Γ_stage2.pre args mem next := by
-  obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
-    ndst0, nev0, alen, evlen, refusal, eoff, args_eq, doc, tail, entries, order,
-    inside, esc, arenaCap, arenaRoom, evCap, evRoom, ndstRead, nevRead, errBytes,
-    maxDoc, separate, -⟩ := h
-  exact ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
-    ndst0, nev0, args_eq, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
-    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate⟩
+theorem pre (h : Stage2Run args mem m0) (next : Nat) : Γ_stage2.pre args mem next :=
+  ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.dst, h.dstcap, h.ndst, h.ev, h.evcap, h.nev,
+    h.err, h.bs, h.ent, h.ndst0, h.nev0, h.args_eq, h.doc, h.tail, h.entries, h.order,
+    h.inside, h.esc, h.arenaCap, h.arenaRoom, h.evCap, h.evRoom, h.ndstRead, h.nevRead,
+    h.errBytes, h.maxDoc, h.separate⟩
 
 /-- The arena and event-stream cursors are inside the objects the caller staged:
 the arena's by its reserve, the event stream's by its write room. -/
@@ -798,83 +843,99 @@ theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
   have herrWalk : readBytes m0 h.err 8 = readBytes mem h.err 8 := by
     have halen : h.alen ≤ h.ndst0 + h.n := h.arenaLe
     have hevlen : h.evlen ≤ h.evcap := le_trans h.evLe h.evRoom
+    have hstaged := stage2StagedWrites_against h.staged
+      (a := h.err) (m := 8) (by simp [stage2Regions])
     refine readBytes_eq_of_UnchangedOn h.walkOwning.unchanged (a := h.err) (n := 8) ?_
     intro k hk hp
     rcases hp with ⟨r, hr, hlo, hhi⟩
-    rcases List.mem_cons.mp hr with rfl | hr'
-    · rcases herrDst with hle | hle <;> omega
-    · rcases List.mem_cons.mp hr' with rfl | hnil
-      · rcases herrEv with hle | hle <;> omega
-      · exact absurd hnil (by simp)
+    rcases List.mem_append.mp hr with hr | hr
+    · rcases List.mem_cons.mp hr with rfl | hr'
+      · rcases herrDst with hle | hle <;> omega
+      · rcases List.mem_cons.mp hr' with rfl | hnil
+        · rcases herrEv with hle | hle <;> omega
+        · exact absurd hnil (by simp)
+    · have hsep := hstaged r hr; omega
   -- a byte the walk's region owns is present in the wrapper's memory
   have hpresentWalk : ∀ a, inRegions [(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)] a →
-      present m a := fun a ha => pres a (h.walkOwning.present a ha)
+      present m a :=
+    fun a ha => pres a (h.walkOwning.present a
+      (inRegions_mono (fun r hr => List.mem_append_left _ hr) ha))
   -- the two prefixes
   obtain ⟨arena, hArena⟩ := LeanLLVM.readBytes_of_hasBytes m h.dst h.alen fun k hk =>
     hpresentWalk (h.dst + k) (inRegions_head_extent
       (Nat.lt_of_lt_of_le hk (Nat.le_add_right h.alen stage2ArenaReserve)))
   obtain ⟨evs, hEvs⟩ := LeanLLVM.readBytes_of_hasBytes m h.ev h.evlen fun k hk =>
     hpresentWalk (h.ev + k) (inRegions_tail_extent hk)
-  -- the frame: the walk's two extents and the wrapper's three slots
+  -- the frame: the walk's whole extent, with the wrapper's three slots inside it
   have hframe : UnchangedOn
-      (inRegions (stage2Writes h.dst h.alen h.ev h.evlen h.ndst h.nev h.err)) mem m := by
+      (inRegions (stage2WalkWrites h.dst h.alen h.ev h.evlen h.ndst h.nev h.err
+        h.c h.ctype h.cst h.tok h.s h.z h.e)) mem m := by
     intro a ha
-    have houtWalk : ¬ inRegions [(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)] a :=
+    have houtWalk :
+        ¬ inRegions ([(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)] ++
+          stage2StagedWrites h.c h.ctype h.cst h.tok h.s h.z h.e) a :=
       fun hc => ha (inRegions_mono (fun r hr => by
-        rcases List.mem_cons.mp hr with rfl | hr'
-        · simp [stage2Writes]
-        · rcases List.mem_cons.mp hr' with rfl | hnil
-          · simp [stage2Writes]
-          · exact absurd hnil (by simp)) hc)
+        rcases List.mem_append.mp hr with hr | hr
+        · exact List.mem_append_left _ (by
+            rcases List.mem_cons.mp hr with rfl | hr'
+            · simp [stage2Writes]
+            · rcases List.mem_cons.mp hr' with rfl | hnil
+              · simp [stage2Writes]
+              · exact absurd hnil (by simp))
+        · exact List.mem_append_right _ hr) hc)
     have houtSlots : ¬ inRegions [(h.ndst, 8), (h.nev, 8), (h.err, 8)] a :=
       fun hc => ha (inRegions_mono (fun r hr => by
         rcases List.mem_cons.mp hr with rfl | hr'
-        · simp [stage2Writes]
+        · simp [stage2WalkWrites, stage2Writes]
         · rcases List.mem_cons.mp hr' with rfl | hr''
-          · simp [stage2Writes]
+          · simp [stage2WalkWrites, stage2Writes]
           · rcases List.mem_cons.mp hr'' with rfl | hnil
-            · simp [stage2Writes]
+            · simp [stage2WalkWrites, stage2Writes]
             · exact absurd hnil (by simp)) hc)
     exact (frameSlots a houtSlots).trans (h.walkOwning.unchanged a houtWalk)
-  -- presence of every byte of the record's write list
+  -- presence of every byte of the record's write list, the seven included
   have hpresent : ∀ a,
-      inRegions (stage2Writes h.dst h.alen h.ev h.evlen h.ndst h.nev h.err) a → present m a := by
+      inRegions (stage2WalkWrites h.dst h.alen h.ev h.evlen h.ndst h.nev h.err
+        h.c h.ctype h.cst h.tok h.s h.z h.e) a → present m a := by
     intro a ha
-    obtain ⟨r, hr, hlo, hhi⟩ :=
-      (show inRegions (stage2Writes h.dst h.alen h.ev h.evlen h.ndst h.nev h.err) a from ha)
-    simp only [stage2Writes, List.mem_cons, List.not_mem_nil, or_false] at hr
-    rcases hr with rfl | rfl | rfl | rfl | rfl
-    · exact hpresentWalk a ⟨(h.dst, h.alen + stage2ArenaReserve),
-        List.mem_cons_self .., hlo, hhi⟩
-    · have hk : a - h.ndst < 8 := by omega
-      have hp := LeanLLVM.readBytes_some_present m h.ndst 8 (wordBytes 8 h.alen)
-        ndstAt (a - h.ndst) hk
-      simpa [show h.ndst + (a - h.ndst) = a by omega] using hp
-    · exact hpresentWalk a ⟨(h.ev, h.evlen), by simp, hlo, hhi⟩
-    · have hk : a - h.nev < 8 := by omega
-      have hp := LeanLLVM.readBytes_some_present m h.nev 8 (wordBytes 8 h.evlen)
-        nevAt (a - h.nev) hk
-      simpa [show h.nev + (a - h.nev) = a by omega] using hp
-    · have hk : a - h.err < 8 := by omega
-      have hread : readBytes m h.err 8 = some (wordBytes 8 h.eoff) ∨
-          readBytes m h.err 8 = readBytes mem h.err 8 := by
-        cases hb : h.refusal with
-        | true => exact Or.inl (errRefuse hb)
-        | false => exact Or.inr ((errAccept hb).trans herrWalk)
-      rcases hread with hr | hr
-      · have hp := LeanLLVM.readBytes_some_present m h.err 8 (wordBytes 8 h.eoff) hr
-          (a - h.err) hk
-        simpa [show h.err + (a - h.err) = a by omega] using hp
-      · obtain ⟨vs, hvs⟩ := h.errBytes
-        rw [← hr] at hvs
-        have hp := LeanLLVM.readBytes_some_present m h.err 8 vs hvs (a - h.err) hk
-        simpa [show h.err + (a - h.err) = a by omega] using hp
+    obtain ⟨r, hr, hlo, hhi⟩ := ha
+    rcases List.mem_append.mp hr with hr | hr
+    · simp only [stage2Writes, List.mem_cons, List.not_mem_nil, or_false] at hr
+      rcases hr with rfl | rfl | rfl | rfl | rfl
+      · exact hpresentWalk a ⟨(h.dst, h.alen + stage2ArenaReserve),
+          List.mem_cons_self .., hlo, hhi⟩
+      · have hk : a - h.ndst < 8 := by omega
+        have hp := LeanLLVM.readBytes_some_present m h.ndst 8 (wordBytes 8 h.alen)
+          ndstAt (a - h.ndst) hk
+        simpa [show h.ndst + (a - h.ndst) = a by omega] using hp
+      · exact hpresentWalk a ⟨(h.ev, h.evlen), by simp, hlo, hhi⟩
+      · have hk : a - h.nev < 8 := by omega
+        have hp := LeanLLVM.readBytes_some_present m h.nev 8 (wordBytes 8 h.evlen)
+          nevAt (a - h.nev) hk
+        simpa [show h.nev + (a - h.nev) = a by omega] using hp
+      · have hk : a - h.err < 8 := by omega
+        have hread : readBytes m h.err 8 = some (wordBytes 8 h.eoff) ∨
+            readBytes m h.err 8 = readBytes mem h.err 8 := by
+          cases hb : h.refusal with
+          | true => exact Or.inl (errRefuse hb)
+          | false => exact Or.inr ((errAccept hb).trans herrWalk)
+        rcases hread with hr | hr
+        · have hp := LeanLLVM.readBytes_some_present m h.err 8 (wordBytes 8 h.eoff) hr
+            (a - h.err) hk
+          simpa [show h.err + (a - h.err) = a by omega] using hp
+        · obtain ⟨vs, hvs⟩ := h.errBytes
+          rw [← hr] at hvs
+          have hp := LeanLLVM.readBytes_some_present m h.err 8 vs hvs (a - h.err) hk
+          simpa [show h.err + (a - h.err) = a by omega] using hp
+    · exact pres a (h.walkOwning.present a ⟨r, List.mem_append_right _ hr, hlo, hhi⟩)
   refine ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.dst, h.dstcap, h.ndst, h.ev, h.evcap,
     h.nev, h.err, stage2Verdict h.refusal, h.ndst0, h.nev0, h.alen, h.evlen, arena, evs,
+    h.c, h.ctype, h.cst, h.tok, h.s, h.z, h.e, h.nkSlot, h.nxpSlot,
     h.args_eq, rfl, stage2Verdict_range h.refusal, h.ndstRead, h.nevRead, ndstAt, nevAt,
-    h.arenaGe, h.arenaLe, h.evGe, h.evLe, h.dstcapLt, h.evcapLt, le_trans h.evLe h.evRoom,
+    h.arenaGe, h.arenaLe, h.evGe, h.evLe, h.dstcapLt, h.evcapLt,
+    le_trans h.evLe h.evRoom, h.nepLt, h.nxpLt,
     h.reserve, hArena, hEvs, ?_, ?_,
-    ⟨hframe, hpresent⟩⟩
+    ⟨hframe, hpresent⟩, h.staged⟩
   · intro hzero
     cases hb : h.refusal with
     | true => exact ⟨h.eoff, h.offLe hb, errRefuse hb⟩
@@ -942,14 +1003,15 @@ that a loop owes its own trace and the arithmetic only:
 * **the reserve's slack** (clause 3, `reserve`) is not a second obligation: the
   arena's bound and the caller's staged capacity give it
   (`Stage2Run.reserve_of_arenaLe`);
-* **`Owns` over the two extents** (clause 4, `walkOwning`) is the walk's `Owns`
-  at the extent it *writes*, `[(dst, alen), (ev, evlen)]`, plus the caller's
-  staging and the arena's bound: the sixty-four bytes past the cursor were
-  present before the walk ran and the walk does not write them, so their presence
-  afterwards is the caller's promise read through the walk's frame
-  (`owns_reserve_of_owns_extent`,
+* **`Owns` over the walk's whole frame** (clause 4, `walkOwning`) is the walk's
+  `Owns` at the extent it *writes* — the two prefixes plus the seven appended
+  objects — plus the caller's staging and the arena's bound: the sixty-four bytes
+  past the cursor were present before the walk ran and the walk does not write
+  them, and the seven are the walk's own objects, present and written inside
+  their staged extents (`owns_reserve_of_owns_walk`,
   `Stage2Run.walkOwning_of_written`).  The record's clause names the larger
-  extent, and the larger extent is what the caller stages;
+  extent, and the larger extent is what the caller stages plus what the body
+  allocates;
 * **the refusal bit** (clause 5) and **`eoff ≤ n`** (clause 6) are where the
   vocabulary stops, and the reason is the evaluator's shape rather than the
   walk's: `Satisfies` relates an outcome and the memory it leaves, and exposes
@@ -1104,8 +1166,75 @@ theorem owns_reserve_of_owns_extent {mem m0 : Mem} {dst alen ev evlen dstcap : N
     · exact h.present a ⟨(ev, evlen), by simp, hlo, hhi⟩
     · exact absurd hnil (by simp)
 
-/-! #### The two walk facts, and the clauses they give -/
+/-- **The reserve window is the caller's, at the walk's whole frame.**  The
+region `stage2WalkFrame` names at `alen` follows from the two extents the loop's
+own claim names — `[(dst, alen), (ev, evlen)]` — together with the seven staged
+writes: the reserve's bytes were present before the walk ran (`HasBytes` at the
+arena's capacity), the walk writes nothing there, and the event extent cannot
+reach it.  `hseven` is the staging's separation of the seven from the arena's
+staged entry, in the orientation the reserve window needs: `a` in
+`[dst, dst + alen + 64)` is outside every one of them, so the walk's silence
+outside its own region covers it.
 
+This is `owns_reserve_of_owns_extent` with the staged tail carried through both
+lists; the ABI prefix's argument is unchanged because the tail is the same list
+on both sides. -/
+theorem owns_reserve_of_owns_walk {mem m0 : Mem} {dst alen ev evlen dstcap : Nat}
+    {c ctype cst tok s z e : Nat}
+    (h : Owns (inRegions ([(dst, alen), (ev, evlen)] ++
+      stage2StagedWrites c ctype cst tok s z e)) mem m0)
+    (harena : HasBytes mem dst dstcap)
+    (hres : alen + stage2ArenaReserve ≤ dstcap)
+    (hsep : dst + alen + stage2ArenaReserve ≤ ev ∨ ev + evlen ≤ dst)
+    (hseven : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
+      r.1 + r.2 ≤ dst ∨ dst + (alen + stage2ArenaReserve) ≤ r.1) :
+    Owns (inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++
+      stage2StagedWrites c ctype cst tok s z e)) mem m0 := by
+  have hsub : ∀ a, inRegions ([(dst, alen), (ev, evlen)] ++
+        stage2StagedWrites c ctype cst tok s z e) a →
+      inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++
+        stage2StagedWrites c ctype cst tok s z e) a := by
+    intro a ha
+    obtain ⟨r, hr, hlo, hhi⟩ := ha
+    rcases List.mem_append.mp hr with hr | hr
+    · rcases List.mem_cons.mp hr with rfl | hr'
+      · exact ⟨(dst, alen + stage2ArenaReserve),
+          List.mem_append_left _ (List.mem_cons_self ..), hlo, by omega⟩
+      · rcases List.mem_cons.mp hr' with rfl | hnil
+        · exact ⟨(ev, evlen), List.mem_append_left _ (by simp), hlo, hhi⟩
+        · exact absurd hnil (by simp)
+    · exact ⟨r, List.mem_append_right _ hr, hlo, hhi⟩
+  refine ⟨h.unchanged.mono hsub, ?_⟩
+  intro a ha
+  obtain ⟨r, hr, hlo, hhi⟩ := ha
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_cons.mp hr with rfl | hr'
+    · rcases Nat.lt_or_ge a (dst + alen) with hlt | hge
+      · exact h.present a ⟨(dst, alen), List.mem_append_left _
+          (List.mem_cons_self ..), hlo, hlt⟩
+      · have hk : a - dst < dstcap := by omega
+        obtain ⟨vs, hvs⟩ := harena
+        obtain ⟨b, hb⟩ := readBytes_some_present mem dst dstcap vs hvs (a - dst) hk
+        rw [show dst + (a - dst) = a by omega] at hb
+        have hnot : ¬ inRegions ([(dst, alen), (ev, evlen)] ++
+            stage2StagedWrites c ctype cst tok s z e) a := by
+          rintro ⟨s, hs, hslo, hshi⟩
+          rcases List.mem_append.mp hs with hs | hs
+          · rcases List.mem_cons.mp hs with rfl | hs'
+            · omega
+            · rcases List.mem_cons.mp hs' with rfl | hnil
+              · rcases hsep with hsep | hsep <;> omega
+              · exact absurd hnil (by simp)
+          · have := hseven s hs
+            omega
+        have heq : readByte m0 a = readByte mem a := h.unchanged a hnot
+        exact ⟨b, by rw [heq]; exact hb⟩
+    · rcases List.mem_cons.mp hr' with rfl | hnil
+      · exact h.present a ⟨(ev, evlen), List.mem_append_left _ (by simp), hlo, hhi⟩
+      · exact absurd hnil (by simp)
+  · exact h.present a ⟨r, List.mem_append_right _ hr, hlo, hhi⟩
+
+/-! #### The two walk facts, and the clauses they give -/
 /-- The walk's arena trace: the extents of the escaped bodies it decoded, as
 intervals of the document.  They are ordered (the walk scans the document once),
 each ends inside it, and the arena grows by at most their total, because the
@@ -1162,15 +1291,24 @@ theorem evLe_of_oneRecordPerEntry (h : Stage2Run args mem m0)
 
 /-- **The report's `Owns` clause, from the walk's own write extent and the
 arena's bound.**  The reserve's slack is `reserve_of_arenaLe` at that bound, not
-a separate obligation of the walk; the staging covers the reserve window. -/
+a separate obligation of the walk; the staging covers the reserve window, and the
+seven appended objects are the same list on both sides
+(`owns_reserve_of_owns_walk`).  The staging's separation of the seven from the
+arena's entry is what puts a byte of the reserve outside them. -/
 theorem walkOwning_of_written (h : Stage2Run args mem m0)
-    (hw : Owns (inRegions [(h.dst, h.alen), (h.ev, h.evlen)]) mem m0)
+    (hw : Owns (inRegions ([(h.dst, h.alen), (h.ev, h.evlen)] ++
+      stage2StagedWrites h.c h.ctype h.cst h.tok h.s h.z h.e)) mem m0)
     (hle : h.alen ≤ h.ndst0 + h.n) :
-    Owns (inRegions [(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)]) mem m0 := by
-  refine owns_reserve_of_owns_extent hw h.arenaCap (h.reserve_of_arenaLe hle) ?_
-  have hevl := le_trans h.evLe h.evRoom
-  have hsep := stage2Regions_arena_ev h.separate
-  rcases hsep with hsep | hsep <;> omega
+    Owns (inRegions ([(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)] ++
+      stage2StagedWrites h.c h.ctype h.cst h.tok h.s h.z h.e)) mem m0 := by
+  have hseven := stage2StagedWrites_against h.staged
+    (a := h.dst) (m := h.ndst0 + h.n + stage2ArenaReserve) (by simp [stage2Regions])
+  refine owns_reserve_of_owns_walk hw h.arenaCap (h.reserve_of_arenaLe hle) ?_
+    (fun r hr => ?_)
+  · have hevl := le_trans h.evLe h.evRoom
+    have hsep := stage2Regions_arena_ev h.separate
+    rcases hsep with hsep | hsep <;> omega
+  · rcases hseven r hr with h' | h' <;> omega
 
 end Stage2Run
 

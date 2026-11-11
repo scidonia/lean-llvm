@@ -267,6 +267,23 @@ claim over the rows may assert.
    and its captures refuse what it does not model; over-approximating source and
    target does not by itself transport a refinement to real LLVM, and no
    per-kernel adequacy statement replaces that argument.
+8. **The model's call discipline does not allocate a fresh frame.** A callee in
+   `Semantics.lean` runs at the caller's `Mem`: there is no fresh frame, so a
+   body's own stack objects are caller-supplied addresses (`JsonStage2IR`'s
+   `stage2Args` appends eight, and `stage2StagedPre` stages them). A compiled
+   callee's stack is disjoint from its caller's objects; here nothing states
+   that, so a stage-2 selection may write the pipeline's `sc`, `mk`, `entw`,
+   `nk`, `nxp` or `xcarry`. Consequently the pipeline's unit post can only claim
+   `UnchangedOutside` over the caller's buffers *plus* the stage-2 walk's seven
+   appended objects (`pipelineUnitsPost`, `stage2StagedWrites`), and two facts
+   the program has are carried as hypotheses: `SigmaFrame` at
+   `JsonPipelineRefine.pipeline_units_finalisation` (the specification's frame),
+   and `PipelineDischarge.Stage2SlotKeeps` (the callee leaves the caller's two
+   count slots alone). Both are statements of this modelling limit, not proof
+   debts. The repair is a fresh-frame call semantics — a callee scratch region
+   disjoint from the caller's objects — which is a change to what the semantics
+   models, not a theorem; and it is what would let the specification's frame
+   clause be proved rather than assumed.
 
 ### 7.2 The claim this ledger licenses
 

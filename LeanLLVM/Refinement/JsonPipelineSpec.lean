@@ -321,6 +321,41 @@ def pipelineSpecPre (tab base : Nat) (args : List Value) (mem : Mem)
 
 /-! ### The post -/
 
+/-- **The caller's frame, as `Sigma_pipeline` names it.**  The twelve regions the
+composite run may write — the caller's buffers, at the extents the units' post
+reports — with the extent component that decides them.
+
+**This clause is true of the program and false of the model, and the difference is
+a modelling limit rather than a proof debt.**  In the compiled pipeline a callee's
+stack frame is fresh: the stage-2 walk's `%c.i`, both container stacks, the token,
+`%s`, `%z` and `%e` are allocated below the caller's objects, so its writes cannot
+reach `sc`, `mk`, `entw`, `nk`, `nxp` or `xcarry`.  This model has no fresh frame
+for a call — the appended staging objects are caller-supplied addresses
+(`JsonStage2IR.stage2Args`, `stage2StagedPre`) — so nothing separates the callee's
+scratch from the caller's non-argument objects, and a stage-2 selection may write
+them.  `JsonStage2Contract.stage2Boundary` therefore reports
+`UnchangedOutside (narrow ++ the seven)`, which does not imply
+`UnchangedOutside narrow`.
+
+The predicate is carried as a hypothesis at `pipeline_units_finalisation`, which
+is where a reader can see exactly which conjuncts still follow from the units'
+post.  The repair is a semantics change — a fresh frame per call — not a proof;
+until then the specification's frame is an open premise, named rather than
+asserted. -/
+def SigmaFrame (args : List Value) (o : Outcome) (mem : Mem) : Prop :=
+  match args, o with
+  | [.ptr _, .int 64 _, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
+     .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
+     .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _],
+    .ret (some (.int 64 _)) m =>
+      ∃ nk' nxp' ndst' nev' : Nat,
+        pipelineOutputExtents args o ndst' nev' ∧
+        UnchangedOutside mem m
+          [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
+           (xp, 4 * (nxp' + 8)), (nxp, 8), (xcarry, 16),
+           (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
+  | _, _ => True
+
 /-- The reference parser's predicate, at `LeanLLVM.JSON.Limits.default`.
 
 On return the word is the ABI's verdict and the caller observes, at its own
@@ -330,7 +365,11 @@ the parser's tokens, the first error offset at the stage that owns the refusal,
 and no byte outside the extent the run wrote moved.  The semantic content is
 stated here and deliberately not in `Γ_pipeline_units`: that record's post is
 about the buffers, and this one is about the parser
-(`JsonPipelineContract`'s docstring). -/
+(`JsonPipelineContract`'s docstring).
+
+The frame's own conjunct is `SigmaFrame`, and it is the one clause this
+specification cannot derive: the model has no fresh frame for a call (see
+`SigmaFrame`). -/
 def Sigma_pipeline (eventRel : EventStreamRel) (base : Nat) (args : List Value)
     (mem : Mem) (_next : Nat) (o : Outcome) : Prop :=
   match o with
@@ -372,11 +411,10 @@ def Sigma_pipeline (eventRel : EventStreamRel) (base : Nat) (args : List Value)
                 readBytes m err 8 = some (wordBytes 8 e) ∧
                 RefusalOffset bs e) ∧
             -- every byte outside the extent the run wrote is unchanged, so the
-            -- document at `base` is not modified
-            UnchangedOutside mem m
-              [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
-               (xp, 4 * (nxp' + 8)), (nxp, 8), (xcarry, 16),
-               (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
+            -- document at `base` is not modified.  Stated as its own predicate
+            -- because it is the one clause the model cannot derive: a callee has
+            -- no fresh frame here (`SigmaFrame`).
+            SigmaFrame args o mem
       | _ => False
   | _ => False
 

@@ -60,25 +60,23 @@ and every proved arm carries them through unchanged memory.
 assumed: `WalkGeom.nonempty` unpacks any `Γ_stage2.pre` into one, so the invariant
 is not vacuous at a caller the record admits.
 
-The memory half is `Owns (inRegions [(dst, alen), (ev, evlen)]) m0 s.mem`: the
-walk owns the arena and event prefixes it has written, changes nothing outside
-them, and they are present in the memory it produced.  The report's `Owns` clause
-at `alen + 64` follows from this and the staged capacity
-(`owns_reserve_of_owns_extent`, `JsonStage2Body`).
+The memory half is the walk's whole frame: `Owns (inRegions ([(dst, alen),
+(ev, evlen)] ++ stage2StagedWrites …)) m0 s.mem`.  It is the record's own region —
+`stage2WalkFrame` at the run's two cursors — so the loop's first store (`%c.i +
+32`) and the nesting arm's two stack writes land inside it rather than
+contradicting it.  The two prefixes' narrower claim is the same statement read at
+the five ABI regions, and the report's clause at `alen + 64` is
+`owns_reserve_of_owns_walk`: the arena's staged capacity supplies the reserve's
+bytes, and the staging's separation of the seven from the arena's entry says the
+walk wrote none of them.
 
-**That is the narrow claim, and it is not the frame the record now names.**  The
-record's frame is `stage2WalkFrame`: the five ABI write regions *and* the seven
-appended objects the body writes, at the extents its own `llvm.lifetime.start`s
-allocate, staged by `Γ_stage2at.pre` (`stage2StagedPre`).  Every forward store the
-loop makes lands inside it — `owns_cursorK_write`, `owns_ctype_write`,
-`owns_cst_write` — so the record change is what admits the loop's first store.
-The invariant's own region is still the narrow one, and the reason is not an
-unfinished arm: `Owns`'s unchanged half is **not** monotone in the region, so a
-widened claim does not yield the narrow one that `WalkInv.report` (and through it
-`Stage2Run`, `stage2Run_boundary` and `stage2Boundary`) consumes.  The widening
-therefore has to begin at the record's post, where the seven have no witness at
-thirteen arguments; *The loop's forward stores* below states the consequence and
-names the pair that resists.
+The seven are the body's own objects: `%c.i`, `%ctype.i`, `%cst.i`, `%t352.i`,
+`%s`, `%z`, `%e`, at the extents its `llvm.lifetime.start`s allocate
+(`stage2StagedWrites`, guarded by `JsonStage2IR`'s `lifetimeExtents`), and
+`WalkStage` carries the adapter's staging of them — presence and the
+seventeen-object separation — for the run.  So the frame is not a widening chosen
+here: it is the region the body writes, and the record's post names it
+(`stage2Boundary`).
 
 ## The measure
 
@@ -187,21 +185,21 @@ iteration's strict decrease (`walkMeasure_step`), the entry loop's back edge
 itself (`walkBack_step`: `cleanup478.i`'s merge, the exit test, and the inner
 reset), and the nesting clause carried through every one of them
 (`WalkInv.depth_reg`, `WalkInv.depth_cap`).  The entry loop's arm — the dispatch
-the edge closes over — does not close.  Its first obstruction was the loop's first
-store, and that obstruction is now a *record* fact rather than a gap:
-`stage2WalkWrites` names the seven objects the walk writes at the extents the
-body allocates, `Γ_stage2at.pre` stages them, and `owns_cursorK_write`,
-`owns_ctype_write` and `owns_cst_write` are the three forward stores preserved
-under the resulting claim.  What remains is that the invariant cannot *use* that
-claim: `Owns` is not monotone, so widening `WalkInv.owning` first requires the
-record's post to name the seven, and the post is at the ABI's thirteen arguments.
-*The loop's forward stores* below states exactly where the chain stops and which
-of the pipeline's four transport pairs cannot be rebuilt.  The `#guard`s beside
-`storeTargets` read the store addresses off the pinned body.
-`WalkLocal` is still `True` at every block outside the ten the five arms reach, so
-well-foundedness over the whole control flow is not established; the seed, the
-back edge and the exit establish the invariant at the ends of the walk and across
-its one edge, not over the dispatch between them.
+the edge closes over — does not close, and its first obstruction is no longer the
+frame: `WalkInv.owning` is the record's own region (`stage2WalkFrame` at the
+run's cursors), and the two forward stores that used to contradict it are
+`WalkInv.owning_cursorK` (`while.body.i`'s `%c.i + 32`) and
+`WalkInv.owning_stack` (`if.end24.i`'s two stack writes), both at the invariant.
+What remains is what the memory claim cannot supply: the dispatch's *register*
+facts.  `while.body.i` reads `%3`, `%5` and `%k11.i`, and `if.end24.i` indexes
+`%ctype.i`/`%cst.i`; the invariant names the depth's *value* (`depth_reg`), not
+the two stack pointers, so each block's `denoteCode` needs those bindings as
+hypotheses before the edge can be a step.  `WalkLocal` is still `True` at every
+block outside the ten the five arms reach, so well-foundedness over the whole
+control flow is not established; the seed, the back edge and the exit establish
+the invariant at the ends of the walk and across its one edge, not over the
+dispatch between them.  *The loop's forward stores* below states the rest in
+order, including the pipeline's one pending transport-pair clause.
 
 The cap is a clause and not an arm, and it is now carried: `WalkInv.inner_cap`
 bounds the inner component by `walkInnerCap G`, the two arms that reset it
@@ -567,11 +565,21 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   `%acap`).  With `log_alen` this is the clause `if.end256.i` needs: the word the
   reserve compares against is `dstcap`, not an unconstrained memory cell. -/
   log_acap : readBytes s.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
-  /-- The walk owns the two prefixes it has written: changes only inside them,
-  and they are present in the memory the run has produced.  The claim runs from
-  the staged memory to the run's own, which is the direction `Owns`'s presence
-  half is about and the direction the report's region clause reads. -/
-  owning : Owns (inRegions [(G.dst, C.alen), (G.ev, C.evlen)]) m0 s.mem
+  /-- **The walk owns the region it writes**: the arena's decoded prefix, the
+  event stream's prefix, and the seven appended objects the body stores into
+  (`stage2StagedWrites`), at the extents its `llvm.lifetime.start`s allocate.  The
+  claim runs from the staged memory to the run's own, which is the direction
+  `Owns`'s presence half is about and the direction the report's region clause
+  reads.
+
+  The seven are in the region because they are written: `while.body.i` stores
+  `%c.i + 32` before any reserve is checked, and `if.end24.i` writes both
+  container stacks.  A claim that stopped at the two extents would be contradicted
+  by the loop's first store (`owns_writeBytes_outside`), which is why the frame is
+  the record's (`stage2WalkFrame`) and not a choice made here. -/
+  owning : Owns (inRegions ([(G.dst, C.alen), (G.ev, C.evlen)] ++
+    stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
+      C.stage.z C.stage.e)) m0 s.mem
   /-- The block-local facts the measure is read from. -/
   blockLocal : WalkLocal C s
 
@@ -637,7 +645,8 @@ def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : P
   s.pc = "NodeBlock21" ∧
     lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)) ∧
     lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)) ∧
-    Owns (inRegions [(G.dst, G.ndst0), (G.ev, G.nev0)]) m0 s.mem ∧
+    Owns (inRegions ([(G.dst, G.ndst0), (G.ev, G.nev0)] ++
+      stage2StagedWrites S.c S.ctype S.cst S.tok S.s S.z S.e)) m0 s.mem ∧
     readBytes s.mem (S.z + 8) 8 = some (wordBytes 8 G.nev0) ∧
     readBytes s.mem (S.z + 16) 8 = some (wordBytes 8 G.evcap) ∧
     readBytes s.mem (S.z + 48) 8 = some (wordBytes 8 G.ndst0) ∧
@@ -1325,7 +1334,9 @@ alone. -/
 /-- **The report's clauses, read off the invariant.**  The seven numbers and the
 region claim `Stage2Run` records from `arenaGe` onwards: both cursors and their
 two-sided growth bounds, the last reserve's slack, the refusal offset, and the
-region at `alen + 64`.  It is the exit's whole content: the wrapper's three
+walk's whole frame at `alen + 64` — the five ABI write regions' arena and event
+prefixes together with the seven appended objects, which is `stage2WalkFrame`'s
+region at the run's cursors.  It is the exit's whole content: the wrapper's three
 stores and `stage2Run_boundary` turn it into `Γ_stage2`'s post. -/
 theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (h : WalkInv G C s) :
@@ -1335,7 +1346,9 @@ theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
       C.evlen ≤ G.nev0 + stage2RecordBytes * G.n ∧
       C.alen + stage2ArenaReserve ≤ G.dstcap ∧
       C.eoff ≤ G.n ∧
-      Owns (inRegions [(G.dst, C.alen + stage2ArenaReserve), (G.ev, C.evlen)]) m0 s.mem := by
+      Owns (inRegions ([(G.dst, C.alen + stage2ArenaReserve), (G.ev, C.evlen)] ++
+        stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok
+          C.stage.s C.stage.z C.stage.e)) m0 s.mem := by
   have hle : C.alen ≤ G.ndst0 + G.n := h.alen_le
   have hev : C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := h.evlen_le
   have hroom : G.ndst0 + G.n + stage2ArenaReserve ≤ G.dstcap := G.arenaRoom
@@ -1344,10 +1357,15 @@ theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   refine ⟨h.alen_ge, hle, ?_, hev, by omega, h.eoff_le, ?_⟩
   · rw [h.evlen_eq]
     exact Nat.le_add_right _ _
-  · refine owns_reserve_of_owns_extent h.owning G.arenaCap (by omega) ?_
-    rcases hsep with hsep | hsep
-    · left; omega
-    · right; omega
+  · refine owns_reserve_of_owns_walk h.owning G.arenaCap (by omega) ?_ ?_
+    · rcases hsep with hsep | hsep
+      · left; omega
+      · right; omega
+    · intro r hr
+      have hseven := stage2StagedWrites_against C.stage.separate
+        (a := G.dst) (m := G.ndst0 + G.n + stage2ArenaReserve)
+        (by simp [stage2Regions])
+      rcases hseven r hr with h' | h' <;> omega
 
 /-! ### The loop's forward stores, and the region they need
 
@@ -1371,52 +1389,60 @@ ABI objects — the staging is at the adapter (`stage2StagedPre`), and the recor
 frame at `stage2WalkWrites`; both are `JsonStage2Contract`'s, and the next
 paragraphs say what they buy and what they cannot yet.
 
-The invariant's region claim is `Owns (inRegions [(dst, alen), (ev, evlen)])`, and
-`Owns`'s unchanged half is a statement about *every address outside* the region.
-So a store outside it contradicts the claim unless the bytes happen to agree —
-`owns_writeBytes_outside` below is that argument — and only a store whose whole
-range is inside it is admitted (`owns_writeBytes_inside`).  The loop's first store
-is to `%c.i + 32`, which is outside both extents in the emitted pipeline, where the
-cursor record is an object of its own; nothing in `WalkGeom` places it inside them,
-so the invariant as stated is not preserved one step into the loop.  The seed's
-region claim fails the same way, one step earlier: `entry`'s own stores
-(`%s + 56/72/80`, `%z + 0/8/16/24/40/48/56`, `%c.i + 0/8/16/24/1112`, and the
-`memset` over `%c.i + 40`) are to the same unstaged objects, which is why
-`WalkSeedState` takes the claim as a hypothesis rather than deriving it.
+The invariant's region claim is the walk's frame, and the two paragraphs that
+follow record what the widening cost and what it bought, because both were
+record-level questions and neither was an arm's.
 
-**The record now names them; the walk's own region does not, and cannot yet.**
-`stage2WalkWrites` names the seven at exactly the extents the body's
-`llvm.lifetime.start`s allocate — `stage2CursorExtent` 1192, `stage2StackExtent`
-520 twice, `stage2TokenExtent` 24, `stage2StateExtent` 120, `stage2LogExtent` 64,
-`stage2ErrorExtent` 24 — and `JsonStage2IR`'s `lifetimeExtents` guards read those
-numbers off the pinned AST rather than from this paragraph.  `Γ_stage2at.pre`
-stages them: `stage2StagedPre` gives presence at each extent and
-`DisjointRegions (stage2WalkRegions …)`, which separates the seven from the
-thirteen ABI objects and from each other.  So every store the loop executes at
-`%c.i + 32` (`while.body.i`, `if.end207.i`), at `%ctype.i[sp]`/`%cst.i[sp]`
-(`if.end24.i`), at `%z + 0/8/16/24/40/48/56`, `%s + 56/72/80` and `%e + 8` lands
-inside `stage2WalkFrame`, and `owns_writeBytes_inside` admits it; the three
-instances are below.
+**The narrow claim, and why it was false.**  Before this widening the claim was
+`Owns (inRegions [(dst, alen), (ev, evlen)])`.  `Owns`'s unchanged half is a
+statement about *every address outside* the region, so a store outside it
+contradicts the claim unless the bytes happen to agree —
+`owns_writeBytes_outside` is that argument — and only a store whose whole range is
+inside it is admitted (`owns_writeBytes_inside`).  The loop's first store is to
+`%c.i + 32`, which is outside both extents in the emitted pipeline, where the
+cursor record is an object of its own; nothing in `WalkGeom` places it inside
+them, so the narrow claim was not preserved one step into the loop.  The seed's
+claim failed the same way, one step earlier: `entry`'s own stores (`%s +
+56/72/80`, `%z + 0/8/16/24/40/48/56`, `%c.i + 0/8/16/24/1112`, and the `memset`
+over `%c.i + 40`) are to the same unstaged objects, which is why `WalkSeedState`
+takes the claim as a hypothesis rather than deriving it.
 
-What is **not** done is replacing the invariant's region with that frame, and the
-reason is not an unfinished arm: **`Owns` is not monotone in its region.**  Its
-presence half is (`owns_extent_present`), but its unchanged half is not — an `Owns`
-at a wider region permits exactly the bytes that an `Owns` at a narrower one
-demands.  So `WalkInv.owning` can only be widened together with
-`WalkInv.report`, which feeds `Stage2Run`'s region clause, which
-`stage2Run_boundary` turns into `stage2Boundary`'s `Owns (stage2Frame …)` at the
-ABI's thirteen arguments.  There the seven have no witness: `stage2Boundary`
-decomposes thirteen values, and `Γ_stage2.pre` cannot stage an object it cannot
-name.  The widening has to begin at the record's post, and its consequence is not
-local: the pipeline's tail reads "the two count slots and the two streams are
-unchanged" off that post (`PipelineDischarge`'s `hframeStage`), and unchanged-
-outside-a-wider-region does not yield unchanged-outside-a-narrower one.  Of the
-four transport pairs, the two streams (`S.ep`, `S.xp`) are stage-2's own objects,
-so their pair would follow from the widened staging's separation; the two count
-slots (`S.nk`, `S.nxp`) are the pipeline's, named by no stage-2 clause, so their
-pair follows from nothing in this tree.  **That is the resister**: the pipeline's
-staging must separate its count slots from the walk's scratch before the record's
-frame can be stated at a region that is true of the body.
+**The widening, and where it had to begin.**  `Owns` is not monotone in its
+region — its presence half is (`owns_extent_present`), but an `Owns` at a wider
+region permits exactly the bytes an `Owns` at a narrower one demands — so
+widening `WalkInv.owning` is only sound together with `WalkInv.report`, which
+feeds `Stage2Run`'s region clause, which `stage2Run_boundary` turns into
+`stage2Boundary`'s post.  The post is at the ABI's thirteen arguments and the
+seven appended objects are the *body's* parameters, so the post is where they
+become nameable: `stage2Boundary` now carries them as witnesses (their extents
+are `stage2StagedWrites`, the numbers `JsonStage2IR`'s `lifetimeExtents` guards
+read off the pinned AST) together with `DisjointRegions
+(stage2StagedRegions …)`.  `Stage2Run` carries the same seven, the caller's two
+count slots and that separation; `WalkInv.owning` is `stage2WalkFrame` at the
+run's cursors; `WalkInv.report` gives it back at `alen + 64`
+(`owns_reserve_of_owns_walk`, whose `hseven` is the staging's separation of the
+seven from the arena's entry).  So the loop's stores at `%c.i + 32`
+(`while.body.i`, `if.end207.i`), at `%ctype.i[sp]`/`%cst.i[sp]` (`if.end24.i`),
+at `%z + 0/8/16/24/40/48/56`, `%s + 56/72/80` and `%e + 8` all land inside the
+claim, and `owns_writeBytes_inside` admits them.  The two forward stores are
+`WalkInv.owning_cursorK` and `WalkInv.owning_stack` below.
+`WalkSeedState`'s own claim is widened the same way; it is the initialisation's
+promise, and it is the one clause of the loop head that is a hypothesis rather
+than a reading of `WalkGeom`.
+
+**What the widening costs its consumers, and which clause is pending.**  The
+pipeline's tail read "the two count slots and the two streams are unchanged" off
+the post, and unchanged-outside-a-wider-region does not yield
+unchanged-outside-a-narrower one.  Of its four transport pairs, the two streams
+(`S.ep`, `S.xp`) follow from the post's staging separation, because both are
+stage-2 *arguments* and the staging names them at the counts the call carried
+(the post carries `nep < 2 ^ 64` and `nxp < 2 ^ 64` so its counts are the
+arguments' words' values — `one word with two widths is one number`, the same
+move the two capacities make).  The two count slots (`S.nk`, `S.nxp`) do not:
+they are the pipeline's, not stage-2's arguments, and no clause of the record can
+name them.  `PipelineDischarge.Stage2SlotKeeps` is that statement, taken as a
+hypothesis and documented as the model's missing stack discipline — the same gap
+`SigmaFrame` records at the specification (`JsonPipelineSpec`).
 
 **The nesting clause is carried.**  `WalkInv.depth_reg` names the register —
 `%sp.i.0248` holds the carry's `sp` — and `WalkInv.depth_cap` bounds it by
@@ -1600,6 +1626,33 @@ theorem owns_cst_write {mem m : Mem} {dst alen ev evlen c ctype cst tok s z e sp
   subst hk0
   exact inRegions_append_right (cst_inside hsp)
 
+/-- **The loop head's store, at the invariant.**  `while.body.i` writes the
+advanced index to `%c.i + 32`; the store is inside the cursor record's extent, so
+the invariant's own region survives it.  This is the first of the dispatch's two
+forward stores, and it is a lemma at the *invariant's* region — the region the
+record's post names — rather than at the record's list, which is what the
+widening bought. -/
+theorem WalkInv.owning_cursorK {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : WalkInv G C s) {v : List UInt8} (hv : v.length ≤ 8) :
+    Owns (inRegions ([(G.dst, C.alen), (G.ev, C.evlen)] ++
+      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
+        C.stage.z C.stage.e)) m0 (writeBytes s.mem (C.stage.c + 32) v) :=
+  owns_cursorK_write hv h.owning
+
+/-- **The nesting arm's two stack stores, at the invariant.**  `if.end24.i`
+writes `%ctype.i[sp]` and `%cst.i[sp]`; both are inside the stacks' staged extents
+at the depth the `MAXD` check admits (`NestGuard`, the arm's guard — not the
+invariant's `depth_cap`), so the invariant's region survives them. -/
+theorem WalkInv.owning_stack {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : WalkInv G C s) {cv sv : List UInt8}
+    (hcv : cv.length ≤ 1) (hsv : sv.length ≤ 1) (hsp : NestGuard C.sp) :
+    Owns (inRegions ([(G.dst, C.alen), (G.ev, C.evlen)] ++
+      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
+        C.stage.z C.stage.e)) m0
+      (writeBytes (writeBytes s.mem (C.stage.ctype + C.sp) cv)
+        (C.stage.cst + C.sp) sv) :=
+  owns_cst_write hsv hsp (owns_ctype_write hcv hsp h.owning)
+
 -- The three store families' provenance, off the pinned body: the cursor field's
 -- `gep` at the loop entry, and the two stack stores at the `zext` of the depth.
 #guard gepDef stage2Body "while.body.i.lr.ph" "%k11.i" = some ("%c.i", 32)
@@ -1637,16 +1690,17 @@ one of the three the lead named** — the nesting and the two reserves are all
    (the document and entry stream bases, loaded in `entry`), `%k11.i`
    (`%c.i + 32`), `%ar` (`%z + 40`), and `%ctype.i`/`%cst.i` as pointers.
    `if.end24.i` indexes `%ctype.i`/`%cst.i` through `zext %sp.i.0248`, and the
-   invariant names the *value* of the depth — this slice's clause — but not the
-   two pointer registers.
+   invariant names the *value* of the depth (`depth_reg`) but not the two pointer
+   registers.  Those are what a block's `denoteCode` needs before its edge can be
+   a step; they are bindings of the emitted body, not clauses of the walk's
+   memory, so they belong to the per-block traces rather than here.
 2. **The dispatch's own completion**, which is where the nesting and both reserves
-   are decided; `WalkLocal` is `True` at every block between them.  The forward
-   edges `while.body.i` and `if.end24.i` are also where the *frame* question
-   lands: both stores are outside the invariant's narrow region, so their
-   preservation needs the wide `stage2WalkFrame` claim, and `Owns` is not monotone
-   (`WalkInv.report` cannot project a wide claim to the narrow one the record's
-   post reads).  The clause set is no longer the obstruction there; the record's
-   post is.
+   are decided; `WalkLocal` is `True` at every block between them.  The *frame*
+   question no longer lands here: `WalkInv.owning` is the record's own region and
+   `WalkInv.owning_cursorK`/`WalkInv.owning_stack` are the two forward stores
+   preserved at it.  What remains for `while.body.i` and `if.end24.i` is the
+   register facts of item 1, the ten predecessors' `phi` facts at `cleanup478.i`,
+   and the per-block traces between the arms.
 3. **The six sub-unit contracts.**  `s2_init`, `s2_value_pos`, `s2_after_value`,
    `s2_string_body`, `od_scalar_value` and `num_fast_el1` all fall through
    `stage2Calls` to the parameter `sub`, and the `#guard` in `JsonStage2IR` pins
@@ -1656,15 +1710,17 @@ one of the three the lead named** — the nesting and the two reserves are all
    and `stage2Calls_s2_init` … `stage2Calls_num_fast_el1` are the reductions from
    the walk's environment to it.
 
-So `Stage2WalkObligation` is not assembled.  What this slice adds is the record
-the loop's stores need (`stage2WalkWrites`, `stage2StagedPre`, the three
-`owns_*_write` instances), the nesting clause carried through every proved edge,
-the staging and its log fields in the invariant, and the six sub-units' selection.
-What it reports is that the dispatch's forward edges are a record-post question
-before they are an arm question — the record's frame, now nameable at the
-adapter's seventeen staged objects, still cannot be the invariant's claim until
-`stage2Post` names the seven, and that widening is `PipelineDischarge`'s transport
-as much as this module's.
+So `Stage2WalkObligation` is stated and not inhabited, and its *post* half is now
+statable at a region that is true of the body: `WalkInv.report` yields
+`stage2WalkFrame`'s claim, `Stage2Run` carries the seven and the staging, and
+`stage2Run_boundary` turns the report into `stage2Boundary` at the ABI's thirteen
+arguments.  The assembly point is `JsonStage2Body.stage2WalkObligation_at_subCalls`
+(completion beside the post) and
+`JsonStage2IR.stage2WalkObligation_iff_completion` (the same at the adapter's
+record); what is missing is the induction — the per-arm trace with the measure,
+over the register facts of item 1.  No well-foundedness claim is made here: the
+five proved arms and the closed back edge are exactly the edges whose measures are
+shown, and `WalkLocal`'s `True` elsewhere is the statement of what is not.
 -/
 
 /-! ### The back edge: `cleanup478.i`'s merge
