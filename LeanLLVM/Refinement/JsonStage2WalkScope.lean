@@ -586,6 +586,57 @@ def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop 
     ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner
   else True
 
+/-- **The pointer registers the dispatch's blocks read**, in one place.
+
+`%3` and `%5` are `entry`'s two loads — the document's base and the entry
+stream's base — and the four others are the addresses the header and the nesting
+arm read: `%k11.i` is the cursor record's `k` field (`%c.i + 32`), `%ctype.i` and
+`%cst.i` are the two container stacks' bases, and `%hash1.i.i` is the log's hash
+word (`%z + 32`).  Each is bound before the loop and no block of the dispatch
+rebinds one, which is why the invariant carries them as bindings: a block's
+`denoteCode` reads them, and the carry is where the run's fixed addresses live.
+`WalkPtrs.bind` is the step that says a bind at any other name preserves all six.
+
+They are binding facts about the emitted body rather than clauses about the
+walk's memory — `%3`'s *value* is the document's address, and only the
+initialisation knows it is `G.b` — so they sit beside `blockIndex` and
+`depth_reg` rather than with the log's fields, and their production is the seed's. -/
+def WalkPtrs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env) : Prop :=
+  lookupName env "%3" = some (.ptr G.b) ∧
+    lookupName env "%5" = some (.ptr G.ep) ∧
+    lookupName env "%k11.i" = some (.ptr (C.stage.c + 32)) ∧
+    lookupName env "%ctype.i" = some (.ptr C.stage.ctype) ∧
+    lookupName env "%cst.i" = some (.ptr C.stage.cst) ∧
+    lookupName env "%hash1.i.i" = some (.ptr (C.stage.z + 32))
+
+/-- **A bind at another name preserves all six pointer registers.**  Each
+disequality is a literal comparison, so an arm discharges it with `decide`; the
+six conclusions are the six cells read back out of the extended environment. -/
+theorem WalkPtrs.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
+    (h : WalkPtrs G C env) {d : String} {v : Value}
+    (h3 : ¬ d = "%3") (h5 : ¬ d = "%5") (hk : ¬ d = "%k11.i")
+    (hc : ¬ d = "%ctype.i") (hs : ¬ d = "%cst.i") (hh : ¬ d = "%hash1.i.i") :
+    WalkPtrs G C ((d, v) :: env) := by
+  obtain ⟨hd3, hd5, hdk, hdc, hds, hdh⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [lookupName, ite_eq_right h3]; exact hd3
+  · simp only [lookupName, ite_eq_right h5]; exact hd5
+  · simp only [lookupName, ite_eq_right hk]; exact hdk
+  · simp only [lookupName, ite_eq_right hc]; exact hdc
+  · simp only [lookupName, ite_eq_right hs]; exact hds
+  · simp only [lookupName, ite_eq_right hh]; exact hdh
+
+/-- **A run of two binds at other names preserves the six pointer registers.** -/
+theorem WalkPtrs.bind_pair {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
+    (h : WalkPtrs G C env) {a b : String} {va vb : Value}
+    (ha : ¬ a = "%3" ∧ ¬ a = "%5" ∧ ¬ a = "%k11.i" ∧ ¬ a = "%ctype.i"
+      ∧ ¬ a = "%cst.i" ∧ ¬ a = "%hash1.i.i")
+    (hb : ¬ b = "%3" ∧ ¬ b = "%5" ∧ ¬ b = "%k11.i" ∧ ¬ b = "%ctype.i"
+      ∧ ¬ b = "%cst.i" ∧ ¬ b = "%hash1.i.i") :
+    WalkPtrs G C ((b, vb) :: (a, va) :: env) :=
+  (h.bind ha.1 ha.2.1 ha.2.2.1 ha.2.2.2.1 ha.2.2.2.2.1 ha.2.2.2.2.2).bind
+    hb.1 hb.2.1 hb.2.2.1 hb.2.2.2.1 hb.2.2.2.2.1 hb.2.2.2.2.2
+
 /-- **The walk's invariant.**  Everything the loop carries, at the block it is at,
 and the memory it has written.  This is the predicate every one of the six arms
 must preserve; `forInc_step` proves the literal comparison's arm does and
@@ -652,6 +703,20 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   depth's counterpart of `blockIndex`, and it is why an arm that leaves the depth
   alone carries it in one step. -/
   depth_reg : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp))
+  /-- **The pointer registers the dispatch's blocks read.**  `while.body.i` reads
+  `%3`, `%5` and `%k11.i`, and `if.end24.i` indexes `%ctype.i`/`%cst.i` and reads
+  the log's hash word through `%hash1.i.i`; a block's `denoteCode` needs those
+  bindings before its edge can be a step, and the invariant names them at the
+  addresses the staging fixed (`WalkPtrs`). -/
+  ptrs : WalkPtrs G C s.env
+  /-- **The log's hash word is the initialisation's zero.**  `if.end24.i` reads
+  the four bytes at `%z + 32` (`%10 = load i32, ptr %hash1.i.i`) and branches on
+  the word: `entry`'s `llvm.memset` over the sixteen bytes at `%z + 24` is what
+  makes it zero, and no block of the walk writes that half of the hash state —
+  `if.then.i.i` writes `%z + 24` only.  This is the one clause the two container
+  stacks' push path reads from memory, and it is what makes the block's branch a
+  *fact* rather than an assumed guard. -/
+  log_hash : readBytes s.mem (C.stage.z + 32) 4 = some (natToBytes 0 4)
   /-- **The log's event length is the carried event cursor.**  `out_reserve`'s
   check reads the word at `%z + 8` (`%len`) against the word at `%z + 16`, and the
   walk's event writes advance it by the record's own width — one, nine or
@@ -755,6 +820,8 @@ def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : P
   s.pc = "NodeBlock21" ∧
     lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)) ∧
     lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)) ∧
+    WalkPtrs G (walkSeed G S) s.env ∧
+    readBytes s.mem (S.z + 32) 4 = some (natToBytes 0 4) ∧
     Owns (inRegions ([(G.dst, G.ndst0), (G.ev, G.nev0)] ++
       stage2StagedWrites S.c S.ctype S.cst S.tok S.s S.z S.e)) m0 s.mem ∧
     readBytes s.mem (S.z + 8) 8 = some (wordBytes 8 G.nev0) ∧
@@ -781,7 +848,7 @@ theorem walkSeed_depth_cap {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 facts and nothing else. -/
 theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
     (h : WalkSeedState G S s) : WalkInv G (walkSeed G S) s := by
-  obtain ⟨hpc, hk, hsp, hown, hlen, hcap, halen, hacap⟩ := h
+  obtain ⟨hpc, hk, hsp, hptrs, hhash, hown, hlen, hcap, halen, hacap⟩ := h
   refine
     { pc_eq := hpc
       blockIndex := hk
@@ -798,6 +865,8 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       inner_cap := walkSeed_inner_cap G S
       depth_cap := walkSeed_depth_cap G S
       depth_reg := hsp
+      ptrs := hptrs
+      log_hash := hhash
       log_len := hlen
       log_cap := hcap
       log_alen := halen
@@ -978,6 +1047,13 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           omega
         depth_cap := hInv.depth_cap
         depth_reg := by rw [hsp]; exact hInv.depth_reg
+        ptrs := by
+          dsimp only [e, State.bind]
+          exact hInv.ptrs.bind_pair
+            (a := "%inc.i.i") (b := "%exitcond.not.i.i")
+            ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+            ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+        log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
@@ -1258,6 +1334,10 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (hinc_cond : inc ≠ cond) (htest_cond : test ≠ cond) (htest_inc : test ≠ inc)
     (hinc_k : inc ≠ "%k.0.i249") (htest_k : test ≠ "%k.0.i249")
     (hinc_sp : inc ≠ "%sp.i.0248") (htest_sp : test ≠ "%sp.i.0248")
+    (hincN : ¬ inc = "%3" ∧ ¬ inc = "%5" ∧ ¬ inc = "%k11.i" ∧ ¬ inc = "%ctype.i"
+      ∧ ¬ inc = "%cst.i" ∧ ¬ inc = "%hash1.i.i")
+    (htestN : ¬ test = "%3" ∧ ¬ test = "%5" ∧ ¬ test = "%k11.i" ∧ ¬ test = "%ctype.i"
+      ∧ ¬ test = "%cst.i" ∧ ¬ test = "%hash1.i.i")
     (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
     (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
     (hinner : C.inner = c - i) (hlt : i + 1 < c) (hcw : c < 2 ^ 64)
@@ -1312,6 +1392,10 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
           omega
         depth_cap := hInv.depth_cap
         depth_reg := by rw [hsp]; exact hInv.depth_reg
+        ptrs := by
+          dsimp only [e, State.bind]
+          exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
+        log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
@@ -1347,6 +1431,7 @@ theorem whitespace_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     scan_step G C s i c "while.body370.i" "land.rhs.i" "%ee.0.i238" "%inc371.i"
       "%exitcond.not" "%cond350.i" "if.end372.i" hInv hblock scanWhitespace_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (hincN := by decide) (htestN := by decide)
       hi hc hinner hnext hcw
       (by
         intro e hpre hinc hcond
@@ -1372,6 +1457,7 @@ theorem string_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     scan_step G C s i c "while.body.i104" "land.rhs.i103" "%ee.011.i" "%inc.i105"
       "%exitcond.not.i" "%cond.i" "cleanup474.i" hInv hblock scanString_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (hincN := by decide) (htestN := by decide)
       hi hc hinner hnext hcw
       (by
         intro e hpre hinc hcond
@@ -1396,6 +1482,7 @@ theorem escape_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     scan_step G C s i c "while.body76.i" "land.rhs71.i" "%s2.020.i" "%inc77.i"
       "%exitcond24.not.i" "%cond.i" "while.end78.i" hInv hblock scanEscape_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (hincN := by decide) (htestN := by decide)
       hi hc hinner hnext hcw
       (by
         intro e hpre hinc hcond
@@ -1420,6 +1507,7 @@ theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     scan_step G C s i c "while.body462.i" "land.rhs457.i" "%q.0.i246" "%inc463.i"
       "%exitcond298.not" "%cond350.i" "if.end473.i" hInv hblock scanExtraToken_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (hincN := by decide) (htestN := by decide)
       hi hc hinner hnext hcw
       (by
         intro e hpre hinc hcond
@@ -1993,6 +2081,16 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
           rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
             lookupName_cons_ne _ _ (by decide)]
           exact hInv.depth_reg
+        ptrs := by
+          dsimp only [e, State.bind]
+          have h1 := hInv.ptrs.bind_pair (a := "%sp.i.1") (b := "%k.2.i")
+            (va := .int 32 (BitVec.ofNat 32 spv))
+            (vb := .int 64 (BitVec.ofNat 64 k2))
+            ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+            ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+          exact h1.bind (d := "%cmp.i") (v := .int 1 (1 : BitVec 1))
+            (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
@@ -2270,3 +2368,870 @@ theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Na
 #print axioms LeanLLVM.Refinement.owns_cst_write
 
 end LeanLLVM.Refinement
+/-! ### Steps at the two blocks' widths -/
+
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR
+open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
+open LeanLLVM.Refinement.BlockEval
+
+
+theorem sExt_ofNat64 {j : Nat} (hj : j < 2 ^ 63) :
+    ((BitVec.ofNat 64 j).signExtend 64).toNat = j := by
+  simp [BitVec.toNat_ofNat, BitVec.signExtend]
+  omega
+
+theorem toNat_ofNat64 {j : Nat} (hj : j < 2 ^ 64) :
+    (BitVec.ofNat 64 j).toNat = j := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj]
+
+theorem toNat_ofNat32 {j : Nat} (hj : j < 2 ^ 32) :
+    (BitVec.ofNat 32 j).toNat = j := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj]
+
+theorem bytesToNat_singleton (b : UInt8) : bytesToNat [b] = b.toNat := by
+  simp [bytesToNat]
+
+theorem bytesToNat_lt_32 {bs : List UInt8} (h : bs.length = 4) :
+    bytesToNat bs < 2 ^ 32 := by
+  have h' := bytesToNat_lt bs
+  rw [h, show (256 : Nat) ^ 4 = 2 ^ 32 from by decide] at h'
+  exact h'
+
+theorem bytesToNat_lt_8 {bs : List UInt8} (h : bs.length = 1) :
+    bytesToNat bs < 256 := by
+  have h' := bytesToNat_lt bs
+  rw [h] at h'
+  exact h'
+
+/-- **A write outside a read's range leaves the read alone.** -/
+theorem readBytes_writeBytes_outside {m : Mem} {v : List UInt8} :
+    ∀ {start addr n : Nat}, addr + n ≤ start ∨ start + v.length ≤ addr →
+      readBytes (writeBytes m start v) addr n = readBytes m addr n
+  | start, addr, 0, _ => by simp [readBytes]
+  | start, addr, n + 1, h => by
+      have hhead : addr < start ∨ start + v.length ≤ addr := by omega
+      have htail : addr + 1 + n ≤ start ∨ start + v.length ≤ addr + 1 := by omega
+      rw [readBytes, readBytes, readByte_writeBytes_outside m v hhead,
+        readBytes_writeBytes_outside (m := m) (v := v) (start := start)
+          (addr := addr + 1) (n := n) htail]
+
+/-- A one-byte read from a present byte. -/
+theorem readBytes_one_of_readByte {m : Mem} {a : Nat} {b : UInt8}
+    (h : readByte m a = some b) : readBytes m a 1 = some [b] := by
+  simp only [readBytes, h]
+
+theorem readBytes_length {m : Mem} {addr : Nat} :
+    ∀ {n : Nat} {bs : List UInt8}, readBytes m addr n = some bs → bs.length = n
+  | 0, bs, h => by
+      simp only [readBytes, Option.some.injEq] at h
+      subst h; rfl
+  | n + 1, bs, h => by
+      simp only [readBytes] at h
+      split at h
+      · cases h
+      · rename_i b hb
+        split at h
+        · cases h
+        · rename_i bs' hbs
+          cases h
+          simp only [List.length_cons]
+          rw [readBytes_length hbs]
+
+theorem readLanes32_nth {m : Mem} {addr : Nat} :
+    ∀ {n : Nat} {l : List Nat}, readLanes32 m addr n = some l →
+      l.length = n ∧ ∀ j, j < n →
+        ∃ q bs, l[j]? = some q ∧ readBytes m (addr + 4 * j) 4 = some bs ∧ bytesToNat bs = q
+  | 0, l, h => by
+      simp only [readLanes32, Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, fun j hj => absurd hj (Nat.not_lt_zero j)⟩
+  | n + 1, l, h => by
+      simp only [readLanes32] at h
+      cases hb : readBytes m addr 4 with
+      | none => rw [hb] at h; cases h
+      | some bs =>
+          rw [hb] at h
+          cases hr : readLanes32 m (addr + 4) n with
+          | none => rw [hr] at h; cases h
+          | some tl =>
+              rw [hr] at h
+              simp only [Option.map_some, Option.bind_some, Option.some.injEq] at h
+              subst h
+              obtain ⟨hlen, hget⟩ := readLanes32_nth (m := m) (addr := addr + 4) hr
+              refine ⟨by simp [hlen], ?_⟩
+              intro j hj
+              cases j with
+              | zero => exact ⟨bytesToNat bs, bs, by simp, by simpa using hb, rfl⟩
+              | succ i =>
+                  obtain ⟨q, bs', hq, hread, hval⟩ := hget i (by omega)
+                  exact ⟨q, bs', by simp [hq], by
+                    rw [show addr + 4 * (i + 1) = addr + 4 + 4 * i from by omega]
+                    exact hread, hval⟩
+
+-- `denoteCode` chain steps: the same shapes `BlockEval` has, at the widths and
+-- the `ofNat` values the two blocks use.
+
+theorem denoteCode_zext32_64_ofNat (calls : Calls) (env : Env) (s : State)
+    (d v : String) {q : Nat}
+    (hv : lookupName env v = some (.int 32 (BitVec.ofNat 32 q)))
+    (hq : q < 2 ^ 32) (is : List Instr) :
+    denoteCode calls (.zext d 32 64 (.reg v) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 64 (BitVec.ofNat 64 q)) :: env) s) := by
+  rw [denoteCode_zext calls env s d v 32 64 (x := BitVec.ofNat 32 q) hv is,
+    toNat_ofNat32 hq]
+
+theorem denoteCode_gep8_ofNat (calls : Calls) (env : Env) (s : State)
+    (d base off : String) {a j : Nat}
+    (hb : lookupName env base = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj : j < 2 ^ 63) (is : List Instr) :
+    denoteCode calls (.gep d (.int 8) (.reg base) (.reg off) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a + j)) :: env) s) := by
+  have hs := sExt_ofNat64 hj
+  rw [denoteCode_gep8_reg calls env s d base off hb ho (by rw [hs]; exact hj) is, hs]
+
+theorem denoteCode_gep32_ofNat (calls : Calls) (env : Env) (s : State)
+    (d base off : String) {a j : Nat}
+    (hb : lookupName env base = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj : j < 2 ^ 63) (is : List Instr) :
+    denoteCode calls (.gep d (.int 32) (.reg base) (.reg off) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a + j * 4)) :: env) s) := by
+  have hs := sExt_ofNat64 hj
+  have hsize : (Ty.int 32).sizeBytes = 4 := by decide
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [evalInstr_gep (s := stateAt env s) (elemTy := .int 32)
+      (hb := evalOperand_reg_of env s base (.ptr a) hb)
+      (ho := evalOperand_reg_of env s off (.int 64 (BitVec.ofNat 64 j)) ho)
+      (hpos := by rw [hs]; exact hj)])]
+  simp only [stateAt, State.bind, hs, hsize]
+
+theorem denoteCode_load32 (calls : Calls) (env : Env) (s : State) (d p : String)
+    {a q : Nat} {bs : List UInt8}
+    (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes s.mem a 4 = some bs) (hbs : bytesToNat bs = q) (is : List Instr) :
+    denoteCode calls (.load d (.int 32) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 32 (BitVec.ofNat 32 q)) :: env) s) := by
+  have hv' : loadValue (stateAt env s).mem (.int 32) a
+      = some (.int 32 (BitVec.ofNat 32 q)) := by
+    show loadValue s.mem (.int 32) a = _
+    simp only [loadValue, show (32 + 7) / 8 = 4 from rfl,
+      ite_eq_right (by decide : ¬ (32 = 0)), hv, hbs]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_load (s := stateAt env s)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hv := hv')])]
+  simp only [stateAt, State.bind]
+
+theorem denoteCode_load8 (calls : Calls) (env : Env) (s : State) (d p : String)
+    {a q : Nat} {bs : List UInt8}
+    (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes s.mem a 1 = some bs) (hbs : bytesToNat bs = q) (is : List Instr) :
+    denoteCode calls (.load d (.int 8) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 8 (BitVec.ofNat 8 q)) :: env) s) := by
+  have hv' : loadValue (stateAt env s).mem (.int 8) a
+      = some (.int 8 (BitVec.ofNat 8 q)) := by
+    show loadValue s.mem (.int 8) a = _
+    simp only [loadValue, show (8 + 7) / 8 = 1 from rfl,
+      ite_eq_right (by decide : ¬ (8 = 0)), hv, hbs]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_load (s := stateAt env s)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hv := hv')])]
+  simp only [stateAt, State.bind]
+
+theorem denoteCode_load8_single (calls : Calls) (env : Env) (s : State) (d p : String)
+    {a : Nat} {b : UInt8}
+    (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes s.mem a 1 = some [b]) (is : List Instr) :
+    denoteCode calls (.load d (.int 8) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 8 (BitVec.ofNat 8 b.toNat)) :: env) s) :=
+  denoteCode_load8 calls env s d p (q := b.toNat) hp hv (bytesToNat_singleton b) is
+
+theorem denoteCode_store64_ofNat (calls : Calls) (env : Env) (s : State)
+    (v p : String) {a j : Nat}
+    (hv : lookupName env v = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj : j < 2 ^ 64) (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 64) (.reg v) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt env { s with mem := writeBytes s.mem a (wordBytes 8 j) }) := by
+  rw [denoteCode_store64 calls env s v p (x := BitVec.ofNat 64 j) hv hp is,
+    toNat_ofNat64 hj]
+  rfl
+
+theorem denoteCode_store8 (calls : Calls) (env : Env) (s : State) (v p : String)
+    {x : BitVec 8} {a : Nat}
+    (hv : lookupName env v = some (.int 8 x))
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 8) (.reg v) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 1) }) := by
+  have hs : storeValue (stateAt env s) (.int 8) (.int 8 x) a
+      = some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 1) }) := by
+    simp [storeValue, stateAt, show (8 + 7) / 8 = 1 from rfl]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_store (s := stateAt env s)
+      (vv := .int 8 x) (a := a)
+      (s' := stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 1) })
+      (hv := evalOperand_reg_of env s v (.int 8 x) hv)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hs := hs)])]
+
+theorem denoteCode_store8_imm (calls : Calls) (env : Env) (s : State) (x : BitVec 8)
+    (p : String) {a : Nat} (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 8) (.imm (.int 8 x)) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 1) }) := by
+  have hs : storeValue (stateAt env s) (.int 8) (.int 8 x) a
+      = some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 1) }) := by
+    simp [storeValue, stateAt, show (8 + 7) / 8 = 1 from rfl]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_store (s := stateAt env s)
+      (vv := .int 8 x) (a := a)
+      (s' := stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 1) })
+      (hv := evalOperand_lit_of (stateAt env s) 8 x)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hs := hs)])]
+
+theorem denoteCode_icmp_eq_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.icmp d .eq w (.reg a) (.imm (.int w c)) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 1 (evalICmp .eq x c)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_icmp (s := stateAt env s)
+      (ha := evalOperand_reg_of env s a (.int w x) ha)
+      (hb := evalOperand_lit_of (stateAt env s) w c)])]
+  simp only [stateAt, State.bind]
+
+theorem denoteCode_add_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .add w (.reg a) (.imm (.int w c)) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x + c)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_binop (s := stateAt env s)
+      (r := (x + c).toNat)
+      (ha := evalOperand_reg_of env s a (.int w x) ha)
+      (hb := evalOperand_lit_of (stateAt env s) w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])])]
+  simp only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+
+theorem denoteCode_add_one_ofNat (calls : Calls) (env : Env) (s : State)
+    (d a : String) (w : Nat) {j : Nat}
+    (ha : lookupName env a = some (.int w (BitVec.ofNat w j))) (is : List Instr) :
+    denoteCode calls
+        (.binop d .add w (.reg a) (.imm (.int w (BitVec.ofNat w 1))) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (BitVec.ofNat w (j + 1))) :: env) s) := by
+  rw [denoteCode_add_imm_w calls env s d a w (x := BitVec.ofNat w j)
+    (c := BitVec.ofNat w 1) ha is, ← BitVec.ofNat_add]
+
+theorem denoteCode_select_imm_imm_w (calls : Calls) (env : Env) (s : State)
+    (d c : String) (w : Nat) {bb : BitVec 1} {x y : BitVec w}
+    (hc : lookupName env c = some (.int 1 bb)) (is : List Instr) :
+    denoteCode calls
+        (.select d (.int w) (.reg c) (.imm (.int w x)) (.imm (.int w y)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (if bb = 1 then x else y)) :: env) s) := by
+  rcases bitVec1_eq_zero_or_one bb with h | h
+  · subst h
+    rw [ite_eq_right (by decide : ¬ ((0 : BitVec 1) = 1))]
+    rw [denoteCode_cons_of _ _ _ _ _ (by
+      rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_select_false (s := stateAt env s)
+        (hc := evalOperand_reg_of env s c (.int 1 (0 : BitVec 1)) hc)
+        (ha := evalOperand_lit_of (stateAt env s) w x)
+        (hb := evalOperand_lit_of (stateAt env s) w y)])]
+    simp only [stateAt, State.bind]
+  · subst h
+    rw [ite_eq_left rfl]
+    rw [denoteCode_cons_of _ _ _ _ _ (by
+      rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_select_true (s := stateAt env s)
+        (hc := evalOperand_reg_of env s c (.int 1 (1 : BitVec 1)) hc)
+        (ha := evalOperand_lit_of (stateAt env s) w x)
+        (hb := evalOperand_lit_of (stateAt env s) w y)])]
+    simp only [stateAt, State.bind]
+
+/-- One instruction of the two blocks: the chain step whose shape matches. -/
+macro "walk_step" : tactic => `(tactic|
+  (first
+   | rw [denoteCode_zext32_64_ofNat _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_gep8_ofNat _ _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_gep32_ofNat _ _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_load32 _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_load8_single _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_load8 _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_store64_ofNat _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_store8 _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_store8_imm _ _ _ _ _ ?_ _]
+   | rw [denoteCode_icmp_eq_imm_w _ _ _ _ _ _ ?_ _]
+   | rw [denoteCode_add_one_ofNat _ _ _ _ _ _ ?_ _]
+   | rw [denoteCode_add_imm_w _ _ _ _ _ _ ?_ _]
+   | rw [denoteCode_select_imm_imm_w _ _ _ _ _ _ ?_ _]
+   | block_step))
+
+/-- A whole block with the two blocks' further shapes. -/
+macro "walk_block_eval" : tactic => `(tactic|
+  (repeat walk_step
+   block_close
+   all_goals (try omega)))
+
+end LeanLLVM.Refinement
+
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR
+open LeanLLVM.Refinement.BlockEval
+
+/-- The header's instruction list, as the pinned body writes it. -/
+def whileBodyInstrs : List Instr := [
+  Instr.phi "%k.0.i249" (Ty.int 64)
+    [("while.body.i.lr.ph", .imm (.int 64 (BitVec.ofNat 64 0))),
+     ("cleanup478.i", .reg "%k.2.i")],
+  Instr.phi "%sp.i.0248" (Ty.int 32)
+    [("while.body.i.lr.ph", .imm (.int 32 (BitVec.ofNat 32 0))),
+     ("cleanup478.i", .reg "%sp.i.1")],
+  Instr.binop "%inc.i" BinOp.add 64 (.reg "%k.0.i249") (.imm (.int 64 (BitVec.ofNat 64 1))),
+  Instr.gep "%arrayidx.i" (Ty.int 32) (.reg "%5") (.reg "%k.0.i249"),
+  Instr.load "%7" (Ty.int 32) (.reg "%arrayidx.i"),
+  Instr.zext "%idxprom.i" 32 64 (.reg "%7"),
+  Instr.gep "%arrayidx10.i" (Ty.int 8) (.reg "%3") (.reg "%idxprom.i"),
+  Instr.load "%8" (Ty.int 8) (.reg "%arrayidx10.i"),
+  Instr.store (Ty.int 64) (.reg "%inc.i") (.reg "%k11.i")]
+
+/-- The header, as a block: the pin the chain is proved about. -/
+def whileBodyBlock : Block :=
+  { name := "while.body.i", instrs := whileBodyInstrs, term := Term.br "NodeBlock21" }
+
+theorem whileBody_find : stage2Body.findBlock "while.body.i" = some whileBodyBlock := by
+  simp [stage2Body, Function.findBlock, findBlockList, whileBodyBlock, whileBodyInstrs]
+
+macro "walk_close" : tactic => `(tactic|
+  (all_goals (try (simp (config := { failIfUnchanged := false })
+    only [cells, evalOperand, denoteCode, State.bindAll]))
+   all_goals (try rfl)
+   all_goals (try assumption)
+   all_goals (try block_lk)
+   all_goals (try (simp only [phiIncoming]; rfl))
+   all_goals (try rfl)
+   all_goals (try (exact evalOperand_lit_of _ _ _))
+   all_goals (try rfl)))
+
+macro "walk_eval" : tactic => `(tactic|
+  (repeat walk_step
+   walk_close
+   all_goals (try omega)))
+
+/-- The state seen as its own environment's builder is itself. -/
+@[simp] theorem stateAt_self (s : State) : stateAt s.env s = s := rfl
+
+/-- The header's outgoing environment: its cells newest first. -/
+def whileBodyOut (env : Env) (k sp b ep c q : Nat) (bt : UInt8) : Env :=
+  cells [("%8", .int 8 (BitVec.ofNat 8 bt.toNat)),
+         ("%arrayidx10.i", .ptr (b + q)),
+         ("%idxprom.i", .int 64 (BitVec.ofNat 64 q)),
+         ("%7", .int 32 (BitVec.ofNat 32 q)),
+         ("%arrayidx.i", .ptr (ep + k * 4)),
+         ("%inc.i", .int 64 (BitVec.ofNat 64 (k + 1))),
+         ("%sp.i.0248", .int 32 (BitVec.ofNat 32 sp)),
+         ("%k.0.i249", .int 64 (BitVec.ofNat 64 k))] env
+
+/-- **`WalkPtrs` survives a run of binds at other names.** -/
+theorem WalkPtrs.cells_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
+    (h : WalkPtrs G C env) (cs : List (String × Value))
+    (hne : ∀ c ∈ cs, c.1 ≠ "%3" ∧ c.1 ≠ "%5" ∧ c.1 ≠ "%k11.i" ∧ c.1 ≠ "%ctype.i"
+      ∧ c.1 ≠ "%cst.i" ∧ c.1 ≠ "%hash1.i.i") :
+    WalkPtrs G C (BlockEval.cells cs env) := by
+  induction cs with
+  | nil => exact h
+  | cons c cs ih =>
+      obtain ⟨h3, h5, hk, hc, hs, hh⟩ := hne c (by simp)
+      exact (ih (fun c' hc' => hne c' (by simp [hc']))).bind
+        (d := c.1) (v := c.2) h3 h5 hk hc hs hh
+
+example (env : Env) (k sp b ep c q : Nat) (bt : UInt8) :
+    lookupName (whileBodyOut env k sp b ep c q bt) "%k.0.i249" =
+      some (.int 64 (BitVec.ofNat 64 k)) := by
+  simp [whileBodyOut, cells, lookupName]
+
+/-- **The header's chain.** -/
+theorem whileBody_denote {calls : Calls} (env : Env) (s : State)
+    {k sp ep b c q : Nat} {bs : List UInt8} {bt : UInt8}
+    (h5 : lookupName env "%5" = some (.ptr ep))
+    (h3 : lookupName env "%3" = some (.ptr b))
+    (hK : lookupName env "%k11.i" = some (.ptr (c + 32)))
+    (hk2 : lookupName env "%k.2.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hsp1 : lookupName env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (hpre : s.pre = some "cleanup478.i")
+    (hread : readBytes s.mem (ep + k * 4) 4 = some bs) (hbs : bytesToNat bs = q)
+    (hdoc : readBytes s.mem (b + q) 1 = some [bt])
+    (hq : q < 2 ^ 32) (hk63 : k < 2 ^ 63) (hk64 : k + 1 < 2 ^ 64) :
+    denoteCode calls whileBodyInstrs (stateAt env s) =
+      some (stateAt (whileBodyOut env k sp b ep c q bt)
+        { s with mem := writeBytes s.mem (c + 32) (wordBytes 8 (k + 1)) }) := by
+  simp only [whileBodyInstrs, whileBodyOut]
+  walk_eval
+
+/-- **The header's terminator**: `br NodeBlock21`, at the state its chain leaves. -/
+theorem whileBody_term {calls : Calls} (s : State)
+    {k sp ep b c q : Nat} {bs : List UInt8} {bt : UInt8}
+    (hpc : s.pc = "while.body.i")
+    (h5 : lookupName s.env "%5" = some (.ptr ep))
+    (h3 : lookupName s.env "%3" = some (.ptr b))
+    (hK : lookupName s.env "%k11.i" = some (.ptr (c + 32)))
+    (hk2 : lookupName s.env "%k.2.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hsp1 : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (hpre : s.pre = some "cleanup478.i")
+    (hread : readBytes s.mem (ep + k * 4) 4 = some bs) (hbs : bytesToNat bs = q)
+    (hdoc : readBytes s.mem (b + q) 1 = some [bt])
+    (hq : q < 2 ^ 32) (hk63 : k < 2 ^ 63) (hk64 : k + 1 < 2 ^ 64) :
+    step calls stage2Body s =
+      .jump { (stateAt (whileBodyOut s.env k sp b ep c q bt)
+          { s with mem := writeBytes s.mem (c + 32) (wordBytes 8 (k + 1)) }) with
+        pc := "NodeBlock21", pre := some "while.body.i" } := by
+  have hden := whileBody_denote (calls := calls) (env := s.env) (s := s)
+    h5 h3 hK hk2 hsp1 hpre hread hbs hdoc hq hk63 hk64
+  simp only [step, hpc, whileBody_find, whileBodyBlock]
+  rw [show denoteCode calls whileBodyInstrs s =
+      some (stateAt (whileBodyOut s.env k sp b ep c q bt)
+        { s with mem := writeBytes s.mem (c + 32) (wordBytes 8 (k + 1)) }) from by
+    rw [← stateAt_self s]; exact hden]
+  simp only [execTerm, hpc]
+  rfl
+
+end LeanLLVM.Refinement
+
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR
+open LeanLLVM.Refinement.BlockEval
+
+/-! ### Separation, for the two steps' memory and log claims -/
+
+theorem pairwise_of_mem_ne {l : List (Nat × Nat)}
+    (h : List.Pairwise (fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1) l)
+    {r s : Nat × Nat} (hr : r ∈ l) (hs : s ∈ l) (hne : r ≠ s) :
+    r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1 := by
+  induction l with
+  | nil => exact absurd hr (by simp)
+  | cons x xs ih =>
+      rw [List.pairwise_cons] at h
+      obtain ⟨hx, hxs⟩ := h
+      rcases List.mem_cons.mp hr with rfl | hr'
+      · rcases List.mem_cons.mp hs with rfl | hs'
+        · exact absurd rfl hne
+        · exact hx s hs'
+      · rcases List.mem_cons.mp hs with rfl | hs'
+        · rcases hx r hr' with h' | h'
+          · exact Or.inr h'
+          · exact Or.inl h'
+        · exact ih hxs hr' hs'
+
+/-- Two members of the walk's staged list are separated. -/
+theorem staged_pair {b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+    c ctype cst tok sv z e nkSlot nxpSlot : Nat}
+    (h : DisjointRegions (stage2StagedRegions b n ep nep xp nxp dst ndst0 ev evcap
+      ndst nev err c ctype cst tok sv z e nkSlot nxpSlot))
+    {r q : Nat × Nat}
+    (hr : r ∈ stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+      c ctype cst tok sv z e)
+    (hq : q ∈ stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+      c ctype cst tok sv z e) (hne : r ≠ q) :
+    r.1 + r.2 ≤ q.1 ∨ q.1 + q.2 ≤ r.1 := by
+  have h' : (stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+      c ctype cst tok sv z e).Pairwise
+      (fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1) := by
+    unfold DisjointRegions at h
+    rw [stage2StagedRegions] at h
+    exact (List.pairwise_append.mp h).1
+  exact pairwise_of_mem_ne h' hr hq hne
+
+/-- **The cursor record and the log are separate**, read off the staging. -/
+theorem cursor_log_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    C.stage.c + stage2CursorExtent ≤ C.stage.z ∨
+      C.stage.z + stage2LogExtent ≤ C.stage.c := by
+  have hmem : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst
+      C.stage.tok C.stage.s C.stage.z C.stage.e,
+      r ∈ stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev
+        G.evcap G.ndst G.nev G.err C.stage.c C.stage.ctype C.stage.cst
+        C.stage.tok C.stage.s C.stage.z C.stage.e :=
+    fun r hr => List.mem_append_right _ hr
+  exact staged_pair C.stage.separate
+    (hmem (C.stage.c, stage2CursorExtent) (by simp [stage2StagedWrites]))
+    (hmem (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites]))
+    (by simp [stage2CursorExtent, stage2LogExtent])
+
+/-- **The type stack and the log are separate.** -/
+theorem ctype_log_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    C.stage.ctype + stage2StackExtent ≤ C.stage.z ∨
+      C.stage.z + stage2LogExtent ≤ C.stage.ctype := by
+  have hmem : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst
+      C.stage.tok C.stage.s C.stage.z C.stage.e,
+      r ∈ stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev
+        G.evcap G.ndst G.nev G.err C.stage.c C.stage.ctype C.stage.cst
+        C.stage.tok C.stage.s C.stage.z C.stage.e :=
+    fun r hr => List.mem_append_right _ hr
+  exact staged_pair C.stage.separate
+    (hmem (C.stage.ctype, stage2StackExtent) (by simp [stage2StagedWrites]))
+    (hmem (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites]))
+    (by simp [stage2StackExtent, stage2LogExtent])
+
+/-- **The state stack and the log are separate.** -/
+theorem cst_log_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    C.stage.cst + stage2StackExtent ≤ C.stage.z ∨
+      C.stage.z + stage2LogExtent ≤ C.stage.cst := by
+  have hmem : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst
+      C.stage.tok C.stage.s C.stage.z C.stage.e,
+      r ∈ stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev
+        G.evcap G.ndst G.nev G.err C.stage.c C.stage.ctype C.stage.cst
+        C.stage.tok C.stage.s C.stage.z C.stage.e :=
+    fun r hr => List.mem_append_right _ hr
+  exact staged_pair C.stage.separate
+    (hmem (C.stage.cst, stage2StackExtent) (by simp [stage2StagedWrites]))
+    (hmem (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites]))
+    (by simp [stage2StackExtent, stage2LogExtent])
+
+/-- **A write into the cursor record leaves the log alone.** -/
+theorem readBytes_log_of_cursor_write {m : Mem} {c z : Nat} {v : List UInt8}
+    (hcz : c + stage2CursorExtent ≤ z ∨ z + stage2LogExtent ≤ c)
+    (hv : v.length ≤ 8) {off len : Nat} (hoff : off + len ≤ stage2LogExtent) :
+    readBytes (writeBytes m (c + 32) v) (z + off) len = readBytes m (z + off) len := by
+  refine readBytes_writeBytes_outside (start := c + 32) ?_
+  rcases hcz with hcz | hcz
+  · right
+    simp only [stage2CursorExtent, stage2LogExtent] at *
+    omega
+  · left
+    simp only [stage2CursorExtent, stage2LogExtent] at *
+    omega
+
+/-- **A write into a container stack at a depth inside it leaves the log alone.** -/
+theorem readBytes_log_of_stack_write {m : Mem} {base z : Nat} {v : List UInt8} {sp : Nat}
+    (hbz : base + stage2StackExtent ≤ z ∨ z + stage2LogExtent ≤ base)
+    (hsp : sp < stage2StackExtent) (hv : v.length ≤ 1)
+    {off len : Nat} (hoff : off + len ≤ stage2LogExtent) :
+    readBytes (writeBytes m (base + sp) v) (z + off) len = readBytes m (z + off) len := by
+  refine readBytes_writeBytes_outside (start := base + sp) ?_
+  rcases hbz with hbz | hbz
+  · right
+    simp only [stage2StackExtent, stage2LogExtent] at *
+    omega
+  · left
+    simp only [stage2StackExtent, stage2LogExtent] at *
+    omega
+
+end LeanLLVM.Refinement
+
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR
+open LeanLLVM.Refinement.BlockEval
+
+end LeanLLVM.Refinement
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR
+open LeanLLVM.Refinement.BlockEval
+
+/-- **Two staged ABI objects, by index, are separate.**  The list is a literal, so
+a position names an object without needing the pair's own disequality. -/
+theorem stage2Regions_sep {b n ep nep xp nxp dst ndst0 ev evcap ndst nev err : Nat}
+    (h : DisjointRegions (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err))
+    {i j : Nat} (hi : i < (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err).length)
+    (hj : j < (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err).length)
+    (hij : i < j) :
+    ((stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)[i]).1 +
+        ((stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)[i]).2 ≤
+        ((stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)[j]).1 ∨
+      ((stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)[j]).1 +
+        ((stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)[j]).2 ≤
+        ((stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)[i]).1 :=
+  (List.pairwise_iff_getElem.mp h) i j hi hj hij
+
+/-- **A byte range separated from the walk's three owned families is outside its
+region.**  The arena's prefix and the event stream's prefix are sub-intervals of
+the staged arena and event entries, and the seven are separated by the staging's
+own list. -/
+theorem WalkInv.outside_of_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) {a m : Nat}
+    (hArena : a + m ≤ G.dst ∨ G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ a)
+    (hEv : a + m ≤ G.ev ∨ G.ev + G.evcap ≤ a)
+    (hSeven : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok
+      C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ a ∨ a + m ≤ r.1)
+    {e : Nat} (ha : a ≤ e) (he : e < a + m) :
+    ¬ inRegions ([(G.dst, C.alen), (G.ev, C.evlen)] ++
+      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
+        C.stage.z C.stage.e) e := by
+  have halen := h.alen_le
+  have hev := h.evlen_le
+  have hevroom := G.evRoom
+  rintro ⟨r, hr, hlo, hhi⟩
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_cons.mp hr with rfl | hr
+    · -- the arena's decoded prefix
+      rcases hArena with h' | h' <;> omega
+    · -- the event stream's prefix
+      rcases List.mem_cons.mp hr with rfl | hr
+      · rcases hEv with h' | h' <;> omega
+      · exact absurd hr (by simp)
+  · rcases hSeven r hr with h' | h' <;> omega
+
+/-- **The entry stream is outside the walk's owned region.** -/
+theorem WalkInv.entry_outside {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) {j : Nat} {e : Nat}
+    (ha : G.ep ≤ e) (he : e < G.ep + 4 * G.nep) :
+    ¬ inRegions ([(G.dst, C.alen), (G.ev, C.evlen)] ++
+      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
+        C.stage.z C.stage.e) e := by
+  have hsep := disjointRegions_staged_prefix C.stage.separate
+  have h13 := stage2Regions_sep hsep (i := 1) (j := 3)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  have h14 := stage2Regions_sep hsep (i := 1) (j := 4)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  simp only [stage2Regions, List.getElem_cons_zero, List.getElem_cons_succ] at h13 h14
+  refine h.outside_of_sep (a := G.ep) (m := 4 * G.nep) (e := e) ?_ ?_ ?_ ha he
+  · omega
+  · omega
+  · intro r hr
+    exact stage2StagedWrites_against C.stage.separate
+      (a := G.ep) (m := 4 * G.nep) (by simp [stage2Regions]) r hr
+
+/-- **The document's bytes are outside the walk's owned region.** -/
+theorem WalkInv.doc_outside {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) {e : Nat}
+    (ha : G.b ≤ e) (he : e < G.b + G.n) :
+    ¬ inRegions ([(G.dst, C.alen), (G.ev, C.evlen)] ++
+      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
+        C.stage.z C.stage.e) e := by
+  have hsep := disjointRegions_staged_prefix C.stage.separate
+  have h03 := stage2Regions_sep hsep (i := 0) (j := 3)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  have h04 := stage2Regions_sep hsep (i := 0) (j := 4)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  simp only [stage2Regions, List.getElem_cons_zero, List.getElem_cons_succ] at h03 h04
+  refine h.outside_of_sep (a := G.b) (m := G.n) (e := e) ?_ ?_ ?_ ha he
+  · omega
+  · omega
+  · intro r hr
+    have h' := stage2StagedWrites_against C.stage.separate
+      (a := G.b) (m := G.n + stage2ReadTail) (by simp [stage2Regions]) r hr
+    omega
+
+
+/-- **A write into the cursor record leaves the event stream's trace alone.** -/
+theorem readBytes_ev_of_cursor_write {m : Mem} {c ev nev0 evcap N : Nat} {v : List UInt8}
+    (hcev : c + stage2CursorExtent ≤ ev ∨ ev + evcap ≤ c) (hv : v.length ≤ 8)
+    (hN : nev0 + N ≤ evcap) :
+    readBytes (writeBytes m (c + 32) v) (ev + nev0) N = readBytes m (ev + nev0) N := by
+  have hv' : stage2CursorExtent = 1192 := rfl
+  refine readBytes_writeBytes_outside (start := c + 32) ?_
+  rcases hcev with hcev | hcev
+  · right
+    omega
+  · left
+    omega
+
+/-- The event stream's staged entry is a member of the ABI list. -/
+theorem stage2Regions_mem_ev {b n ep nep xp nxp dst ndst0 ev evcap ndst nev err : Nat} :
+    (ev, evcap) ∈ stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err := by
+  unfold stage2Regions
+  exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _
+    (List.mem_cons_of_mem _ List.mem_cons_self)))
+
+/-- **The header's step**: one control step from the invariant at the header,
+into `NodeBlock21`, with the index advanced, the depth read from the merge, the
+invariant preserved and the measure strictly smaller. -/
+theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body.i")
+    {k sp : Nat}
+    (hpre : s.pre = some "cleanup478.i")
+    (hk2 : lookupName s.env "%k.2.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hsp1 : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (hkge : C.k < k) (hklt : k < G.nep) (hspc : sp ≤ stage2StackExtent) :
+    ∃ e : State,
+      step calls stage2Body s = .jump e ∧
+      WalkInv G { C with block := "NodeBlock21", k := k, sp := sp } e ∧
+      walkMeasure G { C with block := "NodeBlock21", k := k, sp := sp } < walkMeasure G C ∧
+      ∀ n, runFuel calls (1 + n) stage2Body s = runFuel calls n stage2Body e := by
+  have hpc : s.pc = "while.body.i" := by rw [hInv.pc_eq, hblock]
+  obtain ⟨h3, h5, hK, hct, hcst, hhash⟩ := hInv.ptrs
+  -- the entry stream's lane, which is the next position
+  obtain ⟨-, hget⟩ := readLanes32_nth (m := m0) (addr := G.ep) (n := G.nep)
+    (l := G.ent) G.entries
+  obtain ⟨q, bs, hqmem, hread0, hbs0⟩ := hget k hklt
+  have hqin : q ∈ G.ent := List.mem_of_getElem? hqmem
+  have hqn : q < G.n := G.inside q hqin
+  -- its read at the run's memory, and the document's byte at that position
+  have hread : readBytes s.mem (G.ep + k * 4) 4 = some bs := by
+    rw [show G.ep + k * 4 = G.ep + 4 * k from by rw [Nat.mul_comm]]
+    rw [readBytes_eq_of_UnchangedOn (mem := m0) (m := s.mem) hInv.owning.unchanged
+      (a := G.ep + 4 * k) (n := 4)
+      (fun i hi => hInv.entry_outside (j := k) (by omega) (by omega))]
+    exact hread0
+  have hdocr : readBytes m0 (G.b + q) 1 = some [G.bs.getD q 0] :=
+    readBytes_one_of_readByte (readByte_of_readBytes G.doc (k := q) hqn)
+  have hdoc : readBytes s.mem (G.b + q) 1 = some [G.bs.getD q 0] := by
+    rw [readBytes_eq_of_UnchangedOn (mem := m0) (m := s.mem) hInv.owning.unchanged
+      (a := G.b + q) (n := 1)
+      (fun i hi => hInv.doc_outside (by omega) (by omega))]
+    exact hdocr
+  have hq32 : q < 2 ^ 32 := by
+    rw [← hbs0]
+    exact bytesToNat_lt_32 (readBytes_length hread0)
+  have hmax : G.n ≤ 2 ^ 32 := G.maxDoc
+  have hk63 : k < 2 ^ 63 := by have h := G.nep_le; omega
+  have hk64 : k + 1 < 2 ^ 64 := by have h := G.nep_le; omega
+  -- the log's fields are untouched by the cursor store, and so is the trace
+  have hcz := cursor_log_sep hInv
+  have hcev : C.stage.c + stage2CursorExtent ≤ G.ev ∨ G.ev + G.evcap ≤ C.stage.c := by
+    have h := stage2StagedWrites_against C.stage.separate
+      (a := G.ev) (m := G.evcap) (stage2Regions_mem_ev)
+      (r := (C.stage.c, stage2CursorExtent)) (by simp [stage2StagedWrites])
+    simpa using h
+  have hN : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
+    have hsum := EventRecord.sum_encodedSize_le C.events
+    simp only [stage2RecordBytes] at hsum
+    have h4' := G.evRoom
+    simp only [stage2RecordBytes] at h4'
+    have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
+        (C.events.map EventRecord.encodedSize).sum := by
+      simp only [List.length_flatten, List.map_map]
+      rfl
+    have h1 := hInv.events_le
+    have h2 := hInv.k_le
+    have h3 := G.nep_le
+    omega
+  let e : State :=
+    { (stateAt (whileBodyOut s.env k sp G.b G.ep C.stage.c q (G.bs.getD q 0))
+        { s with mem := writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (k + 1)) }) with
+      pc := "NodeBlock21"
+      pre := some "while.body.i" }
+  have hstep : step calls stage2Body s = .jump e :=
+    whileBody_term (calls := calls) (s := s) hpc h5 h3 hK hk2 hsp1 hpre
+      hread hbs0 hdoc hq32 hk63 hk64
+  refine ⟨e, hstep, ?_, ?_, ?_⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := ?_
+        k_le := le_of_lt hklt
+        events_le := le_trans hInv.events_le (le_of_lt hkge)
+        evlen_eq := hInv.evlen_eq
+        evBytes := ?_
+        alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
+        spans_order := hInv.spans_order
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        eoff_le := hInv.eoff_le
+        inner_cap := hInv.inner_cap
+        depth_cap := hspc
+        depth_reg := ?_
+        ptrs := ?_
+        log_hash := ?_
+        log_len := ?_
+        log_cap := ?_
+        log_alen := ?_
+        log_acap := ?_
+        owning := ?_
+        blockLocal := ?_ }
+    · dsimp only [e, stateAt, whileBodyOut, cells]
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+    · dsimp only [e, stateAt]
+      rw [readBytes_ev_of_cursor_write (c := C.stage.c) (ev := G.ev) (nev0 := G.nev0)
+        (evcap := G.evcap) (N := (C.events.map EventRecord.encodedBytes).flatten.length)
+        hcev (by simp [wordBytes, natToBytes_length]) hN]
+      exact hInv.evBytes
+    · dsimp only [e, stateAt, whileBodyOut, cells]
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_self]
+    · dsimp only [e, stateAt]
+      exact hInv.ptrs.cells_of _
+        (fun c hc => by
+          simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+          rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp)
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length]) (off := 32) (len := 4) (by decide)]
+      exact hInv.log_hash
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length]) (off := 8) (len := 8) (by decide)]
+      exact hInv.log_len
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length]) (off := 16) (len := 8) (by decide)]
+      exact hInv.log_cap
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length]) (off := 48) (len := 8) (by decide)]
+      exact hInv.log_alen
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length]) (off := 56) (len := 8) (by decide)]
+      exact hInv.log_acap
+    · dsimp only [e]
+      exact hInv.owning_cursorK (v := wordBytes 8 (k + 1))
+        (by simp [wordBytes, natToBytes_length])
+    · dsimp only [e]
+      unfold WalkLocal
+      simp
+  · exact walkMeasure_step G C _ hkge (le_of_lt hklt) hInv.inner_cap
+  · intro n
+    rw [show 1 + n = n + 1 from by omega]
+    simp only [runFuel, hstep]
+
+end LeanLLVM.Refinement
+
+/-! ### The header step's footprints, measured
+
+Each is `#print axioms` on the declaration itself.  The three that read a
+`String` register name — `whileBody_find`, its chain and its terminator — carry
+`Classical.choice` beside `propext` and `Quot.sound`, which is the ceiling the
+file's other pinned declarations report; the binding lemmas and the reads are at
+or below `[propext, Quot.sound]`. -/
+
+/-- info: 'LeanLLVM.Refinement.WalkPtrs.bind' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkPtrs.bind
+
+/-- info: 'LeanLLVM.Refinement.WalkPtrs.cells_of' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkPtrs.cells_of
+
+/-- info: 'LeanLLVM.Refinement.readBytes_writeBytes_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.readBytes_writeBytes_outside
+
+/-- info: 'LeanLLVM.Refinement.readLanes32_nth' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.readLanes32_nth
+
+/-- info: 'LeanLLVM.Refinement.stage2Regions_sep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Regions_sep
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.entry_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.entry_outside
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.doc_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.doc_outside
+
+/-- info: 'LeanLLVM.Refinement.whileBody_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.whileBody_find
+
+/-- info: 'LeanLLVM.Refinement.whileBody_denote' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.whileBody_denote
+
+/-- info: 'LeanLLVM.Refinement.whileBody_term' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.whileBody_term
+
+/-- info: 'LeanLLVM.Refinement.whileBody_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.whileBody_step
