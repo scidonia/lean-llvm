@@ -4000,12 +4000,13 @@ container-stack byte at `idxprom` or `sp - 1`, the document byte at `%cond350.i`
 (`land.lhs.true357.i`), `%root_done.i`'s alloca (`if.end490.i`), or the document
 byte at `%idxprom.i` (`if.end.i97`).
 
-**H1's five `LeafBlock`s.**  `%.off = add i8 %NN, -9; %SwitchLeafNN = icmp ule i8
-%.off, 1`.  Two instructions and no memory: `walkDenoteCode_add_imm_w` at a
-negative constant, then class A's terminator.  The compared byte is the loaded
-document byte, which is the same caller-supplied fact class A takes; what stops
-them is that `WalkLink.icmpBr`'s `hinstrs` is a singleton, so the pair needs its
-own class lemma.
+**H1's five `LeafBlock`s — proved.**  `%.off = add i8 %NN, -9; %SwitchLeafNN =
+icmp ule i8 %.off, 1`.  Two instructions and no memory: `walkDenoteCode_add_imm_w`
+at a negative constant, then class A's terminator.  The compared byte is the
+loaded document byte, which is the same caller-supplied fact class A takes; what
+stopped them was that `WalkLink.icmpBr`'s `hinstrs` is a singleton, and
+`WalkLink.addImmBr` (`JsonStage2WalkRest`) is the pair's own class lemma.  The five
+links are `WalkLink.LeafBlock33`, `…43`, `…64`, `…85` and `…96`.
 
 **H2.**  `while.body.i.lr.ph` binds five `getelementptr`s — `%c.i + 32`,
 `%z + 24`, `%t352.i + 20`, `+ 8`, `+ 16` — of which only the first is in
@@ -4076,7 +4077,7 @@ or address that is missing.
 | 66 | `if.end256.i` | F | calls `@llvm.lifetime.start.p0` |
 | 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
 | 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` |
-| 71 | `if.then281.i` | H2 | `add`/`zext`/`or` |
+| 71 | `if.then281.i` | H2 | `add`/`zext`/`or` — proved (`WalkLink.if_then281_i`) |
 | 72 | `if.else285.i` | D | writes `%alen` |
 | 73 | `if.end290.i` | E | the `phi` run `%conv286.i.sink.in`, `%.sink` |
 | 74 | `if.end.i86` | trap | `@llvm.trap`, `unreachable` |
@@ -4087,16 +4088,16 @@ or address that is missing.
 | 80 | `cond.true345.i` | G | reads `%arrayidx346.i` |
 | 81 | `cond.end349.i` | F | calls `@llvm.lifetime.start.p0` |
 | 82 | `land.lhs.true357.i` | G | reads `%gep` |
-| 87 | `LeafBlock33` | H1 | `add` + `icmp` latch |
+| 87 | `LeafBlock33` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock33`) |
 | 89 | `land.rhs.i` | E | the `phi` run `%ee.0.i238` |
-| 94 | `LeafBlock43` | H1 | `add` + `icmp` latch |
+| 94 | `LeafBlock43` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock43`) |
 | 96 | `if.end372.i` | E | the `phi` run `%ee.1.i` |
 | 106 | `if.then413.i` | F | calls `@s2_value_pos` |
 | 108 | `if.then425.i` | F | calls `@od_scalar_value` |
 | 110 | `cond.true.i106` | G | reads `%arrayidx.i108` |
 | 111 | `cond.end.i96` | E | the `phi` run `%cond.i` |
 | 112 | `land.rhs.i103` | E | the `phi` run `%ee.011.i` |
-| 117 | `LeafBlock64` | H1 | `add` + `icmp` latch |
+| 117 | `LeafBlock64` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock64`) |
 | 119 | `while.end.i` | E | the `phi` run `%ee.0.lcssa.i` |
 | 120 | `if.end.i97` | G | reads `%arrayidx10.i` |
 | 121 | `if.then19.i` | F | calls `@llvm.lifetime.start.p0`, `@num_fast_el1` |
@@ -4106,11 +4107,11 @@ or address that is missing.
 | 136 | `if.then57.i` | E | the `phi` run `%ei49.0.ph.i` |
 | 137 | `if.end67.critedge.i` | F | calls `@llvm.lifetime.end.p0` |
 | 139 | `land.rhs71.i` | E | the `phi` run `%s2.020.i` |
-| 144 | `LeafBlock85` | H1 | `add` + `icmp` latch |
+| 144 | `LeafBlock85` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock85`) |
 | 146 | `while.end78.i` | E | the `phi` run `%s2.0.lcssa.i` |
 | 147 | `if.then447.i` | F | calls `@s2_after_value` |
 | 148 | `land.rhs457.i` | E | the `phi` run `%q.0.i246` |
-| 153 | `LeafBlock96` | H1 | `add` + `icmp` latch |
+| 153 | `LeafBlock96` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock96`) |
 | 156 | `if.end473.i` | F | calls `@llvm.lifetime.end.p0` |
 | 157 | `cleanup474.i` | F | calls `@llvm.lifetime.end.p0` |
 | 158 | `cleanup478.i` | E | the `phi` run `%sp.i.1`, `%k.2.i` |
