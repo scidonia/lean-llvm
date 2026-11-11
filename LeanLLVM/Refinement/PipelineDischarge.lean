@@ -52,14 +52,11 @@ read are the loop's own (the invariant's escaped slot, count growth, window read
 and emitter writes), and the eight exit-producing steps are where they reach the
 predicate.
 
-`PipelineTailTarget` is the `exit` field's conclusion at that predicate: the
-run's three steps and the record's own post.  **It is still supplied by the
-caller** in this tree, and what remains is one clause, named in the residue note
-above the target: stage 2's post pins its two reported extents only through
-eight-byte slot words, so `pipelineOutputExtents`'s `ndst' < 2 ^ 64` does not
-follow from `Γ_stage2.post` at the staging's witnesses.
+`PipelineDischarge.pipelineTailTarget` is the `exit` field's conclusion at that
+predicate: the run's three steps and the record's own post.  It is **proved**, and
+`pipeline_satisfies_at_stage2_of_exitStage2` takes no tail premise.
 
-What is proved is the rest of the tail's *premises*:
+The tail's premises, and what closes them:
 
 * `stage2Pre_of_exit` — `Γ_stage2.pre` at the exit state's memory with the
   exiting count stored: the document read, its read-past tail, the entry stream
@@ -76,14 +73,18 @@ What is proved is the rest of the tail's *premises*:
 
 The two call outcomes and their posts (`PipelineUnits.utf8`,
 `PipelineUnits.stage2`), the three control steps
-(`PipelineBodyStep.pipelineExit_run`) and the frame composition are the rest of
-the assembly; `PipelineBodyStep.pipelineExit_accept_at` exposes the acceptance
-branch's memory so a post can be read at stage 2's own outcome.  That assembly is
-not carried out here, because it cannot conclude: the extents clause it must
-produce is the one the residue note shows is not derivable.
+(`PipelineBodyStep.pipelineExit_accept_at` for the acceptance branch and
+`…_refuse` for the refusal one), the two extents' bounds and the frame
+composition are `pipelineTailTarget`'s own body.  The bounds are the stage-2
+record's: `stage2Boundary` states its capacities as 64-bit numbers and the event
+extent inside its capacity, so `ndst' < 2 ^ 64` and `nev' < 2 ^ 64` — what
+`pipelineOutputExtents` reads — follow from the post, and a consumer with the
+call's argument list reads each capacity off its word.  The frame composes the
+loop's write list at the exit's counts with the tail's five entries, which is the
+post's list.
 
-Nothing here narrows a record or weakens a post: the tail's target is stated at
-the same predicate the loop hands over, now with the caller's arguments in it.
+Nothing here narrows a record or weakens a post: the tail is stated at the same
+predicate the loop hands over, with the caller's arguments in it.
 -/
 import LeanLLVM.Refinement.JsonStage2Contract
 import LeanLLVM.Refinement.PipelineBodyStep
@@ -343,7 +344,9 @@ theorem loop_frame_of_staging {tab base : Nat} {args : List Value} {mem m : Mem}
     HasBytes m S.ev S.evcap.toNat ∧
     (readBytes m S.nev 8 = readBytes mem S.nev 8) ∧
     HasBytes m S.err 8 ∧
-    (readBytes m S.err 8 = readBytes mem S.err 8) := by
+    (readBytes m S.err 8 = readBytes mem S.err 8) ∧
+    (readBytes m (S.b - 3) (3 + 64 * pipelineBlocks S.n.toNat) =
+        readBytes mem (S.b - 3) (3 + 64 * pipelineBlocks S.n.toNat)) := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
     nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
     hzero3, hpos, htab, hsc, hcarry, hcount, hnxp, hepcap, hxp, hdstcap, hdst, hev,
@@ -595,7 +598,7 @@ theorem loop_frame_of_staging {tab base : Nat} {args : List Value} {mem m : Mem}
       exact by
         simpa using disjointRegions_pair _ 10 15 (by decide) _ _ rfl rfl hdisj
 
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · refine readBytes_of_loop_frame hframe (obj := (S.b - 3, 3 + 64 * pipelineBlocks S.n.toNat)) hwinobj (fun k hk => ?_)
     omega
   · refine hasBytes_of_loop_frame hframe (obj := (S.b + 64 * pipelineBlocks S.n.toNat, 32)) htailobj (fun k hk => ?_) htail'
@@ -611,6 +614,8 @@ theorem loop_frame_of_staging {tab base : Nat} {args : List Value} {mem m : Mem}
   · refine hasBytes_of_loop_frame hframe (obj := (S.err, 8)) herrobj (fun k hk => ?_) herr8
     omega
   · refine readBytes_of_loop_frame hframe (obj := (S.err, 8)) herrobj (fun k hk => ?_)
+    omega
+  · refine readBytes_of_loop_frame hframe (obj := (S.b - 3, 3 + 64 * pipelineBlocks S.n.toNat)) hwinobj (fun k hk => ?_)
     omega
 
 /-- **An arena capacity is not a lower-bound consequence.**  Stage 2's record reads
@@ -704,7 +709,7 @@ theorem stage2Pre_of_exit
         S.dstcap S.evcap)
       (writeBytes sm S.nk (natToBytes kv.toNat 8)) next := by
   -- the frame's projections at the seven staged objects
-  obtain ⟨hdoc, htailpos, hdstpos, hndstpos, hevpos, hnevpos, herrpos, herrread⟩ :=
+  obtain ⟨hdoc, htailpos, hdstpos, hndstpos, hevpos, hnevpos, herrpos, herrread, -⟩ :=
     loop_frame_of_staging hst htie hkgr hib hxgr hslot hxn0lt hframe
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
     nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
@@ -1043,22 +1048,22 @@ theorem stage2Pre_of_exit
 
 /-! ### Piece 3: the tail's run and post
 
-The exit's three steps are `PipelineBodyStep.pipelineExit_run`, and the record's
-post needs three further components: the UTF-8 call's own precondition (the
-window, at the exit state's memory and through the count slot's store), the
-escape list's read as a `positionsBytes` stream (every byte list of `4 * k` bytes
-is one), and the two-valuedness of the arm's gate.
+The exit's three steps are `PipelineBodyStep.pipelineExit_accept_at` on the
+acceptance branch and `…_refuse` on the refusal one, and the tail needs three
+further components: the UTF-8 call's own precondition (the window, at the exit
+state's memory and through the count slot's store), the escape list's read as a
+`positionsBytes` stream (every byte list of `4 * k` bytes is one), and the
+two-valuedness of the arm's gate.
 
-`pipelineOutputExtents`'s two bounds are where the assembly stops: stage 2's
-post pins its extents only through the eight-byte slot words, and its argument
-list pins the document length through `BitVec.ofNat 64`, so the record's clauses
-bound `ndst' ≤ ndst0 + n` and `nev' ≤ nev0 + 13 * n` at *its own* witnesses,
-which agree with the staging's only modulo `2 ^ 64`.  The record carries no
-`n < 2 ^ 64` (its pre does), so `ndst' < 2 ^ 64` does not follow, and
-`pipelineOutputExtents`'s bound is the one clause the tail cannot derive.  It is
-a gap in the interface rather than in the run: the record's post would need the
-document bound its pre already states.  See the residue note at the end of the
-module. -/
+`pipelineOutputExtents`'s two bounds are the record's.  `stage2Boundary` names its
+two capacities as 64-bit numbers and the event extent inside its capacity, so the
+reporting slot words decide the extents: `ndst' < 2 ^ 64` follows from the
+reserve clause and `nev' < 2 ^ 64` from the event clause, and a consumer that has
+the call's argument list reads each capacity off its word — one word with two
+widths is one number.  The tail uses the second half of that: stage two's five
+write regions lie inside the two capacities the caller staged, so the staged
+objects the tail reads are outside the run's writes and the caller's pairwise
+promise transports them through it. -/
 
 /-- **Every byte list of a position stream's width is one.**  A list of `w * k`
 bytes splits into `k` words of `w` bytes, and each word is the encoding of the
@@ -1173,95 +1178,670 @@ theorem utf8Pre_of_staging {tab base : Nat} {args : List Value} {mem sm : Mem}
     · rw [hg]; rfl
     · simp [LeanLLVM.JSON.ByteString.length_eq_size, LeanLLVM.JSON.ByteString.size_literal, hn]
 
-/-! ### The residue
+/-! #### Frames over different lists
 
-The tail's run and the frame composition around it are assembled from the three
-components above and `PipelineBodyStep`'s branch traces; what does not close is
-`pipelineOutputExtents`'s bound at stage 2's two reported extents.
+The loop's frame, the count slot's store and the tail's own frame are stated over
+different region lists; each extends to the post's list, which is
+`pipelineLoopWrites S` at the exit's counts followed by the tail's five entries,
+and the compositions are the `.trans` of the extended statements. -/
 
-`stage2Boundary` pins `ndst'` and `nev'` through eight-byte slot words, and its
-argument list pins the document length through `BitVec.ofNat 64 n`.  Both are
-`2 ^ 64`-periodic: the record's clauses hold at `(n, ndst0, nev0, ndst', nev')`
-and at `(n + 2 ^ 64, ndst0 + 2 ^ 64, …)` for the same memory whenever the slot
-words and the arena prefix agree, and its only upper bound is
-`ndst' ≤ ndst0 + n`.  Since the staging's `n < 2 ^ 32` is a *pre* clause and the
-post states no document bound, `ndst' < 2 ^ 64` — the bound `pipelineOutputExtents`
-needs to make its slot word decide its value — is not derivable from
-`Γ_stage2.post` at the staging's witnesses.  The record's post would need the
-document bound its pre states; adding it is a change to `JsonStage2Contract`,
-which is outside this change's file set, and supplying it as a hypothesis here
-would be a hypothesis of the target's own shape.  So the tail is not stated as a
-theorem at `Γ_stage2`: `PipelineTailTarget` remains the named obligation, with
-the pieces above done.
--/
+/-- A frame over a list extends to a list that covers it. -/
+theorem UnchangedOutside.widen_to {m0 m : Mem} {R U : List (Nat × Nat)}
+    (h : UnchangedOutside m0 m R) (hR : ∀ r ∈ R, r ∈ U) :
+    UnchangedOutside m0 m U :=
+  h.widen (fun _ ha r hr => ha r (hR r hr))
 
-/-! ### The tail's target -/
+/-- **A range the frame's list misses reads as it did before the run.** -/
+theorem readBytes_of_unchangedOutside {m0 m : Mem} {R : List (Nat × Nat)}
+    {a N : Nat} (h : UnchangedOutside m0 m R)
+    (hsep : ∀ r ∈ R, r.1 + r.2 ≤ a ∨ a + N ≤ r.1) :
+    readBytes m a N = readBytes m0 a N := by
+  refine readBytes_of_readByte_eq (fun k _ => ?_)
+  exact h (a + k) (fun r hr hlt => by
+    rcases hsep r hr with h' | h' <;> omega)
 
-/-- **The tail's target**: the field `PipelineBodyFacts.exit` states at
-`pipelineLoopExit`, the predicate the loop hands over — at the caller's memory
-*and* at the caller's argument list, which is what lets the target name the UTF-8
-window, stage 2's staging and the post's frame at the caller's addresses.
+/-- The lane reader through a run that wrote outside the stream. -/
+theorem readLanes32_of_unchangedOutside {m0 m : Mem} {R : List (Nat × Nat)}
+    {a k : Nat} (h : UnchangedOutside m0 m R)
+    (hsep : ∀ r ∈ R, r.1 + r.2 ≤ a ∨ a + 4 * k ≤ r.1) :
+    readLanes32 m a k = readLanes32 m0 a k := by
+  refine JsonEntrySteps.readLanes32_congr_bytes (fun j hj => ?_)
+  exact h (a + j) (fun r hr hlt => by
+    rcases hsep r hr with h' | h' <;> omega)
 
-The statement is the run's three steps and the record's own post.
-`PipelineBodyStep.pipelineExit_run` supplies the steps once the two call
-preconditions hold; both preconditions are proved above
-(`utf8Pre_of_staging`, `stage2Pre_of_exit`), and the post's escape-stream witness
-is `positionsBytes_surjective`.  This module does not supply the target, so it
-remains a *hypothesis* of `pipelineBodyFacts_of_exitStage2`.  What is left is the
-post's two extent bounds — see the residue note above — which is why the rest of
-the assembly is not carried out: it would have to conclude at the extents. -/
-def PipelineTailTarget (tab base : Nat) (s2 : Calls)
-    (args : List Value) (mem : Mem) (next : Nat) : Prop :=
-  ∀ e : State, pipelineLoopExit mem args e →
-    ∃ (verdict : BitVec 64) (m : Mem),
-      runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
-        some (.ret (some (.int 64 verdict)) m) ∧
-      (Γ_pipeline_units tab base).post args mem next
-        (.ret (some (.int 64 verdict)) m)
+/-- A lane reader through a store that misses the whole stream. -/
+theorem readLanes32_writeBytes_of_end {m : Mem} {start : Nat} {ws : List UInt8}
+    {addr k : Nat} (h : addr + 4 * k ≤ start ∨ start + ws.length ≤ addr) :
+    readLanes32 (writeBytes m start ws) addr k = readLanes32 m addr k := by
+  refine readLanes32_writeBytes_disjoint (fun j hj => ?_)
+  rcases h with h | h <;> omega
+
+/-- A read through a store that misses a range.  `h` is the caller's separation
+at the object's staged width `W`, which is what `pipelineRegions` states. -/
+theorem readBytes_writeBytes_of_staged {m : Mem} {start : Nat} {bs : List UInt8}
+    {a N W : Nat} (hlen : bs.length = 8) (hk : N ≤ W)
+    (h : a + W ≤ start ∨ start + 8 ≤ a) :
+    readBytes (writeBytes m start bs) a N = readBytes m a N :=
+  readBytes_writeBytes_of_disjoint (by
+    rcases h with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by rw [hlen]; omega))
+
+/-- The lane reader through a store that misses the whole stream, at the
+object's staged width. -/
+theorem readLanes32_writeBytes_of_staged {m : Mem} {start : Nat} {bs : List UInt8}
+    {addr k W : Nat} (hlen : bs.length = 8) (hk : 4 * k ≤ W)
+    (h : addr + W ≤ start ∨ start + 8 ≤ addr) :
+    readLanes32 (writeBytes m start bs) addr k = readLanes32 m addr k :=
+  readLanes32_writeBytes_of_end (by
+    rcases h with h | h
+    · exact Or.inl (by omega)
+    · exact Or.inr (by rw [hlen]; omega))
+
+/-! #### Stage 2's write regions inside the caller's staging
+
+The post reports its arena extent and its event extent; the run's write regions
+are the reserve past the first and the second itself.  The record's width clauses
+identify `dstcap` and `evcap` with the numbers the caller staged, so the reserve
+and the event extent are inside the caller's two staged extents, and the staged
+objects the tail reads are outside the run's five write regions by the caller's
+own separation. -/
+
+/-- **Each of stage 2's five write regions misses a staged object.**  The object
+is an entry of the caller's `pipelineRegions` at its staged width `W`; `hwd` and
+`hwe` are the record's two extents inside the capacities the caller staged. -/
+theorem stage2Writes_sep {S : PipelineLoopCarried} {alen evlen a N W : Nat}
+    (hk : N ≤ W)
+    (hDst : a + W ≤ S.dst ∨ S.dst + S.dstcap.toNat ≤ a)
+    (hEv : a + W ≤ S.ev ∨ S.ev + S.evcap.toNat ≤ a)
+    (hNdst : a + W ≤ S.ndst ∨ S.ndst + 8 ≤ a)
+    (hNev : a + W ≤ S.nev ∨ S.nev + 8 ≤ a)
+    (hErr : a + W ≤ S.err ∨ S.err + 8 ≤ a)
+    (hwd : alen + stage2ArenaReserve ≤ S.dstcap.toNat)
+    (hwe : evlen ≤ S.evcap.toNat) :
+    ∀ r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err,
+      r.1 + r.2 ≤ a ∨ a + N ≤ r.1 := by
+  intro r hr
+  simp only [stage2Writes, List.mem_cons, List.not_mem_nil, or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl
+  · rcases hDst with h | h
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · rcases hNdst with h | h
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · rcases hEv with h | h
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · rcases hNev with h | h
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · rcases hErr with h | h
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+
+/-- **The exit's count is the cleanup `phi`'s register.** -/
+theorem phiIncoming_cleanupPhi (a : PipelineBodyArm) :
+    phiIncoming a.head PipelineBodyFacts.cleanupPhi = some (.reg a.countReg) := by
+  cases a <;> decide
+
+/-- **The exit's count is inside the loop's own bound on the entry stream.**  The
+stream is ordered and every position lies inside the first `64 * i` bytes, so its
+length is at most `64 * i`, and its length is the count. -/
+theorem exit_k_le {s : State} {S : PipelineLoopCarried}
+    (hstream : readLanes32 s.mem S.ep S.k = some S.ent)
+    (hord : S.ent.Pairwise (· < ·)) (hbnd : ∀ q ∈ S.ent, q < 64 * S.i) :
+    S.k ≤ 64 * S.i := by
+  rw [← readLanes32_length s.mem S.ep S.k S.ent hstream]
+  exact length_le_of_pairwise_lt hord hbnd
+
+/-! #### The tail's target
+
+The three control steps (`PipelineBodyStep.pipelineExit_accept_at`, `…_refuse`),
+the two call records' posts (`PipelineUnits.utf8`, `PipelineUnits.stage2`), the
+record's `pre` at each call (`utf8Pre_of_staging`, `stage2Pre_of_exit`) and the
+frame composition above are the tail's target at `pipelineLoopExit`.
+
+The two branches are the UTF-8 stage's own verdict.  Acceptance runs stage two at
+the count the exit block stored, reads its post at that outcome, and builds the
+pipeline's post from stage two's extents; refusal stores the document's length in
+the refusal slot and returns zero, and the pipeline's post is at the *loop's*
+extents, which the staging's cursor slots hold.  Both need the staging's bytes at
+the memory the run returns: the loop's frame carries them to the exit, the count
+slot's store leaves them (it is one entry of the loop's write list), and stage
+two's five write regions are inside the two capacities the caller staged.
+
+`pipelineOutputExtents`'s two bounds are the record's own: `stage2Boundary` states
+its capacities as 64-bit numbers and the event extent inside its capacity, so
+`ndst' < 2 ^ 64` follows from the reserve clause and `nev' < 2 ^ 64` from the
+event clause, and the same widths identify stage two's capacities with the ones
+the caller staged. -/
+
+set_option maxHeartbeats 4000000 in
+/-- **The tail's target at the exit predicate.** -/
+theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
+    {args : List Value} {mem : Mem} {next : Nat}
+    (hst : pipelineStaging tab base args mem)
+    (units : PipelineUnits tab base s2 Γ_stage2) :
+    ∀ e : State, pipelineLoopExit mem args e →
+      ∃ (verdict : BitVec 64) (m : Mem),
+        runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
+          some (.ret (some (.int 64 verdict)) m) ∧
+        (Γ_pipeline_units tab base).post args mem next
+          (.ret (some (.int 64 verdict)) m) := by
+  intro e he
+  obtain ⟨S, hpc, htie, hstream, hord, hbnd, hbnd64, hpre, hcells, hcount, hnxpslot,
+    hxngr, hdocs, hsxp, hframe, hib, hnxp0slot, hxn0lt⟩ := he
+  -- the staging's hypothesis stays available: the two call preconditions and the
+  -- frame's projections read it, and destructuring consumes it
+  have hstKeep := hst
+  have htieKeep := htie
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
+    nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
+    hzero3, hpos, htab, hsc, hcarry, hnk0, hnxp, hepcap, hxp, hdstcap, hdst, hev,
+    hnev, hndst, hnev0, hroomk, hroomxn, hblk, harm, hreads, hdisj⟩ := hst
+  subst hargs
+  -- the caller's addresses are the carried record's
+  simp only [exitArgs] at htie
+  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    rfl, rfl⟩ := htie
+  simp only [pipelineRegions, Nat.zero_add] at hdisj
+  -- the exit block's count, its bound, and the word it stores
+  obtain ⟨hkw, hcountReg⟩ := hcount
+  have hkgr : S.k ≤ 64 * S.i := exit_k_le hstream hord hbnd64
+  have hnB : pipelineBlocks S.n.toNat = pipelineBlocks bs.length := by rw [hn]
+  have hk64 : S.k < 2 ^ 64 := by
+    have h1 : S.k ≤ 64 * pipelineBlocks S.n.toNat :=
+      Nat.le_trans hkgr (Nat.mul_le_mul_left 64 hib)
+    have h3 := hblk
+    omega
+  have hword : natToBytes S.kw.toNat 8 = wordBytes 8 S.k := by
+    rw [hkw, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk64]
+    rfl
+  -- the escape count the exit loads is the count the tail's call passes
+  have hrnx : nxp0 + 64 * pipelineBlocks bs.length + 9 < 2 ^ 63 := hroomxn
+  have hxn0eq : S.xn0 = nxp0 :=
+    slotExtent_eq (x := S.xn0) (y := nxp0) (by omega) (by omega) hnxp0slot hnxp
+  have hxngr' : S.xn ≤ nxp0 + 64 * S.i := by
+    have h := hxngr; rw [hxn0eq] at h; exact h
+  have hxn64 : S.xn < 2 ^ 64 := by
+    have h1 := hxngr'
+    have h2 := hib
+    omega
+  -- the loop's frame, projected at the staged objects the tail reads
+  obtain ⟨hdoc, htailpos, hdstpos, hndstpos, hevpos, hnevpos, herrpos, herrread,
+    hwinpos⟩ :=
+    loop_frame_of_staging hstKeep htieKeep hkgr hib hxngr hnxp0slot hxn0lt hframe
+  -- the count slot's store, and the word it holds
+  have hcountStore : readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) S.nk 8 =
+      some (wordBytes 8 S.k) := by
+    rw [hword]
+    exact readBytes_writeBytes_same e.mem (wordBytes 8 S.k)
+  -- the UTF-8 stage, at the window and the count slot's memory
+  obtain ⟨r30, hcall30, hpost30, -⟩ :=
+    units.utf8 [.ptr S.b, .int 64 S.n, .int 32 (tailGate S.armSel)]
+      (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) e.next
+      (utf8Pre_of_staging (kv := S.kw) hstKeep htieKeep hwinpos)
+  obtain ⟨v30, m30, n30⟩ := r30
+  dsimp only at hpost30
+  obtain ⟨b32, n32, gate32, bs32, nb32, err32, hargs32, hret32, hv32, hiff32, hn32,
+    hnb32, hwin32, hpos32, hm32⟩ := hpost30
+  have hsel : evalOperand (BlockEval.stateAt e.env e) (.reg S.arm.countReg) =
+      some (.int 64 S.kw) :=
+    hcountReg
+  -- the cells, as the tail's three steps read them
+  have hnk : lookupName e.env "%nk" = some (.ptr S.nk) := hcells.1
+  have hdstC : lookupName e.env "%dst" = some (.ptr S.dst) := hcells.2.1
+  have hdcap : lookupName e.env "%dstcap" = some (.int 64 S.dstcap) := hcells.2.2.1
+  have hndstC : lookupName e.env "%ndst" = some (.ptr S.ndst) := hcells.2.2.2.1
+  have hevC : lookupName e.env "%ev" = some (.ptr S.ev) := hcells.2.2.2.2.1
+  have hecap : lookupName e.env "%evcap" = some (.int 64 S.evcap) := hcells.2.2.2.2.2.1
+  have hnevC : lookupName e.env "%nev" = some (.ptr S.nev) := hcells.2.2.2.2.2.2.1
+  have herrC : lookupName e.env "%err" = some (.ptr S.err) := hcells.2.2.2.2.2.2.2.1
+  have harmC : lookupName e.env "%arm" = some (.int 64 S.armSel) := hcells.2.2.2.2.2.2.2.2.1
+  have hxpC : lookupName e.env "%xp" = some (.ptr S.xp) := hcells.2.2.2.2.2.2.2.2.2.1
+  have hnxpC : lookupName e.env "%nxp" = some (.ptr S.nxp) := hcells.2.2.2.2.2.2.2.2.2.2.1
+  have hbC : lookupName e.env "%b" = some (.ptr S.b) := hcells.2.2.2.2.2.2.2.2.2.2.2.1
+  have hnC : lookupName e.env "%n" = some (.int 64 S.n) := hcells.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hepC : lookupName e.env "%ep" = some (.ptr S.ep) := hcells.2.2.2.2.2.2.2.2.2.2.2.2.2
+  rcases hv32 with h0 | h1
+  · -- **acceptance**: stage two runs at the count the exit block stored
+    subst h0
+    have hcall30' : pipelineCalls tab S.b s2 "leanllvm_json_utf8"
+        [.ptr S.b, .int 64 S.n, .int 32 (tailGate S.armSel)]
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) e.next =
+        some ⟨.int 64 0, writeBytes e.mem S.nk (natToBytes S.kw.toNat 8), n30⟩ := by
+      have hr : (⟨.int 64 0, writeBytes e.mem S.nk (natToBytes S.kw.toNat 8), n30⟩ :
+          CallOutcome) = ⟨v30, m30, n30⟩ := by simp only [hret32, hm32]
+      rw [hr]
+      exact hcall30
+    -- the escape count at the count-store memory
+    have hld : readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) S.nxp 8 =
+        some (natToBytes (BitVec.ofNat 64 S.xn).toNat 8) := by
+      rw [hword]
+      refine ((readBytes_writeBytes_of_disjoint (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.k 8) (a := S.nxp) (N := 8) ?_).trans hnxpslot).trans ?_
+      · rw [natToBytes_length]
+        exact Or.comm.mp (by
+          simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj)
+      · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hxn64]; rfl
+    have hpre2 : Γ_stage2.pre
+        (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
+          (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 :=
+      stage2Pre_of_exit hstKeep htieKeep hkgr hib hxngr hnxpslot hnxp0slot hxn0lt hframe
+        hstream hord hbnd hsxp hkw hld
+    obtain ⟨r35, hcall2, hpost2, -⟩ :=
+      units.stage2 (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
+        (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 hpre2
+    obtain ⟨v35, m35, n35⟩ := r35
+    dsimp only at hpost2
+    -- stage two's post, at the extents it reports
+    obtain ⟨b₂, n₂, ep₂, nep₂, xp₂, nxp₂, dst₂, dstcap₂, ndst₂, ev₂, evcap₂, nev₂,
+      err₂, verdict₂, ndst0₂, nev0₂, alen, evlen, arena, evs, hargs₂, hveq₂, hvr₂,
+      hndst0Read₂, hnev0Read₂, hndstSlot₂, hnevSlot₂, -, -, -, -, hdstcapLt₂,
+      hevcapLt₂, hevle₂, hreserve₂, hArena₂, hEvs₂, hzero₂, hone₂, hown₂⟩ := hpost2
+    -- the arguments identify stage two's witnesses with the caller's slots
+    have hdst₂ : dst₂ = S.dst := by
+      have h := congrArg (fun l : List Value => l[6]?) hargs₂
+      simpa [stage2Args] using h.symm
+    have hndst₂ : ndst₂ = S.ndst := by
+      have h := congrArg (fun l : List Value => l[8]?) hargs₂
+      simpa [stage2Args] using h.symm
+    have hev₂ : ev₂ = S.ev := by
+      have h := congrArg (fun l : List Value => l[9]?) hargs₂
+      simpa [stage2Args] using h.symm
+    have hnev₂ : nev₂ = S.nev := by
+      have h := congrArg (fun l : List Value => l[11]?) hargs₂
+      simpa [stage2Args] using h.symm
+    have herr₂ : err₂ = S.err := by
+      have h := congrArg (fun l : List Value => l[12]?) hargs₂
+      simpa [stage2Args] using h.symm
+    rw [herr₂] at hzero₂ hone₂
+    -- the two capacities are the caller's numbers: one word, one width
+    have hdstcapEq : dstcap₂ = S.dstcap.toNat := by
+      have h := congrArg (fun l : List Value => l[7]?) hargs₂
+      simp only [stage2Args] at h
+      have hb : S.dstcap = BitVec.ofNat 64 dstcap₂ := by
+        simpa using (Option.some.inj h)
+      have htn := congrArg BitVec.toNat hb
+      simp only [BitVec.toNat_ofNat] at htn
+      have := Nat.mod_eq_of_lt hdstcapLt₂
+      omega
+    have hevcapEq : evcap₂ = S.evcap.toNat := by
+      have h := congrArg (fun l : List Value => l[10]?) hargs₂
+      simp only [stage2Args] at h
+      have hb : S.evcap = BitVec.ofNat 64 evcap₂ := by
+        simpa using (Option.some.inj h)
+      have htn := congrArg BitVec.toNat hb
+      simp only [BitVec.toNat_ofNat] at htn
+      have := Nat.mod_eq_of_lt hevcapLt₂
+      omega
+    have hdstCapW : alen + 64 ≤ S.dstcap.toNat := by
+      rw [← hdstcapEq]
+      simpa [stage2ArenaReserve] using hreserve₂
+    have hevCapW : evlen ≤ S.evcap.toNat := by
+      rw [← hevcapEq]
+      exact hevle₂
+    have halenLt : alen < 2 ^ 64 := by have := S.dstcap.isLt; omega
+    have hevlenLt : evlen < 2 ^ 64 := by have := S.evcap.isLt; omega
+    -- the run
+    have hrun := pipelineExit_accept_at tab S.b s2 e S.arm.head S.arm.countReg S.kw
+      S.b S.nk S.xp S.nxp S.ep S.dst S.ndst S.ev S.nev S.err
+      S.n S.armSel S.dstcap S.evcap (BitVec.ofNat 64 S.xn)
+      (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 ⟨v35, m35, n35⟩
+      hpc hpre (phiIncoming_cleanupPhi S.arm) hsel hnk hbC hnC harmC hxpC hnxpC hepC
+      hdstC hdcap hndstC hevC hecap hnevC herrC hcall30' hld hcall2
+    -- stage two's frame
+    have hframeStage : UnchangedOutside
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) m35
+        (stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err) := by
+      rw [← hdst₂, ← hev₂, ← hndst₂, ← hnev₂, ← herr₂]
+      exact stage2Post_unchangedOutside hown₂
+    -- the caller's pairwise promise, at the pairs the transports read
+    have sep7_11 : S.nk + 8 ≤ S.dst ∨ S.dst + S.dstcap.toNat ≤ S.nk := by
+      simpa using disjointRegions_pair _ 7 11 (by decide) _ _ rfl rfl hdisj
+    have sep7_12 : S.nk + 8 ≤ S.ndst ∨ S.ndst + 8 ≤ S.nk := by
+      simpa using disjointRegions_pair _ 7 12 (by decide) _ _ rfl rfl hdisj
+    have sep7_13 : S.nk + 8 ≤ S.ev ∨ S.ev + S.evcap.toNat ≤ S.nk := by
+      simpa using disjointRegions_pair _ 7 13 (by decide) _ _ rfl rfl hdisj
+    have sep7_14 : S.nk + 8 ≤ S.nev ∨ S.nev + 8 ≤ S.nk := by
+      simpa using disjointRegions_pair _ 7 14 (by decide) _ _ rfl rfl hdisj
+    have sep7_15 : S.nk + 8 ≤ S.err ∨ S.err + 8 ≤ S.nk := by
+      simpa using disjointRegions_pair _ 7 15 (by decide) _ _ rfl rfl hdisj
+    have sep9_11 : S.nxp + 8 ≤ S.dst ∨ S.dst + S.dstcap.toNat ≤ S.nxp := by
+      simpa using disjointRegions_pair _ 9 11 (by decide) _ _ rfl rfl hdisj
+    have sep9_12 : S.nxp + 8 ≤ S.ndst ∨ S.ndst + 8 ≤ S.nxp := by
+      simpa using disjointRegions_pair _ 9 12 (by decide) _ _ rfl rfl hdisj
+    have sep9_13 : S.nxp + 8 ≤ S.ev ∨ S.ev + S.evcap.toNat ≤ S.nxp := by
+      simpa using disjointRegions_pair _ 9 13 (by decide) _ _ rfl rfl hdisj
+    have sep9_14 : S.nxp + 8 ≤ S.nev ∨ S.nev + 8 ≤ S.nxp := by
+      simpa using disjointRegions_pair _ 9 14 (by decide) _ _ rfl rfl hdisj
+    have sep9_15 : S.nxp + 8 ≤ S.err ∨ S.err + 8 ≤ S.nxp := by
+      simpa using disjointRegions_pair _ 9 15 (by decide) _ _ rfl rfl hdisj
+    have sep6_11 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.dst ∨
+        S.dst + S.dstcap.toNat ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 11 (by decide) _ _ rfl rfl hdisj
+    have sep6_12 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.ndst ∨
+        S.ndst + 8 ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 12 (by decide) _ _ rfl rfl hdisj
+    have sep6_13 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.ev ∨
+        S.ev + S.evcap.toNat ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 13 (by decide) _ _ rfl rfl hdisj
+    have sep6_14 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.nev ∨
+        S.nev + 8 ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 14 (by decide) _ _ rfl rfl hdisj
+    have sep6_15 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.err ∨
+        S.err + 8 ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 15 (by decide) _ _ rfl rfl hdisj
+    have sep8_11 : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.dst ∨
+        S.dst + S.dstcap.toNat ≤ S.xp := by
+      simpa using disjointRegions_pair _ 8 11 (by decide) _ _ rfl rfl hdisj
+    have sep8_12 : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.ndst ∨
+        S.ndst + 8 ≤ S.xp := by
+      simpa using disjointRegions_pair _ 8 12 (by decide) _ _ rfl rfl hdisj
+    have sep8_13 : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.ev ∨
+        S.ev + S.evcap.toNat ≤ S.xp := by
+      simpa using disjointRegions_pair _ 8 13 (by decide) _ _ rfl rfl hdisj
+    have sep8_14 : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.nev ∨
+        S.nev + 8 ≤ S.xp := by
+      simpa using disjointRegions_pair _ 8 14 (by decide) _ _ rfl rfl hdisj
+    have sep8_15 : S.xp + 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8) ≤ S.err ∨
+        S.err + 8 ≤ S.xp := by
+      simpa using disjointRegions_pair _ 8 15 (by decide) _ _ rfl rfl hdisj
+    have hsepNk : ∀ r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err,
+        r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 :=
+      stage2Writes_sep (S := S) (alen := alen) (evlen := evlen) (a := S.nk) (N := 8)
+        (W := 8) (Nat.le_refl 8) sep7_11 sep7_13 sep7_12 sep7_14 sep7_15
+        hdstCapW hevCapW
+    have hsepNxp : ∀ r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err,
+        r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 :=
+      stage2Writes_sep (S := S) (alen := alen) (evlen := evlen) (a := S.nxp) (N := 8)
+        (W := 8) (Nat.le_refl 8) sep9_11 sep9_13 sep9_12 sep9_14 sep9_15
+        hdstCapW hevCapW
+    have hsepEp : ∀ r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err,
+        r.1 + r.2 ≤ S.ep ∨ S.ep + 4 * S.k ≤ r.1 :=
+      stage2Writes_sep (S := S) (alen := alen) (evlen := evlen) (a := S.ep)
+        (N := 4 * S.k) (W := 4 * (64 * pipelineBlocks S.n.toNat + 9))
+        (by omega) sep6_11 sep6_13 sep6_12 sep6_14 sep6_15 hdstCapW hevCapW
+    have hsepXp : ∀ r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err,
+        r.1 + r.2 ≤ S.xp ∨ S.xp + 4 * S.xn ≤ r.1 :=
+      stage2Writes_sep (S := S) (alen := alen) (evlen := evlen) (a := S.xp)
+        (N := 4 * S.xn) (W := 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8))
+        (by omega) sep8_11 sep8_13 sep8_12 sep8_14 sep8_15 hdstCapW hevCapW
+    -- the four reads at the memory stage two returns
+    have hnkM : readBytes m35 S.nk 8 = some (wordBytes 8 S.k) :=
+      (readBytes_of_unchangedOutside hframeStage hsepNk).trans hcountStore
+    have hnxpM : readBytes m35 S.nxp 8 = some (wordBytes 8 S.xn) := by
+      refine (readBytes_of_unchangedOutside hframeStage hsepNxp).trans ?_
+      have hsep' : S.nxp + 8 ≤ S.nk ∨ S.nk + (natToBytes S.k 8).length ≤ S.nxp := by
+        rw [natToBytes_length]
+        exact Or.comm.mp (by
+          simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj)
+      rw [hword]
+      exact (readBytes_writeBytes_of_disjoint (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.k 8) (a := S.nxp) (N := 8) hsep').trans hnxpslot
+    have hentM : readLanes32 m35 S.ep S.k = some S.ent := by
+      refine (readLanes32_of_unchangedOutside hframeStage hsepEp).trans ?_
+      have hsep' : S.ep + 4 * S.k ≤ S.nk ∨ S.nk + (natToBytes S.k 8).length ≤ S.ep := by
+        rw [natToBytes_length]
+        have hs := disjointRegions_pair _ 6 7 (by decide) _ _ rfl rfl hdisj
+        rcases hs with hs | hs
+        · exact Or.inl (by omega)
+        · exact Or.inr hs
+      rw [hword]
+      exact (readLanes32_writeBytes_of_end (m := e.mem) (start := S.nk)
+        (ws := natToBytes S.k 8) (addr := S.ep) (k := S.k) hsep').trans hstream
+    obtain ⟨ws, hws⟩ := hasBytes_writeBytes hsxp
+    have hwsM : readBytes m35 S.xp (4 * S.xn) = some ws :=
+      (readBytes_of_unchangedOutside hframeStage hsepXp).trans hws
+    obtain ⟨ps, hps, hpslen⟩ := positionsBytes_surjective 4 S.xn ws
+      (JsonEntrySteps.readBytes_length m35 S.xp (4 * S.xn) hwsM)
+    -- the frame: the loop's list, the count slot's store, stage two's region
+    have hU : UnchangedOutside mem m35
+        (pipelineLoopWrites S ++
+          [(S.dst, alen + 64), (S.ndst, 8), (S.ev, evlen), (S.nev, 8), (S.err, 8)]) := by
+      have hcount' : UnchangedOutside e.mem
+          (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) [(S.nk, 8)] :=
+        unchangedOutside_writeBytes_own e.mem S.nk _
+      have hstage' : UnchangedOutside
+          (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) m35
+          [(S.dst, alen + 64), (S.ndst, 8), (S.ev, evlen), (S.nev, 8), (S.err, 8)] := by
+        simpa [stage2Writes, stage2ArenaReserve] using hframeStage
+      refine ((hframe.widen_to ?_).trans (hcount'.widen_to ?_)).trans
+        (hstage'.widen_to ?_)
+      · intro r hr; exact List.mem_append_left _ hr
+      · intro r hr
+        simp only [List.mem_singleton] at hr
+        subst hr
+        exact List.mem_append_left _ (mem_loopWrites_nk S)
+      · intro r hr; exact List.mem_append_right _ hr
+    refine ⟨verdict₂, m35, ?_, ?_⟩
+    · simpa [hveq₂] using hrun
+    · simp only [Γ_pipeline_units, pipelineUnitsPost]
+      refine ⟨hvr₂, S.k, S.xn, alen, evlen, S.ent, ps, arena, evs, ?_, ?_, ?_, ?_,
+        ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨halenLt, hevlenLt, ?_, ?_⟩
+        · simpa [hndst₂] using hndstSlot₂
+        · simpa [hnev₂] using hnevSlot₂
+      · exact hnkM
+      · exact hnxpM
+      · exact hentM
+      · rw [hps]; exact hwsM
+      · simpa [hdst₂] using hArena₂
+      · simpa [hev₂] using hEvs₂
+      · intro hzero
+        obtain ⟨e', -, he'⟩ := hzero₂ hzero
+        exact ⟨e', he'⟩
+      · intro hone
+        have herrM30 : readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+            S.err 8 = readBytes mem S.err 8 := by
+          refine (readBytes_writeBytes_of_disjoint (m := e.mem) (start := S.nk)
+            (bs := natToBytes S.kw.toNat 8) (a := S.err) (N := 8) ?_).trans herrread
+          rw [natToBytes_length]
+          exact Or.comm.mp (by
+            simpa using disjointRegions_pair _ 7 15 (by decide) _ _ rfl rfl hdisj)
+        exact (hone₂ hone).trans herrM30
+      · simpa [pipelineLoopWrites] using hU
+  · -- **refusal**: the exit block stores the document's length and returns zero
+    subst h1
+    have hcall30' : pipelineCalls tab S.b s2 "leanllvm_json_utf8"
+        [.ptr S.b, .int 64 S.n, .int 32 (tailGate S.armSel)]
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) e.next =
+        some ⟨.int 64 1, writeBytes e.mem S.nk (natToBytes S.kw.toNat 8), n30⟩ := by
+      have hr : (⟨.int 64 1, writeBytes e.mem S.nk (natToBytes S.kw.toNat 8), n30⟩ :
+          CallOutcome) = ⟨v30, m30, n30⟩ := by simp only [hret32, hm32]
+      rw [hr]
+      exact hcall30
+    obtain ⟨hrun, hreadErr⟩ := pipelineExit_refuse tab S.b s2 e S.arm.head
+      S.arm.countReg S.kw S.b S.nk S.n S.armSel S.err
+      (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30
+      hpc hpre (phiIncoming_cleanupPhi S.arm) hsel hnk hbC hnC harmC herrC hcall30'
+    -- the two capacities put the cursors below the word's width
+    have hndst0Lt : ndst0 < 2 ^ 64 := by
+      have h1 := hdstcap
+      have h2 := S.dstcap.isLt
+      omega
+    have hnev0Lt : nev0 < 2 ^ 64 := by
+      have h1 := hnev
+      have h2 := S.evcap.isLt
+      omega
+    -- the caller's pairwise promise, at the pairs the stores read
+    have sep7_15 : S.nk + 8 ≤ S.err ∨ S.err + 8 ≤ S.nk := by
+      simpa using disjointRegions_pair _ 7 15 (by decide) _ _ rfl rfl hdisj
+    have sep9_15 : S.nxp + 8 ≤ S.err ∨ S.err + 8 ≤ S.nxp := by
+      simpa using disjointRegions_pair _ 9 15 (by decide) _ _ rfl rfl hdisj
+    have sep12_15 : S.ndst + 8 ≤ S.err ∨ S.err + 8 ≤ S.ndst := by
+      simpa using disjointRegions_pair _ 12 15 (by decide) _ _ rfl rfl hdisj
+    have sep14_15 : S.nev + 8 ≤ S.err ∨ S.err + 8 ≤ S.nev := by
+      simpa using disjointRegions_pair _ 14 15 (by decide) _ _ rfl rfl hdisj
+    have sep6_15 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.err ∨
+        S.err + 8 ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 15 (by decide) _ _ rfl rfl hdisj
+    have sepc_9 : S.nxp + 8 ≤ S.nk ∨ S.nk + 8 ≤ S.nxp := by
+      exact Or.comm.mp (by
+        simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj)
+    have sepc_12 : S.ndst + 8 ≤ S.nk ∨ S.nk + 8 ≤ S.ndst := by
+      exact Or.comm.mp (by
+        simpa using disjointRegions_pair _ 7 12 (by decide) _ _ rfl rfl hdisj)
+    have sepc_14 : S.nev + 8 ≤ S.nk ∨ S.nk + 8 ≤ S.nev := by
+      exact Or.comm.mp (by
+        simpa using disjointRegions_pair _ 7 14 (by decide) _ _ rfl rfl hdisj)
+    have sepc_6 : S.ep + 4 * (64 * pipelineBlocks S.n.toNat + 9) ≤ S.nk ∨
+        S.nk + 8 ≤ S.ep := by
+      simpa using disjointRegions_pair _ 6 7 (by decide) _ _ rfl rfl hdisj
+    -- the two memories the branch passes through
+    -- the cursor slots at the refusal memory
+    have hndstF : readBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.ndst 8 = some (wordBytes 8 ndst0) := by
+      refine (readBytes_writeBytes_of_staged (start := S.err)
+        (bs := natToBytes S.n.toNat 8) (a := S.ndst) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sep12_15).trans ?_
+      refine (readBytes_writeBytes_of_staged (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.kw.toNat 8) (a := S.ndst) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sepc_12).trans ?_
+      exact hndstpos.trans hndst
+    have hnevF : readBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.nev 8 = some (wordBytes 8 nev0) := by
+      refine (readBytes_writeBytes_of_staged (start := S.err)
+        (bs := natToBytes S.n.toNat 8) (a := S.nev) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sep14_15).trans ?_
+      refine (readBytes_writeBytes_of_staged (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.kw.toNat 8) (a := S.nev) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sepc_14).trans ?_
+      exact hnevpos.trans hnev0
+    -- the count and the escape count
+    have hnkF : readBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.nk 8 = some (wordBytes 8 S.k) := by
+      refine (readBytes_writeBytes_of_staged (start := S.err)
+        (bs := natToBytes S.n.toNat 8) (a := S.nk) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sep7_15).trans ?_
+      exact hcountStore
+    have hnxpF : readBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.nxp 8 = some (wordBytes 8 S.xn) := by
+      refine (readBytes_writeBytes_of_staged (start := S.err)
+        (bs := natToBytes S.n.toNat 8) (a := S.nxp) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sep9_15).trans ?_
+      refine (readBytes_writeBytes_of_staged (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.kw.toNat 8) (a := S.nxp) (N := 8) (W := 8)
+        (natToBytes_length _ _) (Nat.le_refl 8) sepc_9).trans ?_
+      exact hnxpslot
+    -- the entry stream and the escape positions
+    have hentF : readLanes32
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.ep S.k = some S.ent := by
+      refine (readLanes32_writeBytes_of_staged (start := S.err)
+        (bs := natToBytes S.n.toNat 8) (addr := S.ep) (k := S.k)
+        (W := 4 * (64 * pipelineBlocks S.n.toNat + 9))
+        (natToBytes_length _ _) (by omega) sep6_15).trans ?_
+      refine (readLanes32_writeBytes_of_staged (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.kw.toNat 8) (addr := S.ep) (k := S.k)
+        (W := 4 * (64 * pipelineBlocks S.n.toNat + 9))
+        (natToBytes_length _ _) (by omega) sepc_6).trans ?_
+      exact hstream
+    obtain ⟨ws, hws⟩ := hasBytes_writeBytes (hasBytes_writeBytes hsxp)
+    obtain ⟨ps, hps, hpslen⟩ := positionsBytes_surjective 4 S.xn ws
+      (JsonEntrySteps.readBytes_length _ S.xp (4 * S.xn) hws)
+    -- the two prefixes, from the caller's capacities
+    have hdstF : HasBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.dst ndst0 :=
+      hasBytes_of_le (hasBytes_writeBytes (hasBytes_writeBytes hdstpos)) (by omega)
+    have hevF : HasBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.ev nev0 :=
+      hasBytes_of_le (hasBytes_writeBytes (hasBytes_writeBytes hevpos)) (by omega)
+    obtain ⟨out, hout⟩ := hdstF
+    obtain ⟨evs, hevs⟩ := hevF
+    -- the refusal slot carries the document's length
+    have herrF : readBytes
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8)) S.err 8 = some (wordBytes 8 S.n.toNat) :=
+      readBytes_writeBytes_same _ _
+    -- the frame
+    have hU : UnchangedOutside mem
+        (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          S.err (natToBytes S.n.toNat 8))
+        (pipelineLoopWrites S ++
+          [(S.dst, ndst0 + 64), (S.ndst, 8), (S.ev, nev0), (S.nev, 8), (S.err, 8)]) := by
+      have hcount' : UnchangedOutside e.mem
+          (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) [(S.nk, 8)] :=
+        unchangedOutside_writeBytes_own e.mem S.nk _
+      have herr' : UnchangedOutside
+          (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+          (writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+            S.err (natToBytes S.n.toNat 8)) [(S.err, 8)] :=
+        unchangedOutside_writeBytes_own _ S.err _
+      refine ((hframe.widen_to ?_).trans (hcount'.widen_to ?_)).trans
+        (herr'.widen_to ?_)
+      · intro r hr; exact List.mem_append_left _ hr
+      · intro r hr
+        simp only [List.mem_singleton] at hr
+        subst hr
+        exact List.mem_append_left _ (mem_loopWrites_nk S)
+      · intro r hr
+        simp only [List.mem_singleton] at hr
+        subst hr
+        exact List.mem_append_right _ (by simp)
+    refine ⟨0, writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+      S.err (natToBytes S.n.toNat 8), hrun, ?_⟩
+    simp only [Γ_pipeline_units, pipelineUnitsPost]
+    refine ⟨Or.inl trivial, S.k, S.xn, ndst0, nev0, S.ent, ps, out, evs, ?_, ?_, ?_,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · refine ⟨hndst0Lt, hnev0Lt, ?_, ?_⟩
+      · exact hndstF
+      · exact hnevF
+    · exact hnkF
+    · exact hnxpF
+    · exact hentF
+    · rw [hps]; exact hws
+    · exact hout
+    · exact hevs
+    · intro _
+      exact ⟨S.n.toNat, herrF⟩
+    · intro hone
+      exact absurd hone (by decide)
+    · simpa [pipelineLoopWrites] using hU
 
 /-! ### The bundle, from the four fields and the tail -/
 
-/-- **`PipelineBodyFacts` from the proved fields and the tail's target.**  The
+/-- **`PipelineBodyFacts` from the proved fields and the tail's theorem.**  The
 loop, `N_eq`, `cost_le` and the seed are the theorems above; the fifth field is
-the target at the exit predicate the loop produces.  `pipelineLoopExit` is the
-loop's own exit and it now carries the caller's argument list, so the target's
-domain is the field's domain and is stated at the caller's addresses; the target
-itself is the caller's until the tail's assembly is proved. -/
+`pipelineTailTarget` at the exit predicate the loop produces.  `pipelineLoopExit`
+is the loop's own exit and it carries the caller's argument list, so the target's
+domain is the field's domain, at the caller's addresses. -/
 def pipelineBodyFacts_of_exitStage2 {tab base : Nat} {s2 : Calls}
-    {Γ2 : MemContract} {args : List Value} {mem : Mem} {next : Nat}
-    (hst : pipelineStaging tab base args mem) (units : PipelineUnits tab base s2 Γ2)
-    (tail : PipelineTailTarget tab base s2 args mem next) :
-    PipelineBodyFacts tab base s2 Γ2 args mem next :=
-  { loop := pipelineLoop_of_staging hst s2 Γ2 units
-    N_eq := pipelineLoop_of_staging_N hst s2 Γ2 units
-    cost_le := pipelineLoop_of_staging_cost_le hst s2 Γ2 units
+    {args : List Value} {mem : Mem} {next : Nat}
+    (hst : pipelineStaging tab base args mem) (units : PipelineUnits tab base s2 Γ_stage2) :
+    PipelineBodyFacts tab base s2 Γ_stage2 args mem next :=
+  { loop := pipelineLoop_of_staging hst s2 Γ_stage2 units
+    N_eq := pipelineLoop_of_staging_N hst s2 Γ_stage2 units
+    cost_le := pipelineLoop_of_staging_cost_le hst s2 Γ_stage2 units
     seed := pipelineSeed hst
-    exit := fun e he => tail e he }
+    exit := fun e he => pipelineTailTarget hst units e he }
 
 /-- **The assembled pipeline satisfies its unit-level record, from the four
-fields and the tail's target.**  `pipeline_satisfies_at_stage2`'s `hbody` is
-supplied by `pipelineBodyFacts_of_exitStage2`, so the remaining inputs are the
-stage-2 selection `h2` and the tail target — the run from the exit the loop
-leaves, which the excluded `PipelineBodyFacts.exit` field states. -/
+fields and the tail.**  `pipeline_satisfies_at_stage2`'s `hbody` is supplied by
+`pipelineBodyFacts_of_exitStage2`, so the only input left is the stage-2
+selection `h2`; the run from the exit the loop leaves is `pipelineTailTarget`,
+proved above. -/
 theorem pipeline_satisfies_at_stage2_of_exitStage2 (tab : Nat) (s2 : Calls)
-    (h2 : CallSatisfies s2 Γ_stage2 stage2Sym)
-    (tail : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),
-      pipelineStaging tab base args mem → PipelineUnits tab base s2 Γ_stage2 →
-      PipelineTailTarget tab base s2 args mem next) :
+    (h2 : CallSatisfies s2 Γ_stage2 stage2Sym) :
     ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody
       (Γ_pipeline_units tab base) :=
   pipeline_satisfies_at_stage2 tab s2 h2
-    (fun base args mem next hpre units =>
-      pipelineBodyFacts_of_exitStage2 hpre units
-        (tail base args mem next hpre units))
+    (fun _ _ _ _ hpre units => pipelineBodyFacts_of_exitStage2 hpre units)
 
 /-! ### Axiom footprints
 
 The four fields are `PipelineBodyStep`'s instance and two closed comparisons; the
-tail's target is a definition; the bundle is the structure's constructor at them.
-Nothing here adds a carrier: the tail is a named target whose proof is
-`PipelineBodyStep.pipelineExit_run`, and the exit's three facts arrive with the
-loop's producers.
+tail is `pipelineTailTarget`, whose steps are the exit block's traces and the two
+calls' records.  Nothing here adds a carrier.
 -/
 
 /-- info: 'LeanLLVM.Refinement.pipelineBlocks_argLen_cap' depends on axioms: [propext] -/
@@ -1352,9 +1932,9 @@ loop's producers.
 #guard_msgs in
 #print axioms utf8Pre_of_staging
 
-/-- info: 'LeanLLVM.Refinement.PipelineTailTarget' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.pipelineTailTarget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms PipelineTailTarget
+#print axioms pipelineTailTarget
 
 /-- info: 'LeanLLVM.Refinement.pipelineBodyFacts_of_exitStage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

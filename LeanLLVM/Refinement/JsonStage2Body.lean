@@ -680,6 +680,15 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   some (wordBytes 8 e)`), and this field is that demand's hypothesis.  It is a
   property of the value the run produces, not of the path that computed it. -/
   offLe : refusal = true → eoff ≤ n
+  /-- **The arena's capacity is a 64-bit number.**  `stage2Boundary` states it
+  (`dstcap < 2 ^ 64`), and this is that statement's producer: the ABI carries the
+  capacity as an eight-byte word, so the number the record names is the word's
+  value.  The clause places the arena's write extent inside the staging and makes
+  `alen` fit a cursor slot's width. -/
+  dstcapLt : dstcap < 2 ^ 64
+  /-- **The event stream's capacity is a 64-bit number**, for the same reason:
+  `stage2Boundary`'s `evcap < 2 ^ 64`. -/
+  evcapLt : evcap < 2 ^ 64
 
 namespace Stage2Run
 
@@ -862,7 +871,8 @@ theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
   refine ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.dst, h.dstcap, h.ndst, h.ev, h.evcap,
     h.nev, h.err, stage2Verdict h.refusal, h.ndst0, h.nev0, h.alen, h.evlen, arena, evs,
     h.args_eq, rfl, stage2Verdict_range h.refusal, h.ndstRead, h.nevRead, ndstAt, nevAt,
-    h.arenaGe, h.arenaLe, h.evGe, h.evLe, h.reserve, hArena, hEvs, ?_, ?_,
+    h.arenaGe, h.arenaLe, h.evGe, h.evLe, h.dstcapLt, h.evcapLt, le_trans h.evLe h.evRoom,
+    h.reserve, hArena, hEvs, ?_, ?_,
     ⟨hframe, hpresent⟩⟩
   · intro hzero
     cases hb : h.refusal with

@@ -697,11 +697,13 @@ structure PipelineBodyFacts (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   `pipelineLoopExit mem`, which names the program counter, the predecessor, the
   entry stream (with its document and block bounds), the tail's cells, the exiting
   count, the escape count's slot and growth, and the frame at `mem`
-  (`PipelineBodyStep.pipelineLoopExit_cells`, `PipelineLoopCount`); what it does
+  (`PipelineBodyStep.pipelineLoopExit_cells`, `PipelineLoopCount`).  What it does
   not name is the two calls' inputs — the UTF-8 call's window and stage-2's `pre`
-  — and those are the hypotheses of the run this field still owes.  A tail is
-  therefore stated at `pipelineLoopExit` and carries them as its own hypotheses;
-  `PipelineDischarge.PipelineTailTarget` is that statement. -/
+  — and those are consequences of the caller's staging: the loop's frame carries
+  the staged bytes to the exit state and the count slot's store is one entry of
+  the loop's own write list, so `PipelineDischarge.utf8Pre_of_staging` and
+  `PipelineDischarge.stage2Pre_of_exit` derive them at the state's own memory.  The
+  whole field, at `Γ_stage2`, is `PipelineDischarge.pipelineTailTarget`. -/
   exit : ∀ (e : State), loop.Exit mem args e →
     ∃ (verdict : BitVec 64) (m : Mem),
       runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
@@ -731,27 +733,28 @@ arguments disagree with admits nothing.
 `loop` and `cost_le` are proved (`PipelineBodyStep.pipelineLoop`, whose `step` is the
 four arms' steps per entry shape), `N_eq` is the staging's block count, and `seed`'s
 three control steps are proved (`PipelineBodyStep.pipelineSeed`, whose invariant
-state carries the staging's regions); the member that is not is named with its
-clause rather than left as "the body analysis":
+state carries the staging's regions).  It is stated as a hypothesis here because
+this theorem's `Γ2` is arbitrary; at `Γ_stage2` the whole bundle, `exit`
+included, is `PipelineDischarge.pipelineBodyFacts_of_exitStage2`.
 
 * `exit`'s conclusion at `Γ_pipeline_units`'s post is the tail's: the cleanup
   block's store and its UTF-8 call, the two refusal branches, and the stage-2 call
-  whose post is what the `dst`/`ndst`/`ev`/`nev`/`err` clauses are about.  That need
-  is the run's, not the loop exit's, and the post is now the record's own rather
-  than a parameter of the field: the parameterised shape was false, not unproved
-  and it is retired.  The three
-  steps are proved — `PipelineBodyStep.pipelineExit_run`, one `denoteCode` trace per
-  block at the exit state's own environment, composed into the three-fuel run, with
-  the stage-2 record consumed at the call site — at the *cells* the exit state must
-  carry and at stage-2's `pre`.  `pipelineLoopExit` supplies the fourteen cells,
-  the predecessor and the exiting count (`PipelineBodyStep.pipelineLoopExit_cells`,
-  `PipelineLoopCount`), so `hsel` is derivable; what it does not supply is the two
-  calls' inputs, and `pipelineExit_run`'s `hcall` and `hpre2` are what this field
-  waits on.  What the loop's exit *does* hand on is the entry stream: the staging
-  pins the count slot to the empty stream, the loop's emitters append onto nothing,
-  and `PipelineBodyStep.pipelineExit_stream` states the read at the exit's own
-  count, so the post's `readLanes32 m ep nk'` is derivable from the pre instead of
-  being a clause the exit could not reach. -/
+  whose post is what the `dst`/`ndst`/`ev`/`nev`/`err` clauses are about.  The post
+  is the record's own rather than a parameter of the field: the parameterised shape
+  was false, not unproved, and it is retired.  The three steps are
+  `PipelineBodyStep.pipelineExit_run` — one `denoteCode` trace per block at the
+  exit state's own environment, composed into the three-fuel run, with the stage-2
+  record consumed at the call site.  `pipelineLoopExit` supplies the cells, the
+  predecessor and the exiting count (`PipelineBodyStep.pipelineLoopExit_cells`,
+  `PipelineLoopCount`), and the two calls' inputs are consequences of the caller's
+  staging (`PipelineDischarge.utf8Pre_of_staging`, `stage2Pre_of_exit`), so
+  `PipelineDischarge.pipelineTailTarget` discharges the field and
+  `pipeline_satisfies_at_stage2_of_exitStage2` takes no tail premise.  What the
+  loop's exit hands on is the entry stream: the staging pins the count slot to the
+  empty stream, the loop's emitters append onto nothing, and
+  `PipelineBodyStep.pipelineExit_stream` states the read at the exit's own count,
+  so the post's `readLanes32 m ep nk'` is derived from the pre instead of being a
+  clause the exit could not reach. -/
 theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
     (units : ∀ base, PipelineUnits tab base s2 Γ2)
     (hbody : ∀ (base : Nat) (args : List Value) (mem : Mem) (next : Nat),

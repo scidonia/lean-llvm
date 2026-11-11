@@ -406,7 +406,15 @@ the frame as a region claim.
 
 The semantic content — whether the verdict is the reference parser's, what the
 record stream means, which refusal constructor an offset belongs to — is
-`Sigma_pipeline`'s and `EventStreamRel`'s, and is deliberately absent. -/
+`Sigma_pipeline`'s and `EventStreamRel`'s, and is deliberately absent.
+
+The two capacities are stated as 64-bit numbers, and the event extent as lying
+inside its capacity.  The ABI carries each capacity as an eight-byte word, so a
+call site's number is the word's value below `2 ^ 64`; with the reserve clause
+this places the arena's write extent inside the arena and the event extent
+inside the event stream, which is what a consumer composing this post with the
+caller's staging of the two buffers needs.  It also makes the reported extents
+below the word's width, the bound `pipelineOutputExtents` reads. -/
 def stage2Boundary (args : List Value) (mem m : Mem) (v : Value) : Prop :=
   ∃ (b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat)
     (verdict : BitVec 64) (ndst0 nev0 ndst' nev' : Nat) (arena evs : List UInt8),
@@ -426,6 +434,23 @@ def stage2Boundary (args : List Value) (mem m : Mem) (v : Value) : Prop :=
     readBytes m nev 8 = some (wordBytes 8 nev') ∧
     ndst0 ≤ ndst' ∧ ndst' ≤ ndst0 + n ∧
     nev0 ≤ nev' ∧ nev' ≤ nev0 + stage2RecordBytes * n ∧
+    -- **The reported extents are below the word's width, and the capacities say
+    -- so.**  `ndst'` and `nev'` are what a consumer reads back through the two
+    -- eight-byte slots, and a slot word alone leaves its value free modulo
+    -- `2 ^ 64`, so a consumer that must name the extents (`pipelineOutputExtents`)
+    -- needs each below the width.  The two bounds are stated here, at the clause
+    -- that produces them, and through the numbers the run names: the decoder's
+    -- reserve and the event extent both lie inside their capacities, and an ABI
+    -- capacity argument is a 64-bit word, so `dstcap < 2 ^ 64` gives
+    -- `ndst' < 2 ^ 64` by the reserve clause below and `nev' ≤ evcap < 2 ^ 64`
+    -- gives the other.  The width is the smaller change: stating `ndst' < 2 ^ 64`
+    -- and `nev' < 2 ^ 64` directly would state the consequence twice and leave a
+    -- consumer unable to place either write extent inside the staging the call
+    -- was made at, while a width of the capacity is what identifies the
+    -- capacity — two 64-bit numbers with one word are one number.  Without the
+    -- width the record is `2 ^ 64`-periodic in these numbers and the bounds are
+    -- not derivable at all.
+    dstcap < 2 ^ 64 ∧ evcap < 2 ^ 64 ∧ nev' ≤ evcap ∧
     -- the decoder's reserve is still inside the capacity (`stage2.h:49-52`)
     ndst' + stage2ArenaReserve ≤ dstcap ∧
     -- the prefixes the pipeline's post reads
