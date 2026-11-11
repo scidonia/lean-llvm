@@ -74,6 +74,7 @@ import LeanLLVM.Refinement.JsonPipelineRefine
 import LeanLLVM.Refinement.JsonPipelineSpec
 import LeanLLVM.FramePredicate
 import LeanLLVM.Permissions
+import LeanLLVM.HeapLogic
 import LeanLLVM.Refinement.PipelineBodyFacts
 import LeanLLVM.Refinement.PipelineBodyStep
 import LeanLLVM.Refinement.JsonStage2Contract
