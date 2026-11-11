@@ -22,10 +22,10 @@ This probe exercises the installation point described in
   is the program the refinement theorem is about rather than a separately
   authored body.
 - `ir/loop.ll` is the memory-backed loop. It is printed from the `loopFunction`
-  AST in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
+  AST in `LeanLLVM/Refinement/CommaMaskLoopBody.lean` by
   `lake exe leanllvm-loop-emit` (`LoopEmit.lean`) through
   `LeanLLVM.Function.render`: the framework's own printer, not Lean's native
-  compiler (`lean -c`). `LeanLLVM/Vellum/CommaMaskLoop.lean` parses that file
+  compiler (`lean -c`). `LeanLLVM/Refinement/CommaMaskLoop.lean` parses that file
   and pins it to the same AST before proving a correctness and framed-memory
   statement about it; the certificate for the loop names that statement
   (`loop_refines_candidate_within`: the loop refines the unrolled candidate
@@ -33,7 +33,7 @@ This probe exercises the installation point described in
   loop from it in strict and non-strict mode. The gate is
   `tests/m4-loop-install-gate.sh`, described below.
 - `depth_count` is the stage-1 census kernel `tests/v16/depth_count.ll`, the
-  per-function text `LeanLLVM/Vellum/DepthCountRefine.lean` parses and pins
+  per-function text `LeanLLVM/Refinement/DepthCountRefine.lean` parses and pins
   before proving that the run returns and stores the depth fold `depthSpec`
   (`depth_count_refines`). Its installed object is the fixture plus
   `ir/marker_depth_count.ll`; its certificate names that theorem and the
@@ -141,16 +141,16 @@ network.
 
 Two kinds of certificate, with different reach:
 
-1. **Semantic.** `LeanLLVM/Vellum/CommaMaskIR.lean` pins `baseline.ll` and
+1. **Semantic.** `LeanLLVM/Refinement/CommaMaskIR.lean` pins `baseline.ll` and
    `candidate.ll` by parsed AST and proves `Refines candidateFunction
-   baselineFunction`; `LeanLLVM/Vellum/CommaMaskLoop.lean` pins the printed
+   baselineFunction`; `LeanLLVM/Refinement/CommaMaskLoop.lean` pins the printed
    `loop.ll` to `loopFunction` and proves the loop's correctness and
-   framed-memory statements; `LeanLLVM/Vellum/DepthCountRefine.lean` pins
+   framed-memory statements; `LeanLLVM/Refinement/DepthCountRefine.lean` pins
    `tests/v16/depth_count.ll` to `depthFunction` and proves
    `depth_count_refines`, the kernel's returned depth and stored statistics
    against `depthSpec`. The kernel argument for the comma-mask bodies is in
    `CommaMaskKernel.lean`. Axiom footprints are pinned in
-   `LeanLLVMTest/Vellum.lean`.
+   `LeanLLVMTest/Refinement.lean`.
 2. **Installation.** `proof_baseline.env`, `proof_candidate.env`,
    `proof_loop.env` and `proof_depth_count.env` are the
    kernel-derived certificates. Each is a deterministic data file with exactly
@@ -162,14 +162,14 @@ Two kinds of certificate, with different reach:
    `toolchain_revision` (the `sha256:` of a
    fixed nine-line record over the pin files and the `lean`, `clang` and `ld`
    version output). `theorem` names the statement that covers that unit:
-   `LeanLLVM.Vellum.CommaMaskIR.IR_refines` on the baseline's and the
+   `LeanLLVM.Refinement.CommaMaskIR.IR_refines` on the baseline's and the
    candidate's certificates,
-   `LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within` on the loop's,
+   `LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within` on the loop's,
    because `IR_refines` relates the candidate to the baseline and says nothing
    about the memory-backed loop, and
-   `LeanLLVM.Vellum.DepthCountRefine.depth_count_refines` on the depth
-   counter's. `contract` names `LeanLLVM.Vellum.commaContract` for the
-   comma-mask units and `LeanLLVM.Vellum.DepthCountRefine.depthContract` for
+   `LeanLLVM.Refinement.DepthCountRefine.depth_count_refines` on the depth
+   counter's. `contract` names `LeanLLVM.Refinement.commaContract` for the
+   comma-mask units and `LeanLLVM.Refinement.DepthCountRefine.depthContract` for
    the depth counter: the latter is a proposition — the hypothesis set and
    conclusion of `depth_count_refines`, with `depthContract_holds` as its
    witness — because the pure `BitVec 64 → BitVec 64` structure does not
@@ -260,7 +260,7 @@ some unmodelled tokens, so the refusal promise covers function definitions, not
   compilation-chain form of loop provenance is open.
 - The loop's certificate names a statement about the loop body and its frame,
   not a compiled-code equivalence. The framed statement in
-  `LeanLLVM/Vellum/CommaMaskLoop.lean` relates the loop's returned value and
+  `LeanLLVM/Refinement/CommaMaskLoop.lean` relates the loop's returned value and
   the bytes outside the band its own allocations cover, using the general
   relation in `LeanLLVM/Frames.lean` (`AgreesOutsideMem`, `MemPrivate`,
   `AllocFrame`, `RefinesWithin`). The footprint is read off the allocator
@@ -276,7 +276,7 @@ some unmodelled tokens, so the refusal promise covers function definitions, not
   the model's execution of the parsed fixture — and `depthContract`, which is
   that theorem's own type stated as a proposition with `depthContract_holds` as
   its witness. It is not a compiled-code equivalence, and it is not a
-  `LeanLLVM.Vellum.Contract`: the pure one-word structure cannot express the
+  `LeanLLVM.Refinement.Contract`: the pure one-word structure cannot express the
   memory and index-array hypotheses. `tests/depth-count/check.sh` compares the
   installed object with `depthSpec` over a fixed corpus, with a tampered
   expectation, a sequential-reader defect and a return-only defect as controls;
@@ -284,7 +284,7 @@ some unmodelled tokens, so the refusal promise covers function definitions, not
   evidence, not the proof, and the corpus is finite.
 - The contextual replacement theorem covers a caller (in the semantics) whose
   body is a call to the seam whose result it returns
-  (`LeanLLVM/Vellum/SeamContext.lean`), in both an equality form and the
+  (`LeanLLVM/Refinement/SeamContext.lean`), in both an equality form and the
   directional form of `LeanLLVM/CallRefinement.lean`. The environment is
   deterministic; `none` is `ub`, so a defined target call refines an undefined
   source one but not the reverse. An environment returns the callee's value,

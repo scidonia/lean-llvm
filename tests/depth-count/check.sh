@@ -7,7 +7,7 @@
 # arrays:
 #
 #   * the specification — `depthSpec` in
-#     `LeanLLVM/Vellum/DepthCountRefine.lean`, printed by
+#     `LeanLLVM/Refinement/DepthCountRefine.lean`, printed by
 #     `leanllvm-depth-check` over `probes/install/depth-corpus.tsv`;
 #   * the installed object — the depth unit as the installer builds it, from
 #     the committed fixture `tests/v16/depth_count.ll` plus its marker, called

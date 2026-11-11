@@ -51,7 +51,7 @@ the kernel's parse is a checked entry rather than a scratch-corpus observation.
 `readonly` and `writeonly` parameter attributes, the `align` on the two loads and
 the four stores, and the `nuw` flag on the counter's add are removed, and every
 other line is verbatim.  It is committed and listed as `parsed`, and
-`LeanLLVM/Vellum/DepthCountRefine.lean` proves the kernel against its depth fold
+`LeanLLVM/Refinement/DepthCountRefine.lean` proves the kernel against its depth fold
 (`depth_count_refines`) over that text, with the parsed AST pinned by a `#guard`.
 The strip instrument is the extended census's scratch `strip.py`, so — as for
 `ci2.ll` — the re-runnable check of the fixture is the manifest entry and this
@@ -65,8 +65,8 @@ capture derives, in the same run, the normalisation inventory
 and the fixture's own construct inventory (`json-s1-masks.inventory`), and
 refuses when any of the four no longer regenerates.  The fixture is committed and
 `repo-corpus.manifest` lists it as `parsed`, so its parse is a checked entry;
-`LeanLLVM/Vellum/JsonS1MasksIR.lean` pins the parsed AST by `#guard` and
-`LeanLLVM/Vellum/JsonS1MasksSteps.lean` proves the body (`s1_masks_refines`).
+`LeanLLVM/Refinement/JsonS1MasksIR.lean` pins the parsed AST by `#guard` and
+`LeanLLVM/Refinement/JsonS1MasksSteps.lean` proves the body (`s1_masks_refines`).
 
 `probes/install/ir/json-entry.candidate.ll` is the extracted entry unit — the two
 position emitters `@s1f_k_pos8` and `@s1f_k_b8` of `kernel/json/entry.c` at the
@@ -79,9 +79,9 @@ per site) and the fixture's construct inventory (`json-entry.inventory`), and
 five, compares them, parses the fixture and fires its controls.  The fixture is
 committed and `repo-corpus.manifest` lists it as `parsed`, so its parse — both
 functions, one file — is a checked entry;
-`LeanLLVM/Vellum/JsonEntryIR.lean` pins the parsed ASTs by `#guard`,
-`LeanLLVM/Vellum/JsonEntrySteps.lean` proves POS8's body (`entry_pos8_refines`)
-and `LeanLLVM/Vellum/JsonB8Steps.lean` proves B8's (`entry_b8_refines`), the two
+`LeanLLVM/Refinement/JsonEntryIR.lean` pins the parsed ASTs by `#guard`,
+`LeanLLVM/Refinement/JsonEntrySteps.lean` proves POS8's body (`entry_pos8_refines`)
+and `LeanLLVM/Refinement/JsonB8Steps.lean` proves B8's (`entry_b8_refines`), the two
 kernels' agreement (`entry_pos8_b8_agree`) and B8's undefinedness beyond its
 reads (`entry_b8_undefined_of_no_read`).
 
@@ -94,8 +94,8 @@ inventory (`json-utf8.rewrites.tsv`) and the fixture's construct inventory
 the gate: it regenerates them, compares them, parses the fixture and fires its
 control.  The fixture is committed and `repo-corpus.manifest` lists it as
 `parsed`, so its parse — one function, one file — is a checked entry;
-`LeanLLVM/Vellum/JsonUtf8IR.lean` pins the parsed AST by `#guard` and
-`LeanLLVM/Vellum/JsonUtf8Steps.lean` proves the body (`utf8_stage_refines`).
+`LeanLLVM/Refinement/JsonUtf8IR.lean` pins the parsed AST by `#guard` and
+`LeanLLVM/Refinement/JsonUtf8Steps.lean` proves the body (`utf8_stage_refines`).
 
 The manifest entry counts once the fixture is **tracked**: `repo-census.sh`
 enumerates `git ls-files`, so a green run over an untracked file describes a tree

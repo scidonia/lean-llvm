@@ -6,7 +6,7 @@
 # Two actors must agree, row for row, on the same rows:
 #
 #   * the Lean body — `s1MasksFunction`, the AST
-#     `LeanLLVM/Vellum/JsonS1MasksIR.lean` pins to
+#     `LeanLLVM/Refinement/JsonS1MasksIR.lean` pins to
 #     `probes/install/ir/json-s1-masks.candidate.ll` — run by
 #     `leanllvm-json-s1-masks` under the repository's semantics;
 #   * the installed object — `kernel/json/s1_block.c` compiled with the measured

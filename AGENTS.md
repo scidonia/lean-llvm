@@ -43,7 +43,7 @@ needs the other two to match.
 
 - `LeanLLVM/` is the library: syntax, semantics, parser, printer, refinement,
   the pass framework, and the passes.
-- `LeanLLVM/Vellum/` is the refinement layer: `Contract`, `Refines` /
+- `LeanLLVM/Refinement/` is the refinement layer: `Contract`, `Refines` /
   `SemRefines`, `Correct`, the contextual theorems, the comma-mask instance,
   the emitted-IR bridge (`CommaMaskIR`), the IR-level caller (`SeamContext`),
   the two-environment contextual replacement (`ModuleRefinement`:
@@ -145,7 +145,7 @@ needs the other two to match.
   empty-document case `utf8_stage_refines_zero`, and the totality companion
   `utf8_stage_undefined_of_no_read`.
   The theorems the refinement claims rest on are pinned in
-  `LeanLLVMTest/Vellum.lean`, each at the ceiling `[propext, Quot.sound]` or with a
+  `LeanLLVMTest/Refinement.lean`, each at the ceiling `[propext, Quot.sound]` or with a
   `Classical.choice` carrier the pin names — the three `private` numeral lemmas of
   `BitLanes` cannot be named from another file — each choice-carrying `BitVec`/`List`
   lemma replaced by a local proof.  The pins are the instrument and not a formality:
@@ -186,7 +186,7 @@ needs the other two to match.
   postcondition weakening, handler jump-delay and decreasing-measure facts,
   `Bridge` the correspondence and elimination against a completed run, and
   `LoopInstance` the rule's two instances: a visibly recurring call tree and the
-  comma-mask loop/candidate pair.  `LeanLLVM.lean` imports it after the Vellum
+  comma-mask loop/candidate pair.  `LeanLLVM.lean` imports it after the refinement layer's
   modules, so `LeanLLVMTest/` reaches it through the same entrypoint as the rest
   of `LeanLLVM`.  `LeanLLVM/ITree/README.md` records the handler, the relation,
   the rule and the open obligations.
@@ -297,7 +297,7 @@ needs the other two to match.
 - `kernel/json/` holds the three extracted units of the measured SIMD JSON
   stage 1 — `s1_block.c`, the classification mask unit; `entry.c`, the entry
   positions unit; and `utf8.c`, the UTF-8 validity unit — each with its own ABI,
-  its own specification in `LeanLLVM/Vellum/`, its own identity arms and its own
+  its own specification in `LeanLLVM/Refinement/`, its own identity arms and its own
   route.  None is the pipeline, and `kernel/json/measured/` is read-only
   reference that the identity and bench scripts and the UTF-8 route's table
   dumper read, and no `lake` target builds.  `kernel/json/README.md`
@@ -417,7 +417,7 @@ needs the other two to match.
   not symmetric:
   `i1 false` is exact at the zero word, and `i1 true` is admitted because the
   entry claims read no lane the poison can reach, the bound stated once in
-  `LeanLLVM/Vellum/BitLanes.lean` — and the escape unit's list record carries the
+  `LeanLLVM/Refinement/BitLanes.lean` — and the escape unit's list record carries the
   same bound over its batch reserve — while `ctlz … i1 true` has no such bound
   and stays refused.  `umax` at every width is bound by no environment and
   called by no capture under `probes/`, so a call to one is `ub`, and the shape
@@ -474,14 +474,14 @@ needs the other two to match.
   `probes/install/build.sh` must run before reading the manifest or the
   certificates it publishes.
 - The 64-bit seam identities are kernel-checked in
-  `LeanLLVM/Vellum/CommaMaskKernel.lean` by a byte-lane argument.  Do not
+  `LeanLLVM/Refinement/CommaMaskKernel.lean` by a byte-lane argument.  Do not
   reintroduce `bv_decide`, `native_decide`, `sorry` or `admit`; the pins in
-  `LeanLLVMTest/Vellum.lean` must stay at the standard axiom footprint.
+  `LeanLLVMTest/Refinement.lean` must stay at the standard axiom footprint.
 - Checks are behavioural where behaviour is observable: parse a program, run it,
   run the pass, compare.  Avoid tests that merely restate a definition.
 - A mathematical obligation — a refinement, a framing law, a loop rule — is
   discharged by a theorem, its axiom pin, and an adversarial example that fails
-  (`LeanLLVMTest/Vellum.lean` has both the loop's framed statement and a write
+  (`LeanLLVMTest/Refinement.lean` has both the loop's framed statement and a write
   outside the frame that it refuses).  A user-facing route gets an executable
   scenario instead: `tests/m4-loop-gate.sh` drives `probes/install/select.sh`
   with no loop theorem or certificate bound and asserts refusal and fallback,
@@ -496,7 +496,7 @@ needs the other two to match.
   parameter, and a private access is silent because the handler inserted a
   `tau`.  Its own statements follow the same discipline: a positive theorem, a
   negative example the same detector rejects, and an axiom pin no wider than
-  `[propext, Classical.choice, Quot.sound]` in `LeanLLVMTest/Vellum.lean`.  The
+  `[propext, Classical.choice, Quot.sound]` in `LeanLLVMTest/Refinement.lean`.  The
   congruence theorems (`simtt_bind`, `simtt_interp`) are conditional, and their
   refused witnesses are part of the statement: do not drop a hypothesis to make
   a congruence easier.  The tree layer describes **`PureEnv` environments only**:

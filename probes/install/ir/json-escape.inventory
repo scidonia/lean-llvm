@@ -6,7 +6,7 @@
 #
 # The intrinsic call set is what the escape unit's model vocabulary is sized
 # from, so the split is measured here and printed beside the list it counts.
-# "bound in the tree" means some `Calls` environment in `LeanLLVM/Vellum` binds
+# "bound in the tree" means some `Calls` environment in `LeanLLVM/Refinement` binds
 # the spelling; `Parser.lean`'s `checkIntrinsicShape` validates a spelling and is
 # not a model, so it is outside the comparison.  A callee that is not an
 # `llvm.*` intrinsic is one of the fixture's own definitions, and the capture

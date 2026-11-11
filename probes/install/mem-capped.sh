@@ -11,7 +11,7 @@
 #
 # Usage:
 #   probes/install/mem-capped.sh -- lake env lean /tmp/probe.lean
-#   probes/install/mem-capped.sh --cap 12G -- lake build LeanLLVM.Vellum.Foo
+#   probes/install/mem-capped.sh --cap 12G -- lake build LeanLLVM.Refinement.Foo
 #
 # The default is deliberately generous: a module that legitimately needs more
 # than this is better rebuilt than unbuildable.

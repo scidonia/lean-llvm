@@ -8,10 +8,10 @@ The redirect has to be inside the shell the dev shell starts:
 shell's own startup banner, which is printed on the way in.
 
 The text is the header comment below followed by `LeanLLVM.Module.render` of the
-module holding the seam's declaration and `LeanLLVM.Vellum.JsonSeam.scanCaller`.
+module holding the seam's declaration and `LeanLLVM.Refinement.JsonSeam.scanCaller`.
 The module is not just the function: the fixture is checked with
 `opt -passes=verify`, and LLVM refuses a call to a symbol the module does not
-declare.  `LeanLLVM/Vellum/JsonSeam.lean` parses this file back and pins the
+declare.  `LeanLLVM/Refinement/JsonSeam.lean` parses this file back and pins the
 whole module, declaration included, with `#guard`.
 
 This is the framework's printer rendering Lean-defined IR; no `lean -c` C
@@ -26,7 +26,7 @@ module, so a construct or attribute the parser does not model cannot reach the
 fixture silently.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.JsonSeam
+import LeanLLVM.Refinement.JsonSeam
 
 open LeanLLVM
 
@@ -53,11 +53,11 @@ def provenance : String :=
 
 /-- The seam's declaration: the symbol the caller calls and the linker resolves. -/
 def seamDecl : Decl :=
-  { name := LeanLLVM.Vellum.JsonSeam.jsonSeamSymbol, retTy := .int 32, params := [.ptr] }
+  { name := LeanLLVM.Refinement.JsonSeam.jsonSeamSymbol, retTy := .int 32, params := [.ptr] }
 
 /-- The module the fixture holds: the declaration, then the caller. -/
 def callerModule : Module :=
-  { decls := [seamDecl], functions := [LeanLLVM.Vellum.JsonSeam.scanCaller] }
+  { decls := [seamDecl], functions := [LeanLLVM.Refinement.JsonSeam.scanCaller] }
 
 /-- Render the module, refusing unless the text parses back to the same one. -/
 def emit (m : Module) : Except String String := do

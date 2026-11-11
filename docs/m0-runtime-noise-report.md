@@ -279,10 +279,10 @@ not against an unversioned page.
 3. **Write the contextual theorem before proof automation.** For the pure
    slice, state the local LLVM refinement and the restricted caller/callee
    replacement theorem; a `BitVec` equality is a lemma, not acceptance.  The
-   first instance is `LeanLLVM/Vellum/CommaMaskKernel.lean`:
+   first instance is `LeanLLVM/Refinement/CommaMaskKernel.lean`:
    `commaContract ⊢ byteLoop ⊑ swar`, with `Correct` transfer and a two-call
    context, proved by a kernel-checked byte-lane argument; the axiom footprint
-   is pinned in `LeanLLVMTest/Vellum.lean`.
+   is pinned in `LeanLLVMTest/Refinement.lean`.
 4. **Install, then select.** Demonstrate identity installation, then install a
    structurally different certified body and show that the target paths execute
    it. Report semantic acceptance and coverage separately. The installed units
@@ -315,7 +315,7 @@ not against an unversioned page.
    loop fixture is printed from the Lean AST by the framework's printer
    (`lake exe leanllvm-loop-emit`, not `lean -c`), the correctness and
    framed-memory statements are proved about that AST
-   (`LeanLLVM/Vellum/CommaMaskLoop.lean` parses the printed file and pins it back
+   (`LeanLLVM/Refinement/CommaMaskLoop.lean` parses the printed file and pins it back
    to it), the loop installs through its own certificate naming
    `loop_refines_candidate_within` on the same hash-and-rebuild bridge as the
    other two units. The compilation-chain form of that provenance, heap relations across

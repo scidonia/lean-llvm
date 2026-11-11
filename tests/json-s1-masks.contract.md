@@ -3,7 +3,7 @@
 The stage-1 kernel is measured code, and what this file claims is about the
 object the measurement compiled: for one 64-byte block and one inbound carry it
 computes six mask words and the outgoing carry.  The theorem in
-`LeanLLVM/Vellum/JsonS1MasksIR.lean` is stated over the emitted text
+`LeanLLVM/Refinement/JsonS1MasksIR.lean` is stated over the emitted text
 `probes/install/ir/json-s1-masks.candidate.ll`, pinned to a hand-written AST;
 these scenarios are the other half of that claim, where the subject is reached
 from outside rather than read as a proposition.
@@ -249,7 +249,7 @@ refusing a changed element size would refuse the emitted form itself.
 - **Expected failure:** observed, as a staged cut.  In a throwaway copy of the
   tree, `s1MasksFunction`'s table entry for the comma class — `loTab`'s offset
   12, in both copies of the duplicated table — was cleared and the module
-  rebuilt (`lake build LeanLLVM.Vellum.JsonS1MasksIR`, exit 0).  The scenario
+  rebuilt (`lake build LeanLLVM.Refinement.JsonS1MasksIR`, exit 0).  The scenario
   then exits 1.  The first failure is collateral: the scenario's own fixture pin
   at `tests/json-s1-masks.lean:38` fails, because the cut body no longer equals
   the committed text — the pin doing its job, not the red.  The scenario's own
@@ -411,5 +411,5 @@ are:
   binary `lake build leanllvm-json-s1-masks` writes at
   `.lake/build/bin/leanllvm-json-s1-masks` — both are prerequisites of the
   runner, and without them the runner's rows do not exist;
-- `LeanLLVM/Vellum/JsonS1MasksIR.lean` — the module that pins the AST, which
+- `LeanLLVM/Refinement/JsonS1MasksIR.lean` — the module that pins the AST, which
   the Lean scenario imports and which nothing else in the tree provides.

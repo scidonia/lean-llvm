@@ -1,0 +1,4053 @@
+/-
+The assembled pipeline's body facts: the arm traces, the loop instance, the seed
+and the tail.
+
+`JsonPipelineBlockEval` closes one arm of the loop body — the copy `arm & 1 = 0`,
+`arm & 2 = 0` selects, `for.body.us.us` — as the automation's sufficiency
+measurement.  The body has four copies, because the emission unswitches the loop
+once per value of the `arm` selector's low two bits: `arm & 1` selects the entry
+emitter (POS8 at zero, B8 at one) and `arm & 2` the escape-list gate (off at zero,
+on at one).  The three remaining copies are `for.body.us` (POS8, gate on),
+`for.body.us83` (B8, gate off) and `for.body` (B8, gate on), and this module
+closes them the same way: the instruction lists are pinned back to
+`JsonPipelineIR`'s AST by `decide`, the incoming and outgoing builders name the
+block's own cells, and one `block_eval` invocation derives the chain and closes
+its side goals.
+
+**What the arm traces carry and what stays the caller's.**  A block proof is
+`denoteCode calls block.instrs (stateAt envIn s) = some (stateAt envOut s')`.
+What remains a hypothesis is the semantic staging no block proof can discharge —
+the memory the loads read, the `getelementptr` address bound, and the call
+outcomes; and the outcomes are hypotheses here because the units behind them are
+the caller's records, consumed one level up by the loop instance.  No register
+lookup is a hypothesis: the builders hold the values the statement names.
+
+**The dispatch blocks and the tail.**  The seed crosses the entry test's two
+selection blocks before the loop's first iteration, and the tail crosses the
+loop's exit, the UTF-8 stage's call, the refusal branches and the final `phi`;
+those blocks' traces are here too, and their call and 32-bit-arithmetic shapes
+are the chain steps the first arm's blocks do not contain.  A traced block plus
+its terminator is one control step, so each of the four arms also comes with its
+iteration lemma: one `runFuel` prefix from the arm's head to either the exit or
+the next iteration's head, at cost one, in the shape `PipelineLoop.step` asks for.
+
+**The environment bridge, built to the read set.**  A block trace is stated at
+`stateAt envIn s`, and the builders *prepend* every register the block reads,
+including the caller's own cells that `EntryState` already binds.  Two
+consecutive traces therefore state their states over different environment
+lists, and no trace applies to the state the previous block leaves.  What two
+such states do share is what the block reads, so the bridge is stated that way:
+`AgreeOn ns t s` is `State.AgreeOn` — "same memory, allocator base and
+predecessor, and the same value for every name in `ns`" — instantiated at the
+read set `instrsUses` computes for a block, and the transport is
+`denoteCode_transport`: a completed trace at one state gives a completed one at
+any state that agrees on that read set.  The per-instruction step behind it
+(`evalInstr_agree`) and its preservation lemmas live beside the semantics, in
+`LeanLLVM.Semantics`, because a congruence over environments is a fact about
+`evalInstr` rather than about this pipeline; the `AgreeOn` constructors kept here
+are the names this module's axiom pins read.
+
+**What is here for the instance, and what is not.**  The loop instance and its
+invariant are here, with the entry stream and its block bound, the block count and
+the escape count's slot content and growth as carried facts; the exit adds the
+entry stream's document bound; the four arm steps
+are `PipelineBodyStep`'s, and `pipelineLoop` is assembled there.  What is not here
+is the seed (the three control steps from the entry block to the loop's first
+iteration) and the tail (`PipelineBodyFacts.exit`), and the exit predicate is the
+interface between them: it states at `for.cond.cleanup` every fact the tail's
+stage-2 call reads — the stream's order, its document bound and its block bound,
+the count the exit stores, and the escape count's slot and growth — and it is
+`pipelineLoopInv 0` by definition rather than a second spelling of it.  The
+obstructions are stated where the definitions are: the exit predicate's docstring
+names which facts it carries and which inputs remain the tail's own hypotheses,
+and the invariant's names the clause each conjunct answers to.
+-/
+import LeanLLVM.Refinement.JsonPipelineBlockEval
+import LeanLLVM.Refinement.JsonPipelineRefine
+import LeanLLVM.Refinement.JsonEscapeListContract
+import LeanLLVM.Refinement.JsonEntrySteps
+
+set_option autoImplicit false
+set_option maxRecDepth 16000
+
+namespace LeanLLVM.Refinement
+
+open LeanLLVM
+open LeanLLVM.Refinement.JsonPipelineIR (pipelineBody lit)
+open LeanLLVM.Refinement.JsonEntryIR (readLanes32 streamPrefix wordsOf)
+open LeanLLVM.Refinement.JsonScanSpec (positionsOf)
+
+namespace PipelineBodyFacts
+
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.Refinement.JsonPipelineBlockEval
+
+/-! ### The three remaining loop-body blocks
+
+The blocks by index in the pinned AST, as `JsonPipelineBlockEval` names its own
+three: `blockAt` is the AST's list, and `decide` pins each name to its index. -/
+
+/-- POS8 with the escape-list gate on. -/
+def pUs := blockAt pipelineBody 4 (by decide)
+
+/-- B8 with the escape-list gate off. -/
+def pUs83 := blockAt pipelineBody 6 (by decide)
+
+/-- B8 with the escape-list gate on. -/
+def pBody := blockAt pipelineBody 8 (by decide)
+
+theorem findBlock_us : pipelineBody.findBlock "for.body.us" = some pUs := by decide
+
+theorem findBlock_us83 : pipelineBody.findBlock "for.body.us83" = some pUs83 := by
+  decide
+
+theorem findBlock_body : pipelineBody.findBlock "for.body" = some pBody := by decide
+
+/-! ### The pinned instruction lists
+
+Restated from `JsonPipelineIR.pipelineBody` and decided back against it, as the
+first arm's three blocks are: a change to the fixture that moved an instruction
+fails here rather than becoming a proof obligation elsewhere. -/
+
+theorem pUs_instrs :
+    pUs.instrs =
+      [Instr.phi "%prevS.082.us" (Ty.int 64)
+          [("for.body.us", Operand.reg "%shr13.us"),
+           ("for.body.lr.ph.split.us", lit 64 0)],
+       Instr.phi "%k.081.us" (Ty.int 64)
+          [("for.body.us", Operand.reg "%call21.us"),
+           ("for.body.lr.ph.split.us", Operand.reg "%0")],
+       Instr.phi "%i.080.us" (Ty.int 64)
+          [("for.body.us", Operand.reg "%inc.us"),
+           ("for.body.lr.ph.split.us", lit 64 0)],
+       Instr.binop "%shl.us" (BinOp.shl) 64 (Operand.reg "%i.080.us") (lit 64 6),
+       Instr.gep "%add.ptr.us" (Ty.int 8) (Operand.reg "%b") (Operand.reg "%shl.us"),
+       Instr.callVoid "leanllvm_json_s1_masks"
+          [(Ty.ptr, Operand.reg "%add.ptr.us"), (Ty.ptr, Operand.reg "%sc"),
+           (Ty.ptr, Operand.reg "%mk")],
+       Instr.load "%8" (Ty.int 64) (Operand.reg "%mk"),
+       Instr.load "%9" (Ty.int 64) (Operand.reg "%delim"),
+       Instr.load "%10" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.load "%11" (Ty.int 64) (Operand.reg "%ws"),
+       Instr.binop "%12" (BinOp.or) 64 (Operand.reg "%8") (Operand.reg "%11"),
+       Instr.binop "%13" (BinOp.or) 64 (Operand.reg "%12") (Operand.reg "%9"),
+       Instr.binop "%or2.us" (BinOp.or) 64 (Operand.reg "%13") (Operand.reg "%10"),
+       Instr.binop "%not.us" (BinOp.xor) 64 (Operand.reg "%or2.us") (lit 64 (-1)),
+       Instr.binop "%not6.us" (BinOp.xor) 64 (Operand.reg "%10") (lit 64 (-1)),
+       Instr.binop "%and.us" (BinOp.and) 64 (Operand.reg "%9") (Operand.reg "%not6.us"),
+       Instr.binop "%shl8.us" (BinOp.shl) 64 (Operand.reg "%not.us") (lit 64 1),
+       Instr.binop "%or9.us" (BinOp.or) 64 (Operand.reg "%shl8.us")
+          (Operand.reg "%prevS.082.us"),
+       Instr.binop "%not10.us" (BinOp.xor) 64 (Operand.reg "%or9.us") (lit 64 (-1)),
+       Instr.binop "%and11.us" (BinOp.and) 64 (Operand.reg "%not10.us")
+          (Operand.reg "%not.us"),
+       Instr.binop "%14" (BinOp.or) 64 (Operand.reg "%and.us") (Operand.reg "%and11.us"),
+       Instr.binop "%or12.us" (BinOp.or) 64 (Operand.reg "%14") (Operand.reg "%8"),
+       Instr.binop "%shr13.us" (BinOp.lshr) 64 (Operand.reg "%not.us") (lit 64 63),
+       Instr.binop "%sub.us" (BinOp.sub) 64 (Operand.reg "%n") (Operand.reg "%shl.us"),
+       Instr.icmp "%cmp15.us" (IPred.ult) 64 (Operand.reg "%sub.us") (lit 64 64),
+       Instr.binop "%notmask.us" (BinOp.shl) 64 (lit 64 (-1)) (Operand.reg "%sub.us"),
+       Instr.binop "%sub17.us" (BinOp.xor) 64 (Operand.reg "%notmask.us") (lit 64 (-1)),
+       Instr.select "%and18.us" (Ty.int 64) (Operand.reg "%cmp15.us")
+          (Operand.reg "%sub17.us") (lit 64 (-1)),
+       Instr.binop "%ent.0.us" (BinOp.and) 64 (Operand.reg "%or12.us")
+          (Operand.reg "%and18.us"),
+       Instr.store (Ty.int 64) (Operand.reg "%ent.0.us") (Operand.reg "%entw"),
+       Instr.call "%call21.us" (Ty.int 64) "leanllvm_json_entry_pos8"
+          [(Ty.ptr, Operand.reg "%entw"), (Ty.int 64, Operand.reg "%i.080.us"),
+           (Ty.int 64, lit 64 1), (Ty.ptr, Operand.reg "%ep"),
+           (Ty.int 64, Operand.reg "%k.081.us")],
+       Instr.load "%15" (Ty.int 64) (Operand.reg "%backslash"),
+       Instr.load "%16" (Ty.int 64) (Operand.reg "%ctl"),
+       Instr.load "%17" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.callVoid "leanllvm_json_escape_list"
+          [(Ty.int 64, Operand.reg "%15"), (Ty.int 64, Operand.reg "%16"),
+           (Ty.int 64, Operand.reg "%17"), (Ty.int 64, Operand.reg "%i.080.us"),
+           (Ty.ptr, Operand.reg "%xp"), (Ty.ptr, Operand.reg "%nxp"),
+           (Ty.ptr, Operand.reg "%xcarry")],
+       Instr.binop "%inc.us" (BinOp.add) 64 (Operand.reg "%i.080.us") (lit 64 1),
+       Instr.icmp "%exitcond115.not" (IPred.eq) 64 (Operand.reg "%inc.us")
+          (Operand.reg "%shr")] := by
+  decide
+
+theorem pUs83_instrs :
+    pUs83.instrs =
+      [Instr.phi "%prevS.082.us84" (Ty.int 64)
+          [("for.body.us83", Operand.reg "%shr13.us98"),
+           ("for.body.lr.ph.split", lit 64 0)],
+       Instr.phi "%k.081.us85" (Ty.int 64)
+          [("for.body.us83", Operand.reg "%call.us"),
+           ("for.body.lr.ph.split", Operand.reg "%0")],
+       Instr.phi "%i.080.us86" (Ty.int 64)
+          [("for.body.us83", Operand.reg "%inc.us106"),
+           ("for.body.lr.ph.split", lit 64 0)],
+       Instr.binop "%shl.us87" (BinOp.shl) 64 (Operand.reg "%i.080.us86") (lit 64 6),
+       Instr.gep "%add.ptr.us88" (Ty.int 8) (Operand.reg "%b")
+          (Operand.reg "%shl.us87"),
+       Instr.callVoid "leanllvm_json_s1_masks"
+          [(Ty.ptr, Operand.reg "%add.ptr.us88"), (Ty.ptr, Operand.reg "%sc"),
+           (Ty.ptr, Operand.reg "%mk")],
+       Instr.load "%18" (Ty.int 64) (Operand.reg "%mk"),
+       Instr.load "%19" (Ty.int 64) (Operand.reg "%delim"),
+       Instr.load "%20" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.load "%21" (Ty.int 64) (Operand.reg "%ws"),
+       Instr.binop "%22" (BinOp.or) 64 (Operand.reg "%18") (Operand.reg "%21"),
+       Instr.binop "%23" (BinOp.or) 64 (Operand.reg "%22") (Operand.reg "%19"),
+       Instr.binop "%or2.us89" (BinOp.or) 64 (Operand.reg "%23")
+          (Operand.reg "%20"),
+       Instr.binop "%not.us90" (BinOp.xor) 64 (Operand.reg "%or2.us89") (lit 64 (-1)),
+       Instr.binop "%not6.us91" (BinOp.xor) 64 (Operand.reg "%20") (lit 64 (-1)),
+       Instr.binop "%and.us92" (BinOp.and) 64 (Operand.reg "%19")
+          (Operand.reg "%not6.us91"),
+       Instr.binop "%shl8.us93" (BinOp.shl) 64 (Operand.reg "%not.us90") (lit 64 1),
+       Instr.binop "%or9.us94" (BinOp.or) 64 (Operand.reg "%shl8.us93")
+          (Operand.reg "%prevS.082.us84"),
+       Instr.binop "%not10.us95" (BinOp.xor) 64 (Operand.reg "%or9.us94") (lit 64 (-1)),
+       Instr.binop "%and11.us96" (BinOp.and) 64 (Operand.reg "%not10.us95")
+          (Operand.reg "%not.us90"),
+       Instr.binop "%24" (BinOp.or) 64 (Operand.reg "%and.us92")
+          (Operand.reg "%and11.us96"),
+       Instr.binop "%or12.us97" (BinOp.or) 64 (Operand.reg "%24") (Operand.reg "%18"),
+       Instr.binop "%shr13.us98" (BinOp.lshr) 64 (Operand.reg "%not.us90") (lit 64 63),
+       Instr.binop "%sub.us99" (BinOp.sub) 64 (Operand.reg "%n")
+          (Operand.reg "%shl.us87"),
+       Instr.icmp "%cmp15.us100" (IPred.ult) 64 (Operand.reg "%sub.us99") (lit 64 64),
+       Instr.binop "%notmask.us101" (BinOp.shl) 64 (lit 64 (-1))
+          (Operand.reg "%sub.us99"),
+       Instr.binop "%sub17.us102" (BinOp.xor) 64 (Operand.reg "%notmask.us101")
+          (lit 64 (-1)),
+       Instr.select "%and18.us103" (Ty.int 64) (Operand.reg "%cmp15.us100")
+          (Operand.reg "%sub17.us102") (lit 64 (-1)),
+       Instr.binop "%ent.0.us104" (BinOp.and) 64 (Operand.reg "%or12.us97")
+          (Operand.reg "%and18.us103"),
+       Instr.store (Ty.int 64) (Operand.reg "%ent.0.us104") (Operand.reg "%entw"),
+       Instr.call "%call.us" (Ty.int 64) "leanllvm_json_entry_b8"
+          [(Ty.ptr, Operand.reg "%entw"), (Ty.int 64, Operand.reg "%i.080.us86"),
+           (Ty.int 64, lit 64 1), (Ty.ptr, Operand.reg "%ep"),
+           (Ty.int 64, Operand.reg "%k.081.us85")],
+       Instr.binop "%inc.us106" (BinOp.add) 64 (Operand.reg "%i.080.us86")
+          (lit 64 1),
+       Instr.icmp "%exitcond114.not" (IPred.eq) 64 (Operand.reg "%inc.us106")
+          (Operand.reg "%shr")] := by
+  decide
+
+theorem pBody_instrs :
+    pBody.instrs =
+      [Instr.phi "%prevS.082" (Ty.int 64)
+          [("for.body", Operand.reg "%shr13"), ("for.body.lr.ph.split", lit 64 0)],
+       Instr.phi "%k.081" (Ty.int 64)
+          [("for.body", Operand.reg "%call"),
+           ("for.body.lr.ph.split", Operand.reg "%0")],
+       Instr.phi "%i.080" (Ty.int 64)
+          [("for.body", Operand.reg "%inc"),
+           ("for.body.lr.ph.split", lit 64 0)],
+       Instr.binop "%shl" (BinOp.shl) 64 (Operand.reg "%i.080") (lit 64 6),
+       Instr.gep "%add.ptr" (Ty.int 8) (Operand.reg "%b") (Operand.reg "%shl"),
+       Instr.callVoid "leanllvm_json_s1_masks"
+          [(Ty.ptr, Operand.reg "%add.ptr"), (Ty.ptr, Operand.reg "%sc"),
+           (Ty.ptr, Operand.reg "%mk")],
+       Instr.load "%27" (Ty.int 64) (Operand.reg "%mk"),
+       Instr.load "%28" (Ty.int 64) (Operand.reg "%delim"),
+       Instr.load "%29" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.load "%30" (Ty.int 64) (Operand.reg "%ws"),
+       Instr.binop "%31" (BinOp.or) 64 (Operand.reg "%27") (Operand.reg "%30"),
+       Instr.binop "%32" (BinOp.or) 64 (Operand.reg "%31") (Operand.reg "%28"),
+       Instr.binop "%or2" (BinOp.or) 64 (Operand.reg "%32") (Operand.reg "%29"),
+       Instr.binop "%not" (BinOp.xor) 64 (Operand.reg "%or2") (lit 64 (-1)),
+       Instr.binop "%not6" (BinOp.xor) 64 (Operand.reg "%29") (lit 64 (-1)),
+       Instr.binop "%and" (BinOp.and) 64 (Operand.reg "%28") (Operand.reg "%not6"),
+       Instr.binop "%shl8" (BinOp.shl) 64 (Operand.reg "%not") (lit 64 1),
+       Instr.binop "%or9" (BinOp.or) 64 (Operand.reg "%shl8")
+          (Operand.reg "%prevS.082"),
+       Instr.binop "%not10" (BinOp.xor) 64 (Operand.reg "%or9") (lit 64 (-1)),
+       Instr.binop "%and11" (BinOp.and) 64 (Operand.reg "%not10")
+          (Operand.reg "%not"),
+       Instr.binop "%33" (BinOp.or) 64 (Operand.reg "%and") (Operand.reg "%and11"),
+       Instr.binop "%or12" (BinOp.or) 64 (Operand.reg "%33") (Operand.reg "%27"),
+       Instr.binop "%shr13" (BinOp.lshr) 64 (Operand.reg "%not") (lit 64 63),
+       Instr.binop "%sub" (BinOp.sub) 64 (Operand.reg "%n") (Operand.reg "%shl"),
+       Instr.icmp "%cmp15" (IPred.ult) 64 (Operand.reg "%sub") (lit 64 64),
+       Instr.binop "%notmask" (BinOp.shl) 64 (lit 64 (-1)) (Operand.reg "%sub"),
+       Instr.binop "%sub17" (BinOp.xor) 64 (Operand.reg "%notmask") (lit 64 (-1)),
+       Instr.select "%and18" (Ty.int 64) (Operand.reg "%cmp15")
+          (Operand.reg "%sub17") (lit 64 (-1)),
+       Instr.binop "%ent.0" (BinOp.and) 64 (Operand.reg "%or12")
+          (Operand.reg "%and18"),
+       Instr.store (Ty.int 64) (Operand.reg "%ent.0") (Operand.reg "%entw"),
+       Instr.call "%call" (Ty.int 64) "leanllvm_json_entry_b8"
+          [(Ty.ptr, Operand.reg "%entw"), (Ty.int 64, Operand.reg "%i.080"),
+           (Ty.int 64, lit 64 1), (Ty.ptr, Operand.reg "%ep"),
+           (Ty.int 64, Operand.reg "%k.081")],
+       Instr.load "%34" (Ty.int 64) (Operand.reg "%backslash"),
+       Instr.load "%35" (Ty.int 64) (Operand.reg "%ctl"),
+       Instr.load "%36" (Ty.int 64) (Operand.reg "%in_string"),
+       Instr.callVoid "leanllvm_json_escape_list"
+          [(Ty.int 64, Operand.reg "%34"), (Ty.int 64, Operand.reg "%35"),
+           (Ty.int 64, Operand.reg "%36"), (Ty.int 64, Operand.reg "%i.080"),
+           (Ty.ptr, Operand.reg "%xp"), (Ty.ptr, Operand.reg "%nxp"),
+           (Ty.ptr, Operand.reg "%xcarry")],
+       Instr.binop "%inc" (BinOp.add) 64 (Operand.reg "%i.080") (lit 64 1),
+       Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
+          (Operand.reg "%shr")] := by
+  decide
+
+/-- The POS8-with-gate body's terminator. -/
+theorem pUs_term :
+    pUs.term = Term.condbr (Operand.reg "%exitcond115.not") "for.cond.cleanup"
+      "for.body.us" := by decide
+
+/-- The B8-no-gate body's terminator. -/
+theorem pUs83_term :
+    pUs83.term = Term.condbr (Operand.reg "%exitcond114.not") "for.cond.cleanup"
+      "for.body.us83" := by decide
+
+/-- The B8-with-gate body's terminator. -/
+theorem pBody_term :
+    pBody.term = Term.condbr (Operand.reg "%exitcond.not") "for.cond.cleanup"
+      "for.body" := by decide
+
+/-! ### The further chain steps the gate-on arms and the tail contain
+
+`BlockEval`'s chain steps are the shapes the first arm's blocks contain: a
+three-pointer void call, a five-argument call whose third argument is a literal,
+`getelementptr` at a register index, and 64-bit arithmetic.  The gate-on arms add
+the escape list's seven-argument void call; the dispatch blocks add
+`getelementptr` at a literal index; and the tail adds UTF-8's three-argument call,
+stage 2's thirteen-argument call, and `for.cond.cleanup`'s 32-bit shift and mask.
+Those shapes are stated here, one chain step each, so a block that contains them
+is still one `pipeline_block_eval` invocation.  The two 32-bit steps are the
+64-bit ones at an arbitrary width, which is what `for.cond.cleanup`'s `%26` and
+`%conv` need. -/
+
+/-- `%d = lshr iW %a, <c>`, at any width. -/
+theorem step_lshr_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr calls (stateAt env s) (.binop d .lshr w (.reg a) (.imm (.int w c))) =
+      some (stateAt ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_binop (r := (x >>> c.toNat).toNat)
+      (ha := LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := LeanLLVM.Refinement.BlockEval.evalOperand_lit_of _ w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+/-- `%d = and iW %a, <c>`, at any width. -/
+theorem step_and_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr calls (stateAt env s) (.binop d .and w (.reg a) (.imm (.int w c))) =
+      some (stateAt ((d, .int w (x &&& c)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_binop (r := (x &&& c).toNat)
+      (ha := LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := LeanLLVM.Refinement.BlockEval.evalOperand_lit_of _ w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+theorem denoteCode_lshr_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .lshr w (.reg a) (.imm (.int w c)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  rw [LeanLLVM.Refinement.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_lshr_imm_w calls env s d a w ha)]
+
+theorem denoteCode_and_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .and w (.reg a) (.imm (.int w c)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x &&& c)) :: env) s) := by
+  rw [LeanLLVM.Refinement.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_and_imm_w calls env s d a w ha)]
+
+/-- `%d = getelementptr i8, ptr %base, <c>`, at a literal index below `2 ^ 63`. -/
+theorem step_gep8_lit (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} {w : Nat} {n : BitVec w}
+    (hb : lookupName env base = some (.ptr a))
+    (hpos : (n.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls (stateAt env s) (.gep d (.int 8) (.reg base) (.imm (.int w n))) =
+      some (stateAt ((d, .ptr (a + (n.signExtend 64).toNat)) :: env) s) := by
+  rw [LeanLLVM.evalInstr_gep_i8 (hb := LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s base (.ptr a) hb)
+    (ho := LeanLLVM.Refinement.BlockEval.evalOperand_lit_of _ w n) (hpos := hpos)]
+  simp only [stateAt, State.bind]
+
+theorem denoteCode_gep8_lit (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} {w : Nat} {n : BitVec w}
+    (hb : lookupName env base = some (.ptr a))
+    (hpos : (n.signExtend 64).toNat < 2 ^ 63) (is : List Instr) :
+    denoteCode calls (.gep d (.int 8) (.reg base) (.imm (.int w n)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a + (n.signExtend 64).toNat)) :: env) s) := by
+  rw [LeanLLVM.Refinement.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_gep8_lit calls env s d base hb hpos)]
+
+/-- The escape list's call: seven arguments, four masks then three pointers,
+returning nothing. -/
+theorem step_callVoid_escape (calls : Calls) (env : Env) (s : State)
+    (callee : String) (o1 o2 o3 o4 o5 o6 o7 : String)
+    {v1 v2 v3 v4 : BitVec 64} {p1 p2 p3 : Nat} {r : CallOutcome}
+    (h1 : lookupName env o1 = some (.int 64 v1))
+    (h2 : lookupName env o2 = some (.int 64 v2))
+    (h3 : lookupName env o3 = some (.int 64 v3))
+    (h4 : lookupName env o4 = some (.int 64 v4))
+    (h5 : lookupName env o5 = some (.ptr p1))
+    (h6 : lookupName env o6 = some (.ptr p2))
+    (h7 : lookupName env o7 = some (.ptr p3))
+    (hc : calls callee [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+      .ptr p1, .ptr p2, .ptr p3] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, .reg o1), (Ty.int 64, .reg o2),
+          (Ty.int 64, .reg o3), (Ty.int 64, .reg o4), (Ty.ptr, .reg o5),
+          (Ty.ptr, .reg o6), (Ty.ptr, .reg o7)]) =
+      some (stateAt env { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, .reg o1), (Ty.int 64, .reg o2), (Ty.int 64, .reg o3),
+       (Ty.int 64, .reg o4), (Ty.ptr, .reg o5), (Ty.ptr, .reg o6),
+       (Ty.ptr, .reg o7)] =
+      some [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+        .ptr p1, .ptr p2, .ptr p3] := by
+    simp only [evalOperands,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o1 (.int 64 v1) h1,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o2 (.int 64 v2) h2,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o3 (.int 64 v3) h3,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o4 (.int 64 v4) h4,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o5 (.ptr p1) h5,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o6 (.ptr p2) h6,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s o7 (.ptr p3) h7]
+  have hc' : calls callee [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+      .ptr p1, .ptr p2, .ptr p3] (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+theorem denoteCode_callVoid_escape (calls : Calls) (env : Env) (s : State)
+    (callee : String) (o1 o2 o3 o4 o5 o6 o7 : String)
+    {v1 v2 v3 v4 : BitVec 64} {p1 p2 p3 : Nat} {r : CallOutcome}
+    (h1 : lookupName env o1 = some (.int 64 v1))
+    (h2 : lookupName env o2 = some (.int 64 v2))
+    (h3 : lookupName env o3 = some (.int 64 v3))
+    (h4 : lookupName env o4 = some (.int 64 v4))
+    (h5 : lookupName env o5 = some (.ptr p1))
+    (h6 : lookupName env o6 = some (.ptr p2))
+    (h7 : lookupName env o7 = some (.ptr p3))
+    (hc : calls callee [.int 64 v1, .int 64 v2, .int 64 v3, .int 64 v4,
+      .ptr p1, .ptr p2, .ptr p3] s.mem s.next = some r) (is : List Instr) :
+    denoteCode calls
+        (.callVoid callee [(Ty.int 64, .reg o1), (Ty.int 64, .reg o2),
+          (Ty.int 64, .reg o3), (Ty.int 64, .reg o4), (Ty.ptr, .reg o5),
+          (Ty.ptr, .reg o6), (Ty.ptr, .reg o7)] :: is) (stateAt env s) =
+      denoteCode calls is (stateAt env { s with mem := r.mem, next := r.next }) := by
+  rw [LeanLLVM.Refinement.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_callVoid_escape calls env s callee o1 o2 o3
+    o4 o5 o6 o7 h1 h2 h3 h4 h5 h6 h7 hc)]
+
+/-- UTF-8's call: a byte base, the length, and the 32-bit gate. -/
+theorem step_call_utf8 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (bp np gp : String) {p : Nat} {n : BitVec 64} {g : BitVec 32} {r : CallOutcome}
+    (hb : lookupName env bp = some (.ptr p))
+    (hn : lookupName env np = some (.int 64 n))
+    (hg : lookupName env gp = some (.int 32 g))
+    (hc : calls callee [.ptr p, .int 64 n, .int 32 g] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.call d (Ty.int 64) callee [(Ty.ptr, .reg bp), (Ty.int 64, .reg np),
+          (Ty.int 32, .reg gp)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, .reg bp), (Ty.int 64, .reg np), (Ty.int 32, .reg gp)] =
+      some [.ptr p, .int 64 n, .int 32 g] := by
+    simp only [evalOperands,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s bp (.ptr p) hb,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s np (.int 64 n) hn,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s gp (.int 32 g) hg]
+  have hc' : calls callee [.ptr p, .int 64 n, .int 32 g]
+      (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+theorem denoteCode_call_utf8 (calls : Calls) (env : Env) (s : State)
+    (d callee : String) (bp np gp : String)
+    {p : Nat} {n : BitVec 64} {g : BitVec 32} {r : CallOutcome}
+    (hb : lookupName env bp = some (.ptr p))
+    (hn : lookupName env np = some (.int 64 n))
+    (hg : lookupName env gp = some (.int 32 g))
+    (hc : calls callee [.ptr p, .int 64 n, .int 32 g] s.mem s.next = some r)
+    (is : List Instr) :
+    denoteCode calls
+        (.call d (Ty.int 64) callee [(Ty.ptr, .reg bp), (Ty.int 64, .reg np),
+          (Ty.int 32, .reg gp)] :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  rw [LeanLLVM.Refinement.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_call_utf8 calls env s d callee bp np gp
+    hb hn hg hc)]
+
+/-- Stage 2's call: the document, the entry stream and its cursor, the escape
+list and its cursor, the arena and the event stream, each with its capacity or
+cursor slot, and the refusal slot — thirteen arguments, all registers. -/
+theorem step_call_stage2 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (rb rn rep rk rxp r37 rdst rdcap rndst rev recap rnev rerr : String)
+    {pb pe px pd pn pev pnev perr : Nat} {n k x37 dcap ecap : BitVec 64}
+    {r : CallOutcome}
+    (h1 : lookupName env rb = some (.ptr pb))
+    (h2 : lookupName env rn = some (.int 64 n))
+    (h3 : lookupName env rep = some (.ptr pe))
+    (h4 : lookupName env rk = some (.int 64 k))
+    (h5 : lookupName env rxp = some (.ptr px))
+    (h6 : lookupName env r37 = some (.int 64 x37))
+    (h7 : lookupName env rdst = some (.ptr pd))
+    (h8 : lookupName env rdcap = some (.int 64 dcap))
+    (h9 : lookupName env rndst = some (.ptr pn))
+    (h10 : lookupName env rev = some (.ptr pev))
+    (h11 : lookupName env recap = some (.int 64 ecap))
+    (h12 : lookupName env rnev = some (.ptr pnev))
+    (h13 : lookupName env rerr = some (.ptr perr))
+    (hc : calls callee [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px,
+      .int 64 x37, .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap,
+      .ptr pnev, .ptr perr] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.call d (Ty.int 64) callee
+          [(Ty.ptr, .reg rb), (Ty.int 64, .reg rn), (Ty.ptr, .reg rep),
+           (Ty.int 64, .reg rk), (Ty.ptr, .reg rxp), (Ty.int 64, .reg r37),
+           (Ty.ptr, .reg rdst), (Ty.int 64, .reg rdcap), (Ty.ptr, .reg rndst),
+           (Ty.ptr, .reg rev), (Ty.int 64, .reg recap), (Ty.ptr, .reg rnev),
+           (Ty.ptr, .reg rerr)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, .reg rb), (Ty.int 64, .reg rn), (Ty.ptr, .reg rep),
+       (Ty.int 64, .reg rk), (Ty.ptr, .reg rxp), (Ty.int 64, .reg r37),
+       (Ty.ptr, .reg rdst), (Ty.int 64, .reg rdcap), (Ty.ptr, .reg rndst),
+       (Ty.ptr, .reg rev), (Ty.int 64, .reg recap), (Ty.ptr, .reg rnev),
+       (Ty.ptr, .reg rerr)] =
+      some [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px, .int 64 x37,
+        .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap, .ptr pnev,
+        .ptr perr] := by
+    simp only [evalOperands,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rb (.ptr pb) h1,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rn (.int 64 n) h2,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rep (.ptr pe) h3,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rk (.int 64 k) h4,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rxp (.ptr px) h5,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s r37 (.int 64 x37) h6,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rdst (.ptr pd) h7,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rdcap (.int 64 dcap) h8,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rndst (.ptr pn) h9,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rev (.ptr pev) h10,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s recap (.int 64 ecap) h11,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rnev (.ptr pnev) h12,
+      LeanLLVM.Refinement.BlockEval.evalOperand_reg_of env s rerr (.ptr perr) h13]
+  have hc' : calls callee [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px,
+      .int 64 x37, .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap,
+      .ptr pnev, .ptr perr] (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+theorem denoteCode_call_stage2 (calls : Calls) (env : Env) (s : State)
+    (d callee : String) (rb rn rep rk rxp r37 rdst rdcap rndst rev recap rnev rerr : String)
+    {pb pe px pd pn pev pnev perr : Nat} {n k x37 dcap ecap : BitVec 64}
+    {r : CallOutcome}
+    (h1 : lookupName env rb = some (.ptr pb))
+    (h2 : lookupName env rn = some (.int 64 n))
+    (h3 : lookupName env rep = some (.ptr pe))
+    (h4 : lookupName env rk = some (.int 64 k))
+    (h5 : lookupName env rxp = some (.ptr px))
+    (h6 : lookupName env r37 = some (.int 64 x37))
+    (h7 : lookupName env rdst = some (.ptr pd))
+    (h8 : lookupName env rdcap = some (.int 64 dcap))
+    (h9 : lookupName env rndst = some (.ptr pn))
+    (h10 : lookupName env rev = some (.ptr pev))
+    (h11 : lookupName env recap = some (.int 64 ecap))
+    (h12 : lookupName env rnev = some (.ptr pnev))
+    (h13 : lookupName env rerr = some (.ptr perr))
+    (hc : calls callee [.ptr pb, .int 64 n, .ptr pe, .int 64 k, .ptr px,
+      .int 64 x37, .ptr pd, .int 64 dcap, .ptr pn, .ptr pev, .int 64 ecap,
+      .ptr pnev, .ptr perr] s.mem s.next = some r) (is : List Instr) :
+    denoteCode calls
+        (.call d (Ty.int 64) callee
+          [(Ty.ptr, .reg rb), (Ty.int 64, .reg rn), (Ty.ptr, .reg rep),
+           (Ty.int 64, .reg rk), (Ty.ptr, .reg rxp), (Ty.int 64, .reg r37),
+           (Ty.ptr, .reg rdst), (Ty.int 64, .reg rdcap), (Ty.ptr, .reg rndst),
+           (Ty.ptr, .reg rev), (Ty.int 64, .reg recap), (Ty.ptr, .reg rnev),
+           (Ty.ptr, .reg rerr)] :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  rw [LeanLLVM.Refinement.BlockEval.denoteCode_cons_of _ _ _ _ _ (step_call_stage2 calls env s d callee rb rn rep
+    rk rxp r37 rdst rdcap rndst rev recap rnev rerr h1 h2 h3 h4 h5 h6 h7 h8 h9
+    h10 h11 h12 h13 hc)]
+
+/-- The chain steps `BlockEval`'s `block_step` has, plus the five above. -/
+macro "pipeline_block_step" : tactic => `(tactic|
+  (first
+   | rw [denoteCode_callVoid_escape]
+   | rw [denoteCode_call_utf8]
+   | rw [denoteCode_call_stage2]
+   | rw [denoteCode_gep8_lit]
+   | rw [denoteCode_lshr_imm_w]
+   | rw [denoteCode_and_imm_w]
+   | block_step))
+
+/-- `block_close` with the literal-address bounds decided: a `getelementptr` at
+a literal index leaves `(c.signExtend 64).toNat < 2 ^ 63`, a concrete comparison
+that `block_close`'s phases have no decision step for. -/
+macro "pipeline_block_close" : tactic => `(tactic|
+  (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode]))
+   all_goals (try rfl)
+   all_goals (try (first
+     | assumption
+     | block_lk
+     | decide
+     | (simp only [phiIncoming]; rfl)
+     | rfl
+     | (exact LeanLLVM.Refinement.BlockEval.evalOperand_lit_of _ _ _)))
+   all_goals (try rfl)))
+
+/-- A whole block with the further shapes: `pipeline_block_step` to the last
+instruction, then `pipeline_block_close`. -/
+macro "pipeline_block_eval" : tactic => `(tactic|
+  (repeat pipeline_block_step
+   pipeline_block_close))
+
+/-! ### The POS8-with-gate arm, `for.body.us`
+
+The block's shape is the first arm's with the escape list's three loads and its
+void call inserted between the entry call and the increment: the gate is on, so
+the same three mask words the entry kernel derived are read back as the list's
+`bs`/`ctl`/`im` arguments.  The builders name the block's own cells — `%8`–`%17`
+where the first arm has `%1`–`%7` and no escape arm — and the statement's
+hypotheses are the caller's staging: four loads after the mask call, three after
+the entry call, the address bound, and the three calls' outcomes. -/
+
+/-- The POS8-with-gate body's incoming builder. -/
+def usIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%inc.us", .int 64 inc), ("%call21.us", .int 64 c21),
+         ("%shr13.us", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- The POS8-with-gate body's outgoing builder: its results newest first, `r2` and
+`r3` the entry and escape-list calls' returns (the second is `void`, so it binds
+no cell and only its memory is observable). -/
+def usOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64)
+    (w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond115.not", .int 1 (vexit inc shr)),
+         ("%inc.us", .int 64 (vinc inc)),
+         ("%17", .int 64 w7), ("%16", .int 64 w6), ("%15", .int 64 w5),
+         ("%call21.us", ret),
+         ("%ent.0.us", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18.us", .int 64 (vand18 n inc)),
+         ("%sub17.us", .int 64 (vsub17 n inc)),
+         ("%notmask.us", .int 64 (vnotmask n inc)),
+         ("%cmp15.us", .int 1 (vcmp n inc)),
+         ("%sub.us", .int 64 (vsub n inc)),
+         ("%shr13.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%14", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11.us", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10.us", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9.us", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us", .int 64 (vand w2 w3)),
+         ("%not6.us", .int 64 (vnot6 w3)),
+         ("%not.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%13", .int 64 (v6 w1 w2 w4)), ("%12", .int 64 (v5 w1 w4)),
+         ("%11", .int 64 w4), ("%10", .int 64 w3), ("%9", .int 64 w2),
+         ("%8", .int 64 w1),
+         ("%add.ptr.us", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl.us", .int 64 (sh6 inc)),
+         ("%i.080.us", .int 64 inc),
+         ("%k.081.us", .int 64 c21),
+         ("%prevS.082.us", .int 64 s13)]
+    (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+      s13 c21 inc shr)
+
+/-- **The POS8-with-gate body derives its chain and closes its side goals.** -/
+theorem us_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 inc, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pUs_instrs]
+  simp only [lit, usIn, usOut]
+  pipeline_block_eval
+
+/-! ### The B8-no-gate arm, `for.body.us83`
+
+The same shape with the entry emitter switched: `leanllvm_json_entry_b8` at the
+same five arguments, and no escape list, so the block's cells are `%18`–`%24` and
+the entry result is `%call.us`. -/
+
+/-- The B8-no-gate body's incoming builder. -/
+def us83In (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%inc.us106", .int 64 inc), ("%call.us", .int 64 c21),
+         ("%shr13.us98", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- The B8-no-gate body's outgoing builder. -/
+def us83Out (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr : BitVec 64) (w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond114.not", .int 1 (vexit inc shr)),
+         ("%inc.us106", .int 64 (vinc inc)),
+         ("%call.us", ret),
+         ("%ent.0.us104", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18.us103", .int 64 (vand18 n inc)),
+         ("%sub17.us102", .int 64 (vsub17 n inc)),
+         ("%notmask.us101", .int 64 (vnotmask n inc)),
+         ("%cmp15.us100", .int 1 (vcmp n inc)),
+         ("%sub.us99", .int 64 (vsub n inc)),
+         ("%shr13.us98", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us97", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%24", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11.us96", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10.us95", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9.us94", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8.us93", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us92", .int 64 (vand w2 w3)),
+         ("%not6.us91", .int 64 (vnot6 w3)),
+         ("%not.us90", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us89", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%23", .int 64 (v6 w1 w2 w4)), ("%22", .int 64 (v5 w1 w4)),
+         ("%21", .int 64 w4), ("%20", .int 64 w3), ("%19", .int 64 w2),
+         ("%18", .int 64 w1),
+         ("%add.ptr.us88", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl.us87", .int 64 (sh6 inc)),
+         ("%i.080.us86", .int 64 inc),
+         ("%k.081.us85", .int 64 c21),
+         ("%prevS.082.us84", .int 64 s13)]
+    (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr)
+
+/-- **The B8-no-gate body derives its chain and closes its side goals.** -/
+theorem us83_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.us83")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUs83_instrs]
+  simp only [lit, us83In, us83Out]
+  pipeline_block_eval
+
+/-! ### The B8-with-gate arm, `for.body`
+
+The B8 emitter with the escape list appended: the block's cells are `%27`–`%36`,
+the entry result is `%call`, and the list reads `%34`–`%36`. -/
+
+/-- The B8-with-gate body's incoming builder. -/
+def bodyIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%inc", .int 64 inc), ("%call", .int 64 c21),
+         ("%shr13", .int 64 s13),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- The B8-with-gate body's outgoing builder. -/
+def bodyOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (s13 c21 inc shr : BitVec 64)
+    (w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond.not", .int 1 (vexit inc shr)),
+         ("%inc", .int 64 (vinc inc)),
+         ("%36", .int 64 w7), ("%35", .int 64 w6), ("%34", .int 64 w5),
+         ("%call", ret),
+         ("%ent.0", .int 64 (vent n inc w1 w2 w3 w4 s13)),
+         ("%and18", .int 64 (vand18 n inc)),
+         ("%sub17", .int 64 (vsub17 n inc)),
+         ("%notmask", .int 64 (vnotmask n inc)),
+         ("%cmp15", .int 1 (vcmp n inc)),
+         ("%sub", .int 64 (vsub n inc)),
+         ("%shr13", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12", .int 64 (vor12 w1 w2 w3 w4 s13)),
+         ("%33", .int 64 (v7 w1 w2 w3 w4 s13)),
+         ("%and11", .int 64 (vand11 w1 w2 w3 w4 s13)),
+         ("%not10", .int 64 (vnot10 w1 w2 w3 w4 s13)),
+         ("%or9", .int 64 (vor9 w1 w2 w3 w4 s13)),
+         ("%shl8", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and", .int 64 (vand w2 w3)),
+         ("%not6", .int 64 (vnot6 w3)),
+         ("%not", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%32", .int 64 (v6 w1 w2 w4)), ("%31", .int 64 (v5 w1 w4)),
+         ("%30", .int 64 w4), ("%29", .int 64 w3), ("%28", .int 64 w2),
+         ("%27", .int 64 w1),
+         ("%add.ptr", .ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat)),
+         ("%shl", .int 64 (sh6 inc)),
+         ("%i.080", .int 64 inc),
+         ("%k.081", .int 64 c21),
+         ("%prevS.082", .int 64 s13)]
+    (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+      s13 c21 inc shr)
+
+/-- **The B8-with-gate body derives its chain and closes its side goals.** -/
+theorem body_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hpos : (BitVec.signExtend 64 (sh6 inc)).toNat < 2 ^ 63)
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 inc)).toNat), .ptr sc, .ptr mk]
+      s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 inc, .int 64 1, .ptr ep, .int 64 c21]
+      (writeBytes r1.mem entw (natToBytes (vent n inc w1 w2 w3 w4 s13).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 inc, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pBody_instrs]
+  simp only [lit, bodyIn, bodyOut]
+  pipeline_block_eval
+
+/-! ### The first iteration: the split predecessor
+
+The seed's third step leaves `for.body.lr.ph.split.us` or `for.body.lr.ph.split`
+for one of the four arm heads, and the arm traces above are stated at the back
+edge.  At the first iteration every `phi` selects the split operand instead:
+`%prevS` and `%i` take the literal zero and `%k` takes `%0`, the incoming count
+the entry block loaded from `%nk`.  The four traces below state the same blocks
+at that arrival, so the values the invariant's first state carries are read from
+a trace rather than assumed.
+
+The builders bind what the split path reads and nothing else.  The back edge's
+three names (`%shr13`, `%call21`, `%inc` and their per-arm spellings) are in the
+block's static read set through the self-loop `phi` entries, so binding them in
+the first iteration's builder would make it disagree with the dispatch state,
+which binds none of them; leaving them unbound on both sides is what lets
+`AgreeOn` carry the trace to the state the split block leaves. -/
+
+/-- `for.body.us.us`'s incoming builder at the split predecessor: `%0` (the
+count the entry block loaded) and the cells the split path reads. -/
+def usUsSplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body.us.us`'s outgoing builder at the split predecessor. -/
+def usUsSplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond116.not", .int 1 (vexit 0 shr)),
+         ("%inc.us.us", .int 64 (vinc 0)),
+         ("%call21.us.us", ret),
+         ("%ent.0.us.us", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18.us.us", .int 64 (vand18 n 0)),
+         ("%sub17.us.us", .int 64 (vsub17 n 0)),
+         ("%notmask.us.us", .int 64 (vnotmask n 0)),
+         ("%cmp15.us.us", .int 1 (vcmp n 0)),
+         ("%sub.us.us", .int 64 (vsub n 0)),
+         ("%shr13.us.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us.us", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%7", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11.us.us", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10.us.us", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9.us.us", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8.us.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us.us", .int 64 (vand w2 w3)),
+         ("%not6.us.us", .int 64 (vnot6 w3)),
+         ("%not.us.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%6", .int 64 (v6 w1 w2 w4)),
+         ("%5", .int 64 (v5 w1 w4)),
+         ("%4", .int 64 w4), ("%3", .int 64 w3), ("%2", .int 64 w2),
+         ("%1", .int 64 w1),
+         ("%add.ptr.us.us", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl.us.us", .int 64 (sh6 0)),
+         ("%i.080.us.us", .int 64 0),
+         ("%k.081.us.us", .int 64 w0),
+         ("%prevS.082.us.us", .int 64 0)]
+    (usUsSplitIn env n b sc mk delim inString ws entw ep w0 shr)
+
+/-- **`for.body.us.us` from the split predecessor.**  Every `phi` takes the
+split operand, so the carried triple is `(0, %0, 0)`. -/
+theorem usUs_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUsUs.instrs
+        (stateAt (usUsSplitIn env n b sc mk delim inString ws entw ep w0 shr) s) =
+      some (stateAt (usUsSplitOut env n b sc mk delim inString ws entw ep w0 shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUsUs_instrs]
+  simp only [lit, usUsSplitIn, usUsSplitOut]
+  pipeline_block_eval
+
+/-- `for.body.us`'s incoming builder at the split predecessor. -/
+def usSplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body.us`'s outgoing builder at the split predecessor. -/
+def usSplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (ret : Value) : Env :=
+  cells [("%exitcond115.not", .int 1 (vexit 0 shr)),
+         ("%inc.us", .int 64 (vinc 0)),
+         ("%17", .int 64 w7), ("%16", .int 64 w6), ("%15", .int 64 w5),
+         ("%call21.us", ret),
+         ("%ent.0.us", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18.us", .int 64 (vand18 n 0)),
+         ("%sub17.us", .int 64 (vsub17 n 0)),
+         ("%notmask.us", .int 64 (vnotmask n 0)),
+         ("%cmp15.us", .int 1 (vcmp n 0)),
+         ("%sub.us", .int 64 (vsub n 0)),
+         ("%shr13.us", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%14", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11.us", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10.us", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9.us", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8.us", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us", .int 64 (vand w2 w3)),
+         ("%not6.us", .int 64 (vnot6 w3)),
+         ("%not.us", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%13", .int 64 (v6 w1 w2 w4)), ("%12", .int 64 (v5 w1 w4)),
+         ("%11", .int 64 w4), ("%10", .int 64 w3), ("%9", .int 64 w2),
+         ("%8", .int 64 w1),
+         ("%add.ptr.us", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl.us", .int 64 (sh6 0)),
+         ("%i.080.us", .int 64 0),
+         ("%k.081.us", .int 64 w0),
+         ("%prevS.082.us", .int 64 0)]
+    (usSplitIn env n b sc mk delim inString ws backslash ctl entw ep
+      xp nxp xcarry w0 shr)
+
+/-- **`for.body.us` from the split predecessor.** -/
+theorem us_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split.us")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_pos8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 0, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pUs.instrs
+        (stateAt (usSplitIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry w0 shr) s) =
+      some (stateAt (usSplitOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pUs_instrs]
+  simp only [lit, usSplitIn, usSplitOut]
+  pipeline_block_eval
+
+/-- `for.body.us83`'s incoming builder at the split predecessor. -/
+def us83SplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body.us83`'s outgoing builder at the split predecessor. -/
+def us83SplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (ret : Value) : Env :=
+  cells [("%exitcond114.not", .int 1 (vexit 0 shr)),
+         ("%inc.us106", .int 64 (vinc 0)),
+         ("%call.us", ret),
+         ("%ent.0.us104", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18.us103", .int 64 (vand18 n 0)),
+         ("%sub17.us102", .int 64 (vsub17 n 0)),
+         ("%notmask.us101", .int 64 (vnotmask n 0)),
+         ("%cmp15.us100", .int 1 (vcmp n 0)),
+         ("%sub.us99", .int 64 (vsub n 0)),
+         ("%shr13.us98", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12.us97", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%24", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11.us96", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10.us95", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9.us94", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8.us93", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and.us92", .int 64 (vand w2 w3)),
+         ("%not6.us91", .int 64 (vnot6 w3)),
+         ("%not.us90", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2.us89", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%23", .int 64 (v6 w1 w2 w4)), ("%22", .int 64 (v5 w1 w4)),
+         ("%21", .int 64 w4), ("%20", .int 64 w3), ("%19", .int 64 w2),
+         ("%18", .int 64 w1),
+         ("%add.ptr.us88", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl.us87", .int 64 (sh6 0)),
+         ("%i.080.us86", .int 64 0),
+         ("%k.081.us85", .int 64 w0),
+         ("%prevS.082.us84", .int 64 0)]
+    (us83SplitIn env n b sc mk delim inString ws entw ep w0 shr)
+
+/-- **`for.body.us83` from the split predecessor.** -/
+theorem us83_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (w0 shr w1 w2 w3 w4 : BitVec 64) (r1 r2 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2) :
+    denoteCode calls pUs83.instrs
+        (stateAt (us83SplitIn env n b sc mk delim inString ws entw ep w0 shr) s) =
+      some (stateAt (us83SplitOut env n b sc mk delim inString ws entw ep w0 shr
+        w1 w2 w3 w4 r2.ret) { s with mem := r2.mem, next := r2.next }) := by
+  rw [pUs83_instrs]
+  simp only [lit, us83SplitIn, us83SplitOut]
+  pipeline_block_eval
+
+/-- `for.body`'s incoming builder at the split predecessor. -/
+def bodySplitIn (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr : BitVec 64) : Env :=
+  cells [("%shr", .int 64 shr), ("%0", .int 64 w0),
+         ("%xcarry", .ptr xcarry), ("%nxp", .ptr nxp), ("%xp", .ptr xp),
+         ("%ep", .ptr ep), ("%entw", .ptr entw), ("%ctl", .ptr ctl),
+         ("%backslash", .ptr backslash), ("%ws", .ptr ws),
+         ("%in_string", .ptr inString), ("%delim", .ptr delim), ("%mk", .ptr mk),
+         ("%sc", .ptr sc), ("%b", .ptr b), ("%n", .int 64 n)] env
+
+/-- `for.body`'s outgoing builder at the split predecessor. -/
+def bodySplitOut (env : Env) (n : BitVec 64) (b sc mk delim inString ws backslash ctl
+    entw ep xp nxp xcarry : Nat) (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64)
+    (ret : Value) : Env :=
+  cells [("%exitcond.not", .int 1 (vexit 0 shr)),
+         ("%inc", .int 64 (vinc 0)),
+         ("%36", .int 64 w7), ("%35", .int 64 w6), ("%34", .int 64 w5),
+         ("%call", ret),
+         ("%ent.0", .int 64 (vent n 0 w1 w2 w3 w4 0)),
+         ("%and18", .int 64 (vand18 n 0)),
+         ("%sub17", .int 64 (vsub17 n 0)),
+         ("%notmask", .int 64 (vnotmask n 0)),
+         ("%cmp15", .int 1 (vcmp n 0)),
+         ("%sub", .int 64 (vsub n 0)),
+         ("%shr13", .int 64 (vshr13 w1 w2 w3 w4)),
+         ("%or12", .int 64 (vor12 w1 w2 w3 w4 0)),
+         ("%33", .int 64 (v7 w1 w2 w3 w4 0)),
+         ("%and11", .int 64 (vand11 w1 w2 w3 w4 0)),
+         ("%not10", .int 64 (vnot10 w1 w2 w3 w4 0)),
+         ("%or9", .int 64 (vor9 w1 w2 w3 w4 0)),
+         ("%shl8", .int 64 (vshl8 w1 w2 w3 w4)),
+         ("%and", .int 64 (vand w2 w3)),
+         ("%not6", .int 64 (vnot6 w3)),
+         ("%not", .int 64 (vnot w1 w2 w3 w4)),
+         ("%or2", .int 64 (vor2 w1 w2 w3 w4)),
+         ("%32", .int 64 (v6 w1 w2 w4)), ("%31", .int 64 (v5 w1 w4)),
+         ("%30", .int 64 w4), ("%29", .int 64 w3), ("%28", .int 64 w2),
+         ("%27", .int 64 w1),
+         ("%add.ptr", .ptr (b + (BitVec.signExtend 64 (sh6 0)).toNat)),
+         ("%shl", .int 64 (sh6 0)),
+         ("%i.080", .int 64 0),
+         ("%k.081", .int 64 w0),
+         ("%prevS.082", .int 64 0)]
+    (bodySplitIn env n b sc mk delim inString ws backslash ctl entw ep
+      xp nxp xcarry w0 shr)
+
+/-- **`for.body` from the split predecessor.** -/
+theorem body_split_denote (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (w0 shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r1 r2 r3 : CallOutcome)
+    (hpre : s.pre = some "for.body.lr.ph.split")
+    (hld1 : readBytes r1.mem mk 8 = some (natToBytes w1.toNat 8))
+    (hld2 : readBytes r1.mem delim 8 = some (natToBytes w2.toNat 8))
+    (hld3 : readBytes r1.mem inString 8 = some (natToBytes w3.toNat 8))
+    (hld4 : readBytes r1.mem ws 8 = some (natToBytes w4.toNat 8))
+    (hcall1 : calls "leanllvm_json_s1_masks"
+      [.ptr (b + (BitVec.signExtend 64 (sh6 (0 : BitVec 64))).toNat), .ptr sc,
+       .ptr mk] s.mem s.next = some r1)
+    (hcall2 : calls "leanllvm_json_entry_b8"
+      [.ptr entw, .int 64 0, .int 64 1, .ptr ep, .int 64 w0]
+      (writeBytes r1.mem entw (natToBytes (vent n 0 w1 w2 w3 w4 0).toNat 8))
+      r1.next = some r2)
+    (hld5 : readBytes r2.mem backslash 8 = some (natToBytes w5.toNat 8))
+    (hld6 : readBytes r2.mem ctl 8 = some (natToBytes w6.toNat 8))
+    (hld7 : readBytes r2.mem inString 8 = some (natToBytes w7.toNat 8))
+    (hcall3 : calls "leanllvm_json_escape_list"
+      [.int 64 w5, .int 64 w6, .int 64 w7, .int 64 0, .ptr xp, .ptr nxp,
+       .ptr xcarry] r2.mem r2.next = some r3) :
+    denoteCode calls pBody.instrs
+        (stateAt (bodySplitIn env n b sc mk delim inString ws backslash ctl entw ep
+          xp nxp xcarry w0 shr) s) =
+      some (stateAt (bodySplitOut env n b sc mk delim inString ws backslash ctl entw ep
+        xp nxp xcarry w0 shr w1 w2 w3 w4 w5 w6 w7 r2.ret)
+        { s with mem := r3.mem, next := r3.next }) := by
+  rw [pBody_instrs]
+  simp only [lit, bodySplitIn, bodySplitOut]
+  pipeline_block_eval
+
+/-! ### The dispatch blocks and the tail
+
+The seed crosses the entry test's two selection blocks before the loop's first
+iteration, and the tail crosses the loop's exit, the UTF-8 stage's call, the two
+refusal branches and the final `phi`.  Those blocks' instruction lists are pinned
+here, and their traces are `pipeline_block_eval` facts like the arm traces': the
+one shape the dispatch adds is `getelementptr` at a literal index (`%delim`,
+`%in_string`, `%ws`, `%backslash`, `%ctl` are all `%mk` plus a constant), and the
+tail adds the 32-bit shift and mask `for.cond.cleanup` forms its gate from, the
+UTF-8 call, and stage 2's thirteen-argument call. -/
+
+def pLrPh := blockAt pipelineBody 1 (by decide)
+def pSplitUs := blockAt pipelineBody 2 (by decide)
+def pSplit := blockAt pipelineBody 5 (by decide)
+def pCond := blockAt pipelineBody 7 (by decide)
+def pIfThen := blockAt pipelineBody 9 (by decide)
+def pIfEnd := blockAt pipelineBody 10 (by decide)
+
+theorem findBlock_lrPh :
+    pipelineBody.findBlock "for.body.lr.ph" = some pLrPh := by decide
+
+theorem findBlock_splitUs :
+    pipelineBody.findBlock "for.body.lr.ph.split.us" = some pSplitUs := by decide
+
+theorem findBlock_split :
+    pipelineBody.findBlock "for.body.lr.ph.split" = some pSplit := by decide
+
+theorem findBlock_cond :
+    pipelineBody.findBlock "for.cond.cleanup" = some pCond := by decide
+
+theorem findBlock_ifThen :
+    pipelineBody.findBlock "if.then33" = some pIfThen := by decide
+
+theorem findBlock_ifEnd :
+    pipelineBody.findBlock "if.end34" = some pIfEnd := by decide
+
+/-- `for.cond.cleanup`'s `phi`: one incoming entry per loop-exit edge. -/
+def cleanupPhi : List (String × Operand) :=
+  [("entry", Operand.reg "%0"),
+   ("for.body.us.us", Operand.reg "%call21.us.us"),
+   ("for.body.us", Operand.reg "%call21.us"),
+   ("for.body.us83", Operand.reg "%call.us"),
+   ("for.body", Operand.reg "%call")]
+
+theorem pLrPh_instrs :
+    pLrPh.instrs =
+      [Instr.gep "%delim" (Ty.int 8) (Operand.reg "%mk") (lit 64 8),
+       Instr.gep "%in_string" (Ty.int 8) (Operand.reg "%mk") (lit 64 16),
+       Instr.gep "%ws" (Ty.int 8) (Operand.reg "%mk") (lit 64 24),
+       Instr.binop "%and19" (BinOp.and) 64 (Operand.reg "%arm") (lit 64 1),
+       Instr.icmp "%tobool.not" (IPred.eq) 64 (Operand.reg "%and19") (lit 64 0),
+       Instr.binop "%and23" (BinOp.and) 64 (Operand.reg "%arm") (lit 64 2),
+       Instr.icmp "%tobool24.not" (IPred.eq) 64 (Operand.reg "%and23") (lit 64 0),
+       Instr.gep "%backslash" (Ty.int 8) (Operand.reg "%mk") (lit 64 32),
+       Instr.gep "%ctl" (Ty.int 8) (Operand.reg "%mk") (lit 64 40)] := by
+  decide
+
+theorem pSplitUs_instrs : pSplitUs.instrs = [] := by decide
+
+theorem pSplit_instrs : pSplit.instrs = [] := by decide
+
+theorem pCond_instrs :
+    pCond.instrs =
+      [Instr.phi "%k.0.lcssa" (Ty.int 64) cleanupPhi,
+       Instr.store (Ty.int 64) (Operand.reg "%k.0.lcssa") (Operand.reg "%nk"),
+       Instr.trunc "%25" 64 32 (Operand.reg "%arm"),
+       Instr.binop "%26" (BinOp.lshr) 32 (Operand.reg "%25") (lit 32 2),
+       Instr.binop "%conv" (BinOp.and) 32 (Operand.reg "%26") (lit 32 1),
+       Instr.call "%call30" (Ty.int 64) "leanllvm_json_utf8"
+          [(Ty.ptr, Operand.reg "%b"), (Ty.int 64, Operand.reg "%n"),
+           (Ty.int 32, Operand.reg "%conv")],
+       Instr.icmp "%cmp31.not" (IPred.eq) 64 (Operand.reg "%call30") (lit 64 0)] := by
+  decide
+
+theorem pIfThen_instrs :
+    pIfThen.instrs =
+      [Instr.store (Ty.int 64) (Operand.reg "%n") (Operand.reg "%err")] := by
+  decide
+
+theorem pIfEnd_instrs :
+    pIfEnd.instrs =
+      [Instr.load "%37" (Ty.int 64) (Operand.reg "%nxp"),
+       Instr.call "%call35" (Ty.int 64) "leanllvm_json_stage2"
+          [(Ty.ptr, Operand.reg "%b"), (Ty.int 64, Operand.reg "%n"),
+           (Ty.ptr, Operand.reg "%ep"), (Ty.int 64, Operand.reg "%k.0.lcssa"),
+           (Ty.ptr, Operand.reg "%xp"), (Ty.int 64, Operand.reg "%37"),
+           (Ty.ptr, Operand.reg "%dst"), (Ty.int 64, Operand.reg "%dstcap"),
+           (Ty.ptr, Operand.reg "%ndst"), (Ty.ptr, Operand.reg "%ev"),
+           (Ty.int 64, Operand.reg "%evcap"), (Ty.ptr, Operand.reg "%nev"),
+           (Ty.ptr, Operand.reg "%err")]] := by
+  decide
+
+theorem pEntry_term :
+    pEntry.term = Term.condbr (Operand.reg "%cmp79.not") "for.cond.cleanup"
+      "for.body.lr.ph" := by decide
+
+theorem pLrPh_term :
+    pLrPh.term = Term.condbr (Operand.reg "%tobool.not") "for.body.lr.ph.split.us"
+      "for.body.lr.ph.split" := by decide
+
+theorem pSplitUs_term :
+    pSplitUs.term = Term.condbr (Operand.reg "%tobool24.not") "for.body.us.us"
+      "for.body.us" := by decide
+
+theorem pSplit_term :
+    pSplit.term = Term.condbr (Operand.reg "%tobool24.not") "for.body.us83"
+      "for.body" := by decide
+
+theorem pCond_term :
+    pCond.term = Term.condbr (Operand.reg "%cmp31.not") "if.end34" "if.then33" := by
+  decide
+
+theorem pIfThen_term : pIfThen.term = Term.br "cleanup" := by decide
+
+theorem pIfEnd_term : pIfEnd.term = Term.br "cleanup" := by decide
+
+/-! ### The dispatch block's trace -/
+
+/-- The selection block's incoming builder: the two parameters it reads. -/
+def lrPhIn (env : Env) (mk : Nat) (arm : BitVec 64) : Env :=
+  cells [("%arm", .int 64 arm), ("%mk", .ptr mk)] env
+
+/-- The selection block's outgoing builder: the five byte offsets and the two
+selector tests. -/
+def lrPhOut (env : Env) (mk : Nat) (arm : BitVec 64) : Env :=
+  cells [("%ctl", .ptr (mk + 40)),
+         ("%backslash", .ptr (mk + 32)),
+         ("%tobool24.not", .int 1 (evalICmp .eq (arm &&& litv 64 2) (litv 64 0))),
+         ("%and23", .int 64 (arm &&& litv 64 2)),
+         ("%tobool.not", .int 1 (evalICmp .eq (arm &&& litv 64 1) (litv 64 0))),
+         ("%and19", .int 64 (arm &&& litv 64 1)),
+         ("%ws", .ptr (mk + 24)),
+         ("%in_string", .ptr (mk + 16)),
+         ("%delim", .ptr (mk + 8))]
+    (lrPhIn env mk arm)
+
+/-- **The selection block computes the two gates and the five byte offsets.** -/
+theorem lrPh_denote (calls : Calls) (env : Env) (s : State) (mk : Nat)
+    (arm : BitVec 64) :
+    denoteCode calls pLrPh.instrs (stateAt (lrPhIn env mk arm) s) =
+      some (stateAt (lrPhOut env mk arm) s) := by
+  rw [pLrPh_instrs]
+  simp only [lit, litv, lrPhIn, lrPhOut]
+  pipeline_block_eval
+
+/-! ### The tail's blocks -/
+
+/-- The gate `for.cond.cleanup` forms from the selector: `(arm >>> 2) & 1` at
+thirty-two bits. -/
+def condGate (arm : BitVec 64) : BitVec 32 :=
+  ((BitVec.ofNat 32 (arm.toNat % 2 ^ 32)) >>> 2) &&& 1
+
+/-- The exit block's incoming builder: the loop-exit's selected count under its
+own name, the document, the selector and the count slot. -/
+def condIn (env : Env) (sel : String) (kv : BitVec 64) (b nk : Nat)
+    (arm n : BitVec 64) : Env :=
+  cells [("%n", .int 64 n), ("%b", .ptr b), ("%arm", .int 64 arm),
+         ("%nk", .ptr nk), (sel, .int 64 kv)] env
+
+/-- The exit block's outgoing builder. -/
+def condOut (env : Env) (sel : String) (kv : BitVec 64) (b nk : Nat)
+    (arm n verdict : BitVec 64) (ret : Value) : Env :=
+  cells [("%cmp31.not", .int 1 (evalICmp .eq verdict (litv 64 0))),
+         ("%call30", ret),
+         ("%conv", .int 32 (condGate arm)),
+         ("%26", .int 32 ((BitVec.ofNat 32 (arm.toNat % 2 ^ 32)) >>> 2)),
+         ("%25", .int 32 (BitVec.ofNat 32 (arm.toNat % 2 ^ 32))),
+         ("%k.0.lcssa", .int 64 kv)]
+    (condIn env sel kv b nk arm n)
+
+/-- **The exit block selects the count, stores it, and calls the UTF-8 stage.**
+The `phi` reads the predecessor the exit came from, so its incoming operand is
+named by `hinc`; the store writes the selected count to `%nk`, and the stage's
+gate is `condGate arm`.  The stage's result is `i64`, and its value is the `bit`
+the exit test reads, so the call is opened to its three fields and its return is
+the word `hret` names. -/
+theorem condCleanup_denote (calls : Calls) (env : Env) (s : State)
+    (sel p : String) (kv : BitVec 64) (b nk : Nat) (arm n : BitVec 64)
+    (verdict : BitVec 64) (m30 : Mem) (n30 : Nat)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p cleanupPhi = some (.reg sel))
+    (hop : evalOperand (stateAt (condIn env sel kv b nk arm n) s) (.reg sel)
+      = some (.int 64 kv))
+    (hcall : calls "leanllvm_json_utf8" [.ptr b, .int 64 n, .int 32 (condGate arm)]
+      (writeBytes s.mem nk (natToBytes kv.toNat 8)) s.next = some ⟨.int 64 verdict, m30, n30⟩) :
+    denoteCode calls pCond.instrs (stateAt (condIn env sel kv b nk arm n) s) =
+      some (stateAt (condOut env sel kv b nk arm n verdict (.int 64 verdict))
+        { s with mem := m30, next := n30 }) := by
+  rw [pCond_instrs]
+  simp only [lit, litv, condGate, condIn, condOut]
+  pipeline_block_eval
+
+/-- The refusal branch's incoming builder. -/
+def ifThenIn (env : Env) (n : BitVec 64) (err : Nat) : Env :=
+  cells [("%err", .ptr err), ("%n", .int 64 n)] env
+
+/-- **The refusal branch stores the document length in the offset slot.** -/
+theorem ifThen_denote (calls : Calls) (env : Env) (s : State)
+    (n : BitVec 64) (err : Nat) :
+    denoteCode calls pIfThen.instrs (stateAt (ifThenIn env n err) s) =
+      some (stateAt (ifThenIn env n err)
+        { s with mem := writeBytes s.mem err (natToBytes n.toNat 8) }) := by
+  rw [pIfThen_instrs]
+  simp only [ifThenIn]
+  pipeline_block_eval
+
+/-- The success branch's incoming builder: the escape count slot it loads and the
+twelve arguments stage 2 takes. -/
+def ifEndIn (env : Env) (b ep xp dst ndst ev nev err nxp : Nat)
+    (n k dcap ecap : BitVec 64) : Env :=
+  cells [("%err", .ptr err), ("%nev", .ptr nev), ("%evcap", .int 64 ecap),
+         ("%ev", .ptr ev), ("%ndst", .ptr ndst), ("%dstcap", .int 64 dcap),
+         ("%dst", .ptr dst), ("%xp", .ptr xp), ("%k.0.lcssa", .int 64 k),
+         ("%ep", .ptr ep), ("%n", .int 64 n), ("%b", .ptr b),
+         ("%nxp", .ptr nxp)] env
+
+/-- The success branch's outgoing builder. -/
+def ifEndOut (env : Env) (b ep xp dst ndst ev nev err nxp : Nat)
+    (n k dcap ecap x37 : BitVec 64) (ret : Value) : Env :=
+  cells [("%call35", ret), ("%37", .int 64 x37)]
+    (ifEndIn env b ep xp dst ndst ev nev err nxp n k dcap ecap)
+
+/-- **The final `phi` and the return.**  Both tail branches join here: the verdict
+word is the refusal's literal zero on `if.then33` and stage 2's return on
+`if.end34`, and the block returns it.  The `phi` reads the predecessor the branch
+came from, so the selected operand is a hypothesis, as it is at the exit block. -/
+def pCleanup := blockAt pipelineBody 11 (by decide)
+
+theorem findBlock_cleanup :
+    pipelineBody.findBlock "cleanup" = some pCleanup := by decide
+
+/-- The final block's `phi`: one incoming entry per branch. -/
+def cleanupIncoming : List (String × Operand) :=
+  [("if.then33", lit 64 0), ("if.end34", Operand.reg "%call35")]
+
+theorem pCleanup_instrs :
+    pCleanup.instrs = [Instr.phi "%retval.0" (Ty.int 64) cleanupIncoming] := by
+  decide
+
+theorem pCleanup_term :
+    pCleanup.term = Term.ret (Ty.int 64) (some (Operand.reg "%retval.0")) := by
+  decide
+
+/-- The final block's outgoing builder: the selected verdict word. -/
+def cleanupIn (env : Env) (v : BitVec 64) : Env :=
+  cells [("%retval.0", .int 64 v)] env
+
+/-- **The final `phi` selects the verdict the branches join on.**  The block is
+one `phi`; the selected operand is named by the branch the state came from, and
+the returned word is its value. -/
+theorem cleanup_denote (calls : Calls) (env : Env) (s : State) (p : String)
+    (op : Operand) (v : BitVec 64)
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p cleanupIncoming = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 64 v)) :
+    denoteCode calls pCleanup.instrs (stateAt env s) =
+      some (stateAt (cleanupIn env v) s) := by
+  rw [pCleanup_instrs]
+  simp only [cleanupIn]
+  pipeline_block_eval
+
+/-- The success branch loads the escape count and calls stage 2. -/
+theorem ifEnd_denote (calls : Calls) (env : Env) (s : State)
+    (b ep xp dst ndst ev nev err nxp : Nat)
+    (n k x37 dcap ecap : BitVec 64) (r35 : CallOutcome)
+    (hld : readBytes s.mem nxp 8 = some (natToBytes x37.toNat 8))
+    (hcall : calls "leanllvm_json_stage2"
+      [.ptr b, .int 64 n, .ptr ep, .int 64 k, .ptr xp, .int 64 x37, .ptr dst,
+       .int 64 dcap, .ptr ndst, .ptr ev, .int 64 ecap, .ptr nev, .ptr err]
+      s.mem s.next = some r35) :
+    denoteCode calls pIfEnd.instrs
+        (stateAt (ifEndIn env b ep xp dst ndst ev nev err nxp n k dcap ecap) s) =
+      some (stateAt (ifEndOut env b ep xp dst ndst ev nev err nxp n k dcap ecap x37
+        r35.ret) { s with mem := r35.mem, next := r35.next }) := by
+  rw [pIfEnd_instrs]
+  simp only [ifEndIn, ifEndOut]
+  pipeline_block_eval
+
+/-! ### The environment bridge
+
+A block trace is stated at `stateAt envIn s`: the builders prepend every register
+the block reads, including the caller's own cells, so two consecutive traces
+state their states over different environment lists and no trace applies to the
+state the previous block leaves.  What the blocks *do* share is what they read:
+`denoteCode` consults the environment only through `lookupName`, and the memory,
+the allocator base and the predecessor field directly.  So the transport fact is
+
+* two environments that agree on `lookupName` at every name a block reads, with
+  equal memory, allocator base and predecessor, run that block to states that
+  agree in the same way.
+
+That is the fact carried here, with the agreement stated over the block's own
+read set — `instrsUses` — and not over all names, so it is discharged from the
+staging's read set rather than from a promise no staging makes.  The relation is
+`AgreeOn`; `denoteCode_transport` is the form a trace consumer uses: a completed
+denotation at the canonical state transports to any state that agrees with it,
+and the result agrees with the trace's outcome. -/
+
+/-- The register names an operand reads: `Operand.regs`, at the name this
+module's read-set projection states it at. -/
+abbrev operandNames (op : Operand) : List String := op.regs
+
+/-- The operands an instruction evaluates, in evaluation order. -/
+def instrOperands : Instr → List Operand
+  | .binop _ _ _ a b => [a, b]
+  | .icmp _ _ _ a b => [a, b]
+  | .icmpPtr _ _ a b => [a, b]
+  | .select _ _ c a b => [c, a, b]
+  | .trunc _ _ _ v => [v]
+  | .zext _ _ _ v => [v]
+  | .sext _ _ _ v => [v]
+  | .alloca _ _ _ => []
+  | .load _ _ p => [p]
+  | .store _ v p => [v, p]
+  | .gep _ _ base off => [base, off]
+  | .icmpVec _ _ _ _ a b => [a, b]
+  | .binopVec _ _ _ _ a b => [a, b]
+  | .bitcastMask _ _ v => [v]
+  | .extractelement _ _ _ v idx => [v, idx]
+  | .insertelement _ _ _ v elt idx => [v, elt, idx]
+  | .shuffleVec _ _ _ a b _ => [a, b]
+  | .vecBitcast _ _ _ _ _ v => [v]
+  | .call _ _ _ args => args.map (·.2)
+  | .callVoid _ args => args.map (·.2)
+  | .phi _ _ inc => inc.map (·.2)
+
+/-- The register names an instruction reads: exactly its operands'.  A `phi`
+names every incoming operand because which one is read depends on the predecessor
+field, which `AgreeOn` carries equal. -/
+def instrNames (i : Instr) : List String := (instrOperands i).flatMap operandNames
+
+/-- An operand's names are among its instruction's read set. -/
+theorem operand_mem_reads {i : Instr} {op : Operand} (hm : op ∈ instrOperands i)
+    {n : String} (hn : n ∈ operandNames op) : n ∈ instrNames i :=
+  List.mem_flatMap.mpr ⟨op, hm, hn⟩
+
+/-- **Two states agree on what a block reads.**  `State.AgreeOn` names the
+relation and `State.AgreeOn.bind` and its siblings carry its preservation: a
+congruence over environments is a fact about `evalInstr`, so it is stated beside
+the semantics (`LeanLLVM.Semantics`) and instantiated here at the read set a
+block actually has. -/
+abbrev AgreeOn (ns : List String) (t s : State) : Prop := State.AgreeOn ns t s
+
+/-- The predecessor selector's operand is one of the incoming list's. -/
+theorem phiIncoming_mem {p : String} {inc : List (String × Operand)} {op : Operand}
+    (h : phiIncoming p inc = some op) : op ∈ inc.map (·.2) :=
+  LeanLLVM.phiIncoming_mem h
+
+/-- The preservation facts, at the names this module and its axiom pins read.
+The proofs are the fragment's. -/
+theorem AgreeOn.bind {ns : List String} {t s : State} {d : String} {v : Value}
+    (h : AgreeOn ns t s) : AgreeOn ns (t.bind d v) (s.bind d v) :=
+  State.AgreeOn.bind h
+
+theorem AgreeOn.call {ns : List String} {t s : State} {d : String} {r : CallOutcome}
+    (h : AgreeOn ns t s) :
+    AgreeOn ns { t with env := (d, r.ret) :: t.env, mem := r.mem, next := r.next }
+      { s with env := (d, r.ret) :: s.env, mem := r.mem, next := r.next } :=
+  State.AgreeOn.call h
+
+theorem AgreeOn.callVoid {ns : List String} {t s : State} {r : CallOutcome}
+    (h : AgreeOn ns t s) :
+    AgreeOn ns { t with mem := r.mem, next := r.next }
+      { s with mem := r.mem, next := r.next } :=
+  State.AgreeOn.callVoid h
+
+theorem AgreeOn.alloca {ns : List String} {t s : State} {d : String} {ty : Ty}
+    (h : AgreeOn ns t s) :
+    AgreeOn ns
+      { t with env := (d, .ptr t.next) :: t.env, next := t.next + ty.sizeBytes }
+      { s with env := (d, .ptr s.next) :: s.env, next := s.next + ty.sizeBytes } :=
+  State.AgreeOn.alloca h
+
+theorem evalOperand_agree {t s : State} {op : Operand}
+    (h : ∀ n ∈ operandNames op, lookupName t.env n = lookupName s.env n) :
+    evalOperand t op = evalOperand s op :=
+  LeanLLVM.evalOperand_agree h
+
+theorem evalOperands_agree {t s : State} :
+    ∀ (args : List (Ty × Operand)),
+      (∀ op ∈ args.map (·.2), evalOperand t op = evalOperand s op) →
+      evalOperands t args = evalOperands s args :=
+  LeanLLVM.evalOperands_agree
+
+/-- **A block trace transports to any state that agrees on the block's read
+set.**  A completed `denoteCode` at one state gives a completed one at a state
+that agrees on the names the block reads — `instrsUses` — and the two outcomes
+agree in the same way.  This is the form a trace consumer uses: the builders
+prepend every register a block reads, so the state the previous block leaves is
+never syntactically the state the next trace is stated at. -/
+theorem denoteCode_transport {calls : Calls} {is : List Instr} {s s' t : State}
+    (h : AgreeOn (instrsUses is) s t) (hs : denoteCode calls is s = some s') :
+    ∃ t', denoteCode calls is t = some t' ∧ AgreeOn (instrsUses is) s' t' :=
+  denoteCode_agree calls is h (fun _ hn => hn) hs
+
+/-! ### The control steps
+
+A block trace is a `denoteCode` fact; a control step is that fact followed by the
+block's terminator.  The four `execTerm` facts below are the terminator shapes
+the pipeline's blocks use — a conditional jump at a decided one-bit value, an
+unconditional jump, and a valued return — and `step_of_blocks` is the step those
+facts produce: the block's found by name, its instructions denoted, its terminator
+executed.  They are what turns any trace in this module into one `step`, and so
+into the `runFuel` prefixes a loop instance consumes. -/
+
+theorem execTerm_condbr_one {s : State} {c : Operand} {t f : String}
+    (h : evalOperand s c = some (.int 1 1)) :
+    execTerm s (.condbr c t f) = .jump { s with pc := t, pre := some s.pc } := by
+  simp [execTerm, h]
+
+theorem execTerm_condbr_zero {s : State} {c : Operand} {t f : String}
+    (h : evalOperand s c = some (.int 1 0)) :
+    execTerm s (.condbr c t f) = .jump { s with pc := f, pre := some s.pc } := by
+  simp [execTerm, h]
+
+theorem execTerm_br (s : State) (d : String) :
+    execTerm s (.br d) = .jump { s with pc := d, pre := some s.pc } := rfl
+
+theorem execTerm_ret_int {s : State} {o : Operand} {x : BitVec 64}
+    (h : evalOperand s o = some (.int 64 x)) :
+    execTerm s (.ret (Ty.int 64) (some o)) = .ret (some (.int 64 x)) s := by
+  simp [execTerm, h]
+
+/-- **One control step from a block's trace.**  The block is found at the state's
+program counter, its instructions denote to `s'`, and its terminator is `c`. -/
+theorem step_of_blocks {calls : Calls} {f : Function} {s s' : State} {b : Block}
+    {c : Ctrl} (hfind : f.findBlock s.pc = some b)
+    (hcode : denoteCode calls b.instrs s = some s')
+    (hterm : execTerm s' b.term = c) :
+    step calls f s = c := by
+  simp only [step, hfind, hcode, hterm]
+
+/-! ### One iteration, as the loop instance's step
+
+`PipelineLoop.step` asks for a `runFuel` prefix of bounded cost from one invariant
+state to the next, with the next state's block left to the invariant.  Each arm's
+iteration is one control step: the arm's block trace, then its terminator, whose
+test `%exitcond…` compares the carried increment with `%shr`.  The block's
+denotation arrives as the trace fact, so the step adds the terminator and nothing
+else, and a step is stated here for all four arms in `step`'s own shape — an exit
+state or the next iteration's head, at cost one.  The call's return is carried as
+the outcome `r`, whose memory and allocator base the step adopts. -/
+
+/-- The first arm's terminator: the POS8-no-gate copy's exit test. -/
+theorem pUsUs_term :
+    pUsUs.term = Term.condbr (Operand.reg "%exitcond116.not") "for.cond.cleanup"
+      "for.body.us.us" := by decide
+
+/-- A one-step jump lifts to the fuel recursion's head. -/
+theorem runFuel_one_of_step {calls : Calls} {f : Function} {s e : State}
+    (h : step calls f s = .jump e) (k : Nat) :
+    runFuel calls (1 + k) f s = runFuel calls k f e := by
+  rw [show 1 + k = k + 1 from by omega]
+  simp only [runFuel, h]
+
+/-- **The `for.body.us.us` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem usUs_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us.us")
+    (hcode : denoteCode calls pUsUs.instrs
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us.us") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body.us.us", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body.us.us", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUsUs) (s' := stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_usus
+      · exact hcode
+      · rw [pUsUs_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, usUsOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUsUs) (s' := stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_usus
+      · exact hcode
+      · rw [pUsUs_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, usUsOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body.us` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem us_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us")
+    (hcode : denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body.us", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body.us", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs) (s' := stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us
+      · exact hcode
+      · rw [pUs_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, usOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs) (s' := stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us
+      · exact hcode
+      · rw [pUs_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, usOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body.us83` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem us83_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us83")
+    (hcode : denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us83") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body.us83", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body.us83", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs83) (s' := stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us83
+      · exact hcode
+      · rw [pUs83_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, us83Out, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+        .jump (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pUs83) (s' := stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_us83
+      · exact hcode
+      · rw [pUs83_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, us83Out, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body` arm's iteration.**  One control step from the arm's head
+reaches either the loop exit or the head of the next iteration. -/
+theorem body_step (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body")
+    (hcode : denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) = runFuel calls k pipelineBody e := by
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.body", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.body", pre := some s.pc }) := by
+      refine step_of_blocks (b := pBody) (s' := stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_body
+      · exact hcode
+      · rw [pBody_term]
+        refine execTerm_condbr_zero ?_
+        simp only [stateAt, bodyOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+  · refine ⟨stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+      { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc },
+      1, Nat.le_refl 1, Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr) s) =
+        .jump (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+          { s with mem := m'.mem, next := m'.next, pc := "for.cond.cleanup", pre := some s.pc }) := by
+      refine step_of_blocks (b := pBody) (s' := stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next }) ?_ ?_ ?_
+      · simpa only [stateAt, hpc] using findBlock_body
+      · exact hcode
+      · rw [pBody_term]
+        refine execTerm_condbr_one ?_
+        simp only [stateAt, bodyOut, cells, evalOperand, lookupName_cons_self, hb]
+    exact runFuel_one_of_step hstep k
+
+/-! ### One iteration at the state the previous iteration leaves
+
+The four traces above are stated at `stateAt (armIn …) s`, an environment the
+builder chose.  A loop instance cannot state its step there: the state a step
+hands on is the one the run actually produced, whose environment is the
+*builder the block computed*, not the builder its successor reads.  What the two
+share is the read set, so the step is stated at the run's own state and the
+trace is moved to it by `denoteCode_agree`.
+
+Three facts make that move possible, and each is a fact about the semantics
+rather than about this pipeline:
+
+* `denoteCode_pc`: a block's instructions leave the program counter alone.  The
+  transport relation does not carry the counter, and `step` reads it — the
+  jump it produces writes `pre := some s.pc` — so the successor's predecessor
+  field is only pinned once the counter is.
+* `blockUses`: the names a trace must be transported over are the block's
+  instruction read set **together with its terminator's operand**.  The
+  terminator is evaluated at the state the block leaves, and it is the branch
+  the step needs; `instrsUses` alone does not cover it.
+* `lookupName_cells_of_notin`: a name the builder does not bind reads through
+  to the incoming environment, which is what makes the transport's agreement
+  dischargeable for the two names the builder leaves alone (the terminator's
+  operand and the loop's entry register).
+
+`denoteCode_pc` is not in `LeanLLVM.Semantics` because nothing else needs it;
+`stateAt` and `cells` leave the counter untouched, so the transport itself never
+had to. -/
+
+/-- A store leaves the program counter alone. -/
+theorem storeValue_pc {s s' : State} {ty : Ty} {v : Value} {addr : Nat}
+    (h : storeValue s ty v addr = some s') : s'.pc = s.pc := by
+  unfold storeValue at h
+  repeat' split at h
+  all_goals first
+    | (injection h with h'; subst h'; rfl)
+    | (cases h)
+
+/-- An instruction leaves the program counter alone.  Every constructor either
+fails, binds a destination, writes memory or moves the allocator base; none
+reads or writes the block. -/
+theorem evalInstr_pc {calls : Calls} {s s' : State} {i : Instr}
+    (h : evalInstr calls s i = some s') : s'.pc = s.pc := by
+  cases i <;>
+    (simp only [evalInstr, Option.map] at h ⊢) <;>
+    (repeat' split at h) <;>
+    first
+    | (injection h with h'; subst h'; rfl)
+    | (cases h)
+    | (rcases h with ⟨a, -, rfl⟩; rfl)
+    | (exact storeValue_pc h)
+
+/-- **A block's instructions leave the program counter alone.**  This is what
+`step` needs: the terminator runs at the state the block leaves, and the jump it
+produces writes that state's `pc` into the successor's predecessor field. -/
+theorem denoteCode_pc {calls : Calls} {is : List Instr} {s s' : State}
+    (h : denoteCode calls is s = some s') : s'.pc = s.pc := by
+  induction is generalizing s with
+  | nil => simp only [denoteCode, Option.some.injEq] at h; cases h; rfl
+  | cons i is ih =>
+      simp only [denoteCode] at h
+      split at h
+      · cases h
+      · rename_i s1 hs1
+        exact (ih h).trans (evalInstr_pc hs1)
+
+/-- The name list a block's trace transports over: its instructions' read set
+together with its terminator's operand.  The terminator is not one of the block's
+instructions, and the step evaluates it at the state the block leaves. -/
+def blockUses (b : Block) : List String := instrsUses b.instrs ++ b.term.uses
+
+theorem instrsUses_subset_blockUses (b : Block) {n : String}
+    (h : n ∈ instrsUses b.instrs) : n ∈ blockUses b :=
+  List.mem_append_left _ h
+
+theorem termUses_subset_blockUses (b : Block) {n : String}
+    (h : n ∈ b.term.uses) : n ∈ blockUses b :=
+  List.mem_append_right _ h
+
+/-- **The tail's register names.**  The values the exit block's store, its UTF-8
+call and its stage-2 call read — the count slot, the arena and its capacity, the
+two cursors, the event stream and its capacity, the refusal slot, the arm
+selector, the two escape stream slots, and the document, its length and the entry
+stream's base.
+
+None of these is read or bound by an arm's instructions (measured: zero
+occurrences in the four pinned instruction lists), so a trace neither supplies
+nor disturbs them; they are the cells the *tail* reads, and the loop carries them
+so that the exit state is a state the tail's three blocks can run on.  The escape
+slots are read on every arm rather than on the gate-on arms alone: the exit
+block's stage-2 call passes them whatever the arm staged, so a state that does
+not bind them cannot run the tail at all, and the cells a state must carry are
+the tail's read set and not the arm's. -/
+def tailRegs : List String :=
+  ["%nk", "%dst", "%dstcap", "%ndst", "%ev", "%evcap", "%nev", "%err", "%arm",
+   "%xp", "%nxp", "%b", "%n", "%ep"]
+
+/-- **The four exit-edge count registers**, the cleanup `phi`'s incoming entries
+for the arms.  An arm's *outgoing* builder binds one of them — the emitter's
+return word — and its incoming builder binds that one too, as the phi's incoming
+value; the other three it does not bind, so the transport relation may carry the
+whole set at no cost. -/
+def countRegs : List String :=
+  ["%call21.us.us", "%call21.us", "%call.us", "%call"]
+
+/-- The names a step transports over: the block's own read set, the tail's cells,
+and the exit edges' count registers.  The tail's names and the count registers are
+free at every arm's incoming builder where it binds none of them — and where it
+binds its own count register it binds the carried count word, which is the value
+the state holds — so widening the transport relation to them costs nothing at the
+state a step is entered in, and hands the successor the cells and the count. -/
+def armUses (b : Block) : List String := tailRegs ++ countRegs ++ blockUses b
+
+theorem instrsUses_subset_armUses (b : Block) {n : String}
+    (h : n ∈ instrsUses b.instrs) : n ∈ armUses b :=
+  List.mem_append_right _ (instrsUses_subset_blockUses b h)
+
+/-- Agreement at one name list is transitive.  The three carried fields are
+equalities and the register agreement is pointwise, so the composition is the
+one a chain of traces needs. -/
+theorem AgreeOn.trans {ns : List String} {r s t : State}
+    (h1 : AgreeOn ns r s) (h2 : AgreeOn ns s t) : AgreeOn ns r t :=
+  ⟨h1.1.trans h2.1, h1.2.1.trans h2.2.1, h1.2.2.1.trans h2.2.2.1,
+    fun n hn => (h1.2.2.2 n hn).trans (h2.2.2.2 n hn)⟩
+
+/-- A name the builder does not bind reads through to the incoming environment. -/
+theorem lookupName_cells_of_notin :
+    ∀ (cs : List (String × Value)) (n : String) (env : Env),
+      n ∉ cs.map (·.1) → lookupName (cells cs env) n = lookupName env n
+  | [], _, _, _ => rfl
+  | (k, v) :: cs, n, env, h => by
+      have hk : k ≠ n := by intro hkn; exact h (by subst hkn; simp)
+      simp only [cells, lookupName_cons_ne v (cells cs env) hk]
+      exact lookupName_cells_of_notin cs n env (fun hc => h (List.mem_cons_of_mem _ hc))
+
+/-! #### The four arms at the run's own state
+
+Each lemma is the arm's iteration with the trace moved: the hypothesis `hagree`
+says the run's state agrees with the trace's on the block's and terminator's read
+set, `hcode` is the trace, and the conclusion is one `step` from the run's state
+to either the next iteration's head or the loop exit, at cost one — the shape
+`PipelineLoop.step` asks for.  The successors carry the run's own environment,
+which is what a chain of iterations needs: the next lemma's `hagree` is about
+*that* state.
+
+What each `hagree` still needs is the staging: the trace's memory hypotheses (the
+four mask words, the three load words, the call outcomes and the address bound)
+are about the state's memory, and re-establishing the agreement at a successor
+requires the units' own posts at the call sites.  That is the loop instance's
+remaining obligation and it is stated per field at the end of this section. -/
+
+/-- **The `for.body.us.us` arm, from the run's state.** -/
+theorem usUs_step_at (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us.us")
+    (hagree : AgreeOn (armUses pUsUs)
+      (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUsUs.instrs
+        (stateAt (usUsIn env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (usUsOut env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us.us") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUsUs.instrs hagree
+    (fun n hn => instrsUses_subset_armUses pUsUs hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond116.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond116.not" (by
+      simp only [armUses, blockUses, pUsUs_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_append_right _ (List.mem_cons_self ..)))
+    rw [← h1]
+    simp only [stateAt, usUsOut, cells, lookupName]
+    simp +decide
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨{ t' with pc := "for.body.us.us", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.body.us.us", pre := some s.pc } := by
+      refine step_of_blocks (b := pUsUs) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_usus
+      · exact ht'
+      · rw [pUsUs_term]
+        have h := execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond116.not")
+          (t := "for.cond.cleanup") (f := "for.body.us.us") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+  · refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+      refine step_of_blocks (b := pUsUs) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_usus
+      · exact ht'
+      · rw [pUsUs_term]
+        have h := execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond116.not")
+          (t := "for.cond.cleanup") (f := "for.body.us.us") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body.us` arm, from the run's state.** -/
+theorem us_step_at (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome)
+    (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us")
+    (hagree : AgreeOn (armUses pUs)
+      (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+        s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUs.instrs
+        (stateAt (usIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+          s13 c21 inc shr) s) =
+      some (stateAt (usOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs.instrs hagree
+    (fun n hn => instrsUses_subset_armUses pUs hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond115.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond115.not" (by
+      simp only [armUses, blockUses, pUs_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_append_right _ (List.mem_cons_self ..)))
+    rw [← h1]
+    simp only [stateAt, usOut, cells, lookupName]
+    simp +decide
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨{ t' with pc := "for.body.us", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.body.us", pre := some s.pc } := by
+      refine step_of_blocks (b := pUs) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_us
+      · exact ht'
+      · rw [pUs_term]
+        have h := execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond115.not")
+          (t := "for.cond.cleanup") (f := "for.body.us") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+  · refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+      refine step_of_blocks (b := pUs) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_us
+      · exact ht'
+      · rw [pUs_term]
+        have h := execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond115.not")
+          (t := "for.cond.cleanup") (f := "for.body.us") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body.us83` arm, from the run's state.** -/
+theorem us83_step_at (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws entw ep : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 : BitVec 64) (r : CallOutcome) (m' : CallOutcome)
+    (hpc : s.pc = "for.body.us83")
+    (hagree : AgreeOn (armUses pUs83)
+      (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pUs83.instrs
+        (stateAt (us83In env n b sc mk delim inString ws entw ep s13 c21 inc shr) s) =
+      some (stateAt (us83Out env n b sc mk delim inString ws entw ep s13 c21 inc shr w1 w2 w3 w4 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body.us83") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pUs83.instrs hagree
+    (fun n hn => instrsUses_subset_armUses pUs83 hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond114.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond114.not" (by
+      simp only [armUses, blockUses, pUs83_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_append_right _ (List.mem_cons_self ..)))
+    rw [← h1]
+    simp only [stateAt, us83Out, cells, lookupName]
+    simp +decide
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨{ t' with pc := "for.body.us83", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.body.us83", pre := some s.pc } := by
+      refine step_of_blocks (b := pUs83) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_us83
+      · exact ht'
+      · rw [pUs83_term]
+        have h := execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond114.not")
+          (t := "for.cond.cleanup") (f := "for.body.us83") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+  · refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+      refine step_of_blocks (b := pUs83) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_us83
+      · exact ht'
+      · rw [pUs83_term]
+        have h := execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond114.not")
+          (t := "for.cond.cleanup") (f := "for.body.us83") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+
+/-- **The `for.body` arm, from the run's state.** -/
+theorem body_step_at (calls : Calls) (env : Env) (s : State) (n : BitVec 64)
+    (b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry : Nat)
+    (s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 : BitVec 64) (r : CallOutcome)
+    (m' : CallOutcome)
+    (hpc : s.pc = "for.body")
+    (hagree : AgreeOn (armUses pBody)
+      (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+        s13 c21 inc shr) s) s)
+    (hcode : denoteCode calls pBody.instrs
+        (stateAt (bodyIn env n b sc mk delim inString ws backslash ctl entw ep xp nxp xcarry
+          s13 c21 inc shr) s) =
+      some (stateAt (bodyOut env n b sc mk delim inString ws backslash ctl entw ep xp nxp
+        xcarry s13 c21 inc shr w1 w2 w3 w4 w5 w6 w7 r.ret)
+        { s with mem := m'.mem, next := m'.next })) :
+    ∃ (e : State) (j : Nat), j ≤ 1 ∧
+      (e.pc = "for.cond.cleanup" ∨ e.pc = "for.body") ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e := by
+  obtain ⟨t', ht', hag⟩ := denoteCode_agree calls pBody.instrs hagree
+    (fun n hn => instrsUses_subset_armUses pBody hn) hcode
+  have hpc' : t'.pc = s.pc := denoteCode_pc ht'
+  have hval : lookupName t'.env "%exitcond.not" = some (.int 1 (vexit inc shr)) := by
+    have h1 := hag.2.2.2 "%exitcond.not" (by
+      simp only [armUses, blockUses, pBody_term, Term.uses, Operand.regs]
+      exact List.mem_append_right _ (List.mem_append_right _ (List.mem_cons_self ..)))
+    rw [← h1]
+    simp only [stateAt, bodyOut, cells, lookupName]
+    simp +decide
+  obtain hb | hb := bitVec1_eq_zero_or_one (vexit inc shr)
+  · refine ⟨{ t' with pc := "for.body", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inr rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.body", pre := some s.pc } := by
+      refine step_of_blocks (b := pBody) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_body
+      · exact ht'
+      · rw [pBody_term]
+        have h := execTerm_condbr_zero (s := t') (c := Operand.reg "%exitcond.not")
+          (t := "for.cond.cleanup") (f := "for.body") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+  · refine ⟨{ t' with pc := "for.cond.cleanup", pre := some s.pc }, 1, Nat.le_refl 1,
+      Or.inl rfl, fun k => ?_⟩
+    have hstep : step calls pipelineBody s =
+        .jump { t' with pc := "for.cond.cleanup", pre := some s.pc } := by
+      refine step_of_blocks (b := pBody) (s' := t') ?_ ?_ ?_
+      · simpa only [hpc] using findBlock_body
+      · exact ht'
+      · rw [pBody_term]
+        have h := execTerm_condbr_one (s := t') (c := Operand.reg "%exitcond.not")
+          (t := "for.cond.cleanup") (f := "for.body") (by
+            simp only [evalOperand, hval, hb])
+        simpa only [hpc'] using h
+    exact runFuel_one_of_step hstep k
+
+/-! ### What each body fact still needs
+
+The four steps above are the loop instance's *arm dispatch*: an iteration at a
+state that agrees with the arm's builder on the block's and terminator's read set
+reaches the next iteration or the exit at cost one.  Turning them into the
+`PipelineBodyFacts` fields is not a further lemma but three staging obligations,
+one per field.  Each is recorded here with its clause, so a later reader starts
+from the obstruction rather than rediscovering it.
+
+**The loop's cell half: the terminator's stale register.**  A successor's
+environment is the builder the block computed, so the successor agrees with the
+*next* iteration's builder on the builder's own cells — that agreement is a
+finite computation over the two cell lists.  It does **not** extend to the
+terminator's operand: the successor binds `%exitcond…` to the value the block
+just computed, while the incoming builder does not bind it at all, so the
+transport's `instrsUses` set — which excludes destinations — must be replaced by
+`blockUses`, and the builder must then supply the *old* `%exitcond…` as well.  It
+cannot, because no builder binds a destination.  The loop's invariant must
+therefore carry the predecessor's exit word itself (the value the predecessor's
+outgoing builder bound), and the arm's step is stated at a state whose
+environment supplies it rather than at a bare builder state.  That is a fact
+about `AgreeOn`: the relation is over a *static* read set, and a destination read
+by a terminator is read but not listed.
+
+**The loop's memory half: the carried carry.**  The traces read four mask words,
+three block words, two call outcomes and the address bound.  The mask call's post
+(`masksPost`) supplies the four mask words and the outgoing carry slot, so what
+the next iteration's mask call needs is a *readability* fact about the document
+block and a *content* fact about the carry slot, and both are consequences of the
+mask post and the staging's window.
+
+The content clauses of `pipelineUnitsPost` are existential — `ent`, `ps`, `out`
+and `evs` are not pinned by the post — so a whole-stream invariant of the entry
+or position stream is **not** needed: what the invariant must carry is the two
+counts, their capacity bounds and readability at `ep` and `xp`, and readability
+survives a run that only writes bytes.  Two things are nevertheless missing:
+
+* the carry pair is supplied by the escape list's own post.  The run stores the
+  block's outgoing run-open and run-parity words at `carry`, and
+  `escapePositionsPost` states them as `carryPair m carry (carry64 lo hi st)
+  (IsBackslashB (hi ⟨31, by decide⟩)) (carry64 lo hi st).oddRun` — the same
+  definition the mask record's `%sc` clause supplies through
+  `carryPair_of_carrySlot`.  The pre's carry-versus-stream exclusion keeps the
+  batch's stores off that slot, so the pair the next iteration's escape call
+  reads is a consequence of the post rather than an obligation with no
+  supplier.
+* the counts' growth needs the room clause discussed next.
+
+**The staging's arithmetic.**  The POS8 record's `pre` requires
+`k + 64 * ent.length + 9 < 2 ^ 63` at the entry count the body passes, and the
+escape record's requires `xn0 < 2 ^ 63`; the initial cursors' own bounds do not
+survive growth, so `pipelineStaging` states the room once — `cursorRoom nk0
+blocks 9` and `cursorRoom nxp0 blocks 9` — and both units' clauses follow from it
+by `cursorRoom_bounds`.  `staging_count_bound_not_implied` below is the witness
+the room clause answers: one block, `nk0 = 2 ^ 63 - 1`, and a capacity of
+`2 ^ 63 + 100` satisfy the initial-cursor bound, the block count's `uint32` bound
+and the capacity clause, and the count the second iteration passes is above the
+bound the POS8 record asks for.  The escape count has the same shape, with
+`nxp0` and the positions `64 * blocks` add in place of `nk0`.
+
+**The seed.**  The three steps to the loop head are `entry`, `for.body.lr.ph` and
+one of the two split blocks, and the traces for those are here
+(`entry_denote`, `lrPh_denote`, and the split blocks' empty instruction lists).
+The first iteration's traces are here too: `usUs_split_denote`,
+`us_split_denote`, `us83_split_denote` and `body_split_denote` state the four
+arm heads at the split predecessor, where every `phi` selects the split operand
+and the carried triple is `(0, %0, 0)`.  What remains for the `seed` field is
+not a trace: it is the join of the three dispatch traces across their builders —
+the `AgreeOn` facts the loop's cell half above describes — together with the
+loop instance's own `Inv`, which is the `PipelineLoop` the caller supplies.  No
+instance for this body exists in the tree, so the field stays a hypothesis of the
+composition until one does.
+
+**The tail.**  `for.cond.cleanup`, `if.then33`, `if.end34` and `cleanup` are
+traced here, and the tail's own stores and calls are consequent.  The post's
+clauses about `dst`, `ev`, `ndst`, `nev` and `err` are facts about the memory the
+stage-2 call leaves, and `PipelineBodyFacts` is parametric in the stage-2 record
+`Γ2` with only `CallSatisfies` and the verdict's range as its hypotheses; those
+clauses are not consequences of an arbitrary `Γ2`.  The pin that would supply
+them is `Γ2 := Γ_stage2`, and it is **deferred, not missing**: `Γ_stage2` does not
+exist in this tree, so `PipelineBodyFacts.exit` is stated at the arbitrary slot
+until the slice that lands that record substitutes it and consumes the post
+shapes it states.  A record invented here would state stage 2's write set where
+it is convenient rather than where it is measured. -/
+
+/-- **The initial cursors' bounds do not imply the room.**  A one-block document
+with `nk0 = 2 ^ 63 - 1` and a capacity at `2 ^ 63 + 100` satisfies
+`nk0 < 2 ^ 63`, the block count's `uint32` bound and the entry-stream capacity
+clause, and the count the second iteration passes is at or above `2 ^ 63` —
+which the POS8 record's `pre` refuses
+(`k + 64 * ent.length + 9 < 2 ^ 63` at `ent.length = 1`).  The same construction
+fails `cursorRoom nk0 blocks 9`, and the same argument applies to the escape
+count with `nxp0` in place of `nk0`. -/
+theorem staging_count_bound_not_implied :
+    ∃ (nk0 blocks : Nat) (epcap : BitVec 64),
+      nk0 < 2 ^ 63 ∧ 64 * blocks + 63 < 2 ^ 32 ∧
+      nk0 + 64 * blocks + 9 ≤ epcap.toNat ∧
+      ¬ (nk0 + 64 * 1 + 9 < 2 ^ 63) := by
+  refine ⟨2 ^ 63 - 1, 1, BitVec.ofNat 64 (2 ^ 63 + 100), ?_, ?_, ?_, ?_⟩
+  · omega
+  · omega
+  · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+    omega
+  · omega
+
+/-! ### Axiom footprints
+
+The split predecessor's builders are cell lists, and its four traces are
+`pipeline_block_eval` facts like the arm traces: neither adds to the module's
+footprint. -/
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.usUsSplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms usUsSplitIn
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.usUsSplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUsSplitOut
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.usSplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms usSplitIn
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.usSplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usSplitOut
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.us83SplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms us83SplitIn
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.us83SplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us83SplitOut
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.bodySplitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms bodySplitIn
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.bodySplitOut' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bodySplitOut
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.usUs_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms usUs_split_denote
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.us_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us_split_denote
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.us83_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms us83_split_denote
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.body_split_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms body_split_denote
+
+end PipelineBodyFacts
+
+open LeanLLVM.JSON (Block32)
+open LeanLLVM.Refinement.JsonScanSpec
+open LeanLLVM.Refinement.JsonS1MasksIR (block64 carrySlot)
+open LeanLLVM.Refinement.JsonEntryIR (pos8Table)
+open LeanLLVM.Refinement.PipelineBodyFacts
+open LeanLLVM.Refinement.JsonPipelineBlockEval (pUsUs usUsIn usUsOut)
+open LeanLLVM.Refinement.BlockEval (stateAt cells)
+
+/-! ### The escape record's block clause: the base it needs, and what was retired
+
+`Γ_escape_positions.pre`'s block clause is `readBytes mem (base + blockAddr blk0) 64`:
+the block's document *offset* (`blockAddr blk0 = blk0.toNat * 64`) plus the
+document base, which is a value parameter of the record.  The base is a staging
+obligation on the caller, not an access the body makes — the unit takes its three
+masks from the caller — and it is the shape `entry`'s record already uses for
+`tab`.
+
+**What the two surviving facts measure.**  Read at the offset alone, as the record
+did before the base became a parameter, the clause is refused wherever the
+pipeline stages the document above zero: `escapeWindow_at_three` shows that at
+`b = 3` the staging's own prefix and window clauses determine the read at address
+`0` to the *shifted* window, and `escapeShifted_backslash_differ` shows the two
+blocks' backslash words differ.  Both are facts about the staging and the blocks,
+true independently of how the record states its clause, and they stay as the
+measurement of why the offset form was unmeetable.
+
+**What was retired, and why that is not evidence deleted.**  Two theorems here
+said the `pre` is refused at the pipeline's staging:
+`escapePre_refused_by_the_staged_window` and
+`pipelineLoopInv_escape_conjunct_unseeded`, together with their helpers
+`block64_inj` and `value_int_eq_iff`, whose only consumer was the refutation.
+Both were **correct about the record as it was** — the clause read at the offset
+alone — and are **wrong about the record as it is**: with the clause at
+`base + blockAddr blk0` the base is the caller's, and the pipeline's base is `b`,
+so the clause names the block the masks describe.  Keeping them alive, even at a
+frozen copy of the old record, would preserve a false claim as evidence about a
+record that no longer exists.  What replaces them is the positive face,
+`escapeBlockClause_of_staged_window`: at `base = b` the clause is the staging
+window's `m`-th block, which `blockRead_of_window` already supplies.  The earlier
+affirmative control, `escapePre_block_clause_satisfiable`, is that same positive
+content before the base existed — an existential about `blockAddr 0` with no base,
+which asserts nothing about the clause as re-based — so
+`escapeBlockClause_of_staged_window` supersedes it rather than sitting beside it.
+The re-basing and that control — the clause holds once the address is right — are
+the reason the refutations are gone: the fault was the address, not the
+obligation. -/
+
+/-- Sixty-four bytes with a single backslash at lane 5: a document whose
+backslash word is not the shifted window's. -/
+def escapeWitnessDoc : List UInt8 :=
+  List.replicate 5 0x61 ++ [0x5C] ++ List.replicate 58 0x61
+
+theorem escapeWitnessDoc_length : escapeWitnessDoc.length = 64 := by
+  simp [escapeWitnessDoc]
+
+/-- The low half of a sixty-four byte list. -/
+def blockLo (bs : List UInt8) (h : bs.length = 64) : Block32 :=
+  fun i => bs.get ⟨i.val, by have := i.isLt; omega⟩
+
+/-- The high half of a sixty-four byte list. -/
+def blockHi (bs : List UInt8) (h : bs.length = 64) : Block32 :=
+  fun i => bs.get ⟨32 + i.val, by have := i.isLt; omega⟩
+
+theorem block64_split (bs : List UInt8) (h : bs.length = 64) :
+    block64 (blockLo bs h) (blockHi bs h) = bs := by
+  have h1 : List.ofFn (blockLo bs h) = bs.take 32 := by
+    apply List.ext_getElem
+    · simp [blockLo, List.length_take, h]
+    · intro k hk1 hk2
+      rw [List.getElem_ofFn, List.getElem_take]
+      simp [blockLo]
+  have h2 : List.ofFn (blockHi bs h) = bs.drop 32 := by
+    apply List.ext_getElem
+    · simp [blockHi, List.length_drop, h]
+    · intro k hk1 hk2
+      rw [List.getElem_ofFn, List.getElem_drop]
+      simp [blockHi]
+  rw [block64, h1, h2, List.take_append_drop]
+
+/-- The witness document's block, as the memory holds it. -/
+def escapeWitnessBlock : List UInt8 :=
+  block64 (blockLo escapeWitnessDoc escapeWitnessDoc_length)
+    (blockHi escapeWitnessDoc escapeWitnessDoc_length)
+
+/-- The sixty-four bytes at the document's *offset* when the document starts
+three bytes up: the zero prefix and the block's first sixty-one bytes. -/
+def escapeShiftedDoc : List UInt8 := ([0, 0, 0] ++ escapeWitnessBlock).take 64
+
+theorem escapeWitnessBlock_length : escapeWitnessBlock.length = 64 :=
+  block64_length _ _
+
+theorem escapeShiftedDoc_length : escapeShiftedDoc.length = 64 := by
+  simp [escapeShiftedDoc, escapeWitnessBlock_length]
+
+def escapeShiftedLo : Block32 := blockLo escapeShiftedDoc escapeShiftedDoc_length
+
+def escapeShiftedHi : Block32 := blockHi escapeShiftedDoc escapeShiftedDoc_length
+
+theorem escapeShiftedDoc_eq_halves :
+    block64 escapeShiftedLo escapeShiftedHi = escapeShiftedDoc :=
+  block64_split escapeShiftedDoc escapeShiftedDoc_length
+
+/-- **The block's backslash word is not its own three-byte shift's.** -/
+theorem escapeShifted_backslash_differ (st st' : ClassState) :
+    specBackslash64 escapeShiftedLo escapeShiftedHi st ≠
+      specBackslash64 (blockLo escapeWitnessDoc escapeWitnessDoc_length)
+        (blockHi escapeWitnessDoc escapeWitnessDoc_length) st' := by
+  obtain ⟨i, o⟩ := st
+  obtain ⟨i', o'⟩ := st'
+  cases i <;> cases o <;> cases i' <;> cases o' <;> decide
+
+/-- **The first block's escape clause reads the shifted window.** -/
+theorem escapeWindow_at_three {mem : Mem} {lo hi : Block32}
+    (hprefix : readBytes mem 0 3 = some [0, 0, 0])
+    (hwin : readBytes mem 3 64 = some (block64 lo hi)) :
+    readBytes mem 0 64 = some (([0, 0, 0] ++ block64 lo hi).take 64) := by
+  have hcat : readBytes mem 0 (3 + 64) = some ([0, 0, 0] ++ block64 lo hi) :=
+    JsonEntrySteps.readBytes_append mem 3 0 [0, 0, 0] 64 (block64 lo hi) hprefix hwin
+  have h67 : readBytes mem 0 (64 + 3) = some ([0, 0, 0] ++ block64 lo hi) := by
+    rw [show (64 + 3 : Nat) = 3 + 64 from rfl]; exact hcat
+  obtain ⟨hpre, -⟩ := readBytes_split mem 0 64 3 h67
+  exact hpre
+
+/-- **The block clause is the staged window's block.**  With the document base
+`base = b`, the record's clause `readBytes mem (base + blockAddr blk0) 64` at the
+`m`-th block is the read `blockRead_of_window` already supplies: the staging's
+window, cut at sixty-four bytes.  This is the positive face of the base the
+record needs — the clause names the block the masks describe, and the caller
+stages exactly that region (`pipelineRegions` lists `(b - 3, 3 + 64 * blocks)`,
+which contains `b + 64 * m`).  The `2 ^ 64` bound on `m` is the staging's own
+`64 * blocks + 63 < 2 ^ 32`, so the offset and the address agree. -/
+theorem escapeBlockClause_of_staged_window {mem : Mem} {b blocks : Nat}
+    {bs pad : List UInt8} {m : Nat}
+    (hwin : readBytes mem b (64 * blocks) = some (bs ++ pad))
+    (hlen : (bs ++ pad).length = 64 * blocks) (hm : m < blocks)
+    (hm64 : m < 2 ^ 64) :
+    ∃ (lo hi : Block32),
+      readBytes mem (b + blockAddr (BitVec.ofNat 64 m)) 64 = some (block64 lo hi) := by
+  obtain ⟨lo, hi, h⟩ := blockRead_of_window hwin hlen hm
+  refine ⟨lo, hi, ?_⟩
+  have hoff : blockAddr (BitVec.ofNat 64 m) = 64 * m := by
+    simp only [blockAddr, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm64]
+    exact Nat.mul_comm m 64
+  rwa [hoff]
+
+/-- The escape record's `pre`, at the clauses the pipeline's call site reads.  The
+block clause is at the document base: `base + blockAddr blk0`, the block the
+masks describe.  This is the shape the loop step's escape call site destructures,
+and it is the one clause the record's block value is bound by. -/
+theorem escape_pre_shape {base : Nat} {budget : List Value → Mem → Nat}
+    {args : List Value} {mem : Mem} {next : Nat}
+    (h : (Γ_escape_positions base budget).pre args mem next) :
+    ∃ (xp xn carry : Nat) (blk0 : BitVec 64) (bs ctl im : BitVec 64) (lo hi : Block32)
+      (st : ClassState),
+      args = [.int 64 bs, .int 64 ctl, .int 64 im, .int 64 blk0, .ptr xp, .ptr xn,
+        .ptr carry] ∧
+      readBytes mem (base + blockAddr blk0) 64 = some (block64 lo hi) ∧
+      bs = specBackslash64 lo hi st ∧
+      ctl = specControl64 lo hi st ∧
+      im = specInString64 lo hi st := by
+  obtain ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, -, -, -,
+    hargs, hblock, hbs, hctl, him, -⟩ := h
+  exact ⟨xp, xn, carry, blk0, bs, ctl, im, lo, hi, st, hargs, hblock, hbs, hctl, him⟩
+
+/-! ### The entry stream's order and its bound
+
+The stage-2 walk indexes the document at every position the entry stream names,
+and it reads the stream in the order stage 1 wrote it (`stage2.h:56-58`, `:91`),
+so the two facts the loop carries about the stream it has appended are that its
+positions increase strictly and that each lies inside the blocks read so far.
+Both are `positionsOf` read off `setLanes`: the lane list is strictly increasing
+(`BitLanes.setLanes_pairwise`) and every lane is inside the word
+(`BitLanes.mem_setLanes`), and a block's positions are its lanes offset by the
+block's base.
+
+The loop appends one block at a time, and the emitter's post names the appended
+list as `streamPrefix ent blk0 nblk` with `nblk.toNat = ent.length` — the
+`nblk` argument is the literal `1` at both call sites, so the appended list is
+one word's positions at its own block base.  The three facts below are that
+case, stated at the word rather than at the existential the post leaves. -/
+
+theorem positionsOf_pairwise (m : BitVec 64) (base : Nat) :
+    (positionsOf m base).Pairwise (· < ·) := by
+  unfold positionsOf
+  exact List.Pairwise.map (fun k : Nat => base + k) (fun a b h => by omega)
+    (BitLanes.setLanes_pairwise m)
+
+theorem positionsOf_bounds (m : BitVec 64) (base : Nat) :
+    ∀ q ∈ positionsOf m base, base ≤ q ∧ q < base + 64 := by
+  intro q hq
+  simp only [positionsOf, List.mem_map] at hq
+  obtain ⟨k, hk, rfl⟩ := hq
+  have hlt : k < 64 := (BitLanes.mem_setLanes.mp hk).1
+  omega
+
+/-- One block's prefix is its word's positions at the block's base: the `nblk`
+argument is a literal `1`, so the post's `streamPrefix ent blk0 nblk.toNat` is
+this. -/
+theorem streamPrefix_one_eq (w : BitVec 64) (blk0 : Nat) :
+    streamPrefix [w] blk0 1 = positionsOf w (64 * blk0) := by
+  simp [streamPrefix]
+
+theorem streamPrefix_one_pairwise (w : BitVec 64) (blk0 : Nat) :
+    (streamPrefix [w] blk0 1).Pairwise (· < ·) := by
+  rw [streamPrefix_one_eq]
+  exact positionsOf_pairwise w (64 * blk0)
+
+/-- One block's positions lie inside that block. -/
+theorem streamPrefix_one_bounds (w : BitVec 64) (blk0 : Nat) :
+    ∀ q ∈ streamPrefix [w] blk0 1, 64 * blk0 ≤ q ∧ q < 64 * (blk0 + 1) := by
+  intro q hq
+  rw [streamPrefix_one_eq] at hq
+  have h := positionsOf_bounds w (64 * blk0) q hq
+  omega
+
+/-- **The appended stream stays ordered.**  A prefix whose positions increase
+strictly and stop before block `i`, followed by block `i`'s positions, is
+strictly increasing: every new position is at least `64 * i`. -/
+theorem streamPairwise_append {l : List Nat} {w : BitVec 64} {i : Nat}
+    (hl : l.Pairwise (· < ·)) (hb : ∀ q ∈ l, q < 64 * i) :
+    (l ++ streamPrefix [w] i 1).Pairwise (· < ·) := by
+  rw [streamPrefix_one_eq]
+  refine List.pairwise_append.mpr ⟨hl, positionsOf_pairwise w (64 * i), ?_⟩
+  intro a ha b hb'
+  have h1 := hb a ha
+  have h2 := (positionsOf_bounds w (64 * i) b hb').1
+  omega
+
+/-- **The appended stream stays inside the blocks read so far.**  At block `i`'s
+successor the stream's positions are all below `64 * (i + 1)`, which is the
+bound the exit predicate and the stage-2 side read. -/
+theorem streamBound_append {l : List Nat} {w : BitVec 64} {i : Nat}
+    (hb : ∀ q ∈ l, q < 64 * i) :
+    ∀ q ∈ l ++ streamPrefix [w] i 1, q < 64 * (i + 1) := by
+  intro q hq
+  rw [streamPrefix_one_eq] at hq
+  rcases List.mem_append.mp hq with h | h
+  · have := hb q h; omega
+  · have := (positionsOf_bounds w (64 * i) q h).2; omega
+
+/-! ### The appended stream stays inside the document
+
+`streamBound_append` bounds the stream by the blocks read so far — `64 * (i + 1)`
+— which is the bound the loop's own steps can carry.  The tail's stage-2 call
+reads a tighter one: every position is below the document's length `%n`
+(`stage2.h:56-58`, `:91`).  The two are not the same fact: at a
+sixty-four-byte document the carried bound is one block and the pre's is the
+document, and a one-byte document whose block word names lane five has a
+position `5` that no bound below `64 * 1` excludes but `n = 1` does (`#eval
+streamPrefix [(1 : BitVec 64) <<< 5] 0 1 = [5]`).
+
+So the bound is proved where it is created, from the entry word's own arithmetic:
+`%ent.0 = %or12 & %and18` (`JsonPipelineBlockEval.vent`), and `%and18` is
+`%sub17` — the tail mask `limMask` at the block's remaining length — when fewer
+than sixty-four bytes remain, and all-ones otherwise.  `entry_tail_eq` reads the
+masked word's positions as the block's positions filtered at `%n`, and the
+all-ones arm needs nothing but `64 * i + 64 ≤ n`.  The word the emitter read is
+the word the body stored (`word_eq_of_readBytes`): the emitter's post names its
+mask list as `readBytes mem e (8 * ent.length) = some (wordsOf ent)` and `nblk`
+is the literal `1`, so the appended stream is `streamPrefix [vent …] i 1` and not
+an existential mask word.  The two arithmetic hypotheses are not free
+parameters: a block below the count starts inside the document
+(`blockBase_lt_doc`) and its base is an address (`blockBase_lt_two64`), both from
+the invariant's own `S.i < blocks`, `blocks = pipelineBlocks S.n.toNat` and the
+staging's `64 * blocks + 63 < 2 ^ 32`.
+
+**The handoff is landed.**  `pipelineLoopExit` carries the composed document bound
+beside the block bound, and the eight arm exits are where it arrives: each
+successor's stream is `S.ent ++ streamPrefix [vent …] S.i 1`, `streamDocBound_append`
+bounds the prefix by the predecessor's block bound and the block's own positions by
+`vent_positions_lt`, and `PipelineBodyStep.streamDocSucc` is that composition at
+the carried block index.  The word identity it needs — the emitter's `ent` is the
+body's stored `vent` bytes — is `word_eq_of_readBytes` at the emitter's own post,
+returned by `pos8Call_at`/`b8Call_at` and carried through the four arm call bundles. -/
+
+/-- A `Bool` read as a one-bit word at one. -/
+theorem ofBool_eq_one (b : Bool) : (BitVec.ofBool b = (1 : BitVec 1)) ↔ b = true := by
+  cases b <;> decide
+
+/-- A one-bit word that is not one is zero. -/
+theorem bitvec1_eq_zero_of_ne_one (x : BitVec 1) (h : x ≠ 1) : x = 0 := by
+  apply BitVec.toNat_eq.mpr
+  have hlt := x.isLt
+  have h1 : x.toNat ≠ 1 := fun hc => h (BitVec.toNat_eq.mpr (by rw [hc]; rfl))
+  show x.toNat = 0
+  omega
+
+/-- The literal sixty-four, at `toNat`. -/
+theorem litv_64_toNat : (JsonPipelineBlockEval.litv 64 64).toNat = 64 := by decide
+
+/-- `%cmp15` is the block's remaining length below sixty-four. -/
+theorem vcmp_eq_one (n i : BitVec 64) :
+    JsonPipelineBlockEval.vcmp n i = (1 : BitVec 1) ↔
+      (JsonPipelineBlockEval.vsub n i).toNat < 64 := by
+  show BitVec.ofBool
+      (BitVec.ult (JsonPipelineBlockEval.vsub n i) (JsonPipelineBlockEval.litv 64 64)) =
+      (1 : BitVec 1) ↔ _
+  rw [ofBool_eq_one, BitVec.ult_iff_toNat_lt, litv_64_toNat]
+
+/-- `%cmp15` is false exactly when a whole sixty-four bytes remain. -/
+theorem vcmp_eq_zero (n i : BitVec 64) :
+    JsonPipelineBlockEval.vcmp n i = (0 : BitVec 1) ↔
+      ¬ (JsonPipelineBlockEval.vsub n i).toNat < 64 := by
+  constructor
+  · intro h hlt
+    have h' : JsonPipelineBlockEval.vcmp n i ≠ 1 := by rw [h]; decide
+    exact h' ((vcmp_eq_one n i).mpr hlt)
+  · intro h
+    exact bitvec1_eq_zero_of_ne_one _ (fun h1 => h ((vcmp_eq_one n i).mp h1))
+
+/-- The tail mask's lanes are the lanes below `lim`, whatever `lim` is.  The
+library's `BitVec.getLsbD_allOnes` carries `Classical.choice`; `allOnes`'s lane
+lemma does not, and is what this uses. -/
+theorem limMask_lane (lim k : Nat) (hk : k < 64) :
+    (limMask lim).getLsbD k = decide (k < lim) := by
+  by_cases h : lim < 64
+  · exact JsonEntryIR.limMask_getLsbD lim k (by omega) hk
+  · rw [limMask, if_neg h]
+    have hall : BitVec.ofInt 64 (-1) = BitVec.allOnes 64 := by decide
+    rw [hall, BitLanes.allOnes_getLsbD_of_lt hk, decide_eq_true (by omega)]
+
+/-- `%sub17`'s lanes are the lanes below the block's remaining length. -/
+theorem vsub17_lane (n i : BitVec 64) (k : Nat) (hk : k < 64) :
+    (JsonPipelineBlockEval.vsub17 n i).getLsbD k =
+      decide (k < (JsonPipelineBlockEval.vsub n i).toNat) := by
+  unfold JsonPipelineBlockEval.vsub17 JsonPipelineBlockEval.vnotmask
+  have hneg : JsonPipelineBlockEval.negOne = BitVec.allOnes 64 := by decide
+  rw [BitVec.getLsbD_xor, BitVec.getLsbD_shiftLeft, hneg]
+  rw [BitLanes.allOnes_getLsbD_of_lt (by omega)]
+  rw [BitLanes.allOnes_getLsbD_of_lt hk]
+  rw [decide_eq_true hk]
+  simp only [Bool.true_and, Bool.and_true, Bool.xor_true, Bool.not_not]
+
+/-- `%sub17` is the tail mask at the block's remaining length. -/
+theorem vsub17_eq_limMask (n i : BitVec 64) :
+    JsonPipelineBlockEval.vsub17 n i =
+      limMask ((JsonPipelineBlockEval.vsub n i).toNat) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  rw [vsub17_lane n i k hk, limMask_lane ((JsonPipelineBlockEval.vsub n i).toNat) k hk]
+
+/-- The block's byte base `%i <<< 6` at `toNat`. -/
+theorem sh6_toNat (i : BitVec 64) (h : 64 * i.toNat < 2 ^ 64) :
+    (JsonPipelineBlockEval.sh6 i).toNat = 64 * i.toNat := by
+  have h6 : (BitVec.ofInt 64 6).toNat = 6 := by decide
+  simp only [JsonPipelineBlockEval.sh6, JsonPipelineBlockEval.litv]
+  rw [BitVec.toNat_shiftLeft, h6, Nat.shiftLeft_eq,
+    show i.toNat * 2 ^ 6 = 64 * i.toNat from by
+      rw [show (2 : Nat) ^ 6 = 64 from by decide, Nat.mul_comm],
+    Nat.mod_eq_of_lt h]
+
+/-- `%n - %i <<< 6` at `toNat`, for a block that starts inside the document. -/
+theorem vsub_toNat {n i : BitVec 64} (h64 : 64 * i.toNat < 2 ^ 64)
+    (hi : 64 * i.toNat ≤ n.toNat) :
+    (JsonPipelineBlockEval.vsub n i).toNat = n.toNat - 64 * i.toNat := by
+  simp only [JsonPipelineBlockEval.vsub]
+  rw [BitVec.toNat_sub, sh6_toNat i h64]
+  have hn := n.isLt
+  have h1 : 2 ^ 64 - 64 * i.toNat + n.toNat = (n.toNat - 64 * i.toNat) + 2 ^ 64 := by
+    omega
+  rw [h1, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+
+/-- An `and` with the all-ones word is the word.  The library's
+`BitVec.and_allOnes` carries `Classical.choice`; this one does not. -/
+theorem and_allOnes64 (x : BitVec 64) : x &&& BitVec.allOnes 64 = x := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro k hk
+  rw [BitVec.getLsbD_and, BitLanes.allOnes_getLsbD_of_lt hk]
+  simp
+
+/-- A mask's positions are as many as its set lanes. -/
+theorem positionsOf_length (m : BitVec 64) (b : Nat) :
+    (positionsOf m b).length = BitLanes.ctpop m := by
+  simp [positionsOf, BitLanes.ctpop_eq_setLanes_length]
+
+/-- A masked word's positions at the block base lie below the document's end. -/
+theorem positionsOf_and_limMask_lt (m : BitVec 64) (b n : Nat) (hb : b ≤ n)
+    (hn : n ≤ b + 64) : ∀ q ∈ positionsOf (m &&& limMask (n - b)) b, q < n := by
+  intro q hq
+  have htake := JsonEntryIR.entry_tail_eq m b n hb hn
+  have hlen : (positionsOf (m &&& limMask (n - b)) b).length
+      = BitLanes.ctpop (m &&& limMask (n - b)) := positionsOf_length _ _
+  rw [← hlen, List.take_length] at htake
+  rw [htake] at hq
+  exact of_decide_eq_true (List.mem_filter.mp hq).2
+
+/-- **The entry word's positions lie inside the document.**  `%ent.0` is `%or12`
+masked by `%and18`: the tail mask when the block starts inside the document and
+all-ones when a whole sixty-four bytes remain, so every position it names is
+below `%n`. -/
+theorem vent_positions_lt (n i w1 w2 w3 w4 s13 : BitVec 64)
+    (h64 : 64 * i.toNat < 2 ^ 64) (hi : 64 * i.toNat ≤ n.toNat) :
+    ∀ q ∈ positionsOf (JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13) (64 * i.toNat),
+      q < n.toNat := by
+  have hL := vsub_toNat (n := n) (i := i) h64 hi
+  intro q hq
+  by_cases hc : JsonPipelineBlockEval.vcmp n i = (1 : BitVec 1)
+  · have hlt : (JsonPipelineBlockEval.vsub n i).toNat < 64 := (vcmp_eq_one _ _).mp hc
+    have hwin : JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13
+        = JsonPipelineBlockEval.vor12 w1 w2 w3 w4 s13 &&& limMask (n.toNat - 64 * i.toNat) := by
+      simp only [JsonPipelineBlockEval.vent, JsonPipelineBlockEval.vand18]
+      rw [if_pos hc, vsub17_eq_limMask, hL]
+    rw [hwin] at hq
+    exact positionsOf_and_limMask_lt _ _ _ hi (by omega) q hq
+  · have hc0 : JsonPipelineBlockEval.vcmp n i = 0 := bitvec1_eq_zero_of_ne_one _ hc
+    have hge : 64 ≤ n.toNat - 64 * i.toNat := by
+      have h0 := (vcmp_eq_zero _ _).mp hc0
+      rw [hL] at h0
+      omega
+    have hwin : JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13
+        = JsonPipelineBlockEval.vor12 w1 w2 w3 w4 s13 := by
+      simp only [JsonPipelineBlockEval.vent, JsonPipelineBlockEval.vand18]
+      rw [if_neg hc]
+      have hneg : JsonPipelineBlockEval.negOne = BitVec.allOnes 64 := by decide
+      rw [hneg, and_allOnes64]
+    rw [hwin] at hq
+    have hb := (positionsOf_bounds (JsonPipelineBlockEval.vor12 w1 w2 w3 w4 s13)
+      (64 * i.toNat) q hq).2
+    omega
+
+/-- A one-entry mask list is one word. -/
+theorem singleton_of_length_one {ent : List (BitVec 64)} (h : ent.length = 1) :
+    ∃ v, ent = [v] := by
+  match ent with
+  | [] => exact absurd h (by decide)
+  | [_] => exact ⟨_, rfl⟩
+  | _ :: _ :: _ =>
+      exact Nat.noConfusion (Nat.succ.inj (h : Nat.succ (Nat.succ _) = 1))
+
+/-- **The word the emitter read is the word the body stored.**  The emitter's post
+names the words it read, and the body's own store put one word there; with
+`nblk` the literal `1` the mask list is that word. -/
+theorem word_eq_of_readBytes {mem : Mem} {a : Nat} {ent : List (BitVec 64)}
+    {w : BitVec 64} (hlen : ent.length = 1)
+    (h : readBytes mem a (8 * ent.length) = some (wordsOf ent))
+    (hw : readBytes mem a 8 = some (natToBytes w.toNat 8)) : ent = [w] := by
+  obtain ⟨v, rfl⟩ := singleton_of_length_one hlen
+  have hlen1 : 8 * [v].length = 8 := rfl
+  rw [hlen1] at h
+  have hwv : wordsOf [v] = natToBytes w.toNat 8 := by
+    rw [h] at hw
+    exact Option.some.inj hw
+  have hv : natToBytes v.toNat 8 = natToBytes w.toNat 8 := by
+    rw [← hwv]
+    simp [wordsOf]
+  have hbytes : v.toNat % 256 ^ 8 = w.toNat % 256 ^ 8 := by
+    have := congrArg bytesToNat hv
+    rwa [natToBytes_toNat, natToBytes_toNat] at this
+  have h256 : 256 ^ 8 = 2 ^ 64 := by decide
+  have hvl := v.isLt
+  have hwl := w.isLt
+  rw [h256, Nat.mod_eq_of_lt hvl, Nat.mod_eq_of_lt hwl] at hbytes
+  have hveq : v = w := BitVec.toNat_eq.mpr hbytes
+  rw [hveq]
+
+/-- **The stream the emitters appended lies inside the document.**  The block's
+own positions are below `%n` (`vent_positions_lt`) and the blocks before it are
+below `64 * i`, so the composed stream is below `%n` — the bound the tail's
+stage-2 call reads. -/
+theorem streamDocBound_append {l : List Nat} {n i w1 w2 w3 w4 s13 : BitVec 64}
+    (hb : ∀ q ∈ l, q < 64 * i.toNat)
+    (h64 : 64 * i.toNat < 2 ^ 64) (hi : 64 * i.toNat ≤ n.toNat) :
+    ∀ q ∈ l ++ streamPrefix [JsonPipelineBlockEval.vent n i w1 w2 w3 w4 s13] i.toNat 1,
+      q < n.toNat := by
+  intro q hq
+  rcases List.mem_append.mp hq with h | h
+  · have := hb q h; omega
+  · rw [streamPrefix_one_eq] at h
+    exact vent_positions_lt n i w1 w2 w3 w4 s13 h64 hi q h
+
+/-- **A block index below the block count starts inside the document.**  The
+count is `(n + 63) / 64`, so the last block's base is at most `n - 1`; this is
+`streamDocBound_append`'s `64 * i ≤ n` and `blockBase_lt_two64`'s bound read off
+the invariant's own `S.i < blocks` and `blocks = pipelineBlocks S.n.toNat`. -/
+theorem blockBase_lt_doc {n : BitVec 64} {i blocks : Nat}
+    (hblocks : blocks = pipelineBlocks n.toNat) (hi : i < blocks) :
+    64 * i < n.toNat := by
+  have hblocks' : 64 * blocks = 64 * ((n.toNat + 63) / 64) := by
+    rw [hblocks, pipelineBlocks]
+  have hdm : 64 * ((n.toNat + 63) / 64) + (n.toNat + 63) % 64 = n.toNat + 63 :=
+    Nat.div_add_mod _ _
+  have hmod : (n.toNat + 63) % 64 < 64 := Nat.mod_lt _ (by decide)
+  omega
+
+/-- A block base is an address, not a wrapped word: the staging's
+`64 * blocks + 63 < 2 ^ 32` bounds every index below the count. -/
+theorem blockBase_lt_two64 {i blocks : Nat} (hcap : 64 * blocks + 63 < 2 ^ 32)
+    (hi : i < blocks) : 64 * i < 2 ^ 64 := by omega
+
+/-- The post's existential is one word, because the appended word count is the
+literal `1` and the post pins the mask list's length to it. -/
+theorem eq_singleton_of_length_one {ent : List (BitVec 64)}
+    (h : ent.length = 1) : ∃ v, ent = [v] := by
+  cases ent with
+  | nil => simp at h
+  | cons v vs =>
+      refine ⟨v, ?_⟩
+      cases vs with
+      | nil => rfl
+      | cons u us => simp at h
+
+/-! ### The loop instance: the arm, the carried state, the invariant
+
+The instance is `PipelineLoop (pipelineCalls tab base s2) pipelineBody` with the
+iteration bound `pipelineBlocks n`, per-iteration cost one, and `pipelineLoopInv`
+below.  The call record is where the document base reaches the units: the escape
+list's record takes the base as a value parameter, so `pipelineCalls` carries
+`base` in the environment the escape call site reads — `pipelineCalls tab s2` is
+the pre-base form and no longer exists.  `base` is the caller's document pointer:
+the staging record's `b` and the invariant's `S.b`, the address the staged
+document begins at, read off the staging rather than assumed by this file.  The
+base is the **theorem's** parameter,
+not the invariant's: `pipelineLoopInv` speaks about the state and the arm the body
+runs, and the calls enter through `step`'s hypotheses — the four arm lemmas below
+(`usUs_step_at` … `body_step_at`) and `pipelineLoop_exitObligation` each take
+`calls : Calls` as a parameter — so no conjunct of the invariant mentions them.
+Its `step` is the four arm traces at the run's own state; the conjunct
+list is what those traces read, checked one conjunct at a time against the step
+that consumes it and the post or frame that hands it on:
+
+|conjunct|consumed by|handed on by|
+|---|---|---|
+|`s.pc = arm.head ∧ s.pre = some arm.head`|the arm step's `hpc` and `findBlock_*`|the arm step's successor, whose `pre` is the state's `pc`|
+|`S.i + (r + 1) = blocks`, `S.shr = ofNat 64 blocks`, `S.iw = ofNat 64 S.i`|the arm's exit test `%exitcond… = eq (i + 1) shr`, so which successor a step takes|the successor's `i + 1` from `%inc`, and `shr` untouched by the arm|
+|`AgreeOn (armUses arm.block) (stateAt (arm.inBuilder s.env S) s) s`|the arm step's `hagree`, i.e. `denoteCode_transport`|the transport's agreement with the arm's *outgoing* builder, whose cells are the next builder's parameters; it covers the tail's names too, which is how the cells are handed on|
+|`readBytes s.mem b (64 * blocks) = some doc`|`masksPre_at`'s block read at `b + 64 * i`, and the arms' four mask words through the mask unit's post|every unit record's unchanged-outside conjunct, at the region separations also carried|
+|`readBytes s.mem sc 24 = some (carrySlot …)`, `stM.oddRun = (opened && ppar)`|`masksPre_at`'s carry clause|`masksPost`'s write at `c`|
+|`carryPair s.mem xcarry stE prevb prevs` (gate-on arms)|the escape list's `pre` carry clause|`escapePositionsPost`'s `carryPair m carry …`, which the post's own third exclusion makes true|
+|`opened = prevb ∧ ppar = prevs` (gate-on arms)|the escape list's `pre`, whose single classifier state serves both the three loaded mask words and the staged carry pair|both posts on the gate-on arms: the mask post writes `carry64 lo hi st` at `%sc` and `escapePositionsPost` writes the same pair at `%xcarry`, so the two slots agree; at the seed both staged slots are zero|
+|`cursorRoom k (blocks - i) 9`, `cursorRoom xn (blocks - i) 9`|POS8's `k + 64 * nblk + 9 < 2 ^ 63` and the escape list's `xn0 < 2 ^ 63`, via `cursorRoom_bounds`|the count's growth (at most sixty-four per block) against one fewer block left|
+|`HasBytes s.mem xp (4 * blockMax xn)`|the escape list's `pre` capacity clause|the batch's writes at `xp + 4 * xn` and `escapePositionsPost`'s capacity clause, which is presence at the capacity and does not depend on the frame's extent|
+|the three mask separations, at the staged window's extent|`masksPre_at`'s three disjunctions|static: they name addresses, not bytes|
+|the three escape exclusions, at the stream's staged capacity|the escape list's count and carry exclusions|static, and stated at the capacity because a per-block extent is not preserved by the count's growth|
+|`blocks = pipelineBlocks S.n.toNat`|nothing in a step — it is the state's own length argument, and the instance's `N_eq` and this predicate are what make the loop's bound a function of the document|static: the loop writes slots and never `%n`; the seed takes it from the staging's `.int 64 n` slot|
+|`readLanes32 s.mem S.ep S.k = some S.ent`, `S.ent.Pairwise (· < ·)`, `∀ q ∈ S.ent, q < 64 * S.i`|the exit predicate, which hands the stream to the tail's stage-2 call (`Γ_stage2.pre`'s document order and its number clause)|the entry emitter's post: it names the appended lanes as `streamPrefix ent blk0 nblk` with `nblk = 1`, so `streamPrefix_one_pairwise`/`_bounds` give the block's two facts and `streamPairwise_append`/`streamBound_append` compose them; the exit steps carry the same facts to `for.cond.cleanup`|
+
+**What is deliberately absent, and why each absence is not an omission.**
+The run state's register lookups are the transport agreement's own content, and
+adding them would restate it; the iteration's block as two halves is
+`blockRead_of_window`'s read of the carried window at `64 * i`, so a carried
+copy would be a second statement of that clause; the entry stream's and the
+entry word's readability are created by the body's own store and the emitters'
+writes and consumed by no arm step.  Each of the three was in the first draft of
+this list and is removed here as dead weight rather than kept for completeness.
+
+**The escape record's block clause, and the base the gate-on arms needed.**  The
+clause is `readBytes mem (base + blockAddr blk0) 64`, and its base is a value
+parameter of the record: the caller stages the region the specification reads
+(the shape `entry`'s record uses for `tab`), not an access the arm performs,
+since the unit takes its block from the three masks.  Read at the offset alone
+the clause is refused wherever the document is staged above zero, which is what
+`escapeWindow_at_three` and `escapeShifted_backslash_differ` measure and what the
+retired refutations recorded — the two facts stay, the refutations do not (see
+the section above).
+
+**Every clause the gate-on arms' escape call asks for now has a supplier.**  For
+`for.body.us` and `for.body`: the block clause comes from this invariant's window
+conjunct through `escapeBlockClause_of_staged_window` at `base = S.b` and
+`blk0 = S.iw`, with `S.iw = ofNat 64 S.i`, `S.i < blocks` from
+`S.i + (r + 1) = blocks`, the window's length from `readBytes_length`, and the
+index below `2 ^ 64` from `pipelineStaging`'s `64 * blocks + 63 < 2 ^ 32`; the
+carry pair, both `cursorRoom` clauses, `HasBytes xp` and the three exclusions come
+from this invariant's own conjuncts.  `escape_pre_shape` is the destructuring the
+call site reads them through.
+
+**The step and the exit handoff.**  Every clause of the record has a supplier on
+the four arms, and the arm steps (`PipelineBodyStep`) are the dispatch over them.
+The one fact a step needs that is not a conjunct above is the `2 ^ 64` bound on
+the block index, which lives in `pipelineStaging`'s block-count clause rather than
+in this invariant — the loop is about the state, not the arguments, so the bound
+stays a supplier in the proof environment.
+
+**The exit states the stream, because a step's successor carries it and a spent
+budget would otherwise lose it.**  `pipelineLoopInv 0` *is* `pipelineLoopExit`, by
+definition, and that predicate carries the appended stream's read, its order, its
+document bound and its block bound at `for.cond.cleanup` — the facts
+`PipelineBodyFacts.exit`'s consumer reads at the tail's stage-2 call.  The exit
+steps produce them from the last iteration's own successor, so the handoff is the
+same facts rather than a second statement of them: one predicate, one spelling, no
+place for the two to drift apart.
+
+**What the handoff reaches, and what it still owes.**  The stream is one read at
+the loop's own count: `readLanes32 s.mem S.ep S.k`, because the staging pins the
+count slot to the empty stream's count and the emitters append from that cursor
+onwards.  So there is no caller-staged part and no second, count-offset read: the
+read is the whole stream the tail's stage-2 call reads, and neither the offset nor
+the length is a second statement to drift apart from it.
+
+**Both bounds are the predicate's, and they are not the same bound.**  The block
+bound `∀ q ∈ S.ent, q < 64 * S.i` is the successor's own at every iteration; the
+document bound `∀ q ∈ S.ent, q < S.n.toNat` is the one `Γ_stage2.pre` asks for,
+and it is proved by the arms rather than assumed: `streamDocBound_append` composes
+the predecessor's block bound with the block's own positions, the word identity
+comes from the emitter's post (`word_eq_of_readBytes`), and the base is inside the
+document (`blockBase_lt_doc`).  The two differ at a partial last block: at a
+sixty-four-byte document they are `q < 64` and `q < n`, and a one-byte document's
+block word names lane five, which only the second excludes.  Both reach
+`pipelineLoopExit` through the exit steps, so the tail reads them off the state it
+is handed. -/
+
+/-- The four unswitched copies of the loop body, by the arm the entry selection
+took: bit 0 selects the entry emitter, bit 1 the escape list's gate. -/
+inductive PipelineBodyArm where
+  | pos8NoGate
+  | pos8Gate
+  | b8NoGate
+  | b8Gate
+  deriving DecidableEq, Repr
+
+/-- The block the arm's iteration runs. -/
+def PipelineBodyArm.block : PipelineBodyArm → Block
+  | .pos8NoGate => pUsUs
+  | .pos8Gate => pUs
+  | .b8NoGate => pUs83
+  | .b8Gate => pBody
+
+/-- The block's name, which is also the state's program counter. -/
+def PipelineBodyArm.head : PipelineBodyArm → String
+  | .pos8NoGate => "for.body.us.us"
+  | .pos8Gate => "for.body.us"
+  | .b8NoGate => "for.body.us83"
+  | .b8Gate => "for.body"
+
+/-- Does the arm call the escape list?  Bit 1 of the selector. -/
+def PipelineBodyArm.hasEscape : PipelineBodyArm → Bool
+  | .pos8NoGate => false
+  | .pos8Gate => true
+  | .b8NoGate => false
+  | .b8Gate => true
+
+/-- The register each arm's exit edge hands the cleanup `phi`: the emitter's own
+return word, which is the count the exit block stores in `%nk` and stage 2 reads
+the entry stream at.  One name per arm because the four unswitched copies bind
+four different names. -/
+def PipelineBodyArm.countReg : PipelineBodyArm → String
+  | .pos8NoGate => "%call21.us.us"
+  | .pos8Gate => "%call21.us"
+  | .b8NoGate => "%call.us"
+  | .b8Gate => "%call"
+
+theorem countReg_mem_countRegs (a : PipelineBodyArm) : a.countReg ∈ countRegs := by
+  cases a
+  · exact List.mem_cons_self ..
+  · exact List.mem_cons_of_mem _ (List.mem_cons_self ..)
+  · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+  · exact List.mem_cons_of_mem _
+      (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))
+
+/-- The arm's count register is among the names a step transports over. -/
+theorem countReg_mem_armUses (a : PipelineBodyArm) : a.countReg ∈ armUses a.block :=
+  List.mem_append_right tailRegs
+    (List.mem_append_left (blockUses a.block) (countReg_mem_countRegs a))
+
+/-- The values the loop carries from one iteration to the next, and the shape
+the run was staged at.
+
+**What is here is what an arm step reads**: the three live words, the exit
+bound, the block index, this iteration's block, the mask unit's carry slot and
+state, the entry word's slot, the two counts, the escape list's stream and its
+carry pair, and the six extents the units' `pre` clauses name.  What is *not*
+here is anything a step can derive or does not read:
+
+* the run state's register lookups — the transport's agreement carries them, and
+  the agreement is stated at the builder the arm's trace uses, so a lookup conjunct
+  would restate the agreement's own content;
+* the iteration's block as two halves — it is `blockRead_of_window`'s read of the
+  staged window at `64 * i`, so carrying it would be a second statement of the
+  window clause;
+* the entry word's readability — the body's own store creates that byte range,
+  and every unit record's frame leaves it readable, so no arm step consumes a
+  carried clause about it.
+
+What *is* carried about the entry stream is its bytes, its order and its bound
+(`ent`, and the three conjuncts the invariant states about it): those are facts
+about which positions the stream names, which the bytes alone do not determine —
+a stream read back is a list, and which list it is is the loop's own history.  The
+count and the extent are not duplicated: the read is stated at `S.k` entries from
+`S.ep`, with the loop's entry count zero, so no caller-staged part is claimed. -/
+structure PipelineLoopCarried where
+  /-- Which of the four unswitched copies this iteration runs. -/
+  arm : PipelineBodyArm
+  /-- The block index, `%i.080`, and its sixty-four-bit form. -/
+  i : Nat
+  iw : BitVec 64
+  /-- The other two live words the arm carries, `%prevS` and `%k`. -/
+  sw : BitVec 64
+  kw : BitVec 64
+  /-- The exit bound `%shr`: the document's block count, sixty-four bits. -/
+  shr : BitVec 64
+  /-- The document, the address it is staged at, and its length argument. -/
+  b : Nat
+  doc : List UInt8
+  n : BitVec 64
+  /-- The mask unit's carry slot and the state its three words hold. -/
+  sc : Nat
+  stM : ClassState
+  opened : Bool
+  ppar : Bool
+  inside : Bool
+  /-- The mask slot and the five offsets the selection block derives from it. -/
+  maskSlot : Nat
+  delim : Nat
+  inString : Nat
+  ws : Nat
+  backslash : Nat
+  ctl : Nat
+  /-- The entry word's slot and the entry stream's base. -/
+  entw : Nat
+  ep : Nat
+  /-- The POS8 record's staged table: `Γ_entry_pos8at tab` reads it at the
+  argument the record appends, so the stage the loop carries must be the same
+  8 KiB region at every iteration. -/
+  tab : Nat
+  /-- The escape list's stream, its count slot and its carry slot. -/
+  xp : Nat
+  nxp : Nat
+  xcarry : Nat
+  stE : ClassState
+  prevb : Bool
+  prevs : Bool
+  /-- The two counts. -/
+  k : Nat
+  xn : Nat
+  /-- The escape stream's staged capacity, `nxp0 + 64 * blocks + 8`: the extent
+  the escape record's exclusions are stated at, because a per-block extent is not
+  preserved by the count's growth. -/
+  xpExtent : Nat
+  /-- The escape count's first value, kept because `cursorRoom` is stated from it. -/
+  xn0 : Nat
+  /-- The entry stream the loop has appended: the positions the emitters wrote,
+  from the first iteration's cursor onwards, in the order they wrote them.  One
+  object rather than an existential rebuilt per step: the successor inherits the
+  stream it extends, and the exit hands the same object to the tail.
+
+  The loop's entry count starts at zero — the staging's count slot reads as the
+  empty stream's count — so this object is the whole stream the tail's stage-2
+  call reads, and no caller-staged prefix sits below it. -/
+  ent : List Nat
+  /-- The entry count slot `%nk`: the exit block stores the exiting count there
+  and stage 2 reads the entry stream at that count. -/
+  nk : Nat
+  /-- The arena cursor slot `%ndst`, its capacity `%dstcap` and the arena base
+  `%dst` the decoder writes from. -/
+  dst : Nat
+  dstcap : BitVec 64
+  ndst : Nat
+  /-- The event cursor slot `%nev`, its capacity `%evcap` and the event stream's
+  base `%ev`. -/
+  ev : Nat
+  evcap : BitVec 64
+  nev : Nat
+  /-- The refusal slot `%err` — the word the tail's refusal branch writes. -/
+  err : Nat
+  /-- The caller's arm selector, `%arm`, as a sixty-four-bit word.  The carried
+  `arm` is which of the four copies the loop runs; this is the ABI's word, which
+  the selection block reads and the exit block's UTF-8 gate tests (`%arm`'s bit
+  two). -/
+  armSel : BitVec 64
+
+/-- **The tail's cells, at an environment.**  The nine values the exit block's
+store and stage-2 call read, plus the escape list's two stream slots, which only
+the gate-on arms stage.
+
+This is the part of the exit state the loop's invariant cannot derive from the
+memory: the tail reads registers, and a loop state's environment is the chain of
+builders the four arms wrote.  The arm's instructions neither read nor bind these
+names, so a step carries them by reading through to the environment it was
+entered in.  Every conjunct is unconditional: the tail's three blocks read all of
+them on every arm, so a conditional cell would be a state the tail cannot run on.
+
+Thirteen cells is what excludes an exit state that binds the slots and none of the
+memory's addresses: `gapState` — an environment of nine zero cells in an empty
+memory — satisfies every stream and cell clause of the old predicate, and it is
+the reason the exit carries `%b`, `%n` and `%ep`.  With them a state whose
+environment does not name the document cannot claim to be an exit. -/
+def tailCells (S : PipelineLoopCarried) (env : Env) : Prop :=
+  lookupName env "%nk" = some (.ptr S.nk) ∧
+  lookupName env "%dst" = some (.ptr S.dst) ∧
+  lookupName env "%dstcap" = some (.int 64 S.dstcap) ∧
+  lookupName env "%ndst" = some (.ptr S.ndst) ∧
+  lookupName env "%ev" = some (.ptr S.ev) ∧
+  lookupName env "%evcap" = some (.int 64 S.evcap) ∧
+  lookupName env "%nev" = some (.ptr S.nev) ∧
+  lookupName env "%err" = some (.ptr S.err) ∧
+  lookupName env "%arm" = some (.int 64 S.armSel) ∧
+  lookupName env "%xp" = some (.ptr S.xp) ∧
+  lookupName env "%nxp" = some (.ptr S.nxp) ∧
+  lookupName env "%b" = some (.ptr S.b) ∧
+  lookupName env "%n" = some (.int 64 S.n) ∧
+  lookupName env "%ep" = some (.ptr S.ep)
+
+/-- The tail's names are among the names a step transports over. -/
+theorem tailRegs_subset_armUses (b : Block) {n : String} (h : n ∈ tailRegs) :
+    n ∈ armUses b :=
+  List.mem_append_left (countRegs ++ blockUses b) h
+
+/-- The tail's agreement, from a step's: the transport covers the tail's names. -/
+theorem AgreeOn_tailRegs {b : Block} {t s : State} (h : AgreeOn (armUses b) t s) :
+    AgreeOn tailRegs t s :=
+  State.AgreeOn.mono (fun n hn => tailRegs_subset_armUses b hn) h
+
+/-- **The cells read through a builder that binds none of them.**  An arm's
+outgoing builder prepends the values it computed to the environment it was
+entered with; none of its cells is a tail name, so the tail's cells at the
+incoming environment are the tail's cells at the outgoing one. -/
+theorem tailCells_builder {S : PipelineLoopCarried} {s : State} {envIn : Env}
+    {cs : List (String × Value)}
+    (hagree : AgreeOn tailRegs (stateAt envIn s) s) (h : tailCells S s.env)
+    (hx : ∀ n ∈ tailRegs, n ∉ cs.map (fun p => p.1)) :
+    tailCells S (cells cs envIn) := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14⟩ := h
+  have lin : ∀ n ∈ tailRegs, lookupName envIn n = lookupName s.env n :=
+    fun n hn => hagree.2.2.2 n hn
+  have lout : ∀ n ∈ tailRegs, lookupName (cells cs envIn) n = lookupName envIn n :=
+    fun n hn => lookupName_cells_of_notin cs n envIn (hx n hn)
+  have lk : ∀ n ∈ tailRegs, lookupName (cells cs envIn) n = lookupName s.env n :=
+    fun n hn => (lout n hn).trans (lin n hn)
+  exact ⟨(lk "%nk" (by decide)).trans h1,
+    (lk "%dst" (by decide)).trans h2,
+    (lk "%dstcap" (by decide)).trans h3,
+    (lk "%ndst" (by decide)).trans h4,
+    (lk "%ev" (by decide)).trans h5,
+    (lk "%evcap" (by decide)).trans h6,
+    (lk "%nev" (by decide)).trans h7,
+    (lk "%err" (by decide)).trans h8,
+    (lk "%arm" (by decide)).trans h9,
+    (lk "%xp" (by decide)).trans h10,
+    (lk "%nxp" (by decide)).trans h11,
+    (lk "%b" (by decide)).trans h12,
+    (lk "%n" (by decide)).trans h13,
+    (lk "%ep" (by decide)).trans h14⟩
+
+/-- **The cells at a state the transport relates to them.** -/
+theorem tailCells_of_agree {S : PipelineLoopCarried} {a b : State}
+    (h : tailCells S a.env) (hag : AgreeOn tailRegs a b) : tailCells S b.env := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14⟩ := h
+  have lk : ∀ n ∈ tailRegs, lookupName b.env n = lookupName a.env n :=
+    fun n hn => (hag.2.2.2 n hn).symm
+  exact ⟨(lk "%nk" (by decide)).trans h1,
+    (lk "%dst" (by decide)).trans h2,
+    (lk "%dstcap" (by decide)).trans h3,
+    (lk "%ndst" (by decide)).trans h4,
+    (lk "%ev" (by decide)).trans h5,
+    (lk "%evcap" (by decide)).trans h6,
+    (lk "%nev" (by decide)).trans h7,
+    (lk "%err" (by decide)).trans h8,
+    (lk "%arm" (by decide)).trans h9,
+    (lk "%xp" (by decide)).trans h10,
+    (lk "%nxp" (by decide)).trans h11,
+    (lk "%b" (by decide)).trans h12,
+    (lk "%n" (by decide)).trans h13,
+    (lk "%ep" (by decide)).trans h14⟩
+
+/-- The tail's names are absent from any arm's outgoing cell list: none of the
+four blocks reads or binds them, so a builder over one of those blocks has no
+cell with a tail name.  Each name is discharged by the list's own literals.
+
+The closing `simp` decides the string memberships, so the builders that use this
+carry `Classical.choice` through it — a proof-engineering instance, named at each
+pin below, and not a fact the mathematics chooses. -/
+macro "tail_cells_absent" : tactic => `(tactic|
+  (intro x hx
+   simp only [tailRegs, List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false] at hx
+   rcases hx with hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx | hx
+     | hx
+   all_goals (rw [hx] at *; simp)))
+
+/-! ### Axiom footprints of the cells -/
+
+/-- info: 'LeanLLVM.Refinement.tailCells' does not depend on any axioms -/
+#guard_msgs in
+#print axioms tailCells
+
+/-- info: 'LeanLLVM.Refinement.tailRegs_subset_armUses' does not depend on any axioms -/
+#guard_msgs in
+#print axioms tailRegs_subset_armUses
+
+/-- info: 'LeanLLVM.Refinement.AgreeOn_tailRegs' does not depend on any axioms -/
+#guard_msgs in
+#print axioms AgreeOn_tailRegs
+
+/-- info: 'LeanLLVM.Refinement.tailCells_builder' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms tailCells_builder
+
+/-- info: 'LeanLLVM.Refinement.tailCells_of_agree' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms tailCells_of_agree
+
+/-- The arm's incoming builder, at the carried values: the four traces are stated
+one per arm, so the agreement the transport consumes is stated at the same
+builder. -/
+def PipelineBodyArm.inBuilder (a : PipelineBodyArm) (env : Env)
+    (S : PipelineLoopCarried) : Env :=
+  match a with
+  | .pos8NoGate =>
+      usUsIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep
+        S.sw S.kw S.iw S.shr
+  | .pos8Gate =>
+      usIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
+        S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr
+  | .b8NoGate =>
+      us83In env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep
+        S.sw S.kw S.iw S.shr
+  | .b8Gate =>
+      bodyIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
+        S.entw S.ep S.xp S.nxp S.xcarry S.sw S.kw S.iw S.shr
+
+/-- The split block an arm's first iteration is entered from: which of the two
+selection blocks the entry test chose, by the arm the selector picked. -/
+def PipelineBodyArm.splitPre : PipelineBodyArm → String
+  | .pos8NoGate => "for.body.lr.ph.split.us"
+  | .pos8Gate => "for.body.lr.ph.split.us"
+  | .b8NoGate => "for.body.lr.ph.split"
+  | .b8Gate => "for.body.lr.ph.split"
+
+/-- **The first iteration's incoming builder.**  The state the split block leaves
+is at the arm's head with the split block as its predecessor, and every `phi` takes
+the split operand: `%prevS` and `%i` are the literal zero and `%k` is `%0`, the
+count the entry block loaded.  So this builder binds `%0` and *not* the back edge's
+three names — the state's environment has no value for those, which is what makes
+`AgreeOn` satisfiable here and unsatisfiable at the back-edge builder.  The
+argument order is the split traces' (`PipelineBodyFacts.usUsSplitIn` and its three
+siblings), which take the incoming count and `%shr`. -/
+def PipelineBodyArm.splitIn (a : PipelineBodyArm) (env : Env)
+    (S : PipelineLoopCarried) : Env :=
+  match a with
+  | .pos8NoGate =>
+      usUsSplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep
+        S.kw S.shr
+  | .pos8Gate =>
+      usSplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
+        S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr
+  | .b8NoGate =>
+      us83SplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.entw S.ep
+        S.kw S.shr
+  | .b8Gate =>
+      bodySplitIn env S.n S.b S.sc S.maskSlot S.delim S.inString S.ws S.backslash S.ctl
+        S.entw S.ep S.xp S.nxp S.xcarry S.kw S.shr
+
+/-- **The count the exiting edge selected.**  `S.kw` is the arm's own return
+word — the value the exit `phi` reads, which the arm's outgoing builder binds at
+`PipelineBodyArm.countReg` — and it is the loop's count, so the exit block's store
+and the post's count clause speak of `S.k`.  The register side is the state's own
+environment, which is the arm's outgoing builder; the loop's invariant carries it
+through the transport relation (`countReg_mem_armUses`).
+
+This is the one datum the exiting edge carries that the memory does not: the word
+is a register, so no read of the exit state recovers it, and the loop's own count
+`S.k` is what the exit block stores.  A tail that took it as a hypothesis would be
+taking the premise its own state carries. -/
+def PipelineLoopCount (S : PipelineLoopCarried) (s : State) : Prop :=
+  S.kw = BitVec.ofNat 64 S.k ∧
+    lookupName s.env S.arm.countReg = some (.int 64 S.kw)
+
+/-- **The loop's counted write extent.**  The regions an iteration may have
+written, at the state's own counters: the mask unit's carry and mask slots, the
+entry word's store, the entry emitter's touched extent, the entry count slot, the
+escape list's touched extent, its count slot and its carry slot.
+
+This is the exit's frame, and it is exactly `Γ_pipeline_units.post`'s
+`UnchangedOutside` list without the tail's five entries: appending them gives the
+post's list verbatim at `nk' = S.k`, `nxp' = S.xn` (the discharge module states
+that equality).  The two counted extents are the emitters' own touched widths —
+`4 * (k + 8)`, the entry store's sentinel lane, and `4 * (xn + batchReserve)`, the
+escape batch's reserve — so a byte outside this list is a byte no iteration wrote.
+
+It is a function of the state, so the frame moves with the counts: a successor's
+list covers at least its predecessor's, which is what lets a step carry its
+hypothesis's frame forward. -/
+def pipelineLoopWrites (S : PipelineLoopCarried) : List (Nat × Nat) :=
+  [(S.sc, 24), (S.maskSlot, 48), (S.entw, 8), (S.ep, 4 * (S.k + 8)), (S.nk, 8),
+   (S.xp, 4 * (S.xn + batchReserve)), (S.nxp, 8), (S.xcarry, 16)]
+
+/-- **The states the loop may leave in, at the caller's memory**: the exit block,
+carrying the entry stream and the frame.
+
+The stream facts are part of the exit rather than something the tail
+reconstructs, because they are not recoverable from the state: the memory holds
+the bytes, but which positions the stream names, in what order, is the loop's own
+history — the emitters wrote them block by block and no read of the exit state
+says where the writes began.  The loop's entry count starts at zero, so the stream
+is wholly the loop's: there is no caller-staged prefix below it, and the read is
+`readLanes32 s.mem S.ep S.k`.  `PipelineBodyFacts.exit`'s consumer reads the
+stream at the tail's stage-2 call, so the exit is where the fact is handed on.
+`pipelineLoopInv` at a spent budget *is* this predicate, by its own definition, so
+the two are one statement rather than two that a later edit could drift apart.
+
+**What the predicate carries, and what it does not.**  The three register
+conjuncts are the predecessor (`s.pre = some S.arm.head`, which fixes the exit
+phi's incoming selector), `tailCells S s.env` — the cells the exit block's store,
+UTF-8 call and stage-2 call read — and `PipelineLoopCount S s`: the count the
+exiting edge selected, which the exit `phi` reads at the arm's own register.  No
+arm block reads or binds those names, so a step hands them on by reading through
+to the environment it was entered in (`tailCells_builder`), and
+`PipelineBodyStep.pipelineLoopExit_cells` is the projection a consumer uses.
+
+**The stream's two bounds and the escape count's two facts are stated here
+because the tail reads them.**  The *document* bound `∀ q ∈ S.ent, q < S.n.toNat`
+sits beside the block bound: `Γ_stage2.pre` asks for the document's own length,
+and the block bound is weaker at a partial last block (a one-byte document has
+one block).  It is the arms' — `PipelineBodyStep.streamDocSucc` composes the
+predecessor's block bound with the last entry word's own positions, using the
+word identity the emitter's post supplies — and the four exits and the four split
+steps' budget-one branches hand it on.  The escape count's slot content
+`readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn)` is the word the tail's
+stage-2 call passes as its escape count; the cell name alone leaves that argument
+unconstrained.  Its growth `S.xn ≤ S.xn0 + 64 * S.i` is what keeps the count
+inside the staged extent.  Both are live-invariant conjuncts that survive the
+last iteration (the emitter's and the escape list's count clauses) and are
+re-derived at the exit step.
+
+The last conjunct is the frame: at the caller's `mem`, every byte outside
+`pipelineLoopWrites S` reads as it did when the loop was entered.  It is what
+carries the caller's staging through the loop — the document, the table, the
+arena, the event stream and the cursors are the caller's bytes, and the tail reads
+them at the memory it is handed — and it is stated at `mem` rather than at the
+state because the state cannot name the memory it was entered at.
+
+What it does *not* carry is the two calls' inputs, which are the staging's
+memory: the predicate names the entry stream and no other address's contents, so
+the tail's UTF-8 window and stage-2's `pre` are the target's own hypotheses. -/
+def pipelineLoopExit (mem : Mem) (s : State) : Prop :=
+  ∃ (S : PipelineLoopCarried),
+    s.pc = "for.cond.cleanup" ∧
+    readLanes32 s.mem S.ep S.k = some S.ent ∧
+    S.ent.Pairwise (· < ·) ∧
+    (∀ q ∈ S.ent, q < S.n.toNat) ∧
+    (∀ q ∈ S.ent, q < 64 * S.i) ∧
+    s.pre = some S.arm.head ∧
+    tailCells S s.env ∧
+    PipelineLoopCount S s ∧
+    readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
+    S.xn ≤ S.xn0 + 64 * S.i ∧
+    UnchangedOutside mem s.mem (pipelineLoopWrites S)
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyArm.countReg' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.countReg
+
+/-- info: 'LeanLLVM.Refinement.countReg_mem_countRegs' does not depend on any axioms -/
+#guard_msgs in
+#print axioms countReg_mem_countRegs
+
+/-- info: 'LeanLLVM.Refinement.countReg_mem_armUses' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms countReg_mem_armUses
+
+/-- info: 'LeanLLVM.Refinement.PipelineLoopCount' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineLoopCount
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopWrites' does not depend on any axioms -/
+#guard_msgs in
+#print axioms pipelineLoopWrites
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms pipelineLoopExit
+
+/-- `gapState`'s carried state: every field zero. -/
+def gapCarried : PipelineLoopCarried :=
+  { arm := .pos8NoGate, i := 0, iw := 0, sw := 0, kw := 0, shr := 0, b := 0,
+    doc := [], n := 0, sc := 0, stM := ⟨false, false⟩, opened := false,
+    ppar := false, inside := false, maskSlot := 0, delim := 0, inString := 0,
+    ws := 0, backslash := 0, ctl := 0, entw := 0, ep := 0, tab := 0, xp := 0,
+    nxp := 0, xcarry := 0, stE := ⟨false, false⟩, prevb := false, prevs := false,
+    k := 0, xn := 0, xpExtent := 0, xn0 := 0, ent := [],
+    nk := 0, dst := 0, dstcap := 0, ndst := 0, ev := 0, evcap := 0, nev := 0,
+    err := 0, armSel := 0 }
+
+/-- **The empty exit state**: the tail's nine zero cells in an empty memory, at
+the exit block's program counter.  This is the witness the retyped predicate must
+refuse; the retired `pipelineLoopExit_reads_nothing` showed the state-only
+predicate accepting it. -/
+def gapState : State :=
+  { env := [("%nk", .ptr 0), ("%dst", .ptr 0), ("%dstcap", .int 64 0),
+      ("%ndst", .ptr 0), ("%ev", .ptr 0), ("%evcap", .int 64 0), ("%nev", .ptr 0),
+      ("%err", .ptr 0), ("%arm", .int 64 0), ("%call21.us.us", .int 64 0)],
+    mem := [], next := 0, pc := "for.cond.cleanup", pre := some "for.body.us.us" }
+
+/-- `%b` is not among the exit state's cells. -/
+theorem gapState_no_b : lookupName gapState.env "%b" = none := by
+  simp only [gapState]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  rfl
+
+/-- **`gapState` is not an exit at any caller memory.**  The exit's cell conjunct
+requires `%b`, the document's base: the tail's UTF-8 call reads it, so a state
+whose environment does not name the document cannot be an exit at any `mem`.  The
+state-only predicate admitted this witness, and the refusal is why the exit's
+cells are the tail's whole read set.
+
+The `.ub` this state's first control step produces is
+`PipelineBodyStep.gapState_step`, and it is the reason the predicate may not admit
+it: a bundle whose `exit` field quantified over this state would be asked for a
+return no fuel can produce. -/
+theorem gapState_not_exit (mem : Mem) : ¬ pipelineLoopExit mem gapState := by
+  rintro ⟨S, -, -, -, -, -, -, hcells, -⟩
+  simp only [tailCells] at hcells
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hb, -, -⟩ := hcells
+  rw [gapState_no_b] at hb
+  cases hb
+
+/-- The regions the loop's separation is stated over, in the staging's order.
+
+Its window is the caller's, named from three bytes below the document because
+that is the extent `Γ_utf8.pre` reads and `pipelineRegions` stages; its escape
+stream precedes its count slot, which is the staging's order.  With the window
+so named and the entries in that order the list is an exact `List.Sublist` of
+`pipelineRegions`' output at the staging's witnesses — the entries no step reads
+(the read-past tail, the entry count slot and the stage-2 slots) are omitted —
+so the caller's `DisjointRegions` transports here by `List.Pairwise.sublist`
+rather than by one fact per pair.  A list aligned only elsewhere would have to be
+projected pair by pair, which is the enumeration this order removes. -/
+def pipelineLoopRegions (S : PipelineLoopCarried) (blocks : Nat) : List (Nat × Nat) :=
+  [(S.b - 3, 3 + 64 * blocks), (S.tab, 8192), (S.sc, 24), (S.maskSlot, 48),
+   (S.entw, 8), (S.ep, 4 * (64 * blocks + 9)), (S.xp, 4 * S.xpExtent),
+   (S.nxp, 8), (S.xcarry, 16)]
+
+/-- Every region of `pipelineLoopWrites`, as a membership fact: the eight entries
+the frame's containment arguments name. -/
+theorem mem_loopWrites_sc (S : PipelineLoopCarried) :
+    (S.sc, 24) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_maskSlot (S : PipelineLoopCarried) :
+    (S.maskSlot, 48) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_entw (S : PipelineLoopCarried) :
+    (S.entw, 8) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_ep (S : PipelineLoopCarried) :
+    (S.ep, 4 * (S.k + 8)) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_nk (S : PipelineLoopCarried) :
+    (S.nk, 8) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_xp (S : PipelineLoopCarried) :
+    (S.xp, 4 * (S.xn + batchReserve)) ∈ pipelineLoopWrites S := by
+  simp [pipelineLoopWrites]
+theorem mem_loopWrites_nxp (S : PipelineLoopCarried) :
+    (S.nxp, 8) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+theorem mem_loopWrites_xcarry (S : PipelineLoopCarried) :
+    (S.xcarry, 16) ∈ pipelineLoopWrites S := by simp [pipelineLoopWrites]
+
+/-- **A frame over a list implies one over any list that covers it.**  Every
+region of the hypothesis list lies inside a region of the conclusion's list, so a
+byte outside the conclusion's covered set is outside the hypothesis's too.  This
+is how a step's own frames — each over the few regions its unit named — become a
+frame over the loop's whole write extent. -/
+theorem UnchangedOutside.cover {m0 m : Mem} {R R' : List (Nat × Nat)}
+    (h : UnchangedOutside m0 m R')
+    (hsub : ∀ r' ∈ R', ∃ r ∈ R, r.1 ≤ r'.1 ∧ r'.1 + r'.2 ≤ r.1 + r.2) :
+    UnchangedOutside m0 m R :=
+  fun a ha => h a (fun r' hr' => by
+    obtain ⟨r, hr, h1, h2⟩ := hsub r' hr'
+    exact fun hin => ha r hr ⟨Nat.le_trans h1 hin.1, Nat.lt_of_lt_of_le hin.2 h2⟩)
+
+/-- Frames over one region list compose: the second's equality is the first's
+conclusion, at every byte outside the list. -/
+theorem UnchangedOutside.trans {m0 m1 m2 : Mem} {R : List (Nat × Nat)}
+    (h1 : UnchangedOutside m0 m1 R) (h2 : UnchangedOutside m1 m2 R) :
+    UnchangedOutside m0 m2 R :=
+  fun a ha => (h2 a ha).trans (h1 a ha)
+
+/-- The mask unit's frame, as a region list. -/
+theorem unchangedOutside_mask {m0 m : Mem} {a b : Nat}
+    (h : ∀ x, ¬ (a ≤ x ∧ x < a + 24) → ¬ (b ≤ x ∧ x < b + 48) →
+      readByte m x = readByte m0 x) :
+    UnchangedOutside m0 m [(a, 24), (b, 48)] :=
+  fun x hx => h x (fun h1 => hx (a, 24) (by simp) h1)
+    (fun h2 => hx (b, 48) (by simp) h2)
+
+/-- The entry emitter's frame, as a region list.  Its record leaves every byte
+below the appended lanes and every byte past its own extent alone; the region is
+the extent from the stream's base, which contains the untouched gap the two
+clauses name. -/
+theorem unchangedOutside_entry {m0 m : Mem} {a k ext : Nat}
+    (h : ∀ x, x < a + 4 * k ∨ a + 4 * ext ≤ x → readByte m x = readByte m0 x) :
+    UnchangedOutside m0 m [(a, 4 * ext)] := by
+  intro x hx
+  refine h x ?_
+  rcases Nat.lt_or_ge x (a + 4 * k) with hlt | hge
+  · exact Or.inl hlt
+  · refine Or.inr ?_
+    rcases Nat.lt_or_ge x (a + 4 * ext) with hin | hout
+    · exact absurd ⟨by omega, hin⟩ (hx (a, 4 * ext) (by simp))
+    · exact hout
+
+/-- A write sequence's frame, as a region list. -/
+theorem unchangedOutside_writeBytes_own (m : Mem) (start : Nat) (bs : List UInt8) :
+    UnchangedOutside m (writeBytes m start bs) [(start, bs.length)] := by
+  intro a ha
+  exact readByte_writeBytes_outside m bs (by
+    rcases Nat.lt_or_ge a start with h | h
+    · exact Or.inl h
+    · refine Or.inr ?_
+      rcases Nat.lt_or_ge a (start + bs.length) with hin | hout
+      · exact absurd ⟨h, hin⟩ (ha (start, bs.length) (by simp))
+      · exact hout)
+
+/-- **The frame moves with the counts.**  A successor whose static addresses are
+the predecessor's and whose two cursors only grew covers every region the
+predecessor's write list names, so a frame over the predecessor's list is a frame
+over the successor's. -/
+theorem pipelineLoopWrites_cover {S S' : PipelineLoopCarried}
+    (hsc : S'.sc = S.sc) (hmk : S'.maskSlot = S.maskSlot) (hew : S'.entw = S.entw)
+    (hep : S'.ep = S.ep) (hk : S.k ≤ S'.k) (hnk : S'.nk = S.nk)
+    (hxp : S'.xp = S.xp) (hxn : S.xn ≤ S'.xn) (hnxp : S'.nxp = S.nxp)
+    (hxc : S'.xcarry = S.xcarry) :
+    ∀ r' ∈ pipelineLoopWrites S, ∃ r ∈ pipelineLoopWrites S',
+      r.1 ≤ r'.1 ∧ r'.1 + r'.2 ≤ r.1 + r.2 := by
+  intro r' hr'
+  simp only [pipelineLoopWrites, List.mem_cons, List.not_mem_nil, or_false] at hr'
+  rcases hr' with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · exact ⟨_, mem_loopWrites_sc S', by simp [hsc], by simp [hsc]⟩
+  · exact ⟨_, mem_loopWrites_maskSlot S', by simp [hmk], by simp [hmk]⟩
+  · exact ⟨_, mem_loopWrites_entw S', by simp [hew], by simp [hew]⟩
+  · refine ⟨_, mem_loopWrites_ep S', by simp [hep], ?_⟩
+    simp only [hep]
+    omega
+  · exact ⟨_, mem_loopWrites_nk S', by simp [hnk], by simp [hnk]⟩
+  · refine ⟨_, mem_loopWrites_xp S', by simp [hxp], ?_⟩
+    simp only [hxp]
+    unfold batchReserve
+    omega
+  · exact ⟨_, mem_loopWrites_nxp S', by simp [hnxp], by simp [hnxp]⟩
+  · exact ⟨_, mem_loopWrites_xcarry S', by simp [hxc], by simp [hxc]⟩
+
+/-- Separation of a list follows from separation of any list it is a sub-list
+of.  This is how the loop's list inherits the caller's promise. -/
+theorem disjointRegions_of_sublist {rs ss : List (Nat × Nat)}
+    (h : DisjointRegions ss) (hs : rs.Sublist ss) : DisjointRegions rs :=
+  List.Pairwise.sublist hs h
+
+/-- **The loop invariant's back-edge shape.**  With `r + 1` iterations of budget
+the state is the entry of an iteration that follows the arm's own back edge; with
+the budget spent this predicate admits nothing, because the invariant's spent
+budget is the loop's exit block and that is `pipelineLoopInv`'s zero branch.  The
+invariant itself is the disjunction `pipelineLoopInv` below: this shape *or* the
+split shape `pipelineLoopInvSplit`, because the loop's first iteration is entered
+from a split block and the state there is no back-edge successor.  Each shape
+states the conjunct list in full, so a step reading one of them has every fact it
+consumes and takes none from the other.
+
+`base` and `tab` are the call environment's fixed
+values — `pipelineCalls base tab` chooses the escape record and the POS8
+record before the argument list opens — so the invariant names them rather than
+leaving the step to infer an address from the state.  Every conjunct names the
+step that reads it:
+
+* `S.b = base` and `S.tab = tab` — the two stages the call records are fixed at.
+  `Γ_escape_positions base …`'s block clause reads `base + blockAddr blk0`, and
+  `Γ_entry_pos8at tab`'s `pre` reads the 8 KiB table at `tab`; a state whose
+  memory happens to hold a document or a table elsewhere does not satisfy those
+  records at the addresses the environment resolves.  Both are static: every
+  step hands them on untouched, and the seed takes them from the staging's first
+  argument slot (`.ptr base`) and its `pos8Table` clause.  Carried rather than
+  derived per step because no clause of the state's memory determines an address
+  the environment fixed outside it;
+
+* `pc`/`pre` and the agreement — the arm step's `hpc` and `hagree`
+  (`usUs_step_at` … `body_step_at`), i.e. the transport;
+* `i`, `iw`, `shr` and the budget — the arm's exit test
+  `%exitcond… = eq (i + 1) shr`, hence which of the two successors a step takes;
+* the window — `masksPre_at`'s block read, and the arms' four mask words
+  through the mask unit's post;
+* the mask carry slot and `stM.oddRun` — `masksPre_at`'s carry clause;
+* the five offsets the selection block derives from the mask slot —
+  `delim = maskSlot + 8` through `ctl = maskSlot + 40`.  These are the arm
+  traces' **read addresses**, and the mask unit's post writes at exactly those
+  words, so without them the mask-word projection cannot identify the address a
+  trace reads with the address the post wrote.  They are static, so every step
+  hands them on untouched (the loop writes slots, not these fields), and the
+  seed establishes them from `lrPh_denote`/`lrPhOut` — the block that computes
+  them.  Carried rather than derived per step: five steps each reaching outside
+  the state for one pre-loop block's post is the defect, not the derivation;
+* the escape carry pair — the escape list's `pre` carry clause (gate-on arms);
+* the two carry slots' flags agree, `opened = prevb ∧ ppar = prevs` (gate-on
+  arms) — the escape record's `pre` takes one classifier state for both the three
+  loaded mask words and the staged carry pair, so a witness exists only when the
+  mask unit's `%sc` slot and the escape list's `%xcarry` slot hold the same pair.
+  It is a relation between two written slots, not a property of either.  The
+  seed has both staged slots zero; on a gate-on step both posts write the same
+  outgoing pair (`carry64 lo hi st`, at `%sc` and at `%xcarry`), which is what
+  hands it on, and on a gate-off step the clause is vacuous;
+* the two `cursorRoom` clauses — POS8's `k + 64 * nblk + 9 < 2 ^ 63` and the
+  escape list's `xn0 < 2 ^ 63` through `cursorRoom_bounds`;
+* `S.kw = ofNat 64 S.k` — the entry emitter's `pre` takes its count as the
+  `%k.081` cell, a 64-bit word, while the cursor bound above is about the `Nat`.
+  The step could not read `cursorRoom` at the argument the call passes without
+  it.  Carried rather than derived per step because the arm's trace is stated at
+  the builder's cell, and the seed establishes it from the entry block's load of
+  `%nk`; the entry post hands it on, stating both `v = .int 64 (ofNat 64 k')` and
+  the `Nat` `k'`, so one successor clause is the returned word and the other its
+  numeric form;
+* `readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn)` — the escape list's count
+  clause reads the count out of its own slot, and the `cursorRoom` bound above is
+  a `Nat` fact about the state, not a memory fact.  Without this the gate-on
+  arms' third call site has no supplier for its count.  The seed establishes it
+  from the staging's count slot; `escapePositionsPost`'s count clause hands it on,
+  writing the advanced count at the same slot;
+* `readBytes s.mem S.tab 8192 = some pos8Table` — `Γ_entry_pos8at tab` reads the
+  staged table at the argument the record appends, so the entry call's `pre` is
+  unsatisfiable unless the loop can name the region and know it is intact.  It is
+  static, so every step hands it on untouched; the seed establishes it from the
+  staging's table clause.  Carried rather than derived per step because the
+  region is not a field any unit post writes, and reaching outside the state for
+  it at four arms is the defect the invariant exists to remove;
+* the fixed capacity `HasBytes s.mem S.xp (4 * S.xpExtent)` with
+  `S.xpExtent = S.xn0 + 64 * blocks + 8`, and the two count-growth bounds
+  `S.k ≤ 64 * S.i`, `S.xn ≤ S.xn0 + 64 * S.i` — the
+  escape list's capacity clause is stated at `4 * blockMax xn0`, an extent that
+  *grows* with the count, and its post promises only bytes inside that extent.
+  So a carried `HasBytes` at the per-call extent promises nothing about the bytes
+  the next block's larger extent names, and the successor's capacity clause is
+  underivable.  The fixed extent is the staged stream; `readBytes_split` makes
+  the per-call `4 * blockMax S.xn` a prefix of it at the call site, and the
+  escape count's growth bound is what keeps the prefix inside the fixed extent at
+  every block.  The entry count's bound has a different consumer: the entry
+  emitter's `entw`-versus-`ep` separation asks `ep + 4*(S.k + 72) ≤ entw` inside
+  a staged `ep` extent of `4*(64*blocks + 9)`, and with `S.i + (r+1) = blocks`
+  the bound leaves `64*blocks + 8` at `r = 0` — one byte inside the `+9`.  The
+  seed takes all three from the staging (both counts at their initial cursors,
+  `S.i = 0`); `entryPos8Post`'s count clause hands the entry bound on and
+  `escapePositionsPost`'s count clause the escape bound, each growing the count by
+  at most sixty-four per block, while the fixed extent is static;
+* `blocks = pipelineBlocks S.n.toNat` — the iteration bound is the document's
+  own block count, read from the length argument the state carries.  Static: the
+  loop never writes `%n`, and the seed reads it off the staging's `.int 64 n`
+  slot.  Carried rather than derived because the instance's `N_eq` and the exit's
+  bound are about the same value, and a state-only predicate cannot reach the
+  argument list to say so;
+* **the entry stream, as one object** — `S.ent`, read at `S.k` lanes from
+  `S.ep`, strictly increasing, and every position below `64 * S.i`.  Its
+  consumers are the exit predicate's stream facts and, through those, the tail's
+  stage-2 call, whose `pre` reads the stream in document order and inside the
+  document (`stage2.h:56-58`, `:91`).  Handed on
+  by the entry emitter's post: it states the appended lanes as
+  `streamPrefix ent blk0 nblk` with `nblk.toNat = ent.length`, and `nblk` is the
+  literal `1` at both call sites, so the appended list is one word's positions at
+  its own block base — `streamPrefix_one_pairwise`/`streamPrefix_one_bounds` give
+  the three facts, and `streamPairwise_append`/`streamBound_append` compose them
+  with the predecessor's.  The seed establishes them at `S.k = 0` — the read is
+  empty and both bounds vacuous — because the staging pins the count slot to the
+  empty stream's count, so there is no caller-staged part for the loop to carry.
+  Carried rather than derived because the bytes are the
+  emitters' and no read of the state recovers which positions the stream names;
+* the staged regions' separation — `DisjointRegions` at the staged window, the
+  table, the mask carry slot, the mask slot, the entry word, the entry stream,
+  the escape stream, the escape count and the escape carry.  The units' posts
+  leave everything outside their own store regions unchanged, so the window, the
+  mask carry slot, the mask words, the table and the escape carry pair survive an
+  iteration only if those regions are pairwise disjoint from every region the
+  iteration writes.  They are static, so every step hands them on untouched, and
+  the seed takes them from `pipelineStaging`'s own `DisjointRegions` at the
+  staging's witnesses: the list is `pipelineLoopRegions`, an exact sub-list of
+  `pipelineRegions`, so the transport is `disjointRegions_of_sublist` and not a
+  projection per pair.  The mask unit's three separations and the escape list's
+  three exclusions are the pairs this list shares with those records; stating the
+  whole list once is what makes the store at `entw`, the entry stream and the
+  table's preservation derivable from the same conjunct rather than from a
+  separate promise per frame. -/
+def pipelineLoopInvBack (mem : Mem) (base tab : Nat) (blocks : Nat) :
+    Nat → State → Prop
+  | 0, _ => False
+  | r + 1, s =>
+      ∃ (S : PipelineLoopCarried),
+        s.pc = S.arm.head ∧
+        s.pre = some S.arm.head ∧
+        S.i + (r + 1) = blocks ∧
+        S.shr = BitVec.ofNat 64 blocks ∧
+        S.iw = BitVec.ofNat 64 S.i ∧
+        AgreeOn (armUses S.arm.block) (stateAt (S.arm.inBuilder s.env S) s) s ∧
+        S.b = base ∧
+        readBytes s.mem S.b (64 * blocks) = some S.doc ∧
+        readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside) ∧
+        S.stM.oddRun = (S.opened && S.ppar) ∧
+        -- the five offsets the selection block derives from the mask slot: the
+        -- arm traces' read addresses, which the mask unit's post writes
+        S.delim = S.maskSlot + 8 ∧
+        S.inString = S.maskSlot + 16 ∧
+        S.ws = S.maskSlot + 24 ∧
+        S.backslash = S.maskSlot + 32 ∧
+        S.ctl = S.maskSlot + 40 ∧
+        S.tab = tab ∧
+        readBytes s.mem S.tab 8192 = some pos8Table ∧
+        S.kw = BitVec.ofNat 64 S.k ∧
+        readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
+        S.xpExtent = S.xn0 + 64 * blocks + 8 ∧
+        -- the entry count's growth: at block `S.i` the count is at most the
+        -- first iteration's plus sixty-four per block.  Needed at the entry
+        -- call's `entw`-versus-`ep` separation: the staged `ep` extent is
+        -- `4 * (S.k0 + 64 * blocks + 9)`, while the call asks
+        -- `ep + 4 * (S.k + 72) ≤ entw`; with `S.i + (r+1) = blocks` this bound
+        -- gives `S.k + 72 ≤ S.k0 + 64 * blocks - 64 * (r+1) + 72`, so at
+        -- `r = 0` the margin is `S.k0 + 64 * blocks + 8` against the `+9` —
+        -- one byte, which is the whole reason the staged extent has a `+9`.
+        S.k ≤ 64 * S.i ∧
+        S.xn ≤ S.xn0 + 64 * S.i ∧
+        -- the block count is the document's own.  `%shr` is the staging's block
+        -- count and `pipelineBlocks` is `(n + 63) / 64`, so the loop's iteration
+        -- bound is a function of the length argument the state carries rather
+        -- than a number alongside it — which is what lets the instance's `N_eq`
+        -- and the exit's bound be about the same value.
+        blocks = pipelineBlocks S.n.toNat ∧
+        -- **the entry stream.**  The loop's entry count is zero — the staging's
+        -- count slot reads as the empty stream's count — so the stream is the
+        -- whole `S.k` four-byte lanes at `S.ep`, the range the emitters wrote.
+        -- The two facts after it are what `Γ_stage2.pre` reads
+        -- (`stage2.h:56-58`, `:91`): the positions increase strictly, and each
+        -- lies inside the blocks read so far.  Carried rather than derived
+        -- because the bytes are the emitters' and no read of the state recovers
+        -- which positions they name.
+        readLanes32 s.mem S.ep S.k = some S.ent ∧
+        S.ent.Pairwise (· < ·) ∧
+        (∀ q ∈ S.ent, q < 64 * S.i) ∧
+        (S.arm.hasEscape = true →
+          carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
+        -- **the two carry slots describe one carry** on the arms that use both.
+        -- The mask unit's `%sc` slot and the escape list's `%xcarry` slot are
+        -- written by two different units and are separated regions, so nothing
+        -- about one follows from the other; but the escape record's `pre` takes
+        -- **one** classifier state for both the three loaded mask words and the
+        -- staged carry pair, and that witness exists only if the two slots'
+        -- flags agree.  Stated conditionally because on a gate-off arm `%xcarry`
+        -- is never written and the pair is only meaningful under `hasEscape` —
+        -- the same shape `carryPair` itself uses above.
+        (S.arm.hasEscape = true →
+          S.opened = S.prevb ∧ S.ppar = S.prevs) ∧
+        cursorRoom S.k (blocks - S.i) 9 ∧
+        cursorRoom S.xn (blocks - S.i) 9 ∧
+        HasBytes s.mem S.xp (4 * S.xpExtent) ∧
+        DisjointRegions (pipelineLoopRegions S blocks) ∧
+        tailCells S s.env ∧
+        -- the frame: every byte the caller staged outside the loop's write
+        -- extent reads as it did when the loop was entered.  A step's own
+        -- frames are what hand it on, and the exit's frame is what the tail's
+        -- post reads the caller's staging through.
+        UnchangedOutside mem s.mem (pipelineLoopWrites S)
+
+/-- **The loop invariant's split shape.**  The state the loop's *first* iteration
+starts in: the arm's head as the program counter, the split block as the
+predecessor, every `phi` at its split operand — `%i = 0`, `%prevS = 0`, `%k = %0` —
+and the agreement at the split builder `usUsSplitIn` (and its three siblings),
+whose traces are `usUs_split_denote` … `body_split_denote`.
+
+**Why a second shape, and not one agreement for both entries.**  The back-edge
+builder binds `%inc…`, `%call21…` and `%shr13…`, and the split block's successor
+binds none of them, so `AgreeOn` at that builder is false at the state the seed
+reaches while the agreement at the split builder is true there.  The reverse holds
+after an iteration: a successor's `%0` is unbound and the back edge's three names
+are bound.  One agreement cannot be both, so the invariant is a disjunction — and
+each disjunct states the whole conjunct list rather than the two shape conjuncts
+alone, because a disjunction that shares its other conjuncts is one statement with
+two spellings.
+
+`S.sw = 0` is the first iteration's `%prevS` phi operand.  It is stated because no
+environment cell pins it — the split builder leaves `%prevS…` unbound, and the
+successor's builder binds it only after an iteration — while the entry call's
+store (`vent … S.sw`) reads it.
+
+The remaining conjuncts are `pipelineLoopInvBack`'s, in the same order and stated
+in full for the reason above; the docstring there gives each one's consumer and
+hander-on. -/
+def pipelineLoopInvSplit (mem : Mem) (base tab blocks : Nat) : Nat → State → Prop
+  | 0, _ => False
+  | r + 1, s =>
+      ∃ (S : PipelineLoopCarried),
+        s.pc = S.arm.head ∧
+        s.pre = some S.arm.splitPre ∧
+        S.i = 0 ∧
+        S.sw = 0 ∧
+        S.i + (r + 1) = blocks ∧
+        S.shr = BitVec.ofNat 64 blocks ∧
+        S.iw = BitVec.ofNat 64 S.i ∧
+        AgreeOn (armUses S.arm.block) (stateAt (S.arm.splitIn s.env S) s) s ∧
+        S.b = base ∧
+        readBytes s.mem S.b (64 * blocks) = some S.doc ∧
+        readBytes s.mem S.sc 24 = some (carrySlot S.opened S.ppar S.inside) ∧
+        S.stM.oddRun = (S.opened && S.ppar) ∧
+        S.delim = S.maskSlot + 8 ∧
+        S.inString = S.maskSlot + 16 ∧
+        S.ws = S.maskSlot + 24 ∧
+        S.backslash = S.maskSlot + 32 ∧
+        S.ctl = S.maskSlot + 40 ∧
+        S.tab = tab ∧
+        readBytes s.mem S.tab 8192 = some pos8Table ∧
+        S.kw = BitVec.ofNat 64 S.k ∧
+        readBytes s.mem S.nxp 8 = some (wordBytes 8 S.xn) ∧
+        S.xpExtent = S.xn0 + 64 * blocks + 8 ∧
+        S.k ≤ 64 * S.i ∧
+        S.xn ≤ S.xn0 + 64 * S.i ∧
+        blocks = pipelineBlocks S.n.toNat ∧
+        -- the entry stream at the split entry: the loop's entry count is zero, so
+        -- the read is empty and the two order facts below are vacuous.
+        readLanes32 s.mem S.ep S.k = some S.ent ∧
+        S.ent.Pairwise (· < ·) ∧
+        (∀ q ∈ S.ent, q < 64 * S.i) ∧
+        (S.arm.hasEscape = true →
+          carryPair s.mem S.xcarry S.stE S.prevb S.prevs) ∧
+        (S.arm.hasEscape = true →
+          S.opened = S.prevb ∧ S.ppar = S.prevs) ∧
+        cursorRoom S.k (blocks - S.i) 9 ∧
+        cursorRoom S.xn (blocks - S.i) 9 ∧
+        HasBytes s.mem S.xp (4 * S.xpExtent) ∧
+        DisjointRegions (pipelineLoopRegions S blocks) ∧
+        tailCells S s.env ∧
+        -- the frame: every byte the caller staged outside the loop's write
+        -- extent reads as it did when the loop was entered.  A step's own
+        -- frames are what hand it on, and the exit's frame is what the tail's
+        -- post reads the caller's staging through.
+        UnchangedOutside mem s.mem (pipelineLoopWrites S)
+
+/-- **The loop invariant.**  With `r + 1` iterations of budget the state is an
+iteration entry in one of the two shapes the loop can be entered in — the split
+shape at the first iteration and the back-edge shape above it; with the budget
+spent it is the loop's exit block, which is the shape `PipelineLoop.exit`
+consumes.
+
+**Why a disjunction, rather than a preliminary split invariant.**  The seed reaches
+a split block's successor, and no back-edge shape describes that state: the
+invariant that only holds after a step is not one a loop can be entered with.
+`PipelineLoop`'s `step` and `exit` are the only fields a second instance would
+change, and a second instance would duplicate the loop and its exit for a case a
+disjunction absorbs — and would leave two invariants that must be shown to agree at
+the handoff, which is the same statement twice.  So the entry shape goes into the
+invariant, where the step reads it, and the four arm steps each carry a first
+iteration for the split disjunct (`*_split_step`) beside the back-edge ones they
+already had. -/
+def pipelineLoopInv (mem : Mem) (base tab blocks : Nat) : Nat → State → Prop
+  | 0, s => pipelineLoopExit mem s
+  | r + 1, s =>
+      pipelineLoopInvSplit mem base tab blocks (r + 1) s ∨
+        pipelineLoopInvBack mem base tab blocks (r + 1) s
+
+/-- **A live-budget invariant state is at one of the four arms' heads.**  Both
+shapes state it, so a step dispatches on the arm before it reads which shape the
+state is in. -/
+theorem pipelineLoopInv_pc {mem : Mem} {base tab blocks r : Nat} {s : State}
+    (h : pipelineLoopInv mem base tab blocks (r + 1) s) :
+    ∃ S : PipelineLoopCarried, s.pc = S.arm.head := by
+  rcases h with ⟨S, hp, -⟩ | ⟨S, hp, -⟩
+  · exact ⟨S, hp⟩
+  · exact ⟨S, hp⟩
+
+/-- At a spent budget the invariant is the exit predicate, which is the shape
+`PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
+theorem pipelineLoopInv_zero (mem : Mem) (base tab : Nat) {blocks : Nat} {s : State}
+    (h : pipelineLoopInv mem base tab blocks 0 s) : pipelineLoopExit mem s := h
+
+/-- **`PipelineLoop.exit`'s obligation, discharged.**  A spent budget is the loop's
+exit block, so from any state the invariant admits at `r = 0` the loop's exit is
+already reached and the prefix is the zero-length one.  The last iteration is
+therefore `step`'s at `r = 0` — where the arm's own exit test fires and the
+successor is `for.cond.cleanup` — and not `exit`'s. -/
+theorem pipelineLoop_exitObligation (calls : Calls) (mem : Mem) (base tab : Nat)
+    (blocks : Nat) (s : State)
+    (h : pipelineLoopInv mem base tab blocks 0 s) :
+    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit mem e ∧
+      ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e :=
+  ⟨s, 0, Nat.le_refl 0, h, fun k => by rw [Nat.zero_add]⟩
+
+/-! ### Axiom footprints
+
+The block-clause statement is a window read (`blockRead_of_window`) and the
+call-site destructuring is the record's own conjunction; the two facts about the
+shifted window are kernel computations over one sixty-four-byte document; the
+invariant and the builder dispatch are definitions.  Nothing here adds a
+carrier: the section is at `[propext, Quot.sound]` or below. -/
+
+/-- info: 'LeanLLVM.Refinement.escapeBlockClause_of_staged_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeBlockClause_of_staged_window
+
+/-- info: 'LeanLLVM.Refinement.escape_pre_shape' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escape_pre_shape
+
+/-- info: 'LeanLLVM.Refinement.escapeShifted_backslash_differ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeShifted_backslash_differ
+
+/-- info: 'LeanLLVM.Refinement.escapeWindow_at_three' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeWindow_at_three
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyArm.inBuilder' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.inBuilder
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyArm.splitPre' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.splitPre
+
+/-- info: 'LeanLLVM.Refinement.PipelineBodyArm.splitIn' does not depend on any axioms -/
+#guard_msgs in
+#print axioms PipelineBodyArm.splitIn
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopInvBack' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInvBack
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopInvSplit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInvSplit
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopInv_pc' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInv_pc
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopInv' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInv
+
+/-- info: 'LeanLLVM.Refinement.positionsOf_pairwise' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_pairwise
+
+/-- info: 'LeanLLVM.Refinement.positionsOf_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_bounds
+
+/-- info: 'LeanLLVM.Refinement.streamPrefix_one_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPrefix_one_eq
+
+/-- info: 'LeanLLVM.Refinement.streamPrefix_one_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPrefix_one_pairwise
+
+/-- info: 'LeanLLVM.Refinement.streamPrefix_one_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPrefix_one_bounds
+
+/-- info: 'LeanLLVM.Refinement.streamPairwise_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamPairwise_append
+
+/-- info: 'LeanLLVM.Refinement.streamBound_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamBound_append
+
+/-- info: 'LeanLLVM.Refinement.eq_singleton_of_length_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms eq_singleton_of_length_one
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopExit' does not depend on any axioms -/
+#guard_msgs in
+#print axioms pipelineLoopExit
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoopInv_zero' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms pipelineLoopInv_zero
+
+/-- info: 'LeanLLVM.Refinement.pipelineLoop_exitObligation' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipelineLoop_exitObligation
+
+/-- info: 'LeanLLVM.Refinement.ofBool_eq_one' does not depend on any axioms -/
+#guard_msgs in
+#print axioms ofBool_eq_one
+
+/-- info: 'LeanLLVM.Refinement.bitvec1_eq_zero_of_ne_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms bitvec1_eq_zero_of_ne_one
+
+/-- info: 'LeanLLVM.Refinement.litv_64_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms litv_64_toNat
+
+/-- info: 'LeanLLVM.Refinement.vcmp_eq_one' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms vcmp_eq_one
+
+/-- info: 'LeanLLVM.Refinement.vcmp_eq_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vcmp_eq_zero
+
+/-- info: 'LeanLLVM.Refinement.limMask_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms limMask_lane
+
+/-- info: 'LeanLLVM.Refinement.vsub17_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vsub17_lane
+
+/-- info: 'LeanLLVM.Refinement.vsub17_eq_limMask' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vsub17_eq_limMask
+
+/-- info: 'LeanLLVM.Refinement.sh6_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms sh6_toNat
+
+/-- info: 'LeanLLVM.Refinement.vsub_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms vsub_toNat
+
+/-- info: 'LeanLLVM.Refinement.and_allOnes64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms and_allOnes64
+
+/-- info: 'LeanLLVM.Refinement.positionsOf_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_length
+
+/-- info: 'LeanLLVM.Refinement.positionsOf_and_limMask_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms positionsOf_and_limMask_lt
+
+/-- info: 'LeanLLVM.Refinement.vent_positions_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms vent_positions_lt
+
+/-- info: 'LeanLLVM.Refinement.singleton_of_length_one' does not depend on any axioms -/
+#guard_msgs in
+#print axioms singleton_of_length_one
+
+/-- info: 'LeanLLVM.Refinement.word_eq_of_readBytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms word_eq_of_readBytes
+
+/-- info: 'LeanLLVM.Refinement.streamDocBound_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms streamDocBound_append
+
+/-- info: 'LeanLLVM.Refinement.blockBase_lt_doc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms blockBase_lt_doc
+
+/-- info: 'LeanLLVM.Refinement.blockBase_lt_two64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms blockBase_lt_two64
+
+end LeanLLVM.Refinement

@@ -3,7 +3,7 @@
 
 The classifier is not re-implemented here.  Each 32-byte window is staged in
 memory at `blockBase` and `classify32Function` — the AST that
-`LeanLLVM/Vellum/JsonClassifyIR.lean` pins to
+`LeanLLVM/Refinement/JsonClassifyIR.lean` pins to
 `probes/install/ir/json-classify.candidate.ll` and proves equal to the block
 layer's mask on every readable block — is run over it with `runFuel` under the
 repository's semantics.  The printed mask is that run's `i32` return value, so
@@ -34,7 +34,7 @@ skipped row.
 import LeanLLVM
 
 open LeanLLVM
-open LeanLLVM.Vellum.JsonClassifyIR
+open LeanLLVM.Refinement.JsonClassifyIR
 
 /-! ### Running the certified body -/
 

@@ -7,7 +7,7 @@
 # blocks:
 #
 #   * the certified Lean body — `classify32Function`, the AST
-#     `LeanLLVM/Vellum/JsonClassifyIR.lean` pins to
+#     `LeanLLVM/Refinement/JsonClassifyIR.lean` pins to
 #     `probes/install/ir/json-classify.candidate.ll` and proves equal to the
 #     block layer's mask on every readable block — run by
 #     `leanllvm-json-classify` under the repository's semantics;

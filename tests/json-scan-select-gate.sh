@@ -88,7 +88,7 @@ set -e
 
 mkdir -p "$fakebin" "$fixtures/ir" "$units" "$outdir" "$rebuild" "$proofs" \
   "$canonical" "$mirror/probes/install/build" \
-  "$mirror/.lake/build/lib/lean/LeanLLVM/Vellum"
+  "$mirror/.lake/build/lib/lean/LeanLLVM/Refinement"
 : > "$link_log"
 
 target=x86_64-unknown-linux-gnu
@@ -477,11 +477,11 @@ target=$target
 triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
-contract=LeanLLVM.Vellum.commaContract
-theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+contract=LeanLLVM.Refinement.commaContract
+theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
 json_scan_symbol=leanllvm_json_scan_window
-json_scan_theorem=LeanLLVM.Vellum.JsonScanIR.scanWindowLLVM_refines
-json_scan_contract=LeanLLVM.Vellum.JsonScanABI.jsonScanContract
+json_scan_theorem=LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines
+json_scan_contract=LeanLLVM.Refinement.JsonScanABI.jsonScanContract
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -726,7 +726,7 @@ if [ "$mode" = --strict ]; then
   # the candidate and the baseline and not this unit.  The manifest's digest of
   # the certificate is then rewritten, so a stale outer digest cannot explain
   # the result.
-  replace_value "$proof_json_scan" theorem LeanLLVM.Vellum.CommaMaskIR.IR_refines
+  replace_value "$proof_json_scan" theorem LeanLLVM.Refinement.CommaMaskIR.IR_refines
   replace_value "$manifest" proof_json_scan_sha256 "$(sha "$proof_json_scan")"
 
   js2_out=$outdir/json_scan-refused
@@ -772,7 +772,7 @@ if [ "$mode" = --strict ]; then
 else
   # --- the one change -----------------------------------------------------
   # JS3 uses the same theorem-changed certificate as JS2, digest repaired.
-  replace_value "$proof_json_scan" theorem LeanLLVM.Vellum.CommaMaskIR.IR_refines
+  replace_value "$proof_json_scan" theorem LeanLLVM.Refinement.CommaMaskIR.IR_refines
   replace_value "$manifest" proof_json_scan_sha256 "$(sha "$proof_json_scan")"
 
   js3_out=$outdir/json_scan-fallback

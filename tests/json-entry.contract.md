@@ -5,9 +5,9 @@ the measurement compiled: for a stream of 64-bit entry masks and a starting
 cursor it writes each mask's set lanes, as positions, into a caller's buffer.
 The headline theorems are stated over the emitted texts
 `probes/install/ir/json-entry.candidate.ll`, pinned to hand-written ASTs:
-`entry_pos8_refines` in `LeanLLVM/Vellum/JsonEntrySteps.lean`, and
+`entry_pos8_refines` in `LeanLLVM/Refinement/JsonEntrySteps.lean`, and
 `entry_b8_refines`, `entry_pos8_b8_agree` and `entry_b8_undefined_of_no_read` in
-`LeanLLVM/Vellum/JsonB8Steps.lean`; `LeanLLVM/Vellum/JsonEntryIR.lean` holds the
+`LeanLLVM/Refinement/JsonB8Steps.lean`; `LeanLLVM/Refinement/JsonEntryIR.lean` holds the
 fixture pin, `entryCalls`, the `pos8Table` definition and `entry_tail_eq`.  These
 scenarios are the other half of that claim, where the subject is reached from
 outside rather than read as a proposition.
@@ -60,7 +60,7 @@ and the route is
     nix develop -c bash tests/json-entry/check.sh
 
 The first imports `LeanLLVM` only and holds JE1's parser half; the second
-imports `LeanLLVM.Vellum.JsonEntryIR` and holds the fixture pin, JE2 and JE3,
+imports `LeanLLVM.Refinement.JsonEntryIR` and holds the fixture pin, JE2 and JE3,
 including the four clause witnesses.  Every observation is a `#guard`, so a
 failed one stops elaboration with a nonzero exit status.  The Lean files reach
 no compiler, proof checker, service, clock or network; `check.sh` invokes
@@ -267,14 +267,14 @@ the run history rather than in the tree.
 
 `JE2` and `JE3` claim no pre-fix red, and the base revision does not offer one:
 their subject — the entry object, the driver, the runner and
-`LeanLLVM/Vellum/JsonEntryIR.lean` — does not exist at `ad188ad`.  The Lean file
+`LeanLLVM/Refinement/JsonEntryIR.lean` — does not exist at `ad188ad`.  The Lean file
 therefore fails at its unresolved import, and the route exits 3, which are setup
 states and not evidence:
 
     nix develop -c lake env lean tests/json-entry.lean
     tests/json-entry.lean:27:0: error: object file
-      '…/.lake/build/lib/lean/LeanLLVM/Vellum/JsonEntryIR.olean' of module
-      LeanLLVM.Vellum.JsonEntryIR does not exist
+      '…/.lake/build/lib/lean/LeanLLVM/Refinement/JsonEntryIR.olean' of module
+      LeanLLVM.Refinement.JsonEntryIR does not exist
     exit 1
 
     nix develop -c bash tests/json-entry/check.sh
@@ -363,5 +363,5 @@ line naming the absent artefact, and a `FAIL` is never produced.  The inputs are
 - `lakefile.toml`'s `lean_exe` stanza for `leanllvm-json-entry`, and the binary
   `lake build leanllvm-json-entry` writes at
   `.lake/build/bin/leanllvm-json-entry`;
-- `LeanLLVM/Vellum/JsonEntryIR.lean` — the module that pins the ASTs, which
+- `LeanLLVM/Refinement/JsonEntryIR.lean` — the module that pins the ASTs, which
   `tests/json-entry.lean` imports and which nothing else in the tree provides.

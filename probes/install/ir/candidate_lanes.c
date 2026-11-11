@@ -19,7 +19,7 @@
  * This file keeps the fold and writes the recursion out lane by lane, with a
  * literal shift per lane, so no induction variable and no `Nat` remain.  The
  * compare is written against `0` on `x ^ 0x2C..` rather than against `0x2C` on
- * `x`, which is the form `LeanLLVM.Vellum.CommaMask.byteLoop` uses; the two
+ * `x`, which is the form `LeanLLVM.Refinement.CommaMask.byteLoop` uses; the two
  * agree because `0x2C` fits in a byte, and `byteLoop_eq_spec` connects that
  * form to the lane specification.
  */

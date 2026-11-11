@@ -1,0 +1,870 @@
+/-
+The comma mask as a memory-backed loop.
+
+`probes/install/ir/loop.ll` is the control-flow-different counterpart of the
+unrolled candidate: the counter and accumulator live in memory, the lane test
+and bit are computed from the counter, and `select` folds the accumulator.  The
+file is emitted by `lake exe leanllvm-loop-emit` with `LeanLLVM.Function.render`
+from the AST in `LeanLLVM/Refinement/CommaMaskLoopBody.lean`, which is the
+framework's printer rather than Lean's native compiler.  This module
+
+1. parses the fixture and pins it to that AST;
+2. defines the lane prefix the invariant tracks;
+3. proves the loop's entry reaches `cond` with the empty prefix;
+4. proves one iteration preserves the invariant, and chains it.
+
+The final theorem is functional correctness of the loop: it returns the
+lane-wise specification.  It is proved by induction over the counter, not by
+unrolling eight copies of the body, and it is where the memory round trip and
+the write-below framing are exercised by a real program.
+
+The memory story is the framed relation of `LeanLLVM/Frames.lean`.  The
+footprint is not written into a theorem: it is the band the allocator covered
+while the entry block handed out the two `i64` locals (`AllocFrame`), and the
+invariant carries the proof that every store stays inside it, so a write outside
+the band cannot be hidden by the relation.
+-/
+import LeanLLVM.Parser
+import LeanLLVM.Semantics
+import LeanLLVM.Memory
+import LeanLLVM.Refinement.CommaMaskIR
+import LeanLLVM.Refinement.CommaMaskLoopBody
+import LeanLLVM.Frames
+
+namespace LeanLLVM.Refinement.CommaMaskLoop
+
+open LeanLLVM
+open LeanLLVM.Refinement.CommaMaskIR
+
+/-! ### The fixture -/
+
+def loopSrc : String := include_str "../../probes/install/ir/loop.ll"
+
+def firstFunction (src : String) : Option Function :=
+  match parseModule src with
+  | .ok m => m.functions.head?
+  | .error _ => none
+
+#guard decide (firstFunction loopSrc = some loopFunction)
+
+/-! ### The lane prefix -/
+
+/-- The fold over the first `k` lanes. -/
+def maskPrefix (m : BitVec 64) (k : Nat) : BitVec 64 :=
+  (List.range k).foldl
+    (fun acc t => acc ||| (if isZeroByte m t then (0x80 : BitVec 64) <<< (8 * t) else 0)) 0
+
+theorem maskPrefix_zero (m : BitVec 64) : maskPrefix m 0 = 0 := rfl
+
+theorem maskPrefix_succ (m : BitVec 64) (k : Nat) :
+    maskPrefix m (k + 1) =
+      maskPrefix m k |||
+        (if isZeroByte m k then (0x80 : BitVec 64) <<< (8 * k) else 0) := by
+  simp only [maskPrefix, List.range_succ, List.foldl_append, List.foldl_cons,
+    List.foldl_nil]
+
+/-- At eight lanes the prefix is the kernel's fold, hence the specification. -/
+theorem maskPrefix_eight (m : BitVec 64) : maskPrefix m 8 = maskFold m := by
+  simp only [maskPrefix, maskFold,
+    show ([0, 1, 2, 3, 4, 5, 6, 7] : List Nat) = List.range 8 from by decide]
+
+/-! ### The loop invariant -/
+
+/-- The loop's state facts with the allocator base and the incoming memory as
+parameters: the accumulator is the lane prefix, the counter is `k`, the two
+pointers are at `base` and `base + 8` -- the addresses the entry block's
+`alloca`s assign when the allocator starts at `base` -- the allocator is at
+`base + 16`, and the memory agrees with `initMem` outside `Band base s.next`.
+The last field is the one whose shape changes: `MemConfined base s.next s.mem`
+would say nothing is present outside the band, which an incoming byte at or
+above `base + 16` contradicts. -/
+structure LoopFactsAt (initMem : Mem) (base : Nat) (s : State)
+    (m acc : BitVec 64) (k : Nat) : Prop where
+  mReg : lookupName s.env "%m" = some (.int 64 m)
+  accPtr : lookupName s.env "%acc" = some (.ptr base)
+  iPtr : lookupName s.env "%i" = some (.ptr (base + 8))
+  accLoad : loadValue s.mem (.int 64) base = some (.int 64 acc)
+  iLoad : loadValue s.mem (.int 64) (base + 8) = some (.int 64 (BitVec.ofNat 64 k))
+  nextEq : s.next = base + 16
+  memBand : AgreesOutsideMem s.mem initMem (Band base s.next)
+
+/-- `LoopFacts` is the base-`1`, empty-incoming-memory instance, so the loop's
+own statements keep naming the two addresses its entry block reserved: the
+allocator hands out `1` and `9` and is at `17`, and the memory holds nothing
+outside the band `[1, 17)`. -/
+abbrev LoopFacts (s : State) (m acc : BitVec 64) (k : Nat) : Prop :=
+  LoopFactsAt [] 1 s m acc k
+
+/-- At the loop condition with the facts holding, at allocator base `base` and
+with incoming memory `initMem`. -/
+def LoopInvAt (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64)
+    (k : Nat) : Prop :=
+  s.pc = "cond" ∧ LoopFactsAt initMem base s m acc k
+
+/-- At the loop condition at the base the emitted caller drives. -/
+def LoopInv (s : State) (m acc : BitVec 64) (k : Nat) : Prop :=
+  s.pc = "cond" ∧ LoopFacts s m acc k
+
+/-- A 64-bit load of a register operand. -/
+theorem eval_load_64 (calls : Calls) (s : State) (d : String) (p : Operand)
+    (addr : Nat) (v : BitVec 64)
+    (hp : evalOperand s p = some (.ptr addr))
+    (hv : loadValue s.mem (.int 64) addr = some (.int 64 v)) :
+    evalInstr calls s (.load d (.int 64) p) = some (s.bind d (.int 64 v)) := by
+  simp only [evalInstr, hp, hv]
+
+/-- A 64-bit store. -/
+theorem eval_store_64 (calls : Calls) (s : State) (v p : Operand)
+    (val : BitVec 64) (addr : Nat)
+    (hv : evalOperand s v = some (.int 64 val))
+    (hp : evalOperand s p = some (.ptr addr)) :
+    evalInstr calls s (.store (.int 64) v p) = storeValue s (.int 64) (.int 64 val) addr := by
+  simp only [evalInstr, hv, hp]
+
+/-- The state the entry block reaches at `cond` from incoming memory `mem` and
+allocator base `base`: the two locals it allocated are zeroed at `base` and
+`base + 8`, and the allocator has advanced past both. -/
+def entryStateMemAt (mem : Mem) (base : Nat) (x : BitVec 64) : State :=
+  { env := [("%i", .ptr (base + 8)), ("%acc", .ptr base),
+            ("%m", .int 64 (x ^^^ 0x2C2C2C2C2C2C2C2C)),
+            ("%arg", .int 64 x)],
+    mem := writeBytes (writeBytes mem base (natToBytes 0 8)) (base + 8) (natToBytes 0 8),
+    next := base + 16, pc := "cond", pre := some "entry" }
+
+/-- The state the entry block reaches at `cond` from allocator base `base` and
+no incoming memory. -/
+abbrev entryStateAt (base : Nat) (x : BitVec 64) : State :=
+  entryStateMemAt [] base x
+
+/-- The state the entry block reaches at `cond` from the loop's initial state. -/
+abbrev entryState (x : BitVec 64) : State :=
+  entryStateAt 1 x
+
+/-- The entry block from any incoming memory and allocator base: the comma-XOR
+word and the two zeroed locals, with the jump to `cond`. -/
+theorem entry_run_at (x : BitVec 64) (mem : Mem) (base : Nat) :
+    step noCalls loopFunction
+        { (initState loopFunction [.int 64 x]) with mem := mem, next := base } =
+      .jump (entryStateMemAt mem base x) := by
+  simp [step, loopFunction, Function.findBlock, findBlockList, denoteCode, entryInstrs,
+    initState, Function.entry?, List.head?, Option.getD, List.map, List.zip, List.zipWith,
+    evalInstr, evalOperand, Const.toValue, State.bind, entryStateMemAt, execTerm,
+    lookupName, Value.intToNat, evalBinopNat, evalBinop, c, lit, Ty.sizeBytes, storeValue]
+
+theorem entry_run (x : BitVec 64) :
+    step noCalls loopFunction (initState loopFunction [.int 64 x]) =
+      .jump (entryState x) := by
+  simpa [entryState, entryStateAt, initState] using entry_run_at x [] 1
+
+theorem ofNat_toNat_self {w : Nat} (x : BitVec w) : BitVec.ofNat w x.toNat = x := by
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt x.isLt]
+
+theorem ofNat_mul (a b : BitVec 64) :
+    BitVec.ofNat 64 (a.toNat * b.toNat % 18446744073709551616) = a * b := by
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_ofNat, BitVec.toNat_mul]
+  exact Nat.mod_eq_of_lt (Nat.mod_lt _ (by decide))
+
+theorem ofNat_ushiftRight (a : BitVec 64) (n : Nat) :
+    BitVec.ofNat 64 (a.toNat >>> n) = a >>> n := by
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ushiftRight]
+  exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.shiftRight_le _ _) a.isLt)
+
+theorem ofNat_shiftLeft (a : BitVec 64) (n : Nat) :
+    BitVec.ofNat 64 (a.toNat <<< n % 18446744073709551616) = a <<< n := by
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_ofNat, BitVec.toNat_shiftLeft]
+  exact Nat.mod_eq_of_lt (Nat.mod_lt _ (by decide))
+
+/-- The entry block establishes the invariant from any incoming memory and
+allocator base: the two locals it reserved are zeroed at `base` and `base + 8`,
+and nothing outside that band changes. -/
+theorem entry_inv_at (x : BitVec 64) (mem : Mem) (base : Nat) :
+    LoopInvAt mem base (entryStateMemAt mem base x)
+      (x ^^^ c 3182967604875373612) 0 0 := by
+  refine ⟨rfl, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [entryStateMemAt, lookupName, c]
+  · simp [entryStateMemAt, lookupName]
+  · simp [entryStateMemAt]
+  · -- accumulator load: the counter write at `base + 8` is above `base`
+    have h9 : loadValue
+        (writeBytes (writeBytes mem base (natToBytes 0 8)) (base + 8) (natToBytes 0 8))
+        (.int 64) base =
+        loadValue (writeBytes mem base (natToBytes 0 8)) (.int 64) base :=
+      loadValue_writeBytes_below (writeBytes mem base (natToBytes 0 8)) (natToBytes 0 8)
+        64 base (base + 8) (by omega)
+    have h1 := (loadValue_storeValue_64
+      { env := [], mem := mem, next := base, pc := "entry", pre := none }
+      (0 : BitVec 64) base).2
+    simp only [entryStateMemAt, h9]
+    simpa using h1
+  · -- counter load
+    have h := (loadValue_storeValue_64
+      { env := [], mem := writeBytes mem base (natToBytes 0 8), next := base + 8,
+        pc := "entry", pre := none }
+      (0 : BitVec 64) (base + 8)).2
+    simp only [entryStateMemAt]
+    simpa using h
+  · -- the allocator has handed out both locals: eight bytes at `base` and at `base + 8`
+    simp [entryStateMemAt]
+  · -- and the memory is the incoming one outside that band
+    have hband : AgreesOutsideMem
+        (writeBytes (writeBytes mem base (natToBytes 0 8)) (base + 8) (natToBytes 0 8))
+        mem (Band base (base + 16)) := by
+      refine AgreesOutsideMem.writeBytes_left (start := base + 8) (bs := natToBytes 0 8) ?_ ?_
+      · refine AgreesOutsideMem.writeBytes_left (start := base) (bs := natToBytes 0 8) ?_ ?_
+        · exact AgreesOutsideMem.refl mem (Band base (base + 16))
+        · intro k hk
+          rw [natToBytes_length] at hk
+          exact ⟨by omega, by omega⟩
+      · intro k hk
+        rw [natToBytes_length] at hk
+        exact ⟨by omega, by omega⟩
+    simpa [entryStateMemAt] using hband
+
+theorem entry_inv (x : BitVec 64) :
+    LoopInv (entryState x) (x ^^^ c 3182967604875373612) 0 0 :=
+  entry_inv_at x [] 1
+
+/-! ### Instruction evaluators
+
+The loop uses instructions the comma-mask bridge does not: a 64-bit load and
+store, `mul` by an immediate, `lshr` by a register, `shl` by a register and
+`icmp ult` against an immediate.  Each is stated with the register environment
+and memory left abstract, so the block proofs below can rewrite one step at a
+time.
+-/
+
+theorem evalInstr_mul_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
+    evalInstr calls s (.binop d .mul 64 (.reg r) (.imm (.int 64 b))) =
+      (match lookupName s.env r with
+       | some (.int 64 a) => some (s.bind d (.int 64 (a * b)))
+       | _ => none) := by
+  simp only [evalInstr, evalOperand, Const.toValue]
+  cases lookupName s.env r with
+  | none => simp
+  | some v =>
+    cases v with
+    | int w a =>
+      by_cases hw : w = 64
+      · subst hw
+        simp [Value.intToNat, evalBinopNat, evalBinop, ofNat_mul]
+      · simp [Value.intToNat, hw]
+    | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
+
+theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
+    evalInstr calls s (.binop d .lshr 64 (.reg r₁) (.reg r₂)) =
+      (match lookupName s.env r₁, lookupName s.env r₂ with
+       | some (.int 64 a), some (.int 64 b) => some (s.bind d (.int 64 (a >>> b.toNat)))
+       | _, _ => none) := by
+  simp only [evalInstr, evalOperand]
+  cases lookupName s.env r₁ with
+  | none => simp
+  | some v₁ =>
+    cases lookupName s.env r₂ with
+    | none => simp
+    | some v₂ =>
+      cases v₁ with
+      | int w a =>
+        cases v₂ with
+        | int w' b =>
+          by_cases hw : w = 64
+          · by_cases hw' : w' = 64
+            · subst hw; subst hw'
+              simp [Value.intToNat, evalBinopNat, evalBinop, ofNat_ushiftRight]
+            · simp [Value.intToNat, hw']
+          · simp [Value.intToNat, hw]
+        | ptr b => simp [Value.intToNat]
+        | vec n' w' lanes => simp [Value.intToNat]
+      | ptr a => simp [Value.intToNat]
+      | vec n' w' lanes => simp [Value.intToNat]
+
+theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : BitVec 64) :
+    evalInstr calls s (.binop d .shl 64 (.imm (.int 64 a)) (.reg r)) =
+      (match lookupName s.env r with
+       | some (.int 64 b) => some (s.bind d (.int 64 (a <<< b.toNat)))
+       | _ => none) := by
+  simp only [evalInstr, evalOperand, Const.toValue]
+  cases lookupName s.env r with
+  | none => simp
+  | some v =>
+    cases v with
+    | int w b =>
+      by_cases hw : w = 64
+      · subst hw
+        simp [Value.intToNat, evalBinopNat, evalBinop, ofNat_shiftLeft]
+      · simp [Value.intToNat, hw]
+    | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
+
+theorem c_eight : c 8 = (BitVec.ofNat 64 8 : BitVec 64) := by decide
+theorem eight_lit : (8 : BitVec 64) = BitVec.ofNat 64 8 := rfl
+theorem one_lit : (1 : BitVec 64) = c 1 := by decide
+theorem c_zero : c 0 = (0 : BitVec 64) := by decide
+theorem c_255 : c 255 = (0xFF : BitVec 64) := by decide
+theorem c_128 : c 128 = (0x80 : BitVec 64) := by decide
+theorem c_one : c 1 = (1 : BitVec 64) := by decide
+
+/-- `acc ||| (if p then bit else 0)` read as a select. -/
+theorem or_ite (acc bit : BitVec 64) (p : Prop) [Decidable p] :
+    acc ||| (if p then bit else 0) = if p then acc ||| bit else acc := by
+  by_cases h : p <;> simp [h]
+
+/-- The lane shift `k * 8` as a `BitVec`. -/
+theorem ofNat_mul_eight (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k * c 8 = BitVec.ofNat 64 (8 * k) := by
+  rw [c_eight]
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_mul, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  rw [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+  omega
+
+theorem ofNat_eight_mul_toNat (k : Nat) (hk : k < 8) :
+    (BitVec.ofNat 64 (8 * k)).toNat = 8 * k := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+
+/-- The counter increment. -/
+theorem ofNat_add_one (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k + c 1 = BitVec.ofNat 64 (k + 1) := by
+  rw [c_one]
+  apply BitVec.toNat_inj.mp
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  have h1 : BitVec.toNat (1 : BitVec 64) = 1 := by decide
+  rw [h1]
+  rw [Nat.mod_eq_of_lt (by omega : k < 2 ^ 64),
+    Nat.mod_eq_of_lt (by omega : k + 1 < 2 ^ 64)]
+
+theorem ofBool_ult (k : Nat) (hk : k < 8) :
+    BitVec.ofBool ((BitVec.ofNat 64 k).ult (8 : BitVec 64)) = 1 := by
+  rw [show (8 : BitVec 64) = BitVec.ofNat 64 8 from rfl,
+    BitVec.ult_eq_decide, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by decide : 8 < 2 ^ 64)]
+  simp [BitVec.ofBool]
+  omega
+
+theorem evalInstr_icmp_ult_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 64) :
+    evalInstr calls s (.icmp d .ult 64 (.reg r) (.imm (.int 64 b))) =
+      (match lookupName s.env r with
+       | some (.int 64 a) => some (s.bind d (.int 1 (BitVec.ofBool (a.ult b))))
+       | _ => none) := by
+  simp only [evalInstr, evalOperand, Const.toValue]
+  cases lookupName s.env r with
+  | none => simp
+  | some v =>
+    cases v with
+    | int w a =>
+      by_cases hw : w = 64
+      · subst hw
+        simp [Value.intToNat, evalICmpNat, evalICmp]
+      · simp [Value.intToNat, hw]
+    | ptr a => simp [Value.intToNat]
+    | vec n' w' lanes => simp [Value.intToNat]
+
+theorem lookup_bind_self (s : State) (d : String) (v : Value) :
+    lookupName (s.bind d v).env d = some v := by
+  simp [State.bind]
+
+/-- One trip through the condition block at allocator base `base`: the counter
+is loaded and the branch to `body` is taken. -/
+theorem cond_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (k : Nat)
+    (hk : k < 8) (hinv : LoopInvAt initMem base s m acc k) :
+    ∃ s', step noCalls loopFunction s = .jump s' ∧
+      s'.pc = "body" ∧ LoopFactsAt initMem base s' m acc k ∧
+      lookupName s'.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) := by
+  obtain ⟨hpc, hf⟩ := hinv
+  let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 k))
+  let s2 : State :=
+    s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 k).ult (8 : BitVec 64))))
+  let s3 : State := { s2 with pc := "body", pre := some "cond" }
+  have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) :=
+    lookup_bind_self s "%i1" _
+  have hlc : lookupName s2.env "%c" =
+      some (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 k).ult (8 : BitVec 64)))) :=
+    lookup_bind_self s1 "%c" _
+  have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
+    have h := eval_load_64 noCalls s "%i1" (.reg "%i") (base + 8) (BitVec.ofNat 64 k)
+      hf.iPtr hf.iLoad
+    simpa [s1] using h
+  have e2 : evalInstr noCalls s1 (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 (8 : BitVec 64)))) =
+      some s2 := by
+    have h := evalInstr_icmp_ult_imm noCalls s1 "%c" "%i1" (8 : BitVec 64)
+    simp only [hli1] at h
+    simpa [s2] using h
+  refine ⟨s3, ?_, rfl, ?_, ?_⟩
+  · have hfind : loopFunction.findBlock s.pc = some condBody := by
+      simp [loopFunction, Function.findBlock, findBlockList, hpc, condBody, condInstrs]
+    simp only [step, hfind, condBody, condInstrs, denoteCode]
+    rw [e1]
+    simp only []
+    rw [e2]
+    simp only [execTerm, evalOperand, hlc, ofBool_ult k hk, s3]
+    simp [s2, s1, State.bind, hpc]
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
+    · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
+    · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
+    · simp [s3, s2, s1, State.bind, hf.accLoad]
+    · simp [s3, s2, s1, State.bind, hf.iLoad]
+    · simp [s3, s2, s1, State.bind, hf.nextEq]
+    · simpa [s3, s2, s1, State.bind] using hf.memBand
+  · simp [s3, s2, s1, State.bind, lookupName]
+
+theorem body_lane_shift (k : Nat) (hk : k < 8) :
+    (BitVec.ofNat 64 k * c 8).toNat = 8 * k := by
+  rw [ofNat_mul_eight k hk, ofNat_eight_mul_toNat k hk]
+
+theorem ofNat_mul_eight_lit (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k * (8 : BitVec 64) = BitVec.ofNat 64 (8 * k) := by
+  rw [show (8 : BitVec 64) = c 8 from c_eight.symm, ofNat_mul_eight k hk]
+
+theorem ofNat_add_one_lit (k : Nat) (hk : k < 8) :
+    BitVec.ofNat 64 k + (1 : BitVec 64) = BitVec.ofNat 64 (k + 1) := by
+  rw [show (1 : BitVec 64) = c 1 from one_lit, ofNat_add_one k hk]
+
+/-- One trip through the body block at allocator base `base`: the lane is folded
+into the accumulator, the two stores run, and the loop returns to `cond` with the
+next prefix. -/
+theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (k : Nat)
+    (hk : k < 8) (hacc : acc = maskPrefix m k) (hpc : s.pc = "body")
+    (hf : LoopFactsAt initMem base s m acc k)
+    (hi1 : lookupName s.env "%i1" = some (.int 64 (BitVec.ofNat 64 k))) :
+    ∃ s', step noCalls loopFunction s = .jump s' ∧ s'.pc = "cond" ∧
+      LoopFactsAt initMem base s' m (maskPrefix m (k + 1)) (k + 1) := by
+  let shv : BitVec 64 := BitVec.ofNat 64 k * (8 : BitVec 64)
+  let bv : BitVec 64 := m >>> shv.toNat
+  let b2v : BitVec 64 := bv &&& (255 : BitVec 64)
+  let zv : BitVec 1 := BitVec.ofBool (b2v = (0 : BitVec 64))
+  let bitv : BitVec 64 := (128 : BitVec 64) <<< shv.toNat
+  let a1v : BitVec 64 := acc ||| bitv
+  let a2v : BitVec 64 := if zv = 1 then a1v else acc
+  let s1 : State := s.bind "%sh" (.int 64 shv)
+  let s2 : State := s1.bind "%b" (.int 64 bv)
+  let s3 : State := s2.bind "%b2" (.int 64 b2v)
+  let s4 : State := s3.bind "%z" (.int 1 zv)
+  let s5 : State := s4.bind "%a0" (.int 64 acc)
+  let s6 : State := s5.bind "%bit" (.int 64 bitv)
+  let s7 : State := s6.bind "%a1" (.int 64 a1v)
+  let s8 : State := s7.bind "%a2" (.int 64 a2v)
+  -- the two stores
+  have hstore1 : storeValue s8 (.int 64) (.int 64 a2v) base =
+      some { s8 with mem := writeBytes s8.mem base (natToBytes a2v.toNat 8) } :=
+    (loadValue_storeValue_64 s8 a2v base).1
+  let s9 : State := { s8 with mem := writeBytes s8.mem base (natToBytes a2v.toNat 8) }
+  let i2v : BitVec 64 := BitVec.ofNat 64 k + (1 : BitVec 64)
+  let s10 : State := s9.bind "%i2" (.int 64 i2v)
+  have hstore2 : storeValue s10 (.int 64) (.int 64 i2v) (base + 8) =
+      some { s10 with mem := writeBytes s10.mem (base + 8) (natToBytes i2v.toNat 8) } :=
+    (loadValue_storeValue_64 s10 i2v (base + 8)).1
+  let s11 : State :=
+    { s10 with mem := writeBytes s10.mem (base + 8) (natToBytes i2v.toNat 8) }
+  let s12 : State := { s11 with pc := "cond", pre := some "body" }
+  -- one instruction at a time
+  have e1 : evalInstr noCalls s (.binop "%sh" .mul 64 (.reg "%i1") (.imm (.int 64 8))) = some s1 := by
+    have h := evalInstr_mul_imm noCalls s "%sh" "%i1" (8 : BitVec 64)
+    simp only [hi1] at h
+    simpa [s1, shv] using h
+  have hl1 : lookupName s1.env "%m" = some (.int 64 m) := by
+    simp [s1, State.bind, lookupName, hf.mReg]
+  have hl2 : lookupName s1.env "%sh" = some (.int 64 shv) := by
+    simp [s1, State.bind, shv]
+  have e2 : evalInstr noCalls s1 (.binop "%b" .lshr 64 (.reg "%m") (.reg "%sh")) = some s2 := by
+    have h := evalInstr_lshr_reg noCalls s1 "%b" "%m" "%sh"
+    simp only [hl1, hl2] at h
+    simpa [s2, bv] using h
+  have hl3 : lookupName s2.env "%b" = some (.int 64 bv) := by
+    simp [s2, State.bind, bv]
+  have e3 : evalInstr noCalls s2 (.binop "%b2" .and 64 (.reg "%b") (.imm (.int 64 255))) = some s3 := by
+    have h := evalInstr_and_imm noCalls s2 "%b2" "%b" (255 : BitVec 64)
+    simp only [hl3] at h
+    simpa [s3, b2v] using h
+  have hl4 : lookupName s3.env "%b2" = some (.int 64 b2v) := by
+    simp [s3, State.bind, b2v]
+  have e4 : evalInstr noCalls s3 (.icmp "%z" .eq 64 (.reg "%b2") (.imm (.int 64 0))) = some s4 := by
+    have h := evalInstr_icmp_eq_imm noCalls s3 "%z" "%b2" (0 : BitVec 64)
+    simp only [hl4] at h
+    simpa [s4, zv] using h
+  have hl_acc : lookupName s4.env "%acc" = some (.ptr base) := by
+    simp [s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
+  have e5 : evalInstr noCalls s4 (.load "%a0" (.int 64) (.reg "%acc")) = some s5 := by
+    have h := eval_load_64 noCalls s4 "%a0" (.reg "%acc") base acc hl_acc (by simpa [s4, s3, s2, s1, State.bind] using hf.accLoad)
+    simpa [s5] using h
+  have hl_sh2 : lookupName s5.env "%sh" = some (.int 64 shv) := by
+    simp [s5, s4, s3, s2, s1, State.bind, lookupName, shv]
+  have e6 : evalInstr noCalls s5 (.binop "%bit" .shl 64 (.imm (.int 64 128)) (.reg "%sh")) = some s6 := by
+    have h := evalInstr_shl_imm_reg noCalls s5 "%bit" "%sh" (128 : BitVec 64)
+    simp only [hl_sh2] at h
+    simpa [s6, bitv] using h
+  have hl_a0 : lookupName s6.env "%a0" = some (.int 64 acc) := by
+    simp [s6, s5, s4, s3, s2, s1, State.bind, lookupName]
+  have hl_bit : lookupName s6.env "%bit" = some (.int 64 bitv) := by
+    simp [s6, State.bind, bitv]
+  have e7 : evalInstr noCalls s6 (.binop "%a1" .or 64 (.reg "%a0") (.reg "%bit")) = some s7 := by
+    have h := evalInstr_or_reg noCalls s6 "%a1" "%a0" "%bit"
+    simp only [hl_a0, hl_bit] at h
+    simpa [s7, a1v] using h
+  have hl_z : lookupName s7.env "%z" = some (.int 1 zv) := by
+    simp [s7, s6, s5, s4, State.bind, lookupName, zv]
+  have hl_a1 : lookupName s7.env "%a1" = some (.int 64 a1v) := by
+    simp [s7, State.bind, a1v]
+  have hl_a0b : lookupName s7.env "%a0" = some (.int 64 acc) := by
+    simp [s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName]
+  have e8 : evalInstr noCalls s7 (.select "%a2" (.int 64) (.reg "%z") (.reg "%a1") (.reg "%a0")) = some s8 := by
+    have h := evalInstr_select_reg noCalls s7 "%a2" "%z" "%a1" "%a0"
+    simp only [hl_z, hl_a1, hl_a0b] at h
+    simp only [ite_int] at h
+    simpa [s8, a2v] using h
+  have hl_a2 : lookupName s8.env "%a2" = some (.int 64 a2v) := by
+    simp [s8, State.bind, a2v]
+  have hl_acc8 : lookupName s8.env "%acc" = some (.ptr base) := by
+    simp [s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
+  have e9 : evalInstr noCalls s8 (.store (.int 64) (.reg "%a2") (.reg "%acc")) = some s9 := by
+    have h := eval_store_64 noCalls s8 (.reg "%a2") (.reg "%acc") a2v base hl_a2 hl_acc8
+    rw [h, hstore1]
+  have hl_i1_9 : lookupName s9.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) := by
+    simp [s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hi1]
+  have e10 : evalInstr noCalls s9 (.binop "%i2" .add 64 (.reg "%i1") (.imm (.int 64 1))) = some s10 := by
+    have h := evalInstr_add_imm noCalls s9 "%i2" "%i1" (1 : BitVec 64)
+    simp only [hl_i1_9] at h
+    simpa [s10, i2v] using h
+  have hl_i2 : lookupName s10.env "%i2" = some (.int 64 i2v) := by
+    simp [s10, State.bind, i2v]
+  have hl_i10 : lookupName s10.env "%i" = some (.ptr (base + 8)) := by
+    simp [s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
+  have e11 : evalInstr noCalls s10 (.store (.int 64) (.reg "%i2") (.reg "%i")) = some s11 := by
+    have h := eval_store_64 noCalls s10 (.reg "%i2") (.reg "%i") i2v (base + 8) hl_i2 hl_i10
+    rw [h, hstore2]
+  refine ⟨s12, ?_, rfl, ?_⟩
+  · have hfind : loopFunction.findBlock s.pc = some bodyBlock := by
+      simp [loopFunction, Function.findBlock, findBlockList, hpc, bodyBlock, bodyInstrs,
+        condBody]
+    simp only [step, hfind, bodyBlock, bodyInstrs, denoteCode, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11]
+    simp [execTerm, s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, hpc]
+  · have hsh : shv.toNat = 8 * k := by
+      simp only [shv]
+      rw [ofNat_mul_eight_lit k hk, ofNat_eight_mul_toNat k hk]
+    have hbit : bitv = (0x80 : BitVec 64) <<< (8 * k) := by
+      simp only [bitv, hsh]
+    have hz : (zv = 1) ↔ isZeroByte m k := by
+      simp only [zv, ofBool_eq_one]
+      simp only [b2v, bv, hsh, isZeroByte]
+    have ha2 : a2v = maskPrefix m (k + 1) := by
+      simp only [a2v, a1v, hacc]
+      rw [maskPrefix_succ]
+      by_cases hp : isZeroByte m k
+      · rw [ite_eq_left (hz.mpr hp), ite_eq_left hp, hbit]
+      · rw [ite_eq_right (fun h => hp (hz.mp h)), ite_eq_right hp]
+        simp
+    have hi2 : i2v = BitVec.ofNat 64 (k + 1) := by
+      simp only [i2v]
+      rw [ofNat_add_one_lit k hk]
+    have hbelow : loadValue
+        (writeBytes (writeBytes s.mem base (natToBytes a2v.toNat 8)) (base + 8)
+          (natToBytes i2v.toNat 8))
+        (.int 64) base =
+        loadValue (writeBytes s.mem base (natToBytes a2v.toNat 8)) (.int 64) base :=
+      loadValue_writeBytes_below (writeBytes s.mem base (natToBytes a2v.toNat 8))
+        (natToBytes i2v.toNat 8) 64 base (base + 8) (by omega)
+    have hrt1 : loadValue (writeBytes s.mem base (natToBytes a2v.toNat 8)) (.int 64) base =
+        some (.int 64 a2v) :=
+      (loadValue_storeValue_64 s a2v base).2
+    have hrt2 : loadValue
+        (writeBytes (writeBytes s.mem base (natToBytes a2v.toNat 8)) (base + 8)
+          (natToBytes i2v.toNat 8))
+        (.int 64) (base + 8) = some (.int 64 i2v) :=
+      (loadValue_storeValue_64
+        { s with mem := writeBytes s.mem base (natToBytes a2v.toNat 8) } i2v (base + 8)).2
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.mReg]
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
+    · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      rw [hbelow, hrt1, ha2]
+    · simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      rw [hrt2, hi2]
+    · simp [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, hf.nextEq]
+    · -- the two stores land inside the band the base state covers, so the
+      -- agreement with the incoming memory is carried to the next iteration
+      have h1 : AgreesOutsideMem
+          (writeBytes s.mem base (natToBytes a2v.toNat 8)) initMem (Band base s.next) :=
+        AgreesOutsideMem.writeBytes_left hf.memBand (bs := natToBytes a2v.toNat 8)
+          (by
+            intro j hj
+            rw [natToBytes_length] at hj
+            rw [hf.nextEq]
+            exact ⟨by omega, by omega⟩)
+      have h2 : AgreesOutsideMem
+          (writeBytes (writeBytes s.mem base (natToBytes a2v.toNat 8)) (base + 8)
+            (natToBytes i2v.toNat 8)) initMem (Band base s.next) :=
+        AgreesOutsideMem.writeBytes_left h1 (bs := natToBytes i2v.toNat 8)
+          (by
+            intro j hj
+            rw [natToBytes_length] at hj
+            rw [hf.nextEq]
+            exact ⟨by omega, by omega⟩)
+      simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
+      exact h2
+
+theorem ofBool_ult_eight :
+    BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64)) = 0 := by decide
+
+/-- The condition block at counter eight and allocator base `base`: the branch to
+`done` is taken. -/
+theorem cond_done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64)
+    (hinv : LoopInvAt initMem base s m acc 8) :
+    ∃ s', step noCalls loopFunction s = .jump s' ∧ s'.pc = "done" ∧
+      LoopFactsAt initMem base s' m acc 8 := by
+  obtain ⟨hpc, hf⟩ := hinv
+  let s1 : State := s.bind "%i1" (.int 64 (BitVec.ofNat 64 8))
+  let s2 : State :=
+    s1.bind "%c" (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64))))
+  let s3 : State := { s2 with pc := "done", pre := some "cond" }
+  have hli1 : lookupName s1.env "%i1" = some (.int 64 (BitVec.ofNat 64 8)) :=
+    lookup_bind_self s "%i1" _
+  have hlc : lookupName s2.env "%c" =
+      some (.int 1 (BitVec.ofBool ((BitVec.ofNat 64 8).ult (8 : BitVec 64)))) :=
+    lookup_bind_self s1 "%c" _
+  have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
+    have h := eval_load_64 noCalls s "%i1" (.reg "%i") (base + 8) (BitVec.ofNat 64 8)
+      hf.iPtr hf.iLoad
+    simpa [s1] using h
+  have e2 : evalInstr noCalls s1 (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 8))) = some s2 := by
+    have h := evalInstr_icmp_ult_imm noCalls s1 "%c" "%i1" (8 : BitVec 64)
+    simp only [hli1] at h
+    simpa [s2] using h
+  refine ⟨s3, ?_, rfl, ?_⟩
+  · have hfind : loopFunction.findBlock s.pc = some condBody := by
+      simp [loopFunction, Function.findBlock, findBlockList, hpc, condBody, condInstrs]
+    simp only [step, hfind, condBody, condInstrs, denoteCode]
+    rw [e1]
+    simp only []
+    rw [e2]
+    simp only [execTerm, evalOperand, hlc, ofBool_ult_eight, s3]
+    simp [s2, s1, State.bind, hpc]
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp [s3, s2, s1, State.bind, lookupName, hf.mReg]
+    · simp [s3, s2, s1, State.bind, lookupName, hf.accPtr]
+    · simp [s3, s2, s1, State.bind, lookupName, hf.iPtr]
+    · simp [s3, s2, s1, State.bind, hf.accLoad]
+    · simp [s3, s2, s1, State.bind, hf.iLoad]
+    · simp [s3, s2, s1, State.bind, hf.nextEq]
+    · simpa [s3, s2, s1, State.bind] using hf.memBand
+
+/-- The exit block at allocator base `base`: load the accumulator and return it. -/
+theorem done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64)
+    (hpc : s.pc = "done") (hf : LoopFactsAt initMem base s m acc 8) :
+    ∃ s', step noCalls loopFunction s = .ret (some (.int 64 acc)) s' ∧
+      s'.mem = s.mem := by
+  let s1 : State := s.bind "%r" (.int 64 acc)
+  have hl_acc : lookupName s.env "%acc" = some (.ptr base) := hf.accPtr
+  have e1 : evalInstr noCalls s (.load "%r" (.int 64) (.reg "%acc")) = some s1 := by
+    have h := eval_load_64 noCalls s "%r" (.reg "%acc") base acc hl_acc hf.accLoad
+    simpa [s1] using h
+  have hl_r : lookupName s1.env "%r" = some (.int 64 acc) := by
+    simp [s1, State.bind]
+  have hfind : loopFunction.findBlock s.pc = some doneBlock := by
+    simp [loopFunction, Function.findBlock, findBlockList, hpc, doneBlock, doneInstrs,
+      bodyBlock, condBody]
+  refine ⟨s1, ?_, ?_⟩
+  · simp only [step, hfind, doneBlock, doneInstrs, denoteCode]
+    rw [e1]
+    simp only [execTerm, evalOperand, hl_r]
+  · simp only [s1, State.bind]
+
+/-- The loop's footprint is what its own allocations cover: the entry block
+allocates two `i64` locals from the reserved address `1`, so the band is read
+off the allocator state before the run and the state after the entry block. -/
+def loopFrame (x : BitVec 64) : Nat → Prop :=
+  AllocFrame (initState loopFunction [.int 64 x]) (entryState x)
+
+/-- The band, computed: two eight-byte locals from address one. -/
+theorem loopFrame_eq (x : BitVec 64) : loopFrame x = Band 1 17 := rfl
+
+/-- The band at allocator base `base`: the two locals the entry block reserves
+there cover `[base, base + 16)`.  Stated so the number checks against
+`loopFrame_eq` at base `1` and against `Band 9 25` at base `9`. -/
+theorem loopFrameAt_eq (x : BitVec 64) (base : Nat) :
+    AllocFrame { (initState loopFunction [.int 64 x]) with next := base }
+        (entryStateAt base x) = Band base (base + 16) := rfl
+
+/-- The addresses the loop stores to are its own two locals, and both lie in the
+band its allocations cover.  They are the pointer values the entry block's
+`alloca`s handed out (`LoopFactsAt.accPtr`, `LoopFactsAt.iPtr` at base `1`), not
+addresses this development assumes. -/
+theorem loop_store_addresses_in_band (x : BitVec 64) :
+    loopFrame x 1 ∧ loopFrame x 9 := by
+  rw [loopFrame_eq]
+  exact ⟨⟨by decide, by decide⟩, ⟨by decide, by decide⟩⟩
+
+/-- The loop condition at any allocator base and from any incoming memory: from
+the invariant at `k` with `k ≤ 8`, the run returns the full prefix, the memory
+still holds that prefix at the accumulator local, and the memory agrees with the
+incoming one outside the band the allocations at that base cover.  The induction
+is on `8 - k`, i.e. on the counter, not on unrolled copies of the body. -/
+theorem cond_run_aux : ∀ (n : Nat) (initMem : Mem) (base : Nat) (s : State)
+    (m acc : BitVec 64) (k : Nat),
+    k ≤ 8 → 8 - k = n → acc = maskPrefix m k → LoopInvAt initMem base s m acc k →
+    ∃ mem, AgreesOutsideMem mem initMem (Band base (base + 16)) ∧
+      loadValue mem (.int 64) base = some (.int 64 (maskPrefix m 8)) ∧
+      runFuel noCalls (2 * n + 2) loopFunction s =
+        some (.ret (some (.int 64 (maskPrefix m 8))) mem)
+  | 0, initMem, base, s, m, acc, k, hk, hn, hacc, hinv => by
+      have hk8 : k = 8 := by omega
+      subst hk8
+      obtain ⟨s1, h1, hp1, hf1⟩ := cond_done_step initMem base s m acc hinv
+      obtain ⟨s2, h2, h2mem⟩ := done_step initMem base s1 m acc hp1 hf1
+      refine ⟨s2.mem, ?_, ?_, ?_⟩
+      · rw [h2mem]
+        have hband := hf1.memBand
+        rw [hf1.nextEq] at hband
+        exact hband
+      · rw [h2mem, ← hacc]
+        exact hf1.accLoad
+      · simp only [runFuel, h1, h2]
+        rw [hacc]
+  | n + 1, initMem, base, s, m, acc, k, hk, hn, hacc, hinv => by
+      have hk8 : k < 8 := by omega
+      obtain ⟨s1, h1, hp1, hf1, hi1⟩ := cond_step initMem base s m acc k hk8 hinv
+      obtain ⟨s2, h2, hp2, hf2⟩ :=
+        body_step initMem base s1 m acc k hk8 hacc hp1 hf1 hi1
+      obtain ⟨mem, hmem, hload, hrun⟩ :=
+        cond_run_aux n initMem base s2 m (maskPrefix m (k + 1)) (k + 1)
+          (by omega) (by omega) rfl ⟨hp2, hf2⟩
+      refine ⟨mem, hmem, hload, ?_⟩
+      simp only [runFuel, h1, h2]
+      rw [show 2 * (n + 1) = 2 * n + 2 from by omega, hrun]
+
+/-- The loop from any allocator base with any incoming memory: it returns
+`spec x`, its allocator advance is exactly sixteen, and its memory agrees with
+the incoming one outside `Band base (base + 16)`.  The agreement conjunct is
+exactly `CallRefinesWithin`'s memory clause; a `MemConfined` conjunct would be
+false here, since the incoming memory may hold bytes outside the band.  Nothing
+in the loop's text reads an address it did not allocate, which is why arbitrary
+incoming memory is harmless. -/
+theorem loop_run_at_base (x : BitVec 64) (base : Nat) (mem : Mem) :
+    ∃ mem', AgreesOutsideMem mem' mem (Band base (base + 16)) ∧
+      runFuel noCalls 19 loopFunction
+        { (initState loopFunction [.int 64 x]) with mem := mem, next := base } =
+          some (.ret (some (.int 64 (spec x))) mem') := by
+  obtain ⟨mem', hagree, _hload, hrun⟩ :=
+    cond_run_aux 8 mem base (entryStateMemAt mem base x)
+      (x ^^^ c 3182967604875373612) 0 0
+      (by decide) (by decide) (maskPrefix_zero _).symm (entry_inv_at x mem base)
+  refine ⟨mem', hagree, ?_⟩
+  rw [runFuel, entry_run_at]
+  have hspec : maskPrefix (x ^^^ c 3182967604875373612) 8 = spec x := by
+    rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+  simpa [hspec] using hrun
+
+/-- The loop returns the specification after nineteen steps, with a memory
+private to the band its own allocations cover. -/
+theorem loop_run_fuel (x : BitVec 64) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧
+      runFuel noCalls 19 loopFunction (initState loopFunction [.int 64 x]) =
+        some (.ret (some (.int 64 (spec x))) mem) := by
+  obtain ⟨mem, hagree, hrun⟩ := loop_run_at_base x 1 []
+  refine ⟨mem, ?_, ?_⟩
+  · rw [loopFrame_eq]
+    exact hagree
+  · simpa [initState] using hrun
+
+/-- The loop leaves a byte at the address of its accumulator local: at the
+`done` block `LoopFactsAt.accLoad` at base `1` gives
+`loadValue s.mem (.int 64) 1 = some _`, and `done_step` shows the terminator does
+not touch the memory.  Needed because the caller-level refusal at a frame
+excluding address `1` is an inequality, and `MemPrivate`/`MemConfined` say nothing
+inside the band. -/
+theorem loop_mem_at_one (x : BitVec 64) :
+    ∃ mem, run noCalls loopFunction [.int 64 x] =
+        some (.ret (some (.int 64 (spec x))) mem) ∧ readByte mem 1 ≠ none := by
+  obtain ⟨mem, _hagree, hload, hrun⟩ :=
+    cond_run_aux 8 [] 1 (entryState x) (x ^^^ c 3182967604875373612) 0 0
+      (by decide) (by decide) (maskPrefix_zero _).symm (entry_inv x)
+  have hspec : maskPrefix (x ^^^ c 3182967604875373612) 8 = spec x := by
+    rw [maskPrefix_eight, c_comma, ← spec_eq_maskFold]
+  have h19 : runFuel noCalls 19 loopFunction (initState loopFunction [.int 64 x]) =
+      some (.ret (some (.int 64 (spec x))) mem) := by
+    rw [runFuel, entry_run]
+    simpa [hspec] using hrun
+  refine ⟨mem, ?_, ?_⟩
+  · simpa [run] using runFuel_mono_le (by decide : 19 ≤ 10000) h19
+  · have h : loadValue mem (.int 64) 1 = some (.int 64 (spec x)) := by
+      simpa [hspec] using hload
+    exact readByte_ne_none_of_loadValue_64 h
+
+/-- The loop returns the lane-wise specification, and its memory holds nothing
+outside the band its allocations cover. -/
+theorem loop_returns_spec_frame (x : BitVec 64) :
+    ∃ mem, MemPrivate (loopFrame x) mem ∧ run noCalls loopFunction [.int 64 x] =
+      some (.ret (some (.int 64 (spec x))) mem) := by
+  obtain ⟨mem, hmem, hrun⟩ := loop_run_fuel x
+  exact ⟨mem, hmem, by simpa [run] using runFuel_mono_le (by decide : 19 ≤ 10000) hrun⟩
+
+/-- The loop returns the lane-wise specification. -/
+theorem loop_returns_spec (x : BitVec 64) :
+    ∃ mem, run noCalls loopFunction [.int 64 x] =
+      some (.ret (some (.int 64 (spec x))) mem) := by
+  obtain ⟨mem, _, hrun⟩ := loop_returns_spec_frame x
+  exact ⟨mem, hrun⟩
+
+/-- Any behaviour of the loop on an `i64` argument is its full-prefix return:
+the run is deterministic, so a shorter budget that succeeds agrees with the
+budget the induction pins, and a `ub` outcome would contradict that return. -/
+theorem loop_beh_ret (x : BitVec 64) (o : Outcome)
+    (h : Beh noCalls loopFunction [.int 64 x] o) :
+    ∃ mem, o = .ret (some (.int 64 (spec x))) mem ∧ MemPrivate (loopFrame x) mem := by
+  obtain ⟨mem, hmem, h19⟩ := loop_run_fuel x
+  have key : ∀ {o' : Outcome},
+      (∃ n, runFuel noCalls n loopFunction (initState loopFunction [.int 64 x]) = some o') →
+        o' = .ret (some (.int 64 (spec x))) mem := by
+    intro o' ⟨n, hn⟩
+    rcases Nat.le_total n 19 with hle | hle
+    · have h1 := runFuel_mono_le hle hn
+      rw [h19] at h1
+      exact (Option.some.inj h1).symm
+    · have h1 := runFuel_mono_le hle h19
+      rw [h1] at hn
+      exact (Option.some.inj hn).symm
+  rcases h with ⟨n, hu⟩ | ⟨n, hr⟩
+  · have hc := key ⟨n, hu⟩
+    cases hc
+  · exact ⟨mem, key ⟨n, hr⟩, hmem⟩
+
+/-- The parsed loop instantiates the framed relation of `LeanLLVM/Frames.lean`
+against the unrolled candidate on every `i64` argument: the same returned value,
+and byte agreement outside the band the loop's two allocations cover. -/
+theorem loop_refines_candidate_within (x : BitVec 64) (o : Outcome)
+    (ho : Beh noCalls loopFunction [.int 64 x] o) :
+    ∃ o', Beh noCalls candidateFunction [.int 64 x] o' ∧
+      o.AgreesOutside (loopFrame x) o' := by
+  obtain ⟨memL, hoEq, hpriv⟩ := loop_beh_ret x o ho
+  subst hoEq
+  refine ⟨.ret (some (.int 64 (byteLoop x))) [], ?_, ?_⟩
+  · simpa using (candidate_beh_int noCalls x [] _).2 rfl
+  · refine ⟨by rw [byteLoop_eq_spec], ?_⟩
+    exact AgreesOutsideMem.mono
+      (AgreesOutsideMem.of_private hpriv (MemPrivate.nil (fun _ => False)))
+      (fun _ ha => by simpa using ha)
+
+/-- The observable form: both units return the specification, and their
+memories agree outside the band the loop's allocations cover.  The candidate
+leaves no memory at all, so its own footprint is empty. -/
+theorem loop_and_candidate_framed (x : BitVec 64) :
+    ∃ memL,
+      Beh noCalls loopFunction [.int 64 x] (.ret (some (.int 64 (spec x))) memL) ∧
+      Beh noCalls candidateFunction [.int 64 x] (.ret (some (.int 64 (spec x))) []) ∧
+      (Outcome.ret (some (.int 64 (spec x))) memL).AgreesOutside (loopFrame x)
+        (Outcome.ret (some (.int 64 (spec x))) []) := by
+  obtain ⟨memL, hmem, hrun⟩ := loop_returns_spec_frame x
+  have hcand : Beh noCalls candidateFunction [.int 64 x]
+      (.ret (some (.int 64 (spec x))) []) := by
+    simpa [byteLoop_eq_spec] using (candidate_beh_int noCalls x [] _).2 rfl
+  exact ⟨memL, Or.inr ⟨10000, hrun⟩, hcand,
+    ⟨rfl, AgreesOutsideMem.mono
+      (AgreesOutsideMem.of_private hmem (MemPrivate.nil (fun _ => False)))
+      (fun _ ha => by simpa using ha)⟩⟩
+
+end LeanLLVM.Refinement.CommaMaskLoop

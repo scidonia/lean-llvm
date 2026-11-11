@@ -122,9 +122,9 @@ target=$target
 triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
-contract=LeanLLVM.Vellum.commaContract
-theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
-loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+contract=LeanLLVM.Refinement.commaContract
+theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
+loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -163,15 +163,15 @@ EOF
 # acquired the repository lock before it removed its previous output; the lock
 # is held through the manifest publication below and released only at the end.
 (cd "$repo" &&
-  rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean &&
-  lake build LeanLLVM.Vellum.CommaMaskIR)
+  rm -f .lake/build/lib/lean/LeanLLVM/Refinement/CommaMaskIR.olean &&
+  lake build LeanLLVM.Refinement.CommaMaskIR)
 # `CommaMaskLoop` imports `CommaMaskIR`, and the loop's certificate names its own
 # theorem, so it is rebuilt after that module: its proof module must see the
 # freshly built `CommaMaskIR` olean.  Every unit this build links against is
 # certified here, so the step is not conditional on a request.
 (cd "$repo" &&
-  rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
-  lake build LeanLLVM.Vellum.CommaMaskLoop)
+  rm -f .lake/build/lib/lean/LeanLLVM/Refinement/CommaMaskLoop.olean &&
+  lake build LeanLLVM.Refinement.CommaMaskLoop)
 for unit in baseline candidate loop; do
   (cd "$repo" &&
     CERT_UNIT="$unit" CERT_MANIFEST="$build/manifest.env" \

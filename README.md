@@ -23,7 +23,7 @@ This repository is an initial vertical slice, not a port of Vellvm:
 | Refinement | `Refines target source` = every outcome of the target is an outcome of the source; `ub` in the source admits everything, divergence admits nothing. A framed relation (`RefinesWithin`, `LeanLLVM/Frames.lean`) compares the returned value and the bytes outside a footprint read off the allocator state. A call environment returns the value, the memory and the allocator state the callee leaves (`CallOutcome`), and the caller adopts them | relational/log relations; a contextual replacement whose frame is load-bearing; a simulation rule for arbitrary loops |
 | Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, a seeded guarded recursion `mfix` with its unfolding equations and positive-delay witnesses, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, a framed rule proves it for the remaining pairs of an invariant, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a refinement- or behaviour-level loop rule; a `runT`/`mfix` correspondence; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
-| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Vellum/`) | no theorem relates Lean's compiled code or machine instructions to the model; installation is gated by a kernel-derived certificate over the proved fixture (hash and byte-for-byte reproduction), not by a compiler-equivalence theorem, and each installed unit — baseline, candidate and the memory-backed loop — has its own certificate and its own covering statement |
+| Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Refinement/`) | no theorem relates Lean's compiled code or machine instructions to the model; installation is gated by a kernel-derived certificate over the proved fixture (hash and byte-for-byte reproduction), not by a compiler-equivalence theorem, and each installed unit — baseline, candidate and the memory-backed loop — has its own certificate and its own covering statement |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
 
 Every pass is a theorem, not a test: the build fails if the refinement proof
@@ -32,7 +32,7 @@ semantics, the pipeline on a concrete program, and the axiom footprint of the
 soundness theorems.
 
 The memory-backed loop is the current boundary of that claim.  Its fixture is
-printed from the Lean AST in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
+printed from the Lean AST in `LeanLLVM/Refinement/CommaMaskLoopBody.lean` by
 `lake exe leanllvm-loop-emit`, through the framework's own printer, so the text
 the correctness and framed-memory statements are proved about is what that AST
 renders to.  It is not Lean's native compiler output: no `lean -c` emission and
@@ -93,7 +93,7 @@ because the frame is an arbitrary proposition; the routes above are untouched.
 The framework's subject is LLVM IR.  Everything above concerns the syntax, the
 semantics, the refinement relation and the passes over it.
 
-There is also a worked demonstration under `LeanLLVM/JSON/`, `LeanLLVM/Vellum/`
+There is also a worked demonstration under `LeanLLVM/JSON/`, `LeanLLVM/Refinement/`
 and `kernel/json/`: a real SIMD parser for a subset of JSON, taken from C
 through its emitted IR into the framework, with each translation unit carrying
 its own record, its own `Satisfies` theorem, and a certified composition for the
@@ -243,7 +243,7 @@ conditional edge is gone, which is what the certified branch folder proves.
 
 `DESIGN.md` records the refinement definition, the modelling choices that bound
 what the framework can claim, and the next milestones.  The pure seam contract
-and its proof are in `LeanLLVM/Vellum/`: `commaContract ⊢ byteLoop ⊑ swar`,
+and its proof are in `LeanLLVM/Refinement/`: `commaContract ⊢ byteLoop ⊑ swar`,
 with `Correct` transferred to the candidate and a two-call contextual theorem.
 
 ## Refinement discipline

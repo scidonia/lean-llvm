@@ -26,15 +26,15 @@ here; the four aliasing findings are all inside the clauses that are.
 
 Run: `nix develop -c lake env lean tests/escape-expand-matrix.lean`.
 -/
-import LeanLLVM.Vellum.JsonEscapeDecodeRun
+import LeanLLVM.Refinement.JsonEscapeDecodeRun
 
 set_option maxRecDepth 20000
 
 open LeanLLVM
-open LeanLLVM.Vellum
-open LeanLLVM.Vellum.JsonEscapeIR
-open LeanLLVM.Vellum.JsonEscapeIntrinsics
-open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Refinement
+open LeanLLVM.Refinement.JsonEscapeIR
+open LeanLLVM.Refinement.JsonEscapeIntrinsics
+open LeanLLVM.Refinement.JsonScanSpec
 
 namespace EscapeMatrix
 

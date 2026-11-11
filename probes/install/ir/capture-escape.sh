@@ -272,7 +272,7 @@
 # The call set is reported the same way and is what the model vocabulary is
 # sized from: the fixture's `call @llvm.*` targets are enumerated from the
 # inventory, the modelled spellings are extracted from the `Calls` environments
-# in `LeanLLVM/Vellum`, and the difference is printed.  That difference is not
+# in `LeanLLVM/Refinement`, and the difference is printed.  That difference is not
 # failed on here — the vocabulary's own sufficiency artifact is where an
 # unmodelled call fails closed — but it is never recalled: today the fixture
 # calls five intrinsic spellings, two are bound (`ctpop.i64`, `cttz.i64`) and
@@ -1405,7 +1405,7 @@ intrinsic_calls "$work/inventory.body" > "$work/intrinsics"
 # admission is not a model; the model is the binding the bridge supplies.
 modelled_set() {
   local f
-  for f in "$repo"/LeanLLVM/Vellum/*.lean; do
+  for f in "$repo"/LeanLLVM/Refinement/*.lean; do
     grep -qE '^def [A-Za-z0-9_]*Calls : Calls' "$f" || continue
     grep -oE '^[[:space:]]*\| "llvm\.[^"]+"' "$f" |
       sed -E 's/.*"(llvm[^"]*)"/\1/'
@@ -1414,7 +1414,7 @@ modelled_set() {
 modelled_set > "$work/modelled"
 
 [ -s "$work/modelled" ] ||
-  fail "no intrinsic binding was found in LeanLLVM/Vellum; the modelled set's extractor is not evidence"
+  fail "no intrinsic binding was found in LeanLLVM/Refinement; the modelled set's extractor is not evidence"
 grep -qx 'llvm.cttz.i64' "$work/modelled" ||
   fail "the modelled set's extractor does not see llvm.cttz.i64, a spelling the tree binds; it is not evidence"
 
@@ -1434,7 +1434,7 @@ LC_ALL=C comm -12 "$work/intrinsics" "$work/modelled" > "$work/have"
 #
 # The intrinsic call set is what the escape unit's model vocabulary is sized
 # from, so the split is measured here and printed beside the list it counts.
-# "bound in the tree" means some `Calls` environment in `LeanLLVM/Vellum` binds
+# "bound in the tree" means some `Calls` environment in `LeanLLVM/Refinement` binds
 # the spelling; `Parser.lean`'s `checkIntrinsicShape` validates a spelling and is
 # not a model, so it is outside the comparison.  A callee that is not an
 # `llvm.*` intrinsic is one of the fixture's own definitions, and the capture

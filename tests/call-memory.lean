@@ -19,10 +19,10 @@ import LeanLLVM
 namespace CallMemory
 
 open LeanLLVM
-open LeanLLVM.Vellum
-open LeanLLVM.Vellum.SeamContext
-open LeanLLVM.Vellum.CommaMaskLoop
-open LeanLLVM.Vellum.CommaMaskIR
+open LeanLLVM.Refinement
+open LeanLLVM.Refinement.SeamContext
+open LeanLLVM.Refinement.CommaMaskLoop
+open LeanLLVM.Refinement.CommaMaskIR
 
 /-! ### The programs the scenarios run -/
 

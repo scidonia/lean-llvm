@@ -9,13 +9,13 @@ fixture route.  The redirect has to be inside the shell the dev shell starts:
 shell's own startup banner, which is printed on the way in.
 
 The text is the header comment below followed by `LeanLLVM.Function.render` of
-`LeanLLVM.Vellum.CommaMaskLoop.loopFunction`, the AST that
-`LeanLLVM/Vellum/CommaMaskLoop.lean` parses the file back to and proves the
+`LeanLLVM.Refinement.CommaMaskLoop.loopFunction`, the AST that
+`LeanLLVM/Refinement/CommaMaskLoop.lean` parses the file back to and proves the
 correctness and framed-memory statements about.
 
 This is the framework's printer rendering a Lean-defined function; no `lean -c`
 C emission and no clang lowering is involved anywhere on this path.  What the
-proofs pin is the textual IR: `LeanLLVM/Vellum/CommaMaskLoop.lean` parses this
+proofs pin is the textual IR: `LeanLLVM/Refinement/CommaMaskLoop.lean` parses this
 file and proves its correctness and framed-memory statements about the AST that
 results.  Nothing here certifies LLVM's lowering of that text, the object built
 from it, or provenance from Lean's native compiler, and none of those is
@@ -27,7 +27,7 @@ print unless its own output parses back to the same function, so a construct or
 attribute the parser does not model cannot reach the fixture silently.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.CommaMaskLoopBody
+import LeanLLVM.Refinement.CommaMaskLoopBody
 
 open LeanLLVM
 
@@ -71,7 +71,7 @@ def emit (f : Function) : Except String String := do
       | fs => throw s!"the rendered text parses to {fs.length} functions, not one"
 
 def main : IO UInt32 := do
-  match emit LeanLLVM.Vellum.CommaMaskLoop.loopFunction with
+  match emit LeanLLVM.Refinement.CommaMaskLoop.loopFunction with
   | .error e =>
       IO.eprintln s!"leanllvm-loop-emit: {e}"
       return 1

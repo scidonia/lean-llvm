@@ -29,7 +29,7 @@ Modes:
   The kernel is not re-implemented here.  A row stages a window in memory —
   three prefix bytes, the document, and zero padding to the 64-byte boundary
   the block count counts — runs `utf8Function`, the AST
-  `LeanLLVM/Vellum/JsonUtf8IR.lean` pins to
+  `LeanLLVM/Refinement/JsonUtf8IR.lean` pins to
   `probes/install/ir/json-utf8.candidate.ll`, through `runFuel` under the
   repository's semantics, and reads the returned word.  The word printed is the
   body's, so a route that compares it with the object's and with the measured
@@ -55,11 +55,11 @@ Modes:
   expectation in the stage's units.  A malformed line exits 2; a file that
   cannot be read exits 2 as well, since every row here is an assertion input.
 -/
-import LeanLLVM.Vellum.JsonUtf8Spec
-import LeanLLVM.Vellum.JsonUtf8IR
+import LeanLLVM.Refinement.JsonUtf8Spec
+import LeanLLVM.Refinement.JsonUtf8IR
 
 open LeanLLVM
-open LeanLLVM.Vellum
+open LeanLLVM.Refinement
 
 namespace JsonUtf8Main
 

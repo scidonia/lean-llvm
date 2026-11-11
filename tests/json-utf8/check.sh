@@ -15,7 +15,7 @@
 #   * the object — `kernel/json/utf8.c` compiled with the measured compiler line
 #     and called through `probes/json/utf8_driver.c`;
 #   * the Lean body — `utf8Function`, the AST
-#     `LeanLLVM/Vellum/JsonUtf8IR.lean` pins to
+#     `LeanLLVM/Refinement/JsonUtf8IR.lean` pins to
 #     `probes/install/ir/json-utf8.candidate.ll`, run by `leanllvm-json-utf8`
 #     through `runFuel` under the repositorys semantics;
 #   * the measured statements — `probes/json/utf8_measured.c`, which includes

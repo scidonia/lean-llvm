@@ -19,7 +19,7 @@ build=${BUILD_DIR:-"$here/build"}
 # selector elaborate the proof module from source. Warm its dependency oleans
 # first through the repository lock; `lake build` does not track the
 # `include_str` fixtures themselves.
-bash "$install/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR >/dev/null
+bash "$install/lake-locked.sh" build LeanLLVM.Refinement.CommaMaskIR >/dev/null
 
 "$here/build.sh" >/dev/null
 

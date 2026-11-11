@@ -3,7 +3,7 @@ Rights on the region claim, stated beside it.
 
 `LeanLLVM/FramePredicate.lean` states the region claim `Owns P` as two facts about
 one predicate: nothing outside `P` changes, and every location of `P` is present.
-One predicate for both questions is why `LeanLLVM/Vellum/JsonEscapeDecodeRun.lean`
+One predicate for both questions is why `LeanLLVM/Refinement/JsonEscapeDecodeRun.lean`
 carries four hand-written disjointness clauses — `tab`/`dst`, `err`/`dst`,
 `err`/`xj`, `xj`/`dst` — each found by executing a staging that broke the post.
 The model cannot say "this unit may not write here": it can only say that two

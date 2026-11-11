@@ -4,7 +4,7 @@ word's specification rows.
 
 The kernel is not re-implemented here.  A position row stages a mask stream,
 the 8 KiB byte table and an output buffer in memory, runs `entryPos8Function`
-or `entryB8Function` — the ASTs `LeanLLVM/Vellum/JsonEntryIR.lean` pins to
+or `entryB8Function` — the ASTs `LeanLLVM/Refinement/JsonEntryIR.lean` pins to
 `probes/install/ir/json-entry.candidate.ll` — through `runFuel` under the
 repository's semantics, and reads what the body wrote back out of the buffer.
 The words printed are the body's, so a route that compares them with the
@@ -49,12 +49,12 @@ Exit status: `0` when every row was produced (and every expectation held), `1`
 on a mismatch or a usage error, `2` when an input cannot be read.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.JsonEntryIR
+import LeanLLVM.Refinement.JsonEntryIR
 
 open LeanLLVM
 open LeanLLVM.JSON
-open LeanLLVM.Vellum.JsonEntryIR
-open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Refinement.JsonEntryIR
+open LeanLLVM.Refinement.JsonScanSpec
 
 namespace JsonEntryMain
 
@@ -163,7 +163,7 @@ def masksBytes (ms : List Nat) : List UInt8 :=
 
 /-- The population count of a mask word. -/
 def popcount (m : Nat) : Nat :=
-  LeanLLVM.Vellum.BitLanes.ctpop (BitVec.ofNat 64 m)
+  LeanLLVM.Refinement.BitLanes.ctpop (BitVec.ofNat 64 m)
 
 /-- The cursor a correct body returns over the stream. -/
 def derivedCount (k : Nat) (masks : List Nat) : Nat :=

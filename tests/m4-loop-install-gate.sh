@@ -77,7 +77,7 @@ set -e
 
 mkdir -p "$fakebin" "$fixtures/ir" "$units" "$outdir" "$rebuild" "$proofs" \
   "$canonical" "$mirror/probes/install/build" \
-  "$mirror/.lake/build/lib/lean/LeanLLVM/Vellum"
+  "$mirror/.lake/build/lib/lean/LeanLLVM/Refinement"
 : > "$link_log"
 
 target=x86_64-unknown-linux-gnu
@@ -290,7 +290,7 @@ if [ "${1:-}" = build ]; then
   [ "$#" -eq 2 ] ||
     { echo "lake: unexpected build arguments: $*" >&2; exit 1; }
   case "$2" in
-    LeanLLVM.Vellum.CommaMaskIR|LeanLLVM.Vellum.CommaMaskLoop) exit 0 ;;
+    LeanLLVM.Refinement.CommaMaskIR|LeanLLVM.Refinement.CommaMaskLoop) exit 0 ;;
     *) echo "lake: unexpected build target: $2" >&2; exit 1 ;;
   esac
 fi
@@ -393,7 +393,7 @@ cat > "$fixtures/differential.txt" <<'CERT'
 kind: differential
 symbol: leanllvm_comma_mask8
 bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate
-theorem: LeanLLVM.Vellum.CommaMaskIR.IR_refines
+theorem: LeanLLVM.Refinement.CommaMaskIR.IR_refines
 covers: candidate-vs-baseline, loop-vs-candidate
 RESULT: PASS
 CERT
@@ -421,7 +421,7 @@ sha() { sha256sum "$1" | cut -d' ' -f1; }
 # certificate carries the checked axiom set of the theorem it names.
 pinned_axioms() { # theorem name
   sed -n "s/.*$1. depends on axioms: \[\([^]]*\)\].*/\1/p" \
-    "$repo/LeanLLVMTest/Vellum.lean" |
+    "$repo/LeanLLVMTest/Refinement.lean" |
     tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
     LC_ALL=C sort | paste -sd, -
 }
@@ -463,9 +463,9 @@ target=$target
 triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
-contract=LeanLLVM.Vellum.commaContract
-theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
-loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+contract=LeanLLVM.Refinement.commaContract
+theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
+loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -709,7 +709,7 @@ else
   # explain the result.
   case "$mode" in
     --strict-theorem)
-      replace_value "$proof_loop" theorem LeanLLVM.Vellum.CommaMaskIR.IR_refines
+      replace_value "$proof_loop" theorem LeanLLVM.Refinement.CommaMaskIR.IR_refines
       ;;
     --strict-hash|--fallback-hash)
       loop_hash=$(value_of "$proof_loop" unit_object_sha256)

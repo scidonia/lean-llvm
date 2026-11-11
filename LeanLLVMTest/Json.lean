@@ -185,8 +185,8 @@ def subtractIdiom (x : BitVec 64) : BitVec 64 :=
   let m := x ^^^ 0x2C2C2C2C2C2C2C2C
   (m - 0x0101010101010101) &&& ~~~m &&& 0x8080808080808080
 
-#guard LeanLLVM.Vellum.swar 0x0000000000002D2C = 0x80
-#guard LeanLLVM.Vellum.spec 0x0000000000002D2C = 0x80
+#guard LeanLLVM.Refinement.swar 0x0000000000002D2C = 0x80
+#guard LeanLLVM.Refinement.spec 0x0000000000002D2C = 0x80
 #guard subtractIdiom 0x0000000000002D2C = 0x8080
 
 /-! ### Parser fixtures
@@ -1209,7 +1209,7 @@ end LeanLLVMTest.Json
 
 /-! ### The emitted classifier body
 
-`LeanLLVM/Vellum/JsonClassifyIR.lean` pins the fixture, builds its AST
+`LeanLLVM/Refinement/JsonClassifyIR.lean` pins the fixture, builds its AST
 register by register, and proves the body's contract against the block layer:
 the packed lanes are the block mask, the outcome does not depend on the
 allocator state the run is seeded with, and an unreadable block is `ub`.  The
@@ -1228,29 +1228,29 @@ restated below beside its footprint. -/
 -- `Nat.decEq`-decidable.  It is a core tactic artefact, not an arbitrary-`Prop`
 -- frame, and not `bv_decide`.
 /--
-info: 'LeanLLVM.Vellum.JsonClassifyIR.classify32_next_independent' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'LeanLLVM.Refinement.JsonClassifyIR.classify32_next_independent' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in
-#print axioms LeanLLVM.Vellum.JsonClassifyIR.classify32_next_independent
+#print axioms LeanLLVM.Refinement.JsonClassifyIR.classify32_next_independent
 
 /--
-info: 'LeanLLVM.Vellum.JsonClassifyIR.scannerLLVM_refines' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'LeanLLVM.Refinement.JsonClassifyIR.scannerLLVM_refines' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in
-#print axioms LeanLLVM.Vellum.JsonClassifyIR.scannerLLVM_refines
+#print axioms LeanLLVM.Refinement.JsonClassifyIR.scannerLLVM_refines
 
 /--
-info: 'LeanLLVM.Vellum.JsonClassifyIR.classify32_undefined_of_no_read' depends on axioms: [propext, Quot.sound]
+info: 'LeanLLVM.Refinement.JsonClassifyIR.classify32_undefined_of_no_read' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs (whitespace := lax) in
-#print axioms LeanLLVM.Vellum.JsonClassifyIR.classify32_undefined_of_no_read
+#print axioms LeanLLVM.Refinement.JsonClassifyIR.classify32_undefined_of_no_read
 
-open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+open LeanLLVM.JSON LeanLLVM.Refinement.JsonClassifyIR in
 example : ∀ (l : List (BitVec 1)) (k : Nat),
     (LeanLLVM.lanesToNat l).testBit k = (l[k]? = some (1 : BitVec 1)) :=
   @LeanLLVM.lanesToNat_testBit
 
-open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+open LeanLLVM.JSON LeanLLVM.Refinement.JsonClassifyIR in
 example : ∀ (block : Block32) (mem : LeanLLVM.Mem) (p n m : Nat),
     LeanLLVM.readBytes mem p 32 = some (List.ofFn block) →
     LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function
@@ -1261,7 +1261,7 @@ example : ∀ (block : Block32) (mem : LeanLLVM.Mem) (p n m : Nat),
           mem := mem, next := m } :=
   @classify32_next_independent
 
-open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+open LeanLLVM.JSON LeanLLVM.Refinement.JsonClassifyIR in
 example : ∀ (block : Block32) (mem : LeanLLVM.Mem) (p : Nat),
     LeanLLVM.readBytes mem p 32 = some (List.ofFn block) →
     LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function
@@ -1271,7 +1271,7 @@ example : ∀ (block : Block32) (mem : LeanLLVM.Mem) (p : Nat),
         (some (LeanLLVM.Value.int 32 (maskOf block))) mem) :=
   @scannerLLVM_refines
 
-open LeanLLVM.JSON LeanLLVM.Vellum.JsonClassifyIR in
+open LeanLLVM.JSON LeanLLVM.Refinement.JsonClassifyIR in
 example : ∀ (mem : LeanLLVM.Mem) (p : Nat),
     LeanLLVM.readBytes mem p 32 = none →
     LeanLLVM.runFuel LeanLLVM.noCalls 10000 classify32Function

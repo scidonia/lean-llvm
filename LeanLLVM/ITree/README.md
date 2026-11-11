@@ -80,7 +80,7 @@ footprint from **two separate sources**, and neither one accounts for the other:
 
 So the ceiling here is not evidence that a host proof decided a proposition; it
 is the carrier's floor plus the frame decision.  The pins in
-`LeanLLVMTest/Vellum.lean` and `tests/itree-import.lean` record both.
+`LeanLLVMTest/Refinement.lean` and `tests/itree-import.lean` record both.
 
 ## The relation
 
@@ -136,7 +136,7 @@ their hypotheses:
   (i) `post`-related returns give related continuations, (ii) each `f o`
   silently completes at a return or reaches UB, (iii) `f .ub` and `g .ub` reach
   UB, and (iv) `g` reaches no timeout at a defined return — the quantifier is
-  only over `g (.ret v mem)`.  `LeanLLVMTest/Vellum.lean` checks the positive
+  only over `g (.ret v mem)`.  `LeanLLVMTest/Refinement.lean` checks the positive
   theorem and two refusals whose source pair is related, and the refusals break
   different hypotheses:
   * the UB→timeout refusal binds `simtt checkPostTrue (ret o) ubNode` with a

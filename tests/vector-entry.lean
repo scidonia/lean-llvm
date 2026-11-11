@@ -2,7 +2,7 @@
 JE1's parser half: the six spellings the entry closure admits, and the nine
 neighbouring spellings it refuses by name.
 
-This file imports `LeanLLVM` only — not `LeanLLVM.Vellum.JsonEntryIR` — so it
+This file imports `LeanLLVM` only — not `LeanLLVM.Refinement.JsonEntryIR` — so it
 elaborates against the parser that exists today, and an admitted control fails
 at its own assertion rather than the file stopping at an unresolved import.
 

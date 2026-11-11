@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run one Lake command under the repository source-elaboration lock.
 #
-#   bash probes/install/lake-locked.sh build LeanLLVM.Vellum.CommaMaskIR
+#   bash probes/install/lake-locked.sh build LeanLLVM.Refinement.CommaMaskIR
 #   bash probes/install/lake-locked.sh exe leanllvm-loop-emit
 #
 # Lake rewrites the project's oleans and executables, so a warm-up build or the

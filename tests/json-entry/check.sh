@@ -7,7 +7,7 @@
 # Two actors must agree, row for row, on the same rows:
 #
 #   * the Lean body — `entryPos8Function` / `entryB8Function`, the ASTs
-#     `LeanLLVM/Vellum/JsonEntryIR.lean` pins to
+#     `LeanLLVM/Refinement/JsonEntryIR.lean` pins to
 #     `probes/install/ir/json-entry.candidate.ll` — run by
 #     `leanllvm-json-entry` under the repository's semantics;
 #   * the installed object — `kernel/json/entry.c` compiled with the measured

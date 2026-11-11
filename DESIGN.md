@@ -97,10 +97,10 @@ Four points make it usable rather than vacuous:
   framed refinement from any `Refines`, so every existing theorem keeps its
   meaning and none is weakened.
 
-`LeanLLVM/Vellum/CommaMaskLoop.lean` is the instance: the loop's two `alloca`s
+`LeanLLVM/Refinement/CommaMaskLoop.lean` is the instance: the loop's two `alloca`s
 give the band, the invariant carries the proof that both stores stay inside it,
 and `loop_refines_candidate_within` states the same returned value with byte
-agreement outside the band.  `LeanLLVMTest/Vellum.lean` also exercises the
+agreement outside the band.  `LeanLLVMTest/Refinement.lean` also exercises the
 negative direction: a unit that writes one byte outside the frame, for which the
 framed relation is proved to fail.
 
@@ -301,7 +301,7 @@ the handler into the `tau` closure of the handled tree; the candidate has no
 memory events.  The postcondition compares the two handler-produced returns, each
 from its own handler's final memory, and a returned memory that differs at
 address `0`, outside the band, is rejected by the same postcondition
-(`LeanLLVMTest/Vellum.lean`).  It installs nothing, and it does not generalise the
+(`LeanLLVMTest/Refinement.lean`).  It installs nothing, and it does not generalise the
 budgets or the frame.
 
 `loop_candidate_beh_bridge` is the one behaviour statement derived from the bridge
@@ -335,7 +335,7 @@ beyond `PureEnv`.
 
 ## Pure seam refinement
 
-`LeanLLVM/Vellum/` carries the first boundary contract at the type the seam
+`LeanLLVM/Refinement/` carries the first boundary contract at the type the seam
 uses.  A contract fixes the admitted inputs and the observable guarantee:
 
 ```lean
@@ -358,19 +358,19 @@ The first instance is the comma mask.  `swar` (the baseline body) and
 `byteLoop` (the candidate body) are both proved equal to the lane-wise `spec`,
 so `commaContract ⊢ byteLoop ⊑ swar`; a two-call context is preserved as well.
 
-`LeanLLVM/Vellum/CommaMaskIR.lean` carries the same statement to emitted IR:
+`LeanLLVM/Refinement/CommaMaskIR.lean` carries the same statement to emitted IR:
 it parses the probe's two fixtures, pins the ASTs, proves each body returns the
 corresponding `CommaMask` function, and concludes
 `Refines candidateFunction baselineFunction` for every call environment.  The
 fixtures are what the installation probe compiles and installs, so the proved
-code is the installed code.  `LeanLLVM/Vellum/SeamContext.lean` adds a caller
+code is the installed code.  `LeanLLVM/Refinement/SeamContext.lean` adds a caller
 whose body is a call to the seam and proves that swapping the environment entry
 leaves its behaviour unchanged, so the replacement goes through the call
 instruction rather than an inlined body.
 The 64-bit identities are kernel-checked in `CommaMaskKernel.lean` by a
 byte-lane argument: the packed addition is shown to have no lane carries, each
 8-bit lane is discharged by `decide`, and the lanes are glued back by a
-base-256 decomposition.  `LeanLLVMTest/Vellum.lean` pins the standard axiom
+base-256 decomposition.  `LeanLLVMTest/Refinement.lean` pins the standard axiom
 footprint; no native bit-blast axioms remain.
 
 ## Modelling choices

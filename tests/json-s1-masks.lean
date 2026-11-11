@@ -17,14 +17,14 @@ reached.  Elaborated by
 `nix develop -c lake env lean tests/json-s1-masks.lean`.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.JsonS1MasksIR
+import LeanLLVM.Refinement.JsonS1MasksIR
 
 namespace JsonS1MasksScenario
 
 open LeanLLVM
-open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Refinement.JsonS1MasksIR
 open LeanLLVM.JSON
-open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Refinement.JsonScanSpec
 
 /-! ### JS1 — the fixture is the pinned AST -/
 

@@ -2,7 +2,7 @@
 JS1's parser half: the eleven spellings the stage-1 closure admits, and the
 thirteen neighbouring spellings it refuses by name.
 
-This file imports `LeanLLVM` only — not `LeanLLVM.Vellum.JsonS1MasksIR` — so it
+This file imports `LeanLLVM` only — not `LeanLLVM.Refinement.JsonS1MasksIR` — so it
 elaborates against the parser that exists today.  That is what makes it a live
 observation: the admitted controls are the forms the emission uses — plus the
 vector `shl` that is the widening's other direction, exercised here as an

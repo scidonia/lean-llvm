@@ -10,7 +10,7 @@
  * This is a runtime check over the corpus, not a proof and not an installation
  * certificate: the theorem for an installed unit is `IR_refines` over the
  * candidate and the baseline, and the loop's own theorem is in
- * `LeanLLVM/Vellum/CommaMaskLoop.lean`.
+ * `LeanLLVM/Refinement/CommaMaskLoop.lean`.
  */
 #include <stdint.h>
 #include <stdio.h>

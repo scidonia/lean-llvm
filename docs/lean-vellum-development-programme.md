@@ -288,12 +288,12 @@ accepted on the strength of a narrower result.
   (`CallOutcome`) and `.call` adopts them, so a callee that writes is inside the
   semantics.  The value-level form —
   `RefinesWithinAcross`, `replaceFunction_sound` and the
-  `memCaller_replaces_loop` instance in `LeanLLVM/Vellum/ModuleRefinement.lean`,
+  `memCaller_replaces_loop` instance in `LeanLLVM/Refinement/ModuleRefinement.lean`,
   proved from the directional `CallRefines` over the caller and the two seam
   selections — demands complete agreement of the two outcomes, all three fields
   included, so its frame is inert and it says nothing about a callee footprint
   that differs.  The contextual theorem over one pure caller is the earlier
-  instance (`LeanLLVM/Vellum/SeamContext.lean`).
+  instance (`LeanLLVM/Refinement/SeamContext.lean`).
 - **M3 — machinery in place; certificate-bound installation openly scoped.**
   `probes/install/build.sh` rebuilds the imported proof graph, re-elaborates
   `CommaMaskIR` from source and re-elaborates `CommaMaskLoop` after it, then
@@ -336,7 +336,7 @@ accepted on the strength of a narrower result.
   hash-and-rebuild bridge, not that theorem); and the trusted compiler, runtime
   and manifest-shell boundary.
 - **M4 — open.** The loop fixture (`probes/install/ir/loop.ll`) is printed from
-  the Lean AST (`LeanLLVM/Vellum/CommaMaskLoopBody.lean`) by
+  the Lean AST (`LeanLLVM/Refinement/CommaMaskLoopBody.lean`) by
   `lake exe leanllvm-loop-emit` through `LeanLLVM.Function.render`, and
   `capture.sh` regenerates it; the correctness and framed-memory theorems are
   pinned to that AST by a parsed `#guard`, so the text they are about is what

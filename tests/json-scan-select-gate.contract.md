@@ -76,11 +76,11 @@ constant that no assertion reads, because the body's value is not this route's
 observable.
 
 The certificate names the unit's own statement and contract, which are the
-scanner's and not the classifier's: `theorem=LeanLLVM.Vellum.JsonScanIR.scanWindowLLVM_refines`
-and `contract=LeanLLVM.Vellum.JsonScanABI.jsonScanContract`, bound by the
+scanner's and not the classifier's: `theorem=LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines`
+and `contract=LeanLLVM.Refinement.JsonScanABI.jsonScanContract`, bound by the
 manifest's `json_scan_theorem` and `json_scan_contract`.  The manifest's global
 `theorem` and `contract` keep naming
-`LeanLLVM.Vellum.CommaMaskIR.IR_refines` and `LeanLLVM.Vellum.commaContract` for
+`LeanLLVM.Refinement.CommaMaskIR.IR_refines` and `LeanLLVM.Refinement.commaContract` for
 the baseline and the candidate.  The certificate's `axioms` field is the named
 theorem's pinned footprint when
 `LeanLLVMTest/` pins it — it does not at this revision — and otherwise the
@@ -116,8 +116,8 @@ scanner theorem has its pin the fixture reads that pin.
 - **Actor:** the build integrator.
 - **Given:** the same manifest, the same valid-certificate install as JS1, and
   the JSON unit's certificate with its `theorem` field changed from
-  `LeanLLVM.Vellum.JsonScanIR.scanWindowLLVM_refines` to
-  `LeanLLVM.Vellum.CommaMaskIR.IR_refines`, a validly-shaped name that covers
+  `LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines` to
+  `LeanLLVM.Refinement.CommaMaskIR.IR_refines`, a validly-shaped name that covers
   the candidate and the baseline and not this unit, and the manifest's
   `proof_json_scan_sha256` rewritten to the changed bytes.
 - **When:** the integrator invokes the selector with `UNIT=json_scan STRICT=1`

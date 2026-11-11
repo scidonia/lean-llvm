@@ -92,7 +92,7 @@
 # --- The loop fixture, printed from Lean ---------------------------------
 #
 # loop.ll does not go through clang.  It is printed from the `loopFunction` AST
-# in `LeanLLVM/Vellum/CommaMaskLoopBody.lean` by
+# in `LeanLLVM/Refinement/CommaMaskLoopBody.lean` by
 #
 #   bash probes/install/lake-locked.sh exe leanllvm-loop-emit
 #

@@ -189,13 +189,13 @@ the new field; this is the list a reader can check item by item.
 | where | what changed |
 |---|---|
 | `Frames.State.AgreesOutside` | the relation gains `s.pre = t.pre` (the one *definition* that moved, so that a relation named "agrees" is not silent about a field `phi` reads); `agreesOutside_refl` gains the matching `rfl`. No consumer exists, so no theorem elsewhere moved. |
-| `Vellum/CommaMaskIR.baseline_step_entry` | the expected `.jump` state gains `pre := some "bb"` (the block it leaves). |
-| `Vellum/CommaMaskLoop.entryStateMemAt` | the expected state at `cond` gains `pre := some "entry"`; `entry_inv_at`'s two scratch states gain `pre := none`. |
-| `Vellum/CommaMaskLoop.cond_step`, `body_step`, `cond_done_step` | the expected jump states `s3`/`s12` gain `pre := some <the block the jump leaves>`; each step proof closes with `hpc` for the `pc` premise the field now exposes. |
-| `Vellum/SeamContext.envForBody`, `Vellum/JsonSeam.envForBodySym` | the run's initial record literal gains `pre := none` (a callee starts at its entry block, which has no predecessor). |
-| `Vellum/ModuleRefinement` | the run literals in that file and `memCaller_step`'s expected `.ret` state gain `pre := none`. |
-| `Vellum/JsonSeam` | the run literals in that file and `scanCaller_step_of_call`'s expected `.ret` state gain `pre := none`. |
-| `Vellum/JsonScanLane.structBitStart` | the table's starting state gains `pre := none`. |
+| `Refinement/CommaMaskIR.baseline_step_entry` | the expected `.jump` state gains `pre := some "bb"` (the block it leaves). |
+| `Refinement/CommaMaskLoop.entryStateMemAt` | the expected state at `cond` gains `pre := some "entry"`; `entry_inv_at`'s two scratch states gain `pre := none`. |
+| `Refinement/CommaMaskLoop.cond_step`, `body_step`, `cond_done_step` | the expected jump states `s3`/`s12` gain `pre := some <the block the jump leaves>`; each step proof closes with `hpc` for the `pc` premise the field now exposes. |
+| `Refinement/SeamContext.envForBody`, `Refinement/JsonSeam.envForBodySym` | the run's initial record literal gains `pre := none` (a callee starts at its entry block, which has no predecessor). |
+| `Refinement/ModuleRefinement` | the run literals in that file and `memCaller_step`'s expected `.ret` state gain `pre := none`. |
+| `Refinement/JsonSeam` | the run literals in that file and `scanCaller_step_of_call`'s expected `.ret` state gain `pre := none`. |
+| `Refinement/JsonScanLane.structBitStart` | the table's starting state gains `pre := none`. |
 | `ITree/LoopInstance` | three hand-built jump states gain `pre := some <source>.pc`. |
 | `tests/getelementptr.lean` | three scratch states gain `pre := none`. |
 

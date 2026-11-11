@@ -1,7 +1,7 @@
 /-
 The frame vocabulary as a predicate on locations, beside the region-list form.
 
-`LeanLLVM/Vellum/JsonEscapeSteps.lean` and `JsonPipelineContract.lean` describe a
+`LeanLLVM/Refinement/JsonEscapeSteps.lean` and `JsonPipelineContract.lean` describe a
 run's memory effect with three loose predicates: `UnchangedOutside` over a
 `List (Nat × Nat)`, `HasBytes` as a successful `readBytes`, and `DisjointRegions`
 as a pairwise separation of a list.  Those forms name a region as a value and a
@@ -77,7 +77,7 @@ to each is stated exactly, because the boundary matters:
   strictly stronger for the computed-by-member shape, not weaker than the list.
 -/
 import LeanLLVM.Memory
-import LeanLLVM.Vellum.JsonEscapeSteps
+import LeanLLVM.Refinement.JsonEscapeSteps
 
 namespace LeanLLVM
 
@@ -160,7 +160,7 @@ theorem readBytes_of_hasBytes :
 proposition.  This is the presence bridge: a record can be restated one clause
 at a time. -/
 theorem hasBytes_iff (mem : Mem) (a n : Nat) :
-    Vellum.HasBytes mem a n ↔ HasBytes mem a n := by
+    Refinement.HasBytes mem a n ↔ HasBytes mem a n := by
   constructor
   · rintro ⟨vs, hvs⟩
     exact readBytes_some_present mem a n vs hvs
@@ -288,7 +288,7 @@ theorem inRegion_iff_inRegions_singleton (r : Nat × Nat) (a : Nat) :
 is `not_exists`, and the direction to the list is the same step read backwards;
 both are kept because migration reads the bridge in both directions. -/
 theorem unchangedOutside_iff_inRegions {mem m : Mem} {regions : List (Nat × Nat)} :
-    Vellum.UnchangedOutside mem m regions ↔ UnchangedOn (inRegions regions) mem m := by
+    Refinement.UnchangedOutside mem m regions ↔ UnchangedOn (inRegions regions) mem m := by
   constructor
   · intro h a ha
     exact h a (fun r hr hi => ha ⟨r, hr, hi⟩)
@@ -333,24 +333,24 @@ theorem frame_rule {W : Nat → Prop} {mem m : Mem} (h : UnchangedOn W mem m)
 /-- The **capacity** window of the escape positions stream: `xp` to
 `xp + 4 * blockMax xn0`, which includes the batch's eight-entry reserve.  It is the
 window the record's frame named *before* that frame was corrected: the record now
-names the run's touched extent (`Vellum.touchedPositions`, the counted positions
+names the run's touched extent (`Refinement.touchedPositions`, the counted positions
 plus the reserve), which is this window's prefix and shorter whenever the block
 counts fewer than its maximum.  The theorems below are about the capacity-wide
 shape, which is why this definition keeps `blockMax`. -/
 def reserveWindow (xp xn0 : Nat) : Nat → Prop :=
-  fun a => xp ≤ a ∧ a < xp + 4 * Vellum.blockMax xn0
+  fun a => xp ≤ a ∧ a < xp + 4 * Refinement.blockMax xn0
 
 /-- The capacity-wide frame predicate: the stream's capacity (the reserve
 included), the count's slot and the carry's sixteen bytes.  An earlier shape of the
 escape positions post named exactly this; the record names the touched extent now,
 so this is the wider frame those theorems are about. -/
 def escapeFrame (xp xn carry xn0 : Nat) : Nat → Prop :=
-  inRegions [(xp, 4 * Vellum.blockMax xn0), (xn, 8), (carry, 16)]
+  inRegions [(xp, 4 * Refinement.blockMax xn0), (xn, 8), (carry, 16)]
 
 /-- The reserve window is inside the frame predicate. -/
 theorem reserveWindow_mem_escapeFrame (xp xn carry xn0 a : Nat)
     (h : reserveWindow xp xn0 a) : escapeFrame xp xn carry xn0 a :=
-  ⟨(xp, 4 * Vellum.blockMax xn0), by simp, h⟩
+  ⟨(xp, 4 * Refinement.blockMax xn0), by simp, h⟩
 
 /-- **The reserve cannot be excluded and left unowned.**  If a post owns the
 capacity-wide frame predicate, every location of the reserve window is present.
@@ -376,8 +376,8 @@ theorem omission_writesOnly :
     subst h
     apply ha
     apply reserveWindow_mem_escapeFrame 0 100 200 0 0
-    show 0 ≤ 0 ∧ 0 < 0 + 4 * Vellum.blockMax 0
-    unfold Vellum.blockMax Vellum.batchReserve
+    show 0 ≤ 0 ∧ 0 < 0 + 4 * Refinement.blockMax 0
+    unfold Refinement.blockMax Refinement.batchReserve
     decide
   have hne : ¬ (0 = a) := fun h => h0 h.symm
   show (if (0 = a) then some 7 else readByte [] a) = readByte [] a
@@ -409,8 +409,8 @@ theorem reserve_omission_witness :
   · intro hp
     apply omission_not_present_one
     apply hp 1
-    show 0 ≤ 1 ∧ 1 < 0 + 4 * Vellum.blockMax 0
-    unfold Vellum.blockMax Vellum.batchReserve
+    show 0 ≤ 1 ∧ 1 < 0 + 4 * Refinement.blockMax 0
+    unfold Refinement.blockMax Refinement.batchReserve
     decide
 
 /-- **The earlier post's omission is not an owned region.**  The run changes only
@@ -425,8 +425,8 @@ theorem omission_not_owns :
   apply omission_not_present_one
   apply h.present 1
   apply reserveWindow_mem_escapeFrame 0 100 200 0 1
-  show 0 ≤ 1 ∧ 1 < 0 + 4 * Vellum.blockMax 0
-  unfold Vellum.blockMax Vellum.batchReserve
+  show 0 ≤ 1 ∧ 1 < 0 + 4 * Refinement.blockMax 0
+  unfold Refinement.blockMax Refinement.batchReserve
   decide
 
 /-- **An extent narrower than the writes is unstatable.**  If the run changed a
@@ -535,9 +535,9 @@ in scope; the record that needed it added the base as a parameter for exactly
 that reason.  The strictly stronger shape is the family above, whose bases are
 computed by the member rather than fixed before the list is written. -/
 theorem blockWindow_iff_inRegion (base : Nat) (blk0 : BitVec 64) (a : Nat) :
-    (base + Vellum.blockAddr blk0 ≤ a ∧
-        a < base + Vellum.blockAddr blk0 + 64) ↔
-      inRegion (base + Vellum.blockAddr blk0, 64) a :=
+    (base + Refinement.blockAddr blk0 ≤ a ∧
+        a < base + Refinement.blockAddr blk0 + 64) ↔
+      inRegion (base + Refinement.blockAddr blk0, 64) a :=
   Iff.rfl
 
 /-! ### Axiom footprints

@@ -96,7 +96,7 @@ is `:280`.
 
 | Cut | Cut applied in the copy | Build | Route command | Exit | Assertion that fired |
 |---|---|---|---|---|---|
-| `X1` fixture pin | `probes/install/ir/json-classify.candidate.ll`: `splat (i8 44)` → `splat (i8 45)` | exit 0 (the fixture is not a `lake build` input, `AGENTS.md`) | `nix develop -c lake env lean LeanLLVM/Vellum/JsonClassifyIR.lean` | 1 | `JsonClassifyIR.lean:93:0`, did not evaluate to `true` |
+| `X1` fixture pin | `probes/install/ir/json-classify.candidate.ll`: `splat (i8 44)` → `splat (i8 45)` | exit 0 (the fixture is not a `lake build` input, `AGENTS.md`) | `nix develop -c lake env lean LeanLLVM/Refinement/JsonClassifyIR.lean` | 1 | `JsonClassifyIR.lean:93:0`, did not evaluate to `true` |
 | `X2` corpus route | the same fixture mutation | exit 0 | `nix develop -c bash tests/json-classify/check.sh` | 1 | `FAIL: the installed object and the Lean body disagree`; diff `mixed.block 0 0x7bd6f7b7` → `0x7bd4f7a7` |
 | `X3` `scanBlock`'s compiled body | `LeanLLVM/JSON/ScanBlock.lean`: `@[implemented_by] scanBlockImpl`, which ignores `valid` and returns `.ok` with `pos + 32` | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 1 | `:340`, `:341`, `:342` (the three short-block assertions) |
 | `X4` the relation's value clause | no staged cut: `wrongMask_not_refines` (proof) and `JB4`'s executable inequality | exit 0 | `nix develop -c lake env lean tests/json-classify.lean` | 0 | none: the theorem checks and both the equality and the complement inequality hold |
@@ -175,7 +175,7 @@ is not counted as one.
   divergent cut here and no fired assertion; a green control is not an
   assertion red. It does **not** show that the parser
   routes through the candidate, and it does not: the transported caller is
-  `scanCaller` (`LeanLLVM/Vellum/JsonSeam.lean`), which stages its own
+  `scanCaller` (`LeanLLVM/Refinement/JsonSeam.lean`), which stages its own
   32 bytes from four `i64` words before calling the classifier, so the parser
   never reaches the classifier.
 - **`X6` — the packing the semantics applies.** The reversing override builds,
@@ -209,7 +209,7 @@ is not counted as one.
 `tests/json-s1-masks/check.sh` is the JSON route for the stage-1 classification
 masks: the object built from `kernel/json/s1_block.c`, called through
 `probes/json/s1_masks_driver.c`, against the Lean body `s1MasksFunction` that
-`LeanLLVM/Vellum/JsonS1MasksIR.lean` pins from
+`LeanLLVM/Refinement/JsonS1MasksIR.lean` pins from
 `probes/install/ir/json-s1-masks.candidate.ll`. The two row streams must be
 equal line for line; the assertion is that comparison, and the row count it
 walks is asserted separately.
@@ -254,7 +254,7 @@ Command: `nix develop -c bash tests/json-s1-masks/check.sh`.
 `tests/json-entry/check.sh` is the JSON route for the entry position emitters:
 the object built from `kernel/json/entry.c`, called through
 `probes/json/entry_driver.c`, against the Lean bodies `entryPos8Function` and
-`entryB8Function` that `LeanLLVM/Vellum/JsonEntryIR.lean` pins from
+`entryB8Function` that `LeanLLVM/Refinement/JsonEntryIR.lean` pins from
 `probes/install/ir/json-entry.candidate.ll`.  One row is one `(mask stream,
 blk0, nblk, k)` call under one kernel; the route derives every row's count,
 `multi` and sentinel — and, for every row but the one long `nblk` row, its words
@@ -334,7 +334,7 @@ scalar reference agree row for row over a counted corpus:
 - **the object** — `kernel/json/utf8.c` compiled at the measured compiler line
   and called through `probes/json/utf8_driver.c`, which stages each row's
   window and prints the returned word;
-- **the Lean body** — `utf8Function`, the AST `LeanLLVM/Vellum/JsonUtf8IR.lean`
+- **the Lean body** — `utf8Function`, the AST `LeanLLVM/Refinement/JsonUtf8IR.lean`
   pins to `probes/install/ir/json-utf8.candidate.ll`, run by
   `leanllvm-json-utf8` through `runFuel` under the repository's semantics;
 - **the measured statements** — `probes/json/utf8_measured.c`, which includes

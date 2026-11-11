@@ -4,9 +4,9 @@
 and `candidate.ll` from the lane-by-lane C transcription in `candidate_lanes.c`,
 and records the exact `clang` and `opt` invocations.  The loop fixture is
 emitted, not handwritten: `lake exe leanllvm-loop-emit` renders
-`LeanLLVM.Vellum.CommaMaskLoop.loopFunction` — the AST in
-`LeanLLVM/Vellum/CommaMaskLoopBody.lean` that
-`LeanLLVM/Vellum/CommaMaskLoop.lean` parses `ir/loop.ll` back to and proves its
+`LeanLLVM.Refinement.CommaMaskLoop.loopFunction` — the AST in
+`LeanLLVM/Refinement/CommaMaskLoopBody.lean` that
+`LeanLLVM/Refinement/CommaMaskLoop.lean` parses `ir/loop.ll` back to and proves its
 correctness and framed-memory statements about — with
 `LeanLLVM.Function.render`, the framework's printer.  That is
 framework-printer output from the same function the proofs parse, explicitly
@@ -16,9 +16,9 @@ textual IR, and the object is rebuilt from that text.  No theorem here
 certifies LLVM's lowering of that text or the object built from it, and
 nothing in this route establishes native `lean -c` provenance.  The capture
 route is one shared command that writes all three fixtures, but the proofs
-that pin them have separate owners: `LeanLLVM/Vellum/CommaMaskIR.lean` parses
+that pin them have separate owners: `LeanLLVM/Refinement/CommaMaskIR.lean` parses
 and pins `baseline.ll` and `candidate.ll`, while
-`LeanLLVM/Vellum/CommaMaskLoop.lean` separately parses and pins `ir/loop.ll`.
+`LeanLLVM/Refinement/CommaMaskLoop.lean` separately parses and pins `ir/loop.ll`.
 
 E1 pins that: the documented capture command must write the loop fixture from a
 Lean emission of the loop body instead of leaving the fixture the tree starts

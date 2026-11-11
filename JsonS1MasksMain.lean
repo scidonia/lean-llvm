@@ -4,7 +4,7 @@
 The kernel is not re-implemented here.  Each row stages a 64-byte block at
 offset 1 of a 96-byte buffer, a 24-byte carry slot and a 48-byte output slot
 pre-filled with `0xA5` in memory, and runs `s1MasksFunction` — the AST that
-`LeanLLVM/Vellum/JsonS1MasksIR.lean` pins to
+`LeanLLVM/Refinement/JsonS1MasksIR.lean` pins to
 `probes/install/ir/json-s1-masks.candidate.ll` — with `runFuel` under the
 repository's semantics.  The words printed are read back out of the two slots,
 so the route exercises the body rather than the specification beside it.
@@ -42,10 +42,10 @@ Exit status: `0` when every row was produced (and every expectation held), `1`
 on a mismatch or a usage error, `2` when an input cannot be read.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.JsonS1MasksIR
+import LeanLLVM.Refinement.JsonS1MasksIR
 
 open LeanLLVM
-open LeanLLVM.Vellum.JsonS1MasksIR
+open LeanLLVM.Refinement.JsonS1MasksIR
 
 namespace JsonS1MasksMain
 

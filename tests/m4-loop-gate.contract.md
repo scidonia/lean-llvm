@@ -35,7 +35,7 @@ temporary directory, so no compiler, linker or network is used:
 
 - **Actor:** the build integrator.
 - **Given:** a manifest whose hashes match its fixtures and objects, whose
-  `theorem` is `LeanLLVM.Vellum.CommaMaskIR.IR_refines` (candidate to baseline
+  `theorem` is `LeanLLVM.Refinement.CommaMaskIR.IR_refines` (candidate to baseline
   only), and whose differential transcript ends `RESULT: PASS`, and whose
   manifest binds no `loop_theorem` and no `proof_loop` certificate; and a
   baseline selection from the same input that succeeds and produces an
@@ -73,7 +73,7 @@ temporary directory, so no compiler, linker or network is used:
   and writes no selection record naming the candidate or the loop.
 - **Why:** a manifest that overwrites the caller's request would install a unit
   nobody asked for; in strict mode it would install the candidate even though
-  `LeanLLVM.Vellum.CommaMaskIR.IR_refines` covers the candidate and not the
+  `LeanLLVM.Refinement.CommaMaskIR.IR_refines` covers the candidate and not the
   requested loop.
 
 ### G4 — a manifest cannot replace the non-strict fallback unit

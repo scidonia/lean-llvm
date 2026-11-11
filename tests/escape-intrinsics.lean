@@ -26,15 +26,15 @@ Elaborated by `nix develop -c lake env lean tests/escape-intrinsics.lean`.  A
 `#guard` or a failed proof stops elaboration with a nonzero exit status; no
 compiler, service, clock or network is reached.
 -/
-import LeanLLVM.Vellum.JsonEscapeIntrinsics
-import LeanLLVM.Vellum.JsonS1MasksIR
+import LeanLLVM.Refinement.JsonEscapeIntrinsics
+import LeanLLVM.Refinement.JsonS1MasksIR
 
 namespace EscapeIntrinsics
 
 open LeanLLVM
-open LeanLLVM.Vellum.BitLanes
-open LeanLLVM.Vellum.JsonEscapeIntrinsics
-open LeanLLVM.Vellum.JsonS1MasksIR (evalInstr_call evalOperands_cons)
+open LeanLLVM.Refinement.BitLanes
+open LeanLLVM.Refinement.JsonEscapeIntrinsics
+open LeanLLVM.Refinement.JsonS1MasksIR (evalInstr_call evalOperands_cons)
 
 /-! ### The staging form and the operand readers -/
 

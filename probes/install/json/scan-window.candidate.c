@@ -11,13 +11,13 @@
  *
  * by probes/install/ir/capture-json-scan.sh.  This is not the certified body:
  * the certified body is printed from the Lean AST in
- * LeanLLVM/Vellum/JsonScanBody.lean into
+ * LeanLLVM/Refinement/JsonScanBody.lean into
  * probes/install/ir/json-scan-body.ll, and this source, with the fixture
  * captured from it, is the measured record of what the compiler makes of the
  * algorithm.  Nothing certifies these bytes.
  *
  * The ABI is the one
- * LeanLLVM/Vellum/JsonScanABI.lean fixes: `i32 @leanllvm_json_scan_window(
+ * LeanLLVM/Refinement/JsonScanABI.lean fixes: `i32 @leanllvm_json_scan_window(
  * ptr %in, ptr %out, ptr %state, i32 %valid)` reads the first `valid` bytes of
  * `%in`, writes one 32-bit structural mask at `%out` and the next carry in the
  * sixteen-byte slot at `%state`, and returns the status word.

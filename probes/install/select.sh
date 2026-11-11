@@ -122,11 +122,11 @@ file_sha() { [ -f "$1" ] && sha "$1"; }
 ok=1
 reasons=()
 
-expected_theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
-expected_loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
-expected_depth_theorem=LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
-expected_contract=LeanLLVM.Vellum.commaContract
-expected_depth_contract=LeanLLVM.Vellum.DepthCountRefine.depthContract
+expected_theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
+expected_loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
+expected_depth_theorem=LeanLLVM.Refinement.DepthCountRefine.depth_count_refines
+expected_contract=LeanLLVM.Refinement.commaContract
+expected_depth_contract=LeanLLVM.Refinement.DepthCountRefine.depthContract
 expected_axioms=Classical.choice,Quot.sound,propext
 expected_symbol=leanllvm_comma_mask8
 expected_marker=leanllvm_impl_id
@@ -375,8 +375,8 @@ check_certificate() { # unit
   manifest_abs=$(cd "$(dirname "$req_manifest")" && pwd)/$(basename "$req_manifest")
   sequence_ok=1
   if ! (cd "$root" &&
-        rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean &&
-        lake build LeanLLVM.Vellum.CommaMaskIR) \
+        rm -f .lake/build/lib/lean/LeanLLVM/Refinement/CommaMaskIR.olean &&
+        lake build LeanLLVM.Refinement.CommaMaskIR) \
       >/dev/null 2>"$work/rebuild.log"; then
     sequence_ok=0
   fi
@@ -386,8 +386,8 @@ check_certificate() { # unit
   # does not name.
   if [ "$sequence_ok" -eq 1 ] && [ "$unit" = loop ] &&
      ! (cd "$root" &&
-        rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
-        lake build LeanLLVM.Vellum.CommaMaskLoop) \
+        rm -f .lake/build/lib/lean/LeanLLVM/Refinement/CommaMaskLoop.olean &&
+        lake build LeanLLVM.Refinement.CommaMaskLoop) \
       >/dev/null 2>"$work/loop-rebuild.log"; then
     sequence_ok=0
   fi
@@ -397,8 +397,8 @@ check_certificate() { # unit
   # above.
   if [ "$sequence_ok" -eq 1 ] && [ "$unit" = depth_count ] &&
      ! (cd "$root" &&
-        rm -f .lake/build/lib/lean/LeanLLVM/Vellum/DepthCountRefine.olean &&
-        lake build LeanLLVM.Vellum.DepthCountRefine) \
+        rm -f .lake/build/lib/lean/LeanLLVM/Refinement/DepthCountRefine.olean &&
+        lake build LeanLLVM.Refinement.DepthCountRefine) \
       >/dev/null 2>"$work/depth-rebuild.log"; then
     sequence_ok=0
   fi

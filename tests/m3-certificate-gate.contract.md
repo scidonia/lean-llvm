@@ -38,7 +38,7 @@ The checks drive `probes/install/select.sh` with local tool shims in a private
 temporary directory, so no compiler, linker, proof checker, network, clock or
 service is reached.  The proof checker the selector drives is a `lake` shim
 that accepts exactly two invocations: the proof-module rebuild
-`lake build LeanLLVM.Vellum.CommaMaskIR`, which the selector issues after it
+`lake build LeanLLVM.Refinement.CommaMaskIR`, which the selector issues after it
 removes that module's olean so Lake re-elaborates it from source, and the
 producer
 `CERT_UNIT=<unit> CERT_MANIFEST=<manifest> CERT_OUT=<path>
@@ -55,7 +55,7 @@ manifest, and its version components come from the shimmed `lean`, `clang` and
 `ld` version output.  The temporary tree mirrors the repository root, so the
 selector and the checker resolve the revision-bearing pin files, the project
 olean directory and the imported proof source
-`LeanLLVM/Vellum/CommaMaskKernel.lean` they expect; the imported source is
+`LeanLLVM/Refinement/CommaMaskKernel.lean` they expect; the imported source is
 copied there, so a stale-import run marks only that copy.
 
     bash tests/m3-certificate-gate.sh --strict theorem
@@ -79,7 +79,7 @@ mark the imported proof source instead take its module, `CommaMaskKernel`:
     bash tests/m3-certificate-gate.sh --fallback-stale-import CommaMaskKernel
 
 One invocation appends one line that is not a Lean command to the copied
-`LeanLLVM/Vellum/CommaMaskKernel.lean` in the fixture tree, so the imported
+`LeanLLVM/Refinement/CommaMaskKernel.lean` in the fixture tree, so the imported
 graph no longer elaborates.
 
 Every run first selects with the valid artifact and asserts that the selection
@@ -232,7 +232,7 @@ fallback must be attributable to the change made.
 ### H8 — a strict candidate request refuses a stale imported proof source
 
 - **Actor:** the build integrator.
-- **Given:** the fixture tree's copy of `LeanLLVM/Vellum/CommaMaskKernel.lean`,
+- **Given:** the fixture tree's copy of `LeanLLVM/Refinement/CommaMaskKernel.lean`,
   which the proof module imports, a manifest whose object, fixture, marker and
   transcript hashes match the files it names, and a valid candidate artifact;
   and a strict candidate selection from that input that exits 0, selects the
@@ -242,7 +242,7 @@ fallback must be attributable to the change made.
   their bytes.
 - **When:** the integrator invokes the selector with `UNIT=candidate STRICT=1`
   into separate `OUT` and `RECORD` paths.  The `lake` shim's imported-graph
-  rebuild `lake build LeanLLVM.Vellum.CommaMaskIR` returns nonzero for the
+  rebuild `lake build LeanLLVM.Refinement.CommaMaskIR` returns nonzero for the
   marked source, while its certificate producer still succeeds.
 - **Then:** it exits nonzero, no executable exists at the requested output, no
   selection record names the candidate, and the linker was not given the

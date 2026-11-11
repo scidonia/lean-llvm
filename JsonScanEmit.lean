@@ -8,8 +8,8 @@ The redirect has to be inside the shell the dev shell starts:
 dev shell's own startup banner, which is printed on the way in.
 
 The text is the header comment below followed by `LeanLLVM.Function.render` of
-`LeanLLVM.Vellum.JsonScanBody.scanWindowBody`, the AST that
-`LeanLLVM/Vellum/JsonScanIR.lean` parses the file back to and proves the
+`LeanLLVM.Refinement.JsonScanBody.scanWindowBody`, the AST that
+`LeanLLVM/Refinement/JsonScanIR.lean` parses the file back to and proves the
 refinement statement about.
 
 This is the framework's printer rendering a Lean-defined function; no `lean -c`
@@ -26,7 +26,7 @@ print unless its own output parses back to the same function, so a construct or
 attribute the parser does not model cannot reach the fixture silently.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.JsonScanBody
+import LeanLLVM.Refinement.JsonScanBody
 
 open LeanLLVM
 
@@ -77,7 +77,7 @@ def emit (f : Function) : Except String String := do
       | fs => throw s!"the rendered text parses to {fs.length} functions, not one"
 
 def main : IO UInt32 := do
-  match emit LeanLLVM.Vellum.JsonScanBody.scanWindowBody with
+  match emit LeanLLVM.Refinement.JsonScanBody.scanWindowBody with
   | .error e =>
       IO.eprintln s!"leanllvm-json-scan-emit: {e}"
       return 1

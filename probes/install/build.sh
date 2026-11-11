@@ -11,7 +11,7 @@
 # meets a mismatched object refuses it.
 #
 # The installed units are compiled from the emitted IR in probes/install/ir/.
-# `LeanLLVM/Vellum/CommaMaskIR.lean` parses and pins `baseline.ll` and
+# `LeanLLVM/Refinement/CommaMaskIR.lean` parses and pins `baseline.ll` and
 # `candidate.ll`; the compiled objects are hash-bound to those fixtures by
 # rebuild, not proved equivalent to them as compiled or running code.
 # `Baseline.lean` and `Candidate.lean` are still compiled, as provenance
@@ -20,14 +20,14 @@
 #
 # `loop.ll` is printed from the `loopFunction` AST by
 # `lake exe leanllvm-loop-emit` (the framework's printer, not `lean -c`), and
-# `LeanLLVM/Vellum/CommaMaskLoop.lean` parses and pins it.  The loop is built,
+# `LeanLLVM/Refinement/CommaMaskLoop.lean` parses and pins it.  The loop is built,
 # compared and certified: its own `loop_theorem=` field names
 # `loop_refines_candidate_within`, the loop's certificate records that statement
 # and `select.sh` installs `UNIT=loop` from it exactly as it installs the other
 # two units from `theorem=`.
 #
 # `depth_count` is the census fixture `tests/v16/depth_count.ll`, the text
-# `LeanLLVM/Vellum/DepthCountRefine.lean` parses and proves.  It is installed
+# `LeanLLVM/Refinement/DepthCountRefine.lean` parses and proves.  It is installed
 # from its own `depth_count.o` (fixture plus marker), its certificate names
 # `depth_count_refines` and the propositional boundary `depthContract`, and its
 # caller is the corpus driver `depth_driver.c` rather than the one-word comma
@@ -172,12 +172,12 @@ target=$target
 triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
-contract=LeanLLVM.Vellum.commaContract
-theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
-loop_theorem=LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within
+contract=LeanLLVM.Refinement.commaContract
+theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
+loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
 depth_count_symbol=depth_count
-depth_contract=LeanLLVM.Vellum.DepthCountRefine.depthContract
-depth_count_theorem=LeanLLVM.Vellum.DepthCountRefine.depth_count_refines
+depth_contract=LeanLLVM.Refinement.DepthCountRefine.depthContract
+depth_count_theorem=LeanLLVM.Refinement.DepthCountRefine.depth_count_refines
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -242,14 +242,14 @@ EOF
 #    build before any certificate is produced.
 source_check() {
   (cd "$repo" &&
-    rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskIR.olean &&
-    lake build LeanLLVM.Vellum.CommaMaskIR) &&
+    rm -f .lake/build/lib/lean/LeanLLVM/Refinement/CommaMaskIR.olean &&
+    lake build LeanLLVM.Refinement.CommaMaskIR) &&
   (cd "$repo" &&
-    rm -f .lake/build/lib/lean/LeanLLVM/Vellum/CommaMaskLoop.olean &&
-    lake build LeanLLVM.Vellum.CommaMaskLoop) &&
+    rm -f .lake/build/lib/lean/LeanLLVM/Refinement/CommaMaskLoop.olean &&
+    lake build LeanLLVM.Refinement.CommaMaskLoop) &&
   (cd "$repo" &&
-    rm -f .lake/build/lib/lean/LeanLLVM/Vellum/DepthCountRefine.olean &&
-    lake build LeanLLVM.Vellum.DepthCountRefine)
+    rm -f .lake/build/lib/lean/LeanLLVM/Refinement/DepthCountRefine.olean &&
+    lake build LeanLLVM.Refinement.DepthCountRefine)
 }
 certificate() { # unit
   local unit=$1

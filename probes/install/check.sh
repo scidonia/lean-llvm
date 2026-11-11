@@ -58,10 +58,10 @@ fail() {
 # oleans, and releases it before the builder runs.  The loop's pin is a `#guard`
 # over its own `include_str`, so it needs the same treatment after the fixture
 # is printed again.
-warm() { bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR; }
-proof() { (cd "$repo" && lake env lean LeanLLVM/Vellum/CommaMaskIR.lean); }
-loop_proof() { (cd "$repo" && lake env lean LeanLLVM/Vellum/CommaMaskLoop.lean); }
-warm_loop() { bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskLoop; }
+warm() { bash "$here/lake-locked.sh" build LeanLLVM.Refinement.CommaMaskIR; }
+proof() { (cd "$repo" && lake env lean LeanLLVM/Refinement/CommaMaskIR.lean); }
+loop_proof() { (cd "$repo" && lake env lean LeanLLVM/Refinement/CommaMaskLoop.lean); }
+warm_loop() { bash "$here/lake-locked.sh" build LeanLLVM.Refinement.CommaMaskLoop; }
 warm_depth() { bash "$here/lake-locked.sh" build leanllvm-depth-check; }
 pub_sha() { sha256sum "$1" | cut -d' ' -f1; }
 
@@ -78,10 +78,10 @@ warm_depth >/dev/null
 
 echo "== proof"
 proof >/dev/null
-echo "proof: LeanLLVM.Vellum.CommaMaskIR checks"
+echo "proof: LeanLLVM.Refinement.CommaMaskIR checks"
 warm_loop >/dev/null
 loop_proof >/dev/null
-echo "proof: LeanLLVM.Vellum.CommaMaskLoop checks against the printed loop fixture"
+echo "proof: LeanLLVM.Refinement.CommaMaskLoop checks against the printed loop fixture"
 
 echo "== select candidate"
 OUT=$build/app_candidate RECORD=$build/selection_candidate.env "$here/select.sh" >/dev/null
@@ -154,9 +154,9 @@ UNIT=depth_count STRICT=1 MANIFEST=$build/manifest.env \
   OUT=$build/app_depth_count RECORD=$build/selection_depth_count.env \
   "$here/select.sh" >/dev/null
 grep -qx 'selected=depth_count' "$build/selection_depth_count.env"
-grep -qx "theorem=LeanLLVM.Vellum.DepthCountRefine.depth_count_refines" \
+grep -qx "theorem=LeanLLVM.Refinement.DepthCountRefine.depth_count_refines" \
   "$build/selection_depth_count.env"
-grep -qx "contract=LeanLLVM.Vellum.DepthCountRefine.depthContract" \
+grep -qx "contract=LeanLLVM.Refinement.DepthCountRefine.depthContract" \
   "$build/selection_depth_count.env"
 grep -qx "depth_count_sha256=$(pub_sha "$build/depth_count.o")" \
   "$build/selection_depth_count.env"
@@ -240,7 +240,7 @@ echo "proof: restored loop fixture checks again"
 
 # --- a stale imported proof source is refused by the real routes ------------
 echo "== a stale imported proof source is refused and restored"
-imported_source=$repo/LeanLLVM/Vellum/CommaMaskKernel.lean
+imported_source=$repo/LeanLLVM/Refinement/CommaMaskKernel.lean
 saved_import=$build/CommaMaskKernel.lean.saved
 saved_proof=$build/proof_candidate.stale-import.saved
 saved_manifest=$build/manifest.stale-import.saved
@@ -525,7 +525,7 @@ lock_owned=1
 trap release_test_lock EXIT
 warm_status=0
 PATH="$warm_shim:$PATH" WARM_SHIM_MARKER="$warm_marker" \
-  bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR \
+  bash "$here/lake-locked.sh" build LeanLLVM.Refinement.CommaMaskIR \
   >"$build/lock_warm.stdout" 2>"$build/lock_warm.stderr" || warm_status=$?
 [ "$warm_status" -ne 0 ] || fail "the warm-up wrapper ran while the lock was held"
 [ ! -e "$warm_marker" ] ||
@@ -536,7 +536,7 @@ release_test_lock || fail "the warm-up lock could not be released"
 trap - EXIT
 
 PATH="$warm_shim:$PATH" WARM_SHIM_MARKER="$warm_marker" \
-  bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR >/dev/null
+  bash "$here/lake-locked.sh" build LeanLLVM.Refinement.CommaMaskIR >/dev/null
 [ -e "$warm_marker" ] ||
   fail "the warm-up wrapper never reached Lake after the lock was released"
 echo "warm-up: refused while held and reached Lake after release"
@@ -572,7 +572,7 @@ clear_failed_lock() { # case name
 rm -f "$warm_marker"
 warm_fail_status=0
 PATH="$warm_shim:$rmdir_shim:$PATH" WARM_SHIM_MARKER="$warm_marker" \
-  bash "$here/lake-locked.sh" build LeanLLVM.Vellum.CommaMaskIR \
+  bash "$here/lake-locked.sh" build LeanLLVM.Refinement.CommaMaskIR \
   >"$build/rmdir_warm.stdout" 2>"$build/rmdir_warm.stderr" || warm_fail_status=$?
 [ "$warm_fail_status" -ne 0 ] ||
   fail "the warm-up wrapper reported success after a failed release"

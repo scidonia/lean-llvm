@@ -54,8 +54,8 @@ import LeanLLVM
 namespace VectorS1
 
 open LeanLLVM
-open LeanLLVM.Vellum.BitLanes
-open LeanLLVM.Vellum.Pclmul
+open LeanLLVM.Refinement.BitLanes
+open LeanLLVM.Refinement.Pclmul
 
 /-! ### Reading one answer -/
 
@@ -148,7 +148,7 @@ def control32 : List (BitVec 8) :=
 each evaluated by the Lean definition it is named after.  It is local to this
 check so the forms can be exercised without the pinned fixture; the library's
 environment for the same five symbols lives with that fixture in
-`LeanLLVM/Vellum/JsonS1MasksIR.lean`, built from the same definitions, and the
+`LeanLLVM/Refinement/JsonS1MasksIR.lean`, built from the same definitions, and the
 two can differ only in a symbol name. -/
 def fragmentCalls : Calls
   | "llvm.x86.avx2.pshuf.b", [.vec 32 8 table, .vec 32 8 control], mem, next =>

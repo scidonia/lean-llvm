@@ -109,9 +109,9 @@ the scenario asserts the inequality (`≠ none`) rather than a value.
 - **Given:** `caller_replaces_loop_within` and `loop_seam_within_refines`.
 - **When:** each theorem's proof term is printed one level deep.
 - **Then:** `loop_seam_within_refines`'s print names
-  `LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within`, and
+  `LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within`, and
   `caller_replaces_loop_within`'s print names
-  `LeanLLVM.Vellum.loop_seam_within_refines`.
+  `LeanLLVM.Refinement.loop_seam_within_refines`.
 - **Why:** the caller theorem reaches the loop's selection through the framed
   statement rather than re-deriving the base-one agreement; one level of print
   shows the consumed constant, and the two prints together exhibit the chain

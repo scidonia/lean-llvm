@@ -25,7 +25,7 @@
 # `--strict-stale-import` and `--fallback-stale-import` take the imported proof
 # source's module name instead, `CommaMaskKernel`.  One invocation appends a
 # line that is not a Lean command to the copy of
-# LeanLLVM/Vellum/CommaMaskKernel.lean in the fixture tree, so the imported
+# LeanLLVM/Refinement/CommaMaskKernel.lean in the fixture tree, so the imported
 # graph no longer elaborates; the artifact, the manifest and every object keep
 # their bytes.
 #
@@ -60,7 +60,7 @@
 # the selector is copied to probes/install/select.sh beside the toolchain
 # helper, and the project olean directory the rebuild removes the module's
 # olean from exists there.  The imported proof source
-# LeanLLVM/Vellum/CommaMaskKernel.lean is copied there too, so a stale-import
+# LeanLLVM/Refinement/CommaMaskKernel.lean is copied there too, so a stale-import
 # run marks only that copy and never the repository's source.
 #
 # Exit status: 0 when the scenario's assertions hold, 1 when one fails,
@@ -219,7 +219,7 @@ set -e
 
 mkdir -p "$fakebin" "$fixtures/ir" "$units" "$outdir" "$rebuild" \
   "$proofs" "$canonical" "$mirror/probes/install/build" \
-  "$mirror/.lake/build/lib/lean/LeanLLVM/Vellum"
+  "$mirror/.lake/build/lib/lean/LeanLLVM/Refinement"
 : > "$link_log"
 
 target=x86_64-unknown-linux-gnu
@@ -228,7 +228,7 @@ datalayout='e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16
 # would fail on it; the lake shim recognises it by exact line.  Only the copy
 # in this fixture tree is ever marked.
 stale_sentinel='#stale-import-sentinel'
-imported_source=$mirror/LeanLLVM/Vellum/CommaMaskKernel.lean
+imported_source=$mirror/LeanLLVM/Refinement/CommaMaskKernel.lean
 
 {
   printf 'FAKE_TARGET=%q\n' "$target"
@@ -436,7 +436,7 @@ cat > "$fakebin/lake" <<'SHIM'
 set -euo pipefail
 . "$(dirname "$0")/fake.env"
 if [ "${1:-}" = build ]; then
-  [ "$#" -eq 2 ] && [ "$2" = LeanLLVM.Vellum.CommaMaskIR ] ||
+  [ "$#" -eq 2 ] && [ "$2" = LeanLLVM.Refinement.CommaMaskIR ] ||
     { echo "lake: unexpected build arguments: $*" >&2; exit 1; }
   if [ -f "$FAKE_IMPORTED_SOURCE" ] &&
      grep -qxF -- "$FAKE_STALE_SENTINEL" "$FAKE_IMPORTED_SOURCE"; then
@@ -481,10 +481,10 @@ done
 # The imported proof source is copied under the fixture root, so a stale-import
 # run marks only this copy: the repository's source and the objects built from
 # the fixtures keep their bytes.
-mkdir -p "$mirror/LeanLLVM/Vellum"
-[ -f "$repo/LeanLLVM/Vellum/CommaMaskKernel.lean" ] ||
-  setup_fail "no imported proof source at LeanLLVM/Vellum/CommaMaskKernel.lean"
-cp "$repo/LeanLLVM/Vellum/CommaMaskKernel.lean" "$imported_source"
+mkdir -p "$mirror/LeanLLVM/Refinement"
+[ -f "$repo/LeanLLVM/Refinement/CommaMaskKernel.lean" ] ||
+  setup_fail "no imported proof source at LeanLLVM/Refinement/CommaMaskKernel.lean"
+cp "$repo/LeanLLVM/Refinement/CommaMaskKernel.lean" "$imported_source"
 cp "$selector_source" "$selector"
 chmod +x "$selector"
 if [ -f "$repo/probes/install/InstallCertificate.lean" ]; then
@@ -551,7 +551,7 @@ cat > "$fixtures/differential.txt" <<'TRANSCRIPT'
 kind: differential
 symbol: leanllvm_comma_mask8
 bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate
-theorem: LeanLLVM.Vellum.CommaMaskIR.IR_refines
+theorem: LeanLLVM.Refinement.CommaMaskIR.IR_refines
 covers: candidate-vs-baseline
 RESULT: PASS
 TRANSCRIPT
@@ -578,8 +578,8 @@ target=$target
 triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
-contract=LeanLLVM.Vellum.commaContract
-theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+contract=LeanLLVM.Refinement.commaContract
+theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -629,7 +629,7 @@ manifest_value() { # key
 # a fixture value cannot silently disagree with the production rule it claims.
 axioms=$(
   sed -n 's/.*IR_refines. depends on axioms: \[\(.*\)\]/\1/p' \
-    "$repo/LeanLLVMTest/Vellum.lean" |
+    "$repo/LeanLLVMTest/Refinement.lean" |
     tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
     LC_ALL=C sort | paste -sd, -
 )
@@ -994,9 +994,9 @@ else
       unit_object_sha256) mutation=$(intended_value "${other_unit}_object_sha256") ;;
       unit_fixture_sha256) mutation=$(intended_value "${other_unit}_fixture_sha256") ;;
       unit_marker_sha256) mutation=$(intended_value "${other_unit}_marker_sha256") ;;
-      theorem) mutation=LeanLLVM.Vellum.CommaMaskKernel.byteLoop_refines_swar ;;
+      theorem) mutation=LeanLLVM.Refinement.CommaMaskKernel.byteLoop_refines_swar ;;
       axioms) mutation="$axioms,sorryAx" ;;
-      contract) mutation=LeanLLVM.Vellum.commaLoopContract ;;
+      contract) mutation=LeanLLVM.Refinement.commaLoopContract ;;
       target_triple) mutation=aarch64-unknown-linux-gnu ;;
       data_layout) mutation=$(printf '%s' "$datalayout" | sed 's/-f80:128//') ;;
       toolchain_revision) mutation=$toolchain_revision_mutated ;;

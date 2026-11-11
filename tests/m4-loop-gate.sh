@@ -65,7 +65,7 @@ set -e
 
 mkdir -p "$fakebin" "$fixtures/ir" "$units" "$outdir" "$rebuild" "$proofs" \
   "$canonical" "$mirror/probes/install/build" \
-  "$mirror/.lake/build/lib/lean/LeanLLVM/Vellum"
+  "$mirror/.lake/build/lib/lean/LeanLLVM/Refinement"
 : > "$link_log"
 
 target=x86_64-unknown-linux-gnu
@@ -273,7 +273,7 @@ cat > "$fakebin/lake" <<'SHIM'
 set -euo pipefail
 . "$(dirname "$0")/fake.env"
 if [ "${1:-}" = build ]; then
-  [ "$#" -eq 2 ] && [ "$2" = LeanLLVM.Vellum.CommaMaskIR ] ||
+  [ "$#" -eq 2 ] && [ "$2" = LeanLLVM.Refinement.CommaMaskIR ] ||
     { echo "lake: unexpected build arguments: $*" >&2; exit 1; }
   exit 0
 fi
@@ -376,7 +376,7 @@ cat > "$fixtures/differential.txt" <<'CERT'
 kind: differential
 symbol: leanllvm_comma_mask8
 bodies: proved-baseline proved-candidate proved-loop lean-baseline lean-candidate
-theorem: LeanLLVM.Vellum.CommaMaskIR.IR_refines
+theorem: LeanLLVM.Refinement.CommaMaskIR.IR_refines
 covers: candidate-vs-baseline
 RESULT: PASS
 CERT
@@ -403,7 +403,7 @@ sha() { sha256sum "$1" | cut -d' ' -f1; }
 # fixture value cannot silently disagree with the input it claims.
 axioms=$(
   sed -n 's/.*IR_refines. depends on axioms: \[\(.*\)\]/\1/p' \
-    "$repo/LeanLLVMTest/Vellum.lean" |
+    "$repo/LeanLLVMTest/Refinement.lean" |
     tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
     LC_ALL=C sort | paste -sd, -
 )
@@ -444,8 +444,8 @@ target=$target
 triple=$target
 symbol=leanllvm_comma_mask8
 marker=leanllvm_impl_id
-contract=LeanLLVM.Vellum.commaContract
-theorem=LeanLLVM.Vellum.CommaMaskIR.IR_refines
+contract=LeanLLVM.Refinement.commaContract
+theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
 attributes=reject
 datalayout=$datalayout
 target_features=none

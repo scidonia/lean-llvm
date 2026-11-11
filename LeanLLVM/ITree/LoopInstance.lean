@@ -16,15 +16,15 @@ with, and the proof installs nothing.
 -/
 import LeanLLVM.ITree.LoopRule
 import LeanLLVM.ITree.Bridge
-import LeanLLVM.Vellum.CommaMaskLoop
+import LeanLLVM.Refinement.CommaMaskLoop
 
 namespace LeanLLVM.ITree
 
 open LeanLLVM
 open _root_.ITree
-open LeanLLVM.Vellum
-open LeanLLVM.Vellum.CommaMaskLoop
-open LeanLLVM.Vellum.CommaMaskIR
+open LeanLLVM.Refinement
+open LeanLLVM.Refinement.CommaMaskLoop
+open LeanLLVM.Refinement.CommaMaskIR
 
 /-- The loop's tree at the budget its proof uses. -/
 def loopTree (x : BitVec 64) : ITree.Tree Ev Outcome :=

@@ -360,8 +360,8 @@ value clause is observed rather than assumed.  The caller's returned memory is
 read back as the staged block, so the mask is bound to the bytes actually
 written. -/
 
-open LeanLLVM.Vellum.JsonSeam
-open LeanLLVM.Vellum.JsonClassifyIR
+open LeanLLVM.Refinement.JsonSeam
+open LeanLLVM.Refinement.JsonClassifyIR
 
 /-- The little-endian `i64` word staging bytes `8 * j` through `8 * j + 7` of
 `mixedBytes`: the bytes the caller's `j`-th store writes. -/
@@ -443,7 +443,7 @@ reading its expectation back out of `maskOf`.  The returned memory is asserted
 to read back the same 32 bytes, so the body is a pure read: a store, an alloca
 or a clobbered address would show here. -/
 
-open LeanLLVM.Vellum.JsonClassifyIR
+open LeanLLVM.Refinement.JsonClassifyIR
 
 /-- The address the block is placed at.  Non-zero, because `initState` reserves
 address `0` for `null`, and not `mixedBlock`'s own size, so the read is not

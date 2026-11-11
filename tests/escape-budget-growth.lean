@@ -18,13 +18,13 @@ replaced it; the library carries only the current definition.
 
 Run: `nix develop -c lake env lean tests/escape-budget-growth.lean`.
 -/
-import LeanLLVM.Vellum.JsonEscapeDecodeRun
+import LeanLLVM.Refinement.JsonEscapeDecodeRun
 
 set_option maxRecDepth 8000
 
 open LeanLLVM
-open LeanLLVM.Vellum
-open LeanLLVM.Vellum.JsonEscapeIR
+open LeanLLVM.Refinement
+open LeanLLVM.Refinement.JsonEscapeIR
 
 namespace EscapeBudgetGrowth
 

@@ -1,3 +1,3 @@
 import LeanLLVMTest.Core
-import LeanLLVMTest.Vellum
+import LeanLLVMTest.Refinement
 import LeanLLVMTest.Json

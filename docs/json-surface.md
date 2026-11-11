@@ -109,7 +109,7 @@ The block scanner is the one the emitted kernel runs; `scanCharsEnd` is the
 byte-at-a-time reference. **Agreement is a theorem, so the SIMD shape is not
 trusted to agree with the reference — it is proved to.**
 
-**And the scanner cannot accept what the grammar refuses.**  In the Vellum layer,
+**And the scanner cannot accept what the grammar refuses.**  In the refinement layer,
 `envForScanWindow_refuses_valid` and `not_klTailByte_last_of_validPrefix` are the
 two directions that let a window verdict be read as a statement about the
 document: the first says a window the unit calls invalid is not a valid prefix,

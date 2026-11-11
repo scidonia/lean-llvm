@@ -8,20 +8,20 @@ and controls are described in §7 so that a rebuild can repeat the same
 comparisons. Stage 1's units are the exception. The classification-mask
 kernel is extracted as `kernel/json/s1_block.c`, its emitted IR is committed as
 `probes/install/ir/json-s1-masks.candidate.ll`, and `s1_masks_refines`
-(`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves that pinned body stores the six
-masks and the carry `LeanLLVM/Vellum/JsonScanSpec.lean` specifies. The entry
+(`LeanLLVM/Refinement/JsonS1MasksSteps.lean`) proves that pinned body stores the six
+masks and the carry `LeanLLVM/Refinement/JsonScanSpec.lean` specifies. The entry
 positions unit is extracted as `kernel/json/entry.c`, its emitted IR is committed
 as `probes/install/ir/json-entry.candidate.ll`, and the two bodies
-`LeanLLVM/Vellum/JsonEntryIR.lean` pins are proved by `entry_pos8_refines`
-(`LeanLLVM/Vellum/JsonEntrySteps.lean`) and `entry_b8_refines`
-(`LeanLLVM/Vellum/JsonB8Steps.lean`) against the entry word
-`LeanLLVM/Vellum/JsonEntSpec.lean` specifies. The UTF-8 validity stage is the
+`LeanLLVM/Refinement/JsonEntryIR.lean` pins are proved by `entry_pos8_refines`
+(`LeanLLVM/Refinement/JsonEntrySteps.lean`) and `entry_b8_refines`
+(`LeanLLVM/Refinement/JsonB8Steps.lean`) against the entry word
+`LeanLLVM/Refinement/JsonEntSpec.lean` specifies. The UTF-8 validity stage is the
 third, and it is in the tree: its unit is `kernel/json/utf8.c`, its emitted IR is
 committed as `probes/install/ir/json-utf8.candidate.ll`,
-`LeanLLVM/Vellum/JsonUtf8IR.lean` gives its three calls their reading
+`LeanLLVM/Refinement/JsonUtf8IR.lean` gives its three calls their reading
 (`utf8Calls`, with `utf8Calls_pshufb`/`utf8Calls_usubSat`/`utf8Calls_ptestz`),
-`LeanLLVM/Vellum/JsonUtf8Spec.lean` states the specification the verdict is
-judged against, and `utf8_stage_refines` (`LeanLLVM/Vellum/JsonUtf8Steps.lean`)
+`LeanLLVM/Refinement/JsonUtf8Spec.lean` states the specification the verdict is
+judged against, and `utf8_stage_refines` (`LeanLLVM/Refinement/JsonUtf8Steps.lean`)
 proves the pinned body returns zero exactly when the staged window is a valid
 prefix. Everything else — the selection that fills the entry stream, the exit
 and escape stages, the assembled pipeline, and the parser's own refinement —
@@ -235,21 +235,21 @@ Bounded but unresolved, and all inside or near the placement floor:
 - **Mostly nothing about refinement, and stage 1 is the exception.** The measured
   pipeline is a native implementation. Stage 1's units are the exception.
   The classification-mask unit's kernel is extracted as `kernel/json/s1_block.c`,
-  and `s1_masks_refines` (`LeanLLVM/Vellum/JsonS1MasksSteps.lean`) proves the
+  and `s1_masks_refines` (`LeanLLVM/Refinement/JsonS1MasksSteps.lean`) proves the
   emitted body pinned from that source stores exactly the masks and carry
   `JsonScanSpec` defines — which `JsonScanSpec` in turn relates to `ScanBlock`'s
   `maskOf` fold and to `ScanWindow`'s `windowOf`. The entry positions unit's two
   kernels are extracted as `kernel/json/entry.c`, and `entry_pos8_refines`
-  (`LeanLLVM/Vellum/JsonEntrySteps.lean`) and `entry_b8_refines`
-  (`LeanLLVM/Vellum/JsonB8Steps.lean`) prove the bodies pinned from
+  (`LeanLLVM/Refinement/JsonEntrySteps.lean`) and `entry_b8_refines`
+  (`LeanLLVM/Refinement/JsonB8Steps.lean`) prove the bodies pinned from
   `probes/install/ir/json-entry.candidate.ll` against the entry word
-  `LeanLLVM/Vellum/JsonEntSpec.lean` specifies: the positions each body writes and
+  `LeanLLVM/Refinement/JsonEntSpec.lean` specifies: the positions each body writes and
   the cursor it returns. The UTF-8 validity stage is the third, and it too is
   refined: its unit is `kernel/json/utf8.c`, its emitted IR is
-  `probes/install/ir/json-utf8.candidate.ll`, `LeanLLVM/Vellum/JsonUtf8IR.lean`
-  gives its three calls their reading, `LeanLLVM/Vellum/JsonUtf8Spec.lean` states
+  `probes/install/ir/json-utf8.candidate.ll`, `LeanLLVM/Refinement/JsonUtf8IR.lean`
+  gives its three calls their reading, `LeanLLVM/Refinement/JsonUtf8Spec.lean` states
   the specification, and `utf8_stage_refines`
-  (`LeanLLVM/Vellum/JsonUtf8Steps.lean`) proves the pinned body returns zero
+  (`LeanLLVM/Refinement/JsonUtf8Steps.lean`) proves the pinned body returns zero
   exactly when the staged window is a valid prefix. Everything else here is
   still unrelated to the Lean development by any proof: the selection that fills
   the entry stream, the escape and exit stages, the assembled pipeline, and

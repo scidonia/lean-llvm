@@ -7,9 +7,9 @@ The loop unit is the memory-backed counterpart of the unrolled candidate; the
 transcript records runtime agreement on a corpus and is not a theorem about the
 loop body.
 
-`LeanLLVM.Vellum.CommaMaskIR.IR_refines` covers the candidate and the baseline.
+`LeanLLVM.Refinement.CommaMaskIR.IR_refines` covers the candidate and the baseline.
 The loop has its own covering theorem,
-`LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within`, bound by the
+`LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within`, bound by the
 manifest's `loop_theorem` field, and its own certificate, bound by `proof_loop`
 and `proof_loop_sha256`.  The manifest's `theorem` field keeps naming
 `IR_refines` for every request: it is the binding for the candidate/baseline
@@ -24,7 +24,7 @@ hashes bind both operands of the relation to their own files.  A certificate
 whose `theorem`, hash, fixture or marker disagrees with the unit it certifies is
 refused, whatever its digest in the manifest says, because that digest attests
 the bytes and not what they claim.  For a loop request the gate additionally
-re-elaborates `LeanLLVM/Vellum/CommaMaskLoop.lean` after the imported
+re-elaborates `LeanLLVM/Refinement/CommaMaskLoop.lean` after the imported
 `CommaMaskIR` graph is rebuilt, then has the producer derive the certificate
 again and compares the bytes.
 
@@ -33,8 +33,8 @@ file invoked as an external process — with local tool shims in a private
 temporary directory, so no compiler, linker, proof checker, network, clock or
 service is reached.  The proof checker the selector drives is a `lake` shim
 that accepts exactly these invocations: the proof-module rebuilds
-`lake build LeanLLVM.Vellum.CommaMaskIR` and
-`lake build LeanLLVM.Vellum.CommaMaskLoop`, each issued after the selector
+`lake build LeanLLVM.Refinement.CommaMaskIR` and
+`lake build LeanLLVM.Refinement.CommaMaskLoop`, each issued after the selector
 removes that module's olean so Lake re-elaborates it from source, and the
 producer
 `CERT_UNIT=<unit> CERT_MANIFEST=<manifest> CERT_OUT=<path>
@@ -73,11 +73,11 @@ record paths, so the result is attributable to the change made.
 - **Actor:** the build integrator.
 - **Given:** a manifest whose `loop`, `loop_fixture` and `loop_marker` hashes
   match the fixtures and the rebuilt loop object, whose `theorem` is
-  `LeanLLVM.Vellum.CommaMaskIR.IR_refines`, whose `loop_theorem` is
-  `LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within`, and whose loop
+  `LeanLLVM.Refinement.CommaMaskIR.IR_refines`, whose `loop_theorem` is
+  `LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within`, and whose loop
   certificate carries, for every field, the value that field is supposed to
   have — `unit=loop`, `theorem=
-  LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within`, and the
+  LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within`, and the
   cross-hashes of the baseline and candidate objects, fixtures and markers the
   manifest also names; and a strict baseline selection from the same input that
   exits 0, links the baseline object and emits an output file.
@@ -97,8 +97,8 @@ record paths, so the result is attributable to the change made.
 - **Actor:** the build integrator.
 - **Given:** the same manifest and the same valid-loop control as L1, with the
   loop certificate's `theorem` field changed from
-  `LeanLLVM.Vellum.CommaMaskLoop.loop_refines_candidate_within` to
-  `LeanLLVM.Vellum.CommaMaskIR.IR_refines`, a validly-shaped name that does not
+  `LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within` to
+  `LeanLLVM.Refinement.CommaMaskIR.IR_refines`, a validly-shaped name that does not
   cover the loop, and the manifest's `proof_loop_sha256` rewritten to the
   changed bytes; the manifest's own `loop_theorem` field stays correct.
 - **When:** the integrator invokes the selector with `UNIT=loop STRICT=1` into

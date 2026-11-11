@@ -2,7 +2,7 @@
 `leanllvm-depth-check`: the depth fold's corpus runner.
 
 The installed depth unit's numeric evidence is agreement with the
-specification `LeanLLVM.Vellum.DepthCountRefine.depthSpec`, not with another
+specification `LeanLLVM.Refinement.DepthCountRefine.depthSpec`, not with another
 implementation of the same fold.  This program prints `depthSpec` for each row
 of a corpus of index arrays; `probes/install/depth_driver.c` calls the installed
 object over the same rows and prints what it returned and stored, and
@@ -17,9 +17,9 @@ a row to the unit either.
 Exit status: 0 when every row was read and folded, 1 on a malformed row, 2 on a
 usage error or an unreadable corpus.
 -/
-import LeanLLVM.Vellum.DepthCountRefine
+import LeanLLVM.Refinement.DepthCountRefine
 
-open LeanLLVM.Vellum.DepthCountRefine
+open LeanLLVM.Refinement.DepthCountRefine
 
 namespace DepthCheck
 

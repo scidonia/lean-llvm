@@ -2,7 +2,7 @@
 JE2, JE3, the fixture pin, and the four clause witnesses of the entry unit.
 
 The fixture is `probes/install/ir/json-entry.candidate.ll`, read through the
-module that pins it: `LeanLLVM/Vellum/JsonEntryIR.lean`.  `firstFunction` of the
+module that pins it: `LeanLLVM/Refinement/JsonEntryIR.lean`.  `firstFunction` of the
 committed text is exactly `entryPos8Function`, and the module's two functions
 are the POS8 and B8 bodies the theorem is stated over.
 
@@ -25,14 +25,14 @@ reached.  Elaborated by
 `nix develop -c lake env lean tests/json-entry.lean`.
 -/
 import LeanLLVM
-import LeanLLVM.Vellum.JsonEntryIR
+import LeanLLVM.Refinement.JsonEntryIR
 
 namespace JsonEntryScenario
 
 open LeanLLVM
-open LeanLLVM.Vellum.JsonEntryIR
+open LeanLLVM.Refinement.JsonEntryIR
 open LeanLLVM.JSON
-open LeanLLVM.Vellum.JsonScanSpec
+open LeanLLVM.Refinement.JsonScanSpec
 
 /-! ### The fixture is the pinned AST -/
 
@@ -247,7 +247,7 @@ def tailBlockMask : BitVec 64 := 0x8000000000000001
 -- (`lim = 64`), so the last kept lane is the block's top lane.
 #guard
   (positionsOf (tailBlockMask &&& limMask 64) 0).take
-      (LeanLLVM.Vellum.BitLanes.ctpop (tailBlockMask &&& limMask 64)) =
+      (LeanLLVM.Refinement.BitLanes.ctpop (tailBlockMask &&& limMask 64)) =
     (positionsOf tailBlockMask 0).filter (· < 64)
 
 -- The witness refuses it: a body whose tail mask stops at `lim = 63` — the
@@ -255,7 +255,7 @@ def tailBlockMask : BitVec 64 := 0x8000000000000001
 -- positions differ from the document's.
 #guard
   (positionsOf (tailBlockMask &&& limMask 63) 0).take
-      (LeanLLVM.Vellum.BitLanes.ctpop (tailBlockMask &&& limMask 63)) ≠
+      (LeanLLVM.Refinement.BitLanes.ctpop (tailBlockMask &&& limMask 63)) ≠
     (positionsOf tailBlockMask 0).filter (· < 64)
 
 /-! #### (iii) the positions clause: the table row for a single-lane mask -/

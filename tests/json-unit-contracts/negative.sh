@@ -30,8 +30,8 @@
 set -uo pipefail
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
-src=$repo/LeanLLVM/Vellum/JsonUnitContracts.lean
-dst=$repo/LeanLLVM/Vellum/JsonUnitContractsNegative.lean
+src=$repo/LeanLLVM/Refinement/JsonUnitContracts.lean
+dst=$repo/LeanLLVM/Refinement/JsonUnitContractsNegative.lean
 marker='-- negative-build-anchor'
 wrapper='entry_pos8_satisfies'
 
@@ -43,7 +43,7 @@ fi
 
 cleanup() {
   rm -f "$dst"
-  rm -f "$repo"/.lake/build/lib/lean/LeanLLVM/Vellum/JsonUnitContractsNegative.*
+  rm -f "$repo"/.lake/build/lib/lean/LeanLLVM/Refinement/JsonUnitContractsNegative.*
 }
 trap cleanup EXIT
 
@@ -63,7 +63,7 @@ awk -v marker="$marker" '
 log=$(mktemp) || { echo "SETUP: cannot create a log file" >&2; exit 3; }
 trap 'rm -f "$log"; cleanup' EXIT
 
-( cd "$repo" && lake build LeanLLVM.Vellum.JsonUnitContractsNegative ) >"$log" 2>&1
+( cd "$repo" && lake build LeanLLVM.Refinement.JsonUnitContractsNegative ) >"$log" 2>&1
 status=$?
 
 fail=0
@@ -80,8 +80,8 @@ grep -q "∃ k' mem'," "$log" \
 
 # 3. The diagnostics must name the wrapper's declaration and the carrier the hole
 #    introduces, so the failure is attributed rather than merely present.
-grep -q "LeanLLVM\.Vellum\.${wrapper}' depends on axioms: \[propext, sorryAx, Quot\.sound\]" "$log" \
-  || report "no pin diagnostic names LeanLLVM.Vellum.${wrapper} with the sorryAx carrier"
+grep -q "LeanLLVM\.Refinement\.${wrapper}' depends on axioms: \[propext, sorryAx, Quot\.sound\]" "$log" \
+  || report "no pin diagnostic names LeanLLVM.Refinement.${wrapper} with the sorryAx carrier"
 
 # 4. It must not fail elsewhere: every error that names a source file must name
 #    the copy, and none may name another module.

@@ -813,7 +813,7 @@ theorem not_simtt_ret_diverges (post) (o : Outcome) :
 A visible node has no silent step, so the only clause that can relate two of them
 is the one for the same event.  The three lemmas below are therefore the
 refusals for a differing load annotation, store payload or call target; each is
-paired in `LeanLLVMTest/Vellum.lean` with an affirmative under the same detector.
+paired in `LeanLLVMTest/Refinement.lean` with an affirmative under the same detector.
 -/
 
 /-- Two visible loads that differ in address, type or annotation are refused. -/
