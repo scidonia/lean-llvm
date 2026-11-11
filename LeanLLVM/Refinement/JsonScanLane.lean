@@ -116,7 +116,7 @@ namespace LeanLLVM.Refinement.JsonScanLane
 open LeanLLVM
 open LeanLLVM.JSON
 open LeanLLVM.Refinement.JsonScanModel
-open LeanLLVM.Refinement.JsonScanABI (decodeState byteOf)
+open LeanLLVM.Refinement.JsonScanABI (decodeState byteOf encodeStatus Status)
 open LeanLLVM.Refinement.JsonScanIR (maskPref maskPref_succ maskPref_eq_maskOfList)
 open LeanLLVM.Refinement.JsonScanBody (scanWindowBody scanWindowBaselineBody ruleInstrs
   laneHead maskedSkipBits plainSkipBits structLo structHi)
@@ -2774,5 +2774,109 @@ theorem ruleBridge (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1
     have hsk4 : vSk4 f nw qb sb cb = 0 := by simp [vSk4, hsk3]
     have hskip : vSkip b f nw qb sb cb = 0 := by simp [vSkip, hsk4]
     exact ruleBridge_pending b f nw lo hi stp qb sb cb hqb hsb hcb hstp hskip hnwt
+
+/-! ### The lane's other words
+
+The carry is one of the things a lane leaves; `ruleBridge` reads the slot's four
+words back as the model's state.  A lane also leaves a mask word, a stop word and
+a counter, and their arithmetic is here: `maskNext_eq` is the mask accumulator's
+one step at the rule's own registers — `maskStep` is the value-level identity and
+`structBit_eq_vStb` is what lets the emitted `%stb` stand in for `structBit`; the
+three `vW*_eq` theorems are the status word's fields packed, so the lane's
+`%sw0`/`%sw1`/`%sw2` chain reports the model's own `Status`; and `vKn_eq` is the
+counter's step.  With `ruleBridge` these are the per-lane arithmetic `laneStep` —
+the one-iteration step the loop induction consumes, still outstanding — reads off
+a lane. -/
+
+/-- **The table's bit as the rule's `%stb`.**  `structBit` runs `ruleInstrs`'s own
+nine instructions and reads `%stb` back, so the table's answer and the register's
+are one bit. -/
+theorem structBit_eq_vStb (b : UInt8) : structBit b = true ↔ vStb b = 1 := by
+  let env : Env := [("%b", Value.int 8 (vByte b))]
+  have hB : lookupName env "%b" = some (Value.int 8 (vByte b)) := by
+    simp [env, lookupName]
+  have h := ruleStructBits_step noCalls (structBitStart b) env b hB
+  have hreg : structBitReg b = some (Value.int 1 (vStb b)) := by
+    show (denoteCode noCalls structBitCode (structBitStart b)).bind
+      (fun s => lookupName s.env "%stb") = some (Value.int 1 (vStb b))
+    rw [show structBitCode = ruleStructBits from rfl]
+    rw [show structBitStart b = stateAt env (structBitStart b) from rfl]
+    rw [h]
+    simp [stateAt, ruleBitsOut, cells, lookupName]
+  unfold structBit
+  rw [hreg]
+  simp
+
+/-- **The mask accumulator's lane step at the rule's own words.**  With the
+accumulator's word holding `maskPref bs k` and the counter at `k`, the emitted
+`select` on `%stb` leaves `maskPref bs (k + 1)` — the structural bit is the
+table's, the lane's bit is `%one`, and `maskStep` is what the `or` computes. -/
+theorem maskNext_eq (bs : List UInt8) (ki : BitVec 64) (m0 : BitVec 32) (k : Nat) (b : UInt8)
+    (hk32 : (vK32 ki).toNat = k) (hk : k < 32) (hb : bs[k]? = some b)
+    (hm : m0 = maskPref bs k) :
+    vMaskNext m0 ki b = maskPref bs (k + 1) := by
+  by_cases hs : vStb b = 1
+  · have hstb : structBit b = true := (structBit_eq_vStb b).mpr hs
+    have hstep : m0 ||| ((1 : BitVec 32) <<< k) = maskPref bs (k + 1) := by
+      have h := maskStep bs m0 k b hk hb hm
+      rwa [hstb] at h
+    unfold vMaskNext
+    rw [if_pos hs, vOne, hk32]
+    exact hstep
+  · have hstb : ¬ structBit b = true := fun h => hs ((structBit_eq_vStb b).mp h)
+    have hIsb : IsStructOrSpaceB b = false := by
+      rw [← structBit_correct b]
+      exact bool_false_of_not hstb
+    unfold vMaskNext
+    rw [if_neg hs, maskPref_succ]
+    simp [hb, hIsb, hm]
+
+/-- **The closing lane's status word.**  `%wcl` is the model's status: the lane
+field one past the counter, the close kind and no reason. -/
+theorem vWcl_eq (ki : BitVec 64) (k : Nat) (hk : (vK32 ki).toNat = k) (hk32 : k < 32) :
+    vWcl ki = encodeStatus (.ok (some (.close k))) := by
+  have hcl : encodeStatus (.ok (some (.close k))) = BitVec.ofNat 32 (k + 1 + 64) := rfl
+  have h232 : (2 : Nat) ^ 32 = 4294967296 := by decide
+  rw [hcl]
+  apply BitVec.eq_of_toNat_eq
+  simp only [vWcl, vLane1, BitVec.toNat_add, hk, BitVec.toNat_ofNat, h232]
+  have e1 : 1 % 4294967296 = 1 := by decide
+  have e64 : 64 % 4294967296 = 64 := by decide
+  rw [e1, e64, Nat.mod_eq_of_lt (by omega : k + 1 < 4294967296)]
+
+/-- **The control lane's status word.**  `%wct` is the model's refusal at the
+lane, with the control byte's reason. -/
+theorem vWct_eq (ki : BitVec 64) (k : Nat) (hk : (vK32 ki).toNat = k) (hk32 : k < 32) :
+    vWct ki = encodeStatus (.ok (some (.refuse k .control))) := by
+  have hcl : encodeStatus (.ok (some (.refuse k .control))) = BitVec.ofNat 32 (k + 1 + 640) := rfl
+  have h232 : (2 : Nat) ^ 32 = 4294967296 := by decide
+  rw [hcl]
+  apply BitVec.eq_of_toNat_eq
+  simp only [vWct, vLane1, BitVec.toNat_add, hk, BitVec.toNat_ofNat, h232]
+  have e1 : 1 % 4294967296 = 1 := by decide
+  have e640 : 640 % 4294967296 = 640 := by decide
+  rw [e1, e640, Nat.mod_eq_of_lt (by omega : k + 1 < 4294967296)]
+
+/-- **The bad-continuation lane's status word.**  `%wbd` is the model's refusal
+with the `badUtf8` reason, the word both a bad lead byte and a bad continuation
+raise. -/
+theorem vWbd_eq (ki : BitVec 64) (k : Nat) (hk : (vK32 ki).toNat = k) (hk32 : k < 32) :
+    vWbd ki = encodeStatus (.ok (some (.refuse k .badUtf8))) := by
+  have hcl : encodeStatus (.ok (some (.refuse k .badUtf8))) = BitVec.ofNat 32 (k + 1 + 896) := rfl
+  have h232 : (2 : Nat) ^ 32 = 4294967296 := by decide
+  rw [hcl]
+  apply BitVec.eq_of_toNat_eq
+  simp only [vWbd, vLane1, BitVec.toNat_add, hk, BitVec.toNat_ofNat, h232]
+  have e1 : 1 % 4294967296 = 1 := by decide
+  have e896 : 896 % 4294967296 = 896 := by decide
+  rw [e1, e896, Nat.mod_eq_of_lt (by omega : k + 1 < 4294967296)]
+
+/-- **The counter's step.**  `%kn` is the lane's own counter plus one. -/
+theorem vKn_eq (ki : BitVec 64) (k : Nat) (hk : ki.toNat = k) (hk64 : k + 1 < 2 ^ 64) :
+    vKn ki = BitVec.ofNat 64 (k + 1) := by
+  have h264 : (2 : Nat) ^ 64 = 18446744073709551616 := by decide
+  unfold vKn
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_add, hk, BitVec.toNat_ofNat, h264]
 
 end LeanLLVM.Refinement.JsonScanLane
