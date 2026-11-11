@@ -269,6 +269,187 @@ theorem Satisfies.mono {Γ Γ' : MemContract} {calls : Calls} {f : Function}
   · intro o ho
     exact hw args mem next o (hpost o ho)
 
+/-! ### Completion, and the vacuity of behaviour inclusion alone
+
+`Beh` records the outcomes a run reaches, and a run that never finishes reaches
+none.  `Refines` is inclusion of the target's behaviours in the source's, so a
+target with no behaviours refines every source — including one that terminates.
+The witness below is the smallest instance: a one-block self-loop refines a body
+that returns a constant.
+
+The completion conjunct is what excludes it.  `Completes` names `Satisfies`'s
+first conjunct on its own, and `RefinesCompleting` is the replacement claim that
+adds it to behaviour inclusion.  The budget both read is a step count: the number
+of control steps at which the completion argument counts the run down to its
+return.  It witnesses finiteness at the declared inputs; it is not a performance
+bound, because nothing here measures time or says the run is fast. -/
+
+/-- The first conjunct of `Satisfies`, named: from every state the record admits,
+the body reaches a defined return at the record's own budget for those arguments
+and that memory.
+
+The budget is a **completion witness**: a step count at which the run is shown to
+finish, not a performance bound.  A body that only ever exhausts its fuel has no
+such witness, which is exactly the difference `Refines` cannot see. -/
+def Completes (calls : Calls) (f : Function) (Γ : MemContract) : Prop :=
+  ∀ args mem next, Γ.pre args mem next →
+    ∃ v m, runFuel calls (Γ.budget args mem) f (EntryState f args mem next) = some (.ret v m)
+
+/-- `Satisfies` carries completion: its first conjunct is `Completes`. -/
+theorem Satisfies.completes {calls : Calls} {f : Function} {Γ : MemContract}
+    (h : Satisfies calls f Γ) : Completes calls f Γ :=
+  fun args mem next hpre => (h args mem next hpre).1
+
+/-- At the empty-memory, base-one call, completion is completion at `initState`:
+`EntryState` builds that state there, so the record's completion witness speaks
+about the same run `Refines` compares. -/
+theorem Completes.initState {calls : Calls} {f : Function} {Γ : MemContract}
+    (h : Completes calls f Γ) {args : List Value} (hp : Γ.pre args [] 1) :
+    ∃ v m, runFuel calls (Γ.budget args []) f (initState f args) = some (.ret v m) := by
+  simpa [initState_eq_entryState] using h args [] 1 hp
+
+/-- The replacement claim with completion: the target's behaviours are the
+source's, and the target finishes at the record's budget wherever the record
+admits the call.
+
+`Refines` itself is not this claim.  It is left unchanged because it is used as a
+preorder and a function need not terminate — `Refines.refl` would fail if
+completion were folded into it.  The completion conjunct is stated here instead,
+so a candidate that loops forever is refused while every existing `Refines`
+proof keeps its meaning. -/
+def RefinesCompleting (calls : Calls) (Γ : MemContract)
+    (target source : Function) : Prop :=
+  LeanLLVM.Refines calls target source ∧ Completes calls target Γ
+
+theorem RefinesCompleting.refines {calls : Calls} {Γ : MemContract}
+    {target source : Function} (h : RefinesCompleting calls Γ target source) :
+    LeanLLVM.Refines calls target source :=
+  h.1
+
+theorem RefinesCompleting.completes {calls : Calls} {Γ : MemContract}
+    {target source : Function} (h : RefinesCompleting calls Γ target source) :
+    Completes calls target Γ :=
+  h.2
+
+/-- Reflexivity on the completing functions: the completion witness is the
+hypothesis, which is the conjunct `Refines` itself cannot supply. -/
+theorem RefinesCompleting.refl {calls : Calls} {Γ : MemContract} {f : Function}
+    (h : Completes calls f Γ) : RefinesCompleting calls Γ f f :=
+  ⟨fun _ _ hb => hb, h⟩
+
+/-- Transitivity: behaviour inclusion composes, and the completion witness is
+the composed candidate's own, so the claim remains a preorder on the functions
+that complete. -/
+theorem RefinesCompleting.trans {calls : Calls} {Γ : MemContract}
+    {a b c : Function} (hab : RefinesCompleting calls Γ a b)
+    (hbc : RefinesCompleting calls Γ b c) : RefinesCompleting calls Γ a c :=
+  ⟨fun args o hb => hbc.1 args o (hab.1 args o hb), hab.2⟩
+
+/-! #### The witness -/
+
+/-- A one-block self-loop: its entry branches to itself and it has no
+instructions, so every step is a jump back to the state it left. -/
+def spinningFunction : Function :=
+  { name := "leanllvm_spin", retTy := .void, params := [],
+    blocks := [{ name := "entry", instrs := [], term := .br "entry" }] }
+
+/-- A body that returns the constant `7`. -/
+def constantFunction : Function :=
+  { name := "leanllvm_constant", retTy := .int 64, params := [],
+    blocks := [{ name := "entry", instrs := [],
+                 term := .ret (.int 64) (some (.imm (.int 64 7))) }] }
+
+/-- A record that admits every call and guarantees nothing.  The witness needs a
+record whose `pre` is inhabited: an unsatisfiable `pre` would make the completion
+conjunct hold for free, which is a different defect. -/
+def unconstrainedContract : MemContract where
+  budget := fun _ _ => 0
+  pre := fun _ _ _ => True
+  post := fun _ _ _ _ => True
+
+/-- One step of the self-loop is the jump it makes, from any state sitting at
+its entry block. -/
+theorem spinning_step (calls : Calls) (s : State) (h : s.pc = "entry") :
+    step calls spinningFunction s =
+      .jump { s with pc := "entry", pre := some s.pc } := by
+  cases s with
+  | mk env mem next pc pre =>
+      simp_all [step, spinningFunction, Function.findBlock, findBlockList,
+        denoteCode, denoteRun, State.bindAll, execTerm]
+
+/-- No budget reaches an outcome from the self-loop: each step is a jump back to
+the same block, so the fuel is spent without a return or an undefined result. -/
+theorem spinning_runFuel_none (calls : Calls) :
+    ∀ (n : Nat) (s : State), s.pc = "entry" →
+      runFuel calls n spinningFunction s = none
+  | 0, _, _ => rfl
+  | n + 1, s, h => by
+      simp only [runFuel, spinning_step calls s h]
+      exact spinning_runFuel_none calls n _ (by simp)
+
+/-- The self-loop has no behaviour at any argument list. -/
+theorem spinning_no_beh (calls : Calls) (args : List Value) (o : Outcome) :
+    ¬ Beh calls spinningFunction args o := by
+  intro h
+  have hpc : (initState spinningFunction args).pc = "entry" := rfl
+  rw [Beh] at h
+  rcases h with ⟨n, hn⟩ | ⟨n, hn⟩
+  · have hnone := spinning_runFuel_none calls n _ hpc
+    rw [hnone] at hn
+    cases hn
+  · have hnone := spinning_runFuel_none calls n _ hpc
+    rw [hnone] at hn
+    cases hn
+
+/-- The terminating body's one behaviour: it returns `7`. -/
+theorem constant_beh (calls : Calls) :
+    Beh calls constantFunction [] (.ret (some (.int 64 7)) ([] : Mem)) := by
+  rw [Beh]
+  refine Or.inr ⟨1, ?_⟩
+  simp [runFuel, step, constantFunction, Function.findBlock, findBlockList,
+    Function.entry?, denoteCode, denoteRun, State.bindAll, execTerm, evalOperand,
+    Const.toValue, initState]
+
+/-- A target with no behaviour refines every source: this is the vacuity in
+general form. -/
+theorem refines_of_no_beh {calls : Calls} {target : Function}
+    (h : ∀ args o, ¬ Beh calls target args o) (source : Function) :
+    LeanLLVM.Refines calls target source :=
+  fun args o hb => absurd hb (h args o)
+
+/-- The acceptance check's candidate: the looping body refines the terminating
+body under the current relation, because it has no behaviour to include. -/
+theorem spinning_refines_constant (calls : Calls) :
+    LeanLLVM.Refines calls spinningFunction constantFunction :=
+  refines_of_no_beh (fun args o => spinning_no_beh calls args o) constantFunction
+
+/-- The vacuity is the target's, not the source's: the terminating body does not
+refine the looping one, because its return has no source behaviour to match. -/
+theorem constant_not_refines_spinning (calls : Calls) :
+    ¬ LeanLLVM.Refines calls constantFunction spinningFunction := by
+  intro h
+  exact spinning_no_beh calls [] _
+    (h [] _ (constant_beh calls))
+
+/-- The loop reaches no return at any budget from any state a record admits, so
+`Completes` fails wherever the record's `pre` is inhabited. -/
+theorem spinning_not_completes (calls : Calls) (Γ : MemContract)
+    (hpre : ∃ args mem next, Γ.pre args mem next) :
+    ¬ Completes calls spinningFunction Γ := by
+  intro h
+  obtain ⟨args, mem, next, hp⟩ := hpre
+  obtain ⟨v, m, hrun⟩ := h args mem next hp
+  have hpc : (EntryState spinningFunction args mem next).pc = "entry" := rfl
+  have hnone := spinning_runFuel_none calls (Γ.budget args mem) _ hpc
+  rw [hnone] at hrun
+  cases hrun
+
+/-- The completion-added claim rejects the looping candidate that `Refines`
+accepts. -/
+theorem spinning_not_refinesCompleting (calls : Calls) :
+    ¬ RefinesCompleting calls unconstrainedContract spinningFunction constantFunction :=
+  fun h => spinning_not_completes calls unconstrainedContract ⟨[], [], 1, trivial⟩ h.2
+
 /-- A block whose terminator satisfies `retsValued`'s guard. -/
 theorem retsValued_block {f : Function} (h : retsValued f = true) {b : Block}
     (hb : b ∈ f.blocks) :

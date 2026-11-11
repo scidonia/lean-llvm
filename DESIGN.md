@@ -50,6 +50,17 @@ The fuel-indexed `runFuel` makes the modelling explicit: `none` is "no outcome
 within the budget", and `Beh` existentially quantifies the budget.  Proofs lift
 a per-step equality to `runFuel` by induction and then to `Beh`.
 
+Behaviour inclusion alone does not require the target to terminate: a target
+that never finishes contributes no outcome, so it refines every source,
+including a terminating one.  The replacement claim therefore carries completion
+as a separate conjunct.  `Completes` is the run-at-the-declared-budget half of
+`Satisfies`, and `RefinesCompleting` is inclusion plus that conjunct; `Refines`
+keeps its definition so it stays a preorder (`Refines.refl` would fail if a
+function had to terminate) and every existing proof keeps its meaning.  The
+budget is a step count that witnesses the run's finiteness, not a performance
+bound.  The witness is the self-loop `spinningFunction` in
+`LeanLLVM/Refinement/Relation.lean`, pinned in `LeanLLVMTest/Completion.lean`.
+
 ## Framed refinement
 
 `Refines` compares whole outcomes, so the returned memories must be equal.  A
