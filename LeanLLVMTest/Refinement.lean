@@ -3248,13 +3248,18 @@ example : ¬ LeanLLVM.Refinement.JsonScanIR.scanWindowStatementOf
 and `structBit_correct` says the bit they leave is `IsStructOrSpaceB` on every
 byte — the table's correctness is a theorem, where nothing in the kernel had
 connected its arithmetic to the predicate.  `maskStep` then accumulates that
-bit: one lane's `shl`/`or` leaves the model's `maskPref` fold.  The rest of the
-instruction chain, `laneStep`, the loop induction and `scanWindowLLVM_refines`
-are outstanding; that module's header records the measured per-lane count and
-the generator the chain is to come from.  None of them is here yet: the chain's
-last step stores the stop word, and the word it stores is the model's on every
-window measured above — an agreement to prove at every lane, not one to read off
-the windows.  The slot's four stores owe the readback `slotAt` and not
+bit: one lane's `shl`/`or` leaves the model's `maskPref` fold.  The module also
+proves the `body` block's instruction chain as far as `ruleInstrs`: 23
+instructions on the masked path and 8 on the plain one, as `denoteCode`
+equations at the lane's own environment, `laneHeadMaskedSkipBits_step` and
+`laneHeadPlainSkipBits_step` composed from `laneHead_step`,
+`maskedSkipBits_step` and `plainSkipBits_step`.  `ruleInstrs`' 120 instructions,
+the arithmetic bridge from the four words they leave to `bodyStep`, `laneStep`,
+the loop induction and `scanWindowLLVM_refines` are outstanding — the chain as
+proved stops at the `zext` that opens the table.  None of them is here yet: the
+chain's last step stores the stop word, and the word it stores is the model's on
+every window measured above — an agreement to prove at every lane, not one to
+read off the windows.  The slot's four stores owe the readback `slotAt` and not
 `encodeState`'s bytes, which is the frame's boundary at the state region.
 -/
 
@@ -3305,6 +3310,174 @@ example (bs : List UInt8) (m : BitVec 32) (k : Nat) (b : UInt8)
         m ||| ((1 : BitVec 32) <<< k) else m) =
       LeanLLVM.Refinement.JsonScanIR.maskPref bs (k + 1) :=
   LeanLLVM.Refinement.JsonScanLane.maskStep bs m k b hk hb hm
+
+-- The lane's instruction chain, as `denoteCode` equations: `JsonScanLane` proves
+-- `laneHead`'s five instructions, the masked path's eighteen skip instructions
+-- and the plain path's three, and composes them.  `ruleInstrs`' 120 instructions,
+-- the arithmetic bridge from the four words they leave to `bodyStep`, the loop
+-- induction and `scanWindowLLVM_refines` are outstanding, so the chain as proved
+-- stops at `ruleInstrs`' first instruction, the `zext` that opens the table.  The
+-- `body` block is 143 instructions on the masked path and 128 on the plain one.
+-- Every theorem it rests on is pinned below with its footprint, so a dependency
+-- that starts carrying an axiom fails here rather than at the statement's proof.
+-- The statement itself has no pin: it is a proposition and not a theorem, and a
+-- pin for a name with no declaration would fail the build.
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_and_reg_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_and_reg_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_or_reg_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_or_reg_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_and_imm_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_and_imm_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_lshr_reg_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_lshr_reg_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_shl_lit_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_shl_lit_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_icmp_imm_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_icmp_imm_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.loadValue_i8_of_readBytes' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.loadValue_i8_of_readBytes
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.loadValue_i32_of_readBytes' depends on axioms: [propext]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.loadValue_i32_of_readBytes
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.bytesToNat_natToBytes32' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.bytesToNat_natToBytes32
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_load_i8' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_load_i8
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.step_load_i32' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.step_load_i32
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteRun_append' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteRun_append
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_append_scan' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_append_scan
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_and_reg_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_and_reg_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_or_reg_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_or_reg_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_and_imm_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_and_imm_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_lshr_reg_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_lshr_reg_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_shl_lit_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_shl_lit_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i8' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i8
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.laneHead_step' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.laneHead_step
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.maskedSkipBits_step' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.maskedSkipBits_step
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.plainSkipBits_step' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.plainSkipBits_step
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.laneHeadMaskedSkipBits_step' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.laneHeadMaskedSkipBits_step
+
+/--
+info: 'LeanLLVM.Refinement.JsonScanLane.laneHeadPlainSkipBits_step' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonScanLane.laneHeadPlainSkipBits_step
 
 /-! ### The JSON classifier's specification
 
