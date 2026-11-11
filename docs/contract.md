@@ -259,14 +259,18 @@ claim over the rows may assert.
 5. **The Lean execution bridge covers the comma-mask seam and the native JSON
    route, and neither is proved semantically.** Its ABI correspondence is
    observed by link and run. For the seam the caller is printer output rather
-   than compiler output. `probes/json/route/` now calls the assembled pipeline
-   from a Lean program whose extern Lean compiles: `RouteMain.lean` stages the
-   record's bytes, `shim.c` copies them into the ABI, and `check.sh` compares the
-   route's observations with an independent C caller's on the default-profile
-   corpus. That is a source build of an opaque extern plus an observed agreement,
-   not a theorem: nothing in the kernel says the linked object implements the
-   body the stage-2 and pipeline theorems are about, and the route does not
-   establish that the object executes the pinned body.
+   than compiler output. `probes/json/route/` calls the assembled pipeline from a
+   Lean program whose extern Lean compiles: `RouteMain.lean` takes the library's
+   `admission` decision, `shim.c` copies the staged bytes into the ABI, and
+   `check.sh` compares the route's observations with an independent C caller's
+   on every admitted default-profile row. That is a source build of an opaque
+   extern plus an observed agreement, not a theorem: nothing in the kernel says
+   the linked object implements the body the stage-2 and pipeline theorems are
+   about, and the route does not establish that the object executes the pinned
+   body. What *is* proved is the document side: the decision is `admission`'s and
+   the record's document clauses follow from it (§7.5), so a document on the fast
+   path is inside `pipelineSpecPre`'s domain by proof, and every other document
+   is answered by the reference parser rather than by the object.
 6. **Installation covers four units, none of them JSON.** `select.sh` knows
    `json_scan`, but `JsonScanIR.scanWindowLLVM_refines` is a name no theorem
    inhabits (the instruction-level step of `scanWindowStatement` is open), so the
@@ -353,6 +357,41 @@ corpus windows in `tests/json-classify/check.sh`, the benchmark numbers in
 `docs/json-pipeline-performance.md` and the medians in `probes/bench` are
 observations and measurements. They support no row and license no clause; they
 are named where they are used so they cannot be mistaken for one.
+
+### 7.5 The route's document domain, and the fallback
+
+The route's decision on a document is one predicate, `admission`
+(`LeanLLVM/JsonKernelDomain.lean`), and each of its clauses is one checker with
+its own certificate (`LeanLLVM/JsonKernelCertificate.lean`): the non-empty
+document, the input bound `Limits.default.maxInput`, the opener-count bound on
+nesting, and the reference's character policy read through the parser's own body
+scanner.  The clause set is exactly the document clauses `pipelineSpecPre`
+excludes — `admission_documentDomain` turns an `admitted` decision into
+non-emptiness, the input bound and the parser's `depthExceeded`,
+`outOfCapacity` and policy exclusions, and `routeSpecPre` composes that with the
+staging construction.  Nothing about the domain is asserted without a proof, and
+the capacity exclusion is a theorem about the parser (`parseBytes`
+never returns `.outOfCapacity` inside the input bound), not a policy choice.
+
+The scalar reference parser is the **fallback** for a document the decision does
+not admit, and for nothing else.  The route's three outcomes are `admitted`
+(the native pipeline answers), `refused` (the reference parser refuses, with its
+own reason and position) and `fallback` (the reference parser accepts, and its
+tape is the answer).  The fallback is not a pre-filter: a document `admission`
+admits never reaches it.  It is the *current totality mechanism* — the API is
+total today because every document outside the domain is answered by the
+reference — and it is expected to shrink.
+
+The stated direction is that the **fast path may later become total by other
+approaches**, and the shape of the code is chosen for that: the clauses are
+separate functions with separate certificates, so widening the domain means
+removing a clause from `admission` and dropping its certificate, not
+renegotiating the interface.  The depth clause is deliberately conservative (an
+opener **count**, so a balanced document whose string bodies carry more than 128
+`[`/`{` bytes is outside the domain); its docstring says so where the clause is
+defined, and `check.sh` measures the resulting fallback acceptance rather than
+leaving it implicit.  Replacing the count with the stage-1 depth counter is a
+deletion of one clause and one certificate.
 
 ## 8. Out of scope for the first contract
 

@@ -133,6 +133,27 @@ native-reference comparison. The scaling comparison shows no quadratic growth
 over 4–64 KiB once the parser reads at a position; the measured law is no longer
 an obstacle to J6.
 
+## The route's document domain decision
+
+Landed with this record: the route's decision on a document is one certified
+predicate, and the scalar parser is its fallback.
+
+|Task|Status|Evidence|
+|---|---|---|
+|The admission predicate and its clauses|done|`LeanLLVM/JsonKernelDomain.lean`: non-empty, `kernelMaxInput`, the opener-count nesting bound, and the reference character policy through `scanCharsEnd`; `admission`, `admitted`, `documentDecision` and the three outcomes are separate definitions|
+|Each clause certified|done|`LeanLLVM/JsonKernelCertificate.lean`: `depthExceeded_openers`, `parseBytes_policyRefusal`, and the capacity exclusion `parseBytes_no_outOfCapacity` (through `parseValue_ne_outOfCapacity`, `tokens_length_le_input`, `tape_valid` and the span discipline). All at `[propext, Quot.sound]`, pinned in the module with a `Classical.choice` control|
+|The implication to the record|done|`admission_documentDomain` and `admitted_documentDomain` give non-emptiness, the input bound and the parser's three exclusions; `routeSpecPre` derives `pipelineSpecPre` from `routePre`, so the shell's fast path is inside the record's domain by proof|
+|The shell and the fallback|done|`JsonCallRoute.documentDecision`/`checkRoute`: `admitted` (the pipeline answers), `refused` and `fallback` (the reference parser answers, with its own reason or tape). The fallback is consulted for out-of-domain documents only, never as a pre-filter|
+|The executable route uses the same definition|done|`probes/json/route/RouteMain.lean` imports `admission` and `parseBytes` (no second scan); `check.sh`: 107 admitted rows agree with the C driver, 14 policy rows and the empty/over-bound/depth-129+ documents fall back with the reference's answers, divergence 0|
+|Controls|done|four shell cuts (`depthBound`, the two policy reasons, `inputTooLong`, and the admitted arm) redden their assertions and pass when restored; recorded in `probes/json/route/README.md`|
+
+The direction is recorded in `docs/contract.md` §7.5: the domain is exactly what
+the certified checkers decide, the fallback is the current totality mechanism,
+and the fast path may later become total by other approaches — each a clause
+removed from `admission` with its certificate, the depth clause's opener count
+being the first (it is conservative by construction, and the fallback's
+acceptance of an opener-rich document is measured by `check.sh`).
+
 ## Standing blockers, stated rather than assumed
 
 1. **Vector semantics** — *partly present since J2's WP2* (2026-11-03). `Ty`

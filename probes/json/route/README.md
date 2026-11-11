@@ -6,17 +6,43 @@ pipeline's record demands and calls the native object.  The contract is
 
 | File | What it is |
 |---|---|
-| `RouteMain.lean` | the standalone Lean entry point: the record's staging in bytes, the domain shell, the reference's character-policy scan, the call, and the tagged result's report |
+| `RouteMain.lean` | the standalone Lean entry point: it imports the library's `admission` decision and its `parseBytes` fallback (one shell, not two), stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes |
 | `shim.c` | the adapter: validates the staging, copies the caller's `ByteArray`s into the object's ABI, fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
-| `build.sh` | compiles the six kernel units, the adapter and the program, links them, and asserts the two symbols the adapter calls are imported and defined |
-| `check.sh` | the route scenario: fidelity against `driver.c` over the observation and both payload streams, the shell's refusals including the policy class, the zero-divergence assertion, and the depth boundary |
+| `build.sh` | compiles the six kernel units, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts the two symbols the adapter calls are imported and defined |
+| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the fourteen-row policy class, and the three outcomes' distinctness |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
-| `DomainCheck.lean` | the library shell's `checkRoute`, elaborated from source and exercised at every refusal, the fourteen-row policy class pinned against `documentRefusal` and `parseBytes`, and the depth boundary's two sides |
+| `DomainCheck.lean` | the library shell's `documentDecision` and `checkRoute`, elaborated from source: every admission clause on both sides, both fallback outcomes, the fourteen-row policy class, and the layout checks |
+
+## The three outcomes
+
+The decision is the library's, `LeanLLVM.JsonKernelDomain.admission`, and its
+clauses are the certified checkers whose certificates are in
+`LeanLLVM/JsonKernelCertificate.lean`.  A document takes exactly one of three
+paths, and the output distinguishes them:
+
+* **the fast path** (`verdict=...` on stdout).  `admission` admits the document,
+  the program stages it, and the native object answers; the observation, the
+  arena and the event stream are printed.  This is the only path that calls the
+  object.
+* **the fallback's refusal** (`refused: ...` on stderr, exit 2).  `admission`
+  does not admit the document and the scalar reference parser refuses it; the
+  reason and position printed are `parseBytes`'s own.
+* **the fallback's acceptance** (`fallback=accepted tokens=<n> decoded=<0|1>`).
+  `admission` does not admit the document and the reference parser accepts it;
+  the tape is the answer, and `decoded` reports whether `decodeTape` gave a
+  value.
+
+The fallback is the reference parser for every document the domain does not
+admit, and for no other document: it is not consulted before the decision and
+not on the fast path.  The domain is exactly what the certified checkers decide,
+so the open/closed question of the fast path's totality is a question about
+those clauses and nothing else.
 
 ## Commands
 
 ```bash
+nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
 nix develop -c bash probes/json/route/correspondence.sh
@@ -27,96 +53,99 @@ nix develop -c bash probes/install/lake-locked.sh env lean probes/json/route/Dom
 `build.sh` prints `ok: .../leanllvm-json-route`; it fails if `nm` does not show
 `leanllvm_json_pipeline` and `leanllvm_json_entry_table` imported by the adapter
 and defined by the executable, so a build that lost the call or the table's
-initialisation is a red rather than a pass.  `correspondence.sh` prints the
-artifact relation; its output is recorded in
+initialisation is a red rather than a pass.  It compiles the program with
+`lake env lean -c` because the program imports the library's decision and parser;
+the first command builds their Lean modules and their emitted C, and `build.sh`
+stops with that command in its message when they are absent.  `correspondence.sh`
+prints the artifact relation; its output is recorded in
 [the correspondence page](../../../docs/json-route-artifact-correspondence.md).
-`DomainCheck.lean` needs the library's oleans, which the fourth command builds.
+`DomainCheck.lean` needs the library's oleans, which the fifth command builds.
 
 ## Observed
 
-`check.sh`, over the 122 default-profile manifest rows and then the depth
-boundary:
+`check.sh`, over the 122 default-profile manifest rows and then the boundary
+cases:
 
 ```text
-ok: 122 default-profile rows: route and driver agree on the observation, arena and events (60 arena byte(s) over 19 row(s), 3125 event byte(s) over 86 row(s)); accept 59, invalid 48, policy refusals 14; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128/129/520/521 agree, object accepts 128..520 and refuses 521 at 520
+ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons
 ```
 
-- the Lean route and the C driver print the same three lines on every row —
-  verdict, four cursors and error offset; the arena and the event stream — and
-  the two payload lines are compared byte for byte, so equal lengths and a
-  shared verdict cannot conceal different values.  The comparison is
-  field-wise: a verdict disagreement, a value disagreement (naming the stream
-  and the first differing byte) and a metadata disagreement (a cursor, or the
-  error offset) are separate diagnostics.  Between the route and the driver no
-  difference is allowed, because both call the same object with the same
-  staging; the classes distinguish what broke, they do not admit anything.  This
-  holds for the fourteen policy rows too, where the object's observation is
-  printed before the wrapper refuses;
-- 59 `accept` rows are accepted, 48 `invalid` rows report the object's refusal,
-  and 14 `invalid` rows are refused by the wrapper with the reference parser's
-  reason and byte; the empty corpus document is refused with its reason, and an
-  over-bound document is refused with its bound;
-- divergence is 0: every default-profile row's verdict agrees with the
-  reference's, where before the wrapper's change the object accepted 14
-  documents the reference refuses;
-- the eight non-default-profile rows (`depth2`, `in8`, `tok4`) are skipped: the
-  route is stated at `Limits.default`, and those rows exercise other limits;
-- the two callers agree on all four depth probes: 128 and 129 nestings, and the
-  native stack's 520 and 521.  The reference accepts 128 and refuses 129
-  (`depthExceeded`, pinned by `DomainCheck.lean`); the native walk pushes 520
-  frames and refuses the 521st at offset 520.  So the object accepts 129..520,
-  where the reference refuses: that class is outside the record's domain
-  (`pipelineSpecPre` excludes `.depthExceeded`), the route reports the object's
-  observation there, and the scenario asserts it rather than leaving the gap
-  implicit.
+- the 107 admitted rows — 59 the manifest calls `accept` and 48 `invalid` —
+  take the fast path, and the Lean route and the C driver print the same three
+  lines on every one: verdict, four cursors and error offset; the arena and the
+  event stream are compared byte for byte, so equal lengths and a shared verdict
+  cannot conceal different values.  The comparison is field-wise: a verdict
+  disagreement, a value disagreement (naming the stream and the first differing
+  byte) and a metadata disagreement are separate diagnostics.  Between the route
+  and the driver no difference is allowed, because both call the same object
+  with the same staging;
+- divergence is 0: every fast-path row's verdict agrees with the reference's,
+  and every fallback row's answer *is* the reference's;
+- the 14 `invalid` rows the object accepts and the reference refuses under its
+  **character policy** fall back, and the fallback refuses them with the
+  reference's own reason and byte.  The class is: lone and out-of-range
+  surrogate escapes (`lone-dead.json`, `lone-d800.json`, `double-high.json`,
+  `high-char.json`, `reversed-pair.json`, `lone-dc00.json`) and noncharacters,
+  escaped and raw (`nc-fdd0.json`, `nc-fffe.json`, `nc-ffff.json`,
+  `nc-pair-max.json`, `nc-raw-fdd0.json`, `nc-raw-fffe.json`,
+  `nc-raw-10ffff.json`, `nc-raw-1fffe.json`).  RFC 7493 §2.1 is the reference's
+  policy, and `DomainCheck.lean` pins both the class and the shell's decision;
+- the empty document falls back and is refused with `unexpected end at 0`; an
+  over-bound document falls back and is refused with `input too long`;
+- the four depth probes: 128 is admitted and the object accepts it; 129, 520 and
+  521 are outside the domain and fall back with the reference's `depthExceeded`.
+  The driver is still run at 129 and 520, and it accepts — that class is the
+  reason the depth clause exists, and the route no longer calls the object
+  there;
+- the opener-rich document — a string carrying 129 `[` bytes — is accepted by
+  the reference and outside the domain, because the opener-count clause counts
+  bytes rather than nesting.  It falls back and the fallback accepts it with a
+  decoded value: the clause's conservatism narrows the domain and never changes
+  an answer.
 
-The byte comparison is not vacuous: the run counts the bytes it compared and
-the rows that carried any, and fails when either arm is empty — two empty
-payloads agree however the object misbehaved.  Every assertion above has a cut
-that makes it fail; the cuts and their observed output are recorded under
-[The route boundary's controls](../../../docs/json-route-evidence.md#the-route-boundarys-controls-r1r9).
+The byte comparison is not vacuous: the run counts the bytes it compared and the
+rows that carried any, and fails when either arm is empty.  Every assertion above
+has a cut that makes it fail; the cuts and their observed output are recorded
+below.
 
-The fourteen are one class: documents the reference parser refuses under its
-**character policy** — lone and out-of-range surrogate escapes
-(`lone-dead.json`, `lone-d800.json`, `double-high.json`, `high-char.json`,
-`reversed-pair.json`, `lone-dc00.json`) and noncharacters, escaped and raw
-(`nc-fdd0.json`, `nc-fffe.json`, `nc-ffff.json`, `nc-pair-max.json`,
-`nc-raw-fdd0.json`, `nc-raw-fffe.json`, `nc-raw-10ffff.json`,
-`nc-raw-1fffe.json`).  Those are RFC 8259 texts, so the object's verdict is the
-RFC verdict and the reference's is stricter; RFC 7493 §2.1 is the reference's
-policy, and `DomainCheck.lean` pins both the reference's reason and the
-wrapper's.
+## The controls
 
-## The policy scan, and where it could differ
+Four cuts, each applied to the probe's shell (`RouteMain.run`) in a throwaway
+copy and rebuilt, one at a time; the tree was restored and rebuilt after each,
+and the final run above is the restored build's.  The cut is at the decision's
+*consumer* rather than in `admission` itself because the clause definitions carry
+the certificate's proofs: removing a clause there replaces a proof, which is a
+build failure rather than an assertion failure, and the point of these controls
+is that the scenario notices a document taking the wrong path.
 
-`RouteMain.lean`'s `scanDocument` reads the document's string bodies the way the
-reference's `scanChars` reads them — the same escape pairing, the same strict
-UTF-8 ranges, the same `IsNoncharacter` predicate — and reports the reference's
-reason and byte.  It is a second implementation of the reference's scan, because
-the probe is standalone and cannot link the reference parser; `DomainCheck.lean`
-pins the class against the parser itself, and `check.sh` pins the executable's
-reason and byte for all fourteen rows.
+| Control | Cut | First observed red |
+|---|---|---|
+| depth-129 falls back | `.error (.depthBound _) => runFast …` | `FAIL: depth 129: expected the fallback's depthExceeded refusal (exit 0)` (and 520, 521, the opener-rich document) |
+| a policy-violating document falls back | `.error (.unpairedSurrogate _) \| .error (.noncharacter _) => runFast …` | `FAIL: the fallback refuses a different policy class than the one pinned`, `FAIL: expected 14 policy refusals, saw 0`, and the fourteen rows counted as divergences |
+| over-length falls back | `.error (.inputTooLong _) => runFast …` | `FAIL: the over-bound document was not the fallback's refusal (exit 0)` |
+| a policy-clean in-domain document takes the fast path | `.ok () => … runFallback doc` (with `runFast` still referenced from a branch that is not taken, so the link step keeps the call) | `FAIL: the fast-path arm is empty (accept 0, invalid 0)`, `FAIL: no compared row carried arena bytes…`, and the depth-128 row losing its observation |
 
-The scan is applied only to a document the object accepted.  That is the class
-where the wrapper's verdict can differ from the reference's: a document the
-object refused already has a refusal verdict, and the wrapper reports it rather
-than substituting a second reason.  On an accepted document the bytes are RFC
-JSON, so the bodies the scan walks are the bodies the reference walks.
+The first attempt at the last cut — routing *all* documents to the fallback —
+failed the build instead (`build: the executable does not define
+leanllvm_json_pipeline`), because Lean's compiler eliminated the unused extern
+call; that is a scaffolding failure, not a red, which is why the recorded cut
+keeps a live reference to `runFast`.
 
-The ordering is the probe's, and it is what keeps the fidelity instrument: the
-object is called and its observation printed for every default-profile row, so
-the route/driver agreement is measured on the fourteen policy rows too, and the
-refusal is the wrapper's additional verdict on top.  A caller follows
-`LeanLLVM.JsonCallRoute.checkRoute`, which refuses the same class *before* the
-call — the contract's domain is the stronger statement, and the probe measures
-the object's behaviour on the same documents.
+## The fallback, and where it could differ
 
-The one way the scan could report a reason the reference would not is an object
-more lenient than RFC 8259 that accepted a document the reference refuses
-syntactically, with a policy-class sequence after the lenient spot.  Both sides
-refuse such a document, so the verdict agrees; only the reported reason could
-differ.  The corpus shows no such document: the object and the reference agree
-on all 122 rows after the fourteen are refused.
+There is no second policy scan in the probe any more.  `RouteMain.lean` imports
+`admission` and `parseBytes` from the library, so the decision and the
+fallback's answer are the reference's own compiled definitions, not a
+transcription: `DomainCheck.lean` pins the class against the parser itself, and
+`check.sh` pins the executable's reason and byte for all fourteen rows.
+
+The one limitation is the one the clause's own docstring states: the depth
+clause is an opener *count*, so it is conservative.  A balanced document whose
+string bodies carry more than 128 `[`/`{` bytes is refused by `admission` and
+answered by the fallback — never wrongly, because the fallback is the reference
+parser, and `check.sh` asserts exactly that case.  Replacing the count with the
+stage-1 depth counter is a deletion of one clause and its certificate, not a
+renegotiation of this shell.
 
 ## The adapter's tagged result, and why nothing is clamped
 
@@ -153,12 +182,15 @@ Two properties are the point:
 It establishes that a Lean program reaches the native object, that the staging
 it builds is the one the record asks for (by agreement with an independent C
 caller), that the object's observation, arena and event stream are the ones the
-route prints byte for byte, that the shell refuses the empty document,
-over-bound input and the reference's character-policy class before it trusts the
-object's verdict, and that the fourteen documents the object accepts and the
-reference refuses are refused with the reference's own reason and byte.  It also
-measures, rather than inherits, the depth boundary on both sides of the
-reference's 128 levels and the native stack's 520.
+route prints byte for byte, that the document decision is the library's
+certified predicate and the fast path is taken exactly where it admits, and that
+every other document is answered once by the reference parser — with the
+reference's reason and byte for the policy class, its `depthExceeded` past 128,
+`input too long` past the bound, and its accepted tape for the opener-rich
+document.  `DomainCheck.lean` additionally proves by elaboration that the
+shell's decision is `admission`'s (`documentDecision_admitted`) and that the
+certificate's clauses follow from it (`admitted_documentDomain`,
+`routeSpecPre`).
 
 It does not establish that the object executes the pinned body the theorems are
 about: the refinement theorem speaks about the parsed AST and `Mem`, and the
@@ -166,9 +198,9 @@ compiler/FFI step from that to the linked object is the trust boundary
 `docs/contract.md` rows 8 and 9 record — `correspondence.sh` records exactly
 how far the two emissions are from each other, which is that they are not the
 same text.  It does not compare the payload values with the reference tape's
-values either: both callers run the same object, so their agreement is evidence
-about the adapter path and not about the object's meaning.  The object itself
-still accepts the fourteen: `Sigma_pipeline` states the reference parser's
-predicate, and the object's verdict is the RFC one, which is why
-`Sigma_pipeline` remains a statement rather than a theorem about the linked
-object.
+values either: the fast path prints the object's bytes and the fallback prints
+its own answer, and the two are compared only where the domain certificate says
+they must agree.  The object itself still accepts the fourteen: `Sigma_pipeline`
+states the reference parser's predicate, and the object's verdict is the RFC
+one, which is why `Sigma_pipeline` remains a statement rather than a theorem
+about the linked object.

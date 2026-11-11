@@ -372,6 +372,359 @@ theorem depthExceeded_openers (bs : Bytes)
           simp only [hpv] at h
           repeat (split at h) <;> simp_all
 
+/-! ### The capacity outcome is unreachable
+
+The recursive core reports two kinds of failure and never a limit one other than
+depth: every `Step.fail` it builds is a `.depthExceeded` of its own or an
+`.invalid` a scanner produced.  So `parseBytes` is the only place
+`.outOfCapacity` is built, and it builds it only after a successful parse whose
+token count exceeds the limit.  The span discipline bounds that count by the
+input length, which is what makes the outcome unreachable inside the input
+bound.
+
+The first four lemmas are the scanners'; the mutual induction is the core's. -/
+
+theorem parseKey_ne_outOfCapacity (bs : Bytes) (i : Nat) :
+    parseKey bs i ≠ .fail .outOfCapacity := by
+  intro h
+  rw [parseKey.eq_def] at h
+  repeat (split at h)
+  all_goals simp_all
+
+theorem parseString_ne_outOfCapacity (bs : Bytes) (i : Nat) :
+    parseString bs i ≠ .fail .outOfCapacity := by
+  intro h
+  rw [parseString.eq_def] at h
+  repeat (split at h)
+  all_goals simp_all [parseKey_ne_outOfCapacity]
+
+theorem parseNumber_ne_outOfCapacity (bs : Bytes) (i : Nat) :
+    parseNumber bs i ≠ .fail .outOfCapacity := by
+  intro h
+  rw [parseNumber.eq_def] at h
+  dsimp only at h
+  split at h <;> cases h
+
+theorem parseLiteral_ne_outOfCapacity (bs : Bytes) (i : Nat) (lit : Bytes)
+    (tag : LitTag) (hlit : 0 < lit.length) :
+    parseLiteral bs i lit tag hlit ≠ .fail .outOfCapacity := by
+  intro h
+  rw [parseLiteral.eq_def] at h
+  repeat (split at h)
+  all_goals simp_all
+
+set_option maxHeartbeats 1000000 in
+theorem parseValue_ne_outOfCapacity (bs : Bytes) :
+    (∀ i depth, parseValue bs i depth ≠ .fail .outOfCapacity) ∧
+    (∀ j depth, parseMembersTail bs j depth ≠ .fail .outOfCapacity) ∧
+    (∀ j depth, parseElemsTail bs j depth ≠ .fail .outOfCapacity) := by
+  refine parseValue.mutual_induct bs _ _ _
+    ?c1 ?c2 ?c3 ?c4 ?c5 ?c6 ?c7 ?c8 ?c9 ?c10 ?c11 ?c12 ?c13 ?c14 ?c15 ?c16 ?c17 ?c18
+    ?c19 ?c20 ?c21 ?c22 ?c23 ?c24 ?c25 ?c26 ?c27 ?c28 ?c29 ?c30 ?c31
+  case c1 =>
+    intro i depth hnone h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+  case c2 =>
+    intro i hb h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+  case c3 =>
+    intro i depth hb hd hi first hfirst hclose h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c4 =>
+    intro i depth hb hd hi first hfirst hnc e hcall ihm h
+    simp only [first] at *
+    have hres : parseValue bs i depth = .fail e := by
+      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first]
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihm hcall
+  case c5 =>
+    intro i depth hb hd hi first hfirst hnc pv hcall hpnext e htail ihm ihtm h
+    simp only [first] at *
+    have hres : parseValue bs i depth = .fail e := by
+      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first]
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihtm htail
+  case c6 =>
+    intro i depth hb hd hi first hfirst hnc pv hcall hpnext t htail hclose ihm ihtm h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c7 =>
+    intro i depth hb hd hi first hfirst hnc pv hcall hpnext t htail hnclose ihm ihtm h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c8 =>
+    intro i hb h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+  case c9 =>
+    intro i depth hb hd hi first hfirst hclose h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c10 =>
+    intro i depth hb hd hi first hfirst hnc e hkey h
+    simp only [first] at *
+    have hres : parseValue bs i depth = .fail e := by
+      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first]
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact (parseKey_ne_outOfCapacity bs _) hkey
+  case c11 =>
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c12 =>
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 e hcall ihm h
+    simp only [first] at *
+    have hres : parseValue bs i depth = .fail e := by
+      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first]
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihm hcall
+  case c13 =>
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext e htail ihm ihtm h
+    simp only [first] at *
+    have hres : parseValue bs i depth = .fail e := by
+      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first]
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihtm htail
+  case c14 =>
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail hclose ihm ihtm h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c15 =>
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail hnclose ihm ihtm h
+    simp only [first] at *
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [first]
+  case c16 =>
+    intro i depth hb h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+    exact (parseString_ne_outOfCapacity bs i) h
+  case c17 =>
+    intro i depth hb h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+    exact (parseLiteral_ne_outOfCapacity bs i _ _ _) h
+  case c18 =>
+    intro i depth hb h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+    exact (parseLiteral_ne_outOfCapacity bs i _ _ _) h
+  case c19 =>
+    intro i depth hb h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+    exact (parseLiteral_ne_outOfCapacity bs i _ _ _) h
+  case c20 =>
+    intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+    exact (parseNumber_ne_outOfCapacity bs i) h
+  case c21 =>
+    intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd h
+    rw [parseValue.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+  case c22 =>
+    intro i depth hcomma hclt hilen hpos e hkey h
+    have hres : parseMembersTail bs i depth = .fail e := by
+      rw [parseMembersTail.eq_def]; repeat (split); all_goals simp_all
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact (parseKey_ne_outOfCapacity bs _) hkey
+  case c23 =>
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon h
+    rw [parseMembersTail.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all [hkey]
+  case c24 =>
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 e hcall ihm h
+    have hres : parseMembersTail bs i depth = .fail e := by
+      rw [parseMembersTail.eq_def]; repeat (split); all_goals simp_all
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihm hcall
+  case c25 =>
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 pv hcall hpnext e htail ihm ihtm h
+    have hres : parseMembersTail bs i depth = .fail e := by
+      rw [parseMembersTail.eq_def]; repeat (split); all_goals simp_all
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihtm htail
+  case c26 =>
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail _ ihtm h
+    have hres : ∃ t', parseMembersTail bs i depth = .done t' := by
+      rw [parseMembersTail.eq_def]
+      split
+      · rename_i hc
+        simp only [hkey]
+        simp [hncColon]
+        simp only [hcall, htail]
+        exact ⟨_, rfl⟩
+      · rename_i hother
+        exact absurd hcomma hother
+    obtain ⟨t', ht'⟩ := hres
+    rw [ht'] at h
+    cases h
+  case c27 =>
+    intro i depth hnc h
+    rw [parseMembersTail.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+  case c28 =>
+    intro i depth hcomma hclt hilen hpos e hcall ihm h
+    have hres : parseElemsTail bs i depth = .fail e := by
+      rw [parseElemsTail.eq_def]; repeat (split); all_goals simp_all
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihm hcall
+  case c29 =>
+    intro i depth hcomma hclt hilen hpos pv hcall hpnext e htail ihm ihtm h
+    have hres : parseElemsTail bs i depth = .fail e := by
+      rw [parseElemsTail.eq_def]; repeat (split); all_goals simp_all
+    rw [hres] at h
+    injection h with he
+    subst he
+    exact ihtm htail
+  case c30 =>
+    intro i depth hcomma hclt hilen hpos pv hcall hpnext t htail _ ihtm h
+    have hres : ∃ t', parseElemsTail bs i depth = .done t' := by
+      rw [parseElemsTail.eq_def]
+      split
+      · rename_i hc
+        simp only [hcall, htail]
+        exact ⟨_, rfl⟩
+      · rename_i hother
+        exact absurd hcomma hother
+    obtain ⟨t', ht'⟩ := hres
+    rw [ht'] at h
+    cases h
+  case c31 =>
+    intro i depth hnc h
+    rw [parseElemsTail.eq_def] at h
+    repeat (split at h)
+    all_goals simp_all
+
+/-! ### The token count is bounded by the input
+
+A successful parse's tokens satisfy `checkSpans` at the document: that is
+`tape_valid` read at the tape the parse produced.  The span discipline then
+bounds the count by the input length, because every token's span is non-empty
+and the spans advance strictly through the input. -/
+
+theorem checkSpans_length_le (bs : Bytes) (toks : List Token) (prev : Nat)
+    (hspans : checkSpans bs toks prev = true) (hprev : prev ≤ bs.length) :
+    toks.length + prev ≤ bs.length := by
+  induction toks generalizing prev with
+  | nil => simpa using hprev
+  | cons tok rest ih =>
+      simp only [checkSpans, Bool.and_eq_true, decide_eq_true_eq] at hspans
+      have h1 : prev ≤ tok.span.start := hspans.1.1.1.1
+      have h2 : tok.span.start < tok.span.stop := hspans.1.1.1.2
+      have h3 : tok.span.stop ≤ bs.length := hspans.1.1.2
+      have h4 : checkSpans bs rest tok.span.stop = true := hspans.2
+      have hrec := ih tok.span.stop h4 h3
+      simp only [List.length_cons]
+      omega
+
+/-- A successful parse inside the input bound carries at most one token per input
+byte: the tape's span discipline is `checkSpans`, and the spans are non-empty,
+ordered and inside the document.  The tape is obtained by parsing again at the
+limit whose token bound is exactly the count the parse produced, so the
+statement is `parseRef_sound` followed by `tape_valid`, not a second parser. -/
+theorem tokens_length_le_input (bs : Bytes) {p : Parsed (skipFrom bs 0)}
+    (hin : bs.length ≤ Limits.default.maxInput)
+    (hbom : bs.take 3 ≠ ByteString.literal [0xEF, 0xBB, 0xBF])
+    (hp : parseValue bs (skipFrom bs 0) Limits.default.maxDepth = .done p)
+    (htr : ¬ skipFrom bs p.next < bs.length) :
+    p.tokens.length ≤ bs.length := by
+  let L : Limits := { Limits.default with maxTokens := p.tokens.length }
+  have hparse : parseBytes L bs = .ok ⟨bs, p.tokens⟩ := by
+    have hlen : ¬ bs.length > L.maxInput := by
+      show ¬ bs.length > Limits.default.maxInput
+      omega
+    unfold parseBytes
+    rw [if_neg hlen, if_neg hbom]
+    have hpL : parseValue bs (skipFrom bs 0) L.maxDepth = .done p := hp
+    rw [hpL]
+    dsimp only
+    rw [if_neg htr]
+    rw [if_pos (by simp [L])]
+  obtain ⟨-, v, -, hdec⟩ := (parseRef_sound L bs).1 ⟨bs, p.tokens⟩ hparse
+  have hspans : checkSpans bs p.tokens 0 = true := by
+    have := (tape_valid ⟨bs, p.tokens⟩ v hdec).1
+    simpa [spansWellFormed] using this
+  have := checkSpans_length_le bs p.tokens 0 hspans (Nat.zero_le _)
+  simpa using this
+
+/-- `parseBytes` builds `.outOfCapacity` only from a successful parse whose token
+count exceeds the limit, and the token count cannot exceed the input length.  So
+a document inside the input bound is never refused for capacity. -/
+theorem parseBytes_no_outOfCapacity (bs : Bytes)
+    (hin : bs.length ≤ Limits.default.maxInput) :
+    parseBytes Limits.default bs ≠ .error .outOfCapacity := by
+  intro h
+  unfold parseBytes at h
+  rw [if_neg (by omega : ¬ bs.length > Limits.default.maxInput)] at h
+  by_cases hbom : bs.take 3 = ByteString.literal [0xEF, 0xBB, 0xBF]
+  · rw [if_pos hbom] at h; cases h
+  · rw [if_neg hbom] at h
+    cases hpv : parseValue bs (skipFrom bs 0) Limits.default.maxDepth with
+    | fail e =>
+        simp only [hpv] at h
+        injection h with he
+        subst he
+        exact (parseValue_ne_outOfCapacity bs).1 (skipFrom bs 0) Limits.default.maxDepth hpv
+    | done p =>
+        simp only [hpv] at h
+        by_cases htr : skipFrom bs p.next < bs.length
+        · rw [if_pos htr] at h; cases h
+        · rw [if_neg htr] at h
+          by_cases hcap : p.tokens.length ≤ Limits.default.maxTokens
+          · rw [if_pos hcap] at h; cases h
+          · refine hcap ?_
+            have hle := tokens_length_le_input bs hin hbom hpv htr
+            have : p.tokens.length ≤ Limits.default.maxInput :=
+              Nat.le_trans hle hin
+            simpa [Limits.default] using this
+
 /-! ### The character policy -/
 
 def isPolicyReject : Reject → Bool
@@ -749,5 +1102,122 @@ theorem parseBytes_policyRefusal (bs : Bytes) (r : Reject)
             by_cases hcap : p.tokens.length ≤ Limits.default.maxTokens
             · rw [if_pos hcap] at h; cases h
             · rw [if_neg hcap] at h; cases h
+
+/-! ### The domain decision, read as the record's document clauses
+
+`admission` is the route's document decision; these three theorems turn its
+`ok` into exactly the clauses `pipelineSpecPre` asks of the document, so a
+caller that check accepts reaches the record's domain by proof rather than by a
+second check.  The reasons are the ones the certificate's sections above
+establish: the empty document and the input bound are the decision's own first
+two clauses, the nesting bound is `depthExceeded_openers`, the capacity outcome
+is `parseBytes_no_outOfCapacity`, and the character policy is
+`parseBytes_policyRefusal` read through the quote scan. -/
+
+theorem admission_ok {doc : ByteArray} (h : (admission doc).isOk = true) :
+    0 < doc.size ∧ doc.size ≤ kernelMaxInput ∧
+    openersTotal doc ≤ kernelMaxDepth ∧ policyRefusal doc = none := by
+  unfold admission at h
+  by_cases h0 : doc.size = 0
+  · rw [if_pos h0] at h
+    simp only [Except.isOk] at h
+    cases h
+  · rw [if_neg h0] at h
+    by_cases hbig : kernelMaxInput < doc.size
+    · rw [if_pos hbig] at h
+      simp only [Except.isOk] at h
+      cases h
+    · rw [if_neg hbig] at h
+      by_cases hdep : kernelMaxDepth < openersTotal doc
+      · rw [if_pos hdep] at h
+        simp only [Except.isOk] at h
+        cases h
+      · rw [if_neg hdep] at h
+        cases hpol : policyRefusal doc with
+        | none => exact ⟨by omega, by omega, by omega, rfl⟩
+        | some r =>
+            rw [hpol] at h
+            simp only [Except.isOk] at h
+            cases h
+
+/-- A parser refusal that names a policy reason is one the quote scan reports. -/
+theorem policyRefusal_of_isPolicyError {bs : Bytes} {e : ParseError}
+    (he : parseBytes Limits.default bs = .error e) (hp : isPolicyError e = true) :
+    policyRefusal bs ≠ none := by
+  cases e with
+  | invalid r => exact parseBytes_policyRefusal bs r he hp
+  | inputTooLong => simp [isPolicyError] at hp
+  | depthExceeded => simp [isPolicyError] at hp
+  | outOfCapacity => simp [isPolicyError] at hp
+
+/-- **The domain decision implies the record's document clauses.**  A document
+`admission` accepts is non-empty, inside the input bound, and the reference
+parser does not refuse it for depth, for capacity, or under its character
+policy. -/
+theorem admission_documentDomain (doc : ByteArray)
+    (h : (admission doc).isOk = true) :
+    0 < doc.size ∧ doc.size ≤ Limits.default.maxInput ∧
+    (∀ e : ParseError,
+      parseBytes Limits.default doc = .error e →
+        e ≠ .depthExceeded ∧ e ≠ .outOfCapacity ∧ ¬ isPolicyError e) := by
+  obtain ⟨hpos, hlen, hopen, hpol⟩ := admission_ok h
+  have hlen' : doc.size ≤ Limits.default.maxInput := by
+    simpa [kernelMaxInput, Limits.default] using hlen
+  refine ⟨hpos, hlen', ?_⟩
+  intro e he
+  refine ⟨?_, ?_, ?_⟩
+  · intro hd
+    have h129 : 129 ≤ openersTotal doc := by
+      exact depthExceeded_openers doc (by rw [hd] at he; exact he)
+    have h128 : openersTotal doc ≤ 128 := by simpa [kernelMaxDepth] using hopen
+    omega
+  · intro hout
+    exact parseBytes_no_outOfCapacity doc hlen' (hout ▸ he)
+  · intro hp
+    exact policyRefusal_of_isPolicyError he hp hpol
+
+/-! ### Axiom footprints
+
+The capacity argument adds no assumption: the mutual induction is the parser's
+own recursion, and the bound is read off `tape_valid` and the tape's span
+discipline.  The control at the end shows the instrument reports a declaration
+that does carry `Classical.choice`, so the pins below are measured. -/
+
+/-- info: 'LeanLLVM.Refinement.parseValue_ne_outOfCapacity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms parseValue_ne_outOfCapacity
+
+/-- info: 'LeanLLVM.Refinement.checkSpans_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms checkSpans_length_le
+
+/-- info: 'LeanLLVM.Refinement.tokens_length_le_input' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms tokens_length_le_input
+
+/-- info: 'LeanLLVM.Refinement.parseBytes_no_outOfCapacity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms parseBytes_no_outOfCapacity
+
+/-- info: 'LeanLLVM.Refinement.admission_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admission_ok
+
+/-- info: 'LeanLLVM.Refinement.admission_documentDomain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms admission_documentDomain
+
+/-- info: 'LeanLLVM.Refinement.admission' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms admission
+
+/-- Control: a declaration whose type mentions `Classical.choice` is reported
+with it, so the absence above is measured rather than assumed. -/
+theorem admission_axiom_control :
+    (Classical.choice (show Nonempty Nat from ⟨0⟩)) = 0 ∨ True := Or.inr trivial
+
+/-- info: 'LeanLLVM.Refinement.admission_axiom_control' depends on axioms: [Classical.choice] -/
+#guard_msgs in
+#print axioms admission_axiom_control
 
 end LeanLLVM.Refinement

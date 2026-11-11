@@ -17,11 +17,10 @@ This module states the wrapper's contract in the pipeline's own vocabulary:
   document window with its three zero-prefix bytes and thirty-two byte
   read-past tail, the POS8 table, the four scratch objects, the two escape-list
   objects, the arena and the event stream, and the five cursor slots;
-* `routePre` is what the wrapper *requires* of its caller: a non-empty document
-  inside `Limits.default.maxInput`, the parser's two limit exclusions and its
-  character policy, a base with room for the prefix, the capacities the four
-  growing buffers need, the two cursors' 64-bit room, and the pairwise
-  separation of the staged regions;
+* `routePre` is what the wrapper *requires* of its caller: a document `admission`
+  admits, a base with room for the prefix, the capacities the four growing
+  buffers need, the two cursors' 64-bit room, and the pairwise separation of the
+  staged regions;
 * `routeStaging` proves that the built staging *is* `pipelineStaging` at the
   route's arguments — so a route that establishes `routePre` discharges
   `Γ_pipeline_units`'s precondition by construction rather than by assertion;
@@ -30,51 +29,57 @@ This module states the wrapper's contract in the pipeline's own vocabulary:
   four cursor values, the refusal offset, the entry stream, the escape list,
   the arena and the event stream.
 
-# What the wrapper refuses, and why it refuses loudly
+# The document decision, and what answers outside the domain
 
-Three classes of input are outside the record, and none may fall through to a
-simulated call:
+The document side is the kernel's own decision, not a second reading of the
+record's limits.  `admission` (`LeanLLVM/JsonKernelDomain.lean`) is the certified
+predicate, its clauses are separate checkers with separate certificates
+(`LeanLLVM/JsonKernelCertificate.lean`), and `documentDecision` turns it into the
+route's three outcomes:
+
+* `admitted` — the pipeline answers the document: an accepted value, or its
+  refusal, read off `RouteResult`;
+* `refused` — outside the domain, and the scalar reference parser refuses it, so
+  the route reports the reference's own `ParseError` and position;
+* `fallback` — outside the domain, and the reference parser accepts it, so the
+  reference's tape is the answer and `decodeTape` its value.
+
+The last two are the fallback: the reference parser is *the* implementation for
+a document `admission` does not admit, and it is consulted nowhere else.  It is
+not a pre-filter on the fast path — a document the predicate admits is never
+handed to it.  The domain is therefore exactly what the certified checkers
+decide, and the four classes the record excludes are the clauses that narrow it:
 
 * **the empty document** — `pipelineStaging` carries `0 < bs.length` because
-  `Γ_utf8.pre` and its post both require it, while the entry test sends a
-  zero-length document past the loop and still calls the UTF-8 stage.  The
-  record claims nothing about length zero, not even a refusal;
-* **depth and token exhaustion** — the pipeline's twenty-argument ABI carries
-  no depth or token limit, so it may accept a document the reference parser
-  refuses with `.depthExceeded` or `.outOfCapacity`.  `pipelineSpecPre` excludes
-  those documents; the route therefore asks `parseBytes` and refuses with the
-  parser's own reason;
-* **the reference's character policy** — RFC 8259 requires neither of the two
-  restrictions the reference enforces: a surrogate escape must form a
-  well-formed pair, and no code point may be a noncharacter (RFC 7493 §2.1).
-  The ABI has no policy slot, so the object accepts those RFC texts, while the
-  reference refuses them with `unpairedSurrogate` or `noncharacter`.  That is a
-  weaker replacement, not an equivalent one: the route asks `parseBytes`, reads
-  the reference's own reason and byte, and refuses them.  `documentRefusal` is
-  the one place the class is recognised, so the wrapper's policy is the
-  reference's and not a second guess at it.
+  `Γ_utf8.pre` and its post both require it;
+* **the input bound** — `Limits.default.maxInput`;
+* **depth and token exhaustion** — the ABI carries no depth or token limit, so
+  `pipelineSpecPre` excludes documents the reference refuses with
+  `.depthExceeded` or `.outOfCapacity`;
+* **the reference's character policy** — RFC 7493 §2.1's restrictions on
+  surrogates and noncharacters, which the ABI has no slot for.
 
-`documentRefusal` names each of those, and `layoutRefusal` names the caller-side
-layout failures the record's clauses read (prefix room, reserved arm bits, the
-four capacities, the two cursors' room, the 32-bit document bound, separation).
-`checkRoute` is the pair, in the order the reasons are reported; `routePre` is
-the conjunction the two checks accept, and `routePre_iff_checkRoute` is the
-statement that the checks accept exactly that domain.  A refusal is an
-`Except RouteRefusal`, so `RouteRefusal.message` is the reason a caller sees.
+`layoutRefusal` names the caller-side layout failures the record's staging reads
+(prefix room, reserved arm bits, the four capacities, the two cursors' room, the
+32-bit document bound, separation).  `checkRoute` is the pair: the document
+decision first, and the layout only when the document is admitted and the
+pipeline will be called.  `routePre` is what the shell accepts, and
+`routeSpecPre` derives `pipelineSpecPre` from it through
+`admitted_documentDomain`, the certificate read at the shell's decision — no
+clause is asserted without a proof.
 
 # The executable route, and what it observed
 
-`probes/json/route/` is the route: `RouteMain.lean` stages the document in this
-module's shape, `shim.c` is the adapter, and `build.sh` compiles the kernel,
-links the object and asserts the symbol is imported.  `check.sh` compares the
-Lean route's output with a C driver that stages the document identically: all
-122 default-profile corpus rows agree, so the wrapper's staging is the record's
-and its outputs are the object's.  The same run refuses the fourteen documents
-the reference refuses under its policy (unpaired surrogates and noncharacters)
-with the reference's own reason and byte, and reports no remaining divergence:
-the object still accepts those RFC texts, which is why `Sigma_pipeline` remains
-a statement about the object rather than a theorem of this module, but the
-wrapper's caller sees the reference's verdict.
+`probes/json/route/` is the route: `RouteMain.lean` imports `admission` and
+`parseBytes` from the library (one shell, not two), stages the document in this
+module's shape, and prints the outcome; `shim.c` is the adapter, and `build.sh`
+compiles the kernel, links the object and asserts the symbol is imported.
+`check.sh` compares the Lean route's output with a C driver on every admitted
+default-profile corpus row, asserts each fallback answer against the manifest,
+measures the depth boundary on both sides of the reference's 128 and the native
+walk's 520, and pins the fourteen policy rows with the reference's reason and
+byte.  The cuts that redden each of those assertions are recorded in the probe's
+README and in `docs/json-route-evidence.md`.
 
 # The native entry point, and what is missing for a Lean program to call it
 
@@ -90,26 +95,21 @@ kernel: it is a C unit of the identity, route and bench scripts, not of the
 Lean library."  So the missing pieces are named rather than assumed, in
 `missingBridgePieces`.
 
-The executable route lives in `probes/json/route/` as a probe: a standalone
-Lean module (the kernel is outside Lake, so the route cannot be a `lake` target)
-plus the C adapter, built with `lean -c`, `leanc` and `clang` through the flake,
-exactly as `probes/app/` drives the comma-mask seam.  Its `check.sh` asserts
-that the route's output equals a C driver's on all 122 default-profile corpus
-rows — the wrapper builds the record's staging and reports the object's outputs
-— that the shell refuses the empty document and an over-bound document with
-their reasons before any call, and that it refuses the fourteen documents the
-object accepts and the reference refuses under its policy, with the reference's
-reason and byte, so no default-profile row diverges from the reference.  The
-probe's scan reads the document's string bodies the way the reference's
-`scanChars` does; it is applied only to documents the object accepted, which is
-the class where the wrapper's verdict can differ, and its one limitation is
-stated in the probe's README.  The parser's depth and token exclusions need the
-reference parser and are the library's `checkRoute`, exercised by
-`DomainCheck.lean`.  What the probe does not establish is the step from the
-semantics to the object; see `missingBridgePieces` and the docstring of
-`nativePipeline`.
+The executable route lives in `probes/json/route/` as a probe: a Lean module
+that imports the library's decision and parser (the kernel is outside Lake, so
+the route cannot be a `lake` target) plus the C adapter, built with `lake env
+lean -c`, `leanc` and `clang` through the flake, exactly as `probes/app/` drives
+the comma-mask seam.  Its `check.sh` asserts that the route's output equals a C
+driver's on every admitted default-profile corpus row, that each fallback answer
+agrees with the manifest, and that the empty, over-bound, depth-129+ and
+fourteen policy documents fall back with the reference's own answers.  There is
+no second policy scan in the probe any more: the decision is `admission`'s and
+the fallback's answer is `parseBytes`'s.  What the probe does not establish is
+the step from the semantics to the object; see `missingBridgePieces` and the
+docstring of `nativePipeline`.
 -/
 import LeanLLVM.Refinement.JsonPipelineSpec
+import LeanLLVM.JsonKernelCertificate
 
 set_option autoImplicit false
 set_option maxHeartbeats 1000000
@@ -355,6 +355,37 @@ ABI does not carry, and the character policy the reference enforces on top of
 RFC 8259.  The layout sign is read from the record's own staging.  Every clause
 is named here so a caller can check it before any call. -/
 
+/-- What the route does with a document.  Three outcomes, and they are distinct
+claims rather than three encodings of one:
+
+* `admitted` — `admission` admits the document, so the native pipeline answers
+  it: an accepted value, or the pipeline's refusal, read off its result;
+* `refused` — `admission` does not admit it and the scalar reference parser
+  refuses it, so the route reports the reference's own refusal and position;
+* `fallback` — `admission` does not admit it and the scalar reference parser
+  accepts it, so the reference parser's tape is the answer and `decodeTape` its
+  value.
+
+The last two are the fallback: the scalar parser is the implementation for every
+document `admission` does not admit, and it is consulted nowhere else.  The
+domain is exactly what the certified checkers decide; the fallback is the
+totality mechanism, not a pre-filter on the fast path. -/
+inductive DocumentDecision where
+  | admitted
+  | refused (error : ParseError)
+  | fallback (tape : Tape)
+deriving DecidableEq, Repr
+
+/-- The document's disposition.  `admission` is the decision procedure; when it
+admits, the pipeline answers; when it does not, the reference parser answers,
+exactly once. -/
+def documentDecision (doc : List UInt8) : DocumentDecision :=
+  if admitted (ByteString.literal doc) then .admitted
+  else
+    match parseBytes Limits.default (ByteString.literal doc) with
+    | .ok t => .fallback t
+    | .error e => .refused e
+
 /-- The reference parser's character policy: the two `Reject` reasons whose input
 is still an RFC 8259 text.  RFC 8259 admits a lone surrogate escape and every
 noncharacter; RFC 7493 §2.1's character restriction is the reference's own,
@@ -363,17 +394,16 @@ at which byte. -/
 def PolicyRefusal (e : ParseError) : Prop :=
   ∃ k, e = .invalid (.unpairedSurrogate k) ∨ e = .invalid (.noncharacter k)
 
-/-- `routePre` is what the wrapper requires of its caller. -/
+/-- `routePre` is what the wrapper requires of its caller.
+
+The document clause is `admission`'s decision, not a second reading of the
+record's limits: a caller establishes it by running the certified checkers, and
+`admitted_documentDomain` turns the decision into the document clauses
+`pipelineSpecPre` asks for.  The layout clauses are the ones the record's
+staging reads off the caller's buffers. -/
 def routePre (l : RouteLayout) (doc : List UInt8) : Prop :=
-  -- the document is in the record's domain: non-empty, inside the input bound,
-  -- not a limit refusal on either count the ABI does not carry, and not a
-  -- character-policy refusal: the reference is stricter than RFC 8259, and the
-  -- wrapper must refuse what it refuses
-  0 < doc.length ∧
-  doc.length ≤ Limits.default.maxInput ∧
-  (∀ e : ParseError,
-    parseBytes Limits.default (ByteString.literal doc) = .error e →
-      e ≠ .depthExceeded ∧ e ≠ .outOfCapacity ∧ ¬ PolicyRefusal e) ∧
+  -- the document is inside the certified domain, as `admission` decides it
+  documentDecision doc = .admitted ∧
   -- the base has room for the UTF-8 stage's three prefix bytes
   3 ≤ l.base ∧
   -- the capacities, at 64-bit widths
@@ -391,6 +421,44 @@ def routePre (l : RouteLayout) (doc : List UInt8) : Prop :=
   l.arm < 8 ∧
   -- every staged object is separate
   DisjointRegions (stagedExtents l doc)
+
+/-- **The domain decision is the admission predicate.**  `documentDecision` is
+`admitted` exactly when `admission` accepts the document's bytes, so the shell's
+fast-path decision and the certificate speak about one predicate. -/
+theorem documentDecision_admitted {doc : List UInt8} :
+    documentDecision doc = .admitted ↔
+      (admission (ByteString.literal doc)).isOk = true := by
+  unfold documentDecision admitted
+  by_cases h : (admission (ByteString.literal doc)).isOk = true
+  · rw [if_pos h]; simp [h]
+  · rw [if_neg h]
+    cases parseBytes Limits.default (ByteString.literal doc) <;> simp_all
+
+/-- The policy reasons are the certificate's `isPolicyError`; the two are one
+claim at the parser's own vocabulary. -/
+theorem isPolicyError_of_policyRefusal {e : ParseError} (h : PolicyRefusal e) :
+    isPolicyError e = true := by
+  obtain ⟨k, hk | hk⟩ := h
+  · rw [hk]; rfl
+  · rw [hk]; rfl
+
+/-- **An admitted document has the record's document clauses.**  This is the
+bridge from the shell's decision to the certificate: the non-empty document, the
+input bound, and the parser's three exclusions, each from the admission clause
+that established it. -/
+theorem admitted_documentDomain {doc : List UInt8}
+    (h : documentDecision doc = .admitted) :
+    0 < doc.length ∧ doc.length ≤ Limits.default.maxInput ∧
+    (∀ e : ParseError,
+      parseBytes Limits.default (ByteString.literal doc) = .error e →
+        e ≠ .depthExceeded ∧ e ≠ .outOfCapacity ∧ ¬ PolicyRefusal e) := by
+  have hadm : (admission (ByteString.literal doc)).isOk = true :=
+    documentDecision_admitted.mp h
+  obtain ⟨hpos, hlen, hdom⟩ := admission_documentDomain _ hadm
+  refine ⟨by simpa using hpos, by simpa using hlen, ?_⟩
+  intro e he
+  obtain ⟨hd, hc, hp⟩ := hdom e he
+  exact ⟨hd, hc, fun hpr => hp (isPolicyError_of_policyRefusal hpr)⟩
 
 /-! ### Reads at the route's regions
 
@@ -624,8 +692,9 @@ built.  The proof is the construction, not an assumption. -/
 theorem routeStaging (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
     pipelineStaging l.tab l.base (routeArgs l doc) (stagedMem l doc) := by
-  obtain ⟨hpos, hlim, hdom, hb3, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
+  obtain ⟨hadm, hb3, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
     hroom0, hroomx, h32, harm, hsep⟩ := h
+  obtain ⟨hpos, hlim, -⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
     omega
@@ -725,8 +794,9 @@ to `Γ_pipeline`'s domain without a further premise. -/
 theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
     pipelineSpecPre l.tab l.base (routeArgs l doc) (stagedMem l doc) 0 := by
-  obtain ⟨hpos, hlim, hdom, hb3, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
+  obtain ⟨hadm, hb3, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
     hroom0, hroomx, h32, harm, hsep⟩ := h
+  obtain ⟨hpos, hlim, hdom⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
     omega
@@ -739,7 +809,7 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
       parseBytes Limits.default (ByteString.literal doc) = .error e →
         e ≠ .depthExceeded ∧ e ≠ .outOfCapacity :=
     fun e he => ⟨(hdom e he).1, (hdom e he).2.1⟩
-  refine ⟨routeStaging l doc ⟨hpos, hlim, hdom, hb3, hep64, hxp64, hdst64, hev64,
+  refine ⟨routeStaging l doc ⟨hadm, hb3, hep64, hxp64, hdst64, hev64,
     hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩, doc, l.nev0, l.evcap,
     l.nev, ?_, ?_, ?_, stagedDoc_read l doc hsep hb3, ?_, hdom'⟩
   · simp only [pipelineDocLength, routeArgs, hblocks]
@@ -748,19 +818,13 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
   · have h := store_read_full (m := []) (mem_nev l doc) hsep
     simpa only [stagedMem, wordBytes, natToBytes_length] using h
 
-/-! ### The domain the record excludes -/
+/-! ### The domain the record excludes, and what answers outside it -/
 
-/-- The record has no term for an empty document, no depth or token limit, and no
-character-policy slot, and a caller that hands the route any of those is outside
-the domain rather than in a failure case.  The refusals below name the reason,
-so the route never falls through to a call the record does not cover. -/
+
+/-- A caller-side layout failure.  The document's own outcomes are
+`DocumentDecision`'s; these are the clauses the record's staging reads off the
+caller's buffers, and no document can cause them. -/
 inductive RouteRefusal where
-  | emptyInput
-  | inputTooLong (bound : Nat)
-  | depthExceeded
-  | tokenExhausted
-  | unpairedSurrogate (pos : Nat)
-  | noncharacter (pos : Nat)
   | noPrefixRoom (base : Nat)
   | armReserved (arm : Nat)
   | entryCapacity (required cap : Nat)
@@ -775,22 +839,6 @@ deriving DecidableEq, Repr
 /-- The reason a refused caller sees.  Every refusal names the clause it failed;
 none reports a generic error. -/
 def RouteRefusal.message : RouteRefusal → String
-  | .emptyInput =>
-      "empty input: the pipeline record's domain requires a non-empty document"
-  | .inputTooLong bound =>
-      s!"input too long: the record's bound is {bound} bytes"
-  | .depthExceeded =>
-      "out of domain: the reference parser refuses this document with depthExceeded, \
-       and the pipeline ABI carries no depth limit"
-  | .tokenExhausted =>
-      "out of domain: the reference parser refuses this document with outOfCapacity, \
-       and the pipeline ABI carries no token limit"
-  | .unpairedSurrogate pos =>
-      s!"out of domain: the reference parser refuses an unpaired surrogate at byte {pos}, \
-       and the pipeline ABI carries no character-policy slot"
-  | .noncharacter pos =>
-      s!"out of domain: the reference parser refuses a noncharacter at byte {pos}, \
-       and the pipeline ABI carries no character-policy slot"
   | .noPrefixRoom base =>
       s!"no prefix room: the base {base} has fewer than three bytes below it"
   | .armReserved arm =>
@@ -809,23 +857,6 @@ def RouteRefusal.message : RouteRefusal → String
       s!"document bound: {required} bytes overflow the 32-bit entry positions"
   | .overlappingRegions =>
       "overlapping staged regions: the record requires pairwise separation"
-
-/-- The document's own domain check: the empty document, the input bound, the
-two limits the ABI does not carry, and the reference parser's character policy.
-`parseBytes` is the reference parser's own predicate, so every exclusion is the
-parser's policy rather than a second guess at it, and each refusal names the
-byte `parseBytes` named. -/
-def documentRefusal (doc : List UInt8) : Option RouteRefusal :=
-  if doc.length = 0 then some .emptyInput
-  else if Limits.default.maxInput < doc.length then
-    some (.inputTooLong Limits.default.maxInput)
-  else
-    match parseBytes Limits.default (ByteString.literal doc) with
-    | .error .depthExceeded => some .depthExceeded
-    | .error .outOfCapacity => some .tokenExhausted
-    | .error (.invalid (.unpairedSurrogate k)) => some (.unpairedSurrogate k)
-    | .error (.invalid (.noncharacter k)) => some (.noncharacter k)
-    | _ => none
 
 /-- `cursorRoom` is arithmetic, so its check is decidable. -/
 instance cursorRoomDecidable (count blocks reserve : Nat) : Decidable (cursorRoom count blocks reserve) := by
@@ -862,107 +893,18 @@ def layoutRefusal (l : RouteLayout) (doc : List UInt8) : Option RouteRefusal :=
     some .overlappingRegions
   else none
 
-/-- The route's whole domain check, in the order the reasons are reported. -/
-def checkRoute (l : RouteLayout) (doc : List UInt8) : Except RouteRefusal Unit :=
-  match documentRefusal doc with
-  | some r => .error r
-  | none =>
+/-- The route's whole decision: the document first, and — only for a document
+the pipeline will actually answer — the caller's layout.  A document the fallback
+answers is never staged, so its layout is not read. -/
+def checkRoute (l : RouteLayout) (doc : List UInt8) :
+    Except RouteRefusal DocumentDecision :=
+  match documentDecision doc with
+  | .admitted =>
       match layoutRefusal l doc with
       | some r => .error r
-      | none => .ok ()
+      | none => .ok .admitted
+  | d => .ok d
 
-/-- The empty document is refused by its own reason, before any layout is read. -/
-theorem checkRoute_empty (l : RouteLayout) :
-    checkRoute l [] = .error .emptyInput := rfl
-
-/-- A document over the input bound is refused with the bound it broke. -/
-theorem checkRoute_tooLong (l : RouteLayout) (doc : List UInt8)
-    (h : Limits.default.maxInput < doc.length) :
-    checkRoute l doc = .error (.inputTooLong Limits.default.maxInput) := by
-  have hne : doc.length ≠ 0 := by
-    have : 0 < Limits.default.maxInput := by decide
-    omega
-  simp only [checkRoute, documentRefusal, if_neg hne, if_pos h]
-
-/-- A document the reference parser refuses for depth is refused with that
-reason. -/
-theorem checkRoute_depth (l : RouteLayout) (doc : List UInt8)
-    (h : 0 < doc.length) (hlim : ¬ Limits.default.maxInput < doc.length)
-    (hparse : parseBytes Limits.default (ByteString.literal doc) = .error .depthExceeded) :
-    checkRoute l doc = .error .depthExceeded := by
-  have hne : ¬ doc.length = 0 := by omega
-  simp only [checkRoute, documentRefusal, if_neg hne, if_neg hlim, hparse]
-
-/-- A document the reference parser refuses for token capacity is refused with
-that reason. -/
-theorem checkRoute_tokens (l : RouteLayout) (doc : List UInt8)
-    (h : 0 < doc.length) (hlim : ¬ Limits.default.maxInput < doc.length)
-    (hparse : parseBytes Limits.default (ByteString.literal doc) = .error .outOfCapacity) :
-    checkRoute l doc = .error .tokenExhausted := by
-  have hne : ¬ doc.length = 0 := by omega
-  simp only [checkRoute, documentRefusal, if_neg hne, if_neg hlim, hparse]
-
-/-- A document whose first policy refusal is an unpaired surrogate is refused
-with that reason and the reference parser's position. -/
-theorem checkRoute_unpairedSurrogate (l : RouteLayout) (doc : List UInt8)
-    (h : 0 < doc.length) (hlim : ¬ Limits.default.maxInput < doc.length) (pos : Nat)
-    (hparse : parseBytes Limits.default (ByteString.literal doc) =
-      .error (.invalid (.unpairedSurrogate pos))) :
-    checkRoute l doc = .error (.unpairedSurrogate pos) := by
-  have hne : ¬ doc.length = 0 := by omega
-  simp only [checkRoute, documentRefusal, if_neg hne, if_neg hlim, hparse]
-
-/-- A document whose first policy refusal is a noncharacter is refused with that
-reason and the reference parser's position. -/
-theorem checkRoute_noncharacter (l : RouteLayout) (doc : List UInt8)
-    (h : 0 < doc.length) (hlim : ¬ Limits.default.maxInput < doc.length) (pos : Nat)
-    (hparse : parseBytes Limits.default (ByteString.literal doc) =
-      .error (.invalid (.noncharacter pos))) :
-    checkRoute l doc = .error (.noncharacter pos) := by
-  have hne : ¬ doc.length = 0 := by omega
-  simp only [checkRoute, documentRefusal, if_neg hne, if_neg hlim, hparse]
-
-/-- **The document check's clauses.**  A `none` from `documentRefusal` is the
-record's document domain: non-empty, inside the input bound, not a limit refusal
-on either count the ABI does not carry, and not a character-policy refusal of the
-reference parser's. -/
-theorem documentRefusal_none {doc : List UInt8}
-    (hd : documentRefusal doc = none) :
-    0 < doc.length ∧ doc.length ≤ Limits.default.maxInput ∧
-    (∀ e : ParseError,
-      parseBytes Limits.default (ByteString.literal doc) = .error e →
-        e ≠ .depthExceeded ∧ e ≠ .outOfCapacity ∧ ¬ PolicyRefusal e) := by
-  have hne : doc.length ≠ 0 := by
-    intro h0
-    rw [documentRefusal, if_pos h0] at hd
-    cases hd
-  have hbound : ¬ Limits.default.maxInput < doc.length := by
-    intro hb
-    rw [documentRefusal, if_neg hne, if_pos hb] at hd
-    cases hd
-  refine ⟨Nat.pos_of_ne_zero hne, by omega, ?_⟩
-  intro e he
-  refine ⟨?_, ?_, ?_⟩
-  · intro hee
-    have : documentRefusal doc = some .depthExceeded := by
-      rw [documentRefusal, if_neg hne, if_neg hbound, he, hee]
-    rw [this] at hd
-    cases hd
-  · intro hee
-    have : documentRefusal doc = some .tokenExhausted := by
-      rw [documentRefusal, if_neg hne, if_neg hbound, he, hee]
-    rw [this] at hd
-    cases hd
-  · intro hpr
-    rcases hpr with ⟨k, hk | hk⟩
-    · have : documentRefusal doc = some (.unpairedSurrogate k) := by
-        rw [documentRefusal, if_neg hne, if_neg hbound, he, hk]
-      rw [this] at hd
-      cases hd
-    · have : documentRefusal doc = some (.noncharacter k) := by
-        rw [documentRefusal, if_neg hne, if_neg hbound, he, hk]
-      rw [this] at hd
-      cases hd
 
 /-- **The layout check's clauses.**  A `none` from `layoutRefusal` is every
 caller-side clause `routePre` asks for, in the order the check tests them. -/
@@ -1116,38 +1058,44 @@ accepts has established every clause of `routePre`; this is the bridge a route
 uses so that no call reaches the native entry point outside the record's
 domain. -/
 theorem routePre_of_checkRoute_ok {l : RouteLayout} {doc : List UInt8}
-    (h : (checkRoute l doc).isOk = true) : routePre l doc := by
+    (h : checkRoute l doc = .ok .admitted) : routePre l doc := by
   unfold checkRoute at h
-  cases hd : documentRefusal doc with
-  | some r => simp [hd, Except.isOk, Except.toBool] at h
-  | none =>
+  cases hd : documentDecision doc with
+  | admitted =>
       cases hl : layoutRefusal l doc with
-      | some r => simp [hd, hl, Except.isOk, Except.toBool] at h
+      | some r =>
+          rw [hd, hl] at h
+          cases h
       | none =>
-          obtain ⟨hpos, hbound, hdom⟩ := documentRefusal_none hd
           obtain ⟨hbase, harm, hep64, hxp64, hdst64, hev64, hepcap, hdst,
             hev, hroom0, hroomx, h32, hsep⟩ := layoutRefusal_none hl
-          exact ⟨hpos, hbound, hdom, hbase, hep64, hxp64, hdst64, hev64,
+          exact ⟨hd, hbase, hep64, hxp64, hdst64, hev64,
             hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩
+  | refused e =>
+      rw [hd] at h
+      cases h
+  | fallback t =>
+      rw [hd] at h
+      cases h
 
 /-- **The route's domain excludes the reference's character policy.**  A document
 `routePre` admits is not one the reference parser refuses with
-`unpairedSurrogate` or `noncharacter`: the exclusion is the reference's own
-verdict read from `parseBytes`, so a call the check accepts is not a document the
-reference refuses under its policy. -/
+`unpairedSurrogate` or `noncharacter`: the exclusion follows from the admission
+clauses, so a call the check accepts is not a document the reference refuses
+under its policy. -/
 theorem routePre_not_policy {l : RouteLayout} {doc : List UInt8}
     (h : routePre l doc) {e : ParseError}
     (hparse : parseBytes Limits.default (ByteString.literal doc) = .error e) :
     ¬ PolicyRefusal e :=
-  (h.2.2.1 e hparse).2.2
+  ((admitted_documentDomain h.1).2.2 e hparse).2.2
 
-/-- **Acceptance implies the reference's policy admits the document.**  A
-`checkRoute` that accepts cannot be a document the reference refuses with
+/-- **An admitted document is the reference's policy's too.**  A `checkRoute`
+that admits cannot be a document the reference refuses with
 `unpairedSurrogate` or `noncharacter`; the class the object accepted and the
-reference refused is outside the route's domain, and a caller that passed the
-check is not in it. -/
+reference refused is outside the route's domain, and a caller whose decision is
+`admitted` is not in it. -/
 theorem checkRoute_ok_not_policy {l : RouteLayout} {doc : List UInt8}
-    (h : (checkRoute l doc).isOk = true) :
+    (h : checkRoute l doc = .ok .admitted) :
     ∀ e : ParseError,
       parseBytes Limits.default (ByteString.literal doc) = .error e →
         ¬ PolicyRefusal e :=
@@ -1266,29 +1214,13 @@ do; the staging construction adds no axiom of its own. -/
 #guard_msgs in
 #print axioms routeStaging
 
-/-- info: 'LeanLLVM.Refinement.checkRoute_empty' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.documentDecision_admitted' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms checkRoute_empty
+#print axioms documentDecision_admitted
 
-/-- info: 'LeanLLVM.Refinement.checkRoute_tooLong' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.admitted_documentDomain' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms checkRoute_tooLong
-
-/-- info: 'LeanLLVM.Refinement.checkRoute_depth' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms checkRoute_depth
-
-/-- info: 'LeanLLVM.Refinement.checkRoute_tokens' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms checkRoute_tokens
-
-/-- info: 'LeanLLVM.Refinement.checkRoute_unpairedSurrogate' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms checkRoute_unpairedSurrogate
-
-/-- info: 'LeanLLVM.Refinement.checkRoute_noncharacter' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms checkRoute_noncharacter
+#print axioms admitted_documentDomain
 
 /-- info: 'LeanLLVM.Refinement.routePre_not_policy' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -1297,10 +1229,6 @@ do; the staging construction adds no axiom of its own. -/
 /-- info: 'LeanLLVM.Refinement.checkRoute_ok_not_policy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms checkRoute_ok_not_policy
-
-/-- info: 'LeanLLVM.Refinement.documentRefusal_none' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms documentRefusal_none
 
 /-- info: 'LeanLLVM.Refinement.layoutRefusal_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

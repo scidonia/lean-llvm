@@ -481,14 +481,18 @@ from the working tree.  Nothing in the repository was moved, and no cut is part
 of the change.
 
 Observed on the working tree at `4f94295` plus this change, Lean 4.35.0 and
-clang/LLVM 21.1.8 from the flake.  Every cut tree built with exit 0 before its
-scenario ran, except `R5`, whose claim is the build's own assertion.  The uncut
-control is the same copy with no cut: `build.sh` exits 0 and `check.sh` prints
+clang/LLVM 21.1.8 from the flake; `R10`–`R13` were observed later, after the
+route's shell became the library's `admission` decision, and their uncut control
+is
 
 ```text
-ok: 122 default-profile rows: route and driver agree on the observation, arena and events (60 arena byte(s) over 19 row(s), 3125 event byte(s) over 86 row(s)); accept 59, invalid 48, policy refusals 14; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128/129/520/521 agree, object accepts 128..520 and refuses 521 at 520
+ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons
 ```
 
+`R1`–`R9`'s quoted reds belong to the earlier revision and to the row counts
+that revision compared; they are not re-read here.  Every cut tree built with
+exit 0 before its scenario ran, except `R5`, whose claim is the build's own
+assertion.
 | Cut | Applied in the copy | Build | Route command | Exit | Assertion that fired |
 |---|---|---|---|---|---|
 | `R1` arena value | `shim.c`: one arena byte flipped after the call, `ndst` and every other word untouched | 0 | `check.sh` | 1 | `FAIL: esc-quote.json: value disagreement: the arena streams first differ at byte 0: route 0x23, driver 0x22`; **19** value disagreements — one per row whose arena is non-empty — then three aggregate assertions |
@@ -499,7 +503,7 @@ ok: 122 default-profile rows: route and driver agree on the observation, arena a
 | `R6` buffer below its capacity | `RouteMain.lean`: the entry buffer sized `4 * epcap - 4` against the advertised `epcap` | 0 | `check.sh` | 1 | `FAIL: num-zero.json: the route exited 3`, then `route: unsupported domain: the entry stream's buffer at its capacity: expected 292, observed 288`; 122 assertions |
 | `R7` allocation failure | `shim.c`: the 24-byte staging copy forced to fail | 0 | `check.sh` | 1 | `FAIL: num-zero.json: the route exited 4`, then `route: allocation failure: the adapter could not copy a 24-byte staging buffer`; 130 assertions |
 | `R8` optimisation level | `build.sh`: `-O2` → `-O1` | — | `correspondence.sh` | 1 | `FAIL: build.sh carries '-O1' beyond the capture's flags; the relation is not -O2 against -O3 alone` |
-| `R9` depth guard | a copy of `DomainCheck.lean` with the acceptance side's `128` → `129` | — | `lake env lean` | 1 | the `parseBytes` acceptance guard and the `documentRefusal … = none` guard at `:37` and `:42` did not evaluate to `true` |
+| `R9` depth guard | a copy of `DomainCheck.lean` with the acceptance side's `128` → `129` | — | `lake env lean` | 1 | the `parseBytes` acceptance guard and the shell's admitted-decision guard did not evaluate to `true` |
 
 The per-cut totals above are the run's own summary counts, and most of them are
 aggregates: a row whose comparison fails is not counted in the class it would
@@ -546,3 +550,48 @@ What each shows, and what it does not:
   reference's side of the depth boundary: `DomainCheck.lean`'s 128 guards fail
   when the acceptance side is moved onto the refusal side, so the 128/129 pair
   is a measured bound and not a comment.
+
+## The shell's routing controls (`R10`–`R13`)
+
+Observed after the route's document decision became the library's `admission`
+predicate.  Each cut was applied to `probes/json/route/RouteMain.lean`'s `run` in
+a throwaway copy, the route was rebuilt with `build.sh`, and `check.sh` was run;
+the tree was then restored from a saved copy, rebuilt, and the run quoted above
+is the restored build's.  The cut is at the decision's consumer rather than in
+`admission`, because the clause definitions carry the certificate's proofs:
+removing a clause there is a build failure, not an assertion failure, and these
+controls are about whether the scenario notices a document taking the wrong
+path.
+
+| Cut | Applied in the copy | Build | Route command | Exit | Assertion that fired |
+|---|---|---|---|---|---|
+| `R10` depth fallback | `.error (.depthBound _) => runFast …` in `run`'s match | 0 | `check.sh` | 1 | `FAIL: depth 129: expected the fallback's depthExceeded refusal (exit 0)`, the same at 520 and 521, and `FAIL: the opener-rich document was not the fallback's acceptance (exit 0)`; 4 assertions |
+| `R11` policy fallback | `.error (.unpairedSurrogate _) \| .error (.noncharacter _) => runFast …` | 0 | `check.sh` | 1 | `FAIL: the fallback refuses a different policy class than the one pinned`, `FAIL: expected 14 policy refusals, saw 0`, and `FAIL: 14 default-profile rows still diverge from the reference: …`; 4 assertions |
+| `R12` length fallback | `.error (.inputTooLong _) => runFast …` | 0 | `check.sh` | 1 | `FAIL: the over-bound document was not the fallback's refusal (exit 0)`; 1 assertion |
+| `R13` fast path | `.ok () => … runFallback doc`, with `runFast` still referenced from a branch that cannot be taken | 0 | `check.sh` | 1 | `FAIL: the fast-path arm is empty (accept 0, invalid 0)`, `FAIL: the outcome arms are empty (fast 0, fallback refusals 62, fallback accepts 59)`, `FAIL: no compared row carried arena bytes; the value comparison is vacuous`, `FAIL: no compared row carried event bytes; the value comparison is vacuous`, and the depth-128 row losing its observation; 5 assertions |
+
+What each shows, and what it does not:
+
+- **`R10` — the depth clause's fallback is live.** The cut sends the class the
+  depth clause excludes back to the object, so the depth probes and the
+  opener-rich document lose their fallback answers at once.  It does not show
+  the clause's *stated* bound is right (that is `depthExceeded_openers` and the
+  `DomainCheck.lean` guards); it shows the shell's routing is what carries the
+  bound to a caller.
+- **`R11` — the policy class is what the fallback answers.** The cut sends the
+  fourteen documents the object accepts back to the fast path: the pinned policy
+  set empties, and the run's divergence count becomes exactly those fourteen.
+  The cut does not show the *reason and byte* are right — `DomainCheck.lean`
+  pins those against `parseBytes` — only that dropping the fallback for the
+  class is visible.
+- **`R12` — the input bound is answered by the fallback.** The cut admits the
+  over-bound document to the object's path; the over-bound assertion is the one
+  that fires, and nothing else moves.
+- **`R13` — the fast path is distinguishable and non-empty.** Routing every
+  admitted document to the fallback removes the fast-path arm; the run reports
+  the empty arm directly, and the payload comparison is reported vacuous rather
+  than silently passing.  The first attempt at this cut — routing *all*
+  documents to the fallback — failed the build instead
+  (`build: the executable does not define leanllvm_json_pipeline`), because
+  Lean's compiler eliminated the unused extern; that is a scaffolding failure,
+  not a red, which is why the recorded cut keeps a live `runFast` reference.

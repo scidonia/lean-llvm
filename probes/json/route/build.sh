@@ -26,8 +26,29 @@ done
 
 clang "${cflags[@]}" $(leanc --print-cflags) -c "$here/shim.c" -o "$build/shim.o"
 
-(cd "$here" && lean -c "$build/RouteMain.c" RouteMain.lean)
-leanc -c "$build/RouteMain.c" -o "$build/RouteMain.o"
+# The decision and the fallback are the library's, so the program imports the
+# domain module and the reference parser.  Their Lean modules are built by Lake,
+# and the emitted C is what links: the input must be inside the Lake project so
+# the module prefix resolves, and `-I` is the emitted C's own include root.
+cone_ir=("$repo/.lake/build/ir/LeanLLVM/JsonKernelDomain.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/ByteString.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Bytes.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Utf8.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Spec.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Scan.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Tape.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Parse.c")
+for f in "${cone_ir[@]}"; do
+  [ -f "$f" ] || {
+    echo "build: absent: $f" >&2
+    echo "build: build the route's Lean modules first:" >&2
+    echo "  nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse" >&2
+    exit 1
+  }
+done
+
+(cd "$repo" && lake env lean -c "$build/RouteMain.c" probes/json/route/RouteMain.lean)
+leanc -c "$build/RouteMain.c" -I "$repo/.lake/build/ir" -o "$build/RouteMain.o"
 
 if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_pipeline')" -eq 0 ]; then
   echo "build: the adapter does not import leanllvm_json_pipeline" >&2
@@ -42,9 +63,10 @@ if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_entry_table')" -eq 0 ]; t
 fi
 
 leanc "$build/RouteMain.o" "$build/shim.o" \
+  "${cone_ir[@]}" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" \
-  -o "$build/leanllvm-json-route"
+  -I "$repo/.lake/build/ir" -o "$build/leanllvm-json-route"
 
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline$')" -eq 0 ]; then
   echo "build: the executable does not define leanllvm_json_pipeline" >&2
