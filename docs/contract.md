@@ -191,7 +191,10 @@ pairing; they do not prove importer or exporter correctness.
 ## 7. Trust ledger
 
 What a result here inherits when it is read as a claim about an installed
-artifact, at revision `a706a17`. One row per trusted step, with the basis it
+artifact. The rows were written at revision `a706a17`. The Lean-caller entries —
+row 9, §7.1 item 5 and the runtime clause of §7.2 — are corrected against
+`dedbf66`, where the native JSON route exists; no other row was re-measured, and
+they stand as written at `a706a17`. One row per trusted step, with the basis it
 rests on and the artifact in this tree that carries it. The bases are a closed
 vocabulary:
 
@@ -215,7 +218,7 @@ footprint licenses row 1 and nothing below it.
 | 6 | Fixture-to-AST association | The parser, `include_str`, and the executable pin that bind each proof's literal AST to the committed fixture bytes | checked by an executable pin | `#guard decide` over `parseModule src` in `JsonClassifyIR.lean`, `JsonEntryIR.lean`, `JsonEscapeIR.lean`, `JsonS1MasksIR.lean`, `JsonUtf8IR.lean` and `JsonSeam.lean`; the depth pin is restated in `LeanLLVMTest/Refinement.lean`. `probes/install/check.sh` mutates the candidate and loop fixtures and requires the guard to fail. Fixtures are not `lake build` inputs, so the pin is read only when its module is elaborated; the certificate producer re-elaborates the module from source, and that is what makes the pin current on the installation path |
 | 7 | Printer | That `LeanLLVM/Printer.lean`'s text means to real LLVM what the AST means here, and is accepted by it | checked by an executable pin | The three F3 decisions are written at the printer: no `inbounds`; a register index at the width its definition binds; `align 1` on load and store, with an `alloca`'s alignment printed as parsed. `LoopEmit.lean` refuses to print unless its output parses back to the same function; `json-caller.ll` and `json-scan-body.ll` are printed and pinned. Round trips are pinned in `LeanLLVMTest/Core.lean`; `llvm-as` acceptance is exercised in `tests/phi-differential.sh` and `opt -passes=verify` in the captures. The printer is inside the artifact path for `loop`, whose installed object is built from printed text |
 | 8 | Native compilation | That clang, the LLVM backend and assembler, and `ld` preserve the fixture's meaning, and that a rebuild reproduces the object | outside the kernel's reach | `probes/install/build.sh` compiles each unit with `clang -c` and links its marker with `ld -r`; `probes/install/select.sh` rebuilds from the fixtures under the same basenames and requires the same object hash. Captures and installations record their flags and target (`-O2 -mavx2` for the classifier; `target_features=none`, triple and data layout in the manifest); `probes/install/toolchain-id.sh` pins the Lean, clang and ld versions. A byte-equal rebuild shows the object is that fixture's output; it says nothing about the instructions the machine executes |
-| 9 | Lean execution bridge | That a Lean caller's `@[extern]` call reaches the certified symbol with a compatible ABI | outside the kernel's reach | Comma-mask seam only: `probes/install/Caller.lean` and `probes/app/App.lean` declare the symbol `opaque`; `probes/app/build.sh` compiles with `lean -c` then `leanc`, requires the call to survive (`app.ll` and `nm -u`), and `probes/app/check.sh` links it against the candidate, baseline and loop units, runs each, and compares answers. No theorem connects the extern declaration to the body, and the ABI agreement is observed at link and run. The JSON route has no Lean caller: `JsonSeam.scanCaller` is a Lean AST printed through the framework printer, so its compiled form is not Lean's compiler's output |
+| 9 | Lean execution bridge | That a Lean caller's `@[extern]` call reaches the certified symbol with a compatible ABI | outside the kernel's reach | Comma-mask seam only: `probes/install/Caller.lean` and `probes/app/App.lean` declare the symbol `opaque`; `probes/app/build.sh` compiles with `lean -c` then `leanc`, requires the call to survive (`app.ll` and `nm -u`), and `probes/app/check.sh` links it against the candidate, baseline and loop units, runs each, and compares answers. No theorem connects the extern declaration to the body, and the ABI agreement is observed at link and run. **A JSON Lean caller now exists**: `probes/json/route/` builds `RouteMain.lean`, whose `@[extern]` declaration is compiled by Lean's own compiler, against the assembled object; `shim.c` copies its buffers into the ABI, `build.sh` requires the symbol to be imported by the adapter and defined by the executable (`nm`), and `check.sh` compares its verdict, four cursors and error offset with an independent C caller on every default-profile corpus row. The caller exists; its **semantic correspondence remains open** — a source build of an opaque extern is not a kernel proof that the linked implementation has the declared behaviour, and the route's README records that it does not establish the object executes the pinned body the theorems are about. `JsonSeam.scanCaller` remains a Lean AST printed through the framework printer, so its compiled form is not Lean's compiler's output |
 | 10 | Installation | The certificate producer and selector as written, the hashes they compare, and the shell manifest | outside the kernel's reach | `InstallCertificate.lean` writes seventeen fields; `probes/install/select.sh` compares each with the file it names, rebuilds the units, re-elaborates the proof module and reproduces the certificate. Gates: `tests/m3-certificate-gate.sh` (47 runs), `tests/m4-loop-install-gate.sh`, `tests/m4-depth-install-gate.sh`. `tests/json-scan-select-gate.sh` is the JSON selection gate and currently stops at setup, refusing the fixture at the missing `scanWindowLLVM_refines` pin, so no JSON selection gate passes. The certificate does not bind source commits, declarations, call-site assumptions or external contracts (§6), and the manifest is executed as shell. A hash binds bytes, not their semantics |
 
 ### 7.1 Where the tree is weaker than a clean ledger suggests
@@ -253,9 +256,17 @@ claim over the rows may assert.
    artifact path, but a parsed external source with `internal` linkage would not
    round-trip to text with the same linkage. For `loop` the printer is on the
    artifact path.
-5. **The Lean execution bridge exists for the comma-mask seam only.** Its ABI
-   correspondence is observed by link and run. No JSON body has a Lean caller,
-   and the seam's caller is printer output rather than compiler output.
+5. **The Lean execution bridge covers the comma-mask seam and the native JSON
+   route, and neither is proved semantically.** Its ABI correspondence is
+   observed by link and run. For the seam the caller is printer output rather
+   than compiler output. `probes/json/route/` now calls the assembled pipeline
+   from a Lean program whose extern Lean compiles: `RouteMain.lean` stages the
+   record's bytes, `shim.c` copies them into the ABI, and `check.sh` compares the
+   route's observations with an independent C caller's on the default-profile
+   corpus. That is a source build of an opaque extern plus an observed agreement,
+   not a theorem: nothing in the kernel says the linked object implements the
+   body the stage-2 and pipeline theorems are about, and the route does not
+   establish that the object executes the pinned body.
 6. **Installation covers four units, none of them JSON.** `select.sh` knows
    `json_scan`, but `JsonScanIR.scanWindowLLVM_refines` is a name no theorem
    inhabits (the instruction-level step of `scanWindowStatement` is open), so the
@@ -277,7 +288,11 @@ claim over the rows may assert.
    `UnchangedOutside` over the caller's buffers *plus* the stage-2 walk's seven
    appended objects (`pipelineUnitsPost`, `stage2StagedWrites`), and two facts
    the program has are carried as hypotheses: `SigmaFrame` at
-   `JsonPipelineRefine.pipeline_units_finalisation` (the specification's frame),
+   `JsonPipelineRefine.pipeline_units_finalisation` (the specification's frame,
+   at that theorem's own fixed outcome) and at
+   `pipeline_satisfies_of_parser`, where it is asked only at the run's staging
+   and the outcomes `BehFromState` produces — a universal version of that
+   premise is false (`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`) —
    and `PipelineDischarge.Stage2SlotKeeps` (the callee leaves the caller's two
    count slots alone). Both are statements of this modelling limit, not proof
    debts. The repair is a fresh-frame call semantics — a callee scratch region
@@ -294,20 +309,22 @@ claim over the rows may assert.
 
 The rows above license this claim only in the following parts.
 
-| Clause | Status at `a706a17` |
+| Clause | Status (as at `a706a17`, with row 9 read at `dedbf66`) |
 |---|---|
 | a specified Lean JSON operation | Met for one operation: the block layer's masked classification, `maskOf` (the `maskOfList` scalar transition) over a 32-byte window, which is what `scanBlock_correct` relates the block operation to. The parse — the operation a product needs — is not the subject of any installed result |
 | replaced by a particular SIMD implementation | Met at the model for `json-classify.candidate.ll`, whose bytes are pinned and whose capture records `-O2 -mavx2`. Not met as a deployment: the classifier is not a selector unit and no certificate covers it |
 | proved equivalent under explicit input and staging conditions | Met as a directional refinement, not symmetric equivalence: `scannerLLVM_refines` holds for every block readable at the argument, with the caller's memory unchanged, and `classifySeam_refines` and `replaceScanner_sound` carry it through the staging caller. The reference is the verified Lean transition; the baseline-body half is open because the fragment has no pointer arithmetic, so no scalar byte-walking body can be written in it |
 | in an audited LLVM fragment | Met for fixture membership: the fragment is enumerated, the captures refuse what it does not model, and the fixture's construct inventory is measured. Model conformance to real LLVM remains an assumption (row 3) |
-| compiler, runtime and artifact-binding assumptions listed separately | Met by rows 8–10 for the comma-mask seam, which has a real Lean caller and an installation record. For every JSON body the class is empty: there is no Lean caller, hence no runtime in the path, and no JSON unit is installed, hence no artifact binding |
+| compiler, runtime and artifact-binding assumptions listed separately | Met by rows 8–10 for the comma-mask seam, which has a real Lean caller and an installation record. For the JSON pipeline a Lean caller now exists — `probes/json/route/`, compiled by Lean and linked against the object — so the runtime row is no longer empty; what is missing there is the correspondence, since no theorem connects the extern, the adapter and the linked object to the pinned body. No JSON unit is installed, so there is still no artifact binding |
 
 Clauses not yet met: the deployment of any JSON body; equivalence against a
 baseline LLVM body; replacement through the parser (`docs/capabilities.md`
 records "Refinement of the parser through the classifier" as missing); and an
 artifact binding for a JSON unit. What the ledger licenses today is the
 block-layer refinement, and separately the comma-mask installation through the
-seam whose bridge is row 9.
+seam whose bridge is row 9. The JSON route's caller licenses nothing further by
+itself: a caller is not a correspondence, so the pipeline remains a specification
+with an executed build rather than a proved implementation.
 
 ### 7.3 Why the axiom list is insufficient
 

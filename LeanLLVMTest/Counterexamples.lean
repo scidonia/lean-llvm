@@ -23,8 +23,25 @@ contradiction needs no concrete `Mem`, no concrete `base`, and no evaluation of
 the parser's answer.  The two lemmas below state this at an arbitrary
 `eventRel` (and, for the finalisation's, at an arbitrary staging memory and
 `base`), which is every instance the retired theorems could be used at.
+
+The frame premise had the same defect in a conjunct rather than in the parser
+half: `pipeline_satisfies_of_parser` took `SigmaFrame args outcome mem` over every
+argument list, memory and outcome, so an *empty* returned memory was in its scope.
+`SigmaFrame` asks `pipelineOutputExtents`, whose two cursor reads must succeed at
+the outcome's memory; the empty memory answers neither, so the universal premise
+is uninhabited.  `pipeline_frame_hsem_false` below is that regression, and the
+repaired premise is indexed by the staging and the run's behaviour, as the parser
+half is.
+
+The event-length equality the walk's invariant used to carry is the third: it
+required the event cursor to be `nev0 + 13 * records`, but the stream's encoding
+is variable-width (one, nine or thirteen bytes), so a literal's emission and a
+number's emission each supply a cursor with no natural-number record count.
+`stage2_evlen_thirteen_eq_false` and `stage2_evlen_thirteen_eq_false_number` are
+the two instances.
 -/
 import LeanLLVM
+import LeanLLVM.Refinement.JsonStage2WalkScope
 
 namespace LeanLLVMTest.Counterexamples
 
@@ -91,6 +108,54 @@ theorem pipeline_units_finalisation_hsem_false (eventRel : EventStreamRel)
   have hlt : (0 : BitVec 64) = 1 := h0.1.mpr hacc
   exact absurd hlt verdict_zero_ne_one
 
+/-- The witness argument list: the ABI's twenty slots.  Positions fifteen and
+eighteen are the arena and event cursor slots (`ndst`, `nev`), and the empty
+returned memory below has neither. -/
+private def frameArgs : List LeanLLVM.Value :=
+  [.ptr 1000, .int 64 4, .ptr 0, .ptr 8, .ptr 16, .ptr 24, .int 64 0, .ptr 32,
+   .ptr 40, .int 64 0, .ptr 48, .ptr 56, .ptr 64, .int 64 0, .ptr 0, .ptr 72,
+   .int 64 0, .ptr 8, .ptr 96, .int 64 0]
+
+/-- **The universally quantified frame premise is false.**
+
+The hypothesis is the one `pipeline_satisfies_of_parser` took — `SigmaFrame` at
+every argument list, memory and outcome.  The proof instantiates it at the shaped
+argument list above, an arbitrary starting memory, and the outcome that returns a
+word in an **empty** memory.  `SigmaFrame` then asks
+`pipelineOutputExtents`, which requires the eight bytes at the arena and event
+cursor slots of *that* memory; the empty memory has none, so the word's own
+eight-byte reads fail and the premise is uninhabited. -/
+theorem pipeline_frame_hsem_false :
+    ¬ (∀ (args : List LeanLLVM.Value) (mem : Mem) (o : Outcome), SigmaFrame args o mem) := by
+  intro h
+  have hf := h frameArgs ([] : Mem) (.ret (some (.int 64 0)) ([] : Mem))
+  have hnone : readBytes ([] : Mem) 0 8 = none := rfl
+  simp only [SigmaFrame, pipelineOutputExtents, frameArgs, hnone] at hf
+  obtain ⟨nk', nxp', ndst', nev', ⟨-, -, hread, -⟩, -⟩ := hf
+  exact absurd hread (by simp)
+
+/-- **The retired event-length equality is false at a literal's emission.**  A
+container marker or a literal — here a root `true` — writes one byte through
+`out_tag`, so the carry's trace is `[tag 1]` and the cursor is `nev0 + 1`.  The
+retired invariant said the cursor is `nev0 + 13 * records`, which no
+natural-number `records` satisfies at that trace. -/
+theorem stage2_evlen_thirteen_eq_false (nev0 records : Nat) :
+    ¬ (nev0 + ([EventRecord.tag 1].map EventRecord.encodedSize).sum =
+        nev0 + stage2RecordBytes * records) := by
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
+    EventRecord.encodedSize_tag, stage2RecordBytes]
+  omega
+
+/-- **The same at a number's emission.**  A number's record is nine bytes (the
+tag and the binary64 payload), so `nev0 + 9 = nev0 + 13 * records` has no
+natural-number solution either. -/
+theorem stage2_evlen_thirteen_eq_false_number (nev0 records bits : Nat) :
+    ¬ (nev0 + ([EventRecord.number bits].map EventRecord.encodedSize).sum =
+        nev0 + stage2RecordBytes * records) := by
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
+    EventRecord.encodedSize_number, stage2RecordBytes]
+  omega
+
 /-! ### Axiom footprint
 
 Each lemma is a closed proof: it consumes no parser result and adds no principle,
@@ -104,5 +169,17 @@ assumed. -/
 /-- info: 'LeanLLVMTest.Counterexamples.pipeline_units_finalisation_hsem_false' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pipeline_units_finalisation_hsem_false
+
+/-- info: 'LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms pipeline_frame_hsem_false
+
+/-- info: 'LeanLLVMTest.Counterexamples.stage2_evlen_thirteen_eq_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms stage2_evlen_thirteen_eq_false
+
+/-- info: 'LeanLLVMTest.Counterexamples.stage2_evlen_thirteen_eq_false_number' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms stage2_evlen_thirteen_eq_false_number
 
 end LeanLLVMTest.Counterexamples

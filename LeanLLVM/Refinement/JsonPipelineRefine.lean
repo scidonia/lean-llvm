@@ -65,8 +65,12 @@ is the regression that says so, and
 `pipeline_units_finalisation_hsem_false` states the same for the finalisation's
 own retired premise.  `ParserHalfForOutcome` reads the verdict, the returned
 memory and the caller's slots out of the run's outcome and argument list, so a
-run that returned `1` supplies the half at `1` and says nothing at `0`.
--/
+run that returned `1` supplies the half at `1` and says nothing at `0`.  The
+frame premise is indexed the same way: `pipeline_satisfies_of_parser` asks
+`SigmaFrame` at the staging and the `BehFromState` outcome, and a premise that
+quantified the returned memory freely is false — an empty returned memory cannot
+answer `pipelineOutputExtents`' cursor reads
+(`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`). -/
 import LeanLLVM.Refinement.JsonPipelineContract
 import LeanLLVM.Refinement.JsonPipelineBlockEval
 import LeanLLVM.Refinement.JsonPipelineSpec
@@ -1111,7 +1115,9 @@ call, so the units' post can only say `UnchangedOutside (narrow ++ seven)`, whic
 does not imply `UnchangedOutside narrow`.  `SigmaFrame` is that statement, and it
 is true of the program (where a callee's frame is fresh) and false of the model.
 The repair is a fresh-frame semantics, not a proof; `docs/contract.md` §7 records
-it at the layer where it belongs. -/
+it at the layer where it belongs.  The premise here is at the finalisation's own
+fixed outcome — the one the units' post names — and `pipeline_satisfies_of_parser`
+asks it only at outcomes the run produces. -/
 theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
     (hpre : pipelineStaging tab base args mem)
@@ -1194,7 +1200,17 @@ the retired premise was not — it quantified the verdict freely, so one documen
 supplied the acceptance equivalence at `1` and at `0`
 (`LeanLLVMTest.Counterexamples.pipeline_parser_hsem_false`).  The producer is
 stage two's body theorem, which is not in this file; nothing here assumes the
-parser's answer for an outcome the execution did not return. -/
+parser's answer for an outcome the execution did not return.
+
+**The frame is asked at the same outcomes.**  `hframe` takes the staging and the
+`BehFromState` premise `hsem` takes, and returns `SigmaFrame` at the outcome they
+name; it never ranges over a returned memory the run did not produce.  The
+premise it replaces quantified the argument list, the starting memory and the
+outcome freely, so an empty returned memory was in its scope — and `SigmaFrame`
+then asks `pipelineOutputExtents`, whose two cursor reads cannot succeed there
+(`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`).  As with `hsem`, the
+producer is the semantics' fresh-frame step, which this model does not have; the
+difference is where the premise is asked, not what it says. -/
 theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
     {eventRel : EventStreamRel} {tab base : Nat}
     (hunits : Satisfies calls f (Γ_pipeline_units tab base))
@@ -1204,7 +1220,10 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
       BehFromState calls f (EntryState f args mem next) o →
       pipelineOutputExtents args o ndst' nev' →
       ParserHalfForOutcome eventRel base args mem ndst' nev' o)
-    (hframe : ∀ (args : List Value) (mem : Mem) (o : Outcome), SigmaFrame args o mem) :
+    (hframe : ∀ (args : List Value) (mem : Mem) (next : Nat) (o : Outcome),
+      pipelineStaging tab base args mem →
+      BehFromState calls f (EntryState f args mem next) o →
+      SigmaFrame args o mem) :
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
@@ -1214,7 +1233,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)
     (args := args) (mem := mem) (next := next) (o := o) hstage (hpost o ho)
     (fun ndst' nev' hext => hsem args mem next o ndst' nev' hstage ho hext)
-    (hframe args mem o)
+    (hframe args mem next o hstage ho)
 
 /-! ### The post alone does not imply the specification
 

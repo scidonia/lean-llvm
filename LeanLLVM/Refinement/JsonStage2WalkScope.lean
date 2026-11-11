@@ -26,10 +26,16 @@ the summands themselves:
   two shape clauses, which is exactly the predicate `Stage2SpansInside` and
   exactly what `arenaLe_of_spans` consumes to give `alen ≤ ndst0 + n`.  The
   report keeps the bound, not the list;
-* `records : Nat` — the event records emitted, with `evlen = nev0 + 13 * records`
-  and `records ≤ k`.  Thirteen bytes per record is the body's own store
-  (`out_reserve(&z->ev, 13)` and `len += 13`), and at most one record per entry is
-  the count `Stage2OneRecordPerEntry` needs;
+* `events : List EventRecord` — the event records emitted, in order, at the widths
+  their emitters write: one byte for a container marker or a literal, nine for a
+  number (tag and binary64 payload), thirteen for a key or string (tag, length and
+  span).  The cursor is the sum of the widths, `evlen = nev0 + sum
+  (events.map encodedSize)`, which is the body's own arithmetic, and
+  `events.length ≤ k` is the one-record-per-entry count
+  `Stage2OneRecordPerEntry` needs.  `evBytes` says the bytes the trace names are
+  the ones at the log's stream, so the carry is about what the body wrote.  A
+  count times a constant was the defect this replaces: the encoding is
+  variable-width, and a root `true` leaves the cursor one byte past its start;
 * `k : Nat` — the block index into the entry stream, at the phi the loop reads
   (`%k.0.i249`);
 * `alen` and `evlen` — the two cursors;
@@ -394,6 +400,91 @@ structure WalkStage {m0 : Mem} (G : WalkGeom m0) where
   /-- The seven objects the walk writes are present in the staged memory. -/
   present : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e, HasBytes m0 r.1 r.2
 
+/-! ### The event trace
+
+The event stream is variable-width, and the widths are the emitters':
+
+| record | bytes | emitter |
+|---|---:|---|
+| container marker, `true`, `false`, `null` | 1 | `out_tag` |
+| number | 9 | `out_tag` then `out_u64` of the value's `toBits` |
+| key or string | 13 | `out_reserve(&z->ev, 13)` and the three stores |
+
+So the cursor is the sum of the records' widths and not thirteen times a count: a
+root `true` leaves it one byte past its start, and no natural-number record count
+satisfies `1 = 13 * records`.  `EventRecord` is the trace the loop carries — one
+entry per record emitted, at its shape — and `encodedSize` is the width its
+emitter writes.  The invariant states the cursor as the trace's width sum and the
+stream's written suffix as the trace's concatenation, so the carry is about the
+bytes the body wrote rather than about a count.
+
+The trace is not the token correspondence: it records each event's shape and the
+payload fields its bytes carry, and what those records mean to the reference
+parser is the later event relation (`EventStreamRel`), not this predicate. -/
+
+/-- One record of the emitted event stream. -/
+inductive EventRecord where
+  /-- `out_tag`: one byte, a container marker or `true`/`false`/`null`. -/
+  | tag (t : Nat)
+  /-- A number: the tag and the eight bytes of the value's binary64 payload. -/
+  | number (bits : Nat)
+  /-- A key or string: the tag, a four-byte length and an eight-byte span. -/
+  | str (key : Bool) (len span : Nat)
+  deriving DecidableEq
+
+namespace EventRecord
+
+/-- `T_KEY` (`stage2.c:104`, pinned in `JsonStage2Body`). -/
+def tagKey : Nat := 5
+
+/-- `T_STR`. -/
+def tagStr : Nat := 6
+
+/-- The bytes the emitted body writes for the record.  A tag is `out_tag`'s one
+byte; a number is exactly `numberRecord`, the model of the number arm's two
+writes; a key or string is the thirteen-byte record `out_reserve` makes room for.
+-/
+def encodedBytes : EventRecord → List UInt8
+  | .tag t => [UInt8.ofNat t]
+  | .number bits => (numberRecord bits).flatten
+  | .str key len span =>
+      [UInt8.ofNat (if key then tagKey else tagStr)] ++ wordBytes 4 len ++
+        wordBytes 8 span
+
+/-- The record's width: the length of the bytes its emitter writes. -/
+def encodedSize (e : EventRecord) : Nat := e.encodedBytes.length
+
+/-- A tag is one byte (`out_tag`). -/
+theorem encodedSize_tag (t : Nat) : (EventRecord.tag t).encodedSize = 1 := rfl
+
+/-- A number is nine bytes: the tag and the binary64 payload. -/
+theorem encodedSize_number (bits : Nat) : (EventRecord.number bits).encodedSize = 9 := by
+  simp only [encodedSize, encodedBytes]
+  rw [numberRecord_width]
+
+/-- A key or string is thirteen bytes: the tag, the length and the span. -/
+theorem encodedSize_str (key : Bool) (len span : Nat) :
+    (EventRecord.str key len span).encodedSize = 13 := by
+  simp only [encodedSize, encodedBytes, wordBytes, natToBytes_length,
+    List.length_append, List.length_cons, List.length_nil]
+
+/-- **No record is wider than the record width.**  The three widths are one, nine
+and thirteen, so this is the uniform fact the capacity bound needs. -/
+theorem encodedSize_le (e : EventRecord) : e.encodedSize ≤ stage2RecordBytes := by
+  cases e with
+  | tag t => rw [encodedSize_tag]; decide
+  | number bits => rw [encodedSize_number]; decide
+  | str key len span => rw [encodedSize_str]; decide
+
+/-- A trace's width sum is at most the record width times its length. -/
+theorem sum_encodedSize_le (evs : List EventRecord) :
+    (evs.map encodedSize).sum ≤ stage2RecordBytes * evs.length :=
+  sum_le_of_forall_le (fun x hx => by
+    obtain ⟨e, -, rfl⟩ := List.mem_map.mp hx
+    exact encodedSize_le e) (by simp)
+
+end EventRecord
+
 /-- What the loop carries between iterations.  The extents are a list because a
 cursor is their sum and a sum does not name its summands (`Stage2Run`'s
 definition records the obstruction). -/
@@ -404,8 +495,8 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   alen : Nat
   /-- The event cursor. -/
   evlen : Nat
-  /-- The event records emitted, thirteen bytes each. -/
-  records : Nat
+  /-- The event records emitted, in order, at the widths their emitters write. -/
+  events : List EventRecord
   /-- The decoded bodies' document extents, in document order. -/
   spans : List (Nat × Nat)
   /-- The record in flight: its entry position and its reserved arena offset. -/
@@ -507,10 +598,23 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   blockIndex : lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k))
   /-- The index has not passed the stream. -/
   k_le : C.k ≤ G.nep
-  /-- At most one record per entry. -/
-  records_le : C.records ≤ C.k
-  /-- The event cursor is exactly thirteen bytes per record. -/
-  evlen_eq : C.evlen = G.nev0 + stage2RecordBytes * C.records
+  /-- At most one record per entry consumed. -/
+  events_le : C.events.length ≤ C.k
+  /-- **The event cursor is the trace's own width sum.**  `out_raw` advances
+  `o->len` by the bytes it reserves, and the trace records each write at the width
+  its emitter gives it — one, nine or thirteen.  So the cursor is
+  `nev0 + sum (trace.map encodedSize)`, which is the body's arithmetic; the
+  equality this replaces, `nev0 + 13 * records`, was false at a literal's and at a
+  number's emission (`LeanLLVMTest.Counterexamples.stage2_evlen_thirteen_eq_false`
+  and `…_number`). -/
+  evlen_eq : C.evlen = G.nev0 + (C.events.map EventRecord.encodedSize).sum
+  /-- **The trace is the stream's written suffix.**  The records the carry names
+  are the bytes at the log's stream from the staged cursor on, in order.  This is
+  what makes the carry a statement about memory rather than about a counter: the
+  cursor's value and the bytes under it are two readings of one trace. -/
+  evBytes : readBytes s.mem (G.ev + G.nev0)
+      (C.events.map EventRecord.encodedBytes).flatten.length =
+    some (C.events.map EventRecord.encodedBytes).flatten
   /-- The arena cursor is bounded by the extents it decoded. -/
   alen_le_sum : C.alen ≤ G.ndst0 + (C.spans.map (fun r => r.2)).sum
   /-- The arena cursor only appends: this is the report's `Stage2Run.arenaGe`,
@@ -550,9 +654,10 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   depth_reg : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp))
   /-- **The log's event length is the carried event cursor.**  `out_reserve`'s
   check reads the word at `%z + 8` (`%len`) against the word at `%z + 16`, and the
-  walk's own record path advances it by thirteen; the staging fixes the field at
-  `%z + 8`, so the reserve is about the cursor the carry names rather than about
-  an unread word.  The `gep` is `JsonStage2IR`'s (`entry`'s `%len = %z + 8`). -/
+  walk's event writes advance it by the record's own width — one, nine or
+  thirteen, the sum `evlen_eq` names; the staging fixes the field at `%z + 8`, so
+  the reserve is about the cursor the carry names rather than about an unread
+  word.  The `gep` is `JsonStage2IR`'s (`entry`'s `%len = %z + 8`). -/
   log_len : readBytes s.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen)
   /-- **The log's event capacity is the staged one** (the word at `%z + 16`,
   `%cap`). -/
@@ -593,10 +698,15 @@ variable {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
 theorem alen_le (h : WalkInv G C s) : C.alen ≤ G.ndst0 + G.n :=
   arenaLe_of_spans h.spans_order h.spans_inside h.alen_le_sum
 
-/-- The event cursor's bound, from one record per entry and the entry count. -/
+/-- The event cursor's bound, from the trace's widths, one record per entry and the
+entry count: the width sum is at most thirteen times the trace's length, and the
+length is at most the entries consumed. -/
 theorem evlen_le (h : WalkInv G C s) : C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := by
-  have h1 : stage2RecordBytes * C.records ≤ stage2RecordBytes * G.n :=
-    Nat.mul_le_mul_left _ (le_trans h.records_le (le_trans h.k_le G.nep_le))
+  have hsum := EventRecord.sum_encodedSize_le C.events
+  have hlen : C.events.length ≤ G.n :=
+    le_trans h.events_le (le_trans h.k_le G.nep_le)
+  have hmul : stage2RecordBytes * C.events.length ≤ stage2RecordBytes * G.n :=
+    Nat.mul_le_mul_left _ hlen
   rw [h.evlen_eq]
   omega
 
@@ -627,7 +737,7 @@ def walkSeed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : WalkCarry G where
   k := 0
   alen := G.ndst0
   evlen := G.nev0
-  records := 0
+  events := []
   spans := []
   pending := none
   refusal := false
@@ -676,8 +786,9 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
     { pc_eq := hpc
       blockIndex := hk
       k_le := Nat.zero_le _
-      records_le := Nat.zero_le _
-      evlen_eq := rfl
+      events_le := Nat.zero_le _
+      evlen_eq := by simp [walkSeed]
+      evBytes := rfl
       alen_le_sum := by simp [walkSeed]
       alen_ge := Nat.le_refl _
       spans_order := by simp [walkSeed]
@@ -851,8 +962,9 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       { pc_eq := rfl
         blockIndex := by rw [hk]; exact hInv.blockIndex
         k_le := hInv.k_le
-        records_le := hInv.records_le
+        events_le := hInv.events_le
         evlen_eq := hInv.evlen_eq
+        evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
@@ -1184,8 +1296,9 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        records_le := hInv.records_le
+        events_le := hInv.events_le
         evlen_eq := hInv.evlen_eq
+        evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
@@ -1864,8 +1977,9 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        records_le := hInv.records_le
+        events_le := hInv.events_le
         evlen_eq := hInv.evlen_eq
+        evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
@@ -1946,6 +2060,18 @@ theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Na
 /-- info: 'LeanLLVM.Refinement.WalkInv.evlen_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkInv.evlen_le
+
+/-- info: 'LeanLLVM.Refinement.EventRecord.encodedSize_number' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.EventRecord.encodedSize_number
+
+/-- info: 'LeanLLVM.Refinement.EventRecord.encodedSize_le' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.EventRecord.encodedSize_le
+
+/-- info: 'LeanLLVM.Refinement.EventRecord.sum_encodedSize_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.EventRecord.sum_encodedSize_le
 
 /-- info: 'LeanLLVM.Refinement.forInc_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
