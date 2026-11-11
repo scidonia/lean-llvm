@@ -188,49 +188,96 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
   | vecBitcast d n w m jw v => intro he; exact he
   | phi d ty inc => intro he; exact he
 
+/-- A straight-line run whose pending `phi` bindings are the same on both sides
+is undefined in the target exactly where it is undefined in the source: a
+leading `phi` run selects from the one snapshot at both environments, and every
+other instruction's effect is `evalInstr`'s, which `CallRefines` preserves. -/
+theorem denoteRun_ub_refines {calls' calls : Calls}
+    (h : ∀ sym, CallRefines calls' calls sym) :
+    ∀ (pend : List (String × Value)) (is : List Instr) (s : State),
+      denoteRun calls' pend is s = none → denoteRun calls pend is s = none
+  | _, [], _, he => by
+      simp only [denoteRun] at he
+      cases he
+  | pend, i :: is, s, he => by
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        simp only [denoteRun] at he ⊢
+        cases hsel : phiSelect s inc with
+        | none => simp only [hsel] at he ⊢
+        | some v =>
+            simp only [hsel] at he ⊢
+            exact denoteRun_ub_refines h (pend ++ [(d, v)]) is s he
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        rw [denoteRun_cons_of hi] at he ⊢
+        cases hstep : evalInstr calls' (s.bindAll pend) i with
+        | none =>
+            rw [hstep] at he
+            rw [evalInstr_ub_refines h (s.bindAll pend) i hstep]
+        | some s' =>
+            rw [hstep] at he
+            rcases evalInstr_refines h (s.bindAll pend) i s' hstep with hsame | hnone
+            · rw [hsame]
+              exact denoteRun_ub_refines h [] is s' he
+            · rw [hnone]
+
 /-- A straight-line sequence that is undefined in the target is undefined in
 the source. -/
 theorem denoteCode_ub_refines {calls' calls : Calls}
+    (h : ∀ sym, CallRefines calls' calls sym) (is : List Instr) (s : State)
+    (he : denoteCode calls' is s = none) : denoteCode calls is s = none :=
+  denoteRun_ub_refines h [] is s he
+
+/-- A straight-line run either has the same effect or the source becomes
+undefined at some instruction.  A leading `phi` run installs the same bindings
+on both sides, so it is one unchanged step. -/
+theorem denoteRun_refines {calls' calls : Calls}
     (h : ∀ sym, CallRefines calls' calls sym) :
-    ∀ (is : List Instr) (s : State), denoteCode calls' is s = none →
-      denoteCode calls is s = none
-  | [], _, he => by
-      simp only [denoteCode] at he
-      cases he
-  | i :: is, s, he => by
-      simp only [denoteCode] at he ⊢
-      cases hstep : evalInstr calls' s i with
-      | none => rw [evalInstr_ub_refines h s i hstep]
-      | some s' =>
-          rw [hstep] at he
-          rcases evalInstr_refines h s i s' hstep with hsame | hnone
-          · rw [hsame]
-            simpa using denoteCode_ub_refines h is s' he
-          · rw [hnone]
+    ∀ (pend : List (String × Value)) (is : List Instr) (s s' : State),
+      denoteRun calls' pend is s = some s' →
+      denoteRun calls pend is s = some s' ∨ denoteRun calls pend is s = none
+  | _, [], s, s', he => by
+      simp only [denoteRun, Option.some.injEq] at he
+      subst he
+      exact Or.inl rfl
+  | pend, i :: is, s, s', he => by
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        simp only [denoteRun] at he ⊢
+        cases hsel : phiSelect s inc with
+        | none => simp only [hsel] at he; cases he
+        | some v =>
+            simp only [hsel] at he ⊢
+            exact denoteRun_refines h (pend ++ [(d, v)]) is s s' he
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        rw [denoteRun_cons_of hi] at he ⊢
+        cases hstep : evalInstr calls' (s.bindAll pend) i with
+        | none =>
+            rw [hstep] at he
+            cases he
+        | some s'' =>
+            rw [hstep] at he
+            rcases evalInstr_refines h (s.bindAll pend) i s'' hstep with hsame | hnone
+            · rw [hsame]
+              exact denoteRun_refines h [] is s'' s' he
+            · rw [hnone]
+              simp
 
 /-- A straight-line sequence either has the same effect or the source becomes
 undefined at some instruction. -/
 theorem denoteCode_refines {calls' calls : Calls}
-    (h : ∀ sym, CallRefines calls' calls sym) :
-    ∀ (is : List Instr) (s s' : State), denoteCode calls' is s = some s' →
-      denoteCode calls is s = some s' ∨ denoteCode calls is s = none
-  | [], s, s', he => by
-      simp only [denoteCode, Option.some.injEq] at he
-      subst he
-      exact Or.inl rfl
-  | i :: is, s, s', he => by
-      simp only [denoteCode] at he ⊢
-      cases hstep : evalInstr calls' s i with
-      | none =>
-          rw [hstep] at he
-          cases he
-      | some s'' =>
-          rw [hstep] at he
-          rcases evalInstr_refines h s i s'' hstep with hsame | hnone
-          · rw [hsame]
-            simpa using denoteCode_refines h is s'' s' he
-          · rw [hnone]
-            simp
+    (h : ∀ sym, CallRefines calls' calls sym) (is : List Instr) (s s' : State)
+    (he : denoteCode calls' is s = some s') :
+    denoteCode calls is s = some s' ∨ denoteCode calls is s = none :=
+  denoteRun_refines h [] is s s' he
 
 /-- One control step either matches or the source reaches `ub`.  `ub` is the
 top of the behaviour order, so it admits whatever the target does. -/

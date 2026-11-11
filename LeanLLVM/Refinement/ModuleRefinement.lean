@@ -192,15 +192,15 @@ theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem :
       subst hw
       exact hne v rfl
     simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
-      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode,
+      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
       argName, hw]
   · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
-      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode,
+      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
       argName]
   · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
-      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode,
+      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
       argName]
 
@@ -209,7 +209,7 @@ its parameter is unbound, so the first instruction is undefined. -/
 theorem candidate_envForBody_none_nil (mem : Mem) (next : Nat) :
     envForBody 10000 16 candidateFunction seamSymbol [] mem next = none := by
   simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
-    findBlockList, Function.entry?, List.zip, denoteCode, candidateInstrs, evalInstr,
+    findBlockList, Function.entry?, List.zip, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
     evalOperand, Const.toValue, lit, c, argName]
 
 /-- The environment relation the module theorem consumes: the loop and the
@@ -384,7 +384,7 @@ theorem memCaller_step (calls : Calls) (x : BitVec 64) {r : CallOutcome} (v : Bi
       some (.int 64 v) :=
     (loadValue_storeValue_64 ⟨[], r.mem, r.next, "entry", none⟩ v 1).2
   simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
-    Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode,
+    Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
     evalInstr, evalOperands, evalOperand, execTerm, Ty.sizeBytes, State.bind, lookupName,
     storeValue, h, hr, hload]
 
@@ -441,7 +441,7 @@ theorem memCaller_beh_of_unresolved (calls : Calls) (a : Value) (rest : List Val
   have hstep : step calls memCaller (initState memCaller (a :: rest)) = .ub := by
     simp only [initState_cons_memCaller]
     simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
-      Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode,
+      Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName, h]
   simp only [runFuel, hstep]
 
@@ -452,7 +452,7 @@ theorem memCaller_beh_nil (calls : Calls) (o : Outcome) :
   refine Or.inl ⟨1, ?_⟩
   have hstep : step calls memCaller (initState memCaller ([] : List Value)) = .ub := by
     simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
-      Option.getD, Option.map, initState, List.zip, denoteCode, evalInstr, evalOperands,
+      Option.getD, Option.map, initState, List.zip, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands,
       evalOperand, Ty.sizeBytes, lookupName]
   simp only [runFuel, hstep]
 

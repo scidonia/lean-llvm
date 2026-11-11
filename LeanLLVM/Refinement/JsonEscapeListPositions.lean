@@ -122,21 +122,37 @@ theorem evalInstr_escapeListCalls {Γ : MemContract} (s : State) (i : Instr)
 
 /-- A straight-line instruction sequence evaluates the same at either environment
 when none of its instructions calls `@xl_batch`. -/
-theorem denoteCode_escapeListCalls {Γ : MemContract} (instrs : List Instr) (s : State)
-    (h : ∀ i ∈ instrs, noBatchCall i = true) :
-    denoteCode (escapeListCalls Γ) instrs s = denoteCode escapeCalls instrs s := by
-  induction instrs generalizing s with
-  | nil => rfl
-  | cons i is ih =>
+theorem denoteRun_escapeListCalls {Γ : MemContract} :
+    ∀ (instrs : List Instr) (pend : List (String × Value)) (s : State),
+      (∀ i ∈ instrs, noBatchCall i = true) →
+      denoteRun (escapeListCalls Γ) pend instrs s = denoteRun escapeCalls pend instrs s
+  | [], pend, s, _ => rfl
+  | i :: is, pend, s, h => by
       have hi : noBatchCall i = true := h i List.mem_cons_self
       have htail : ∀ j ∈ is, noBatchCall j = true :=
         fun j hj => h j (List.mem_cons_of_mem i hj)
-      cases hm : evalInstr escapeCalls s i with
-      | none =>
-          rw [denoteCode, denoteCode, evalInstr_escapeListCalls s i hi, hm]
-      | some s' =>
-          rw [denoteCode, denoteCode, evalInstr_escapeListCalls s i hi, hm]
-          exact ih s' htail
+      cases hflag : i.isPhi with
+      | true =>
+          cases i with
+          | phi d ty inc =>
+              simp only [denoteRun]
+              cases hsel : phiSelect s inc with
+              | none => rfl
+              | some v => exact denoteRun_escapeListCalls is (pend ++ [(d, v)]) s htail
+          | _ => simp only [Instr.isPhi] at hflag; cases hflag
+      | false =>
+          rw [denoteRun_cons_of hflag, denoteRun_cons_of hflag,
+            evalInstr_escapeListCalls (s.bindAll pend) i hi]
+          cases hb : evalInstr escapeCalls (s.bindAll pend) i with
+          | none => rfl
+          | some s' => exact denoteRun_escapeListCalls is [] s' htail
+
+/-- A straight-line instruction sequence evaluates the same at either environment
+when none of its instructions calls `@xl_batch`. -/
+theorem denoteCode_escapeListCalls {Γ : MemContract} (instrs : List Instr) (s : State)
+    (h : ∀ i ∈ instrs, noBatchCall i = true) :
+    denoteCode (escapeListCalls Γ) instrs s = denoteCode escapeCalls instrs s :=
+  denoteRun_escapeListCalls (Γ := Γ) instrs [] s h
 
 /-- **One control step is the same at either environment**, at a block that makes
 no `@xl_batch` call. -/

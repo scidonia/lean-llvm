@@ -312,8 +312,9 @@ theorem lstLanesExit_denote (env : Env) (s : State) (bs ctl im blk0 w : BitVec 6
       some (withEnv (lx9 env bs ctl im w blk0)
         { s with mem := lxMem2 s.mem bs w carry }) := by
   rw [lstLanesExit_instrs]
-  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_phi hpre hinc hop)]
-  rw [show (withEnv env s).bind "%e.2.i" (.int 64 w) = withEnv (lx1 env w) s from rfl]
+  rw [phiRun_one escapeCalls env s "%e.2.i" (.int 64) _ _ hpre hinc hop]
+  all_goals (first | rfl | decide | skip)
+  rw [show withEnv (("%e.2.i", .int 64 w) :: env) s = withEnv (lx1 env w) s from rfl]
   rw [denoteCode_cons_of _ _ _ _ _ (b_lshr64_63 _ s "%shr.i" "%bs" bs (by lx_simp; lx_lk))]
   rw [show withEnv (("%shr.i", .int 64 (bs >>> 63)) :: lx1 env w) s =
     withEnv (lx2 env bs w) s from rfl]

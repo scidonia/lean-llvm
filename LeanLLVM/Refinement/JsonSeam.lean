@@ -274,11 +274,11 @@ theorem classify32_step_nonptr (calls : Calls) (s : State) (v : Value)
     simp [hpc, classify32Function, classify32Body, Function.findBlock, findBlockList]
   cases v with
   | int w x =>
-      simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, evalInstr,
+      simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
         evalOperand, harg]
   | ptr p => exact absurd rfl (hne p)
   | vec n w l =>
-      simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, evalInstr,
+      simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
         evalOperand, harg]
 
 /-- The classifier body run from a state whose argument is not a pointer is
@@ -400,7 +400,7 @@ theorem scanCaller_step_eq (s : State) :
                term := .ret (.int 32) (some (.reg "%m")) } := by
       simp [hpc, scanCaller, Function.findBlock, findBlockList]
     simp only [step, hfind]
-    simp only [denoteCode, evalInstr_call_eq]
+    simp only [denoteCode, denoteRun, State.bindAll, evalInstr_call_eq]
     simp only [evalInstr]
   · have hnone : scanCaller.findBlock s.pc = none := by
       simp [scanCaller, Function.findBlock, findBlockList]
@@ -475,7 +475,7 @@ theorem scanCaller_step_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
         (natToBytes w3.toNat 8)) 33 = some ⟨v, m, next⟩ := by
     simpa only [stagedMem] using h
   simp [step, scanCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
-    Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode,
+    Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
     evalInstr, evalOperands, evalOperand, execTerm, Ty.sizeBytes, lookupName,
     storeValue, h']
 
@@ -597,16 +597,42 @@ theorem replaceScanner_ret (w0 w1 w2 w3 : BitVec 64) :
 
 /-! ### The negative control -/
 
+/-- A straight-line run splits at a block boundary: a point whose second half
+does not begin with a `phi`, so no leading run is cut in two.  The pending
+bindings of the first half are installed at the split. -/
+theorem denoteRun_append (calls : Calls) :
+    ∀ (is js : List Instr) (pend : List (String × Value)) (s : State),
+      startsWithPhi js = false →
+      denoteRun calls pend (is ++ js) s =
+        (denoteRun calls pend is s).bind (denoteCode calls js)
+  | [], js, pend, s, hb => by
+      simp only [List.nil_append, denoteRun, Option.bind_some]
+      exact denoteRun_nil_pend hb
+  | i :: is, js, pend, s, hb => by
+      simp only [List.cons_append]
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        simp only [denoteRun]
+        cases hsel : phiSelect s inc with
+        | none => rfl
+        | some v =>
+            simp only [hsel]
+            exact denoteRun_append calls is js (pend ++ [(d, v)]) s hb
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        simp only [denoteRun_cons_of hi]
+        cases he : evalInstr calls (s.bindAll pend) i with
+        | none => rfl
+        | some s' => simp only []; exact denoteRun_append calls is js [] s' hb
+
 /-- A straight-line sequence's effect composes. -/
-theorem denoteCode_append (calls : Calls) :
-    ∀ (is js : List Instr) (s : State),
-      denoteCode calls (is ++ js) s = (denoteCode calls is s).bind (denoteCode calls js)
-  | [], js, s => by simp [denoteCode]
-  | i :: is, js, s => by
-      simp only [List.cons_append, denoteCode]
-      cases h : evalInstr calls s i with
-      | none => rfl
-      | some s' => exact denoteCode_append calls is js s'
+theorem denoteCode_append (calls : Calls) (is js : List Instr) (s : State)
+    (hb : startsWithPhi js = false) :
+    denoteCode calls (is ++ js) s = (denoteCode calls is s).bind (denoteCode calls js) :=
+  denoteRun_append calls is js [] s hb
 
 /-- The complemented body's instruction, added after the classifier's. -/
 def wrongMaskInstr : Instr :=
@@ -644,11 +670,13 @@ theorem wrongMask_step (s : State) (block : Block32) (p : Nat)
     simp [findBlockList, wrongMaskBody]
   have hsplit : wrongMaskInstrs = classify32Instrs ++ [wrongMaskInstr] := rfl
   have hbody : denoteCode noCalls wrongMaskInstrs s = some (wrongMaskRun s block) := by
-    rw [hsplit, denoteCode_append, classify32_block noCalls s block p harg hread]
-    simp only [wrongMaskInstr, wrongMaskRun, denoteCode, evalInstr,
-      evalOperand, lookupName_classifyRun, Const.toValue, Value.intToNat, evalBinopNat,
-      evalBinop, Option.bind, State.bind]
-    simp
+    rw [hsplit, denoteCode_append]
+    · rw [classify32_block noCalls s block p harg hread]
+      simp only [wrongMaskInstr, wrongMaskRun, denoteCode, denoteRun, State.bindAll, evalInstr,
+        evalOperand, lookupName_classifyRun, Const.toValue, Value.intToNat, evalBinopNat,
+        evalBinop, Option.bind, State.bind]
+      simp
+    · rfl
   have hterm : execTerm (wrongMaskRun s block) wrongMaskBody.term =
       .ret (some (.int 32 (packed block ^^^ BitVec.ofInt 32 (-1)))) (wrongMaskRun s block) := by
     rw [show wrongMaskBody.term = .ret (.int 32) (some (.reg "%w")) from rfl]

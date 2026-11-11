@@ -367,9 +367,10 @@ theorem evalInstr_bitcastMask (calls : Calls) (s : State) (d r : String)
 
 /-- Peel one instruction from a straight-line block whose effect is known. -/
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp only [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 /-- The state after the load. -/
 def q0 (s : State) (block : Block32) : State :=
@@ -799,7 +800,7 @@ theorem classify32_step_ub (calls : Calls) (s : State) (p : Nat)
     step calls classify32Function s = .ub := by
   have hfind : classify32Function.findBlock s.pc = some classify32Body := by
     simp [hpc, classify32Function, classify32Body, Function.findBlock, findBlockList]
-  simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, evalInstr,
+  simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
     evalOperand, harg, loadValue, hnone]
 
 /-! ### The theorems -/

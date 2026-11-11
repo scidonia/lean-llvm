@@ -140,7 +140,7 @@ theorem caller_findBlock :
 theorem caller_block (v : BitVec 64 → BitVec 64) (s : State) (x : BitVec 64)
     (h0 : lookupName s.env "%arg" = some (.int 64 x)) :
     denoteCode (envFor v) callerInstrs s = some (s.bind "%r" (.int 64 (v x))) := by
-  simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand,
+  simp only [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands, evalOperand,
     envFor, seamSymbol, h0, ite_true, State.bind]
 
 theorem caller_step (v : BitVec 64 → BitVec 64) (x : BitVec 64) :
@@ -192,7 +192,7 @@ theorem caller_block_body (fuel reserve : Nat) (f : Function) (s : State)
     (h : envForBody fuel reserve f seamSymbol [.int 64 x] s.mem s.next = some r) :
     denoteCode (envForBody fuel reserve f) callerInstrs s =
       some { s with env := ("%r", r.ret) :: s.env, mem := r.mem, next := r.next } := by
-  simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand, h0]
+  simp only [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands, evalOperand, h0]
   rw [h]
 
 /-- The caller's run under a body's selection returns, after one step, the
@@ -264,7 +264,7 @@ theorem caller_block_unresolved (fuel reserve : Nat) (f : Function) (s : State)
     (hm : s.mem = []) (hn : s.next = 1)
     (h : envForBody fuel reserve f seamSymbol [a] [] 1 = none) :
     denoteCode (envForBody fuel reserve f) callerInstrs s = none := by
-  simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand, h0]
+  simp only [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands, evalOperand, h0]
   rw [hm, hn, h]
 
 /-- The caller reaches `ub` at its call whenever the selection leaves that call
@@ -292,7 +292,7 @@ theorem caller_beh_nil (fuel reserve : Nat) (f : Function) (o : Outcome) :
   refine Or.inl ⟨1, ?_⟩
   have hblock : denoteCode (envForBody fuel reserve f) callerInstrs
       (initState callerFunction ([] : List Value)) = none := by
-    simp only [callerInstrs, denoteCode, evalInstr, evalOperands, evalOperand,
+    simp only [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands, evalOperand,
       initState, callerFunction, List.map, List.zip, List.zipWith, lookupName]
   have hstep : step (envForBody fuel reserve f) callerFunction
       (initState callerFunction ([] : List Value)) = .ub :=

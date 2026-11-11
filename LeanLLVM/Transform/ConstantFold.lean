@@ -191,6 +191,13 @@ theorem foldInstrs_cons (σ : Subst) (i : Instr) (is : List Instr) :
       (let r := foldInstrs (foldStep σ i) is
        (substInstr σ i :: r.1, r.2)) := rfl
 
+theorem foldInstrs_cons_fst (σ : Subst) (i : Instr) (is : List Instr) :
+    (foldInstrs σ (i :: is)).1 = substInstr σ i :: (foldInstrs (foldStep σ i) is).1 :=
+  rfl
+
+theorem foldInstrs_cons_snd (σ : Subst) (i : Instr) (is : List Instr) :
+    (foldInstrs σ (i :: is)).2 = (foldInstrs (foldStep σ i) is).2 := rfl
+
 /-- The instructions of a block after folding. -/
 def foldBlockInstrs (b : Block) : List Instr :=
   (foldInstrs Subst.empty b.instrs).1
@@ -236,21 +243,27 @@ theorem evalOperands_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) :
 /-- Substituting inside a `phi`'s incoming list does not change the value it
 selects: the selector reads the same entry, and that entry's operand evaluates
 to the same value once the substitution's invariant holds. -/
-theorem evalInstr_phi_subst {σ : Subst} {s : State} (calls : Calls)
-    (h : EnvEmbeds s.env σ) (d : String) (ty : Ty)
+theorem phiSelect_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ)
     (inc : List (String × Operand)) :
-    evalInstr calls s (.phi d ty (inc.map fun kv => (kv.1, substOperand σ kv.2))) =
-      evalInstr calls s (.phi d ty inc) := by
-  simp only [evalInstr]
+    phiSelect s (inc.map fun kv => (kv.1, substOperand σ kv.2)) = phiSelect s inc := by
+  simp only [phiSelect]
   cases hpre : s.pre with
   | none => rfl
   | some p =>
       simp only []
       rw [phiIncoming_map]
-      cases phiIncoming p inc with
+      cases hinc : phiIncoming p inc with
       | none => rfl
-      | some op =>
-          simp only [Option.map_some, evalOperand_subst h]
+      | some op => simp only [Option.map_some]; exact evalOperand_subst h op
+
+/-- Substituting inside a `phi`'s incoming list does not change the state the
+instruction reaches. -/
+theorem evalInstr_phi_subst {σ : Subst} {s : State} (calls : Calls)
+    (h : EnvEmbeds s.env σ) (d : String) (ty : Ty)
+    (inc : List (String × Operand)) :
+    evalInstr calls s (.phi d ty (inc.map fun kv => (kv.1, substOperand σ kv.2))) =
+      evalInstr calls s (.phi d ty inc) := by
+  simp only [evalInstr, phiSelect_subst h]
 
 theorem evalInstr_subst {σ : Subst} {s : State} (calls : Calls)
     (h : EnvEmbeds s.env σ) (i : Instr) :
@@ -329,18 +342,12 @@ theorem evalInstr_phi_env {calls : Calls} {s s' : State} {d : String} {ty : Ty}
     (h : evalInstr calls s (.phi d ty inc) = some s') :
     ∃ v, s'.env = (d, v) :: s.env := by
   simp only [evalInstr] at h
-  split at h
-  · cases h
-  · rename_i p _
-    split at h
-    · cases h
-    · rename_i op _
-      cases hop : evalOperand s op with
-      | none => simp only [hop] at h; cases h
-      | some v =>
-          simp only [hop, Option.map_some, Option.some.injEq] at h
-          subst h
-          exact ⟨v, rfl⟩
+  cases hs : phiSelect s inc with
+  | none => simp only [hs] at h; cases h
+  | some v =>
+      simp only [hs, Option.map_some, Option.some.injEq] at h
+      subst h
+      exact ⟨v, rfl⟩
 
 /-- A pointer comparison binds exactly its destination. -/
 theorem evalInstr_icmpPtr_env {calls : Calls} {s s' : State} {d : String}
@@ -670,40 +677,158 @@ theorem envEmbeds_foldStep {σ : Subst} {s s' : State} {i : Instr}
     rw [henv]
     exact h x c hx
 
+/-- A name the substitution does not mention is not bound by a group of pending
+`phi` cell-bindings, so a lookup below them is a lookup at the original
+environment. -/
+theorem lookupName_bindAll_of_unmentioned {s : State} {pend : List (String × Value)}
+    {σ : Subst} (h : ∀ b ∈ pend, σ b.1 = none) {x : String} {c : Const}
+    (hx : σ x = some c) : lookupName (s.bindAll pend).env x = lookupName s.env x := by
+  induction pend generalizing s with
+  | nil => rfl
+  | cons b rest ih =>
+      obtain ⟨n, v⟩ := b
+      have hn : n ≠ x := by
+        intro hnx
+        have hb : σ n = none := h (n, v) (List.mem_cons_self ..)
+        rw [hnx, hx] at hb
+        cases hb
+      have hrest : ∀ b ∈ rest, σ b.1 = none :=
+        fun b hb => h b (List.mem_cons_of_mem _ hb)
+      have hstep : lookupName ((s.bind n v).bindAll rest).env x
+          = lookupName (s.bind n v).env x := ih hrest
+      have hb : lookupName (s.bind n v).env x = lookupName s.env x := by
+        simp only [State.bind, lookupName_cons_ne v s.env hn]
+      rw [hb] at hstep
+      exact hstep
+
+/-- The environment invariant survives a group of pending bindings, provided the
+substitution does not mention the names the group binds. -/
+theorem EnvEmbeds.bindAll {s : State} {pend : List (String × Value)} {σ : Subst}
+    (h : EnvEmbeds s.env σ) (hp : ∀ b ∈ pend, σ b.1 = none) :
+    EnvEmbeds (s.bindAll pend).env σ := by
+  intro x c hx
+  rw [lookupName_bindAll_of_unmentioned (σ := σ) hp hx]
+  exact h x c hx
+
+/-- A `phi` step's substitution only removes the destination, so the invariant
+carries. -/
+theorem foldStep_phi_eq {σ : Subst} {d : String} {ty : Ty}
+    {inc : List (String × Operand)} :
+    foldStep σ (.phi d ty inc) = Subst.update σ d none := by
+  simp only [foldStep, foldInstr, Instr.dst?]
+
+theorem envEmbeds_foldStep_phi {σ : Subst} {s : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)} (h : EnvEmbeds s.env σ) :
+    EnvEmbeds s.env (foldStep σ (.phi d ty inc)) := by
+  rw [foldStep_phi_eq]
+  intro x c hx
+  simp only [Subst.update] at hx
+  by_cases hxd : x = d
+  · rw [ite_eq_left hxd] at hx
+    cases hx
+  · rw [ite_eq_right hxd] at hx
+    exact h x c hx
+
+/-- The pending group's names are not mentioned by the substitution after the
+step that added the last of them. -/
+theorem foldStep_phi_pending {σ : Subst} {d : String} {ty : Ty}
+    {inc : List (String × Operand)} {pend : List (String × Value)} {v : Value}
+    (hp : ∀ b ∈ pend, σ b.1 = none) :
+    ∀ b ∈ pend ++ [(d, v)], (foldStep σ (.phi d ty inc)) b.1 = none := by
+  rw [foldStep_phi_eq]
+  intro b hb
+  by_cases hbd : b.1 = d
+  · simp only [Subst.update, hbd, ite_true]
+  · rw [Subst.update_ne none hbd]
+    rcases List.mem_append.mp hb with hb | hb
+    · exact hp b hb
+    · simp only [List.mem_singleton] at hb
+      exact absurd (by rw [hb]) hbd
+
+/-- Folding an instruction list preserves its denotation, and leaves the
+environment invariant holding at the end: the general statement, with the
+leading `phi` run's pending bindings and the invariant that the substitution
+does not mention them.  `denoteRun` steps one instruction at a time, so the
+induction follows the list even through a run; each `phi` selects the same value
+at the same untouched snapshot. -/
+theorem foldInstrs_correct_run (calls : Calls) :
+    ∀ (is : List Instr) (σ : Subst) (pend : List (String × Value)) (s : State),
+      EnvEmbeds s.env σ →
+      (∀ b ∈ pend, σ b.1 = none) →
+      denoteRun calls pend (foldInstrs σ is).1 s = denoteRun calls pend is s ∧
+        (∀ s', denoteRun calls pend is s = some s' →
+          EnvEmbeds s'.env (foldInstrs σ is).2) := by
+  intro is
+  induction is with
+  | nil =>
+      intro σ pend s h hp
+      refine ⟨rfl, ?_⟩
+      intro s' hs'
+      simp only [denoteRun, Option.some.injEq] at hs'
+      subst hs'
+      exact EnvEmbeds.bindAll h hp
+  | cons i is ih =>
+      intro σ pend s h hp
+      refine ⟨?_, ?_⟩
+      · rw [foldInstrs_cons_fst]
+        by_cases hphi : i.isPhi = true
+        · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+            cases i with
+            | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+            | _ => simp_all [Instr.isPhi]
+          simp only [substInstr, denoteRun]
+          rw [phiSelect_subst h]
+          cases hs : phiSelect s inc with
+          | none => rfl
+          | some v =>
+              simp only []
+              exact (ih (foldStep σ (.phi d ty inc)) (pend ++ [(d, v)]) s
+                (envEmbeds_foldStep_phi h) (foldStep_phi_pending hp)).1
+        · have hi : i.isPhi = false := by
+            cases i <;> simp_all [Instr.isPhi]
+          have hsubst : (substInstr σ i).isPhi = false := by
+            cases i <;> simp_all [substInstr, Instr.isPhi]
+          rw [denoteRun_cons_of hsubst, denoteRun_cons_of hi,
+            evalInstr_subst calls (EnvEmbeds.bindAll h hp)]
+          cases he : evalInstr calls (s.bindAll pend) i with
+          | none => rfl
+          | some s'' =>
+              simp only []
+              exact (ih (foldStep σ i) [] s''
+                (envEmbeds_foldStep calls (EnvEmbeds.bindAll h hp) he) (by simp)).1
+      · intro s' hs'
+        rw [foldInstrs_cons_snd]
+        by_cases hphi : i.isPhi = true
+        · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+            cases i with
+            | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+            | _ => simp_all [Instr.isPhi]
+          simp only [denoteRun] at hs'
+          cases hs : phiSelect s inc with
+          | none => simp only [hs] at hs'; cases hs'
+          | some v =>
+              simp only [hs, Option.some.injEq] at hs'
+              exact (ih (foldStep σ (.phi d ty inc)) (pend ++ [(d, v)]) s
+                (envEmbeds_foldStep_phi h) (foldStep_phi_pending hp)).2 s' hs'
+        · have hi : i.isPhi = false := by
+            cases i <;> simp_all [Instr.isPhi]
+          rw [denoteRun_cons_of hi] at hs'
+          cases he : evalInstr calls (s.bindAll pend) i with
+          | none => simp only [he] at hs'; cases hs'
+          | some s'' =>
+              simp only [he, Option.some.injEq] at hs'
+              exact (ih (foldStep σ i) [] s''
+                (envEmbeds_foldStep calls (EnvEmbeds.bindAll h hp) he)
+                (by simp)).2 s' hs'
+
 /-- Folding an instruction list preserves its denotation, and leaves the
 environment invariant holding at the end. -/
 theorem foldInstrs_correct (calls : Calls) (σ : Subst) (is : List Instr) (s : State)
     (h : EnvEmbeds s.env σ) :
     denoteCode calls (foldInstrs σ is).1 s = denoteCode calls is s ∧
       (∀ s', denoteCode calls is s = some s' → EnvEmbeds s'.env (foldInstrs σ is).2) := by
-  induction is generalizing σ s with
-  | nil =>
-      refine ⟨rfl, ?_⟩
-      intro s' hs'
-      cases hs'
-      exact h
-  | cons i is ih =>
-      generalize htail : foldInstrs (foldStep σ i) is = tail
-      cases tail with
-      | mk rest σ' =>
-        simp only [foldInstrs_cons, htail]
-        constructor
-        · simp only [denoteCode, evalInstr_subst calls h]
-          cases he : evalInstr calls s i with
-          | none => rfl
-          | some s'' =>
-              have hstep := ih (foldStep σ i) s'' (envEmbeds_foldStep calls h he)
-              rw [htail] at hstep
-              exact hstep.1
-        · intro s' hs'
-          simp only [denoteCode] at hs'
-          cases he : evalInstr calls s i with
-          | none => simp [he] at hs'
-          | some s'' =>
-              simp only [he] at hs'
-              have hstep := ih (foldStep σ i) s'' (envEmbeds_foldStep calls h he)
-              rw [htail] at hstep
-              exact hstep.2 s' hs'
+  have h := foldInstrs_correct_run calls is σ [] s h (by simp)
+  simpa only [denoteCode, denoteRun, State.bindAll] using h
 
 /-- The block-level theorem: folding preserves the block's instruction
 denotation, and the end-of-block substitution is valid for the terminator. -/

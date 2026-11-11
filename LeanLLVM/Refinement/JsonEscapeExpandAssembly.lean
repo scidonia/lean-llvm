@@ -1897,7 +1897,7 @@ theorem udRunExit_denoteS (env : Env) (s : State) (paddr : Nat)
     (by ud_lk) hr)]
   rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ult8_imm _ _ "%cmp18" "%7" b
     (BitVec.ofInt 8 32) (by ud_lk))]
-  simp only [denoteCode, withEnv, udRunExitEnvS]
+  simp only [denoteCode, denoteRun, State.bindAll, withEnv, udRunExitEnvS]
 
 /-- `us_run.exit`'s step into `if.end21`: the body's byte at the head is not a control
 byte. -/

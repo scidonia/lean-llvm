@@ -81,8 +81,25 @@ block, so replacing it leaves those projections alone. -/
 def State.bind (s : State) (n : String) (v : Value) : State :=
   { s with env := (n, v) :: s.env }
 
+/-- Bind a list of registers in the order the block wrote them.  The last entry
+ends at the head of the environment, exactly where binding each in turn would
+leave it, so a group's install is the install its members would each have made. -/
+def State.bindAll (s : State) : List (String × Value) → State
+  | [] => s
+  | (n, v) :: rest => (s.bind n v).bindAll rest
+
 theorem State.bind_setPre (s : State) (p : Option String) (n : String) (v : Value) :
     (s.setPre p).bind n v = (s.bind n v).setPre p := rfl
+
+theorem State.bindAll_setPre (s : State) (p : Option String)
+    (bs : List (String × Value)) :
+    (s.setPre p).bindAll bs = (s.bindAll bs).setPre p := by
+  induction bs generalizing s with
+  | nil => rfl
+  | cons b rest ih =>
+      obtain ⟨n, v⟩ := b
+      simp only [State.bindAll, State.bind_setPre]
+      exact ih (s.bind n v)
 
 /-- What a callee leaves behind: the value it returns, the memory after its
 writes, and the allocator state the caller resumes from.  The memory is the
@@ -115,6 +132,27 @@ def evalOperand (s : State) : Operand → Option Value
 theorem evalOperand_setPre (s : State) (p : Option String) (o : Operand) :
     evalOperand (s.setPre p) o = evalOperand s o := by
   cases o <;> rfl
+
+/-- The value a `phi` selects in the state `s`: the incoming operand whose label
+is the block the edge came from, read from `s`'s own environment.
+
+`none` is undefined behaviour, and it has two causes that LLVM's verifier
+refuses rather than defines: a state with no predecessor — the entry block, or a
+hand-built state that never jumped — and an incoming list with no entry for the
+predecessor the edge actually came from.  A `phi` whose predecessor *is* listed
+and whose selected operand reads is defined; it is valid LLVM, and the value it
+selects is the incoming operand's value.
+
+Selection is a pure function of the state it is given.  `denoteCode` gives every
+member of a block's leading `phi` run the same state, which is what makes the
+run read one snapshot of the environment the edge carried in. -/
+def phiSelect (s : State) (inc : List (String × Operand)) : Option Value :=
+  match s.pre with
+  | none => none
+  | some p =>
+      match phiIncoming p inc with
+      | none => none
+      | some op => evalOperand s op
 
 /-- Binary integer operations.  Division and remainder by zero are undefined
 behaviour (LLVM: poison).  Shifts follow Lean's `BitVec` saturating behaviour:
@@ -591,12 +629,14 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       -- runtime-only `none` cannot admit a behaviour LLVM forbids.  The
       -- instruction's type is not consulted: the selected operand evaluates to
       -- its own value, and the parser has already refused a mismatch.
-      match s.pre with
-      | none => none
-      | some p =>
-          match phiIncoming p inc with
-          | none => none
-          | some op => (evalOperand s op).map fun v => s.bind d v
+      --
+      -- This is one member of a leading run read in isolation.  A block's run
+      -- is a stronger step than this constructor: `phiGroup` gives every member
+      -- the same snapshot state, so no member reads a destination a sibling
+      -- bound.  `evalInstr` remains the instruction's meaning for a `phi` that
+      -- is not part of such a run — a list the parser refuses — and the
+      -- semantics of a well-formed block's run is `denoteCode`'s, below.
+      (phiSelect s inc).map fun v => s.bind d v
 
 /-! ### Pointer comparison
 
@@ -821,21 +861,160 @@ theorem evalInstr_insertelement_out_of_range {calls : Calls} {s : State} {d : St
     evalInstr calls s (.insertelement d n w v elt idx) = none := by
   simp [evalInstr, hv, hl, he, hx, hi, Nat.not_lt.mpr hge]
 
-/-- Execute a straight-line instruction sequence. -/
-def denoteCode (calls : Calls) : List Instr → State → Option State
-  | [], s => some s
-  | i :: is, s =>
-      match evalInstr calls s i with
+/-- A `phi` of a block's leading run: its destination, result type and incoming
+list.  The type is carried so a run's instructions can be named exactly as the
+block wrote them; selection does not consult it. -/
+structure PhiSpec where
+  dst : String
+  ty : Ty
+  incoming : List (String × Operand)
+
+/-- The instruction a spec describes. -/
+def PhiSpec.instr (p : PhiSpec) : Instr := .phi p.dst p.ty p.incoming
+
+/-- Whether a list begins with a `phi`.  A block's leading `phi` run is one step
+of `denoteCode`, so the instruction after the run is a step only once the run is
+over; this predicate is that fact, in a form `decide` and `rfl` close. -/
+def startsWithPhi : List Instr → Bool
+  | .phi .. :: _ => true
+  | _ => false
+
+/-- The bindings a leading `phi` run selects, one entry per spec in the order the
+block writes them, with every operand read from the one state `s`.
+
+This is the run's contract.  A member's operand may name the destination of a
+sibling — a swap or a cycle — and that is valid LLVM: the incoming uses happen
+on the predecessor edge, where none of the block's new destinations exists yet.
+Reading every member at `s` is what makes the run order-independent. -/
+inductive PhiSelects (s : State) (p : String) :
+    List PhiSpec → List (String × Value) → Prop
+  | nil : PhiSelects s p [] []
+  | cons {sp : PhiSpec} {specs : List PhiSpec} {vs : List (String × Value)}
+      {op : Operand} {v : Value} :
+      phiIncoming p sp.incoming = some op →
+      evalOperand s op = some v →
+      PhiSelects s p specs vs →
+      PhiSelects s p (sp :: specs) ((sp.dst, v) :: vs)
+
+/-- Execute a block's instructions from `s`.
+
+The block's leading `phi` run is one step.  `pend` holds the bindings the run
+has selected so far, in the order the block writes them, and `s` is untouched
+while it is collected: every member reads the environment the edge carried in.
+When the run ends — at the first instruction that is not a `phi`, or at the end
+of the list — the bindings are installed together and execution continues from
+the resulting environment.
+
+A `phi` that does not belong to the leading run is malformed LLVM: the parser
+refuses a `phi` that follows a non-`phi`, and SSA gives it no defined meaning.
+Such a `phi` is executed by `evalInstr`, exactly as before, so the malformed
+input policy is unchanged; what changed is the meaning of the leading run, which
+is valid LLVM and now reads one snapshot. -/
+def denoteRun (calls : Calls) : List (String × Value) → List Instr → State → Option State
+  | pend, [], s => some (s.bindAll pend)
+  | pend, .phi d _ty inc :: is, s =>
+      match phiSelect s inc with
+      | some v => denoteRun calls (pend ++ [(d, v)]) is s
       | none => none
-      | some s' => denoteCode calls is s'
+  | pend, i :: is, s =>
+      match evalInstr calls (s.bindAll pend) i with
+      | some s' => denoteRun calls [] is s'
+      | none => none
+
+/-- Execute a straight-line instruction sequence. -/
+def denoteCode (calls : Calls) (is : List Instr) (s : State) : Option State :=
+  denoteRun calls [] is s
+
+@[simp] theorem denoteCode_nil (calls : Calls) (s : State) :
+    denoteCode calls [] s = some s := rfl
+
+/-- `denoteRun` at an instruction that is not a `phi`: the pending run's bindings
+are installed, the instruction runs, and the rest of the block follows. -/
+theorem denoteRun_cons_of {calls : Calls} {pend : List (String × Value)}
+    {i : Instr} {is : List Instr} {s : State} (hi : i.isPhi = false) :
+    denoteRun calls pend (i :: is) s =
+      match evalInstr calls (s.bindAll pend) i with
+      | some s' => denoteRun calls [] is s'
+      | none => none := by
+  cases i <;> simp_all [denoteRun, Instr.isPhi, State.bindAll]
+
+/-- One instruction, when it is not a `phi`: the block steps through it. -/
+theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr)
+    (s s' : State) (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' := by
+  rw [denoteCode, denoteRun_cons_of hi]
+  simp only [State.bindAll, h, denoteCode]
+
+/-- One instruction that is not a `phi` and is undefined makes the block
+undefined. -/
+theorem denoteCode_cons_none (calls : Calls) (i : Instr) (is : List Instr)
+    (s : State) (h : evalInstr calls s i = none)
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = none := by
+  rw [denoteCode, denoteRun_cons_of hi]
+  simp only [State.bindAll, h]
+
+/-- A `phi` whose predecessor is listed and whose selected operand reads selects
+its value: the accepting case of one member of a run. -/
+theorem phiSelect_eq {s : State} {p : String} {inc : List (String × Operand)}
+    {op : Operand} {v : Value} (hpre : s.pre = some p)
+    (hinc : phiIncoming p inc = some op) (hop : evalOperand s op = some v) :
+    phiSelect s inc = some v := by
+  simp [phiSelect, hpre, hinc, hop]
+
+/-- A block's leading `phi` run is one step: one snapshot in, all bindings out. -/
+theorem denoteRun_phiRun {calls : Calls} {s : State} {p : String}
+    {specs : List PhiSpec} {vs : List (String × Value)} {rest : List Instr}
+    {pend : List (String × Value)}
+    (hpre : s.pre = some p) (hsel : PhiSelects s p specs vs) :
+    denoteRun calls pend (specs.map PhiSpec.instr ++ rest) s =
+      denoteRun calls (pend ++ vs) rest s := by
+  induction hsel generalizing pend with
+  | nil => simp
+  | cons hinc hop _ ih =>
+      simp only [List.map_cons, List.cons_append, PhiSpec.instr, denoteRun,
+        phiSelect_eq hpre hinc hop, Option.some.injEq]
+      rw [ih, List.append_assoc, List.singleton_append]
+
+/-- A list that does not begin with a `phi` begins with something `denoteRun`
+steps through, so the predicate is the instruction's own. -/
+theorem startsWithPhi_cons {i : Instr} {is : List Instr}
+    (h : startsWithPhi (i :: is) = false) : i.isPhi = false := by
+  cases i <;> simp_all [startsWithPhi, Instr.isPhi]
+
+/-- A completed leading run installs its bindings and execution resumes from
+them: the block's snapshot is not visible to anything after the run. -/
+theorem denoteRun_nil_pend {calls : Calls} {pend : List (String × Value)}
+    {rest : List Instr} {s : State} (h : startsWithPhi rest = false) :
+    denoteRun calls pend rest s = denoteRun calls [] rest (s.bindAll pend) := by
+  cases rest with
+  | nil => rfl
+  | cons i is =>
+      have hi : i.isPhi = false := startsWithPhi_cons h
+      rw [denoteRun_cons_of hi, denoteRun_cons_of hi]
+      rfl
+
+/-- A block's leading `phi` run, stated at `denoteCode`: every selected operand
+is read from the state the edge delivered, and the bindings land together. -/
+theorem denoteCode_phiRun {calls : Calls} {s : State} {p : String}
+    {specs : List PhiSpec} {vs : List (String × Value)} {rest : List Instr}
+    (hpre : s.pre = some p) (hsel : PhiSelects s p specs vs)
+    (hrest : startsWithPhi rest = false) :
+    denoteCode calls (specs.map PhiSpec.instr ++ rest) s =
+      denoteCode calls rest (s.bindAll vs) := by
+  rw [denoteCode, denoteRun_phiRun hpre hsel, List.nil_append]
+  rw [denoteRun_nil_pend hrest]
+  rfl
 
 /-! ### The `phi` selection
 
-Four facts about the one instruction that reads the predecessor field, each a
-closed statement about `evalInstr` rather than a restatement of it: the entry
-whose label is the predecessor is the one that is read, a `phi` in a block with
-no predecessor selects nothing, a `phi` whose list omits the predecessor is
-undefined, and neither shape writes memory.
+Four facts about one `phi` read in isolation, each a closed statement about
+`evalInstr` rather than a restatement of it: the entry whose label is the
+predecessor is the one that is read, a `phi` in a block with no predecessor
+selects nothing, a `phi` whose list omits the predecessor is undefined, and
+neither shape writes memory.  The block's leading run is a stronger step, stated
+above: `denoteCode_phiRun`.
 -/
 
 /-- A `phi` reached from block `p` whose incoming list names `p` binds the
@@ -846,7 +1025,7 @@ theorem evalInstr_phi {calls : Calls} {s : State} {d : String} {ty : Ty}
     (hpre : s.pre = some p) (hinc : phiIncoming p inc = some op)
     (hop : evalOperand s op = some v) :
     evalInstr calls s (.phi d ty inc) = some (s.bind d v) := by
-  simp only [evalInstr, hpre, hinc, hop, Option.map_some]
+  simp only [evalInstr, phiSelect_eq hpre hinc hop, Option.map_some]
 
 /-- A `phi` in a block that was not entered from anywhere — the entry block —
 selects nothing, because `initState` leaves the predecessor `none` and no
@@ -856,7 +1035,7 @@ runs with a meaning LLVM does not give it. -/
 theorem evalInstr_phi_no_pred {calls : Calls} {s : State} {d : String} {ty : Ty}
     {inc : List (String × Operand)} (h : s.pre = none) :
     evalInstr calls s (.phi d ty inc) = none := by
-  simp [evalInstr, h]
+  simp [evalInstr, phiSelect, h]
 
 /-- A `phi` whose incoming list has no entry for the block the edge came from is
 undefined behaviour: `none`, which `step` reads as `ub`. -/
@@ -864,7 +1043,9 @@ theorem evalInstr_phi_missing {calls : Calls} {s : State} {d : String} {ty : Ty}
     {inc : List (String × Operand)} {p : String} (hpre : s.pre = some p)
     (hinc : phiIncoming p inc = none) :
     evalInstr calls s (.phi d ty inc) = none := by
-  simp only [evalInstr, hpre, hinc]
+  simp only [evalInstr, phiSelect, hpre] at *
+  rw [hinc]
+  rfl
 
 /-- Selecting an incoming value writes no memory: the step binds one register and
 changes nothing else. -/
@@ -872,18 +1053,67 @@ theorem evalInstr_phi_mem {calls : Calls} {s s' : State} {d : String} {ty : Ty}
     {inc : List (String × Operand)}
     (h : evalInstr calls s (.phi d ty inc) = some s') : s'.mem = s.mem := by
   simp only [evalInstr] at h
-  split at h
-  · cases h
-  · rename_i p _
-    split at h
-    · cases h
-    · rename_i op _
-      cases hop : evalOperand s op with
-      | none => simp only [hop] at h; cases h
-      | some v =>
-          simp only [hop, Option.map_some, Option.some.injEq] at h
-          subst h
-          rfl
+  cases hs : phiSelect s inc with
+  | none => simp only [hs] at h; cases h
+  | some v =>
+      simp only [hs, Option.map_some, Option.some.injEq] at h
+      subst h
+      rfl
+
+/-- A group whose first member has no selection has no selection either: the
+run's failure is the whole step's.  Stated for `denoteRun` at the run's head. -/
+theorem denoteRun_phi_none {calls : Calls} {pend : List (String × Value)}
+    {d : String} {ty : Ty} {inc : List (String × Operand)} {is : List Instr}
+    {s : State} (h : phiSelect s inc = none) :
+    denoteRun calls pend (.phi d ty inc :: is) s = none := by
+  simp only [denoteRun, h]
+
+/-- Installing a group's bindings moves no memory. -/
+theorem State.bindAll_mem (s : State) (bs : List (String × Value)) :
+    (s.bindAll bs).mem = s.mem := by
+  induction bs generalizing s with
+  | nil => rfl
+  | cons b rest ih =>
+      obtain ⟨n, v⟩ := b
+      simp only [State.bindAll, State.bind]
+      exact ih (s.bind n v)
+
+/-- Installing a group's bindings leaves the program counter where it was:
+binding a register rewrites the environment alone. -/
+theorem State.bindAll_pc (s : State) (bs : List (String × Value)) :
+    (s.bindAll bs).pc = s.pc := by
+  induction bs generalizing s with
+  | nil => rfl
+  | cons b rest ih => exact ih (s.bind b.1 b.2)
+
+/-- A block's leading `phi` run moves no memory: selecting and installing
+bindings leaves the memory and the allocator where they were. -/
+theorem denoteRun_phi_mem {calls : Calls} :
+    ∀ (pend : List (String × Value)) (is : List Instr) (s s' : State),
+      (∀ i ∈ is, i.isPhi = true) →
+      denoteRun calls pend is s = some s' → s'.mem = s.mem := by
+  intro pend is
+  induction is generalizing pend with
+  | nil =>
+      intro s s' _ h
+      simp only [denoteRun, Option.some.injEq] at h
+      subst h
+      exact State.bindAll_mem s pend
+  | cons i rest ih =>
+      intro s s' hall h
+      have hrest : ∀ j ∈ rest, j.isPhi = true :=
+        fun j hj => hall j (List.mem_cons_of_mem _ hj)
+      cases i with
+      | phi dst ty inc =>
+          cases hs : phiSelect s inc with
+          | none => simp only [denoteRun, hs] at h; cases h
+          | some v =>
+              simp only [denoteRun, hs] at h
+              exact ih _ s s' hrest h
+      | _ =>
+          have hi : Instr.isPhi _ = true := hall _ (List.mem_cons_self ..)
+          simp only [Instr.isPhi] at hi
+          cases hi
 
 /-- The effect of a terminator. -/
 inductive Ctrl where
@@ -1510,20 +1740,32 @@ theorem evalInstr_pre_of_not_phi {calls : Calls} {s s' : State} {i : Instr}
   rfl
 
 /-- A straight-line sequence of `phi`-free instructions reaches the same state up
-to the predecessor field. -/
-theorem denoteCode_setPre (calls : Calls) (is : List Instr)
-    (h : ∀ i ∈ is, i.isPhi = false) (s : State) (p : Option String) :
-    denoteCode calls is (s.setPre p) = (denoteCode calls is s).map (·.setPre p) := by
-  induction is generalizing s with
-  | nil => rfl
+to the predecessor field.  `pend` is the leading run's pending bindings, which a
+`phi`-free list never collects, so it is carried through unchanged; both sides
+install it with `bindAll`, which commutes with `setPre`. -/
+theorem denoteRun_setPre (calls : Calls) (is : List Instr)
+    (h : ∀ i ∈ is, i.isPhi = false) (pend : List (String × Value)) (s : State)
+    (p : Option String) :
+    denoteRun calls pend is (s.setPre p) =
+      (denoteRun calls pend is s).map (·.setPre p) := by
+  induction is generalizing pend s with
+  | nil => simp only [denoteRun, State.bindAll_setPre, Option.map_some]
   | cons i rest ih =>
       have hi : i.isPhi = false := h i (List.mem_cons_self ..)
       have hrest : ∀ j ∈ rest, j.isPhi = false :=
         fun j hj => h j (List.mem_cons_of_mem _ hj)
-      simp only [denoteCode, evalInstr_setPre i hi]
-      cases he : evalInstr calls s i with
+      rw [denoteRun_cons_of hi, denoteRun_cons_of hi, State.bindAll_setPre,
+        evalInstr_setPre i hi]
+      cases he : evalInstr calls (s.bindAll pend) i with
       | none => rfl
-      | some s' => simp only [Option.map_some]; exact ih hrest s'
+      | some s' => simp only [Option.map_some]; exact ih hrest [] s'
+
+/-- A straight-line sequence of `phi`-free instructions reaches the same state up
+to the predecessor field. -/
+theorem denoteCode_setPre (calls : Calls) (is : List Instr)
+    (h : ∀ i ∈ is, i.isPhi = false) (s : State) (p : Option String) :
+    denoteCode calls is (s.setPre p) = (denoteCode calls is s).map (·.setPre p) :=
+  denoteRun_setPre calls is h [] s p
 
 /-- A terminator reaches the same control result from two states one `setPre`
 apart.  A `ret` keeps the field; a jump overwrites it with the block it came
@@ -1739,6 +1981,14 @@ theorem State.AgreeOn.bind {ns : List String} {s t : State} {d : String} {v : Va
   · rw [ite_eq_right hdn, ite_eq_right hdn]
     exact hl n hn'
 
+/-- Installing a group's bindings on both sides preserves agreement: the run
+selects the same destinations bound to the same values at either state. -/
+theorem State.AgreeOn.bindAll {ns : List String} :
+    ∀ (bs : List (String × Value)) {s t : State}, State.AgreeOn ns s t →
+      State.AgreeOn ns (s.bindAll bs) (t.bindAll bs)
+  | [], _, _, h => h
+  | (n, v) :: rest, _, _, h => State.AgreeOn.bindAll rest (State.AgreeOn.bind h)
+
 /-- The memory a store writes, at the same address and the same bytes on both
 sides: the write's byte list is the value's, so the equality of the memories is
 the equality of what was there. -/
@@ -1839,6 +2089,28 @@ theorem phi_operand_regs_uses {d : String} {ty : Ty} {inc : List (String × Oper
   obtain ⟨⟨l, o⟩, hmem, ho⟩ := List.mem_map.mp (phiIncoming_mem hinc)
   rw [← ho] at hn
   exact List.mem_flatten.mpr ⟨o.regs, List.mem_map.mpr ⟨(l, o), hmem, rfl⟩, hn⟩
+
+/-- Selection reads the same at two states that agree on the instruction's read
+set: the predecessor field and every incoming operand's registers. -/
+theorem phiSelect_agree {ns : List String} {s t : State} {d : String} {ty : Ty}
+    {inc : List (String × Operand)}
+    (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.phi d ty inc), n ∈ ns) :
+    phiSelect s inc = phiSelect t inc := by
+  obtain ⟨_, _, hp, hl⟩ := h
+  cases hsp : s.pre with
+  | none =>
+      have htp : t.pre = none := by rw [← hp]; exact hsp
+      simp only [phiSelect, hsp, htp]
+  | some p =>
+      have htp : t.pre = some p := by rw [← hp]; exact hsp
+      cases hinc : phiIncoming p inc with
+      | none => simp only [phiSelect, hsp, htp, hinc]
+      | some op =>
+          simp only [phiSelect, hsp, htp, hinc]
+          exact evalOperand_agree_of_uses
+            (hl := fun n hmem => hl n (hread n hmem))
+            (hsub := fun n hn' => phi_operand_regs_uses hinc hn')
 
 /-- **A store's success and its written bytes depend only on the memory.**  The
 shape tests `storeValue` performs read the type and the value, never the state,
@@ -2467,22 +2739,32 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
          exact ⟨_, by simp only [evalInstr, *], State.AgreeOn.callVoid h⟩)
       | (cases hs)
   | phi d ty inc =>
-    simp only [evalInstr, hp] at hs
-    split at hs
-    · cases hs
-    · rename_i htpre
-      split at hs
-      · cases hs
-      · rename_i hinc
-        rw [evalOperand_agree_of_uses hl
-          (fun n hn' => phi_operand_regs_uses hinc hn')] at hs
-        rw [Option.map_eq_some_iff] at hs
-        obtain ⟨v, hv, hs⟩ := hs
-        cases hs
-        exact ⟨_, by simp [evalInstr, htpre, hinc, hv, Option.map_some],
+    have hsel : phiSelect s inc = phiSelect t inc := phiSelect_agree h hread
+    cases hsl : phiSelect t inc with
+    | none => simp only [evalInstr, hsel, hsl] at hs; cases hs
+    | some v =>
+        simp only [evalInstr, hsel, hsl, Option.map_some, Option.some.injEq] at hs
+        subst hs
+        exact ⟨_, by simp only [evalInstr, hsl, Option.map_some],
           State.AgreeOn.bind h⟩
 
 end Agreement
+
+/-- Installing pending `phi` bindings never changes the lookup of a name they do
+not bind. -/
+theorem lookupName_bindAll_of_ne (s : State) :
+    ∀ (pend : List (String × Value)) {n : String}, (∀ b ∈ pend, b.1 ≠ n) →
+      lookupName (s.bindAll pend).env n = lookupName s.env n
+  | [], _, _ => rfl
+  | (m, v) :: rest, n, h => by
+      have hm : m ≠ n := h (m, v) (List.mem_cons_self ..)
+      have hrest : ∀ b ∈ rest, b.1 ≠ n :=
+        fun b hb => h b (List.mem_cons_of_mem _ hb)
+      have hstep : lookupName ((s.bind m v).bindAll rest).env n
+          = lookupName (s.bind m v).env n := lookupName_bindAll_of_ne (s.bind m v) rest hrest
+      have hb : lookupName (s.bind m v).env n = lookupName s.env n := by
+        simp only [State.bind, lookupName_cons_ne v s.env hm]
+      exact hstep.trans hb
 
 /-- The register names a straight-line instruction list reads. -/
 def instrsUses : List Instr → List String
@@ -2490,31 +2772,67 @@ def instrsUses : List Instr → List String
   | i :: is => i.uses ++ instrsUses is
 
 /-- **Consecutive-block transport: a straight-line list.**  A completed
-`denoteCode` at one state transports to any state that agrees on the list's read
+`denoteRun` at one state transports to any state that agrees on the list's read
 set, and the two outcomes agree on that set.  This is `evalInstr_agree` once per
 instruction, with the read set unchanged by the step: every instruction only
-binds a destination, and a destination is not in the list's read set. -/
+binds a destination, and a destination is not in the list's read set.  A leading
+`phi` run transports as one step: its members select at the same snapshot, so
+the bindings it installs are identical on both sides. -/
+theorem denoteRun_agree (calls : Calls) :
+    ∀ (pend : List (String × Value)) (is : List Instr) {ns : List String}
+      {s t s' : State}, State.AgreeOn ns s t →
+      (∀ n ∈ instrsUses is, n ∈ ns) →
+      denoteRun calls pend is s = some s' →
+      ∃ t', denoteRun calls pend is t = some t' ∧ State.AgreeOn ns s' t' := by
+  intro pend is
+  induction is generalizing pend with
+  | nil =>
+      intro ns s t s' h _ hs
+      simp only [denoteRun, Option.some.injEq] at hs
+      subst hs
+      exact ⟨t.bindAll pend,
+        by simp only [denoteRun], State.AgreeOn.bindAll pend h⟩
+  | cons i rest ih =>
+      intro ns s t s' h hread hs
+      have hread_i : ∀ n ∈ Instr.uses i, n ∈ ns :=
+        fun n hn => hread n (List.mem_append_left _ hn)
+      have hread_is : ∀ n ∈ instrsUses rest, n ∈ ns :=
+        fun n hn => hread n (List.mem_append_right _ hn)
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        simp only [denoteRun] at hs
+        cases hsl : phiSelect s inc with
+        | none => simp only [hsl] at hs; cases hs
+        | some v =>
+            simp only [hsl, Option.some.injEq] at hs
+            have hsl' : phiSelect t inc = some v := by
+              rw [← phiSelect_agree h hread_i]; exact hsl
+            have h2 := ih (pend := pend ++ [(d, v)]) h hread_is hs
+            obtain ⟨t1, ht1, hag⟩ := h2
+            exact ⟨t1, by simp only [denoteRun, hsl', ht1], hag⟩
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        rw [denoteRun_cons_of hi] at hs
+        rw [denoteRun_cons_of hi]
+        cases he : evalInstr calls (s.bindAll pend) i with
+        | none => simp only [he] at hs; cases hs
+        | some s1 =>
+            simp only [he, Option.some.injEq] at hs
+            obtain ⟨t1, ht1, hag⟩ :=
+              evalInstr_agree calls (State.AgreeOn.bindAll pend h) hread_i he
+            have h2 := ih (pend := []) hag hread_is hs
+            obtain ⟨t2, ht2, hag2⟩ := h2
+            exact ⟨t2, by simp only [he, ht1, ht2], hag2⟩
+
+/-- **Consecutive-block transport: a straight-line list.** -/
 theorem denoteCode_agree (calls : Calls) (is : List Instr) {ns : List String}
     {s t s' : State} (h : State.AgreeOn ns s t)
     (hread : ∀ n ∈ instrsUses is, n ∈ ns)
     (hs : denoteCode calls is s = some s') :
-    ∃ t', denoteCode calls is t = some t' ∧ State.AgreeOn ns s' t' := by
-  induction is generalizing ns s t s' with
-  | nil =>
-      simp only [denoteCode, Option.some.injEq] at hs
-      cases hs
-      exact ⟨t, rfl, h⟩
-  | cons i is ih =>
-      have hread_i : ∀ n ∈ Instr.uses i, n ∈ ns :=
-        fun n hn => hread n (List.mem_append_left _ hn)
-      have hread_is : ∀ n ∈ instrsUses is, n ∈ ns :=
-        fun n hn => hread n (List.mem_append_right _ hn)
-      simp only [denoteCode] at hs
-      split at hs
-      · cases hs
-      · rename_i s1 hstep
-        obtain ⟨t1, ht1, hag1⟩ := evalInstr_agree calls h hread_i hstep
-        obtain ⟨t2, ht2, hag2⟩ := ih hag1 hread_is hs
-        exact ⟨t2, by simp only [denoteCode, ht1, ht2], hag2⟩
+    ∃ t', denoteCode calls is t = some t' ∧ State.AgreeOn ns s' t' :=
+  denoteRun_agree calls [] is h hread hs
 
 end LeanLLVM

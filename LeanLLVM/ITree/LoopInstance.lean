@@ -61,7 +61,8 @@ theorem done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     simp [loopFunction, Function.findBlock, findBlockList, hpc, doneBlock, doneInstrs,
       condBody, bodyBlock]
   rw [runT_succ, hfind]
-  simp only [doneBlock, doneInstrs, codeT, instrT, evalOperand, hf.accPtr]
+  simp only [doneBlock, doneInstrs, codeT, codeTFrom, State.bindAll, instrT, evalOperand,
+    hf.accPtr]
   refine RawSilentHead.step (RawSilentStep.load 1 (.int 64) _ s.mem (.int 64 acc)
     hf.accLoad (inFrame_one x)) ?_
   simp only [State.bind, termT, execTerm, evalOperand, lookup_bind_self]
@@ -79,7 +80,7 @@ theorem entry_silent (x : BitVec 64) (n : Nat) :
       some { name := "entry", instrs := entryInstrs, term := .br "cond" } := by
     simp [loopFunction, Function.findBlock, findBlockList]
   rw [runT_succ, hpc, hfind]
-  simp only [entryInstrs, codeT]
+  simp only [entryInstrs, codeT, codeTFrom, State.bindAll]
   simp [instrT, pureInstrT, evalInstr, evalOperand, evalBinopNat, evalBinop, Value.intToNat,
     Const.toValue, State.bind, lookupName, storeValue, termT, execTerm, Ty.sizeBytes,
     entryState, initState, List.map, List.zip, List.zipWith, loopFunction, Function.entry?,
@@ -134,7 +135,8 @@ theorem cond_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     · simpa [s3, s2, s1, State.bind] using hf.memBand
   · simp [s3, s2, s1, State.bind, lookupName]
   · rw [runT_succ, hfind]
-    simp only [condBody, condInstrs, codeT, instrT, evalOperand, hf.iPtr]
+    simp only [condBody, condInstrs, codeT, codeTFrom, State.bindAll, instrT, evalOperand,
+      hf.iPtr]
     refine RawSilentHead.step (RawSilentStep.load 9 (.int 64) _ s.mem (.int 64 (BitVec.ofNat 64 k))
       hf.iLoad (inFrame_nine x)) ?_
     simp only [instrT, pureInstrT, e2, termT, hterm]
@@ -297,7 +299,8 @@ theorem body_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
       simp only [s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind]
       exact h2
   · rw [runT_succ, hfind]
-    simp only [bodyBlock, bodyInstrs, codeT, instrT, evalOperand, pureInstrT,
+    simp only [bodyBlock, bodyInstrs, codeT, codeTFrom, State.bindAll, instrT, evalOperand,
+      pureInstrT,
       e1, e2, e3, e4, hl_acc4]
     refine RawSilentHead.step (RawSilentStep.load 1 (.int 64) _ s.mem (.int 64 acc)
       hf.accLoad (inFrame_one x)) ?_
@@ -352,7 +355,8 @@ theorem cond_done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVe
     · simp [s3, s2, s1, State.bind, hf.nextEq]
     · simpa [s3, s2, s1, State.bind] using hf.memBand
   · rw [runT_succ, hfind]
-    simp only [condBody, condInstrs, codeT, instrT, evalOperand, hf.iPtr]
+    simp only [condBody, condInstrs, codeT, codeTFrom, State.bindAll, instrT, evalOperand,
+      hf.iPtr]
     refine RawSilentHead.step (RawSilentStep.load 9 (.int 64) _ s.mem (.int 64 (BitVec.ofNat 64 8))
       hf.iLoad (inFrame_nine x)) ?_
     simp only [instrT, pureInstrT, e2, termT, hterm]
@@ -367,59 +371,53 @@ def NoEvents : Instr → Bool
   | .callVoid _ _ => false
   | _ => true
 
-theorem codeT_eq_of_noEvents (calls : Calls) :
-    ∀ (is : List Instr) (s : State) (k : State → ITree.Tree Ev Outcome) (s' : State),
-      is.all NoEvents = true → denoteCode calls is s = some s' → codeT calls is s k = k s'
-  | [], s, k, s', _, h => by
-      simp only [denoteCode, Option.some.injEq] at h
+theorem codeTFrom_eq_of_noEvents (calls : Calls) :
+    ∀ (is : List Instr) (s : State) (k : State → ITree.Tree Ev Outcome) (s' : State)
+      (pend : List (String × Value)),
+      is.all NoEvents = true → denoteRun calls pend is s = some s' →
+      codeTFrom calls pend is s k = k s'
+  | [], s, k, s', pend, _, h => by
+      simp only [denoteRun, Option.some.injEq] at h
       subst h
       rfl
-  | i :: is, s, k, s', hne, h => by
+  | i :: is, s, k, s', pend, hne, h => by
       simp only [List.all_cons, Bool.and_eq_true] at hne
       obtain ⟨hi, his⟩ := hne
-      simp only [denoteCode] at h
-      split at h
-      · cases h
-      · rename_i s1 heq
-        have hih := codeT_eq_of_noEvents calls is s1 k s' his h
-        cases i with
-        | load d ty p => simp [NoEvents] at hi
-        | store ty v p => simp [NoEvents] at hi
-        | gep d elemTy base off => simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | call d rt c args => simp [NoEvents] at hi
-        | callVoid c args => simp [NoEvents] at hi
-        | binop d op w a b =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | icmp d p w a b =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | icmpPtr d p a b =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | select d ty c a b =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | trunc d wi wo v =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | zext d wi wo v =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | sext d wi wo v =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | icmpVec d p n w a b =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | binopVec d op n w a b =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | bitcastMask d n v =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | extractelement d n w v idx =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | insertelement d n w v elt idx =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | shuffleVec d n w a b mask =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | vecBitcast d n w m jw v =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | phi d ty inc =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
-        | alloca d ty al =>
-            simpa only [codeT, instrT, pureInstrT, heq] using hih
+      cases hflag : i.isPhi with
+      | false =>
+          simp only [denoteRun_cons_of hflag] at h
+          cases heq : evalInstr calls (s.bindAll pend) i with
+          | none => simp only [heq] at h; cases h
+          | some s1 =>
+              simp only [heq] at h
+              rw [codeTFrom_cons_of hflag]
+              cases i with
+              | load d ty p => simp [NoEvents] at hi
+              | store ty v p => simp [NoEvents] at hi
+              | call d rt c args => simp [NoEvents] at hi
+              | callVoid c args => simp [NoEvents] at hi
+              | phi d ty inc => simp only [Instr.isPhi] at hflag; cases hflag
+              | _ =>
+                  simpa only [instrT, pureInstrT, heq] using
+                    codeTFrom_eq_of_noEvents calls is s1 k s' [] his h
+      | true =>
+          cases i with
+          | phi d ty inc =>
+              simp only [denoteRun, codeTFrom] at h ⊢
+              cases hsel : phiSelect s inc with
+              | none => simp only [hsel] at h ⊢; cases h
+              | some v =>
+                  simp only [hsel] at h ⊢
+                  exact codeTFrom_eq_of_noEvents calls is s k s' (pend ++ [(d, v)]) his h
+          | _ => simp only [Instr.isPhi] at hflag; cases hflag
+
+/-- Straight-line code with no memory events is its continuation at the code's
+final state. -/
+theorem codeT_eq_of_noEvents (calls : Calls) (is : List Instr) (s : State)
+    (k : State → ITree.Tree Ev Outcome) (s' : State)
+    (hne : is.all NoEvents = true) (h : denoteCode calls is s = some s') :
+    codeT calls is s k = k s' :=
+  codeTFrom_eq_of_noEvents calls is s k s' [] hne h
 
 /-! ### The loop's seed family
 

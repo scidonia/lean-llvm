@@ -458,9 +458,10 @@ theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String
 
 /-- Peel one instruction from a straight-line block whose effect is known. -/
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp only [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 /-- The baseline body, stage by stage, in the order the instructions bind. -/
 def b1 (s : State) (x : BitVec 64) : State := s.bind "%i" (.int 64 (baseW x))
@@ -555,7 +556,7 @@ theorem baseline_step_entry (calls : Calls) (x : BitVec 64) :
       .jump { initState baselineFunction [.int 64 x] with pc := "bb1", pre := some "bb" } := by
   simp only [step, baselineFunction, baselineEntry, baselineBody, Function.findBlock,
     findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
-    List.map, List.zip, List.zipWith, denoteCode, execTerm, ite_true, argName]
+    List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, execTerm, ite_true, argName]
 
 theorem baseline_step_body (calls : Calls) (s : State) (x : BitVec 64)
     (h0 : lookupName s.env "%arg" = some (.int 64 x)) (hpc : s.pc = "bb1") :
@@ -1091,17 +1092,17 @@ theorem baseline_beh_other (calls : Calls) (a : Value) (rest : List Value)
     refine Or.inl ⟨2, ?_⟩
     simp [runFuel, step, baselineFunction, baselineEntry, baselineBody,
       Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
-      Option.getD, List.map, List.zip, List.zipWith, denoteCode, baselineInstrs, execTerm,
+      Option.getD, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, baselineInstrs, execTerm,
       evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName, hw]
   · refine Or.inl ⟨2, ?_⟩
     simp [runFuel, step, baselineFunction, baselineEntry, baselineBody,
       Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
-      Option.getD, List.map, List.zip, List.zipWith, denoteCode, baselineInstrs, execTerm,
+      Option.getD, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, baselineInstrs, execTerm,
       evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
   · refine Or.inl ⟨2, ?_⟩
     simp [runFuel, step, baselineFunction, baselineEntry, baselineBody,
       Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
-      Option.getD, List.map, List.zip, List.zipWith, denoteCode, baselineInstrs, execTerm,
+      Option.getD, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, baselineInstrs, execTerm,
       evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
 
 /-- The candidate refuses any other argument list in the same way. -/
@@ -1116,17 +1117,17 @@ theorem candidate_beh_other (calls : Calls) (a : Value) (rest : List Value)
     refine Or.inl ⟨1, ?_⟩
     simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
-      List.map, List.zip, List.zipWith, denoteCode, candidateInstrs, evalInstr,
+      List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
       evalOperand, Const.toValue, Value.intToNat, lit, c, argName, hw]
   · refine Or.inl ⟨1, ?_⟩
     simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
-      List.map, List.zip, List.zipWith, denoteCode, candidateInstrs, evalInstr,
+      List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
       evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
   · refine Or.inl ⟨1, ?_⟩
     simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
-      List.map, List.zip, List.zipWith, denoteCode, candidateInstrs, evalInstr,
+      List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
       evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
 
 /-- With no argument the parameter is unbound, so the first instruction is
@@ -1136,7 +1137,7 @@ theorem baseline_beh_nil (calls : Calls) (o : Outcome) :
   refine Or.inl ⟨2, ?_⟩
   simp [runFuel, step, baselineFunction, baselineEntry, baselineBody,
     Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
-    Option.getD, List.zip, denoteCode, baselineInstrs, execTerm,
+    Option.getD, List.zip, denoteCode, denoteRun, State.bindAll, baselineInstrs, execTerm,
     evalInstr, evalOperand, Const.toValue, lit, c, argName, lookupName]
 
 theorem candidate_beh_nil (calls : Calls) (o : Outcome) :
@@ -1144,7 +1145,7 @@ theorem candidate_beh_nil (calls : Calls) (o : Outcome) :
   refine Or.inl ⟨1, ?_⟩
   simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
     findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
-    List.zip, denoteCode, candidateInstrs, evalInstr,
+    List.zip, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
     evalOperand, Const.toValue, lit, c, argName]
 
 /-- The emitted candidate refines the emitted baseline: on an `i64` argument both

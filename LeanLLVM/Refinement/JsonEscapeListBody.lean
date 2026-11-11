@@ -487,7 +487,7 @@ theorem entry_denote (env : Env) (s : State) (bs w0 : BitVec 64) (carry : Nat)
     (bs &&& (BitVec.ofInt 64 1)) w0 (by lk) (by lk))]
   rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_eq64_imm _ s "%tobool.not.i" "%and2.i"
     ((bs &&& (BitVec.ofInt 64 1)) &&& w0) (BitVec.ofInt 64 0) (by lk))]
-  simp only [denoteCode, entryEnv, List.zip_cons_cons, List.zip_nil_right,
+  simp only [denoteCode, denoteRun, State.bindAll, entryEnv, List.zip_cons_cons, List.zip_nil_right,
     List.zip_nil_right, List.cons_append, List.nil_append]
 
 /-- The cells the successor blocks read, out of the entry block's environment. -/
@@ -630,7 +630,7 @@ theorem ifThen_denote (env : Env) (s : State) (bs w1 andI : BitVec 64) (a : Nat)
       (by rfl) (by exact hand4))]
     rw [denoteCode_cons_of _ _ _ _ _ (b_or64 _ s "%or5.i" "%cond.i" "%and.i"
       (BitVec.ofInt 64 1) andI (by lk) (by lk))]
-    simp only [denoteCode, ifThenEnv, ft3, List.zip_cons_cons, List.zip_nil_right,
+    simp only [denoteCode, denoteRun, State.bindAll, ifThenEnv, ft3, List.zip_cons_cons, List.zip_nil_right,
       List.zip_nil_right, List.cons_append, List.nil_append]
     rw [show ifThenCond bs w1 = BitVec.ofInt 64 1 from by
       unfold ifThenCond; exact ite_eq_left h0]
@@ -644,7 +644,7 @@ theorem ifThen_denote (env : Env) (s : State) (bs w1 andI : BitVec 64) (a : Nat)
       (by rfl) (by exact hand4))]
     rw [denoteCode_cons_of _ _ _ _ _ (b_or64 _ s "%or5.i" "%cond.i" "%and.i"
       (bs &&& BitVec.ofInt 64 2) andI (by lk) (by lk))]
-    simp only [denoteCode, ifThenEnv, ft3, List.zip_cons_cons, List.zip_nil_right,
+    simp only [denoteCode, denoteRun, State.bindAll, ifThenEnv, ft3, List.zip_cons_cons, List.zip_nil_right,
       List.zip_nil_right, List.cons_append, List.nil_append]
     rw [show ifThenCond bs w1 = bs &&& BitVec.ofInt 64 2 from by
       unfold ifThenCond; exact ite_eq_right h0]
@@ -730,8 +730,9 @@ theorem ifEnd_denote (env : Env) (s : State) (bs e0 : BitVec 64) (p : String) (o
     denoteCode escapeCalls lstIfEnd.instrs (withEnv env s) =
       some (withEnv (ie13 env bs e0) s) := by
   rw [lstIfEnd_instrs]
-  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_phi hpre hinc hop)]
-  rw [show (withEnv env s).bind "%e.0.i" (.int 64 e0) = withEnv (ie1 env bs e0) s from rfl]
+  rw [phiRun_one escapeCalls env s "%e.0.i" (.int 64) _ _ hpre hinc hop]
+  all_goals (first | rfl | decide | skip)
+  rw [show withEnv (("%e.0.i", .int 64 e0) :: env) s = withEnv (ie1 env bs e0) s from rfl]
   rw [denoteCode_cons_of _ _ _ _ _ (b_and64 _ s "%and7.i" "%shl.i" "%bs" (bs <<< 1) bs (by ie_simp; lk) (by ie_simp; lk))]
   rw [show withEnv (("%and7.i", .int 64 ((bs <<< 1) &&& bs)) :: ie1 env bs e0) s = withEnv (ie2 env bs e0) s from rfl]
   rw [denoteCode_cons_of _ _ _ _ _ (b_shl64_two _ s "%shl8.i" "%e.0.i" e0 (by ie_simp; lk))]
@@ -756,7 +757,7 @@ theorem ifEnd_denote (env : Env) (s : State) (bs e0 : BitVec 64) (p : String) (o
   rw [show withEnv (("%and17.i", .int 64 (em10 bs e0 &&& em1 bs e0)) :: ie11 env bs e0) s = withEnv (ie12 env bs e0) s from rfl]
   rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_eq64_imm _ s "%cmp.not.i" "%and17.i" (em11 bs e0) (BitVec.ofInt 64 0) (by ie_simp; lk))]
   rw [show withEnv (("%cmp.not.i", .int 1 (evalICmp .eq (em11 bs e0) (BitVec.ofInt 64 0))) :: ie12 env bs e0) s = withEnv (ie13 env bs e0) s from rfl]
-  simp only [denoteCode]
+  simp only [denoteCode, denoteRun, State.bindAll]
 
 /-! ### The seed, as the three blocks compute it
 

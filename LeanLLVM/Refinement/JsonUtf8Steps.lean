@@ -2247,9 +2247,17 @@ theorem utf8Ungated_body (env : Env) (s : State) (b nb bi : Nat) (acc : List UIn
   case hrun =>
     simp only [utf8ForBody, reg, lit, splatOf, lanesOf, highBitMask, JsonUtf8IR.pshufb,
       JsonUtf8IR.usubSat]
-    ent_step (utf8_phi env s "%u8k.076" v4i64 _ p opA (.vec 4 64 u8k) hpre hincA hopA)
-    ent_step (utf8_phi (("%u8k.076", .vec 4 64 u8k) :: env) s "%bi.075" (.int 64) _ p opB
-      (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+    have hmemB : ("%u8k.076" : String) ∉ Operand.regs opB := by
+      have hm := phiIncoming_mem hincB
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    have hopB' : evalOperand (withEnv env s) opB = some (.int 64 (BitVec.ofNat 64 bi)) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%u8k.076") (v := .vec 4 64 u8k) (op := opB) hmemB]
+      exact hopB
+    rw [denoteCode_phi2 _ _ _ _ _ _ _ _ _ _ hpre hincA hopA hincB hopB']
+    all_goals (first | rfl | decide | skip)
     ent_step (utf8_step_shl _ _ "%shl" "%bi.075" 64 (BitVec.ofNat 64 bi) (BitVec.ofInt 64 6)
       (by ent_auto))
     rw [shl64_six bi (by omega)]
@@ -2616,9 +2624,8 @@ theorem utf8Reduce (env : Env) (s : State) (p : String) (op : Operand)
   refine ⟨?env', ?hrun, ?h36, ?h16, ?h19, ?hcond⟩
   case hrun =>
     simp only [utf8Cleanup, reg, lit, splatOf, JsonUtf8IR.ptestz]
-    ent_step (utf8_phi _ _ "%u8k.0.lcssa" v4i64
-      [("entry", .imm (.splat 4 64 (BitVec.ofInt 64 0))), ("if.end14.us", .reg "%u8k.2.us"),
-        ("for.body", .reg "%or.i47")] p op (.vec 4 64 u8k) hpre hinc hop)
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre hinc hop]
+    all_goals (first | rfl | decide | skip)
     ent_step (utf8_step_ptestz _ _ "%36" "%u8k.0.lcssa" (.reg "%u8k.0.lcssa") u8k u8k
       (by simp only [withEnv, evalOperand]; ent_auto) hu8klen (by ent_auto) hu8klen)
     ent_step (utf8_step_icmp_eq_imm _ _ "%tobool16.not" "%36" 32 _ (BitVec.ofInt 32 0)
@@ -2677,11 +2684,8 @@ theorem utf8Return (env : Env) (s : State) (p : String) (op : Operand) (e : BitV
   refine ⟨?env', ?hrun, ?hval⟩
   case hrun =>
     simp only [utf8End24, reg]
-    ent_step (utf8_phi _ _ "%err.0.in" (.int 1)
-      [("if.then20", .reg "%or2373"), ("for.cond.cleanup", .reg "%tobool16.not")] p op
-      (.int 1 e) hpre hinc hop)
-    ent_step (utf8_step_zext _ _ "%err.0" "%err.0.in" 1 64 e (by ent_auto))
-    rfl
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre hinc hop]
+    all_goals (first | rfl | decide | skip)
   case hval => ent_auto
 
 /-! ### The blocks around the two loops
@@ -2789,17 +2793,37 @@ theorem utf8ForBodyUs_run (env : Env) (s : State) (p : String) (opP opU opB : Op
   refine ⟨?env', ?hrun, ?hP, ?hU, ?hB, ?hptr, ?h0', ?h1', ?h2, ?hcond⟩
   case hrun =>
     simp only [utf8ForBodyUs, reg, lit, splatOf, highBitMask, JsonUtf8IR.ptestz]
-    ent_step (utf8_phi env s "%prev_ascii.077.us" (.int 32)
-      [("if.end14.us", .reg "%2"), ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))]
-      p opP (.int 32 prev) hpre hincP hopP)
-    ent_step (utf8_phi (("%prev_ascii.077.us", .int 32 prev) :: env) s "%u8k.076.us" v4i64
-      [("if.end14.us", .reg "%u8k.2.us"),
-        ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))]
-      p opU (.vec 4 64 u8kIn) hpre hincU hopU)
-    ent_step (utf8_phi (("%u8k.076.us", .vec 4 64 u8kIn) ::
-      ("%prev_ascii.077.us", .int 32 prev) :: env) s "%bi.075.us" (.int 64)
-      [("if.end14.us", .reg "%inc.us"), ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))]
-      p opB (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+    have hmemU : ("%prev_ascii.077.us" : String) ∉ Operand.regs opU := by
+      have hm := phiIncoming_mem hincU
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    have hopU' : evalOperand (withEnv env s) opU = some (.vec 4 64 u8kIn) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%prev_ascii.077.us") (v := .int 32 prev) (op := opU) hmemU]
+      exact hopU
+    have hmemB1 : ("%u8k.076.us" : String) ∉ Operand.regs opB := by
+      have hm := phiIncoming_mem hincB
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    have hmemB2 : ("%prev_ascii.077.us" : String) ∉ Operand.regs opB := by
+      have hm := phiIncoming_mem hincB
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    have hopB1 : evalOperand (withEnv (("%prev_ascii.077.us", .int 32 prev) :: env) s) opB
+        = some (.int 64 (BitVec.ofNat 64 bi)) := by
+      rw [← evalOperand_withEnv_cons_of_ne
+        (env := ("%prev_ascii.077.us", .int 32 prev) :: env) (s := s)
+        (n := "%u8k.076.us") (v := .vec 4 64 u8kIn) (op := opB) hmemB1]
+      exact hopB
+    have hopB' : evalOperand (withEnv env s) opB = some (.int 64 (BitVec.ofNat 64 bi)) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%prev_ascii.077.us") (v := .int 32 prev) (op := opB) hmemB2]
+      exact hopB1
+    rw [denoteCode_phi3 _ _ _ _ _ _ _ _ _ _ _ _ _ hpre hincP hopP hincU hopU' hincB hopB']
+    all_goals (first | rfl | decide | skip)
     ent_step (utf8_step_shl _ _ "%shl.us" "%bi.075.us" 64 (BitVec.ofNat 64 bi)
       (BitVec.ofInt 64 6) (by ent_auto))
     rw [shl64_six bi (by omega)]
@@ -2860,9 +2884,8 @@ theorem utf8EndUs_run (env : Env) (s : State) (p : String) (op : Operand)
   refine ⟨?env', ?hrun, ?hU, ?hI, ?hE⟩
   case hrun =>
     simp only [utf8EndUs, reg, lit]
-    ent_step (utf8_phi _ _ "%u8k.2.us" v4i64
-      [("for.body.us", .reg "%u8k.076.us"), ("if.then11.us", .reg "%or.i.us")]
-      p op (.vec 4 64 u8k) hpre hinc hop)
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre hinc hop]
+    all_goals (first | rfl | decide | skip)
     ent_step (utf8_step_add _ _ "%inc.us" "%bi.075.us" 64 (BitVec.ofNat 64 bi)
       (BitVec.ofInt 64 1) (by ent_auto))
     ent_step (utf8_step_icmp_eq _ _ "%exitcond79.not" "%inc.us" "%div44" 64 _ _
@@ -4181,17 +4204,37 @@ theorem utf8ForBodyUs_denote_none (env : Env) (s : State) (p : String)
     (hbi64 : 64 * bi < 2 ^ 63) :
     denoteCode utf8Calls utf8ForBodyUs.instrs (withEnv env s) = none := by
   simp only [utf8ForBodyUs, reg, lit, splatOf, highBitMask, JsonUtf8IR.ptestz]
-  ent_step (utf8_phi env s "%prev_ascii.077.us" (.int 32)
-    [("if.end14.us", .reg "%2"), ("for.body.lr.ph", .imm (.int 32 (BitVec.ofInt 32 1)))]
-    p opP (.int 32 prev) hpre hincP hopP)
-  ent_step (utf8_phi (("%prev_ascii.077.us", .int 32 prev) :: env) s "%u8k.076.us" v4i64
-    [("if.end14.us", .reg "%u8k.2.us"),
-      ("for.body.lr.ph", .imm (.splat 4 64 (BitVec.ofInt 64 0)))]
-    p opU (.vec 4 64 u8kIn) hpre hincU hopU)
-  ent_step (utf8_phi (("%u8k.076.us", .vec 4 64 u8kIn) ::
-    ("%prev_ascii.077.us", .int 32 prev) :: env) s "%bi.075.us" (.int 64)
-    [("if.end14.us", .reg "%inc.us"), ("for.body.lr.ph", .imm (.int 64 (BitVec.ofInt 64 0)))]
-    p opB (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+  have hmemU : ("%prev_ascii.077.us" : String) ∉ Operand.regs opU := by
+    have hm := phiIncoming_mem hincU
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hopU' : evalOperand (withEnv env s) opU = some (.vec 4 64 u8kIn) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+      (n := "%prev_ascii.077.us") (v := .int 32 prev) (op := opU) hmemU]
+    exact hopU
+  have hmemB1 : ("%u8k.076.us" : String) ∉ Operand.regs opB := by
+    have hm := phiIncoming_mem hincB
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hmemB2 : ("%prev_ascii.077.us" : String) ∉ Operand.regs opB := by
+    have hm := phiIncoming_mem hincB
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hopB1 : evalOperand (withEnv (("%prev_ascii.077.us", .int 32 prev) :: env) s) opB
+      = some (.int 64 (BitVec.ofNat 64 bi)) := by
+    rw [← evalOperand_withEnv_cons_of_ne
+      (env := ("%prev_ascii.077.us", .int 32 prev) :: env) (s := s)
+      (n := "%u8k.076.us") (v := .vec 4 64 u8kIn) (op := opB) hmemB1]
+    exact hopB
+  have hopB' : evalOperand (withEnv env s) opB = some (.int 64 (BitVec.ofNat 64 bi)) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+      (n := "%prev_ascii.077.us") (v := .int 32 prev) (op := opB) hmemB2]
+    exact hopB1
+  rw [denoteCode_phi3 _ _ _ _ _ _ _ _ _ _ _ _ _ hpre hincP hopP hincU hopU' hincB hopB']
+  all_goals (first | rfl | decide | skip)
   ent_step (utf8_step_shl _ _ "%shl.us" "%bi.075.us" 64 (BitVec.ofNat 64 bi)
     (BitVec.ofInt 64 6) (by ent_auto))
   rw [shl64_six bi (by omega)]
@@ -4250,9 +4293,17 @@ theorem utf8ForBody_denote_none (env : Env) (s : State) (b bi : Nat)
     denoteCode utf8Calls utf8ForBody.instrs (withEnv env s) = none := by
   simp only [utf8ForBody, reg, lit, splatOf, lanesOf, highBitMask, JsonUtf8IR.pshufb,
     JsonUtf8IR.usubSat]
-  ent_step (utf8_phi env s "%u8k.076" v4i64 _ p opA (.vec 4 64 u8k) hpre hincA hopA)
-  ent_step (utf8_phi (("%u8k.076", .vec 4 64 u8k) :: env) s "%bi.075" (.int 64) _ p opB
-    (.int 64 (BitVec.ofNat 64 bi)) hpre hincB hopB)
+  have hmemB : ("%u8k.076" : String) ∉ Operand.regs opB := by
+    have hm := phiIncoming_mem hincB
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hopB' : evalOperand (withEnv env s) opB = some (.int 64 (BitVec.ofNat 64 bi)) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+      (n := "%u8k.076") (v := .vec 4 64 u8k) (op := opB) hmemB]
+    exact hopB
+  rw [denoteCode_phi2 _ _ _ _ _ _ _ _ _ _ hpre hincA hopA hincB hopB']
+  all_goals (first | rfl | decide | skip)
   ent_step (utf8_step_shl _ _ "%shl" "%bi.075" 64 (BitVec.ofNat 64 bi) (BitVec.ofInt 64 6)
     (by ent_auto))
   rw [shl64_six bi (by omega)]
@@ -7164,10 +7215,12 @@ that a caller splitting on `n` discharges the same obligations on either side.
 The headline's other two bounds are absent because `n = 0` settles them outright
 (`0 + 63 < 2 ^ 64`, `0 < 2 ^ 63`), and `hpos` is absent because it is false.
 
-Footprint: `[propext, Quot.sound]` — no `Classical.choice`, since the entry's
-`%n` lookup is read through `lookupName_initState_utf8` and the two phi edges
-through `decide` rather than through the `simp` route that decides a string
-disequality by `String.ofList_injective`. -/
+Footprint: `[propext, Quot.sound]`.  The run's split on "this instruction is a
+`phi`" is the explicit `isPhi` decision rather than a `by_cases` over an
+undecidable existential, so no classical carrier arrives through
+`denoteCode_lookupName`.  The entry's `%n` lookup itself is still read through
+`lookupName_initState_utf8` and the phi edges through `decide`, not through the
+`simp` route that decides a string disequality by `String.ofList_injective`. -/
 theorem utf8_stage_refines_zero
     (bs : LeanLLVM.JSON.Bytes) (n nb : Nat) (mem : Mem) (b : Nat) (ungated : Bool)
     (hn : n = bs.length) (hnb : nb = (n + 63) / 64)

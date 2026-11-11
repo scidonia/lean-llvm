@@ -131,12 +131,12 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
       cases htp : t.pre with
       | none =>
           have hsn : s.pre = none := hpre.trans htp
-          simp [evalInstr, hsn, htp, OptStateRel]
+          simp [evalInstr, phiSelect, hsn, htp, OptStateRel]
       | some p =>
           cases hinc : phiIncoming p inc with
-          | none => simp [evalInstr, htp, hinc, hpre]
+          | none => simp [evalInstr, phiSelect, htp, hinc, hpre]
           | some op =>
-              simp only [evalInstr, htp, hinc, hpre]
+              simp only [evalInstr, phiSelect, htp, hinc, hpre]
               rw [evalOperand_env_eq henv op]
               cases evalOperand t op <;>
                 simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
@@ -361,29 +361,95 @@ theorem noAlloca_block {f : Function} (hf : allocaFree f = true) {b : Block}
   exact hb' i hi
 
 set_option linter.unusedSimpArgs false in
-theorem denoteCode_next_irr {calls : Calls} (hcalls : CallsNextIrr calls) :
-    ∀ (is : List Instr) {s t : State}, SameApartFromNext s t →
+/-- Selection reads the same at two states that agree on the predecessor field and
+the environment: it is a function of those two and of nothing else. -/
+theorem phiSelect_sameApartFromNext {s t : State} (h : SameApartFromNext s t)
+    (inc : List (String × Operand)) : phiSelect s inc = phiSelect t inc := by
+  obtain ⟨henv, _, _, hpre⟩ := h
+  cases htp : t.pre with
+  | none =>
+      have hsn : s.pre = none := hpre.trans htp
+      simp only [phiSelect, hsn, htp]
+  | some p =>
+      have hsp : s.pre = some p := hpre.trans htp
+      cases hinc : phiIncoming p inc with
+      | none => simp only [phiSelect, hsp, htp, hinc]
+      | some op =>
+          simp only [phiSelect, hsp, htp, hinc]
+          exact evalOperand_env_eq henv op
+
+/-- Installing the same bindings on two states that agree installs them on
+states that agree: only the environment moves, and it moves the same way. -/
+theorem bindAll_sameApartFromNext {s t : State} (h : SameApartFromNext s t) :
+    ∀ bs : List (String × Value), SameApartFromNext (s.bindAll bs) (t.bindAll bs)
+  | [] => h
+  | (n, v) :: rest => by
+      obtain ⟨henv, hmem, hpc, hpre⟩ := h
+      have hb : SameApartFromNext (s.bind n v) (t.bind n v) :=
+        ⟨by simp only [State.bind, henv], hmem, hpc, hpre⟩
+      exact bindAll_sameApartFromNext hb rest
+
+/-- A list whose head reports itself as a `phi` is one: the flag is decided by the
+constructor, so the witness is the instruction itself. -/
+theorem exists_phi_of_isPhi {i : Instr} (h : i.isPhi = true) :
+    ∃ (d : String) (ty : Ty) (inc : List (String × Operand)), i = .phi d ty inc := by
+  cases i with
+  | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+  | _ => simp only [Instr.isPhi] at h; cases h
+
+set_option linter.unusedSimpArgs false in
+/-- The run's outcome is independent of the allocator, at every point a leading
+`phi` run can be in: the pending bindings are the same on both sides, a `phi`
+selects the same value from both, and a stepped instruction lands in two states
+that agree again. -/
+theorem denoteRun_next_irr {calls : Calls} (hcalls : CallsNextIrr calls) :
+    ∀ (is : List Instr) (pend : List (String × Value)) {s t : State},
+      SameApartFromNext s t →
       (∀ i ∈ is, HasAlloca i = false) →
-      OptStateRel (denoteCode calls is s) (denoteCode calls is t)
-  | [], s, t, h, _ => by simpa only [denoteCode, OptStateRel] using h
-  | i :: rest, s, t, h, hno => by
+      OptStateRel (denoteRun calls pend is s) (denoteRun calls pend is t)
+  | [], pend, s, t, h, _ => by
+      simp only [denoteRun, OptStateRel]
+      exact bindAll_sameApartFromNext h pend
+  | i :: rest, pend, s, t, h, hno => by
       have hi : HasAlloca i = false := hno i (by simp)
       have hrest : ∀ j ∈ rest, HasAlloca j = false := by
         intro j hj; exact hno j (by simp [hj])
-      have hstep := evalInstr_next_irr hcalls h i hi
-      cases hsi : evalInstr calls s i with
-      | none =>
-          have hti : evalInstr calls t i = none := by
-            rw [hsi] at hstep
-            exact OptStateRel_none.mp hstep
-          simp only [denoteCode, hsi, hti, OptStateRel]
-      | some s' =>
-          have hti : ∃ t', evalInstr calls t i = some t' ∧ SameApartFromNext s' t' := by
-            rw [hsi] at hstep
-            exact OptStateRel_some.mp hstep
-          obtain ⟨t', hti', hrel⟩ := hti
-          simp only [denoteCode, hsi, hti']
-          exact denoteCode_next_irr hcalls rest hrel hrest
+      have hbp : SameApartFromNext (s.bindAll pend) (t.bindAll pend) :=
+        bindAll_sameApartFromNext h pend
+      cases hflag : i.isPhi with
+      | false =>
+          have hstep := evalInstr_next_irr hcalls hbp i hi
+          rw [denoteRun_cons_of hflag, denoteRun_cons_of hflag]
+          cases hsi : evalInstr calls (s.bindAll pend) i with
+          | none =>
+              have hti : evalInstr calls (t.bindAll pend) i = none := by
+                rw [hsi] at hstep
+                exact OptStateRel_none.mp hstep
+              simp only [hsi, hti, OptStateRel]
+          | some s' =>
+              have hti : ∃ t', evalInstr calls (t.bindAll pend) i = some t' ∧
+                  SameApartFromNext s' t' := by
+                rw [hsi] at hstep
+                exact OptStateRel_some.mp hstep
+              obtain ⟨t', hti', hrel⟩ := hti
+              simp only [hsi, hti']
+              exact denoteRun_next_irr hcalls rest [] hrel hrest
+      | true =>
+          obtain ⟨d, ty, inc, rfl⟩ := exists_phi_of_isPhi hflag
+          have hsel : phiSelect s inc = phiSelect t inc := phiSelect_sameApartFromNext h inc
+          simp only [denoteRun, hsel]
+          cases hsl : phiSelect t inc with
+          | none => simp only [hsl, OptStateRel]
+          | some v =>
+              simp only [hsl]
+              exact denoteRun_next_irr hcalls rest (pend ++ [(d, v)]) h hrest
+
+set_option linter.unusedSimpArgs false in
+theorem denoteCode_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
+    (is : List Instr) {s t : State} (h : SameApartFromNext s t)
+    (hno : ∀ i ∈ is, HasAlloca i = false) :
+    OptStateRel (denoteCode calls is s) (denoteCode calls is t) :=
+  denoteRun_next_irr hcalls is [] h hno
 
 set_option linter.unusedSimpArgs false in
 theorem step_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)

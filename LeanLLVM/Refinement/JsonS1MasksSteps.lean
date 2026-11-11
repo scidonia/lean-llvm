@@ -142,9 +142,10 @@ open LeanLLVM.Refinement.Pclmul (clmul seedVec specInString64_eq_clmul)
 /-- Straight-line composition: an instruction that resolves to a state leaves the
 rest of the list to be run from it. -/
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 /-- A state seen as its environment: the composition's subject.  Everything a step
 does not touch — memory, the allocator cursor, the block, the predecessor — is
@@ -3163,8 +3164,9 @@ theorem readBytes_second_none {m : Mem} {addr : Nat} {a : List UInt8}
 
 /-- A `denoteCode` step whose instruction is undefined is undefined. -/
 theorem denoteCode_cons_none (calls : Calls) (i : Instr) (is : List Instr) (s : State)
-    (h : evalInstr calls s i = none) : denoteCode calls (i :: is) s = none := by
-  simp only [denoteCode, h]
+    (h : evalInstr calls s i = none) (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = none :=
+  LeanLLVM.denoteCode_cons_none calls i is s h hi
 
 /-- The unit's instruction list, at its first three instructions: the two block
 loads and the address between them, split off the rest. -/

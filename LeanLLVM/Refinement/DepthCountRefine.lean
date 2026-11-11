@@ -60,6 +60,17 @@ def entryInstrs : List Instr :=
 
 def entryTerm : Term := .condbr (.reg "%nz") "exit0" "loop"
 
+/-- The block's leading `phi` run, one spec per member. -/
+def specK : PhiSpec :=
+  { dst := "%k", ty := .int 64,
+    incoming := [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%kn")] }
+def specSP : PhiSpec :=
+  { dst := "%sp", ty := .int 64,
+    incoming := [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%spn")] }
+def specSUM : PhiSpec :=
+  { dst := "%sum", ty := .int 64,
+    incoming := [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%sumn")] }
+
 def loopInstrs : List Instr :=
   [ .phi "%k" (.int 64) [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%kn")],
     .phi "%sp" (.int 64) [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%spn")],
@@ -82,6 +93,10 @@ def loopInstrs : List Instr :=
     .binop "%sumn" .add 64 (.reg "%sum") (.reg "%spn"),
     .binop "%kn" .add 64 (.reg "%k") (.imm (.int 64 (BitVec.ofNat 64 1))),
     .icmp "%more" .ult 64 (.reg "%kn") (.reg "%nidx") ]
+
+/-- The block's leading `phi` run splits off: one spec per member. -/
+theorem loopInstrs_split :
+    loopInstrs = [specK, specSP, specSUM].map PhiSpec.instr ++ List.drop 3 loopInstrs := rfl
 
 def loopTerm : Term := .condbr (.reg "%more") "loop" "exit"
 
@@ -260,9 +275,10 @@ theorem bytesToNat_single (t : UInt8) : bytesToNat [t] = t.toNat := by
 
 /-- Execute a straight-line instruction sequence. -/
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp only [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 theorem evalInstr_icmp8 (calls : Calls) (s : State) (d r : String) (b v : BitVec 8)
     (h : lookupName s.env r = some (.int 8 b)) :
@@ -882,12 +898,41 @@ theorem loop_body (calls : Calls) (s : State) (pidx pbuf : Nat) (n k : Nat)
               lookupName s.env "%spn" = some (.int 64 sp) ∧
               lookupName s.env "%sumn" = some (.int 64 sum))) :
     denoteCode calls loopInstrs s = some (c21 s pidx pbuf n k sp sum a t) := by
-  rw [show loopInstrs = (.phi "%k" (.int 64) [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%kn")]) :: List.drop 1 loopInstrs from rfl]
-  rw [denoteCode_cons_of _ _ _ _ _ (step01 calls s pidx pbuf n k sp sum a t hn hk hidx hbuf hnidx hread hafit htok hphi)]
-  rw [show List.drop 1 loopInstrs = (.phi "%sp" (.int 64) [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%spn")]) :: List.drop 2 loopInstrs from rfl]
-  rw [denoteCode_cons_of _ _ _ _ _ (step02 calls s pidx pbuf n k sp sum a t hn hk hidx hbuf hnidx hread hafit htok hphi)]
-  rw [show List.drop 2 loopInstrs = (.phi "%sum" (.int 64) [("entry", .imm (.int 64 (BitVec.ofNat 64 0))), ("loop", .reg "%sumn")]) :: List.drop 3 loopInstrs from rfl]
-  rw [denoteCode_cons_of _ _ _ _ _ (step03 calls s pidx pbuf n k sp sum a t hn hk hidx hbuf hnidx hread hafit htok hphi)]
+  -- the block's leading run of three phis: one snapshot, three bindings
+  obtain ⟨p, hpre⟩ : ∃ p, s.pre = some p := by
+    rcases hphi with ⟨h, _⟩ | ⟨h, _⟩ <;> exact ⟨_, h⟩
+  have hsel : PhiSelects s p [specK, specSP, specSUM]
+      [("%k", Vk k), ("%sp", Vs sp), ("%sum", Vs sum)] := by
+    rcases hphi with ⟨hE, hk0, hsp0, hsum0⟩ | ⟨hL, hkn, hspn, hsumn⟩
+    · have hp : p = "entry" := by
+        rw [hE] at hpre
+        exact (Option.some.inj hpre).symm
+      subst hp
+      subst hk0
+      subst hsp0
+      subst hsum0
+      refine PhiSelects.cons (op := .imm (.int 64 (BitVec.ofNat 64 0)))
+        (by simp [specK, phiIncoming]) (by rfl)
+        (PhiSelects.cons (op := .imm (.int 64 (BitVec.ofNat 64 0)))
+          (by simp [specSP, phiIncoming]) (by rfl)
+          (PhiSelects.cons (op := .imm (.int 64 (BitVec.ofNat 64 0)))
+            (by simp [specSUM, phiIncoming]) (by rfl) PhiSelects.nil))
+    · have hp : p = "loop" := by
+        rw [hL] at hpre
+        exact (Option.some.inj hpre).symm
+      subst hp
+      refine PhiSelects.cons (op := .reg "%kn") (by simp [specK, phiIncoming]) ?_
+        (PhiSelects.cons (op := .reg "%spn") (by simp [specSP, phiIncoming]) ?_
+          (PhiSelects.cons (op := .reg "%sumn") (by simp [specSUM, phiIncoming]) ?_ PhiSelects.nil))
+      · simp [evalOperand, Vk, hkn]
+      · simp [evalOperand, Vs, hspn]
+      · simp [evalOperand, Vs, hsumn]
+  rw [loopInstrs_split,
+    denoteCode_phiRun (specs := [specK, specSP, specSUM])
+      (vs := [("%k", Vk k), ("%sp", Vs sp), ("%sum", Vs sum)])
+      (rest := List.drop 3 loopInstrs) hpre hsel (by rfl)]
+  change denoteCode calls (List.drop 3 loopInstrs) (c3 s pidx pbuf n k sp sum a t) =
+    some (c21 s pidx pbuf n k sp sum a t)
   rw [show List.drop 3 loopInstrs = (.gep "%ip" (.int 32) (.reg "%idx") (.reg "%k")) :: List.drop 4 loopInstrs from rfl]
   rw [denoteCode_cons_of _ _ _ _ _ (step04 calls s pidx pbuf n k sp sum a t hn hk hidx hbuf hnidx hread hafit htok)]
   rw [show List.drop 4 loopInstrs = (.load "%p32" (.int 32) (.reg "%ip")) :: List.drop 5 loopInstrs from rfl]
@@ -1020,7 +1065,7 @@ theorem entry_body (calls : Calls) (s : State) (n : Nat)
     denoteCode calls entryInstrs s = some (e1 s n) := by
   rw [show entryInstrs =
     [.icmp "%nz" .eq 64 (.reg "%nidx") (.imm (.int 64 (BitVec.ofNat 64 0)))] from rfl]
-  simp [denoteCode, evalInstr_icmp64_eq calls s "%nz" "%nidx"
+  simp [denoteCode, denoteRun, State.bindAll, evalInstr_icmp64_eq calls s "%nz" "%nidx"
     (BitVec.ofNat 64 n) (BitVec.ofNat 64 0) hnidx, e1, Ve]
 
 /-- `%nz` is one at `n = 0`. -/

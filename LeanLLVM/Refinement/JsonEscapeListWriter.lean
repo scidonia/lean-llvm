@@ -561,34 +561,34 @@ theorem lstIfEnd4_run (env : Env) (s : State) (esc : BitVec 64) (base : BitVec 3
   rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ugt64_imm _ _ "%cmp.i.i" "%12" _
     (BitVec.ofInt 64 8) (by b_lk (by b_lk (lookupName_cons_ne _ _ (by decide)))))]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · simp only [denoteCode, Option.map_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.map_some, withEnv]
     rw [lstIfEnd4_count_compose, lstIfEnd4_count_bytes]
     simp [lstIfEnd4Mem, wordBytes, inlWrites, inlBytes, batchCast, batchChain]
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk_count
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     rw [lookupName_cons_self] <;> rfl
 
 
@@ -1491,14 +1491,18 @@ theorem lstWhileBody_run (env : Env) (s : State) (w : BitVec 64) (base : BitVec 
       (denoteCode (escapeListCalls Γ_xl_batch) lstWhileBody.instrs (withEnv env s)).bind
           (fun st => lookupName st.env "%xn") = lookupName env "%xn" := by
   rw [lstWhileBody_instrs]
-  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
-    (evalInstr_phi (s := withEnv env s) hpre hoo hvo)]
-  rw [show (withEnv env s).bind "%o.044.i.i" (.ptr o) = withEnv (("%o.044.i.i", .ptr o) :: env) s
-    from rfl]
-  rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
-    (evalInstr_phi (s := withEnv (("%o.044.i.i", .ptr o) :: env) s) hpre hoc hvc)]
-  rw [show (withEnv (("%o.044.i.i", .ptr o) :: env) s).bind "%c.143.i.i" (.int 64 w) =
-    withEnv (("%c.143.i.i", .int 64 w) :: ("%o.044.i.i", .ptr o) :: env) s from rfl]
+  have hmemC : ("%o.044.i.i" : String) ∉ Operand.regs oc := by
+    have hm := phiIncoming_mem hoc
+    simp only [lstWhileIncomingC, List.map_cons, List.map_nil, List.mem_cons,
+      List.not_mem_nil, or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hvc' : evalOperand (withEnv env s) oc = some (.int 64 w) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s) (n := "%o.044.i.i")
+      (v := .ptr o) (op := oc) hmemC]
+    exact hvc
+  rw [phiRun_two (escapeListCalls Γ_xl_batch) env s "%o.044.i.i" (.ptr) _ "%c.143.i.i"
+    (.int 64) _ _ hpre hoo hvo hoc hvc']
+  all_goals (first | rfl | decide | skip)
   rw [denoteCode_cons_of (escapeListCalls Γ_xl_batch) _ _ _ _
     (b_call_batch _ _ "%call7.i.i" "%c.143.i.i" "%o.044.i.i" w base o
       (by b_lk lookupName_cons_self) (by b_lk hconv)
@@ -1588,25 +1592,25 @@ theorem lstWhileBody_run (env : Env) (s : State) (w : BitVec 64) (base : BitVec 
     (wb_icmp_eq64_imm _ _ _ "%tobool6.not.i.i" "%and18.7.i.i" _
       (BitVec.ofInt 64 0) (by b_lk (by b_lk lookupName_cons_self)))]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · simp only [denoteCode, Option.map_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.map_some, withEnv]
     rw [show (BitVec.ofNat 64 c0 +
           BitVec.ofNat 64 (umin (BitVec.ofNat 32 (ctpop w)) (BitVec.ofNat 32 8)).toNat).toNat =
         (c0 + lstBatchCount w) % 2 ^ 64 from by
       rw [ofNat64_add, BitVec.toNat_ofNat]
       rfl,
       natToBytes_mod_two_pow]
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
     rw [Nat.mul_comm]
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     rw [lookupName_cons_self]
     simp only [cSt8, cSt]
-  · simp only [denoteCode, Option.bind_some, withEnv]
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
-  · simp only [denoteCode, Option.bind_some, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.bind_some, withEnv]
     ie4_lk
 
 /-- One block's step at an arbitrary call environment. -/

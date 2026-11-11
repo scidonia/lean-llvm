@@ -582,7 +582,7 @@ macro "pipeline_block_step" : tactic => `(tactic|
 a literal index leaves `(c.signExtend 64).toNat < 2 ^ 63`, a concrete comparison
 that `block_close`'s phases have no decision step for. -/
 macro "pipeline_block_close" : tactic => `(tactic|
-  (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode]))
+  (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode, denoteRun, State.bindAll]))
    all_goals (try rfl)
    all_goals (try (first
      | assumption
@@ -1806,7 +1806,10 @@ rather than about this pipeline:
 * `denoteCode_pc`: a block's instructions leave the program counter alone.  The
   transport relation does not carry the counter, and `step` reads it — the
   jump it produces writes `pre := some s.pc` — so the successor's predecessor
-  field is only pinned once the counter is.
+  field is only pinned once the counter is.  The proof is stated for `denoteRun`
+  at any pending `phi` run (`denoteRun_pc`), because a block's list may open
+  with one: a `phi` member reads the state and installs nothing until the run
+  ends, so the counter is the one the block was entered with.
 * `blockUses`: the names a trace must be transported over are the block's
   instruction read set **together with its terminator's operand**.  The
   terminator is evaluated at the state the block leaves, and it is the branch
@@ -1843,19 +1846,43 @@ theorem evalInstr_pc {calls : Calls} {s s' : State} {i : Instr}
     | (rcases h with ⟨a, -, rfl⟩; rfl)
     | (exact storeValue_pc h)
 
+/-- **A run leaves the program counter alone**, whatever `phi` run it has
+pending.  A `phi` member reads the state it was given and installs nothing until
+the run ends, so the state the run continues from is the one that arrived; a
+non-`phi` installs the run so far and neither reads nor writes the block; and an
+exhausted list installs the remaining bindings.  Every branch hands on `s.pc`. -/
+theorem denoteRun_pc {calls : Calls} {pend : List (String × Value)}
+    {is : List Instr} {s s' : State}
+    (h : denoteRun calls pend is s = some s') : s'.pc = s.pc := by
+  induction is generalizing pend s with
+  | nil =>
+      simp only [denoteRun, Option.some.injEq] at h
+      subst h
+      exact State.bindAll_pc s pend
+  | cons i is ih =>
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i <;> simp_all [Instr.isPhi]
+        cases hs : phiSelect s inc with
+        | none => simp only [denoteRun, hs] at h; cases h
+        | some v =>
+            simp only [denoteRun, hs] at h
+            exact ih h
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        rw [denoteRun_cons_of hi] at h
+        cases he : evalInstr calls (s.bindAll pend) i with
+        | none => simp only [he] at h; cases h
+        | some s1 =>
+            simp only [he] at h
+            exact (ih h).trans ((evalInstr_pc he).trans (State.bindAll_pc s pend))
+
 /-- **A block's instructions leave the program counter alone.**  This is what
 `step` needs: the terminator runs at the state the block leaves, and the jump it
 produces writes that state's `pc` into the successor's predecessor field. -/
 theorem denoteCode_pc {calls : Calls} {is : List Instr} {s s' : State}
-    (h : denoteCode calls is s = some s') : s'.pc = s.pc := by
-  induction is generalizing s with
-  | nil => simp only [denoteCode, Option.some.injEq] at h; cases h; rfl
-  | cons i is ih =>
-      simp only [denoteCode] at h
-      split at h
-      · cases h
-      · rename_i s1 hs1
-        exact (ih h).trans (evalInstr_pc hs1)
+    (h : denoteCode calls is s = some s') : s'.pc = s.pc :=
+  denoteRun_pc h
 
 /-- The name list a block's trace transports over: its instructions' read set
 together with its terminator's operand.  The terminator is not one of the block's

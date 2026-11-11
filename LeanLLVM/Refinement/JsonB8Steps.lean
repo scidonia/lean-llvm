@@ -875,7 +875,7 @@ theorem b8Kernel_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o : Nat)
     ent_step (b8_step_store32 _ _ "%add33.i" "%arrayidx34.i" (slotVal (posBase blk0 i) w 7) (o + 4 * k + 4 * (0 + 7)) (by ent_auto) (by ent_auto))
     -- the test the block branches on
     ent_step (b8_step_icmp_ult_imm _ _ "%cmp.i" "%1" 64 (BitVec.ofNat 64 (ctpop w)) (BitVec.ofInt 64 9) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case h1' => ent_auto
   case hand' => ent_auto
@@ -1001,7 +1001,7 @@ theorem b8TailGuard_run (env : Env) (s : State) (w : BitVec 64)
     rw [show BitVec.ofInt 64 8 = BitVec.ofNat 64 8 from by decide]
     ent_step (step_icmp_eq_imm _ _ "%12" "%and36.i" 64 (clearLow w 8) (BitVec.ofInt 64 0) (by ent_auto))
     rw [ofInt64_zero]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case h10 => ent_auto
   case h11 => ent_auto
@@ -1061,7 +1061,7 @@ theorem b8TailPreheader_run (env : Env) (s : State) (w : BitVec 64) (k o : Nat)
         show (Ty.int 8).sizeBytes = 1 from rfl]]
     ent_step (step_and_imm _ _ "%xtraiter" "%10" 64 (BitVec.ofNat 64 (ctpop (clearLow w 8))) (BitVec.ofInt 64 7) (by ent_auto))
     ent_step (b8_step_icmp_ult_imm _ _ "%13" "%10" 64 (BitVec.ofNat 64 (ctpop (clearLow w 8))) (BitVec.ofInt 64 8) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hptr' => ent_auto
   case hxtra => ent_auto
@@ -1129,7 +1129,7 @@ theorem b8TailUnrolled_run (env : Env) (s : State) (w : BitVec 64)
   case hrun =>
     simp only [b8TailUnrolled, reg, lit]
     ent_step (step_and_imm _ _ "%unroll_iter" "%10" 64 (BitVec.ofNat 64 (ctpop (clearLow w 8))) (BitVec.ofInt 64 56) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hu => ent_auto
 
@@ -1561,7 +1561,7 @@ theorem b8TailLoop_phis (env : Env) (s : State) (w : BitVec 64) (k o j : Nat) (p
       = some (withEnv (("%niter", .int 64 (BitVec.ofNat 64 niter)) ::
           ("%o.addr.095.i", .ptr (o + 4 * k + 4 * j)) ::
           ("%c.096.i", .int 64 (clearLow w j)) :: env) s) := by
-  simp only [denoteCode, reg, lit, b8IncomingC, b8IncomingO, b8IncomingN]
+  simp only [denoteCode, denoteRun, State.bindAll, reg, lit, b8IncomingC, b8IncomingO, b8IncomingN]
   have hopc' : phiIncoming p
       [("while.body.preheader.i.new", Operand.reg "%and36.i"),
        ("while.body.i", Operand.reg "%and44.i.7")] = some opc := hopc
@@ -1571,13 +1571,39 @@ theorem b8TailLoop_phis (env : Env) (s : State) (w : BitVec 64) (k o j : Nat) (p
   have hopn' : phiIncoming p
       [("while.body.preheader.i.new", Operand.imm (Const.int 64 (BitVec.ofInt 64 0))),
        ("while.body.i", Operand.reg "%niter.next.7")] = some opn := hopn
-  rw [phi_step env s "%c.096.i" (.int 64) _ p opc _ hpre hopc' hc]
-  simp only [denoteCode, Option.bind]
-  rw [phi_step (("%c.096.i", .int 64 (clearLow w j)) :: env) s
-    "%o.addr.095.i" .ptr _ p opo _ hpre hopo' ho]
-  simp only [denoteCode, Option.bind]
-  rw [phi_step (("%o.addr.095.i", .ptr (o + 4 * k + 4 * j)) :: ("%c.096.i", .int 64 (clearLow w j)) :: env) s
-    "%niter" (.int 64) _ p opn _ hpre hopn' hn]
+  -- one snapshot: the siblings' bindings are not read by a later member
+  have hmemO : ("%c.096.i" : String) ∉ Operand.regs opo := by
+    have hm := phiIncoming_mem hopo'
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hmemN1 : ("%o.addr.095.i" : String) ∉ Operand.regs opn := by
+    have hm := phiIncoming_mem hopn'
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have hmemN2 : ("%c.096.i" : String) ∉ Operand.regs opn := by
+    have hm := phiIncoming_mem hopn'
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  have ho' : evalOperand (withEnv env s) opo = some (.ptr (o + 4 * k + 4 * j)) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+      (n := "%c.096.i") (v := .int 64 (clearLow w j)) (op := opo) hmemO]
+    exact ho
+  have hn1 : evalOperand (withEnv (("%c.096.i", .int 64 (clearLow w j)) :: env) s) opn
+      = some (.int 64 (BitVec.ofNat 64 niter)) := by
+    rw [← evalOperand_withEnv_cons_of_ne
+      (env := ("%c.096.i", .int 64 (clearLow w j)) :: env) (s := s)
+      (n := "%o.addr.095.i") (v := .ptr (o + 4 * k + 4 * j)) (op := opn) hmemN1]
+    exact hn
+  have hn' : evalOperand (withEnv env s) opn = some (.int 64 (BitVec.ofNat 64 niter)) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+      (n := "%c.096.i") (v := .int 64 (clearLow w j)) (op := opn) hmemN2]
+    exact hn1
+  exact denoteCode_phi3 (calls := entryCalls) (env := env) (s := s)
+    "%c.096.i" (.int 64) _ "%o.addr.095.i" .ptr _ "%niter" (.int 64) _
+    (is := []) (hst := by rfl) hpre hopc' hc hopo' ho' hopn' hn'
 
 /-- Stages 1 to 4 of the unrolled loop. -/
 theorem b8Stages_run4 (env : Env) (s : State) (w : BitVec 64) (i blk0 k o j : Nat)
@@ -1659,16 +1685,23 @@ theorem b8Stages_run4 (env : Env) (s : State) (w : BitVec 64) (i blk0 k o j : Na
       (withEnv e3 { s with mem := b8Lanes o w (posBase blk0 i) k j 3 s.mem }) (withEnv e4 { s with mem := b8Lanes o w (posBase blk0 i) k j 4 s.mem }) h4
     exact h.trans hunroll3
   refine ⟨e4, ?_, hand4, hgep4, hconv4, hbase4, hunroll4⟩
-  simp only [denoteCode_append, h1, h2, h3, h4, Option.bind_some]
+  rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
+  simp only [Option.bind_some]
+  rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
+  simp only [Option.bind_some]
+  rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
+  simp only [Option.bind_some]
+  rw [h4]
 
 /-- Splitting a straight-line sequence at a point whose state is already known:
 the second half runs from it.  Stated so the composition never puts a state under
 a `bind`. -/
 theorem denoteCode_append_apply {calls : Calls} {a b : List Instr} {s s' : State}
-    (h : denoteCode calls a s = some s') :
+    (h : denoteCode calls a s = some s') {hb : startsWithPhi b = false} :
     denoteCode calls (a ++ b) s = denoteCode calls b s' := by
-  rw [denoteCode_append, h]
+  rw [denoteCode_append (hb := hb), h]
   rfl
+
 
 /-- A second memory update replaces the first: the fields the outer update keeps
 are the ones the inner update never touches. -/
@@ -1739,11 +1772,11 @@ theorem b8Stages_run4B (env : Env) (s t : State) (w : BitVec 64) (i blk0 k o j :
       (withEnv e8 { s with mem := b8Lanes o w (posBase blk0 i) k j 8 mem }) h8
     exact h.trans hconv7
   refine ⟨e8, ?_, hand8, hgep8, hconv8⟩
-  rw [denoteCode_append, h5]
+  rw [denoteCode_append, h5] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h6]
+  rw [denoteCode_append, h6] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h7]
+  rw [denoteCode_append, h7] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
   rw [h8]
   simp only [Option.bind_some]
@@ -1882,7 +1915,7 @@ theorem b8Counter_run (env : Env) (s : State) (niter : Nat) (u : BitVec 64)
       ofNat64_add_ofNat niter 8 hniter]
     ent_step (step_icmp_eq_reg _ _ "%niter.ncmp.7" "%niter.next.7" "%unroll_iter" 64
       (BitVec.ofNat 64 (niter + 8)) u (by ent_auto) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hnext => ent_auto
   case hcmp => ent_auto
@@ -1972,7 +2005,7 @@ theorem b8LoopBody_run (env : Env) (s t : State) (w : BitVec 64) (i blk0 k o j n
       ((b8Stage1 ++ (b8Stage2 ++ (b8Stage3 ++ b8Stage4))) ++
        (b8Stage5 ++ (b8Stage6 ++ (b8Stage7 ++ b8Stage8)))) (withEnv env₃ s)
       = some (withEnv e8 t) := by
-    rw [denoteCode_append_apply h4]
+    rw [denoteCode_append_apply h4] <;> (first | rfl | decide | skip)
     exact h8
   have hN8 : lookupName e8 "%niter" = some (.int 64 (BitVec.ofNat 64 niter)) := by
     have h := denoteCode_lookupName entryCalls
@@ -1997,9 +2030,9 @@ theorem b8LoopBody_run (env : Env) (s t : State) (w : BitVec 64) (i blk0 k o j n
     (BitVec.ofNat 64 (ctpop (clearLow w 8)) &&& BitVec.ofInt 64 56) hN8 hunroll8 hniter
   have hfull : denoteCode entryCalls b8TailLoop.instrs (withEnv env s) = some (withEnv e' t) := by
     rw [b8TailLoop_instrs_grouped]
-    rw [denoteCode_append_apply hphis']
-    rw [denoteCode_append_apply h4]
-    rw [denoteCode_append_apply h8]
+    rw [denoteCode_append_apply hphis'] <;> (first | rfl | decide | skip)
+    rw [denoteCode_append_apply h4] <;> (first | rfl | decide | skip)
+    rw [denoteCode_append_apply h8] <;> (first | rfl | decide | skip)
     rw [hcnt]
   have hkeep : ∀ (n : String) (v : Value), n ≠ "%niter.next.7" → n ≠ "%niter.ncmp.7" →
       lookupName e8 n = some v → lookupName e' n = some v := by
@@ -2066,13 +2099,49 @@ theorem b8EpilBody_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o jj e 
   refine ⟨?e', ?hrun, ?hand, ?hgep, ?hnext, ?hcmp, ?hconv', ?hxtra'⟩
   case hrun =>
     simp only [b8TailRemainder, reg, lit, b8IncomingCe, b8IncomingOe, b8IncomingIe]
-    ent_step (phi_step env s "%c.096.i.epil" (.int 64) _ p opcc _
-      hpre (by assumption) hc)
-    ent_step (phi_step (("%c.096.i.epil", .int 64 (clearLow w jj)) :: env) s
-      "%o.addr.095.i.epil" .ptr _ p opco _ hpre (by assumption) ho)
-    ent_step (phi_step (("%o.addr.095.i.epil", .ptr (o + 4 * k + 4 * jj)) ::
-      ("%c.096.i.epil", .int 64 (clearLow w jj)) :: env) s
-      "%epil.iter" (.int 64) _ p opci _ hpre (by assumption) hi)
+    have hopcc : phiIncoming p
+        [("while.body.i.epil", .reg "%and44.i.epil"),
+         ("s1f_ke_b8.exit.loopexit.unr-lcssa", .reg "%c.096.i.unr")] = some opcc :=
+      hopc
+    have hopco : phiIncoming p
+        [("while.body.i.epil", .reg "%incdec.ptr.i.epil"),
+         ("s1f_ke_b8.exit.loopexit.unr-lcssa", .reg "%o.addr.095.i.unr")] = some opco :=
+      hopo
+    have hopci : phiIncoming p
+        [("while.body.i.epil", .reg "%epil.iter.next"),
+         ("s1f_ke_b8.exit.loopexit.unr-lcssa", .imm (.int 64 (BitVec.ofInt 64 0)))] = some opci :=
+      hopi
+    have hmemO : ("%c.096.i.epil" : String) ∉ Operand.regs opco := by
+      have hm := phiIncoming_mem hopco
+      simp only [b8IncomingOe, List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    have hmemI1 : ("%o.addr.095.i.epil" : String) ∉ Operand.regs opci := by
+      have hm := phiIncoming_mem hopci
+      simp only [b8IncomingIe, List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hm
+      rcases hm with rfl | rfl | rfl <;> decide
+    have hmemI2 : ("%c.096.i.epil" : String) ∉ Operand.regs opci := by
+      have hm := phiIncoming_mem hopci
+      simp only [b8IncomingIe, List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hm
+      rcases hm with rfl | rfl | rfl <;> decide
+    have ho' : evalOperand (withEnv env s) opco = some (.ptr (o + 4 * k + 4 * jj)) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%c.096.i.epil") (v := .int 64 (clearLow w jj)) (op := opco) hmemO]
+      exact ho
+    have hi1 : evalOperand (withEnv (("%c.096.i.epil", .int 64 (clearLow w jj)) :: env) s)
+        opci = some (.int 64 (BitVec.ofNat 64 e)) := by
+      rw [← evalOperand_withEnv_cons_of_ne
+        (env := ("%c.096.i.epil", .int 64 (clearLow w jj)) :: env) (s := s)
+        (n := "%o.addr.095.i.epil") (v := .ptr (o + 4 * k + 4 * jj)) (op := opci) hmemI1]
+      exact hi
+    have hi' : evalOperand (withEnv env s) opci = some (.int 64 (BitVec.ofNat 64 e)) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%c.096.i.epil") (v := .int 64 (clearLow w jj)) (op := opci) hmemI2]
+      exact hi1
+    rw [denoteCode_phi3 _ _ _ _ _ _ _ _ _ _ _ _ _ hpre hopcc hc hopco ho' hopci hi']
+    all_goals (first | rfl | decide | skip)
     ent_step (b8_step_call_cttz _ _ "%22" "%c.096.i.epil" (clearLow w jj)
       (BitVec.ofInt 1 (-1)) (by ent_auto))
     ent_step (step_trunc _ _ "%cast41.i.epil" "%22" 64 32
@@ -2102,7 +2171,7 @@ theorem b8EpilBody_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o jj e 
     rw [ofInt64_one, ofNat64_add_one e he64]
     ent_step (step_icmp_eq_reg _ _ "%epil.iter.cmp.not" "%epil.iter.next" "%xtraiter" 64
       (BitVec.ofNat 64 (e + 1)) u (by ent_auto) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hand => ent_auto
   case hgep => ent_auto
@@ -2224,13 +2293,14 @@ theorem b8Advance_body (env : Env) (s : State) (i k nblk : Nat) (p : String) (op
   refine ⟨?env', ?hrun, ?hk, ?hinc, ?hx⟩
   case hrun =>
     simp only [b8Advance, reg, lit, b8IncomingCl]
-    ent_step (phi_step env s "%k.addr.1" (.int 64) _ p opk _ hpre (by assumption) hvk)
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre (by assumption) hvk]
+    all_goals (first | rfl | decide | skip)
     ent_step (step_add_imm _ _ "%inc" "%i.010" 64 (BitVec.ofNat 64 i) (BitVec.ofInt 64 1)
       (by ent_auto))
     rw [ofInt64_one, ofNat64_add_one i hi64]
     ent_step (step_icmp_eq_reg _ _ "%exitcond.not" "%inc" "%nblk" 64
       (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 nblk) (by ent_auto) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hk => ent_auto
   case hinc => ent_auto
@@ -2347,11 +2417,12 @@ theorem b8Join_run (env : Env) (s : State) (rv k : Nat) (p : String) (opr : Oper
   refine ⟨?e, ?hrun, ?hadd⟩
   case hrun =>
     simp only [b8Join, reg, lit, b8IncomingR]
-    ent_step (phi_step env s "%retval.0.i" (.int 64) _ p opr _ hpre (by assumption) hrv)
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre (by assumption) hrv]
+    all_goals (first | rfl | decide | skip)
     ent_step (step_add_reg _ _ "%add1" "%retval.0.i" "%k.addr.011" 64
       (BitVec.ofNat 64 rv) (BitVec.ofNat 64 k) (by ent_auto) (by ent_auto))
     rw [ofNat64_add_ofNat rv k hsum]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hadd => ent_auto
 
@@ -2373,12 +2444,26 @@ theorem b8RemainderGuard_run (env : Env) (s : State) (w : BitVec 64) (k o jj : N
   refine ⟨?e, ?hrun, ?hc, ?ho, ?hx⟩
   case hrun =>
     simp only [b8TailRemainderGuard, reg, lit, b8IncomingCu, b8IncomingOu]
-    ent_step (phi_step env s "%c.096.i.unr" (.int 64) _ p opc _ hpre (by assumption) hc)
-    ent_step (phi_step (("%c.096.i.unr", .int 64 (clearLow w jj)) :: env) s
-      "%o.addr.095.i.unr" .ptr _ p opo _ hpre (by assumption) ho)
+    have hopcc : phiIncoming p
+        [("while.body.preheader.i", .reg "%and36.i"), ("while.body.i", .reg "%and44.i.7")]
+        = some opc := hopc
+    have hopco : phiIncoming p
+        [("while.body.preheader.i", .reg "%add.ptr.i"),
+         ("while.body.i", .reg "%incdec.ptr.i.7")] = some opo := hopo
+    have hmemO : ("%c.096.i.unr" : String) ∉ Operand.regs opo := by
+      have hm := phiIncoming_mem hopco
+      simp only [b8IncomingOu, List.map_cons, List.map_nil, List.mem_cons,
+        List.not_mem_nil, or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    have ho' : evalOperand (withEnv env s) opo = some (.ptr (o + 4 * k + 4 * jj)) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%c.096.i.unr") (v := .int 64 (clearLow w jj)) (op := opo) hmemO]
+      exact ho
+    rw [denoteCode_phi2 _ _ _ _ _ _ _ _ _ _ hpre hopcc hc hopco ho']
+    all_goals (first | rfl | decide | skip)
     ent_step (step_icmp_eq_imm _ _ "%lcmp.mod.not" "%xtraiter" 64 u
       (BitVec.ofInt 64 0) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hc => ent_auto
   case ho => ent_auto
@@ -3936,7 +4021,7 @@ theorem b8Entry_body (env : Env) (s : State) (nblk : Nat)
     ent_step (step_icmp_eq_imm env s "%cmp9.not" "%nblk" 64 (BitVec.ofNat 64 nblk)
       (BitVec.ofInt 64 0) (by ent_auto))
     rw [ofInt64_zero]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hnot => ent_auto
 

@@ -645,8 +645,10 @@ theorem stuckState_step (err xj : Nat) :
     step escapeCalls usDecFunction (stuckState err xj) = .ub := by
   have hpc : (stuckState err xj).pc = "cleanup41" := rfl
   have hpre : (stuckState err xj).pre = none := rfl
-  simp only [step, hpc, findBlock_udCleanup41, udCleanup41_instrs, denoteCode,
-    evalInstr_phi_no_pred hpre]
+  have hsel : phiSelect (stuckState err xj) udCleanup41Incoming = none := by
+    simp only [phiSelect, hpre]
+  simp only [step, hpc, findBlock_udCleanup41, udCleanup41_instrs, denoteCode, denoteRun,
+    State.bindAll, hsel]
 
 theorem runFuel_stuck (err xj k : Nat) :
     runFuel escapeCalls (k + 1) usDecFunction (stuckState err xj) = some .ub := by

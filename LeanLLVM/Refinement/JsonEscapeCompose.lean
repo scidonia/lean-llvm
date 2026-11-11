@@ -81,7 +81,7 @@ theorem udIfEnd21_denote (env : Env) (s : State) (subv nv : BitVec 64)
     (BitVec.ofInt 64 1) (by ud_lk_h hsub))]
   rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ult64 _ s "%cmp.not.i" "%add.i100" "%n"
     (subv + BitVec.ofInt 64 1) nv (by ud_lk) (by ud_lk_h hn))]
-  simp only [denoteCode, withEnv, udIfEnd21Env]
+  simp only [denoteCode, denoteRun, State.bindAll, withEnv, udIfEnd21Env]
 
 theorem udIfEnd21_run (env : Env) (s : State) (subv nv : BitVec 64)
     (hsub : lookupName env "%sub" = some (.int 64 subv))
@@ -212,24 +212,38 @@ theorem udWhileEnd35_denote (env : Env) (s : State) (prev : String)
         (withEnv env s) =
       some (withEnv (udWhileEnd35Env env paddr daddr j i kv nv) s) := by
   rw [udWhileEnd35_instrs]
-  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_phi (s := withEnv env s)
-    (d := "%j.0.lcssa") (ty := .int 64) (inc := udWhileEnd35IncomingJ) hpre hj hopj)]
-  rw [show (withEnv env s).bind "%j.0.lcssa" (.int 64 j) =
-      withEnv (("%j.0.lcssa", .int 64 j) :: env) s from rfl]
-  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_phi (s := withEnv (("%j.0.lcssa",
-      .int 64 j) :: env) s) (d := "%i.0.lcssa") (ty := .int 64)
-    (inc := udWhileEnd35IncomingI) hpre hi hopi)]
-  rw [show (withEnv (("%j.0.lcssa", .int 64 j) :: env) s).bind "%i.0.lcssa"
-      (.int 64 i) =
-      withEnv (("%i.0.lcssa", .int 64 i) :: ("%j.0.lcssa", .int 64 j) :: env) s
-      from rfl]
-  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_phi (s := withEnv (("%i.0.lcssa",
-      .int 64 i) :: ("%j.0.lcssa", .int 64 j) :: env) s) (d := "%k.1.lcssa")
-    (ty := .int 64) (inc := udWhileEnd35IncomingK) hpre hk hopk)]
-  rw [show (withEnv (("%i.0.lcssa", .int 64 i) :: ("%j.0.lcssa", .int 64 j) :: env)
-      s).bind "%k.1.lcssa" (.int 64 kv) =
-      withEnv (("%k.1.lcssa", .int 64 kv) :: ("%i.0.lcssa", .int 64 i) ::
-        ("%j.0.lcssa", .int 64 j) :: env) s from rfl]
+  have hmemI : ("%j.0.lcssa" : String) ∉ Operand.regs opi := by
+    have hm := phiIncoming_mem hi
+    simp only [udWhileEnd35IncomingI, List.map_cons, List.map_nil, List.mem_cons,
+      List.not_mem_nil, or_false] at hm
+    rcases hm with rfl | rfl | rfl | rfl <;> decide
+  have hopi' : evalOperand (withEnv env s) opi = some (.int 64 i) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s) (n := "%j.0.lcssa")
+      (v := .int 64 j) (op := opi) hmemI]
+    exact hopi
+  have hmemK1 : ("%i.0.lcssa" : String) ∉ Operand.regs opk := by
+    have hm := phiIncoming_mem hk
+    simp only [udWhileEnd35IncomingK, List.map_cons, List.map_nil, List.mem_cons,
+      List.not_mem_nil, or_false] at hm
+    rcases hm with rfl | rfl | rfl | rfl <;> decide
+  have hmemK2 : ("%j.0.lcssa" : String) ∉ Operand.regs opk := by
+    have hm := phiIncoming_mem hk
+    simp only [udWhileEnd35IncomingK, List.map_cons, List.map_nil, List.mem_cons,
+      List.not_mem_nil, or_false] at hm
+    rcases hm with rfl | rfl | rfl | rfl <;> decide
+  have hopk1 : evalOperand (withEnv (("%j.0.lcssa", .int 64 j) :: env) s) opk
+      = some (.int 64 kv) := by
+    rw [← evalOperand_withEnv_cons_of_ne
+      (env := ("%j.0.lcssa", .int 64 j) :: env) (s := s) (n := "%i.0.lcssa")
+      (v := .int 64 i) (op := opk) hmemK1]
+    exact hopk
+  have hopk' : evalOperand (withEnv env s) opk = some (.int 64 kv) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s) (n := "%j.0.lcssa")
+      (v := .int 64 j) (op := opk) hmemK2]
+    exact hopk1
+  rw [phiRun_three escapeCalls env s "%j.0.lcssa" (.int 64) _ "%i.0.lcssa" (.int 64) _
+    "%k.1.lcssa" (.int 64) _ _ hpre hj hopj hi hopi' hk hopk']
+  all_goals (first | rfl | decide | skip)
   rw [denoteCode_cons_of _ _ _ _ _ (b_gep8_reg _ s "%add.ptr36" "%p" "%i.0.lcssa"
     paddr i i.toNat (by ud_lk_h hp) (by ud_lk) hiw hi63)]
   rw [denoteCode_cons_of _ _ _ _ _ (b_gep8_reg _ s "%add.ptr37" "%dst" "%j.0.lcssa"
@@ -238,7 +252,7 @@ theorem udWhileEnd35_denote (env : Env) (s : State) (prev : String)
     nv i (by ud_lk_h hn) (by ud_lk))]
   rw [denoteCode_cons_of _ _ _ _ _ (b_icmp_ugt64_imm _ s "%cmp.i303" "%sub38"
     ((nv - i)) (BitVec.ofInt 64 64) (by ud_lk))]
-  simp only [denoteCode, withEnv, udWhileEnd35Env]
+  simp only [denoteCode, denoteRun, State.bindAll, withEnv, udWhileEnd35Env]
 
 theorem udWhileEnd35_run (env : Env) (s : State) (prev : String)
     (opj opi opk : Operand) (paddr daddr : Nat) (j i kv nv : BitVec 64)

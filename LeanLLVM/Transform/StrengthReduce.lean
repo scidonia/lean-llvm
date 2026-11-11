@@ -135,17 +135,55 @@ def strengthReduceBlock (b : Block) : Block :=
 def strengthReduce (f : Function) : Function :=
   { f with blocks := f.blocks.map strengthReduceBlock }
 
+/-- The rewrite keeps an instruction's constructor, so it keeps its `phi`
+status. -/
+theorem strengthReduceInstr_isPhi (i : Instr) :
+    (strengthReduceInstr i).isPhi = i.isPhi := by
+  cases i with
+  | binop d op w a b =>
+      simp only [strengthReduceInstr]
+      repeat' split
+      all_goals rfl
+  | _ => rfl
+
+/-- The rewrite leaves a `phi` alone: it has no arithmetic to strengthen. -/
+theorem strengthReduceInstr_phi (d : String) (ty : Ty) (inc : List (String × Operand)) :
+    strengthReduceInstr (.phi d ty inc) = .phi d ty inc := rfl
+
+/-- Rewriting every instruction of a block preserves its denotation: a leading
+`phi` run reads the same selections at the same snapshot on both sides, so the
+run installs the same bindings. -/
+theorem denoteRun_map_strengthReduce (calls : Calls) :
+    ∀ (is : List Instr) (pend : List (String × Value)) (s : State),
+      denoteRun calls pend (is.map strengthReduceInstr) s = denoteRun calls pend is s := by
+  intro is
+  induction is with
+  | nil => intro pend s; rfl
+  | cons i is ih =>
+      intro pend s
+      simp only [List.map_cons]
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        simp only [strengthReduceInstr_phi, denoteRun]
+        cases hs : phiSelect s inc with
+        | none => rfl
+        | some v => simp only []; exact ih (pend ++ [(d, v)]) s
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        have hsubst : (strengthReduceInstr i).isPhi = false := by
+          rw [strengthReduceInstr_isPhi]; exact hi
+        rw [denoteRun_cons_of hsubst, denoteRun_cons_of hi, evalInstr_strengthReduce]
+        cases he : evalInstr calls (s.bindAll pend) i with
+        | none => rfl
+        | some s' => simp only []; exact ih [] s'
+
 /-- Rewriting every instruction of a block preserves its denotation. -/
 theorem denoteCode_map_strengthReduce (calls : Calls) (is : List Instr) (s : State) :
-    denoteCode calls (is.map strengthReduceInstr) s = denoteCode calls is s := by
-  induction is generalizing s with
-  | nil => rfl
-  | cons i is ih =>
-      simp only [List.map_cons, denoteCode, evalInstr_strengthReduce]
-      split
-      · rfl
-      · rename_i s' _
-        exact ih s'
+    denoteCode calls (is.map strengthReduceInstr) s = denoteCode calls is s :=
+  denoteRun_map_strengthReduce calls is [] s
 
 theorem step_strengthReduce (calls : Calls) (f : Function) (s : State) :
     step calls (strengthReduce f) s = step calls f s := by

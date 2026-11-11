@@ -234,7 +234,8 @@ theorem vandal_beh :
         (LeanLLVM.writeBytes [] 0 (LeanLLVM.natToBytes 1 1))) := by
   refine Or.inr ⟨1, ?_⟩
   simp [LeanLLVM.runFuel, LeanLLVM.step, vandalFunction, LeanLLVM.Function.findBlock,
-    LeanLLVM.findBlockList, LeanLLVM.denoteCode, LeanLLVM.evalInstr,
+    LeanLLVM.findBlockList, LeanLLVM.denoteCode, LeanLLVM.denoteRun, LeanLLVM.State.bindAll,
+    LeanLLVM.evalInstr,
     LeanLLVM.evalOperand, LeanLLVM.Const.toValue, LeanLLVM.storeValue,
     LeanLLVM.execTerm, LeanLLVM.initState, LeanLLVM.Function.entry?]
 
@@ -243,7 +244,8 @@ theorem quiet_run (n : Nat) (s : LeanLLVM.State) (hpc : s.pc = "entry") :
       some (.ret (some (.int 64 0)) s.mem) := by
   cases n <;>
     simp [LeanLLVM.runFuel, LeanLLVM.step, quietFunction, LeanLLVM.Function.findBlock,
-      LeanLLVM.findBlockList, LeanLLVM.denoteCode, LeanLLVM.execTerm,
+      LeanLLVM.findBlockList, LeanLLVM.denoteCode, LeanLLVM.denoteRun,
+      LeanLLVM.State.bindAll, LeanLLVM.execTerm,
       LeanLLVM.evalOperand, LeanLLVM.Const.toValue, hpc]
 
 theorem quiet_beh (o : LeanLLVM.Outcome)
@@ -312,7 +314,7 @@ theorem callerInstrs_none (s : LeanLLVM.State) :
     cases h : LeanLLVM.evalOperands s [(.int 64, .reg "%arg")] with
     | none => simp [LeanLLVM.evalInstr, h]
     | some vs => simp [LeanLLVM.evalInstr, h]
-  simp [callerInstrs, LeanLLVM.denoteCode, hcall]
+  simp [callerInstrs, LeanLLVM.denoteCode, LeanLLVM.denoteRun, LeanLLVM.State.bindAll, hcall]
 
 theorem caller_step_none :
     LeanLLVM.step (fun _ _ _ _ => none) callerFunction

@@ -146,7 +146,7 @@ theorem entry_run_at (x : BitVec 64) (mem : Mem) (base : Nat) :
     step noCalls loopFunction
         { (initState loopFunction [.int 64 x]) with mem := mem, next := base } =
       .jump (entryStateMemAt mem base x) := by
-  simp [step, loopFunction, Function.findBlock, findBlockList, denoteCode, entryInstrs,
+  simp [step, loopFunction, Function.findBlock, findBlockList, denoteCode, denoteRun, State.bindAll, entryInstrs,
     initState, Function.entry?, List.head?, Option.getD, List.map, List.zip, List.zipWith,
     evalInstr, evalOperand, Const.toValue, State.bind, entryStateMemAt, execTerm,
     lookupName, Value.intToNat, evalBinopNat, evalBinop, c, lit, Ty.sizeBytes, storeValue]
@@ -397,7 +397,7 @@ theorem cond_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
   refine ⟨s3, ?_, rfl, ?_, ?_⟩
   · have hfind : loopFunction.findBlock s.pc = some condBody := by
       simp [loopFunction, Function.findBlock, findBlockList, hpc, condBody, condInstrs]
-    simp only [step, hfind, condBody, condInstrs, denoteCode]
+    simp only [step, hfind, condBody, condInstrs, denoteCode, denoteRun, State.bindAll]
     rw [e1]
     simp only []
     rw [e2]
@@ -541,7 +541,7 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
   · have hfind : loopFunction.findBlock s.pc = some bodyBlock := by
       simp [loopFunction, Function.findBlock, findBlockList, hpc, bodyBlock, bodyInstrs,
         condBody]
-    simp only [step, hfind, bodyBlock, bodyInstrs, denoteCode, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11]
+    simp only [step, hfind, bodyBlock, bodyInstrs, denoteCode, denoteRun, State.bindAll, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11]
     simp [execTerm, s12, s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, hpc]
   · have hsh : shv.toNat = 8 * k := by
       simp only [shv]
@@ -638,7 +638,7 @@ theorem cond_done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 
   refine ⟨s3, ?_, rfl, ?_⟩
   · have hfind : loopFunction.findBlock s.pc = some condBody := by
       simp [loopFunction, Function.findBlock, findBlockList, hpc, condBody, condInstrs]
-    simp only [step, hfind, condBody, condInstrs, denoteCode]
+    simp only [step, hfind, condBody, condInstrs, denoteCode, denoteRun, State.bindAll]
     rw [e1]
     simp only []
     rw [e2]
@@ -669,7 +669,7 @@ theorem done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64)
     simp [loopFunction, Function.findBlock, findBlockList, hpc, doneBlock, doneInstrs,
       bodyBlock, condBody]
   refine ⟨s1, ?_, ?_⟩
-  · simp only [step, hfind, doneBlock, doneInstrs, denoteCode]
+  · simp only [step, hfind, doneBlock, doneInstrs, denoteCode, denoteRun, State.bindAll]
     rw [e1]
     simp only [execTerm, evalOperand, hl_r]
   · simp only [s1, State.bind]

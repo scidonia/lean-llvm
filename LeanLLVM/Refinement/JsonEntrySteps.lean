@@ -52,20 +52,48 @@ open LeanLLVM.Refinement.JsonS1MasksIR
 /-- Straight-line composition: an instruction that resolves to a state leaves the
 rest of the list to be run from it. -/
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
-/-- A straight-line sequence splits anywhere. -/
-theorem denoteCode_append (calls : Calls) (a b : List Instr) (s : State) :
-    denoteCode calls (a ++ b) s = (denoteCode calls a s).bind (denoteCode calls b) := by
-  induction a generalizing s with
-  | nil => rfl
-  | cons i is ih =>
-      simp only [List.cons_append, denoteCode]
-      cases h : evalInstr calls s i with
-      | none => rfl
-      | some s' => exact ih s'
+/-- A straight-line run splits at a block boundary: a point whose second half
+does not begin with a `phi`, because there one block's leading run has ended and
+the next list's begins.  The pending bindings of the first half are installed at
+the split, exactly where `denoteRun` installs them when the run ends. -/
+theorem denoteRun_append (calls : Calls) :
+    ∀ (a b : List Instr) (pend : List (String × Value)) (s : State),
+      startsWithPhi b = false →
+      denoteRun calls pend (a ++ b) s =
+        (denoteRun calls pend a s).bind (denoteCode calls b)
+  | [], b, pend, s, hb => by
+      simp only [List.nil_append, denoteRun, Option.bind_some]
+      exact denoteRun_nil_pend hb
+  | i :: a, b, pend, s, hb => by
+      simp only [List.cons_append]
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        simp only [denoteRun]
+        cases hsel : phiSelect s inc with
+        | none => rfl
+        | some v =>
+            simp only [hsel]
+            exact denoteRun_append calls a b (pend ++ [(d, v)]) s hb
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        simp only [denoteRun_cons_of hi]
+        cases he : evalInstr calls (s.bindAll pend) i with
+        | none => rfl
+        | some s' => simp only []; exact denoteRun_append calls a b [] s' hb
+
+/-- A straight-line sequence splits at a block boundary. -/
+theorem denoteCode_append (calls : Calls) (a b : List Instr) (s : State)
+    (hb : startsWithPhi b = false) :
+    denoteCode calls (a ++ b) s = (denoteCode calls a s).bind (denoteCode calls b) :=
+  denoteRun_append calls a b [] s hb
 
 /-- A state seen as its environment: the composition's subject.  Everything a step
 does not touch — memory, the allocator cursor, the block, the predecessor — is
@@ -74,6 +102,83 @@ def withEnv (env : Env) (s : State) : State := { s with env := env }
 
 /-- The environment of a run is not observed by `State.mem`. -/
 theorem withEnv_mem (env : Env) (s : State) : (withEnv env s).mem = s.mem := rfl
+
+/-- A leading `phi` run of one member, read at the state the edge delivered. -/
+theorem denoteCode_phi1 (calls : Calls) (env : Env) (s : State) (d : String) (ty : Ty)
+    (inc : List (String × Operand)) {p : String} {op : Operand} {v : Value}
+    (is : List Instr) (hpre : s.pre = some p) (hinc : phiIncoming p inc = some op)
+    (hop : evalOperand (withEnv env s) op = some v) {hst : startsWithPhi is = false} :
+    denoteCode calls (.phi d ty inc :: is) (withEnv env s) =
+      denoteCode calls is (withEnv ((d, v) :: env) s) := by
+  have hsel : PhiSelects (withEnv env s) p
+      [{ dst := d, ty := ty, incoming := inc }] [(d, v)] :=
+    PhiSelects.cons hinc hop PhiSelects.nil
+  have h := denoteCode_phiRun (calls := calls) (s := withEnv env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, withEnv] using h
+
+/-- A leading `phi` run of two members: both operands read the one snapshot and
+the two bindings land together. -/
+theorem denoteCode_phi2 (calls : Calls) (env : Env) (s : State)
+    (d1 : String) (ty1 : Ty) (inc1 : List (String × Operand))
+    (d2 : String) (ty2 : Ty) (inc2 : List (String × Operand))
+    {p : String} {op1 : Operand} {v1 : Value} {op2 : Operand} {v2 : Value}
+    (is : List Instr) (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p inc1 = some op1)
+    (hop1 : evalOperand (withEnv env s) op1 = some v1)
+    (hinc2 : phiIncoming p inc2 = some op2)
+    (hop2 : evalOperand (withEnv env s) op2 = some v2)
+    {hst : startsWithPhi is = false} :
+    denoteCode calls (.phi d1 ty1 inc1 :: .phi d2 ty2 inc2 :: is) (withEnv env s) =
+      denoteCode calls is (withEnv ((d2, v2) :: (d1, v1) :: env) s) := by
+  have hsel : PhiSelects (withEnv env s) p
+      [{ dst := d1, ty := ty1, incoming := inc1 },
+       { dst := d2, ty := ty2, incoming := inc2 }] [(d1, v1), (d2, v2)] :=
+    PhiSelects.cons hinc1 hop1 (PhiSelects.cons hinc2 hop2 PhiSelects.nil)
+  have h := denoteCode_phiRun (calls := calls) (s := withEnv env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, withEnv] using h
+
+/-- A leading `phi` run of three members: every operand reads the one snapshot
+and the three bindings land together. -/
+theorem denoteCode_phi3 (calls : Calls) (env : Env) (s : State)
+    (d1 : String) (ty1 : Ty) (inc1 : List (String × Operand))
+    (d2 : String) (ty2 : Ty) (inc2 : List (String × Operand))
+    (d3 : String) (ty3 : Ty) (inc3 : List (String × Operand))
+    {p : String} {op1 : Operand} {v1 : Value} {op2 : Operand} {v2 : Value}
+    {op3 : Operand} {v3 : Value}
+    (is : List Instr) (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p inc1 = some op1)
+    (hop1 : evalOperand (withEnv env s) op1 = some v1)
+    (hinc2 : phiIncoming p inc2 = some op2)
+    (hop2 : evalOperand (withEnv env s) op2 = some v2)
+    (hinc3 : phiIncoming p inc3 = some op3)
+    (hop3 : evalOperand (withEnv env s) op3 = some v3)
+    {hst : startsWithPhi is = false} :
+    denoteCode calls (.phi d1 ty1 inc1 :: .phi d2 ty2 inc2 :: .phi d3 ty3 inc3 :: is)
+        (withEnv env s) =
+      denoteCode calls is (withEnv ((d3, v3) :: (d2, v2) :: (d1, v1) :: env) s) := by
+  have hsel : PhiSelects (withEnv env s) p
+      [{ dst := d1, ty := ty1, incoming := inc1 },
+       { dst := d2, ty := ty2, incoming := inc2 },
+       { dst := d3, ty := ty3, incoming := inc3 }] [(d1, v1), (d2, v2), (d3, v3)] :=
+    PhiSelects.cons hinc1 hop1 (PhiSelects.cons hinc2 hop2
+      (PhiSelects.cons hinc3 hop3 PhiSelects.nil))
+  have h := denoteCode_phiRun (calls := calls) (s := withEnv env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, withEnv] using h
+
+/-- A cell a run does not read leaves an operand's value alone: a `phi` that
+follows another in the run reads the snapshot, not the cell its sibling just
+bound. -/
+theorem evalOperand_withEnv_cons_of_ne {env : Env} {s : State} {n : String}
+    {v : Value} {op : Operand} (h : n ∉ Operand.regs op) :
+    evalOperand (withEnv ((n, v) :: env) s) op = evalOperand (withEnv env s) op := by
+  cases op with
+  | reg m =>
+      have hmn : n ≠ m := by
+        intro hnm
+        exact h (by simp only [Operand.regs, List.mem_singleton]; exact hnm)
+      simp only [withEnv, evalOperand, State.bind, lookupName_cons_ne v env hmn]
+  | imm c => rfl
+
 
 /-- Resolve a register in the run's environment: peel the cells bound after it,
 then take the cell it is, or the caller's environment when it is a parameter. -/
@@ -1159,7 +1264,7 @@ theorem pos8Head_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab : N
     rw [show o + 4 * k + (BitVec.ofNat 64 (groupPop w 0)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 1 from by
       rw [toNat_ofNat64 (groupPop w 0) (by have := groupPop_le w 0; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_one w k]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rw [blockMem_one]
   case h0' => ent_auto
   case hconv' => ent_auto
@@ -1221,7 +1326,7 @@ theorem pos8Group1_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     rw [show o + 4 * groupCursor w k 1 + (BitVec.ofNat 64 (groupPop w 1)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 2 from by
       rw [toNat_ofNat64 (groupPop w 1) (by have := groupPop_le w 1; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 1]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -1279,7 +1384,7 @@ theorem pos8Group2_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     rw [show o + 4 * groupCursor w k 2 + (BitVec.ofNat 64 (groupPop w 2)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 3 from by
       rw [toNat_ofNat64 (groupPop w 2) (by have := groupPop_le w 2; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 2]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -1337,7 +1442,7 @@ theorem pos8Group3_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     rw [show o + 4 * groupCursor w k 3 + (BitVec.ofNat 64 (groupPop w 3)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 4 from by
       rw [toNat_ofNat64 (groupPop w 3) (by have := groupPop_le w 3; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 3]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -1395,7 +1500,7 @@ theorem pos8Group4_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     rw [show o + 4 * groupCursor w k 4 + (BitVec.ofNat 64 (groupPop w 4)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 5 from by
       rw [toNat_ofNat64 (groupPop w 4) (by have := groupPop_le w 4; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 4]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -1453,7 +1558,7 @@ theorem pos8Group5_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     rw [show o + 4 * groupCursor w k 5 + (BitVec.ofNat 64 (groupPop w 5)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 6 from by
       rw [toNat_ofNat64 (groupPop w 5) (by have := groupPop_le w 5; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 5]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -1511,7 +1616,7 @@ theorem pos8Group6_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     rw [show o + 4 * groupCursor w k 6 + (BitVec.ofNat 64 (groupPop w 6)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 7 from by
       rw [toNat_ofNat64 (groupPop w 6) (by have := groupPop_le w 6; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 6]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -1599,7 +1704,7 @@ theorem pos8Tail_run (env : Env) (s : State) (w : BitVec 64) (k : Nat)
     simp only [pos8Tail, reg, lit, zero8, splatLane0]
     ent_step (step_call_ctpop64 _ _ "%23" "%0" w (by ent_auto))
     ent_step (step_add_reg _ _ "%add1" "%23" "%k.addr.011" 64 (BitVec.ofNat 64 (ctpop w)) (BitVec.ofNat 64 k) (by ent_auto) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [withEnv]
     rfl
   case hadd1 => ent_auto
@@ -1709,21 +1814,21 @@ theorem pos8Groups_run (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab :
     pos8Tail_run e8 { s with mem := blockMem o w (posBase blk0 i) k 8 s.mem } w k h8a h8d
   rw [pos8GroupsInstrs_split]
   refine ⟨e9, ?_, h9a⟩
-  rw [denoteCode_append, h1]
+  rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h2]
+  rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h3]
+  rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h4]
+  rw [denoteCode_append, h4] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h5]
+  rw [denoteCode_append, h5] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h6]
+  rw [denoteCode_append, h6] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h7]
+  rw [denoteCode_append, h7] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h8]
+  rw [denoteCode_append, h8] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
   exact h9
 
@@ -1885,24 +1990,60 @@ theorem evalInstr_lookupName (calls : Calls) (s s' : State) (i : Instr) (n : Str
   · rw [he]
     exact lookupName_cons_ne v s.env (fun hdn => hn (hdn ▸ hd))
 
+theorem denoteRun_lookupName (calls : Calls) :
+    ∀ (instrs : List Instr) (n : String),
+      (∀ i ∈ instrs, i.dst? ≠ some n) →
+      ∀ (pend : List (String × Value)) (s s' : State),
+        (∀ b ∈ pend, b.1 ≠ n) → denoteRun calls pend instrs s = some s' →
+        lookupName s'.env n = lookupName s.env n
+  | [], n, _, pend, s, s', hp, h => by
+      simp only [denoteRun, Option.some.injEq] at h
+      subst h
+      exact lookupName_bindAll_of_ne s pend hp
+  | i :: is, n, hn, pend, s, s', hp, h => by
+      by_cases hphi : i.isPhi = true
+      · obtain ⟨d, ty, inc, rfl⟩ : ∃ d ty inc, i = .phi d ty inc := by
+          cases i with
+          | phi d ty inc => exact ⟨d, ty, inc, rfl⟩
+          | _ => simp_all [Instr.isPhi]
+        have hd : d ≠ n := by
+          intro hdn
+          exact hn (.phi d ty inc) (List.mem_cons_self ..)
+            (by show some d = some n; rw [hdn])
+        simp only [denoteRun] at h
+        cases hsel : phiSelect s inc with
+        | none => simp only [hsel] at h; cases h
+        | some v =>
+            simp only [hsel] at h
+            have hp' : ∀ b ∈ pend ++ [(d, v)], b.1 ≠ n := by
+              intro b hb
+              rcases List.mem_append.mp hb with hb | hb
+              · exact hp b hb
+              · simp only [List.mem_singleton] at hb
+                rw [hb]
+                exact hd
+            exact denoteRun_lookupName calls is n
+              (fun j hj => hn j (List.mem_cons_of_mem _ hj)) (pend ++ [(d, v)]) s s'
+              hp' h
+      · have hi : i.isPhi = false := by
+          cases i <;> simp_all [Instr.isPhi]
+        rw [denoteRun_cons_of hi] at h
+        cases he : evalInstr calls (s.bindAll pend) i with
+        | none => simp only [he] at h; cases h
+        | some s1 =>
+            simp only [he] at h
+            rw [denoteRun_lookupName calls is n
+              (fun j hj => hn j (List.mem_cons_of_mem _ hj)) [] s1 s'
+              (by simp) h]
+            rw [evalInstr_lookupName calls (s.bindAll pend) s1 i n he
+              (hn i (List.mem_cons_self ..))]
+            exact lookupName_bindAll_of_ne s pend hp
+
 theorem denoteCode_lookupName (calls : Calls) (instrs : List Instr) (n : String)
     (hn : ∀ i ∈ instrs, i.dst? ≠ some n) :
     ∀ (s s' : State), denoteCode calls instrs s = some s' →
-      lookupName s'.env n = lookupName s.env n := by
-  induction instrs with
-  | nil =>
-      intro s s' h
-      simp only [denoteCode, Option.some.injEq] at h
-      subst h
-      rfl
-  | cons i is ih =>
-      intro s s' h
-      simp only [denoteCode] at h
-      split at h
-      · cases h
-      · rename_i s1 h1
-        rw [ih (fun j hj => hn j (List.mem_cons_of_mem _ hj)) s1 s' h,
-          evalInstr_lookupName calls s s1 i n h1 (hn i (List.mem_cons_self ..))]
+      lookupName s'.env n = lookupName s.env n :=
+  fun s s' h => denoteRun_lookupName calls instrs n hn [] s s' (by simp) h
 
 /-- The six parameter names the loop carries across a block. -/
 def pos8Params : List String := ["%ent", "%blk0", "%nblk", "%out", "%k", "%tab"]
@@ -2344,14 +2485,6 @@ theorem withEnv_withEnv (env env' : Env) (s : State) :
 
 theorem withEnv_pc (env : Env) (s : State) : (withEnv env s).pc = s.pc := rfl
 
-theorem phi_step (env : Env) (s : State) (d : String) (ty : Ty)
-    (inc : List (String × Operand)) (p : String) (op : Operand) (v : Value)
-    (hpre : s.pre = some p) (hinc : phiIncoming p inc = some op)
-    (hop : evalOperand (withEnv env s) op = some v) :
-    evalInstr entryCalls (withEnv env s) (.phi d ty inc) = some (withEnv ((d, v) :: env) s) := by
-  rw [evalInstr_phi (s := withEnv env s) hpre hinc hop]
-  rfl
-
 /-! ### The incoming lists -/
 
 def pos8IncomingK : List (String × Operand) :=
@@ -2378,7 +2511,7 @@ theorem pos8Entry_body (env : Env) (s : State) (nblk : Nat)
     ent_step (step_icmp_eq_imm env s "%cmp9.not" "%nblk" 64 (BitVec.ofNat 64 nblk)
       (BitVec.ofInt 64 0) (by ent_auto))
     rw [ofInt64_zero]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hnot => ent_auto
 
@@ -2408,9 +2541,17 @@ theorem pos8Body_body (env : Env) (s : State) (w : BitVec 64) (i k e : Nat) (p :
     have hopi' : phiIncoming p
         [("cleanup", Operand.reg "%inc"),
          ("entry", Operand.imm (Const.int 64 (BitVec.ofInt 64 0)))] = some opi := hopi
-    ent_step (phi_step env s "%k.addr.011" (.int 64) _ p opk _ hpre hopk' hvk)
-    ent_step (phi_step (("%k.addr.011", .int 64 (BitVec.ofNat 64 k)) :: env) s
-      "%i.010" (.int 64) _ p opi _ hpre hopi' hvi)
+    have hvi' : evalOperand (withEnv env s) opi
+        = some (.int 64 (BitVec.ofNat 64 i)) := by
+      rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+        (n := "%k.addr.011") (v := .int 64 (BitVec.ofNat 64 k)) (op := opi) ?_]
+      exact hvi
+      have hm := phiIncoming_mem hopi'
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with rfl | rfl <;> decide
+    rw [denoteCode_phi2 _ _ _ _ _ _ _ _ _ _ hpre hopk' hvk hopi' hvi']
+    all_goals (first | rfl | skip)
     ent_step (step_gep64 _ _ "%arrayidx" "%ent" "%i.010" (.int 64) e (BitVec.ofNat 64 i)
       (by ent_auto) (by ent_auto)
       (by rw [toNat_ofNat64 i (by omega)]; omega))
@@ -2420,7 +2561,7 @@ theorem pos8Body_body (env : Env) (s : State) (w : BitVec 64) (i k e : Nat) (p :
     ent_step (step_load64 _ _ "%0" "%arrayidx" (e + 8 * i) w (by ent_auto) hread)
     ent_step (step_icmp_eq_imm _ _ "%tobool.not" "%0" 64 w (BitVec.ofInt 64 0) (by ent_auto))
     rw [ofInt64_zero]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hi => ent_auto
   case hk => ent_auto
@@ -2446,13 +2587,14 @@ theorem pos8Cleanup_body (env : Env) (s : State) (i k nblk : Nat) (p : String) (
     simp only [pos8Advance, reg, lit, pos8IncomingCl]
     have hopk' : phiIncoming p
         [("if.end", Operand.reg "%add1"), ("for.body", Operand.reg "%k.addr.011")] = some opk := hopk
-    ent_step (phi_step env s "%k.addr.1" (.int 64) _ p opk _ hpre hopk' hvk)
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre hopk' hvk]
+    all_goals (first | rfl | skip)
     ent_step (step_add_imm _ _ "%inc" "%i.010" 64 (BitVec.ofNat 64 i) (BitVec.ofInt 64 1)
       (by ent_auto))
     rw [ofInt64_one, ofNat64_add_one i hi64]
     ent_step (step_icmp_eq_reg _ _ "%exitcond.not" "%inc" "%nblk" 64
       (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 nblk) (by ent_auto) (by ent_auto))
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rfl
   case hk => ent_auto
   case hinc => ent_auto
@@ -2471,9 +2613,8 @@ theorem pos8Exit_body (env : Env) (s : State) (k : Nat) (p : String) (opk : Oper
     simp only [pos8LoopExit, reg, lit, pos8IncomingE]
     have hopk' : phiIncoming p
         [("entry", Operand.reg "%k"), ("cleanup", Operand.reg "%k.addr.1")] = some opk := hopk
-    ent_step (phi_step env s "%k.addr.0.lcssa" (.int 64) _ p opk _ hpre hopk' hvk)
-    simp only [denoteCode, Option.bind]
-    rfl
+    rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre hopk' hvk]
+    all_goals (first | rfl | skip)
   case hk => ent_auto
 
 
@@ -3240,8 +3381,9 @@ theorem entry_pos8_refines (ent : List (BitVec 64)) (blk0 nblk k : Nat) (mem : M
             · right; exact h))
 
 theorem denoteCode_cons_none (calls : Calls) (i : Instr) (is : List Instr) (s : State)
-    (h : evalInstr calls s i = none) : denoteCode calls (i :: is) s = none := by
-  simp only [denoteCode, h]
+    (h : evalInstr calls s i = none) (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = none :=
+  LeanLLVM.denoteCode_cons_none calls i is s h hi
 
 theorem loadValue_i64_none {m : Mem} {a : Nat} (h : readBytes m a 8 = none) :
     loadValue m (.int 64) a = none := by
@@ -3276,9 +3418,17 @@ theorem pos8Body_denote_none (env : Env) (s : State) (i k e : Nat) (p : String)
   have hopi' : phiIncoming p
       [("cleanup", Operand.reg "%inc"),
        ("entry", Operand.imm (Const.int 64 (BitVec.ofInt 64 0)))] = some opi := hopi
-  ent_step (phi_step env s "%k.addr.011" (.int 64) _ p opk _ hpre hopk' hvk)
-  ent_step (phi_step (("%k.addr.011", .int 64 (BitVec.ofNat 64 k)) :: env) s
-    "%i.010" (.int 64) _ p opi _ hpre hopi' hvi)
+  have hvi' : evalOperand (withEnv env s) opi
+      = some (.int 64 (BitVec.ofNat 64 i)) := by
+    rw [← evalOperand_withEnv_cons_of_ne (env := env) (s := s)
+      (n := "%k.addr.011") (v := .int 64 (BitVec.ofNat 64 k)) (op := opi) ?_]
+    exact hvi
+    have hm := phiIncoming_mem hopi'
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hm
+    rcases hm with rfl | rfl <;> decide
+  rw [denoteCode_phi2 _ _ _ _ _ _ _ _ _ _ hpre hopk' hvk hopi' hvi']
+  all_goals (first | rfl | skip)
   ent_step (step_gep64 _ _ "%arrayidx" "%ent" "%i.010" (.int 64) e (BitVec.ofNat 64 i)
     (by ent_auto) (by ent_auto)
     (by rw [toNat_ofNat64 i (by omega)]; omega))
@@ -3762,7 +3912,7 @@ theorem pos8Head_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o tab
     rw [show o + 4 * k + (BitVec.ofNat 64 (groupPop w 0)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 1 from by
       rw [toNat_ofNat64 (groupPop w 0) (by have := groupPop_le w 0; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_one w k]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     rw [blockMem_one]
   case h0' => ent_auto
   case hconv' => ent_auto
@@ -3821,7 +3971,7 @@ theorem pos8Group1_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     rw [show o + 4 * groupCursor w k 1 + (BitVec.ofNat 64 (groupPop w 1)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 2 from by
       rw [toNat_ofNat64 (groupPop w 1) (by have := groupPop_le w 1; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 1]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -3880,7 +4030,7 @@ theorem pos8Group2_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     rw [show o + 4 * groupCursor w k 2 + (BitVec.ofNat 64 (groupPop w 2)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 3 from by
       rw [toNat_ofNat64 (groupPop w 2) (by have := groupPop_le w 2; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 2]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -3939,7 +4089,7 @@ theorem pos8Group3_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     rw [show o + 4 * groupCursor w k 3 + (BitVec.ofNat 64 (groupPop w 3)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 4 from by
       rw [toNat_ofNat64 (groupPop w 3) (by have := groupPop_le w 3; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 3]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -3998,7 +4148,7 @@ theorem pos8Group4_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     rw [show o + 4 * groupCursor w k 4 + (BitVec.ofNat 64 (groupPop w 4)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 5 from by
       rw [toNat_ofNat64 (groupPop w 4) (by have := groupPop_le w 4; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 4]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -4057,7 +4207,7 @@ theorem pos8Group5_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     rw [show o + 4 * groupCursor w k 5 + (BitVec.ofNat 64 (groupPop w 5)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 6 from by
       rw [toNat_ofNat64 (groupPop w 5) (by have := groupPop_le w 5; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 5]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -4116,7 +4266,7 @@ theorem pos8Group6_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     rw [show o + 4 * groupCursor w k 6 + (BitVec.ofNat 64 (groupPop w 6)).toNat * (Ty.int 32).sizeBytes = o + 4 * groupCursor w k 7 from by
       rw [toNat_ofNat64 (groupPop w 6) (by have := groupPop_le w 6; omega), show (Ty.int 32).sizeBytes = 4 from rfl, gc_succ' w k 6]
       omega]
-    simp only [denoteCode, Option.bind]
+    simp only [denoteCode, denoteRun, State.bindAll, Option.bind]
     simp only [hs, withEnv]
     rfl
   case h0' => ent_auto
@@ -4399,21 +4549,21 @@ theorem pos8Groups_run_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o t
     pos8Tail_run e8 { s with mem := blockMem o w (posBase blk0 i) k 8 s.mem } w k h8a h8d
   rw [pos8GroupsInstrs_split]
   refine ⟨e9, ?_, h9a⟩
-  rw [denoteCode_append, h1]
+  rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h2]
+  rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h3]
+  rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h4]
+  rw [denoteCode_append, h4] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h5]
+  rw [denoteCode_append, h5] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h6]
+  rw [denoteCode_append, h6] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h7]
+  rw [denoteCode_append, h7] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
-  rw [denoteCode_append, h8]
+  rw [denoteCode_append, h8] <;> (first | rfl | decide | skip)
   simp only [Option.bind_some]
   exact h9
 
@@ -4456,373 +4606,301 @@ theorem pos8Groups_ub_of_row (env : Env) (s : State) (w : BitVec 64) (i blk0 k o
   match g with
   | 0 =>
       rw [pos8GroupsInstrs_split]
-      rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-        hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) rfl)]
-      rfl
+      rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 1 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 1
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
-        rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-          w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) rfl)]
-        rfl
+        rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 2 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 2
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
         by_cases hb1 : byteOf w 1 = byteOf w 2
         ·
-          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-            w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1)]
-          rfl
+          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1) ] <;> (first | rfl | decide | skip)
         ·
           obtain ⟨e2, h2, h2a, h2b, h2c, h2d, h2e⟩ :=
             pos8Group1_run_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
               w i blk0 k o tab s.mem (state_mem_update _ _) h1a h1b h1e h1c h1d hblk
               (by rw [state_mem_update]; exact hpre 1 (by omega) hb1)
-          rw [denoteCode_append, h2]
+          rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
           simp only [Option.bind_some]
-          rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
-            w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) rfl)]
-          rfl
+          rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem } w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 3 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 3
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
         by_cases hb1 : byteOf w 1 = byteOf w 3
         ·
-          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-            w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1)]
-          rfl
+          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1) ] <;> (first | rfl | decide | skip)
         ·
           obtain ⟨e2, h2, h2a, h2b, h2c, h2d, h2e⟩ :=
             pos8Group1_run_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
               w i blk0 k o tab s.mem (state_mem_update _ _) h1a h1b h1e h1c h1d hblk
               (by rw [state_mem_update]; exact hpre 1 (by omega) hb1)
-          rw [denoteCode_append, h2]
+          rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
           simp only [Option.bind_some]
           by_cases hb2 : byteOf w 2 = byteOf w 3
           ·
-            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
-              w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2)]
-            rfl
+            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem } w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2) ] <;> (first | rfl | decide | skip)
           ·
             obtain ⟨e3, h3, h3a, h3b, h3c, h3d, h3e⟩ :=
               pos8Group2_run_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
                 w i blk0 k o tab s.mem (state_mem_update _ _) h2a h2b h2e h2c h2d hblk
                 (by rw [state_mem_update]; exact hpre 2 (by omega) hb2)
-            rw [denoteCode_append, h3]
+            rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
             simp only [Option.bind_some]
-            rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
-              w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) rfl)]
-            rfl
+            rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem } w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 4 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 4
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
         by_cases hb1 : byteOf w 1 = byteOf w 4
         ·
-          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-            w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1)]
-          rfl
+          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1) ] <;> (first | rfl | decide | skip)
         ·
           obtain ⟨e2, h2, h2a, h2b, h2c, h2d, h2e⟩ :=
             pos8Group1_run_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
               w i blk0 k o tab s.mem (state_mem_update _ _) h1a h1b h1e h1c h1d hblk
               (by rw [state_mem_update]; exact hpre 1 (by omega) hb1)
-          rw [denoteCode_append, h2]
+          rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
           simp only [Option.bind_some]
           by_cases hb2 : byteOf w 2 = byteOf w 4
           ·
-            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
-              w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2)]
-            rfl
+            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem } w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2) ] <;> (first | rfl | decide | skip)
           ·
             obtain ⟨e3, h3, h3a, h3b, h3c, h3d, h3e⟩ :=
               pos8Group2_run_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
                 w i blk0 k o tab s.mem (state_mem_update _ _) h2a h2b h2e h2c h2d hblk
                 (by rw [state_mem_update]; exact hpre 2 (by omega) hb2)
-            rw [denoteCode_append, h3]
+            rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
             simp only [Option.bind_some]
             by_cases hb3 : byteOf w 3 = byteOf w 4
             ·
-              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
-                w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3)]
-              rfl
+              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem } w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3) ] <;> (first | rfl | decide | skip)
             ·
               obtain ⟨e4, h4, h4a, h4b, h4c, h4d, h4e⟩ :=
                 pos8Group3_run_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
                   w i blk0 k o tab s.mem (state_mem_update _ _) h3a h3b h3e h3c h3d hblk
                   (by rw [state_mem_update]; exact hpre 3 (by omega) hb3)
-              rw [denoteCode_append, h4]
+              rw [denoteCode_append, h4] <;> (first | rfl | decide | skip)
               simp only [Option.bind_some]
-              rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
-                w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) rfl)]
-              rfl
+              rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem } w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 5 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 5
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
         by_cases hb1 : byteOf w 1 = byteOf w 5
         ·
-          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-            w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1)]
-          rfl
+          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1) ] <;> (first | rfl | decide | skip)
         ·
           obtain ⟨e2, h2, h2a, h2b, h2c, h2d, h2e⟩ :=
             pos8Group1_run_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
               w i blk0 k o tab s.mem (state_mem_update _ _) h1a h1b h1e h1c h1d hblk
               (by rw [state_mem_update]; exact hpre 1 (by omega) hb1)
-          rw [denoteCode_append, h2]
+          rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
           simp only [Option.bind_some]
           by_cases hb2 : byteOf w 2 = byteOf w 5
           ·
-            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
-              w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2)]
-            rfl
+            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem } w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2) ] <;> (first | rfl | decide | skip)
           ·
             obtain ⟨e3, h3, h3a, h3b, h3c, h3d, h3e⟩ :=
               pos8Group2_run_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
                 w i blk0 k o tab s.mem (state_mem_update _ _) h2a h2b h2e h2c h2d hblk
                 (by rw [state_mem_update]; exact hpre 2 (by omega) hb2)
-            rw [denoteCode_append, h3]
+            rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
             simp only [Option.bind_some]
             by_cases hb3 : byteOf w 3 = byteOf w 5
             ·
-              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
-                w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3)]
-              rfl
+              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem } w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3) ] <;> (first | rfl | decide | skip)
             ·
               obtain ⟨e4, h4, h4a, h4b, h4c, h4d, h4e⟩ :=
                 pos8Group3_run_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
                   w i blk0 k o tab s.mem (state_mem_update _ _) h3a h3b h3e h3c h3d hblk
                   (by rw [state_mem_update]; exact hpre 3 (by omega) hb3)
-              rw [denoteCode_append, h4]
+              rw [denoteCode_append, h4] <;> (first | rfl | decide | skip)
               simp only [Option.bind_some]
               by_cases hb4 : byteOf w 4 = byteOf w 5
               ·
-                rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
-                  w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) hb4)]
-                rfl
+                rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem } w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) hb4) ] <;> (first | rfl | decide | skip)
               ·
                 obtain ⟨e5, h5, h5a, h5b, h5c, h5d, h5e⟩ :=
                   pos8Group4_run_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
                     w i blk0 k o tab s.mem (state_mem_update _ _) h4a h4b h4e h4c h4d hblk
                     (by rw [state_mem_update]; exact hpre 4 (by omega) hb4)
-                rw [denoteCode_append, h5]
+                rw [denoteCode_append, h5] <;> (first | rfl | decide | skip)
                 simp only [Option.bind_some]
-                rw [denoteCode_append, pos8Group5_run_none_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem }
-                  w tab h5a h5c (by rw [state_mem_update]; exact hfail 5 (by omega) rfl)]
-                rfl
+                rw [denoteCode_append, pos8Group5_run_none_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem } w tab h5a h5c (by rw [state_mem_update]; exact hfail 5 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 6 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 6
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
         by_cases hb1 : byteOf w 1 = byteOf w 6
         ·
-          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-            w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1)]
-          rfl
+          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1) ] <;> (first | rfl | decide | skip)
         ·
           obtain ⟨e2, h2, h2a, h2b, h2c, h2d, h2e⟩ :=
             pos8Group1_run_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
               w i blk0 k o tab s.mem (state_mem_update _ _) h1a h1b h1e h1c h1d hblk
               (by rw [state_mem_update]; exact hpre 1 (by omega) hb1)
-          rw [denoteCode_append, h2]
+          rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
           simp only [Option.bind_some]
           by_cases hb2 : byteOf w 2 = byteOf w 6
           ·
-            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
-              w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2)]
-            rfl
+            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem } w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2) ] <;> (first | rfl | decide | skip)
           ·
             obtain ⟨e3, h3, h3a, h3b, h3c, h3d, h3e⟩ :=
               pos8Group2_run_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
                 w i blk0 k o tab s.mem (state_mem_update _ _) h2a h2b h2e h2c h2d hblk
                 (by rw [state_mem_update]; exact hpre 2 (by omega) hb2)
-            rw [denoteCode_append, h3]
+            rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
             simp only [Option.bind_some]
             by_cases hb3 : byteOf w 3 = byteOf w 6
             ·
-              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
-                w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3)]
-              rfl
+              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem } w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3) ] <;> (first | rfl | decide | skip)
             ·
               obtain ⟨e4, h4, h4a, h4b, h4c, h4d, h4e⟩ :=
                 pos8Group3_run_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
                   w i blk0 k o tab s.mem (state_mem_update _ _) h3a h3b h3e h3c h3d hblk
                   (by rw [state_mem_update]; exact hpre 3 (by omega) hb3)
-              rw [denoteCode_append, h4]
+              rw [denoteCode_append, h4] <;> (first | rfl | decide | skip)
               simp only [Option.bind_some]
               by_cases hb4 : byteOf w 4 = byteOf w 6
               ·
-                rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
-                  w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) hb4)]
-                rfl
+                rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem } w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) hb4) ] <;> (first | rfl | decide | skip)
               ·
                 obtain ⟨e5, h5, h5a, h5b, h5c, h5d, h5e⟩ :=
                   pos8Group4_run_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
                     w i blk0 k o tab s.mem (state_mem_update _ _) h4a h4b h4e h4c h4d hblk
                     (by rw [state_mem_update]; exact hpre 4 (by omega) hb4)
-                rw [denoteCode_append, h5]
+                rw [denoteCode_append, h5] <;> (first | rfl | decide | skip)
                 simp only [Option.bind_some]
                 by_cases hb5 : byteOf w 5 = byteOf w 6
                 ·
-                  rw [denoteCode_append, pos8Group5_run_none_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem }
-                    w tab h5a h5c (by rw [state_mem_update]; exact hfail 5 (by omega) hb5)]
-                  rfl
+                  rw [denoteCode_append, pos8Group5_run_none_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem } w tab h5a h5c (by rw [state_mem_update]; exact hfail 5 (by omega) hb5) ] <;> (first | rfl | decide | skip)
                 ·
                   obtain ⟨e6, h6, h6a, h6b, h6c, h6d, h6e⟩ :=
                     pos8Group5_run_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem }
                       w i blk0 k o tab s.mem (state_mem_update _ _) h5a h5b h5e h5c h5d hblk
                       (by rw [state_mem_update]; exact hpre 5 (by omega) hb5)
-                  rw [denoteCode_append, h6]
+                  rw [denoteCode_append, h6] <;> (first | rfl | decide | skip)
                   simp only [Option.bind_some]
-                  rw [denoteCode_append, pos8Group6_run_none_row e6 { s with mem := blockMem o w (posBase blk0 i) k 6 s.mem }
-                    w tab h6a h6c (by rw [state_mem_update]; exact hfail 6 (by omega) rfl)]
-                  rfl
+                  rw [denoteCode_append, pos8Group6_run_none_row e6 { s with mem := blockMem o w (posBase blk0 i) k 6 s.mem } w tab h6a h6c (by rw [state_mem_update]; exact hfail 6 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | 7 =>
       rw [pos8GroupsInstrs_split]
       by_cases hb0 : byteOf w 0 = byteOf w 7
       ·
-        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab
-          hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0)]
-        rfl
+        rw [denoteCode_append, pos8Head_run_none_row env s w i blk0 k o tab hi hbk hout hk h0 htab hconv hk63 (hfail 0 (by omega) hb0) ] <;> (first | rfl | decide | skip)
       ·
         obtain ⟨e1, h1, h1a, h1b, h1c, h1d, h1e⟩ :=
           pos8Head_run_row env s w i blk0 k o tab hi hbk hout hk h0 htab hk63 hblk hconv
             (hpre 0 (by omega) hb0)
-        rw [denoteCode_append, h1]
+        rw [denoteCode_append, h1] <;> (first | rfl | decide | skip)
         simp only [Option.bind_some]
         by_cases hb1 : byteOf w 1 = byteOf w 7
         ·
-          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
-            w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1)]
-          rfl
+          rw [denoteCode_append, pos8Group1_run_none_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem } w tab h1a h1c (by rw [state_mem_update]; exact hfail 1 (by omega) hb1) ] <;> (first | rfl | decide | skip)
         ·
           obtain ⟨e2, h2, h2a, h2b, h2c, h2d, h2e⟩ :=
             pos8Group1_run_row e1 { s with mem := blockMem o w (posBase blk0 i) k 1 s.mem }
               w i blk0 k o tab s.mem (state_mem_update _ _) h1a h1b h1e h1c h1d hblk
               (by rw [state_mem_update]; exact hpre 1 (by omega) hb1)
-          rw [denoteCode_append, h2]
+          rw [denoteCode_append, h2] <;> (first | rfl | decide | skip)
           simp only [Option.bind_some]
           by_cases hb2 : byteOf w 2 = byteOf w 7
           ·
-            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
-              w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2)]
-            rfl
+            rw [denoteCode_append, pos8Group2_run_none_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem } w tab h2a h2c (by rw [state_mem_update]; exact hfail 2 (by omega) hb2) ] <;> (first | rfl | decide | skip)
           ·
             obtain ⟨e3, h3, h3a, h3b, h3c, h3d, h3e⟩ :=
               pos8Group2_run_row e2 { s with mem := blockMem o w (posBase blk0 i) k 2 s.mem }
                 w i blk0 k o tab s.mem (state_mem_update _ _) h2a h2b h2e h2c h2d hblk
                 (by rw [state_mem_update]; exact hpre 2 (by omega) hb2)
-            rw [denoteCode_append, h3]
+            rw [denoteCode_append, h3] <;> (first | rfl | decide | skip)
             simp only [Option.bind_some]
             by_cases hb3 : byteOf w 3 = byteOf w 7
             ·
-              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
-                w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3)]
-              rfl
+              rw [denoteCode_append, pos8Group3_run_none_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem } w tab h3a h3c (by rw [state_mem_update]; exact hfail 3 (by omega) hb3) ] <;> (first | rfl | decide | skip)
             ·
               obtain ⟨e4, h4, h4a, h4b, h4c, h4d, h4e⟩ :=
                 pos8Group3_run_row e3 { s with mem := blockMem o w (posBase blk0 i) k 3 s.mem }
                   w i blk0 k o tab s.mem (state_mem_update _ _) h3a h3b h3e h3c h3d hblk
                   (by rw [state_mem_update]; exact hpre 3 (by omega) hb3)
-              rw [denoteCode_append, h4]
+              rw [denoteCode_append, h4] <;> (first | rfl | decide | skip)
               simp only [Option.bind_some]
               by_cases hb4 : byteOf w 4 = byteOf w 7
               ·
-                rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
-                  w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) hb4)]
-                rfl
+                rw [denoteCode_append, pos8Group4_run_none_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem } w tab h4a h4c (by rw [state_mem_update]; exact hfail 4 (by omega) hb4) ] <;> (first | rfl | decide | skip)
               ·
                 obtain ⟨e5, h5, h5a, h5b, h5c, h5d, h5e⟩ :=
                   pos8Group4_run_row e4 { s with mem := blockMem o w (posBase blk0 i) k 4 s.mem }
                     w i blk0 k o tab s.mem (state_mem_update _ _) h4a h4b h4e h4c h4d hblk
                     (by rw [state_mem_update]; exact hpre 4 (by omega) hb4)
-                rw [denoteCode_append, h5]
+                rw [denoteCode_append, h5] <;> (first | rfl | decide | skip)
                 simp only [Option.bind_some]
                 by_cases hb5 : byteOf w 5 = byteOf w 7
                 ·
-                  rw [denoteCode_append, pos8Group5_run_none_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem }
-                    w tab h5a h5c (by rw [state_mem_update]; exact hfail 5 (by omega) hb5)]
-                  rfl
+                  rw [denoteCode_append, pos8Group5_run_none_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem } w tab h5a h5c (by rw [state_mem_update]; exact hfail 5 (by omega) hb5) ] <;> (first | rfl | decide | skip)
                 ·
                   obtain ⟨e6, h6, h6a, h6b, h6c, h6d, h6e⟩ :=
                     pos8Group5_run_row e5 { s with mem := blockMem o w (posBase blk0 i) k 5 s.mem }
                       w i blk0 k o tab s.mem (state_mem_update _ _) h5a h5b h5e h5c h5d hblk
                       (by rw [state_mem_update]; exact hpre 5 (by omega) hb5)
-                  rw [denoteCode_append, h6]
+                  rw [denoteCode_append, h6] <;> (first | rfl | decide | skip)
                   simp only [Option.bind_some]
                   by_cases hb6 : byteOf w 6 = byteOf w 7
                   ·
-                    rw [denoteCode_append, pos8Group6_run_none_row e6 { s with mem := blockMem o w (posBase blk0 i) k 6 s.mem }
-                      w tab h6a h6c (by rw [state_mem_update]; exact hfail 6 (by omega) hb6)]
-                    rfl
+                    rw [denoteCode_append, pos8Group6_run_none_row e6 { s with mem := blockMem o w (posBase blk0 i) k 6 s.mem } w tab h6a h6c (by rw [state_mem_update]; exact hfail 6 (by omega) hb6) ] <;> (first | rfl | decide | skip)
                   ·
                     obtain ⟨e7, h7, h7a, h7b, h7c, h7d, h7e⟩ :=
                       pos8Group6_run_row e6 { s with mem := blockMem o w (posBase blk0 i) k 6 s.mem }
                         w i blk0 k o tab s.mem (state_mem_update _ _) h6a h6b h6e h6c h6d hblk
                         (by rw [state_mem_update]; exact hpre 6 (by omega) hb6)
-                    rw [denoteCode_append, h7]
+                    rw [denoteCode_append, h7] <;> (first | rfl | decide | skip)
                     simp only [Option.bind_some]
-                    rw [denoteCode_append, pos8Group7_run_none_row e7 { s with mem := blockMem o w (posBase blk0 i) k 7 s.mem }
-                      w tab h7a h7c (by rw [state_mem_update]; exact hfail 7 (by omega) rfl)]
-                    rfl
+                    rw [denoteCode_append, pos8Group7_run_none_row e7 { s with mem := blockMem o w (posBase blk0 i) k 7 s.mem } w tab h7a h7c (by rw [state_mem_update]; exact hfail 7 (by omega) rfl) ] <;> (first | rfl | decide | skip)
   | n + 8 =>
       exact False.elim (by omega)
 /-- `if.end` steps when every row the block reads is readable: the groups block

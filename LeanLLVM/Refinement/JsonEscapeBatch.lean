@@ -36,13 +36,93 @@ def batchInstrs : List Instr :=
   | [] => []
 
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
     (h : lookupName env n = some v) : evalOperand (withEnv env s) (.reg n) = some v := by
   simp only [withEnv, evalOperand, h]
+
+/-- A `phi` in a run reads the snapshot, not a cell a sibling just bound: a
+binding the run has not installed yet cannot shadow its operand. -/
+theorem evalOperand_withEnv_cons_of_ne {env : Env} {s : State} {n : String}
+    {v : Value} {op : Operand} (h : n ∉ Operand.regs op) :
+    evalOperand (withEnv ((n, v) :: env) s) op = evalOperand (withEnv env s) op := by
+  cases op with
+  | reg m =>
+      have hmn : n ≠ m := by
+        intro hnm
+        exact h (by simp only [Operand.regs, List.mem_singleton]; exact hnm)
+      simp only [withEnv, evalOperand, State.bind, lookupName_cons_ne v env hmn]
+  | imm c => rfl
+
+/-- A leading `phi` run of one member: the operand is read at the state the edge
+delivered, and the binding is installed before anything after the run executes.
+Stated here because `withEnv` is this module's name for the state view, and the
+`phi` step is the one instruction `denoteCode_cons_of` cannot take. -/
+theorem phiRun_one (calls : Calls) (env : Env) (s : State) (d : String) (ty : Ty)
+    (inc : List (String × Operand)) {p : String} {op : Operand} {v : Value}
+    (is : List Instr) (hpre : s.pre = some p) (hinc : phiIncoming p inc = some op)
+    (hop : evalOperand (withEnv env s) op = some v)
+    {hst : startsWithPhi is = false} :
+    denoteCode calls (.phi d ty inc :: is) (withEnv env s) =
+      denoteCode calls is (withEnv ((d, v) :: env) s) := by
+  have hsel : PhiSelects (withEnv env s) p
+      [{ dst := d, ty := ty, incoming := inc }] [(d, v)] :=
+    PhiSelects.cons hinc hop PhiSelects.nil
+  have h := denoteCode_phiRun (calls := calls) (s := withEnv env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, withEnv] using h
+
+/-- A leading `phi` run of two members: both operands read the one snapshot and
+the two bindings land together. -/
+theorem phiRun_two (calls : Calls) (env : Env) (s : State)
+    (d1 : String) (ty1 : Ty) (inc1 : List (String × Operand))
+    (d2 : String) (ty2 : Ty) (inc2 : List (String × Operand))
+    {p : String} {op1 : Operand} {v1 : Value} {op2 : Operand} {v2 : Value}
+    (is : List Instr) (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p inc1 = some op1)
+    (hop1 : evalOperand (withEnv env s) op1 = some v1)
+    (hinc2 : phiIncoming p inc2 = some op2)
+    (hop2 : evalOperand (withEnv env s) op2 = some v2)
+    {hst : startsWithPhi is = false} :
+    denoteCode calls (.phi d1 ty1 inc1 :: .phi d2 ty2 inc2 :: is) (withEnv env s) =
+      denoteCode calls is (withEnv ((d2, v2) :: (d1, v1) :: env) s) := by
+  have hsel : PhiSelects (withEnv env s) p
+      [{ dst := d1, ty := ty1, incoming := inc1 },
+       { dst := d2, ty := ty2, incoming := inc2 }] [(d1, v1), (d2, v2)] :=
+    PhiSelects.cons hinc1 hop1 (PhiSelects.cons hinc2 hop2 PhiSelects.nil)
+  have h := denoteCode_phiRun (calls := calls) (s := withEnv env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, withEnv] using h
+
+/-- A leading `phi` run of three members: every operand reads the one snapshot
+and the three bindings land together. -/
+theorem phiRun_three (calls : Calls) (env : Env) (s : State)
+    (d1 : String) (ty1 : Ty) (inc1 : List (String × Operand))
+    (d2 : String) (ty2 : Ty) (inc2 : List (String × Operand))
+    (d3 : String) (ty3 : Ty) (inc3 : List (String × Operand))
+    {p : String} {op1 : Operand} {v1 : Value} {op2 : Operand} {v2 : Value}
+    {op3 : Operand} {v3 : Value}
+    (is : List Instr) (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p inc1 = some op1)
+    (hop1 : evalOperand (withEnv env s) op1 = some v1)
+    (hinc2 : phiIncoming p inc2 = some op2)
+    (hop2 : evalOperand (withEnv env s) op2 = some v2)
+    (hinc3 : phiIncoming p inc3 = some op3)
+    (hop3 : evalOperand (withEnv env s) op3 = some v3)
+    {hst : startsWithPhi is = false} :
+    denoteCode calls (.phi d1 ty1 inc1 :: .phi d2 ty2 inc2 :: .phi d3 ty3 inc3 :: is)
+        (withEnv env s) =
+      denoteCode calls is (withEnv ((d3, v3) :: (d2, v2) :: (d1, v1) :: env) s) := by
+  have hsel : PhiSelects (withEnv env s) p
+      [{ dst := d1, ty := ty1, incoming := inc1 },
+       { dst := d2, ty := ty2, incoming := inc2 },
+       { dst := d3, ty := ty3, incoming := inc3 }] [(d1, v1), (d2, v2), (d3, v3)] :=
+    PhiSelects.cons hinc1 hop1 (PhiSelects.cons hinc2 hop2
+      (PhiSelects.cons hinc3 hop3 PhiSelects.nil))
+  have h := denoteCode_phiRun (calls := calls) (s := withEnv env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, withEnv] using h
 
 theorem evalOperand_lit_of (s : State) (w : Nat) (c : BitVec w) :
     evalOperand s (.imm (.int w c)) = some (.int w c) := rfl
@@ -290,8 +370,8 @@ theorem batch_run (env : Env) (s : State) (esc : BitVec 64) (base : BitVec 32) (
   rw [denoteCode_cons_of _ _ _ _ _ (b_trunc _ _ "%cast36" "%8" _ (by b_lk lookupName_cons_self))]
   rw [denoteCode_cons_of _ _ _ _ _ (b_call_umin _ _ "%cond" "%cast36" _ (BitVec.ofInt 32 8) (by b_lk lookupName_cons_self))]
   constructor
-  · simp only [denoteCode, Option.map_some, withEnv, batchMem, batchBytes, batchCast, batchChain]
-  · simp [denoteCode, withEnv]
+  · simp only [denoteCode, denoteRun, State.bindAll, Option.map_some, withEnv, batchMem, batchBytes, batchCast, batchChain]
+  · simp [denoteCode, denoteRun, State.bindAll, withEnv]
 
 /-- The count the batch returns, in the form the record states it: the truncated
 population count against eight. -/

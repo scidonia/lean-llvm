@@ -189,8 +189,9 @@ theorem lstDoBody_denote (env : Env) (s : State) (bs w : BitVec 64) (p : String)
         .binop "%and22.i" .and 64 (.reg "%shl21.i") (.reg "%and7.i"),
         .binop "%or23.i" .or 64 (.reg "%and22.i") (.reg "%e.1.i"),
         .icmp "%cmp24.not.i" .eq 64 (.reg "%or23.i") (.reg "%e.1.i") ] from rfl]
-  rw [denoteCode_cons_of _ _ _ _ _ (evalInstr_phi hpre hinc hop)]
-  rw [show (withEnv env s).bind "%e.1.i" (.int 64 w) = withEnv (ld1 env w) s from rfl]
+  rw [phiRun_one escapeCalls env s "%e.1.i" (.int 64) _ _ hpre hinc hop]
+  all_goals (first | rfl | decide | skip)
+  rw [show withEnv (("%e.1.i", .int 64 w) :: env) s = withEnv (ld1 env w) s from rfl]
   rw [denoteCode_cons_of _ _ _ _ _ (b_shl64_two _ s "%shl21.i" "%e.1.i" w (by ld_simp; ld_lk))]
   rw [show withEnv (("%shl21.i", .int 64 (w <<< 2)) :: ld1 env w) s =
     withEnv (ld2 env w) s from rfl]
@@ -206,7 +207,7 @@ theorem lstDoBody_denote (env : Env) (s : State) (bs w : BitVec 64) (p : String)
     (stepWord bs w) w (by ld_simp; ld_lk) (by ld_simp; ld_lk))]
   rw [show withEnv (("%cmp24.not.i", .int 1 (evalICmp .eq (stepWord bs w) w)) :: ld4 env bs w) s =
     withEnv (ld5 env bs w) s from rfl]
-  simp only [denoteCode]
+  simp only [denoteCode, denoteRun, State.bindAll]
 
 /-- **`do.body.i`'s one control step.**  From the head with the carried word `w` in
 the `phi`'s selected operand, the block computes `stepWord bs w` and jumps to

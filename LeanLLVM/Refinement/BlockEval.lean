@@ -31,7 +31,7 @@ assigned from a branch it then rejects.
 
 **3. One chain step per instruction shape.**  Each `denoteCode_*` lemma is the
 `denoteCode_cons_of` step for one `evalInstr`-shaped wrapper — the shape this
-tree already uses (`b_load64`, `step_gep64`, `phi_step`) — covering the
+tree already uses (`b_load64`, `step_gep64`, `step_phi`) — covering the
 operand-staging instructions the pipeline's blocks use beyond the
 already-automated `binop`/`load`/`icmp`: `gep`, `phi`, `trunc`, `select`, and
 call-argument staging.  A step's value arguments are *implicit*, so the chain
@@ -58,6 +58,7 @@ check before them is a check on unassigned metavariables.
 block's `denoteCode`; the address bound, the memory facts and the call outcomes
 are the caller's, as they are in every block proof in this tree.
 -/
+import Lean
 import LeanLLVM.Refinement.JsonS1MasksIR
 
 set_option autoImplicit false
@@ -87,6 +88,21 @@ def cells : List (String × Value) → Env → Env
 theorem stateAt_stateAt (env env' : Env) (s : State) :
     stateAt env' (stateAt env s) = stateAt env' s := rfl
 
+/-- A run's cells, taken in the order the block wrote them: each lands in front
+of the ones already installed, so the last written is the outermost. -/
+def runCells : List (String × Value) → Env → Env
+  | [], env => env
+  | c :: cs, env => runCells cs (c :: env)
+
+/-- Installing a run's bindings is the builder applied to the run's cells. -/
+theorem stateAt_bindAll_runCells (env : Env) (s : State) :
+    ∀ vs : List (String × Value), (stateAt env s).bindAll vs = stateAt (runCells vs env) s
+  | [] => rfl
+  | (n, v) :: rest => by
+      rw [State.bindAll, show (stateAt env s).bind n v = stateAt ((n, v) :: env) s from rfl,
+        stateAt_bindAll_runCells ((n, v) :: env) s rest]
+      rfl
+
 theorem stateAt_mem (env : Env) (s : State) : (stateAt env s).mem = s.mem := rfl
 
 theorem stateAt_next (env : Env) (s : State) : (stateAt env s).next = s.next := rfl
@@ -105,11 +121,14 @@ theorem evalOperand_lit_of (s : State) (w : Nat) (c : BitVec w) :
     evalOperand s (.imm (.int w c)) = some (.int w c) := rfl
 
 /-- Straight-line composition: an instruction that resolves to a state leaves the
-rest of the list to be run from it. -/
+rest of the list to be run from it.  A leading `phi` run is one step of its own,
+so this is the step for the instructions after it; the witness that the
+instruction is not a `phi` is decided from its shape. -/
 theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' : State)
-    (h : evalInstr calls s i = some s') :
-    denoteCode calls (i :: is) s = denoteCode calls is s' := by
-  simp [denoteCode, h]
+    (h : evalInstr calls s i = some s')
+    (hi : i.isPhi = false := by rfl) :
+    denoteCode calls (i :: is) s = denoteCode calls is s' :=
+  LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 /-- The eight bytes of a 64-bit word are `2 ^ 64`. -/
 theorem pow256_eight : (256 : Nat) ^ 8 = 2 ^ 64 := by decide
@@ -765,13 +784,23 @@ theorem denoteCode_store64 (calls : Calls) (env : Env) (s : State) (v p : String
         (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
   rw [denoteCode_cons_of _ _ _ _ _ (step_store64 calls env s v p hv hp)]
 
+/-- A block's leading `phi` run of one member, as a chain step: the operand is
+read at the state the edge delivered and the binding lands before the rest of
+the block.  A block with several leading `phi`s is one step for the whole run
+(`block_phi_run`); this is its single-member form, and it needs the run to be
+over, which is `hst`. -/
 theorem denoteCode_phi (calls : Calls) (env : Env) (s : State) (d : String) (ty : Ty)
     (inc : List (String × Operand)) {p : String} {op : Operand} {v : Value}
     (hpre : s.pre = some p) (hinc : phiIncoming p inc = some op)
-    (hop : evalOperand (stateAt env s) op = some v) (is : List Instr) :
+    (hop : evalOperand (stateAt env s) op = some v) (is : List Instr)
+    (hst : startsWithPhi is = false) :
     denoteCode calls (.phi d ty inc :: is) (stateAt env s) =
       denoteCode calls is (stateAt ((d, v) :: env) s) := by
-  rw [denoteCode_cons_of _ _ _ _ _ (step_phi calls env s d ty inc hpre hinc hop)]
+  have hsel : PhiSelects (stateAt env s) p
+      [{ dst := d, ty := ty, incoming := inc }] [(d, v)] :=
+    PhiSelects.cons hinc hop PhiSelects.nil
+  have h := denoteCode_phiRun (calls := calls) (s := stateAt env s) hpre hsel hst
+  simpa [PhiSpec.instr, State.bindAll, State.bind, stateAt] using h
 
 theorem denoteCode_callVoid3 (calls : Calls) (env : Env) (s : State) (callee : String)
     (o1 o2 o3 : Operand) {v1 v2 v3 : Value} {r : CallOutcome}
@@ -798,6 +827,132 @@ theorem denoteCode_call5 (calls : Calls) (env : Env) (s : State) (d callee : Str
           (Ty.int 64, .imm (.int 64 c3)), (Ty.ptr, o4), (Ty.int 64, o5)] :: is) (stateAt env s) =
       denoteCode calls is (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
   rw [denoteCode_cons_of _ _ _ _ _ (step_call5 calls env s d callee o1 o2 o4 o5 h1 h2 h4 h5 hc)]
+
+/-! ### The leading `phi` run, as one chain step
+
+A block's leading `phi` run is a single step of `denoteCode`: every member reads
+the state the edge delivered, and the bindings land together.  The tactic below
+reads the run off the goal's own instruction list — which is a literal, since the
+block's pins have already been rewritten in — and applies `denoteCode_phiRun`
+with each member's selected value as a side goal.  Those side goals are the same
+shape the single-instruction steps leave (`phiIncoming p inc = some op`,
+`evalOperand s op = some v`), so `block_close` discharges them. -/
+
+open Lean Meta Elab Tactic in
+/-- Apply `denoteCode_phiRun` to the goal's leading `phi` run.  Fails when the
+goal is not a `denoteCode` equation whose list begins with a `phi`, so it can sit
+inside `repeat` beside the other chain steps. -/
+elab "block_phi_run" : tactic => do
+  let goal ← getMainGoal
+  let target ← instantiateMVars (← goal.getType)
+  let some (_, lhs, rhs) := target.eq? | throwError "block_phi_run: not an equation"
+  /- The goal's head is read without `whnf`: `denoteCode` is a definition, and
+  unfolding it turns the very shape this tactic matches on into `denoteRun`. -/
+  let lhsFn := lhs.getAppFn
+  let lhsArgs := lhs.getAppArgs
+  let (calls, list, st) ←
+    if lhsFn.isConstOf ``denoteCode && lhsArgs.size == 3 then
+      pure (lhsArgs[0]!, lhsArgs[1]!, lhsArgs[2]!)
+    else if lhsFn.isConstOf ``denoteRun && lhsArgs.size == 4 then
+      if lhsArgs[1]!.isAppOfArity ``List.nil 1 then
+        pure (lhsArgs[0]!, lhsArgs[2]!, lhsArgs[3]!)
+      else
+        throwError "block_phi_run: the run has pending bindings"
+    else
+      throwError "block_phi_run: expected a denoteCode equation"
+  let p ← mkFreshExprMVar (some (mkConst ``String))
+  let operandTy := mkConst ``Operand
+  let valueTy := mkConst ``Value
+  /- The lemma's instruction list is a literal, so the run is its `phi` prefix. -/
+  let rec collect : Nat → Expr → Array Expr → Array Expr → Array Expr →
+      MetaM (Array Expr × Array Expr × Array Expr × Expr)
+    | 0, _, _, _, _ => throwError "block_phi_run: run too long"
+    | fuel + 1, l, specs, vs, leaf => do
+      let l ← whnf l
+      let (lfn, largs) := l.getAppFnArgs
+      /- `getAppArgs` carries the implicit arguments too, so the cell and the tail
+      are read from the end of the spine rather than by fixed index. -/
+      if lfn == ``List.cons && largs.size ≥ 2 then
+        let head ← whnf largs[largs.size - 2]!
+        let (hfn, hargs) := head.getAppFnArgs
+        if hfn == ``Instr.phi && hargs.size ≥ 3 then
+          let d := hargs[hargs.size - 3]!
+          let instTy := hargs[hargs.size - 2]!
+          let inc := hargs[hargs.size - 1]!
+          let spec ← mkAppM ``PhiSpec.mk #[d, instTy, inc]
+          let op ← mkFreshExprMVar (some operandTy)
+          let v ← mkFreshExprMVar (some valueTy)
+          let incEqTy ← mkAppM ``Eq #[← mkAppM ``phiIncoming #[p, inc],
+            ← mkAppM ``Option.some #[op]]
+          let opEqTy ← mkAppM ``Eq #[← mkAppM ``evalOperand #[st, op],
+            ← mkAppM ``Option.some #[v]]
+          let hinc ← mkFreshExprMVar (some incEqTy)
+          let hop ← mkFreshExprMVar (some opEqTy)
+          let pair ← mkAppM ``Prod.mk #[d, v]
+          collect fuel largs[largs.size - 1]! (specs.push spec) (vs.push pair)
+            ((leaf.push hinc).push hop)
+        else
+          return (specs, vs, leaf, l)
+      else
+        return (specs, vs, leaf, l)
+  let (specs, vs, leaf, rest) ← collect (list.getAppNumArgs + 8) list #[] #[] #[]
+  if specs.isEmpty then
+    throwError "block_phi_run: the list does not begin with a phi"
+  /- `List.cons` takes its element type implicitly, so the type is supplied
+  first: a two-argument `mkApp` would spend the element on that binder. -/
+  let mkList (elems : Array Expr) (ty : Expr) : Expr :=
+    elems.foldr (fun e acc => mkApp3 (mkConst ``List.cons [0]) ty e acc)
+      (mkApp (mkConst ``List.nil [0]) ty)
+  let pairTy ← mkAppM ``Prod #[mkConst ``String, valueTy]
+  let specTy := mkConst ``PhiSpec
+  let specsL := mkList specs specTy
+  let vsL := mkList vs pairTy
+  /- One `PhiSelects.cons` per member, each leaving its two premises as goals. -/
+  let total := specs.size
+  let rec build : Nat → Nat → MetaM Expr
+    | 0, _ => mkAppOptM ``PhiSelects.nil #[some st, some p]
+    | fuel + 1, k => do
+      if k ≥ total then
+        mkAppOptM ``PhiSelects.nil #[some st, some p]
+      else
+        let hinc := leaf[2 * k]!
+        let hop := leaf[2 * k + 1]!
+        let tail ← build fuel (k + 1)
+        mkAppOptM ``PhiSelects.cons
+          #[some st, some p, some specs[k]!, some (mkList (specs.extract (k + 1) total) specTy),
+            some (mkList (vs.extract (k + 1) total) pairTy), none, none,
+            some hinc, some hop, some tail]
+  let selProof ← build (total + 1) 0
+  let hpreTy ← mkAppM ``Eq #[← mkAppM ``State.pre #[st],
+    ← mkAppM ``Option.some #[p]]
+  let hpre ← mkFreshExprMVar (some hpreTy)
+  let hrestTy ← mkAppM ``Eq #[← mkAppM ``startsWithPhi #[rest],
+    mkConst ``Bool.false]
+  let hrest ← mkFreshExprMVar (some hrestTy)
+  /- The step rewrites the goal's left side to the block's remaining run; the
+  statement's own right side is what that run is then checked against, so the
+  remaining obligation is the equality between them. -/
+  let midTy ← mkAppM ``Eq #[← mkAppM ``denoteCode #[calls, rest,
+    ← mkAppM ``State.bindAll #[st, vsL]], rhs]
+  let mid ← mkFreshExprMVar (some midTy)
+  let lemma ← mkAppOptM ``denoteCode_phiRun
+    #[some calls, some st, some p, some specsL, some vsL, some rest,
+      some hpre, some selProof, some hrest]
+  let trans ← mkAppM ``Eq.trans #[lemma, mid]
+  goal.assign trans
+  let leafIds := leaf.toList.map Expr.mvarId!
+  let hpreId := hpre.mvarId!
+  let hrestId := hrest.mvarId!
+  let midId := mid.mvarId!
+  replaceMainGoal [midId]
+  /- The run's bindings are installed all at once; the state the remaining run
+  starts from is the builder applied to them, which is the spelling every chain
+  step matches on. -/
+  evalTactic (← `(tactic| rw [stateAt_bindAll_runCells]))
+  let mainGoals ← getGoals
+  /- The block's remaining run stays the main goal, so `block_step`'s `repeat`
+  keeps stepping it; the run's side goals are discharged by `block_close`. -/
+  replaceMainGoal (mainGoals ++ [hpreId, hrestId] ++ leafIds)
 
 /-! ### The whole-block tactic -/
 
@@ -830,7 +985,7 @@ macro "block_step" : tactic => `(tactic|
    | rw [denoteCode_gep8_reg _ _ _ _ _ _ ?_ ?_ ?_ _]
    | rw [denoteCode_load64 _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_store64 _ _ _ _ _ ?_ ?_ _]
-   | rw [denoteCode_phi _ _ _ _ _ _ ?_ ?_ ?_ _]
+   | block_phi_run
    | rw [denoteCode_callVoid3 _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_call5 _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]))
 
@@ -846,7 +1001,7 @@ the unfolded run with the builder, the side goals assign the values, and the
 last `rfl` closes the equation against those assignments.  Checking it earlier
 compares the builder with values that the lookups have not yet fixed. -/
 macro "block_close" : tactic => `(tactic|
-  (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode]))
+  (all_goals (try (simp (config := { failIfUnchanged := false }) only [cells, denoteCode, State.bindAll]))
    all_goals (try rfl)
    all_goals (try
      (first

@@ -6567,7 +6567,7 @@ theorem condCleanup_denote_tail (calls : Calls) (e : State) (p sel : String)
   rw [pCond_instrs, condOutTail]
   simp only [lit]
   rw [LeanLLVM.Refinement.BlockEval.denoteCode_phi calls e.env e "%k.0.lcssa" (Ty.int 64)
-    cleanupPhi (p := p) (op := .reg sel) (v := .int 64 kv) hpre hinc hsel]
+    cleanupPhi (p := p) (op := .reg sel) (v := .int 64 kv) hpre hinc hsel (hst := by rfl)]
   rw [LeanLLVM.Refinement.BlockEval.denoteCode_store64 calls
     (("%k.0.lcssa", .int 64 kv) :: e.env) e "%k.0.lcssa" "%nk" (x := kv) (a := nk)
     (by simp [lookupName]) (by
@@ -6723,9 +6723,9 @@ theorem cleanup_denote_value {calls : Calls} {e : State} {p : String} {op : Oper
     denoteCode calls pCleanup.instrs (stateAt e.env e) =
       some ((stateAt e.env e).bind "%retval.0" v) := by
   rw [pCleanup_instrs]
-  simp only [denoteCode]
-  rw [evalInstr_phi (calls := calls) (s := stateAt e.env e) (d := "%retval.0")
-    (ty := Ty.int 64) (inc := cleanupIncoming) (p := p) (op := op) (v := v) hpre hinc hop]
+  simp only [denoteCode, denoteRun, State.bindAll]
+  rw [phiSelect_eq (s := stateAt e.env e) hpre hinc hop]
+  simp [State.bindAll]
 
 /-- The valued return at the operand's own value. -/
 theorem execTerm_ret_value {s : State} {o : Operand} {v : Value}
