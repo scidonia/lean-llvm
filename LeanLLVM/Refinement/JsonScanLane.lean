@@ -101,13 +101,12 @@ the rule with those 120.
 **Where the bridge stands.**  The identification of the four words the rule
 leaves with the carry the model steps — `decodeState` of them is `bodyStep` of
 the four it read, under the `act` gate, with `maskStep` as the mask half — is
-**proved on its pending-requirement arm** as `ruleBridge_pending`, against the
-rule's own predicates.  The no-requirement arm's nine branches are stated and
-decomposed but not proved; the section below records what they still need and
-why.  **Not here at all:** the `laneStep` lemma the loop induction consumes, the
-induction over `valid ≤ 32`, and the statement's footprint clause.
-`scanWindowLLVM_refines` is still the statement `scanWindowStatement` and nothing
-here claims it.
+proved on both arms: `ruleBridge_pending` for an outstanding requirement, the
+nine leaves and `ruleBridge_no` for the no-requirement arm, and `ruleBridge` for
+the two together, all against the rule's own predicates.  **Not here at all:** the
+`laneStep` lemma the loop induction consumes, the induction over `valid ≤ 32`, and
+the statement's footprint clause.  `scanWindowLLVM_refines` is still the statement
+`scanWindowStatement` and nothing here claims it.
 -/
 import LeanLLVM.Refinement.JsonScanIR
 import LeanLLVM.Refinement.BlockEval
@@ -1805,15 +1804,17 @@ are unchanged — or it does not, and the words are the carry again.  It is the
 arm the lane reaches with a requirement outstanding, and it is proved against
 the emitted `ruleInstrs`' own predicates, not a re-description of them.
 
-The no-requirement arm's nine branches are **not** proved here.  The
-decomposition is stated and is the tree above; what a proof of those branches
-still needs is that `bodyStep`'s control test is a *`Bool`* conjunction
-(`st.inside && decide (b < 0x20)`) rather than a propositional one, so the
-`if`-condition a leaf discharges is `(a && decide p) = true` rather than `a = true
-∧ p`, and that `getLsbD` of a `select`-chain word must be pushed through its
-`if`s by `rw [getLsbD_if_prop]`, because `simp` does not consume that lemma.  With those two in place each remaining leaf is the same
-computation as `ruleBridge_pending`'s.  The bridge as a whole, the lane step,
-the induction over `valid ≤ 32`, the footprint clause and
+The no-requirement arm is proved too, one leaf per branch of the tree above, and
+the leaves record the two facts that shape it: `bodyStep`'s control test is a
+*`Bool`* conjunction (`st.inside && decide (b < 0x20)`) rather than a
+propositional one, so the `if`-condition a leaf discharges is
+`(a && decide p) = true` rather than `a = true ∧ p`; and `getLsbD` of a
+`select`-chain word is pushed through its `if`s by `rw [getLsbD_if_prop]`,
+because `simp` does not consume that lemma even when passed explicitly.
+`ruleBridge_no` dispatches on the model's own order and `ruleBridge` adds the
+pending arm, so the four words decode to the carry `bodyStep` leaves on every
+byte and every carry.  The lane step the loop induction consumes, the induction
+over `valid ≤ 32`, the footprint clause and
 `scanWindowStatementOf scanWindowBody` are still outstanding, and
 `scanWindowLLVM_refines` remains unclaimed. -/
 
@@ -2309,5 +2310,469 @@ theorem ruleBridge_pending (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : 
     lane_simp hnw, hnw0, hin
     rw [decodeState_trunc, hdec, if_neg hnw]
     rfl
+
+/-! ### The no-requirement arm
+
+`bodyStep` with no requirement outstanding is a tree of nine branches, and the
+rule's four words run the same tree: the run parity, the quote on each side of a
+body, the backslash, the control byte, the content lane, the lead byte's classes,
+the refusal of a byte no character starts with, and the lane outside a body.
+Each branch is a leaf below, proved by the same computation as
+`ruleBridge_pending`: every predicate restated as an `if` on the proposition it
+tests, the one-bit `&&&`/`^^^` folded to that proposition, and `getLsbD` pushed
+through each `select` chain with `getLsbD_if_prop` — which `simp` does not consume
+even when passed explicitly, so the leaves rewrite with it before closing.
+
+Two facts shape the tree.  `bodyStep`'s control test is a `Bool` conjunction, so
+the condition a leaf discharges is `(st.inside && decide (b < 0x20)) = true` and
+not `st.inside = true ∧ b < 0x20`.  And a lane the rule skips is a content lane:
+`skip_facts` reads the six facts out of the skip bit, `skip_one` puts them back,
+and together they make `ruleBridge_no_content` the only arm a skipped lane
+reaches.
+
+`ruleBridge_no` dispatches on the model's own order and `ruleBridge` adds the
+pending arm to it, so the rule's four words decode to the state `bodyStep` steps
+the carry to on every byte and every carry.  What the lane step still needs above
+this is the mask accumulator's word, the stop word and the counter, none of which
+is part of the carry. -/
+
+/-- The lead byte's count word is one, two or three, so it is never zero and
+`decodeState` reads a requirement out of it rather than `.none`. -/
+theorem vNc_toNat_ne_zero (b : UInt8) : (vNc b).toNat ≠ 0 := by
+  unfold vNc vN3v
+  repeat (first | split | decide)
+
+/-- A one-bit value xor-ed with one is one exactly when the value is zero. -/
+theorem xor_one_eq_one {x : BitVec 1} : (x ^^^ (1 : BitVec 1)) = 1 ↔ x = 0 := by
+  rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one x with h | h <;>
+    rw [h] <;> decide
+
+/-- A `Bool` that is not true is false. -/
+theorem bool_false_of_not {x : Bool} (h : ¬ x = true) : x = false := by
+  cases x <;> simp_all
+
+/-- The carry a slot holds when its count word is zero: the two flag bits and no
+requirement.  `decodeState` of the four words the rule read is this, which is the
+form the no-requirement arm's leaves conclude. -/
+abbrev carryForm (f : BitVec 32) : BodyState := ⟨f.getLsbD 0, f.getLsbD 1, Utf8Need.none⟩
+
+/-- The rule's gate is open on a live stop word and a lane it does not skip. -/
+theorem vAct_eq_one (b : UInt8) (f nw : BitVec 32) (stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hstp : stp = 0) (hskip : vSkip b f nw qb sb cb = 0) :
+    vAct stp b f nw qb sb cb = 1 := by
+  rw [vAct, vLive_ite, if_pos hstp, vNact, hskip]
+  decide
+
+/-- A byte that is not below `0x80` is at least `0x80`. -/
+theorem ge_of_not_lt {b : UInt8} (h : ¬ b < 0x80) : 0x80 ≤ b := by
+  have h128 : (0x80 : UInt8).toNat = 128 := by decide
+  have h' : ¬ b.toNat < 128 := by
+    rw [UInt8.lt_iff_toNat_lt, h128] at h
+    exact h
+  rw [UInt8.le_iff_toNat_le, h128]
+  omega
+
+set_option maxHeartbeats 4000000 in
+/-- **The run parity leaf.**  An odd run makes the byte escaped content: the rule
+clears the run bit in the flags word and leaves the requirement's count and bounds
+as it read them, which is `{ st with oddRun := false }`. -/
+theorem ruleBridge_no_parity (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hnw : nw = 0) (hodd : f.getLsbD 1 = true)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (⟨f.getLsbD 0, false, Utf8Need.none⟩ : BodyState) := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hodd
+  simp [decodeState]
+  all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+set_option maxHeartbeats 4000000 in
+/-- **The quote leaf, closing.**  Inside a body with no run and no requirement a
+quote closes the string: the rule leaves the carry alone and `bodyStep` reports
+`.closed`, which the statement records as the carry again. -/
+theorem ruleBridge_no_quote_close (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hq : IsQuoteB b = true) (hin : f.getLsbD 0 = true) (hnodd : f.getLsbD 1 = false)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      carryForm f := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hqb, hq, hin, hnodd
+  simp [decodeState]
+  all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+set_option maxHeartbeats 4000000 in
+/-- **The quote leaf, opening.**  Outside a body the same byte opens one: the rule
+sets the body flag, clears the run bit and leaves the count and bounds, which is
+`{ st with inside := true, oddRun := false }`. -/
+theorem ruleBridge_no_quote_open (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hq : IsQuoteB b = true) (hin : f.getLsbD 0 = false) (hnodd : f.getLsbD 1 = false)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (⟨true, false, Utf8Need.none⟩ : BodyState) := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hqb, hq, hin, hnodd
+  simp [decodeState]
+  all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+set_option maxHeartbeats 4000000 in
+/-- **The backslash leaf.**  A backslash starts a run in a body and escapes nothing
+outside one, so the rule sets the run bit to the body flag; the count and bounds
+are the read ones. -/
+theorem ruleBridge_no_backslash (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hnq : IsQuoteB b = false) (hbs : IsBackslashB b = true)
+    (hnodd : f.getLsbD 1 = false)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (⟨f.getLsbD 0, f.getLsbD 0, Utf8Need.none⟩ : BodyState) := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  by_cases hin : f.getLsbD 0 = true
+  · lane_simp hnw, hqb, hsb, hnq, hbs, hnodd, hin
+    simp [decodeState]
+    all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+  · lane_simp hnw, hqb, hsb, hnq, hbs, hnodd, hin
+    simp [decodeState]
+    all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+set_option maxHeartbeats 4000000 in
+/-- **The control leaf.**  A byte below `0x20` inside a body is refused as a control
+byte: the rule leaves the carry alone and `bodyStep` reports `.refused .control`,
+which the statement records as the carry again. -/
+theorem ruleBridge_no_control (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hnq : IsQuoteB b = false) (hbs : IsBackslashB b = false)
+    (hin : f.getLsbD 0 = true) (hnodd : f.getLsbD 1 = false) (hctrl : b < 0x20)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      carryForm f := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hqb, hsb, hcb, hnq, hbs, hin, hnodd, hctrl
+  simp [decodeState]
+  all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+set_option maxHeartbeats 4000000 in
+/-- **The content leaf.**  A lane the rule skips changes nothing: when `vAct` is
+zero the four words are the four it read, so the slot decodes to the carry it
+started from. -/
+theorem ruleBridge_no_content (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnact : vAct stp b f nw qb sb cb = 0) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      decodeState ⟨f, nw, lo, hi⟩ := by
+  have h1 : ¬ (vAct stp b f nw qb sb cb = 1) := by rw [hnact]; decide
+  simp only [vFout, vCout, vLout, vHout, ite_eq_right h1]
+
+set_option maxHeartbeats 4000000 in
+/-- **The lead leaf.**  A byte in `[0xC2, 0xF4]` starts a sequence: the rule's count
+and bound selects are the model's own nine classes, so the slot holds the
+requirement `Utf8Need.step` produces.  `leadClass_agrees` is the class bridge, and
+`decodeState_of_count` reads the three words back. -/
+theorem ruleBridge_no_lead (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hnq : IsQuoteB b = false) (hbs : IsBackslashB b = false)
+    (hin : f.getLsbD 0 = true) (hnodd : f.getLsbD 1 = false)
+    (hasc : 0x80 ≤ b) (hlo : 194 ≤ b) (hhi : b ≤ 244) (hctrl : ¬ b < 0x20)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (⟨true, false,
+        Utf8Need.more (vNc b).toNat (byteOf (vLc b)) (byteOf (vHc b))⟩ : BodyState) := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hqb, hsb, hcb, hnq, hbs, hin, hnodd, hasc, hlo, hhi, hctrl
+  simp_all
+  change decodeState ⟨f, vNc b, vLc b, vHc b⟩ =
+    (⟨true, false,
+      Utf8Need.more (vNc b).toNat (byteOf (vLc b)) (byteOf (vHc b))⟩ : BodyState)
+  have h1 : decodeState ⟨f, vNc b, vLc b, vHc b⟩ =
+      (⟨f.getLsbD 0, f.getLsbD 1,
+        Utf8Need.more (vNc b).toNat (byteOf (vLc b)) (byteOf (vHc b))⟩ : BodyState) :=
+    decodeState_of_count f (vNc b) (vLc b) (vHc b) (vNc b).toNat
+      (byteOf (vLc b)) (byteOf (vHc b)) rfl (vNc_toNat_ne_zero b) rfl rfl
+  rw [h1]
+  simp_all
+
+set_option maxHeartbeats 4000000 in
+/-- **The bad-lead leaf.**  A byte at or above `0x80` outside `[0xC2, 0xF4]` starts no
+sequence: `Utf8Need.step` rejects it, the rule freezes the carry, and the statement
+records the refusal as the carry again. -/
+theorem ruleBridge_no_badlead (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hnq : IsQuoteB b = false) (hbs : IsBackslashB b = false)
+    (hin : f.getLsbD 0 = true) (hnodd : f.getLsbD 1 = false)
+    (hasc : 0x80 ≤ b) (hout : ¬ (194 ≤ b ∧ b ≤ 244)) (hctrl : ¬ b < 0x20)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      carryForm f := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hqb, hsb, hcb, hnq, hbs, hin, hnodd, hasc, hout, hctrl
+  simp [decodeState]
+  all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+set_option maxHeartbeats 4000000 in
+/-- **The outside leaf.**  With no body open and no run to clear, every gate of the
+rule is closed and the four words are the ones it read, so the slot holds the
+carry `bodyStep` leaves unchanged. -/
+theorem ruleBridge_no_outside (b : UInt8) (f nw lo hi stp : BitVec 32)
+    (qb sb cb : BitVec 1) (hnw : nw = 0)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hnq : IsQuoteB b = false) (hbs : IsBackslashB b = false)
+    (hin : f.getLsbD 0 = false) (hnodd : f.getLsbD 1 = false)
+    (hact : vAct stp b f nw qb sb cb = 1) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      carryForm f := by
+  rw [vFout_of_act _ _ _ _ _ _ _ _ _ hact, vCout_of_act _ _ _ _ _ _ _ _ _ hact,
+    vLout_of_act _ _ _ _ _ _ _ _ _ hact, vHout_of_act _ _ _ _ _ _ _ _ _ hact]
+  lane_simp hnw, hqb, hsb, hnq, hbs, hin, hnodd
+  simp [decodeState]
+  all_goals (try (repeat rw [getLsbD_if_prop]); simp_all; try decide)
+
+/-- **What a skipped lane implies.**  When the rule's skip bit is set the lane is a
+content lane: inside, no run, no requirement, none of the three byte predicates,
+and a byte below `0x80`.  Each fact is read through the predicate's own equation,
+and the six-way conjunction is the `&&&` chain unrolled. -/
+theorem skip_facts {b : UInt8} {f nw : BitVec 32} {qb sb cb : BitVec 1}
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hskip : vSkip b f nw qb sb cb = 1) :
+    f.getLsbD 0 = true ∧ f.getLsbD 1 = false ∧ nw = 0 ∧
+      IsQuoteB b = false ∧ IsBackslashB b = false ∧ ¬ b < 0x20 ∧ b < 0x80 := by
+  have h4 : vSk4 f nw qb sb cb = 1 := ((bit_and_one _ _).mp hskip).1
+  have hasc : vAsc b = 1 := ((bit_and_one _ _).mp hskip).2
+  have h3 : vSk3 f nw qb sb = 1 := ((bit_and_one _ _).mp h4).1
+  have hncb : vNcb cb = 1 := ((bit_and_one _ _).mp h4).2
+  have h2 : vSk2 f nw qb = 1 := ((bit_and_one _ _).mp h3).1
+  have hnbs : vNbs sb = 1 := ((bit_and_one _ _).mp h3).2
+  have h1 : vSk1 f nw = 1 := ((bit_and_one _ _).mp h2).1
+  have hnq : vNq qb = 1 := ((bit_and_one _ _).mp h2).2
+  have h0 : vSk0 f = 1 := ((bit_and_one _ _).mp h1).1
+  have hnmre : vNmre nw = 1 := ((bit_and_one _ _).mp h1).2
+  have hinn : vInn f = 1 := ((bit_and_one _ _).mp h0).1
+  have hnodd : vNodd f = 1 := ((bit_and_one _ _).mp h0).2
+  have hodd0 : vOdd f = 0 := xor_one_eq_one.mp hnodd
+  have hq0 : qb = 0 := xor_one_eq_one.mp hnq
+  have hs0 : sb = 0 := xor_one_eq_one.mp hnbs
+  have hc0 : cb = 0 := xor_one_eq_one.mp hncb
+  have hinside : f.getLsbD 0 = true := (vInn_eq f).mp hinn
+  have hodd : f.getLsbD 1 = false := by
+    have hne : ¬ f.getLsbD 1 = true := fun h => by
+      rw [← vOdd_eq f] at h
+      rw [hodd0] at h
+      exact absurd h (by decide)
+    exact bool_false_of_not hne
+  have hnw : nw = 0 := (vNmre_eq nw).mp hnmre
+  have hquote : IsQuoteB b = false := by
+    have h0' : (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) = 0 := by
+      rw [← hqb, hq0]
+    exact (bit_ite_zero _).mp h0'
+  have hback : IsBackslashB b = false := by
+    have h0' : (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) = 0 := by
+      rw [← hsb, hs0]
+    exact (bit_ite_zero _).mp h0'
+  have hctrl : ¬ b < 0x20 := by
+    have h0' : (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0) = 0 := by
+      rw [← hcb, hc0]
+    exact (ite_one_eq_zero _).mp h0'
+  have hlt : b < 0x80 := (vAsc_eq b).mp hasc
+  exact ⟨hinside, hodd, hnw, hquote, hback, hctrl, hlt⟩
+
+/-- **A content lane is skipped.**  The converse of `skip_facts`: the six facts a
+content lane has set the rule's skip bit, which is what makes the content leaf the
+only arm a skipped lane reaches. -/
+theorem skip_one {b : UInt8} {f nw : BitVec 32} {qb sb cb : BitVec 1}
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hin : f.getLsbD 0 = true) (hnodd : f.getLsbD 1 = false) (hnw : nw = 0)
+    (hnq : IsQuoteB b = false) (hnbs : IsBackslashB b = false) (hnc : ¬ b < 0x20)
+    (hlt : b < 0x80) : vSkip b f nw qb sb cb = 1 := by
+  have hinn : vInn f = 1 := (vInn_eq f).mpr hin
+  have hodd0 : vOdd f = 0 := by
+    rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one (vOdd f) with h | h
+    · exact h
+    · exact absurd ((vOdd_eq f).mp h) (by simpa using hnodd)
+  have hnodd' : vNodd f = 1 := (xor_one_eq_one (x := vOdd f)).mpr hodd0
+  have hnmre : vNmre nw = 1 := (vNmre_eq nw).mpr hnw
+  have hq : vNq qb = 1 := by
+    rw [vNq, hqb, hnq]
+    decide
+  have hbs : vNbs sb = 1 := by
+    rw [vNbs, hsb, hnbs]
+    decide
+  have hcb1 : vNcb cb = 1 := by
+    rw [vNcb, hcb]
+    rw [if_neg hnc]
+    decide
+  have hasc : vAsc b = 1 := (vAsc_eq b).mpr hlt
+  have h0 : vSk0 f = 1 := (bit_and_one _ _).mpr ⟨hinn, hnodd'⟩
+  have h1 : vSk1 f nw = 1 := (bit_and_one _ _).mpr ⟨h0, hnmre⟩
+  have h2 : vSk2 f nw qb = 1 := (bit_and_one _ _).mpr ⟨h1, hq⟩
+  have h3 : vSk3 f nw qb sb = 1 := (bit_and_one _ _).mpr ⟨h2, hbs⟩
+  have h4 : vSk4 f nw qb sb cb = 1 := (bit_and_one _ _).mpr ⟨h3, hcb1⟩
+  exact (bit_and_one _ _).mpr ⟨h4, hasc⟩
+
+set_option maxHeartbeats 8000000 in
+/-- **The bridge, on the no-requirement arm.**  With the count word zero the rule's
+four words decode to the state `bodyStep` steps the carry to: the run parity, the
+quote's two sides, the backslash, the control byte, the content lane, the lead
+byte's classes, its refusal and the outside lane.  The tree is the model's own
+order, each arm is one of the nine leaves above, and a skipped lane is
+`ruleBridge_no_content` with the content lane's facts supplied by `skip_facts`. -/
+theorem ruleBridge_no (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hstp : stp = 0) (hnw : nw = 0) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (match bodyStep (decodeState ⟨f, nw, lo, hi⟩) b with
+       | .cont st' => st'
+       | .closed => decodeState ⟨f, nw, lo, hi⟩
+       | .refused _ => decodeState ⟨f, nw, lo, hi⟩) := by
+  have hdec : decodeState ⟨f, nw, lo, hi⟩ = carryForm f := by
+    simp [decodeState, carryForm, hnw]
+  rw [hdec]
+  by_cases hskip : vSkip b f nw qb sb cb = 0
+  · have hact : vAct stp b f nw qb sb cb = 1 :=
+      vAct_eq_one b f nw stp qb sb cb hstp hskip
+    by_cases hodd : f.getLsbD 1 = true
+    · have hstep : bodyStep (carryForm f) b =
+          .cont ⟨f.getLsbD 0, false, Utf8Need.none⟩ := by
+        simp_all [bodyStep, carryForm]
+      rw [hstep]
+      exact ruleBridge_no_parity b f nw lo hi stp qb sb cb hnw hodd hact
+    · have hnodd : f.getLsbD 1 = false := bool_false_of_not hodd
+      by_cases hq : IsQuoteB b = true
+      · by_cases hin : f.getLsbD 0 = true
+        · have hstep : bodyStep (carryForm f) b = .closed := by
+            simp_all [bodyStep, carryForm]
+          rw [hstep]
+          exact ruleBridge_no_quote_close b f nw lo hi stp qb sb cb hnw hqb hq hin hnodd
+            hact
+        · have hnin : f.getLsbD 0 = false := bool_false_of_not hin
+          have hstep : bodyStep (carryForm f) b =
+              .cont ⟨true, false, Utf8Need.none⟩ := by
+            simp_all [bodyStep, carryForm]
+          rw [hstep]
+          exact ruleBridge_no_quote_open b f nw lo hi stp qb sb cb hnw hqb hq hnin hnodd
+            hact
+      · have hnq : IsQuoteB b = false := bool_false_of_not hq
+        by_cases hbs : IsBackslashB b = true
+        · have hstep : bodyStep (carryForm f) b =
+              .cont ⟨f.getLsbD 0, f.getLsbD 0, Utf8Need.none⟩ := by
+            simp_all [bodyStep, carryForm]
+          rw [hstep]
+          exact ruleBridge_no_backslash b f nw lo hi stp qb sb cb hnw hqb hsb hnq hbs
+            hnodd hact
+        · have hnbs : IsBackslashB b = false := bool_false_of_not hbs
+          by_cases hin : f.getLsbD 0 = true
+          · by_cases hctrl : b < 0x20
+            · have hstep : bodyStep (carryForm f) b = .refused .control := by
+                simp_all [bodyStep, carryForm]
+              rw [hstep]
+              exact ruleBridge_no_control b f nw lo hi stp qb sb cb hnw hqb hsb hcb hnq
+                hnbs hin hnodd hctrl hact
+            · by_cases hlt : b < 0x80
+              · exfalso
+                have h1 : vSkip b f nw qb sb cb = 1 :=
+                  skip_one hqb hsb hcb hin hnodd hnw hnq hnbs hctrl hlt
+                rw [h1] at hskip
+                exact absurd hskip (by decide)
+              · have hasc : 0x80 ≤ b := ge_of_not_lt hlt
+                by_cases hlead : 194 ≤ b ∧ b ≤ 244
+                · obtain ⟨hlo', hhi'⟩ := hlead
+                  have hstep : bodyStep (carryForm f) b =
+                      .cont ⟨true, false,
+                        Utf8Need.more (vNc b).toNat (byteOf (vLc b)) (byteOf (vHc b))⟩ := by
+                    simp_all [bodyStep, carryForm, leadClass_agrees b hlo' hhi']
+                  rw [hstep]
+                  exact ruleBridge_no_lead b f nw lo hi stp qb sb cb hnw hqb hsb hcb hnq
+                    hnbs hin hnodd hasc hlo' hhi' hctrl hact
+                · have hout : ¬ (194 ≤ b ∧ b ≤ 244) := hlead
+                  have hstep : bodyStep (carryForm f) b = .refused .badUtf8 := by
+                    simp_all [bodyStep, carryForm, noLeadClass_agrees b hasc hout]
+                  rw [hstep]
+                  exact ruleBridge_no_badlead b f nw lo hi stp qb sb cb hnw hqb hsb hcb hnq
+                    hnbs hin hnodd hasc hlead hctrl hact
+          · have hnin : f.getLsbD 0 = false := bool_false_of_not hin
+            have hstep : bodyStep (carryForm f) b = .cont (carryForm f) := by
+              simp_all [bodyStep, carryForm]
+            rw [hstep]
+            exact ruleBridge_no_outside b f nw lo hi stp qb sb cb hnw hqb hsb hnq hnbs
+              hnin hnodd hact
+  · have hskip1 : vSkip b f nw qb sb cb = 1 := by
+      rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one
+        (vSkip b f nw qb sb cb) with h | h
+      · exact absurd h hskip
+      · exact h
+    obtain ⟨hin, hnodd, hnw', hnq, hnbs, hctrl, hlt⟩ := skip_facts hqb hsb hcb hskip1
+    have hnact : vAct stp b f nw qb sb cb = 0 := by
+      rw [vAct, vLive_ite, if_pos hstp, vNact, hskip1]
+      decide
+    have hstep : bodyStep (carryForm f) b = .cont (carryForm f) := by
+      simp_all [bodyStep, carryForm, step_none_ascii b hlt]
+    rw [hstep]
+    exact (ruleBridge_no_content b f nw lo hi stp qb sb cb hnact).trans hdec
+
+set_option maxHeartbeats 8000000 in
+/-- **The bridge.**  The rule's four words decode to the state `bodyStep` steps the
+carry to, on both arms: the pending requirement (`ruleBridge_pending`, where a
+nonzero count forces the skip bit clear) and the no-requirement arm
+(`ruleBridge_no`).  This is the arithmetic the lane step consumes. -/
+theorem ruleBridge (b : UInt8) (f nw lo hi stp : BitVec 32) (qb sb cb : BitVec 1)
+    (hqb : qb = (if IsQuoteB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hsb : sb = (if IsBackslashB b then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hcb : cb = (if b < 0x20 then BitVec.ofNat 1 1 else BitVec.ofNat 1 0))
+    (hstp : stp = 0) :
+    decodeState ⟨vFout stp b f nw lo hi qb sb cb, vCout stp b f nw lo hi qb sb cb,
+                 vLout stp b f nw lo hi qb sb cb, vHout stp b f nw lo hi qb sb cb⟩ =
+      (match bodyStep (decodeState ⟨f, nw, lo, hi⟩) b with
+       | .cont st' => st'
+       | .closed => decodeState ⟨f, nw, lo, hi⟩
+       | .refused _ => decodeState ⟨f, nw, lo, hi⟩) := by
+  by_cases hnw : nw = 0
+  · exact ruleBridge_no b f nw lo hi stp qb sb cb hqb hsb hcb hstp hnw
+  · have hnwt : nw.toNat ≠ 0 := by
+      intro h
+      exact hnw (BitVec.toNat_eq.mpr (by simpa using h))
+    have hmre : vNmre nw = 0 := by
+      rw [vNmre_ite, if_neg hnw]
+      decide
+    have hsk1 : vSk1 f nw = 0 := by simp [vSk1, hmre]
+    have hsk2 : vSk2 f nw qb = 0 := by simp [vSk2, hsk1]
+    have hsk3 : vSk3 f nw qb sb = 0 := by simp [vSk3, hsk2]
+    have hsk4 : vSk4 f nw qb sb cb = 0 := by simp [vSk4, hsk3]
+    have hskip : vSkip b f nw qb sb cb = 0 := by simp [vSkip, hsk4]
+    exact ruleBridge_pending b f nw lo hi stp qb sb cb hqb hsb hcb hstp hskip hnwt
 
 end LeanLLVM.Refinement.JsonScanLane

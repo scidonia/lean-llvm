@@ -74,9 +74,9 @@ lane there: the 23 instructions before the rule on the full-window path, the 8 o
 the scalar path, `ruleInstrs`'s 120 instructions, and the two paths composed, as
 `denoteCode` equations at the lane's own environment.  Of what that leaves, the
 arithmetic bridge from the four words the rule leaves to `bodyStep` is proved on
-its pending-requirement arm (`JsonScanLane.ruleBridge_pending`); its
-no-requirement arm, the loop induction over `valid ≤ 32` and the footprint
-clause are outstanding.
+both arms — `JsonScanLane.ruleBridge_pending` for an outstanding requirement and
+`JsonScanLane.ruleBridge` for every carry — while the lane step that bridge feeds,
+the loop induction over `valid ≤ 32` and the footprint clause are outstanding.
 
 Two properties of the body are measured rather than promised, and are what a
 reviewer of the fixture can check independently: it contains no `phi`, no
@@ -427,9 +427,9 @@ lane there: the 23 instructions before the rule on the full-window path, the 8 o
 the scalar path, `ruleInstrs`'s 120 instructions, and the two paths composed, as
 `denoteCode` equations at the lane's own environment.  Of what that leaves, the
 arithmetic bridge from the four words the rule leaves to `bodyStep` is proved on
-its pending-requirement arm (`JsonScanLane.ruleBridge_pending`); its
-no-requirement arm, the loop induction over `valid ≤ 32` and the footprint
-clause are outstanding.
+both arms — `JsonScanLane.ruleBridge_pending` for an outstanding requirement and
+`JsonScanLane.ruleBridge` for every carry — while the lane step that bridge feeds,
+the loop induction over `valid ≤ 32` and the footprint clause are outstanding.
 -/
 
 /-- The bytes the body's own allocations occupy, from the allocator base: `%k`
