@@ -1539,13 +1539,20 @@ the eight are written by the body — `%c.i`'s `k` field is the loop's first sto
 so the adapter cannot leave their staging unstated: `stage2StagedPre` gives
 presence at each of the seven extents and the separation of every staged object
 from every other, which is what the loop's region claim needs and what
-`Γ_stage2.pre`, at thirteen arguments, has no way to name. -/
-def Γ_stage2at (d c ctype cst tok s z e : Nat) : MemContract where
+`Γ_stage2.pre`, at thirteen arguments, has no way to name.
+
+The two count slots are parameters for the same reason the eight are: the ABI
+does not carry them and both sides of their separation have to be nameable
+somewhere.  They are not presence clauses — the pipeline's own staging reads both
+words — but the two entries that put them in the staged list, so that the walk's
+seven write extents are separated from the caller's `%nk` and `%nxp` rather than
+only from the thirteen ABI objects. -/
+def Γ_stage2at (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : MemContract where
   budget := fun args mem => Γ_stage2.budget (args.take 13) mem
   pre := fun args mem next =>
     ∃ a13, args = stage2Args a13 d c ctype cst tok s z e ∧
       Γ_stage2.pre a13 mem next ∧
-      stage2StagedPre a13 mem c ctype cst tok s z e
+      stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot
   post := fun args mem next o => Γ_stage2.post (args.take 13) mem next o
 
 /-- The adapter's prefix is the ABI's argument list. -/
@@ -1561,9 +1568,9 @@ their extents and every staged object is separate from every other.  That second
 hypothesis is not optional: `Γ_stage2.pre` names thirteen objects and the body
 writes seven more, so the adapter is the only place the staging can say it. -/
 theorem Γ_stage2at_pre {a13 : List Value} {mem : Mem} {next : Nat}
-    {d c ctype cst tok s z e : Nat} (h : Γ_stage2.pre a13 mem next)
-    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e) :
-    (Γ_stage2at d c ctype cst tok s z e).pre
+    {d c ctype cst tok s z e nkSlot nxpSlot : Nat} (h : Γ_stage2.pre a13 mem next)
+    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot) :
+    (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre
       (stage2Args a13 d c ctype cst tok s z e) mem next :=
   ⟨a13, rfl, h, hstaged⟩
 
@@ -1575,9 +1582,9 @@ appended, at the adapter's record and the walk's own call environment. -/
 
 /-- The stage-2 selection at a staging: `envForUnit` at the pinned body, with the
 adapter's arguments appended. -/
-def envForStage2 (d c ctype cst tok s z e : Nat) (sub : Calls) : Calls :=
+def envForStage2 (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) : Calls :=
   fun callee args mem next =>
-    envForUnit "leanllvm_json_stage2" (Γ_stage2at d c ctype cst tok s z e)
+    envForUnit "leanllvm_json_stage2" (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot)
       (stage2Calls sub) stage2Body callee
       (stage2Args args d c ctype cst tok s z e) mem next
 
@@ -1596,19 +1603,21 @@ obligation at the adapter's record — the thing this slice names and does not
 discharge; `retsValued` is read off the pinned AST by `stage2Body_retsValued`; and
 the staging hypothesis is the caller's: at thirteen arguments the ABI cannot name
 the seven objects the body writes, so the promise that they are staged is theirs'
-to make and is stated once here rather than per call. -/
-theorem satisfies_calls_stage2 (d c ctype cst tok s z e : Nat) {sub : Calls}
+to make and is stated once here rather than per call; it now carries the caller's
+two count slots as well, which are the objects whose separation from the seven is
+what lets a caller read them back after the run. -/
+theorem satisfies_calls_stage2 (d c ctype cst tok s z e nkSlot nxpSlot : Nat) {sub : Calls}
     (hwalk : Satisfies (stage2Calls sub) stage2Body
-      (Γ_stage2at d c ctype cst tok s z e))
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot))
     (hstaged : ∀ {args : List Value} {mem : Mem} {next : Nat},
       Γ_stage2.pre args mem next →
-        stage2StagedPre args mem c ctype cst tok s z e) :
-    CallSatisfies (envForStage2 d c ctype cst tok s z e sub) Γ_stage2
+        stage2StagedPre args mem c ctype cst tok s z e nkSlot nxpSlot) :
+    CallSatisfies (envForStage2 d c ctype cst tok s z e nkSlot nxpSlot sub) Γ_stage2
       "leanllvm_json_stage2" := by
   intro args mem next hpre
   obtain ⟨r, hsome, hpost, hnext⟩ :=
     satisfies_calls (calls := stage2Calls sub) (body := stage2Body)
-      (Γ := Γ_stage2at d c ctype cst tok s z e) (sym := "leanllvm_json_stage2")
+      (Γ := Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot) (sym := "leanllvm_json_stage2")
       hwalk stage2Body_retsValued (stage2Args args d c ctype cst tok s z e) mem next
       (Γ_stage2at_pre hpre (hstaged hpre))
   have htake : (stage2Args args d c ctype cst tok s z e).take 13 = args :=
@@ -1627,8 +1636,8 @@ two walk facts `JsonStage2Body` names (one event record per entry, and the escap
 bodies' lengths summing inside the document) are part of the same induction. -/
 
 /-- The stage-2 walk's obligation at a staging and a sub-unit selection. -/
-def Stage2WalkObligation (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
-  Satisfies (stage2Calls sub) stage2Body (Γ_stage2at d c ctype cst tok s z e)
+def Stage2WalkObligation (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) : Prop :=
+  Satisfies (stage2Calls sub) stage2Body (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot)
 
 /-- **The walk's obligation yields the record's post.**  At an argument list in
 `Γ_stage2.pre` whose seven appended objects are staged, the obligation at the
@@ -1636,13 +1645,13 @@ adapter's arguments completes the pinned body, and the outcome it reaches
 satisfies `Γ_stage2`'s post at the ABI's own thirteen values: the two are one
 proposition, related by `stage2Args_take13`, so a proof of the walk needs no
 second statement of what it owes. -/
-theorem stage2_walk_yields_record {d c ctype cst tok s z e : Nat} {sub : Calls}
-    (hwalk : Stage2WalkObligation d c ctype cst tok s z e sub)
+theorem stage2_walk_yields_record {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
+    (hwalk : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub)
     {a13 : List Value} {mem : Mem} {next : Nat} (hpre : Γ_stage2.pre a13 mem next)
-    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e) :
+    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot) :
     ∃ v m,
       runFuel (stage2Calls sub)
-          ((Γ_stage2at d c ctype cst tok s z e).budget
+          ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget
             (stage2Args a13 d c ctype cst tok s z e) mem)
           stage2Body
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
@@ -1657,15 +1666,16 @@ theorem stage2_walk_yields_record {d c ctype cst tok s z e : Nat} {sub : Calls}
 
 /-- The obligation's own vocabulary: a body's `Satisfies` is a completion at the
 record's budget and the post of the outcome it reaches. -/
-theorem Stage2WalkObligation.summary {d c ctype cst tok s z e : Nat} {sub : Calls}
-    (h : Stage2WalkObligation d c ctype cst tok s z e sub) :
-    ∀ args mem next, (Γ_stage2at d c ctype cst tok s z e).pre args mem next →
+theorem Stage2WalkObligation.summary {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
+    (h : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub) :
+    ∀ args mem next,
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
       (∃ v m, runFuel (stage2Calls sub)
-          ((Γ_stage2at d c ctype cst tok s z e).budget args mem) stage2Body
+          ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget args mem) stage2Body
           (EntryState stage2Body args mem next) = some (.ret v m)) ∧
       ∀ o, BehFromState (stage2Calls sub) stage2Body
           (EntryState stage2Body args mem next) o →
-        (Γ_stage2at d c ctype cst tok s z e).post args mem next o := h
+        (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o := h
 
 end LeanLLVM.Refinement.JsonStage2IR
 

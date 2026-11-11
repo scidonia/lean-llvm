@@ -1240,9 +1240,9 @@ theorem stage2Budget_pos_of_pre {args : List Value} {mem : Mem} {next : Nat}
 /-- The adapter's budget at the flattened arguments is the record's own, at the
 ABI's thirteen: the eight staging objects contribute nothing to the walk's
 fuel. -/
-theorem Γ_stage2at_budget (d c ctype cst tok s z e : Nat) {a13 : List Value}
+theorem Γ_stage2at_budget (d c ctype cst tok s z e nkSlot nxpSlot : Nat) {a13 : List Value}
     (hlen : a13.length = 13) (mem : Mem) :
-    (Γ_stage2at d c ctype cst tok s z e).budget
+    (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget
         (stage2Args a13 d c ctype cst tok s z e) mem = stage2Budget a13 mem := by
   show stage2Budget ((stage2Args a13 d c ctype cst tok s z e).take 13) mem
       = stage2Budget a13 mem
@@ -1252,10 +1252,13 @@ theorem Γ_stage2at_budget (d c ctype cst tok s z e : Nat) {a13 : List Value}
 arguments, with the seven appended objects staged.  Stated and not claimed: what
 discharges it is the loop.  The staging hypothesis is not decorativeness — the
 body's first store is to `%c.i`, so a completion statement that did not stage the
-appended objects would be about a body whose stores could not be justified. -/
-def Stage2WalkCompletes (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
+appended objects would be about a body whose stores could not be justified.  The
+two count slots are carried beside the seven for the same reason and at the same
+place: they are the pipeline's, the ABI does not carry them, and their separation
+from the seven is what the caller reads back after the run. -/
+def Stage2WalkCompletes (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) : Prop :=
   ∀ a13 mem next, Γ_stage2.pre a13 mem next →
-    stage2StagedPre a13 mem c ctype cst tok s z e →
+    stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot →
     ∃ v m, runFuel (stage2Calls sub) (stage2Budget a13 mem) stage2Body
       (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
       = some (.ret v m)
@@ -1264,13 +1267,15 @@ def Stage2WalkCompletes (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
 beside the post's second.  The two directions are the adapter's precondition and
 `stage2Args_take13`: a caller's arguments are the flattened ones read at the
 thirteen-slot prefix, the staging goes with them, and the budget goes with both. -/
-theorem stage2WalkObligation_iff_completion (d c ctype cst tok s z e : Nat) (sub : Calls) :
-    Stage2WalkObligation d c ctype cst tok s z e sub ↔
-      Stage2WalkCompletes d c ctype cst tok s z e sub ∧
-        (∀ args mem next, (Γ_stage2at d c ctype cst tok s z e).pre args mem next →
+theorem stage2WalkObligation_iff_completion
+    (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) :
+    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub ↔
+      Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot sub ∧
+        (∀ args mem next,
+          (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
           ∀ o, BehFromState (stage2Calls sub) stage2Body
               (EntryState stage2Body args mem next) o →
-            (Γ_stage2at d c ctype cst tok s z e).post args mem next o) := by
+            (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) := by
   constructor
   · intro h
     refine ⟨?_, ?_⟩
@@ -1301,7 +1306,7 @@ theorem stage2WalkObligation_iff_completion (d c ctype cst tok s z e : Nat) (sub
 completion at every larger one (`runFuel_mono`); together with `runFuel`'s
 outcome-or-nothing answer, this is why the budget's adequacy is the completion
 conjunct and not a separate fact about the body's blocks. -/
-theorem stage2WalkCompletes_mono {d c ctype cst tok s z e : Nat} {sub : Calls}
+theorem stage2WalkCompletes_mono {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
     {B B' : List Value → Mem → Nat}
     (h : ∀ a13 mem next, Γ_stage2.pre a13 mem next →
       ∃ v m, runFuel (stage2Calls sub) (B a13 mem) stage2Body

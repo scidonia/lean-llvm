@@ -126,6 +126,17 @@ refusal (`stage2.h:21-24`).
   the caller's staging, so the separation is part of the pre rather than a hope
   about the body.
 
+  **At the adapter the list is wider, and it has to be.**  `Γ_stage2.pre` names
+  thirteen objects because the ABI carries thirteen arguments; the flattened body
+  writes seven more, and the pipeline's two count slots — `%nk` and `%nxp` — are
+  caller-owned addresses the run must not touch.  `stage2StagedRegions` is the
+  list with those nine objects in it, and `stage2StagedPre` separates all
+  seventeen.  Without the two count-slot entries the record's separation says
+  nothing about `%nk` or `%nxp`, and the pipeline's transport of those words
+  through stage two rests on no premise at all — which is the gap
+  `stage2StagedPre_countSlots` now closes at the only place both sides are
+  nameable.
+
 # The post
 
 The clauses are the ones the pipeline's post and the tail consume, and nothing
@@ -417,28 +428,119 @@ def stage2WalkFrame (dst ndst' ev nev' ndst nev err c ctype cst tok s z e : Nat)
 `stage2Regions` and the seven appended ones.  Every pair is separate, which is
 what makes the walk's writes to the seven miss the arena and the event stream (and
 each other), and what keeps the document, the entry stream and the escape list
-readable while the walk writes. -/
+readable while the walk writes.
+
+This is the *frame's* list, not the whole staging: the pipeline's two count slots
+are staged beside it (`stage2StagedRegions`), because the run neither names nor
+writes them and a frame that named them would demand silence over bytes no clause
+of the run touches. -/
 def stage2WalkRegions (b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
     c ctype cst tok s z e : Nat) : List (Nat × Nat) :=
   stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err ++
     stage2StagedWrites c ctype cst tok s z e
 
+/-- **The staged objects of the adapter, with the caller's two count slots.**
+
+`stage2WalkRegions` names the objects the *walk* touches: the thirteen ABI
+objects and the seven appended ones.  The pipeline's count slots are neither.
+They are the caller's cursor words — `%nk`, the entry count the exit block stores,
+and `%nxp`, the escape list's count — and stage 2 receives neither as an
+argument, so no clause of its record can name them.  They are nonetheless
+addresses the run's writes must miss, and the pair has to be stated where both
+sides are nameable: here, at the adapter, beside the seven.  Without the two
+entries `DisjointRegions` separates the seven from the thirteen ABI objects only,
+so "the walk did not write the caller's count slots" follows from nothing —
+which is what leaves the pipeline's transport of those two slots through stage
+two without a premise.
+
+The two are appended rather than folded into `stage2WalkRegions`, because that
+list is the frame of the walk's writes (`stage2WalkFrame`) and the caller's slots
+are not written by it; a frame that named them would demand silence over bytes no
+clause of the run touches.  The separation is the statement, not the frame.
+
+**Containment is not an alternative to this clause, and the pre refutes it.**  A
+reader may ask whether the pair could instead be derived by placing the walk's
+seven objects *inside* a pipeline buffer — `nk` and `nxp` look like cursor slots
+of the arena, and then `pipelineRegions`' own separation would do the work.  Both
+halves of that are false here.  `nk` and `nxp` are entries of their own in
+`pipelineRegions` — `(nk, 8)` and `(nxp, 8)` — and the staging's `DisjointRegions`
+separates them from the arena at `dstcap`, so they are not slots inside it.  And
+the seven are required *separate from* the arena and both streams by
+`stage2WalkRegions`' separation (`dst` is entry 3, the streams entries 1 and 2),
+so no pipeline buffer contains them: the walk's scratch is staged beside the
+caller's objects, not within them.  The pair is a separation to be stated, which
+is what the two appended entries do. -/
+def stage2StagedRegions (b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+    c ctype cst tok s z e nkSlot nxpSlot : Nat) : List (Nat × Nat) :=
+  stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+      c ctype cst tok s z e ++
+    [(nkSlot, 8), (nxpSlot, 8)]
+
 /-- **The staging the flattened body's precondition asks of the appended
 objects**: the seven the walk writes are present at their extents, and every
-staged object — the thirteen ABI objects and the seven — is separate from every
-other.  It is stated at the argument list the record receives, so the numbers are
-the record's own; `ndst0` is read from the arena's cursor slot, exactly as
-`stage2Pre` reads it. -/
-def stage2StagedPre (args : List Value) (mem : Mem) (c ctype cst tok s z e : Nat) : Prop :=
+staged object — the thirteen ABI objects, the seven, and the caller's two count
+slots — is separate from every other.  It is stated at the argument list the
+record receives, so the numbers are the record's own; `ndst0` is read from the
+arena's cursor slot, exactly as `stage2Pre` reads it.
+
+The two count slots are parameters rather than arguments because the ABI does not
+carry them: `stage2Args` appends eight staging pointers and the pinned body takes
+twenty-one values, so a slot the pipeline owns reaches this staging as a caller's
+number, exactly as the seven do.  Presence is not repeated for them: the
+pipeline's own `pipelineStaging` already reads both words (`readBytes mem nk 8 =
+some (wordBytes 8 0)`, `readBytes mem nxp 8 = some (wordBytes 8 nxp0)`), and a
+presence clause here would be a second promise about a region whose bytes the
+caller has already fixed. -/
+def stage2StagedPre (args : List Value) (mem : Mem)
+    (c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
   (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, HasBytes mem r.1 r.2) ∧
-  match args with
-  | [.ptr b, .int 64 n, .ptr ep, .int 64 nep, .ptr xp, .int 64 nxp, .ptr dst,
-     .int 64 _, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err] =>
-      ∃ ndst0, readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
-        DisjointRegions
-          (stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0
-            ev evcap.toNat ndst nev err c ctype cst tok s z e)
-  | _ => False
+  ∃ (b : Nat) (n : BitVec 64) (ep : Nat) (nep : BitVec 64) (xp : Nat) (nxp : BitVec 64)
+    (dst : Nat) (dstcap : BitVec 64) (ndst0 : Nat) (ev : Nat) (evcap : BitVec 64)
+    (ndst nev err : Nat),
+    args = [.ptr b, .int 64 n, .ptr ep, .int 64 nep, .ptr xp, .int 64 nxp,
+            .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev,
+            .ptr err] ∧
+    readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
+    DisjointRegions
+      (stage2StagedRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0
+        ev evcap.toNat ndst nev err c ctype cst tok s z e nkSlot nxpSlot)
+
+/-- **An object appended after a separated list is separate from every member**
+and from its neighbour.  This is the shape `stage2StagedRegions` appends the
+caller's two count slots in, read off the `Pairwise` directly. -/
+theorem disjointRegions_append_slots {L : List (Nat × Nat)} {a b : Nat}
+    (h : DisjointRegions (L ++ [(a, 8), (b, 8)])) :
+    (∀ r ∈ L, (r.1 + r.2 ≤ a ∨ a + 8 ≤ r.1) ∧
+      (r.1 + r.2 ≤ b ∨ b + 8 ≤ r.1)) ∧
+      (a + 8 ≤ b ∨ b + 8 ≤ a) := by
+  unfold DisjointRegions at h
+  rw [List.pairwise_append] at h
+  obtain ⟨-, htail, hcross⟩ := h
+  refine ⟨fun r hr => ⟨hcross r hr (a, 8) (by simp), hcross r hr (b, 8) (by simp)⟩, ?_⟩
+  exact (List.pairwise_cons.mp htail).1 (b, 8) (by simp)
+
+/-- **The two count slots are separate from the seven and from each other**,
+which is the half of `stage2StagedPre`'s separation the pipeline's transport of
+those slots reads.  It is exactly the statement the walk's frame widening needs:
+the seven objects the walk writes, at their own extents, do not meet a byte of
+either slot, so the walk's writes leave both words as the pipeline left them. -/
+theorem stage2StagedPre_countSlots {args : List Value} {mem : Mem}
+    {c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (h : stage2StagedPre args mem c ctype cst tok s z e nkSlot nxpSlot) :
+    (∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
+      (r.1 + r.2 ≤ nkSlot ∨ nkSlot + 8 ≤ r.1) ∧
+        (r.1 + r.2 ≤ nxpSlot ∨ nxpSlot + 8 ≤ r.1)) ∧
+      (nkSlot + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ nkSlot) := by
+  obtain ⟨-, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
+    -, -, hdisj⟩ := h
+  have hsep := disjointRegions_append_slots
+    (L := stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
+      evcap.toNat ndst nev err c ctype cst tok s z e) hdisj
+  have hmem : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
+      r ∈ stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
+        evcap.toNat ndst nev err c ctype cst tok s z e :=
+    fun r hr => List.mem_append_right _ hr
+  exact ⟨fun r hr => hsep.1 r (hmem r hr), hsep.2⟩
 
 /-- The ABI frame is a prefix of the walk's. -/
 theorem stage2Writes_subset_walkWrites {dst ndst' ev nev' ndst nev err
@@ -462,7 +564,8 @@ theorem owns_extent_present {mem m : Mem} {rs : List (Nat × Nat)} {r : Nat × N
 /-- The seven staged objects' extents are the ones the record names, so a caller
 that has the staging has presence at each of them. -/
 theorem stage2StagedPre_present {args : List Value} {mem : Mem}
-    {c ctype cst tok s z e : Nat} (h : stage2StagedPre args mem c ctype cst tok s z e) :
+    {c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (h : stage2StagedPre args mem c ctype cst tok s z e nkSlot nxpSlot) :
     HasBytes mem c stage2CursorExtent ∧ HasBytes mem ctype stage2StackExtent ∧
       HasBytes mem cst stage2StackExtent ∧ HasBytes mem tok stage2TokenExtent ∧
       HasBytes mem s stage2StateExtent ∧ HasBytes mem z stage2LogExtent ∧
@@ -925,6 +1028,16 @@ theorem pipeline_satisfies_at_stage2 (tab : Nat) (s2 : Calls)
 #guard stage2ReadTail = 32
 #guard (stage2Regions 0 0 0 0 0 0 32 0 0 0 96 104 112).length = 8
 
+-- The adapter's staged list is the walk frame's fifteen entries plus the caller's
+-- two count slots; the guard is the control that the appended pair is in the list,
+-- not merely in the definition's prose.
+#guard (stage2StagedRegions 0 0 0 0 0 0 32 0 0 0 96 104 112 8 520 528 560 600 640 700
+  1200 1208).length = 17
+
+-- The two count slots are the list's last two entries, at their extents.
+#guard decide ((stage2StagedRegions 0 0 0 0 0 0 32 0 0 0 96 104 112 8 520 528 560 600
+  640 700 1200 1208).drop 15 = [(1200, 8), (1208, 8)])
+
 -- The read-past tail is not free at the pipeline's staging: a sixty-four-byte
 -- document is staged as one sixty-four-byte block, and the decoder's thirty-two
 -- bytes past a body ending at 62 reach `b + 94`.
@@ -1105,9 +1218,24 @@ rests on are the extraction steps' lemmas — `String.ofList_injective`,
 #guard_msgs in
 #print axioms stage2WalkRegions
 
-/-- info: 'LeanLLVM.Refinement.stage2StagedPre' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2StagedRegions' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2StagedRegions
+
+/-- info: 'LeanLLVM.Refinement.stage2StagedPre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms stage2StagedPre
+
+/-- info: 'LeanLLVM.Refinement.disjointRegions_append_slots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms disjointRegions_append_slots
+
+-- `Quot.sound` is `List.pairwise_append`'s, the list library's own carrier; it is
+-- the same one `owns_extent_present` above carries.
+
+/-- info: 'LeanLLVM.Refinement.stage2StagedPre_countSlots' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms stage2StagedPre_countSlots
 
 /-- info: 'LeanLLVM.Refinement.stage2Writes_subset_walkWrites' does not depend on any axioms -/
 #guard_msgs in

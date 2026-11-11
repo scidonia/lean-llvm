@@ -133,7 +133,14 @@ the bytes between that extent and the capacity unstaged and unwritable by
 nothing.  The document's entry is the UTF-8 window's extent, and the pair beside
 it is the read-past tail the staging's `HasBytes` clause claims: the decoder
 reads those thirty-two bytes, so no writable object may be staged there, which is
-what the separate pair states rather than widening the window's. -/
+what the separate pair states rather than widening the window's.
+
+The two count slots are entries of their own, at `(nk, 8)` and `(nxp, 8)` — the
+words the loop writes back and the tail reads in.  Being entries, their separation
+from every other staged object is `DisjointRegions`'s, which is the half a record
+at this ABI can state.  The half it cannot is the pair against stage two's seven
+appended objects, whose addresses are not arguments here; that is the adapter's
+list (`JsonStage2Contract.stage2StagedRegions`). -/
 def pipelineRegions (base tab nk0 nxp0 : Nat) (args : List Value) : List (Nat × Nat) :=
   match args with
   | [.ptr _, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 _,
@@ -237,7 +244,18 @@ clause names the unit record it is read from:
   memory that staged the table somewhere else;
 * the carry slots are the inputs the mask and escape-list records read for a
   document's first block (`pipeline.h`: both zero);
-* the counts are the records' cursor slots, read in;
+* the counts are the records' cursor slots, read in.  **The two words are staged
+  objects, not just reads.**  `nk` and `nxp` are `pipelineRegions`' entries 7 and
+  9, so `DisjointRegions` already separates them from the thirteen ABI objects the
+  stage-2 call names — the arena, both streams, both cursors, the refusal slot and
+  the document.  What the staging cannot state is the other half: stage 2 also
+  writes seven appended objects at addresses this ABI does not carry, and a pair
+  against those is not a term this record can form.  That half is stated at the
+  adapter (`JsonStage2Contract.stage2StagedRegions`, whose list adds these two
+  words to the fifteen), and the producer of the value is here: the slot's word is
+  fixed below and the caller promises its separation at the same place.  A reader
+  looking for "the count slots are separate from the walk's scratch" should read
+  the adapter's list, and `stage2StagedPre_countSlots` for the projection;
 * the entry-stream capacity is `Γ_entry_pos8.pre`'s `k + 64 * nblk + 9 ≤ outCap`
   at one block per iteration and at most sixty-four entries per block;
 * the entry count is zero, and there is therefore no caller-staged prefix.  The
@@ -558,7 +576,17 @@ alternative — an equality here pinning this post's pair to whatever a second
 party calls the extents — is not smaller: it needs that party's extents to be a
 term both sides can write, and the only such term is the slot word plus the
 bound, which is what the component states.  So the component is the whole of the
-change, and it is where the next reader meets the extents. -/
+change, and it is where the next reader meets the extents.
+
+**The two count slots are in the post twice, and in two senses.**  Their words are
+read at `nk` and `nxp` (presence and value), and both extents are entries of the
+`UnchangedOutside` list — the list is the regions the run *may* write, and the
+loop's emitters write these two.  What the post does not and cannot say is that
+the tail's stage-2 call left them alone: `Γ_stage2` is a record at thirteen
+arguments that do not include these two addresses, so its post has no term for
+them.  That fact lives at the adapter instead, as the separation of the two words
+from the seven objects the walk writes (`stage2StagedPre_countSlots`), which is
+what the transport through stage two reads. -/
 def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
     (o : Outcome) : Prop :=
   match o with
@@ -687,6 +715,20 @@ def Γ_pipeline_units (tab base : Nat) : MemContract where
    .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
    .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
    .int 64 0]).length == 16
+
+-- The two count slots are the staging's own entries 7 and 9, at the arguments'
+-- `%nk` (120) and `%nxp` (160): the control for the docstrings above, so their
+-- membership is read off the list rather than counted out of the prose.
+#guard (pipelineRegions 64 4096 0 0
+  [.ptr 0, .int 64 1, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
+   .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
+   .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
+   .int 64 0])[7]? == some (120, 8)
+#guard (pipelineRegions 64 4096 0 0
+  [.ptr 0, .int 64 1, .ptr 8, .ptr 32, .ptr 80, .ptr 88, .int 64 256,
+   .ptr 120, .ptr 128, .int 64 256, .ptr 160, .ptr 168, .ptr 184,
+   .int 64 4096, .ptr 208, .ptr 216, .int 64 4096, .ptr 240, .ptr 248,
+   .int 64 0])[9]? == some (160, 8)
 
 /-! ### Axiom footprints
 
