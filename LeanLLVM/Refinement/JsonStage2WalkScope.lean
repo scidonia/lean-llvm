@@ -1,13 +1,16 @@
 /-
-The stage-2 walk's loop invariants, its measure, and five of its six back edges
-proved against them.
+The stage-2 walk's loop invariants, its measure, and its six back edges.
 
 `Stage2WalkObligation` (`JsonStage2IR`) is `Satisfies` for the pinned 165-block
 body, and its first conjunct is completion at `stage2Budget`
 (`stage2WalkObligation_iff_completion`).  `runFuel` is fuel-indexed, so the proof
 that resists is the loop: an invariant preserved by every arm, and a measure that
-decreases on every back edge.  This module scopes that proof and discharges the
-literal comparison's arm and the four scans'.  It does not claim the obligation.
+decreases on every iteration.  This module scopes that proof.  It discharges the
+literal comparison's arm and the four scans', five edges that decrease the measure
+at the edge itself; the entry loop's edge (the merge at `cleanup478.i`, its two
+`phi`s, the exit test, and the inner reset), which preserves the invariant and
+hands the decrease to the header's block (`walkMeasure_step`); and it states the
+entry loop's first obligation.  It does not claim the obligation.
 
 ## What the loop carries
 
@@ -42,10 +45,11 @@ the summands themselves:
 assumed: `WalkGeom.nonempty` unpacks any `Γ_stage2.pre` into one, so the invariant
 is not vacuous at a caller the record admits.
 
-The memory half is `Owns (inRegions [(dst, alen), (ev, evlen)]) s.mem m0`: the
-walk owns the arena and event prefixes it has written, and the staging survives
-outside them.  The report's `Owns` clause at `alen + 64` follows from this and the
-staged capacity (`owns_reserve_of_owns_extent`, `JsonStage2Body`).
+The memory half is `Owns (inRegions [(dst, alen), (ev, evlen)]) m0 s.mem`: the
+walk owns the arena and event prefixes it has written, changes nothing outside
+them, and they are present in the memory it produced.  The report's `Owns` clause
+at `alen + 64` follows from this and the staged capacity
+(`owns_reserve_of_owns_extent`, `JsonStage2Body`).
 
 ## The measure
 
@@ -63,26 +67,31 @@ any back edge: the scans `land.rhs.i`, `land.rhs.i103`, `land.rhs71.i` and
 
 The four scans' arms show the decrease and not the cap, and the difference
 matters.  Each of them decreases `inner` by one at a fixed `k`, so the radix plays
-no part on those edges.  What no arm can show is `inner ≤ walkInnerCap G` itself:
-`WalkInv` bounds each scan's own bound register only by `2 ^ 64`, so the cap is
-not a consequence of the invariant, and an arm that claimed it from the invariant
-alone would be claiming more than it holds.  The bound is nevertheless the right
-value, and the reason is in the body: each scan's bound is one of two words.
-`%cond350.i` is either `%4` — the word `entry` loads from the state's own slot at
-offset 8 — or `%conv347.i`, a `zext` of a 32-bit lane of the entry stream read at
-`%inc.i`; `%cond.i` is either `%4` or `%conv.i`, the same lane read.  A lane is an
-entry position, and every entry position is below `n` (`WalkGeom.inside`), while
-`nep ≤ n` (`WalkGeom.nep_le`) is what puts the lane's index inside the stream.  So
-a scan's remaining work is `c - i` with `c` an entry position — at most `n`, inside
-`n + 5` with five to spare.  The slot `%4` is read is where `s2_init` leaves the
-document length, and that layout is not part of `WalkGeom`: it is the seeding
-edges' work, together with the clause the outer arm's strict reset needs and the
-invariant does not yet carry, `inner ≤ walkInnerCap G`.  The outer arm is strict
-on the factor because `inner` resets to at most the cap, which is why the radix is
+no part on those edges.  `inner ≤ walkInnerCap G` is not a consequence of the
+register bounds the scans carry — `WalkInv` bounds each scan's own bound register
+only by `2 ^ 64` — so it is a field of the invariant, `WalkInv.inner_cap`, and
+every arm that resets the inner component must re-establish it (the two proved
+below do, because they lower it).  Its production is the seed's: the loop head
+carries the whole dispatch's allowance, `walkSeed G` sets `inner` to
+`walkInnerCap G`, and `walkSeed_invariant` is the invariant at the loop head.
+The bound is the right value, and the reason is in the body: each scan's bound is
+one of two words.  `%cond350.i` is either `%4` — the word `entry` loads from the
+state's own slot at offset 8 — or `%conv347.i`, a `zext` of a 32-bit lane of the
+entry stream read at `%inc.i`; `%cond.i` is either `%4` or `%conv.i`, the same
+lane read.  A lane is an entry position, and every entry position is below `n`
+(`WalkGeom.inside`), while `nep ≤ n` (`WalkGeom.nep_le`) is what puts the lane's
+index inside the stream.  So a scan's remaining work is `c - i` with `c` an entry
+position — at most `n`, inside `n + 5` with five to spare.  The slot `%4` is read
+is where `s2_init` leaves the document length, and that layout is not part of
+`WalkGeom`: it is the seeding edges' work, and it is why the seed's inner value is
+the allowance rather than a reading of the register.  The outer arm is strict on
+the factor because `inner` resets to at most the cap, which is why the radix is
 `cap + 1`.
 
-The arm proved below does not consume the cap's value: it decreases the inner
-component at a fixed `k`, and the outer term is the same on both sides.
+The five arms proved below do not consume the cap's value: each decreases the
+inner component at a fixed `k`, and the outer term is the same on both sides.
+The entry loop's arm is the one that reads it, and it does not close; the first
+obligation it needs is recorded in *The entry loop's first obligation* below.
 
 ## The arm, and the shape
 
@@ -111,7 +120,13 @@ guards mark — the **nesting** state (`sp`, `ctype`, `cst`, and the `sp >= MAXD
 refusal) and the **two reserves** (`z_arena_reserve` before a decoded body and
 `out_reserve(&z->ev, 13)` before each record), each of which can take a refusal
 arm and leave the cursors, the refusal bit and the refusal offset as the record
-must report them.
+must report them.  The edge itself closes — `walkBack_step` is `cleanup478.i`'s
+merge, the exit test, and the inner reset at the invariant — but the iteration
+does not, and the obligation it needs is not one of those three: the first store
+the iteration executes is the header's write to the caller's cursor record, and
+the region claim does not name it.  *The entry loop's first obligation* below
+states it, with the two `Owns` lemmas that make it a necessity rather than a
+convenience.
 
 The four scans are the middle, and their four arms are proved below against the
 same `WalkInv`, one at a time:
@@ -136,18 +151,29 @@ the same on both sides and the decrease is the inner component's.
 ## What is not here
 
 `Stage2WalkObligation` is not proved.  This module supplies the invariant
-statement, the measure, five of the six arms, and the block-local facts at the
-ten blocks those arms reach; the entry loop's arm, the seed from `entry` to
-`while.body.i`, the exit states, and the composition with `Stage2Run`'s six
-clauses remain.  `WalkLocal` is still `True` at every block outside those ten, so
-well-foundedness over the whole control flow is not established until the entry
-loop's arm pins its own blocks.
+statement, the measure, five of the six arms, the block-local facts at the ten
+blocks those arms reach, the seed (`walkSeed`/`WalkSeedState`/
+`walkSeed_invariant`), the exit's clauses (`WalkInv.report`), the outer
+iteration's strict decrease (`walkMeasure_step`), and the entry loop's back edge
+itself (`walkBack_step`: `cleanup478.i`'s merge, the exit test, and the inner
+reset).  The entry loop's arm — the dispatch the edge closes over — does not
+close, and *The entry loop's first obligation*, below, records what it needs and
+why: the loop's first store is to the caller's cursor record, the objects the
+flattening appends are staged by neither `WalkGeom` nor `Γ_stage2at`'s
+precondition, and `Owns` cannot survive a store outside the region it claims.  The
+`#guard`s beside `storeTargets` read the store addresses off the pinned body.
+`WalkLocal` is still `True` at every block outside the ten the five arms reach, so
+well-foundedness over the whole control flow is not established; the seed, the
+back edge and the exit establish the invariant at the ends of the walk and across
+its one edge, not over the dispatch between them.
 
-The cap is the other gap, and it is a clause rather than an arm: `WalkInv` does
-not carry `inner ≤ walkInnerCap G`, so no arm can derive the outer arm's strict
-reset from the invariant as it stands.  The value `n + 5` is justified by the
-scan bounds above, not exceeded by any of them, and adding the clause (and its
-seeding proof) is what the outer arm needs.
+The cap is a clause and not an arm, and it is now carried: `WalkInv.inner_cap`
+bounds the inner component by `walkInnerCap G`, the two arms that reset it
+re-establish it because they lower it, and the seed satisfies it by construction
+(`walkSeed_inner_cap`).  The value `n + 5` is justified by the scan bounds above
+and exceeded by none of them.  `WalkInv.alen_ge` is the second clause the exit
+needed and the invariant did not carry: the report's `arenaGe`, the append-only
+half of the arena cursor.
 -/
 import LeanLLVM.Refinement.JsonStage2Body
 import LeanLLVM.Refinement.JsonEscapeListBody
@@ -343,6 +369,12 @@ def ScanGuard (s : State) (phi cond : String) (inner : Nat) : Prop :=
     lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
     i + 1 < c
 
+/-- A bound on the inner work at any back edge: the scans are bounded by the
+document, and the literal comparison by its own five-byte cap.  It is the
+radix's base in `walkMeasure` and the value the invariant's `inner_cap` clause
+bounds the inner component by, which is why it is stated before both. -/
+def walkInnerCap {m0 : Mem} (G : WalkGeom m0) : Nat := G.n + 5
+
 /-- The block-local half of the invariant: the inner component and the registers
 it is read from, at the ten blocks the five proved arms reach — the literal
 comparison's two and each of the four scans' latch and landing.  At every other
@@ -395,6 +427,10 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   evlen_eq : C.evlen = G.nev0 + stage2RecordBytes * C.records
   /-- The arena cursor is bounded by the extents it decoded. -/
   alen_le_sum : C.alen ≤ G.ndst0 + (C.spans.map (fun r => r.2)).sum
+  /-- The arena cursor only appends: this is the report's `Stage2Run.arenaGe`,
+  read off the carry rather than assumed.  Without it the upper bound above is
+  one-sided and the report's growth clause has no producer. -/
+  alen_ge : G.ndst0 ≤ C.alen
   /-- The extents are in document order. -/
   spans_order : C.spans.Pairwise (fun r s => r.1 + r.2 ≤ s.1)
   /-- Every extent ends inside the document. -/
@@ -405,8 +441,19 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   pending_at : ∀ p off, C.pending = some (p, off) → off = C.alen ∧ p < G.n
   /-- The refusal offset is inside the document. -/
   eoff_le : C.eoff ≤ G.n
-  /-- The walk owns the two prefixes it has written, and the staging survives. -/
-  owning : Owns (inRegions [(G.dst, C.alen), (G.ev, C.evlen)]) s.mem m0
+  /-- **The inner component is inside the dispatch's allowance.**  This is the
+  clause the outer arm's strictness reads: an iteration advances `k` by one and
+  resets `inner` to at most `walkInnerCap G`, so the radix `cap + 1` makes the
+  outer term fall by at least one even when the inner component resets to its
+  cap.  It cannot be derived from the register bounds the scans carry — those
+  bound a scan's own bound register by `2 ^ 64` — which is why it is a field
+  here and its production at the loop head is stated with the seed. -/
+  inner_cap : C.inner ≤ walkInnerCap G
+  /-- The walk owns the two prefixes it has written: changes only inside them,
+  and they are present in the memory the run has produced.  The claim runs from
+  the staged memory to the run's own, which is the direction `Owns`'s presence
+  half is about and the direction the report's region clause reads. -/
+  owning : Owns (inRegions [(G.dst, C.alen), (G.ev, C.evlen)]) m0 s.mem
   /-- The block-local facts the measure is read from. -/
   blockLocal : WalkLocal C s
 
@@ -437,11 +484,72 @@ theorem forInc {h : WalkInv G C s} (hblock : C.block = "for.inc.i.i") :
 
 end WalkInv
 
-/-! ### The measure -/
+/-! ### The seed: the invariant at the loop head
 
-/-- A bound on the inner work at any back edge: the scans are bounded by the
-document, and the literal comparison by its own five-byte cap. -/
-def walkInnerCap {m0 : Mem} (G : WalkGeom m0) : Nat := G.n + 5
+The seed is not a step but a value: at the loop head the dispatch has not run, so
+the carry's `inner` is the whole allowance, not a reading of a register.  The
+state it is read at is what the initialisation hands the loop — the header's
+`phi` selecting the first position, and the staged cursors — and
+`WalkSeedState`'s three clauses are exactly that handoff.  The region claim is a
+seed hypothesis rather than a consequence of `WalkGeom`, and that is the
+initialisation's first obligation: see *The entry loop's first obligation*. -/
+
+/-- The loop head's carry: the initial entry index, the staged cursors, no
+records, no extents, no record in flight, no refusal, and the whole dispatch's
+inner allowance. -/
+def walkSeed {m0 : Mem} (G : WalkGeom m0) : WalkCarry G where
+  k := 0
+  alen := G.ndst0
+  evlen := G.nev0
+  records := 0
+  spans := []
+  pending := none
+  refusal := false
+  eoff := 0
+  block := "NodeBlock21"
+  inner := walkInnerCap G
+
+/-- The state the initialisation hands the loop: the header's block after its
+`phi` selected the first entry position, and the two cursors as the caller staged
+them. -/
+def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (s : State) : Prop :=
+  s.pc = "NodeBlock21" ∧
+    lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)) ∧
+    Owns (inRegions [(G.dst, G.ndst0), (G.ev, G.nev0)]) m0 s.mem
+
+/-- **The cap at the seed is the allowance itself**, so the clause that the outer
+arm's strictness reads is satisfied by construction rather than by a register
+bound. -/
+theorem walkSeed_inner_cap {m0 : Mem} (G : WalkGeom m0) :
+    (walkSeed G).inner ≤ walkInnerCap G :=
+  Nat.le_refl _
+
+/-- **The invariant at the loop head.**  `walkSeed` satisfies every clause of
+`WalkInv` at a `WalkSeedState`, so the seed's production is the initialisation's
+three facts and nothing else. -/
+theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) {s : State}
+    (h : WalkSeedState G s) : WalkInv G (walkSeed G) s := by
+  obtain ⟨hpc, hk, hown⟩ := h
+  refine
+    { pc_eq := hpc
+      blockIndex := hk
+      k_le := Nat.zero_le _
+      records_le := Nat.zero_le _
+      evlen_eq := rfl
+      alen_le_sum := by simp [walkSeed]
+      alen_ge := Nat.le_refl _
+      spans_order := by simp [walkSeed]
+      spans_inside := by simp [walkSeed]
+      pending_at := ?_
+      eoff_le := Nat.zero_le _
+      inner_cap := walkSeed_inner_cap G
+      owning := hown
+      blockLocal := ?_ }
+  · intro p off hp
+    simp [walkSeed] at hp
+  · simp [WalkLocal, walkSeed]
+
+/-! ### The measure -/
 
 /-- **The measure**, as one `Nat`: the remaining entries radix the remaining inner
 work.  The outer term decreases by at least one per entry; the inner term by
@@ -595,10 +703,16 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         records_le := hInv.records_le
         evlen_eq := hInv.evlen_eq
         alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         eoff_le := hInv.eoff_le
+        inner_cap := by
+          have hcap : c - i ≤ G.n + 5 := by
+            simpa only [walkInnerCap] using hinner ▸ hInv.inner_cap
+          show c - (i + 1) ≤ G.n + 5
+          omega
         owning := hInv.owning
         blockLocal := ?_ }
     dsimp only [WalkLocal, C']
@@ -912,10 +1026,16 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         records_le := hInv.records_le
         evlen_eq := hInv.evlen_eq
         alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         eoff_le := hInv.eoff_le
+        inner_cap := by
+          have hcap : c - i ≤ G.n + 5 := by
+            simpa only [walkInnerCap] using hinner ▸ hInv.inner_cap
+          show c - (i + 1) ≤ G.n + 5
+          omega
         owning := ?_
         blockLocal := ?_ }
     · rw [hk]; exact hInv.blockIndex
@@ -1022,6 +1142,397 @@ theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         rw [WalkLocal.extraTokenLanded rfl]
         exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
   exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+
+/-! ### The exit
+
+Both exit shapes store the walk's report to the caller's slots: `s2_walk.exit`
+writes `ndst ← alen` and `nev ← evlen` and returns `1`; `if.then` writes the same
+two and `err ← eoff` and returns `0`.  Those stores are the wrapper's and are
+pinned in `JsonStage2IR`; `JsonStage2Body`'s `stage2Report` and
+`stage2Run_boundary` are their effect.  What the exits read off the loop is the
+report's clauses, and `WalkInv.report` is those clauses at the carry — the same
+statement at both shapes, because the shapes differ in the wrapper's stores and
+not in what the walk left.
+
+The two clauses below that the invariant did not carry are `alen_ge` (the report's
+`arenaGe`, the append-only half of the arena cursor) and, before this slice,
+`inner_cap`.  Both are stated where their value is produced — the arena appends
+and the loop head — and both are preserved by every arm that leaves the field
+alone. -/
+
+/-- **The report's clauses, read off the invariant.**  The seven numbers and the
+region claim `Stage2Run` records from `arenaGe` onwards: both cursors and their
+two-sided growth bounds, the last reserve's slack, the refusal offset, and the
+region at `alen + 64`.  It is the exit's whole content: the wrapper's three
+stores and `stage2Run_boundary` turn it into `Γ_stage2`'s post. -/
+theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    G.ndst0 ≤ C.alen ∧
+      C.alen ≤ G.ndst0 + G.n ∧
+      G.nev0 ≤ C.evlen ∧
+      C.evlen ≤ G.nev0 + stage2RecordBytes * G.n ∧
+      C.alen + stage2ArenaReserve ≤ G.dstcap ∧
+      C.eoff ≤ G.n ∧
+      Owns (inRegions [(G.dst, C.alen + stage2ArenaReserve), (G.ev, C.evlen)]) m0 s.mem := by
+  have hle : C.alen ≤ G.ndst0 + G.n := h.alen_le
+  have hev : C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := h.evlen_le
+  have hroom : G.ndst0 + G.n + stage2ArenaReserve ≤ G.dstcap := G.arenaRoom
+  have hevcap : C.evlen ≤ G.evcap := le_trans hev G.evRoom
+  have hsep := stage2Regions_arena_ev G.separate
+  refine ⟨h.alen_ge, hle, ?_, hev, by omega, h.eoff_le, ?_⟩
+  · rw [h.evlen_eq]
+    exact Nat.le_add_right _ _
+  · refine owns_reserve_of_owns_extent h.owning G.arenaCap (by omega) ?_
+    rcases hsep with hsep | hsep
+    · left; omega
+    · right; omega
+
+/-! ### The entry loop's first obligation
+
+The entry loop's arm is the dispatch: `while.body.i` reads the entry stream and the
+document, the switch tree classifies the byte, and one of the arms assembles a
+record or refuses.  The edge that closes the iteration is proved (`walkBack_step`:
+the merge at `cleanup478.i`, its two `phi`s, the exit test, and the inner reset),
+and the iteration's forward edges are not; the obstruction to those is not the
+nesting state, either reserve, or a refusal path: it is the first store the loop
+executes, before any of them.
+
+`while.body.i` stores the advanced index to the caller's cursor record,
+`store i64 %inc.i, %k11.i` with `%k11.i = %c.i + 32` (`while.body.i.lr.ph`'s
+`gep`), and `if.end207.i` does the same for the two-entry advance.  The
+initialisation writes the record's other fields (`%c.i + 0/8/16/24`, and
+`%c.i + 1112` for `%e`), and the walk writes the two container stacks
+`%ctype.i`/`%cst.i` at `%sp.i.0248`, the log's `%z + 0/8/16/24/40/48/56`, `%s`'s
+three fields, `%e + 8`, and `%t352.i`.  None of those addresses is staged by
+`WalkGeom`, which is `stage2Pre` unpacked, and `stage2Pre` names only the thirteen
+ABI objects.
+
+The invariant's region claim is `Owns (inRegions [(dst, alen), (ev, evlen)])`, and
+`Owns`'s unchanged half is a statement about *every address outside* the region.
+So a store outside it contradicts the claim unless the bytes happen to agree —
+`owns_writeBytes_outside` below is that argument — and only a store whose whole
+range is inside it is admitted (`owns_writeBytes_inside`).  The loop's first store
+is to `%c.i + 32`, which is outside both extents in the emitted pipeline, where the
+cursor record is an object of its own; nothing in `WalkGeom` places it inside them,
+so the invariant as stated is not preserved one step into the loop.  The seed's
+region claim fails the same way, one step earlier: `entry`'s own stores
+(`%s + 56/72/80`, `%z + 0/8/16/24/40/48/56`, `%c.i + 0/8/16/24/1112`, and the
+`memset` over `%c.i + 40`) are to the same unstaged objects, which is why
+`WalkSeedState` takes the claim as a hypothesis rather than deriving it.
+
+**The obligation, then, is a statement change and not an arm**: the walk's region
+must name the appended objects it writes — `%c.i`, `%ctype.i`, `%cst.i`,
+`%t352.i`, `%s`, `%z`, `%e` (`%d.i` is staged but the pinned body neither reads
+nor writes it) — at the extents the body writes, with their presence staged
+(`HasBytes` at each extent) and their separation from the arena and event
+extents, and the record's `stage2Frame` must name them too, because the post's
+`Owns` is a claim about the whole run.  `Γ_stage2at`'s precondition says nothing
+about those objects (`stage2Args` appends them and `Γ_stage2at.pre` constrains
+none), so neither the loop's invariant nor the report's region clause can be
+derived at that record for a placement that puts any of them outside the frame —
+and no clause places them inside it.  The obligation precedes the dispatch's three
+named obligations: the nesting state is first *written* at `if.end24.i`
+(`%ctype.i`/`%cst.i`), the arena's reserve is first *checked* at `if.end256.i`
+(`%add.i82` against `%acap`, with the cursor updated at `if.else285.i`), and the
+event reserve is first checked at `if.end.i.i`, all of them around stores to the
+same unstaged objects.
+
+Two structural facts about the edge are worth recording beside it.  First, the
+header's leading `phi` rebinds `%k.0.i249` inside the block, not on the edge, so
+the outer arm is the two-block step `cleanup478.i → while.body.i → NodeBlock21`:
+the carry's `k` advances only when the header's own instructions run, which is why
+the strict decrease is `walkMeasure_step`'s (the header's block) and not the
+edge's.  Second, the header's `phi` takes `%k.2.i` from `cleanup478.i`, whose
+incoming value is the dispatch's, so the edge's guard is that merge's own — the
+carry does not record it, and the dispatch to `while.body.i` needs the ten
+predecessors' register facts at `cleanup478.i`'s two `phi`s.
+
+Behind the region claim sits the second clause the dispatch needs and the
+invariant does not carry: **the nesting state**.  `WalkInv` names no register for
+the depth `%sp.i.0248`, the container-type stack `%ctype.i`, the container-state
+stack `%cst.i`, or their bound, so `if.end24.i`'s `sp > 519` refusal, its
+`ctype[sp]`/`cst[sp]` stores and its `%inc33.i` advance have nothing to preserve,
+and a refusal arm's `%idxprom.i` offset is a register the carry's `eoff` is not
+tied to.  The clause is the same shape as the cap's: the depth is seeded at zero
+by the loop head's `phi` (`%sp.i.0248` takes the constant `0` from
+`while.body.i.lr.ph`), the stacks are the two ABI objects `%ctype.i`/`%cst.i` with
+`entry`'s `memset` over the cursor record's `%c.i + 40` beside them, the bound is
+the `MAXD` check the arm reads (`%cmp19.i`'s `519`), and the depth moves by one per
+push and per pop.  It belongs where its value is produced — the loop head's `phi`
+and `entry`'s initialisation — and, like the cap, it is a clause and not an arm. -/
+
+/-- A block's store destinations, in text order, with the stored types. -/
+def storeTargets (f : Function) (name : String) : List (String × Ty) :=
+  match f.findBlock name with
+  | none => []
+  | some b =>
+      b.instrs.filterMap fun i =>
+        match i with
+        | .store ty _ (.reg p) => some (p, ty)
+        | _ => none
+
+/-- The base register and displacement of a named `gep` in a block: the address
+the store above is computed from. -/
+def gepDef (f : Function) (name dst : String) : Option (String × Nat) :=
+  match f.findBlock name with
+  | none => none
+  | some b =>
+      (b.instrs.filterMap fun i =>
+        match i with
+        | .gep d _ (.reg base) (.imm (.int _ off)) =>
+            if d = dst then some (base, off.toNat) else none
+        | _ => none).head?
+
+-- The loop head's first write is the cursor record's `k` field, and the field is
+-- `%c.i + 32`; the store is eight bytes wide.
+#guard storeTargets stage2Body "while.body.i" = [("%k11.i", Ty.int 64)]
+#guard gepDef stage2Body "while.body.i.lr.ph" "%k11.i" = some ("%c.i", 32)
+
+-- The two-entry advance writes the same field with the same width.
+#guard storeTargets stage2Body "if.end207.i" = [("%k11.i", Ty.int 64)]
+
+-- The nesting arm's stores are the two container stacks, at the running depth.
+#guard storeTargets stage2Body "if.end24.i" =
+  [("%arrayidx30.i", Ty.int 8), ("%arrayidx32.i", Ty.int 8)]
+
+-- The hash update and the event reserve's two stores, in the order the record
+-- path reaches them.
+#guard storeTargets stage2Body "if.then.i.i" = [("%h1.i.i.i51", Ty.int 64)]
+#guard storeTargets stage2Body "out_reserve.exit.i.i" =
+  [("%add.ptr.i.i", Ty.int 8), ("%len", Ty.int 64)]
+
+/-- **A write whose whole range is inside the owned region preserves the region
+claim.**  The unchanged half is about the addresses outside the region, so a range
+inside it asks nothing of them — at an address below the range or above it the
+bytes are untouched (`readByte_writeBytes_outside`) — and the presence half holds
+of the written bytes because a write adds presence. -/
+theorem owns_writeBytes_inside {P : Nat → Prop} {mem m : Mem} {w : Nat} {v : List UInt8}
+    (h : Owns P mem m) (hw : ∀ k, k < v.length → P (w + k)) :
+    Owns P mem (writeBytes m w v) := by
+  refine ⟨?_, ?_⟩
+  · intro a ha
+    by_cases hbelow : a < w
+    · exact (readByte_writeBytes_outside m v (Or.inl hbelow)).trans (h.unchanged a ha)
+    · by_cases habove : w + v.length ≤ a
+      · exact (readByte_writeBytes_outside m v (Or.inr habove)).trans (h.unchanged a ha)
+      · exfalso
+        apply ha
+        have hk : a - w < v.length := by omega
+        have hP := hw (a - w) hk
+        rwa [show w + (a - w) = a by omega] at hP
+  · intro a ha
+    exact present_writeBytes m w v (h.present a ha)
+
+/-- **A write outside the owned region breaks the claim.**  If the write changes
+the byte at an address the region excludes, no `Owns` at that region survives it:
+the unchanged half demands that byte agree with the pre-state, and the store is
+exactly what makes it not.  This is why the loop's first store is the entry
+loop's first obligation rather than a detail of its arms. -/
+theorem owns_writeBytes_outside {P : Nat → Prop} {mem m : Mem} {w : Nat} {v : List UInt8}
+    (hw : ¬ P w) (hdiff : readByte (writeBytes m w v) w ≠ readByte mem w) :
+    ¬ Owns P mem (writeBytes m w v) := by
+  intro h
+  exact hdiff (h.unchanged w hw)
+
+/-! ### The back edge: `cleanup478.i`'s merge
+
+The edge's own block is the merge and the exit test: the depth and the index the
+dispatch left, and the unsigned test against the entry count.  It writes no
+memory, so the region claim and the carried extents are untouched, and its effect
+on the carry is the reset — the next iteration's dispatch has spent nothing, so
+`inner` is the whole allowance again.  The index does not advance here: the
+header's leading `phi` rebinds `%k.0.i249` inside `while.body.i`, which is why the
+strict decrease is the next block's (`walkMeasure_step`) and not this edge's. -/
+
+/-- The merge's depth `phi`, as the pinned body writes it. -/
+def cleanupSpIncoming : List (String × Operand) :=
+  [("if.end473.i", .reg "%sp.i.0248"), ("if.end150.i", .reg "%sp.i.0248"),
+   ("if.end162.i", .reg "%sp.i.0248"), ("if.end195.i", .reg "%sp.i.0248"),
+   ("if.else334.i", .reg "%sp.i.0248"), ("if.then330.i", .reg "%sp.i.0248"),
+   ("if.then.i.i", .reg "%inc33.i"), ("out_reserve.exit.i.i", .reg "%inc33.i"),
+   ("if.then.i.i50", .reg "%sub.i"), ("out_reserve.exit.i.i60", .reg "%sub.i")]
+
+/-- The merge's index `phi`, as the pinned body writes it. -/
+def cleanupKIncoming : List (String × Operand) :=
+  [("if.end473.i", .reg "%inc.i"), ("if.end150.i", .reg "%inc.i"),
+   ("if.end162.i", .reg "%inc.i"), ("if.end195.i", .reg "%inc.i"),
+   ("if.else334.i", .reg "%inc208.i"), ("if.then330.i", .reg "%inc208.i"),
+   ("if.then.i.i", .reg "%inc.i"), ("out_reserve.exit.i.i", .reg "%inc.i"),
+   ("if.then.i.i50", .reg "%inc.i"), ("out_reserve.exit.i.i60", .reg "%inc.i")]
+
+/-- `cleanup478.i`: the merge and the unsigned test against the entry count. -/
+def cleanup478Block : Block :=
+  { name := "cleanup478.i",
+    instrs := [
+      Instr.phi "%sp.i.1" (Ty.int 32) cleanupSpIncoming,
+      Instr.phi "%k.2.i" (Ty.int 64) cleanupKIncoming,
+      Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i") (Operand.reg "%nep")],
+    term := Term.condbr (Operand.reg "%cmp.i") "while.body.i" "if.then485.i" }
+
+/-- The merge is the pinned body's block: the arm is about `stage2Body`, not a
+transcription of it. -/
+theorem cleanup478_find :
+    stage2Body.findBlock "cleanup478.i" = some cleanup478Block := by
+  simp [stage2Body, Function.findBlock, findBlockList, cleanup478Block,
+    cleanupSpIncoming, cleanupKIncoming]
+
+/-- The merge's two `phi`s and the test, at the state's own environment: the
+bindings are the two selected values, and the test's bit is one because the
+dispatch's index is still short of the entry count. -/
+theorem cleanup478_denote (calls : Calls) (s : State) (p : String)
+    {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hguard : k2 < nepv.toNat) :
+    denoteCode calls cleanup478Block.instrs s =
+      some (((s.bind "%sp.i.1" (.int 32 (BitVec.ofNat 32 spv))).bind
+        "%k.2.i" (.int 64 (BitVec.ofNat 64 k2))).bind
+        "%cmp.i" (.int 1 (1 : BitVec 1))) := by
+  have hult : evalICmp .ult (BitVec.ofNat 64 k2) nepv = (1 : BitVec 1) := by
+    have hlt : (BitVec.ofNat 64 k2).toNat < nepv.toNat := by
+      rw [BitVec.toNat_ofNat]
+      omega
+    rw [show evalICmp .ult (BitVec.ofNat 64 k2) nepv
+          = BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 k2) nepv) from rfl]
+    rw [show BitVec.ult (BitVec.ofNat 64 k2) nepv = true from
+      (BitVec.ult_iff_toNat_lt).2 hlt]
+    rfl
+  have hsel : PhiSelects s p
+      [{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+       { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }]
+      [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+       ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))] :=
+    PhiSelects.cons hsp hspv (PhiSelects.cons hk hkv PhiSelects.nil)
+  have hspecs : cleanup478Block.instrs =
+      ([{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+        { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }].map
+          PhiSpec.instr) ++
+        [Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i")
+          (Operand.reg "%nep")] := by
+    simp [cleanup478Block, PhiSpec.instr]
+  rw [hspecs, denoteCode_phiRun (specs :=
+      [{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+       { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }])
+      (vs := [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+              ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))])
+      (rest := [Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i")
+        (Operand.reg "%nep")]) hpre hsel (by rfl)]
+  rw [show s.bindAll [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+        ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))] =
+      stateAt (("%k.2.i", .int 64 (BitVec.ofNat 64 k2)) ::
+        ("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)) :: s.env) s from rfl]
+  rw [denoteCode_icmp_ult_reg (x := BitVec.ofNat 64 k2) (y := nepv)
+    calls _ s "%cmp.i" "%k.2.i" "%nep"
+    (by simp only [lookupName_cons_self])
+    (by
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+      exact hnep)
+    []]
+  rw [hult]
+  rfl
+
+/-- **The back edge, at the invariant.**  From `WalkInv` at `cleanup478.i`, whose
+merge selects the dispatch's depth and index and whose test is clear, one control
+step lands at `while.body.i` with every clause preserved and the inner component
+reset to the allowance. -/
+theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "cleanup478.i")
+    {p : String} {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hguard : k2 < nepv.toNat) :
+    ∃ e : State,
+      step calls stage2Body s = .jump e ∧
+      WalkInv G { C with block := "while.body.i", inner := walkInnerCap G } e ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  have hpc : s.pc = "cleanup478.i" := by rw [hInv.pc_eq, hblock]
+  let e : State :=
+    { ((s.bind "%sp.i.1" (.int 32 (BitVec.ofNat 32 spv))).bind
+        "%k.2.i" (.int 64 (BitVec.ofNat 64 k2))).bind
+        "%cmp.i" (.int 1 (1 : BitVec 1)) with
+      pc := "while.body.i"
+      pre := some "cleanup478.i" }
+  have hden := cleanup478_denote calls s p hpre hsp hspv hk hkv hnep hguard
+  have hterm : cleanup478Block.term =
+      Term.condbr (Operand.reg "%cmp.i") "while.body.i" "if.then485.i" := rfl
+  have hstep : step calls stage2Body s = .jump e := by
+    have hfind : stage2Body.findBlock s.pc = some cleanup478Block := by
+      rw [hpc, cleanup478_find]
+    simp only [step, hfind, hden, hterm]
+    dsimp only [e, State.bind]
+    simp only [execTerm, evalOperand, lookupName_cons_self, hpc]
+    simp
+  refine ⟨e, hstep, ?_, ?_⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := ?_
+        k_le := hInv.k_le
+        records_le := hInv.records_le
+        evlen_eq := hInv.evlen_eq
+        alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
+        spans_order := hInv.spans_order
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        eoff_le := hInv.eoff_le
+        inner_cap := Nat.le_refl _
+        owning := by dsimp only [e, State.bind]; exact hInv.owning
+        blockLocal := by simp [WalkLocal] }
+    dsimp only [e, State.bind]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    exact hInv.blockIndex
+  · intro k
+    rw [show 1 + k = k + 1 from by omega]
+    simp only [runFuel, hstep]
+
+/-! ### The outer iteration's arithmetic
+
+The entry loop's back edge (`walkBack_step`) resets `inner` to the next dispatch's
+work; the index advances at the header's `phi`, which `while.body.i` binds from
+`%k.2.i` inside the block rather than on the edge.  So the iteration is the
+two-block step `cleanup478.i → while.body.i → NodeBlock21`: its reset is the
+edge's, its advance is the header's block's, and the cap is what makes the reset
+survive the radix.  `walkMeasure_step` is the strict decrease, and it is the only
+place the cap's value is consumed. -/
+
+/-- **An iteration that advances the index and stays inside the cap is strict.**
+`k' ≥ k + 1` takes at least one whole radix off the outer term, and `inner' ≤ cap`
+is smaller than the radix that was removed, so the inner component's reset cannot
+give it back. -/
+theorem walkMeasure_step {m0 : Mem} (G : WalkGeom m0) (C C' : WalkCarry G)
+    (hk : C.k < C'.k) (hk' : C'.k ≤ G.nep)
+    (hinner : C'.inner ≤ walkInnerCap G) :
+    walkMeasure G C' < walkMeasure G C := by
+  have hsplit : G.nep - C.k = (G.nep - C'.k) + (C'.k - C.k) := by omega
+  have hstep : 1 ≤ C'.k - C.k := by omega
+  have hmul : (G.nep - C.k) * (walkInnerCap G + 1)
+      = (G.nep - C'.k) * (walkInnerCap G + 1) + (C'.k - C.k) * (walkInnerCap G + 1) := by
+    rw [hsplit, Nat.add_mul]
+  have hradix : walkInnerCap G + 1 ≤ (C'.k - C.k) * (walkInnerCap G + 1) := by
+    simpa using Nat.mul_le_mul_right (walkInnerCap G + 1) hstep
+  simp only [walkMeasure]
+  rw [hmul]
+  omega
+
+/-- **The iteration's measure, from the two halves.**  The edge resets `inner`
+(`walkBack_step`) and the header's block advances `k`; the carry with both applied
+is the one above, and its decrease is `walkMeasure_step` with the cap holding by
+`Nat.le_refl`.  This is the arithmetic the header's block still owes: prove it
+lands with the index advanced, and the decrease is this. -/
+theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Nat)
+    (hk : C.k < k2) (hk' : k2 ≤ G.nep) :
+    walkMeasure G { C with k := k2, inner := walkInnerCap G } < walkMeasure G C :=
+  walkMeasure_step G C { C with k := k2, inner := walkInnerCap G } hk hk'
+    (Nat.le_refl _)
 
 /-! ### The instrument -/
 
@@ -1164,6 +1675,46 @@ theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
 /-- info: 'LeanLLVM.Refinement.extraToken_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.extraToken_scan
+
+/-- info: 'LeanLLVM.Refinement.walkSeed_inner_cap' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.walkSeed_inner_cap
+
+/-- info: 'LeanLLVM.Refinement.walkSeed_invariant' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.walkSeed_invariant
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.report' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.report
+
+/-- info: 'LeanLLVM.Refinement.owns_writeBytes_inside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.owns_writeBytes_inside
+
+/-- info: 'LeanLLVM.Refinement.owns_writeBytes_outside' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.owns_writeBytes_outside
+
+/-- info: 'LeanLLVM.Refinement.walkMeasure_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.walkMeasure_step
+
+/-- info: 'LeanLLVM.Refinement.cleanup478_find' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.cleanup478_find
+
+/-- info: 'LeanLLVM.Refinement.cleanup478_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.cleanup478_denote
+
+/-- info: 'LeanLLVM.Refinement.walkBack_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.walkBack_step
+
+/-- info: 'LeanLLVM.Refinement.walkIter_measure' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.walkIter_measure
 
 
 end LeanLLVM.Refinement
