@@ -215,12 +215,17 @@ all-automated chain left unresolved.
 The trace itself is stated: `WalkLink` is one link (a control step that preserves
 `WalkInv` and does not raise `walkMeasure`), `WalkChain` is a chain of them, and
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
-as a run, a measure bound, and a completion at a returning last state.  Its two
-proved links are `WalkLink.whileBody` and `WalkLink.ifEnd24`; the links between
-them are not supplied.  `WalkLocal` is still `True` at every block outside the ten
-the five arms reach, so well-foundedness over the whole control flow is not
-established; the seed, the back edge and the exit establish the invariant at the
-ends of the walk and across its one edge, not over the dispatch between them.
+as a run, a measure bound, and a completion at a returning last state.
+
+Seventy-seven of the body's 165 blocks are now links: the two named arms
+(`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
+(`WalkLink.forInc` and the four scan headers), and the sixty-nine of the
+dispatch's comparisons and empty blocks, which are the censused classes A, B and
+B′.  The census, the shape each remaining class needs, and the 88 blocks that are
+still not links are stated in *The middle's two classes* below.  `WalkLocal` is
+still `True` at every block outside the ten the five measure arms reach, so
+well-foundedness over the whole control flow is not established, and
+`Stage2WalkCompletes` is not inhabited.
 *The loop's forward stores* below states the rest in order, including the
 pipeline's one pending transport-pair clause.
 
@@ -1024,6 +1029,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     (hc : lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hinner : C.inner = c - i) (hlt : i + 1 < c) (hcw : c < 2 ^ 64) :
     ∃ (e : State) (C' : WalkCarry G),
+      step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧
       C'.block = "for.body.i.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
@@ -1043,7 +1049,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   have hsp : lookupName e.env "%sp.i.0248" = lookupName s.env "%sp.i.0248" := by
     dsimp only [e, State.bind]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
-  refine ⟨e, C', ?_, rfl, ?_, ?_⟩
+  refine ⟨e, C', hstep, ?_, rfl, ?_, ?_⟩
   · refine
       { pc_eq := rfl
         blockIndex := by rw [hk]; exact hInv.blockIndex
@@ -1099,6 +1105,7 @@ theorem forInc_arm {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "for.inc.i.i")
     (hguard : ForIncGuard C s) :
     ∃ (e : State) (C' : WalkCarry G),
+      step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧
       C'.block = "for.body.i.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
@@ -1439,12 +1446,13 @@ theorem whitespace_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
     (hguard : ScanGuard s "%ee.0.i238" "%cond350.i" C.inner) :
     ∃ (e : State) (C' : WalkCarry G),
+      step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧ C'.block = "land.rhs.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
       ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
   obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.whitespace hInv hblock
   have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
     scan_step G C s i c "while.body370.i" "land.rhs.i" "%ee.0.i238" "%inc371.i"
       "%exitcond.not" "%cond350.i" "if.end372.i" hInv hblock scanWhitespace_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -1454,7 +1462,7 @@ theorem whitespace_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         intro e hpre hinc hcond
         rw [WalkLocal.whitespaceLanded rfl]
         exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-- **The string scan's back edge**, `while.body.i104 → land.rhs.i103`.  The
 counter `%ee.011.i` goes from `i` to `i + 1` and the test `%inc.i105 = %cond.i`
@@ -1465,12 +1473,13 @@ theorem string_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body.i104")
     (hguard : ScanGuard s "%ee.011.i" "%cond.i" C.inner) :
     ∃ (e : State) (C' : WalkCarry G),
+      step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧ C'.block = "land.rhs.i103" ∧
       walkMeasure G C' < walkMeasure G C ∧
       ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
   obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.stringScan hInv hblock
   have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
     scan_step G C s i c "while.body.i104" "land.rhs.i103" "%ee.011.i" "%inc.i105"
       "%exitcond.not.i" "%cond.i" "cleanup474.i" hInv hblock scanString_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -1480,7 +1489,7 @@ theorem string_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         intro e hpre hinc hcond
         rw [WalkLocal.stringScanLanded rfl]
         exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-- **The escape scan's back edge**, `while.body76.i → land.rhs71.i`.  The counter
 `%s2.020.i` goes from `i` to `i + 1` and the test `%inc77.i = %cond.i` is clear
@@ -1490,12 +1499,13 @@ theorem escape_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body76.i")
     (hguard : ScanGuard s "%s2.020.i" "%cond.i" C.inner) :
     ∃ (e : State) (C' : WalkCarry G),
+      step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧ C'.block = "land.rhs71.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
       ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
   obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.escape hInv hblock
   have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
     scan_step G C s i c "while.body76.i" "land.rhs71.i" "%s2.020.i" "%inc77.i"
       "%exitcond24.not.i" "%cond.i" "while.end78.i" hInv hblock scanEscape_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -1505,7 +1515,7 @@ theorem escape_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         intro e hpre hinc hcond
         rw [WalkLocal.escapeLanded rfl]
         exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-- **The extra-token scan's back edge**, `while.body462.i → land.rhs457.i`.  The
 counter `%q.0.i246` goes from `i` to `i + 1` and the test `%inc463.i =
@@ -1515,12 +1525,13 @@ theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
     (hguard : ScanGuard s "%q.0.i246" "%cond350.i" C.inner) :
     ∃ (e : State) (C' : WalkCarry G),
+      step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧ C'.block = "land.rhs457.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
       ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
   obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.extraToken hInv hblock
   have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, -, hinv, hmeas, hrun⟩ :=
+  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
     scan_step G C s i c "while.body462.i" "land.rhs457.i" "%q.0.i246" "%inc463.i"
       "%exitcond298.not" "%cond350.i" "if.end473.i" hInv hblock scanExtraToken_find
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -1530,7 +1541,7 @@ theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         intro e hpre hinc hcond
         rw [WalkLocal.extraTokenLanded rfl]
         exact ⟨i + 1, c, rfl, hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hinv, rfl, hmeas, hrun⟩
+  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-! ### The exit
 
@@ -3732,9 +3743,10 @@ The trace the obligation's completion conjunct is: a chain of the walk's own
 control steps, each of which preserves `WalkInv` and does not raise
 `walkMeasure`.  The chain is what an induction over the dispatch produces, block
 by block; this section states it, proves that it carries the invariant and the
-measure, and gives it the two links the module has proved — the header's block and
-the nesting arm's.  The links between them are the blocks `WalkLocal` is still
-`True` at, and they are not supplied. -/
+measure, and gives it the links the module has proved: the header's block, the
+nesting arm, the latch, the four scan headers, and the censused classes A, B and
+B′ — seventy-seven blocks in all.  The links between them are the 88 rows of the
+census's remainder, and they are not supplied. -/
 
 /-- **One link of the dispatch's trace**: a control step that preserves
 `WalkInv` and does not raise the measure. -/
@@ -3829,6 +3841,1710 @@ theorem WalkLink.ifEnd24 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
   exact ⟨e, ⟨hInv, hstep, hinv, le_of_eq hmono⟩⟩
 
 
+
+
+/-! ## The middle's two classes
+
+`WalkLink` is what the dispatch's trace is made of, and the two links above are
+hand-written: a block's `denoteCode`, its terminator, and the twenty-two clauses
+of `WalkInv` re-established one at a time.  At that price the ~140 blocks between
+the arms are not writable, so the middle is classified instead, and each class is
+one lemma whose instances differ only in the block's text.
+
+## The census
+
+The classification is a census of the pinned body's 165 blocks by the shape that
+decides what a link proof costs.  The shape is the opcode sequence, because a
+block's `denoteCode` is one step per instruction and what a step costs is set by
+the instruction's constructor, not by the block's name.
+
+| class | shape | blocks | proved |
+|---|---|---:|---|
+| A | one `icmp` and a `condbr` on its result | 60 | 60 |
+| B | no instructions and a `br` | 9 | 9 |
+| B′ | no instructions and a `condbr` on a carried bit | 1 | 1 |
+| C | the refusal store: `gep %e+8`, `store i64`, `br` | 18 | 0 |
+| D | other `store` shapes | 11 | 1 |
+| E | a `phi`-headed block | 15 | 1 |
+| F | a block that calls | 19 | 0 |
+| G | `load` and compare | 14 | 0 |
+| H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 5 |
+| H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 0 |
+| — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
+
+**Seventy-seven of the 165 blocks are links**: the sixty of class A, the nine of B,
+B′'s single block, the four scan headers and `for.inc.i.i` (the five of H1 that
+decrease the measure), and the two named arms `while.body.i` (E) and `if.end24.i`
+(D).  The remaining 88 are named below with their obstruction, one row each; six
+of them are not links at all — the seed, the return, and the four `unreachable`
+arms.
+
+The count that mattered was the number of classes, not of blocks.  A, B and B′ are
+70 blocks between them and need no memory reasoning at all: none touches memory
+and none rebinds a register the invariant carries, so each link is one
+`lookupName_cons_ne` per carried register and nothing else.  Two more classes
+close the same way once their own small gap is filled — H1's five `LeafBlock`s
+need one `add` of a negative literal before the comparison, and H2's two are five
+`getelementptr`s and three arithmetic instructions.
+
+## What each class is missing
+
+**C, the refusal store (18).**  `%off1.i.iNN = getelementptr inbounds i8, ptr %e,
+i64 8; store i64 <reg>, %off1.i.iNN; br label %if.then`.  `WalkInv` has four
+clauses for the log's fields (`log_len`, `log_cap`, `log_alen`, `log_acap`) and
+none for the refusal record's: the carry holds `refusal` and `eoff`, and `WalkInv`
+binds neither to memory.  So the store has no `readBytes` clause to preserve, no
+`eoff` producer, and `WalkInv.eoff_le` needs the stored value bounded by `G.n` —
+which is the block's own register (`%idxprom.i` in thirteen, `%4` in four,
+`%q.0.i246` in one) and not a carried fact.  `owning` is the easy half:
+`owns_writeBytes_inside` with an `e_inside` companion to `ctype_inside`, since
+`%e + 8 + k < %e + stage2ErrorExtent` for `k < 8`.  One lemma covers all
+eighteen; what it needs is a `WalkInv` clause for `%e + 8`, and adding a clause to
+the invariant is the planner's decision, not this slice's.
+
+**D, the other stores (11; `if.end24.i` proved).**  Ten shapes, one each: the hash
+word at `%z + 24` (`if.then.i.i`, `if.then.i.i50` — six instructions of `xor`,
+`mul`, `add` over the mask constants, and the invariant has no clause for that
+word); the event stream's byte and its length (`out_reserve.exit.i.i`,
+`.i60` — two stores that move `evlen`, and so the carry's `events`, `evlen_eq` and
+`evBytes` all three); the container-stack byte at `%cst.i + idxprom`
+(`if.end150.i`, `if.end162.i`, `if.end195.i`); the cursor's `k` field
+(`if.end207.i`, at `%k11.i`, which is `WalkPtrs`' own address); the arena cursor
+(`if.else285.i`, at `%alen`); and the state stack at `cst + sp - 1`
+(`if.then330.i`).  Each is provable, and none is a class: they are ten different
+addresses with ten different clauses behind them.
+
+**E, the `phi` run (15; `while.body.i` proved).**  The run reads `s.pre`, which the
+invariant does not constrain beyond the block it is at (`denoteCode_phiRun` is the
+mechanism).  The four `land.rhs*` blocks are the important ones: each selects the
+scan's counter and then loads the document byte at it, so each is where a scan's
+`%NN` — class A's compared register — is produced, and each is on the path
+between a scan header and the comparison that ends the scan.  `if.end372.i`,
+`while.end.i`, `while.end78.i`, `if.end245.i`, `if.end290.i`, `cond.end.i96` and
+`if.end48.i` are merges whose incoming values are the previous arm's registers, so
+their links are one `PhiSelects` per incoming edge.
+
+**F, the calls (19).**  Every call has to resolve through `stage2Calls`, and what
+it leaves is a `CallOutcome`: the `lifetime.start`/`lifetime.end` markers (twelve
+and twenty-one of them, `JsonStage2IR`'s guards) and the two `memset`s are
+resolved there and leave memory alone, `@llvm.trap` is the reserve's refusal arm,
+and `s2_init`, `s2_value_pos`, `s2_after_value`, `s2_string_body`, `num_fast_el1`
+and `od_scalar_value` are the `sub` parameter.  So each of these
+links is a contract question — the callee's post at the caller's staging — and the
+block that reads the returned word (`if.end256.i` reads `%call272.i`'s successors,
+`if.then328.i` reads `%outn.i`) needs the contract's *frame* as well as its post.
+
+**G, `load` and compare (14).**  Each reads a word the invariant does not bind.
+`if.end.i.i` and `if.end.i.i55` read `%len` and `%cap` — which `log_len` and
+`log_cap` *do* bind, so these two are the closest of the fourteen; the rest read a
+container-stack byte at `idxprom` or `sp - 1`, the document byte at `%cond350.i`
+(`land.lhs.true357.i`), `%root_done.i`'s alloca (`if.end490.i`), or the document
+byte at `%idxprom.i` (`if.end.i97`).
+
+**H1's five `LeafBlock`s.**  `%.off = add i8 %NN, -9; %SwitchLeafNN = icmp ule i8
+%.off, 1`.  Two instructions and no memory: `walkDenoteCode_add_imm_w` at a
+negative constant, then class A's terminator.  The compared byte is the loaded
+document byte, which is the same caller-supplied fact class A takes; what stops
+them is that `WalkLink.icmpBr`'s `hinstrs` is a singleton, so the pair needs its
+own class lemma.
+
+**H2.**  `while.body.i.lr.ph` binds five `getelementptr`s — `%c.i + 32`,
+`%z + 24`, `%t352.i + 20`, `+ 8`, `+ 16` — of which only the first is in
+`WalkPtrs`, so its link needs four more fixed addresses (and `%t352.i` itself is
+not a `WalkPtrs` register).  `if.then281.i` is `add i32 %7, 1`, a `zext`, and an
+`or` with the top bit set; it needs `%7`'s value, which is `if.then328.i`'s
+`%conv286.i.sink`, and it carries `inner` untouched.
+
+**The six that are not links.**  `entry` is the initialisation and its obligation
+is `WalkSeedState`, already stated.  `if.end` returns; `WalkChain.completes` takes
+its step as `hret`.  The four `unreachable` blocks are `@llvm.trap` arms: a link
+cannot enter one without concluding the run does not complete, so their obligation
+is the guard before them — `if.end.i.i`'s and `if.end.i.i55`'s event reserve,
+`if.end256.i`'s arena reserve, `if.end290.i`'s thirteen-byte reserve — never
+failing.
+
+## The remainder, named
+
+The 88 blocks that are not links yet.  `class` is the census's; `what a link
+needs` is the block's own instance of the class's obstruction, naming the register
+or address that is missing.
+
+| # | block | class | what a link needs |
+|---:|---|---|---|
+| 1 | `entry` | seed | the initialisation, 58 instructions |
+| 2 | `while.body.i.lr.ph` | H2 | five `gep`s |
+| 17 | `if.then.i` | F | calls `@s2_value_pos` |
+| 18 | `if.then16.i` | C | stores `%idxprom.i` |
+| 20 | `if.then21.i` | C | stores `%idxprom.i` |
+| 22 | `if.then.i.i` | D | writes `%h1.i.i.i51` |
+| 23 | `if.end.i.i` | G | reads `%len`, `%cap` |
+| 24 | `if.end.i.i.i` | trap | `@llvm.trap`, `unreachable` |
+| 25 | `out_reserve.exit.i.i` | D | writes `%add.ptr.i.i`, `%len` |
+| 27 | `if.then56.i` | C | stores `%idxprom.i` |
+| 28 | `if.end59.i` | G | reads `%arrayidx66.i` |
+| 29 | `if.then71.i` | C | stores `%idxprom.i` |
+| 30 | `if.end74.i` | G | reads `%arrayidx76.i` |
+| 36 | `cleanup104.i` | C | stores `%idxprom.i` |
+| 37 | `if.then109.i` | F | calls `@s2_after_value` |
+| 38 | `if.then.i.i50` | D | writes `%h1.i.i.i51` |
+| 39 | `if.end.i.i55` | G | reads `%len`, `%cap` |
+| 40 | `if.end.i.i.i64` | trap | `@llvm.trap`, `unreachable` |
+| 41 | `out_reserve.exit.i.i60` | D | writes `%add.ptr.i.i61`, `%len` |
+| 43 | `if.then130.i` | C | stores `%idxprom.i` |
+| 44 | `if.end133.i` | G | reads `%arrayidx137.i`, `%arrayidx143.i` |
+| 46 | `if.then147.i` | C | stores `%idxprom.i` |
+| 47 | `if.end150.i` | D | writes `%arrayidx143.i` |
+| 49 | `if.then159.i` | C | stores `%idxprom.i` |
+| 50 | `if.end162.i` | D | writes `%arrayidx143.i` |
+| 52 | `if.then176.i` | C | stores `%idxprom.i` |
+| 53 | `if.end179.i` | G | reads `%arrayidx183.i` |
+| 54 | `lor.lhs.false.i` | G | reads `%arrayidx188.i` |
+| 55 | `if.then192.i` | C | stores `%idxprom.i` |
+| 56 | `if.end195.i` | D | writes `%arrayidx188.i` |
+| 58 | `if.then205.i` | C | stores `%4` |
+| 59 | `if.end207.i` | D | writes `%k11.i` |
+| 60 | `if.then214.i` | C | stores `%4` |
+| 61 | `if.then219.i` | F | calls `@s2_value_pos` |
+| 62 | `land.lhs.true.i` | G | reads `%arrayidx227.i` |
+| 63 | `if.then231.i` | G | reads `%arrayidx235.i` |
+| 64 | `if.end245.i` | E | the `phi` run `%key.1.i` |
+| 65 | `if.then249.i` | C | stores `%idxprom.i` |
+| 66 | `if.end256.i` | F | calls `@llvm.lifetime.start.p0` |
+| 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
+| 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` |
+| 71 | `if.then281.i` | H2 | `add`/`zext`/`or` |
+| 72 | `if.else285.i` | D | writes `%alen` |
+| 73 | `if.end290.i` | E | the `phi` run `%conv286.i.sink.in`, `%.sink` |
+| 74 | `if.end.i86` | trap | `@llvm.trap`, `unreachable` |
+| 75 | `if.then328.i` | F | calls `@llvm.lifetime.end.p0` |
+| 76 | `if.then330.i` | D | writes `%arrayidx333.i` |
+| 77 | `if.else334.i` | F | calls `@s2_after_value` |
+| 78 | `cleanup339.critedge.i` | F | calls `@llvm.lifetime.end.p0` |
+| 80 | `cond.true345.i` | G | reads `%arrayidx346.i` |
+| 81 | `cond.end349.i` | F | calls `@llvm.lifetime.start.p0` |
+| 82 | `land.lhs.true357.i` | G | reads `%gep` |
+| 87 | `LeafBlock33` | H1 | `add` + `icmp` latch |
+| 89 | `land.rhs.i` | E | the `phi` run `%ee.0.i238` |
+| 94 | `LeafBlock43` | H1 | `add` + `icmp` latch |
+| 96 | `if.end372.i` | E | the `phi` run `%ee.1.i` |
+| 106 | `if.then413.i` | F | calls `@s2_value_pos` |
+| 107 | `if.then418.i` | C | stores `%idxprom.i` |
+| 108 | `if.then425.i` | F | calls `@od_scalar_value` |
+| 110 | `cond.true.i106` | G | reads `%arrayidx.i108` |
+| 111 | `cond.end.i96` | E | the `phi` run `%cond.i` |
+| 112 | `land.rhs.i103` | E | the `phi` run `%ee.011.i` |
+| 117 | `LeafBlock64` | H1 | `add` + `icmp` latch |
+| 119 | `while.end.i` | E | the `phi` run `%ee.0.lcssa.i` |
+| 120 | `if.end.i97` | G | reads `%arrayidx10.i` |
+| 121 | `if.then19.i` | F | calls `@llvm.lifetime.start.p0`, `@llvm.lifetime.start.p0`, `@num_fast_el1` |
+| 122 | `if.then25.i` | F | calls `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0` |
+| 131 | `if.else43.i` | C | stores `%idxprom.i` |
+| 132 | `if.end48.i` | E | the `phi` run `%lit.0.i`, `%ln.0.i` |
+| 133 | `for.body.i.i` | E | the `phi` run `%i.029.i.i` |
+| 136 | `if.then57.i` | E | the `phi` run `%ei49.0.ph.i` |
+| 137 | `if.end67.critedge.i` | F | calls `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0` |
+| 139 | `land.rhs71.i` | E | the `phi` run `%s2.020.i` |
+| 144 | `LeafBlock85` | H1 | `add` + `icmp` latch |
+| 146 | `while.end78.i` | E | the `phi` run `%s2.0.lcssa.i` |
+| 147 | `if.then447.i` | F | calls `@s2_after_value` |
+| 148 | `land.rhs457.i` | E | the `phi` run `%q.0.i246` |
+| 153 | `LeafBlock96` | H1 | `add` + `icmp` latch |
+| 155 | `if.then467.i` | C | stores `%q.0.i246` |
+| 156 | `if.end473.i` | F | calls `@llvm.lifetime.end.p0` |
+| 157 | `cleanup474.i` | F | calls `@llvm.lifetime.end.p0` |
+| 158 | `cleanup478.i` | E | the `phi` run `%sp.i.1`, `%k.2.i` |
+| 160 | `if.then488.i` | C | stores `%4` |
+| 161 | `if.end490.i` | G | reads `%root_done.i` |
+| 162 | `if.then492.i` | C | stores `%4` |
+| 163 | `s2_walk.exit` | F | calls `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0` |
+| 164 | `if.then` | F | calls `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0`, `@llvm.lifetime.end.p0` |
+| 165 | `if.end` | ret | the return, 5 instructions |
+
+## Whether the chain closes
+
+It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
+inhabited: 88 of the body's 165 blocks have no link, and the six `unreachable`
+arms have no argument that they are unreachable.  What the census buys is that the
+remaining work is 88 named rows and six classes, not an open-ended set: class C is
+one lemma and one invariant clause, H1 is one two-instruction class lemma, and the
+rest are the ten D addresses, the fourteen E merges, the nineteen F contracts and
+the fourteen G reads.
+
+The step count is likewise not established.  `WalkChain.steps` reads a chain as a
+run, and a chain with 88 of its links missing has no step count to compare against
+`stage2Budget`.  What the budget's arithmetic would need is one link per block the
+dispatch traverses, and this module measures neither the traversed count nor the
+budget's tightness: `stage2EntryAllowance` is 32, `stage2ByteAllowance` 8 and
+`stage2PositionAllowance` 32, and whether a 165-block dispatch spends them is a
+question the completed chain answers and the census cannot.-/
+
+/-- **A comparison**, at a state rather than at a builder and at arbitrary operands:
+the step `denoteCode_icmp_eq_imm_w` is its `eq`-with-literal case, and the
+dispatch's binary search uses `slt`, `ult`, `ule` and `eq` over both registers and
+literals indifferently. -/
+theorem walkDenoteCode_icmp {calls : Calls} (env : Env) (s : State) (d : String)
+    (w : Nat) (p : IPred) {oa ob : Operand} {x y : BitVec w}
+    (ha : evalOperand (stateAt env s) oa = some (.int w x))
+    (hb : evalOperand (stateAt env s) ob = some (.int w y)) (is : List Instr) :
+    denoteCode calls (.icmp d p w oa ob :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 1 (evalICmp p x y)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_icmp (s := stateAt env s) ha hb])]
+  simp only [stateAt, State.bind]
+
+/-- **A `condbr` on a one-bit register** takes the edge its bit names.  `execTerm`
+answers `ub` on a bit that is neither zero nor one, and a `BitVec 1` has no third
+value, so the edge is total. -/
+theorem walkExecTerm_condbr {s : State} {d tl fl : String} {bit : BitVec 1}
+    (hd : lookupName s.env d = some (.int 1 bit)) :
+    execTerm s (Term.condbr (.reg d) tl fl) =
+      .jump { s with pc := (if bit = 1 then tl else fl), pre := some s.pc } := by
+  simp only [execTerm, evalOperand, hd]
+  rcases bitVec1_eq_zero_or_one bit with h | h
+  · rw [h]; simp
+  · rw [h]; simp
+
+/-- **Class A: one comparison and a branch.**  The block reads two operands at one
+width, binds the one-bit result and branches on it.  Nothing else in the
+environment moves, so the six pointer registers, the entry index and the depth
+register survive a `lookupName_cons_ne` each, the memory is untouched, and the
+measure does not move because the block advances neither the entry index nor the
+inner work.
+
+The operands are the caller's: `%8` is the document byte `while.body.i` loaded,
+`%sp.i.0248` is the depth the invariant carries, and `%35`, `%ee.0.i238` and their
+siblings are a scan's counters.  What the block *does* with the answer is the edge
+it takes, which is why the target block is the bit's own value.
+
+The block-local clause is taken at the two edges rather than at the test, because
+the test is a `BitVec` comparison the lemma cannot decide: a caller with a literal
+target discharges each by `simp [WalkLocal]`. -/
+theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    {B : Block} (hfind : stage2Body.findBlock C.block = some B)
+    {d tl fl : String} {p : IPred} {w : Nat} {oa ob : Operand} {x y : BitVec w}
+    (hinstrs : B.instrs = [Instr.icmp d p w oa ob])
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (ha : evalOperand s oa = some (.int w x)) (hb : evalOperand s ob = some (.int w y))
+    (hk : d ≠ "%k.0.i249") (hsp : d ≠ "%sp.i.0248")
+    (h3 : d ≠ "%3") (h5 : d ≠ "%5") (hkk : d ≠ "%k11.i")
+    (hc : d ≠ "%ctype.i") (hs : d ≠ "%cst.i") (hh : d ≠ "%hash1.i.i")
+    (hl : WalkLocal { C with block := tl }
+      { stateAt ((d, .int 1 (evalICmp p x y)) :: s.env) s with pc := tl, pre := some s.pc })
+    (hf : WalkLocal { C with block := fl }
+      { stateAt ((d, .int 1 (evalICmp p x y)) :: s.env) s with
+        pc := fl, pre := some s.pc }) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp p x y = 1 then tl else fl) } s' := by
+  have hpc : s.pc = C.block := hInv.pc_eq
+  have hden : denoteCode calls B.instrs s =
+      some (stateAt ((d, .int 1 (evalICmp p x y)) :: s.env) s) := by
+    rw [hinstrs, ← stateAt_self s]
+    exact walkDenoteCode_icmp (calls := calls) s.env s d w p ha hb []
+  let s' : State :=
+    { stateAt ((d, .int 1 (evalICmp p x y)) :: s.env) s with pc := (if evalICmp p x y = 1 then tl else fl), pre := some s.pc }
+  have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
+    simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
+    exact walkExecTerm_condbr (d := d) (tl := tl) (fl := fl)
+      (bit := evalICmp p x y) (by simp only [stateAt, lookupName_cons_self])
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := ?_
+        k_le := hInv.k_le
+        events_le := hInv.events_le
+        evlen_eq := hInv.evlen_eq
+        evBytes := ?_
+        alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
+        spans_order := hInv.spans_order
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        eoff_le := hInv.eoff_le
+        inner_cap := hInv.inner_cap
+        depth_cap := hInv.depth_cap
+        depth_reg := ?_
+        ptrs := ?_
+        log_hash := hInv.log_hash
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
+        owning := hInv.owning
+        blockLocal := ?_ }
+    · dsimp only [s', stateAt]
+      rw [lookupName_cons_ne _ _ hk]
+      exact hInv.blockIndex
+    · dsimp only [s', stateAt]
+      exact hInv.evBytes
+    · dsimp only [s', stateAt]
+      rw [lookupName_cons_ne _ _ hsp]
+      exact hInv.depth_reg
+    · dsimp only [s', stateAt]
+      exact hInv.ptrs.bind h3 h5 hkk hc hs hh
+    · dsimp only [s']
+      by_cases ht : evalICmp p x y = 1
+      · rw [ite_eq_left ht]; exact hl
+      · rw [ite_eq_right ht]; exact hf
+  · rfl
+
+/-- **Class B′: no instructions and a branch on a carried bit.**  The block binds
+nothing; the bit is one the previous block's comparison left behind, and the edge
+it names is the edge taken.  Every clause of the invariant is the one it had. -/
+theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    {B : Block} (hfind : stage2Body.findBlock C.block = some B)
+    (hinstrs : B.instrs = []) {d tl fl : String} {bit : BitVec 1}
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (hd : lookupName s.env d = some (.int 1 bit))
+    (hl : WalkLocal { C with block := tl } { s with pc := tl, pre := some s.pc })
+    (hf : WalkLocal { C with block := fl } { s with pc := fl, pre := some s.pc }) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if bit = 1 then tl else fl) } s' := by
+  have hpc : s.pc = C.block := hInv.pc_eq
+  let s' : State := { s with pc := (if bit = 1 then tl else fl), pre := some s.pc }
+  have hden : denoteCode calls B.instrs s = some s := by rw [hinstrs]; rfl
+  have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
+    simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
+    exact walkExecTerm_condbr (bit := bit) hd
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := hInv.blockIndex
+        k_le := hInv.k_le
+        events_le := hInv.events_le
+        evlen_eq := hInv.evlen_eq
+        evBytes := hInv.evBytes
+        alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
+        spans_order := hInv.spans_order
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        eoff_le := hInv.eoff_le
+        inner_cap := hInv.inner_cap
+        depth_cap := hInv.depth_cap
+        depth_reg := hInv.depth_reg
+        ptrs := hInv.ptrs
+        log_hash := hInv.log_hash
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
+        owning := hInv.owning
+        blockLocal := ?_ }
+    · dsimp only [s']
+      by_cases ht : bit = 1
+      · rw [ite_eq_left ht]; exact hl
+      · rw [ite_eq_right ht]; exact hf
+  · rfl
+
+/-- `if.then432.i`: the block `if.then425.i`'s clear test enters, and its branch is
+`%cmp343.i`'s answer — the same bit `if.end133.i` computed. -/
+def walkIf_then432_i : Block :=
+  { name := "if.then432.i", instrs := [],
+    term := Term.condbr (.reg "%cmp343.i") "cond.true.i106" "cond.end.i96" }
+
+theorem walkIf_then432_i_find :
+    stage2Body.findBlock "if.then432.i" = some walkIf_then432_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then432_i]
+
+theorem WalkLink.if_then432_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then432.i")
+    {x : BitVec 1} (h1 : evalOperand s (.reg "%cmp343.i") = some (.int 1 x))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if x = 1 then "cond.true.i106" else "cond.end.i96") } s' := by
+  exact WalkLink.condBr (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_then432_i_find) rfl rfl h1
+    (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- **Class B: no instructions and a jump.**  The block binds nothing, so every
+clause of the invariant is the one it had and the only change is the block the run
+is at. -/
+theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    {B : Block} (hfind : stage2Body.findBlock C.block = some B)
+    (hinstrs : B.instrs = []) {t : String} (hterm : B.term = Term.br t)
+    (hloc : WalkLocal { C with block := t } { s with pc := t, pre := some s.pc }) :
+    ∃ s', WalkLink calls G C s { C with block := t } s' := by
+  have hpc : s.pc = C.block := hInv.pc_eq
+  let s' : State := { s with pc := t, pre := some s.pc }
+  have hden : denoteCode calls B.instrs s = some s := by rw [hinstrs]; rfl
+  have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
+    simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm, s']
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := hInv.blockIndex
+        k_le := hInv.k_le
+        events_le := hInv.events_le
+        evlen_eq := hInv.evlen_eq
+        evBytes := hInv.evBytes
+        alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
+        spans_order := hInv.spans_order
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        eoff_le := hInv.eoff_le
+        inner_cap := hInv.inner_cap
+        depth_cap := hInv.depth_cap
+        depth_reg := hInv.depth_reg
+        ptrs := hInv.ptrs
+        log_hash := hInv.log_hash
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
+        owning := hInv.owning
+        blockLocal := hloc }
+  · rfl
+
+
+/-! ### The four scan headers, as links
+
+The four scans are the inner measure's engine: each of their headers increments
+its counter and takes the back edge while the counter is short of the bound, so
+`scan_step` gives the step, the invariant and a strictly smaller measure.  These
+four wrappers are that arm as a link, for the trace to use: the strictness is
+dropped to `WalkLink`'s non-increase, and the landing carry the arm builds is
+existential there (`scan_step`'s own shape), so the target block is named beside
+it.
+
+The target's `inner` is `c - (i + 1)`, which is the arm's own reading of the
+scan's two registers; the caller reaches it through the `ScanLanded` fact the
+landing block's `WalkLocal` carries, not by naming it here. -/
+
+/-- **The literal comparison's latch as a link.**  `for.inc.i.i` is `forInc_step`
+without the strictness: the measure falls by one, so it does not rise. -/
+theorem WalkLink.forInc {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "for.inc.i.i") (hguard : ForIncGuard C s) :
+    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "for.body.i.i" := by
+  obtain ⟨i, c, hinner, hlt, hcw, hi, hc⟩ := hguard
+  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
+    forInc_step G C s i c hInv hblock hi hc hinner hlt hcw
+  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
+
+theorem WalkLink.whileBody370 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "while.body370.i")
+    (hguard : ScanGuard s "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs.i" := by
+  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
+    whitespace_scan (calls := calls) G C s hInv hblock hguard
+  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
+
+theorem WalkLink.whileBodyI104 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "while.body.i104")
+    (hguard : ScanGuard s "%ee.011.i" "%cond.i" C.inner) :
+    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs.i103" := by
+  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
+    string_scan (calls := calls) G C s hInv hblock hguard
+  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
+
+theorem WalkLink.whileBody76 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "while.body76.i")
+    (hguard : ScanGuard s "%s2.020.i" "%cond.i" C.inner) :
+    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs71.i" := by
+  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
+    escape_scan (calls := calls) G C s hInv hblock hguard
+  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
+
+theorem WalkLink.whileBody462 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "while.body462.i")
+    (hguard : ScanGuard s "%q.0.i246" "%cond350.i" C.inner) :
+    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs457.i" := by
+  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
+    extraToken_scan (calls := calls) G C s hInv hblock hguard
+  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
+
+/-! ### Class A's sixty instances
+
+Each is the pinned body's own text, transcribed, with the `findBlock` proof beside
+it: `#guard decide (firstFunction stage2Src = some stage2Body)` in
+`JsonStage2IR` is what makes the transcription the body's block rather than a
+paraphrase of the fixture.  The instances differ only in the comparison, its
+width, and the two edges — the proof is one `WalkLink.icmpBr` application in each.
+
+Eight of them branch into one of the ten scan blocks, where `WalkLocal` is not
+`True`; those eight carry the block-local clause at that edge as a hypothesis,
+because the reset that establishes it is the edge's own work and not this
+block's. -/
+
+/-- `NodeBlock21`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock21 : Block :=
+  { name := "NodeBlock21",
+    instrs := [Instr.icmp "%Pivot22" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 91)))],
+    term := Term.condbr (.reg "%Pivot22") "NodeBlock5" "NodeBlock19" }
+
+theorem walkNodeBlock21_find : stage2Body.findBlock "NodeBlock21" = some walkNodeBlock21 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock21]
+
+theorem WalkLink.NodeBlock21 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock21")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 91) = 1 then "NodeBlock5" else "NodeBlock19") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock21_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock19`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock19 : Block :=
+  { name := "NodeBlock19",
+    instrs := [Instr.icmp "%Pivot20" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 123)))],
+    term := Term.condbr (.reg "%Pivot20") "NodeBlock11" "NodeBlock17" }
+
+theorem walkNodeBlock19_find : stage2Body.findBlock "NodeBlock19" = some walkNodeBlock19 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock19]
+
+theorem WalkLink.NodeBlock19 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock19")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 123) = 1 then "NodeBlock11" else "NodeBlock17") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock19_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock17`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock17 : Block :=
+  { name := "NodeBlock17",
+    instrs := [Instr.icmp "%Pivot18" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 125)))],
+    term := Term.condbr (.reg "%Pivot18") "LeafBlock13" "LeafBlock15" }
+
+theorem walkNodeBlock17_find : stage2Body.findBlock "NodeBlock17" = some walkNodeBlock17 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock17]
+
+theorem WalkLink.NodeBlock17 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock17")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 125) = 1 then "LeafBlock13" else "LeafBlock15") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock17_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock15`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock15 : Block :=
+  { name := "LeafBlock15",
+    instrs := [Instr.icmp "%SwitchLeaf16" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 125)))],
+    term := Term.condbr (.reg "%SwitchLeaf16") "if.then53.i" "sw.default.i" }
+
+theorem walkLeafBlock15_find : stage2Body.findBlock "LeafBlock15" = some walkLeafBlock15 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock15]
+
+theorem WalkLink.LeafBlock15 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock15")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 125) = 1 then "if.then53.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock15_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock13`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock13 : Block :=
+  { name := "LeafBlock13",
+    instrs := [Instr.icmp "%SwitchLeaf14" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 123)))],
+    term := Term.condbr (.reg "%SwitchLeaf14") "if.then.i" "sw.default.i" }
+
+theorem walkLeafBlock13_find : stage2Body.findBlock "LeafBlock13" = some walkLeafBlock13 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock13]
+
+theorem WalkLink.LeafBlock13 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock13")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 123) = 1 then "if.then.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock13_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock11`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock11 : Block :=
+  { name := "NodeBlock11",
+    instrs := [Instr.icmp "%Pivot12" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 93)))],
+    term := Term.condbr (.reg "%Pivot12") "LeafBlock7" "LeafBlock9" }
+
+theorem walkNodeBlock11_find : stage2Body.findBlock "NodeBlock11" = some walkNodeBlock11 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock11]
+
+theorem WalkLink.NodeBlock11 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock11")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 93) = 1 then "LeafBlock7" else "LeafBlock9") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock11_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock9`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock9 : Block :=
+  { name := "LeafBlock9",
+    instrs := [Instr.icmp "%SwitchLeaf10" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 93)))],
+    term := Term.condbr (.reg "%SwitchLeaf10") "if.then53.i" "sw.default.i" }
+
+theorem walkLeafBlock9_find : stage2Body.findBlock "LeafBlock9" = some walkLeafBlock9 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock9]
+
+theorem WalkLink.LeafBlock9 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock9")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 93) = 1 then "if.then53.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock9_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock7`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock7 : Block :=
+  { name := "LeafBlock7",
+    instrs := [Instr.icmp "%SwitchLeaf8" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 91)))],
+    term := Term.condbr (.reg "%SwitchLeaf8") "if.then.i" "sw.default.i" }
+
+theorem walkLeafBlock7_find : stage2Body.findBlock "LeafBlock7" = some walkLeafBlock7 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock7]
+
+theorem WalkLink.LeafBlock7 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock7")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 91) = 1 then "if.then.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock7_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock5`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock5 : Block :=
+  { name := "NodeBlock5",
+    instrs := [Instr.icmp "%Pivot6" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 44)))],
+    term := Term.condbr (.reg "%Pivot6") "LeafBlock" "NodeBlock" }
+
+theorem walkNodeBlock5_find : stage2Body.findBlock "NodeBlock5" = some walkNodeBlock5 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock5]
+
+theorem WalkLink.NodeBlock5 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock5")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 44) = 1 then "LeafBlock" else "NodeBlock") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock5_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock : Block :=
+  { name := "NodeBlock",
+    instrs := [Instr.icmp "%Pivot" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 58)))],
+    term := Term.condbr (.reg "%Pivot") "LeafBlock1" "LeafBlock3" }
+
+theorem walkNodeBlock_find : stage2Body.findBlock "NodeBlock" = some walkNodeBlock := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock]
+
+theorem WalkLink.NodeBlock {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 58) = 1 then "LeafBlock1" else "LeafBlock3") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock3`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock3 : Block :=
+  { name := "LeafBlock3",
+    instrs := [Instr.icmp "%SwitchLeaf4" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 58)))],
+    term := Term.condbr (.reg "%SwitchLeaf4") "if.then173.i" "sw.default.i" }
+
+theorem walkLeafBlock3_find : stage2Body.findBlock "LeafBlock3" = some walkLeafBlock3 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock3]
+
+theorem WalkLink.LeafBlock3 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock3")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 58) = 1 then "if.then173.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock3_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock1`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock1 : Block :=
+  { name := "LeafBlock1",
+    instrs := [Instr.icmp "%SwitchLeaf2" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 44)))],
+    term := Term.condbr (.reg "%SwitchLeaf2") "if.then127.i" "sw.default.i" }
+
+theorem walkLeafBlock1_find : stage2Body.findBlock "LeafBlock1" = some walkLeafBlock1 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock1]
+
+theorem WalkLink.LeafBlock1 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock1")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 44) = 1 then "if.then127.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock1_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock : Block :=
+  { name := "LeafBlock",
+    instrs := [Instr.icmp "%SwitchLeaf" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 34)))],
+    term := Term.condbr (.reg "%SwitchLeaf") "sw.bb202.i" "sw.default.i" }
+
+theorem walkLeafBlock_find : stage2Body.findBlock "LeafBlock" = some walkLeafBlock := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock]
+
+theorem WalkLink.LeafBlock {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 34) = 1 then "sw.bb202.i" else "sw.default.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.end.i`: the dispatch's comparison `icmp .ugt i32` and the edge its bit names. -/
+def walkIf_end_i : Block :=
+  { name := "if.end.i",
+    instrs := [Instr.icmp "%cmp19.i" IPred.ugt 32 (.reg "%sp.i.0248") (.imm (.int 32 (BitVec.ofNat 32 519)))],
+    term := Term.condbr (.reg "%cmp19.i") "if.then21.i" "if.end24.i" }
+
+theorem walkIf_end_i_find : stage2Body.findBlock "if.end.i" = some walkIf_end_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_end_i]
+
+theorem WalkLink.if_end_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.end.i")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .ugt x1 (BitVec.ofNat 32 519) = 1 then "if.then21.i" else "if.end24.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_end_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.then53.i`: the dispatch's comparison `icmp .eq i32` and the edge its bit names. -/
+def walkIf_then53_i : Block :=
+  { name := "if.then53.i",
+    instrs := [Instr.icmp "%cmp54.i" IPred.eq 32 (.reg "%sp.i.0248") (.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (.reg "%cmp54.i") "if.then56.i" "if.end59.i" }
+
+theorem walkIf_then53_i_find : stage2Body.findBlock "if.then53.i" = some walkIf_then53_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then53_i]
+
+theorem WalkLink.if_then53_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then53.i")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 32 0) = 1 then "if.then56.i" else "if.end59.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_then53_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock27`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock27 : Block :=
+  { name := "NodeBlock27",
+    instrs := [Instr.icmp "%Pivot28" IPred.slt 8 (.reg "%15") (.imm (.int 8 (BitVec.ofNat 8 3)))],
+    term := Term.condbr (.reg "%Pivot28") "LeafBlock23" "LeafBlock25" }
+
+theorem walkNodeBlock27_find : stage2Body.findBlock "NodeBlock27" = some walkNodeBlock27 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock27]
+
+theorem WalkLink.NodeBlock27 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock27")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%15") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 3) = 1 then "LeafBlock23" else "LeafBlock25") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock27_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock25`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock25 : Block :=
+  { name := "LeafBlock25",
+    instrs := [Instr.icmp "%SwitchLeaf26" IPred.eq 8 (.reg "%15") (.imm (.int 8 (BitVec.ofNat 8 3)))],
+    term := Term.condbr (.reg "%SwitchLeaf26") "if.then109.i" "cleanup104.i" }
+
+theorem walkLeafBlock25_find : stage2Body.findBlock "LeafBlock25" = some walkLeafBlock25 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock25]
+
+theorem WalkLink.LeafBlock25 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock25")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%15") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 3) = 1 then "if.then109.i" else "cleanup104.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock25_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock23`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock23 : Block :=
+  { name := "LeafBlock23",
+    instrs := [Instr.icmp "%SwitchLeaf24" IPred.eq 8 (.reg "%15") (.imm (.int 8 (BitVec.ofNat 8 0)))],
+    term := Term.condbr (.reg "%SwitchLeaf24") "if.then109.i" "cleanup104.i" }
+
+theorem walkLeafBlock23_find : stage2Body.findBlock "LeafBlock23" = some walkLeafBlock23 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock23]
+
+theorem WalkLink.LeafBlock23 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock23")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%15") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 0) = 1 then "if.then109.i" else "cleanup104.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock23_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `cond.end.i`: the dispatch's comparison `icmp .ult i8` and the edge its bit names. -/
+def walkCond_end_i : Block :=
+  { name := "cond.end.i",
+    instrs := [Instr.icmp "%16" IPred.ult 8 (.reg "%15") (.imm (.int 8 (BitVec.ofNat 8 2)))],
+    term := Term.condbr (.reg "%16") "if.then109.i" "cleanup104.i" }
+
+theorem walkCond_end_i_find : stage2Body.findBlock "cond.end.i" = some walkCond_end_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkCond_end_i]
+
+theorem WalkLink.cond_end_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "cond.end.i")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%15") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .ult x1 (BitVec.ofNat 8 2) = 1 then "if.then109.i" else "cleanup104.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkCond_end_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.then127.i`: the dispatch's comparison `icmp .eq i32` and the edge its bit names. -/
+def walkIf_then127_i : Block :=
+  { name := "if.then127.i",
+    instrs := [Instr.icmp "%cmp128.i" IPred.eq 32 (.reg "%sp.i.0248") (.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (.reg "%cmp128.i") "if.then130.i" "if.end133.i" }
+
+theorem walkIf_then127_i_find : stage2Body.findBlock "if.then127.i" = some walkIf_then127_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then127_i]
+
+theorem WalkLink.if_then127_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then127.i")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 32 0) = 1 then "if.then130.i" else "if.end133.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_then127_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.then141.i`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkIf_then141_i : Block :=
+  { name := "if.then141.i",
+    instrs := [Instr.icmp "%cmp145.not.i" IPred.eq 8 (.reg "%22") (.imm (.int 8 (BitVec.ofNat 8 3)))],
+    term := Term.condbr (.reg "%cmp145.not.i") "if.end150.i" "if.then147.i" }
+
+theorem walkIf_then141_i_find : stage2Body.findBlock "if.then141.i" = some walkIf_then141_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then141_i]
+
+theorem WalkLink.if_then141_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then141.i")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%22") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 3) = 1 then "if.end150.i" else "if.then147.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_then141_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.else153.i`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkIf_else153_i : Block :=
+  { name := "if.else153.i",
+    instrs := [Instr.icmp "%cmp157.not.i" IPred.eq 8 (.reg "%22") (.imm (.int 8 (BitVec.ofNat 8 1)))],
+    term := Term.condbr (.reg "%cmp157.not.i") "if.end162.i" "if.then159.i" }
+
+theorem walkIf_else153_i_find : stage2Body.findBlock "if.else153.i" = some walkIf_else153_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_else153_i]
+
+theorem WalkLink.if_else153_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.else153.i")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%22") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 1) = 1 then "if.end162.i" else "if.then159.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_else153_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.then173.i`: the dispatch's comparison `icmp .eq i32` and the edge its bit names. -/
+def walkIf_then173_i : Block :=
+  { name := "if.then173.i",
+    instrs := [Instr.icmp "%cmp174.i" IPred.eq 32 (.reg "%sp.i.0248") (.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (.reg "%cmp174.i") "if.then176.i" "if.end179.i" }
+
+theorem walkIf_then173_i_find : stage2Body.findBlock "if.then173.i" = some walkIf_then173_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then173_i]
+
+theorem WalkLink.if_then173_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then173.i")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 32 0) = 1 then "if.then176.i" else "if.end179.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_then173_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `sw.bb202.i`: the dispatch's comparison `icmp .ult i64` and the edge its bit names. -/
+def walkSw_bb202_i : Block :=
+  { name := "sw.bb202.i",
+    instrs := [Instr.icmp "%cmp203.not.i" IPred.ult 64 (.reg "%inc.i") (.reg "%nep")],
+    term := Term.condbr (.reg "%cmp203.not.i") "if.end207.i" "if.then205.i" }
+
+theorem walkSw_bb202_i_find : stage2Body.findBlock "sw.bb202.i" = some walkSw_bb202_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkSw_bb202_i]
+
+theorem WalkLink.sw_bb202_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "sw.bb202.i")
+    {x1 : BitVec 64} (h1 : evalOperand s (.reg "%inc.i") = some (.int 64 x1))
+    {x2 : BitVec 64} (h2 : evalOperand s (.reg "%nep") = some (.int 64 x2))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .ult x1 x2 = 1 then "if.end207.i" else "if.then205.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkSw_bb202_i_find) rfl rfl h1 h2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock31`: the dispatch's comparison `icmp .slt i32` and the edge its bit names. -/
+def walkNodeBlock31 : Block :=
+  { name := "NodeBlock31",
+    instrs := [Instr.icmp "%Pivot32" IPred.slt 32 (.reg "%call272.i") (.imm (.int 32 (BitVec.ofNat 32 1)))],
+    term := Term.condbr (.reg "%Pivot32") "cleanup339.critedge.i" "LeafBlock29" }
+
+theorem walkNodeBlock31_find : stage2Body.findBlock "NodeBlock31" = some walkNodeBlock31 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock31]
+
+theorem WalkLink.NodeBlock31 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock31")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%call272.i") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 32 1) = 1 then "cleanup339.critedge.i" else "LeafBlock29") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock31_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock29`: the dispatch's comparison `icmp .eq i32` and the edge its bit names. -/
+def walkLeafBlock29 : Block :=
+  { name := "LeafBlock29",
+    instrs := [Instr.icmp "%SwitchLeaf30" IPred.eq 32 (.reg "%call272.i") (.imm (.int 32 (BitVec.ofNat 32 1)))],
+    term := Term.condbr (.reg "%SwitchLeaf30") "if.then281.i" "if.else285.i" }
+
+theorem walkLeafBlock29_find : stage2Body.findBlock "LeafBlock29" = some walkLeafBlock29 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock29]
+
+theorem WalkLink.LeafBlock29 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock29")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%call272.i") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 32 1) = 1 then "if.then281.i" else "if.else285.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock29_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `sw.default.i`: the dispatch's comparison `icmp .ult i64` and the edge its bit names. -/
+def walkSw_default_i : Block :=
+  { name := "sw.default.i",
+    instrs := [Instr.icmp "%cmp343.i" IPred.ult 64 (.reg "%inc.i") (.reg "%nep")],
+    term := Term.condbr (.reg "%cmp343.i") "cond.true345.i" "cond.end349.i" }
+
+theorem walkSw_default_i_find : stage2Body.findBlock "sw.default.i" = some walkSw_default_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkSw_default_i]
+
+theorem WalkLink.sw_default_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "sw.default.i")
+    {x1 : BitVec 64} (h1 : evalOperand s (.reg "%inc.i") = some (.int 64 x1))
+    {x2 : BitVec 64} (h2 : evalOperand s (.reg "%nep") = some (.int 64 x2))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .ult x1 x2 = 1 then "cond.true345.i" else "cond.end349.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkSw_default_i_find) rfl rfl h1 h2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock41`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock41 : Block :=
+  { name := "NodeBlock41",
+    instrs := [Instr.icmp "%Pivot42" IPred.slt 8 (.reg "%35") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%Pivot42") "LeafBlock33" "NodeBlock39" }
+
+theorem walkNodeBlock41_find : stage2Body.findBlock "NodeBlock41" = some walkNodeBlock41 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock41]
+
+theorem WalkLink.NodeBlock41 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock41")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%35") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 13) = 1 then "LeafBlock33" else "NodeBlock39") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock41_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock39`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock39 : Block :=
+  { name := "NodeBlock39",
+    instrs := [Instr.icmp "%Pivot40" IPred.slt 8 (.reg "%35") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%Pivot40") "LeafBlock35" "LeafBlock37" }
+
+theorem walkNodeBlock39_find : stage2Body.findBlock "NodeBlock39" = some walkNodeBlock39 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock39]
+
+theorem WalkLink.NodeBlock39 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock39")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%35") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 32) = 1 then "LeafBlock35" else "LeafBlock37") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock39_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock37`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock37 : Block :=
+  { name := "LeafBlock37",
+    instrs := [Instr.icmp "%SwitchLeaf38" IPred.eq 8 (.reg "%35") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%SwitchLeaf38") "land.rhs.i.preheader" "if.end372.i" }
+
+theorem walkLeafBlock37_find : stage2Body.findBlock "LeafBlock37" = some walkLeafBlock37 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock37]
+
+theorem WalkLink.LeafBlock37 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock37")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%35") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 32) = 1 then "land.rhs.i.preheader" else "if.end372.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock37_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock35`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock35 : Block :=
+  { name := "LeafBlock35",
+    instrs := [Instr.icmp "%SwitchLeaf36" IPred.eq 8 (.reg "%35") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%SwitchLeaf36") "land.rhs.i.preheader" "if.end372.i" }
+
+theorem walkLeafBlock35_find : stage2Body.findBlock "LeafBlock35" = some walkLeafBlock35 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock35]
+
+theorem WalkLink.LeafBlock35 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock35")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%35") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1 then "land.rhs.i.preheader" else "if.end372.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock35_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock52`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock52 : Block :=
+  { name := "NodeBlock52",
+    instrs := [Instr.icmp "%Pivot53" IPred.slt 8 (.reg "%36") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%Pivot53") "LeafBlock43" "NodeBlock50" }
+
+theorem walkNodeBlock52_find : stage2Body.findBlock "NodeBlock52" = some walkNodeBlock52 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock52]
+
+theorem WalkLink.NodeBlock52 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock52")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%36") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 13) = 1 then "LeafBlock43" else "NodeBlock50") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock52_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock50`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock50 : Block :=
+  { name := "NodeBlock50",
+    instrs := [Instr.icmp "%Pivot51" IPred.slt 8 (.reg "%36") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%Pivot51") "LeafBlock46" "LeafBlock48" }
+
+theorem walkNodeBlock50_find : stage2Body.findBlock "NodeBlock50" = some walkNodeBlock50 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock50]
+
+theorem WalkLink.NodeBlock50 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock50")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%36") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 32) = 1 then "LeafBlock46" else "LeafBlock48") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock50_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock48`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock48 : Block :=
+  { name := "LeafBlock48",
+    instrs := [Instr.icmp "%SwitchLeaf49" IPred.eq 8 (.reg "%36") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%SwitchLeaf49") "if.end372.i" "while.body370.i" }
+
+theorem walkLeafBlock48_find : stage2Body.findBlock "LeafBlock48" = some walkLeafBlock48 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock48]
+
+theorem WalkLink.LeafBlock48 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock48")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%36") = some (.int 8 x1))
+    (hf : WalkLocal { C with block := "while.body370.i" }
+      { stateAt (("%SwitchLeaf49", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 32))) :: s.env) s with pc := "while.body370.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 32) = 1 then "if.end372.i" else "while.body370.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock48_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) hf
+
+/-- `LeafBlock46`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock46 : Block :=
+  { name := "LeafBlock46",
+    instrs := [Instr.icmp "%SwitchLeaf47" IPred.eq 8 (.reg "%36") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%SwitchLeaf47") "if.end372.i" "while.body370.i" }
+
+theorem walkLeafBlock46_find : stage2Body.findBlock "LeafBlock46" = some walkLeafBlock46 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock46]
+
+theorem WalkLink.LeafBlock46 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock46")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%36") = some (.int 8 x1))
+    (hf : WalkLocal { C with block := "while.body370.i" }
+      { stateAt (("%SwitchLeaf47", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 13))) :: s.env) s with pc := "while.body370.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1 then "if.end372.i" else "while.body370.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock46_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) hf
+
+/-- `NodeBlock62`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock62 : Block :=
+  { name := "NodeBlock62",
+    instrs := [Instr.icmp "%Pivot63" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 110)))],
+    term := Term.condbr (.reg "%Pivot63") "LeafBlock54" "NodeBlock60" }
+
+theorem walkNodeBlock62_find : stage2Body.findBlock "NodeBlock62" = some walkNodeBlock62 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock62]
+
+theorem WalkLink.NodeBlock62 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock62")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 110) = 1 then "LeafBlock54" else "NodeBlock60") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock62_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock60`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock60 : Block :=
+  { name := "NodeBlock60",
+    instrs := [Instr.icmp "%Pivot61" IPred.slt 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 116)))],
+    term := Term.condbr (.reg "%Pivot61") "LeafBlock56" "LeafBlock58" }
+
+theorem walkNodeBlock60_find : stage2Body.findBlock "NodeBlock60" = some walkNodeBlock60 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock60]
+
+theorem WalkLink.NodeBlock60 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock60")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 116) = 1 then "LeafBlock56" else "LeafBlock58") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock60_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock58`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock58 : Block :=
+  { name := "LeafBlock58",
+    instrs := [Instr.icmp "%SwitchLeaf59" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 116)))],
+    term := Term.condbr (.reg "%SwitchLeaf59") "if.then413.i" "if.else405.i" }
+
+theorem walkLeafBlock58_find : stage2Body.findBlock "LeafBlock58" = some walkLeafBlock58 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock58]
+
+theorem WalkLink.LeafBlock58 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock58")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 116) = 1 then "if.then413.i" else "if.else405.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock58_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock56`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock56 : Block :=
+  { name := "LeafBlock56",
+    instrs := [Instr.icmp "%SwitchLeaf57" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 110)))],
+    term := Term.condbr (.reg "%SwitchLeaf57") "if.then403.i" "if.else405.i" }
+
+theorem walkLeafBlock56_find : stage2Body.findBlock "LeafBlock56" = some walkLeafBlock56 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock56]
+
+theorem WalkLink.LeafBlock56 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock56")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 110) = 1 then "if.then403.i" else "if.else405.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock56_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock54`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock54 : Block :=
+  { name := "LeafBlock54",
+    instrs := [Instr.icmp "%SwitchLeaf55" IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 102)))],
+    term := Term.condbr (.reg "%SwitchLeaf55") "if.then397.i" "if.else405.i" }
+
+theorem walkLeafBlock54_find : stage2Body.findBlock "LeafBlock54" = some walkLeafBlock54 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock54]
+
+theorem WalkLink.LeafBlock54 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock54")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%8") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 102) = 1 then "if.then397.i" else "if.else405.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock54_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock73`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock73 : Block :=
+  { name := "NodeBlock73",
+    instrs := [Instr.icmp "%Pivot74" IPred.slt 8 (.reg "%40") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%Pivot74") "LeafBlock64" "NodeBlock71" }
+
+theorem walkNodeBlock73_find : stage2Body.findBlock "NodeBlock73" = some walkNodeBlock73 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock73]
+
+theorem WalkLink.NodeBlock73 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock73")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%40") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 13) = 1 then "LeafBlock64" else "NodeBlock71") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock73_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock71`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock71 : Block :=
+  { name := "NodeBlock71",
+    instrs := [Instr.icmp "%Pivot72" IPred.slt 8 (.reg "%40") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%Pivot72") "LeafBlock67" "LeafBlock69" }
+
+theorem walkNodeBlock71_find : stage2Body.findBlock "NodeBlock71" = some walkNodeBlock71 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock71]
+
+theorem WalkLink.NodeBlock71 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock71")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%40") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 32) = 1 then "LeafBlock67" else "LeafBlock69") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock71_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock69`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock69 : Block :=
+  { name := "LeafBlock69",
+    instrs := [Instr.icmp "%SwitchLeaf70" IPred.eq 8 (.reg "%40") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%SwitchLeaf70") "while.end.i" "while.body.i104" }
+
+theorem walkLeafBlock69_find : stage2Body.findBlock "LeafBlock69" = some walkLeafBlock69 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock69]
+
+theorem WalkLink.LeafBlock69 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock69")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%40") = some (.int 8 x1))
+    (hf : WalkLocal { C with block := "while.body.i104" }
+      { stateAt (("%SwitchLeaf70", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 32))) :: s.env) s with pc := "while.body.i104", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 32) = 1 then "while.end.i" else "while.body.i104") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock69_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) hf
+
+/-- `LeafBlock67`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock67 : Block :=
+  { name := "LeafBlock67",
+    instrs := [Instr.icmp "%SwitchLeaf68" IPred.eq 8 (.reg "%40") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%SwitchLeaf68") "while.end.i" "while.body.i104" }
+
+theorem walkLeafBlock67_find : stage2Body.findBlock "LeafBlock67" = some walkLeafBlock67 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock67]
+
+theorem WalkLink.LeafBlock67 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock67")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%40") = some (.int 8 x1))
+    (hf : WalkLocal { C with block := "while.body.i104" }
+      { stateAt (("%SwitchLeaf68", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 13))) :: s.env) s with pc := "while.body.i104", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1 then "while.end.i" else "while.body.i104") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock67_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) hf
+
+/-- `NodeBlock83`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock83 : Block :=
+  { name := "NodeBlock83",
+    instrs := [Instr.icmp "%Pivot84" IPred.slt 8 (.reg "%41") (.imm (.int 8 (BitVec.ofNat 8 110)))],
+    term := Term.condbr (.reg "%Pivot84") "LeafBlock75" "NodeBlock81" }
+
+theorem walkNodeBlock83_find : stage2Body.findBlock "NodeBlock83" = some walkNodeBlock83 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock83]
+
+theorem WalkLink.NodeBlock83 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock83")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%41") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 110) = 1 then "LeafBlock75" else "NodeBlock81") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock83_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock81`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock81 : Block :=
+  { name := "NodeBlock81",
+    instrs := [Instr.icmp "%Pivot82" IPred.slt 8 (.reg "%41") (.imm (.int 8 (BitVec.ofNat 8 116)))],
+    term := Term.condbr (.reg "%Pivot82") "LeafBlock77" "LeafBlock79" }
+
+theorem walkNodeBlock81_find : stage2Body.findBlock "NodeBlock81" = some walkNodeBlock81 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock81]
+
+theorem WalkLink.NodeBlock81 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock81")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%41") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 116) = 1 then "LeafBlock77" else "LeafBlock79") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock81_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock79`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock79 : Block :=
+  { name := "LeafBlock79",
+    instrs := [Instr.icmp "%SwitchLeaf80" IPred.eq 8 (.reg "%41") (.imm (.int 8 (BitVec.ofNat 8 116)))],
+    term := Term.condbr (.reg "%SwitchLeaf80") "if.end48.i" "if.else43.i" }
+
+theorem walkLeafBlock79_find : stage2Body.findBlock "LeafBlock79" = some walkLeafBlock79 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock79]
+
+theorem WalkLink.LeafBlock79 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock79")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%41") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 116) = 1 then "if.end48.i" else "if.else43.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock79_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock77`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock77 : Block :=
+  { name := "LeafBlock77",
+    instrs := [Instr.icmp "%SwitchLeaf78" IPred.eq 8 (.reg "%41") (.imm (.int 8 (BitVec.ofNat 8 110)))],
+    term := Term.condbr (.reg "%SwitchLeaf78") "if.then42.i" "if.else43.i" }
+
+theorem walkLeafBlock77_find : stage2Body.findBlock "LeafBlock77" = some walkLeafBlock77 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock77]
+
+theorem WalkLink.LeafBlock77 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock77")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%41") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 110) = 1 then "if.then42.i" else "if.else43.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock77_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock75`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock75 : Block :=
+  { name := "LeafBlock75",
+    instrs := [Instr.icmp "%SwitchLeaf76" IPred.eq 8 (.reg "%41") (.imm (.int 8 (BitVec.ofNat 8 102)))],
+    term := Term.condbr (.reg "%SwitchLeaf76") "if.then37.i" "if.else43.i" }
+
+theorem walkLeafBlock75_find : stage2Body.findBlock "LeafBlock75" = some walkLeafBlock75 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock75]
+
+theorem WalkLink.LeafBlock75 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock75")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%41") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 102) = 1 then "if.then37.i" else "if.else43.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock75_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `for.end.i.i`: the dispatch's comparison `icmp .eq i64` and the edge its bit names. -/
+def walkFor_end_i_i : Block :=
+  { name := "for.end.i.i",
+    instrs := [Instr.icmp "%cmp11.not.i.i" IPred.eq 64 (.reg "%sub54.i") (.reg "%ln.0.i")],
+    term := Term.condbr (.reg "%cmp11.not.i.i") "if.end67.i" "if.then57.i" }
+
+theorem walkFor_end_i_i_find : stage2Body.findBlock "for.end.i.i" = some walkFor_end_i_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkFor_end_i_i]
+
+theorem WalkLink.for_end_i_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "for.end.i.i")
+    {x1 : BitVec 64} (h1 : evalOperand s (.reg "%sub54.i") = some (.int 64 x1))
+    {x2 : BitVec 64} (h2 : evalOperand s (.reg "%ln.0.i") = some (.int 64 x2))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 x2 = 1 then "if.end67.i" else "if.then57.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkFor_end_i_i_find) rfl rfl h1 h2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `if.end67.i`: the dispatch's comparison `icmp .ult i64` and the edge its bit names. -/
+def walkIf_end67_i : Block :=
+  { name := "if.end67.i",
+    instrs := [Instr.icmp "%cmp6919.i" IPred.ult 64 (.reg "%ee.0.lcssa.i") (.reg "%cond.i")],
+    term := Term.condbr (.reg "%cmp6919.i") "land.rhs71.i" "while.end78.i" }
+
+theorem walkIf_end67_i_find : stage2Body.findBlock "if.end67.i" = some walkIf_end67_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_end67_i]
+
+theorem WalkLink.if_end67_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.end67.i")
+    {x1 : BitVec 64} (h1 : evalOperand s (.reg "%ee.0.lcssa.i") = some (.int 64 x1))
+    {x2 : BitVec 64} (h2 : evalOperand s (.reg "%cond.i") = some (.int 64 x2))
+    (hl : WalkLocal { C with block := "land.rhs71.i" }
+      { stateAt (("%cmp6919.i", .int 1 (evalICmp .ult x1 x2)) :: s.env) s with pc := "land.rhs71.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .ult x1 x2 = 1 then "land.rhs71.i" else "while.end78.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_end67_i_find) rfl rfl h1 h2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hl (by simp [WalkLocal])
+
+/-- `NodeBlock94`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock94 : Block :=
+  { name := "NodeBlock94",
+    instrs := [Instr.icmp "%Pivot95" IPred.slt 8 (.reg "%46") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%Pivot95") "LeafBlock85" "NodeBlock92" }
+
+theorem walkNodeBlock94_find : stage2Body.findBlock "NodeBlock94" = some walkNodeBlock94 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock94]
+
+theorem WalkLink.NodeBlock94 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock94")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%46") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 13) = 1 then "LeafBlock85" else "NodeBlock92") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock94_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock92`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock92 : Block :=
+  { name := "NodeBlock92",
+    instrs := [Instr.icmp "%Pivot93" IPred.slt 8 (.reg "%46") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%Pivot93") "LeafBlock88" "LeafBlock90" }
+
+theorem walkNodeBlock92_find : stage2Body.findBlock "NodeBlock92" = some walkNodeBlock92 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock92]
+
+theorem WalkLink.NodeBlock92 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock92")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%46") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 32) = 1 then "LeafBlock88" else "LeafBlock90") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock92_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock90`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock90 : Block :=
+  { name := "LeafBlock90",
+    instrs := [Instr.icmp "%SwitchLeaf91" IPred.eq 8 (.reg "%46") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%SwitchLeaf91") "while.body76.i" "while.end78.i" }
+
+theorem walkLeafBlock90_find : stage2Body.findBlock "LeafBlock90" = some walkLeafBlock90 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock90]
+
+theorem WalkLink.LeafBlock90 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock90")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%46") = some (.int 8 x1))
+    (hl : WalkLocal { C with block := "while.body76.i" }
+      { stateAt (("%SwitchLeaf91", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 32))) :: s.env) s with pc := "while.body76.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 32) = 1 then "while.body76.i" else "while.end78.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock90_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hl (by simp [WalkLocal])
+
+/-- `LeafBlock88`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock88 : Block :=
+  { name := "LeafBlock88",
+    instrs := [Instr.icmp "%SwitchLeaf89" IPred.eq 8 (.reg "%46") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%SwitchLeaf89") "while.body76.i" "while.end78.i" }
+
+theorem walkLeafBlock88_find : stage2Body.findBlock "LeafBlock88" = some walkLeafBlock88 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock88]
+
+theorem WalkLink.LeafBlock88 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock88")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%46") = some (.int 8 x1))
+    (hl : WalkLocal { C with block := "while.body76.i" }
+      { stateAt (("%SwitchLeaf89", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 13))) :: s.env) s with pc := "while.body76.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1 then "while.body76.i" else "while.end78.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock88_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hl (by simp [WalkLocal])
+
+/-- `NodeBlock105`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock105 : Block :=
+  { name := "NodeBlock105",
+    instrs := [Instr.icmp "%Pivot106" IPred.slt 8 (.reg "%47") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%Pivot106") "LeafBlock96" "NodeBlock103" }
+
+theorem walkNodeBlock105_find : stage2Body.findBlock "NodeBlock105" = some walkNodeBlock105 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock105]
+
+theorem WalkLink.NodeBlock105 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock105")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%47") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 13) = 1 then "LeafBlock96" else "NodeBlock103") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock105_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `NodeBlock103`: the dispatch's comparison `icmp .slt i8` and the edge its bit names. -/
+def walkNodeBlock103 : Block :=
+  { name := "NodeBlock103",
+    instrs := [Instr.icmp "%Pivot104" IPred.slt 8 (.reg "%47") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%Pivot104") "LeafBlock99" "LeafBlock101" }
+
+theorem walkNodeBlock103_find : stage2Body.findBlock "NodeBlock103" = some walkNodeBlock103 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkNodeBlock103]
+
+theorem WalkLink.NodeBlock103 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock103")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%47") = some (.int 8 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .slt x1 (BitVec.ofNat 8 32) = 1 then "LeafBlock99" else "LeafBlock101") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkNodeBlock103_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- `LeafBlock101`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock101 : Block :=
+  { name := "LeafBlock101",
+    instrs := [Instr.icmp "%SwitchLeaf102" IPred.eq 8 (.reg "%47") (.imm (.int 8 (BitVec.ofNat 8 32)))],
+    term := Term.condbr (.reg "%SwitchLeaf102") "while.body462.i" "if.then467.i" }
+
+theorem walkLeafBlock101_find : stage2Body.findBlock "LeafBlock101" = some walkLeafBlock101 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock101]
+
+theorem WalkLink.LeafBlock101 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock101")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%47") = some (.int 8 x1))
+    (hl : WalkLocal { C with block := "while.body462.i" }
+      { stateAt (("%SwitchLeaf102", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 32))) :: s.env) s with pc := "while.body462.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 32) = 1 then "while.body462.i" else "if.then467.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock101_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hl (by simp [WalkLocal])
+
+/-- `LeafBlock99`: the dispatch's comparison `icmp .eq i8` and the edge its bit names. -/
+def walkLeafBlock99 : Block :=
+  { name := "LeafBlock99",
+    instrs := [Instr.icmp "%SwitchLeaf100" IPred.eq 8 (.reg "%47") (.imm (.int 8 (BitVec.ofNat 8 13)))],
+    term := Term.condbr (.reg "%SwitchLeaf100") "while.body462.i" "if.then467.i" }
+
+theorem walkLeafBlock99_find : stage2Body.findBlock "LeafBlock99" = some walkLeafBlock99 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLeafBlock99]
+
+theorem WalkLink.LeafBlock99 {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock99")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%47") = some (.int 8 x1))
+    (hl : WalkLocal { C with block := "while.body462.i" }
+      { stateAt (("%SwitchLeaf100", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 13))) :: s.env) s with pc := "while.body462.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1 then "while.body462.i" else "if.then467.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkLeafBlock99_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hl (by simp [WalkLocal])
+
+/-- `if.then485.i`: the dispatch's comparison `icmp .eq i32` and the edge its bit names. -/
+def walkIf_then485_i : Block :=
+  { name := "if.then485.i",
+    instrs := [Instr.icmp "%48" IPred.eq 32 (.reg "%sp.i.1") (.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (.reg "%48") "if.end490.i" "if.then488.i" }
+
+theorem walkIf_then485_i_find : stage2Body.findBlock "if.then485.i" = some walkIf_then485_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then485_i]
+
+theorem WalkLink.if_then485_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then485.i")
+    {x1 : BitVec 32} (h1 : evalOperand s (.reg "%sp.i.1") = some (.int 32 x1))
+    : ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq x1 (BitVec.ofNat 32 0) = 1 then "if.end490.i" else "if.then488.i") } s' := by
+  exact WalkLink.icmpBr (G := G) (C := C) (s := s) hInv (by rw [hblock]; exact walkIf_then485_i_find) rfl rfl h1 (by rfl) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-! ### Class B's ten instances -/
+
+/-- `cond.true.i`: no instructions, and the edge it takes. -/
+def walkCond_true_i : Block :=
+  { name := "cond.true.i", instrs := [], term := Term.br "NodeBlock27" }
+
+theorem walkCond_true_i_find : stage2Body.findBlock "cond.true.i" = some walkCond_true_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkCond_true_i]
+
+theorem WalkLink.cond_true_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "cond.true.i")
+    : ∃ s', WalkLink calls G C s { C with block := "NodeBlock27" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkCond_true_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `land.rhs.i.preheader`: no instructions, and the edge it takes. -/
+def walkLand_rhs_i_preheader : Block :=
+  { name := "land.rhs.i.preheader", instrs := [], term := Term.br "land.rhs.i" }
+
+theorem walkLand_rhs_i_preheader_find : stage2Body.findBlock "land.rhs.i.preheader" = some walkLand_rhs_i_preheader := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLand_rhs_i_preheader]
+
+theorem WalkLink.land_rhs_i_preheader {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "land.rhs.i.preheader")
+    (hloc : WalkLocal { C with block := "land.rhs.i" } { s with pc := "land.rhs.i", pre := some s.pc })
+    : ∃ s', WalkLink calls G C s { C with block := "land.rhs.i" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkLand_rhs_i_preheader_find) rfl rfl hloc
+
+/-- `if.else387.i`: no instructions, and the edge it takes. -/
+def walkIf_else387_i : Block :=
+  { name := "if.else387.i", instrs := [], term := Term.br "NodeBlock62" }
+
+theorem walkIf_else387_i_find : stage2Body.findBlock "if.else387.i" = some walkIf_else387_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_else387_i]
+
+theorem WalkLink.if_else387_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.else387.i")
+    : ∃ s', WalkLink calls G C s { C with block := "NodeBlock62" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_else387_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `if.then397.i`: no instructions, and the edge it takes. -/
+def walkIf_then397_i : Block :=
+  { name := "if.then397.i", instrs := [], term := Term.br "if.then413.i" }
+
+theorem walkIf_then397_i_find : stage2Body.findBlock "if.then397.i" = some walkIf_then397_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then397_i]
+
+theorem WalkLink.if_then397_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then397.i")
+    : ∃ s', WalkLink calls G C s { C with block := "if.then413.i" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_then397_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `if.then403.i`: no instructions, and the edge it takes. -/
+def walkIf_then403_i : Block :=
+  { name := "if.then403.i", instrs := [], term := Term.br "if.then413.i" }
+
+theorem walkIf_then403_i_find : stage2Body.findBlock "if.then403.i" = some walkIf_then403_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then403_i]
+
+theorem WalkLink.if_then403_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then403.i")
+    : ∃ s', WalkLink calls G C s { C with block := "if.then413.i" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_then403_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `if.else405.i`: no instructions, and the edge it takes. -/
+def walkIf_else405_i : Block :=
+  { name := "if.else405.i", instrs := [], term := Term.br "if.then413.i" }
+
+theorem walkIf_else405_i_find : stage2Body.findBlock "if.else405.i" = some walkIf_else405_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_else405_i]
+
+theorem WalkLink.if_else405_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.else405.i")
+    : ∃ s', WalkLink calls G C s { C with block := "if.then413.i" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_else405_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `if.else.i`: no instructions, and the edge it takes. -/
+def walkIf_else_i : Block :=
+  { name := "if.else.i", instrs := [], term := Term.br "NodeBlock83" }
+
+theorem walkIf_else_i_find : stage2Body.findBlock "if.else.i" = some walkIf_else_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_else_i]
+
+theorem WalkLink.if_else_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.else.i")
+    : ∃ s', WalkLink calls G C s { C with block := "NodeBlock83" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_else_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `if.then37.i`: no instructions, and the edge it takes. -/
+def walkIf_then37_i : Block :=
+  { name := "if.then37.i", instrs := [], term := Term.br "if.end48.i" }
+
+theorem walkIf_then37_i_find : stage2Body.findBlock "if.then37.i" = some walkIf_then37_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then37_i]
+
+theorem WalkLink.if_then37_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then37.i")
+    : ∃ s', WalkLink calls G C s { C with block := "if.end48.i" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_then37_i_find) rfl rfl (by simp [WalkLocal])
+
+/-- `if.then42.i`: no instructions, and the edge it takes. -/
+def walkIf_then42_i : Block :=
+  { name := "if.then42.i", instrs := [], term := Term.br "if.end48.i" }
+
+theorem walkIf_then42_i_find : stage2Body.findBlock "if.then42.i" = some walkIf_then42_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_then42_i]
+
+theorem WalkLink.if_then42_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then42.i")
+    : ∃ s', WalkLink calls G C s { C with block := "if.end48.i" } s' := by
+  exact WalkLink.br (G := G) (C := C) (s := s) hInv
+    (by rw [hblock]; exact walkIf_then42_i_find) rfl rfl (by simp [WalkLocal])
+
 end WalkScope
 
 end LeanLLVM.Refinement
@@ -3880,3 +5596,35 @@ pin, chain, terminator and step, and the two links that wrap them, do. -/
 /-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.ifEnd24' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.ifEnd24
+
+/-! ### The middle's class lemmas and two instances, measured
+
+The two general lemmas and one instance of each class, at `#print axioms`: each is
+at the `[propext, Classical.choice, Quot.sound]` ceiling the file's other pinned
+declarations report.  The rest of the instances are the same application of the
+same lemmas, so a per-instance reading adds nothing; what it would add is the
+`decide` on the eight disequalities, which reads no axiom beyond `propext`. -/
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.icmpBr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.icmpBr
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.br' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.br
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.NodeBlock21' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.NodeBlock21
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.cond_true_i' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cond_true_i
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkDenoteCode_icmp' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_icmp
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkExecTerm_condbr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkExecTerm_condbr
