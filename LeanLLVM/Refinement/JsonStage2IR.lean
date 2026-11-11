@@ -88,11 +88,17 @@ Not discharged, and named with the obligation:
   loop induction is the first obligation that resists and the six `Stage2Run`
   clauses (both cursors and their growth bounds, the arena's reserve slack,
   `Owns` over the two extents, the refusal bit, and `eoff ≤ n`) are what it owes
-  once it is reached.
+  once it is reached.  The budget is stated on its own at this ABI in
+  `JsonStage2Body` — `Stage2WalkCompletes`, with
+  `stage2WalkObligation_iff_completion` proving it is exactly this conjunct —
+  and the clauses are reduced there to the loop's trace.
 * **the two walk facts `JsonStage2Body` names**: at most one event record per
-  entry (`emitBlobs_len_le` needs it) and the escaped bodies' lengths summing
-  inside the document (`Stage2Run.evlen_le`, `arena_le`).  Both are properties of
-  the loop's per-entry dispatch, so they are part of the same induction.
+  entry (`Stage2OneRecordPerEntry`, the count `emitBlobs_len_le` needs stated at
+  the entry stream) and the escaped bodies' lengths summing inside the document
+  (`Stage2SpansInside`, the extents whose sum `Stage2Run.arenaLe_of_spans` reads
+  the arena's bound off).  Both are properties of the loop's per-entry dispatch,
+  so they are part of the same induction; what each buys once the loop supplies
+  it — and what the six clauses above reduce to — is proved in `JsonStage2Body`.
 * **the FP call composition's own side**: the body calls `num_fast_el1` and
   `od_scalar_value`; what those compute is the tier theorems' subject, and this
   module neither adds to nor weakens them.

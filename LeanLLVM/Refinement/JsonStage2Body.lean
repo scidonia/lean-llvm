@@ -51,6 +51,19 @@ Proved below:
   vocabulary, the emitted wrapper's stores make `Γ_stage2`'s post true — the
   verdict, both cursors with their growth bounds, the arena and event prefixes,
   the refusal word's two sides, and the frame as `Owns`;
+* the report's clauses, and the two walk facts they are read from: the reserve's
+  slack (`Stage2Run.reserve_of_arenaLe`), `Owns` at the extent the post names
+  (`Stage2Run.walkOwning_of_written`, from the walk's own write extent and the
+  caller's staging), both cursors' bounds from the walk facts
+  (`Stage2Run.arenaLe_of_spans`, `Stage2Run.evLe_of_oneRecordPerEntry`), with the
+  entry count (`Stage2Run.nep_le`) and the records' thirteen-bytes-per-entry sum
+  (`records_total_le`, `evlen_le_of_records`) proved outright;
+* the completion budget, **stated and not claimed**: `Stage2WalkCompletes` is
+  completion at `stage2Budget` at the ABI's thirteen arguments, its value is the
+  three-word term `stage2Budget_at_abi`, the adapter reads the same number
+  (`Γ_stage2at_budget`), and `stage2WalkObligation_iff_completion` proves the
+  standalone statement is exactly the obligation's first conjunct — so the loop's
+  budget is named where its consumer reads it, and what is missing is the loop;
 * the number path: the emitted dispatch's counters are the specification's, its
   three classes are `Tier1`, `Tier2` and `Fallback` at the kernel's decision,
   and the three proved tier models therefore compose to
@@ -75,12 +88,22 @@ Not proved, and named with the obligation each would need:
   the last reserve's slack `alen + 64 ≤ dstcap`, the walk's region claim `Owns`
   over `[(dst, alen + 64), (ev, evlen)]`, the refusal bit, and the offset's bound
   `eoff ≤ n`.  Each is a clause `Γ_stage2`'s post names, so the walk's obligation
-  is still stated in the record's vocabulary rather than in this module's.
+  is still stated in the record's vocabulary rather than in this module's.  The
+  budget is stated at the ABI's arguments in *The completion budget, stated*, and
+  the clauses are reduced there to what the loop's trace must carry: the reserve's
+  slack and `Owns` follow from the arena's bound, the caller's capacity and the
+  walk's write extent; both cursors' bounds follow from the two walk facts, whose
+  arithmetic is proved; the refusal bit and `eoff ≤ n` remain the loop's own,
+  because nothing in the record's vocabulary names the run's state at the refusal
+  arm.
 * **the emitters' invocation trace.**  `emitBlobs_len_le` bounds the cursor by
   `13 * n` when at most `n` blobs of at most thirteen bytes each are emitted, and
   `arenaAppend` bounds the arena by the body's own length.  That there is at most
   one event record per entry, and that the escaped bodies' lengths sum inside the
-  document, are walk facts (they are `Stage2Run.evlen_le` and `arena_le`).
+  document, are walk facts (`Stage2OneRecordPerEntry`, `Stage2SpansInside`); what
+  is proved here is what each buys — `evlen_le_of_records` from the record
+  grouping, `arenaLe_of_spans` from the extents — and what the loop owes is the
+  trace that satisfies them.
 * **the number path's locals.**  `numEff` and the mantissa read `d`'s
   decomposition, which is what `StrtodReader.reader` returns; that the emitted
   accumulators `ip`, `fr`, `idig`, `fdig`, `exp10` equal those fields is the
@@ -872,6 +895,423 @@ theorem stage2Run_boundary {args : List Value} {mem m0 : Mem} {next : Nat}
     (fun a ha => stage2Report_present ha)
     (stage2Report_frame m0 h.ndst h.nev h.err h.alen h.evlen h.refusal h.eoff)
 
+/-! ### The report's clauses, and the walk facts that produce them
+
+`Stage2Run` is the report a model of `s2_walk` produces, and its fields from
+`arenaGe` onwards are the six clauses `Γ_stage2`'s post names.  They are not six
+independent obligations.  What follows says what each is a consequence of, so
+that a loop owes its own trace and the arithmetic only:
+
+* **the arena's bound** (clause 1, `arenaLe`) is the escaped bodies' extents —
+  ordered along the document, each ending inside it — together with the
+  decoder's output never being longer than the body it decoded
+  (`arenaAppend_spec`'s `on ≤ len`, the escape unit's own post).
+  `Stage2SpansInside` names that trace and `Stage2Run.arenaLe_of_spans` reads the
+  bound off it, the sum telescoping (`ordered_sum_le`).  The extents are *not* a
+  field of `Stage2Run`: the report records the arena's cursor, which is their
+  sum, and a sum of `Nat`s does not name its summands — so what a loop must
+  carry is the extents it scanned, and this is the proposition they satisfy;
+* **the event cursor's bound** (clause 2, `evLe`) is one record per entry
+  (`Stage2OneRecordPerEntry`), because the entry stream's positions are strictly
+  increasing inside the document and therefore number at most the document's
+  bytes.  That count half is a consequence of the precondition, not of the loop:
+  `Stage2Run.nep_le` reads it off `readLanes32_length` and
+  `length_le_of_pairwise_lt` at the pre's own clauses, and the per-record
+  arithmetic is `records_total_le`/`evlen_le_of_records`;
+* **the reserve's slack** (clause 3, `reserve`) is not a second obligation: the
+  arena's bound and the caller's staged capacity give it
+  (`Stage2Run.reserve_of_arenaLe`);
+* **`Owns` over the two extents** (clause 4, `walkOwning`) is the walk's `Owns`
+  at the extent it *writes*, `[(dst, alen), (ev, evlen)]`, plus the caller's
+  staging and the arena's bound: the sixty-four bytes past the cursor were
+  present before the walk ran and the walk does not write them, so their presence
+  afterwards is the caller's promise read through the walk's frame
+  (`owns_reserve_of_owns_extent`,
+  `Stage2Run.walkOwning_of_written`).  The record's clause names the larger
+  extent, and the larger extent is what the caller stages;
+* **the refusal bit** (clause 5) and **`eoff ≤ n`** (clause 6) are the loop's own
+  and reduce to nothing here: neither is a proposition about the memory the
+  caller staged, and no other clause names `eoff`.  What a loop must show is that
+  the bit is `s2_walk`'s return — `stage2.c`'s `r ? 1 : 0`, which the wrapper's
+  side already spells `stage2Verdict` — and that the offset it stores is a
+  document position. -/
+
+section
+
+-- The budget's statement below is at the adapter's record, so the flattened
+-- body's names are read here for the length of this section only.
+open LeanLLVM.Refinement.JsonStage2IR
+
+/-! #### Extents inside a window, and records per entry -/
+
+/-- **Ordered extents inside a window sum inside it.**  Half-open intervals in
+increasing order, each beginning at or after `lo` and ending at or before `hi`,
+have lengths summing to at most `hi - lo`.  The conclusion is stated additively
+(`sum + lo ≤ hi`) so that the induction's tail, which starts where the head ends,
+never subtracts. -/
+theorem ordered_sum_le (lo hi : Nat) :
+    ∀ (sp : List (Nat × Nat)), sp.Pairwise (fun r s => r.1 + r.2 ≤ s.1) →
+      (∀ r ∈ sp, r.1 + r.2 ≤ hi) → (∀ r ∈ sp, lo ≤ r.1) → lo ≤ hi →
+      (sp.map fun r => r.2).sum + lo ≤ hi
+  | [], _, _, _, hlh => by simpa using hlh
+  | r :: t, hord, hend, hstart, _ => by
+      have hhead : r.1 + r.2 ≤ hi := hend r (List.mem_cons_self ..)
+      have hp := List.pairwise_cons.mp hord
+      have htail : t.Pairwise (fun r s => r.1 + r.2 ≤ s.1) := hp.2
+      have hlo : lo ≤ r.1 := hstart r (List.mem_cons_self ..)
+      have hend' : ∀ s ∈ t, s.1 + s.2 ≤ hi := fun s hs => hend s (List.mem_cons_of_mem r hs)
+      have ih := ordered_sum_le (r.1 + r.2) hi t htail hend' hp.1 hhead
+      simp only [List.map_cons, List.sum_cons]
+      omega
+
+/-- The sum form `arenaLe` reads: extents ordered and inside the document, from
+the document's first byte. -/
+theorem sum_le_of_ordered (hi : Nat) {sp : List (Nat × Nat)}
+    (hord : sp.Pairwise (fun r s => r.1 + r.2 ≤ s.1))
+    (hend : ∀ r ∈ sp, r.1 + r.2 ≤ hi) : (sp.map fun r => r.2).sum ≤ hi := by
+  have := ordered_sum_le 0 hi sp hord hend (fun r _ => Nat.zero_le r.1) (Nat.zero_le hi)
+  omega
+
+/-- **The escaped bodies' lengths sum inside the document**, so the arena grows
+by at most the document's own bytes. -/
+theorem arenaLe_of_spans {alen ndst0 n : Nat} {sp : List (Nat × Nat)}
+    (hord : sp.Pairwise (fun r s => r.1 + r.2 ≤ s.1))
+    (hend : ∀ r ∈ sp, r.1 + r.2 ≤ n)
+    (hgrowth : alen ≤ ndst0 + (sp.map fun r => r.2).sum) :
+    alen ≤ ndst0 + n := by
+  have := sum_le_of_ordered n hord hend
+  omega
+
+/-- The event records' bytes, grouped: the blob fold's total is the sum of the
+groups' widths. -/
+theorem records_flatten_length (records : List (List (List UInt8))) :
+    records.flatten.flatten.length = (records.map fun r => r.flatten.length).sum := by
+  induction records with
+  | nil => rfl
+  | cons r rs ih =>
+      simp only [List.flatten_cons, List.flatten_append, List.length_append, ih,
+        List.map_cons, List.sum_cons]
+
+/-- **Thirteen bytes per entry.**  A grouping of the event writes into records,
+one per entry and none wider than `stage2RecordBytes`, totals at most thirteen
+bytes per entry — `emitBlobs_len_le`'s arithmetic at the count a walk actually
+has. -/
+theorem records_total_le {records : List (List (List UInt8))} {nep : Nat}
+    (hlen : records.length = nep)
+    (hwidth : ∀ r ∈ records, r.flatten.length ≤ stage2RecordBytes) :
+    records.flatten.flatten.length ≤ stage2RecordBytes * nep := by
+  rw [records_flatten_length]
+  refine sum_le_of_forall_le (w := stage2RecordBytes) (n := nep) ?_ ?_
+  · intro x hx
+    obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hx
+    exact hwidth r hr
+  · simp [hlen]
+
+/-- **The fold's cursor, from the record grouping.**  `emitBlobs_spec` at the
+grouped blobs: a walk that emits one record per entry leaves the event cursor at
+most `13 * nep` past where it started. -/
+theorem evlen_le_of_records {mem : Mem} {ev len cap : Nat}
+    {records : List (List (List UInt8))} {mem' : Mem} {len' : Nat} {nep : Nat}
+    (hlen : records.length = nep)
+    (hwidth : ∀ r ∈ records, r.flatten.length ≤ stage2RecordBytes)
+    (h : emitBlobs mem ev len cap records.flatten = some (mem', len')) :
+    len' ≤ len + stage2RecordBytes * nep := by
+  obtain ⟨-, hl'⟩ := emitBlobs_spec h
+  have := records_total_le hlen hwidth
+  omega
+
+/-! #### The reserve window, and the two extents' separation -/
+
+/-- **The two extents the walk owns are separated**, read off the record's own
+`DisjointRegions` at the arena's and the event stream's entries. -/
+theorem stage2Regions_arena_ev {b n ep nep xp nxp dst ndst0 ev evcap ndst nev err : Nat}
+    (h : DisjointRegions (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)) :
+    dst + (ndst0 + n + stage2ArenaReserve) ≤ ev ∨ ev + evcap ≤ dst := by
+  simp only [DisjointRegions, stage2Regions, List.pairwise_cons, List.Pairwise.nil,
+    and_true] at h
+  obtain ⟨-, -, -, hs, -⟩ := h
+  have := hs (ev, evcap) (by simp)
+  simpa using this
+
+/-- **The reserve window is the caller's, not the walk's.**  `Owns` at
+`[(dst, alen + 64), (ev, evlen)]` — the extent `Γ_stage2`'s post names — follows
+from `Owns` at the extent the walk writes, `[(dst, alen), (ev, evlen)]`, the
+arena's staged capacity, and the two extents' separation: a byte of the
+sixty-four-byte reserve was present before the walk ran (`HasBytes` at the
+capacity), the walk writes nothing there, and the event extent cannot reach it. -/
+theorem owns_reserve_of_owns_extent {mem m0 : Mem} {dst alen ev evlen dstcap : Nat}
+    (h : Owns (inRegions [(dst, alen), (ev, evlen)]) mem m0)
+    (harena : HasBytes mem dst dstcap)
+    (hres : alen + stage2ArenaReserve ≤ dstcap)
+    (hsep : dst + alen + stage2ArenaReserve ≤ ev ∨ ev + evlen ≤ dst) :
+    Owns (inRegions [(dst, alen + stage2ArenaReserve), (ev, evlen)]) mem m0 := by
+  have hsub : ∀ a, inRegions [(dst, alen), (ev, evlen)] a →
+      inRegions [(dst, alen + stage2ArenaReserve), (ev, evlen)] a := by
+    intro a ha
+    obtain ⟨r, hr, hlo, hhi⟩ := ha
+    rcases List.mem_cons.mp hr with rfl | hr'
+    · exact ⟨(dst, alen + stage2ArenaReserve), List.mem_cons_self .., hlo, by omega⟩
+    · rcases List.mem_cons.mp hr' with rfl | hnil
+      · exact ⟨(ev, evlen), by simp, hlo, hhi⟩
+      · exact absurd hnil (by simp)
+  refine ⟨h.unchanged.mono hsub, ?_⟩
+  intro a ha
+  obtain ⟨r, hr, hlo, hhi⟩ := ha
+  rcases List.mem_cons.mp hr with rfl | hr'
+  · rcases Nat.lt_or_ge a (dst + alen) with hlt | hge
+    · exact h.present a ⟨(dst, alen), List.mem_cons_self .., hlo, hlt⟩
+    · have hk : a - dst < dstcap := by omega
+      obtain ⟨vs, hvs⟩ := harena
+      obtain ⟨b, hb⟩ := readBytes_some_present mem dst dstcap vs hvs (a - dst) hk
+      rw [show dst + (a - dst) = a by omega] at hb
+      have hnot : ¬ inRegions [(dst, alen), (ev, evlen)] a := by
+        rintro ⟨s, hs, hslo, hshi⟩
+        rcases List.mem_cons.mp hs with rfl | hs'
+        · omega
+        · rcases List.mem_cons.mp hs' with rfl | hnil
+          · rcases hsep with hsep | hsep <;> omega
+          · exact absurd hnil (by simp)
+      have heq : readByte m0 a = readByte mem a := h.unchanged a hnot
+      exact ⟨b, by rw [heq]; exact hb⟩
+  · rcases List.mem_cons.mp hr' with rfl | hnil
+    · exact h.present a ⟨(ev, evlen), by simp, hlo, hhi⟩
+    · exact absurd hnil (by simp)
+
+/-! #### The two walk facts, and the clauses they give -/
+
+/-- The walk's arena trace: the extents of the escaped bodies it decoded, as
+intervals of the document.  They are ordered (the walk scans the document once),
+each ends inside it, and the arena grows by at most their total, because the
+decoder's output is never longer than the body it decoded.
+
+The extents are not a field of `Stage2Run`: the report records the arena's
+cursor, which is their *sum*, and a sum of `Nat`s does not name its summands.  A
+model of the loop carries the extents it scanned; this is the proposition it then
+satisfies, and `Stage2Run.arenaLe_of_spans` is the bound it buys. -/
+def Stage2SpansInside {args : List Value} {mem m0 : Mem} (h : Stage2Run args mem m0)
+    (sp : List (Nat × Nat)) : Prop :=
+  sp.Pairwise (fun r s => r.1 + r.2 ≤ s.1) ∧
+    (∀ r ∈ sp, r.1 + r.2 ≤ h.n) ∧
+    h.alen ≤ h.ndst0 + (sp.map fun r => r.2).sum
+
+/-- **One event record per entry**, as the cursor's bound: thirteen bytes an
+entry and no more, which is the count `emitBlobs_len_le` needs at the entry
+stream rather than at the document. -/
+def Stage2OneRecordPerEntry {args : List Value} {mem m0 : Mem}
+    (h : Stage2Run args mem m0) : Prop :=
+  h.evlen ≤ h.nev0 + stage2RecordBytes * h.nep
+
+namespace Stage2Run
+
+variable {args : List Value} {mem m0 : Mem}
+
+/-- The entry stream has no more entries than the document has bytes: its
+positions are strictly increasing and inside the document. -/
+theorem nep_le (h : Stage2Run args mem m0) : h.nep ≤ h.n := by
+  rw [← readLanes32_length mem h.ep h.nep h.ent h.entries]
+  exact length_le_of_pairwise_lt h.order h.inside
+
+/-- The arena's bound gives the reserve's slack at the caller's capacity. -/
+theorem reserve_of_arenaLe (h : Stage2Run args mem m0) (hle : h.alen ≤ h.ndst0 + h.n) :
+    h.alen + stage2ArenaReserve ≤ h.dstcap := by
+  have := h.arenaRoom
+  omega
+
+/-- The arena's bound, from the walk's spans. -/
+theorem arenaLe_of_spans (h : Stage2Run args mem m0) {sp : List (Nat × Nat)}
+    (hf : Stage2SpansInside h sp) : h.alen ≤ h.ndst0 + h.n :=
+  LeanLLVM.Refinement.arenaLe_of_spans hf.1 hf.2.1 hf.2.2
+
+/-- The event cursor's bound, from one record per entry and the entry count. -/
+theorem evLe_of_oneRecordPerEntry (h : Stage2Run args mem m0)
+    (hone : Stage2OneRecordPerEntry h) :
+    h.evlen ≤ h.nev0 + stage2RecordBytes * h.n := by
+  have h1 := h.nep_le
+  have h2 : stage2RecordBytes * h.nep ≤ stage2RecordBytes * h.n :=
+    Nat.mul_le_mul_left _ h1
+  have hone' := hone
+  simp only [Stage2OneRecordPerEntry] at hone'
+  omega
+
+/-- **The report's `Owns` clause, from the walk's own write extent and the
+arena's bound.**  The reserve's slack is `reserve_of_arenaLe` at that bound, not
+a separate obligation of the walk; the staging covers the reserve window. -/
+theorem walkOwning_of_written (h : Stage2Run args mem m0)
+    (hw : Owns (inRegions [(h.dst, h.alen), (h.ev, h.evlen)]) mem m0)
+    (hle : h.alen ≤ h.ndst0 + h.n) :
+    Owns (inRegions [(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)]) mem m0 := by
+  refine owns_reserve_of_owns_extent hw h.arenaCap (h.reserve_of_arenaLe hle) ?_
+  have hevl := le_trans h.evLe h.evRoom
+  have hsep := stage2Regions_arena_ev h.separate
+  rcases hsep with hsep | hsep <;> omega
+
+end Stage2Run
+
+/-! ### The completion budget, stated
+
+`Stage2WalkObligation`'s first conjunct is a budget at which the pinned body
+returns.  It is expressible here, and this section states it without inhabiting
+it:
+
+* **the budget is a term, not a hypothesis.**  `stage2Budget` reads three of the
+  ABI's thirteen words — the entry count, the document's length and the escape
+  list's count — and `stage2Budget_at_abi` is that term at the argument shape
+  `Γ_stage2.pre` admits.  The two `#guard`s below read it: `72` at one entry and
+  one document byte, and `0` off the ABI's shape, so the first is a statement
+  about the argument list and not about a match that accepts anything.  The
+  budget depends on no memory (`stage2Budget`'s parameter is unused), so it is a
+  numeral per staging and needs no `readBytes` witness of its own;
+* **through the adapter it is the same number.**  `Γ_stage2at`'s budget at the
+  twenty-one flattened arguments is `stage2Budget` at the ABI's thirteen
+  (`Γ_stage2at_budget`), so completion at the record's budget is completion at a
+  function of the thirteen words rather than at a term the body's parameters
+  hide;
+* **the standalone statement is the obligation's completion half.**
+  `Stage2WalkCompletes` states, at the ABI's arguments, that the pinned body
+  returns some value within `stage2Budget`, and
+  `stage2WalkObligation_iff_completion` proves it is exactly the first conjunct
+  of `Stage2WalkObligation` beside the post — so naming the budget weakens
+  nothing.
+
+What this vocabulary cannot state is a budget's *tightness*, and it does not need
+to: `runFuel` is asked for a budget and answers with an outcome or with nothing,
+so "the budget is enough" and "the run completes at it" are one proposition, and
+completion transfers to every larger budget (`stage2WalkCompletes_mono`, from
+`runFuel_mono`).  There is no step-count fact above the completion conjunct that
+a loop proof would then discharge separately.
+
+What resists is the conjunct itself.  `stage2Body` is 165 blocks whose dispatch
+reads the document's bytes and the entry stream, so a completion proof needs a
+per-arm trace with a measure that decreases — the entry index consumed, then the
+document position — and that induction is the same one the six clauses above are
+read from.  No statement in this module supplies a trace, so the budget is
+stated and not claimed: stating it is what lets the clauses stay downstream of
+it rather than being restated as hypotheses. -/
+
+/-- **The record's budget is a term of three of the ABI's thirteen words.** -/
+theorem stage2Budget_at_abi (b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat)
+    (mem : Mem) :
+    stage2Budget [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
+        .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
+        .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
+        .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err] mem
+      = stage2EntryAllowance * (BitVec.ofNat 64 nep).toNat
+        + stage2ByteAllowance * (BitVec.ofNat 64 n).toNat
+        + stage2PositionAllowance * (BitVec.ofNat 64 nxp).toNat
+        + stage2FinalisationAllowance := rfl
+
+/-- The budget is positive at every staging the record admits, so the completion
+conjunct never asks a run for zero steps. -/
+theorem stage2Budget_pos_of_pre {args : List Value} {mem : Mem} {next : Nat}
+    (h : Γ_stage2.pre args mem next) : 0 < stage2Budget args mem := by
+  obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, _bs, _ent,
+    _ndst0, _nev0, hargs, -⟩ := h
+  subst hargs
+  rw [stage2Budget_at_abi b n ep nep xp nxp dst dstcap ndst ev evcap nev err mem]
+  unfold stage2FinalisationAllowance
+  omega
+
+/-- The adapter's budget at the flattened arguments is the record's own, at the
+ABI's thirteen: the eight staging objects contribute nothing to the walk's
+fuel. -/
+theorem Γ_stage2at_budget (d c ctype cst tok s z e : Nat) {a13 : List Value}
+    (hlen : a13.length = 13) (mem : Mem) :
+    (Γ_stage2at d c ctype cst tok s z e).budget
+        (stage2Args a13 d c ctype cst tok s z e) mem = stage2Budget a13 mem := by
+  show stage2Budget ((stage2Args a13 d c ctype cst tok s z e).take 13) mem
+      = stage2Budget a13 mem
+  rw [stage2Args_take13 a13 hlen]
+
+/-- **The walk's completion at the record's own budget**, at the ABI's thirteen
+arguments.  Stated and not claimed: what discharges it is the loop. -/
+def Stage2WalkCompletes (d c ctype cst tok s z e : Nat) (sub : Calls) : Prop :=
+  ∀ a13 mem next, Γ_stage2.pre a13 mem next →
+    ∃ v m, runFuel (stage2Calls sub) (stage2Budget a13 mem) stage2Body
+      (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+      = some (.ret v m)
+
+/-- **The standalone completion statement is the obligation's first conjunct**,
+beside the post's second.  The two directions are the adapter's precondition and
+`stage2Args_take13`: a caller's arguments are the flattened ones read at the
+thirteen-slot prefix, and the budget goes with them. -/
+theorem stage2WalkObligation_iff_completion (d c ctype cst tok s z e : Nat) (sub : Calls) :
+    Stage2WalkObligation d c ctype cst tok s z e sub ↔
+      Stage2WalkCompletes d c ctype cst tok s z e sub ∧
+        (∀ args mem next, (Γ_stage2at d c ctype cst tok s z e).pre args mem next →
+          ∀ o, BehFromState (stage2Calls sub) stage2Body
+              (EntryState stage2Body args mem next) o →
+            (Γ_stage2at d c ctype cst tok s z e).post args mem next o) := by
+  constructor
+  · intro h
+    refine ⟨?_, ?_⟩
+    · intro a13 mem next hpre
+      have hlen : a13.length = 13 := stage2Pre_length hpre
+      obtain ⟨v, m, hrun⟩ :=
+        (h (stage2Args a13 d c ctype cst tok s z e) mem next (Γ_stage2at_pre hpre)).1
+      refine ⟨v, m, ?_⟩
+      simp only [Γ_stage2at] at hrun
+      rw [stage2Args_take13 a13 hlen] at hrun
+      exact hrun
+    · intro args mem next hpre o hbeh
+      exact (h args mem next hpre).2 o hbeh
+  · intro ⟨hcom, hpost⟩ args mem next hpre
+    obtain ⟨a13, hargs, hpre13⟩ := hpre
+    subst hargs
+    have hlen : a13.length = 13 := stage2Pre_length hpre13
+    refine ⟨?_, hpost (stage2Args a13 d c ctype cst tok s z e) mem next
+      ⟨a13, rfl, hpre13⟩⟩
+    obtain ⟨v, m, hrun⟩ := hcom a13 mem next hpre13
+    refine ⟨v, m, ?_⟩
+    simp only [Γ_stage2at]
+    rw [stage2Args_take13 a13 hlen]
+    exact hrun
+
+/-- **A larger budget is not a second obligation.**  Completion at one budget is
+completion at every larger one (`runFuel_mono`); together with `runFuel`'s
+outcome-or-nothing answer, this is why the budget's adequacy is the completion
+conjunct and not a separate fact about the body's blocks. -/
+theorem stage2WalkCompletes_mono {d c ctype cst tok s z e : Nat} {sub : Calls}
+    {B B' : List Value → Mem → Nat}
+    (h : ∀ a13 mem next, Γ_stage2.pre a13 mem next →
+      ∃ v m, runFuel (stage2Calls sub) (B a13 mem) stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+        = some (.ret v m))
+    (hle : ∀ a13 mem, B a13 mem ≤ B' a13 mem) :
+    ∀ a13 mem next, Γ_stage2.pre a13 mem next →
+      ∃ v m, runFuel (stage2Calls sub) (B' a13 mem) stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+        = some (.ret v m) := by
+  intro a13 mem next hpre
+  obtain ⟨v, m, hrun⟩ := h a13 mem next hpre
+  refine ⟨v, m, ?_⟩
+  have hmono := runFuel_mono hrun (d := B' a13 mem - B a13 mem)
+  rw [Nat.add_sub_of_le (hle a13 mem)] at hmono
+  exact hmono
+
+-- The budget at one entry and one document byte is `32 + 8 + 32`: the term is a
+-- numeral of the arguments, and this is its value there.
+#guard stage2Budget [.ptr 0, .int 64 1, .ptr 0, .int 64 1, .ptr 0, .int 64 0, .ptr 0,
+  .int 64 0, .ptr 0, .ptr 0, .int 64 0, .ptr 0, .ptr 0] [] = 72
+
+-- The control: a list that is not the ABI's thirteen draws no fuel, so the guard
+-- above is a statement about the argument list and not about a match that accepts
+-- anything.
+#guard stage2Budget [] [] = 0
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkObligation_iff_completion' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2WalkObligation_iff_completion
+
+/-- info: 'LeanLLVM.Refinement.Stage2Run.walkOwning_of_written' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Run.walkOwning_of_written
+
+/-- info: 'LeanLLVM.Refinement.records_total_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.records_total_le
+
+end
+
 /-! ### The number path: the emitted dispatch, and the three proved models
 
 `num_fast_el1` converts a lexeme in three classes.  The dispatch
@@ -1395,8 +1835,10 @@ at every `ret` (which is what lets a `Satisfies` obligation at the body become a
 `CallSatisfies` at a call site), and the obligation yields this record's post at
 the ABI's own arguments, so a proof of the loop needs no second statement of what
 it owes.  What has not moved is the loop: `Stage2Run` is still the report a model
-of the walk must produce, and the completion budget is still the first obligation
-that resists. -/
+of the walk must produce, and the completion budget is still the obligation that
+resists — now stated on its own (`Stage2WalkCompletes`) and proved identical to
+the obligation's first conjunct, with the six clauses reduced to the trace the
+loop carries. -/
 
 /-- **The pinned body returns a value at every `ret`, re-exported where the walk's
 report is stated.**  A `Satisfies` obligation on the pinned body becomes a
@@ -1415,6 +1857,20 @@ modules' own pins record. -/
 
 #print axioms stage2Boundary_of_parts
 #print axioms stage2Run_boundary
+#print axioms ordered_sum_le
+#print axioms arenaLe_of_spans
+#print axioms evlen_le_of_records
+#print axioms stage2Regions_arena_ev
+#print axioms owns_reserve_of_owns_extent
+#print axioms Stage2Run.nep_le
+#print axioms Stage2Run.arenaLe_of_spans
+#print axioms Stage2Run.evLe_of_oneRecordPerEntry
+#print axioms Stage2Run.walkOwning_of_written
+#print axioms stage2Budget_at_abi
+#print axioms stage2Budget_pos_of_pre
+#print axioms Γ_stage2at_budget
+#print axioms stage2WalkObligation_iff_completion
+#print axioms stage2WalkCompletes_mono
 #print axioms numFastEmitted_refines
 #print axioms numFastEmitted_strtodSpec
 #print axioms stage2Body_retsValued_at_pin
