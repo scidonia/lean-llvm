@@ -5,15 +5,15 @@
 ; masks); a shorter window takes the same lane body with the byte's own
 ; predicates as its skip bits.
 ;
-; Emitted from LeanLLVM.Vellum.JsonScanBody.scanWindowBody -- the AST in
-; LeanLLVM/Vellum/JsonScanBody.lean that LeanLLVM/Vellum/JsonScanIR.lean parses
+; Emitted from LeanLLVM.Refinement.JsonScanBody.scanWindowBody -- the AST in
+; LeanLLVM/Refinement/JsonScanBody.lean that LeanLLVM/Refinement/JsonScanIR.lean parses
 ; this file back to -- with
 ;
 ;   nix develop -c bash -c 'lake exe leanllvm-json-scan-emit > probes/install/ir/json-scan-body.ll'
 ;
 ; through LeanLLVM.Function.render, the framework's own printer.
 ;
-; The refinement statement about this text is not yet proved: LeanLLVM/Vellum/
+; The refinement statement about this text is not yet proved: LeanLLVM/Refinement/
 ; JsonScanIR.lean pins the text to the AST and proves the prefix facts the
 ; statement rests on, and its own header records what is outstanding.  Until
 ; that theorem exists, nothing here is certified, and the manifest must not
@@ -31,55 +31,55 @@ entry:
   %maskp = alloca i32, align 4
   %stopp = alloca i32, align 4
   %v64 = zext i32 %valid to i64
-  store i64 0, ptr %k
-  store i32 0, ptr %maskp
-  store i32 0, ptr %stopp
+  store i64 0, ptr %k, align 1
+  store i32 0, ptr %maskp, align 1
+  store i32 0, ptr %stopp, align 1
   %qmp = alloca i32, align 4
   %smp = alloca i32, align 4
   %cmp = alloca i32, align 4
-  store i32 0, ptr %qmp
-  store i32 0, ptr %smp
-  store i32 0, ptr %cmp
+  store i32 0, ptr %qmp, align 1
+  store i32 0, ptr %smp, align 1
+  store i32 0, ptr %cmp, align 1
   %short = icmp ne i32 %valid, 32
   br i1 %short, label %cond, label %wide
 
 wide:
-  %vv = load <32 x i8>, ptr %in
+  %vv = load <32 x i8>, ptr %in, align 1
   %qv = icmp eq <32 x i8> %vv, splat (i8 34)
   %qm = bitcast <32 x i1> %qv to i32
   %sv = icmp eq <32 x i8> %vv, splat (i8 92)
   %sm = bitcast <32 x i1> %sv to i32
   %cv = icmp ult <32 x i8> %vv, splat (i8 32)
   %cm = bitcast <32 x i1> %cv to i32
-  store i32 %qm, ptr %qmp
-  store i32 %sm, ptr %smp
-  store i32 %cm, ptr %cmp
+  store i32 %qm, ptr %qmp, align 1
+  store i32 %sm, ptr %smp, align 1
+  store i32 %cm, ptr %cmp, align 1
   br label %cond
 
 cond:
-  %kc = load i64, ptr %k
+  %kc = load i64, ptr %k, align 1
   %lt = icmp ult i64 %kc, %v64
   br i1 %lt, label %body, label %done
 
 body:
-  %ki = load i64, ptr %k
+  %ki = load i64, ptr %k, align 1
   %k32 = trunc i64 %ki to i32
   %one = shl i32 1, %k32
-  %bp = getelementptr inbounds i8, ptr %in, i64 %ki
-  %b = load i8, ptr %bp
-  %q0 = load i32, ptr %qmp
+  %bp = getelementptr i8, ptr %in, i64 %ki
+  %b = load i8, ptr %bp, align 1
+  %q0 = load i32, ptr %qmp, align 1
   %q1 = lshr i32 %q0, %k32
   %q2 = and i32 %q1, 1
   %q3 = icmp ne i32 %q2, 0
   %q4 = icmp eq i8 %b, 34
   %qb = or i1 %q3, %q4
-  %s0 = load i32, ptr %smp
+  %s0 = load i32, ptr %smp, align 1
   %s1 = lshr i32 %s0, %k32
   %s2 = and i32 %s1, 1
   %s3 = icmp ne i32 %s2, 0
   %s4 = icmp eq i8 %b, 92
   %sb = or i1 %s3, %s4
-  %c0 = load i32, ptr %cmp
+  %c0 = load i32, ptr %cmp, align 1
   %c1 = lshr i32 %c0, %k32
   %c2 = and i32 %c1, 1
   %c3 = icmp ne i32 %c2, 0
@@ -94,18 +94,18 @@ body:
   %sh = lshr i64 %t1, %bt
   %sb1 = and i64 %sh, 1
   %stb = icmp ne i64 %sb1, 0
-  %m0 = load i32, ptr %maskp
+  %m0 = load i32, ptr %maskp, align 1
   %m1 = or i32 %m0, %one
   %m2 = select i1 %stb, i32 %m1, i32 %m0
-  store i32 %m2, ptr %maskp
-  %f = load i32, ptr %state
-  %sp4 = getelementptr inbounds i8, ptr %state, i32 4
-  %nw = load i32, ptr %sp4
-  %sp8 = getelementptr inbounds i8, ptr %state, i32 8
-  %lo = load i32, ptr %sp8
-  %sp12 = getelementptr inbounds i8, ptr %state, i32 12
-  %hi = load i32, ptr %sp12
-  %stp = load i32, ptr %stopp
+  store i32 %m2, ptr %maskp, align 1
+  %f = load i32, ptr %state, align 1
+  %sp4 = getelementptr i8, ptr %state, i32 4
+  %nw = load i32, ptr %sp4, align 1
+  %sp8 = getelementptr i8, ptr %state, i32 8
+  %lo = load i32, ptr %sp8, align 1
+  %sp12 = getelementptr i8, ptr %state, i32 12
+  %hi = load i32, ptr %sp12, align 1
+  %stp = load i32, ptr %stopp, align 1
   %live = icmp eq i32 %stp, 0
   %innb = and i32 %f, 1
   %inn = icmp ne i32 %innb, 0
@@ -178,7 +178,7 @@ body:
   %raise = or i1 %ras2, %aqc
   %stp0 = and i1 %live, %raise
   %stpn = select i1 %stp0, i32 %sw2, i32 %stp
-  store i32 %stpn, ptr %stopp
+  store i32 %stpn, ptr %stopp, align 1
   %nact = xor i1 %skip, 1
   %act = and i1 %live, %nact
   %nw0 = sub i32 %nw, 1
@@ -198,17 +198,17 @@ body:
   %cout = select i1 %act, i32 %cw1, i32 %nw
   %lout = select i1 %act, i32 %lw1, i32 %lo
   %hout = select i1 %act, i32 %hw1, i32 %hi
-  store i32 %fout, ptr %state
-  store i32 %cout, ptr %sp4
-  store i32 %lout, ptr %sp8
-  store i32 %hout, ptr %sp12
+  store i32 %fout, ptr %state, align 1
+  store i32 %cout, ptr %sp4, align 1
+  store i32 %lout, ptr %sp8, align 1
+  store i32 %hout, ptr %sp12, align 1
   %kn = add i64 %ki, 1
-  store i64 %kn, ptr %k
+  store i64 %kn, ptr %k, align 1
   br label %cond
 
 done:
-  %rm = load i32, ptr %maskp
-  store i32 %rm, ptr %out
-  %rs = load i32, ptr %stopp
+  %rm = load i32, ptr %maskp, align 1
+  store i32 %rm, ptr %out, align 1
+  %rs = load i32, ptr %stopp, align 1
   ret i32 %rs
 }

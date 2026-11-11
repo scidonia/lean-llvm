@@ -10,7 +10,7 @@
 ; operation for operation: the parameter is XORed with the comma pattern, masked
 ; against 0x7F.., given the 0x7F.. bias, OR-ed with the XOR word, complemented
 ; and masked against 0x80...
-; LeanLLVM/Vellum/CommaMaskIR.lean proves this body returns `swar x` for every
+; LeanLLVM/Refinement/CommaMaskIR.lean proves this body returns `swar x` for every
 ; `x`, by rewriting it to `CommaMask.swar` (no bit-blasting).
 define i64 @leanllvm_comma_mask8(i64 %arg) {
 bb:

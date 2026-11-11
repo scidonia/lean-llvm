@@ -261,7 +261,7 @@ emit "$here/baseline.ll" '; The baseline seam as emitted, in the fragment `LeanL
 ; operation for operation: the parameter is XORed with the comma pattern, masked
 ; against 0x7F.., given the 0x7F.. bias, OR-ed with the XOR word, complemented
 ; and masked against 0x80...
-; LeanLLVM/Vellum/CommaMaskIR.lean proves this body returns `swar x` for every
+; LeanLLVM/Refinement/CommaMaskIR.lean proves this body returns `swar x` for every
 ; `x`, by rewriting it to `CommaMask.swar` (no bit-blasting).' \
   "$work/baseline.body.ll"
 
@@ -275,7 +275,7 @@ emit "$here/candidate.ll" '; The candidate seam as emitted, in the fragment `Lea
 ; loop itself (candidate.raw.ll) is outside the modelled fragment.  Same
 ; textual stripping as baseline.ll; `simplifycfg` folded each lane'"'"'s diamond
 ; back into the `select` the source wrote.
-; LeanLLVM/Vellum/CommaMaskIR.lean proves this body returns `byteLoop x` for
+; LeanLLVM/Refinement/CommaMaskIR.lean proves this body returns `byteLoop x` for
 ; every `x`, by rewriting it to the fold in `CommaMask.byteLoop` (no
 ; bit-blasting).' "$work/candidate.body.ll"
 

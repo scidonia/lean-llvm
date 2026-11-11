@@ -40,15 +40,15 @@ def provenance : String :=
 ; masks); a shorter window takes the same lane body with the byte's own
 ; predicates as its skip bits.
 ;
-; Emitted from LeanLLVM.Vellum.JsonScanBody.scanWindowBody -- the AST in
-; LeanLLVM/Vellum/JsonScanBody.lean that LeanLLVM/Vellum/JsonScanIR.lean parses
+; Emitted from LeanLLVM.Refinement.JsonScanBody.scanWindowBody -- the AST in
+; LeanLLVM/Refinement/JsonScanBody.lean that LeanLLVM/Refinement/JsonScanIR.lean parses
 ; this file back to -- with
 ;
 ;   nix develop -c bash -c 'lake exe leanllvm-json-scan-emit > probes/install/ir/json-scan-body.ll'
 ;
 ; through LeanLLVM.Function.render, the framework's own printer.
 ;
-; The refinement statement about this text is not yet proved: LeanLLVM/Vellum/
+; The refinement statement about this text is not yet proved: LeanLLVM/Refinement/
 ; JsonScanIR.lean pins the text to the AST and proves the prefix facts the
 ; statement rests on, and its own header records what is outstanding.  Until
 ; that theorem exists, nothing here is certified, and the manifest must not

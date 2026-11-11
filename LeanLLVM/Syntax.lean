@@ -82,7 +82,8 @@ inductive Instr where
   is on the address rather than on the index — it is defined only while the
   displacement does not exceed the base, and refused above it, since the result
   would leave the address space below zero.  `inbounds` is not a field either —
-  the printer emits it and no semantics here reads it. -/
+  the parser accepts and drops it, the printer writes an ordinary `getelementptr`
+  without it, and no semantics here reads it. -/
   | gep (dst : String) (elemTy : Ty) (base : Operand) (off : Operand)
   /-- A lane-wise integer comparison: each lane of the result is the predicate's
   one-bit result on the two operands' lane at that position.  The lane count and
@@ -224,10 +225,12 @@ sizes happen to agree, so an unlisted agreeing type is refused as policy.
 Second, the step bounds the index below `2 ^ 63` in the forward direction and the
 address below in the backward one, and it does not bound the **address** above: an
 `i128` element type multiplies an index below `2 ^ 63` by 16, so the model can
-compute an address at or above `2 ^ 64`.  The printer emits `inbounds` on every
-`getelementptr`, and LLVM's `inbounds` poisoning such a pointer is a behaviour
-this model does not represent; a bound tying the index to the element width
-would close that, and is not added here. -/
+compute an address at or above `2 ^ 64`.  This model's address is an unbounded
+`Nat` while LLVM's pointer index is 64 bits, so what LLVM makes of an address at
+or above `2 ^ 64` is outside what this model pins; the printed form carries no
+`inbounds`, so it adds no in-allocation promise of its own.  A bound tying the
+index to the element width would close the address-width gap, and is not added
+here. -/
 def Ty.gepElemAdmitted : Ty → Bool
   | .int 1 | .int 7 | .int 8 | .int 16 | .int 32 | .int 64 | .int 128 => true
   | .vec n (.int w) => w % 8 == 0 && isPowerOfTwo (n * w / 8)

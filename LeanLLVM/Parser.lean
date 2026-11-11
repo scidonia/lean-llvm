@@ -12,7 +12,8 @@ seven integer widths `Ty.gepElemAdmitted` names or a vector of integer lanes
 under that predicate's one condition — and every other `getelementptr` shape is
 refused by name: an element type outside that admission, a base that is not a
 `ptr`, a second index, a wider index, and the `inrange`/`nuw`/`nusw` modifiers.
-`inbounds` is accepted and dropped, because the instruction has no field for it.
+`inbounds` is accepted and dropped, because the instruction has no field for it;
+the printer emits neither, so a parse/print round trip does not add it.
 Of the vector fragment the modelled part is the one an emitted body contains —
 `load` of `<n x i8>` and of integer lanes, a `store` of integer lanes whose total
 width is a whole number of bytes (the mask store's `<n x i1>` rule at `w = 1`),
@@ -909,54 +910,6 @@ def parsePhiIncoming (ty : Ty) : P (List PhiEdge) := fun ts =>
   | .error e => .error e
   | .ok r => .ok r
 
-/-- The type an instruction's destination is bound at, when it binds one.  This
-is what lets the parser compare a `phi`'s type with a register its incoming list
-names; `store` and a `void` call bind nothing, so they have no type here. -/
-def Instr.resultTy : Instr → Option Ty
-  | .binop _ _ w _ _ => some (.int w)
-  | .icmp .. => some (.int 1)
-  | .icmpPtr .. => some (.int 1)
-  | .select _ ty _ _ _ => some ty
-  | .trunc _ _ wOut _ => some (.int wOut)
-  | .zext _ _ wOut _ => some (.int wOut)
-  | .sext _ _ wOut _ => some (.int wOut)
-  | .alloca .. => some .ptr
-  | .load _ ty _ => some ty
-  | .store .. => none
-  | .gep .. => some .ptr
-  | .icmpVec _ _ n _ _ _ => some (.vec n (.int 1))
-  | .binopVec _ _ n w _ _ => some (.vec n (.int w))
-  | .bitcastMask _ n _ => some (.int n)
-  | .extractelement _ _ w _ _ => some (.int w)
-  | .insertelement _ n w _ _ _ => some (.vec n (.int w))
-  | .shuffleVec _ _ w _ _ mask => some (.vec mask.length (.int w))
-  | .vecBitcast _ _ _ m jw _ => some (.vec m (.int jw))
-  | .call _ retTy _ _ => some retTy
-  | .callVoid _ _ => none
-  | .phi _ ty _ => some ty
-
-/-- The type a register is bound at in a function: its parameter type, or the
-result type of the first instruction that defines it.  A name is bound at most
-once, because `checkDefinitions` refuses a repeat, so the first definition is the
-only one and this table agrees with the semantics' reading of the environment
-(`State.bind` prepends and `lookupName` reads the head, so the last binding is the
-one in force — the two coincide only while no name is bound twice).  A name the
-function neither takes as a parameter nor defines has no type here. -/
-def Function.regType (f : Function) (n : String) : Option Ty :=
-  match lookupName f.params n with
-  | some ty => some ty
-  | none =>
-      let rec go : List Block → Option Ty
-        | [] => none
-        | b :: bs =>
-            match (b.instrs.filterMap fun i =>
-                match i.dst? with
-                | some d => if d = n then i.resultTy else none
-                | none => none).head? with
-            | some ty => some ty
-            | none => go bs
-      go f.blocks
-
 /-- Compare a `phi`'s type with every incoming operand.  A literal has already
 been read at that type by the operand grammar; a register is looked up among the
 function's parameters and definitions, and one bound at another type — or bound
@@ -1123,6 +1076,26 @@ def shuffleMaskEntries (n : Nat) : P (List Nat) := fun ts =>
     | [_] => .error "incomplete shufflevector mask entry: expected '<i32> <value>'"
   go [] ts
 
+/-- Read an optional `, align N` after an instruction's operands, returning the
+written alignment or `none` when the text ends there.  The value is checked to be
+a decimal natural and then dropped by `alloca` only when it is absent; `load` and
+`store` have no field for it, so they accept and discard it — the printer writes
+`align 1` for them, the weakest alignment, rather than leave the ABI default to
+be assumed (see `LeanLLVM/Printer.lean`).  Any other trailing attribute is
+refused by name rather than parsed past. -/
+def parseAlignOpt : P (Option Nat) := do
+  let more ← P.optional ","
+  if more then do
+    let kw ← P.next
+    if kw = "align" then
+      let n ← P.next
+      match n.toNat? with
+      | some k => pure (some k)
+      | none => P.fail s!"invalid alignment '{n}'"
+    else P.fail s!"expected 'align' after ',', got '{kw}': an alignment is the \
+        only trailing attribute modelled here"
+  else pure none
+
 def parseValueInstr (dst : String) : P Stmt := do
   let op ← P.next
   match op with
@@ -1237,23 +1210,19 @@ def parseValueInstr (dst : String) : P Stmt := do
   | "sext" => parseCast dst fun d wi wo v => .sext d wi wo v
   | "alloca" =>
       let ty ← expectTy
-      let align ← do
-        let more ← P.optional ","
-        if more then do
-          let kw ← P.next
-          if kw = "align" then
-            let n ← P.next
-            match n.toNat? with
-            | some k => pure k
-            | none => P.fail s!"invalid alignment '{n}'"
-          else P.fail "expected 'align' after ','"
-        else pure 0
+      let align ← match (← parseAlignOpt) with
+        | some k => pure k
+        | none => pure 0
       if let .vec _ _ := ty then P.fail "alloca of a vector type is not modelled"
       else pure (.instr (.alloca dst ty align))
   | "load" =>
+      -- `load <ty>, ptr <p>[, align N]`: the alignment is read, checked and
+      -- dropped like the `getelementptr` index width, because the instruction
+      -- has no field for it.
       let ty ← expectTy
       P.expect ","
       let (_, p) ← parseTypedOperand
+      let _ ← parseAlignOpt
       pure (.instr (.load dst ty p))
   | "bitcast" =>
       -- Two modelled reinterpretations.  A mask pack is `<n x i1>` to the
@@ -1381,7 +1350,7 @@ def parseValueInstr (dst : String) : P Stmt := do
       -- `ptr`, a second index, and an index type that is not an integer no wider
       -- than 64 bits — are refused by name too.  `inbounds` itself is accepted
       -- and dropped: the instruction has no field for it, and the printer emits
-      -- it again.
+      -- an ordinary `getelementptr`, so the round trip adds no promise.
       let _ ← gepModifiers
       let elemTy ← expectTy
       if elemTy.gepElemAdmitted then pure ()
@@ -1524,6 +1493,9 @@ def parseSimple : P Stmt := do
       let (ty, v) ← parseTypedOperand
       P.expect ","
       let (_, p) ← parseTypedOperand
+      -- `store <ty> <v>, ptr <p>[, align N]`: the alignment is read, checked
+      -- and dropped, because the instruction has no field for it.
+      let _ ← parseAlignOpt
       match ty with
       | .vec n (.int w) =>
           if n * w % 8 = 0 then pure (.instr (.store ty v p))

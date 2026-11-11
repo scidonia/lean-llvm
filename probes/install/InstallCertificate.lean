@@ -584,10 +584,14 @@ run_cmd do
   liftTermElabM (checkTheorem unit)
   liftTermElabM (checkContract unit)
   let theoremAxioms ← checkAxioms (theoremNameFor unit)
+  -- The serialized field is canonical order for every unit, not only the depth
+  -- counter: `Lean.collectAxioms` returns an unordered set, so the raw list is
+  -- permutation-dependent, while the selector reproduces this file byte for byte
+  -- and therefore requires one order.
   let axioms ←
     if unit == "depth_count" then do
       let witnessAxioms ← checkWitnessAxioms depthContractWitness
       pure (canonicalAxioms (theoremAxioms ++ witnessAxioms))
     else
-      pure theoremAxioms
+      pure (canonicalAxioms theoremAxioms)
   liftIO (publish outPath (render unit inputs axioms))

@@ -8,7 +8,7 @@
 ; loop itself (candidate.raw.ll) is outside the modelled fragment.  Same
 ; textual stripping as baseline.ll; `simplifycfg` folded each lane's diamond
 ; back into the `select` the source wrote.
-; LeanLLVM/Vellum/CommaMaskIR.lean proves this body returns `byteLoop x` for
+; LeanLLVM/Refinement/CommaMaskIR.lean proves this body returns `byteLoop x` for
 ; every `x`, by rewriting it to the fold in `CommaMask.byteLoop` (no
 ; bit-blasting).
 define i64 @leanllvm_comma_mask8(i64 %arg) {

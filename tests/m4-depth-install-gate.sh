@@ -402,8 +402,12 @@ sha() { sha256sum "$1" | cut -d' ' -f1; }
 # The certificate's field values are derived from the files the manifest names,
 # from the toolchain the selector observes and from the pinned proof data.
 pinned_axioms() { # theorem name
-  sed -n "s/.*$1. depends on axioms: \[\([^]]*\)\].*/\1/p" \
-    "$repo/LeanLLVMTest/Refinement.lean" |
+  # Lean wraps a rendered `#print axioms` message at its print width, so the
+  # pin can span several source lines.  Join them before matching: a reader that
+  # assumes one line stops matching, silently, the moment the name or the set
+  # crosses the width.
+  tr '\n' ' ' < "$repo/LeanLLVMTest/Refinement.lean" |
+    sed -n "s/.*$1. depends on axioms: \[\([^]]*\)\].*/\1/p" |
     tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' |
     LC_ALL=C sort | paste -sd, -
 }

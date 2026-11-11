@@ -29,16 +29,15 @@ subtract from one even though it has no object to walk backwards inside; the
 caller supplies the byte a backward step names, and reading an address nothing
 wrote stays `ub`.  What remains true of the forward direction is a bound on the
 index rather than on the address: with an `i128` element type an index below
-`2 ^ 63` scales to an address at or above `2 ^ 64`, where the `inbounds` the
-printer always emits would poison the pointer in LLVM — a behaviour this model
-does not represent.
+`2 ^ 63` scales to an address at or above `2 ^ 64`, which is outside the 64-bit
+pointer index LLVM uses — a behaviour this model does not represent.
 
 A base that is not a `ptr`, a second index, an index type that is not an integer
 no wider than 64 bits, an element type that is neither an admitted integer width
 nor a vector meeting the condition below, and the `inrange`/`nuw`/`nusw`
 modifiers are each refused by a message naming what was refused.  `inbounds` is
-accepted and dropped, and the printer emits it again, so the round trip is
-stable.
+accepted and dropped, and the printer emits an ordinary `getelementptr`, so the
+round trip adds no flag the source did not write.
 
 Several refusals are produced by the type parser rather than the `getelementptr`
 branch, because the element token is read as a type first: an aggregate such as
@@ -174,7 +173,7 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
   match instrsOf gepVec with
   | some [i] =>
       reparses i ∧
-        mentions (Instr.render i) "getelementptr inbounds <4 x i32>, ptr %p, i64 %k" ∧
+        mentions (Instr.render i) "getelementptr <4 x i32>, ptr %p, i64 %k" ∧
         !mentions (Instr.render i) "nuw"
   | _ => false
 
@@ -201,23 +200,25 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
 
 /-! ### The canonical text -/
 
--- A register index prints as `i64`, the width the semantics sign-extends to,
--- and a literal keeps its own width.  Both forms parse back to the same
+-- A bare instruction has no function around it, so no register has a definition
+-- to read: a register index prints the canonical `i64` and a literal keeps its
+-- own width.  The width LLVM checks is printed by `Module.render`, which has the
+-- function and its register table (below).  Both forms parse back to the same
 -- instruction, which is what makes the emitter's round-trip check a check.
 #guard Instr.render (.gep "%q" (.int 8) (.reg "%p") (.reg "%k")) =
-  "  %q = getelementptr inbounds i8, ptr %p, i64 %k"
+  "  %q = getelementptr i8, ptr %p, i64 %k"
 
 #guard Instr.render (.gep "%q" (.int 8) (.reg "%p") (.imm (.int 32 7))) =
-  "  %q = getelementptr inbounds i8, ptr %p, i32 7"
+  "  %q = getelementptr i8, ptr %p, i32 7"
 
 -- The element type is printed as it was parsed, not as `i8`: the canonical form
 -- of a scaled offset keeps the scale, which is what makes the printed text mean
 -- the same instruction.
 #guard Instr.render (.gep "%q" (.int 32) (.reg "%p") (.reg "%k")) =
-  "  %q = getelementptr inbounds i32, ptr %p, i64 %k"
+  "  %q = getelementptr i32, ptr %p, i64 %k"
 
 #guard Instr.render (.gep "%q" (.int 64) (.reg "%p") (.imm (.int 32 2))) =
-  "  %q = getelementptr inbounds i64, ptr %p, i32 2"
+  "  %q = getelementptr i64, ptr %p, i32 2"
 
 -- The printed module parses back to the module it came from, for the byte form
 -- and for the scaled one.
@@ -231,13 +232,25 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
   | .ok m => parseModule (Module.render m) = .ok m
   | .error _ => false
 
--- The narrower text prints in the canonical form and re-parses to the same
--- instruction: the dropped width is recovered as `i64`, not as `i32`.
+-- The printed module carries no `inbounds` and writes `%k` at the width its
+-- definition binds it at: the module declares `i32 %k`, so both the narrow text
+-- and the text that wrote `i64 %k` over that definition print `i32 %k`.  That
+-- is the type LLVM checks the operand against, and the printed text re-parses
+-- to the same module.
 #guard
   match parseWith gepNarrow with
   | .ok m =>
       parseModule (Module.render m) = .ok m ∧
-        mentions (Module.render m) "getelementptr inbounds i8, ptr %p, i64 %k"
+        mentions (Module.render m) "getelementptr i8, ptr %p, i32 %k" ∧
+        !mentions (Module.render m) "inbounds"
+  | .error _ => false
+
+#guard
+  match parseWith gepRegister with
+  | .ok m =>
+      parseModule (Module.render m) = .ok m ∧
+        mentions (Module.render m) "getelementptr i8, ptr %p, i32 %k" ∧
+        !mentions (Module.render m) "i64 %k"
   | .error _ => false
 
 -- The printed form of a typed offset parses and prints to the same text, which

@@ -370,8 +370,8 @@ emit "$work/json-scan.candidate.ll" "; The window scanner as emitted, in the fra
 ;   nix develop -c bash probes/install/ir/capture-json-scan.sh
 ;
 ; This is not the certified body.  The certified body is printed from
-; LeanLLVM/Vellum/JsonScanBody.lean -- the AST that
-; LeanLLVM/Vellum/JsonScanIR.lean parses probes/install/ir/json-scan-body.ll
+; LeanLLVM/Refinement/JsonScanBody.lean -- the AST that
+; LeanLLVM/Refinement/JsonScanIR.lean parses probes/install/ir/json-scan-body.ll
 ; back to and proves the refinement statement about -- into
 ; probes/install/ir/json-scan-body.ll.  What follows is the same algorithm as
 ; the compiler builds it, and it is kept as the measured record of the shapes

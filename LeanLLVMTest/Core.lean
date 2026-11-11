@@ -544,25 +544,28 @@ entry:
   | _ => false
 
 -- The `mentions` detector the printed-text guard reads with: it finds `nuw` in a
--- text that carries the modifier and `tail` in the source sample, so the two
--- absence halves of the next guard are about the printed module and not about a
--- detector that matches nothing.
+-- text that carries the modifier, and `tail` and `inbounds` in the source sample,
+-- so the three absence halves of the next guard are about the printed module and
+-- not about a detector that matches nothing.
 #guard mentions "  %q = getelementptr nuw i8, ptr %p, i64 %k" "nuw" ∧
   mentions entryFragmentSample "tail" ∧
+  mentions entryFragmentSample "inbounds" ∧
   !mentions "  %q = getelementptr inbounds <8 x i32>, ptr %p, i64 %k" "nuw"
 
 -- The printed text is the parser's form: the vector element type and the vector
 -- store's type are written, `tail` is dropped because the parser does not keep
--- it, and no `nuw` appears because the parser refuses one.
+-- it, no `nuw` appears because the parser refuses one, and no `inbounds` appears
+-- because the parser drops the source's flag and the printer adds none.
 #guard
   match parseModule entryFragmentSample with
   | .ok m =>
       let printed := Module.render m
       mentions printed "store <8 x i32> %v, ptr %p" ∧
-        mentions printed "getelementptr inbounds <8 x i32>, ptr %p, i64 %k" ∧
+        mentions printed "getelementptr <8 x i32>, ptr %p, i64 %k" ∧
         mentions printed "call i32 @llvm.ctpop.i32(i32 %w)" ∧
         mentions printed "call i64 @llvm.cttz.i64(i64 %c, i1 1)" ∧
         !mentions printed "nuw" ∧
+        !mentions printed "inbounds" ∧
         !mentions printed "tail"
   | .error _ => false
 

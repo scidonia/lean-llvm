@@ -37,14 +37,14 @@ def provenance : String :=
 ; from address 1, then the seam is called on the first local's address, and the
 ; i32 it returns is the caller's result.
 ;
-; Emitted from LeanLLVM.Vellum.JsonSeam.scanCaller with
+; Emitted from LeanLLVM.Refinement.JsonSeam.scanCaller with
 ;
 ;   nix develop -c bash probes/install/lake-locked.sh exe leanllvm-json-emit > probes/install/ir/json-caller.ll
 ;
 ; through LeanLLVM.Module.render, the framework's own printer.  The module holds
 ; the seam's declaration and the caller's definition, because the fixture is
 ; checked with `opt -passes=verify` and LLVM refuses a call to an undeclared
-; symbol.  LeanLLVM/Vellum/JsonSeam.lean parses this file back and pins the
+; symbol.  LeanLLVM/Refinement/JsonSeam.lean parses this file back and pins the
 ; whole module, declaration included, with `#guard`.
 ;
 ; This is not the output of Lean's native compiler: no `lean -c` C emission and

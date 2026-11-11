@@ -39,9 +39,9 @@ def provenance : String :=
 ; folds the accumulator.  The loop is the control-flow-different counterpart of
 ; the unrolled candidate in candidate.ll.
 ;
-; Emitted from LeanLLVM.Vellum.CommaMaskLoop.loopFunction -- the AST in
-; LeanLLVM/Vellum/CommaMaskLoopBody.lean that
-; LeanLLVM/Vellum/CommaMaskLoop.lean parses this file back to and proves its
+; Emitted from LeanLLVM.Refinement.CommaMaskLoop.loopFunction -- the AST in
+; LeanLLVM/Refinement/CommaMaskLoopBody.lean that
+; LeanLLVM/Refinement/CommaMaskLoop.lean parses this file back to and proves its
 ; correctness and framed-memory statements about -- with
 ;
 ;   nix develop -c bash -c 'lake exe leanllvm-loop-emit > probes/install/ir/loop.ll'
