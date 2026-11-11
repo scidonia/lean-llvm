@@ -180,7 +180,7 @@ so this is a hoist of values, not a re-shaping of arithmetic.
    `nb = (n + 63) / 64` (`s1fuse.h:1670`) means its last block reads past `n`,
    and the measured corpora are padded.  The contract is "64 bytes readable at
    `p`"; the tail policy is the entry unit's (`lim` masking at
-   `s1fuse.h:1721-1722`), where `LeanLLVM/Vellum/JsonEntryIR.lean`'s
+   `s1fuse.h:1721-1722`), where `LeanLLVM/Refinement/JsonEntryIR.lean`'s
    `entry_tail_eq` states it: a block's word masked with `limMask (n - b)` has
    exactly that block's positions below the document's end `n`.  The UTF-8 unit
    has a document-end rule of its own and it is a different one — its last block
@@ -339,7 +339,7 @@ the measured header this unit is not.  Each row is a deletion, and a row marked
 7. **It does not truncate at the document's end.**  A block's word is emitted
    whole; the last block's is masked by the caller — `lim = n - (bi << 6)` and
    `ent &= (1ULL << lim) - 1ULL` at `s1fuse.h:1721-1722` — and
-   `LeanLLVM/Vellum/JsonEntryIR.lean`'s `entry_tail_eq` states what that leaves:
+   `LeanLLVM/Refinement/JsonEntryIR.lean`'s `entry_tail_eq` states what that leaves:
    the block's positions below the document's end, and nothing above it.  The
    buffer the caller provides is the caller's to size (limit 2).
 
@@ -642,7 +642,7 @@ is *proved* against its record.  Stage 2's number conversion is where the
 difference is visible.  Its `to_double` is the unit's own text, not
 the measured `p6.c` function: `stage2-entities:` does not list `p6:to_double`
 and `stage2-extra:` names it, which is the identity list saying the body is new
-code.  The unit's record (`LeanLLVM/Vellum/JsonStage2Contract.lean`) states the
+code.  The unit's record (`LeanLLVM/Refinement/JsonStage2Contract.lean`) states the
 ABI boundary — the staging, the two cursors, the refusal slot and the frame —
 and its pre puts no bound on a number token's length, because the body has no
 length bound either.  Whether the conversion's results are `strtodSpec`'s is
