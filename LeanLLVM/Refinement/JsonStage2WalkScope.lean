@@ -196,16 +196,20 @@ frame: `WalkInv.owning` is the record's own region (`stage2WalkFrame` at the
 run's cursors), and the two forward stores that used to contradict it are
 `WalkInv.owning_cursorK` (`while.body.i`'s `%c.i + 32`) and
 `WalkInv.owning_stack` (`if.end24.i`'s two stack writes), both at the invariant.
-What remains is what the memory claim cannot supply: the dispatch's *register*
-facts.  `while.body.i` reads `%3`, `%5` and `%k11.i`, and `if.end24.i` indexes
-`%ctype.i`/`%cst.i`; the invariant names the depth's *value* (`depth_reg`), not
-the two stack pointers, so each block's `denoteCode` needs those bindings as
-hypotheses before the edge can be a step.  `WalkLocal` is still `True` at every
-block outside the ten the five arms reach, so well-foundedness over the whole
-control flow is not established; the seed, the back edge and the exit establish
-the invariant at the ends of the walk and across its one edge, not over the
-dispatch between them.  *The loop's forward stores* below states the rest in
-order, including the pipeline's one pending transport-pair clause.
+What remains is the dispatch's own trace, and its register half is now carried:
+`WalkPtrs` binds `%3`, `%5`, `%k11.i`, `%ctype.i`, `%cst.i` and `%hash1.i.i` on
+the invariant, produced at the seed and carried by the three arms, and
+`WalkInv.log_hash` carries the zeroed hash word `if.end24.i` branches on.  With
+them the header's block is a step: `whileBody_step` runs `while.body.i` from the
+invariant into `NodeBlock21`, advancing the entry index to the merge's, taking the
+merge's depth, preserving every clause and decreasing `walkMeasure`.  What is not
+yet proved is the rest of the dispatch — `if.end24.i`'s own step and the blocks
+between the arms.  `WalkLocal` is still `True` at every block outside the ten the
+five arms reach, so well-foundedness over the whole control flow is not
+established; the seed, the back edge and the exit establish the invariant at the
+ends of the walk and across its one edge, not over the dispatch between them.
+*The loop's forward stores* below states the rest in order, including the
+pipeline's one pending transport-pair clause.
 
 The cap is a clause and not an arm, and it is now carried: `WalkInv.inner_cap`
 bounds the inner component by `walkInnerCap G`, the two arms that reset it
@@ -1882,19 +1886,22 @@ Three things stand between this invariant and the dispatch, and **none of them i
 one of the three the lead named** — the nesting and the two reserves are all
 *downstream* of the first:
 
-1. **The register facts the dispatch reads.**  The log's four fields are now a
-   clause of the invariant (`log_len`, `log_cap`, `log_alen`, `log_acap`), read at
+1. **The register facts the dispatch reads.**  The log's four fields are a clause
+   of the invariant (`log_len`, `log_cap`, `log_alen`, `log_acap`), read at
    `%z + 8/16/48/56` with the `#guard`s above as the addresses' provenance, so
    `if.end256.i`'s `%add.i82 = (%add.i) + %z.val36` compares `alen + len + 64`
-   against the word the staging fixed as `dstcap`.  What is still not carried is
-   the two pointer registers the loop head and the nesting arm read: `%3` and `%5`
+   against the word the staging fixed as `dstcap`; they were **measured** from
+   the run's cursors rather than assumed.  The six pointer registers the header
+   and the nesting arm read are now carried too, by `WalkPtrs`: `%3` and `%5`
    (the document and entry stream bases, loaded in `entry`), `%k11.i`
-   (`%c.i + 32`), `%ar` (`%z + 40`), and `%ctype.i`/`%cst.i` as pointers.
-   `if.end24.i` indexes `%ctype.i`/`%cst.i` through `zext %sp.i.0248`, and the
-   invariant names the *value* of the depth (`depth_reg`) but not the two pointer
-   registers.  Those are what a block's `denoteCode` needs before its edge can be
-   a step; they are bindings of the emitted body, not clauses of the walk's
-   memory, so they belong to the per-block traces rather than here.
+   (`%c.i + 32`), `%ctype.i`/`%cst.i` as pointers, and `%hash1.i.i`.  They are
+   bindings of the emitted body rather than clauses of the walk's memory, but a
+   block's `denoteCode` needs them before its edge can be a step, so they are
+   fields of the invariant: produced at the seed (`WalkSeedState` carries them)
+   and preserved by `forInc_step`, `scan_step` and `walkBack_step` through
+   `WalkPtrs.bind`.  `WalkInv.log_hash` carries the last memory clause the
+   nesting arm reads, the zeroed hash word at `%z + 32`.  Not carried: `%ar`
+   (`%z + 40`), which no proved block reads yet.
 2. **The dispatch's own completion**, which is where the nesting and both reserves
    are decided; `WalkLocal` is `True` at every block between them.  The *frame*
    question no longer lands here: `WalkInv.owning` is the record's own region and
