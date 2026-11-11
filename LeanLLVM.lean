@@ -26,6 +26,7 @@ import LeanLLVM.Refinement.JsonSeam
 import LeanLLVM.Refinement.BitLanes
 import LeanLLVM.Refinement.Pclmul
 import LeanLLVM.Refinement.QuoteDerive
+import LeanLLVM.Refinement.CallsFootprint
 import LeanLLVM.Refinement.JsonS1MasksIR
 import LeanLLVM.Refinement.JsonS1MasksSteps
 import LeanLLVM.Refinement.JsonEntSpec

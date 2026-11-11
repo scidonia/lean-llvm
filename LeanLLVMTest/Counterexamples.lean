@@ -24,14 +24,16 @@ the parser's answer.  The two lemmas below state this at an arbitrary
 `eventRel` (and, for the finalisation's, at an arbitrary staging memory and
 `base`), which is every instance the retired theorems could be used at.
 
-The frame premise had the same defect in a conjunct rather than in the parser
-half: `pipeline_satisfies_of_parser` took `SigmaFrame args outcome mem` over every
-argument list, memory and outcome, so an *empty* returned memory was in its scope.
-`SigmaFrame` asks `pipelineOutputExtents`, whose two cursor reads must succeed at
-the outcome's memory; the empty memory answers neither, so the universal premise
-is uninhabited.  `pipeline_frame_hsem_false` below is that regression, and the
-repaired premise is indexed by the staging and the run's behaviour, as the parser
-half is.
+The frame clause had the same defect in a conjunct rather than in the parser half.
+An earlier `pipeline_satisfies_of_parser` took `SigmaFrame args outcome mem` over
+every argument list, memory and outcome, so an *empty* returned memory was in its
+scope.  `SigmaFrame` asks `pipelineOutputExtents`, whose two cursor reads must
+succeed at the outcome's memory; the empty memory answers neither, so the
+statement is false as a universal.  `pipeline_frame_hsem_false` below is that
+regression.  The frame is now derived from the units' post at the run's own
+outcome rather than assumed, and the false universal is why it cannot be a
+premise at any narrower shape either: its extent component is a reading of the
+returned memory, not a property of the argument list.
 
 The event-length equality the walk's invariant used to carry is the third: it
 required the event cursor to be `nev0 + 13 * records`, but the stream's encoding
@@ -116,22 +118,24 @@ private def frameArgs : List LeanLLVM.Value :=
    .ptr 40, .int 64 0, .ptr 48, .ptr 56, .ptr 64, .int 64 0, .ptr 0, .ptr 72,
    .int 64 0, .ptr 8, .ptr 96, .int 64 0]
 
-/-- **The universally quantified frame premise is false.**
+/-- **`SigmaFrame` is false as a universal.**
 
-The hypothesis is the one `pipeline_satisfies_of_parser` took — `SigmaFrame` at
-every argument list, memory and outcome.  The proof instantiates it at the shaped
-argument list above, an arbitrary starting memory, and the outcome that returns a
-word in an **empty** memory.  `SigmaFrame` then asks
+The hypothesis is the premise `pipeline_satisfies_of_parser` used to take —
+`SigmaFrame` at every argument list, memory and outcome.  The proof instantiates it
+at the shaped argument list above, an arbitrary starting memory, and the outcome
+that returns a word in an **empty** memory.  `SigmaFrame` then asks
 `pipelineOutputExtents`, which requires the eight bytes at the arena and event
 cursor slots of *that* memory; the empty memory has none, so the word's own
-eight-byte reads fail and the premise is uninhabited. -/
+eight-byte reads fail and the statement is uninhabited.  The frame is derived at
+the run's own outcome for this reason: its extent component reads the returned
+memory, so no argument list and no starting memory decides it. -/
 theorem pipeline_frame_hsem_false :
     ¬ (∀ (args : List LeanLLVM.Value) (mem : Mem) (o : Outcome), SigmaFrame args o mem) := by
   intro h
   have hf := h frameArgs ([] : Mem) (.ret (some (.int 64 0)) ([] : Mem))
   have hnone : readBytes ([] : Mem) 0 8 = none := rfl
   simp only [SigmaFrame, pipelineOutputExtents, frameArgs, hnone] at hf
-  obtain ⟨nk', nxp', ndst', nev', ⟨-, -, hread, -⟩, -⟩ := hf
+  obtain ⟨nk', nxp', ndst', nev', -, -, -, -, -, -, -, ⟨-, -, hread, -⟩, -⟩ := hf
   exact absurd hread (by simp)
 
 /-- **The retired event-length equality is false at a literal's emission.**  A

@@ -56,6 +56,7 @@ across the whole 64 bytes the body reads.  The mask identities reuse
 import LeanLLVM.Parser
 import LeanLLVM.Memory
 import LeanLLVM.Refinement.Pclmul
+import LeanLLVM.Refinement.CallsFootprint
 
 
 namespace LeanLLVM.Refinement.JsonS1MasksIR
@@ -334,6 +335,16 @@ def s1Calls : Calls :=
           some { ret := .int 64 (BitVec.ofNat 64 (ctlz x)), mem := mem, next := next }
         else none
     | _, _ => none
+
+/-- **The mask unit's caller-visible footprint is empty.**  Every arm returns the
+caller's memory — the five spellings are register operations on their operands —
+so no address the caller holds can change across the call. -/
+def s1CallsFootprint : CallsFootprint s1Calls :=
+  CallsFootprint.pure s1Calls (by
+    intro sym args mem next r h
+    simp only [s1Calls] at h
+    repeat' split at h
+    all_goals (cases h <;> rfl))
 
 /-- The table lookup the body calls. -/
 theorem s1Calls_pshufb (table control : List (BitVec 8)) (mem : Mem) (next : Nat) :

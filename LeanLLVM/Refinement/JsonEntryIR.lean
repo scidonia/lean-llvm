@@ -77,6 +77,7 @@ written in is `JsonScanSpec`'s — the masks, `pos8Row`, `positionsOf`, `limMask
 import LeanLLVM.Memory
 import LeanLLVM.Parser
 import LeanLLVM.Refinement.JsonEntSpec
+import LeanLLVM.Refinement.CallsFootprint
 
 namespace LeanLLVM.Refinement.JsonEntryIR
 
@@ -651,6 +652,16 @@ def entryCalls : Calls :=
         some { ret := .int 64 (BitVec.ofNat 64 (BitLanes.cttz x)),
                mem := mem, next := next }
     | _, _ => none
+
+/-- **The entry unit's caller-visible footprint is empty.**  The three count
+intrinsics are register operations, so every arm returns the caller's memory and
+no caller address moves. -/
+def entryCallsFootprint : CallsFootprint entryCalls :=
+  CallsFootprint.pure entryCalls (by
+    intro sym args mem next r h
+    simp only [entryCalls] at h
+    repeat' split at h
+    all_goals (cases h <;> rfl))
 
 /-- The 32-bit population count. -/
 theorem entryCalls_ctpop32 (x : BitVec 32) (mem : Mem) (next : Nat) :

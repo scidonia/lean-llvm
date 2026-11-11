@@ -65,11 +65,15 @@ is the regression that says so, and
 `pipeline_units_finalisation_hsem_false` states the same for the finalisation's
 own retired premise.  `ParserHalfForOutcome` reads the verdict, the returned
 memory and the caller's slots out of the run's outcome and argument list, so a
-run that returned `1` supplies the half at `1` and says nothing at `0`.  The
-frame premise is indexed the same way: `pipeline_satisfies_of_parser` asks
-`SigmaFrame` at the staging and the `BehFromState` outcome, and a premise that
-quantified the returned memory freely is false — an empty returned memory cannot
-answer `pipelineOutputExtents`' cursor reads
+run that returned `1` supplies the half at `1` and says nothing at `0`.
+
+**The frame is not a premise.**  `SigmaFrame` is the caller's view of the run —
+its own thirteen regions extended by the stage-2 callee's declared seven — which
+is the units' post's own frame clause, so the finalisation derives it at the
+post's witnesses and `pipeline_satisfies_of_parser` takes no frame hypothesis.
+Nothing here ranges over a returned memory the run did not produce, which is what
+a universal reading of `SigmaFrame` would do: it is false as a universal, because
+its extent component asks `pipelineOutputExtents`' cursor reads of that memory
 (`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`). -/
 import LeanLLVM.Refinement.JsonPipelineContract
 import LeanLLVM.Refinement.JsonPipelineBlockEval
@@ -1105,26 +1109,21 @@ record admits, and the post's own pair is the only one.  So the proof below
 applies it at the post's witnesses and there is no quantifier over prefixes
 anywhere on the path from the units' post to the specification's.
 
-**`hframe` is the one conjunct that does not follow, and it is a modelling limit
-rather than a proof debt.**  Everything else `Sigma_pipeline` says — the document
-read, the four cursors, the verdict's range, the acceptance equivalence, the
-accepted value and event stream, the refusal offset — is derived below from the
-units' post.  The frame is not: the composite run writes the stage-2 callee's
-seven appended objects (`stage2WalkWrites`), and this model has no fresh frame per
-call, so the units' post can only say `UnchangedOutside (narrow ++ seven)`, which
-does not imply `UnchangedOutside narrow`.  `SigmaFrame` is that statement, and it
-is true of the program (where a callee's frame is fresh) and false of the model.
-The repair is a fresh-frame semantics, not a proof; `docs/contract.md` §7 records
-it at the layer where it belongs.  The premise here is at the finalisation's own
-fixed outcome — the one the units' post names — and `pipeline_satisfies_of_parser`
-asks it only at outcomes the run produces. -/
+**Every conjunct follows from the units' post, the frame included.**  The
+composite run writes the stage-2 callee's seven appended objects
+(`stage2WalkWrites`), and this model has no fresh frame per call, so a frame over
+the caller's own regions alone is false of the model: the callee's scratch lies
+outside them.  The units' post therefore names the callee's declared extent beside
+the caller's, and `SigmaFrame` is that list — the caller's thirteen regions
+extended by `stage2StagedWrites`, which is `CallerView` by definition.  The frame
+is derived below at the post's own witnesses through `CallerView_of_framed`, so
+no premise carries it and nothing is asked at an outcome the run did not produce. -/
 theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
     (hpre : pipelineStaging tab base args mem)
     (hpost : pipelineUnitsPost args mem next o)
     (hsem : ∀ (ndst' nev' : Nat), pipelineOutputExtents args o ndst' nev' →
-      ParserHalfForOutcome eventRel base args mem ndst' nev' o)
-    (hframe : SigmaFrame args o mem) :
+      ParserHalfForOutcome eventRel base args mem ndst' nev' o) :
     Sigma_pipeline eventRel base args mem next o := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs,
@@ -1181,7 +1180,11 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     · intro h0
       obtain ⟨e, he⟩ := herr h0
       exact ⟨e, he, hrefused e he⟩
-    · exact hframe
+    · -- the frame: the post names the caller's extents and the callee's own
+      -- regions at the same witnesses, which is the caller's view
+      unfold SigmaFrame
+      exact ⟨nk', nxp', ndst', nev', c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂,
+        hext, hunch.2⟩
   · exact hpost.elim
 
 /-- **The specification's record from the units' record, without `mono`.**
@@ -1202,15 +1205,14 @@ supplied the acceptance equivalence at `1` and at `0`
 stage two's body theorem, which is not in this file; nothing here assumes the
 parser's answer for an outcome the execution did not return.
 
-**The frame is asked at the same outcomes.**  `hframe` takes the staging and the
-`BehFromState` premise `hsem` takes, and returns `SigmaFrame` at the outcome they
-name; it never ranges over a returned memory the run did not produce.  The
-premise it replaces quantified the argument list, the starting memory and the
-outcome freely, so an empty returned memory was in its scope — and `SigmaFrame`
-then asks `pipelineOutputExtents`, whose two cursor reads cannot succeed there
-(`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`).  As with `hsem`, the
-producer is the semantics' fresh-frame step, which this model does not have; the
-difference is where the premise is asked, not what it says. -/
+**The frame is a derivation, not a premise.**  The specification's frame is the
+caller's view of the run — its own thirteen regions extended by the stage-2
+callee's declared extent — and that is the units' post's own frame clause, so
+`pipeline_units_finalisation` reads it off the post at the outcome `hsem` names.
+Nothing here asks it of an argument list, a memory or an outcome the run did not
+produce: the retired premise quantified all three, so an empty returned memory was
+in its scope, and `SigmaFrame`'s extent clause cannot hold there
+(`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`). -/
 theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
     {eventRel : EventStreamRel} {tab base : Nat}
     (hunits : Satisfies calls f (Γ_pipeline_units tab base))
@@ -1219,11 +1221,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
       pipelineStaging tab base args mem →
       BehFromState calls f (EntryState f args mem next) o →
       pipelineOutputExtents args o ndst' nev' →
-      ParserHalfForOutcome eventRel base args mem ndst' nev' o)
-    (hframe : ∀ (args : List Value) (mem : Mem) (next : Nat) (o : Outcome),
-      pipelineStaging tab base args mem →
-      BehFromState calls f (EntryState f args mem next) o →
-      SigmaFrame args o mem) :
+      ParserHalfForOutcome eventRel base args mem ndst' nev' o) :
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
@@ -1233,7 +1231,6 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)
     (args := args) (mem := mem) (next := next) (o := o) hstage (hpost o ho)
     (fun ndst' nev' hext => hsem args mem next o ndst' nev' hstage ho hext)
-    (hframe args mem next o hstage ho)
 
 /-! ### The post alone does not imply the specification
 

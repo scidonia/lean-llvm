@@ -286,19 +286,24 @@ claim over the rows may assert.
    that, so a stage-2 selection may write the pipeline's `sc`, `mk`, `entw`,
    `nk`, `nxp` or `xcarry`. Consequently the pipeline's unit post can only claim
    `UnchangedOutside` over the caller's buffers *plus* the stage-2 walk's seven
-   appended objects (`pipelineUnitsPost`, `stage2StagedWrites`), and two facts
-   the program has are carried as hypotheses: `SigmaFrame` at
-   `JsonPipelineRefine.pipeline_units_finalisation` (the specification's frame,
-   at that theorem's own fixed outcome) and at
-   `pipeline_satisfies_of_parser`, where it is asked only at the run's staging
-   and the outcomes `BehFromState` produces — a universal version of that
-   premise is false (`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`) —
-   and `PipelineDischarge.Stage2SlotKeeps` (the callee leaves the caller's two
-   count slots alone). Both are statements of this modelling limit, not proof
-   debts. The repair is a fresh-frame call semantics — a callee scratch region
-   disjoint from the caller's objects — which is a change to what the semantics
-   models, not a theorem; and it is what would let the specification's frame
-   clause be proved rather than assumed.
+   appended objects (`pipelineUnitsPost`, `stage2StagedWrites`), and the
+   specification's frame is stated at that same list rather than at the caller's
+   buffers alone: `SigmaFrame` names the caller's thirteen regions extended by
+   the callee's seven (`CallsFootprint.CallerView`), so
+   `JsonPipelineRefine.pipeline_units_finalisation` derives it from the units'
+   post's own witnesses and `pipeline_satisfies_of_parser` carries no frame
+   premise. That is the limit stated rather than discharged — in the program the
+   seven are private stack objects, and here the clause has to admit them. The
+   one fact of this kind the tree still carries as a hypothesis is
+   `PipelineDischarge.Stage2SlotKeeps` (the callee leaves the caller's two count
+   slots alone), because those two slots appear in no list the stage-2 record
+   declares for itself. What the specification's frame cannot be is a universal:
+   `SigmaFrame` over every argument list, memory and outcome is false, because its
+   extent component is a reading of the returned memory
+   (`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`). The repair that
+   would let the frame be claimed over the caller's buffers alone is a fresh-frame
+   call semantics — a callee scratch region disjoint from the caller's objects —
+   which is a change to what the semantics models, not a theorem.
 
 ### 7.2 The claim this ledger licenses
 

@@ -62,6 +62,7 @@ import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.Refinement.JsonS1MasksIR
 import LeanLLVM.Refinement.Relation
 import LeanLLVM.Refinement.JsonEscapeListInvariant
+import LeanLLVM.Refinement.CallsFootprint
 
 namespace LeanLLVM.Refinement
 
@@ -126,27 +127,6 @@ theorem hasBytes_writeBytes {m : Mem} {a k : Nat} (h : HasBytes m a k)
     {start : Nat} {bs : List UInt8} : HasBytes (writeBytes m start bs) a k := by
   obtain ⟨vs, hvs⟩ := h
   exact readBytes_writeBytes_present m bs start k a vs hvs
-
-/-- Every byte outside `regions` reads as it did before the run.  A region is an
-address and a length; the extent a run wrote is the list of regions it names, and a
-byte the store reached is inside one of them. -/
-def UnchangedOutside (mem m : Mem) (regions : List (Nat × Nat)) : Prop :=
-  ∀ a, (∀ r ∈ regions, ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) → readByte m a = readByte mem a
-
-/-- **A frame over a narrow region list implies one over a wider list**, when every
-byte the wider list excludes is a byte the narrow list excludes.  The predicate
-talks about the *union of the regions*, not about the list: a region list whose
-covered set is larger is a weaker statement, and a run that kept silence over the
-narrow covered set kept it over the larger one too.  `mono` is the special case
-where the wider list's regions are literally members of the narrow list; this is
-the case where they are the same region list's extents with different widths,
-which no membership argument can express. -/
-theorem UnchangedOutside.widen {m0 m : Mem} {R R' : List (Nat × Nat)}
-    (h : UnchangedOutside m0 m R')
-    (hsub : ∀ a, (∀ r ∈ R, ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) →
-      ∀ r ∈ R', ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) :
-    UnchangedOutside m0 m R :=
-  fun a ha => h a (hsub a ha)
 
 /-- A boolean flag as the eight bytes a caller's carry slot holds. -/
 def flagBytes (b : Bool) : List UInt8 := natToBytes (if b then 1 else 0) 8

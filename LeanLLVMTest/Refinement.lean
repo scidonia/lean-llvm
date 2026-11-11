@@ -10472,6 +10472,24 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.Sigma_pipeline
 
+/-- info: 'LeanLLVM.Refinement.SigmaFrame' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.SigmaFrame
+
+/-! #### The caller-visible footprint of the intrinsic calls -/
+
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksIR.s1CallsFootprint' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1MasksIR.s1CallsFootprint
+
+/-- info: 'LeanLLVM.Refinement.JsonEntryIR.entryCallsFootprint' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonEntryIR.entryCallsFootprint
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8IR.utf8CallsFootprint' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8IR.utf8CallsFootprint
+
 /-- info: 'LeanLLVM.Refinement.RefusalOffset' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.RefusalOffset

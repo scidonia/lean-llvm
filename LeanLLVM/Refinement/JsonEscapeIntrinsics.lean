@@ -33,6 +33,7 @@ escape-body step — are in `tests/escape-intrinsics.lean`, which is where this
 vocabulary's sufficiency is demonstrated rather than claimed.
 -/
 import LeanLLVM.Refinement.BitLanes
+import LeanLLVM.Refinement.CallsFootprint
 
 namespace LeanLLVM.Refinement.JsonEscapeIntrinsics
 
@@ -127,7 +128,21 @@ theorem escapeCalls_mem_next {callee : String} {args : List Value} {mem : Mem}
   split at h <;> simp_all
   all_goals (subst h; simp)
 
+/-! ### The caller-visible footprint
+
+`escapeCalls_mem_next` is exactly the hypothesis `CallsFootprint.pure` takes, so
+the escape unit's footprint is the empty list: none of the five spellings writes,
+and a caller's address therefore keeps its bytes across any of these calls. -/
+
+/-- **The escape unit's caller-visible footprint is empty.** -/
+def escapeCallsFootprint : CallsFootprint escapeCalls :=
+  CallsFootprint.pure escapeCalls (fun _ _ _ _ _ h => (escapeCalls_mem_next h).1)
+
 /-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Refinement.JsonEscapeIntrinsics.escapeCallsFootprint' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms escapeCallsFootprint
 
 /-- info: 'LeanLLVM.Refinement.JsonEscapeIntrinsics.escapeCalls_mem_next' depends on axioms: [propext] -/
 #guard_msgs in

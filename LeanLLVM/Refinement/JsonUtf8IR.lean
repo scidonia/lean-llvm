@@ -23,6 +23,7 @@ import LeanLLVM.Memory
 import LeanLLVM.Parser
 import LeanLLVM.JSON.Utf8
 import LeanLLVM.Refinement.BitLanes
+import LeanLLVM.Refinement.CallsFootprint
 
 namespace LeanLLVM.Refinement.JsonUtf8IR
 
@@ -42,6 +43,16 @@ def utf8Calls : Calls :=
         some { ret := .int 32 (BitLanes.ptestz (BitVec.ofNat 256 (packLanes a))
               (BitVec.ofNat 256 (packLanes b))), mem := mem, next := next }
     | _, _ => none
+
+/-- **The UTF-8 unit's caller-visible footprint is empty.**  The three spellings
+are vector operations on their operands, so every arm returns the caller's memory
+and no caller address moves. -/
+def utf8CallsFootprint : CallsFootprint utf8Calls :=
+  CallsFootprint.pure utf8Calls (by
+    intro sym args mem next r h
+    simp only [utf8Calls] at h
+    repeat' split at h
+    all_goals (cases h <;> rfl))
 
 /-- The table lookup: `pshuf.b`'s meaning is `pshufbLanes` on the two operand
 lane lists, the table then the control. -/
