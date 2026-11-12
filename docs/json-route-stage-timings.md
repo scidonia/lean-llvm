@@ -59,7 +59,10 @@ kernel object's level) and `TIMING=1` (the adapter's stage instrument).
 The record below is one run of that script, on this machine, with the change that
 added the native policy scan in the working tree and not yet committed; the
 flake's dirty-tree notice is what a run prints for an uncommitted tree and is not
-a measurement, so it is not in the record.
+a measurement, so it is not in the record.  It carries one appended section, the
+staging fill's paired before/after, added with that change: it is a later run of
+the same `--stages` mode on two builds, and the command and construction it used
+are named with it.
 
 ## What each stage contains
 
@@ -68,7 +71,7 @@ a measurement, so it is not in the record.
 | `read_ns` | `IO.FS.readBinFile` of the document — reported apart from the stages, in no stage |
 | `admission_ns` | the two-phase decision, both phases: `admission_native_ns` (the adapter's mask pass over the document, the delimiter lanes counted, the candidate flag, and the header decode) plus `admission_policy_ns` (the native character-policy scan, which runs only where the masks saw a candidate; `-` on the rows where it was skipped) |
 | `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_openers`, `admission_candidate`, `admission_blocks`, `admission_clause`) |
-| `staging_ns` | the record's shape in bytes: the window `[0,0,0] ++ doc ++ padding ++ 32`, and the four growing buffers zero-filled at the record's capacities, all as fresh `ByteArray`s |
+| `staging_ns` | the record's shape in bytes: the window `[0,0,0] ++ doc ++ padding ++ 32`, and the four growing buffers, each a fresh `ByteArray` at the record's capacity, zero-filled by the adapter's `leanllvm_route_zeroed` — one allocation and one `memset` per buffer |
 | `copyin_ns` | the adapter's precondition checks and its copy of the thirteen buffers the object writes into its own allocations (13 `malloc` + `memcpy`); the document window is borrowed, because the object only reads it, so its bytes are staged once rather than twice |
 | `native_ns` | the call to `leanllvm_json_pipeline` alone |
 | `copyout_ns` | the cursor reads and checks, the result `ByteArray` built from the header and both payloads, and the staging copies freed |
@@ -581,6 +584,25 @@ its own above, in the outcome dissection.
 
 build and corpus directory: /tmp/benchdir
 every command above ran under MemoryMax=6442450944 with MemorySwapMax=1073741824, pinned to CPU 3.
+
+## the staging fill, appended with the change (unit: ns)
+
+The stage rows above are the run before the staging fill changed.  These are the
+fill's paired measurement: `--stages <file> 21` on two `-O2 TIMING=1` builds in
+one session, three rounds per document alternating them, each cell the median of
+three medians; `staged_bytes` is the fourteen buffers' capacities as `stage`
+sizes them.  `before` is `ByteArray.mk (Array.replicate n 0)` per buffer, as the
+rows above were run against; `after` is `leanllvm_route_zeroed`.
+
+row doc=fast-nums-4096.json staged_bytes=95257 before_ns=45134 after_ns=2969
+row doc=fast-nums-16384.json staged_bytes=377881 before_ns=213212 after_ns=11909
+row doc=fast-nums-65536.json staged_bytes=1508377 before_ns=1626586 after_ns=70833
+row doc=fast-esc.json staged_bytes=46919 before_ns=20850 after_ns=1627
+row doc=fast-esc-quotes.json staged_bytes=46919 before_ns=19631 after_ns=1618
+row doc=fast-esc-u.json staged_bytes=69559 before_ns=30915 after_ns=2842
+row doc=fast-surrogate.json staged_bytes=69559 before_ns=33616 after_ns=2592
+row doc=fast-utf8.json staged_bytes=46919 before_ns=20464 after_ns=1680
+row doc=depth-128.json staged_bytes=6319 before_ns=2626 after_ns=571
 ```
 
 ## Reading it
@@ -687,18 +709,85 @@ the header by index (the consumer's `decodeIndexed` is the measured shape), buil
 the hex without a list and a `String` per byte, and cut the payloads without
 materialising the result.
 
-**The copy is cheap; the staging before it is not.**  For `fast-nums-65536` the
+**The copy is cheap; the fill before it was not.**  For `fast-nums-65536` the
 adapter copies 1,442,742 bytes (entry 262,436; escape 262,432; arena 65,603;
 events 852,135; the nine fixed slots and their growth, 136) in 102,701 ns —
 about 14.0 GB/s.  The document window is not in that figure: the object only
 reads the document, so the adapter hands the caller's padding over in place and
 the 13 buffers it copies are the ones the object writes.  The caller's staging of
-1,508,377 bytes costs 1,365,528 ns, about 1.1 GB/s: the `zeros` arrays are built
-element by element, so the stage that exists to hand the adapter zeros costs 13.3
-times what the adapter's copy of them does.  Both are small against the
-reporting, and the copy-in figure is the one a caller could not remove (it is the
-FFI boundary); the staging figure is allocator-plus-fill work the route chooses
-to do per call.
+1,508,377 bytes cost 1,365,528 ns in the run above, about 1.10 GB/s: the `zeros`
+arrays were built element by element, so the stage that exists to hand the
+adapter zeros cost 13.3 times what the adapter's copy of them did.  That fill is
+now one allocation and one `memset` per buffer, and the stage costs 56,541–71,009
+ns on the same document in this record's two `TIMING=1` builds — 21.3–26.7 GB/s,
+at or above the copy's per-byte cost rather than a sixteenth of it.  The profile,
+the before/after pair and what remains are in the section below.
+
+### The staging fill
+
+The stage is fourteen fresh buffers: the window's three zero runs around the
+document, and the four growing buffers at the record's capacities.  In the run
+above each one was `ByteArray.mk (Array.replicate n 0)`, and the emitted C is
+the attribution rather than an inference: `zeros` compiles to
+`lean_mk_array(n, lean_box(0))` followed by `lean_byte_array_mk`, so the fill
+first replicates a boxed element across an array of pointers and then walks that
+array element by element, unboxing each byte into the scalar array.  Timed
+apart at the `fast-nums-65536` capacities (a scratch build of the same `zeros`,
+median of 21 repetitions, CPU 3, the same session):
+
+| buffer | bytes | fill_ns | GB/s |
+|---|---|---|---|
+| `ev` | 852,135 | 541,711–576,804 | 1.48–1.57 |
+| `ep` | 262,436 | 117,571–125,493 | 2.09–2.23 |
+| `xp` | 262,432 | 121,390–126,668 | 2.07–2.16 |
+| `dst` | 65,603 | 29,650–31,973 | 2.05–2.21 |
+| the window's three appends | 65,635 | 1,190–1,352 | 48.6–55.2 |
+
+Unit: ns per call and bytes per nanosecond written; the range is three runs of
+21 repetitions.  The four growing fills were 823,522–849,560 ns of the whole
+scratch stage's 1,146,725–1,195,000 ns — 71–72% — so the fill dominated the
+stage, it is proportional to the bytes staged rather than to the number of
+buffers, and the window's appends, copies at `memcpy` cost, were never the
+problem.
+
+The fix is `leanllvm_route_zeroed` in the adapter: `lean_alloc_sarray` and one
+`memset` per buffer, the same zeros `JsonCallRoute.stagedStore` states, and
+`stage` an `IO` action so that two buffers of one size are two allocations.  No
+capacity changed — `ep` at `4 * (64 * blocks + 9)`, `xp` at `4 * (64 * blocks +
+8)`, `dst` at `n + 64`, `ev` at `13 * n + 128` — so the bounds the call is
+checked against are the ones `routePre` states, and `check.sh`'s fidelity rows
+(the route and the C driver, byte for byte on the observation and both payloads)
+are unchanged.
+
+| document | staged_bytes | before_ns | after_ns | before GB/s | after GB/s | before/after |
+|---|---|---|---|---|---|---|
+| `fast-nums-4096` | 95,257 | 45,134 | 2,969 | 2.11 | 32.08 | 15.2 |
+| `fast-nums-16384` | 377,881 | 213,212 | 11,909 | 1.77 | 31.73 | 17.9 |
+| `fast-nums-65536` | 1,508,377 | 1,626,586 | 70,833 | 0.93 | 21.29 | 23.0 |
+| `fast-esc` | 46,919 | 20,850 | 1,627 | 2.25 | 28.84 | 12.8 |
+| `fast-esc-quotes` | 46,919 | 19,631 | 1,618 | 2.39 | 29.00 | 12.1 |
+| `fast-esc-u` | 69,559 | 30,915 | 2,842 | 2.25 | 24.48 | 10.9 |
+| `fast-surrogate` | 69,559 | 33,616 | 2,592 | 2.07 | 26.84 | 13.0 |
+| `fast-utf8` | 46,919 | 20,464 | 1,680 | 2.29 | 27.93 | 12.2 |
+| `depth-128` | 6,319 | 2,626 | 571 | 2.41 | 11.07 | 4.6 |
+
+Unit: `staged_bytes` is the sum of the fourteen buffers' capacities as `stage`
+sizes them, in bytes; `before_ns`/`after_ns` are `staging_ns` medians of 21
+repetitions, and `before`/`after GB/s` divide the bytes by those medians.  The
+two columns are a paired measurement: both builds are `-O2 TIMING=1`, and for
+each document three rounds alternate them, each cell the median of the three
+`--stages` medians, so the machine's drift is in neither column alone.
+`before/after` is a multiplier, the same document and session.  The pair is a
+later session than the stage rows above, so its `before` column is not those
+rows: the 64 KiB document's 1,626,586 ns here against the 1,365,528 ns above is
+the same fill measured in two sessions, and only the paired ratio inside one
+session is read as the change's effect.  The ratio grows
+with the document because what remains after the fill — the fourteen allocations
+and the window's appends — is a per-call cost: `depth-128` stages 6,319 bytes and
+gains 4.6 times, while the 64 KiB document stages 1,508,377 and gains 23.0.  The
+frontier a caller meets is now the copy's: 1,508,377 bytes at 21.3 GB/s, the
+1,442,742 of them the object writes staged once by the route and once by the
+adapter.
 
 **Admission: the native facts and the native policy scan, beside the two Lean
 passes they replaced.**  The predicate the route used to run is the library's

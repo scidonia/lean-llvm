@@ -165,6 +165,22 @@ static void route_init(void) {
   route_table_ready = 1;
 }
 
+/* ## The staging buffers
+ *
+ * `RouteMain.lean`'s `stage` needs fresh zero-filled buffers at the record's
+ * capacities.  Built in Lean as `ByteArray.mk (Array.replicate n 0)`, the fill
+ * goes through `lean_mk_array`'s boxed replication and then the byte-array
+ * conversion's element-by-element unboxing: 1.5-2.2 GB/s per byte written on
+ * this machine, which is where the staging stage's time went.  Here the buffer
+ * is one allocation and one `memset`, and the bytes handed over are the same
+ * zeros the record's staging is stated with. */
+LEAN_EXPORT lean_object *leanllvm_route_zeroed(uint64_t n) {
+  size_t size = (size_t)n;
+  lean_object *r = lean_alloc_sarray(1, size, size);
+  if (size) memset(lean_sarray_cptr(r), 0, size);
+  return lean_io_result_mk_ok(r);
+}
+
 static uint8_t *copy_array(lean_object *a) {
   size_t n = lean_sarray_size(a);
   uint8_t *p = (uint8_t *)malloc(n ? n : 1);

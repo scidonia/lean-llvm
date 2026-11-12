@@ -67,7 +67,15 @@ index is folded once and reports the first call's interval for every later one. 
 @[extern "leanllvm_route_stage_ns_at"]
 opaque stageNsAt (i : UInt64) : IO Nat
 
-def zeros (n : Nat) : ByteArray := ByteArray.mk (Array.replicate n (0 : UInt8))
+/-- A fresh zero-filled buffer of `n` bytes, allocated and filled by the
+adapter: one allocation and one `memset`.  The Lean-side construction
+`ByteArray.mk (Array.replicate n 0)` fills an array of boxed bytes and then
+unboxes them into the byte array element by element, which is where the staging
+stage's time went; the bytes here are the same zeros.  It is an `IO` action, not
+a pure extern, so two buffers of the same size are never two names for one
+allocation. -/
+@[extern "leanllvm_route_zeroed"]
+opaque zeroed (n : UInt64) : IO ByteArray
 
 def blocks (n : Nat) : Nat := (n + 63) / 64
 
@@ -226,32 +234,36 @@ structure Staged where
   err : ByteArray
 
 /-- Staging: the record's shape in bytes, with every buffer zero-filled and the
-window `[0,0,0] ++ doc ++ zero padding ++ 32` readable tail bytes. -/
-def stage (doc : ByteArray) (n : Nat) : Staged :=
+window `[0,0,0] ++ doc ++ zero padding ++ 32` readable tail bytes.  Each fill is
+the adapter's `zeroed`: one allocation and one `memset`, which is the same zeros
+the record's staging is stated with. -/
+def stage (doc : ByteArray) (n : Nat) : IO Staged := do
   let nb := blocks n
   let epcap := 64 * nb + 9
   let xpcap := 64 * nb + 8
   let dstcap := n + 64
   let evcap := 13 * n + 128
-  { n := n
-    window := (zeros 3).append doc |>.append (zeros (64 * nb - n)) |>.append (zeros 32)
-    sc := zeros 24
-    mkSlot := zeros 48
-    entw := zeros 8
-    ep := zeros (4 * epcap)
-    epcap := epcap
-    nk := zeros 8
-    xp := zeros (4 * xpcap)
-    xpcap := xpcap
-    nxp := zeros 8
-    xcarry := zeros 16
-    dst := zeros dstcap
-    dstcap := dstcap
-    ndst := zeros 8
-    ev := zeros evcap
-    evcap := evcap
-    nev := zeros 8
-    err := zeros 8 }
+  let base ← zeroed 3
+  let pad ← zeroed (UInt64.ofNat (64 * nb - n))
+  let tail ← zeroed 32
+  let window := base.append doc |>.append pad |>.append tail
+  let sc ← zeroed 24
+  let mkSlot ← zeroed 48
+  let entw ← zeroed 8
+  let ep ← zeroed (UInt64.ofNat (4 * epcap))
+  let nk ← zeroed 8
+  let xp ← zeroed (UInt64.ofNat (4 * xpcap))
+  let nxp ← zeroed 8
+  let xcarry ← zeroed 16
+  let dst ← zeroed (UInt64.ofNat dstcap)
+  let ndst ← zeroed 8
+  let ev ← zeroed (UInt64.ofNat evcap)
+  let nev ← zeroed 8
+  let err ← zeroed 8
+  return { n := n, window := window, sc := sc, mkSlot := mkSlot, entw := entw
+           ep := ep, epcap := epcap, nk := nk, xp := xp, xpcap := xpcap
+           nxp := nxp, xcarry := xcarry, dst := dst, dstcap := dstcap
+           ndst := ndst, ev := ev, evcap := evcap, nev := nev, err := err }
 
 /-- The native call through the adapter, over a staged document. -/
 def call (s : Staged) : IO ByteArray :=
@@ -637,7 +649,8 @@ def decisionTag (d : Decision) : String :=
 /-- The fast path: stage the document in the record's shape, call the object
 through the adapter, and print the observation and the two payloads. -/
 def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
-  let result ← call (stage doc n)
+  let staged ← stage doc n
+  let result ← call staged
   interpret result
 
 /-- The fallback's acceptance, in the route's wording: the tape's token count,
@@ -790,7 +803,7 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         summed := summed.push ((a2 - a0) + (f1 - f0) + (o1 - o0))
     | .admitted =>
         let s0 ← IO.monoNanosNow
-        let staged := stage doc doc.size
+        let staged ← stage doc doc.size
         let s1 ← IO.monoNanosNow
         let c0 ← IO.monoNanosNow
         let result ← call staged
@@ -1004,7 +1017,7 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
       kind := "fallback"
     | .admitted =>
       let s0 ← IO.monoNanosNow
-      let staged := stage doc doc.size
+      let staged ← stage doc doc.size
       let c0 ← IO.monoNanosNow
       let result ← call staged
       let c1 ← IO.monoNanosNow
