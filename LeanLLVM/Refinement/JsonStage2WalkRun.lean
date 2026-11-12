@@ -74,18 +74,21 @@ a store list split at the field's own write reads that write's bytes back, with
 the half after it required to lie outside.
 
 One equality over all four is **not** stated, and the obstruction is measured
-rather than guessed: the halves' conclusions name the memory as raw nested
-`writeBytes`, so closing `produced = stated` asks `whnf` to compare two
-eight-deep chains whose innermost term differs by one `memAt` projection.  A
-memset's 1152-byte write reduces byte by byte in front of a memory that grows a
-cell per byte, so that comparison is quadratic in the write's length: at
-`maxHeartbeats 2000000` the check ran 61 s without finishing, and stating the
-target in the produced form moves the same cost into the statement's own
-elaboration.  The vocabulary that avoids it is segment 2's own — state the later
-segments' conclusions over `stage2WriteStores` folds rather than raw nesting, so
-the comparison meets a fold the run never unfolds.  That is the open row, and the
-block's `step`, its `runFuel` prefix and `WalkSeedState`'s production all wait on
-it: the loop head's facts are read at the memory this composition names.
+rather than guessed.  Closing it compares two memories whose innermost term
+differs by one `memAt` projection, and every tactic that touches those terms —
+`rfl`, `rw`, `dsimp` — reduces the memset's 1152-byte write along the way:
+`writeBytes` consumes its byte list one byte at a time in front of a memory that
+grows a cell per byte, so that reduction is quadratic in the write's length.
+Measured: `rfl` at `maxHeartbeats 2000000` ran 61 s without finishing; stating
+the target in the produced form moved the same cost into the statement's own
+elaboration; a `stage2WriteStores` fold for the last two segments' stores, and
+then taking the outgoing memory as a parameter with its defining equality, each
+still ended in a `whnf` timeout at the close.  So the open row is not a matter of
+presenting the memory differently: the composition must keep the memset's bytes
+out of the term the close compares, which makes the cursor record's staging a
+sub-run with its own memory variable — the shape segment 2 already has, applied
+one level up.  The block's `step`, its `runFuel` prefix and `WalkSeedState`'s
+production all wait on that.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkSeed
 
