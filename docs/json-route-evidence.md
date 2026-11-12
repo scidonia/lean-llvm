@@ -481,9 +481,11 @@ from the working tree.  Nothing in the repository was moved, and no cut is part
 of the change.
 
 Observed on the working tree at `4f94295` plus this change, Lean 4.35.0 and
-clang/LLVM 21.1.8 from the flake; `R10`–`R13` were observed later, after the
-route's shell became the library's `admission` decision, and their uncut control
-is
+clang/LLVM 21.1.8 from the flake; `R10`–`R13` were observed later, when the
+route's shell decided by the library's `admission` directly — the shell now
+decides by the two-phase equivalent (the native phase-one verdict, with
+`policyRefusal` only on a candidate, `admission` retained as the oracle), and
+their uncut control is
 
 ```text
 ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons
@@ -553,8 +555,9 @@ What each shows, and what it does not:
 
 ## The shell's routing controls (`R10`–`R13`)
 
-Observed after the route's document decision became the library's `admission`
-predicate.  Each cut was applied to `probes/json/route/RouteMain.lean`'s `run` in
+Observed while the route's document decision was the library's `admission`
+predicate directly (the shell now uses the two-phase equivalent, with
+`admission` as the suite's oracle).  Each cut was applied to `probes/json/route/RouteMain.lean`'s `run` in
 a throwaway copy, the route was rebuilt with `build.sh`, and `check.sh` was run;
 the tree was then restored from a saved copy, rebuilt, and the run quoted above
 is the restored build's.  The cut is at the decision's consumer rather than in

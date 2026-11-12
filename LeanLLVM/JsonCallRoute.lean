@@ -102,9 +102,11 @@ lean -c`, `leanc` and `clang` through the flake, exactly as `probes/app/` drives
 the comma-mask seam.  Its `check.sh` asserts that the route's output equals a C
 driver's on every admitted default-profile corpus row, that each fallback answer
 agrees with the manifest, and that the empty, over-bound, depth-129+ and
-fourteen policy documents fall back with the reference's own answers.  There is
-no second policy scan in the probe any more: the decision is `admission`'s and
-the fallback's answer is `parseBytes`'s.  What the probe does not establish is
+fourteen policy documents fall back with the reference's own answers.  The
+probe's decision is the two-phase equivalent: the native phase-one verdict
+(delimiter lanes, bounds), with the library's own `policyRefusal` run only
+when a quote-or-backslash candidate exists, and `admission` retained as the
+suite's oracle; the fallback's answer is `parseBytes`'s.  What the probe does not establish is
 the step from the semantics to the object; see `missingBridgePieces` and the
 docstring of `nativePipeline`.
 -/
