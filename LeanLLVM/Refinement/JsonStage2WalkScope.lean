@@ -229,14 +229,15 @@ The trace itself is stated: `WalkLink` is one link (a control step that preserve
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
 as a run, a measure bound, and a completion at a returning last state.
 
-A hundred and thirty-eight of the body's 165 blocks are links, and *The middle's two
+A hundred and forty-eight of the body's 165 blocks are links, and *The middle's two
 classes* below is the census that decomposes the count: the two named arms
 (`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
 (`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
 eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
 twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
-`JsonStage2WalkPure`), and the two entry links beside `while.body.i.lr.ph`
-(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 25 blocks
+`JsonStage2WalkPure`), eight of class F's nineteen call blocks
+(`JsonStage2WalkCall`), and the two entry links beside `while.body.i.lr.ph`
+(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 17 blocks
 that are still not links, are stated there.  `WalkLocal` is
 still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
@@ -4181,18 +4182,19 @@ the instruction's constructor, not by the block's name.
 | C | the refusal store: `gep %e+8`, `store i64`, `br` | 18 | 18 |
 | D | other `store` shapes | 11 | 11 |
 | E | a `phi`-headed block | 15 | 15 |
-| F | a block that calls | 19 | 0 |
+| F | a block that calls | 19 | 8 |
 | G | `load` and compare | 14 | 14 |
 | H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**A hundred and forty of the 165 blocks are links**, and the table's proved
+**A hundred and forty-eight of the 165 blocks are links**, and the table's proved
 column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
-14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) = 140, with
-the five measure arms among those classes rather than beside them.  The remaining
-25 are named below with their obstruction, one row each; six of them are not links
-at all — the seed, the return, and the four `unreachable` arms.
+14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 8 (F's
+`JsonStage2WalkCall`) = 148, with the five measure arms among those classes rather
+than beside them.  The remaining 17 are named below with their obstruction, one
+row each; six of them are not links at all — the seed, the return, and the four
+`unreachable` arms.
 
 **The call census, measured.**  The F row's 19 is the number of blocks between the
 arms whose instruction list contains an `Instr.call` or `Instr.callVoid`, read off
@@ -4282,15 +4284,45 @@ arena reserve's decoded length, loaded from `%outn.i` — as the caller's fact; 
 *production* is `s2_string_body`'s write (`s2StringBody_outn_le`), the F datum the
 merge's edge reads.
 
-**F, the calls (19).**  Every call has to resolve through `stage2Calls`, and what
-it leaves is a `CallOutcome`: the `lifetime.start`/`lifetime.end` markers (twelve
-and twenty-one of them, `JsonStage2IR`'s guards) and the two `memset`s are
-resolved there and leave memory alone, `@llvm.trap` is the reserve's refusal arm,
-and `s2_init`, `s2_value_pos`, `s2_after_value`, `s2_string_body`, `num_fast_el1`
-and `od_scalar_value` are the `sub` parameter.  So each of these
-links is a contract question — the callee's post at the caller's staging — and the
-block that reads the returned word (`if.end256.i` reads `%call272.i`'s successors,
-`if.then328.i` reads `%outn.i`) needs the contract's *frame* as well as its post.
+**F, the calls (19; eight proved).**  Every call has to resolve through
+`stage2Calls`, and what it leaves is a `CallOutcome`: the
+`lifetime.start`/`lifetime.end` markers (twelve and twenty-one of them,
+`JsonStage2IR`'s guards) and the two `memset`s are resolved there and leave memory
+alone, `@llvm.trap` is the reserve's refusal arm, and `s2_init`, `s2_value_pos`,
+`s2_after_value`, `s2_string_body`, `num_fast_el1` and `od_scalar_value` are the
+`sub` parameter.  So each of these links is a contract question — the callee's post
+at the caller's staging — and `JsonStage2WalkCall` is where the walk's selection is
+fixed (`stage2Calls stage2SubCalls`, the selection the six proved contracts are
+stated at) and where the step is: `walkDenoteCode_call`/`walkDenoteCode_callVoid`
+are the `denoteCode` steps of a call at an arbitrary argument list, and
+`walkArgs_*` are the six helpers' argument lists read off the pinned body.
+
+Eight of the nineteen are closed there.  Four are marker blocks
+(`cleanup339.critedge.i`, `if.end67.critedge.i`, `if.end473.i`, `cleanup474.i`):
+`walkDenoteCode_lifetimeEnd` is the marker's step — the state it was handed — so
+each link is a pure run.  Four call a helper through the contract:
+`if.then.i` and `if.then219.i` call `s2_value_pos`, whose footprint is empty and
+whose memory is the caller's, so their links are `WalkLink.pureCore` at the two
+returns; `if.else334.i` and `if.then447.i` call `s2_after_value`, whose model writes
+one of two places (`stage2AfterValue_form`), and `walkAfterValue_facts` is the
+frame, presence, log and trace at that write — the depth-zero arm's root slot needs
+the caller's fact that `%root_done.i`'s four bytes miss the log and the stream,
+because the staging does not place the seven appended objects relative to the
+alloca cursor (`hroot`, `hrootev`).
+
+What remains is eleven.  `if.then109.i` (`s2_after_value`), `if.end256.i` (a
+marker, a zero store at `%outn.i` and the arena check), `cond.end349.i` (a marker
+and two token stores), `if.then413.i` (`s2_value_pos` after a token store),
+`if.then19.i`/`if.then25.i` (`num_fast_el1` and the refusal store that follows it)
+need `WalkLink.callQuiet`, whose four memory facts (`JsonStage2WalkCall`'s transfer)
+the caller supplies at the callee's footprint; three move a cursor the carry names —
+`z_arena_reserve.exit` (the decoded body's prefix in the arena, which the frame's
+arena extent at `C.alen` does not yet cover), `if.then328.i` (a thirteen-byte event
+record, so the carry's trace advances) and `if.then425.i` (`od_scalar_value`'s
+appended record, whose model the contract's post does not unfold) — so their links
+are the carry's; and two finalise the caller's slots (`s2_walk.exit`, `if.then`),
+whose stores go to `%ndst`, `%nev` and `%err`, three of the ABI's objects the
+frame's list does not include.
 
 **G, `load` and compare (14; all proved).**  Each reads a word the invariant does not
 bind.  `if.end.i.i` and `if.end.i.i55` read `%len` and `%cap` — which `log_len` and
@@ -4362,7 +4394,7 @@ class of the finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
 ## The remainder, named
 
 The census's rows outside classes A, B, B′, `entry`, `if.end` and the four traps:
-25 blocks still without a link, and 140 already closed.  `class` is the census's;
+17 blocks still without a link, and 148 already closed.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -4371,14 +4403,14 @@ it.
 |---:|---|---|---|
 | 1 | `entry` | seed | the initialisation, 58 instructions |
 | 2 | `while.body.i.lr.ph` | H2 | five `gep`s — proved (`WalkLink.while_body_i_lr_ph`) |
-| 17 | `if.then.i` | F | calls `@s2_value_pos` |
+| 17 | `if.then.i` | F | calls `@s2_value_pos` — proved (`WalkLink.if_then_i`) |
 | 22 | `if.then.i.i` | D | the hash word at `%z + 24` — proved (`WalkLink.if_then_i_i`) |
 | 23 | `if.end.i.i` | G | the two log words — proved (`WalkLink.if_end_i_i`) |
 | 24 | `if.end.i.i.i` | trap | `@llvm.trap`, `unreachable` |
 | 25 | `out_reserve.exit.i.i` | D | the tag byte and the cursor — proved (`WalkLink.out_reserve_exit_i_i`) |
 | 28 | `if.end59.i` | G | the type stack's byte — proved (`WalkLink.if_end59_i`) |
 | 30 | `if.end74.i` | G | the state stack's byte, carried bit — proved (`WalkLink.if_end74_i`) |
-| 37 | `if.then109.i` | F | calls `@s2_after_value` |
+| 37 | `if.then109.i` | F | calls `@s2_after_value`; its `phi` run is the remaining need |
 | 38 | `if.then.i.i50` | D | the hash word at `%z + 24` — proved (`WalkLink.if_then_i_i50`) |
 | 39 | `if.end.i.i55` | G | the two log words — proved (`WalkLink.if_end_i_i55`) |
 | 40 | `if.end.i.i.i64` | trap | `@llvm.trap`, `unreachable` |
@@ -4390,7 +4422,7 @@ it.
 | 54 | `lor.lhs.false.i` | G | the state stack's byte — proved (`WalkLink.lor_lhs_false_i`) |
 | 56 | `if.end195.i` | D | the state stack's byte — proved (`WalkLink.if_end195_i`) |
 | 59 | `if.end207.i` | D | the cursor record's `k` — proved (`WalkLink.if_end207_i`) |
-| 61 | `if.then219.i` | F | calls `@s2_value_pos` |
+| 61 | `if.then219.i` | F | calls `@s2_value_pos` — proved (`WalkLink.if_then219_i`) |
 | 62 | `land.lhs.true.i` | G | the type stack's byte — proved (`WalkLink.land_lhs_true_i`) |
 | 63 | `if.then231.i` | G | the state stack's masked byte — proved (`WalkLink.if_then231_i`) |
 | 64 | `if.end245.i` | E | the `phi` run `%key.1.i` and the callee's return — proved (`WalkLink.if_end245_i`) |
@@ -4403,8 +4435,8 @@ it.
 | 74 | `if.end.i86` | trap | `@llvm.trap`, `unreachable` |
 | 75 | `if.then328.i` | F | calls `@llvm.lifetime.end.p0` |
 | 76 | `if.then330.i` | D | the state stack's byte — proved (`WalkLink.if_then330_i`) |
-| 77 | `if.else334.i` | F | calls `@s2_after_value` |
-| 78 | `cleanup339.critedge.i` | F | calls `@llvm.lifetime.end.p0` |
+| 77 | `if.else334.i` | F | calls `@s2_after_value` — proved (`WalkLink.if_else334_i`) |
+| 78 | `cleanup339.critedge.i` | F | calls `@llvm.lifetime.end.p0` — proved (`WalkLink.cleanup339_critedge_i`) |
 | 80 | `cond.true345.i` | G | the stream's next lane — proved (`WalkLink.cond_true345_i`) |
 | 81 | `cond.end349.i` | F | calls `@llvm.lifetime.start.p0` |
 | 82 | `land.lhs.true357.i` | G | the document byte at the bound — proved (`WalkLink.land_lhs_true357_i`) |
@@ -4425,15 +4457,15 @@ it.
 | 132 | `if.end48.i` | E | the two `phi`s, `min`, and the entry test — proved (`WalkLink.if_end48_i`) |
 | 133 | `for.body.i.i` | E | the `phi` run and the `for.inc.i.i` guard — proved (`WalkLink.for_body_i_i`) |
 | 136 | `if.then57.i` | E | the `phi`, the `add`, and the refusal store — proved (`WalkLink.if_then57_i`) |
-| 137 | `if.end67.critedge.i` | F | calls `@llvm.lifetime.end.p0` |
+| 137 | `if.end67.critedge.i` | F | calls `@llvm.lifetime.end.p0` — proved (`WalkLink.if_end67_critedge_i`) |
 | 139 | `land.rhs71.i` | E | the counter `phi` and the document byte — proved (`WalkLink.land_rhs71_i`) |
 | 144 | `LeafBlock85` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock85`) |
 | 146 | `while.end78.i` | E | the landing `phi` and the refusal store — proved (`WalkLink.while_end78_i`) |
-| 147 | `if.then447.i` | F | calls `@s2_after_value` |
+| 147 | `if.then447.i` | F | calls `@s2_after_value` — proved (`WalkLink.if_then447_i`) |
 | 148 | `land.rhs457.i` | E | the counter `phi` and the document byte — proved (`WalkLink.land_rhs457_i`) |
 | 153 | `LeafBlock96` | H1 | `add` + `icmp` latch — proved (`WalkLink.LeafBlock96`) |
-| 156 | `if.end473.i` | F | calls `@llvm.lifetime.end.p0` |
-| 157 | `cleanup474.i` | F | calls `@llvm.lifetime.end.p0` |
+| 156 | `if.end473.i` | F | calls `@llvm.lifetime.end.p0` — proved (`WalkLink.if_end473_i`) |
+| 157 | `cleanup474.i` | F | calls `@llvm.lifetime.end.p0` — proved (`WalkLink.cleanup474_i`) |
 | 158 | `cleanup478.i` | E | the depth and index `phi`s — proved (`WalkLink.cleanup478_i`) |
 | 161 | `if.end490.i` | G | the `%root_done.i` slot — proved (`WalkLink.if_end490_i`) |
 | 163 | `s2_walk.exit` | F | calls `@llvm.lifetime.end.p0` |
@@ -4443,7 +4475,7 @@ it.
 ## Whether the chain closes
 
 It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited: 25 of the body's 165 blocks have no link, and the arena trap's clause
+inhabited: 17 of the body's 165 blocks have no link, and the arena trap's clause
 has no production yet.
 
 `JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the
@@ -4451,7 +4483,8 @@ has no production yet.
 three transfers the rest of the pure classes share: `WalkLink.pureCore` (a run that
 binds no carried register and whose edge is a carried or computed bit),
 `WalkLink.pureJumpCore` and `WalkLink.pureCoreCarried`.  What remains absent, with
-the reason in each row, is the nineteen call blocks; classes D, E and G are
+the reason in each row, is eleven of the nineteen call blocks
+(`JsonStage2WalkCall` closes the other eight); classes D, E and G are
 `JsonStage2WalkStore`, `JsonStage2WalkPhi` and `JsonStage2WalkPure`, the last with
 four of its fourteen rows obstructed by a kernel recursion.
 
