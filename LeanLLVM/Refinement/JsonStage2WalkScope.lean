@@ -259,11 +259,13 @@ run* is no longer one: `JsonStage2WalkSeedRun`'s `walkSeedState` produces
 three carriers and the frame and presence rows included — and
 `walkSeedState_geometry` derives the run's two loads from the staging itself, so
 `walkSeed_invariant`'s hypothesis is now a conclusion of the seed module.  What
-remains: (1) the container stacks' *contents* —
-`WalkRegs`/`WalkIter` carry registers, not the per-depth bytes `ctype[i]`/`cst[i]`,
-because a push or pop does not preserve a byte at `sp - 1` (the sound shape is a
-carried `Nat → UInt8` map, which `if.end24_step`, class D's four container-byte
-stores and `cleanup478.i` would all have to move); (2) the 165-block next-link
+remains: (1) the container stacks' *contents* — `WalkRegs`/`WalkIter` carry
+registers, not the per-depth bytes `ctype[i]`/`cst[i]`, because a push or pop does
+not preserve a byte at `sp - 1`.  The sound shape is a carried `Nat → UInt8` map,
+and its vocabulary and laws are `JsonStage2WalkStack` (`WalkStackBytes`, the push,
+store and restriction laws, and `walkStack_valuePos`); what is still owed is
+carrying the maps in `WalkInv` — a field addition every link in six modules must
+build — plus the two local facts named there; (2) the 165-block next-link
 lemma; (3) the well-founded completion one level up from `WalkChain`; and (4) the
 budget's global accounting.  The census's 157 links are the arithmetic of the
 *classes*, and a link whose source invariant no run reaches (the preheader's,
@@ -882,10 +884,18 @@ The container stacks' *contents* are not among these carriers, and the reason is
 structural rather than an omission: a clause of the form "the byte at `sp - 1`
 is `t`" cannot be carried by a link that pushes or pops, because the byte at the
 new `sp - 1` was written at an earlier index and the carry does not remember it.
-The sound shape is a carried map `Nat → UInt8` updated at the pushed index,
-which the push link (`if.end24_step`), the container-byte stores (class D's
-`if.end150.i`, `if.end162.i`, `if.end195.i`, `if.then330.i`) and the merge
-(`cleanup478.i`) all have to move.  That is recorded in the census as the
+The sound shape is a carried map `Nat → UInt8`, read off the stack's own bytes at
+the carried depth.  `JsonStage2WalkStack` states it — `WalkStackBytes` — and
+proves its laws: the push extends the map at the pushed index
+(`WalkStackBytes.push`/`pushNat`), a one-byte store rewrites it where it writes
+(`WalkStackBytes.store`/`storeNat`), a pop or the merge at `cleanup478.i` is a
+restriction (`WalkStackBytes.restrict`), and `s2_value_pos` reads the map at
+`sp - 1` (`walkStack_valuePos`).  `walkStack_ifEnd24` composes the push link's two
+writes at `ctype + sp` and `cst + sp` into one update of both maps.  What remains
+is carrying those maps in `WalkInv`: that is a field addition to a structure every
+link in six modules builds by hand, and it needs two local facts beside it — the
+four class-D stores' index specified as `sp - 1`, and the push's two stores
+identified with `if.end24.i`'s own.  That is recorded in the census as the
 remaining half of the second carrier. -/
 
 /-- The entry stream's position at index `k`, with `0` past the end.  The
