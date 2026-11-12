@@ -1,6 +1,13 @@
 name = "LeanLLVM"
 version = "0.1.0"
-defaultTargets = ["leanllvm", "ITree"]
+defaultTargets = ["leanllvm", "ITree", "LeanLLVMTest"]
+
+# `LeanLLVMTest` is a default target so that a change which breaks one of the
+# test library's pins fails `lake build`, rather than waiting for someone to run
+# `lake build LeanLLVMTest` by hand — the shape the pipeline spec's widening
+# took when it invalidated a counterexample's pattern.  The whole test library
+# is five modules and elaborates in about eleven seconds from cold; a library
+# edit re-elaborates only the test modules that import the changed file.
 
 # The interaction-tree library is proved against mathlib's QPF support; the
 # revision is pinned so a build resolves the same sources everywhere.  Every

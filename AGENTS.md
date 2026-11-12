@@ -30,9 +30,10 @@ A build killed by it is a signal that the file it was elaborating needs
 splitting or its `maxHeartbeats` raising — not a reason to run the same
 command without the ceiling.
 
-The default targets are the `leanllvm` executable and the `ITree` library, so
-`lake build` covers `LeanLLVM` (through the executable) and the generic tree
-library.  The generic library depends on `leanprover-community/mathlib4` at the
+The default targets are the `leanllvm` executable, the `ITree` library and the
+`LeanLLVMTest` library, so `lake build` covers `LeanLLVM` (through the
+executable), the generic tree library, and every pin in `LeanLLVMTest/`.  The
+generic library depends on `leanprover-community/mathlib4` at the
 revision pinned in `lakefile.toml`, resolved into `.lake/packages`; mathlib's
 oleans must be present before the tree modules elaborate, so a cold checkout pays
 for a mathlib build unless its prebuilt cache is already in place.  The mathlib

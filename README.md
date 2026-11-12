@@ -161,7 +161,7 @@ The toolchain is Lean `v4.35.0` from the flake.  Run every command through
 the shell so the environment comes from this checkout:
 
 ```bash
-nix develop -c lake build            # default targets: leanllvm and the ITree library
+nix develop -c lake build            # default targets: leanllvm, ITree and LeanLLVMTest
 nix develop -c lake build ITree      # the generic tree library alone
 nix develop -c lake build LeanLLVMTest
 nix develop -c lake exe leanllvm tests/constfold.ll
