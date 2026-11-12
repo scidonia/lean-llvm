@@ -36,6 +36,12 @@ What a call block owes, and what this module supplies:
   names, so their links are the carry's, not the frame's.  `s2ScalarValuePost`'s
   second conjunct names the appended record, so `if.then425.i`'s call does not
   hide the trace's step behind the model's equation.
+* **the terminal step.**  `s2_walk.exit`'s jump and `if.end`'s return are not
+  `WalkLink`s: the exit's stores are the record's, outside the walk's frame by
+  design (`err_not_in_walkFrame`).  They are `step` equations —
+  `walkExitBlock_denote` at the five markers and the two cursor copies, and
+  `walkIfEnd_step` at either arm's `phi` value — and `WalkChain.finalisation`
+  composes a chain to `s2_walk.exit` with them into a completion.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkRest
 import LeanLLVM.Refinement.JsonStage2Helpers
@@ -1310,6 +1316,192 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     rfl
     (by simp [cells, stateAt, lookupName_cons_self])
     (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-- The `if.end` block's `tobool` phi. -/
+def walkIfEndIncoming : List (String × Operand) :=
+  [("if.then", .imm (.int 64 (BitVec.ofNat 64 0))),
+   ("s2_walk.exit", .imm (.int 64 (BitVec.ofNat 64 1)))]
+
+/-- `s2_walk.exit`: the five live-range ends and the two cursor copies. -/
+def walkExitBlock : Block :=
+  { name := "s2_walk.exit",
+    instrs := [
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 8))), (.ptr, .reg "%xj.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 4))), (.ptr, .reg "%root_done.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 520))), (.ptr, .reg "%cst.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 520))), (.ptr, .reg "%ctype.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 1192))), (.ptr, .reg "%c.i")],
+      Instr.load "%49" (.int 64) (.reg "%alen"),
+      Instr.store (.int 64) (.reg "%49") (.reg "%ndst"),
+      Instr.load "%50" (.int 64) (.reg "%len"),
+      Instr.store (.int 64) (.reg "%50") (.reg "%nev")],
+    term := Term.br "if.end" }
+
+theorem walkExitBlock_find : stage2Body.findBlock "s2_walk.exit" = some walkExitBlock := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkExitBlock]
+
+/-- `walkSetMem`: the target state of a store run. -/
+def walkSetMem (s : State) (m : Mem) : State := { s with mem := m }
+
+theorem walkExitBlock_denote {sub : Calls} (env : Env) (s : State)
+    {a : Nat} {A : BitVec 64} {l : Nat} {L : BitVec 64}
+    {xj rd cst ctp c nd nv : Nat}
+    (hxj : lookupName env "%xj.i" = some (.ptr xj))
+    (hrd : lookupName env "%root_done.i" = some (.ptr rd))
+    (hcst : lookupName env "%cst.i" = some (.ptr cst))
+    (hctp : lookupName env "%ctype.i" = some (.ptr ctp))
+    (hc : lookupName env "%c.i" = some (.ptr c))
+    (halen : lookupName env "%alen" = some (.ptr a))
+    (hnd : lookupName env "%ndst" = some (.ptr nd))
+    (hlen : lookupName env "%len" = some (.ptr l))
+    (hnev : lookupName env "%nev" = some (.ptr nv))
+    (hA : readBytes s.mem a 8 = some (natToBytes A.toNat 8))
+    (hL : readBytes s.mem l 8 = some (natToBytes L.toNat 8))
+    (hsep : nd + 8 ≤ l ∨ l + 8 ≤ nd) :
+    denoteCode (stage2Calls sub) walkExitBlock.instrs (stateAt env s) =
+      some (stateAt (cells [("%50", .int 64 L), ("%49", .int 64 A)] env)
+        (walkSetMem s (writeBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) nv
+          (wordBytes 8 L.toNat)))) := by
+  rw [show walkExitBlock.instrs = [Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 8))), (.ptr, .reg "%xj.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 4))), (.ptr, .reg "%root_done.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 520))), (.ptr, .reg "%cst.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 520))), (.ptr, .reg "%ctype.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 1192))), (.ptr, .reg "%c.i")],
+      Instr.load "%49" (.int 64) (.reg "%alen"),
+      Instr.store (.int 64) (.reg "%49") (.reg "%ndst"),
+      Instr.load "%50" (.int 64) (.reg "%len"),
+      Instr.store (.int 64) (.reg "%50") (.reg "%nev")] from rfl]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 8) (obj := "%xj.i") (p := xj) (by simpa [lookupName] using hxj)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 4) (obj := "%root_done.i") (p := rd) (by simpa [lookupName] using hrd)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 520) (obj := "%cst.i") (p := cst) (by simpa [lookupName] using hcst)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 520) (obj := "%ctype.i") (p := ctp) (by simpa [lookupName] using hctp)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 1192) (obj := "%c.i") (p := c) (by simpa [lookupName] using hc)]
+  have hL' : readBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) l 8 =
+      some (natToBytes L.toNat 8) := by
+    rw [walkReadBytes_writeBytes_outside (start := nd) (addr := l) (n := 8)
+      (v := wordBytes 8 A.toNat) (by
+        rw [wordBytes, natToBytes_length]
+        rcases hsep with h | h
+        · right; exact h
+        · left; exact h)]
+    exact hL
+  rw [denoteCode_load64 (calls := stage2Calls sub) (env := env) (s := s)
+    (d := "%49") (p := "%alen") (a := a) (v := A)
+    (by simpa [lookupName] using halen) hA]
+  rw [denoteCode_store64_ofNat (calls := stage2Calls sub)
+    (env := ("%49", .int 64 A) :: env) (s := s)
+    (v := "%49") (p := "%ndst") (a := nd) (j := A.toNat)
+    (by simp [lookupName]) A.isLt (by simpa [lookupName] using hnd)]
+  rw [denoteCode_load64 (calls := stage2Calls sub)
+    (env := ("%49", .int 64 A) :: env)
+    (s := { s with mem := writeBytes s.mem nd (wordBytes 8 A.toNat) })
+    (d := "%50") (p := "%len") (a := l) (v := L)
+    (by simpa [lookupName] using hlen) hL']
+  rw [denoteCode_store64_ofNat (calls := stage2Calls sub)
+    (env := ("%50", .int 64 L) :: ("%49", .int 64 A) :: env)
+    (s := { s with mem := writeBytes s.mem nd (wordBytes 8 A.toNat) })
+    (v := "%50") (p := "%nev") (a := nv) (j := L.toNat)
+    (by simp [lookupName]) L.isLt (by simpa [lookupName] using hnev)]
+  dsimp only [walkSetMem]
+  rfl
+
+
+/-- The `if.end` block: the `tobool` phi, the three markers, and the return. -/
+def walkIfEndBlock : Block :=
+  { name := "if.end",
+    instrs := [
+      Instr.phi "%tobool.not151" (.int 64) walkIfEndIncoming,
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 24))), (.ptr, .reg "%e")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 64))), (.ptr, .reg "%z")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 120))), (.ptr, .reg "%s")]],
+    term := Term.ret (.int 64) (some (.reg "%tobool.not151")) }
+
+theorem walkIfEndBlock_find : stage2Body.findBlock "if.end" = some walkIfEndBlock := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIfEndBlock, walkIfEndIncoming]
+
+/-- The `if.end` return, at the arm's own bit: `s2_walk.exit` selects `1` and
+`if.then` selects `0`.  The markers bind nothing, so they do not move the cell. -/
+theorem ifEnd_step {sub : Calls} (s : State)
+    (hpc : s.pc = "if.end") {p : String} {v : BitVec 64} {bit : BitVec 64}
+    {pe pz ps : Nat}
+    (he : lookupName s.env "%e" = some (.ptr pe))
+    (hz : lookupName s.env "%z" = some (.ptr pz))
+    (hs : lookupName s.env "%s" = some (.ptr ps))
+    (hpre : s.pre = some p) (hphi : phiIncoming p walkIfEndIncoming = some (Operand.imm (Const.int 64 bit)))
+    (hv : bit = v) :
+    step (stage2Calls sub) stage2Body s =
+      .ret (some (.int 64 v)) (stateAt (("%tobool.not151", .int 64 bit) :: s.env) s) := by
+  have hden : denoteCode (stage2Calls sub) walkIfEndBlock.instrs s =
+      some (stateAt (("%tobool.not151", .int 64 bit) :: s.env) s) := by
+    rw [show walkIfEndBlock.instrs =
+      [{ dst := "%tobool.not151", ty := Ty.int 64, incoming := walkIfEndIncoming }].map
+          PhiSpec.instr ++
+        [Instr.callVoid "llvm.lifetime.end.p0"
+          [(.int 64, .imm (.int 64 (BitVec.ofNat 64 24))), (.ptr, .reg "%e")],
+         Instr.callVoid "llvm.lifetime.end.p0"
+          [(.int 64, .imm (.int 64 (BitVec.ofNat 64 64))), (.ptr, .reg "%z")],
+         Instr.callVoid "llvm.lifetime.end.p0"
+          [(.int 64, .imm (.int 64 (BitVec.ofNat 64 120))), (.ptr, .reg "%s")]] from rfl]
+    rw [denoteCode_phiRun (specs :=
+        [{ dst := "%tobool.not151", ty := Ty.int 64, incoming := walkIfEndIncoming }])
+      (vs := [("%tobool.not151", .int 64 bit)])
+      (rest := [Instr.callVoid "llvm.lifetime.end.p0"
+          [(.int 64, .imm (.int 64 (BitVec.ofNat 64 24))), (.ptr, .reg "%e")],
+         Instr.callVoid "llvm.lifetime.end.p0"
+          [(.int 64, .imm (.int 64 (BitVec.ofNat 64 64))), (.ptr, .reg "%z")],
+         Instr.callVoid "llvm.lifetime.end.p0"
+          [(.int 64, .imm (.int 64 (BitVec.ofNat 64 120))), (.ptr, .reg "%s")]])
+      hpre (PhiSelects.cons hphi (by rfl) PhiSelects.nil) (by rfl)]
+    rw [show s.bindAll [("%tobool.not151", .int 64 bit)] =
+      stateAt (("%tobool.not151", .int 64 bit) :: s.env) s from rfl]
+    rw [walkDenoteCode_lifetimeEnd (sub := sub)
+      (env := ("%tobool.not151", .int 64 bit) :: s.env) (s := s)
+      (size := 24) (obj := "%e") (p := pe) (by simpa [lookupName] using he)]
+    rw [walkDenoteCode_lifetimeEnd (sub := sub)
+      (env := ("%tobool.not151", .int 64 bit) :: s.env) (s := s)
+      (size := 64) (obj := "%z") (p := pz) (by simpa [lookupName] using hz)]
+    rw [walkDenoteCode_lifetimeEnd (sub := sub)
+      (env := ("%tobool.not151", .int 64 bit) :: s.env) (s := s)
+      (size := 120) (obj := "%s") (p := ps) (by simpa [lookupName] using hs)]
+    rfl
+  have hterm : walkIfEndBlock.term =
+      Term.ret (.int 64) (some (.reg "%tobool.not151")) := rfl
+  simp only [LeanLLVM.step, hpc, walkIfEndBlock_find, hden, hterm, execTerm, evalOperand,
+    stateAt, lookupName_cons_self, hv]
+
+/-- **The chain's terminal step.**  A chain whose tail is at `s2_walk.exit`,
+followed by the two finalisation blocks, completes the run.  The finalisation is
+two control steps: the exit to `if.end` and `if.end`'s return.  It is not a
+`WalkLink` pair, because the exit's stores are the record's, outside the walk's
+frame by design (`err_not_in_walkFrame`). -/
+theorem WalkChain.finalisation {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' s'' sret : State} {v : Value}
+    (h : WalkChain calls G C s C' s')
+    (hstep1 : step calls stage2Body s' = .jump s'')
+    (hret : step calls stage2Body s'' = .ret v sret) :
+    ∃ k, runFuel calls k stage2Body s = some (.ret v sret.mem) := by
+  obtain ⟨k, hk⟩ := h.steps
+  refine ⟨k + 2, ?_⟩
+  rw [hk 2]
+  simp only [runFuel, hstep1, hret]
 
 /-! ### The instrument
 

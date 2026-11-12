@@ -4358,8 +4358,14 @@ not a `WalkPtrs` register).  `if.then281.i` is `add i32 %7, 1`, a `zext`, and an
 `%conv286.i.sink`, and it carries `inner` untouched.
 
 **The six that are not links.**  `entry` is the initialisation and its obligation
-is `WalkSeedState`, already stated.  `if.end` returns; `WalkChain.completes` takes
-its step as `hret`.  The four `unreachable` blocks are `@llvm.trap` arms: a link
+is `WalkSeedState`, already stated.  `if.end` returns: `walkIfEnd_step`
+(`JsonStage2WalkCall`) is its step at either arm's `phi` value, and
+`WalkChain.finalisation` composes a chain to `s2_walk.exit` with the exit's jump
+(`walkExitBlock_denote`) and that return into a completion, without demanding a
+`WalkLink` of either — the exit's stores are the record's, outside the walk's
+frame by design.  `if.then`'s refusal copy still owes its three instructions; its
+live-range prefix is `walkExitBlock_denote` at the same nine.  The four
+`unreachable` blocks are `@llvm.trap` arms: a link
 cannot enter one without concluding the run does not complete — `walkTrap_noStep`
 (`JsonStage2WalkCall`) is that fact, since `stage2Calls` answers `none` at the trap
 — so their obligation is the guard before them — `if.end.i.i`'s and
@@ -4464,9 +4470,9 @@ it.
 | 157 | `cleanup474.i` | F | calls `@llvm.lifetime.end.p0` — proved (`WalkLink.cleanup474_i`) |
 | 158 | `cleanup478.i` | E | the depth and index `phi`s — proved (`WalkLink.cleanup478_i`) |
 | 161 | `if.end490.i` | G | the `%root_done.i` slot — proved (`WalkLink.if_end490_i`) |
-| 163 | `s2_walk.exit` | F | calls `@llvm.lifetime.end.p0` |
-| 164 | `if.then` | F | calls `@llvm.lifetime.end.p0` |
-| 165 | `if.end` | ret | the return, five instructions |
+| 163 | `s2_walk.exit` | F | the terminal step — proved (`walkExitBlock_denote`, `WalkChain.finalisation`) |
+| 164 | `if.then` | F | the refusal copy: three instructions after its live-range prefix (`walkExitBlock_denote` at the same nine) |
+| 165 | `if.end` | ret | the return — proved as the terminal step (`walkIfEnd_step`, `WalkChain.finalisation`) |
 
 ## Whether the chain closes
 
@@ -4485,8 +4491,12 @@ four pieces, in order:
    invariant at the loop head, and what `entry`'s 58 instructions must show is
    that state (the two `phi` values, the six pointer bindings, the log's four
    fields and the staging's presence);
-3. **the return** — `if.end`'s step as `WalkChain.completes`' `hret`, after the
-   two finalisation blocks; and
+3. **the return** — *stated and composed*: `walkIfEnd_step` is `if.end`'s step at
+   either arm's `phi` value, `walkExitBlock_denote` is the exit's jump, and
+   `WalkChain.finalisation` turns a chain to `s2_walk.exit` plus those two steps
+   into the completion.  What remains of the return is `if.then`'s refusal copy
+   (the three instructions after the live-range prefix); the returning arm
+   (`s2_walk.exit`) needs nothing further; and
 4. **the count** — `WalkChain.steps` composed over the assembled chain to give a
    step count at or below `stage2Budget`, which is the one place the 22-and-six
    readings of *The budget, counted* are spent.
