@@ -253,22 +253,18 @@ still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
 `Stage2WalkCompletes` is not inhabited.
 
-**The open rows, named.**  Four remain, and none is claimed here.  The *entry
+**The open rows, named.**  Three remain, and none is claimed here.  The *entry
 run* is no longer one: `JsonStage2WalkSeedRun`'s `walkSeedState` produces
 `WalkSeedState` at the state the entry run leaves — its thirteen clauses, the
 three carriers and the frame and presence rows included — and
 `walkSeedState_geometry` derives the run's two loads from the staging itself, so
 `walkSeed_invariant`'s hypothesis is now a conclusion of the seed module.  What
-remains: (1) the container stacks' *contents* — `WalkRegs`/`WalkIter` carry
-registers, not the per-depth bytes `ctype[i]`/`cst[i]`, because a push or pop does
-not preserve a byte at `sp - 1`.  The sound shape is a carried `Nat → UInt8` map,
-and its vocabulary and laws are here (`WalkStackBytes`, the push, store and
-restriction laws, and `walkStack_valuePos`); what is still owed is carrying the
-maps in `WalkInv` — a field addition every link in six modules must
-build — with no other local fact beside it (`storeAt` covers any stored index and
-the push is stated at the register's depth); (2) the 165-block next-link
-lemma; (3) the well-founded completion one level up from `WalkChain`; and (4) the
-budget's global accounting.  The census's 157 links are the arithmetic of the
+remains: (1) the 165-block next-link lemma; (2) the well-founded completion one
+level up from `WalkChain`; and (3) the budget's global accounting.  The container
+stacks' contents are no longer one: `WalkCarry` carries the written mark and the
+two maps, and `WalkInv` carries the two `WalkStackBytes` clauses beside
+`sp ≤ wlen` and `wlen ≤ stage2StackExtent`, so a link that reads a stack byte at
+`sp - 1` derives it from the map (`walkStack_valuePos`) rather than assuming it.  The census's 157 links are the arithmetic of the
 *classes*, and a link whose source invariant no run reaches (the preheader's,
 whose premise asks for `%k11.i` before the block binds it) is vacuous: it is
 proved, and it moves nothing.
@@ -565,6 +561,17 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   `%sp.i.0248`'s value at the loop head's `phi`; the merge at `cleanup478.i` is
   the edge that moves it. -/
   sp : Nat
+  /-- **The written mark of the two container stacks.**  `if.end24.i` stores at
+  the register's depth `sp`, not at the mark the stack already reached, so a push
+  after a pop writes below the previous mark and the mark is the largest index
+  either stack has written: a push moves it to `max wlen (sp + 1)` and every
+  other block leaves it alone.  The mark rather than the register's depth is what
+  a byte read at `sp - 1` is found under after a pop. -/
+  wlen : Nat
+  /-- The type stack's contents, one byte per index below the written mark. -/
+  tyMap : Nat → UInt8
+  /-- The state stack's contents, one byte per index below the written mark. -/
+  stMap : Nat → UInt8
   /-- The adapter's staging of the walk's own objects, fixed for the run. -/
   stage : WalkStage G
 
@@ -881,12 +888,12 @@ alone.  The paths that never pass the header — the preheader and `entry` itsel
 — are not loop states, so the carrier is not a claim about them; the seed is the
 first state it is asserted at.
 
-The container stacks' *contents* are not among these carriers, and the reason is
-structural rather than an omission: a clause of the form "the byte at `sp - 1`
-is `t`" cannot be carried by a link that pushes or pops, because the byte at the
-new `sp - 1` was written at an earlier index and the carry does not remember it.
-The sound shape is a carried map `Nat → UInt8`, read off the stack's own bytes at
-the carried depth.  `WalkStackBytes`, in this module, states it, and
+The container stacks' *contents* are a third carrier, and their shape is set by
+what a push and a pop do to them: a clause of the form "the byte at `sp - 1` is
+`t`" cannot be carried by a link that pushes or pops, because the byte at the new
+`sp - 1` was written at an earlier index and the carry does not remember it.  The
+sound shape is a carried map `Nat → UInt8`, read off the stack's own bytes at the
+carried written mark.  `WalkStackBytes`, in this module, states it, and
 proves its laws: a push extends the map at the index it writes, whether that index
 is the written mark or, after a pop, below it (`WalkStackBytes.pushAt`/`pushNatAt`),
 a one-byte store rewrites it where it writes at any index
@@ -896,14 +903,16 @@ restriction (`WalkStackBytes.restrict`), and `s2_value_pos` reads the map at
 two writes at `ctype + sp` and `cst + sp` into one update of both maps, at the
 written mark `max wlen (sp + 1)`.
 
-What remains is carrying those maps in `WalkInv`: a field addition to a structure
-every link in six modules builds by hand, with the carried written mark and the
-two maps, and the clauses `sp ≤ wlen`, `wlen ≤ stage2StackExtent`, and one
-`WalkStackBytes` per stack.  Nothing else is owed beside it: the class-D stores
-need no `sp - 1` specification because `storeAt` is stated at an arbitrary index,
-and the push's two stores are already `if.end24.i`'s own in
-`walkStack_ifEnd24_at`.  That field addition is recorded in the census as the
-remaining half of the second carrier. -/
+Those maps are carried: `WalkCarry.wlen` is the written mark and `tyMap`/`stMap`
+the two maps, and `WalkInv` states `sp ≤ wlen`, `wlen ≤ stage2StackExtent` and one
+`WalkStackBytes` per stack.  Every link of the six modules builds the four
+clauses — unchanged where the block writes elsewhere, `walkStack_ifEnd24_at` at
+the nesting arm's push, `WalkStackBytes.storeAt` at the class-D stores, and
+`WalkStackBytes.write_outside` against a staged object, the cursor record, `%d.i`
+or the allocas at the rest.  Nothing beside them is owed: the class-D stores need
+no `sp - 1` specification because `storeAt` is stated at an arbitrary index, and
+the helper that advances the state stack's top is `walkAfterValue_stBytesAt` with
+`walkAfterValueMapAt`'s map. -/
 
 /-- The entry stream's position at index `k`, with `0` past the end.  The
 carrier is read at an index the loop's own bound keeps inside the stream, so the
@@ -1095,6 +1104,12 @@ reads at `sp - 1` is `M (sp - 1)` — a value the carry keeps after the depth th
 produced it has moved. -/
 def WalkStackBytes (mem : Mem) (base : Nat) (M : Nat → UInt8) (n : Nat) : Prop :=
   ∀ i, i < n → readByte mem (base + i) = some (M i)
+
+/-- **The empty mark carries any map**: no index is below zero.  This is the
+seed's stack clause and the clause a depth reduced to zero restates. -/
+theorem WalkStackBytes.empty {mem : Mem} {base : Nat} {M : Nat → UInt8} :
+    WalkStackBytes mem base M 0 :=
+  fun i hi => absurd hi (Nat.not_lt_zero i)
 
 /-- The byte at an index the depth admits. -/
 theorem WalkStackBytes.at {mem : Mem} {base n : Nat} {M : Nat → UInt8}
@@ -1391,6 +1406,22 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   depth's counterpart of `blockIndex`, and it is why an arm that leaves the depth
   alone carries it in one step. -/
   depth_reg : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp))
+  /-- **The register's depth is inside the written mark.**  A pop lowers `sp` but
+  not the mark, so the depth is at most the mark and a push at `sp` stores at an
+  index the carried map already covers. -/
+  sp_le_wlen : C.sp ≤ C.wlen
+  /-- **The written mark is inside the two stacks' staged extent**, so a push at
+  the mark writes inside the object the caller staged. -/
+  wlen_cap : C.wlen ≤ stage2StackExtent
+  /-- **The type stack's contents are the carried map.**  The bytes at
+  `%ctype.i`'s first `wlen` indices are `tyMap`, so the byte a block reads at
+  `sp - 1` is the value the carry kept after the depth that produced it moved.
+  `walkStack_valuePos` is what turns the two clauses into the helper's answer. -/
+  tyBytes : WalkStackBytes s.mem C.stage.ctype C.tyMap C.wlen
+  /-- **The state stack's contents are the carried map.**  The state twin of
+  `tyBytes`; `if.end24.i` advances both maps and the class-D stores rewrite one
+  entry of `stMap` where they write. -/
+  stBytes : WalkStackBytes s.mem C.stage.cst C.stMap C.wlen
   /-- **The pointer registers the dispatch's blocks read.**  `while.body.i` reads
   `%3`, `%5` and `%k11.i`, and `if.end24.i` indexes `%ctype.i`/`%cst.i` and reads
   the log's hash word through `%hash1.i.i`; a block's `denoteCode` needs those
@@ -1597,6 +1628,9 @@ def walkSeed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : WalkCarry G where
   block := "NodeBlock21"
   inner := walkInnerCap G
   sp := 0
+  wlen := 0
+  tyMap := fun _ => 0
+  stMap := fun _ => 0
   stage := S
 
 /-- The state the initialisation hands the loop: the header's block after its two
@@ -1658,6 +1692,10 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       inner_cap := walkSeed_inner_cap G S
       depth_cap := walkSeed_depth_cap G S
       depth_reg := hsp
+      sp_le_wlen := Nat.zero_le _
+      wlen_cap := Nat.zero_le _
+      tyBytes := WalkStackBytes.empty
+      stBytes := WalkStackBytes.empty
       ptrs := hptrs
       regs := hregs
       iter := hiter
@@ -1850,6 +1888,10 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           omega
         depth_cap := hInv.depth_cap
         depth_reg := by rw [hsp]; exact hInv.depth_reg
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
         ptrs := by
           dsimp only [e, State.bind]
           exact hInv.ptrs.bind_pair
@@ -2217,6 +2259,10 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
           omega
         depth_cap := hInv.depth_cap
         depth_reg := by rw [hsp]; exact hInv.depth_reg
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
         ptrs := by
           dsimp only [e, State.bind]
           exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
@@ -2986,6 +3032,10 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
           rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
             lookupName_cons_ne _ _ (by decide)]
           exact hInv.depth_reg
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
         ptrs := by
           dsimp only [e, State.bind]
           have h1 := hInv.ptrs.bind_pair (a := "%sp.i.1") (b := "%k.2.i")
@@ -3979,6 +4029,298 @@ theorem stage2Regions_mem_ev {b n ep nep xp nxp dst ndst0 ev evcap ndst nev err 
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _
     (List.mem_cons_of_mem _ List.mem_cons_self)))
 
+/-! ### The staged objects against the two container stacks
+
+The carried maps make the stacks' bytes a clause of the invariant, so every link
+that writes elsewhere owes a transfer: the write must miss the bytes the map
+covers.  The separation is the staging's own `Pairwise`, read at the positions of
+the written object and of a stack, so a link never has to compare two addresses.
+-/
+
+/-- **Two entries of the staged seven, by position, are separate.** -/
+theorem stagedWrites_sep {c ctype cst tok s z e : Nat}
+    (h : DisjointRegions (stage2StagedWrites c ctype cst tok s z e))
+    {i j : Nat} (hi : i < 7) (hj : j < 7) (hij : i < j) :
+    ((stage2StagedWrites c ctype cst tok s z e)[i]).1 +
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).2 ≤
+      ((stage2StagedWrites c ctype cst tok s z e)[j]).1 ∨
+    ((stage2StagedWrites c ctype cst tok s z e)[j]).1 +
+        ((stage2StagedWrites c ctype cst tok s z e)[j]).2 ≤
+      ((stage2StagedWrites c ctype cst tok s z e)[i]).1 :=
+  (List.pairwise_iff_getElem.mp h) i j hi hj hij
+
+/-- **A staged object other than a container stack is separate from both stacks**
+at their staged extents.  The written object is named by its position (`0` the
+cursor record, `3` the token, `4` the staging record, `5` the log, `6` the
+refusal record), so no address comparison is owed. -/
+theorem staged_entry_sep {c ctype cst tok s z e : Nat}
+    (h : DisjointRegions (stage2StagedWrites c ctype cst tok s z e))
+    {i : Nat} (hi : i < 7) (h1 : i ≠ 1) (h2 : i ≠ 2) :
+    (ctype + stage2StackExtent ≤ ((stage2StagedWrites c ctype cst tok s z e)[i]).1 ∨
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).1 +
+          ((stage2StagedWrites c ctype cst tok s z e)[i]).2 ≤ ctype) ∧
+      (cst + stage2StackExtent ≤ ((stage2StagedWrites c ctype cst tok s z e)[i]).1 ∨
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).1 +
+          ((stage2StagedWrites c ctype cst tok s z e)[i]).2 ≤ cst) := by
+  have hct : ctype + stage2StackExtent ≤
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).1 ∨
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).1 +
+          ((stage2StagedWrites c ctype cst tok s z e)[i]).2 ≤ ctype := by
+    rcases Nat.lt_or_gt_of_ne h1 with hlt | hgt
+    · have h' := stagedWrites_sep h (i := i) (j := 1) hi (by decide) hlt
+      simpa only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ]
+        using h'.symm
+    · have h' := stagedWrites_sep h (i := 1) (j := i) (by decide) hi hgt
+      simpa only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ]
+        using h'
+  have hcs : cst + stage2StackExtent ≤
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).1 ∨
+        ((stage2StagedWrites c ctype cst tok s z e)[i]).1 +
+          ((stage2StagedWrites c ctype cst tok s z e)[i]).2 ≤ cst := by
+    rcases Nat.lt_or_gt_of_ne h2 with hlt | hgt
+    · have h' := stagedWrites_sep h (i := i) (j := 2) hi (by decide) hlt
+      simpa only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ]
+        using h'.symm
+    · have h' := stagedWrites_sep h (i := 2) (j := i) (by decide) hi hgt
+      simpa only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ]
+        using h'
+  exact ⟨hct, hcs⟩
+
+/-- **The two container stacks are separate.**  `if.end24.i` stores into both at
+the same depth, so each store must miss the other stack's staged extent — which is
+the premise `walkStack_ifEnd24_at` composes the push from. -/
+theorem ctype_cst_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (_h : WalkInv G C s) :
+    C.stage.cst + stage2StackExtent ≤ C.stage.ctype ∨
+      C.stage.ctype + stage2StackExtent ≤ C.stage.cst := by
+  have h' : C.stage.ctype + stage2StackExtent ≤ C.stage.cst ∨
+      C.stage.cst + stage2StackExtent ≤ C.stage.ctype := by
+    have h := stagedWrites_sep C.stage.writes_separate (i := 1) (j := 2)
+      (by decide) (by decide) (by decide)
+    simpa only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ]
+      using h
+  exact h'.symm
+
+/-- **A write inside the cursor record misses both stacks' carried marks.** -/
+theorem stack_c_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    (C.stage.ctype + C.wlen ≤ C.stage.c ∨ C.stage.c + stage2CursorExtent ≤ C.stage.ctype) ∧
+      (C.stage.cst + C.wlen ≤ C.stage.c ∨ C.stage.c + stage2CursorExtent ≤ C.stage.cst) := by
+  obtain ⟨hct, hcs⟩ := staged_entry_sep C.stage.writes_separate (i := 0)
+    (by decide) (by decide) (by decide)
+  simp only [stage2StagedWrites, List.getElem_cons_zero] at hct hcs
+  have hcap := h.wlen_cap
+  constructor
+  · rcases hct with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+  · rcases hcs with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+
+/-- **A write inside the token's staging misses both stacks' carried marks.** -/
+theorem stack_tok_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    (C.stage.ctype + C.wlen ≤ C.stage.tok ∨ C.stage.tok + stage2TokenExtent ≤ C.stage.ctype) ∧
+      (C.stage.cst + C.wlen ≤ C.stage.tok ∨ C.stage.tok + stage2TokenExtent ≤ C.stage.cst) := by
+  obtain ⟨hct, hcs⟩ := staged_entry_sep C.stage.writes_separate (i := 3)
+    (by decide) (by decide) (by decide)
+  simp only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ] at hct hcs
+  have hcap := h.wlen_cap
+  constructor
+  · rcases hct with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+  · rcases hcs with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+
+/-- **A write inside the refusal record misses both stacks' carried marks.** -/
+theorem stack_e_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    (C.stage.ctype + C.wlen ≤ C.stage.e ∨ C.stage.e + stage2ErrorExtent ≤ C.stage.ctype) ∧
+      (C.stage.cst + C.wlen ≤ C.stage.e ∨ C.stage.e + stage2ErrorExtent ≤ C.stage.cst) := by
+  obtain ⟨hct, hcs⟩ := staged_entry_sep C.stage.writes_separate (i := 6)
+    (by decide) (by decide) (by decide)
+  simp only [stage2StagedWrites, List.getElem_cons_zero, List.getElem_cons_succ] at hct hcs
+  have hcap := h.wlen_cap
+  constructor
+  · rcases hct with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+  · rcases hcs with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+
+/-- **A write inside `%d.i`'s slot misses both stacks' carried marks.** -/
+theorem stack_d_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    (C.stage.ctype + C.wlen ≤ C.stage.d ∨ C.stage.d + 8 ≤ C.stage.ctype) ∧
+      (C.stage.cst + C.wlen ≤ C.stage.d ∨ C.stage.d + 8 ≤ C.stage.cst) := by
+  have hcap := h.wlen_cap
+  have hct := C.stage.dSep (C.stage.ctype, stage2StackExtent)
+    (by simp [stage2WalkRegions, stage2Regions, stage2StagedWrites])
+  have hcs := C.stage.dSep (C.stage.cst, stage2StackExtent)
+    (by simp [stage2WalkRegions, stage2Regions, stage2StagedWrites])
+  constructor
+  · rcases hct with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+  · rcases hcs with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+
+/-- **A write inside the arena's staged window misses both stacks' carried
+marks.**  The arena is an ABI object, so the staging separates it from the seven
+the stacks belong to. -/
+theorem stack_arena_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) :
+    (C.stage.ctype + C.wlen ≤ G.dst ∨
+        G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ C.stage.ctype) ∧
+      (C.stage.cst + C.wlen ≤ G.dst ∨
+        G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ C.stage.cst) := by
+  have hcap := h.wlen_cap
+  have hct := disjointRegions_against C.stage.walk_separate
+    (a := G.dst) (n := G.ndst0 + G.n + stage2ArenaReserve)
+    (by simp [stage2WalkRegions, stage2Regions])
+    (C.stage.ctype, stage2StackExtent)
+    (by simp [stage2WalkRegions, stage2Regions, stage2StagedWrites])
+  have hcs := disjointRegions_against C.stage.walk_separate
+    (a := G.dst) (n := G.ndst0 + G.n + stage2ArenaReserve)
+    (by simp [stage2WalkRegions, stage2Regions])
+    (C.stage.cst, stage2StackExtent)
+    (by simp [stage2WalkRegions, stage2Regions, stage2StagedWrites])
+  constructor
+  · rcases hct with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+  · rcases hcs with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr h'
+
+/-- **The state stack's map after `s2_after_value` at a given depth.**  At depth
+zero the helper writes the root slot and the state stack is untouched; at a
+positive depth it rewrites the top byte to the state the top container's type
+calls for. -/
+def walkAfterValueMapAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sp : Nat) :
+    Nat → UInt8 :=
+  fun i => if sp = 0 then C.stMap i
+    else if i = sp - 1 then
+      UInt8.ofNat (if (C.tyMap (sp - 1)).toNat = 1 then 3 else 1)
+    else C.stMap i
+
+/-- The helper's map at the register's own depth. -/
+def walkAfterValueMap {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : Nat → UInt8 :=
+  walkAfterValueMapAt C C.sp
+
+/-- At a positive depth the map is the top's rewrite. -/
+theorem walkAfterValueMapAt_pos {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sp : Nat}
+    (h : sp ≠ 0) :
+    walkAfterValueMapAt C sp = fun i =>
+      if i = sp - 1 then
+        UInt8.ofNat (if (C.tyMap (sp - 1)).toNat = 1 then 3 else 1)
+      else C.stMap i := by
+  funext i
+  simp only [walkAfterValueMapAt, h, ite_false]
+
+/-- At depth zero the map is the carried one. -/
+theorem walkAfterValueMapAt_zero {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sp : Nat}
+    (h : sp = 0) : walkAfterValueMapAt C sp = C.stMap := by
+  funext i
+  simp only [walkAfterValueMapAt, h, ite_true]
+
+/-- The depth the helper receives is the register's own. -/
+theorem walkAfterValue_sp {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) : (BitVec.ofNat 32 C.sp).toNat = C.sp := by
+  have hcap := h.depth_cap
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]
+  simp only [stage2StackExtent] at hcap
+  omega
+
+/-- **`s2_after_value` keeps the type stack.**  Its write is either the root slot
+at the call's cursor or one byte of the state stack, and both miss the type
+stack's carried extent. -/
+theorem walkAfterValue_tyBytesAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : WalkInv G C s) {m : Mem} {sp : Nat}
+    (hsp : sp ≤ stage2StackExtent)
+    (hm : stage2AfterValue s.mem sp (G.next0 + 8) C.stage.ctype C.stage.cst = some m) :
+    WalkStackBytes m C.stage.ctype C.tyMap C.wlen := by
+  unfold stage2AfterValue at hm
+  by_cases h0 : sp = 0
+  · rw [ite_eq_left h0] at hm
+    obtain rfl := (Option.some.inj hm).symm
+    refine h.tyBytes.write_outside (Or.inr ?_)
+    have hw : (wordBytes 4 1).length = 4 := by simp [wordBytes, natToBytes_length]
+    have hse := C.stage.sevenEnd (C.stage.ctype, stage2StackExtent)
+      (by simp [stage2StagedWrites])
+    have hcap := h.wlen_cap
+    have hS : stage2StackExtent = 520 := rfl
+    simp only [stage2StackExtent] at hse hcap
+    omega
+  · rw [ite_eq_right h0] at hm
+    cases hc : readByte s.mem (C.stage.ctype + (sp - 1)) with
+    | none => rw [hc] at hm; exact absurd hm (by simp)
+    | some ctv =>
+      rw [hc] at hm
+      obtain rfl := (Option.some.inj hm).symm
+      refine h.tyBytes.write_outside ?_
+      have hl : [UInt8.ofNat (if ctv.toNat = 1 then 3 else 1)].length = 1 := rfl
+      have hcap := h.wlen_cap
+      have hS : stage2StackExtent = 520 := rfl
+      simp only [stage2StackExtent] at hcap
+      rcases ctype_cst_sep h with hs | hs
+      · refine Or.inl ?_ ; omega
+      · exact Or.inr (by omega)
+
+/-- **`s2_after_value` advances the state stack's top.**  At depth zero the write
+is the root slot and the map is the carried one; above it the byte at `sp - 1` is
+the state the type stack's own top names, which is `walkAfterValueMapAt`'s entry —
+provided the read index is inside the carried mark. -/
+theorem walkAfterValue_stBytesAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : WalkInv G C s) {m : Mem} {sp : Nat}
+    (hsp : sp ≤ stage2StackExtent) (hspw : sp = 0 ∨ sp - 1 < C.wlen)
+    (hm : stage2AfterValue s.mem sp (G.next0 + 8) C.stage.ctype C.stage.cst = some m) :
+    WalkStackBytes m C.stage.cst (walkAfterValueMapAt C sp) C.wlen := by
+  unfold stage2AfterValue at hm
+  by_cases h0 : sp = 0
+  · rw [ite_eq_left h0] at hm
+    obtain rfl := (Option.some.inj hm).symm
+    rw [walkAfterValueMapAt_zero h0]
+    refine h.stBytes.write_outside (Or.inr ?_)
+    have hw : (wordBytes 4 1).length = 4 := by simp [wordBytes, natToBytes_length]
+    have hse := C.stage.sevenEnd (C.stage.cst, stage2StackExtent)
+      (by simp [stage2StagedWrites])
+    have hcap := h.wlen_cap
+    have hS : stage2StackExtent = 520 := rfl
+    simp only [stage2StackExtent] at hse hcap
+    omega
+  · rw [ite_eq_right h0] at hm
+    cases hc : readByte s.mem (C.stage.ctype + (sp - 1)) with
+    | none => rw [hc] at hm; exact absurd hm (by simp)
+    | some ctv =>
+      rw [hc] at hm
+      obtain rfl := (Option.some.inj hm).symm
+      have hlt : sp - 1 < C.wlen := by rcases hspw with h | h <;> omega
+      have hctv : ctv = C.tyMap (sp - 1) := by
+        have hb := h.tyBytes.at hlt
+        rw [hc] at hb
+        exact Option.some.inj hb
+      rw [hctv, walkAfterValueMapAt_pos h0]
+      exact h.stBytes.storeAt (k := sp - 1)
+        (v := UInt8.ofNat (if (C.tyMap (sp - 1)).toNat = 1 then 3 else 1))
+
+/-- **A write at or above the call's cursor misses both stacks' carried marks**:
+the seven staged objects, the stacks among them, end at or below the cursor. -/
+theorem stack_alloca_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) {a : Nat} (ha : G.next0 ≤ a) :
+    C.stage.ctype + C.wlen ≤ a ∧ C.stage.cst + C.wlen ≤ a := by
+  have hcap := h.wlen_cap
+  have hct := C.stage.sevenEnd (C.stage.ctype, stage2StackExtent)
+    (by simp [stage2StagedWrites])
+  have hcs := C.stage.sevenEnd (C.stage.cst, stage2StackExtent)
+    (by simp [stage2StagedWrites])
+  constructor <;> omega
+
 /-- **The header's step**: one control step from the invariant at the header,
 into `NodeBlock21`, with the index advanced, the depth read from the merge, the
 invariant preserved and the measure strictly smaller. -/
@@ -3988,7 +4330,8 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     (hpre : s.pre = some "cleanup478.i")
     (hk2 : lookupName s.env "%k.2.i" = some (.int 64 (BitVec.ofNat 64 k)))
     (hsp1 : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 sp)))
-    (hkge : C.k < k) (hklt : k < G.nep) (hspc : sp ≤ stage2StackExtent) :
+    (hkge : C.k < k) (hklt : k < G.nep) (hspc : sp ≤ stage2StackExtent)
+    (hspw : sp ≤ C.wlen) :
     ∃ e : State,
       step calls stage2Body s = .jump e ∧
       WalkInv G { C with block := "NodeBlock21", k := k, sp := sp } e ∧
@@ -4072,6 +4415,24 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         inner_cap := hInv.inner_cap
         depth_cap := hspc
         depth_reg := ?_
+        sp_le_wlen := hspw
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes.write_outside (by
+          rcases (stack_c_sep hInv).1 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by
+              have hw : (wordBytes 8 (k + 1)).length = 8 := by
+                simp [wordBytes, natToBytes_length]
+              have hc : stage2CursorExtent = 1192 := rfl
+              omega))
+        stBytes := hInv.stBytes.write_outside (by
+          rcases (stack_c_sep hInv).2 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by
+              have hw : (wordBytes 8 (k + 1)).length = 8 := by
+                simp [wordBytes, natToBytes_length]
+              have hc : stage2CursorExtent = 1192 := rfl
+              omega))
         ptrs := ?_
         regs := by
           dsimp only [e]
@@ -4577,7 +4938,10 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     (hguard : NestGuard C.sp) :
     ∃ e : State,
       step calls stage2Body s = .jump e ∧
-      WalkInv G { C with block := "if.end.i.i" } e ∧
+      WalkInv G { C with
+        block := "if.end.i.i", wlen := max C.wlen (C.sp + 1),
+        tyMap := fun i => if i = C.sp then ifEnd24TyByte b else C.tyMap i,
+        stMap := fun i => if i = C.sp then ifEnd24StByte else C.stMap i } e ∧
       walkMeasure G { C with block := "if.end.i.i" } = walkMeasure G C ∧
       ∀ n, runFuel calls (1 + n) stage2Body s = runFuel calls n stage2Body e := by
   have hpc : s.pc = "if.end24.i" := by rw [hInv.pc_eq, hblock]
@@ -4614,6 +4978,11 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
   have hstep : step calls stage2Body s = .jump e :=
     ifEnd24_term (calls := calls) (s := s) hpc h8 hspv hct hcst hhash hspExt hcz hsz
       hInv.log_hash
+  obtain ⟨hTy, hSt⟩ :=
+    walkStack_ifEnd24_at (mem := s.mem) (ctype := C.stage.ctype) (cst := C.stage.cst)
+      (sp := C.sp) (wlen := C.wlen) (TM := C.tyMap) (SM := C.stMap) (b := b)
+      hInv.tyBytes hInv.stBytes (ctype_cst_sep hInv) hInv.sp_le_wlen
+      (by refine max_le hInv.wlen_cap ?_; have := hspExt; omega)
   refine ⟨e, hstep, ?_, ?_, ?_⟩
   · refine
       { pc_eq := rfl
@@ -4634,6 +5003,10 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := le_trans (Nat.le_succ _) (le_max_right _ _)
+        wlen_cap := max_le hInv.wlen_cap (by have := hspExt; omega)
+        tyBytes := hTy
+        stBytes := hSt
         ptrs := ?_
         regs := by
           dsimp only [e, ifEnd24Out, ifEnd24Mid]
@@ -4850,10 +5223,11 @@ theorem WalkLink.whileBody {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     (hpre : s.pre = some "cleanup478.i")
     (hk2 : lookupName s.env "%k.2.i" = some (.int 64 (BitVec.ofNat 64 k)))
     (hsp1 : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 sp)))
-    (hkge : C.k < k) (hklt : k < G.nep) (hspc : sp ≤ stage2StackExtent) :
+    (hkge : C.k < k) (hklt : k < G.nep) (hspc : sp ≤ stage2StackExtent)
+    (hspw : sp ≤ C.wlen) :
     ∃ s', WalkLink calls G C s { C with block := "NodeBlock21", k := k, sp := sp } s' := by
   obtain ⟨e, hstep, hinv, hmono, -⟩ :=
-    whileBody_step (calls := calls) G C s hInv hblock hpre hk2 hsp1 hkge hklt hspc
+    whileBody_step (calls := calls) G C s hInv hblock hpre hk2 hsp1 hkge hklt hspc hspw
   exact ⟨e, ⟨hInv, hstep, hinv, le_of_lt hmono⟩⟩
 
 /-- **The trace's second proved link: the nesting arm.**  `if.end24.i` writes the
@@ -4863,10 +5237,14 @@ header bound it at the carried index, and no block between the header and
 `if.end24.i` rebinds it (`WalkIter.reg8`). -/
 theorem WalkLink.ifEnd24 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end24.i")
+    {b : BitVec 8} (h8 : lookupName s.env "%8" = some (.int 8 b))
     (hguard : NestGuard C.sp) :
-    ∃ s', WalkLink calls G C s { C with block := "if.end.i.i" } s' := by
+    ∃ s', WalkLink calls G C s { C with
+      block := "if.end.i.i", wlen := max C.wlen (C.sp + 1),
+      tyMap := fun i => if i = C.sp then ifEnd24TyByte b else C.tyMap i,
+      stMap := fun i => if i = C.sp then ifEnd24StByte else C.stMap i } s' := by
   obtain ⟨e, hstep, hinv, hmono, -⟩ :=
-    ifEnd24_step G C s hInv hblock hInv.iter.reg8 hguard
+    ifEnd24_step (b := b) G C s hInv hblock h8 hguard
   exact ⟨e, ⟨hInv, hstep, hinv, le_of_eq hmono⟩⟩
 
 
@@ -5340,18 +5718,19 @@ the assembly — the seed's prefix run, the dispatch chain, the chain's step cou
 the return, and the budget comparison — as five named premises, with no `sorry`
 and no claim of the obligation.
 
-Three things the census therefore keeps open, each with its cost named:
+The census's carriers, with their costs named:
 
-* the two carriers **are** `WalkInv` fields, and their production is stated: the
-  static carrier by the seed's bindings and the per-iteration pair by
-  `whileBody_step`'s own two loads.  What the clause does not carry is the
-  container stacks' *contents* — the next bullet;
-* the container stacks' bytes read at `ctype/cst + (C.sp - 1)` are not carried.
-  A per-depth byte cannot be carried by a clause a push or pop preserves: the
-  byte at the new depth was written at an earlier index.  The sound shape is a
-  carried map `Nat → UInt8` updated at the pushed index, which moves
-  `if.end24_step`, the four container-byte stores of class D and the merge at
-  `cleanup478.i` — the class-D rework, recorded here rather than assumed;
+* the two register carriers **are** `WalkInv` fields, and their production is
+  stated: the static carrier by the seed's bindings and the per-iteration pair by
+  `whileBody_step`'s own two loads;
+* the container stacks' bytes read at `ctype/cst + (C.sp - 1)` are carried as a
+  map at a written mark, not as a per-depth byte: the byte at a popped depth was
+  written at an earlier index.  `WalkCarry` carries `wlen` and the two maps,
+  `WalkInv` carries the two `WalkStackBytes` clauses and their bounds, and the
+  conversions are `if.end24_step` (`walkStack_ifEnd24_at`), the class-D stores
+  (`WalkStackBytes.storeAt`), the two `s2_after_value` links
+  (`walkAfterValueMapAt`), and `WalkStackBytes.write_outside` at every link that
+  writes a staged object, the cursor record, `%d.i` or an alloca;
 * the seed's entry run is stated in four segments and only partly proved.  The
   block's own list is `walkEntryInstrs` and `JsonStage2WalkRun` cuts it into
   four segments, pinned to the block by `walkEntryInstrs_segments` (an `rfl`).
@@ -5472,6 +5851,10 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
         regs := ?_
         iter := ?_
         log_hash := hInv.log_hash
@@ -5682,6 +6065,20 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes.write_outside (by
+          have hw : (wordBytes 8 j).length = 8 := by simp [wordBytes, natToBytes_length]
+          have hx : stage2ErrorExtent = 24 := rfl
+          rcases (stack_e_sep hInv).1 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
+        stBytes := hInv.stBytes.write_outside (by
+          have hw : (wordBytes 8 j).length = 8 := by simp [wordBytes, natToBytes_length]
+          have hx : stage2ErrorExtent = 24 := rfl
+          rcases (stack_e_sep hInv).2 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
         ptrs := ?_
         regs := ?_
         iter := ?_
@@ -6212,6 +6609,10 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         depth_cap := hInv.depth_cap
         depth_reg := hInv.depth_reg
         ptrs := hInv.ptrs
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
         regs := hInv.regs
         iter := hInv.iter
         log_hash := hInv.log_hash
@@ -6283,6 +6684,10 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         depth_cap := hInv.depth_cap
         depth_reg := hInv.depth_reg
         ptrs := hInv.ptrs
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
         regs := hInv.regs
         iter := hInv.iter
         log_hash := hInv.log_hash

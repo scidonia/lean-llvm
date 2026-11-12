@@ -252,6 +252,10 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by dsimp only [s']; rw [hmem]; exact hInv.tyBytes
+        stBytes := by dsimp only [s']; rw [hmem]; exact hInv.stBytes
         ptrs := ?_
         regs := by dsimp only [s']; exact WalkRegs.of_run hInv.regs hfree hden
         iter := by dsimp only [s']; exact WalkIter.of_run hInv.iter hfree hden
@@ -327,6 +331,10 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by dsimp only [s']; rw [hmem]; exact hInv.tyBytes
+        stBytes := by dsimp only [s']; rw [hmem]; exact hInv.stBytes
         ptrs := ?_
         regs := by dsimp only [s']; exact WalkRegs.of_run hInv.regs hfree hden
         iter := by dsimp only [s']; exact WalkIter.of_run hInv.iter hfree hden
@@ -598,6 +606,10 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by dsimp only [s']; rw [hmem]; exact hInv.tyBytes
+        stBytes := by dsimp only [s']; rw [hmem]; exact hInv.stBytes
         ptrs := ?_
         regs := hregs
         iter := hiter

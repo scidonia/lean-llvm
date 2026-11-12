@@ -211,7 +211,9 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hterm : B.term = Term.br "cleanup478.i")
     (hp : lookupName s.env p = some (.ptr (C.stage.cst + q)))
     (hq : q < stage2StackExtent) :
-    ∃ s', WalkLink calls G C s { C with block := "cleanup478.i" } s' := by
+    ∃ s', WalkLink calls G C s { C with
+      block := "cleanup478.i",
+      stMap := fun i => if i = q then (natToBytes x.toNat 1).getD 0 0 else C.stMap i } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   have hlen : (natToBytes x.toNat 1).length = 1 := by simp [natToBytes_length]
   have hv : (natToBytes x.toNat 1).length ≤ 1 := by omega
@@ -259,6 +261,18 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := hInv.depth_reg
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.tyBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            rcases ctype_cst_sep hInv with h' | h'
+            · exact Or.inl (by omega)
+            · exact Or.inr (by omega))
+        stBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.stBytes.storeNatAt (k := q) (v := x.toNat)
         ptrs := hInv.ptrs
         regs := hInv.regs
         iter := hInv.iter
@@ -325,7 +339,10 @@ theorem WalkLink.if_end150_i {calls : Calls} {m0 : Mem}
     (hblock : C.block = "if.end150.i")
     {q : Nat} (hp : lookupName s.env "%arrayidx143.i" = some (.ptr (C.stage.cst + q)))
     (hq : q < stage2StackExtent) :
-    ∃ s', WalkLink calls G C s { C with block := "cleanup478.i" } s' := by
+    ∃ s', WalkLink calls G C s { C with
+      block := "cleanup478.i",
+      stMap := fun i => if i = q then
+        (natToBytes (BitVec.ofNat 8 4).toNat 1).getD 0 0 else C.stMap i } s' := by
   exact WalkLink.store8Stack G C s hInv
     (by rw [hblock]; exact walkIf_end150_i_find) rfl rfl hp hq
 
@@ -345,7 +362,10 @@ theorem WalkLink.if_end162_i {calls : Calls} {m0 : Mem}
     (hblock : C.block = "if.end162.i")
     {q : Nat} (hp : lookupName s.env "%arrayidx143.i" = some (.ptr (C.stage.cst + q)))
     (hq : q < stage2StackExtent) :
-    ∃ s', WalkLink calls G C s { C with block := "cleanup478.i" } s' := by
+    ∃ s', WalkLink calls G C s { C with
+      block := "cleanup478.i",
+      stMap := fun i => if i = q then
+        (natToBytes (BitVec.ofNat 8 2).toNat 1).getD 0 0 else C.stMap i } s' := by
   exact WalkLink.store8Stack G C s hInv
     (by rw [hblock]; exact walkIf_end162_i_find) rfl rfl hp hq
 
@@ -365,7 +385,10 @@ theorem WalkLink.if_end195_i {calls : Calls} {m0 : Mem}
     (hblock : C.block = "if.end195.i")
     {q : Nat} (hp : lookupName s.env "%arrayidx188.i" = some (.ptr (C.stage.cst + q)))
     (hq : q < stage2StackExtent) :
-    ∃ s', WalkLink calls G C s { C with block := "cleanup478.i" } s' := by
+    ∃ s', WalkLink calls G C s { C with
+      block := "cleanup478.i",
+      stMap := fun i => if i = q then
+        (natToBytes (BitVec.ofNat 8 2).toNat 1).getD 0 0 else C.stMap i } s' := by
   exact WalkLink.store8Stack G C s hInv
     (by rw [hblock]; exact walkIf_end195_i_find) rfl rfl hp hq
 
@@ -518,6 +541,26 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.tyBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hL : stage2LogExtent = 64 := rfl
+            have hl := hmlen
+            rcases ctype_log_sep hInv with h' | h'
+            · exact Or.inr (by omega)
+            · exact Or.inl (by omega))
+        stBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.stBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hL : stage2LogExtent = 64 := rfl
+            have hl := hmlen
+            rcases cst_log_sep hInv with h' | h'
+            · exact Or.inr (by omega)
+            · exact Or.inl (by omega))
         ptrs := ?_
         regs := ?_
         iter := ?_
@@ -810,6 +853,38 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by
+          dsimp only [s', stateAt, m']
+          exact (hInv.tyBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hl := hevlen_lt
+            rcases ctype_ev_sep hInv with h' | h'
+            · exact Or.inr (by omega)
+            · exact Or.inl (by omega))).write_outside (by
+              have hcap := hInv.wlen_cap
+              have hL : stage2LogExtent = 64 := rfl
+              have hwl : (wordBytes 8 (C.evlen + 1)).length = 8 := by
+                simp [wordBytes, natToBytes_length]
+              rcases ctype_log_sep hInv with h' | h'
+              · exact Or.inr (by omega)
+              · exact Or.inl (by omega))
+        stBytes := by
+          dsimp only [s', stateAt, m']
+          exact (hInv.stBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hl := hevlen_lt
+            rcases cst_ev_sep hInv with h' | h'
+            · exact Or.inr (by omega)
+            · exact Or.inl (by omega))).write_outside (by
+              have hcap := hInv.wlen_cap
+              have hL : stage2LogExtent = 64 := rfl
+              have hwl : (wordBytes 8 (C.evlen + 1)).length = 8 := by
+                simp [wordBytes, natToBytes_length]
+              rcases cst_log_sep hInv with h' | h'
+              · exact Or.inr (by omega)
+              · exact Or.inl (by omega))
         ptrs := ?_
         regs := ?_
         iter := ?_
@@ -1122,6 +1197,28 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       inner_cap := hInv.inner_cap
       depth_cap := hInv.depth_cap
       depth_reg := ?_
+      sp_le_wlen := hInv.sp_le_wlen
+      wlen_cap := hInv.wlen_cap
+      tyBytes := by
+        dsimp only [s', stateAt, m']
+        exact hInv.tyBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hL : stage2LogExtent = 64 := rfl
+          have hl : (wordBytes 8 (a + l)).length = 8 := by
+            simp [wordBytes, natToBytes_length]
+          rcases ctype_log_sep hInv with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
+      stBytes := by
+        dsimp only [s', stateAt, m']
+        exact hInv.stBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hL : stage2LogExtent = 64 := rfl
+          have hl : (wordBytes 8 (a + l)).length = 8 := by
+            simp [wordBytes, natToBytes_length]
+          rcases cst_log_sep hInv with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
       ptrs := ?_
       regs := ?_
       iter := ?_
@@ -1222,7 +1319,10 @@ theorem walkIf_then330_i_find :
 theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.then330.i") (hsp1 : 1 ≤ C.sp) :
-    ∃ s', WalkLink calls G C s { C with block := "cleanup478.i" } s' := by
+    ∃ s', WalkLink calls G C s { C with
+      block := "cleanup478.i",
+      stMap := fun i => if i = C.sp - 1 then
+        (natToBytes (BitVec.ofNat 8 1).toNat 1).getD 0 0 else C.stMap i } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   have hsp32 : C.sp < 2 ^ 32 := by
     have h := hInv.depth_cap
@@ -1308,6 +1408,20 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.tyBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hp : C.sp - 1 < stage2StackExtent := hpred_ext
+            rcases ctype_cst_sep hInv with h' | h'
+            · exact Or.inl (by omega)
+            · exact Or.inr (by omega))
+        stBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.stBytes.storeNatAt (k := C.sp - 1)
+            (v := (BitVec.ofNat 8 1).toNat)
         ptrs := ?_
         regs := ?_
         iter := ?_
@@ -1549,6 +1663,24 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
         depth_reg := ?_
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.tyBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hcur : stage2CursorExtent = 1192 := rfl
+            rcases (stack_c_sep hInv).1 with h' | h'
+            · exact Or.inr (by omega)
+            · exact Or.inl (by omega))
+        stBytes := by
+          dsimp only [s', stateAt, m']
+          exact hInv.stBytes.write_outside (by
+            have hcap := hInv.wlen_cap
+            have hcur : stage2CursorExtent = 1192 := rfl
+            rcases (stack_c_sep hInv).2 with h' | h'
+            · exact Or.inr (by omega)
+            · exact Or.inl (by omega))
         ptrs := ?_
         regs := ?_
         iter := ?_

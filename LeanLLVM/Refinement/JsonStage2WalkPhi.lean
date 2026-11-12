@@ -1213,6 +1213,26 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       inner_cap := hInv.inner_cap
       depth_cap := hInv.depth_cap
       depth_reg := ?_
+      sp_le_wlen := hInv.sp_le_wlen
+      wlen_cap := hInv.wlen_cap
+      tyBytes := by
+        dsimp only [s', sFin, m', stateAt]
+        exact hInv.tyBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hx : stage2TokenExtent = 24 := rfl
+          have hl := natToBytes_length (e.toNat) 8
+          rcases (stack_tok_sep hInv).1 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
+      stBytes := by
+        dsimp only [s', sFin, m', stateAt]
+        exact hInv.stBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hx : stage2TokenExtent = 24 := rfl
+          have hl := natToBytes_length (e.toNat) 8
+          rcases (stack_tok_sep hInv).2 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
       ptrs := ?_
       regs := ?_
       iter := ?_
@@ -1396,6 +1416,26 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       inner_cap := hInv.inner_cap
       depth_cap := hInv.depth_cap
       depth_reg := ?_
+      sp_le_wlen := hInv.sp_le_wlen
+      wlen_cap := hInv.wlen_cap
+      tyBytes := by
+        dsimp only [s', sFin, m', stateAt]
+        exact hInv.tyBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hx : stage2ErrorExtent = 24 := rfl
+          have hl := natToBytes_length ((x + ix).toNat) 8
+          rcases (stack_e_sep hInv).1 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
+      stBytes := by
+        dsimp only [s', sFin, m', stateAt]
+        exact hInv.stBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hx : stage2ErrorExtent = 24 := rfl
+          have hl := natToBytes_length ((x + ix).toNat) 8
+          rcases (stack_e_sep hInv).2 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
       ptrs := ?_
       regs := ?_
       iter := ?_
@@ -1573,6 +1613,26 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       inner_cap := hInv.inner_cap
       depth_cap := hInv.depth_cap
       depth_reg := ?_
+      sp_le_wlen := hInv.sp_le_wlen
+      wlen_cap := hInv.wlen_cap
+      tyBytes := by
+        dsimp only [s', sFin, m', stateAt]
+        exact hInv.tyBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hx : stage2ErrorExtent = 24 := rfl
+          have hl := natToBytes_length (x.toNat) 8
+          rcases (stack_e_sep hInv).1 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
+      stBytes := by
+        dsimp only [s', sFin, m', stateAt]
+        exact hInv.stBytes.write_outside (by
+          have hcap := hInv.wlen_cap
+          have hx : stage2ErrorExtent = 24 := rfl
+          have hl := natToBytes_length (x.toNat) 8
+          rcases (stack_e_sep hInv).2 with h' | h'
+          · exact Or.inr (by omega)
+          · exact Or.inl (by omega))
       ptrs := ?_
       regs := ?_
       iter := ?_
