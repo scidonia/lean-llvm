@@ -39,13 +39,13 @@ rest of the tree does not have (`walkMemStore64`, `walkMemStorePtr`,
 `walkMemMemset`, `walkMemLoad64`, `walkMemS2Init`), and it is what any longer
 straight-line run in this walk must be built from.
 
-What remains is the block's `denoteCode`.  The segments compose in pairs
-(`walkEntrySeg12_denote`, `walkEntrySeg34_denote`) and the record's argument
-fields are read back across the second segment
-(`readBytes_stage2WriteStores_at`, `walkSeg2ReadRecord_b`/`_n`/`_ep`), but one
-equality over all four is blocked by the size of the memory term it closes over —
-that module's census carries the measurement — and the block's `step`, its
-`runFuel` prefix and `WalkSeedState`'s production all wait on it.
+The block's own run is `walkEntry_denote`: one equality over all four segments,
+with segment 3 and segment 4 restated at their own memory variable
+(`walkEntrySeg3_denote_mem`, `walkEntrySeg4_denote_mem`) so that the close meets
+the named folds `walkSeg3PostMem`/`walkSeg4PostMem` rather than reducing the
+cursor record's 1152-byte memset — that module's census carries the measurement
+and the shape.  The block's `step`, its `runFuel` prefix and `WalkSeedState`'s
+production read that equality; they are the open row.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
