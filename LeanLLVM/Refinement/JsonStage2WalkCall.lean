@@ -1323,8 +1323,8 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup474_i
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_store64_imm
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end256_i
-#print axioms LeanLLVM.Refinement.WalkScope.WalkStage.rootSlot_log
-#print axioms LeanLLVM.Refinement.WalkScope.WalkStage.rootSlot_ev
+#print axioms LeanLLVM.Refinement.WalkStage.rootSlot_log
+#print axioms LeanLLVM.Refinement.WalkStage.rootSlot_ev
 
 /-! ## The four traps
 
