@@ -233,7 +233,7 @@ The trace itself is stated: `WalkLink` is one link (a control step that preserve
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
 as a run, a measure bound, and a completion at a returning last state.
 
-A hundred and fifty-three of the body's 165 blocks are links, and *The middle's
+A hundred and fifty-seven of the body's 165 blocks are links, and *The middle's
 two classes* below is the census that decomposes the count: the two named arms
 (`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
 (`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
@@ -241,7 +241,7 @@ eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
 twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
 `JsonStage2WalkPure`), sixteen of class F's nineteen call blocks
 (`JsonStage2WalkCall`), and the two entry links beside `while.body.i.lr.ph`
-(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 10 blocks
+(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the five blocks
 that are still not links, are stated there.  `WalkLocal` is
 still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
@@ -4651,7 +4651,33 @@ budget, counted* below takes that path off the pinned AST: the dispatch's longes
 path is 22 blocks against `stage2EntryAllowance` 32, and the widest scan step is
 six blocks against `stage2ByteAllowance` 8.  What is still open is the chain's own
 count — whether a 165-block dispatch spends exactly those allowances over a
-completed traversal — which is the completed chain's answer and not the census's.-/
+completed traversal — which is the completed chain's answer and not the census's.
+
+**The register carriers, and what is still open.**  `JsonStage2WalkSeed` now
+states the two predicates the traversal's successor hypotheses need: `WalkRegs`,
+the 24 static addresses bound by `entry`/`while.body.i.lr.ph` and never rebound,
+and `WalkIter`, `%7` and `%8` at `entryPos G C.k`/`entryByte G C.k`.  Their
+preservation lemmas are `WalkRegs.of_run` and `WalkIter.of_run`, both by
+`denoteCode_lookupName` and nothing else.  `walkCompletes_of_prefix_chain` states
+the assembly — the seed's prefix run, the dispatch chain, the chain's step count,
+the return, and the budget comparison — as five named premises, with no `sorry`
+and no claim of the obligation.
+
+Three things the census therefore keeps open, each with its cost named:
+
+* the two predicates are not fields of `WalkInv` yet.  Making them fields
+  changes all 31 record literals and every hand-built link at once; that rework
+  is the next sitting's first step, not a change the step vocabulary carries;
+* the container stacks' bytes read at `ctype/cst + (C.sp - 1)` are not carried.
+  A per-depth byte cannot be carried by a clause a push or pop preserves: the
+  byte at the new depth was written at an earlier index.  The sound shape is a
+  carried map `Nat → UInt8` updated at the pushed index, which moves
+  `if.end24_step`, the four container-byte stores of class D and the merge at
+  `cleanup478.i` — the class-D rework, recorded here rather than assumed;
+* the seed's entry run is not produced.  The step vocabulary is here and the
+  four segments are named, but the `entry` run at a symbolic staging is not yet
+  a `runFuel` prefix, so `hprefix` in the conditional theorem has no producer
+  yet.  The five open rows stay open until it does.-/
 
 /-- **A comparison**, at a state rather than at a builder and at arbitrary operands:
 the step `denoteCode_icmp_eq_imm_w` is its `eq`-with-literal case, and the

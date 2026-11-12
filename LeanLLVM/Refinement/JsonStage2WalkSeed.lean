@@ -277,6 +277,177 @@ theorem denoteCode_s2_init (env : Env) (s : State)
   rw [walkDenoteCode_callVoid (calls := stage2Calls stage2SubCalls) (env := env) (s := s)
     (callee := "s2_init") ha hc5]
 
+/-! ### The two register carriers
+
+The dispatch's blocks read registers the invariant does not bind, and the
+traversal's successor hypotheses have to come from somewhere.  There are two
+kinds, and they are different kinds:
+
+* **static** registers, bound once by `entry` or `while.body.i.lr.ph` and never
+  rebound.  Their values are fixed by the staging (the `%z`/`%s`/`%c.i`
+  offsets, the document base's predecessor, and the four stack objects' slots
+  at the call's cursor), so `WalkRegs` is a list of lookups, one entry each.
+  `WalkRegs.of_run` is the whole preservation proof: a run that binds none of
+  the names keeps every one of them, by `denoteCode_lookupName`.
+* **per-iteration** registers, rebound by the header on every pass: `%7` is the
+  entry stream's lane at the carried index and `%8` the document byte that lane
+  selects.  Their values are functions of the carry's `k`, so the clause is
+  stated at `entryPos G C.k` and `entryByte G C.k` rather than at a constant.
+  `WalkIter.of_run` is the same preservation by freshness.
+
+What is *not* here, and why: the container stacks' bytes read at
+`ctype/cst + (sp - 1)`.  A clause of the form "the byte at `sp - 1` is `t`"
+cannot be carried by a link that pushes or pops, because the byte at the new
+`sp - 1` was written at an earlier index and the carry does not remember it.
+The sound shape is a carried map `Nat → UInt8` updated at the pushed index,
+which the push link (`if.end24_step`), the container-byte stores (class D's
+`if.end150.i`, `if.end162.i`, `if.end195.i`, `if.then330.i`) and the merge
+(`cleanup478.i`) all have to move.  That is the class-D rework, and it belongs
+with the 165-block next-link lemma rather than with the seed.  The register
+carriers below are what the header and the seed produce; the stack map is
+recorded here as the remaining half of the second carrier, not assumed.
+
+The two predicates are stated beside `WalkInv` rather than as fields of it so
+this module lands green: adding a field to the structure changes all ~31 of its
+record literals and every hand-built link at once, which is the rework the
+census below records as open, not a change the seed's step vocabulary can carry
+on its own. -/
+
+/-- The entry stream's position at index `k`, with `0` past the end.  The
+carrier is read at an index the loop's own bound keeps inside the stream, so
+the default is a totalisation, not a case the walk takes. -/
+def entryPos {m0 : Mem} (G : WalkGeom m0) (k : Nat) : Nat :=
+  G.ent.getD k 0
+
+/-- The document byte the entry at index `k` selects, with `0` past the end.
+`%8` is `entry[%idxprom.i]`, so this is the value the header binds. -/
+def entryByte {m0 : Mem} (G : WalkGeom m0) (k : Nat) : UInt8 :=
+  G.bs.getD (entryPos G k) 0
+
+/-- The static address registers the dispatch reads, beside `WalkPtrs`' six: the
+`%s` record's fields the header's preheader stores, the log's six addresses the
+reserves and the merges read, the token's three, the cursor record's five, the
+document base's predecessor, and the four stack objects at the call's cursor.
+Every one is bound before the loop and no block rebinds it. -/
+def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String × Value) :=
+  [("%nsp", .ptr (C.stage.s + 56)), ("%xp1", .ptr (C.stage.s + 72)),
+   ("%nxp2", .ptr (C.stage.s + 80)), ("%n2.i", .ptr (C.stage.s + 8)),
+   ("%ep3.i", .ptr (C.stage.s + 48)),
+   ("%len", .ptr (C.stage.z + 8)), ("%cap", .ptr (C.stage.z + 16)),
+   ("%0", .ptr (C.stage.z + 24)), ("%h1.i.i.i51", .ptr (C.stage.z + 24)),
+   ("%ar", .ptr (C.stage.z + 40)), ("%alen", .ptr (C.stage.z + 48)),
+   ("%acap", .ptr (C.stage.z + 56)),
+   ("%gap.i", .ptr (C.stage.tok + 20)), ("%end.i", .ptr (C.stage.tok + 8)),
+   ("%kind404.i", .ptr (C.stage.tok + 16)),
+   ("%n6.i", .ptr (C.stage.c + 8)), ("%ix.i", .ptr (C.stage.c + 16)),
+   ("%nix.i", .ptr (C.stage.c + 24)), ("%e7.i", .ptr (C.stage.c + 1112)),
+   ("%invariant.gep", .ptr (G.b - 1)),
+   ("%ei.i", .ptr G.next0), ("%root_done.i", .ptr (G.next0 + 8)),
+   ("%xj.i", .ptr (G.next0 + 12)), ("%outn.i", .ptr (G.next0 + 20))]
+
+/-- **The static carrier**: every register `walkStaticRegs` names holds the value
+the staging fixes for it. -/
+def WalkRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env) : Prop :=
+  ∀ p ∈ walkStaticRegs G C, lookupName env p.1 = some p.2
+
+/-- **A run that binds none of the static names keeps both carriers.**  One
+`denoteCode_lookupName` per name, and no memory reasoning. -/
+theorem WalkRegs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {env env' : Env} {s s' : State} {is : List Instr}
+    (h : WalkRegs G C env)
+    (hfree : ∀ i ∈ is, ∀ p ∈ walkStaticRegs G C, i.dst? ≠ some p.1)
+    (hden : denoteCode calls is (stateAt env s) = some (stateAt env' s')) :
+    WalkRegs G C env' := by
+  intro p hp
+  have hlk : lookupName env' p.1 = lookupName env p.1 := by
+    simpa only [stateAt] using LeanLLVM.Refinement.JsonEntrySteps.denoteCode_lookupName calls is p.1
+      (fun i hi => hfree i hi p hp) (stateAt env s) (stateAt env' s') hden
+  rw [hlk]
+  exact h p hp
+
+/-- **The per-iteration carrier**: `%7` is the entry stream's lane at the carried
+index, and `%8` is the document byte that lane selects.  Both are rebound by
+`while.body.i`, so the clause is a function of `C.k`, not a constant; the header's
+step produces it and every other block's run leaves it alone. -/
+structure WalkIter {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env) : Prop where
+  /-- `%7` holds the lane at the carried index. -/
+  reg7 : lookupName env "%7" = some (.int 32 (BitVec.ofNat 32 (entryPos G C.k)))
+  /-- `%8` holds the document byte the lane selects. -/
+  reg8 : lookupName env "%8" = some (.int 8 (BitVec.ofNat 8 (entryByte G C.k).toNat))
+
+/-- A run that binds neither `%7` nor `%8` keeps the per-iteration carrier. -/
+theorem WalkIter.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {env env' : Env} {s s' : State} {is : List Instr}
+    (h : WalkIter G C env)
+    (h7 : ∀ i ∈ is, i.dst? ≠ some "%7") (h8 : ∀ i ∈ is, i.dst? ≠ some "%8")
+    (hden : denoteCode calls is (stateAt env s) = some (stateAt env' s')) :
+    WalkIter G C env' := by
+  refine ⟨?_, ?_⟩
+  · have hlk : lookupName env' "%7" = lookupName env "%7" := by
+      simpa only [stateAt] using LeanLLVM.Refinement.JsonEntrySteps.denoteCode_lookupName calls is "%7" h7
+        (stateAt env s) (stateAt env' s') hden
+    rw [hlk]; exact h.reg7
+  · have hlk : lookupName env' "%8" = lookupName env "%8" := by
+      simpa only [stateAt] using LeanLLVM.Refinement.JsonEntrySteps.denoteCode_lookupName calls is "%8" h8
+        (stateAt env s) (stateAt env' s') hden
+    rw [hlk]; exact h.reg8
+
+/-! ### The traversal, stated conditionally
+
+The completion conjunct of `Stage2WalkObligation` is `Stage2WalkCompletes`: at
+the ABI's thirteen arguments the pinned body returns within `stage2Budget`.  The
+loop proof is an arc, and this is its assembly point, stated with every premise
+named and none assumed away:
+
+* `hprefix` — the entry seed's run: from `EntryState`, `j` steps reach the loop
+  head state `s0` and leave it exactly, for every further fuel;
+* `hchain` — the dispatch as a `WalkChain` from the seed: one link per block, the
+  thing the 165-block next-link lemma produces;
+* `hsteps` — the chain's own step count, read as a fuel shift (`k` steps from
+  `s0` are `k` steps, for every continuation); `WalkChain.steps` is what the
+  traversal sitting discharges it with;
+* `hret` — the last state's step returns;
+* `hbudget` — the count against the record's allowance: the seed's `j` steps,
+  the chain's `k`, and the return's one step fit the budget.
+
+Nothing here proves any of the five; the theorem is what a proof of them buys,
+and `Stage2WalkCompletes` follows from it once they are supplied. -/
+theorem walkCompletes_of_prefix_chain {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (S : WalkStage G) {s s0 s' sret : State} {j k B : Nat}
+    {v : Value}
+    (hprefix : ∀ n, runFuel calls (j + n) stage2Body s = runFuel calls n stage2Body s0)
+    (_hchain : WalkChain calls G (walkSeed G S) s0 (walkSeed G S) s')
+    (hsteps : ∀ n, runFuel calls (k + n) stage2Body s0 = runFuel calls n stage2Body s')
+    (hret : step calls stage2Body s' = .ret v sret)
+    (hbudget : j + k + 1 ≤ B) :
+    ∃ v' m, runFuel calls B stage2Body s = some (.ret v' m) := by
+  have h1 : runFuel calls (k + 1) stage2Body s0 = some (.ret v sret.mem) := by
+    rw [hsteps 1]
+    simp only [runFuel, hret]
+  have h2 : runFuel calls (j + (k + 1)) stage2Body s = some (.ret v sret.mem) := by
+    rw [hprefix (k + 1)]
+    exact h1
+  obtain ⟨d, hd⟩ := Nat.exists_eq_add_of_le hbudget
+  refine ⟨v, sret.mem, ?_⟩
+  rw [hd]
+  have hB : j + (k + 1) + d = j + k + 1 + d := by omega
+  rw [← hB]
+  exact runFuel_mono h2
+
+/-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkRegs.of_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkRegs.of_run
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkIter.of_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkIter.of_run
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkCompletes_of_prefix_chain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkCompletes_of_prefix_chain
+
 end WalkScope
 
 end LeanLLVM.Refinement
