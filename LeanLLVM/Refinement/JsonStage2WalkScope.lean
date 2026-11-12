@@ -4986,19 +4986,34 @@ and no claim of the obligation.
 
 Three things the census therefore keeps open, each with its cost named:
 
-* the two predicates are not fields of `WalkInv` yet.  Making them fields
-  changes all 31 record literals and every hand-built link at once; that rework
-  is the next sitting's first step, not a change the step vocabulary carries;
+* the two carriers **are** `WalkInv` fields, and their production is stated: the
+  static carrier by the seed's bindings and the per-iteration pair by
+  `whileBody_step`'s own two loads.  What the clause does not carry is the
+  container stacks' *contents* — the next bullet;
 * the container stacks' bytes read at `ctype/cst + (C.sp - 1)` are not carried.
   A per-depth byte cannot be carried by a clause a push or pop preserves: the
   byte at the new depth was written at an earlier index.  The sound shape is a
   carried map `Nat → UInt8` updated at the pushed index, which moves
   `if.end24_step`, the four container-byte stores of class D and the merge at
   `cleanup478.i` — the class-D rework, recorded here rather than assumed;
-* the seed's entry run is not produced.  The step vocabulary is here
-  (`walkEntryInstrs`, the block's own list), but the `entry` run at a symbolic
-  staging is not yet a `runFuel` prefix, so `hprefix` in the conditional theorem
-  has no producer yet.  The five open rows stay open until it does.-/
+* the seed's entry run is stated in four segments and only partly proved.  The
+  block's own list is `walkEntryInstrs` and `JsonStage2WalkRun` cuts it into
+  four segments, pinned to the block by `walkEntryInstrs_segments` (an `rfl`).
+  Three `denoteCode` equalities are proved at a symbolic environment and state
+  (`walkEntrySeg1_denote`, `walkEntrySeg3_denote`, `walkEntrySeg4_denote`); the
+  second — the initialisation, the `S2` record's fields, the log's memset and
+  stores, and the two cursor loads — is cut into its two halves
+  (`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by `walkEntrySeg2_split`) and is
+  **not** proved: its goal carries the initialisation's fifteen-store list, and
+  at `maxRecDepth 20000`/`maxHeartbeats 2000000` the elaboration times out at
+  the store that follows the `S2` field writes in both halves, with the side
+  goals deferred and the segment split at its loads.  The shape that avoids it
+  is a list-level read lemma over `stage2WriteStores m (s2InitStores …)` read
+  before the chain, so the goal never carries the store list; the three reads
+  back out of the `S2` record (`%3`, `%4`, `%5`) are its inside case, which
+  `readBytes_s2Init_of_outside` does not state.  The composition of the segments
+  into the block's `runFuel` prefix is therefore also still open, and the five
+  open rows stay open until it is produced.-/
 
 /-- **A comparison**, at a state rather than at a builder and at arbitrary operands:
 the step `denoteCode_icmp_eq_imm_w` is its `eq`-with-literal case, and the

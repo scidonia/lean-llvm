@@ -25,9 +25,14 @@ the run that would establish it — `entry`'s fifty-seven instructions, the
 preheader's five `getelementptr`s and the header's first pass — is the open row.
 The step vocabulary below is what that run is built from: the `alloca`, the
 pointer and immediate stores, the signed `getelementptr` at `-1`, the two
-`memset`s and `s2_init`.  What is still missing is the read-over-write argument
-through `s2_init`'s fifteen stores, which the document and entry-stream reads
-after the initialisation need.
+`memset`s and `s2_init`.  `JsonStage2WalkRun` states `entry`'s own run as four
+segments, three of them proved as `denoteCode` equalities at a symbolic
+environment and state, with the cut pinned to this module's `walkEntryInstrs` by
+an `rfl`; the second segment's equality is not proved, and its obstruction — the
+initialisation's store list in the goal's term, measured — is recorded in that
+module and in the census.  The composition into the block's `runFuel` prefix is
+therefore still open, and the inside case of `readBytes_s2Init_of_outside` is
+the read fact it needs.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
