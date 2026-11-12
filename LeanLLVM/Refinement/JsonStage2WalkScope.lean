@@ -4674,10 +4674,10 @@ Three things the census therefore keeps open, each with its cost named:
   carried map `Nat → UInt8` updated at the pushed index, which moves
   `if.end24_step`, the four container-byte stores of class D and the merge at
   `cleanup478.i` — the class-D rework, recorded here rather than assumed;
-* the seed's entry run is not produced.  The step vocabulary is here and the
-  four segments are named, but the `entry` run at a symbolic staging is not yet
-  a `runFuel` prefix, so `hprefix` in the conditional theorem has no producer
-  yet.  The five open rows stay open until it does.-/
+* the seed's entry run is not produced.  The step vocabulary is here
+  (`walkEntryInstrs`, the block's own list), but the `entry` run at a symbolic
+  staging is not yet a `runFuel` prefix, so `hprefix` in the conditional theorem
+  has no producer yet.  The five open rows stay open until it does.-/
 
 /-- **A comparison**, at a state rather than at a builder and at arbitrary operands:
 the step `denoteCode_icmp_eq_imm_w` is its `eq`-with-literal case, and the
