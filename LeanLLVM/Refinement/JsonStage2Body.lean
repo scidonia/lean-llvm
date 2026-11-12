@@ -26,6 +26,21 @@ slice can reach, and it says which part that is:
   accumulators they read — so the three proved models compose at one function,
   `numFastEmitted`, and `numFastEmitted_strtodSpec` is
   `∀ d, d.wellFormed → numFastEmitted d.lexeme = strtodSpec d`.
+* **the number token's lexical scan, and its refusal.**  `numLexScan` is the
+  function's own control flow: the optional `minus`, the `int` part, the optional
+  fraction and exponent, and the end-of-input test, with the first rejected
+  position as its offset.  `stage2NumFast` answers the conversion at an accepted
+  lexeme and a written refusal offset at a rejected one, and `od_scalar_value`'s
+  number branch takes the same decision, writing `od_fail`'s record where the
+  source's nested call refuses.  The scan's acceptance is the *emitted function's*,
+  not a proof that a token the scanner classifies as a number is RFC 8259 §6's:
+  that step is the scanner's token-extent obligation and is recorded as such in
+  `docs/contract.md`.  The malformed tokens the assessment names (`1e`, `01`,
+  `-`) are refused here, with accepted controls beside them.
+* **the event cursor's write-back.**  `out_raw`'s `o->len += n` is modelled: every
+  emitting path of `od_scalar_value` writes the advanced cursor at `o + 8`, which
+  is the word the walk reloads after the call.  A model that dropped it would make
+  `WalkInv.log_len` false one step after an emission.
 
 # The pin
 
@@ -2013,12 +2028,17 @@ leaves out of line.
 What the models are, and what they are not, is stated with each one.  The three
 state helpers are read out of their bodies directly.  `s2_init` is the `S2`
 record's field-by-field initialisation.  The number path re-uses the models this
-module already proved (`numFastEmitted` and its `strtodSpec` clause), and the
+module already proved (`numFastEmitted` and its `strtodSpec` clause) **after** the
+emitted function's own lexical scan, so a malformed token is the refusal the
+function performs rather than a conversion of whatever bytes the token spans; the
 string path re-uses the escape unit's specification (`escapeDecodeGo`) for the
 escaped form.  None is a refinement of the C function's instructions: each is the
 function's observable at its call boundary, which is what a `Calls` selection is.
 The instruction-level distance is the pipeline's existing body-faithfulness seam,
-named at the end of this section. -/
+named at the end of this section; each helper's record at its call boundary — its
+precondition, its post, and the regions it may write — is
+`JsonStage2HelperContracts`, and `docs/contract.md` records which of those
+records is proved against an emitted body and which is trusted. -/
 
 open LeanLLVM.Refinement.JsonStage2IR (stage2Calls)
 
@@ -2102,6 +2122,251 @@ fixture passes `null` for it. -/
 def stage2ErrSet (mem : Mem) (e off : Nat) : Mem :=
   writeBytes (writeBytes mem e (wordBytes 4 0)) (e + 8) (wordBytes 8 off)
 
+/-! #### The number token's lexical scan
+
+`num_fast_el1` is not a total conversion.  It scans the lexeme first and, at the
+first position its grammar rejects, writes that position through `*err` and
+returns 0 (`stage2.c:379-460`); only a lexeme the scan accepts reaches a
+conversion.  A selection that converted every readable token would therefore
+answer a value where the emitted function answers a refusal — for `1e`, `01` and
+`-` among others.
+
+The scan below is that control flow transcribed: the optional `minus`, the `int`
+part (`0`, or `digit1-9` and its digit tail), the optional fraction with at least
+one digit, the optional exponent with an optional sign and at least one digit, and
+the end-of-input test.  Its output is the pair the function's two observables
+carry: the offset (`*err`) and whether the lexeme was accepted.  The acceptance
+predicate is the emitted function's own, not a claim that a token classified as a
+number by the scanner is one: that step is the scanner's token-extent obligation,
+and `docs/contract.md` records it as such.
+
+`IsDigitB` is `LeanLLVM.JSON`'s, the same predicate the reference grammar's
+`Digits` uses, so the scan's digit run and the specification's agree by
+construction rather than by a second spelling. -/
+
+/-- Consume a run of digits: the index of the first byte that is not one. -/
+def numDigitsFrom : List UInt8 → Nat → Nat
+  | [], n => n
+  | b :: bs, n => if IsDigitB b = true then numDigitsFrom bs (n + 1) else n
+
+/-- The digit run starting at `i` of `lex`, as the index just past it. -/
+def numDigits (lex : List UInt8) (i : Nat) : Nat := numDigitsFrom (lex.drop i) i
+
+/-- The optional `minus`'s width: one when the lexeme opens with `-`. -/
+def numSignStart (lex : List UInt8) : Nat := if lex[0]? = some 0x2D then 1 else 0
+
+/-- Where the exponent's digits start, if its marker is there: past `e`/`E` and
+its optional sign. -/
+def numExpStart (lex : List UInt8) (j : Nat) : Nat :=
+  if lex[j + 1]? = some 0x2B ∨ lex[j + 1]? = some 0x2D then j + 2 else j + 1
+
+/-- The scan's end test: an accepting run is one that stopped at the lexeme's
+length, and a rejecting one is its own offset. -/
+def numEnd (s : Nat × Bool) (n : Nat) : Nat × Bool :=
+  if s.2 then (s.1, s.1 = n) else s
+
+/-- The byte at `i` is a digit; a position past the lexeme is not. -/
+def numDigitAt (lex : List UInt8) (i : Nat) : Bool :=
+  match lex[i]? with
+  | some c => IsDigitB c
+  | none => false
+
+/-- The scan after the `int` part: the optional exponent (its marker, an optional
+sign, and at least one digit).  `j` is the position after the fraction. -/
+def numExpTail (lex : List UInt8) (j : Nat) : Nat × Bool :=
+  if lex[j]? = some 0x65 ∨ lex[j]? = some 0x45 then
+    if numDigitAt lex (numExpStart lex j) then
+      (numDigits lex (numExpStart lex j + 1), true)
+    else (numExpStart lex j, false)
+  else (j, true)
+
+/-- The scan after the `int` part: the optional fraction (`.` and at least one
+digit), then the optional exponent.  `i` is the position after the `int` part. -/
+def numFracTail (lex : List UInt8) (i : Nat) : Nat × Bool :=
+  if lex[i]? = some 0x2E then
+    if numDigitAt lex (i + 1) then numExpTail lex (numDigits lex (i + 2))
+    else (i + 1, false)
+  else numExpTail lex i
+
+/-- The scan after the `int` part. -/
+def numLexTail (lex : List UInt8) (i : Nat) : Nat × Bool := numFracTail lex i
+
+/-- **`num_fast_el1`'s scan**, at the lexeme it reads: `(offset, accepted)`, with
+`offset` the first rejected position on refusal and the lexeme's length on
+acceptance.  This is the emitted control flow, one branch per test; the accepted
+lexemes are those its tests accept.
+
+The `int` part's first byte is read out of bounds only after the `i < n` test, so
+the model's index is the source's: `i >= n` is the `(i, false)` arm, and the
+`b = '0'` and `1-9` arms are the two `int` shapes. -/
+def numLexScan (lex : List UInt8) : Nat × Bool :=
+  let n := lex.length
+  let i := numSignStart lex
+  if h : i < n then
+    let b := lex[i]
+    if b = 0x30 then numEnd (numLexTail lex (i + 1)) n
+    else if 0x31 ≤ b && b ≤ 0x39 then
+      numEnd (numLexTail lex (numDigits lex (i + 1))) n
+    else (i, false)
+  else (i, false)
+
+/-- The scan's acceptance predicate: the lexeme is one `num_fast_el1` converts. -/
+def numLexOK (lex : List UInt8) : Bool := (numLexScan lex).2
+
+/-- The scan's refusal offset (the function's `*err`) — the lexeme's length when
+it accepts, because the scan then stopped at the end. -/
+def numLexOff (lex : List UInt8) : Nat := (numLexScan lex).1
+
+/-- A digit run neither moves left of its start nor past the list. -/
+theorem numDigitsFrom_bounds (bs : List UInt8) (n : Nat) :
+    n ≤ numDigitsFrom bs n ∧ numDigitsFrom bs n ≤ bs.length + n := by
+  induction bs generalizing n with
+  | nil => simp [numDigitsFrom]
+  | cons b bs ih =>
+      by_cases h : IsDigitB b = true
+      · simp only [numDigitsFrom, if_pos h, List.length_cons]
+        have := ih (n + 1)
+        omega
+      · simp only [numDigitsFrom, if_neg h, List.length_cons]
+        have := ih n
+        omega
+
+/-- The scan only asks for a digit run at a position the lexeme has. -/
+theorem numDigits_bounds {lex : List UInt8} {i : Nat} (hi : i ≤ lex.length) :
+    i ≤ numDigits lex i ∧ numDigits lex i ≤ lex.length := by
+  change i ≤ numDigitsFrom (lex.drop i) i ∧ numDigitsFrom (lex.drop i) i ≤ lex.length
+  have h := numDigitsFrom_bounds (lex.drop i) i
+  have hdrop : (lex.drop i).length = lex.length - i := by
+    rw [List.length_drop]
+  rw [hdrop] at h
+  omega
+
+/-- The sign's width is inside the lexeme. -/
+theorem numSignStart_le (lex : List UInt8) : numSignStart lex ≤ lex.length := by
+  unfold numSignStart
+  split <;> rename_i h
+  · obtain ⟨hlt, -⟩ := List.getElem?_eq_some_iff.mp h
+    omega
+  · omega
+
+/-- The exponent's starting position is at most two past its marker. -/
+theorem numExpStart_bounds (lex : List UInt8) (j : Nat) :
+    j ≤ numExpStart lex j ∧ numExpStart lex j ≤ j + 2 := by
+  unfold numExpStart
+  split <;> omega
+
+/-- The end test keeps the position it is handed. -/
+theorem numEnd_fst (s : Nat × Bool) (n : Nat) : (numEnd s n).1 = s.1 := by
+  unfold numEnd
+  split <;> rfl
+
+/-- The end test's position is inside the lexeme when the run it ends is. -/
+theorem numEnd_fst_le {s : Nat × Bool} {n : Nat} (h : s.1 ≤ n) : (numEnd s n).1 ≤ n := by
+  rw [numEnd_fst]; exact h
+
+/-- A digit test's position is inside the lexeme. -/
+theorem numDigitAt_true {lex : List UInt8} {i : Nat} (h : numDigitAt lex i = true) :
+    i < lex.length := by
+  unfold numDigitAt at h
+  split at h
+  · rename_i c hc
+    obtain ⟨hlt, -⟩ := List.getElem?_eq_some_iff.mp hc
+    exact hlt
+  · exact absurd h (by simp)
+
+/-- An exponent marker's start is inside the lexeme. -/
+theorem numExpStart_le_length {lex : List UInt8} {j : Nat} (hj : j < lex.length) :
+    numExpStart lex j ≤ lex.length := by
+  unfold numExpStart
+  split <;> rename_i h
+  · rcases h with h | h
+    · obtain ⟨hlt, -⟩ := List.getElem?_eq_some_iff.mp h
+      omega
+    · obtain ⟨hlt, -⟩ := List.getElem?_eq_some_iff.mp h
+      omega
+  · omega
+
+/-- The exponent stage's position is inside the lexeme. -/
+theorem numExpTail_fst_le (lex : List UInt8) (j : Nat) (hj : j ≤ lex.length) :
+    (numExpTail lex j).1 ≤ lex.length := by
+  unfold numExpTail
+  by_cases hmark : lex[j]? = some 0x65 ∨ lex[j]? = some 0x45
+  · rw [if_pos hmark]
+    have hlt : j < lex.length := by
+      rcases hmark with h | h
+      · exact (List.getElem?_eq_some_iff.mp h).1
+      · exact (List.getElem?_eq_some_iff.mp h).1
+    have hstart := numExpStart_le_length hlt
+    by_cases hd : numDigitAt lex (numExpStart lex j) = true
+    · rw [if_pos hd]
+      have hdlt := numDigitAt_true hd
+      have hdig := numDigits_bounds (lex := lex) (i := numExpStart lex j + 1) (by omega)
+      omega
+    · rw [if_neg hd]
+      omega
+  · rw [if_neg hmark]
+    exact hj
+
+/-- The fraction stage's position is inside the lexeme. -/
+theorem numFracTail_fst_le (lex : List UInt8) (i : Nat) (hi : i ≤ lex.length) :
+    (numFracTail lex i).1 ≤ lex.length := by
+  unfold numFracTail
+  by_cases hdot : lex[i]? = some 0x2E
+  · rw [if_pos hdot]
+    have hlt : i < lex.length := (List.getElem?_eq_some_iff.mp hdot).1
+    by_cases hd : numDigitAt lex (i + 1) = true
+    · rw [if_pos hd]
+      have hdlt := numDigitAt_true hd
+      have hdig := numDigits_bounds (lex := lex) (i := i + 2) (by omega)
+      exact numExpTail_fst_le lex (numDigits lex (i + 2)) (by omega)
+    · rw [if_neg hd]
+      omega
+  · rw [if_neg hdot]
+    exact numExpTail_fst_le lex i hi
+
+/-- The tail keeps the lexeme's positions. -/
+theorem numLexTail_fst_le (lex : List UInt8) (i : Nat) (hi : i ≤ lex.length) :
+    (numLexTail lex i).1 ≤ lex.length :=
+  numFracTail_fst_le lex i hi
+
+/-- The refusal offset is inside the lexeme (or its end).  The walk's caller adds
+it to the token's document position, so the bound is what keeps the reported
+offset inside the document. -/
+theorem numLexScan_fst_le (lex : List UInt8) : (numLexScan lex).1 ≤ lex.length := by
+  unfold numLexScan
+  dsimp only
+  split
+  · rename_i h
+    split
+    · apply numEnd_fst_le
+      exact numLexTail_fst_le lex (numSignStart lex + 1) (by omega)
+    · split
+      · apply numEnd_fst_le
+        have hdig := numDigits_bounds (lex := lex) (i := numSignStart lex + 1) (by omega)
+        exact numLexTail_fst_le lex (numDigits lex (numSignStart lex + 1)) (by omega)
+      · omega
+  · rename_i h
+    have hi := numSignStart_le lex
+    omega
+
+-- The three malformed tokens the assessment names, and valid tokens as the
+-- control that the same test accepts: the scan refuses where the emitted
+-- function refuses, and the marker is not a test that refuses everything.
+#guard numLexScan [0x31, 0x65] = (2, false)                    -- "1e"
+#guard numLexScan [0x30, 0x31] = (1, false)                    -- "01"
+#guard numLexScan [0x2D] = (1, false)                          -- "-"
+#guard numLexScan [0x31, 0x65, 0x2B, 0x35] = (4, true)         -- "1e+5", control
+#guard numLexScan [0x2D, 0x30, 0x2E, 0x35] = (4, true)         -- "-0.5", control
+#guard numLexScan [0x31, 0x2E, 0x35] = (3, true)               -- "1.5", control
+#guard numLexScan [0x30] = (1, true)                           -- "0", control
+#guard numLexScan [] = (0, false)                              -- the empty lexeme
+#guard numLexScan [0x31, 0x2E] = (2, false)                    -- "1."
+#guard numLexScan [0x31, 0x2E, 0x65, 0x35] = (2, false)        -- "1.e5"
+#guard numLexScan [0x30, 0x30] = (1, false)                    -- "00"
+#guard numLexScan [0x2B, 0x31] = (0, false)                    -- "+1"
+#guard numLexScan [0x31, 0x65] = (2, false)                    -- "1e", repeated as
+                                                               -- the marker's control
+
 /-- The literal bytes `od_scalar_value` validates, by token kind. -/
 def stage2Literal (kind : Nat) : Option (List UInt8) :=
   if kind = 8 then some [0x74, 0x72, 0x75, 0x65]        -- "true"
@@ -2112,8 +2377,17 @@ def stage2Literal (kind : Nat) : Option (List UInt8) :=
 /-- **`od_scalar_value`**, at the emitted call's three arguments: the cursor, the
 token and the event stream's `Out` record.  A number's lexeme is the token's
 `[pos, end)` window, and its record is `numberRecord` of the conversion this
-module already specifies; a literal's record is its tag, after the literal
-check; an unclassified token and a failed literal write the refusal offset.
+module already specifies — after the same lexical scan the direct call makes, so a
+number token the conversion refuses writes `od_fail`'s record at the token's
+position plus the scan's offset, exactly as the source's
+`if (!num_fast(...)) return od_fail(c, t->pos + ei, "number");` does; a literal's
+record is its tag, after the literal check; an unclassified token and a failed
+literal write the refusal offset.
+
+Every emitting path writes the stream's cursor back at `o + 8`, which is what
+`out_raw`'s `o->len += n` does and what the walk reloads after the call
+(`if.end290.i`'s `load %len`).  A model that dropped the write would make
+`WalkInv.log_len` false one step after an emission.
 
 The body's fourth parameter (`acc`) is dropped by the emitted call, so the
 model has no accumulator: every path it can take is the emitting one. -/
@@ -2129,15 +2403,20 @@ def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
         match readBytes mem (base + pos) (endp - pos) with
         | none => none
         | some lex =>
-            match stage2ReadWord mem o 8, stage2ReadWord mem (o + 8) 8,
-                  stage2ReadWord mem (o + 16) 8 with
-            | some buf, some len, some cap =>
-                match emitBlobs mem buf len cap
-                    (numberRecord (numFastEmitted (ByteString.literal lex)).toBits) with
-                | some p => some { ret := .int 32 (BitVec.ofNat 32 1), mem := p.1,
-                                   next := next }
-                | none => none
-            | _, _, _ => none
+            if (numLexScan lex).2 then
+              match stage2ReadWord mem o 8, stage2ReadWord mem (o + 8) 8,
+                    stage2ReadWord mem (o + 16) 8 with
+              | some buf, some len, some cap =>
+                  match emitBlobs mem buf len cap
+                      (numberRecord (numFastEmitted (ByteString.literal lex)).toBits) with
+                  | some p => some { ret := .int 32 (BitVec.ofNat 32 1),
+                                     mem := writeBytes p.1 (o + 8) (wordBytes 8 p.2),
+                                     next := next }
+                  | none => none
+              | _, _, _ => none
+            else
+              some { ret := .int 32 (BitVec.ofNat 32 0),
+                     mem := stage2ErrSet mem e (pos + (numLexScan lex).1), next := next }
       else
         match stage2Literal kind with
         | none =>
@@ -2151,7 +2430,8 @@ def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
                         stage2ReadWord mem (o + 16) 8 with
                   | some buf, some len, some cap =>
                       match outTag mem buf len cap kind with
-                      | some p => some { ret := .int 32 (BitVec.ofNat 32 1), mem := p.1,
+                      | some p => some { ret := .int 32 (BitVec.ofNat 32 1),
+                                         mem := writeBytes p.1 (o + 8) (wordBytes 8 p.2),
                                          next := next }
                       | none => none
                   | _, _, _ => none
@@ -2211,23 +2491,34 @@ def stage2StringBodyCall (args : List Value) (mem : Mem) (next : Nat) : Option C
         { ret := .int 32 (BitVec.ofNat 32 form), mem := m, next := next }
   | _ => none
 
-/-- **`num_fast_el1`**: the lexeme's eight-byte result and a zero offset on the
-path the walk takes.  The conversion is `numFastEmitted`, whose `strtodSpec`
-clause this module proves; the emitted function's refusal exits are not modelled
-(their offsets are the scanner's own, and the walk's calling condition is a
-`K_NUM` token). -/
+-- The number token's lexical scan is defined above the models that use it, at
+-- `num_fast_el1`'s first consumer (`stage2ScalarValue`); see `numLexScan`.
+
+/-- **`num_fast_el1`**, with both of its outcomes: the accepted lexeme's eight
+bytes at `out` (`numFastEmitted`, whose `strtodSpec` clause this module proves),
+or the refusal offset at `err`.  The two writes are disjoint: the function writes
+the value only where it accepts and the offset only where it refuses, which is why
+the contract's frame is one region and not both.
+
+`out` is untouched on refusal and `err` is untouched on acceptance — the source's
+`*err` is written on each refusal return and nowhere else, and `*out` only by the
+conversion.  This is the observable the walk's two call sites read: `%d.i` on
+acceptance, `%ei.i` on refusal. -/
 def stage2NumFast (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
   match args with
   | [.ptr p, .int 64 n, .ptr out, .ptr err] =>
       match readBytes mem p n.toNat with
       | none => none
       | some lex =>
-          some { ret := .int 32 (BitVec.ofNat 32 1),
-                 mem := writeBytes
-                   (writeBytes mem out
-                     (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits))
-                   err (wordBytes 8 0),
-                 next := next }
+          let s := numLexScan lex
+          if s.2 then
+            some { ret := .int 32 (BitVec.ofNat 32 1),
+                   mem := writeBytes mem out
+                     (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits),
+                   next := next }
+          else
+            some { ret := .int 32 (BitVec.ofNat 32 0),
+                   mem := writeBytes mem err (wordBytes 8 s.1), next := next }
   | _ => none
 
 /-- **The six sub-units' selection**: every symbol `stage2Calls` forwards. -/
@@ -2312,7 +2603,9 @@ theorem stage2NumFast_answers (p : Nat) (n : BitVec 64) (out err : Nat)
     (h : readBytes mem p n.toNat = some lex) :
     ∃ r, stage2NumFast [.ptr p, .int 64 n, .ptr out, .ptr err] mem next = some r := by
   simp only [stage2NumFast, h]
-  exact ⟨_, rfl⟩
+  split
+  · exact ⟨_, rfl⟩
+  · exact ⟨_, rfl⟩
 
 /-- **The walk's obligation at the modelled sub-units, assembled from its two
 conjuncts.**  `stage2WalkObligation_iff_completion` says the obligation is the

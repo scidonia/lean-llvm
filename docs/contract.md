@@ -393,6 +393,100 @@ defined, and `check.sh` measures the resulting fallback acceptance rather than
 leaving it implicit.  Replacing the count with the stage-1 depth counter is a
 deletion of one clause and one certificate.
 
+### 7.6 The stage-2 helpers' correspondence
+
+The emitted `s2_walk` calls six functions out of line — `s2_init`,
+`s2_value_pos`, `s2_after_value`, `s2_string_body`, `od_scalar_value` and
+`num_fast_el1`.  `kernel/json/stage2.c` defines them, and
+`probes/install/ir/stage2.candidate.ll` *declares* them: the derivation keeps each
+as a call (`stage2.rewrites.tsv` class r2, "their bodies are outside this
+fragment ... each is resolved by the fixture's `Calls` environment at the record
+or tier theorem that states its contract").  `LeanLLVM/Refinement/JsonStage2Body`
+therefore models each function's observable at the call boundary — the returned
+word, the words it writes, and the memory it leaves — and
+`stage2SubCalls` selects those six.  What follows is the correspondence for each
+of the six, in the ledger's own vocabulary: what is proved, what is trusted, and
+what a caller must still supply.
+
+**The trust, once for all six.**  No model is a refinement of the compiled
+function.  The models are transcriptions, and the transcription is pinned by text:
+`JsonStage2Body`'s `#guard`s assert that the lines each model encodes are lines of
+`kernel/json/stage2.c`, with `#guard !occurs stage2Src "…// absent"` as the
+control that the marker discriminates.  A transcription is not a proof of
+equivalence, and the distance between the two is the pipeline's body-faithfulness
+seam (§7.1 items 1–3 and row 5): the pin says the source text is where the model
+says it is, and nothing in the kernel says the instructions execute that text.
+Row 5's basis — outside the kernel's reach — is this row's basis too.
+
+| # | Helper | What the model states, and what the tree proves about it | Basis | Evidence in this tree |
+|---|--------|--------------------------------------------------------|-------|------------------------|
+| a | `s2_init` | The `S2` record's fifteen field stores at the five arguments the emitted call passes; **proved**: the call answers there (`s2Init_answers`) | assumed (model) | `JsonStage2Body.stage2Init`, `s2InitStores`; the stores' offsets are `S2`'s (`stage2.c:981-988`) |
+| b | `s2_value_pos` | The value-position test's bit at the four arguments the call passes, with the caller's memory returned unchanged; **proved**: the call answers there (`stage2ValuePos_answers`, `stage2ValuePos_zero`) | assumed (model) | `JsonStage2Body.stage2ValuePos`, `stage2ValuePosCall`; `stage2.c:990-997` |
+| c | `s2_after_value` | The root flag at depth zero or one container-stack byte at the running depth; **proved**: the call answers there (`stage2AfterValue_answers`) | assumed (model) | `JsonStage2Body.stage2AfterValue`; `stage2.c:998-1003` |
+| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), and the decoded form is never longer than its body (`escapeDecodeGo_length_le`) | assumed (model) | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047` |
+| e | `od_scalar_value` | The appended number record (`T_NUM` and the value's eight bytes), the literal tag after the literal check, the refusal's `od_fail` record, and the event cursor's write-back at `o + 8`; **proved**: where the calls answer and what they write (`emitBlobs_spec`, `emitBlobs_frame`, `arenaAppend_spec`, `arenaAppend_frame`) | assumed (model) | `JsonStage2Body.stage2ScalarValue`; `stage2.c:929-957` |
+| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), and the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`) | assumed (model) | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455` |
+
+Two things about the table are deliberate.  First, **no row's frame is proved
+over the helper as a whole.**  The two frame lemmas that exist are per emitter —
+`emitBlobs_frame` and `arenaAppend_frame`, each over one region — and a call
+block needs the same statement at the helper's *whole* footprint, which is the
+region list a caller would apply by membership to keep a clause about a byte the
+callee did not write.  The regions are, in the same order as the table:
+`(s, 120)` for the `S2` record;
+nothing for `s2_value_pos`; the root flag's four bytes or one stack byte for
+`s2_after_value`; the cursor word, the length word, the decoded-body slot at `dst`
+and the error record at `c + 1112`'s pointer for `s2_string_body`; the stream's
+cursor word, the appended record's thirteen-byte slot and the error record for
+`od_scalar_value`; the value and offset slots for `num_fast_el1`.  Four of the six
+write the body-allocated objects `%ei.i`, `%root_done.i`, `%xj.i` and `%outn.i`
+(`JsonStage2IR.allocaTypes` pins their widths: 8, 4, 8, 8), which are *not* among
+the eight staging objects `stage2StagingArgs` passes and are consequently in no
+staged region list — so a walk invariant whose region claim covers the seven
+staged objects alone has no clause covering them, and a write to one of the four
+breaks `Owns` unless the claim names it: `s2_after_value`, `s2_string_body` and
+`num_fast_el1` each write at least one.
+
+Second, **the number path's two agreements are separate and both stay visible**.
+The conversion's agreement is `strtodSpec`'s, proved for every well-formed
+lexeme: `numFastEmitted_strtodSpec`.  The *lexical* agreement is not: which
+lexemes reach a conversion is the emitted function's own scan, modelled as
+`numLexScan` and checked by `#guard`s at the three malformed tokens the
+assessment names and at accepted controls —
+
+```
+#guard numLexScan [0x31, 0x65] = (2, false)              -- "1e"
+#guard numLexScan [0x30, 0x31] = (1, false)              -- "01"
+#guard numLexScan [0x2D] = (1, false)                    -- "-"
+#guard numLexScan [0x31, 0x65, 0x2B, 0x35] = (4, true)   -- "1e+5", control
+#guard numLexScan [0x2D, 0x30, 0x2E, 0x35] = (4, true)   -- "-0.5", control
+```
+
+The scan's acceptance is the *emitted function's*, not a proof that a token the
+stage-1 scanner classifies as a number is RFC 8259 §6's: that step is the
+scanner's token-extent obligation, and it is stated here rather than assumed.  A
+model that converted every readable lexeme would answer a value where the emitted
+function answers a refusal, which is why the refusal is modelled and not skipped.
+
+**What is not yet stated, and what it would take.**  The six *caller-side* records
+— the post and the footprint each call block of the walk's dispatch applies, with
+the statement that the call answers at a staging and that every answer's memory is
+the caller's outside the footprint — are not stated in the tree.  `JsonStage2WalkScope` reports the class F blocks as a
+contract gap for exactly this reason, and the gap is one module: a record per
+helper carrying (i) the staging at which the call answers, (ii) the answer's post,
+(iii) the region list above as its footprint, and the three facts that make the
+triple a step — the call resolves at the staging, every answer satisfies the post,
+and every answer's memory is the caller's outside the footprint.  The region lists
+are fixed by this section; the staging for `od_scalar_value` must include the
+event stream's room for the widest record (its remaining `none` arms are the
+reserve's fault, the source's `__builtin_trap`), and the staging for
+`s2_string_body` must include the escape list's spacing, because
+`s2StringBody_outn_le`'s bound is `escapeDecodeGo_length_le`'s and that lemma is
+about a spaced list.  A caller that cannot supply the spacing has no bound on the
+escaped form.  Until that module lands, a walk link over a call block rests on
+the model's reply without the frame, which is what this section records rather
+than leaves to a reader to discover.
+
 ## 8. Out of scope for the first contract
 
 `NaN`/`Infinity`, binary floating-point conversion as a proved equivalence,
