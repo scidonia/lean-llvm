@@ -34,6 +34,13 @@
 #   process start, the file read, the route, and the printing of the hex
 #   payloads.  They are the artifact a shell sees, and they are measured on the
 #   uninstrumented build for both levels.
+# * `consume` rows come from `leanllvm-json-route --consume <file> <reps>` on
+#   the production build: the fast path run once per repetition, its result read
+#   without printing -- the header through indexing and the event stream record
+#   by record -- with a fold that keeps no per-token object and a reading that
+#   materialises one event record per token.  The dissection section prices the
+#   outcome stage's five parts against them; the mode exits 5 if its two
+#   readings disagree.
 # * `simdjson` rows come from `bench/simdjson-baseline.cc`: `pad_ns` is one
 #   `padded_string` construction (simdjson's staging: allocate, copy, pad) and
 #   `parse_ns` is one `iterate` plus the full value traversal, the parser staged
@@ -233,6 +240,33 @@ wall_row() { # <build dir> <file> -> row on stdout
   rm -f "$f"
 }
 
+consumer_row() { # <build dir> <file> [reps] -> row on stdout
+  local out status row r=${3:-$reps}
+  set +e
+  out=$("${pin[@]}" "$work/$1/leanllvm-json-route" --consume "$2" "$r" \
+          2>&1 >/dev/null)
+  status=$?
+  set -e
+  # The consumer's two readings must agree, or the mode exits 5 and this is a
+  # failure rather than a row.  A document outside the domain has no fast-path
+  # result to read and is not a consumer row, so any non-zero status is a
+  # failure of the row this function was asked for.
+  case $status in
+    0) ;;
+    *)
+      echo "bench: $(basename "$2") exited $status under --consume in $1:" >&2
+      printf '%s\n' "$out" >&2
+      exit 1
+      ;;
+  esac
+  row=$(printf '%s\n' "$out" | grep '^row ')
+  if [ "$(field "$row" path)" != fast ]; then
+    echo "bench: $(basename "$2") took path=$(field "$row" path) under --consume" >&2
+    exit 1
+  fi
+  printf '%s\n' "$row"
+}
+
 printf '## the rows (ns)\n\n'
 printf 'stage rows   <build>/leanllvm-json-route --stages <file> %s\n' "$reps"
 printf 'wall rows    <build>/leanllvm-json-route --doc <file>, one process each\n'
@@ -268,6 +302,150 @@ for doc in "${depth_docs[@]}" "${repo_fallback[@]}"; do
   printf '%s\n' "$(wall_row o2 "$doc")"
 done
 printf '\n'
+
+# --- the consumer's rows --------------------------------------------------
+# `--consume` reads the fast path's result without printing: the header through
+# indexing and the event stream record by record, counted and checksummed.  It
+# is driven on the production build, so nothing in its row comes from the
+# adapter's instrument; the mode exits 5 if its two readings disagree.
+printf 'consume rows  <build>/leanllvm-json-route --consume <file> %s\n\n' "$reps"
+cons_rows="$work/cons-fast.rows"
+: >"$cons_rows"
+for doc in "${fast_docs[@]}"; do
+  printf '%s\n' "$(consumer_row o2 "$doc")" | tee -a "$cons_rows"
+done
+printf '\n'
+
+# --- the outcome stage, dissected ----------------------------------------
+pct() { # <a> <b> -> a as a percent of b
+  awk -v a="$1" -v b="$2" 'BEGIN{ if (b+0 == 0) print "-"; else printf "%.2f", 100*a/b }'
+}
+per() { # <numerator> <denominator> -> the quotient, three decimals
+  awk -v a="$1" -v b="$2" 'BEGIN{ if (b+0 == 0) print "-"; else printf "%.2f", a/b }'
+}
+sum5() { # five numbers -> their sum
+  awk -v a="$1" -v b="$2" -v c="$3" -v d="$4" -v e="$5" \
+    'BEGIN{ printf "%d", a+b+c+d+e }'
+}
+
+printf '## the outcome stage dissected (unit: ns; medians of %s reps, OPT=-O2 TIMING=1 build)\n\n' "$reps"
+printf '%-22s %9s %7s %8s %7s %10s %10s %10s %11s %7s\n' \
+  doc decode header slice arena events outcome hex_arena hex_events tokens
+for doc in "${fast_docs[@]}"; do
+  name=$(basename "$doc")
+  row=$(grep " doc=$name " "$o2_rows")
+  cons=$(grep " doc=$name " "$cons_rows")
+  printf '%-22s %9s %7s %8s %7s %10s %10s %10s %11s %7s\n' "$name" \
+    "$(field "$row" outcome_decode_ns)" "$(field "$row" outcome_header_ns)" \
+    "$(field "$row" outcome_slice_ns)" "$(field "$row" outcome_arena_ns)" \
+    "$(field "$row" outcome_events_ns)" "$(field "$row" outcome_ns)" \
+    "$(field "$row" hex_arena_ns)" "$(field "$row" hex_events_ns)" \
+    "$(field "$cons" tokens)"
+done
+printf '\nconstruction: the five parts are the outcome stage itself, in its own\n'
+printf 'order.  decode is `decodeResult`: the tagged header, the length check and\n'
+printf 'the seven header words; header is the observation line built and written;\n'
+printf 'slice is the two payloads cut out of the result; arena and events are each\n'
+printf 'payload line built and written.  outcome is the per-repetition sum of the\n'
+printf 'five, so the five clock reads that divide them are inside the stage and\n'
+printf 'nothing outside it is.  hex_arena and hex_events rebuild the same two lines\n'
+printf 'with the write removed, after the stage timed window: the difference between\n'
+printf 'a payload part and its hex figure is that line write.  tokens is the event\n'
+printf 'count the consumer row above reports for the same document.\n\n'
+
+printf 'share of outcome (unit: percent; each part median divided by the outcome\n'
+printf 'median from the same --stages row; the parts are medians of per-repetition\n'
+printf 'sums, so they need not add to exactly 100)\n\n'
+printf '%-22s %8s %7s %8s %7s %9s %8s\n' doc decode header slice arena events parts
+for doc in "${fast_docs[@]}"; do
+  name=$(basename "$doc")
+  row=$(grep " doc=$name " "$o2_rows")
+  out=$(field "$row" outcome_ns)
+  parts=$(sum5 "$(field "$row" outcome_decode_ns)" "$(field "$row" outcome_header_ns)" \
+    "$(field "$row" outcome_slice_ns)" "$(field "$row" outcome_arena_ns)" \
+    "$(field "$row" outcome_events_ns)")
+  printf '%-22s %8s %7s %8s %7s %9s %8s\n' "$name" \
+    "$(pct "$(field "$row" outcome_decode_ns)" "$out")" \
+    "$(pct "$(field "$row" outcome_header_ns)" "$out")" \
+    "$(pct "$(field "$row" outcome_slice_ns)" "$out")" \
+    "$(pct "$(field "$row" outcome_arena_ns)" "$out")" \
+    "$(pct "$(field "$row" outcome_events_ns)" "$out")" \
+    "$(pct "$parts" "$out")"
+done
+printf '\n'
+
+printf 'per-unit costs (each column states its numerator, its denominator and its\n'
+printf 'unit; the denominators are the same stage row and the consumer row above)\n\n'
+printf '%-22s %7s %12s %11s %16s %15s %13s\n' \
+  doc tokens result_bytes decode/byte hex_events/byte events_write printed/event
+for doc in "${fast_docs[@]}"; do
+  name=$(basename "$doc")
+  row=$(grep " doc=$name " "$o2_rows")
+  cons=$(grep " doc=$name " "$cons_rows")
+  rb=$((80 + $(field "$row" ndst) + $(field "$row" nev)))
+  wr=$(($(field "$row" outcome_events_ns) - $(field "$row" hex_events_ns)))
+  printf '%-22s %7s %12s %11s %16s %15s %13s\n' "$name" \
+    "$(field "$cons" tokens)" "$rb" \
+    "$(per "$(field "$row" outcome_decode_ns)" "$rb")" \
+    "$(per "$(field "$row" hex_events_ns)" "$(field "$row" nev)")" \
+    "$wr" \
+    "$(per "$(field "$row" outcome_ns)" "$(field "$cons" tokens)")"
+done
+printf '\nUnits and construction: result_bytes is 80 header bytes plus ndst plus nev,\n'
+printf 'the extent of the array decodeResult walks; decode/byte divides the decode\n'
+printf 'median by it (ns per result byte); hex_events/byte divides the hex rebuild\n'
+printf 'median by nev (ns per event-stream byte); events_write is the events part\n'
+printf 'less its hex rebuild, in ns per document (the write of one events line);\n'
+printf 'printed/event divides the outcome median by the consumer token count (ns\n'
+printf 'per event, the printed path).\n\n'
+
+printf '## what a consumer pays (unit: ns; the same documents, the consumer rows above)\n\n'
+printf '%-22s %7s %6s %7s %8s %8s %14s %16s %10s %12s\n' \
+  doc tokens ndst nev fold values fold/event values/event fold/byte values/byte
+for doc in "${fast_docs[@]}"; do
+  name=$(basename "$doc")
+  cons=$(grep " doc=$name " "$cons_rows")
+  t=$(field "$cons" tokens)
+  b=$(( $(field "$cons" ndst) + $(field "$cons" nev) ))
+  printf '%-22s %7s %6s %7s %8s %8s %14s %16s %10s %12s\n' "$name" "$t" \
+    "$(field "$cons" ndst)" "$(field "$cons" nev)" \
+    "$(field "$cons" consume_fold_ns)" "$(field "$cons" consume_values_ns)" \
+    "$(per "$(field "$cons" consume_fold_ns)" "$t")" \
+    "$(per "$(field "$cons" consume_values_ns)" "$t")" \
+    "$(per "$(field "$cons" consume_fold_ns)" "$b")" \
+    "$(per "$(field "$cons" consume_values_ns)" "$b")"
+done
+printf '\nconstruction: fold and values are the two readings the consumer mode\n'
+printf 'prices, medians over the same repetition count, alternating which goes\n'
+printf 'first so neither always pays the cold pass; both include one indexed header\n'
+printf 'decode and the arena read.  fold keeps no per-token object; values\n'
+printf 'materialises one event record per token and folds the array, so its price\n'
+printf 'carries the per-token allocation.  fold/event and values/event divide each\n'
+printf 'median by the event count (ns per event); fold/byte and values/byte divide\n'
+printf 'it by ndst plus nev instead (ns per payload byte).\n\n'
+
+printf 'printed against consumed (unit: multiplier; the printed path outcome median\n'
+printf 'divided by the consumer values median, same document and session, outcome\n'
+printf 'from the TIMING=1 build and consumed from the production build; per-event\n'
+printf 'costs are those two medians divided by the same token count)\n\n'
+printf '%-22s %12s %16s %14s %18s\n' \
+  doc printed/event consumed/event printed/consumed decoded/printed
+for doc in "${fast_docs[@]}"; do
+  name=$(basename "$doc")
+  row=$(grep " doc=$name " "$o2_rows")
+  cons=$(grep " doc=$name " "$cons_rows")
+  t=$(field "$cons" tokens)
+  out=$(field "$row" outcome_ns)
+  cv=$(field "$cons" consume_values_ns)
+  dec=$(field "$row" outcome_decode_ns)
+  printf '%-22s %12s %16s %14s %18s\n' "$name" \
+    "$(per "$out" "$t")" "$(per "$cv" "$t")" "$(per "$out" "$cv")" \
+    "$(pct "$dec" "$out")"
+done
+printf '\nconstruction: printed/consumed is the outcome median over the consumer\n'
+printf 'values median, both per document (a multiplier, not a percentage);\n'
+printf 'decoded/printed is the decode part percent of the outcome, the same figure\n'
+printf 'the share table carries, repeated here beside the consumer number.\n\n'
 
 # --- the reference arm ----------------------------------------------------
 printf '## the reference arm\n\n'
@@ -438,9 +616,9 @@ if [ -x "$work/simdjson-baseline" ]; then
   printf 'two binaries, so the alternation cancels drift but not the difference between\n'
   printf 'two address spaces.  The escape-heavy document is the one shape where the\n'
   printf 'reference traversal, which unescapes every string, exceeds the route native\n'
-  printf 'stage.  The route total over the same figure is not shown: it is 80-480x\n'
-  printf 'because the route prints both payloads as hex, which is the outcome stage\n'
-  printf 'and is reported on its own above.\n\n'
+  printf 'stage.  The route total over the same figure is not shown: it is the hex\n'
+  printf 'printing of both payloads, which is the outcome stage and is reported on\n'
+  printf 'its own above, in the outcome dissection.\n\n'
 fi
 
 printf '## the record\n\n'

@@ -65,7 +65,8 @@ def blocks (n : Nat) : Nat := (n + 63) / 64
 
 def usage : String :=
   "usage: leanllvm-json-route --doc <file>\n" ++
-  "       leanllvm-json-route --stages <file> [reps]"
+  "       leanllvm-json-route --stages <file> [reps]\n" ++
+  "       leanllvm-json-route --consume <file> [reps]"
 
 def hexByte (b : UInt8) : String :=
   let s := String.ofList (Nat.toDigits 16 b.toNat)
@@ -236,35 +237,134 @@ def call (s : Staged) : IO ByteArray :=
     s.dst (UInt64.ofNat s.dstcap) s.ndst
     s.ev (UInt64.ofNat s.evcap) s.nev s.err 2
 
+/-! ### Outcome handling, in the parts the stage report prices
+
+`interpret` is the outcome stage with no clock read in it.  `--stages` calls its
+parts with a clock read between them, so the dissection prices the code that
+runs — the same `decodeResult`, `payloads`, `observationLine` and `payloadLine`
+— rather than a copy written for the instrument.
+
+`decodeResult` is the header decode the route has always done: `be64` materialises
+`result.toList` at every byte it reads, so one word costs eight list traversals
+of the whole result and the seven words an observation needs cost fifty-six.
+`payloads` materialises the result's list once per payload.  Both are priced as
+they are rather than changed here; `--consume` below reads the same words
+through indexing, and the two numbers together are what those conversions cost.
+-/
+
+/-- The observation's six words, decoded from the adapter's header. -/
+structure Observation where
+  verdict : Nat := 0
+  nk : Nat := 0
+  nxp : Nat := 0
+  ndst : Nat := 0
+  nev : Nat := 0
+  err : Nat := 0
+
+/-- The header's class: the observation when the object produced one, the
+failure's status otherwise.  A failure class is reported here, with its failed
+precondition and its expected and observed numbers, so the caller has only a
+status to propagate. -/
+def decodeResult (result : ByteArray) : IO (Except UInt32 Observation) := do
+  if result.size < headerBytes then
+    IO.eprintln s!"route: internal contract violation: the adapter returned \
+      {result.size} bytes, fewer than its {headerBytes}-byte header"
+    return .error 5
+  let tag := be64 result 0
+  if tag != tagObserved && tag != tagRefused then
+    return .error (← reportAdapterFailure result tag)
+  let o : Observation :=
+    { verdict := be64 result 32
+      nk := be64 result 40
+      nxp := be64 result 48
+      ndst := be64 result 56
+      nev := be64 result 64
+      err := be64 result 72 }
+  -- The header names the payload's extent; a result of another length has lost
+  -- or gained bytes, and printing it as the observation would hide that.
+  if result.size ≠ headerBytes + o.ndst + o.nev then
+    IO.eprintln s!"route: internal contract violation: the result is \
+      {result.size} bytes, and its header names {headerBytes + o.ndst + o.nev}"
+    return .error 5
+  return .ok o
+
+/-- The observation's line, exactly as the route prints it. -/
+def observationLine (o : Observation) : String :=
+  s!"verdict={o.verdict} nk={o.nk} nxp={o.nxp} ndst={o.ndst} nev={o.nev} err={o.err}"
+
+/-- One payload's line, exactly as the route prints it: the label, then two
+lowercase hex digits per byte. -/
+def payloadLine (label : String) (bs : ByteArray) : String :=
+  label ++ "=" ++ hex bs
+
+/-- The two payloads cut out of the result.  Each cut materialises the result's
+`toList` and walks it, so the stage is two list traversals per call. -/
+def payloads (result : ByteArray) (ndst nev : Nat) : ByteArray × ByteArray :=
+  (ByteArray.mk (Array.mk ((result.toList.drop headerBytes).take ndst)),
+   ByteArray.mk (Array.mk ((result.toList.drop (headerBytes + ndst)).take nev)))
+
 /-- Outcome handling: decode the adapter's tagged result, and either print the
 observation and the two payloads or report the failure class with its failed
 precondition and its expected and observed numbers. -/
 def interpret (result : ByteArray) : IO UInt32 := do
-  if result.size < headerBytes then
-    IO.eprintln s!"route: internal contract violation: the adapter returned \
-      {result.size} bytes, fewer than its {headerBytes}-byte header"
-    return 5
-  let tag := be64 result 0
-  if tag != tagObserved && tag != tagRefused then
-    return ← reportAdapterFailure result tag
-  let verdict := be64 result 32
-  let nk := be64 result 40
-  let nxp := be64 result 48
-  let ndst := be64 result 56
-  let nev := be64 result 64
-  let err := be64 result 72
-  -- The header names the payload's extent; a result of another length has lost
-  -- or gained bytes, and printing it as the observation would hide that.
-  if result.size ≠ headerBytes + ndst + nev then
-    IO.eprintln s!"route: internal contract violation: the result is \
-      {result.size} bytes, and its header names {headerBytes + ndst + nev}"
-    return 5
-  IO.println s!"verdict={verdict} nk={nk} nxp={nxp} ndst={ndst} nev={nev} err={err}"
-  let arena := ByteArray.mk (Array.mk ((result.toList.drop headerBytes).take ndst))
-  let events := ByteArray.mk (Array.mk ((result.toList.drop (headerBytes + ndst)).take nev))
-  IO.println s!"arena={hex arena}"
-  IO.println s!"events={hex events}"
-  return 0
+  match ← decodeResult result with
+  | .error status => return status
+  | .ok o =>
+    IO.println (observationLine o)
+    let (arena, events) := payloads result o.ndst o.nev
+    IO.println (payloadLine "arena" arena)
+    IO.println (payloadLine "events" events)
+    return 0
+
+/-- The outcome stage's intervals, in nanoseconds.  `decode`, `header`, `slice`,
+`arena` and `events` are the five parts `interpret` runs, in its order; their
+sum is the stage's cost plus the five clock reads that divide it.  `--stages`
+reports them, and `arenaBytes`/`eventBytes` carry the payloads so a build-only
+probe of the hex conversion can run outside the stage's timed window. -/
+structure OutcomeParts where
+  decode : Nat := 0
+  header : Nat := 0
+  slice : Nat := 0
+  arena : Nat := 0
+  events : Nat := 0
+  status : UInt32 := 0
+  arenaBytes : ByteArray := ByteArray.empty
+  eventBytes : ByteArray := ByteArray.empty
+
+/-- The outcome stage with its parts timed: the same calls `interpret` makes in
+the same order, with a clock read between them. -/
+def interpretTimed (result : ByteArray) : IO OutcomeParts := do
+  let d0 ← IO.monoNanosNow
+  let decoded ← decodeResult result
+  let d1 ← IO.monoNanosNow
+  match decoded with
+  | .error status =>
+      return { decode := d1 - d0, status := status }
+  | .ok o =>
+      IO.println (observationLine o)
+      let h1 ← IO.monoNanosNow
+      let (arena, events) := payloads result o.ndst o.nev
+      let s1 ← IO.monoNanosNow
+      IO.println (payloadLine "arena" arena)
+      let a1 ← IO.monoNanosNow
+      IO.println (payloadLine "events" events)
+      let e1 ← IO.monoNanosNow
+      return { decode := d1 - d0, header := h1 - d1, slice := s1 - h1,
+               arena := a1 - s1, events := e1 - a1, status := 0,
+               arenaBytes := arena, eventBytes := events }
+
+/-- The hex conversion of both payloads, built and folded into the length it
+returned, with no write.  Run after the stage's timed window, it prices the
+conversion inside `arena` and `events`; the difference between each and this is
+the write. -/
+def hexProbe (arena events : ByteArray) : IO (Nat × Nat × Nat) := do
+  let t0 ← IO.monoNanosNow
+  let a := payloadLine "arena" arena
+  let t1 ← IO.monoNanosNow
+  let e := payloadLine "events" events
+  let t2 ← IO.monoNanosNow
+  -- The lengths are returned so the compiler cannot drop either build.
+  return (t1 - t0, t2 - t1, a.length + e.length)
 
 /-- The fast path: stage the document in the record's shape, call the object
 through the adapter, and print the observation and the two payloads. -/
@@ -341,6 +441,14 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
   let mut awall : Array Nat := #[]
   let mut fallback : Array Nat := #[]
   let mut outcome : Array Nat := #[]
+  let mut odecode : Array Nat := #[]
+  let mut oheader : Array Nat := #[]
+  let mut oslice : Array Nat := #[]
+  let mut oarena : Array Nat := #[]
+  let mut oevents : Array Nat := #[]
+  let mut hexArena : Array Nat := #[]
+  let mut hexEvents : Array Nat := #[]
+  let mut hexLen := 0
   let mut total : Array Nat := #[]
   let mut summed : Array Nat := #[]
   let mut verdict := 0
@@ -400,10 +508,27 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         copyin := copyin.push ci
         native := native.push na
         copyout := copyout.push co
-        let o0 ← IO.monoNanosNow
-        status ← interpret result
+        let parts ← interpretTimed result
         let o1 ← IO.monoNanosNow
-        outcome := outcome.push (o1 - o0)
+        -- The stage's cost is the sum of its parts, each interval from the
+        -- clock read that closed the one before it, so the five reads are in
+        -- the stage and nothing else is.
+        let ocost := parts.decode + parts.header + parts.slice + parts.arena +
+          parts.events
+        outcome := outcome.push ocost
+        odecode := odecode.push parts.decode
+        oheader := oheader.push parts.header
+        oslice := oslice.push parts.slice
+        oarena := oarena.push parts.arena
+        oevents := oevents.push parts.events
+        -- Instrument-only, outside the stage's timed window: the same hex
+        -- conversion with the write removed, so each printed payload's write is
+        -- the difference between its interval and this one.
+        let (hexa, hexe, hexl) ← hexProbe parts.arenaBytes parts.eventBytes
+        hexArena := hexArena.push hexa
+        hexEvents := hexEvents.push hexe
+        hexLen := hexl
+        status := parts.status
         verdict := be64 result 32
         ndst := be64 result 56
         nev := be64 result 64
@@ -413,22 +538,235 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         -- so a reader can see it rather than infer it from a residual.
         awall := awall.push (c1 - c0)
         total := total.push (o1 - a0)
-        summed := summed.push ((a1 - a0) + (s1 - s0) + ci + na + co + (o1 - o0))
+        summed := summed.push ((a1 - a0) + (s1 - s0) + ci + na + co + ocost)
   IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
     path={kind} reps={reps} \
     read_ns={median reads} admission_ns={stageField adm} \
     staging_ns={stageField staging} copyin_ns={stageField copyin} \
     native_ns={stageField native} copyout_ns={stageField copyout} \
     adapter_wall_ns={stageField awall} fallback_ns={stageField fallback} outcome_ns={stageField outcome} \
+    outcome_decode_ns={stageField odecode} outcome_header_ns={stageField oheader} \
+    outcome_slice_ns={stageField oslice} outcome_arena_ns={stageField oarena} \
+    outcome_events_ns={stageField oevents} \
+    hex_arena_ns={stageField hexArena} hex_events_ns={stageField hexEvents} \
+    hexlen={if hexArena.isEmpty then "-" else toString hexLen} \
     total_ns={median total} summed_stage_ns={median summed} \
     verdict={verdict} ndst={ndst} nev={nev} rep_total_ns={total.toList}"
   return status
+
+/-! ### The consumer's read
+
+`--consume <file> <reps>` is the route without its reporting: it runs the fast
+path and reads the result the way a consumer that keeps no printed copy would.
+The header words come from `ByteArray` indexing rather than `be64`'s list
+materialisation, and the event stream is walked record by record at the widths
+`kernel/json/stage2.h` documents.  Two readings are priced: a fold that keeps no
+per-token object, and one that materialises one `Event` per event — which is what
+a consumer that wants values pays, and where a per-token allocation lands.
+Nothing is printed per repetition, so neither number contains the route's hex
+conversion.
+
+The walk is a summary rather than a second parser: it reads each record's tag,
+length and payload, sums the arena's bytes, and stops with `walked=false` at a
+record that would run past the stream instead of reading past it.  A consumer
+that rebuilt strings from the spans is not measured here; its floor is the arena
+read below, and its per-string allocation would sit on top of the token price.
+-/
+
+/-- One decoded event record: the tag, the length field a key or string carries
+(0 for a tag without one), and the eight-byte payload (a number's IEEE bits, a
+key's or string's span, or 0). -/
+structure Event where
+  tag : UInt8
+  len : UInt64
+  payload : UInt64
+deriving Inhabited
+
+/-- A consumer's summary of one result. -/
+structure Consumed where
+  tokens : Nat := 0
+  events : Nat := 0
+  arena : Nat := 0
+  sum : UInt64 := 0
+  walked : Bool := false
+  values : Nat := 0
+deriving Inhabited
+
+/-- The record's width, from the encoding `kernel/json/stage2.h` documents: a
+key (`T_KEY` = 5) or string (`T_STR` = 6) is a tag, four length bytes and eight
+span bytes; a number (`T_NUM` = 7) is a tag and its eight IEEE bytes; every
+other tag stands alone. -/
+def eventWidth (tag : UInt8) : Nat :=
+  if tag == 5 || tag == 6 then 13 else if tag == 7 then 9 else 1
+
+/-- Eight little-endian bytes at `i`, read by index.  The arithmetic is
+`UInt64` rather than `Nat`, so a byte read is unboxed and the reading prices the
+record walk rather than the accumulator's allocation. -/
+def indexWord (bs : ByteArray) (i : Nat) : UInt64 :=
+  let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
+  g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3 +
+    4294967296 * (g 4 + 256 * g 5 + 65536 * g 6 + 16777216 * g 7)
+
+/-- Four little-endian bytes at `i`, read by index. -/
+def indexWord4 (bs : ByteArray) (i : Nat) : UInt64 :=
+  let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
+  g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3
+
+/-- The header through indexing: the observation a consumer needs, with neither
+`be64`'s per-byte list materialisation nor any printing. -/
+def decodeIndexed (result : ByteArray) : Except String Observation :=
+  if result.size < headerBytes then
+    .error s!"the result is {result.size} bytes, fewer than its \
+      {headerBytes}-byte header"
+  else
+    let tag := indexWord result 0
+    if tag != 0 && tag != 1 then
+      .error s!"the adapter tagged the result {tag}, not an observation"
+    else
+      let o : Observation :=
+        { verdict := (indexWord result 32).toNat
+          nk := (indexWord result 40).toNat
+          nxp := (indexWord result 48).toNat
+          ndst := (indexWord result 56).toNat
+          nev := (indexWord result 64).toNat
+          err := (indexWord result 72).toNat }
+      if result.size ≠ headerBytes + o.ndst + o.nev then
+        .error s!"the result is {result.size} bytes, and its header names \
+          {headerBytes + o.ndst + o.nev}"
+      else
+        .ok o
+
+/-- Read a result as a consumer would.  `build` also materialises one `Event`
+per event: with it the walk pays an object and an array growth per event;
+without it the same fields are folded and no per-token object exists. -/
+partial def consumeResult (result : ByteArray) (o : Observation)
+    (build : Bool) : Consumed :=
+  let rec arenaSum (k : Nat) (acc : UInt64) : UInt64 :=
+    if k < o.ndst then
+      arenaSum (k + 1) (acc + (result.get! (headerBytes + k)).toUInt64)
+    else acc
+  let rec walk (k : Nat) (tokens : Nat) (sum : UInt64) (acc : Array Event) :
+      Consumed :=
+    if k >= o.nev then
+      { tokens := tokens, events := k, arena := o.ndst, sum := sum, walked := true,
+        values := acc.size }
+    else
+      let tag := result.get! (headerBytes + o.ndst + k)
+      let w := eventWidth tag
+      if k + w > o.nev then
+        { tokens := tokens, events := k, arena := o.ndst, sum := sum,
+          walked := false, values := acc.size }
+      else
+        let base := headerBytes + o.ndst + k
+        let len := if w == 13 then indexWord4 result (base + 1) else 0
+        let payload :=
+          if w == 13 then indexWord result (base + 5)
+          else if w == 9 then indexWord result (base + 1)
+          else 0
+        let sum := sum + tag.toUInt64 + len + payload
+        let acc :=
+          if build then acc.push { tag := tag, len := len, payload := payload }
+          else acc
+        walk (k + w) (tokens + 1) sum acc
+  walk 0 0 (arenaSum 0 0) #[]
+
+/-- `--consume`: the fast path run `reps` times, with the consumer's two
+readings timed apart from the route and from each other.  The two readings share
+one header decode each, so each price includes it; the fold and the values walk
+must agree on the token count and on the checksum, and a disagreement is
+reported rather than averaged in. -/
+def runConsume (path : String) (reps : Nat) : IO UInt32 := do
+  let mut reads : Array Nat := #[]
+  let mut adm : Array Nat := #[]
+  let mut staging : Array Nat := #[]
+  let mut routeNs : Array Nat := #[]
+  let mut copyout : Array Nat := #[]
+  let mut fold : Array Nat := #[]
+  let mut values : Array Nat := #[]
+  let mut size := 0
+  let mut kind := "fast"
+  let mut tokens := 0
+  let mut valuesBuilt := 0
+  let mut ndst := 0
+  let mut nev := 0
+  let mut walked := true
+  let mut foldSum : UInt64 := 0
+  let mut valuesSum : UInt64 := 0
+  for rep in List.range reps do
+    let t0 ← IO.monoNanosNow
+    let doc ←
+      try
+        IO.FS.readBinFile path
+      catch e =>
+        IO.eprintln s!"route: cannot read '{path}': {e}"
+        return 2
+    let t1 ← IO.monoNanosNow
+    reads := reads.push (t1 - t0)
+    size := doc.size
+    let a0 ← IO.monoNanosNow
+    let decision := admission doc
+    let a1 ← IO.monoNanosNow
+    adm := adm.push (a1 - a0)
+    match decision with
+    | .error _ =>
+      kind := "fallback"
+    | .ok () =>
+      let s0 ← IO.monoNanosNow
+      let staged := stage doc doc.size
+      let c0 ← IO.monoNanosNow
+      let result ← call staged
+      let c1 ← IO.monoNanosNow
+      staging := staging.push (c0 - s0)
+      routeNs := routeNs.push (c1 - c0)
+      let co ← stageNsAt 2
+      if co != stageUnfilled then copyout := copyout.push co
+      -- One reading, with its own header decode.  The two alternate which goes
+      -- first, so neither always pays the cold pass over the result.
+      let read (build : Bool) : IO (Consumed × Nat) := do
+        let t0 ← IO.monoNanosNow
+        let c :=
+          match decodeIndexed result with
+          | .ok o => consumeResult result o build
+          | .error _ => ({ walked := false } : Consumed)
+        let t1 ← IO.monoNanosNow
+        return (c, t1 - t0)
+      let first ← read (rep % 2 != 0)
+      let second ← read (rep % 2 == 0)
+      let (folded, fns) := if rep % 2 == 0 then first else second
+      let (built, vns) := if rep % 2 == 0 then second else first
+      fold := fold.push fns
+      values := values.push vns
+      tokens := folded.tokens
+      valuesBuilt := built.values
+      ndst := folded.arena
+      nev := folded.events
+      walked := folded.walked && built.walked && folded.tokens == built.tokens
+      foldSum := folded.sum
+      valuesSum := built.sum
+  IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
+    path={kind} reps={reps} read_ns={median reads} \
+    admission_ns={stageField adm} staging_ns={stageField staging} \
+    route_ns={stageField routeNs} copyout_ns={stageField copyout} \
+    consume_fold_ns={stageField fold} consume_values_ns={stageField values} \
+    ndst={ndst} nev={nev} tokens={tokens} values={valuesBuilt} \
+    walked={if walked then 1 else 0} foldsum={foldSum} valuessum={valuesSum}"
+  -- A consumer whose two readings disagree, or whose walk did not land on the
+  -- stream's end, is a failure of the reading rather than a number to report.
+  if kind == "fast" &&
+      !(walked && valuesBuilt == tokens && tokens > 0 && foldSum == valuesSum) then
+    IO.eprintln s!"route: --consume: the readings disagree: tokens={tokens} \
+      values={valuesBuilt} walked={walked} fold sum={foldSum} \
+      values sum={valuesSum}"
+    return 5
+  return 0
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--doc", path] => run path
   | ["--stages", path] => runStaged path 11
   | ["--stages", path, reps] => runStaged path reps.toNat!
+  | ["--consume", path] => runConsume path 11
+  | ["--consume", path, reps] => runConsume path reps.toNat!
   | _ =>
       IO.eprintln usage
       return 1

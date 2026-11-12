@@ -77,7 +77,7 @@ for f in "${cone_ir[@]}"; do
   }
 done
 
-(cd "$repo" && lake env lean -c "$build/RouteMain.c" probes/json/route/RouteMain.lean)
+(cd "$repo" && lake env lean -c "$build/RouteMain.c" "$here/RouteMain.lean")
 leanc -c "$build/RouteMain.c" -I "$repo/.lake/build/ir" -o "$build/RouteMain.o"
 
 if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_pipeline')" -eq 0 ]; then

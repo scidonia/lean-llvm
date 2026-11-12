@@ -6,12 +6,12 @@ pipeline's record demands and calls the native object.  The contract is
 
 | File | What it is |
 |---|---|
-| `RouteMain.lean` | the standalone Lean entry point: it imports the library's `admission` decision and its `parseBytes` fallback (one shell, not two), stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes |
+| `RouteMain.lean` | the standalone Lean entry point: it imports the library's `admission` decision and its `parseBytes` fallback (one shell, not two), stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array |
 | `shim.c` | the adapter: validates the staging, copies the caller's `ByteArray`s into the object's ABI, fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
 | `build.sh` | compiles the six kernel units, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts the two symbols the adapter calls are imported and defined |
-| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the fourteen-row policy class, and the three outcomes' distinctness |
-| `bench.sh` | the route's per-stage timings, the object's -O2/-O3 pair taken paired against a drift control, the fallback's price, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
+| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the fourteen-row policy class, the three outcomes' distinctness, and the consumer mode's reading of a five-event fixture |
+| `bench.sh` | the route's per-stage timings, the outcome stage's five parts, the consumer rows, the object's -O2/-O3 pair taken paired against a drift control, the fallback's price, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
 | `bench/simdjson-baseline.cc` | the reference arm: simdjson 4.6.11 on-demand over the same documents, its `padded_string` staging and its `iterate` plus full value traversal timed apart |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
 | `DomainCheck.lean` | the library shell's `documentDecision` and `checkRoute`, elaborated from source: every admission clause on both sides, both fallback outcomes, the fourteen-row policy class, and the layout checks |
@@ -47,6 +47,7 @@ those clauses and nothing else.
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
+"$PWD/probes/json/route/build/leanllvm-json-route" --consume <document> 21
 nix develop -c bash probes/json/route/correspondence.sh
 bash probes/json/route/bench.sh 21        # re-executes itself under a 6 GiB scope
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonCallRoute
@@ -72,13 +73,35 @@ The instrument is a compile-time gate: the ordinary adapter contains no clock
 read, which `build.sh` asserts with `nm` rather than assuming.  `bench.sh` uses
 `OPT` for the -O2/-O3 pair and `TIMING=1` for the stage rows.
 
+## The stage report, and the consumer's reading
+
+`--stages <file> <reps>` reports one median per stage and, for the fast path,
+five medians for the outcome stage's parts: `outcome_decode_ns` (the tagged
+header and its seven words), `outcome_slice_ns` (the two payloads cut out),
+`outcome_header_ns`, `outcome_arena_ns` and `outcome_events_ns` (each line built
+and written).  Their per-repetition sum is `outcome_ns`, so the five clock reads
+that divide them are inside the stage.  `hex_arena_ns` and `hex_events_ns`
+rebuild the same two payload lines with the write removed, after the stage's
+timed window; the difference between a payload part and its hex figure is that
+line's write.  The parts price the route's own reporting, not the object.
+
+`--consume <file> <reps>` is the production reader's number: it runs the fast
+path once per repetition and reads the result without printing — the header by
+index, the event stream record by record at the widths `kernel/json/stage2.h`
+documents — as a fold that keeps no per-token object (`consume_fold_ns`) and as
+one that materialises an event record per token (`consume_values_ns`).  The two
+alternate which goes first.  The mode exits 5 unless both readings count the
+same tokens, land exactly on the event stream's end and produce the same
+checksum, so a row reports a reading that was checked rather than a duration
+alone.
+
 ## Observed
 
 `check.sh`, over the 122 default-profile manifest rows and then the boundary
 cases:
 
 ```text
-ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons
+ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; 1 consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings
 ```
 
 - the 107 admitted rows — 59 the manifest calls `accept` and 48 `invalid` —
@@ -112,7 +135,13 @@ ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the 
   the reference and outside the domain, because the opener-count clause counts
   bytes rather than nesting.  It falls back and the fallback accepts it with a
   decoded value: the clause's conservatism narrows the domain and never changes
-  an answer.
+  an answer;
+- the consumer mode reads `["\n",123,true]` — an array, an escaped string (one
+  arena byte), a number, `true` and the array's close — as 5 tokens over 25
+  event bytes with one arena byte, and its fold and values readings agree on the
+  token count and the checksum.  The record widths it decodes at are the ones
+  `stage2.h` documents, so a width change that left the object's stream
+  unreadable is a red rather than a shorter row.
 
 The byte comparison is not vacuous: the run counts the bytes it compared and the
 rows that carried any, and fails when either arm is empty.  Every assertion above
@@ -121,13 +150,14 @@ below.
 
 ## The controls
 
-Four cuts, each applied to the probe's shell (`RouteMain.run`) in a throwaway
-copy and rebuilt, one at a time; the tree was restored and rebuilt after each,
-and the final run above is the restored build's.  The cut is at the decision's
-*consumer* rather than in `admission` itself because the clause definitions carry
-the certificate's proofs: removing a clause there replaces a proof, which is a
-build failure rather than an assertion failure, and the point of these controls
-is that the scenario notices a document taking the wrong path.
+Five cuts, each applied in a throwaway copy of the directory and rebuilt, one at
+a time; the tree was restored and rebuilt after each, and the final run above is
+the restored build's.  The first four cut the probe's shell (`RouteMain.run`) at
+the decision's *consumer* rather than in `admission` itself because the clause
+definitions carry the certificate's proofs: removing a clause there replaces a
+proof, which is a build failure rather than an assertion failure, and the point
+of these controls is that the scenario notices a document taking the wrong path.
+The fifth cuts the consumer mode's record-width table.
 
 | Control | Cut | First observed red |
 |---|---|---|
@@ -135,6 +165,7 @@ is that the scenario notices a document taking the wrong path.
 | a policy-violating document falls back | `.error (.unpairedSurrogate _) \| .error (.noncharacter _) => runFast …` | `FAIL: the fallback refuses a different policy class than the one pinned`, `FAIL: expected 14 policy refusals, saw 0`, and the fourteen rows counted as divergences |
 | over-length falls back | `.error (.inputTooLong _) => runFast …` | `FAIL: the over-bound document was not the fallback's refusal (exit 0)` |
 | a policy-clean in-domain document takes the fast path | `.ok () => … runFallback doc` (with `runFast` still referenced from a branch that is not taken, so the link step keeps the call) | `FAIL: the fast-path arm is empty (accept 0, invalid 0)`, `FAIL: no compared row carried arena bytes…`, and the depth-128 row losing its observation |
+| the consumer decodes the record widths | `eventWidth`: `tag == 7 then 9` → `then 1` (a number read as a one-byte record) | `FAIL: --consume read the five-event document as: … tokens=13 values=13 …` and `FAIL: 1 assertion(s) failed over 122 default-profile rows` |
 
 The first attempt at the last cut — routing *all* documents to the fallback —
 failed the build instead (`build: the executable does not define

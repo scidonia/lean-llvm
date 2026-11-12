@@ -35,6 +35,9 @@
 #   5. the three outcomes are distinct in the output: a fast-path row prints no
 #      `fallback=` line, a fallback row prints no `verdict=` line, and both arms
 #      are non-empty.
+#   6. the consumer mode reads a five-event fixture at the record widths the
+#      object wrote: 5 tokens, one arena byte, 25 event bytes, both readings
+#      agreeing on the token count and the checksum.
 #
 # A comparison that fails names its class: a verdict disagreement, a value
 # disagreement (the arena or event bytes, with the first differing byte), or a
@@ -175,7 +178,7 @@ compare_observation() { # <row label> <route output> <driver output>
 }
 
 rows=0; skipped=0; fast=0; fallback_refusals=0; fallback_accepts=0
-accepts=0; invalids=0; excluded=0; diverged=0
+accepts=0; invalids=0; excluded=0; diverged=0; consumer_ok=0
 divergent=
 : >"$work/policy-got"
 
@@ -454,11 +457,42 @@ if [ "$rows_with_events" -eq 0 ]; then
   failed=$((failed + 1))
 fi
 
+# ---------------------------------------------------------------------------
+# The consumer mode
+#
+# `--consume` is the reading the timings page quotes as the production
+# consumer's: the result read without printing, by index and record.  Its two
+# readings must agree on the token count and the checksum and land on the event
+# stream's end, and the record widths it decodes at (13 for a string, 9 for a
+# number, 1 for every other tag) must be the ones the object wrote.  The fixture
+# carries one of each: an array, an escaped string (one arena byte), a number,
+# `true`, and the array's close.
+# ---------------------------------------------------------------------------
+printf '["\\n",123,true]' >"$work/consume.json"
+"$route" --consume "$work/consume.json" 5 >"$work/out" 2>"$work/err"
+status=$?
+crow=$(grep '^row ' "$work/err")
+cf() { printf '%s\n' "$crow" | tr ' ' '\n' | sed -n "s/^$1=//p" | head -1; }
+if [ "$status" -ne 0 ] || [ -z "$crow" ]; then
+  printf 'FAIL: --consume exited %s on a five-event document:\n' "$status" >&2
+  cat "$work/err" >&2
+  failed=$((failed + 1))
+elif [ "$(cf path)" != fast ] || [ "$(cf tokens)" != 5 ] ||
+     [ "$(cf values)" != 5 ] || [ "$(cf walked)" != 1 ] ||
+     [ "$(cf ndst)" != 1 ] || [ "$(cf nev)" != 25 ] ||
+     [ "$(cf foldsum)" != "$(cf valuessum)" ]; then
+  printf 'FAIL: --consume read the five-event document as:\n  %s\n' "$crow" >&2
+  printf '  expected path=fast tokens=5 values=5 walked=1 ndst=1 nev=25 and equal sums\n' >&2
+  failed=$((failed + 1))
+else
+  consumer_ok=$((consumer_ok + 1))
+fi
+
 if [ "$failed" -ne 0 ]; then
   printf 'FAIL: %s assertion(s) failed over %s default-profile rows\n' "$failed" "$rows" >&2
   exit 1
 fi
-printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons\n' \
+printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
   "$rows" "$fast" "$compared_arena" "$rows_with_arena" "$compared_events" "$rows_with_events" \
-  "$accepts" "$invalids" "$fallback_refusals" "$fallback_accepts" "$diverged" "$excluded" "$skipped"
+  "$accepts" "$invalids" "$fallback_refusals" "$fallback_accepts" "$diverged" "$excluded" "$skipped" "$consumer_ok"
 exit 0
