@@ -18,41 +18,56 @@ Segment 1 is the four `alloca`s, the three `lifetime.start` markers, and the
 by the four objects' sizes and the environment binds the four pointers and the
 two arithmetic words.
 
-Three of the four are proved (`walkEntrySeg1_denote`, `walkEntrySeg3_denote`,
-`walkEntrySeg4_denote`).  The second — the initialisation, the `S2` record's
-fields, the log's memset and stores, and the two cursor loads — is cut into its
-two halves (`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by a `rfl`), and its
-twenty-two instructions after the initialisation are pinned to the block's own
-list as `walkEntrySeg2Post` (`walkEntrySeg2_cut`).
+All four are proved (`walkEntrySeg1_denote`, `walkEntrySeg2_denote`,
+`walkEntrySeg3_denote`, `walkEntrySeg4_denote`).  The second — the
+initialisation, the `S2` record's fields, the log's memset and stores, and the
+two cursor loads — is cut into its two halves
+(`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by a `rfl`), and its twenty-two
+instructions after the initialisation are pinned to the block's own list as
+`walkEntrySeg2Post` (`walkEntrySeg2_cut`).
 
-Its equality is **not** proved, and the obstruction is measured rather than
-guessed.  The read obstruction is gone: `readBytes_stage2WriteStores_of_all_outside`
-reads a *store list* — one entry avoiding the range is all it asks — so
-`walkSeg2Ws1`/`Ws2`/`Ws3` give the two cursor loads' values at `m` and the
-`seg2StoreOutside` step carries each across the object extents, before any
-`denoteCode` step runs.  What remains is the shape of `denoteCode`'s own step
-conclusions: each is `stateAt env {s with mem := ...}`, and with `s` the previous
-state literal that elaborates to a structure literal whose four non-memory fields
-each *repeat* the previous literal.  The term therefore grows four-fold per store,
-and the closing `rfl` of a twenty-two-step chain is a defeq check over that
-growth: the direct chain, with both reads consumed first and every side goal
-deferred, times out at `whnf` at `maxHeartbeats 4000000` after two minutes, and
-`dsimp` has nothing to reduce there because the term is already in normal form.
-Restating the twenty-two instructions as eleven runs between explicit flat states
-— which keeps the composition flat — was drafted and the two-step runs' own
-`rfl` still times out at the default budget, so the cost is inside each step's
-conclusion and not only in the composition.  The vocabulary that avoids it is a
-step lemma stated with a memory-only updater over `State` rather than a structure
-literal, which is a change to `BlockEval`'s step set and is recorded as the open
-row rather than worked around here.
+Segment 2 is stated over `memAt` rather than over a state literal, and that is
+what keeps the run linear.  `denoteCode`'s conclusion for one step is
+`stateAt env {s with mem := ...}`; with `s` the previous state literal, each
+conclusion repeats that literal in the four fields the step does not touch, so
+the term grows four-fold per store, and the chain of twenty-two diverged at
+`whnf` at `maxHeartbeats 4000000` after 2 m 05 s in that form.  `memAt` threads
+the memory as an argument of its own (`JsonStage2WalkSeed`), so each conclusion
+is `memAt s (writeBytes m ...)`: this module now elaborates in full in about
+three seconds, and the segment's own `rfl` reduces a chain of projections rather
+than a tree of literals.
 
-The segments' statements carry `env`, `s` and `is` explicitly rather than
+The two cursor loads' values are transported before the chain:
+`readBytes_stage2WriteStores_of_all_outside` reads a *store list* — one entry
+avoiding the range is all it asks — so `walkSeg2Read1` and `walkSeg2Read2`
+carry each load's value from the caller's memory (`m`) across the
+initialisation's record and the segment's own store list.
+`walkSeg2Ws1Window`/`Ws2Window`/`Ws3Window` place every entry of that list in
+one of two windows — the record's cursor fields `[%s + 56, %s + 88)` and the
+log's whole extent `[%z, %z + 64)` — and `seg2StoreOutside` turns a read
+separated from a window into one separated from the entries inside it.
+`walkSeg2PostMem_eq` reads the outgoing memory as a single fold over
+`walkSeg2Stores`, so a composition over the segment meets the fold its statement
+names without unfolding the run's own nesting.
+
+The segments' statements carry `env`, `s`, `m` and `is` explicitly rather than
 leaving them to unification: `lookupName` reduces to an `if` on a `String`
-equality that `isDefEq` cannot soundly decide, so an implicit state whose
-lookup is asked to reduce definitionally can leave a metavariable assigned from
-the branch it then rejects.  Every side goal below is stated at a named
-environment and closed by the `block_lk` peel, `simpa [lookupName]`, or the
-hypothesis the segment takes.
+equality that `isDefEq` cannot soundly decide, so an implicit state whose lookup
+is asked to reduce definitionally can leave a metavariable assigned from the
+branch it then rejects.  Segment 2's side goals are the run's own cells, and
+they are closed by peeling the cells as a syntactic rewrite and then matching a
+binding exactly; `block_lk`'s `assumption` is not used there, because on this
+goal set its definitional comparison of distinct `String` literals does not
+terminate promptly.  The arithmetic that places the windows' entries is split
+into its conjuncts before `omega` sees it, since `omega` on a conjunction is
+what would otherwise add `Classical.choice` to the footprint.
+
+The composition of the four segments into the block's `denoteCode`, its `step`,
+and the `runFuel` prefix is the open row: every segment is an equality at a
+symbolic environment, state and memory, and the composition is a `trans` chain
+over them with the three segments' own read hypotheses, which are the initialisation's
+record fields `%s + 0`, `%s + 8` and `%s + 48` — outside segment 2's windows, so
+`walkSeg2StoresOutside` carries them.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkSeed
 
@@ -522,19 +537,283 @@ theorem walkEntrySeg2_cut :
 
 
 
-/-- info: 'LeanLLVM.Refinement.WalkScope.readBytes_stage2WriteStores_of_all_outside' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkScope.readBytes_stage2WriteStores_of_all_outside
+/-! ### The second segment's equality
 
-/-- info: 'LeanLLVM.Refinement.WalkScope.seg2StoreOutside' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkScope.seg2StoreOutside
+The step vocabulary of `JsonStage2WalkSeed` (`memAt`) is what makes this chain
+linear: the incoming memory is an argument, so the twenty-three steps compose
+without repeating the state four times per step.  The reads the two cursor loads
+make are transported before the chain runs — `walkSeg2Read1` and `walkSeg2Read2`
+carry each across the initialisation's record and the segment's own store list —
+so the chain itself is only the steps.
 
-/-- info: 'LeanLLVM.Refinement.WalkScope.seg2MemsetCount' does not depend on any axioms -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkScope.seg2MemsetCount
+The stores lie in two windows: the record's three cursor fields,
+`[%s + 56, %s + 88)`, and the log's whole extent, `[%z, %z + 64)`.  That is the
+fact the transport lemmas rest on, and the fact a read at the record's argument
+fields (`%s + 0`, `%s + 8`, `%s + 48`) needs in order to survive the segment. -/
 
-/-! ### The instrument -/
+/-- The memory the initialisation hands the rest of the segment. -/
+def walkSeg2InitMem (sAddr b ep : Nat) (n nb : BitVec 64) (m : Mem) : Mem :=
+  stage2WriteStores m (s2InitStores sAddr b n.toNat nb.toNat ep)
+
+/-- Folding a store list is folding its two halves. -/
+theorem stage2WriteStores_append : ∀ (ws1 ws2 : List (Nat × List UInt8)) (m : Mem),
+    stage2WriteStores m (ws1 ++ ws2) = stage2WriteStores (stage2WriteStores m ws1) ws2
+  | [], _, _ => rfl
+  | (a, bs) :: rest, ws2, m => by
+      show stage2WriteStores (writeBytes m a bs) (rest ++ ws2) = _
+      rw [stage2WriteStores_append rest ws2 (writeBytes m a bs)]
+      rfl
+
+/-- **The first run's stores lie in the two windows.**  The record's `%nep`,
+`%xp` and `%nxp` fields, and the log's arena cursor and stream base. -/
+theorem walkSeg2Ws1Window (sAddr zAddr nep xp nxp dst : Nat) :
+    ∀ st ∈ walkSeg2Ws1 sAddr zAddr nep xp nxp dst,
+      (sAddr + 56 ≤ st.1 ∧ st.1 + st.2.length ≤ sAddr + 88) ∨
+      (zAddr ≤ st.1 ∧ st.1 + st.2.length ≤ zAddr + 64) := by
+  intro st hst
+  simp only [walkSeg2Ws1, List.mem_cons, List.not_mem_nil, or_false] at hst
+  rcases hst with rfl | rfl | rfl | rfl | rfl
+  all_goals
+    (simp (config := { failIfUnchanged := false }) only
+       [woff_24, woff_40, woff_56, woff_72, woff_80, seg2MemsetCount,
+        wordBytes, natToBytes_length, List.length_replicate]
+     first
+     | exact Or.inl ⟨by omega, by omega⟩
+     | exact Or.inr ⟨by omega, by omega⟩)
+
+/-- **The second run's stores lie in the log's window.** -/
+theorem walkSeg2Ws2Window (zAddr v1 dstcap ev : Nat) :
+    ∀ st ∈ walkSeg2Ws2 zAddr v1 dstcap ev,
+      (zAddr ≤ st.1 ∧ st.1 + st.2.length ≤ zAddr + 64) := by
+  intro st hst
+  simp only [walkSeg2Ws2, List.mem_cons, List.not_mem_nil, or_false] at hst
+  rcases hst with rfl | rfl | rfl
+  all_goals
+    (simp (config := { failIfUnchanged := false }) only
+       [woff_48, woff_56, wordBytes, natToBytes_length]
+     constructor <;> omega)
+
+/-- **The third run's stores lie in the log's window.** -/
+theorem walkSeg2Ws3Window (zAddr v2 evcap : Nat) :
+    ∀ st ∈ walkSeg2Ws3 zAddr v2 evcap,
+      (zAddr ≤ st.1 ∧ st.1 + st.2.length ≤ zAddr + 64) := by
+  intro st hst
+  simp only [walkSeg2Ws3, List.mem_cons, List.not_mem_nil, or_false] at hst
+  rcases hst with rfl | rfl
+  all_goals
+    (simp (config := { failIfUnchanged := false }) only
+       [woff_8, woff_16, wordBytes, natToBytes_length]
+     constructor <;> omega)
+
+/-- **Every store the second segment writes lies in one of two windows.** -/
+theorem walkSeg2StoreWindow (sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat) :
+    ∀ st ∈ walkSeg2Stores sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap,
+      (sAddr + 56 ≤ st.1 ∧ st.1 + st.2.length ≤ sAddr + 88) ∨
+      (zAddr ≤ st.1 ∧ st.1 + st.2.length ≤ zAddr + 64) := by
+  intro st hst
+  simp only [walkSeg2Stores, List.mem_append] at hst
+  rcases hst with (h | h) | h
+  · exact walkSeg2Ws1Window sAddr zAddr nep xp nxp dst st h
+  · exact Or.inr (walkSeg2Ws2Window zAddr v1 dstcap ev st h)
+  · exact Or.inr (walkSeg2Ws3Window zAddr v2 evcap st h)
+
+/-- A read separated from both windows is untouched by every store the second
+segment writes. -/
+theorem walkSeg2StoresOutside {a len sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat}
+    (hs : a + len ≤ sAddr + 56 ∨ sAddr + 88 ≤ a)
+    (hz : a + len ≤ zAddr ∨ zAddr + 64 ≤ a) :
+    ∀ st ∈ walkSeg2Stores sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap,
+      a + len ≤ st.1 ∨ st.1 + st.2.length ≤ a := by
+  intro st hst
+  rcases walkSeg2StoreWindow sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap st hst with
+    ⟨h1, h2⟩ | ⟨h1, h2⟩
+  · rcases hs with h | h <;> omega
+  · rcases hz with h | h <;> omega
+
+/-- The segment's whole store list leaves such a read alone. -/
+theorem readBytes_walkSeg2Stores {m : Mem} {a len sAddr zAddr nep xp nxp dst v1 dstcap ev
+    v2 evcap : Nat}
+    (hs : a + len ≤ sAddr + 56 ∨ sAddr + 88 ≤ a)
+    (hz : a + len ≤ zAddr ∨ zAddr + 64 ≤ a) :
+    readBytes (stage2WriteStores m (walkSeg2Stores sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap))
+        a len = readBytes m a len :=
+  readBytes_stage2WriteStores_of_all_outside _ (walkSeg2StoresOutside hs hz)
+
+/-- The segment's outgoing memory is its three runs folded over its store list. -/
+theorem walkSeg2PostMem_eq (sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat) (m : Mem) :
+    walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap m =
+      stage2WriteStores m (walkSeg2Stores sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap) := by
+  simp only [walkSeg2PostMem, walkSeg2Mem2, walkSeg2Mem1, walkSeg2Stores, List.append_assoc]
+  rw [stage2WriteStores_append, stage2WriteStores_append]
+
+/-- **The first cursor load's value**, read at the caller's memory and carried
+through the initialisation and the five stores before the load. -/
+theorem walkSeg2Read1 {m : Mem} {sAddr b ep zAddr nep xp nxp dst ndst v1 : Nat} {n nb : BitVec 64}
+    (hs : ndst + 8 ≤ sAddr ∨ sAddr + 120 ≤ ndst)
+    (hz : ndst + 8 ≤ zAddr ∨ zAddr + 64 ≤ ndst)
+    (h : readBytes m ndst 8 = some (natToBytes v1 8)) :
+    readBytes (walkSeg2Mem1 sAddr zAddr nep xp nxp dst (walkSeg2InitMem sAddr b ep n nb m))
+        ndst 8 = some (natToBytes v1 8) := by
+  have hsub : ∀ st ∈ walkSeg2Ws1 sAddr zAddr nep xp nxp dst,
+      ndst + 8 ≤ st.1 ∨ st.1 + st.2.length ≤ ndst := by
+    intro st hst
+    rcases walkSeg2Ws1Window sAddr zAddr nep xp nxp dst st hst with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · rcases hs with h | h <;> omega
+    · rcases hz with h | h <;> omega
+  rw [walkSeg2Mem1, walkSeg2InitMem,
+    readBytes_stage2WriteStores_of_all_outside _ hsub,
+    readBytes_s2Init_of_outside (sv := sAddr) (b := b) (n := n.toNat) (nb := nb.toNat)
+      (ep := ep) hs]
+  exact h
+
+/-- **The second cursor load's value**, carried through the initialisation and
+the eight stores before it. -/
+theorem walkSeg2Read2 {m : Mem} {sAddr b ep zAddr nep xp nxp dst dstcap ev nev v1 v2 : Nat}
+    {n nb : BitVec 64}
+    (hs : nev + 8 ≤ sAddr ∨ sAddr + 120 ≤ nev)
+    (hz : nev + 8 ≤ zAddr ∨ zAddr + 64 ≤ nev)
+    (h : readBytes m nev 8 = some (natToBytes v2 8)) :
+    readBytes (walkSeg2Mem2 sAddr zAddr nep xp nxp dst v1 dstcap ev
+        (walkSeg2InitMem sAddr b ep n nb m)) nev 8 = some (natToBytes v2 8) := by
+  have hWs1 : ∀ st ∈ walkSeg2Ws1 sAddr zAddr nep xp nxp dst,
+      nev + 8 ≤ st.1 ∨ st.1 + st.2.length ≤ nev := by
+    intro st hst
+    rcases walkSeg2Ws1Window sAddr zAddr nep xp nxp dst st hst with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · rcases hs with h | h <;> omega
+    · rcases hz with h | h <;> omega
+  have hWs2 : ∀ st ∈ walkSeg2Ws2 zAddr v1 dstcap ev,
+      nev + 8 ≤ st.1 ∨ st.1 + st.2.length ≤ nev := by
+    intro st hst
+    obtain ⟨h1, h2⟩ := walkSeg2Ws2Window zAddr v1 dstcap ev st hst
+    rcases hz with h | h <;> omega
+  rw [walkSeg2Mem2,
+    readBytes_stage2WriteStores_of_all_outside (walkSeg2Ws2 zAddr v1 dstcap ev) hWs2,
+    walkSeg2Mem1,
+    readBytes_stage2WriteStores_of_all_outside (walkSeg2Ws1 sAddr zAddr nep xp nxp dst) hWs1,
+    walkSeg2InitMem,
+    readBytes_s2Init_of_outside (sv := sAddr) (b := b) (n := n.toNat) (nb := nb.toNat)
+      (ep := ep) hs]
+  exact h
+
+/-- **The second segment's equality.**  `s2_init`, the record's three argument
+fields, the log's fields, and the two cursor loads — twenty-three instructions at
+a symbolic environment, state, and incoming memory, leaving the environment
+`walkEntryEnv2` and the memory `walkSeg2PostMem`.
+
+The chain is composed of `memAt` steps, so each conclusion threads the memory
+instead of repeating the state: the twenty-two post-initialisation steps cost
+`whnf` a chain of projections rather than a tree of literals, which is what the
+structure-literal form of the same chain could not do at `maxHeartbeats
+4000000`.  The reads are the two hypotheses at the caller's memory, transported
+by `walkSeg2Read1` and `walkSeg2Read2` before the chain starts.  The side
+conditions are the run's own cells: each is the cell the step before it wrote, or
+a binding the incoming environment carries, and the search is a syntactic peel
+followed by an exact match rather than `block_lk`'s `assumption`, whose
+definitional comparison of distinct `String` literals does not terminate
+promptly on this goal set. -/
+theorem walkEntrySeg2_denote (env : Env) (s : State) (m : Mem) (is : List Instr)
+    {sAddr b ep zAddr nep xp nxp dst dstcap ev ndst nev v1 v2 evcap : Nat} {n nb : BitVec 64}
+    (hs : lookupName env "%s" = some (.ptr sAddr))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hnb : lookupName env "%shr" = some (.int 64 nb))
+    (hep : lookupName env "%ep" = some (.ptr ep))
+    (hz : lookupName env "%z" = some (.ptr zAddr))
+    (hne : lookupName env "%nep" = some (.int 64 (BitVec.ofNat 64 nep)))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 nxp)))
+    (hdst : lookupName env "%dst" = some (.ptr dst))
+    (hndst : lookupName env "%ndst" = some (.ptr ndst))
+    (hdcap : lookupName env "%dstcap" = some (.int 64 (BitVec.ofNat 64 dstcap)))
+    (hev : lookupName env "%ev" = some (.ptr ev))
+    (hnev : lookupName env "%nev" = some (.ptr nev))
+    (hevcap : lookupName env "%evcap" = some (.int 64 (BitVec.ofNat 64 evcap)))
+    (hjne : nep < 2 ^ 64) (hjnxp : nxp < 2 ^ 64) (hjdc : dstcap < 2 ^ 64)
+    (hjv1 : v1 < 2 ^ 64) (hjv2 : v2 < 2 ^ 64) (hjecap : evcap < 2 ^ 64)
+    (hs1 : ndst + 8 ≤ sAddr ∨ sAddr + 120 ≤ ndst)
+    (hz1 : ndst + 8 ≤ zAddr ∨ zAddr + 64 ≤ ndst)
+    (hs2 : nev + 8 ≤ sAddr ∨ sAddr + 120 ≤ nev)
+    (hz2 : nev + 8 ≤ zAddr ∨ zAddr + 64 ≤ nev)
+    (hnd : readBytes m ndst 8 = some (natToBytes v1 8))
+    (hnev' : readBytes m nev 8 = some (natToBytes v2 8)) :
+    denoteCode (stage2Calls stage2SubCalls) (walkEntrySeg2 ++ is) (stateAt env (memAt s m)) =
+      denoteCode (stage2Calls stage2SubCalls) is
+        (stateAt (walkEntryEnv2 env sAddr zAddr nep xp nxp dst v1 v2 ev)
+          (memAt s (walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap
+            (walkSeg2InitMem sAddr b ep n nb m)))) := by
+  have h1 : readBytes (walkSeg2Mem1 sAddr zAddr nep xp nxp dst
+        (walkSeg2InitMem sAddr b ep n nb m)) ndst 8 = some (natToBytes v1 8) :=
+    walkSeg2Read1 (m := m) (n := n) (nb := nb) hs1 hz1 hnd
+  have h2 : readBytes (walkSeg2Mem2 sAddr zAddr nep xp nxp dst v1 dstcap ev
+        (walkSeg2InitMem sAddr b ep n nb m)) nev 8 = some (natToBytes v2 8) :=
+    walkSeg2Read2 (m := m) (n := n) (nb := nb) hs2 hz2 hnev'
+  simp only [walkEntrySeg2, List.cons_append, List.nil_append]
+  rw [walkMemS2Init (env := env) (s := s) (m := m) (sAddr := sAddr) (b := b) (ep := ep)
+    (n := n) (nb := nb) hs hb hn hnb hep]
+  rw [denoteCode_gep8_lit_w (d := "%nsp") (base := "%s") (a := sAddr)
+    (n := BitVec.ofNat 64 56) (hpos := by decide)]
+  rw [walkMemStore64 (v := "%nep") (p := "%nsp") (a := sAddr + woff 56) (j := nep) (hj := hjne)]
+  rw [denoteCode_gep8_lit_w (d := "%xp1") (base := "%s") (a := sAddr)
+    (n := BitVec.ofNat 64 72) (hpos := by decide)]
+  rw [walkMemStorePtr (v := "%xp") (p := "%xp1") (q := xp) (a := sAddr + woff 72)]
+  rw [denoteCode_gep8_lit_w (d := "%nxp2") (base := "%s") (a := sAddr)
+    (n := BitVec.ofNat 64 80) (hpos := by decide)]
+  rw [walkMemStore64 (v := "%nxp") (p := "%nxp2") (a := sAddr + woff 80) (j := nxp) (hj := hjnxp)]
+  rw [denoteCode_gep8_lit_w (d := "%hash1.i.i") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 32) (hpos := by decide)]
+  rw [denoteCode_gep8_lit_w (d := "%ar") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 40) (hpos := by decide)]
+  rw [denoteCode_gep8_lit_w (d := "%0") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 24) (hpos := by decide)]
+  rw [walkMemMemset (sub := stage2SubCalls) (p := "%0") (a := zAddr + woff 24) (nz := 16)]
+  rw [walkMemStorePtr (v := "%dst") (p := "%ar") (q := dst) (a := zAddr + woff 40)]
+  rw [walkMemLoad64 (d := "%1") (p := "%ndst") (a := ndst) (v := BitVec.ofNat 64 v1)
+    (hv := by rw [walkToNat_ofNat64 hjv1]; exact h1)]
+  rw [denoteCode_gep8_lit_w (d := "%alen") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 48) (hpos := by decide)]
+  rw [walkMemStore64 (v := "%1") (p := "%alen") (a := zAddr + woff 48) (j := v1) (hj := hjv1)]
+  rw [denoteCode_gep8_lit_w (d := "%acap") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 56) (hpos := by decide)]
+  rw [walkMemStore64 (v := "%dstcap") (p := "%acap") (a := zAddr + woff 56) (j := dstcap)
+    (hj := hjdc)]
+  rw [walkMemStorePtr (v := "%ev") (p := "%z") (q := ev) (a := zAddr)]
+  rw [walkMemLoad64 (d := "%2") (p := "%nev") (a := nev) (v := BitVec.ofNat 64 v2)
+    (hv := by rw [walkToNat_ofNat64 hjv2]; exact h2)]
+  rw [denoteCode_gep8_lit_w (d := "%len") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 8) (hpos := by decide)]
+  rw [walkMemStore64 (v := "%2") (p := "%len") (a := zAddr + woff 8) (j := v2) (hj := hjv2)]
+  rw [denoteCode_gep8_lit_w (d := "%cap") (base := "%z") (a := zAddr)
+    (n := BitVec.ofNat 64 16) (hpos := by decide)]
+  rw [walkMemStore64 (v := "%evcap") (p := "%cap") (a := zAddr + woff 16) (j := evcap)
+    (hj := hjecap)]
+  all_goals first
+    | rfl
+    | (repeat rw [lookupName_cons_ne _ _ (by decide)]
+       first
+       | exact hs | exact hb | exact hn | exact hnb | exact hep | exact hz | exact hne
+       | exact hxp | exact hnxp | exact hdst | exact hndst | exact hdcap | exact hev
+       | exact hnev | exact hevcap
+       | (rw [lookupName_cons_self] <;> rfl))
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntrySeg2_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntrySeg2_denote
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2StoreWindow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2StoreWindow
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2PostMem_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2PostMem_eq
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2Read1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2Read1
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2Read2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2Read2
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.denoteCode_loadPtr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

@@ -26,17 +26,24 @@ preheader's five `getelementptr`s and the header's first pass — is the open ro
 The step vocabulary below is what that run is built from: the `alloca`, the
 pointer and immediate stores, the signed `getelementptr` at `-1`, the two
 `memset`s and `s2_init`.  `JsonStage2WalkRun` states `entry`'s own run as four
-segments, three of them proved as `denoteCode` equalities at a symbolic
-environment and state, with the cut pinned to this module's `walkEntryInstrs` by
-an `rfl`, and the fourth's twenty-two post-initialisation instructions pinned as
-`walkEntrySeg2Post`.  That fourth equality is still not proved, but its read
-obstruction is: `readBytes_stage2WriteStores_of_all_outside` reads a store *list*
-and the two cursor loads are transported across the extents before the chain
-runs.  What remains is the step conclusions' own shape — each repeats the
-previous state literal four times — measured at `maxHeartbeats 4000000` in that
-module.  The composition into the block's `runFuel` prefix is therefore still
-open, and the inside case of `readBytes_s2Init_of_outside` is the read fact the
-composition of the third segment needs.
+segments, all four proved as `denoteCode` equalities at a symbolic environment,
+state and memory, with the cut pinned to this module's `walkEntryInstrs` by an
+`rfl`.  The fourth — the initialisation and the twenty-two instructions after it
+— is stated over this module's `memAt`, which is what keeps it linear: the
+structure-literal form of `denoteCode`'s step conclusion repeats the previous
+state in the four fields the step does not touch, so the chain of twenty-two
+diverged at `maxHeartbeats 4000000`.  `memAt` makes the memory an argument of
+each conclusion, and the run of twenty-three steps then elaborates in a
+three-second module.  The step vocabulary below is that form of the steps the
+rest of the tree does not have (`walkMemStore64`, `walkMemStorePtr`,
+`walkMemMemset`, `walkMemLoad64`, `walkMemS2Init`), and it is what any longer
+straight-line run in this walk must be built from.
+
+What remains is the composition: the four segments into the block's
+`denoteCode`, its `step`, and the `runFuel` prefix that reaches the loop head,
+which is `WalkSeedState`'s production.  The inside case of
+`readBytes_s2Init_of_outside` is the read fact the third segment's composition
+needs.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
@@ -295,6 +302,96 @@ theorem denoteCode_s2_init (env : Env) (s : State)
     rfl
   rw [walkDenoteCode_callVoid (calls := stage2Calls stage2SubCalls) (env := env) (s := s)
     (callee := "s2_init") ha hc5]
+
+/-! ### The step vocabulary with a memory-only updater
+
+`denoteCode`'s conclusion for one step is stated against a state *literal*,
+`{ s with mem := … }`.  Chained, that conclusion repeats the previous state
+literal in every field the step does not touch, so the term a run of `n` stores
+builds grows as `4 ^ n`: the entry block's twenty-two post-initialisation
+instructions are twenty-two stores, gepe and loads, and their direct chain
+diverges at `whnf` at `maxHeartbeats 4000000`.  A step stated over `memAt s m`
+threads the memory as an argument of its own and leaves the state a single atom,
+so the run composes linearly: each conclusion is `memAt s (writeBytes m …)` and
+the closing `rfl` reduces a chain of projections rather than a tree of
+literals.  The two rewrite facts are `rfl`, and they are what keeps the chain
+flat. -/
+
+/-- A state seen as its memory, and nothing else. -/
+def memAt (s : State) (m : Mem) : State := { s with mem := m }
+
+/-- The memory a `memAt` state carries. -/
+theorem memAt_mem (s : State) (m : Mem) : (memAt s m).mem = m := rfl
+
+/-- Two updaters are the later one: the first is overwritten, not nested. -/
+theorem memAt_memAt (s : State) (m m' : Mem) : memAt (memAt s m) m' = memAt s m' := rfl
+
+/-- A 64-bit store, at the incoming memory. -/
+theorem walkMemStore64 (calls : Calls) (env : Env) (s : State) (m : Mem) (v p : String)
+    {a j : Nat}
+    (hv : lookupName env v = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj : j < 2 ^ 64) (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 64) (.reg v) (.reg p) :: is) (stateAt env (memAt s m)) =
+      denoteCode calls is (stateAt env (memAt s (writeBytes m a (wordBytes 8 j)))) := by
+  rw [denoteCode_store64_ofNat (calls := calls) (env := env) (s := memAt s m) (v := v)
+    (p := p) (a := a) (j := j) hv hj hp is, memAt_mem]
+  rfl
+
+/-- A pointer store, at the incoming memory. -/
+theorem walkMemStorePtr (calls : Calls) (env : Env) (s : State) (m : Mem) (v p : String)
+    {q a : Nat}
+    (hv : lookupName env v = some (.ptr q))
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store Ty.ptr (.reg v) (.reg p) :: is) (stateAt env (memAt s m)) =
+      denoteCode calls is (stateAt env (memAt s (writeBytes m a (natToBytes q 8)))) := by
+  rw [denoteCode_storePtr (calls := calls) (env := env) (s := memAt s m) (v := v) (p := p)
+    (q := q) (a := a) hv hp is, memAt_mem]
+  rfl
+
+/-- A `memset`, at the incoming memory. -/
+theorem walkMemMemset (sub : Calls) (env : Env) (s : State) (m : Mem) (p : String)
+    {a nz : Nat}
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode (stage2Calls sub)
+        (.callVoid "llvm.memset.p0.i64"
+          [(Ty.ptr, (Operand.reg p)), ((Ty.int 8), (Operand.imm (.int 8 (BitVec.ofNat 8 0)))),
+           ((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 nz)))),
+           ((Ty.int 1), (Operand.imm (.int 1 (BitVec.ofNat 1 0))))] :: is)
+        (stateAt env (memAt s m)) =
+      denoteCode (stage2Calls sub) is
+        (stateAt env (memAt s (writeBytes m a (List.replicate (BitVec.ofNat 64 nz).toNat 0)))) := by
+  rw [denoteCode_memset (sub := sub) (env := env) (s := memAt s m) (p := p) (a := a)
+    (nz := nz) hp is, memAt_mem]
+  rfl
+
+/-- A 64-bit load, read at the incoming memory. -/
+theorem walkMemLoad64 (calls : Calls) (env : Env) (s : State) (m : Mem) (d p : String)
+    {a : Nat} {v : BitVec 64}
+    (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes m a 8 = some (natToBytes v.toNat 8)) (is : List Instr) :
+    denoteCode calls (.load d (.int 64) (.reg p) :: is) (stateAt env (memAt s m)) =
+      denoteCode calls is (stateAt ((d, .int 64 v) :: env) (memAt s m)) := by
+  rw [denoteCode_load64 (calls := calls) (env := env) (s := memAt s m) (d := d) (p := p)
+    (a := a) (v := v) hp (by rw [memAt_mem]; exact hv) is]
+
+/-- `s2_init`, at the incoming memory. -/
+theorem walkMemS2Init (env : Env) (s : State) (m : Mem)
+    {sAddr b ep : Nat} {n nb : BitVec 64}
+    (hs : lookupName env "%s" = some (.ptr sAddr))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hnb : lookupName env "%shr" = some (.int 64 nb))
+    (hep : lookupName env "%ep" = some (.ptr ep)) (is : List Instr) :
+    denoteCode (stage2Calls stage2SubCalls)
+        (.callVoid "s2_init" [(Ty.ptr, (Operand.reg "%s")), (Ty.ptr, (Operand.reg "%b")),
+          ((Ty.int 64), (Operand.reg "%n")), ((Ty.int 64), (Operand.reg "%shr")),
+          (Ty.ptr, (Operand.reg "%ep"))] :: is)
+        (stateAt env (memAt s m)) =
+      denoteCode (stage2Calls stage2SubCalls) is
+        (stateAt env (memAt s (stage2WriteStores m (s2InitStores sAddr b n.toNat nb.toNat ep)))) := by
+  rw [denoteCode_s2_init (env := env) (s := memAt s m) (sAddr := sAddr) (b := b) (ep := ep)
+    (n := n) (nb := nb) hs hb hn hnb hep is, memAt_mem]
+  rfl
 
 /-! ### The initialisation's writes are inside the record
 
