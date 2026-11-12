@@ -316,6 +316,7 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
+      pending_len := hInv.pending_len
       eoff_le := hInv.eoff_le
       inner_cap := hInv.inner_cap
       depth_cap := hInv.depth_cap
@@ -398,6 +399,7 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
+      pending_len := hInv.pending_len
       eoff_le := hInv.eoff_le
       inner_cap := hInv.inner_cap
       depth_cap := hInv.depth_cap
@@ -851,8 +853,6 @@ facts (`hroot`, `hrootev`), because the staging does not place the seven appende
 objects relative to the alloca cursor. -/
 theorem walkAfterValue_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s)
-    (hroot : G.next0 + 8 + 4 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ G.next0 + 8)
-    (hrootev : G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8)
     {m : Mem}
     (hm : stage2AfterValue s.mem (BitVec.ofNat 32 C.sp).toNat (G.next0 + 8)
       C.stage.ctype C.stage.cst = some m)
@@ -867,6 +867,10 @@ theorem walkAfterValue_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
           (C.events.map EventRecord.encodedBytes).flatten.length =
         readBytes s.mem (G.ev + G.nev0)
           (C.events.map EventRecord.encodedBytes).flatten.length := by
+  have hroot : G.next0 + 8 + 4 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ G.next0 + 8 :=
+    C.stage.rootSlot_log
+  have hrootev : G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8 :=
+    C.stage.rootSlot_ev
   have hsp0 : (BitVec.ofNat 32 C.sp).toNat = C.sp := by
     have hcap := hInv.depth_cap
     simp only [stage2StackExtent] at hcap
@@ -943,9 +947,7 @@ theorem WalkLink.if_else334_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
     (hpre : s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
-       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
-    (hroot : G.next0 + 8 + 4 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ G.next0 + 8)
-    (hrootev : G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8) :
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with block := "cleanup478.i" } s' := by
   obtain ⟨r, hcall, hpost, hfr⟩ :=
     s2AfterValueContract.resolves (next := s.next) hpre
@@ -955,7 +957,7 @@ theorem WalkLink.if_else334_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
     rw [hmem] at hfr; exact hfr
   obtain ⟨hframe, howned, hlog, hev⟩ :=
-    walkAfterValue_facts (G := G) (C := C) (s := s) hInv hroot hrootev hm hfr'
+    walkAfterValue_facts (G := G) (C := C) (s := s) hInv hm hfr'
   refine WalkLink.callQuiet (G := G) (C := C) (s := s) hInv
     (B := walkIfElse334) (by rw [hblock]; exact walkIfElse334_find)
     (s₁ := stateAt s.env { s with mem := r.mem, next := r.next })
@@ -1020,8 +1022,6 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (hpre : s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
-    (hroot : G.next0 + 8 + 4 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ G.next0 + 8)
-    (hrootev : G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8)
     {ei cd : Nat}
     (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)))
     (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
@@ -1038,7 +1038,7 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
     rw [hmem] at hfr; exact hfr
   obtain ⟨hframe, howned, hlog, hev⟩ :=
-    walkAfterValue_facts (G := G) (C := C) (s := s) hInv hroot hrootev hm hfr'
+    walkAfterValue_facts (G := G) (C := C) (s := s) hInv hm hfr'
   refine WalkLink.callQuietBr (G := G) (C := C) (s := s) hInv
     (B := walkIfThen447I) (by rw [hblock]; exact walkIfThen447I_find)
     (s₁ := stateAt (cells [("%cmp451.i", .int 1 (evalICmp .ult
@@ -1061,6 +1061,254 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
         by simpa [stateAt, cells, lookupName] using hcd⟩)
     (by simp [WalkLocal])
 
+/-! ## The arena reservation's block
+
+`if.end256.i` is where a decoded body's room is checked: the token's extent
+(`%sub260.i`, the entry's span less one), the decoder's slack and the arena's
+cursor are summed and compared against the log's capacity word.  Its instance is
+also where the two facts the exclusion needs are read — the log's `alen` and
+`acap` words, at the addresses `%alen` and `%acap` the block loads them — so the
+run is the last instruction shape class F adds to the step vocabulary:
+
+* `walkDenoteCode_store64_imm` — a store of a literal, the zero `%outn.i`'s slot
+  receives before the check.  `BlockEval`'s store steps all take a register, and
+  the block's zero is an immediate;
+* the two loads at `%alen`/`%acap`, which the invariant *does* bind
+  (`log_alen`, `log_acap`) — the difference from class G's reads is that the
+  words are the carried cursors, so the run reads them out of the invariant
+  rather than from a caller's fact;
+* the frame, presence, log and event facts, across the one store: the slot is
+  `%outn.i`, the fourth `alloca` at `G.next0 + 20`, so the store is inside
+  `walkWide`'s four stack objects and outside the log and the stream.
+
+The branch's *taken* edge is the arena trap's exclusion (`walkArenaReserve_clear`)
+read at the record in flight; the link states the branch at the bit the run
+computed, so it composes with that verdict without assuming it: a caller that has
+`pending` at the record takes `z_arena_reserve.exit`, and the trap arm is
+unreachable (`step_ub_of_trap`). -/
+
+/-- **A store of a literal** at a register's address.  `%outn.i`'s zeroing before
+the arena check is this instruction, and the tree's store steps all take a
+register, so the literal is its own step. -/
+theorem walkDenoteCode_store64_imm (calls : Calls) (env : Env) (s : State)
+    (x : BitVec 64) (p : String) {a : Nat}
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 64) (.imm (.int 64 x)) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
+  have hstep : evalInstr calls (stateAt env s)
+      (.store (.int 64) (.imm (.int 64 x)) (.reg p)) =
+      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
+    simp [evalInstr, evalOperand, Const.toValue, stateAt, hp, storeValue]
+  rw [denoteCode_cons_of _ _ _ _ _ hstep]
+/-- `if.end256.i`: the arena's reservation for a decoded body. -/
+def walkIfEnd256 : Block :=
+  { name := "if.end256.i",
+    instrs := [
+      Instr.binop "%30" .xor 64 (.reg "%idxprom.i")
+        (.imm (.int 64 (BitVec.ofNat 64 18446744073709551615))),
+      Instr.binop "%sub260.i" .add 64 (.reg "%conv211.i") (.reg "%30"),
+      Instr.callVoid "llvm.lifetime.start.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 8))), (.ptr, .reg "%outn.i")],
+      Instr.store (.int 64) (.imm (.int 64 (BitVec.ofNat 64 0))) (.reg "%outn.i"),
+      Instr.binop "%add.i" .add 64 (.reg "%sub260.i")
+        (.imm (.int 64 (BitVec.ofNat 64 64))),
+      Instr.load "%z.val36" (.int 64) (.reg "%alen"),
+      Instr.load "%z.val37" (.int 64) (.reg "%acap"),
+      Instr.binop "%add.i82" .add 64 (.reg "%add.i") (.reg "%z.val36"),
+      Instr.icmp "%cmp.not.i" IPred.ugt 64 (.reg "%add.i82") (.reg "%z.val37")],
+    term := Term.condbr (.reg "%cmp.not.i") "if.end.i83" "z_arena_reserve.exit" }
+
+theorem walkIfEnd256_find : stage2Body.findBlock "if.end256.i" = some walkIfEnd256 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIfEnd256]
+
+/-- The block's run: the token's extent, the marker, the zero, the two log words
+and the comparison.  The two reads are taken at the memory *after* the zero store,
+so the caller supplies the separation that transports them
+(`hsepA`, `hsepC`), which at the walk's staging is `WalkStage.sevenEnd`. -/
+theorem walkIfEnd256_denote {sub : Calls} (env : Env) (s : State)
+    {ix cv : BitVec 64} {ao al ac : Nat} {A C : BitVec 64}
+    (hidx : lookupName env "%idxprom.i" = some (.int 64 ix))
+    (hconv : lookupName env "%conv211.i" = some (.int 64 cv))
+    (houtn : lookupName env "%outn.i" = some (.ptr ao))
+    (halen : lookupName env "%alen" = some (.ptr al))
+    (hacap : lookupName env "%acap" = some (.ptr ac))
+    (hreadA : readBytes s.mem al 8 = some (natToBytes A.toNat 8))
+    (hreadC : readBytes s.mem ac 8 = some (natToBytes C.toNat 8))
+    (hsepA : al + 8 ≤ ao ∨ ao + 8 ≤ al)
+    (hsepC : ac + 8 ≤ ao ∨ ao + 8 ≤ ac) :
+    denoteCode (stage2Calls sub) walkIfEnd256.instrs (stateAt env s) =
+      some (stateAt (cells [
+        ("%cmp.not.i", .int 1 (evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+          + BitVec.ofNat 64 64 + A) C)),
+        ("%add.i82", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+          + BitVec.ofNat 64 64 + A)),
+        ("%z.val37", .int 64 C),
+        ("%z.val36", .int 64 A),
+        ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+          + BitVec.ofNat 64 64)),
+        ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))),
+        ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615))] env)
+        { s with mem := writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8) }) := by
+  have hreadA' : readBytes (writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8)) al 8 =
+      some (natToBytes A.toNat 8) := by
+    rw [walkReadBytes_writeBytes_outside (start := ao) (addr := al) (n := 8)
+      (v := natToBytes (BitVec.ofNat 64 0).toNat 8)
+      (by rw [natToBytes_length]; omega)]
+    exact hreadA
+  have hreadC' : readBytes (writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8)) ac 8 =
+      some (natToBytes C.toNat 8) := by
+    rw [walkReadBytes_writeBytes_outside (start := ao) (addr := ac) (n := 8)
+      (v := natToBytes (BitVec.ofNat 64 0).toNat 8)
+      (by rw [natToBytes_length]; omega)]
+    exact hreadC
+  simp only [walkIfEnd256]
+  rw [denoteCode_xor_imm (calls := stage2Calls sub) (env := env) (s := s) (d := "%30")
+    (a := "%idxprom.i") (x := ix) (c := BitVec.ofNat 64 18446744073709551615) hidx]
+  rw [denoteCode_add_reg (calls := stage2Calls sub)
+    (env := ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (s := s) (d := "%sub260.i") (a := "%conv211.i") (b := "%30") hconv (by rfl)]
+  rw [walkDenoteCode_lifetimeStart (sub := sub)
+    (env := ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (s := s) (size := 8) (obj := "%outn.i") (by simpa [lookupName] using houtn)]
+  rw [walkDenoteCode_store64_imm (calls := stage2Calls sub)
+    (env := ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (s := s) (x := BitVec.ofNat 64 0) (p := "%outn.i") (a := ao)
+    (by simpa [lookupName] using houtn)]
+  rw [denoteCode_add_imm (calls := stage2Calls sub)
+    (env := ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (s := { s with mem := writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8) })
+    (d := "%add.i") (a := "%sub260.i") (c := BitVec.ofNat 64 64)
+    (x := cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))
+    (by simp [lookupName])]
+  rw [denoteCode_load64 (calls := stage2Calls sub) (s := { s with mem := writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8) })
+    (env := ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64)) ::
+      ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (d := "%z.val36") (p := "%alen") (a := al) (v := A)
+    (by simpa [lookupName] using halen) hreadA']
+  rw [denoteCode_load64 (calls := stage2Calls sub) (s := { s with mem := writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8) })
+    (env := ("%z.val36", .int 64 A) ::
+      ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64)) ::
+      ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (d := "%z.val37") (p := "%acap") (a := ac) (v := C)
+    (by simpa [lookupName] using hacap) hreadC']
+  rw [denoteCode_add_reg (calls := stage2Calls sub) (s := { s with mem := writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8) })
+    (env := ("%z.val37", .int 64 C) :: ("%z.val36", .int 64 A) ::
+      ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64)) ::
+      ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (d := "%add.i82") (a := "%add.i") (b := "%z.val36")
+    (x := cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615) + BitVec.ofNat 64 64) (y := A)
+    (by simp [lookupName]) (by simp [lookupName])]
+  rw [walkDenoteCode_icmp (calls := stage2Calls sub) (s := { s with mem := writeBytes s.mem ao (natToBytes (BitVec.ofNat 64 0).toNat 8) })
+    (env := ("%add.i82", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64 + A)) ::
+      ("%z.val37", .int 64 C) :: ("%z.val36", .int 64 A) ::
+      ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64)) ::
+      ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))) ::
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615)) :: env)
+    (d := "%cmp.not.i") (w := 64) (p := IPred.ugt)
+    (oa := .reg "%add.i82") (ob := .reg "%z.val37")
+    (x := cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615) + BitVec.ofNat 64 64 + A)
+    (y := C) (by simp [evalOperand, stateAt, lookupName]) (by simp [evalOperand, stateAt, lookupName])]
+  rfl
+
+/-- **`if.end256.i` is a link.**  The one store is `%outn.i`'s zero, inside the
+four stack objects; the two log words are the invariant's; and the edge is the
+bit the run computed, so the trap's arm is taken only when
+`walkArenaReserve_clear`'s hypothesis fails. -/
+theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.end256.i")
+    {ix cv : BitVec 64} {A Cc : BitVec 64}
+    (hidx : lookupName s.env "%idxprom.i" = some (.int 64 ix))
+    (hconv : lookupName s.env "%conv211.i" = some (.int 64 cv))
+    (houtn : lookupName s.env "%outn.i" = some (.ptr (G.next0 + 20)))
+    (halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)))
+    (hacap : lookupName s.env "%acap" = some (.ptr (C.stage.z + 56)))
+    (hA : natToBytes A.toNat 8 = wordBytes 8 C.alen)
+    (hC : natToBytes Cc.toNat 8 = wordBytes 8 G.dstcap) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := (if evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+          + BitVec.ofNat 64 64 + A) Cc = 1 then "if.end.i83" else "z_arena_reserve.exit") } s' := by
+  have hz64 : C.stage.z + 64 ≤ G.next0 := by
+    have h := C.stage.sevenEnd (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites])
+    simp only [stage2LogExtent] at h
+    exact h
+  have hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8) := by
+    rw [hA]; exact hInv.log_alen
+  have hreadC : readBytes s.mem (C.stage.z + 56) 8 = some (natToBytes Cc.toNat 8) := by
+    rw [hC]; exact hInv.log_acap
+  have hden := walkIfEnd256_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+    (ix := ix) (cv := cv) (ao := G.next0 + 20) (al := C.stage.z + 48)
+    (ac := C.stage.z + 56) (A := A) (C := Cc)
+    hidx hconv houtn halen hacap hreadA hreadC (by omega) (by omega)
+  refine WalkLink.callQuietBr (G := G) (C := C) (s := s) hInv
+    (B := walkIfEnd256) (by rw [hblock]; exact walkIfEnd256_find)
+    (s₁ := stateAt (cells [
+      ("%cmp.not.i", .int 1 (evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64 + A) Cc)),
+      ("%add.i82", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64 + A)),
+      ("%z.val37", .int 64 Cc),
+      ("%z.val36", .int 64 A),
+      ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64)),
+      ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))),
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615))] s.env)
+      { s with mem := writeBytes s.mem (G.next0 + 20) (natToBytes (BitVec.ofNat 64 0).toNat 8) })
+    hden (by unfold walkCarried; decide) rfl
+    (by
+      dsimp only [stateAt]
+      exact hInv.frame.write_inside (a := G.next0 + 20)
+        (bs := natToBytes (BitVec.ofNat 64 0).toNat 8)
+        (fun k hk => by
+          rw [natToBytes_length] at hk
+          exact ⟨(G.next0 + 20, 8), by simp [walkWide, walkPresent, stage2AllocaWrites],
+            by omega, by omega⟩))
+    (by dsimp only [stateAt]; exact walkStaged_write rfl hInv.owned)
+    (by
+      dsimp only [stateAt]
+      intro off w hw
+      have hw' : off + w ≤ 64 := hw
+      refine walkReadBytes_writeBytes_outside (start := G.next0 + 20)
+        (addr := C.stage.z + off) (n := w) (v := natToBytes (BitVec.ofNat 64 0).toNat 8) ?_
+      rw [natToBytes_length]
+      left
+      omega)
+    (by
+      dsimp only [stateAt]
+      have hsum : (C.events.map EventRecord.encodedSize).sum ≤ 13 * C.events.length := by
+        have h := EventRecord.sum_encodedSize_le C.events
+        simpa only [stage2RecordBytes] using h
+      have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
+          (C.events.map EventRecord.encodedSize).sum := by
+        simp only [List.length_flatten, List.map_map]; rfl
+      have hroom : G.nev0 + 13 * G.n ≤ G.evcap := by
+        have h := G.evRoom
+        simpa only [stage2RecordBytes] using h
+      have hwm : G.ev + G.evcap ≤ G.next0 :=
+        G.watermark (G.ev, G.evcap) (by simp [stage2Regions])
+      have h1 : C.events.length ≤ C.k := hInv.events_le
+      have h2 : C.k ≤ G.nep := hInv.k_le
+      have h3 : G.nep ≤ G.n := G.nep_le
+      refine walkReadBytes_writeBytes_outside (start := G.next0 + 20)
+        (addr := G.ev + G.nev0) (n := (C.events.map EventRecord.encodedBytes).flatten.length)
+        (v := natToBytes (BitVec.ofNat 64 0).toNat 8) ?_
+      rw [natToBytes_length]; left
+      rw [hlen]; omega)
+    rfl
+    (by simp [cells, stateAt, lookupName_cons_self])
+    (by simp [WalkLocal]) (by simp [WalkLocal])
+
 /-! ### The instrument
 
 The module's axis: the step machinery (the call's `denoteCode` step and the
@@ -1073,6 +1321,10 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else334_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup474_i
+#print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_store64_imm
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end256_i
+#print axioms LeanLLVM.Refinement.WalkScope.WalkStage.rootSlot_log
+#print axioms LeanLLVM.Refinement.WalkScope.WalkStage.rootSlot_ev
 
 /-! ## The four traps
 
@@ -1128,16 +1380,18 @@ theorem walkTrap_noStep (s : State) (hpc : s.pc = "if.end.i83" ∨ s.pc = "if.en
   rw [step_ub_of_trap s hpc] at hs
   exact Ctrl.noConfusion hs
 
-/-- **The arena reserve's check is clear** at the invariant, once the in-flight
-token's document extent is named: the cursor is at most the staging's offset plus
-the record's entry position, the entry position plus the token's extent is inside
-the document, and the arena's room covers the document and the decoder's slack. -/
+/-- **The arena reserve's check is clear** at the invariant: the record in flight
+names its entry position, its reservation and its document extent, and the three
+clauses `pending_at`, `pending_cursor` and `pending_len` give the check's
+conclusion — the cursor is at most the staging's offset plus the entry position,
+the position plus the extent is inside the document, and the arena's room covers
+the document and the decoder's slack.  Nothing is taken beside the invariant. -/
 theorem walkArenaReserve_clear {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) {p off len : Nat}
-    (hpend : C.pending = some (p, off)) (hplen : p + len ≤ G.n) :
+    (hpend : C.pending = some (p, off, len)) :
     C.alen + len + 64 ≤ G.dstcap := by
-  have hoff : off = C.alen := (hInv.pending_at p off hpend).1
-  have hcur : C.alen ≤ G.ndst0 + p := hInv.pending_cursor p off hpend
+  have hcur : C.alen ≤ G.ndst0 + p := hInv.pending_cursor p off len hpend
+  have hplen : p + len ≤ G.n := hInv.pending_len p off len hpend
   have hroom : G.ndst0 + G.n + stage2ArenaReserve ≤ G.dstcap := G.arenaRoom
   simp only [stage2ArenaReserve] at hroom
   omega

@@ -39,8 +39,12 @@ the summands themselves:
 * `k : Nat` — the block index into the entry stream, at the phi the loop reads
   (`%k.0.i249`);
 * `alen` and `evlen` — the two cursors;
-* `pending : Option (Nat × Nat)` — the record in flight: the entry position and
-  the arena offset reserved for its decoded body, `none` between records;
+* `pending : Option (Nat × Nat × Nat)` — the record in flight: the entry
+  position, the arena offset reserved for its decoded body, and that body's
+  document extent, `none` between records.  The extent is carried because it is
+  the number `z_arena_reserve`'s check is about: with it the arena trap's
+  exclusion is a theorem of the invariant (`walkArenaReserve_clear`), with it
+  absent the exclusion needed a hypothesis beside the record;
 * `refusal : Bool` and `eoff : Nat` — the refusal bit and the offset it stores,
   the two clauses nothing in `Stage2Run`'s vocabulary names at the refusal arm;
 * `block : String` — the block the run is at;
@@ -229,15 +233,15 @@ The trace itself is stated: `WalkLink` is one link (a control step that preserve
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
 as a run, a measure bound, and a completion at a returning last state.
 
-A hundred and forty-eight of the body's 165 blocks are links, and *The middle's two
-classes* below is the census that decomposes the count: the two named arms
+A hundred and forty-nine of the body's 165 blocks are links, and *The middle's
+two classes* below is the census that decomposes the count: the two named arms
 (`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
 (`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
 eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
 twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
-`JsonStage2WalkPure`), eight of class F's nineteen call blocks
+`JsonStage2WalkPure`), nine of class F's nineteen call blocks
 (`JsonStage2WalkCall`), and the two entry links beside `while.body.i.lr.ph`
-(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 17 blocks
+(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 16 blocks
 that are still not links, are stated there.  `WalkLocal` is
 still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
@@ -466,6 +470,39 @@ structure WalkStage {m0 : Mem} (G : WalkGeom m0) where
   dSep : ∀ r ∈ stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev
       G.evcap G.ndst G.nev G.err c ctype cst tok s z e,
     r.1 + r.2 ≤ d ∨ d + 8 ≤ r.1
+  /-- **The seven appended objects end at or below the call's cursor.**  `%ei.i`,
+  `%root_done.i`, `%xj.i` and `%outn.i` are the body's own four `alloca`s at
+  `G.next0` (`stage2AllocaWrites`), and the seven the constraint flattening
+  appends are the *caller's* objects, staged before the call — so every one of
+  them, and `%d.i` too, ends at or below the cursor the callee allocates from.
+  This is `Γ_stage2.pre`'s watermark statement (`stage2Pre`'s last clause, which
+  `WalkGeom.watermark` carries at the thirteen ABI objects) at the objects the
+  adapter appends.  It is stated here rather than in `stage2StagedPre` because
+  the adapter's predicate does not carry the call's `next`: the cursor is the
+  run's, so the relation between the seven and it is the run's staging's to
+  state.  Its consumers are `WalkStage.rootSlot_log` and `WalkStage.rootSlot_ev`,
+  and they are what makes the container-closing helper's root slot — and its
+  container byte — fresh of the log and the event stream, so a link that calls
+  `s2_after_value` needs no staging hypothesis beside it. -/
+  sevenEnd : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e, r.1 + r.2 ≤ G.next0
+
+/-- **The root slot misses the log.**  `%root_done.i` is the second allocated slot
+at `G.next0 + 8`, four bytes wide, and the log ends at or below `G.next0`, so the
+two are separate: `walkAfterValue_facts`' depth-zero arm writes the root flag and
+the log's four fields read across it. -/
+theorem WalkStage.rootSlot_log {m0 : Mem} {G : WalkGeom m0} (S : WalkStage G) :
+    G.next0 + 8 + 4 ≤ S.z ∨ S.z + stage2LogExtent ≤ G.next0 + 8 := by
+  have h := S.sevenEnd (S.z, stage2LogExtent) (by simp [stage2StagedWrites])
+  simp only [stage2LogExtent] at h ⊢
+  omega
+
+/-- **The root slot misses the event stream.**  Same slot, and the stream is one
+of the thirteen ABI objects, so `WalkGeom.watermark` places its whole capacity at
+or below the cursor. -/
+theorem WalkStage.rootSlot_ev {m0 : Mem} {G : WalkGeom m0} (S : WalkStage G) :
+    G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8 := by
+  have h := G.watermark (G.ev, G.evcap) (by simp [stage2Regions])
+  omega
 
 /-! ### The event trace
 
@@ -566,8 +603,14 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   events : List EventRecord
   /-- The decoded bodies' document extents, in document order. -/
   spans : List (Nat × Nat)
-  /-- The record in flight: its entry position and its reserved arena offset. -/
-  pending : Option (Nat × Nat)
+  /-- The record in flight: its entry position, the arena offset reserved for
+  its decoded body, and that body's document extent.  The extent is the third
+  component rather than something the arms re-derive: `z_arena_reserve` tests
+  `alen + len + 64` against the arena's capacity, and `len` — the token's
+  document extent, `entry[k+1] - entry[k] - 1` — is the number the test is
+  about.  Carrying it is what makes the arena trap's exclusion a statement of
+  this invariant instead of a hypothesis beside it. -/
+  pending : Option (Nat × Nat × Nat)
   /-- The refusal bit. -/
   refusal : Bool
   /-- The refusal offset. -/
@@ -915,7 +958,16 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   /-- The record in flight reserves the arena at the cursor, inside the document:
   at most one record is being assembled, and its reservation is the cursor's own
   offset. -/
-  pending_at : ∀ p off, C.pending = some (p, off) → off = C.alen ∧ p < G.n
+  pending_at : ∀ p off len, C.pending = some (p, off, len) → off = C.alen ∧ p < G.n
+  /-- **The record in flight is a token of the document.**  Its entry position
+  plus its extent is inside the document, which is the fact `z_arena_reserve`'s
+  check needs: the entry stream's positions are strictly increasing and every
+  position is inside the document (`WalkGeom.order`, `WalkGeom.inside`), so the
+  extent `entry[k+1] - entry[k] - 1` ends at `entry[k+1] - 1 < n`.  The extent is
+  carried rather than recomputed because the entry stream's index is not part of
+  the carry either: `pending`'s first component is the position, and the extent
+  is the predicate's third. -/
+  pending_len : ∀ p off len, C.pending = some (p, off, len) → p + len ≤ G.n
   /-- **The record in flight is inside the arena's room at its entry position.**
   `z_arena_reserve` checks `alen + len + 64` against the arena's capacity before
   it decodes an entry's body, where `len` is the entry's own document extent and
@@ -930,8 +982,11 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   Its only production is the merge's, through `pending`: a block that advances
   `alen` (`if.else285.i`) must keep the record's offset equal to the new cursor
   (`pending_at`) and re-prove the bound, and the merge that carries the next
-  entry's position in is where the clause is first established for a body. -/
-  pending_cursor : ∀ p off, C.pending = some (p, off) → C.alen ≤ G.ndst0 + p
+  entry's position in is where the clause is first established for a body.  With
+  `pending_len` beside it the clause set is the whole of the check's premises:
+  `walkArenaReserve_clear` reads the three at one `pending` and needs nothing
+  from outside the invariant. -/
+  pending_cursor : ∀ p off len, C.pending = some (p, off, len) → C.alen ≤ G.ndst0 + p
   /-- The refusal offset is inside the document. -/
   eoff_le : C.eoff ≤ G.n
   /-- **The inner component is inside the iteration's budget.**  The component is
@@ -1127,6 +1182,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       spans_inside := by simp [walkSeed]
       pending_at := ?_
       pending_cursor := ?_
+      pending_len := ?_
       eoff_le := Nat.zero_le _
       inner_cap := walkSeed_inner_cap G S
       depth_cap := walkSeed_depth_cap G S
@@ -1140,9 +1196,11 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       owned := hown
       frame := hframe
       blockLocal := ?_ }
-  · intro p off hp
+  · intro p off len hp
     simp [walkSeed] at hp
-  · intro p off hp
+  · intro p off len hp
+    simp [walkSeed] at hp
+  · intro p off len hp
     simp [walkSeed] at hp
   · simp [WalkLocal, walkSeed]
 
@@ -1310,6 +1368,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := by
           show C.inner - 1 ≤ walkInnerCap G
@@ -1662,6 +1721,7 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := by
           show C.inner - 1 ≤ walkInnerCap G
@@ -2405,6 +2465,7 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := Nat.le_refl _
         depth_cap := hInv.depth_cap
@@ -3479,6 +3540,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hspc
@@ -3942,6 +4004,7 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -4182,17 +4245,17 @@ the instruction's constructor, not by the block's name.
 | C | the refusal store: `gep %e+8`, `store i64`, `br` | 18 | 18 |
 | D | other `store` shapes | 11 | 11 |
 | E | a `phi`-headed block | 15 | 15 |
-| F | a block that calls | 19 | 8 |
+| F | a block that calls | 19 | 9 |
 | G | `load` and compare | 14 | 14 |
 | H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**A hundred and forty-eight of the 165 blocks are links**, and the table's proved
+**A hundred and forty-nine of the 165 blocks are links**, and the table's proved
 column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
-14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 8 (F's
-`JsonStage2WalkCall`) = 148, with the five measure arms among those classes rather
-than beside them.  The remaining 17 are named below with their obstruction, one
+14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 9 (F's
+`JsonStage2WalkCall`) = 149, with the five measure arms among those classes rather
+than beside them.  The remaining 16 are named below with their obstruction, one
 row each; six of them are not links at all — the seed, the return, and the four
 `unreachable` arms.
 
@@ -4284,7 +4347,7 @@ arena reserve's decoded length, loaded from `%outn.i` — as the caller's fact; 
 *production* is `s2_string_body`'s write (`s2StringBody_outn_le`), the F datum the
 merge's edge reads.
 
-**F, the calls (19; eight proved).**  Every call has to resolve through
+**F, the calls (19; nine proved).**  Every call has to resolve through
 `stage2Calls`, and what it leaves is a `CallOutcome`: the
 `lifetime.start`/`lifetime.end` markers (twelve and twenty-one of them,
 `JsonStage2IR`'s guards) and the two `memset`s are resolved there and leave memory
@@ -4297,7 +4360,7 @@ stated at) and where the step is: `walkDenoteCode_call`/`walkDenoteCode_callVoid
 are the `denoteCode` steps of a call at an arbitrary argument list, and
 `walkArgs_*` are the six helpers' argument lists read off the pinned body.
 
-Eight of the nineteen are closed there.  Four are marker blocks
+Nine of the nineteen are closed there.  Four are marker blocks
 (`cleanup339.critedge.i`, `if.end67.critedge.i`, `if.end473.i`, `cleanup474.i`):
 `walkDenoteCode_lifetimeEnd` is the marker's step — the state it was handed — so
 each link is a pure run.  Four call a helper through the contract:
@@ -4305,14 +4368,27 @@ each link is a pure run.  Four call a helper through the contract:
 whose memory is the caller's, so their links are `WalkLink.pureCore` at the two
 returns; `if.else334.i` and `if.then447.i` call `s2_after_value`, whose model writes
 one of two places (`stage2AfterValue_form`), and `walkAfterValue_facts` is the
-frame, presence, log and trace at that write — the depth-zero arm's root slot needs
-the caller's fact that `%root_done.i`'s four bytes miss the log and the stream,
-because the staging does not place the seven appended objects relative to the
-alloca cursor (`hroot`, `hrootev`).
+frame, presence, log and trace at that write.  The depth-zero arm's root slot
+(`%root_done.i`, the second `alloca` at `G.next0 + 8`) misses the log and the
+stream, and that is now *structural* rather than a hypothesis beside the two
+links: `WalkStage.sevenEnd` is the adapter's watermark at the seven appended
+objects — every one of them ends at or below the call's cursor, which is the same
+clause `Γ_stage2.pre` states for its thirteen — and `WalkStage.rootSlot_log` and
+`WalkStage.rootSlot_ev` read it (`%d.i`'s and the stream's entries come from
+`WalkGeom.watermark`).  The fact lives in the run's staging record because the
+adapter's `stage2StagedPre` does not carry the call's `next`, which is the run's.
 
-What remains is eleven.  `if.then109.i` (`s2_after_value`), `if.end256.i` (a
-marker, a zero store at `%outn.i` and the arena check), `cond.end349.i` (a marker
-and two token stores), `if.then413.i` (`s2_value_pos` after a token store),
+`if.end256.i` is the ninth, and it is the arena's reservation itself: the token's
+extent, the marker, the zero store at `%outn.i`, the two log words and the check.
+Its run is where class F's step vocabulary gains a literal store
+(`walkDenoteCode_store64_imm` — the tree's store steps all take a register) and
+where the two log words are read out of the invariant's `log_alen`/`log_acap`
+rather than from a caller's fact.  The branch is stated at the bit the run
+computed, so it composes with the trap verdict (`walkArenaReserve_clear`, which is
+now a theorem of the invariant) instead of assuming it.
+
+What remains is ten.  `if.then109.i` (`s2_after_value`), `cond.end349.i` (a
+marker and two token stores), `if.then413.i` (`s2_value_pos` after a token store),
 `if.then19.i`/`if.then25.i` (`num_fast_el1` and the refusal store that follows it)
 need `WalkLink.callQuiet`, whose four memory facts (`JsonStage2WalkCall`'s transfer)
 the caller supplies at the callee's footprint; three move a cursor the carry names —
@@ -4381,25 +4457,24 @@ cursor is `nev0 + sum(events)`, at most `nev0 + 13·k ≤ nev0 + 13·nep ≤ evc
 `len + 1 > cap` and `len + 13 > cap` tests are clear; `walkEventReserve_clear`
 (`JsonStage2WalkRest`) is that arithmetic, stated at the invariant.  The **arena
 trap** (`if.end.i83`) is excluded by `walkArenaReserve_clear`
-(`JsonStage2WalkCall`) at `pending_at`, `pending_cursor` and the in-flight token's
-document extent (`p + len ≤ n`); what the invariant does not carry is that extent,
-and that is a finding about this invariant rather than about the body: the test is
-`alen + (entry[k+1] - entry[k] - 1) + 64 > dstcap`, and the clauses give only
-`alen ≤ ndst0 + n` and `ndst0 + n + 64 ≤ dstcap`, so the invariant does not exclude
-a cursor at `ndst0 + n` with a positive-length token, and the guard would then fail.  `WalkInv`
-now carries the clause the guard reads — `pending_cursor`, `alen ≤ ndst0 + p` for
-the record in flight at entry position `p` — and every arm preserves it, but its
-**production** is the merge's (`pending := some (p, alen)` for the entry about to
-be decoded), which is the same D/F work the record's assembly owes, and `len` — the
-token's extent — is not in the carry's vocabulary at all.  Until both land the
-clause is a true strengthening and the exclusion is stated at the two facts rather
-than consumed by a branch.  The class of the finding is in `JsonStage2WalkRest`'s
+(`JsonStage2WalkCall`), and the exclusion is now a theorem *of the invariant*: the
+record in flight is a triple `(p, off, len)`, `pending_at` fixes its offset at the
+cursor, `pending_cursor` bounds the cursor by the staging's offset plus `p`, and
+`pending_len` places `p + len` inside the document.  The three are the whole of
+the check's premises — `alen + len + 64 ≤ dstcap` follows from them and
+`G.arenaRoom` — so no hypothesis sits beside the invariant.  The test is
+`alen + (entry[k+1] - entry[k] - 1) + 64 > dstcap`, and `len` is exactly that
+extent.  What remains is not the clause but its **production**: no link sets
+`pending` to `some` yet — the merge at `cleanup478.i` is where the next entry's
+position and extent are read from the entry stream — so the three clauses are
+vacuously true today and the exclusion is a stated consequence rather than one a
+traversal consumes.  That production is the record's assembly (the D/F work).  The class of the finding is in `JsonStage2WalkRest`'s
 header, with the arithmetic.
 
 ## The remainder, named
 
 The census's rows outside classes A, B, B′, `entry`, `if.end` and the four traps:
-17 blocks still without a link, and 148 already closed.  `class` is the census's;
+16 blocks still without a link, and 149 already closed.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -4431,7 +4506,7 @@ it.
 | 62 | `land.lhs.true.i` | G | the type stack's byte — proved (`WalkLink.land_lhs_true_i`) |
 | 63 | `if.then231.i` | G | the state stack's masked byte — proved (`WalkLink.if_then231_i`) |
 | 64 | `if.end245.i` | E | the `phi` run `%key.1.i` and the callee's return — proved (`WalkLink.if_end245_i`) |
-| 66 | `if.end256.i` | F | calls `@llvm.lifetime.start.p0` |
+| 66 | `if.end256.i` | F | the arena check — proved (`WalkLink.if_end256_i`) |
 | 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
 | 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` |
 | 71 | `if.then281.i` | H2 | `add`/`zext`/`or` — proved (`WalkLink.if_then281_i`) |
@@ -4480,16 +4555,16 @@ it.
 ## Whether the chain closes
 
 It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited: 17 of the body's 165 blocks have no link, and the arena trap's clause
-has no production yet.
+inhabited: 16 of the body's 165 blocks have no link, and the three clauses the
+arena trap reads have no production yet.
 
 `JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the
 `add`'s literal at the instruction's own width) and `if.then281.i`, and states the
 three transfers the rest of the pure classes share: `WalkLink.pureCore` (a run that
 binds no carried register and whose edge is a carried or computed bit),
 `WalkLink.pureJumpCore` and `WalkLink.pureCoreCarried`.  What remains absent, with
-the reason in each row, is eleven of the nineteen call blocks
-(`JsonStage2WalkCall` closes the other eight); classes D, E and G are
+the reason in each row, is ten of the nineteen call blocks
+(`JsonStage2WalkCall` closes the other nine); classes D, E and G are
 `JsonStage2WalkStore`, `JsonStage2WalkPhi` and `JsonStage2WalkPure`, the last with
 four of its fourteen rows obstructed by a kernel recursion.
 
@@ -4612,6 +4687,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -4814,6 +4890,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hj
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -5335,6 +5412,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -5402,6 +5480,7 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap

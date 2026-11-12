@@ -253,6 +253,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -507,6 +508,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -785,6 +787,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -1090,6 +1093,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
         spans_inside := ?_
         pending_at := ?_
         pending_cursor := ?_
+        pending_len := ?_
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -1137,11 +1141,15 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
         subst hr
         exact hinside
     · dsimp only
-      intro p off hp
+      intro p off len hp
       rw [hpending] at hp
       exact absurd hp (by simp)
     · dsimp only
-      intro p off hp
+      intro p off len hp
+      rw [hpending] at hp
+      exact absurd hp (by simp)
+    · dsimp only
+      intro p off len hp
       rw [hpending] at hp
       exact absurd hp (by simp)
     · rw [henv']
@@ -1298,6 +1306,7 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
@@ -1529,6 +1538,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
         eoff_le := hInv.eoff_le
         inner_cap := hInv.inner_cap
         depth_cap := hInv.depth_cap
