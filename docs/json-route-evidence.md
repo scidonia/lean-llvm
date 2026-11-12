@@ -483,9 +483,10 @@ of the change.
 Observed on the working tree at `4f94295` plus this change, Lean 4.35.0 and
 clang/LLVM 21.1.8 from the flake; `R10`–`R13` were observed later, when the
 route's shell decided by the library's `admission` directly — the shell now
-decides by the two-phase equivalent (the native phase-one verdict, with
-`policyRefusal` only on a candidate, `admission` retained as the oracle), and
-their uncut control is
+decides by the two-phase equivalent (the native phase-one verdict, then the
+native character-policy scan `policy.c` defines on a candidate, with `admission`
+and the library's `policyRefusal` retained as the suite's oracles; `R14` and
+`R15` are that scan's own controls), and their uncut control is
 
 ```text
 ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons
@@ -598,3 +599,44 @@ What each shows, and what it does not:
   (`build: the executable does not define leanllvm_json_pipeline`), because
   Lean's compiler eliminated the unused extern; that is a scaffolding failure,
   not a red, which is why the recorded cut keeps a live `runFast` reference.
+
+## The native policy scan's controls (`R14`, `R15`)
+
+Phase two of the route's document decision is the native character-policy scan
+`probes/json/route/policy.c` defines, and the library's own `policyRefusal` is
+the oracle `--admit` runs on the same bytes.  The gate's comparison is the reason
+tag, and a policy refusal's reason carries the byte it is reported at
+(`unpairedSurrogate@1`, `noncharacter@1`), so the gate compares the class and the
+position.  Two cuts show that comparison notices each of them.  Each was applied
+to `policy.c` in place, built into its own `BUILD_DIR`, and run with `ROUTE=`
+pointing at that build, so the shipped build was never the one under test; the
+tree was restored from a saved copy after each (`cmp` clean) and rebuilt, and the
+green run is the restored build's: 137 rows agree, `policy candidate 59, policy
+scan run 58; control failures 0`.
+
+| Cut | Applied in the copy | Build | Route command | Exit | Assertion that fired |
+|---|---|---|---|---|---|
+| `R14` the surrogate class | `policy.c`: the high-surrogate branch's `if (cv >= 0xD800u && cv <= 0xDBFFu)` → `if (0)`, so a `\uD800` form is accepted as an ordinary character | 0 | `check.sh` | 1 | `FAIL: lone-d800.json: the two-phase decision and the certified predicate differ`, also `double-high`, `high-char`, and `pair-d834`/`pair-i-json` — a *valid* pair refused, because its low half is then read as unpaired — then `FAIL: expected 14 policy refusals, saw 11` and `FAIL: 3 default-profile rows still diverge from the reference: lone-d800.json double-high.json high-char.json`; 9 assertions |
+| `R15` the refusal's byte | `policy.c`: `policy_refusal_pos` returns `i - s`, the body-relative offset, instead of `i` | 0 | `check.sh` | 1 | every one of the fourteen policy rows: `FAIL: <row>: the two-phase decision and the certified predicate differ`, and the row itself `policy_native=unpairedSurrogate@0 policy_oracle=unpairedSurrogate@1 … reason=unpairedSurrogate@0 certified_reason=unpairedSurrogate@1 agree=0`; 14 assertions |
+
+What each shows, and what it does not:
+
+- **`R14` — the scan's classes carry decisions.** With the high-surrogate branch
+  gone, a lone `\uD800` is admitted and a well-formed pair is refused: the
+  refusal class moves in both directions at once, and the gate reports both.  It
+  does not show the class is the *reference's* — the oracle rows
+  (`policy_oracle=…`) and the differential sweeps are what compare that.
+- **`R15` — the byte is part of the compared value.** The wrong offset is a
+  plausible near-miss: the same class at the same document for a class-name
+  comparison, and a disagreement here only because the tag carries the byte.
+  It does not show the *class* is right, which `R14` moves and the oracle rows
+  check.
+
+The gate's rows are the corpus and the boundary documents; a scan that agreed on
+those and not on another shape would pass.  The two-phase section of
+`probes/json/route/README.md` records the two differential sweeps that stand in
+for a wider row set — 1547 documents drawn from the rule's branch bytes and 3618
+that place every escape form at every offset across two block boundaries, both
+against the library's `policyRefusal`, with zero disagreements at class and
+byte — and they are readings, not a proof: this unit has no refinement theorem
+and is not in `kernel/json/`.

@@ -6,11 +6,12 @@
 # The kernel is outside Lake (kernel/json/README.md), so this script is the link
 # step: it compiles the six kernel translation units, the proved stage-1 depth
 # counter (`tests/v16/depth_count.ll`, at the same `clang -c` line the install
-# uses for the unit), the C adapter, and the standalone Lean program, then links
-# them with `leanc`.  It asserts that the adapter imports the units it calls --
-# `leanllvm_json_pipeline`, `leanllvm_json_entry_table`, the mask unit and the
-# depth counter -- and that the executable defines each of them, so a build that
-# silently lost a call is a failure rather than a pass.
+# uses for the unit), the probe's native character-policy scan (`policy.c`), the
+# C adapter, and the standalone Lean program, then links them with `leanc`.  It
+# asserts that the adapter imports the units it calls -- `leanllvm_json_pipeline`,
+# `leanllvm_json_entry_table`, the mask unit, the depth counter and the policy
+# scan -- and that the executable defines each of them, so a build that silently
+# lost a call is a failure rather than a pass.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -46,6 +47,8 @@ done
 # is the object `depth_count_refines` is about.
 clang -c "$repo/tests/v16/depth_count.ll" -o "$build/depth_count.o"
 
+clang "${shim_flags[@]}" $(leanc --print-cflags) -I "$here" -c "$here/policy.c" \
+  -o "$build/policy.o"
 clang "${shim_flags[@]}" $(leanc --print-cflags) -c "$here/shim.c" -o "$build/shim.o"
 
 # The instrument is a compile-time gate, so its cost in the ordinary adapter is
@@ -111,8 +114,15 @@ if [ "$(nm -u "$build/shim.o" | grep -c ' depth_count$')" -eq 0 ]; then
   echo "build: the adapter does not import depth_count" >&2
   exit 1
 fi
+# Phase two of the admission is this scan: an adapter that stopped calling it
+# would build, would still answer every document, and would be reading the
+# reference's rule from nowhere, so the import is checked like the pipeline's.
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_route_policy_scan$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_route_policy_scan" >&2
+  exit 1
+fi
 
-leanc "$build/RouteMain.o" "$build/shim.o" \
+leanc "$build/RouteMain.o" "$build/shim.o" "$build/policy.o" \
   "${cone_ir[@]}" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" "$build/depth_count.o" \
@@ -132,6 +142,10 @@ if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_s1_masks$')"
 fi
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T depth_count$')" -eq 0 ]; then
   echo "build: the executable does not define depth_count" >&2
+  exit 1
+fi
+if [ "$(nm --defined-only "$build/leanllvm-json-route" | grep -c ' leanllvm_route_policy_scan$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_route_policy_scan" >&2
   exit 1
 fi
 

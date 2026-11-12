@@ -8,10 +8,13 @@ taken in two phases whose clauses are that predicate's.  Phase one is the
 adapter's (`shim.c`): the proved stage-1 mask unit over the document's 64-byte
 blocks gives the opener count and a policy-candidate flag, and the empty and
 length bounds come from `kernelMaxInput`/`kernelMaxDepth` passed in from here.
-Phase two is the reference's own `policyRefusal`, run only where the masks saw a
-candidate.  So the shell and the certified domain are one predicate, and the
-`check.sh` agreement gate asserts the two decisions are the same object on every
-corpus row.  For every document the decision refuses, the scalar reference
+Phase two is the native character-policy scan (`policy.c`, through
+`leanllvm_route_policy`), run only where the masks saw a candidate; the
+reference's own `policyRefusal` is not called on this path, and is the oracle
+`--admit` measures and the `check.sh` agreement gate compares the native answer
+against -- its class and its byte -- on every corpus row.  So the shell and the
+certified domain are one predicate, and that gate asserts the two decisions are
+the same object.  For every document the decision refuses, the scalar reference
 parser answers — `parseBytes` from the library, with `decodeTape` its value on
 acceptance — and the program prints that answer as the fallback's.  There is no
 second scan and no pre-filter: a document either takes the fast path or is
@@ -396,16 +399,20 @@ The document decision is taken in two phases.  Phase one is the adapter's
 bytes, the quote and backslash lanes OR'd into a policy-candidate flag, and the
 empty and length bounds compared against `kernelMaxInput` and `kernelMaxDepth` —
 the library's own numbers, passed in rather than restated in C.  Phase two is
-`decide2From`: the refused clause's reason, and, only when the masks saw a
-candidate byte, the reference's own `policyRefusal`.
+`policyPhase`: the native scan `policy.c` defines, over the document's bytes, run
+only when the masks saw a candidate byte.
 
 The candidate flag is a superset of the bytes `policyRefusal` can report at, so
 skipping phase two when it is false cannot miss a refusal, and consulting it when
-true runs exactly the certified scan.  The clause order is `admission`'s —
-empty, over-long, too many openers, then the character policy — so the decision
-and its reason are the same object, not a second reading of it.  That agreement
-is what `check.sh` asserts on every corpus row; `docs/json-route-stage-timings.md`
-records the cost of each phase and how often phase two runs.
+true runs the native scan, whose rule is the reference's branch for branch.  The
+library's `policyRefusal` is not called on this path: it is the oracle `--admit`
+runs on the same bytes and prints beside the native answer, so the two can be
+compared at the refusal's class and at its byte, and `check.sh` is that
+comparison.  The clause order is `admission`'s — empty, over-long, too many
+openers, then the character policy — so the decision and its reason are the same
+object, not a second reading of it.  That agreement is what `check.sh` asserts on
+every corpus row; `docs/json-route-stage-timings.md` records the cost of each
+phase and how often phase two runs.
 
 The proved depth counter is measured beside the decision and gates nothing: its
 two values are a balance and the sum of prefix depths, and `admission`'s clause is
@@ -507,6 +514,65 @@ def depthFacts (doc : ByteArray) : IO (Except UInt32 DepthFacts) := do
   | .ok d => return .ok d
   | .error (status, msg) => IO.eprintln s!"route: {msg}"; return .error status
 
+/-- The policy scan's header: six words, no payload. -/
+def policyHeaderBytes : Nat := 48
+
+/-- Phase two of the admission: the native character-policy scan (`policy.c`).
+It returns the header `shim.c` documents: the tag and a failed precondition's
+fields, then the refusal's class and the byte it is reported at. -/
+@[extern "leanllvm_route_policy"]
+opaque policyNative (doc : ByteArray) (n : UInt64) : IO ByteArray
+
+/-- What the native scan reported.  `cls` is 0 for a document the character
+policy admits, 1 for an unpaired surrogate escape and 2 for a noncharacter;
+`pos` is the byte the reference names, meaningful only when `cls` is not 0. -/
+structure PolicyFacts where
+  cls : Nat
+  pos : Nat
+
+/-- Decode the policy scan's header.  A tag other than the measured class is an
+adapter-level failure: 3 for an unmet precondition, 4 for a class array that
+could not be allocated -- which is reported rather than read as an admitted
+document. -/
+def policyFactsOf (r : ByteArray) : Except (UInt32 × String) PolicyFacts :=
+  if r.size < policyHeaderBytes then
+    .error (5, s!"the policy result is {r.size} bytes, fewer than its \
+      {policyHeaderBytes}-byte header")
+  else
+    let tag := indexWord r 0
+    if tag == 2 then
+      .error (3, s!"unsupported domain: {preconditionName (indexWord r 8).toNat}: \
+        expected {(indexWord r 16).toNat}, observed {(indexWord r 24).toNat}")
+    else if tag == 3 then
+      .error (4, s!"the policy scan could not allocate its class array over \
+        {(indexWord r 16).toNat} bytes")
+    else if tag == 0 then
+      let cls := (indexWord r 32).toNat
+      if cls > 2 then
+        .error (5, s!"the policy result names class {cls}")
+      else
+        .ok { cls := cls, pos := (indexWord r 40).toNat }
+    else
+      .error (5, s!"the policy result carries tag {tag}")
+
+/-- The scan's answer as the refusal it names: `admission`'s two policy
+constructors, or `none` for a document the character policy admits. -/
+def policyRefusalOf (f : PolicyFacts) : Option KernelRefusal :=
+  match f.cls with
+  | 1 => some (.unpairedSurrogate f.pos)
+  | 2 => some (.noncharacter f.pos)
+  | _ => none
+
+/-- Phase two, measured by its caller where a stage report needs it.  The scan
+runs over the caller's own bytes in place, and its failure class is the route's
+own exit status rather than a refusal. -/
+def policyPhase (doc : ByteArray) :
+    IO (Except UInt32 (Option KernelRefusal)) := do
+  let r ← policyNative doc (UInt64.ofNat doc.size)
+  match policyFactsOf r with
+  | .ok f => return .ok (policyRefusalOf f)
+  | .error (status, msg) => IO.eprintln s!"route: {msg}"; return .error status
+
 /-- The refused clause's reason, in `admission`'s constructor vocabulary. -/
 def nativeRefusal (f : AdmitFacts) : Option KernelRefusal :=
   match f.clause with
@@ -523,18 +589,19 @@ inductive Decision where
   | failed (status : UInt32)
 
 /-- The decision from phase one's facts: the native clause's reason, then the
-reference's own character-policy scan only when the masks saw a candidate byte.
-The scan is the library's `policyRefusal`, so the reason and byte are the
-reference's. -/
-def decide2From (doc : ByteArray) (f : AdmitFacts) : Decision :=
+native character-policy scan only when the masks saw a candidate byte.  The
+scan is `policyPhase`, not the library's `policyRefusal`: the reference's rule is
+the oracle `--admit` compares this against, and is not on the route's path. -/
+def decide2From (doc : ByteArray) (f : AdmitFacts) : IO Decision := do
   match nativeRefusal f with
-  | some r => .refused r
+  | some r => return .refused r
   | none =>
       if f.candidate then
-        match policyRefusal doc with
-        | some r => .refused r
-        | none => .admitted
-      else .admitted
+        match ← policyPhase doc with
+        | .ok (some r) => return .refused r
+        | .ok none => return .admitted
+        | .error status => return .failed status
+      else return .admitted
 
 /-- The two-phase admission.  `maxDepth` is the native side's bound and defaults
 to the certified one; a caller that passes another number is running the
@@ -543,17 +610,22 @@ agreement scenario's control, where a disagreement with `admission` is the point
 def decide2 (doc : ByteArray) (maxDepth : Nat := kernelMaxDepth) : IO Decision := do
   match ← admitPhase1 doc maxDepth with
   | .error status => return .failed status
-  | .ok f => return decide2From doc f
+  | .ok f => decide2From doc f
 
 /-- A decision's reason in the vocabulary the agreement table compares:
-`admission`'s constructors, and `none` for an admitted document. -/
+`admission`'s constructors, and `none` for an admitted document.  The two policy
+constructors carry the byte the reference names, because that byte is part of
+the value they are (`KernelRefusal.unpairedSurrogate (pos : Nat)`), so a
+comparison of two reason tags compares the two refusals and not their classes
+alone.  The opener clause's count is compared through its own field instead, so
+the control that moves the native bound still reads `reason=depthBound`. -/
 def reasonTag : Option KernelRefusal → String
   | none => "none"
   | some .emptyInput => "emptyInput"
   | some (.inputTooLong _) => "inputTooLong"
   | some (.depthBound _) => "depthBound"
-  | some (.unpairedSurrogate _) => "unpairedSurrogate"
-  | some (.noncharacter _) => "noncharacter"
+  | some (.unpairedSurrogate p) => s!"unpairedSurrogate@{p}"
+  | some (.noncharacter p) => s!"noncharacter@{p}"
 
 /-- The decision's reason tag, or `failed` for an adapter failure. -/
 def decisionTag (d : Decision) : String :=
@@ -677,15 +749,15 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     let t1 ← IO.monoNanosNow
     reads := reads.push (t1 - t0)
     size := doc.size
-    -- The admission stage is both phases: the native facts, then the clause's
-    -- reason and the reference's policy scan where a candidate exists.  Each
-    -- phase's own interval is reported beside the sum.
+    -- The admission stage is both phases: the native facts, then the native
+    -- policy scan where a candidate exists.  Each phase's own interval is
+    -- reported beside the sum.
     let a0 ← IO.monoNanosNow
     let facts ← admitPhase1 doc
     let a1 ← IO.monoNanosNow
-    let decision := match facts with
+    let decision ← match facts with
       | .ok f => decide2From doc f
-      | .error status => .failed status
+      | .error st => pure (.failed st)
     let a2 ← IO.monoNanosNow
     adm := adm.push (a2 - a0)
     admnative := admnative.push (a1 - a0)
@@ -983,23 +1055,33 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
 /-! ### The agreement probe
 
 `--admit <file> <reps> <native depth>` is the gate's instrument, not a route: it
-runs the two-phase admission, the proved depth counter, and the library's
-`admission` on the same bytes, and prints one line with both decisions, both
-reasons, and the three medians.  `check.sh` asserts, row by row over the corpus,
-that the two decisions and their reasons are the same object; the third argument
-is the native side's depth bound, which the scenario's control moves off the
-certified 128 so that the comparator is shown catching a disagreement rather than
-agreeing vacuously.
+runs the two-phase admission, the proved depth counter, the library's `admission`
+and the library's own `policyRefusal` on the same bytes, and prints one line with
+both decisions, both reasons, both policy readings and the medians.  `check.sh`
+asserts, row by row over the corpus, that the two decisions and their reasons are
+the same object -- the reason carries the policy class *and* the byte it is
+reported at -- and the third argument is the native side's depth bound, which the
+scenario's control moves off the certified 128 so that the comparator is shown
+catching a disagreement rather than agreeing vacuously.
+
+The library's `policyRefusal` is the oracle: the route's own path calls the
+native scan (`policyPhase`), and this mode runs the reference's scan beside it on
+the same bytes, so a row carries both readings and both costs.  `policy` says the
+native phase ran, `policy_native` its answer, `policy_oracle` the reference's,
+and `agree` their comparison together with the two decisions'.
 
 The document is re-read inside every repetition, as `--stages` does, so a pure
 loop-invariant `admission doc` cannot be hoisted out of its timed region and
 measured as nothing.  The policy phase's own interval is reported only when it
 ran: `policy=0` rows are the documents whose masks saw no candidate byte, and
-they are the reason the phase is skipped at all. -/
+they are the reason the phase is skipped at all.  Each phase's interval is the
+clock read that closes it, so the native scan's cost and the reference scan's are
+each one interval of the same row. -/
 def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
   let mut p1 : Array Nat := #[]
   let mut dp : Array Nat := #[]
   let mut pol : Array Nat := #[]
+  let mut opol : Array Nat := #[]
   let mut cert : Array Nat := #[]
   let mut two : Array Nat := #[]
   let mut size := 0
@@ -1009,6 +1091,8 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
   let mut candidateS := "-"
   let mut blocksS := "-"
   let mut policyS := "-"
+  let mut policyNativeS := "-"
+  let mut policyOracleS := "-"
   let mut depthFinalS := "-"
   let mut depthSumS := "-"
   let mut structuralsS := "-"
@@ -1029,10 +1113,31 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
     let t1 ← IO.monoNanosNow
     let depthInfo ← depthFacts doc
     let t2 ← IO.monoNanosNow
-    let decision := match facts with
-      | .ok f => decide2From doc f
-      | .error status => .failed status
+    -- Phase two, the route's own: the native scan where the native clauses
+    -- admitted and the masks saw a candidate.
+    let mut natReading := "-"
+    let decision ←
+      match facts with
+      | .error status => pure (.failed status)
+      | .ok f =>
+          match nativeRefusal f with
+          | some r => pure (.refused r)
+          | none =>
+              if f.candidate then
+                match ← policyPhase doc with
+                | .ok (some r) => natReading := reasonTag (some r); pure (.refused r)
+                | .ok none => natReading := "none"; pure .admitted
+                | .error status => pure (.failed status)
+              else pure .admitted
     let t3 ← IO.monoNanosNow
+    -- The oracle: the reference's own scan on the same bytes, timed apart from
+    -- everything the decision pays.
+    let o0 ← IO.monoNanosNow
+    let oraclePol :=
+      match facts with
+      | .ok f => if f.verdict && f.candidate then policyRefusal doc else none
+      | .error _ => none
+    let o1 ← IO.monoNanosNow
     let c0 ← IO.monoNanosNow
     let certified := admission doc
     let c1 ← IO.monoNanosNow
@@ -1051,6 +1156,9 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
         if f.verdict && f.candidate then
           policyS := "1"
           pol := pol.push (t3 - t2)
+          opol := opol.push (o1 - o0)
+          policyNativeS := natReading
+          policyOracleS := reasonTag oraclePol
         else policyS := "0"
     match depthInfo with
     | .error status => return status
@@ -1071,12 +1179,14 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
   IO.eprintln s!"admit doc={(System.FilePath.fileName path).getD path} size={size} \
     reps={reps} maxdepth={nativeDepth} native={nativeS} native_clause={clauseS} \
     openers={openersS} candidate={candidateS} blocks={blocksS} policy={policyS} \
+    policy_native={policyNativeS} policy_oracle={policyOracleS} \
     depth_final={depthFinalS} depth_sum={depthSumS} structurals={structuralsS} \
     certified={if certTag == "none" then "1" else "0"} \
     certified_reason={certTag} certified_count={certCount} \
     verdict={if twoTag == "none" then "1" else "0"} reason={twoTag} \
     agree={agree} phase1_ns={median p1} depth_ns={median dp} \
-    policy_ns={stageField pol} certified_ns={median cert} \
+    policy_ns={stageField pol} policy_oracle_ns={stageField opol} \
+    certified_ns={median cert} \
     two_phase_ns={median two}"
   return 0
 

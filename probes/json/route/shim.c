@@ -53,6 +53,7 @@
 
 #include "pipeline.h"
 #include "entry.h"
+#include "policy.h"
 #include "s1_block.h"
 
 /* The proved stage-1 depth counter's one entry point, at the ABI
@@ -213,15 +214,18 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
  * holds no more opener bytes than the nesting bound admits, and the reference's
  * character policy refuses nothing in it.  The first three are facts about the
  * bytes that the proved stage-1 mask unit reports; the fourth is the reference's
- * own `scanCharsEnd`, which this adapter does not re-implement.
+ * own `scanCharsEnd`, through `policyRefusal`.
  *
  * The decision is therefore taken in two phases.  Phase one is
  * `leanllvm_route_admit`: `leanllvm_json_s1_masks` over every 64-byte block of
  * the caller's document, the delimiter mask's lanes read to count `{`/`[` bytes,
  * the quote and backslash lanes OR'd into a policy-candidate flag, and the empty
  * and length bounds compared against numbers the caller supplies.  Phase two is
- * `RouteMain.lean`'s: the refused clause's reason, and -- only when phase one saw
- * a candidate -- the reference's own `policyRefusal`.
+ * `leanllvm_route_policy`: the native character-policy scan `policy.c` defines,
+ * run by the caller only when phase one saw a candidate.  The reference's own
+ * `policyRefusal` is not called on this path; it is the oracle the route's
+ * `--admit` mode measures and `check.sh` compares the native answer against,
+ * row by row and at the refusal's class and byte.
  *
  * ## Why the policy phase may be skipped
  *
@@ -231,7 +235,7 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
  * then a backslash run precedes it, so the backslash lane carries that.  The
  * candidate flag is the OR of the two masks over the whole document, so it is
  * true whenever a `"` byte exists: skipping the phase when it is false cannot
- * miss a refusal, and consulting it when true runs exactly the certified scan.
+ * miss a refusal, and consulting it when true runs the exact scan.
  *
  * ## The opener count, and not the depth counter
  *
@@ -265,6 +269,16 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
 
 /* The depth facts' header: seven words, no payload. */
 #define DEPTH_HEADER_BYTES 56
+
+/* The character-policy scan's header: six words, no payload. */
+#define POLICY_HEADER_BYTES 48
+
+/* The class of a policy result. */
+enum policy_tag {
+  POLICY_SCANNED = 0, /* the scan ran; the class and the byte follow */
+  POLICY_DOMAIN = 2,  /* a precondition failed before the scan */
+  POLICY_ALLOC = 3    /* the scan's class array could not be allocated */
+};
 
 /* The class of an admission result. */
 enum admit_tag {
@@ -402,6 +416,35 @@ static lean_object *depth_impl(lean_object *doc, uint64_t n) {
   uint64_t w[7] = {ADMIT_MEASURED, 0, 0, 0, (uint64_t)d[0], (uint64_t)d[1],
                    (uint64_t)d[2]};
   return word_result(DEPTH_HEADER_BYTES, w, 7);
+}
+
+/* Phase two's result.  `tag` is the measured class or the failure that
+   preceded it; the measured header's `want` is the document's length (the
+   bytes the scan covered) and `got` is zero, and `class` and `pos` are the
+   refusal the scan reported -- `POLICY_NONE` and 0 for a document the policy
+   admits. */
+static lean_object *policy_result(uint64_t tag, uint64_t detail, uint64_t want,
+                                  uint64_t got, uint64_t class_,
+                                  uint64_t pos) {
+  uint64_t w[6] = {tag, detail, want, got, class_, pos};
+  return word_result(POLICY_HEADER_BYTES, w, 6);
+}
+
+/* The character-policy scan over the document's bytes, which the caller
+   provides the length of: `n > doc.size` is the one precondition, and it is
+   checked before a byte is read.  The scan itself is `policy.c`'s; this wraps
+   its answer and its one failure (a class array that could not be allocated,
+   reported rather than read as an admitted document). */
+static lean_object *policy_impl(lean_object *doc, uint64_t n) {
+  uint64_t bytes = array_bytes(doc);
+  if (n > bytes) {
+    return policy_result(POLICY_DOMAIN, PC_DOC, n, bytes, POLICY_NONE, 0);
+  }
+  uint64_t cls = POLICY_NONE, pos = 0;
+  if (n && leanllvm_route_policy_scan(lean_sarray_cptr(doc), n, &cls, &pos) != 0) {
+    return policy_result(POLICY_ALLOC, PC_NONE, n, 0, POLICY_NONE, 0);
+  }
+  return policy_result(POLICY_SCANNED, 0, n, 0, cls, pos);
 }
 
 /* The adapter's body.  `leanllvm_json_route` below wraps it in the runtime's IO
@@ -558,6 +601,14 @@ LEAN_EXPORT lean_object *leanllvm_route_admit(lean_object *doc, uint64_t n,
                                               uint64_t maxInput,
                                               uint64_t maxDepth) {
   return lean_io_result_mk_ok(admit_impl(doc, n, maxInput, maxDepth));
+}
+
+/* Phase two of the two-phase admission: the native character-policy scan over
+   the document.  The caller runs it only when phase one's candidate flag is
+   set, and compares its answer with the reference's `policyRefusal` in the
+   route's `--admit` mode. */
+LEAN_EXPORT lean_object *leanllvm_route_policy(lean_object *doc, uint64_t n) {
+  return lean_io_result_mk_ok(policy_impl(doc, n));
 }
 
 /* The proved depth counter over the document's delimiter lanes: the facts, for

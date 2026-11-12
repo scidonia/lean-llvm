@@ -22,10 +22,13 @@
 #   `admission_policy_ns` split it, the second present only on the rows whose
 #   masks saw a policy candidate (`admission_candidate`).
 # * `admit` rows come from `leanllvm-json-route --admit <file> <reps>` on the
-#   production build: the two-phase decision, the proved depth counter, and the
-#   library's `admission` on the same bytes, with each one's own median.  They
-#   are what the two-phase admission table divides, and they are the same rows
-#   `check.sh` asserts agreement on.  `adapter_wall_ns` is the interval the
+#   production build: the two-phase decision, the proved depth counter, the
+#   library's `admission`, and the library's own `policyRefusal` on the same
+#   bytes, with each one's own median.  `policy_ns` is phase two as the route
+#   runs it -- the native scan -- and `policy_oracle_ns` is the reference's scan
+#   on the same bytes, so one row carries both the answer and the price of each.
+#   These are what the two-phase admission table divides, and they are the same
+#   rows `check.sh` asserts agreement on.  `adapter_wall_ns` is the interval the
 #   caller saw around the adapter; `copyin + native + copyout` less it is the
 #   precondition checks and the two clock reads the adapter's intervals are
 #   divided by.  `total_ns` is admission's start to the end of outcome handling,
@@ -122,17 +125,34 @@ if command -v taskset >/dev/null 2>&1; then pin=(taskset -c "$cpu"); fi
 # opener-count clause holds, and shapes whose arena and event streams fit the
 # record's capacities.  The two depth documents are the boundary pair: 128
 # openers are admitted, 129 are outside the domain and the fallback answers.
+#
+# The five escape documents are the candidate-heavy row set: each carries quote
+# or backslash bytes, so the two-phase admission runs phase two on it, and they
+# are the shapes the native scan's branches are for.  `fast-esc` is 1000 `\n`
+# escapes -- no `\u` and no byte at or above 0xEF, so the scan's screen answers
+# it without visiting a position; `fast-esc-quotes` is 1000 escaped quotes, so
+# its 1002 quote bytes are 1002 scan starts and the reference's scan is
+# quadratic in them; `fast-esc-u` is 500 `\u00e9` escapes, `fast-surrogate` 250
+# surrogate pairs whose 12-byte forms straddle the 64-byte block boundaries;
+# `fast-utf8` is 1000 raw two-byte characters, non-ASCII and below the
+# noncharacter lead, so the screen dismisses it too.
 corpus="$work/corpus"
 mkdir -p "$corpus"
 awk 'BEGIN{n=683;   printf "["; for(i=0;i<n;i++){if(i)printf ",";printf "12345"}; printf "]"}' >"$corpus/fast-nums-4096.json"
 awk 'BEGIN{n=2731;  printf "["; for(i=0;i<n;i++){if(i)printf ",";printf "12345"}; printf "]"}' >"$corpus/fast-nums-16384.json"
 awk 'BEGIN{n=10923; printf "["; for(i=0;i<n;i++){if(i)printf ",";printf "12345"}; printf "]"}' >"$corpus/fast-nums-65536.json"
 awk 'BEGIN{printf "["; printf "\""; for(i=0;i<1000;i++)printf "\\n"; printf "\"]"}' >"$corpus/fast-esc.json"
+awk 'BEGIN{printf "["; printf "\""; for(i=0;i<1000;i++)printf "\\\""; printf "\"]"}' >"$corpus/fast-esc-quotes.json"
+awk 'BEGIN{printf "["; printf "\""; for(i=0;i<500;i++)printf "\\u00e9"; printf "\"]"}' >"$corpus/fast-esc-u.json"
+awk 'BEGIN{printf "["; printf "\""; for(i=0;i<250;i++)printf "\\uD83D\\uDE00"; printf "\"]"}' >"$corpus/fast-surrogate.json"
+awk 'BEGIN{printf "["; printf "\""; for(i=0;i<1000;i++)printf "\303\251"; printf "\"]"}' >"$corpus/fast-utf8.json"
 awk 'BEGIN{for(i=0;i<128;i++)printf "["; for(i=0;i<128;i++)printf "]"}' >"$corpus/depth-128.json"
 awk 'BEGIN{for(i=0;i<129;i++)printf "["; for(i=0;i<129;i++)printf "]"}' >"$corpus/depth-129.json"
 
 fast_docs=("$corpus/fast-nums-4096.json" "$corpus/fast-nums-16384.json"
-           "$corpus/fast-nums-65536.json" "$corpus/fast-esc.json")
+           "$corpus/fast-nums-65536.json" "$corpus/fast-esc.json"
+           "$corpus/fast-esc-quotes.json" "$corpus/fast-esc-u.json"
+           "$corpus/fast-surrogate.json" "$corpus/fast-utf8.json")
 depth_docs=("$corpus/depth-128.json" "$corpus/depth-129.json")
 # A document the repository already ships that the domain does not admit: its
 # objects open a container per element, so the opener count exceeds the bound.
@@ -578,8 +598,10 @@ printf 'documents differ in shape as well as in path)\n\n'
 # session, and beside the proved depth counter, which is measured and gates
 # nothing.  `certified_ns` is the library's `admission` -- the opener count over
 # `doc.data.toList` and the per-quote policy scan -- and `two_phase_ns` is what
-# the route now pays: the native facts, then the policy scan only where the masks
-# saw a candidate.
+# the route now pays: the native facts, then the native policy scan only where
+# the masks saw a candidate.  `policy_oracle_ns` is the reference's own
+# `policyRefusal` measured on the same bytes, so the two policy phases are one
+# row and neither number is a separate run's.
 admit_row() { # <file> [native depth] -> the row on stderr
   local out status row
   set +e
@@ -608,15 +630,17 @@ for doc in "${all_docs[@]}"; do
 done
 
 printf '## the two-phase admission (unit: ns; medians of %s reps, OPT=-O2 production build)\n\n' "$reps"
-printf '%-22s %8s %9s %12s %10s %10s %12s %10s %10s\n' \
-  doc openers candidate certified_ns phase1_ns policy_ns two_phase_ns 'two_phase/certified' depth_ns
+printf '%-22s %8s %9s %12s %10s %10s %10s %12s %10s %10s\n' \
+  doc openers candidate certified_ns phase1_ns policy_ns policy_oracle_ns \
+  two_phase_ns 'two_phase/certified' depth_ns
 for doc in "${all_docs[@]}"; do
   name=$(basename "$doc")
   row=$(grep " doc=$name " "$adm_rows")
-  printf '%-22s %8s %9s %12s %10s %10s %12s %10s %10s\n' "$name" \
+  printf '%-22s %8s %9s %12s %10s %10s %10s %12s %10s %10s\n' "$name" \
     "$(field "$row" openers)" "$(field "$row" candidate)" \
     "$(field "$row" certified_ns)" "$(field "$row" phase1_ns)" \
-    "$(field "$row" policy_ns)" "$(field "$row" two_phase_ns)" \
+    "$(field "$row" policy_ns)" "$(field "$row" policy_oracle_ns)" \
+    "$(field "$row" two_phase_ns)" \
     "$(ratio "$(field "$row" two_phase_ns)" "$(field "$row" certified_ns)")" \
     "$(field "$row" depth_ns)"
 done
@@ -624,11 +648,14 @@ printf '\nconstruction: certified_ns is the library'"'"'s `admission`: the empty
 printf 'length clauses, the opener count over `doc.data.toList`, and the per-quote\n'
 printf 'policy scan.  phase1_ns is the adapter'"'"'s native call (the mask unit over\n'
 printf 'the document, the delimiter lanes counted, the candidate flag), including\n'
-printf 'the Lean extern call and the header decode.  policy_ns is phase two, the\n'
-printf 'reference'"'"'s own `policyRefusal`, and is `-` where the masks saw no\n'
-printf 'candidate: two_phase_ns is phase one plus phase two, so a `-` row differs\n'
-printf 'from certified_ns alone.  two_phase/certified is a multiplier (the new\n'
-printf 'cost divided by the old, same document and session).  depth_ns is the\n'
+printf 'the Lean extern call and the header decode.  policy_ns is phase two as the\n'
+printf 'route runs it -- the native scan, including its own extern call and header\n'
+printf 'decode -- and policy_oracle_ns is the library'"'"'s `policyRefusal` on the\n'
+printf 'same bytes, a separate interval in the same repetition; both are `-` where\n'
+printf 'the masks saw no candidate.  two_phase_ns is phase one plus the native\n'
+printf 'phase two, so a `-` row differs from certified_ns alone.\n'
+printf 'two_phase/certified is a multiplier (the route'"'"'s decision cost divided by\n'
+printf 'the predicate it replaced, same document and session).  depth_ns is the\n'
 printf 'proved depth counter run over the same delimiter lanes: it is a balance\n'
 printf 'and a prefix-depth sum, neither of which is the opener count the clause\n'
 printf 'states, so it is reported and gates nothing.\n\n'
@@ -644,9 +671,9 @@ printf 'policy candidate on %s of %s rows (the fraction of documents whose masks
   "$cand" "${#all_docs[@]}"
 printf 'show a byte the policy scan can report at: a quote or a backslash); the\n'
 printf 'scan itself ran on %s, the rows that candidate flag did not spare by a\n' "$ran"
-printf 'native clause refusing first.  A document with quotes and no escapes pays\n'
-printf 'the whole scan, which is the number that decides whether the policy check\n'
-printf 'needs its own native unit.\n\n'
+printf 'native clause refusing first.  The two policy columns on those rows are the\n'
+printf 'price of the same phase twice: the native scan the route pays, and the\n'
+printf 'reference scan it replaced.\n\n'
 
 if [ -x "$work/simdjson-baseline" ]; then
   # Paired for the same reason the -O2/-O3 pair is: the two arms are separate
