@@ -226,12 +226,12 @@ The trace itself is stated: `WalkLink` is one link (a control step that preserve
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
 as a run, a measure bound, and a completion at a returning last state.
 
-A hundred and thirty-six of the body's 165 blocks are links, and *The middle's two
+A hundred and thirty-eight of the body's 165 blocks are links, and *The middle's two
 classes* below is the census that decomposes the count: the two named arms
 (`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
 (`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
 eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
-twelve merges and ten of class G's fourteen reads (`JsonStage2WalkPhi`,
+twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
 `JsonStage2WalkPure`), and the two entry links beside `while.body.i.lr.ph`
 (`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 25 blocks
 that are still not links, are stated there.  `WalkLocal` is
@@ -3816,8 +3816,8 @@ by block; this section states it, proves that it carries the invariant and the
 measure, and gives it the links the module has proved: the header's block, the
 nesting arm, the latch, the four scan headers, and the censused classes A, B and
 B′, the eighteen refusal stores of C, class D's ten stores, the two entry links,
-class E's twelve merges and ten of class G's fourteen reads — a hundred and
-thirty-six blocks in all.  The links between them are the 29 rows of the census's
+class E's twelve merges and twelve of class G's fourteen reads — a hundred and
+thirty-eight blocks in all.  The links between them are the 27 rows of the census's
 remainder, and they are not supplied. -/
 
 /-- **One link of the dispatch's trace**: a control step that preserves
@@ -3939,16 +3939,16 @@ the instruction's constructor, not by the block's name.
 | D | other `store` shapes | 11 | 11 |
 | E | a `phi`-headed block | 15 | 15 |
 | F | a block that calls | 19 | 0 |
-| G | `load` and compare | 14 | 10 |
+| G | `load` and compare | 14 | 12 |
 | H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**A hundred and thirty-six of the 165 blocks are links**, and the table's proved
+**A hundred and thirty-eight of the 165 blocks are links**, and the table's proved
 column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
 10 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) = 136, with
 the five measure arms among those classes rather than beside them.  The remaining
-29 are named below with their obstruction, one row each; six of them are not links
+27 are named below with their obstruction, one row each; six of them are not links
 at all — the seed, the return, and the four `unreachable` arms.
 
 The count that mattered was the number of classes, not of blocks.  A, B and B′ are
@@ -4029,7 +4029,7 @@ links is a contract question — the callee's post at the caller's staging — a
 block that reads the returned word (`if.end256.i` reads `%call272.i`'s successors,
 `if.then328.i` reads `%outn.i`) needs the contract's *frame* as well as its post.
 
-**G, `load` and compare (14; ten proved, four obstructed).**  Each reads a word the invariant does not
+**G, `load` and compare (14; twelve proved, two obstructed).**  Each reads a word the invariant does not
 bind.  `if.end.i.i` and `if.end.i.i55` read `%len` and `%cap` — which `log_len` and
 `log_cap` *do* bind, so these two are the closest of the fourteen; the rest read a
 container-stack byte at `idxprom` or `sp - 1`, the document byte at `%cond350.i`
@@ -4039,12 +4039,18 @@ block's run written out as a `denoteCode` equality and handed to its edge's
 transfer — `pureCore` for a bit the block computes, `pureCoreCarried` for
 `if.end74.i`'s carried bit, `pureJumpCore` for the four jump shapes — with the
 `getelementptr` at a computed index its own step (`denoteCode_gep8_ofNat`).
-The four obstructed rows (`if.end59.i`, `if.end133.i`, `land.lhs.true.i`,
-`if.end179.i`) are the blocks that read a container-stack byte through
-`sp - 1`; their declarations fail the kernel's type-checker with a deep-recursion
-error (not a depth limit — `maxRecDepth 50000` does not help), while the statement
-alone and each proof term's parts type-check; `JsonStage2WalkPure`'s header records
-the measurement.
+The four rows that read a container-stack byte through `sp - 1`
+(`if.end179.i`, `land.lhs.true.i`, `if.end133.i`, `if.end59.i`) failed the
+kernel's type-checker when their runs were written at the block's literal
+instruction list: a deep-recursion error, not a depth limit (`maxRecDepth 50000`
+does not help), while the statement alone and each proof term's parts type-check.
+Stating the run at the block's *variables* and supplying each block by `rfl` —
+`WalkLink.addImmBr`'s device — closes two of them (`WalkLink.if_end179_i`,
+`WalkLink.land_lhs_true_i`); the other two (`if.end133.i`'s seven-instruction pair
+and `if.end59.i`'s eight-instruction `select` nest) exceed this repository's
+elaboration budget (the pair's declaration alone reaches 7.8 GB resident under a
+6 GB cap, the marker's 1.7 GB), and `JsonStage2WalkPure`'s header records the
+measurement.
 
 **H1's five `LeafBlock`s — proved.**  `%.off = add i8 %NN, -9; %SwitchLeafNN =
 icmp ule i8 %.off, 1`.  Two instructions and no memory: `walkDenoteCode_add_imm_w`
@@ -4114,12 +4120,12 @@ it.
 | 44 | `if.end133.i` | G | both stacks' bytes at `sp - 1` — the proof is written but the declaration's kernel check recurses |
 | 47 | `if.end150.i` | D | the state stack's byte — proved (`WalkLink.if_end150_i`) |
 | 50 | `if.end162.i` | D | the state stack's byte — proved (`WalkLink.if_end162_i`) |
-| 53 | `if.end179.i` | G | the type stack's byte — the proof is written but the declaration's kernel check recurses |
+| 53 | `if.end179.i` | G | the type stack's byte — proved (`WalkLink.if_end179_i`) |
 | 54 | `lor.lhs.false.i` | G | the state stack's byte — proved (`WalkLink.lor_lhs_false_i`) |
 | 56 | `if.end195.i` | D | the state stack's byte — proved (`WalkLink.if_end195_i`) |
 | 59 | `if.end207.i` | D | the cursor record's `k` — proved (`WalkLink.if_end207_i`) |
 | 61 | `if.then219.i` | F | calls `@s2_value_pos` |
-| 62 | `land.lhs.true.i` | G | the type stack's byte — the proof is written but the declaration's kernel check recurses |
+| 62 | `land.lhs.true.i` | G | the type stack's byte — proved (`WalkLink.land_lhs_true_i`) |
 | 63 | `if.then231.i` | G | the state stack's masked byte — proved (`WalkLink.if_then231_i`) |
 | 64 | `if.end245.i` | E | the `phi` run `%key.1.i` and the callee's return — proved (`WalkLink.if_end245_i`) |
 | 66 | `if.end256.i` | F | calls `@llvm.lifetime.start.p0` |
