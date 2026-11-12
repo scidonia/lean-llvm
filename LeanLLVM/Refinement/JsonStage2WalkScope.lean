@@ -239,7 +239,7 @@ two classes* below is the census that decomposes the count: the two named arms
 (`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
 eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
 twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
-`JsonStage2WalkPure`), fourteen of class F's nineteen call blocks
+`JsonStage2WalkPure`), fifteen of class F's nineteen call blocks
 (`JsonStage2WalkCall`), and the two entry links beside `while.body.i.lr.ph`
 (`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 10 blocks
 that are still not links, are stated there.  `WalkLocal` is
@@ -4040,21 +4040,21 @@ measure, and gives it the links the module has proved: the header's block, the
 nesting arm, the latch, the four scan headers, and the censused classes A, B and
 B′, the eighteen refusal stores of C, class D's ten stores, the two entry links,
 class E's twelve merges and twelve of class G's fourteen reads, and the class F
-blocks the call and finalisation modules prove — a hundred and fifty-four blocks in all; three
+blocks the call and finalisation modules prove — a hundred and fifty-five blocks in all; three
 more are discharged as steps, and the nine outside them are named with their
 obstruction under *The census* below. -/
 
 /-! ### The census's arithmetic
 
 The table's columns and the reconciliation as `#guard`s: the class rows sum to the
-body's 165 blocks, the proved column sums to the 154 links the modules close, and
-the links, the three finalisation steps and the eight rows outside both sum to 165
+body's 165 blocks, the proved column sums to the 155 links the modules close, and
+the links, the three finalisation steps and the seven rows outside both sum to 165
 again.  `JsonStage2IR` pins the body's own count (`stage2Body.blocks.length = 165`),
 so these lines hold the prose to the pinned body rather than to a transcription. -/
 
 #guard decide (60 + 9 + 1 + 18 + 11 + 15 + 19 + 14 + 10 + 2 + 6 = 165)
-#guard decide (60 + 9 + 1 + 18 + 11 + 15 + 14 + 10 + 2 + 14 = 154)
-#guard decide (154 + 3 + 8 = 165)
+#guard decide (60 + 9 + 1 + 18 + 11 + 15 + 14 + 10 + 2 + 15 = 155)
+#guard decide (155 + 3 + 7 = 165)
 
 /-- **One link of the dispatch's trace**: a control step that preserves
 `WalkInv` and does not raise the measure. -/
@@ -4174,7 +4174,7 @@ the instruction's constructor, not by the block's name.
 | C | the refusal store: `gep %e+8`, `store i64`, `br` | 18 | 18 |
 | D | other `store` shapes | 11 | 11 |
 | E | a `phi`-headed block | 15 | 15 |
-| F | a block that calls | 19 | 14 |
+| F | a block that calls | 19 | 15 |
 | G | `load` and compare | 14 | 14 |
 | H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
@@ -4182,12 +4182,12 @@ the instruction's constructor, not by the block's name.
 
 **A hundred and fifty-three of the 165 blocks are links**, and the table's proved
 column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
-14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 14 (F's
-`JsonStage2WalkCall` and `JsonStage2WalkFinal`) = 154, with the five measure arms among those classes rather
+14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 15 (F's
+`JsonStage2WalkCall` and `JsonStage2WalkFinal`) = 155, with the five measure arms among those classes rather
 than beside them.  The remaining 12 are named below with their obstruction, one
 row each; seven of them are not links at all — the seed, the return's two arms
 (`s2_walk.exit` and `if.then`) and the four `unreachable` arms — and all three
-finalisation blocks are discharged as steps, so eight rows remain.
+finalisation blocks are discharged as steps, so seven rows remain.
 
 **The call census, measured.**  The F row's 19 is the number of blocks between the
 arms whose instruction list contains an `Instr.call` or `Instr.callVoid`, read off
@@ -4317,11 +4317,13 @@ rather than from a caller's fact.  The branch is stated at the bit the run
 computed, so it composes with the trap verdict (`walkArenaReserve_clear`, which is
 now a theorem of the invariant) instead of assuming it.
 
-What remains is three.  `if.then109.i` (`s2_after_value` at a depth binding the
-invariant does not carry), `if.then19.i` (`num_fast_el1` and the refusal store that
+What remains is two.  `if.then19.i` (`num_fast_el1` and the refusal store that
 follows it, whose footprint the walk modules state) and `z_arena_reserve.exit` (the
 decoded body's prefix in the arena, which the frame's arena extent at `C.alen` does
-not yet cover) are the class's open links.  `if.then425.i` is closed as the carry's
+not yet cover) are the class's open links.  `if.then109.i` is closed
+(`WalkLink.if_then109_i`, `JsonStage2WalkFinal`): its call's depth is `%sub.i`, so
+the facts lemma is stated at the register (`walkAfterValue_facts_at`) and the block
+reads the log's zeroed hash word to its `if.end.i.i55` edge.  `if.then425.i` is closed as the carry's
 link (`WalkLink.if_then425_i_emit`/`_refuse`, `JsonStage2WalkFinal`): the
 contract's post names the appended record, so the emitting arm advances the trace
 and the refusing arm leaves the carry where it was.  The two finalisation arms
@@ -4406,7 +4408,7 @@ header, with the arithmetic.
 
 ## The remainder, named
 
-The census's rows: eight blocks still without a link, 154 already closed as links,
+The census's rows: seven blocks still without a link, 155 already closed as links,
 and three (`s2_walk.exit`, `if.then`, `if.end`) closed as steps — 165 in all.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
@@ -4423,7 +4425,7 @@ it.
 | 25 | `out_reserve.exit.i.i` | D | the tag byte and the cursor — proved (`WalkLink.out_reserve_exit_i_i`) |
 | 28 | `if.end59.i` | G | the type stack's byte — proved (`WalkLink.if_end59_i`) |
 | 30 | `if.end74.i` | G | the state stack's byte, carried bit — proved (`WalkLink.if_end74_i`) |
-| 37 | `if.then109.i` | F | calls `@s2_after_value`; its `phi` run is the remaining need |
+| 37 | `if.then109.i` | F | calls `@s2_after_value` — proved (`WalkLink.if_then109_i`) |
 | 38 | `if.then.i.i50` | D | the hash word at `%z + 24` — proved (`WalkLink.if_then_i_i50`) |
 | 39 | `if.end.i.i55` | G | the two log words — proved (`WalkLink.if_end_i_i55`) |
 | 40 | `if.end.i.i.i64` | trap | `@llvm.trap`, `unreachable` |
@@ -4493,8 +4495,8 @@ half of `Stage2WalkObligation` at `stage2Budget` (`stage2WalkObligation_iff_comp
 is the equivalence, so nothing else is wanted).  Read as a proof obligation it is
 four pieces, in order:
 
-1. **the eight rows** — the three class F blocks the table names without a link
-   (`if.then109.i`, `if.then19.i`, `z_arena_reserve.exit`),
+1. **the seven rows** — the two class F blocks the table names without a link
+   (`if.then19.i`, `z_arena_reserve.exit`),
    `entry` (item 2), and the four `unreachable` arms (whose verdicts are proved:
    `walkTrap_noStep`, `walkEventReserve_clear`, `walkArenaReserve_clear`), so the
    traversal has no gap;

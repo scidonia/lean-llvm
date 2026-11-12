@@ -28,9 +28,10 @@ What a call block owes, and what this module supplies:
 * **the class.**  The census splits F's nineteen by what the callee writes: the
   three `s2_value_pos` callers and the eight `lifetime`-only blocks write
   nothing, `if.then413.i` is a fourth `s2_value_pos` caller whose own store
-  writes the token's kind byte inside its staged extent, `if.then109.i`, `if.else334.i`, `if.then447.i` (through
-  `s2_after_value`) and `if.then19.i` (through `num_fast_el1`) write inside the
-  frame and not at any word the invariant reads, `if.end256.i`'s own zero store
+  writes the token's kind byte inside its staged extent, `if.else334.i` and `if.then447.i` (through
+  `s2_after_value`), `if.then109.i` (the same call at the dispatch's own depth
+  register, `JsonStage2WalkFinal`) and `if.then19.i` (through `num_fast_el1`) write
+  inside the frame and not at any word the invariant reads, `if.end256.i`'s own zero store
   is at `%outn.i`'s slot, and three write a record a cursor names:
   `if.then328.i`'s thirteen-byte event record is proved as the carry's link
   (below, `WalkLink.if_then328_i`), and `if.then425.i`'s appended record is its

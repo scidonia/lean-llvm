@@ -491,6 +491,338 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         by simp only [stage2ErrorExtent]; omega⟩
       (bs := wordBytes 8 pos) (by simp [wordBytes, natToBytes_length])
 
+
+/-- A byte at an inside index of the state stack is separated from the log. -/
+theorem walkCstByte_log_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {q : Nat} (hq : q + 1 ≤ stage2StackExtent) :
+    C.stage.cst + q + 1 ≤ C.stage.z ∨
+      C.stage.z + stage2LogExtent ≤ C.stage.cst + q := by
+  have hsep := cst_log_sep hInv
+  have h520 : stage2StackExtent = 520 := rfl
+  rw [h520] at hq
+  simp only [stage2LogExtent] at hsep ⊢
+  rcases hsep with hsep | hsep
+  · left; omega
+  · right; omega
+
+/-- A byte at an inside index of the state stack is separated from the event
+stream. -/
+theorem walkCstByte_ev_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {q : Nat} (hq : q + 1 ≤ stage2StackExtent) :
+    C.stage.cst + q + 1 ≤ G.ev ∨ G.ev + G.evcap ≤ C.stage.cst + q := by
+  have hsep := cst_ev_sep hInv
+  have h520 : stage2StackExtent = 520 := rfl
+  rw [h520] at hq
+  rcases hsep with hsep | hsep
+  · left; omega
+  · right; omega
+
+/-- **`s2_after_value`'s four memory facts at an arbitrary depth binding.**  The
+callee's model writes one of two places — the root slot at depth zero and the top
+container's state byte above it — and both are inside the walk's frame: the root
+slot is the first allocated slot and the byte is inside `%cst.i`'s staged extent.
+The depth is the register the call passes (`%sub.i`, which the dispatch binds as
+`%sp.i.0248 - 1`), so the lemma takes its value and its bound rather than reading
+the carry: the instance at `BitVec.ofNat 32 C.sp` is `walkAfterValue_facts`. -/
+theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {spz : BitVec 32} (hspz : spz.toNat ≤ stage2StackExtent)
+    {m : Mem}
+    (hm : stage2AfterValue s.mem spz.toNat (G.next0 + 8)
+      C.stage.ctype C.stage.cst = some m)
+    (hfr : UnchangedOutside s.mem m
+      (s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
+        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)) :
+    UnchangedOutside m0 m (walkWide G C) ∧
+      (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
+      (∀ off w, off + w ≤ stage2LogExtent →
+        readBytes m (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w) ∧
+      readBytes m (G.ev + G.nev0)
+          (C.events.map EventRecord.encodedBytes).flatten.length =
+        readBytes s.mem (G.ev + G.nev0)
+          (C.events.map EventRecord.encodedBytes).flatten.length := by
+  have hroot : G.next0 + 8 + 4 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ G.next0 + 8 :=
+    C.stage.rootSlot_log
+  have hrootev : G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8 :=
+    C.stage.rootSlot_ev
+  have hbyte : spz.toNat - 1 + 1 ≤ stage2StackExtent := by
+    have h520 : stage2StackExtent = 520 := rfl
+    rw [h520] at hspz ⊢
+    omega
+  have hfoot : s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
+      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next =
+      (if spz.toNat = 0 then [(G.next0 + 8, 4)]
+       else [(C.stage.cst + (spz.toNat - 1), 1)]) := by
+    simp [s2AfterValueFoot]
+  have hsub : ∀ q ∈ s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
+      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next,
+      ∃ w ∈ walkWide G C, w.1 ≤ q.1 ∧ q.1 + q.2 ≤ w.1 + w.2 := by
+    intro q hq
+    rw [hfoot] at hq
+    by_cases h0 : spz.toNat = 0
+    · rw [ite_eq_left h0] at hq
+      simp only [List.mem_singleton] at hq
+      subst hq
+      exact walkWide_rootSlot
+    · rw [ite_eq_right h0] at hq
+      simp only [List.mem_singleton] at hq
+      subst hq
+      exact walkWide_cst_byte (q := spz.toNat - 1) hbyte
+  have hevcap : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
+    have hsum := EventRecord.sum_encodedSize_le C.events
+    simp only [stage2RecordBytes] at hsum
+    have h4' := G.evRoom
+    simp only [stage2RecordBytes] at h4'
+    have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
+        (C.events.map EventRecord.encodedSize).sum := by
+      simp only [List.length_flatten, List.map_map]
+      rfl
+    have h1 := hInv.events_le
+    have h2 := hInv.k_le
+    have h3 := G.nep_le
+    omega
+  have hframe : UnchangedOutside m0 m (walkWide G C) :=
+    hInv.frame.trans' (UnchangedOutside.of_subset hfr hsub)
+  have howned : ∀ q ∈ walkStaged G C, HasBytes m q.1 q.2 := by
+    obtain h1 | ⟨b, h1⟩ := stage2AfterValue_form hm
+    · rw [h1]; exact walkStaged_write rfl hInv.owned
+    · rw [h1]; exact walkStaged_write rfl hInv.owned
+  have hlog : ∀ off w, off + w ≤ stage2LogExtent →
+      readBytes m (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w := by
+    intro off w hsubw
+    obtain h1 | ⟨b, h1⟩ := stage2AfterValue_form hm
+    · rw [h1]
+      refine walkReadBytes_log_of_write (w := 4) (by simp [wordBytes, natToBytes_length])
+        ?_ hsubw
+      simpa [wordBytes, natToBytes_length] using hroot
+    · rw [h1]
+      exact walkReadBytes_log_of_write (w := 1) (by simp) (walkCstByte_log_sep hInv hbyte) hsubw
+  have hev : readBytes m (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length =
+      readBytes s.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length := by
+    obtain h1 | ⟨b, h1⟩ := stage2AfterValue_form hm
+    · rw [h1]
+      refine walkReadBytes_ev_of_write (w := 4) (by simp [wordBytes, natToBytes_length]) ?_
+      rcases hrootev with h | h
+      · exact Or.inl h
+      · exact Or.inr (by omega)
+    · rw [h1]
+      refine walkReadBytes_ev_of_write (w := 1) (by simp) ?_
+      rcases walkCstByte_ev_sep hInv hbyte with h | h
+      · exact Or.inl (by omega)
+      · exact Or.inr (by omega)
+  exact ⟨hframe, howned, hlog, hev⟩
+
+/-- The `%conv115.i` `phi`: the kind byte the token's arm selected. -/
+def walkIfThen109Incoming : List (String × Operand) :=
+  [("LeafBlock23", .imm (.int 8 (BitVec.ofNat 8 2))),
+   ("LeafBlock25", .imm (.int 8 (BitVec.ofNat 8 2))),
+   ("cond.end.i", .imm (.int 8 (BitVec.ofNat 8 4)))]
+
+/-- `if.then109.i`: the value's flag, the hash word's load and its test. -/
+def walkIfThen109 : Block :=
+  { name := "if.then109.i",
+    instrs := [
+      Instr.phi "%conv115.i" (Ty.int 8) walkIfThen109Incoming,
+      Instr.callVoid "s2_after_value"
+        [(Ty.int 32, Operand.reg "%sub.i"), (Ty.ptr, Operand.reg "%root_done.i"),
+         (Ty.ptr, Operand.reg "%ctype.i"), (Ty.ptr, Operand.reg "%cst.i")],
+      Instr.load "%17" (Ty.int 32) (Operand.reg "%hash1.i.i"),
+      Instr.icmp "%tobool.not.i.i49" IPred.eq 32 (Operand.reg "%17")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (Operand.reg "%tobool.not.i.i49") "if.end.i.i55" "if.then.i.i50" }
+
+theorem walkIfThen109_find : stage2Body.findBlock "if.then109.i" = some walkIfThen109 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIfThen109,
+    walkIfThen109Incoming]
+
+theorem walkIfThen109_denote {sub : Calls} (env : Env) (s : State)
+    {p : String} {op : Operand} {c8 : BitVec 8} {spz : BitVec 32}
+    {rd ct cs : Nat} {r : CallOutcome} {hzA : Nat}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p walkIfThen109Incoming = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 8 c8))
+    (hsub : lookupName env "%sub.i" = some (.int 32 spz))
+    (hrd : lookupName env "%root_done.i" = some (.ptr rd))
+    (hct : lookupName env "%ctype.i" = some (.ptr ct))
+    (hcs : lookupName env "%cst.i" = some (.ptr cs))
+    (hcall : stage2Calls sub "s2_after_value"
+      [.int 32 spz, .ptr rd, .ptr ct, .ptr cs] s.mem s.next = some r)
+    (hz : lookupName env "%hash1.i.i" = some (.ptr hzA))
+    (hread : readBytes r.mem hzA 4 = some (natToBytes 0 4)) :
+    denoteCode (stage2Calls sub) walkIfThen109.instrs (stateAt env s) =
+      some (stateAt (cells [
+        ("%tobool.not.i.i49", .int 1 (evalICmp .eq
+          (BitVec.ofNat 32 (bytesToNat (natToBytes 0 4))) (BitVec.ofNat 32 0))),
+        ("%17", .int 32 (BitVec.ofNat 32 (bytesToNat (natToBytes 0 4)))),
+        ("%conv115.i", .int 8 c8)] env) { s with mem := r.mem, next := r.next }) := by
+  simp only [walkIfThen109]
+  rw [denoteCode_phi (calls := stage2Calls sub) (env := env) (s := s)
+    (d := "%conv115.i") (ty := .int 8) (inc := walkIfThen109Incoming)
+    (p := p) (op := op) (v := .int 8 c8) hpre hinc hop _ (by decide)]
+  rw [walkDenoteCode_callVoid (calls := stage2Calls sub)
+    (env := ("%conv115.i", .int 8 c8) :: env) (s := s)
+    (callee := "s2_after_value")
+    (args := [(Ty.int 32, Operand.reg "%sub.i"),
+      (Ty.ptr, Operand.reg "%root_done.i"), (Ty.ptr, Operand.reg "%ctype.i"),
+      (Ty.ptr, Operand.reg "%cst.i")])
+    (vs := [.int 32 spz, .ptr rd, .ptr ct, .ptr cs]) (r := r)
+    (by
+      simp only [evalOperands, evalOperand, stateAt]
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+      simp [hsub, hrd, hct, hcs])
+    hcall [Instr.load "%17" (Ty.int 32) (Operand.reg "%hash1.i.i"),
+      Instr.icmp "%tobool.not.i.i49" IPred.eq 32 (Operand.reg "%17")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))]]
+  rw [denoteCode_load32 (calls := stage2Calls sub)
+    (env := ("%conv115.i", .int 8 c8) :: env)
+    (s := { s with mem := r.mem, next := r.next })
+    (d := "%17") (p := "%hash1.i.i") (a := hzA)
+    (q := bytesToNat (natToBytes 0 4))
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hz)
+    hread rfl [Instr.icmp "%tobool.not.i.i49" IPred.eq 32 (Operand.reg "%17")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))]]
+  rw [denoteCode_icmp_eq_imm_w (calls := stage2Calls sub)
+    (env := ("%17", .int 32 (BitVec.ofNat 32 (bytesToNat (natToBytes 0 4)))) ::
+      ("%conv115.i", .int 8 c8) :: env)
+    (s := { s with mem := r.mem, next := r.next })
+    (d := "%tobool.not.i.i49") (a := "%17") (w := 32)
+    (x := BitVec.ofNat 32 (bytesToNat (natToBytes 0 4)))
+    (c := BitVec.ofNat 32 0)
+    (by simp [stateAt, evalOperand, lookupName]) []]
+  simp only [denoteCode_nil]
+  rfl
+
+/-- **The hash word's value is zero**: the initialisation's `memset` over the
+sixteen bytes at `%z + 24` is the invariant's `log_hash`, so the word four bytes
+later is the word the load binds. -/
+theorem walkBytesToNat_zero4 : bytesToNat (natToBytes 0 4) = 0 := by decide
+
+/-- **`if.then109.i` is a link**: the value's flag is set, the hash word is zero,
+and the block takes the log-word comparison's edge with the carry unmoved. -/
+theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then109.i")
+    {p : String} {op : Operand} {c8 : BitVec 8} {spz : BitVec 32}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p walkIfThen109Incoming = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 8 c8))
+    (hsub : lookupName s.env "%sub.i" = some (.int 32 spz))
+    (hspz : spz.toNat ≤ stage2StackExtent)
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hpreA : s2AfterValuePre [.int 32 spz, .ptr (G.next0 + 8),
+      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := "if.end.i.i55" } s' := by
+  obtain ⟨r, hcall, hpost, hfr⟩ := s2AfterValueContract.resolves (next := s.next) hpreA
+  obtain ⟨m, hm, -, hmem, -⟩ := hpost
+  have hfr' : UnchangedOutside s.mem m
+      (s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
+        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
+    rw [hmem] at hfr; exact hfr
+  obtain ⟨hframe, howned, hlog, hev⟩ :=
+    walkAfterValue_facts_at (G := G) (C := C) (s := s) hInv hspz hm hfr'
+  have hread : readBytes r.mem (C.stage.z + 32) 4 = some (natToBytes 0 4) := by
+    rw [hmem, hlog 32 4 (by decide)]
+    exact hInv.log_hash
+  have hevm : readBytes m (G.ev + G.nev0)
+      (C.events.map EventRecord.encodedBytes).flatten.length =
+      readBytes s.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length := hev
+  let s₁ : State := stateAt (cells [
+    ("%tobool.not.i.i49", .int 1 (evalICmp .eq
+      (BitVec.ofNat 32 (bytesToNat (natToBytes 0 4))) (BitVec.ofNat 32 0))),
+    ("%17", .int 32 (BitVec.ofNat 32 (bytesToNat (natToBytes 0 4)))),
+    ("%conv115.i", .int 8 c8)] s.env) { s with mem := r.mem, next := r.next }
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen109.instrs s =
+      some s₁ := by
+    dsimp only [s₁]
+    exact walkIfThen109_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (p := p) (op := op) (c8 := c8) (spz := spz) (rd := G.next0 + 8)
+      (ct := C.stage.ctype) (cs := C.stage.cst) (r := r) (hzA := C.stage.z + 32)
+      hpre hinc hop hsub hrd (hInv.ptrs.2.2.2.1)
+      (hInv.ptrs.2.2.2.2.1) hcall (hInv.ptrs.2.2.2.2.2) hread
+  have hpc : s.pc = C.block := hInv.pc_eq
+  have hbit : evalICmp .eq (BitVec.ofNat 32 (bytesToNat (natToBytes 0 4)))
+      (BitVec.ofNat 32 0) = (1 : BitVec 1) := by
+    rw [walkBytesToNat_zero4]
+    decide
+  let s' : State := { s₁ with pc := "if.end.i.i55", pre := some s.pc }
+  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump s' := by
+    have hfind : stage2Body.findBlock s.pc = some walkIfThen109 := by
+      rw [hpc, hblock]; exact walkIfThen109_find
+    have hterm : walkIfThen109.term =
+        Term.condbr (Operand.reg "%tobool.not.i.i49") "if.end.i.i55" "if.then.i.i50" := rfl
+    simp only [LeanLLVM.step, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%tobool.not.i.i49") (tl := "if.end.i.i55")
+      (fl := "if.then.i.i50") (bit := (1 : BitVec 1))
+      (by dsimp only [s₁]; simp [stateAt, cells, lookupName, hbit])]
+    dsimp only [s', s₁, cells, stateAt]
+    simp only [hbit]
+    rfl
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine
+    { pc_eq := rfl
+      blockIndex := ?_
+      k_le := hInv.k_le
+      events_le := hInv.events_le
+      evlen_eq := hInv.evlen_eq
+      evBytes := ?_
+      alen_le_sum := hInv.alen_le_sum
+      alen_ge := hInv.alen_ge
+      spans_order := hInv.spans_order
+      spans_inside := hInv.spans_inside
+      pending_at := hInv.pending_at
+      pending_cursor := hInv.pending_cursor
+      pending_len := hInv.pending_len
+      eoff_le := hInv.eoff_le
+      inner_cap := hInv.inner_cap
+      depth_cap := hInv.depth_cap
+      depth_reg := ?_
+      ptrs := ?_
+      log_hash := ?_
+      log_len := ?_
+      log_cap := ?_
+      log_alen := ?_
+      log_acap := ?_
+      owned := ?_
+      frame := ?_
+      blockLocal := by simp [WalkLocal] }
+  · rw [show s'.env = s₁.env from rfl]
+    rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen109.instrs
+      "%k.0.i249" (by refine fun i hi => ?_; simp only [walkIfThen109, walkIfThen109Incoming,
+      List.mem_cons, List.not_mem_nil, or_false] at hi; rcases hi with rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+    exact hInv.blockIndex
+  · rw [show s'.mem = m from hmem]
+    rw [hevm]
+    exact hInv.evBytes
+  · rw [show s'.env = s₁.env from rfl]
+    rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen109.instrs
+      "%sp.i.0248" (by refine fun i hi => ?_; simp only [walkIfThen109, walkIfThen109Incoming,
+      List.mem_cons, List.not_mem_nil, or_false] at hi; rcases hi with rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+    exact hInv.depth_reg
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.mem = m from hmem]
+    rw [hlog 32 4 (by decide)]
+    exact hInv.log_hash
+  · rw [show s'.mem = m from hmem]
+    rw [hlog 8 8 (by decide)]
+    exact hInv.log_len
+  · rw [show s'.mem = m from hmem]
+    rw [hlog 16 8 (by decide)]
+    exact hInv.log_cap
+  · rw [show s'.mem = m from hmem]
+    rw [hlog 48 8 (by decide)]
+    exact hInv.log_alen
+  · rw [show s'.mem = m from hmem]
+    rw [hlog 56 8 (by decide)]
+    exact hInv.log_acap
+  · rw [show s'.mem = m from hmem]
+    simpa [walkStaged] using howned
+  · rw [show s'.mem = m from hmem]
+    simpa [walkWide, walkPresent] using hframe
+
 /-! ### The instrument -/
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkIfThen425_denote' depends on axioms: [propext, Quot.sound] -/
@@ -504,6 +836,18 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
 /-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.if_then425_i_refuse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then425_i_refuse
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkIfThen109_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen109_denote
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.if_then109_i' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then109_i
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at
 
 end WalkScope
 
