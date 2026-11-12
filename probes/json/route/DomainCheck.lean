@@ -61,11 +61,11 @@ def sampleLayout : RouteLayout :=
   | .ok .admitted => true
   | _ => false
 
--- The depth clause is an opener *count*, so it is conservative: this document
--- is balanced and the reference accepts it, but it carries 129 opener bytes, so
--- `admission` does not admit it and the fallback answers it with the tape the
--- reference accepted.  The clause's conservatism is a narrowing of the domain,
--- never a wrong answer.
+-- The depth clause reads the stage-1 counter, so string content does not
+-- count as nesting: this document carries 129 opener *bytes* inside a string,
+-- its true depth is one, and the kernel answers it on the fast path.  Before
+-- the clause read the counter, this row fell back; the change is recorded in
+-- the ledger.
 def openerRichDoc : List UInt8 :=
   "\"".toUTF8.toList ++ List.replicate 129 (0x5B : UInt8) ++ "\"".toUTF8.toList
 
@@ -73,7 +73,7 @@ def openerRichDoc : List UInt8 :=
   | .ok _ => true
   | .error _ => false)
 #guard match documentDecision openerRichDoc with
-  | .fallback t => decide (decodeTape t).isSome
+  | .admitted => true
   | _ => false
 
 -- The layout checks: a base below three is refused, a reserved arm bit is
