@@ -44,8 +44,11 @@ with segment 3 and segment 4 restated at their own memory variable
 (`walkEntrySeg3_denote_mem`, `walkEntrySeg4_denote_mem`) so that the close meets
 the named folds `walkSeg3PostMem`/`walkSeg4PostMem` rather than reducing the
 cursor record's 1152-byte memset — that module's census carries the measurement
-and the shape.  The block's `step`, its `runFuel` prefix and `WalkSeedState`'s
-production read that equality; they are the open row.
+and the shape.  `JsonStage2WalkSeedRun` reads it: the entry block's step in both
+arms of its test, the preheader's and the header's first pass, their `runFuel`
+prefixes, and the environment and memory clauses of `WalkSeedState`.  What that
+module names as still open is `WalkIter`, the staged objects' presence and the
+frame.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 

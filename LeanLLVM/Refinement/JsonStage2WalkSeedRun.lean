@@ -28,11 +28,31 @@ fuel unit per step, which is the shape a prefix is composed in.
 The state's *memory* at `NodeBlock21` is `walkEntryMem`: the entry run's named
 folds plus the header's cursor word.  Its five log clauses are proved at it
 (`walkEntryMem_hash`, `_len`, `_cap`, `_alen`, `_acap`), read through the folds
-by their extents.  What remains for `WalkSeedState`'s production is the register
-half — the lookups the header's and the preheader's cells bind, which `WalkPtrs`
-and `WalkRegs` name — and the two claims over the run's write set: the staged
-objects' presence and the frame.  Those are the open row; the steps, their
-`runFuel` forms and the memory clauses are here.
+by their extents.  The environment's clauses are `walkSeedFinalEnv`: the two
+`phi` values (zero, zero), `WalkPtrs`' six addresses and `WalkRegs`'
+twenty-four, all lookups the run's own cells answer.  So `WalkSeedState` is
+produced up to three rows, and each is named rather than assumed:
+
+* `WalkIter` — `%7` and `%8` — needs the entry stream's first lane read at
+  `G.ep` through the run's folds, and the lane-to-document-byte tie is
+  `WalkGeom.entries`/`G.doc` at index zero.  The peel is the read-side dual of
+  the frame's coverage: every store the entry run makes lies outside
+  `[G.ep, G.ep + 4 * G.nep)`, which is the staging's separation.
+* the staged objects' presence — `walkStaged`'s extents at the run's memory —
+  follows from the caller's `HasBytes` clauses and monotonicity
+  (`walkStaged_write`), since every write the run makes lands in a staged extent
+  or in the four stack slots.
+* the frame — `UnchangedOutside m0 (walkEntryMem G S) (walkWide G (walkSeed G S))`
+  — follows the same coverage the other way: every write lands in a
+  `walkWide` entry, so the frames compose by `UnchangedOutside.write_inside`
+  over the store list's induction.
+
+The two rows below the seed are the ones `JsonStage2WalkScope`'s census already
+names, and this module neither lands nor narrows them: the **stack map** (the
+carried `Nat → UInt8` for the container stacks, moved by `if.end24_step`, class
+D's four container-byte stores and `cleanup478.i`) and the **completion arc**
+(the next-link lemma, the well-founded completion, the budget accounting,
+`Stage2WalkCompletes` and `Stage2WalkObligation`).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkRun
 
