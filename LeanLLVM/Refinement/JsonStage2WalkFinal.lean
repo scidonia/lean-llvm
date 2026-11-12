@@ -823,6 +823,267 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   · rw [show s'.mem = m from hmem]
     simpa [walkWide, walkPresent] using hframe
 
+
+/-- **`num_fast_el1`'s four memory facts**: the callee writes one of its two
+caller's slots — the value's at `%d.i` and the offset's at `%ei.i` — both inside
+the walk's frame, and neither is in the log or the event stream.  The two slots'
+separation from those regions is the caller's: `%d.i` is staged beside the
+seventeen (the adapter's pre), and `%ei.i` is the first of the four stack
+allocations, below every staged object by the watermark. -/
+theorem walkNumFast_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {m : Mem} {w w' : Nat}
+    (hm : m = writeBytes s.mem C.stage.d (wordBytes 8 w) ∨
+          m = writeBytes s.mem G.next0 (wordBytes 8 w'))
+    (hdlog : C.stage.d + 8 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ C.stage.d)
+    (hdev : C.stage.d + 8 ≤ G.ev ∨ G.ev + G.evcap ≤ C.stage.d) :
+    UnchangedOutside m0 m (walkWide G C) ∧
+      (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
+      (∀ off w'', off + w'' ≤ stage2LogExtent →
+        readBytes m (C.stage.z + off) w'' = readBytes s.mem (C.stage.z + off) w'') ∧
+      readBytes m (G.ev + G.nev0)
+          (C.events.map EventRecord.encodedBytes).flatten.length =
+        readBytes s.mem (G.ev + G.nev0)
+          (C.events.map EventRecord.encodedBytes).flatten.length := by
+  have hz0 : C.stage.z + stage2LogExtent ≤ G.next0 :=
+    C.stage.sevenEnd (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites])
+  have hev0 : G.ev + G.evcap ≤ G.next0 :=
+    G.watermark (G.ev, G.evcap) (by simp [stage2Regions])
+  have hdmem : (C.stage.d, 8) ∈ walkWide G C := by
+    simp [walkWide, walkPresent, stage2ReportScratch]
+  have hnext : (G.next0, 8) ∈ walkWide G C := by
+    simp [walkWide, walkPresent, stage2AllocaWrites]
+  have hlen : (wordBytes 8 w).length = 8 := by simp [wordBytes, natToBytes_length]
+  have hlen' : (wordBytes 8 w').length = 8 := by simp [wordBytes, natToBytes_length]
+  have hframe : UnchangedOutside m0 m (walkWide G C) := by
+    rcases hm with hm | hm
+    · rw [hm]
+      exact (hInv.frame).write_le (w := 8) ⟨(C.stage.d, 8), hdmem, Nat.le_refl _, by omega⟩
+        (Nat.le_of_eq hlen)
+    · rw [hm]
+      exact (hInv.frame).write_le (w := 8) ⟨(G.next0, 8), hnext, Nat.le_refl _, by omega⟩
+        (Nat.le_of_eq hlen')
+  have howned : ∀ q ∈ walkStaged G C, HasBytes m q.1 q.2 := by
+    rcases hm with hm | hm
+    · rw [hm]; exact walkStaged_write rfl hInv.owned
+    · rw [hm]; exact walkStaged_write rfl hInv.owned
+  have hlog : ∀ off w'', off + w'' ≤ stage2LogExtent →
+      readBytes m (C.stage.z + off) w'' = readBytes s.mem (C.stage.z + off) w'' := by
+    intro off w'' hsubw
+    rcases hm with hm | hm
+    · rw [hm]
+      exact walkReadBytes_log_of_write (w := 8) (Nat.le_of_eq hlen) hdlog hsubw
+    · rw [hm]
+      refine walkReadBytes_log_of_write (w := 8) (Nat.le_of_eq hlen') ?_ hsubw
+      right; exact hz0
+  have hevcap : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
+    have hsum := EventRecord.sum_encodedSize_le C.events
+    simp only [stage2RecordBytes] at hsum
+    have hroom := G.evRoom
+    simp only [stage2RecordBytes] at hroom
+    have hlen2 : (C.events.map EventRecord.encodedBytes).flatten.length =
+        (C.events.map EventRecord.encodedSize).sum := by
+      simp only [List.length_flatten, List.map_map]; rfl
+    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    rw [hlen2]; omega
+  have hev : readBytes m (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length =
+      readBytes s.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length := by
+    rcases hm with hm | hm
+    · rw [hm]
+      refine walkReadBytes_ev_of_write (w := 8) (Nat.le_of_eq hlen) ?_
+      rcases hdev with h | h
+      · exact Or.inl (by omega)
+      · exact Or.inr (by omega)
+    · rw [hm]
+      refine walkReadBytes_ev_of_write (w := 8) (Nat.le_of_eq hlen') ?_
+      exact Or.inr (by omega)
+  exact ⟨hframe, howned, hlog, hev⟩
+
+/-- `if.then19.i`: the number path's two markers, the lexeme's extent and the
+call. -/
+def walkIfThen19 : Block :=
+  { name := "if.then19.i",
+    instrs := [
+      Instr.callVoid "llvm.lifetime.start.p0"
+        [((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 8)))),
+         (Ty.ptr, (Operand.reg "%d.i"))],
+      Instr.callVoid "llvm.lifetime.start.p0"
+        [((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 8)))),
+         (Ty.ptr, (Operand.reg "%ei.i"))],
+      Instr.binop "%sub.i99" BinOp.sub 64 (Operand.reg "%ee.0.lcssa.i")
+        (Operand.reg "%idxprom.i"),
+      Instr.call "%call23.i" (Ty.int 32) "num_fast_el1"
+        [(Ty.ptr, (Operand.reg "%arrayidx10.i")),
+         ((Ty.int 64), (Operand.reg "%sub.i99")),
+         (Ty.ptr, (Operand.reg "%d.i")), (Ty.ptr, (Operand.reg "%ei.i"))],
+      Instr.icmp "%tobool24.not.not.i" IPred.eq 32 (Operand.reg "%call23.i")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (Operand.reg "%tobool24.not.not.i") "if.then25.i"
+      "if.end67.critedge.i" }
+
+theorem walkIfThen19_find : stage2Body.findBlock "if.then19.i" = some walkIfThen19 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIfThen19]
+
+theorem walkIfThen19_denote {sub : Calls} (env : Env) (s : State)
+    {x y : BitVec 64} {p dof eof : Nat} {xout : BitVec 32} {r : CallOutcome}
+    (hd : lookupName env "%d.i" = some (.ptr dof))
+    (he : lookupName env "%ei.i" = some (.ptr eof))
+    (hee : lookupName env "%ee.0.lcssa.i" = some (.int 64 x))
+    (hix : lookupName env "%idxprom.i" = some (.int 64 y))
+    (harr : lookupName env "%arrayidx10.i" = some (.ptr p))
+    (hcall : stage2Calls sub "num_fast_el1"
+      [.ptr p, .int 64 (x - y), .ptr dof, .ptr eof] s.mem s.next = some r)
+    (hretv : r.ret = .int 32 xout) :
+    denoteCode (stage2Calls sub) walkIfThen19.instrs (stateAt env s) =
+      some (stateAt (cells [
+        ("%tobool24.not.not.i", .int 1 (evalICmp .eq xout (BitVec.ofNat 32 0))),
+        ("%call23.i", r.ret),
+        ("%sub.i99", .int 64 (x - y))] env) { s with mem := r.mem, next := r.next }) := by
+  simp only [walkIfThen19]
+  rw [walkDenoteCode_lifetimeStart (sub := sub) (env := env) (s := s) (size := 8)
+    (obj := "%d.i") (p := dof) hd]
+  rw [walkDenoteCode_lifetimeStart (sub := sub) (env := env) (s := s) (size := 8)
+    (obj := "%ei.i") (p := eof) he]
+  rw [denoteCode_sub_reg (calls := stage2Calls sub) (env := env) (s := s)
+    (d := "%sub.i99") (a := "%ee.0.lcssa.i") (b := "%idxprom.i") hee hix
+    [Instr.call "%call23.i" (Ty.int 32) "num_fast_el1"
+        [(Ty.ptr, (Operand.reg "%arrayidx10.i")),
+         ((Ty.int 64), (Operand.reg "%sub.i99")),
+         (Ty.ptr, (Operand.reg "%d.i")), (Ty.ptr, (Operand.reg "%ei.i"))],
+      Instr.icmp "%tobool24.not.not.i" IPred.eq 32 (Operand.reg "%call23.i")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))]]
+  rw [walkDenoteCode_call (calls := stage2Calls sub)
+    (env := ("%sub.i99", .int 64 (x - y)) :: env) (s := s)
+    (d := "%call23.i") (callee := "num_fast_el1") (ty := .int 32)
+    (args := [(Ty.ptr, Operand.reg "%arrayidx10.i"),
+      (Ty.int 64, Operand.reg "%sub.i99"), (Ty.ptr, Operand.reg "%d.i"),
+      (Ty.ptr, Operand.reg "%ei.i")])
+    (vs := [.ptr p, .int 64 (x - y), .ptr dof, .ptr eof]) (r := r)
+    (walkArgs_numFast (("%sub.i99", .int 64 (x - y)) :: env) s
+      (by rw [lookupName_cons_ne _ _ (by decide)]; exact harr)
+      (by rw [lookupName_cons_self])
+      (by rw [lookupName_cons_ne _ _ (by decide)]; exact hd)
+      (by rw [lookupName_cons_ne _ _ (by decide)]; exact he)) hcall
+    [Instr.icmp "%tobool24.not.not.i" IPred.eq 32 (Operand.reg "%call23.i")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))]]
+  rw [denoteCode_icmp_eq_imm_w (calls := stage2Calls sub)
+    (env := ("%call23.i", r.ret) :: ("%sub.i99", .int 64 (x - y)) :: env)
+    (s := { s with mem := r.mem, next := r.next })
+    (d := "%tobool24.not.not.i") (a := "%call23.i") (w := 32)
+    (x := xout) (c := BitVec.ofNat 32 0)
+    (by rw [lookupName_cons_self]; exact congrArg some hretv) []]
+  simp only [denoteCode_nil]
+  rfl
+
+
+/-- **`if.then19.i` is a link**: the number path's two markers, its lexeme's
+extent and `num_fast_el1`.  The callee writes one of its two slots, both inside the
+frame, so the carry is the source's and the branch is the answer's own bit. -/
+theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then19.i")
+    {x y : BitVec 64} {p w w' : Nat} {r : CallOutcome} {xout : BitVec 32}
+    (hd : lookupName s.env "%d.i" = some (.ptr C.stage.d))
+    (he : lookupName s.env "%ei.i" = some (.ptr G.next0))
+    (hee : lookupName s.env "%ee.0.lcssa.i" = some (.int 64 x))
+    (hix : lookupName s.env "%idxprom.i" = some (.int 64 y))
+    (harr : lookupName s.env "%arrayidx10.i" = some (.ptr p))
+    (hcall : stage2Calls stage2SubCalls "num_fast_el1"
+      [.ptr p, .int 64 (x - y), .ptr C.stage.d, .ptr G.next0] s.mem s.next = some r)
+    (hretv : r.ret = .int 32 xout)
+    (hm : r.mem = writeBytes s.mem C.stage.d (wordBytes 8 w) ∨
+          r.mem = writeBytes s.mem G.next0 (wordBytes 8 w'))
+    (hdlog : C.stage.d + 8 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ C.stage.d)
+    (hdev : C.stage.d + 8 ≤ G.ev ∨ G.ev + G.evcap ≤ C.stage.d) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := (if evalICmp .eq xout (BitVec.ofNat 32 0) = 1
+          then "if.then25.i" else "if.end67.critedge.i") } s' := by
+  obtain ⟨hframe, howned, hlog, hev⟩ :=
+    walkNumFast_facts (G := G) (C := C) (s := s) hInv (m := r.mem) hm hdlog hdev
+  let s₁ : State := stateAt (cells [
+    ("%tobool24.not.not.i", .int 1 (evalICmp .eq xout (BitVec.ofNat 32 0))),
+    ("%call23.i", r.ret),
+    ("%sub.i99", .int 64 (x - y))] s.env) { s with mem := r.mem, next := r.next }
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen19.instrs s = some s₁ := by
+    dsimp only [s₁]
+    exact walkIfThen19_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (x := x) (y := y) (p := p) (dof := C.stage.d) (eof := G.next0)
+      (xout := xout) (r := r) hd he hee hix harr hcall hretv
+  have hpc : s.pc = C.block := hInv.pc_eq
+  let bit := evalICmp .eq xout (BitVec.ofNat 32 0)
+  let s' : State := { s₁ with
+    pc := (if bit = 1 then "if.then25.i" else "if.end67.critedge.i"), pre := some s.pc }
+  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump s' := by
+    have hfind : stage2Body.findBlock s.pc = some walkIfThen19 := by
+      rw [hpc, hblock]; exact walkIfThen19_find
+    have hterm : walkIfThen19.term =
+        Term.condbr (Operand.reg "%tobool24.not.not.i") "if.then25.i"
+          "if.end67.critedge.i" := rfl
+    simp only [LeanLLVM.step, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%tobool24.not.not.i") (tl := "if.then25.i")
+      (fl := "if.end67.critedge.i") (bit := bit)
+      (by dsimp only [s₁, bit]; simp [stateAt, cells, lookupName])]
+    dsimp only [s', s₁, bit, cells, stateAt]
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine
+    { pc_eq := rfl
+      blockIndex := ?_
+      k_le := hInv.k_le
+      events_le := hInv.events_le
+      evlen_eq := hInv.evlen_eq
+      evBytes := ?_
+      alen_le_sum := hInv.alen_le_sum
+      alen_ge := hInv.alen_ge
+      spans_order := hInv.spans_order
+      spans_inside := hInv.spans_inside
+      pending_at := hInv.pending_at
+      pending_cursor := hInv.pending_cursor
+      pending_len := hInv.pending_len
+      eoff_le := hInv.eoff_le
+      inner_cap := hInv.inner_cap
+      depth_cap := hInv.depth_cap
+      depth_reg := ?_
+      ptrs := ?_
+      log_hash := ?_
+      log_len := ?_
+      log_cap := ?_
+      log_alen := ?_
+      log_acap := ?_
+      owned := ?_
+      frame := ?_
+      blockLocal := by
+        by_cases hb : bit = 1
+        · rw [ite_eq_left hb]; simp [WalkLocal]
+        · rw [ite_eq_right hb]; simp [WalkLocal] }
+  · rw [show s'.env = s₁.env from rfl]
+    rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen19.instrs
+      "%k.0.i249" (by refine fun i hi => ?_; simp only [walkIfThen19, List.mem_cons, List.not_mem_nil,
+        or_false] at hi; rcases hi with rfl | rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+    exact hInv.blockIndex
+  · rw [show s'.mem = r.mem from rfl, hev]
+    exact hInv.evBytes
+  · rw [show s'.env = s₁.env from rfl]
+    rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen19.instrs
+      "%sp.i.0248" (by refine fun i hi => ?_; simp only [walkIfThen19, List.mem_cons, List.not_mem_nil,
+        or_false] at hi; rcases hi with rfl | rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+    exact hInv.depth_reg
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.mem = r.mem from rfl, hlog 32 4 (by decide)]
+    exact hInv.log_hash
+  · rw [show s'.mem = r.mem from rfl, hlog 8 8 (by decide)]
+    exact hInv.log_len
+  · rw [show s'.mem = r.mem from rfl, hlog 16 8 (by decide)]
+    exact hInv.log_cap
+  · rw [show s'.mem = r.mem from rfl, hlog 48 8 (by decide)]
+    exact hInv.log_alen
+  · rw [show s'.mem = r.mem from rfl, hlog 56 8 (by decide)]
+    exact hInv.log_acap
+  · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
+    exact howned
+  · rw [show s'.mem = r.mem from rfl]
+    exact hframe
+
 /-! ### The instrument -/
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkIfThen425_denote' depends on axioms: [propext, Quot.sound] -/
@@ -848,6 +1109,18 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkIfThen19_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen19_denote
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.if_then19_i' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then19_i
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkNumFast_facts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkNumFast_facts
 
 end WalkScope
 
