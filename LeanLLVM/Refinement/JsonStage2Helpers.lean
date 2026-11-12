@@ -30,8 +30,9 @@ decoded body's prefix in a slot `len` wide and, on refusal, the error record the
 cursor record points at; `num_fast_el1` writes the value on acceptance and the
 offset on refusal, never both; `od_scalar_value` writes the stream's cursor word,
 the record it appends at the stream's cursor and, on refusal, the error record.
-The lists are the interface; three of the six fields the contract asks of each
-helper — `answers`, `sound`, `framed` — are not yet supplied (see below).
+Each of the six carries its three facts — `answers`, `sound` and `framed` — so
+`HelperContract.resolves` applies at a call block for every helper the emitted
+walk calls out of line (see "What is not stated here" for what stays open).
 Each list is the union over the arms one call may take, because a footprint is
 read from the arguments and the memory *before* the call and so cannot see which
 arm the callee chose.  Where an arm writes less than the union — the literal tag's
@@ -61,37 +62,44 @@ decodes one entry's body, and the walk then advances the arena's cursor by the
 decoded length.  `WalkInv.pending_cursor` (`alen ≤ ndst0 + p`) survives that
 advance only if the decoded length is inside the body's document extent, so the
 staging asks for the escape list to be this body's own positions in document order
-(`BodyPositionsSpaced`), and the accepting arms' bound `on ≤ len` is the
-consequence a caller reads off `escapeDecodeGo_length_le` at that staging.  The
+(`BodyPositionsSpaced`), and the accepting arms' bound `on ≤ len` is
+`s2StringBody_outn_le`'s at that staging, read off `escapeDecodeGo_length_le`.
+`WalkInv.pending_cursor` consumes that bound; it is the one datum the walk reads
+from the call beyond the post and the frame.  The
 spacing is the *list's* obligation — the stage-1 escape positions' token extent —
 and not a fact about this function; a caller that cannot supply it has no bound on
 the escaped form, and `docs/contract.md` §7.6 records that rather than assuming it
 away.
 
-**What is not stated here.**  Two gaps, both deliberate and both named.
+**What is not stated here.**  One gap, deliberate and named, and one consequence
+for the walk.
 
-*The six contract values are not proved.*  `HelperContract`'s three facts —
-`answers`, `sound`, `framed` — are stated for each helper as the field that must
-be supplied, and no value is defined here: the module carries the staging
-predicates, the posts, the footprints and the frame steps, not the proofs that
-the models satisfy them.  Nor is the string staging's consequence stated as a
-theorem of its own: the decoded-length bound is recorded where it is read
-(`BodyPositionsSpaced`'s docstring and `docs/contract.md` §7.6), not proved
-here.  A caller can therefore read the interface and the region
-lists, and cannot yet apply `HelperContract.resolves` at a call.  The three facts
-per helper are model readings and frame compositions — `stage2*_answers` already
-supplies the first for five of the six, and the frame steps below supply the third
-once each arm's write is placed in a region — so the gap is proof engineering, not
-a missing statement.  `docs/contract.md` §7.6 records it with the rest of the
-helpers' correspondence.
-
-*No helper's contract is proved against an emitted body.*  The fixture declares
-all six (`stage2.rewrites.tsv` class r2 — "their bodies are outside this fragment
-... each is resolved by the fixture's `Calls` environment at the record or tier
+*Every helper's contract is proved of its model, and no model is a refinement of
+an emitted body.*  Each of the six has `answers`, `sound` and `framed` as
+theorems of `JsonStage2Body`'s model — `s2InitContract` and its five siblings
+below — so a call block applies `HelperContract.resolves`, `keeps`,
+`readBytes_eq` and `view` at the helper's own region list, and the decoded
+length's bound is `s2StringBody_outn_le`'s.  What none of them is, is a statement
+about the compiled function: the fixture declares all six
+(`stage2.rewrites.tsv` class r2 — "their bodies are outside this fragment ...
+each is resolved by the fixture's `Calls` environment at the record or tier
 theorem that states its contract").  The models are transcriptions of
 `kernel/json/stage2.c` pinned by `#guard`s in `JsonStage2Body`, and the
 correspondence between a transcription and the compiled function is the pipeline's
-body-faithfulness seam.
+body-faithfulness seam.  `docs/contract.md` §7.6 records that per helper.
+
+*What the walk may now do, and the one thing it must still carry.*
+`JsonStage2WalkScope`'s class F — the nineteen links whose callee is one of these
+six — is unblocked at the contract level: each link's step is a `resolves`
+application at the staging the block establishes, and the frame is the helper's
+own region list composed with the block's other writes.  The walk's invariant must
+still name the four body-allocated objects when it crosses a call that writes one
+(`%ei.i`, `%root_done.i`, `%xj.i`, `%outn.i`, above): a claim covering only the
+seven staged objects does not survive `s2_after_value`, `s2_string_body` or
+`num_fast_el1`, and no staged list contains them because the allocator chose
+their addresses.  That is a claim the walk states, not a fact this module can add:
+`s2AfterValueFoot` says *where* the byte is written, and whether the invariant
+covers that address is the invariant's own content.
 -/
 import LeanLLVM.Refinement.JsonStage2Body
 
@@ -486,7 +494,7 @@ def s2NumFastPost (args : List Value) (mem : Mem) (next : Nat)
   match args with
   | [.ptr p, .int 64 n, .ptr out, .ptr err] =>
       ∃ lex, readBytes mem p n.toNat = some lex ∧
-        (((numLexScan lex).2 = true) ∧
+        ((((numLexScan lex).2 = true) ∧
           r.ret = .int 32 (BitVec.ofNat 32 1) ∧
           r.mem = writeBytes mem out
             (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits) ∧
@@ -494,7 +502,7 @@ def s2NumFastPost (args : List Value) (mem : Mem) (next : Nat)
         ∨ (((numLexScan lex).2 = false) ∧
           r.ret = .int 32 (BitVec.ofNat 32 0) ∧
           r.mem = writeBytes mem err (wordBytes 8 (numLexScan lex).1) ∧
-          r.next = next ∧ (numLexScan lex).1 ≤ n.toNat)
+          r.next = next ∧ (numLexScan lex).1 ≤ n.toNat))
   | _ => False
 
 /-- **`num_fast_el1`'s two slots**: the value and the offset.  One is written per
@@ -536,12 +544,761 @@ theorem stage2Literal_length {kind : Nat} {lit : List UInt8}
       · obtain rfl := Option.some.inj h; simp
       · simp at h
 
-/-! ### Axiom footprints -/
+/-! ### The six contracts
 
-#print axioms UnchangedOutside.write_le
-#print axioms stage2WriteStores_frame
-#print axioms stage2ErrSet_frame
-#print axioms stage2Literal_length
-#print axioms UnchangedOutside.of_subset
+Each instance is three facts at the emitted call: the staging makes the call
+resolve, the answer it resolves to satisfies the post, and the memory it hands
+back is the caller's outside the footprint.
+
+A proof here reads the model at the call's own argument list and keeps the
+outcome *abstract*: it derives `r`'s three fields from the call's value rather
+than substituting the value for `r`.  That is not a stylistic choice.  A post
+destructured at a literal outcome — `⟨voidRet, stage2WriteStores mem stores,
+next⟩` — puts a fifteen-store recursive term in the scrutinee of every
+projection the conjunction mentions, and the reducer then walks the store list
+once for each field; the axiom pins below are the same, but the heartbeat cost is
+three orders of magnitude larger.  Deriving `r.mem = …`, `r.ret = …` and
+`r.next = …` as separate equations and assembling the post at the abstract `r`
+avoids it: the equation `r = ⟨ret, mem, next⟩` is derived once, and each field
+is read by rewriting with it in a goal that still names `r`.  The same reason
+keeps the footprints out of the branch analysis: they are stated as a local
+equation (`hfoot`) from the arguments the staging already supplies rather than
+by letting the reducer unfold the match. -/
+
+/-! #### `s2_init`: the staging record -/
+
+/-- Every store `s2InitStores` makes lies inside the `S2` record's extent. -/
+theorem s2InitStores_inside (s b n nb ep : Nat) {p : Nat × List UInt8}
+    (hp : p ∈ s2InitStores s b n nb ep) :
+    s ≤ p.1 ∧ p.1 + p.2.length ≤ s + stage2StateExtent := by
+  simp only [s2InitStores, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
+  all_goals
+    obtain rfl := h
+    simp only [wordBytes, natToBytes_length, stage2StateExtent]
+    constructor <;> omega
+
+/-- **`s2_init`'s reply** at the five arguments the emitted call passes. -/
+theorem s2Init_reply {mem : Mem} {next : Nat} {s b ep : Nat} {n nb : BitVec 64} :
+    stage2Calls stage2SubCalls "s2_init"
+        [.ptr s, .ptr b, .int 64 n, .int 64 nb, .ptr ep] mem next =
+      some ⟨voidRet, stage2WriteStores mem (s2InitStores s b n.toNat nb.toNat ep),
+        next⟩ :=
+  rfl
+
+theorem s2Init_answers {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2InitPre args mem next) :
+    ∃ r, stage2Calls stage2SubCalls "s2_init" args mem next = some r := by
+  obtain ⟨s, b, ep, n, nb, rfl⟩ := hpre
+  exact ⟨_, s2Init_reply⟩
+
+theorem s2Init_sound {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2InitPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_init" args mem next = some r) :
+    s2InitPost args mem next r := by
+  obtain ⟨s, b, ep, n, nb, rfl⟩ := hpre
+  have hr : r = ⟨voidRet,
+      stage2WriteStores mem (s2InitStores s b n.toNat nb.toNat ep), next⟩ :=
+    Option.some.inj (h.symm.trans s2Init_reply)
+  have h1 : r.ret = voidRet := by rw [hr]
+  have h2 : r.mem = stage2WriteStores mem (s2InitStores s b n.toNat nb.toNat ep) := by
+    rw [hr]
+  have h3 : r.next = next := by rw [hr]
+  exact ⟨h1, h2, h3⟩
+
+theorem s2Init_framed {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2InitPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_init" args mem next = some r) :
+    UnchangedOutside mem r.mem (s2InitFoot args mem next) := by
+  obtain ⟨s, b, ep, n, nb, rfl⟩ := hpre
+  have hmem : r.mem =
+      stage2WriteStores mem (s2InitStores s b n.toNat nb.toNat ep) := by
+    have hr : r = ⟨voidRet,
+        stage2WriteStores mem (s2InitStores s b n.toNat nb.toNat ep), next⟩ :=
+      Option.some.inj (h.symm.trans s2Init_reply)
+    rw [hr]
+  rw [hmem]
+  refine stage2WriteStores_frame ?_
+  intro p hp
+  exact ⟨(s, stage2StateExtent), List.mem_cons_self ..,
+    s2InitStores_inside s b n.toNat nb.toNat ep hp⟩
+
+/-- **`s2_init`'s contract**: the `S2` record's initialisation. -/
+def s2InitContract : HelperContract (stage2Calls stage2SubCalls) "s2_init" where
+  pre := s2InitPre
+  post := s2InitPost
+  foot := s2InitFoot
+  answers := fun _ _ _ hpre => s2Init_answers hpre
+  sound := fun _ _ _ hpre _ h => s2Init_sound hpre h
+  framed := fun _ _ _ hpre _ h => s2Init_framed hpre h
+
+/-! #### `s2_value_pos`: the test -/
+
+/-- **`s2_value_pos`'s reply** at the four arguments the emitted call passes. -/
+theorem s2ValuePos_reply {mem : Mem} {next : Nat} {sp rd : BitVec 32} {ct cs : Nat} :
+    stage2Calls stage2SubCalls "s2_value_pos" [.int 32 sp, .int 32 rd, .ptr ct, .ptr cs]
+        mem next =
+      (stage2ValuePos mem sp.toNat rd.toNat ct cs).map
+        (fun v => (⟨.int 32 (BitVec.ofNat 32 v), mem, next⟩ : CallOutcome)) :=
+  rfl
+
+theorem s2ValuePos_answers {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2ValuePosPre args mem next) :
+    ∃ r, stage2Calls stage2SubCalls "s2_value_pos" args mem next = some r := by
+  obtain ⟨sp, rd, ct, cs, rfl, hcase⟩ := hpre
+  rw [s2ValuePos_reply]
+  by_cases h0 : sp.toNat = 0
+  · obtain ⟨v, hv⟩ := stage2ValuePos_zero mem rd.toNat ct cs
+    rw [h0, hv]
+    exact ⟨_, rfl⟩
+  · rcases hcase with h1 | ⟨⟨c, hc⟩, ⟨s, hs⟩⟩
+    · exact absurd h1 h0
+    · obtain ⟨v, hv⟩ := stage2ValuePos_answers mem sp.toNat rd.toNat ct cs h0 hc hs
+      rw [hv]
+      exact ⟨_, rfl⟩
+
+theorem s2ValuePos_sound {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2ValuePosPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_value_pos" args mem next = some r) :
+    s2ValuePosPost args mem next r := by
+  obtain ⟨sp, rd, ct, cs, rfl, -⟩ := hpre
+  cases hv : stage2ValuePos mem sp.toNat rd.toNat ct cs with
+  | none =>
+      rw [s2ValuePos_reply, hv] at h
+      cases h
+  | some v =>
+      have hr : r = ⟨.int 32 (BitVec.ofNat 32 v), mem, next⟩ :=
+        Option.some.inj (h.symm.trans (by rw [s2ValuePos_reply, hv]; rfl))
+      refine ⟨v, hv, ?_, ?_, ?_⟩
+      · rw [hr]
+      · rw [hr]
+      · rw [hr]
+
+theorem s2ValuePos_framed {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2ValuePosPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_value_pos" args mem next = some r) :
+    UnchangedOutside mem r.mem (s2ValuePosFoot args mem next) := by
+  obtain ⟨sp, rd, ct, cs, rfl, -⟩ := hpre
+  cases hv : stage2ValuePos mem sp.toNat rd.toNat ct cs with
+  | none =>
+      rw [s2ValuePos_reply, hv] at h
+      cases h
+  | some v =>
+      have hmem : r.mem = mem := by
+        have hr : r = ⟨.int 32 (BitVec.ofNat 32 v), mem, next⟩ :=
+          Option.some.inj (h.symm.trans (by rw [s2ValuePos_reply, hv]; rfl))
+        rw [hr]
+      rw [hmem]
+      exact UnchangedOutside.refl' mem []
+
+/-- **`s2_value_pos`'s contract**: the value-position test. -/
+def s2ValuePosContract : HelperContract (stage2Calls stage2SubCalls) "s2_value_pos" where
+  pre := s2ValuePosPre
+  post := s2ValuePosPost
+  foot := s2ValuePosFoot
+  answers := fun _ _ _ hpre => s2ValuePos_answers hpre
+  sound := fun _ _ _ hpre _ h => s2ValuePos_sound hpre h
+  framed := fun _ _ _ hpre _ h => s2ValuePos_framed hpre h
+
+/-! #### `s2_after_value`: one flag or one stack byte -/
+
+/-- **`s2_after_value`'s reply** at the four arguments the emitted call passes. -/
+theorem s2AfterValue_reply {mem : Mem} {next : Nat} {sp : BitVec 32} {rd ct cs : Nat} :
+    stage2Calls stage2SubCalls "s2_after_value" [.int 32 sp, .ptr rd, .ptr ct, .ptr cs]
+        mem next =
+      (stage2AfterValue mem sp.toNat rd ct cs).map
+        (fun m => (⟨voidRet, m, next⟩ : CallOutcome)) :=
+  rfl
+
+theorem s2AfterValue_answers {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2AfterValuePre args mem next) :
+    ∃ r, stage2Calls stage2SubCalls "s2_after_value" args mem next = some r := by
+  obtain ⟨sp, rd, ct, cs, rfl, hcase⟩ := hpre
+  rw [s2AfterValue_reply]
+  by_cases h0 : sp.toNat = 0
+  · have hm : stage2AfterValue mem sp.toNat rd ct cs =
+        some (writeBytes mem rd (wordBytes 4 1)) := by
+      rw [stage2AfterValue]
+      simp only [h0, ↓reduceIte]
+    rw [hm]
+    exact ⟨_, rfl⟩
+  · rcases hcase with h1 | ⟨c, hc⟩
+    · exact absurd h1 h0
+    · obtain ⟨m, hm⟩ := stage2AfterValue_answers mem sp.toNat rd ct cs h0 hc
+      rw [hm]
+      exact ⟨_, rfl⟩
+
+theorem s2AfterValue_sound {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2AfterValuePre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_after_value" args mem next = some r) :
+    s2AfterValuePost args mem next r := by
+  obtain ⟨sp, rd, ct, cs, rfl, -⟩ := hpre
+  cases hm : stage2AfterValue mem sp.toNat rd ct cs with
+  | none =>
+      rw [s2AfterValue_reply, hm] at h
+      cases h
+  | some m =>
+      have hr : r = ⟨voidRet, m, next⟩ :=
+        Option.some.inj (h.symm.trans (by rw [s2AfterValue_reply, hm]; rfl))
+      refine ⟨m, hm, ?_, ?_, ?_⟩
+      · rw [hr]
+      · rw [hr]
+      · rw [hr]
+
+theorem s2AfterValue_framed {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2AfterValuePre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_after_value" args mem next = some r) :
+    UnchangedOutside mem r.mem (s2AfterValueFoot args mem next) := by
+  obtain ⟨sp, rd, ct, cs, rfl, -⟩ := hpre
+  cases hm : stage2AfterValue mem sp.toNat rd ct cs with
+  | none =>
+      rw [s2AfterValue_reply, hm] at h
+      cases h
+  | some m =>
+      have hmem : r.mem = m := by
+        have hr : r = ⟨voidRet, m, next⟩ :=
+          Option.some.inj (h.symm.trans (by rw [s2AfterValue_reply, hm]; rfl))
+        rw [hr]
+      rw [hmem]
+      have hfoot : s2AfterValueFoot [.int 32 sp, .ptr rd, .ptr ct, .ptr cs] mem next =
+          (if sp.toNat = 0 then [(rd, 4)] else [(cs + (sp.toNat - 1), 1)]) := rfl
+      rw [hfoot]
+      unfold stage2AfterValue at hm
+      by_cases h0 : sp.toNat = 0
+      · simp only [h0, ↓reduceIte] at hm ⊢
+        obtain rfl := (Option.some.inj hm).symm
+        exact (UnchangedOutside.refl' mem [(rd, 4)]).write_le (a := rd) (w := 4)
+          ⟨(rd, 4), List.mem_cons_self .., le_rfl, le_rfl⟩
+          (by simp [wordBytes, natToBytes_length])
+      · simp only [h0, ↓reduceIte] at hm ⊢
+        cases hc : readByte mem (ct + (sp.toNat - 1)) with
+        | none => rw [hc] at hm; cases hm
+        | some c =>
+            rw [hc] at hm
+            obtain rfl := (Option.some.inj hm).symm
+            exact (UnchangedOutside.refl' mem [(cs + (sp.toNat - 1), 1)]).write_le
+              (a := cs + (sp.toNat - 1)) (w := 1)
+              ⟨(cs + (sp.toNat - 1), 1), List.mem_cons_self .., le_rfl, le_rfl⟩
+              (by simp)
+
+/-- **`s2_after_value`'s contract**: the top container's state after a value. -/
+def s2AfterValueContract :
+    HelperContract (stage2Calls stage2SubCalls) "s2_after_value" where
+  pre := s2AfterValuePre
+  post := s2AfterValuePost
+  foot := s2AfterValueFoot
+  answers := fun _ _ _ hpre => s2AfterValue_answers hpre
+  sound := fun _ _ _ hpre _ h => s2AfterValue_sound hpre h
+  framed := fun _ _ _ hpre _ h => s2AfterValue_framed hpre h
+
+/-! #### `s2_string_body`: the decoded body -/
+
+/-- **`s2_string_body`'s reply** at the eight arguments the emitted call passes. -/
+theorem s2StringBody_reply {mem : Mem} {next : Nat} {c p dst outn xp xj : Nat}
+    {len nxp : BitVec 64} {m : Mem} {form : Nat}
+    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = some (m, form)) :
+    stage2Calls stage2SubCalls "s2_string_body"
+        [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+          .int 64 nxp] mem next =
+      some ⟨.int 32 (BitVec.ofNat 32 form), m, next⟩ := by
+  rw [stage2Calls_s2_string_body, stage2StringBodyCall, hm]
+  rfl
+
+/-- **`s2_string_body`'s silence**: a model that answers nothing is an unresolved
+call. -/
+theorem s2StringBody_none {mem : Mem} {next : Nat} {c p dst outn xp xj : Nat}
+    {len nxp : BitVec 64}
+    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = none) :
+    stage2Calls stage2SubCalls "s2_string_body"
+        [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+          .int 64 nxp] mem next = none := by
+  rw [stage2Calls_s2_string_body, stage2StringBodyCall, hm]
+  rfl
+
+theorem s2StringBody_answers {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2StringBodyPre args mem next) :
+    ∃ r, stage2Calls stage2SubCalls "s2_string_body" args mem next = some r := by
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, rfl, ⟨base, hbase⟩, ⟨j0, hj0⟩,
+    ⟨ps, hps⟩, ⟨body, hbody⟩, ⟨e, he⟩, -⟩ := hpre
+  obtain ⟨pr, hpr⟩ := stage2StringBody_answers mem c p len.toNat dst outn xp xj
+    nxp.toNat hbase hj0 hps hbody he
+  obtain ⟨m, form⟩ := pr
+  exact ⟨_, s2StringBody_reply hpr⟩
+
+theorem s2StringBody_sound {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2StringBodyPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_string_body" args mem next = some r) :
+    s2StringBodyPost args mem next r := by
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, rfl, -⟩ := hpre
+  cases hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat with
+  | none =>
+      rw [s2StringBody_none hm] at h
+      cases h
+  | some pr =>
+      obtain ⟨m, form⟩ := pr
+      have hr : r = ⟨.int 32 (BitVec.ofNat 32 form), m, next⟩ :=
+        Option.some.inj (h.symm.trans (s2StringBody_reply hm))
+      refine ⟨m, form, hm, ?_, ?_, ?_⟩
+      · rw [hr]
+      · rw [hr]
+      · rw [hr]
+
+theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2StringBodyPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_string_body" args mem next = some r) :
+    UnchangedOutside mem r.mem (s2StringBodyFoot args mem next) := by
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, rfl, ⟨base, hbase⟩, ⟨j0, hj0⟩,
+    ⟨ps, hps⟩, ⟨body, hbody⟩, ⟨e, he⟩, hspace⟩ := hpre
+  cases hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat with
+  | none =>
+      rw [s2StringBody_none hm] at h
+      cases h
+  | some pr =>
+      obtain ⟨m, form⟩ := pr
+      have hmem : r.mem = m := by
+        have hr : r = ⟨.int 32 (BitVec.ofNat 32 form), m, next⟩ :=
+          Option.some.inj (h.symm.trans (s2StringBody_reply hm))
+        rw [hr]
+      rw [hmem]
+      have hfoot : s2StringBodyFoot [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn,
+          .ptr xp, .ptr xj, .int 64 nxp] mem next =
+          ([(xj, 8), (outn, 8), (dst, len.toNat)] ++ [(e, 16)]) := by
+        simp only [s2StringBodyFoot, he]
+      rw [hfoot]
+      unfold stage2StringBody at hm
+      simp only [hbase, hj0, hps, he] at hm
+      split at hm
+      · have hinj := Option.some.inj hm
+        simp only [Prod.mk.injEq] at hinj
+        obtain ⟨rfl, rfl⟩ := hinj
+        exact ((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
+          ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+          (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
+          ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+          (by simp [wordBytes, natToBytes_length])
+      · split at hm
+        · simp at hm
+        · rename_i body' hbody'
+          split at hm
+          · rename_i out k hdec
+            have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            obtain ⟨rfl, rfl⟩ := hinj
+            have hlen : out.length ≤ len.toNat := by
+              have hle := escapeDecodeGo_length_le body'
+                (hspace base j0 ps body' hbase hj0 hps hbody') 0 [] out k hdec
+              have hbl : body'.length = len.toNat :=
+                JsonEntrySteps.readBytes_length mem p len.toNat hbody'
+              simp only [List.length_nil, Nat.zero_add] at hle
+              omega
+            exact (((UnchangedOutside.refl' mem _).write_le (a := dst) (w := len.toNat)
+              ⟨(dst, len.toNat), by simp, le_rfl, le_rfl⟩ hlen).write_le
+              (a := xj) (w := 8) ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+              (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
+              ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+              (by simp [wordBytes, natToBytes_length])
+          · rename_i off k href
+            have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            obtain ⟨rfl, rfl⟩ := hinj
+            exact (stage2ErrSet_frame (R := [(xj, 8), (outn, 8), (dst, len.toNat)] ++
+              [(e, 16)]) ⟨(e, 16), by simp, le_rfl, le_rfl⟩).write_le (a := xj) (w := 8)
+              ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+              (by simp [wordBytes, natToBytes_length])
+
+/-- **`s2_string_body`'s contract**: the decoded body. -/
+def s2StringBodyContract :
+    HelperContract (stage2Calls stage2SubCalls) "s2_string_body" where
+  pre := s2StringBodyPre
+  post := s2StringBodyPost
+  foot := s2StringBodyFoot
+  answers := fun _ _ _ hpre => s2StringBody_answers hpre
+  sound := fun _ _ _ hpre _ h => s2StringBody_sound hpre h
+  framed := fun _ _ _ hpre _ h => s2StringBody_framed hpre h
+
+/-- **The decoded length is inside the body's document extent** — the datum the
+walk advances the arena's cursor by.  On the two accepting forms the model writes
+the length at `outn`: the body-itself form's is `len`, and the escaped form's is
+`escapeDecodeGo_length_le`'s at the caller's spaced list.  The refusal form leaves
+the word alone, which is why the form is a hypothesis rather than a conclusion. -/
+theorem s2StringBody_outn_le {mem : Mem} {c p dst outn xp xj : Nat} {len nxp : BitVec 64}
+    {m : Mem} {form : Nat}
+    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = some (m, form))
+    (hspace : BodyPositionsSpaced mem c xj xp nxp.toNat p len.toNat)
+    (hform : form ≠ 0) :
+    ∃ on : Nat, readBytes m outn 8 = some (wordBytes 8 on) ∧ on ≤ len.toNat := by
+  unfold stage2StringBody at hm
+  split at hm
+  · rename_i base j0 ps hbase hj0 hps
+    dsimp only at hm
+    split at hm
+    · have hinj := Option.some.inj hm
+      simp only [Prod.mk.injEq] at hinj
+      obtain ⟨rfl, rfl⟩ := hinj
+      refine ⟨len.toNat, ?_, le_rfl⟩
+      exact readBytes_wordBytes_same (addr := outn) (v := len.toNat)
+    · split at hm
+      · simp at hm
+      · rename_i body hbody
+        split at hm
+        · rename_i out k hdec
+          have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          obtain ⟨rfl, rfl⟩ := hinj
+          refine ⟨out.length, ?_, ?_⟩
+          · exact readBytes_wordBytes_same (addr := outn) (v := out.length)
+          · have hle := escapeDecodeGo_length_le body
+              (hspace base j0 ps body hbase hj0 hps hbody) 0 [] out k hdec
+            have hbl : body.length = len.toNat :=
+              JsonEntrySteps.readBytes_length mem p len.toNat hbody
+            simp only [List.length_nil, Nat.zero_add] at hle
+            omega
+        · rename_i off k href
+          split at hm
+          · have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            obtain ⟨rfl, rfl⟩ := hinj
+            exact absurd rfl hform
+          · simp at hm
+  · simp at hm
+
+/-! #### `od_scalar_value`: the appended record -/
+
+/-- **A shorter read at one address is a prefix of a longer one there.**  The
+delivered window is the token's `endp - pos` bytes plus the five a literal check
+reads; this reads the token's own window out of it. -/
+theorem readBytes_take_prefix {mem : Mem} {a n m : Nat} {bs : List UInt8}
+    (hnm : n ≤ m) (h : readBytes mem a m = some bs) :
+    readBytes mem a n = some (bs.take n) := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hnm
+  exact (readBytes_split mem a n k h).1
+
+/-- **A blob that fits its reserve is written.**  `outBlob`'s `none` is the
+reserve's refusal, so a caller that shows the blob inside the remaining capacity
+has the write. -/
+theorem outBlob_complete {mem : Mem} {ev len cap : Nat} {bs : List UInt8}
+    (h : len + bs.length ≤ cap) : ∃ p, outBlob mem ev len cap bs = some p := by
+  unfold outBlob
+  by_cases hc : len + bs.length ≤ cap
+  · simp only [hc, ↓reduceIte]
+    exact ⟨_, rfl⟩
+  · exact absurd h hc
+
+/-- **A fold whose every blob fits its reserve is written.**  The staging's room is
+stated at the widest record, and this is what turns that room into the fold's
+answer: `emitBlobs`'s `none` is the reserve's refusal at one of the blobs. -/
+theorem emitBlobs_complete {mem : Mem} {ev len cap : Nat} {blobs : List (List UInt8)}
+    (h : len + blobs.flatten.length ≤ cap) :
+    ∃ p, emitBlobs mem ev len cap blobs = some p := by
+  induction blobs generalizing mem len with
+  | nil => exact ⟨_, rfl⟩
+  | cons b bs ih =>
+      rw [emitBlobs_cons]
+      have hb : len + b.length ≤ cap := by
+        simp only [List.flatten_cons, List.length_append] at h
+        omega
+      obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := ev) (len := len) (cap := cap) hb
+      obtain ⟨p1, p2⟩ := p
+      rw [hp]
+      obtain ⟨-, hl⟩ := outBlob_spec hp
+      obtain ⟨q, hq⟩ := ih (mem := p1) (len := p2) (by
+        rw [hl]
+        simp only [List.flatten_cons, List.length_append] at h
+        omega)
+      exact ⟨q, hq⟩
+
+theorem s2ScalarValue_answers {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2ScalarValuePre args mem next) :
+    ∃ r, stage2Calls stage2SubCalls "od_scalar_value" args mem next = some r := by
+  obtain ⟨c, t, o, rfl, base, e, pos, endp, kind, buf, len, cap, win, hbase, he, hpos,
+    hend, hkind, hbuf, hlen, hcap, hroom, hwin⟩ := hpre
+  rw [stage2Calls_od_scalar_value]
+  unfold stage2ScalarValueCall stage2ScalarValue
+  simp only [hbase, he, hpos, hend, hkind]
+  have hlex : readBytes mem (base + pos) (endp - pos) =
+      some (win.take (endp - pos)) :=
+    readBytes_take_prefix (Nat.le_max_left _ _) hwin
+  by_cases h0 : kind = 0
+  · simp only [h0, ↓reduceIte]
+    exact ⟨_, rfl⟩
+  · simp only [h0, ↓reduceIte]
+    by_cases h7 : kind = 7
+    · simp only [h7, ↓reduceIte]
+      simp only [hlex]
+      by_cases hscan : (numLexScan (win.take (endp - pos))).2 = true
+      · simp only [hscan]
+        simp only [hbuf, hlen, hcap]
+        obtain ⟨p, hp⟩ := emitBlobs_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
+          (blobs := numberRecord
+            ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits))
+          (by
+            have hw := numberRecord_le
+              ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits)
+            omega)
+        rw [hp]
+        exact ⟨_, rfl⟩
+      · simp only [hscan]
+        exact ⟨_, rfl⟩
+    · simp only [h7, ↓reduceIte]
+      cases hlit : stage2Literal kind with
+      | none => exact ⟨_, rfl⟩
+      | some lit =>
+          have hlit5 := stage2Literal_length hlit
+          have hgot : readBytes mem (base + pos) lit.length =
+              some (win.take lit.length) :=
+            readBytes_take_prefix (le_trans hlit5 (Nat.le_max_right _ _)) hwin
+          simp only [hgot]
+          split
+          · simp only [hbuf, hlen, hcap]
+            obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
+              (bs := [UInt8.ofNat kind]) (by
+                have hl : [UInt8.ofNat kind].length = 1 := rfl
+                simp only [stage2RecordBytes] at hroom
+                omega)
+            have hpt : outTag mem buf len cap kind = some p := hp
+            rw [hpt]
+            exact ⟨_, rfl⟩
+          · exact ⟨_, rfl⟩
+
+/-- **`od_scalar_value`'s answer and frame in one reading**: the record's `ok`
+word, the memory the call leaves, and the frame over the footprint.  The three
+refusals write the error record; the two appending arms write the record at the
+stream's cursor and then the cursor word, which is why the frames compose from the
+inside out. -/
+theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : CallOutcome}
+    (hpre : s2ScalarValuePre args mem next)
+    (h : stage2Calls stage2SubCalls "od_scalar_value" args mem next = some r) :
+    ∃ (m : Mem) (ok : Nat), r = ⟨.int 32 (BitVec.ofNat 32 ok), m, next⟩ ∧
+      UnchangedOutside mem m (s2ScalarValueFoot args mem next) := by
+  obtain ⟨c, t, o, rfl, base, e, pos, endp, kind, buf, len, cap, win, hbase, he, hpos,
+    hend, hkind, hbuf, hlen, hcap, hroom, hwin⟩ := hpre
+  have hfoot : s2ScalarValueFoot [.ptr c, .ptr t, .ptr o] mem next =
+      ([(o + 8, 8), (buf + len, stage2RecordBytes)] ++ [(e, 16)]) := by
+    simp only [s2ScalarValueFoot, hbuf, hlen, he, List.singleton_append]
+  rw [hfoot]
+  rw [stage2Calls_od_scalar_value, stage2ScalarValueCall] at h
+  simp only [stage2ScalarValue, hbase, he, hpos, hend, hkind] at h
+  have hlex : readBytes mem (base + pos) (endp - pos) =
+      some (win.take (endp - pos)) :=
+    readBytes_take_prefix (Nat.le_max_left _ _) hwin
+  by_cases h0 : kind = 0
+  · simp only [h0, ↓reduceIte] at h
+    exact ⟨_, 0, (Option.some.inj h).symm,
+      stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+  · simp only [h0, ↓reduceIte] at h
+    by_cases h7 : kind = 7
+    · simp only [h7, ↓reduceIte] at h
+      simp only [hlex] at h
+      by_cases hscan : (numLexScan (win.take (endp - pos))).2 = true
+      · simp only [hscan] at h
+        simp only [hbuf, hlen, hcap] at h
+        obtain ⟨p, hp⟩ := emitBlobs_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
+          (blobs := numberRecord
+            ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits))
+          (by
+            have hw := numberRecord_le
+              ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits)
+            omega)
+        obtain ⟨p1, p2⟩ := p
+        rw [hp] at h
+        obtain ⟨hm', hl'⟩ := emitBlobs_spec hp
+        rw [hm', hl'] at h
+        exact ⟨_, 1, (Option.some.inj h).symm,
+          ((UnchangedOutside.refl' mem _).write_le (a := buf + len) (w := stage2RecordBytes)
+            ⟨(buf + len, stage2RecordBytes), by simp, le_rfl, le_rfl⟩
+            (numberRecord_le
+              ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits))).write_le
+            (a := o + 8) (w := 8) ⟨(o + 8, 8), by simp, le_rfl, le_rfl⟩
+            (by simp [wordBytes, natToBytes_length])⟩
+      · simp only [hscan] at h
+        exact ⟨_, 0, (Option.some.inj h).symm,
+          stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+    · simp only [h7, ↓reduceIte] at h
+      cases hlit : stage2Literal kind with
+      | none =>
+          rw [hlit] at h
+          exact ⟨_, 0, (Option.some.inj h).symm,
+            stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+      | some lit =>
+          have hlit5 := stage2Literal_length hlit
+          have hgot : readBytes mem (base + pos) lit.length =
+              some (win.take lit.length) :=
+            readBytes_take_prefix (le_trans hlit5 (Nat.le_max_right _ _)) hwin
+          simp only [hlit, hgot] at h
+          split at h
+          · simp only [hbuf, hlen, hcap] at h
+            obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
+              (bs := [UInt8.ofNat kind]) (by
+                have hl : [UInt8.ofNat kind].length = 1 := rfl
+                simp only [stage2RecordBytes] at hroom
+                omega)
+            obtain ⟨p1, p2⟩ := p
+            have hpt : outTag mem buf len cap kind = some (p1, p2) := hp
+            rw [hpt] at h
+            obtain ⟨hm', hl'⟩ := outBlob_spec hp
+            rw [hm', hl'] at h
+            exact ⟨_, 1, (Option.some.inj h).symm,
+              ((UnchangedOutside.refl' mem _).write_le (a := buf + len)
+                (w := stage2RecordBytes) ⟨(buf + len, stage2RecordBytes), by simp, le_rfl,
+                  le_rfl⟩ (by simp [stage2RecordBytes, List.length_cons])).write_le
+                (a := o + 8) (w := 8) ⟨(o + 8, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])⟩
+          · exact ⟨_, 0, (Option.some.inj h).symm,
+              stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+
+theorem s2ScalarValue_sound {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2ScalarValuePre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "od_scalar_value" args mem next = some r) :
+    s2ScalarValuePost args mem next r := by
+  obtain ⟨c, t, o, rfl, hrest⟩ := hpre
+  have hpre' : s2ScalarValuePre [.ptr c, .ptr t, .ptr o] mem next := ⟨c, t, o, rfl, hrest⟩
+  obtain ⟨m, ok, hr, -⟩ := s2ScalarValue_shape hpre' h
+  have hval : stage2ScalarValue mem c t o next = some ⟨.int 32 (BitVec.ofNat 32 ok), m, next⟩ := by
+    rw [← hr]
+    rw [stage2Calls_od_scalar_value, stage2ScalarValueCall] at h
+    exact h
+  refine ⟨m, ok, hval, ?_, ?_, ?_⟩
+  · rw [hr]
+  · rw [hr]
+  · rw [hr]
+
+theorem s2ScalarValue_framed {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2ScalarValuePre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "od_scalar_value" args mem next = some r) :
+    UnchangedOutside mem r.mem (s2ScalarValueFoot args mem next) := by
+  obtain ⟨c, t, o, rfl, hrest⟩ := hpre
+  have hpre' : s2ScalarValuePre [.ptr c, .ptr t, .ptr o] mem next := ⟨c, t, o, rfl, hrest⟩
+  obtain ⟨m, _, hr, hframe⟩ := s2ScalarValue_shape hpre' h
+  have hmem : r.mem = m := by rw [hr]
+  rw [hmem]
+  exact hframe
+
+/-- **`od_scalar_value`'s contract**: the token's record or its refusal. -/
+def s2ScalarValueContract :
+    HelperContract (stage2Calls stage2SubCalls) "od_scalar_value" where
+  pre := s2ScalarValuePre
+  post := s2ScalarValuePost
+  foot := s2ScalarValueFoot
+  answers := fun _ _ _ hpre => s2ScalarValue_answers hpre
+  sound := fun _ _ _ hpre _ h => s2ScalarValue_sound hpre h
+  framed := fun _ _ _ hpre _ h => s2ScalarValue_framed hpre h
+
+/-! #### `num_fast_el1`: the conversion, or the refusal offset -/
+
+/-- **`num_fast_el1`'s reply** at the four arguments the emitted call passes.  The
+scan's answer decides the arm, which is why the equation is stated with the scan's
+`let` reduced. -/
+theorem s2NumFast_reply {mem : Mem} {next : Nat} {p out err : Nat} {n : BitVec 64}
+    {lex : List UInt8} (hlex : readBytes mem p n.toNat = some lex) :
+    stage2Calls stage2SubCalls "num_fast_el1" [.ptr p, .int 64 n, .ptr out, .ptr err]
+        mem next =
+      (if (numLexScan lex).2 = true
+       then some ⟨.int 32 (BitVec.ofNat 32 1),
+         writeBytes mem out
+           (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits), next⟩
+       else some ⟨.int 32 (BitVec.ofNat 32 0),
+         writeBytes mem err (wordBytes 8 (numLexScan lex).1), next⟩) := by
+  rw [stage2Calls_num_fast_el1]
+  unfold stage2NumFast
+  simp only [hlex]
+
+theorem s2NumFast_answers {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2NumFastPre args mem next) :
+    ∃ r, stage2Calls stage2SubCalls "num_fast_el1" args mem next = some r := by
+  obtain ⟨p, out, err, n, rfl, lex, hlex⟩ := hpre
+  rw [s2NumFast_reply hlex]
+  split
+  · exact ⟨_, rfl⟩
+  · exact ⟨_, rfl⟩
+
+/-- **The refusal's offset is inside the lexeme it was read from** — the bound the
+post's refusing arm carries, and what keeps the reported position inside the
+token's document extent. -/
+theorem numLexScan_off_le {mem : Mem} {p n : Nat} {lex : List UInt8}
+    (h : readBytes mem p n = some lex) : (numLexScan lex).1 ≤ n := by
+  have hlen : lex.length = n := JsonEntrySteps.readBytes_length mem p n h
+  rw [← hlen]
+  exact numLexScan_fst_le lex
+
+theorem s2NumFast_sound {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2NumFastPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "num_fast_el1" args mem next = some r) :
+    s2NumFastPost args mem next r := by
+  obtain ⟨p, out, err, n, rfl, lex, hlex⟩ := hpre
+  rw [s2NumFast_reply hlex] at h
+  by_cases hs : (numLexScan lex).2 = true
+  · simp only [hs] at h
+    have hr : r = ⟨.int 32 (BitVec.ofNat 32 1),
+        writeBytes mem out
+          (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits), next⟩ :=
+      (Option.some.inj h).symm
+    exact ⟨lex, hlex, Or.inl ⟨hs, by rw [hr], by rw [hr], by rw [hr]⟩⟩
+  · simp only [hs] at h
+    have hr : r = ⟨.int 32 (BitVec.ofNat 32 0),
+        writeBytes mem err (wordBytes 8 (numLexScan lex).1), next⟩ :=
+      (Option.some.inj h).symm
+    exact ⟨lex, hlex, Or.inr ⟨by simpa using hs, by rw [hr], by rw [hr], by rw [hr],
+      numLexScan_off_le hlex⟩⟩
+
+theorem s2NumFast_framed {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2NumFastPre args mem next) {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "num_fast_el1" args mem next = some r) :
+    UnchangedOutside mem r.mem (s2NumFastFoot args mem next) := by
+  obtain ⟨p, out, err, n, rfl, lex, hlex⟩ := hpre
+  rw [s2NumFast_reply hlex] at h
+  by_cases hs : (numLexScan lex).2 = true
+  · simp only [hs] at h
+    have hr : r = ⟨.int 32 (BitVec.ofNat 32 1),
+        writeBytes mem out
+          (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits), next⟩ :=
+      (Option.some.inj h).symm
+    have hmem : r.mem = writeBytes mem out
+        (wordBytes 8 (numFastEmitted (ByteString.literal lex)).toBits) := by rw [hr]
+    rw [hmem]
+    exact (UnchangedOutside.refl' mem [(out, 8), (err, 8)]).write_le (a := out) (w := 8)
+      ⟨(out, 8), List.mem_cons_self .., le_rfl, le_rfl⟩
+      (by simp [wordBytes, natToBytes_length])
+  · simp only [hs] at h
+    have hr : r = ⟨.int 32 (BitVec.ofNat 32 0),
+        writeBytes mem err (wordBytes 8 (numLexScan lex).1), next⟩ :=
+      (Option.some.inj h).symm
+    have hmem : r.mem = writeBytes mem err (wordBytes 8 (numLexScan lex).1) := by rw [hr]
+    rw [hmem]
+    exact (UnchangedOutside.refl' mem [(out, 8), (err, 8)]).write_le (a := err) (w := 8)
+      ⟨(err, 8), by simp, le_rfl, le_rfl⟩
+      (by simp [wordBytes, natToBytes_length])
+
+/-- **`num_fast_el1`'s contract**: the conversion, or the refusal's offset. -/
+def s2NumFastContract : HelperContract (stage2Calls stage2SubCalls) "num_fast_el1" where
+  pre := s2NumFastPre
+  post := s2NumFastPost
+  foot := s2NumFastFoot
+  answers := fun _ _ _ hpre => s2NumFast_answers hpre
+  sound := fun _ _ _ hpre _ h => s2NumFast_sound hpre h
+  framed := fun _ _ _ hpre _ h => s2NumFast_framed hpre h
+
+/-! ### Axiom footprints
+
+Five of the six contracts print the standard footprint — `propext` and
+`Quot.sound`.  `num_fast_el1`'s prints `Classical.choice` as well, inherited from
+`JsonStage2Body.numLexScan_fst_le`, the lexeme bound its post's refusing arm
+carries: the choice is the model module's, not this contract's.
+
+The instrument is `#print axioms`, and a declaration proved with `sorry` prints
+`sorryAx` under the same command — so a contract printing only
+`[propext, Quot.sound]` is a fact about the proof rather than about the printer.
+-/
+
+#print axioms s2InitContract
+#print axioms s2ValuePosContract
+#print axioms s2AfterValueContract
+#print axioms s2StringBodyContract
+#print axioms s2ScalarValueContract
+#print axioms s2NumFastContract
+#print axioms s2StringBody_outn_le
+#print axioms emitBlobs_complete
+#print axioms readBytes_take_prefix
+#print axioms HelperContract.resolves
+#print axioms HelperContract.view
 
 end LeanLLVM.Refinement

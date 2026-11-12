@@ -420,19 +420,20 @@ Row 5's basis — outside the kernel's reach — is this row's basis too.
 
 | # | Helper | What the model states, and what the tree proves about it | Basis | Evidence in this tree |
 |---|--------|--------------------------------------------------------|-------|------------------------|
-| a | `s2_init` | The `S2` record's fifteen field stores at the five arguments the emitted call passes; **proved**: the call answers there (`s2Init_answers`) | assumed (model) | `JsonStage2Body.stage2Init`, `s2InitStores`; the stores' offsets are `S2`'s (`stage2.c:981-988`) |
-| b | `s2_value_pos` | The value-position test's bit at the four arguments the call passes, with the caller's memory returned unchanged; **proved**: the call answers there (`stage2ValuePos_answers`, `stage2ValuePos_zero`) | assumed (model) | `JsonStage2Body.stage2ValuePos`, `stage2ValuePosCall`; `stage2.c:990-997` |
-| c | `s2_after_value` | The root flag at depth zero or one container-stack byte at the running depth; **proved**: the call answers there (`stage2AfterValue_answers`) | assumed (model) | `JsonStage2Body.stage2AfterValue`; `stage2.c:998-1003` |
-| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), and the decoded form is never longer than its body (`escapeDecodeGo_length_le`) | assumed (model) | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047` |
-| e | `od_scalar_value` | The appended number record (`T_NUM` and the value's eight bytes), the literal tag after the literal check, the refusal's `od_fail` record, and the event cursor's write-back at `o + 8`; **proved**: where the calls answer and what they write (`emitBlobs_spec`, `emitBlobs_frame`, `arenaAppend_spec`, `arenaAppend_frame`) | assumed (model) | `JsonStage2Body.stage2ScalarValue`; `stage2.c:929-957` |
-| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), and the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`) | assumed (model) | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455` |
+| a | `s2_init` | The `S2` record's fifteen field stores at the five arguments the emitted call passes; **proved**: the call answers there (`s2Init_answers`), every answer is that store list (`s2Init_sound`), and the frame over the record's extent (`s2Init_framed`) — `s2InitContract` | assumed (model) | `JsonStage2Body.stage2Init`, `s2InitStores`; the stores' offsets are `S2`'s (`stage2.c:981-988`) |
+| b | `s2_value_pos` | The value-position test's bit at the four arguments the call passes, with the caller's memory returned unchanged; **proved**: the call answers there (`stage2ValuePos_answers`, `stage2ValuePos_zero`) and the answer satisfies the post at the empty footprint (`s2ValuePosContract`) | assumed (model) | `JsonStage2Body.stage2ValuePos`, `stage2ValuePosCall`; `stage2.c:990-997` |
+| c | `s2_after_value` | The root flag at depth zero or one container-stack byte at the running depth; **proved**: the call answers there (`stage2AfterValue_answers`) and the write is inside the one-byte or four-byte region (`s2AfterValueContract`) | assumed (model) | `JsonStage2Body.stage2AfterValue`; `stage2.c:998-1003` |
+| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), the decoded form is never longer than its body (`escapeDecodeGo_length_le`), the decoded length is inside the body's extent (`s2StringBody_outn_le`), and the frame over the cursor, length, body and error regions (`s2StringBodyContract`) | assumed (model) | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047` |
+| e | `od_scalar_value` | The appended number record (`T_NUM` and the value's eight bytes), the literal tag after the literal check, the refusal's `od_fail` record, and the event cursor's write-back at `o + 8`; **proved**: where the calls answer and what they write (`emitBlobs_spec`, `emitBlobs_frame`, `arenaAppend_spec`, `arenaAppend_frame`), that a record inside the reserve is written (`emitBlobs_complete`), and the frame over the cursor, record and error regions (`s2ScalarValueContract`) | assumed (model) | `JsonStage2Body.stage2ScalarValue`; `stage2.c:929-957` |
+| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`), and both exits' frame over the value and offset slots (`s2NumFastContract`) | assumed (model) | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455` |
 
-Two things about the table are deliberate.  First, **no row's frame is proved
-over the helper as a whole.**  The two frame lemmas that exist are per emitter —
-`emitBlobs_frame` and `arenaAppend_frame`, each over one region — and a call
-block needs the same statement at the helper's *whole* footprint, which is the
-region list a caller would apply by membership to keep a clause about a byte the
-callee did not write.  The regions are, in the same order as the table:
+Two things about the table are deliberate.  First, **each row's frame is proved
+at the helper's whole footprint.**  `JsonStage2Body`'s per-emitter frame lemmas
+(`emitBlobs_frame`, `arenaAppend_frame`) are over one region each; the caller's
+statement is `HelperContract.framed`, which composes the model's per-arm writes
+into the region list below, so a call block applies it by membership
+(`HelperContract.keeps`) or as its own view (`HelperContract.view`).  The regions
+are, in the same order as the table:
 `(s, 120)` for the `S2` record;
 nothing for `s2_value_pos`; the root flag's four bytes or one stack byte for
 `s2_after_value`; the cursor word, the length word, the decoded-body slot at `dst`
@@ -445,7 +446,10 @@ the eight staging objects `stage2StagingArgs` passes and are consequently in no
 staged region list — so a walk invariant whose region claim covers the seven
 staged objects alone has no clause covering them, and a write to one of the four
 breaks `Owns` unless the claim names it: `s2_after_value`, `s2_string_body` and
-`num_fast_el1` each write at least one.
+`num_fast_el1` each write at least one.  The footprints name those four at the
+pointers their calls pass; the region claim a walk invariant makes over them is
+the invariant's own, and it is the one part of a class F link the contracts do not
+close.
 
 Second, **the number path's two agreements are separate and both stay visible**.
 The conversion's agreement is `strtodSpec`'s, proved for every well-formed
@@ -468,30 +472,42 @@ scanner's token-extent obligation, and it is stated here rather than assumed.  A
 model that converted every readable lexeme would answer a value where the emitted
 function answers a refusal, which is why the refusal is modelled and not skipped.
 
-**What is stated, and what is not.**  The six *caller-side* records' shape and
-content are in the tree: `LeanLLVM/Refinement/JsonStage2Helpers` states
-`HelperContract` — the staging, the post, the footprint, and the three facts a call
-block applies (it resolves at the staging, every answer satisfies the post, and
-every answer's memory is the caller's outside the footprint) — together with the
-four frame steps a proof composes with (`UnchangedOutside.write_le`,
-`stage2WriteStores_frame`, `stage2ErrSet_frame` and `UnchangedOutside.of_subset`,
-each at the standard axiom footprint), the six staging predicates, the six posts,
-and the six footprints at the region lists above.  What it does **not** carry is
-the six values: `answers`, `sound` and `framed` have no instance, so
-`HelperContract.resolves` is not applicable at a call block yet, and
-`JsonStage2WalkScope`'s class F remains a contract gap.  The work is the six model
-readings and frame compositions — `stage2*_answers` already supplies the first
-fact for five of the six, and the frame steps turn each arm's write into the
-footprint — not a missing statement.  Two stagings are more than readability: the
-one for `od_scalar_value` must include the event stream's room for the widest
-record (its remaining `none` arms are the reserve's fault, the source's
-`__builtin_trap`), and the one for `s2_string_body` must include the escape list's
-spacing, because the decoded-length bound is `escapeDecodeGo_length_le`'s and that
-lemma is about a spaced list.  A caller that cannot supply the spacing has no
-bound on the escaped form.  The bounded statement itself — the post's accepting
-arms carrying `on ≤ len` — is stated, not proved, in
-`JsonStage2Helpers`'s `s2StringBodyPre`/`BodyPositionsSpaced`; the theorem that
-would discharge it is owed with the six instances.
+**What is stated, and what is not.**  The six *caller-side* records are in the
+tree and each is proved of its model.
+`LeanLLVM/Refinement/JsonStage2Helpers` states `HelperContract` — the staging, the
+post, the footprint, and the three facts a call block applies (it resolves at the
+staging, every answer satisfies the post, and every answer's memory is the
+caller's outside the footprint) — together with the six staging predicates, the
+six posts, the six footprints at the region lists above, the frame steps a proof
+composes with (`UnchangedOutside.write_le`, `stage2WriteStores_frame`,
+`stage2ErrSet_frame`, `UnchangedOutside.of_subset`), and now the six instances:
+`s2InitContract`, `s2ValuePosContract`, `s2AfterValueContract`,
+`s2StringBodyContract`, `s2ScalarValueContract` and `s2NumFastContract`.  So
+`HelperContract.resolves` applies at a call block for every helper the emitted walk
+calls out of line, which is what `JsonStage2WalkScope`'s class F — the nineteen
+links whose callee is one of these six — needs at the contract level.
+
+Two stagings are more than readability: the one for `od_scalar_value` must include
+the event stream's room for the widest record (its remaining `none` arms are the
+reserve's fault, the source's `__builtin_trap`), which is
+`emitBlobs_complete`'s hypothesis; and the one for `s2_string_body` must include
+the escape list's spacing, because the decoded-length bound is
+`escapeDecodeGo_length_le`'s and that lemma is about a spaced list.  A caller that
+cannot supply the spacing has no bound on the escaped form; with it, the bound the
+walk's cursor advance reads is `s2StringBody_outn_le`.
+
+**Axiom footprints.**  Five contracts print `[propext, Quot.sound]`, the footprint
+`JsonStage2Helpers`'s frame lemmas carry.  `s2NumFastContract` prints
+`Classical.choice` besides, inherited from `JsonStage2Body.numLexScan_fst_le`, the
+lexeme bound its post's refusing arm carries; the choice is the model module's,
+not the contract's.  That the instrument discriminates is checked by a control: a
+declaration proved with `sorry` prints `sorryAx` under the same `#print axioms`.
+
+**What remains open is the transcription.**  Each row's basis is *assumed (model)*,
+and the six instances do not change that: they prove the models satisfy the
+records, not that the compiled functions do.  The distance is the pipeline's
+body-faithfulness seam (§7.1 items 1–3 and row 5), and it is the same seam
+`numFastEmitted_strtodSpec` and the `#guard` pins already rest on.
 
 ## 8. Out of scope for the first contract
 
