@@ -1439,7 +1439,7 @@ theorem walkIfEndBlock_find : stage2Body.findBlock "if.end" = some walkIfEndBloc
 
 /-- The `if.end` return, at the arm's own bit: `s2_walk.exit` selects `1` and
 `if.then` selects `0`.  The markers bind nothing, so they do not move the cell. -/
-theorem ifEnd_step {sub : Calls} (s : State)
+theorem walkIfEnd_step {sub : Calls} (s : State)
     (hpc : s.pc = "if.end") {p : String} {v : BitVec 64} {bit : BitVec 64}
     {pe pz ps : Nat}
     (he : lookupName s.env "%e" = some (.ptr pe))
@@ -1519,6 +1519,9 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end256_i
 #print axioms LeanLLVM.Refinement.WalkStage.rootSlot_log
 #print axioms LeanLLVM.Refinement.WalkStage.rootSlot_ev
+#print axioms LeanLLVM.Refinement.WalkScope.walkExitBlock_denote
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd_step
+#print axioms LeanLLVM.Refinement.WalkScope.WalkChain.finalisation
 
 /-! ## The four traps
 

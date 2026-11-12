@@ -1405,5 +1405,6 @@ The instrument is `#print axioms`, and a declaration proved with `sorry` prints
 #print axioms readBytes_take_prefix
 #print axioms HelperContract.resolves
 #print axioms HelperContract.view
+#print axioms LeanLLVM.Refinement.s2ScalarValue_appended
 
 end LeanLLVM.Refinement

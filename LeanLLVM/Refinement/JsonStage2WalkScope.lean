@@ -241,7 +241,7 @@ eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
 twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
 `JsonStage2WalkPure`), nine of class F's nineteen call blocks
 (`JsonStage2WalkCall`), and the two entry links beside `while.body.i.lr.ph`
-(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 16 blocks
+(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 14 blocks
 that are still not links, are stated there.  `WalkLocal` is
 still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
@@ -4173,7 +4173,8 @@ column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
 `JsonStage2WalkCall`) = 149, with the five measure arms among those classes rather
 than beside them.  The remaining 16 are named below with their obstruction, one
 row each; six of them are not links at all — the seed, the return, and the four
-`unreachable` arms.
+`unreachable` arms — and `s2_walk.exit` and `if.end` are the return's two
+discharged steps, so fourteen rows remain.
 
 **The call census, measured.**  The F row's 19 is the number of blocks between the
 arms whose instruction list contains an `Instr.call` or `Instr.callVoid`, read off
@@ -4396,7 +4397,8 @@ header, with the arithmetic.
 ## The remainder, named
 
 The census's rows outside classes A, B, B′, `entry`, `if.end` and the four traps:
-16 blocks still without a link, and 149 already closed.  `class` is the census's;
+14 blocks still without a link, 149 already closed as links, and two (163, 165)
+closed as the terminal step.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -4482,8 +4484,9 @@ half of `Stage2WalkObligation` at `stage2Budget` (`stage2WalkObligation_iff_comp
 is the equivalence, so nothing else is wanted).  Read as a proof obligation it is
 four pieces, in order:
 
-1. **sixteen links** — the ten class F blocks the table names plus `entry`,
-   `if.end`, and the four `unreachable` arms (whose verdicts are proved:
+1. **fourteen links** — the class F blocks the table names, less `if.then`
+   (its refusal copy) and less `s2_walk.exit` and `if.end` (the terminal step),
+   plus `entry`, and the four `unreachable` arms (whose verdicts are proved:
    `walkTrap_noStep`, `walkEventReserve_clear`, `walkArenaReserve_clear`), so the
    traversal has no gap;
 2. **the seed** — `WalkSeedState` at `entry`'s handoff, which is the
@@ -4501,18 +4504,19 @@ four pieces, in order:
    step count at or below `stage2Budget`, which is the one place the 22-and-six
    readings of *The budget, counted* are spent.
 
-Two of the sixteen cannot be links under the record's post as it stands, and the
-reason is the same in both cases: the walk's frame is a *prefix* of the record's
+Two of the non-link rows cannot be links under the record's post as it stands,
+and the reason is the same in both cases: the walk's frame is a *prefix* of the record's
 (`walkFrame_reportFrame_coverage` maps `(dst, alen)` into `(dst, alen + 64)`, and
 `err_not_in_walkFrame` places the refusal slot *outside* it), so widening the
 walk's frame widens the record's.  `z_arena_reserve.exit` writes the decoded body
 at `G.dst + C.alen` before `if.else285.i` advances the cursor two blocks later, so
 the write is inside neither the source nor the target carry's arena entry; the
 staged window `(G.dst, ndst0 + n + 64)` covers it, and that window is not inside
-`(dst, alen + 64)`.  `s2_walk.exit` and `if.then` store to `%ndst`, `%nev` and
-`%err`, which the report's post proves *itself* from `err_not_in_walkFrame` and
-the wrapper's `frameSlots` — a walk frame that covered the three would make
-`errAccept` unprovable.  Both are decisions about `stage2Boundary`, for the record
+`(dst, alen + 64)`.  The exit stores to `%ndst`, `%nev` and `%err`, which the
+report's post proves *itself* from `err_not_in_walkFrame` and the wrapper's
+`frameSlots` — a walk frame that covered the three would make `errAccept`
+unprovable; that is why the exit is the terminal step and not a link, and why
+`if.then`'s refusal copy is the same.  Both are decisions about `stage2Boundary`, for the record
 that owns it; inside this module the honest statement is the obstruction.  The
 `if.then425.i` third is closed at the contract: `s2ScalarValuePost` now carries a
 second conjunct naming the record an emitting arm appended (`s2ScalarValueAppend`
