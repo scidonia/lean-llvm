@@ -1231,6 +1231,45 @@ theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s
   rw [hq, hbt0] at hseed
   exact hseed
 
+/-- **The seed's run as one prefix.**  The entry block, the preheader and the
+header's first pass compose: three steps from the entry state reach the loop head
+and leave it exactly, for every further fuel.  The three block equalities are the
+caller's — this is the `hprefix` premise of `walkCompletes_of_prefix_chain`, at
+the blocks whose steps the three theorems above state. -/
+theorem walkSeedPrefix_runFuel {s s₁ s₂ s₃ : State} {nep : Nat} (n : Nat)
+    (hpc : s.pc = "entry")
+    (hden₁ : denoteCode (stage2Calls stage2SubCalls) walkEntryInstrs s = some s₁)
+    (hne : lookupName s₁.env "%cmp.i247.not" =
+      some (.int 1 (evalICmp .eq (BitVec.ofNat 64 nep) (BitVec.ofNat 64 0))))
+    (hne64 : nep < 2 ^ 64) (hne0 : nep ≠ 0) (hpc₁ : s₁.pc = s.pc)
+    (hden₂ : denoteCode (stage2Calls stage2SubCalls) walkPreheaderInstrs
+      (walkEntryJump s₁ nep) = some s₂)
+    (hpc₂ : s₂.pc = (walkEntryJump s₁ nep).pc)
+    (hden₃ : denoteCode (stage2Calls stage2SubCalls) whileBodyInstrs
+      { s₂ with pc := "while.body.i", pre := some "while.body.i.lr.ph" } = some s₃)
+    (hpc₃ : s₃.pc = "while.body.i") :
+    runFuel (stage2Calls stage2SubCalls) (3 + n) stage2Body s =
+      runFuel (stage2Calls stage2SubCalls) n stage2Body
+        { s₃ with pc := "NodeBlock21", pre := some "while.body.i" } := by
+  have hj : (walkEntryJump s₁ nep).pc = "while.body.i.lr.ph" := by
+    simp [walkEntryJump, hne0]
+  rw [show 3 + n = 1 + (1 + (1 + n)) from by omega]
+  rw [walkEntry_runFuel s hpc hden₁ hne hne64 hpc₁ (1 + (1 + n))]
+  rw [walkPreheader_runFuel (s := walkEntryJump s₁ nep) hj hden₂ hpc₂ (1 + n)]
+  exact walkHeader_runFuel rfl hden₃ hpc₃ n
+
+/-- **The invariant at the loop head from the staging alone.**  The seed's state
+is `walkSeedState_geometry`'s, and `walkSeed_invariant` reads every clause of
+`WalkInv` at it: the entry run's handoff is no longer a hypothesis of the loop. -/
+theorem walkSeedInvariant_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (s : State) (hn : 0 < G.nep)
+    (hct : lookupName s.env "%ctype.i" = some (.ptr S.ctype))
+    (hcs : lookupName s.env "%cst.i" = some (.ptr S.cst))
+    (hnext : s.next = G.next0) :
+    WalkInv G (walkSeed G S)
+      (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) :=
+  walkSeed_invariant G S (walkSeedState_geometry G S s hn hct hcs hnext)
+
 /-! ### Axiom footprints for the seed's last rows -/
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryStores_s' depends on axioms: [propext] -/
@@ -1344,6 +1383,14 @@ theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedState_geometry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkSeedState_geometry
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedPrefix_runFuel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedPrefix_runFuel
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedInvariant_geometry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedInvariant_geometry
 
 /-! ### Axiom footprints -/
 

@@ -4886,9 +4886,14 @@ four pieces, in order:
    `walkTrap_noStep`, `walkEventReserve_clear`, `walkArenaReserve_clear`), so the
    traversal has no gap;
 2. **the seed** — *landed*: `walkSeedState` (`JsonStage2WalkSeedRun`) is
-   `WalkSeedState` at the state the entry run leaves, and `walkSeedState_geometry`
-   derives its two loads from the staging, so `walkSeed_invariant` turns it into
-   the invariant at the loop head with nothing assumed beside the geometry;
+   `WalkSeedState` at the state the entry run leaves, `walkSeedState_geometry`
+   derives its two loads from the staging, and `walkSeedInvariant_geometry` reads
+   `WalkInv` at it — the loop head's invariant with nothing assumed beside the
+   geometry.  The *prefix* half of this item is `walkSeedPrefix_runFuel`: the
+   entry block, the preheader and the header's first pass composed into one
+   `runFuel` equality from the entry state to the loop head, which is
+   `walkCompletes_of_prefix_chain`'s `hprefix` at the blocks whose steps are
+   proved here;
 3. **the return** — *stated and composed*: `walkIfEnd_step` is `if.end`'s step at
    either arm's `phi` value, `walkExitBlock_denote` and `walkIfThenBlock_denote`
    are the two arms' copies (with `walkIfThen_step` the refusal arm's jump), and
