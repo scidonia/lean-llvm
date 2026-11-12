@@ -2507,13 +2507,16 @@ one of the three the lead named** — the nesting and the two reserves are all
    fields of the invariant: produced at the seed (`WalkSeedState` carries them)
    and preserved by `forInc_step`, `scan_step` and `walkBack_step` through
    `WalkPtrs.bind`.  `WalkInv.log_hash` carries the last memory clause the
-   nesting arm reads, the zeroed hash word at `%z + 32`.  Two registers are read
-   by a proved block and not carried: `%ar` (`%z + 40`), which no proved block
-   reads yet, and `%8`, the document byte the header loads.  `%8` is the one
-   register fact `ifEnd24_step` takes as a hypothesis rather than from the
-   invariant, because its value is the header's read of the document at the
-   entry's position — `whileBodyOut` binds it — and that is a fact about the
-   dispatch's data flow rather than about the walk's carry.
+   nesting arm reads, the zeroed hash word at `%z + 32`.  One register is read
+   by a proved block and still not carried: `%ar` (`%z + 40`), which no proved
+   block reads yet.  `%8` and the lane `%7` are carried, by `WalkIter`, at the
+   header's own read of the document and the entry stream at the carried index —
+   the header's step produces them, and `WalkLink.ifEnd24` reads `%8` from the
+   invariant rather than taking it as a hypothesis.  The other blocks that
+   compare `%8` (`if.end59.i`, `if.end372.i` and the literal comparison's
+   neighbours) still take it as a hypothesis of their own lemmas; each is the
+   value the invariant now names, and deriving it there is the same one-line
+   read, left to those instances.
 2. **The dispatch's own completion**, which is where the nesting and both reserves
    are decided; `WalkLocal` is `True` at every block between them.  The *frame*
    question no longer lands here: `WalkInv.frame` is the record's own write
@@ -4503,14 +4506,15 @@ theorem WalkLink.whileBody {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
 
 /-- **The trace's second proved link: the nesting arm.**  `if.end24.i` writes the
 two container stacks and branches on the log's zeroed hash word, with the measure
-unchanged.  Its `%8` binding is the caller's: the header loaded the document byte
-at the entry's position, and the invariant does not carry it. -/
+unchanged.  Its `%8` is read from the invariant's per-iteration carrier: the
+header bound it at the carried index, and no block between the header and
+`if.end24.i` rebinds it (`WalkIter.reg8`). -/
 theorem WalkLink.ifEnd24 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end24.i")
-    {b : BitVec 8} (h8 : lookupName s.env "%8" = some (.int 8 b))
     (hguard : NestGuard C.sp) :
     ∃ s', WalkLink calls G C s { C with block := "if.end.i.i" } s' := by
-  obtain ⟨e, hstep, hinv, hmono, -⟩ := ifEnd24_step G C s hInv hblock h8 hguard
+  obtain ⟨e, hstep, hinv, hmono, -⟩ :=
+    ifEnd24_step G C s hInv hblock hInv.iter.reg8 hguard
   exact ⟨e, ⟨hInv, hstep, hinv, le_of_eq hmono⟩⟩
 
 
