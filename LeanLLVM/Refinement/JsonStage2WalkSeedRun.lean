@@ -576,6 +576,110 @@ theorem walkEntryMem_hash {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkEntryMem_hash
 
+/-! ### The seed's register clauses
+
+`walkSeedFinalEnv` is the environment at `NodeBlock21` after the three runs: the
+entry run's cells (`walkEntryEnv1` through `walkEntryEnv4`), the preheader's five
+literal-offset binds, and the header's eight (`whileBodyOut` at the first pass).
+The two `phi` values are the preheader's arm — the index and the depth are zero —
+and the remaining clauses `WalkSeedState` states about the environment are
+lookups in it: `WalkPtrs`' six addresses, `WalkRegs`' twenty-four, which are the
+entry run's own cells, and the two `phi` registers.
+
+The proof is a peel to the binding and an exact match: the environment is a cons
+chain once the builders are unfolded, so `walk_final_lk` walks it and closes at
+the cell.  `WalkRegs`' list is a literal (`walkStaticRegs`), so its twenty-four
+members are its twenty-four cells; the three stack objects are at the call's
+cursor, which the caller states as `s.next = G.next0`.
+
+`WalkIter` — `%7` and `%8`, the entry stream's lane and the document byte — is
+the remaining environment clause, and it reads the entry stream at `G.ep` through
+the entry run's folds; that peel is the next row. -/
+
+/-- The environment at `NodeBlock21` after the three runs: the entry run's cells,
+then the preheader's five, then the header's eight. -/
+def walkSeedFinalEnv {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) (q : Nat) (bt : UInt8) : Env :=
+  let e1 := walkEntryEnv1 env s.next G.n
+  let e2 := walkEntryEnv2 e1 S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev
+  let e3 := walkEntryEnv3 e2 G.b G.n G.ep S.s S.c
+  let e4 := walkEntryEnv4 e3 G.b G.nep
+  let p1 : Env := ("%k11.i", .ptr (S.c + 32)) :: e4
+  let p2 : Env := ("%h1.i.i.i51", .ptr (S.z + 24)) :: p1
+  let p3 : Env := ("%gap.i", .ptr (S.tok + 20)) :: p2
+  let p4 : Env := ("%end.i", .ptr (S.tok + 8)) :: p3
+  let p5 : Env := ("%kind404.i", .ptr (S.tok + 16)) :: p4
+  whileBodyOut p5 0 0 G.b G.ep S.c q bt
+
+/-- Peel the seed's environment to a binding and match it exactly. -/
+macro "walk_final_lk" : tactic => `(tactic|
+  (simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
+     walkEntryEnv2, walkEntryEnv1, cells, State.bind]
+   simp only [woff_4, woff_8, woff_16, woff_24, woff_32, woff_40, woff_48, woff_56,
+     woff_64, woff_72, woff_80, woff_1112, woff_1192]
+   repeat rw [lookupName_cons_ne _ _ (by decide)]
+   first
+   | (rw [lookupName_cons_self]; rfl)
+   | rfl))
+
+theorem walkSeedFinalEnv_k {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) (q : Nat) (bt : UInt8) :
+    lookupName (walkSeedFinalEnv G S env s q bt) "%k.0.i249" = some (.int 64 0) := by
+  walk_final_lk
+
+theorem walkSeedFinalEnv_sp {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) (q : Nat) (bt : UInt8) :
+    lookupName (walkSeedFinalEnv G S env s q bt) "%sp.i.0248" = some (.int 32 0) := by
+  walk_final_lk
+
+theorem walkSeedFinalEnv_ptrs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) (q : Nat) (bt : UInt8)
+    (hct : lookupName env "%ctype.i" = some (.ptr S.ctype))
+    (hcs : lookupName env "%cst.i" = some (.ptr S.cst)) :
+    WalkPtrs G (walkSeed G S) (walkSeedFinalEnv G S env s q bt) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · walk_final_lk
+  · walk_final_lk
+  · walk_final_lk
+  · simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
+      walkEntryEnv2, walkEntryEnv1, cells, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hct
+  · simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
+      walkEntryEnv2, walkEntryEnv1, cells, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hcs
+  · walk_final_lk
+
+theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) (q : Nat) (bt : UInt8) (hnext : s.next = G.next0) :
+    WalkRegs G (walkSeed G S) (walkSeedFinalEnv G S env s q bt) := by
+  intro p hp
+  simp only [walkStaticRegs, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals first
+    | walk_final_lk
+    | (simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
+        walkEntryEnv2, walkEntryEnv1, cells, State.bind]
+       repeat rw [lookupName_cons_ne _ _ (by decide)]
+       rw [lookupName_cons_self, hnext])
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_k' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_k
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_sp' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_sp
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_ptrs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_ptrs
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_regs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_regs
+
 /-! ### Axiom footprints -/
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkEntry_step' depends on axioms: [propext, Quot.sound] -/
