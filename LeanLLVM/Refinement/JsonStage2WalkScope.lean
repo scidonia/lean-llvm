@@ -253,15 +253,18 @@ still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
 `Stage2WalkCompletes` is not inhabited.
 
-**The open rows, named.**  Five remain, and none is claimed here: (1) the
-*entry run* — `WalkSeedState` now asks for the two carriers, and no producer of
-it exists yet, so `walkSeed_invariant`'s hypothesis is the initialisation's
-obligation rather than its conclusion; (2) the container stacks' *contents* —
+**The open rows, named.**  Four remain, and none is claimed here.  The *entry
+run* is no longer one: `JsonStage2WalkSeedRun`'s `walkSeedState` produces
+`WalkSeedState` at the state the entry run leaves — its thirteen clauses, the
+three carriers and the frame and presence rows included — and
+`walkSeedState_geometry` derives the run's two loads from the staging itself, so
+`walkSeed_invariant`'s hypothesis is now a conclusion of the seed module.  What
+remains: (1) the container stacks' *contents* —
 `WalkRegs`/`WalkIter` carry registers, not the per-depth bytes `ctype[i]`/`cst[i]`,
 because a push or pop does not preserve a byte at `sp - 1` (the sound shape is a
 carried `Nat → UInt8` map, which `if.end24_step`, class D's four container-byte
-stores and `cleanup478.i` would all have to move); (3) the 165-block next-link
-lemma; (4) the well-founded completion one level up from `WalkChain`; and (5) the
+stores and `cleanup478.i` would all have to move); (2) the 165-block next-link
+lemma; (3) the well-founded completion one level up from `WalkChain`; and (4) the
 budget's global accounting.  The census's 157 links are the arithmetic of the
 *classes*, and a link whose source invariant no run reaches (the preheader's,
 whose premise asks for `%k11.i` before the block binds it) is vacuous: it is
@@ -4872,11 +4875,10 @@ four pieces, in order:
    verdicts are proved:
    `walkTrap_noStep`, `walkEventReserve_clear`, `walkArenaReserve_clear`), so the
    traversal has no gap;
-2. **the seed** — `WalkSeedState` at `entry`'s handoff, which is the
-   initialisation's own obligation: `walkSeed_invariant` turns it into the
-   invariant at the loop head, and what `entry`'s 58 instructions must show is
-   that state (the two `phi` values, the six pointer bindings, the log's four
-   fields and the staging's presence);
+2. **the seed** — *landed*: `walkSeedState` (`JsonStage2WalkSeedRun`) is
+   `WalkSeedState` at the state the entry run leaves, and `walkSeedState_geometry`
+   derives its two loads from the staging, so `walkSeed_invariant` turns it into
+   the invariant at the loop head with nothing assumed beside the geometry;
 3. **the return** — *stated and composed*: `walkIfEnd_step` is `if.end`'s step at
    either arm's `phi` value, `walkExitBlock_denote` and `walkIfThenBlock_denote`
    are the two arms' copies (with `walkIfThen_step` the refusal arm's jump), and

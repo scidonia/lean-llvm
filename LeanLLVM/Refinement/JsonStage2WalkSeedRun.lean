@@ -30,28 +30,32 @@ folds plus the header's cursor word.  Its five log clauses are proved at it
 (`walkEntryMem_hash`, `_len`, `_cap`, `_alen`, `_acap`), read through the folds
 by their extents.  The environment's clauses are `walkSeedFinalEnv`: the two
 `phi` values (zero, zero), `WalkPtrs`' six addresses and `WalkRegs`'
-twenty-four, all lookups the run's own cells answer.  So `WalkSeedState` is
-produced up to three rows, and each is named rather than assumed:
+twenty-four, all lookups the run's own cells answer.  The three rows that
+complete `WalkSeedState` are landed here, each with its own proof:
 
-* `WalkIter` — `%7` and `%8` — needs the entry stream's first lane read at
-  `G.ep` through the run's folds, and the lane-to-document-byte tie is
-  `WalkGeom.entries`/`G.doc` at index zero.  The peel is the read-side dual of
-  the frame's coverage: every store the entry run makes lies outside
-  `[G.ep, G.ep + 4 * G.nep)`, which is the staging's separation.
-* the staged objects' presence — `walkStaged`'s extents at the run's memory —
-  follows from the caller's `HasBytes` clauses and monotonicity
-  (`walkStaged_write`), since every write the run makes lands in a staged extent
-  or in the four stack slots.
-* the frame — `UnchangedOutside m0 (walkEntryMem G S) (walkWide G (walkSeed G S))`
-  — follows the same coverage the other way: every write lands in a
-  `walkWide` entry, so the frames compose by `UnchangedOutside.write_inside`
-  over the store list's induction.
+* the frame — `walkEntryMem_frame`: every extent the run writes
+  (`walkEntryStores`) is an entry of `walkWide` at the seed, so the segment
+  layers compose and the last is widened through that coverage.  Each segment's
+  stores are placed in its own extent (`walkSeg2Init_frame`, `walkSeg2_frame`,
+  `walkSeg3_frame`, `walkSeg4_frame`, `walkHeader_frame`).
+* the staged objects' presence — `walkSeed_staged` — from the caller's and the
+  adapter's `HasBytes` clauses, monotone under every store the run makes
+  (`walkEntryMem_hasBytes`).
+* `WalkIter` — `%7`/`%8` — from the run's two loads: `walkSeed_lane` and
+  `walkSeed_docByte` read the entry stream's lane at `G.ep` and the document's
+  byte at `G.b + lane` through the frame (the read-side dual of its coverage) and
+  tie them to `entryPos G 0`/`entryByte G 0` by `WalkGeom.entries` and
+  `WalkGeom.doc`.
 
-The two rows below the seed are the ones `JsonStage2WalkScope`'s census already
-names, and this module neither lands nor narrows them: the **stack map** (the
-carried `Nat → UInt8` for the container stacks, moved by `if.end24_step`, class
-D's four container-byte stores and `cleanup478.i`) and the **completion arc**
-(the next-link lemma, the well-founded completion, the budget accounting,
+`walkSeedState` assembles the thirteen clauses at the run's own two loads, and
+`walkSeedState_geometry` derives those loads from the staging, so the seed's
+production no longer asks for anything the geometry does not already carry.
+
+The two rows below the seed are the ones `JsonStage2WalkScope`'s census names,
+and this module neither lands nor narrows them: the **stack map** (the carried
+`Nat → UInt8` for the container stacks, moved by `if.end24_step`, class D's four
+container-byte stores and `cleanup478.i`) and the **completion arc** (the
+next-link lemma, the well-founded completion, the budget accounting,
 `Stage2WalkCompletes` and `Stage2WalkObligation`).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkRun
@@ -699,6 +703,647 @@ theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (en
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_regs' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_regs
+
+
+/-! ### The seed's last three rows
+
+`WalkSeedState` asks, beyond the register and log clauses read at the run's own
+cells, for three claims: the per-iteration carrier `WalkIter`, the staged
+objects' presence, and the frame.  This section produces all three at the run's
+memory `walkEntryMem` and its environment `walkSeedFinalEnv`, and assembles
+`walkSeedState`.
+
+The frame is the arithmetic of the run's store set.  Each segment's stores lie in
+a named extent — `s2InitStores` in the `%s` record, `walkSeg2Stores` in `%s + 56`
+and the log `%z`, `walkSeg3Stores` in the cursor record `%c.i`, the two zeroed
+slots at `%s`'s successor cursor, and the header's word at `%c.i + 32` — and every
+one of those extents is an entry of `walkWide` at the seed.  `walkEntryStores` is
+that list, and `walkEntryMem_frame` is the frame at it.
+
+Presence is monotonicity over the same store set: a store replaces a cell or
+adds one, so a range the caller staged is still there after every write
+(`HasBytes.stage2WriteStores`).
+
+The carrier's read side is the dual of the frame's coverage.  The entry stream's
+lane and the document's byte at that lane lie outside `walkWide`, so the frame
+transports both reads from `m0`, and `WalkGeom.entries` fixes the lane at index
+zero (`readLanes32_nth`) while `WalkGeom.doc` fixes the byte.  It is these two
+that make `%7`/`%8` the carrier's values rather than two arbitrary reads. -/
+
+/-- The extents the entry run's stores lie in, as one list: the `%s` record, the
+log, the cursor record, and the four stack objects at the call's cursor. -/
+def walkEntryStores {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : List (Nat × Nat) :=
+  [(S.s, stage2StateExtent), (S.z, stage2LogExtent), (S.c, stage2CursorExtent)] ++
+    stage2AllocaWrites G.next0
+
+theorem walkEntryStores_s {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G} :
+    (S.s, stage2StateExtent) ∈ walkEntryStores G S := by
+  simp [walkEntryStores]
+
+theorem walkEntryStores_z {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G} :
+    (S.z, stage2LogExtent) ∈ walkEntryStores G S := by
+  simp [walkEntryStores]
+
+theorem walkEntryStores_c {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G} :
+    (S.c, stage2CursorExtent) ∈ walkEntryStores G S := by
+  simp [walkEntryStores]
+
+/-- **`s2_init`'s fifteen stores lie inside the `%s` record's extent.** -/
+theorem walkS2InitStores_bounds (sv b n nb ep : Nat) :
+    ∀ p ∈ s2InitStores sv b n nb ep,
+      sv ≤ p.1 ∧ p.1 + p.2.length ≤ sv + stage2StateExtent := by
+  intro p hp
+  simp only [s2InitStores, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl
+  all_goals
+    (simp only [wordBytes, natToBytes_length, stage2StateExtent]
+     omega)
+
+/-- **The initialisation leaves the frame.**  Its fifteen stores are the record's
+own fields. -/
+theorem walkSeg2Init_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (n nb : BitVec 64) :
+    UnchangedOutside m0 (walkSeg2InitMem S.s G.b G.ep n nb m0) (walkEntryStores G S) := by
+  rw [walkSeg2InitMem]
+  refine stage2WriteStores_frame ?_
+  intro p hp
+  obtain ⟨h1, h2⟩ := walkS2InitStores_bounds S.s G.b _ _ G.ep p hp
+  exact ⟨(S.s, stage2StateExtent), walkEntryStores_s, by omega, by omega⟩
+
+/-- **The second segment leaves the frame.**  Its stores are the record's three
+cursor fields and the log's extent. -/
+theorem walkSeg2_frame {m0 m : Mem} {G : WalkGeom m0} {S : WalkStage G}
+    (h : UnchangedOutside m0 m (walkEntryStores G S)) :
+    UnchangedOutside m0
+      (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev G.nev0
+        G.evcap m) (walkEntryStores G S) := by
+  rw [walkSeg2PostMem_eq]
+  refine h.trans' (stage2WriteStores_frame ?_)
+  intro p hp
+  rcases walkSeg2StoreWindow S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev
+    G.nev0 G.evcap p hp with ⟨h1, h2⟩ | ⟨h1, h2⟩
+  · exact ⟨(S.s, stage2StateExtent), walkEntryStores_s,
+      by omega,
+      by simp only [stage2StateExtent]; omega⟩
+  · exact ⟨(S.z, stage2LogExtent), walkEntryStores_z,
+      by omega,
+      by simp only [stage2LogExtent]; omega⟩
+
+/-- **The third segment leaves the frame.**  Its stores are the cursor record's
+memset and five fields, inside `[%c.i, %c.i + 1192)`. -/
+theorem walkSeg3_frame {m0 m : Mem} {G : WalkGeom m0} {S : WalkStage G}
+    (h : UnchangedOutside m0 m (walkEntryStores G S)) :
+    UnchangedOutside m0 (walkSeg3PostMem G.b G.n G.ep G.nep S.e S.c m)
+      (walkEntryStores G S) := by
+  rw [walkSeg3PostMem]
+  refine h.trans' (stage2WriteStores_frame ?_)
+  intro p hp
+  obtain ⟨h1, h2⟩ := walkSeg3Stores_bounds G.b G.n G.ep G.nep S.e S.c p hp
+  exact ⟨(S.c, stage2CursorExtent), walkEntryStores_c,
+    by omega, by simp only [stage2CursorExtent]; omega⟩
+
+/-- **The fourth segment's two zeroed slots leave the frame.**  They are two of
+the four objects the body allocates at the call's cursor. -/
+theorem walkSeg4_frame {m0 m : Mem} {G : WalkGeom m0} {S : WalkStage G}
+    (h : UnchangedOutside m0 m (walkEntryStores G S)) :
+    UnchangedOutside m0 (walkSeg4PostMem (G.next0 + 8) (G.next0 + 12) m)
+      (walkEntryStores G S) := by
+  rw [walkSeg4PostMem]
+  have hroot : UnchangedOutside m0 (writeBytes m (G.next0 + 8) (natToBytes 0 4))
+      (walkEntryStores G S) :=
+    h.write_le (w := 4) ⟨(G.next0 + 8, 4),
+      by simp [walkEntryStores, stage2AllocaWrites], by omega, by omega⟩
+      (bs := natToBytes 0 4) (by simp [natToBytes_length])
+  exact hroot.write_le (w := 8) ⟨(G.next0 + 12, 8),
+    by simp [walkEntryStores, stage2AllocaWrites], by omega, by omega⟩
+    (bs := natToBytes 0 8) (by simp [natToBytes_length])
+
+/-- **The header's cursor word leaves the frame.**  It is `%c.i`'s `k` field. -/
+theorem walkHeader_frame {m0 m : Mem} {G : WalkGeom m0} {S : WalkStage G}
+    (h : UnchangedOutside m0 m (walkEntryStores G S)) :
+    UnchangedOutside m0 (writeBytes m (S.c + 32) (wordBytes 8 1)) (walkEntryStores G S) :=
+  h.write_le (w := 8) ⟨(S.c, stage2CursorExtent), walkEntryStores_c,
+    by omega,
+    by simp only [stage2CursorExtent]; omega⟩
+    (bs := wordBytes 8 1) (by simp [wordBytes, natToBytes_length])
+
+/-- **Every extent the entry run writes is an entry of the seed's frame.**  The
+three named extents are entries of `stage2ReportScratch`, which `walkWide` carries
+beside the two cursor prefixes; the four stack slots are `walkWide`'s tail. -/
+theorem walkEntryStores_covered {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    ∀ r ∈ walkEntryStores G S,
+      ∃ q ∈ walkWide G (walkSeed G S), q.1 ≤ r.1 ∧ r.1 + r.2 ≤ q.1 + q.2 := by
+  intro r hr
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_cons.mp hr with rfl | hr'
+    · exact ⟨(S.s, stage2StateExtent), by
+        simp [walkWide, walkPresent, walkSeed, stage2ReportScratch, stage2StagedWrites],
+        le_rfl, le_rfl⟩
+    · rcases List.mem_cons.mp hr' with rfl | hr''
+      · exact ⟨(S.z, stage2LogExtent), by
+          simp [walkWide, walkPresent, walkSeed, stage2ReportScratch, stage2StagedWrites],
+          le_rfl, le_rfl⟩
+      · rcases List.mem_cons.mp hr'' with rfl | hnil
+        · exact ⟨(S.c, stage2CursorExtent), by
+            simp [walkWide, walkPresent, walkSeed, stage2ReportScratch, stage2StagedWrites],
+            le_rfl, le_rfl⟩
+        · exact absurd hnil (by simp)
+  · exact ⟨r, by simp [walkWide, walkPresent, walkSeed, hr], le_rfl, le_rfl⟩
+
+/-- **The frame at the seed's memory**: the entry run writes only inside
+`walkWide`.  The four segment layers compose, and the last one is widened to
+`walkWide` through `walkEntryStores_covered`. -/
+theorem walkEntryMem_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    UnchangedOutside m0 (walkEntryMem G S) (walkWide G (walkSeed G S)) := by
+  have h0 := walkSeg2Init_frame G S (BitVec.ofNat 64 G.n)
+    ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6)
+  have h1 := walkSeg2_frame h0
+  have h2 := walkSeg3_frame h1
+  have h3 := walkSeg4_frame h2
+  have h4 := walkHeader_frame h3
+  exact UnchangedOutside.of_covered (by simpa only [walkEntryMem] using h4)
+    (walkEntryStores_covered G S)
+
+/-- Presence is monotone under a store list: a store replaces a cell or adds
+one. -/
+theorem hasBytes_stage2WriteStores {m : Mem} {a n : Nat} (h : HasBytes m a n)
+    (ws : List (Nat × List UInt8)) : HasBytes (stage2WriteStores m ws) a n := by
+  induction ws generalizing m with
+  | nil => exact h
+  | cons p rest ih =>
+      obtain ⟨addr, bs⟩ := p
+      exact ih (m := writeBytes m addr bs) (hasBytes_writeBytes h)
+
+/-- A shorter range of a present range is present: presence is per location, so a
+prefix of a present range is present. -/
+theorem walkHasBytes_short {m : Mem} {a n n' : Nat} (h : HasBytes m a n) (hn : n' ≤ n) :
+    HasBytes m a n' :=
+  (hasBytes_iff m a n').mpr (LeanLLVM.HasBytes.mono ((hasBytes_iff m a n).mp h) hn)
+
+/-- **A range present before the run is present at its memory.**  Every segment is
+a store fold or a pair of stores, and presence is what a store only adds. -/
+theorem walkEntryMem_hasBytes {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    {a n : Nat} (h : HasBytes m0 a n) : HasBytes (walkEntryMem G S) a n := by
+  rw [walkEntryMem]
+  have h1 : HasBytes (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+      ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) m0) a n := by
+    rw [walkSeg2InitMem]
+    exact hasBytes_stage2WriteStores h _
+  have h2 : HasBytes (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap
+      G.ev G.nev0 G.evcap (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+        ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) m0)) a n := by
+    rw [walkSeg2PostMem_eq]
+    exact hasBytes_stage2WriteStores h1 _
+  have h3 : HasBytes (walkSeg3PostMem G.b G.n G.ep G.nep S.e S.c
+      (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev G.nev0
+        G.evcap (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+          ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) m0))) a n := by
+    rw [walkSeg3PostMem]
+    exact hasBytes_stage2WriteStores h2 _
+  have h4 : HasBytes (walkSeg4PostMem (G.next0 + 8) (G.next0 + 12)
+      (walkSeg3PostMem G.b G.n G.ep G.nep S.e S.c
+        (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev G.nev0
+          G.evcap (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+            ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) m0)))) a n := by
+    rw [walkSeg4PostMem]
+    exact hasBytes_writeBytes (start := G.next0 + 12) (bs := natToBytes 0 8)
+      (hasBytes_writeBytes (start := G.next0 + 8) (bs := natToBytes 0 4) h3)
+  exact hasBytes_writeBytes (start := S.c + 32) (bs := wordBytes 8 1) h4
+
+/-- **The staged objects' presence at the seed's memory.**  The five ABI extents
+are the caller's staging (`G.arenaCap`, the two cursor words, `G.evCap`,
+`G.errBytes`), the seven appended objects and `%d.i` are the adapter's
+(`WalkStage.present`, `WalkStage.dPresent`), and presence survives the run. -/
+theorem walkSeed_staged {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    ∀ r ∈ walkStaged G (walkSeed G S), HasBytes (walkEntryMem G S) r.1 r.2 := by
+  intro r hr
+  refine walkEntryMem_hasBytes G S ?_
+  simp only [walkStaged, walkSeed, stage2ReportScratch] at hr
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_cons.mp hr with rfl | hr'
+    · exact walkHasBytes_short G.arenaCap G.arenaRoom
+    · rcases List.mem_cons.mp hr' with rfl | hr''
+      · exact ⟨wordBytes 8 G.ndst0, G.ndstRead⟩
+      · rcases List.mem_cons.mp hr'' with rfl | hr'''
+        · exact G.evCap
+        · rcases List.mem_cons.mp hr''' with rfl | hr''''
+          · exact ⟨wordBytes 8 G.nev0, G.nevRead⟩
+          · rcases List.mem_cons.mp hr'''' with rfl | hnil
+            · exact G.errBytes
+            · exact absurd hnil (by simp)
+  · rcases List.mem_append.mp hr with hr | hr
+    · exact S.present r hr
+    · rcases List.mem_cons.mp hr with rfl | hnil
+      · exact S.dPresent
+      · exact absurd hnil (by simp)
+
+/-- **A byte outside the seed's frame.**  At the seed the frame's two cursor
+prefixes are the staged cursors, so the arena's and event stream's prefixes are
+excluded by the staging's separation too; the seven appended objects and `%d.i`
+are excluded the same way, and the four stack slots by the watermark. -/
+theorem walkSeedWide_outside {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {a m : Nat}
+    (hArena : a + m ≤ G.dst ∨ G.dst + G.ndst0 ≤ a)
+    (hEv : a + m ≤ G.ev ∨ G.ev + G.nev0 ≤ a)
+    (hSeven : ∀ r ∈ stage2StagedWrites S.c S.ctype S.cst S.tok S.s S.z S.e,
+      r.1 + r.2 ≤ a ∨ a + m ≤ r.1)
+    (hD : S.d + 8 ≤ a ∨ a + m ≤ S.d)
+    (hwm : a + m ≤ G.next0) {e : Nat} (ha : a ≤ e) (he : e < a + m) :
+    ¬ inRegions (walkWide G (walkSeed G S)) e := by
+  rintro ⟨r, hr, hlo, hhi⟩
+  simp only [walkWide, walkPresent, walkSeed, stage2ReportScratch] at hr
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_append.mp hr with hr | hr
+    · rcases List.mem_cons.mp hr with rfl | hr'
+      · rcases hArena with h' | h' <;> omega
+      · rcases List.mem_cons.mp hr' with rfl | hnil
+        · rcases hEv with h' | h' <;> omega
+        · exact absurd hnil (by simp)
+    · rcases List.mem_append.mp hr with hr | hr
+      · rcases hSeven r hr with h' | h' <;> omega
+      · rcases List.mem_cons.mp hr with rfl | hnil
+        · rcases hD with h' | h' <;> omega
+        · exact absurd hnil (by simp)
+  · exact not_walkAlloca_of_lt (by omega) ⟨r, hr, hlo, hhi⟩
+
+/-- The staged event cursor is inside the event stream's capacity: the stream has
+room for one record per input byte. -/
+theorem walkGeom_nev_le {m0 : Mem} (G : WalkGeom m0) : G.nev0 ≤ G.evcap := by
+  have h := G.evRoom
+  simp only [stage2RecordBytes] at h
+  omega
+
+/-- **The entry stream's bytes are outside the seed's frame**, which is the
+read-side dual of the frame's coverage. -/
+theorem walkSeed_entry_out {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (hn : 0 < G.nep) {e : Nat} (ha : G.ep ≤ e) (he : e < G.ep + 4) :
+    ¬ inRegions (walkWide G (walkSeed G S)) e := by
+  have hsep := disjointRegions_staged_prefix S.separate
+  have h13 := stage2Regions_sep hsep (i := 1) (j := 3)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  have h14 := stage2Regions_sep hsep (i := 1) (j := 4)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  simp only [stage2Regions, List.getElem_cons_zero, List.getElem_cons_succ] at h13 h14
+  have hn4 : 4 ≤ 4 * G.nep := by
+    simpa using Nat.mul_le_mul_left 4 (Nat.succ_le_of_lt hn)
+  have hnev : G.nev0 ≤ G.evcap := walkGeom_nev_le G
+  refine walkSeedWide_outside G S (a := G.ep) (m := 4) ?_ ?_ ?_ ?_ ?_ (by omega) (by omega)
+  · omega
+  · omega
+  · intro r hr
+    rcases stage2StagedWrites_against (a := G.ep) (m := 4 * G.nep)
+      S.separate (by simp [stage2Regions]) r hr with h' | h'
+    · exact Or.inl h'
+    · exact Or.inr (by omega)
+  · rcases S.dSep (G.ep, 4 * G.nep) (by simp [stage2WalkRegions, stage2Regions]) with hd | hd
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · have hwm := G.watermark (G.ep, 4 * G.nep) (by simp [stage2Regions])
+    omega
+
+/-- **The document's bytes are outside the seed's frame.** -/
+theorem walkSeed_doc_out {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    {e : Nat} (ha : G.b ≤ e) (he : e < G.b + G.n) :
+    ¬ inRegions (walkWide G (walkSeed G S)) e := by
+  have hsep := disjointRegions_staged_prefix S.separate
+  have h03 := stage2Regions_sep hsep (i := 0) (j := 3)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  have h04 := stage2Regions_sep hsep (i := 0) (j := 4)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  simp only [stage2Regions, List.getElem_cons_zero, List.getElem_cons_succ] at h03 h04
+  have hnev : G.nev0 ≤ G.evcap := walkGeom_nev_le G
+  refine walkSeedWide_outside G S (a := G.b) (m := G.n) ?_ ?_ ?_ ?_ ?_ ha he
+  · omega
+  · omega
+  · intro r hr
+    rcases stage2StagedWrites_against (a := G.b) (m := G.n + stage2ReadTail)
+      S.separate (by simp [stage2Regions]) r hr with h' | h'
+    · exact Or.inl h'
+    · exact Or.inr (by omega)
+  · rcases S.dSep (G.b, G.n + stage2ReadTail)
+      (by simp [stage2WalkRegions, stage2Regions]) with hd | hd
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · have hwm := G.watermark (G.b, G.n + stage2ReadTail) (by simp [stage2Regions])
+    omega
+
+/-- **The entry stream's first lane passes the entry run.**  The stream is staged
+outside every extent the run writes, so the frame transports the read from `m0`. -/
+theorem walkSeed_entry_read {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (hn : 0 < G.nep) :
+    readBytes (walkEntryMem G S) G.ep 4 = readBytes m0 G.ep 4 :=
+  readBytes_eq_of_UnchangedOn (unchangedOutside_iff_inRegions.mp (walkEntryMem_frame G S))
+    (fun k hk => walkSeed_entry_out (G := G) (S := S) hn (e := G.ep + k)
+      (by omega) (by omega))
+
+/-- **The lane the run read is the entry stream's position at index zero.** -/
+theorem walkSeed_lane {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (hn : 0 < G.nep)
+    {bs : List UInt8} (hread : readBytes (walkEntryMem G S) G.ep 4 = some bs) :
+    bytesToNat bs = entryPos G 0 := by
+  have hread0 : readBytes m0 G.ep 4 = some bs := by
+    rw [← walkSeed_entry_read G S hn]
+    exact hread
+  obtain ⟨-, hget⟩ := readLanes32_nth (m := m0) (addr := G.ep) (n := G.nep)
+    (l := G.ent) G.entries
+  obtain ⟨q0, bs0, hmem, hread1, hval⟩ := hget 0 hn
+  rw [show G.ep + 4 * 0 = G.ep from by omega] at hread1
+  rw [hread0] at hread1
+  have hbs : bs = bs0 := Option.some.inj hread1
+  have hpos : q0 = entryPos G 0 := by
+    cases h : G.ent with
+    | nil => rw [h] at hmem; simp at hmem
+    | cons x xs =>
+        rw [h] at hmem
+        have hx : x = q0 := by simpa using hmem
+        simpa [entryPos, h] using hx.symm
+  rw [hbs, hval, hpos]
+
+/-- **The document byte the run read is the one the lane selects.**  The document
+is staged outside every extent the run writes, so the frame transports its byte
+too, and `WalkGeom.doc` says what that byte is. -/
+theorem walkSeed_docByte {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (hn : 0 < G.nep)
+    {bs : List UInt8} (hread : readBytes (walkEntryMem G S) G.ep 4 = some bs)
+    {bt : UInt8} (hdoc : readBytes (walkEntryMem G S) (G.b + bytesToNat bs) 1 = some [bt]) :
+    bt = entryByte G 0 := by
+  have hq : bytesToNat bs = entryPos G 0 := walkSeed_lane G S hn hread
+  obtain ⟨-, hget⟩ := readLanes32_nth (m := m0) (addr := G.ep) (n := G.nep)
+    (l := G.ent) G.entries
+  obtain ⟨q0, bs0, hmem, -, hval⟩ := hget 0 hn
+  have hqin : bytesToNat bs ∈ G.ent := by
+    rw [hq]
+    have hpos : q0 = entryPos G 0 := by
+      cases h : G.ent with
+      | nil => rw [h] at hmem; simp at hmem
+      | cons x xs =>
+          rw [h] at hmem
+          have hx : x = q0 := by simpa using hmem
+          simpa [entryPos, h] using hx.symm
+    rw [← hpos]
+    rw [List.mem_iff_getElem?]
+    exact ⟨0, hmem⟩
+  have hqn : bytesToNat bs < G.n := G.inside _ hqin
+  have hb0 : readByte m0 (G.b + bytesToNat bs) = some (G.bs.getD (bytesToNat bs) 0) :=
+    readByte_of_readBytes G.doc hqn
+  have hb1 : readBytes m0 (G.b + bytesToNat bs) 1 = some [G.bs.getD (bytesToNat bs) 0] :=
+    walkReadBytes_one_of_readByte hb0
+  have hout : readBytes (walkEntryMem G S) (G.b + bytesToNat bs) 1 =
+      readBytes m0 (G.b + bytesToNat bs) 1 :=
+    readBytes_eq_of_UnchangedOn (unchangedOutside_iff_inRegions.mp (walkEntryMem_frame G S))
+      (fun k hk => walkSeed_doc_out (G := G) (S := S) (e := G.b + bytesToNat bs + k)
+        (by omega) (by omega))
+  rw [hout, hb1] at hdoc
+  have hbt : bt = G.bs.getD (bytesToNat bs) 0 := by simpa using hdoc.symm
+  rw [hbt, hq]
+  rfl
+
+/-- **The seed's per-iteration carrier.**  `%7` and `%8` are the header's first
+pass, so the carrier's values are the lane and the document byte the read
+provides; `walkSeed_lane`/`walkSeed_docByte` tie both to the geometry. -/
+theorem walkSeedFinalEnv_iter {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) {q : Nat} {bt : UInt8} (hq : q = entryPos G 0)
+    (hbt : bt = entryByte G 0) :
+    WalkIter G (walkSeed G S).k (walkSeedFinalEnv G S env s q bt) := by
+  subst hq
+  subst hbt
+  have hk : (walkSeed G S).k = 0 := rfl
+  refine ⟨?_, ?_⟩
+  · rw [hk]; walk_final_lk
+  · rw [hk]; walk_final_lk
+
+/-- The state the initialisation hands the loop, at the run's own memory and
+environment: `NodeBlock21`, entered from the header's first pass. -/
+def walkSeedFinalState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
+    (q : Nat) (bt : UInt8) : State :=
+  { s with
+    env := walkSeedFinalEnv G S s.env s q bt
+    mem := walkEntryMem G S
+    pc := "NodeBlock21"
+    pre := some "while.body.i" }
+
+theorem walkSeedFinalState_env {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (s : State) (q : Nat) (bt : UInt8) :
+    (walkSeedFinalState G S s q bt).env = walkSeedFinalEnv G S s.env s q bt := by
+  simp only [walkSeedFinalState]
+
+theorem walkSeedFinalState_mem {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (s : State) (q : Nat) (bt : UInt8) :
+    (walkSeedFinalState G S s q bt).mem = walkEntryMem G S := by
+  simp only [walkSeedFinalState]
+
+theorem walkSeedFinalState_pc {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (s : State) (q : Nat) (bt : UInt8) :
+    (walkSeedFinalState G S s q bt).pc = "NodeBlock21" := by
+  simp only [walkSeedFinalState]
+
+/-- **The seed's producer.**  The state the entry run leaves at `NodeBlock21` is a
+`WalkSeedState`: its block, its two loop-head `phi`s, the three register carriers,
+the five log clauses, the staged objects' presence and the frame.  The two read
+facts are the header's own loads — the entry stream's lane at `G.ep` and the
+document's byte at that lane — read at the run's memory; `walkSeed_lane` and
+`walkSeed_docByte` turn them into the carrier's values. -/
+theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
+    {bs : List UInt8} {bt : UInt8} (hn : 0 < G.nep)
+    (hct : lookupName s.env "%ctype.i" = some (.ptr S.ctype))
+    (hcs : lookupName s.env "%cst.i" = some (.ptr S.cst))
+    (hnext : s.next = G.next0)
+    (hread : readBytes (walkEntryMem G S) G.ep 4 = some bs)
+    (hdoc : readBytes (walkEntryMem G S) (G.b + bytesToNat bs) 1 = some [bt]) :
+    WalkSeedState G S (walkSeedFinalState G S s (bytesToNat bs) bt) := by
+  have hq := walkSeed_lane G S hn hread
+  have hbt := walkSeed_docByte G S hn hread hdoc
+  refine ⟨walkSeedFinalState_pc G S s (bytesToNat bs) bt, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [walkSeedFinalState_env]
+    exact walkSeedFinalEnv_k (G := G) (S := S) (env := s.env) (s := s)
+      (q := bytesToNat bs) (bt := bt)
+  · rw [walkSeedFinalState_env]
+    exact walkSeedFinalEnv_sp (G := G) (S := S) (env := s.env) (s := s)
+      (q := bytesToNat bs) (bt := bt)
+  · rw [walkSeedFinalState_env]
+    exact walkSeedFinalEnv_ptrs (G := G) (S := S) (env := s.env) (s := s)
+      (q := bytesToNat bs) (bt := bt) hct hcs
+  · rw [walkSeedFinalState_env]
+    exact walkSeedFinalEnv_regs (G := G) (S := S) (env := s.env) (s := s)
+      (q := bytesToNat bs) (bt := bt) hnext
+  · rw [walkSeedFinalState_env]
+    exact walkSeedFinalEnv_iter (G := G) (S := S) (env := s.env) (s := s) hq hbt
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_hash G S
+  · rw [walkSeedFinalState_mem]
+    exact walkSeed_staged G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_frame G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_len G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_cap G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_alen G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_acap G S
+
+
+
+/-- **The seed from the staging alone.**  The two loads `walkSeedState` takes are
+the header's, and the frame transports both from `m0`; `WalkGeom.entries` fixes
+the lane at index zero and `WalkGeom.doc` the byte it selects.  So the state is
+the one `while.body.i` leaves after its first pass, with no read hypothesis
+beside the staging. -/
+theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
+    (hn : 0 < G.nep)
+    (hct : lookupName s.env "%ctype.i" = some (.ptr S.ctype))
+    (hcs : lookupName s.env "%cst.i" = some (.ptr S.cst))
+    (hnext : s.next = G.next0) :
+    WalkSeedState G S (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) := by
+  obtain ⟨-, hget⟩ := readLanes32_nth (m := m0) (addr := G.ep) (n := G.nep)
+    (l := G.ent) G.entries
+  obtain ⟨q0, bs0, hmem, hread0, hval⟩ := hget 0 hn
+  rw [show G.ep + 4 * 0 = G.ep from by omega] at hread0
+  have hpos : q0 = entryPos G 0 := by
+    cases h : G.ent with
+    | nil => rw [h] at hmem; simp at hmem
+    | cons x xs =>
+        rw [h] at hmem
+        have hx : x = q0 := by simpa using hmem
+        simpa [entryPos, h] using hx.symm
+  have hread : readBytes (walkEntryMem G S) G.ep 4 = some bs0 := by
+    rw [walkSeed_entry_read G S hn]
+    exact hread0
+  have hq : bytesToNat bs0 = entryPos G 0 := walkSeed_lane G S hn hread
+  have hqin : entryPos G 0 ∈ G.ent := by
+    rw [← hpos]
+    rw [List.mem_iff_getElem?]
+    exact ⟨0, hmem⟩
+  have hqn : entryPos G 0 < G.n := G.inside _ hqin
+  have hbyte : readBytes (walkEntryMem G S) (G.b + entryPos G 0) 1 =
+      some [G.bs.getD (entryPos G 0) 0] := by
+    rw [readBytes_eq_of_UnchangedOn (unchangedOutside_iff_inRegions.mp (walkEntryMem_frame G S))
+      (fun k hk => walkSeed_doc_out (G := G) (S := S) (e := G.b + entryPos G 0 + k)
+        (by omega) (by omega))]
+    exact walkReadBytes_one_of_readByte (readByte_of_readBytes G.doc hqn)
+  have hdoc : readBytes (walkEntryMem G S) (G.b + bytesToNat bs0) 1 =
+      some [G.bs.getD (entryPos G 0) 0] := by
+    rw [hq]
+    exact hbyte
+  have hbt0 : G.bs.getD (entryPos G 0) 0 = entryByte G 0 := rfl
+  have hseed := walkSeedState (G := G) (S := S) (s := s) (bs := bs0)
+    (bt := G.bs.getD (entryPos G 0) 0) hn hct hcs hnext hread hdoc
+  rw [hq, hbt0] at hseed
+  exact hseed
+
+/-! ### Axiom footprints for the seed's last rows -/
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryStores_s' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryStores_s
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryStores_z' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryStores_z
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryStores_c' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryStores_c
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkS2InitStores_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkS2InitStores_bounds
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2Init_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2Init_frame
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2_frame
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg3_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg3_frame
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg4_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg4_frame
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkHeader_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkHeader_frame
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryStores_covered' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryStores_covered
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryMem_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryMem_frame
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.hasBytes_stage2WriteStores' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.hasBytes_stage2WriteStores
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkHasBytes_short' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkHasBytes_short
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryMem_hasBytes' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryMem_hasBytes
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeed_staged' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeed_staged
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkGeom_nev_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkGeom_nev_le
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedWide_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedWide_outside
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeed_entry_out' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeed_entry_out
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeed_doc_out' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeed_doc_out
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeed_entry_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeed_entry_read
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeed_lane' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeed_lane
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeed_docByte' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeed_docByte
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_iter' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_iter
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalState_env' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalState_env
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalState_mem' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalState_mem
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalState_pc' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedFinalState_pc
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedState' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedState
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedState_geometry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedState_geometry
 
 /-! ### Axiom footprints -/
 

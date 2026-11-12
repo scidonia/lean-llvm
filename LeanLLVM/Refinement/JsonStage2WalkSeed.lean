@@ -46,9 +46,10 @@ the named folds `walkSeg3PostMem`/`walkSeg4PostMem` rather than reducing the
 cursor record's 1152-byte memset — that module's census carries the measurement
 and the shape.  `JsonStage2WalkSeedRun` reads it: the entry block's step in both
 arms of its test, the preheader's and the header's first pass, their `runFuel`
-prefixes, and the environment and memory clauses of `WalkSeedState`.  What that
-module names as still open is `WalkIter`, the staged objects' presence and the
-frame.
+prefixes, the environment and memory clauses of `WalkSeedState`, and its last
+three rows: `WalkIter`, the staged objects' presence and the frame
+(`walkSeedState`, `walkSeedState_geometry`).  What remains below the seed is what
+`JsonStage2WalkScope`'s census names: the stack map and the completion arc.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
