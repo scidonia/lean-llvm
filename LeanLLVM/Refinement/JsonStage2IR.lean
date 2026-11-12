@@ -1519,10 +1519,11 @@ theorem stage2Calls_trap {sub : Calls} {args : List Value} {mem : Mem} {next : N
 is a definition, not a step: `stage2Args` appends the eight staging objects, and
 `Γ_stage2at` reads the record's budget and post at the thirteen-slot prefix.  The
 eight objects' staging **is** a clause of the adapter (`stage2StagedPre`), because
-seven of them are written by the body: `%c.i`'s `k` field is the loop's first
-store (`while.body.i`), so a record that left them unstaged would contradict its
-own ownership claim one step in.  The thirteen-argument ABI cannot name them, so
-the adapter is the only place the staging can say it. -/
+seven of them are written by the body's own stores and the eighth, `%d.i`, by
+`num_fast_el1`'s: `%c.i`'s `k` field is the loop's first store (`while.body.i`),
+so a record that left them unstaged would contradict its own ownership claim one
+step in.  The thirteen-argument ABI cannot name them, so the adapter is the only
+place the staging can say it. -/
 
 /-- The eight staging objects, as the addresses the body receives. -/
 def stage2StagingArgs (d c ctype cst tok s z e : Nat) : List Value :=
@@ -1537,9 +1538,12 @@ thirteen-slot prefix, and the precondition holds when the arguments are the ABI'
 followed by the eight staging objects **and those objects are staged**.  Seven of
 the eight are written by the body — `%c.i`'s `k` field is the loop's first store —
 so the adapter cannot leave their staging unstated: `stage2StagedPre` gives
-presence at each of the seven extents and the separation of every staged object
-from every other, which is what the loop's region claim needs and what
-`Γ_stage2.pre`, at thirteen arguments, has no way to name.
+presence at the seven extents and at `%d.i`'s, and the separation of every staged
+object from every other, which is what the loop's region claim needs and what
+`Γ_stage2.pre`, at thirteen arguments, has no way to name.  `%d.i`'s presence is
+stated beside the seven's rather than among them because the seven are the walk's
+own stores and it is not; the separation list is the seventeen-object one with its
+entry appended.
 
 The two count slots are parameters for the same reason the eight are: the ABI
 does not carry them and both sides of their separation have to be nameable
@@ -1552,7 +1556,7 @@ def Γ_stage2at (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : MemContract whe
   pre := fun args mem next =>
     ∃ a13, args = stage2Args a13 d c ctype cst tok s z e ∧
       Γ_stage2.pre a13 mem next ∧
-      stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot
+      stage2StagedPre a13 mem d c ctype cst tok s z e nkSlot nxpSlot
   post := fun args mem next o => Γ_stage2.post (args.take 13) mem next o
 
 /-- The adapter's prefix is the ABI's argument list. -/
@@ -1569,7 +1573,7 @@ hypothesis is not optional: `Γ_stage2.pre` names thirteen objects and the body
 writes seven more, so the adapter is the only place the staging can say it. -/
 theorem Γ_stage2at_pre {a13 : List Value} {mem : Mem} {next : Nat}
     {d c ctype cst tok s z e nkSlot nxpSlot : Nat} (h : Γ_stage2.pre a13 mem next)
-    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot) :
+    (hstaged : stage2StagedPre a13 mem d c ctype cst tok s z e nkSlot nxpSlot) :
     (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre
       (stage2Args a13 d c ctype cst tok s z e) mem next :=
   ⟨a13, rfl, h, hstaged⟩
@@ -1611,7 +1615,7 @@ theorem satisfies_calls_stage2 (d c ctype cst tok s z e nkSlot nxpSlot : Nat) {s
       (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot))
     (hstaged : ∀ {args : List Value} {mem : Mem} {next : Nat},
       Γ_stage2.pre args mem next →
-        stage2StagedPre args mem c ctype cst tok s z e nkSlot nxpSlot) :
+        stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
     CallSatisfies (envForStage2 d c ctype cst tok s z e nkSlot nxpSlot sub) Γ_stage2
       "leanllvm_json_stage2" := by
   intro args mem next hpre
@@ -1648,7 +1652,7 @@ second statement of what it owes. -/
 theorem stage2_walk_yields_record {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
     (hwalk : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub)
     {a13 : List Value} {mem : Mem} {next : Nat} (hpre : Γ_stage2.pre a13 mem next)
-    (hstaged : stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot) :
+    (hstaged : stage2StagedPre a13 mem d c ctype cst tok s z e nkSlot nxpSlot) :
     ∃ v m,
       runFuel (stage2Calls sub)
           ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget

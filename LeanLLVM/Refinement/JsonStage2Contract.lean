@@ -465,11 +465,12 @@ def stage2StagedRegions (b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
     [(nkSlot, 8), (nxpSlot, 8)]
 
 /-- **The staging the flattened body's precondition asks of the appended
-objects**: the seven the walk writes are present at their extents, and every
-staged object — the thirteen ABI objects, the seven, and the caller's two count
-slots — is separate from every other.  It is stated at the argument list the
-record receives, so the numbers are the record's own; `ndst0` is read from the
-arena's cursor slot, exactly as `stage2Pre` reads it.
+objects**: the seven the walk writes, and `%d.i`'s own slot, are present at their
+extents, and every staged object — the thirteen ABI objects, the seven, the
+caller's two count slots, and `%d.i` — is separate from every other.  It is
+stated at the argument list the record receives, so the numbers are the
+record's own; `ndst0` is read from the arena's cursor slot, exactly as
+`stage2Pre` reads it.
 
 The two count slots are parameters rather than arguments because the ABI does not
 carry them: `stage2Args` appends eight staging pointers and the pinned body takes
@@ -478,10 +479,23 @@ number, exactly as the seven do.  Presence is not repeated for them: the
 pipeline's own `pipelineStaging` already reads both words (`readBytes mem nk 8 =
 some (wordBytes 8 0)`, `readBytes mem nxp 8 = some (wordBytes 8 nxp0)`), and a
 presence clause here would be a second promise about a region whose bytes the
-caller has already fixed. -/
+caller has already fixed.
+
+`%d.i` is the eighth appended parameter and the sixth stack slot the number path
+writes through: `num_fast_el1`'s accepting arm stores the lexeme's value there
+(`s2NumFastFoot`).  Its address is the caller's number, so its presence and its
+separation are staged here beside the seven; the list it is separated in is the
+adapter's (`stage2StagedRegions`), read with the one entry appended. -/
 def stage2StagedPre (args : List Value) (mem : Mem)
-    (c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
+    (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
   (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, HasBytes mem r.1 r.2) ∧
+  -- **`%d.i`'s eight bytes are present.**  The number path's output slot is one
+  -- of the eight objects the flattening appends (`stage2StagingArgs` takes it
+  -- first), and `num_fast_el1` writes the accepted lexeme's value there.  Its
+  -- presence is stated here rather than folded into the seven's clause because
+  -- the seven are the walk's own stores: `%d.i` is written only through that
+  -- call, so the walk's region claim over the seven says nothing about it.
+  HasBytes mem d 8 ∧
   ∃ (b : Nat) (n : BitVec 64) (ep : Nat) (nep : BitVec 64) (xp : Nat) (nxp : BitVec 64)
     (dst : Nat) (dstcap : BitVec 64) (ndst0 : Nat) (ev : Nat) (evcap : BitVec 64)
     (ndst nev err : Nat),
@@ -490,8 +504,9 @@ def stage2StagedPre (args : List Value) (mem : Mem)
             .ptr err] ∧
     readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
     DisjointRegions
-      (stage2StagedRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0
-        ev evcap.toNat ndst nev err c ctype cst tok s z e nkSlot nxpSlot)
+      ((stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0
+        ev evcap.toNat ndst nev err c ctype cst tok s z e ++ [(d, 8)]) ++
+        [(nkSlot, 8), (nxpSlot, 8)])
 
 /-- **An object appended after a separated list is separate from every member**
 and from its neighbour.  This is the shape `stage2StagedRegions` appends the
@@ -563,22 +578,53 @@ those slots reads.  It is exactly the statement the walk's frame widening needs:
 the seven objects the walk writes, at their own extents, do not meet a byte of
 either slot, so the walk's writes leave both words as the pipeline left them. -/
 theorem stage2StagedPre_countSlots {args : List Value} {mem : Mem}
-    {c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (h : stage2StagedPre args mem c ctype cst tok s z e nkSlot nxpSlot) :
+    {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (h : stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
     (∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
       (r.1 + r.2 ≤ nkSlot ∨ nkSlot + 8 ≤ r.1) ∧
         (r.1 + r.2 ≤ nxpSlot ∨ nxpSlot + 8 ≤ r.1)) ∧
       (nkSlot + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ nkSlot) := by
-  obtain ⟨-, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
+  obtain ⟨-, -, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
     -, -, hdisj⟩ := h
   have hsep := disjointRegions_append_slots
     (L := stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
-      evcap.toNat ndst nev err c ctype cst tok s z e) hdisj
+      evcap.toNat ndst nev err c ctype cst tok s z e ++ [(d, 8)]) hdisj
   have hmem : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
       r ∈ stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
-        evcap.toNat ndst nev err c ctype cst tok s z e :=
-    fun r hr => List.mem_append_right _ hr
+        evcap.toNat ndst nev err c ctype cst tok s z e ++ [(d, 8)] :=
+    fun r hr => List.mem_append_left _ (List.mem_append_right _ hr)
   exact ⟨fun r hr => hsep.1 r (hmem r hr), hsep.2⟩
+
+/-- **`%d.i` is separate from every object the walk's staging names.**  The
+adapter's separated list carries `%d.i`'s slot as its entry after the seventeen,
+so every ABI object, every one of the seven appended objects and the caller's two
+count slots misses it: the walk's write to `%d.i` (through `num_fast_el1`) is a
+write to a slot of its own, and the value it leaves is the value the number
+path's reader loads. -/
+theorem stage2StagedPre_dSep {args : List Value} {mem : Mem}
+    {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (h : stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
+    ∃ (b n ep nep xp nxp dst ndst0 ev evcap ndst nev err : Nat),
+      (∀ r ∈ stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+          c ctype cst tok s z e, r.1 + r.2 ≤ d ∨ d + 8 ≤ r.1) ∧
+      (d + 8 ≤ nkSlot ∨ nkSlot + 8 ≤ d) ∧
+      (d + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ d) := by
+  obtain ⟨-, hd, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
+    -, -, hdisj⟩ := h
+  have h' : DisjointRegions
+      ((stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
+          evcap.toNat ndst nev err c ctype cst tok s z e) ++
+        [(d, 8), (nkSlot, 8), (nxpSlot, 8)]) := by
+    simpa only [stage2StagedRegions, List.append_assoc, List.singleton_append] using hdisj
+  unfold DisjointRegions at h'
+  rw [List.pairwise_append] at h'
+  obtain ⟨-, htail, hcross⟩ := h'
+  rw [List.pairwise_cons] at htail
+  obtain ⟨hdhead, -⟩ := htail
+  refine ⟨b, n.toNat, ep, nep.toNat, xp, nxp.toNat, dst, ndst0, ev, evcap.toNat,
+    ndst, nev, err, fun r hr => hcross r hr (d, 8) (by simp), ?_, ?_⟩
+  · exact hdhead (nkSlot, 8) (by simp)
+  · exact hdhead (nxpSlot, 8) (by simp)
 
 /-- The ABI frame is a prefix of the walk's. -/
 theorem stage2Writes_subset_walkWrites {dst ndst' ev nev' ndst nev err
@@ -603,13 +649,13 @@ theorem owns_extent_present {mem m : Mem} {rs : List (Nat × Nat)} {r : Nat × N
 /-- The seven staged objects' extents are the ones the record names, so a caller
 that has the staging has presence at each of them. -/
 theorem stage2StagedPre_present {args : List Value} {mem : Mem}
-    {c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (h : stage2StagedPre args mem c ctype cst tok s z e nkSlot nxpSlot) :
+    {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (h : stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
     HasBytes mem c stage2CursorExtent ∧ HasBytes mem ctype stage2StackExtent ∧
       HasBytes mem cst stage2StackExtent ∧ HasBytes mem tok stage2TokenExtent ∧
       HasBytes mem s stage2StateExtent ∧ HasBytes mem z stage2LogExtent ∧
-      HasBytes mem e stage2ErrorExtent := by
-  obtain ⟨hpres, -⟩ := h
+      HasBytes mem e stage2ErrorExtent ∧ HasBytes mem d 8 := by
+  obtain ⟨hpres, hd, -⟩ := h
   have hc : (c, stage2CursorExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
     simp [stage2StagedWrites]
   have hctype : (ctype, stage2StackExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
@@ -625,7 +671,7 @@ theorem stage2StagedPre_present {args : List Value} {mem : Mem}
   have he : (e, stage2ErrorExtent) ∈ stage2StagedWrites c ctype cst tok s z e := by
     simp [stage2StagedWrites]
   exact ⟨hpres _ hc, hpres _ hctype, hpres _ hcst, hpres _ htok, hpres _ hst,
-    hpres _ hz, hpres _ he⟩
+    hpres _ hz, hpres _ he, hd⟩
 
 /-! ### The budget -/
 

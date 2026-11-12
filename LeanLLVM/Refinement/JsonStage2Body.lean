@@ -1195,20 +1195,16 @@ This is `owns_reserve_of_owns_extent` with the staged tail carried through both
 lists; the ABI prefix's argument is unchanged because the tail is the same list
 on both sides. -/
 theorem owns_reserve_of_owns_walk {mem m0 : Mem} {dst alen ev evlen dstcap : Nat}
-    {c ctype cst tok s z e : Nat}
-    (h : Owns (inRegions ([(dst, alen), (ev, evlen)] ++
-      stage2StagedWrites c ctype cst tok s z e)) mem m0)
+    {T : List (Nat × Nat)}
+    (h : Owns (inRegions ([(dst, alen), (ev, evlen)] ++ T)) mem m0)
     (harena : HasBytes mem dst dstcap)
     (hres : alen + stage2ArenaReserve ≤ dstcap)
     (hsep : dst + alen + stage2ArenaReserve ≤ ev ∨ ev + evlen ≤ dst)
-    (hseven : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
+    (hseven : ∀ r ∈ T,
       r.1 + r.2 ≤ dst ∨ dst + (alen + stage2ArenaReserve) ≤ r.1) :
-    Owns (inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++
-      stage2StagedWrites c ctype cst tok s z e)) mem m0 := by
-  have hsub : ∀ a, inRegions ([(dst, alen), (ev, evlen)] ++
-        stage2StagedWrites c ctype cst tok s z e) a →
-      inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++
-        stage2StagedWrites c ctype cst tok s z e) a := by
+    Owns (inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++ T)) mem m0 := by
+  have hsub : ∀ a, inRegions ([(dst, alen), (ev, evlen)] ++ T) a →
+      inRegions ([(dst, alen + stage2ArenaReserve), (ev, evlen)] ++ T) a := by
     intro a ha
     obtain ⟨r, hr, hlo, hhi⟩ := ha
     rcases List.mem_append.mp hr with hr | hr
@@ -1231,8 +1227,7 @@ theorem owns_reserve_of_owns_walk {mem m0 : Mem} {dst alen ev evlen dstcap : Nat
         obtain ⟨vs, hvs⟩ := harena
         obtain ⟨b, hb⟩ := readBytes_some_present mem dst dstcap vs hvs (a - dst) hk
         rw [show dst + (a - dst) = a by omega] at hb
-        have hnot : ¬ inRegions ([(dst, alen), (ev, evlen)] ++
-            stage2StagedWrites c ctype cst tok s z e) a := by
+        have hnot : ¬ inRegions ([(dst, alen), (ev, evlen)] ++ T) a := by
           rintro ⟨s, hs, hslo, hshi⟩
           rcases List.mem_append.mp hs with hs | hs
           · rcases List.mem_cons.mp hs with rfl | hs'
@@ -1412,7 +1407,7 @@ place: they are the pipeline's, the ABI does not carry them, and their separatio
 from the seven is what the caller reads back after the run. -/
 def Stage2WalkCompletes (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) : Prop :=
   ∀ a13 mem next, Γ_stage2.pre a13 mem next →
-    stage2StagedPre a13 mem c ctype cst tok s z e nkSlot nxpSlot →
+    stage2StagedPre a13 mem d c ctype cst tok s z e nkSlot nxpSlot →
     ∃ v m, runFuel (stage2Calls sub) (stage2Budget a13 mem) stage2Body
       (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
       = some (.ret v m)

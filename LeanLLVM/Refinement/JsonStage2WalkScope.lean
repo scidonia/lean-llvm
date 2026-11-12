@@ -355,7 +355,7 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
   have h' : stage2Pre args m0 next := h
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, -, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
-    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate⟩ := h'
+    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, -⟩ := h'
   exact ⟨{
     b := b
     n := n
@@ -430,7 +430,9 @@ structure WalkStage {m0 : Mem} (G : WalkGeom m0) where
   nkSlot : Nat
   /-- The caller's escape-count slot. -/
   nxpSlot : Nat
-  /-- The staged objects are separate, as `stage2StagedPre` states them. -/
+  /-- The staged objects are separate, as the adapter's staging states them.  The
+  pre also stages `%d.i` beside this list (`stage2StagedPre`'s own entry); the
+  carry names the seventeen because that is every object the walk writes. -/
   separate : DisjointRegions
     (stage2StagedRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev G.evcap
       G.ndst G.nev G.err c ctype cst tok s z e nkSlot nxpSlot)
