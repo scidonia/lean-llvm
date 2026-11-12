@@ -54,23 +54,23 @@ statements in `WalkInv`/`WalkLocal` that were too weak, and both are now in
 
 ## What is not here
 
-* the remaining G reads (13 blocks) and H2's `while.body.i.lr.ph`: each needs its
-  outgoing environment written out so its `denoteCode` equality is a term the
-  transfer consumes.  The class lemmas take `denoteCode ... = some s₁`, and `s₁`'s
-  memory and `pc` are only visible from that term, so the instance must state it.
-  The five `LeafBlock` instances show the shape; the remaining reads differ in
-  their arithmetic, not in their class.
+* H2's `while.body.i.lr.ph` and class G's fourteen reads: each needs its outgoing
+  environment written out so its `denoteCode` equality is a term the transfer
+  consumes.  The class lemmas take `denoteCode ... = some s₁`, and `s₁`'s memory and
+  `pc` are only visible from that term, so the instance must state it.  The five
+  `LeafBlock` instances show the shape.
 * class D's ten stores, and E's merges that write (`if.end372.i`, `while.end78.i`,
   `if.then57.i`) — the memory clauses each owes are `JsonStage2WalkScope`'s class C
   reasoning at a new address.
-* **the scan-entry measure**.  The disjunctive landing fact names the entry edge's
-  counter, but the edge must also set `C.inner` to the scan's remaining work, and
-  `WalkLink.mono` requires the measure not to rise.  A later scan in the same
-  iteration can have more remaining work than an earlier one left, so the reset can
-  raise `inner`; the entry edge is a link only under a measure whose inner component
-  is a shared budget (the header's `walkInnerCap G`).  That is a decision about the
-  measure, and the five blocks it touches (`if.end48.i` and the four scan-entry
-  edges) are left unlinked rather than linked under an unstated assumption.
+* **the scan-entry measure — resolved**.  The disjunctive landing fact names the
+  entry edge's counter, and the edge must also say what `C.inner` is there.  Under a
+  measure whose inner component is the current scan's remaining work an entry resets
+  it upward whenever a later scan has more work than the earlier one left, and
+  `WalkLink.mono` fails.  The measure's inner component is therefore the iteration's
+  shared budget — `walkInnerCap G = 4 * G.n + 5`, refilled at the loop head and drawn
+  on by every scan — and an entry edge leaves it alone: `JsonStage2WalkEntry` has
+  `if.end48.i`, `cond.end.i96`, and the two landed links whose landing fact was an
+  argument.  The escapes' entry (`if.then447.i`) is a call block, so it stays F's.
 * **class F's contract gap.**  All nineteen call blocks resolve through
   `stage2Calls`, which leaves `s2_init`, `s2_value_pos`, `s2_after_value`,
   `s2_string_body`, `num_fast_el1` and `od_scalar_value` to the `sub` parameter.  A
