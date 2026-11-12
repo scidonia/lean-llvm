@@ -5003,17 +5003,27 @@ Three things the census therefore keeps open, each with its cost named:
   (`walkEntrySeg1_denote`, `walkEntrySeg3_denote`, `walkEntrySeg4_denote`); the
   second — the initialisation, the `S2` record's fields, the log's memset and
   stores, and the two cursor loads — is cut into its two halves
-  (`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by `walkEntrySeg2_split`) and is
-  **not** proved: its goal carries the initialisation's fifteen-store list, and
-  at `maxRecDepth 20000`/`maxHeartbeats 2000000` the elaboration times out at
-  the store that follows the `S2` field writes in both halves, with the side
-  goals deferred and the segment split at its loads.  The shape that avoids it
-  is a list-level read lemma over `stage2WriteStores m (s2InitStores …)` read
-  before the chain, so the goal never carries the store list; the three reads
-  back out of the `S2` record (`%3`, `%4`, `%5`) are its inside case, which
-  `readBytes_s2Init_of_outside` does not state.  The composition of the segments
-  into the block's `runFuel` prefix is therefore also still open, and the five
-  open rows stay open until it is produced.-/
+  (`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by `walkEntrySeg2_split`) and its
+  twenty-two instructions after the initialisation are pinned as
+  `walkEntrySeg2Post` (`walkEntrySeg2_cut`), and its equality is **not**
+  proved.  Its read obstruction is discharged: its store runs are the lists
+  `walkSeg2Ws1`/`Ws2`/`Ws3`, `readBytes_stage2WriteStores_of_all_outside` reads a
+  list rather than a window, and `seg2StoreOutside` carries each entry across the
+  record's and the log's extents, so the two cursor loads are taken at the
+  incoming memory *before* any step runs.  What remains is the shape of each
+  step's own conclusion: `stateAt env {s with mem := …}` repeats the previous
+  state literal in four fields, so the accumulated term grows four-fold per store
+  and the closing `rfl` is a defeq check over that growth — the direct chain,
+  reads consumed first, times out at `whnf` at `maxHeartbeats 4000000` after two
+  minutes, and restating the run as eleven flats between explicit states still
+  times out inside the two-step runs at the default budget.  The vocabulary that
+  avoids it is a step lemma stated with a memory-only updater over `State` rather
+  than a structure literal; it is a change to `BlockEval`'s step set and is
+  recorded here rather than worked around.  The three reads back out of the `S2`
+  record (`%3`, `%4`, `%5`) are `readBytes_s2Init_of_outside`'s inside case,
+  which it does not state, and which the third segment's composition needs.  The
+  composition of the segments into the block's `runFuel` prefix is therefore also
+  still open, and the five open rows stay open until it is produced.-/
 
 /-- **A comparison**, at a state rather than at a builder and at arbitrary operands:
 the step `denoteCode_icmp_eq_imm_w` is its `eq`-with-literal case, and the

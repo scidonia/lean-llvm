@@ -21,14 +21,30 @@ two arithmetic words.
 Three of the four are proved (`walkEntrySeg1_denote`, `walkEntrySeg3_denote`,
 `walkEntrySeg4_denote`).  The second — the initialisation, the `S2` record's
 fields, the log's memset and stores, and the two cursor loads — is cut into its
-two halves (`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by a `rfl`) and **not**
-proved: its goal carries the initialisation's fifteen-store list, and at
-`maxRecDepth 20000`/`maxHeartbeats 2000000` the elaboration times out at the
-store that follows the `S2` field writes in both halves.  Splitting the segment
-at its loads and deferring the side goals did not reduce the cost, so it is the
-term's own size rather than a tactic shape.  The shape that avoids it is a
-list-level read lemma (`readBytes (stage2WriteStores m (s2InitStores ...))`) read
-*before* the chain, so that the goal never carries the store list.
+two halves (`walkEntrySeg2a`/`walkEntrySeg2b`, pinned by a `rfl`), and its
+twenty-two instructions after the initialisation are pinned to the block's own
+list as `walkEntrySeg2Post` (`walkEntrySeg2_cut`).
+
+Its equality is **not** proved, and the obstruction is measured rather than
+guessed.  The read obstruction is gone: `readBytes_stage2WriteStores_of_all_outside`
+reads a *store list* — one entry avoiding the range is all it asks — so
+`walkSeg2Ws1`/`Ws2`/`Ws3` give the two cursor loads' values at `m` and the
+`seg2StoreOutside` step carries each across the object extents, before any
+`denoteCode` step runs.  What remains is the shape of `denoteCode`'s own step
+conclusions: each is `stateAt env {s with mem := ...}`, and with `s` the previous
+state literal that elaborates to a structure literal whose four non-memory fields
+each *repeat* the previous literal.  The term therefore grows four-fold per store,
+and the closing `rfl` of a twenty-two-step chain is a defeq check over that
+growth: the direct chain, with both reads consumed first and every side goal
+deferred, times out at `whnf` at `maxHeartbeats 4000000` after two minutes, and
+`dsimp` has nothing to reduce there because the term is already in normal form.
+Restating the twenty-two instructions as eleven runs between explicit flat states
+— which keeps the composition flat — was drafted and the two-step runs' own
+`rfl` still times out at the default budget, so the cost is inside each step's
+conclusion and not only in the composition.  The vocabulary that avoids it is a
+step lemma stated with a memory-only updater over `State` rather than a structure
+literal, which is a change to `BlockEval`'s step set and is recorded as the open
+row rather than worked around here.
 
 The segments' statements carry `env`, `s` and `is` explicitly rather than
 leaving them to unification: `lookupName` reduces to an `if` on a `String`
@@ -388,6 +404,135 @@ theorem walkEntrySeg3_denote (sub : Calls) (env : Env) (s : State) (is : List In
   rw [denoteCode_storePtr (calls := stage2Calls sub) (v := "%e") (p := "%e7.i")
     (q := eAddr) (a := cAddr + woff 1112)] <;> try block_lk
   all_goals first | rfl | block_lk | skip
+
+/-! ### Segment 2: the initialisation, its fields, and the two cursor loads -/
+
+/-- A store list all of whose entries lie outside the read range leaves the read
+alone.  The sibling `readBytes_stage2WriteStores_of_outside` asks for one window
+containing every entry; this asks only that each entry avoid the range, which is
+what the entry run's two cursor loads need. -/
+theorem readBytes_stage2WriteStores_of_all_outside :
+    ∀ (stores : List (Nat × List UInt8)) {m : Mem} {a len : Nat},
+      (∀ st ∈ stores, a + len ≤ st.1 ∨ st.1 + st.2.length ≤ a) →
+      readBytes (stage2WriteStores m stores) a len = readBytes m a len
+  | [], _, _, _, _ => rfl
+  | (a', bs) :: rest, m, a, len, h => by
+      have h1 : a + len ≤ a' ∨ a' + bs.length ≤ a := h (a', bs) (by simp)
+      have hrest : ∀ st ∈ rest, a + len ≤ st.1 ∨ st.1 + st.2.length ≤ a :=
+        fun st hst => h st (by simp [hst])
+      show readBytes (stage2WriteStores (writeBytes m a' bs) rest) a len = readBytes m a len
+      rw [readBytes_stage2WriteStores_of_all_outside rest (m := writeBytes m a' bs) hrest]
+      exact walkReadBytes_writeBytes_outside (v := bs) (start := a') (addr := a) (n := len) h1
+
+/-- A store inside an object's extent is outside a read separated from that
+extent.  Each side of the separation is a disjunction, which `omega` will not
+split on its own, so the split is here and each window is one linear step. -/
+theorem seg2StoreOutside {a len base ext p : Nat} {l : List UInt8}
+    (hp : base ≤ p) (hext : p + l.length ≤ base + ext) :
+    (a + len ≤ base ∨ base + ext ≤ a) → a + len ≤ p ∨ p + l.length ≤ a := by
+  intro hsep
+  rcases hsep with h | h
+  · exact Or.inl (by omega)
+  · exact Or.inr (by omega)
+
+/-- The `memset`'s literal count, reduced: the step writes `List.replicate` of it. -/
+theorem seg2MemsetCount : (BitVec.ofNat 64 16).toNat = 16 := by decide
+
+/-- Segment 2's first five stores, after `s2_init`: the `S2` record's three
+argument fields and the log's arena words. -/
+def walkSeg2Ws1 (sAddr zAddr nep xp nxp dst : Nat) : List (Nat × List UInt8) :=
+  [(sAddr + woff 56, wordBytes 8 nep), (sAddr + woff 72, natToBytes xp 8),
+   (sAddr + woff 80, wordBytes 8 nxp),
+   (zAddr + woff 24, List.replicate (BitVec.ofNat 64 16).toNat 0),
+   (zAddr + woff 40, natToBytes dst 8)]
+
+/-- Segment 2's next three stores: the arena cursor read from the caller's slot,
+the capacity word, and the log's stream base. -/
+def walkSeg2Ws2 (zAddr v1 dstcap ev : Nat) : List (Nat × List UInt8) :=
+  [(zAddr + woff 48, wordBytes 8 v1), (zAddr + woff 56, wordBytes 8 dstcap),
+   (zAddr, natToBytes ev 8)]
+
+/-- Segment 2's last two stores: the event cursor and the event capacity. -/
+def walkSeg2Ws3 (zAddr v2 evcap : Nat) : List (Nat × List UInt8) :=
+  [(zAddr + woff 8, wordBytes 8 v2), (zAddr + woff 16, wordBytes 8 evcap)]
+
+/-- The three runs in the order the block writes them. -/
+def walkSeg2Stores (sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat) :
+    List (Nat × List UInt8) :=
+  walkSeg2Ws1 sAddr zAddr nep xp nxp dst ++ walkSeg2Ws2 zAddr v1 dstcap ev ++
+    walkSeg2Ws3 zAddr v2 evcap
+
+/-- The memory at the first cursor load: the record's fields and the five stores
+before the load. -/
+def walkSeg2Mem1 (sAddr zAddr nep xp nxp dst : Nat) (m : Mem) : Mem :=
+  stage2WriteStores m (walkSeg2Ws1 sAddr zAddr nep xp nxp dst)
+
+/-- The memory at the second cursor load: the first run's stores, then the
+second's. -/
+def walkSeg2Mem2 (sAddr zAddr nep xp nxp dst v1 dstcap ev : Nat) (m : Mem) : Mem :=
+  stage2WriteStores (walkSeg2Mem1 sAddr zAddr nep xp nxp dst m) (walkSeg2Ws2 zAddr v1 dstcap ev)
+
+/-- The memory segment 2 hands on: the first two runs' stores, then the third's. -/
+def walkSeg2PostMem (sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat) (m : Mem) : Mem :=
+  stage2WriteStores (walkSeg2Mem2 sAddr zAddr nep xp nxp dst v1 dstcap ev m)
+    (walkSeg2Ws3 zAddr v2 evcap)
+
+/-- Segment 2's outgoing environment, newest first. -/
+def walkEntryEnv2 (env : Env) (sAddr zAddr nep xp nxp dst v1 v2 ev : Nat) : Env :=
+  cells [("%cap", .ptr (zAddr + woff 16)), ("%len", .ptr (zAddr + woff 8)),
+         ("%2", .int 64 (BitVec.ofNat 64 v2)), ("%acap", .ptr (zAddr + woff 56)),
+         ("%alen", .ptr (zAddr + woff 48)), ("%1", .int 64 (BitVec.ofNat 64 v1)),
+         ("%0", .ptr (zAddr + woff 24)), ("%ar", .ptr (zAddr + woff 40)),
+         ("%hash1.i.i", .ptr (zAddr + woff 32)),
+         ("%nxp2", .ptr (sAddr + woff 80)), ("%xp1", .ptr (sAddr + woff 72)),
+         ("%nsp", .ptr (sAddr + woff 56))] env
+
+/-- Segment 2 after the initialisation: the `S2` record's fields, the log's
+fields, and the two cursor loads. -/
+def walkEntrySeg2Post : List Instr := [
+  Instr.gep "%nsp" (Ty.int 8) (Operand.reg "%s") (Operand.imm (.int 64 (BitVec.ofNat 64 56))),
+  Instr.store (Ty.int 64) (Operand.reg "%nep") (Operand.reg "%nsp"),
+  Instr.gep "%xp1" (Ty.int 8) (Operand.reg "%s") (Operand.imm (.int 64 (BitVec.ofNat 64 72))),
+  Instr.store Ty.ptr (Operand.reg "%xp") (Operand.reg "%xp1"),
+  Instr.gep "%nxp2" (Ty.int 8) (Operand.reg "%s") (Operand.imm (.int 64 (BitVec.ofNat 64 80))),
+  Instr.store (Ty.int 64) (Operand.reg "%nxp") (Operand.reg "%nxp2"),
+  Instr.gep "%hash1.i.i" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 32))),
+  Instr.gep "%ar" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 40))),
+  Instr.gep "%0" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 24))),
+  Instr.callVoid "llvm.memset.p0.i64" [(Ty.ptr, (Operand.reg "%0")), ((Ty.int 8), (Operand.imm (.int 8 (BitVec.ofNat 8 0)))), ((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 16)))), ((Ty.int 1), (Operand.imm (.int 1 (BitVec.ofNat 1 0))))],
+  Instr.store Ty.ptr (Operand.reg "%dst") (Operand.reg "%ar"),
+  Instr.load "%1" (Ty.int 64) (Operand.reg "%ndst"),
+  Instr.gep "%alen" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 48))),
+  Instr.store (Ty.int 64) (Operand.reg "%1") (Operand.reg "%alen"),
+  Instr.gep "%acap" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 56))),
+  Instr.store (Ty.int 64) (Operand.reg "%dstcap") (Operand.reg "%acap"),
+  Instr.store Ty.ptr (Operand.reg "%ev") (Operand.reg "%z"),
+  Instr.load "%2" (Ty.int 64) (Operand.reg "%nev"),
+  Instr.gep "%len" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 8))),
+  Instr.store (Ty.int 64) (Operand.reg "%2") (Operand.reg "%len"),
+  Instr.gep "%cap" (Ty.int 8) (Operand.reg "%z") (Operand.imm (.int 64 (BitVec.ofNat 64 16))),
+  Instr.store (Ty.int 64) (Operand.reg "%evcap") (Operand.reg "%cap")]
+
+/-- **Segment 2 is the initialisation and then these twenty-two.** -/
+theorem walkEntrySeg2_cut :
+    walkEntrySeg2 =
+      Instr.callVoid "s2_init" [(Ty.ptr, (Operand.reg "%s")), (Ty.ptr, (Operand.reg "%b")),
+        ((Ty.int 64), (Operand.reg "%n")), ((Ty.int 64), (Operand.reg "%shr")),
+        (Ty.ptr, (Operand.reg "%ep"))] :: walkEntrySeg2Post := rfl
+
+
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.readBytes_stage2WriteStores_of_all_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.readBytes_stage2WriteStores_of_all_outside
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.seg2StoreOutside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.seg2StoreOutside
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.seg2MemsetCount' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.seg2MemsetCount
 
 /-! ### The instrument -/
 

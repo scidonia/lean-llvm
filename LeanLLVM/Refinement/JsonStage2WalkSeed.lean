@@ -28,11 +28,15 @@ pointer and immediate stores, the signed `getelementptr` at `-1`, the two
 `memset`s and `s2_init`.  `JsonStage2WalkRun` states `entry`'s own run as four
 segments, three of them proved as `denoteCode` equalities at a symbolic
 environment and state, with the cut pinned to this module's `walkEntryInstrs` by
-an `rfl`; the second segment's equality is not proved, and its obstruction — the
-initialisation's store list in the goal's term, measured — is recorded in that
-module and in the census.  The composition into the block's `runFuel` prefix is
-therefore still open, and the inside case of `readBytes_s2Init_of_outside` is
-the read fact it needs.
+an `rfl`, and the fourth's twenty-two post-initialisation instructions pinned as
+`walkEntrySeg2Post`.  That fourth equality is still not proved, but its read
+obstruction is: `readBytes_stage2WriteStores_of_all_outside` reads a store *list*
+and the two cursor loads are transported across the extents before the chain
+runs.  What remains is the step conclusions' own shape — each repeats the
+previous state literal four times — measured at `maxHeartbeats 4000000` in that
+module.  The composition into the block's `runFuel` prefix is therefore still
+open, and the inside case of `readBytes_s2Init_of_outside` is the read fact the
+composition of the third segment needs.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
