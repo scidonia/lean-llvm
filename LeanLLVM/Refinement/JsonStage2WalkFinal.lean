@@ -234,6 +234,8 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := by
         show readBytes r.mem (C.stage.z + 8) 8 = some (wordBytes 8 (C.evlen + ev.encodedSize))
@@ -262,6 +264,10 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     exact hInv.depth_reg
   · rw [show s'.env = s₁.env from rfl]
     exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkRegs.of_run hInv.regs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · show readBytes r.mem (C.stage.z + 32) 4 = some (natToBytes 0 4)
     rw [hlogRead 32 4 (by decide) (by decide)]; exact hInv.log_hash
   · show readBytes r.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
@@ -429,6 +435,8 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -455,6 +463,10 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     exact hInv.depth_reg
   · rw [show s'.env = s₁.env from rfl]
     exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkRegs.of_run hInv.regs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · show readBytes r.mem (C.stage.z + 32) 4 = some (natToBytes 0 4)
     rw [hrefuse, stage2ErrSet]
     rw [herr8Log 32 4 (by decide)]
@@ -785,6 +797,8 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -808,6 +822,10 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     exact hInv.depth_reg
   · rw [show s'.env = s₁.env from rfl]
     exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkRegs.of_run hInv.regs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · rw [show s'.mem = m from hmem]
     rw [hlog 32 4 (by decide)]
     exact hInv.log_hash
@@ -1050,6 +1068,8 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -1075,6 +1095,10 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     exact hInv.depth_reg
   · rw [show s'.env = s₁.env from rfl]
     exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkRegs.of_run hInv.regs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · rw [show s'.mem = r.mem from rfl, hlog 32 4 (by decide)]
     exact hInv.log_hash
   · rw [show s'.mem = r.mem from rfl, hlog 8 8 (by decide)]

@@ -1214,6 +1214,8 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -1248,6 +1250,10 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
     exact hInv.depth_reg
   · dsimp only [s', sFin]
     exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s', sFin]
+    exact WalkRegs.of_run hInv.regs hfree hden
+  · dsimp only [s', sFin]
+    exact WalkIter.of_run hInv.iter hfree hden
   · dsimp only [s', sFin, m', stateAt]
     rw [walkReadBytes_log_of_tok_write (tok := C.stage.tok) (z := C.stage.z) (off := 32)
       (N := 4) (x := e) (walkTok_z_sep hInv) (by decide)]
@@ -1391,6 +1397,8 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -1425,6 +1433,10 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
     exact hInv.depth_reg
   · dsimp only [s', sFin]
     exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s', sFin]
+    exact WalkRegs.of_run hInv.regs hfree hden
+  · dsimp only [s', sFin]
+    exact WalkIter.of_run hInv.iter hfree hden
   · dsimp only [s', sFin, m', stateAt]
     rw [walkReadBytes_log_of_refusal_write (e := C.stage.e) (z := C.stage.z) (off := 32)
       (x := x + ix) (N := 4) (e_z_sep hInv) (by decide)]
@@ -1562,6 +1574,8 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -1596,6 +1610,10 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
     exact hInv.depth_reg
   · dsimp only [s', sFin]
     exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s', sFin]
+    exact WalkRegs.of_run hInv.regs hfree hden
+  · dsimp only [s', sFin]
+    exact WalkIter.of_run hInv.iter hfree hden
   · dsimp only [s', sFin, m', stateAt]
     rw [walkReadBytes_log_of_refusal_write (e := C.stage.e) (z := C.stage.z) (off := 32)
       (x := x) (N := 4) (e_z_sep hInv) (by decide)]

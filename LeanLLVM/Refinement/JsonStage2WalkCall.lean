@@ -339,6 +339,8 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -358,6 +360,10 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
     exact hInv.depth_reg
   · dsimp only [s'']
     exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s'']
+    exact WalkRegs.of_run hInv.regs hfree hden
+  · dsimp only [s'']
+    exact WalkIter.of_run hInv.iter hfree hden
   · dsimp only [s'']
     rw [hlog 32 4 (by decide)]
     exact hInv.log_hash
@@ -423,6 +429,8 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -442,6 +450,10 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     exact hInv.depth_reg
   · dsimp only [s'']
     exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s'']
+    exact WalkRegs.of_run hInv.regs hfree hden
+  · dsimp only [s'']
+    exact WalkIter.of_run hInv.iter hfree hden
   · dsimp only [s'']
     rw [hlog 32 4 (by decide)]
     exact hInv.log_hash
@@ -518,6 +530,8 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -549,6 +563,10 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     exact hInv.depth_reg
   · dsimp only [s'']
     exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s'']
+    exact WalkRegs.of_run hInv.regs hfree hden
+  · dsimp only [s'']
+    exact WalkIter.of_run hInv.iter hfree hden
   · dsimp only [s'']
     rw [hlog 32 4 (by decide)]
     exact hInv.log_hash
@@ -1670,6 +1688,8 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -1729,6 +1749,10 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     exact hInv.depth_reg
   · rw [show s'.env = s₁.env from rfl]
     exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkRegs.of_run hInv.regs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · dsimp only [s', s₁, stateAt]
     rw [hlog 32 4 (by decide)]
     exact hInv.log_hash
@@ -2036,6 +2060,8 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -2083,6 +2109,10 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     simpa [cells, lookupName] using hInv.depth_reg
   · dsimp only [s', s₁, envF]
     exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkRegs.of_run hInv.regs (by unfold walkCarried; decide) hden
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · dsimp only [s', s₁, envF, walkSetMem, stateAt]
     rw [hmemEq]
     rw [walkReadBytes_log_of_log_write (m := writeBytes s.mem (G.ev + C.evlen) recBytes)

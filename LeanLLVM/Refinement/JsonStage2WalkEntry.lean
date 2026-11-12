@@ -138,10 +138,18 @@ theorem WalkLink.while_body_i_lr_ph {calls : Calls} {m0 : Mem}
     rfl
   refine WalkLink.pureJumpK11 (G := G) (C := C) (s := s) hInv
     (B := walkWhileBodyLrPh) (by rw [hblock]; exact walkWhileBodyLrPh_find) hden
-    (by unfold walkCarriedNoK11; decide) rfl rfl ?_ rfl (by simp [WalkLocal])
-  simp only [State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  rfl
+    (by unfold walkCarriedNoK11; decide) rfl rfl ?_ ?_ ?_ rfl (by simp [WalkLocal])
+  · dsimp only [State.bind]
+    exact preheaderRegs G C s.env hInv.regs
+  · dsimp only [State.bind]
+    exact ((((hInv.iter.bind (d := "%k11.i") (by decide) (by decide)).bind
+      (d := "%h1.i.i.i51") (by decide) (by decide)).bind
+      (d := "%gap.i") (by decide) (by decide)).bind
+      (d := "%end.i") (by decide) (by decide)).bind
+      (d := "%kind404.i") (by decide) (by decide)
+  · simp only [State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rfl
 
 /-! ### The scan entries' landing facts -/
 

@@ -260,6 +260,8 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         depth_cap := hInv.depth_cap
         depth_reg := hInv.depth_reg
         ptrs := hInv.ptrs
+        regs := hInv.regs
+        iter := hInv.iter
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -418,7 +420,8 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hld : ld ≠ "%h1.i.i.i51")
     (hne : ∀ n, n ∈ [xa, xv, xy, xr, ld] →
       n ≠ "%k.0.i249" ∧ n ≠ "%sp.i.0248" ∧ n ≠ "%3" ∧ n ≠ "%5" ∧ n ≠ "%k11.i"
-        ∧ n ≠ "%ctype.i" ∧ n ≠ "%cst.i" ∧ n ≠ "%hash1.i.i") :
+        ∧ n ≠ "%ctype.i" ∧ n ≠ "%cst.i" ∧ n ≠ "%hash1.i.i"
+        ∧ n ∉ walkCarriedNames) :
     ∃ s', WalkLink calls G C s { C with block := "cleanup478.i" } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   have hread' : readBytes s.mem (C.stage.z + 24) 8 =
@@ -516,6 +519,8 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := ?_
+        iter := ?_
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -543,7 +548,16 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       exact hInv.ptrs.cells_of cs
         (fun c hc => ⟨(hne c.1 (hmem c hc)).2.2.1, (hne c.1 (hmem c hc)).2.2.2.1,
           (hne c.1 (hmem c hc)).2.2.2.2.1, (hne c.1 (hmem c hc)).2.2.2.2.2.1,
-          (hne c.1 (hmem c hc)).2.2.2.2.2.2.1, (hne c.1 (hmem c hc)).2.2.2.2.2.2.2⟩)
+          (hne c.1 (hmem c hc)).2.2.2.2.2.2.1, (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.1⟩)
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.regs.cells_of cs
+        (fun n hn hin => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2
+          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr hin)))
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.iter.cells_of cs
+        (fun n hn => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2)
     · rw [hmem']
       dsimp only [m']
       rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 24)
@@ -620,7 +634,7 @@ theorem WalkLink.if_then_i_i {calls : Calls} {m0 : Mem}
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
         rcases hn with rfl | rfl | rfl | rfl | rfl <;>
           exact ⟨by decide, by decide, by decide, by decide, by decide, by decide,
-            by decide, by decide⟩)
+            by decide, by decide, by decide⟩)
 
 /-- `if.then.i.i50`: the second hash update. -/
 def walkIf_then_i_i50 : Block :=
@@ -656,7 +670,7 @@ theorem WalkLink.if_then_i_i50 {calls : Calls} {m0 : Mem}
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
         rcases hn with rfl | rfl | rfl | rfl | rfl <;>
           exact ⟨by decide, by decide, by decide, by decide, by decide, by decide,
-            by decide, by decide⟩)
+            by decide, by decide, by decide⟩)
 
 
 /-! ## The two event-stream stores
@@ -696,7 +710,8 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hg_len : gp ≠ "%len") (hl_len : ld ≠ "%len")
     (hne : ∀ n, n ∈ [gp, ld] →
       n ≠ "%k.0.i249" ∧ n ≠ "%sp.i.0248" ∧ n ≠ "%3" ∧ n ≠ "%5" ∧ n ≠ "%k11.i"
-        ∧ n ≠ "%ctype.i" ∧ n ≠ "%cst.i" ∧ n ≠ "%hash1.i.i") :
+        ∧ n ≠ "%ctype.i" ∧ n ≠ "%cst.i" ∧ n ≠ "%hash1.i.i"
+        ∧ n ∉ walkCarriedNames) :
     ∃ s', WalkLink calls G C s
       { C with block := "cleanup478.i", evlen := C.evlen + 1, events := C.events ++ [EventRecord.tag b.toNat] } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
@@ -796,6 +811,8 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := ?_
+        iter := ?_
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -845,7 +862,16 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       exact hInv.ptrs.cells_of cs
         (fun c hc => ⟨(hne c.1 (hmem c hc)).2.2.1, (hne c.1 (hmem c hc)).2.2.2.1,
           (hne c.1 (hmem c hc)).2.2.2.2.1, (hne c.1 (hmem c hc)).2.2.2.2.2.1,
-          (hne c.1 (hmem c hc)).2.2.2.2.2.2.1, (hne c.1 (hmem c hc)).2.2.2.2.2.2.2⟩)
+          (hne c.1 (hmem c hc)).2.2.2.2.2.2.1, (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.1⟩)
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.regs.cells_of cs
+        (fun n hn hin => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2
+          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr hin)))
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.iter.cells_of cs
+        (fun n hn => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2)
     · rw [hmem']
       dsimp only [m']
       rw [walkReadBytes_writeBytes_outside (start := C.stage.z + 8) (addr := C.stage.z + 32)
@@ -940,7 +966,7 @@ theorem WalkLink.out_reserve_exit_i_i {calls : Calls} {m0 : Mem}
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
         rcases hn with rfl | rfl <;>
           exact ⟨by decide, by decide, by decide, by decide, by decide, by decide,
-            by decide, by decide⟩)
+            by decide, by decide, by decide⟩)
 
 /-- `out_reserve.exit.i.i60`: the second key/string record's tag and length. -/
 def walkOut_reserve_exit_i_i60 : Block :=
@@ -979,7 +1005,7 @@ theorem WalkLink.out_reserve_exit_i_i60 {calls : Calls} {m0 : Mem}
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
         rcases hn with rfl | rfl <;>
           exact ⟨by decide, by decide, by decide, by decide, by decide, by decide,
-            by decide, by decide⟩)
+            by decide, by decide, by decide⟩)
 
 
 /-! ## The arena-cursor store
@@ -1097,6 +1123,8 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       depth_cap := hInv.depth_cap
       depth_reg := ?_
       ptrs := ?_
+      regs := ?_
+      iter := ?_
       log_hash := ?_
       log_len := ?_
       log_cap := ?_
@@ -1130,6 +1158,12 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
           simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
           rcases hc with rfl | rfl <;>
             exact ⟨by simp, by simp, by simp, by simp, by simp, by simp⟩)
+  · rw [henv']
+    dsimp only [out]
+    exact hInv.regs.names_of_eq ["%add289.i", "%32"] rfl (by decide)
+  · rw [henv']
+    dsimp only [out]
+    exact hInv.iter.names_of_eq ["%add289.i", "%32"] rfl (by decide)
   · rw [hmem']
     dsimp only [m']
     rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
@@ -1275,6 +1309,8 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := ?_
+        iter := ?_
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -1309,6 +1345,12 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
             simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
             rcases hc with rfl | rfl | rfl <;>
               exact ⟨by simp, by simp, by simp, by simp, by simp, by simp⟩)
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.regs.names_of_eq ["%arrayidx333.i", "%idxprom332.i", "%sub331.i"] rfl (by decide)
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.iter.names_of_eq ["%arrayidx333.i", "%idxprom332.i", "%sub331.i"] rfl (by decide)
     · rw [hmem']
       dsimp only [m']
       rw [readBytes_log_of_stack_write (base := C.stage.cst)
@@ -1508,6 +1550,8 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := ?_
+        iter := ?_
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -1541,6 +1585,12 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
             simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
             rcases hc with rfl | rfl | rfl | rfl | rfl <;>
               exact ⟨by simp, by simp, by simp, by simp, by simp, by simp⟩)
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.regs.names_of_eq ["%cmp212.not.i", "%conv211.i", "%25", "%arrayidx209.i", "%inc208.i"] rfl (by decide)
+    · rw [henv']
+      dsimp only [out]
+      exact hInv.iter.names_of_eq ["%cmp212.not.i", "%conv211.i", "%25", "%arrayidx209.i", "%inc208.i"] rfl (by decide)
     · rw [hmem']
       dsimp only [m']
       rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz

@@ -164,7 +164,35 @@ def walkCarried (is : List Instr) : Prop :=
   ∀ i ∈ is, i.dst? ≠ some "%k.0.i249" ∧ i.dst? ≠ some "%sp.i.0248" ∧
     i.dst? ≠ some "%3" ∧ i.dst? ≠ some "%5" ∧ i.dst? ≠ some "%k11.i" ∧
     i.dst? ≠ some "%ctype.i" ∧ i.dst? ≠ some "%cst.i" ∧
-    i.dst? ≠ some "%hash1.i.i"
+    i.dst? ≠ some "%hash1.i.i" ∧
+    (∀ n ∈ walkStaticNames, i.dst? ≠ some n) ∧
+    i.dst? ≠ some "%7" ∧ i.dst? ≠ some "%8"
+
+/-- **A run that binds none of the carried names keeps the static carrier.**  One
+`denoteCode_lookupName` per name, and no memory reasoning. -/
+theorem WalkRegs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s s₁ : State} {is : List Instr} (h : WalkRegs G C s.env)
+    (hfree : walkCarried is) (hden : denoteCode calls is s = some s₁) :
+    WalkRegs G C s₁.env := by
+  intro p hp
+  rw [denoteCode_lookupName calls is p.1
+    (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.1 p.1 (by
+      rw [← walkStaticRegs_names G C]
+      exact List.mem_map_of_mem hp)) s s₁ hden]
+  exact h p hp
+
+/-- **A run that binds neither `%7` nor `%8` keeps the per-iteration carrier.** -/
+theorem WalkIter.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {k : Nat}
+    {s s₁ : State} {is : List Instr} (h : WalkIter G k s.env)
+    (hfree : walkCarried is) (hden : denoteCode calls is s = some s₁) :
+    WalkIter G k s₁.env := by
+  refine ⟨?_, ?_⟩
+  · rw [denoteCode_lookupName calls is "%7"
+      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.1) s s₁ hden]
+    exact h.reg7
+  · rw [denoteCode_lookupName calls is "%8"
+      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+    exact h.reg8
 
 theorem WalkPtrs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s s₁ : State} {is : List Instr} (h : WalkPtrs G C s.env)
@@ -179,7 +207,7 @@ theorem WalkPtrs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
     exact hc
   · rw [denoteCode_lookupName _ is "%cst.i" (fun i hi => (hfree i hi).2.2.2.2.2.2.1) s s₁ hden]
     exact hs
-  · rw [denoteCode_lookupName _ is "%hash1.i.i" (fun i hi => (hfree i hi).2.2.2.2.2.2.2) s s₁ hden]
+  · rw [denoteCode_lookupName _ is "%hash1.i.i" (fun i hi => (hfree i hi).2.2.2.2.2.2.2.1) s s₁ hden]
     exact hh
 
 /-- **A pure run's invariant transfer.**  The block binds no carried register, so
@@ -225,6 +253,8 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := by dsimp only [s']; exact WalkRegs.of_run hInv.regs hfree hden
+        iter := by dsimp only [s']; exact WalkIter.of_run hInv.iter hfree hden
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -298,6 +328,8 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := by dsimp only [s']; exact WalkRegs.of_run hInv.regs hfree hden
+        iter := by dsimp only [s']; exact WalkIter.of_run hInv.iter hfree hden
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
@@ -535,6 +567,7 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     {s₁ : State} (hden : denoteCode calls B.instrs s = some s₁)
     (hfree : walkCarriedNoK11 B.instrs) (hmem : s₁.mem = s.mem) (hpc₁ : s₁.pc = s.pc)
+    (hregs : WalkRegs G C s₁.env) (hiter : WalkIter G C.k s₁.env)
     (hk11 : lookupName s₁.env "%k11.i" = some (.ptr (C.stage.c + 32)))
     {t : String} (hterm : B.term = Term.br t)
     (hloc : WalkLocal { C with block := t } { s₁ with pc := t, pre := some s.pc }) :
@@ -566,6 +599,8 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         depth_cap := hInv.depth_cap
         depth_reg := ?_
         ptrs := ?_
+        regs := hregs
+        iter := hiter
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
