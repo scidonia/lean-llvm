@@ -3939,17 +3939,37 @@ the instruction's constructor, not by the block's name.
 | D | other `store` shapes | 11 | 11 |
 | E | a `phi`-headed block | 15 | 15 |
 | F | a block that calls | 19 | 0 |
-| G | `load` and compare | 14 | 12 |
+| G | `load` and compare | 14 | 14 |
 | H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**A hundred and thirty-eight of the 165 blocks are links**, and the table's proved
+**A hundred and forty of the 165 blocks are links**, and the table's proved
 column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
-10 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) = 136, with
+14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) = 140, with
 the five measure arms among those classes rather than beside them.  The remaining
-27 are named below with their obstruction, one row each; six of them are not links
+25 are named below with their obstruction, one row each; six of them are not links
 at all — the seed, the return, and the four `unreachable` arms.
+
+**The call census, measured.**  The F row's 19 is the number of blocks between the
+arms whose instruction list contains an `Instr.call` or `Instr.callVoid`, read off
+`stage2Body`'s own block list.  The callee of a value-returning call is the
+instruction's *third* field: the first quoted string of `Instr.call "%call14.i"
+(Ty.int 32) "s2_value_pos" [...]` is the destination register, and enumerating
+calls by the first quoted string instead reports those blocks under a register
+name.  Measured that way the body has **25** call-containing blocks: `entry` (11
+calls, `s2_init` among them), `if.end` (3 `lifetime.end`), the four `unreachable`
+arms, and the 19 class F rows — so the table's 19 is right and an earlier
+enumeration of "22 blocks, 16 F rows" undercounted F by three, all of them
+`lifetime.end`-only blocks near the body's end (`cleanup474.i`, `s2_walk.exit`,
+`if.then`).  Of the 19, **13 write only inside the present frame** (the three
+`s2_value_pos` callers, the eight `lifetime`-only blocks, `if.then25.i` and
+`if.then425.i`'s `od_scalar_value`, whose three-footprint union is the log's
+cursor word, the event stream and the refusal record) and **6 need the frame
+widening** — `if.then109.i`, `if.else334.i` and `if.then447.i` through
+`s2_after_value`'s `%root_done.i`, `z_arena_reserve.exit` through
+`s2_string_body`'s `%xj.i`/`%outn.i`, `if.then19.i` through `num_fast_el1`'s
+`%d.i`/`%ei.i`, and `if.end256.i`'s own zero store to `%outn.i`.
 
 The count that mattered was the number of classes, not of blocks.  A, B and B′ are
 70 blocks between them and need no memory reasoning at all: none touches memory
@@ -4029,7 +4049,7 @@ links is a contract question — the callee's post at the caller's staging — a
 block that reads the returned word (`if.end256.i` reads `%call272.i`'s successors,
 `if.then328.i` reads `%outn.i`) needs the contract's *frame* as well as its post.
 
-**G, `load` and compare (14; twelve proved, two obstructed).**  Each reads a word the invariant does not
+**G, `load` and compare (14; all proved).**  Each reads a word the invariant does not
 bind.  `if.end.i.i` and `if.end.i.i55` read `%len` and `%cap` — which `log_len` and
 `log_cap` *do* bind, so these two are the closest of the fourteen; the rest read a
 container-stack byte at `idxprom` or `sp - 1`, the document byte at `%cond350.i`
@@ -4042,15 +4062,18 @@ transfer — `pureCore` for a bit the block computes, `pureCoreCarried` for
 The four rows that read a container-stack byte through `sp - 1`
 (`if.end179.i`, `land.lhs.true.i`, `if.end133.i`, `if.end59.i`) failed the
 kernel's type-checker when their runs were written at the block's literal
-instruction list: a deep-recursion error, not a depth limit (`maxRecDepth 50000`
-does not help), while the statement alone and each proof term's parts type-check.
+instruction list with the outgoing environment duplicated in the hypothesis
+types: a deep-recursion error, not a depth limit (`maxRecDepth 50000` does not
+help), while the statement alone and each proof term's parts type-check.
 Stating the run at the block's *variables* and supplying each block by `rfl` —
-`WalkLink.addImmBr`'s device — closes two of them (`WalkLink.if_end179_i`,
-`WalkLink.land_lhs_true_i`); the other two (`if.end133.i`'s seven-instruction pair
-and `if.end59.i`'s eight-instruction `select` nest) exceed this repository's
-elaboration budget (the pair's declaration alone reaches 7.8 GB resident under a
-6 GB cap, the marker's 1.7 GB), and `JsonStage2WalkPure`'s header records the
-measurement.
+`WalkLink.addImmBr`'s device — closes the two five-instruction rows
+(`WalkLink.if_end179_i`, `WalkLink.land_lhs_true_i`); the other two are closed by
+naming the seven- and eight-cell environment **once** as a parameter
+(`env' : Env` with an equation `env' = walkPairEnv …`/`walkSelectEnv …`) so the
+statement never contains it twice: `WalkLink.if_end133_i` and
+`WalkLink.if_end59_i`.  The measurement that forced that shape: with the
+environment written into the two `WalkLocal` hypotheses, the pair's declaration
+alone reached 7.8 GB resident under a 6 GB cap (the marker's 1.7 GB).
 
 **H1's five `LeafBlock`s — proved.**  `%.off = add i8 %NN, -9; %SwitchLeafNN =
 icmp ule i8 %.off, 1`.  Two instructions and no memory: `walkDenoteCode_add_imm_w`
@@ -4096,7 +4119,7 @@ class of the finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
 ## The remainder, named
 
 The census's rows outside classes A, B, B′, `entry`, `if.end` and the four traps:
-29 blocks still without a link, and 136 already closed.  `class` is the census's;
+25 blocks still without a link, and 140 already closed.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -4110,14 +4133,14 @@ it.
 | 23 | `if.end.i.i` | G | the two log words — proved (`WalkLink.if_end_i_i`) |
 | 24 | `if.end.i.i.i` | trap | `@llvm.trap`, `unreachable` |
 | 25 | `out_reserve.exit.i.i` | D | the tag byte and the cursor — proved (`WalkLink.out_reserve_exit_i_i`) |
-| 28 | `if.end59.i` | G | the type stack's byte — the proof is written but the declaration's kernel check recurses |
+| 28 | `if.end59.i` | G | the type stack's byte — proved (`WalkLink.if_end59_i`) |
 | 30 | `if.end74.i` | G | the state stack's byte, carried bit — proved (`WalkLink.if_end74_i`) |
 | 37 | `if.then109.i` | F | calls `@s2_after_value` |
 | 38 | `if.then.i.i50` | D | the hash word at `%z + 24` — proved (`WalkLink.if_then_i_i50`) |
 | 39 | `if.end.i.i55` | G | the two log words — proved (`WalkLink.if_end_i_i55`) |
 | 40 | `if.end.i.i.i64` | trap | `@llvm.trap`, `unreachable` |
 | 41 | `out_reserve.exit.i.i60` | D | the tag byte and the cursor — proved (`WalkLink.out_reserve_exit_i_i60`) |
-| 44 | `if.end133.i` | G | both stacks' bytes at `sp - 1` — the proof is written but the declaration's kernel check recurses |
+| 44 | `if.end133.i` | G | both stacks' bytes at `sp - 1` — proved (`WalkLink.if_end133_i`) |
 | 47 | `if.end150.i` | D | the state stack's byte — proved (`WalkLink.if_end150_i`) |
 | 50 | `if.end162.i` | D | the state stack's byte — proved (`WalkLink.if_end162_i`) |
 | 53 | `if.end179.i` | G | the type stack's byte — proved (`WalkLink.if_end179_i`) |
@@ -4177,7 +4200,7 @@ it.
 ## Whether the chain closes
 
 It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited: 29 of the body's 165 blocks have no link, and the arena trap's clause
+inhabited: 25 of the body's 165 blocks have no link, and the arena trap's clause
 has no production yet.
 
 `JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the

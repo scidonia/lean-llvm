@@ -6,15 +6,19 @@ The stage-2 walk's remaining pure blocks: class G's `load`-and-compare runs.
 `WalkLink.pureJumpK11`, and six links — H1's five `LeafBlock`s and `if.then281.i`.
 What it records as not supplied is the *instance work*: writing each block's
 outgoing environment so its `denoteCode` equality is a term the transfer consumes.
-This module is that work for ten of the census's fourteen G rows.  The other four
-(`if.end59.i`, `if.end133.i`, `land.lhs.true.i`, `if.end179.i`) state the same
-`denoteCode` equalities, but their declarations do not pass the kernel's
-type-checker: with the run written either through `denoteCode_gep8_reg` and
-`simpa`/`omega`-built rewrites or through `denoteCode_gep8_ofNat`, the kernel
-reports a deep recursion while checking the declaration even though the statement
-alone and the proof's individual arguments type-check (measured: `maxRecDepth
-50000` does not help, so it is not a depth limit).  They are named as the class's
-open rows in the census.
+This module is that work for all fourteen of the census's G rows.  Four of them
+read a container-stack byte through `sp - 1` (`if.end179.i`, `land.lhs.true.i`,
+`if.end133.i`, `if.end59.i`), and their runs are stated at the block's *variables*
+with the outgoing environment named once, because writing the environment into the
+statement twice (once per `WalkLocal`) does not pass the kernel's type-checker:
+with the run at the block's literal instruction list the declaration reports a
+deep recursion (measured: `maxRecDepth 50000` does not help, so it is not a depth
+limit, and the pair's declaration alone reached 7.8 GB resident under a 6 GB cap).
+The two five-instruction rows take `walkMarkerEnv` through one class lemma
+(`WalkLink.stackMarkerBr`); the seven- and eight-instruction rows take a named
+`env'` with an equation `env' = walkPairEnv …`/`walkSelectEnv …`
+(`WalkLink.stackPairBr`, `WalkLink.stackSelectBr`), and the instances supply the
+block by `rfl`, so no statement contains the environment twice.
 
 A G block reads a word the invariant does not bind — the two log fields `%len` and
 `%cap`, a container-stack byte at the depth's index, a document byte, or the
@@ -707,17 +711,23 @@ def walkSelBit (db : BitVec 8) : BitVec 1 :=
 def walkSelVal (db : BitVec 8) : BitVec 32 :=
   if walkSelBit db = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2
 
-/-- The eight cells a `select`-nest run leaves. -/
-def walkSelectEnv (sub cmpi sel idx apx ldv cvt d : String) (db : BitVec 8)
+/-- The eight cells the `select` nest leaves, in the explicit form the run builds
+(the definitional `walkSelVal`/`walkSelBit` folded out, so the statement's
+environment is the run's term). -/
+def walkSelectEnv (sub cmpi sel zx apx ldv cvt d : String) (db : BitVec 8)
     (x c : BitVec 32) (ct q : Nat) (env : Env) : Env :=
-  cells [(d, .int 1 (evalICmp .eq (walkSelVal db)
+  cells [
+    (d, .int 1 (evalICmp .eq
+      (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+        else BitVec.ofNat 32 2)
       (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat))),
     (cvt, .int 32 (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)),
     (ldv, .int 8 (BitVec.ofNat 8 q)),
     (apx, .ptr (ct + (x + c).toNat)),
-    (idx, .int 64 (BitVec.ofNat 64 (x + c).toNat)),
-    (sel, .int 32 (walkSelVal db)),
-    (cmpi, .int 1 (walkSelBit db)),
+    (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)),
+    (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1
+      then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)),
+    (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))),
     (sub, .int 32 (x + c))] env
 
 /-- **One stack byte at `%sp - 1`, tested for a marker, then a `condbr`.**  The
@@ -814,6 +824,279 @@ theorem WalkLink.land_lhs_true_i {calls : Calls} {m0 : Mem}
     (by unfold walkCarried; decide)
     (by simp [WalkLocal]) (by simp [WalkLocal])
 
+/-- **Two stack bytes at `%sp - 1`, the first tested for a marker.**  The
+seven-instruction shape `if.end133.i`.  The run's environment is named once
+(`env'`), so the statement mentions the seven cells once and no proof term
+duplicates them. -/
+theorem WalkLink.stackPairBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    {B : Block} (hfind : stage2Body.findBlock C.block = some B)
+    {gg zx ap1 ld1 d ap2 ld2 base1 base2 tl fl : String}
+    {x c : BitVec 32} {a1 a2 : Nat} {one : BitVec 8} {bs : List UInt8} {bs2 : List UInt8}
+    {q : Nat} {env' : Env}
+    (hinstrs : B.instrs = [
+      Instr.binop gg BinOp.add 32 (.reg "%sp.i.0248") (.imm (.int 32 c)),
+      Instr.zext zx 32 64 (.reg gg),
+      Instr.gep ap1 (.int 8) (.reg base1) (.reg zx),
+      Instr.load ld1 (.int 8) (.reg ap1),
+      Instr.icmp d IPred.eq 8 (.reg ld1) (.imm (.int 8 one)),
+      Instr.gep ap2 (.int 8) (.reg base2) (.reg zx),
+      Instr.load ld2 (.int 8) (.reg ap2)])
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (henv : env' = walkPairEnv gg zx ap1 ld1 d ap2 ld2 x c a1 a2 one q bs2 s.env)
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 x))
+    (hb1 : lookupName s.env base1 = some (.ptr a1))
+    (hb2 : lookupName s.env base2 = some (.ptr a2))
+    (hzb1 : zx ≠ base1) (hgb1 : gg ≠ base1)
+    (hzb2 : zx ≠ base2) (hgb2 : gg ≠ base2)
+    (hdzx : d ≠ zx) (hlzx : ld1 ≠ zx) (hazx : ap1 ≠ zx)
+    (hlb2 : ld1 ≠ base2) (hab2 : ap1 ≠ base2) (hdb2 : d ≠ base2)
+    (hld2d : ld2 ≠ d) (hap2d : ap2 ≠ d)
+    (hpos : (x + c).toNat < 2 ^ 63)
+    (hbs : bytesToNat bs = q)
+    (hread1 : readBytes s.mem (a1 + (x + c).toNat) 1 = some bs)
+    (hread2 : readBytes s.mem (a2 + (x + c).toNat) 1 = some bs2)
+    (hfree : walkCarried B.instrs)
+    (hl : WalkLocal { C with block := tl } { stateAt env' s with pc := tl, pre := some s.pc })
+    (hf : WalkLocal { C with block := fl } { stateAt env' s with pc := fl, pre := some s.pc }) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq (BitVec.ofNat 8 q) one = 1 then tl else fl) } s' := by
+  have hden : denoteCode calls B.instrs s = some (stateAt env' s) := by
+    rw [hinstrs, ← stateAt_self s]
+    rw [walkDenoteCode_add_imm_w (calls := calls) (env := s.env) (s := s) (d := gg)
+      (a := "%sp.i.0248") (w := 32) (x := x) (c := c) hsp]
+    rw [denoteCode_zext (calls := calls) (env := (gg, .int 32 (x + c)) :: s.env) (s := s)
+      (d := zx) (v := gg) (wIn := 32) (wOut := 64) (x := x + c) (by simp [lookupName])]
+    rw [denoteCode_gep8_ofNat (calls := calls)
+      (env := (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ap1) (base := base1) (off := zx) (a := a1) (j := (x + c).toNat)
+      (by rw [lookupName_cons_ne (k := zx) (n := base1) _ _ hzb1,
+              lookupName_cons_ne (k := gg) (n := base1) _ _ hgb1]; exact hb1)
+      (by simp [lookupName]) hpos]
+    rw [denoteCode_load8 (calls := calls)
+      (env := (ap1, .ptr (a1 + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ld1) (p := ap1) (a := a1 + (x + c).toNat) (q := q) (bs := bs)
+      (by simp [lookupName]) hread1 hbs]
+    rw [denoteCode_icmp_eq_imm_w (calls := calls)
+      (env := (ld1, .int 8 (BitVec.ofNat 8 q)) :: (ap1, .ptr (a1 + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := d) (a := ld1) (w := 8) (x := BitVec.ofNat 8 q) (c := one)
+      (by simp [lookupName])]
+    rw [denoteCode_gep8_ofNat (calls := calls)
+      (env := (d, .int 1 (evalICmp .eq (BitVec.ofNat 8 q) one)) ::
+        (ld1, .int 8 (BitVec.ofNat 8 q)) :: (ap1, .ptr (a1 + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ap2) (base := base2) (off := zx) (a := a2) (j := (x + c).toNat)
+      (by
+        rw [lookupName_cons_ne (k := d) (n := base2) _ _ hdb2,
+            lookupName_cons_ne (k := ld1) (n := base2) _ _ hlb2,
+            lookupName_cons_ne (k := ap1) (n := base2) _ _ hab2,
+            lookupName_cons_ne (k := zx) (n := base2) _ _ hzb2,
+            lookupName_cons_ne (k := gg) (n := base2) _ _ hgb2]
+        exact hb2)
+      (by
+        rw [lookupName_cons_ne (k := d) (n := zx) _ _ hdzx,
+            lookupName_cons_ne (k := ld1) (n := zx) _ _ hlzx,
+            lookupName_cons_ne (k := ap1) (n := zx) _ _ hazx]
+        simp [lookupName]) hpos]
+    rw [denoteCode_load8 (calls := calls)
+      (env := (ap2, .ptr (a2 + (x + c).toNat)) ::
+        (d, .int 1 (evalICmp .eq (BitVec.ofNat 8 q) one)) ::
+        (ld1, .int 8 (BitVec.ofNat 8 q)) :: (ap1, .ptr (a1 + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ld2) (p := ap2) (a := a2 + (x + c).toNat) (q := bytesToNat bs2)
+      (bs := bs2) (by simp [lookupName]) hread2 rfl]
+    rw [henv]
+    rfl
+  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
+    (by
+      rw [henv]
+      simp only [stateAt, walkPairEnv, cells]
+      rw [lookupName_cons_ne (k := ld2) (n := d) _ _ hld2d,
+        lookupName_cons_ne (k := ap2) (n := d) _ _ hap2d, lookupName_cons_self])
+    hl hf
+
+/-- **`if.end133.i` as a link.** -/
+theorem WalkLink.if_end133_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.end133.i")
+    {sp ct cs : Nat} {b : UInt8} {b2 : UInt8}
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (hct : lookupName s.env "%ctype.i" = some (.ptr ct))
+    (hcs : lookupName s.env "%cst.i" = some (.ptr cs))
+    (hq63 : (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat < 2 ^ 63)
+    (hread1 : readBytes s.mem
+      (ct + (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat) 1 = some [b])
+    (hread2 : readBytes s.mem
+      (cs + (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat) 1 = some [b2]) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 1) = 1
+          then "if.then141.i" else "if.else153.i") } s' :=
+  WalkLink.stackPairBr (G := G) (C := C) (s := s) hInv
+    (B := walkIf_end133_i) (by rw [hblock]; exact walkIf_end133_i_find)
+    rfl rfl
+    (env' := walkPairEnv "%sub135.i" "%idxprom136.i" "%arrayidx137.i" "%21" "%cmp139.i" "%arrayidx143.i" "%22"
+      (BitVec.ofNat 32 sp) (BitVec.ofNat 32 4294967295) ct cs
+      (BitVec.ofNat 8 1) (bytesToNat [b]) [b2] s.env)
+    (q := bytesToNat [b]) (bs := [b]) (bs2 := [b2])
+    (one := BitVec.ofNat 8 1) (x := BitVec.ofNat 32 sp) (c := BitVec.ofNat 32 4294967295)
+    (a1 := ct) (a2 := cs)
+    rfl hsp hct hcs (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    hq63 rfl hread1 hread2
+    (by unfold walkCarried; decide)
+    (by simp [WalkLocal]) (by simp [WalkLocal])
+
+
+/-- **The `select` nest of `if.end59.i`**: `%sp - 1`, the marker chosen from the
+document byte, the type stack's byte, and the pair's comparison. -/
+theorem WalkLink.stackSelectBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    {B : Block} (hfind : stage2Body.findBlock C.block = some B)
+    {zx apx ldv cvt d sub cmpi sel base tl fl : String}
+    {x c : BitVec 32} {ct : Nat} {db : BitVec 8} {q : Nat} {bs : List UInt8} {env' : Env}
+    (hinstrs : B.instrs = [
+      Instr.binop sub BinOp.add 32 (.reg "%sp.i.0248") (.imm (.int 32 c)),
+      Instr.icmp cmpi IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 125))),
+      Instr.select sel (.int 32) (.reg cmpi) (.imm (.int 32 (BitVec.ofNat 32 1)))
+        (.imm (.int 32 (BitVec.ofNat 32 2))),
+      Instr.zext zx 32 64 (.reg sub),
+      Instr.gep apx (.int 8) (.reg base) (.reg zx),
+      Instr.load ldv (.int 8) (.reg apx),
+      Instr.zext cvt 8 32 (.reg ldv),
+      Instr.icmp d IPred.eq 32 (.reg sel) (.reg cvt)])
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (henv : env' = walkSelectEnv sub cmpi sel zx apx ldv cvt d db x c ct q s.env)
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 x))
+    (h8 : lookupName s.env "%8" = some (.int 8 db))
+    (hb : lookupName s.env base = some (.ptr ct))
+    (hzb : zx ≠ base) (hsb : sub ≠ base) (hs8 : sub ≠ "%8")
+    (hselSub : sel ≠ sub) (hcmpiSub : cmpi ≠ sub)
+    (hselBase : sel ≠ base) (hcmpiBase : cmpi ≠ base)
+    (hcvtSel : cvt ≠ sel) (hldvSel : ldv ≠ sel)
+    (hapxSel : apx ≠ sel) (hzxSel : zx ≠ sel)
+    (hpos : (x + c).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (ct + (x + c).toNat) 1 = some bs)
+    (hbsn : bytesToNat bs = q)
+    (hfree : walkCarried B.instrs)
+    (hl : WalkLocal { C with block := tl } { stateAt env' s with pc := tl, pre := some s.pc })
+    (hf : WalkLocal { C with block := fl } { stateAt env' s with pc := fl, pre := some s.pc }) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq
+          (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+            else BitVec.ofNat 32 2)
+          (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat) = 1 then tl else fl) } s' := by
+  have hden : denoteCode calls B.instrs s = some (stateAt env' s) := by
+    rw [hinstrs, ← stateAt_self s]
+    rw [walkDenoteCode_add_imm_w (calls := calls) (env := s.env) (s := s) (d := sub)
+      (a := "%sp.i.0248") (w := 32) (x := x) (c := c) hsp]
+    rw [denoteCode_icmp_eq_imm_w (calls := calls) (env := (sub, .int 32 (x + c)) :: s.env)
+      (s := s) (d := cmpi) (a := "%8") (w := 8) (x := db) (c := BitVec.ofNat 8 125)
+      (by rw [lookupName_cons_ne (k := sub) (n := "%8") _ _ hs8]; exact h8)]
+    rw [denoteCode_select_imm_imm_w (calls := calls)
+      (env := (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+        (sub, .int 32 (x + c)) :: s.env) (s := s)
+      (d := sel) (c := cmpi) (w := 32) (bb := evalICmp .eq db (BitVec.ofNat 8 125))
+      (x := BitVec.ofNat 32 1) (y := BitVec.ofNat 32 2)
+      (by simp [lookupName])]
+    rw [denoteCode_zext (calls := calls)
+      (env := (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
+        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := zx) (v := sub)
+      (wIn := 32) (wOut := 64) (x := x + c)
+      (by rw [lookupName_cons_ne (k := sel) (n := sub) _ _ hselSub,
+              lookupName_cons_ne (k := cmpi) (n := sub) _ _ hcmpiSub]; simp [lookupName])]
+    rw [denoteCode_gep8_ofNat (calls := calls)
+      (env := (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
+        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := apx) (base := base) (off := zx)
+      (a := ct) (j := (x + c).toNat)
+      (by
+        rw [lookupName_cons_ne (k := zx) (n := base) _ _ hzb,
+            lookupName_cons_ne (k := sel) (n := base) _ _ hselBase,
+            lookupName_cons_ne (k := cmpi) (n := base) _ _ hcmpiBase,
+            lookupName_cons_ne (k := sub) (n := base) _ _ hsb]
+        exact hb)
+      (by simp [lookupName]) hpos]
+    rw [denoteCode_load8 (calls := calls)
+      (env := (apx, .ptr (ct + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
+        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+        (sub, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ldv) (p := apx) (a := ct + (x + c).toNat) (q := q) (bs := bs)
+      (by simp [lookupName]) hread hbsn]
+    rw [denoteCode_zext (calls := calls)
+      (env := (ldv, .int 8 (BitVec.ofNat 8 q)) :: (apx, .ptr (ct + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
+        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := cvt) (v := ldv)
+      (wIn := 8) (wOut := 32) (x := BitVec.ofNat 8 q) (by simp [lookupName])]
+    rw [denoteCode_icmp_reg_w (calls := calls)
+      (env := (cvt, .int 32 (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)) ::
+        (ldv, .int 8 (BitVec.ofNat 8 q)) :: (apx, .ptr (ct + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
+        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := d) (a := sel) (b := cvt)
+      IPred.eq 32
+      (x := if evalICmp .eq db (BitVec.ofNat 8 125) = 1
+        then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)
+      (y := BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)
+      (by
+        rw [lookupName_cons_ne (k := cvt) (n := sel) _ _ hcvtSel,
+            lookupName_cons_ne (k := ldv) (n := sel) _ _ hldvSel,
+            lookupName_cons_ne (k := apx) (n := sel) _ _ hapxSel,
+            lookupName_cons_ne (k := zx) (n := sel) _ _ hzxSel]
+        simp [lookupName, walkSelVal, walkSelBit])
+      (by simp [lookupName])]
+    rw [henv]
+    rfl
+  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
+    (by
+      rw [henv]
+      simp only [stateAt, walkSelectEnv, cells]
+      simp [lookupName])
+    hl hf
+
+/-- **`if.end59.i` as a link.** -/
+theorem WalkLink.if_end59_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.end59.i")
+    {sp ct : Nat} {db : BitVec 8} {b : UInt8}
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (h8 : lookupName s.env "%8" = some (.int 8 db))
+    (hct : lookupName s.env "%ctype.i" = some (.ptr ct))
+    (hq63 : (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat < 2 ^ 63)
+    (hread : readBytes s.mem
+      (ct + (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat) 1 = some [b]) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq (walkSelVal db)
+          (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 1
+          then "if.end74.i" else "if.then71.i") } s' := by
+  show (∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq (walkSelVal db)
+          (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 1
+          then "if.end74.i" else "if.then71.i") } s')
+  simp only [walkSelVal, walkSelBit]
+  exact WalkLink.stackSelectBr (G := G) (C := C) (s := s) hInv
+    (B := walkIf_end59_i) (by rw [hblock]; exact walkIf_end59_i_find)
+    rfl rfl
+    (env' := walkSelectEnv "%sub.i" "%cmp61.i" "%conv64.i" "%idxprom65.i" "%arrayidx66.i"
+      "%14" "%conv67.i" "%cmp69.not.i" db (BitVec.ofNat 32 sp) (BitVec.ofNat 32 4294967295)
+      ct (bytesToNat [b]) s.env)
+    (bs := [b]) (q := bytesToNat [b]) (db := db)
+    (x := BitVec.ofNat 32 sp) (c := BitVec.ofNat 32 4294967295)
+    rfl hsp h8 hct (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide)
+    hq63 hread rfl
+    (by unfold walkCarried; decide)
+    (by simp [WalkLocal]) (by simp [WalkLocal])
+
+
 /-! ### The instrument
 
 The module's declarations' axiom footprints, measured rather than asserted.  The
@@ -839,6 +1122,14 @@ read). -/
 /-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.if_end490_i' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end490_i
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.if_end133_i' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end133_i
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.WalkLink.if_end59_i' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end59_i
 
 end WalkScope
 end LeanLLVM.Refinement
