@@ -226,13 +226,14 @@ The trace itself is stated: `WalkLink` is one link (a control step that preserve
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
 as a run, a measure bound, and a completion at a returning last state.
 
-A hundred and four of the body's 165 blocks are links, and *The middle's two
+A hundred and fourteen of the body's 165 blocks are links, and *The middle's two
 classes* below is the census that decomposes the count: the two named arms
 (`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
 (`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
-eighteen refusal stores, and the two entry links beside `while.body.i.lr.ph`
-(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the 61 blocks
-that are still not links, are stated there.  `WalkLocal` is
+eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), and the two
+entry links beside `while.body.i.lr.ph` (`JsonStage2WalkEntry`).  The shape each
+remaining class needs, and the 51 blocks that are still not links, are stated
+there.  `WalkLocal` is
 still `True` at every block outside the ten the five measure arms reach, so
 well-foundedness over the whole control flow is not established, and
 `Stage2WalkCompletes` is not inhabited.
@@ -3813,9 +3814,9 @@ control steps, each of which preserves `WalkInv` and does not raise
 by block; this section states it, proves that it carries the invariant and the
 measure, and gives it the links the module has proved: the header's block, the
 nesting arm, the latch, the four scan headers, and the censused classes A, B and
-B′, and the eighteen refusal stores of C, and the two entry links — a hundred and
-four blocks in all.  The links
-between them are the 61 rows of the census's remainder, and they are not
+B′, and the eighteen refusal stores of C, class D's ten stores, and the two entry
+links — a hundred and fourteen blocks in all.  The links
+between them are the 51 rows of the census's remainder, and they are not
 supplied. -/
 
 /-- **One link of the dispatch's trace**: a control step that preserves
@@ -3934,7 +3935,7 @@ the instruction's constructor, not by the block's name.
 | B | no instructions and a `br` | 9 | 9 |
 | B′ | no instructions and a `condbr` on a carried bit | 1 | 1 |
 | C | the refusal store: `gep %e+8`, `store i64`, `br` | 18 | 18 |
-| D | other `store` shapes | 11 | 1 |
+| D | other `store` shapes | 11 | 11 |
 | E | a `phi`-headed block | 15 | 3 |
 | F | a block that calls | 19 | 0 |
 | G | `load` and compare | 14 | 0 |
@@ -3942,11 +3943,11 @@ the instruction's constructor, not by the block's name.
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**A hundred and four of the 165 blocks are links**, and the table's proved column
-is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 1 (D's `if.end24.i`) + 3 (E's
+**A hundred and fourteen of the 165 blocks are links**, and the table's proved
+column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 3 (E's
 `while.body.i` and the two entry links) + 10 (H1) + 2 (H2's `while.body.i.lr.ph`
-and `if.then281.i`) = 104, with the five measure arms among those classes rather
-than beside them.  The remaining 61 are named below with their obstruction, one row
+and `if.then281.i`) = 114, with the five measure arms among those classes rather
+than beside them.  The remaining 51 are named below with their obstruction, one row
 each; six of them are not links at all — the seed, the return, and the four
 `unreachable` arms.
 
@@ -3978,17 +3979,23 @@ into the six equalities.  Nothing in `WalkInv` was weakened, and nothing was
 added: the clause the arm is missing is still missing, and it is now a hypothesis
 on the eighteen instances rather than a wall.
 
-**D, the other stores (11; `if.end24.i` proved).**  Ten shapes, one each: the hash
-word at `%z + 24` (`if.then.i.i`, `if.then.i.i50` — six instructions of `xor`,
-`mul`, `add` over the mask constants, and the invariant has no clause for that
-word); the event stream's byte and its length (`out_reserve.exit.i.i`,
-`.i60` — two stores that move `evlen`, and so the carry's `events`, `evlen_eq` and
-`evBytes` all three); the container-stack byte at `%cst.i + idxprom`
-(`if.end150.i`, `if.end162.i`, `if.end195.i`); the cursor's `k` field
-(`if.end207.i`, at `%k11.i`, which is `WalkPtrs`' own address); the arena cursor
-(`if.else285.i`, at `%alen`); and the state stack at `cst + sp - 1`
-(`if.then330.i`).  Each is provable, and none is a class: they are ten different
-addresses with ten different clauses behind them.
+**D, the other stores (11) — proved (`JsonStage2WalkStore`).**  Ten shapes, one
+each: the hash word at `%z + 24` (`if.then.i.i`, `if.then.i.i50` — six
+instructions of `xor`, `mul`, `add` over the mask constants, and the invariant has
+no clause for that word); the event stream's byte and its length
+(`out_reserve.exit.i.i`, `.i60` — two stores that move `evlen`, and so the carry's
+`events`, `evlen_eq` and `evBytes` all three); the container-stack byte at
+`%cst.i + idxprom` (`if.end150.i`, `if.end162.i`, `if.end195.i`); the cursor's `k`
+field (`if.end207.i`, at `%k11.i`, which is `WalkPtrs`' own address); the arena
+cursor (`if.else285.i`, at `%alen`); and the state stack at `cst + sp - 1`
+(`if.then330.i`).  None is a class — ten addresses with ten clause preservations
+behind them — so the module proves one transfer per shape (a container-stack byte,
+the hash word, the event stream's tag-and-length pair, the cursor's `k`, the arena
+cursor) and one instance per block.  The addresses the invariant does not bind are
+the caller's, as class C takes `%e`'s, and the two cursor moves are the carry's:
+`events`/`evlen` for the event stream, `alen`/`spans` for the arena, the latter
+with `pending` cleared (the merge that reserves the next record re-establishes
+it).
 
 **E, the `phi` run (15; `while.body.i`, `cond.end.i96` and `if.end48.i` proved).**
 The run reads `s.pre`, which the invariant does not constrain beyond the block it
@@ -4064,7 +4071,7 @@ class of the finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
 ## The remainder, named
 
 The census's rows outside classes A, B, B′, `entry`, `if.end` and the four traps:
-61 blocks still without a link, and 17 already closed.  `class` is the census's;
+51 blocks still without a link, and 27 already closed.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -4074,24 +4081,24 @@ it.
 | 1 | `entry` | seed | the initialisation, 58 instructions |
 | 2 | `while.body.i.lr.ph` | H2 | five `gep`s — proved (`WalkLink.while_body_i_lr_ph`) |
 | 17 | `if.then.i` | F | calls `@s2_value_pos` |
-| 22 | `if.then.i.i` | D | writes `%h1.i.i.i51` |
+| 22 | `if.then.i.i` | D | the hash word at `%z + 24` — proved (`WalkLink.if_then_i_i`) |
 | 23 | `if.end.i.i` | G | reads `%len`, `%cap` |
 | 24 | `if.end.i.i.i` | trap | `@llvm.trap`, `unreachable` |
-| 25 | `out_reserve.exit.i.i` | D | writes `%add.ptr.i.i`, `%len` |
+| 25 | `out_reserve.exit.i.i` | D | the tag byte and the cursor — proved (`WalkLink.out_reserve_exit_i_i`) |
 | 28 | `if.end59.i` | G | reads `%arrayidx66.i` |
 | 30 | `if.end74.i` | G | reads `%arrayidx76.i` |
 | 37 | `if.then109.i` | F | calls `@s2_after_value` |
-| 38 | `if.then.i.i50` | D | writes `%h1.i.i.i51` |
+| 38 | `if.then.i.i50` | D | the hash word at `%z + 24` — proved (`WalkLink.if_then_i_i50`) |
 | 39 | `if.end.i.i55` | G | reads `%len`, `%cap` |
 | 40 | `if.end.i.i.i64` | trap | `@llvm.trap`, `unreachable` |
-| 41 | `out_reserve.exit.i.i60` | D | writes `%add.ptr.i.i61`, `%len` |
+| 41 | `out_reserve.exit.i.i60` | D | the tag byte and the cursor — proved (`WalkLink.out_reserve_exit_i_i60`) |
 | 44 | `if.end133.i` | G | reads `%arrayidx137.i`, `%arrayidx143.i` |
-| 47 | `if.end150.i` | D | writes `%arrayidx143.i` |
-| 50 | `if.end162.i` | D | writes `%arrayidx143.i` |
+| 47 | `if.end150.i` | D | the state stack's byte — proved (`WalkLink.if_end150_i`) |
+| 50 | `if.end162.i` | D | the state stack's byte — proved (`WalkLink.if_end162_i`) |
 | 53 | `if.end179.i` | G | reads `%arrayidx183.i` |
 | 54 | `lor.lhs.false.i` | G | reads `%arrayidx188.i` |
-| 56 | `if.end195.i` | D | writes `%arrayidx188.i` |
-| 59 | `if.end207.i` | D | writes `%k11.i` |
+| 56 | `if.end195.i` | D | the state stack's byte — proved (`WalkLink.if_end195_i`) |
+| 59 | `if.end207.i` | D | the cursor record's `k` — proved (`WalkLink.if_end207_i`) |
 | 61 | `if.then219.i` | F | calls `@s2_value_pos` |
 | 62 | `land.lhs.true.i` | G | reads `%arrayidx227.i` |
 | 63 | `if.then231.i` | G | reads `%arrayidx235.i` |
@@ -4100,11 +4107,11 @@ it.
 | 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
 | 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` |
 | 71 | `if.then281.i` | H2 | `add`/`zext`/`or` — proved (`WalkLink.if_then281_i`) |
-| 72 | `if.else285.i` | D | writes `%alen` |
+| 72 | `if.else285.i` | D | the arena cursor and the span — proved (`WalkLink.if_else285_i`) |
 | 73 | `if.end290.i` | E | the `phi` run `%conv286.i.sink.in`, `%.sink` |
 | 74 | `if.end.i86` | trap | `@llvm.trap`, `unreachable` |
 | 75 | `if.then328.i` | F | calls `@llvm.lifetime.end.p0` |
-| 76 | `if.then330.i` | D | writes `%arrayidx333.i` |
+| 76 | `if.then330.i` | D | the state stack's byte — proved (`WalkLink.if_then330_i`) |
 | 77 | `if.else334.i` | F | calls `@s2_after_value` |
 | 78 | `cleanup339.critedge.i` | F | calls `@llvm.lifetime.end.p0` |
 | 80 | `cond.true345.i` | G | reads `%arrayidx346.i` |
@@ -4145,7 +4152,7 @@ it.
 ## Whether the chain closes
 
 It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited: 61 of the body's 165 blocks have no link, and the arena trap's clause
+inhabited: 51 of the body's 165 blocks have no link, and the arena trap's clause
 has no production yet.
 
 `JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the
@@ -4153,8 +4160,7 @@ has no production yet.
 three transfers the rest of the pure classes share: `WalkLink.pureCore` (a run that
 binds no carried register and whose edge is a carried or computed bit),
 `WalkLink.pureJumpCore` and `WalkLink.pureCoreCarried`.  What remains absent, with
-the reason in each row, is class G's fourteen reads, the D stores, the E merges,
-and the F calls.
+the reason in each row, is class G's fourteen reads, the E merges, and the F calls.
 
 The scan entries are links, and the measure is what made them.  `for.body.i.i` is
 reached from `if.end48.i` as well as from `for.inc.i.i`, and its landing fact is the
