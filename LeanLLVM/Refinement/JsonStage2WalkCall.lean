@@ -33,10 +33,11 @@ What a call block owes, and what this module supplies:
   frame and not at any word the invariant reads, `if.end256.i`'s own zero store
   is at `%outn.i`'s slot, and three write a record a cursor names:
   `if.then328.i`'s thirteen-byte event record is proved as the carry's link
-  (below, `WalkLink.if_then328_i`), and `z_arena_reserve.exit` (the decoded
-  body's prefix in the arena) and `if.then425.i` (`od_scalar_value`'s appended
-  record) are the same shape and still open, so their links are the carry's, not
-  the frame's.  `s2ScalarValuePost`'s second conjunct names the appended record,
+  (below, `WalkLink.if_then328_i`), and `if.then425.i`'s appended record is its
+  contract-driven companion (`JsonStage2WalkFinal`'s
+  `WalkLink.if_then425_i_emit`/`_refuse`), so those two links are the carry's,
+  not the frame's; `z_arena_reserve.exit` (the decoded body's prefix in the
+  arena) is the remaining cursor-mover.  `s2ScalarValuePost`'s second conjunct names the appended record,
   so `if.then425.i`'s call does not hide the trace's step behind the model's
   equation.
 * **the terminal step.**  Neither finalisation arm is a `WalkLink`: the exit's and
