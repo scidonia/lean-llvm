@@ -54,6 +54,49 @@
 /* The result's header: ten words, then the payload. */
 #define ROUTE_HEADER_BYTES 80
 
+/* ## Stage timing, and why it is gated
+ *
+ * `RouteMain.lean --stages` reports the route's stages separately, and three of
+ * them happen inside this adapter: the copy of the caller's arrays, the native
+ * call, and the copy of the result back.  A `ROUTE_TIMING` build records those
+ * three intervals in `leanllvm_route_stage_ns` (nanoseconds, CLOCK_MONOTONIC)
+ * and `leanllvm_route_stage_ns_at` reads a slot.  The slots are declared in
+ * both builds so the program links either way, but they start at `UINT64_MAX`,
+ * which no measured duration reaches: a build that never filled them reports
+ * that rather than a zero that would read as a fast stage, and `--stages`
+ * refuses to print a row.
+ *
+ * The gate is off unless `build.sh` is invoked with `TIMING=1`, and with it off
+ * this translation unit contains no clock read at all -- `build.sh` asserts
+ * with `nm` that `clock_gettime` is absent from the ordinary object's undefined
+ * symbols and present in the instrumented one -- so the ordinary adapter's
+ * work is the work it was before this instrument. */
+#include <time.h>
+
+/* A duration in nanoseconds no run reaches: 584 years. */
+#define ROUTE_STAGE_UNFILLED UINT64_MAX
+
+uint64_t leanllvm_route_stage_ns[3] = {
+    ROUTE_STAGE_UNFILLED, ROUTE_STAGE_UNFILLED, ROUTE_STAGE_UNFILLED};
+
+/* Reading a slot is an effect: the value is mutable state the adapter wrote,
+   so the getter returns the runtime's IO result rather than a pure `uint64_t`.
+   A pure extern with a literal index is a constant the compiler folds once --
+   measured, with all three slots reported from the first call and every later
+   repetition reading that cached value. */
+lean_object *leanllvm_route_stage_ns_at(uint64_t i) {
+  uint64_t v = i < 3 ? leanllvm_route_stage_ns[i] : 0;
+  return lean_io_result_mk_ok(lean_uint64_to_nat(v));
+}
+
+#ifdef ROUTE_TIMING
+static uint64_t route_now_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+#endif
+
 /* The outcome classes. */
 enum route_tag {
   ROUTE_OBSERVED = 0, /* the object ran and accepted (verdict 1) */
@@ -148,7 +191,11 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
   return build_result(tag, detail, want, got, none, NULL, 0, NULL, 0);
 }
 
-LEAN_EXPORT lean_object *leanllvm_json_route(
+/* The adapter's body.  `leanllvm_json_route` below wraps it in the runtime's IO
+   result, so the route's call is sequenced against the clock reads that divide
+   its stages; a pure `let` is free to move, and a call moved past a slot read
+   would report the previous call's interval. */
+static lean_object *route_impl(
     lean_object *win, uint64_t n,
     lean_object *sc, lean_object *mk, lean_object *entw,
     lean_object *ep, uint64_t epcap, lean_object *nk,
@@ -197,6 +244,9 @@ LEAN_EXPORT lean_object *leanllvm_json_route(
   lean_object *ins[IN_COUNT] = {win, sc, mk, entw, ep, nk, xp, nxp, xcarry,
                                 dst, ndst, ev, nev, err};
   uint8_t *copies[IN_COUNT] = {0};
+#ifdef ROUTE_TIMING
+  uint64_t route_t_copy0 = route_now_ns();
+#endif
   for (int i = 0; i < IN_COUNT; i++) {
     copies[i] = copy_array(ins[i]);
     if (!copies[i]) {
@@ -205,6 +255,10 @@ LEAN_EXPORT lean_object *leanllvm_json_route(
       return failure(ROUTE_ALLOC, PC_NONE, bytes, 0);
     }
   }
+#ifdef ROUTE_TIMING
+  uint64_t route_t_native0 = route_now_ns();
+  leanllvm_route_stage_ns[0] = route_t_native0 - route_t_copy0;
+#endif
 
   uint64_t verdict = leanllvm_json_pipeline(
       copies[IN_WIN] + 3, n, (uint64_t *)copies[IN_SC], (uint64_t *)copies[IN_MK],
@@ -214,6 +268,11 @@ LEAN_EXPORT lean_object *leanllvm_json_route(
       copies[IN_DST], dstcap, (uint64_t *)copies[IN_NDST],
       copies[IN_EV], evcap, (uint64_t *)copies[IN_NEV],
       (uint64_t *)copies[IN_ERR], arm);
+
+#ifdef ROUTE_TIMING
+  uint64_t route_t_out0 = route_now_ns();
+  leanllvm_route_stage_ns[1] = route_t_out0 - route_t_native0;
+#endif
 
   uint64_t nkv = *(uint64_t *)copies[IN_NK];
   uint64_t nxv = *(uint64_t *)copies[IN_NXP];
@@ -243,6 +302,24 @@ LEAN_EXPORT lean_object *leanllvm_json_route(
                        copies[IN_EV], (size_t)nevV);
   }
 
+  /* The copy-out interval closes after the staging copies are released, so the
+     adapter's own work is entirely inside one of the three stages. */
   for (int i = 0; i < IN_COUNT; i++) free(copies[i]);
+#ifdef ROUTE_TIMING
+  leanllvm_route_stage_ns[2] = route_now_ns() - route_t_out0;
+#endif
   return out;
+}
+
+LEAN_EXPORT lean_object *leanllvm_json_route(
+    lean_object *win, uint64_t n,
+    lean_object *sc, lean_object *mk, lean_object *entw,
+    lean_object *ep, uint64_t epcap, lean_object *nk,
+    lean_object *xp, uint64_t xpcap, lean_object *nxp, lean_object *xcarry,
+    lean_object *dst, uint64_t dstcap, lean_object *ndst,
+    lean_object *ev, uint64_t evcap, lean_object *nev,
+    lean_object *err, uint64_t arm) {
+  return lean_io_result_mk_ok(
+      route_impl(win, n, sc, mk, entw, ep, epcap, nk, xp, xpcap, nxp, xcarry,
+                 dst, dstcap, ndst, ev, evcap, nev, err, arm));
 }

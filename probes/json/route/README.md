@@ -11,6 +11,8 @@ pipeline's record demands and calls the native object.  The contract is
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
 | `build.sh` | compiles the six kernel units, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts the two symbols the adapter calls are imported and defined |
 | `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the fourteen-row policy class, and the three outcomes' distinctness |
+| `bench.sh` | the route's per-stage timings, the object's -O2/-O3 pair taken paired against a drift control, the fallback's price, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
+| `bench/simdjson-baseline.cc` | the reference arm: simdjson 4.6.11 on-demand over the same documents, its `padded_string` staging and its `iterate` plus full value traversal timed apart |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
 | `DomainCheck.lean` | the library shell's `documentDecision` and `checkRoute`, elaborated from source: every admission clause on both sides, both fallback outcomes, the fourteen-row policy class, and the layout checks |
 
@@ -46,6 +48,7 @@ nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomai
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
 nix develop -c bash probes/json/route/correspondence.sh
+bash probes/json/route/bench.sh 21        # re-executes itself under a 6 GiB scope
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonCallRoute
 nix develop -c bash probes/install/lake-locked.sh env lean probes/json/route/DomainCheck.lean
 ```
@@ -60,6 +63,14 @@ stops with that command in its message when they are absent.  `correspondence.sh
 prints the artifact relation; its output is recorded in
 [the correspondence page](../../../docs/json-route-artifact-correspondence.md).
 `DomainCheck.lean` needs the library's oleans, which the fifth command builds.
+
+`build.sh` takes two knobs, both defaulting to the build the route ships:
+`OPT` is the optimisation level of the six kernel translation units (the
+route's object) with the adapter and every other flag held fixed, and
+`TIMING=1` compiles the adapter with the stage instrument `--stages` reports.
+The instrument is a compile-time gate: the ordinary adapter contains no clock
+read, which `build.sh` asserts with `nm` rather than assuming.  `bench.sh` uses
+`OPT` for the -O2/-O3 pair and `TIMING=1` for the stage rows.
 
 ## Observed
 

@@ -17,14 +17,44 @@ build=${BUILD_DIR:-"$here/build"}
 rm -rf "$build"
 mkdir -p "$build"
 
-cflags=(-O2 -march=x86-64-v3 -mpclmul -std=gnu11
-        -falign-loops=64 -falign-functions=64 -I "$repo/kernel/json")
+# The kernel object's optimisation level and the adapter's stage instrument are
+# the two build knobs; both default to the build the route ships.  `OPT` names
+# the level the six kernel units are compiled at (the route's object); `TIMING=1`
+# makes the adapter record its three stage intervals for `--stages`.  Everything
+# else is held fixed, so an `OPT` pair differs in the optimisation level alone.
+opt=${OPT:--O2}
+timing=${TIMING:-0}
+base=(-march=x86-64-v3 -mpclmul -std=gnu11
+      -falign-loops=64 -falign-functions=64 -I "$repo/kernel/json")
+kflags=("$opt" "${base[@]}")
+shim_flags=(-O2 "${base[@]}")
+if [ "$timing" = 1 ]; then
+  shim_flags+=(-DROUTE_TIMING=1)
+fi
+
+printf 'flags: kernel=%s adapter=-O2 timing=%s\n' "$opt" "$timing"
 
 for f in pipeline s1_block entry escape utf8 stage2; do
-  clang "${cflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
+  clang "${kflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
 done
 
-clang "${cflags[@]}" $(leanc --print-cflags) -c "$here/shim.c" -o "$build/shim.o"
+clang "${shim_flags[@]}" $(leanc --print-cflags) -c "$here/shim.c" -o "$build/shim.o"
+
+# The instrument is a compile-time gate, so its cost in the ordinary adapter is
+# checkable rather than asserted: an uninstrumented build must not reference the
+# clock at all, and an instrumented one must.
+clock_refs=$(nm -u "$build/shim.o" | grep -c 'clock_gettime' || true)
+if [ "$timing" = 1 ]; then
+  if [ "$clock_refs" -lt 1 ]; then
+    echo "build: TIMING=1 but the adapter does not read the clock" >&2
+    exit 1
+  fi
+else
+  if [ "$clock_refs" -ne 0 ]; then
+    echo "build: the ordinary adapter references clock_gettime; the gate is off" >&2
+    exit 1
+  fi
+fi
 
 # The decision and the fallback are the library's, so the program imports the
 # domain module and the reference parser.  Their Lean modules are built by Lake,
@@ -77,7 +107,7 @@ if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_entry_table$
   exit 1
 fi
 
-clang "${cflags[@]}" "$here/driver.c" \
+clang "${kflags[@]}" "$here/driver.c" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" -o "$build/driver"
 

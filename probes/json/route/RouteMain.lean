@@ -40,19 +40,32 @@ open LeanLLVM.Refinement
 
 /-- The adapter: it validates the staging, copies the caller's `ByteArray`s into
 the object's ABI, calls `leanllvm_json_pipeline`, and returns the tagged result
-`shim.c` defines. -/
+`shim.c` defines.  It is an `IO` action rather than a pure `let` so that it is
+sequenced against the clock reads `--stages` divides its intervals by: a pure
+call is free to move. -/
 @[extern "leanllvm_json_route"]
 opaque route (window : ByteArray) (n : UInt64)
   (sc mkSlot entw : ByteArray) (ep : ByteArray) (epcap : UInt64) (nk : ByteArray)
   (xp : ByteArray) (xpcap : UInt64) (nxp xcarry dst : ByteArray)
   (dstcap : UInt64) (ndst : ByteArray) (ev : ByteArray) (evcap : UInt64)
-  (nev err : ByteArray) (arm : UInt64) : ByteArray
+  (nev err : ByteArray) (arm : UInt64) : IO ByteArray
+
+/-- One stage interval the adapter recorded, in nanoseconds: 0 the copy of the
+caller's arrays into the object's ABI, 1 the native call, 2 the copy back.
+`UINT64_MAX` means the adapter was built without `ROUTE_TIMING` and filled no
+slot, which `--stages` reports rather than printing a zero.  The read is an
+`IO` action because the slots are mutable state: a pure extern with a literal
+index is folded once and reports the first call's interval for every later one. -/
+@[extern "leanllvm_route_stage_ns_at"]
+opaque stageNsAt (i : UInt64) : IO Nat
 
 def zeros (n : Nat) : ByteArray := ByteArray.mk (Array.replicate n (0 : UInt8))
 
 def blocks (n : Nat) : Nat := (n + 63) / 64
 
-def usage : String := "usage: leanllvm-json-route --doc <file>"
+def usage : String :=
+  "usage: leanllvm-json-route --doc <file>\n" ++
+  "       leanllvm-json-route --stages <file> [reps]"
 
 def hexByte (b : UInt8) : String :=
   let s := String.ofList (Nat.toDigits 16 b.toNat)
@@ -162,21 +175,71 @@ def reportAdapterFailure (result : ByteArray) (tag : Nat) : IO UInt32 := do
       capacity {want}, returned {got}"
     return 5
 
-/-- The fast path: stage the document in the record's shape, call the object
-through the adapter, and print the observation and the two payloads. -/
-def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
+/-- The route's staged input: the window and the four growing buffers at the
+record's capacities, each zero-filled, plus the capacities the adapter's
+preconditions are stated at. -/
+structure Staged where
+  n : Nat
+  window : ByteArray
+  sc : ByteArray
+  mkSlot : ByteArray
+  entw : ByteArray
+  ep : ByteArray
+  epcap : Nat
+  nk : ByteArray
+  xp : ByteArray
+  xpcap : Nat
+  nxp : ByteArray
+  xcarry : ByteArray
+  dst : ByteArray
+  dstcap : Nat
+  ndst : ByteArray
+  ev : ByteArray
+  evcap : Nat
+  nev : ByteArray
+  err : ByteArray
+
+/-- Staging: the record's shape in bytes, with every buffer zero-filled and the
+window `[0,0,0] ++ doc ++ zero padding ++ 32` readable tail bytes. -/
+def stage (doc : ByteArray) (n : Nat) : Staged :=
   let nb := blocks n
   let epcap := 64 * nb + 9
   let xpcap := 64 * nb + 8
   let dstcap := n + 64
   let evcap := 13 * n + 128
-  let window := (zeros 3).append doc |>.append (zeros (64 * nb - n)) |>.append (zeros 32)
-  let result := route window (UInt64.ofNat n)
-    (zeros 24) (zeros 48) (zeros 8)
-    (zeros (4 * epcap)) (UInt64.ofNat epcap) (zeros 8)
-    (zeros (4 * xpcap)) (UInt64.ofNat xpcap) (zeros 8) (zeros 16)
-    (zeros dstcap) (UInt64.ofNat dstcap) (zeros 8)
-    (zeros evcap) (UInt64.ofNat evcap) (zeros 8) (zeros 8) 2
+  { n := n
+    window := (zeros 3).append doc |>.append (zeros (64 * nb - n)) |>.append (zeros 32)
+    sc := zeros 24
+    mkSlot := zeros 48
+    entw := zeros 8
+    ep := zeros (4 * epcap)
+    epcap := epcap
+    nk := zeros 8
+    xp := zeros (4 * xpcap)
+    xpcap := xpcap
+    nxp := zeros 8
+    xcarry := zeros 16
+    dst := zeros dstcap
+    dstcap := dstcap
+    ndst := zeros 8
+    ev := zeros evcap
+    evcap := evcap
+    nev := zeros 8
+    err := zeros 8 }
+
+/-- The native call through the adapter, over a staged document. -/
+def call (s : Staged) : IO ByteArray :=
+  route s.window (UInt64.ofNat s.n)
+    s.sc s.mkSlot s.entw
+    s.ep (UInt64.ofNat s.epcap) s.nk
+    s.xp (UInt64.ofNat s.xpcap) s.nxp s.xcarry
+    s.dst (UInt64.ofNat s.dstcap) s.ndst
+    s.ev (UInt64.ofNat s.evcap) s.nev s.err 2
+
+/-- Outcome handling: decode the adapter's tagged result, and either print the
+observation and the two payloads or report the failure class with its failed
+precondition and its expected and observed numbers. -/
+def interpret (result : ByteArray) : IO UInt32 := do
   if result.size < headerBytes then
     IO.eprintln s!"route: internal contract violation: the adapter returned \
       {result.size} bytes, fewer than its {headerBytes}-byte header"
@@ -203,16 +266,28 @@ def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
   IO.println s!"events={hex events}"
   return 0
 
+/-- The fast path: stage the document in the record's shape, call the object
+through the adapter, and print the observation and the two payloads. -/
+def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
+  let result ← call (stage doc n)
+  interpret result
+
+/-- The fallback's acceptance, in the route's wording: the tape's token count,
+and whether `decodeTape` gave a value. -/
+def reportFallbackAccept (t : Tape) : IO Unit := do
+  let decoded := (decodeTape t).isSome
+  IO.println s!"fallback=accepted tokens={t.tokens.length} decoded={decoded}"
+
+/-- The fallback's refusal, in the route's wording: the reference parser's own
+reason and byte. -/
+def reportFallbackReject (e : ParseError) : IO Unit :=
+  IO.eprintln s!"refused: {fallbackText e}"
+
 /-- The fallback: the reference parser answers the document, once. -/
 def runFallback (doc : ByteArray) : IO UInt32 := do
   match parseBytes Limits.default doc with
-  | .ok t =>
-      let decoded := (decodeTape t).isSome
-      IO.println s!"fallback=accepted tokens={t.tokens.length} decoded={decoded}"
-      return 0
-  | .error e =>
-      IO.eprintln s!"refused: {fallbackText e}"
-      return 2
+  | .ok t => reportFallbackAccept t; return 0
+  | .error e => reportFallbackReject e; return 2
 
 def run (path : String) : IO UInt32 := do
   let doc ← try
@@ -227,9 +302,133 @@ def run (path : String) : IO UInt32 := do
   | .ok () => runFast doc doc.size
   | .error _ => runFallback doc
 
+/-! ### The stage report
+
+`--stages <file> <reps>` runs the route `reps` times on the same document and
+prints each stage's median in nanoseconds.  The document is read inside every
+repetition and the read is timed apart from the stages, so no stage's input is
+hoisted out of its timed region and shared between repetitions: each
+repetition's document is a fresh `ByteArray`.  A stage the path does not take is
+reported `-`, not 0.
+
+The five stages of the fast path are admission, staging, the adapter's copy-in,
+the native call, and the adapter's copy-out; outcome handling is the sixth, and
+it is the work between the adapter's return and the printed observation.  The
+adapter's three intervals come from the instrumented build's slots, so the
+route must be built with `TIMING=1`; a build without it reports that instead of
+printing zeros. -/
+
+def median (xs : Array Nat) : Nat :=
+  if xs.isEmpty then 0
+  else
+    let s := xs.qsort (· < ·)
+    s[s.size / 2]!
+
+/-- A stage's median, or `-` when the path did not take it. -/
+def stageField (xs : Array Nat) : String :=
+  if xs.isEmpty then "-" else toString (median xs)
+
+/-- The unfilled slot's value: `UINT64_MAX`. -/
+def stageUnfilled : Nat := 18446744073709551615
+
+def runStaged (path : String) (reps : Nat) : IO UInt32 := do
+  let mut reads : Array Nat := #[]
+  let mut adm : Array Nat := #[]
+  let mut staging : Array Nat := #[]
+  let mut copyin : Array Nat := #[]
+  let mut native : Array Nat := #[]
+  let mut copyout : Array Nat := #[]
+  let mut awall : Array Nat := #[]
+  let mut fallback : Array Nat := #[]
+  let mut outcome : Array Nat := #[]
+  let mut total : Array Nat := #[]
+  let mut summed : Array Nat := #[]
+  let mut verdict := 0
+  let mut ndst := 0
+  let mut nev := 0
+  let mut size := 0
+  let mut status := 0
+  let mut kind := "fast"
+  for _ in List.range reps do
+    let t0 ← IO.monoNanosNow
+    let doc ←
+      try
+        IO.FS.readBinFile path
+      catch e =>
+        IO.eprintln s!"route: cannot read '{path}': {e}"
+        return 2
+    let t1 ← IO.monoNanosNow
+    reads := reads.push (t1 - t0)
+    size := doc.size
+    let a0 ← IO.monoNanosNow
+    let decision := admission doc
+    let a1 ← IO.monoNanosNow
+    adm := adm.push (a1 - a0)
+    match decision with
+    | .error _ =>
+        kind := "fallback"
+        let f0 ← IO.monoNanosNow
+        let answer := parseBytes Limits.default doc
+        let f1 ← IO.monoNanosNow
+        fallback := fallback.push (f1 - f0)
+        let o0 ← IO.monoNanosNow
+        let st ← match answer with
+          | .ok t => reportFallbackAccept t; pure 0
+          | .error e => reportFallbackReject e; pure 2
+        let o1 ← IO.monoNanosNow
+        outcome := outcome.push (o1 - o0)
+        status := st
+        total := total.push (o1 - a0)
+        summed := summed.push ((a1 - a0) + (f1 - f0) + (o1 - o0))
+    | .ok () =>
+        let s0 ← IO.monoNanosNow
+        let staged := stage doc doc.size
+        let s1 ← IO.monoNanosNow
+        let c0 ← IO.monoNanosNow
+        let result ← call staged
+        let c1 ← IO.monoNanosNow
+        let ci ← stageNsAt 0
+        let na ← stageNsAt 1
+        let co ← stageNsAt 2
+        if ci == stageUnfilled || na == stageUnfilled
+            || co == stageUnfilled then
+          IO.eprintln "route: --stages needs the instrumented adapter: no stage \
+            was recorded. Rebuild with TIMING=1, e.g.\n  \
+            nix develop -c bash probes/json/route/build.sh"
+          return 6
+        staging := staging.push (s1 - s0)
+        copyin := copyin.push ci
+        native := native.push na
+        copyout := copyout.push co
+        let o0 ← IO.monoNanosNow
+        status ← interpret result
+        let o1 ← IO.monoNanosNow
+        outcome := outcome.push (o1 - o0)
+        verdict := be64 result 32
+        ndst := be64 result 56
+        nev := be64 result 64
+        -- The adapter's wall carries the two clock reads the slots are divided
+        -- by, and the precondition checks before the first one; the difference
+        -- between it and the three slots is that uncovered interval, reported
+        -- so a reader can see it rather than infer it from a residual.
+        awall := awall.push (c1 - c0)
+        total := total.push (o1 - a0)
+        summed := summed.push ((a1 - a0) + (s1 - s0) + ci + na + co + (o1 - o0))
+  IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
+    path={kind} reps={reps} \
+    read_ns={median reads} admission_ns={stageField adm} \
+    staging_ns={stageField staging} copyin_ns={stageField copyin} \
+    native_ns={stageField native} copyout_ns={stageField copyout} \
+    adapter_wall_ns={stageField awall} fallback_ns={stageField fallback} outcome_ns={stageField outcome} \
+    total_ns={median total} summed_stage_ns={median summed} \
+    verdict={verdict} ndst={ndst} nev={nev} rep_total_ns={total.toList}"
+  return status
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--doc", path] => run path
+  | ["--stages", path] => runStaged path 11
+  | ["--stages", path, reps] => runStaged path reps.toNat!
   | _ =>
       IO.eprintln usage
       return 1
