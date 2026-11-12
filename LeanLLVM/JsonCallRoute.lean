@@ -104,9 +104,11 @@ driver's on every admitted default-profile corpus row, that each fallback answer
 agrees with the manifest, and that the empty, over-bound, depth-129+ and
 fourteen policy documents fall back with the reference's own answers.  The
 probe's decision is the two-phase equivalent: the native phase-one verdict
-(delimiter lanes, bounds), with the library's own `policyRefusal` run only
-when a quote-or-backslash candidate exists, and `admission` retained as the
-suite's oracle; the fallback's answer is `parseBytes`'s.  What the probe does not establish is
+(delimiter lanes, bounds), then the probe's native policy scan
+(`probes/json/route/policy.c`) when a quote-or-backslash candidate exists;
+the library's `policyRefusal` and `admission` are both retained as the
+suite's oracles, and `check.sh` asserts agreement.  The fallback's answer is
+`parseBytes`'s.  What the probe does not establish is
 the step from the semantics to the object; see `missingBridgePieces` and the
 docstring of `nativePipeline`.
 -/
