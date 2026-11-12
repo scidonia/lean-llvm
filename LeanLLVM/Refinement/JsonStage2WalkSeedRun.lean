@@ -49,7 +49,8 @@ complete `WalkSeedState` are landed here, each with its own proof:
 
 `walkSeedState` assembles the thirteen clauses at the run's own two loads, and
 `walkSeedState_geometry` derives those loads from the staging, so the seed's
-production no longer asks for anything the geometry does not already carry.
+production asks for nothing beyond the geometry, the staging and the initial
+state's own bindings — the two container-stack pointers and the cursor.
 
 The two rows below the seed are the ones `JsonStage2WalkScope`'s census names,
 and this module neither lands nor narrows them: the **stack map** (the carried

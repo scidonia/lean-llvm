@@ -4889,7 +4889,7 @@ four pieces, in order:
    `WalkSeedState` at the state the entry run leaves, `walkSeedState_geometry`
    derives its two loads from the staging, and `walkSeedInvariant_geometry` reads
    `WalkInv` at it — the loop head's invariant with nothing assumed beside the
-   geometry.  The *prefix* half of this item is `walkSeedPrefix_runFuel`: the
+   geometry, the staging and the initial state's own three bindings.  The *prefix* half of this item is `walkSeedPrefix_runFuel`: the
    entry block, the preheader and the header's first pass composed into one
    `runFuel` equality from the entry state to the loop head, which is
    `walkCompletes_of_prefix_chain`'s `hprefix` at the blocks whose steps are
