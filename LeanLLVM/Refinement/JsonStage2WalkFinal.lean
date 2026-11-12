@@ -224,6 +224,7 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -265,8 +266,8 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     rw [hlogRead 32 4 (by decide) (by decide)]; exact hInv.log_hash
   · show readBytes r.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
     rw [hlogRead 16 8 (by decide) (by decide)]; exact hInv.log_cap
-  · show readBytes r.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
-    rw [hlogRead 48 8 (by decide) (by decide)]; exact hInv.log_alen
+  · obtain ⟨a, ha, hr⟩ := hInv.log_alen
+    exact ⟨a, ha, Eq.trans (hlogRead 48 8 (by decide) (by decide)) hr⟩
   · show readBytes r.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
     rw [hlogRead 56 8 (by decide) (by decide)]; exact hInv.log_acap
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
@@ -418,6 +419,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -465,10 +467,12 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     rw [hrefuse, stage2ErrSet]
     rw [herr8Log 16 8 (by decide)]
     exact hInv.log_cap
-  · show readBytes r.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+  · obtain ⟨a, ha, hr⟩ := hInv.log_alen
+    refine ⟨a, ha, ?_⟩
+    show readBytes r.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
     rw [hrefuse, stage2ErrSet]
     rw [herr8Log 48 8 (by decide)]
-    exact hInv.log_alen
+    exact hr
   · show readBytes r.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
     rw [hrefuse, stage2ErrSet]
     rw [herr8Log 56 8 (by decide)]
@@ -771,6 +775,7 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -1035,6 +1040,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor

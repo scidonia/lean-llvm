@@ -60,7 +60,7 @@ the summands themselves:
 
 The invariant also carries the log's four fields the reserves read —
 `log_len` at `%z + 8` is `evlen`, `log_cap` at `%z + 16` is `evcap`, `log_alen`
-at `%z + 48` is `alen`, and `log_acap` at `%z + 56` is `dstcap` — so
+at `%z + 48` is at most `alen`, and `log_acap` at `%z + 56` is `dstcap` — so
 `if.end256.i`'s comparison of `alen + len + 64` against the word at `%z + 56` is
 about the carried cursor and the staged capacity rather than an unread cell.  The
 seed takes the four as `WalkSeedState` hypotheses (the initialisation's stores),
@@ -871,10 +871,19 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   spans_order : C.spans.Pairwise (fun r s => r.1 + r.2 ≤ s.1)
   /-- Every extent ends inside the document. -/
   spans_inside : ∀ r ∈ C.spans, r.1 + r.2 ≤ G.n
-  /-- The record in flight reserves the arena at the cursor, inside the document:
-  at most one record is being assembled, and its reservation is the cursor's own
-  offset. -/
-  pending_at : ∀ p off len, C.pending = some (p, off, len) → off = C.alen ∧ p < G.n
+  /-- **Every extent ends at or before the arena cursor.**  The extents are the
+  bodies the arena has decoded, so their ends are the cursor's own progress: a
+  body's window is reserved at the cursor before it is decoded, and the cursor
+  never moves back.  This is what lets a block that writes inside a reserved
+  window (`z_arena_reserve.exit`) place the write inside `walkWide`'s arena entry
+  at the carried cursor, which is `(G.dst, C.alen)`. -/
+  spans_end : ∀ r ∈ C.spans, r.1 + r.2 ≤ C.alen
+  /-- The record in flight reserves the arena at or below the cursor, inside the
+  document: at most one record is being assembled, and its reservation is an offset
+  the cursor has already reached.  The inequality rather than the equality is what
+  the walking carry needs: the cursor that has decoded a body does not move back,
+  and the record in flight is the one the next reservation is made for. -/
+  pending_at : ∀ p off len, C.pending = some (p, off, len) → off ≤ C.alen ∧ p < G.n
   /-- **The record in flight is a token of the document.**  Its entry position
   plus its extent is inside the document, which is the fact `z_arena_reserve`'s
   check needs: the entry stream's positions are strictly increasing and every
@@ -896,8 +905,8 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   under the invariant as it stood.
 
   Its only production is the merge's, through `pending`: a block that advances
-  `alen` (`if.else285.i`) must keep the record's offset equal to the new cursor
-  (`pending_at`) and re-prove the bound, and the merge that carries the next
+  `alen` (`z_arena_reserve.exit`) must keep the record's offset at or below the new
+  cursor (`pending_at`) and re-prove the bound, and the merge that carries the next
   entry's position in is where the clause is first established for a body.  With
   `pending_len` beside it the clause set is the whole of the check's premises:
   `walkArenaReserve_clear` reads the three at one `pending` and needs nothing
@@ -952,10 +961,18 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   /-- **The log's event capacity is the staged one** (the word at `%z + 16`,
   `%cap`). -/
   log_cap : readBytes s.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
-  /-- **The log's arena cursor is the carried arena cursor.**  `z_arena_reserve`
+  /-- **The log's arena cursor is at most the carried arena cursor.**  `z_arena_reserve`
   reads the word at `%z + 48` (`%alen`) and adds the body's length and the
-  decoder's slack to it; `if.end256.i` compares that sum against `%z + 56`. -/
-  log_alen : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+  decoder's slack to it; `if.end256.i` compares that sum against `%z + 56`.  The
+  word is read as an *inequality* rather than an equality because the carry
+  reserves a body's window before the block that writes the word back:
+  `z_arena_reserve.exit` decodes the body at the carried cursor and the reserve is
+  the carry's (`spans_end`), while `if.else285.i` is where `%alen` receives the
+  decoded prefix -- `old + %32` -- which is at most the window's end.  Between the
+  two the memory's word is short of the carry by the part of the window the
+  decoder has not filled, and `logArena_le` below recovers the bound a caller
+  needs. -/
+  log_alen : ∃ a, a ≤ C.alen ∧ readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
   /-- **The log's arena capacity is the staged one** (the word at `%z + 56`,
   `%acap`).  With `log_alen` this is the clause `if.end256.i` needs: the word the
   reserve compares against is `dstcap`, not an unconstrained memory cell. -/
@@ -1009,6 +1026,26 @@ theorem evlen_le (h : WalkInv G C s) : C.evlen ≤ G.nev0 + stage2RecordBytes * 
   have hmul : stage2RecordBytes * C.events.length ≤ stage2RecordBytes * G.n :=
     Nat.mul_le_mul_left _ hlen
   rw [h.evlen_eq]
+  omega
+
+/-- **The arena word a block loads is at most the carried cursor.**  `log_alen`
+states the log's `%alen` word as some `a ≤ C.alen`; a block that loads the word as a
+`BitVec` (`A`, at the `natToBytes` its load produces) therefore gets
+`A.toNat ≤ C.alen`.  The two readings agree below `2^64` --- `A.toNat` is already
+below it and `natToBytes` keeps only the residue --- so the inequality is the word's
+own content and not a fresh hypothesis. -/
+theorem logArena_le (h : WalkInv G C s) {A : BitVec 64}
+    (hA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8)) :
+    A.toNat ≤ C.alen := by
+  obtain ⟨a, ha, hr⟩ := h.log_alen
+  have heq : natToBytes A.toNat 8 = natToBytes a 8 :=
+    Option.some.inj (hA.symm.trans hr)
+  have hb : bytesToNat (natToBytes A.toNat 8) = bytesToNat (natToBytes a 8) := by
+    rw [heq]
+  rw [natToBytes_toNat, natToBytes_toNat] at hb
+  have hAm : A.toNat % 256 ^ 8 = A.toNat := by
+    rw [show (256 : Nat) ^ 8 = 2 ^ 64 from by decide, Nat.mod_eq_of_lt A.isLt]
+  have ham : a % 256 ^ 8 ≤ a := Nat.mod_le _ _
   omega
 
 /-- The block-local facts at the latch: the invariant implies them, and the arm's
@@ -1095,6 +1132,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       alen_le_sum := by simp [walkSeed]
       alen_ge := Nat.le_refl _
       spans_order := by simp [walkSeed]
+      spans_end := by simp [walkSeed]
       spans_inside := by simp [walkSeed]
       pending_at := ?_
       pending_cursor := ?_
@@ -1107,7 +1145,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       log_hash := hhash
       log_len := hlen
       log_cap := hcap
-      log_alen := halen
+      log_alen := ⟨G.ndst0, Nat.le_refl _, halen⟩
       log_acap := hacap
       owned := hown
       frame := hframe
@@ -1281,6 +1319,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -1634,6 +1673,7 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -2378,6 +2418,7 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -2468,6 +2509,10 @@ theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Na
 /-- info: 'LeanLLVM.Refinement.WalkInv.evlen_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkInv.evlen_le
+
+/-- info: 'LeanLLVM.Refinement.WalkInv.logArena_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.logArena_le
 
 /-- info: 'LeanLLVM.Refinement.EventRecord.encodedSize_number' depends on axioms: [propext] -/
 #guard_msgs in
@@ -3453,6 +3498,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -3917,6 +3963,7 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -4395,7 +4442,7 @@ cursor is `nev0 + sum(events)`, at most `nev0 + 13·k ≤ nev0 + 13·nep ≤ evc
 (`JsonStage2WalkRest`) is that arithmetic, stated at the invariant.  The **arena
 trap** (`if.end.i83`) is excluded by `walkArenaReserve_clear`
 (`JsonStage2WalkCall`), and the exclusion is now a theorem *of the invariant*: the
-record in flight is a triple `(p, off, len)`, `pending_at` fixes its offset at the
+record in flight is a triple `(p, off, len)`, `pending_at` bounds its offset by the
 cursor, `pending_cursor` bounds the cursor by the staging's offset plus `p`, and
 `pending_len` places `p + len` inside the document.  The three are the whole of
 the check's premises — `alen + len + 64 ≤ dstcap` follows from them and
@@ -4669,6 +4716,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -4872,6 +4920,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -5394,6 +5443,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -5462,6 +5512,7 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor

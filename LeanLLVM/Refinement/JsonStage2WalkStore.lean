@@ -250,6 +250,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -505,6 +506,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -784,6 +786,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -1090,6 +1093,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
         alen_le_sum := ?_
         alen_ge := ?_
         spans_order := ?_
+        spans_end := ?_
         spans_inside := ?_
         pending_at := ?_
         pending_cursor := ?_
@@ -1141,6 +1145,13 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
         subst hr
         exact hinside
     · dsimp only
+      intro r hr
+      rcases List.mem_append.mp hr with hr | hr
+      · exact Nat.le_trans (hInv.spans_end r hr) (by omega)
+      · simp only [List.mem_singleton] at hr
+        subst hr
+        omega
+    · dsimp only
       intro p off len hp
       rw [hpending] at hp
       exact absurd hp (by simp)
@@ -1180,11 +1191,10 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
         (off' := 16) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
       exact hInv.log_cap
-    · rw [hmem']
+    · refine ⟨a + l, Nat.le_refl _, ?_⟩
+      rw [hmem']
       dsimp only [m']
-      have hself : readBytes (writeBytes s.mem (C.stage.z + 48) (wordBytes 8 (a + l)))
-          (C.stage.z + 48) 8 = some (wordBytes 8 (a + l)) := readBytes_writeBytes_same _ _
-      rw [hself]
+      exact readBytes_writeBytes_same _ _
     · rw [hmem']
       dsimp only [m']
       rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
@@ -1303,6 +1313,7 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor
@@ -1535,6 +1546,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         alen_le_sum := hInv.alen_le_sum
         alen_ge := hInv.alen_ge
         spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
         spans_inside := hInv.spans_inside
         pending_at := hInv.pending_at
         pending_cursor := hInv.pending_cursor

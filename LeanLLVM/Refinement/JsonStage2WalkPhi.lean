@@ -1204,6 +1204,7 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -1380,6 +1381,7 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -1550,6 +1552,7 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor

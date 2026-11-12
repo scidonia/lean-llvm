@@ -329,6 +329,7 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -412,6 +413,7 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
@@ -1250,7 +1252,7 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     (houtn : lookupName s.env "%outn.i" = some (.ptr (G.next0 + 20)))
     (halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)))
     (hacap : lookupName s.env "%acap" = some (.ptr (C.stage.z + 56)))
-    (hA : natToBytes A.toNat 8 = wordBytes 8 C.alen)
+    (hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8))
     (hC : natToBytes Cc.toNat 8 = wordBytes 8 G.dstcap) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
       { C with block := (if evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
@@ -1259,8 +1261,6 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     have h := C.stage.sevenEnd (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites])
     simp only [stage2LogExtent] at h
     exact h
-  have hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8) := by
-    rw [hA]; exact hInv.log_alen
   have hreadC : readBytes s.mem (C.stage.z + 56) 8 = some (natToBytes Cc.toNat 8) := by
     rw [hC]; exact hInv.log_acap
   have hden := walkIfEnd256_denote (sub := stage2SubCalls) (env := s.env) (s := s)
@@ -1606,6 +1606,7 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       alen_le_sum := hInv.alen_le_sum
       alen_ge := hInv.alen_ge
       spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
       spans_inside := hInv.spans_inside
       pending_at := hInv.pending_at
       pending_cursor := hInv.pending_cursor
