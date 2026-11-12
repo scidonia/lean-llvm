@@ -47,7 +47,7 @@ those clauses and nothing else.
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
-"$PWD/probes/json/route/build/leanllvm-json-route" --consume <document> 21
+"$PWD/probes/json/route/build/leanllvm-json-route" --consume tests/json/corpus/depth-two-ok.json 21
 nix develop -c bash probes/json/route/correspondence.sh
 bash probes/json/route/bench.sh 21        # re-executes itself under a 6 GiB scope
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonCallRoute
