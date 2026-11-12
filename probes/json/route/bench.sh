@@ -17,7 +17,15 @@
 #   stage's median.  The stages are admission, staging, the adapter's copy-in,
 #   the native call, the adapter's copy-out (which closes after the staging
 #   copies are freed), and outcome handling (the tagged result decoded and the
-#   observation and payloads printed).  `adapter_wall_ns` is the interval the
+#   observation and payloads printed).  The admission stage is the two-phase
+#   decision: `admission_ns` is both phases and `admission_native_ns` and
+#   `admission_policy_ns` split it, the second present only on the rows whose
+#   masks saw a policy candidate (`admission_candidate`).
+# * `admit` rows come from `leanllvm-json-route --admit <file> <reps>` on the
+#   production build: the two-phase decision, the proved depth counter, and the
+#   library's `admission` on the same bytes, with each one's own median.  They
+#   are what the two-phase admission table divides, and they are the same rows
+#   `check.sh` asserts agreement on.  `adapter_wall_ns` is the interval the
 #   caller saw around the adapter; `copyin + native + copyout` less it is the
 #   precondition checks and the two clock reads the adapter's intervals are
 #   divided by.  `total_ns` is admission's start to the end of outcome handling,
@@ -563,6 +571,82 @@ printf 'differ by one bracket pair, and by which path answers them)\n'
 printf 'ratio scale-4096/fast-nums-4096 total = %s (unit: ns per document; the\n' \
   "$(ratio "$(field "$row_rs4096" total_ns)" "$(field "$(grep ' doc=fast-nums-4096.json ' "$o2_rows")" total_ns)")"
 printf 'documents differ in shape as well as in path)\n\n'
+
+# --- the two-phase admission ----------------------------------------------
+# The admission stage the route runs is the two-phase decision; these rows put
+# it beside the predicate it replaced, on the same documents in the same
+# session, and beside the proved depth counter, which is measured and gates
+# nothing.  `certified_ns` is the library's `admission` -- the opener count over
+# `doc.data.toList` and the per-quote policy scan -- and `two_phase_ns` is what
+# the route now pays: the native facts, then the policy scan only where the masks
+# saw a candidate.
+admit_row() { # <file> [native depth] -> the row on stderr
+  local out status row
+  set +e
+  out=$("${pin[@]}" "$work/o2/leanllvm-json-route" --admit "$1" "$reps" ${2:-} \
+          2>&1 >/dev/null)
+  status=$?
+  set -e
+  if [ "$status" -ne 0 ]; then
+    echo "bench: $(basename "$1") exited $status under --admit:" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+  row=$(printf '%s\n' "$out" | grep '^admit ')
+  if [ -z "$row" ]; then
+    echo "bench: $(basename "$1") printed no admission row" >&2
+    exit 1
+  fi
+  printf '%s\n' "$row"
+}
+
+adm_rows="$work/admit.rows"
+: >"$adm_rows"
+all_docs=("${fast_docs[@]}" "${depth_docs[@]}" "${repo_fallback[@]}")
+for doc in "${all_docs[@]}"; do
+  admit_row "$doc" | tee -a "$adm_rows" >/dev/null
+done
+
+printf '## the two-phase admission (unit: ns; medians of %s reps, OPT=-O2 production build)\n\n' "$reps"
+printf '%-22s %8s %9s %12s %10s %10s %12s %10s %10s\n' \
+  doc openers candidate certified_ns phase1_ns policy_ns two_phase_ns 'two_phase/certified' depth_ns
+for doc in "${all_docs[@]}"; do
+  name=$(basename "$doc")
+  row=$(grep " doc=$name " "$adm_rows")
+  printf '%-22s %8s %9s %12s %10s %10s %12s %10s %10s\n' "$name" \
+    "$(field "$row" openers)" "$(field "$row" candidate)" \
+    "$(field "$row" certified_ns)" "$(field "$row" phase1_ns)" \
+    "$(field "$row" policy_ns)" "$(field "$row" two_phase_ns)" \
+    "$(ratio "$(field "$row" two_phase_ns)" "$(field "$row" certified_ns)")" \
+    "$(field "$row" depth_ns)"
+done
+printf '\nconstruction: certified_ns is the library'"'"'s `admission`: the empty and\n'
+printf 'length clauses, the opener count over `doc.data.toList`, and the per-quote\n'
+printf 'policy scan.  phase1_ns is the adapter'"'"'s native call (the mask unit over\n'
+printf 'the document, the delimiter lanes counted, the candidate flag), including\n'
+printf 'the Lean extern call and the header decode.  policy_ns is phase two, the\n'
+printf 'reference'"'"'s own `policyRefusal`, and is `-` where the masks saw no\n'
+printf 'candidate: two_phase_ns is phase one plus phase two, so a `-` row differs\n'
+printf 'from certified_ns alone.  two_phase/certified is a multiplier (the new\n'
+printf 'cost divided by the old, same document and session).  depth_ns is the\n'
+printf 'proved depth counter run over the same delimiter lanes: it is a balance\n'
+printf 'and a prefix-depth sum, neither of which is the opener count the clause\n'
+printf 'states, so it is reported and gates nothing.\n\n'
+
+cand=0
+ran=0
+for doc in "${all_docs[@]}"; do
+  row=$(grep " doc=$(basename "$doc") " "$adm_rows")
+  [ "$(field "$row" candidate)" = 1 ] && cand=$((cand + 1))
+  [ "$(field "$row" policy)" = 1 ] && ran=$((ran + 1))
+done
+printf 'policy candidate on %s of %s rows (the fraction of documents whose masks\n' \
+  "$cand" "${#all_docs[@]}"
+printf 'show a byte the policy scan can report at: a quote or a backslash); the\n'
+printf 'scan itself ran on %s, the rows that candidate flag did not spare by a\n' "$ran"
+printf 'native clause refusing first.  A document with quotes and no escapes pays\n'
+printf 'the whole scan, which is the number that decides whether the policy check\n'
+printf 'needs its own native unit.\n\n'
 
 if [ -x "$work/simdjson-baseline" ]; then
   # Paired for the same reason the -O2/-O3 pair is: the two arms are separate

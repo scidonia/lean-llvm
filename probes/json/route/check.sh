@@ -3,11 +3,12 @@
 #
 #   nix develop -c bash probes/json/route/check.sh
 #
-# The route decides with the library's `admission` predicate and has three
-# outcomes: the fast path (`verdict=` on stdout, the native object's
-# observation), the fallback's acceptance (`fallback=accepted`), and the
-# fallback's refusal (`refused: ...` on stderr, exit 2).  Five claims are
-# asserted:
+# The route decides in two phases -- the adapter's native facts from the proved
+# stage-1 mask unit, then the library's own policy scan where the masks saw a
+# candidate -- and has three outcomes: the fast path (`verdict=` on stdout, the
+# native object's observation), the fallback's acceptance
+# (`fallback=accepted`), and the fallback's refusal (`refused: ...` on stderr,
+# exit 2).  Seven claims are asserted:
 #
 #   1. fidelity on the fast path: for every default-profile corpus document the
 #      route admits, the Lean route and the C driver print the same three lines —
@@ -38,6 +39,14 @@
 #   6. the consumer mode reads a five-event fixture at the record widths the
 #      object wrote: 5 tokens, one arena byte, 25 event bytes, both readings
 #      agreeing on the token count and the checksum.
+#   7. the two-phase admission agrees with the certified predicate on every row:
+#      `--admit` reports the decision phase one's native facts and phase two's
+#      policy scan produce, and the library's `admission`, on the same bytes, and
+#      this script compares the two verdicts and the two reasons itself -- on
+#      every manifest row and on the boundary documents.  A control repeats the
+#      comparison with the native side's depth bound moved off the certified 128
+#      and must report the disagreement, so an agreement that cannot fail is a
+#      red rather than a pass.
 #
 # A comparison that fails names its class: a verdict disagreement, a value
 # disagreement (the arena or event bytes, with the first differing byte), or a
@@ -363,6 +372,187 @@ for d in 128 129 520 521; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# The two-phase admission against the certified predicate
+#
+# The route's decision is phase one's native facts (the mask unit's opener count
+# and policy-candidate flag, the empty and length bounds) plus phase two's
+# reference scan where the masks saw a candidate.  `--admit` reports that
+# decision, its reason, and the library's `admission` -- verdict, reason and the
+# opener count it names -- for the same bytes, with the policy scan's own
+# interval.  The comparison below is the shell's, not the row's own `agree`
+# field: the verdict and the reason are read out and compared here.
+# ---------------------------------------------------------------------------
+admit_field() { # <row> <name>
+  printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1
+}
+
+admit_row() { # <file> [native depth] -> the row on stderr
+  local out status
+  out=$("$route" --admit "$1" 5 ${2:-} 2>&1 >/dev/null)
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    printf 'FAIL: --admit exited %s on %s:\n' "$status" "$1" >&2
+    printf '%s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$out" | grep '^admit '
+}
+
+# 0 when the two decisions agree, 1 when they differ, 2 when the row does not
+# carry the four fields (which is a failure of the row, not a decision).
+admit_compare() { # <row>
+  local v c r cr
+  v=$(admit_field "$1" verdict)
+  c=$(admit_field "$1" certified)
+  r=$(admit_field "$1" reason)
+  cr=$(admit_field "$1" certified_reason)
+  [ -n "$v" ] && [ -n "$c" ] && [ -n "$r" ] && [ -n "$cr" ] || return 2
+  if [ "$v" = "$c" ] && [ "$r" = "$cr" ]; then return 0; fi
+  return 1
+}
+
+agree_rows=0
+agree_failures=0
+candidate_rows=0
+policy_rows=0
+agree_classes="$work/agree-classes"
+: >"$agree_classes"
+
+agree_one() { # <label> <file> [native depth] -> the tool's default when omitted
+  local row rc
+  row=$(admit_row "$2" ${3:-}) || { agree_failures=$((agree_failures + 1)); return; }
+  agree_rows=$((agree_rows + 1))
+  admit_compare "$row"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    agree_failures=$((agree_failures + 1))
+    if [ "$rc" -eq 2 ]; then
+      printf 'FAIL: %s: the admission row does not carry both decisions:\n  %s\n' \
+        "$1" "$row" >&2
+    else
+      printf 'FAIL: %s: the two-phase decision and the certified predicate differ:\n  %s\n' \
+        "$1" "$row" >&2
+    fi
+    return
+  fi
+  # The row's own agreement flag must be the same comparison's answer.
+  if [ "$(admit_field "$row" agree)" != 1 ]; then
+    agree_failures=$((agree_failures + 1))
+    printf 'FAIL: %s: the two decisions agree and the row reports agree=%s\n' \
+      "$1" "$(admit_field "$row" agree)" >&2
+    return
+  fi
+  [ "$(admit_field "$row" candidate)" = 1 ] && candidate_rows=$((candidate_rows + 1))
+  [ "$(admit_field "$row" policy)" = 1 ] && policy_rows=$((policy_rows + 1))
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(admit_field "$row" verdict)" \
+    "$(admit_field "$row" reason)" "$(admit_field "$row" candidate)" \
+    "$(admit_field "$row" policy)" "$1" >>"$agree_classes"
+}
+
+# Every manifest row, whatever its profile: the decision is about the bytes, and
+# a profile only selects which rows the fidelity comparison runs.
+while IFS=$'\t' read -r path expected rendering profile; do
+  [ -n "${path:-}" ] || continue
+  agree_one "$path" "$corpus/$path"
+done <"$manifest"
+
+# The boundary documents: the empty one, the over-bound one, the opener-rich
+# one, and the four depth probes.
+agree_one "empty" "$work/empty"
+agree_one "over-bound" "$work/long"
+agree_one "opener-rich" "$work/rich"
+for d in 128 129 520 521; do
+  agree_one "depth-$d" "$work/depth-$d.json"
+done
+
+# The controls, three of them, and none of them restates the certified bound.
+#
+#  1. The same comparison with the native bound set to zero: `[1,2]` holds one
+#     opener, so the native side must refuse it on the depth clause while
+#     `admission` admits it, and the comparator -- the shell's comparison, not
+#     only the row's own flag -- must report that disagreement.
+#  2. The route's own decision consults that bound: with the native bound moved
+#     to 127 the route must send the 128-opener document to the fallback, which
+#     is the shipped path's witness that the decision is the native one.
+#  3. The candidate detector's other direction is asserted above, on a
+#     quote-bearing and a quote-free document.
+control_failures=0
+
+printf '[1,2]' >"$work/one-opener.json"
+control_row=$(admit_row "$work/one-opener.json" 0)
+if [ -z "$control_row" ]; then
+  printf 'FAIL: the control run printed no admission row\n' >&2
+  control_failures=$((control_failures + 1))
+else
+  admit_compare "$control_row"
+  if [ $? -ne 1 ]; then
+    printf 'FAIL: the control compared two decisions that must differ and reported agreement:\n  %s\n' \
+      "$control_row" >&2
+    control_failures=$((control_failures + 1))
+  fi
+  if [ "$(admit_field "$control_row" verdict)" != 0 ] ||
+     [ "$(admit_field "$control_row" reason)" != depthBound ] ||
+     [ "$(admit_field "$control_row" certified)" != 1 ]; then
+    printf 'FAIL: the control did not move the native bound: %s\n' "$control_row" >&2
+    control_failures=$((control_failures + 1))
+  fi
+  if [ "$(admit_field "$control_row" agree)" != 0 ]; then
+    printf 'FAIL: the control row reports agree=%s for two decisions that differ\n' \
+      "$(admit_field "$control_row" agree)" >&2
+    control_failures=$((control_failures + 1))
+  fi
+fi
+
+"$route" --doc "$work/depth-128.json" 127 >"$work/out" 2>"$work/err"
+status=$?
+if [ "$status" -ne 0 ] || [ "$(fallback_of "$work/out")" != accepted ] ||
+   [ -n "$(verdict_of "$work/out")" ]; then
+  printf 'FAIL: the route did not take the fallback when its native bound refused (exit %s):\n' \
+    "$status" >&2
+  cat "$work/out" "$work/err" >&2
+  control_failures=$((control_failures + 1))
+fi
+failed=$((failed + control_failures))
+failed=$((failed + agree_failures))
+
+if [ "$agree_rows" -eq 0 ]; then
+  printf 'FAIL: no admission row was compared; the agreement gate is vacuous\n' >&2
+  failed=$((failed + 1))
+fi
+
+# The candidate detector, both ways: a document with a quote byte (raw, and
+# escaped with no raw quote of its own) is a candidate for the policy phase, and
+# one without is not.  Without both directions the skip could be a detector that
+# never fires, or one that always does.
+printf '"a"' >"$work/quote-only.json"
+printf '[1,2]' >"$work/no-quote.json"
+printf '\\"' >"$work/escaped-only.json"
+cand_failures=0
+for probe in "quote-only:1" "no-quote:0" "escaped-only:1"; do
+  name=${probe%%:*}; want=${probe##*:}
+  row=$(admit_row "$work/$name.json" 128)
+  got=$(admit_field "$row" candidate)
+  if [ "$got" != "$want" ]; then
+    printf 'FAIL: candidate detector: %s reports candidate=%s, expected %s\n' \
+      "$name" "$got" "$want" >&2
+    cand_failures=$((cand_failures + 1))
+  fi
+done
+failed=$((failed + cand_failures))
+
+# The agreement table, by row class: the two-phase verdict, the reason both
+# decisions name, whether the masks saw a policy candidate, and whether the
+# policy scan ran.  Its rows are the gate's own rows, so the split a reader sees
+# is the split the assertions above covered.
+printf 'the two-phase admission against the certified predicate, by row class\n'
+printf '(class is verdict/reason/candidate/policy; rows is how many rows it covers;\n'
+printf 'the rows are every manifest row and the boundary documents)\n\n'
+printf '%-44s %6s\n' class rows
+cut -f1-4 "$agree_classes" | awk -F'\t' '{printf "%s/%s/%s/%s\n", $1, $2, $3, $4}' \
+  | sort | uniq -c | awk '{printf "%-44s %6s\n", $2, $1}'
+printf '\n'
+
 # The class the fallback refuses for the reference's reason: the fourteen corpus
 # rows the object accepts and the reference refuses.  A missing row, an extra
 # row, or a different reason or byte is a failure, not a report.
@@ -492,7 +682,8 @@ if [ "$failed" -ne 0 ]; then
   printf 'FAIL: %s assertion(s) failed over %s default-profile rows\n' "$failed" "$rows" >&2
   exit 1
 fi
-printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
+printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on %s row(s) (policy candidate %s, policy scan run %s; control failures %s); %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
   "$rows" "$fast" "$compared_arena" "$rows_with_arena" "$compared_events" "$rows_with_events" \
-  "$accepts" "$invalids" "$fallback_refusals" "$fallback_accepts" "$diverged" "$excluded" "$skipped" "$consumer_ok"
+  "$accepts" "$invalids" "$fallback_refusals" "$fallback_accepts" "$diverged" "$excluded" "$skipped" \
+  "$agree_rows" "$candidate_rows" "$policy_rows" "$control_failures" "$consumer_ok"
 exit 0

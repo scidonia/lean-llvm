@@ -3,14 +3,19 @@ The JSON pipeline's call route: a standalone Lean program that stages the
 document the record demands, calls `leanllvm_json_pipeline` through the C
 adapter in `shim.c`, and prints what the caller observes.
 
-The document decision is the library's: `LeanLLVM.JsonKernelDomain.admission`,
-imported here rather than transcribed, so the probe's shell and the certified
-domain are one predicate.  `admission` admits a document to the native pipeline;
-for every document it does not admit, the scalar reference parser answers —
-`parseBytes` from the library, with `decodeTape` its value on acceptance — and
-the program prints that answer as the fallback's.  There is no second scan and
-no pre-filter: a document either takes the fast path or is answered once by the
-fallback.
+The document decision is the library's `LeanLLVM.JsonKernelDomain.admission`,
+taken in two phases whose clauses are that predicate's.  Phase one is the
+adapter's (`shim.c`): the proved stage-1 mask unit over the document's 64-byte
+blocks gives the opener count and a policy-candidate flag, and the empty and
+length bounds come from `kernelMaxInput`/`kernelMaxDepth` passed in from here.
+Phase two is the reference's own `policyRefusal`, run only where the masks saw a
+candidate.  So the shell and the certified domain are one predicate, and the
+`check.sh` agreement gate asserts the two decisions are the same object on every
+corpus row.  For every document the decision refuses, the scalar reference
+parser answers — `parseBytes` from the library, with `decodeTape` its value on
+acceptance — and the program prints that answer as the fallback's.  There is no
+second scan and no pre-filter: a document either takes the fast path or is
+answered once by the fallback.
 
 The staging is `LeanLLVM.JsonCallRoute.stagedStore`'s shape, in bytes: the
 window is `[0,0,0] ++ doc ++ zero padding ++ 32` readable tail bytes, and the
@@ -64,7 +69,8 @@ def zeros (n : Nat) : ByteArray := ByteArray.mk (Array.replicate n (0 : UInt8))
 def blocks (n : Nat) : Nat := (n + 63) / 64
 
 def usage : String :=
-  "usage: leanllvm-json-route --doc <file>\n" ++
+  "usage: leanllvm-json-route --doc <file> [<native depth>]\n" ++
+  "       leanllvm-json-route --admit <file> [reps] [<native depth>]\n" ++
   "       leanllvm-json-route --stages <file> [reps]\n" ++
   "       leanllvm-json-route --consume <file> [reps]"
 
@@ -80,6 +86,20 @@ def be64 (bs : ByteArray) (i : Nat) : Nat :=
   let get (k : Nat) := (bs.toList.getD (i + k) 0).toNat
   get 0 + 256 * get 1 + 65536 * get 2 + 16777216 * get 3 +
     4294967296 * (get 4 + 256 * get 5 + 65536 * get 6 + 16777216 * get 7)
+
+/-- Eight little-endian bytes at `i`, read by index: the word reader the paths
+that must not pay `be64`'s list materialisation use — the consumer's event walk,
+and the two-phase admission's header, which is on the fast path.  The arithmetic
+is `UInt64` rather than `Nat`, so a byte read is unboxed. -/
+def indexWord (bs : ByteArray) (i : Nat) : UInt64 :=
+  let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
+  g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3 +
+    4294967296 * (g 4 + 256 * g 5 + 65536 * g 6 + 16777216 * g 7)
+
+/-- Four little-endian bytes at `i`, read by index. -/
+def indexWord4 (bs : ByteArray) (i : Nat) : UInt64 :=
+  let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
+  g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3
 
 /-! ### The fallback's report
 
@@ -154,6 +174,8 @@ def preconditionName : Nat → String
   | 18 => "the arena's cursor"
   | 19 => "the event stream's count"
   | 20 => "the two payload lengths"
+  | 21 => "the window's 64-byte blocks (the mask unit reads every block whole)"
+  | 22 => "the document's own bytes in the admission call"
   | _ => "a precondition the adapter did not name"
 
 /-- Report a failure tag and return that class's exit status: 3 for an unmet
@@ -366,6 +388,180 @@ def hexProbe (arena events : ByteArray) : IO (Nat × Nat × Nat) := do
   -- The lengths are returned so the compiler cannot drop either build.
   return (t1 - t0, t2 - t1, a.length + e.length)
 
+/-! ### The two-phase admission
+
+The document decision is taken in two phases.  Phase one is the adapter's
+(`shim.c`, `leanllvm_route_admit`): the proved stage-1 mask unit over every
+64-byte block of the document, the delimiter mask's lanes read to count `{`/`[`
+bytes, the quote and backslash lanes OR'd into a policy-candidate flag, and the
+empty and length bounds compared against `kernelMaxInput` and `kernelMaxDepth` —
+the library's own numbers, passed in rather than restated in C.  Phase two is
+`decide2From`: the refused clause's reason, and, only when the masks saw a
+candidate byte, the reference's own `policyRefusal`.
+
+The candidate flag is a superset of the bytes `policyRefusal` can report at, so
+skipping phase two when it is false cannot miss a refusal, and consulting it when
+true runs exactly the certified scan.  The clause order is `admission`'s —
+empty, over-long, too many openers, then the character policy — so the decision
+and its reason are the same object, not a second reading of it.  That agreement
+is what `check.sh` asserts on every corpus row; `docs/json-route-stage-timings.md`
+records the cost of each phase and how often phase two runs.
+
+The proved depth counter is measured beside the decision and gates nothing: its
+two values are a balance and the sum of prefix depths, and `admission`'s clause is
+an opener *count*, so the decision cannot be read off it.  `leanllvm_route_depth`
+reports them for the admission record. -/
+
+/-- The admission result's header: nine words, no payload. -/
+def admitHeaderBytes : Nat := 72
+
+/-- The depth facts' header: seven words, no payload. -/
+def depthHeaderBytes : Nat := 56
+
+/-- Phase one of the admission: the document, its length, and the two certified
+bounds.  It returns the header `shim.c` documents: the tag and a failed
+precondition's fields, then the openers, the candidate flag, the block count, the
+verdict and the refused clause. -/
+@[extern "leanllvm_route_admit"]
+opaque admitNative (doc : ByteArray) (n maxInput maxDepth : UInt64) :
+  IO ByteArray
+
+/-- The proved depth counter over the document's delimiter lanes, as its own
+native pass: the final depth, the sum of the prefix depths, and the number of
+delimiter lanes it walked. -/
+@[extern "leanllvm_route_depth"]
+opaque depthNative (doc : ByteArray) (n : UInt64) : IO ByteArray
+
+/-- What phase one measured.  `verdict` is the three native clauses' decision,
+`clause` names the one that refused (`0` none, `1` empty, `2` over-long, `3` too
+many openers), `openers` is the delimiter-lane count (exact up to
+`maxDepth + 1`, and exactly `maxDepth + 1` past it, because the decision is `>`),
+`candidate` is the policy-candidate flag, and `blocks` is the document's 64-byte
+block count. -/
+structure AdmitFacts where
+  verdict : Bool
+  clause : Nat
+  openers : Nat
+  candidate : Bool
+  blocks : Nat
+
+/-- What the depth counter reported. -/
+structure DepthFacts where
+  final : Nat
+  sum : Nat
+  structurals : Nat
+
+/-- Decode phase one's header.  A tag other than the measured class is an
+adapter-level failure with the status its message deserves: 3 for an unmet
+precondition, 5 for a result the adapter's own contract does not allow. -/
+def admitFactsOf (r : ByteArray) : Except (UInt32 × String) AdmitFacts :=
+  if r.size < admitHeaderBytes then
+    .error (5, s!"the admission result is {r.size} bytes, fewer than its \
+      {admitHeaderBytes}-byte header")
+  else
+    let tag := indexWord r 0
+    if tag == 2 then
+      .error (3, s!"unsupported domain: {preconditionName (indexWord r 8).toNat}: \
+        expected {(indexWord r 16).toNat}, observed {(indexWord r 24).toNat}")
+    else if tag == 0 then
+      let clause := (indexWord r 64).toNat
+      if clause > 3 then
+        .error (5, s!"the admission result names clause {clause}")
+      else
+        .ok { verdict := indexWord r 56 == 1, clause := clause,
+              openers := (indexWord r 32).toNat,
+              candidate := indexWord r 40 == 1,
+              blocks := (indexWord r 48).toNat }
+    else
+      .error (5, s!"the admission result carries tag {tag}")
+
+/-- Decode the depth facts' header. -/
+def depthFactsOf (r : ByteArray) : Except (UInt32 × String) DepthFacts :=
+  if r.size < depthHeaderBytes then
+    .error (5, s!"the depth result is {r.size} bytes, fewer than its \
+      {depthHeaderBytes}-byte header")
+  else
+    let tag := indexWord r 0
+    if tag == 2 then
+      .error (3, s!"unsupported domain: {preconditionName (indexWord r 8).toNat}: \
+        expected {(indexWord r 16).toNat}, observed {(indexWord r 24).toNat}")
+    else if tag == 0 then
+      .ok { final := (indexWord r 32).toNat, sum := (indexWord r 40).toNat,
+            structurals := (indexWord r 48).toNat }
+    else
+      .error (5, s!"the depth result carries tag {tag}")
+
+/-- Phase one, timed by its caller where a stage report needs it. -/
+def admitPhase1 (doc : ByteArray) (maxDepth : Nat := kernelMaxDepth) :
+    IO (Except UInt32 AdmitFacts) := do
+  let r ← admitNative doc (UInt64.ofNat doc.size) (UInt64.ofNat kernelMaxInput)
+    (UInt64.ofNat maxDepth)
+  match admitFactsOf r with
+  | .ok f => return .ok f
+  | .error (status, msg) => IO.eprintln s!"route: {msg}"; return .error status
+
+/-- The depth facts, at the same shape. -/
+def depthFacts (doc : ByteArray) : IO (Except UInt32 DepthFacts) := do
+  let r ← depthNative doc (UInt64.ofNat doc.size)
+  match depthFactsOf r with
+  | .ok d => return .ok d
+  | .error (status, msg) => IO.eprintln s!"route: {msg}"; return .error status
+
+/-- The refused clause's reason, in `admission`'s constructor vocabulary. -/
+def nativeRefusal (f : AdmitFacts) : Option KernelRefusal :=
+  match f.clause with
+  | 1 => some .emptyInput
+  | 2 => some (.inputTooLong kernelMaxInput)
+  | 3 => some (.depthBound f.openers)
+  | _ => none
+
+/-- The document's disposition under the two-phase admission.  `failed` is the
+adapter's own failure class, with the exit status the route reports for it. -/
+inductive Decision where
+  | admitted
+  | refused (r : KernelRefusal)
+  | failed (status : UInt32)
+
+/-- The decision from phase one's facts: the native clause's reason, then the
+reference's own character-policy scan only when the masks saw a candidate byte.
+The scan is the library's `policyRefusal`, so the reason and byte are the
+reference's. -/
+def decide2From (doc : ByteArray) (f : AdmitFacts) : Decision :=
+  match nativeRefusal f with
+  | some r => .refused r
+  | none =>
+      if f.candidate then
+        match policyRefusal doc with
+        | some r => .refused r
+        | none => .admitted
+      else .admitted
+
+/-- The two-phase admission.  `maxDepth` is the native side's bound and defaults
+to the certified one; a caller that passes another number is running the
+agreement scenario's control, where a disagreement with `admission` is the point.
+-/
+def decide2 (doc : ByteArray) (maxDepth : Nat := kernelMaxDepth) : IO Decision := do
+  match ← admitPhase1 doc maxDepth with
+  | .error status => return .failed status
+  | .ok f => return decide2From doc f
+
+/-- A decision's reason in the vocabulary the agreement table compares:
+`admission`'s constructors, and `none` for an admitted document. -/
+def reasonTag : Option KernelRefusal → String
+  | none => "none"
+  | some .emptyInput => "emptyInput"
+  | some (.inputTooLong _) => "inputTooLong"
+  | some (.depthBound _) => "depthBound"
+  | some (.unpairedSurrogate _) => "unpairedSurrogate"
+  | some (.noncharacter _) => "noncharacter"
+
+/-- The decision's reason tag, or `failed` for an adapter failure. -/
+def decisionTag (d : Decision) : String :=
+  match d with
+  | .admitted => "none"
+  | .refused r => reasonTag (some r)
+  | .failed _ => "failed"
+
 /-- The fast path: stage the document in the record's shape, call the object
 through the adapter, and print the observation and the two payloads. -/
 def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
@@ -389,18 +585,22 @@ def runFallback (doc : ByteArray) : IO UInt32 := do
   | .ok t => reportFallbackAccept t; return 0
   | .error e => reportFallbackReject e; return 2
 
-def run (path : String) : IO UInt32 := do
+def run (path : String) (maxDepth : Nat := kernelMaxDepth) : IO UInt32 := do
   let doc ← try
       IO.FS.readBinFile path
     catch e =>
       IO.eprintln s!"route: cannot read '{path}': {e}"
       return 2
-  -- One predicate, the library's: the fast path is taken exactly when the
-  -- certified domain admits the document; everything else is the fallback's,
-  -- answered by the scalar reference parser and nowhere pre-filtered.
-  match admission doc with
-  | .ok () => runFast doc doc.size
-  | .error _ => runFallback doc
+  -- One decision, taken in two phases: the native facts, then the reference's
+  -- policy scan where the masks saw a candidate.  The fast path is taken exactly
+  -- where it admits; everything else is the fallback's, answered by the scalar
+  -- reference parser and nowhere pre-filtered.  `maxDepth` is the certified
+  -- bound unless a caller overrides it, which only the agreement scenario's
+  -- control does.
+  match ← decide2 doc maxDepth with
+  | .admitted => runFast doc doc.size
+  | .refused _ => runFallback doc
+  | .failed status => return status
 
 /-! ### The stage report
 
@@ -414,9 +614,12 @@ reported `-`, not 0.
 The five stages of the fast path are admission, staging, the adapter's copy-in,
 the native call, and the adapter's copy-out; outcome handling is the sixth, and
 it is the work between the adapter's return and the printed observation.  The
-adapter's three intervals come from the instrumented build's slots, so the
-route must be built with `TIMING=1`; a build without it reports that instead of
-printing zeros. -/
+admission stage is both phases of the decision, and its two intervals are
+reported separately: `admission_native_ns` is phase one's native call and
+`admission_policy_ns` is phase two's scan, present only on the rows whose masks
+saw a candidate.  The adapter's three intervals come from the instrumented
+build's slots, so the route must be built with `TIMING=1`; a build without it
+reports that instead of printing zeros. -/
 
 def median (xs : Array Nat) : Nat :=
   if xs.isEmpty then 0
@@ -434,6 +637,8 @@ def stageUnfilled : Nat := 18446744073709551615
 def runStaged (path : String) (reps : Nat) : IO UInt32 := do
   let mut reads : Array Nat := #[]
   let mut adm : Array Nat := #[]
+  let mut admnative : Array Nat := #[]
+  let mut admpolicy : Array Nat := #[]
   let mut staging : Array Nat := #[]
   let mut copyin : Array Nat := #[]
   let mut native : Array Nat := #[]
@@ -457,6 +662,10 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
   let mut size := 0
   let mut status := 0
   let mut kind := "fast"
+  let mut candidate := 0
+  let mut openers := 0
+  let mut blocks := 0
+  let mut clause := "-"
   for _ in List.range reps do
     let t0 ← IO.monoNanosNow
     let doc ←
@@ -468,12 +677,31 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     let t1 ← IO.monoNanosNow
     reads := reads.push (t1 - t0)
     size := doc.size
+    -- The admission stage is both phases: the native facts, then the clause's
+    -- reason and the reference's policy scan where a candidate exists.  Each
+    -- phase's own interval is reported beside the sum.
     let a0 ← IO.monoNanosNow
-    let decision := admission doc
+    let facts ← admitPhase1 doc
     let a1 ← IO.monoNanosNow
-    adm := adm.push (a1 - a0)
+    let decision := match facts with
+      | .ok f => decide2From doc f
+      | .error status => .failed status
+    let a2 ← IO.monoNanosNow
+    adm := adm.push (a2 - a0)
+    admnative := admnative.push (a1 - a0)
+    match facts with
+    | .ok f =>
+        candidate := if f.candidate then 1 else 0
+        openers := f.openers
+        blocks := f.blocks
+        clause := toString f.clause
+        -- Phase two runs the scan exactly when the native clauses admitted and
+        -- the masks saw a candidate; its interval is the scan's.
+        if f.verdict && f.candidate then admpolicy := admpolicy.push (a2 - a1)
+    | .error _ => pure ()
     match decision with
-    | .error _ =>
+    | .failed st => return st
+    | .refused _ =>
         kind := "fallback"
         let f0 ← IO.monoNanosNow
         let answer := parseBytes Limits.default doc
@@ -487,8 +715,8 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         outcome := outcome.push (o1 - o0)
         status := st
         total := total.push (o1 - a0)
-        summed := summed.push ((a1 - a0) + (f1 - f0) + (o1 - o0))
-    | .ok () =>
+        summed := summed.push ((a2 - a0) + (f1 - f0) + (o1 - o0))
+    | .admitted =>
         let s0 ← IO.monoNanosNow
         let staged := stage doc doc.size
         let s1 ← IO.monoNanosNow
@@ -538,10 +766,14 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         -- so a reader can see it rather than infer it from a residual.
         awall := awall.push (c1 - c0)
         total := total.push (o1 - a0)
-        summed := summed.push ((a1 - a0) + (s1 - s0) + ci + na + co + ocost)
+        summed := summed.push ((a2 - a0) + (s1 - s0) + ci + na + co + ocost)
   IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
     path={kind} reps={reps} \
     read_ns={median reads} admission_ns={stageField adm} \
+    admission_native_ns={stageField admnative} \
+    admission_policy_ns={stageField admpolicy} \
+    admission_candidate={candidate} admission_openers={openers} \
+    admission_blocks={blocks} admission_clause={clause} \
     staging_ns={stageField staging} copyin_ns={stageField copyin} \
     native_ns={stageField native} copyout_ns={stageField copyout} \
     adapter_wall_ns={stageField awall} fallback_ns={stageField fallback} outcome_ns={stageField outcome} \
@@ -598,19 +830,6 @@ span bytes; a number (`T_NUM` = 7) is a tag and its eight IEEE bytes; every
 other tag stands alone. -/
 def eventWidth (tag : UInt8) : Nat :=
   if tag == 5 || tag == 6 then 13 else if tag == 7 then 9 else 1
-
-/-- Eight little-endian bytes at `i`, read by index.  The arithmetic is
-`UInt64` rather than `Nat`, so a byte read is unboxed and the reading prices the
-record walk rather than the accumulator's allocation. -/
-def indexWord (bs : ByteArray) (i : Nat) : UInt64 :=
-  let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
-  g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3 +
-    4294967296 * (g 4 + 256 * g 5 + 65536 * g 6 + 16777216 * g 7)
-
-/-- Four little-endian bytes at `i`, read by index. -/
-def indexWord4 (bs : ByteArray) (i : Nat) : UInt64 :=
-  let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
-  g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3
 
 /-- The header through indexing: the observation a consumer needs, with neither
 `be64`'s per-byte list materialisation nor any printing. -/
@@ -704,13 +923,14 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
     reads := reads.push (t1 - t0)
     size := doc.size
     let a0 ← IO.monoNanosNow
-    let decision := admission doc
+    let decision ← decide2 doc
     let a1 ← IO.monoNanosNow
     adm := adm.push (a1 - a0)
     match decision with
-    | .error _ =>
+    | .failed status => return status
+    | .refused _ =>
       kind := "fallback"
-    | .ok () =>
+    | .admitted =>
       let s0 ← IO.monoNanosNow
       let staged := stage doc doc.size
       let c0 ← IO.monoNanosNow
@@ -760,9 +980,113 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
     return 5
   return 0
 
+/-! ### The agreement probe
+
+`--admit <file> <reps> <native depth>` is the gate's instrument, not a route: it
+runs the two-phase admission, the proved depth counter, and the library's
+`admission` on the same bytes, and prints one line with both decisions, both
+reasons, and the three medians.  `check.sh` asserts, row by row over the corpus,
+that the two decisions and their reasons are the same object; the third argument
+is the native side's depth bound, which the scenario's control moves off the
+certified 128 so that the comparator is shown catching a disagreement rather than
+agreeing vacuously.
+
+The document is re-read inside every repetition, as `--stages` does, so a pure
+loop-invariant `admission doc` cannot be hoisted out of its timed region and
+measured as nothing.  The policy phase's own interval is reported only when it
+ran: `policy=0` rows are the documents whose masks saw no candidate byte, and
+they are the reason the phase is skipped at all. -/
+def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
+  let mut p1 : Array Nat := #[]
+  let mut dp : Array Nat := #[]
+  let mut pol : Array Nat := #[]
+  let mut cert : Array Nat := #[]
+  let mut two : Array Nat := #[]
+  let mut size := 0
+  let mut nativeS := "-"
+  let mut clauseS := "-"
+  let mut openersS := "-"
+  let mut candidateS := "-"
+  let mut blocksS := "-"
+  let mut policyS := "-"
+  let mut depthFinalS := "-"
+  let mut depthSumS := "-"
+  let mut structuralsS := "-"
+  let mut certTag := "-"
+  let mut certCount := "-"
+  let mut twoTag := "-"
+  let mut agree := 0
+  for _ in List.range reps do
+    let doc ←
+      try
+        IO.FS.readBinFile path
+      catch e =>
+        IO.eprintln s!"route: cannot read '{path}': {e}"
+        return 2
+    size := doc.size
+    let t0 ← IO.monoNanosNow
+    let facts ← admitPhase1 doc nativeDepth
+    let t1 ← IO.monoNanosNow
+    let depthInfo ← depthFacts doc
+    let t2 ← IO.monoNanosNow
+    let decision := match facts with
+      | .ok f => decide2From doc f
+      | .error status => .failed status
+    let t3 ← IO.monoNanosNow
+    let c0 ← IO.monoNanosNow
+    let certified := admission doc
+    let c1 ← IO.monoNanosNow
+    p1 := p1.push (t1 - t0)
+    dp := dp.push (t2 - t1)
+    cert := cert.push (c1 - c0)
+    two := two.push ((t1 - t0) + (t3 - t2))
+    match facts with
+    | .error status => return status
+    | .ok f =>
+        nativeS := if f.verdict then "1" else "0"
+        clauseS := toString f.clause
+        openersS := toString f.openers
+        candidateS := if f.candidate then "1" else "0"
+        blocksS := toString f.blocks
+        if f.verdict && f.candidate then
+          policyS := "1"
+          pol := pol.push (t3 - t2)
+        else policyS := "0"
+    match depthInfo with
+    | .error status => return status
+    | .ok d =>
+        depthFinalS := toString d.final
+        depthSumS := toString d.sum
+        structuralsS := toString d.structurals
+    certTag := match certified with
+      | .ok () => "none"
+      | .error r => reasonTag (some r)
+    certCount := match certified with
+      | .error (.depthBound k) => toString k
+      | _ => "-"
+    twoTag := decisionTag decision
+    agree := match decision with
+      | .failed _ => 0
+      | _ => if twoTag == certTag then 1 else 0
+  IO.eprintln s!"admit doc={(System.FilePath.fileName path).getD path} size={size} \
+    reps={reps} maxdepth={nativeDepth} native={nativeS} native_clause={clauseS} \
+    openers={openersS} candidate={candidateS} blocks={blocksS} policy={policyS} \
+    depth_final={depthFinalS} depth_sum={depthSumS} structurals={structuralsS} \
+    certified={if certTag == "none" then "1" else "0"} \
+    certified_reason={certTag} certified_count={certCount} \
+    verdict={if twoTag == "none" then "1" else "0"} reason={twoTag} \
+    agree={agree} phase1_ns={median p1} depth_ns={median dp} \
+    policy_ns={stageField pol} certified_ns={median cert} \
+    two_phase_ns={median two}"
+  return 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--doc", path] => run path
+  | ["--doc", path, depth] => run path depth.toNat!
+  | ["--admit", path] => runAdmit path 11 kernelMaxDepth
+  | ["--admit", path, reps] => runAdmit path reps.toNat! kernelMaxDepth
+  | ["--admit", path, reps, depth] => runAdmit path reps.toNat! depth.toNat!
   | ["--stages", path] => runStaged path 11
   | ["--stages", path, reps] => runStaged path reps.toNat!
   | ["--consume", path] => runConsume path 11

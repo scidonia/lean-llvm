@@ -4,10 +4,13 @@
 #   nix develop -c bash probes/json/route/build.sh
 #
 # The kernel is outside Lake (kernel/json/README.md), so this script is the link
-# step: it compiles the six kernel translation units, the C adapter, and the
-# standalone Lean program, then links them with `leanc`.  It asserts that the
-# adapter imports `leanllvm_json_pipeline` and that the executable defines it,
-# so a build that silently lost the call is a failure rather than a pass.
+# step: it compiles the six kernel translation units, the proved stage-1 depth
+# counter (`tests/v16/depth_count.ll`, at the same `clang -c` line the install
+# uses for the unit), the C adapter, and the standalone Lean program, then links
+# them with `leanc`.  It asserts that the adapter imports the units it calls --
+# `leanllvm_json_pipeline`, `leanllvm_json_entry_table`, the mask unit and the
+# depth counter -- and that the executable defines each of them, so a build that
+# silently lost a call is a failure rather than a pass.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -37,6 +40,11 @@ printf 'flags: kernel=%s adapter=-O2 timing=%s\n' "$opt" "$timing"
 for f in pipeline s1_block entry escape utf8 stage2; do
   clang "${kflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
 done
+
+# The depth counter is the census fixture's text, compiled at the line the
+# install uses for it (`probes/install/build.sh`), so the object the route runs
+# is the object `depth_count_refines` is about.
+clang -c "$repo/tests/v16/depth_count.ll" -o "$build/depth_count.o"
 
 clang "${shim_flags[@]}" $(leanc --print-cflags) -c "$here/shim.c" -o "$build/shim.o"
 
@@ -92,10 +100,22 @@ if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_entry_table')" -eq 0 ]; t
   exit 1
 fi
 
+# The two-phase admission's phase one is the mask unit and the depth facts are
+# the depth counter; an adapter that stopped calling either would still build
+# and would report the other path's numbers.
+if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_s1_masks')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_s1_masks" >&2
+  exit 1
+fi
+if [ "$(nm -u "$build/shim.o" | grep -c ' depth_count$')" -eq 0 ]; then
+  echo "build: the adapter does not import depth_count" >&2
+  exit 1
+fi
+
 leanc "$build/RouteMain.o" "$build/shim.o" \
   "${cone_ir[@]}" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
-  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" \
+  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" "$build/depth_count.o" \
   -I "$repo/.lake/build/ir" -o "$build/leanllvm-json-route"
 
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline$')" -eq 0 ]; then
@@ -104,6 +124,14 @@ if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline$')"
 fi
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_entry_table$')" -eq 0 ]; then
   echo "build: the executable does not define leanllvm_json_entry_table" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_s1_masks$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_s1_masks" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T depth_count$')" -eq 0 ]; then
+  echo "build: the executable does not define depth_count" >&2
   exit 1
 fi
 

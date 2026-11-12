@@ -6,11 +6,11 @@ pipeline's record demands and calls the native object.  The contract is
 
 | File | What it is |
 |---|---|
-| `RouteMain.lean` | the standalone Lean entry point: it imports the library's `admission` decision and its `parseBytes` fallback (one shell, not two), stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array |
-| `shim.c` | the adapter: validates the staging, copies the caller's `ByteArray`s into the object's ABI, fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result |
+| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts, then the library's own `policyRefusal` where the masks saw a candidate — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` on the same bytes; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array |
+| `shim.c` | the adapter: validates the staging, copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the mask unit over the document — and the proved depth counter, which the admission record reports and the decision does not consult |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
-| `build.sh` | compiles the six kernel units, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts the two symbols the adapter calls are imported and defined |
-| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the fourteen-row policy class, the three outcomes' distinctness, and the consumer mode's reading of a five-event fixture |
+| `build.sh` | compiles the six kernel units, the proved depth counter (`tests/v16/depth_count.ll`), the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined |
+| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the fourteen-row policy class, the three outcomes' distinctness, the two-phase decision's agreement with `admission` on every row (with a control that must report a disagreement), and the consumer mode's reading of a five-event fixture |
 | `bench.sh` | the route's per-stage timings, the outcome stage's five parts, the consumer rows, the object's -O2/-O3 pair taken paired against a drift control, the fallback's price, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
 | `bench/simdjson-baseline.cc` | the reference arm: simdjson 4.6.11 on-demand over the same documents, its `padded_string` staging and its `iterate` plus full value traversal timed apart |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
@@ -18,20 +18,24 @@ pipeline's record demands and calls the native object.  The contract is
 
 ## The three outcomes
 
-The decision is the library's, `LeanLLVM.JsonKernelDomain.admission`, and its
-clauses are the certified checkers whose certificates are in
-`LeanLLVM/JsonKernelCertificate.lean`.  A document takes exactly one of three
-paths, and the output distinguishes them:
+The decision is the library's `LeanLLVM.JsonKernelDomain.admission`, taken in two
+phases: the native facts about the bytes (non-empty, inside the input bound, no
+more opener bytes than the nesting bound, and whether any byte could carry a
+character-policy refusal), then the reference's own `policyRefusal` where that
+last flag is set.  Its clauses are the certified checkers whose certificates are
+in `LeanLLVM/JsonKernelCertificate.lean`, and the two-phase decision is asserted
+against `admission` itself on every corpus row by `check.sh`.  A document takes
+exactly one of three paths, and the output distinguishes them:
 
-* **the fast path** (`verdict=...` on stdout).  `admission` admits the document,
-  the program stages it, and the native object answers; the observation, the
-  arena and the event stream are printed.  This is the only path that calls the
-  object.
-* **the fallback's refusal** (`refused: ...` on stderr, exit 2).  `admission`
+* **the fast path** (`verdict=...` on stdout).  The decision admits the
+  document, the program stages it, and the native object answers; the
+  observation, the arena and the event stream are printed.  This is the only
+  path that calls the object.
+* **the fallback's refusal** (`refused: ...` on stderr, exit 2).  The decision
   does not admit the document and the scalar reference parser refuses it; the
   reason and position printed are `parseBytes`'s own.
 * **the fallback's acceptance** (`fallback=accepted tokens=<n> decoded=<0|1>`).
-  `admission` does not admit the document and the reference parser accepts it;
+  The decision does not admit the document and the reference parser accepts it;
   the tape is the answer, and `decoded` reports whether `decodeTape` gave a
   value.
 
@@ -39,7 +43,12 @@ The fallback is the reference parser for every document the domain does not
 admit, and for no other document: it is not consulted before the decision and
 not on the fast path.  The domain is exactly what the certified checkers decide,
 so the open/closed question of the fast path's totality is a question about
-those clauses and nothing else.
+those clauses and nothing else.  The decision is `admission`'s because
+`--admit`'s two readings are compared row by row; what makes the native side
+equal to `admission` is argued clause by clause in the adapter's comment (the
+delimiter mask marks every structural byte wherever it falls, and a quote byte
+is either unescaped or preceded by a backslash), and observed, not proved —
+the counting routine is new code with no refinement theorem yet.
 
 ## Commands
 
@@ -48,6 +57,7 @@ nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomai
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
 "$PWD/probes/json/route/build/leanllvm-json-route" --consume tests/json/corpus/depth-two-ok.json 21
+"$PWD/probes/json/route/build/leanllvm-json-route" --admit tests/json/corpus/depth-two-ok.json 21
 nix develop -c bash probes/json/route/correspondence.sh
 bash probes/json/route/bench.sh 21        # re-executes itself under a 6 GiB scope
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonCallRoute
@@ -55,9 +65,10 @@ nix develop -c bash probes/install/lake-locked.sh env lean probes/json/route/Dom
 ```
 
 `build.sh` prints `ok: .../leanllvm-json-route`; it fails if `nm` does not show
-`leanllvm_json_pipeline` and `leanllvm_json_entry_table` imported by the adapter
-and defined by the executable, so a build that lost the call or the table's
-initialisation is a red rather than a pass.  It compiles the program with
+`leanllvm_json_pipeline`, `leanllvm_json_entry_table`, `leanllvm_json_s1_masks`
+and `depth_count` imported by the adapter and defined by the executable, so a
+build that lost a call or the table's initialisation is a red rather than a
+pass.  It compiles the program with
 `lake env lean -c` because the program imports the library's decision and parser;
 the first command builds their Lean modules and their emitted C, and `build.sh`
 stops with that command in its message when they are absent.  `correspondence.sh`
@@ -85,6 +96,25 @@ rebuild the same two payload lines with the write removed, after the stage's
 timed window; the difference between a payload part and its hex figure is that
 line's write.  The parts price the route's own reporting, not the object.
 
+The admission stage is the two-phase decision and reports its split:
+`admission_ns` is both phases, `admission_native_ns` is phase one's native call
+(including the `@[extern]` call and the nine-word header decode) and
+`admission_policy_ns` is phase two, present only on the rows whose masks saw a
+candidate byte — `admission_policy_ns=-` is a row where the scan was skipped.  A
+row also carries the facts the decision was taken on: `admission_candidate`,
+`admission_openers` (exact up to the bound and exactly the bound plus one past
+it), `admission_blocks` and `admission_clause`.
+
+`--admit <file> <reps> [<native depth>]` is the agreement probe rather than a
+route: it runs phase one, the proved depth counter, the two-phase decision and
+the library's `admission` on the same bytes, and prints one line with both
+verdicts, both reasons, the opener count each names, the candidate flag, the
+depth facts, and the medians of phase one, the depth pass, phase two, the
+certified predicate and the two-phase total.  `check.sh` reads the verdicts and reasons out
+of that line and compares them itself.  The optional third argument is the native
+side's depth bound; it defaults to `kernelMaxDepth`, and the scenario's control is
+the only caller that moves it.
+
 `--consume <file> <reps>` is the production reader's number: it runs the fast
 path once per repetition and reads the result without printing — the header by
 index, the event stream record by record at the widths `kernel/json/stage2.h`
@@ -101,8 +131,35 @@ alone.
 cases:
 
 ```text
-ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; 1 consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings
+the two-phase admission against the certified predicate, by row class
+(class is verdict/reason/candidate/policy; rows is how many rows it covers;
+the rows are every manifest row and the boundary documents)
+
+class                                          rows
+0/depthBound/0/0                                  3
+0/depthBound/1/0                                  1
+0/emptyInput/0/0                                  2
+0/inputTooLong/0/0                                1
+0/noncharacter/1/1                                8
+0/unpairedSurrogate/1/1                           6
+1/none/0/0                                       72
+1/none/1/1                                       44
+
+ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1125 event byte(s) over 69 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on 137 row(s) (policy candidate 59, policy scan run 58; control failures 0); 1 consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings
 ```
+
+The class table is the agreement gate's own row set, grouped: every manifest row
+whatever its profile (the decision is about the bytes, and a profile only selects
+which rows the fidelity comparison runs) plus the empty, over-bound, opener-rich
+and four depth documents.  The verdict and the reason are the same on all 137 —
+`1/none/*` are the admitted rows, `0/depthBound/0/*` the depth boundary,
+`0/*/1/1` the fourteen policy rows, where the masks saw a candidate and the scan
+ran and refused.  `0/depthBound/1/0` is the opener-rich document: its masks show
+a quote, but the native depth clause refuses before the policy phase, so the scan
+does not run — the clause order is `admission`'s, and a reason that named the
+policy there would be a different decision.  The rate is the number that decides
+whether the policy check needs its own native unit: 59 of 137 rows carry a quote
+or a backslash byte, and 58 of them pay the scan.
 
 - the 107 admitted rows — 59 the manifest calls `accept` and 48 `invalid` —
   take the fast path, and the Lean route and the C driver print the same three
@@ -173,21 +230,40 @@ leanllvm_json_pipeline`), because Lean's compiler eliminated the unused extern
 call; that is a scaffolding failure, not a red, which is why the recorded cut
 keeps a live reference to `runFast`.
 
-## The fallback, and where it could differ
+The agreement gate's controls are not cuts: they are inputs the comparator must
+catch, and they run inside the scenario rather than in a throwaway copy.
 
-There is no second policy scan in the probe any more.  `RouteMain.lean` imports
-`admission` and `parseBytes` from the library, so the decision and the
-fallback's answer are the reference's own compiled definitions, not a
-transcription: `DomainCheck.lean` pins the class against the parser itself, and
-`check.sh` pins the executable's reason and byte for all fourteen rows.
+| Control | What is moved | Observed |
+|---|---|---|
+| the comparator catches a disagreement | `--admit [1,2] 5 0`: the native depth bound set to zero, so one opener is refused natively while `admission` admits it | the shell's own comparison reports the two decisions differ, the row's `agree=0`, `native=0 native_clause=3 certified=1 reason=none` |
+| the shipped route uses the native bound | `--doc depth-128.json 127`: the route's own decision with the bound one below 128 | the route takes the fallback (`fallback=accepted`, no `verdict=` line) instead of the fast path, so the path is the native decision's |
+| the candidate detector fires both ways | `"a"` (a raw quote), `[1,2]` (no quote), `\"` (an escaped quote and no raw one) | `candidate=1`, `candidate=0`, `candidate=1`: the flag is not a detector that always fires, nor one that never does |
 
-The one limitation is the one the clause's own docstring states: the depth
-clause is an opener *count*, so it is conservative.  A balanced document whose
-string bodies carry more than 128 `[`/`{` bytes is refused by `admission` and
-answered by the fallback — never wrongly, because the fallback is the reference
-parser, and `check.sh` asserts exactly that case.  Replacing the count with the
-stage-1 depth counter is a deletion of one clause and its certificate, not a
-renegotiation of this shell.
+## The decision's two phases, and where they could differ
+
+Phase two is not a second policy scan: it is the library's `policyRefusal`, the
+same definition `admission` calls, run only where phase one's candidate flag says
+a `"` byte exists.  Phase one is new code, and its two claims are argued in
+`shim.c` and observed rather than proved: the delimiter mask marks all six
+structural bytes wherever they fall, so counting `{`/`[` at those lanes is
+`openersTotal` exactly; and a quote byte is either unescaped (the mask unit's
+quote lane) or preceded by a backslash run (its backslash lane), so the candidate
+flag is true whenever a quote byte exists.  `check.sh`'s agreement gate is the
+observation: 137 rows, the two verdicts and the two reasons compared in the
+shell.
+
+The clause the native side does *not* implement is any nesting-depth rule.  The
+depth clause is an opener *count* (`openersTotal`), so it is conservative: a
+balanced document whose string bodies carry more than 128 `[`/`{` bytes is
+refused by `admission` and answered by the fallback — never wrongly, because the
+fallback is the reference parser, and `check.sh` asserts exactly that case.  The
+proved depth counter cannot stand in for the count: it reports a balance and the
+sum of the prefix depths, and a 128-opener document and a 129-opener one both
+report a balance of 0 (`--admit`'s `depth_final`).  Replacing the count with a
+nesting bound would *widen* the domain — `scale-4096.json` holds 179 openers at a
+nesting depth of 2, and `admission` refuses it — which is a decision about the
+certificate, not about this shell, and the agreement gate would report it as a
+divergence rather than let it pass.
 
 ## The adapter's tagged result, and why nothing is clamped
 
@@ -199,6 +275,24 @@ its capacity — and `detail`/`want`/`got` name the failing check with its
 expected and observed numbers.  `RouteMain.lean` prints the observation for the
 first two classes as before, and reports the last three on stderr at exit 3, 4
 and 5.
+
+The admission call returns a header of its own, nine words and no payload:
+`tag detail want got openers candidate blocks verdict clause`.  `detail`,
+`want` and `got` are the failed precondition's when the tag is the failure class;
+otherwise `openers` is the delimiter-lane count (exact up to the bound and
+exactly the bound plus one past it), `candidate` the policy flag, `blocks` the
+document's 64-byte block count, `verdict` the native clauses' decision, and
+`clause` which of them refused (`0` none, `1` empty, `2` over-long, `3` too many
+openers).  The depth callback's header is seven words: `tag detail want got
+final sum structurals`.
+
+The document window is the one buffer the adapter does not copy.  Every unit's
+document parameter is `const`, so the object only reads it; the adapter hands the
+caller's bytes over and checks, before the call, that the window carries the
+document's whole last 64-byte block (`PC_WINDOW_BLOCKS`), which is what the mask
+unit reads unconditionally.  The other thirteen buffers are written by the
+object, so they keep their own allocations, and the window is neither freed nor
+written by the adapter.
 
 Two properties are the point:
 
@@ -225,14 +319,22 @@ It establishes that a Lean program reaches the native object, that the staging
 it builds is the one the record asks for (by agreement with an independent C
 caller), that the object's observation, arena and event stream are the ones the
 route prints byte for byte, that the document decision is the library's
-certified predicate and the fast path is taken exactly where it admits, and that
-every other document is answered once by the reference parser — with the
-reference's reason and byte for the policy class, its `depthExceeded` past 128,
-`input too long` past the bound, and its accepted tape for the opener-rich
-document.  `DomainCheck.lean` additionally proves by elaboration that the
-shell's decision is `admission`'s (`documentDecision_admitted`) and that the
-certificate's clauses follow from it (`admitted_documentDomain`,
-`routeSpecPre`).
+certified predicate — the two-phase native decision agreeing with `admission` in
+verdict and reason on every corpus row, with a control that must disagree — and
+that the fast path is taken exactly where it admits, and that every other
+document is answered once by the reference parser — with the reference's reason
+and byte for the policy class, its `depthExceeded` past 128, `input too long`
+past the bound, and its accepted tape for the opener-rich document.
+`DomainCheck.lean` additionally proves by elaboration that the shell's decision
+is `admission`'s (`documentDecision_admitted`) and that the certificate's clauses
+follow from it (`admitted_documentDomain`, `routeSpecPre`).
+
+What the two-phase decision adds beyond that is measured, not proved: the
+opener-count routine and the candidate flag are new code with no refinement
+theorem, the clause-by-clause argument for their equality with `admission`'s is
+in `shim.c`, and `check.sh` observes the equality on every row it has.  A
+document outside that corpus is decided by the same argument's reasoning and not
+by an assertion.
 
 It does not establish that the object executes the pinned body the theorems are
 about: the refinement theorem speaks about the parsed AST and `Mem`, and the

@@ -2,9 +2,12 @@
  *
  * It is the piece no Lean term can be: a Lean `ByteArray`'s data pointer is the
  * runtime's C API (`lean_sarray_cptr`), so the addresses the pipeline's ABI
- * takes can only be produced here.  The adapter copies every caller buffer into
- * its own allocation, so no native store reaches a Lean-owned object, and
- * returns the observable bytes as a fresh `ByteArray`.
+ * takes can only be produced here.  The adapter copies every caller buffer the
+ * object writes into its own allocation, so no native store reaches a
+ * Lean-owned object, and returns the observable bytes as a fresh `ByteArray`.
+ * The document window is the one buffer the object only reads, so it is handed
+ * over in place (the caller's padding is required, not assumed; see the
+ * precondition at `PC_WINDOW_BLOCKS`).
  *
  * ## Result layout (little-endian words, then the payloads)
  *
@@ -50,6 +53,16 @@
 
 #include "pipeline.h"
 #include "entry.h"
+#include "s1_block.h"
+
+/* The proved stage-1 depth counter's one entry point, at the ABI
+   `tests/v16/depth_count.ll` defines and `DepthCountRefine` proves: the
+   document, an index array of positions in it, that array's length, and the
+   two-word statistics slot the unit writes (the final depth and the sum of the
+   prefix depths).  It is compiled from the fixture at the same `clang -c` line
+   as the install's unit and linked beside the kernel units. */
+extern int64_t depth_count(const uint8_t *buf, const int32_t *idx,
+                           int64_t nidx, int64_t *stats);
 
 /* The result's header: ten words, then the payload. */
 #define ROUTE_HEADER_BYTES 80
@@ -128,7 +141,9 @@ enum route_precondition {
   PC_CURSOR_NXP = 17,
   PC_CURSOR_NDST = 18,
   PC_CURSOR_NEV = 19,
-  PC_TOTAL = 20
+  PC_TOTAL = 20,
+  PC_WINDOW_BLOCKS = 21,
+  PC_DOC = 22
 };
 
 /* The caller's arrays, in the order the copy loop walks them. */
@@ -191,6 +206,204 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
   return build_result(tag, detail, want, got, none, NULL, 0, NULL, 0);
 }
 
+/* ## The two-phase admission
+ *
+ * `admission` is the certified decision (`LeanLLVM/JsonKernelDomain.lean`) and
+ * has four clauses: the document is non-empty, it is inside the input bound, it
+ * holds no more opener bytes than the nesting bound admits, and the reference's
+ * character policy refuses nothing in it.  The first three are facts about the
+ * bytes that the proved stage-1 mask unit reports; the fourth is the reference's
+ * own `scanCharsEnd`, which this adapter does not re-implement.
+ *
+ * The decision is therefore taken in two phases.  Phase one is
+ * `leanllvm_route_admit`: `leanllvm_json_s1_masks` over every 64-byte block of
+ * the caller's document, the delimiter mask's lanes read to count `{`/`[` bytes,
+ * the quote and backslash lanes OR'd into a policy-candidate flag, and the empty
+ * and length bounds compared against numbers the caller supplies.  Phase two is
+ * `RouteMain.lean`'s: the refused clause's reason, and -- only when phase one saw
+ * a candidate -- the reference's own `policyRefusal`.
+ *
+ * ## Why the policy phase may be skipped
+ *
+ * `policyRefusal` runs `policyRefusalAt` at every byte that is `"`, so a
+ * document with no `"` byte has no reason to report.  A quote byte is either
+ * unescaped, and then the mask unit's quote lane carries it, or escaped, and
+ * then a backslash run precedes it, so the backslash lane carries that.  The
+ * candidate flag is the OR of the two masks over the whole document, so it is
+ * true whenever a `"` byte exists: skipping the phase when it is false cannot
+ * miss a refusal, and consulting it when true runs exactly the certified scan.
+ *
+ * ## The opener count, and not the depth counter
+ *
+ * The clause is an opener *count* (`openersTotal`), not a nesting depth, and the
+ * count is what this phase computes: `delim` marks the six structural bytes
+ * whichever side of a string they fall on, so reading each marked lane gives
+ * `openersTotal` exactly.  The proved depth counter
+ * (`tests/v16/depth_count.ll`) reports a balance and the sum of prefix depths
+ * over an index array, neither of which is the count -- a balanced 128-opener
+ * document and a balanced 129-opener one both report a final depth of 0 -- so it
+ * cannot decide this clause and the decision does not consult it.
+ * `leanllvm_route_depth` runs it over the same delimiter lanes anyway, so the
+ * probe reports what it says and what it costs beside the count; nothing gates
+ * on it.
+ *
+ * ## Zero copy, and what the caller owes
+ *
+ * Phase one reads the caller's own `ByteArray` in place: no buffer is allocated,
+ * and the last, partial block is copied into a padded 64-byte stack array
+ * because the mask unit reads 64 bytes at every block.  `route_impl`'s window
+ * handoff is the same rule for the pipeline: the object's document parameter is
+ * `const` in every unit, so the adapter hands over the caller's bytes instead of
+ * copying them, and the window is required to cover the document's whole last
+ * block rather than only its `n` bytes.
+ */
+
+/* The admission result's header: nine words, no payload.  `tag` names the
+   measured class or a failed precondition; the other words are meaningful for
+   one of the two. */
+#define ADMIT_HEADER_BYTES 72
+
+/* The depth facts' header: seven words, no payload. */
+#define DEPTH_HEADER_BYTES 56
+
+/* The class of an admission result. */
+enum admit_tag {
+  ADMIT_MEASURED = 0, /* the scan ran; the clause words follow */
+  ADMIT_DOMAIN = 2    /* a precondition failed before the scan */
+};
+
+/* The clause that refused the document, in `admission`'s own order. */
+enum admit_clause {
+  ADMIT_NONE = 0,
+  ADMIT_EMPTY = 1,
+  ADMIT_LENGTH = 2,
+  ADMIT_DEPTH = 3
+};
+
+/* The document's 64-byte blocks, without the overflow `(n + 63) / 64` has at
+   `n` near `UINT64_MAX`. */
+static uint64_t block_count(uint64_t n) { return n / 64 + (n % 64 != 0); }
+
+/* One pass over the document: the mask unit per block, the opener count from the
+   delimiter lanes (saturating at `maxDepth + 1`, because the decision is `>`,
+   and the exact count past the bound is not a number the caller acts on), and
+   the policy candidate from the quote and backslash lanes.
+
+   `with_depth` additionally runs the depth counter over each block's delimiter
+   lanes and recombines the two statistics: the unit starts every call at depth
+   0, so block `b`'s prefix depths are its own plus the depth carried into it,
+   and its sum enters the document's sum with that carry once per delimiter
+   lane.  The lanes are relative to the block, which is the buffer the unit is
+   given for that call, so the index array is 64 `uint32_t` on the stack and no
+   pass allocates. */
+static void admit_scan(const uint8_t *b, uint64_t n, uint64_t maxDepth,
+                       int with_depth, uint64_t *openers_o,
+                       uint64_t *candidate_o, uint64_t *blocks_o,
+                       int64_t *depth_o) {
+  uint32_t lanes[64];
+  uint8_t tail[64] __attribute__((aligned(32)));
+  s1_carry carry = {0, 0, 0};
+  uint64_t nb = block_count(n), opens = 0, cand = 0;
+  int64_t at = 0, sum = 0, structurals = 0;
+
+  for (uint64_t k = 0; k < nb; k++) {
+    const uint8_t *p = b + 64 * k;
+    uint64_t rest = n - 64 * k;
+    if (rest < 64) {
+      memset(tail, 0, 64);
+      memcpy(tail, p, (size_t)rest);
+      p = tail;
+    }
+    s1_masks m;
+    leanllvm_json_s1_masks(p, &carry, &m);
+    cand |= (m.quote | m.backslash) != 0;
+    uint64_t d = m.delim, count = 0;
+    while (d) {
+      unsigned lane = (unsigned)__builtin_ctzll(d);
+      d &= d - 1;
+      if (with_depth) lanes[count] = lane;
+      count++;
+      uint8_t c = p[lane];
+      if ((c == '[' || c == '{') && opens <= maxDepth) opens++;
+    }
+    if (with_depth && count) {
+      int64_t stats[2];
+      int64_t spn = depth_count(p, (const int32_t *)lanes, (int64_t)count, stats);
+      sum += stats[1] + (int64_t)count * at;
+      at += spn;
+      structurals += (int64_t)count;
+    }
+  }
+
+  *openers_o = opens;
+  *candidate_o = cand;
+  *blocks_o = nb;
+  if (depth_o) {
+    depth_o[0] = at;
+    depth_o[1] = sum;
+    depth_o[2] = structurals;
+  }
+}
+
+/* A word-addressed header, `words` words wide, no payload. */
+static lean_object *word_result(size_t bytes, const uint64_t *w, size_t words) {
+  lean_object *res = lean_alloc_sarray(1, bytes, bytes);
+  uint8_t *out = lean_sarray_cptr(res);
+  for (size_t i = 0; i < words; i++) store64(out + 8 * i, w[i]);
+  return res;
+}
+
+/* Phase one's result.  `want`/`got` describe the clause's comparison, or the
+   failed precondition when `tag` is `ADMIT_DOMAIN`. */
+static lean_object *admit_result(uint64_t tag, uint64_t detail, uint64_t want,
+                                 uint64_t got, uint64_t openers,
+                                 uint64_t candidate, uint64_t blocks,
+                                 uint64_t verdict, uint64_t clause) {
+  uint64_t w[9] = {tag, detail, want, got, openers, candidate, blocks, verdict,
+                   clause};
+  return word_result(ADMIT_HEADER_BYTES, w, 9);
+}
+
+/* The document's bytes, which the caller provides the length of: `n > doc.size`
+   is the one precondition, and it is checked before a byte is read. */
+static lean_object *admit_impl(lean_object *doc, uint64_t n, uint64_t maxInput,
+                               uint64_t maxDepth) {
+  uint64_t bytes = array_bytes(doc);
+  if (n > bytes)
+    return admit_result(ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0, 0, ADMIT_NONE);
+  if (n == 0)
+    return admit_result(ADMIT_MEASURED, 0, 1, 0, 0, 0, 0, 0, ADMIT_EMPTY);
+  if (n > maxInput)
+    return admit_result(ADMIT_MEASURED, 0, maxInput, n, 0, 0, 0, 0,
+                        ADMIT_LENGTH);
+
+  uint64_t openers, candidate, blocks;
+  admit_scan(lean_sarray_cptr(doc), n, maxDepth, 0, &openers, &candidate, &blocks,
+             0);
+  uint64_t clause = openers > maxDepth ? ADMIT_DEPTH : ADMIT_NONE;
+  uint64_t verdict = clause == ADMIT_NONE ? 1 : 0;
+  return admit_result(ADMIT_MEASURED, 0, maxDepth, openers, openers, candidate,
+                      blocks, verdict, clause);
+}
+
+/* The depth facts, as their own pass over the document. */
+static lean_object *depth_impl(lean_object *doc, uint64_t n) {
+  uint64_t bytes = array_bytes(doc);
+  int64_t d[3] = {0, 0, 0};
+  if (n > bytes) {
+    uint64_t w[7] = {ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0};
+    return word_result(DEPTH_HEADER_BYTES, w, 7);
+  }
+  if (n) {
+    uint64_t openers, candidate, blocks;
+    admit_scan(lean_sarray_cptr(doc), n, UINT64_MAX, 1, &openers, &candidate,
+               &blocks, d);
+  }
+  uint64_t w[7] = {ADMIT_MEASURED, 0, 0, 0, (uint64_t)d[0], (uint64_t)d[1],
+                   (uint64_t)d[2]};
+  return word_result(DEPTH_HEADER_BYTES, w, 7);
+}
+
 /* The adapter's body.  `leanllvm_json_route` below wraps it in the runtime's IO
    result, so the route's call is sequenced against the clock reads that divide
    its stages; a pure `let` is free to move, and a call moved past a slot read
@@ -207,10 +420,16 @@ static lean_object *route_impl(
 
   /* Preconditions, before any buffer is copied and before the call.  The
      window carries the document at offset 3, so its readable bytes past the
-     base are `len - 3` and the document needs `n`. */
+     base are `len - 3` and the document needs `n`.  The mask unit reads every
+     block's 64 bytes unconditionally, and the window is handed to the object in
+     place (see the copy below), so the bytes past the base must cover the
+     document's whole last block: `64 * blocks(n)`, not `n`. */
   uint64_t winLen = array_bytes(win);
-  if (winLen < 3 || n > winLen - 3)
-    return failure(ROUTE_DOMAIN, PC_WINDOW, n, winLen < 3 ? 0 : winLen - 3);
+  uint64_t past = winLen < 3 ? 0 : winLen - 3;
+  if (winLen < 3 || n > past)
+    return failure(ROUTE_DOMAIN, PC_WINDOW, n, past);
+  if (block_count(n) > past / 64)
+    return failure(ROUTE_DOMAIN, PC_WINDOW_BLOCKS, block_count(n), past / 64);
   if (array_bytes(sc) < 24) return failure(ROUTE_DOMAIN, PC_SC, 24, array_bytes(sc));
   if (array_bytes(mk) < 48) return failure(ROUTE_DOMAIN, PC_MK, 48, array_bytes(mk));
   if (array_bytes(entw) < 8)
@@ -243,15 +462,21 @@ static lean_object *route_impl(
 
   lean_object *ins[IN_COUNT] = {win, sc, mk, entw, ep, nk, xp, nxp, xcarry,
                                 dst, ndst, ev, nev, err};
+  /* The window is the one buffer the object only reads: every unit's document
+     parameter is `const`, and the block requirement above keeps the read inside
+     the caller's own bytes.  It is therefore borrowed, not copied, and it is
+     neither freed nor written below.  The other thirteen buffers are written by
+     the object, so they keep their own allocations. */
   uint8_t *copies[IN_COUNT] = {0};
+  copies[IN_WIN] = lean_sarray_cptr(win);
 #ifdef ROUTE_TIMING
   uint64_t route_t_copy0 = route_now_ns();
 #endif
-  for (int i = 0; i < IN_COUNT; i++) {
+  for (int i = IN_WIN + 1; i < IN_COUNT; i++) {
     copies[i] = copy_array(ins[i]);
     if (!copies[i]) {
       uint64_t bytes = array_bytes(ins[i]);
-      for (int j = 0; j < i; j++) free(copies[j]);
+      for (int j = IN_WIN + 1; j < i; j++) free(copies[j]);
       return failure(ROUTE_ALLOC, PC_NONE, bytes, 0);
     }
   }
@@ -303,8 +528,9 @@ static lean_object *route_impl(
   }
 
   /* The copy-out interval closes after the staging copies are released, so the
-     adapter's own work is entirely inside one of the three stages. */
-  for (int i = 0; i < IN_COUNT; i++) free(copies[i]);
+     adapter's own work is entirely inside one of the three stages.  The
+     window's bytes are the caller's and are not released here. */
+  for (int i = IN_WIN + 1; i < IN_COUNT; i++) free(copies[i]);
 #ifdef ROUTE_TIMING
   leanllvm_route_stage_ns[2] = route_now_ns() - route_t_out0;
 #endif
@@ -322,4 +548,20 @@ LEAN_EXPORT lean_object *leanllvm_json_route(
   return lean_io_result_mk_ok(
       route_impl(win, n, sc, mk, entw, ep, epcap, nk, xp, xpcap, nxp, xcarry,
                  dst, dstcap, ndst, ev, evcap, nev, err, arm));
+}
+
+/* Phase one of the two-phase admission: the document, its length, and the two
+   bounds the certified predicate states -- from `kernelMaxInput` and
+   `kernelMaxDepth` in `RouteMain.lean`, so the numbers are the library's and not
+   a second copy of them here. */
+LEAN_EXPORT lean_object *leanllvm_route_admit(lean_object *doc, uint64_t n,
+                                              uint64_t maxInput,
+                                              uint64_t maxDepth) {
+  return lean_io_result_mk_ok(admit_impl(doc, n, maxInput, maxDepth));
+}
+
+/* The proved depth counter over the document's delimiter lanes: the facts, for
+   the admission record, and never part of the decision. */
+LEAN_EXPORT lean_object *leanllvm_route_depth(lean_object *doc, uint64_t n) {
+  return lean_io_result_mk_ok(depth_impl(doc, n));
 }
