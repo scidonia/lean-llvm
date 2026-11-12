@@ -456,13 +456,13 @@ the payloads without materialising the result.
 
 **The copy is cheap; the staging before it is not.**  For `fast-nums-65536` the
 adapter copies 1,442,742 bytes (entry 262,436; escape 262,432; arena 65,603;
-events 852,135; the nine fixed slots and their growth, 136) in 86,515 ns — about
-16.7 GB/s.  The document window is not in that figure: the object only reads the
-document, so the adapter hands the caller's padding over in place and the
-13 buffers it copies are the ones the object writes.  The caller's staging of the
-same bytes costs 1,250,680 ns, about 1.3 GB/s: the `zeros` arrays are built
-element by element, so the stage that exists to hand the adapter zeros is 14.5
-times more expensive per byte than the adapter's copy of them.  Both are small
+events 852,135; the nine fixed slots and their growth, 136) in 86,515 ns —
+about 16.7 GB/s.  The document window is not in that figure: the object only
+reads the document, so the adapter hands the caller's padding over in place and
+the 13 buffers it copies are the ones the object writes.  The caller's staging of
+1,508,377 bytes costs 1,250,680 ns, about 1.2 GB/s: the `zeros` arrays are built
+element by element, so the stage that exists to hand the adapter zeros costs 14.5
+times what the adapter's copy of them does.  Both are small
 against the reporting, and the copy-in figure is the one a caller could not
 remove (it is the FFI boundary); the staging figure is allocator-plus-fill work
 the route chooses to do per call.
@@ -492,7 +492,7 @@ the adapter's native call including the `@[extern]` call and the header decode;
 candidate, so `two-phase` is phase one alone on those rows.  The route's own
 admission stage in the `--stages` rows is the same decision: 1,526 ns at 4 KiB,
 18,862 at 64 KiB and 50,410 on the escape document, against 88,776, 1,517,867 and
-63,976 certified above.  Phase one is 0.024–0.027 ns per input byte on the three
+63,976 certified above.  Phase one is 0.27–0.33 ns per input byte on the three
 scalar arrays (1,345 ns at 4,099 bytes, 17,807 at 65,539) and the policy scan is
 what a quote-bearing document still pays: 50,130 of the escape document's 50,537
 ns, 99.2%.
@@ -504,8 +504,9 @@ of them (the opener-rich document has quotes but its native depth clause refuses
 first, so the clause order spares the scan).  On the bench corpus it is 2 of 7
 documents and the scan runs on 1.  A JSON document with strings is a candidate by
 construction, so a native policy unit is the next lever on this stage; until it
-exists, the two-phase admission's win is the quote-free shape, which is 66–87
-times cheaper than the predicate it replaced, and the quote-bearing shape is
+exists, the two-phase admission's win is the quote-free shape, which is 65–85
+times cheaper than the predicate it replaced (88,776/1,368, 373,493/4,880 and
+1,517,867/17,840, the same-session pairs above), and the quote-bearing shape is
 dominated by the scan's own cost.
 
 **The decision is the predicate's, row by row.**  `check.sh` runs `--admit` over
@@ -551,7 +552,7 @@ converted); `core/pad+parse` divides the route's `total_ns` less `outcome_ns`
 by simdjson's `padded_string` construction plus the same traversal.  One pass
 per arm, no repeated work in either.  The escape-heavy document is the one shape
 where the reference's traversal, which unescapes a 1,000-escape string, exceeds
-the route's native stage.  The whole route over `pad+parse` is 19–114× and is
+the route's native stage.  The whole route over `pad+parse` is 83–427× and is
 not tabulated: that ratio is the reporting, already a column above.
 
 **The optimisation level is not a performance lever here.**  The object is the
