@@ -2618,6 +2618,27 @@ theorem WalkChain.finalisation {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   rw [hk 2]
   simp only [runFuel, hstep1, hret]
 
+/-- **The trace completes within a budget.**  `WalkChain.steps` names the count
+and `WalkChain.finalisation` the completion; this states them together: the chain's
+step count `k` plus the two finalisation steps, and the run's outcome at *any*
+budget at least that.  This is where the count is spent — the obligation's
+remaining conjunct is the numeric comparison `k + 2 ≤ stage2Budget args mem` at the
+chain the seed produces, and `runFuel_mono_le` is what turns it into the
+completion. -/
+theorem WalkChain.completesWithin {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' s'' sret : State} {v : Value}
+    (h : WalkChain calls G C s C' s')
+    (hstep1 : step calls stage2Body s' = .jump s'')
+    (hret : step calls stage2Body s'' = .ret v sret) :
+    ∃ k, (∀ n, runFuel calls (k + n) stage2Body s = runFuel calls n stage2Body s') ∧
+      ∀ N, k + 2 ≤ N → runFuel calls N stage2Body s = some (.ret v sret.mem) := by
+  obtain ⟨k, hk⟩ := h.steps
+  refine ⟨k, hk, fun N hN => ?_⟩
+  have h1 : runFuel calls (k + 2) stage2Body s = some (.ret v sret.mem) := by
+    rw [hk 2]
+    simp only [runFuel, hstep1, hret]
+  exact runFuel_mono_le hN h1
+
 /-! ### The instrument
 
 The module's axis: the step machinery (the call's `denoteCode` step and the
@@ -2656,6 +2677,7 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitBlock_denote
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd_step
 #print axioms LeanLLVM.Refinement.WalkScope.WalkChain.finalisation
+#print axioms LeanLLVM.Refinement.WalkScope.WalkChain.completesWithin
 
 /-! ## The four traps
 

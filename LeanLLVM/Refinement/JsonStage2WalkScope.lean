@@ -4044,6 +4044,18 @@ blocks the call module proves — a hundred and fifty-three blocks in all; three
 more are discharged as steps, and the nine outside them are named with their
 obstruction under *The census* below. -/
 
+/-! ### The census's arithmetic
+
+The table's columns and the reconciliation as `#guard`s: the class rows sum to the
+body's 165 blocks, the proved column sums to the 153 links the modules close, and
+the links, the three finalisation steps and the nine rows outside both sum to 165
+again.  `JsonStage2IR` pins the body's own count (`stage2Body.blocks.length = 165`),
+so these lines hold the prose to the pinned body rather than to a transcription. -/
+
+#guard decide (60 + 9 + 1 + 18 + 11 + 15 + 19 + 14 + 10 + 2 + 6 = 165)
+#guard decide (60 + 9 + 1 + 18 + 11 + 15 + 14 + 10 + 2 + 13 = 153)
+#guard decide (153 + 3 + 9 = 165)
+
 /-- **One link of the dispatch's trace**: a control step that preserves
 `WalkInv` and does not raise the measure. -/
 structure WalkLink (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
@@ -4499,8 +4511,10 @@ four pieces, in order:
    are the two arms' copies (with `walkIfThen_step` the refusal arm's jump), and
    `WalkChain.finalisation` turns a chain to either arm plus those steps into the
    completion.  Nothing of the return remains open; and
-4. **the count** — `WalkChain.steps` composed over the assembled chain to give a
-   step count at or below `stage2Budget`, which is the one place the 22-and-six
+4. **the count** — `WalkChain.completesWithin` composes the trace's own step count
+   `k` with the two finalisation steps and turns the comparison
+   `k + 2 ≤ stage2Budget args mem` into the completion.  That comparison is the
+   only arithmetic the assembled chain owes, and it is the one place the 22-and-six
    readings of *The budget, counted* are spent.
 
 Two of the non-link rows cannot be links under the record's post as it stands,
