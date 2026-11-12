@@ -4494,7 +4494,7 @@ it.
 | 64 | `if.end245.i` | E | the `phi` run `%key.1.i` and the callee's return — proved (`WalkLink.if_end245_i`) |
 | 66 | `if.end256.i` | F | the arena check, and the record in flight's entry into the carry — proved (`WalkLink.if_end256_i`) |
 | 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
-| 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` |
+| 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` — the block and its run are pinned (`walkZArenaReserveExit_find`, `walkZArenaReserveExit_denote`); the link is owed |
 | 71 | `if.then281.i` | H2 | `add`/`zext`/`or` — proved (`WalkLink.if_then281_i`) |
 | 72 | `if.else285.i` | D | the arena cursor and the span — proved (`WalkLink.if_else285_i`) |
 | 73 | `if.end290.i` | E | the two `phi`s and the thirteen-byte reserve — proved (`WalkLink.if_end290_i`); `%32` is `s2_string_body`'s write, the F datum the edge reads |
@@ -4577,7 +4577,10 @@ the record's (`walkFrame_reportFrame_coverage` maps `(dst, alen)` into
 `err_not_in_walkFrame` places the refusal slot outside it.  That is a decision
 about `stage2Boundary`, for the record that owns it.
 
-`z_arena_reserve.exit` is not that case: the block writes nothing of its own — one
+`z_arena_reserve.exit` is not that case, and its block is now pinned with its run
+(`walkZArenaReserveExit_find`, `walkZArenaReserveExit_denote`, `JsonStage2WalkCall`)
+so that what remains is the link's carry work rather than the block's text: the
+block writes nothing of its own — one
 load (`%31 = load ptr, ptr %ar`), two `gep`s, the `s2_string_body` call and a jump
 — and the callee's writes are the cursor word, `%outn.i`'s word, a `len`-wide
 window at the arena offset, and the error record.  The window's start is the word

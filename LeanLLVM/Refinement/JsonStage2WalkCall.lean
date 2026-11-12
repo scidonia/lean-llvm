@@ -1445,6 +1445,129 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     (by simp [WalkLocal]) (by simp [WalkLocal])
     (Nat.le_refl _) hiv hcur hpl
 
+/-! ### The reservation's completion block
+
+`z_arena_reserve.exit` spends the reservation `if.end256.i` recorded: it loads
+the arena's base word at `%z + 40` (`%ar`), forms the document's body pointer
+(`%arrayidx10.i + 1`) and the arena's destination (`%ar + %z.val36`), calls
+`@s2_string_body`, and hands the answer to `NodeBlock31`.
+
+The block writes nothing of its own.  Everything the reservation is *about* is
+the callee's: the cursor word at `%xj.i`, the decoded-length word at `%outn.i`
+(the block zeroed it one block earlier, so the read-back is the decoded length on
+the accepting arms), and the decoded prefix in a window `%sub260.i` wide at
+`%ar + %z.val36`.  The window's start is the word `if.end256.i` loaded, which
+`WalkInv.logArena_le` bounds by the carried cursor, so a carry that reserves
+`alen + %sub260.i` at the cursor already covers the write: the reservation is
+what the *carry* records at this block, and `if.else285.i` then only writes the
+word back.  Its frame is `s2StringBodyFoot` widened to `walkWide` at the new
+cursor, which is the composition `WalkInv.spans_end` and the relaxed
+`WalkInv.log_alen` exist for.
+
+This section pins the block and its run: the instruction list as the body has
+it, and its `denoteCode` at an arbitrary outcome.  The link that carries the
+invariant across it is the next statement owed here. -/
+
+/-- `z_arena_reserve.exit`: the arena's base, the body's two pointers, and the
+`@s2_string_body` call whose answer `NodeBlock31` tests. -/
+def walkZArenaReserveExit : Block :=
+  { name := "z_arena_reserve.exit",
+    instrs := [
+      Instr.load "%31" Ty.ptr (Operand.reg "%ar"),
+      Instr.gep "%add.ptr.i" (Ty.int 8) (Operand.reg "%31") (Operand.reg "%z.val36"),
+      Instr.gep "%add.ptr271.i" (Ty.int 8) (Operand.reg "%arrayidx10.i")
+        (Operand.imm (.int 64 (BitVec.ofNat 64 1))),
+      Instr.call "%call272.i" (Ty.int 32) "s2_string_body"
+        [(Ty.ptr, Operand.reg "%c.i"), (Ty.ptr, Operand.reg "%add.ptr271.i"),
+         (Ty.int 64, Operand.reg "%sub260.i"), (Ty.ptr, Operand.reg "%add.ptr.i"),
+         (Ty.ptr, Operand.reg "%outn.i"), (Ty.ptr, Operand.reg "%xp"),
+         (Ty.ptr, Operand.reg "%xj.i"), (Ty.int 64, Operand.reg "%nxp")]],
+    term := Term.br "NodeBlock31" }
+
+theorem walkZArenaReserveExit_find :
+    stage2Body.findBlock "z_arena_reserve.exit" = some walkZArenaReserveExit := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkZArenaReserveExit]
+
+/-- The `s2_string_body` argument list: the cursor record, the body's document
+pointer and extent, the arena's destination, the output slot, the escape list
+and its count. -/
+theorem walkArgs_stringBody (env : Env) (s : State)
+    {c p on xp xj : Nat} {dq : Nat} {A : BitVec 64} {ext nxp : Nat}
+    (hc : lookupName env "%c.i" = some (.ptr c))
+    (hp : lookupName env "%add.ptr271.i" = some (.ptr p))
+    (hlen : lookupName env "%sub260.i" = some (.int 64 (BitVec.ofNat 64 ext)))
+    (hdst : lookupName env "%add.ptr.i" = some (.ptr (dq + (A.signExtend 64).toNat)))
+    (hon : lookupName env "%outn.i" = some (.ptr on))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj.i" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 nxp))) :
+    evalOperands (stateAt env s)
+        [(Ty.ptr, Operand.reg "%c.i"), (Ty.ptr, Operand.reg "%add.ptr271.i"),
+         (Ty.int 64, Operand.reg "%sub260.i"), (Ty.ptr, Operand.reg "%add.ptr.i"),
+         (Ty.ptr, Operand.reg "%outn.i"), (Ty.ptr, Operand.reg "%xp"),
+         (Ty.ptr, Operand.reg "%xj.i"), (Ty.int 64, Operand.reg "%nxp")] =
+      some [.ptr c, .ptr p, .int 64 (BitVec.ofNat 64 ext),
+        .ptr (dq + (A.signExtend 64).toNat), .ptr on, .ptr xp, .ptr xj,
+        .int 64 (BitVec.ofNat 64 nxp)] := by
+  simp only [evalOperands, stateAt, evalOperand, hc, hp, hlen, hdst, hon, hxp, hxj, hnxp]
+
+/-- **The reservation's block, as a run.**  The `%ar` word is the arena's base,
+the second `gep`'s literal is the body's first document byte, and the call's
+outcome is the selection's answer at the eight arguments the block passes. -/
+theorem walkZArenaReserveExit_denote {sub : Calls} (env : Env) (s : State)
+    {ar c dq pn on xp xj : Nat} {A : BitVec 64} {ext nxp : Nat} {r : CallOutcome}
+    (har : lookupName env "%ar" = some (.ptr ar))
+    (hreadAr : readBytes s.mem ar 8 = some (wordBytes 8 dq))
+    (hdq : dq < 2 ^ 64)
+    (hz36 : lookupName env "%z.val36" = some (.int 64 A))
+    (hpos : (A.signExtend 64).toNat < 2 ^ 63)
+    (haj : lookupName env "%arrayidx10.i" = some (.ptr pn))
+    (hsub : lookupName env "%sub260.i" = some (.int 64 (BitVec.ofNat 64 ext)))
+    (hc : lookupName env "%c.i" = some (.ptr c))
+    (houtn : lookupName env "%outn.i" = some (.ptr on))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj.i" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 nxp)))
+    (hcall : stage2Calls sub "s2_string_body"
+      [.ptr c, .ptr (pn + 1), .int 64 (BitVec.ofNat 64 ext),
+        .ptr (dq + (A.signExtend 64).toNat), .ptr on, .ptr xp, .ptr xj,
+        .int 64 (BitVec.ofNat 64 nxp)] s.mem s.next = some r) :
+    denoteCode (stage2Calls sub) walkZArenaReserveExit.instrs (stateAt env s) =
+      some (stateAt (("%call272.i", r.ret) ::
+        ("%add.ptr271.i", .ptr (pn + 1)) ::
+        ("%add.ptr.i", .ptr (dq + (A.signExtend 64).toNat)) ::
+        ("%31", .ptr dq) :: env) { s with mem := r.mem, next := r.next }) := by
+  simp only [walkZArenaReserveExit]
+  rw [walkDenoteCode_loadPtr (calls := stage2Calls sub) (env := env) (s := s)
+    (d := "%31") (p := "%ar") (a := ar) (q := dq) har hreadAr hdq]
+  rw [denoteCode_gep8_reg (calls := stage2Calls sub)
+    (env := ("%31", .ptr dq) :: env) (s := s)
+    (d := "%add.ptr.i") (base := "%31") (off := "%z.val36") (a := dq) (idx := A)
+    (by simp [lookupName]) (by simpa [lookupName] using hz36) hpos]
+  rw [denoteCode_gep8_lit_w (calls := stage2Calls sub)
+    (env := ("%add.ptr.i", .ptr (dq + (A.signExtend 64).toNat)) ::
+      ("%31", .ptr dq) :: env) (s := s)
+    (d := "%add.ptr271.i") (base := "%arrayidx10.i") (a := pn) (w := 64)
+    (n := BitVec.ofNat 64 1) (by simpa [lookupName] using haj) (by decide)]
+  have hone : (BitVec.signExtend 64 (BitVec.ofNat 64 1)).toNat = 1 := by decide
+  rw [hone]
+  rw [walkDenoteCode_call (calls := stage2Calls sub)
+    (env := ("%add.ptr271.i", .ptr (pn + 1)) ::
+      ("%add.ptr.i", .ptr (dq + (A.signExtend 64).toNat)) ::
+      ("%31", .ptr dq) :: env) (s := s)
+    (d := "%call272.i") (callee := "s2_string_body") (ty := .int 32)
+    (walkArgs_stringBody _ s
+      (by simpa [lookupName] using hc)
+      (by simp [lookupName])
+      (by simpa [lookupName] using hsub)
+      (by simp [lookupName])
+      (by simpa [lookupName] using houtn)
+      (by simpa [lookupName] using hxp)
+      (by simpa [lookupName] using hxj)
+      (by simpa [lookupName] using hnxp))
+    hcall]
+  simp only [denoteCode_nil, stateAt]
+
 /-! ## The event record's emission
 
 `if.then328.i` is where the thirteen-byte key/string record is written at the
@@ -2775,6 +2898,9 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else334_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup474_i
+#print axioms LeanLLVM.Refinement.WalkScope.walkZArenaReserveExit_find
+#print axioms LeanLLVM.Refinement.WalkScope.walkZArenaReserveExit_denote
+#print axioms LeanLLVM.Refinement.WalkScope.walkArgs_stringBody
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_store64_imm
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end256_i
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_writeBytes_append
