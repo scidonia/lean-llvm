@@ -262,10 +262,11 @@ three carriers and the frame and presence rows included — and
 remains: (1) the container stacks' *contents* — `WalkRegs`/`WalkIter` carry
 registers, not the per-depth bytes `ctype[i]`/`cst[i]`, because a push or pop does
 not preserve a byte at `sp - 1`.  The sound shape is a carried `Nat → UInt8` map,
-and its vocabulary and laws are `JsonStage2WalkStack` (`WalkStackBytes`, the push,
-store and restriction laws, and `walkStack_valuePos`); what is still owed is
-carrying the maps in `WalkInv` — a field addition every link in six modules must
-build — plus the two local facts named there; (2) the 165-block next-link
+and its vocabulary and laws are here (`WalkStackBytes`, the push, store and
+restriction laws, and `walkStack_valuePos`); what is still owed is carrying the
+maps in `WalkInv` — a field addition every link in six modules must
+build — with no other local fact beside it (`storeAt` covers any stored index and
+the push is stated at the register's depth); (2) the 165-block next-link
 lemma; (3) the well-founded completion one level up from `WalkChain`; and (4) the
 budget's global accounting.  The census's 157 links are the arithmetic of the
 *classes*, and a link whose source invariant no run reaches (the preheader's,
@@ -885,17 +886,23 @@ structural rather than an omission: a clause of the form "the byte at `sp - 1`
 is `t`" cannot be carried by a link that pushes or pops, because the byte at the
 new `sp - 1` was written at an earlier index and the carry does not remember it.
 The sound shape is a carried map `Nat → UInt8`, read off the stack's own bytes at
-the carried depth.  `JsonStage2WalkStack` states it — `WalkStackBytes` — and
-proves its laws: the push extends the map at the pushed index
-(`WalkStackBytes.push`/`pushNat`), a one-byte store rewrites it where it writes
-(`WalkStackBytes.store`/`storeNat`), a pop or the merge at `cleanup478.i` is a
+the carried depth.  `WalkStackBytes`, in this module, states it, and
+proves its laws: a push extends the map at the index it writes, whether that index
+is the written mark or, after a pop, below it (`WalkStackBytes.pushAt`/`pushNatAt`),
+a one-byte store rewrites it where it writes at any index
+(`WalkStackBytes.storeAt`/`storeNatAt`), a pop or the merge at `cleanup478.i` is a
 restriction (`WalkStackBytes.restrict`), and `s2_value_pos` reads the map at
-`sp - 1` (`walkStack_valuePos`).  `walkStack_ifEnd24` composes the push link's two
-writes at `ctype + sp` and `cst + sp` into one update of both maps.  What remains
-is carrying those maps in `WalkInv`: that is a field addition to a structure every
-link in six modules builds by hand, and it needs two local facts beside it — the
-four class-D stores' index specified as `sp - 1`, and the push's two stores
-identified with `if.end24.i`'s own.  That is recorded in the census as the
+`sp - 1` (`walkStack_valuePos`).  `walkStack_ifEnd24_at` composes the push link's
+two writes at `ctype + sp` and `cst + sp` into one update of both maps, at the
+written mark `max wlen (sp + 1)`.
+
+What remains is carrying those maps in `WalkInv`: a field addition to a structure
+every link in six modules builds by hand, with the carried written mark and the
+two maps, and the clauses `sp ≤ wlen`, `wlen ≤ stage2StackExtent`, and one
+`WalkStackBytes` per stack.  Nothing else is owed beside it: the class-D stores
+need no `sp - 1` specification because `storeAt` is stated at an arbitrary index,
+and the push's two stores are already `if.end24.i`'s own in
+`walkStack_ifEnd24_at`.  That field addition is recorded in the census as the
 remaining half of the second carrier. -/
 
 /-- The entry stream's position at index `k`, with `0` past the end.  The
@@ -1079,6 +1086,205 @@ theorem preheaderRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env)
   all_goals first
     | exact h _ (by simp [walkStaticRegs])
     | simp [cells, lookupName]
+
+/-! ### The map and its agreement with the stack's bytes -/
+
+/-- **The container stack's carried contents**: the stack at `base` holds `M`'s
+first `n` values, one byte each.  `n` is the carried depth, so the byte a block
+reads at `sp - 1` is `M (sp - 1)` — a value the carry keeps after the depth that
+produced it has moved. -/
+def WalkStackBytes (mem : Mem) (base : Nat) (M : Nat → UInt8) (n : Nat) : Prop :=
+  ∀ i, i < n → readByte mem (base + i) = some (M i)
+
+/-- The byte at an index the depth admits. -/
+theorem WalkStackBytes.at {mem : Mem} {base n : Nat} {M : Nat → UInt8}
+    (h : WalkStackBytes mem base M n) {i : Nat} (hi : i < n) :
+    readByte mem (base + i) = some (M i) :=
+  h i hi
+
+/-- **The top of the stack at a positive depth.**  This is the byte every
+container-state check and every push at the top reads. -/
+theorem WalkStackBytes.top {mem : Mem} {base n : Nat} {M : Nat → UInt8}
+    (h : WalkStackBytes mem base M n) (hn : 0 < n) :
+    readByte mem (base + (n - 1)) = some (M (n - 1)) :=
+  h (n - 1) (by omega)
+
+/-- **A restriction of the depth keeps the map.**  A pop lowers `n` and the merge
+at `cleanup478.i` moves it without writing either stack, so both are this step. -/
+theorem WalkStackBytes.restrict {mem : Mem} {base n n' : Nat} {M : Nat → UInt8}
+    (h : WalkStackBytes mem base M n) (hn : n' ≤ n) : WalkStackBytes mem base M n' :=
+  fun i hi => h i (Nat.lt_of_lt_of_le hi hn)
+
+/-- **A write outside the stack's extent leaves it.** -/
+theorem WalkStackBytes.write_outside {mem : Mem} {base n a : Nat} {M : Nat → UInt8}
+    {bs : List UInt8} (h : WalkStackBytes mem base M n)
+    (hout : a + bs.length ≤ base ∨ base + n ≤ a) :
+    WalkStackBytes (writeBytes mem a bs) base M n := by
+  intro i hi
+  rw [readByte_writeBytes_outside mem bs (by omega)]
+  exact h i hi
+
+/-- **A push**: one byte written at the depth extends the map by it.  This is the
+store `if.end24.i` makes at `ctype + sp` (and its state-stack twin at
+`cst + sp`), with the pushed byte as the store's own list. -/
+theorem WalkStackBytes.push {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : UInt8}
+    (h : WalkStackBytes mem base M n) :
+    WalkStackBytes (writeBytes mem (base + n) [v]) base
+      (fun i => if i = n then v else M i) (n + 1) := by
+  intro i hi
+  by_cases hin : i = n
+  · rw [hin]
+    simpa using readByte_writeBytes_at mem [v] (base + n) 0 (by simp)
+  · rw [readByte_writeBytes_outside mem [v] (by omega)]
+    simp only [if_neg hin]
+    exact h i (by omega)
+
+/-- **A byte written at an index below the depth rewrites the map there.**  The
+container-state stores of class D are this shape: one `i8` literal at the state
+stack's byte the block indexed. -/
+theorem WalkStackBytes.store {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : UInt8}
+    (h : WalkStackBytes mem base M n) {k : Nat} (hk : k < n) :
+    WalkStackBytes (writeBytes mem (base + k) [v]) base
+      (fun i => if i = k then v else M i) n := by
+  intro i hi
+  by_cases hik : i = k
+  · rw [hik]
+    simpa using readByte_writeBytes_at mem [v] (base + k) 0 (by simp)
+  · have hout : base + i < base + k ∨ base + k + [v].length ≤ base + i := by
+      rcases Nat.lt_or_ge i k with hlt | hge
+      · left; omega
+      · right; simp only [List.length_cons, List.length_nil]; omega
+    rw [readByte_writeBytes_outside mem [v] hout]
+    simp only [if_neg hik]
+    exact h i hi
+
+/-- **A push of a `natToBytes` byte**, the store shape the body's blocks actually
+emit: the pushed value is the one-byte list `natToBytes v 1`, and the map keeps
+its own byte. -/
+theorem WalkStackBytes.pushNat {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : Nat}
+    (h : WalkStackBytes mem base M n) :
+    WalkStackBytes (writeBytes mem (base + n) (natToBytes v 1)) base
+      (fun i => if i = n then (natToBytes v 1).getD 0 0 else M i) (n + 1) := by
+  intro i hi
+  by_cases hin : i = n
+  · rw [hin]
+    simpa using readByte_writeBytes_at mem (natToBytes v 1) (base + n) 0
+      (by simp [natToBytes_length])
+  · rw [readByte_writeBytes_outside mem (natToBytes v 1) (by
+      left; simp [natToBytes_length]; omega)]
+    simp only [if_neg hin]
+    exact h i (by omega)
+
+/-- **A one-byte literal store at an index below the depth**, the class-D shape:
+`store i8 <imm>, %arrayidx`. -/
+theorem WalkStackBytes.storeNat {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : Nat}
+    (h : WalkStackBytes mem base M n) {k : Nat} (hk : k < n) :
+    WalkStackBytes (writeBytes mem (base + k) (natToBytes v 1)) base
+      (fun i => if i = k then (natToBytes v 1).getD 0 0 else M i) n := by
+  intro i hi
+  by_cases hik : i = k
+  · rw [hik]
+    simpa using readByte_writeBytes_at mem (natToBytes v 1) (base + k) 0
+      (by simp [natToBytes_length])
+  · have hout : base + i < base + k ∨
+        base + k + (natToBytes v 1).length ≤ base + i := by
+      rcases Nat.lt_or_ge i k with hlt | hge
+      · left; omega
+      · right; simp [natToBytes_length]; omega
+    rw [readByte_writeBytes_outside mem (natToBytes v 1) hout]
+    simp only [if_neg hik]
+    exact h i hi
+
+/-- **A push at an index at or below the written depth.**  A push writes at the
+register's depth, which may be below the mark after a pop; the map updates at the
+pushed index and the mark becomes `max n (i + 1)`.  This is the shape
+`if.end24.i` has, whose store is at `%sp`, not at the mark. -/
+theorem WalkStackBytes.pushAt {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : UInt8}
+    {i : Nat} (h : WalkStackBytes mem base M n) (hi : i ≤ n) :
+    WalkStackBytes (writeBytes mem (base + i) [v]) base
+      (fun j => if j = i then v else M j) (max n (i + 1)) := by
+  intro j hj
+  by_cases hji : j = i
+  · rw [hji]
+    simpa using readByte_writeBytes_at mem [v] (base + i) 0 (by simp)
+  · have hjn : j < n := by
+      by_contra hge
+      have hge' : n ≤ j := Nat.le_of_not_lt hge
+      have : i + 1 ≤ j := by omega
+      have : max n (i + 1) ≤ j := max_le hge' this
+      omega
+    have hout : base + j < base + i ∨ base + i + [v].length ≤ base + j := by
+      rcases Nat.lt_or_ge j i with hlt | hge
+      · left; omega
+      · right; simp only [List.length_cons, List.length_nil]; omega
+    rw [readByte_writeBytes_outside mem [v] hout]
+    simp only [if_neg hji]
+    exact h j hjn
+
+/-- **A `natToBytes` push at an index at or below the written depth**, the store
+shape the body's blocks emit. -/
+theorem WalkStackBytes.pushNatAt {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : Nat}
+    {i : Nat} (h : WalkStackBytes mem base M n) (hi : i ≤ n) :
+    WalkStackBytes (writeBytes mem (base + i) (natToBytes v 1)) base
+      (fun j => if j = i then (natToBytes v 1).getD 0 0 else M j) (max n (i + 1)) := by
+  intro j hj
+  by_cases hji : j = i
+  · rw [hji]
+    simpa using readByte_writeBytes_at mem (natToBytes v 1) (base + i) 0
+      (by simp [natToBytes_length])
+  · have hjn : j < n := by
+      by_contra hge
+      have hge' : n ≤ j := Nat.le_of_not_lt hge
+      have : i + 1 ≤ j := by omega
+      have : max n (i + 1) ≤ j := max_le hge' this
+      omega
+    have hout : base + j < base + i ∨ base + i + (natToBytes v 1).length ≤ base + j := by
+      rcases Nat.lt_or_ge j i with hlt | hge
+      · left; omega
+      · right; simp [natToBytes_length]; omega
+    rw [readByte_writeBytes_outside mem (natToBytes v 1) hout]
+    simp only [if_neg hji]
+    exact h j hjn
+
+/-- **A one-byte store at any index.**  A class-D store writes the state stack at
+the index a previous block computed; that index may be inside the written depth
+(the map updates there) or at or above it (the write misses the map's extent, and
+the map is unchanged there because it only constrains indices below `n`). -/
+theorem WalkStackBytes.storeAt {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : UInt8}
+    {k : Nat} (h : WalkStackBytes mem base M n) :
+    WalkStackBytes (writeBytes mem (base + k) [v]) base
+      (fun i => if i = k then v else M i) n := by
+  intro i hi
+  by_cases hik : i = k
+  · rw [hik]
+    simpa using readByte_writeBytes_at mem [v] (base + k) 0 (by simp)
+  · have hout : base + i < base + k ∨ base + k + [v].length ≤ base + i := by
+      rcases Nat.lt_or_ge i k with hlt | hge
+      · left; omega
+      · right; simp only [List.length_cons, List.length_nil]; omega
+    rw [readByte_writeBytes_outside mem [v] hout]
+    simp only [if_neg hik]
+    exact h i hi
+
+/-- **A one-byte literal store at any index**, the class-D `natToBytes` shape. -/
+theorem WalkStackBytes.storeNatAt {mem : Mem} {base n : Nat} {M : Nat → UInt8} {v : Nat}
+    {k : Nat} (h : WalkStackBytes mem base M n) :
+    WalkStackBytes (writeBytes mem (base + k) (natToBytes v 1)) base
+      (fun i => if i = k then (natToBytes v 1).getD 0 0 else M i) n := by
+  intro i hi
+  by_cases hik : i = k
+  · rw [hik]
+    simpa using readByte_writeBytes_at mem (natToBytes v 1) (base + k) 0
+      (by simp [natToBytes_length])
+  · have hout : base + i < base + k ∨
+        base + k + (natToBytes v 1).length ≤ base + i := by
+      rcases Nat.lt_or_ge i k with hlt | hge
+      · left; omega
+      · right; simp [natToBytes_length]; omega
+    rw [readByte_writeBytes_outside mem (natToBytes v 1) hout]
+    simp only [if_neg hik]
+    exact h i hi
+
 
 /-- **The walk's invariant.**  Everything the loop carries, at the block it is at,
 and the memory it has written.  This is the predicate every one of the six arms
@@ -1314,6 +1520,57 @@ theorem forInc {h : WalkInv G C s} (hblock : C.block = "for.inc.i.i") :
   simpa [WalkLocal, hblock] using h.blockLocal
 
 end WalkInv
+
+/-! ### The carried maps across a step
+
+The four stack clauses are carried by every step, and each step's evidence is one
+of six shapes: the memory is unchanged; the write is inside a staged object other
+than the two stacks; the write is inside one of the thirteen ABI objects; the
+write is inside the body's four `alloca`s; the write is inside `%d.i`; or the
+write is a stack store itself.  The lemmas below state the first five as
+`WalkStackBytes` transfers; the sixth is `WalkStackBytes.pushAt`/`storeAt` and the
+block's own index, at the site.
+
+Every one of them reads the staging's separation and the watermark, so no site
+re-derives the arrangement of the objects. -/
+
+/-- Two distinct members of a `DisjointRegions` list are separated. -/
+theorem disjointRegions_pair_of_mem {rs : List (Nat × Nat)} (h : DisjointRegions rs)
+    {r t : Nat × Nat} (hr : r ∈ rs) (ht : t ∈ rs) (hne : r ≠ t) :
+    r.1 + r.2 ≤ t.1 ∨ t.1 + t.2 ≤ r.1 := by
+  unfold DisjointRegions at h
+  induction rs with
+  | nil => simp at hr
+  | cons x xs ih =>
+      rw [List.pairwise_cons] at h
+      obtain ⟨hx, hxs⟩ := h
+      rcases List.mem_cons.mp hr with hrx | hrx
+      · subst hrx
+        rcases List.mem_cons.mp ht with htx | htx
+        · subst htx; exact absurd rfl hne
+        · exact hx t htx
+      · rcases List.mem_cons.mp ht with htx | htx
+        · subst htx; exact Or.symm (hx r hrx)
+        · exact ih hxs hrx htx
+
+/-- The seven staged objects are separated from each other. -/
+theorem WalkStage.writes_separate {m0 : Mem} {G : WalkGeom m0} (S : WalkStage G) :
+    DisjointRegions (stage2StagedWrites S.c S.ctype S.cst S.tok S.s S.z S.e) := by
+  have h := S.separate
+  unfold DisjointRegions at h
+  rw [stage2StagedRegions, stage2WalkRegions, List.append_assoc] at h
+  exact (List.pairwise_append.mp (List.pairwise_append.mp h).2.1).1
+
+/-- The walk's region list is separated from itself, with the caller's two count
+slots set aside. -/
+theorem WalkStage.walk_separate {m0 : Mem} {G : WalkGeom m0} (S : WalkStage G) :
+    DisjointRegions (stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0
+      G.ev G.evcap G.ndst G.nev G.err S.c S.ctype S.cst S.tok S.s S.z S.e) := by
+  have h := S.separate
+  unfold DisjointRegions at h
+  rw [stage2StagedRegions] at h
+  exact (List.pairwise_append.mp h).1
+
 
 /-! ### The seed: the invariant at the loop head
 
@@ -4043,6 +4300,88 @@ def ifEnd24Ty (b : BitVec 8) : BitVec 8 :=
 /-- `%conv42.i`, the byte the state stack receives. -/
 def ifEnd24St (b : BitVec 8) : BitVec 8 :=
   if ifEnd24Test b = 1 then 1 else 3
+
+/-! #### The two stack writes as one map update -/
+
+/-- A one-byte `natToBytes` is the list of its own byte. -/
+theorem walkNatToBytes_singleton (v : Nat) :
+    natToBytes v 1 = [(natToBytes v 1).getD 0 0] := by
+  have hlen := natToBytes_length v 1
+  cases h : natToBytes v 1 with
+  | nil => rw [h] at hlen; simp at hlen
+  | cons y ys =>
+      have hys : ys = [] := by
+        rw [h] at hlen
+        simpa using hlen
+      subst hys
+      rfl
+
+/-- The byte `if.end24.i` pushes onto the type stack, as the store's own list
+holds it. -/
+def ifEnd24TyByte (b : BitVec 8) : UInt8 :=
+  (natToBytes (ifEnd24Ty b).toNat 1).getD 0 0
+
+/-- The byte `if.end24.i` pushes onto the state stack: zero. -/
+def ifEnd24StByte : UInt8 := (natToBytes 0 1).getD 0 0
+
+/-- The state stack's pushed byte is zero. -/
+theorem ifEnd24StByte_zero : ifEnd24StByte = 0 := rfl
+
+/-- **`if.end24.i`'s two stores, as one map update at an arbitrary depth.**  The
+type stack receives `ifEnd24TyByte b` at `sp` and the state stack zero; each store
+is outside the other stack's extent, so both maps advance to the written mark
+`max wlen (sp + 1)`.  The mark rather than `sp + 1` is the sound depth: a push
+after a pop stores at an index below the mark, which leaves the mark where it
+was. -/
+theorem walkStack_ifEnd24_at {mem : Mem} {ctype cst sp wlen : Nat} {TM SM : Nat → UInt8}
+    {b : BitVec 8}
+    (hT : WalkStackBytes mem ctype TM wlen) (hS : WalkStackBytes mem cst SM wlen)
+    (hsep : cst + stage2StackExtent ≤ ctype ∨ ctype + stage2StackExtent ≤ cst)
+    (hsp : sp ≤ wlen) (hcap : max wlen (sp + 1) ≤ stage2StackExtent) :
+    WalkStackBytes
+        (writeBytes (writeBytes mem (ctype + sp) (natToBytes (ifEnd24Ty b).toNat 1))
+          (cst + sp) (natToBytes 0 1))
+        ctype (fun i => if i = sp then ifEnd24TyByte b else TM i) (max wlen (sp + 1)) ∧
+      WalkStackBytes
+        (writeBytes (writeBytes mem (ctype + sp) (natToBytes (ifEnd24Ty b).toNat 1))
+          (cst + sp) (natToBytes 0 1))
+        cst (fun i => if i = sp then ifEnd24StByte else SM i) (max wlen (sp + 1)) := by
+  have hTstep : WalkStackBytes (writeBytes mem (ctype + sp)
+      (natToBytes (ifEnd24Ty b).toNat 1)) ctype
+      (fun i => if i = sp then ifEnd24TyByte b else TM i) (max wlen (sp + 1)) :=
+    hT.pushNatAt (v := (ifEnd24Ty b).toNat) hsp
+  have hSstep : WalkStackBytes (writeBytes mem (cst + sp)
+      (natToBytes 0 1)) cst
+      (fun i => if i = sp then ifEnd24StByte else SM i) (max wlen (sp + 1)) :=
+    hS.pushNatAt (v := 0) hsp
+  refine ⟨hTstep.write_outside ?_, ?_⟩
+  · rcases hsep with h | h
+    · left
+      simp only [natToBytes_length]
+      omega
+    · right
+      omega
+  · refine (hS.write_outside ?_).pushNatAt (i := sp) hsp
+    rcases hsep with h | h
+    · right
+      omega
+    · left
+      simp only [natToBytes_length]
+      omega
+
+/-- **`s2_value_pos` reads the map at `sp - 1`.**  At a positive depth the helper
+loads the two stacks' top bytes, and the agreement turns both into the carried
+values: the map is what the helper's answer is a function of. -/
+theorem walkStack_valuePos {m : Mem} {ct cs sp rd : Nat} {TM SM : Nat → UInt8}
+    (hsp : sp ≠ 0) (hT : WalkStackBytes m ct TM sp) (hS : WalkStackBytes m cs SM sp) :
+    stage2ValuePos m sp rd ct cs =
+      some (if (TM (sp - 1)).toNat = 1 then
+        (if (SM (sp - 1)).toNat = 2 then 1 else 0)
+      else (if (SM (sp - 1)).toNat = 0 ∨ (SM (sp - 1)).toNat = 2 then 1 else 0)) := by
+  have hlt : sp - 1 < sp := by omega
+  simp only [stage2ValuePos, hsp, hT.at hlt, hS.at hlt]
+  simp
+
 
 /-- The head's cells, newest first. -/
 def ifEnd24HeadCells (sp ctype cst : Nat) (b : BitVec 8) : List (String × Value) :=
