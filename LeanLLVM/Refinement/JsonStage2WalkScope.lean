@@ -4040,8 +4040,9 @@ measure, and gives it the links the module has proved: the header's block, the
 nesting arm, the latch, the four scan headers, and the censused classes A, B and
 B′, the eighteen refusal stores of C, class D's ten stores, the two entry links,
 class E's twelve merges and twelve of class G's fourteen reads, and the class F
-blocks the call module proves — a hundred and fifty-three blocks in all.  The
-ten outside them are named with their obstruction under *The census* below. -/
+blocks the call module proves — a hundred and fifty-three blocks in all; three
+more are discharged as steps, and the nine outside them are named with their
+obstruction under *The census* below. -/
 
 /-- **One link of the dispatch's trace**: a control step that preserves
 `WalkInv` and does not raise the measure. -/
@@ -4172,9 +4173,9 @@ column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
 14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 13 (F's
 `JsonStage2WalkCall`) = 153, with the five measure arms among those classes rather
 than beside them.  The remaining 12 are named below with their obstruction, one
-row each; six of them are not links at all — the seed, the return, and the four
-`unreachable` arms — and `s2_walk.exit` and `if.end` are the return's two
-discharged steps, so ten rows remain.
+row each; seven of them are not links at all — the seed, the return's two arms
+(`s2_walk.exit` and `if.then`) and the four `unreachable` arms — and all three
+finalisation blocks are discharged as steps, so nine rows remain.
 
 **The call census, measured.**  The F row's 19 is the number of blocks between the
 arms whose instruction list contains an `Instr.call` or `Instr.callVoid`, read off
@@ -4396,8 +4397,8 @@ header, with the arithmetic.
 
 ## The remainder, named
 
-The census's rows: 10 blocks still without a link, 153 already closed as links,
-and two (`s2_walk.exit`, `if.end`) closed as the terminal step — 165 in all.  `class` is the census's;
+The census's rows: nine blocks still without a link, 153 already closed as links,
+and three (`s2_walk.exit`, `if.then`, `if.end`) closed as steps — 165 in all.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -4472,7 +4473,7 @@ it.
 | 158 | `cleanup478.i` | E | the depth and index `phi`s — proved (`WalkLink.cleanup478_i`) |
 | 161 | `if.end490.i` | G | the `%root_done.i` slot — proved (`WalkLink.if_end490_i`) |
 | 163 | `s2_walk.exit` | F | the terminal step — proved (`walkExitBlock_denote`, `WalkChain.finalisation`) |
-| 164 | `if.then` | F | the refusal copy: three instructions after its live-range prefix (`walkExitBlock_denote` at the same nine) |
+| 164 | `if.then` | F | the refusal copy — proved as a step (`walkIfThenBlock_denote`, `walkIfThen_step`) |
 | 165 | `if.end` | ret | the return — proved as the terminal step (`walkIfEnd_step`, `WalkChain.finalisation`) |
 
 ## Whether the chain closes
@@ -4483,24 +4484,21 @@ half of `Stage2WalkObligation` at `stage2Budget` (`stage2WalkObligation_iff_comp
 is the equivalence, so nothing else is wanted).  Read as a proof obligation it is
 four pieces, in order:
 
-1. **the ten rows** — the six class F blocks the table names without a
-   link (`if.then109.i`, `if.then425.i`, `if.then19.i`,
-   `z_arena_reserve.exit`, plus `s2_walk.exit` and `if.then`,
-   which the two items below own), `entry` (item 2), and the four `unreachable`
-   arms (whose verdicts are proved: `walkTrap_noStep`,
-   `walkEventReserve_clear`, `walkArenaReserve_clear`), so the traversal has no
-   gap;
+1. **the nine rows** — the four class F blocks the table names without a link
+   (`if.then109.i`, `if.then425.i`, `if.then19.i`, `z_arena_reserve.exit`),
+   `entry` (item 2), and the four `unreachable` arms (whose verdicts are proved:
+   `walkTrap_noStep`, `walkEventReserve_clear`, `walkArenaReserve_clear`), so the
+   traversal has no gap;
 2. **the seed** — `WalkSeedState` at `entry`'s handoff, which is the
    initialisation's own obligation: `walkSeed_invariant` turns it into the
    invariant at the loop head, and what `entry`'s 58 instructions must show is
    that state (the two `phi` values, the six pointer bindings, the log's four
    fields and the staging's presence);
 3. **the return** — *stated and composed*: `walkIfEnd_step` is `if.end`'s step at
-   either arm's `phi` value, `walkExitBlock_denote` is the exit's jump, and
-   `WalkChain.finalisation` turns a chain to `s2_walk.exit` plus those two steps
-   into the completion.  What remains of the return is `if.then`'s refusal copy
-   (the three instructions after the live-range prefix); the returning arm
-   (`s2_walk.exit`) needs nothing further; and
+   either arm's `phi` value, `walkExitBlock_denote` and `walkIfThenBlock_denote`
+   are the two arms' copies (with `walkIfThen_step` the refusal arm's jump), and
+   `WalkChain.finalisation` turns a chain to either arm plus those steps into the
+   completion.  Nothing of the return remains open; and
 4. **the count** — `WalkChain.steps` composed over the assembled chain to give a
    step count at or below `stage2Budget`, which is the one place the 22-and-six
    readings of *The budget, counted* are spent.

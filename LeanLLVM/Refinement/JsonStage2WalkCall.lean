@@ -39,10 +39,12 @@ What a call block owes, and what this module supplies:
   the frame's.  `s2ScalarValuePost`'s second conjunct names the appended record,
   so `if.then425.i`'s call does not hide the trace's step behind the model's
   equation.
-* **the terminal step.**  `s2_walk.exit`'s jump and `if.end`'s return are not
-  `WalkLink`s: the exit's stores are the record's, outside the walk's frame by
-  design (`err_not_in_walkFrame`).  They are `step` equations —
-  `walkExitBlock_denote` at the five markers and the two cursor copies, and
+* **the terminal step.**  Neither finalisation arm is a `WalkLink`: the exit's and
+  the refusal copy's stores are the record's, outside the walk's frame by design
+  (`err_not_in_walkFrame`).  They are `step` equations —
+  `walkExitBlock_denote` at the five markers and the two cursor copies,
+  `walkIfThenBlock_denote`/`walkIfThen_step` at the refusal arm's same prefix and
+  three copies, and
   `walkIfEnd_step` at either arm's `phi` value — and `WalkChain.finalisation`
   composes a chain to `s2_walk.exit` with them into a completion.
 -/
@@ -1768,6 +1770,157 @@ theorem tok_ev_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   have h' := List.pairwise_iff_getElem.mp hpair 4 11 (by omega) (by omega) (by omega)
   simpa [stage2WalkRegions, stage2Regions, stage2StagedWrites] using h'.symm
 
+/-- The refusal arm's exit: the five live-range ends and the three copies into
+the record's slots. -/
+def walkIfThenBlock : Block :=
+  { name := "if.then",
+    instrs := [
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 8))), (.ptr, .reg "%xj.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 4))), (.ptr, .reg "%root_done.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 520))), (.ptr, .reg "%cst.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 520))), (.ptr, .reg "%ctype.i")],
+      Instr.callVoid "llvm.lifetime.end.p0"
+        [(.int 64, .imm (.int 64 (BitVec.ofNat 64 1192))), (.ptr, .reg "%c.i")],
+      Instr.load "%51" (.int 64) (.reg "%alen"),
+      Instr.store (.int 64) (.reg "%51") (.reg "%ndst"),
+      Instr.load "%52" (.int 64) (.reg "%len"),
+      Instr.store (.int 64) (.reg "%52") (.reg "%nev"),
+      Instr.gep "%off" (.int 8) (.reg "%e") (.imm (.int 64 (BitVec.ofNat 64 8))),
+      Instr.load "%53" (.int 64) (.reg "%off"),
+      Instr.store (.int 64) (.reg "%53") (.reg "%err")],
+    term := Term.br "if.end" }
+
+theorem walkIfThenBlock_find : stage2Body.findBlock "if.then" = some walkIfThenBlock := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIfThenBlock]
+
+/-- **The refusal arm's copy.**  The same live-range prefix as `s2_walk.exit`,
+then the arena's cursor, the event stream's, and the error's offset into the
+record's three slots. -/
+theorem walkIfThenBlock_denote {sub : Calls} (env : Env) (s : State)
+    {a : Nat} {A : BitVec 64} {l : Nat} {L : BitVec 64}
+    {xj rd cst ctp c e nd nv err : Nat} {E : BitVec 64}
+    (hxj : lookupName env "%xj.i" = some (.ptr xj))
+    (hrd : lookupName env "%root_done.i" = some (.ptr rd))
+    (hcst : lookupName env "%cst.i" = some (.ptr cst))
+    (hctp : lookupName env "%ctype.i" = some (.ptr ctp))
+    (hc : lookupName env "%c.i" = some (.ptr c))
+    (halen : lookupName env "%alen" = some (.ptr a))
+    (hnd : lookupName env "%ndst" = some (.ptr nd))
+    (hlen : lookupName env "%len" = some (.ptr l))
+    (hnev : lookupName env "%nev" = some (.ptr nv))
+    (he : lookupName env "%e" = some (.ptr e))
+    (herr : lookupName env "%err" = some (.ptr err))
+    (hA : readBytes s.mem a 8 = some (natToBytes A.toNat 8))
+    (hL : readBytes s.mem l 8 = some (natToBytes L.toNat 8))
+    (hE : readBytes s.mem (e + 8) 8 = some (natToBytes E.toNat 8))
+    (hsep : nd + 8 ≤ l ∨ l + 8 ≤ nd)
+    (hsepE1 : nd + 8 ≤ e + 8 ∨ e + 8 + 8 ≤ nd)
+    (hsepE2 : nv + 8 ≤ e + 8 ∨ e + 8 + 8 ≤ nv) :
+    denoteCode (stage2Calls sub) walkIfThenBlock.instrs (stateAt env s) =
+      some (stateAt
+        (cells [("%53", .int 64 E), ("%off", .ptr (e + 8)),
+          ("%52", .int 64 L), ("%51", .int 64 A)] env)
+        (walkSetMem s (writeBytes (writeBytes (writeBytes s.mem nd
+          (wordBytes 8 A.toNat)) nv (wordBytes 8 L.toNat)) err (wordBytes 8 E.toNat)))) := by
+  simp only [walkIfThenBlock]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 8) (obj := "%xj.i") (p := xj) (by simpa [lookupName] using hxj)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 4) (obj := "%root_done.i") (p := rd) (by simpa [lookupName] using hrd)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 520) (obj := "%cst.i") (p := cst) (by simpa [lookupName] using hcst)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 520) (obj := "%ctype.i") (p := ctp) (by simpa [lookupName] using hctp)]
+  rw [walkDenoteCode_lifetimeEnd (sub := sub) (env := env) (s := s)
+    (size := 1192) (obj := "%c.i") (p := c) (by simpa [lookupName] using hc)]
+  have hL' : readBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) l 8 =
+      some (natToBytes L.toNat 8) := by
+    rw [walkReadBytes_writeBytes_outside (start := nd) (addr := l) (n := 8)
+      (v := wordBytes 8 A.toNat) (by
+        rw [wordBytes, natToBytes_length]
+        rcases hsep with h | h
+        · right; exact h
+        · left; exact h)]
+    exact hL
+  have hE' : readBytes (writeBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) nv
+      (wordBytes 8 L.toNat)) (e + 8) 8 = some (natToBytes E.toNat 8) := by
+    rw [walkReadBytes_writeBytes_outside (start := nv) (addr := e + 8) (n := 8)
+      (v := wordBytes 8 L.toNat) (by
+        rw [wordBytes, natToBytes_length]
+        rcases hsepE2 with h | h
+        · right; exact h
+        · left; exact h)]
+    rw [walkReadBytes_writeBytes_outside (start := nd) (addr := e + 8) (n := 8)
+      (v := wordBytes 8 A.toNat) (by
+        rw [wordBytes, natToBytes_length]
+        rcases hsepE1 with h | h
+        · right; exact h
+        · left; exact h)]
+    exact hE
+  rw [denoteCode_load64 (calls := stage2Calls sub) (env := env) (s := s)
+    (d := "%51") (p := "%alen") (a := a) (v := A)
+    (by simpa [lookupName] using halen) hA]
+  rw [denoteCode_store64_ofNat (calls := stage2Calls sub)
+    (env := ("%51", .int 64 A) :: env) (s := s)
+    (v := "%51") (p := "%ndst") (a := nd) (j := A.toNat)
+    (by simp [lookupName]) A.isLt (by simpa [lookupName] using hnd)]
+  rw [denoteCode_load64 (calls := stage2Calls sub)
+    (env := ("%51", .int 64 A) :: env)
+    (s := { s with mem := writeBytes s.mem nd (wordBytes 8 A.toNat) })
+    (d := "%52") (p := "%len") (a := l) (v := L)
+    (by simpa [lookupName] using hlen) hL']
+  rw [denoteCode_store64_ofNat (calls := stage2Calls sub)
+    (env := ("%52", .int 64 L) :: ("%51", .int 64 A) :: env)
+    (s := { s with mem := writeBytes s.mem nd (wordBytes 8 A.toNat) })
+    (v := "%52") (p := "%nev") (a := nv) (j := L.toNat)
+    (by simp [lookupName]) L.isLt (by simpa [lookupName] using hnev)]
+  rw [denoteCode_gep8_lit_w (calls := stage2Calls sub)
+    (env := ("%52", .int 64 L) :: ("%51", .int 64 A) :: env)
+    (s := { s with mem := writeBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) nv (wordBytes 8 L.toNat) })
+    (d := "%off") (base := "%e") (a := e) (w := 64) (n := BitVec.ofNat 64 8)
+    (by simpa [lookupName] using he) (by decide)]
+  simp only [show (BitVec.signExtend 64 (BitVec.ofNat 64 8)).toNat = 8 from by decide]
+  rw [denoteCode_load64 (calls := stage2Calls sub)
+    (env := ("%off", .ptr (e + 8)) :: ("%52", .int 64 L) :: ("%51", .int 64 A) :: env)
+    (s := { s with mem := writeBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) nv (wordBytes 8 L.toNat) })
+    (d := "%53") (p := "%off") (a := e + 8) (v := E)
+    (by simp [lookupName]) hE']
+  rw [denoteCode_store64_ofNat (calls := stage2Calls sub)
+    (env := ("%53", .int 64 E) :: ("%off", .ptr (e + 8)) ::
+      ("%52", .int 64 L) :: ("%51", .int 64 A) :: env)
+    (s := { s with mem := writeBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) nv (wordBytes 8 L.toNat) })
+    (v := "%53") (p := "%err") (a := err) (j := E.toNat)
+    (by simp [lookupName]) E.isLt (by simpa [lookupName] using herr)]
+  dsimp only [walkSetMem]
+  rfl
+
+/-- **The refusal arm's step**: `if.then` jumps to the return. -/
+theorem walkIfThen_step {sub : Calls} (s : State) (hpc : s.pc = "if.then")
+    {s₁ : State}
+    (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s = some s₁)
+    (hpc₁ : s₁.pc = s.pc) :
+    step (stage2Calls sub) stage2Body s =
+      .jump { s₁ with pc := "if.end", pre := some s.pc } := by
+  have hfind : stage2Body.findBlock s.pc = some walkIfThenBlock := by
+    rw [hpc]; exact walkIfThenBlock_find
+  simp only [LeanLLVM.step, hfind, hden]
+  dsimp only [walkIfThenBlock, execTerm]
+  rw [hpc₁]
+
+/-! ## The refusal arm's copy
+
+`if.then` is the walk's other finalisation arm: the same five live-range ends as
+`s2_walk.exit`, then the arena's cursor, the event stream's and the error's offset
+copied into the record's three slots.  Its stores are the record's, outside the
+walk's frame (`err_not_in_walkFrame`), so it is the terminal step's second
+refusal arm and not a link: `walkIfThenBlock_denote` is the copy and
+`walkIfThen_step` the jump to `if.end`, which `WalkChain.finalisation` composes
+with the chain in the same way as the exit's. -/
+
 /-! ## The error offset's computed store
 
 `if.then25.i` stores the number's length plus its entry index at `%e + 8` and
@@ -2489,6 +2642,9 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen25I_find
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen25I_denote
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then25_i
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThenBlock_find
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThenBlock_denote
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen_step
 #print axioms LeanLLVM.Refinement.WalkScope.tok_z_sep
 #print axioms LeanLLVM.Refinement.WalkScope.tok_ev_sep
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_store32_imm
