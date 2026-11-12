@@ -4567,26 +4567,39 @@ four pieces, in order:
    only arithmetic the assembled chain owes, and it is the one place the 22-and-six
    readings of *The budget, counted* are spent.
 
-Two of the non-link rows cannot be links under the record's post as it stands,
-and the reason is the same in both cases: the walk's frame is a *prefix* of the record's
-(`walkFrame_reportFrame_coverage` maps `(dst, alen)` into `(dst, alen + 64)`, and
-`err_not_in_walkFrame` places the refusal slot *outside* it), so widening the
-walk's frame widens the record's.  `z_arena_reserve.exit` writes the decoded body
-at `G.dst + C.alen` before `if.else285.i` advances the cursor two blocks later, so
-the write is inside neither the source nor the target carry's arena entry; the
-staged window `(G.dst, ndst0 + n + 64)` covers it, and that window is not inside
-`(dst, alen + 64)`.  The exit stores to `%ndst`, `%nev` and `%err`, which the
-report's post proves *itself* from `err_not_in_walkFrame` and the wrapper's
-`frameSlots` — a walk frame that covered the three would make `errAccept`
-unprovable; that is why the exit is the terminal step and not a link, and why
-`if.then`'s refusal copy is the same.  Both are decisions about `stage2Boundary`, for the record
-that owns it; inside this module the honest statement is the obstruction.  The
-`if.then425.i` third is closed at the contract: `s2ScalarValuePost` now carries a
-second conjunct naming the record an emitting arm appended (`s2ScalarValueAppend`
-at an `EventRecord`), so the carry's trace can advance from the call's own post.
-What that link still needs is the log's buffer-pointer word at `%z` (the
-invariant binds the four fields from `%z + 8` on, not `%z`'s first field) and the
-carry advance itself, which is the same composition `if.then328.i` owes.
+Two of the non-link rows cannot be links under the record's post as it stands.
+`if.then`'s refusal copy stores the three report words (`%ndst`, `%nev`, `%err`)
+that the record's post proves *itself*, from `err_not_in_walkFrame` and the
+wrapper's `frameSlots`; a walk frame that covered them would make `errAccept`
+unprovable, so the copy is the terminal step.  The walk's frame is a *prefix* of
+the record's (`walkFrame_reportFrame_coverage` maps `(dst, alen)` into
+`(dst, alen + 64)`), so widening the walk's frame widens the record's, and
+`err_not_in_walkFrame` places the refusal slot outside it.  That is a decision
+about `stage2Boundary`, for the record that owns it.
+
+`z_arena_reserve.exit` is not that case: the block writes nothing of its own — one
+load (`%31 = load ptr, ptr %ar`), two `gep`s, the `s2_string_body` call and a jump
+— and the callee's writes are the cursor word, `%outn.i`'s word, a `len`-wide
+window at the arena offset, and the error record.  The window's start is the word
+`if.end256.i` loaded, which `logArena_le` bounds by the carried cursor, so a link
+that *reserves* the window in the carry — `alen + ext`, the extent appended to
+`spans` at the cursor — places the write inside `walkWide`'s arena entry; `spans_end`
+and the relaxed `log_alen` are what keep `alen_le_sum`, and the later
+`if.else285.i`, consistent with that reservation.  What the row still owes is the
+call's own composition: `s2_string_body`'s answer is one `stage2StringBody` result,
+so the frame and the presence the invariant asks for must be read off
+`s2StringBody_framed` and its footprint's containment in `walkWide`, and no lemma
+yet transports a helper's footprint frame into the walk's own list.  That is the
+same composition the `if.then425.i` and `if.then328.i` links owe, and it is why
+this row is still open.
+
+The two rows that had a *contract* gap instead are links: `s2ScalarValuePost`
+carries a second conjunct naming the record an emitting arm appended
+(`s2ScalarValueAppend` at an `EventRecord`), so `if.then425.i`'s carry advances
+from the call's own post, and `if.then328.i` writes its thirteen bytes and moves
+the log's `%len` word directly.  Both read the log's buffer-pointer word at `%z`,
+which the invariant binds as `C.stage`'s own object rather than as one of the four
+fields at `%z + 8` on.
 
 `JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the
 `add`'s literal at the instruction's own width) and `if.then281.i`, and states the
