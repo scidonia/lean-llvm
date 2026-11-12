@@ -986,32 +986,23 @@ theorem WalkLink.out_reserve_exit_i_i60 {calls : Calls} {m0 : Mem}
 
 `if.else285.i` loads the decoded length the callee left in `%outn.i`, adds it to
 the log's arena cursor (`%z.val36`, the word at `%z + 48`), and writes the sum
-back.  This is the one class-D shape that advances the arena carry: `alen` becomes
-`a + l` and the decoded extent is appended to `spans`.  The frame grows
-with the cursor (`walkWide_grow`), its new bytes present because the arena was
-staged whole; the four span facts the new extent owes are the caller's, as the
-brief records.  The record in flight is *closed* here: `if.end256.i` set it to the
-entry's position and extent when it made the reservation, and this block is where
-the window it reserved has been decoded, so the carry leaves with `pending` empty
-and the next entry's record enters at the next check.
+back.  The store is the block's whole effect: the reservation was already spent at
+`z_arena_reserve.exit` — the carry's `alen` advanced by the token's extent there,
+the extent appended to `spans` at the cursor it was reserved at, `pending` cleared
+— so this block leaves `alen` and `spans` where the reservation put them and moves
+only the log's recorded cursor word.  The word it writes is `a + l`, the decoded
+prefix inside the window, and `pending` is already empty, so the invariant's
+`log_alen` is the one clause the store moves: the new word is at most the carried
+cursor (`hale`), which is what the reservation's window and the callee's own
+length supply.
 
-The log's recorded cursor is re-read from the write itself, so `log_alen` needs no
-side condition beyond the store; the record's own `alen` is related to the loaded
-word by `hca` (`C.alen ≤ a`), which the body gets from `if.end256.i`'s load of
-`%alen` — a data-flow fact the invariant does not carry.
+The pre-reservation statement — which advanced `alen` to `a + l` and appended the
+extent here — is not the one a traversal after the exit composes: it required
+`C.alen ≤ a`, and the reservation makes the carried cursor exceed the log's word
+by the part of the window the decoder has not filled.  This is the restated link,
+the store alone. -/
 
-**This is the pre-reservation statement.**  The link below moves `alen` to `a + l`,
-which lets the cursor lag the write's own word; `WalkLink.z_arena_reserve_exit`
-instead reserves the token's whole extent at the cursor when the callee is called
-(`alen + ext`, the window appended to `spans` at the cursor, `pending` cleared
-there), so the two statements do not compose: after the reservation the block
-writes the word back *below* the carried cursor, and the restated link — the store
-alone, with `alen` and `spans` left where the reservation put them — is what a
-traversal after the exit composes.  That restatement is owed, not implied by the
-statement below, and `hca` is where the difference shows: the reservation makes
-`C.alen ≤ a` false in general. -/
-
-/-- `if.else285.i`: the arena cursor advances by the decoded length. -/
+/-- `if.else285.i`: the log's arena-cursor word receives the decoded prefix. -/
 def walkIf_else285_i : Block :=
   { name := "if.else285.i",
     instrs := [
@@ -1024,6 +1015,9 @@ theorem walkIf_else285_i_find :
     stage2Body.findBlock "if.else285.i" = some walkIf_else285_i := by
   simp [stage2Body, Function.findBlock, findBlockList, walkIf_else285_i]
 
+/-- **`if.else285.i` is a link at the reserved cursor.**  The carry is unchanged
+but for its block: the store moves the log's `%alen` word, and `hale` keeps that
+word at or below the cursor the reservation set. -/
 theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.else285.i")
@@ -1033,13 +1027,8 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     (hz36 : lookupName s.env "%z.val36" = some (.int 64 (BitVec.ofNat 64 a)))
     (halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)))
     (hal64 : a + l < 2 ^ 64)
-    (hca : C.alen ≤ a)
-    (hge : G.ndst0 ≤ a)
-    (hsum : a ≤ G.ndst0 + (C.spans.map (fun r => r.2)).sum)
-    (hspan : ∀ r ∈ C.spans, r.1 + r.2 ≤ a)
-    (hinside : a + l ≤ G.n) :
-    ∃ s', WalkLink calls G C s
-      { C with block := "if.end290.i", alen := a + l, spans := C.spans ++ [(a, l)], pending := none } s' := by
+    (hale : a + l ≤ C.alen) :
+    ∃ s', WalkLink calls G C s { C with block := "if.end290.i" } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let cs : List (String × Value) := [
     ("%add289.i", .int 64 (BitVec.ofNat 64 (a + l))),
@@ -1087,138 +1076,92 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hzev := walkLog_ev_sep hInv
-  -- the frame widened with the arena cursor the store advances
-  have hframeA : UnchangedOutside m0 s.mem (walkWide G
-      ({ C with
-        block := "if.end290.i", alen := a + l, spans := C.spans ++ [(a, l)] })) :=
-    UnchangedOutside.of_covered hInv.frame
-      (walkWide_grow (show C.alen ≤ a + l from by omega)
-        (show C.evlen ≤ C.evlen from Nat.le_refl _) rfl)
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
-  · refine
-      { pc_eq := rfl
-        blockIndex := ?_
-        k_le := hInv.k_le
-        events_le := hInv.events_le
-        evlen_eq := hInv.evlen_eq
-        evBytes := ?_
-        alen_le_sum := ?_
-        alen_ge := ?_
-        spans_order := ?_
-        spans_end := ?_
-        spans_inside := ?_
-        pending_at := ?_
-        pending_cursor := ?_
-        pending_len := ?_
-        eoff_le := hInv.eoff_le
-        inner_cap := hInv.inner_cap
-        depth_cap := hInv.depth_cap
-        depth_reg := ?_
-        ptrs := ?_
-        log_hash := ?_
-        log_len := ?_
-        log_cap := ?_
-        log_alen := ?_
-        log_acap := ?_
-        owned := walkStaged_write rfl hInv.owned
-        frame := ?_
-        blockLocal := ?_ }
-    · rw [henv']
-      dsimp only [out]
-      exact walkLookup_cells_ne s.env "%k.0.i249" hInv.blockIndex cs
-        (by intro c hc
-            simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
-            rcases hc with rfl | rfl <;> simp)
-    · rw [hmem']
-      dsimp only [m']
-      rw [walkReadBytes_ev_of_log_write (z := C.stage.z) (ev := G.ev) (evcap := G.evcap)
-        (nev0 := G.nev0) (N := _) (off := 48) (v := wordBytes 8 (a + l)) hzev
-        (by rw [hmlen]; decide) hN]
-      exact hInv.evBytes
-    · dsimp only
-      rw [List.map_append, List.sum_append]
-      simp only [List.map_singleton, List.sum_singleton]
-      omega
-    · dsimp only
-      omega
-    · dsimp only
-      rw [List.pairwise_append]
-      refine ⟨hInv.spans_order, ?_, ?_⟩
-      · exact List.Pairwise.cons (by intro b hb; exact absurd hb (by simp)) List.Pairwise.nil
-      · intro r hr s' hs'
-        simp only [List.mem_singleton] at hs'
-        subst hs'
-        exact hspan r hr
-    · dsimp only
-      intro r hr
-      rcases List.mem_append.mp hr with hr | hr
-      · exact hInv.spans_inside r hr
-      · simp only [List.mem_singleton] at hr
-        subst hr
-        exact hinside
-    · dsimp only
-      intro r hr
-      rcases List.mem_append.mp hr with hr | hr
-      · exact Nat.le_trans (hInv.spans_end r hr) (by omega)
-      · simp only [List.mem_singleton] at hr
-        subst hr
-        omega
-    · dsimp only
-      intro p off len hp
-      simp at hp
-    · dsimp only
-      intro p off len hp
-      simp at hp
-    · dsimp only
-      intro p off len hp
-      simp at hp
-    · rw [henv']
-      dsimp only [out]
-      exact walkLookup_cells_ne s.env "%sp.i.0248" hInv.depth_reg cs
-        (by intro c hc
-            simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
-            rcases hc with rfl | rfl <;> simp)
-    · rw [henv']
-      dsimp only [out]
-      exact hInv.ptrs.cells_of cs
-        (by intro c hc
-            simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
-            rcases hc with rfl | rfl <;>
-              exact ⟨by simp, by simp, by simp, by simp, by simp, by simp⟩)
-    · rw [hmem']
-      dsimp only [m']
-      rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
-        (off' := 32) (N := 4) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
-      exact hInv.log_hash
-    · rw [hmem']
-      dsimp only [m']
-      rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
-        (off' := 8) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
-      exact hInv.log_len
-    · rw [hmem']
-      dsimp only [m']
-      rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
-        (off' := 16) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
-      exact hInv.log_cap
-    · refine ⟨a + l, Nat.le_refl _, ?_⟩
-      rw [hmem']
-      dsimp only [m']
-      exact readBytes_writeBytes_same _ _
-    · rw [hmem']
-      dsimp only [m']
-      rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
-        (off' := 56) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
-      exact hInv.log_acap
-    · rw [hmem']
-      dsimp only [m']
-      refine walkFrame_write_inside hframeA ?_
-      intro k hk
-      rw [hmlen] at hk
-      exact walkWide_of_seven
-        ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
-          by simp only [stage2LogExtent]; omega⟩
-    · simp [WalkLocal]
-  · rfl
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine
+    { pc_eq := rfl
+      blockIndex := ?_
+      k_le := hInv.k_le
+      events_le := hInv.events_le
+      evlen_eq := hInv.evlen_eq
+      evBytes := ?_
+      alen_le_sum := hInv.alen_le_sum
+      alen_ge := hInv.alen_ge
+      spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
+      spans_inside := hInv.spans_inside
+      pending_at := hInv.pending_at
+      pending_cursor := hInv.pending_cursor
+      pending_len := hInv.pending_len
+      eoff_le := hInv.eoff_le
+      inner_cap := hInv.inner_cap
+      depth_cap := hInv.depth_cap
+      depth_reg := ?_
+      ptrs := ?_
+      log_hash := ?_
+      log_len := ?_
+      log_cap := ?_
+      log_alen := ?_
+      log_acap := ?_
+      owned := walkStaged_write rfl hInv.owned
+      frame := ?_
+      blockLocal := by simp [WalkLocal] }
+  · rw [henv']
+    dsimp only [out]
+    exact walkLookup_cells_ne s.env "%k.0.i249" hInv.blockIndex cs
+      (by intro c hc
+          simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+          rcases hc with rfl | rfl <;> simp)
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_ev_of_log_write (z := C.stage.z) (ev := G.ev) (evcap := G.evcap)
+      (nev0 := G.nev0) (N := _) (off := 48) (v := wordBytes 8 (a + l)) hzev
+      (by rw [hmlen]; decide) hN]
+    exact hInv.evBytes
+  · rw [henv']
+    dsimp only [out]
+    exact walkLookup_cells_ne s.env "%sp.i.0248" hInv.depth_reg cs
+      (by intro c hc
+          simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+          rcases hc with rfl | rfl <;> simp)
+  · rw [henv']
+    dsimp only [out]
+    exact hInv.ptrs.cells_of cs
+      (by intro c hc
+          simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+          rcases hc with rfl | rfl <;>
+            exact ⟨by simp, by simp, by simp, by simp, by simp, by simp⟩)
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
+      (off' := 32) (N := 4) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
+    exact hInv.log_hash
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
+      (off' := 8) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
+    exact hInv.log_len
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
+      (off' := 16) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
+    exact hInv.log_cap
+  · refine ⟨a + l, hale, ?_⟩
+    rw [hmem']
+    dsimp only [m']
+    exact readBytes_writeBytes_same _ _
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
+      (off' := 56) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
+    exact hInv.log_acap
+  · rw [hmem']
+    dsimp only [m']
+    refine walkFrame_write_inside hInv.frame ?_
+    intro k hk
+    rw [hmlen] at hk
+    exact walkWide_of_seven
+      ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
+        by simp only [stage2LogExtent]; omega⟩
 
 /-! ## The state-stack decrement
 

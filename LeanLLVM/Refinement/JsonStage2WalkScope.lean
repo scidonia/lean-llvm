@@ -4453,8 +4453,8 @@ extent.  The three clauses' **production** is `if.end256.i`: it is the first
 block that holds all three components — the entry's position (`%idxprom.i`), the
 arena offset reserved (`%alen`'s word, bounded by the carry's cursor through
 `logArena_le`) and the token's extent (`%sub260.i`) — so `WalkLink.if_end256_i`
-sets `pending` there, and `WalkLink.if_else285_i` clears it once the reserved
-window has been decoded.  The exclusion is therefore one a traversal supplies at
+sets `pending` there, and `WalkLink.z_arena_reserve_exit` clears it once the
+reserved window has been decoded.  The exclusion is therefore one a traversal supplies at
 the reservation rather than a clause every carry leaves empty.  The class of the
 finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
 
@@ -4497,7 +4497,7 @@ it.
 | 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
 | 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` — proved (`WalkLink.z_arena_reserve_exit`), the block's own run with it (`walkZArenaReserveExit_denote`) |
 | 71 | `if.then281.i` | H2 | `add`/`zext`/`or` — proved (`WalkLink.if_then281_i`) |
-| 72 | `if.else285.i` | D | the arena cursor and the span — proved (`WalkLink.if_else285_i`) |
+| 72 | `if.else285.i` | D | the log's arena-cursor word at the reserved cursor — proved (`WalkLink.if_else285_i`) |
 | 73 | `if.end290.i` | E | the two `phi`s and the thirteen-byte reserve — proved (`WalkLink.if_end290_i`); `%32` is `s2_string_body`'s write, the F datum the edge reads |
 | 74 | `if.end.i86` | trap | `@llvm.trap`, `unreachable` |
 | 75 | `if.then328.i` | F | the record, the cursor and the log's `len` — proved (`WalkLink.if_then328_i`) |
@@ -4588,13 +4588,12 @@ window at the arena offset, and the error record.  The window's start is the wor
 that *reserves* the window in the carry — `alen + ext`, the extent appended to
 `spans` at the cursor — places the write inside `walkWide`'s arena entry; `spans_end`
 and the relaxed `log_alen` are what keep `alen_le_sum`, and the later
-`if.else285.i`, consistent with that reservation.  What the row still owes is the
-call's own composition: `s2_string_body`'s answer is one `stage2StringBody` result,
-so the frame and the presence the invariant asks for must be read off
-`s2StringBody_framed` and its footprint's containment in `walkWide`, and no lemma
-yet transports a helper's footprint frame into the walk's own list.  That is the
-same composition the `if.then425.i` and `if.then328.i` links owe, and it is why
-this row is still open.
+`if.else285.i`, consistent with that reservation.  The call's own composition is
+the link's hypotheses: `s2_string_body`'s answer is one `stage2StringBody` result,
+so the frame and the presence are read off `s2StringBody_framed` at
+`s2StringBodyFoot`, and the caller presents the log's and the event stream's
+readbacks beside them — the same shape the `if.then425.i` and `if.then328.i`
+links take.
 
 The two rows that had a *contract* gap instead are links: `s2ScalarValuePost`
 carries a second conjunct naming the record an emitting arm appended
