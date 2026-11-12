@@ -4744,6 +4744,18 @@ theorem walkStack_valuePos {m : Mem} {ct cs sp rd : Nat} {TM SM : Nat → UInt8}
   simp
 
 
+/-- **`s2_value_pos`'s answer is the carried maps' function.**  At a positive
+depth the helper reads the two stacks' tops, so the word it answers with is
+determined by `tyMap` and `stMap` rather than by the caller's memory.  This is the
+premise a stack-reading link needs; it is derived, not assumed. -/
+theorem walkValuePos_answer {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) {sp rd : Nat} (hsp : sp ≠ 0) (hspw : sp ≤ C.wlen) :
+    stage2ValuePos s.mem sp rd C.stage.ctype C.stage.cst =
+      some (if (C.tyMap (sp - 1)).toNat = 1 then
+        (if (C.stMap (sp - 1)).toNat = 2 then 1 else 0)
+      else (if (C.stMap (sp - 1)).toNat = 0 ∨ (C.stMap (sp - 1)).toNat = 2 then 1 else 0)) :=
+  walkStack_valuePos hsp (h.tyBytes.restrict hspw) (h.stBytes.restrict hspw)
+
 /-- The head's cells, newest first. -/
 def ifEnd24HeadCells (sp ctype cst : Nat) (b : BitVec 8) : List (String × Value) :=
   [("%conv42.i", .int 8 (ifEnd24St b)),

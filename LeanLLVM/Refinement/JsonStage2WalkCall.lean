@@ -293,6 +293,34 @@ caller a presence fact at that object, which each instance reads off the model's
 own post (`stage2AfterValue`'s two arms are `writeBytes`, so a write's monotonicity
 gives it). -/
 
+/-- **A `s2_value_pos` call at the carried depth answers with the maps' word.**
+The link's `ret` premise is this theorem at its own call, so the two clauses the
+carry keeps are what the block's edge is read against. -/
+theorem walkValuePos_ret {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (h : WalkInv G C s) {r : CallOutcome} {rd : BitVec 32}
+    (hsp0 : C.sp ≠ 0)
+    (hpre : s2ValuePosPre [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r) :
+    r.ret = .int 32 (BitVec.ofNat 32
+      (if (C.tyMap (C.sp - 1)).toNat = 1 then
+        (if (C.stMap (C.sp - 1)).toNat = 2 then 1 else 0)
+      else (if (C.stMap (C.sp - 1)).toNat = 0 ∨ (C.stMap (C.sp - 1)).toNat = 2 then 1 else 0))) := by
+  obtain ⟨v, hv, hret, -, -⟩ := s2ValuePos_sound hpre hcall
+  have hsp : (BitVec.ofNat 32 C.sp).toNat = C.sp := walkAfterValue_sp h
+  rw [hsp] at hv
+  have hE := walkValuePos_answer (G := G) (C := C) (s := s) h
+    (sp := C.sp) (rd := rd.toNat) hsp0 h.sp_le_wlen
+  rw [hE] at hv
+  have hEq : (if (C.tyMap (C.sp - 1)).toNat = 1 then
+        (if (C.stMap (C.sp - 1)).toNat = 2 then 1 else 0)
+      else (if (C.stMap (C.sp - 1)).toNat = 0 ∨ (C.stMap (C.sp - 1)).toNat = 2 then 1 else 0))
+      = v := Option.some.inj hv
+  rw [hEq]
+  exact hret
+
 /-- **A call's link, `br` shape.**  The target carry differs from the source only
 in its block, so every clause that speaks about the carry's numbers is the
 source's. -/
