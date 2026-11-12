@@ -2,9 +2,12 @@
 The kernel domain's certificates: each admission clause is proved to exclude
 the reference parser outcome it is there to exclude.
 
-* the opener count bounds the parser's nesting: a `depthExceeded` refusal
-  consumes `maxDepth + 1` opener bytes, so `openersTotal ≤ maxDepth` keeps the
-  clause `pipelineSpecPre` asks for;
+* the measured nesting depth bounds the parser's: the clause reads the maximum
+  of the stage-1 depth counter's fold over the document's structural delimiter
+  sequence (`docDepth`), and the bridge below proves the reference parser
+  refuses for depth exactly when that maximum is past its bound — one direction
+  turns a `depthExceeded` into a witness of a genuinely deeper document, the
+  other turns the measured bound into the absence of that refusal;
 * the quote scan is the reference's own body scanner, so a policy refusal from
   the parser is one the scan reports;
 * token exhaustion is unreachable under the input bound: a table of tokens
@@ -28,85 +31,161 @@ namespace LeanLLVM.Refinement
 
 open LeanLLVM
 open LeanLLVM.JSON
+open LeanLLVM.Refinement.DepthCountRefine
 
-/-! ### The nesting bound -/
+/-! ### The depth clause's certificate
 
-/-- The prefix count the induction carries: opener bytes from `i` on. -/
-def openersIn (l : List UInt8) : Nat := l.countP openerB
+The clause's number is `docDepth`, the maximum of the depth counter's fold over
+the document's structural delimiter sequence (`LeanLLVM/JsonKernelDomain.lean`).
+The bridge to the parser is stated over the parser's own recursion: a refusal
+`depthExceeded` is reached only after the budget's worth of nested containers,
+and every container the recursion enters is a structural opener, so the measured
+maximum grows with the descent.  The two results are
 
-def openersFrom (bs : Bytes) (i : Nat) : Nat := openersIn (bs.data.toList.drop i)
+* `depth_measured_no_refusal`: a document inside the bound is not refused for
+  depth — the implication the clause needs, and the one
+  `admission_documentDomain` consumes;
+* `depth_refusal_deep`: a depth refusal witnesses a document past the bound — the
+  measurement is not an over-approximation, which is what makes the clause's
+  tightening (the deleted opener count) a narrowing with no case it kept out that
+  the parser would have accepted.
 
-theorem openersIn_append (a b : List UInt8) :
-    openersIn (a ++ b) = openersIn a + openersIn b := by
-  simp [openersIn, List.countP_append]
+The induction carries a second conjunct: a successful parse's span is no deeper
+than the position it started at.  The container branches need it between a value
+and the tail that follows it, and it is proved by the same recursion.
 
-theorem openersFrom_zero (bs : Bytes) : openersFrom bs 0 = openersTotal bs := by
-  simp [openersFrom, openersTotal, openersIn]
+The document-side pieces are: the scan's stop is past its start (the fixture's
+well-foundedness), a whitespace run and a number run and a literal and an object
+key contribute no depth, and an opener raises the measured maximum by one while
+a closer lowers it by at most one. -/
 
-theorem openersFrom_mono {bs : Bytes} {i j : Nat} (h : i ≤ j) :
-    openersFrom bs j ≤ openersFrom bs i := by
-  unfold openersFrom openersIn
-  have h1 : List.take (j - i) (bs.data.toList.drop i) ++
-      List.drop (j - i) (bs.data.toList.drop i) = bs.data.toList.drop i :=
-    List.take_append_drop _ _
-  rw [← h1, List.countP_append]
-  have h2 : List.drop (j - i) (bs.data.toList.drop i) = bs.data.toList.drop j := by
-    rw [List.drop_drop]
-    congr 1
+theorem one_le_depthAt_of_open {bs : Bytes} {i : Nat} {c : UInt8}
+    (h : bs[i]? = some c) (ho : IsOpenB c = true) : 1 ≤ depthAt bs i := by
+  rw [depthAt_open_step h ho]
+  have hthis : 0 ≤ depthAt bs (i + 1) := maxDepthTokens_nonneg _
+  omega
+
+theorem depthAt_close_le_succ {bs : Bytes} {n : Nat} {c : UInt8}
+    (h : bs[n]? = some c) (hc : IsCloseB c = true) :
+    depthAt bs (n + 1) ≤ depthAt bs n + 1 := by
+  have := depthAt_close_step (bs := bs) h hc
+  omega
+
+/-- The scan sees nothing across a window whose bytes are inert. -/
+theorem depthAt_window_inert {bs : Bytes} {i d : Nat} {w : Bytes}
+    (hw : (bs.drop i).take d = w) (hlen : w.length = d)
+    (hinert : ∀ (k : Nat) (b : UInt8), w[k]? = some b → b ≠ 0x22 ∧ delimTok b = false) :
+    depthAt bs (i + d) = depthAt bs i := by
+  have hr : structTokensFrom bs i = structTokensFrom bs (i + d) := by
+    refine structTokensFrom_run bs i d ?_
+    intro k b hk hkb hget
+    have hdrop : (bs.drop i)[k - i]? = some b := by
+      rw [ByteString.getElem?_drop, Nat.add_sub_of_le hk]
+      simpa using hget
+    have hwget : w[k - i]? = some b := by
+      rw [← hw, ByteString.getElem?_take, if_pos (by omega)]
+      exact hdrop
+    exact hinert (k - i) b hwget
+  rw [depthAt, depthAt, hr]
+
+/-- A number run contributes no depth: its bytes are constituents, none of them a
+string or a bracket. -/
+theorem depthAt_numRunFrom (bs : Bytes) (i : Nat) :
+    depthAt bs (i + (numRunFrom bs i).length) = depthAt bs i := by
+  have hw : (bs.drop i).take (numRunFrom bs i).length = numRunFrom bs i := by
+    rw [numRunFrom_eq]
+    exact (numRun_spec (bs.drop i)).1
+  refine depthAt_window_inert hw rfl ?_
+  intro k b hb
+  rw [numRunFrom_eq] at hb
+  exact constituent_inert (numRun_getElem (bs.drop i) k hb)
+
+/-- A literal's bytes are its list's, and none of them is a string or a bracket. -/
+theorem literal_inert {l : List UInt8} (h : ∀ x ∈ l, x ≠ 0x22 ∧ delimTok x = false) :
+    ∀ (k : Nat) (b : UInt8), (ByteString.literal l)[k]? = some b →
+      b ≠ 0x22 ∧ delimTok b = false := by
+  intro k b hb
+  simp only [ByteString.getElem?_literal] at hb
+  exact h _ (List.mem_of_getElem? hb)
+
+theorem depthAt_literal {bs : Bytes} {i : Nat} {l : List UInt8}
+    (hw : (bs.drop i).take l.length = ByteString.literal l)
+    (hinert : ∀ x ∈ l, x ≠ 0x22 ∧ delimTok x = false) :
+    depthAt bs (i + l.length) = depthAt bs i := by
+  refine depthAt_window_inert (w := ByteString.literal l) hw (by simp) ?_
+  exact literal_inert hinert
+
+/-- An object key's span: from the opening quote, through the scan's stop, past the
+whitespace and the colon, to the first byte of the member's value. -/
+theorem depthAt_key_chain {bs : Bytes} {j : Nat} {knext : Nat} {cs : List Nat}
+    {stop : { n : Nat // n ≤ bs.size }}
+    (hq : bs[j]? = some 0x22) (hs : scanCharsEnd bs (j + 1) 0 = .ok (cs, stop))
+    (hnext : knext = stop.val) (hcolon : bs[skipFrom bs knext]? = some 0x3A) :
+    depthAt bs j = depthAt bs (skipFrom bs (skipFrom bs knext + 1)) := by
+  subst hnext
+  rw [depthAt_quote_step hq hs, depthAt_skipFrom bs stop.val,
+    depthAt_inert_step hcolon (by decide) (by decide),
+    depthAt_skipFrom bs (skipFrom bs stop.val + 1)]
+
+/-- A key's scan witnesses: the byte at the key's index is a quote and the scan
+stops where the key ends. -/
+theorem key_scan {bs : Bytes} {j : Nat} {k : Key j} (h : parseKey bs j = .done k) :
+    ∃ (cs : List Nat) (stop : { n : Nat // n ≤ bs.size }),
+      bs[j]? = some 0x22 ∧ scanCharsEnd bs (j + 1) 0 = .ok (cs, stop) ∧
+        k.next = stop.val := by
+  rw [parseKey.eq_def] at h
+  split at h
+  · rename_i heq
+    split at h
+    · cases h
+    · rename_i hs
+      simp only [Step.done.injEq] at h
+      exact ⟨_, _, heq, hs, by rw [← h]⟩
+  · cases h
+
+
+theorem depthAt_literal_done {bs : Bytes} {i : Nat} {lit : Bytes} {tag : LitTag}
+    {hlit : 0 < lit.length} {pv : Parsed i}
+    (h : parseLiteral bs i lit tag hlit = .done pv)
+    (hinert : ∀ (k : Nat) (b : UInt8), lit[k]? = some b → b ≠ 0x22 ∧ delimTok b = false) :
+    depthAt bs pv.next ≤ depthAt bs i := by
+  rw [parseLiteral.eq_def] at h
+  split at h
+  · rename_i hl
+    injection h with h'
+    subst pv
+    dsimp only
+    have hw : (bs.drop i).take lit.length = lit := hasPrefixB_iff.mp hl
+    rw [depthAt_window_inert hw rfl hinert]
     omega
-  rw [h2]
-  omega
+  · cases h
 
-theorem getElem?_data {bs : Bytes} {i : Nat} {b : UInt8} (h : bs[i]? = some b) :
-    bs.data.toList[i]? = some b := by
-  rw [← ByteString.toList_eq_data_toList]
-  exact (ByteString.toList_getElem?_eq_getElem? bs i).trans h
+theorem le_of_eq_aux {a b : Int} (h : a = b) : a ≤ b := by omega
 
-theorem getElem_data {bs : Bytes} {i : Nat} {b : UInt8} (h : bs[i]? = some b) :
-    ∃ (hl : i < bs.data.toList.length), bs.data.toList[i] = b := by
-  obtain ⟨hl, hget⟩ := List.getElem?_eq_some_iff.mp (getElem?_data h)
-  exact ⟨hl, hget⟩
+theorem depthAt_number_done {bs : Bytes} {i : Nat} {pv : Parsed i}
+    (h : parseNumber bs i = .done pv) : depthAt bs pv.next ≤ depthAt bs i := by
+  rw [parseNumber.eq_def] at h
+  dsimp only at h
+  split at h
+  · injection h with h'
+    subst pv
+    dsimp only
+    exact le_of_eq_aux (depthAt_numRunFrom bs i)
+  · cases h
 
-theorem one_le_openersFrom_of_get? {bs : Bytes} {i : Nat} {b : UInt8}
-    (h : bs[i]? = some b) (hb : openerB b = true) : 1 ≤ openersFrom bs i := by
-  unfold openersFrom openersIn
-  obtain ⟨hl, hget⟩ := getElem_data h
-  rw [List.drop_eq_getElem_cons hl, hget, List.countP_cons]
-  have h1 : (if openerB b = true then 1 else 0) = 1 := by rw [hb]; rfl
-  rw [h1]; omega
-
-theorem openersFrom_succ_of {bs : Bytes} {i : Nat} {b : UInt8}
-    (h : bs[i]? = some b) (hb : openerB b = true) :
-    openersFrom bs i = 1 + openersFrom bs (i + 1) := by
-  unfold openersFrom openersIn
-  obtain ⟨hl, hget⟩ := getElem_data h
-  rw [List.drop_eq_getElem_cons hl, hget, List.countP_cons]
-  have h1 : (if openerB b = true then 1 else 0) = 1 := by rw [hb]; rfl
-  rw [h1]; omega
-
-theorem openersFrom_ge_shift {bs : Bytes} {i j : Nat} {b : UInt8}
-    (h : bs[i]? = some b) (hb : openerB b = true) (hij : i < j) :
-    1 + openersFrom bs j ≤ openersFrom bs i := by
-  rw [openersFrom_succ_of h hb]
-  have := openersFrom_mono (bs := bs) (show i + 1 ≤ j from hij)
-  omega
-
-theorem parseKey_ne_depth (bs : Bytes) (i : Nat) :
-    parseKey bs i ≠ .fail .depthExceeded := by
+theorem parseKey_ne_depth (bs : Bytes) (i : Nat) : parseKey bs i ≠ .fail .depthExceeded := by
   intro h
   rw [parseKey.eq_def] at h
   repeat (split at h)
   all_goals simp_all
 
-theorem parseString_ne_depth (bs : Bytes) (i : Nat) :
-    parseString bs i ≠ .fail .depthExceeded := by
+theorem parseString_ne_depth (bs : Bytes) (i : Nat) : parseString bs i ≠ .fail .depthExceeded := by
   intro h
   rw [parseString.eq_def] at h
   repeat (split at h)
   all_goals simp_all [parseKey_ne_depth]
 
-theorem parseNumber_ne_depth (bs : Bytes) (i : Nat) :
-    parseNumber bs i ≠ .fail .depthExceeded := by
+theorem parseNumber_ne_depth (bs : Bytes) (i : Nat) : parseNumber bs i ≠ .fail .depthExceeded := by
   intro h
   rw [parseNumber.eq_def] at h
   dsimp only at h
@@ -120,235 +199,543 @@ theorem parseLiteral_ne_depth (bs : Bytes) (i : Nat) (lit : Bytes) (tag : LitTag
   repeat (split at h)
   all_goals simp_all
 
-set_option maxHeartbeats 1000000 in
-theorem depth_openers_from (bs : Bytes) :
-    (∀ i depth, parseValue bs i depth = .fail .depthExceeded →
-      depth + 1 ≤ openersFrom bs i) ∧
-    (∀ j depth, parseMembersTail bs j depth = .fail .depthExceeded →
-      depth + 1 ≤ openersFrom bs j) ∧
-    (∀ j depth, parseElemsTail bs j depth = .fail .depthExceeded →
-      depth + 1 ≤ openersFrom bs j) := by
+set_option maxHeartbeats 4000000 in
+theorem depth_bridge_core (bs : Bytes) :
+    (∀ i depth, (parseValue bs i depth = .fail .depthExceeded →
+        (depth : Int) + 1 ≤ depthAt bs i) ∧
+      (∀ pv : Parsed i, parseValue bs i depth = .done pv → depthAt bs pv.next ≤ depthAt bs i)) ∧
+    (∀ i depth, (parseMembersTail bs i depth = .fail .depthExceeded →
+        (depth : Int) + 1 ≤ depthAt bs i) ∧
+      (∀ t : ObjectTail i, parseMembersTail bs i depth = .done t →
+        depthAt bs t.next ≤ depthAt bs i)) ∧
+    (∀ i depth, (parseElemsTail bs i depth = .fail .depthExceeded →
+        (depth : Int) + 1 ≤ depthAt bs i) ∧
+      (∀ t : ArrayTail i, parseElemsTail bs i depth = .done t →
+        depthAt bs t.next ≤ depthAt bs i)) := by
   refine parseValue.mutual_induct bs _ _ _
     ?c1 ?c2 ?c3 ?c4 ?c5 ?c6 ?c7 ?c8 ?c9 ?c10 ?c11 ?c12 ?c13 ?c14 ?c15 ?c16 ?c17 ?c18
     ?c19 ?c20 ?c21 ?c22 ?c23 ?c24 ?c25 ?c26 ?c27 ?c28 ?c29 ?c30 ?c31
   case c1 =>
-    intro i depth hnone h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hnone
+    exact ⟨by intro h; rw [parseValue.eq_def] at h; split at h <;> simp_all,
+      by intro pv hp; rw [parseValue.eq_def] at hp; split at hp <;> simp_all⟩
   case c2 =>
-    intro i hb h
-    exact one_le_openersFrom_of_get? hb (by decide)
+    intro i hb
+    exact ⟨by intro h; exact one_le_depthAt_of_open hb (by decide),
+      by intro pv hp; rw [parseValue.eq_def] at hp; split at hp <;> simp_all⟩
   case c3 =>
-    intro i depth hb hd hi first hfirst hclose h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hclose
+    have hclose' : bs[first]? = some 0x5D := by simpa using hclose
+    let p : Parsed i :=
+      { tokens := [Token.punct .openBracket ⟨i, i + 1⟩,
+                   Token.punct .closeBracket ⟨first, first + 1⟩],
+        value := .array [], next := first + 1, consumed := by omega }
+    have hres : parseValue bs i depth = .done p := by
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x5B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [p, first, hbi])
+    refine ⟨?_, ?_⟩
+    · intro h; rw [hres] at h; cases h
+    · intro pv hp
+      rw [hres] at hp
+      injection hp with hpeq
+      subst pv
+      dsimp only [p]
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      have hstep : depthAt bs (first + 1) ≤ depthAt bs first + 1 :=
+        depthAt_close_le_succ hclose' (by decide)
+      omega
   case c4 =>
-    intro i depth hb hd hi first hfirst hnc e hcall ihm h
+    intro i depth hb hd hi first hfirst hnc e hcall ihm
     have hres : parseValue bs i depth = .fail e := by
-      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihm hcall
-    have hge := openersFrom_ge_shift hb (by decide : openerB 0x5B = true) hfirst
-    omega
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x5B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [first, hd, hnc, hcall])
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hchild := ihm.1 hcall
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      omega
+    · intro pv hp; rw [hres] at hp; cases hp
   case c5 =>
-    intro i depth hb hd hi first hfirst hnc pv hcall hpnext e htail ihm ihtm h
+    intro i depth hb hd hi first hfirst hnc pv hcall hpnext e htail ihm ihtm
     have hres : parseValue bs i depth = .fail e := by
-      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihtm htail
-    have hge := openersFrom_ge_shift hb (by decide : openerB 0x5B = true) (by omega)
-    omega
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x5B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [first, hd, hnc, hcall, htail])
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hval := ihm.2 pv hcall
+      have htail' := ihtm.1 htail
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      omega
+    · intro pv' hp; rw [hres] at hp; cases hp
   case c6 =>
-    intro i depth hb hd hi first hfirst hnc pv hcall hpnext t htail hclose ihm ihtm h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hnc pv hcall hpnext t htail hclose ihm ihtm
+    have hclose' : bs[t.next]? = some 0x5D := by simpa using hclose
+    let p : Parsed i :=
+      { tokens := Token.punct .openBracket ⟨i, i + 1⟩ ::
+          (pv.tokens ++ (t.tokens ++ [Token.punct .closeBracket ⟨t.next, t.next + 1⟩])),
+        value := .array (pv.value :: t.values), next := t.next + 1,
+        consumed := by have := t.moved; omega }
+    have hres : parseValue bs i depth = .done p := by
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x5B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [p, first, hd, hnc, hcall, htail, hclose])
+    refine ⟨?_, ?_⟩
+    · intro h; rw [hres] at h; cases h
+    · intro pv' hp
+      rw [hres] at hp
+      injection hp with hpeq
+      subst pv'
+      dsimp only [p]
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      have hval := ihm.2 pv hcall
+      have htail' := ihtm.2 t htail
+      have hstep : depthAt bs (t.next + 1) ≤ depthAt bs t.next + 1 :=
+        depthAt_close_le_succ hclose' (by decide)
+      omega
   case c7 =>
-    intro i depth hb hd hi first hfirst hnc pv hcall hpnext t htail hnclose ihm ihtm h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hnc pv hcall hpnext t htail hnclose ihm ihtm
+    exact ⟨by intro h; rw [parseValue.eq_def] at h; split at h <;>
+        simp_all [first, hd, hnc, hcall, htail, hnclose],
+      by intro pv' hp; rw [parseValue.eq_def] at hp; split at hp <;>
+        simp_all [first, hd, hnc, hcall, htail, hnclose]⟩
   case c8 =>
-    intro i hb h
-    exact one_le_openersFrom_of_get? hb (by decide)
+    intro i hb
+    exact ⟨by intro h; exact one_le_depthAt_of_open hb (by decide),
+      by intro pv hp; rw [parseValue.eq_def] at hp; split at hp <;> simp_all⟩
   case c9 =>
-    intro i depth hb hd hi first hfirst hclose h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hclose
+    have hclose' : bs[first]? = some 0x7D := by simpa using hclose
+    let p : Parsed i :=
+      { tokens := [Token.punct .openBrace ⟨i, i + 1⟩,
+                   Token.punct .closeBrace ⟨first, first + 1⟩],
+        value := .object [], next := first + 1, consumed := by omega }
+    have hres : parseValue bs i depth = .done p := by
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x7B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [p, first, hbi])
+    refine ⟨?_, ?_⟩
+    · intro h; rw [hres] at h; cases h
+    · intro pv hp
+      rw [hres] at hp
+      injection hp with hpeq
+      subst pv
+      dsimp only [p]
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      have hstep : depthAt bs (first + 1) ≤ depthAt bs first + 1 :=
+        depthAt_close_le_succ hclose' (by decide)
+      omega
   case c10 =>
-    intro i depth hb hd hi first hfirst hnc e hkey h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hnc e hkey
+    exact ⟨by intro h; rw [parseValue.eq_def] at h; split at h <;>
+        simp_all [first, hd, hnc, hkey, parseKey_ne_depth],
+      by intro pv hp; rw [parseValue.eq_def] at hp; split at hp <;>
+        simp_all [first, hd, hnc, hkey, parseKey_ne_depth]⟩
   case c11 =>
-    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon
+    exact ⟨by intro h; rw [parseValue.eq_def] at h; split at h <;>
+        simp_all [first, hd, hnc, hkey, hncColon, parseKey_ne_depth],
+      by intro pv hp; rw [parseValue.eq_def] at hp; split at hp <;>
+        simp_all [first, hd, hnc, hkey, hncColon, parseKey_ne_depth]⟩
   case c12 =>
-    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 e hcall ihm h
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 e hcall ihm
     have hres : parseValue bs i depth = .fail e := by
-      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihm hcall
-    have hge := openersFrom_ge_shift hb (by decide : openerB 0x7B = true) hpos2
-    omega
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x7B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [first, hd, hnc, hkey, hncColon, hcall])
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hchild := ihm.1 hcall
+      obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hkey
+      have hcolon : bs[skipFrom bs k.next]? = some 0x3A := by simpa using hncColon
+      have hkeychain := depthAt_key_chain hq hs hnext hcolon
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      omega
+    · intro pv hp; rw [hres] at hp; cases hp
   case c13 =>
-    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext e htail ihm ihtm h
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext e htail ihm ihtm
     have hres : parseValue bs i depth = .fail e := by
-      rw [parseValue.eq_def]; repeat (split); all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihtm htail
-    have hge := openersFrom_ge_shift hb (by decide : openerB 0x7B = true) (by omega)
-    omega
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x7B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [first, hd, hnc, hkey, hncColon, hcall, htail])
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hval := ihm.2 pv hcall
+      have htail' := ihtm.1 htail
+      obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hkey
+      have hcolon : bs[skipFrom bs k.next]? = some 0x3A := by simpa using hncColon
+      have hkeychain := depthAt_key_chain hq hs hnext hcolon
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      omega
+    · intro pv' hp; rw [hres] at hp; cases hp
   case c14 =>
-    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail hclose ihm ihtm h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail hclose ihm ihtm
+    have hclose' : bs[t.next]? = some 0x7D := by simpa using hclose
+    let p : Parsed i :=
+      { tokens := Token.punct .openBrace ⟨i, i + 1⟩ :: k.token ::
+          ([Token.punct .colon ⟨skipFrom bs k.next, skipFrom bs k.next + 1⟩] ++
+            (pv.tokens ++ (t.tokens ++ [Token.punct .closeBrace ⟨t.next, t.next + 1⟩]))),
+        value := .object ((k.name, pv.value) :: t.members), next := t.next + 1,
+        consumed := by have := t.moved; omega }
+    have hres : parseValue bs i depth = .done p := by
+      cases hbi : bs[i]? with
+      | none => simp_all
+      | some b =>
+          have hb_eq : b = 0x7B := by
+            have h := hb; rw [hbi] at h; exact Option.some.inj h
+          subst hb_eq
+          rw [parseValue.eq_def]
+          split
+          all_goals
+            first
+            | (exfalso; rw [ByteString.getElem?_eq_getElem hi] at *; simp_all; done)
+            | (simp_all [p, first, hd, hnc, hkey, hncColon, hcall, htail, hclose])
+    refine ⟨?_, ?_⟩
+    · intro h; rw [hres] at h; cases h
+    · intro pv' hp
+      rw [hres] at hp
+      injection hp with hpeq
+      subst pv'
+      dsimp only [p]
+      have hopen : depthAt bs i = depthAt bs first + 1 := by
+        rw [depthAt_open_step hb (by decide), depthAt_skipFrom bs (i + 1)]
+      obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hkey
+      have hcolon : bs[skipFrom bs k.next]? = some 0x3A := by simpa using hncColon
+      have hkeychain := depthAt_key_chain hq hs hnext hcolon
+      have hval := ihm.2 pv hcall
+      have htail' := ihtm.2 t htail
+      have hstep : depthAt bs (t.next + 1) ≤ depthAt bs t.next + 1 :=
+        depthAt_close_le_succ hclose' (by decide)
+      omega
   case c15 =>
-    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail hnclose ihm ihtm h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [first, parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb hd hi first hfirst hnc k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail hnclose ihm ihtm
+    exact ⟨by intro h; rw [parseValue.eq_def] at h; split at h <;>
+        simp_all [first, hd, hnc, hkey, hncColon, hcall, htail, hnclose],
+      by intro pv' hp; rw [parseValue.eq_def] at hp; split at hp <;>
+        simp_all [first, hd, hnc, hkey, hncColon, hcall, htail, hnclose]⟩
   case c16 =>
-    intro i depth hb h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb
+    have hres : parseValue bs i depth = parseString bs i := by
+      rw [parseValue.eq_def]; split <;> simp_all
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      simp only [parseString] at h
+      split at h
+      · rename_i x heq
+        injection h with hx
+        subst hx
+        exact absurd heq (parseKey_ne_depth bs i)
+      · rename_i x k hk
+        cases h
+    · intro pv hp
+      rw [hres] at hp
+      simp only [parseString] at hp
+      split at hp
+      · cases hp
+      · rename_i x k hk
+        injection hp with hp'
+        subst pv
+        show depthAt bs k.next ≤ depthAt bs i
+        obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hk
+        rw [hnext, depthAt_quote_step hq hs]
+        omega
   case c17 =>
-    intro i depth hb h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb
+    have hres : parseValue bs i depth =
+        parseLiteral bs i (ByteString.literal [116, 114, 117, 101]) .true (by decide) := by
+      rw [parseValue.eq_def]; split <;> simp_all
+    refine ⟨by intro h; rw [hres] at h; exact absurd h (parseLiteral_ne_depth bs i _ _ _),
+      by intro pv hp; rw [hres] at hp
+         exact depthAt_literal_done hp (literal_inert (by decide))⟩
   case c18 =>
-    intro i depth hb h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb
+    have hres : parseValue bs i depth =
+        parseLiteral bs i (ByteString.literal [102, 97, 108, 115, 101]) .false (by decide) := by
+      rw [parseValue.eq_def]; split <;> simp_all
+    refine ⟨by intro h; rw [hres] at h; exact absurd h (parseLiteral_ne_depth bs i _ _ _),
+      by intro pv hp; rw [hres] at hp
+         exact depthAt_literal_done hp (literal_inert (by decide))⟩
   case c19 =>
-    intro i depth hb h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hb
+    have hres : parseValue bs i depth =
+        parseLiteral bs i (ByteString.literal [110, 117, 108, 108]) .null (by decide) := by
+      rw [parseValue.eq_def]; split <;> simp_all
+    refine ⟨by intro h; rw [hres] at h; exact absurd h (parseLiteral_ne_depth bs i _ _ _),
+      by intro pv hp; rw [hres] at hp
+         exact depthAt_literal_done hp (literal_inert (by decide))⟩
   case c20 =>
-    intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd
+    have hres : parseValue bs i depth = parseNumber bs i := by
+      rw [parseValue.eq_def]; split <;> simp_all
+    refine ⟨by intro h; rw [hres] at h; exact absurd h (parseNumber_ne_depth bs i),
+      by intro pv hp; rw [hres] at hp; exact depthAt_number_done hp⟩
   case c21 =>
-    intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd h
-    rw [parseValue.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth b hb91 hb123 hb34 hb116 hb102 hb110 hb hd
+    refine ⟨by intro h; rw [parseValue.eq_def] at h; split at h <;> simp_all [hd],
+      by intro pv hp; rw [parseValue.eq_def] at hp; split at hp <;> simp_all [hd]⟩
   case c22 =>
-    intro i depth hcomma hclt hilen hpos e hkey h
-    rw [parseMembersTail.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hcomma hclt hilen hpos e hkey
+    exact ⟨by intro h; rw [parseMembersTail.eq_def] at h; split at h <;>
+        simp_all [parseKey_ne_depth],
+      by intro t ht; rw [parseMembersTail.eq_def] at ht; split at ht <;>
+        simp_all [parseKey_ne_depth]⟩
   case c23 =>
-    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon h
-    rw [parseMembersTail.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon
+    exact ⟨by intro h; rw [parseMembersTail.eq_def] at h; split at h <;>
+        simp_all [parseKey_ne_depth, hncColon],
+      by intro t ht; rw [parseMembersTail.eq_def] at ht; split at ht <;>
+        simp_all [parseKey_ne_depth, hncColon]⟩
   case c24 =>
-    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 e hcall ihm h
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 e hcall ihm
     have hres : parseMembersTail bs i depth = .fail e := by
-      rw [parseMembersTail.eq_def]; repeat (split); all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihm hcall
-    have hle : openersFrom bs (skipFrom bs (skipFrom bs k.next + 1)) ≤ openersFrom bs i :=
-      openersFrom_mono (by omega)
-    omega
+      rw [parseMembersTail.eq_def]; repeat (split); all_goals
+        simp_all [parseKey_ne_depth, hncColon, hcall]
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hchild := ihm.1 hcall
+      obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hkey
+      have hkc := depthAt_key_chain (bs := bs) hq hs hnext (by simpa using hncColon)
+      have hspan : depthAt bs (skipFrom bs (skipFrom bs i + 1)) ≤ depthAt bs i := by
+        rw [← depthAt_skipFrom bs (skipFrom bs i + 1),
+            ← depthAt_inert_step hcomma (by decide) (by decide),
+            ← depthAt_skipFrom bs i]
+        omega
+      omega
+    · intro t ht; rw [hres] at ht; cases ht
   case c25 =>
-    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 pv hcall hpnext e htail ihm ihtm h
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 pv hcall hpnext e htail ihm ihtm
     have hres : parseMembersTail bs i depth = .fail e := by
-      rw [parseMembersTail.eq_def]; repeat (split); all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihtm htail
-    have hle : openersFrom bs pv.next ≤ openersFrom bs i := openersFrom_mono (by omega)
-    omega
+      rw [parseMembersTail.eq_def]; repeat (split); all_goals
+        simp_all [parseKey_ne_depth, hncColon, hcall, htail]
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hval := ihm.2 pv hcall
+      have htail' := ihtm.1 htail
+      obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hkey
+      have hkc := depthAt_key_chain (bs := bs) hq hs hnext (by simpa using hncColon)
+      have hspan : depthAt bs (skipFrom bs (skipFrom bs i + 1)) ≤ depthAt bs i := by
+        rw [← depthAt_skipFrom bs (skipFrom bs i + 1),
+            ← depthAt_inert_step hcomma (by decide) (by decide),
+            ← depthAt_skipFrom bs i]
+        omega
+      omega
+    · intro t ht; rw [hres] at ht; cases ht
   case c26 =>
-    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail _ ihtm h
-    have hres : ∃ t', parseMembersTail bs i depth = .done t' := by
-      rw [parseMembersTail.eq_def]
-      split
+    intro i depth hcomma hclt hilen hpos k hkey hknext hkskip hncColon hpos2 pv hcall hpnext t htail ihm ihtm
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [parseMembersTail.eq_def] at h
+      split at h <;> simp_all [parseKey_ne_depth, hncColon, hcall, htail]
+    · intro t' ht
+      rw [parseMembersTail.eq_def] at ht
+      split at ht
       · rename_i hc
-        simp only [hkey]
-        simp [hncColon]
-        simp only [hcall, htail]
-        exact ⟨_, rfl⟩
-      · rename_i hother
-        exact absurd hcomma hother
-    obtain ⟨t', ht'⟩ := hres
-    rw [ht'] at h
-    cases h
+        simp only [hkey] at ht
+        simp only [hncColon] at ht
+        simp only [hcall, htail] at ht
+        injection ht with hpeq
+        subst t'
+        dsimp only
+        have hval := ihm.2 pv hcall
+        have htail'' := ihtm.2 t htail
+        obtain ⟨cs, stop, hq, hs, hnext⟩ := key_scan hkey
+        have hkc := depthAt_key_chain (bs := bs) hq hs hnext (by simpa using hncColon)
+        have hspan : depthAt bs (skipFrom bs (skipFrom bs i + 1)) ≤ depthAt bs i := by
+          rw [← depthAt_skipFrom bs (skipFrom bs i + 1),
+              ← depthAt_inert_step hcomma (by decide) (by decide),
+              ← depthAt_skipFrom bs i]
+          omega
+        omega
+      · injection ht with hpeq
+        subst t'
+        dsimp only
+        rw [← depthAt_skipFrom bs i]
+        omega
   case c27 =>
-    intro i depth hnc h
-    rw [parseMembersTail.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hnc
+    refine ⟨by intro h; rw [parseMembersTail.eq_def] at h; split at h <;> simp_all, ?_⟩
+    intro t ht
+    rw [parseMembersTail.eq_def] at ht
+    split at ht
+    · simp_all
+    · injection ht with hpeq
+      subst t
+      dsimp only
+      rw [← depthAt_skipFrom bs i]
+      omega
   case c28 =>
-    intro i depth hcomma hclt hilen hpos e hcall ihm h
+    intro i depth hcomma hclt hilen hpos e hcall ihm
     have hres : parseElemsTail bs i depth = .fail e := by
-      rw [parseElemsTail.eq_def]; repeat (split); all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihm hcall
-    have hle : openersFrom bs (skipFrom bs (skipFrom bs i + 1)) ≤ openersFrom bs i :=
-      openersFrom_mono (by omega)
-    omega
+      rw [parseElemsTail.eq_def]; repeat (split); all_goals simp_all [hcall]
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hchild := ihm.1 hcall
+      have hspan : depthAt bs (skipFrom bs (skipFrom bs i + 1)) ≤ depthAt bs i := by
+        rw [← depthAt_skipFrom bs (skipFrom bs i + 1),
+            ← depthAt_inert_step hcomma (by decide) (by decide),
+            ← depthAt_skipFrom bs i]
+        omega
+      omega
+    · intro t ht; rw [hres] at ht; cases ht
   case c29 =>
-    intro i depth hcomma hclt hilen hpos pv hcall hpnext e htail ihm ihtm h
+    intro i depth hcomma hclt hilen hpos pv hcall hpnext e htail ihm ihtm
     have hres : parseElemsTail bs i depth = .fail e := by
-      rw [parseElemsTail.eq_def]; repeat (split); all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
-    rw [hres] at h
-    have he : e = .depthExceeded := by injection h
-    subst he
-    have := ihtm htail
-    have hle : openersFrom bs pv.next ≤ openersFrom bs i := openersFrom_mono (by omega)
-    omega
+      rw [parseElemsTail.eq_def]; repeat (split); all_goals simp_all [hcall, htail]
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [hres] at h
+      have he : e = .depthExceeded := by injection h
+      subst he
+      have hval := ihm.2 pv hcall
+      have htail' := ihtm.1 htail
+      have hspan : depthAt bs (skipFrom bs (skipFrom bs i + 1)) ≤ depthAt bs i := by
+        rw [← depthAt_skipFrom bs (skipFrom bs i + 1),
+            ← depthAt_inert_step hcomma (by decide) (by decide),
+            ← depthAt_skipFrom bs i]
+        omega
+      omega
+    · intro t ht; rw [hres] at ht; cases ht
   case c30 =>
-    intro i depth hcomma hclt hilen hpos pv hcall hpnext t htail _ ihtm h
-    have hres : ∃ t', parseElemsTail bs i depth = .done t' := by
-      rw [parseElemsTail.eq_def]
-      split
+    intro i depth hcomma hclt hilen hpos pv hcall hpnext t htail ihm ihtm
+    refine ⟨?_, ?_⟩
+    · intro h
+      rw [parseElemsTail.eq_def] at h
+      split at h <;> simp_all [hcall, htail]
+    · intro t' ht
+      rw [parseElemsTail.eq_def] at ht
+      split at ht
       · rename_i hc
-        simp only [hcall, htail]
-        exact ⟨_, rfl⟩
-      · rename_i hother
-        exact absurd hcomma hother
-    obtain ⟨t', ht'⟩ := hres
-    rw [ht'] at h
-    cases h
+        simp only [hcall, htail] at ht
+        injection ht with hpeq
+        subst t'
+        dsimp only
+        have hval := ihm.2 pv hcall
+        have htail'' := ihtm.2 t htail
+        have hspan : depthAt bs (skipFrom bs (skipFrom bs i + 1)) ≤ depthAt bs i := by
+          rw [← depthAt_skipFrom bs (skipFrom bs i + 1),
+              ← depthAt_inert_step hcomma (by decide) (by decide),
+              ← depthAt_skipFrom bs i]
+          omega
+        omega
+      · injection ht with hpeq
+        subst t'
+        dsimp only
+        rw [← depthAt_skipFrom bs i]
+        omega
   case c31 =>
-    intro i depth hnc h
-    rw [parseElemsTail.eq_def] at h
-    repeat (split at h)
-    all_goals simp_all [parseKey_ne_depth, parseString_ne_depth, parseNumber_ne_depth, parseLiteral_ne_depth]
+    intro i depth hnc
+    refine ⟨by intro h; rw [parseElemsTail.eq_def] at h; split at h <;> simp_all, ?_⟩
+    intro t ht
+    rw [parseElemsTail.eq_def] at ht
+    split at ht
+    · simp_all
+    · injection ht with hpeq
+      subst t
+      dsimp only
+      rw [← depthAt_skipFrom bs i]
+      omega
 
-/-! ### The parser's nesting refusal -/
-
-theorem depthExceeded_openers (bs : Bytes)
-    (h : parseBytes Limits.default bs = .error .depthExceeded) :
-    129 ≤ openersTotal bs := by
-  have h3 := depth_openers_from bs
+/-- **The measured bound suffices: the depth clause's certificate.**  A document
+whose measured nesting is inside the reference's bound is not refused for
+depth, so the clause `admission` decides with `docDepth` excludes exactly the
+outcome `pipelineSpecPre` forbids. -/
+theorem depth_measured_no_refusal {bs : Bytes} (hbound : docDepth bs ≤ 128) :
+    parseBytes Limits.default bs ≠ .error .depthExceeded := by
+  intro h
   unfold parseBytes at h
   by_cases hin : bs.length > Limits.default.maxInput
   · rw [if_pos hin] at h; cases h
@@ -358,15 +745,38 @@ theorem depthExceeded_openers (bs : Bytes)
     · rw [if_neg hbom] at h
       cases hpv : parseValue bs (skipFrom bs 0) Limits.default.maxDepth with
       | fail e =>
-          simp only [hpv] at h
+          rw [hpv] at h
           injection h with he
           subst he
-          have hb := h3.1 (skipFrom bs 0) Limits.default.maxDepth hpv
+          have hb := (depth_bridge_core bs).1 (skipFrom bs 0) Limits.default.maxDepth |>.1 hpv
           simp only [Limits.default] at hb
-          have hle : openersFrom bs (skipFrom bs 0) ≤ openersTotal bs := by
-            have h0 := openersFrom_mono (bs := bs) (i := 0) (j := skipFrom bs 0)
-              (Nat.zero_le _)
-            simpa [openersFrom_zero] using h0
+          rw [docDepth] at hbound
+          omega
+      | done p =>
+          simp only [hpv] at h
+          repeat (split at h) <;> simp_all
+
+/-- **A depth refusal witnesses the measurement.**  A document the reference
+refuses for depth nests deeper than its bound, so the clause's number is not an
+over-approximation of the quantity the parser refuses on. -/
+theorem depth_refusal_deep {bs : Bytes}
+    (h : parseBytes Limits.default bs = .error .depthExceeded) :
+    128 < docDepth bs := by
+  unfold parseBytes at h
+  by_cases hin : bs.length > Limits.default.maxInput
+  · rw [if_pos hin] at h; cases h
+  · rw [if_neg hin] at h
+    by_cases hbom : bs.take 3 = ByteString.literal [0xEF, 0xBB, 0xBF]
+    · rw [if_pos hbom] at h; cases h
+    · rw [if_neg hbom] at h
+      cases hpv : parseValue bs (skipFrom bs 0) Limits.default.maxDepth with
+      | fail e =>
+          rw [hpv] at h
+          injection h with he
+          subst he
+          have hb := (depth_bridge_core bs).1 (skipFrom bs 0) Limits.default.maxDepth |>.1 hpv
+          simp only [Limits.default] at hb
+          rw [docDepth]
           omega
       | done p =>
           simp only [hpv] at h
@@ -1110,13 +1520,13 @@ theorem parseBytes_policyRefusal (bs : Bytes) (r : Reject)
 caller that check accepts reaches the record's domain by proof rather than by a
 second check.  The reasons are the ones the certificate's sections above
 establish: the empty document and the input bound are the decision's own first
-two clauses, the nesting bound is `depthExceeded_openers`, the capacity outcome
-is `parseBytes_no_outOfCapacity`, and the character policy is
+two clauses, the nesting bound is `depth_measured_no_refusal`, the capacity
+outcome is `parseBytes_no_outOfCapacity`, and the character policy is
 `parseBytes_policyRefusal` read through the quote scan. -/
 
 theorem admission_ok {doc : ByteArray} (h : (admission doc).isOk = true) :
     0 < doc.size ∧ doc.size ≤ kernelMaxInput ∧
-    openersTotal doc ≤ kernelMaxDepth ∧ policyRefusal doc = none := by
+    ¬ ((kernelMaxDepth : Int) < docDepth doc) ∧ policyRefusal doc = none := by
   unfold admission at h
   by_cases h0 : doc.size = 0
   · rw [if_pos h0] at h
@@ -1128,7 +1538,7 @@ theorem admission_ok {doc : ByteArray} (h : (admission doc).isOk = true) :
       simp only [Except.isOk] at h
       cases h
     · rw [if_neg hbig] at h
-      by_cases hdep : kernelMaxDepth < openersTotal doc
+      by_cases hdep : (kernelMaxDepth : Int) < docDepth doc
       · rw [if_pos hdep] at h
         simp only [Except.isOk] at h
         cases h
@@ -1160,17 +1570,18 @@ theorem admission_documentDomain (doc : ByteArray)
     (∀ e : ParseError,
       parseBytes Limits.default doc = .error e →
         e ≠ .depthExceeded ∧ e ≠ .outOfCapacity ∧ ¬ isPolicyError e) := by
-  obtain ⟨hpos, hlen, hopen, hpol⟩ := admission_ok h
+  obtain ⟨hpos, hlen, hdep, hpol⟩ := admission_ok h
   have hlen' : doc.size ≤ Limits.default.maxInput := by
     simpa [kernelMaxInput, Limits.default] using hlen
+  have hmeasure : docDepth doc ≤ 128 := by
+    have h := hdep
+    simp only [kernelMaxDepth] at h
+    omega
   refine ⟨hpos, hlen', ?_⟩
   intro e he
   refine ⟨?_, ?_, ?_⟩
   · intro hd
-    have h129 : 129 ≤ openersTotal doc := by
-      exact depthExceeded_openers doc (by rw [hd] at he; exact he)
-    have h128 : openersTotal doc ≤ 128 := by simpa [kernelMaxDepth] using hopen
-    omega
+    exact depth_measured_no_refusal hmeasure (hd ▸ he)
   · intro hout
     exact parseBytes_no_outOfCapacity doc hlen' (hout ▸ he)
   · intro hp
@@ -1199,15 +1610,27 @@ that does carry `Classical.choice`, so the pins below are measured. -/
 #guard_msgs in
 #print axioms parseBytes_no_outOfCapacity
 
+/-- info: 'LeanLLVM.Refinement.depth_bridge_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms depth_bridge_core
+
+/-- info: 'LeanLLVM.Refinement.depth_measured_no_refusal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms depth_measured_no_refusal
+
+/-- info: 'LeanLLVM.Refinement.depth_refusal_deep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms depth_refusal_deep
+
 /-- info: 'LeanLLVM.Refinement.admission_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms admission_ok
 
-/-- info: 'LeanLLVM.Refinement.admission_documentDomain' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.admission_documentDomain' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms admission_documentDomain
 
-/-- info: 'LeanLLVM.Refinement.admission' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.admission' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms admission
 

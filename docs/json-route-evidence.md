@@ -579,9 +579,13 @@ What each shows, and what it does not:
 - **`R10` — the depth clause's fallback is live.** The cut sends the class the
   depth clause excludes back to the object, so the depth probes and the
   opener-rich document lose their fallback answers at once.  It does not show
-  the clause's *stated* bound is right (that is `depthExceeded_openers` and the
-  `DomainCheck.lean` guards); it shows the shell's routing is what carries the
-  bound to a caller.
+  the clause's *stated* bound is right — that is the library's certificate
+  (`depth_measured_no_refusal`, `depth_refusal_deep`) and the gate
+  `tests/json-depth-clause.lean` — and it is a cut of the *probe's* opener-count
+  decision.  The library's clause now reads the measured nesting instead, so
+  the opener-rich document is inside the domain there; the probe's own decision
+  is probes-owned and unchanged, and its `DomainCheck.lean` guard for that
+  document is the row that no longer matches the library's verdict.
 - **`R11` — the policy class is what the fallback answers.** The cut sends the
   fourteen documents the object accepts back to the fast path: the pinned policy
   set empties, and the run's divergence count becomes exactly those fourteen.

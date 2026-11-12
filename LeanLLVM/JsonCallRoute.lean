@@ -1212,9 +1212,13 @@ object to `pipelineUnitsPost`; that is the compiler/FFI trust boundary \
 /-! ### Axiom footprints
 
 Every declaration is choice-free or carries the same carrier the record's proofs
-do; the staging construction adds no axiom of its own. -/
+do; the staging construction adds no axiom of its own.  The depth clause's
+measurement is where `Classical.choice` enters — the `max` arithmetic that the
+measured nesting bound needs — and it reaches the domain theorems through
+`admission_documentDomain`, so the three pins that rest on that theorem carry it
+too. -/
 
-/-- info: 'LeanLLVM.Refinement.routeStaging' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.routeStaging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms routeStaging
 
@@ -1222,11 +1226,11 @@ do; the staging construction adds no axiom of its own. -/
 #guard_msgs in
 #print axioms documentDecision_admitted
 
-/-- info: 'LeanLLVM.Refinement.admitted_documentDomain' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.admitted_documentDomain' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms admitted_documentDomain
 
-/-- info: 'LeanLLVM.Refinement.routePre_not_policy' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.routePre_not_policy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms routePre_not_policy
 
@@ -1242,7 +1246,7 @@ do; the staging construction adds no axiom of its own. -/
 #guard_msgs in
 #print axioms routePre_of_checkRoute_ok
 
-/-- info: 'LeanLLVM.Refinement.routeSpecPre' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.routeSpecPre' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms routeSpecPre
 

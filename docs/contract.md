@@ -363,9 +363,9 @@ are named where they are used so they cannot be mistaken for one.
 The route's decision on a document is one predicate, `admission`
 (`LeanLLVM/JsonKernelDomain.lean`), and each of its clauses is one checker with
 its own certificate (`LeanLLVM/JsonKernelCertificate.lean`): the non-empty
-document, the input bound `Limits.default.maxInput`, the opener-count bound on
-nesting, and the reference's character policy read through the parser's own body
-scanner.  The clause set is exactly the document clauses `pipelineSpecPre`
+document, the input bound `Limits.default.maxInput`, the measured nesting depth
+`docDepth`, and the reference's character policy read through the parser's own
+body scanner.  The clause set is exactly the document clauses `pipelineSpecPre`
 excludes — `admission_documentDomain` turns an `admitted` decision into
 non-emptiness, the input bound and the parser's `depthExceeded`,
 `outOfCapacity` and policy exclusions, and `routeSpecPre` composes that with the
@@ -386,12 +386,27 @@ The stated direction is that the **fast path may later become total by other
 approaches**, and the shape of the code is chosen for that: the clauses are
 separate functions with separate certificates, so widening the domain means
 removing a clause from `admission` and dropping its certificate, not
-renegotiating the interface.  The depth clause is deliberately conservative (an
-opener **count**, so a balanced document whose string bodies carry more than 128
-`[`/`{` bytes is outside the domain); its docstring says so where the clause is
-defined, and `check.sh` measures the resulting fallback acceptance rather than
-leaving it implicit.  Replacing the count with the stage-1 depth counter is a
-deletion of one clause and one certificate.
+renegotiating the interface.  The depth clause reads the stage-1 depth
+counter's own fold: `docDepth` is the maximum of the counter's running depth
+over the document's structural delimiter sequence (the `{`/`[`/`}`/`]` bytes
+outside string bodies, in document order — the sequence the stage-1 index
+stream carries), computed with the counter's step `deltaZ`.  The certificate
+states the bridge in both directions: `depth_measured_no_refusal` turns the
+measured bound into the absence of the parser's `depthExceeded`, and
+`depth_refusal_deep` turns a `depthExceeded` into a witness that the document
+nests past the bound.  The unconditional converse of the pair cannot hold — a
+document the parser refuses for *syntax* before it reaches the depth check is
+not a depth refusal however deeply it nests — which is why the clause keeps its
+own measurement rather than restating the parse.
+
+Widening this clause was a deletion: the opener-count clause and its
+certificate (`openersTotal`, `depthExceeded_openers`) are gone, and a
+deep-but-balanced document — `probes/bench/json/scale-4096.json` carries 179
+opener bytes at nesting depth 2 — is admitted rather than answered by the
+fallback.  `tests/json-depth-clause.lean` is the oracle gate: it compares the
+clause's verdict with the reference's own depth verdict on the deep-but-balanced
+class, the boundary, and the corpus's depth rows, and reproduces the deleted
+clause as a control that disagrees on exactly that class.
 
 ### 7.6 The stage-2 helpers' correspondence
 
