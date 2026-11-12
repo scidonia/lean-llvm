@@ -990,8 +990,10 @@ back.  This is the one class-D shape that advances the arena carry: `alen` becom
 `a + l` and the decoded extent is appended to `spans`.  The frame grows
 with the cursor (`walkWide_grow`), its new bytes present because the arena was
 staged whole; the four span facts the new extent owes are the caller's, as the
-brief records, and `pending` is `none` since the merge re-establishes the
-in-flight record.
+brief records.  The record in flight is *closed* here: `if.end256.i` set it to the
+entry's position and extent when it made the reservation, and this block is where
+the window it reserved has been decoded, so the carry leaves with `pending` empty
+and the next entry's record enters at the next check.
 
 The log's recorded cursor is re-read from the write itself, so `log_alen` needs no
 side condition beyond the store; the record's own `alen` is related to the loaded
@@ -1024,10 +1026,9 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     (hge : G.ndst0 ≤ a)
     (hsum : a ≤ G.ndst0 + (C.spans.map (fun r => r.2)).sum)
     (hspan : ∀ r ∈ C.spans, r.1 + r.2 ≤ a)
-    (hinside : a + l ≤ G.n)
-    (hpending : C.pending = none) :
+    (hinside : a + l ≤ G.n) :
     ∃ s', WalkLink calls G C s
-      { C with block := "if.end290.i", alen := a + l, spans := C.spans ++ [(a, l)] } s' := by
+      { C with block := "if.end290.i", alen := a + l, spans := C.spans ++ [(a, l)], pending := none } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let cs : List (String × Value) := [
     ("%add289.i", .int 64 (BitVec.ofNat 64 (a + l))),
@@ -1153,16 +1154,13 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
         omega
     · dsimp only
       intro p off len hp
-      rw [hpending] at hp
-      exact absurd hp (by simp)
+      simp at hp
     · dsimp only
       intro p off len hp
-      rw [hpending] at hp
-      exact absurd hp (by simp)
+      simp at hp
     · dsimp only
       intro p off len hp
-      rw [hpending] at hp
-      exact absurd hp (by simp)
+      simp at hp
     · rw [henv']
       dsimp only [out]
       exact walkLookup_cells_ne s.env "%sp.i.0248" hInv.depth_reg cs

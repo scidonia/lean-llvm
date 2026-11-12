@@ -4448,12 +4448,14 @@ cursor, `pending_cursor` bounds the cursor by the staging's offset plus `p`, and
 the check's premises — `alen + len + 64 ≤ dstcap` follows from them and
 `G.arenaRoom` — so no hypothesis sits beside the invariant.  The test is
 `alen + (entry[k+1] - entry[k] - 1) + 64 > dstcap`, and `len` is exactly that
-extent.  What remains is not the clause but its **production**: no link sets
-`pending` to `some` yet — the merge at `cleanup478.i` is where the next entry's
-position and extent are read from the entry stream — so the three clauses are
-vacuously true today and the exclusion is a stated consequence rather than one a
-traversal consumes.  That production is the record's assembly (the D/F work).  The class of the finding is in `JsonStage2WalkRest`'s
-header, with the arithmetic.
+extent.  The three clauses' **production** is `if.end256.i`: it is the first
+block that holds all three components — the entry's position (`%idxprom.i`), the
+arena offset reserved (`%alen`'s word, bounded by the carry's cursor through
+`logArena_le`) and the token's extent (`%sub260.i`) — so `WalkLink.if_end256_i`
+sets `pending` there, and `WalkLink.if_else285_i` clears it once the reserved
+window has been decoded.  The exclusion is therefore one a traversal supplies at
+the reservation rather than a clause every carry leaves empty.  The class of the
+finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
 
 ## The remainder, named
 
@@ -4490,7 +4492,7 @@ it.
 | 62 | `land.lhs.true.i` | G | the type stack's byte — proved (`WalkLink.land_lhs_true_i`) |
 | 63 | `if.then231.i` | G | the state stack's masked byte — proved (`WalkLink.if_then231_i`) |
 | 64 | `if.end245.i` | E | the `phi` run `%key.1.i` and the callee's return — proved (`WalkLink.if_end245_i`) |
-| 66 | `if.end256.i` | F | the arena check — proved (`WalkLink.if_end256_i`) |
+| 66 | `if.end256.i` | F | the arena check, and the record in flight's entry into the carry — proved (`WalkLink.if_end256_i`) |
 | 67 | `if.end.i83` | trap | `@llvm.trap`, `unreachable` |
 | 68 | `z_arena_reserve.exit` | F | calls `@s2_string_body` |
 | 71 | `if.then281.i` | H2 | `add`/`zext`/`or` — proved (`WalkLink.if_then281_i`) |

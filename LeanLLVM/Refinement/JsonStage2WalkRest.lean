@@ -40,10 +40,11 @@ statements in `WalkInv`/`WalkLocal` that were too weak, and both are now in
   `if.end.i83`) reads, and without it the arena trap is reachable under the
   invariant: a cursor at `ndst0 + n` with a positive-length token fails the guard.
   Every arm in `JsonStage2WalkScope` preserves the clause (all of them copy
-  `pending` and `alen`), and the seed establishes it vacuously; its *production* —
-  the merge setting `pending` for the entry about to be decoded — is the D/F work
-  that is still owed, so the clause is a true strengthening the trap does not yet
-  consume.
+  `pending` and `alen`), and the seed establishes it vacuously; its *production* is
+  `if.end256.i` (`WalkLink.if_end256_i`), the block whose check reads it, and
+  `if.else285.i` clears the record again once the window is decoded.  The clause is
+  therefore one a traversal supplies at the reservation rather than one every carry
+  leaves empty.
 * `WalkLocal`'s landing facts are disjunctive.  A scan's landing block (`land.rhs*`)
   has two predecessors and only one of them is the latch, so `ScanLanded` (which
   names `pre = <latch>`) is not the entry edge's fact; `ScanEntered` is, and the

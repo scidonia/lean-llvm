@@ -462,6 +462,113 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     · rw [ite_eq_left ht]; exact hl
     · rw [ite_eq_right ht]; exact hf
 
+/-- **The quiet block's step, with the record in flight replaced.**  `if.end256.i`
+computes the token's entry position, its document extent and the arena offset the
+body will be reserved at, so the block that makes those three numbers is where the
+record enters the carry: `walkArenaReserve_clear` then reads the check's premises
+of a `pending` some link actually set.  The shape is `callQuietBr`'s with the
+target's `pending` replaced, and the three clauses that value owes supplied beside
+it. -/
+theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s)
+    {B : Block} (hfind : stage2Body.findBlock C.block = some B)
+    {s₁ : State} (hden : denoteCode (stage2Calls stage2SubCalls) B.instrs s = some s₁)
+    (hfree : walkCarried B.instrs) (hpc₁ : s₁.pc = s.pc)
+    (hframe : UnchangedOutside m0 s₁.mem (walkWide G C))
+    (howned : ∀ r ∈ walkStaged G C, HasBytes s₁.mem r.1 r.2)
+    (hlog : ∀ off w, off + w ≤ stage2LogExtent →
+      readBytes s₁.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w)
+    (hev : readBytes s₁.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length =
+      readBytes s.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length)
+    {d tl fl : String} (hterm : B.term = Term.condbr (.reg d) tl fl)
+    {bit : BitVec 1} (hbit : lookupName s₁.env d = some (.int 1 bit))
+    (hl : WalkLocal { C with block := tl } { s₁ with pc := tl, pre := some s.pc })
+    (hf : WalkLocal { C with block := fl } { s₁ with pc := fl, pre := some s.pc })
+    {p off ext : Nat} (hoff : off ≤ C.alen) (hpn : p < G.n)
+    (hcur : C.alen ≤ G.ndst0 + p) (hlen : p + ext ≤ G.n) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := (if bit = 1 then tl else fl), pending := some (p, off, ext) } s' := by
+  have hpc : s.pc = C.block := hInv.pc_eq
+  let s'' : State := { s₁ with pc := (if bit = 1 then tl else fl), pre := some s.pc }
+  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump s'' := by
+    simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := d) (tl := tl) (fl := fl) (bit := bit) hbit]
+    dsimp only [s'']
+    rw [hpc₁]
+  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine
+    { pc_eq := rfl
+      blockIndex := ?_
+      k_le := hInv.k_le
+      events_le := hInv.events_le
+      evlen_eq := hInv.evlen_eq
+      evBytes := ?_
+      alen_le_sum := hInv.alen_le_sum
+      alen_ge := hInv.alen_ge
+      spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
+      spans_inside := hInv.spans_inside
+      pending_at := ?_
+      pending_len := ?_
+      pending_cursor := ?_
+      eoff_le := hInv.eoff_le
+      inner_cap := hInv.inner_cap
+      depth_cap := hInv.depth_cap
+      depth_reg := ?_
+      ptrs := ?_
+      log_hash := ?_
+      log_len := ?_
+      log_cap := ?_
+      log_alen := ?_
+      log_acap := ?_
+      owned := howned
+      frame := by dsimp only [s'']; exact hframe
+      blockLocal := ?_ }
+  · rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%k.0.i249"
+      (fun i hi => (hfree i hi).1) s s₁ hden]
+    exact hInv.blockIndex
+  · dsimp only [s'']
+    rw [hev]
+    exact hInv.evBytes
+  · intro p' off' len' hp'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hp'
+    obtain ⟨rfl, rfl, rfl⟩ := hp'
+    exact ⟨hoff, hpn⟩
+  · intro p' off' len' hp'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hp'
+    obtain ⟨rfl, rfl, rfl⟩ := hp'
+    exact hlen
+  · intro p' off' len' hp'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hp'
+    obtain ⟨rfl, rfl, rfl⟩ := hp'
+    exact hcur
+  · rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%sp.i.0248"
+      (fun i hi => (hfree i hi).2.1) s s₁ hden]
+    exact hInv.depth_reg
+  · dsimp only [s'']
+    exact WalkPtrs.of_run hInv.ptrs hfree hden
+  · dsimp only [s'']
+    rw [hlog 32 4 (by decide)]
+    exact hInv.log_hash
+  · dsimp only [s'']
+    rw [hlog 8 8 (by decide)]
+    exact hInv.log_len
+  · dsimp only [s'']
+    rw [hlog 16 8 (by decide)]
+    exact hInv.log_cap
+  · dsimp only [s'']
+    rw [hlog 48 8 (by decide)]
+    exact hInv.log_alen
+  · dsimp only [s'']
+    rw [hlog 56 8 (by decide)]
+    exact hInv.log_acap
+  · dsimp only [s'']
+    by_cases ht : bit = 1
+    · rw [ite_eq_left ht]; exact hl
+    · rw [ite_eq_right ht]; exact hf
+
 /-! ## The `llvm.lifetime` blocks
 
 `stage2Calls` resolves the two markers itself — a live-range marker reads no
@@ -1101,9 +1208,18 @@ run is the last instruction shape class F adds to the step vocabulary:
 
 The branch's *taken* edge is the arena trap's exclusion (`walkArenaReserve_clear`)
 read at the record in flight; the link states the branch at the bit the run
-computed, so it composes with that verdict without assuming it: a caller that has
-`pending` at the record takes `z_arena_reserve.exit`, and the trap arm is
-unreachable (`step_ub_of_trap`). -/
+computed, so it composes with that verdict without assuming it.  This block is
+also where the record in flight *enters* the carry: it is the first block that
+has all three of the triple — the entry's position (`%idxprom.i`), the arena
+offset it reserved (`%alen`'s word, which the carry's cursor bounds) and the
+token's document extent (`%sub260.i`) — so the link sets `pending` to them and
+the trap arm's premise is one the traversal actually supplies. -/
+
+/-- **The check's two edges**, read at the word the block loads: the arena's trap
+when the reservation does not fit, and the reservation's own block when it does. -/
+def walkIfEnd256Next (A Cc cv ix : BitVec 64) : String :=
+  if evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+      + BitVec.ofNat 64 64 + A) Cc = 1 then "if.end.i83" else "z_arena_reserve.exit"
 
 /-- **A store of a literal** at a register's address.  `%outn.i`'s zeroing before
 the arena check is this instruction, and the tree's store steps all take a
@@ -1253,10 +1369,12 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     (halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)))
     (hacap : lookupName s.env "%acap" = some (.ptr (C.stage.z + 56)))
     (hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8))
-    (hC : natToBytes Cc.toNat 8 = wordBytes 8 G.dstcap) :
+    (hC : natToBytes Cc.toNat 8 = wordBytes 8 G.dstcap)
+    (ext : Nat) (hiv : ix.toNat < G.n)
+    (hnext : cv.toNat = ix.toNat + ext + 1) (hpl : ix.toNat + ext ≤ G.n)
+    (hcur : C.alen ≤ G.ndst0 + ix.toNat) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
-      { C with block := (if evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
-          + BitVec.ofNat 64 64 + A) Cc = 1 then "if.end.i83" else "z_arena_reserve.exit") } s' := by
+      { C with block := walkIfEnd256Next A Cc cv ix, pending := some (ix.toNat, C.alen, ext) } s' := by
   have hz64 : C.stage.z + 64 ≤ G.next0 := by
     have h := C.stage.sevenEnd (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites])
     simp only [stage2LogExtent] at h
@@ -1267,7 +1385,8 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     (ix := ix) (cv := cv) (ao := G.next0 + 20) (al := C.stage.z + 48)
     (ac := C.stage.z + 56) (A := A) (C := Cc)
     hidx hconv houtn halen hacap hreadA hreadC (by omega) (by omega)
-  refine WalkLink.callQuietBr (G := G) (C := C) (s := s) hInv
+  refine WalkLink.callQuietBrPending (G := G) (C := C) (s := s) hInv
+    (p := ix.toNat) (off := C.alen) (ext := ext)
     (B := walkIfEnd256) (by rw [hblock]; exact walkIfEnd256_find)
     (s₁ := stateAt (cells [
       ("%cmp.not.i", .int 1 (evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
@@ -1324,6 +1443,7 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     rfl
     (by simp [cells, stateAt, lookupName_cons_self])
     (by simp [WalkLocal]) (by simp [WalkLocal])
+    (Nat.le_refl _) hiv hcur hpl
 
 /-! ## The event record's emission
 
@@ -2649,6 +2769,7 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.callQuiet
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.callQuietBr
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.callQuietBrPending
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_call
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else334_i
@@ -2695,15 +2816,17 @@ Three of the four are the event stream's reserves, and their arithmetic is
 sum, one record per entry consumed, and the widest record leaves twelve bytes of
 slack at the loop head's strictness.  The fourth is the arena's reserve,
 `if.end256.i`'s check `alen + len + 64 > dstcap`, and its exclusion reads the
-carry's two pending clauses: `pending_at` fixes the record's arena offset at the
-cursor and `pending_cursor` bounds the cursor by the staging's offset plus the
-record's entry position.  The token's own extent is the one number the exclusion
-also needs, and it is not in the carry's vocabulary: `len`, the in-flight token's
-document extent, is a fact about the scan that produced it, so the verdict is
-stated with `p + len ≤ n` beside it.  That is the exact missing conjunct of the
-arena trap, and its producer is the same one `pending_cursor` owes: no link sets
-`pending` to `some` yet, so the two clauses are vacuously true and the exclusion is
-stated rather than consumed. -/
+carry's three pending clauses: `pending_at` bounds the record's arena offset by the
+cursor, `pending_cursor` bounds the cursor by the staging's offset plus the
+record's entry position, and `pending_len` places the entry's position and the
+token's extent inside the document.  The token's own extent is the one number the
+exclusion also needs, and it is not derived from the other two: `len`, the
+in-flight token's document extent, is a fact about the entry stream, so the
+verdict carries `p + len ≤ n` in the carry rather than recomputing it per arm.
+The clause set now has a producer: `WalkLink.if_end256_i` sets `pending` to the
+triple at the check that reads it, and `WalkLink.if_else285_i` clears it once the
+reserved window has been decoded, so a traversal supplies the premise instead of
+leaving it empty. -/
 
 /-- A trap arm, at the name the census gives it.  The four are the same block: one
 `@llvm.trap` call and `unreachable`. -/
