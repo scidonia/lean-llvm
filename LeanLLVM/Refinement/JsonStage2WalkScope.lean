@@ -4555,8 +4555,42 @@ it.
 ## Whether the chain closes
 
 It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited: 16 of the body's 165 blocks have no link, and the three clauses the
-arena trap reads have no production yet.
+inhabited, and the exact missing conjunct is *that* proposition — the completion
+half of `Stage2WalkObligation` at `stage2Budget` (`stage2WalkObligation_iff_completion`
+is the equivalence, so nothing else is wanted).  Read as a proof obligation it is
+four pieces, in order:
+
+1. **sixteen links** — the ten class F blocks the table names plus `entry`,
+   `if.end`, and the four `unreachable` arms (whose verdicts are proved:
+   `walkTrap_noStep`, `walkEventReserve_clear`, `walkArenaReserve_clear`), so the
+   traversal has no gap;
+2. **the seed** — `WalkSeedState` at `entry`'s handoff, which is the
+   initialisation's own obligation: `walkSeed_invariant` turns it into the
+   invariant at the loop head, and what `entry`'s 58 instructions must show is
+   that state (the two `phi` values, the six pointer bindings, the log's four
+   fields and the staging's presence);
+3. **the return** — `if.end`'s step as `WalkChain.completes`' `hret`, after the
+   two finalisation blocks; and
+4. **the count** — `WalkChain.steps` composed over the assembled chain to give a
+   step count at or below `stage2Budget`, which is the one place the 22-and-six
+   readings of *The budget, counted* are spent.
+
+Two of the sixteen cannot be links under the record's post as it stands, and the
+reason is the same in both cases: the walk's frame is a *prefix* of the record's
+(`walkFrame_reportFrame_coverage` maps `(dst, alen)` into `(dst, alen + 64)`, and
+`err_not_in_walkFrame` places the refusal slot *outside* it), so widening the
+walk's frame widens the record's.  `z_arena_reserve.exit` writes the decoded body
+at `G.dst + C.alen` before `if.else285.i` advances the cursor two blocks later, so
+the write is inside neither the source nor the target carry's arena entry; the
+staged window `(G.dst, ndst0 + n + 64)` covers it, and that window is not inside
+`(dst, alen + 64)`.  `s2_walk.exit` and `if.then` store to `%ndst`, `%nev` and
+`%err`, which the report's post proves *itself* from `err_not_in_walkFrame` and
+the wrapper's `frameSlots` — a walk frame that covered the three would make
+`errAccept` unprovable.  Both are decisions about `stage2Boundary`, for the record
+that owns it; inside this module the honest statement is the obstruction, and the
+`if.then425.i` third is a helper-contract gap of the same kind: `s2ScalarValuePost`
+says the callee returns the model's memory but not *which* bytes the appended
+record has, so the carry's trace cannot advance from it.
 
 `JsonStage2WalkRest` supplies H1's five `LeafBlock` links (its class lemma reads the
 `add`'s literal at the instruction's own width) and `if.then281.i`, and states the
