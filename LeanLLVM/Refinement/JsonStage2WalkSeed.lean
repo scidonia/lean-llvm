@@ -287,6 +287,53 @@ theorem denoteCode_s2_init (env : Env) (s : State)
   rw [walkDenoteCode_callVoid (calls := stage2Calls stage2SubCalls) (env := env) (s := s)
     (callee := "s2_init") ha hc5]
 
+/-! ### The initialisation's writes are inside the record
+
+`entry` calls `s2_init`, whose fifteen stores are the `S2` record at `%s`
+(`s2InitStores`: `s + 0` through `s + 112`, eight bytes each).  Every read after
+the initialisation — the document's byte, the entry stream's lane, the log's
+fields — is therefore unchanged, provided it lies outside `[s, s + 120)`.  This
+is the read-over-write fact the seed's production needs: the predecessor's
+blocker was that the `%7`/`%8` loads read the document through the fifteen
+stores, and the staging separates the record from the document and the entry
+stream (`WalkGeom`'s separation). -/
+
+/-- **A store list whose entries lie inside one window leaves a read outside it
+alone**, for any base memory: the induction carries the memory, so each entry's
+write is the next induction's base. -/
+theorem readBytes_stage2WriteStores_of_outside :
+    ∀ (stores : List (Nat × List UInt8)) {m : Mem} {sv a len : Nat},
+      (∀ st ∈ stores, sv ≤ st.1 ∧ st.1 + st.2.length ≤ sv + 120) →
+      (a + len ≤ sv ∨ sv + 120 ≤ a) →
+      readBytes (stage2WriteStores m stores) a len = readBytes m a len
+  | [], _, _, _, _, _, _ => rfl
+  | (a', bs) :: rest, m, sv, a, len, hstep, h => by
+      obtain ⟨hin1, hin2⟩ := hstep (a', bs) (by simp)
+      simp only [Prod.snd] at hin2
+      have hrest : ∀ st ∈ rest, sv ≤ st.1 ∧ st.1 + st.2.length ≤ sv + 120 :=
+        fun st hst => hstep st (by simp [hst])
+      have hout : a + len ≤ a' ∨ a' + bs.length ≤ a := by
+        rcases h with h | h
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega)
+      show readBytes (stage2WriteStores (writeBytes m a' bs) rest) a len =
+        readBytes m a len
+      rw [readBytes_stage2WriteStores_of_outside rest (m := writeBytes m a' bs) hrest h]
+      exact walkReadBytes_writeBytes_outside hout
+
+/-- **A read outside the `S2` record survives `s2_init`.**  The fifteen stores are
+`s + 0` through `s + 112`, eight bytes each. -/
+theorem readBytes_s2Init_of_outside {m : Mem} {sv b n nb ep a len : Nat}
+    (h : a + len ≤ sv ∨ sv + 120 ≤ a) :
+    readBytes (stage2WriteStores m (s2InitStores sv b n nb ep)) a len =
+      readBytes m a len := by
+  refine readBytes_stage2WriteStores_of_outside (s2InitStores sv b n nb ep) ?_ h
+  intro st hst
+  simp only [s2InitStores, List.mem_cons, List.not_mem_nil, or_false] at hst
+  rcases hst with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl <;>
+    simp [wordBytes, natToBytes_length]
+
 /-! ### The traversal, stated conditionally
 
 The completion conjunct of `Stage2WalkObligation` is `Stage2WalkCompletes`: at
@@ -330,6 +377,14 @@ theorem walkCompletes_of_prefix_chain {calls : Calls} {m0 : Mem}
   exact runFuel_mono h2
 
 /-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.readBytes_stage2WriteStores_of_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.readBytes_stage2WriteStores_of_outside
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.readBytes_s2Init_of_outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.readBytes_s2Init_of_outside
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.WalkRegs.of_run' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
