@@ -37,8 +37,8 @@ What a call block owes, and what this module supplies:
   (below, `WalkLink.if_then328_i`), and `if.then425.i`'s appended record is its
   contract-driven companion (`JsonStage2WalkFinal`'s
   `WalkLink.if_then425_i_emit`/`_refuse`), so those two links are the carry's,
-  not the frame's; `z_arena_reserve.exit` (the decoded body's prefix in the
-  arena) is the remaining cursor-mover.  `s2ScalarValuePost`'s second conjunct names the appended record,
+  not the frame's; and `z_arena_reserve.exit`'s decoded prefix in the arena is the
+  third (`WalkLink.z_arena_reserve_exit`), the reservation its carry records.  `s2ScalarValuePost`'s second conjunct names the appended record,
   so `if.then425.i`'s call does not hide the trace's step behind the model's
   equation.
 * **the terminal step.**  Neither finalisation arm is a `WalkLink`: the exit's and
@@ -1568,6 +1568,183 @@ theorem walkZArenaReserveExit_denote {sub : Calls} (env : Env) (s : State)
     hcall]
   simp only [denoteCode_nil, stateAt]
 
+/-- **`z_arena_reserve.exit` is a link.**  The reservation `if.end256.i` recorded
+is *spent*: the carry's arena cursor advances by the token's document extent, the
+window's extent is appended to the spans at the cursor the reservation was made
+at, and the record in flight is cleared because the window it named is now the
+carry's.  The three quantities land where `pending`'s own clauses need them —
+`spans_end` from the cursor's monotonicity (`C.alen + ext`), `spans_inside` from
+the window's document room, and `alen_le_sum` from the cursor's own bound — and
+the reserved window covers the write the callee performs at `%ar + %z.val36`,
+because `logArena_le` bounds that word by the carried cursor.
+
+The four memory clauses are class F's own, as they are for `WalkLink.callQuiet`
+and `WalkLink.if_then425_i_emit`: the callee's answer (`s2StringBodyPost`) names
+the memory, and the frame read off `s2StringBody_framed` at
+`s2StringBodyFoot` — widened to `walkWide` at the new cursor — is the caller's,
+with the presence, log and event-read facts beside it. -/
+theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "z_arena_reserve.exit")
+    {p off ext : Nat} (hpend : C.pending = some (p, off, ext))
+    {A : BitVec 64} (hz36 : lookupName s.env "%z.val36" = some (.int 64 A))
+    (hpos : (A.signExtend 64).toNat < 2 ^ 63)
+    (hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8))
+    (har : lookupName s.env "%ar" = some (.ptr (C.stage.z + 40)))
+    (hGdst : G.dst < 2 ^ 64)
+    (hreadAr : readBytes s.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
+    (haj : lookupName s.env "%arrayidx10.i" = some (.ptr (G.b + p)))
+    (hsub : lookupName s.env "%sub260.i" = some (.int 64 (BitVec.ofNat 64 ext)))
+    (hc : lookupName s.env "%c.i" = some (.ptr C.stage.c))
+    (houtn : lookupName s.env "%outn.i" = some (.ptr (G.next0 + 20)))
+    (hxp : lookupName s.env "%xp" = some (.ptr G.xp))
+    (hxj : lookupName s.env "%xj.i" = some (.ptr (G.next0 + 16)))
+    (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (hwin : C.alen + ext ≤ G.n)
+    {r : CallOutcome}
+    (hcall : stage2Calls stage2SubCalls "s2_string_body"
+      [.ptr C.stage.c, .ptr (G.b + p + 1), .int 64 (BitVec.ofNat 64 ext),
+        .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 16),
+        .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r)
+    (hframe : UnchangedOutside m0 r.mem (walkWide G { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none }))
+    (howned : ∀ q ∈ walkStaged G { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none }, HasBytes r.mem q.1 q.2)
+    (hlog : ∀ off w, off + w ≤ stage2LogExtent →
+      readBytes r.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w)
+    (hev : readBytes r.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length =
+      readBytes s.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none } s' := by
+  have hAle : A.toNat ≤ C.alen := hInv.logArena_le hreadA
+  have hse : (A.signExtend 64).toNat = A.toNat := by simp
+  have hcall' : stage2Calls stage2SubCalls "s2_string_body"
+      [.ptr C.stage.c, .ptr (G.b + p + 1), .int 64 (BitVec.ofNat 64 ext),
+        .ptr (G.dst + (A.signExtend 64).toNat), .ptr (G.next0 + 20), .ptr G.xp,
+        .ptr (G.next0 + 16), .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r := by
+    rw [hse]; exact hcall
+  let s₁ : State := stateAt (("%call272.i", r.ret) ::
+    ("%add.ptr271.i", .ptr (G.b + p + 1)) ::
+    ("%add.ptr.i", .ptr (G.dst + (A.signExtend 64).toNat)) ::
+    ("%31", .ptr G.dst) :: s.env) { s with mem := r.mem, next := r.next }
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkZArenaReserveExit.instrs s =
+      some s₁ := by
+    dsimp only [s₁]
+    exact walkZArenaReserveExit_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (ar := C.stage.z + 40) (c := C.stage.c) (dq := G.dst) (pn := G.b + p)
+      (on := G.next0 + 20) (xp := G.xp) (xj := G.next0 + 16) (A := A)
+      (ext := ext) (nxp := G.nxp) (r := r)
+      har hreadAr hGdst hz36 hpos haj hsub hc houtn hxp hxj hnxp hcall'
+  have hpc : s.pc = C.block := hInv.pc_eq
+  have hfreeK : ∀ i ∈ walkZArenaReserveExit.instrs, i.dst? ≠ some "%k.0.i249" := by
+    intro i hi
+    simp only [walkZArenaReserveExit, List.mem_cons, List.not_mem_nil, or_false] at hi
+    rcases hi with rfl | rfl | rfl | rfl <;> decide
+  have hfreeSp : ∀ i ∈ walkZArenaReserveExit.instrs, i.dst? ≠ some "%sp.i.0248" := by
+    intro i hi
+    simp only [walkZArenaReserveExit, List.mem_cons, List.not_mem_nil, or_false] at hi
+    rcases hi with rfl | rfl | rfl | rfl <;> decide
+  have hfind : stage2Body.findBlock C.block = some walkZArenaReserveExit := by
+    rw [hblock]; exact walkZArenaReserveExit_find
+  let s' : State := { s₁ with pc := "NodeBlock31", pre := some s.pc }
+  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump s' := by
+    have hterm : walkZArenaReserveExit.term = Term.br "NodeBlock31" := rfl
+    simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm]
+    dsimp only [s', s₁, stateAt]
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine
+    { pc_eq := rfl
+      blockIndex := ?_
+      k_le := hInv.k_le
+      events_le := hInv.events_le
+      evlen_eq := hInv.evlen_eq
+      evBytes := ?_
+      alen_le_sum := ?_
+      alen_ge := ?_
+      spans_order := ?_
+      spans_end := ?_
+      spans_inside := ?_
+      pending_at := ?_
+      pending_cursor := ?_
+      pending_len := ?_
+      eoff_le := hInv.eoff_le
+      inner_cap := hInv.inner_cap
+      depth_cap := hInv.depth_cap
+      depth_reg := ?_
+      ptrs := ?_
+      log_hash := ?_
+      log_len := ?_
+      log_cap := ?_
+      log_alen := ?_
+      log_acap := ?_
+      owned := howned
+      frame := hframe
+      blockLocal := by simp [WalkLocal] }
+  · rw [show s'.env = s₁.env from rfl]
+    rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkZArenaReserveExit.instrs
+      "%k.0.i249" hfreeK s s₁ hden]
+    exact hInv.blockIndex
+  · dsimp only [s', s₁, stateAt]
+    rw [hev]
+    exact hInv.evBytes
+  · dsimp only
+    rw [List.map_append, List.sum_append]
+    simp only [List.map_singleton, List.sum_singleton]
+    have := hInv.alen_le_sum
+    omega
+  · dsimp only
+    have := hInv.alen_ge
+    omega
+  · dsimp only
+    rw [List.pairwise_append]
+    refine ⟨hInv.spans_order, ?_, ?_⟩
+    · exact List.Pairwise.cons (by intro b hb; exact absurd hb (by simp)) List.Pairwise.nil
+    · intro a ha b hb
+      simp only [List.mem_singleton] at hb
+      subst hb
+      exact hInv.spans_end a ha
+  · dsimp only
+    intro r hr
+    rw [List.mem_append] at hr
+    rcases hr with h | h
+    · exact hInv.spans_inside r h
+    · simp only [List.mem_singleton] at h
+      subst h
+      exact hwin
+  · dsimp only
+    intro r hr
+    rw [List.mem_append] at hr
+    rcases hr with h | h
+    · exact le_trans (hInv.spans_end r h) (by omega)
+    · simp only [List.mem_singleton] at h
+      subst h
+      omega
+  · intro p' off' len' hp
+    exact absurd hp (by simp)
+  · intro p' off' len' hp
+    exact absurd hp (by simp)
+  · intro p' off' len' hp
+    exact absurd hp (by simp)
+  · rw [show s'.env = s₁.env from rfl]
+    rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkZArenaReserveExit.instrs
+      "%sp.i.0248" hfreeSp s s₁ hden]
+    exact hInv.depth_reg
+  · rw [show s'.env = s₁.env from rfl]
+    exact WalkPtrs.of_run hInv.ptrs (by unfold walkCarried; decide) hden
+  · dsimp only [s', s₁, stateAt]
+    rw [hlog 32 4 (by decide)]
+    exact hInv.log_hash
+  · dsimp only [s', s₁, stateAt]
+    rw [hlog 8 8 (by decide)]
+    exact hInv.log_len
+  · dsimp only [s', s₁, stateAt]
+    rw [hlog 16 8 (by decide)]
+    exact hInv.log_cap
+  · dsimp only [s', s₁, stateAt]
+    obtain ⟨a, ha, hr⟩ := hInv.log_alen
+    exact ⟨a, le_trans ha (by omega), Eq.trans (hlog 48 8 (by decide)) hr⟩
+  · dsimp only [s', s₁, stateAt]
+    rw [hlog 56 8 (by decide)]
+    exact hInv.log_acap
+
 /-! ## The event record's emission
 
 `if.then328.i` is where the thirteen-byte key/string record is written at the
@@ -2903,6 +3080,7 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.walkArgs_stringBody
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_store64_imm
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_end256_i
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.z_arena_reserve_exit
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_writeBytes_append
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen328_find
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen328_denote

@@ -998,7 +998,18 @@ and the next entry's record enters at the next check.
 The log's recorded cursor is re-read from the write itself, so `log_alen` needs no
 side condition beyond the store; the record's own `alen` is related to the loaded
 word by `hca` (`C.alen ≤ a`), which the body gets from `if.end256.i`'s load of
-`%alen` — a data-flow fact the invariant does not carry. -/
+`%alen` — a data-flow fact the invariant does not carry.
+
+**This is the pre-reservation statement.**  The link below moves `alen` to `a + l`,
+which lets the cursor lag the write's own word; `WalkLink.z_arena_reserve_exit`
+instead reserves the token's whole extent at the cursor when the callee is called
+(`alen + ext`, the window appended to `spans` at the cursor, `pending` cleared
+there), so the two statements do not compose: after the reservation the block
+writes the word back *below* the carried cursor, and the restated link — the store
+alone, with `alen` and `spans` left where the reservation put them — is what a
+traversal after the exit composes.  That restatement is owed, not implied by the
+statement below, and `hca` is where the difference shows: the reservation makes
+`C.alen ≤ a` false in general. -/
 
 /-- `if.else285.i`: the arena cursor advances by the decoded length. -/
 def walkIf_else285_i : Block :=
