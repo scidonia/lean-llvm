@@ -404,6 +404,91 @@ theorem numberRecord_le (bits : Nat) :
   rw [numberRecord_width, stage2RecordBytes]
   omega
 
+/-! ### The event trace
+
+The event stream is variable-width, and the widths are the emitters':
+
+| record | bytes | emitter |
+|---|---:|---|
+| container marker, `true`, `false`, `null` | 1 | `out_tag` |
+| number | 9 | `out_tag` then `out_u64` of the value's `toBits` |
+| key or string | 13 | `out_reserve(&z->ev, 13)` and the three stores |
+
+So the cursor is the sum of the records' widths and not thirteen times a count: a
+root `true` leaves it one byte past its start, and no natural-number record count
+satisfies `1 = 13 * records`.  `EventRecord` is the trace the loop carries — one
+entry per record emitted, at its shape — and `encodedSize` is the width its
+emitter writes.  The invariant states the cursor as the trace's width sum and the
+stream's written suffix as the trace's concatenation, so the carry is about the
+bytes the body wrote rather than about a count.
+
+The trace is not the token correspondence: it records each event's shape and the
+payload fields its bytes carry, and what those records mean to the reference
+parser is the later event relation (`EventStreamRel`), not this predicate. -/
+
+/-- One record of the emitted event stream. -/
+inductive EventRecord where
+  /-- `out_tag`: one byte, a container marker or `true`/`false`/`null`. -/
+  | tag (t : Nat)
+  /-- A number: the tag and the eight bytes of the value's binary64 payload. -/
+  | number (bits : Nat)
+  /-- A key or string: the tag, a four-byte length and an eight-byte span. -/
+  | str (key : Bool) (len span : Nat)
+  deriving DecidableEq
+
+namespace EventRecord
+
+/-- `T_KEY` (`stage2.c:104`, pinned in `JsonStage2Body`). -/
+def tagKey : Nat := 5
+
+/-- `T_STR`. -/
+def tagStr : Nat := 6
+
+/-- The bytes the emitted body writes for the record.  A tag is `out_tag`'s one
+byte; a number is exactly `numberRecord`, the model of the number arm's two
+writes; a key or string is the thirteen-byte record `out_reserve` makes room for.
+-/
+def encodedBytes : EventRecord → List UInt8
+  | .tag t => [UInt8.ofNat t]
+  | .number bits => (numberRecord bits).flatten
+  | .str key len span =>
+      [UInt8.ofNat (if key then tagKey else tagStr)] ++ wordBytes 4 len ++
+        wordBytes 8 span
+
+/-- The record's width: the length of the bytes its emitter writes. -/
+def encodedSize (e : EventRecord) : Nat := e.encodedBytes.length
+
+/-- A tag is one byte (`out_tag`). -/
+theorem encodedSize_tag (t : Nat) : (EventRecord.tag t).encodedSize = 1 := rfl
+
+/-- A number is nine bytes: the tag and the binary64 payload. -/
+theorem encodedSize_number (bits : Nat) : (EventRecord.number bits).encodedSize = 9 := by
+  simp only [encodedSize, encodedBytes]
+  rw [numberRecord_width]
+
+/-- A key or string is thirteen bytes: the tag, the length and the span. -/
+theorem encodedSize_str (key : Bool) (len span : Nat) :
+    (EventRecord.str key len span).encodedSize = 13 := by
+  simp only [encodedSize, encodedBytes, wordBytes, natToBytes_length,
+    List.length_append, List.length_cons, List.length_nil]
+
+/-- **No record is wider than the record width.**  The three widths are one, nine
+and thirteen, so this is the uniform fact the capacity bound needs. -/
+theorem encodedSize_le (e : EventRecord) : e.encodedSize ≤ stage2RecordBytes := by
+  cases e with
+  | tag t => rw [encodedSize_tag]; decide
+  | number bits => rw [encodedSize_number]; decide
+  | str key len span => rw [encodedSize_str]; decide
+
+/-- A trace's width sum is at most the record width times its length. -/
+theorem sum_encodedSize_le (evs : List EventRecord) :
+    (evs.map encodedSize).sum ≤ stage2RecordBytes * evs.length :=
+  sum_le_of_forall_le (fun x hx => by
+    obtain ⟨e, -, rfl⟩ := List.mem_map.mp hx
+    exact encodedSize_le e) (by simp)
+
+end EventRecord
+
 /-! ### The arena
 
 `z_arena_reserve(z, len + US_SLACK)` refuses a reserve that does not fit, then

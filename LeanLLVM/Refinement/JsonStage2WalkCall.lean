@@ -33,7 +33,9 @@ What a call block owes, and what this module supplies:
   is at `%outn.i`'s slot, and three — `z_arena_reserve.exit` (the decoded body's
   prefix in the arena), `if.then328.i` (a thirteen-byte event record) and
   `if.then425.i` (`od_scalar_value`'s appended record) — move a cursor the carry
-  names, so their links are the carry's, not the frame's.
+  names, so their links are the carry's, not the frame's.  `s2ScalarValuePost`'s
+  second conjunct names the appended record, so `if.then425.i`'s call does not
+  hide the trace's step behind the model's equation.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkRest
 import LeanLLVM.Refinement.JsonStage2Helpers

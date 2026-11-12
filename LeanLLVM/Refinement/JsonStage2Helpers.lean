@@ -452,16 +452,38 @@ def s2StringBodyFoot (args : List Value) (mem : Mem) (_next : Nat) :
 
 /-! #### `od_scalar_value`: the appended record -/
 
+/-- **The record an emitting arm appended**, at the caller's stream: the bytes at
+the stream's cursor, and the cursor word advanced by the record's width.  The
+record is given as an `EventRecord`, because that is the vocabulary the walk's
+trace carries: `encodedBytes` is what the emitter writes, `encodedSize` the width
+the cursor advances by.  The two `stage2ReadWord` clauses fix the record's base
+and the cursor's old value, so the conclusion is about the caller's own stream
+and not about a copy. -/
+def s2ScalarValueAppend (mem m : Mem) (o : Nat) (rec : List UInt8) : Prop :=
+  ∃ buf len : Nat,
+    stage2ReadWord mem o 8 = some buf ∧
+    stage2ReadWord mem (o + 8) 8 = some len ∧
+    m = writeBytes (writeBytes mem (buf + len) rec) (o + 8)
+      (wordBytes 8 (len + rec.length))
+
 /-- **`od_scalar_value`'s answer**: `1` when it appended the token's record and
 `0` when it refused, with the stream's cursor written back (`out_raw`'s
-`o->len += n`) and the refusal's offset in the error record. -/
+`o->len += n`) and the refusal's offset in the error record.
+
+The second conjunct is the shape of an emission: when the call appended a record,
+the memory is the caller's with that record's bytes at the stream's cursor and the
+cursor word advanced by its width.  The first conjunct does not say *which*
+record the arm wrote; without the second a link that owns the trace could not
+advance it, because `s2ScalarValue`'s model hides the arm behind one equation. -/
 def s2ScalarValuePost (args : List Value) (mem : Mem) (next : Nat)
     (r : CallOutcome) : Prop :=
   match args with
   | [.ptr c, .ptr t, .ptr o] =>
-      ∃ (m : Mem) (ok : Nat),
+      (∃ (m : Mem) (ok : Nat),
         stage2ScalarValue mem c t o next = some ⟨.int 32 (BitVec.ofNat 32 ok), m, next⟩ ∧
-        r.ret = .int 32 (BitVec.ofNat 32 ok) ∧ r.mem = m ∧ r.next = next
+        r.ret = .int 32 (BitVec.ofNat 32 ok) ∧ r.mem = m ∧ r.next = next) ∧
+      (r.ret = .int 32 (BitVec.ofNat 32 1) →
+        ∃ ev : EventRecord, s2ScalarValueAppend mem r.mem o ev.encodedBytes)
   | _ => False
 
 /-- **`od_scalar_value`'s writes**: the stream's cursor word, the slot the record
@@ -1146,6 +1168,86 @@ theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : Ca
           · exact ⟨_, 0, (Option.some.inj h).symm,
               stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
 
+/-- **Which record an emitting arm appended.**  `ok = 1` is exactly the two
+appending arms — the number scan's acceptance and a literal's match — so the
+record is one of those two, and the memory's shape at it is the model's own
+composition: the record's bytes at the stream's cursor, then the cursor word. -/
+theorem s2ScalarValue_appended {c t o : Nat} {mem : Mem} {next : Nat}
+    {r : CallOutcome} (hpre : s2ScalarValuePre [.ptr c, .ptr t, .ptr o] mem next)
+    (h : stage2Calls stage2SubCalls "od_scalar_value" [.ptr c, .ptr t, .ptr o] mem next = some r)
+    (hok : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    ∃ ev : EventRecord, s2ScalarValueAppend mem r.mem o ev.encodedBytes := by
+  have h01 : (BitVec.ofNat 32 0) ≠ (BitVec.ofNat 32 1) := by decide
+  obtain ⟨c', t', o', hargs, base, e, pos, endp, kind, buf, len, cap, win, hbase, he, hpos,
+    hend, hkind, hbuf, hlen, hcap, hroom, hwin⟩ := hpre
+  cases hargs
+  have hlex : readBytes mem (base + pos) (endp - pos) =
+      some (win.take (endp - pos)) :=
+    readBytes_take_prefix (Nat.le_max_left _ _) hwin
+  rw [stage2Calls_od_scalar_value, stage2ScalarValueCall] at h
+  simp only [stage2ScalarValue, hbase, he, hpos, hend, hkind] at h
+  by_cases h0 : kind = 0
+  · simp only [h0, ↓reduceIte] at h
+    exact absurd (by
+      rw [(Option.some.inj h).symm] at hok
+      simpa using hok) h01
+  · simp only [h0, ↓reduceIte] at h
+    by_cases h7 : kind = 7
+    · simp only [h7, ↓reduceIte] at h
+      simp only [hlex] at h
+      by_cases hscan : (numLexScan (win.take (endp - pos))).2 = true
+      · simp only [hscan] at h
+        simp only [hbuf, hlen, hcap] at h
+        obtain ⟨p, hp⟩ := emitBlobs_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
+          (blobs := numberRecord
+            ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits))
+          (by
+            have hw := numberRecord_le
+              ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits)
+            omega)
+        obtain ⟨p1, p2⟩ := p
+        rw [hp] at h
+        obtain ⟨hm', hl'⟩ := emitBlobs_spec hp
+        rw [hm', hl'] at h
+        refine ⟨EventRecord.number
+          ((numFastEmitted (ByteString.literal (win.take (endp - pos)))).toBits), buf, len,
+          hbuf, hlen, ?_⟩
+        simp [EventRecord.encodedBytes, (Option.some.inj h).symm]
+      · simp only [hscan] at h
+        exact absurd (by
+          rw [(Option.some.inj h).symm] at hok
+          simpa using hok) h01
+    · simp only [h7, ↓reduceIte] at h
+      cases hlit : stage2Literal kind with
+      | none =>
+          rw [hlit] at h
+          exact absurd (by
+            rw [(Option.some.inj h).symm] at hok
+            simpa using hok) h01
+      | some lit =>
+          have hlit5 := stage2Literal_length hlit
+          have hgot : readBytes mem (base + pos) lit.length =
+              some (win.take lit.length) :=
+            readBytes_take_prefix (le_trans hlit5 (Nat.le_max_right _ _)) hwin
+          simp only [hlit, hgot] at h
+          split at h
+          · simp only [hbuf, hlen, hcap] at h
+            obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
+              (bs := [UInt8.ofNat kind]) (by
+                have hl : [UInt8.ofNat kind].length = 1 := rfl
+                simp only [stage2RecordBytes] at hroom
+                omega)
+            obtain ⟨p1, p2⟩ := p
+            have hpt : outTag mem buf len cap kind = some (p1, p2) := hp
+            rw [hpt] at h
+            obtain ⟨hm', hl'⟩ := outBlob_spec hp
+            rw [hm', hl'] at h
+            refine ⟨EventRecord.tag kind, buf, len, hbuf, hlen, ?_⟩
+            simp [EventRecord.encodedBytes, (Option.some.inj h).symm]
+          · exact absurd (by
+              rw [(Option.some.inj h).symm] at hok
+              simpa using hok) h01
+
 theorem s2ScalarValue_sound {args : List Value} {mem : Mem} {next : Nat}
     (hpre : s2ScalarValuePre args mem next) {r : CallOutcome}
     (h : stage2Calls stage2SubCalls "od_scalar_value" args mem next = some r) :
@@ -1157,10 +1259,13 @@ theorem s2ScalarValue_sound {args : List Value} {mem : Mem} {next : Nat}
     rw [← hr]
     rw [stage2Calls_od_scalar_value, stage2ScalarValueCall] at h
     exact h
-  refine ⟨m, ok, hval, ?_, ?_, ?_⟩
+  refine ⟨⟨m, ok, hval, ?_, ?_, ?_⟩, ?_⟩
   · rw [hr]
   · rw [hr]
   · rw [hr]
+  · intro hok
+    obtain ⟨ev, happ⟩ := s2ScalarValue_appended hpre' h hok
+    exact ⟨ev, happ⟩
 
 theorem s2ScalarValue_framed {args : List Value} {mem : Mem} {next : Nat}
     (hpre : s2ScalarValuePre args mem next) {r : CallOutcome}
