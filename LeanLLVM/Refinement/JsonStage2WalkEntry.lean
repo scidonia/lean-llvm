@@ -26,7 +26,10 @@ Two facts an entry link takes from its caller, neither of which `WalkInv` states
 
 * `while.body.i.lr.ph`, the outer loop's preheader: five literal-offset
   `getelementptr`s, the first of which is `%k11.i` at the staging's `%c.i + 32`
-  (`WalkLink.pureJumpK11`'s instance, in `JsonStage2WalkEntry`'s own module).
+  (`WalkLink.pureJumpK11`'s instance).  It reads `%c.i`, `%z` and `%t352.i`, which
+  `WalkPtrs` does not carry — it binds the six registers the dispatch *reads*, and
+  these three are the preheader's own inputs — so the link takes their bindings as
+  hypotheses, as the entry links take their floor.
 * `land.rhs.i.preheader`'s edge into `land.rhs.i`, and `if.end67.i`'s into
   `land.rhs71.i`: the two landed links whose landing fact was an argument.
 * `cond.end.i96` (the string scan's bound `phi` and its entry test) and
