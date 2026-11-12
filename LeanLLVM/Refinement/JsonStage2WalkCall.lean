@@ -27,7 +27,8 @@ What a call block owes, and what this module supplies:
   the five log fields and the trace read across it.
 * **the class.**  The census splits F's nineteen by what the callee writes: the
   three `s2_value_pos` callers and the eight `lifetime`-only blocks write
-  nothing, `if.then109.i`, `if.else334.i`, `if.then447.i` (through
+  nothing, `if.then413.i` is a fourth `s2_value_pos` caller whose own store
+  writes the token's kind byte inside its staged extent, `if.then109.i`, `if.else334.i`, `if.then447.i` (through
   `s2_after_value`) and `if.then19.i` (through `num_fast_el1`) write inside the
   frame and not at any word the invariant reads, `if.end256.i`'s own zero store
   is at `%outn.i`'s slot, and three write a record a cursor names:
@@ -1728,33 +1729,6 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       · show (C.stage.z, stage2LogExtent) ∈ walkWide G C'
         simp [walkWide, walkPresent, stage2ReportScratch, stage2StagedWrites, C']
       · simp only [wordBytes, natToBytes_length, stage2LogExtent, C']; omega
-/-! ## The token's entry
-
-`cond.end349.i` is where the scalar token is filled in before the record it
-describes is written: the switch's bound `phi`, the token's own live-range
-marker, the token's position and its one-byte gap flag.  It is class F's
-store-only shape — no call, but two stores whose addresses the invariant does not
-bind — and it is the block `if.then328.i` reads the token at, so its facts are the
-record's vertex.
-
-The two stores are at the token's first eight bytes and at `%gap.i`
-(`%t352.i + 20`), both inside the token's staged extent, so the frame, presence
-and the two streams' reads are the same four facts every in-frame store uses. -/
-
-/-- **A store of a literal at 32 bits**, the token's gap flag.  `BlockEval`'s
-store steps take a register and a 64-bit width; this is the 32-bit literal. -/
-theorem walkDenoteCode_store32_imm (calls : Calls) (env : Env) (s : State)
-    (x : BitVec 32) (p : String) {a : Nat}
-    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
-    denoteCode calls (.store (.int 32) (.imm (.int 32 x)) (.reg p) :: is) (stateAt env s) =
-      denoteCode calls is
-        (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
-  have hstep : evalInstr calls (stateAt env s)
-      (.store (.int 32) (.imm (.int 32 x)) (.reg p)) =
-      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
-    simp [evalInstr, evalOperand, Const.toValue, stateAt, hp, storeValue]
-  rw [denoteCode_cons_of _ _ _ _ _ hstep]
-
 /-- The token and the log are separate regions of the staging. -/
 theorem tok_z_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (_h : WalkInv G C s) :
@@ -1793,6 +1767,239 @@ theorem tok_ev_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     simp [stage2WalkRegions, stage2Regions, stage2StagedWrites]
   have h' := List.pairwise_iff_getElem.mp hpair 4 11 (by omega) (by omega) (by omega)
   simpa [stage2WalkRegions, stage2Regions, stage2StagedWrites] using h'.symm
+
+/-! ## The kind byte
+
+`if.then413.i` writes the scalar's kind byte at `%kind404.i` (`%t352.i + 16`,
+inside the token's staged extent), reads the root flag from `%root_done.i`, and
+asks `s2_value_pos` for the container's depth verdict.  Its run is also the
+dispatch's one five-way `phi` over immediate operands: the kind is a literal on
+every incoming edge, so the `phi` step is `denoteCode_phi` at the operand its
+predecessor names, and the block's own store is the first thing the verdict is
+read against.  The call writes nothing, so the link is the in-frame store's four
+memory facts plus the call's contract; the store and the token are separated from
+the log and the event stream by `tok_z_sep`/`tok_ev_sep` (above). -/
+
+/-- `if.then413.i`: the kind byte, the root flag, and `s2_value_pos`'s verdict. -/
+def walkIfThen413I : Block :=
+  { name := "if.then413.i",
+    instrs := [
+      Instr.phi "%.sink372" (Ty.int 32)
+        [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+         ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+         ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+         ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+         ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))],
+      Instr.store (Ty.int 32) (Operand.reg "%.sink372") (Operand.reg "%kind404.i"),
+      Instr.load "%38" (Ty.int 32) (Operand.reg "%root_done.i"),
+      Instr.call "%call416.i" (Ty.int 32) "s2_value_pos"
+        [(Ty.int 32, Operand.reg "%sp.i.0248"), (Ty.int 32, Operand.reg "%38"),
+         (Ty.ptr, Operand.reg "%ctype.i"), (Ty.ptr, Operand.reg "%cst.i")],
+      Instr.icmp "%tobool417.not.i" IPred.eq 32 (Operand.reg "%call416.i")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 0)))],
+    term := Term.condbr (Operand.reg "%tobool417.not.i") "if.then418.i" "if.then425.i" }
+
+theorem walkIfThen413I_find : stage2Body.findBlock "if.then413.i" = some walkIfThen413I := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIfThen413I]
+
+theorem walkIfThen413I_denote {sub : Calls} (env : Env) (s : State)
+    {p reg : String} {c : BitVec 32} {kind root : Nat} {rdv : BitVec 32}
+    {sp : BitVec 32} {ct cs : Nat} {r : CallOutcome} {x : BitVec 32} {op : Operand}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 32 c))
+    (hkind : lookupName env "%kind404.i" = some (.ptr kind))
+    (hroot : lookupName env "%root_done.i" = some (.ptr root))
+    (hread : readBytes (writeBytes s.mem kind (natToBytes c.toNat 4)) root 4 =
+      some (natToBytes rdv.toNat 4))
+    (hsp : lookupName env "%sp.i.0248" = some (.int 32 sp))
+    (hct : lookupName env "%ctype.i" = some (.ptr ct))
+    (hcs : lookupName env "%cst.i" = some (.ptr cs))
+    (hcall : stage2Calls sub "s2_value_pos"
+      [.int 32 sp, .int 32 rdv, .ptr ct, .ptr cs]
+      (writeBytes s.mem kind (natToBytes c.toNat 4)) s.next = some r)
+    (hret : r.ret = .int 32 x) :
+    denoteCode (stage2Calls sub) walkIfThen413I.instrs (stateAt env s) =
+      some (stateAt
+        (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+          ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+          ("%.sink372", .int 32 c)] env)
+        { s with mem := r.mem, next := r.next }) := by
+  simp only [walkIfThen413I]
+  rw [denoteCode_phi (calls := stage2Calls sub) (env := env) (s := s)
+    (d := "%.sink372") (ty := .int 32)
+    (inc := [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+      ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+      ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+      ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+      ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))])
+    (p := p) (op := op) (v := .int 32 c) hpre hinc hop _ (by decide)]
+  rw [denoteCode_store32 (calls := stage2Calls sub)
+    (env := ("%.sink372", .int 32 c) :: env) (s := s) (v := "%.sink372")
+    (p := "%kind404.i") (x := c) (a := kind)
+    (by simp [lookupName]) (by simpa [lookupName] using hkind)]
+  rw [denoteCode_load_i32 (calls := stage2Calls sub)
+    (env := ("%.sink372", .int 32 c) :: env)
+    (s := { s with mem := writeBytes s.mem kind (natToBytes c.toNat 4) })
+    (d := "%38") (p := "%root_done.i") (a := root) (v := rdv)
+    (by simpa [lookupName] using hroot) hread]
+  rw [walkDenoteCode_call (calls := stage2Calls sub)
+    (env := ("%38", .int 32 rdv) :: ("%.sink372", .int 32 c) :: env)
+    (s := { s with mem := writeBytes s.mem kind (natToBytes c.toNat 4) })
+    (d := "%call416.i") (ty := Ty.int 32) (callee := "s2_value_pos")
+    (args := [(Ty.int 32, Operand.reg "%sp.i.0248"), (Ty.int 32, Operand.reg "%38"),
+      (Ty.ptr, Operand.reg "%ctype.i"), (Ty.ptr, Operand.reg "%cst.i")])
+    (vs := [.int 32 sp, .int 32 rdv, .ptr ct, .ptr cs]) (r := r) ?_ hcall]
+  · rw [hret]
+    rw [denoteCode_icmp_eq_imm_w (calls := stage2Calls sub)
+      (env := ("%call416.i", .int 32 x) :: ("%38", .int 32 rdv) ::
+        ("%.sink372", .int 32 c) :: env)
+      (s := { s with mem := r.mem, next := r.next })
+      (d := "%tobool417.not.i") (a := "%call416.i") (w := 32)
+      (x := x) (c := BitVec.ofNat 32 0) (by simp [lookupName])]
+    rfl
+  · refine walkArgs_valuePos (("%38", .int 32 rdv) :: ("%.sink372", .int 32 c) :: env) s
+      ?_ ?_ ?_ ?_
+    · simpa [lookupName] using hsp
+    · rfl
+    · simpa [lookupName] using hct
+    · simpa [lookupName] using hcs
+
+/-- **`if.then413.i` is a link**: the kind byte is written inside the token's
+staged extent, and `s2_value_pos`'s verdict decides the arm. -/
+theorem WalkLink.if_then413_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
+    {p reg : String} {c : BitVec 32} {op : Operand} {rdv : BitVec 32} {x : BitVec 32}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 32 c))
+    (hkind : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hread : readBytes
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4))
+      (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre' : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next)
+    (hx : ∀ r, stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next = some r →
+      r.ret = .int 32 x) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
+          then "if.then418.i" else "if.then425.i") } s' := by
+  obtain ⟨r, hcall, hpost, -⟩ := s2ValuePosContract.resolves (next := s.next) hpre'
+  obtain ⟨v, -, hret, hmem, -⟩ := hpost
+  have hret' : r.ret = .int 32 x := hx r hcall
+  refine WalkLink.callQuietBr (G := G) (C := C) (s := s) hInv
+    (B := walkIfThen413I) (by rw [hblock]; exact walkIfThen413I_find)
+    (s₁ := stateAt
+      (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+        ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+        ("%.sink372", .int 32 c)] s.env)
+      { s with mem := r.mem, next := r.next })
+    (walkIfThen413I_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (p := p) (reg := reg) (c := c) (kind := C.stage.tok + 16)
+      (root := G.next0 + 8) (rdv := rdv) (sp := BitVec.ofNat 32 C.sp)
+      (ct := C.stage.ctype) (cs := C.stage.cst) (r := r) (x := x) (op := op)
+      hpre hinc hop hkind hrd hread hInv.depth_reg
+      (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall hret')
+    (by unfold walkCarried; decide) rfl
+    (by
+      dsimp only [stateAt]; rw [hmem]
+      refine walkFrame_write_inside hInv.frame ?_
+      intro k hk
+      rw [natToBytes_length] at hk
+      refine walkWide_of_seven
+        ⟨(C.stage.tok, stage2TokenExtent), by simp [stage2StagedWrites],
+          by omega, by simp only [stage2TokenExtent]; omega⟩)
+    (by
+      dsimp only [stateAt]; rw [hmem]
+      exact walkStaged_write (m := s.mem) (a := C.stage.tok + 16)
+        (bs := natToBytes c.toNat 4) rfl hInv.owned)
+    (by
+      dsimp only [stateAt]; rw [hmem]
+      intro off w hw
+      refine walkReadBytes_writeBytes_outside (start := C.stage.tok + 16)
+        (addr := C.stage.z + off) (n := w) (v := natToBytes c.toNat 4) ?_
+      rw [natToBytes_length]
+      rcases tok_z_sep hInv with h | h
+      · right
+        have h' : C.stage.tok + 24 ≤ C.stage.z := by
+          simpa [stage2TokenExtent] using h
+        omega
+      · left
+        have hz : C.stage.z + 64 ≤ C.stage.tok := by
+          simpa [stage2LogExtent] using h
+        omega)
+    (by
+      dsimp only [stateAt]; rw [hmem]
+      refine walkReadBytes_writeBytes_outside (start := C.stage.tok + 16)
+        (addr := G.ev + G.nev0)
+        (n := (C.events.map EventRecord.encodedBytes).flatten.length)
+        (v := natToBytes c.toNat 4) ?_
+      rw [natToBytes_length]
+      rcases tok_ev_sep hInv with h | h
+      · right
+        have h' : C.stage.tok + 24 ≤ G.ev := by
+          simpa [stage2TokenExtent] using h
+        omega
+      · left
+        have hroom : G.nev0 + 13 * G.n ≤ G.evcap := by
+          simpa [stage2RecordBytes] using G.evRoom
+        have hsum : (C.events.map EventRecord.encodedSize).sum ≤
+            13 * C.events.length := by
+          simpa [stage2RecordBytes] using EventRecord.sum_encodedSize_le C.events
+        have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
+            (C.events.map EventRecord.encodedSize).sum := by
+          simp only [List.length_flatten, List.map_map]; rfl
+        have h1 := hInv.events_le
+        have h2 := hInv.k_le
+        have h3 := G.nep_le
+        rw [hlen]
+        omega)
+    rfl
+    (by simp [cells, stateAt, lookupName_cons_self])
+    (by simp [WalkLocal]) (by simp [WalkLocal])
+
+/-! ## The token's entry
+
+`cond.end349.i` is where the scalar token is filled in before the record it
+describes is written: the switch's bound `phi`, the token's own live-range
+marker, the token's position and its one-byte gap flag.  It is class F's
+store-only shape — no call, but two stores whose addresses the invariant does not
+bind — and it is the block `if.then328.i` reads the token at, so its facts are the
+record's vertex.
+
+The two stores are at the token's first eight bytes and at `%gap.i`
+(`%t352.i + 20`), both inside the token's staged extent, so the frame, presence
+and the two streams' reads are the same four facts every in-frame store uses. -/
+
+/-- **A store of a literal at 32 bits**, the token's gap flag.  `BlockEval`'s
+store steps take a register and a 64-bit width; this is the 32-bit literal. -/
+theorem walkDenoteCode_store32_imm (calls : Calls) (env : Env) (s : State)
+    (x : BitVec 32) (p : String) {a : Nat}
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 32) (.imm (.int 32 x)) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+  have hstep : evalInstr calls (stateAt env s)
+      (.store (.int 32) (.imm (.int 32 x)) (.reg p)) =
+      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+    simp [evalInstr, evalOperand, Const.toValue, stateAt, hp, storeValue]
+  rw [denoteCode_cons_of _ _ _ _ _ hstep]
 
 /-- `cond.end349.i`: the switch's bound and the scalar token's two fields. -/
 def walkCondEnd349 : Block :=
@@ -2143,6 +2350,9 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen328_find
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen328_denote
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then328_i
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen413I_find
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen413I_denote
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then413_i
 #print axioms LeanLLVM.Refinement.WalkScope.tok_z_sep
 #print axioms LeanLLVM.Refinement.WalkScope.tok_ev_sep
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_store32_imm
