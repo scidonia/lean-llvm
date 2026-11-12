@@ -54,14 +54,15 @@ statements in `WalkInv`/`WalkLocal` that were too weak, and both are now in
 
 ## What is not here
 
-* H2's `while.body.i.lr.ph` and class G's fourteen reads: each needs its outgoing
-  environment written out so its `denoteCode` equality is a term the transfer
-  consumes.  The class lemmas take `denoteCode ... = some s₁`, and `s₁`'s memory and
-  `pc` are only visible from that term, so the instance must state it.  The five
-  `LeafBlock` instances show the shape.
-* class D's ten stores, and E's merges that write (`if.end372.i`, `while.end78.i`,
-  `if.then57.i`) — the memory clauses each owes are `JsonStage2WalkScope`'s class C
-  reasoning at a new address.
+* H2's `while.body.i.lr.ph` (`JsonStage2WalkEntry`) and class G's fourteen reads
+  (`JsonStage2WalkPure`): each needs its outgoing environment written out so its
+  `denoteCode` equality is a term the transfer consumes.  The class lemmas take
+  `denoteCode ... = some s₁`, and `s₁`'s memory and `pc` are only visible from that
+  term, so the instance states it.  The five `LeafBlock` instances show the shape.
+* class D's ten stores (`JsonStage2WalkStore`) and E's merges that write
+  (`if.end372.i`, `while.end78.i`, `if.then57.i`, in `JsonStage2WalkPhi`) — the
+  memory clauses each owes are `JsonStage2WalkScope`'s class C reasoning at a new
+  address, and `if.end372.i`'s token-slot write is carried by `owning` alone.
 * **the scan-entry measure — resolved**.  The disjunctive landing fact names the
   entry edge's counter, and the edge must also say what `C.inner` is there.  Under a
   measure whose inner component is the current scan's remaining work an entry resets
@@ -79,8 +80,10 @@ statements in `WalkInv`/`WalkLocal` that were too weak, and both are now in
   returned word (`if.end256.i` reads `%call272.i`'s successors, `if.then328.i` reads
   `%outn.i`) need the callee's **frame** as well as its post, and
   `z_arena_reserve.exit` needs the reservation to be the cursor's — the datum
-  `WalkInv.pending_cursor` reads.  Stating those contracts is order 4's input; no
-  F link is claimed here.
+  `WalkInv.pending_cursor` reads.  The six helpers' contracts are stated and proved
+  at their call boundary in `JsonStage2Helpers`; turning them into F links also
+  needs the walk's `owning` claim over the four body-allocated objects (`%ei.i`,
+  `%root_done.i`, `%xj.i`, `%outn.i`), and no F link is claimed here.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkScope
 import LeanLLVM.Refinement.JsonScanLane
@@ -681,10 +684,9 @@ theorem WalkLink.pureCoreCarried {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
 -- The four jump shapes these classes cover (`cond.true345.i`, `cond.true.i106`,
 -- `land.lhs.true357.i`, `if.then231.i`) and the carried-bit `condbr`
 -- (`if.end74.i`) are instances of the two transfers above; their `denoteCode`
--- equalities need the block's outgoing environment written out (the class
--- lemmas take `denoteCode ... = some s₁`, and `s₁`'s memory and `pc` are only
--- available from that term), which is the instance work this sitting did not
--- reach.  They are named in the module's census note as the remaining G rows.
+-- equalities are the G instances `JsonStage2WalkPure` supplies (`WalkLink.cond_true345_i`,
+-- `WalkLink.cond_true_i106`, `WalkLink.land_lhs_true357_i`, `WalkLink.if_then231_i`
+-- and `WalkLink.if_end74_i`).
 
 
 
