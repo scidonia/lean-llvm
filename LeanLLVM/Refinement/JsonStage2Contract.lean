@@ -173,27 +173,26 @@ else:
   `readBytes m err 8 = readBytes mem err 8`: the refusal channel is the only
   writer, and a caller that reads `*err` after an acceptance reads what it
   staged;
-* **the frame, as a region claim** — `Owns (stage2WalkFrame dst ndst' ev nev'
-  ndst nev err c ctype cst tok s z e) mem m`, from `LeanLLVM/FramePredicate.lean`.
-  The frame vocabulary is used here rather than a region list because this is
-  exactly the defect class it exists for: `Owns` is a structure whose presence
-  field is over the *same* predicate as its unchanged field, so a post cannot
-  name the reserve and leave its presence out, and an extent narrower than the
-  writes is refuted at the byte the run wrote (`narrowExtent_refuted`,
-  `not_owns_of_changed_outside`).  The record's siblings carried the list form;
-  this one states `Owns` and *derives* the list form for its consumer below
-  (`stage2Post_unchangedOutside`), so there is one object and a projection rather
-  than two regions that can drift.  The region is the run's whole touched extent,
+* **presence and the frame, as two region claims** — presence over
+  `stage2ReportPresent` (the five ABI write regions, the seven appended objects
+  and `%d.i`'s slot), and silence outside `stage2ReportFrame` (those plus the four
+  stack objects the body allocates at the call's cursor).  They are two claims
+  because they are not two readings of one region: presence over the four stack
+  bytes is false at the loop head, and silence outside the seven alone is false of
+  every helper that stores through an `alloca`, so a single `Owns` cannot state
+  both.  An extent narrower than the writes is refuted at the byte the run wrote
+  (`narrowExtent_refuted`, `not_owns_of_changed_outside`).  The touched extent is
   reserve included: `(dst, ndst' + 64)` for the decoder's slack, `(ev, nev')`, the
-  three slots (`ndst`, `nev`, `err`), **and the seven objects the emitted body
+  three slots (`ndst`, `nev`, `err`), **the seven objects the emitted body
   writes** — the cursor record, both container stacks, the token, `%s`, `%z` and
   `%e` — which the thirteen-argument ABI does not name and which the pre stages at
-  the adapter (`stage2StagedPre`).  A frame that stopped at the five would be
-  false of the pinned text at `%c.i + 32`.  The post carries the staging too
-  (`DisjointRegions (stage2StagedRegions …)`), because that is what separates the
-  seven from the caller's objects and from each other.  `b`, `ep`, `xp` and the
-  two count slots are absent from the region, which is the statement that **the
-  unit does not modify its inputs** — the clause every other record carries and
+  the adapter (`stage2StagedPre`), **`%d.i`'s slot** the number path stores
+  through, and **the four `alloca`s** at `next`.  A frame that stopped at the five
+  would be false of the pinned text at `%c.i + 32`.  The post carries the staging
+  too (`DisjointRegions (stage2StagedRegions …)`), because that is what separates
+  the seven from the caller's objects and from each other.  `b`, `ep`, `xp` and
+  the two count slots are absent from both lists, which is the statement that
+  **the unit does not modify its inputs** — the clause every other record carries and
   the one a caller would notice first if it moved.
 
 `.ub` is refused by the `match` (`False` at `.ub`), as every record in this tree
@@ -352,9 +351,9 @@ This is the ABI prefix of the walk's frame, not the frame itself.
 `stage2WalkFrame` is the walk's — the five plus the seven appended objects the
 emitted body writes — and `stage2Boundary`'s `Owns` is stated at *it*, because an
 `Owns` at these five does not survive the loop's first store (`%c.i + 32`).
-`stage2Writes_subset_walkWrites` records the containment, and
-`stage2Post_unchangedOutside` projects the post's frame to the walk's whole
-write list.  The five are kept as a named region because they are what the
+`stage2Writes_subset_walkWrites` records the containment, and the post's frame is
+`stage2ReportFrame`, the walk's write list extended by `%d.i` and the four
+`alloca`s.  The five are kept as a named region because they are what the
 *wrapper* stores, and a reader asking "what does the ABI-level unit write at its
 own boundary" should see that list rather than the body's scratch. -/
 def stage2Frame (dst ndst' ev nev' ndst nev err : Nat) : Nat → Prop :=
@@ -378,9 +377,13 @@ The extents below are the body's own `llvm.lifetime.start` sizes, read off the
 pinned AST by the `#guard`s in `JsonStage2IR`.  A frame that stops at
 `stage2Writes` omits every one of these objects, so no `Owns` at that frame
 survives the loop's first store — `while.body.i`'s write of its advanced index to
-`%c.i + 32`.  `stage2WalkFrame` is the frame that names them; `stage2Frame` is its
-ABI prefix, and the record's post is stated at the whole frame so that it is a
-projection of the walk's claim rather than a second region that can drift from it.
+`%c.i + 32`.  `stage2WalkFrame` is the predicate that names them; `stage2Frame` is
+its ABI prefix.  The record's post is not a single `Owns` at either: presence is
+claimed at `stage2ReportPresent` and silence at `stage2ReportFrame`, because the
+run makes the seven and `%d.i` present while the four stack objects are the
+allocator's.  `%d.i`'s slot and the four are named beside the seven
+(`stage2ReportScratch`, `stage2AllocaWrites`), so this predicate is the narrower
+statement, not the record's frame.
 -/
 
 /- The seven extents and their write list live upstream (`JsonStage2Scratch`),
@@ -395,8 +398,60 @@ def stage2WalkWrites (dst ndst' ev nev' ndst nev err c ctype cst tok s z e : Nat
   stage2Writes dst ndst' ev nev' ndst nev err ++
     stage2StagedWrites c ctype cst tok s z e
 
-/-- **The walk's frame**: the region claim's predicate at the run's whole touched
-extent.  `stage2Frame` is its prefix (`stage2Writes_subset_walkWrites`).
+/-! ### The four stack objects, as a region list
+
+`stage2AllocaWrites a` is the body's four `alloca`s at the cursor `a`; the three
+lemmas below are what a frame reads off it.  Every entry starts at `a` or later
+and ends at or before `a + 24`, so a byte below `a` is outside the list and the
+list lies inside the window `[a, a + 24)` — the direction the watermark's
+consumers need, since the staged objects are all below `a`. -/
+
+/-- A stack slot starts at or after the cursor. -/
+theorem stage2AllocaWrites_start {a : Nat} {r : Nat × Nat}
+    (hr : r ∈ stage2AllocaWrites a) : a ≤ r.1 := by
+  unfold stage2AllocaWrites at hr
+  rcases List.mem_cons.mp hr with rfl | hr
+  · exact Nat.le_refl a
+  rcases List.mem_cons.mp hr with rfl | hr
+  · exact Nat.le_add_right a 8
+  rcases List.mem_cons.mp hr with rfl | hr
+  · exact Nat.le_add_right a 12
+  rcases List.mem_cons.mp hr with rfl | hr
+  · exact Nat.le_add_right a 20
+  exact absurd hr (by simp)
+
+/-- Every stack slot ends inside the twenty-eight bytes the four allocations take
+`(8, 4, 8, 8)`. -/
+theorem stage2AllocaWrites_end {a : Nat} {r : Nat × Nat}
+    (hr : r ∈ stage2AllocaWrites a) : r.1 + r.2 ≤ a + 28 := by
+  unfold stage2AllocaWrites at hr
+  rcases List.mem_cons.mp hr with rfl | hr
+  · omega
+  rcases List.mem_cons.mp hr with rfl | hr
+  · omega
+  rcases List.mem_cons.mp hr with rfl | hr
+  · omega
+  rcases List.mem_cons.mp hr with rfl | hr
+  · omega
+  exact absurd hr (by simp)
+
+/-- **A byte below the cursor is outside the stack slots.**  This is the freshness
+the watermark buys: the staged objects end at or below `a`, so none of their bytes
+is in `stage2AllocaWrites a`. -/
+theorem not_inRegions_allocaWrites {a x : Nat} (hx : x < a) :
+    ¬ inRegions (stage2AllocaWrites a) x := by
+  rintro ⟨r, hr, hlo, -⟩
+  have := stage2AllocaWrites_start hr
+  omega
+
+
+/-- **The walk's write predicate at the five ABI regions and the seven appended
+objects.**  This is a *narrower* statement than the record's frame: `%d.i`'s slot
+and the four stack objects at the call's cursor are outside it, so the run's
+touched extent is `stage2ReportFrame`, and a claim silent only outside this list
+is false of the helpers that store through an `alloca`.  It is kept because it is
+the projection at the extent the ABI itself names.  `stage2Frame` is its prefix
+(`stage2Writes_subset_walkWrites`).
 
 **Why the seven are in the frame, and why that is the correct statement rather
 than a widening that suits a proof.**  The eight appended parameters exist in the
@@ -633,14 +688,93 @@ theorem stage2Writes_subset_walkWrites {dst ndst' ev nev' ndst nev err
       r ∈ stage2WalkWrites dst ndst' ev nev' ndst nev err c ctype cst tok s z e :=
   fun _ hr => List.mem_append_left _ hr
 
-/-- **A listed extent is present under the region claim.**  This is the only
+/-- **A frame over a region list is a frame over any list that covers it.**  Every
+entry of `R` lies inside some entry of `R'`, so a byte outside `R'` is outside `R`
+and the frame's equality transports.  This is the transfer between the lists a run
+names at different points of its own proof: the walk's write extents at its
+cursors, and the record's at the cursors plus the decoder's slack.
+
+The direction matters and is the one a wider list needs: `R'` may be wider than
+`R`, which makes the claim at `R'` *weaker*, and a weaker claim is what a run that
+writes at the wider list's extra bytes can keep. -/
+theorem UnchangedOutside.of_covered {mem m : Mem} {R R' : List (Nat × Nat)}
+    (h : UnchangedOutside mem m R)
+    (hsub : ∀ r ∈ R, ∃ s ∈ R', s.1 ≤ r.1 ∧ r.1 + r.2 ≤ s.1 + s.2) :
+    UnchangedOutside mem m R' := by
+  intro a ha
+  refine h a ?_
+  rintro r hr ⟨hlo, hhi⟩
+  obtain ⟨s, hs, h1, h2⟩ := hsub r hr
+  exact ha s hs ⟨Nat.le_trans h1 hlo, Nat.lt_of_lt_of_le hhi h2⟩
+
+/-- **A write whose every byte lies inside a region list extends a frame over that
+list.**  The store cannot touch a byte the frame talks about, and the bytes it
+does touch are inside the list by hypothesis.  The per-byte form is deliberate:
+the lists are literals built from a call's arguments, and a caller's inside-proof
+is a membership at each written offset rather than a search for one entry that
+contains the whole range. -/
+theorem UnchangedOutside.write_inside {mem m : Mem} {R : List (Nat × Nat)}
+    {a : Nat} {bs : List UInt8} (h : UnchangedOutside mem m R)
+    (hw : ∀ k, k < bs.length → inRegions R (a + k)) :
+    UnchangedOutside mem (writeBytes m a bs) R := by
+  intro x hx
+  have hout : x < a ∨ a + bs.length ≤ x := by
+    rcases Nat.lt_or_ge x a with hlt | hge
+    · exact Or.inl hlt
+    · refine Or.inr (Nat.le_of_not_lt ?_)
+      intro hlt
+      obtain ⟨r, hr, hlo, hhi⟩ := hw (x - a) (by omega)
+      exact hx r hr ⟨by omega, by omega⟩
+  rw [readByte_writeBytes_outside m bs hout]
+  exact h x hx
+
+/-- **A frame survives a store at a byte the list is about to grow over.**  The
+event stream's two record stores are this shape: the frame is stated at the cursor
+the store advances, so the written byte is inside the *new* list and every old
+entry is covered by the new one.  `hsub` is that coverage. -/
+theorem UnchangedOutside.write_grow {mem m : Mem} {R R' : List (Nat × Nat)}
+    {a : Nat} {bs : List UInt8} (h : UnchangedOutside mem m R)
+    (hsub : ∀ r ∈ R, ∃ s ∈ R', s.1 ≤ r.1 ∧ r.1 + r.2 ≤ s.1 + s.2)
+    (hin : ∃ r ∈ R', r.1 ≤ a ∧ a + bs.length ≤ r.1 + r.2) :
+    UnchangedOutside mem (writeBytes m a bs) R' := by
+  obtain ⟨r, hr, hlo, hhi⟩ := hin
+  intro x hx
+  have hx' : x < a ∨ a + bs.length ≤ x := by
+    rcases Nat.lt_or_ge x a with hlt | hge
+    · exact Or.inl hlt
+    · refine Or.inr (Nat.le_of_not_lt ?_)
+      intro hlt
+      exact hx r hr ⟨by omega, by omega⟩
+  rw [readByte_writeBytes_outside m bs hx']
+  exact UnchangedOutside.of_covered h hsub x hx
+
+/-- **The extents the run makes present**: the five ABI write regions and the
+staged scratch.  Presence is claimed here and only here, because every byte of it
+was present before the run started — the caller staged the buffers and the seven
+objects, and `%d.i`'s slot is staged at the adapter (`stage2StagedPre`). -/
+def stage2ReportPresent (dst ndst' ev nev' ndst nev err c ctype cst tok s z e d : Nat) :
+    List (Nat × Nat) :=
+  stage2Writes dst ndst' ev nev' ndst nev err ++ stage2ReportScratch c ctype cst tok s z e d
+
+/-- **The run's whole touched extent**: everything it makes present, and the four
+stack objects the body allocates at the cursor `next`.  This is the list the
+record's frame is stated at, and the walk's frame transfers to it
+(`UnchangedOutside.of_covered`): the stack objects are written by the helper calls
+the walk makes, so a claim silent outside the seven alone is false of the body. -/
+def stage2ReportFrame (dst ndst' ev nev' ndst nev err c ctype cst tok s z e d next : Nat) :
+    List (Nat × Nat) :=
+  stage2ReportPresent dst ndst' ev nev' ndst nev err c ctype cst tok s z e d ++
+    stage2AllocaWrites next
+
+/-- A listed extent is present under the region claim.  This is the only
 projection a region claim admits: presence is monotone in the region, so a listed
-interval's bytes are present.  The unchanged half is not: `UnchangedOn` at a
-narrow region implies it at every wider one, and never the other way.  So
-`Owns (stage2WalkFrame …)` does **not** yield `Owns (stage2Frame …)` — the wider
-region leaves exactly the seven appended bytes outside the narrow one's demand,
-and the walk wrote them.  That is why the record's post is stated at the walk's
-frame rather than at the ABI's five and projected down. -/
+interval's bytes are present.  The unchanged half is not: `UnchangedOutside` at a
+narrow region implies it at every wider one, and never the other way.  So a single
+`Owns` cannot state the record's two halves either (`Owns (stage2WalkFrame …)`
+does **not** yield `Owns (stage2Frame …)` — the wider region leaves exactly the
+seven appended bytes outside the narrow one's demand, and the walk wrote them),
+which is why the post carries presence over the write extents and silence over the
+wider touched extent as two clauses rather than projecting one region down. -/
 theorem owns_extent_present {mem m : Mem} {rs : List (Nat × Nat)} {r : Nat × Nat}
     (h : Owns (inRegions rs) mem m) (hr : r ∈ rs) : HasBytes m r.1 r.2 :=
   readBytes_of_hasBytes m r.1 r.2 fun k hk =>
@@ -706,7 +840,7 @@ def stage2Budget (args : List Value) (_mem : Mem) : Nat :=
 /-- The caller's staging for the stage-2 unit, at `stage2.h`'s thirteen
 arguments.  Every clause is read from a sentence of the header or from the body's
 own reads; the module docstring walks them in order. -/
-def stage2Pre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
+def stage2Pre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
   ∃ (b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat)
     (bs : List UInt8) (ent : List Nat) (ndst0 nev0 : Nat),
     args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
@@ -740,7 +874,25 @@ def stage2Pre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
     n ≤ stage2MaxDocument ∧
     -- every staged object is a separate region
     DisjointRegions
-      (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)
+      (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err) ∧
+    -- **the watermark**: every staged object ends at or below the allocator
+    -- cursor the call is made at.  `next` is the cursor the body's `entry` block
+    -- starts from, and its four `alloca`s land at `next`, `next + 8`,
+    -- `next + 12` and `next + 20` (`stage2AllocaWrites`), so this clause is what
+    -- makes those four objects fresh: not one byte of the caller's staging is in
+    -- them, and the walk's frame can therefore name them without claiming
+    -- silence over the caller's buffers.
+    --
+    -- It is a caller's promise, not a consequence of the other clauses: the
+    -- model's `next` is a bump cursor with no upper bound an allocator could
+    -- check, so a caller whose buffers sat above it would have its own objects
+    -- overwritten by the body's first `alloca`.  Stating it here is what makes
+    -- the four slots' extent *derived* from the staging rather than assumed:
+    -- `WalkGeom.watermark` is this clause at the staging the walk reads, and the
+    -- walk's read proofs use it to exclude the four from the document and the
+    -- entry stream.
+    (∀ r ∈ stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err,
+      r.1 + r.2 ≤ next)
 
 /-! ### The post -/
 
@@ -781,10 +933,11 @@ this places the arena's write extent inside the arena and the event extent
 inside the event stream, which is what a consumer composing this post with the
 caller's staging of the two buffers needs.  It also makes the reported extents
 below the word's width, the bound `pipelineOutputExtents` reads. -/
-def stage2Boundary (args : List Value) (mem m : Mem) (v : Value) : Prop :=
+def stage2Boundary (args : List Value) (mem : Mem) (next : Nat) (m : Mem)
+    (v : Value) : Prop :=
   ∃ (b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat)
     (verdict : BitVec 64) (ndst0 nev0 ndst' nev' : Nat) (arena evs : List UInt8)
-    (c ctype cst tok s z e nkSlot nxpSlot : Nat),
+    (c ctype cst tok s z e d nkSlot nxpSlot : Nat),
     args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
             .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
             .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
@@ -835,13 +988,33 @@ def stage2Boundary (args : List Value) (mem m : Mem) (v : Value) : Prop :=
       ∃ e : Nat, e ≤ n ∧ readBytes m err 8 = some (wordBytes 8 e)) ∧
     -- and unchanged on acceptance, because nothing writes it
     (verdict = 1 → readBytes m err 8 = readBytes mem err 8) ∧
-    -- the region the run touched, owned: presence and the frame together.  The
-    -- frame is the walk's — the five ABI write regions *and* the seven appended
-    -- objects the body writes — because a frame that named only the five is
-    -- contradicted by the loop's first store (`%c.i + 32`).  The five are its
-    -- prefix (`stage2Writes_subset_walkWrites`), so every clause the ABI's five
-    -- regions carried is still here.
-    Owns (stage2WalkFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e) mem m ∧
+    -- **presence over the extents the run wrote**, and the frame the run kept:
+    -- the two halves of what was one region claim, kept apart because the region
+    -- the run may *write* and the region over which it must be *silent* are not
+    -- the same list.
+    --
+    -- Presence is claimed at the write extents: the five ABI write regions, the
+    -- seven appended objects the body stores into (the seven are the body's own
+    -- `llvm.lifetime.start` extents, `stage2StagedWrites`), and `%d.i`'s slot,
+    -- which the number path's accepted arm stores through.  The four `alloca`s
+    -- the body also writes are *not* here: their bytes are written by the helper
+    -- calls and nothing makes them present before that, so a presence claim over
+    -- them would be false one step into the run.
+    (∀ a, inRegions
+      (stage2ReportPresent dst ndst' ev nev' ndst nev err c ctype cst tok s z e d) a →
+        present m a) ∧
+    -- Silence outside the run's whole touched extent — the extents above *and*
+    -- the four stack objects the body allocates at its entry, which the helpers
+    -- store through.  They are the four slots `stage2AllocaWrites next` names, at
+    -- the cursor this call was made at: their addresses are the allocator's, not
+    -- the caller's, so the post names them through `next`, and it is
+    -- `stage2Pre`'s watermark that places them above every staged object.  A
+    -- frame that stopped at the seven asserted silence over bytes `s2_init`,
+    -- `s2_string_body` and `num_fast_el1` do write (`s2AfterValueFoot`'s
+    -- `(outn, 8)`, `s2StringBodyFoot`'s `(xj, 8)`, `s2NumFastFoot`'s
+    -- `(out, 8)`).
+    UnchangedOutside mem m
+      (stage2ReportFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e d next) ∧
     -- and the seventeen staged objects are pairwise separate, at their staged
     -- extents.  This is the pre's staging (`stage2StagedPre`) carried through the
     -- run, and it is what a consumer reads the report's frame against: the seven
@@ -855,15 +1028,23 @@ def stage2Boundary (args : List Value) (mem m : Mem) (v : Value) : Prop :=
     -- not the caller's addresses.
     DisjointRegions
       (stage2StagedRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
-        c ctype cst tok s z e nkSlot nxpSlot)
+        c ctype cst tok s z e nkSlot nxpSlot) ∧
+    -- **`%d.i` is separate from the walk's own staged objects.**  The adapter's
+    -- staging separates its slot from the seventeen (`stage2StagedPre_dSep`), and
+    -- a consumer that reads the caller's entry stream or escape list *after* the
+    -- call needs it: the run may have written `%d.i`, so silence outside the
+    -- frame that names `%d.i` is not silence outside the frame that omits it.  The
+    -- clause is `Stage2Run.dSep`'s content, at the arguments the post names.
+    (∀ r ∈ stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+        c ctype cst tok s z e, r.1 + r.2 ≤ d ∨ d + 8 ≤ r.1)
 
 /-- What the stage-2 run leaves at the caller's staging, at the outcome it
 produces.  `.ub` is refused by the match, and a return that carries no value or
 a value of another shape is outside `stage2Boundary`'s `v = .int 64 verdict`. -/
-def stage2Post (args : List Value) (mem : Mem) (_next : Nat) (o : Outcome) : Prop :=
+def stage2Post (args : List Value) (mem : Mem) (next : Nat) (o : Outcome) : Prop :=
   match o with
   | .ub => False
-  | .ret (some v) m => stage2Boundary args mem m v
+  | .ret (some v) m => stage2Boundary args mem next m v
   | .ret none _ => False
 
 /-! ### The record -/
@@ -882,42 +1063,26 @@ def Γ_stage2 : MemContract where
 The pipeline's post is a region list, so the frame claim is projected to that
 form once here rather than restated in the record. -/
 
-/-- **The post's frame, as the list form the pipeline's post speaks.**  A reader
-of `Γ_pipeline_units.post` sees `UnchangedOutside`; this is where it comes from,
-at the walk's whole extent.  The list is the frame's, not the ABI's five: a
-consumer holding a byte outside the list has a byte the run did not write, and
-the staged objects it must separately reason about are the seven — which is why
-the pipeline's own post names them too. -/
-theorem stage2Post_unchangedOutside {dst ndst' ev nev' ndst nev err
-    c ctype cst tok s z e : Nat} {mem m : Mem}
-    (h : Owns (stage2WalkFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e)
-      mem m) :
-    UnchangedOutside mem m
-      (stage2WalkWrites dst ndst' ev nev' ndst nev err c ctype cst tok s z e) := by
-  rw [unchangedOutside_iff_inRegions]
-  exact h.unchanged
-
-/-- **The arena extent is present, from the region claim.**  The presence half of
-`Owns` is over the same predicate as the frame, so the decoder's reserve is
-present without a second clause (`escapeFrame_owns_reserve`'s move at this
-record's frame). -/
+/-- **The arena extent is present, from the presence half.** -/
 theorem stage2Frame_arena_present {dst ndst' ev nev' ndst nev err
-    c ctype cst tok s z e : Nat} {mem m : Mem}
-    (h : Owns (stage2WalkFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e)
-      mem m) :
+    c ctype cst tok s z e d : Nat} {m : Mem}
+    (h : ∀ a, inRegions
+      (stage2ReportPresent dst ndst' ev nev' ndst nev err c ctype cst tok s z e d) a →
+        present m a) :
     HasBytes m dst (ndst' + stage2ArenaReserve) :=
   readBytes_of_hasBytes m dst (ndst' + stage2ArenaReserve) fun k hk =>
-    h.present (dst + k) ⟨(dst, ndst' + stage2ArenaReserve), by
-        simp [stage2WalkWrites, stage2Writes], by omega, by omega⟩
+    h (dst + k) ⟨(dst, ndst' + stage2ArenaReserve), by
+        simp [stage2ReportPresent, stage2Writes], by omega, by omega⟩
 
-/-- **The event prefix is present, from the region claim.** -/
+/-- **The event prefix is present, from the presence half.** -/
 theorem stage2Frame_event_present {dst ndst' ev nev' ndst nev err
-    c ctype cst tok s z e : Nat} {mem m : Mem}
-    (h : Owns (stage2WalkFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e)
-      mem m) :
+    c ctype cst tok s z e d : Nat} {m : Mem}
+    (h : ∀ a, inRegions
+      (stage2ReportPresent dst ndst' ev nev' ndst nev err c ctype cst tok s z e d) a →
+        present m a) :
     HasBytes m ev nev' :=
   readBytes_of_hasBytes m ev nev' fun k hk =>
-    h.present (ev + k) ⟨(ev, nev'), by simp [stage2WalkWrites, stage2Writes],
+    h (ev + k) ⟨(ev, nev'), by simp [stage2ReportPresent, stage2Writes],
       by omega, by omega⟩
 
 /-- The record refuses `ub`: the post is `False` there, so `Satisfies`'s
@@ -937,8 +1102,9 @@ theorem stage2_verdict_bounded :
       ∃ k : BitVec 64, v = .int 64 k ∧ (k = 0 ∨ k = 1) := by
   intro args mem next v m h
   simp only [Γ_stage2, stage2Post] at h
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, k, _, _, _, _, _, _,
-    _, _, _, _, _, _, _, _, _, hargs, hv, hr, -⟩ := h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, k, _, _, _, _, _, _, _, _, _, _, _,
+    _, _, _, _, _, hargs, hv, hr, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+    _, _⟩ := h
   exact ⟨k, hv, hr⟩
 
 /-! ### Consequences of the pre
@@ -1014,7 +1180,7 @@ theorem stage2Pre_cursor_bounds {args : List Value} {mem : Mem} {next : Nat}
       ndst0 ≤ dstcap ∧ nev0 ≤ evcap ∧ nep ≤ n := by
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, _hargs, _hdoc, _htail, hent, horder, hlt, _hxp, _hdstpres,
-    hdst, _hevpres, hev, _hndst, _hnev, _herr, _hmax, _hdisj⟩ := h
+    hdst, _hevpres, hev, _hndst, _hnev, _herr, _hmax, _hdisj, _hwm⟩ := h
   refine ⟨n, nep, dstcap, evcap, ndst0, nev0, by omega, by omega, ?_⟩
   rw [← readLanes32_length mem ep nep ent hent]
   exact length_le_of_pairwise_lt horder hlt
@@ -1081,14 +1247,19 @@ theorem stage2Mem_disjoint :
 witness memory: every extent has the length the pre asks, the entry stream is
 empty so its two content clauses are vacuous, the document's read-past tail is
 staged, and the cursors read zero.  The record therefore promises something
-rather than refusing every caller. -/
+rather than refusing every caller.
+
+The watermark is `120`: the witness's largest staged object ends at `112 + 8`, so
+a cursor at `120` is the smallest the clause admits — and `1`, the model's
+`initState` cursor, is *not* admitted, which is the clause's content rather than
+an accident of the witness. -/
 theorem stage2_pre_inhabited :
     Γ_stage2.pre
       [.ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 32,
        .int 64 64, .ptr 96, .ptr 0, .int 64 0, .ptr 104, .ptr 112]
-      stage2Mem 1 := by
+      stage2Mem 120 := by
   refine ⟨0, 0, 0, 0, 0, 0, 32, 64, 96, 0, 0, 104, 112, [], [], 0, 0, rfl,
-    rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact ⟨List.replicate stage2ReadTail 0, stage2Mem_tail⟩
   · simp
   · simp
@@ -1102,6 +1273,7 @@ theorem stage2_pre_inhabited :
   · exact ⟨wordBytes 8 0, stage2Mem_err⟩
   · decide
   · exact stage2Mem_disjoint
+  · decide
 
 /-! ### The tail's pin
 
@@ -1266,10 +1438,6 @@ rests on are the extraction steps' lemmas — `String.ofList_injective`,
 /-- info: 'LeanLLVM.Refinement.Γ_stage2' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms Γ_stage2
-
-/-- info: 'LeanLLVM.Refinement.stage2Post_unchangedOutside' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms stage2Post_unchangedOutside
 
 /-- info: 'LeanLLVM.Refinement.stage2Frame_arena_present' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

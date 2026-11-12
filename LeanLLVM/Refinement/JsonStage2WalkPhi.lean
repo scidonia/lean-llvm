@@ -22,7 +22,7 @@ Of the three store blocks, the two refusal exits have class C's shape with a
 `phi` (and, at `if.then57.i`, an `add`) in front, so their carry advances
 `eoff`/`refusal` exactly as `WalkLink.refusalStore`'s does, and `if.end372.i`
 writes the scan's end position at the token's slot `%t352.i + 8`, which no clause
-of `WalkInv` names: its write is carried by `owning` alone.
+of `WalkInv` names: its write is carried by `frame` alone.
 
 **What waits on F.**  `if.end290.i`'s first `phi` takes `%32` — the arena
 reserve's decoded length, loaded from `%outn.i` — as an incoming operand, so its
@@ -116,7 +116,7 @@ theorem walkDenoteCode_add_reg_w (calls : Calls) (env : Env) (s : State) (d a b 
 /-! ### The token's extent, for the scan's end store
 
 `if.end372.i` writes eight bytes at `%t352.i + 8` (`%end.i`).  No clause of
-`WalkInv` reads the token, so the write owes only `owning`: the pair
+`WalkInv` reads the token, so the write owes only `frame`: the pair
 `(tok, stage2TokenExtent)` is one of the staged regions, and the log, the event
 stream and the arena's cursor are separate from it. -/
 
@@ -1062,7 +1062,7 @@ theorem walkIf_end372_i_find : stage2Body.findBlock "if.end372.i" = some walkIf_
 
 /-- **`if.end372.i` as a link.**  The store writes the scan's end position at
 `%end.i` (`%t352.i + 8`), inside the token's extent; no `WalkInv` clause names the
-token, so `owning` is the only clause the write touches. -/
+token, so `frame` is the only clause the write touches. -/
 theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.end372.i")
@@ -1217,7 +1217,8 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
-      owning := ?_
+      owned := walkStaged_write rfl hInv.owned
+      frame := ?_
       blockLocal := by split <;> simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkIf_end372_i.instrs "%k.0.i249"
@@ -1266,9 +1267,9 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       (N := 8) (x := e) (walkTok_z_sep hInv) (by decide)]
     exact hInv.log_acap
   · dsimp only [s', sFin, m', stateAt]
-    refine owns_writeBytes_inside hInv.owning ?_
+    refine walkFrame_write_inside hInv.frame ?_
     intro k hk
-    refine inRegions_append_right ?_
+    refine walkWide_of_seven ?_
     exact walkTok_inside (by
       have hk' : k < (natToBytes e.toNat 8).length := hk
       rw [natToBytes_length] at hk'
@@ -1391,7 +1392,8 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
-      owning := ?_
+      owned := walkStaged_write rfl hInv.owned
+      frame := ?_
       blockLocal := by simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkIf_then57_i.instrs "%k.0.i249"
@@ -1440,10 +1442,10 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       (x := x + ix) (N := 8) (e_z_sep hInv) (by decide)]
     exact hInv.log_acap
   · dsimp only [s', sFin, m', stateAt]
-    refine owns_writeBytes_inside hInv.owning ?_
+    refine walkFrame_write_inside hInv.frame ?_
     intro k hk
     rw [natToBytes_length] at hk
-    exact inRegions_append_right (eoff_inside hk)
+    exact walkWide_of_seven (eoff_inside hk)
   · simp [walkMeasure]
 
 /-- `while.end78.i`: the escape scan's refusal store. -/
@@ -1559,7 +1561,8 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
-      owning := ?_
+      owned := walkStaged_write rfl hInv.owned
+      frame := ?_
       blockLocal := by simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkWhile_end78_i.instrs "%k.0.i249"
@@ -1608,10 +1611,10 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       (x := x) (N := 8) (e_z_sep hInv) (by decide)]
     exact hInv.log_acap
   · dsimp only [s', sFin, m', stateAt]
-    refine owns_writeBytes_inside hInv.owning ?_
+    refine walkFrame_write_inside hInv.frame ?_
     intro k hk
     rw [natToBytes_length] at hk
-    exact inRegions_append_right (eoff_inside hk)
+    exact walkWide_of_seven (eoff_inside hk)
   · simp [walkMeasure]
 
 

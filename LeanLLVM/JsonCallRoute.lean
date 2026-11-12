@@ -1152,7 +1152,7 @@ theorem routePost_result {l : RouteLayout} {doc : List UInt8} {next : Nat}
       (verdict.toNat = 0 ∨ verdict.toNat = 1) := by
   simp only [routePost, pipelineUnitsPost, routeArgs] at h
   obtain ⟨hv, nk', nxp', ndst', nev', ent, ps, out, evs,
-    -, -, -, -, -, -, -, hout, hnk, hnxp, -, -, -, -, -, -, -⟩ := h
+    -, -, -, -, -, -, -, -, -, hout, hnk, hnxp, -, -, -, -, -, -, -⟩ := h
   simp only [pipelineOutputExtents, routeArgs] at hout
   obtain ⟨-, -, hndst, hnev⟩ := hout
   refine ⟨nk', nxp', ndst', nev', ?_, ?_⟩

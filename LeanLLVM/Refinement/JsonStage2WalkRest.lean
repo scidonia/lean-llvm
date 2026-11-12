@@ -62,7 +62,7 @@ statements in `WalkInv`/`WalkLocal` that were too weak, and both are now in
 * class D's ten stores (`JsonStage2WalkStore`) and E's merges that write
   (`if.end372.i`, `while.end78.i`, `if.then57.i`, in `JsonStage2WalkPhi`) — the
   memory clauses each owes are `JsonStage2WalkScope`'s class C reasoning at a new
-  address, and `if.end372.i`'s token-slot write is carried by `owning` alone.
+  address, and `if.end372.i`'s token-slot write is carried by `frame` alone.
 * **the scan-entry measure — resolved**.  The disjunctive landing fact names the
   entry edge's counter, and the edge must also say what `C.inner` is there.  Under a
   measure whose inner component is the current scan's remaining work an entry resets
@@ -82,7 +82,7 @@ statements in `WalkInv`/`WalkLocal` that were too weak, and both are now in
   `z_arena_reserve.exit` needs the reservation to be the cursor's — the datum
   `WalkInv.pending_cursor` reads.  The six helpers' contracts are stated and proved
   at their call boundary in `JsonStage2Helpers`; turning them into F links also
-  needs the walk's `owning` claim over the four body-allocated objects (`%ei.i`,
+  needs the walk's `frame` claim over the four body-allocated objects (`%ei.i`,
   `%root_done.i`, `%xj.i`, `%outn.i`), and no F link is claimed here.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkScope
@@ -227,7 +227,8 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        frame := ?_
         blockLocal := ?_ }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -250,7 +251,7 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
     · dsimp only [s']
-      rw [hmem]; exact hInv.owning
+      rw [hmem]; exact hInv.frame
     · dsimp only [s']
       by_cases ht : bit = 1
       · rw [ite_eq_left ht]; exact hl
@@ -297,7 +298,8 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        frame := ?_
         blockLocal := hloc }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -320,7 +322,7 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
     · dsimp only [s']
-      rw [hmem]; exact hInv.owning
+      rw [hmem]; exact hInv.frame
   · rfl
 
 
@@ -562,7 +564,8 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        frame := ?_
         blockLocal := hloc }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -585,7 +588,7 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
     · dsimp only [s']
-      rw [hmem]; exact hInv.owning
+      rw [hmem]; exact hInv.frame
   · rfl
 
 /-! ### Class H2: the entry loop's five addresses, and the literal's `or` -/

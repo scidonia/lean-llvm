@@ -328,16 +328,18 @@ composite run may write — the caller's buffers, at the extents the units' post
 reports — with the extent component that decides them, extended by the regions the
 stage-2 callee declared for itself (`CallsFootprint.CallerView`).
 
-The callee's list is `stage2StagedWrites` at the seven appended objects: the
+The callee's list is the run's whole scratch: the seven appended objects (the
 cursor record, the two container stacks, the token, the decoder state, the log and
-the refusal record.  Their addresses are not functions of anything the caller
-holds: the walk allocates them inside its own frame, and the pipeline's call
-carries the thirteen ABI slots only (`PipelineBodyStep.stage2Args`), so the clause
-binds them existentially — the same witnesses, at the same extents, that
+the refusal record), the number path's output slot `%d.i`, and the four `alloca`s
+the body's `entry` block takes.  Their addresses are not functions of anything the
+caller holds: the seven and `%d.i` are appended parameters of the flattened body
+and the four are the allocator's, and the pipeline's call carries the thirteen ABI
+slots only (`PipelineBodyStep.stage2Args`), so the clause binds all twelve
+existentially — the same witnesses, at the same extents, that
 `pipelineUnitsPost` carries.  Reading the footprint off the callee's parameters
-would require them to name addresses those parameters do not carry; the seven
-enter an argument list only at the adapter's twenty-one-slot call, where
-`JsonStage2IR.stage2Args` appends them.
+would require them to name addresses those parameters do not carry; they enter an
+argument list only at the adapter's twenty-one-slot call, where
+`JsonStage2IR.stage2Args` appends eight of them.
 
 `CallerView` is `UnchangedOutside` at the concatenation of the two lists, so this
 is the units' post's own frame clause with the callee's declared regions already
@@ -356,13 +358,13 @@ def SigmaFrame (args : List Value) (o : Outcome) (mem : Mem) : Prop :=
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
      .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _],
     .ret (some (.int 64 _)) m =>
-      ∃ (nk' nxp' ndst' nev' : Nat) (c ctype cst tok s z e : Nat),
+      ∃ (nk' nxp' ndst' nev' : Nat) (c ctype cst tok s z e d alloc : Nat),
         pipelineOutputExtents args o ndst' nev' ∧
         CallerView
           [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
            (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16),
            (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
-          (stage2StagedWrites c ctype cst tok s z e) mem m
+          (stage2ReportScratch c ctype cst tok s z e d ++ stage2AllocaWrites alloc) mem m
   | _, _ => True
 
 /-- The reference parser's predicate, at `LeanLLVM.JSON.Limits.default`.

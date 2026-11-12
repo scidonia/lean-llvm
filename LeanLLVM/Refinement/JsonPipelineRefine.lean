@@ -1110,14 +1110,16 @@ applies it at the post's witnesses and there is no quantifier over prefixes
 anywhere on the path from the units' post to the specification's.
 
 **Every conjunct follows from the units' post, the frame included.**  The
-composite run writes the stage-2 callee's seven appended objects
-(`stage2WalkWrites`), and this model has no fresh frame per call, so a frame over
-the caller's own regions alone is false of the model: the callee's scratch lies
-outside them.  The units' post therefore names the callee's declared extent beside
-the caller's, and `SigmaFrame` is that list — the caller's thirteen regions
-extended by `stage2StagedWrites`, which is `CallerView` by definition.  The frame
-is derived below at the post's own witnesses through `CallerView_of_framed`, so
-no premise carries it and nothing is asked at an outcome the run did not produce. -/
+composite run writes the stage-2 callee's seven appended objects, its number
+path's output slot and the four stack objects its `entry` block allocates
+(`stage2ReportScratch` and `stage2AllocaWrites`), and this model has no fresh frame
+per call, so a frame over the caller's own regions alone is false of the model:
+the callee's scratch lies outside them.  The units' post therefore names the
+callee's declared extent beside the caller's, and `SigmaFrame` is that list — the
+caller's thirteen regions extended by the callee's twelve, which is `CallerView` by
+definition.  The frame is derived below at the post's own witnesses through
+`CallerView_of_framed`, so no premise carries it and nothing is asked at an outcome
+the run did not produce. -/
 theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     {args : List Value} {mem : Mem} {next : Nat} {o : Outcome}
     (hpre : pipelineStaging tab base args mem)
@@ -1137,7 +1139,7 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
   · exact hpost
   · rename_i _o0 verdict m'
     obtain ⟨hverdict, nk', nxp', ndst', nev', ent, ps, out, evs,
-      c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂,
+      c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂, alloc₂,
       hext, hnk, hnxp, hent, hxp, hdst, hev, herr, hunch⟩ := hpost
     -- the extents the record names are the ones it reads back through its slots
     have hndstSlot : readBytes m' ndst 8 = some (wordBytes 8 ndst') := hext.2.2.1
@@ -1183,8 +1185,8 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     · -- the frame: the post names the caller's extents and the callee's own
       -- regions at the same witnesses, which is the caller's view
       unfold SigmaFrame
-      exact ⟨nk', nxp', ndst', nev', c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂,
-        hext, hunch.2⟩
+      exact ⟨nk', nxp', ndst', nev', c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂,
+        alloc₂, hext, hunch.2⟩
   · exact hpost.elim
 
 /-- **The specification's record from the units' record, without `mono`.**
@@ -1264,7 +1266,7 @@ theorem pipelineUnitsPost_not_imp_Sigma :
   refine ⟨fun _ _ _ _ => False, 1000, gapArgs, zeroCells 104, 1,
     .ret (some (.int 64 0)) (zeroCells 104), ?_, ?_⟩
   · unfold pipelineUnitsPost
-    refine ⟨Or.inl rfl, 0, 0, 0, 0, [], [], [], [], 0, 0, 0, 0, 0, 0, 0,
+    refine ⟨Or.inl rfl, 0, 0, 0, 0, [], [], [], [], 0, 0, 0, 0, 0, 0, 0, 0, 0,
       ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [pipelineOutputExtents]
       exact ⟨by decide, by decide, by decide, by decide⟩

@@ -193,21 +193,6 @@ theorem walkLog_ev_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   have h' := List.pairwise_iff_getElem.mp hpair 4 13 (by omega) (by omega) (by omega)
   simpa [stage2WalkRegions, stage2Regions, stage2StagedWrites] using h'.symm
 
-/-- **A region claim survives a growth of its region**, provided the new addresses
-were already present.  The unchanged half is the old one read at a weaker
-hypothesis (`¬Q → ¬P`), and the presence half is old presence where the region
-did not grow and the caller's fact where it did. -/
-theorem walkOwns_extend {P Q : Nat → Prop} {mem m : Mem}
-    (h : Owns P mem m) (hsub : ∀ a, P a → Q a)
-    (hpres : ∀ a, Q a → ¬ P a → present m a) : Owns Q mem m := by
-  refine ⟨?_, ?_⟩
-  · intro a ha
-    exact h.unchanged a (fun hp => ha (hsub a hp))
-  · intro a ha
-    by_cases hp : P a
-    · exact h.present a hp
-    · exact hpres a ha hp
-
 /-! ## The three container-stack bytes
 
 `if.end150.i`, `if.end162.i` and `if.end195.i` are one `store i8 <imm>,
@@ -278,7 +263,8 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := walkStaged_write rfl hInv.owned
+        frame := ?_
         blockLocal := ?_ }
     · dsimp only [s', stateAt, m']
       rw [readBytes_ev_of_stack_write (base := C.stage.cst)
@@ -307,11 +293,11 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         (v := natToBytes x.toNat 1) hsz (sp := q) hq hv (off := 56) (len := 8) (by decide)]
       exact hInv.log_acap
     · dsimp only [s', stateAt, m']
-      refine owns_writeBytes_inside hInv.owning ?_
+      refine walkFrame_write_inside hInv.frame ?_
       intro k hk
       have hk0 : k = 0 := by omega
       subst hk0
-      refine inRegions_append_right ?_
+      refine walkWide_of_seven ?_
       refine ⟨(C.stage.cst, stage2StackExtent), by simp [stage2StagedWrites], by omega, ?_⟩
       simp only [stage2StackExtent] at hq ⊢
       omega
@@ -531,7 +517,8 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := walkStaged_write rfl hInv.owned
+        frame := ?_
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -580,9 +567,9 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       exact hInv.log_acap
     · rw [hmem']
       dsimp only [m']
-      refine owns_writeBytes_inside hInv.owning ?_
+      refine walkFrame_write_inside hInv.frame ?_
       intro k hk
-      refine inRegions_append_right ?_
+      refine walkWide_of_seven ?_
       refine ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega, ?_⟩
       simp only [stage2LogExtent] at ⊢
       omega
@@ -677,8 +664,8 @@ the log's length field.  This is the one class-D shape that moves the carry:
 `evlen` advances by one and the trace gains the record.  The tag byte is inside
 the *grown* event prefix, the length word is inside the log, and the log is
 separate from the event stream, so `evBytes` is the old trace followed by the
-byte (`walkReadBytes_writeByte_append`) and `owning` is the region grown by one
-byte (`walkOwns_extend`). -/
+byte (`walkReadBytes_writeByte_append`) and `frame` is the region grown by one
+byte (`walkWide_grow`). -/
 
 /-- **The event-stream record store.** -/
 theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -773,37 +760,17 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     rw [hInv.evlen_eq]
     omega
   have hzev := walkLog_ev_sep hInv
-  -- the region grown by the new event byte
-  have hOwnEv : Owns (inRegions ([(G.dst, C.alen), (G.ev, C.evlen + 1)] ++
-      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
-        C.stage.z C.stage.e)) m0 s.mem := by
-    refine walkOwns_extend hInv.owning ?_ ?_
-    · intro x hx
-      obtain ⟨r, hr, h1, h2⟩ := hx
-      rcases List.mem_append.mp hr with hr | hr
-      · rcases List.mem_cons.mp hr with rfl | hr
-        · exact ⟨(G.dst, C.alen), by simp, h1, h2⟩
-        · rcases List.mem_cons.mp hr with rfl | hr
-          · exact ⟨(G.ev, C.evlen + 1), by simp, h1, by omega⟩
-          · exact absurd hr (by simp)
-      · exact ⟨r, List.mem_append_right _ hr, h1, h2⟩
-    · intro x hx hP
-      obtain ⟨r, hr, h1, h2⟩ := hx
-      rcases List.mem_append.mp hr with hr | hr
-      · rcases List.mem_cons.mp hr with rfl | hr
-        · exact absurd ⟨(G.dst, C.alen), by simp, h1, h2⟩ hP
-        · rcases List.mem_cons.mp hr with rfl | hr
-          · have hxge : G.ev + C.evlen ≤ x := by
-              by_contra hc
-              push Not at hc
-              exact hP ⟨(G.ev, C.evlen), by simp, h1, hc⟩
-            have hxeq : x = G.ev + C.evlen := by omega
-            rw [hxeq] at hP ⊢
-            obtain ⟨vs, hvs⟩ := G.evCap
-            obtain ⟨byy, hbyy⟩ := readBytes_some_present m0 G.ev G.evcap vs hvs C.evlen hevlen_lt
-            exact ⟨byy, (hInv.owning.unchanged _ hP).trans hbyy⟩
-          · exact absurd hr (by simp)
-      · exact absurd ⟨r, List.mem_append_right _ hr, h1, h2⟩ hP
+  -- the frame grown by the new event byte
+  have hframeEv : UnchangedOutside m0
+      (writeBytes s.mem (G.ev + C.evlen) (natToBytes b.toNat 1))
+      (walkWide G ({ C with
+        block := "cleanup478.i", evlen := C.evlen + 1,
+        events := C.events ++ [EventRecord.tag b.toNat] })) := by
+    refine UnchangedOutside.write_grow hInv.frame
+      (walkWide_grow (show C.alen ≤ C.alen from Nat.le_refl _)
+        (show C.evlen ≤ C.evlen + 1 from by omega) rfl) ?_
+    exact ⟨(G.ev, C.evlen + 1), by simp [walkWide, walkPresent], by omega,
+      by rw [htaglen]; omega⟩
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
       { pc_eq := rfl
@@ -828,7 +795,8 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+        frame := ?_
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -920,17 +888,12 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         · right; rw [htaglen]; omega
     · rw [hmem']
       dsimp only [m']
-      refine owns_writeBytes_inside ?_ ?_ -- z+8 write first (outermost)
-      · refine owns_writeBytes_inside hOwnEv ?_
-        intro k hk
-        have hk0 : k = 0 := by omega
-        subst hk0
-        exact ⟨(G.ev, C.evlen + 1), by simp, by omega, by omega⟩
-      · intro k hk
-        rw [show (wordBytes 8 (C.evlen + 1)).length = 8 from natToBytes_length _ _] at hk
-        exact inRegions_append_right
-          ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
-            by simp only [stage2LogExtent]; omega⟩
+      refine walkFrame_write_inside hframeEv ?_
+      intro k hk
+      rw [show (wordBytes 8 (C.evlen + 1)).length = 8 from natToBytes_length _ _] at hk
+      exact walkWide_of_seven
+        ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
+          by simp only [stage2LogExtent]; omega⟩
     · simp [WalkLocal]
   · rfl
 
@@ -1018,8 +981,8 @@ theorem WalkLink.out_reserve_exit_i_i60 {calls : Calls} {m0 : Mem}
 `if.else285.i` loads the decoded length the callee left in `%outn.i`, adds it to
 the log's arena cursor (`%z.val36`, the word at `%z + 48`), and writes the sum
 back.  This is the one class-D shape that advances the arena carry: `alen` becomes
-`a + l` and the decoded extent is appended to `spans`.  The region claim grows
-with the cursor (`walkOwns_extend`), its new bytes present because the arena was
+`a + l` and the decoded extent is appended to `spans`.  The frame grows
+with the cursor (`walkWide_grow`), its new bytes present because the arena was
 staged whole; the four span facts the new extent owes are the caller's, as the
 brief records, and `pending` is `none` since the merge re-establishes the
 in-flight record.
@@ -1106,46 +1069,13 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hzev := walkLog_ev_sep hInv
-  have hOwnQ : Owns (inRegions ([(G.dst, a + l), (G.ev, C.evlen)] ++
-      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
-        C.stage.z C.stage.e)) m0 s.mem := by
-    refine walkOwns_extend hInv.owning ?_ ?_
-    · intro xx hx
-      obtain ⟨r, hr, h1, h2⟩ := hx
-      rcases List.mem_append.mp hr with hr | hr
-      · rcases List.mem_cons.mp hr with rfl | hr
-        · exact ⟨(G.dst, a + l), by simp, h1, by omega⟩
-        · exact ⟨r, List.mem_append_left _ (List.mem_cons_of_mem _ hr), h1, h2⟩
-      · exact ⟨r, List.mem_append_right _ hr, h1, h2⟩
-    · intro xx hx hP
-      obtain ⟨r, hr, h1, h2⟩ := hx
-      rcases List.mem_append.mp hr with hr | hr
-      · rcases List.mem_cons.mp hr with rfl | hr
-        · have hxge : G.dst + C.alen ≤ xx := by
-            by_contra hc
-            push Not at hc
-            exact hP ⟨(G.dst, C.alen), by simp, h1, hc⟩
-          have hxlt : xx - G.dst < G.dstcap := by
-            have hroom := G.arenaRoom
-            omega
-          obtain ⟨vs, hvs⟩ := G.arenaCap
-          have hpres0 : present m0 xx := by
-            have hp2 := readBytes_some_present m0 G.dst G.dstcap vs hvs (xx - G.dst) hxlt
-            rwa [show G.dst + (xx - G.dst) = xx from by omega] at hp2
-          obtain ⟨byy, hbyy⟩ := hpres0
-          exact ⟨byy, (hInv.owning.unchanged _ hP).trans hbyy⟩
-        · exact absurd ⟨r, List.mem_append_left _ (List.mem_cons_of_mem _ hr), h1, h2⟩ hP
-      · exact absurd ⟨r, List.mem_append_right _ hr, h1, h2⟩ hP
-  have hOwn' : Owns (inRegions ([(G.dst, a + l), (G.ev, C.evlen)] ++
-      stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
-        C.stage.z C.stage.e)) m0
-      (writeBytes s.mem (C.stage.z + 48) (wordBytes 8 (a + l))) := by
-    refine owns_writeBytes_inside hOwnQ ?_
-    intro k hk
-    rw [hmlen] at hk
-    exact inRegions_append_right
-      ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
-        by simp only [stage2LogExtent]; omega⟩
+  -- the frame widened with the arena cursor the store advances
+  have hframeA : UnchangedOutside m0 s.mem (walkWide G
+      ({ C with
+        block := "if.end290.i", alen := a + l, spans := C.spans ++ [(a, l)] })) :=
+    UnchangedOutside.of_covered hInv.frame
+      (walkWide_grow (show C.alen ≤ a + l from by omega)
+        (show C.evlen ≤ C.evlen from Nat.le_refl _) rfl)
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
       { pc_eq := rfl
@@ -1170,7 +1100,8 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := walkStaged_write rfl hInv.owned
+        frame := ?_
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -1253,7 +1184,12 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       exact hInv.log_acap
     · rw [hmem']
       dsimp only [m']
-      exact hOwn'
+      refine walkFrame_write_inside hframeA ?_
+      intro k hk
+      rw [hmlen] at hk
+      exact walkWide_of_seven
+        ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
+          by simp only [stage2LogExtent]; omega⟩
     · simp [WalkLocal]
   · rfl
 
@@ -1372,7 +1308,8 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := walkStaged_write rfl hInv.owned
+        frame := ?_
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -1432,11 +1369,11 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
       exact hInv.log_acap
     · rw [hmem']
       dsimp only [m']
-      refine owns_writeBytes_inside hInv.owning ?_
+      refine walkFrame_write_inside hInv.frame ?_
       intro k hk
       have hk0 : k = 0 := by omega
       subst hk0
-      refine inRegions_append_right ?_
+      refine walkWide_of_seven ?_
       refine ⟨(C.stage.cst, stage2StackExtent), by simp [stage2StagedWrites], by omega, ?_⟩
       simp only [stage2StackExtent] at hpred_ext ⊢
       omega
@@ -1602,7 +1539,8 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
-        owning := ?_
+        owned := walkStaged_write rfl hInv.owned
+        frame := ?_
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -1656,7 +1594,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
       exact hInv.log_acap
     · rw [hmem']
       dsimp only [m']
-      exact hInv.owning_cursorK (v := wordBytes 8 (C.k + 2)) (by rw [hwlen])
+      exact hInv.frame_cursorK (v := wordBytes 8 (C.k + 2)) (by rw [hwlen])
     · simp only [WalkLocal]
       split <;> simp
   · rfl

@@ -47,4 +47,31 @@ def stage2StagedWrites (c ctype cst tok s z e : Nat) : List (Nat × Nat) :=
    (tok, stage2TokenExtent), (s, stage2StateExtent), (z, stage2LogExtent),
    (e, stage2ErrorExtent)]
 
+/-- **The four objects the emitted body allocates**, at the addresses the
+allocator hands them: `%ei.i`, `%root_done.i`, `%xj.i` and `%outn.i` are the
+`entry` block's four `alloca`s, so they sit at the call's cursor and at the three
+offsets its eight, four, eight and eight bytes produce.  `a` is that cursor, the
+`next` the call is made at.
+
+They are not staged: no caller passes their addresses and no `stage2StagedWrites`
+entry names them, which is why a region claim that stops at the seven staged
+objects does not survive `s2_init`, `s2_string_body` or `num_fast_el1` — the
+helper feet name the slots at the pointers their calls pass
+(`s2AfterValueFoot`'s `(outn, 8)`, `s2StringBodyFoot`'s `(xj, 8)`), and this list
+is the same slots at the only addresses the model gives them.
+
+They are *fresh* — disjoint from every staged object — exactly when the staging's
+objects end at or below `a`; that premise is the watermark clause
+`JsonStage2Contract.stage2Pre` states, and both the walk's frame and the record's
+post read it from there rather than assuming it. -/
+def stage2AllocaWrites (a : Nat) : List (Nat × Nat) :=
+  [(a, 8), (a + 8, 4), (a + 12, 8), (a + 20, 8)]
+
+/-- **The run's staged scratch, as the record's own numbers name it**: the seven
+appended objects, the number path's output slot `%d.i`, and — beside it — nothing.
+The four stack objects are not scratch: their addresses are the allocator's, and
+`stage2ReportFrame` appends them at the cursor. -/
+def stage2ReportScratch (c ctype cst tok s z e d : Nat) : List (Nat × Nat) :=
+  stage2StagedWrites c ctype cst tok s z e ++ [(d, 8)]
+
 end LeanLLVM.Refinement
