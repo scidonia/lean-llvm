@@ -39,11 +39,13 @@ rest of the tree does not have (`walkMemStore64`, `walkMemStorePtr`,
 `walkMemMemset`, `walkMemLoad64`, `walkMemS2Init`), and it is what any longer
 straight-line run in this walk must be built from.
 
-What remains is the composition: the four segments into the block's
-`denoteCode`, its `step`, and the `runFuel` prefix that reaches the loop head,
-which is `WalkSeedState`'s production.  The inside case of
-`readBytes_s2Init_of_outside` is the read fact the third segment's composition
-needs.
+What remains is the block's `denoteCode`.  The segments compose in pairs
+(`walkEntrySeg12_denote`, `walkEntrySeg34_denote`) and the record's argument
+fields are read back across the second segment
+(`readBytes_stage2WriteStores_at`, `walkSeg2ReadRecord_b`/`_n`/`_ep`), but one
+equality over all four is blocked by the size of the memory term it closes over —
+that module's census carries the measurement — and the block's `step`, its
+`runFuel` prefix and `WalkSeedState`'s production all wait on it.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
