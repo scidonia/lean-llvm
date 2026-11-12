@@ -1074,6 +1074,77 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup474_i
 
+/-! ## The four traps
+
+The body's four `unreachable` arms are `@llvm.trap` calls, and `stage2Calls`
+answers `none` there — the semantics' `ub` — so no link enters one: an arm whose
+step is `ub` cannot be a `WalkLink`'s target.  What a trap verdict owes is
+therefore not a link but an exclusion: the guard in front of each trap is clear at
+the invariant, so the branch it feeds takes the other successor.
+
+Three of the four are the event stream's reserves, and their arithmetic is
+`walkEventReserve_clear` (`JsonStage2WalkRest`): the cursor is the trace's width
+sum, one record per entry consumed, and the widest record leaves twelve bytes of
+slack at the loop head's strictness.  The fourth is the arena's reserve,
+`if.end256.i`'s check `alen + len + 64 > dstcap`, and its exclusion reads the
+carry's two pending clauses: `pending_at` fixes the record's arena offset at the
+cursor and `pending_cursor` bounds the cursor by the staging's offset plus the
+record's entry position.  The token's own extent is the one number the exclusion
+also needs, and it is not in the carry's vocabulary: `len`, the in-flight token's
+document extent, is a fact about the scan that produced it, so the verdict is
+stated with `p + len ≤ n` beside it.  That is the exact missing conjunct of the
+arena trap, and its producer is the same one `pending_cursor` owes: no link sets
+`pending` to `some` yet, so the two clauses are vacuously true and the exclusion is
+stated rather than consumed. -/
+
+/-- A trap arm, at the name the census gives it.  The four are the same block: one
+`@llvm.trap` call and `unreachable`. -/
+def walkTrapBlock (t : String) : Block :=
+  { name := t, instrs := [Instr.callVoid "llvm.trap" []], term := Term.unreachable }
+
+/-- The four trap arms' pins. -/
+theorem walkTrapBlock_find {t : String}
+    (ht : t = "if.end.i83" ∨ t = "if.end.i.i.i" ∨ t = "if.end.i.i.i64" ∨ t = "if.end.i86") :
+    stage2Body.findBlock t = some (walkTrapBlock t) := by
+  rcases ht with rfl | rfl | rfl | rfl <;>
+    simp [stage2Body, Function.findBlock, findBlockList, walkTrapBlock]
+
+/-- **A trap arm's step is `ub`**: the selection answers `none` at `llvm.trap`, so
+the block's `denoteCode` has no value to hand the terminator. -/
+theorem step_ub_of_trap (s : State) (hp : s.pc = "if.end.i83" ∨ s.pc = "if.end.i.i.i"
+    ∨ s.pc = "if.end.i.i.i64" ∨ s.pc = "if.end.i86") :
+    LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = .ub := by
+  have hden : denoteCode (stage2Calls stage2SubCalls)
+      [Instr.callVoid "llvm.trap" []] s = none := rfl
+  rw [LeanLLVM.step, walkTrapBlock_find (t := s.pc) hp]
+  dsimp only [walkTrapBlock]
+  rw [hden]
+
+/-- **No link enters a trap arm.** -/
+theorem walkTrap_noStep (s : State) (hpc : s.pc = "if.end.i83" ∨ s.pc = "if.end.i.i.i"
+    ∨ s.pc = "if.end.i.i.i64" ∨ s.pc = "if.end.i86") :
+    ¬ ∃ s', LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = .jump s' := by
+  rintro ⟨s', hs⟩
+  rw [step_ub_of_trap s hpc] at hs
+  exact Ctrl.noConfusion hs
+
+/-- **The arena reserve's check is clear** at the invariant, once the in-flight
+token's document extent is named: the cursor is at most the staging's offset plus
+the record's entry position, the entry position plus the token's extent is inside
+the document, and the arena's room covers the document and the decoder's slack. -/
+theorem walkArenaReserve_clear {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {p off len : Nat}
+    (hpend : C.pending = some (p, off)) (hplen : p + len ≤ G.n) :
+    C.alen + len + 64 ≤ G.dstcap := by
+  have hoff : off = C.alen := (hInv.pending_at p off hpend).1
+  have hcur : C.alen ≤ G.ndst0 + p := hInv.pending_cursor p off hpend
+  have hroom : G.ndst0 + G.n + stage2ArenaReserve ≤ G.dstcap := G.arenaRoom
+  simp only [stage2ArenaReserve] at hroom
+  omega
+
+#print axioms LeanLLVM.Refinement.WalkScope.walkTrap_noStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkArenaReserve_clear
+
 end WalkScope
 
 end LeanLLVM.Refinement

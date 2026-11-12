@@ -4368,10 +4368,11 @@ not a `WalkPtrs` register).  `if.then281.i` is `add i32 %7, 1`, a `zext`, and an
 **The six that are not links.**  `entry` is the initialisation and its obligation
 is `WalkSeedState`, already stated.  `if.end` returns; `WalkChain.completes` takes
 its step as `hret`.  The four `unreachable` blocks are `@llvm.trap` arms: a link
-cannot enter one without concluding the run does not complete, so their obligation
-is the guard before them — `if.end.i.i`'s and `if.end.i.i55`'s event reserve,
-`if.end256.i`'s arena reserve, `if.end290.i`'s thirteen-byte reserve — never
-failing.
+cannot enter one without concluding the run does not complete — `walkTrap_noStep`
+(`JsonStage2WalkCall`) is that fact, since `stage2Calls` answers `none` at the trap
+— so their obligation is the guard before them — `if.end.i.i`'s and
+`if.end.i.i55`'s event reserve, `if.end256.i`'s arena reserve, `if.end290.i`'s
+thirteen-byte reserve — never failing.
 
 Three of the four guards are excluded by the invariant plus the loop head's own
 guard (`C.k < G.nep`, the strictness `whileBody_step` already takes): the event
@@ -4379,17 +4380,21 @@ cursor is `nev0 + sum(events)`, at most `nev0 + 13·k ≤ nev0 + 13·nep ≤ evc
 `k ≤ nep - 1 ≤ n - 1` leaves twelve bytes of slack at the widest record, so the
 `len + 1 > cap` and `len + 13 > cap` tests are clear; `walkEventReserve_clear`
 (`JsonStage2WalkRest`) is that arithmetic, stated at the invariant.  The **arena
-trap** (`if.end.i83`) is not excluded, and that is a finding about this invariant
-rather than about the body: the test is
+trap** (`if.end.i83`) is excluded by `walkArenaReserve_clear`
+(`JsonStage2WalkCall`) at `pending_at`, `pending_cursor` and the in-flight token's
+document extent (`p + len ≤ n`); what the invariant does not carry is that extent,
+and that is a finding about this invariant rather than about the body: the test is
 `alen + (entry[k+1] - entry[k] - 1) + 64 > dstcap`, and the clauses give only
 `alen ≤ ndst0 + n` and `ndst0 + n + 64 ≤ dstcap`, so the invariant does not exclude
 a cursor at `ndst0 + n` with a positive-length token, and the guard would then fail.  `WalkInv`
 now carries the clause the guard reads — `pending_cursor`, `alen ≤ ndst0 + p` for
 the record in flight at entry position `p` — and every arm preserves it, but its
 **production** is the merge's (`pending := some (p, alen)` for the entry about to
-be decoded), which is the same D/F work the record's assembly owes; until that
-lands the clause is a true strengthening that the trap does not yet consume.  The
-class of the finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
+be decoded), which is the same D/F work the record's assembly owes, and `len` — the
+token's extent — is not in the carry's vocabulary at all.  Until both land the
+clause is a true strengthening and the exclusion is stated at the two facts rather
+than consumed by a branch.  The class of the finding is in `JsonStage2WalkRest`'s
+header, with the arithmetic.
 
 ## The remainder, named
 
