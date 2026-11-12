@@ -468,24 +468,30 @@ scanner's token-extent obligation, and it is stated here rather than assumed.  A
 model that converted every readable lexeme would answer a value where the emitted
 function answers a refusal, which is why the refusal is modelled and not skipped.
 
-**What is not yet stated, and what it would take.**  The six *caller-side* records
-— the post and the footprint each call block of the walk's dispatch applies, with
-the statement that the call answers at a staging and that every answer's memory is
-the caller's outside the footprint — are not stated in the tree.  `JsonStage2WalkScope` reports the class F blocks as a
-contract gap for exactly this reason, and the gap is one module: a record per
-helper carrying (i) the staging at which the call answers, (ii) the answer's post,
-(iii) the region list above as its footprint, and the three facts that make the
-triple a step — the call resolves at the staging, every answer satisfies the post,
-and every answer's memory is the caller's outside the footprint.  The region lists
-are fixed by this section; the staging for `od_scalar_value` must include the
-event stream's room for the widest record (its remaining `none` arms are the
-reserve's fault, the source's `__builtin_trap`), and the staging for
-`s2_string_body` must include the escape list's spacing, because
-`s2StringBody_outn_le`'s bound is `escapeDecodeGo_length_le`'s and that lemma is
-about a spaced list.  A caller that cannot supply the spacing has no bound on the
-escaped form.  Until that module lands, a walk link over a call block rests on
-the model's reply without the frame, which is what this section records rather
-than leaves to a reader to discover.
+**What is stated, and what is not.**  The six *caller-side* records' shape and
+content are in the tree: `LeanLLVM/Refinement/JsonStage2Helpers` states
+`HelperContract` — the staging, the post, the footprint, and the three facts a call
+block applies (it resolves at the staging, every answer satisfies the post, and
+every answer's memory is the caller's outside the footprint) — together with the
+four frame steps a proof composes with (`UnchangedOutside.write_le`,
+`stage2WriteStores_frame`, `stage2ErrSet_frame` and `UnchangedOutside.of_subset`,
+each at the standard axiom footprint), the six staging predicates, the six posts,
+and the six footprints at the region lists above.  What it does **not** carry is
+the six values: `answers`, `sound` and `framed` have no instance, so
+`HelperContract.resolves` is not applicable at a call block yet, and
+`JsonStage2WalkScope`'s class F remains a contract gap.  The work is the six model
+readings and frame compositions — `stage2*_answers` already supplies the first
+fact for five of the six, and the frame steps turn each arm's write into the
+footprint — not a missing statement.  Two stagings are more than readability: the
+one for `od_scalar_value` must include the event stream's room for the widest
+record (its remaining `none` arms are the reserve's fault, the source's
+`__builtin_trap`), and the one for `s2_string_body` must include the escape list's
+spacing, because the decoded-length bound is `escapeDecodeGo_length_le`'s and that
+lemma is about a spaced list.  A caller that cannot supply the spacing has no
+bound on the escaped form.  The bounded statement itself — the post's accepting
+arms carrying `on ≤ len` — is stated, not proved, in
+`JsonStage2Helpers`'s `s2StringBodyPre`/`BodyPositionsSpaced`; the theorem that
+would discharge it is owed with the six instances.
 
 ## 8. Out of scope for the first contract
 
