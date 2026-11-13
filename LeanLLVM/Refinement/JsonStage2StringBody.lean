@@ -2969,6 +2969,47 @@ def s2StringBodyIfThen11Out (env : Env) (s : State) (off sub : BitVec 64) (c e :
   stateAt (s2StringBodyIfThen11Env env off sub c e)
     { s with mem := s2StringBodyIfThen11Mem s.mem e off sub, pc := "cleanup", pre := some s.pc }
 
+set_option maxHeartbeats 4000000 in
+/-- **The refusal record's path finishes**, with the record's facts and the slot
+lookup supplied by the caller: the heavy environment appears once, in the
+composition's state, and the completion is the generic one.
+
+**The budget is scoped to this theorem, and it is a cost exception, not a proof
+trick.**  The composition's elaboration exceeds the default 200 000 heartbeats —
+measured again after naming the state and after taking the slot lookup from the
+caller, so neither of those is the cause — and completes at 4 000 000 in about a
+minute.  The cause is inherent to a nine-cell record state crossing a lemma whose
+conclusion mentions the state's memory; the general fix is a completion whose
+outcome carries the memory as a *variable*, which is a change to the closing's
+shape rather than to this path. -/
+theorem s2StringBodyIfThen11_finishes {env : Env} {s : State} {c ei e : Nat}
+    {off sub : BitVec 64}
+    (hpc : s.pc = "if.then11")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hoff : readBytes s.mem ei 8 = some (natToBytes off.toNat 8))
+    (hcval : readBytes s.mem (c + (1112#64).toNat) 8 = some (wordBytes 8 e))
+    (he64 : e < 2 ^ 64)
+    (hslot : lookupName (s2StringBodyIfThen11Env env off sub c e) "%ei"
+      = some (.ptr ei)) :
+    runFuel s2StringBodyCalls 3 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000000#32))
+        (s2StringBodyIfThen11Mem s.mem e off sub)) := by
+  have hstep := step_ifThen11_cleanup hpc hc hei hsub hoff hcval he64
+  have hfin : runFuel s2StringBodyCalls 2 s2StringBodyBody
+      (stateAt (s2StringBodyIfThen11Env env off sub c e)
+        { s with mem := s2StringBodyIfThen11Mem s.mem e off sub, pc := "cleanup", pre := some s.pc }) =
+      some (.ret (some (.int 32 0x00000000#32))
+        (s2StringBodyIfThen11Mem s.mem e off sub)) :=
+    s2StringBodyCleanup_fromRefused_finishes
+      (env := s2StringBodyIfThen11Env env off sub c e)
+      (s := { s with mem := s2StringBodyIfThen11Mem s.mem e off sub, pc := "cleanup", pre := some s.pc })
+      rfl (by rw [hpc]) hslot
+  have := runFuel_prefix_some (fun k => runFuel_jump_prefix hstep k) hfin
+  simpa using this
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
