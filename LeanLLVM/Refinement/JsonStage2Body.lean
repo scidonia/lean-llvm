@@ -853,21 +853,25 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   property of the value the run produces, not of the path that computed it. -/
   offLe : refusal = true → eoff ≤ n
   /-- **The arena's capacity is a 64-bit number.**  `stage2Boundary` states it
-  (`dstcap < 2 ^ 64`), and this is that statement's producer: the ABI carries the
-  capacity as an eight-byte word, so the number the record names is the word's
-  value.  The clause places the arena's write extent inside the staging and makes
-  `alen` fit a cursor slot's width. -/
+  (`dstcap < 2 ^ 64`), and the ABI carries the capacity as an eight-byte word, so
+  the number the record names is the word's value.  The clause places the arena's
+  write extent inside the staging and makes `alen` fit a cursor slot's width.  The
+  record's precondition states it (`stage2Pre`), so this field is the post's
+  statement read at the report rather than a fresh promise. -/
   dstcapLt : dstcap < 2 ^ 64
   /-- **The event stream's capacity is a 64-bit number**, for the same reason:
-  `stage2Boundary`'s `evcap < 2 ^ 64`. -/
+  `stage2Boundary`'s `evcap < 2 ^ 64`, and `stage2Pre`'s. -/
   evcapLt : evcap < 2 ^ 64
   /-- **The entry count is its argument word's value** (`stage2.h:56-58`), so
   `stage2Boundary`'s `nep < 2 ^ 64`.  Like the two capacities, this is the ABI's
   own statement about a 64-bit argument rather than a hypothesis about the run:
-  one word with two widths is one number. -/
+  one word with two widths is one number.  It is not a clause of `stage2Pre`: the
+  precondition fixes the stream (`readLanes32`) and the document's `2 ^ 32` bound,
+  and a strictly increasing stream inside `n` bytes has at most `n` entries
+  (`WalkGeom.nep_le`). -/
   nepLt : nep < 2 ^ 64
   /-- **The escape count is its argument word's value**, for the same reason:
-  `stage2Boundary`'s `nxp < 2 ^ 64`. -/
+  `stage2Boundary`'s `nxp < 2 ^ 64`, and `stage2Pre`'s. -/
   nxpLt : nxp < 2 ^ 64
 
 namespace Stage2Run
@@ -889,7 +893,7 @@ theorem pre (h : Stage2Run args mem m0) : Γ_stage2.pre args mem h.next0 :=
   ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.dst, h.dstcap, h.ndst, h.ev, h.evcap, h.nev,
     h.err, h.bs, h.ent, h.ndst0, h.nev0, h.args_eq, h.doc, h.tail, h.entries, h.order,
     h.inside, h.esc, h.arenaCap, h.arenaRoom, h.evCap, h.evRoom, h.ndstRead, h.nevRead,
-    h.errBytes, h.maxDoc, h.separate, h.watermark⟩
+    h.errBytes, h.maxDoc, h.separate, h.watermark, h.nxpLt, h.dstcapLt, h.evcapLt⟩
 
 /-- The arena and event-stream cursors are inside the objects the caller staged:
 the arena's by its reserve, the event stream's by its write room. -/

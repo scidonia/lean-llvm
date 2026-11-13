@@ -56,14 +56,17 @@ block runs `walkSeedPrefix_runFuel` takes are `entry`'s fifty-seven instructions
 in it is one of four kinds: the eighteen register bindings, which are
 `EntryState`'s own argument list read at `stage2Body.params`; five region-separation
 facts, which are `WalkStage.separate` at the two cursor slots; the two cursor-slot
-reads, which are the geometry's `ndstRead`/`nevRead`; and the word facts the two
-preconditions do not state — `0 < G.b`, `G.b < 2^64`, `G.ep < 2^64`, and the counts
-`G.nxp`, `G.dstcap`, `G.evcap`, `G.ndst0`, `G.nev0` inside their words.  The last
-family is the same one the stage's construction owes (§ *The stage*), and it is what `Stage2Run`
-asserts of the *report* (`nxpLt`, `dstcapLt`, `evcapLt`, `nepLt`): the record's post
-demands a width its precondition leaves free.  So the seed's three runs are address
-facts and environment reads, not a trace — which is why the four premises reduce to
-the dispatch's chain and the exit's tail once the widths are stated.
+reads, which are the geometry's `ndstRead`/`nevRead`; and the word facts —
+`0 < G.b`, `G.b < 2^64`, `G.ep < 2^64`, and the counts `G.nxp`, `G.dstcap`,
+`G.evcap`, `G.ndst0`, `G.nev0` inside their words.  The widths are the
+precondition's: `Γ_stage2.pre` states the three words (`nxp`, `dstcap`, `evcap`)
+and `nep` follows from the stream, which is what `Stage2Run`'s
+`nxpLt`/`dstcapLt`/`evcapLt`/`nepLt` read at the *report*, and `G.n` is below the
+document's `2 ^ 32` bound (`WalkGeom.n_lt`).  The two addresses are the caller's:
+nothing in a record fixes where its buffers are, so `0 < G.b` and `G.b < 2^64` are
+statements about a particular caller's staging, not about the record.  So the
+seed's three runs are address facts and environment reads, not a trace — which is
+why the four premises reduce to the dispatch's chain and the exit's tail.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
 import LeanLLVM.Refinement.JsonStage2WalkTraverse
@@ -310,7 +313,8 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
   have h' : stage2Pre args m0 next := h
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, hargs, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
-    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm⟩ := h'
+    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
+    hevcap⟩ := h'
   refine ⟨{
     b := b
     n := n
@@ -380,20 +384,21 @@ What it owes is the *numbers*, and they are not free:
 * `stage2StagedPre` names its columns as words (`n nep nxp dstcap evcap` are
   `BitVec 64`) and its region list at their `.toNat`s, while `WalkGeom` carries the
   `Nat`s the ABI's argument list holds.  The two agree only inside the words, so
-  the construction needs the 64-bit width facts — and `Γ_stage2.pre` states none of
-  them, while `Stage2Run`'s `nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` assert them of the
-  *report*.  That is a contract gap rather than a construction step: the record's
-  post demands widths its precondition leaves free;
+  the construction needs the 64-bit width facts.  The precondition now states them
+  (`nxp`, `dstcap`, `evcap` as its last three clauses; `n` is bounded by
+  `maxDoc` and `nep` by the stream's order), so they are the geometry's
+  (`WalkGeom.nxpLt` and its two siblings) rather than a gap between two records:
 * the arena entry's extent names the cursor *value* — `G.ndst0`, which is
   `stage2Pre`'s read of the slot — while the adapter's staging names its own read of
-  the same slot (`stage2StagedPre`'s `ndst0`).  Nothing relates the two witnesses:
-  both predicates read `readBytes mem ndst 8` and neither states the value, so a
-  construction either takes the equation as a hypothesis or proves `natToBytes`
-  injective at both values' widths;
+  the same slot (`stage2StagedPre`'s `ndst0`).  Both predicates read
+  `readBytes mem ndst 8`, so the two witnesses agree modulo `2 ^ 64`
+  (`wordBytes8_mod_eq`), and the staged predicate's cursor-width clause makes each
+  of them the word's value; the equation is therefore arithmetic rather than a
+  hypothesis;
 * `WalkStage.sevenEnd` bounds the seven nested objects by the caller's cursor.
-  `stage2StagedPre` separates the seven but says nothing about where they end, and
-  `stage2Pre`'s watermark is stated at the thirteen ABI objects only, so this is a
-  staging fact the adapter must state.  It is what makes the root slot fresh of the
+  `stage2Pre`'s watermark is stated at the thirteen ABI objects only, so the
+  adapter's predicate carries the same clause at the seven it names
+  (`stage2StagedPre`'s last conjunct).  It is what makes the root slot fresh of the
   log and the event stream (`WalkStage.rootSlot_log`, `WalkStage.rootSlot_ev`).
 
 So premise 4 has one constructive half and one that is a caller's clause: the

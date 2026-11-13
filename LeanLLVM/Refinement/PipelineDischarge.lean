@@ -1067,12 +1067,16 @@ theorem stage2Pre_of_exit
   refine ⟨S.b, S.n.toNat, S.ep, S.k, S.xp, x37.toNat, S.dst, S.dstcap.toNat,
     S.ndst, S.ev, S.evcap.toNat, S.nev, S.err, bs, S.ent, ndst0, nev0,
     ?_, hdoc_ms, htail_ms, hlanes, hord, hbnd, hesc_ms, hdst_ms, ?_, hev_ms, ?_,
-    hndst_ms, hnev_ms, herr_ms, ?_, hx37 ▸ hdisj2, by rw [hx37]; exact hstaged⟩
+    hndst_ms, hnev_ms, herr_ms, ?_, hx37 ▸ hdisj2, by rw [hx37]; exact hstaged,
+    ?_, ?_, ?_⟩
   · simpa [stage2Args] using hkv
   · simpa [stage2ArenaReserve] using hdstcap
   · simpa [stage2RecordBytes, ← hn] using hnev
   · simp only [stage2MaxDocument]
     omega
+  · rw [hx37]; exact hxn64
+  · exact S.dstcap.isLt
+  · exact S.evcap.isLt
 
 /-! ### Piece 3: the tail's run and post
 

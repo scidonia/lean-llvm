@@ -108,9 +108,11 @@ recorded there: the separation transports (`walkDisjoint_drop_member`,
 columns as words and their `.toNat`s while the geometry carries the ABI's `Nat`s, that
 the arena's extent names the cursor value while `stage2StagedPre` names its own read
 of the slot, and that `WalkStage.sevenEnd` bounds the seven nested objects by the
-caller's cursor — the first family being the widths `Stage2Run`'s
-`nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` assert of the *report* while `Γ_stage2.pre` leaves
-them free.
+caller's cursor.  The widths are the precondition's — `Γ_stage2.pre` states the
+three words (`nxp`, `dstcap`, `evcap`), and `Stage2Run`'s
+`nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` are that statement at the *report* — and the
+cursor's two witnesses are one word (`wordBytes8_mod_eq`, the staged predicate's
+cursor-width clause); the seven's end is the adapter's own clause.
 
 Nothing above is a claim about `Stage2WalkObligation`: its completion half is the
 conjunct these premises discharge, and its post half is not read here. -/

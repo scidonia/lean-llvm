@@ -395,7 +395,7 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
   have h' : stage2Pre args m0 next := h
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, -, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
-    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm⟩ := h'
+    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, -, -, -⟩ := h'
   exact ⟨{
     b := b
     n := n

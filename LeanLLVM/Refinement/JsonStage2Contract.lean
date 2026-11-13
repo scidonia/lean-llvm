@@ -561,7 +561,15 @@ def stage2StagedPre (args : List Value) (mem : Mem)
     DisjointRegions
       ((stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0
         ev evcap.toNat ndst nev err c ctype cst tok s z e ++ [(d, 8)]) ++
-        [(nkSlot, 8), (nxpSlot, 8)])
+        [(nkSlot, 8), (nxpSlot, 8)]) ∧
+    -- **The cursor slot's value is the word's.**  The staged predicate reads the
+    -- arena's cursor slot exactly as the pre does (`readBytes mem ndst 8 =
+    -- some (wordBytes 8 ndst0)`), so the two witnesses agree modulo `2 ^ 64`; this
+    -- clause makes each of them the word's value, and the two then agree outright.
+    -- Without it the staged cursor and the pre's could be two different numbers
+    -- under one eight-byte read, and the walk's staged region list — drawn at the
+    -- pre's cursor — would not be the list the pre separates.
+    ndst0 < 2 ^ 64
 
 /-- **An object appended after a separated list is separate from every member**
 and from its neighbour.  This is the shape `stage2StagedRegions` appends the
@@ -640,7 +648,7 @@ theorem stage2StagedPre_countSlots {args : List Value} {mem : Mem}
         (r.1 + r.2 ≤ nxpSlot ∨ nxpSlot + 8 ≤ r.1)) ∧
       (nkSlot + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ nkSlot) := by
   obtain ⟨-, -, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
-    -, -, hdisj⟩ := h
+    -, -, hdisj, -⟩ := h
   have hsep := disjointRegions_append_slots
     (L := stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
       evcap.toNat ndst nev err c ctype cst tok s z e ++ [(d, 8)]) hdisj
@@ -665,7 +673,7 @@ theorem stage2StagedPre_dSep {args : List Value} {mem : Mem}
       (d + 8 ≤ nkSlot ∨ nkSlot + 8 ≤ d) ∧
       (d + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ d) := by
   obtain ⟨-, hd, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
-    -, -, hdisj⟩ := h
+    -, -, hdisj, -⟩ := h
   have h' : DisjointRegions
       ((stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
           evcap.toNat ndst nev err c ctype cst tok s z e) ++
@@ -892,7 +900,20 @@ def stage2Pre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     -- walk's read proofs use it to exclude the four from the document and the
     -- entry stream.
     (∀ r ∈ stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err,
-      r.1 + r.2 ≤ next)
+      r.1 + r.2 ≤ next) ∧
+    -- **Three widths the argument words carry.**  The ABI's escape count and two
+    -- capacities arrive as eight-byte words (`stage2.h:13-24`, `:58-60`), so the
+    -- number a caller states there is the word's value: below `2 ^ 64`, and equal
+    -- to the word's `.toNat`.  Without this the three numbers are only bounded
+    -- from below (`HasBytes mem xp (4 * nxp)`, `ndst0 + n + reserve ≤ dstcap`,
+    -- `nev0 + 13 * n ≤ evcap`), so a caller could name a number whose word is that
+    -- number modulo `2 ^ 64` and the two readings of one argument would disagree.
+    -- The document's length is below `2 ^ 32` by `maxDoc` and the entry count
+    -- follows from the stream (`nep_le`), so these three are the only width facts
+    -- the pre has to state; the post states all three (`stage2Boundary`), and a
+    -- precondition that left them free would demand of its proof what it did not
+    -- grant its caller.
+    nxp < 2 ^ 64 ∧ dstcap < 2 ^ 64 ∧ evcap < 2 ^ 64
 
 /-! ### The post -/
 
@@ -1180,7 +1201,8 @@ theorem stage2Pre_cursor_bounds {args : List Value} {mem : Mem} {next : Nat}
       ndst0 ≤ dstcap ∧ nev0 ≤ evcap ∧ nep ≤ n := by
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, _hargs, _hdoc, _htail, hent, horder, hlt, _hxp, _hdstpres,
-    hdst, _hevpres, hev, _hndst, _hnev, _herr, _hmax, _hdisj, _hwm⟩ := h
+    hdst, _hevpres, hev, _hndst, _hnev, _herr, _hmax, _hdisj, _hwm, _hnxp, _hdstcap,
+    _hevcap⟩ := h
   refine ⟨n, nep, dstcap, evcap, ndst0, nev0, by omega, by omega, ?_⟩
   rw [← readLanes32_length mem ep nep ent hent]
   exact length_le_of_pairwise_lt horder hlt
@@ -1259,7 +1281,8 @@ theorem stage2_pre_inhabited :
        .int 64 64, .ptr 96, .ptr 0, .int 64 0, .ptr 104, .ptr 112]
       stage2Mem 120 := by
   refine ⟨0, 0, 0, 0, 0, 0, 32, 64, 96, 0, 0, 104, 112, [], [], 0, 0, rfl,
-    rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_⟩
   · exact ⟨List.replicate stage2ReadTail 0, stage2Mem_tail⟩
   · simp
   · simp
@@ -1273,6 +1296,9 @@ theorem stage2_pre_inhabited :
   · exact ⟨wordBytes 8 0, stage2Mem_err⟩
   · decide
   · exact stage2Mem_disjoint
+  · decide
+  · decide
+  · decide
   · decide
 
 /-! ### The tail's pin
