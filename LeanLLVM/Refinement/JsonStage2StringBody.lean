@@ -4593,7 +4593,7 @@ def s2StringBodyIfEnd14State (e : State) (sub len conv : BitVec 64) (call : BitV
 /-- The `cleanup` entry state after the length's write, named. -/
 def s2StringBodyCleanupState (e : State) (sub len conv : BitVec 64) (call : BitVec 64)
     (extra : Mem) (nx outn : Nat) : State :=
-  stateAt (s2StringBodyLhsEnv e sub len conv)
+  stateAt (s2StringBodyIfEndEnv (s2StringBodyLhsEnv e sub len conv) call)
     ({ e with mem := writeBytes extra outn (natToBytes call.toNat 8), next := nx, pc := "cleanup", pre := some "if.end14" })
 
 /-! ### Axiom footprints
