@@ -436,6 +436,27 @@ theorem writeBytes_absent_comm_witness :
     writeBytes (writeBytes [] 0 [1]) 1 [2] ≠
       writeBytes (writeBytes [] 1 [2]) 0 [1] := by decide
 
+/-- **Reads do not determine the memory.**  A memory with a duplicated address
+answers every read exactly as the memory without the duplicate: `readByte` returns
+the *first* cell there.  So the two are different lists with the same byte at every
+address, which is why region extensionality cannot be stated from reads alone.
+
+This is the shape wall the absorption runs into, and it is the same kind of record
+as `writeBytes_absent_comm_witness`: a false form stated so that the true one's
+hypothesis is visible.  The hypothesis it points at is **duplicate-freedom** — a
+`Nodup` on the address sequence — which nothing in this cone supplies, and which the
+staging would have to state for the closing to compare memories as lists. -/
+theorem readByte_not_determined_by_reads :
+    (∀ a : Nat, readByte [(0, 1)] a = readByte [(0, 1), (0, 2)] a) ∧
+      ([(0, 1)] : Mem) ≠ [(0, 1), (0, 2)] := by
+  refine ⟨?_, ?_⟩
+  · intro a
+    cases a with
+    | zero => rfl
+    | succ n => simp [readByte]
+  · intro h
+    exact absurd h (by simp)
+
 /-- **The ten blocks, in the order the body runs them.**  `findBlock` is a
 search over this list, so the names and their order are what every block's step
 lemma resolves against; the control beneath it is a name the body does not carry. -/
@@ -3509,7 +3530,14 @@ commutation:
 * **region extensionality** — two memories that agree at every address outside a
   region, and each hold that region present, agree after being rewritten there with
   the same bytes.  That is what lets a final in-place write erase an earlier one
-  whose values differ.
+  whose values differ — **but it is false as stated**, and
+  `readByte_not_determined_by_reads` is the witness: a duplicated address answers
+  every read as the memory without it does, so two different lists have the same
+  byte everywhere.  The true statement needs **duplicate-freedom** on the memory's
+  address sequence, which no module in this cone supplies; so the absorption is
+  either proved by a direct induction over the memory with two region cursors (no
+  extensionality), or the staging gains a `Nodup` clause.  That choice is the
+  closing's, not the lemma's, and it is the last shape question the row has.
 
 With both, `writeBytes_absorb_one` is an induction whose region extent is
 *constant* (both `ei` writes are eight bytes, so no length negotiation enters) and
