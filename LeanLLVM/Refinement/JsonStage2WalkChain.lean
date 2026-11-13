@@ -27,6 +27,16 @@ the fix is positional rather than an annotation.  And a step lemma may exist at 
 `icmp … 8` from the IR needs the general one — a recipe that pins the special case is a
 sitting spent on the wrong lemma.
 
+**Four spellings a `BitVec` site costs.**  `((BitVec.ofNat 64 (i + 1)).signExtend 64).toNat`
+needs its outer parentheses: without them `64.toNat` is read as a decimal literal, and the
+error speaks of a number rather than of the projection.  A `ScanCount` read off
+`WalkInv.blockLocal` needs `ScanCount` *unfolded* in the `simp` set beside `WalkLocal` and
+the block equation — with only `WalkLocal` the goal stalls at the ∃-form.  A round whose
+hypothesis is the *target's* count still needs the latch's for its landing fact, so `hsub`
+comes from `ScanCount.same` at the source.  And a landing's target environment is the form
+its own `denoteCode` names — six cells for the literal comparison — which is what a
+carry-and-state composition is read against.
+
 The *count* is the mechanism, not only the philosophy.  An environment named once is peeled
 a fixed number of cells, so the count is a claim about that environment: when a peel went
 one cell too far, the proof's own `decide` refused `"%ee.0.i238" ≠ "%ee.0.i238"` — the proof
