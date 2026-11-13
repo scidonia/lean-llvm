@@ -1476,6 +1476,440 @@ theorem s2StringBodyScan_run_at (mem0 : Mem) (xj N pos0 : Nat) (ps : List Nat)
   (s2StringBodyScanBoundLoop mem0 xj N pos0 ps cost Exit ExitWord step_exit
     step_loop).run_at s c hinv k hcont
 
+/-! ### The blocks as control steps
+
+`step` reads a block at `s.pc`, denotes its instruction list, and executes its
+terminator; the runs above are the same `denoteCode` at the same block.  The two
+are one step (`step_at_block`), and what each step still needs is its terminator's
+branch value — the bit the block's own test wrote, which the run's conclusion
+names as the environment's cell.  Stating the bit as a hypothesis (rather than
+case-splitting inside each step) is what keeps the step at the shape `runFuel`'s
+recursion consumes: `runFuel_jump_prefix` turns a `.jump` into one control step,
+and `BoundLoop`'s arms are two of these composed.
+
+**The nine pin theorems are the block labels the `_at` shapes resolve to.**  Each
+is `decide`, so a block whose instruction list moved fails here rather than inside
+a step's proof. -/
+
+/-- One control step from a block's run: `step` at a state whose program counter
+finds `b`, whose instruction list denotes to `s'`, and whose terminator is `c`. -/
+theorem step_at_block {calls : Calls} {f : Function} {s s' : State} {b : Block}
+    {c : Ctrl} (hfind : f.findBlock s.pc = some b)
+    (hcode : denoteCode calls b.instrs s = some s')
+    (hterm : execTerm s' b.term = c) :
+    step calls f s = c := by
+  simp only [step, hfind, hcode, hterm]
+
+theorem s2StringBody_findBlock_entry_at :
+    s2StringBodyBody.findBlock "entry" =
+      some ⟨"entry", s2StringBodyEntryInstrs,
+        Term.condbr (.reg "%cmp3") "land.rhs" "if.then"⟩ := by decide
+
+theorem s2StringBody_findBlock_land_rhs_at :
+    s2StringBodyBody.findBlock "land.rhs" =
+      some ⟨"land.rhs", s2StringBodyLandRhsInstrs,
+        Term.condbr (.reg "%cmp1") "while.body" "land.lhs.true"⟩ := by decide
+
+theorem s2StringBody_findBlock_while_body_at :
+    s2StringBodyBody.findBlock "while.body" =
+      some ⟨"while.body", s2StringBodyWhileBodyInstrs,
+        Term.condbr (.reg "%exitcond.not") "if.then" "land.rhs"⟩ := by decide
+
+theorem s2StringBody_findBlock_land_lhs_true_at :
+    s2StringBodyBody.findBlock "land.lhs.true" =
+      some ⟨"land.lhs.true", s2StringBodyLandLhsTrueInstrs,
+        Term.condbr (.reg "%cmp7") "if.end" "if.then"⟩ := by decide
+
+theorem s2StringBody_findBlock_if_then_at :
+    s2StringBodyBody.findBlock "if.then" =
+      some ⟨"if.then",
+        [Instr.store (Ty.int 64) (Operand.reg "%len") (Operand.reg "%outn")],
+        Term.br "cleanup16"⟩ := by decide
+
+theorem s2StringBody_findBlock_if_end_at :
+    s2StringBodyBody.findBlock "if.end" =
+      some ⟨"if.end", s2StringBodyIfEndInstrs,
+        Term.condbr (.reg "%cmp9") "if.then11" "if.end14"⟩ := by decide
+
+theorem s2StringBody_findBlock_if_then11_at :
+    s2StringBodyBody.findBlock "if.then11" =
+      some ⟨"if.then11", s2StringBodyIfThen11Instrs, Term.br "cleanup"⟩ := by decide
+
+theorem s2StringBody_findBlock_if_end14_at :
+    s2StringBodyBody.findBlock "if.end14" =
+      some ⟨"if.end14",
+        [Instr.store (Ty.int 64) (Operand.reg "%call") (Operand.reg "%outn")],
+        Term.br "cleanup"⟩ := by decide
+
+theorem s2StringBody_findBlock_cleanup_at :
+    s2StringBodyBody.findBlock "cleanup" =
+      some ⟨"cleanup", s2StringBodyCleanupInstrs, Term.br "cleanup16"⟩ := by decide
+
+theorem s2StringBody_findBlock_cleanup16_at :
+    s2StringBodyBody.findBlock "cleanup16" =
+      some ⟨"cleanup16", s2StringBodyCleanup16Instrs,
+        Term.ret (Ty.int 32) (some (Operand.reg "%retval.1"))⟩ := by decide
+
+/-- The entry block's environment after its seven instructions, named: the
+allocator's first cell and the six the block builds over it. -/
+def s2StringBodyEntryOut (env : Env) (next : Nat) (base p j0 : Nat)
+    (nxp : BitVec 64) : Env :=
+  s2StringBodyEnv7 (s2StringBodyEnv6 (s2StringBodyEnv5 (s2StringBodyEnv4
+    (s2StringBodyEnv3 (s2StringBodyEnv2 (s2StringBodyEnv1 env next) base) p) base)
+    p base) j0) j0 nxp
+
+/-- The entry block's step, to the scan's head: the test holds. -/
+theorem step_entry_landRhs {env : Env} {s : State} {c p xj base j0 : Nat}
+    {nxp : BitVec 64}
+    (hpc : s.pc = "entry")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+        { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+      { s with next := s.next + (Ty.int 64).sizeBytes })
+    (b := ⟨"entry", s2StringBodyEntryInstrs,
+      Term.condbr (.reg "%cmp3") "land.rhs" "if.then"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_entry_at
+  · simpa only [denoteCode_nil, s2StringBodyEntryOut] using
+      s2StringBody_entry_denote hc hp hxj hnxp hbase hb64 hp64 hj0 hj64
+  · exact execTerm_condbr_one _ _ _ _ _ (by s2_lk) hbit
+
+/-- The entry block's step, to the body-itself arm: the test fails. -/
+theorem step_entry_ifThen {env : Env} {s : State} {c p xj base j0 : Nat}
+    {nxp : BitVec 64}
+    (hpc : s.pc = "entry")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 0#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+        { s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+      { s with next := s.next + (Ty.int 64).sizeBytes })
+    (b := ⟨"entry", s2StringBodyEntryInstrs,
+      Term.condbr (.reg "%cmp3") "land.rhs" "if.then"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_entry_at
+  · simpa only [denoteCode_nil, s2StringBodyEntryOut] using
+      s2StringBody_entry_denote hc hp hxj hnxp hbase hb64 hp64 hj0 hj64
+  · exact execTerm_condbr_zero _ _ _ _ _ (by s2_lk) hbit
+
+/-- The scan's head, while the lane is still below the body: one control step to
+`while.body`. -/
+theorem step_landRhs_while {env : Env} {s : State} {p : String} {op : Operand}
+    {inc24 : BitVec 64} {xp : Nat} {bs : List UInt8} {sub : BitVec 64}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("while.body", Operand.reg "%inc"),
+      ("entry", Operand.reg "%xj.promoted")] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 64 inc24))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hpos : (inc24.signExtend 64).toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (xp + (inc24.signExtend 64).toNat * 4) 4 = some bs)
+    (hbit : evalICmpNat .ugt 64 sub.toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 1#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyLandRhsEnv env inc24 xp bs sub)
+        { s with pc := "while.body", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyLandRhsEnv env inc24 xp bs sub) s)
+    (b := ⟨"land.rhs", s2StringBodyLandRhsInstrs,
+      Term.condbr (.reg "%cmp1") "while.body" "land.lhs.true"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_land_rhs_at
+  · simpa only [denoteCode_nil] using
+      s2StringBody_landRhs_denote hpre hinc hop hxp hsub hpos hlane
+  · exact execTerm_condbr_one _ _ _ _ _ (by s2_lk) hbit
+
+/-- The scan's head, the lane inside the body: one control step to
+`land.lhs.true`, the loop's first exit. -/
+theorem step_landRhs_exit {env : Env} {s : State} {p : String} {op : Operand}
+    {inc24 : BitVec 64} {xp : Nat} {bs : List UInt8} {sub : BitVec 64}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("while.body", Operand.reg "%inc"),
+      ("entry", Operand.reg "%xj.promoted")] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 64 inc24))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hpos : (inc24.signExtend 64).toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (xp + (inc24.signExtend 64).toNat * 4) 4 = some bs)
+    (hbit : evalICmpNat .ugt 64 sub.toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 0#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyLandRhsEnv env inc24 xp bs sub)
+        { s with pc := "land.lhs.true", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyLandRhsEnv env inc24 xp bs sub) s)
+    (b := ⟨"land.rhs", s2StringBodyLandRhsInstrs,
+      Term.condbr (.reg "%cmp1") "while.body" "land.lhs.true"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_land_rhs_at
+  · simpa only [denoteCode_nil] using
+      s2StringBody_landRhs_denote hpre hinc hop hxp hsub hpos hlane
+  · exact execTerm_condbr_zero _ _ _ _ _ (by s2_lk) hbit
+
+/-- The scan's body: the counter's advance written back, one control step to the
+scan's head (`cost`'s second step). -/
+theorem step_whileBody_back {env : Env} {s : State} {inc24 nxp : BitVec 64}
+    {xj : Nat}
+    (hpc : s.pc = "while.body")
+    (hinc24 : lookupName env "%inc24" = some (.int 64 inc24))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbit : evalICmp .eq (inc24 + 1#64) nxp = 0#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt
+        (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+          ("%inc", .int 64 (inc24 + 1#64)) :: env)
+        ({ s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8), pc := "land.rhs", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt
+      (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+        ("%inc", .int 64 (inc24 + 1#64)) :: env)
+      { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) })
+    (b := ⟨"while.body", s2StringBodyWhileBodyInstrs,
+      Term.condbr (.reg "%exitcond.not") "if.then" "land.rhs"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_while_body_at
+  · simpa only [denoteCode_nil] using s2StringBody_whileBody_denote hinc24 hxj hnxp
+  · exact execTerm_condbr_zero _ _ _ _ _ (by s2_lk) hbit
+
+/-- The scan's body, the counter at the count: one control step to `if.then`, the
+loop's second exit. -/
+theorem step_whileBody_exit {env : Env} {s : State} {inc24 nxp : BitVec 64}
+    {xj : Nat}
+    (hpc : s.pc = "while.body")
+    (hinc24 : lookupName env "%inc24" = some (.int 64 inc24))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbit : evalICmp .eq (inc24 + 1#64) nxp = 1#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt
+        (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+          ("%inc", .int 64 (inc24 + 1#64)) :: env)
+        ({ s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8), pc := "if.then", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt
+      (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+        ("%inc", .int 64 (inc24 + 1#64)) :: env)
+      { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) })
+    (b := ⟨"while.body", s2StringBodyWhileBodyInstrs,
+      Term.condbr (.reg "%exitcond.not") "if.then" "land.rhs"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_while_body_at
+  · simpa only [denoteCode_nil] using s2StringBody_whileBody_denote hinc24 hxj hnxp
+  · exact execTerm_condbr_one _ _ _ _ _ (by s2_lk) hbit
+
+/-- The inside test, the lane past the body's end: one control step to `if.end`. -/
+theorem step_landLhsTrue_ifEnd {env : Env} {s : State} {sub len conv : BitVec 64}
+    (hpc : s.pc = "land.lhs.true")
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hconv : lookupName env "%conv" = some (.int 64 conv))
+    (hbit : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 1#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt
+        (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+          ("%add", .int 64 (sub + len)) :: env)
+        { s with pc := "if.end", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt
+      (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+        ("%add", .int 64 (sub + len)) :: env) s)
+    (b := ⟨"land.lhs.true", s2StringBodyLandLhsTrueInstrs,
+      Term.condbr (.reg "%cmp7") "if.end" "if.then"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_land_lhs_true_at
+  · simpa only [denoteCode_nil] using s2StringBody_landLhsTrue_denote hsub hlen hconv
+  · exact execTerm_condbr_one _ _ _ _ _ (by s2_lk) hbit
+
+/-- The inside test, the lane inside the body: one control step to `if.then`. -/
+theorem step_landLhsTrue_ifThen {env : Env} {s : State} {sub len conv : BitVec 64}
+    (hpc : s.pc = "land.lhs.true")
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hconv : lookupName env "%conv" = some (.int 64 conv))
+    (hbit : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 0#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt
+        (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+          ("%add", .int 64 (sub + len)) :: env)
+        { s with pc := "if.then", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt
+      (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+        ("%add", .int 64 (sub + len)) :: env) s)
+    (b := ⟨"land.lhs.true", s2StringBodyLandLhsTrueInstrs,
+      Term.condbr (.reg "%cmp7") "if.end" "if.then"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_land_lhs_true_at
+  · simpa only [denoteCode_nil] using s2StringBody_landLhsTrue_denote hsub hlen hconv
+  · exact execTerm_condbr_zero _ _ _ _ _ (by s2_lk) hbit
+
+/-- The body-itself arm's step: the extent's word at `outn`, then `cleanup16`. -/
+theorem step_ifThen_cleanup16 {env : Env} {s : State} {len : BitVec 64} {outn : Nat}
+    (hpc : s.pc = "if.then")
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt env
+        ({ s with mem := writeBytes s.mem outn (natToBytes len.toNat 8), pc := "cleanup16", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8) })
+    (b := ⟨"if.then",
+      [Instr.store (Ty.int 64) (Operand.reg "%len") (Operand.reg "%outn")],
+      Term.br "cleanup16"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_if_then_at
+  · simpa only [denoteCode_nil] using s2StringBody_ifThen_denote hlen houtn
+  · rfl
+
+/-- The expander's step, its answer all-ones: one control step to the refusal
+record. -/
+theorem step_ifEnd_ifThen11 {env : Env} {s : State}
+    {p dst ei xp xj : Nat} {len nxp sub call : BitVec 64} {m : Mem} {nx : Nat}
+    (hpc : s.pc = "if.end")
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hdst : lookupName env "%dst" = some (.ptr dst))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hc : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes s.mem ei (natToBytes (0#64).toNat 8)) s.next =
+      some { ret := .int 64 call, mem := m, next := nx })
+    (hbit : evalICmp .eq call 0xffffffffffffffff#64 = 1#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyIfEndEnv env call)
+        ({ s with mem := m, next := nx, pc := "if.then11", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyIfEndEnv env call) { s with mem := m, next := nx })
+    (b := ⟨"if.end", s2StringBodyIfEndInstrs,
+      Term.condbr (.reg "%cmp9") "if.then11" "if.end14"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_if_end_at
+  · simpa only [denoteCode_nil] using
+      s2StringBody_ifEnd_denote hp hlen hdst hei hxp hxj hnxp hsub hc
+  · exact execTerm_condbr_one _ _ _ _ _ (by s2_lk) hbit
+
+/-- The expander's step, an answer that is not all-ones: one control step to the
+decoded length's write. -/
+theorem step_ifEnd_ifEnd14 {env : Env} {s : State}
+    {p dst ei xp xj : Nat} {len nxp sub call : BitVec 64} {m : Mem} {nx : Nat}
+    (hpc : s.pc = "if.end")
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hdst : lookupName env "%dst" = some (.ptr dst))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hc : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes s.mem ei (natToBytes (0#64).toNat 8)) s.next =
+      some { ret := .int 64 call, mem := m, next := nx })
+    (hbit : evalICmp .eq call 0xffffffffffffffff#64 = 0#1) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyIfEndEnv env call)
+        ({ s with mem := m, next := nx, pc := "if.end14", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyIfEndEnv env call) { s with mem := m, next := nx })
+    (b := ⟨"if.end", s2StringBodyIfEndInstrs,
+      Term.condbr (.reg "%cmp9") "if.then11" "if.end14"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_if_end_at
+  · simpa only [denoteCode_nil] using
+      s2StringBody_ifEnd_denote hp hlen hdst hei hxp hxj hnxp hsub hc
+  · exact execTerm_condbr_zero _ _ _ _ _ (by s2_lk) hbit
+
+set_option maxHeartbeats 1000000 in
+/-- The refusal record's step: the three fields written, then `cleanup`. -/
+theorem step_ifThen11_cleanup {env : Env} {s : State} {c ei e : Nat} {off sub : BitVec 64}
+    (hpc : s.pc = "if.then11")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hoff : readBytes s.mem ei 8 = some (natToBytes off.toNat 8))
+    (hcval : readBytes s.mem (c + (1112#64).toNat) 8 = some (wordBytes 8 e))
+    (he64 : e < 2 ^ 64) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (s2StringBodyIfThen11Env env off sub c e)
+        ({ s with mem := s2StringBodyIfThen11Mem s.mem e off sub, pc := "cleanup", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt (s2StringBodyIfThen11Env env off sub c e)
+      { s with mem := s2StringBodyIfThen11Mem s.mem e off sub })
+    (b := ⟨"if.then11", s2StringBodyIfThen11Instrs, Term.br "cleanup"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_if_then11_at
+  · simpa only [denoteCode_nil] using
+      s2StringBody_ifThen11_denote hc hei hsub hoff hcval he64
+  · rfl
+
+/-- The decoded length's step at `outn`, then `cleanup`. -/
+theorem step_ifEnd14_cleanup {env : Env} {s : State} {call : BitVec 64} {outn : Nat}
+    (hpc : s.pc = "if.end14")
+    (hcall : lookupName env "%call" = some (.int 64 call))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt env
+        ({ s with mem := writeBytes s.mem outn (natToBytes call.toNat 8), pc := "cleanup", pre := some s.pc })) := by
+  refine step_at_block
+    (s' := stateAt env { s with mem := writeBytes s.mem outn (natToBytes call.toNat 8) })
+    (b := ⟨"if.end14",
+      [Instr.store (Ty.int 64) (Operand.reg "%call") (Operand.reg "%outn")],
+      Term.br "cleanup"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_if_end14_at
+  · simpa only [denoteCode_nil] using s2StringBody_ifEnd14_denote hcall houtn
+  · rfl
+
+/-- The first cleanup block's step: the form's `phi`, then `cleanup16`. -/
+theorem step_cleanup_cleanup16 {env : Env} {s : State} {p : String} {op : Operand}
+    {form : BitVec 32} {ei : Nat}
+    (hpc : s.pc = "cleanup") (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("if.then11", Operand.imm (Const.int 32 0x00000000#32)),
+      ("if.end14", Operand.imm (Const.int 32 0x00000002#32))] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 32 form))
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.jump (stateAt (("%retval.0", .int 32 form) :: env)
+        { s with pc := "cleanup16", pre := some s.pc }) := by
+  refine step_at_block
+    (s' := stateAt (("%retval.0", .int 32 form) :: env) s)
+    (b := ⟨"cleanup", s2StringBodyCleanupInstrs, Term.br "cleanup16"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_cleanup_at
+  · simpa only [denoteCode_nil] using s2StringBody_cleanup_denote hpre hinc hop hei
+  · rfl
+
+/-- The second cleanup block's step: the returned form, and the function's
+answer.  The `i32` the `phi` selects is what `execTerm` reads, so the terminator is
+a `ret` of that word, not of the register. -/
+theorem step_cleanup16_ret {env : Env} {s : State} {p : String} {op : Operand}
+    {form : BitVec 32}
+    (hpc : s.pc = "cleanup16") (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("cleanup", Operand.reg "%retval.0"),
+      ("if.then", Operand.imm (Const.int 32 0x00000001#32))] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 32 form)) :
+    step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      Ctrl.ret (some (.int 32 form)) (stateAt (("%retval.1", .int 32 form) :: env) s) := by
+  refine step_at_block
+    (s' := stateAt (("%retval.1", .int 32 form) :: env) s)
+    (b := ⟨"cleanup16", s2StringBodyCleanup16Instrs,
+      Term.ret (Ty.int 32) (some (Operand.reg "%retval.1"))⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using s2StringBody_findBlock_cleanup16_at
+  · simpa only [denoteCode_nil] using s2StringBody_cleanup16_denote hpre hinc hop
+  · have hv : evalOperand (stateAt (("%retval.1", .int 32 form) :: env) s)
+        (.reg "%retval.1") = some (.int 32 form) := by s2_lk
+    simp only [execTerm, hv]
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
