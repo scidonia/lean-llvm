@@ -447,7 +447,18 @@ there: `Cend`/`sEnd` are the carry and state the last dispatch leaves at
 `Cend.alen` — the equality the exit's slot copy needs, and the lag inside an
 iteration closed at the loop head.  `WalkInv.log_len` already gives the event
 cursor's word as an equality, so the two slot copies are the same fact on the two
-sides and only the arena's needs stating. -/
+sides and only the arena's needs stating.
+
+What the post still owes beyond this premise is one identification, and it is
+`writeBytes` algebra rather than a fact about the walk: `sret.mem` is
+`stage2Report sEnd.mem …` because the tail's stores are the report's three slots
+with this equality and `WalkInv.log_len` supplying their values, and the slots are
+pairwise separate (`Stage2Run.staged`).  Writing them in a different order is
+`writeBytes` commutativity over disjoint extents, which the tree does not have yet —
+`readByte_writeBytes_outside` is the primitive it is built from.  A *direct* proof
+of `stage2Boundary` at `sret.mem` avoids that order question and also avoids the
+error word: the boundary's refusal clause is existential (`∃ e, e ≤ n ∧ …`), so the
+offset it names can be the memory's own word rather than the carry's `eoff`. -/
 def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 = G.nep →
