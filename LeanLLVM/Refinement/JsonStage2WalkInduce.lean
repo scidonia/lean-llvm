@@ -240,6 +240,11 @@ abbrev scanNodeBlock50Out (s : State) (x : BitVec 8) : State :=
   { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
     pc := "LeafBlock46", pre := some s.pc }
 
+/-- The state `NodeBlock50` leaves at the class that takes its second arm. -/
+abbrev scanNodeBlock48Out (s : State) (x : BitVec 8) : State :=
+  { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
+    pc := "LeafBlock48", pre := some s.pc }
+
 /-- The state `LeafBlock46` leaves at the class that takes the back edge. -/
 abbrev scanLeafBlock46Out (s : State) (x : BitVec 8) : State :=
   { stateAt ((("%SwitchLeaf47", .int 1 (evalICmp .eq x (BitVec.ofNat 8 13)))) :: s.env) s with
@@ -300,18 +305,15 @@ theorem walkChain_extend_nodeBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock50")
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hge32 : evalICmp .slt x (BitVec.ofNat 8 32) = 0) :
-    WalkChain calls G C₀ s₀ { C with block := "LeafBlock48" }
-      { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
-        pc := "LeafBlock48", pre := some s.pc } := by
+    WalkChain calls G C₀ s₀ { C with block := "LeafBlock48" } (scanNodeBlock48Out s x) := by
   have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
   have hres : (if evalICmp .slt x (BitVec.ofNat 8 32) = 1
       then "LeafBlock46" else "LeafBlock48") = "LeafBlock48" := if_neg (by rw [hge32]; decide)
   obtain ⟨s', hl, hs⟩ :=
     WalkLink.NodeBlock50_at G C s (WalkChain.inv_last hchain) hblock h1
-  have hstep : s' = { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
-      pc := "LeafBlock48", pre := some s.pc } := by
+  have hstep : s' = scanNodeBlock48Out s x := by
     rw [hs]
-    simp only [hres]
+    simp only [scanNodeBlock48Out, hres]
   rw [hstep] at hl
   rw [hres] at hl
   exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
@@ -369,6 +371,126 @@ theorem walkChain_extend_leafBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
   rw [hstep] at hl
   rw [hres] at hl
   exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-! ### The way back, composed
+
+The three classes of byte that continue the whitespace scan, each as one chain from the
+latch's dispatch node back to the latch.  What the leaves need of the counter is the same
+`ScanCount` the latch holds: no pivot between them binds `%ee.0.i238` or `%cond350.i`, so
+the fact transfers across each cell as a lookup peel. -/
+
+/-- **The scan count across a cell.**  A cell at another name moves neither of the two
+registers the count reads. -/
+theorem ScanCount.bind {s : State} {phi cond : String} {inner : Nat}
+    (h : ScanCount s phi cond inner) {d : String} {v : Value}
+    (hp : d ≠ phi) (hc : d ≠ cond) : ScanCount (s.bind d v) phi cond inner := by
+  obtain ⟨i, c, hsub, hlt, hcw, hi, hc'⟩ := h
+  refine ⟨i, c, hsub, hlt, hcw, ?_, ?_⟩
+  · rw [show (s.bind d v).env = (d, v) :: s.env from rfl, lookupName_cons_ne _ _ hp]
+    exact hi
+  · rw [show (s.bind d v).env = (d, v) :: s.env from rfl, lookupName_cons_ne _ _ hc]
+    exact hc'
+
+/-- **The scan count across the environment builder.** -/
+theorem ScanCount.stateAt_cells {s : State} {phi cond : String} {inner : Nat}
+    (h : ScanCount s phi cond inner) (cs : List (String × Value))
+    (hne : ∀ c ∈ cs, c.1 ≠ phi ∧ c.1 ≠ cond) :
+    ScanCount (stateAt (cells cs s.env) s) phi cond inner := by
+  obtain ⟨i, c, hsub, hlt, hcw, hi, hc'⟩ := h
+  have go : ∀ cs : List (String × Value),
+      (∀ c ∈ cs, c.1 ≠ phi ∧ c.1 ≠ cond) →
+      lookupName (cells cs s.env) phi = some (.int 64 (BitVec.ofNat 64 i)) ∧
+      lookupName (cells cs s.env) cond = some (.int 64 (BitVec.ofNat 64 c)) := by
+    intro cs
+    induction cs with
+    | nil => intro _; exact ⟨hi, hc'⟩
+    | cons hd tl ih =>
+        intro hne'
+        obtain ⟨k, v⟩ := hd
+        obtain ⟨h1, h2⟩ := hne' (k, v) (by simp)
+        obtain ⟨ih1, ih2⟩ := ih (fun c hc => hne' c (by simp [hc]))
+        refine ⟨?_, ?_⟩
+        · rw [show cells ((k, v) :: tl) s.env = (k, v) :: cells tl s.env from rfl,
+            lookupName_cons_ne _ _ h1]
+          exact ih1
+        · rw [show cells ((k, v) :: tl) s.env = (k, v) :: cells tl s.env from rfl,
+            lookupName_cons_ne _ _ h2]
+          exact ih2
+  obtain ⟨h1, h2⟩ := go cs hne
+  exact ⟨i, c, hsub, hlt, hcw, by simpa only [stateAt] using h1,
+    by simpa only [stateAt] using h2⟩
+
+/-- **The way back through `LeafBlock43`.**  The byte is below `13` and its own test is
+clear, so the pivot's first arm and the leaf's back edge return to the latch. -/
+theorem walkWhiteScanBack43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock52")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hlt13 : evalICmp .slt x (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0)
+    (hsc : ScanCount s "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" }
+      (leafBlock43OutAt (nodeBlock52OutAt s x) x) := by
+  have h₁ := walkChain_extend_nodeBlock52 (C₀ := C₀) (s₀ := s₀) hchain hblock h36 hlt13
+  have h36' : lookupName (nodeBlock52OutAt s x).env "%36" = some (.int 8 x) := by
+    show lookupName
+      (("%Pivot53", .int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) :: s.env) "%36" = some (.int 8 x)
+    rw [lookupName_cons_ne _ _ (by decide)]
+    exact h36
+  have hsc' : ScanCount (nodeBlock52OutAt s x) "%ee.0.i238" "%cond350.i" C.inner :=
+    ScanCount.bind (d := "%Pivot53") (v := .int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))
+      hsc (by decide) (by decide) (inner := C.inner)
+  exact walkChain_extend_leafBlock43 (C₀ := C₀) (s₀ := s₀)
+    (C := { C with block := "LeafBlock43" }) (inner := C.inner) h₁ rfl h36' hws rfl hsc'
+
+/-- **The way back through `LeafBlock46`.**  The byte is at or above `13`, below `32`, and
+not `13`: the second pivot, its first arm, and the leaf's back edge. -/
+theorem walkWhiteScanBack46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock52")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hge13 : evalICmp .slt x (BitVec.ofNat 8 13) = 0)
+    (hlt32 : evalICmp .slt x (BitVec.ofNat 8 32) = 1)
+    (hne13 : evalICmp .eq x (BitVec.ofNat 8 13) = 0)
+    (hsc : ScanCount s "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀
+      { { { C with block := "NodeBlock52" } with block := "NodeBlock50" } with
+        block := "while.body370.i" }
+      (scanLeafBlock46Out (scanNodeBlock50Out (nodeBlock52OutAt s x) x) x) := by
+  have h₁ := walkChain_extend_nodeBlock50 (C₀ := C₀) (s₀ := s₀) hchain hblock h36 hge13
+  have h36₁ : lookupName (nodeBlock52OutAt s x).env "%36" = some (.int 8 x) := by
+    show lookupName
+      (("%Pivot53", .int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) :: s.env) "%36" = some (.int 8 x)
+    rw [lookupName_cons_ne _ _ (by decide)]
+    exact h36
+  have hsc₁ : ScanCount (nodeBlock52OutAt s x) "%ee.0.i238" "%cond350.i" C.inner :=
+    ScanCount.bind (d := "%Pivot53") (v := .int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))
+      hsc (by decide) (by decide) (inner := C.inner)
+  have h₂ := walkChain_extend_nodeBlock50Out (C₀ := C₀) (s₀ := s₀)
+    (C := { C with block := "NodeBlock50" }) h₁ rfl h36₁ hlt32
+  have h36₂ : lookupName (scanNodeBlock50Out (nodeBlock52OutAt s x) x).env "%36"
+      = some (.int 8 x) := by
+    show lookupName
+      (("%Pivot51", .int 1 (evalICmp .slt x (BitVec.ofNat 8 32))) ::
+       ("%Pivot53", .int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) :: s.env) "%36"
+      = some (.int 8 x)
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact h36
+  have hsc₂ : ScanCount (scanNodeBlock50Out (nodeBlock52OutAt s x) x)
+      "%ee.0.i238" "%cond350.i" C.inner :=
+    ScanCount.bind (d := "%Pivot51") (v := .int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))
+      hsc₁ (by decide) (by decide) (inner := C.inner)
+  have hsc₃ : ScanCount (scanLeafBlock46Out (scanNodeBlock50Out (nodeBlock52OutAt s x) x) x)
+      "%ee.0.i238" "%cond350.i" C.inner :=
+    ScanCount.stateAt_cells (inner := C.inner) hsc₂
+      [("%SwitchLeaf47", .int 1 (evalICmp .eq x (BitVec.ofNat 8 13)))]
+      (by
+        intro c hc
+        simp only [List.mem_singleton] at hc
+        subst hc
+        exact ⟨by simp, by simp⟩)
+  exact walkChain_extend_leafBlock46 (C₀ := C₀) (s₀ := s₀)
+    h₂ rfl h36₂ hne13 hsc₃
 
 /-! ### The five inductions
 
