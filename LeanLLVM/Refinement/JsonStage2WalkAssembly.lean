@@ -2073,8 +2073,9 @@ theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
     (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
     (hv64 : v < 2 ^ 64) :
     ∃ s' : State, LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = "if.then" ∧
-      s'.env = ("%off1.i.i117", .ptr (e + 8)) :: s.env :=
-  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl⟩
+      s'.env = ("%off1.i.i117", .ptr (e + 8)) :: s.env ∧
+      s'.mem = writeBytes s.mem (e + 8) (wordBytes 8 v) :=
+  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl, rfl⟩
 
 /-- **The entry block's zero arm and the flush block, chained.**  Two of the arm's four steps:
 the second's two operands and its environment come from the first's returned environment, and
@@ -2119,7 +2120,7 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
     have h := G.maxDoc
     simp only [stage2MaxDocument] at h
     omega
-  obtain ⟨s₂, h2, hpc2, henv2⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
+  obtain ⟨s₂, h2, hpc2, henv2, -⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
     hpc1 he h4 hn64
   rw [henv1] at henv2
   have hnine := walkEntryEnv_copy (EntryState stage2Body
