@@ -3955,6 +3955,16 @@ theorem s2StringBodyWindow_empty_of_lane {ps : List Nat} {c pos0 len lane : Nat}
   rw [s2StringBodyInBody_empty_iff]
   exact Or.inr ⟨lane, ps.drop (c + 1), drop_eq_cons_of_getElem? hlane, hle⟩
 
+/-- **The expander arm's switch**: a lane below the window's end keeps the window
+non-empty, which is the decoded/refused fork.  The dual of
+`s2StringBodyWindow_empty_of_lane`, with `false`/`<` in place of `true`/`≤`. -/
+theorem s2StringBodyWindow_cons_of_lane {ps : List Nat} {c pos0 len lane : Nat}
+    (hlane : ps[c]? = some lane) (hlt : lane < pos0 + len) :
+    ((ps.drop c).takeWhile (fun q => decide (q < pos0 + len))).isEmpty = false := by
+  rw [drop_eq_cons_of_getElem? hlane]
+  rw [List.takeWhile_cons_of_pos (p := fun q => decide (q < pos0 + len)) (by simpa using hlt)]
+  rfl
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
