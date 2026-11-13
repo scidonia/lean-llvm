@@ -5908,6 +5908,42 @@ theorem s2StringBodyRefusedModel_reconciles (mem : Mem) {ei xj c1 e' offN k p ba
   rw [show (BitVec.ofNat 64 offN).toNat = offN from by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hoffN]]
 
+/-- **The expander's refusing answer at variable leaves**: its memory is the callee's
+chain with `Woff`/`Wj` as lists rather than the literal words.  A consumer that names
+the stage then unifies by structure; comparing a chain whose leaves are literals is
+what costs, not its depth. -/
+theorem s2StringBodyExpand_refused_named {mem xmem : Mem} {p dst xp xj : Nat}
+    {len nxp : BitVec 64} {base c1 ei next lane offN k : Nat} {ps : List Nat}
+    {body : List UInt8} {Woff Wj : List UInt8}
+    (hmem : xmem = writeBytes mem xj (wordBytes 8 c1))
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hbody : readBytes mem p len.toNat = some body)
+    (hlane : ps[c1]? = some lane) (hge : p - base ≤ lane)
+    (hp0 : p - base < 2 ^ 64) (hc1 : c1 < 2 ^ 64)
+    (hWoff : Woff = wordBytes 8 offN) (hWj : Wj = wordBytes 8 (c1 + k))
+    (hxjp : RegionsApart xj 8 p len.toNat)
+    (heip : RegionsApart ei 8 p len.toNat)
+    (heixj : RegionsApart ei 8 xj 8)
+    (heilan : ∀ j, j < nxp.toNat → xp + 4 * j + 4 ≤ ei ∨ ei + 8 ≤ xp + 4 * j)
+    (hjlan : ∀ j, j < nxp.toNat → xp + 4 * j + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * j)
+    (hr : escapeDecodeGo body 0 0
+      (((ps.drop c1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+        (fun q => q - (p - base))) [] = .refused offN k) :
+    s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 (BitVec.ofNat 64 (p - base))]
+      (writeBytes xmem ei (natToBytes (0#64).toNat 8)) next =
+    some { ret := .int 64 0xffffffffffffffff#64,
+           mem := writeBytes
+             (writeBytes (writeBytes xmem ei (natToBytes (0#64).toNat 8)) ei Woff)
+             xj Wj,
+           next := next } := by
+  rw [hWoff, hWj]
+  exact s2StringBodyExpand_refused_at_exit (ch := 0) (dst := dst) (next := next)
+    (hps := hps) (hbody := hbody) (hlane := hlane) (hge := hge) (hp0 := hp0)
+    (hc1 := hc1) (hxjp := hxjp) (heip := heip) (heixj := heixj)
+    (heilan := heilan) (hjlan := hjlan) (hmem := hmem) (hr := hr)
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
