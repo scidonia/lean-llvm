@@ -160,6 +160,8 @@ theorem cleanup478_denote_finish (calls : Calls) (s : State) (p : String)
 
 end WalkScope
 
+open LeanLLVM.Refinement.BlockEval
+
 /-! ### The invariant, across a block change
 
 `WalkInv` mentions the carry's `block` in exactly two fields — `pc_eq`, which says the
@@ -277,6 +279,83 @@ theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   owned := h.owned
   frame := h.frame
   blockLocal := hloc
+
+/-- **The invariant transports across a cell list and a block change at once.**  The state
+this produces — `cells cs`'s environment at the block `b` and the given predecessor — is the
+one a `denoteCode`'s successor has, so a step is `bindAt` and nothing else.
+
+The fused form is necessary rather than convenient: `bind` pins the *source's* `pc`, so a
+chain of `bind`s cannot reach a successor whose position the term's own `br`/`condbr`
+chooses.  Two facts make the fusion cheap — **no `WalkInv` field reads `pre`**, and `pc` is
+read by `pc_eq` alone — so the whole content is the environment change: one field copy for
+the two registers that read it (`%k.0.i249`, `%sp.i.0248`) and the three carriers, whose
+side conditions are `WalkLink.refusalStore`'s list. -/
+theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {b : String} {cs : List (String × Value)} {pr : Option String}
+    (h : WalkInv G C s)
+    (hfree : ∀ c ∈ cs, c.1 ∉ walkCarriedNames)
+    (hki : ∀ c ∈ cs, c.1 ≠ "%k.0.i249") (hspp : ∀ c ∈ cs, c.1 ≠ "%sp.i.0248")
+    (hptr : ∀ c ∈ cs, c.1 ≠ "%3" ∧ c.1 ≠ "%5" ∧ c.1 ≠ "%k11.i" ∧ c.1 ≠ "%ctype.i"
+      ∧ c.1 ≠ "%cst.i" ∧ c.1 ≠ "%hash1.i.i")
+    (hloc : WalkLocal { C with block := b } { s with env := cells cs s.env, pc := b, pre := pr }) :
+    WalkInv G { C with block := b } { s with env := cells cs s.env, pc := b, pre := pr } where
+  pc_eq := rfl
+  blockIndex := by
+    rw [lookupName_cells_of_notin cs "%k.0.i249" s.env (fun hin => by
+      obtain ⟨c, hc, hce⟩ := List.mem_map.mp hin
+      exact hki c hc hce)]
+    exact h.blockIndex
+  k_le := h.k_le
+  events_le := h.events_le
+  evlen_eq := h.evlen_eq
+  evBytes := h.evBytes
+  alen_le_sum := h.alen_le_sum
+  alen_ge := h.alen_ge
+  spans_order := h.spans_order
+  spans_inside := h.spans_inside
+  spans_end := h.spans_end
+  pending_at := h.pending_at
+  pending_len := h.pending_len
+  pending_cursor := h.pending_cursor
+  eoff_le := h.eoff_le
+  inner_cap := h.inner_cap
+  depth_cap := h.depth_cap
+  depth_reg := by
+    rw [lookupName_cells_of_notin cs "%sp.i.0248" s.env (fun hin => by
+      obtain ⟨c, hc, hce⟩ := List.mem_map.mp hin
+      exact hspp c hc hce)]
+    exact h.depth_reg
+  sp_le_wlen := h.sp_le_wlen
+  wlen_cap := h.wlen_cap
+  tyBytes := h.tyBytes
+  stBytes := h.stBytes
+  ptrs := h.ptrs.cells_of cs hptr
+  regs := h.regs.cells_of cs (fun n hn => by
+    obtain ⟨c, hc, hce⟩ := List.mem_map.mp hn
+    have hc' : c.1 ∉ walkCarriedNames := hfree c hc
+    simp only [walkCarriedNames, List.mem_cons, not_or] at hc'
+    exact hce ▸ hc'.2.2)
+  iter := by
+    have hgo : ∀ (l : List (String × Value)), (∀ c ∈ l, c.1 ∉ walkCarriedNames) →
+        WalkIter G C.k (cells l s.env) := by
+      intro l
+      induction l with
+      | nil => intro _; exact h.iter
+      | cons c cs ih =>
+          intro hcl
+          have hc : c.1 ∉ walkCarriedNames := hcl c (by simp)
+          simp only [walkCarriedNames, List.mem_cons, not_or] at hc
+          exact WalkIter.bind (ih (fun c' hc' => hcl c' (by simp [hc']))) hc.1 hc.2.1
+    exact hgo cs hfree
+  log_hash := h.log_hash
+  log_len := h.log_len
+  log_cap := h.log_cap
+  log_alen := h.log_alen
+  log_acap := h.log_acap
+  owned := h.owned
+  frame := h.frame
+  blockLocal := hloc
+
 end LeanLLVM.Refinement
 
 /-! ### The instrument -/
@@ -288,3 +367,4 @@ end LeanLLVM.Refinement
 #print axioms LeanLLVM.Refinement.WalkInv.reblock
 #print axioms LeanLLVM.Refinement.WalkInv.reblock_true
 #print axioms LeanLLVM.Refinement.WalkInv.bind
+#print axioms LeanLLVM.Refinement.WalkInv.bindAt
