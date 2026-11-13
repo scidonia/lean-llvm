@@ -3208,7 +3208,16 @@ syntax rather than mathematics — which is why the record names them together:
    unable to print the difference, so only taking the term from the equality removes the
    second spelling. -/
 
-/-! ### The copy's equation is a hypothesis every consumer takes
+/-! ### The arm is a staged execution: `runFuel`, not `run`
+
+`run` begins at `initState`, whose memory is empty and whose cursor is one.  The walk's execution
+is staged: `Γ_stage2.pre` reads the document, the entry stream, the arena and the log out of the
+*caller's* memory at an arbitrary `next`.  So the arm's theorem is about a staged execution and
+is stated at `runFuel` — and a handoff's "`run`" stands for that staged execution at a staging.
+Read the `∃ s, run = .outcome …` form as this one, rather than looking for an `initState` equality
+that would pin the staging to `[]`.
+
+### The copy's equation is a hypothesis every consumer takes
 
 `walkIfThenBlock_denote_named`'s conclusion — the copy block's `denoteCode` run at
 `walkIfThenBlockState` — is affordable to *state* by the lemma that proves it and never to
