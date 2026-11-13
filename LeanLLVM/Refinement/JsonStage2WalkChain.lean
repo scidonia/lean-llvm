@@ -821,14 +821,20 @@ theorem walkScanChain_to_latch {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 /-- **The scan's chain entered at the preheader.**  The preheader's edge, the scan's own step
 (whose byte is `walkDoc_byte`'s), the pivot on that byte, and the whitespace skip's leaf taking the
 back edge — the four extensions `walkScanChain_to_latch` composes after `LeafBlock33`, taken from a
-chain that is already at `land.rhs.i.preheader`.  That is where `walkDispatchSegmentStart`'s
-terminus lies, and the statement is parametric in the incoming carry and state so the dispatch's
-whitespace classes share one scan instead of one chain per leaf.
+chain that is already at `land.rhs.i.preheader`.  That is where `walkDispatchSegmentStart` ends, at
+the named state `leafBlock33OutAt headS₇`, so the two segments join with this statement's `rfl`s and
+nothing else.
 
-The premises are the `def`s' own: the preheader's entry fact (`hsc`, at the `inner` the carry
-names), the byte the scan loads and its two pivots, and the counter's bound at the latch.  The
-preheader's own `pc` is a hypothesis rather than `rfl`, because the chain may have arrived from any
-of the dispatch's whitespace leaves. -/
+The finite segment stops at the latch because past it the visit repeats: the next piece is
+`WalkScanInduction`'s, not a chain.  Where a scan's premises have to be *derived* rather than
+assumed, the whole-dispatch proof goes through the named states, as `walkHeadChain_to_scanLatch`
+does — the premises here are the `def`s' own: the preheader's entry fact (`hsc`, at the `inner` the
+carry names), the byte the scan loads and its two pivots, and the counter's bound at the latch.
+
+The preheader's own `pc` is a hypothesis rather than `rfl`, and the statement is parametric in the
+incoming carry and state, for one reason: the chain may arrive from any of the dispatch's whitespace
+leaves.  That is what makes the deferred `LeafBlock35`/`LeafBlock37` arms a two-line addition —
+each supplies its chain and its `pc`, and reuses this scan — rather than a second chain. -/
 theorem walkScanChain_from_preheader {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
     (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i.preheader")
@@ -1163,19 +1169,23 @@ theorem walkDispatchSecondLink {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 /-- **The dispatch's segment to the whitespace preheader.**  The head path's six links end at
 `NodeBlock41`; taking that block's `icmp slt i8 %35, 13` pivot towards `LeafBlock33`, and then the
 leaf's `ule %35 + 247, 1` arm, puts the chain at `land.rhs.i.preheader` — the whitespace skip's
-entry.
+entry, at the state that leaves `LeafBlock33`, `leafBlock33OutAt headS₇`'s.
 
-The composition is `walkHeadChain_to_nodeBlock41Out`'s rather than a chain of the pivot links, for
-two reasons that are both facts about the interface.  A chain's next link needs a fact at the state
-the previous one left, and `walkDispatchFirstLink` states its target as `∃ s', WalkLink … s'` —
-dropping the `s' = …` equality the `_at` lemma beneath it carries — so a step that follows it has no
-`lookupName s'.env "%35"` to extend with.  The state has to be named, which is what
-`nodeBlock41Out`'s composition does.  And the two pivots are alternatives, not a sequence:
-`NodeBlock41`'s `LeafBlock33` arm and its `NodeBlock39` arm are the two sides of one branch, and
-`NodeBlock39` continues at `LeafBlock35` (`%35 < 32`) or `LeafBlock37` — never at `LeafBlock33`.  A
-chain that took the second pivot would be at one of those leaves, where this extension's block
-hypothesis cannot hold: they reach the preheader by their own `icmp eq` arms, and are separate
-segments that this module does not extend. -/
+The chain's two ends are named because the consumer composes on them, and naming them is also what
+the proof needs in the middle.  A chain's next link reads a fact at the state the previous one left,
+while `walkDispatchFirstLink` states its target as `∃ s', WalkLink … s'` — dropping the `s' = …`
+equality the `_at` lemma beneath it carries — so a step that follows it has no
+`lookupName s'.env "%35"` to extend with.  The states are therefore `walkHeadChain_to_nodeBlock41`'s
+`s₆ = headS₆ …` and `NodeBlock41_at`'s `s₇ = headS₇ …`, which is what makes the terminus
+`leafBlock33OutAt headS₇` and lets `walkScanChain_from_preheader` take the chain from there.  The
+carry is named for the same reason: the scan it hands over to states its entry and its count at
+`C.inner`, and a carry left existential would not reduce there.
+
+The second pivot is not on this path.  `NodeBlock41`'s `LeafBlock33` arm and its `NodeBlock39` arm
+are the two sides of one branch, and `NodeBlock39` continues at `LeafBlock35` (`%35 < 32`) or
+`LeafBlock37` — never at `LeafBlock33`.  A chain that took the second pivot would be at one of those
+leaves, where this extension's block hypothesis cannot hold: they reach the preheader by their own
+`icmp eq` arms, and are separate segments that this module does not extend. -/
 theorem walkDispatchSegmentStart {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
@@ -1199,13 +1209,54 @@ theorem walkDispatchSegmentStart {m0 : Mem} {G : WalkGeom m0}
     (hbit : evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat) (BitVec.ofNat 8 13) = 1)
     (hws : evalICmp .ule (BitVec.ofNat 8 (G.bs.getD q 0).toNat + BitVec.ofNat 8 247)
       (BitVec.ofNat 8 1) = 1) :
-    ∃ (C' : WalkCarry G) (s' : State),
-      WalkChain (stage2Calls stage2SubCalls) G C s C' s' ∧
-        C'.block = "land.rhs.i.preheader" := by
-  obtain ⟨C₇, s₇, hc₇, hC₇, h35₇⟩ :=
-    walkHeadChain_to_nodeBlock41Out hInv hhead h8 hlt91 hlt44 hne34 hinc hnep hge hugt hpre4
-      hinc4 hav4 hidx4 htok4 hgap4 hpos hq63 hqn halen hevlen hbit
-  exact ⟨_, _, walkChain_extend_leafBlock33 (C₀ := C) (s₀ := s) hc₇ hC₇ h35₇ hws, rfl⟩
+    WalkChain (stage2Calls stage2SubCalls) G C s
+      { { { { C with block := "cond.end349.i" } with block := "NodeBlock41" } with
+        block := "LeafBlock33" } with block := "land.rhs.i.preheader" }
+      (leafBlock33OutAt (headS₇ G C s x inc nep c ix q)
+        (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+  obtain ⟨C₆, s₆, hchain₆, hC₆, hs₆⟩ :=
+    walkHeadChain_to_nodeBlock41 hInv hhead h8 hlt91 hlt44 hne34 hinc hnep hge hugt hpre4
+      hinc4 hav4 hidx4 htok4 hgap4 hpos hq63 hqn halen hevlen
+  rw [hC₆] at hchain₆
+  have hs₆' : s₆ = headS₆ G C s x inc nep c ix q := by
+    rw [hs₆]
+    rfl
+  rw [hs₆'] at hchain₆
+  -- the pivot's operand is the cell the token's arm bound
+  have h35 : evalOperand (headS₆ G C s x inc nep c ix q) (.reg "%35")
+      = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+    show lookupName (cells
+      [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+       ("%gep", .ptr ((G.b - 1) + c.toNat))]
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+      "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    block_lk
+  obtain ⟨s₇, hl₇, hs₇⟩ :=
+    WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G _ _ hchain₆.inv_last rfl h35
+  have hres : (if evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat)
+      (BitVec.ofNat 8 13) = 1 then "LeafBlock33" else "NodeBlock39") = "LeafBlock33" :=
+    if_pos hbit
+  have hstep7 : s₇ = headS₇ G C s x inc nep c ix q := by
+    rw [hs₇]
+    simp only [headS₇, nodeBlock41OutAt, hres]
+  rw [hstep7] at hl₇
+  rw [hres] at hl₇
+  have hc₇ := hchain₆.append (WalkChain.tail hl₇ (WalkChain.nil hl₇.inv'))
+  -- the byte's lookup at the state `NodeBlock41` leaves
+  have h35' : lookupName (headS₇ G C s x inc nep c ix q).env "%35"
+      = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+    show lookupName (("%Pivot42", .int 1 (evalICmp .slt
+      (BitVec.ofNat 8 (G.bs.getD q 0).toNat) (BitVec.ofNat 8 13))) ::
+      (headS₆ G C s x inc nep c ix q).env) "%35"
+      = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    rw [lookupName_cons_ne _ _ (by decide)]
+    show lookupName (cells
+      [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+       ("%gep", .ptr ((G.b - 1) + c.toNat))]
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+      "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    block_lk
+  exact walkChain_extend_leafBlock33 (C₀ := C) (s₀ := s) hc₇ rfl h35' hws
 
 end WalkScope
 
