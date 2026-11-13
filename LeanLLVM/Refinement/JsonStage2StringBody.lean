@@ -4981,6 +4981,73 @@ theorem s2StringBodyPost_of_bodyItself {mem : Mem} {next c p dst outn xp xj j1 :
   simp only [hself]
   rfl
 
+/-- **The model's body-itself answer at a scan exit**: `j1` is the counter and the
+window there is empty, so the two forms' first branch is taken — the cursor word
+and the extent's word, form `1`, empty slot. -/
+theorem s2StringBodyModel_bodyItself {mem : Mem} {c p dst outn xp xj j1 : Nat}
+    {len nxp : BitVec 64} {base j0 : Nat} {ps : List Nat}
+    (hbase : stage2ReadWord mem c 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hj1 : j1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)
+    (hempty : ((ps.drop j1).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = true) :
+    stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn
+        (wordBytes 8 len.toNat), 1, []) := by
+  simp only [stage2StringBody, hbase, hj0, hps]
+  rw [← hj1]
+  rw [if_pos hempty]
+
+/-- **The model's decoded answer at a scan exit**: the window is non-empty, the
+body's bytes are the staging's read, and the decoder's result is the callee's —
+the decoded prefix at `dst`, the advanced cursor, the decoded length at `outn`,
+form `2` and the length as the slot's word. -/
+theorem s2StringBodyModel_decoded {mem : Mem} {c p dst outn xp xj j1 k : Nat}
+    {len nxp : BitVec 64} {base j0 : Nat} {ps : List Nat} {body out : List UInt8}
+    (hbase : stage2ReadWord mem c 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hbody : readBytes mem p len.toNat = some body)
+    (hj1 : j1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)
+    (hne : ((ps.drop j1).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = false)
+    (hdec : escapeDecodeGo body 0 0
+      (((ps.drop j1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+        (fun q => q - (p - base))) [] = .decoded out k) :
+    stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (writeBytes
+        (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k))) outn
+        (wordBytes 8 out.length), 2, wordBytes 8 out.length) := by
+  simp only [stage2StringBody, hbase, hj0, hps]
+  rw [← hj1]
+  rw [if_neg (by simpa using hne)]
+  simp only [hbody, hdec]
+
+/-- **The model's refusing answer at a scan exit**: the decoder's refusal, the
+body-relative offset written at the error record, form `0` and the offset as the
+slot's word. -/
+theorem s2StringBodyModel_refused {mem : Mem} {c p dst outn xp xj j1 k off e' : Nat}
+    {len nxp : BitVec 64} {base j0 : Nat} {ps : List Nat} {body : List UInt8}
+    (hbase : stage2ReadWord mem c 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hbody : readBytes mem p len.toNat = some body)
+    (he : stage2ReadWord mem (c + 1112) 8 = some e')
+    (hj1 : j1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)
+    (hne : ((ps.drop j1).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = false)
+    (hr : escapeDecodeGo body 0 0
+      (((ps.drop j1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+        (fun q => q - (p - base))) [] = .refused off k) :
+    stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (writeBytes (stage2ErrSetMsg mem e' (p - base + off) 0) xj
+        (wordBytes 8 (j1 + k)), 0, wordBytes 8 off) := by
+  simp only [stage2StringBody, hbase, hj0, hps]
+  rw [← hj1]
+  rw [if_neg (by simpa using hne)]
+  simp only [hbody, hr, he]
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
