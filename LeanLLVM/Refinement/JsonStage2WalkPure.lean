@@ -856,6 +856,60 @@ theorem walkSelectDen8 {calls : Calls} (env : Env) (s : State)
     (by simp [lookupName])]
   rfl
 
+/-- **The select nest's step, at the successor named.**  `WalkLink.stackSelectBr`'s
+`hden`-and-terminator, composed from the split's two halves (`walkSelectDen4`,
+`walkSelectDen8`) so the eight-instruction derivation is never one term.  The bit is a
+parameter rather than a function of the cells: a caller that knows the `select`'s value
+supplies the cell's contents, and the successor's `pc` then folds the same way in the
+caller's own statement. -/
+theorem walkSelectStep {calls : Calls} (s : State) {B : Block}
+    {sub cmpi sel zx apx ldv cvt d base tl fl : String} {x c : BitVec 32} {ct q : Nat}
+    {bs : List UInt8} {db : BitVec 8} {bit : BitVec 1}
+    (hfind : stage2Body.findBlock s.pc = some B)
+    (hinstrs : B.instrs = [
+      Instr.binop sub BinOp.add 32 (.reg "%sp.i.0248") (.imm (.int 32 c)),
+      Instr.icmp cmpi IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 125))),
+      Instr.select sel (.int 32) (.reg cmpi) (.imm (.int 32 (BitVec.ofNat 32 1)))
+        (.imm (.int 32 (BitVec.ofNat 32 2))),
+      Instr.zext zx 32 64 (.reg sub),
+      Instr.gep apx (.int 8) (.reg base) (.reg zx),
+      Instr.load ldv (.int 8) (.reg apx),
+      Instr.zext cvt 8 32 (.reg ldv),
+      Instr.icmp d IPred.eq 32 (.reg sel) (.reg cvt)])
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 x))
+    (h8 : lookupName s.env "%8" = some (.int 8 db))
+    (hb : lookupName s.env base = some (.ptr ct))
+    (hzb : zx ≠ base) (hsb : sub ≠ base) (hs8 : sub ≠ "%8")
+    (hselSub : sel ≠ sub) (hcmpiSub : cmpi ≠ sub)
+    (hselBase : sel ≠ base) (hcmpiBase : cmpi ≠ base)
+    (hcvtSel : cvt ≠ sel) (hldvSel : ldv ≠ sel)
+    (hapxSel : apx ≠ sel) (hzxSel : zx ≠ sel)
+    (hq63 : (x + c).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (ct + (x + c).toNat) 1 = some bs)
+    (hbsn : bytesToNat bs = q)
+    (hbit : lookupName (stateAt (walkSelectEnv sub cmpi sel zx apx ldv cvt d
+      db x c ct q s.env) s).env d = some (.int 1 bit)) :
+    step calls stage2Body s =
+      .jump { stateAt (walkSelectEnv sub cmpi sel zx apx ldv cvt d db x c
+          ct q s.env) s with
+        pc := (if bit = 1 then tl else fl)
+        pre := some s.pc } := by
+  have hden : denoteCode calls B.instrs s = some (stateAt (walkSelectEnv sub cmpi sel zx
+      apx ldv cvt d db x c ct q s.env) s) := by
+    rw [hinstrs, ← stateAt_self s,
+      walkSelectDen4 (calls := calls) (env := s.env) (s := s) hsp h8 hs8 hselSub hcmpiSub
+        (rest := [Instr.gep apx (.int 8) (.reg base) (.reg zx),
+          Instr.load ldv (.int 8) (.reg apx),
+          Instr.zext cvt 8 32 (.reg ldv),
+          Instr.icmp d IPred.eq 32 (.reg sel) (.reg cvt)]),
+      walkSelectDen8 (calls := calls) (env := s.env) (s := s) hzb hselBase hcmpiBase hsb hb
+        hq63 hread hbsn hcvtSel hldvSel hapxSel hzxSel (rest := [])]
+    rfl
+  simp only [LeanLLVM.step, hfind, hden, hterm]
+  rw [walkExecTerm_condbr (d := d) (tl := tl) (fl := fl) (bit := bit) hbit]
+  rfl
+
 /-- **One stack byte at `%sp - 1`, tested for a marker, then a `condbr`.**  The
 five-instruction shape `if.end179.i` and `land.lhs.true.i`. -/
 theorem WalkLink.stackMarkerBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
