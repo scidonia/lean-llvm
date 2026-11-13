@@ -1187,6 +1187,22 @@ def WalkDispatchThree (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     WalkDispatchOutcome calls G C s
 
+/-- **The existing premise is the `cont` alternative.**  Every dispatch the old
+`WalkDispatch` supplied — one that needs another revolution — is an outcome of the new type
+with the *same* evidence, field for field.  So stating the dispatch at its three outcomes
+completes the layer rather than rewriting it: nothing the earlier premise proved is lost, and
+the two cases it could not express (`finish` at the terminal index, `refuse` before the
+merge) are additions beside it. -/
+theorem WalkDispatchOutcome.ofDispatch {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (h : WalkDispatch calls G)
+    (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hk : C.k + 1 < G.nep) :
+    WalkDispatchOutcome calls G C s := by
+  obtain ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblock, hkC, hpre, hsp, hspv,
+    hkOp, hk2, hnepv, hbelow, hnep, hadvance, hspcap, hspw, hprice⟩ :=
+    h C s hInv hhead hk
+  exact WalkDispatchOutcome.cont Cd sd p spv k2 prev spOp kOp nepv seg hblock hkC hpre hsp
+    hspv hkOp hk2 hnepv hbelow hnep hadvance hspcap hspw hprice
+
 /-! ### What a dispatch proof still owes
 
 Two things the census's links do not supply, and the dispatch therefore owes
