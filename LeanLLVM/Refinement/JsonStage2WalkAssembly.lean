@@ -80,6 +80,7 @@ namespace LeanLLVM.Refinement
 namespace WalkScope
 
 open LeanLLVM
+open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.JsonStage2IR
 
 set_option autoImplicit false
@@ -123,6 +124,87 @@ theorem cleanup478Out_pre {s : State} {spv k2 : Nat} :
 /-- The merge's target is `while.body.i`. -/
 theorem cleanup478Out_pc {s : State} {spv k2 : Nat} :
     (cleanup478Out s spv k2).pc = "while.body.i" := rfl
+
+/-- **The merge's failing test.**  The same two `phi` selections as the back edge,
+with the test clear: `%cmp.i` is `0` and the terminator takes its false arm, so one
+step lands at `if.then485.i` — the exit tail's first block — rather than at
+`while.body.i`.  The index's width is a hypothesis because the comparison's value is
+the word's: `nep ≤ k2` decides it only when `k2` is a word.
+
+The test is `%k.2.i < %nep` (`cleanup478Block`'s `icmp ult`), so the clear case is
+`nep ≤ k2` — at the exit the merge selects the entry count itself, which is why
+`WalkExit` states its guard as `C.k + 1 = G.nep`. -/
+theorem walkBackFalse_step {calls : Calls} (s : State) {p : String}
+    {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    (hpc : s.pc = "cleanup478.i") (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hk2 : k2 < 2 ^ 64) (hguard : nepv.toNat ≤ k2) :
+    step calls stage2Body s =
+      .jump { (((s.bind "%sp.i.1" (.int 32 (BitVec.ofNat 32 spv))).bind
+        "%k.2.i" (.int 64 (BitVec.ofNat 64 k2))).bind
+        "%cmp.i" (.int 1 (0 : BitVec 1))) with
+        pc := "if.then485.i", pre := some "cleanup478.i" } := by
+  have hult0 : evalICmp .ult (BitVec.ofNat 64 k2) nepv = (0 : BitVec 1) := by
+    have hlt : ¬ (BitVec.ofNat 64 k2).toNat < nepv.toNat := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk2]
+      omega
+    rw [show evalICmp .ult (BitVec.ofNat 64 k2) nepv
+          = BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 k2) nepv) from rfl]
+    rw [show BitVec.ult (BitVec.ofNat 64 k2) nepv = false from by
+      cases h : BitVec.ult (BitVec.ofNat 64 k2) nepv with
+      | false => rfl
+      | true => exact absurd ((BitVec.ult_iff_toNat_lt).1 h) hlt]
+    rfl
+  have hsel : PhiSelects s p
+      [{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+       { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }]
+      [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+       ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))] :=
+    PhiSelects.cons hsp hspv (PhiSelects.cons hk hkv PhiSelects.nil)
+  have hspecs : cleanup478Block.instrs =
+      ([{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+        { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }].map
+          PhiSpec.instr) ++
+        [Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i")
+          (Operand.reg "%nep")] := by
+    simp [cleanup478Block, PhiSpec.instr]
+  have hden : denoteCode calls cleanup478Block.instrs s =
+      some (((s.bind "%sp.i.1" (.int 32 (BitVec.ofNat 32 spv))).bind
+        "%k.2.i" (.int 64 (BitVec.ofNat 64 k2))).bind
+        "%cmp.i" (.int 1 (0 : BitVec 1))) := by
+    rw [hspecs, denoteCode_phiRun (specs :=
+        [{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+         { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }])
+        (vs := [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+                ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))])
+        (rest := [Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i")
+          (Operand.reg "%nep")]) hpre hsel (by rfl)]
+    rw [show s.bindAll [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+          ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))] =
+        LeanLLVM.Refinement.BlockEval.stateAt
+          (("%k.2.i", .int 64 (BitVec.ofNat 64 k2)) ::
+            ("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)) :: s.env) s from rfl]
+    rw [denoteCode_icmp_ult_reg (x := BitVec.ofNat 64 k2) (y := nepv)
+      calls _ s "%cmp.i" "%k.2.i" "%nep"
+      (by simp only [lookupName_cons_self])
+      (by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hnep)
+      []]
+    rw [hult0]
+    rfl
+  have hterm : cleanup478Block.term =
+      Term.condbr (Operand.reg "%cmp.i") "while.body.i" "if.then485.i" := rfl
+  have hfind : stage2Body.findBlock s.pc = some cleanup478Block := by
+    rw [hpc, cleanup478_find]
+  simp only [step, hfind, hden, hterm]
+  dsimp only [State.bind]
+  simp only [execTerm, evalOperand, lookupName_cons_self, hpc]
+  simp
 
 /-- **The back edge, at the state the next pass reads.**  `walkBack_step`'s four
 facts at `cleanup478Out`, so the header's pass has its two `phi` values and its
@@ -946,6 +1028,7 @@ theorem walkCredit_long_string :
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.walkBackFalse_step
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_k
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_sp
 #print axioms LeanLLVM.Refinement.WalkScope.walkBack_step_at
