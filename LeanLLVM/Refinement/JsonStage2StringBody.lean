@@ -377,6 +377,34 @@ theorem writeBytes_absent_comm_witness :
     writeBytes (writeBytes [] 0 [1]) 1 [2] ≠
       writeBytes (writeBytes [] 1 [2]) 0 [1] := by decide
 
+/-- **The ten blocks, in the order the body runs them.**  `findBlock` is a
+search over this list, so the names and their order are what every block's step
+lemma resolves against; the control beneath it is a name the body does not carry. -/
+theorem s2StringBodyBody_blockNames :
+    (s2StringBodyBody.blocks.map (·.name)) =
+      ["entry", "land.rhs", "while.body", "land.lhs.true", "if.then", "if.end",
+       "if.then11", "if.end14", "cleanup", "cleanup16"] := by decide
+
+-- The control: a block the body does not have is not found.
+theorem s2StringBodyBody_findBlock_absent :
+    s2StringBodyBody.findBlock "land.rhs.not" = none := by decide
+
+/-- **The entry block.**  Seven instructions: the slot's `alloca`, the two
+address conversions, the subtraction, the cursor read and the two tests. -/
+theorem s2StringBody_findBlock_entry :
+    s2StringBodyBody.findBlock "entry" =
+      some ⟨"entry",
+        [Instr.alloca "%ei" (Ty.int 64) 0,
+         Instr.load "%0" (Ty.ptr) (Operand.reg "%c"),
+         Instr.ptrtoint "%sub.ptr.lhs.cast" (Operand.reg "%p"),
+         Instr.ptrtoint "%sub.ptr.rhs.cast" (Operand.reg "%0"),
+         Instr.binop "%sub.ptr.sub" (BinOp.sub) 64 (Operand.reg "%sub.ptr.lhs.cast")
+           (Operand.reg "%sub.ptr.rhs.cast"),
+         Instr.load "%xj.promoted" (Ty.int 64) (Operand.reg "%xj"),
+         Instr.icmp "%cmp3" (IPred.ult) 64 (Operand.reg "%xj.promoted")
+           (Operand.reg "%nxp")],
+        Term.condbr (Operand.reg "%cmp3") "land.rhs" "if.then"⟩ := by decide
+
 /- **A write of the bytes already there leaves the memory alone** — the form the
 closing needs for a region the body rewrites with its own value (the cursor word
 when the scan does not run, the slot on the arm that writes nothing):
