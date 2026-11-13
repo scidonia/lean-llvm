@@ -82,7 +82,11 @@ rest is composition: resolve each arm, supply each step's cell, and append.  A s
 named state is read off that step's own conclusion, which is why no further hypothesis
 about the tail is needed.  The tail is now composed: `walkChain_extend_leafBlock33`
 through `walkChain_extend_leafBlock43` are one extension per step and
-`walkScanChain_to_latch` is the five of them as one chain, to the scan's latch.
+`walkScanChain_to_latch` is the five of them as one chain, to the scan's latch; the head
+path's own last links are `walkHeadChain_to_nodeBlock41Out`'s, and
+`walkHeadChain_to_scanLatch` is the twelve of them as one chain from the loop head to
+the latch.  What that leaves is not a link but the repeated visit: an induction per
+scan, which `WalkScanInduction` names.
 
 **Two shapes a resolved arm costs, beyond the nesting rule.**  `rfl` does not fire on
 `if c then a else b` for a symbolic `c`, and neither does `simp [h]` when `h : c` — the
@@ -592,6 +596,25 @@ theorem walkChain_extend_leafBlock43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
   rw [hres] at hl
   exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
 
+/-- The state the token's dispatch leaves at `NodeBlock41`: the byte's cell and the
+address it was read from, on the environment `cond.end349.i`'s run leaves. -/
+def headS₆ {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) (x : BitVec 8)
+    (inc nep c ix : BitVec 64) (q : Nat) : State :=
+  { stateAt (cells
+      [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+       ("%gep", .ptr ((G.b - 1) + c.toNat))]
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)) with
+    pc := "NodeBlock41"
+    pre := some (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok
+      (C.stage.tok + 20)).pc }
+
+/-- The state `NodeBlock41` leaves at the class that takes the byte's first arm. -/
+def headS₇ {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) (x : BitVec 8)
+    (inc nep c ix : BitVec 64) (q : Nat) : State :=
+  nodeBlock41OutAt (headS₆ G C s x inc nep c ix q)
+    (BitVec.ofNat 8 (G.bs.getD q 0).toNat)
+
 /-! ### The scan's chain to its latch, as one theorem
 
 The five links from `LeafBlock33` to the latch, composed.  The states are the `def`s
@@ -690,6 +713,112 @@ theorem walkScanChain_to_latch {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
       block := "NodeBlock52" } with block := "LeafBlock43" }) (inner := C.inner) h₄ rfl h36₄
       hge rfl hcount
 
+/-- **The dispatch's chain from the loop head to the scan's latch.**  The twelve links
+of the head path and the scan's, as one chain: the two halves are `walkHeadChain`'s and
+`walkScanChain_to_latch`'s, and the only thing joining them is that the head's last
+state is the scan's first — which is why the `def`s name it.
+
+Every premise is a fact about the program at one of the `def`s: the class's three pivot
+bits, the token's arm, the scan's whitespace and its two pivots, the preheader's entry
+fact, the byte (`walkDoc_byte`'s), and the counter's own bound.  What remains outside it
+is the induction's step — the scan's visit repeated — which `WalkScanInduction` names. -/
+theorem walkHeadChain_to_scanLatch {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (hlt44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
+    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
+    {inc nep c ix : BitVec 64} {reg : String}
+    (hinc : evalOperand (headS₃ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (headS₃ s x) (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0) (hugt : evalICmp .ugt c ix = 1)
+    (hpre4 : (headS₄ s x inc nep).pre = some "sw.default.i")
+    (hinc4 : phiIncoming "sw.default.i" [("cond.true345.i", Operand.reg "%conv347.i"),
+      ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
+    (hav4 : lookupName (headS₄ s x inc nep).env reg = some (.int 64 c))
+    (hidx4 : lookupName (headS₄ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok4 : lookupName (headS₄ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap4 : lookupName (headS₄ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)))
+    {q : Nat} (hpos : c.toNat = q + 1) (hq63 : c.toNat < 2 ^ 63) (hqn : q < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hbit : evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat)
+      (BitVec.ofNat 8 13) = 1)
+    -- the scan's own premises, at the state the head path reaches
+    (hws : evalICmp .ule (BitVec.ofNat 8 (G.bs.getD q 0).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 1)
+    (hsc : ScanEntered
+      (scanT₂ (headS₇ G C s x inc nep c ix q) (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+      "land.rhs.i.preheader" "%idxprom.i" "%cond350.i" C.inner)
+    {e : BitVec 64}
+    (hin : phiIncoming "land.rhs.i.preheader"
+      [("while.body370.i", (Operand.reg "%inc371.i")),
+       ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] =
+      some (.reg "%idxprom.i"))
+    (hv : evalOperand
+      (landRhsPreheaderOutAt
+        (scanT₁ (headS₇ G C s x inc nep c ix q) (BitVec.ofNat 8 (G.bs.getD q 0).toNat)))
+      (.reg "%idxprom.i") = some (.int 64 e))
+    (hpos' : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn' : (e.signExtend 64).toNat < G.n)
+    (h36₃ : lookupName (scanT₃ G (headS₇ G C s x inc nep c ix q)
+      (BitVec.ofNat 8 (G.bs.getD q 0).toNat) e).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)))
+    (hlt : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1)
+    (h36₄ : lookupName (scanT₄ G (headS₇ G C s x inc nep c ix q)
+      (BitVec.ofNat 8 (G.bs.getD q 0).toNat) e).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)))
+    (hge' : evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 0)
+    (hcount : ScanCount (scanT₅ G (headS₇ G C s x inc nep c ix q)
+      (BitVec.ofNat 8 (G.bs.getD q 0).toNat) e) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain (stage2Calls stage2SubCalls) G C s { C with block := "while.body370.i" }
+      (scanT₅ G (headS₇ G C s x inc nep c ix q) (BitVec.ofNat 8 (G.bs.getD q 0).toNat) e) := by
+  obtain ⟨C₆, s₆, hchain₆, hC₆, hs₆⟩ :=
+    walkHeadChain_to_nodeBlock41 hInv hhead h8 hlt91 hlt44 hne34 hinc hnep hge hugt hpre4
+      hinc4 hav4 hidx4 htok4 hgap4 hpos hq63 hqn halen hevlen
+  rw [hC₆] at hchain₆
+  have hs₆' : s₆ = headS₆ G C s x inc nep c ix q := by
+    rw [hs₆]
+    rfl
+  rw [hs₆'] at hchain₆
+  -- the byte's cell, at the state the token's arm left
+  have h35 : evalOperand (headS₆ G C s x inc nep c ix q) (.reg "%35")
+      = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+    show lookupName (cells
+      [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+       ("%gep", .ptr ((G.b - 1) + c.toNat))]
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+      "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    block_lk
+  obtain ⟨s₇, hl₇, hs₇⟩ :=
+    WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G _ _ hchain₆.inv_last rfl h35
+  have hres : (if evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat)
+      (BitVec.ofNat 8 13) = 1 then "LeafBlock33" else "NodeBlock39") = "LeafBlock33" :=
+    if_pos hbit
+  have hstep : s₇ = headS₇ G C s x inc nep c ix q := by
+    rw [hs₇]
+    simp only [headS₇, nodeBlock41OutAt, hres]
+  rw [hstep] at hl₇
+  rw [hres] at hl₇
+  have hchain₇ := hchain₆.append (WalkChain.tail hl₇ (WalkChain.nil hl₇.inv'))
+  -- the byte's lookup at the state `NodeBlock41` leaves
+  have h35' : lookupName (headS₇ G C s x inc nep c ix q).env "%35"
+      = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+    show lookupName (("%Pivot42", .int 1 (evalICmp .slt
+      (BitVec.ofNat 8 (G.bs.getD q 0).toNat) (BitVec.ofNat 8 13))) ::
+      (headS₆ G C s x inc nep c ix q).env) "%35"
+      = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    rw [lookupName_cons_ne _ _ (by decide)]
+    show lookupName (cells
+      [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+       ("%gep", .ptr ((G.b - 1) + c.toNat))]
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+      "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    block_lk
+  exact walkScanChain_to_latch (C₀ := C) (s₀ := s) hchain₇ rfl h35' hws hsc hin hv hpos'
+    hqn' halen hevlen h36₃ hlt h36₄ hge' hcount
+
 /-! ### The five inductions, named
 
 A scan's visit is not a finite path: the scan repeats until its counter reaches its
@@ -784,6 +913,7 @@ def walkInductionExtraToken (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop 
 #print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock52
 #print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_leafBlock43
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanChain_to_latch
+#print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_scanLatch
 
 end WalkScope
 
