@@ -2860,6 +2860,52 @@ theorem s2StringBodyIfThen_finishes {env : Env} {s : State} {len : BitVec 64}
   simpa only [stateAt] using runFuel_prefix_some hpre hcont
 
 
+/-- **`cleanup` finishes, having come from the refusal**: its `phi` selects `0`,
+`cleanup16` returns `%retval.0`, and the run is over in two control steps. -/
+theorem s2StringBodyCleanup_fromRefused_finishes {env : Env} {s : State} {ei : Nat}
+    (hpc : s.pc = "cleanup") (hpre : s.pre = some "if.then11")
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
+    runFuel s2StringBodyCalls 2 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000000#32)) s.mem) := by
+  have hstep : step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      .jump (stateAt (("%retval.0", .int 32 0x00000000#32) :: env)
+        { s with pc := "cleanup16", pre := some s.pc }) :=
+    step_cleanup_cleanup16 (env := env) (s := s) (p := "if.then11")
+      (op := .imm (Const.int 32 0x00000000#32)) hpc hpre (by simp [phiIncoming]) rfl hei
+  have hfin : runFuel s2StringBodyCalls 1 s2StringBodyBody
+      (stateAt (("%retval.0", .int 32 0x00000000#32) :: env)
+        { s with pc := "cleanup16", pre := some s.pc }) =
+      some (.ret (some (.int 32 0x00000000#32)) s.mem) := by
+    have h := s2StringBodyCleanup16_finishes (env := ("%retval.0", .int 32 0x00000000#32) :: env)
+      (s := { s with pc := "cleanup16", pre := some s.pc }) (p := "cleanup")
+      (op := .reg "%retval.0") (form := 0x00000000#32) rfl (by rw [hpc])
+      (by simp [phiIncoming]) (by s2_lk)
+    simpa only [stateAt] using h
+  exact runFuel_prefix_some (fun k => runFuel_jump_prefix hstep k) hfin
+
+/-- **`cleanup` finishes, having come from the decoded arm**: its `phi` selects `2`. -/
+theorem s2StringBodyCleanup_fromDecoded_finishes {env : Env} {s : State} {ei : Nat}
+    (hpc : s.pc = "cleanup") (hpre : s.pre = some "if.end14")
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
+    runFuel s2StringBodyCalls 2 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000002#32)) s.mem) := by
+  have hstep : step s2StringBodyCalls s2StringBodyBody (stateAt env s) =
+      .jump (stateAt (("%retval.0", .int 32 0x00000002#32) :: env)
+        { s with pc := "cleanup16", pre := some s.pc }) :=
+    step_cleanup_cleanup16 (env := env) (s := s) (p := "if.end14")
+      (op := .imm (Const.int 32 0x00000002#32)) hpc hpre (by simp [phiIncoming]) rfl hei
+  have hfin : runFuel s2StringBodyCalls 1 s2StringBodyBody
+      (stateAt (("%retval.0", .int 32 0x00000002#32) :: env)
+        { s with pc := "cleanup16", pre := some s.pc }) =
+      some (.ret (some (.int 32 0x00000002#32)) s.mem) := by
+    have h := s2StringBodyCleanup16_finishes (env := ("%retval.0", .int 32 0x00000002#32) :: env)
+      (s := { s with pc := "cleanup16", pre := some s.pc }) (p := "cleanup")
+      (op := .reg "%retval.0") (form := 0x00000002#32) rfl (by rw [hpc])
+      (by simp [phiIncoming]) (by s2_lk)
+    simpa only [stateAt] using h
+  exact runFuel_prefix_some (fun k => runFuel_jump_prefix hstep k) hfin
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
