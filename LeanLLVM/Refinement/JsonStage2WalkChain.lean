@@ -141,6 +141,14 @@ applied on both sides — which is why every carry and every intermediate state 
 passes through is a `def` here (`scanCarryLeafBlock46`, `scanNodeBlock50In`, …), and why a
 composition's statement names the state the run visits rather than one equal to it.
 
+**An unresolved arm always sits inside something, so `if_pos`/`if_neg` appear at every
+scale.**  The same rewrite is needed at the *carry* (a nested `with`), the *state* (a
+record), the *index* (a chain's `def`), the *count* (a `Seg`'s `Nat`), the *environment* (the
+cell a `lookupName` reads), the *goal's left side* (a `split`'s branches) and the *goal's
+right side* (an `if` inside a `pc` field).  Seven sites, one rule: an arm is resolved by
+naming the proposition its `if` tests, and the site decides only which of `if_pos`, `if_neg`
+or a full `simp` reaches it — never whether the resolution is needed at all.
+
 **A class helper's arm is resolved after its call, not before.**  `LeafBlock43_at` (and
 its siblings at the leaves and the pivots) take no bit hypothesis: their conclusion carries
 the `if` on the comparison, so the caller names the arm with `if_pos`/`if_neg` and rewrites
