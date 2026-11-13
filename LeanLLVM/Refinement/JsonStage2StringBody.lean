@@ -4197,6 +4197,38 @@ theorem s2StringBodyScan_reaches_exit (mem0 : Mem) (xj pos0 xp N : Nat) (ps : Li
         runFuel s2StringBodyCalls k s2StringBodyBody e :=
   s2StringBodyScanLoop mem0 xj pos0 xp N ps hps hdisj hN hpos0 |>.run_from N s c hinv
 
+/-- The callee's decoded memory, named. -/
+def s2StringBodyExpandMem (mem : Mem) (ei dst xj : Nat) (out outj : List UInt8) : Mem :=
+  writeBytes (writeBytes (writeBytes (writeBytes mem ei (natToBytes (0#64).toNat 8)) dst out)
+    xj outj) ei (wordBytes 8 out.length)
+
+/-- The decoded arm's memory, named: the model's memory with the slot at the caller's
+allocator. -/
+def s2StringBodyDecodedMem (mem : Mem) (dst xj outn ei : Nat) (outj out : List UInt8) :
+    Mem :=
+  writeBytes (writeBytes (writeBytes (writeBytes mem dst out) xj outj) outn
+    (wordBytes 8 out.length)) ei (wordBytes 8 out.length)
+
+/-- **The decoded join at the named memories.**  The heavy laminate is unfolded once,
+here, so the arm's statement and proof match on identifiers. -/
+theorem s2StringBodyMemory_decoded_named (mem : Mem) {ei dst xj outn j1 k : Nat}
+    {out : List UInt8}
+    (hei : readBytes mem ei 8 ≠ none)
+    (hdst : readBytes mem dst out.length ≠ none)
+    (hxj : readBytes mem xj 8 ≠ none)
+    (houtn : readBytes mem outn 8 ≠ none)
+    (hd_ei : ei + 8 ≤ dst ∨ dst + out.length ≤ ei)
+    (hx_ei : ei + 8 ≤ xj ∨ xj + 8 ≤ ei)
+    (hd_xj : dst + out.length ≤ xj ∨ xj + 8 ≤ dst)
+    (ho_ei : ei + 8 ≤ outn ∨ outn + 8 ≤ ei)
+    (ho_d : outn + 8 ≤ dst ∨ dst + out.length ≤ outn)
+    (ho_x : outn + 8 ≤ xj ∨ xj + 8 ≤ outn) :
+    writeBytes (s2StringBodyExpandMem mem ei dst xj out (wordBytes 8 (j1 + k)))
+        outn (natToBytes out.length 8)
+      = s2StringBodyDecodedMem mem dst xj outn ei (wordBytes 8 (j1 + k)) out := by
+  simp only [s2StringBodyExpandMem, s2StringBodyDecodedMem]
+  exact s2StringBodyMemory_decoded mem hei hdst hxj houtn hd_ei hx_ei hd_xj ho_ei ho_d ho_x
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
