@@ -15,6 +15,15 @@ instruction's bit, and a class is the case that takes one arm at each branch.  S
 chains are stated per class, and the class is the hypothesis (`hlt`, `hge`, …) rather
 than a branch inside the chain.
 
+**A path's terminus is not one of its links.**  The head path ends at the first
+latch, `while.body370.i`, and the latch is the *entry* of the scan — a `phi` over the
+counter — so no step of its own is owed: the path's last link is the block that jumps
+to it (`LeafBlock43_at`), whose target is exactly the latch.  So the head path's
+missing set is three instances, not four: `cond.end349.i` (F, the call), and
+`land.lhs.true357.i` and `land.rhs.i` (a single-block G sequence and an E block whose
+body is a `gep` + `load`), with `LeafBlock33`, `land.rhs.i.preheader` and
+`LeafBlock43` already named.
+
 **The interface the chain runs on.**  Two facts hold at every link and are inherited
 by every path.  A link's operand fact at the next state is the previous one *peeled*:
 the step binds one cell, so `evalOperand` at the target is the source's fact after
