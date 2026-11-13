@@ -5604,11 +5604,11 @@ it.
 
 ## Whether the chain closes
 
-It does not, and this slice does not claim it.  `Stage2WalkCompletes` is not
-inhabited, and the exact missing conjunct is *that* proposition — the completion
-half of `Stage2WalkObligation` at `stage2Budget` (`stage2WalkObligation_iff_completion`
-is the equivalence, so nothing else is wanted).  Read as a proof obligation it is
-four pieces, in order:
+The completion is not inhabited: the loop's own pass is not a proof.  It is
+*assembled*, though, and the assembly is `JsonStage2WalkTraverse`, which turns the
+loop into an induction on the entry index (`walkLoopFinishes`) and leaves one
+premise, `WalkLoopStep` — the revolution or the exit at a loop-head state.  Read as
+a proof obligation the completion is four pieces, in order:
 
 1. **the five rows** — `entry` (item 2) and the four `unreachable` arms (whose
    verdicts are proved:
@@ -5628,11 +5628,30 @@ four pieces, in order:
    are the two arms' copies (with `walkIfThen_step` the refusal arm's jump), and
    `WalkChain.finalisation` turns a chain to either arm plus those steps into the
    completion.  Nothing of the return remains open; and
-4. **the count** — `WalkChain.completesWithin` composes the trace's own step count
-   `k` with the two finalisation steps and turns the comparison
-   `k + 2 ≤ stage2Budget args mem` into the completion.  That comparison is the
-   only arithmetic the assembled chain owes, and it is the one place the 22-and-six
-   readings of *The budget, counted* are spent.
+4. **the count** — *closed as arithmetic* (`JsonStage2WalkTraverse`):
+   `walkCompletes_of_loop_budget` reads the completion at `32 * nep + 8 * n + 32`
+   — the record's two counted terms and the finalisation allowance — from a
+   *potential* `walkPotential`, `32` per unconsumed entry plus `8` per document
+   byte the arena has decoded, rather than from the measure.  The revolution's
+   premise is `p + walkPotential C' ≤ walkPotential C`, which
+   `walkPotential_of_allowances` reads as `p` inside one entry allowance plus one
+   byte allowance per extent the revolution appended — the 22-and-six readings of
+   *The budget, counted* are that premise, and the byte term is bounded by the
+   document through `walkSpans_sum_le` and the invariant's two span clauses.  The
+   measure's `(nep - k) * (4 * n + 6)` is a *termination* radix, not a count:
+   `walkIterations_le_measure` is its only use in this direction, and at a hundred
+   entries and a hundred bytes it is 40,600 against the record's 4,032
+   (`walkMeasure_exceeds_budget_at_100`) — so spending the measure against the
+   budget would not have been a proof of anything.
+
+`WalkLoopStep`'s two branches are therefore the one premise the completion still
+owes: the left is the revolution — the dispatch's pass from `NodeBlock21` to
+`cleanup478.i` (the census's class links), the back edge (`walkBack_step`), the
+header's pass (`whileBody_step`) and the two `phi` runs — with its price, and the
+right is the exit: the test's false edge and the tail through `s2_walk.exit` to
+`if.end`'s return, inside `F ≤ 27` (the finalisation allowance less the seed's
+three steps and the return's one).  Both are stated at `WalkInv` and admit nothing
+beside it.
 
 Two of the non-link rows cannot be links under the record's post as it stands.
 `if.then`'s refusal copy stores the three report words (`%ndst`, `%nev`, `%err`)
@@ -5711,14 +5730,17 @@ proved against a `CallOutcome` that the `sub` parameter's contract does not stat
 which is why F is reported as a contract gap rather than closed here.
 
 The step count is likewise not established, but the two numbers it is compared
-against now are.  `WalkChain.steps` reads a chain as a run, and a chain with 16 of
-its links missing has no step count to compare against `stage2Budget`.  What the
-budget's arithmetic needs is one link per block the dispatch traverses, and *The
-budget, counted* below takes that path off the pinned AST: the dispatch's longest
-path is 22 blocks against `stage2EntryAllowance` 32, and the widest scan step is
-six blocks against `stage2ByteAllowance` 8.  What is still open is the chain's own
-count — whether a 165-block dispatch spends exactly those allowances over a
-completed traversal — which is the completed chain's answer and not the census's.
+against now are, and the comparison itself is arithmetic.  `WalkChain.steps` reads
+a chain as a run, and a chain with 16 of its links missing has no step count to
+compare against `stage2Budget`.  What the budget's arithmetic needs is one link per
+block the dispatch traverses, and *The budget, counted* below takes that path off
+the pinned AST: the dispatch's longest path is 22 blocks against
+`stage2EntryAllowance` 32, and the widest scan step is six blocks against
+`stage2ByteAllowance` 8.  `JsonStage2WalkTraverse` turns that into the comparison
+`p + walkPotential C' ≤ walkPotential C` and the induction that spends it
+(`walkLoopFinishes`), so what remains open is the revolution's price — that the
+pass, the back edge and the header's pass cost what the potential's fall allows —
+and not the count against the budget.
 
 **The register carriers, and what is still open.**  `JsonStage2WalkSeed` now
 states the two predicates the traversal's successor hypotheses need: `WalkRegs`,
@@ -5728,7 +5750,8 @@ preservation lemmas are `WalkRegs.of_run` and `WalkIter.of_run`, both by
 `denoteCode_lookupName` and nothing else.  `walkCompletes_of_prefix_chain` states
 the assembly — the seed's prefix run, the dispatch chain, the chain's step count,
 the return, and the budget comparison — as five named premises, with no `sorry`
-and no claim of the obligation.
+and no claim of the obligation; its count, its induction and its potential are
+`JsonStage2WalkTraverse`'s (`walkLoopFinishes`, `walkCompletes_of_loop_budget`).
 
 The census's carriers, with their costs named:
 
