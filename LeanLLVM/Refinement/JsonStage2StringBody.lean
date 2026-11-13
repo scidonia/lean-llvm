@@ -3899,6 +3899,46 @@ theorem s2StringBodyBit_cmp3_zero {j0 : Nat} {nxp : BitVec 64}
     BitVec.ofBool]
   rfl
 
+/-- **`takeWhile` is empty exactly when the list is empty or its head fails the
+predicate.**  The `true` direction is structural — `takeWhile`'s two equations and the
+induction — and the `false` direction is the head's value; that asymmetry is why
+stating the `iff` this way needs no arithmetic. -/
+theorem takeWhile_isEmpty_iff {α : Type} (p : α → Bool) :
+    ∀ (l : List α), (l.takeWhile p).isEmpty = true ↔
+      (l = [] ∨ ∃ a t, l = a :: t ∧ ¬ p a = true)
+  | [] => by simp
+  | a :: t => by
+      by_cases h : p a = true
+      · rw [List.takeWhile_cons_of_pos (p := p) h]
+        simp only [List.isEmpty_cons, Bool.false_eq_true, false_iff]
+        rintro (h' | ⟨a', t', heq, hneg⟩)
+        · exact absurd h' (by simp)
+        · simp only [List.cons.injEq] at heq
+          obtain ⟨rfl, rfl⟩ := heq
+          exact absurd h hneg
+      · rw [List.takeWhile_cons_of_neg (p := p) h]
+        exact ⟨fun _ => Or.inr ⟨a, t, rfl, h⟩, fun _ => rfl⟩
+
+set_option maxHeartbeats 1000000 in
+/- **The inside test's shape**: the model's window is empty exactly when the lane at
+`j1` is past it, or there is none — which is what the body's `%cmp7` reads, its lane's
+value being the model's entry at that index. -/
+theorem s2StringBodyInBody_empty_iff (ps : List Nat) (j1 pos0 len : Nat) :
+    ((ps.drop j1).takeWhile (fun q => decide (q < pos0 + len))).isEmpty = true ↔
+      (ps.drop j1 = [] ∨ ∃ a t, ps.drop j1 = a :: t ∧ pos0 + len ≤ a) := by
+  rw [takeWhile_isEmpty_iff]
+  constructor
+  · rintro (h | ⟨a, t, heq, hneg⟩)
+    · exact Or.inl h
+    · refine Or.inr ⟨a, t, heq, ?_⟩
+      have : ¬ a < pos0 + len := by simpa using hneg
+      omega
+  · rintro (h | ⟨a, t, heq, hle⟩)
+    · exact Or.inl h
+    · refine Or.inr ⟨a, t, heq, ?_⟩
+      have : ¬ a < pos0 + len := by omega
+      simpa using this
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
