@@ -237,6 +237,70 @@ distinct opcode sequences, not the count of classes.  Class D divides the same w
 (`store` alone, `gep+store`), and E is `phi`-headed with the selection read from the
 predecessor. -/
 
+/-- **Class G's tag-reserve shape: two loads, an add, a compare.**  `if.end.i.i` and
+`if.end.i.i55` are the same four instructions at their own names — the log's length
+and capacity words, the length's increment, and the test that the increment does not
+pass the capacity — so the class's repeated variant is one step.  The target is the
+four cells the chain binds and the arm the comparison picks, at
+`stateAt (cells …)` for the same reason `walkAddIcmpBrStep` states it there: the
+class's links take their `WalkLocal` hypotheses at that form. -/
+theorem walkTwoLoadAddIcmpStep {calls : Calls} (s : State) {b : Block}
+    {dl₁ dl₂ dadd dcmp pl₁ pl₂ tl fl : String} {al ac : Nat} {nl nc : BitVec 64}
+    (hfind : stage2Body.findBlock s.pc = some b)
+    (his : b.instrs = [
+      Instr.load dl₁ (Ty.int 64) (.reg pl₁),
+      Instr.load dl₂ (Ty.int 64) (.reg pl₂),
+      Instr.binop dadd BinOp.add 64 (.reg dl₁)
+        (.imm (.int 64 (BitVec.ofNat 64 1))),
+      Instr.icmp dcmp IPred.ugt 64 (.reg dadd) (.reg dl₂)])
+    (ht : b.term = Term.condbr (.reg dcmp) tl fl)
+    (h₁ : lookupName s.env pl₁ = some (.ptr al))
+    (h₂ : lookupName ((dl₁, .int 64 nl) :: s.env) pl₂ = some (.ptr ac))
+    (hr₁ : readBytes s.mem al 8 = some (natToBytes nl.toNat 8))
+    (hr₂ : readBytes s.mem ac 8 = some (natToBytes nc.toNat 8))
+    (hadd : lookupName ((dl₂, .int 64 nc) :: (dl₁, .int 64 nl) :: s.env) dl₁ =
+      some (.int 64 nl))
+    (hic₁ : lookupName ((dadd, .int 64 (nl + BitVec.ofNat 64 1)) ::
+      (dl₂, .int 64 nc) :: (dl₁, .int 64 nl) :: s.env) dadd =
+      some (.int 64 (nl + BitVec.ofNat 64 1)))
+    (hic₂ : lookupName ((dadd, .int 64 (nl + BitVec.ofNat 64 1)) ::
+      (dl₂, .int 64 nc) :: (dl₁, .int 64 nl) :: s.env) dl₂ = some (.int 64 nc))
+    (hbit : evalICmp .ugt (nl + BitVec.ofNat 64 1) nc = 0 ∨
+      evalICmp .ugt (nl + BitVec.ofNat 64 1) nc = 1) :
+    step calls stage2Body s =
+      .jump { stateAt (cells
+          [(dcmp, .int 1 (evalICmp .ugt (nl + BitVec.ofNat 64 1) nc)),
+           (dadd, .int 64 (nl + BitVec.ofNat 64 1)),
+           (dl₂, .int 64 nc),
+           (dl₁, .int 64 nl)] s.env) s with
+        pc := (if evalICmp .ugt (nl + BitVec.ofNat 64 1) nc = 1 then tl else fl)
+        pre := some s.pc } := by
+  have hden : denoteCode calls b.instrs s =
+      some (stateAt (cells
+        [(dcmp, .int 1 (evalICmp .ugt (nl + BitVec.ofNat 64 1) nc)),
+         (dadd, .int 64 (nl + BitVec.ofNat 64 1)),
+         (dl₂, .int 64 nc),
+         (dl₁, .int 64 nl)] s.env) s) := by
+    rw [his]
+    conv_lhs => rw [← stateAt_self s]
+    rw [denoteCode_load64 (calls := calls) (env := s.env) (s := s) (d := dl₁)
+      (p := pl₁) (a := al) (v := nl) h₁ hr₁]
+    rw [denoteCode_load64 (calls := calls) (env := (dl₁, .int 64 nl) :: s.env)
+      (s := s) (d := dl₂) (p := pl₂) (a := ac) (v := nc) h₂ hr₂]
+    rw [walkDenoteCode_add_imm_w (calls := calls)
+      (env := (dl₂, .int 64 nc) :: (dl₁, .int 64 nl) :: s.env) (s := s)
+      (d := dadd) (a := dl₁) (w := 64) (x := nl) (c := BitVec.ofNat 64 1) hadd]
+    rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_reg_w (calls := calls)
+      (env := (dadd, .int 64 (nl + BitVec.ofNat 64 1)) ::
+        (dl₂, .int 64 nc) :: (dl₁, .int 64 nl) :: s.env) (s := s)
+      (d := dcmp) (a := dadd) (b := dl₂) IPred.ugt 64
+      (x := nl + BitVec.ofNat 64 1) (y := nc)
+      hic₁ hic₂]
+    rfl
+  simp only [step, hfind, hden, ht, execTerm]
+  simp only [evalOperand, stateAt, cells, lookupName_cons_self]
+  rcases hbit with h | h <;> simp [h]
+
 /-- **Class H1: the arithmetic latch.**  `add` an immediate into a fresh name, compare
 it against a bound, branch on the bit — ten blocks, the dispatch's range tests.  The
 target is the two cells the pair binds and the arm the comparison picks, stated at
@@ -1525,6 +1589,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
+#print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
