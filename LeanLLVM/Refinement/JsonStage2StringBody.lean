@@ -3610,6 +3610,33 @@ theorem s2StringBodyMemory_decoded (mem : Mem) {ei dst xj outn j1 k : Nat}
     ei (wordBytes 8 out.length) outn (wordBytes 8 out.length)
     ⟨X₁, hX₁⟩ ⟨O₁, hO₁⟩ ho_ei']
 
+/-- **The refusal record's fields are the model's.**  The body writes the record's
+three words at `e`, `e + 8`, `e + 16`; the model writes
+`writeBytes (writeBytes (writeBytes mem e (wordBytes 4 0)) (e + 8) (wordBytes 8 off))
+(e + 16) (wordBytes 8 msg)` with `off = pos0 + off` and `msg = 0`.  The three writes
+agree word for word, and the offset's reconciliation is the only arithmetic: the
+body's `off + sub` is `off.toNat + pos0` because `sub` is `pos0` at `i64` and the sum
+does not wrap. -/
+theorem s2StringBodyErrRecord_reconciles (mem : Mem) (e : Nat) (off : BitVec 64)
+    (sub : BitVec 64) (pos0 : Nat)
+    (hsub : sub = BitVec.ofNat 64 pos0) (hpos0 : pos0 < 2 ^ 64)
+    (hsum : off.toNat + pos0 < 2 ^ 64) :
+    writeBytes
+        (writeBytes
+          (writeBytes mem e (natToBytes (0#32).toNat 4))
+          (e + (8#64).toNat) (natToBytes (off + sub).toNat 8))
+        (e + (16#64).toNat) (natToBytes (0#64).toNat 8)
+      = stage2ErrSetMsg mem e (pos0 + off.toNat) 0 := by
+  have htoNat : (off + sub).toNat = off.toNat + pos0 := by
+    rw [hsub, BitVec.toNat_add, BitVec.toNat_ofNat]
+    omega
+  have h0_32 : (0#32).toNat = 0 := by decide
+  have h0_64 : (0#64).toNat = 0 := by decide
+  have h8 : (8#64).toNat = 8 := by decide
+  have h16 : (16#64).toNat = 16 := by decide
+  simp only [stage2ErrSetMsg, stage2ErrSet, wordBytes, htoNat, h0_32, h0_64, h8, h16,
+    Nat.add_comm]
+
 /-- The cursor word the scan leaves is the model's `j1`: the exit word's counter,
 written at the caller's cursor, is the memory the model's `j1` names.  This is where
 `ExitWord`'s `∃ c` is consumed — at the memory term, not at the exits. -/
