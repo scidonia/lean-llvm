@@ -309,20 +309,18 @@ condition, so it cannot hide a refusal, and a document it lets through pays the
 scan (measured in [the stage timings page](../../../docs/json-route-stage-timings.md),
 which also carries the candidate-heavy row set the corpus was extended with).
 
-What is not proved: there is no refinement theorem for this unit, and it is not
-in `kernel/json/` — the certified units are the ones with certificates, and this
-is a probe's.  `LeanLLVM/Refinement/JsonPolicyModel.lean` is the start of one: it
-writes the emission's transition (`policyStep`) beside the reference's
-(`scanCharsFrom`) in the emission's branch order, its three-valued class, the
-reference's reading of a scan, and the reference's own equations read at the
-lead ranges the emission tests.  It proves the supporting lemmas and **not** the
-equivalence: the step-by-step theorem, the walk and the backward-fill theorem
-are the remaining work, so nothing in the tree yet states that `policy_step` and
-`scanCharsAt` agree.  The emission's own body is a second open piece and a
-structural one: `@leanllvm_route_policy_scan` and `@policy_step` are outside the
-modelled fragment (`switch`, `insertvalue`/`extractvalue`, and an anonymous-struct
-return), so the body-level correspondence needs those forms modelled or the
-fixture rewritten, and neither exists yet.  What establishes it is observation, in three readings: the gate's
+What is not proved: the **body-level** correspondence — this unit is not in
+`kernel/json/` and its emitted body carries `switch`, `insertvalue`/
+`extractvalue` and an anonymous-struct return, all outside the modelled
+fragment, so a fixture refinement needs those forms modelled or the fixture
+rewritten, and neither exists yet.  At the model level the agreement **is**
+proved: `LeanLLVM/Refinement/JsonPolicyModel.lean` writes the emission's
+transition (`policyStep`) beside the reference's (`scanCharsFrom`) in the
+emission's branch order, and proves the step-by-step equivalence
+(`policyStep_spec`), the walk (`policyWalk_spec`), the classifier
+(`policyClass_refClass`) and the backward fill (`policyClass_backward`),
+bridged to the reference's own error values by `Scan.scanCharsEnd_error`,
+each pinned at `[propext, Quot.sound]`.  What establishes the *C body* is observation, in three readings: the gate's
 137 rows (verdict, reason, and the refusal's byte); the candidate-heavy corpus
 the bench measures, whose rows the gate's comparison also covers where they
 overlap; and two differential sweeps against the oracle — 1547 random documents
@@ -333,20 +331,14 @@ each lone half, escaped and raw noncharacters, truncated forms) at every offset
 either, at class and at byte.  The oracle is the library's own `policyRefusal`,
 so these compare against the reference's scan and not against a second reading of
 this page.  A document outside those sets is decided by the same argument and not
-by an assertion, which is the same standing phase one's opener count has.
-
-The clause the native side does *not* implement is any nesting-depth rule.  The
-depth clause is an opener *count* (`openersTotal`), so it is conservative: a
-balanced document whose string bodies carry more than 128 `[`/`{` bytes is
-refused by `admission` and answered by the fallback — never wrongly, because the
-fallback is the reference parser, and `check.sh` asserts exactly that case.  The
-proved depth counter cannot stand in for the count: it reports a balance and the
-sum of the prefix depths, and a 128-opener document and a 129-opener one both
-report a balance of 0 (`--admit`'s `depth_final`).  Replacing the count with a
-nesting bound would *widen* the domain — `scale-4096.json` holds 179 openers at a
-nesting depth of 2, and `admission` refuses it — which is a decision about the
-certificate, not about this shell, and the agreement gate would report it as a
-divergence rather than let it pass.
+by an assertion.  The depth clause reads the stage-1 depth counter, and the
+bridge (`JsonKernelCertificate.depth_bridge_core`) proves the counter's
+verdict and the reference's `depthExceeded` agree: a balanced document whose
+string bodies carry many `[`/`{` bytes is admitted and answered on the fast
+path, and a document nested past the bound is refused as the reference
+refuses it.  Deep-but-balanced documents (`scale-4096.json` holds 179 openers
+at a nesting depth of 2) are admitted; the agreement gate reports any
+divergence rather than letting it pass.
 
 ## The adapter's tagged result, and why nothing is clamped
 
