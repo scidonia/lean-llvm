@@ -3213,7 +3213,20 @@ syntax rather than mathematics — which is why the record names them together:
    unable to print the difference, so only taking the term from the equality removes the
    second spelling. -/
 
-/-! ### A named existential is a parameter
+/-! ### The arena word is a fact about a run, not about the state
+
+`WalkInv.log_alen` is an existential — *some* `a` with `ndst0 ≤ a ≤ C.alen` is stored at
+`z + 48` — and that is the correct invariant, because **the carry is ahead of the memory
+between the append and the write-back**: a block that advances `alen` without storing breaks the
+equality, so sharpening the clause to `a = C.alen` would assert something false on that path.
+
+The docstring's *"the dispatch's to produce"* describes the dispatch producing the equality **at
+a moment** (its alen store), not holding it always.  So the arena word is a fact about the
+exit's **run**, and `WalkExit` takes it as a hypothesis — the traverse supplies it from the
+dispatch's evidence — rather than the invariant carrying it.  **An equality that holds after a
+store is not an invariant; the invariant is the inequality.**
+
+### A named existential is a parameter
 
 The boundary rule has a consumer-side twin.  **An existential state that a consumer's premises
 name is a parameter, because the caller has it** — `walkFlushSteps12` returns `s₁` and `s₂` as
