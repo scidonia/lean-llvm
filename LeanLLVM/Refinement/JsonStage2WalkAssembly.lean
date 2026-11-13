@@ -226,6 +226,40 @@ instructions compute — an empty instruction list with a `br` (class B) and wit
 edge's destination and predecessor, and the class's nine-plus-one instances are the
 `find`/`term` pair of each block. -/
 
+/-- **Class A: one comparison and a branch.**  Sixty of the walk's blocks are this
+shape — one `icmp` into a fresh name and a `condbr` on it — which makes the class a
+single step: the target's environment carries the comparison's cell and its `pc` is
+the bit's arm, so a block's instance is the pair `find`/`term` and its two operands'
+values.
+
+The bit is a hypothesis rather than a fact of the terminator, and that is what lets
+a chain's case split be the one it already carries: `execTerm`'s `condbr` has two
+arms and an `ub` for a bit that is neither, while an `icmp`'s value is always one of
+the two, so the disjunction is discharged at the instantiation. -/
+theorem walkIcmpBrStep {calls : Calls} (s : State) {b : Block} {d : String}
+    {pred : IPred} {w : Nat} {a₁ a₂ : Operand} {t f : String} {x y : BitVec w}
+    (hfind : stage2Body.findBlock s.pc = some b)
+    (his : b.instrs = [Instr.icmp d pred w a₁ a₂])
+    (ht : b.term = Term.condbr (.reg d) t f)
+    (hx : evalOperand s a₁ = some (.int w x))
+    (hy : evalOperand s a₂ = some (.int w y))
+    (hbit : evalICmp pred x y = 0 ∨ evalICmp pred x y = 1) :
+    step calls stage2Body s =
+      .jump { (s.bind d (.int 1 (evalICmp pred x y))) with
+        pc := (if evalICmp pred x y = 1 then t else f)
+        pre := some s.pc } := by
+  have hden : denoteCode calls b.instrs s =
+      some (s.bind d (.int 1 (evalICmp pred x y))) := by
+    rw [his]
+    rw [denoteCode_cons_of calls (Instr.icmp d pred w a₁ a₂) [] s
+      (s.bind d (.int 1 (evalICmp pred x y)))
+      (LeanLLVM.Refinement.JsonS1MasksIR.evalInstr_icmp hx hy)]
+    simp only [denoteCode_nil]
+  simp only [step, hfind, hden, ht, execTerm]
+  dsimp only [State.bind]
+  simp only [evalOperand, lookupName_cons_self]
+  rcases hbit with h | h <;> simp [h]
+
 /-- **Class B: an empty block and a `br`.**  The target is the source with the edge's
 destination; nothing the block does moves a register or a byte. -/
 theorem walkBrStep {calls : Calls} (s : State) {b : Block} {dest : String}
@@ -1406,6 +1440,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
+#print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkCondbrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen488Step
