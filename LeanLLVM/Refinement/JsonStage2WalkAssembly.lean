@@ -1790,6 +1790,15 @@ theorem walkSeg3Stores_inside (b n ep nep eAddr cAddr : Nat) :
     omega
   all_goals simp [wordBytes, natToBytes_length, woff] <;> omega
 
+/-- **Segment 4's two stores lie in their own slots.**  The root-done word at the cursor and
+the twelve-byte offset after it: `(rootAddr, 4)` and `(xjAddr, 8)`, the last two entries of the
+write-extent region list. -/
+theorem walkSeg4Writes_inside (rootAddr xjAddr : Nat) :
+    (∃ q ∈ [(rootAddr, 4), (xjAddr, 8)], q.1 ≤ rootAddr ∧ rootAddr + 4 ≤ q.1 + q.2) ∧
+    (∃ q ∈ [(rootAddr, 4), (xjAddr, 8)], q.1 ≤ xjAddr ∧ xjAddr + 8 ≤ q.1 + q.2) :=
+  ⟨⟨_, List.mem_cons_self .., le_rfl, le_rfl⟩,
+   ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), le_rfl, le_rfl⟩⟩
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
