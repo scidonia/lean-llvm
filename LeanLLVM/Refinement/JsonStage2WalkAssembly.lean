@@ -214,6 +214,68 @@ theorem walkBitVec1_zero_or_one (b : BitVec 1) : b = 0 ∨ b = 1 := by
   revert b
   decide
 
+/-- **A `condbr` on a `BitVec 1` cell is the two-arm jump.**  `execTerm` carries a third
+arm — `ub` — for a bit that is neither `0` nor `1`, and an `icmp`'s value never is, so
+that arm is dead.  The shapes state their bit as a hypothesis for exactly this reason,
+and this is the lemma that consumes it: with the bit in hand the terminator is one `if`,
+which is the form every chain step's target is stated in.
+
+It is a lemma rather than a per-goal tactic because every chain step over a `condbr`
+needs it — the latch chain, the other four paths, and the scan inductions' exits. -/
+theorem execTerm_condbr_bit {s : State} {c : Operand} {t f : String} {bit : BitVec 1}
+    (hv : evalOperand s c = some (.int 1 bit)) (hb : bit = 0 ∨ bit = 1) :
+    execTerm s (Term.condbr c t f) =
+      .jump { s with pc := (if bit = 1 then t else f), pre := some s.pc } := by
+  simp only [execTerm, hv]
+  rcases hb with rfl | rfl <;> simp
+
+/-- `cond.end349.i`'s successor at the writes its run leaves: the bound's cell, the
+compare's cell, the token's two stores, and the arm the compare picks.  A flat `State`
+literal, because the target has to be nameable without a nested `with`. -/
+def condEnd349OutAt (s : State) (c ix : BitVec 64) (tk gap : Nat) : State :=
+  { env := cells [("%cmp355.i", .int 1 (evalICmp .ugt c ix)),
+      ("%cond350.i", .int 64 c)] s.env
+    mem := writeBytes (writeBytes s.mem tk (natToBytes ix.toNat 8)) gap
+      (natToBytes (BitVec.ofNat 32 1).toNat 4)
+    next := s.next
+    pc := (if evalICmp .ugt c ix = 1 then "land.lhs.true357.i" else "if.end372.i")
+    pre := some s.pc }
+
+/-- **`cond.end349.i`'s step.**  Class F's form: the bound's `phi`, the token marker's
+`lifetime.start`, the position and gap stores, and the compare — and with
+`execTerm_condbr_bit` the terminator is the two-arm jump the shapes state, so the
+successor is named.
+
+The `denote` is `walkCondEnd349_denote`'s, restored *at* `s` by `stateAt_self`: the
+goal's `denoteCode` argument then stays the concrete block's, which is what lets the
+step reduce at all. -/
+theorem walkCondEnd349Step {sub : Calls} (s : State)
+    {c ix : BitVec 64} {reg p : String} {tk gap : Nat}
+    (hpc : s.pc = "cond.end349.i")
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("cond.true345.i", Operand.reg "%conv347.i"),
+      ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
+    (hav : lookupName s.env reg = some (.int 64 c))
+    (htok : lookupName s.env "%t352.i" = some (.ptr tk))
+    (hidx : lookupName s.env "%idxprom.i" = some (.int 64 ix))
+    (hgap : lookupName s.env "%gap.i" = some (.ptr gap)) :
+    LeanLLVM.step (stage2Calls sub) stage2Body s =
+      .jump (condEnd349OutAt s c ix tk gap) := by
+  have hden : denoteCode (stage2Calls sub) walkCondEnd349.instrs s =
+      some { condEnd349OutAt s c ix tk gap with pc := s.pc, pre := s.pre } := by
+    have h := walkCondEnd349_denote (sub := sub) (env := s.env) (s := s) (c := c)
+      (ix := ix) (tk := tk) (gap := gap) (reg := reg) (p := p)
+      hpre hinc hav htok hidx hgap
+    simpa only [stateAt_self, stateAt, condEnd349OutAt]
+  have hfind : stage2Body.findBlock s.pc = some walkCondEnd349 := by
+    rw [hpc]; exact walkCondEnd349_find
+  have hterm : walkCondEnd349.term =
+      Term.condbr (Operand.reg "%cmp355.i") "land.lhs.true357.i" "if.end372.i" := rfl
+  simp only [LeanLLVM.step, hfind, hden, hterm]
+  rw [execTerm_condbr_bit (bit := evalICmp .ugt c ix) _ (walkBitVec1_zero_or_one _)]
+  · simp only [condEnd349OutAt]
+  · simp only [evalOperand, condEnd349OutAt, cells, lookupName_cons_self]
+
 /-! ### The trace's step shapes
 
 `WalkLink` carries `step : step calls stage2Body s = .jump s'`, so a chain names every
@@ -1845,6 +1907,8 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkPhiGepLoadBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.execTerm_condbr_bit
+#print axioms LeanLLVM.Refinement.WalkScope.walkCondEnd349Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkGepLoadBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
