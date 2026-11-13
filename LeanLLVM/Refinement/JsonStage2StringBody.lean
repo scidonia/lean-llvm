@@ -2906,6 +2906,55 @@ theorem s2StringBodyCleanup_fromDecoded_finishes {env : Env} {s : State} {ei : N
   exact runFuel_prefix_some (fun k => runFuel_jump_prefix hstep k) hfin
 
 
+/-- **The decoded length's path finishes**: the word at `outn`, `cleanup`'s decoded
+form, and the run is over in three control steps. -/
+theorem s2StringBodyIfEnd14_finishes {env : Env} {s : State} {call : BitVec 64}
+    {outn : Nat}
+    (hpc : s.pc = "if.end14")
+    (hcall : lookupName env "%call" = some (.int 64 call))
+    (houtn : lookupName env "%outn" = some (.ptr outn))
+    (hei : lookupName env "%ei" = some (.ptr 0)) :
+    runFuel s2StringBodyCalls 3 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000002#32))
+        (writeBytes s.mem outn (natToBytes call.toNat 8))) := by
+  have hstep := step_ifEnd14_cleanup hpc hcall houtn
+  have hfin : runFuel s2StringBodyCalls 2 s2StringBodyBody
+      (stateAt env { s with mem := writeBytes s.mem outn (natToBytes call.toNat 8), pc := "cleanup", pre := some s.pc }) =
+      some (.ret (some (.int 32 0x00000002#32))
+        (writeBytes s.mem outn (natToBytes call.toNat 8))) :=
+    s2StringBodyCleanup_fromDecoded_finishes (env := env)
+      (s := { s with mem := writeBytes s.mem outn (natToBytes call.toNat 8), pc := "cleanup", pre := some s.pc })
+      rfl (by rw [hpc]) hei
+  have := runFuel_prefix_some (fun k => runFuel_jump_prefix hstep k) hfin
+  simpa using this
+
+/-- **The inside test finishing at the body-itself arm**: one step to `if.then`,
+then the arm's two — three control steps, form `1`. -/
+theorem s2StringBodyLandLhsTrue_toIfThen_finishes {env : Env} {s : State}
+    {sub len conv : BitVec 64} {outn : Nat}
+    (hpc : s.pc = "land.lhs.true")
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hconv : lookupName env "%conv" = some (.int 64 conv))
+    (hbit : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 0#1)
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    runFuel s2StringBodyCalls 3 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes s.mem outn (natToBytes len.toNat 8))) := by
+  have hstep := step_landLhsTrue_ifThen hpc hsub hlen hconv hbit
+  have hfin : runFuel s2StringBodyCalls 2 s2StringBodyBody
+      (stateAt (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+        ("%add", .int 64 (sub + len)) :: env)
+        { s with pc := "if.then", pre := some s.pc }) =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes s.mem outn (natToBytes len.toNat 8))) :=
+    s2StringBodyIfThen_finishes (env := ("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+        ("%add", .int 64 (sub + len)) :: env)
+      (s := { s with pc := "if.then", pre := some s.pc }) rfl (by s2_lk) (by s2_lk)
+  have := runFuel_prefix_some (fun k => runFuel_jump_prefix hstep k) hfin
+  simpa using this
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
