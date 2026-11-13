@@ -318,18 +318,34 @@ def s2AfterValuePre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
     args = [.int 32 sp, .ptr rd, .ptr ct, .ptr cs] ∧
     (sp.toNat = 0 ∨ ∃ c, readByte mem (ct + (sp.toNat - 1)) = some c)
 
-/-- **`s2_string_body`'s staging**: the eight arguments, the five words the callee
-reads, and the escape list's spacing at the body it is given. -/
+/-- **`s2_string_body`'s staging**: the eight arguments, the five words the
+callee reads, the escape list's spacing at the body it is given, and the five
+arithmetic facts the body's own 64-bit instructions need.
+
+The last group is the body's, not the model's.  `entry` converts both addresses
+with `ptrtoint`, which is `ub` at or above `2 ^ 64`, and subtracts them at
+`i64`, while the model's `pos0` is a `Nat` subtraction: `p < 2^64` and
+`base ≤ p` are what make the two agree.  `%add = pos0 + len` is a 64-bit add and
+the model's window bound is `Nat`, so `p - base + len` must not wrap.  And the
+scan's `getelementptr i32` sign-extends its index, which is the forward branch
+only below `2 ^ 63`; the scan is entered exactly when the cursor is below the
+count, so `j0` and the count are both bounded there. -/
 def s2StringBodyPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
-  ∃ (c p : Nat) (len : BitVec 64) (dst outn xp xj : Nat) (nxp : BitVec 64),
+  ∃ (c p : Nat) (len : BitVec 64) (dst outn xp xj : Nat) (nxp : BitVec 64)
+    (base j0 : Nat) (ps : List Nat) (body : List UInt8) (e : Nat),
     args = [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
       .int 64 nxp] ∧
-    (∃ base, stage2ReadWord mem c 8 = some base) ∧
-    (∃ j0, stage2ReadWord mem xj 8 = some j0) ∧
-    (∃ ps, readLanes32 mem xp nxp.toNat = some ps) ∧
-    (∃ body, readBytes mem p len.toNat = some body) ∧
-    (∃ e, stage2ReadWord mem (c + 1112) 8 = some e) ∧
-    BodyPositionsSpaced mem c xj xp nxp.toNat p len.toNat
+    stage2ReadWord mem c 8 = some base ∧
+    stage2ReadWord mem xj 8 = some j0 ∧
+    readLanes32 mem xp nxp.toNat = some ps ∧
+    readBytes mem p len.toNat = some body ∧
+    stage2ReadWord mem (c + 1112) 8 = some e ∧
+    BodyPositionsSpaced mem c xj xp nxp.toNat p len.toNat ∧
+    p < 2 ^ 64 ∧
+    base ≤ p ∧
+    p - base + len.toNat < 2 ^ 64 ∧
+    j0 < 2 ^ 63 ∧
+    nxp.toNat < 2 ^ 63
 
 /-- **`od_scalar_value`'s staging**: the three arguments; the cursor record's two
 pointers; the token's three words; the delivered window (`endp - pos + 5` bytes,
@@ -429,9 +445,12 @@ def s2StringBodyPost (args : List Value) (mem : Mem) (next : Nat)
     (r : CallOutcome) : Prop :=
   match args with
   | [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj, .int 64 nxp] =>
-      ∃ (m : Mem) (form : Nat),
-        stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = some (m, form) ∧
-        r.ret = .int 32 (BitVec.ofNat 32 form) ∧ r.mem = m ∧ r.next = next
+      ∃ (m : Mem) (form : Nat) (slot : List UInt8),
+        stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+          some (m, form, slot) ∧
+        r.ret = .int 32 (BitVec.ofNat 32 form) ∧
+        r.mem = writeBytes m next slot ∧
+        r.next = next + 8
   | _ => False
 
 /-- **`s2_string_body`'s writes**: the cursor word, the decoded-length word, the
@@ -440,11 +459,11 @@ is readable — the error record it names.  The error region is in the list on t
 accepting arms too, because the footprint is read before the call and cannot see
 which arm ran; `stage2ErrorExtent` is the record's staged extent and the refusal
 writes sixteen of its bytes. -/
-def s2StringBodyFoot (args : List Value) (mem : Mem) (_next : Nat) :
+def s2StringBodyFoot (args : List Value) (mem : Mem) (next : Nat) :
     List (Nat × Nat) :=
   match args with
   | [.ptr c, .ptr _, .int 64 len, .ptr dst, .ptr outn, .ptr _, .ptr xj, .int 64 _] =>
-      [(xj, 8), (outn, 8), (dst, len.toNat)] ++
+      [(xj, 8), (outn, 8), (dst, len.toNat), (next, 8)] ++
         (match stage2ReadWord mem (c + 1112) 8 with
          | some e => [(e, stage2ErrorExtent)]
          | none => [])
@@ -830,12 +849,13 @@ def s2AfterValueContract :
 
 /-- **`s2_string_body`'s reply** at the eight arguments the emitted call passes. -/
 theorem s2StringBody_reply {mem : Mem} {next : Nat} {c p dst outn xp xj : Nat}
-    {len nxp : BitVec 64} {m : Mem} {form : Nat}
-    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = some (m, form)) :
+    {len nxp : BitVec 64} {m : Mem} {form : Nat} {slot : List UInt8}
+    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (m, form, slot)) :
     stage2Calls stage2SubCalls "s2_string_body"
         [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
           .int 64 nxp] mem next =
-      some ⟨.int 32 (BitVec.ofNat 32 form), m, next⟩ := by
+      some ⟨.int 32 (BitVec.ofNat 32 form), writeBytes m next slot, next + 8⟩ := by
   rw [stage2Calls_s2_string_body, stage2StringBodyCall, hm]
   rfl
 
@@ -853,27 +873,26 @@ theorem s2StringBody_none {mem : Mem} {next : Nat} {c p dst outn xp xj : Nat}
 theorem s2StringBody_answers {args : List Value} {mem : Mem} {next : Nat}
     (hpre : s2StringBodyPre args mem next) :
     ∃ r, stage2Calls stage2SubCalls "s2_string_body" args mem next = some r := by
-  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, rfl, ⟨base, hbase⟩, ⟨j0, hj0⟩,
-    ⟨ps, hps⟩, ⟨body, hbody⟩, ⟨e, he⟩, -⟩ := hpre
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, _, _, _, _, _, rfl, hbase, hj0, hps,
+    hbody, he, -⟩ := hpre
   obtain ⟨pr, hpr⟩ := stage2StringBody_answers mem c p len.toNat dst outn xp xj
     nxp.toNat hbase hj0 hps hbody he
-  obtain ⟨m, form⟩ := pr
   exact ⟨_, s2StringBody_reply hpr⟩
 
 theorem s2StringBody_sound {args : List Value} {mem : Mem} {next : Nat}
     (hpre : s2StringBodyPre args mem next) {r : CallOutcome}
     (h : stage2Calls stage2SubCalls "s2_string_body" args mem next = some r) :
     s2StringBodyPost args mem next r := by
-  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, rfl, -⟩ := hpre
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, _, _, _, _, _, rfl, -⟩ := hpre
   cases hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat with
   | none =>
       rw [s2StringBody_none hm] at h
       cases h
   | some pr =>
-      obtain ⟨m, form⟩ := pr
-      have hr : r = ⟨.int 32 (BitVec.ofNat 32 form), m, next⟩ :=
+      obtain ⟨m, form, slot⟩ := pr
+      have hr : r = ⟨.int 32 (BitVec.ofNat 32 form), writeBytes m next slot, next + 8⟩ :=
         Option.some.inj (h.symm.trans (s2StringBody_reply hm))
-      refine ⟨m, form, hm, ?_, ?_, ?_⟩
+      refine ⟨m, form, slot, hm, ?_, ?_, ?_⟩
       · rw [hr]
       · rw [hr]
       · rw [hr]
@@ -882,22 +901,23 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
     (hpre : s2StringBodyPre args mem next) {r : CallOutcome}
     (h : stage2Calls stage2SubCalls "s2_string_body" args mem next = some r) :
     UnchangedOutside mem r.mem (s2StringBodyFoot args mem next) := by
-  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, rfl, ⟨base, hbase⟩, ⟨j0, hj0⟩,
-    ⟨ps, hps⟩, ⟨body, hbody⟩, ⟨e, he⟩, hspace⟩ := hpre
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, base, j0, ps, body, e, rfl, hbase, hj0,
+    hps, hbody, he, hspace, -, -, -, -, -⟩ := hpre
   cases hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat with
   | none =>
       rw [s2StringBody_none hm] at h
       cases h
   | some pr =>
-      obtain ⟨m, form⟩ := pr
-      have hmem : r.mem = m := by
-        have hr : r = ⟨.int 32 (BitVec.ofNat 32 form), m, next⟩ :=
+      obtain ⟨m, form, slot⟩ := pr
+      have hmem : r.mem = writeBytes m next slot := by
+        have hr : r = ⟨.int 32 (BitVec.ofNat 32 form), writeBytes m next slot, next + 8⟩ :=
           Option.some.inj (h.symm.trans (s2StringBody_reply hm))
         rw [hr]
       rw [hmem]
       have hfoot : s2StringBodyFoot [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn,
           .ptr xp, .ptr xj, .int 64 nxp] mem next =
-          ([(xj, 8), (outn, 8), (dst, len.toNat)] ++ [(e, stage2ErrorExtent)]) := by
+          ([(xj, 8), (outn, 8), (dst, len.toNat), (next, 8)] ++
+            [(e, stage2ErrorExtent)]) := by
         simp only [s2StringBodyFoot, he]
       rw [hfoot]
       unfold stage2StringBody at hm
@@ -905,12 +925,13 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
       split at hm
       · have hinj := Option.some.inj hm
         simp only [Prod.mk.injEq] at hinj
-        obtain ⟨rfl, rfl⟩ := hinj
-        exact ((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
+        obtain ⟨rfl, rfl, rfl⟩ := hinj
+        exact (((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
           ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
           (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
           ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
-          (by simp [wordBytes, natToBytes_length])
+          (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+          ⟨(next, 8), by simp, le_rfl, le_rfl⟩ (by simp)
       · split at hm
         · simp at hm
         · rename_i body' hbody'
@@ -918,7 +939,7 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
           · rename_i out k hdec
             have hinj := Option.some.inj hm
             simp only [Prod.mk.injEq] at hinj
-            obtain ⟨rfl, rfl⟩ := hinj
+            obtain ⟨rfl, rfl, rfl⟩ := hinj
             have hlen : out.length ≤ len.toNat := by
               have hle := escapeDecodeGo_length_le body'
                 (hspace base j0 ps body' hbase hj0 hps hbody') 0 [] out k hdec
@@ -926,20 +947,25 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
                 JsonEntrySteps.readBytes_length mem p len.toNat hbody'
               simp only [List.length_nil, Nat.zero_add] at hle
               omega
-            exact (((UnchangedOutside.refl' mem _).write_le (a := dst) (w := len.toNat)
+            exact ((((UnchangedOutside.refl' mem _).write_le (a := dst) (w := len.toNat)
               ⟨(dst, len.toNat), by simp, le_rfl, le_rfl⟩ hlen).write_le
               (a := xj) (w := 8) ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
               (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
               ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+              (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+              ⟨(next, 8), by simp, le_rfl, le_rfl⟩
               (by simp [wordBytes, natToBytes_length])
           · rename_i off k href
             have hinj := Option.some.inj hm
             simp only [Prod.mk.injEq] at hinj
-            obtain ⟨rfl, rfl⟩ := hinj
-            exact (stage2ErrSetMsg_frame
-              (R := [(xj, 8), (outn, 8), (dst, len.toNat)] ++ [(e, stage2ErrorExtent)])
+            obtain ⟨rfl, rfl, rfl⟩ := hinj
+            exact ((stage2ErrSetMsg_frame
+              (R := [(xj, 8), (outn, 8), (dst, len.toNat), (next, 8)] ++
+                [(e, stage2ErrorExtent)])
               ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩).write_le (a := xj) (w := 8)
               ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+              (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+              ⟨(next, 8), by simp, le_rfl, le_rfl⟩
               (by simp [wordBytes, natToBytes_length])
 
 /-- **`s2_string_body`'s contract**: the decoded body. -/
@@ -958,8 +984,8 @@ the length at `outn`: the body-itself form's is `len`, and the escaped form's is
 `escapeDecodeGo_length_le`'s at the caller's spaced list.  The refusal form leaves
 the word alone, which is why the form is a hypothesis rather than a conclusion. -/
 theorem s2StringBody_outn_le {mem : Mem} {c p dst outn xp xj : Nat} {len nxp : BitVec 64}
-    {m : Mem} {form : Nat}
-    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = some (m, form))
+    {m : Mem} {form : Nat} {slot : List UInt8}
+    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat = some (m, form, slot))
     (hspace : BodyPositionsSpaced mem c xj xp nxp.toNat p len.toNat)
     (hform : form ≠ 0) :
     ∃ on : Nat, readBytes m outn 8 = some (wordBytes 8 on) ∧ on ≤ len.toNat := by
@@ -970,7 +996,7 @@ theorem s2StringBody_outn_le {mem : Mem} {c p dst outn xp xj : Nat} {len nxp : B
     split at hm
     · have hinj := Option.some.inj hm
       simp only [Prod.mk.injEq] at hinj
-      obtain ⟨rfl, rfl⟩ := hinj
+      obtain ⟨rfl, rfl, -⟩ := hinj
       refine ⟨len.toNat, ?_, le_rfl⟩
       exact readBytes_wordBytes_same (addr := outn) (v := len.toNat)
     · split at hm
@@ -980,7 +1006,7 @@ theorem s2StringBody_outn_le {mem : Mem} {c p dst outn xp xj : Nat} {len nxp : B
         · rename_i out k hdec
           have hinj := Option.some.inj hm
           simp only [Prod.mk.injEq] at hinj
-          obtain ⟨rfl, rfl⟩ := hinj
+          obtain ⟨rfl, rfl, -⟩ := hinj
           refine ⟨out.length, ?_, ?_⟩
           · exact readBytes_wordBytes_same (addr := outn) (v := out.length)
           · have hle := escapeDecodeGo_length_le body
@@ -993,7 +1019,7 @@ theorem s2StringBody_outn_le {mem : Mem} {c p dst outn xp xj : Nat} {len nxp : B
           split at hm
           · have hinj := Option.some.inj hm
             simp only [Prod.mk.injEq] at hinj
-            obtain ⟨rfl, rfl⟩ := hinj
+            obtain ⟨rfl, rfl, -⟩ := hinj
             exact absurd rfl hform
           · simp at hm
   · simp at hm
