@@ -1070,6 +1070,17 @@ theorem walkDispatchFirstLink {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   obtain ⟨s', hlink, _⟩ := WalkLink.NodeBlock41_at G C s hInv hblock h35
   exact ⟨s', hlink⟩
 
+/-- **`NodeBlock39`'s arm.**  `icmp slt i8 %35, 32` picks `LeafBlock35` or `LeafBlock37`. -/
+theorem walkDispatchSecondLink {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hblock : C.block = "NodeBlock39")
+    {x1 : BitVec 8} (h35 : evalOperand s (.reg "%35") = some (.int 8 x1)) :
+    ∃ s', WalkLink calls G C s
+      { C with
+        block := (if evalICmp .slt x1 (BitVec.ofNat 8 32) = 1 then
+          "LeafBlock35" else "LeafBlock37") } s' := by
+  obtain ⟨s', hlink, _⟩ := WalkLink.NodeBlock39_at G C s hInv hblock h35
+  exact ⟨s', hlink⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
