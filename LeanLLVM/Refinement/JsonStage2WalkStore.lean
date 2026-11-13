@@ -1128,7 +1128,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     (hz36 : lookupName s.env "%z.val36" = some (.int 64 (BitVec.ofNat 64 a)))
     (halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)))
     (hal64 : a + l < 2 ^ 64)
-    (hale : a + l ≤ C.alen) :
+    (hge : G.ndst0 ≤ a) (hale : a + l ≤ C.alen) :
     ∃ s', WalkLink calls G C s { C with block := "if.end290.i" } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let cs : List (String × Value) := [
@@ -1276,7 +1276,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
       (off' := 16) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
     exact hInv.log_cap
-  · refine ⟨a + l, hale, ?_⟩
+  · refine ⟨a + l, by omega, hale, ?_⟩
     rw [hmem']
     dsimp only [m']
     exact readBytes_writeBytes_same _ _

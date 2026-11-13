@@ -439,15 +439,33 @@ def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
 `%inc.i` is the entry count), `27` steps reach a state whose jump is followed by a
 return — *beside* the potential the state still holds, because that state's own
 dispatch is the last entry's.  The `27` is the finalisation allowance less the
-seed's three steps and the two terminal ones (`walkExitFits`). -/
+seed's three steps and the two terminal ones (`walkExitFits`).
+
+The run is stated in two pieces and its merge is named, because the post reads it
+there: `Cend`/`sEnd` are the carry and state the last dispatch leaves at
+`cleanup478.i`, the tail runs from `sEnd`, and the arena word at `sEnd` is
+`Cend.alen` — the equality the exit's slot copy needs, and the lag inside an
+iteration closed at the loop head.  `WalkInv.log_len` already gives the event
+cursor's word as an equality, so the two slot copies are the same fact on the two
+sides and only the arena's needs stating. -/
 def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 = G.nep →
-    ∃ (q : Nat) (s1 s2 sret : State),
-      q ≤ walkPotential G C + 27 ∧
-      (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
-      step calls stage2Body s1 = .jump s2 ∧
-      step calls stage2Body s2 = .ret v sret
+    ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
+      Cend.block = "cleanup478.i" ∧ Cend.k = G.nep ∧
+      -- **The arena word is the cursor at the merge.**  The carry advances with
+      -- each append (`arenaAppend`'s `alen' = alen + on`) and the block that
+      -- writes `%z + 48` stores the same decoded length, so the lag
+      -- `WalkInv.log_alen` allows is closed at the loop head.  The exit's slot
+      -- copy reads this word, which is what identifies the run's final memory
+      -- with the record's report.
+      readBytes sEnd.mem (Cend.stage.z + 48) 8 = some (wordBytes 8 Cend.alen) ∧
+      ∃ (q₁ q₂ : Nat) (s1 s2 sret : State),
+        (∀ n, runFuel calls (q₁ + n) stage2Body s = runFuel calls n stage2Body sEnd) ∧
+        q₁ + q₂ ≤ walkPotential G C + 27 ∧
+        (∀ n, runFuel calls (q₂ + n) stage2Body sEnd = runFuel calls n stage2Body s1) ∧
+        step calls stage2Body s1 = .jump s2 ∧
+        step calls stage2Body s2 = .ret v sret
 
 /-- **The empty entry stream's flush arm.**  The entry's own step and the refusal
 copy reach a return, inside the finalisation allowance, whenever the entry count
@@ -613,7 +631,11 @@ theorem walkLoopStep_of_dispatch_exit {calls : Calls} {m0 : Mem} {G : WalkGeom m
   intro C s hInv hhead hk
   by_cases hcase : C.k + 1 < G.nep
   · exact Or.inl (hdisp.revolution C s hInv hhead hcase)
-  · exact Or.inr (hexit C s hInv hhead (by omega))
+  · obtain ⟨Cend, sEnd, -, -, -, -, q₁, q₂, s1, s2, sret, hseg1, hq, hseg2,
+      hstep1, hret⟩ := hexit C s hInv hhead (by omega)
+    refine Or.inr ⟨q₁ + q₂, s1, s2, sret, ?_, ?_, hstep1, hret⟩
+    · omega
+    · exact runFuel_prefix_trans hseg1 hseg2
 
 /-- **`F ≤ 27` is the finalisation allowance** at the seed's three steps: the
 record's constant less the seed's prefix and the exit's own jump. -/
