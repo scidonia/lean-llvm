@@ -1203,6 +1203,40 @@ theorem WalkDispatchOutcome.ofDispatch {calls : Calls} {m0 : Mem} {G : WalkGeom 
   exact WalkDispatchOutcome.cont Cd sd p spv k2 prev spOp kOp nepv seg hblock hkC hpre hsp
     hspv hkOp hk2 hnepv hbelow hnep hadvance hspcap hspw hprice
 
+/-- **`WalkDispatchThree` from two named obligations.**  A dispatch either continues — which
+is `WalkDispatch`'s premise, taken into `cont` by `ofDispatch` — or it does not, and then it
+either finishes at the terminal index or refuses before the merge.  So the three-outcome
+premise follows from the old one plus the last entry's two cases, and the case split it
+performs is on the *dispatch's* branch rather than on `C.k + 1` alone: the hypothesis
+`¬ (C.k + 1 < G.nep)` is what selects the last entry, and which of `finish`/`refuse` it is
+is the disjunction's own. -/
+theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    (hcont : WalkDispatch calls G)
+    (hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      ¬ (C.k + 1 < G.nep) →
+      (∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
+          (kOp : Operand) (nepv : BitVec 64),
+        WalkSegment calls G C s Cd sd p ∧ Cd.block = "cleanup478.i" ∧
+        sd.pre = some prev ∧ phiIncoming prev cleanupKIncoming = some kOp ∧
+        evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)) ∧
+        lookupName sd.env "%nep" = some (.int 64 nepv) ∧ k2 = nepv.toNat ∧
+        p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+          stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)) ∨
+      (∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
+        WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+        p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+          stage2ByteAllowance * (G.n - entryPos G C.k))) :
+    WalkDispatchThree calls G := by
+  intro C s hInv hhead
+  by_cases hk : C.k + 1 < G.nep
+  · exact WalkDispatchOutcome.ofDispatch hcont hInv hhead hk
+  · rcases hlast C s hInv hhead hk with
+      ⟨Cd, sd, p, k2, prev, kOp, nepv, seg, hblock, hpre, hkOp, hk2, hnepv, hterm, hprice⟩ |
+      ⟨Cd, sd, p, seg, hblock, herr, hprice⟩
+    · exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
+        hnepv hterm hprice
+    · exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
+
 /-! ### What a dispatch proof still owes
 
 Two things the census's links do not supply, and the dispatch therefore owes
