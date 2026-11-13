@@ -1013,6 +1013,118 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
           .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] m0 from rfl]
     exact hrun
 
+/-! ### The run's report, from the invariant
+
+`stage2Boundary_of_parts` consumes a `Stage2Run`: the geometry's numbers, the two
+cursors as the walk left them, the refusal bit and its offset, and the two region
+claims.  Every one of those is a clause of `WalkInv` at the loop's end — the
+geometry's fields are `WalkGeom`'s, the cursors and the refusal are the carry's,
+and the two region clauses are the invariant's `frame` and, through its `owned`
+extents, the presence half.  So the report is a projection and not a premise: a
+caller holding the invariant at a state holds the run.
+
+The frames agree by definition: `Stage2Run.walkFrame`'s list is `walkWide`, which is
+where `WalkInv.frame` is stated.  Presence needs one step — the carry's own list is
+`[(dst, alen), (ev, evlen)]` and the extents it claims are the staging's — so each
+of its entries lies inside a staged extent (`(dst, ndst0 + n + reserve)` covers the
+arena's prefix at `alen ≤ ndst0 + n`, and `(ev, evcap)` covers the event stream's
+at `evlen ≤ evcap`), which is the coverage `WalkInv.report` reads. -/
+def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (h : WalkInv G C s) {args : List Value}
+    (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]) :
+    Stage2Run args m0 s.mem where
+  b := G.b
+  n := G.n
+  ep := G.ep
+  nep := G.nep
+  xp := G.xp
+  nxp := G.nxp
+  dst := G.dst
+  dstcap := G.dstcap
+  ndst := G.ndst
+  ev := G.ev
+  evcap := G.evcap
+  nev := G.nev
+  err := G.err
+  bs := G.bs
+  ent := G.ent
+  ndst0 := G.ndst0
+  nev0 := G.nev0
+  alen := C.alen
+  evlen := C.evlen
+  refusal := C.refusal
+  eoff := C.eoff
+  args_eq := hargs
+  doc := G.doc
+  tail := G.tail
+  entries := G.entries
+  order := G.order
+  inside := G.inside
+  esc := G.esc
+  arenaCap := G.arenaCap
+  arenaRoom := G.arenaRoom
+  evCap := G.evCap
+  evRoom := G.evRoom
+  ndstRead := G.ndstRead
+  nevRead := G.nevRead
+  errBytes := G.errBytes
+  maxDoc := G.maxDoc
+  c := C.stage.c
+  ctype := C.stage.ctype
+  cst := C.stage.cst
+  tok := C.stage.tok
+  s := C.stage.s
+  z := C.stage.z
+  e := C.stage.e
+  d := C.stage.d
+  nkSlot := C.stage.nkSlot
+  nxpSlot := C.stage.nxpSlot
+  staged := C.stage.separate
+  arenaGe := h.alen_ge
+  arenaLe := h.alen_le
+  evGe := by rw [h.evlen_eq]; exact Nat.le_add_right _ _
+  evLe := h.evlen_le
+  reserve := (Nat.add_le_add_right h.alen_le stage2ArenaReserve).trans G.arenaRoom
+  next0 := G.next0
+  watermark := G.watermark
+  walkPresent := by
+    intro a ha
+    have hale := h.alen_le
+    have hevle : C.evlen ≤ G.evcap := le_trans h.evlen_le G.evRoom
+    obtain ⟨r, hr, hlo, hhi⟩ := ha
+    simp only [walkPresent, stage2ReportScratch] at hr
+    rcases List.mem_append.mp hr with hr | hr
+    · rcases List.mem_cons.mp hr with rfl | hr1
+      · refine present_of_hasBytes (h.owned (G.dst, G.ndst0 + G.n + stage2ArenaReserve)
+          (by simp [walkStaged])) hlo ?_
+        exact Nat.lt_of_lt_of_le hhi (Nat.add_le_add_left
+          (le_trans hale (Nat.le_add_right _ _)) _)
+      · rcases List.mem_cons.mp hr1 with rfl | hnil
+        · refine present_of_hasBytes (h.owned (G.ev, G.evcap) (by simp [walkStaged]))
+            hlo ?_
+          exact Nat.lt_of_lt_of_le hhi (Nat.add_le_add_left hevle _)
+        · exact absurd hnil (by simp)
+    · refine present_of_hasBytes (h.owned r ?_) hlo hhi
+      simp only [walkStaged, stage2ReportScratch]
+      exact List.mem_append_right _ hr
+  walkFrame := by simpa only [walkWide, walkPresent] using h.frame
+  dSep := C.stage.dSep
+  offLe := fun _ => h.eoff_le
+  dstcapLt := G.dstcapLt
+  evcapLt := G.evcapLt
+  nepLt := by
+    have hle := G.nep_le
+    have hdoc := G.maxDoc
+    simp only [stage2MaxDocument] at hdoc
+    omega
+  nxpLt := G.nxpLt
+  bPos := G.bPos
+  bLt := G.bLt
+  epLt := G.epLt
+
 /-- **The obligation from the premises and its post.**  `Stage2WalkObligation` is
 the completion conjunct beside the post (`stage2WalkObligation_iff_completion`), so
 a dispatch that supplies `WalkPremises` and the record's post rule has the
@@ -1106,6 +1218,7 @@ theorem walkCredit_long_string :
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen485Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd490Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkBackFalse_step
