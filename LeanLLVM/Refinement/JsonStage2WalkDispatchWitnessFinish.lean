@@ -634,12 +634,72 @@ exposure that `stackSelectBr` got, and the criterion for asking is now met: **th
 consumers need the same three chains.**  That is `JsonStage2WalkCall`'s and
 `JsonStage2WalkFinal`'s work, not this module's. -/
 
+
+/-! ### The tail segment's statement
+
+The four links from `if.then413.i`'s entry to the merge, stated as a proposition before it is
+proved — the day's discipline: the statement is the thing to get right, and one elaboration
+checks it.
+
+Two premises are the junctions': the log's stream-base word at the memory `s2_value_pos`'s
+answer left, and the copy's staging at the memory the scalar call's answer left.  **The
+answers are parameters because the junction hypotheses are about the memories they left** —
+a consumer names what it consumes. -/
+def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r₁ r₂ : CallOutcome) (ev : EventRecord) (ei cd : Nat) (tok : Nat) : Prop :=
+  ∀ (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
+    {p reg : String} {c : BitVec 32} {op : Operand} {rdv : BitVec 32} {x : BitVec 32},
+    s.pre = some p →
+    phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op →
+    evalOperand (stateAt s.env s) op = some (.int 32 c) →
+    lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16)) →
+    lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)) →
+    readBytes (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4))
+      (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4) →
+    s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next →
+    stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next = some r₁ →
+    r₁.ret = .int 32 x →
+    evalICmp .eq x (BitVec.ofNat 32 0) = 0 →
+    -- the first junction: the log's stream-base word at the answer's memory
+    readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) →
+    lookupName s.env "%c.i" = some (.ptr C.stage.c) →
+    lookupName s.env "%t352.i" = some (.ptr tok) →
+    lookupName s.env "%z" = some (.ptr C.stage.z) →
+    stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z] r₁.mem s.next = some r₂ →
+    s2ScalarValueAppend r₁.mem r₂.mem C.stage.z ev.encodedBytes →
+    r₂.ret = .int 32 (BitVec.ofNat 32 1) →
+    G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length < C.k →
+    -- the second junction: the copy's staging at the appended record's memory
+    s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem s.next →
+    lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)) →
+    lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)) →
+    cd - ei ≤ C.inner → ei < cd → cd < 2 ^ 64 →
+    lookupName s.env "%t352.i" = some (.ptr tok) →
+    ∃ (Cd : WalkCarry G) (sd : State) (n : Nat),
+      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n ∧
+      Cd.block = "cleanup478.i" ∧ n = 4
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd473_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkCondTrue345_at
 #print axioms LeanLLVM.Refinement.WalkScope.end372_else_chain
+#check @LeanLLVM.Refinement.WalkScope.ConsumerTailSeg
 
 end WalkScope
 end LeanLLVM.Refinement
