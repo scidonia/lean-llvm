@@ -2163,6 +2163,29 @@ def walkStepsC : List String :=
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else43_i_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then467_i_at
 
+/-! ### The extra-token scan's landing
+
+`land.rhs457.i` is the scan's landing block and the one block in the walk whose step
+opens with a `phi` run and continues with work: `%q.0.i246` selected from the edge,
+then the byte's address and its load, at `NodeBlock105`.  Its `phi` selects
+`%ee.1.i` on the `if.then447.i` edge — the value the copy call left — and binds
+`%q.0.i246` only at this block's entry, which is why the scan's local fact at the
+landing is written at `%ee.1.i`. -/
+def walkLandRhs457 : Block :=
+  { name := "land.rhs457.i",
+    instrs := [
+      Instr.phi "%q.0.i246" (Ty.int 64)
+        [("while.body462.i", (Operand.reg "%inc463.i")),
+         ("if.then447.i", (Operand.reg "%ee.1.i"))],
+      Instr.gep "%arrayidx458.i" (Ty.int 8) (Operand.reg "%3")
+        (Operand.reg "%q.0.i246"),
+      Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx458.i")],
+    term := Term.br "NodeBlock105" }
+
+theorem walkLandRhs457_find :
+    stage2Body.findBlock "land.rhs457.i" = some walkLandRhs457 := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkLandRhs457]
+
 end WalkScope
 
 end LeanLLVM.Refinement
