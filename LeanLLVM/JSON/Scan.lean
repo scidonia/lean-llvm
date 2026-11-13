@@ -2960,6 +2960,46 @@ theorem scanCharsEnd_ok_of_scanCharsFrom {bs : Bytes} {i off : Nat} {cs : List N
     rw [hd, scanCharsFrom_nil] at h
     cases h
 
+/-- The position scan's refusal is the reference scan's: the same reason and the
+same offset.  `scanCharsEnd_sound` states the success side; this states the
+failure side, which is what a caller reporting *why* a body was refused reads.
+The two together fix the position scan's value on every input, so a decision
+read through `scanCharsEnd` names the reference's own reason rather than a
+second implementation's. -/
+theorem scanCharsEnd_error {bs : Bytes} {i off : Nat} {e : ScanError} :
+    scanCharsEnd bs i off = .error e ↔ scanCharsFrom off (bs.drop i) = .error e := by
+  rcases Nat.lt_or_ge i bs.size with hi | hi
+  · have hmap := scanCharsAt_eq (bs.size - i) bs i off (by omega)
+    have hmap' : (scanCharsAt bs (bs.size - i) i off).map
+        (fun p => (p.1, tailFrom bs p.2)) = scanCharsFrom off (bs.drop i) := by
+      rw [hmap, tailFrom_eq_drop]
+    constructor
+    · intro h
+      unfold scanCharsEnd at h
+      split at h
+      · rename_i err he
+        have herr : err = e := Except.error.inj h
+        rw [← hmap', he, map_error, herr]
+      · cases h
+    · intro h
+      unfold scanCharsEnd
+      rw [← hmap'] at h
+      cases hc : scanCharsAt bs (bs.size - i) i off with
+      | error err =>
+        have herr : err = e := by
+          rw [hc, map_error] at h
+          exact Except.error.inj h
+        rw [herr]
+      | ok p => rw [hc] at h; cases h
+  · have hz : bs.size - i = 0 := by omega
+    have hd : bs.drop i = empty := by
+      apply ByteString.eq_empty_of_data_toList
+      rw [ByteString.data_toList_drop, data_toList_drop_eq_nil (by omega)]
+    rw [hd]
+    unfold scanCharsEnd
+    rw [hz]
+    simp only [scanCharsAt.eq_1, scanCharsFrom_nil, Except.error.injEq]
+
 /-! #### The reflection lemma -/
 
 /-- The success side of `scanChars` is exactly the strict character relation.  The
