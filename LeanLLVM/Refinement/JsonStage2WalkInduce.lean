@@ -2449,7 +2449,8 @@ theorem walkScanLinks457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
     (hloc96 : WalkLocal (ScanC₉₆ C) (ScanS₉₆ s idx a q x))
     (hlatch : WalkLocal { C with block := "while.body462.i" } (Latch462S s idx a q x)) :
-    ∃ (s' : State), WalkSegment calls G C s { C with block := "while.body462.i" } s' 3 := by
+    ∃ (s' : State), s' = Latch462S s idx a q x ∧
+      WalkSegment calls G C s { C with block := "while.body462.i" } s' 3 := by
   obtain ⟨s₁, hl₁, hs₁⟩ := WalkLink.landRhs457_at (G := G) (C := C) (s := s) hInv hblock
     hpre hinc hop h3 hpos hread hbs hloc105
   rw [hs₁] at hl₁
@@ -2458,14 +2459,15 @@ theorem walkScanLinks457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   have hs₂' : s₂ = ScanS₉₆ s idx a q x := by rw [hs₂, if_pos hbit]; rfl
   rw [hs₂'] at hl₂
   rw [if_pos hbit] at hl₂
-  obtain ⟨s₃, hl₃⟩ := WalkLink.LeafBlock96 (G := G) (C := ScanC₉₆ C)
+  obtain ⟨s₃, hl₃, hs₃⟩ := WalkLink.LeafBlock96_at (G := G) (C := ScanC₉₆ C)
     (s := ScanS₉₆ s idx a q x) hl₂.inv' rfl
     (by
       simpa only [ScanS₉₆, stateAt, evalOperand,
         lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide)] using h47)
     hlatch
   rw [if_pos hws] at hl₃
-  exact ⟨s₃, Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))⟩
+  refine ⟨s₃, ?_, Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))⟩
+  rw [hs₃, if_pos hws]
 
 end WalkScope
 
