@@ -2091,6 +2091,10 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
           d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0) = .jump s₁ ∧
       LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s₁ = .jump s₂ ∧
       s₂.pc = "if.then" ∧
+      lookupName s₂.env "%xj.i" = some (.ptr (G.next0 + 12)) ∧
+      lookupName s₂.env "%root_done.i" = some (.ptr (G.next0 + 8)) ∧
+      lookupName s₂.env "%alen" = some (.ptr (S.z + woff 48)) ∧
+      lookupName s₂.env "%len" = some (.ptr (S.z + woff 8)) ∧
       s₂.env = ("%off1.i.i117", .ptr (S.e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
           (walkEntryEnv1 (EntryState stage2Body
               (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -2118,7 +2122,18 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
   obtain ⟨s₂, h2, hpc2, henv2⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
     hpc1 he h4 hn64
   rw [henv1] at henv2
-  exact ⟨s₁, s₂, h1, h2, hpc2, henv2⟩
+  have hnine := walkEntryEnv_copy (EntryState stage2Body
+      (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+      d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env
+    G.next0 G.n G.b G.ep G.nep S.s S.z G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev S.e
+  refine ⟨s₁, s₂, h1, h2, hpc2, ?_, ?_, ?_, ?_, henv2⟩
+  · rw [henv2]; exact hnine.1
+  · rw [henv2]; exact hnine.2.1
+  · rw [henv2]; exact hnine.2.2.1
+  · rw [henv2]; exact hnine.2.2.2.1
 
 /-- **The refusal copy's step.**  `if.then`'s five live-range ends at the state the flush
 block leaves: the jump's destination is `if.end`. -/
