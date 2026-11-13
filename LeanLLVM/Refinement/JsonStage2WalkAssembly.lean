@@ -1799,6 +1799,55 @@ theorem walkSeg4Writes_inside (rootAddr xjAddr : Nat) :
   ⟨⟨_, List.mem_cons_self .., le_rfl, le_rfl⟩,
    ⟨_, List.mem_cons_of_mem _ (List.mem_cons_self ..), le_rfl, le_rfl⟩⟩
 
+/-- **The entry's run writes nothing outside a narrow region list.**  `walkEntryMem_frame` frames
+the run at `walkWide`, which contains the staged objects and the allocas — and a frame at a
+wider region says nothing about the addresses inside it.  The stack copies live inside
+`walkWide`'s coverage, so their clauses need the narrower fact: every store of the run lies in
+`R`, given the five containments.  Each layer's frame is `stage2WriteStores_frame`, the two
+closing writes are `write_le`, and `UnchangedOutside` composes them in the order the run
+writes. -/
+theorem walkEntryMem_narrow {m : Mem} {R : List (Nat × Nat)}
+    {sAddr zAddr cAddr rootAddr xjAddr b n ep nep eAddr xp nxp dst v1 dstcap ev v2 evcap :
+      Nat} {n64 nb : BitVec 64}
+    (h1 : ∀ p ∈ s2InitStores sAddr b n64.toNat nb.toNat ep,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2)
+    (h2a : ∀ p ∈ walkSeg2Ws1 sAddr zAddr nep xp nxp dst,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2)
+    (h2b : ∀ p ∈ walkSeg2Ws2 zAddr v1 dstcap ev,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2)
+    (h2c : ∀ p ∈ walkSeg2Ws3 zAddr v2 evcap,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2)
+    (h3 : ∀ p ∈ walkSeg3Stores b n ep nep eAddr cAddr,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2)
+    (h4 : ∃ q ∈ R, q.1 ≤ rootAddr ∧ rootAddr + 4 ≤ q.1 + q.2)
+    (h5 : ∃ q ∈ R, q.1 ≤ xjAddr ∧ xjAddr + 8 ≤ q.1 + q.2) :
+    UnchangedOutside m
+      (walkSeg4PostMem rootAddr xjAddr
+        (walkSeg3PostMem b n ep nep eAddr cAddr
+          (walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap
+            (walkSeg2InitMem sAddr b ep n64 nb m)))) R := by
+  have s1 : UnchangedOutside m (walkSeg2InitMem sAddr b ep n64 nb m) R :=
+    stage2WriteStores_frame h1
+  have s2 : UnchangedOutside m
+      (stage2WriteStores (walkSeg2InitMem sAddr b ep n64 nb m)
+        (walkSeg2Ws1 sAddr zAddr nep xp nxp dst)) R :=
+    s1.trans' (stage2WriteStores_frame h2a)
+  have s3 : UnchangedOutside m
+      (stage2WriteStores (stage2WriteStores (walkSeg2InitMem sAddr b ep n64 nb m)
+        (walkSeg2Ws1 sAddr zAddr nep xp nxp dst)) (walkSeg2Ws2 zAddr v1 dstcap ev)) R :=
+    s2.trans' (stage2WriteStores_frame h2b)
+  have s4 : UnchangedOutside m
+      (walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap
+        (walkSeg2InitMem sAddr b ep n64 nb m)) R := by
+    refine s3.trans' (stage2WriteStores_frame h2c)
+  have s5 : UnchangedOutside m
+      (walkSeg3PostMem b n ep nep eAddr cAddr
+        (walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap
+          (walkSeg2InitMem sAddr b ep n64 nb m))) R :=
+    s4.trans' (stage2WriteStores_frame h3)
+  exact (s5.trans' ((UnchangedOutside.refl' _ R).write_le h4 (Nat.le_refl _))).trans'
+    ((UnchangedOutside.refl' _ R).write_le h5 (Nat.le_refl _))
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
