@@ -901,6 +901,15 @@ index.  The structure below therefore describes the four token scans, whose exit
 own finalisation blocks; the literal comparison's induction is the same `step` and a
 different exit, stated where the dispatch's outcomes are.
 
+The same distinction shows up in the *hypothesis lists*.  A scan whose exit is its own
+finalisation carries the counter's arithmetic in its own loop: `ScanCount` at the latch
+gives `c - i ≤ inner`, and the round is the only place it is read.  The literal
+comparison's landing block proves neither: `for.body.i.i` shows that the phi wrote `e` into
+`%i.029.i.i` and that `%cond.i.i` is untouched, and nothing about `c - e.toNat ≤ inner` —
+which is the induction's arithmetic and not a fact about six instructions.  So its link
+takes the target's `ScanCount` as a hypothesis and the round supplies it, exactly as
+`scanLatch_visit`'s two `WalkLocal` arguments are hypotheses for the same reason.
+
 The four token scans' lattices are the body's own blocks (`scanBlock`/`scanWhitespace_find`
 and its three siblings); the literal comparison's is `for.inc.i.i`.  None of the three
 pieces is proved here: what this module proves is the *chain* a visit is made of, and the
