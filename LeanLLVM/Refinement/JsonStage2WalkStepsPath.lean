@@ -323,3 +323,31 @@ theorem walkScanChain457_ws {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     hlatch
   rw [if_pos hws] at hl₃
   exact ⟨s₃, WalkChain.tail hl₁ (WalkChain.tail hl₂ (WalkChain.tail hl₃ (WalkChain.nil hl₃.inv')))⟩
+
+/-- **`LeafBlock96`'s target, named.**  `%.off97 = %47 + 247`, `ule %.off97, 1`; the bit
+picks the scan's back edge or the token's end. -/
+theorem WalkLink.LeafBlock96_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock96")
+    {x : BitVec 8} (h47 : lookupName s.env "%47" = some (.int 8 x))
+    (hl : WalkLocal { C with block := "while.body462.i" }
+      { stateAt (cells [("%SwitchLeaf98", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+          (BitVec.ofNat 8 1))), ("%.off97", .int 8 (x + BitVec.ofNat 8 247))] s.env) s with
+        pc := "while.body462.i", pre := some s.pc }) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .ule (x + BitVec.ofNat 8 247)
+            (BitVec.ofNat 8 1) = 1 then "while.body462.i" else "if.then467.i") } s' ∧
+      s' = { stateAt (cells [("%SwitchLeaf98", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+          (BitVec.ofNat 8 1))), ("%.off97", .int 8 (x + BitVec.ofNat 8 247))] s.env) s with
+        pc := (if evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+          then "while.body462.i" else "if.then467.i")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.LeafBlock96 G C s hInv hblock h47 hl
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkAddIcmpBrStep (calls := calls) (s := s) (b := walkLeafBlock96)
+    (reg := "%47") (off := "%.off97") (d := "%SwitchLeaf98")
+    (c := BitVec.ofNat 8 247) (one := BitVec.ofNat 8 1)
+    (tl := "while.body462.i") (fl := "if.then467.i") (x := x)
+    (by rw [hInv.pc_eq, hblock]; exact walkLeafBlock96_find) rfl rfl h47
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
