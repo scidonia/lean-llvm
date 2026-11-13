@@ -1746,6 +1746,17 @@ theorem s2InitStores_inside (sAddr b ep : Nat) (n nb : BitVec 64) :
     rfl | rfl | rfl
   all_goals simp [wordBytes, natToBytes_length] <;> try omega
 
+/-- **Segment 2's first stores: three in the record, two in the log.**  The record's tail
+fields at `%s + 56/72/80` and the log's window and arena base at `%z + 24/40`. -/
+theorem walkSeg2Ws1_inside (sAddr zAddr nep xp nxp dst : Nat) :
+    ∀ p ∈ walkSeg2Ws1 sAddr zAddr nep xp nxp dst,
+      (sAddr ≤ p.1 ∧ p.1 + p.2.length ≤ sAddr + 120) ∨
+      (zAddr ≤ p.1 ∧ p.1 + p.2.length ≤ zAddr + 64) := by
+  intro p hp
+  simp only [walkSeg2Ws1, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl | rfl | rfl | rfl
+  all_goals simp [wordBytes, natToBytes_length, woff, List.length_replicate] <;> omega
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
