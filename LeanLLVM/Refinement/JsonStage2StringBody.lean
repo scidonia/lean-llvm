@@ -5881,6 +5881,33 @@ theorem s2StringBodyRefusedC6_join (mem : Mem) {ei xj c1 e' offN k p base : Nat}
   exact s2StringBodyRefusedErased_join mem hWoff hei hxj' he0 he1 he2 h1 h2 h3 h4
     h5 h6 h7 h8 h9 h10
 
+/-- The model's memory at this call, staged: the record's message set, the cursor
+and the slot. -/
+def s2StringBodyRefusedM0 (mem : Mem) (ei xj c1 e' offN k p base : Nat) : Mem :=
+  writeBytes
+    (writeBytes (stage2ErrSetMsg mem e' (p - base + offN) 0) xj
+      (wordBytes 8 (c1 + k)))
+    ei (wordBytes 8 offN)
+
+/-- **The model's order is the staged order**: the record's three words are
+`stage2ErrSetMsg`, which is the reconciliation, and the rest is the same chain. -/
+theorem s2StringBodyRefusedModel_reconciles (mem : Mem) {ei xj c1 e' offN k p base : Nat}
+    (hoffN : offN < 2 ^ 64) (hp0 : p - base < 2 ^ 64)
+    (hsumW : offN + (p - base) < 2 ^ 64) :
+    s2StringBodyRefusedModel mem ei xj e' (wordBytes 8 offN) (wordBytes 8 (c1 + k))
+        (natToBytes (0#32).toNat 4)
+        (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8)
+        (natToBytes (0#64).toNat 8)
+      = s2StringBodyRefusedM0 mem ei xj c1 e' offN k p base := by
+  simp only [s2StringBodyRefusedModel, s2StringBodyRefusedM0]
+  rw [s2StringBodyErrRecord_reconciles mem e' (BitVec.ofNat 64 offN)
+    (BitVec.ofNat 64 (p - base)) (p - base) rfl hp0 (by
+      rw [show (BitVec.ofNat 64 offN).toNat = offN from by
+        rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hoffN]]
+      exact hsumW)]
+  rw [show (BitVec.ofNat 64 offN).toNat = offN from by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hoffN]]
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
