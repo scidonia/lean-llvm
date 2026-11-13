@@ -2798,6 +2798,68 @@ theorem s2StringBodyScanInv_seat (env : Env) (s : State) (base p xj xp j0 : Nat)
     exact hlaneM
 
 
+/-! ### The end of the run
+
+Two blocks finish the body — `cleanup16` returns the form, and `if.then` writes the
+extent's word before it — and both are `ret`s rather than jumps, so the run ends at
+them (`runFuel` maps a `ret` step to the outcome, dropping the state).  These are
+the continuations' last link: every path reaches `cleanup16` at some form, and the
+form is the `phi`'s answer from whichever cleanup block preceded it. -/
+
+/-- A `ret` step completes the run: the outcome carries the returned word and the
+memory the block left. -/
+theorem runFuel_ret_mem {calls : Calls} {f : Function} {s s' : State} {v : Value}
+    (h : step calls f s = .ret (some v) s') (k : Nat) :
+    runFuel calls (1 + k) f s = some (.ret (some v) s'.mem) := by
+  rw [show 1 + k = k + 1 from by omega]
+  simp only [runFuel, h]
+
+/-- **`cleanup16` finishes the body**: the returned form's `phi` and the function's
+answer at that word, one control step. -/
+theorem s2StringBodyCleanup16_finishes {env : Env} {s : State} {p : String}
+    {op : Operand} {form : BitVec 32}
+    (hpc : s.pc = "cleanup16") (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("cleanup", Operand.reg "%retval.0"),
+      ("if.then", Operand.imm (Const.int 32 0x00000001#32))] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 32 form)) :
+    runFuel s2StringBodyCalls 1 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 form))
+        (stateAt (("%retval.1", .int 32 form) :: env) s).mem) :=
+  runFuel_ret_mem (step_cleanup16_ret hpc hpre hinc hop) 0
+
+/-- **The body-itself arm's end**: `if.then` writes the extent's word at `outn`,
+`cleanup16` returns `1`, and the run is over in two control steps. -/
+theorem s2StringBodyIfThen_finishes {env : Env} {s : State} {len : BitVec 64}
+    {outn : Nat}
+    (hpc : s.pc = "if.then")
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    runFuel s2StringBodyCalls 2 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes s.mem outn (natToBytes len.toNat 8))) := by
+  have h1 := step_ifThen_cleanup16 hpc hlen houtn
+  have h2 : step s2StringBodyCalls s2StringBodyBody
+      (stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8), pc := "cleanup16", pre := some s.pc }) =
+      .ret (some (.int 32 0x00000001#32))
+        (stateAt (("%retval.1", .int 32 0x00000001#32) :: env)
+          { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8), pc := "cleanup16", pre := some s.pc }) := by
+    refine step_cleanup16_ret (p := "if.then")
+      (op := .imm (Const.int 32 0x00000001#32)) rfl ?_ ?_ rfl
+    · rw [hpc]
+    · simp [phiIncoming]
+  have hpre : ∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody (stateAt env s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8), pc := "cleanup16", pre := some s.pc }) :=
+    fun k => runFuel_jump_prefix h1 k
+  have hcont : runFuel s2StringBodyCalls 1 s2StringBodyBody
+      (stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8), pc := "cleanup16", pre := some s.pc }) =
+      some (.ret (some (.int 32 0x00000001#32))
+        (stateAt (("%retval.1", .int 32 0x00000001#32) :: env)
+          { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8), pc := "cleanup16", pre := some s.pc }).mem) :=
+    runFuel_ret_mem h2 0
+  simpa only [stateAt] using runFuel_prefix_some hpre hcont
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
