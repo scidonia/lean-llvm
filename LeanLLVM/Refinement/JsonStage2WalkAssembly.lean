@@ -2076,6 +2076,50 @@ theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
       s'.env = ("%off1.i.i117", .ptr (e + 8)) :: s.env :=
   ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl⟩
 
+/-- **The entry block's zero arm and the flush block, chained.**  Two of the arm's four steps:
+the second's two operands and its environment come from the first's returned environment, and
+the document bound is the geometry's. -/
+theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : Nat}
+    (hzero : G.nep = 0) :
+    ∃ s₁ s₂ : State,
+      LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body
+          (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+            .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+            .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+            .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+          d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0) = .jump s₁ ∧
+      LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s₁ = .jump s₂ ∧
+      s₂.pc = "if.then" ∧
+      s₂.env = ("%off1.i.i117", .ptr (S.e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+          (walkEntryEnv1 (EntryState stage2Body
+              (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+                .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+                .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+                .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+              d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env G.next0 G.n)
+          S.s S.z G.ep G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev) G.b G.n G.ep S.s S.c)
+        G.b G.nep := by
+  obtain ⟨s₁, h1, hpc1, -, henv1⟩ := walkEntryStaging_zeroArm G S hzero
+  obtain ⟨he0, h40⟩ := walkEntryEnv_e4 (EntryState stage2Body
+      (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+      d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env
+    G.next0 G.n G.b G.ep G.nep S.s S.z G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev
+  have he : lookupName s₁.env "%e" = some (.ptr S.e) := by rw [henv1]; exact he0
+  have h4 : lookupName s₁.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) := by
+    rw [henv1]; exact h40
+  have hn64 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  obtain ⟨s₂, h2, hpc2, henv2⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
+    hpc1 he h4 hn64
+  rw [henv1] at henv2
+  exact ⟨s₁, s₂, h1, h2, hpc2, henv2⟩
+
 /-- **The refusal copy's step.**  `if.then`'s five live-range ends at the state the flush
 block leaves: the jump's destination is `if.end`. -/
 theorem walkRefusalCopy_at {sub : Calls} {s : State} {s₁ : State}
