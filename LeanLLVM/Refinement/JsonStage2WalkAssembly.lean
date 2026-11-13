@@ -2065,6 +2065,20 @@ theorem walkEntryEnv_copy (env : Env) (c n b ep nep sAddr zAddr xp nxp dst v1 v2
     simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
       lookupName_cons_ne, woff]
 
+/-- **The copy's four cells do not bind the return's three registers.**  `%e`, `%z` and `%s` are
+the base environment's, and the run prepends `%53`, `%off`, `%52`, `%51` in front — so
+`walkReturn_at`'s three lookups pass through. -/
+theorem walkRefusalCopyState_cells (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (s : State) :
+    lookupName (walkIfThenBlockState env nd nv err e A L E s).env "%e"
+        = lookupName env "%e" ∧
+    lookupName (walkIfThenBlockState env nd nv err e A L E s).env "%z"
+        = lookupName env "%z" ∧
+    lookupName (walkIfThenBlockState env nd nv err e A L E s).env "%s"
+        = lookupName env "%s" := by
+  refine ⟨?_, ?_, ?_⟩ <;>
+    simp [walkIfThenBlockState, stateAt, cells, lookupName_cons_ne]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
