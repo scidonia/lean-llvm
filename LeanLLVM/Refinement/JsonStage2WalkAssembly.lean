@@ -214,6 +214,40 @@ theorem walkBitVec1_zero_or_one (b : BitVec 1) : b = 0 ∨ b = 1 := by
   revert b
   decide
 
+/-! ### The trace's step shapes
+
+`WalkLink` carries `step : step calls stage2Body s = .jump s'`, so a chain names every
+state it passes through — but each class's *lemma* returns `∃ s', WalkLink … s'`, and
+the witness it invents is not the state a chain must thread.  Composing a `WalkChain`
+therefore needs each block's step at the state the invariant gives, with the target
+named.  The two shapes below are the ones whose target depends on nothing the block's
+instructions compute — an empty instruction list with a `br` (class B) and with a
+`condbr` on a carried bit (class B′) — so their targets are the source state with the
+edge's destination and predecessor, and the class's nine-plus-one instances are the
+`find`/`term` pair of each block. -/
+
+/-- **Class B: an empty block and a `br`.**  The target is the source with the edge's
+destination; nothing the block does moves a register or a byte. -/
+theorem walkBrStep {calls : Calls} (s : State) {b : Block} {dest : String}
+    (hfind : stage2Body.findBlock s.pc = some b)
+    (his : b.instrs = []) (ht : b.term = Term.br dest) :
+    step calls stage2Body s = .jump { s with pc := dest, pre := some s.pc } := by
+  simp only [step, hfind, his, denoteCode_nil, ht, execTerm]
+
+/-- **Class B′: an empty block and a `condbr` on a carried bit.**  The target's `pc`
+is the bit's arm, unfolded so the caller's case split on the bit is the one the step
+takes. -/
+theorem walkCondbrStep {calls : Calls} (s : State) {b : Block} {c : Operand}
+    {t f : String} {bit : BitVec 1}
+    (hfind : stage2Body.findBlock s.pc = some b)
+    (his : b.instrs = []) (ht : b.term = Term.condbr c t f)
+    (hv : evalOperand s c = some (.int 1 bit))
+    (hbit : bit = 0 ∨ bit = 1) :
+    step calls stage2Body s =
+      .jump { s with pc := (if bit = 1 then t else f), pre := some s.pc } := by
+  simp only [step, hfind, his, denoteCode_nil, ht, execTerm, hv]
+  rcases hbit with rfl | rfl <;> simp
+
 /-! ### The exit's tail blocks
 
 Three of the tail's blocks are steps rather than links, because what the exit owes
@@ -449,16 +483,18 @@ iteration closed at the loop head.  `WalkInv.log_len` already gives the event
 cursor's word as an equality, so the two slot copies are the same fact on the two
 sides and only the arena's needs stating.
 
-What the post still owes beyond this premise is one identification, and it is
-`writeBytes` algebra rather than a fact about the walk: `sret.mem` is
-`stage2Report sEnd.mem …` because the tail's stores are the report's three slots
-with this equality and `WalkInv.log_len` supplying their values, and the slots are
-pairwise separate (`Stage2Run.staged`).  Writing them in a different order is
-`writeBytes` commutativity over disjoint extents, which the tree does not have yet —
-`readByte_writeBytes_outside` is the primitive it is built from.  A *direct* proof
-of `stage2Boundary` at `sret.mem` avoids that order question and also avoids the
-error word: the boundary's refusal clause is existential (`∃ e, e ≤ n ∧ …`), so the
-offset it names can be the memory's own word rather than the carry's `eoff`. -/
+What the post owes beyond this premise is *not* a `writeBytes` identity.
+Disjointness does not make two writes commute as memories: `writeByte` replaces a
+present cell in place but appends an absent one, so a difference in order survives
+as a difference in the list — `writeBytes_absent_comm_witness` is the two-write
+counterexample (`JsonStage2StringBody`).  The order facts that do hold are the
+pointwise one (a read outside both regions is unchanged) and the present one (a
+write of the bytes already there is the identity), and the post needs neither in
+its commuting form: every clause of `stage2Boundary` is a *read* at a named address
+or a region claim, so the boundary can be proved at `sret.mem` directly — the two
+copied words are `Cend.alen` (this premise) and `Cend.evlen` (`WalkInv.log_len`),
+and the refusal offset is existential there (`∃ e, e ≤ n ∧ …`), so the memory's own
+word serves rather than the carry's `eoff`. -/
 def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 = G.nep →
@@ -1370,6 +1406,8 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
+#print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkCondbrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen488Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen492Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen485Step
