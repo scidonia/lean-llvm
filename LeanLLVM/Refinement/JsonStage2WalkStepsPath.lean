@@ -12,6 +12,7 @@ Each instance states the target as the shape states it, so a chain's `def` for t
 state is the instance's term and its state equality applies by `rfl`.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkAssembly
+import LeanLLVM.Refinement.JsonStage2WalkPhi
 import LeanLLVM.Refinement.JsonStage2WalkSteps
 
 set_option autoImplicit false
@@ -113,4 +114,52 @@ theorem WalkLink.land_lhs_true357_i_at {calls : Calls} {m0 : Mem}
     (dest := "NodeBlock41") (a := ig) (j := q) (b := b)
     (by rw [hInv.pc_eq, hblock]; exact walkLand_lhs_true357_i_find) rfl rfl
     hig hcond hq63 hread
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`land.rhs.i`'s target, named.**  The scan's counter `phi`, the address it indexes
+and the byte it loads.  Off `walkPhiGepLoadBrStep`: `PhiSelects` from the link's own
+incoming pair and value, `%3`'s pointer peeled past the selected cell, and the
+offset's width — the shape carries everything else. -/
+theorem WalkLink.land_rhs_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "land.rhs.i")
+    {p : String} {op : Operand} {e : BitVec 64} {b : UInt8}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (G.b + (e.signExtend 64).toNat) 1 = some [b]) :
+    ∃ (s' : State), WalkLink calls G C s { C with block := "NodeBlock52" } s' ∧
+      s' = { stateAt (cells [("%36", .int 8 (BitVec.ofNat 8 b.toNat)),
+          ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+          (s.bindAll [("%ee.0.i238", .int 64 e)]).env)
+          (s.bindAll [("%ee.0.i238", .int 64 e)]) with
+        pc := "NodeBlock52"
+        pre := some (s.bindAll [("%ee.0.i238", .int 64 e)]).pc } := by
+  obtain ⟨s', hlink⟩ :=
+    WalkLink.land_rhs_i G C s hInv hblock hpre hin hv hpos hread
+  refine ⟨s', hlink, ?_⟩
+  -- the selected environment's two lookups
+  have hbase : lookupName (s.bind "%ee.0.i238" (.int 64 e)).env "%3"
+      = some (.ptr G.b) := by
+    simp only [State.bind, lookupName_cons_ne (k := "%ee.0.i238") (n := "%3") _ _
+      (by decide)]
+    exact hInv.ptrs.1
+  have hoff : lookupName (s.bind "%ee.0.i238" (.int 64 e)).env "%ee.0.i238"
+      = some (.int 64 (BitVec.ofNat 64 (e.signExtend 64).toNat)) := by
+    simp only [State.bind, lookupName_cons_self, BitVec.ofNat_toNat,
+      BitVec.setWidth_eq, BitVec.signExtend_eq]
+  let specs : List PhiSpec :=
+    [{ dst := "%ee.0.i238", ty := Ty.int 64,
+       incoming := [("while.body370.i", (Operand.reg "%inc371.i")),
+         ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] }]
+  let vs : List (String × Value) := [("%ee.0.i238", .int 64 e)]
+  have hsel : PhiSelects s p specs vs := PhiSelects.cons hin hv PhiSelects.nil
+  have hstep := walkPhiGepLoadBrStep (calls := calls) (s := s) (B := walkLand_rhs_i)
+    (specs := specs) (vs := vs) (p := p)
+    (ap := "%arrayidx367.i") (ld := "%36") (base := "%3") (off := "%ee.0.i238")
+    (dest := "NodeBlock52") (a := G.b) (j := (e.signExtend 64).toNat) (b := b)
+    (by rw [hInv.pc_eq, hblock]; exact walkLand_rhs_i_find) rfl rfl hpre
+    hsel hbase hoff hpos hread
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
