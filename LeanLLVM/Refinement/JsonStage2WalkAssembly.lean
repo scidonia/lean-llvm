@@ -1848,6 +1848,31 @@ theorem walkEntryMem_narrow {m : Mem} {R : List (Nat × Nat)}
   exact (s5.trans' ((UnchangedOutside.refl' _ R).write_le h4 (Nat.le_refl _))).trans'
     ((UnchangedOutside.refl' _ R).write_le h5 (Nat.le_refl _))
 
+/-- **A read whose every byte is unchanged is unchanged.**  `readBytes` is `n+1`-shaped with a
+match on the first byte, so the induction follows that shape: the head's equality is
+`UnchangedOutside` at `a`, and the tail's is the hypothesis at `a + 1`.
+
+The statement is an equality of `Option`s rather than a claim about the `some` it might be —
+which is what keeps the induction's generalisation away, since there is nothing to
+generalise.  This is the `readBytes` analogue of `WalkStackBytes.frame`, one level below it: the
+log's six words need it where the stack copies did not, because they are read as a window
+rather than one byte at a time. -/
+theorem readBytes_frame {mem mem' : Mem} {R : List (Nat × Nat)} {a n : Nat}
+    (hfr : UnchangedOutside mem mem' R)
+    (hout : ∀ i, i < n → ∀ q ∈ R, ¬ (q.1 ≤ a + i ∧ a + i < q.1 + q.2)) :
+    readBytes mem' a n = readBytes mem a n := by
+  induction n generalizing a with
+  | zero => rfl
+  | succ k ih =>
+      have hb : readByte mem' a = readByte mem a := hfr a (hout 0 (by omega))
+      simp only [readBytes]
+      rw [hb]
+      cases hmem : readByte mem a with
+      | none => rfl
+      | some b =>
+          simp only [hmem]
+          rw [ih (a := a + 1) (fun i hi q hq hc => hout (i + 1) (by omega) q hq (by omega))]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
