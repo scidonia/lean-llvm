@@ -636,6 +636,24 @@ consumers need the same three chains.**  That is `JsonStage2WalkCall`'s and
 `JsonStage2WalkFinal`'s work, not this module's. -/
 
 
+/-- The tail's carry after the value-position call: the scalar call's block. -/
+abbrev TailCarry₂ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { C with block := "if.then425.i" }
+
+/-- The tail's carry after the scalar call's emit arm: the copy's block, with the record
+appended to the trace. -/
+abbrev TailCarry₃ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
+    WalkCarry G :=
+  { C with
+    block := "if.then447.i"
+    evlen := C.evlen + ev.encodedSize
+    events := C.events ++ [ev] }
+
+/-- The tail's carry at the merge. -/
+abbrev TailCarry₄ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
+    WalkCarry G :=
+  { TailCarry₃ C ev with block := "cleanup478.i" }
+
 /-! ### The tail segment's statement
 
 The four links from `if.then413.i`'s entry to the merge, stated as a proposition before it is
@@ -686,14 +704,14 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     -- the second junction: the copy's staging at the appended record's memory
     s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
-       .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem s.next →
+       .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst] r₂.mem s.next →
     lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)) →
     lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)) →
     cd - ei ≤ C.inner → ei < cd → cd < 2 ^ 64 →
     lookupName s.env "%t352.i" = some (.ptr tok) →
     ∃ (Cd : WalkCarry G) (sd : State) (n : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n ∧
-      Cd.block = "cleanup478.i" ∧ n = 4
+      Cd = TailCarry₄ C ev ∧ Cd.block = "cleanup478.i" ∧ n = 4
 
 /-! ### The instrument -/
 
