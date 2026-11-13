@@ -557,6 +557,128 @@ theorem walkWhiteScanBack48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   exact walkChain_extend_leafBlock48 (C₀ := C₀) (s₀ := s₀)
     (C := scanCarryLeafBlock48 C) h₂ rfl h36₂ hne32 hsc₃
 
+/-! ### The visit, composed
+
+The induction's `step` is the latch's own step, and the way back is a chain per byte
+class.  A **visit** is the landing block's step and one of those chains: the landing
+block's write is the byte the class splits on, so the two halves agree by construction. -/
+
+/-- **One visit, through `LeafBlock43`.**  From the scan's landing block, short of the
+bound and with the byte below `13`, the run returns to the latch. -/
+theorem walkWhiteScanVisit43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hlt13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀
+      (scanCarryLatchOf { { C with block := "NodeBlock52" } with block := "LeafBlock43" })
+      (leafBlock43OutAt
+        (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) := by
+  have h₁ := walkChain_extend_landRhsI (C₀ := C₀) (s₀ := s₀) hchain hblock hpre hin hv hpos
+    hqn halen hevlen
+  have h36 : lookupName (landRhsIOutAt G s e (scanB G e)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName (cells
+      [("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)),
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+      ((s.bindAll [("%ee.0.i238", .int 64 e)]).env)) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [cells]
+    rw [lookupName_cons_self]
+  exact walkWhiteScanBack43 (C₀ := C₀) (s₀ := s₀) (C := { C with block := "NodeBlock52" })
+    h₁ rfl h36 hlt13 hws hsc
+
+/-- **One visit, through `LeafBlock46`.**  The byte is at or above `13`, below `32`, and
+not `13`. -/
+theorem walkWhiteScanVisit46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hge13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hlt32 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 1)
+    (hne13 : evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀
+      (scanCarryLatchOf (scanCarryLeafBlock46 { C with block := "NodeBlock52" }))
+      (scanLeafBlock46Out
+        (scanNodeBlock50Out
+          (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+            (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) := by
+  have h₁ := walkChain_extend_landRhsI (C₀ := C₀) (s₀ := s₀) hchain hblock hpre hin hv hpos
+    hqn halen hevlen
+  have h36 : lookupName (landRhsIOutAt G s e (scanB G e)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName (cells
+      [("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)),
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+      ((s.bindAll [("%ee.0.i238", .int 64 e)]).env)) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [cells]
+    rw [lookupName_cons_self]
+  exact walkWhiteScanBack46 (C₀ := C₀) (s₀ := s₀) (C := { C with block := "NodeBlock52" })
+    h₁ rfl h36 hge13 hlt32 hne13 hsc
+
+/-- **One visit, through `LeafBlock48`.**  The byte is at or above `32` and not `32`. -/
+theorem walkWhiteScanVisit48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hge13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hge32 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 0)
+    (hne32 : evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀
+      (scanCarryLatchOf (scanCarryLeafBlock48 { C with block := "NodeBlock52" }))
+      (scanLeafBlock48Out
+        (scanNodeBlock48Out
+          (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+            (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) := by
+  have h₁ := walkChain_extend_landRhsI (C₀ := C₀) (s₀ := s₀) hchain hblock hpre hin hv hpos
+    hqn halen hevlen
+  have h36 : lookupName (landRhsIOutAt G s e (scanB G e)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName (cells
+      [("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)),
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+      ((s.bindAll [("%ee.0.i238", .int 64 e)]).env)) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [cells]
+    rw [lookupName_cons_self]
+  exact walkWhiteScanBack48 (C₀ := C₀) (s₀ := s₀) (C := { C with block := "NodeBlock52" })
+    h₁ rfl h36 hge13 hge32 hne32 hsc
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
@@ -890,6 +1012,9 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanBack43
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanBack46
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanBack48
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisit43
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisit46
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisit48
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
