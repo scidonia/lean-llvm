@@ -3965,6 +3965,53 @@ theorem s2StringBodyWindow_cons_of_lane {ps : List Nat} {c pos0 len lane : Nat}
   rw [List.takeWhile_cons_of_pos (p := fun q => decide (q < pos0 + len)) (by simpa using hlt)]
   rfl
 
+/-! ### `%cmp9`: the call's answer
+
+The expander answers all-ones on refusal and the decoded length otherwise, and the
+body tests the returned word against all-ones. -/
+
+/-- The refusal's answer: all-ones is all-ones. -/
+theorem s2StringBodyBit_cmp9_refused {call : BitVec 64}
+    (h : call = 0xffffffffffffffff#64) :
+    evalICmp .eq call 0xffffffffffffffff#64 = 1#1 :=
+  evalICmp_eq_one h
+
+/-- The decoded answer: the returned word is not all-ones, so the test is `0`.  The
+inequality is the caller's — it follows from the decoded length being a `Nat` below
+`2 ^ 64`, which is the staging's fact rather than the bit's. -/
+theorem s2StringBodyBit_cmp9_decoded {n : Nat} {call : BitVec 64}
+    (hcall : call = BitVec.ofNat 64 n) (hne : call ≠ 0xffffffffffffffff#64) :
+    evalICmp .eq call 0xffffffffffffffff#64 = 0#1 := by
+  subst hcall
+  exact evalICmp_eq_zero hne
+
+/-! ### `%cmp1`: the lane against the body's start
+
+The head's test is `sub` (the body's first position at `i64`) against the lane, and
+the lane's value is the model's `ps` entry at the counter. -/
+
+/-- The scan continues: the lane is below the body's start. -/
+theorem s2StringBodyBit_cmp1_advance {pos0 q : Nat} (hpos0 : pos0 < 2 ^ 64)
+    (hq : q < 2 ^ 32) (h : q < pos0) :
+    evalICmpNat .ugt 64 (BitVec.ofNat 64 pos0).toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat).toNat = 1#1 := by
+  have hconv : (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat).toNat = q := by
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hq,
+      Nat.mod_eq_of_lt (by omega)]
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+  exact evalICmpNat_ugt_one hpos0 (by omega) h
+
+/-- The scan leaves: the lane is at or past the body's start. -/
+theorem s2StringBodyBit_cmp1_exit {pos0 q : Nat} (hpos0 : pos0 < 2 ^ 64)
+    (hq : q < 2 ^ 32) (h : pos0 ≤ q) :
+    evalICmpNat .ugt 64 (BitVec.ofNat 64 pos0).toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat).toNat = 0#1 := by
+  have hconv : (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat).toNat = q := by
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hq,
+      Nat.mod_eq_of_lt (by omega)]
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+  exact evalICmpNat_ugt_zero hpos0 (by omega) h
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
