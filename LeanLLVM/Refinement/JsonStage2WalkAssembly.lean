@@ -1501,6 +1501,33 @@ theorem walkInvSeat_stackBytes {mem : Mem} (base : Nat) (M : Nat → UInt8) :
     WalkStackBytes mem base M 0 :=
   WalkStackBytes.empty
 
+/-- **The staged objects are present, at the extents the run makes them.**  The five
+geometry entries have their own witnesses — the arena's capacity and its room, the two
+cursor slots' eight-byte reads, the event stream's capacity and the refusal slot — and the
+scratch list's objects are the caller's staged facts.  This is the seating's one
+*established* field beyond the empty stack.
+
+A seating lemma's fields come in three kinds, and this one shows the middle: the carried
+fields are the incoming invariant's own conclusions, the *established* ones are proved here
+from the geometry, and the *passed* ones are the staging's facts taken as hypotheses.
+Naming which is which keeps a premise from being written as a lemma. -/
+theorem walkStaged_hasBytes {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (hscratch : ∀ r ∈ stage2ReportScratch C.stage.c C.stage.ctype C.stage.cst
+        C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d, HasBytes m0 r.1 r.2) :
+    ∀ r ∈ walkStaged G C, HasBytes m0 r.1 r.2 := by
+  intro r hr
+  rw [walkStaged] at hr
+  rcases List.mem_append.1 hr with h | h
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+    obtain ⟨_, hread⟩ := G.arenaCap
+    rcases h with rfl | rfl | rfl | rfl | rfl
+    · exact ⟨_, readBytes_take_prefix (by have := G.arenaRoom; omega) hread⟩
+    · exact ⟨_, G.ndstRead⟩
+    · exact G.evCap
+    · exact ⟨_, G.nevRead⟩
+    · exact G.errBytes
+  · exact hscratch r h
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
