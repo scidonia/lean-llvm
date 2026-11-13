@@ -3109,6 +3109,32 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_premises
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_premises
 
+/-! ### The matching details, gathered
+
+Every failure this layer's later rows met had one of these shapes, and each is about
+syntax rather than mathematics — which is why the record names them together:
+
+1. **A rewrite's direction follows the hypothesis's own orientation.**  `UnchangedOutside
+   mem m' R` concludes `readByte m' a = readByte mem a`, so `hfr a …` rewrites `m'`'s
+   byte to `mem`'s; `s'.env = e4` rewrites forward; `henv2`'s `::`-form rewrites backward
+   when the consumer's hypotheses are stated at the unfolded side.
+2. **Surface types are part of a statement.**  `Value` versus `Option Value` (`WalkFlushAt`'s
+   `v0`), `Nat` versus `BitVec 64` (the two document-length spellings in
+   `walkSeg2InitMem` and `walkSeg3Stores`), and the `{ C with block := … }` carry at a
+   premise's type rather than at a goal.
+3. **A parameter's own arithmetic.**  Passing `e + 8` where the function adds the offset
+   silently doubles it; the cell's address is the function's to compute.
+4. **A numeral through a name is invisible to `omega`.**  `simp only [stage2MaxDocument]`
+   first, then `omega`.
+5. **`simp` closes a goal, not a component of a constructor.**  Splitting a returned tuple
+   needs `refine ⟨_, _, ?_, ?_⟩`, not `exact ⟨…⟩` with a `simp` inside.
+6. **A large term may be printed and passed, but not written into a declaration's type.**
+   A wrapper around a step whose conclusion is large fails where the step itself is
+   consumed: the wrapper's type is the cost, not the term's use.
+7. **Never write out a term already available as an equality's side.**  The error may be
+   unable to print the difference, so only taking the term from the equality removes the
+   second spelling. -/
+
 end WalkScope
 
 end LeanLLVM.Refinement
