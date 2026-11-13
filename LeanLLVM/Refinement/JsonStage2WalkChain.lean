@@ -50,7 +50,7 @@ step binds are its own `cells` list; and the *document's* bytes a scan loads are
 fields rather than a new one.  So no link has yet needed a carry field the model lacks;
 if one does, that is a finding at the model, not a hypothesis at the chain.
 
-**Per-link checklist, from the links that were written.**  Four things a chain
+**Per-link checklist, from the links that were written.**  Five things a chain
 extension has to get right, each of which cost a rewrite when it was missed.  Keep the
 chain at its state *def* and state the next link's facts at the def — `simp only
 [headS₅, condEnd349OutAt, cells]` — rather than rewriting the def away with `rw`, which
@@ -62,7 +62,11 @@ statement, so `%cond350.i`'s offset hypothesis is `c.toNat < 2 ^ 63` and the add
 rewrite should `obtain ⟨q, rfl⟩ := Nat.exists_eq_succ_of_ne_zero …` rather than ask
 `omega` for a subtraction it does not have.  And a link lemma fixed at one selection
 (the class-F instance) fixes the whole chain's `calls`, which is why the chains here are
-stated at `stage2Calls stage2SubCalls` and nowhere else.
+stated at `stage2Calls stage2SubCalls` and nowhere else.  And a successor state reached
+through a branch arm still has the *unresolved* arm in its carry's `block`, so the
+extension must resolve it first — `rw [show (if evalICmp .ugt c ix = 1 then "a" else "b")
+= "a" from by simp [hugt]] at hchain` — otherwise the next link's `block` hypothesis
+cannot be `rfl` and the invariant is at a carry whose `block` is an `if`.
 
 **The target terms are part of the work.**  Each instance's state is a literal nest
 (`{ (s.bind a v).bind b w with … }`), so a chain's target is that nest applied k
