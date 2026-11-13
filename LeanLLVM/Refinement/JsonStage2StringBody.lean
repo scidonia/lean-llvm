@@ -3145,6 +3145,108 @@ theorem s2StringBodyLandLhsTrue_decoded_finishes {env : Env} {s : State}
   simpa using this
 
 
+/-! ### The split on `Exited`
+
+The scan leaves either at `if.then` (its second exit) or at `land.lhs.true` (its
+first), and the second's two branches are the lane test's bit.  Each wrapper below
+reads the composed path at the exit state the scan's instance returns, so `hcont`
+in `s2StringBodyScan_run` is one `rcases` away:
+
+* `if.then` — the body-itself arm, answer `1`;
+* `land.lhs.true` with the inside test false — the body-itself arm through
+  `if.then`, answer `1`;
+* `land.lhs.true` with the inside test true and the expander's answer all-ones —
+  the refusal, answer `0`;
+* `land.lhs.true` with the inside test true and any other answer — the decoded
+  length, answer `2`.
+
+`ExitWord` is not consumed here: the outcome's memory is the exit state's own, and
+the counter's `∃ c` is what the closing uses to name that memory as the model's. -/
+
+/-- The second exit finishes the body-itself arm. -/
+theorem s2StringBodyExit_ifThen {e : State} {len : BitVec 64} {outn : Nat}
+    (hpc : e.pc = "if.then")
+    (hlen : lookupName e.env "%len" = some (.int 64 len))
+    (houtn : lookupName e.env "%outn" = some (.ptr outn)) :
+    runFuel s2StringBodyCalls 2 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes e.mem outn (natToBytes len.toNat 8))) :=
+  s2StringBodyIfThen_finishes (env := e.env) (s := e) hpc hlen houtn
+
+/-- The first exit, the lane inside the body: the body-itself arm through
+`if.then`. -/
+theorem s2StringBodyExit_landLhsTrue_toIfThen {e : State} {sub len conv : BitVec 64}
+    {outn : Nat}
+    (hpc : e.pc = "land.lhs.true")
+    (hsub : lookupName e.env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName e.env "%len" = some (.int 64 len))
+    (hconv : lookupName e.env "%conv" = some (.int 64 conv))
+    (hbit : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 0#1)
+    (houtn : lookupName e.env "%outn" = some (.ptr outn)) :
+    runFuel s2StringBodyCalls 3 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes e.mem outn (natToBytes len.toNat 8))) :=
+  s2StringBodyLandLhsTrue_toIfThen_finishes (env := e.env) (s := e)
+    hpc hsub hlen hconv hbit houtn
+
+/-- The first exit, the expander refusing: the record's path, answer `0`. -/
+theorem s2StringBodyExit_refused {e : State} {sub len conv off : BitVec 64}
+    {p dst ei xp xj c j : Nat} {nxp : BitVec 64} {extra : Mem} {nx : Nat}
+    {call : BitVec 64}
+    (hpc : e.pc = "land.lhs.true")
+    (hc : lookupName e.env "%c" = some (.ptr c))
+    (hsub : lookupName e.env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName e.env "%len" = some (.int 64 len))
+    (hconv : lookupName e.env "%conv" = some (.int 64 conv))
+    (hbit7 : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 1#1)
+    (hp : lookupName e.env "%p" = some (.ptr p))
+    (hdst : lookupName e.env "%dst" = some (.ptr dst))
+    (hei : lookupName e.env "%ei" = some (.ptr ei))
+    (hxp : lookupName e.env "%xp" = some (.ptr xp))
+    (hxj : lookupName e.env "%xj" = some (.ptr xj))
+    (hnxp : lookupName e.env "%nxp" = some (.int 64 nxp))
+    (hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes e.mem ei (natToBytes (0#64).toNat 8)) e.next =
+      some { ret := .int 64 call, mem := extra, next := nx })
+    (hbit9 : evalICmp .eq call 0xffffffffffffffff#64 = 1#1)
+    (hoff : readBytes extra ei 8 = some (natToBytes off.toNat 8))
+    (hcval : readBytes extra (c + (1112#64).toNat) 8 = some (wordBytes 8 j))
+    (hj64 : j < 2 ^ 64) :
+    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000000#32))
+        (s2StringBodyIfThen11Mem extra j off sub)) :=
+  s2StringBodyLandLhsTrue_refused_finishes (env := e.env) (s := e)
+    hpc hc hsub hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp hbit9 hoff hcval hj64
+
+/-- The first exit, the expander decoding: the decoded length's word, answer `2`. -/
+theorem s2StringBodyExit_decoded {e : State} {sub len conv : BitVec 64}
+    {p dst ei outn xp xj : Nat} {nxp : BitVec 64} {extra : Mem} {nx : Nat}
+    {call : BitVec 64}
+    (hpc : e.pc = "land.lhs.true")
+    (hsub : lookupName e.env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName e.env "%len" = some (.int 64 len))
+    (hconv : lookupName e.env "%conv" = some (.int 64 conv))
+    (hbit7 : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 1#1)
+    (hp : lookupName e.env "%p" = some (.ptr p))
+    (hdst : lookupName e.env "%dst" = some (.ptr dst))
+    (hei : lookupName e.env "%ei" = some (.ptr ei))
+    (hxp : lookupName e.env "%xp" = some (.ptr xp))
+    (hxj : lookupName e.env "%xj" = some (.ptr xj))
+    (hnxp : lookupName e.env "%nxp" = some (.int 64 nxp))
+    (hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes e.mem ei (natToBytes (0#64).toNat 8)) e.next =
+      some { ret := .int 64 call, mem := extra, next := nx })
+    (hbit9 : evalICmp .eq call 0xffffffffffffffff#64 = 0#1)
+    (houtn : lookupName e.env "%outn" = some (.ptr outn)) :
+    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000002#32))
+        (writeBytes extra outn (natToBytes call.toNat 8))) :=
+  s2StringBodyLandLhsTrue_decoded_finishes (env := e.env) (s := e)
+    hpc hsub hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp hbit9 houtn
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
