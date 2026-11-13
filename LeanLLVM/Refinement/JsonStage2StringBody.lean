@@ -1833,6 +1833,71 @@ theorem writeBytes_absorb_one (B : Mem) {ei dst xj : Nat} {X out Wj Z : List UIn
   -- 3. the two writes to `ei` are adjacent, and the second one is the memory
   exact writeBytes_writeBytes_same (writeBytes (writeBytes B dst out) xj Wj) ei X Z hlen
 
+/-- **A counter whose every position below it satisfies the predicate, and whose own
+position does not (or is past the list), is the `takeWhile` length.**  Induction on
+the counter, with the head peeled by `takeWhile_cons_of_pos`/`_of_neg`. -/
+theorem takeWhile_length_of_counter {l : List Nat} {pos0 : Nat} :
+    ∀ (n : Nat), (∀ k, k < n → ∃ q, l[k]? = some q ∧ q < pos0) →
+      (l[n]? = none ∨ ∃ q, l[n]? = some q ∧ pos0 ≤ q) →
+      (l.takeWhile (fun q => decide (q < pos0))).length = n
+  | 0, _, hstop => by
+      cases l with
+      | nil => rfl
+      | cons a t =>
+          have hneg : ¬ decide (a < pos0) = true := by
+            rcases hstop with h | ⟨q, hq, hle⟩
+            · simp only [List.getElem?_cons_zero, Option.some_ne_none] at h
+            · simp only [List.getElem?_cons_zero, Option.some.injEq] at hq
+              subst hq
+              simp only [decide_eq_true_eq]
+              omega
+          rw [List.takeWhile_cons_of_neg (p := fun q => decide (q < pos0)) hneg]
+          rfl
+  | n + 1, hstep, hstop => by
+      cases l with
+      | nil =>
+          obtain ⟨q, hq, _⟩ := hstep 0 (by omega)
+          simp only [List.getElem?_nil] at hq
+          cases hq
+      | cons a t =>
+          obtain ⟨q, hq, hlt⟩ := hstep 0 (by omega)
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hq
+          subst hq
+          rw [List.takeWhile_cons_of_pos (p := fun q => decide (q < pos0))
+            (by simpa using hlt)]
+          simp only [List.length_cons]
+          rw [takeWhile_length_of_counter n ?_ ?_]
+          · intro k hk
+            obtain ⟨q', hq', hlt'⟩ := hstep (k + 1) (by omega)
+            exact ⟨q', by simpa using hq', hlt'⟩
+          · rcases hstop with h | ⟨q', hq', hle⟩
+            · exact Or.inl (by simpa using h)
+            · exact Or.inr ⟨q', by simpa using hq', hle⟩
+
+/-- **The scan's counter is the model's `j1`.**  From the invariant's counter `c`
+at the exit — every position between `j0` and `c` below the body's first position,
+and `c` itself past it or past the list — the model's
+`j0 + ((ps.drop j0).takeWhile (fun q => decide (q < pos0))).length` is `c`. -/
+theorem scanCounter_eq_takeWhile (ps : List Nat) (pos0 : Nat) (j0 c : Nat)
+    (hjc : j0 ≤ c)
+    (hstep : ∀ k, j0 ≤ k → k < c → ∃ q, ps[k]? = some q ∧ q < pos0)
+    (hstop : ps[c]? = none ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) :
+    c = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < pos0))).length := by
+  have h := takeWhile_length_of_counter (l := ps.drop j0) (pos0 := pos0) (n := c - j0)
+    (by
+      intro k hk
+      obtain ⟨q, hq, hlt⟩ := hstep (j0 + k) (by omega) (by omega)
+      exact ⟨q, by rw [List.getElem?_drop]; simpa using hq, hlt⟩)
+    (by
+      rcases hstop with h' | ⟨q, hq, hle⟩
+      · refine Or.inl ?_
+        rw [List.getElem?_drop, Nat.add_sub_cancel' hjc]
+        exact h'
+      · exact Or.inr ⟨q, by
+          rw [List.getElem?_drop, Nat.add_sub_cancel' hjc]
+          exact hq, hle⟩)
+  omega
+
 /-! ### The scan's bound
 
 The scan is the body's only loop: `land.rhs` reads the lane at the counter, and
@@ -3815,23 +3880,17 @@ theorem s2StringBodyMemory_refused (mem : Mem) {ei xj e : Nat}
     xj Wj (e + (16#64).toNat) R2 (exists_readBytes_of_ne hxj_e01)
     (exists_readBytes_of_ne he2_e01) h7]
 
-/- **What the contract still needs, and it is not assembly.**  The plan was that
+/- **The contract's prerequisite, now proved.**  The planning estimate was that
 `s2StringBodyBody_contract` would assemble seat, run, split and joins — "no crossings,
-so the smallest unit".  A check of this cone says otherwise: **the scan's
-characterization is missing**.  The model's `j1` is
-`j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length`, while the loop's exit
-word gives a counter `c` with `s2StringBodyScanAtBound`'s disjunction at it.  Nothing
-in this module, `JsonStage2Sc*` or `JsonScan*` proves
-
-    (∀ k, j0 ≤ k → k < c → ∃ q, ps[k]? = some q ∧ q < pos0) →
-    (ps[c]? = none ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) →
-    c = j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length
-
-which is the bridge from the invariant's counter to the model's `j1` — and without it
-the post's `m` (which mentions `j1`) cannot be reached from the run's exit word.  So
-the contract's remaining content is **one `takeWhile`-length development**, and the
-assembly is the small part after it.  Recording it here because the planning estimate
-was wrong in the optimistic direction, and the mistake was mine. -/
+so the smallest unit" — and a check of this cone said otherwise: the scan's
+characterization was missing.  The model's `j1` is
+`j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length`, while the loop's exit word
+gives a counter `c` with `s2StringBodyScanAtBound`'s disjunction at it.  That bridge is
+`scanCounter_eq_takeWhile` below, from `takeWhile_length_of_counter`: **a counter whose
+every position below it satisfies the predicate, and whose own position does not (or is
+past the list), is the `takeWhile` length.**  It is a three-lemma development, not an
+assembly step — which is why "no crossings" was the wrong dimension to count, and the
+mistake was mine. -/
 
 /-- The cursor word the scan leaves is the model's `j1`: the exit word's counter,
 written at the caller's cursor, is the memory the model's `j1` names.  This is where
