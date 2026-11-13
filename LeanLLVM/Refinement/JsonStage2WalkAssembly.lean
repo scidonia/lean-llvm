@@ -1528,6 +1528,30 @@ theorem walkStaged_hasBytes {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     · exact G.errBytes
   · exact hscratch r h
 
+/-- **The carry at the start of the walk.**  Nothing has been read, nothing decoded and
+nothing pushed: the index, the arena cursor at the staging's own `ndst0`, the event cursor
+at `nev0`, empty trace and extent lists, no record in flight, no refusal, no offsets, the
+loop head's block, depth zero with the two maps arbitrary (a depth of zero reads no entry),
+and the caller's staged pointers.  Every invariant clause about the count, the trace, the
+extents, the caps and the stack is then immediate at these values, which is what makes the
+seating a definition plus a page of projections rather than a twenty-six-field proof. -/
+def walkCarryZero {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) : WalkCarry G where
+  k := 0
+  alen := G.ndst0
+  evlen := G.nev0
+  events := []
+  spans := []
+  pending := none
+  refusal := false
+  eoff := 0
+  block := walkLoopHead
+  inner := 0
+  sp := 0
+  wlen := 0
+  tyMap := fun _ => 0
+  stMap := fun _ => 0
+  stage := stage
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
