@@ -18,6 +18,10 @@ allocator cell is `(Ty.int 64).sizeBytes`, not the numeral it reduces to; a
 one-cell-deep lookup is `(by s2_lk)`; and `denoteCode_load64`'s implicit value
 must be named (`(v := …)`) or its metavariable survives into the closing goal.
 
+**And the fourth**: a statement whose environment or memory nests more than three
+deep gets a `def` — there the parser's layout, not the prover, decides whether the
+lemma exists at all.
+
 **The body.**  `entry` converts the two addresses and reads the cursor word;
 `land.rhs`/`while.body` scan the position list forward to the body's first
 position; `land.lhs.true` tests whether that position is inside the body;
@@ -941,5 +945,39 @@ theorem s2StringBodyWhileBodyInstrs_eq :
             Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
               (Operand.reg "%nxp")] := by
   decide
+
+/-- The `if.then11` block's environment and memory, named: the record's pointer,
+its three fields, and the offset word the expander returned. -/
+def s2StringBodyIfThen11Env (env : Env) (off sub : BitVec 64) (c e : Nat) : Env :=
+  ("%msg2.i.i", .ptr (e + 16)) :: ("%off1.i.i", .ptr (e + 8)) ::
+    ("%c.val", .ptr e) :: ("%3", .ptr (c + 1112)) ::
+    ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env
+
+def s2StringBodyIfThen11Mem (mem : Mem) (e : Nat) (off sub : BitVec 64) : Mem :=
+  writeBytes
+    (writeBytes (writeBytes mem e (natToBytes 0 4)) (e + 8)
+      (natToBytes (off + sub).toNat 8))
+    (e + 16) (natToBytes 0 8)
+
+/-- The `if.then11` block's instruction list: the expander's offset word, the
+record's pointer, and the record's three fields. -/
+def s2StringBodyIfThen11Instrs : List Instr :=
+  [Instr.load "%2" (Ty.int 64) (Operand.reg "%ei"),
+   Instr.binop "%add12" (BinOp.add) 64 (Operand.reg "%2") (Operand.reg "%sub.ptr.sub"),
+   Instr.gep "%3" (Ty.int 8) (Operand.reg "%c")
+     (Operand.imm (Const.int 64 0x0000000000000458#64)),
+   Instr.load "%c.val" (Ty.ptr) (Operand.reg "%3"),
+   Instr.store (Ty.int 32) (Operand.imm (Const.int 32 0x0000000000000000#32))
+     (Operand.reg "%c.val"),
+   Instr.gep "%off1.i.i" (Ty.int 8) (Operand.reg "%c.val")
+     (Operand.imm (Const.int 64 0x0000000000000008#64)),
+   Instr.store (Ty.int 64) (Operand.reg "%add12") (Operand.reg "%off1.i.i"),
+   Instr.gep "%msg2.i.i" (Ty.int 8) (Operand.reg "%c.val")
+     (Operand.imm (Const.int 64 0x0000000000000010#64)),
+   Instr.store (Ty.ptr) (Operand.imm (Const.null)) (Operand.reg "%msg2.i.i")]
+
+theorem s2StringBodyIfThen11Instrs_eq :
+    (s2StringBodyBody.findBlock "if.then11").map (·.instrs) =
+      some s2StringBodyIfThen11Instrs := by decide
 
 end LeanLLVM.Refinement
