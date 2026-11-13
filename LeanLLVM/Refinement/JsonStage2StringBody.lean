@@ -3939,6 +3939,22 @@ theorem s2StringBodyInBody_empty_iff (ps : List Nat) (j1 pos0 len : Nat) :
       have : ¬ a < pos0 + len := by omega
       simpa using this
 
+/-- A lane the list holds at `c` starts the drop at `c`. -/
+theorem drop_eq_cons_of_getElem? {ps : List Nat} {c lane : Nat}
+    (h : ps[c]? = some lane) : ps.drop c = lane :: ps.drop (c + 1) := by
+  obtain ⟨hlt, heq⟩ := List.getElem?_eq_some_iff.mp h
+  rw [← heq]
+  exact List.drop_eq_getElem_cons hlt
+
+/-- **`%cmp7`'s case**: a lane at or past the window's end makes the model's window
+empty, which is the body-itself arm.  The lane is the one `readLanes32_lane` gives at
+the scan's exit counter, and the comparison is the body's `%cmp7`. -/
+theorem s2StringBodyWindow_empty_of_lane {ps : List Nat} {c pos0 len lane : Nat}
+    (hlane : ps[c]? = some lane) (hle : pos0 + len ≤ lane) :
+    ((ps.drop c).takeWhile (fun q => decide (q < pos0 + len))).isEmpty = true := by
+  rw [s2StringBodyInBody_empty_iff]
+  exact Or.inr ⟨lane, ps.drop (c + 1), drop_eq_cons_of_getElem? hlane, hle⟩
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
