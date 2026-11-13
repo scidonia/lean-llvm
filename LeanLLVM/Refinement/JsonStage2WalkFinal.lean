@@ -313,8 +313,8 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     rw [hlogRead 32 4 (by decide) (by decide)]; exact hInv.log_hash
   · show readBytes r.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
     rw [hlogRead 16 8 (by decide) (by decide)]; exact hInv.log_cap
-  · obtain ⟨a, -, ha, hr⟩ := hInv.log_alen
-    exact ⟨a, ha, Eq.trans (hlogRead 48 8 (by decide) (by decide)) hr⟩
+  · obtain ⟨a, h0, ha, hr⟩ := hInv.log_alen
+    exact ⟨a, h0, ha, Eq.trans (hlogRead 48 8 (by decide) (by decide)) hr⟩
   · show readBytes r.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
     rw [hlogRead 56 8 (by decide) (by decide)]; exact hInv.log_acap
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
@@ -592,8 +592,8 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 16 8 (by decide)]
     exact hInv.log_cap
-  · obtain ⟨a, -, ha, hr⟩ := hInv.log_alen
-    refine ⟨a, ha, ?_⟩
+  · obtain ⟨a, h0, ha, hr⟩ := hInv.log_alen
+    refine ⟨a, h0, ha, ?_⟩
     show readBytes r.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
     rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 48 8 (by decide)]
