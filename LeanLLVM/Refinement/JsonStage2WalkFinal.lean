@@ -349,6 +349,76 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
         (bs := wordBytes 8 (C.evlen + ev.encodedBytes.length)) (by simp [wordBytes, natToBytes_length])
     exact h0.trans' h1
 
+
+/-- **`if.then425.i`'s emit arm, with the answer named.**  `od_scalar_value` returned one
+(its record appended), so `%tobool428.not.i` is zero and the run takes `if.then447.i` with
+the event appended to the trace: the carry's `evlen` and `events` move, which the link's
+conclusion already states. -/
+theorem walkIfThen425_emit_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then425.i")
+    {ev : EventRecord} {r : CallOutcome}
+    (hc : lookupName s.env "%c.i" = some (.ptr C.stage.c))
+    (ht : lookupName s.env "%t352.i" = some (.ptr C.stage.tok))
+    (ho : lookupName s.env "%z" = some (.ptr C.stage.z))
+    (hzread : readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hcall : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z] s.mem s.next = some r)
+    (happ : s2ScalarValueAppend s.mem r.mem C.stage.z ev.encodedBytes)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
+    (hlt : C.events.length < C.k) :
+    ∃ (s' : State), WalkLink (stage2Calls stage2SubCalls) G C s
+        { C with
+          block := "if.then447.i"
+          evlen := C.evlen + ev.encodedSize
+          events := C.events ++ [ev] } s' ∧
+      s' = { stateAt (cells [
+          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 1)
+            (BitVec.ofNat 32 0))),
+          ("%call427.i", .int 32 (BitVec.ofNat 32 1))] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := "if.then447.i"
+        pre := some s.pc } := by
+  obtain ⟨s', hl⟩ := WalkLink.if_then425_i_emit (G := G) (C := C) (s := s) hInv hblock hc ht
+    ho hzread hcall happ hret hev64 hevlen64 hlt
+  refine ⟨s', hl, ?_⟩
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen425.instrs s =
+      some (stateAt (cells [
+          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 1)
+            (BitVec.ofNat 32 0))),
+          ("%call427.i", .int 32 (BitVec.ofNat 32 1))] s.env)
+        { s with mem := r.mem, next := r.next }) := by
+    simpa only [stateAt] using (walkIfThen425_denote (sub := stage2SubCalls) (env := s.env)
+      (s := s) (c := C.stage.c) (t := C.stage.tok) (o := C.stage.z)
+      (x := BitVec.ofNat 32 1) (r := r) hc ht ho hcall hret)
+  have hbit0 : evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0) = (0 : BitVec 1) := by
+    decide
+  have hbit : lookupName (stateAt (cells [
+      ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 1)
+        (BitVec.ofNat 32 0))),
+      ("%call427.i", .int 32 (BitVec.ofNat 32 1))] s.env)
+      { s with mem := r.mem, next := r.next }).env "%tobool428.not.i" =
+      some (.int 1 (0 : BitVec 1)) := by
+    simp only [stateAt, cells, lookupName_cons_self, hbit0]
+  have hfind : stage2Body.findBlock s.pc = some walkIfThen425 := by
+    rw [hInv.pc_eq, hblock]; exact walkIfThen425_find
+  have hterm : walkIfThen425.term =
+      Term.condbr (.reg "%tobool428.not.i") "if.then432.i" "if.then447.i" := rfl
+  have hstep : step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump
+      { stateAt (cells [
+          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 1)
+            (BitVec.ofNat 32 0))),
+          ("%call427.i", .int 32 (BitVec.ofNat 32 1))] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := "if.then447.i"
+        pre := some s.pc } := by
+    simp only [LeanLLVM.step, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%tobool428.not.i") (tl := "if.then432.i")
+      (fl := "if.then447.i") (bit := (0 : BitVec 1)) hbit]
+    dsimp only [stateAt]
+    rfl
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-- **`if.then425.i` on the refusing arm**: `od_scalar_value` or `out_tag` refused,
 the answer is `0`, the branch takes the refusal's continuation, and the carry is
 the source's (the callee's writes are the error record, outside every clause). -/
