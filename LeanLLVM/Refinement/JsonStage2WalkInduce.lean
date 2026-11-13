@@ -1127,6 +1127,307 @@ theorem walkWhiteScanRound43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   exact ⟨_, _, hseg₁.trans hseg₂, hseg₂.inv', rfl, hee, hcond₂,
     by simp [stage2ByteAllowance]⟩
 
+/-- **The visit through `LeafBlock46`, counted: four links.**  The second pivot's first arm
+and the leaf's back edge are one more link than `LeafBlock43`'s visit — the byte's class is
+the extra step, and it is inside the allowance. -/
+theorem walkWhiteScanVisitSeg4_46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hge13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hlt32 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 1)
+    (hne13 : evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    Seg calls G C s
+      (scanCarryLatchOf
+        (scanCarryLeafBlock46 { C with block := "NodeBlock52" }))
+      (scanLeafBlock46Out
+        (scanNodeBlock50Out
+          (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+            (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) 4 := by
+  -- the landing block
+  have hread : readBytes s.mem (G.b + (e.signExtend 64).toNat) 1
+      = some [G.bs.getD (e.signExtend 64).toNat 0] :=
+    walkDoc_byte G C s hInv halen hevlen hqn
+  obtain ⟨s₁, hl₁, hs₁⟩ :=
+    WalkLink.land_rhs_i_at G C s hInv hblock hpre hin hv hpos hread
+  have hstep₁ : s₁ = landRhsIOutAt G s e (scanB G e) := by
+    rw [hs₁]
+    rfl
+  rw [hstep₁] at hl₁
+  -- the first pivot, on the second arm
+  have h36₁ : lookupName (landRhsIOutAt G s e (scanB G e)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName (cells
+      [("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)),
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+      ((s.bindAll [("%ee.0.i238", .int 64 e)]).env)) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [cells, State.bindAll, State.bind]
+    block_lk
+  have h1 : evalOperand (landRhsIOutAt G s e (scanB G e)) (.reg "%36")
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := h36₁
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
+    WalkLink.NodeBlock52_at G { C with block := "NodeBlock52" }
+      (landRhsIOutAt G s e (scanB G e)) hl₁.inv' rfl h1
+  have hres₂ : (if evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1
+      then "LeafBlock43" else "NodeBlock50") = "NodeBlock50" :=
+    if_neg (by rw [hge13]; decide)
+  have hstep₂ : s₂ = scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+      (BitVec.ofNat 8 (scanB G e).toNat) := by
+    rw [hs₂]
+    simp only [scanNodeBlock50In, hres₂]
+  rw [hstep₂] at hl₂
+  rw [hres₂] at hl₂
+  -- the second pivot, on its first arm
+  have h36₂ : lookupName (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+        (BitVec.ofNat 8 (scanB G e).toNat)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName
+      (("%Pivot53", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13))) ::
+       ("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)) ::
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat)) ::
+       (s.bindAll [("%ee.0.i238", .int 64 e)]).env) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [State.bindAll, State.bind]
+    block_lk
+  have h2 : evalOperand (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+        (BitVec.ofNat 8 (scanB G e).toNat)) (.reg "%36")
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := h36₂
+  obtain ⟨s₃, hl₃, hs₃⟩ :=
+    WalkLink.NodeBlock50_at G { { C with block := "NodeBlock52" } with block := "NodeBlock50" }
+      (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+      hl₂.inv' rfl h2
+  have hres₃ : (if evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 1
+      then "LeafBlock46" else "LeafBlock48") = "LeafBlock46" := if_pos hlt32
+  have hstep₃ : s₃ = scanNodeBlock50Out
+      (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+      (BitVec.ofNat 8 (scanB G e).toNat) := by
+    rw [hs₃]
+    simp only [scanNodeBlock50Out, hres₃]
+  rw [hstep₃] at hl₃
+  rw [hres₃] at hl₃
+  -- the leaf, on its back edge
+  have h36₃ : lookupName (scanNodeBlock50Out
+        (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName
+      (("%Pivot51", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 32))) ::
+       ("%Pivot53", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13))) ::
+       ("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)) ::
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat)) ::
+       (s.bindAll [("%ee.0.i238", .int 64 e)]).env) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [State.bindAll, State.bind]
+    block_lk
+  have hsc₃ : ScanCount (scanNodeBlock50Out
+        (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) "%ee.0.i238" "%cond350.i" C.inner := by
+    refine ScanCount.bind (d := "%Pivot51")
+      (v := .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32)))
+      (ScanCount.bind (d := "%Pivot53")
+        (v := .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13)))
+        hsc (by decide) (by decide) (inner := C.inner))
+      (by decide) (by decide) (inner := C.inner)
+  have hsc₄ : ScanCount (scanLeafBlock46Out
+      (scanNodeBlock50Out
+        (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) (BitVec.ofNat 8 (scanB G e).toNat))
+      "%ee.0.i238" "%cond350.i" C.inner :=
+    ScanCount.stateAt_cells (inner := C.inner) hsc₃
+      [("%SwitchLeaf47", .int 1 (evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13)))]
+      (by
+        intro c hc
+        simp only [List.mem_singleton] at hc
+        subst hc
+        exact ⟨by simp, by simp⟩)
+  have hloc : WalkLocal { { { C with block := "NodeBlock52" } with block := "NodeBlock50" } with
+      block := "while.body370.i" }
+      (scanLeafBlock46Out
+        (scanNodeBlock50Out
+          (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat)) (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    rw [WalkLocal.whitespace rfl]
+    exact hsc₄
+  obtain ⟨s₄, hl₄, hs₄⟩ :=
+    WalkLink.LeafBlock46_at G
+      { { { C with block := "NodeBlock52" } with block := "NodeBlock50" } with block := "LeafBlock46" }
+      (scanNodeBlock50Out
+        (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat))
+      hl₃.inv' rfl h36₃ hloc
+  have hres₄ : (if evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1
+      then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
+    if_neg (by rw [hne13]; decide)
+  have hstep₄ : s₄ = scanLeafBlock46Out
+      (scanNodeBlock50Out
+        (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) (BitVec.ofNat 8 (scanB G e).toNat) := by
+    rw [hs₄]
+    simp only [scanLeafBlock46Out, hres₄]
+    rfl
+  rw [hstep₄] at hl₄
+  rw [hres₄] at hl₄
+  exact Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.tail hl₄ (Seg.nil hl₄.inv'))))
+
+/-- **A round through `LeafBlock46`, counted: five steps.**  The latch and the visit's four,
+`trans` at `1 + 4`, inside the byte allowance — one more than `LeafBlock43`'s round, because
+the byte's class crosses a second pivot. -/
+theorem walkWhiteScanRound46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
+    {i c : Nat} (hi : lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hlt : i + 1 < c)
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") op
+      = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hge13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hlt32 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 1)
+    (hne13 : evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hsc : ScanCount
+      (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+        (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 5 ∧
+      WalkInv G C' s' ∧ C'.block = "while.body370.i" ∧
+      lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+      lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) ∧
+      5 ≤ stage2ByteAllowance := by
+  have hSC : ScanCount s "%ee.0.i238" "%cond350.i" C.inner := by
+    have h := hInv.blockLocal
+    rwa [WalkLocal.whitespace hblock] at h
+  have hsub : c - i ≤ C.inner := ScanCount.same hSC hi hc hcw (by omega)
+  have hinc₁ : lookupName
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env "%inc371.i" =
+      some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    show lookupName (cells
+      [("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1))
+          (BitVec.ofNat 64 c))),
+       ("%inc371.i", .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) "%inc371.i" =
+      some (.int 64 (BitVec.ofNat 64 (i + 1)))
+    simp only [cells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+  have hcond₁ : lookupName
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 c)) := by
+    show lookupName (cells
+      [("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1))
+          (BitVec.ofNat 64 c))),
+       ("%inc371.i", .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 c))
+    simp only [cells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hc
+  have hland : WalkLocal { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") := by
+    rw [WalkLocal.whitespaceLanded rfl]
+    exact Or.inl ⟨i + 1, c, by show c - (i + 1) ≤ C.inner; omega, hlt, hcw,
+      by show some s.pc = some "while.body370.i"; rw [hInv.pc_eq, hblock],
+      hinc₁, hcond₁⟩
+  obtain ⟨s₁, hl₁, hs₁, -, -⟩ :=
+    scanLatch_link (G := G) (C := C) (s := s) hInv hblock
+      (src := "while.body370.i") (inc := "%inc371.i") (phi := "%ee.0.i238")
+      (test := "%exitcond.not") (cond := "%cond350.i") (exit := "if.end372.i")
+      (land := "land.rhs.i")
+      (B := scanBlock "while.body370.i" "%inc371.i" "%ee.0.i238" "%exitcond.not"
+        "%cond350.i" "if.end372.i" "land.rhs.i")
+      scanWhitespace_find rfl rfl (by decide) (by decide) (by decide)
+      (by unfold walkCarried scanBlock; decide) hi hc hcw hlt
+      (by simp [WalkLocal]) hland
+  have hseg₁ : WalkSegment calls G C s { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") 1 := by
+    rw [hs₁] at hl₁
+    exact Seg.measure (Seg.tail hl₁ (Seg.nil hl₁.inv'))
+  have hinv₁ : WalkInv G { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") := by
+    rw [← hs₁]
+    exact hl₁.inv'
+  have hseg₂ : WalkSegment calls G { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i")
+      (scanCarryLatchOf (scanCarryLeafBlock46 { { C with block := "land.rhs.i" } with
+        block := "NodeBlock52" }))
+      (scanLeafBlock46Out
+        (scanNodeBlock50Out
+          (scanNodeBlock50In
+            (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+              (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) 4 :=
+    Seg.measure (walkWhiteScanVisitSeg4_46
+      (s := scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i")
+      hinv₁ rfl hpre hin hv hpos hqn halen hevlen hge13 hlt32 hne13 hsc)
+  -- the counter the landing writes, and the bound it leaves
+  have heq : e = BitVec.ofNat 64 (i + 1) :=
+    scanPhiIncrement hInv hblock hpre hin hv hinc₁
+  have henv : (scanLeafBlock46Out
+      (scanNodeBlock50Out
+        (scanNodeBlock50In
+          (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+            (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat))
+      (BitVec.ofNat 8 (scanB G e).toNat)).env =
+      ("%SwitchLeaf47", .int 1 (evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13))) ::
+      ("%Pivot51", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 32))) ::
+      ("%Pivot53", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13))) ::
+      ("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)) ::
+      ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat)) ::
+      ("%ee.0.i238", .int 64 e) ::
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env := by
+    simp only [scanLeafBlock46Out, scanNodeBlock50Out, scanNodeBlock50In, landRhsIOutAt,
+      stateAt, State.bind, State.bindAll, cells]
+  have hee : lookupName (scanLeafBlock46Out
+      (scanNodeBlock50Out
+        (scanNodeBlock50In
+          (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+            (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat))
+      (BitVec.ofNat 8 (scanB G e).toNat)).env
+      "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    rw [henv,
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+    rw [heq]
+  have hcond₂ : lookupName (scanLeafBlock46Out
+      (scanNodeBlock50Out
+        (scanNodeBlock50In
+          (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+            (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat))
+      (BitVec.ofNat 8 (scanB G e).toNat)).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
+    rw [henv,
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hcond₁
+  exact ⟨_, _, hseg₁.trans hseg₂, hseg₂.inv', rfl, hee, hcond₂,
+    by simp [stage2ByteAllowance]⟩
+
 /-! ### The counted traversal
 
 A round leaves the scan at its latch with the counter advanced, so the positions still to
@@ -1566,6 +1867,8 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatch_link
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanRound43
 #print axioms LeanLLVM.Refinement.WalkScope.scanPhiIncrement
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg4_46
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanRound46
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds43
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
