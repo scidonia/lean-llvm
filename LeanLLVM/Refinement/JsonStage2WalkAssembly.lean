@@ -225,7 +225,57 @@ be read off it; and a link's price is `walkMeasure`'s non-increase, not the cred
 the potential charges, so the chain says nothing about the price premise.  A
 dispatch proof is therefore a per-block run at the *values* the next block reads
 (the shape `WalkLink.addImmBr` and the named-environment statements in
-`JsonStage2WalkPure` already take), not a chain of the existing links. -/
+`JsonStage2WalkPure` already take), not a chain of the existing links.
+
+**The path, exactly.**  From `while.body.i` to the merge, over the body's own graph
+with the five scans' repeated visits removed (the ten blocks `walkScanBlocks`
+names), the longest path is twenty-two steps:
+
+  `while.body.i → NodeBlock21 → NodeBlock5 → NodeBlock → LeafBlock1 → sw.default.i
+  → cond.true345.i → cond.end349.i → land.lhs.true357.i → NodeBlock41 → NodeBlock39
+  → LeafBlock35 → if.end372.i → if.else387.i → NodeBlock62 → NodeBlock60 →
+  LeafBlock56 → if.then403.i → if.then413.i → if.then425.i → if.then447.i →
+  if.end473.i → cleanup478.i`
+
+`walkDispatchPrice` is `some 22` and `walkDispatch_le_entryAllowance` is that count
+against `stage2EntryAllowance`.  `WalkDispatch` is stated at the head
+(`NodeBlock21`, one step into the path), so the dispatch's own count is at most
+twenty-one and `p + 2` — the merge and the header's pass — is at most twenty-three,
+inside the `22 + 2` the credit's rows use.
+
+**What naming costs.**  Each block's step must be computed at the concrete
+environment the invariant fixes, so that `Ctrl.jump`'s injectivity names the
+successor: `step calls stage2Body s = .jump sN` from a `simp` at the block's
+`denoteCode` and terminator, then `WalkLink`'s existential target is `sN` by
+`Ctrl.jump.inj` — the pattern `walkBack_step_at` uses at the merge.  Four of the
+dispatch's twenty-one have a `_denote` at the block (`walkCondEnd349_denote`,
+`walkIfThen413I_denote`, `walkIfThen425_denote`, `walkIfThen447I_denote`; the merge
+has `cleanup478_denote`); the other seventeen — the switch's nodes and leaves, the
+scan exits, the write arm and the four call blocks — have a `WalkLink` each, with
+their `denoteCode` derived inside that link's own proof, so each needs a `_denote`
+at the environment the invariant fixes before its `WalkLink` can name its target.
+
+The two `phi` values come out of that: `%inc.i` is bound by the *header*
+(`while.body.i`, `%inc.i = %k.0.i249 + 1`), so at the merge it is `C.k + 1` and
+`WalkInv.blockIndex` names it; `%sp.i.1` is the merge's own selection and
+`WalkDispatch`'s `spOp`/`spv` name it at the predecessor.  The price premise is
+`p + 2 ≤ 32·Δk + 8·ΔA` with `Δk = 1` and `ΔA` the entry's span, which is
+`walkCredit_suffices` at the block count `p ≤ 22 + 6b` (`walkDispatchPrice`,
+`walkScanStepWidth_le_byteAllowance`).
+
+**The exit's tail.**  From `cleanup478.i` with the test false, the body reaches a
+return in three or four blocks and on every path:
+
+  `if.then485.i → if.end490.i → s2_walk.exit → if.end`
+  `if.then485.i → if.end490.i → if.then492.i → if.then → if.end`
+  `if.then485.i → if.then488.i → if.then → if.end`
+
+`walkExitBlock_denote`, `walkIfThen_step` and `walkIfEnd_step` are the last three
+blocks of those paths; the merge's *false* branch and `if.then485.i`,
+`if.end490.i`, `if.then492.i`, `if.then488.i` are what is not yet run.  `WalkExit`
+is stated at the head because the last entry's dispatch runs inside the exit
+branch's credit (`walkPotential G C + 27`), so it is the dispatch's run followed by
+this tail. -/
 
 /-! ### The revolution, composed
 
