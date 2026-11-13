@@ -1119,13 +1119,14 @@ visiting counter, advances it by one, and leaves the invariant and the bound. -/
 
 /-- **The whitespace scan's counted traversal.**  `4 · (c - 1 - i)` steps, inside
 `8 · (c - 1 - i)` — the unit the dispatch's credit consumes. -/
-theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat}
+theorem walkScanRounds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c k : Nat}
+    (hk : k ≤ stage2ByteAllowance)
     (hround : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
       C.block = "while.body370.i" →
       lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 p)) →
       lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       c < 2 ^ 64 → p + 1 < c →
-      ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 4 ∧
+      ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' k ∧
         WalkInv G C' s' ∧ C'.block = "while.body370.i" ∧
         lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
         lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
@@ -1135,17 +1136,17 @@ theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat
     (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hcw : c < 2 ^ 64) (hic : i < c) :
     ∃ (C' : WalkCarry G) (s' : State),
-      WalkSegment calls G C s C' s' (4 * (c - 1 - i)) ∧ WalkInv G C' s' ∧
+      WalkSegment calls G C s C' s' (k * (c - 1 - i)) ∧ WalkInv G C' s' ∧
       C'.block = "while.body370.i" ∧
       lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
-      4 * (c - 1 - i) ≤ 8 * (c - 1 - i) := by
+      k * (c - 1 - i) ≤ stage2ByteAllowance * (c - 1 - i) := by
   have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
       WalkInv G C s → C.block = "while.body370.i" →
       lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)) →
       lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       i < c →
       ∃ (C' : WalkCarry G) (s' : State),
-        WalkSegment calls G C s C' s' (4 * r) ∧ WalkInv G C' s' ∧
+        WalkSegment calls G C s C' s' (k * r) ∧ WalkInv G C' s' ∧
         C'.block = "while.body370.i" ∧
         lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) := by
     intro r
@@ -1168,7 +1169,31 @@ theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat
         have := hseg.trans hseg₂
         simpa only [Nat.mul_succ, Nat.add_comm] using this
   obtain ⟨C', s', hseg, hinv, hb, hi'⟩ := go (c - 1 - i) i C s rfl hInv hblock hi hc hic
-  exact ⟨C', s', hseg, hinv, hb, hi', by omega⟩
+  exact ⟨C', s', hseg, hinv, hb, hi',
+    Nat.mul_le_mul_right _ hk⟩
+
+/-- **The whitespace scan's traversal through `LeafBlock43`**: four steps a round. -/
+theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat}
+    (hround : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
+      C.block = "while.body370.i" →
+      lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      c < 2 ^ 64 → p + 1 < c →
+      ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 4 ∧
+        WalkInv G C' s' ∧ C'.block = "while.body370.i" ∧
+        lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
+        lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
+    (hi : lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hic : i < c) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkSegment calls G C s C' s' (4 * (c - 1 - i)) ∧ WalkInv G C' s' ∧
+      C'.block = "while.body370.i" ∧
+      lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+      4 * (c - 1 - i) ≤ 8 * (c - 1 - i) :=
+  walkScanRounds (k := 4) (by simp [stage2ByteAllowance]) hround hInv hblock hi hc hcw hic
 
 /-! ### The five inductions
 
@@ -1516,6 +1541,7 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg3_43
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatch_link
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanRound43
+#print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds43
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
