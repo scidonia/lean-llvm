@@ -4254,9 +4254,28 @@ head's exit at a lane inside the body, and `while.body`'s exit at the advanced
 counter, which is exactly the count — and it is the form `scanCounter_eq_takeWhile`
 consumes. -/
 
-/-- The lanes the scan has passed are the ones below the body's first position. -/
+/-- **A name a prefix does not bind reads through it.**  The scan prepends its own
+cells to the environment it was given and never rebinds a caller's register, so
+each of the caller's cells survives the loop — this is `lookupName_cons_ne` peeled
+once per prepended cell, and it is how a continuation reads the entry's registers
+at an exit state it did not build. -/
+theorem lookupName_append_of_forall {α : Type} {cells : List (String × α)}
+    {name : String} {v : α} (env : List (String × α))
+    (h : ∀ w, (name, w) ∈ cells → False) (h0 : lookupName env name = some v) :
+    lookupName (cells ++ env) name = some v := by
+  induction cells with
+  | nil => simpa using h0
+  | cons c rest ih =>
+      obtain ⟨k, w⟩ := c
+      rw [List.cons_append, lookupName_cons_ne w (rest ++ env)]
+      · exact ih (fun w' hw' => h w' (List.mem_cons_of_mem _ hw'))
+      · intro hk
+        exact h w (by rw [hk]; exact List.mem_cons_self ..)
+
+/-- The lanes the scan has passed are the ones below the body's first position,
+and the counter has not gone behind the cursor it started at. -/
 def s2StringBodyScanPrefix (ps : List Nat) (pos0 j0 c : Nat) : Prop :=
-  ∀ k, j0 ≤ k → k < c → ∃ q, ps[k]? = some q ∧ q < pos0
+  j0 ≤ c ∧ ∀ k, j0 ≤ k → k < c → ∃ q, ps[k]? = some q ∧ q < pos0
 
 /-- The scan's invariant with the visited prefix beside it. -/
 def s2StringBodyScanInvP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
@@ -4275,6 +4294,7 @@ def s2StringBodyScanExitWordP (mem0 : Mem) (xj j0 : Nat) (ps : List Nat)
 /-- At its own start the scan has passed nothing. -/
 theorem s2StringBodyScanPrefix_self (ps : List Nat) (pos0 j0 : Nat) :
     s2StringBodyScanPrefix ps pos0 j0 j0 := by
+  refine ⟨le_rfl, ?_⟩
   intro k _ hk
   exact absurd hk (by omega)
 
@@ -4292,11 +4312,11 @@ theorem s2StringBodyScanExitWordP.toExitWord {mem0 : Mem} {xj j0 : Nat} {ps : Li
 word carries is `scanCounter_eq_takeWhile`'s visited-prefix hypothesis, and the stop
 condition is its stopping hypothesis. -/
 theorem s2StringBodyScanExit_j1 {ps : List Nat} {pos0 N j0 c : Nat}
-    (hjc : j0 ≤ c) (hfix : s2StringBodyScanPrefix ps pos0 j0 c)
+    (hfix : s2StringBodyScanPrefix ps pos0 j0 c)
     (hstop : c = N ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q)
     (hlen : ps.length = N) :
     c = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < pos0))).length := by
-  refine scanCounter_eq_takeWhile ps pos0 j0 c hjc hfix ?_
+  refine scanCounter_eq_takeWhile ps pos0 j0 c hfix.1 hfix.2 ?_
   rcases hstop with hN | ⟨q, hq, hge⟩
   · exact Or.inl (List.getElem?_eq_none (by omega))
   · exact Or.inr ⟨q, hq, hge⟩
@@ -4373,9 +4393,10 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
           s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
         ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })
     have hfix' : s2StringBodyScanPrefix ps pos0 j0 (c + 1) := by
+      refine ⟨Nat.le_succ_of_le hfix.1, ?_⟩
       intro k hjk hkc
       rcases Nat.lt_or_ge k c with hltc | hgec
-      · exact hfix k hjk hltc
+      · exact hfix.2 k hjk hltc
       · have hk : k = c := by omega
         subst hk
         exact ⟨q, hq, hlt⟩
@@ -4445,9 +4466,10 @@ theorem s2StringBodyScan_step_loopP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
         s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
       ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "land.rhs", pre := some "while.body" })
   have hfix' : s2StringBodyScanPrefix ps pos0 j0 (c + 1) := by
+    refine ⟨Nat.le_succ_of_le hfix.1, ?_⟩
     intro k hjk hkc
     rcases Nat.lt_or_ge k c with hltc | hgec
-    · exact hfix k hjk hltc
+    · exact hfix.2 k hjk hltc
     · have hk : k = c := by omega
       subst hk
       exact ⟨q, hq, hltq⟩
