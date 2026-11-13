@@ -417,6 +417,13 @@ theorem walkAddIcmpBrStep {calls : Calls} (s : State) {b : Block} {reg off d : S
 Stated this way the class needs one shape per terminator rather than one per block,
 and a block's instance is its `phi` list, its predecessor and its edge.
 
+That is the *pure* form, and the class is not all of that form: a block that runs work
+after its `phi`s needs the run composed with the class that work belongs to
+(`land.rhs.i`, `while.body370.i` and `if.end245.i` are `phi` + `gep` + `load` + `br`).
+So nothing new is owed — `denoteCode_phiRun` is already the general statement, the
+selection and then the rest at the selected environment — and what such a block's
+instance costs is two rewrites rather than one: the run's, then its body's shape.
+
 The target is `s.bindAll vs` — the selection's cells — at the edge's destination, so
 an instance's facts are `PhiSelects`' own and nothing about the block's name. -/
 theorem walkPhiBrStep {calls : Calls} (s : State) {B : Block} {specs : List PhiSpec}
