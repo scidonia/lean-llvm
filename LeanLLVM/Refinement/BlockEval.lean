@@ -1019,3 +1019,28 @@ macro "block_eval" : tactic => `(tactic|
    block_close))
 
 end LeanLLVM.Refinement.BlockEval
+
+/-! ### The comparison instruction's value, at the model's form
+
+`evalInstr` on `icmp` binds `evalICmpNat p w x.toNat y.toNat`: the operands are read
+as values and compared at their `Nat` readings.  Every statement about a body's
+*test*, and every `denoteCode_icmp_*` step above, is written at `evalICmp p x y`, so
+a step reused against `denoteCode`'s own form needs this one rewrite to line up —
+`evalICmpNat` is `evalICmp` at `BitVec.ofNat`, and `BitVec.ofNat w x.toNat = x`. -/
+namespace LeanLLVM.Refinement
+
+open LeanLLVM
+
+/-- **The comparison instruction's value, at the model's form.**  `evalInstr`
+binds `evalICmpNat p w x.toNat y.toNat` — the operands are read as values and
+compared at their `Nat` readings — while every statement about a body's *test* is
+written at `evalICmp p x y`.  The two are the same function. -/
+theorem evalICmpNat_toNat (p : IPred) (w : Nat) (x y : BitVec w) :
+    evalICmpNat p w x.toNat y.toNat = evalICmp p x y := by
+  simp only [evalICmpNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- info: 'LeanLLVM.Refinement.evalICmpNat_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.evalICmpNat_toNat
+
+end LeanLLVM.Refinement
