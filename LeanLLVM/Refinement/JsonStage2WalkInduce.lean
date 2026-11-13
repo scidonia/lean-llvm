@@ -235,6 +235,20 @@ the pivot's and the leaf's.  The class facts are the caller's, exactly as the he
 chain's pivots take theirs; what the leaves need beyond them is the latch's own local
 fact, which is `WalkLocal.whitespace`'s at the counter the visit writes. -/
 
+/-- The carry the scan's second pivot leaves: `NodeBlock52`'s second arm. -/
+abbrev scanCarryNodeBlock50 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { C with block := "NodeBlock50" }
+
+/-- The carry `NodeBlock50` leaves at the class that takes its second arm.  A chain's
+carry is an index, so the composition names it rather than writing the nest: two nests
+that are equal are not thereby the same index. -/
+abbrev scanCarryLeafBlock48 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { scanCarryNodeBlock50 C with block := "LeafBlock48" }
+
+/-- The carry a leaf's back edge leaves: its own, at the latch. -/
+abbrev scanCarryLatchOf {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { C with block := "while.body370.i" }
+
 /-- The state `NodeBlock50` leaves at the class that takes its first arm. -/
 abbrev scanNodeBlock50Out (s : State) (x : BitVec 8) : State :=
   { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
@@ -262,7 +276,7 @@ theorem walkChain_extend_nodeBlock50 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock52")
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hge13 : evalICmp .slt x (BitVec.ofNat 8 13) = 0) :
-    WalkChain calls G C₀ s₀ { C with block := "NodeBlock50" }
+    WalkChain calls G C₀ s₀ (scanCarryNodeBlock50 C)
       { (s.bind "%Pivot53" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))) with
         pc := "NodeBlock50", pre := some s.pc } := by
   have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
@@ -305,7 +319,7 @@ theorem walkChain_extend_nodeBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock50")
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hge32 : evalICmp .slt x (BitVec.ofNat 8 32) = 0) :
-    WalkChain calls G C₀ s₀ { C with block := "LeafBlock48" } (scanNodeBlock48Out s x) := by
+    WalkChain calls G C₀ s₀ (scanCarryLeafBlock48 C) (scanNodeBlock48Out s x) := by
   have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
   have hres : (if evalICmp .slt x (BitVec.ofNat 8 32) = 1
       then "LeafBlock46" else "LeafBlock48") = "LeafBlock48" := if_neg (by rw [hge32]; decide)
@@ -353,7 +367,7 @@ theorem walkChain_extend_leafBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hne32 : evalICmp .eq x (BitVec.ofNat 8 32) = 0)
     (hsc : ScanCount (scanLeafBlock48Out s x) "%ee.0.i238" "%cond350.i" C.inner) :
-    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" } (scanLeafBlock48Out s x) := by
+    WalkChain calls G C₀ s₀ (scanCarryLatchOf C) (scanLeafBlock48Out s x) := by
   have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
   have hres : (if evalICmp .eq x (BitVec.ofNat 8 32) = 1
       then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
@@ -467,7 +481,7 @@ theorem walkWhiteScanBack46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     ScanCount.bind (d := "%Pivot53") (v := .int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))
       hsc (by decide) (by decide) (inner := C.inner)
   have h₂ := walkChain_extend_nodeBlock50Out (C₀ := C₀) (s₀ := s₀)
-    (C := { C with block := "NodeBlock50" }) h₁ rfl h36₁ hlt32
+    (C := scanCarryNodeBlock50 C) h₁ rfl h36₁ hlt32
   have h36₂ : lookupName (scanNodeBlock50Out (nodeBlock52OutAt s x) x).env "%36"
       = some (.int 8 x) := by
     show lookupName
