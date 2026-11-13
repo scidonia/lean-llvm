@@ -13,31 +13,30 @@ trace split into segments composed by `WalkSegment.trans`.
 elaborator's `walkBrStep` gives the successor outright, and naming it costs only
 `Ctrl.jump`'s injectivity.
 
-**What the rest of the path owes, block by block.**  Eight of the twenty-two blocks have no
-named step yet, and they are not alike:
+**What the rest of the path owes, block by block.**  The pattern is the layer's where a
+fact's producer is elsewhere (`walkIfThen_step`): the block's `denoteCode` is the caller's
+hypothesis and the step names the successor.  Which core a block needs depends on whether
+it touches memory, and on whether its call's result is a contract:
 
-* `cond.true345.i` — `gep %5, %inc.i`, load, `zext`, `br cond.end349.i`: a load-and-`zext`
-  step, the `WalkLink.cond_true345_i` sharpened the way `walkIfEnd74_at` was.
-* `if.end372.i` — a `phi` (eight predecessors), a store through `%end.i`, and the three
-  comparisons that choose which of the number's helpers runs.  Its `_denote` is the
-  `phi`-plus-`store` shape, so the step needs `walkPhiStore...`'s pattern.
-* `if.then413.i` — `phi` `%.sink372`, a store through `%kind404.i`, a call to
-  `s2_value_pos`, and the test on its result: the *call* is the premise, and its contract is
-  the helper's.
-* `if.then425.i` — a call to `od_scalar_value` and the test on its result.  This is the
-  number conversion's own entry, so its step is a helper-contract consumer.
-* `if.then447.i` — `s2_after_value`, then the scan's test `%ee.1.i ult %cond350.i`.
-* `if.end473.i` — `llvm.lifetime.end.p0` on `%t352.i`, then `br cleanup478.i`.
-* `cleanup478.i` itself — the two `phi`s `%sp.i.1` and `%k.2.i` over ten predecessors, whose
-  incoming operands are what `WalkDispatchOutcome.finish`'s `kOp`/`spOp` read.  Its
-  `cleanup478_denote` exists; the step's work is the `phi` selection at `if.end473.i`.
+| block | core | the hypothesis it owes |
+|---|---|---|
+| `cond.true345.i` | `pureCore` (no store) | the entry stream's lane read at `%inc.i` — `%5 + %inc.i`'s 32-bit word, which the geometry's `entries` gives at the index |
+| `if.end372.i` | store variant (`refusalStore`'s shape) | `denoteCode` **and** the frame for its store through `%end.i`; its `phi` over eight predecessors is `cleanup478_denote`'s sibling |
+| `if.then413.i` | store variant + call | `denoteCode`, which consumes `s2_value_pos`'s contract at this call site, plus the frame for the `%kind404.i` store |
+| `if.then425.i` | call consumer | **`od_scalar_value`'s contract at `(%c.i, %t352.i, %z)`**, then the frame for its writes |
+| `if.then447.i` | call consumer | **`s2_after_value`'s contract** at the two stack pointers, then the scan's test |
+| `if.end473.i` | `pureCore` (no store) | only `denoteCode`: `llvm.lifetime.end.p0` writes nothing, so `hmem` is `rfl` |
+| `cleanup478.i` | `pureCore` (no store) | the two `phi`s' selection at `pre = some "if.end473.i"` — `cleanup478_denote` is exactly that, and `%cmp.i`'s bit picks `while.body.i` or `if.then485.i` |
 
-Each of the five that carries a helper call sits on a contract rather than on a block: the
-number path is where the layer's `NumFast` and `s2_value_pos`/`od_scalar_value` obligations
-are consumed, and no step for them can be written before those contracts are stated at the
-call site.  That is why this file is sized rather than finished: the refusal side of
-`hlast` is closed by the witness modules, and `finish`'s remaining work is the number path's
-five contract blocks plus `cleanup478.i`'s two `phi`s. -/
+Three of the seven therefore fit `pureCore`'s no-store shape and are one `denoteCode` away;
+two need the store variant of the same pattern, where the frame is the extra obligation as it
+was for `if.end59.i`'s nesting check; and two are *call* consumers, whose step is honest only
+with the helper's contract named as its hypothesis — `s2_value_pos`, `od_scalar_value` and
+`s2_after_value`, in the handoff's own names.
+
+That is why this file is sized rather than finished: the refusal side of `hlast` is closed by
+the witness modules, and `finish`'s remaining work is these seven blocks, four of which are
+contract consumers rather than block arithmetic.-/
 
 namespace LeanLLVM.Refinement
 namespace WalkScope
