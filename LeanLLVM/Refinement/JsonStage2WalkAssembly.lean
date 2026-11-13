@@ -1673,6 +1673,31 @@ theorem walkEntryInv_at_regs {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s
   · rw [hk.1]; exact hInv.blockIndex
   · rw [hk.2]; exact hInv.depth_reg
 
+/-- **The successor's static registers.**  `walkStaticRegs`' twenty-four pairs split by the
+classification rule: twenty are cells of the entry's own layers with exactly the values the
+list names, and four are bound by no layer, so they pass through to the base environment.
+
+The values name the *stage's* addresses, while the layers are built from the entry's
+parameters, so the lemma takes the identifications as premises — at the seating they hold by
+construction because the environment *is* the staging's, and at the successor they are four
+equations.  **A value that names an address is only passed when the address is the one the
+consumer holds.** -/
+theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (env : Env)
+    (n b ep nep xp nxp dst v1 v2 ev sAddr zAddr cAddr c : Nat)
+    (hs : sAddr = stage.s) (hz : zAddr = stage.z) (hc : cAddr = stage.c)
+    (hcn : c = G.next0) (hb : b = G.b) (hep : ep = G.ep)
+    (hbase : lookupName env "%h1.i.i.i51" = some (.ptr (stage.z + 24)) ∧
+      lookupName env "%gap.i" = some (.ptr (stage.tok + 20)) ∧
+      lookupName env "%end.i" = some (.ptr (stage.tok + 8)) ∧
+      lookupName env "%kind404.i" = some (.ptr (stage.tok + 16))) :
+    WalkRegs G (walkCarryZero G stage)
+      (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
+        sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr cAddr) b nep) := by
+  obtain ⟨hb1, hb2, hb3, hb4⟩ := hbase
+  subst hs hz hc hcn hb hep
+  simp [WalkRegs, walkStaticRegs, walkCarryZero, walkEntryEnv4, walkEntryEnv3,
+    walkEntryEnv2, walkEntryEnv1, cells, lookupName_cons_ne, woff, hb1, hb2, hb3, hb4]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
