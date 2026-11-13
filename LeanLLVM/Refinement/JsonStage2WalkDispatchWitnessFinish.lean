@@ -709,18 +709,18 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     lookupName s.env "%z" = some (.ptr (TailCarry₂ C).stage.z) →
     stage2Calls stage2SubCalls "od_scalar_value"
       [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
-       .ptr (TailCarry₂ C).stage.z] r₁.mem s.next = some r₂ →
+       .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next = some r₂ →
     s2ScalarValueAppend r₁.mem r₂.mem (TailCarry₂ C).stage.z ev.encodedBytes →
     r₂.ret = .int 32 (BitVec.ofNat 32 1) →
     G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length < C.k →
     s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
-      r₂.mem s.next →
+      r₂.mem r₂.next →
     stage2Calls stage2SubCalls "s2_after_value"
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
-      r₂.mem s.next = some r₃ →
+      r₂.mem r₂.next = some r₃ →
     lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)) →
     lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)) →
     cd - ei ≤ C.inner → ei < cd → cd < 2 ^ 64 →
@@ -728,6 +728,7 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     ∃ (Cd : WalkCarry G) (sd : State) (n : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n ∧
       Cd = TailCarry₄ C ev ∧ Cd.block = "cleanup478.i" ∧ n = 4
+
 
 
 /-! ### The instrument -/
