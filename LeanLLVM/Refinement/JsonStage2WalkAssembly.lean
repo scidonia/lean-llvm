@@ -2029,6 +2029,42 @@ theorem walkEntryStaging_cells {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) 
       G.next0 G.n G.b G.ep G.nep S.s S.z G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev
   exact ⟨s', hstep, hpc, by rw [henv]; exact he, by rw [henv]; exact h4⟩
 
+/-- **The copy block's nine cells at the flush block's successor.**  The step binds
+`%off1.i.i117` in front, the four layers supply `%xj.i`, `%root_done.i`, `%alen` and `%len`,
+and the base environment supplies the rest.  These are `walkIfThenBlock_denote`'s lookup
+premises, so row 4 needs nothing else before its `denoteCode` run. -/
+theorem walkEntryEnv_copy (env : Env) (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev e : Nat) :
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%xj.i" = some (.ptr (c + 12)) ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%root_done.i" = some (.ptr (c + 8)) ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%alen" = some (.ptr (zAddr + woff 48)) ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%len" = some (.ptr (zAddr + woff 8)) ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%c.i" = lookupName env "%c.i" ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%ctype.i" = lookupName env "%ctype.i" ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%cst.i" = lookupName env "%cst.i" ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%ndst" = lookupName env "%ndst" ∧
+    lookupName (("%off1.i.i117", .ptr (e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%nev" = lookupName env "%nev" := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne, woff]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
