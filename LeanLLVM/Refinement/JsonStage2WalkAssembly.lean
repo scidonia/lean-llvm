@@ -1410,25 +1410,17 @@ shadows either name, so the invariant's two lookup fields pass through the chain
 unchanged.  This is the mechanical half of the entry's preservation: the other
 fields either carry (`hInv`'s own conclusions, which no step touches) or are the
 step's `pc`, and the memory fields are the block's own writes. -/
-theorem walkEntryEnv_k (env : Env) (c n b nep sAddr zAddr xp nxp dst v1 v2 ev :
-    Nat) :
+theorem walkEntryEnv_k (env : Env) (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
     lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
-        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n 0 sAddr c)
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
       b nep) "%k.0.i249" = lookupName env "%k.0.i249" ∧
     lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
-        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n 0 sAddr c)
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
       b nep) "%sp.i.0248" = lookupName env "%sp.i.0248" := by
   constructor <;>
     simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
       lookupName_cons_ne]
 
-/-- **The entry's preservation, assembled.**  The entry block advances the block to
-its zero arm and leaves every carried quantity alone: fifteen fields are the incoming
-invariant's own conclusions, `pc_eq` is the step's destination, and the two register
-lookups and the three memory fields are what the step establishes.  Those five are
-premises here for the same reason the other steps take them: a step lemma's caller has
-the memory facts (`G`'s separation and the record the block writes), and stating them
-as hypotheses keeps this lemma free of the block's layout. -/
 theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) {s' : State}
     (hpc : s'.pc = "if.then492.i")
@@ -1656,6 +1648,24 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
       owned := hown
       frame := hframe
       blockLocal := hlocal }
+
+/-- **The successor's two registers, from the incoming invariant.**  `walkEntryEnv_k` was
+stated over exactly the environment the entry's run leaves — `walkEntryEnv4`'s composition —
+so the block's counter and the stack pointer are the incoming `blockIndex` and `depth_reg`,
+carried through four layers.  Nothing is restated: the lookup lemma's term is the
+successor's own. -/
+theorem walkEntryInv_at_regs {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 s.env c n)
+        sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep)
+      "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)) ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 s.env c n)
+        sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep)
+      "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)) := by
+  have hk := walkEntryEnv_k (env := s.env) c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev
+  constructor
+  · rw [hk.1]; exact hInv.blockIndex
+  · rw [hk.2]; exact hInv.depth_reg
 
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
