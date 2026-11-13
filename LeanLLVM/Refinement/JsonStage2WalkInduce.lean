@@ -822,6 +822,113 @@ theorem link_price {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     ∃ (h : Seg calls G C s C' s' 1), 1 ≤ stage2ByteAllowance :=
   ⟨Seg.tail hl (Seg.nil hl.inv'), by decide⟩
 
+/-! ### The counted visit
+
+The three links of a visit, composed at the level `Seg` counts: the landing block's, the
+pivot's and the leaf's.  Each is taken from its own `_at` helper at the state the previous
+one leaves, so the count is the visible one — three — and `Seg.measure` turns it into a
+segment at three steps.  With `scanLatch_visit`'s one-step segment the round is four
+steps against the byte allowance. -/
+
+/-- **The visit through `LeafBlock43`, counted: three links.** -/
+theorem walkWhiteScanVisitSeg3_43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hlt13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    Seg calls G C s
+      (scanCarryLatchOf { { C with block := "NodeBlock52" } with block := "LeafBlock43" })
+      (leafBlock43OutAt
+        (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) 3 := by
+  -- the landing block's link
+  have hread : readBytes s.mem (G.b + (e.signExtend 64).toNat) 1
+      = some [G.bs.getD (e.signExtend 64).toNat 0] :=
+    walkDoc_byte G C s hInv halen hevlen hqn
+  obtain ⟨s₁, hl₁, hs₁⟩ :=
+    WalkLink.land_rhs_i_at G C s hInv hblock hpre hin hv hpos hread
+  have hstep₁ : s₁ = landRhsIOutAt G s e (scanB G e) := by
+    rw [hs₁]
+    rfl
+  rw [hstep₁] at hl₁
+  -- the pivot's link
+  have h36₁ : lookupName (landRhsIOutAt G s e (scanB G e)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName (cells
+      [("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)),
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+      ((s.bindAll [("%ee.0.i238", .int 64 e)]).env)) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    simp only [cells]
+    rw [lookupName_cons_self]
+  have h1 : evalOperand (landRhsIOutAt G s e (scanB G e)) (.reg "%36")
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := h36₁
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
+    WalkLink.NodeBlock52_at G { C with block := "NodeBlock52" } (landRhsIOutAt G s e (scanB G e))
+      hl₁.inv' rfl h1
+  have hstep₂ : s₂ = nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e))
+      (BitVec.ofNat 8 (scanB G e).toNat) := by
+    rw [hs₂]
+    simp only [nodeBlock52OutAt, if_pos hlt13]
+  rw [hstep₂] at hl₂
+  rw [show (if evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1
+      then "LeafBlock43" else "NodeBlock50") = "LeafBlock43" from if_pos hlt13] at hl₂
+  -- the leaf's link
+  have h36₂ : lookupName (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e))
+        (BitVec.ofNat 8 (scanB G e).toNat)).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    show lookupName
+      (("%Pivot53", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13))) ::
+       ("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)) ::
+       ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat)) ::
+       (s.bindAll [("%ee.0.i238", .int 64 e)]).env) "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat))
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+  have hsc₃ : ScanCount
+      (leafBlock43OutAt
+        (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) "%ee.0.i238" "%cond350.i" C.inner :=
+    ScanCount.stateAt_cells (inner := C.inner) hsc
+      [("%SwitchLeaf34", .int 1 (evalICmp .ule
+          (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
+       ("%.off", .int 8 (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247))]
+      (by
+        intro c hc
+        simp only [List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false] at hc
+        rcases hc with rfl | rfl <;> exact ⟨by simp, by simp⟩)
+  have hloc : WalkLocal { { C with block := "NodeBlock52" } with block := "while.body370.i" }
+      (leafBlock43OutAt
+        (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) := by
+    rw [WalkLocal.whitespace rfl]
+    exact hsc₃
+  obtain ⟨s₃, hl₃, hs₃⟩ :=
+    WalkLink.LeafBlock43_at G _
+      (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+      hl₂.inv' (by simp) h36₂ hloc
+  have hres : (if evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 1 then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
+    if_neg (by rw [hws]; decide)
+  have hstep₃ : s₃ = leafBlock43OutAt
+      (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+      (BitVec.ofNat 8 (scanB G e).toNat) := by
+    rw [hs₃]
+    simp only [leafBlock43OutAt, hres]
+  rw [hstep₃] at hl₃
+  rw [hres] at hl₃
+  exact Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv')))
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
@@ -1165,6 +1272,7 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.Seg.measure
 #print axioms LeanLLVM.Refinement.WalkScope.WalkChain.seg
 #print axioms LeanLLVM.Refinement.WalkScope.link_price
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg3_43
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
