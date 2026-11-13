@@ -9,7 +9,9 @@
 ; rewrites — its conversion slot becomes a pointer parameter, its messages
 ; become `null`, and its one llvm.umin.i64 unfolds — and num_fast_el1 takes
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
-; `ashr exact` loses its flag.  The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIR` pins the AST it parses to.
+; `ashr exact` loses its flag.  s2_string_body takes one: its refusal message
+; becomes `null`, because the call boundary has no global table to read the
+; symbol's address from.  The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIR` pins the AST it parses to.
 ;
 define i32 @num_fast_el1(ptr %p, i64 %n, ptr %out, ptr %err) {
 entry:

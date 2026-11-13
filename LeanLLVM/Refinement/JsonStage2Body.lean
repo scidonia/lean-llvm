@@ -2398,6 +2398,14 @@ fixture passes `null` for it. -/
 def stage2ErrSet (mem : Mem) (e off : Nat) : Mem :=
   writeBytes (writeBytes mem e (wordBytes 4 0)) (e + 8) (wordBytes 8 off)
 
+/-- **The refusal record at all three of `err_set`'s fields**: the `ok` word, the
+offset, and the message pointer.  The emitted refusal paths write the third at
+`e + 16` (the helpers' bodies' `%msg2.i.i` store), and this is the memory they
+leave; `stage2ErrSet` is its two-store prefix, kept for the callers that observe
+only those two. -/
+def stage2ErrSetMsg (mem : Mem) (e off msg : Nat) : Mem :=
+  writeBytes (stage2ErrSet mem e off) (e + 16) (wordBytes 8 msg)
+
 /-! #### The number token's lexical scan
 
 `num_fast_el1` is not a total conversion.  It scans the lexeme first and, at the
@@ -2673,7 +2681,7 @@ def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
         stage2ReadWord mem (t + 16) 4 with
   | some base, some e, some pos, some endp, some kind =>
       if kind = 0 then
-        some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSet mem e pos,
+        some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSetMsg mem e pos 0,
                next := next }
       else if kind = 7 then
         match readBytes mem (base + pos) (endp - pos) with
@@ -2692,11 +2700,11 @@ def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
               | _, _, _ => none
             else
               some { ret := .int 32 (BitVec.ofNat 32 0),
-                     mem := stage2ErrSet mem e (pos + (numLexScan lex).1), next := next }
+                     mem := stage2ErrSetMsg mem e (pos + (numLexScan lex).1) 0, next := next }
       else
         match stage2Literal kind with
         | none =>
-            some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSet mem e pos,
+            some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSetMsg mem e pos 0,
                    next := next }
         | some lit =>
             match readBytes mem (base + pos) lit.length with
@@ -2712,7 +2720,7 @@ def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
                       | none => none
                   | _, _, _ => none
                 else
-                  some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSet mem e pos,
+                  some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSetMsg mem e pos 0,
                          next := next }
             | none => none
   | _, _, _, _, _ => none
@@ -2754,7 +2762,7 @@ def stage2StringBody (mem : Mem) (c p len dst outn xp xj nxp : Nat) :
                         outn (wordBytes 8 out.length), 2)
             | .refused off k =>
                 match stage2ReadWord mem (c + 1112) 8 with
-                | some e => some (writeBytes (stage2ErrSet mem e (pos0 + off))
+                | some e => some (writeBytes (stage2ErrSetMsg mem e (pos0 + off) 0)
                                    xj (wordBytes 8 (j1 + k)), 0)
                 | none => none
   | _, _, _ => none

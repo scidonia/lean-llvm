@@ -242,7 +242,31 @@ nf_rewrites() { # <in> <out>
     fail "num_fast_el1's llvm.umin.i64 was not folded to its icmp/select pair"
 }
 
-capture() { # <symbol> <rewrite: none|od|nf|as-is>
+# `s2_string_body`'s one rewrite: its refusal message becomes `null`, as
+# `od_scalar_value`'s three already do.
+#
+# The message pointer is a diagnostic and not a parse result, and the call
+# boundary cannot carry it: `Calls` is
+# `String -> List Value -> Mem -> Nat -> Option CallOutcome`, with no global
+# table, and the extraction takes one `define` block, so the module's global
+# declarations are not in the text to read the symbol's address from.  The word
+# the refusal arm stores is therefore modelled as the zero word, and the text
+# says the same thing.
+#
+# The cost is evidence, not correctness: `stage2.helper.s2_string_body.ll` stops
+# being a fixture that carries an `Operand.global` through a run.  That operand's
+# body-level evidence is `tests/core-extension.lean`'s acceptance pins (the
+# store, load, `icmpPtr` and `gep` forms at a global symbol), and the ledger says
+# where it moved.
+msgs_rewrites() { # <in> <out>
+  sed -E -e 's/@\.str\.[0-9]+/null/g' "$1" > "$2"
+  grep -qE '@\.str\.' "$2" &&
+    fail "s2_string_body still names its refusal message symbol"
+  grep -qE '^  store ptr null, ptr %msg2\.i\.i$' "$2" ||
+    fail "s2_string_body's refusal message store was not rewritten to null"
+}
+
+capture() { # <symbol> <rewrite: none|od|nf|msgs|as-is>
   local sym=$1 mode=$2
   extract_define "$sym" "$work/$sym.raw.ll"
   strip_body "$work/$sym.raw.ll" "$work/$sym.stripped.ll"
@@ -250,6 +274,7 @@ capture() { # <symbol> <rewrite: none|od|nf|as-is>
     none) cp "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     od) od_rewrites "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     nf) nf_rewrites "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
+    msgs) msgs_rewrites "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     as-is) cp "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     *) fail "unknown capture mode $mode" ;;
   esac
@@ -258,7 +283,7 @@ capture() { # <symbol> <rewrite: none|od|nf|as-is>
 capture s2_init none
 capture s2_value_pos none
 capture s2_after_value none
-capture s2_string_body as-is
+capture s2_string_body msgs
 capture od_scalar_value od
 capture num_fast_el1 nf
 
@@ -343,7 +368,9 @@ banner() { # <symbol> <what>
 ; rewrites — its conversion slot becomes a pointer parameter, its messages
 ; become \`null\`, and its one llvm.umin.i64 unfolds — and num_fast_el1 takes
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
-; \`ashr exact\` loses its flag.  $2
+; \`ashr exact\` loses its flag.  s2_string_body takes one: its refusal message
+; becomes \`null\`, because the call boundary has no global table to read the
+; symbol's address from.  $2
 ;
 EOF
 }
@@ -352,7 +379,7 @@ for sym in s2_init s2_value_pos s2_after_value s2_string_body od_scalar_value nu
   out=$here/stage2.helper.$sym.ll
   case "$sym" in
     s2_string_body)
-      note='The body is a program of this fragment: its `ptrtoint` pair and its `@.str.14` symbol operand are both modelled, and `JsonStage2HelperIR` pins the AST it parses to.' ;;
+      note='The body is a program of this fragment: its `ptrtoint` pair is modelled, and `JsonStage2HelperIR` pins the AST it parses to.  Its refusal message is `null` here — the call boundary carries no global table — so this fixture is not where `Operand.global`'"'"'s body-level evidence lives; that evidence is tests/core-extension.lean'"'"'s acceptance pins.' ;;
     od_scalar_value)
       note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is `stage2.helper.num_fast_el1.ll`.' ;;
     num_fast_el1)
@@ -380,7 +407,7 @@ done
     case "$sym" in
       s2_string_body)
         verdict=expressible
-        basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean" ;;
+        basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean.  One strip rewrite: the refusal message becomes null, because Calls has no global table and the extracted block carries no global declaration; Operand.global's body-level evidence is tests/core-extension.lean's pins, not this fixture" ;;
       num_fast_el1)
         verdict=expressible
         basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)); parses after two strip rewrites — the one llvm.umin.i64 folds to its icmp/select pair (the fragment's umin is i32 at two registers), and ashr exact loses the flag, so the pinned body is the flag-erased form and 'the bits shifted out are zero' is a staging fact the text does not carry — and with %struct.Stk's 1568-byte extent supplied as the Layout the pin states; the decimal literals parse" ;;

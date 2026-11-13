@@ -446,7 +446,7 @@ def s2StringBodyFoot (args : List Value) (mem : Mem) (_next : Nat) :
   | [.ptr c, .ptr _, .int 64 len, .ptr dst, .ptr outn, .ptr _, .ptr xj, .int 64 _] =>
       [(xj, 8), (outn, 8), (dst, len.toNat)] ++
         (match stage2ReadWord mem (c + 1112) 8 with
-         | some e => [(e, 16)]
+         | some e => [(e, stage2ErrorExtent)]
          | none => [])
   | _ => []
 
@@ -500,7 +500,7 @@ def s2ScalarValueFoot (args : List Value) (mem : Mem) (_next : Nat) :
          | some buf, some len => [(buf + len, stage2RecordBytes)]
          | _, _ => []) ++
         (match stage2ReadWord mem (c + 1112) 8 with
-         | some e => [(e, 16)]
+         | some e => [(e, stage2ErrorExtent)]
          | none => [])
   | _ => []
 
@@ -553,6 +553,19 @@ theorem stage2ErrSet_frame {mem : Mem} {R : List (Nat × Nat)} {e off : Nat}
     (by simp [wordBytes, natToBytes_length])).write_le (a := e + 8) (w := 8)
     (by obtain ⟨q, hq, lo, hi⟩ := hin; exact ⟨q, hq, by omega, by omega⟩)
     (by simp [wordBytes, natToBytes_length]))
+
+/-- **The refusal record's three stores, inside one region.**  `err_set` writes
+`ok`, `off` and the message pointer, and the two helpers' refusal paths emit all
+three; the region is the record's staged extent, twenty-four bytes, which is what
+the walk's staged-writes list already claims. -/
+theorem stage2ErrSetMsg_frame {mem : Mem} {R : List (Nat × Nat)} {e off msg : Nat}
+    (hin : ∃ q ∈ R, q.1 ≤ e ∧ e + 24 ≤ q.1 + q.2) :
+    UnchangedOutside mem (stage2ErrSetMsg mem e off msg) R := by
+  unfold stage2ErrSetMsg
+  exact (stage2ErrSet_frame (by obtain ⟨q, hq, lo, hi⟩ := hin; exact ⟨q, hq, lo, by omega⟩)).write_le
+    (a := e + 16) (w := 8)
+    (by obtain ⟨q, hq, lo, hi⟩ := hin; exact ⟨q, hq, by omega, by omega⟩)
+    (by simp [wordBytes, natToBytes_length])
 
 /-- **The literal bytes a token kind stands for are at most five.** -/
 theorem stage2Literal_length {kind : Nat} {lit : List UInt8}
@@ -884,7 +897,7 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
       rw [hmem]
       have hfoot : s2StringBodyFoot [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn,
           .ptr xp, .ptr xj, .int 64 nxp] mem next =
-          ([(xj, 8), (outn, 8), (dst, len.toNat)] ++ [(e, 16)]) := by
+          ([(xj, 8), (outn, 8), (dst, len.toNat)] ++ [(e, stage2ErrorExtent)]) := by
         simp only [s2StringBodyFoot, he]
       rw [hfoot]
       unfold stage2StringBody at hm
@@ -923,8 +936,9 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
             have hinj := Option.some.inj hm
             simp only [Prod.mk.injEq] at hinj
             obtain ⟨rfl, rfl⟩ := hinj
-            exact (stage2ErrSet_frame (R := [(xj, 8), (outn, 8), (dst, len.toNat)] ++
-              [(e, 16)]) ⟨(e, 16), by simp, le_rfl, le_rfl⟩).write_le (a := xj) (w := 8)
+            exact (stage2ErrSetMsg_frame
+              (R := [(xj, 8), (outn, 8), (dst, len.toNat)] ++ [(e, stage2ErrorExtent)])
+              ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩).write_le (a := xj) (w := 8)
               ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
               (by simp [wordBytes, natToBytes_length])
 
@@ -1095,7 +1109,7 @@ theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : Ca
   obtain ⟨c, t, o, rfl, base, e, pos, endp, kind, buf, len, cap, win, hbase, he, hpos,
     hend, hkind, hbuf, hlen, hcap, hroom, hwin⟩ := hpre
   have hfoot : s2ScalarValueFoot [.ptr c, .ptr t, .ptr o] mem next =
-      ([(o + 8, 8), (buf + len, stage2RecordBytes)] ++ [(e, 16)]) := by
+      ([(o + 8, 8), (buf + len, stage2RecordBytes)] ++ [(e, stage2ErrorExtent)]) := by
     simp only [s2ScalarValueFoot, hbuf, hlen, he, List.singleton_append]
   rw [hfoot]
   rw [stage2Calls_od_scalar_value, stage2ScalarValueCall] at h
@@ -1106,7 +1120,7 @@ theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : Ca
   by_cases h0 : kind = 0
   · simp only [h0, ↓reduceIte] at h
     exact ⟨_, 0, (Option.some.inj h).symm,
-      stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+      stage2ErrSetMsg_frame ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩⟩
   · simp only [h0, ↓reduceIte] at h
     by_cases h7 : kind = 7
     · simp only [h7, ↓reduceIte] at h
@@ -1134,13 +1148,13 @@ theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : Ca
             (by simp [wordBytes, natToBytes_length])⟩
       · simp only [hscan] at h
         exact ⟨_, 0, (Option.some.inj h).symm,
-          stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+          stage2ErrSetMsg_frame ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩⟩
     · simp only [h7, ↓reduceIte] at h
       cases hlit : stage2Literal kind with
       | none =>
           rw [hlit] at h
           exact ⟨_, 0, (Option.some.inj h).symm,
-            stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+            stage2ErrSetMsg_frame ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩⟩
       | some lit =>
           have hlit5 := stage2Literal_length hlit
           have hgot : readBytes mem (base + pos) lit.length =
@@ -1166,7 +1180,7 @@ theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : Ca
                 (a := o + 8) (w := 8) ⟨(o + 8, 8), by simp, le_rfl, le_rfl⟩
                 (by simp [wordBytes, natToBytes_length])⟩
           · exact ⟨_, 0, (Option.some.inj h).symm,
-              stage2ErrSet_frame ⟨(e, 16), by simp, le_rfl, le_rfl⟩⟩
+              stage2ErrSetMsg_frame ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩⟩
 
 /-- **Which record an emitting arm appended.**  `ok = 1` is exactly the two
 appending arms — the number scan's acceptance and a literal's match — so the

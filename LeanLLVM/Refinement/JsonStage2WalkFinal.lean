@@ -15,8 +15,9 @@ carried byte; its carry is the source's.
 The log's buffer word at `%z` is the caller's fact (`hzread`), as it is for
 `if.then328.i`: the invariant binds the four fields from `%z + 8` on, and the
 emitted body stored `%ev` at `%z` in `entry`.  The refusal's address is the staged
-one (`%c.i + 1112`'s pointer), so the link takes the model's `stage2ErrSet` shape
-at `C.stage.e`.
+one (`%c.i + 1112`'s pointer), so the link takes the model's `stage2ErrSetMsg`
+shape at `C.stage.e` — all three of `err_set`'s fields, the message word
+included.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkCall
 
@@ -359,7 +360,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     (ho : lookupName s.env "%z" = some (.ptr C.stage.z))
     (hcall : stage2Calls stage2SubCalls "od_scalar_value"
       [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z] s.mem s.next = some r)
-    (hrefuse : r.mem = stage2ErrSet s.mem (C.stage.e) pos)
+    (hrefuse : r.mem = stage2ErrSetMsg s.mem (C.stage.e) pos 0)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 0)) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
       { C with block := "if.then432.i" } s' := by
@@ -418,7 +419,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     · left
       rw [Nat.add_assoc]
       exact Nat.le_trans (Nat.add_le_add_left hoff C.stage.z) h
-  have herr8Log : ∀ off N, off + N ≤ stage2LogExtent →
+  have herr8Log2 : ∀ off N, off + N ≤ stage2LogExtent →
       readBytes (writeBytes (writeBytes s.mem C.stage.e (wordBytes 4 0)) (C.stage.e + 8)
         (wordBytes 8 pos)) (C.stage.z + off) N =
       readBytes s.mem (C.stage.z + off) N := by
@@ -432,7 +433,26 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         · left; simp only [stage2ErrorExtent]; exact h
         · right; simp only [stage2LogExtent]; exact h) hoff]
     exact herr4Log off N hoff
-  have herr8Ev : readBytes (writeBytes (writeBytes s.mem C.stage.e (wordBytes 4 0)) (C.stage.e + 8)
+  -- the same read across the record's third store, which is outside the log
+  have herr8Log : ∀ off N, off + N ≤ stage2LogExtent →
+      readBytes (writeBytes (writeBytes (writeBytes s.mem C.stage.e (wordBytes 4 0))
+        (C.stage.e + 8) (wordBytes 8 pos)) (C.stage.e + 16) (wordBytes 8 0))
+        (C.stage.z + off) N =
+      readBytes s.mem (C.stage.z + off) N := by
+    intro off N hoff
+    rw [walkReadBytes_writeBytes_outside (m := writeBytes (writeBytes s.mem C.stage.e
+        (wordBytes 4 0)) (C.stage.e + 8) (wordBytes 8 pos))
+      (start := C.stage.e + 16) (v := wordBytes 8 0) (addr := C.stage.z + off) (n := N) ?_]
+    · exact herr8Log2 off N hoff
+    · have hw : (wordBytes 8 0).length = 8 := by simp [wordBytes, natToBytes_length]
+      rw [hw]
+      rcases hez with h | h
+      · right; omega
+      · left
+        have hoff' := hoff
+        simp only [stage2LogExtent] at hoff'
+        omega
+  have herr8Ev2 : readBytes (writeBytes (writeBytes s.mem C.stage.e (wordBytes 4 0)) (C.stage.e + 8)
         (wordBytes 8 pos)) (G.ev + G.nev0)
         (C.events.map EventRecord.encodedBytes).flatten.length =
       readBytes s.mem (G.ev + G.nev0)
@@ -454,6 +474,23 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     · left
       rw [Nat.add_assoc]
       exact Nat.le_trans (Nat.add_le_add_left hNev G.ev) h
+  -- and across the record's third store
+  have herr8Ev : readBytes (writeBytes (writeBytes (writeBytes s.mem C.stage.e (wordBytes 4 0))
+        (C.stage.e + 8) (wordBytes 8 pos)) (C.stage.e + 16) (wordBytes 8 0))
+        (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length =
+      readBytes s.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length := by
+    rw [walkReadBytes_writeBytes_outside (m := writeBytes (writeBytes s.mem C.stage.e
+        (wordBytes 4 0)) (C.stage.e + 8) (wordBytes 8 pos))
+      (start := C.stage.e + 16) (v := wordBytes 8 0) (addr := G.ev + G.nev0)
+      (n := (C.events.map EventRecord.encodedBytes).flatten.length) ?_]
+    · exact herr8Ev2
+    · have hw : (wordBytes 8 0).length = 8 := by simp [wordBytes, natToBytes_length]
+      rw [hw]
+      rcases heev with h | h
+      · right; omega
+      · left; omega
   refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
   refine
     { pc_eq := rfl
@@ -479,31 +516,37 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       tyBytes := by
         dsimp only [s', s₁, stateAt]
         rw [hrefuse]
-        unfold stage2ErrSet
+        unfold stage2ErrSetMsg stage2ErrSet
         have h1 : (wordBytes 4 0).length = 4 := by simp [wordBytes, natToBytes_length]
         have h2 : (wordBytes 8 pos).length = 8 := by simp [wordBytes, natToBytes_length]
         have hx : stage2ErrorExtent = 24 := rfl
-        refine (hInv.tyBytes.write_outside ?_).write_outside ?_
+        refine ((hInv.tyBytes.write_outside ?_).write_outside ?_).write_outside ?_
         · rcases (stack_e_sep hInv).1 with h | h
           · exact Or.inr (by omega)
           · exact Or.inl (by omega)
         · rcases (stack_e_sep hInv).1 with h | h
           · exact Or.inr (by omega)
           · exact Or.inl (by omega)
+        · rcases (stack_e_sep hInv).1 with h | h
+          · exact Or.inr (by omega)
+          · exact Or.inl (by simp only [wordBytes, natToBytes_length]; omega)
       stBytes := by
         dsimp only [s', s₁, stateAt]
         rw [hrefuse]
-        unfold stage2ErrSet
+        unfold stage2ErrSetMsg stage2ErrSet
         have h1 : (wordBytes 4 0).length = 4 := by simp [wordBytes, natToBytes_length]
         have h2 : (wordBytes 8 pos).length = 8 := by simp [wordBytes, natToBytes_length]
         have hx : stage2ErrorExtent = 24 := rfl
-        refine (hInv.stBytes.write_outside ?_).write_outside ?_
+        refine ((hInv.stBytes.write_outside ?_).write_outside ?_).write_outside ?_
         · rcases (stack_e_sep hInv).2 with h | h
           · exact Or.inr (by omega)
           · exact Or.inl (by omega)
         · rcases (stack_e_sep hInv).2 with h | h
           · exact Or.inr (by omega)
           · exact Or.inl (by omega)
+        · rcases (stack_e_sep hInv).2 with h | h
+          · exact Or.inr (by omega)
+          · exact Or.inl (by simp only [wordBytes, natToBytes_length]; omega)
       ptrs := ?_
       regs := ?_
       iter := ?_
@@ -523,7 +566,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
   · show readBytes r.mem (G.ev + G.nev0)
       (C.events.map EventRecord.encodedBytes).flatten.length =
       some (C.events.map EventRecord.encodedBytes).flatten
-    rw [hrefuse, stage2ErrSet]
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Ev]
     exact hInv.evBytes
   · rw [show s'.env = s₁.env from rfl]
@@ -538,44 +581,48 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
   · rw [show s'.env = s₁.env from rfl]
     exact WalkIter.of_run hInv.iter (by unfold walkCarried; decide) hden
   · show readBytes r.mem (C.stage.z + 32) 4 = some (natToBytes 0 4)
-    rw [hrefuse, stage2ErrSet]
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 32 4 (by decide)]
     exact hInv.log_hash
   · show readBytes r.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen)
-    rw [hrefuse, stage2ErrSet]
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 8 8 (by decide)]
     exact hInv.log_len
   · show readBytes r.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
-    rw [hrefuse, stage2ErrSet]
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 16 8 (by decide)]
     exact hInv.log_cap
   · obtain ⟨a, ha, hr⟩ := hInv.log_alen
     refine ⟨a, ha, ?_⟩
     show readBytes r.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
-    rw [hrefuse, stage2ErrSet]
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 48 8 (by decide)]
     exact hr
   · show readBytes r.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
-    rw [hrefuse, stage2ErrSet]
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 56 8 (by decide)]
     exact hInv.log_acap
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     rw [hrefuse]
-    unfold stage2ErrSet
-    exact walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+    unfold stage2ErrSetMsg stage2ErrSet
+    exact walkStaged_write rfl (walkStaged_write rfl (walkStaged_write rfl hInv.owned))
   · show UnchangedOutside m0 r.mem (walkWide G C)
     rw [hrefuse]
-    unfold stage2ErrSet
+    unfold stage2ErrSetMsg stage2ErrSet
     have hregion : (C.stage.e, stage2ErrorExtent) ∈ walkWide G C := by
       simp [walkWide, walkPresent, stage2ReportScratch, stage2StagedWrites]
-    refine UnchangedOutside.write_le (a := C.stage.e + 8) (w := 8)
-      (UnchangedOutside.write_le (a := C.stage.e) (w := 4) hInv.frame
-        ⟨(C.stage.e, stage2ErrorExtent), hregion, by omega,
+    refine UnchangedOutside.write_le (a := C.stage.e + 16) (w := 8)
+      (UnchangedOutside.write_le (a := C.stage.e + 8) (w := 8)
+        (UnchangedOutside.write_le (a := C.stage.e) (w := 4) hInv.frame
+          ⟨(C.stage.e, stage2ErrorExtent), hregion, by omega,
+            by simp only [stage2ErrorExtent]; omega⟩
+          (bs := wordBytes 4 0) (by simp [wordBytes, natToBytes_length]))
+        ⟨(C.stage.e, stage2ErrorExtent), hregion, by simp only [stage2ErrorExtent]; omega,
           by simp only [stage2ErrorExtent]; omega⟩
-        (bs := wordBytes 4 0) (by simp [wordBytes, natToBytes_length]))
+        (bs := wordBytes 8 pos) (by simp [wordBytes, natToBytes_length]))
       ⟨(C.stage.e, stage2ErrorExtent), hregion, by simp only [stage2ErrorExtent]; omega,
         by simp only [stage2ErrorExtent]; omega⟩
-      (bs := wordBytes 8 pos) (by simp [wordBytes, natToBytes_length])
+      (bs := wordBytes 8 0) (by simp [wordBytes, natToBytes_length])
 
 
 /-- A byte at an inside index of the state stack is separated from the log. -/

@@ -9,7 +9,9 @@
 ; rewrites — its conversion slot becomes a pointer parameter, its messages
 ; become `null`, and its one llvm.umin.i64 unfolds — and num_fast_el1 takes
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
-; `ashr exact` loses its flag.  The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is `stage2.helper.num_fast_el1.ll`.
+; `ashr exact` loses its flag.  s2_string_body takes one: its refusal message
+; becomes `null`, because the call boundary has no global table to read the
+; symbol's address from.  The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is `stage2.helper.num_fast_el1.ll`.
 ;
 define i32 @od_scalar_value(ptr %c, ptr %t, ptr %o, ptr %d) {
 entry:

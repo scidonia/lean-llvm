@@ -60,9 +60,18 @@ open, and one is still outside it:
 * `s2_string_body` carries `ptrtoint`, which the fragment models as
   `Instr.ptrtoint` at the model's 64-bit pointer width; the step is exact below
   `2 ^ 64` and `ub` at or above it, so a use owes the staging's address bound.
-  The body's other construct is its global-symbol operand `@.str.14`, which is an
-  `Operand.global` read from the loader's assignment at the run's staging.  The
-  body parses; its contents are pinned below.
+  The body's other raw construct is its refusal message's symbol operand, and the
+  capture rewrites it to `null` — the one place the fixtures take a rewrite for a
+  reason other than a missing instruction.  `Calls` is
+  `String -> List Value -> Mem -> Nat -> Option CallOutcome`, with no global
+  table, and the extracted block carries no global declaration, so the symbol's
+  address is not reachable from the call boundary at all; the message pointer is
+  a diagnostic rather than a parse result, and the word the refusal arm stores is
+  modelled as the zero word the rewritten text stores.  The cost is evidence:
+  this fixture is no longer where `Operand.global` is run, and that operand's
+  body-level evidence is `tests/core-extension.lean`'s acceptance pins (a store,
+  a load, an `icmpPtr` and a `gep` at a global symbol).  The body parses; its
+  contents are pinned below.
 * `num_fast_el1` carries `alloca [768 x i8]`, `alloca %struct.Stk` and the
   binary64 chain (`uitofp`, `fmul`, `fdiv`, `fneg`, `select double`), all of
   which the fragment models.  Three surfaces kept the raw text out of the
@@ -86,18 +95,19 @@ open, and one is still outside it:
   with the exponent's sign written and a sign in front of the mantissa, and the
   reader takes both (`tests/core-extension.lean` pins the form).
 
-**One finding the body text carries.**  Where the model refuses, it writes the
-error record's `ok` word and its offset (`stage2ErrSet`), and the helpers'
-footprints name that record as a region sixteen bytes wide.  The emitted refusal
-path also stores the record's `message` pointer at offset sixteen — pinned below
-for `od_scalar_value` by `storesNullAt` — so the body writes at `e + 16`, which
-the region `(e, 16)` does not cover.  A body-level `UnchangedOutside` at that
-region would require the byte at `e + 16` unchanged, and the store does not leave
-it so (`errorRegion_message_outside` is the arithmetic).  This module records the
-gap and does not widen the contract: the region lists are `JsonStage2Helpers`'
-and stay as they are.  What it means for a caller is that the error record's
-staged extent (`stage2ErrorExtent`, 24 bytes) is the region a walk invariant must
-claim, which is what the walk's own staged-writes list already does.
+**The refusal record's third field, and the gap that was.**  The source's
+`err_set` (`kernel/json/stage2.c:69-73`) writes three fields — `ok`, `off` and
+`msg` — and the emitted refusal paths write all three.  The model used to write
+two, and the helpers' footprints named the record sixteen bytes wide, so the
+body's store at `e + 16` was outside both the model and the region.  That is
+closed on both sides: `stage2ErrSetMsg` is the three-field record the refusal
+arms leave, its frame is
+`stage2ErrSetMsg_frame` over the record's staged extent
+(`stage2ErrorExtent`, 24 bytes — the region the walk's own staged-writes list
+always claimed), and the footprints name that extent.
+`errorRegion_message_outside` remains below as the arithmetic of *why* sixteen
+was wrong, and `stage2ErrSet` remains as the two-field prefix for the callers
+that observe only those two writes.
 -/
 import LeanLLVM.Parser
 import LeanLLVM.Semantics
@@ -489,6 +499,14 @@ neither. -/
 -- does not find it where the fragment does have terms.
 #guard hasSubstr s2StringBodySrc "ptrtoint ptr"
 #guard !hasSubstr s2InitSrc "ptrtoint ptr"
+-- The capture's message rewrite, as the store it produces, and the control that
+-- the marker does not fire on a body with no refusal record.
+#guard (match firstFunction s2StringBodySrc with
+  | some f => storesNullAt f "%msg2.i.i"
+  | none => false)
+#guard (match firstFunction s2InitSrc with
+  | some f => !storesNullAt f "%msg2.i.i"
+  | none => false)
 
 /-! ### The call environment and the staged state
 

@@ -9,7 +9,9 @@
 ; rewrites — its conversion slot becomes a pointer parameter, its messages
 ; become `null`, and its one llvm.umin.i64 unfolds — and num_fast_el1 takes
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
-; `ashr exact` loses its flag.  The body is a program of this fragment: its `ptrtoint` pair and its `@.str.14` symbol operand are both modelled, and `JsonStage2HelperIR` pins the AST it parses to.
+; `ashr exact` loses its flag.  s2_string_body takes one: its refusal message
+; becomes `null`, because the call boundary has no global table to read the
+; symbol's address from.  The body is a program of this fragment: its `ptrtoint` pair is modelled, and `JsonStage2HelperIR` pins the AST it parses to.  Its refusal message is `null` here — the call boundary carries no global table — so this fixture is not where `Operand.global`'s body-level evidence lives; that evidence is tests/core-extension.lean's acceptance pins.
 ;
 define i32 @s2_string_body(ptr %c, ptr %p, i64 %len, ptr %dst, ptr %outn, ptr %xp, ptr %xj, i64 %nxp) {
 entry:
@@ -61,7 +63,7 @@ if.then11:                                        ; preds = %if.end
   %off1.i.i = getelementptr inbounds i8, ptr %c.val, i64 8
   store i64 %add12, ptr %off1.i.i
   %msg2.i.i = getelementptr inbounds i8, ptr %c.val, i64 16
-  store ptr @.str.14, ptr %msg2.i.i
+  store ptr null, ptr %msg2.i.i
   br label %cleanup
 
 if.end14:                                         ; preds = %if.end
