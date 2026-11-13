@@ -1,5 +1,6 @@
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessState
 import LeanLLVM.Refinement.JsonStage2WalkFinal
+import LeanLLVM.Refinement.JsonStage2WalkInduce
 
 /-! # The `finish` alternative
 
