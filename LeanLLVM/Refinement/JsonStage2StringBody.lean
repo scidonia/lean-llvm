@@ -3815,6 +3815,24 @@ theorem s2StringBodyMemory_refused (mem : Mem) {ei xj e : Nat}
     xj Wj (e + (16#64).toNat) R2 (exists_readBytes_of_ne hxj_e01)
     (exists_readBytes_of_ne he2_e01) h7]
 
+/- **What the contract still needs, and it is not assembly.**  The plan was that
+`s2StringBodyBody_contract` would assemble seat, run, split and joins — "no crossings,
+so the smallest unit".  A check of this cone says otherwise: **the scan's
+characterization is missing**.  The model's `j1` is
+`j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length`, while the loop's exit
+word gives a counter `c` with `s2StringBodyScanAtBound`'s disjunction at it.  Nothing
+in this module, `JsonStage2Sc*` or `JsonScan*` proves
+
+    (∀ k, j0 ≤ k → k < c → ∃ q, ps[k]? = some q ∧ q < pos0) →
+    (ps[c]? = none ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) →
+    c = j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length
+
+which is the bridge from the invariant's counter to the model's `j1` — and without it
+the post's `m` (which mentions `j1`) cannot be reached from the run's exit word.  So
+the contract's remaining content is **one `takeWhile`-length development**, and the
+assembly is the small part after it.  Recording it here because the planning estimate
+was wrong in the optimistic direction, and the mistake was mine. -/
+
 /-- The cursor word the scan leaves is the model's `j1`: the exit word's counter,
 written at the caller's cursor, is the memory the model's `j1` names.  This is where
 `ExitWord`'s `∃ c` is consumed — at the memory term, not at the exits. -/
