@@ -3518,10 +3518,18 @@ Its proof is an induction over the memory showing that an in-place write changes
 cell's *position*, which is what the two preservations above supply one byte at a
 time.
 
-**The absorption, reduced.**  Pushing the two failure routes through — commute
-first needs `b` present, which the chain does not have; absorb adjacent first
-leaves the intervening write in the way — leaves two facts, and neither is a
-commutation:
+**The absorption is an artefact of the direction, and it is not needed.**  The
+chain above commutes *leftwards* — the later same-region write is moved towards the
+earlier one — and once the two `ei` writes are adjacent, `writeBytes_writeBytes_same`
+absorbs the clear with no other hypothesis (`s2StringBodySlot_absorb` is that
+instance).  So the join is three commutations and one same-region absorption, all of
+which are already proved, and the intervening writes never block anything: the
+commutation's `b`-present hypothesis is met by the *region the write is crossing*,
+not by one it would have to cross first.  What that leaves unreachable is nothing —
+`writeBytes_absorb_one` was the right lemma for the *other* direction (carrying an
+earlier write forwards), and the join does not take it.
+
+For the record, the two facts that direction would have needed:
 
 * **position preservation** — a write over a *present* region changes values only,
   so every cell keeps its position and the memory's *shape* is unchanged.  That is
