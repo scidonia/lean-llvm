@@ -935,6 +935,34 @@ theorem walkRefuseWitness_comma {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   commaRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
 
+/-! ### The branches that are not witnesses: the four traps
+
+Four blocks of the dispatch's reachable set are `@llvm.trap` arms —
+`if.end.i83` (the arena's reserve), `if.end.i.i.i` and `if.end.i.i.i64` (the two event
+reserves) and `if.end.i86` (the thirteen-byte record reserve).  `walkTrap_noStep` is
+their verdict: `stage2Calls` answers `none` at the trapping call, so the block cannot
+step at all.  A `refuse`/`finish` witness for them is therefore not owed, and cannot
+exist: a link *is* a jump, so no link leaves a trap, and a dispatch's run — a chain of
+links — cannot pass one.
+
+What keeps the run out is the guard before each: `walkEventReserve_clear` and
+`walkArenaReserve_clear` are the two clauses read at the invariant, and the thirteen-
+byte reserve is the same arithmetic at the widest record.  Those are the statements the
+four rows owe, and they are programmes of the invariant rather than witnesses of a
+refusal. -/
+
+/-- **No link leaves a trap block.**  A link's step is a jump and a trap's step is not,
+so a run that reaches one stops there — which is what makes the four `unreachable` rows
+obligations about their guards and not about a segment. -/
+theorem walkNoLinkFromTrap {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    {C' : WalkCarry G} {s' : State}
+    (hpc : s.pc = "if.end.i83" ∨ s.pc = "if.end.i.i.i" ∨ s.pc = "if.end.i.i.i64" ∨
+      s.pc = "if.end.i86") :
+    ¬ WalkLink (stage2Calls stage2SubCalls) G C s C' s' := by
+  intro hl
+  exact walkTrap_noStep s hpc ⟨s', WalkLink.step hl⟩
+
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.refusePrice_of_le
@@ -958,3 +986,4 @@ theorem walkRefuseWitness_comma {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_colon
 #print axioms LeanLLVM.Refinement.WalkScope.commaRefuse_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_comma
+#print axioms LeanLLVM.Refinement.WalkScope.walkNoLinkFromTrap
