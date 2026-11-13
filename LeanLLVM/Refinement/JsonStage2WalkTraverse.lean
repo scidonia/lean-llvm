@@ -56,14 +56,15 @@ that supply it (the seed's run and entry, and the finalisation allowance's
 arithmetic).  Named exactly:
 
 1. **`WalkLoopStep`** — its left branch is one revolution from `NodeBlock21` back
-   to it: the dispatch's pass to `cleanup478.i` (the census's hundred and
-   fifty-seven links and its three steps), the back edge (`walkBack_step`), the
+   to it: the dispatch's pass to `cleanup478.i` (built from the census's class
+   links, and the three steps it counts), the back edge (`walkBack_step`), the
    header's pass (`whileBody_step`) and the two `phi` runs, with `walkMeasure`'s
    strict decrease where `walkMeasure_step` states it and the traps excluded before
    their arms (`walkEventReserve_clear`, `walkArenaReserve_clear` are theorems of
    the invariant).  Its right branch is the exit: the test's false edge and the
    tail through `s2_walk.exit` to `if.end`'s return, inside `F ≤ 27` — the
-   finalisation allowance less the seed's three steps and the return's one.  Both
+   finalisation allowance less the seed's three steps and the two terminal ones
+   (the exit's jump and `if.end`'s return).  Both
    are stated at `WalkInv` and admit nothing beside it, which is what the carriers
    were converted for.  The revolution is *one* premise rather than a pass plus
    the two proved steps because `walkBack_step`'s statement gives the back edge's
@@ -74,7 +75,8 @@ arithmetic).  Named exactly:
 2. **the seed** — `walkSeedPrefix_runFuel` is `hseed` at `j = 3` (the entry
    block, the preheader and the header's first pass, at the state they compose to)
    and `walkSeedInvariant_geometry` is `hInv` at that state, so this premise is
-   proved and only its own three block equalities are the caller's;
+   proved and only its own three block runs, their pc facts and the entry test's
+   bit are the caller's;
 3. **`hF`** — `j + F + 2 ≤ stage2FinalisationAllowance`, i.e. `F ≤ 27` at the
    seed's three steps; and
 4. **the geometry** — `WalkGeom` is `stage2Pre`'s witnesses, field for field, and
