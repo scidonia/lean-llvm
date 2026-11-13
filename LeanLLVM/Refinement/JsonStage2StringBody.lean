@@ -3556,7 +3556,27 @@ carries information its bytes do not.
 
 **The absorption itself survives duplicates**, because both of its sides replace the
 *same* first occurrences — which is why the direct induction over the memory is the
-route, not a map lemma.  It carries the region's presence as the cursor moves
+route, not a map lemma.  But it needs presence of **every** region it names, not only
+the one it erases: an absent region is *appended*, and the two sides append in
+different orders (`clear, dst, xj` against `dst, xj, slot`), so a single absent
+region makes the lists differ while every read agrees.  That is the same wall for the
+third time, now quantitative — presence is what makes each write in place, and the
+absorption needs it on all three regions it crosses.  The join has it: `dst` and `xj`
+are staged (the writing caller's buffers) and `ei` is the caller's own stack slot, so
+none of the three is appended by these writes.
+
+Stated, therefore, with the presence of all three as its hypothesis and the two
+intervening writes at their own regions:
+
+    readBytes B ei X.length ≠ none → readBytes B dst out.length ≠ none →
+    readBytes B xj Wj.length ≠ none → Z.length = X.length →
+    writeBytes (writeBytes (writeBytes (writeBytes B ei X) dst out) xj Wj) ei Z
+      = writeBytes (writeBytes (writeBytes B dst out) xj Wj) ei Z
+
+Its proof is the walk over `B`: at each cell the cell's address decides which write
+touches it, both sides do the same thing there — the erased region's cell ends as
+`Z`'s byte, the others as their region's — and no side appends, so the lists have the
+same length and the same cells in the same order.  It carries the region's presence as the cursor moves
 (`readBytes_writeByte_above`/`_below`), and it does not need to know how many cells
 share an address, only that every step does the same thing to the same cell.
 
