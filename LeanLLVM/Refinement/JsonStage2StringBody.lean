@@ -5428,8 +5428,7 @@ theorem s2StringBodyExpand_decoded_at_exit {mem xmem : Mem} {ch p dst xp xj : Na
            mem := writeBytes
              (writeBytes
                (writeBytes (writeBytes xmem ei (natToBytes (0#64).toNat 8)) dst out)
-               xj (wordBytes 8 (c1 +
-                 ((ps.drop c1).takeWhile (fun q => decide (q < p - base))).length + k)))
+               xj (wordBytes 8 (c1 + k)))
              ei (wordBytes 8 out.length),
            next := next } := by
   obtain ⟨hxjW, hlanC, hbodyC⟩ :=
@@ -5452,7 +5451,8 @@ theorem s2StringBodyExpand_decoded_at_exit {mem xmem : Mem} {ch p dst xp xj : Na
     (mem := writeBytes xmem ei (natToBytes (0#64).toNat 8)) (next := next)
     (j0 := c1) (ps := ps) (body := body) (out := out) (k := k)
     hxjW hlanC hbodyC len.isLt nxp.isLt hp0 hdec'
-  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq] using h
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, htake0, Nat.add_zero]
+    using h
 
 
 /-- **The expander's refusing answer at the exit's memory**: the same three reads,
@@ -5482,8 +5482,7 @@ theorem s2StringBodyExpand_refused_at_exit {mem xmem : Mem} {ch p dst xp xj : Na
            mem := writeBytes
              (writeBytes (writeBytes xmem ei (natToBytes (0#64).toNat 8)) ei
                (wordBytes 8 off))
-             xj (wordBytes 8 (c1 +
-               ((ps.drop c1).takeWhile (fun q => decide (q < p - base))).length + k)),
+             xj (wordBytes 8 (c1 + k)),
            next := next } := by
   obtain ⟨hxjW, hlanC, hbodyC⟩ :=
     s2StringBodyCallee_reads hmem hps hbody hc1 hxjp heip heixj heilan hjlan
@@ -5505,7 +5504,8 @@ theorem s2StringBodyExpand_refused_at_exit {mem xmem : Mem} {ch p dst xp xj : Na
     (mem := writeBytes xmem ei (natToBytes (0#64).toNat 8)) (next := next)
     (j0 := c1) (ps := ps) (body := body) (off := off) (k := k)
     hxjW hlanC hbodyC len.isLt nxp.isLt hp0 hr'
-  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq] using h
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, htake0, Nat.add_zero]
+    using h
 
 /-- **The scan's `if.then` exit finishes form `1`**: the counter reached the count,
 so the window at `j1` is empty and the model answers the body itself.  The exit's
