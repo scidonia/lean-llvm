@@ -1256,7 +1256,19 @@ theorem walkEntryStaging_zeroArm {mem : Mem} (G : WalkGeom mem) (S : WalkStage G
             .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
             .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
           d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0) = .jump s' ∧
-      s'.pc = "if.then492.i" := by
+      s'.pc = "if.then492.i" ∧
+      -- the environment the next row reads, in its own form: one conjunct for every cell
+      -- (`%4` is `walkEntryEnv3`'s bound value, `%e` the base env's pointer), and the
+      -- equality is `rfl` because both steps preserve `env` structurally.
+      s'.env = walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+          (walkEntryEnv1 (EntryState stage2Body
+              (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+                .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+                .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+                .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+              d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env G.next0 G.n)
+          S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev) G.b G.n G.ep S.s S.c)
+        G.b G.nep := by
   let ent : State := EntryState stage2Body
     (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
       .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
@@ -1388,8 +1400,8 @@ theorem walkEntryStaging_zeroArm {mem : Mem} (G : WalkGeom mem) (S : WalkStage G
     simp only [s₁, stateAt, memAt, e4, walkEntryEnv4, cells]
     exact lookupName_cons_self _ _ _
   have hpc₁ : s₁.pc = ent.pc := by simp only [s₁, stateAt, memAt]
-  exact ⟨_, walkEntry_step ent rfl hden₁ hne hnep64 hpc₁,
-    by simp [walkEntryJump, hzero]⟩
+  exact ⟨walkEntryJump s₁ G.nep, walkEntry_step ent rfl hden₁ hne hnep64 hpc₁,
+    by simp [walkEntryJump, hzero], rfl⟩
 
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
