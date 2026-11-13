@@ -3208,6 +3208,20 @@ syntax rather than mathematics — which is why the record names them together:
    unable to print the difference, so only taking the term from the equality removes the
    second spelling. -/
 
+/-! ### The copy's equation is a hypothesis every consumer takes
+
+`walkIfThenBlock_denote_named`'s conclusion — the copy block's `denoteCode` run at
+`walkIfThenBlockState` — is affordable to *state* by the lemma that proves it and never to
+re-derive.  Four configurations were measured and all time out: the equation as a declaration's
+type in this module and in a fresh one, and the equation as a local `have` inside a
+`WalkFlushAt` proof in both, at 1M and 4M heartbeats.  Printing it is cheap (`#check` does so in
+under two seconds); elaborating anything that *mentions* it as a term is not.
+
+So the arm's assembly is the caller's four applications — `walkFlushSteps12`, the copy's
+equation obtained at its own site, `walkRefusalCopy_at`, `walkReturn_at`, then
+`WalkFlushAt.ofRun` — and not a lemma of its own: a wrapper whose statement is another lemma's
+statement with one substitution adds no content. -/
+
 end WalkScope
 
 end LeanLLVM.Refinement
