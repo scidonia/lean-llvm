@@ -42,12 +42,12 @@ eight-cell nest — *a peel that re-derives a state's environment costs the same
 lemma application, because the elaborator spells the same term each time*. -/
 
 /-- The depth test's successor, at the nest's input. -/
-abbrev ssNest {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : State :=
+abbrev ssNest (s : State) : State :=
   mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))
 
 /-- The select nest's successor, at the bracket's marker test. -/
 abbrev ssSel {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : State :=
-  stackSelOut (ssNest C s) C.sp C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+  stackSelOut (ssNest s) C.sp C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
     (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))
 
 /-- The `cst` read's successor, at the state stack's test. -/
@@ -107,7 +107,7 @@ theorem stateStackSeg₁ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)))
     (hsp : C.sp ≠ 0) :
-    WalkSegment calls G C s { C with block := "if.end59.i" } (ssNest C s) 5 := by
+    WalkSegment calls G C s { C with block := "if.end59.i" } (ssNest s) 5 := by
   have h8₁ : evalOperand (refuseS₁ s) (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)) := by
     simpa only [refuseS₁, evalOperand, State.bind,
       lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
@@ -137,7 +137,7 @@ theorem stateStackSeg₁ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
       L₃.inv' rfl h8₃
   have L₅ : WalkLink calls G { C with block := "if.then53.i" }
       (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))) { C with block := "if.end59.i" }
-      (ssNest C s) :=
+      (ssNest s) :=
     mlStep₅ G { C with block := "if.then53.i" } (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))
       L₄.inv' rfl hsp
   exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄ (Seg.tail L₅
