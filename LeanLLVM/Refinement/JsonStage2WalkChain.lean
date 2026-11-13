@@ -888,6 +888,19 @@ pieces, stated once here so the five are five instantiations rather than five ar
   induction's measure: the bound less the counter falls by one per visit, so the visit
   count is bounded by the remaining budget.
 
+**A scan whose exit is a dispatch arm is not a scan whose exit is a finalisation.**  The
+literal comparison is the case: its landing block, `for.body.i.i`, is six instructions — the
+counter's `phi`, two `gep`/`load` pairs and an `icmp eq` on the two bytes — and its arms are
+*equal* (which returns to the latch, the same induction) and *differ* (which jumps to
+`if.then57.i`).  The second is a **mismatch outcome**, not a scan's finalisation: the token
+does not match, and what happens next is the dispatch's to classify.  So `exitStep`'s
+"a jump to the scan's own exit block" is *not* the literal comparison's exit, and its
+mismatch arm belongs to the dispatch's outcomes — the "Refuse early" alternative of the
+three-outcome split, a counted segment to the refusal finalisation available at any entry
+index.  The structure below therefore describes the four token scans, whose exits are their
+own finalisation blocks; the literal comparison's induction is the same `step` and a
+different exit, stated where the dispatch's outcomes are.
+
 The four token scans' lattices are the body's own blocks (`scanBlock`/`scanWhitespace_find`
 and its three siblings); the literal comparison's is `for.inc.i.i`.  None of the three
 pieces is proved here: what this module proves is the *chain* a visit is made of, and the
