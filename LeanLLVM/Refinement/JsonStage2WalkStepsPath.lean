@@ -10,6 +10,13 @@ their instances are the proven pattern: the block's link lemma gives
 
 Each instance states the target as the shape states it, so a chain's `def` for the
 state is the instance's term and its state equality applies by `rfl`.
+
+Two facts about the invariant and the registers that every later instance meets:
+`WalkInv.ptrs` is a nested conjunction rather than a record, so `%3`'s clause is its
+`.1` (the walk's pointer list starts at the arena's base register); and
+`e.signExtend 64 = e` for a `BitVec 64` is `BitVec.signExtend_eq` with
+`BitVec.setWidth_eq`, so a `phi`-selected 64-bit cell *is* the register's word and a
+`gep` offset needs no normalisation.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkAssembly
 import LeanLLVM.Refinement.JsonStage2WalkPhi
