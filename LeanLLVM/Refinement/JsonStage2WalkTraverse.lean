@@ -4,8 +4,9 @@ The stage-2 walk's traversal: the loop as a counted run.
 `walkCompletes_of_prefix_chain` (`JsonStage2WalkSeed`) states the completion
 conjunct of `Stage2WalkObligation` behind five premises: the seed's prefix, the
 `WalkChain` value, the chain's step count, the return's step and the numeric
-comparison against `stage2Budget`.  This module discharges the last three of them
-from one, and reduces the chain to the loop's own revolution:
+comparison against `stage2Budget`.  This module replaces the chain's step count
+and the comparison with one loop-step premise, keeps the return's step inside that
+premise's exit branch, and reads the chain as the run it is:
 
 * **a segment is a counted run.**  `WalkSegment` is a `j` and a `runFuel`
   equality at that count, with `WalkInv` at the target; `WalkChain.steps` is its
