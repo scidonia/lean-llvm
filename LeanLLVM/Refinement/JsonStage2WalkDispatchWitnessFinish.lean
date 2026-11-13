@@ -647,8 +647,8 @@ answers are parameters because the junction hypotheses are about the memories th
 a consumer names what it consumes. -/
 def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (r₁ r₂ : CallOutcome) (ev : EventRecord) (ei cd : Nat) (tok : Nat) : Prop :=
-  ∀ (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
-    {p reg : String} {c : BitVec 32} {op : Operand} {rdv : BitVec 32} {x : BitVec 32},
+  ∀ (_hInv : WalkInv G C s) (_hblock : C.block = "if.then413.i")
+    {p _reg : String} {c : BitVec 32} {op : Operand} {rdv : BitVec 32} {x : BitVec 32},
     s.pre = some p →
     phiIncoming p
       [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
