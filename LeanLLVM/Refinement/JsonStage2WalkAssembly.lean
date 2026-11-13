@@ -2082,8 +2082,9 @@ theorem walkRefusalCopy_at {sub : Calls} {s : State} {s₁ : State}
     (hpc : s.pc = "if.then")
     (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s = some s₁)
     (hpc₁ : s₁.pc = s.pc) :
-    ∃ s' : State, LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s' ∧ s'.pc = "if.end" :=
-  ⟨_, walkIfThen_step s hpc hden hpc₁, rfl⟩
+    ∃ s' : State, LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s' ∧ s'.pc = "if.end" ∧
+      s'.env = s₁.env :=
+  ⟨_, walkIfThen_step s hpc hden hpc₁, rfl, rfl⟩
 
 /-- **The refusal arm's verdict is the literal zero.**  `if.end`'s `phi` takes `0` on the
 `if.then` edge and `1` on `s2_walk.exit`'s, so the empty entry stream returns `some (.int 64
