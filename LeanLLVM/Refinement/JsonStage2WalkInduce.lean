@@ -365,6 +365,39 @@ theorem scanLatch_visit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     scanLatch_link G C s hInv hsrc hfind his ht hneIC hneTI hneTC hfree hi hc hcw hlt hexit hland
   exact ⟨_, s', WalkSegment.of_link hl, rfl, hi', hc'⟩
 
+/-- **The same visit, its witness named.**  `scanLatch_visit` leaves its target
+existential; the round that follows it states the landing chain's four hypotheses **at
+that state**, so it asks for it by name, and `scanLatchOut` is the name its own proof
+already builds.  A companion rather than a restatement: `scanLatch_visit`'s four callers
+never look at the witness.
+
+**Every existential-witnessed step lemma this chain composes needs a named companion**,
+because the next link's hypotheses are stated at the state the previous one left — by
+name. -/
+theorem scanLatch_visit_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    {src inc phi test cond exit land : String} (hsrc : C.block = src)
+    {B : Block} (hfind : stage2Body.findBlock src = some B)
+    (his : B.instrs = [Instr.binop inc BinOp.add 64 (.reg phi)
+        (.imm (.int 64 (BitVec.ofNat 64 1))),
+      Instr.icmp test IPred.eq 64 (.reg inc) (.reg cond)])
+    (ht : B.term = Term.condbr (.reg test) exit land)
+    (hneIC : inc ≠ cond) (hneTI : test ≠ inc) (hneTC : test ≠ cond)
+    (hfree : walkCarried B.instrs)
+    {i c : Nat} (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hlt : i + 1 < c)
+    (hexit : WalkLocal { C with block := exit } (scanLatchOut s inc test i c exit))
+    (hland : WalkLocal { C with block := land } (scanLatchOut s inc test i c land)) :
+    ∃ (C' : WalkCarry G) (s' : State), s' = scanLatchOut s inc test i c land ∧
+      WalkSegment calls G C s C' s' 1 ∧
+      C'.block = land ∧
+      lookupName s'.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+      lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
+  obtain ⟨s', hl, hs, hi', hc'⟩ :=
+    scanLatch_link G C s hInv hsrc hfind his ht hneIC hneTI hneTC hfree hi hc hcw hlt hexit hland
+  exact ⟨_, s', hs, WalkSegment.of_link hl, rfl, hi', hc'⟩
+
 /-! ### The scan's way back
 
 A visit's second half.  The whitespace scan's landing block jumps to `NodeBlock52`, which
