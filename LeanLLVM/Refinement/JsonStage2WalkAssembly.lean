@@ -1579,6 +1579,21 @@ theorem walkCarryZero_invNum {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) 
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (simp [walkCarryZero]; try omega)
 
+/-- **The entry's layers bind the document's and the entry stream's bases.**  `%3` and `%5`
+are `walkEntryEnv3`'s own cells — the block's two `alloca`s' loads — so at the successor's
+environment they are `.ptr b` and `.ptr ep`, which is the two-pointer half of `WalkPtrs` that
+the seating *establishes*.  The other four of the six are the staging's. -/
+theorem walkEntryEnv_ptr35 (env : Env) (c n b nep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n nep sAddr c)
+      b nep) "%3" = some (.ptr b) ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n nep sAddr c)
+      b nep) "%5" = some (.ptr nep) := by
+  constructor <;>
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
