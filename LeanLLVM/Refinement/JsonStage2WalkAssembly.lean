@@ -3304,7 +3304,10 @@ theorem walkExit485 {calls : Calls} {s : State} {spv : Nat}
   ⟨_, walkIfThen485Step s hpc hsp, rfl⟩
 
 /-- **`if.end490.i`'s test, with its two destinations named.**  The root-done word decides between
-the refusal arm and the exit's own tail. -/
+the refusal arm and the exit's own tail: a **zero** word takes the refusal (`if.then492.i`) and a
+non-zero word takes `s2_walk.exit`.  The block's cell is `%tobool491.not`, so the arm is the
+opposite of the word's zero test — writing the bits the other way round is the mistake this note is
+for, and it shows up at the `if`'s resolution rather than in the composition. -/
 theorem walkExit490 {calls : Calls} {s : State} {rd : Nat} {v : BitVec 32}
     (hpc : s.pc = "if.end490.i")
     (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
