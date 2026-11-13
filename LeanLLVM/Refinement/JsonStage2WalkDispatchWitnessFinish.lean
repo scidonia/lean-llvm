@@ -922,6 +922,42 @@ theorem scanExitSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
             simp only [runFuel, hstep]
           inv' := hinv' }
 
+
+
+/-- **The scan's arrival at the merge's entry, and the merge in two steps.**  The latch
+is at its last visit — `i = c - 1` — so the traversal is the zero-visit case and the
+state is the initial one; the exit is one step and the merge's entry block the second.
+
+Stated at the dispatch's own `calls`: a segment's `calls` is the **program's**, not a
+variable — `WalkSegment calls …` reads `runFuel calls` at `stage2Body`, and the only
+`calls` that runs the body is `stage2Calls stage2SubCalls`. -/
+theorem walkScanToMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
+    {c : Nat} (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hi : lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (c - 1))))
+    (hc0 : 1 ≤ c) (hinn : 1 ≤ C.inner) (hcw : c < 2 ^ 64)
+    (hexit : ∀ (e : State), e.pre = some "while.body462.i" →
+      lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 ((c - 1) + 1))) →
+      lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      WalkLocal (G := G) (ScanCMerge C) e)
+    {tok : Nat}
+    (htok : lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" (c - 1) c
+      "if.end473.i").env "%t352.i" = some (.ptr tok)) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkSegment (stage2Calls stage2SubCalls) G C s C' s' 2 ∧ C'.block = "cleanup478.i" := by
+  have hie : (c - 1) + 1 = c := by omega
+  obtain ⟨s₁, hseg₁, -, hs₁, hInv₁⟩ :=
+    scanExitSeg (calls := stage2Calls stage2SubCalls) (G := G) (C := C) (s := s)
+      hInv hblock hi hc (by show c - (c - 1) ≤ C.inner; omega) hie hcw
+      (by intro e hpre hinc hcond; exact hexit e hpre hinc hcond)
+  rw [hs₁] at hseg₁
+  rw [hs₁] at hInv₁
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
+    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := ScanCMerge C)
+      (s := scanLatchOut s "%inc463.i" "%exitcond298.not" (c - 1) c "if.end473.i")
+      hInv₁ rfl htok
+  exact ⟨_, s₂, hseg₁.trans (WalkSegment.of_link hl₂), by simp⟩
+
 end WalkScope
 end LeanLLVM.Refinement
 
