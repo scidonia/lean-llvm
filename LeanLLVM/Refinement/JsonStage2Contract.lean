@@ -400,11 +400,17 @@ def stage2WalkWrites (dst ndst' ev nev' ndst nev err c ctype cst tok s z e : Nat
 
 /-! ### The four stack objects, as a region list
 
-`stage2AllocaWrites a` is the body's four `alloca`s at the cursor `a`; the three
-lemmas below are what a frame reads off it.  Every entry starts at `a` or later
-and ends at or before `a + 24`, so a byte below `a` is outside the list and the
-list lies inside the window `[a, a + 24)` — the direction the watermark's
-consumers need, since the staged objects are all below `a`. -/
+`stage2AllocaWrites a` is the body's four `alloca`s at the cursor `a`, and beside
+them the `%ei` slot `s2_string_body` takes at the *helper's* cursor — the byte
+after the four, `a + 28` (`stage2StringBodyCall` advances `next` by the slot's
+eight bytes).  The three lemmas below are what a frame reads off it.  Every entry
+starts at `a` or later and ends at or before `a + 36`, so a byte below `a` is
+outside the list and the list lies inside the window `[a, a + 36)` — the direction
+the watermark's consumers need, since the staged objects are all below `a`.
+
+`num_fast_el1` has the same hole and is not covered yet: its body allocates 936
+bytes (`[768 x i8]` and a `%struct.Stk`) at the helper's cursor, so row f adds an
+entry there rather than extending the four. -/
 
 /-- A stack slot starts at or after the cursor. -/
 theorem stage2AllocaWrites_start {a : Nat} {r : Nat × Nat}
@@ -418,13 +424,17 @@ theorem stage2AllocaWrites_start {a : Nat} {r : Nat × Nat}
   · exact Nat.le_add_right a 12
   rcases List.mem_cons.mp hr with rfl | hr
   · exact Nat.le_add_right a 20
+  rcases List.mem_cons.mp hr with rfl | hr
+  · exact Nat.le_add_right a 28
   exact absurd hr (by simp)
 
-/-- Every stack slot ends inside the twenty-eight bytes the four allocations take
-`(8, 4, 8, 8)`. -/
+/-- Every stack slot ends inside the thirty-six bytes the four allocations and the
+helper's slot take (`(8, 4, 8, 8)` and the string body's `%ei`). -/
 theorem stage2AllocaWrites_end {a : Nat} {r : Nat × Nat}
-    (hr : r ∈ stage2AllocaWrites a) : r.1 + r.2 ≤ a + 28 := by
+    (hr : r ∈ stage2AllocaWrites a) : r.1 + r.2 ≤ a + 36 := by
   unfold stage2AllocaWrites at hr
+  rcases List.mem_cons.mp hr with rfl | hr
+  · omega
   rcases List.mem_cons.mp hr with rfl | hr
   · omega
   rcases List.mem_cons.mp hr with rfl | hr

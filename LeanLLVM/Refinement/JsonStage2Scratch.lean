@@ -65,7 +65,7 @@ objects end at or below `a`; that premise is the watermark clause
 `JsonStage2Contract.stage2Pre` states, and both the walk's frame and the record's
 post read it from there rather than assuming it. -/
 def stage2AllocaWrites (a : Nat) : List (Nat × Nat) :=
-  [(a, 8), (a + 8, 4), (a + 12, 8), (a + 20, 8)]
+  [(a, 8), (a + 8, 4), (a + 12, 8), (a + 20, 8), (a + 28, 8)]
 
 /-- **The run's staged scratch, as the record's own numbers name it**: the seven
 appended objects, the number path's output slot `%d.i`, and — beside it — nothing.

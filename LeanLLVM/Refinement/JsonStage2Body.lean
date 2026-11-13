@@ -2695,20 +2695,27 @@ is its own materialisation (form 1, `outn = len`), and otherwise the escaped for
 is the escape unit's own rule at the body's positions (form 2, `outn` the decoded
 length), with a refusal at the expander's offset (form 0).
 
+The third component is the bytes the body leaves in its own `%ei` slot at the
+call's `next` — the `alloca i64` the body takes on every path.  The empty arm
+writes nothing there (`[]`), the decoded arm the decoded length and the refusing
+arm the *body-relative* offset, before `pos0` is added; the call stores them at
+`next` and advances the cursor by the slot's eight bytes, so a caller's next
+allocation is the byte after `%ei`.
+
 The cursor write back is the global index `j1 + k` the body's pointer would hold;
 `j1` is where the scan left it.  A call that resumes *inside* a body is outside
 this model — the walk never does, because `xj` is carried across bodies, not
 restarted within one — and the `pre` of the escape unit states that restriction
 for the same reason. -/
 def stage2StringBody (mem : Mem) (c p len dst outn xp xj nxp : Nat) :
-    Option (Mem × Nat) :=
+    Option (Mem × Nat × List UInt8) :=
   match stage2ReadWord mem c 8, stage2ReadWord mem xj 8, readLanes32 mem xp nxp with
   | some base, some j0, some ps =>
       let pos0 := p - base
       let j1 := j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length
       let inBody := (ps.drop j1).takeWhile (fun q => q < pos0 + len)
       if inBody.isEmpty then
-        some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (wordBytes 8 len), 1)
+        some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (wordBytes 8 len), 1, [])
       else
         match readBytes mem p len with
         | none => none
@@ -2717,11 +2724,11 @@ def stage2StringBody (mem : Mem) (c p len dst outn xp xj nxp : Nat) :
             | .decoded out k =>
                 some (writeBytes
                         (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
-                        outn (wordBytes 8 out.length), 2)
+                        outn (wordBytes 8 out.length), 2, wordBytes 8 out.length)
             | .refused off k =>
                 match stage2ReadWord mem (c + 1112) 8 with
                 | some e => some (writeBytes (stage2ErrSetMsg mem e (pos0 + off) 0)
-                                   xj (wordBytes 8 (j1 + k)), 0)
+                                   xj (wordBytes 8 (j1 + k)), 0, wordBytes 8 off)
                 | none => none
   | _, _, _ => none
 
@@ -2729,8 +2736,10 @@ def stage2StringBody (mem : Mem) (c p len dst outn xp xj nxp : Nat) :
 def stage2StringBodyCall (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
   match args with
   | [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj, .int 64 nxp] =>
-      (stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat).map fun (m, form) =>
-        { ret := .int 32 (BitVec.ofNat 32 form), mem := m, next := next }
+      (stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat).map
+        fun (m, form, slot) =>
+          { ret := .int 32 (BitVec.ofNat 32 form), mem := writeBytes m next slot,
+            next := next + 8 }
   | _ => none
 
 -- The number token's lexical scan is defined above the models that use it, at
