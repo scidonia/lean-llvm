@@ -2606,6 +2606,8 @@ theorem walkScanRounds457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Na
         WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
         lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
         lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hguard : ∀ (C : WalkCarry G) (s : State), WalkInv G C s →
+      C.block = "while.body462.i" → ScanGuard s "%q.0.i246" "%cond350.i" C.inner)
     (hbyte : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
       C.block = "while.body462.i" → p + 1 < c →
       lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -2637,6 +2639,7 @@ theorem walkScanRounds457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Na
       n ≤ stage2ByteAllowance * (c - 1 - i) := by
   have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
       WalkInv G C s → C.block = "while.body462.i" →
+      ScanGuard s "%q.0.i246" "%cond350.i" C.inner →
       lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)) →
       lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       i < c →
@@ -2647,11 +2650,11 @@ theorem walkScanRounds457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Na
     intro r
     induction r with
     | zero =>
-        intro i C s _ hInv hblock hi _ hic
+        intro i C s _ hInv hblock _ hi _ hic
         have hie : i = c - 1 := by omega
         exact ⟨C, s, 0, Seg.measure (Seg.nil hInv), hInv, hblock, by rw [← hie]; exact hi, by simp⟩
     | succ n ih =>
-        intro i C s hr hInv hblock hi hc' hic
+        intro i C s hr hInv hblock hg hi hc' hic
         have hlt : i + 1 < c := by omega
         have hposi : i + 1 < 2 ^ 63 := by omega
         obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
@@ -2660,12 +2663,12 @@ theorem walkScanRounds457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Na
           hround C s i a bs q x hInv hblock hi hc' hlt hposi h3 hread hbs h47 hbit hws
             hl105 hl96 hll
         obtain ⟨C₂, s₂, m, hseg₂, hInv₂, hb₂, hi₂, hm⟩ :=
-          ih (i + 1) C₁ s₁ (by omega) hInv₁ hb₁ hi₁ hc₁ (by omega)
+          ih (i + 1) C₁ s₁ (by omega) hInv₁ hb₁ (hguard C₁ s₁ hInv₁ hb₁) hi₁ hc₁ (by omega)
         refine ⟨C₂, s₂, j + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, ?_⟩
         rw [Nat.mul_succ]
         omega
   obtain ⟨C', s', n, hseg, hInv', hb, hi', hn⟩ :=
-    go (c - 1 - i) i C s rfl hInv hblock hi hc hic
+    go (c - 1 - i) i C s rfl hInv hblock (hguard C s hInv hblock) hi hc hic
   exact ⟨C', s', n, hseg, hInv', hb, hi', hn⟩
 
 end WalkScope
