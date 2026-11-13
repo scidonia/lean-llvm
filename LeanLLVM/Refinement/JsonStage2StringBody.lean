@@ -4373,14 +4373,17 @@ at. -/
 def s2StringBodyScanExitWordP (mem0 : Mem) (xj j0 : Nat) (ps : List Nat)
     (pos0 N : Nat) (env0 : Env) (ei xp : Nat) (e : State) : Prop :=
   ∃ c, e.mem = writeBytes mem0 xj (wordBytes 8 c) ∧
-    (c = N ∨ ∃ q conv, ps[c]? = some q ∧ pos0 ≤ q ∧
-      lookupName e.env "%conv" = some (.int 64 conv) ∧ conv.toNat = q) ∧
     s2StringBodyScanPrefix ps pos0 j0 c ∧ s2StringBodyScanShape env0 e ∧
     lookupName e.env "%ei" = some (.ptr ei) ∧
     lookupName e.env "%sub.ptr.sub" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
     lookupName e.env "%xp" = some (.ptr xp) ∧
     lookupName e.env "%xj" = some (.ptr xj) ∧
-    lookupName e.env "%nxp" = some (.int 64 (BitVec.ofNat 64 N))
+    lookupName e.env "%nxp" = some (.int 64 (BitVec.ofNat 64 N)) ∧
+    -- the exit's block decides which way the scan stopped, so each arm reads its
+    -- own case directly
+    (e.pc = "if.then" → c = N) ∧
+    (e.pc = "land.lhs.true" → ∃ q conv, ps[c]? = some q ∧ pos0 ≤ q ∧
+      lookupName e.env "%conv" = some (.int 64 conv) ∧ conv.toNat = q)
 
 /-- At its own start the scan has passed nothing. -/
 theorem s2StringBodyScanPrefix_self (ps : List Nat) (pos0 j0 : Nat) :
@@ -4392,13 +4395,15 @@ theorem s2StringBodyScanPrefix_self (ps : List Nat) (pos0 j0 : Nat) :
 /-- The strengthened exit word is the old one: `c = N` is the count reached. -/
 theorem s2StringBodyScanExitWordP.toExitWord {mem0 : Mem} {xj j0 : Nat} {ps : List Nat}
     {pos0 N : Nat} {env0 : Env} {ei xp : Nat} {e : State}
+    (hexit : s2StringBodyScanExited e)
     (h : s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 ei xp e) :
     s2StringBodyScanExitWord mem0 xj ps pos0 N e := by
-  obtain ⟨c, hmem, hstop, -, -, -, -, -, -⟩ := h
+  obtain ⟨c, hmem, hfix, hshape, hei, hsub, hxp, hxj, hnxp, hif, hland⟩ := h
   refine ⟨c, hmem, ?_⟩
-  rcases hstop with hN | ⟨q, conv, hq, hge, -, -⟩
-  · exact Or.inl (by omega)
-  · exact Or.inr ⟨q, hq, hge⟩
+  rcases hexit with hpc | hpc
+  · obtain ⟨q, conv, hq, hge, -, -⟩ := hland hpc
+    exact Or.inr ⟨q, hq, hge⟩
+  · exact Or.inl (by have := hif hpc; omega)
 
 /-- **The exit's counter is the model's `j1`.**  The prefix the strengthened exit
 word carries is `scanCounter_eq_takeWhile`'s visited-prefix hypothesis, and the stop
@@ -4483,9 +4488,14 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
           obtain ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
         · exact hnames name w hw
     refine ⟨e, 1, by decide, Or.inl rfl, ?_, hrun⟩
-    exact ⟨c, by simp only [e, stateAt]; exact hmem,
-      Or.inr ⟨q, BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat, hq, hge,
-        hconv', hconv⟩, hfix, hshape', hei', hsub', hxp', hxj', hnxp'⟩
+    refine ⟨c, by simp only [e, stateAt]; exact hmem, hfix, hshape', hei', hsub',
+      hxp', hxj', hnxp', ?_, ?_⟩
+    · intro h
+      simp only [e, stateAt] at h
+      exact absurd h (by decide)
+    · intro _
+      exact ⟨q, BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat, hq, hge,
+        hconv', hconv⟩
   · -- the lane is below the body's start, so only the count can have stopped it
     have hlt : q < pos0 := by omega
     have hNle : N ≤ c + 1 := by
@@ -4539,11 +4549,16 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
         subst hk
         exact ⟨q, hq, hlt⟩
     refine ⟨e, 2, le_rfl, Or.inr rfl, ?_, hrun⟩
-    refine ⟨c + 1, ?_, Or.inl heqc, hfix', hshape', hei', hsub', hxp', hxj', hnxp'⟩
-    simp only [e, stateAt]
-    rw [show (writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8))
-        = writeBytes mem0 xj (wordBytes 8 (c + 1)) from
-      s2StringBodyScan_advance mem0 xj c s hmem (by omega)]
+    refine ⟨c + 1, ?_, hfix', hshape', hei', hsub', hxp', hxj', hnxp', ?_, ?_⟩
+    · simp only [e, stateAt]
+      rw [show (writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8))
+          = writeBytes mem0 xj (wordBytes 8 (c + 1)) from
+        s2StringBodyScan_advance mem0 xj c s hmem (by omega)]
+    · intro _
+      exact heqc
+    · intro h
+      simp only [e, stateAt] at h
+      exact absurd h (by decide)
 
 /-- **The back edge, with the prefix**: one iteration, and the lane it passed joins
 the prefix. -/
