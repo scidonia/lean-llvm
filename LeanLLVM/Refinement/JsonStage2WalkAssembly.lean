@@ -3209,7 +3209,18 @@ syntax rather than mathematics — which is why the record names them together:
    unable to print the difference, so only taking the term from the equality removes the
    second spelling. -/
 
-/-! ### The arm is a staged execution: `runFuel`, not `run`
+/-! ### A named existential is a parameter
+
+The boundary rule has a consumer-side twin.  **An existential state that a consumer's premises
+name is a parameter, because the caller has it** — `walkFlushSteps12` returns `s₁` and `s₂` as
+values, the exit's tails take `s₁`/`s₂` with their two equations, and the composition supplies
+both.  **An existential the consumer never names stays a `∃`** — `walkFlush492_at`'s successor is
+named by nobody but the row that receives it, so it is returned existentially.
+
+The test is whether a hypothesis mentions the state: if one does, the wrapper cannot state its
+own premise, and the state must be a parameter.
+
+### The arm is a staged execution: `runFuel`, not `run`
 
 `run` begins at `initState`, whose memory is empty and whose cursor is one.  The walk's execution
 is staged: `Γ_stage2.pre` reads the document, the entry stream, the arena and the log out of the
