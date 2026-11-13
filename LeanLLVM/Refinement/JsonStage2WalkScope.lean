@@ -1497,8 +1497,16 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   decoded prefix -- `old + %32` -- which is at most the window's end.  Between the
   two the memory's word is short of the carry by the part of the window the
   decoder has not filled, and `logArena_le` below recovers the bound a caller
-  needs. -/
-  log_alen : ∃ a, a ≤ C.alen ∧ readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
+  needs.
+
+  The word is also bounded *below*, at the arena's staged cursor: it starts there
+  (the initialisation stores `%ndst`'s word at `%z + 48`) and the one block that
+  writes it writes a sum with the old word as an addend, so it never goes back
+  below the staging.  That is the clause the post's `ndst0 ≤ ndst'` reads: the
+  number the caller reads back is this word — the decoded prefix — rather than the
+  carry, which is the *reserved* window and is at least as large. -/
+  log_alen : ∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧
+    readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
   /-- **The log's arena capacity is the staged one** (the word at `%z + 56`,
   `%acap`).  With `log_alen` this is the clause `if.end256.i` needs: the word the
   reserve compares against is `dstcap`, not an unconstrained memory cell. -/
@@ -1563,7 +1571,7 @@ own content and not a fresh hypothesis. -/
 theorem logArena_le (h : WalkInv G C s) {A : BitVec 64}
     (hA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8)) :
     A.toNat ≤ C.alen := by
-  obtain ⟨a, ha, hr⟩ := h.log_alen
+  obtain ⟨a, -, ha, hr⟩ := h.log_alen
   have heq : natToBytes A.toNat 8 = natToBytes a 8 :=
     Option.some.inj (hA.symm.trans hr)
   have hb : bytesToNat (natToBytes A.toNat 8) = bytesToNat (natToBytes a 8) := by
@@ -1734,7 +1742,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       log_hash := hhash
       log_len := hlen
       log_cap := hcap
-      log_alen := ⟨G.ndst0, Nat.le_refl _, halen⟩
+      log_alen := ⟨G.ndst0, Nat.le_refl _, Nat.le_refl _, halen⟩
       log_acap := hacap
       owned := hown
       frame := hframe

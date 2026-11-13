@@ -1865,7 +1865,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     rw [hlog 16 8 (by decide)]
     exact hInv.log_cap
   · dsimp only [s', s₁, stateAt]
-    obtain ⟨a, ha, hr⟩ := hInv.log_alen
+    obtain ⟨a, -, ha, hr⟩ := hInv.log_alen
     exact ⟨a, le_trans ha (by omega), Eq.trans (hlog 48 8 (by decide)) hr⟩
   · dsimp only [s', s₁, stateAt]
     rw [hlog 56 8 (by decide)]
