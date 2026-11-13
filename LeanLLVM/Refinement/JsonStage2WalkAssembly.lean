@@ -3388,6 +3388,16 @@ theorem walkExitStep {sub : Calls} (s : State) (hpc : s.pc = "s2_walk.exit")
   dsimp only [walkExitBlock, execTerm]
   rw [hpc₁]
 
+/-- **The dispatch, and the word it produces.**  The revolution's segment stores the arena cursor
+at `z + 48`, so a proof of the dispatch that names the word at the head gives both premises the
+completion needs — `WalkDispatch` by the first projection and `WalkLoopStep`'s `hword` by the
+second.  The docstring's sentence is the design: *the word is the dispatch's product, not a chain
+invariant*, so the producer produces it rather than the traverse carrying it. -/
+def WalkDispatchBoth (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    WalkDispatchOutcome calls G C s ∧
+      readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+
 end WalkScope
 
 end LeanLLVM.Refinement
