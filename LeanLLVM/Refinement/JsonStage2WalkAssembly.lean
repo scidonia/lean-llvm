@@ -231,11 +231,79 @@ fourteen blocks are six shapes — `load+load+binop+icmp` (`if.end.i.i`,
 `if.end.i.i55`), `gep+load+icmp` (`lor.lhs.false.i`), `binop+zext+gep+load+icmp`
 (`if.end179.i`, `land.lhs.true.i`), `gep+load+binop+icmp` (`if.then231.i`),
 `gep+load+zext` (`cond.true345.i`), `gep+load` (`land.lhs.true357.i`) — beside two
-long chains (`if.end59.i`, `if.end133.i`).  So a shape pays for itself at a repeated
-variant and the rest are instances: the count of shapes to write is the count of
-distinct opcode sequences, not the count of classes.  Class D divides the same way
-(`store` alone, `gep+store`), and E is `phi`-headed with the selection read from the
-predecessor. -/
+long chains (`if.end59.i`, `if.end133.i`).  Class D divides the same way (`store`
+alone, `gep+store`), and E is `phi`-headed, one shape per terminator.
+
+So the count of shapes to write is the count of distinct opcode sequences, not the
+count of classes — and the second measurement decides whether a repeated sequence
+earns one.  A shape over *variable* names must take the intermediate cells as
+hypotheses: with literal names `simp [lookupName]` peels a cons because the head
+inequality is decidable at elaboration, while with parameters the same goal becomes
+`dl₂ = dl₁ → nc = nl`, which the statement does not carry.  An instance discharges
+each of those by `by simp [lookupName]` at its own literals, so **a shape's hypotheses
+approach the instance's own proof**: it pays at two instances and is a loss below
+that.  The rule, for every remaining block: repeated sequence → shape; once → instance. -/
+
+/-- **Class G's stack-marker variant: an index, a load and a compare.**  `if.end179.i`
+and `land.lhs.true.i` are the same five instructions at their own names — the depth's
+`add`, its `zext`, the stack's `gep`, the byte's `load` and the compare against one —
+so the variant that repeats gets a step, and the four single-block sequences of the
+class stay instances under the same rule.
+
+The target is `walkMarkerEnv`, the named environment the class's links already state
+their `WalkLocal` hypotheses at, so an instance's local facts need no transport.  The
+`denoteCode` chain is the variant's own and is the one `WalkLink.stackMarkerBr`
+carries; the difference is again only that the step names the successor. -/
+theorem walkStackMarkerStep {calls : Calls} (s : State) {B : Block}
+    {gg zx ap ld d base tl fl : String} {x c : BitVec 32} {a : Nat} {one : BitVec 8}
+    {bs : List UInt8} {q : Nat}
+    (hfind : stage2Body.findBlock s.pc = some B)
+    (hinstrs : B.instrs = [
+      Instr.binop gg BinOp.add 32 (.reg "%sp.i.0248") (.imm (.int 32 c)),
+      Instr.zext zx 32 64 (.reg gg),
+      Instr.gep ap (.int 8) (.reg base) (.reg zx),
+      Instr.load ld (.int 8) (.reg ap),
+      Instr.icmp d IPred.eq 8 (.reg ld) (.imm (.int 8 one))])
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 x))
+    (hbase : lookupName s.env base = some (.ptr a))
+    (hzb : zx ≠ base) (hgb : gg ≠ base)
+    (hpos : (x + c).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (x + c).toNat) 1 = some bs)
+    (hbs : bytesToNat bs = q)
+    (hbit : evalICmp .eq (BitVec.ofNat 8 q) one = 0 ∨
+      evalICmp .eq (BitVec.ofNat 8 q) one = 1) :
+    step calls stage2Body s =
+      .jump { stateAt (walkMarkerEnv gg zx ap ld d x c a q one s.env) s with
+        pc := (if evalICmp .eq (BitVec.ofNat 8 q) one = 1 then tl else fl)
+        pre := some s.pc } := by
+  have hden : denoteCode calls B.instrs s =
+      some (stateAt (walkMarkerEnv gg zx ap ld d x c a q one s.env) s) := by
+    rw [hinstrs, ← stateAt_self s]
+    rw [walkDenoteCode_add_imm_w (calls := calls) (env := s.env) (s := s) (d := gg)
+      (a := "%sp.i.0248") (w := 32) (x := x) (c := c) hsp]
+    rw [denoteCode_zext (calls := calls) (env := (gg, .int 32 (x + c)) :: s.env) (s := s)
+      (d := zx) (v := gg) (wIn := 32) (wOut := 64) (x := x + c) (by simp [lookupName])]
+    rw [denoteCode_gep8_ofNat (calls := calls)
+      (env := (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ap) (base := base) (off := zx) (a := a) (j := (x + c).toNat)
+      (by rw [lookupName_cons_ne (k := zx) (n := base) _ _ hzb,
+              lookupName_cons_ne (k := gg) (n := base) _ _ hgb]; exact hbase)
+      (by simp [lookupName]) hpos]
+    rw [denoteCode_load8 (calls := calls)
+      (env := (ap, .ptr (a + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := ld) (p := ap) (a := a + (x + c).toNat) (q := q) (bs := bs)
+      (by simp [lookupName]) hread hbs]
+    rw [denoteCode_icmp_eq_imm_w (calls := calls)
+      (env := (ld, .int 8 (BitVec.ofNat 8 q)) :: (ap, .ptr (a + (x + c).toNat)) ::
+        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) :: (gg, .int 32 (x + c)) :: s.env)
+      (s := s) (d := d) (a := ld) (w := 8) (x := BitVec.ofNat 8 q) (c := one)
+      (by simp [lookupName])]
+    rfl
+  simp only [step, hfind, hden, hterm, execTerm]
+  simp only [evalOperand, stateAt, walkMarkerEnv, cells, lookupName_cons_self]
+  rcases hbit with h | h <;> simp [h]
 
 /-- **Class G's tag-reserve shape: two loads, an add, a compare.**  `if.end.i.i` and
 `if.end.i.i55` are the same four instructions at their own names — the log's length
@@ -333,6 +401,54 @@ theorem walkAddIcmpBrStep {calls : Calls} (s : State) {b : Block} {reg off d : S
   simp only [step, hfind, hden, hterm, execTerm]
   simp only [evalOperand, stateAt, cells, lookupName_cons_self]
   rcases hbit with h | h <;> simp [h]
+
+/-- **Class E: a `phi` run and a branch.**  The class's fifteen blocks all open with a
+`phi` run, which `denoteCode` takes in one step: the selection is by predecessor
+(`PhiSelects`), and what follows runs at the environment the selected cells extend.
+Stated this way the class needs one shape per terminator rather than one per block,
+and a block's instance is its `phi` list, its predecessor and its edge.
+
+The target is `s.bindAll vs` — the selection's cells — at the edge's destination, so
+an instance's facts are `PhiSelects`' own and nothing about the block's name. -/
+theorem walkPhiBrStep {calls : Calls} (s : State) {B : Block} {specs : List PhiSpec}
+    {vs : List (String × Value)} {p dest : String}
+    (hfind : stage2Body.findBlock s.pc = some B)
+    (hinstrs : B.instrs = specs.map PhiSpec.instr)
+    (hterm : B.term = Term.br dest)
+    (hpre : s.pre = some p)
+    (hsel : PhiSelects s p specs vs) :
+    step calls stage2Body s =
+      .jump { s.bindAll vs with pc := dest, pre := some (s.bindAll vs).pc } := by
+  have hden : denoteCode calls B.instrs s = some (s.bindAll vs) := by
+    rw [hinstrs]
+    have h := denoteCode_phiRun (calls := calls) (s := s) (p := p) (specs := specs)
+      (vs := vs) (rest := []) hpre hsel (by rfl)
+    simpa only [List.append_nil, denoteCode_nil] using h
+  simp only [step, hfind, hden, hterm, execTerm]
+
+/-- **Class E, the branching terminator.**  The block's `phi` run, then a `condbr` on
+a cell the run bound — the selection's own register, so the bit is a lookup at the
+extended environment and the arm is the one `evalICmp`-shaped facts already name. -/
+theorem walkPhiCondbrStep {calls : Calls} (s : State) {B : Block}
+    {specs : List PhiSpec} {vs : List (String × Value)} {p d tl fl : String}
+    {bit : BitVec 1}
+    (hfind : stage2Body.findBlock s.pc = some B)
+    (hinstrs : B.instrs = specs.map PhiSpec.instr)
+    (hterm : B.term = Term.condbr (.reg d) tl fl)
+    (hpre : s.pre = some p)
+    (hsel : PhiSelects s p specs vs)
+    (hbit : lookupName (s.bindAll vs).env d = some (.int 1 bit))
+    (hb01 : bit = 0 ∨ bit = 1) :
+    step calls stage2Body s =
+      .jump { s.bindAll vs with
+        pc := (if bit = 1 then tl else fl), pre := some (s.bindAll vs).pc } := by
+  have hden : denoteCode calls B.instrs s = some (s.bindAll vs) := by
+    rw [hinstrs]
+    have h := denoteCode_phiRun (calls := calls) (s := s) (p := p) (specs := specs)
+      (vs := vs) (rest := []) hpre hsel (by rfl)
+    simpa only [List.append_nil, denoteCode_nil] using h
+  simp only [step, hfind, hden, hterm, execTerm, evalOperand, hbit]
+  rcases hb01 with rfl | rfl <;> simp
 
 /-- **Class A: one comparison and a branch.**  Sixty of the walk's blocks are this
 shape — one `icmp` into a fresh name and a `condbr` on it — which makes the class a
@@ -1589,6 +1705,9 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
+#print axioms LeanLLVM.Refinement.WalkScope.walkPhiBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkPhiCondbrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkStackMarkerStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
