@@ -1437,6 +1437,20 @@ theorem readBytes_writeByte_below (m : Mem) {x : Nat} {v : UInt8} :
       | some b =>
           rw [readBytes_writeByte_below m n (a + 1) (by omega)]
 
+/-- Reads entirely below a single written cell are unchanged — the dual of
+`readBytes_writeByte_below`, and the other half of what a presence fact needs: a
+write on either side of a region leaves it alone. -/
+theorem readBytes_writeByte_above (m : Mem) {x : Nat} {v : UInt8} :
+    ∀ (n a : Nat), a + n ≤ x → readBytes (writeByte m x v) a n = readBytes m a n
+  | 0, _, _ => by simp only [readBytes]
+  | n + 1, a, h => by
+      have hb : readByte (writeByte m x v) a = readByte m a :=
+        readByte_writeByte_other m v (by omega)
+      simp only [readBytes, hb]
+      cases hr : readByte m a with
+      | none => rfl
+      | some b => rw [readBytes_writeByte_above m n (a + 1) (by omega)]
+
 /-- **The swap with the presence on the other address.**  The equality is symmetric
 in its two writes, so this is `writeByte_swap_of_readByte` with the addresses
 exchanged — the variant the commutation's upper case needs, where the region, not
@@ -1655,6 +1669,71 @@ theorem writeBytes_writeBytes_same (m : Mem) (a : Nat) :
       rw [writeByte_writeBytes_head m a b₁ bs₁ b]
       exact writeBytes_writeBytes_same (writeByte m a b) (a + 1) bs₁ bs
         (by simp only [List.length_cons] at h; omega)
+
+/-- **Two writes over disjoint present regions commute.**  Both regions are present,
+so both writes are replacements in place and the append order — the one thing that
+distinguishes the two sides as lists — never enters.  This is
+`writeBytes_absent_comm_witness`'s statement with the hypothesis the absent case
+cannot meet. -/
+theorem writeBytes_comm_of_present (A : Mem) :
+    ∀ (a : Nat) (X : List UInt8) (b : Nat) (Y : List UInt8),
+      (∃ X₀, readBytes A a X.length = some X₀) →
+      (∃ Y₀, readBytes A b Y.length = some Y₀) →
+      (a + X.length ≤ b ∨ b + Y.length ≤ a) →
+      writeBytes (writeBytes A a X) b Y = writeBytes (writeBytes A b Y) a X
+  | a, X, b, [], _, _, _ => rfl
+  | a, X, b, y :: Ys, hX, hY, hdisj => by
+      obtain ⟨Y₀, hY₀⟩ := hY
+      simp only [List.length_cons] at hY₀ hdisj
+      obtain ⟨y₀, hy₀⟩ : ∃ y₀, readByte A b = some y₀ := by
+        cases h : readByte A b with
+        | none =>
+            rw [show readBytes A b (Ys.length + 1) = none from by
+              simp only [readBytes, h]] at hY₀
+            cases hY₀
+        | some y₀ => exact ⟨y₀, rfl⟩
+      obtain ⟨Ys₀, hYs₀⟩ : ∃ Ys₀, readBytes A (b + 1) Ys.length = some Ys₀ := by
+        rw [show readBytes A b (Ys.length + 1) = (match readByte A b with
+          | none => none
+          | some y₀ => match readBytes A (b + 1) Ys.length with
+            | none => none
+            | some bs => some (y₀ :: bs))
+          from rfl, hy₀] at hY₀
+        cases h : readBytes A (b + 1) Ys.length with
+        | none => rw [h] at hY₀; cases hY₀
+        | some Ys₀ => exact ⟨Ys₀, rfl⟩
+      -- the single byte at `b` lifts past the whole of `X`
+      have hlift : writeByte (writeBytes A a X) b y = writeBytes (writeByte A b y) a X := by
+        refine writeByte_writeBytes_comm (m := A) (b := b) (y := y) a X hX ?_
+        rcases hdisj with h | h
+        · exact Or.inr h
+        · exact Or.inl (by omega)
+      -- the region's presence in the memory the byte write leaves: the write is on
+      -- one side of it or the other
+      have hX' : ∃ X₀, readBytes (writeByte A b y) a X.length = some X₀ := by
+        obtain ⟨X₀, hX₀⟩ := hX
+        refine ⟨X₀, ?_⟩
+        rcases hdisj with h | h
+        · rw [readBytes_writeByte_above A X.length a (by omega)]
+          exact hX₀
+        · rw [readBytes_writeByte_below A X.length a (by omega)]
+          exact hX₀
+      have hY' : ∃ Y₀, readBytes (writeByte A b y) (b + 1) Ys.length = some Y₀ :=
+        ⟨Ys₀, by
+          rw [readBytes_writeByte_below A Ys.length (b + 1) (by omega)]
+          exact hYs₀⟩
+      have hdisj' : a + X.length ≤ b + 1 ∨ (b + 1) + Ys.length ≤ a := by
+        rcases hdisj with h | h
+        · exact Or.inl (Nat.le_trans h (Nat.le_succ b))
+        · refine Or.inr ?_
+          have heq : b + (Ys.length + 1) = (b + 1) + Ys.length := by omega
+          rwa [heq] at h
+      show writeBytes (writeByte (writeBytes A a X) b y) (b + 1) Ys
+        = writeBytes (writeBytes A b (y :: Ys)) a X
+      rw [hlift]
+      rw [show writeBytes (writeBytes A b (y :: Ys)) a X
+        = writeBytes (writeBytes (writeByte A b y) (b + 1) Ys) a X from rfl]
+      exact writeBytes_comm_of_present (writeByte A b y) a X (b + 1) Ys hX' hY' hdisj'
 
 /-! ### The scan's bound
 
@@ -3388,8 +3467,8 @@ model's, and the join needs exactly two facts:
 * **the slot write absorbs the arm's clear** — proved below
   (`s2StringBodySlot_absorb`): the body stores `0` at its slot before the call and
   the callee stores the arm's word there, so the second write is the memory;
-* **two in-place writes over disjoint regions commute** — *owed*.  Stated at the
-  shape the join uses:
+* **two in-place writes over disjoint regions commute** — proved below as
+  `writeBytes_comm_of_present`, at the shape the join uses:
 
       readBytes A a X.length ≠ none → readBytes A b Y.length ≠ none →
       (a + X.length ≤ b ∨ b + Y.length ≤ a) →
@@ -3397,10 +3476,13 @@ model's, and the join needs exactly two facts:
 
   It is not `writeBytes_absent_comm_witness`'s claim (that one is false, and the
   witness is why): both regions must be **present**, which is what makes each write
-  a replacement in place, and only then is the append order irrelevant.  The
-  presence of the two regions is the staging's, and it is the last thing
-  `s2StringBodyPre` would need if the join is to be closed inside the row rather
-  than at the walk's staging.  -/
+  a replacement in place, and only then is the append order irrelevant.  Presence is
+  stated existentially — the bytes *written* and the bytes *present* are different
+  lists of the same length — and it survives the inductive step's byte write by
+  `readBytes_writeByte_above`/`_below`, one for each side of the region.  **That
+  two-sidedness is the cluster's whole content**: the commutation splits on which
+  side the odd address lies, and so does the preservation it needs.  The remaining
+  obligation is the two instantiations, whose presence facts are the staging's.  -/
 
 /-- **The slot write absorbs the arm's clear.**  The body writes `0` at the slot
 before the call and the callee writes the arm's word there; the second write is the
