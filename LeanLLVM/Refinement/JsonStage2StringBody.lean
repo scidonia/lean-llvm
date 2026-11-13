@@ -4229,6 +4229,44 @@ theorem s2StringBodyMemory_decoded_named (mem : Mem) {ei dst xj outn j1 k : Nat}
   simp only [s2StringBodyExpandMem, s2StringBodyDecodedMem]
   exact s2StringBodyMemory_decoded mem hei hdst hxj houtn hd_ei hx_ei hd_xj ho_ei ho_d ho_x
 
+set_option maxHeartbeats 2000000 in
+/-- **The decoded terminal at the named memory.**  The laminate `s2StringBodyExit_decoded`
+spells in its conclusion is paid once here, so a composition matches on the identifier
+and never unfolds it.  The hypotheses are that theorem's, plus the two facts that name
+the call's answer and the callee's memory. -/
+theorem s2StringBodyExit_decoded_named {e : State} {sub len conv : BitVec 64}
+    {p dst ei outn xp xj : Nat} {nxp : BitVec 64} {extra : Mem} {nx : Nat}
+    {call : BitVec 64} {outj out : List UInt8}
+    (hpc : e.pc = "land.lhs.true")
+    (hsub : lookupName e.env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName e.env "%len" = some (.int 64 len))
+    (hconv : lookupName e.env "%conv" = some (.int 64 conv))
+    (hbit7 : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 1#1)
+    (hp : lookupName e.env "%p" = some (.ptr p))
+    (hdst : lookupName e.env "%dst" = some (.ptr dst))
+    (hei : lookupName e.env "%ei" = some (.ptr ei))
+    (hxp : lookupName e.env "%xp" = some (.ptr xp))
+    (hxj : lookupName e.env "%xj" = some (.ptr xj))
+    (hnxp : lookupName e.env "%nxp" = some (.int 64 nxp))
+    (hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes e.mem ei (natToBytes (0#64).toNat 8)) e.next =
+      some { ret := .int 64 call, mem := extra, next := nx })
+    (hbit9 : evalICmp .eq call 0xffffffffffffffff#64 = 0#1)
+    (houtn : lookupName e.env "%outn" = some (.ptr outn))
+    (hextra : extra = s2StringBodyExpandMem e.mem ei dst xj out outj)
+    (hcall : call = BitVec.ofNat 64 out.length) (hlenOut : out.length < 2 ^ 64) :
+    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000002#32))
+        (writeBytes (s2StringBodyExpandMem e.mem ei dst xj out outj) outn
+          (natToBytes out.length 8))) := by
+  have htoNat : (BitVec.ofNat 64 out.length).toNat = out.length := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlenOut]
+  have hstep := s2StringBodyExit_decoded (e := e) hpc hsub hlen hconv hbit7 hp hdst hei
+    hxp hxj hnxp hexp hbit9 houtn
+  rw [hcall, htoNat, hextra] at hstep
+  exact hstep
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
