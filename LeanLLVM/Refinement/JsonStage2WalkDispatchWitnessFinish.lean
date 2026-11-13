@@ -656,6 +656,18 @@ abbrev TailCarry₄ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRe
 
 /-! ### The tail segment's statement
 
+Two editing facts, both learned the hard way on this declaration:
+
+* a `def` stating a proposition and the theorem that fills it must have **the same parameter
+  list** — dropping a parameter from one produced `ConsumerTailSeg … : ℕ → Prop`, and the
+  error names the *type* rather than the missing binder;
+* a statement's premise list is rewritten **as one whole block**.  An indexed, line-by-line
+  patch of this file shifted a region by one line and a later indexed edit landed on a
+  docstring 250 lines away, which fails as a syntax error at a site nothing was meant to
+  touch.
+
+
+
 The four links from `if.then413.i`'s entry to the merge, stated as a proposition before it is
 proved — the day's discipline: the statement is the thing to get right, and one elaboration
 checks it.
@@ -665,7 +677,7 @@ answer left, and the copy's staging at the memory the scalar call's answer left.
 answers are parameters because the junction hypotheses are about the memories they left** —
 a consumer names what it consumes. -/
 def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (r₁ r₂ : CallOutcome) (ev : EventRecord) (ei cd : Nat) (tok : Nat) : Prop :=
+    (r₁ r₂ : CallOutcome) (ev : EventRecord) (ei cd : Nat) : Prop :=
   ∀ (_hInv : WalkInv G C s) (_hblock : C.block = "if.then413.i")
     (p : String) (_reg : String) (c : BitVec 32) (op : Operand) (rdv : BitVec 32)
     (x : BitVec 32),
@@ -691,27 +703,28 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next = some r₁ →
     r₁.ret = .int 32 x →
     evalICmp .eq x (BitVec.ofNat 32 0) = 0 →
-    -- the first junction: the log's stream-base word at the answer's memory
     readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) →
-    lookupName s.env "%c.i" = some (.ptr C.stage.c) →
-    lookupName s.env "%t352.i" = some (.ptr tok) →
-    lookupName s.env "%z" = some (.ptr C.stage.z) →
+    lookupName s.env "%c.i" = some (.ptr (TailCarry₂ C).stage.c) →
+    lookupName s.env "%t352.i" = some (.ptr (TailCarry₂ C).stage.tok) →
+    lookupName s.env "%z" = some (.ptr (TailCarry₂ C).stage.z) →
     stage2Calls stage2SubCalls "od_scalar_value"
-      [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z] r₁.mem s.next = some r₂ →
-    s2ScalarValueAppend r₁.mem r₂.mem C.stage.z ev.encodedBytes →
+      [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+       .ptr (TailCarry₂ C).stage.z] r₁.mem s.next = some r₂ →
+    s2ScalarValueAppend r₁.mem r₂.mem (TailCarry₂ C).stage.z ev.encodedBytes →
     r₂.ret = .int 32 (BitVec.ofNat 32 1) →
     G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length < C.k →
-    -- the second junction: the copy's staging at the appended record's memory
     s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
-       .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst] r₂.mem s.next →
+       .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
+      r₂.mem s.next →
     lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)) →
     lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)) →
     cd - ei ≤ C.inner → ei < cd → cd < 2 ^ 64 →
-    lookupName s.env "%t352.i" = some (.ptr tok) →
+    lookupName s.env "%t352.i" = some (.ptr (TailCarry₃ C ev).stage.tok) →
     ∃ (Cd : WalkCarry G) (sd : State) (n : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n ∧
       Cd = TailCarry₄ C ev ∧ Cd.block = "cleanup478.i" ∧ n = 4
+
 
 /-! ### The instrument -/
 
