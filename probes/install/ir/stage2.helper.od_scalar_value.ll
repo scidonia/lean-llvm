@@ -7,7 +7,7 @@
 ; `noinline` on every helper except s2_walk, the same token strip
 ; capture-stage2.sh applies, and — for od_scalar_value only — the walk's own
 ; three rewrites: its conversion slot becomes a pointer parameter, its
-; messages become `null`, and its one llvm.umin.i64 unfolds.  The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose body is outside the fragment at the negative-zero literal spelling `-0.000000e+00`.
+; messages become `null`, and its one llvm.umin.i64 unfolds.  The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is outside the fragment at the surfaces `stage2.helpers.tsv` names.
 ;
 define i32 @od_scalar_value(ptr %c, ptr %t, ptr %o, ptr %d) {
 entry:

@@ -65,15 +65,20 @@ open, and one is still outside it:
   body parses; its contents are pinned below.
 * `num_fast_el1` carries `alloca [768 x i8]`, `alloca %struct.Stk` and the
   binary64 chain (`uitofp`, `fmul`, `fdiv`, `fneg`, `select double`), all of
-  which the fragment models.  Its body is still outside it, on a narrower ground
-  than the shape: `-0.000000e+00`, the form LLVM prints for a negative zero, is
-  an exponent spelling the double reader refuses — it reads a decimal or a `0x`
-  pattern — so the measurement `stage2.rewrites.tsv` records as the reason the
-  walk's fixture keeps it out of line stands.  Its text is not written to the
-  tree: a fixture nothing can read is not a pin.  `stage2.helpers.tsv` records
-  its shape (1 922 lines, 237 blocks, two aggregate allocas, thirty-eight
-  floating-point sites) and the refusal reason, and the capture refuses if the
-  emission stops carrying them.
+  which the fragment models.  Its body is still outside the fragment, and the
+  reader of the text names three surfaces the capture leaves in place: the
+  extracted block is one `define`, so it carries no `%struct.Stk = type { … }`
+  line and the parser takes a struct's extent from its `Layout` argument; its
+  one `llvm.umin.i64` call is at `i64` with an immediate operand where the
+  model's unsigned minimum is `@llvm.umin.i32` at `i32` with two operands; and
+  `ashr exact`'s flag is refused by name.  Its text is not written to the tree:
+  a fixture nothing can read is not a pin.  `stage2.helpers.tsv` records its
+  shape (1 922 lines, 237 blocks, two aggregate allocas, thirty-eight
+  floating-point sites) and those three grounds, and the capture refuses if the
+  emission stops carrying the constructs it measures.  The literal spelling the
+  reader used to refuse, `-0.000000e+00`, is read now: LLVM prints binary64 with
+  the exponent's sign written and a sign in front of the mantissa, and the
+  reader takes both (`tests/core-extension.lean` pins the form).
 
 **One finding the body text carries.**  Where the model refuses, it writes the
 error record's `ok` word and its offset (`stage2ErrSet`), and the helpers'
@@ -112,7 +117,7 @@ def s2ValuePosSrc : String :=
 def s2AfterValueSrc : String :=
   include_str "../../probes/install/ir/stage2.helper.s2_after_value.ll"
 
-/-- `@s2_string_body`, which this fragment does not represent. -/
+/-- `@s2_string_body`. -/
 def s2StringBodySrc : String :=
   include_str "../../probes/install/ir/stage2.helper.s2_string_body.ll"
 

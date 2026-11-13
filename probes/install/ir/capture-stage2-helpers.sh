@@ -61,10 +61,25 @@
 #   num_fast_el1     aggregate and binary64 text: `alloca [768 x i8]`,
 #                    `alloca %struct.Stk`, `alloca double`, and the `uitofp`/
 #                    `fmul`/`fdiv`/`fneg`/`select double` chain, all modelled.
-#                    The body is still outside the fragment at one literal
-#                    spelling: `-0.000000e+00`, LLVM's printed negative zero, is
-#                    an exponent form the double reader refuses (it reads a
-#                    decimal or a `0x` pattern).
+#                    The body is still outside the fragment, on three grounds
+#                    this capture leaves in place, measured by reading the body
+#                    with `LeanLLVM.Parser`:
+#
+#                      %struct.Stk   the extraction takes one `define` block, so
+#                                    the module's `%struct.Stk = type { … }` line
+#                                    is not in the text, and the parser takes a
+#                                    struct's extent from its `Layout` argument
+#                                    rather than recomputing it from fields
+#                                    (`expectAllocaTy`);
+#                      llvm.umin.i64 one call, at i64 with an immediate operand;
+#                                    the model's unsigned minimum is
+#                                    `@llvm.umin.i32` at i32 with two operands;
+#                      ashr exact    `exact` on the shift, a flag the token strip
+#                                    does not remove and the parser refuses by
+#                                    name.
+#
+#                    The double reader accepts the body's literals —
+#                    `-0.000000e+00` and `0.000000e+00` included.
 #
 # num_fast_el1's text is not written to the tree: a fixture nothing can read is
 # not a pin.  The inventory records the shape and the verdict, and the checks
@@ -297,7 +312,7 @@ for sym in s2_init s2_value_pos s2_after_value s2_string_body od_scalar_value; d
     s2_string_body)
       note='The body is a program of this fragment: its `ptrtoint` pair and its `@.str.14` symbol operand are both modelled, and `JsonStage2HelperIR` pins the AST it parses to.' ;;
     od_scalar_value)
-      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose body is outside the fragment at the negative-zero literal spelling `-0.000000e+00`.' ;;
+      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is outside the fragment at the surfaces `stage2.helpers.tsv` names.' ;;
     *)
       note='The body is captured and the fragment expresses it.' ;;
   esac
@@ -324,7 +339,7 @@ done
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean" ;;
       num_fast_el1)
         verdict=refused
-        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)), all modelled; refused at the negative-zero literal spelling -0.000000e+00, an exponent form the double reader does not accept" ;;
+        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)), all modelled; refused at three surfaces this capture leaves in place: the extracted block has no %struct.Stk declaration and the parser takes a struct's extent from a Layout argument, the one llvm.umin.i64 call is at i64 with an immediate where the model's umin is i32 with two operands, and ashr exact's flag is refused by name; the decimal literals parse" ;;
       *)
         verdict=expressible
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean" ;;

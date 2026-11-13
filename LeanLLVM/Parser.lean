@@ -315,7 +315,9 @@ def splitDecimalExp (cs : List Char) : Option (List Char × Int) :=
   | [] => some ([], 0)
   | c :: rest =>
       if c = 'e' || c = 'E' then
-        match parseInt (String.ofList rest) with
+        let es := String.ofList rest
+        let es := if es.startsWith "+" then (es.drop 1).toString else es
+        match parseInt es with
         | some e => some ([], e)
         | none => none
       else
@@ -352,7 +354,8 @@ def parseDoubleLit (t : String) : Except String (BitVec 64) :=
     | none => .error s!"invalid hexadecimal floating-point literal '{t}'"
   else
     let neg := t.startsWith "-"
-    match splitDecimalExp t.toList with
+    let body := if neg then (t.drop 1).toString else t
+    match splitDecimalExp body.toList with
     | none => .error s!"invalid floating-point literal '{t}': write a decimal or a 0x pattern"
     | some (mcs, e) =>
       match parseMantissa mcs with

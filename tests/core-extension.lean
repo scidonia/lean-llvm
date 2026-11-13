@@ -361,6 +361,34 @@ def outOne (i : Instr) (s : State) (n : String) : Option (BitVec 1) :=
 #guard Const.render (.float 0x8000000000000000) = "0x8000000000000000"
 #guard Const.render (.float 0x7FF8000000000001) = "0x7ff8000000000001"
 
+/-- The reader's answer to a literal, as a `Bool` pin: `some b` when it reads the
+pattern `b`, `none` when it refuses. -/
+def doubleLit (t : String) : Option (BitVec 64) :=
+  match parseDoubleLit t with
+  | .ok b => some b
+  | .error _ => none
+
+-- The literal reader: a decimal is admitted only where it denotes exactly the
+-- pattern it writes.  LLVM prints binary64 as a decimal with an exponent whose
+-- sign is always written and a sign in front of the mantissa, so both spellings
+-- below are decimals the reader has to read — `-0.000000e+00` is the emitted
+-- `num_fast_el1`'s, and negative zero is exactly representable.
+#guard doubleLit "-0.000000e+00" = some 0x8000000000000000
+#guard doubleLit "0.000000e+00" = some 0x0000000000000000
+#guard doubleLit "1.000000e+01" = some 0x4024000000000000
+#guard doubleLit "-2.500000e+00" = some 0xC004000000000000
+#guard doubleLit "0x8000000000000000" = some 0x8000000000000000
+
+-- The rule those spellings are read under still refuses a decimal it would have
+-- to round, and a malformed exponent still refuses by name.
+#guard doubleLit "0.100000e+00" = none
+#guard doubleLit "1.000000e-07" = none
+#guard doubleLit "1.0e" = none
+#guard
+  match parseDoubleLit "0.100000e+00" with
+  | .error e => hasSubstr e "is not exactly a binary64"
+  | .ok _ => false
+
 -- `uitofp i64 … to double`, against C's `(double)x`; the seventh and eighth
 -- round, which is the only place the widening is not exact.
 #guard outBits (.uitofp "%r" 64 (.reg "%x")) (stI 0) "%r" = some 0x0000000000000000
