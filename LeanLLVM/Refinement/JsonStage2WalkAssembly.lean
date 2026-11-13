@@ -1260,6 +1260,16 @@ theorem walkRefusalCopy_at {sub : Calls} {s : State} {s₁ : State}
     ∃ s' : State, LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s' ∧ s'.pc = "if.end" :=
   ⟨_, walkIfThen_step s hpc hden hpc₁, rfl⟩
 
+/-- **The refusal arm's verdict is the literal zero.**  `if.end`'s `phi` takes `0` on the
+`if.then` edge and `1` on `s2_walk.exit`'s, so the empty entry stream returns `some (.int 64
+0)` — the "specified refusal" is a definitional fact about `walkIfEndIncoming`'s list, not a
+claim about the copy's cells.  This is also `walkReturn_at`'s `hphi` at the refusal: the
+returned word and the arm's premise are one fact, which is why it is stated once here. -/
+theorem walkIfEnd_refusal_phi :
+    phiIncoming "if.then" walkIfEndIncoming =
+      some (Operand.imm (Const.int 64 (BitVec.ofNat 64 0))) :=
+  rfl
+
 /-- **The return.**  `if.end`'s `phi` at the refusal bit, returning the verdict the copy
 carried. -/
 theorem walkReturn_at {sub : Calls} {s : State}
