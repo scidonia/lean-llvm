@@ -2036,8 +2036,9 @@ theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
     (he : lookupName s.env "%e" = some (.ptr e))
     (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
     (hv64 : v < 2 ^ 64) :
-    ∃ s' : State, LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = "if.then" :=
-  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl⟩
+    ∃ s' : State, LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = "if.then" ∧
+      s'.env = ("%off1.i.i117", .ptr (e + 8)) :: s.env :=
+  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl⟩
 
 /-- **The refusal copy's step.**  `if.then`'s five live-range ends at the state the flush
 block leaves: the jump's destination is `if.end`. -/
