@@ -3348,6 +3348,21 @@ theorem walkExit488Tail {sub : Calls} {s s₁ s₂ : State} {e v : Nat} {p : Str
   exact walkIfEnd_step { s₂ with pc := "if.end", pre := some s₁.pc } rfl
     he₂ hz₂ hs₂ rfl hphi hv
 
+/-- **`s2_walk.exit`'s step.**  The six live-range ends and the two cursor copies, then the
+block's unconditional branch to `if.end`.  Its terminator is `br`, so the step is the same shape
+as `walkIfThen_step`'s. -/
+theorem walkExitStep {sub : Calls} (s : State) (hpc : s.pc = "s2_walk.exit")
+    {s₁ : State}
+    (hden : denoteCode (stage2Calls sub) walkExitBlock.instrs s = some s₁)
+    (hpc₁ : s₁.pc = s.pc) :
+    LeanLLVM.step (stage2Calls sub) stage2Body s =
+      .jump { s₁ with pc := "if.end", pre := some s.pc } := by
+  have hfind : stage2Body.findBlock s.pc = some walkExitBlock := by
+    rw [hpc]; exact walkExitBlock_find
+  simp only [LeanLLVM.step, hfind, hden]
+  dsimp only [walkExitBlock, execTerm]
+  rw [hpc₁]
+
 end WalkScope
 
 end LeanLLVM.Refinement
