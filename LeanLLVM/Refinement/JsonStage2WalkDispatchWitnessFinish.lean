@@ -677,7 +677,7 @@ answer left, and the copy's staging at the memory the scalar call's answer left.
 answers are parameters because the junction hypotheses are about the memories they left** —
 a consumer names what it consumes. -/
 def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (r₁ r₂ : CallOutcome) (ev : EventRecord) (ei cd : Nat) : Prop :=
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) (ei cd : Nat) : Prop :=
   ∀ (_hInv : WalkInv G C s) (_hblock : C.block = "if.then413.i")
     (p : String) (_reg : String) (c : BitVec 32) (op : Operand) (rdv : BitVec 32)
     (x : BitVec 32),
@@ -717,6 +717,10 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
       r₂.mem s.next →
+    stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
+      r₂.mem s.next = some r₃ →
     lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)) →
     lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)) →
     cd - ei ≤ C.inner → ei < cd → cd < 2 ^ 64 →
