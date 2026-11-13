@@ -30,7 +30,11 @@ literal's `toNat` unreduced (`c + (1112#64).toNat`, not `c + 1112`); a stored
 value likewise (`natToBytes (0#32).toNat 4`, not `natToBytes 0 4`); and an
 arithmetic cell is `x + c` in the immediate's own `BitVec` form.  The two sides of
 a failed reconciliation are printed by the compiler, which is where the produced
-term should be copied from.
+term should be copied from — and **two margins**: the final reconciliation must
+rewrite *both* `denoteCode []` occurrences (`simp only [denoteCode_nil, …]`, not a
+single `rw`), and a step's `_` slot can hide a **bound** as easily as a value, so
+when the two sides print identically and the goal will not close, the residual is
+a side condition of a step rather than a mismatch of terms.
 
 **The body.**  `entry` converts the two addresses and reads the cursor word;
 `land.rhs`/`while.body` scan the position list forward to the body's first
@@ -1052,5 +1056,27 @@ theorem s2StringBody_ifThen11_denote {calls : Calls} {env : Env} {s : State}
           (e + (8#64).toNat) (natToBytes (off + sub).toNat 8)) }
       "%msg2.i.i" (by s2_lk))]
   simp only [denoteCode_nil, s2StringBodyIfThen11Env, s2StringBodyIfThen11Mem]
+
+/-- **The `while.body` block's run**: the counter advances by one, the cursor
+word takes it, and the exit test compares it with the count.  This is the scan's
+per-iteration effect, the write the `BoundLoop`'s invariant carries. -/
+theorem s2StringBody_whileBody_denote {calls : Calls} {env : Env} {s : State}
+    {inc24 nxp : BitVec 64} {xj : Nat}
+    (hinc24 : lookupName env "%inc24" = some (.int 64 inc24))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp)) :
+    denoteCode calls s2StringBodyWhileBodyInstrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt
+          (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+            ("%inc", .int 64 (inc24 + 1#64)) :: env)
+          { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) }) := by
+  dsimp only [s2StringBodyWhileBodyInstrs]
+  rw [denoteCode_add_imm calls env s "%inc" "%inc24" hinc24 _]
+  rw [denoteCode_store64 calls (("%inc", .int 64 (inc24 + 1#64)) :: env) s "%inc" "%xj"
+    (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_icmp_eq_reg calls (("%inc", .int 64 (inc24 + 1#64)) :: env)
+    { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) }
+    "%exitcond.not" "%inc" "%nxp" (by s2_lk) (by s2_lk) []]
 
 end LeanLLVM.Refinement
