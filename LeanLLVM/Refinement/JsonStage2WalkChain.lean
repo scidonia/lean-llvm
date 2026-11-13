@@ -44,6 +44,7 @@ made explicit — which is where the literal form stops paying.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkAssembly
 import LeanLLVM.Refinement.JsonStage2WalkSteps
+import LeanLLVM.Refinement.JsonStage2WalkStepsPath
 
 set_option autoImplicit false
 
@@ -172,11 +173,66 @@ theorem walkHeadChain_default {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     simpa [hne34] using hl₃
   exact WalkChain.tail hl₁' (WalkChain.tail hl₂' (WalkChain.tail hl₃' (WalkChain.nil hl₃'.inv')))
 
+/-- The state `sw.default.i` leaves on the arm that reaches `cond.end349.i`: the entry
+count's test's cell. -/
+def headS₄ (s : State) (x : BitVec 8) (inc nep : BitVec 64) : State :=
+  { (headS₃ s x).bind "%cmp343.i" (.int 1 (evalICmp .ult inc nep)) with
+    pc := "cond.end349.i", pre := some (headS₃ s x).pc }
+
+/-- **The head path to `cond.end349.i`'s successor.**  Two more links past the default
+arm: the entry count's test at `sw.default.i`, then class F's own run at
+`cond.end349.i` — whose successor is `condEnd349OutAt`, so the chain names it.
+
+The two facts the pair needs are the count's word (`%nep`, the ABI's fourth argument)
+and `%inc.i`, the header's increment; both are the caller's to supply, which is where a
+token class's case split enters. -/
+theorem walkHeadChain_to_condOut {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (hlt44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
+    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
+    {inc nep : BitVec 64} {c ix : BitVec 64} {reg p : String}
+    (hinc : evalOperand (headS₃ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (headS₃ s x) (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0)
+    (hpre4 : (headS₄ s x inc nep).pre = some "sw.default.i")
+    (hinc4 : phiIncoming "sw.default.i" [("cond.true345.i", Operand.reg "%conv347.i"),
+      ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
+    (hav4 : lookupName (headS₄ s x inc nep).env reg = some (.int 64 c))
+    (hidx4 : lookupName (headS₄ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok4 : lookupName (headS₄ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap4 : lookupName (headS₄ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))) :
+    ∃ (C₅ : WalkCarry G) (s₅ : State), WalkChain (stage2Calls stage2SubCalls) G C s C₅ s₅ ∧
+      C₅ = { { C with block := "cond.end349.i" } with
+        block := (if evalICmp .ugt c ix = 1
+          then "land.lhs.true357.i" else "if.end372.i") } ∧
+      s₅ = condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20) := by
+  -- the first three links, at their own target
+  have hchain₃ : WalkChain (stage2Calls stage2SubCalls) G C s
+      { C with block := "sw.default.i" } (headS₃ s x) :=
+    walkHeadChain_default (calls := stage2Calls stage2SubCalls) hInv hhead h8 hlt91 hlt44 hne34
+  -- the default arm's test
+  obtain ⟨s₄, hl₄, hs₄⟩ :=
+    WalkLink.sw_default_i_at G _ _ (WalkChain.inv_last hchain₃) rfl hinc hnep
+  have hl₄' : WalkLink (stage2Calls stage2SubCalls) G
+      { C with block := "sw.default.i" } (headS₃ s x)
+      { C with block := "cond.end349.i" } (headS₄ s x inc nep) := by
+    have : s₄ = headS₄ s x inc nep := hs₄.trans (by simp [headS₄, hge])
+    rw [this] at hl₄
+    simpa [hge] using hl₄
+  -- class F's run
+  obtain ⟨s₅, hl₅, hs₅⟩ :=
+    WalkLink.cond_end349_i_at G _ _ hl₄'.inv' rfl hpre4 hinc4 hav4 hidx4 htok4 hgap4
+  refine ⟨_, s₅, hchain₃.append (WalkChain.tail hl₄' (WalkChain.tail hl₅ (WalkChain.nil hl₅.inv'))),
+    rfl, hs₅⟩
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91_lt44
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_default
+#print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_condOut
 
 end WalkScope
 
