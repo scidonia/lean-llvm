@@ -1,28 +1,31 @@
 # The JSON route's stage timings
 
 The route artifact answers one document per invocation: it decides the document
-in two phases — the adapter's native facts from the proved stage-1 mask unit,
-then the native character-policy scan where the masks saw a candidate byte —
-stages it in the record's shape on the fast path, calls the native object through
+in two phases — the adapter's native walk of the document's structural delimiter
+sequence, whose maximum is the depth clause's number, then the native
+character-policy scan where the walk saw a candidate byte — stages it in the
+record's shape on the fast path, calls the native object through
 the adapter, and prints the observation, the arena and the event stream.  This
 page records where its time goes, measured stage by stage, beside the numbers for
-the object's optimisation level, the fallback's price, and one external
-reference.  The outcome stage — 96.4–97.2% of the route on the three scalar
-arrays, 88.1–93.1% on the five escape documents and 59.4% on the raw-UTF-8 one,
-whose result is 95 bytes — is dissected into its five parts, and set against a
-consumer that reads the same result without printing, because the printed path's
-cost and a production consumer's cost are not the same number.  The admission
-stage is set beside the predicate it replaced, in the same session and on the
-same documents, because which of its two phases runs is a property of the
-document; the policy phase is measured against the reference's own scan on the
-same bytes, which is the cost it replaced.
+the object's optimisation level and the fallback's price.  The outcome stage —
+99.09–99.30% of the route on the three scalar arrays, 91.99–97.93% on the five
+escape documents and 86.31% on the raw-UTF-8 one, whose result is 95 bytes — is
+dissected into its five parts, and set against a consumer that reads the same
+result without printing, because the printed path's cost and a production
+consumer's cost are not the same number.  The admission stage is set beside the
+predicate it replaced, in the same session and on the same documents, because
+which of its two phases runs is a property of the document; the policy phase is
+measured against the reference's own scan on the same bytes, which is the cost it
+replaced.  The external reference arm is the one section this run could not
+measure: no local simdjson `singleheader/` source was present, so `bench.sh`
+reported it absent rather than substituting a row.
 
 Every time on this page is nanoseconds, every row is a median, and each row's
 construction is stated with it.  Nothing here is compared against
 [`kernel/json/measured/`](../kernel/json/measured/PROVENANCE.md): that
 record's ratios came from a scratch tree, a different pipeline build and a
-rotation this page does not share, so the only comparison is the reference arm
-measured in the same session as the route, paired round by round.
+rotation this page does not share, so the rows paired round by round inside one
+session are the only comparisons this page reads.
 
 ## Reproducing it
 
@@ -57,20 +60,26 @@ documented in `probes/json/route/README.md` beside the build knobs `OPT` (the
 kernel object's level) and `TIMING=1` (the adapter's stage instrument).
 
 The record below is one run of that script, on this machine, with the change that
-added the native policy scan in the working tree and not yet committed; the
+made the native route measure the depth clause — the maximum structural nesting,
+in place of the opener-byte count — in the working tree and not yet committed; the
 flake's dirty-tree notice is what a run prints for an uncommitted tree and is not
-a measurement, so it is not in the record.  It carries one appended section, the
-staging fill's paired before/after, added with that change: it is a later run of
-the same `--stages` mode on two builds, and the command and construction it used
-are named with it.
+a measurement, so it is not in the record.  It is the whole record rather than an
+appended row set, because the admission stage's fields changed: `admission_depth`
+is the number the depth clause compares, and the shipped `scale-4096.json` row
+now takes the fast path, so its earlier fallback rows no longer describe it.  The
+host was shared and busy while it ran -- a load average of 3.5–4.8 on eight cores,
+with another build holding most of a core -- and a local simdjson `singleheader/`
+source was absent, so the reference arm is reported absent rather than
+substituted; "What this does and does not establish", below, says what that costs
+the numbers.
 
 ## What each stage contains
 
 | stage | the work inside the timed region |
 |---|---|
 | `read_ns` | `IO.FS.readBinFile` of the document — reported apart from the stages, in no stage |
-| `admission_ns` | the two-phase decision, both phases: `admission_native_ns` (the adapter's mask pass over the document, the delimiter lanes counted, the candidate flag, and the header decode) plus `admission_policy_ns` (the native character-policy scan, which runs only where the masks saw a candidate; `-` on the rows where it was skipped) |
-| `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_openers`, `admission_candidate`, `admission_blocks`, `admission_clause`) |
+| `admission_ns` | the two-phase decision, both phases: `admission_native_ns` (the adapter's walk over the document — the running depth, its maximum, the structural lane list through the proved counter, the candidate flag, and the header decode) plus `admission_policy_ns` (the native character-policy scan, which runs only where the walk saw a candidate; `-` on the rows where it was skipped) |
+| `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_depth` — the maximum structural nesting — `admission_candidate`, `admission_blocks`, `admission_clause`) |
 | `staging_ns` | the record's shape in bytes: the window `[0,0,0] ++ doc ++ padding ++ 32`, and the four growing buffers, each a fresh `ByteArray` at the record's capacity, zero-filled by the adapter's `leanllvm_route_zeroed` — one allocation and one `memset` per buffer |
 | `copyin_ns` | the adapter's precondition checks and its copy of the thirteen buffers the object writes into its own allocations (13 `malloc` + `memcpy`); the document window is borrowed, because the object only reads it, so its bytes are staged once rather than twice |
 | `native_ns` | the call to `leanllvm_json_pipeline` alone |
@@ -115,6 +124,7 @@ pins a five-event fixture's counts as well.
 ## The record
 
 ```text
+lean-llvm: Lean (version 4.35.0, Release)
 ## the machine
 
 cpu            Intel(R) Core(TM) Ultra 7 268V
@@ -164,72 +174,72 @@ stage rows   <build>/leanllvm-json-route --stages <file> 21
 wall rows    <build>/leanllvm-json-route --doc <file>, one process each
 reference    bench/simdjson-baseline <file> 21
 
-row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=6194 admission_ns=1773 admission_native_ns=1732 admission_policy_ns=- admission_candidate=0 admission_openers=1 admission_blocks=65 admission_clause=0 staging_ns=50345 copyin_ns=1666 native_ns=6910 copyout_ns=225 adapter_wall_ns=9008 fallback_ns=- outcome_ns=2268795 outcome_decode_ns=1915649 outcome_header_ns=689 outcome_slice_ns=67495 outcome_arena_ns=182 outcome_events_ns=282948 hex_arena_ns=66 hex_events_ns=272235 hexlen=12311 total_ns=2333802 summed_stage_ns=2333184 verdict=1 ndst=0 nev=6149 rep_total_ns=[2953399, 2510062, 2322217, 2290252, 2308755, 2262732, 2330401, 2340580, 2277553, 2307549, 2438015, 2333802, 2333985, 2328447, 2342296, 2443651, 2312659, 2354919, 2306092, 2415796, 2356821]
-row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=16092 admission_ns=6219 admission_native_ns=6005 admission_policy_ns=- admission_candidate=0 admission_openers=1 admission_blocks=257 admission_clause=0 staging_ns=254658 copyin_ns=16183 native_ns=28510 copyout_ns=1331 adapter_wall_ns=46460 fallback_ns=- outcome_ns=9196793 outcome_decode_ns=7749951 outcome_header_ns=2369 outcome_slice_ns=280132 outcome_arena_ns=918 outcome_events_ns=1150948 hex_arena_ns=85 hex_events_ns=1107185 hexlen=49175 total_ns=9468973 summed_stage_ns=9466456 verdict=1 ndst=0 nev=24581 rep_total_ns=[11005928, 10052369, 9562573, 9924075, 9513297, 9521684, 9867394, 9599673, 9641975, 9437062, 9415662, 9259193, 9415985, 9213417, 9192314, 9341255, 9295305, 9744020, 9468973, 9449695, 9464258]
-row doc=fast-nums-65536.json size=65539 path=fast reps=21 read_ns=28705 admission_ns=22849 admission_native_ns=22566 admission_policy_ns=- admission_candidate=0 admission_openers=1 admission_blocks=1025 admission_clause=0 staging_ns=1365528 copyin_ns=102701 native_ns=132941 copyout_ns=5911 adapter_wall_ns=243257 fallback_ns=- outcome_ns=42181209 outcome_decode_ns=35471304 outcome_header_ns=3215 outcome_slice_ns=1246846 outcome_arena_ns=1756 outcome_events_ns=5399119 hex_arena_ns=401 hex_events_ns=5219667 hexlen=196631 total_ns=43740910 summed_stage_ns=43738290 verdict=1 ndst=0 nev=98309 rep_total_ns=[41216681, 39103622, 41331016, 39481813, 40609611, 41500091, 42913081, 42890908, 43435297, 44163536, 43740910, 44615107, 44956551, 43811952, 43948793, 43299646, 48251378, 45601222, 46288263, 47185012, 47479464]
-row doc=fast-esc.json size=2004 path=fast reps=21 read_ns=3205 admission_ns=730 admission_native_ns=493 admission_policy_ns=238 admission_candidate=1 admission_openers=1 admission_blocks=32 admission_clause=0 staging_ns=27238 copyin_ns=965 native_ns=2857 copyout_ns=163 adapter_wall_ns=4160 fallback_ns=- outcome_ns=434329 outcome_decode_ns=363022 outcome_header_ns=413 outcome_slice_ns=19669 outcome_arena_ns=47358 outcome_events_ns=1165 hex_arena_ns=47565 hex_events_ns=1059 hexlen=2043 total_ns=467441 summed_stage_ns=466743 verdict=1 ndst=1000 nev=15 rep_total_ns=[722925, 658305, 479529, 492082, 463420, 461062, 470507, 500978, 469075, 488791, 451249, 464713, 466789, 460299, 467441, 519820, 466154, 456767, 639695, 448088, 462084]
-row doc=fast-esc-quotes.json size=2004 path=fast reps=21 read_ns=3507 admission_ns=700 admission_native_ns=466 admission_policy_ns=236 admission_candidate=1 admission_openers=1 admission_blocks=32 admission_clause=0 staging_ns=27465 copyin_ns=989 native_ns=2921 copyout_ns=169 adapter_wall_ns=4241 fallback_ns=- outcome_ns=428653 outcome_decode_ns=365377 outcome_header_ns=408 outcome_slice_ns=19595 outcome_arena_ns=42128 outcome_events_ns=1139 hex_arena_ns=41984 hex_events_ns=1068 hexlen=2043 total_ns=460664 summed_stage_ns=460204 verdict=1 ndst=1000 nev=15 rep_total_ns=[674619, 638614, 457181, 453100, 460664, 452748, 464959, 482547, 514783, 459544, 459194, 459041, 452719, 450755, 442641, 470277, 482416, 629234, 520345, 512546, 458465]
-row doc=fast-esc-u.json size=3004 path=fast reps=21 read_ns=3413 admission_ns=8403 admission_native_ns=615 admission_policy_ns=7802 admission_candidate=1 admission_openers=1 admission_blocks=47 admission_clause=0 staging_ns=41205 copyin_ns=1281 native_ns=4529 copyout_ns=164 adapter_wall_ns=6146 fallback_ns=- outcome_ns=429171 outcome_decode_ns=365575 outcome_header_ns=405 outcome_slice_ns=19475 outcome_arena_ns=42410 outcome_events_ns=1144 hex_arena_ns=42393 hex_events_ns=1073 hexlen=2043 total_ns=486113 summed_stage_ns=485583 verdict=1 ndst=1000 nev=15 rep_total_ns=[896495, 854978, 531227, 480143, 478420, 486113, 478886, 524950, 533803, 491597, 490116, 473316, 485008, 465995, 482495, 522864, 495398, 484354, 480494, 501018, 474269]
-row doc=fast-surrogate.json size=3004 path=fast reps=21 read_ns=3380 admission_ns=8846 admission_native_ns=616 admission_policy_ns=8256 admission_candidate=1 admission_openers=1 admission_blocks=47 admission_clause=0 staging_ns=40987 copyin_ns=1295 native_ns=3248 copyout_ns=158 adapter_wall_ns=4866 fallback_ns=- outcome_ns=425090 outcome_decode_ns=362512 outcome_header_ns=431 outcome_slice_ns=18842 outcome_arena_ns=42110 outcome_events_ns=1158 hex_arena_ns=42148 hex_events_ns=1044 hexlen=2043 total_ns=482781 summed_stage_ns=481869 verdict=1 ndst=1000 nev=15 rep_total_ns=[906174, 840451, 482781, 471438, 498914, 500081, 470141, 478818, 483856, 494891, 472452, 529579, 480564, 518216, 472277, 479632, 477862, 486677, 484546, 478933, 474045]
-row doc=fast-utf8.json size=2004 path=fast reps=21 read_ns=2768 admission_ns=696 admission_native_ns=476 admission_policy_ns=224 admission_candidate=1 admission_openers=1 admission_blocks=32 admission_clause=0 staging_ns=27193 copyin_ns=944 native_ns=644 copyout_ns=146 adapter_wall_ns=1876 fallback_ns=- outcome_ns=44290 outcome_decode_ns=41439 outcome_header_ns=298 outcome_slice_ns=1324 outcome_arena_ns=113 outcome_events_ns=1241 hex_arena_ns=60 hex_events_ns=1051 hexlen=43 total_ns=74617 summed_stage_ns=74038 verdict=1 ndst=0 nev=15 rep_total_ns=[287147, 109659, 83715, 71484, 71977, 74464, 74617, 81322, 71088, 73073, 77389, 78648, 227455, 73167, 72709, 75183, 73621, 78089, 295365, 73929, 71661]
-row doc=depth-128.json size=256 path=fast reps=21 read_ns=2330 admission_ns=556 admission_native_ns=511 admission_policy_ns=- admission_candidate=0 admission_openers=128 admission_blocks=4 admission_clause=0 staging_ns=3186 copyin_ns=193 native_ns=716 copyout_ns=110 adapter_wall_ns=1165 fallback_ns=- outcome_ns=116566 outcome_decode_ns=101408 outcome_header_ns=301 outcome_slice_ns=3720 outcome_arena_ns=98 outcome_events_ns=11429 hex_arena_ns=49 hex_events_ns=11228 hexlen=525 total_ns=122269 summed_stage_ns=121829 verdict=1 ndst=0 nev=256 rep_total_ns=[324077, 143842, 141641, 118979, 118490, 121040, 130963, 118943, 130130, 122269, 119819, 148281, 118669, 125371, 130428, 118228, 121233, 125387, 122202, 120790, 122979]
-row doc=depth-129.json size=258 path=fallback reps=21 read_ns=2400 admission_ns=706 admission_native_ns=619 admission_policy_ns=- admission_candidate=0 admission_openers=129 admission_blocks=5 admission_clause=3 staging_ns=- copyin_ns=- native_ns=- copyout_ns=- adapter_wall_ns=- fallback_ns=5920 outcome_ns=1025 outcome_decode_ns=- outcome_header_ns=- outcome_slice_ns=- outcome_arena_ns=- outcome_events_ns=- hex_arena_ns=- hex_events_ns=- hexlen=- total_ns=7812 summed_stage_ns=7548 verdict=0 ndst=0 nev=0 rep_total_ns=[27883, 8289, 8172, 7481, 7413, 7572, 7412, 8206, 7370, 7084, 7904, 7870, 7812, 7724, 7859, 8023, 7710, 7610, 7715, 7873, 7910]
-row doc=scale-4096.json size=4096 path=fallback reps=21 read_ns=4396 admission_ns=1941 admission_native_ns=1861 admission_policy_ns=- admission_candidate=1 admission_openers=129 admission_blocks=64 admission_clause=3 staging_ns=- copyin_ns=- native_ns=- copyout_ns=- adapter_wall_ns=- fallback_ns=213012 outcome_ns=209478 outcome_decode_ns=- outcome_header_ns=- outcome_slice_ns=- outcome_arena_ns=- outcome_events_ns=- hex_arena_ns=- hex_events_ns=- hexlen=- total_ns=424227 summed_stage_ns=424003 verdict=0 ndst=0 nev=0 rep_total_ns=[481557, 421214, 426875, 423710, 429369, 422804, 571167, 422489, 439020, 449055, 414402, 424227, 420925, 419979, 437471, 422160, 415456, 415982, 426536, 448081, 438151]
+row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=7299 admission_ns=3288 admission_native_ns=3242 admission_policy_ns=- admission_candidate=0 admission_depth=1 admission_blocks=65 admission_clause=0 staging_ns=3831 copyin_ns=2418 native_ns=9070 copyout_ns=301 adapter_wall_ns=12024 fallback_ns=- outcome_ns=2888347 outcome_decode_ns=2431708 outcome_header_ns=815 outcome_slice_ns=83842 outcome_arena_ns=236 outcome_events_ns=364664 hex_arena_ns=82 hex_events_ns=357253 hexlen=12311 total_ns=2908832 summed_stage_ns=2907894 verdict=1 ndst=0 nev=6149 rep_total_ns=[3541479, 3040855, 2904859, 2891418, 2908832, 2922590, 2919727, 3016622, 3037166, 2920090, 2891102, 3082681, 2939897, 2891399, 2823000, 2830605, 2901999, 2809122, 3016035, 2834754, 2837684]
+row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=20614 admission_ns=9836 admission_native_ns=9218 admission_policy_ns=- admission_candidate=0 admission_depth=1 admission_blocks=257 admission_clause=0 staging_ns=16532 copyin_ns=18261 native_ns=33945 copyout_ns=1342 adapter_wall_ns=55262 fallback_ns=- outcome_ns=11615795 outcome_decode_ns=9780557 outcome_header_ns=2722 outcome_slice_ns=344910 outcome_arena_ns=963 outcome_events_ns=1453948 hex_arena_ns=165 hex_events_ns=1397617 hexlen=49175 total_ns=11701242 summed_stage_ns=11698737 verdict=1 ndst=0 nev=24581 rep_total_ns=[13110309, 12266529, 11850148, 12023722, 11652651, 11448458, 11741023, 11505111, 11701242, 11599483, 11543161, 11637262, 11537150, 11834388, 11541118, 11456544, 11684956, 11782120, 12035056, 11959157, 11764264]
+row doc=fast-nums-65536.json size=65539 path=fast reps=21 read_ns=52310 admission_ns=33427 admission_native_ns=32925 admission_policy_ns=- admission_candidate=0 admission_depth=1 admission_blocks=1025 admission_clause=0 staging_ns=81063 copyin_ns=98032 native_ns=155237 copyout_ns=7371 adapter_wall_ns=270901 fallback_ns=- outcome_ns=50715996 outcome_decode_ns=42270230 outcome_header_ns=6811 outcome_slice_ns=1514090 outcome_arena_ns=2358 outcome_events_ns=6925834 hex_arena_ns=597 hex_events_ns=6712599 hexlen=196631 total_ns=51181541 summed_stage_ns=51176030 verdict=1 ndst=0 nev=98309 rep_total_ns=[50808550, 51181541, 51089917, 50275793, 50150174, 49081976, 48041469, 48767456, 48876269, 49852051, 50923076, 52085542, 52115709, 58332842, 54481440, 56358189, 58039438, 59843239, 59327448, 60295761, 67596897]
+row doc=fast-esc.json size=2004 path=fast reps=21 read_ns=7011 admission_ns=3766 admission_native_ns=3251 admission_policy_ns=547 admission_candidate=1 admission_depth=1 admission_blocks=32 admission_clause=0 staging_ns=4004 copyin_ns=1481 native_ns=4051 copyout_ns=316 adapter_wall_ns=6127 fallback_ns=- outcome_ns=619964 outcome_decode_ns=507563 outcome_header_ns=926 outcome_slice_ns=28792 outcome_arena_ns=68806 outcome_events_ns=1841 hex_arena_ns=63178 hex_events_ns=1500 hexlen=2043 total_ns=636954 summed_stage_ns=636335 verdict=1 ndst=1000 nev=15 rep_total_ns=[1904011, 655172, 646281, 1792886, 607161, 612252, 4553073, 618044, 587814, 591061, 636954, 677574, 587435, 835598, 578237, 605089, 603746, 693620, 6741616, 597598, 727238]
+row doc=fast-esc-quotes.json size=2004 path=fast reps=21 read_ns=6750 admission_ns=3590 admission_native_ns=3241 admission_policy_ns=372 admission_candidate=1 admission_depth=1 admission_blocks=32 admission_clause=0 staging_ns=3678 copyin_ns=1350 native_ns=3878 copyout_ns=235 adapter_wall_ns=5765 fallback_ns=- outcome_ns=589528 outcome_decode_ns=500923 outcome_header_ns=679 outcome_slice_ns=26887 outcome_arena_ns=58243 outcome_events_ns=1735 hex_arena_ns=58577 hex_events_ns=1529 hexlen=2043 total_ns=603573 summed_stage_ns=603038 verdict=1 ndst=1000 nev=15 rep_total_ns=[3156455, 656584, 619433, 615784, 1066772, 596854, 614474, 591243, 585288, 592976, 593164, 899178, 668517, 574526, 578362, 679950, 591482, 576778, 603573, 598918, 670477]
+row doc=fast-esc-u.json size=3004 path=fast reps=21 read_ns=6491 admission_ns=15743 admission_native_ns=5130 admission_policy_ns=10617 admission_candidate=1 admission_depth=1 admission_blocks=47 admission_clause=0 staging_ns=5075 copyin_ns=1889 native_ns=6240 copyout_ns=281 adapter_wall_ns=8637 fallback_ns=- outcome_ns=597845 outcome_decode_ns=509510 outcome_header_ns=736 outcome_slice_ns=26281 outcome_arena_ns=57785 outcome_events_ns=1654 hex_arena_ns=57355 hex_events_ns=1470 hexlen=2043 total_ns=649936 summed_stage_ns=647292 verdict=1 ndst=1000 nev=15 rep_total_ns=[1382539, 649936, 727329, 657984, 613113, 629517, 728420, 796616, 629248, 702206, 623633, 602486, 609352, 676117, 591235, 595478, 1592701, 622307, 747279, 597943, 1055565]
+row doc=fast-surrogate.json size=3004 path=fast reps=21 read_ns=6024 admission_ns=14418 admission_native_ns=3232 admission_policy_ns=11218 admission_candidate=1 admission_depth=1 admission_blocks=47 admission_clause=0 staging_ns=5909 copyin_ns=1947 native_ns=4521 copyout_ns=297 adapter_wall_ns=6891 fallback_ns=- outcome_ns=590765 outcome_decode_ns=503642 outcome_header_ns=710 outcome_slice_ns=26132 outcome_arena_ns=59249 outcome_events_ns=1727 hex_arena_ns=56986 hex_events_ns=1539 hexlen=2043 total_ns=619420 summed_stage_ns=618867 verdict=1 ndst=1000 nev=15 rep_total_ns=[925648, 776055, 600336, 598367, 642872, 609840, 3651570, 671158, 599089, 3789164, 618678, 607075, 639963, 686374, 708413, 590696, 592616, 619420, 635136, 619291, 617927]
+row doc=fast-utf8.json size=2004 path=fast reps=21 read_ns=4119 admission_ns=3473 admission_native_ns=3172 admission_policy_ns=304 admission_candidate=1 admission_depth=1 admission_blocks=32 admission_clause=0 staging_ns=3211 copyin_ns=1355 native_ns=907 copyout_ns=201 adapter_wall_ns=2694 fallback_ns=- outcome_ns=61589 outcome_decode_ns=56897 outcome_header_ns=345 outcome_slice_ns=1804 outcome_arena_ns=160 outcome_events_ns=1695 hex_arena_ns=80 hex_events_ns=1372 hexlen=43 total_ns=71358 summed_stage_ns=70748 verdict=1 ndst=0 nev=15 rep_total_ns=[320456, 97577, 71110, 67595, 71943, 76732, 67807, 66306, 71291, 80930, 77042, 69600, 66936, 66305, 77703, 70356, 71358, 79218, 75951, 66216, 74604]
+row doc=depth-128.json size=256 path=fast reps=21 read_ns=4225 admission_ns=1094 admission_native_ns=1039 admission_policy_ns=- admission_candidate=0 admission_depth=128 admission_blocks=4 admission_clause=0 staging_ns=922 copyin_ns=327 native_ns=974 copyout_ns=163 adapter_wall_ns=1615 fallback_ns=- outcome_ns=156098 outcome_decode_ns=134512 outcome_header_ns=436 outcome_slice_ns=4942 outcome_arena_ns=149 outcome_events_ns=14946 hex_arena_ns=75 hex_events_ns=14657 hexlen=525 total_ns=162553 summed_stage_ns=161448 verdict=1 ndst=0 nev=256 rep_total_ns=[229603, 322048, 162553, 157511, 156395, 183577, 158751, 194392, 158065, 168585, 153810, 163090, 153724, 161994, 158530, 159140, 209655, 175079, 319353, 164498, 156968]
+row doc=depth-129.json size=258 path=fallback reps=21 read_ns=2818 admission_ns=1054 admission_native_ns=989 admission_policy_ns=- admission_candidate=0 admission_depth=129 admission_blocks=5 admission_clause=3 staging_ns=- copyin_ns=- native_ns=- copyout_ns=- adapter_wall_ns=- fallback_ns=6526 outcome_ns=1098 outcome_decode_ns=- outcome_header_ns=- outcome_slice_ns=- outcome_arena_ns=- outcome_events_ns=- hex_arena_ns=- hex_events_ns=- hexlen=- total_ns=8877 summed_stage_ns=8664 verdict=0 ndst=0 nev=0 rep_total_ns=[33262, 11933, 10925, 10836, 9231, 9222, 9406, 8740, 8767, 8690, 8591, 8664, 9186, 8870, 8877, 8725, 8666, 8873, 8672, 9109, 9186]
+row doc=scale-4096.json size=4096 path=fast reps=21 read_ns=11853 admission_ns=7431 admission_native_ns=6731 admission_policy_ns=693 admission_candidate=1 admission_depth=2 admission_blocks=64 admission_clause=0 staging_ns=5713 copyin_ns=2800 native_ns=7573 copyout_ns=445 adapter_wall_ns=11304 fallback_ns=- outcome_ns=4634336 outcome_decode_ns=3846595 outcome_header_ns=1373 outcome_slice_ns=134656 outcome_arena_ns=627 outcome_events_ns=648972 hex_arena_ns=168 hex_events_ns=637107 hexlen=17817 total_ns=4662132 summed_stage_ns=4660323 verdict=1 ndst=0 nev=8902 rep_total_ns=[5141871, 4629625, 4623558, 5061309, 4825565, 4662132, 4752612, 4728467, 4738983, 5164746, 4507463, 4643883, 4650100, 4637644, 4746013, 4819595, 4584927, 4555683, 4782716, 4634973, 4625446]
 
-row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=7628 admission_ns=2097 admission_native_ns=2039 admission_policy_ns=- admission_candidate=0 admission_openers=1 admission_blocks=65 admission_clause=0 staging_ns=59594 copyin_ns=2004 native_ns=8177 copyout_ns=269 adapter_wall_ns=10634 fallback_ns=- outcome_ns=2596030 outcome_decode_ns=2195767 outcome_header_ns=949 outcome_slice_ns=76701 outcome_arena_ns=310 outcome_events_ns=326287 hex_arena_ns=76 hex_events_ns=316159 hexlen=12311 total_ns=2668187 summed_stage_ns=2666885 verdict=1 ndst=0 nev=6149 rep_total_ns=[3303654, 3018065, 2694728, 2674037, 2725329, 2616692, 2668187, 2660405, 2658093, 2612040, 2665089, 2627157, 2695143, 2669853, 2734805, 2647845, 2603333, 2649199, 2728987, 2653909, 2720344]
-row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=15540 admission_ns=6947 admission_native_ns=6764 admission_policy_ns=- admission_candidate=0 admission_openers=1 admission_blocks=257 admission_clause=0 staging_ns=282855 copyin_ns=20250 native_ns=32244 copyout_ns=1486 adapter_wall_ns=54899 fallback_ns=- outcome_ns=10661733 outcome_decode_ns=9016145 outcome_header_ns=2483 outcome_slice_ns=316393 outcome_arena_ns=803 outcome_events_ns=1328851 hex_arena_ns=121 hex_events_ns=1284797 hexlen=49175 total_ns=11005672 summed_stage_ns=11003519 verdict=1 ndst=0 nev=24581 rep_total_ns=[12881908, 11792105, 10880323, 11471001, 11022219, 11183715, 11050974, 10975333, 11005672, 10955130, 11088766, 11091294, 10828936, 10931691, 11133509, 10970878, 10905576, 12277474, 10990009, 10969417, 10922865]
-row doc=fast-nums-65536.json size=65539 path=fast reps=21 read_ns=33035 admission_ns=24691 admission_native_ns=24445 admission_policy_ns=- admission_candidate=0 admission_openers=1 admission_blocks=1025 admission_clause=0 staging_ns=1483377 copyin_ns=107282 native_ns=145777 copyout_ns=6426 adapter_wall_ns=255111 fallback_ns=- outcome_ns=46375155 outcome_decode_ns=37735470 outcome_header_ns=3866 outcome_slice_ns=1313158 outcome_arena_ns=1673 outcome_events_ns=6154030 hex_arena_ns=438 hex_events_ns=5769054 hexlen=196631 total_ns=48249213 summed_stage_ns=48245472 verdict=1 ndst=0 nev=98309 rep_total_ns=[51524578, 48812837, 49461981, 45411927, 45750713, 45085840, 45087621, 46258581, 46005040, 46579505, 46496170, 48249213, 51115888, 48476147, 52477369, 50668316, 51088298, 49860028, 49015924, 47187420, 47144808]
-row doc=fast-esc.json size=2004 path=fast reps=21 read_ns=3205 admission_ns=753 admission_native_ns=491 admission_policy_ns=238 admission_candidate=1 admission_openers=1 admission_blocks=32 admission_clause=0 staging_ns=28021 copyin_ns=993 native_ns=2873 copyout_ns=169 adapter_wall_ns=4201 fallback_ns=- outcome_ns=445404 outcome_decode_ns=373052 outcome_header_ns=412 outcome_slice_ns=20372 outcome_arena_ns=49842 outcome_events_ns=1198 hex_arena_ns=49518 hex_events_ns=1113 hexlen=2043 total_ns=478878 summed_stage_ns=478281 verdict=1 ndst=1000 nev=15 rep_total_ns=[745139, 651023, 488673, 532195, 474448, 475945, 479122, 475632, 462529, 496468, 484874, 470389, 477582, 478750, 478878, 460860, 495564, 495942, 678802, 466036, 476011]
-row doc=fast-esc-quotes.json size=2004 path=fast reps=21 read_ns=3288 admission_ns=730 admission_native_ns=502 admission_policy_ns=237 admission_candidate=1 admission_openers=1 admission_blocks=32 admission_clause=0 staging_ns=27944 copyin_ns=1035 native_ns=2937 copyout_ns=178 adapter_wall_ns=4370 fallback_ns=- outcome_ns=442954 outcome_decode_ns=374039 outcome_header_ns=409 outcome_slice_ns=20836 outcome_arena_ns=44647 outcome_events_ns=1202 hex_arena_ns=43233 hex_events_ns=1140 hexlen=2043 total_ns=475937 summed_stage_ns=475240 verdict=1 ndst=1000 nev=15 rep_total_ns=[721161, 656543, 478753, 520244, 469911, 465728, 467621, 485544, 485519, 527574, 469270, 466179, 472496, 459297, 475937, 474471, 472208, 635795, 489334, 475667, 484185]
-row doc=fast-esc-u.json size=3004 path=fast reps=21 read_ns=3773 admission_ns=8633 admission_native_ns=606 admission_policy_ns=8020 admission_candidate=1 admission_openers=1 admission_blocks=47 admission_clause=0 staging_ns=42601 copyin_ns=1321 native_ns=4720 copyout_ns=172 adapter_wall_ns=6437 fallback_ns=- outcome_ns=445607 outcome_decode_ns=379440 outcome_header_ns=444 outcome_slice_ns=19459 outcome_arena_ns=43526 outcome_events_ns=1265 hex_arena_ns=43407 hex_events_ns=1125 hexlen=2043 total_ns=503041 summed_stage_ns=502512 verdict=1 ndst=1000 nev=15 rep_total_ns=[986879, 873515, 547474, 498563, 493375, 580981, 490405, 484695, 495456, 503041, 493224, 521774, 517748, 547815, 482814, 489945, 506244, 515240, 497318, 493526, 514255]
-row doc=fast-surrogate.json size=3004 path=fast reps=21 read_ns=4512 admission_ns=9178 admission_native_ns=628 admission_policy_ns=8562 admission_candidate=1 admission_openers=1 admission_blocks=47 admission_clause=0 staging_ns=42482 copyin_ns=1384 native_ns=3413 copyout_ns=184 adapter_wall_ns=5083 fallback_ns=- outcome_ns=441380 outcome_decode_ns=376210 outcome_header_ns=450 outcome_slice_ns=19557 outcome_arena_ns=44122 outcome_events_ns=1231 hex_arena_ns=44201 hex_events_ns=1129 hexlen=2043 total_ns=501473 summed_stage_ns=500978 verdict=1 ndst=1000 nev=15 rep_total_ns=[892348, 847506, 513902, 540033, 487004, 501473, 498160, 500677, 506485, 516708, 499633, 497303, 498232, 492419, 494132, 581310, 486885, 502738, 511203, 490114, 556505]
-row doc=fast-utf8.json size=2004 path=fast reps=21 read_ns=2937 admission_ns=716 admission_native_ns=490 admission_policy_ns=235 admission_candidate=1 admission_openers=1 admission_blocks=32 admission_clause=0 staging_ns=28046 copyin_ns=973 native_ns=669 copyout_ns=149 adapter_wall_ns=1931 fallback_ns=- outcome_ns=45874 outcome_decode_ns=42956 outcome_header_ns=277 outcome_slice_ns=1359 outcome_arena_ns=116 outcome_events_ns=1284 hex_arena_ns=61 hex_events_ns=1127 hexlen=43 total_ns=77336 summed_stage_ns=76646 verdict=1 ndst=0 nev=15 rep_total_ns=[311822, 113058, 85227, 93669, 87624, 75189, 75488, 76383, 97938, 74764, 76649, 73833, 238127, 76893, 77336, 75777, 82658, 78703, 226670, 76519, 73970]
-row doc=depth-128.json size=256 path=fast reps=21 read_ns=2346 admission_ns=556 admission_native_ns=510 admission_policy_ns=- admission_candidate=0 admission_openers=128 admission_blocks=4 admission_clause=0 staging_ns=3136 copyin_ns=204 native_ns=714 copyout_ns=112 adapter_wall_ns=1182 fallback_ns=- outcome_ns=117499 outcome_decode_ns=102144 outcome_header_ns=284 outcome_slice_ns=3689 outcome_arena_ns=103 outcome_events_ns=10984 hex_arena_ns=50 hex_events_ns=10797 hexlen=525 total_ns=123026 summed_stage_ns=122655 verdict=1 ndst=0 nev=256 rep_total_ns=[311968, 121300, 122882, 120217, 129798, 136763, 135006, 120490, 128103, 128721, 123123, 119880, 117872, 128393, 126739, 120052, 117065, 122623, 121574, 128691, 123026]
-row doc=depth-129.json size=258 path=fallback reps=21 read_ns=2346 admission_ns=683 admission_native_ns=609 admission_policy_ns=- admission_candidate=0 admission_openers=129 admission_blocks=5 admission_clause=3 staging_ns=- copyin_ns=- native_ns=- copyout_ns=- adapter_wall_ns=- fallback_ns=5724 outcome_ns=940 outcome_decode_ns=- outcome_header_ns=- outcome_slice_ns=- outcome_arena_ns=- outcome_events_ns=- hex_arena_ns=- hex_events_ns=- hexlen=- total_ns=7487 summed_stage_ns=7296 verdict=0 ndst=0 nev=0 rep_total_ns=[28124, 8415, 7107, 7243, 7327, 7136, 8046, 7487, 7385, 7522, 7442, 7397, 7382, 7489, 7481, 7315, 13142, 7849, 7656, 7552, 7561]
-row doc=scale-4096.json size=4096 path=fallback reps=21 read_ns=3367 admission_ns=2005 admission_native_ns=1921 admission_policy_ns=- admission_candidate=1 admission_openers=129 admission_blocks=64 admission_clause=3 staging_ns=- copyin_ns=- native_ns=- copyout_ns=- adapter_wall_ns=- fallback_ns=210218 outcome_ns=208003 outcome_decode_ns=- outcome_header_ns=- outcome_slice_ns=- outcome_arena_ns=- outcome_events_ns=- hex_arena_ns=- hex_events_ns=- hexlen=- total_ns=422878 summed_stage_ns=422679 verdict=0 ndst=0 nev=0 rep_total_ns=[531337, 426137, 419358, 438740, 414814, 422878, 586027, 422844, 447539, 424344, 417689, 416242, 429807, 413690, 478780, 422267, 428879, 417947, 426006, 417809, 414360]
+row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=18503 admission_ns=4909 admission_native_ns=4663 admission_policy_ns=- admission_candidate=0 admission_depth=1 admission_blocks=65 admission_clause=0 staging_ns=5546 copyin_ns=3035 native_ns=11094 copyout_ns=462 adapter_wall_ns=15451 fallback_ns=- outcome_ns=3544376 outcome_decode_ns=2999246 outcome_header_ns=1666 outcome_slice_ns=105438 outcome_arena_ns=387 outcome_events_ns=437293 hex_arena_ns=155 hex_events_ns=433754 hexlen=12311 total_ns=3600474 summed_stage_ns=3598445 verdict=1 ndst=0 nev=6149 rep_total_ns=[8299442, 3630706, 3450912, 3778327, 3733050, 3467625, 3533477, 3636114, 3600474, 3794098, 3615396, 3501297, 3957273, 3557484, 3427281, 3527499, 3474229, 3528930, 3990517, 3474236, 3975768]
+row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=34767 admission_ns=11589 admission_native_ns=11069 admission_policy_ns=- admission_candidate=0 admission_depth=1 admission_blocks=257 admission_clause=0 staging_ns=20785 copyin_ns=22902 native_ns=42753 copyout_ns=1585 adapter_wall_ns=69735 fallback_ns=- outcome_ns=14532929 outcome_decode_ns=12174981 outcome_header_ns=3606 outcome_slice_ns=426059 outcome_arena_ns=1165 outcome_events_ns=1845380 hex_arena_ns=245 hex_events_ns=1748685 hexlen=49175 total_ns=14633734 summed_stage_ns=14631516 verdict=1 ndst=0 nev=24581 rep_total_ns=[16517931, 15242522, 15248656, 15938866, 16966212, 15334376, 14921234, 14353417, 14684215, 14592272, 15375560, 14460020, 14705782, 13894446, 14550180, 13934399, 14278017, 14633734, 14059999, 13687874, 13770146]
+row doc=fast-nums-65536.json size=65539 path=fast reps=21 read_ns=47039 admission_ns=39375 admission_native_ns=38951 admission_policy_ns=- admission_candidate=0 admission_depth=1 admission_blocks=1025 admission_clause=0 staging_ns=74707 copyin_ns=101246 native_ns=133840 copyout_ns=5795 adapter_wall_ns=241855 fallback_ns=- outcome_ns=45121489 outcome_decode_ns=37974520 outcome_header_ns=5563 outcome_slice_ns=1438298 outcome_arena_ns=1884 outcome_events_ns=6054087 hex_arena_ns=508 hex_events_ns=5598313 hexlen=196631 total_ns=45449883 summed_stage_ns=45446092 verdict=1 ndst=0 nev=98309 rep_total_ns=[57409534, 55068615, 53716984, 49677245, 49355675, 47897599, 47683894, 47405442, 45667592, 45449883, 44877332, 44411451, 44990978, 44345139, 47453914, 45033086, 44351521, 44030868, 42954527, 43021656, 42552631]
+row doc=fast-esc.json size=2004 path=fast reps=21 read_ns=3604 admission_ns=2418 admission_native_ns=2191 admission_policy_ns=227 admission_candidate=1 admission_depth=1 admission_blocks=32 admission_clause=0 staging_ns=2317 copyin_ns=903 native_ns=2687 copyout_ns=159 adapter_wall_ns=3923 fallback_ns=- outcome_ns=404455 outcome_decode_ns=340085 outcome_header_ns=389 outcome_slice_ns=18039 outcome_arena_ns=45114 outcome_events_ns=1052 hex_arena_ns=44107 hex_events_ns=977 hexlen=2043 total_ns=416512 summed_stage_ns=415775 verdict=1 ndst=1000 nev=15 rep_total_ns=[697017, 427592, 416512, 457746, 405080, 413919, 408500, 405324, 700882, 431298, 413067, 411643, 429568, 413323, 416538, 431761, 422635, 432954, 405367, 411315, 408623]
+row doc=fast-esc-quotes.json size=2004 path=fast reps=21 read_ns=3804 admission_ns=2397 admission_native_ns=2167 admission_policy_ns=226 admission_candidate=1 admission_depth=1 admission_blocks=32 admission_clause=0 staging_ns=2212 copyin_ns=935 native_ns=2661 copyout_ns=150 adapter_wall_ns=3894 fallback_ns=- outcome_ns=405902 outcome_decode_ns=345681 outcome_header_ns=378 outcome_slice_ns=18550 outcome_arena_ns=39393 outcome_events_ns=1143 hex_arena_ns=39550 hex_events_ns=952 hexlen=2043 total_ns=414475 summed_stage_ns=414031 verdict=1 ndst=1000 nev=15 rep_total_ns=[647631, 437784, 410520, 400371, 419282, 414475, 403941, 436053, 396465, 452709, 406375, 481050, 430481, 414392, 414315, 416870, 414638, 431704, 413091, 409835, 411495]
+row doc=fast-esc-u.json size=3004 path=fast reps=21 read_ns=3789 admission_ns=10999 admission_native_ns=3576 admission_policy_ns=7407 admission_candidate=1 admission_depth=1 admission_blocks=47 admission_clause=0 staging_ns=3723 copyin_ns=1333 native_ns=4429 copyout_ns=163 adapter_wall_ns=6077 fallback_ns=- outcome_ns=404829 outcome_decode_ns=344724 outcome_header_ns=388 outcome_slice_ns=18219 outcome_arena_ns=40184 outcome_events_ns=1100 hex_arena_ns=40055 hex_events_ns=974 hexlen=2043 total_ns=433531 summed_stage_ns=432813 verdict=1 ndst=1000 nev=15 rep_total_ns=[680500, 463356, 471477, 411439, 437732, 416832, 440503, 427618, 418298, 435827, 487555, 458455, 421556, 424780, 433531, 425545, 494145, 423787, 448429, 412431, 423387]
+row doc=fast-surrogate.json size=3004 path=fast reps=21 read_ns=4159 admission_ns=10011 admission_native_ns=2186 admission_policy_ns=7823 admission_candidate=1 admission_depth=1 admission_blocks=47 admission_clause=0 staging_ns=4456 copyin_ns=1327 native_ns=3192 copyout_ns=155 adapter_wall_ns=4837 fallback_ns=- outcome_ns=411774 outcome_decode_ns=345883 outcome_header_ns=376 outcome_slice_ns=18048 outcome_arena_ns=40222 outcome_events_ns=1094 hex_arena_ns=40038 hex_events_ns=1008 hexlen=2043 total_ns=433267 summed_stage_ns=432723 verdict=1 ndst=1000 nev=15 rep_total_ns=[734075, 443760, 444245, 426079, 433267, 432285, 420009, 488813, 417804, 467338, 435267, 419277, 447474, 415333, 438925, 511810, 411930, 434964, 412358, 427066, 427532]
+row doc=fast-utf8.json size=2004 path=fast reps=21 read_ns=2616 admission_ns=2456 admission_native_ns=2232 admission_policy_ns=218 admission_candidate=1 admission_depth=1 admission_blocks=32 admission_clause=0 staging_ns=1957 copyin_ns=937 native_ns=619 copyout_ns=135 adapter_wall_ns=1862 fallback_ns=- outcome_ns=41884 outcome_decode_ns=39166 outcome_header_ns=261 outcome_slice_ns=1250 outcome_arena_ns=106 outcome_events_ns=1242 hex_arena_ns=61 hex_events_ns=1014 hexlen=43 total_ns=48390 summed_stage_ns=47800 verdict=1 ndst=0 nev=15 rep_total_ns=[245860, 65458, 46990, 47464, 45883, 65707, 75367, 57863, 51567, 60272, 47245, 48104, 48255, 47562, 48390, 47578, 54248, 52756, 47605, 65494, 47773]
+row doc=depth-128.json size=256 path=fast reps=21 read_ns=3479 admission_ns=1072 admission_native_ns=1027 admission_policy_ns=- admission_candidate=0 admission_depth=128 admission_blocks=4 admission_clause=0 staging_ns=803 copyin_ns=290 native_ns=1015 copyout_ns=150 adapter_wall_ns=1652 fallback_ns=- outcome_ns=160899 outcome_decode_ns=140851 outcome_header_ns=416 outcome_slice_ns=4847 outcome_arena_ns=140 outcome_events_ns=15010 hex_arena_ns=69 hex_events_ns=14326 hexlen=525 total_ns=164811 summed_stage_ns=164316 verdict=1 ndst=0 nev=256 rep_total_ns=[239808, 159395, 168652, 157294, 166167, 163244, 163129, 160766, 167267, 164811, 163033, 212815, 165524, 234856, 162154, 166241, 156831, 162725, 356486, 181854, 157378]
+row doc=depth-129.json size=258 path=fallback reps=21 read_ns=3209 admission_ns=1212 admission_native_ns=1098 admission_policy_ns=- admission_candidate=0 admission_depth=129 admission_blocks=5 admission_clause=3 staging_ns=- copyin_ns=- native_ns=- copyout_ns=- adapter_wall_ns=- fallback_ns=7616 outcome_ns=1202 outcome_decode_ns=- outcome_header_ns=- outcome_slice_ns=- outcome_arena_ns=- outcome_events_ns=- hex_arena_ns=- hex_events_ns=- hexlen=- total_ns=10326 summed_stage_ns=9823 verdict=0 ndst=0 nev=0 rep_total_ns=[33939, 11711, 10326, 10947, 10409, 10671, 10911, 10727, 10649, 10509, 10057, 8826, 9005, 9186, 9092, 9101, 8844, 8956, 9581, 9124, 195100]
+row doc=scale-4096.json size=4096 path=fast reps=21 read_ns=12015 admission_ns=7289 admission_native_ns=6564 admission_policy_ns=736 admission_candidate=1 admission_depth=2 admission_blocks=64 admission_clause=0 staging_ns=5819 copyin_ns=2638 native_ns=7234 copyout_ns=482 adapter_wall_ns=11203 fallback_ns=- outcome_ns=4497984 outcome_decode_ns=3745949 outcome_header_ns=1179 outcome_slice_ns=126590 outcome_arena_ns=578 outcome_events_ns=617296 hex_arena_ns=134 hex_events_ns=599497 hexlen=17817 total_ns=4533668 summed_stage_ns=4531823 verdict=1 ndst=0 nev=8902 rep_total_ns=[5161119, 4618764, 4538941, 4663404, 4655203, 4793696, 4488520, 4377974, 4566132, 4344110, 4374738, 4335634, 4746512, 4569889, 4533668, 4518970, 4325575, 4521684, 4925949, 4474222, 4468346]
 
-row doc=fast-nums-4096.json size=4099 build=o2 process_wall_ns=9441796 reps=21
-row doc=fast-nums-4096.json size=4099 build=o3 process_wall_ns=8937297 reps=21
-row doc=fast-nums-16384.json size=16387 build=o2 process_wall_ns=17188357 reps=21
-row doc=fast-nums-16384.json size=16387 build=o3 process_wall_ns=17652584 reps=21
-row doc=fast-nums-65536.json size=65539 build=o2 process_wall_ns=44465070 reps=21
-row doc=fast-nums-65536.json size=65539 build=o3 process_wall_ns=41849028 reps=21
-row doc=fast-esc.json size=2004 build=o2 process_wall_ns=4810422 reps=21
-row doc=fast-esc.json size=2004 build=o3 process_wall_ns=4511955 reps=21
-row doc=fast-esc-quotes.json size=2004 build=o2 process_wall_ns=5169858 reps=21
-row doc=fast-esc-quotes.json size=2004 build=o3 process_wall_ns=5148548 reps=21
-row doc=fast-esc-u.json size=3004 build=o2 process_wall_ns=6256869 reps=21
-row doc=fast-esc-u.json size=3004 build=o3 process_wall_ns=6247406 reps=21
-row doc=fast-surrogate.json size=3004 build=o2 process_wall_ns=6136691 reps=21
-row doc=fast-surrogate.json size=3004 build=o3 process_wall_ns=6010633 reps=21
-row doc=fast-utf8.json size=2004 build=o2 process_wall_ns=5145275 reps=21
-row doc=fast-utf8.json size=2004 build=o3 process_wall_ns=5208296 reps=21
-row doc=depth-128.json size=256 build=o2 process_wall_ns=5415029 reps=21
-row doc=depth-129.json size=258 build=o2 process_wall_ns=5067480 reps=21
-row doc=scale-4096.json size=4096 build=o2 process_wall_ns=6142776 reps=21
+row doc=fast-nums-4096.json size=4099 build=o2 process_wall_ns=9117288 reps=21
+row doc=fast-nums-4096.json size=4099 build=o3 process_wall_ns=9033225 reps=21
+row doc=fast-nums-16384.json size=16387 build=o2 process_wall_ns=18152001 reps=21
+row doc=fast-nums-16384.json size=16387 build=o3 process_wall_ns=17869293 reps=21
+row doc=fast-nums-65536.json size=65539 build=o2 process_wall_ns=59940794 reps=21
+row doc=fast-nums-65536.json size=65539 build=o3 process_wall_ns=58700469 reps=21
+row doc=fast-esc.json size=2004 build=o2 process_wall_ns=7208782 reps=21
+row doc=fast-esc.json size=2004 build=o3 process_wall_ns=9989920 reps=21
+row doc=fast-esc-quotes.json size=2004 build=o2 process_wall_ns=7804727 reps=21
+row doc=fast-esc-quotes.json size=2004 build=o3 process_wall_ns=7523808 reps=21
+row doc=fast-esc-u.json size=3004 build=o2 process_wall_ns=9022164 reps=21
+row doc=fast-esc-u.json size=3004 build=o3 process_wall_ns=8310383 reps=21
+row doc=fast-surrogate.json size=3004 build=o2 process_wall_ns=8164758 reps=21
+row doc=fast-surrogate.json size=3004 build=o3 process_wall_ns=10243309 reps=21
+row doc=fast-utf8.json size=2004 build=o2 process_wall_ns=7866734 reps=21
+row doc=fast-utf8.json size=2004 build=o3 process_wall_ns=8083819 reps=21
+row doc=depth-128.json size=256 build=o2 process_wall_ns=7383769 reps=21
+row doc=depth-129.json size=258 build=o2 process_wall_ns=9174120 reps=21
+row doc=scale-4096.json size=4096 build=o2 process_wall_ns=18034621 reps=21
 
 consume rows  <build>/leanllvm-json-route --consume <file> 21
 
-row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=2567 admission_ns=1269 staging_ns=47465 route_ns=8202 copyout_ns=- consume_fold_ns=7899 consume_values_ns=11675 ndst=0 nev=6149 tokens=685 values=685 walked=1 foldsum=15412454270129148596 valuessum=15412454270129148596
-row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=4986 admission_ns=4922 staging_ns=209662 route_ns=40373 copyout_ns=- consume_fold_ns=32767 consume_values_ns=46491 ndst=0 nev=24581 tokens=2733 values=2733 walked=1 foldsum=1641572509537028788 valuessum=1641572509537028788
-row doc=fast-nums-65536.json size=65539 path=fast reps=21 read_ns=19912 admission_ns=19920 staging_ns=1348831 route_ns=210898 copyout_ns=- consume_fold_ns=122974 consume_values_ns=237378 ndst=0 nev=98309 tokens=10925 values=10925 walked=1 foldsum=1898277688297204404 valuessum=1898277688297204404
-row doc=fast-esc.json size=2004 path=fast reps=21 read_ns=2625 admission_ns=636 staging_ns=26144 route_ns=3581 copyout_ns=- consume_fold_ns=1859 consume_values_ns=1918 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=11013 valuessum=11013
-row doc=fast-esc-quotes.json size=2004 path=fast reps=21 read_ns=2336 admission_ns=627 staging_ns=23757 route_ns=3416 copyout_ns=- consume_fold_ns=1848 consume_values_ns=1890 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=35013 valuessum=35013
-row doc=fast-esc-u.json size=3004 path=fast reps=21 read_ns=2363 admission_ns=7123 staging_ns=34904 route_ns=5169 copyout_ns=- consume_fold_ns=1831 consume_values_ns=1886 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=183013 valuessum=183013
-row doc=fast-surrogate.json size=3004 path=fast reps=21 read_ns=2468 admission_ns=7649 staging_ns=35514 route_ns=4307 copyout_ns=- consume_fold_ns=1869 consume_values_ns=1898 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=170763 valuessum=170763
-row doc=fast-utf8.json size=2004 path=fast reps=21 read_ns=2313 admission_ns=591 staging_ns=23505 route_ns=1517 copyout_ns=- consume_fold_ns=158 consume_values_ns=213 ndst=0 nev=15 tokens=3 values=3 walked=1 foldsum=9223372036854777823 valuessum=9223372036854777823
+row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=4410 admission_ns=2525 staging_ns=4974 route_ns=13480 copyout_ns=- consume_fold_ns=12865 consume_values_ns=18771 ndst=0 nev=6149 tokens=685 values=685 walked=1 foldsum=15412454270129148596 valuessum=15412454270129148596
+row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=5948 admission_ns=9671 staging_ns=19453 route_ns=57246 copyout_ns=- consume_fold_ns=52162 consume_values_ns=74466 ndst=0 nev=24581 tokens=2733 values=2733 walked=1 foldsum=1641572509537028788 valuessum=1641572509537028788
+row doc=fast-nums-65536.json size=65539 path=fast reps=21 read_ns=20808 admission_ns=51144 staging_ns=226156 route_ns=277468 copyout_ns=- consume_fold_ns=219653 consume_values_ns=348888 ndst=0 nev=98309 tokens=10925 values=10925 walked=1 foldsum=1898277688297204404 valuessum=1898277688297204404
+row doc=fast-esc.json size=2004 path=fast reps=21 read_ns=4004 admission_ns=3516 staging_ns=3490 route_ns=5611 copyout_ns=- consume_fold_ns=3023 consume_values_ns=3113 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=11013 valuessum=11013
+row doc=fast-esc-quotes.json size=2004 path=fast reps=21 read_ns=3827 admission_ns=3501 staging_ns=3361 route_ns=5508 copyout_ns=- consume_fold_ns=3002 consume_values_ns=3149 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=35013 valuessum=35013
+row doc=fast-esc-u.json size=3004 path=fast reps=21 read_ns=3946 admission_ns=16024 staging_ns=4769 route_ns=8558 copyout_ns=- consume_fold_ns=3010 consume_values_ns=3108 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=183013 valuessum=183013
+row doc=fast-surrogate.json size=3004 path=fast reps=21 read_ns=3851 admission_ns=14574 staging_ns=4861 route_ns=6710 copyout_ns=- consume_fold_ns=2996 consume_values_ns=3126 ndst=1000 nev=15 tokens=3 values=3 walked=1 foldsum=170763 valuessum=170763
+row doc=fast-utf8.json size=2004 path=fast reps=21 read_ns=3804 admission_ns=3643 staging_ns=3131 route_ns=2576 copyout_ns=- consume_fold_ns=275 consume_values_ns=358 ndst=0 nev=15 tokens=3 values=3 walked=1 foldsum=9223372036854777823 valuessum=9223372036854777823
 
 ## the outcome stage dissected (unit: ns; medians of 21 reps, OPT=-O2 TIMING=1 build)
 
 doc                       decode  header    slice   arena     events    outcome  hex_arena  hex_events  tokens
-fast-nums-4096.json      1915649     689    67495     182     282948    2268795         66      272235     685
-fast-nums-16384.json     7749951    2369   280132     918    1150948    9196793         85     1107185    2733
-fast-nums-65536.json    35471304    3215  1246846    1756    5399119   42181209        401     5219667   10925
-fast-esc.json             363022     413    19669   47358       1165     434329      47565        1059       3
-fast-esc-quotes.json      365377     408    19595   42128       1139     428653      41984        1068       3
-fast-esc-u.json           365575     405    19475   42410       1144     429171      42393        1073       3
-fast-surrogate.json       362512     431    18842   42110       1158     425090      42148        1044       3
-fast-utf8.json             41439     298     1324     113       1241      44290         60        1051       3
+fast-nums-4096.json      2431708     815    83842     236     364664    2888347         82      357253     685
+fast-nums-16384.json     9780557    2722   344910     963    1453948   11615795        165     1397617    2733
+fast-nums-65536.json    42270230    6811  1514090    2358    6925834   50715996        597     6712599   10925
+fast-esc.json             507563     926    28792   68806       1841     619964      63178        1500       3
+fast-esc-quotes.json      500923     679    26887   58243       1735     589528      58577        1529       3
+fast-esc-u.json           509510     736    26281   57785       1654     597845      57355        1470       3
+fast-surrogate.json       503642     710    26132   59249       1727     590765      56986        1539       3
+fast-utf8.json             56897     345     1804     160       1695      61589         80        1372       3
 
 construction: the five parts are the outcome stage itself, in its own
 order.  decode is `decodeResult`: the tagged header, the length check and
@@ -247,27 +257,27 @@ median from the same --stages row; the parts are medians of per-repetition
 sums, so they need not add to exactly 100)
 
 doc                      decode  header    slice   arena    events    parts
-fast-nums-4096.json       84.43    0.03     2.97    0.01     12.47    99.92
-fast-nums-16384.json      84.27    0.03     3.05    0.01     12.51    99.86
-fast-nums-65536.json      84.09    0.01     2.96    0.00     12.80    99.86
-fast-esc.json             83.58    0.10     4.53   10.90      0.27    99.38
-fast-esc-quotes.json      85.24    0.10     4.57    9.83      0.27   100.00
-fast-esc-u.json           85.18    0.09     4.54    9.88      0.27    99.96
-fast-surrogate.json       85.28    0.10     4.43    9.91      0.27    99.99
-fast-utf8.json            93.56    0.67     2.99    0.26      2.80   100.28
+fast-nums-4096.json       84.19    0.03     2.90    0.01     12.63    99.75
+fast-nums-16384.json      84.20    0.02     2.97    0.01     12.52    99.72
+fast-nums-65536.json      83.35    0.01     2.99    0.00     13.66   100.01
+fast-esc.json             81.87    0.15     4.64   11.10      0.30    98.06
+fast-esc-quotes.json      84.97    0.12     4.56    9.88      0.29    99.82
+fast-esc-u.json           85.22    0.12     4.40    9.67      0.28    99.69
+fast-surrogate.json       85.25    0.12     4.42   10.03      0.29   100.12
+fast-utf8.json            92.38    0.56     2.93    0.26      2.75    98.88
 
 per-unit costs (each column states its numerator, its denominator and its
 unit; the denominators are the same stage row and the consumer row above)
 
 doc                     tokens result_bytes decode/byte  hex_events/byte    events_write printed/event
-fast-nums-4096.json        685         6229      307.54            44.27           10713       3312.11
-fast-nums-16384.json      2733        24661      314.26            45.04           43763       3365.09
-fast-nums-65536.json     10925        98389      360.52            53.09          179452       3860.98
-fast-esc.json                3         1095      331.53            70.60             106     144776.33
-fast-esc-quotes.json         3         1095      333.68            71.20              71     142884.33
-fast-esc-u.json              3         1095      333.86            71.53              71     143057.00
-fast-surrogate.json          3         1095      331.06            69.60             114     141696.67
-fast-utf8.json               3           95      436.20            70.07             190      14763.33
+fast-nums-4096.json        685         6229      390.38            58.10            7411       4216.56
+fast-nums-16384.json      2733        24661      396.60            56.86           56331       4250.20
+fast-nums-65536.json     10925        98389      429.62            68.28          213235       4642.20
+fast-esc.json                3         1095      463.53           100.00             341     206654.67
+fast-esc-quotes.json         3         1095      457.46           101.93             206     196509.33
+fast-esc-u.json              3         1095      465.31            98.00             184     199281.67
+fast-surrogate.json          3         1095      459.95           102.60             188     196921.67
+fast-utf8.json               3           95      598.92            91.47             323      20529.67
 
 Units and construction: result_bytes is 80 header bytes plus ndst plus nev,
 the extent of the array decodeResult walks; decode/byte divides the decode
@@ -280,14 +290,14 @@ per event, the printed path).
 ## what a consumer pays (unit: ns; the same documents, the consumer rows above)
 
 doc                     tokens   ndst     nev     fold   values     fold/event     values/event  fold/byte  values/byte
-fast-nums-4096.json        685      0    6149     7899    11675          11.53            17.04       1.28         1.90
-fast-nums-16384.json      2733      0   24581    32767    46491          11.99            17.01       1.33         1.89
-fast-nums-65536.json     10925      0   98309   122974   237378          11.26            21.73       1.25         2.41
-fast-esc.json                3   1000      15     1859     1918         619.67           639.33       1.83         1.89
-fast-esc-quotes.json         3   1000      15     1848     1890         616.00           630.00       1.82         1.86
-fast-esc-u.json              3   1000      15     1831     1886         610.33           628.67       1.80         1.86
-fast-surrogate.json          3   1000      15     1869     1898         623.00           632.67       1.84         1.87
-fast-utf8.json               3      0      15      158      213          52.67            71.00      10.53        14.20
+fast-nums-4096.json        685      0    6149    12865    18771          18.78            27.40       2.09         3.05
+fast-nums-16384.json      2733      0   24581    52162    74466          19.09            27.25       2.12         3.03
+fast-nums-65536.json     10925      0   98309   219653   348888          20.11            31.93       2.23         3.55
+fast-esc.json                3   1000      15     3023     3113        1007.67          1037.67       2.98         3.07
+fast-esc-quotes.json         3   1000      15     3002     3149        1000.67          1049.67       2.96         3.10
+fast-esc-u.json              3   1000      15     3010     3108        1003.33          1036.00       2.97         3.06
+fast-surrogate.json          3   1000      15     2996     3126         998.67          1042.00       2.95         3.08
+fast-utf8.json               3      0      15      275      358          91.67           119.33      18.33        23.87
 
 construction: fold and values are the two readings the consumer mode
 prices, medians over the same repetition count, alternating which goes
@@ -304,14 +314,14 @@ from the TIMING=1 build and consumed from the production build; per-event
 costs are those two medians divided by the same token count)
 
 doc                    printed/event   consumed/event printed/consumed    decoded/printed
-fast-nums-4096.json         3312.11            17.04         194.33              84.43
-fast-nums-16384.json        3365.09            17.01         197.82              84.27
-fast-nums-65536.json        3860.98            21.73         177.70              84.09
-fast-esc.json             144776.33           639.33         226.45              83.58
-fast-esc-quotes.json      142884.33           630.00         226.80              85.24
-fast-esc-u.json           143057.00           628.67         227.56              85.18
-fast-surrogate.json       141696.67           632.67         223.97              85.28
-fast-utf8.json             14763.33            71.00         207.93              93.56
+fast-nums-4096.json         4216.56            27.40         153.87              84.19
+fast-nums-16384.json        4250.20            27.25         155.99              84.20
+fast-nums-65536.json        4642.20            31.93         145.36              83.35
+fast-esc.json             206654.67          1037.67         199.15              81.87
+fast-esc-quotes.json      196509.33          1049.67         187.21              84.97
+fast-esc-u.json           199281.67          1036.00         192.36              85.22
+fast-surrogate.json       196921.67          1042.00         188.98              85.25
+fast-utf8.json             20529.67           119.33         172.04              92.38
 
 construction: printed/consumed is the outcome median over the consumer
 values median, both per document (a multiplier, not a percentage);
@@ -320,109 +330,23 @@ the share table carries, repeated here beside the consumer number.
 
 ## the reference arm
 
-source      /nix/store/33yf1blbsp27xsdll7ja4xrskb110mkq-source/singleheader, simdjson 4.6.11
-lineage     no simdjson checkout and no -dev headers exist on this machine; the
-            arm is compiled from the local source archive the pinned release
-            ships as (singleheader/simdjson.{h,cpp}), and its runtime refuses a
-            row unless that header and the active implementation name 4.6.11
-build       clang++ -O3 -std=c++17 -march=x86-64-v3 -mpclmul -I <src>/singleheader\
-              bench/simdjson-baseline.cc <src>/singleheader/simdjson.cpp
-
-row doc=fast-nums-4096.json size=4099 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=85 parse_ns=7563 pad_plus_parse_ns=7644 walked=177078678
-row doc=fast-nums-16384.json size=16387 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=270 parse_ns=29756 pad_plus_parse_ns=30052 walked=708055446
-row doc=fast-nums-65536.json size=65539 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=1575 parse_ns=128053 pad_plus_parse_ns=129600 walked=2831962518
-row doc=fast-esc.json size=2004 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=52 parse_ns=7582 pad_plus_parse_ns=7640 walked=21021
-row doc=fast-esc-quotes.json size=2004 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=52 parse_ns=8862 pad_plus_parse_ns=8911 walked=21021
-row doc=fast-esc-u.json size=3004 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=60 parse_ns=4156 pad_plus_parse_ns=4218 walked=21021
-row doc=fast-surrogate.json size=3004 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=62 parse_ns=2495 pad_plus_parse_ns=2554 walked=21021
-row doc=fast-utf8.json size=2004 path=simdjson version=4.6.11 implementation=haswell reps=21 pad_ns=43 parse_ns=408 pad_plus_parse_ns=451 walked=42021
+absent      no local simdjson 4.6.11 source with singleheader/ was found and no
+            row is substituted; the route rows above stand alone.
 
 ## the -O2/-O3 pair, paired (unit: ratio of ns medians; 9 rounds of 5 reps)
 
-bench: paired round 1/9 for fast-nums-4096.json
-bench: paired round 2/9 for fast-nums-4096.json
-bench: paired round 3/9 for fast-nums-4096.json
-bench: paired round 4/9 for fast-nums-4096.json
-bench: paired round 5/9 for fast-nums-4096.json
-bench: paired round 6/9 for fast-nums-4096.json
-bench: paired round 7/9 for fast-nums-4096.json
-bench: paired round 8/9 for fast-nums-4096.json
-bench: paired round 9/9 for fast-nums-4096.json
-bench: paired round 1/9 for fast-nums-16384.json
-bench: paired round 2/9 for fast-nums-16384.json
-bench: paired round 3/9 for fast-nums-16384.json
-bench: paired round 4/9 for fast-nums-16384.json
-bench: paired round 5/9 for fast-nums-16384.json
-bench: paired round 6/9 for fast-nums-16384.json
-bench: paired round 7/9 for fast-nums-16384.json
-bench: paired round 8/9 for fast-nums-16384.json
-bench: paired round 9/9 for fast-nums-16384.json
-bench: paired round 1/9 for fast-nums-65536.json
-bench: paired round 2/9 for fast-nums-65536.json
-bench: paired round 3/9 for fast-nums-65536.json
-bench: paired round 4/9 for fast-nums-65536.json
-bench: paired round 5/9 for fast-nums-65536.json
-bench: paired round 6/9 for fast-nums-65536.json
-bench: paired round 7/9 for fast-nums-65536.json
-bench: paired round 8/9 for fast-nums-65536.json
-bench: paired round 9/9 for fast-nums-65536.json
-bench: paired round 1/9 for fast-esc.json
-bench: paired round 2/9 for fast-esc.json
-bench: paired round 3/9 for fast-esc.json
-bench: paired round 4/9 for fast-esc.json
-bench: paired round 5/9 for fast-esc.json
-bench: paired round 6/9 for fast-esc.json
-bench: paired round 7/9 for fast-esc.json
-bench: paired round 8/9 for fast-esc.json
-bench: paired round 9/9 for fast-esc.json
-bench: paired round 1/9 for fast-esc-quotes.json
-bench: paired round 2/9 for fast-esc-quotes.json
-bench: paired round 3/9 for fast-esc-quotes.json
-bench: paired round 4/9 for fast-esc-quotes.json
-bench: paired round 5/9 for fast-esc-quotes.json
-bench: paired round 6/9 for fast-esc-quotes.json
-bench: paired round 7/9 for fast-esc-quotes.json
-bench: paired round 8/9 for fast-esc-quotes.json
-bench: paired round 9/9 for fast-esc-quotes.json
-bench: paired round 1/9 for fast-esc-u.json
-bench: paired round 2/9 for fast-esc-u.json
-bench: paired round 3/9 for fast-esc-u.json
-bench: paired round 4/9 for fast-esc-u.json
-bench: paired round 5/9 for fast-esc-u.json
-bench: paired round 6/9 for fast-esc-u.json
-bench: paired round 7/9 for fast-esc-u.json
-bench: paired round 8/9 for fast-esc-u.json
-bench: paired round 9/9 for fast-esc-u.json
-bench: paired round 1/9 for fast-surrogate.json
-bench: paired round 2/9 for fast-surrogate.json
-bench: paired round 3/9 for fast-surrogate.json
-bench: paired round 4/9 for fast-surrogate.json
-bench: paired round 5/9 for fast-surrogate.json
-bench: paired round 6/9 for fast-surrogate.json
-bench: paired round 7/9 for fast-surrogate.json
-bench: paired round 8/9 for fast-surrogate.json
-bench: paired round 9/9 for fast-surrogate.json
-bench: paired round 1/9 for fast-utf8.json
-bench: paired round 2/9 for fast-utf8.json
-bench: paired round 3/9 for fast-utf8.json
-bench: paired round 4/9 for fast-utf8.json
-bench: paired round 5/9 for fast-utf8.json
-bench: paired round 6/9 for fast-utf8.json
-bench: paired round 7/9 for fast-utf8.json
-bench: paired round 8/9 for fast-utf8.json
-bench: paired round 9/9 for fast-utf8.json
 
 
 doc                    O3/O2 native          O3/O2 total           control native       
                        med min max           med min max           med min max          
-fast-nums-4096.json    0.991 0.904 1.094     1.009 0.984 1.149     0.982 0.935 1.074    
-fast-nums-16384.json   0.973 0.867 1.041     1.006 0.896 1.054     0.957 0.890 1.037    
-fast-nums-65536.json   1.000 0.937 1.053     0.993 0.962 1.053     1.008 0.906 1.091    
-fast-esc.json          0.958 0.916 1.095     1.018 0.922 1.178     1.033 0.986 1.088    
-fast-esc-quotes.json   1.005 0.808 1.185     1.048 0.915 1.131     1.057 0.860 1.183    
-fast-esc-u.json        0.998 0.867 1.146     1.058 0.862 1.156     1.025 0.868 1.174    
-fast-surrogate.json    0.971 0.883 1.174     0.981 0.916 1.079     1.070 0.855 1.179    
-fast-utf8.json         0.955 0.721 1.233     0.956 0.868 1.212     1.050 0.887 1.444    
+fast-nums-4096.json    0.984 0.946 1.019     1.003 0.945 1.170     0.992 0.933 1.063    
+fast-nums-16384.json   1.000 0.929 1.071     0.995 0.966 1.069     1.015 0.929 1.063    
+fast-nums-65536.json   0.960 0.799 1.154     0.984 0.888 1.045     0.983 0.735 1.146    
+fast-esc.json          1.006 0.958 1.082     0.997 0.901 1.088     1.009 0.952 1.060    
+fast-esc-quotes.json   0.976 0.839 1.027     1.018 0.919 1.047     0.972 0.839 1.014    
+fast-esc-u.json        1.033 0.975 2.510     1.099 0.945 1.541     1.007 0.980 1.100    
+fast-surrogate.json    1.022 0.991 1.043     1.009 0.934 1.081     0.994 0.932 1.019    
+fast-utf8.json         1.023 0.869 1.264     1.001 0.870 1.543     0.967 0.928 1.040    
 
 construction: O3/O2 native divides the -O3 build native-call stage by the
 -O2 build same stage in the same round, alternated so the drift cancels;
@@ -431,168 +355,75 @@ second -O2 run by the first in the same round, so its range is what the
 machine contributes with no OPT change at all.  A pair whose median sits
 inside the control range is not a difference OPT produced.
 
-## the fallback price (unit: ns; medians of 21 reps, OPT=-O2 build)
+## the boundary rows (unit: ns; medians of 21 reps, OPT=-O2 build)
 
 doc                         path  admission    staging     native    outcome       total
-depth-128.json              fast        556       3186        716     116566      122269
-depth-129.json          fallback        706          -          -       1025        7812
-scale-4096.json         fallback       1941          -          -     209478      424227
+depth-128.json              fast       1094        922        974     156098      162553
+depth-129.json          fallback       1054          -          -       1098        8877
+scale-4096.json             fast       7431       5713       7573    4634336     4662132
 
-ratio depth-129/depth-128 total = 0.064 (unit: ns per document; the documents
+ratio depth-129/depth-128 total = 0.055 (unit: ns per document; the documents
 differ by one bracket pair, and by which path answers them)
-ratio scale-4096/fast-nums-4096 total = 0.182 (unit: ns per document; the
-documents differ in shape as well as in path)
+ratio scale-4096/fast-nums-4096 total = 1.603 (unit: ns per document; both
+are on the fast path, and the documents differ in shape -- 178 objects
+against 683 numbers, at the same size)
 
 ## the two-phase admission (unit: ns; medians of 21 reps, OPT=-O2 production build)
 
-doc                     openers candidate certified_ns  phase1_ns  policy_ns policy_oracle_ns two_phase_ns two_phase/certified   depth_ns
-fast-nums-4096.json           1         0        80077       1104          -          -         1129      0.014       1452
-fast-nums-16384.json          1         0       331813       4267          -          -         4286      0.013       5441
-fast-nums-65536.json          1         0      1388660      16830          -          -        16870      0.012      22958
-fast-esc.json                 1         1        54586        375        147      43634          519      0.010        270
-fast-esc-quotes.json          1         1      8956894        634        206    8901665          870      0.000        338
-fast-esc-u.json               1         1        80623        474       5565      68396         6139      0.076        356
-fast-surrogate.json           1         1        78970        473       5908      62165         6518      0.083        373
-fast-utf8.json                1         1        54902        371        155      46074          535      0.010        275
-depth-128.json              128         0         6590        547          -          -          571      0.087        654
-depth-129.json              129         0         1698        522          -          -          566      0.333        597
-scale-4096.json             129         1        24518       1533          -          -         1579      0.064       1976
+doc                       depth candidate certified_ns  phase1_ns  policy_ns policy_oracle_ns two_phase_ns two_phase/certified   depth_ns
+fast-nums-4096.json           1         0       138940       2787          -          -         2824      0.020       2716
+fast-nums-16384.json          1         0       568502       7225          -          -         7256      0.013       6941
+fast-nums-65536.json          1         0      2375179      27625          -          -        27760      0.012      27214
+fast-esc.json                 1         1       105563       2429        256      61939         2697      0.026       2342
+fast-esc-quotes.json          1         1     11880827       2832        671   11835137         3414      0.000       2329
+fast-esc-u.json               1         1       152078       3723       7782      91198        11520      0.076       3647
+fast-surrogate.json           1         1       146876       2290       8261      89722        10637      0.072       2161
+fast-utf8.json                1         1       110084       2368        229      60270         2617      0.024       2268
+depth-128.json              128         0        15285        929          -          -          953      0.062        808
+depth-129.json              129         0        10595        936          -          -         1008      0.095        824
+scale-4096.json               2         1       303802       5184        320     189854         5521      0.018       4995
 
 construction: certified_ns is the library's `admission`: the empty and
-length clauses, the opener count over `doc.data.toList`, and the per-quote
-policy scan.  phase1_ns is the adapter's native call (the mask unit over
-the document, the delimiter lanes counted, the candidate flag), including
-the Lean extern call and the header decode.  policy_ns is phase two as the
+length clauses, `docDepth` over the document's structural delimiter
+sequence, and the per-quote policy scan.  phase1_ns is the adapter's
+native call (the whole-document walk, the running depth and its maximum,
+the candidate flag), including the Lean extern call and the header decode.  policy_ns is phase two as the
 route runs it -- the native scan, including its own extern call and header
 decode -- and policy_oracle_ns is the library's `policyRefusal` on the
 same bytes, a separate interval in the same repetition; both are `-` where
-the masks saw no candidate.  two_phase_ns is phase one plus the native
+the walk saw no candidate.  two_phase_ns is phase one plus the native
 phase two, so a `-` row differs from certified_ns alone.
 two_phase/certified is a multiplier (the route's decision cost divided by
 the predicate it replaced, same document and session).  depth_ns is the
-proved depth counter run over the same delimiter lanes: it is a balance
-and a prefix-depth sum, neither of which is the opener count the clause
-states, so it is reported and gates nothing.
+depth pass: the walk again, with the proved counter run over the same
+structural lanes.  The counter reports the sequence's final depth and a
+prefix-depth sum; a maximum is not among them, so the clause's number is
+the walk's accumulator and this pass is the arithmetic beside it.
 
-policy candidate on 6 of 11 rows (the fraction of documents whose masks
-show a byte the policy scan can report at: a quote or a backslash); the
-scan itself ran on 5, the rows that candidate flag did not spare by a
+policy candidate on 6 of 11 rows (the fraction of documents whose walk
+shows a byte the policy scan can report at: a quote or a backslash); the
+scan itself ran on 6, the rows that candidate flag did not spare by a
 native clause refusing first.  The two policy columns on those rows are the
 price of the same phase twice: the native scan the route pays, and the
 reference scan it replaced.
 
-## the reference comparison, paired (unit: ratio of ns medians; 9 rounds of 5 reps)
-
-bench: reference round 1/9 for fast-nums-4096.json
-bench: reference round 2/9 for fast-nums-4096.json
-bench: reference round 3/9 for fast-nums-4096.json
-bench: reference round 4/9 for fast-nums-4096.json
-bench: reference round 5/9 for fast-nums-4096.json
-bench: reference round 6/9 for fast-nums-4096.json
-bench: reference round 7/9 for fast-nums-4096.json
-bench: reference round 8/9 for fast-nums-4096.json
-bench: reference round 9/9 for fast-nums-4096.json
-bench: reference round 1/9 for fast-nums-16384.json
-bench: reference round 2/9 for fast-nums-16384.json
-bench: reference round 3/9 for fast-nums-16384.json
-bench: reference round 4/9 for fast-nums-16384.json
-bench: reference round 5/9 for fast-nums-16384.json
-bench: reference round 6/9 for fast-nums-16384.json
-bench: reference round 7/9 for fast-nums-16384.json
-bench: reference round 8/9 for fast-nums-16384.json
-bench: reference round 9/9 for fast-nums-16384.json
-bench: reference round 1/9 for fast-nums-65536.json
-bench: reference round 2/9 for fast-nums-65536.json
-bench: reference round 3/9 for fast-nums-65536.json
-bench: reference round 4/9 for fast-nums-65536.json
-bench: reference round 5/9 for fast-nums-65536.json
-bench: reference round 6/9 for fast-nums-65536.json
-bench: reference round 7/9 for fast-nums-65536.json
-bench: reference round 8/9 for fast-nums-65536.json
-bench: reference round 9/9 for fast-nums-65536.json
-bench: reference round 1/9 for fast-esc.json
-bench: reference round 2/9 for fast-esc.json
-bench: reference round 3/9 for fast-esc.json
-bench: reference round 4/9 for fast-esc.json
-bench: reference round 5/9 for fast-esc.json
-bench: reference round 6/9 for fast-esc.json
-bench: reference round 7/9 for fast-esc.json
-bench: reference round 8/9 for fast-esc.json
-bench: reference round 9/9 for fast-esc.json
-bench: reference round 1/9 for fast-esc-quotes.json
-bench: reference round 2/9 for fast-esc-quotes.json
-bench: reference round 3/9 for fast-esc-quotes.json
-bench: reference round 4/9 for fast-esc-quotes.json
-bench: reference round 5/9 for fast-esc-quotes.json
-bench: reference round 6/9 for fast-esc-quotes.json
-bench: reference round 7/9 for fast-esc-quotes.json
-bench: reference round 8/9 for fast-esc-quotes.json
-bench: reference round 9/9 for fast-esc-quotes.json
-bench: reference round 1/9 for fast-esc-u.json
-bench: reference round 2/9 for fast-esc-u.json
-bench: reference round 3/9 for fast-esc-u.json
-bench: reference round 4/9 for fast-esc-u.json
-bench: reference round 5/9 for fast-esc-u.json
-bench: reference round 6/9 for fast-esc-u.json
-bench: reference round 7/9 for fast-esc-u.json
-bench: reference round 8/9 for fast-esc-u.json
-bench: reference round 9/9 for fast-esc-u.json
-bench: reference round 1/9 for fast-surrogate.json
-bench: reference round 2/9 for fast-surrogate.json
-bench: reference round 3/9 for fast-surrogate.json
-bench: reference round 4/9 for fast-surrogate.json
-bench: reference round 5/9 for fast-surrogate.json
-bench: reference round 6/9 for fast-surrogate.json
-bench: reference round 7/9 for fast-surrogate.json
-bench: reference round 8/9 for fast-surrogate.json
-bench: reference round 9/9 for fast-surrogate.json
-bench: reference round 1/9 for fast-utf8.json
-bench: reference round 2/9 for fast-utf8.json
-bench: reference round 3/9 for fast-utf8.json
-bench: reference round 4/9 for fast-utf8.json
-bench: reference round 5/9 for fast-utf8.json
-bench: reference round 6/9 for fast-utf8.json
-bench: reference round 7/9 for fast-utf8.json
-bench: reference round 8/9 for fast-utf8.json
-bench: reference round 9/9 for fast-utf8.json
-
-
-doc                    native/parse          core/pad+parse       
-                       med min max           med min max          
-fast-nums-4096.json    1.362 1.293 1.526     19.371 11.667 44.325 
-fast-nums-16384.json   1.309 1.120 1.451     25.501 12.239 34.137 
-fast-nums-65536.json   1.282 1.064 1.471     23.157 15.992 39.080 
-fast-esc.json          0.492 0.418 0.569     5.925 4.415 13.107   
-fast-esc-quotes.json   0.516 0.406 0.574     9.271 5.109 12.503   
-fast-esc-u.json        1.475 1.358 1.642     22.494 17.226 38.543 
-fast-surrogate.json    1.693 1.608 1.715     29.403 25.078 58.634 
-fast-utf8.json         1.664 1.547 2.389     67.909 54.708 99.985 
-
-native/parse divides the route native-call stage by simdjson iterate plus
-the full value traversal; core/pad+parse divides the route total less
-outcome handling (admission, staging, copy-in, native, copy-out) by simdjson
-padded-copy plus parse.  Both are ratios of ns medians over the same document
-in the same round; one pass per arm, no repeated work in either.  The arms are
-two binaries, so the alternation cancels drift but not the difference between
-two address spaces.  The escape-heavy document is the one shape where the
-reference traversal, which unescapes every string, exceeds the route native
-stage.  The route total over the same figure is not shown: it is the hex
-printing of both payloads, which is the outcome stage and is reported on
-its own above, in the outcome dissection.
-
 ## the record
 
-build and corpus directory: /tmp/benchdir
+build and corpus directory: /tmp/nix-shell.8WwG0O/json-route-bench.MuS2nC
 every command above ran under MemoryMax=6442450944 with MemorySwapMax=1073741824, pinned to CPU 3.
 
-## the staging fill, appended with the change (unit: ns)
+## the staging fill, one session's paired measurement (unit: ns)
 
-The stage rows above are the run before the staging fill changed.  These are the
-fill's paired measurement: `--stages <file> 21` on two `-O2 TIMING=1` builds in
-one session, three rounds per document alternating them, each cell the median of
-three medians; `staged_bytes` is the fourteen buffers' capacities as `stage`
-sizes them.  `before` is `ByteArray.mk (Array.replicate n 0)` per buffer, as the
-rows above were run against; `after` is `leanllvm_route_zeroed`.
+This block is not from the run above: it is the pairing recorded when the staging
+fill changed, kept because the *before* column cannot be measured any more (the
+`Array.replicate` fill is gone).  Its `--stages <file> 21` ran on two
+`-O2 TIMING=1` builds in one session, three rounds per document alternating them,
+each cell the median of three medians; `staged_bytes` is the fourteen buffers'
+capacities as `stage` sizes them.  `before` is `ByteArray.mk (Array.replicate n
+0)` per buffer; `after` is `leanllvm_route_zeroed`.  The stage rows in the record
+above are the `after` path, so the 64 KiB document's 81,063 ns there and the
+1,626,586 ns `before` figure here are two sessions' readings of two builds, and
+only the pair inside this block is read as the change's effect.
 
 row doc=fast-nums-4096.json staged_bytes=95257 before_ns=45134 after_ns=2969
 row doc=fast-nums-16384.json staged_bytes=377881 before_ns=213212 after_ns=11909
@@ -605,135 +436,138 @@ row doc=fast-utf8.json staged_bytes=46919 before_ns=20464 after_ns=1680
 row doc=depth-128.json staged_bytes=6319 before_ns=2626 after_ns=571
 ```
 
+
 ## Reading it
 
-**The route's own reporting dominates it.**  `outcome_ns` is 96.43–97.21% of
-`total_ns` on the three scalar arrays, 92.92–93.05% on the two documents of
-`\n` escapes and escaped quotes, 88.05–88.29% on the two that carry a `\u`, and
-59.36% on the raw-UTF-8 document, whose result is 95 bytes so its staging and its
-admission are each as large as its printing.  Inside that stage, however, the
-cost is not the two payloads' hex: it is the header reader.
+**The route's own reporting dominates it.**  `outcome_ns` is 99.09–99.30% of
+`total_ns` on the three scalar arrays, 97.11–97.93% on the two documents of `\n`
+escapes and escaped quotes, 91.99–95.37% on the two that carry a `\u`, 99.21% on
+the shipped `scale-4096`, and 86.31% on the raw-UTF-8 document, whose result is
+95 bytes so its admission and its staging are each a visible fraction of its
+printing.  Inside that stage, however, the cost is not the two payloads' hex: it
+is the header reader.
 
 | document | decode | slice | events | arena | header | outcome | decode % | events % |
 |---|---|---|---|---|---|---|---|---|
-| `fast-nums-4096` | 1,915,649 | 67,495 | 282,948 | 182 | 689 | 2,268,795 | 84.43 | 12.47 |
-| `fast-nums-16384` | 7,749,951 | 280,132 | 1,150,948 | 918 | 2,369 | 9,196,793 | 84.27 | 12.51 |
-| `fast-nums-65536` | 35,471,304 | 1,246,846 | 5,399,119 | 1,756 | 3,215 | 42,181,209 | 84.09 | 12.80 |
-| `fast-esc` | 363,022 | 19,669 | 1,165 | 47,358 | 413 | 434,329 | 83.58 | 0.27 |
-| `fast-esc-quotes` | 365,377 | 19,595 | 1,139 | 42,128 | 408 | 428,653 | 85.24 | 0.27 |
-| `fast-esc-u` | 365,575 | 19,475 | 1,144 | 42,410 | 405 | 429,171 | 85.18 | 0.27 |
-| `fast-surrogate` | 362,512 | 18,842 | 1,158 | 42,110 | 431 | 425,090 | 85.28 | 0.27 |
-| `fast-utf8` | 41,439 | 1,324 | 1,241 | 113 | 298 | 44,290 | 93.56 | 2.80 |
+| `fast-nums-4096` | 2,431,708 | 83,842 | 364,664 | 236 | 815 | 2,888,347 | 84.19 | 12.63 |
+| `fast-nums-16384` | 9,780,557 | 344,910 | 1,453,948 | 963 | 2,722 | 11,615,795 | 84.20 | 12.52 |
+| `fast-nums-65536` | 42,270,230 | 1,514,090 | 6,925,834 | 2,358 | 6,811 | 50,715,996 | 83.35 | 13.66 |
+| `fast-esc` | 507,563 | 28,792 | 1,841 | 68,806 | 926 | 619,964 | 81.87 | 0.30 |
+| `fast-esc-quotes` | 500,923 | 26,887 | 1,735 | 58,243 | 679 | 589,528 | 84.97 | 0.29 |
+| `fast-esc-u` | 509,510 | 26,281 | 1,654 | 57,785 | 736 | 597,845 | 85.22 | 0.28 |
+| `fast-surrogate` | 503,642 | 26,132 | 1,727 | 59,249 | 710 | 590,765 | 85.25 | 0.29 |
+| `fast-utf8` | 56,897 | 1,804 | 1,695 | 160 | 345 | 61,589 | 92.38 | 2.75 |
 
 Unit: ns, medians of 21 repetitions from the same `--stages` row; the percent
 columns divide a part's median by that row's `outcome_ns` median.  Construction:
-`outcome_ns` is the per-repetition sum of the five parts, so the five clock
-reads that divide them are inside the stage and nothing else is; the parts are
-medians of per-repetition sums, so their percentages need not add to exactly
-100.  `arena` is 0.01% on the scalar arrays because their arena is empty, and
-9.8–10.9% on the five escape documents, whose arena carries the unescaped bytes;
+`outcome_ns` is the per-repetition sum of the five parts, so the five clock reads
+that divide them are inside the stage and nothing else is; the parts are medians
+of per-repetition sums, so their percentages need not add to exactly 100.  `arena`
+is 0.00–0.01% on the scalar arrays because their arena is empty, and 9.67–11.10%
+on the five escape documents, whose arena carries the unescaped bytes;
 `fast-utf8` has no escapes, so its arena is empty and its whole result 95 bytes.
 
-**The header decode is fifty-six list materialisations.**  `be64` reads one
-byte as `(bs.toList.getD (i + k) 0)`: the whole result's list is built, then
-walked from its head to the index.  Each header word is eight such reads, and an
+**The header decode is fifty-six list materialisations.**  `be64` reads one byte
+as `(bs.toList.getD (i + k) 0)`: the whole result's list is built, then walked
+from its head to the index.  Each header word is eight such reads, and an
 observation needs seven words, so one outcome stage costs 56 materialisations of
-`80 + ndst + nev` bytes and 56 head-to-index walks on top.  At 6,229 result
-bytes that is 348,824 cons cells for 1,915,649 ns — 34,208 ns per
-materialisation, 5.49 ns per cell — and 6.44 ns per cell at 98,389
-result bytes, where one materialisation is 633,416 ns.  The accounting is in the
-artifact rather than inferred: the emitted `l_be64___lam__0` calls
-`l_ByteArray_toList` once per byte read, and `decodeResult` calls `be64` seven
-times.  This is the instrument's own conversion, not a decoder for the
-pipeline's result: the consumer below reads the same header and walks the whole
-event stream in 7,899 ns.
+`80 + ndst + nev` bytes and 56 head-to-index walks on top.  At 6,229 result bytes
+that is 6.97 ns per cell (2,431,708 ns of decode over 348,824 cells); at 98,389
+result bytes 7.67 ns; at the escape documents' 1,095 bytes 8.17–8.31 ns; and
+10.69 ns at the raw-UTF-8 document's 95 bytes, where the fixed cost of the seven
+walks is all there is.  The accounting is in the artifact rather than inferred:
+the emitted `l_be64___lam__0` calls `l_ByteArray_toList` once per byte read, and
+`decodeResult` calls `be64` seven times.  This is the instrument's own conversion,
+not a decoder for the pipeline's result: the consumer below reads the same header
+and walks the whole event stream in 18,771 ns.
 
 **The printing cost is the hex conversion, not the write.**  The events line is
-282,948 ns at 4 KiB and its build-only figure is 272,235 ns, so 96% of the line
-is building the string and 10,713 ns is writing it; at 64 KiB the split is
-5,399,119 against 5,219,667 ns, so 179,452 ns of the 5.4 ms is the write of
+364,664 ns at 4 KiB and its build-only figure is 357,253 ns, so 7,411 ns of the
+line is the write and 98.0% is building the string; at 64 KiB the split is
+6,925,834 against 6,712,599 ns, so 213,235 ns of the 6.9 ms is the write of
 196,631 characters.  Building it is `hex`'s shape: `toList`, one `String` per
 byte through `Nat.toDigits 16`, then `join`.  Per event-stream byte that is
-44.27–53.09 ns on the scalar arrays and 69.60–71.53 ns on the five escape
+56.86–71.57 ns on the scalar arrays and 98.00–102.60 ns on the five escape
 documents; `hex_arena_ns` prices the escape documents' 1,000 arena bytes at
-41,984–47,565 ns, 42.0–47.6 ns per arena byte.
+56,986–63,178 ns, 56.99–63.18 ns per arena byte.
 
-**The slicing is the third cost.**  Two `toList` materialisations cut the
-payloads out: 67,495 ns at 6,229 result bytes (2.97% of the stage) and
-1,246,846 ns at 98,389 (2.96%).  The observation line is 689 ns and the empty
-arena's line 182 ns; neither is a lever.
+**The slicing is the third cost.**  Two `toList` materialisations cut the payloads
+out: 83,842 ns at 6,229 result bytes (2.90% of the stage) and 1,514,090 ns at
+98,389 (2.99%), and 4.38–4.64% on the escape documents, whose arena is a
+megabyte-less 1,000 bytes but whose slice is still two materialisations.  The
+observation line is 815 ns and the empty arena's line 236 ns; neither is a lever.
 
 **What a consumer pays.**  A consumer that reads the same result and keeps
-values pays two to three orders of magnitude less than the printed path:
+values pays two orders of magnitude less than the printed path:
 
-| document | tokens | fold | values | fold/event | values/event | fold/byte | values/byte |
-|---|---|---|---|---|---|---|---|
-| `fast-nums-4096` | 685 | 7,899 | 11,675 | 11.53 | 17.04 | 1.28 | 1.90 |
-| `fast-nums-16384` | 2,733 | 32,767 | 46,491 | 11.99 | 17.01 | 1.33 | 1.89 |
-| `fast-nums-65536` | 10,925 | 122,974 | 237,378 | 11.26 | 21.73 | 1.25 | 2.41 |
-| `fast-esc` | 3 | 1,859 | 1,918 | 619.67 | 639.33 | 1.83 | 1.89 |
-| `fast-esc-quotes` | 3 | 1,848 | 1,890 | 616.00 | 630.00 | 1.82 | 1.86 |
-| `fast-esc-u` | 3 | 1,831 | 1,886 | 610.33 | 628.67 | 1.80 | 1.86 |
-| `fast-surrogate` | 3 | 1,869 | 1,898 | 623.00 | 632.67 | 1.84 | 1.87 |
-| `fast-utf8` | 3 | 158 | 213 | 52.67 | 71.00 | 10.53 | 14.20 |
+| document | tokens | fold | values | outcome/values | fold/event | values/event | fold/byte | values/byte |
+|---|---|---|---|---|---|---|---|---|
+| `fast-nums-4096` | 685 | 12,865 | 18,771 | 153.9 | 18.78 | 27.40 | 2.09 | 3.05 |
+| `fast-nums-16384` | 2,733 | 52,162 | 74,466 | 156.0 | 19.09 | 27.25 | 2.12 | 3.03 |
+| `fast-nums-65536` | 10,925 | 219,653 | 348,888 | 145.4 | 20.11 | 31.93 | 2.23 | 3.55 |
+| `fast-esc` | 3 | 3,023 | 3,113 | 199.2 | 1,007.67 | 1,037.67 | 2.98 | 3.07 |
+| `fast-esc-quotes` | 3 | 3,002 | 3,149 | 187.2 | 1,000.67 | 1,049.67 | 2.96 | 3.10 |
+| `fast-esc-u` | 3 | 3,010 | 3,108 | 192.4 | 1,003.33 | 1,036.00 | 2.97 | 3.06 |
+| `fast-surrogate` | 3 | 2,996 | 3,126 | 189.0 | 998.67 | 1,042.00 | 2.95 | 3.08 |
+| `fast-utf8` | 3 | 275 | 358 | 172.0 | 91.67 | 119.33 | 18.33 | 23.87 |
 
 Unit: `fold` and `values` are ns per document (medians of 21 repetitions, the
-alternating order above); the `/event` columns divide each median by the token
-count and the `/byte` columns by `ndst + nev`, both from the same consumer row.
-`tokens` is the number of event records, so the five documents with three events
-over a 1,015-byte payload make their per-event figures meaningless and their
-per-byte figures the ones to read; `fast-utf8`'s result is 95 bytes, which is why
-its 213 ns still divides to 14.20 ns per payload byte.
+alternating order above); `outcome/values` is a multiplier, that row's
+`outcome_ns` divided by its values reading; the `/event` columns divide each
+median by the token count and the `/byte` columns by `ndst + nev`, both from the
+same consumer row.  `tokens` is the number of event records, so the five
+documents with three events over a 1,015-byte payload make their per-event
+figures meaningless and their per-byte figures the ones to read; `fast-utf8`'s
+result is 95 bytes, which is why its 358 ns still divides to 23.87 ns per payload
+byte.
 
-The printed path's cost over the same token and byte counts is 3,312.11–3,860.98
-ns per event and 44.27–53.09 ns per event-stream byte on the scalar arrays, and
-141,696.67–144,776.33 ns per event on the five escape documents.  Dividing the
-two per-document medians, the printed stage is 177.70–227.56 times the consumer's
+The printed path's cost over the same token and byte counts is 4,130.1–5,317.6
+ns per event and 56.86–71.57 ns per event-stream byte on the scalar arrays, and
+134,818.3–137,258.0 ns per event on the five escape documents.  Dividing the two
+per-document medians, the printed stage is 145.4–199.2 times the consumer's
 values reading on the eight documents (unit: multiplier of ns medians, the same
 document and session; the printed figure is the `TIMING=1` build's and the
 consumer's the production build's, and the consumer's own code holds no clock
 read).
 
-**So the 2.3 ms is instrumentation.**  In this session the 4 KiB document's
-outcome stage is 2.27 ms, and 84.43% of it is a header reader that rebuilds the
-result's list for every byte it reads, 12.47% is the events line's hex
-conversion, and 2.97% is cutting the payloads out.  A consumer that reads the
-result and keeps values pays 11,675 ns on the same document — 17.04 ns per event
-and 1.90 ns per payload byte — and 237,378 ns at 64 KiB, without per-token values
-11.26–11.99 ns per event.  The honest production cost of reading this pipeline's
+**So the 2.9 ms is instrumentation.**  In this session the 4 KiB document's
+outcome stage is 2.89 ms, and 84.19% of it is a header reader that rebuilds the
+result's list for every byte it reads, 12.63% is the events line's hex
+conversion, and 2.90% is cutting the payloads out.  A consumer that reads the
+result and keeps values pays 18,771 ns on the same document — 27.40 ns per event
+and 3.05 ns per payload byte — and 348,888 ns at 64 KiB, without per-token values
+18.78–20.11 ns per event.  The honest production cost of reading this pipeline's
 result at these sizes is therefore tens of nanoseconds per token, not
-microseconds, and it is not the parser's cost either way: the object is 0.30% of
-the route's total on the three scalar arrays and 0.61–0.93% on the five escape
-documents.  The fixes are a follow-up and they are all on the probe side — read
-the header by index (the consumer's `decodeIndexed` is the measured shape), build
-the hex without a list and a `String` per byte, and cut the payloads without
-materialising the result.
+microseconds, and it is not the parser's cost either way: the object is 0.29–0.31%
+of the route's total on the three scalar arrays, 0.64–0.96% on the escape
+documents and 1.27% on the raw-UTF-8 one.  The fixes are a follow-up and they are
+all on the probe side — read the header by index (the consumer's `decodeIndexed`
+is the measured shape), build the hex without a list and a `String` per byte, and
+cut the payloads without materialising the result.
 
 **The copy is cheap; the fill before it was not.**  For `fast-nums-65536` the
 adapter copies 1,442,742 bytes (entry 262,436; escape 262,432; arena 65,603;
-events 852,135; the nine fixed slots and their growth, 136) in 102,701 ns —
-about 14.0 GB/s.  The document window is not in that figure: the object only
-reads the document, so the adapter hands the caller's padding over in place and
-the 13 buffers it copies are the ones the object writes.  The caller's staging of
-1,508,377 bytes cost 1,365,528 ns in the run above, about 1.10 GB/s: the `zeros`
-arrays were built element by element, so the stage that exists to hand the
-adapter zeros cost 13.3 times what the adapter's copy of them did.  That fill is
-now one allocation and one `memset` per buffer, and the stage costs 56,541–71,009
-ns on the same document in this record's two `TIMING=1` builds — 21.3–26.7 GB/s,
-at or above the copy's per-byte cost rather than a sixteenth of it.  The profile,
-the before/after pair and what remains are in the section below.
+events 852,135; the nine fixed slots and their growth, 136) in 98,032 ns — about
+14.7 GB/s.  The document window is not in that figure: the object only reads the
+document, so the adapter hands the caller's padding over in place and the 13
+buffers it copies are the ones the object writes.  The caller's staging of
+1,508,377 bytes costs 81,063 ns in this record, about 18.6 GB/s: one allocation
+and one `memset` per buffer, at the copy's per-byte cost rather than a sixteenth
+of it.  The `before` figure — the `Array.replicate` fill at 1.10 GB/s, 13.3 times
+the adapter's copy of the same bytes — cannot be measured any more; its paired
+record is the block above.
 
 ### The staging fill
 
 The stage is fourteen fresh buffers: the window's three zero runs around the
-document, and the four growing buffers at the record's capacities.  In the run
-above each one was `ByteArray.mk (Array.replicate n 0)`, and the emitted C is
-the attribution rather than an inference: `zeros` compiles to
+document, and the four growing buffers at the record's capacities.  Before the
+change each one was `ByteArray.mk (Array.replicate n 0)`, and the emitted C is the
+attribution rather than an inference: `zeros` compiles to
 `lean_mk_array(n, lean_box(0))` followed by `lean_byte_array_mk`, so the fill
 first replicates a boxed element across an array of pointers and then walks that
-array element by element, unboxing each byte into the scalar array.  Timed
-apart at the `fast-nums-65536` capacities (a scratch build of the same `zeros`,
-median of 21 repetitions, CPU 3, the same session):
+array element by element, unboxing each byte into the scalar array.  Timed apart
+at the `fast-nums-65536` capacities in the session that made the change (a scratch
+build of the same `zeros`, median of 21 repetitions, CPU 3):
 
 | buffer | bytes | fill_ns | GB/s |
 |---|---|---|---|
@@ -743,12 +577,11 @@ median of 21 repetitions, CPU 3, the same session):
 | `dst` | 65,603 | 29,650–31,973 | 2.05–2.21 |
 | the window's three appends | 65,635 | 1,190–1,352 | 48.6–55.2 |
 
-Unit: ns per call and bytes per nanosecond written; the range is three runs of
-21 repetitions.  The four growing fills were 823,522–849,560 ns of the whole
-scratch stage's 1,146,725–1,195,000 ns — 71–72% — so the fill dominated the
-stage, it is proportional to the bytes staged rather than to the number of
-buffers, and the window's appends, copies at `memcpy` cost, were never the
-problem.
+Unit: ns per call and bytes per nanosecond written; the range is three runs of 21
+repetitions.  The four growing fills were 823,522–849,560 ns of the whole scratch
+stage's 1,146,725–1,195,000 ns — 71–72% — so the fill dominated the stage, it is
+proportional to the bytes staged rather than to the number of buffers, and the
+window's appends, copies at `memcpy` cost, were never the problem.
 
 The fix is `leanllvm_route_zeroed` in the adapter: `lean_alloc_sarray` and one
 `memset` per buffer, the same zeros `JsonCallRoute.stagedStore` states, and
@@ -773,129 +606,131 @@ are unchanged.
 
 Unit: `staged_bytes` is the sum of the fourteen buffers' capacities as `stage`
 sizes them, in bytes; `before_ns`/`after_ns` are `staging_ns` medians of 21
-repetitions, and `before`/`after GB/s` divide the bytes by those medians.  The
-two columns are a paired measurement: both builds are `-O2 TIMING=1`, and for
-each document three rounds alternate them, each cell the median of the three
+repetitions, and the `GB/s` columns divide the bytes by those medians.  The two
+columns are a paired measurement: both builds are `-O2 TIMING=1`, and for each
+document three rounds alternate them, each cell the median of the three
 `--stages` medians, so the machine's drift is in neither column alone.
-`before/after` is a multiplier, the same document and session.  The pair is a
-later session than the stage rows above, so its `before` column is not those
-rows: the 64 KiB document's 1,626,586 ns here against the 1,365,528 ns above is
-the same fill measured in two sessions, and only the paired ratio inside one
-session is read as the change's effect.  The ratio grows
+`before/after` is a multiplier, the same document and session.  The ratio grows
 with the document because what remains after the fill — the fourteen allocations
 and the window's appends — is a per-call cost: `depth-128` stages 6,319 bytes and
 gains 4.6 times, while the 64 KiB document stages 1,508,377 and gains 23.0.  The
-frontier a caller meets is now the copy's: 1,508,377 bytes at 21.3 GB/s, the
-1,442,742 of them the object writes staged once by the route and once by the
-adapter.
+frontier a caller meets is now the copy's: 1,508,377 bytes at 18.6 GB/s in this
+record, the 1,442,742 of them the object writes staged once by the route and once
+by the adapter.
 
-**Admission: the native facts and the native policy scan, beside the two Lean
-passes they replaced.**  The predicate the route used to run is the library's
-`admission`: the opener count over `doc.data.toList` and the per-quote policy scan
-over `List.range doc.size`.  The route now runs the adapter's mask pass and the
-native character-policy scan only where the masks saw a candidate, and the table
-in the record divides them on the same documents in the same session:
+### Admission: the depth walk and the native policy scan, beside the two Lean passes
 
-| document | openers | candidate | certified (old) | phase one | policy (native) | policy (reference) | two-phase | two-phase/certified |
-|---|---|---|---|---|---|---|---|---|
-| `fast-nums-4096` | 1 | 0 | 80,077 | 1,104 | - | - | 1,129 | 0.014 |
-| `fast-nums-16384` | 1 | 0 | 331,813 | 4,267 | - | - | 4,286 | 0.013 |
-| `fast-nums-65536` | 1 | 0 | 1,388,660 | 16,830 | - | - | 16,870 | 0.012 |
-| `fast-esc` | 1 | 1 | 54,586 | 375 | 147 | 43,634 | 519 | 0.010 |
-| `fast-esc-quotes` | 1 | 1 | 8,956,894 | 634 | 206 | 8,901,665 | 870 | 0.000 |
-| `fast-esc-u` | 1 | 1 | 80,623 | 474 | 5,565 | 68,396 | 6,139 | 0.076 |
-| `fast-surrogate` | 1 | 1 | 78,970 | 473 | 5,908 | 62,165 | 6,518 | 0.083 |
-| `fast-utf8` | 1 | 1 | 54,902 | 371 | 155 | 46,074 | 535 | 0.010 |
-| `depth-128` | 128 | 0 | 6,590 | 547 | - | - | 571 | 0.087 |
-| `depth-129` | 129 | 0 | 1,698 | 522 | - | - | 566 | 0.333 |
-| `scale-4096` | 129 | 1 | 24,518 | 1,533 | - | - | 1,579 | 0.064 |
+The predicate the route used to run is the library's `admission`: a measurement
+over `doc.data.toList` and the per-quote policy scan over `List.range doc.size`.
+The library's depth clause now folds the document's structural delimiter
+sequence, and the route runs the same measurement natively — a walk over the
+document, the running depth and its maximum, the proved counter over the same
+structural lanes — then the native character-policy scan only where the walk saw
+a candidate.  This session's rows, in the record above:
+
+| document | depth | phase one | policy (native) | policy (reference) | two-phase | certified | two-phase/certified |
+|---|---|---|---|---|---|---|---|
+| `fast-nums-4096` | 1 | 2,787 | - | - | 2,824 | 138,940 | 0.020 |
+| `fast-nums-16384` | 1 | 7,225 | - | - | 7,256 | 568,502 | 0.013 |
+| `fast-nums-65536` | 1 | 27,625 | - | - | 27,760 | 2,375,179 | 0.012 |
+| `fast-esc` | 1 | 2,429 | 256 | 61,939 | 2,697 | 105,563 | 0.026 |
+| `fast-esc-quotes` | 1 | 2,832 | 671 | 118,351,137 | 3,414 | 11,880,827 | 0.000 |
+| `fast-esc-u` | 1 | 3,723 | 7,782 | 91,198 | 11,520 | 152,078 | 0.076 |
+| `fast-surrogate` | 1 | 2,290 | 8,261 | 89,722 | 10,637 | 146,876 | 0.072 |
+| `fast-utf8` | 1 | 2,368 | 229 | 60,270 | 2,617 | 110,084 | 0.024 |
+| `depth-128` | 128 | 929 | - | - | 953 | 15,285 | 0.062 |
+| `depth-129` | 129 | 936 | - | - | 1,008 | 10,595 | 0.095 |
+| `scale-4096` | 2 | 5,184 | 320 | 189,854 | 5,521 | 303,802 | 0.018 |
 
 Unit: ns per document, medians of 21 repetitions of `--admit` on the production
 build; `two-phase/certified` is a multiplier, the same document in the same
-session.  Construction: `certified` is the library's `admission`; `phase one` is
-the adapter's native call including the `@[extern]` call and the header decode;
-`policy (native)` is the route's phase two — `leanllvm_route_policy`, including
-its own `@[extern]` call and six-word header decode — and `policy (reference)` is
-the library's `policyRefusal` on the same bytes in the same repetition, timed
-apart; both are `-` where the masks saw no candidate, so `two-phase` is phase one
-alone on those rows.  The route's own admission stage in the `--stages` rows is
-the same decision: 730 ns on the escape document (493 phase one, 238 phase two),
-700 on the escaped-quote one, 8,403 on `fast-esc-u` (615 and 7,802), 17,732 at
-4 KiB and 22,849 at 64 KiB.  Phase one is 0.26–0.27 ns per input byte on the
-three scalar arrays (1,104 ns at 4,099 bytes, 16,830 at 65,539).
+session.  Construction: `phase one` is the adapter's native walk, including the
+`@[extern]` call and the header decode; `policy (native)` is the route's phase
+two — `leanllvm_route_policy`, including its own `@[extern]` call and six-word
+header decode — and `policy (reference)` is the library's `policyRefusal` on the
+same bytes in the same repetition, timed apart; both are `-` where the walk saw
+no candidate, so `two-phase` is phase one alone on those rows.  `certified` is
+the library's `admission` on the same bytes: the empty and length clauses, the
+`docDepth` fold over `doc.data.toList`, and the per-quote policy scan.  The
+route's own admission stage in the `--stages` rows is the same decision: 2,418 ns
+on the `\n` document (2,191 phase one, 227 phase two), 2,397 on the
+escaped-quote one, 10,999 on `fast-esc-u` (3,576 and 7,407), 3,288 at 4 KiB and
+33,427 at 64 KiB.
+
+**The walk costs about half a nanosecond per byte, and the strings cost the
+rest.**  Phase one is 0.42–0.68 ns per input byte on the three scalar arrays
+(2,787 ns at 4,099 bytes, 27,625 at 65,539) and 1.27 ns on `scale-4096`, whose
+178 object bodies are walked character by character; on the 256-byte depth
+document it is 3.63 ns per byte, where the `@[extern]` call and the header decode
+are most of the interval.  The walk replaced a mask pass that read 64 bytes per
+iteration, so it is the dearer stage; its share of the route is what matters and
+it is small: 0.07–0.16% of `total_ns` on the numeric and `scale-4096` rows, 0.58%
+on the two escape documents whose names carry no `\u`, and 4.87% on the 2,004-byte
+raw-UTF-8 document, where the printed result is 95 bytes and admission is
+therefore a visible part of the route.
+
+**The depth pass beside the walk is the proved counter, and its final depth meets
+the walk's.**  `depth_ns` in each row is the walk run a second time, with
+`tests/v16/depth_count.ll` called over each block's structural lane list: 2,716 ns
+at 4 KiB, 27,214 at 64 KiB, 808 on the 256-byte depth document.  The counter
+returns the sequence's final depth and a prefix-depth sum, so it corroborates the
+walk's final depth and cannot supply its maximum — the maximum is the walk's
+accumulator, and `check.sh` compares the accumulator's final depth with the
+counter's recombined one on every row it runs.
 
 **The policy phase costs what the document's bytes allow, not what its quotes
 cost.**  The five escape documents split by what the screen can rule out:
-`fast-esc`, `fast-esc-quotes` and `fast-utf8` carry no `\u` pair and no byte at
-or above `0xEF`, so the screen answers them without visiting a position and the
-147–206 ns the phase reports is its own extern call and header decode; `fast-esc-u`
-and `fast-surrogate` carry `\u`, so they pay the exact scan at 1.85–1.97 ns per
-input byte.  The reference's scan on the same bytes is 43,634 ns on the escape
-document, 46,074 on the raw-UTF-8 one, 62,165–68,396 on the two `\u` documents
-and 8,901,665 on the escaped-quote document, where it starts a body scan at each
-of 1,002 quote bytes and re-reads the rest of the body from each: the native phase
-is 297×, 297×, 10.5–12.3× and 43,213× cheaper on those rows (unit: ratio of the
-two ns medians in the same row).  Where the policy scan was 99.2% of the
-admission stage — 50,130 of the escape document's 50,537 ns — it is now 238 of
-730 ns, and the whole decision on that document is 519 ns against the 54,586 the
-predicate costs.
+`fast-esc`, `fast-esc-quotes` and `fast-utf8` carry no `\u` pair and no byte at or
+above `0xEF`, so the screen answers them without visiting a position and the
+229–671 ns the phase reports is its own extern call and header decode;
+`fast-esc-u` and `fast-surrogate` carry `\u`, so they pay the exact scan at
+2.59–2.75 ns per input byte.  The reference's scan on the same bytes is 61,939 ns
+on the escape document, 60,270 on the raw-UTF-8 one, 89,722–91,198 on the two
+`\u` documents and 118,351,137 on the escaped-quote document, where it starts a
+body scan at each of 1,002 quote bytes and re-reads the rest of the body from
+each: the native phase is 242×, 263×, 10.9–11.7× and 176,381× cheaper on those
+rows (unit: ratio of the two ns medians in the same row).
 
 **The decision is the predicate's, row by row.**  `check.sh` runs `--admit` over
-every manifest row and the boundary documents and compares the two decisions and
-their reasons itself; a policy refusal's reason carries the byte the reference
-names, so the comparison covers the class and the position.  The class table it
-prints is:
+every manifest row, the boundary documents, the depth clause's own documents and
+its fixed-seed sweep, and compares the two decisions, their reasons and the two
+measured depths itself; a policy refusal's reason carries the byte the reference
+names, so the comparison covers the class and the position, and the depth is
+compared as a number wherever the walk ran.  The class table it prints is:
 
 ```text
 class                                          rows
 0/depthBound/0/0                                  3
-0/depthBound/1/0                                  1
 0/emptyInput/0/0                                  2
 0/inputTooLong/0/0                                1
 0/noncharacter@1/1/1                              8
 0/unpairedSurrogate@1/1/1                         6
-1/none/0/0                                       72
-1/none/1/1                                       44
+0/unpairedSurrogate@6/1/1                         1
+1/none/0/0                                       78
+1/none/1/1                                      166
 ```
 
-Unit: rows, one per corpus row class (`verdict/reason/candidate/policy`), 137
-rows in all.  Construction: the verdict and the reason are compared in the
+Unit: rows, one per row class (`verdict/reason/candidate/policy`), 265 rows in
+all.  Construction: the verdict, the reason and the depth are compared in the
 scenario's shell, not read from the row's own `agree` field; the control repeats
 the comparison with the native depth bound set to zero and must report a
-disagreement, and a second control moves the shipped route's bound and asserts
-that the route changes path.  The depth counter's own pass is reported beside the
-decision in the same rows (`depth_ns`: 1,452 ns at 4 KiB, 22,958 at 64 KiB) and
-gates nothing.
+disagreement, a second control moves the shipped route's bound and asserts that
+the route changes path, and the depth clause's eleven documents are asserted
+against hand-written measurements as well as against `docDepth`.
 
-**The object against the reference.**  `native/parse` is 1.282–1.362 on the three
-scalar-array documents, 0.492–0.516 on the two documents whose arena is 1,000
-bytes and whose event stream 15, and 1.475–1.693 on the two that carry a `\u` or
-raw UTF-8:
-
-| document | `native/parse` med (min–max) | `core/pad+parse` med (min–max) |
-|---|---|---|
-| `fast-nums-4096` | 1.362 (1.293–1.526) | 19.4 (11.7–44.3) |
-| `fast-nums-16384` | 1.309 (1.120–1.451) | 25.5 (12.2–34.1) |
-| `fast-nums-65536` | 1.282 (1.064–1.471) | 23.2 (16.0–39.1) |
-| `fast-esc` | 0.492 (0.418–0.569) | 5.9 (4.4–13.1) |
-| `fast-esc-quotes` | 0.516 (0.406–0.574) | 9.3 (5.1–12.5) |
-| `fast-esc-u` | 1.475 (1.358–1.642) | 22.5 (17.2–38.5) |
-| `fast-surrogate` | 1.693 (1.608–1.715) | 29.4 (25.1–58.6) |
-| `fast-utf8` | 1.664 (1.547–2.389) | 67.9 (54.7–100.0) |
-
-Unit: ratio of ns medians per document, both arms medians over the same
-document in the same round, alternating which arm goes first.  Construction:
-`native/parse` divides the route's `native_ns` by simdjson's `iterate` plus the
-full value traversal (every string fetched, every key unescaped, every number
-converted); `core/pad+parse` divides the route's `total_ns` less `outcome_ns`
-by simdjson's `padded_string` construction plus the same traversal.  One pass
-per arm, no repeated work in either.  The two escape documents whose bodies are
-`\n` and `\"` repeats are the shape where the reference's traversal, which
-unescapes every string, exceeds the route's native stage; `fast-esc-u` and
-`fast-surrogate` are the same shape with the escapes expanded into more bytes,
-where the traversal is 1.5–1.7 times the route's call.  The whole route over
-`pad+parse` is 5.9–67.9× and is not tabulated: that ratio is the reporting,
-already a column above.
+**The fallback's price is negative.**  `depth-129` is the document one bracket
+pair past the domain, and the fallback answers it end to end in 8,877 ns, against
+162,553 ns for the admitted `depth-128` — a ratio of 0.055 (unit: ns per
+document, medians of 21 repetitions of the whole route).  The reason is in the
+columns above: the fallback's residual is the reference parse (6,526 ns at 258
+bytes) plus one printed line, while the fast path pays staging and the hex
+printing of its payloads.  The floor the fast path sits on is its own reporting;
+the residue is cheaper than that floor at these sizes.  This is where an
+optimisation would pay: the stage table's dominant column is not the parser.
+`scale-4096` is now on that fast path (its nesting is 2, not the 179 opener bytes
+an earlier rule counted), and its 4,662,132 ns end to end is 1.603 times the
+4,099-byte scalar array's 2,908,832 — 178 objects against 683 numbers at the same
+size, the difference being the strings and the arena.
 
 **The optimisation level is not a performance lever here.**  The object is the
 six kernel translation units; `OPT` changes that level and nothing else, and the
@@ -904,44 +739,43 @@ of the −O2 build in each round as the drift control:
 
 | document | −O3/−O2 `native_ns` med (min–max) | −O3/−O2 `total_ns` med (min–max) | control: −O2/−O2 `native_ns` med (min–max) |
 |---|---|---|---|
-| `fast-nums-4096` | 0.991 (0.904–1.094) | 1.009 (0.984–1.149) | 0.982 (0.935–1.074) |
-| `fast-nums-16384` | 0.973 (0.867–1.041) | 1.006 (0.896–1.054) | 0.957 (0.890–1.037) |
-| `fast-nums-65536` | 1.000 (0.937–1.053) | 0.993 (0.962–1.053) | 1.008 (0.906–1.091) |
-| `fast-esc` | 0.958 (0.916–1.095) | 1.018 (0.922–1.178) | 1.033 (0.986–1.088) |
-| `fast-esc-quotes` | 1.005 (0.808–1.185) | 1.048 (0.915–1.131) | 1.057 (0.860–1.183) |
-| `fast-esc-u` | 0.998 (0.867–1.146) | 1.058 (0.862–1.156) | 1.025 (0.868–1.174) |
-| `fast-surrogate` | 0.971 (0.883–1.174) | 0.981 (0.916–1.079) | 1.070 (0.855–1.179) |
-| `fast-utf8` | 0.955 (0.721–1.233) | 0.956 (0.868–1.212) | 1.050 (0.887–1.444) |
+| `fast-nums-4096` | 0.984 (0.946–1.019) | 1.003 (0.945–1.170) | 0.992 (0.933–1.063) |
+| `fast-nums-16384` | 1.000 (0.929–1.071) | 0.995 (0.966–1.069) | 1.015 (0.929–1.063) |
+| `fast-nums-65536` | 0.960 (0.799–1.154) | 0.984 (0.888–1.045) | 0.983 (0.735–1.146) |
+| `fast-esc` | 1.006 (0.958–1.082) | 0.997 (0.901–1.088) | 1.009 (0.952–1.060) |
+| `fast-esc-quotes` | 0.976 (0.839–1.027) | 1.018 (0.919–1.047) | 0.972 (0.839–1.014) |
+| `fast-esc-u` | 1.033 (0.975–2.510) | 1.099 (0.945–1.541) | 1.007 (0.980–1.100) |
+| `fast-surrogate` | 1.022 (0.991–1.043) | 1.009 (0.934–1.081) | 0.994 (0.932–1.019) |
+| `fast-utf8` | 1.023 (0.869–1.264) | 1.001 (0.870–1.543) | 0.967 (0.928–1.040) |
 
 Unit: ratio of ns medians from the two builds in the same round.  Construction:
 each round runs both builds on the same document with 5 repetitions each, and a
 second −O2 run; the control's range is what this host contributes with no `OPT`
-change at all.  The pair's native ratios and its total ratios both sit inside
-the control's range on every document (the control's own medians span
-0.855–1.444 over the eight).
+change at all.  Every native median sits inside its own document's control range
+but one: `fast-surrogate`'s 1.022 against a control range whose maximum is 1.019,
+which is inside the control's spread over the eight (0.932–1.146) and is not a
+difference this pairing can attribute to `OPT`.  The total ratios are noisier —
+`fast-esc-u`'s 1.099 sits inside its control range's maximum 1.100 and its
+maximum round 1.541 against a control maximum 1.100 — so the table reads as one
+level.
 
 That is the performance number the flag gap
-[the correspondence page](json-route-artifact-correspondence.md) records —
-the route's object is a −O2 compilation where the proofs' body is a −O3
-emission.  For the route's use of the object, at 2 KiB to 64 KiB, the
-difference between the two levels is not distinguishable from this machine's
-run-to-run drift.  The level changes which bodies the compiler inlines — the
-correspondence page measures that — but not the route's cost at these sizes,
-where the object is a fraction of a percent of the total (0.30–0.93%).
+[the correspondence page](json-route-artifact-correspondence.md) records — the
+route's object is a −O2 compilation where the proofs' body is a −O3 emission.
+For the route's use of the object, at 2 KiB to 64 KiB, the difference between the
+two levels is not distinguishable from this machine's run-to-run drift.  The
+level changes which bodies the compiler inlines — the correspondence page
+measures that — but not the route's cost at these sizes, where the object is a
+fraction of a percent of the total (0.29–1.27%).
 
-**The fallback's price is negative.**  `depth-129` is the document one bracket
-pair past the domain, and the fallback answers it end to end in 7,812 ns, against
-122,269 ns for the admitted `depth-128`; the 4,096-byte opener-rich
-`scale-4096.json` is answered by the fallback in 424,227 ns against 2,333,802 ns
-for the admitted 4,099-byte scalar array.  Unit: ns per document, medians of 21
-repetitions of the whole route, the two documents of each pair differing by one
-bracket pair (first pair) or in shape (second pair).  The reason is in the
-columns above: the fallback's residual is the reference parse
-(5,920 ns at 258 bytes, 213,012 ns at 4 KiB) plus one printed line, while the
-fast path pays staging and hex printing of its payloads.  The floor the fast path
-sits on is its own reporting; the residue is cheaper than that floor at these
-sizes.  This is where an optimisation would pay: the stage table's dominant
-column is not the parser.
+**The reference arm is absent from this run.**  `bench/simdjson-baseline.cc`
+compiles against a local simdjson 4.6.11 `singleheader/` source, and this machine's
+store now holds only the built library (`libsimdjson.so.33`) with no headers, so
+`bench.sh` reported the arm absent rather than substituting a row.  The previous
+record's `native/parse` and `core/pad+parse` ratios are therefore not carried
+forward: they were another session's two binaries, and the ratios this page reads
+are the paired rows above.  `SIMDJSON_SRC=<tree with singleheader/>` re-establishes
+the arm; the section prints again when it can be built.
 
 ## The instrument, and the two defects it has caught
 
@@ -969,28 +803,28 @@ read is an `IO` action.  Both properties are load-bearing:
   probe runs after the stage's last read so it cannot enter `total_ns`.  The
   dissection then found the second defect: `be64`, a header reader written as
   "the result's byte at an offset", materialises the result's list per byte and
-  was 84.09–84.43% of the stage it was measuring on the three scalar arrays.  It looked like decoding the
-  result and was the probe's own conversion, which is why the consumer mode
-  reads the same header by index and why the fix, not the number, is the
-  follow-up.
+  is 81.87–85.25% of the stage it measures on the numeric and escape rows and
+  92.38% on the raw-UTF-8 one.  It looked like decoding the result and was the
+  probe's own conversion, which is why the consumer mode reads the same header by
+  index and why the fix, not the number, is the follow-up.
 
 ## What this does and does not establish
 
-It establishes, for one session on this machine, the per-stage cost of the
-route as it stands, the outcome stage's split across its five parts, the price
-of a consumer that reads the same result without printing, the price of the
-object's two optimisation levels against each other with a drift control, two
-fallback documents' end-to-end cost beside the admitted document each is paired
-with, and one paired comparison against simdjson 4.6.11.
+It establishes, for one session on this machine, the per-stage cost of the route
+as it stands, the outcome stage's split across its five parts, the price of a
+consumer that reads the same result without printing, the price of the object's
+two optimisation levels against each other with a drift control, the two paths'
+end-to-end cost on the boundary documents, and the depth walk's cost beside the
+proved counter's.
 
 It does not establish a portable number.  The host is shared, nothing is
-isolated beyond a CPU pin, and the same-build control spread reaches 0.855–1.444
-on `native_ns`: absolute medians from another session will differ by up to that
-much, which is why the pair and the reference rows are ratios taken round by
-round rather than differences of two runs.  The reference arm is two binaries,
-not one process, so its alternation cancels drift but not the difference between
-two address spaces; a single-process arm would need simdjson linked into the
-route executable.
+isolated beyond a CPU pin, the load average during this run was 3.5–4.8 on eight
+cores with another build holding most of a core, and the same-build control
+spread reached 0.735–1.146 on `native_ns` — which is why the pair rows are ratios
+taken round by round rather than differences of two runs, and why no absolute
+figure here is compared with the previous record's: this session's `outcome_ns` on
+`fast-nums-4096` is 2,888,347 ns against that record's 2,268,795, a 27% difference
+with no code change between them, larger than the change this run records.
 
 The consumer number is a floor, not every consumer's cost.  It walks the event
 records and reads the arena's bytes, and it materialises one record per token
@@ -1005,5 +839,7 @@ production median of the same document in the same session; the consumer's code
 contains no clock read, so only the printed side carries the instrument.
 
 And no row here says anything about the object's relation to the proved body —
-that is [the correspondence page](json-route-artifact-correspondence.md)'s
-record, and its residual is unchanged by any timing.
+the refinement theorem speaks about the parsed AST and `Mem`, and the compiler and
+link step from that to the object this page measures is the trust boundary
+`docs/contract.md` rows 8 and 9 record.  What the rows do price is the artifact
+as deployed, decision and staging and printing included.

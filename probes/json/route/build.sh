@@ -71,6 +71,13 @@ fi
 # domain module and the reference parser.  Their Lean modules are built by Lake,
 # and the emitted C is what links: the input must be inside the Lake project so
 # the module prefix resolves, and `-I` is the emitted C's own include root.
+#
+# `admission`'s depth clause folds `deltaZ` (`DepthCountRefine`), so the domain
+# module's link carries that module and the eight-module cone its emitted C
+# names: the three the initialiser chain reaches (`Memory`, `Parser`, `Semantics`)
+# and the four they in turn reach (`Basic`, `Syntax`, `Binary64`, `Printer`).  A
+# module absent from this list is an undefined `deltaZ` at link, not a green
+# build: the list is what the emitted C names, not a choice.
 cone_ir=("$repo/.lake/build/ir/LeanLLVM/JsonKernelDomain.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/ByteString.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/Bytes.c"
@@ -78,7 +85,15 @@ cone_ir=("$repo/.lake/build/ir/LeanLLVM/JsonKernelDomain.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/Spec.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/Scan.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/Tape.c"
-         "$repo/.lake/build/ir/LeanLLVM/JSON/Parse.c")
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Parse.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/DepthCountRefine.c"
+         "$repo/.lake/build/ir/LeanLLVM/Basic.c"
+         "$repo/.lake/build/ir/LeanLLVM/Binary64.c"
+         "$repo/.lake/build/ir/LeanLLVM/Memory.c"
+         "$repo/.lake/build/ir/LeanLLVM/Parser.c"
+         "$repo/.lake/build/ir/LeanLLVM/Printer.c"
+         "$repo/.lake/build/ir/LeanLLVM/Semantics.c"
+         "$repo/.lake/build/ir/LeanLLVM/Syntax.c")
 for f in "${cone_ir[@]}"; do
   [ -f "$f" ] || {
     echo "build: absent: $f" >&2
@@ -103,15 +118,19 @@ if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_entry_table')" -eq 0 ]; t
   exit 1
 fi
 
-# The two-phase admission's phase one is the mask unit and the depth facts are
-# the depth counter; an adapter that stopped calling either would still build
-# and would report the other path's numbers.
-if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_s1_masks')" -eq 0 ]; then
-  echo "build: the adapter does not import leanllvm_json_s1_masks" >&2
-  exit 1
-fi
+# Phase one of the admission is the depth walk, and its lane list goes through
+# the proved depth counter: an adapter that stopped calling the counter would
+# still build and would report a maximum with no second arithmetic beside it.
+# The mask unit is not on this path -- the walk reads the bytes it folds, because
+# the classifier's in-string mask is a different reading of a string from the
+# reference scan's (see `shim.c`'s depth section) -- so it is checked where it is
+# defined, by the object, and not here.
 if [ "$(nm -u "$build/shim.o" | grep -c ' depth_count$')" -eq 0 ]; then
   echo "build: the adapter does not import depth_count" >&2
+  exit 1
+fi
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_route_body_stop$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_route_body_stop" >&2
   exit 1
 fi
 # Phase two of the admission is this scan: an adapter that stopped calling it

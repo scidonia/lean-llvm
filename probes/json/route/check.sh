@@ -4,7 +4,7 @@
 #   nix develop -c bash probes/json/route/check.sh
 #
 # The route decides in two phases -- the adapter's native facts from the proved
-# stage-1 mask unit, then the library's own policy scan where the masks saw a
+# stage-1 mask unit, then the library's own policy scan where the walk saw a
 # candidate -- and has three outcomes: the fast path (`verdict=` on stdout, the
 # native object's observation), the fallback's acceptance
 # (`fallback=accepted`), and the fallback's refusal (`refused: ...` on stderr,
@@ -40,13 +40,22 @@
 #      object wrote: 5 tokens, one arena byte, 25 event bytes, both readings
 #      agreeing on the token count and the checksum.
 #   7. the two-phase admission agrees with the certified predicate on every row:
-#      `--admit` reports the decision phase one's native facts and phase two's
-#      policy scan produce, and the library's `admission`, on the same bytes, and
-#      this script compares the two verdicts and the two reasons itself -- on
-#      every manifest row and on the boundary documents.  A control repeats the
-#      comparison with the native side's depth bound moved off the certified 128
-#      and must report the disagreement, so an agreement that cannot fail is a
-#      red rather than a pass.
+#      `--admit` reports the decision phase one's depth measurement and phase
+#      two's policy scan produce, and the library's `admission`, on the same
+#      bytes, and this script compares the two verdicts, the two reasons and --
+#      wherever the native walk measured it -- the two depths itself, on every
+#      manifest row and on the boundary documents.  It also compares the proved
+#      depth counter's recombined final depth against the adapter's accumulator
+#      on every row.  A control repeats the comparison with the native side's
+#      depth bound moved off the certified 128 and must report the disagreement,
+#      so an agreement that cannot fail is a red rather than a pass.
+#   8. the depth clause's number is the maximum structural nesting, not an
+#      opener-byte count and not a final balance: the opener-rich string, many
+#      shallow sibling containers, a prefix that goes negative, bodies the
+#      reference refuses (which end the token sequence), escaped quotes and
+#      bodies straddling a 64-byte block boundary are each asserted against a
+#      hand-written measurement as well as against `docDepth`, and a fixed-seed
+#      sweep of malformed documents is compared row by row.
 #
 # A comparison that fails names its class: a verdict disagreement, a value
 # disagreement (the arena or event bytes, with the first differing byte), or a
@@ -305,20 +314,26 @@ if [ "$status" -ne 2 ] || ! grep -q '^refused: input too long' "$work/err"; then
   failed=$((failed + 1))
 fi
 
-# The opener-rich document: balanced, accepted by the reference, and outside the
-# domain because the opener-count clause counts bytes rather than nesting.  The
-# fallback must accept it, with a value — the clause's conservatism narrows the
-# domain and never changes an answer.
-printf '"' >"$work/rich"
-for _ in $(seq 129); do printf '[' >>"$work/rich"; done
-printf '"' >>"$work/rich"
+# The opener-rich document: a string carrying 129 `[` bytes.  Its structural
+# nesting is 0, so `admission` admits it and the route must take the fast path
+# and the object must answer it -- the depth clause counts nesting, not opener
+# bytes, and the fallback is not consulted for a document the domain admits.
+printf '%s' '"' >"$work/rich"
+for _ in $(seq 129); do printf '%s' '[' >>"$work/rich"; done
+printf '%s' '"' >>"$work/rich"
 "$route" --doc "$work/rich" >"$work/out" 2>"$work/err"
 status=$?
-if [ "$status" -ne 0 ] || [ "$(fallback_of "$work/out")" != accepted ] ||
-   ! grep -q 'decoded=true' "$work/out"; then
-  printf 'FAIL: the opener-rich document was not the fallback'"'"'s acceptance (exit %s):\n' "$status" >&2
+"$driver" "$work/rich" >"$work/dout" 2>/dev/null
+if [ "$status" -ne 0 ] || [ -n "$(fallback_of "$work/out")" ]; then
+  printf 'FAIL: the opener-rich document did not take the fast path (exit %s):\n' "$status" >&2
   cat "$work/out" "$work/err" >&2
   failed=$((failed + 1))
+else
+  compare_observation "opener-rich" "$work/out" "$work/dout" || true
+  if [ "$(verdict_of "$work/out")" != 1 ]; then
+    printf 'FAIL: the opener-rich document: the object refused a document inside both bounds\n' >&2
+    failed=$((failed + 1))
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -326,8 +341,8 @@ fi
 #
 # The reference parser's bound is `Limits.default.maxDepth` = 128: 128 nested
 # containers parse and the document is admitted, so the object answers it (and
-# must accept it); 129 exhausts the reference's bound, the opener-count clause
-# refuses the document, and the fallback reports the reference's own
+# must accept it); 129 exhausts the reference's bound, the depth clause measures
+# 129 and refuses the document, and the fallback reports the reference's own
 # `depthExceeded`.  The native walk's stack is `stage2.c`'s `MAXD` = 520; 129 and
 # 520 are outside the domain, so the route does not call the object there and
 # the driver is run only to record what it would have answered.
@@ -375,13 +390,14 @@ done
 # ---------------------------------------------------------------------------
 # The two-phase admission against the certified predicate
 #
-# The route's decision is phase one's native facts (the mask unit's opener count
-# and policy-candidate flag, the empty and length bounds) plus phase two's
-# reference scan where the masks saw a candidate.  `--admit` reports that
-# decision, its reason, and the library's `admission` -- verdict, reason and the
-# opener count it names -- for the same bytes, with the policy scan's own
-# interval.  The comparison below is the shell's, not the row's own `agree`
-# field: the verdict and the reason are read out and compared here.
+# The route's decision is phase one's native measurement (the maximum structural
+# nesting, the policy-candidate flag, the empty and length bounds) plus phase
+# two's reference scan where the walk saw a candidate.  `--admit` reports that
+# decision, its reason, the depth it measured, and the library's `admission` --
+# verdict, reason and `docDepth` -- for the same bytes, with the policy scan's
+# own interval and the depth pass's statistics.  The comparison below is the
+# shell's, not the row's own `agree` field: the verdict, the reason, the measured
+# depth and the counter's final depth are read out and compared here.
 # ---------------------------------------------------------------------------
 admit_field() { # <row> <name>
   printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1
@@ -400,14 +416,30 @@ admit_row() { # <file> [native depth] -> the row on stderr
 }
 
 # 0 when the two decisions agree, 1 when they differ, 2 when the row does not
-# carry the four fields (which is a failure of the row, not a decision).
+# carry the compared fields (which is a failure of the row, not a decision).
+#
+# The depth clause is compared as a number, not only as the class of its reason:
+# a native maximum that differs from `docDepth` while both sides refuse (or both
+# admit) the document is a different measurement, and a comparison of class names
+# cannot see it.  `native_depth` is `-` on the two rows whose decision returns
+# before the walk (empty, over-long), and there the number is not compared.  The
+# last comparison is inside one row rather than between the two decisions: the
+# proved counter's recombined final depth and the adapter's accumulator are two
+# arithmetics over one structural lane list, and they must end at the same depth.
 admit_compare() { # <row>
-  local v c r cr
+  local v c r cr nd cd fin walk
   v=$(admit_field "$1" verdict)
   c=$(admit_field "$1" certified)
   r=$(admit_field "$1" reason)
   cr=$(admit_field "$1" certified_reason)
-  [ -n "$v" ] && [ -n "$c" ] && [ -n "$r" ] && [ -n "$cr" ] || return 2
+  nd=$(admit_field "$1" native_depth)
+  cd=$(admit_field "$1" certified_depth)
+  fin=$(admit_field "$1" depth_final)
+  walk=$(admit_field "$1" depth_walk_final)
+  [ -n "$v" ] && [ -n "$c" ] && [ -n "$r" ] && [ -n "$cr" ] && \
+    [ -n "$nd" ] && [ -n "$cd" ] && [ -n "$fin" ] && [ -n "$walk" ] || return 2
+  if [ "$nd" != "-" ] && [ "$nd" != "$cd" ]; then return 1; fi
+  if [ "$fin" != "$walk" ]; then return 1; fi
   if [ "$v" = "$c" ] && [ "$r" = "$cr" ]; then return 0; fi
   return 1
 }
@@ -466,15 +498,134 @@ for d in 128 129 520 521; do
   agree_one "depth-$d" "$work/depth-$d.json"
 done
 
+# ---------------------------------------------------------------------------
+# The depth clause's own documents
+#
+# The clause is the maximum structural nesting `docDepth` measures: not a count
+# of opener bytes, not a final balance, and not a running counter clamped at
+# zero.  The documents below are where those readings differ, and each row is
+# asserted twice -- `agree_one` compares the native decision and its measured
+# depth against `admission`/`docDepth`, and `depth_check` compares both against
+# the measurement written here.  A row that agreed with the library by being
+# wrong in the same way on both sides would pass the first and fail the second.
+# ---------------------------------------------------------------------------
+depth_rows=0
+depth_failures=0
+depth_check() { # <label> <file> <want verdict> <want reason> <want depth>
+  local label=$1 file=$2 wv=$3 wr=$4 wd=$5 row v r nd cd
+  row=$(admit_row "$file") || { depth_failures=$((depth_failures + 1)); return; }
+  depth_rows=$((depth_rows + 1))
+  v=$(admit_field "$row" verdict)
+  r=$(admit_field "$row" reason)
+  nd=$(admit_field "$row" native_depth)
+  cd=$(admit_field "$row" certified_depth)
+  if [ "$nd" != "$wd" ] || [ "$cd" != "$wd" ]; then
+    printf 'FAIL: %s: measured depth native=%s certified=%s, expected %s\n' \
+      "$label" "$nd" "$cd" "$wd" >&2
+    depth_failures=$((depth_failures + 1))
+  fi
+  if [ "$v" != "$wv" ] || [ "$r" != "$wr" ]; then
+    printf 'FAIL: %s: verdict=%s reason=%s, expected %s/%s\n' \
+      "$label" "$v" "$r" "$wv" "$wr" >&2
+    depth_failures=$((depth_failures + 1))
+  fi
+}
+
+# Many shallow sibling containers: 200 `[]` pairs inside one array.  The opener
+# bytes number 401 and the nesting is 2, so an opener-count clause refuses a
+# document whose depth is inside the bound.
+{ printf '%s' '['; for _ in $(seq 199); do printf '%s' '[],'; done; printf '%s' '[]]'; } \
+  >"$work/siblings"
+# A prefix that goes below zero: the running depth is 0, -1, -2, -1, 0, so the
+# maximum prefix depth is 0.  A counter clamped at zero before the next opener
+# would report 2.
+printf '%s' ']] [[' >"$work/neg-prefix"
+# A body the reference refuses ends the token sequence: an unterminated body and
+# a bad escape, each after two opens and before a close a skipped body would have
+# let count.
+printf '%s' '[[ "abc' >"$work/body-ended"
+printf '%s' '[["\q"]' >"$work/body-refused"
+# A quote after a refused body still makes the document a policy candidate: the
+# refusal here is at byte 6, past the body the depth walk stopped at.
+printf '%s' '"\q" "\uD800"' >"$work/quote-after-refused"
+# Escaped quotes and 200 `[` bytes inside one body: nesting 1, measured 1.
+{ printf '%s' '["'; for _ in 1 2 3; do printf '%s' '\"'; done
+  for _ in $(seq 200); do printf '%s' '['; done; printf '%s' '"]'; } >"$work/escaped"
+# Bodies straddling a 64-byte block boundary: the opening quote at byte 62 with
+# eight `[` in the body crossing lane 63/64, and the opening quote at lane 63
+# with the body in the next block.  Both are nesting 1.
+{ printf '%s' '['; for _ in $(seq 61); do printf ' '; done; printf '%s' '"'
+  for _ in $(seq 8); do printf '%s' '['; done; printf '%s' '"]]'; } >"$work/straddle-body"
+{ printf '%s' '['; for _ in $(seq 62); do printf ' '; done; printf '%s' '"'
+  for _ in $(seq 8); do printf '%s' '['; done; printf '%s' '"]'; } >"$work/straddle-quote"
+
+agree_one "siblings" "$work/siblings"
+agree_one "neg-prefix" "$work/neg-prefix"
+agree_one "body-ended" "$work/body-ended"
+agree_one "body-refused" "$work/body-refused"
+agree_one "quote-after-refused" "$work/quote-after-refused"
+agree_one "escaped" "$work/escaped"
+agree_one "straddle-body" "$work/straddle-body"
+agree_one "straddle-quote" "$work/straddle-quote"
+
+depth_check "opener-rich" "$work/rich" 1 none 0
+depth_check "siblings" "$work/siblings" 1 none 2
+depth_check "neg-prefix" "$work/neg-prefix" 1 none 0
+depth_check "body-ended" "$work/body-ended" 1 none 2
+depth_check "body-refused" "$work/body-refused" 1 none 2
+depth_check "quote-after-refused" "$work/quote-after-refused" 0 unpairedSurrogate@6 0
+depth_check "escaped" "$work/escaped" 1 none 1
+depth_check "straddle-body" "$work/straddle-body" 1 none 1
+depth_check "straddle-quote" "$work/straddle-quote" 1 none 1
+depth_check "depth-128" "$work/depth-128.json" 1 none 128
+depth_check "depth-129" "$work/depth-129.json" 0 depthBound 129
+
+failed=$((failed + depth_failures))
+if [ "$depth_rows" -eq 0 ]; then
+  printf 'FAIL: no depth row was checked; the depth gate is vacuous\n' >&2
+  failed=$((failed + 1))
+fi
+
+# The sweep: documents drawn from the bytes the depth rule branches on --
+# brackets in both directions, quotes, backslashes, escape letters, hex digits,
+# spaces and `:`.  A fixed-seed Lehmer generator draws them, so the row set is
+# the same on every run; the comparison is the gate's, over verdict, reason and
+# the measured depth.  This is what covers the body-refusal and block-boundary
+# combinations the hand-written rows do not enumerate.
+sweep_rows=0
+cat >"$work/gen.awk" <<'AWK'
+function rnd() { state = (state * 48271) % 2147483647; return state / 2147483647 }
+BEGIN {
+  state = 20261113
+  nchar = split("91 93 123 125 34 92 117 68 56 48 49 32 44 58 97 120 70", code, " ")
+  for (n = 0; n < 120; n++) {
+    len = 1 + int(rnd() * 200)
+    s = ""
+    for (i = 0; i < len; i++) s = s sprintf("%c", code[1 + int(rnd() * nchar)])
+    printf "%s", s > (dir "/sweep-" n ".json")
+    close(dir "/sweep-" n ".json")
+  }
+}
+AWK
+awk -v dir="$work" -f "$work/gen.awk"
+for f in "$work"/sweep-*.json; do
+  agree_one "sweep-$(basename "$f" .json)" "$f"
+  sweep_rows=$((sweep_rows + 1))
+done
+if [ "$sweep_rows" -ne 120 ]; then
+  printf 'FAIL: the sweep generated %s document(s), expected 120\n' "$sweep_rows" >&2
+  failed=$((failed + 1))
+fi
+
 # The controls, three of them, and none of them restates the certified bound.
 #
-#  1. The same comparison with the native bound set to zero: `[1,2]` holds one
-#     opener, so the native side must refuse it on the depth clause while
+#  1. The same comparison with the native bound set to zero: `[1,2]` nests one
+#     level, so the native side must refuse it on the depth clause while
 #     `admission` admits it, and the comparator -- the shell's comparison, not
 #     only the row's own flag -- must report that disagreement.
 #  2. The route's own decision consults that bound: with the native bound moved
-#     to 127 the route must send the 128-opener document to the fallback, which
-#     is the shipped path's witness that the decision is the native one.
+#     to 127 the route must send the 128-deep document to the fallback, which is
+#     the shipped path's witness that the decision is the native one.
 #  3. The candidate detector's other direction is asserted above, on a
 #     quote-bearing and a quote-free document.
 control_failures=0
@@ -542,7 +693,7 @@ done
 failed=$((failed + cand_failures))
 
 # The agreement table, by row class: the two-phase verdict, the reason both
-# decisions name, whether the masks saw a policy candidate, and whether the
+# decisions name, whether the walk saw a policy candidate, and whether the
 # policy scan ran.  Its rows are the gate's own rows, so the split a reader sees
 # is the split the assertions above covered.
 printf 'the two-phase admission against the certified predicate, by row class\n'
@@ -682,8 +833,9 @@ if [ "$failed" -ne 0 ]; then
   printf 'FAIL: %s assertion(s) failed over %s default-profile rows\n' "$failed" "$rows" >&2
   exit 1
 fi
-printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on %s row(s) (policy candidate %s, policy scan run %s; control failures %s); %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
+printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; the opener-rich string takes the fast path; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on %s row(s), the measured depth compared wherever the walk ran (policy candidate %s, policy scan run %s; control failures %s); the depth gate carries %s hand-written row(s) and %s swept document(s) agree with `docDepth`, the proved counter and the accumulator ending at the same depth on every row; %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
   "$rows" "$fast" "$compared_arena" "$rows_with_arena" "$compared_events" "$rows_with_events" \
   "$accepts" "$invalids" "$fallback_refusals" "$fallback_accepts" "$diverged" "$excluded" "$skipped" \
-  "$agree_rows" "$candidate_rows" "$policy_rows" "$control_failures" "$consumer_ok"
+  "$agree_rows" "$candidate_rows" "$policy_rows" "$control_failures" "$depth_rows" "$sweep_rows" \
+  "$consumer_ok"
 exit 0

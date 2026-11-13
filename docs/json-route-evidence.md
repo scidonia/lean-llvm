@@ -644,3 +644,48 @@ that place every escape form at every offset across two block boundaries, both
 against the library's `policyRefusal`, with zero disagreements at class and
 byte — and they are readings, not a proof: this unit has no refinement theorem
 and is not in `kernel/json/`.
+
+## The depth clause's control (`R16`)
+
+Phase one of the decision measures the depth clause's number: the maximum running
+depth over the document's structural delimiter sequence, which is `docDepth`'s
+rule.  `--admit` reports both numbers (`native_depth`, the adapter's accumulator;
+`certified_depth`, the library's `docDepth`) and the gate compares them wherever
+the walk ran, beside the verdict and the reason; the depth pass's header also
+carries the proved counter's recombined final depth and the accumulator's own, and
+the gate requires those equal on every row.
+
+The cut restores the rule this change replaced — an opener-*byte* count over the
+whole document, string bodies included — and leaves everything else in place: the
+walk, its structural lane list and the proved counter still run, and only the
+clause's number moves.  It was applied to `shim.c` in place, built with
+`BUILD_DIR=/tmp/route-cut`, and run as
+`ROUTE=/tmp/route-cut/leanllvm-json-route DRIVER=/tmp/route-cut/driver bash probes/json/route/check.sh`;
+the tree was then restored from a saved copy (`cmp` clean) and rebuilt, and the
+green run is the restored build's (265 rows agreeing, `control failures 0`).
+
+| Cut | Applied in place | Build | Route command | Exit | Assertion that fired |
+|---|---|---|---|---|---|
+| `R16` the depth clause's number | `shim.c`: `depth_measure` keeps the walk and the lane list, and sets `f->max` to a count of `[`/`{` bytes over the whole document instead of the maximum it tracked | 0 | `check.sh` | 1 | `FAIL: the opener-rich document did not take the fast path (exit 0):` with `fallback=accepted tokens=1 decoded=true`; `FAIL: opener-rich: the two-phase decision and the certified predicate differ` with `native_depth=129 certified_depth=0`; the same for `siblings` (`201` against `2`), `escaped` (`201` against `1`), `straddle-body`, `straddle-quote`, `neg-prefix` (`2` against `0`) and 113 of the 120 swept rows; then the depth gate's own expectations, `FAIL: <row>: measured depth native=… certified=…, expected …`; **129 assertions** |
+
+What it shows, and what it does not:
+
+- **The depth clause's number is compared, not just its class.** `neg-prefix`
+  (`]] [[`) is the row that says so: under the cut the native side measures 2 and
+  the library 0, while the verdict and the reason agree on both sides (`1` /
+  `none`) and the row's own `agree` flag reads 1.  The shell's comparison is what
+  reddens it, because it reads the two depths out of the row.
+- **The clause's documents are the ones that separate the rules.** The
+  opener-rich string (129 `[` bytes, nesting 0), 200 sibling containers (401
+  opener bytes, nesting 2) and the escaped-quote body (200 `[` bytes, nesting 1)
+  are each admitted natively under the fix and refused under the cut, and the
+  fast-path assertion fires because the route takes the fallback for a document
+  `admission` admits.
+- **What it does not show.** The cut moves one number; it does not show the walk
+  is right for any shape outside the gate's rows.  That is the fixed-seed sweep's
+  claim (120 documents, compared on verdict, reason and depth) and the hand-written
+  rows' — 11 documents each asserted against a measurement written in `check.sh`
+  as well as against `docDepth` — and both are observations, not a proof: the
+  walk has no refinement theorem and is not in `kernel/json/`.  The *predicate* it
+  measures is certified (`JsonKernelCertificate.depth_bridge_core`); the native
+  measurement is not.

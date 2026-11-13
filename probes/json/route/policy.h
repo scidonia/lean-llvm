@@ -1,4 +1,5 @@
-/* policy.h -- the character-policy scan's one public entry point.
+/* policy.h -- the character-policy scan's entry point, and the reference
+   body scan's stop it is written from.
 
    The rule is `policyRefusal`'s (`LeanLLVM/JsonKernelDomain.lean`): run the
    reference's own string-body scanner (`scanCharsEnd`) at every byte of the
@@ -30,5 +31,18 @@
 
 int leanllvm_route_policy_scan(const uint8_t *b, uint64_t n, uint64_t *cls,
                                uint64_t *pos);
+
+/* The reference string-body scan's stop (`scanCharsEnd b i 0`), for a caller
+   that asks only whether it succeeds and where it ends: 0 and the position
+   just past the closing quote when the body scans, 1 when it refuses for any
+   reason (`ended`, `badEscape`, `badUTF8`, `controlCharacter`,
+   `unpairedSurrogate`, `noncharacter`).  `i` is the body's first byte.  The
+   step is `policy.c`'s `policy_step`, so this is the same branch structure the
+   policy class array is built from, and the two callers cannot drift: the
+   depth predicate skips a body from its quote to this stop, and ends the
+   document's token sequence at a quote whose body this refuses
+   (`structTokensFrom`).  Reads `b[0 .. n-1]` and no byte past it. */
+int leanllvm_route_body_stop(const uint8_t *b, uint64_t n, uint64_t i,
+                             uint64_t *stop);
 
 #endif

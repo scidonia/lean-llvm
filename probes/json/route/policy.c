@@ -69,6 +69,13 @@
    quote byte; on the route's escape document it was 99.2% of the admission
    stage, which is the cost this unit exists to remove.
 
+   ## The body scan, and its second consumer
+
+   `leanllvm_route_body_stop` is the same `policy_step`, walked to the closing
+   quote: the depth predicate skips a string body from its quote to that stop and
+   ends the token sequence at a body it refuses.  One branch structure, two
+   answers, so the two consumers cannot disagree about what a body is.
+
    ## What this unit is not
 
    It is not a certificate.  Its agreement with `policyRefusal` is observed,
@@ -295,6 +302,35 @@ static uint64_t policy_refusal_pos(const uint8_t *b, uint64_t n, uint64_t s) {
     if (st.self != POLICY_NONE) return i;
     i = st.next;
   }
+}
+
+/* ## The body scan's stop, for the depth predicate
+
+   `admission`'s depth clause (`docDepth`) walks the document's *structural*
+   delimiter sequence, and `structTokensFrom` skips each string body from its
+   quote to the reference scan's stop, ending the sequence at the first body
+   whose scan refuses (`LeanLLVM/JsonKernelDomain.lean`).  That is the same
+   `scanCharsAt` walk this unit's `policy_step` is written from, asked for a
+   different answer: not which class a position raises but whether the body
+   stops at a closing quote and where.  A step that stops without being a
+   character-policy refusal -- a bad escape, bad UTF-8, a control byte, the
+   document ending -- refuses the body scan, and so does a policy refusal, so
+   `next == P_STOP` is the refusing answer for both.  `policy_step` is untouched:
+   `LeanLLVM/Refinement/JsonPolicyModel.lean` is its transcription, and this
+   function only walks it. */
+int leanllvm_route_body_stop(const uint8_t *b, uint64_t n, uint64_t i,
+                             uint64_t *stop) {
+  while (i < n) {
+    /* `scanCharsAt`'s `.ok` arm: the closing quote, and the scan ends past it. */
+    if (b[i] == 0x22) {
+      *stop = i + 1;
+      return 0;
+    }
+    pstep s = policy_step(b, n, i);
+    if (s.next == P_STOP) return 1;
+    i = s.next;
+  }
+  return 1;
 }
 
 /* ## The screen

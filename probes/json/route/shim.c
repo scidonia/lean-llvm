@@ -54,7 +54,6 @@
 #include "pipeline.h"
 #include "entry.h"
 #include "policy.h"
-#include "s1_block.h"
 
 /* The proved stage-1 depth counter's one entry point, at the ABI
    `tests/v16/depth_count.ll` defines and `DepthCountRefine` proves: the
@@ -227,16 +226,16 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
  *
  * `admission` is the certified decision (`LeanLLVM/JsonKernelDomain.lean`) and
  * has four clauses: the document is non-empty, it is inside the input bound, it
- * holds no more opener bytes than the nesting bound admits, and the reference's
- * character policy refuses nothing in it.  The first three are facts about the
- * bytes that the proved stage-1 mask unit reports; the fourth is the reference's
- * own `scanCharsEnd`, through `policyRefusal`.
+ * nests no deeper than the bound admits, and the reference's character policy
+ * refuses nothing in it.  The first three are facts about the bytes -- the third
+ * is `docDepth`, the maximum of the stage-1 depth counter's fold over the
+ * document's structural delimiter sequence; the fourth is the reference's own
+ * `scanCharsEnd`, through `policyRefusal`.
  *
  * The decision is therefore taken in two phases.  Phase one is
- * `leanllvm_route_admit`: `leanllvm_json_s1_masks` over every 64-byte block of
- * the caller's document, the delimiter mask's lanes read to count `{`/`[` bytes,
- * the quote and backslash lanes OR'd into a policy-candidate flag, and the empty
- * and length bounds compared against numbers the caller supplies.  Phase two is
+ * `leanllvm_route_admit`: the depth walk below, which also reports the
+ * policy-candidate flag, and the empty and length bounds compared against
+ * numbers the caller supplies.  Phase two is
  * `leanllvm_route_policy`: the native character-policy scan `policy.c` defines,
  * run by the caller only when phase one saw a candidate.  The reference's own
  * `policyRefusal` is not called on this path; it is the oracle the route's
@@ -246,32 +245,47 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
  * ## Why the policy phase may be skipped
  *
  * `policyRefusal` runs `policyRefusalAt` at every byte that is `"`, so a
- * document with no `"` byte has no reason to report.  A quote byte is either
- * unescaped, and then the mask unit's quote lane carries it, or escaped, and
- * then a backslash run precedes it, so the backslash lane carries that.  The
- * candidate flag is the OR of the two masks over the whole document, so it is
- * true whenever a `"` byte exists: skipping the phase when it is false cannot
- * miss a refusal, and consulting it when true runs the exact scan.
+ * document with no `"` byte has no reason to report.  The depth walk visits
+ * every byte outside a body and opens every body at a quote it visits, so it
+ * sees a quote byte whenever one exists, and it sees a backslash outside a body
+ * directly; skipping the phase when its flag is false therefore cannot miss a
+ * refusal, and consulting it when true runs the exact scan.  The flag stays true
+ * past a refused body, because that body was opened by a quote the walk saw, so
+ * a quote after it still sets it even though the walk stopped.
  *
- * ## The opener count, and not the depth counter
+ * ## The depth clause: the maximum structural nesting
  *
- * The clause is an opener *count* (`openersTotal`), not a nesting depth, and the
- * count is what this phase computes: `delim` marks the six structural bytes
- * whichever side of a string they fall on, so reading each marked lane gives
- * `openersTotal` exactly.  The proved depth counter
- * (`tests/v16/depth_count.ll`) reports a balance and the sum of prefix depths
- * over an index array, neither of which is the count -- a balanced 128-opener
- * document and a balanced 129-opener one both report a final depth of 0 -- so it
- * cannot decide this clause and the decision does not consult it.
- * `leanllvm_route_depth` runs it over the same delimiter lanes anyway, so the
- * probe reports what it says and what it costs beside the count; nothing gates
- * on it.
+ * The clause is `docDepth`: the maximum of the stage-1 fold over the document's
+ * *structural* delimiter sequence -- the `{`/`[`/`}`/`]` bytes outside string
+ * bodies, in document order, stepped `+1`/`-1` -- and not the count of opener
+ * bytes, not the final balance.  A string carrying 129 `[` bytes measures 0 and
+ * is admitted; a document nested 129 levels measures 129 and is refused,
+ * whatever else its bytes carry.
+ *
+ * The token sequence is `structTokensFrom`'s, walked by position: a `"` starts a
+ * string body that is skipped to the reference body scan's stop, a body that scan
+ * refuses ends the sequence, and every other byte is a structural delimiter if
+ * it is one of `{`/`[`/`}`/`]`.  The walk steps the running depth over those
+ * bytes and keeps the maximum -- a max-tracking accumulator, because neither of
+ * the proved counter's two statistics determines a maximum.  The walk does not
+ * read the classifier's `in_string` mask: that is the unescaped-quote reading,
+ * and a quote a backslash run precedes is not escaped to this walk, so `\"` at
+ * the top level opens a body the classifier would not open.  The gate's
+ * fixed-seed sweep contains that document; it is why the string state is carried
+ * here.
+ *
+ * Beside the maximum, the walk's lane list is handed to the proved depth counter
+ * (`tests/v16/depth_count.ll`): it reports the sequence's final depth and the
+ * sum of its prefix depths, and the adapter recombines them per block.  Its
+ * recombined final depth and the accumulator's are two arithmetics over one
+ * lane list, and `--admit` reports both so `check.sh` can compare them; the
+ * maximum is the accumulator's alone and is compared against `docDepth`.
  *
  * ## Zero copy, and what the caller owes
  *
  * Phase one reads the caller's own `ByteArray` in place: no buffer is allocated,
- * and the last, partial block is copied into a padded 64-byte stack array
- * because the mask unit reads 64 bytes at every block.  `route_impl`'s window
+ * and the last, partial block is copied into a padded 64-byte stack array only
+ * where the proved counter is called on that block's lanes.  `route_impl`'s window
  * handoff is the same rule for the pipeline: the object's document parameter is
  * `const` in every unit, so the adapter hands over the caller's bytes instead of
  * copying them, and the window is required to cover the document's whole last
@@ -283,8 +297,8 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
    one of the two. */
 #define ADMIT_HEADER_BYTES 72
 
-/* The depth facts' header: seven words, no payload. */
-#define DEPTH_HEADER_BYTES 56
+/* The depth pass's header: nine words, no payload. */
+#define DEPTH_HEADER_BYTES 72
 
 /* The character-policy scan's header: six words, no payload. */
 #define POLICY_HEADER_BYTES 48
@@ -314,65 +328,98 @@ enum admit_clause {
    `n` near `UINT64_MAX`. */
 static uint64_t block_count(uint64_t n) { return n / 64 + (n % 64 != 0); }
 
-/* One pass over the document: the mask unit per block, the opener count from the
-   delimiter lanes (saturating at `maxDepth + 1`, because the decision is `>`,
-   and the exact count past the bound is not a number the caller acts on), and
-   the policy candidate from the quote and backslash lanes.
+/* What the document's structural delimiter sequence measures. */
+typedef struct {
+  int64_t max;        /* the maximum running depth: the clause's number */
+  int64_t final;      /* the proved counter's recombined final depth */
+  int64_t walk_final; /* the accumulator's own final depth */
+  int64_t sum;        /* the proved counter's recombined prefix-depth sum */
+  uint64_t tokens;    /* structural delimiters the fold stepped over */
+  uint64_t blocks;    /* the document's 64-byte blocks */
+  int candidate;      /* a quote or a backslash byte anywhere in the document */
+} depth_facts;
 
-   `with_depth` additionally runs the depth counter over each block's delimiter
-   lanes and recombines the two statistics: the unit starts every call at depth
-   0, so block `b`'s prefix depths are its own plus the depth carried into it,
-   and its sum enters the document's sum with that carry once per delimiter
-   lane.  The lanes are relative to the block, which is the buffer the unit is
-   given for that call, so the index array is 64 `uint32_t` on the stack and no
-   pass allocates. */
-static void admit_scan(const uint8_t *b, uint64_t n, uint64_t maxDepth,
-                       int with_depth, uint64_t *openers_o,
-                       uint64_t *candidate_o, uint64_t *blocks_o,
-                       int64_t *depth_o) {
+/* The block's structural lanes, through the proved depth counter and
+   recombined.  The unit starts every call at depth 0, so the block's prefix
+   depths are its own plus the depth carried into it, which enters its sum once
+   per lane; the carry after the block is the sum of the spans. */
+static void depth_flush(const uint8_t *b, uint64_t n, uint8_t *tail,
+                        uint64_t block, const uint32_t *lanes, uint64_t cnt,
+                        int64_t *into, int64_t *sum) {
+  const uint8_t *p = b + 64 * block;
+  uint64_t rest = n - 64 * block;
+  if (rest < 64) {
+    memset(tail, 0, 64);
+    memcpy(tail, p, (size_t)rest);
+    p = tail;
+  }
+  int64_t stats[2];
+  int64_t span = depth_count(p, (const int32_t *)lanes, (int64_t)cnt, stats);
+  *sum += stats[1] + (int64_t)cnt * *into;
+  *into += span;
+}
+
+/* The document's structural token walk, and the maximum it reaches.
+
+   `structTokensFrom` is the rule: at a `"` the reference body scan runs and the
+   walk continues past its stop, and a body that scan refuses ends the sequence
+   there; any other byte is a structural delimiter if it is one of `{`/`[`/`}`/
+   `]`, stepped `+1`/`-1`.  The walk is by position, not by the classifier's
+   masks: `in_string` is the unescaped-quote reading, and a quote a backslash run
+   precedes is *not* escaped to this walk -- at the top level there is no escape
+   state, so `\"` opens a body the classifier would not open.  That document
+   (`sweep-114` in the gate's fixed-seed set) is why the string state is carried
+   here and the delimiter bytes are read by the walk.
+
+   The maximum is tracked as the running depth grows, because neither statistic
+   the proved counter returns determines one; the lanes the walk steps are handed
+   to that counter per block, so the two arithmetics are over one list.  The
+   candidate flag is the walk's own reading of the bytes it visits: a quote byte
+   exists exactly when the walk visited one -- every body is opened by a quote the
+   walk sees -- and a backslash outside a body is visited too, so the flag is true
+   whenever the document carries either byte. */
+static void depth_measure(const uint8_t *b, uint64_t n, depth_facts *f) {
   uint32_t lanes[64];
   uint8_t tail[64] __attribute__((aligned(32)));
-  s1_carry carry = {0, 0, 0};
-  uint64_t nb = block_count(n), opens = 0, cand = 0;
-  int64_t at = 0, sum = 0, structurals = 0;
+  uint64_t nb = block_count(n);
+  int64_t at = 0, into = 0, sum = 0, max = 0;
+  uint64_t tokens = 0, nl = 0, block = 0;
+  int cand = 0;
 
-  for (uint64_t k = 0; k < nb; k++) {
-    const uint8_t *p = b + 64 * k;
-    uint64_t rest = n - 64 * k;
-    if (rest < 64) {
-      memset(tail, 0, 64);
-      memcpy(tail, p, (size_t)rest);
-      p = tail;
+  for (uint64_t i = 0; i < n;) {
+    uint8_t c = b[i];
+    if (c == 0x22) { /* a string body, or the sequence's end */
+      uint64_t stop;
+      cand = 1;
+      if (leanllvm_route_body_stop(b, n, i + 1, &stop)) break;
+      i = stop;
+      continue;
     }
-    s1_masks m;
-    leanllvm_json_s1_masks(p, &carry, &m);
-    cand |= (m.quote | m.backslash) != 0;
-    uint64_t d = m.delim, count = 0;
-    while (d) {
-      unsigned lane = (unsigned)__builtin_ctzll(d);
-      d &= d - 1;
-      if (with_depth) lanes[count] = lane;
-      count++;
-      uint8_t c = p[lane];
-      if ((c == '[' || c == '{') && opens <= maxDepth) opens++;
+    if (c == 0x5C) cand = 1;
+    if (c == 0x5B || c == 0x7B || c == 0x5D || c == 0x7D) {
+      int open = c == 0x5B || c == 0x7B;
+      uint64_t blk = i / 64;
+      if (blk != block) {
+        if (nl) depth_flush(b, n, tail, block, lanes, nl, &into, &sum);
+        nl = 0;
+        block = blk;
+      }
+      lanes[nl++] = (uint32_t)(i & 63);
+      at += open ? 1 : -1;
+      if (at > max) max = at;
+      tokens++;
     }
-    if (with_depth && count) {
-      int64_t stats[2];
-      int64_t spn = depth_count(p, (const int32_t *)lanes, (int64_t)count, stats);
-      sum += stats[1] + (int64_t)count * at;
-      at += spn;
-      structurals += (int64_t)count;
-    }
+    i++;
   }
+  if (nl) depth_flush(b, n, tail, block, lanes, nl, &into, &sum);
 
-  *openers_o = opens;
-  *candidate_o = cand;
-  *blocks_o = nb;
-  if (depth_o) {
-    depth_o[0] = at;
-    depth_o[1] = sum;
-    depth_o[2] = structurals;
-  }
+  f->max = max;
+  f->final = into;
+  f->walk_final = at;
+  f->sum = sum;
+  f->tokens = tokens;
+  f->blocks = nb;
+  f->candidate = cand;
 }
 
 /* A word-addressed header, `words` words wide, no payload. */
@@ -384,12 +431,14 @@ static lean_object *word_result(size_t bytes, const uint64_t *w, size_t words) {
 }
 
 /* Phase one's result.  `want`/`got` describe the clause's comparison, or the
-   failed precondition when `tag` is `ADMIT_DOMAIN`. */
+   failed precondition when `tag` is `ADMIT_DOMAIN`; `depth` is the measured
+   maximum structural nesting the depth clause compares (and zero on the empty
+   and over-long paths, which refuse before a byte of the walk runs). */
 static lean_object *admit_result(uint64_t tag, uint64_t detail, uint64_t want,
-                                 uint64_t got, uint64_t openers,
+                                 uint64_t got, uint64_t depth,
                                  uint64_t candidate, uint64_t blocks,
                                  uint64_t verdict, uint64_t clause) {
-  uint64_t w[9] = {tag, detail, want, got, openers, candidate, blocks, verdict,
+  uint64_t w[9] = {tag, detail, want, got, depth, candidate, blocks, verdict,
                    clause};
   return word_result(ADMIT_HEADER_BYTES, w, 9);
 }
@@ -407,31 +456,27 @@ static lean_object *admit_impl(lean_object *doc, uint64_t n, uint64_t maxInput,
     return admit_result(ADMIT_MEASURED, 0, maxInput, n, 0, 0, 0, 0,
                         ADMIT_LENGTH);
 
-  uint64_t openers, candidate, blocks;
-  admit_scan(lean_sarray_cptr(doc), n, maxDepth, 0, &openers, &candidate, &blocks,
-             0);
-  uint64_t clause = openers > maxDepth ? ADMIT_DEPTH : ADMIT_NONE;
+  depth_facts f;
+  depth_measure(lean_sarray_cptr(doc), n, &f);
+  uint64_t depth = (uint64_t)f.max;
+  uint64_t clause = depth > maxDepth ? ADMIT_DEPTH : ADMIT_NONE;
   uint64_t verdict = clause == ADMIT_NONE ? 1 : 0;
-  return admit_result(ADMIT_MEASURED, 0, maxDepth, openers, openers, candidate,
-                      blocks, verdict, clause);
+  return admit_result(ADMIT_MEASURED, 0, maxDepth, depth, depth,
+                      (uint64_t)f.candidate, f.blocks, verdict, clause);
 }
 
 /* The depth facts, as their own pass over the document. */
 static lean_object *depth_impl(lean_object *doc, uint64_t n) {
   uint64_t bytes = array_bytes(doc);
-  int64_t d[3] = {0, 0, 0};
   if (n > bytes) {
-    uint64_t w[7] = {ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0};
-    return word_result(DEPTH_HEADER_BYTES, w, 7);
+    uint64_t w[9] = {ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0, 0, 0};
+    return word_result(DEPTH_HEADER_BYTES, w, 9);
   }
-  if (n) {
-    uint64_t openers, candidate, blocks;
-    admit_scan(lean_sarray_cptr(doc), n, UINT64_MAX, 1, &openers, &candidate,
-               &blocks, d);
-  }
-  uint64_t w[7] = {ADMIT_MEASURED, 0, 0, 0, (uint64_t)d[0], (uint64_t)d[1],
-                   (uint64_t)d[2]};
-  return word_result(DEPTH_HEADER_BYTES, w, 7);
+  depth_facts f = {0, 0, 0, 0, 0, 0, 0};
+  if (n) depth_measure(lean_sarray_cptr(doc), n, &f);
+  uint64_t w[9] = {ADMIT_MEASURED, 0, 0, 0, (uint64_t)f.final, (uint64_t)f.sum,
+                   f.tokens, (uint64_t)f.max, (uint64_t)f.walk_final};
+  return word_result(DEPTH_HEADER_BYTES, w, 9);
 }
 
 /* Phase two's result.  `tag` is the measured class or the failure that

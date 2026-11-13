@@ -20,7 +20,7 @@
 #   observation and payloads printed).  The admission stage is the two-phase
 #   decision: `admission_ns` is both phases and `admission_native_ns` and
 #   `admission_policy_ns` split it, the second present only on the rows whose
-#   masks saw a policy candidate (`admission_candidate`).
+#   walk saw a policy candidate (`admission_candidate`).
 # * `admit` rows come from `leanllvm-json-route --admit <file> <reps>` on the
 #   production build: the two-phase decision, the proved depth counter, the
 #   library's `admission`, and the library's own `policyRefusal` on the same
@@ -121,10 +121,10 @@ pin=()
 if command -v taskset >/dev/null 2>&1; then pin=(taskset -c "$cpu"); fi
 
 # --- corpus ---------------------------------------------------------------
-# Every fast-path document stays inside `admission`: one opener byte, so the
-# opener-count clause holds, and shapes whose arena and event streams fit the
-# record's capacities.  The two depth documents are the boundary pair: 128
-# openers are admitted, 129 are outside the domain and the fallback answers.
+# Every fast-path document stays inside `admission`: its structural nesting is
+# 1 or 2, so the depth clause holds, and its arena and event streams fit the
+# record's capacities.  The two depth documents are the boundary pair: nesting
+# 128 is admitted, 129 is outside the domain and the fallback answers.
 #
 # The five escape documents are the candidate-heavy row set: each carries quote
 # or backslash bytes, so the two-phase admission runs phase two on it, and they
@@ -154,9 +154,11 @@ fast_docs=("$corpus/fast-nums-4096.json" "$corpus/fast-nums-16384.json"
            "$corpus/fast-esc-quotes.json" "$corpus/fast-esc-u.json"
            "$corpus/fast-surrogate.json" "$corpus/fast-utf8.json")
 depth_docs=("$corpus/depth-128.json" "$corpus/depth-129.json")
-# A document the repository already ships that the domain does not admit: its
-# objects open a container per element, so the opener count exceeds the bound.
-repo_fallback=("$repo/probes/bench/json/scale-4096.json")
+# A document the repository already ships that the domain now admits: 178
+# objects with two members each, so its opener *bytes* number 179 while its
+# nesting is 2.  It is the deep-but-balanced shape the depth clause is for, and
+# it is measured on the fast path because `docDepth` admits it.
+repo_deep=("$repo/probes/bench/json/scale-4096.json")
 
 # --- machine --------------------------------------------------------------
 printf '## the machine\n\n'
@@ -175,7 +177,7 @@ printf '\n'
 # --- corpus table ---------------------------------------------------------
 printf '## the corpus\n\n'
 printf '%-22s %8s  %s\n' doc bytes sha256
-for doc in "${fast_docs[@]}" "${depth_docs[@]}" "${repo_fallback[@]}"; do
+for doc in "${fast_docs[@]}" "${depth_docs[@]}" "${repo_deep[@]}"; do
   printf '%-22s %8s  %s\n' "$(basename "$doc")" "$(stat -c %s "$doc")" \
     "$(sha256sum "$doc" | cut -d' ' -f1)"
 done
@@ -305,10 +307,10 @@ o2_rows="$work/o2-fast.rows"; o3_rows="$work/o3-fast.rows"
 
 row_d128=$(stage_row o2t "${depth_docs[0]}" fast)
 row_d129=$(stage_row o2t "${depth_docs[1]}" fallback)
-row_rs4096=$(stage_row o2t "${repo_fallback[0]}" fallback)
+row_rs4096=$(stage_row o2t "${repo_deep[0]}" fast)
 row_d128_o3=$(stage_row o3t "${depth_docs[0]}" fast)
 row_d129_o3=$(stage_row o3t "${depth_docs[1]}" fallback)
-row_rs4096_o3=$(stage_row o3t "${repo_fallback[0]}" fallback)
+row_rs4096_o3=$(stage_row o3t "${repo_deep[0]}" fast)
 
 for doc in "${fast_docs[@]}"; do
   row=$(stage_row o2t "$doc" fast)
@@ -326,7 +328,7 @@ printf '\n'
 for doc in "${fast_docs[@]}"; do
   for b in o2 o3; do printf '%s\n' "$(wall_row "$b" "$doc")"; done
 done
-for doc in "${depth_docs[@]}" "${repo_fallback[@]}"; do
+for doc in "${depth_docs[@]}" "${repo_deep[@]}"; do
   printf '%s\n' "$(wall_row o2 "$doc")"
 done
 printf '\n'
@@ -577,7 +579,7 @@ printf 'second -O2 run by the first in the same round, so its range is what the\
 printf 'machine contributes with no OPT change at all.  A pair whose median sits\n'
 printf 'inside the control range is not a difference OPT produced.\n\n'
 
-printf '## the fallback price (unit: ns; medians of %s reps, OPT=-O2 build)\n\n' "$reps"
+printf '## the boundary rows (unit: ns; medians of %s reps, OPT=-O2 build)\n\n' "$reps"
 printf '%-22s %9s %10s %10s %10s %10s %11s\n' doc path admission staging native outcome total
 for row in "$row_d128" "$row_d129" "$row_rs4096"; do
   printf '%-22s %9s %10s %10s %10s %10s %11s\n' "$(field "$row" doc)" \
@@ -588,18 +590,20 @@ done
 printf '\nratio depth-129/depth-128 total = %s (unit: ns per document; the documents\n' \
   "$(ratio "$(field "$row_d129" total_ns)" "$(field "$row_d128" total_ns)")"
 printf 'differ by one bracket pair, and by which path answers them)\n'
-printf 'ratio scale-4096/fast-nums-4096 total = %s (unit: ns per document; the\n' \
+printf 'ratio scale-4096/fast-nums-4096 total = %s (unit: ns per document; both\n' \
   "$(ratio "$(field "$row_rs4096" total_ns)" "$(field "$(grep ' doc=fast-nums-4096.json ' "$o2_rows")" total_ns)")"
-printf 'documents differ in shape as well as in path)\n\n'
+printf 'are on the fast path, and the documents differ in shape -- 178 objects\n'
+printf 'against 683 numbers, at the same size)\n\n'
 
 # --- the two-phase admission ----------------------------------------------
 # The admission stage the route runs is the two-phase decision; these rows put
 # it beside the predicate it replaced, on the same documents in the same
-# session, and beside the proved depth counter, which is measured and gates
-# nothing.  `certified_ns` is the library's `admission` -- the opener count over
-# `doc.data.toList` and the per-quote policy scan -- and `two_phase_ns` is what
-# the route now pays: the native facts, then the native policy scan only where
-# the masks saw a candidate.  `policy_oracle_ns` is the reference's own
+# session, and beside the depth pass, whose counter corroborates the walk's
+# final depth but cannot supply its maximum.  `certified_ns` is the library's
+# `admission` -- the measured nesting over the document's structural delimiter
+# sequence and the per-quote policy scan -- and `two_phase_ns` is what the route
+# now pays: the native walk, then the native policy scan only where the walk saw
+# a candidate.  `policy_oracle_ns` is the reference's own
 # `policyRefusal` measured on the same bytes, so the two policy phases are one
 # row and neither number is a separate run's.
 admit_row() { # <file> [native depth] -> the row on stderr
@@ -624,20 +628,20 @@ admit_row() { # <file> [native depth] -> the row on stderr
 
 adm_rows="$work/admit.rows"
 : >"$adm_rows"
-all_docs=("${fast_docs[@]}" "${depth_docs[@]}" "${repo_fallback[@]}")
+all_docs=("${fast_docs[@]}" "${depth_docs[@]}" "${repo_deep[@]}")
 for doc in "${all_docs[@]}"; do
   admit_row "$doc" | tee -a "$adm_rows" >/dev/null
 done
 
 printf '## the two-phase admission (unit: ns; medians of %s reps, OPT=-O2 production build)\n\n' "$reps"
 printf '%-22s %8s %9s %12s %10s %10s %10s %12s %10s %10s\n' \
-  doc openers candidate certified_ns phase1_ns policy_ns policy_oracle_ns \
+  doc depth candidate certified_ns phase1_ns policy_ns policy_oracle_ns \
   two_phase_ns 'two_phase/certified' depth_ns
 for doc in "${all_docs[@]}"; do
   name=$(basename "$doc")
   row=$(grep " doc=$name " "$adm_rows")
   printf '%-22s %8s %9s %12s %10s %10s %10s %12s %10s %10s\n' "$name" \
-    "$(field "$row" openers)" "$(field "$row" candidate)" \
+    "$(field "$row" native_depth)" "$(field "$row" candidate)" \
     "$(field "$row" certified_ns)" "$(field "$row" phase1_ns)" \
     "$(field "$row" policy_ns)" "$(field "$row" policy_oracle_ns)" \
     "$(field "$row" two_phase_ns)" \
@@ -645,20 +649,21 @@ for doc in "${all_docs[@]}"; do
     "$(field "$row" depth_ns)"
 done
 printf '\nconstruction: certified_ns is the library'"'"'s `admission`: the empty and\n'
-printf 'length clauses, the opener count over `doc.data.toList`, and the per-quote\n'
-printf 'policy scan.  phase1_ns is the adapter'"'"'s native call (the mask unit over\n'
-printf 'the document, the delimiter lanes counted, the candidate flag), including\n'
-printf 'the Lean extern call and the header decode.  policy_ns is phase two as the\n'
+printf 'length clauses, `docDepth` over the document'"'"'s structural delimiter\n'
+printf 'sequence, and the per-quote policy scan.  phase1_ns is the adapter'"'"'s\n'
+printf 'native call (the whole-document walk, the running depth and its maximum,\n'
+printf 'the candidate flag), including the Lean extern call and the header decode.  policy_ns is phase two as the\n'
 printf 'route runs it -- the native scan, including its own extern call and header\n'
 printf 'decode -- and policy_oracle_ns is the library'"'"'s `policyRefusal` on the\n'
 printf 'same bytes, a separate interval in the same repetition; both are `-` where\n'
-printf 'the masks saw no candidate.  two_phase_ns is phase one plus the native\n'
+printf 'the walk saw no candidate.  two_phase_ns is phase one plus the native\n'
 printf 'phase two, so a `-` row differs from certified_ns alone.\n'
 printf 'two_phase/certified is a multiplier (the route'"'"'s decision cost divided by\n'
 printf 'the predicate it replaced, same document and session).  depth_ns is the\n'
-printf 'proved depth counter run over the same delimiter lanes: it is a balance\n'
-printf 'and a prefix-depth sum, neither of which is the opener count the clause\n'
-printf 'states, so it is reported and gates nothing.\n\n'
+printf 'depth pass: the walk again, with the proved counter run over the same\n'
+printf 'structural lanes.  The counter reports the sequence'"'"'s final depth and a\n'
+printf 'prefix-depth sum; a maximum is not among them, so the clause'"'"'s number is\n'
+printf 'the walk'"'"'s accumulator and this pass is the arithmetic beside it.\n\n'
 
 cand=0
 ran=0
@@ -667,7 +672,7 @@ for doc in "${all_docs[@]}"; do
   [ "$(field "$row" candidate)" = 1 ] && cand=$((cand + 1))
   [ "$(field "$row" policy)" = 1 ] && ran=$((ran + 1))
 done
-printf 'policy candidate on %s of %s rows (the fraction of documents whose masks\n' \
+printf 'policy candidate on %s of %s rows (the fraction of documents whose walk\n' \
   "$cand" "${#all_docs[@]}"
 printf 'show a byte the policy scan can report at: a quote or a backslash); the\n'
 printf 'scan itself ran on %s, the rows that candidate flag did not spare by a\n' "$ran"

@@ -5,11 +5,12 @@ adapter in `shim.c`, and prints what the caller observes.
 
 The document decision is the library's `LeanLLVM.JsonKernelDomain.admission`,
 taken in two phases whose clauses are that predicate's.  Phase one is the
-adapter's (`shim.c`): the proved stage-1 mask unit over the document's 64-byte
-blocks gives the opener count and a policy-candidate flag, and the empty and
-length bounds come from `kernelMaxInput`/`kernelMaxDepth` passed in from here.
-Phase two is the native character-policy scan (`policy.c`, through
-`leanllvm_route_policy`), run only where the masks saw a candidate; the
+adapter's (`shim.c`): a walk of the document's structural delimiter sequence --
+the `{`/`[`/`}`/`]` bytes outside string bodies, stepped `+1`/`-1` with the
+maximum tracked -- gives the depth clause's number and a policy-candidate flag,
+and the empty and length bounds come from `kernelMaxInput`/`kernelMaxDepth`
+passed in from here.  Phase two is the native character-policy scan (`policy.c`,
+through `leanllvm_route_policy`), run only where the walk saw a candidate; the
 reference's own `policyRefusal` is not called on this path, and is the oracle
 `--admit` measures and the `check.sh` agreement gate compares the native answer
 against -- its class and its byte -- on every corpus row.  So the shell and the
@@ -106,6 +107,14 @@ def indexWord (bs : ByteArray) (i : Nat) : UInt64 :=
   let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
   g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3 +
     4294967296 * (g 4 + 256 * g 5 + 65536 * g 6 + 16777216 * g 7)
+
+/-- A header word as the two's-complement `Int` the adapter wrote.  The depth
+statistics are signed -- a document whose running depth goes negative has a
+negative prefix-depth sum -- and a `Nat` read of a negative word names
+`2^64 - 4` where the counter wrote `-4`. -/
+def signedWord (bs : ByteArray) (i : Nat) : Int :=
+  let v := (indexWord bs i).toNat
+  if v ≥ 2 ^ 63 then (v : Int) - 2 ^ 64 else (v : Int)
 
 /-- Four little-endian bytes at `i`, read by index. -/
 def indexWord4 (bs : ByteArray) (i : Nat) : UInt64 :=
@@ -406,13 +415,17 @@ def hexProbe (arena events : ByteArray) : IO (Nat × Nat × Nat) := do
 /-! ### The two-phase admission
 
 The document decision is taken in two phases.  Phase one is the adapter's
-(`shim.c`, `leanllvm_route_admit`): the proved stage-1 mask unit over every
-64-byte block of the document, the delimiter mask's lanes read to count `{`/`[`
-bytes, the quote and backslash lanes OR'd into a policy-candidate flag, and the
-empty and length bounds compared against `kernelMaxInput` and `kernelMaxDepth` —
-the library's own numbers, passed in rather than restated in C.  Phase two is
+(`shim.c`, `leanllvm_route_admit`): the document's maximum structural nesting,
+the policy-candidate flag the same walk sets when it meets a quote or a
+backslash byte, and the empty and length bounds compared against
+`kernelMaxInput` and `kernelMaxDepth` — the library's own numbers, passed in
+rather than restated in C.  The nesting is the
+depth clause's number: `structTokensFrom`'s sequence of `{`/`[`/`}`/`]` bytes
+outside string bodies (a body skipped to the reference scan's stop, and a body
+that scan refuses ending the sequence), stepped `+1`/`-1` with the maximum
+tracked — not an opener-byte count and not a final balance.  Phase two is
 `policyPhase`: the native scan `policy.c` defines, over the document's bytes, run
-only when the masks saw a candidate byte.
+only when the walk saw a candidate byte.
 
 The candidate flag is a superset of the bytes `policyRefusal` can report at, so
 skipping phase two when it is false cannot miss a refusal, and consulting it when
@@ -420,22 +433,26 @@ true runs the native scan, whose rule is the reference's branch for branch.  The
 library's `policyRefusal` is not called on this path: it is the oracle `--admit`
 runs on the same bytes and prints beside the native answer, so the two can be
 compared at the refusal's class and at its byte, and `check.sh` is that
-comparison.  The clause order is `admission`'s — empty, over-long, too many
-openers, then the character policy — so the decision and its reason are the same
-object, not a second reading of it.  That agreement is what `check.sh` asserts on
-every corpus row; `docs/json-route-stage-timings.md` records the cost of each
-phase and how often phase two runs.
+comparison.  The clause order is `admission`'s — empty, over-long, too deep, then
+the character policy — so the decision and its reason are the same object, not a
+second reading of it.  That agreement is what `check.sh` asserts on every corpus
+row, and it compares the measured depth itself beside the verdict and the reason;
+`docs/json-route-stage-timings.md` records the cost of each phase and how often
+phase two runs.
 
-The proved depth counter is measured beside the decision and gates nothing: its
-two values are a balance and the sum of prefix depths, and `admission`'s clause is
-an opener *count*, so the decision cannot be read off it.  `leanllvm_route_depth`
-reports them for the admission record. -/
+The depth clause's number is measured by the adapter.  The proved depth counter
+is run over the same structural lane list, so its two statistics are the
+sequence's final depth and its prefix-depth sum; a maximum is not among them —
+final depth and prefix sums do not determine one — so the maximum is the
+adapter's accumulator and the counter's recombined final depth is reported beside
+it.  `leanllvm_route_depth` reports both, and `check.sh` compares the maximum
+against `docDepth` and the two final depths against each other. -/
 
 /-- The admission result's header: nine words, no payload. -/
 def admitHeaderBytes : Nat := 72
 
-/-- The depth facts' header: seven words, no payload. -/
-def depthHeaderBytes : Nat := 56
+/-- The depth facts' header: nine words, no payload. -/
+def depthHeaderBytes : Nat := 72
 
 /-- Phase one of the admission: the document, its length, and the two certified
 bounds.  It returns the header `shim.c` documents: the tag and a failed
@@ -445,30 +462,37 @@ verdict and the refused clause. -/
 opaque admitNative (doc : ByteArray) (n maxInput maxDepth : UInt64) :
   IO ByteArray
 
-/-- The proved depth counter over the document's delimiter lanes, as its own
-native pass: the final depth, the sum of the prefix depths, and the number of
-delimiter lanes it walked. -/
+/-- The depth pass over the document's structural delimiter lanes, as its own
+native pass: the proved counter's final depth and prefix-depth sum, the number
+of structural lanes it walked, the maximum running depth the adapter tracked
+(the clause's number), and the adapter's own final depth. -/
 @[extern "leanllvm_route_depth"]
 opaque depthNative (doc : ByteArray) (n : UInt64) : IO ByteArray
 
 /-- What phase one measured.  `verdict` is the three native clauses' decision,
 `clause` names the one that refused (`0` none, `1` empty, `2` over-long, `3` too
-many openers), `openers` is the delimiter-lane count (exact up to
-`maxDepth + 1`, and exactly `maxDepth + 1` past it, because the decision is `>`),
-`candidate` is the policy-candidate flag, and `blocks` is the document's 64-byte
-block count. -/
+deep), `depth` is the document's maximum structural nesting — the depth clause's
+number, and the value its reason reports — `candidate` is the policy-candidate
+flag, and `blocks` is the document's 64-byte block count. -/
 structure AdmitFacts where
   verdict : Bool
   clause : Nat
-  openers : Nat
+  depth : Nat
   candidate : Bool
   blocks : Nat
 
-/-- What the depth counter reported. -/
+/-- What the depth pass reported: the proved counter's recombined final depth
+and prefix-depth sum over the document's structural delimiter sequence, how many
+tokens that sequence held, the maximum running depth the adapter's accumulator
+tracked, and the accumulator's own final depth.  The maximum is the clause's
+number; the last two exist so an arithmetic over the same lane list can be
+compared against the counter's. -/
 structure DepthFacts where
-  final : Nat
-  sum : Nat
+  final : Int
+  sum : Int
   structurals : Nat
+  max : Nat
+  walkFinal : Int
 
 /-- Decode phase one's header.  A tag other than the measured class is an
 adapter-level failure with the status its message deserves: 3 for an unmet
@@ -488,7 +512,7 @@ def admitFactsOf (r : ByteArray) : Except (UInt32 × String) AdmitFacts :=
         .error (5, s!"the admission result names clause {clause}")
       else
         .ok { verdict := indexWord r 56 == 1, clause := clause,
-              openers := (indexWord r 32).toNat,
+              depth := (indexWord r 32).toNat,
               candidate := indexWord r 40 == 1,
               blocks := (indexWord r 48).toNat }
     else
@@ -505,8 +529,10 @@ def depthFactsOf (r : ByteArray) : Except (UInt32 × String) DepthFacts :=
       .error (3, s!"unsupported domain: {preconditionName (indexWord r 8).toNat}: \
         expected {(indexWord r 16).toNat}, observed {(indexWord r 24).toNat}")
     else if tag == 0 then
-      .ok { final := (indexWord r 32).toNat, sum := (indexWord r 40).toNat,
-            structurals := (indexWord r 48).toNat }
+      .ok { final := signedWord r 32, sum := signedWord r 40,
+            structurals := (indexWord r 48).toNat,
+            max := (indexWord r 56).toNat,
+            walkFinal := signedWord r 64 }
     else
       .error (5, s!"the depth result carries tag {tag}")
 
@@ -590,7 +616,7 @@ def nativeRefusal (f : AdmitFacts) : Option KernelRefusal :=
   match f.clause with
   | 1 => some .emptyInput
   | 2 => some (.inputTooLong kernelMaxInput)
-  | 3 => some (.depthBound f.openers)
+  | 3 => some (.depthBound f.depth)
   | _ => none
 
 /-- The document's disposition under the two-phase admission.  `failed` is the
@@ -601,7 +627,7 @@ inductive Decision where
   | failed (status : UInt32)
 
 /-- The decision from phase one's facts: the native clause's reason, then the
-native character-policy scan only when the masks saw a candidate byte.  The
+native character-policy scan only when the walk saw a candidate byte.  The
 scan is `policyPhase`, not the library's `policyRefusal`: the reference's rule is
 the oracle `--admit` compares this against, and is not on the route's path. -/
 def decide2From (doc : ByteArray) (f : AdmitFacts) : IO Decision := do
@@ -629,7 +655,7 @@ def decide2 (doc : ByteArray) (maxDepth : Nat := kernelMaxDepth) : IO Decision :
 constructors carry the byte the reference names, because that byte is part of
 the value they are (`KernelRefusal.unpairedSurrogate (pos : Nat)`), so a
 comparison of two reason tags compares the two refusals and not their classes
-alone.  The opener clause's count is compared through its own field instead, so
+alone.  The depth clause's number is compared through its own field instead, so
 the control that moves the native bound still reads `reason=depthBound`. -/
 def reasonTag : Option KernelRefusal → String
   | none => "none"
@@ -677,7 +703,7 @@ def run (path : String) (maxDepth : Nat := kernelMaxDepth) : IO UInt32 := do
       IO.eprintln s!"route: cannot read '{path}': {e}"
       return 2
   -- One decision, taken in two phases: the native facts, then the reference's
-  -- policy scan where the masks saw a candidate.  The fast path is taken exactly
+  -- policy scan where the walk saw a candidate.  The fast path is taken exactly
   -- where it admits; everything else is the fallback's, answered by the scalar
   -- reference parser and nowhere pre-filtered.  `maxDepth` is the certified
   -- bound unless a caller overrides it, which only the agreement scenario's
@@ -748,7 +774,7 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
   let mut status := 0
   let mut kind := "fast"
   let mut candidate := 0
-  let mut openers := 0
+  let mut depth := 0
   let mut blocks := 0
   let mut clause := "-"
   for _ in List.range reps do
@@ -777,11 +803,11 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     match facts with
     | .ok f =>
         candidate := if f.candidate then 1 else 0
-        openers := f.openers
+        depth := f.depth
         blocks := f.blocks
         clause := toString f.clause
         -- Phase two runs the scan exactly when the native clauses admitted and
-        -- the masks saw a candidate; its interval is the scan's.
+        -- the walk saw a candidate; its interval is the scan's.
         if f.verdict && f.candidate then admpolicy := admpolicy.push (a2 - a1)
     | .error _ => pure ()
     match decision with
@@ -857,7 +883,7 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     read_ns={median reads} admission_ns={stageField adm} \
     admission_native_ns={stageField admnative} \
     admission_policy_ns={stageField admpolicy} \
-    admission_candidate={candidate} admission_openers={openers} \
+    admission_candidate={candidate} admission_depth={depth} \
     admission_blocks={blocks} admission_clause={clause} \
     staging_ns={stageField staging} copyin_ns={stageField copyin} \
     native_ns={stageField native} copyout_ns={stageField copyout} \
@@ -1086,7 +1112,7 @@ and `agree` their comparison together with the two decisions'.
 The document is re-read inside every repetition, as `--stages` does, so a pure
 loop-invariant `admission doc` cannot be hoisted out of its timed region and
 measured as nothing.  The policy phase's own interval is reported only when it
-ran: `policy=0` rows are the documents whose masks saw no candidate byte, and
+ran: `policy=0` rows are the documents whose walk saw no candidate byte, and
 they are the reason the phase is skipped at all.  Each phase's interval is the
 clock read that closes it, so the native scan's cost and the reference scan's are
 each one interval of the same row. -/
@@ -1100,7 +1126,7 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
   let mut size := 0
   let mut nativeS := "-"
   let mut clauseS := "-"
-  let mut openersS := "-"
+  let mut depthS := "-"
   let mut candidateS := "-"
   let mut blocksS := "-"
   let mut policyS := "-"
@@ -1109,6 +1135,9 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
   let mut depthFinalS := "-"
   let mut depthSumS := "-"
   let mut structuralsS := "-"
+  let mut depthMaxS := "-"
+  let mut depthWalkS := "-"
+  let mut certDepthS := "-"
   let mut certTag := "-"
   let mut certCount := "-"
   let mut twoTag := "-"
@@ -1127,7 +1156,7 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
     let depthInfo ← depthFacts doc
     let t2 ← IO.monoNanosNow
     -- Phase two, the route's own: the native scan where the native clauses
-    -- admitted and the masks saw a candidate.
+    -- admitted and the walk saw a candidate.
     let mut natReading := "-"
     let decision ←
       match facts with
@@ -1153,6 +1182,13 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
     let o1 ← IO.monoNanosNow
     let c0 ← IO.monoNanosNow
     let certified := admission doc
+    -- The clause's number as the library measures it, on the rows whose
+    -- decision reaches the depth clause: the two earlier clauses return before
+    -- the fold, and this row says so rather than spending a megabyte's walk on
+    -- a document the length bound already refused.
+    certDepthS :=
+      if doc.size == 0 || kernelMaxInput < doc.size then "-"
+      else toString (kernelDepthOf doc)
     let c1 ← IO.monoNanosNow
     p1 := p1.push (t1 - t0)
     dp := dp.push (t2 - t1)
@@ -1163,7 +1199,9 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
     | .ok f =>
         nativeS := if f.verdict then "1" else "0"
         clauseS := toString f.clause
-        openersS := toString f.openers
+        -- The empty and over-long clauses refuse before the walk, so their
+        -- depth is not a measurement and the row says so.
+        depthS := if f.clause == 1 || f.clause == 2 then "-" else toString f.depth
         candidateS := if f.candidate then "1" else "0"
         blocksS := toString f.blocks
         if f.verdict && f.candidate then
@@ -1179,6 +1217,8 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
         depthFinalS := toString d.final
         depthSumS := toString d.sum
         structuralsS := toString d.structurals
+        depthMaxS := toString d.max
+        depthWalkS := toString d.walkFinal
     certTag := match certified with
       | .ok () => "none"
       | .error r => reasonTag (some r)
@@ -1191,11 +1231,13 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
       | _ => if twoTag == certTag then 1 else 0
   IO.eprintln s!"admit doc={(System.FilePath.fileName path).getD path} size={size} \
     reps={reps} maxdepth={nativeDepth} native={nativeS} native_clause={clauseS} \
-    openers={openersS} candidate={candidateS} blocks={blocksS} policy={policyS} \
+    native_depth={depthS} candidate={candidateS} blocks={blocksS} policy={policyS} \
     policy_native={policyNativeS} policy_oracle={policyOracleS} \
     depth_final={depthFinalS} depth_sum={depthSumS} structurals={structuralsS} \
+    depth_max={depthMaxS} depth_walk_final={depthWalkS} \
     certified={if certTag == "none" then "1" else "0"} \
     certified_reason={certTag} certified_count={certCount} \
+    certified_depth={certDepthS} \
     verdict={if twoTag == "none" then "1" else "0"} reason={twoTag} \
     agree={agree} phase1_ns={median p1} depth_ns={median dp} \
     policy_ns={stageField pol} policy_oracle_ns={stageField opol} \
