@@ -1127,6 +1127,66 @@ def WalkFlush (calls : Calls) (v0 : Value) (a13 : List Value) (nep : Nat)
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
           some (.ret v0 m)
 
+/-- **A dispatch's outcome, and it is one of three.**  The index cannot decide it in
+advance.  A standalone string consumes *two* entries — the opener and the closer, the merge
+selecting `%inc208.i = %k.0.i249 + 2` — so at `nep = 2` the same `C.k + 1 < G.nep` that
+selects a revolution ends the stream; and a refusal at depth zero stores its error and jumps
+to the refusal finalisation at *any* index, bypassing the merge entirely.  So the outcome is
+read from the dispatch's own result — its terminal index and target block — and never from
+`C.k + 1` before the dispatch runs.
+
+The three alternatives are the handoff's table: a counted segment to the merge with an index
+strictly below the stream, the same with the *terminal* index, and a counted segment to the
+refusal finalisation with the error position and a bounded cost. -/
+inductive WalkDispatchOutcome (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) : Prop
+  /-- **Continue**: fewer entries consumed than the stream holds, so the merge's index is
+  strictly below `nep` and the loop runs again. -/
+  | cont (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
+      (spOp kOp : Operand) (nepv : BitVec 64)
+      (seg : WalkSegment calls G C s Cd sd p)
+      (hblock : Cd.block = "cleanup478.i") (hk : Cd.k = C.k)
+      (hpre : sd.pre = some prev)
+      (hsp : phiIncoming prev cleanupSpIncoming = some spOp)
+      (hspv : evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+      (hkOp : phiIncoming prev cleanupKIncoming = some kOp)
+      (hk2 : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+      (hnepv : lookupName sd.env "%nep" = some (.int 64 nepv))
+      (hbelow : k2 < nepv.toNat) (hnep : k2 < G.nep) (hadvance : C.k < k2)
+      (hspcap : spv ≤ stage2StackExtent) (hspw : spv ≤ Cd.wlen)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
+  /-- **Finish normally**: the token consumed the *last* entry — the merge's index is `nep`,
+  which the old `k2 < G.nep` requirement excluded and which the string branch reaches. -/
+  | finish (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
+      (kOp : Operand) (nepv : BitVec 64)
+      (seg : WalkSegment calls G C s Cd sd p)
+      (hblock : Cd.block = "cleanup478.i")
+      (hpre : sd.pre = some prev)
+      (hkOp : phiIncoming prev cleanupKIncoming = some kOp)
+      (hk2 : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+      (hnepv : lookupName sd.env "%nep" = some (.int 64 nepv))
+      (hterm : k2 = nepv.toNat)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
+  /-- **Refuse early**: the token is rejected before the merge at any index — a mismatched
+  literal's `if.then57.i`, a closing bracket's `if.then53.i`/`if.then56.i`, whose error store
+  jumps to the refusal finalisation — so the segment ends there with the error position and a
+  cost inside the entry's credit. -/
+  | refuse (Cd : WalkCarry G) (sd : State) (p : Nat)
+      (seg : WalkSegment calls G C s Cd sd p)
+      (hblock : Cd.block = "if.then")
+      (herr : Cd.eoff ≤ G.n)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k))
+
+/-- **The dispatch, stated at its outcomes.**  At the loop head the dispatch runs and its
+result is one of the three, so the case split that follows is a split on
+`WalkDispatchOutcome` and not on `C.k + 1`. -/
+def WalkDispatchThree (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    WalkDispatchOutcome calls G C s
+
 /-! ### What a dispatch proof still owes
 
 Two things the census's links do not supply, and the dispatch therefore owes
