@@ -1221,6 +1221,37 @@ theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : Walk
         hnepv hterm hprice
     · exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
 
+/-! ### The endpoint, and the three cases it is for
+
+The three outcomes above are not an end in themselves: they are what the dispatch, the
+scoped flush and the exit are *for*.  The endpoint they serve is
+
+  `Stage2WalkCompletes … stage2SubCalls`, then the complete `Stage2WalkObligation`,
+
+with **no** assumed `WalkPremises`, `WalkDispatch`, `WalkExit`, `WalkFlushAt` or an
+equivalent completed-run witness, and with the boundary derived from the *actual* final
+memory — its reads, its extents and its frame, pointwise — rather than from an equality
+between two differently ordered write lists, which disjointness does not give.
+
+Three cases are the gate, each exercising a different arm of what is above:
+
+* **a long standalone string** — both the byte credit and the two-entry advance: the `finish`
+  outcome, where the merge selects `%inc208.i = %k.0.i249 + 2` and the index reaches `nep`;
+* **an early refusal with entries remaining** — the terminal path inside the dispatch: the
+  `refuse` outcome, taken at an index the old `C.k + 1 < G.nep` split would have called a
+  revolution;
+* **an all-whitespace input** — the zero-entry branch at a staged memory, which is the
+  `WalkFlushAt` premise at the memory and cursor the staging hands the entry.
+
+Only then: escaped strings, whitespace gaps, malformed input encountered late, and container
+nesting.
+
+Two disciplines, because they are what a partial proof most easily misstates: a longest-path
+count or an opcode census is **not** a bound on a trace containing loops — the scans are
+counted traversals, and `WalkSegment`'s index is their price — and the number of proved links
+is not a percentage of completed verification.  What is proved is what the theorems say, and
+`#print axioms` is where a reader checks it. -/
+
 /-! ### What a dispatch proof still owes
 
 Two things the census's links do not supply, and the dispatch therefore owes
