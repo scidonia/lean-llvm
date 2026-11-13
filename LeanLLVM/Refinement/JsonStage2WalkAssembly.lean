@@ -1221,6 +1221,26 @@ theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : Walk
         hnepv hterm hprice
     · exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
 
+/-- **The entry block's zero arm.**  `walkEntry_step` branches on the entry count's own
+test, so the zero arm is that lemma plus the target's `pc`: at `nep = 0` the jump's
+destination is `if.then492.i`, the flush block, and the run leaves the entry state there.
+
+The premises are `walkEntry_step`'s, taken as hypotheses rather than re-derived: the run of
+`walkEntryInstrs` at the entry state, the test's cell in it, the count's width, and the
+run's `pc`.  At a staging they are `walkEntry_denote`'s conclusion at `EntryState` — the
+setup `walkSeedPrefix_entry` carries — which is why this lemma is stated at the step and not
+at the staging: the four checkpoints share that setup, and a fact re-derived per checkpoint is
+a fact with four spellings to keep in step. -/
+theorem walkEntry_zeroArm {calls : Calls} {s : State} {nep : Nat}
+    (hpc : s.pc = "entry") {s₁ : State}
+    (hden : denoteCode (stage2Calls stage2SubCalls) walkEntryInstrs s = some s₁)
+    (hne : lookupName s₁.env "%cmp.i247.not" =
+      some (.int 1 (evalICmp .eq (BitVec.ofNat 64 nep) (BitVec.ofNat 64 0))))
+    (hne64 : nep < 2 ^ 64) (hpc₁ : s₁.pc = s.pc) (hzero : nep = 0) :
+    ∃ s' : State, LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = .jump s' ∧
+      s'.pc = "if.then492.i" :=
+  ⟨_, walkEntry_step s hpc hden hne hne64 hpc₁, by simp [walkEntryJump, hzero]⟩
+
 /-- **The flush arm from four named steps.**  The zero-entry run is the entry block's zero
 arm, the flush block, the refusal copy and the return — four control steps, inside
 `stage2FinalisationAllowance` — so `WalkFlushAt` follows from their four step equations at the
