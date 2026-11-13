@@ -293,17 +293,17 @@ side conditions are `WalkLink.refusalStore`'s list. -/
 theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     {b : String} {cs : List (String × Value)} {pr : Option String}
     (h : WalkInv G C s)
-    (hfree : ∀ c ∈ cs, c.1 ∉ walkCarriedNames)
-    (hki : ∀ c ∈ cs, c.1 ≠ "%k.0.i249") (hspp : ∀ c ∈ cs, c.1 ≠ "%sp.i.0248")
+    (hfree : ∀ n ∈ cs.map (·.1), n ∉ walkCarriedNames)
+    (hki : ∀ n ∈ cs.map (·.1), n ≠ "%k.0.i249")
+    (hspp : ∀ n ∈ cs.map (·.1), n ≠ "%sp.i.0248")
     (hptr : ∀ c ∈ cs, c.1 ≠ "%3" ∧ c.1 ≠ "%5" ∧ c.1 ≠ "%k11.i" ∧ c.1 ≠ "%ctype.i"
       ∧ c.1 ≠ "%cst.i" ∧ c.1 ≠ "%hash1.i.i")
     (hloc : WalkLocal { C with block := b } { s with env := cells cs s.env, pc := b, pre := pr }) :
     WalkInv G { C with block := b } { s with env := cells cs s.env, pc := b, pre := pr } where
   pc_eq := rfl
   blockIndex := by
-    rw [lookupName_cells_of_notin cs "%k.0.i249" s.env (fun hin => by
-      obtain ⟨c, hc, hce⟩ := List.mem_map.mp hin
-      exact hki c hc hce)]
+    rw [lookupName_cells_of_notin cs "%k.0.i249" s.env
+      (fun hin => hki "%k.0.i249" hin rfl)]
     exact h.blockIndex
   k_le := h.k_le
   events_le := h.events_le
@@ -321,9 +321,8 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   inner_cap := h.inner_cap
   depth_cap := h.depth_cap
   depth_reg := by
-    rw [lookupName_cells_of_notin cs "%sp.i.0248" s.env (fun hin => by
-      obtain ⟨c, hc, hce⟩ := List.mem_map.mp hin
-      exact hspp c hc hce)]
+    rw [lookupName_cells_of_notin cs "%sp.i.0248" s.env
+      (fun hin => hspp "%sp.i.0248" hin rfl)]
     exact h.depth_reg
   sp_le_wlen := h.sp_le_wlen
   wlen_cap := h.wlen_cap
@@ -331,21 +330,21 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   stBytes := h.stBytes
   ptrs := h.ptrs.cells_of cs hptr
   regs := h.regs.cells_of cs (fun n hn => by
-    obtain ⟨c, hc, hce⟩ := List.mem_map.mp hn
-    have hc' : c.1 ∉ walkCarriedNames := hfree c hc
-    simp only [walkCarriedNames, List.mem_cons, not_or] at hc'
-    exact hce ▸ hc'.2.2)
+    have hc : n ∉ walkCarriedNames := hfree n hn
+    simp only [walkCarriedNames, List.mem_cons, not_or] at hc
+    exact hc.2.2)
   iter := by
-    have hgo : ∀ (l : List (String × Value)), (∀ c ∈ l, c.1 ∉ walkCarriedNames) →
-        WalkIter G C.k (cells l s.env) := by
+    have hgo : ∀ (l : List (String × Value)),
+        (∀ n ∈ l.map (·.1), n ∉ walkCarriedNames) → WalkIter G C.k (cells l s.env) := by
       intro l
       induction l with
       | nil => intro _; exact h.iter
       | cons c cs ih =>
           intro hcl
-          have hc : c.1 ∉ walkCarriedNames := hcl c (by simp)
+          have hc : c.1 ∉ walkCarriedNames := hcl c.1 (by simp)
           simp only [walkCarriedNames, List.mem_cons, not_or] at hc
-          exact WalkIter.bind (ih (fun c' hc' => hcl c' (by simp [hc']))) hc.1 hc.2.1
+          exact WalkIter.bind
+            (ih (fun n hn => hcl n (by simp [hn]))) hc.1 hc.2.1
     exact hgo cs hfree
   log_hash := h.log_hash
   log_len := h.log_len
@@ -356,6 +355,92 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   frame := h.frame
   blockLocal := hloc
 
+end LeanLLVM.Refinement
+
+
+namespace LeanLLVM.Refinement
+namespace WalkScope
+
+open LeanLLVM
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.Refinement.JsonStage2IR
+
+set_option autoImplicit false
+
+/-- **The merge's step at the terminal index.**  The dispatch has consumed the last entry,
+so `cleanup478.i`'s test is zero and the run takes the *exit* arm: one control step to
+`if.then485.i`, the three cells the merge binds in the environment, and `WalkInv` at the
+exit's block — which is `WalkDispatchOutcome.finish`'s `Cd`/`sd` pair.
+
+The invariant comes from `bindAt` (cells plus block, one copy) rather than from a
+field-by-field assembly: the merge binds three names no invariant field reads, so the
+transport is exactly the one the transport lemmas state. -/
+theorem walkFinishMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "cleanup478.i")
+    {p : String} {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hterm : k2 = nepv.toNat) :
+    ∃ (e : State), step calls stage2Body s = .jump e ∧
+      WalkInv G { C with block := "if.then485.i" } e ∧
+      e = { s with
+        env := (cells [("%cmp.i", .int 1 (0 : BitVec 1)),
+          ("%k.2.i", .int 64 (BitVec.ofNat 64 k2)),
+          ("%sp.i.1", .int 32 (BitVec.ofNat 32 spv))] s.env)
+        pc := "if.then485.i"
+        pre := some "cleanup478.i" } := by
+  have hpc : s.pc = "cleanup478.i" := by rw [hInv.pc_eq, hblock]
+  have hden := cleanup478_denote_finish calls s p hpre hsp hspv hk hkv hnep hterm
+  have hfind : stage2Body.findBlock s.pc = some cleanup478Block := by
+    rw [hpc]; exact cleanup478_find
+  have hterm' : cleanup478Block.term =
+      Term.condbr (.reg "%cmp.i") "while.body.i" "if.then485.i" := rfl
+  let cs : List (String × Value) :=
+    [("%cmp.i", .int 1 (0 : BitVec 1)),
+     ("%k.2.i", .int 64 (BitVec.ofNat 64 k2)),
+     ("%sp.i.1", .int 32 (BitVec.ofNat 32 spv))]
+  let e : State :=
+    { s with
+      env := (cells cs s.env)
+      pc := "if.then485.i"
+      pre := some "cleanup478.i" }
+  have hstep : step calls stage2Body s = .jump e := by
+    simp only [LeanLLVM.step, hfind, hden, hterm']
+    rw [walkExecTerm_condbr (d := "%cmp.i") (tl := "while.body.i") (fl := "if.then485.i")
+      (bit := (0 : BitVec 1)) (by simp only [State.bind]; simp [lookupName])]
+    dsimp only [e, cs, State.bind]
+    rw [hpc]
+    rfl
+  refine ⟨e, hstep, ?_, rfl⟩
+  refine hInv.bindAt (b := "if.then485.i") (cs := cs) (pr := some "cleanup478.i")
+    ?_ ?_ ?_ (fun c hc => ?_) ?_
+  · intro n hn
+    simp only [cs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hn
+    rcases hn with h | h | h <;> (rw [h]; decide)
+  · intro n hn
+    simp only [cs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hn
+    rcases hn with h | h | h <;> (rw [h]; decide)
+  · intro n hn
+    simp only [cs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hn
+    rcases hn with h | h | h <;> (rw [h]; decide)
+  · have hkey : c.1 ∈ ["%cmp.i", "%k.2.i", "%sp.i.1"] := by
+      simpa [cs] using List.mem_map_of_mem (f := (·.1)) hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hkey
+    rcases hkey with h | h | h <;> (rw [h]; decide)
+  · simp [WalkLocal]
+
+/-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
+
+end WalkScope
 end LeanLLVM.Refinement
 
 /-! ### The instrument -/
