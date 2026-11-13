@@ -2426,6 +2426,47 @@ theorem latch462S_cond {m0 : Mem} (s : State) (i c : Nat) (idx : BitVec 64) (a q
     lookupName_cons_ne (k := "%inc463.i") (n := "%cond350.i") _ _ (by decide)]
   exact hc
 
+
+/-- **The dispatch's three links, as a counted segment.**  The landing, the first pivot
+and the range leaf, three steps — the form a consumer that needs the price uses, since
+a `Prop`-valued chain has no step count to read off. -/
+theorem walkScanLinks457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hblock : C.block = "land.rhs457.i")
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
+    (hpre : s.pre = some src)
+    (hinc : phiIncoming src
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
+    (hop : evalOperand (stateAt s.env s) sel = some (.int 64 idx))
+    {x : BitVec 8}
+    (h3 : lookupName s.env "%3" = some (.ptr a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
+    (hbs : bytesToNat bs = q)
+    (hloc105 : WalkLocal (ScanC₁₀₅ C) (landRhs457OutAt s idx a q))
+    (h47 : evalOperand (landRhs457OutAt s idx a q) (.reg "%47") = some (.int 8 x))
+    (hbit : evalICmp .slt x (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    (hloc96 : WalkLocal (ScanC₉₆ C) (ScanS₉₆ s idx a q x))
+    (hlatch : WalkLocal { C with block := "while.body462.i" } (Latch462S s idx a q x)) :
+    ∃ (s' : State), WalkSegment calls G C s { C with block := "while.body462.i" } s' 3 := by
+  obtain ⟨s₁, hl₁, hs₁⟩ := WalkLink.landRhs457_at (G := G) (C := C) (s := s) hInv hblock
+    hpre hinc hop h3 hpos hread hbs hloc105
+  rw [hs₁] at hl₁
+  obtain ⟨s₂, hl₂, hs₂⟩ := WalkLink.NodeBlock105_at (G := G) (C := ScanC₁₀₅ C)
+    (s := landRhs457OutAt s idx a q) hl₁.inv' rfl h47
+  have hs₂' : s₂ = ScanS₉₆ s idx a q x := by rw [hs₂, if_pos hbit]; rfl
+  rw [hs₂'] at hl₂
+  rw [if_pos hbit] at hl₂
+  obtain ⟨s₃, hl₃⟩ := WalkLink.LeafBlock96 (G := G) (C := ScanC₉₆ C)
+    (s := ScanS₉₆ s idx a q x) hl₂.inv' rfl
+    (by
+      simpa only [ScanS₉₆, stateAt, evalOperand,
+        lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide)] using h47)
+    hlatch
+  rw [if_pos hws] at hl₃
+  exact ⟨s₃, Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
