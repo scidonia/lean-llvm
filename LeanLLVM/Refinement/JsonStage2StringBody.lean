@@ -457,6 +457,21 @@ theorem readByte_not_determined_by_reads :
   · intro h
     exact absurd h (by simp)
 
+/-- **The canonical form is not `writeByte`.**  `writeByte` replaces the *first* cell
+at an address; a map over the memory replaces *every* cell there.  With a duplicated
+address the two disagree, so `writeByte A a c = A.map (…)` — and therefore the
+`memUpd` equivalence the section proposes — needs duplicate-freedom as well as
+presence.
+
+This closes the canonical route in this setting: duplicate-freedom is exactly the
+staging clause the join is not allowed to add.  The absorption itself survives,
+because both of its sides replace the *same* first occurrences; what does not
+survive is the map that was meant to make it cheap. -/
+theorem writeByte_not_map_of_duplicate :
+    writeByte [(0, 1), (0, 2)] 0 5
+      ≠ [(0, 1), (0, 2)].map (fun p => if p.1 = 0 then (p.1, 5) else p) := by
+  decide
+
 /-- **The ten blocks, in the order the body runs them.**  `findBlock` is a
 search over this list, so the names and their order are what every block's step
 lemma resolves against; the control beneath it is a name the body does not carry. -/
@@ -3528,39 +3543,28 @@ the same, because the target's slot write comes **last**:
   crossings to reach it, the absorption, and then three back, because the model's
   memory has the slot last and it has to return.
 
-**The absorption's route: a canonical form, under presence.**  An induction over the
-memory carrying outside-agreement needs, at each cell, the cell's *position* in both
-memories and the byte that belongs at that offset — which `readByte_not_determined_by_reads`
-shows cannot come from reads.  The cheap route makes the shape **definitional**:
+**The absorption's route, and the canonical form that does not work.**  The first
+idea was to make the shape definitional — a map `memUpd A a n bs` re-valuing the
+region's cells, with `writeBytes A a bs = memUpd A a bs.length bs` proved once.  It
+fails, and the witness is `writeByte_not_map_of_duplicate`: **`writeByte` replaces the
+*first* cell at an address, and a map replaces every cell there**, so with a
+duplicated address the two disagree.  The equivalence therefore needs
+duplicate-freedom *as well as* presence, and duplicate-freedom is exactly the staging
+clause the join may not add — so the canonical route is closed here, and it is closed
+by the same wall `readByte_not_determined_by_reads` shows: the memory's list order
+carries information its bytes do not.
 
-    memUpd A a n bs := A.map (fun (d, v) => if a ≤ d ∧ d < a + n then (d, bs.getD (d - a) 0) else (d, v))
+**The absorption itself survives duplicates**, because both of its sides replace the
+*same* first occurrences — which is why the direct induction over the memory is the
+route, not a map lemma.  It carries the region's presence as the cursor moves
+(`readBytes_writeByte_above`/`_below`), and it does not need to know how many cells
+share an address, only that every step does the same thing to the same cell.
 
-and then `writeBytes A a bs = memUpd A a bs.length bs` **under the region's
-presence** — `∀ i < bs.length, readByte A (a + i) ≠ none`.  Presence is not optional
-and no definition can remove it: `writeByte` **appends on a miss**, so a region the
-memory does not hold makes `writeBytes` grow the list, and `List.map` cannot append.
-Under presence `writeByte` replaces in place, the address sequence is unchanged, and
-`memUpd` is exact; with an address absent the two write orders are two different
-lists with the same reads — `A ++ [(a, slot), (b, y)]` against
-`A ++ [(b, y), (a, slot)]` — which is the wall the witness shows.
-
-With the equivalence in hand, and **under the same presence**:
-
-* **position preservation** is `List.map`'s congruence — `memUpd`'s address sequence
-  is `A`'s, definitionally;
-* **extensionality** is `List.map` equality on pairs — no hypothesis about reads, and
-  no `Nodup` clause, because position is what was missing and the map supplies it;
-* **the absorption** is the composition of two maps, decided by the offsets: the
-  clear's cells are overwritten by the slot's, and the intervening writes' offsets
-  are disjoint from the slot's.  The join has the presence it needs: `ei` is the
-  caller's own stack slot, and the staging wrote it.
-
-So the definition does **not** remove presence — it removes the *reasoning*: four
-proofs' byte-at-a-time bookkeeping become three map lemmas, and `_above`/`_below`
-stay where they are needed (the commutation) instead of being presented as
-prerequisites of the absorption.  **A definition can only remove a hypothesis if it
-is the definition of the same object**; here the append is the object, so the
-hypothesis stays.
+What the canonical form would have bought is still worth naming, because it is what
+the direct induction pays instead: position preservation and extensionality as map
+congruences.  `List.map` cannot express `writeByte`'s first-occurrence semantics
+without duplicate-freedom, so those two facts must come from the induction, cell by
+cell.
 
 **Neither count is reachable with commutations alone, and the typecheck says why.**
 The statement typechecks with its conclusion as a hypothesis (the produced-form
