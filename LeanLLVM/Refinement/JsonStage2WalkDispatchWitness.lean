@@ -1647,6 +1647,44 @@ theorem walkIfEnd74_at {calls : Calls} {m0 : Mem}
     rfl
   exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
 
+/-- `cond.end.i`'s successor at a state-stack byte of at least `2`: the test's cell, at
+`cleanup104.i`. -/
+def clS₈ (s : State) : State :=
+  { s.bind "%16" (.int 1 (0 : BitVec 1)) with pc := "cleanup104.i", pre := some s.pc }
+
+/-- `cleanup104.i`: the entry's position written at `%e + 8`, at `if.then`. -/
+def clS₉ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat) (s : State) : State :=
+  { { s with
+      env := ("%off1.i.i45", .ptr (C.stage.e + 8)) :: s.env
+      mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- **`cond.end.i` at a state-stack byte of at least `2`.**  `%15 ult 2` is false, so
+the run takes the refusal store rather than the value path. -/
+theorem clStep₈ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "cond.end.i")
+    {v : BitVec 8} (h15 : evalOperand s (.reg "%15") = some (.int 8 v))
+    (hbit : evalICmp .ult v (BitVec.ofNat 8 2) = 0) :
+    WalkLink calls G C s { C with block := "cleanup104.i" } (clS₈ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.cond_end_i_at G C s hInv hblock h15
+  rw [hs'] at hl
+  simp only [hbit] at hl
+  simp only [if_neg (by decide : ¬ ((0 : BitVec 1) = 1))] at hl
+  exact hl
+
+/-- **`cleanup104.i`.**  The refusal's offset store: the entry's position goes to
+`%e + 8` and the edge is the refusal copy. -/
+theorem clStep₉ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "cleanup104.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    WalkLink calls G C s { C with block := "if.then", eoff := j, refusal := true }
+      (clS₉ C j s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.cleanup104_i_at G C s hInv hblock hv he hj hj64
+  rw [hs'] at hl
+  exact hl
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.refusePrice_of_le
@@ -1685,3 +1723,5 @@ theorem walkIfEnd74_at {calls : Calls} {m0 : Mem}
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_mismatched
 #print axioms LeanLLVM.Refinement.WalkScope.mlStep₆c
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd74_at
+#print axioms LeanLLVM.Refinement.WalkScope.clStep₈
+#print axioms LeanLLVM.Refinement.WalkScope.clStep₉
