@@ -72,6 +72,7 @@ the arbitrary `sub` the record's obligation names.  Passing between the two is t
 first block's helper contract — what the selection's `s2_init` returns — and it is
 the walk's first read of `sub`, not a fact about the pinned text.
 -/
+import LeanLLVM.Refinement.JsonStage2WalkPure
 import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
 import LeanLLVM.Refinement.JsonStage2WalkTraverse
@@ -205,6 +206,83 @@ theorem walkBackFalse_step {calls : Calls} (s : State) {p : String}
   dsimp only [State.bind]
   simp only [execTerm, evalOperand, lookupName_cons_self, hpc]
   simp
+
+/-- A one-bit value is zero or one: every `icmp` the tail tests is a `BitVec 1`, so
+the two arms below are exhaustive and a step stated with the bit's `if` covers
+both. -/
+theorem walkBitVec1_zero_or_one (b : BitVec 1) : b = 0 ∨ b = 1 := by
+  revert b
+  decide
+
+/-! ### The exit's tail blocks
+
+Three of the tail's blocks are steps rather than links, because what the exit owes
+is a run to the return and not a measure's non-increase.  `if.then485.i` is the
+depth's zero test — the dispatch's `icmp .eq i32 %sp.i.1, 0`, whose bit names
+`if.end490.i` or `if.then488.i`; `if.end490.i` is the root-done flag's last test,
+a load of `%root_done.i` and the `icmp .eq i32` of its four bytes against zero. -/
+
+/-- **`if.then485.i`'s step.**  The depth's zero test, at the register the merge
+left: the bit is `%sp.i.1 == 0`, and the terminator takes `if.end490.i` on it and
+`if.then488.i` off it. -/
+theorem walkIfThen485Step {calls : Calls} (s : State) (hpc : s.pc = "if.then485.i")
+    {spv : Nat}
+    (hsp : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv))) :
+    step calls stage2Body s =
+      .jump { (s.bind "%48"
+          (.int 1 (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0)))) with
+        pc := (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+          then "if.end490.i" else "if.then488.i")
+        pre := some s.pc } := by
+  have hden : denoteCode calls walkIf_then485_i.instrs s =
+      some (s.bind "%48"
+        (.int 1 (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0)))) := by
+    simp only [walkIf_then485_i]
+    rw [← stateAt_self s]
+    rw [denoteCode_icmp_eq_imm_w (calls := calls) (env := s.env) (s := s)
+      (d := "%48") (a := "%sp.i.1") (w := 32) (x := BitVec.ofNat 32 spv)
+      (c := BitVec.ofNat 32 0) (by simpa [lookupName] using hsp)]
+    rfl
+  have hterm : walkIf_then485_i.term =
+      Term.condbr (Operand.reg "%48") "if.end490.i" "if.then488.i" := rfl
+  simp only [step, hpc, walkIf_then485_i_find, hden, hterm]
+  dsimp only [State.bind]
+  simp only [execTerm, evalOperand, lookupName_cons_self, hpc]
+  rcases walkBitVec1_zero_or_one (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0))
+    with h | h <;> simp [h]
+
+/-- **`if.end490.i`'s step.**  The root-done flag's last test: the four bytes at
+`%root_done.i` are `%.pr`, and its zero test is the bit that takes
+`if.then492.i` — the refusal copy — or `s2_walk.exit`. -/
+theorem walkIfEnd490Step {calls : Calls} (s : State) (hpc : s.pc = "if.end490.i")
+    {rd : Nat} {v : BitVec 32}
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s.mem rd 4 = some (natToBytes v.toNat 4)) :
+    step calls stage2Body s =
+      .jump { ((s.bind "%.pr" (.int 32 v)).bind "%tobool491.not.i"
+          (.int 1 (evalICmp .eq v (BitVec.ofNat 32 0)))) with
+        pc := (if evalICmp .eq v (BitVec.ofNat 32 0) = 1 then "if.then492.i"
+          else "s2_walk.exit")
+        pre := some s.pc } := by
+  have hden : denoteCode calls walkIf_end490_i.instrs s =
+      some ((s.bind "%.pr" (.int 32 v)).bind "%tobool491.not.i"
+        (.int 1 (evalICmp .eq v (BitVec.ofNat 32 0)))) := by
+    simp only [walkIf_end490_i]
+    conv_lhs => rw [← stateAt_self s]
+    rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32 (calls := calls)
+      (env := s.env) (s := s)
+      (d := "%.pr") (p := "%root_done.i") (a := rd) (v := v) hroot hread]
+    rw [denoteCode_icmp_eq_imm_w (calls := calls)
+      (env := ("%.pr", .int 32 v) :: s.env) (s := s)
+      (d := "%tobool491.not.i") (a := "%.pr") (w := 32) (x := v)
+      (c := BitVec.ofNat 32 0) (by simp [lookupName])]
+    rfl
+  have hterm : walkIf_end490_i.term =
+      Term.condbr (Operand.reg "%tobool491.not.i") "if.then492.i" "s2_walk.exit" := rfl
+  simp only [step, hpc, walkIf_end490_i_find, hden, hterm]
+  dsimp only [State.bind]
+  simp only [execTerm, evalOperand, lookupName_cons_self, hpc]
+  rcases walkBitVec1_zero_or_one (evalICmp .eq v (BitVec.ofNat 32 0)) with h | h <;> simp [h]
 
 /-- **The back edge, at the state the next pass reads.**  `walkBack_step`'s four
 facts at `cleanup478Out`, so the header's pass has its two `phi` values and its
@@ -1028,6 +1106,8 @@ theorem walkCredit_long_string :
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen485Step
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd490Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkBackFalse_step
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_k
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_sp
