@@ -51,29 +51,28 @@ untouched here.  Those three are stated, not assumed away, and
 `stage2WalkCompletes_of_premises`/`stage2WalkObligation_of_premises` is the exact
 shape of what a dispatch supplies.
 
-The seed's residue is not a trace and is enumerated rather than assumed.  The three
-block runs `walkSeedPrefix_runFuel` takes are `entry`'s fifty-seven instructions
-(`walkEntry_denote`), `while.body.i.lr.ph`'s five `getelementptr`s
-(`walkPreheader_denote`) and `while.body.i`'s first pass
-(`whileBodyFirst_denote`), plus the entry test's bit and the header's two loads.
-`walkEntry_denote`'s hypothesis list is what the residue is made of, and every item
-in it is one of four kinds: the eighteen register bindings, which are
-`EntryState`'s own argument list read at `stage2Body.params`; five region-separation
-facts, which are `WalkStage.separate` at the two cursor slots; the two cursor-slot
-reads, which are the geometry's `ndstRead`/`nevRead`; and the word facts —
-`0 < G.b`, `G.b < 2^64`, `G.ep < 2^64`, and the counts `G.nxp`, `G.dstcap`,
-`G.evcap`, `G.ndst0`, `G.nev0` inside their words.  Every one of them is the
-precondition's: `Γ_stage2.pre` states the three counts (`nxp`, `dstcap`, `evcap`),
-the two addresses (`0 < b`, `b < 2^64`, `ep < 2^64`), and `nep` follows from the
-stream, which is what `Stage2Run`'s
-`nxpLt`/`dstcapLt`/`evcapLt`/`nepLt`/`bPos`/`bLt`/`epLt` read at the *report*, and
-`G.n` is below the document's `2 ^ 32` bound (`WalkGeom.n_lt`).  So the seed's
-three runs are environment reads, not a trace — the record grants every fact they
-ask — which is why the four premises reduce to the dispatch's chain and the exit's
-tail.  The final state is `walkSeedFinalState`, whose cursor is the entry run's
-`next + 28` (the four `alloca`s `stage2AllocaWrites` names); the state the three
-blocks leave and the state the loop reads are one state, field for field.
+The seed's run is not a residue any more.  `JsonStage2WalkSeedAtEntry` discharges
+every hypothesis `walkSeedPrefix_runFuel` takes at the state the record starts
+from: the entry block's environment is `stage2Args`'s list (`walkEntryState_env`),
+the entry run's own hypothesis list is the argument list read at `stage2Body.params`
+plus `WalkStage.separate`'s five separations at the two cursor slots, the two
+cursor-slot reads and the word facts the geometry carries; the preheader and the
+header's first pass are their own `_denote` results; the two loads the header takes
+are the geometry's (`walkSeedPrefix_entry_geometry`), transported across the one
+eight-byte cursor store the header makes; and the state the three blocks leave is
+`walkSeedFinalState` field for field — the environment `walkSeedFinalEnv`, the
+memory `walkEntryMem`, and the cursor's `next + 28` (the four `alloca`s
+`stage2AllocaWrites` names).
+
+One hypothesis is *not* discharged and is not a residue of this file: the entry
+block calls `s2_init`, and `walkEntry_denote` is stated at
+`stage2Calls stage2SubCalls`.  So the seed's run is proved at the reference call
+selection, while `WalkPremises`'s seed conjunct is stated at `stage2Calls sub` for
+the arbitrary `sub` the record's obligation names.  Passing between the two is the
+first block's helper contract — what the selection's `s2_init` returns — and it is
+the walk's first read of `sub`, not a fact about the pinned text.
 -/
+import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
 import LeanLLVM.Refinement.JsonStage2WalkTraverse
 
@@ -216,6 +215,30 @@ def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
       (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
       step calls stage2Body s1 = .jump s2 ∧
       step calls stage2Body s2 = .ret v sret
+
+/-- **The empty entry stream's flush arm.**  The entry's own step and the refusal
+copy reach a return, inside the finalisation allowance, whenever the entry count
+is zero.
+
+The empty stream is the all-whitespace document: a real input the reference
+*refuses* and the record admits, so it is a branch of the completion rather than a
+clause on the precondition.  The count is the entry state's own `%nep` — the ABI's
+fourth argument, and nothing the entry block computes — so the premise reads it
+from the state instead of taking it as a number; `nep = 0` selects the entry's
+`if.then492.i` arm (`walkEntry_step`'s zero branch, `walkEntryJump`), whose store
+and `if.then`'s copy are the refusal arm's (`walkIfThenBlock_denote`), and
+`if.end` returns the refusal bit (`walkIfEnd_step`'s `0` arm).
+
+The allowance is `stage2FinalisationAllowance`, which is the term `stage2Budget`
+carries whatever the counts are: one step for the entry, one for the flush block,
+one for the copy and one for the return, so the budget covers the arm at `nep = 0`
+and at every document length. -/
+def WalkFlush (calls : Calls) (v0 : Value) : Prop :=
+  ∀ (s : State), s.pc = "entry" →
+    (∃ nep : Nat,
+      lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 nep)) ∧ nep = 0) →
+    ∃ (q : Nat) (m : Mem), q ≤ stage2FinalisationAllowance ∧
+      runFuel calls q stage2Body s = some (.ret v0 m)
 
 /-! ### What a dispatch proof still owes
 
@@ -685,7 +708,15 @@ admits: a geometry whose numbers are the argument list's and a staging of the
 walk's own objects — both now constructed (`walkGeom_at_pre`, `walkStage_at_pre`,
 and `walkPremises_of_parts` reads this definition at the pair they give) — the
 seed's three-step prefix to the loop head, the invariant there, and the loop's step
-at the value the exit returns (`WalkDispatch` beside `WalkExit`). -/
+at the value the exit returns (`WalkDispatch` beside `WalkExit`).
+
+The seed conjunct is stated at `stage2Calls sub`, and the entry block's `s2_init`
+call is the one place the selection enters it: the run itself is proved at
+`stage2Calls stage2SubCalls` (`JsonStage2WalkSeedAtEntry`'s
+`walkSeedPrefix_entry_geometry`), so a `sub` other than the reference selection owes
+its own first block's call outcome.  That is the helper contract, and it is named
+here rather than absorbed: the premise is the statement the completion consumes, not
+the statement the reference run proves. -/
 def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
   ∀ (a13 : List Value) (mem : Mem) (next : Nat),
     Γ_stage2.pre a13 mem next →
@@ -696,18 +727,19 @@ def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : 
         .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
         .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] ∧
-      0 < G.nep ∧
-      (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
-          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
-        runFuel (stage2Calls sub) n stage2Body
+      ((G.nep = 0 ∧ ∃ v0 : Value, WalkFlush (stage2Calls sub) v0) ∨
+        (0 < G.nep ∧
+        (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
+            (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+          runFuel (stage2Calls sub) n stage2Body
+            (walkSeedFinalState G S
+              (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+              (entryPos G 0) (entryByte G 0))) ∧
+        WalkInv G (walkSeed G S)
           (walkSeedFinalState G S
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-            (entryPos G 0) (entryByte G 0))) ∧
-      WalkInv G (walkSeed G S)
-        (walkSeedFinalState G S
-          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-          (entryPos G 0) (entryByte G 0)) ∧
-      (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)
+            (entryPos G 0) (entryByte G 0)) ∧
+        (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)))
 
 /-- **What a dispatch supplies, at the geometry and the stage the record gives.**
 A proof of `WalkPremises` no longer has to invent a geometry and a staging: the two
@@ -726,61 +758,113 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {su
         .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
         .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] →
-      0 < G.nep ∧
-      (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
-          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
-        runFuel (stage2Calls sub) n stage2Body
+      ((G.nep = 0 ∧ ∃ v0 : Value, WalkFlush (stage2Calls sub) v0) ∨
+        (0 < G.nep ∧
+        (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
+            (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+          runFuel (stage2Calls sub) n stage2Body
+            (walkSeedFinalState G S
+              (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+              (entryPos G 0) (entryByte G 0))) ∧
+        WalkInv G (walkSeed G S)
           (walkSeedFinalState G S
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-            (entryPos G 0) (entryByte G 0))) ∧
-      WalkInv G (walkSeed G S)
-        (walkSeedFinalState G S
-          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-          (entryPos G 0) (entryByte G 0)) ∧
-      (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)) :
+            (entryPos G 0) (entryByte G 0)) ∧
+        (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)))) :
     WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot := by
   intro a13 mem next hpre hst
   obtain ⟨G, S, hnext, hargs⟩ := walkStage_at_pre hpre hst
-  obtain ⟨hn, hseed, hInv, hloop⟩ := h a13 mem next G S hpre hst hnext hargs
-  exact ⟨mem, G, S, hnext, hargs, hn, hseed, hInv, hloop⟩
+  exact ⟨mem, G, S, hnext, hargs, h a13 mem next G S hpre hst hnext hargs⟩
+
+/-- **The ABI's fourth argument is the entry state's `%nep`.**  The thirteen
+parameters' prefix of the flattened body's list is the ABI's own, so the entry
+state's environment binds `%nep` to the fourth argument and to nothing the entry
+block computes: the empty-stream branch reads the count from the state it is given,
+not from a number a proof supplies. -/
+theorem walkEntryState_nep {b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat}
+    {mem : Mem} {next : Nat} {d c ctype cst tok s z e : Nat} :
+    lookupName
+      (EntryState stage2Body
+        (stage2Args [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
+          .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
+          .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
+          .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err] d c ctype cst tok s z e)
+        mem next).env "%nep" = some (.int 64 (BitVec.ofNat 64 nep)) := by
+  simp [EntryState, stage2Body, stage2Args, stage2StagingArgs, List.zip, List.map,
+    List.zipWith, lookupName]
+
+/-- **The budget carries the finalisation allowance at every staging**, so the
+empty stream's flush arm is inside it: the record's budget is
+`32·nep + 8·n + 32·nxp + 32` and the arm costs at most the last term. -/
+theorem walkBudget_ge_finalisation {mem : Mem}
+    {b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat} :
+    stage2FinalisationAllowance ≤
+      stage2Budget [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
+        .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
+        .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
+        .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err] mem := by
+  simp only [stage2Budget, stage2EntryAllowance, stage2ByteAllowance,
+    stage2PositionAllowance, stage2FinalisationAllowance]
+  omega
 
 /-- **The completion at the record's own budget**, from the premises the four
 obstructions name: the seed's prefix at the ABI's entry state, the invariant at the
 loop head, and the loop's step.  The budget is `stage2Budget` at `a13`, which
-`walkGeom_at_pre` identifies with the geometry's numbers. -/
+`walkGeom_at_pre` identifies with the geometry's numbers.
+
+The empty entry stream is a branch of its own: at `nep = 0` the entry's test takes
+its zero arm and `WalkFlush` completes the run inside the finalisation allowance,
+which `stage2Budget` carries at every staging (`walkBudget_ge_finalisation`).  The
+other branch is the loop, and the two are exhaustive because the count is a
+`Nat`. -/
 theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     {sub : Calls} (h : WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot) :
     Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot sub := by
   intro a13 mem next hpre hstaged
-  obtain ⟨m0, G, S, hnext, hargs, hn, hseed, hInv, hloop⟩ :=
-    h a13 mem next hpre hstaged
-  obtain ⟨v, hloopv⟩ := hloop
-  obtain ⟨v', m, hrun⟩ :=
-    walkCompletes_at_stage2Budget (calls := stage2Calls sub) (G := G)
-      (C := walkSeed G S)
-      (s := walkSeedFinalState G S
-        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-        (entryPos G 0) (entryByte G 0))
-      (sEntry := EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-      (v := v) (j := 3) (F := 27) (b := G.b) (ep := G.ep) (xp := G.xp) (dst := G.dst)
-      (dstcap := G.dstcap) (ndst := G.ndst) (ev := G.ev) (evcap := G.evcap)
-      (nev := G.nev) (err := G.err) (nxp := G.nxp)
-      hseed hInv (walkSeed_block G S)
-      (by simp only [walkSeed]; exact hn) hloopv (walkExitFits 27 (Nat.le_refl 27))
-      (WalkGeom.n_lt G) (WalkGeom.nep_lt G)
-  refine ⟨v', m, ?_⟩
-  rw [hargs] at hrun ⊢
-  rw [show stage2Budget
-      [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
-        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
-        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
-        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] mem
-    = stage2Budget
-      [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
-        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
-        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
-        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] m0 from rfl]
-  exact hrun
+  obtain ⟨m0, G, S, hnext, hargs, hbr⟩ := h a13 mem next hpre hstaged
+  rcases hbr with ⟨hzero, v0, hflush⟩ | ⟨hn, hseed, hInv, hloop⟩
+  · -- the empty entry stream: the entry's zero arm and the refusal copy
+    have hlen : ∃ nep : Nat,
+        lookupName (EntryState stage2Body
+            (stage2Args a13 d c ctype cst tok s z e) mem next).env "%nep" =
+          some (.int 64 (BitVec.ofNat 64 nep)) ∧ nep = 0 := by
+      refine ⟨G.nep, ?_, hzero⟩
+      rw [hargs]
+      exact walkEntryState_nep
+    obtain ⟨q, m, hq, hrun⟩ :=
+      hflush (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+        rfl hlen
+    refine ⟨v0, m, ?_⟩
+    rw [hargs] at hrun ⊢
+    exact runFuel_mono_le (le_trans hq walkBudget_ge_finalisation) hrun
+  · -- entries left: the seed, the invariant and the loop's step
+    obtain ⟨v, hloopv⟩ := hloop
+    obtain ⟨v', m, hrun⟩ :=
+      walkCompletes_at_stage2Budget (calls := stage2Calls sub) (G := G)
+        (C := walkSeed G S)
+        (s := walkSeedFinalState G S
+          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+          (entryPos G 0) (entryByte G 0))
+        (sEntry := EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+        (v := v) (j := 3) (F := 27) (b := G.b) (ep := G.ep) (xp := G.xp) (dst := G.dst)
+        (dstcap := G.dstcap) (ndst := G.ndst) (ev := G.ev) (evcap := G.evcap)
+        (nev := G.nev) (err := G.err) (nxp := G.nxp)
+        hseed hInv (walkSeed_block G S)
+        (by simp only [walkSeed]; exact hn) hloopv (walkExitFits 27 (Nat.le_refl 27))
+        (WalkGeom.n_lt G) (WalkGeom.nep_lt G)
+    refine ⟨v', m, ?_⟩
+    rw [hargs] at hrun ⊢
+    rw [show stage2Budget
+        [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+          .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+          .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+          .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] mem
+      = stage2Budget
+        [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+          .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+          .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+          .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] m0 from rfl]
+    exact hrun
 
 /-- **The obligation from the premises and its post.**  `Stage2WalkObligation` is
 the completion conjunct beside the post (`stage2WalkObligation_iff_completion`), so
@@ -893,6 +977,11 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.nep_lt
 #print axioms LeanLLVM.Refinement.WalkScope.walkStage_at_pre
 #print axioms LeanLLVM.Refinement.WalkScope.walkPremises_of_parts
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryState_nep
+#print axioms LeanLLVM.Refinement.WalkScope.walkBudget_ge_finalisation
+#print axioms LeanLLVM.Refinement.WalkScope.WalkFlush
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedPrefix_entry
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeedPrefix_entry_geometry
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_premises
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_premises
 
