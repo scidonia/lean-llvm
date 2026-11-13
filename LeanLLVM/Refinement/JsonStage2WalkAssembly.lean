@@ -1873,6 +1873,52 @@ theorem readBytes_frame {mem mem' : Mem} {R : List (Nat × Nat)} {a n : Nat}
           simp only [hmem]
           rw [ih (a := a + 1) (fun i hi q hq hc => hout (i + 1) (by omega) q hq (by omega))]
 
+/-- **A region's membership gives the existential form the frame consumes.**  The containment
+lemmas state the absolute bound at the region's own start; `stage2WriteStores_frame` asks for a
+region of the list containing the store.  One bridge serves all five lists. -/
+theorem exists_mem_of_abs {R : List (Nat × Nat)} {q : Nat × Nat} (hq : q ∈ R)
+    {a len : Nat} (h : q.1 ≤ a ∧ a + len ≤ q.1 + q.2) :
+    ∃ r ∈ R, r.1 ≤ a ∧ a + len ≤ r.1 + r.2 :=
+  ⟨q, hq, h⟩
+
+/-- The initialisation's stores, in the existential form, from `(sAddr, 120) ∈ R`. -/
+theorem s2InitStores_cover {R : List (Nat × Nat)} (sAddr b ep : Nat) (n nb : BitVec 64)
+    (hR : (sAddr, 120) ∈ R) :
+    ∀ p ∈ s2InitStores sAddr b n.toNat nb.toNat ep,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2 :=
+  fun p hp => exists_mem_of_abs hR (s2InitStores_inside sAddr b ep n nb p hp)
+
+/-- Segment 2's first stores, from the two regions' membership. -/
+theorem walkSeg2Ws1_cover {R : List (Nat × Nat)} (sAddr zAddr nep xp nxp dst : Nat)
+    (hR1 : (sAddr, 120) ∈ R) (hR2 : (zAddr, 64) ∈ R) :
+    ∀ p ∈ walkSeg2Ws1 sAddr zAddr nep xp nxp dst,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2 := by
+  intro p hp
+  rcases walkSeg2Ws1_inside sAddr zAddr nep xp nxp dst p hp with h | h
+  · exact exists_mem_of_abs hR1 h
+  · exact exists_mem_of_abs hR2 h
+
+/-- Segment 2's middle stores, from the log's membership. -/
+theorem walkSeg2Ws2_cover {R : List (Nat × Nat)} (zAddr v1 dstcap ev : Nat)
+    (hR : (zAddr, 64) ∈ R) :
+    ∀ p ∈ walkSeg2Ws2 zAddr v1 dstcap ev,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2 :=
+  fun p hp => exists_mem_of_abs hR (walkSeg2Ws2_inside zAddr v1 dstcap ev p hp)
+
+/-- Segment 2's last stores, from the log's membership. -/
+theorem walkSeg2Ws3_cover {R : List (Nat × Nat)} (zAddr v2 evcap : Nat)
+    (hR : (zAddr, 64) ∈ R) :
+    ∀ p ∈ walkSeg2Ws3 zAddr v2 evcap,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2 :=
+  fun p hp => exists_mem_of_abs hR (walkSeg2Ws3_inside zAddr v2 evcap p hp)
+
+/-- Segment 3's stores, from the cursor record's membership. -/
+theorem walkSeg3Stores_cover {R : List (Nat × Nat)} (b n ep nep eAddr cAddr : Nat)
+    (hR : (cAddr, 1192) ∈ R) :
+    ∀ p ∈ walkSeg3Stores b n ep nep eAddr cAddr,
+      ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2 :=
+  fun p hp => exists_mem_of_abs hR (walkSeg3Stores_inside b n ep nep eAddr cAddr p hp)
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
