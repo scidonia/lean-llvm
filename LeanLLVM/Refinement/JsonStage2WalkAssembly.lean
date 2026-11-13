@@ -254,6 +254,15 @@ shape too, and `walkGepLoadBrStep` is one: it serves `land.lhs.true357.i` direct
 `land.rhs.i` and `while.body370.i` after their `phi` runs, three blocks for one shape
 under either reading.
 
+**A call block's terminator is a step of its own.**  Class F's links never compute their
+terminators: `WalkLink.pureCore` takes the term's `Ctrl` as a hypothesis, so the term is
+the caller's to prove and the link's target stays existential.  A chain step must *name*
+its successor, so the terminator has to be computed after all — and the only form in
+which `execTerm`'s match reduces is the one whose `denote` is restored *at* the state the
+step is stated at (`walkCondEnd349_denote` with `env := s.env`, then `stateAt_self`); a
+`denote` stated through `stateAt s.env s` leaves the goal's `denoteCode` argument
+different from the block's and the match stays under its catch-all.
+
 Two of the shapes' statements are not free choices, and each cost a round to find.
 A `phi`-headed block's target carries `pre := some (s.bindAll vs).pc`, not `some s.pc`:
 `bindAll` extends the environment and its `pc` is not definitionally the source's, so
