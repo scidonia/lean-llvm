@@ -5639,6 +5639,115 @@ def s2StringBodyBudget (args : List Value) : Nat :=
       1 + (nxp.toNat + 1) * 2 + 5
   | _ => 0
 
+/-! ### The refused arm's memory, named
+
+Six `writeBytes` deep, the arm's memory is past the point where a statement's
+parenthesisation is transcribable — the module's rule four, met from the other
+side: the nesting limit is not only about reaching a subterm, it is about the
+statement being writable at all.  The three memories are named here, and the two
+steps the arm spends on them are equalities between the identifiers. -/
+
+/-- The refused arm's memory as the body writes it: the scan's cursor word,
+`if.end`'s clear, the callee's offset, its cursor word, then the record's three. -/
+def s2StringBodyRefusedRun (mem : Mem) (ei xj c1 e' : Nat)
+    (Woff Wj R0 R1 R2 : List UInt8) : Mem :=
+  writeBytes
+    (writeBytes
+      (writeBytes
+        (writeBytes
+          (writeBytes
+            (writeBytes
+              (writeBytes mem xj (wordBytes 8 c1))
+              ei (natToBytes (0#64).toNat 8))
+            ei Woff)
+          xj Wj)
+        e' R0)
+      (e' + (8#64).toNat) R1)
+    (e' + (16#64).toNat) R2
+
+/-- The same chain with the scan's cursor write erased — the join's left side. -/
+def s2StringBodyRefusedErased (mem : Mem) (ei xj e' : Nat)
+    (Woff Wj R0 R1 R2 : List UInt8) : Mem :=
+  writeBytes
+    (writeBytes
+      (writeBytes
+        (writeBytes
+          (writeBytes
+            (writeBytes mem ei (natToBytes (0#64).toNat 8))
+            ei Woff)
+          xj Wj)
+        e' R0)
+      (e' + (8#64).toNat) R1)
+    (e' + (16#64).toNat) R2
+
+/-- The model's refused memory at this call, in its own write order — the join's
+right side. -/
+def s2StringBodyRefusedModel (mem : Mem) (ei xj e' : Nat)
+    (Woff Wj R0 R1 R2 : List UInt8) : Mem :=
+  writeBytes
+    (writeBytes
+      (writeBytes
+        (writeBytes
+          (writeBytes mem e' R0) (e' + (8#64).toNat) R1)
+        (e' + (16#64).toNat) R2)
+      xj Wj)
+    ei Woff
+
+/-- **The scan's cursor write is erased**: `if.end`'s clear and the callee's offset
+are adjacent and collapse, and one crossing then carries the callee's cursor write
+past the erased one. -/
+theorem s2StringBodyRefusedRun_erase (mem : Mem) {ei xj c1 e' : Nat}
+    {Woff Wj R0 R1 R2 : List UInt8}
+    (hWoff : Woff.length = 8)
+    (hxj : readBytes mem xj (wordBytes 8 c1).length ≠ none)
+    (hei : readBytes mem ei Woff.length ≠ none)
+    (hlen : (wordBytes 8 c1).length ≤ Wj.length)
+    (hdis : xj + (wordBytes 8 c1).length ≤ ei ∨ ei + Woff.length ≤ xj) :
+    s2StringBodyRefusedRun mem ei xj c1 e' Woff Wj R0 R1 R2 =
+      s2StringBodyRefusedErased mem ei xj e' Woff Wj R0 R1 R2 := by
+  simp only [s2StringBodyRefusedRun, s2StringBodyRefusedErased]
+  rw [writeBytes_writeBytes_same
+    (writeBytes mem xj (wordBytes 8 c1))
+    ei (natToBytes (0#64).toNat 8) Woff (by simp [natToBytes_length, hWoff])]
+  rw [writeBytes_writeBytes_same mem ei
+    (natToBytes (0#64).toNat 8) Woff (by simp [natToBytes_length, hWoff])]
+  exact congrArg (fun m =>
+      writeBytes (writeBytes (writeBytes m e' R0) (e' + (8#64).toNat) R1)
+        (e' + (16#64).toNat) R2)
+    (writeBytes_absorb_single mem hxj hei hlen hdis)
+
+/-- **The erased chain is the model's**: the join at the five present regions. -/
+theorem s2StringBodyRefusedErased_join (mem : Mem) {ei xj e' : Nat}
+    {Woff Wj R0 R1 R2 : List UInt8}
+    (hWoff : Woff.length = 8)
+    (hei : readBytes mem ei Woff.length ≠ none)
+    (hxj : readBytes mem xj Wj.length ≠ none)
+    (he0 : readBytes mem e' R0.length ≠ none)
+    (he1 : readBytes mem (e' + (8#64).toNat) R1.length ≠ none)
+    (he2 : readBytes mem (e' + (16#64).toNat) R2.length ≠ none)
+    (h1 : ei + Woff.length ≤ xj ∨ xj + Wj.length ≤ ei)
+    (h2 : ei + Woff.length ≤ e' ∨ e' + R0.length ≤ ei)
+    (h3 : ei + Woff.length ≤ e' + (8#64).toNat ∨
+      e' + (8#64).toNat + R1.length ≤ ei)
+    (h4 : ei + Woff.length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + R2.length ≤ ei)
+    (h5 : xj + Wj.length ≤ e' ∨ e' + R0.length ≤ xj)
+    (h6 : xj + Wj.length ≤ e' + (8#64).toNat ∨
+      e' + (8#64).toNat + R1.length ≤ xj)
+    (h7 : xj + Wj.length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + R2.length ≤ xj)
+    (h8 : e' + R0.length ≤ e' + (8#64).toNat ∨
+      e' + (8#64).toNat + R1.length ≤ e')
+    (h9 : e' + R0.length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + R2.length ≤ e')
+    (h10 : e' + (8#64).toNat + R1.length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + R2.length ≤ e' + (8#64).toNat) :
+    s2StringBodyRefusedErased mem ei xj e' Woff Wj R0 R1 R2 =
+      s2StringBodyRefusedModel mem ei xj e' Woff Wj R0 R1 R2 := by
+  simp only [s2StringBodyRefusedErased, s2StringBodyRefusedModel]
+  exact s2StringBodyMemory_refused mem hWoff hei hxj he0 he1 he2 h1 h2 h3 h4 h5 h6
+    h7 h8 h9 h10
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
