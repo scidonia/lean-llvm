@@ -802,13 +802,13 @@ seed's three-step prefix to the loop head, the invariant there, and the loop's s
 at the value the exit returns (`WalkDispatch` beside `WalkExit`).
 
 The seed conjunct is stated at `stage2Calls sub`, and the entry block's `s2_init`
-call is the one place the selection enters it: the run itself is proved at
-`stage2Calls stage2SubCalls` (`JsonStage2WalkSeedAtEntry`'s
-`walkSeedPrefix_entry_geometry`), so a `sub` other than the reference selection owes
-its own first block's call outcome.  That is the helper contract, and it is named
-here rather than absorbed: the premise is the statement the completion consumes, not
-the statement the reference run proves. -/
-def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
+call is the one place the selection enters it, and the premise names the selection
+the pipeline uses: `stage2Calls stage2SubCalls`, which is what
+`JsonStage2WalkSeedAtEntry`'s `walkSeedPrefix_entry_geometry` is proved at and what
+`Stage2WalkObligation` states.  At any other selection the completion is false
+rather than merely unproved — a selection may leave `s2_init` unanswered — so the
+premise does not quantify over one. -/
+def WalkPremises (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
   ∀ (a13 : List Value) (mem : Mem) (next : Nat),
     Γ_stage2.pre a13 mem next →
     stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot →
@@ -820,11 +820,11 @@ def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : 
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] ∧
       ((G.nep = 0 ∧
           ∃ v0 : Value,
-            WalkFlush (stage2Calls sub) v0 a13 G.nep d c ctype cst tok s z e) ∨
+            WalkFlush (stage2Calls stage2SubCalls) v0 a13 G.nep d c ctype cst tok s z e) ∨
         (0 < G.nep ∧
-        (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
+        (∀ n, runFuel (stage2Calls stage2SubCalls) (3 + n) stage2Body
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
-          runFuel (stage2Calls sub) n stage2Body
+          runFuel (stage2Calls stage2SubCalls) n stage2Body
             (walkSeedFinalState G S
               (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
               (entryPos G 0) (entryByte G 0))) ∧
@@ -832,7 +832,7 @@ def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : 
           (walkSeedFinalState G S
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
             (entryPos G 0) (entryByte G 0)) ∧
-        (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)))
+        (∃ v : Value, WalkLoopStep (stage2Calls stage2SubCalls) G v 27)))
 
 /-- **What a dispatch supplies, at the geometry and the stage the record gives.**
 A proof of `WalkPremises` no longer has to invent a geometry and a staging: the two
@@ -841,7 +841,7 @@ precondition and the adapter's staging, so the seed's prefix, the invariant at t
 loop head and the loop's step are owed at a pair the prover *is given*.  This is the
 shape the dispatch's proof is written against, and it is why the two constructions
 are theorems rather than fields of the premise. -/
-theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
+theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (h : ∀ (a13 : List Value) (mem : Mem) (next : Nat) (G : WalkGeom mem)
         (S : WalkStage G),
       Γ_stage2.pre a13 mem next →
@@ -853,11 +853,11 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {su
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] →
       ((G.nep = 0 ∧
           ∃ v0 : Value,
-            WalkFlush (stage2Calls sub) v0 a13 G.nep d c ctype cst tok s z e) ∨
+            WalkFlush (stage2Calls stage2SubCalls) v0 a13 G.nep d c ctype cst tok s z e) ∨
         (0 < G.nep ∧
-        (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
+        (∀ n, runFuel (stage2Calls stage2SubCalls) (3 + n) stage2Body
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
-          runFuel (stage2Calls sub) n stage2Body
+          runFuel (stage2Calls stage2SubCalls) n stage2Body
             (walkSeedFinalState G S
               (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
               (entryPos G 0) (entryByte G 0))) ∧
@@ -865,8 +865,8 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {su
           (walkSeedFinalState G S
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
             (entryPos G 0) (entryByte G 0)) ∧
-        (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)))) :
-    WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot := by
+        (∃ v : Value, WalkLoopStep (stage2Calls stage2SubCalls) G v 27)))) :
+    WalkPremises d c ctype cst tok s z e nkSlot nxpSlot := by
   intro a13 mem next hpre hst
   obtain ⟨G, S, hnext, hargs⟩ := walkStage_at_pre hpre hst
   exact ⟨mem, G, S, hnext, hargs, h a13 mem next G S hpre hst hnext hargs⟩
@@ -896,8 +896,8 @@ which `stage2Budget` carries at every staging (`walkBudget_ge_finalisation`).  T
 other branch is the loop, and the two are exhaustive because the count is a
 `Nat`. -/
 theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    {sub : Calls} (h : WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot) :
-    Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot sub := by
+    (h : WalkPremises d c ctype cst tok s z e nkSlot nxpSlot) :
+    Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls := by
   intro a13 mem next hpre hstaged
   obtain ⟨m0, G, S, hnext, hargs, hbr⟩ := h a13 mem next hpre hstaged
   rcases hbr with ⟨hzero, v0, hflush⟩ | ⟨hn, hseed, hInv, hloop⟩
@@ -909,7 +909,7 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
   · -- entries left: the seed, the invariant and the loop's step
     obtain ⟨v, hloopv⟩ := hloop
     obtain ⟨v', m, hrun⟩ :=
-      walkCompletes_at_stage2Budget (calls := stage2Calls sub) (G := G)
+      walkCompletes_at_stage2Budget (calls := stage2Calls stage2SubCalls) (G := G)
         (C := walkSeed G S)
         (s := walkSeedFinalState G S
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
@@ -941,14 +941,14 @@ a dispatch that supplies `WalkPremises` and the record's post rule has the
 obligation.  Naming the two is the point: the completion is this module's, and the
 post half — the run's own region claim at the outcome — is not read here. -/
 theorem stage2WalkObligation_of_premises {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    {sub : Calls} (h : WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot)
+    (h : WalkPremises d c ctype cst tok s z e nkSlot nxpSlot)
     (hpost : ∀ args mem next,
       (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
-      ∀ o, BehFromState (stage2Calls sub) stage2Body
+      ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
           (EntryState stage2Body args mem next) o →
         (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
-    JsonStage2IR.Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub :=
-  (stage2WalkObligation_iff_completion d c ctype cst tok s z e nkSlot nxpSlot sub).2
+    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot :=
+  (stage2WalkObligation_iff_completion d c ctype cst tok s z e nkSlot nxpSlot).2
     ⟨stage2WalkCompletes_of_premises h, hpost⟩
 
 /-! ### The revolution's counted credit

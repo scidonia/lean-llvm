@@ -1689,44 +1689,6 @@ def Stage2WalkCompletes (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Ca
       (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
       = some (.ret v m)
 
-/-- **The standalone completion statement is the obligation's first conjunct**,
-beside the post's second.  The two directions are the adapter's precondition and
-`stage2Args_take13`: a caller's arguments are the flattened ones read at the
-thirteen-slot prefix, the staging goes with them, and the budget goes with both. -/
-theorem stage2WalkObligation_iff_completion
-    (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) :
-    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub ↔
-      Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot sub ∧
-        (∀ args mem next,
-          (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
-          ∀ o, BehFromState (stage2Calls sub) stage2Body
-              (EntryState stage2Body args mem next) o →
-            (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) := by
-  constructor
-  · intro h
-    refine ⟨?_, ?_⟩
-    · intro a13 mem next hpre hstaged
-      have hlen : a13.length = 13 := stage2Pre_length hpre
-      obtain ⟨v, m, hrun⟩ :=
-        (h (stage2Args a13 d c ctype cst tok s z e) mem next
-          (Γ_stage2at_pre hpre hstaged)).1
-      refine ⟨v, m, ?_⟩
-      simp only [Γ_stage2at] at hrun
-      rw [stage2Args_take13 a13 hlen] at hrun
-      exact hrun
-    · intro args mem next hpre o hbeh
-      exact (h args mem next hpre).2 o hbeh
-  · intro ⟨hcom, hpost⟩ args mem next hpre
-    obtain ⟨a13, hargs, hpre13, hstaged⟩ := hpre
-    subst hargs
-    have hlen : a13.length = 13 := stage2Pre_length hpre13
-    refine ⟨?_, hpost (stage2Args a13 d c ctype cst tok s z e) mem next
-      ⟨a13, rfl, hpre13, hstaged⟩⟩
-    obtain ⟨v, m, hrun⟩ := hcom a13 mem next hpre13 hstaged
-    refine ⟨v, m, ?_⟩
-    simp only [Γ_stage2at]
-    rw [stage2Args_take13 a13 hlen]
-    exact hrun
 
 /-- **A larger budget is not a second obligation.**  Completion at one budget is
 completion at every larger one (`runFuel_mono`); together with `runFuel`'s
@@ -1759,10 +1721,6 @@ theorem stage2WalkCompletes_mono {d c ctype cst tok s z e nkSlot nxpSlot : Nat} 
 -- above is a statement about the argument list and not about a match that accepts
 -- anything.
 #guard stage2Budget [] [] = 0
-
-/-- info: 'LeanLLVM.Refinement.stage2WalkObligation_iff_completion' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.stage2WalkObligation_iff_completion
 
 /-- info: 'LeanLLVM.Refinement.Stage2Run.walkPresent_of_written' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -2840,6 +2798,116 @@ theorem stage2Calls_num_fast_el1 (args : List Value) (mem : Mem) (next : Nat) :
     stage2Calls stage2SubCalls "num_fast_el1" args mem next =
       stage2NumFast args mem next := rfl
 
+open LeanLLVM.Refinement.JsonStage2IR
+
+/-- The stage-2 walk's obligation at a staging: the pinned body, run with the
+selection the pipeline gives it.
+
+The selection is `stage2SubCalls` and not a parameter.  `stage2Calls sub`
+forwards every symbol it does not answer itself to `sub`, so at an arbitrary
+selection the statement is not a stronger theorem but a false one: a selection may
+answer `s2_init` with nothing, and then the entry block has no run and the body
+completes at no budget.  The general form would need a named agreement per symbol
+(the helper contracts, one per forwarded call), and the pipeline does not need it:
+its environment is `stage2Calls stage2SubCalls`, which is the selection the walk's
+proofs are written at and the one this obligation names.
+
+`Stage2WalkCompletes` keeps its own `sub`, because its general form is a true
+statement about completion at any selection; the obligation is where the selection
+stops being free. -/
+def Stage2WalkObligation (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
+  Satisfies (stage2Calls stage2SubCalls) stage2Body
+    (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot)
+
+/-- **The walk's obligation yields the record's post.**  At an argument list in
+`Γ_stage2.pre` whose seven appended objects are staged, the obligation at the
+adapter's arguments completes the pinned body, and the outcome it reaches
+satisfies `Γ_stage2`'s post at the ABI's own thirteen values: the two are one
+proposition, related by `stage2Args_take13`, so a proof of the walk needs no
+second statement of what it owes. -/
+theorem stage2_walk_yields_record {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (hwalk : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot)
+    {a13 : List Value} {mem : Mem} {next : Nat} (hpre : Γ_stage2.pre a13 mem next)
+    (hstaged : stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot) :
+    ∃ v m,
+      runFuel (stage2Calls stage2SubCalls)
+          ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget
+            (stage2Args a13 d c ctype cst tok s z e) mem)
+          stage2Body
+          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+        some (.ret v m) ∧
+      Γ_stage2.post a13 mem next (.ret v m) := by
+  obtain ⟨hcom, hpost⟩ := hwalk _ _ _ (Γ_stage2at_pre hpre hstaged)
+  obtain ⟨v, m, hrun⟩ := hcom
+  refine ⟨v, m, hrun, ?_⟩
+  have htake : (stage2Args a13 d c ctype cst tok s z e).take 13 = a13 :=
+    stage2Args_take13 a13 (stage2Pre_length hpre) d c ctype cst tok s z e
+  simpa [Γ_stage2at, htake] using hpost (.ret v m) (Or.inr ⟨_, hrun⟩)
+
+/-- The obligation's own vocabulary: a body's `Satisfies` is a completion at the
+record's budget and the post of the outcome it reaches. -/
+theorem Stage2WalkObligation.summary {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (h : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot) :
+    ∀ args mem next,
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
+      (∃ v m, runFuel (stage2Calls stage2SubCalls)
+          ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget args mem) stage2Body
+          (EntryState stage2Body args mem next) = some (.ret v m)) ∧
+      ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+          (EntryState stage2Body args mem next) o →
+        (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o := h
+
+/-- **The standalone completion statement is the obligation's first conjunct**,
+beside the post's second.  The two directions are the adapter's precondition and
+`stage2Args_take13`: a caller's arguments are the flattened ones read at the
+thirteen-slot prefix, the staging goes with them, and the budget goes with both. -/
+theorem stage2WalkObligation_iff_completion
+    (d c ctype cst tok s z e nkSlot nxpSlot : Nat) :
+    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot ↔
+      Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls ∧
+        (∀ args mem next,
+          (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
+          ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+              (EntryState stage2Body args mem next) o →
+            (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) := by
+  constructor
+  · intro h
+    refine ⟨?_, ?_⟩
+    · intro a13 mem next hpre hstaged
+      have hlen : a13.length = 13 := stage2Pre_length hpre
+      obtain ⟨v, m, hrun⟩ :=
+        (h (stage2Args a13 d c ctype cst tok s z e) mem next
+          (Γ_stage2at_pre hpre hstaged)).1
+      refine ⟨v, m, ?_⟩
+      simp only [Γ_stage2at] at hrun
+      rw [stage2Args_take13 a13 hlen] at hrun
+      exact hrun
+    · intro args mem next hpre o hbeh
+      exact (h args mem next hpre).2 o hbeh
+  · intro ⟨hcom, hpost⟩ args mem next hpre
+    obtain ⟨a13, hargs, hpre13, hstaged⟩ := hpre
+    subst hargs
+    have hlen : a13.length = 13 := stage2Pre_length hpre13
+    refine ⟨?_, hpost (stage2Args a13 d c ctype cst tok s z e) mem next
+      ⟨a13, rfl, hpre13, hstaged⟩⟩
+    obtain ⟨v, m, hrun⟩ := hcom a13 mem next hpre13 hstaged
+    refine ⟨v, m, ?_⟩
+    simp only [Γ_stage2at]
+    rw [stage2Args_take13 a13 hlen]
+    exact hrun
+
+/-- info: 'LeanLLVM.Refinement.stage2_walk_yields_record' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2_walk_yields_record
+
+/-- info: 'LeanLLVM.Refinement.Stage2WalkObligation.summary' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2WalkObligation.summary
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkObligation_iff_completion' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2WalkObligation_iff_completion
+
 /-- **`s2_init` answers its emitted call at every staging.**  It reads no memory,
 so nothing gates it. -/
 theorem stage2Init_answers (s b n nb ep : Nat) (mem : Mem) (next : Nat) :
@@ -2908,9 +2976,9 @@ theorem stage2WalkObligation_at_subCalls
       ∀ o, BehFromState (stage2Calls stage2SubCalls) JsonStage2IR.stage2Body
           (EntryState JsonStage2IR.stage2Body args mem next) o →
         (JsonStage2IR.Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
-    JsonStage2IR.Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
+    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot :=
   (stage2WalkObligation_iff_completion
-    d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls).2 ⟨hcom, hpost⟩
+    d c ctype cst tok s z e nkSlot nxpSlot).2 ⟨hcom, hpost⟩
 
 /-! ### The pin, and what it moves
 

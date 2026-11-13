@@ -82,8 +82,11 @@ the pipeline's stage-2 slot needs.
 
 Not discharged, and named with the obligation:
 
-* **`Satisfies (stage2Calls sub) stage2Body (Γ_stage2at st)`**, the walk's own
-  obligation.  Its first conjunct is the **completion budget**: a step count at
+* **`Satisfies (stage2Calls stage2SubCalls) stage2Body (Γ_stage2at st)`**, the
+  walk's own obligation, at the one selection the pipeline gives the body: at an
+  arbitrary `sub` the statement is false (a selection may leave `s2_init`
+  unanswered), so the general form would need a named helper agreement per
+  forwarded symbol rather than a stronger theorem.  Its first conjunct is the **completion budget**: a step count at
   which a 165-block loop returns.  Every later clause is downstream of it,
   because `Satisfies` states the post only of an outcome the run reaches, so the
   loop induction is the first obligation that resists and the six `Stage2Run`
@@ -1632,55 +1635,18 @@ theorem satisfies_calls_stage2 (d c ctype cst tok s z e nkSlot nxpSlot : Nat) {s
 
 /-! ### The named remainder
 
-The walk's obligation, as a proposition at the pinned body.  It is not proved
-here, and the first thing that resists is its completion conjunct: a step count
-at which a 165-block loop returns.  The six `Stage2Run` clauses — both cursors and
-their growth bounds, the arena's reserve slack, `Owns` over the two extents, the
-refusal bit, and `eoff ≤ n` — are what it owes once the run is reached, and the
-two walk facts `JsonStage2Body` names (one event record per entry, and the escaped
-bodies' lengths summing inside the document) are part of the same induction. -/
+The walk's obligation is stated in `JsonStage2Body`, beside the selection it names:
+`Stage2WalkObligation` is `Satisfies (stage2Calls stage2SubCalls)` at the pinned
+body, and the selection's six answers are that module's, so the statement cannot
+be made where `stage2Calls` is without also making the models.  It is not proved
+anywhere yet, and the first thing that resists is its completion conjunct: a step
+count at which a 165-block loop returns.  The six `Stage2Run` clauses — both
+cursors and their growth bounds, the arena's reserve slack, `Owns` over the two
+extents, the refusal bit, and `eoff ≤ n` — are what it owes once the run is
+reached, and the two walk facts `JsonStage2Body` names (one event record per
+entry, and the escaped bodies' lengths summing inside the document) are part of
+the same induction. -/
 
-/-- The stage-2 walk's obligation at a staging and a sub-unit selection. -/
-def Stage2WalkObligation (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) : Prop :=
-  Satisfies (stage2Calls sub) stage2Body (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot)
-
-/-- **The walk's obligation yields the record's post.**  At an argument list in
-`Γ_stage2.pre` whose seven appended objects are staged, the obligation at the
-adapter's arguments completes the pinned body, and the outcome it reaches
-satisfies `Γ_stage2`'s post at the ABI's own thirteen values: the two are one
-proposition, related by `stage2Args_take13`, so a proof of the walk needs no
-second statement of what it owes. -/
-theorem stage2_walk_yields_record {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
-    (hwalk : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub)
-    {a13 : List Value} {mem : Mem} {next : Nat} (hpre : Γ_stage2.pre a13 mem next)
-    (hstaged : stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot) :
-    ∃ v m,
-      runFuel (stage2Calls sub)
-          ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget
-            (stage2Args a13 d c ctype cst tok s z e) mem)
-          stage2Body
-          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
-        some (.ret v m) ∧
-      Γ_stage2.post a13 mem next (.ret v m) := by
-  obtain ⟨hcom, hpost⟩ := hwalk _ _ _ (Γ_stage2at_pre hpre hstaged)
-  obtain ⟨v, m, hrun⟩ := hcom
-  refine ⟨v, m, hrun, ?_⟩
-  have htake : (stage2Args a13 d c ctype cst tok s z e).take 13 = a13 :=
-    stage2Args_take13 a13 (stage2Pre_length hpre) d c ctype cst tok s z e
-  simpa [Γ_stage2at, htake] using hpost (.ret v m) (Or.inr ⟨_, hrun⟩)
-
-/-- The obligation's own vocabulary: a body's `Satisfies` is a completion at the
-record's budget and the post of the outcome it reaches. -/
-theorem Stage2WalkObligation.summary {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
-    (h : Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub) :
-    ∀ args mem next,
-      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
-      (∃ v m, runFuel (stage2Calls sub)
-          ((Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).budget args mem) stage2Body
-          (EntryState stage2Body args mem next) = some (.ret v m)) ∧
-      ∀ o, BehFromState (stage2Calls sub) stage2Body
-          (EntryState stage2Body args mem next) o →
-        (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o := h
 
 end LeanLLVM.Refinement.JsonStage2IR
 
@@ -1714,13 +1680,7 @@ end LeanLLVM.Refinement.JsonStage2IR
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonStage2IR.satisfies_calls_stage2
 
-/-- info: 'LeanLLVM.Refinement.JsonStage2IR.Stage2WalkObligation.summary' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonStage2IR.Stage2WalkObligation.summary
 
-/-- info: 'LeanLLVM.Refinement.JsonStage2IR.stage2_walk_yields_record' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonStage2IR.stage2_walk_yields_record
 
 /-- info: 'LeanLLVM.Refinement.JsonStage2IR.stage2Pre_length' depends on axioms: [propext] -/
 #guard_msgs in

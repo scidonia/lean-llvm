@@ -1,7 +1,7 @@
 /-
 The stage-2 walk's loop invariants, its measure, and its six back edges.
 
-`Stage2WalkObligation` (`JsonStage2IR`) is `Satisfies` for the pinned 165-block
+`Stage2WalkObligation` (`JsonStage2Body`) is `Satisfies` for the pinned 165-block
 body, and its first conjunct is completion at `stage2Budget`
 (`stage2WalkObligation_iff_completion`).  `runFuel` is fuel-indexed, so the proof
 that resists is the loop: an invariant preserved by every arm, and a measure that
