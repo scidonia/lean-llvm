@@ -1744,37 +1744,44 @@ rather than per leaf.  The recursion is leaf-agnostic — only `hround` differs 
 why the traversal is stated once and instantiated at each class's `k`. -/
 
 /-- **A scan's counted traversal.**  `k · (c - 1 - i)` steps, inside
-`stage2ByteAllowance · (c - 1 - i)` — the unit the dispatch's credit consumes. -/
+`stage2ByteAllowance · (c - 1 - i)` — the unit the dispatch's credit consumes.
+
+The scan's three names are parameters, so this is *one* traversal for all five: the
+whitespace scan instantiates it at `while.body370.i`/`%ee.0.i238`/`%cond350.i`, the literal
+comparison at `for.inc.i.i`/`%i.029.i.i`/`%cond.i.i`, and the three token scans at theirs.
+Only `hround` differs between them — the traversal is leaf-agnostic *and* scan-agnostic, and
+what each scan owes is its round. -/
 theorem walkScanRounds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c k : Nat}
+    (latch counter cond : String)
     (hk : k ≤ stage2ByteAllowance)
     (hround : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
-      C.block = "while.body370.i" →
-      lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 p)) →
-      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      C.block = latch →
+      lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
       c < 2 ^ 64 → p + 1 < c →
       ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' k ∧
-        WalkInv G C' s' ∧ C'.block = "while.body370.i" ∧
-        lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
-        lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+        WalkInv G C' s' ∧ C'.block = latch ∧
+        lookupName s'.env counter = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
+        lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)))
     {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
-    (hi : lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)))
-    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hInv : WalkInv G C s) (hblock : C.block = latch)
+    (hi : lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
     (hcw : c < 2 ^ 64) (hic : i < c) :
     ∃ (C' : WalkCarry G) (s' : State),
       WalkSegment calls G C s C' s' (k * (c - 1 - i)) ∧ WalkInv G C' s' ∧
-      C'.block = "while.body370.i" ∧
-      lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+      C'.block = latch ∧
+      lookupName s'.env counter = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
       k * (c - 1 - i) ≤ stage2ByteAllowance * (c - 1 - i) := by
   have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
-      WalkInv G C s → C.block = "while.body370.i" →
-      lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)) →
-      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      WalkInv G C s → C.block = latch →
+      lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
       i < c →
       ∃ (C' : WalkCarry G) (s' : State),
         WalkSegment calls G C s C' s' (k * r) ∧ WalkInv G C' s' ∧
-        C'.block = "while.body370.i" ∧
-        lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) := by
+        C'.block = latch ∧
+        lookupName s'.env counter = some (.int 64 (BitVec.ofNat 64 (c - 1))) := by
     intro r
     induction r with
     | zero =>
@@ -1819,7 +1826,8 @@ theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat
       C'.block = "while.body370.i" ∧
       lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
       4 * (c - 1 - i) ≤ 8 * (c - 1 - i) :=
-  walkScanRounds (k := 4) (by simp [stage2ByteAllowance]) hround hInv hblock hi hc hcw hic
+  walkScanRounds "while.body370.i" "%ee.0.i238" "%cond350.i" (k := 4)
+    (by simp [stage2ByteAllowance]) hround hInv hblock hi hc hcw hic
 
 /-! ### The five inductions
 
