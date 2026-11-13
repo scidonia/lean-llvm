@@ -1422,6 +1422,69 @@ theorem walkEntryEnv_k (env : Env) (c n b nep sAddr zAddr xp nxp dst v1 v2 ev :
     simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
       lookupName_cons_ne]
 
+/-- **The entry's preservation, assembled.**  The entry block advances the block to
+its zero arm and leaves every carried quantity alone: fifteen fields are the incoming
+invariant's own conclusions, `pc_eq` is the step's destination, and the two register
+lookups and the three memory fields are what the step establishes.  Those five are
+premises here for the same reason the other steps take them: a step lemma's caller has
+the memory facts (`G`'s separation and the record the block writes), and stating them
+as hypotheses keeps this lemma free of the block's layout. -/
+theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {s' : State}
+    (hpc : s'.pc = "if.then492.i")
+    (hk : lookupName s'.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)))
+    (hsp : lookupName s'.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
+    (hEv : readBytes s'.mem (G.ev + G.nev0)
+        (C.events.map EventRecord.encodedBytes).flatten.length =
+      some (C.events.map EventRecord.encodedBytes).flatten)
+    (hTy : WalkStackBytes s'.mem C.stage.ctype C.tyMap C.wlen)
+    (hSt : WalkStackBytes s'.mem C.stage.cst C.stMap C.wlen)
+    (hptr : WalkPtrs G C s'.env) (hreg : WalkRegs G C s'.env)
+    (hiter : WalkIter G C.k s'.env)
+    (hlogHash : readBytes s'.mem (C.stage.z + 32) 4 = some (natToBytes 0 4))
+    (hlogLen : readBytes s'.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen))
+    (hlogCap : readBytes s'.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap))
+    (hlogA : ∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧
+      readBytes s'.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
+    (hlogAcap : readBytes s'.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
+    (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
+    (hframe : UnchangedOutside mem s'.mem (walkWide G C))
+    (hlocal : WalkLocal { C with block := "if.then492.i" } s') :
+    WalkInv G { C with block := "if.then492.i" } s' where
+  pc_eq := hpc
+  blockIndex := hk
+  k_le := hInv.k_le
+  events_le := hInv.events_le
+  evlen_eq := hInv.evlen_eq
+  evBytes := hEv
+  alen_le_sum := hInv.alen_le_sum
+  alen_ge := hInv.alen_ge
+  spans_order := hInv.spans_order
+  spans_inside := hInv.spans_inside
+  spans_end := hInv.spans_end
+  pending_at := hInv.pending_at
+  pending_len := hInv.pending_len
+  pending_cursor := hInv.pending_cursor
+  eoff_le := hInv.eoff_le
+  inner_cap := hInv.inner_cap
+  depth_cap := hInv.depth_cap
+  depth_reg := hsp
+  sp_le_wlen := hInv.sp_le_wlen
+  wlen_cap := hInv.wlen_cap
+  tyBytes := hTy
+  stBytes := hSt
+  ptrs := hptr
+  regs := hreg
+  iter := hiter
+  log_hash := hlogHash
+  log_len := hlogLen
+  log_cap := hlogCap
+  log_alen := hlogA
+  log_acap := hlogAcap
+  owned := hown
+  frame := hframe
+  blockLocal := hlocal
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
