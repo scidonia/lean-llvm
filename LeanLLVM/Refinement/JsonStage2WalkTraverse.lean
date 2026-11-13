@@ -100,19 +100,16 @@ is the dispatch's segment, the merge's step and the header's pass
 runs, and at the last entry the merge's test fails.  Premise 1 is therefore **two**
 premises — `WalkDispatch`, the dispatch's chain to `cleanup478.i` with the ten
 predecessors' `phi` facts, and `WalkExit`, the false edge's tail inside the
-finalisation allowance — and premise 3 is `walkExitFits`.  Premise 4's geometry is a
-construction there: `walkGeom_at_pre` is `stage2Pre`'s witnesses as a `WalkGeom` with
-the argument list the geometry's own numbers.  Its stage is not, and what it owes is
-recorded there: the separation transports (`walkDisjoint_drop_member`,
-`walkDisjoint_before`), and what remains is that the adapter's staging names its
-columns as words and their `.toNat`s while the geometry carries the ABI's `Nat`s, that
-the arena's extent names the cursor value while `stage2StagedPre` names its own read
-of the slot, and that `WalkStage.sevenEnd` bounds the seven nested objects by the
-caller's cursor.  The widths are the precondition's — `Γ_stage2.pre` states the
-three words (`nxp`, `dstcap`, `evcap`), and `Stage2Run`'s
-`nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` are that statement at the *report* — and the
-cursor's two witnesses are one word (`wordBytes8_mod_eq`, the staged predicate's
-cursor-width clause); the seven's end is the adapter's own clause.
+finalisation allowance — and premise 3 is `walkExitFits`.  Premise 4 is a
+construction on both halves: `walkGeom_at_pre` is `stage2Pre`'s witnesses as a
+`WalkGeom` with the argument list the geometry's own numbers, and `walkStage_at_pre`
+is the adapter's staging as a `WalkStage`.  The second is the separation transports
+(`walkDisjoint_drop_member`, `walkDisjoint_before`) after the two predicates' number
+clauses make the columns agree — the widths `Γ_stage2.pre` states (`nxp`, `dstcap`,
+`evcap`, which `Stage2Run`'s `nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` read at the
+*report*), the cursor's two witnesses as one word (`wordBytes8_mod_eq`, the staged
+predicate's cursor-width clause), and the seven's end, which is the adapter's own
+watermark at the objects it appends.
 
 Nothing above is a claim about `Stage2WalkObligation`: its completion half is the
 conjunct these premises discharge, and its post half is not read here. -/

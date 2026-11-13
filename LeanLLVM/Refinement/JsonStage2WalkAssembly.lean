@@ -41,11 +41,15 @@ apart:
   of `Stage2WalkObligation` beside the post
   (`stage2WalkObligation_iff_completion`).
 
+Premise 4 is now discharged: the geometry is `walkGeom_at_pre` and the stage
+`walkStage_at_pre`, so `walkPremises_of_parts` states the seed's run, the invariant
+and the loop's step at a pair the record *gives* rather than one a proof invents.
+
 What the module does not do is inhabit `Stage2WalkObligation`: the loop step's two
 premises are the census's dispatch chain and the exit's tail, and the post half is
-untouched here.  The premises are stated, not assumed away, and
-`WalkPremises`/`stage2WalkCompletes_of_premises` is the exact shape of what a
-dispatch supplies.
+untouched here.  Those three are stated, not assumed away, and
+`stage2WalkCompletes_of_premises`/`stage2WalkObligation_of_premises` is the exact
+shape of what a dispatch supplies.
 
 The seed's residue is not a trace and is enumerated rather than assumed.  The three
 block runs `walkSeedPrefix_runFuel` takes are `entry`'s fifty-seven instructions
@@ -347,6 +351,9 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
     nevRead := nevRead
     errBytes := errBytes
     maxDoc := maxDoc
+    nxpLt := hnxp
+    dstcapLt := hdstcap
+    evcapLt := hevcap
     separate := separate
     next0 := next
     watermark := hwm }, rfl, hargs⟩
@@ -401,9 +408,11 @@ What it owes is the *numbers*, and they are not free:
   (`stage2StagedPre`'s last conjunct).  It is what makes the root slot fresh of the
   log and the event stream (`WalkStage.rootSlot_log`, `WalkStage.rootSlot_ev`).
 
-So premise 4 has one constructive half and one that is a caller's clause: the
-geometry is `walkGeom_at_pre`, and the stage is these two lemmas plus a staging
-predicate that states the widths, the cursor and the watermark at the seven.
+So premise 4 is a construction on both halves: the geometry is `walkGeom_at_pre`,
+and the stage is `walkStage_at_pre` — these two lemmas, the adapter's two number
+clauses, and the staged list's own cross half.  Nothing in it is a hypothesis beside
+the record's precondition and the adapter's staging, which is what `walkPremises_of_parts`
+uses to state the remaining premises at a pair the prover is given.
 -/
 
 /-- **A separated list stays separated when an inserted member is dropped.**  The
@@ -444,18 +453,18 @@ Three of the five follow from the precondition's own clauses: `n` from the
 document's bound (`stage2MaxDocument`, `2 ^ 32`) and `nep` from the stream's order
 (`WalkGeom.nep_le`).  `nxp`, `dstcap` and `evcap` do not: the precondition states
 lower bounds on them (`HasBytes mem xp (4 * nxp)`, `ndst0 + n + reserve ≤ dstcap`,
-`nev0 + 13 * n ≤ evcap`) and nothing above, while the record's **post** asserts
-exactly these three widths (`stage2Boundary`).  The cursor slot is the fourth: the
+`nev0 + 13 * n ≤ evcap`) beside the three widths the pre now states, which is also what the
+record's **post** asserts (`stage2Boundary`).  The cursor slot is the fourth: the
 staged predicate reads `readBytes mem ndst 8` and the precondition reads the same
 eight bytes, so the two values agree modulo the word and agree outright once both
 are written below it.
 
-So the reconciliation is arithmetic, and its hypotheses are the record's missing
+So the reconciliation is arithmetic, and its hypotheses are the two predicates'
 clauses rather than a proof gap: `stage2StagedRegions_reconcile` is the whole of
 "the numbers do not agree", stated at the two argument equations and the widths.
 What is left once it holds is `walkDisjoint_drop_member` and `walkDisjoint_before`
-above, and the cursor clause `WalkStage.sevenEnd`, which `stage2StagedPre` cannot
-name because the adapter's predicate does not carry the call's `next`. -/
+above, and the cursor clause `WalkStage.sevenEnd`, which is the adapter's own
+watermark at the seven.  `walkStage_at_pre` is that composition. -/
 
 /-- **A slot word decides its value modulo its width.**  Two numbers whose eight
 little-endian bytes agree are congruent modulo `2 ^ 64`, which is the whole of what
@@ -537,17 +546,86 @@ theorem stage2StagedRegions_reconcile {args : List Value}
     Nat.mod_eq_of_lt hn, Nat.mod_eq_of_lt hnep, Nat.mod_eq_of_lt hnxp,
     Nat.mod_eq_of_lt hdstcap, Nat.mod_eq_of_lt hevcap]
 
+/-! ### The stage, constructed
+
+`WalkPremises` used to hand the completion a geometry *and* a staging, and the two
+preconditions were enough to build only the first (`walkGeom_at_pre`).  The stage is
+a construction too, and the two clauses the adapter's predicate gained are what make
+it one: the width facts reconcile the adapter's columns with the geometry's
+(`stage2StagedRegions_reconcile`), the cursor slot's width makes the two readings of
+that slot one number, and the seven's watermark is `WalkStage.sevenEnd`.  So a caller
+inside the record's domain has the walk's staging, and premise 4 no longer assumes
+anything the record does not grant. -/
+
+/-- **The adapter's staging is the walk's `WalkStage`.**  The seventeen-object
+separation is the staged list with `%d.i`'s entry dropped
+(`walkDisjoint_drop_member`), after the reconcile transports the staged list's
+numbers to the geometry's; the seven objects' presence and `%d.i`'s are the staged
+predicate's two presence clauses; `%d.i`'s separation is the staged list's cross
+half, read at the geometry's numbers; and the seven's end is the adapter's
+watermark at the call's cursor. -/
+theorem walkStage_at_pre {args : List Value} {m0 : Mem} {next : Nat}
+    {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (hpre : Γ_stage2.pre args m0 next)
+    (hst : stage2StagedPre args m0 next d c ctype cst tok s z e nkSlot nxpSlot) :
+    ∃ (G : WalkGeom m0) (S : WalkStage G), G.next0 = next ∧
+      args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] := by
+  obtain ⟨G, hnext, hargs⟩ := walkGeom_at_pre hpre
+  obtain ⟨hpres, hd8, b', nw, ep', nepw, xp', nxpw, dst', dstcapw, ndst0', ev', evcapw,
+    ndst', nev', err', hargs', hread', hdisj', hndst0w, hwm'⟩ := hst
+  -- the argument list names one set of objects, read at the ABI's words and again
+  -- at the adapter's: the two readings' slot addresses agree, and so does the rest
+  obtain ⟨-, -, -, -, -, -, -, -, hndstEq, -, -, -, -⟩ :=
+    stage2Args_components hargs hargs'
+  -- the two cursor witnesses are one word, so they are one number
+  have hmod : G.ndst0 % 2 ^ 64 = ndst0' % 2 ^ 64 := by
+    have hreadG : readBytes m0 ndst' 8 = some (wordBytes 8 G.ndst0) := by
+      rw [← hndstEq]; exact G.ndstRead
+    exact wordBytes8_mod_eq (Option.some.inj (hreadG.symm.trans hread'))
+  have hGndst0 : G.ndst0 < 2 ^ 64 := by
+    have hroom := G.arenaRoom
+    have hcap := G.dstcapLt
+    simp only [stage2ArenaReserve] at hroom
+    omega
+  -- the two region lists are one list, at the geometry's numbers
+  have hrecon := stage2StagedRegions_reconcile hargs hargs' (WalkGeom.n_lt G)
+    (WalkGeom.nep_lt G) G.nxpLt G.dstcapLt G.evcapLt hGndst0 hndst0w hmod
+    c ctype cst tok s z e nkSlot nxpSlot
+  have hdisjG : DisjointRegions
+      ((stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev G.evcap
+          G.ndst G.nev G.err c ctype cst tok s z e ++ [(d, 8)]) ++
+        [(nkSlot, 8), (nxpSlot, 8)]) := by
+    rw [← hrecon] at hdisj'
+    simpa only [stage2StagedRegions, List.append_assoc] using hdisj'
+  refine ⟨G, ?_, hnext, hargs⟩
+  refine ⟨c, ctype, cst, tok, s, z, e, nkSlot, nxpSlot, ?_, hpres, d, hd8, ?_, ?_⟩
+  · exact walkDisjoint_drop_member hdisjG
+  · have hL : DisjointRegions
+        (stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev G.evcap
+          G.ndst G.nev G.err c ctype cst tok s z e ++
+          [(d, 8), (nkSlot, 8), (nxpSlot, 8)]) := by
+      simpa only [List.append_assoc, List.singleton_append] using hdisjG
+    unfold DisjointRegions at hL
+    rw [List.pairwise_append] at hL
+    obtain ⟨-, -, hcross⟩ := hL
+    exact fun r hr => hcross r hr (d, 8) (by simp)
+  · rw [hnext]; exact hwm'
+
 /-! ### The completion at the ABI's arguments -/
 
 /-- **What a dispatch supplies, and nothing else.**  At every staging the record
-admits: a geometry whose numbers are the argument list's
-(`walkGeom_at_pre`), the seed's three-step prefix to the loop head and the
-invariant there (the seed's caller facts), and the loop's step at the value the
-exit returns (`WalkDispatch` beside `WalkExit`). -/
+admits: a geometry whose numbers are the argument list's and a staging of the
+walk's own objects — both now constructed (`walkGeom_at_pre`, `walkStage_at_pre`,
+and `walkPremises_of_parts` reads this definition at the pair they give) — the
+seed's three-step prefix to the loop head, the invariant there, and the loop's step
+at the value the exit returns (`WalkDispatch` beside `WalkExit`). -/
 def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
   ∀ (a13 : List Value) (mem : Mem) (next : Nat),
     Γ_stage2.pre a13 mem next →
-    stage2StagedPre a13 mem d c ctype cst tok s z e nkSlot nxpSlot →
+    stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot →
     ∃ (m0 : Mem) (G : WalkGeom m0) (S : WalkStage G),
       G.next0 = next ∧
       a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -566,6 +644,41 @@ def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : 
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
           (entryPos G 0) (entryByte G 0)) ∧
       (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)
+
+/-- **What a dispatch supplies, at the geometry and the stage the record gives.**
+A proof of `WalkPremises` no longer has to invent a geometry and a staging: the two
+constructions (`walkGeom_at_pre`, `walkStage_at_pre`) build them from the record's
+precondition and the adapter's staging, so the seed's prefix, the invariant at the
+loop head and the loop's step are owed at a pair the prover *is given*.  This is the
+shape the dispatch's proof is written against, and it is why the two constructions
+are theorems rather than fields of the premise. -/
+theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {sub : Calls}
+    (h : ∀ (a13 : List Value) (mem : Mem) (next : Nat) (G : WalkGeom mem)
+        (S : WalkStage G),
+      Γ_stage2.pre a13 mem next →
+      stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot →
+      G.next0 = next →
+      a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] →
+      0 < G.nep ∧
+      (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
+          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+        runFuel (stage2Calls sub) n stage2Body
+          (walkSeedFinalState G S
+            (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+            (entryPos G 0) (entryByte G 0))) ∧
+      WalkInv G (walkSeed G S)
+        (walkSeedFinalState G S
+          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
+          (entryPos G 0) (entryByte G 0)) ∧
+      (∃ v : Value, WalkLoopStep (stage2Calls sub) G v 27)) :
+    WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot := by
+  intro a13 mem next hpre hst
+  obtain ⟨G, S, hnext, hargs⟩ := walkStage_at_pre hpre hst
+  obtain ⟨hn, hseed, hInv, hloop⟩ := h a13 mem next G S hpre hst hnext hargs
+  exact ⟨mem, G, S, hnext, hargs, hn, hseed, hInv, hloop⟩
 
 /-- **The completion at the record's own budget**, from the premises the four
 obstructions name: the seed's prefix at the ABI's entry state, the invariant at the
@@ -688,6 +801,8 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkDisjoint_before
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.n_lt
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.nep_lt
+#print axioms LeanLLVM.Refinement.WalkScope.walkStage_at_pre
+#print axioms LeanLLVM.Refinement.WalkScope.walkPremises_of_parts
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_premises
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_premises
 

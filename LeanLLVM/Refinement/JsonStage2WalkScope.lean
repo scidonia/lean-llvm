@@ -307,7 +307,8 @@ open LeanLLVM.Refinement.BlockEval
 
 /-- `stage2Pre`'s witnesses, at the memory the caller staged.  A geometry is the
 staging the loop reads, held fixed for the run; the invariant and the measure are
-indexed by it.  Every field and every clause is `stage2Pre`'s, in the same order,
+indexed by it.  Every field and every clause is `stage2Pre`'s (the three widths
+sit beside `maxDoc` rather than after the watermark),
 so the loop does not work at a weaker domain than the record admits. -/
 structure WalkGeom (m0 : Mem) where
   /-- The document. -/
@@ -372,6 +373,17 @@ structure WalkGeom (m0 : Mem) where
   errBytes : HasBytes m0 err 8
   /-- The document's positions fit the entry stream's 32-bit words. -/
   maxDoc : n ≤ stage2MaxDocument
+  /-- **The escape count is its argument word's value**, `stage2Pre`'s clause at the
+  geometry.  The ABI carries it as an eight-byte word, so it is below `2 ^ 64` and
+  the word's `.toNat` is the number itself.  The adapter's staging names the same
+  number as a word (`stage2StagedPre`), and this is half of what reconciles the
+  two region lists (`stage2StagedRegions_reconcile`). -/
+  nxpLt : nxp < 2 ^ 64
+  /-- **The arena's capacity is its argument word's value**, `stage2Pre`'s clause. -/
+  dstcapLt : dstcap < 2 ^ 64
+  /-- **The event stream's capacity is its argument word's value**, `stage2Pre`'s
+  clause. -/
+  evcapLt : evcap < 2 ^ 64
   /-- The staged objects are separate. -/
   separate : DisjointRegions
     (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)
@@ -395,7 +407,8 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
   have h' : stage2Pre args m0 next := h
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, -, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
-    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, -, -, -⟩ := h'
+    evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
+    hevcap⟩ := h'
   exact ⟨{
     b := b
     n := n
@@ -428,6 +441,9 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
     nevRead := nevRead
     errBytes := errBytes
     maxDoc := maxDoc
+    nxpLt := hnxp
+    dstcapLt := hdstcap
+    evcapLt := hevcap
     separate := separate
     next0 := next
     watermark := hwm
@@ -499,13 +515,14 @@ structure WalkStage {m0 : Mem} (G : WalkGeom m0) where
   them, and `%d.i` too, ends at or below the cursor the callee allocates from.
   This is `Γ_stage2.pre`'s watermark statement (`stage2Pre`'s last clause, which
   `WalkGeom.watermark` carries at the thirteen ABI objects) at the objects the
-  adapter appends.  It is stated here rather than in `stage2StagedPre` because
-  the adapter's predicate does not carry the call's `next`: the cursor is the
-  run's, so the relation between the seven and it is the run's staging's to
-  state.  Its consumers are `WalkStage.rootSlot_log` and `WalkStage.rootSlot_ev`,
-  and they are what makes the container-closing helper's root slot — and its
-  container byte — fresh of the log and the event stream, so a link that calls
-  `s2_after_value` needs no staging hypothesis beside it. -/
+  adapter appends.  It is the adapter's clause (`stage2StagedPre`'s last
+  conjunct) read at the geometry: the adapter's predicate carries the call's
+  `next`, so the relation between the seven and the cursor is stated where the
+  caller can promise it, and `walkStage_at_pre` is what transports it here.  Its
+  consumers are `WalkStage.rootSlot_log` and `WalkStage.rootSlot_ev`, and they are
+  what makes the container-closing helper's root slot — and its container byte —
+  fresh of the log and the event stream, so a link that calls `s2_after_value`
+  needs no staging hypothesis beside it. -/
   sevenEnd : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e, r.1 + r.2 ≤ G.next0
 
 /-- **The root slot misses the log.**  `%root_done.i` is the second allocated slot
@@ -5426,8 +5443,9 @@ links: `WalkStage.sevenEnd` is the adapter's watermark at the seven appended
 objects — every one of them ends at or below the call's cursor, which is the same
 clause `Γ_stage2.pre` states for its thirteen — and `WalkStage.rootSlot_log` and
 `WalkStage.rootSlot_ev` read it (`%d.i`'s and the stream's entries come from
-`WalkGeom.watermark`).  The fact lives in the run's staging record because the
-adapter's `stage2StagedPre` does not carry the call's `next`, which is the run's.
+`WalkGeom.watermark`).  The fact lives in both: `stage2StagedPre` states it at the
+seven (the adapter carries the call's `next`), and `WalkStage.sevenEnd` is that
+clause at the geometry, transported by `walkStage_at_pre`.
 
 `if.end256.i` is the ninth, and it is the arena's reservation itself: the token's
 extent, the marker, the zero store at `%outn.i`, the two log words and the check.

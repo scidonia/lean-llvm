@@ -1676,7 +1676,7 @@ place: they are the pipeline's, the ABI does not carry them, and their separatio
 from the seven is what the caller reads back after the run. -/
 def Stage2WalkCompletes (d c ctype cst tok s z e nkSlot nxpSlot : Nat) (sub : Calls) : Prop :=
   ∀ a13 mem next, Γ_stage2.pre a13 mem next →
-    stage2StagedPre a13 mem d c ctype cst tok s z e nkSlot nxpSlot →
+    stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot →
     ∃ v m, runFuel (stage2Calls sub) (stage2Budget a13 mem) stage2Body
       (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
       = some (.ret v m)

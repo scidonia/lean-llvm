@@ -540,8 +540,24 @@ caller has already fixed.
 writes through: `num_fast_el1`'s accepting arm stores the lexeme's value there
 (`s2NumFastFoot`).  Its address is the caller's number, so its presence and its
 separation are staged here beside the seven; the list it is separated in is the
-adapter's (`stage2StagedRegions`), read with the one entry appended. -/
-def stage2StagedPre (args : List Value) (mem : Mem)
+adapter's (`stage2StagedRegions`), read with the one entry appended.
+
+Two clauses are about the *numbers* the argument list carries rather than about a
+region, and both are the caller's:
+
+* **the cursor slot's width.**  `ndst0` is the eight bytes at `ndst` decoded, and
+  `stage2Pre` reads the same eight bytes, so the two witnesses agree modulo
+  `2 ^ 64` (`wordBytes8_mod_eq`).  Stated below the word at both ends, each is the
+  word's value and the two are equal, which is what makes the region list below —
+  drawn at this predicate's cursor — the list the pre separates;
+* **the seven's end**, `next`.  `stage2Pre`'s watermark bounds the thirteen ABI
+  objects by the cursor the call is made at; the seven the adapter appends are the
+  caller's objects, staged before the call, so the same cursor bounds them.  The
+  adapter is the only place this can be said, because the record at thirteen
+  arguments cannot name these objects.  `WalkStage.sevenEnd` is the walk's reading
+  of it, and with it the container arms' root slot is fresh of the log and the
+  event stream (`WalkStage.rootSlot_log`, `WalkStage.rootSlot_ev`). -/
+def stage2StagedPre (args : List Value) (mem : Mem) (next : Nat)
     (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
   (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, HasBytes mem r.1 r.2) ∧
   -- **`%d.i`'s eight bytes are present.**  The number path's output slot is one
@@ -569,7 +585,16 @@ def stage2StagedPre (args : List Value) (mem : Mem)
     -- Without it the staged cursor and the pre's could be two different numbers
     -- under one eight-byte read, and the walk's staged region list — drawn at the
     -- pre's cursor — would not be the list the pre separates.
-    ndst0 < 2 ^ 64
+    ndst0 < 2 ^ 64 ∧
+    -- **The seven appended objects end at or below the call's cursor.**  This is
+    -- `stage2Pre`'s watermark statement at the objects the adapter appends: the
+    -- seven are the *caller's* objects, staged before the call, and `next` is the
+    -- cursor the callee's four `alloca`s land at (`stage2AllocaWrites`), so every
+    -- one of them ends at or below it.  The clause is the adapter's because the
+    -- record at thirteen arguments cannot name these objects; its consumer is the
+    -- walk's own staging (`WalkStage.sevenEnd`), which is what makes the container
+    -- arms' root slot fresh of the log and the event stream.
+    (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, r.1 + r.2 ≤ next)
 
 /-- **An object appended after a separated list is separate from every member**
 and from its neighbour.  This is the shape `stage2StagedRegions` appends the
@@ -640,15 +665,15 @@ which is the half of `stage2StagedPre`'s separation the pipeline's transport of
 those slots reads.  It is exactly the statement the walk's frame widening needs:
 the seven objects the walk writes, at their own extents, do not meet a byte of
 either slot, so the walk's writes leave both words as the pipeline left them. -/
-theorem stage2StagedPre_countSlots {args : List Value} {mem : Mem}
+theorem stage2StagedPre_countSlots {args : List Value} {mem : Mem} {next : Nat}
     {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (h : stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
+    (h : stage2StagedPre args mem next d c ctype cst tok s z e nkSlot nxpSlot) :
     (∀ r ∈ stage2StagedWrites c ctype cst tok s z e,
       (r.1 + r.2 ≤ nkSlot ∨ nkSlot + 8 ≤ r.1) ∧
         (r.1 + r.2 ≤ nxpSlot ∨ nxpSlot + 8 ≤ r.1)) ∧
       (nkSlot + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ nkSlot) := by
   obtain ⟨-, -, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
-    -, -, hdisj, -⟩ := h
+    -, -, hdisj, -, -⟩ := h
   have hsep := disjointRegions_append_slots
     (L := stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
       evcap.toNat ndst nev err c ctype cst tok s z e ++ [(d, 8)]) hdisj
@@ -664,16 +689,16 @@ so every ABI object, every one of the seven appended objects and the caller's tw
 count slots misses it: the walk's write to `%d.i` (through `num_fast_el1`) is a
 write to a slot of its own, and the value it leaves is the value the number
 path's reader loads. -/
-theorem stage2StagedPre_dSep {args : List Value} {mem : Mem}
+theorem stage2StagedPre_dSep {args : List Value} {mem : Mem} {next : Nat}
     {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (h : stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
+    (h : stage2StagedPre args mem next d c ctype cst tok s z e nkSlot nxpSlot) :
     ∃ (b n ep nep xp nxp dst ndst0 ev evcap ndst nev err : Nat),
       (∀ r ∈ stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
           c ctype cst tok s z e, r.1 + r.2 ≤ d ∨ d + 8 ≤ r.1) ∧
       (d + 8 ≤ nkSlot ∨ nkSlot + 8 ≤ d) ∧
       (d + 8 ≤ nxpSlot ∨ nxpSlot + 8 ≤ d) := by
   obtain ⟨-, hd, b, n, ep, nep, xp, nxp, dst, dstcap, ndst0, ev, evcap, ndst, nev, err,
-    -, -, hdisj, -⟩ := h
+    -, -, hdisj, -, -⟩ := h
   have h' : DisjointRegions
       ((stage2WalkRegions b n.toNat ep nep.toNat xp nxp.toNat dst ndst0 ev
           evcap.toNat ndst nev err c ctype cst tok s z e) ++
@@ -790,9 +815,9 @@ theorem owns_extent_present {mem m : Mem} {rs : List (Nat × Nat)} {r : Nat × N
 
 /-- The seven staged objects' extents are the ones the record names, so a caller
 that has the staging has presence at each of them. -/
-theorem stage2StagedPre_present {args : List Value} {mem : Mem}
+theorem stage2StagedPre_present {args : List Value} {mem : Mem} {next : Nat}
     {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (h : stage2StagedPre args mem d c ctype cst tok s z e nkSlot nxpSlot) :
+    (h : stage2StagedPre args mem next d c ctype cst tok s z e nkSlot nxpSlot) :
     HasBytes mem c stage2CursorExtent ∧ HasBytes mem ctype stage2StackExtent ∧
       HasBytes mem cst stage2StackExtent ∧ HasBytes mem tok stage2TokenExtent ∧
       HasBytes mem s stage2StateExtent ∧ HasBytes mem z stage2LogExtent ∧
