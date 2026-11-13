@@ -1556,6 +1556,97 @@ theorem walkRefuseWitness_mismatched {calls : Calls} {m0 : Mem} (G : WalkGeom m0
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   mismatchedRefuse_at G C s hInv hhead h8 hsp hq hv he hj hj64 hk
 
+/-! ### The state stack's refusal
+
+`cleanup104.i` is the dispatch's third refusal shape: a closing bracket whose container
+marker *agrees* — so the type stack's check passes — but whose state stack records a
+value of at least `2` (`cond.end.i`'s `%15 ult 2`).  Its path crosses `if.end59.i`'s
+select nest on the *continue* arm, then `if.end74.i`'s `cst` read, then `cond.end.i`'s
+test.
+
+`if.end74.i`'s step is added here: the layer's `WalkLink.if_end74_i` carries its
+`denoteCode` and its link, and the state the two blocks after it read is named — the
+same instrument that named the select nest's successor. -/
+
+/-- **`if.end59.i` at an agreeing bracket.**  The byte's bracket *is* the marker, so the
+select nest passes and the run takes the `cst` read at `if.end74.i`. -/
+theorem mlStep₆c {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end59.i")
+    {sp ct : Nat} {db : BitVec 8} {b : UInt8}
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (h8 : lookupName s.env "%8" = some (.int 8 db))
+    (hct : lookupName s.env "%ctype.i" = some (.ptr ct))
+    (hq63 : (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat < 2 ^ 63)
+    (hread : readBytes s.mem
+      (ct + (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat) 1 = some [b])
+    (hbit : evalICmp .eq (walkSelVal db)
+      (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 1) :
+    WalkLink calls G C s { C with block := "if.end74.i" }
+      (stackSelOut s sp ct db b (stackSelBit db b)) := by
+  obtain ⟨s', hl, hs'⟩ := walkIfEnd59_at (calls := calls) G C s hInv hblock hsp h8 hct hq63
+    hread
+  rw [hs'] at hl
+  rw [if_pos (show evalICmp .eq (walkSelVal db)
+    (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 1 from hbit)] at hl
+  exact hl
+
+/-- The state `if.end74.i` leaves: the `cst` byte and its address, at the edge the
+carried marker test picks. -/
+abbrev ifEnd74Out (s : State) (cs q : Nat) (b : UInt8) (bit : BitVec 1) : State :=
+  { stateAt (cells [("%15", .int 8 (BitVec.ofNat 8 b.toNat)),
+      ("%arrayidx76.i", .ptr (cs + q))] s.env) s with
+    pc := (if bit = 1 then "cond.true.i" else "cond.end.i")
+    pre := some s.pc }
+
+/-- **`if.end74.i`'s target, named.**  The state stack's byte and its address, at
+`cond.end.i` — the cell `cond.end.i`'s test reads. -/
+theorem walkIfEnd74_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.end74.i")
+    {cs q : Nat} {b : UInt8} {bit : BitVec 1}
+    (hcs : lookupName s.env "%cst.i" = some (.ptr cs))
+    (hidx : lookupName s.env "%idxprom65.i" = some (.int 64 (BitVec.ofNat 64 q)))
+    (hq63 : q < 2 ^ 63)
+    (hread : readBytes s.mem (cs + q) 1 = some [b])
+    (hbit : lookupName s.env "%cmp61.i" = some (.int 1 bit)) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if bit = 1 then "cond.true.i" else "cond.end.i") } s' ∧
+      s' = ifEnd74Out s cs q b bit := by
+  obtain ⟨s', hl⟩ := WalkLink.if_end74_i (calls := calls) G C s hInv hblock hcs hidx hq63
+    hread hbit
+  refine ⟨s', hl, ?_⟩
+  have hfind : stage2Body.findBlock C.block = some walkIf_end74_i := by
+    rw [hblock]; exact walkIf_end74_i_find
+  have hden : denoteCode calls walkIf_end74_i.instrs s =
+      some (stateAt (cells [("%15", .int 8 (BitVec.ofNat 8 b.toNat)),
+        ("%arrayidx76.i", .ptr (cs + q))] s.env) s) := by
+    simp only [walkIf_end74_i]
+    conv_lhs => rw [← stateAt_self s]
+    rw [denoteCode_gep8_reg (calls := calls) (env := s.env) (s := s) (d := "%arrayidx76.i")
+      (base := "%cst.i") (off := "%idxprom65.i") (a := cs)
+      (idx := BitVec.ofNat 64 q) hcs hidx (by rw [sExt_ofNat64 hq63]; exact hq63)]
+    rw [sExt_ofNat64 hq63]
+    rw [denoteCode_load8_single (calls := calls)
+      (env := ("%arrayidx76.i", .ptr (cs + q)) :: s.env) (s := s)
+      (d := "%15") (p := "%arrayidx76.i") (a := cs + q)
+      (by simp [lookupName]) hread]
+    rfl
+  have hbit' : lookupName (stateAt (cells [("%15", .int 8 (BitVec.ofNat 8 b.toNat)),
+      ("%arrayidx76.i", .ptr (cs + q))] s.env) s).env "%cmp61.i" = some (.int 1 bit) := by
+    simp only [stateAt, cells,
+      lookupName_cons_ne (k := "%15") (n := "%cmp61.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%arrayidx76.i") (n := "%cmp61.i") _ _ (by decide)]
+    exact hbit
+  have hterm : walkIf_end74_i.term = Term.condbr (.reg "%cmp61.i") "cond.true.i"
+      "cond.end.i" := rfl
+  have hstep : LeanLLVM.step calls stage2Body s =
+      Ctrl.jump (ifEnd74Out s cs q b bit) := by
+    simp only [LeanLLVM.step, hInv.pc_eq, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%cmp61.i") (tl := "cond.true.i") (fl := "cond.end.i")
+      (bit := bit) hbit']
+    rfl
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.refusePrice_of_le
@@ -1592,3 +1683,5 @@ theorem walkRefuseWitness_mismatched {calls : Calls} {m0 : Mem} (G : WalkGeom m0
 #print axioms LeanLLVM.Refinement.WalkScope.mlStep₇
 #print axioms LeanLLVM.Refinement.WalkScope.mismatchedRefuse_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_mismatched
+#print axioms LeanLLVM.Refinement.WalkScope.mlStep₆c
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd74_at
