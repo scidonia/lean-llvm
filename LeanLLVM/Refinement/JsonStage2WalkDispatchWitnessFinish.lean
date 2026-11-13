@@ -611,6 +611,29 @@ theorem end372_else_chain {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     (C := { C with block := "if.else387.i" }) G s₁ hl₁.inv' rfl
   exact ⟨s₂, WalkChain.tail hl₁ (WalkChain.tail hl₂ (WalkChain.nil hl₂.inv'))⟩
 
+/-! ### The three consumers, and why the chain stops at them
+
+All three call consumers have their links, each already taking its helper's contract as
+hypotheses — `WalkLink.if_then413_i` takes `s2ValuePosPre` *and* the result's shape
+(`∀ r, stage2Calls … = some r → r.ret = .int 32 x`), `WalkLink.if_then425_i_emit`/`_refuse`
+take `od_scalar_value`'s, and `WalkLink.if_then447_i` takes `s2AfterValuePre` plus the two
+scan cells.  So route (1) — compose over links, never name a successor — has everything it
+needs *except at one junction per consumer*, and the reason is structural:
+
+* `if.then413.i` stores through `%kind404.i` before its call, so the next block's read is
+  at `writeBytes s.mem (C.stage.tok + 16) …` — a memory the link names in its *hypothesis*
+  but not in its target, which is existential;
+* `if.then447.i` reads `%ee.1.i` and `%cond350.i`, and `%ee.1.i` is bound by **the `phi` of
+  `if.end372.i`** — a cell no `WalkInv` field carries.
+
+So the last three blocks are the mirror image of `if.end372.i`: there the successors read
+`%8` (invariant-carried) and a consumed bit, and a link chain suffices; here they read a
+post-store memory and a `phi`-bound cell, and only a named successor serves.  Naming those
+successors needs each link's `sFin`, which is where its `denoteCode` chain lives — the
+exposure that `stackSelectBr` got, and the criterion for asking is now met: **three
+consumers need the same three chains.**  That is `JsonStage2WalkCall`'s and
+`JsonStage2WalkFinal`'s work, not this module's. -/
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
