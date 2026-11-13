@@ -3727,6 +3727,24 @@ Its hypotheses are six, and instrument eleven counts them exactly: **three prese
 (one per pair).  Each crossing spends its presence and its disjointness, which is why
 the conclusion's one region needed six facts in the statement.
 
+**The refused arm's chain, written out.**  Its body writes six times:
+`clear(ei)`, the callee's `offset(ei)`, `scan(xj)`, then the record's three words at
+`e`, `e + 8`, `e + 16`.  The model writes five: the record's three, `scan(xj)`, then
+the slot at `ei`.  So the join is
+
+* the clear absorbed by the callee's own `ei` write — they are **adjacent**, so
+  `writeBytes_writeBytes_same` does it (`s2StringBodySlot_absorb` outside a type
+  argument);
+* `scan(xj)` moved right past the record's three words — 3 crossings;
+* the `ei` write moved right to the end — 4 crossings;
+
+**seven commutations, and ten pairwise disjointnesses** (five regions: `ei`, `xj`,
+`e`, `e + 8`, `e + 16`), the last three pairs being the record's own words, which are
+disjoint from each other (`4`, `8`, `8` bytes at `e`, `e + 8`, `e + 16`).  The
+decoded arm's three crossings are the same two moves at a shorter distance: **the
+model's write order charges for the record's three words, and the decoded arm never
+writes a record at all.**  That is the two arms' difference, measured.
+
 **Neither count is reachable with commutations alone, and the typecheck says why.**
 The statement typechecks with its conclusion as a hypothesis (the produced-form
 check: if `example (…) (h : <the equality>) : <the equality> := h` elaborates, the
