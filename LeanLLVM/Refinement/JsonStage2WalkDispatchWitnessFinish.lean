@@ -223,6 +223,60 @@ theorem WalkInv.reblock_true {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
   h.reblock hpc (by rw [hloc]; trivial)
 
 
+
+/-- **The invariant transports across a bind whose name no field reads.**  The `WalkInv`
+fields read four registers and the two carriers: `%k.0.i249` (the block index),
+`%sp.i.0248` (the depth), `%7`/`%8` (the lane and the byte), the six pointer names, and
+`walkStaticNames` — and `blockLocal` is `WalkLocal`, whose reads are the block's own.  A
+bind at a name outside that set leaves every field alone, so the transport is the three
+carrier lemmas plus a field copy — which is what `pureCore` assembles inline at each use.
+
+`reblock`'s companion: a step that prepends cells *and* changes block uses both, bind
+first and block second. -/
+theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {d : String} {v : Value} (h : WalkInv G C s)
+    (hst : d ∉ walkStaticNames) (hki : d ≠ "%k.0.i249") (hspp : d ≠ "%sp.i.0248")
+    (h3 : d ≠ "%3") (h5 : d ≠ "%5") (hk11 : d ≠ "%k11.i") (hct : d ≠ "%ctype.i")
+    (hcs : d ≠ "%cst.i") (hhash : d ≠ "%hash1.i.i") (h7 : d ≠ "%7") (h8 : d ≠ "%8")
+    (hloc : WalkLocal C (s.bind d v)) :
+    WalkInv G C (s.bind d v) where
+  pc_eq := h.pc_eq
+  blockIndex := by
+    simp only [State.bind, lookupName_cons_ne _ _ hki]
+    exact h.blockIndex
+  k_le := h.k_le
+  events_le := h.events_le
+  evlen_eq := h.evlen_eq
+  evBytes := h.evBytes
+  alen_le_sum := h.alen_le_sum
+  alen_ge := h.alen_ge
+  spans_order := h.spans_order
+  spans_inside := h.spans_inside
+  spans_end := h.spans_end
+  pending_at := h.pending_at
+  pending_len := h.pending_len
+  pending_cursor := h.pending_cursor
+  eoff_le := h.eoff_le
+  inner_cap := h.inner_cap
+  depth_cap := h.depth_cap
+  depth_reg := by
+    simp only [State.bind, lookupName_cons_ne _ _ hspp]
+    exact h.depth_reg
+  sp_le_wlen := h.sp_le_wlen
+  wlen_cap := h.wlen_cap
+  tyBytes := h.tyBytes
+  stBytes := h.stBytes
+  ptrs := h.ptrs.bind h3 h5 hk11 hct hcs hhash
+  regs := h.regs.bind hst
+  iter := h.iter.bind h7 h8
+  log_hash := h.log_hash
+  log_len := h.log_len
+  log_cap := h.log_cap
+  log_alen := h.log_alen
+  log_acap := h.log_acap
+  owned := h.owned
+  frame := h.frame
+  blockLocal := hloc
 end LeanLLVM.Refinement
 
 /-! ### The instrument -/
@@ -233,3 +287,4 @@ end LeanLLVM.Refinement
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478_denote_finish
 #print axioms LeanLLVM.Refinement.WalkInv.reblock
 #print axioms LeanLLVM.Refinement.WalkInv.reblock_true
+#print axioms LeanLLVM.Refinement.WalkInv.bind
