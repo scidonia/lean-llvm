@@ -265,6 +265,115 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     rw [show 1 + k = k + 1 from by omega]
     simp only [runFuel, hstep]
 
+/-- **A scan's exit arm.**  At the bound the latch's equality test is set, so its
+terminator is the scan's exit block rather than its landing block: `i + 1 = c`, and
+the increment's cell and the test's cell are the state `scanBlock_step` builds with
+the test reading `1`.
+
+The carried fields transfer as in `scan_step_at`, because the arm writes the same
+two cells and nothing else.  The budget is not decremented: the exit is where the
+scan stops rather than one more iteration through it, so the carry is `C` at the
+exit block, and the exit block's local fact is the caller's at that same carry.
+
+`scan_step_at` states the visit's target as `scanLatchAt`, whose test cell is the
+clear bit the visit's proof builds; the exit's test cell is the comparison's own
+value, which is `scanLatchOut`'s spelling and the one `scanBlock_step` returns, so
+the two meet by `rfl` and no reconciliation is needed. -/
+theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (i c : Nat) (src land phi inc test cond exit : String)
+    (hInv : WalkInv G C s) (hblock : C.block = src)
+    (hfind : stage2Body.findBlock src = some (scanBlock src inc phi test cond exit land))
+    (hinc_cond : inc ≠ cond) (htest_cond : test ≠ cond) (htest_inc : test ≠ inc)
+    (hinc_k : inc ≠ "%k.0.i249") (htest_k : test ≠ "%k.0.i249")
+    (hinc_sp : inc ≠ "%sp.i.0248") (htest_sp : test ≠ "%sp.i.0248")
+    (hincN : ¬ inc = "%3" ∧ ¬ inc = "%5" ∧ ¬ inc = "%k11.i" ∧ ¬ inc = "%ctype.i"
+      ∧ ¬ inc = "%cst.i" ∧ ¬ inc = "%hash1.i.i")
+    (htestN : ¬ test = "%3" ∧ ¬ test = "%5" ∧ ¬ test = "%k11.i" ∧ ¬ test = "%ctype.i"
+      ∧ ¬ test = "%cst.i" ∧ ¬ test = "%hash1.i.i")
+    (hincS : inc ∉ walkStaticNames) (htestS : test ∉ walkStaticNames)
+    (hincI7 : inc ≠ "%7") (hincI8 : inc ≠ "%8")
+    (htestI7 : test ≠ "%7") (htestI8 : test ≠ "%8")
+    (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hinner : c - i ≤ C.inner) (hie : i + 1 = c) (hcw : c < 2 ^ 64)
+    (hexit : ∀ (e : State), e.pre = some src →
+      lookupName e.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) →
+      lookupName e.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      WalkLocal (G := G) { C with block := exit } e) :
+    ∃ (s' : State),
+      s' = scanLatchOut s inc test i c exit ∧
+      step calls stage2Body s = .jump s' ∧
+      s'.pc = exit ∧
+      WalkInv G { C with block := exit } s' := by
+  have hpc : s.pc = src := by rw [hInv.pc_eq, hblock]
+  have hb1 : evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c) = 1 := by
+    rw [hie]
+    simp [evalICmp]
+  let s' : State := scanLatchOut s inc test i c exit
+  have hstep : step calls stage2Body s = .jump s' := by
+    rw [scanBlock_step (calls := calls) s hpc hfind rfl rfl hinc_cond hi hc (Or.inr hb1)]
+    rw [ite_eq_left hb1]
+  have hinc : lookupName s'.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_inc, lookupName_cons_self]
+  have hcond : lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
+    dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_cond, lookupName_cons_ne _ _ hinc_cond]
+    exact hc
+  have hk : lookupName s'.env "%k.0.i249" = lookupName s.env "%k.0.i249" := by
+    dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_k, lookupName_cons_ne _ _ hinc_k]
+  have hsp : lookupName s'.env "%sp.i.0248" = lookupName s.env "%sp.i.0248" := by
+    dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_sp, lookupName_cons_ne _ _ hinc_sp]
+  refine ⟨s', rfl, hstep, rfl, ?_⟩
+  refine
+    { pc_eq := rfl
+      blockIndex := ?_
+      k_le := hInv.k_le
+      events_le := hInv.events_le
+      evlen_eq := hInv.evlen_eq
+      evBytes := hInv.evBytes
+      alen_le_sum := hInv.alen_le_sum
+      alen_ge := hInv.alen_ge
+      spans_order := hInv.spans_order
+      spans_end := hInv.spans_end
+      spans_inside := hInv.spans_inside
+      pending_at := hInv.pending_at
+      pending_cursor := hInv.pending_cursor
+      pending_len := hInv.pending_len
+      eoff_le := hInv.eoff_le
+      inner_cap := hInv.inner_cap
+      depth_cap := hInv.depth_cap
+      depth_reg := by rw [hsp]; exact hInv.depth_reg
+      sp_le_wlen := hInv.sp_le_wlen
+      wlen_cap := hInv.wlen_cap
+      tyBytes := hInv.tyBytes
+      stBytes := hInv.stBytes
+      ptrs := by
+        dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+        exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
+      regs := by
+        dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+        exact hInv.regs.bind_pair (a := inc) (b := test) hincS htestS
+      iter := by
+        dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+        exact hInv.iter.bind_pair (a := inc) (b := test)
+          (va := .int 64 (BitVec.ofNat 64 (i + 1)))
+          (vb := .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c)))
+          hincI7 hincI8 htestI7 htestI8
+      log_hash := by dsimp only [s']; exact hInv.log_hash
+      log_len := hInv.log_len
+      log_cap := hInv.log_cap
+      log_alen := hInv.log_alen
+      log_acap := hInv.log_acap
+      owned := by dsimp only [s']; exact hInv.owned
+      frame := ?_
+      blockLocal := ?_ }
+  · rw [hk]; exact hInv.blockIndex
+  · dsimp only [s']; exact hInv.frame
+  · exact hexit s' (by dsimp only [s', scanLatchOut]; rw [hpc]) hinc hcond
+
 /-! #### The four arms -/
 
 /-- **A scan latch's visit.**  Short of the bound, the latch is one control step to its
@@ -2364,6 +2473,7 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.scanBlock_den
 #print axioms LeanLLVM.Refinement.WalkScope.scanBlock_step
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatch_visit
+#print axioms LeanLLVM.Refinement.WalkScope.scanStepAt_exit
 #print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock50
 #print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock50Out
 #print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock48
