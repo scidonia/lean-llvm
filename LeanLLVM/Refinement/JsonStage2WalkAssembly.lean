@@ -3257,6 +3257,16 @@ theorem walkExitFalseEdge {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : Walk
     simp only [evalOperand]; exact hinc
   exact ⟨_, walkBackFalse_step s hpc hpre hsp hspv' hk hkv' hnep hk2 hguard, rfl⟩
 
+/-- **`if.then485.i`'s test, with the destination named.**  `%sp.i.1` is the value the previous
+step writes, so the branch's two destinations are the exit's two tails. -/
+theorem walkExit485 {calls : Calls} {s : State} {spv : Nat}
+    (hpc : s.pc = "if.then485.i")
+    (hsp : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv))) :
+    ∃ s', LeanLLVM.step calls stage2Body s = .jump s' ∧
+      s'.pc = (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+        then "if.end490.i" else "if.then488.i") :=
+  ⟨_, walkIfThen485Step s hpc hsp, rfl⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
