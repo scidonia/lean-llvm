@@ -959,15 +959,16 @@ theorem s2StringBodyWhileBodyInstrs_eq :
 /-- The `if.then11` block's environment and memory, named: the record's pointer,
 its three fields, and the offset word the expander returned. -/
 def s2StringBodyIfThen11Env (env : Env) (off sub : BitVec 64) (c e : Nat) : Env :=
-  ("%msg2.i.i", .ptr (e + 16)) :: ("%off1.i.i", .ptr (e + 8)) ::
-    ("%c.val", .ptr e) :: ("%3", .ptr (c + 1112)) ::
+  ("%msg2.i.i", .ptr (e + (16#64).toNat)) ::
+    ("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+    ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
     ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env
 
 def s2StringBodyIfThen11Mem (mem : Mem) (e : Nat) (off sub : BitVec 64) : Mem :=
   writeBytes
-    (writeBytes (writeBytes mem e (natToBytes 0 4)) (e + 8)
-      (natToBytes (off + sub).toNat 8))
-    (e + 16) (natToBytes 0 8)
+    (writeBytes (writeBytes mem e (natToBytes (0#32).toNat 4))
+      (e + (8#64).toNat) (natToBytes (off + sub).toNat 8))
+    (e + (16#64).toNat) (natToBytes 0 8)
 
 /-- The `if.then11` block's instruction list: the expander's offset word, the
 record's pointer, and the record's three fields. -/
@@ -989,5 +990,67 @@ def s2StringBodyIfThen11Instrs : List Instr :=
 theorem s2StringBodyIfThen11Instrs_eq :
     (s2StringBodyBody.findBlock "if.then11").map (·.instrs) =
       some s2StringBodyIfThen11Instrs := by decide
+
+theorem s2StringBody_ifThen11_denote {calls : Calls} {env : Env} {s : State}
+    {c ei e : Nat} {off sub : BitVec 64}
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hoff : readBytes s.mem ei 8 = some (natToBytes off.toNat 8))
+    (hcval : readBytes s.mem (c + (1112#64).toNat) 8 = some (wordBytes 8 e))
+    (he64 : e < 2 ^ 64) :
+    denoteCode calls s2StringBodyIfThen11Instrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt (s2StringBodyIfThen11Env env off sub c e)
+          { s with mem := s2StringBodyIfThen11Mem s.mem e off sub }) := by
+  dsimp only [s2StringBodyIfThen11Instrs]
+  rw [denoteCode_load64 (v := off) calls env s "%2" "%ei"
+    (by simpa [lookupName] using hei) hoff _]
+  rw [denoteCode_add_reg calls (("%2", .int 64 off) :: env) s "%add12" "%2"
+    "%sub.ptr.sub" (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep8_lit calls
+      (("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env) s "%3" "%c"
+      (1112#64) (by s2_lk) (by decide))]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_loadPtr calls
+      (("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env) s
+      "%c.val" "%3" (by s2_lk) hcval he64)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_store32_imm calls
+      (("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env) s
+      "%c.val" (by s2_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep8_lit calls
+      (("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+      { s with mem := writeBytes s.mem e (natToBytes (0#32).toNat 4) }
+      "%off1.i.i" "%c.val" (8#64) (by s2_lk) (by decide))]
+  rw [denoteCode_store64 calls
+    (("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+      ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+      ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+    { s with mem := writeBytes s.mem e (natToBytes (0#32).toNat 4) }
+    "%add12" "%off1.i.i" (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep8_lit calls
+      (("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+        ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+      { s with mem := (writeBytes (writeBytes s.mem e (natToBytes (0#32).toNat 4))
+          (e + (8#64).toNat) (natToBytes (off + sub).toNat 8)) }
+      "%msg2.i.i" "%c.val" (16#64) (by s2_lk) (by decide))]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_storePtr_null calls
+      (("%msg2.i.i", .ptr (e + (16#64).toNat)) ::
+        ("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+        ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+      { s with mem := (writeBytes (writeBytes s.mem e (natToBytes (0#32).toNat 4))
+          (e + (8#64).toNat) (natToBytes (off + sub).toNat 8)) }
+      "%msg2.i.i" (by s2_lk))]
+  simp only [denoteCode_nil, s2StringBodyIfThen11Env, s2StringBodyIfThen11Mem]
 
 end LeanLLVM.Refinement
