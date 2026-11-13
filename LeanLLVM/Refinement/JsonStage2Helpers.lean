@@ -392,9 +392,28 @@ def s2StringBodyPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     RegionsApart outn 8 dst len.toNat ∧
     RegionsApart outn 8 e stage2ErrorExtent ∧
     RegionsApart dst len.toNat e stage2ErrorExtent ∧
+    -- **The regions the body only reads do not meet the regions it writes.**  The
+    -- document's bytes, the cursor record's error field and the position list are
+    -- read at the callee's own call, after the scan has written the cursor word and
+    -- `if.end` has written the slot; each read is the staging's only if those
+    -- writes are elsewhere.  Without this the callee's model answers at a different
+    -- memory than the body's call reads, which is the same defect the presence
+    -- clauses above close at the writes.
+    RegionsApart xj 8 p len.toNat ∧
+    RegionsApart xj 8 (c + 1112) 8 ∧
+    RegionsApart next 8 p len.toNat ∧
+    RegionsApart next 8 (c + 1112) 8 ∧
+    RegionsApart dst len.toNat p len.toNat ∧
+    RegionsApart dst len.toNat (c + 1112) 8 ∧
+    RegionsApart outn 8 p len.toNat ∧
+    RegionsApart outn 8 (c + 1112) 8 ∧
+    RegionsApart e stage2ErrorExtent p len.toNat ∧
+    RegionsApart e stage2ErrorExtent (c + 1112) 8 ∧
     -- the position list and the cursor word do not meet, which is what lets the
-    -- scan re-read a lane after writing the cursor
-    (∀ k, k < nxp.toNat → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    -- scan re-read a lane after writing the cursor, and the slot is away from the
+    -- list too
+    (∀ k, k < nxp.toNat → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k) ∧
+    (∀ k, k < nxp.toNat → xp + 4 * k + 4 ≤ next ∨ next + 8 ≤ xp + 4 * k)
 
 /-- **`od_scalar_value`'s staging**: the three arguments; the cursor record's two
 pointers; the token's three words; the delivered window (`endp - pos + 5` bytes,
@@ -951,7 +970,8 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
     (h : stage2Calls stage2SubCalls "s2_string_body" args mem next = some r) :
     UnchangedOutside mem r.mem (s2StringBodyFoot args mem next) := by
   obtain ⟨c, p, len, dst, outn, xp, xj, nxp, base, j0, ps, body, e, rfl, hbase, hj0,
-    hps, hbody, he, hspace, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := hpre
+    hps, hbody, he, hspace, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
+    -, -, -, -, -, -, -⟩ := hpre
   cases hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat with
   | none =>
       rw [s2StringBody_none hm] at h
