@@ -35,6 +35,19 @@ the run carries.
 Both prices are one bound (`refusePrice_of_le`): a refusal path is at most thirty
 steps, so with one entry unconsumed the entry term alone pays for it.
 
+**An open point: the past-end entry.**  Every theorem here carries
+`hk : C.k < G.nep`; it is not derived, because `WalkInv` records only `C.k ≤ G.nep`.
+At `C.k = G.nep` the price's byte term starts from `entryPos G G.nep`, which the
+totalisation sends to `0` and which then has to pay for a whole document rather than
+for a span — the accounting the review handoff raised as open (a terminal charge
+reading a past-end entry).  `entryPos` and `entryByte` state the position at which
+the default is read, and say of it that "the carrier is read at an index the loop's
+own bound keeps inside the stream, so the default is a totalisation, not a case the
+walk takes": the loop's own guard is `C.k < G.nep`.  Whether the past-end state is
+in the invariant's scope, and on which credit boundary it is charged, is a design
+question about the terminal price — it is not settled here, and a witness file is not
+where it should be.
+
 **What is not here.**  The remaining refusal branches — `if.then71.i`,
 `cleanup104.i`, `if.then13.i`/`if.then176.i`, the mismatched literals' — and the
 `four` trap blocks (`walkTrap_noStep`), plus the `finish` alternative.  Each is the
@@ -528,6 +541,201 @@ theorem walkRefuseWitness_quote {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   quoteRefuse_at G C s hInv hhead h8 hinc hnep hge hv he hk
 
+/-! ### The colon at depth zero
+
+`%8 = 58` falls below `NodeBlock5`'s pivot and is not `44`, so the switch reaches
+`NodeBlock → LeafBlock3`, whose equality test takes `if.then173.i`; a depth-zero
+register there refuses with the entry's position in `%e + 8`.  Six blocks, and the
+byte is the one the *dispatch* reads — an early refusal with entries remaining, which
+is the case the old index split could not describe. -/
+
+/-- `NodeBlock21` at `%8 = 58`: `%8 < 91` is true, so the edge is `NodeBlock5`. -/
+def colS₁ (s : State) : State :=
+  { s.bind "%Pivot22" (.int 1 (1 : BitVec 1)) with pc := "NodeBlock5", pre := some s.pc }
+
+/-- `NodeBlock5` at `%8 = 58`: `%8 < 44` is false, so the edge is `NodeBlock`. -/
+def colS₂ (s : State) : State :=
+  { s.bind "%Pivot6" (.int 1 (0 : BitVec 1)) with pc := "NodeBlock", pre := some s.pc }
+
+/-- `NodeBlock` at `%8 = 58`: `%8 < 58` is false, so the edge is `LeafBlock3`. -/
+def colS₃ (s : State) : State :=
+  { s.bind "%Pivot" (.int 1 (0 : BitVec 1)) with pc := "LeafBlock3", pre := some s.pc }
+
+/-- `LeafBlock3` at `%8 = 58`: `%8 = 58` is true, so the edge is `if.then173.i`. -/
+def colS₄ (s : State) : State :=
+  { s.bind "%SwitchLeaf4" (.int 1 (1 : BitVec 1)) with
+    pc := "if.then173.i", pre := some s.pc }
+
+/-- `if.then173.i` at a depth-zero register: the edge is `if.then176.i`. -/
+def colS₅ (s : State) : State :=
+  { s.bind "%cmp174.i" (.int 1 (1 : BitVec 1)) with pc := "if.then176.i", pre := some s.pc }
+
+/-- `if.then176.i`: the entry's position written at `%e + 8`, at `if.then`. -/
+def colS₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat) (s : State) : State :=
+  { { s with
+      env := ("%off1.i.i72", .ptr (C.stage.e + 8)) :: s.env
+      mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- **`NodeBlock21` at a colon.**  `%8 < 91` is true at `58`. -/
+theorem colStep₁ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58))) :
+    WalkLink calls G C s { C with block := "NodeBlock5" } (colS₁ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.NodeBlock21_at G C s hInv hhead h8
+  have hbit : evalICmp .slt (BitVec.ofNat 8 58) (BitVec.ofNat 8 91) = 1 := by decide
+  have hstate : s' = colS₁ s := hs'.trans (by simp [colS₁, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`NodeBlock5` at a colon.**  `%8 < 44` is false at `58`, so the edge is
+`NodeBlock`. -/
+theorem colStep₂ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "NodeBlock5")
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58))) :
+    WalkLink calls G C s { C with block := "NodeBlock" } (colS₂ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.NodeBlock5_at G C s hInv hblock h8
+  have hbit : evalICmp .slt (BitVec.ofNat 8 58) (BitVec.ofNat 8 44) = 0 := by decide
+  have hstate : s' = colS₂ s := hs'.trans (by simp [colS₂, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`NodeBlock` at a colon.**  `%8 < 58` is false at `58` — the pivot's boundary is
+exclusive — so the edge is `LeafBlock3`. -/
+theorem colStep₃ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "NodeBlock")
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58))) :
+    WalkLink calls G C s { C with block := "LeafBlock3" } (colS₃ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.NodeBlock_at G C s hInv hblock h8
+  have hbit : evalICmp .slt (BitVec.ofNat 8 58) (BitVec.ofNat 8 58) = 0 := by decide
+  have hstate : s' = colS₃ s := hs'.trans (by simp [colS₃, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`LeafBlock3` at a colon.**  The leaf's equality test is true at `58`, so the
+run takes `if.then173.i`. -/
+theorem colStep₄ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "LeafBlock3")
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58))) :
+    WalkLink calls G C s { C with block := "if.then173.i" } (colS₄ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.LeafBlock3_at G C s hInv hblock h8
+  have hbit : evalICmp .eq (BitVec.ofNat 8 58) (BitVec.ofNat 8 58) = 1 := by decide
+  have hstate : s' = colS₄ s := hs'.trans (by simp [colS₄, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`if.then173.i` at depth zero.**  `%sp.i.0248 = 0` is true, so the run takes the
+refusal store `if.then176.i`. -/
+theorem colStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then173.i")
+    (hsp : C.sp = 0) :
+    WalkLink calls G C s { C with block := "if.then176.i" } (colS₅ s) := by
+  have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 0)) := by
+    simpa only [evalOperand, hsp] using hInv.depth_reg
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then173_i_at G C s hInv hblock h1
+  have hbit : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = 1 := by decide
+  have hstate : s' = colS₅ s := hs'.trans (by simp [colS₅, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`if.then176.i`.**  The refusal's offset store: the entry's position goes to
+`%e + 8` and the edge is the refusal copy. -/
+theorem colStep₆ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then176.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    WalkLink calls G C s { C with block := "if.then", eoff := j, refusal := true }
+      (colS₆ C j s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then176_i_at G C s hInv hblock hv he hj hj64
+  rw [hs'] at hl
+  exact hl
+
+/-- **The colon's refusal, as one counted run.**  Six links from the head to
+`if.then`. -/
+theorem colonRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
+    (hsp : C.sp = 0)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    WalkRefuseAt calls G C s := by
+  have h8₁ : evalOperand (colS₁ s) (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)) := by
+    simpa only [colS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₂ : evalOperand (colS₂ (colS₁ s)) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 58)) := by
+    simpa only [colS₂, colS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot6") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₃ : evalOperand (colS₃ (colS₂ (colS₁ s))) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 58)) := by
+    simpa only [colS₃, colS₂, colS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have hv₆ : evalOperand (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))) (.reg "%idxprom.i") =
+      some (.int 64 (BitVec.ofNat 64 j)) := by
+    simpa only [colS₅, colS₄, colS₃, colS₂, colS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%cmp174.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf4") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%idxprom.i") _ _ (by decide)] using hv
+  have he₆ : lookupName (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))).env "%e" =
+      some (.ptr C.stage.e) := by
+    simpa only [colS₅, colS₄, colS₃, colS₂, colS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp174.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf4") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%e") _ _ (by decide)] using he
+  have L₁ : WalkLink calls G C s { C with block := "NodeBlock5" } (colS₁ s) :=
+    colStep₁ G C s hInv hhead h8
+  have L₂ : WalkLink calls G { C with block := "NodeBlock5" } (colS₁ s)
+      { C with block := "NodeBlock" } (colS₂ (colS₁ s)) :=
+    colStep₂ G { C with block := "NodeBlock5" } (colS₁ s) L₁.inv' rfl h8₁
+  have L₃ : WalkLink calls G { C with block := "NodeBlock" } (colS₂ (colS₁ s))
+      { C with block := "LeafBlock3" } (colS₃ (colS₂ (colS₁ s))) :=
+    colStep₃ G { C with block := "NodeBlock" } (colS₂ (colS₁ s)) L₂.inv' rfl h8₂
+  have L₄ : WalkLink calls G { C with block := "LeafBlock3" } (colS₃ (colS₂ (colS₁ s)))
+      { C with block := "if.then173.i" } (colS₄ (colS₃ (colS₂ (colS₁ s)))) :=
+    colStep₄ G { C with block := "LeafBlock3" } (colS₃ (colS₂ (colS₁ s))) L₃.inv' rfl h8₃
+  have L₅ : WalkLink calls G { C with block := "if.then173.i" }
+      (colS₄ (colS₃ (colS₂ (colS₁ s)))) { C with block := "if.then176.i" }
+      (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))) :=
+    colStep₅ G { C with block := "if.then173.i" } (colS₄ (colS₃ (colS₂ (colS₁ s))))
+      L₄.inv' rfl hsp
+  have L₆ : WalkLink calls G { C with block := "if.then176.i" }
+      (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s)))))
+      { C with block := "if.then", eoff := j, refusal := true }
+      (colS₆ C j (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s)))))) :=
+    colStep₆ G { C with block := "if.then176.i" }
+      (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))) L₅.inv' rfl hv₆ he₆ hj hj64
+  refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
+    colS₆ C j (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))), 6, ?_, rfl,
+    L₆.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
+  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+    (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+
+/-- **The `refuse` witness at a depth-zero colon**, in the exact shape
+`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct.  Six
+blocks from the head to the refusal copy, the entry's position as the offset, and the
+price inside one entry's allowance — a refusal with entries still remaining. -/
+theorem walkRefuseWitness_colon {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
+    (hsp : C.sp = 0)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
+      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k) :=
+  colonRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.refusePrice_of_le
@@ -547,3 +755,5 @@ theorem walkRefuseWitness_quote {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
 #print axioms LeanLLVM.Refinement.WalkScope.quoteRefuseStep₅
 #print axioms LeanLLVM.Refinement.WalkScope.quoteRefuse_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_quote
+#print axioms LeanLLVM.Refinement.WalkScope.colonRefuse_at
+#print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_colon
