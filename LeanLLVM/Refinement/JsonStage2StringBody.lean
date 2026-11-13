@@ -405,6 +405,189 @@ theorem s2StringBody_findBlock_entry :
            (Operand.reg "%nxp")],
         Term.condbr (Operand.reg "%cmp3") "land.rhs" "if.then"⟩ := by decide
 
+-- The nine blocks beside `entry`, each the literal `findBlock` resolves to.  The
+-- search is over the list pinned above, so these nine and the entry's statement
+-- are what every block's step lemma rewrites with; the two controls beneath them
+-- are that a name the body does not carry is `none`, and that two different
+-- blocks do not resolve to the same literal — a step applied at the wrong block
+-- fails here rather than in the run that follows it.
+theorem s2StringBody_findBlock_land_rhs :
+    s2StringBodyBody.findBlock "land.rhs" =
+      some { name := "land.rhs",
+               instrs := [Instr.phi
+                            "%inc24"
+                            (Ty.int 64)
+                            [("while.body", Operand.reg "%inc"),
+                             ("entry", Operand.reg "%xj.promoted")],
+                          Instr.gep
+                            "%arrayidx"
+                            (Ty.int 32)
+                            (Operand.reg "%xp")
+                            (Operand.reg "%inc24"),
+                          Instr.load "%1" (Ty.int 32) (Operand.reg "%arrayidx"),
+                          Instr.zext "%conv" 32 64 (Operand.reg "%1"),
+                          Instr.icmp
+                            "%cmp1"
+                            (IPred.ugt)
+                            64
+                            (Operand.reg "%sub.ptr.sub")
+                            (Operand.reg "%conv")],
+               term := Term.condbr (Operand.reg "%cmp1") "while.body" "land.lhs.true" } := by decide
+
+theorem s2StringBody_findBlock_while_body :
+    s2StringBodyBody.findBlock "while.body" =
+      some { name := "while.body",
+               instrs := [Instr.binop
+                            "%inc"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%inc24")
+                            (Operand.imm (Const.int 64 0x0000000000000001#64)),
+                          Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%inc")
+                            (Operand.reg "%xj"),
+                          Instr.icmp
+                            "%exitcond.not"
+                            (IPred.eq)
+                            64
+                            (Operand.reg "%inc")
+                            (Operand.reg "%nxp")],
+               term := Term.condbr (Operand.reg "%exitcond.not") "if.then" "land.rhs" } := by decide
+
+theorem s2StringBody_findBlock_land_lhs_true :
+    s2StringBodyBody.findBlock "land.lhs.true" =
+      some { name := "land.lhs.true",
+               instrs := [Instr.binop
+                            "%add"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%sub.ptr.sub")
+                            (Operand.reg "%len"),
+                          Instr.icmp
+                            "%cmp7"
+                            (IPred.ugt)
+                            64
+                            (Operand.reg "%add")
+                            (Operand.reg "%conv")],
+               term := Term.condbr (Operand.reg "%cmp7") "if.end" "if.then" } := by decide
+
+theorem s2StringBody_findBlock_if_then :
+    s2StringBodyBody.findBlock "if.then" =
+      some { name := "if.then",
+               instrs := [Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%len")
+                            (Operand.reg "%outn")],
+               term := Term.br "cleanup16" } := by decide
+
+theorem s2StringBody_findBlock_if_end :
+    s2StringBodyBody.findBlock "if.end" =
+      some { name := "if.end",
+               instrs := [Instr.callVoid
+                            "llvm.lifetime.start.p0"
+                            [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+                             (Ty.ptr, Operand.reg "%ei")],
+                          Instr.store
+                            (Ty.int 64)
+                            (Operand.imm (Const.int 64 0x0000000000000000#64))
+                            (Operand.reg "%ei"),
+                          Instr.call
+                            "%call"
+                            (Ty.int 64)
+                            "leanllvm_json_escape_expand"
+                            [(Ty.ptr, Operand.reg "%p"),
+                             (Ty.int 64, Operand.reg "%len"),
+                             (Ty.ptr, Operand.reg "%dst"),
+                             (Ty.ptr, Operand.reg "%ei"),
+                             (Ty.ptr, Operand.reg "%xp"),
+                             (Ty.ptr, Operand.reg "%xj"),
+                             (Ty.int 64, Operand.reg "%nxp"),
+                             (Ty.int 64, Operand.reg "%sub.ptr.sub")],
+                          Instr.icmp
+                            "%cmp9"
+                            (IPred.eq)
+                            64
+                            (Operand.reg "%call")
+                            (Operand.imm (Const.int 64 0xffffffffffffffff#64))],
+               term := Term.condbr (Operand.reg "%cmp9") "if.then11" "if.end14" } := by decide
+
+theorem s2StringBody_findBlock_if_then11 :
+    s2StringBodyBody.findBlock "if.then11" =
+      some { name := "if.then11",
+               instrs := [Instr.load "%2" (Ty.int 64) (Operand.reg "%ei"),
+                          Instr.binop
+                            "%add12"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%2")
+                            (Operand.reg "%sub.ptr.sub"),
+                          Instr.gep
+                            "%3"
+                            (Ty.int 8)
+                            (Operand.reg "%c")
+                            (Operand.imm (Const.int 64 0x0000000000000458#64)),
+                          Instr.load "%c.val" (Ty.ptr) (Operand.reg "%3"),
+                          Instr.store
+                            (Ty.int 32)
+                            (Operand.imm (Const.int 32 0x00000000#32))
+                            (Operand.reg "%c.val"),
+                          Instr.gep
+                            "%off1.i.i"
+                            (Ty.int 8)
+                            (Operand.reg "%c.val")
+                            (Operand.imm (Const.int 64 0x0000000000000008#64)),
+                          Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%add12")
+                            (Operand.reg "%off1.i.i"),
+                          Instr.gep
+                            "%msg2.i.i"
+                            (Ty.int 8)
+                            (Operand.reg "%c.val")
+                            (Operand.imm (Const.int 64 0x0000000000000010#64)),
+                          Instr.store
+                            (Ty.ptr)
+                            (Operand.imm (Const.null))
+                            (Operand.reg "%msg2.i.i")],
+               term := Term.br "cleanup" } := by decide
+
+theorem s2StringBody_findBlock_if_end14 :
+    s2StringBodyBody.findBlock "if.end14" =
+      some { name := "if.end14",
+               instrs := [Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%call")
+                            (Operand.reg "%outn")],
+               term := Term.br "cleanup" } := by decide
+
+theorem s2StringBody_findBlock_cleanup :
+    s2StringBodyBody.findBlock "cleanup" =
+      some { name := "cleanup",
+               instrs := [Instr.phi
+                            "%retval.0"
+                            (Ty.int 32)
+                            [("if.then11", Operand.imm (Const.int 32 0x00000000#32)),
+                             ("if.end14", Operand.imm (Const.int 32 0x00000002#32))],
+                          Instr.callVoid
+                            "llvm.lifetime.end.p0"
+                            [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+                             (Ty.ptr, Operand.reg "%ei")]],
+               term := Term.br "cleanup16" } := by decide
+
+theorem s2StringBody_findBlock_cleanup16 :
+    s2StringBodyBody.findBlock "cleanup16" =
+      some { name := "cleanup16",
+               instrs := [Instr.phi
+                            "%retval.1"
+                            (Ty.int 32)
+                            [("cleanup", Operand.reg "%retval.0"),
+                             ("if.then", Operand.imm (Const.int 32 0x00000001#32))]],
+               term := Term.ret (Ty.int 32) (some (Operand.reg "%retval.1")) } := by decide
+-- The control: two different blocks are two different literals.
+theorem s2StringBody_findBlock_entry_ne_ifEnd :
+    s2StringBodyBody.findBlock "entry" ≠ s2StringBodyBody.findBlock "if.end" := by decide
+
 /- **A write of the bytes already there leaves the memory alone** — the form the
 closing needs for a region the body rewrites with its own value (the cursor word
 when the scan does not run, the slot on the arm that writes nothing):
