@@ -4046,6 +4046,42 @@ theorem s2StringBodyWindow_lane_lt {ps : List Nat} {c pos0 len lane : Nat}
   rw [hempty] at hcons
   exact absurd hcons (by simp)
 
+/-- The scan's head state, named: the entry's output environment over the entry's
+output state, cursor advanced by the slot.  Rule four at the level of a *state* — the
+five-cell record update is spelled once, here, because the parser will not read it
+inside a tuple and because the contract names this state repeatedly. -/
+def s2StringBodyHeadState (env : Env) (s : State) (base p j0 : Nat)
+    (nxp : BitVec 64) : State :=
+  stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+    { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc }
+
+/-- **The entry, seated**: the body's first control step reaches the named head, and
+the invariant holds there.  The prefix and the seat, consumed as one fact. -/
+theorem s2StringBodyEntry_seat_landRhs {env : Env} {s : State} {c p xj base j0 : Nat}
+    {nxp : BitVec 64} {ps : List Nat}
+    (hpc : s.pc = "entry")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hxpc : lookupName env "%xp" = some (.ptr xp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1)
+    (hble : base ≤ p)
+    (hword : stage2ReadWord s.mem xj 8 = some j0)
+    (hps : readLanes32 s.mem xp nxp.toNat = some ps)
+    (hj0N : j0 < nxp.toNat) :
+    (∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody (stateAt env s) =
+        runFuel s2StringBodyCalls k s2StringBodyBody
+          (s2StringBodyHeadState env s base p j0 nxp)) ∧
+      s2StringBodyScanInv s.mem xj (p - base) xp nxp.toNat ps (nxp.toNat - j0)
+        (s2StringBodyHeadState env s base p j0 nxp) j0 :=
+  ⟨s2StringBodyEntry_prefix_landRhs hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit,
+   s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hpc hble hp64 hword hps hj0N
+     hxpc hxj hnxp⟩
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
