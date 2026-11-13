@@ -2120,6 +2120,11 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
       lookupName s₂.env "%root_done.i" = some (.ptr (G.next0 + 8)) ∧
       lookupName s₂.env "%alen" = some (.ptr (S.z + woff 48)) ∧
       lookupName s₂.env "%len" = some (.ptr (S.z + woff 8)) ∧
+      lookupName s₂.env "%c.i" = some (.ptr S.c) ∧
+      lookupName s₂.env "%ctype.i" = some (.ptr S.ctype) ∧
+      lookupName s₂.env "%cst.i" = some (.ptr S.cst) ∧
+      lookupName s₂.env "%ndst" = some (.ptr G.ndst) ∧
+      lookupName s₂.env "%nev" = some (.ptr G.nev) ∧
       s₂.mem = writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n) ∧
       s₂.env = ("%off1.i.i117", .ptr (S.e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
           (walkEntryEnv1 (EntryState stage2Body
@@ -2158,11 +2163,27 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
       d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env
     G.next0 G.n G.b G.ep G.nep S.s S.z G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev S.e
-  refine ⟨s₁, s₂, h1, h2, hpc2, ?_, ?_, ?_, ?_, hmem2', henv2⟩
+  refine ⟨s₁, s₂, h1, h2, hpc2, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hmem2', henv2⟩
   · rw [henv2]; exact hnine.1
   · rw [henv2]; exact hnine.2.1
   · rw [henv2]; exact hnine.2.2.1
   · rw [henv2]; exact hnine.2.2.2.1
+  · rw [henv2]
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne, walkEntryState_env]
+  · rw [henv2]
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne, walkEntryState_env]
+  · rw [henv2]
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne, walkEntryState_env]
+  · rw [henv2]
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne, walkEntryState_env]
+  · rw [henv2]
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne, walkEntryState_env]
+
 
 /-- **The refusal copy's step.**  `if.then`'s five live-range ends at the state the flush
 block leaves: the jump's destination is `if.end`. -/
