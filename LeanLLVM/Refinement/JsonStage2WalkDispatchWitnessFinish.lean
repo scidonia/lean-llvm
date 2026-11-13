@@ -86,8 +86,81 @@ theorem walkIfThen403_seg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
   obtain ⟨s', hl, hs'⟩ := walkIfThen403_at (calls := calls) G C s hInv hblock
   exact ⟨_, s', WalkSegment.of_link hl, rfl, hs', hl.inv'⟩
 
+/-! ### The merge's other arm
+
+`cleanup478_denote` states the merge at `k2 < nepv.toNat`, which is the *back edge*: the
+`icmp .ult` is one, and the successor is `while.body.i`.  The `finish` outcome needs the
+same phi selection with the test **false** — `k2 = nepv.toNat`, the terminal index — whose
+successor is `if.then485.i`.  The lemma is restated here as the twin rather than changed,
+because `WalkScope`'s form is the loop's and this one is the exit's: the two differ in the
+bit and in nothing else. -/
+
+/-- **The merge's `denoteCode` at the terminal index.**  The two `phi`s select the
+dispatch's depth and index, and `%cmp.i` is zero because the index has reached the entry
+count. -/
+theorem cleanup478_denote_finish (calls : Calls) (s : State) (p : String)
+    {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hterm : k2 = nepv.toNat) :
+    denoteCode calls cleanup478Block.instrs s =
+      some (((s.bind "%sp.i.1" (.int 32 (BitVec.ofNat 32 spv))).bind
+        "%k.2.i" (.int 64 (BitVec.ofNat 64 k2))).bind
+        "%cmp.i" (.int 1 (0 : BitVec 1))) := by
+  have hk2lt : k2 < 2 ^ 64 := by
+    rw [hterm]; exact nepv.isLt
+  have hult : evalICmp .ult (BitVec.ofNat 64 k2) nepv = (0 : BitVec 1) := by
+    have hge : ¬ ((BitVec.ofNat 64 k2).toNat < nepv.toNat) := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk2lt, hterm]
+      omega
+    have hfalse : BitVec.ult (BitVec.ofNat 64 k2) nepv = false := by
+      rw [Bool.eq_false_iff]
+      intro h
+      exact hge ((BitVec.ult_iff_toNat_lt).1 h)
+    rw [show evalICmp .ult (BitVec.ofNat 64 k2) nepv
+          = BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 k2) nepv) from rfl, hfalse]
+    rfl
+  have hsel : PhiSelects s p
+      [{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+       { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }]
+      [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+       ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))] :=
+    PhiSelects.cons hsp hspv (PhiSelects.cons hk hkv PhiSelects.nil)
+  have hspecs : cleanup478Block.instrs =
+      ([{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+        { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }].map
+          PhiSpec.instr) ++
+        [Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i")
+          (Operand.reg "%nep")] := by
+    simp [cleanup478Block, PhiSpec.instr]
+  rw [hspecs, denoteCode_phiRun (specs :=
+      [{ dst := "%sp.i.1", ty := Ty.int 32, incoming := cleanupSpIncoming },
+       { dst := "%k.2.i", ty := Ty.int 64, incoming := cleanupKIncoming }])
+      (vs := [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+              ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))])
+      (rest := [Instr.icmp "%cmp.i" IPred.ult 64 (Operand.reg "%k.2.i")
+        (Operand.reg "%nep")]) hpre hsel (by rfl)]
+  rw [show s.bindAll [("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)),
+        ("%k.2.i", .int 64 (BitVec.ofNat 64 k2))] =
+      stateAt (("%k.2.i", .int 64 (BitVec.ofNat 64 k2)) ::
+        ("%sp.i.1", .int 32 (BitVec.ofNat 32 spv)) :: s.env) s from rfl]
+  rw [denoteCode_icmp_ult_reg (x := BitVec.ofNat 64 k2) (y := nepv)
+    calls _ s "%cmp.i" "%k.2.i" "%nep"
+    (by simp only [lookupName_cons_self])
+    (by
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+      exact hnep)
+    []]
+  rw [hult]
+  rfl
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfElse387_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen403_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen403_seg
+#print axioms LeanLLVM.Refinement.WalkScope.cleanup478_denote_finish
