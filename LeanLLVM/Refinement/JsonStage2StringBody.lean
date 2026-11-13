@@ -5611,6 +5611,34 @@ theorem s2StringBodyArm_scan_landLhsTrue {mem : Mem} {next ch p dst outn xp xj :
       (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
       ⟨(outn, 8), by simp, le_rfl, le_rfl⟩ (by simp [natToBytes_length])
 
+/-- **The error record's three words are present**, from the staging's one extent:
+the body writes `0`, the offset and the message pointer at `e`, `e + 8` and
+`e + 16`, and the staging holds the record whole. -/
+theorem s2StringBodyErr_presence {mem : Mem} {e : Nat} {bs : List UInt8}
+    (h : readBytes mem e stage2ErrorExtent = some bs) :
+    readBytes mem e 4 ≠ none ∧ readBytes mem (e + 8) 8 ≠ none ∧
+      readBytes mem (e + 16) 8 ≠ none := by
+  have h24 : readBytes mem e (4 + 20) = some bs := by
+    rw [show (4 + 20 : Nat) = stage2ErrorExtent from by decide]
+    exact h
+  obtain ⟨h4, h20⟩ := readBytes_split mem e 4 20 h24
+  obtain ⟨-, h16⟩ := readBytes_split mem (e + 4) 4 16 h20
+  obtain ⟨h8, h8'⟩ := readBytes_split mem (e + 8) 8 8 (by
+    rwa [show (e + 4) + 4 = e + 8 from by omega] at h16)
+  refine ⟨?_, ?_, ?_⟩
+  · rw [h4]; simp
+  · rw [h8]; simp
+  · rw [show e + 16 = e + 8 + 8 from by omega, h8']; simp
+
+/-- **The body's budget as a term of its arguments**: the entry's one step, the
+scan's `(N + 1) * 2`, and the longest arm's five.  The same shape as
+`stage2Budget`: a caller reads the budget off the arguments rather than the run. -/
+def s2StringBodyBudget (args : List Value) : Nat :=
+  match args with
+  | [.ptr _, .ptr _, .int 64 _, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 nxp] =>
+      1 + (nxp.toNat + 1) * 2 + 5
+  | _ => 0
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
