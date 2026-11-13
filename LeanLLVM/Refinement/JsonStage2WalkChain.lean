@@ -1,4 +1,16 @@
 /-
+**Name what a step produces; never leave the consumer to re-derive it.**  That is the whole
+technique of this layer, and it cost one item at each level it was learned at.  A step's
+*carry* is stated with the nesting it produces (`{ { C with block := "a" } with block :=
+"b" }`, not a tidied `{ C with block := "b" }`); its *state* is named by a definition rather
+than restated (`scanNodeBlock50In`, `landRhsIOutAt`); a chain's *index* is a `def`, because
+an `abbrev` is unfolded by the elaborator and the produced index and the written one stop
+being the same term; a chain's *count* is a `Seg`, because `WalkChain` is a `Prop` and no
+length is definable from it; and an environment is named once as an equality and rewritten
+with, because `simp` will not normalise a mixed `cells`/`bind`/`bindAll` nest.  Each is the
+same trade: the producer states the fact, and every consumer reads it instead of computing
+it again — which is what makes the layers composable at all.
+
 The walk's dispatch chain: the finite pieces of a revolution.
 
 `WalkDispatch`'s interior is not one path.  A revolution is a finite path from the
