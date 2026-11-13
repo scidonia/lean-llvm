@@ -20,7 +20,7 @@ it touches memory, and on whether its call's result is a contract:
 
 | block | core | the hypothesis it owes |
 |---|---|---|
-| `cond.true345.i` | `pureCore` (no store) | the entry stream's lane read at `%inc.i` — `%5 + %inc.i`'s 32-bit word, which the geometry's `entries` gives at the index |
+| `cond.true345.i` | `pureCore` (no store) | **the frame's entry-stream preservation at the cursor**; the lane read itself is the cheap half — `denoteCode_gep32_ofNat`, `denoteCode_load_i32` and `readLanes32_nth` give it outright |
 | `if.end372.i` | store variant (`refusalStore`'s shape) | `denoteCode` **and** the frame for its store through `%end.i`; its `phi` over eight predecessors is `cleanup478_denote`'s sibling |
 | `if.then413.i` | store variant + call | `denoteCode`, which consumes `s2_value_pos`'s contract at this call site, plus the frame for the `%kind404.i` store |
 | `if.then425.i` | call consumer | **`od_scalar_value`'s contract at `(%c.i, %t352.i, %z)`**, then the frame for its writes |
