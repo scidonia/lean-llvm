@@ -4151,6 +4151,37 @@ theorem s2StringBodyStaged_entry (mem : Mem) (next : Nat)
     simp [stagedState, initState, s2StringBodyBody, List.zip_cons_cons,
       List.map_cons, lookupName]
 
+/-- **Stage 2: the body-itself arm.**  With the cursor at the count the entry's test
+fails; the body-itself arm writes the extent's word at `outn` and answers `1` — three
+control steps.  The model's arm names the cursor word too, but the staging already
+holds that word, so that write is the memory and the two memories agree. -/
+theorem s2StringBodyArm_bodyItself {env : Env} {s : State}
+    {c p xj base j0 outn : Nat} {nxp len : BitVec 64}
+    (hpc : s.pc = "entry")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (houtn : lookupName env "%outn" = some (.ptr outn))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 0#1) :
+    runFuel s2StringBodyCalls 3 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes s.mem outn (natToBytes len.toNat 8))) := by
+  have h1 := step_entry_ifThen hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit
+  have h2 : runFuel s2StringBodyCalls 2 s2StringBodyBody
+      (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+        ({ s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then", pre := some s.pc })) =
+      some (.ret (some (.int 32 0x00000001#32))
+        (writeBytes s.mem outn (natToBytes len.toNat 8))) :=
+    s2StringBodyIfThen_finishes (env := s2StringBodyEntryOut env s.next base p j0 nxp)
+      (s := { s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then", pre := some s.pc })
+      rfl (by s2_lk) (by s2_lk)
+  exact runFuel_prefix_some (fun k => runFuel_jump_prefix h1 k) h2
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
