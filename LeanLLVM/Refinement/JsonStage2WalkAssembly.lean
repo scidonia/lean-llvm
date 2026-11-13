@@ -307,6 +307,60 @@ theorem walkWide_outside {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {a m : N
         · exact absurd hnil (by simp)
   · exact not_walkAlloca_of_lt (by omega) ⟨r, hr, hlo, hhi⟩
 
+/-- **The document's bytes are outside the run's frame, at any carry.**  The seed's
+version (`walkSeed_doc_out`) is stated at `walkSeed G S`; a chain's carry has advanced,
+so the arena and event comparisons are the *carry's* — but the document lies below both
+(`stage2Regions`' first entry against the third and the fourth), so the two bounds are
+those clauses read at the carry's cursors and not a search.
+
+The carry's two bounds are the invariant's: `C.alen ≤ ndst0 + n + reserve` is
+`alen_le` plus the reserve, and `C.evlen ≤ G.evcap` is `evlen_le` through `evRoom`. -/
+theorem walkWide_doc_out {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    {e : Nat} (ha : G.b ≤ e) (he : e < G.b + G.n) :
+    ¬ inRegions (walkWide G C) e := by
+  have hsep := disjointRegions_staged_prefix C.stage.separate
+  have h03 := stage2Regions_sep hsep (i := 0) (j := 3)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  have h04 := stage2Regions_sep hsep (i := 0) (j := 4)
+    (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
+  simp only [stage2Regions, List.getElem_cons_zero, List.getElem_cons_succ] at h03 h04
+  have hnev : G.nev0 ≤ G.evcap := walkGeom_nev_le G
+  refine walkWide_outside G C (a := G.b) (m := G.n) ?_ ?_ ?_ ?_ ?_ ha he
+  · rcases h03 with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr (by omega)
+  · rcases h04 with h' | h'
+    · exact Or.inl (by omega)
+    · exact Or.inr (by omega)
+  · intro r hr
+    rcases stage2StagedWrites_against (a := G.b) (m := G.n + stage2ReadTail)
+      C.stage.separate (by simp [stage2Regions]) r hr with h' | h'
+    · exact Or.inl h'
+    · exact Or.inr (by omega)
+  · rcases C.stage.dSep (G.b, G.n + stage2ReadTail)
+      (by simp [stage2WalkRegions, stage2Regions]) with hd | hd
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  · have hwm := G.watermark (G.b, G.n + stage2ReadTail) (by simp [stage2Regions])
+    omega
+
+/-- **A document byte reads as the caller's.**  The document is outside the run's
+frame at every carry (`walkWide_doc_out`), so the byte a scan loads is `G.doc`'s own —
+the derivation the accounting promised in place of a carry field: the invariant's frame
+plus the geometry's document, and nothing about the scan. -/
+theorem walkDoc_byte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap) {q : Nat} (hq : q < G.n) :
+    readBytes s.mem (G.b + q) 1 = some [G.bs.getD q 0] := by
+  have hreads : readBytes s.mem (G.b + q) 1 = readBytes m0 (G.b + q) 1 :=
+    readBytes_eq_of_UnchangedOn (unchangedOutside_iff_inRegions.mp hInv.frame)
+      (fun k hk => walkWide_doc_out G C halen hevlen (by omega) (by omega))
+  rw [hreads]
+  exact walkReadBytes_one_of_readByte (readByte_of_readBytes G.doc hq)
+
 /-! ### The trace's step shapes
 
 `WalkLink` carries `step : step calls stage2Body s = .jump s'`, so a chain names every
@@ -1938,6 +1992,8 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkPhiGepLoadBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkDoc_byte
+#print axioms LeanLLVM.Refinement.WalkScope.walkWide_doc_out
 #print axioms LeanLLVM.Refinement.WalkScope.walkWide_outside
 #print axioms LeanLLVM.Refinement.WalkScope.execTerm_condbr_bit
 #print axioms LeanLLVM.Refinement.WalkScope.walkCondEnd349Step
