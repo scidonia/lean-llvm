@@ -1221,6 +1221,27 @@ theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : Walk
         hnepv hterm hprice
     · exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
 
+/-- **The flush arm from four named steps.**  The zero-entry run is the entry block's zero
+arm, the flush block, the refusal copy and the return — four control steps, inside
+`stage2FinalisationAllowance` — so `WalkFlushAt` follows from their four step equations at the
+staging's own memory and cursor.  This is the composition; what remains at a call site is to
+name the four steps from the staging's premises (`walkEntry_step`'s zero branch and
+`walkEntryJump`, the flush block's run, `walkIfThen_step`, `walkIfEnd_step`), which is why the
+premise is `WalkFlushAt` at the memory rather than over every memory: the steps are facts
+about *those* bytes. -/
+theorem WalkFlushAt.ofRun {sub : Calls} {v0 : Value} {a13 : List Value} {nep : Nat}
+    {d c ctype cst tok s z e : Nat} {mem : Mem} {next : Nat}
+    (h0 : nep = 0) {s₁ s₂ s₃ s₄ : State}
+    (hstep₁ : LeanLLVM.step (stage2Calls sub) stage2Body
+      (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) = .jump s₁)
+    (hstep₂ : LeanLLVM.step (stage2Calls sub) stage2Body s₁ = .jump s₂)
+    (hstep₃ : LeanLLVM.step (stage2Calls sub) stage2Body s₂ = .jump s₃)
+    (hstep₄ : LeanLLVM.step (stage2Calls sub) stage2Body s₃ = .ret v0 s₄) :
+    WalkFlushAt (stage2Calls sub) v0 mem next a13 nep d c ctype cst tok s z e := by
+  intro _
+  refine ⟨4, s₄.mem, by simp [stage2FinalisationAllowance], ?_⟩
+  simp only [runFuel, hstep₁, hstep₂, hstep₃, hstep₄]
+
 /-! ### The endpoint, and the three cases it is for
 
 The three outcomes above are not an end in themselves: they are what the dispatch, the
