@@ -2505,7 +2505,7 @@ theorem walkScanRound457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
         (BitVec.ofNat 64 (i + 1)) a q x)) :
     ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
       WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
-      n ≤ stage2ByteAllowance + 3 ∧
+      n ≤ stage2ByteAllowance ∧
       lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
       lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
   have hSC : ScanCount s "%q.0.i246" "%cond350.i" C.inner := by
@@ -2564,9 +2564,10 @@ theorem walkScanRound457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
           = some bs := by rw [h2, h1]; exact hread
       simpa only [scanLatchOut, stateAt, State.bind] using hr)
     hbs hloc105 h47 hbit hws hloc96 hlatch
-  have hallow : 1 ≤ stage2ByteAllowance := by simp [stage2ByteAllowance]
-  refine ⟨_, s₃, 1 + 3, hseg₁.trans hseg₃, hseg₃.inv', ?_, by omega, ?_, ?_⟩
-  · rfl
+  refine ⟨{ ScanCLand C with block := "while.body462.i" }, s₃, 1 + 3,
+    hseg₁.trans hseg₃, hseg₃.inv', ?_, ?_, ?_, ?_⟩
+  · simp only [ScanCLand]
+  · simp [stage2ByteAllowance]
   · rw [hs₃]
     exact latch462S_counter (m0 := m0) s i c (BitVec.ofNat 64 (i + 1)) a q x
   · rw [hs₃]
