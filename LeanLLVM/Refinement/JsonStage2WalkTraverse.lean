@@ -24,17 +24,21 @@ premise's exit branch, and reads the chain as the run it is:
   hundred entries and a hundred bytes the measure is 40,600 against the
   record's 4,032, so spending the measure against `stage2Budget` would prove
   nothing about the walk.  The count is spent by `walkPotential`,
-  `32 * (nep - k) + 8 * (the document bytes the arena has decoded)`: its entry
-  term is one allowance per unconsumed entry and its byte term is one allowance
-  per decoded document byte, and `walkPotential_le` bounds it by
-  `32 * nep + 8 * n` from the invariant's two span clauses
-  (`spans_order`/`spans_inside`, read by `walkSpans_sum_le`).  A revolution
-  therefore has to show `p + walkPotential C' ≤ walkPotential C`, which
-  `walkPotential_of_allowances` reads as the census's own two readings: the
-  revolution's price inside one entry allowance plus one byte allowance per
-  document byte it decoded.  That is the arithmetic the *The budget, counted*
-  section fixes (22 blocks against 32, six against eight) and what the measure
-  could not supply;
+  `32 * (nep - k) + 8 * (n - the entry stream's position at k)`: its entry term is
+  one allowance per unconsumed entry and its byte term one per document byte not
+  yet reached, so the credit *falls* as the walk consumes them, and
+  `walkPotential_le` bounds it by `32 * nep + 8 * n` by saturation alone.  A
+  revolution therefore has to show `p + walkPotential C' ≤ walkPotential C`, which
+  `walkPotential_spend` reads in the direction the accounting has: the price inside
+  the credit the revolution *consumes*, `p ≤ 32·Δk + 8·ΔA`, never inside the credit
+  that remains.  That is the arithmetic the *The budget, counted* section fixes
+  (22 blocks against 32, six against eight), and the byte term is the entry
+  stream's own span, so a scan that emits nothing — whitespace, quote discovery —
+  is paid out of the same credit.  Charging the decoded extents instead, as an
+  earlier draft did, adds processed bytes to the remaining budget and denies the
+  price even at `p = 0`.  The rows the change is stated at, the negative control
+  on that form, and the dispatch's first pivots stepped on the pinned body are
+  `tests/stage2-walk-credit.lean`;
 * **the loop is an induction on the entry index.**  `WalkLoopStep` is the one
   premise this module leaves: at a loop-head state with the invariant and an
   unconsumed entry, either one revolution back to the head with the index
@@ -255,49 +259,91 @@ theorem walkSpans_sum_le {m0 : Mem} (G : WalkGeom m0) {spans : List (Nat × Nat)
 /-! ### The potential
 
 `walkMeasure`'s outer factor is a *termination* radix; the budget's is a count.
-The potential is the budget's own shape, read at the carry: one entry allowance
-per entry not yet consumed, and one byte allowance per document byte the arena
-has decoded. -/
+The potential is the budget's own shape read at the carry as **credit**: one entry
+allowance for each entry not yet dispatched, and one byte allowance for each
+document byte not yet reached.  The byte term is the entry stream's own position,
+and that is what makes a revolution's price payable: an entry's dispatch runs
+inside the bytes that entry spans, so the whitespace, quote and escape scans — none
+of which emits arena output — are paid out of the same credit.
 
-/-- **The walk's remaining budget, at the carry.** -/
+Charging the *decoded* extents instead adds already-processed bytes to the
+remaining budget: a revolution appending a hundred-byte span moved the potential by
+`-32 + 800`, so `p + Φ(C′) ≤ Φ(C)` failed at `p = 0`.  The direction is fixed here —
+the credit falls as bytes are consumed — and the revolution's price is stated
+against what it consumes: `p ≤ 32·Δk + 8·ΔA`
+(`walkPotential_spend`). -/
+
+/-- **The walk's remaining budget, at the carry**: the entries not yet dispatched
+and the document bytes not yet reached.  Both terms saturate at zero past their
+end, so the potential is bounded without reference to the invariant. -/
 def walkPotential {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Nat :=
   stage2EntryAllowance * (G.nep - C.k) +
-    stage2ByteAllowance * (C.spans.map (fun r => r.2)).sum
+    stage2ByteAllowance * (G.n - entryPos G C.k)
 
-/-- **The potential is inside the record's entry and byte terms**, at the
-invariant: the index has not passed the stream, and the decoded extents are no
-more than the document. -/
+/-- A strictly increasing index list's entries do not fall as the index rises,
+read through `getD` (the shape the entry positions have). -/
+theorem pairwise_lt_getD_le {l : List Nat} (hs : l.Pairwise (· < ·)) {d : Nat} {i j : Nat}
+    (hij : i ≤ j) (hj : j < l.length) : l.getD i d ≤ l.getD j d := by
+  have hi : i < l.length := lt_of_le_of_lt hij hj
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+    List.getElem?_eq_getElem hi, List.getElem?_eq_getElem hj]
+  simp only [Option.getD_some]
+  rcases Nat.lt_or_eq_of_le hij with h | h
+  · exact le_of_lt ((List.pairwise_iff_getElem.mp hs) i j hi hj h)
+  · subst h
+    exact le_rfl
+
+/-- **An entry the stream holds is inside the document.** -/
+theorem entryPos_lt {m0 : Mem} (G : WalkGeom m0) {k : Nat} (hk : k < G.nep) :
+    entryPos G k < G.n := by
+  have hlen : G.ent.length = G.nep := by
+    rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
+  have hk' : k < G.ent.length := by omega
+  have hget : entryPos G k = G.ent[k] := by
+    simp only [entryPos, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk',
+      Option.getD_some]
+  rw [hget]
+  exact G.inside _ (List.getElem_mem hk')
+
+/-- **The stream's positions advance with the index.** -/
+theorem entryPos_mono {m0 : Mem} (G : WalkGeom m0) {k k' : Nat} (hkk : k ≤ k')
+    (hk' : k' < G.nep) : entryPos G k ≤ entryPos G k' := by
+  have hlen : G.ent.length = G.nep := by
+    rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
+  have hk'' : k' < G.ent.length := by omega
+  exact pairwise_lt_getD_le G.order hkk hk''
+
+/-- **The potential is inside the record's entry and byte terms** — immediately,
+by saturating subtraction: the index has not passed the stream, and every position
+is at most the document's length. -/
 theorem walkPotential_le {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
-    (hInv : WalkInv G C s) :
+    (_hInv : WalkInv G C s) :
     walkPotential G C ≤ stage2EntryAllowance * G.nep + stage2ByteAllowance * G.n := by
-  have hsum : (C.spans.map (fun r => r.2)).sum ≤ G.n :=
-    walkSpans_sum_le G hInv.spans_order hInv.spans_inside
-  have hk : G.nep - C.k ≤ G.nep := Nat.sub_le _ _
   have h1 : stage2EntryAllowance * (G.nep - C.k) ≤ stage2EntryAllowance * G.nep :=
-    Nat.mul_le_mul_left _ hk
-  have h2 : stage2ByteAllowance * (C.spans.map (fun r => r.2)).sum
-      ≤ stage2ByteAllowance * G.n := Nat.mul_le_mul_left _ hsum
+    Nat.mul_le_mul_left _ (Nat.sub_le _ _)
+  have h2 : stage2ByteAllowance * (G.n - entryPos G C.k) ≤ stage2ByteAllowance * G.n :=
+    Nat.mul_le_mul_left _ (Nat.sub_le _ _)
   simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance] at h1 h2 ⊢
   omega
 
-/-- **One revolution spends one entry allowance and one allowance per byte it
-decoded.**  This is the form the census's two readings take: the price `p` inside
-`32 + 8 * (the new extents' lengths)` is exactly `p` inside the potential's fall.
-The converse does not hold, and does not need to: the index may advance by more
-than one, in which case the entry term falls by more than one allowance. -/
-theorem walkPotential_of_allowances {m0 : Mem} (G : WalkGeom m0) {C C' : WalkCarry G}
-    {p : Nat} (hk : C.k < C'.k) (hk' : C'.k ≤ G.nep)
-    (hall : p + stage2ByteAllowance * (C'.spans.map (fun r => r.2)).sum ≤
-      stage2EntryAllowance + stage2ByteAllowance * (C.spans.map (fun r => r.2)).sum) :
+/-- **A revolution's price, in the credit it consumes.**  `Δk` entries and `ΔA`
+document bytes: `p ≤ 32·Δk + 8·ΔA` is the obligation the dispatch's counted path
+owes, and it yields the potential's fall.  This is the direction the accounting
+has — the price is bounded by the credit *consumed*, never by the credit that
+remains — so one byte of the entry's span pays eight model steps of the
+byte-dependent loops inside it. -/
+theorem walkPotential_spend {m0 : Mem} (G : WalkGeom m0) {C C' : WalkCarry G} {p : Nat}
+    (hk : C.k ≤ C'.k) (hk' : C'.k ≤ G.nep)
+    (hp : entryPos G C.k ≤ G.n) (hp' : entryPos G C'.k ≤ G.n)
+    (hmono : entryPos G C.k ≤ entryPos G C'.k)
+    (hall : p ≤ stage2EntryAllowance * (C'.k - C.k) +
+      stage2ByteAllowance * (entryPos G C'.k - entryPos G C.k)) :
     p + walkPotential G C' ≤ walkPotential G C := by
-  have hsplit : G.nep - C.k = (G.nep - C'.k) + (C'.k - C.k) := by omega
-  have hstep : 1 ≤ C'.k - C.k := by omega
-  have hmul : stage2EntryAllowance * (G.nep - C.k) =
-      stage2EntryAllowance * (G.nep - C'.k) + stage2EntryAllowance * (C'.k - C.k) := by
-    rw [hsplit, Nat.mul_add]
-  have hone : stage2EntryAllowance ≤ stage2EntryAllowance * (C'.k - C.k) := by
-    simpa using Nat.mul_le_mul_left stage2EntryAllowance hstep
-  simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance] at hall hmul hone ⊢
+  have h1 : G.nep - C.k = (G.nep - C'.k) + (C'.k - C.k) := by omega
+  have h2 : G.n - entryPos G C.k =
+      (G.n - entryPos G C'.k) + (entryPos G C'.k - entryPos G C.k) := by omega
+  simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance] at hall ⊢
+  rw [h1, h2, Nat.mul_add, Nat.mul_add]
   omega
 
 /-- **The measure dominates the iteration count.**  The outer radix is
@@ -337,21 +383,25 @@ reads the phi the previous merge left, and `whileBody_step`'s guard is
 `C.k < k < nep`, so the advance is not assumed to be one. -/
 
 /-- **The loop's next step**: at the head, a revolution (potential spent) or the
-exit (`F` steps to a state whose step returns). -/
+exit.  The exit's bound is the potential *beside* `F`, not `F` alone: the last
+entry's dispatch is byte-dependent work like any other revolution's, so the branch
+that dispatches it and then finalises is bounded by the credit it consumes plus the
+finalisation allowance. -/
 def WalkLoopStep (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) (F : Nat) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead → C.k < G.nep →
     (∃ (C' : WalkCarry G) (s' : State) (p : Nat),
         WalkSegment calls G C s C' s' p ∧ C'.block = walkLoopHead ∧
         C.k < C'.k ∧ C'.k < G.nep ∧ p + walkPotential G C' ≤ walkPotential G C)
     ∨ (∃ (q : Nat) (s1 s2 sret : State),
-        q ≤ F ∧
+        q ≤ walkPotential G C + F ∧
         (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
         step calls stage2Body s1 = .jump s2 ∧
         step calls stage2Body s2 = .ret v sret)
 
 /-- **The loop finishes, and its run is inside the potential.**  Strong recursion
 on the remaining entries: the revolution's advance shortens it, and the exit's
-`F` steps are the only part not spent from the potential. -/
+bound is the potential at the state it is taken from plus `F` — the same credit,
+because the last entry's dispatch is that state's remaining potential. -/
 theorem walkLoopFinishes {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {v : Value} {F : Nat}
     (hstep : WalkLoopStep calls G v F) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hk : C.k < G.nep) :
@@ -467,15 +517,20 @@ theorem walkCompletes_at_stage2Budget {calls : Calls} {m0 : Mem} {G : WalkGeom m
 
 /-! ### At the seed
 
-The seed's three-step prefix, its invariant and its empty carry: the potential is
-`32 * nep`, and the finalisation allowance covers the exit's `F ≤ 27` steps, the
-seed's three and the return's one. -/
+The seed's three-step prefix, its invariant and its empty carry: no entry is
+consumed, so the credit's entry term is all of `32 * nep`, and the byte term is the
+document from the first entry's position — the bytes the walk has not reached.  The
+finalisation allowance covers the exit's `F ≤ 27` steps, the seed's three and the
+return's one. -/
 
-/-- **The seed's potential is its entry term.**  `walkSeed`'s carry has decoded
-no extents and consumed no entries. -/
+/-- **The seed's potential is its credit.**  `walkSeed`'s carry has consumed no
+entries, so the entry term is the whole stream's and the byte term is the document
+from the first entry's position. -/
 theorem walkPotential_seed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
-    walkPotential G (walkSeed G S) = stage2EntryAllowance * G.nep := by
-  simp [walkPotential, walkSeed, stage2ByteAllowance]
+    walkPotential G (walkSeed G S) =
+      stage2EntryAllowance * G.nep +
+        stage2ByteAllowance * (G.n - entryPos G 0) := by
+  simp [walkPotential, walkSeed]
 
 /-- **The walk completes at the seed's potential plus the finalisation
 allowance**, from the seed's prefix (`walkSeedPrefix_runFuel`'s `3`), the
@@ -487,7 +542,10 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (hseed : ∀ n, runFuel calls (3 + n) stage2Body sEntry = runFuel calls n stage2Body s)
     (hInv : WalkInv G (walkSeed G S) s) (_hpc : s.pc = walkLoopHead)
     (hstep : WalkLoopStep calls G v F) (hF : F ≤ 27) :
-    ∃ v' m, runFuel calls (32 * G.nep + 32) stage2Body sEntry = some (.ret v' m) := by
+    ∃ v' m, runFuel calls
+        (stage2EntryAllowance * G.nep +
+          stage2ByteAllowance * (G.n - entryPos G 0) + stage2FinalisationAllowance)
+        stage2Body sEntry = some (.ret v' m) := by
   have hk : (walkSeed G S).k < G.nep := by
     simp only [walkSeed]
     exact hn
@@ -498,7 +556,8 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
         omega)
   refine ⟨v', m, ?_⟩
   rw [walkPotential_seed] at hrun
-  simpa only [stage2EntryAllowance, stage2FinalisationAllowance] using hrun
+  simpa only [stage2EntryAllowance, stage2ByteAllowance, stage2FinalisationAllowance]
+    using hrun
 
 /-! ### The instrument -/
 
@@ -509,7 +568,10 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.WalkSegment.ret
 #print axioms LeanLLVM.Refinement.WalkScope.walkSpans_sum_le
 #print axioms LeanLLVM.Refinement.WalkScope.walkPotential_le
-#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_of_allowances
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_spend
+#print axioms LeanLLVM.Refinement.WalkScope.entryPos_lt
+#print axioms LeanLLVM.Refinement.WalkScope.entryPos_mono
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_seed
 #print axioms LeanLLVM.Refinement.WalkScope.walkIterations_le_measure
 #print axioms LeanLLVM.Refinement.WalkScope.walkMeasure_ge
 #print axioms LeanLLVM.Refinement.WalkScope.walkMeasure_exceeds_budget_at_100
@@ -518,7 +580,6 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.walkCompletes_of_loop_budget
 #print axioms LeanLLVM.Refinement.WalkScope.walkBudget_le_stage2Budget
 #print axioms LeanLLVM.Refinement.WalkScope.walkCompletes_at_stage2Budget
-#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_seed
 #print axioms LeanLLVM.Refinement.WalkScope.walkCompletes_of_seed_loop
 
 end WalkScope

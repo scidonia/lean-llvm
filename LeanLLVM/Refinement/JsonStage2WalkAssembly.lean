@@ -164,13 +164,14 @@ unconsumed entry left *after* this iteration (`C.k + 1 < G.nep`, which is the
 merge's own guard at `%inc.i = C.k + 1`), the dispatch runs to `cleanup478.i`
 leaving the carry's index where the head put it, the merge's two `phi` operands of
 the block that jumped there, an index `k2` strictly advanced and still short of
-the stream, a depth inside the stacks, and a price inside the iteration's
-allowance: the dispatch's own count plus the merge's and the header's two steps,
-against `walkPotential`'s fall at `k2`.  The two steps are named in the premise
-because they are steps the revolution takes and the potential does not pay for
-separately: one iteration's price is one entry allowance (`stage2EntryAllowance`,
-`32`) and the merge and the header are the last two of the dispatch's blocks in
-that allowance. -/
+the stream, a depth inside the stacks, and a price inside the credit it consumes:
+the dispatch's own count plus the merge's and the header's two steps, against
+`32·Δk + 8·ΔA` — one entry allowance per entry consumed and one byte allowance per
+document byte the entry spans.  The two steps are named in the premise because they
+are steps the revolution takes and the credit is charged for them: one iteration's
+own path is `stage2EntryAllowance` (`32`) and the merge and the header are the last
+two blocks in it.  The byte term is what pays the scans: an entry's dispatch runs
+inside the bytes between its position and the next entry's. -/
 def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep →
@@ -190,20 +191,34 @@ def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
       C.k < k2 ∧
       spv ≤ stage2StackExtent ∧
       spv ≤ Cd.wlen ∧
-      p + 2 + walkPotential G { Cd with k := k2, sp := spv } ≤ walkPotential G C
+      p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)
 
 /-- **The exit**: at the head whose merge fails its test (`C.k + 1 = G.nep`, so
 `%inc.i` is the entry count), `27` steps reach a state whose jump is followed by a
-return.  The `27` is the finalisation allowance less the seed's three steps and
-the two terminal ones (`walkExitFits`). -/
+return — *beside* the potential the state still holds, because that state's own
+dispatch is the last entry's.  The `27` is the finalisation allowance less the
+seed's three steps and the two terminal ones (`walkExitFits`). -/
 def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 = G.nep →
     ∃ (q : Nat) (s1 s2 sret : State),
-      q ≤ 27 ∧
+      q ≤ walkPotential G C + 27 ∧
       (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
       step calls stage2Body s1 = .jump s2 ∧
       step calls stage2Body s2 = .ret v sret
+
+/-! ### What a dispatch proof still owes
+
+Two things the census's links do not supply, and the dispatch therefore owes
+itself.  A `WalkLink`'s target state is *existential* (`∃ s', WalkLink … s'`), so a
+chain of them leaves the state at `cleanup478.i` unnamed and the merge's two `phi`
+operand values — `%inc.i`, and the container arm's `%inc208.i` or `%sub.i` — cannot
+be read off it; and a link's price is `walkMeasure`'s non-increase, not the credit
+the potential charges, so the chain says nothing about the price premise.  A
+dispatch proof is therefore a per-block run at the *values* the next block reads
+(the shape `WalkLink.addImmBr` and the named-environment statements in
+`JsonStage2WalkPure` already take), not a chain of the existing links. -/
 
 /-! ### The revolution, composed
 
@@ -240,14 +255,20 @@ theorem WalkDispatch.revolution {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
         rw [show p + 1 + 1 + n = p + (1 + (1 + n)) from by omega,
           hseg.run (1 + (1 + n)), hrunB (1 + n), hrunH n]
       inv' := hInvH }
-  have hpot' : walkPotential G C' = walkPotential G { Cd with k := k2, sp := spv } := rfl
+  have hpot' : (p + 1 + 1) + walkPotential G C' ≤ walkPotential G C := by
+    have hmono : entryPos G C.k ≤ entryPos G k2 :=
+      entryPos_mono G (le_of_lt hstrict) hklt
+    have hp : entryPos G C.k ≤ G.n := le_of_lt (entryPos_lt G (by omega))
+    have hp' : entryPos G k2 ≤ G.n := le_of_lt (entryPos_lt G hklt)
+    have hspend := walkPotential_spend (G := G) (C := C) (C' := C') (p := p + 2)
+      (le_of_lt hstrict) (le_of_lt hklt) hp hp' hmono hpot
+    simpa using hspend
   refine ⟨C', s', p + 1 + 1, hseg', rfl, ?_, ?_, ?_⟩
   · show C.k < k2
     exact hstrict
   · show k2 < G.nep
     exact hklt
-  · rw [hpot']
-    omega
+  · exact hpot'
 
 /-- **The loop's step, from the dispatch and the exit.**  The case split is the
 entry index: while an entry is left after this one the dispatch runs and the
@@ -407,6 +428,110 @@ theorem walkDisjoint_before {L slots : List (Nat × Nat)} {d n : Nat}
   intro r hr
   exact hcrossL r hr (d, n) (by simp)
 
+/-! ### The stage's columns, reconciled
+
+`stage2StagedPre` names the ABI's five numbers as 64-bit words and its regions at
+those words' `.toNat`s, while `WalkGeom` carries the precondition's `Nat`s — the
+numbers the argument list is built from.  The two are the same numbers only when
+each is the word's value, i.e. below `2 ^ 64`.
+
+Three of the five follow from the precondition's own clauses: `n` from the
+document's bound (`stage2MaxDocument`, `2 ^ 32`) and `nep` from the stream's order
+(`WalkGeom.nep_le`).  `nxp`, `dstcap` and `evcap` do not: the precondition states
+lower bounds on them (`HasBytes mem xp (4 * nxp)`, `ndst0 + n + reserve ≤ dstcap`,
+`nev0 + 13 * n ≤ evcap`) and nothing above, while the record's **post** asserts
+exactly these three widths (`stage2Boundary`).  The cursor slot is the fourth: the
+staged predicate reads `readBytes mem ndst 8` and the precondition reads the same
+eight bytes, so the two values agree modulo the word and agree outright once both
+are written below it.
+
+So the reconciliation is arithmetic, and its hypotheses are the record's missing
+clauses rather than a proof gap: `stage2StagedRegions_reconcile` is the whole of
+"the numbers do not agree", stated at the two argument equations and the widths.
+What is left once it holds is `walkDisjoint_drop_member` and `walkDisjoint_before`
+above, and the cursor clause `WalkStage.sevenEnd`, which `stage2StagedPre` cannot
+name because the adapter's predicate does not carry the call's `next`. -/
+
+/-- **A slot word decides its value modulo its width.**  Two numbers whose eight
+little-endian bytes agree are congruent modulo `2 ^ 64`, which is the whole of what
+a slot read says about the cursor it encodes. -/
+theorem wordBytes8_mod_eq {x y : Nat} (h : wordBytes 8 x = wordBytes 8 y) :
+    x % 2 ^ 64 = y % 2 ^ 64 := by
+  have h' := congrArg bytesToNat h
+  simpa only [wordBytes, natToBytes_toNat,
+    show (256 : Nat) ^ 8 = 2 ^ 64 from by decide] using h'
+
+/-- **The argument list determines its thirteen components.**  Two readings of one
+list at the ABI's thirteen slots name the same document, streams, slots and
+counts, and each of the five numbers the list carries as a word is that word's
+value — the direction the staged predicate's regions need, since they are stated at
+the words' `.toNat`s. -/
+theorem stage2Args_components {args : List Value}
+    {b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat}
+    {b' xp' dst' ev' ep' ndst' nev' err' : Nat}
+    {nw nepw nxpw dstcapw evcapw : BitVec 64}
+    (h13 : args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
+      .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
+      .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
+      .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err])
+    (hst : args = [.ptr b', .int 64 nw, .ptr ep', .int 64 nepw, .ptr xp',
+      .int 64 nxpw, .ptr dst', .int 64 dstcapw, .ptr ndst', .ptr ev',
+      .int 64 evcapw, .ptr nev', .ptr err']) :
+    b = b' ∧ nw = BitVec.ofNat 64 n ∧ ep = ep' ∧ nepw = BitVec.ofNat 64 nep ∧
+      xp = xp' ∧ nxpw = BitVec.ofNat 64 nxp ∧ dst = dst' ∧
+      dstcapw = BitVec.ofNat 64 dstcap ∧ ndst = ndst' ∧ ev = ev' ∧
+      evcapw = BitVec.ofNat 64 evcap ∧ nev = nev' ∧ err = err' := by
+  have hm : ([.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
+      .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
+      .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
+      .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err] : List LeanLLVM.Value) =
+    [.ptr b', .int 64 nw, .ptr ep', .int 64 nepw, .ptr xp', .int 64 nxpw,
+      .ptr dst', .int 64 dstcapw, .ptr ndst', .ptr ev', .int 64 evcapw,
+      .ptr nev', .ptr err'] := h13.symm.trans hst
+  simp only [List.cons.injEq, and_true, true_and, Value.ptr.injEq, Value.int.injEq] at hm
+  obtain ⟨hb, hw1, hep, hw2, hxp, hw3, hdst, hw4, hndst, hev, hw5, hnev, herr⟩ := hm
+  exact ⟨hb, (eq_of_heq hw1).symm, hep, (eq_of_heq hw2).symm, hxp,
+    (eq_of_heq hw3).symm, hdst, (eq_of_heq hw4).symm, hndst, hev,
+    (eq_of_heq hw5).symm, hnev, herr⟩
+
+/-- **The adapter's staged list is the walk's own region list**, once the columns
+agree: the two argument readings name the same thirteen objects, the three free
+widths make `nxp`, `dstcap` and `evcap` their words' values, and the cursor slot's
+two reads make the staged cursor the precondition's.  This is the equality
+`WalkStage.separate` is drawn from — the staged predicate's list at its witnesses,
+which is the walk's list at the geometry's numbers. -/
+theorem stage2StagedRegions_reconcile {args : List Value}
+    {b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat}
+    {b' xp' dst' ev' ep' ndst' nev' err' : Nat}
+    {nw nepw nxpw dstcapw evcapw : BitVec 64}
+    {ndst0 ndst0' : Nat}
+    (h13 : args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
+      .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
+      .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
+      .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err])
+    (hst : args = [.ptr b', .int 64 nw, .ptr ep', .int 64 nepw, .ptr xp',
+      .int 64 nxpw, .ptr dst', .int 64 dstcapw, .ptr ndst', .ptr ev',
+      .int 64 evcapw, .ptr nev', .ptr err'])
+    (hn : n < 2 ^ 64) (hnep : nep < 2 ^ 64) (hnxp : nxp < 2 ^ 64)
+    (hdstcap : dstcap < 2 ^ 64) (hevcap : evcap < 2 ^ 64)
+    (hndst0 : ndst0 < 2 ^ 64) (hndst0' : ndst0' < 2 ^ 64)
+    (hmod : ndst0 % 2 ^ 64 = ndst0' % 2 ^ 64)
+    (c ctype cst tok s z e nkSlot nxpSlot : Nat) :
+    stage2WalkRegions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
+        c ctype cst tok s z e =
+      stage2WalkRegions b' nw.toNat ep' nepw.toNat xp' nxpw.toNat dst' ndst0' ev'
+        evcapw.toNat ndst' nev' err' c ctype cst tok s z e := by
+  obtain ⟨hb, hw1, hep, hw2, hxp, hw3, hdst, hw4, hndst, hev, hw5, hnev, herr⟩ :=
+    stage2Args_components h13 hst
+  have hnd : ndst0 = ndst0' := by
+    have h1 : ndst0' % 2 ^ 64 = ndst0' := Nat.mod_eq_of_lt hndst0'
+    have h2 : ndst0 % 2 ^ 64 = ndst0 := Nat.mod_eq_of_lt hndst0
+    omega
+  rw [hb, hw1, hep, hw2, hxp, hw3, hdst, hndst, hev, hw5, hnev, herr, ← hnd]
+  simp only [stage2WalkRegions, stage2Regions, stage2StagedWrites, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt hn, Nat.mod_eq_of_lt hnep, Nat.mod_eq_of_lt hnxp,
+    Nat.mod_eq_of_lt hdstcap, Nat.mod_eq_of_lt hevcap]
+
 /-! ### The completion at the ABI's arguments -/
 
 /-- **What a dispatch supplies, and nothing else.**  At every staging the record
@@ -491,6 +616,55 @@ theorem stage2WalkObligation_of_premises {d c ctype cst tok s z e nkSlot nxpSlot
   (stage2WalkObligation_iff_completion d c ctype cst tok s z e nkSlot nxpSlot sub).2
     ⟨stage2WalkCompletes_of_premises h, hpost⟩
 
+/-! ### The revolution's counted credit
+
+The census measured the dispatch's two numbers: at most twenty-two blocks on an
+entry's own path (`walkDispatchPrice`), and at most six blocks per document byte a
+scan visits (`walkScanStepSets`' widest set).  An entry of `b` bytes therefore costs
+at most `22 + 6 * b` model control steps, and the credit the revolution consumes is
+`32 + 8 * b` — one entry allowance plus one byte allowance per byte the entry spans
+(`walkPotential_spend`).  The inequality holds at every width:
+
+  `22 + 6b + 2 ≤ 32 + 8b`.
+
+The direction the credit form repairs is the other one.  Charging the *decoded*
+extents asked the price to fit after the newly decoded bytes were charged —
+`22 + 6b + 2 + 8b ≤ 32` — which fails from the first byte on, so no entry containing
+a string could satisfy it and the premise had no producer.  `walkCreditOldOk` is
+that form, and the guard below is its falsity at the acceptance's rows. -/
+
+/-- The dispatch's counted price fits the credit it consumes, at every entry width:
+twenty-two blocks and six per byte against thirty-two and eight. -/
+theorem walkCredit_suffices (b : Nat) : 22 + 6 * b + 2 ≤ 32 + 8 * b := by omega
+
+/-- The acceptance's rows, at their counted numbers: `(scenario, blocks the
+dispatch traverses, bytes the entry spans)`. -/
+def walkCreditRows : List (String × Nat × Nat) :=
+  [("long string", 22 + 6 * 100, 100),
+   ("escaped string", 22 + 6 * 96, 96),
+   ("whitespace-heavy", 22 + 6 * 80, 80),
+   ("malformed late", 22 + 6 * 64 + 4, 64),
+   ("the last entry's exit", 22 + 6 * 100 + 5, 100)]
+
+/-- Every row's price fits `32·Δk + 8·ΔA` at `Δk = 1`. -/
+def walkCreditOk (r : String × Nat × Nat) : Bool :=
+  r.2.1 + 2 ≤ 32 + 8 * r.2.2
+
+#guard walkCreditRows.all walkCreditOk
+
+/-- The form the credit replaced, at the same rows: the price had to fit inside
+`32` *after* the newly decoded bytes were charged. -/
+def walkCreditOldOk (r : String × Nat × Nat) : Bool :=
+  r.2.1 + 2 + 8 * r.2.2 ≤ 32
+
+#guard !walkCreditRows.any walkCreditOldOk
+
+/-- The hundred-byte long-string revolution, counted: 624 steps against a credit of
+832. -/
+theorem walkCredit_long_string :
+    (22 + 6 * 100 + 2 : Nat) = 624 ∧ (32 + 8 * 100 : Nat) = 832 ∧ 624 ≤ 832 := by
+  decide
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_k
@@ -500,6 +674,11 @@ theorem stage2WalkObligation_of_premises {d c ctype cst tok s z e nkSlot nxpSlot
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStep_of_dispatch_exit
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitFits
 #print axioms LeanLLVM.Refinement.WalkScope.walkGeom_at_pre
+#print axioms LeanLLVM.Refinement.WalkScope.wordBytes8_mod_eq
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Args_components
+#print axioms LeanLLVM.Refinement.WalkScope.stage2StagedRegions_reconcile
+#print axioms LeanLLVM.Refinement.WalkScope.walkCredit_suffices
+#print axioms LeanLLVM.Refinement.WalkScope.walkCredit_long_string
 #print axioms LeanLLVM.Refinement.WalkScope.walkDisjoint_drop_member
 #print axioms LeanLLVM.Refinement.WalkScope.walkDisjoint_before
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.n_lt

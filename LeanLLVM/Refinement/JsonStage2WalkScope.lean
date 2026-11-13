@@ -5647,12 +5647,12 @@ a proof obligation the completion is four pieces, in order:
    `walkCompletes_of_loop_budget` reads the completion at `32 * nep + 8 * n + 32`
    — the record's two counted terms and the finalisation allowance — from a
    *potential* `walkPotential`, `32` per unconsumed entry plus `8` per document
-   byte the arena has decoded, rather than from the measure.  The revolution's
-   premise is `p + walkPotential C' ≤ walkPotential C`, which
-   `walkPotential_of_allowances` reads as `p` inside one entry allowance plus one
-   byte allowance per extent the revolution appended — the 22-and-six readings of
-   *The budget, counted* are that premise, and the byte term is bounded by the
-   document through `walkSpans_sum_le` and the invariant's two span clauses.  The
+   byte not yet reached, rather than from the measure.  The revolution's premise is
+   `p + walkPotential C' ≤ walkPotential C`, which `walkPotential_spend` reads as the
+   price inside the credit consumed — `p ≤ 32·Δk + 8·ΔA` — the 22-and-six readings
+   of *The budget, counted* being that premise; the credit is the entry stream's
+   own span, so the byte-dependent scans inside an entry are paid by the bytes the
+   entry spans.  The
    measure's `(nep - k) * (4 * n + 6)` is a *termination* radix, not a count:
    `walkIterations_le_measure` is its only use in this direction, and at a hundred
    entries and a hundred bytes it is 40,600 against the record's 4,032
