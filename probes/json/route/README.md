@@ -15,6 +15,7 @@ pipeline's record demands and calls the native object.  The contract is
 | `bench.sh` | the route's per-stage timings, the outcome stage's five parts, the consumer rows, the object's -O2/-O3 pair taken paired against a drift control, the boundary rows' two paths, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
 | `bench/simdjson-baseline.cc` | the reference arm: simdjson 4.6.11 on-demand over the same documents, its `padded_string` staging and its `iterate` plus full value traversal timed apart |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
+| `residue.sh` | the document-domain measurement: every corpus row, the scenario's generated rows, the bench's documents and the constructed shapes the corpus does not cover, each classified by the admission clause that refused it, with the reference's verdict on the same bytes read from `leanllvm-json`; the record is [the residue page](../../../docs/json-route-residue.md) |
 | `DomainCheck.lean` | the library shell's `documentDecision` and `checkRoute`, elaborated from source: every admission clause on both sides, both fallback outcomes, the fourteen-row policy class, and the layout checks |
 
 ## The three outcomes
@@ -63,6 +64,8 @@ nix develop -c bash probes/json/route/check.sh
 "$PWD/probes/json/route/build/leanllvm-json-route" --consume tests/json/corpus/depth-two-ok.json 21
 "$PWD/probes/json/route/build/leanllvm-json-route" --admit tests/json/corpus/depth-two-ok.json 21
 nix develop -c bash probes/json/route/correspondence.sh
+nix develop -c bash probes/install/lake-locked.sh build leanllvm-json   # the residue's validity oracle
+bash probes/json/route/residue.sh
 bash probes/json/route/bench.sh 21        # re-executes itself under a 6 GiB scope
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonCallRoute
 nix develop -c bash probes/install/lake-locked.sh env lean probes/json/route/DomainCheck.lean
@@ -393,6 +396,46 @@ carry many `[`/`{` bytes is admitted (`scale-4096.json` holds 179 opener bytes a
 a nesting depth of 2); a document nested past the bound is refused at the number
 it nests to; and a document whose prefix depth goes negative is measured at 0,
 which a clamped running counter would not be.
+
+## The residue
+
+The fallback answers every document the admission refuses, so the domain's size
+is a question about documents, not time.  `residue.sh` measures it over every
+document set the repository has — the 130 corpus rows, the 135 documents
+`check.sh` generates, the eleven bench documents, and fourteen constructed
+shapes the corpus does not carry — classifying each by the clause that refused
+it and reading the reference's own verdict on the same bytes for every row.
+
+| set | docs | admitted | empty | inputTooLong | depthBound | policy: unpaired | policy: noncharacter | unsupported |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| corpus | 130 | 115 | 1 | 0 | 0 | 6 | 8 | 0 |
+| scenario | 135 | 129 | 1 | 1 | 3 | 1 | 0 | 0 |
+| bench | 11 | 10 | 0 | 0 | 1 | 0 | 0 | 0 |
+| plausible | 14 | 8 | 0 | 1 | 3 | 1 | 1 | 0 |
+| total | 290 | 262 | 2 | 2 | 7 | 8 | 9 | 0 |
+
+Unit: documents.  There is no "unsupported domain" row: `admission` has no such
+clause, so nothing is refused for an unsupported construct, and a document
+inside the domain whose syntax the object refuses is answered on the fast path
+with `verdict=0` rather than by the fallback.  That is why 55 of the 59
+documents that are not a JSON text are admitted, and only the two empty
+documents, the over-bound one and the policy-carrying `quote-after-refused` row
+are not.
+
+The share the north star's third axis asks for, over the valid documents of
+each set (the reference's acceptance under `Limits.default`, with the fourteen
+policy rows and three profile-limited corpus rows counted valid, and the 120
+swept documents excluded): 65 of 79 corpus documents (82.3%), 10 of 11 bench
+documents (90.9%), 7 of 13 constructed documents (53.8%), 82 of 103 for
+corpus + bench + constructed (79.6%) and 87 of 111 over every set (78.4%).
+The constructed population is one or three documents per shape, so the page
+states its composition and the sensitivity: counting the depth boundary once
+instead of three times makes it 17 of 22 (77.3%), and every valid document that
+is not deep, over-bound or policy-carrying takes the fast path.
+
+[The residue page](../../../docs/json-route-residue.md) carries the class
+tables, every construction, the reference verdicts and what the measurement
+does not establish.
 
 ## The adapter's tagged result, and why nothing is clamped
 
