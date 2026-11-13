@@ -297,6 +297,12 @@ def BodyPositionsSpaced (mem : Mem) (c xj xp : Nat) (nxp p len : Nat) : Prop :=
       (((ps.drop (j0 + ((ps.drop j0).takeWhile (fun q => q < p - base)).length)).takeWhile
         (fun q => q < p - base + len)).map (fun q => q - (p - base)))
 
+/-- Two regions do not meet: one ends at or before the other starts.  This is the
+pairwise form of `DisjointRegions`' `Pairwise` step, at two named extents — the
+shape a call's staging states for the objects it shares with the callee, and the
+shape the memory joins consume. -/
+def RegionsApart (a n b m : Nat) : Prop := a + n ≤ b ∨ b + m ≤ a
+
 /-- **`s2_init`'s staging**: the emitted call's five arguments. -/
 def s2InitPre (args : List Value) (_mem : Mem) (_next : Nat) : Prop :=
   ∃ (s b ep : Nat) (n nb : BitVec 64),
@@ -337,8 +343,26 @@ composed at the use (`JsonStage2StringBody.stage2ReadWord_writeBytes_self`: a
 region a `readBytes` returned is written back in place, byte by byte) rather than
 a clause here — the read already says the bytes are present.  The spacing clause
 is the only memory clause that had to be stated, because it is the one the
-decoded-length bound cannot be derived from a read. -/
-def s2StringBodyPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
+decoded-length bound cannot be derived from a read.
+
+**The five regions, present and pairwise separated — and why presence is not a
+convenience.**  `writeByte` appends absent addresses, so write order is
+observable — with `ei`, `dst`, `outn` and the record's `e` absent, the body's
+order (clear, `dst`, `xj`, slot, `outn`) and the model's (`dst`, `xj`, `outn`,
+slot) are different lists, and `r.mem = writeBytes m next slot` fails.  The
+two-byte witness is `JsonStage2StringBody.writeBytes_absent_comm_witness`.  So the
+clause is the fact that makes the memory equality true, not a strengthening that
+eases a proof: the model's write order and the body's meet only where every
+region either writes is already present.
+
+The five are the five `s2StringBodyFoot` names, in its order — the cursor word,
+the decoded-length word, the decoded window at `dst`, the body's own `%ei` slot at
+`next`, and the error record the cursor's second word points at — and the body
+writes no other bytes on any arm.  The slot is the caller's staging here for the
+reason the joins need it at this memory: the body's `alloca` advances the cursor
+and does not populate bytes, so its later clear is the *second* write to the
+region rather than the first. -/
+def s2StringBodyPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
   ∃ (c p : Nat) (len : BitVec 64) (dst outn xp xj : Nat) (nxp : BitVec 64)
     (base j0 : Nat) (ps : List Nat) (body : List UInt8) (e : Nat),
     args = [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
@@ -353,7 +377,24 @@ def s2StringBodyPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
     base ≤ p ∧
     p - base + len.toNat < 2 ^ 64 ∧
     j0 < 2 ^ 63 ∧
-    nxp.toNat < 2 ^ 63
+    nxp.toNat < 2 ^ 63 ∧
+    readBytes mem next 8 ≠ none ∧
+    readBytes mem outn 8 ≠ none ∧
+    readBytes mem dst len.toNat ≠ none ∧
+    readBytes mem e stage2ErrorExtent ≠ none ∧
+    RegionsApart xj 8 next 8 ∧
+    RegionsApart xj 8 outn 8 ∧
+    RegionsApart xj 8 dst len.toNat ∧
+    RegionsApart xj 8 e stage2ErrorExtent ∧
+    RegionsApart next 8 outn 8 ∧
+    RegionsApart next 8 dst len.toNat ∧
+    RegionsApart next 8 e stage2ErrorExtent ∧
+    RegionsApart outn 8 dst len.toNat ∧
+    RegionsApart outn 8 e stage2ErrorExtent ∧
+    RegionsApart dst len.toNat e stage2ErrorExtent ∧
+    -- the position list and the cursor word do not meet, which is what lets the
+    -- scan re-read a lane after writing the cursor
+    (∀ k, k < nxp.toNat → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
 
 /-- **`od_scalar_value`'s staging**: the three arguments; the cursor record's two
 pointers; the token's three words; the delivered window (`endp - pos + 5` bytes,
@@ -910,7 +951,7 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
     (h : stage2Calls stage2SubCalls "s2_string_body" args mem next = some r) :
     UnchangedOutside mem r.mem (s2StringBodyFoot args mem next) := by
   obtain ⟨c, p, len, dst, outn, xp, xj, nxp, base, j0, ps, body, e, rfl, hbase, hj0,
-    hps, hbody, he, hspace, -, -, -, -, -⟩ := hpre
+    hps, hbody, he, hspace, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := hpre
   cases hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat with
   | none =>
       rw [s2StringBody_none hm] at h

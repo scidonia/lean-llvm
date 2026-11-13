@@ -1833,6 +1833,46 @@ theorem writeBytes_absorb_one (B : Mem) {ei dst xj : Nat} {X out Wj Z : List UIn
   -- 3. the two writes to `ei` are adjacent, and the second one is the memory
   exact writeBytes_writeBytes_same (writeBytes (writeBytes B dst out) xj Wj) ei X Z hlen
 
+/-- **One intermediate write is enough for the absorption.**  The first write is
+commuted past the crossing — both regions present, so neither is appended — and the
+later write to the same region erases it, which is
+`writeBytes_writeBytes_same` once the two are adjacent.  The scan's cursor write
+needs this form: the callee's own write to the cursor word follows one crossing,
+not two. -/
+theorem writeBytes_absorb_single (A : Mem) {a : Nat} {X : List UInt8} {b : Nat}
+    {Y Z : List UInt8}
+    (ha : readBytes A a X.length ≠ none) (hb : readBytes A b Y.length ≠ none)
+    (hlen : X.length ≤ Z.length) (hd : a + X.length ≤ b ∨ b + Y.length ≤ a) :
+    writeBytes (writeBytes (writeBytes A a X) b Y) a Z =
+      writeBytes (writeBytes A b Y) a Z := by
+  rw [writeBytes_comm_of_present A a X b Y (exists_readBytes_of_ne ha)
+    (exists_readBytes_of_ne hb) hd]
+  exact writeBytes_writeBytes_same (writeBytes A b Y) a X Z hlen
+
+/-- **A word read is the byte read the body's blocks make**: a successful
+`stage2ReadWord` returns the `readBytes` of the model's `wordBytes`.  The staging's
+clauses are stated as word reads (that is the model's vocabulary) and each block's
+run is stated as byte reads (that is the body's), so the two are bridged here once
+rather than at every use. -/
+theorem readBytes_of_stage2ReadWord {mem : Mem} {a w v : Nat}
+    (h : stage2ReadWord mem a w = some v) :
+    readBytes mem a w = some (wordBytes w v) := by
+  unfold stage2ReadWord at h
+  cases hr : readBytes mem a w with
+  | none => rw [hr] at h; cases h
+  | some bs =>
+      rw [hr] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      subst h
+      have hlen : bs.length = w := readBytes_length_some hr
+      have hbs : natToBytes (bytesToNat bs) w = bs := by
+        have htake : List.take bs.length (natToBytes (bytesToNat bs) w)
+            = natToBytes (bytesToNat bs) w :=
+          List.take_of_length_le (by rw [natToBytes_length]; omega)
+        rw [← htake]
+        exact natToBytes_bytesToNat bs w (by omega)
+      simpa only [wordBytes, hbs] using hr
+
 /-- **A counter whose every position below it satisfies the predicate, and whose own
 position does not (or is past the list), is the `takeWhile` length.**  Induction on
 the counter, with the head peeled by `takeWhile_cons_of_pos`/`_of_neg`. -/
@@ -4197,6 +4237,281 @@ theorem s2StringBodyScan_reaches_exit (mem0 : Mem) (xj pos0 xp N : Nat) (ps : Li
         runFuel s2StringBodyCalls k s2StringBodyBody e :=
   s2StringBodyScanLoop mem0 xj pos0 xp N ps hps hdisj hN hpos0 |>.run_from N s c hinv
 
+/-! ### The scan's visited prefix
+
+`s2StringBodyScanExitWord` records the counter the scan stopped at and what stopped
+it, not the lanes it passed on the way there.  The model's `j1` is the `takeWhile`
+length over the lanes below the body's first position, so the counter is that `j1`
+only when every lane the scan passed is below it — and a caller of the run sees
+only `Exit` and `ExitWord`, so the prefix has to be part of what the exit hands
+back.  The instance below carries it as a conjunct of the invariant and of the exit
+word, so `scanCounter_eq_takeWhile` applies at the state the run returns rather than
+at a state the loop's proof no longer names.
+
+The exit's stop condition is stated as `c = N` rather than the head's
+`N ≤ c + 1`: both exits that this instance admits witness it in that form — the
+head's exit at a lane inside the body, and `while.body`'s exit at the advanced
+counter, which is exactly the count — and it is the form `scanCounter_eq_takeWhile`
+consumes. -/
+
+/-- The lanes the scan has passed are the ones below the body's first position. -/
+def s2StringBodyScanPrefix (ps : List Nat) (pos0 j0 c : Nat) : Prop :=
+  ∀ k, j0 ≤ k → k < c → ∃ q, ps[k]? = some q ∧ q < pos0
+
+/-- The scan's invariant with the visited prefix beside it. -/
+def s2StringBodyScanInvP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
+    (r : Nat) (s : State) (c : Nat) : Prop :=
+  s2StringBodyScanInv mem0 xj pos0 xp N ps r s c ∧
+    s2StringBodyScanPrefix ps pos0 j0 c
+
+/-- What the scan leaves behind, with the visited prefix at the counter it stopped
+at. -/
+def s2StringBodyScanExitWordP (mem0 : Mem) (xj j0 : Nat) (ps : List Nat)
+    (pos0 N : Nat) (e : State) : Prop :=
+  ∃ c, e.mem = writeBytes mem0 xj (wordBytes 8 c) ∧
+    (c = N ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) ∧
+    s2StringBodyScanPrefix ps pos0 j0 c
+
+/-- At its own start the scan has passed nothing. -/
+theorem s2StringBodyScanPrefix_self (ps : List Nat) (pos0 j0 : Nat) :
+    s2StringBodyScanPrefix ps pos0 j0 j0 := by
+  intro k _ hk
+  exact absurd hk (by omega)
+
+/-- The strengthened exit word is the old one: `c = N` is the count reached. -/
+theorem s2StringBodyScanExitWordP.toExitWord {mem0 : Mem} {xj j0 : Nat} {ps : List Nat}
+    {pos0 N : Nat} {e : State} (h : s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N e) :
+    s2StringBodyScanExitWord mem0 xj ps pos0 N e := by
+  obtain ⟨c, hmem, hstop, -⟩ := h
+  refine ⟨c, hmem, ?_⟩
+  rcases hstop with hN | ⟨q, hq, hge⟩
+  · exact Or.inl (by omega)
+  · exact Or.inr ⟨q, hq, hge⟩
+
+/-- **The exit's counter is the model's `j1`.**  The prefix the strengthened exit
+word carries is `scanCounter_eq_takeWhile`'s visited-prefix hypothesis, and the stop
+condition is its stopping hypothesis. -/
+theorem s2StringBodyScanExit_j1 {ps : List Nat} {pos0 N j0 c : Nat}
+    (hjc : j0 ≤ c) (hfix : s2StringBodyScanPrefix ps pos0 j0 c)
+    (hstop : c = N ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q)
+    (hlen : ps.length = N) :
+    c = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < pos0))).length := by
+  refine scanCounter_eq_takeWhile ps pos0 j0 c hjc hfix ?_
+  rcases hstop with hN | ⟨q, hq, hge⟩
+  · exact Or.inl (List.getElem?_eq_none (by omega))
+  · exact Or.inr ⟨q, hq, hge⟩
+
+/-- **The exit arm, with the prefix**: the same two exits as
+`s2StringBodyScan_step_exit`, each handing back the lanes it passed. -/
+theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
+    (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (r c : Nat) (s : State)
+    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps r s c)
+    (hbound : s2StringBodyScanAtBound ps pos0 N s c = true) :
+    ∃ (e : State) (j : Nat), j ≤ 2 ∧ s2StringBodyScanExited e ∧
+      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N e ∧
+      ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+        runFuel s2StringBodyCalls k s2StringBodyBody e := by
+  obtain ⟨hinv, hfix⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, ⟨p, op, hpre, hinc, hop⟩, hxp, hsub, hxj, hnxp,
+    ⟨q, bs, hq, hblen, hval, hlane⟩⟩ := hinv
+  have hlen : ps.length = N := (readLanes32_lane hps).1
+  have hcN : c < N := by
+    have : c < ps.length := by
+      by_contra h
+      rw [List.getElem?_eq_none (by omega)] at hq
+      cases hq
+    omega
+  have hb : s2StringBodyScanAtBound ps pos0 N s c = true := hbound
+  rw [s2StringBodyScanAtBound_eq] at hbound
+  have hN64 : N < 2 ^ 64 := by omega
+  have hpos : ((BitVec.ofNat 64 c).signExtend 64).toNat < 2 ^ 63 := by
+    rw [signExtend_ofNat c (by omega)]; omega
+  have hidx : ((BitVec.ofNat 64 c).signExtend 64).toNat * 4 = 4 * c := by
+    rw [signExtend_ofNat c (by omega)]; omega
+  have hlane' : readBytes s.mem (xp + ((BitVec.ofNat 64 c).signExtend 64).toNat * 4) 4
+      = some bs := by
+    rw [hidx]; exact hlane
+  have hconv : (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = q := by
+    have h32 := bytesToNat_lt_32 hblen
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h32,
+      Nat.mod_eq_of_lt (by omega), hval]
+  by_cases hge : pos0 ≤ q
+  · -- the lane is already inside the body: the head's exit, one step
+    have hbit : evalICmpNat .ugt 64 (BitVec.ofNat 64 pos0).toNat
+        (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 0#1 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+      exact evalICmpNat_ugt_of_ge hpos0 (by have := bytesToNat_lt_32 hblen; omega) hge
+    have hrun := s2StringBodyScanExit (envH := s.env) (s := s) (p := p) (op := op)
+      hpc hpre hinc hop hxp hsub hpos hlane' hbit
+    let e : State := stateAt (s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs
+        (BitVec.ofNat 64 pos0)) { s with pc := "land.lhs.true", pre := some s.pc }
+    refine ⟨e, 1, by decide, Or.inl rfl, ?_, hrun⟩
+    exact ⟨c, by simp only [e, stateAt]; exact hmem, Or.inr ⟨q, hq, hge⟩, hfix⟩
+  · -- the lane is below the body's start, so only the count can have stopped it
+    have hlt : q < pos0 := by omega
+    have hNle : N ≤ c + 1 := by
+      rcases hbound with h | ⟨q', hq', hge'⟩
+      · exact h
+      · rw [hq] at hq'; cases Option.some.inj hq'; exact absurd hge' hge
+    have heqc : c + 1 = N := by omega
+    have hbit1 : evalICmpNat .ugt 64 (BitVec.ofNat 64 pos0).toNat
+        (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 1#1 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+      exact evalICmpNat_ugt_one hpos0 (by have := bytesToNat_lt_32 hblen; omega) hlt
+    have hbit2 : evalICmp .eq ((BitVec.ofNat 64 c) + 1#64) (BitVec.ofNat 64 N) = 1#1 :=
+      evalICmp_eq_of_eq hN64 heqc.symm
+    have hrun := s2StringBodyScanIterateExit (envH := s.env) (s := s) (p := p) (op := op)
+      hpc hpre hxj hnxp hinc hop hxp hsub hpos hlane' hbit1 hbit2
+    let e : State := stateAt
+        (("%exitcond.not", .int 1 (evalICmp .eq ((BitVec.ofNat 64 c) + 1#64)
+            (BitVec.ofNat 64 N))) ::
+          ("%inc", .int 64 ((BitVec.ofNat 64 c) + 1#64)) ::
+          s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
+        ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })
+    have hfix' : s2StringBodyScanPrefix ps pos0 j0 (c + 1) := by
+      intro k hjk hkc
+      rcases Nat.lt_or_ge k c with hltc | hgec
+      · exact hfix k hjk hltc
+      · have hk : k = c := by omega
+        subst hk
+        exact ⟨q, hq, hlt⟩
+    refine ⟨e, 2, le_rfl, Or.inr rfl, ?_, hrun⟩
+    refine ⟨c + 1, ?_, Or.inl heqc, hfix'⟩
+    simp only [e, stateAt]
+    rw [show (writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8))
+        = writeBytes mem0 xj (wordBytes 8 (c + 1)) from
+      s2StringBodyScan_advance mem0 xj c s hmem (by omega)]
+
+/-- **The back edge, with the prefix**: one iteration, and the lane it passed joins
+the prefix. -/
+theorem s2StringBodyScan_step_loopP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
+    (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (r c : Nat) (s : State)
+    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps (r + 1) s c)
+    (hbound : s2StringBodyScanAtBound ps pos0 N s c = false) :
+    ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 2 ∧ e.pc = "land.rhs" ∧ c < c' ∧
+      s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps r e c' ∧
+      ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+        runFuel s2StringBodyCalls k s2StringBodyBody e := by
+  obtain ⟨hinv, hfix⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, ⟨p, op, hpre, hinc, hop⟩, hxp, hsub, hxj, hnxp,
+    ⟨q, bs, hq, hblen, hval, hlane⟩⟩ := hinv
+  have hlen : ps.length = N := (readLanes32_lane hps).1
+  have hb : s2StringBodyScanAtBound ps pos0 N s c = false := hbound
+  rw [s2StringBodyScanAtBound_false] at hbound
+  have hcN : c + 1 < N := by
+    by_contra h; exact hbound (Or.inl (by omega))
+  have hc : c < N := by omega
+  have hltq : q < pos0 := by
+    by_contra h
+    exact hbound (Or.inr ⟨q, hq, by omega⟩)
+  have hN64 : N < 2 ^ 64 := by omega
+  have hpos : ((BitVec.ofNat 64 c).signExtend 64).toNat < 2 ^ 63 := by
+    rw [signExtend_ofNat c (by omega)]; omega
+  obtain ⟨hbit1, hbit2⟩ :=
+    s2StringBodyScan_bits_of_not_atBound hb hq hval hblen rfl hpos0 rfl rfl hN64
+  have hidx : ((BitVec.ofNat 64 c).signExtend 64).toNat * 4 = 4 * c := by
+    rw [signExtend_ofNat c (by omega)]
+    omega
+  have hlane' : readBytes s.mem (xp + ((BitVec.ofNat 64 c).signExtend 64).toNat * 4) 4
+      = some bs := by
+    rw [hidx]
+    exact hlane
+  have hrun := s2StringBodyScanIterate (envH := s.env) (s := s) (p := p) (op := op)
+    hpc hpre hxj hnxp hinc hop hxp hsub hpos hlane' hbit1 hbit2
+  obtain ⟨laneQ, laneBs, hq', hlaneM, hval'⟩ :=
+    (readLanes32_lane hps).2 (c + 1) hcN
+  have hblen' : laneBs.length = 4 := readBytes_length_some hlaneM
+  have hframe : readBytes (writeBytes mem0 xj (wordBytes 8 (c + 1))) (xp + 4 * (c + 1)) 4
+      = some laneBs := by
+    rcases hdisj (c + 1) hcN with h | h
+    · rw [readBytes_writeBytes_below mem0 (wordBytes 8 (c + 1)) 4 (xp + 4 * (c + 1)) xj
+        (by omega)]
+      exact hlaneM
+    · rw [s2StringBodyReadBytes_above mem0 (wordBytes 8 (c + 1)) 4 (xp + 4 * (c + 1)) xj
+        (by simp [wordBytes, natToBytes_length]; omega)]
+      exact hlaneM
+  let e : State := stateAt
+      (("%exitcond.not", .int 1 (evalICmp .eq ((BitVec.ofNat 64 c) + 1#64)
+          (BitVec.ofNat 64 N))) ::
+        ("%inc", .int 64 ((BitVec.ofNat 64 c) + 1#64)) ::
+        s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
+      ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "land.rhs", pre := some "while.body" })
+  have hfix' : s2StringBodyScanPrefix ps pos0 j0 (c + 1) := by
+    intro k hjk hkc
+    rcases Nat.lt_or_ge k c with hltc | hgec
+    · exact hfix k hjk hltc
+    · have hk : k = c := by omega
+      subst hk
+      exact ⟨q, hq, hltq⟩
+  refine ⟨e, c + 1, 2, le_rfl, rfl, by omega, ⟨?_, hfix'⟩, ?_⟩
+  · refine ⟨rfl, ?_, by omega,
+      ⟨"while.body", Operand.reg "%inc", rfl, by simp [phiIncoming], ?_⟩,
+      ?_, ?_, ?_, ?_, ⟨laneQ, laneBs, hq', hblen', hval', ?_⟩⟩
+    · exact s2StringBodyScan_advance mem0 xj c s hmem (by omega)
+    · simp [e, stateAt, evalOperand, lookupName, s2StringBodyLandRhsEnv, ofNat_add_one]
+    · simp only [e, stateAt, lookupName, s2StringBodyLandRhsEnv]; exact hxp
+    · simp only [e, stateAt, lookupName, s2StringBodyLandRhsEnv]; exact hsub
+    · simp only [e, stateAt, lookupName, s2StringBodyLandRhsEnv]; exact hxj
+    · simp only [e, stateAt, lookupName, s2StringBodyLandRhsEnv]; exact hnxp
+    · simp only [e]
+      rw [show (writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8))
+          = writeBytes mem0 xj (wordBytes 8 (c + 1)) from
+        s2StringBodyScan_advance mem0 xj c s hmem (by omega)]
+      exact hframe
+  · exact hrun
+
+/-- **The scan, as a `BoundLoop`, handing back the lanes it passed.** -/
+def s2StringBodyScanLoopP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64) :
+    BoundLoop s2StringBodyCalls s2StringBodyBody where
+  head := "land.rhs"
+  exitBlock := "land.lhs.true"
+  N := N
+  cost := 2
+  Inv := s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps
+  atBound := s2StringBodyScanAtBound ps pos0 N
+  Exit := s2StringBodyScanExited
+  ExitWord := s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N
+  step_exit := fun r s c =>
+    s2StringBodyScan_step_exitP mem0 xj pos0 xp N j0 ps hps hdisj hN hpos0 r c s
+  step_loop := fun r s c =>
+    s2StringBodyScan_step_loopP mem0 xj pos0 xp N j0 ps hps hdisj hN hpos0 r c s
+  exit_at_zero := by
+    intro s c h
+    obtain ⟨hb, -⟩ := h
+    obtain ⟨_hpc, _hmem, hsum, _⟩ := hb
+    rw [s2StringBodyScanAtBound_eq]
+    exact Or.inl (by omega)
+  budget := by
+    intro r s c h
+    obtain ⟨hb, -⟩ := h
+    obtain ⟨_hpc, _hmem, hsum, _⟩ := hb
+    omega
+
+/-- **The scan's run, with the lanes it passed**: from the seated head, the exit at
+`(N + 1) * 2` steps carries the model's `j1` as its counter. -/
+theorem s2StringBodyScan_runP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (s : State) (c : Nat) (k : Nat)
+    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps N s c) {o : Outcome}
+    (hcont : ∀ (e : State), s2StringBodyScanExited e →
+      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N e →
+      runFuel s2StringBodyCalls k s2StringBodyBody e = some o) :
+    runFuel s2StringBodyCalls ((N + 1) * 2 + k) s2StringBodyBody s = some o :=
+  (s2StringBodyScanLoopP mem0 xj pos0 xp N j0 ps hps hdisj hN hpos0).run_at s c hinv k hcont
+
 /-- The callee's decoded memory, named. -/
 def s2StringBodyExpandMem (mem : Mem) (ei dst xj : Nat) (out outj : List UInt8) : Mem :=
   writeBytes (writeBytes (writeBytes (writeBytes mem ei (natToBytes (0#64).toNat 8)) dst out)
@@ -4595,6 +4910,136 @@ def s2StringBodyCleanupState (e : State) (sub len conv : BitVec 64) (call : BitV
     (extra : Mem) (nx outn : Nat) : State :=
   stateAt (s2StringBodyIfEndEnv (s2StringBodyLhsEnv e sub len conv) call)
     ({ e with mem := writeBytes extra outn (natToBytes call.toNat 8), next := nx, pc := "cleanup", pre := some "if.end14" })
+
+/-! ### The contract
+
+The body's whole run: the entry's test, the scan for the body's first position, the
+inside test's two readings of one comparison, and the expander's answer.  The plan
+below is the one the parts were written for —
+
+* the entry's `%cmp3` splits into the scan (the cursor below the count) and the
+  short arm straight to `if.then` (the cursor at or past it);
+* the scan is the prefix-carrying instance, so its exit's counter *is* the model's
+  `j1`;
+* the inside test's `%cmp7` is the window's emptiness (`%cmp1`'s reading at `j1`),
+  and `%cmp9` is the expander's word;
+* `Post` is by cases on the returned form, and the memory equality is the arm's
+  join — no join at all on the body-itself form, the absorbed cursor write and the
+  decoded join on `2`, the record's reconciliation and the refused join on `0`.
+
+Every join is applied at the staging's five present, pairwise separated regions,
+which is why `s2StringBodyPre` states them. -/
+
+/-- A word the staging reads is below `256 ^ w`, so an eight-byte word is below
+`2 ^ 64` — the bound the entry's `ptrtoint` and the scan's `i64` arithmetic need. -/
+theorem stage2ReadWord_lt {mem : Mem} {a w v : Nat}
+    (h : stage2ReadWord mem a w = some v) : v < 256 ^ w := by
+  unfold stage2ReadWord at h
+  cases hr : readBytes mem a w with
+  | none => rw [hr] at h; cases h
+  | some bs =>
+      rw [hr] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      subst h
+      have hb := bytesToNat_lt bs
+      rwa [readBytes_length_some hr] at hb
+
+/-- The eight-byte case: `256 ^ 8` is `2 ^ 64`. -/
+theorem stage2ReadWord_lt_64 {mem : Mem} {a v : Nat}
+    (h : stage2ReadWord mem a 8 = some v) : v < 2 ^ 64 := by
+  have h' := stage2ReadWord_lt h
+  have h2 : (256 : Nat) ^ 8 = 2 ^ 64 := by decide
+  omega
+
+/-- **The contract's conclusion from a state**: the run completes at the state's own
+fuel and answers the model's form with the contract's post and footprint.  The
+scan's continuation is stated at this shape so each exit arm is proved at its own
+fuel and lifted to the contract's budget. -/
+def s2StringBodyConcludes (args : List Value) (mem : Mem) (next : Nat) (k : Nat)
+    (e : State) : Prop :=
+  ∃ o : CallOutcome,
+    runFuel s2StringBodyCalls k s2StringBodyBody e = some (.ret (some o.ret) o.mem) ∧
+    s2StringBodyPost args mem next o ∧
+    UnchangedOutside mem o.mem (s2StringBodyFoot args mem next)
+
+/-- **The body-itself form's post**: the model answered form `1` with the empty slot,
+and the two memories are the same because the cursor write is the staging's own —
+`hself` is that write being a no-op. -/
+theorem s2StringBodyPost_of_bodyItself {mem : Mem} {next c p dst outn xp xj j1 : Nat}
+    {len nxp : BitVec 64}
+    (h : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn
+        (wordBytes 8 len.toNat), 1, []))
+    (hself : writeBytes mem xj (wordBytes 8 j1) = mem) :
+    s2StringBodyPost
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next
+      ⟨.int 32 (BitVec.ofNat 32 1),
+        writeBytes mem outn (natToBytes len.toNat 8), next + 8⟩ := by
+  refine ⟨writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn
+    (wordBytes 8 len.toNat), 1, [], h, rfl, ?_, rfl⟩
+  simp only [hself]
+  rfl
+
+/-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
+`0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
+is exhausted at the cursor), the window is empty, and the answer is form `1` — and
+the two memories agree because the model's cursor write is the write the staging
+already read, so it is the memory. -/
+theorem s2StringBodyArm_entry_ifThen {mem : Mem} {next c p dst outn xp xj : Nat}
+    {len nxp : BitVec 64} {base j0 : Nat} {ps : List Nat} {body : List UInt8}
+    {e : Nat}
+    (hbase : stage2ReadWord mem c 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (he : stage2ReadWord mem (c + 1112) 8 = some e)
+    (hp64 : p < 2 ^ 64) (hble : base ≤ p)
+    (hj63 : j0 < 2 ^ 63) (hN63 : nxp.toNat < 2 ^ 63)
+    (hnle : nxp.toNat ≤ j0) :
+    s2StringBodyConcludes
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next 3
+      (stagedState s2StringBodyBody
+        [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+          .int 64 nxp] mem next) := by
+  obtain ⟨hpc, hc, hp, hlen, hdst, houtn, hxp, hxj, hnxp, hmem, hnext⟩ :=
+    s2StringBodyStaged_entry mem next
+  have hrun := s2StringBodyArm_bodyItself
+    (env := (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env)
+    (s := stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next)
+    hpc hc hp hxj hnxp hlen houtn
+    (by simpa only [hmem] using readBytes_of_stage2ReadWord hbase)
+    (stage2ReadWord_lt_64 hbase) hp64
+    (by simpa only [hmem] using readBytes_of_stage2ReadWord hj0)
+    (stage2ReadWord_lt_64 hj0)
+    (s2StringBodyBit_cmp3_zero hj63 hN63 hnle)
+  have hlen_ps : ps.length = nxp.toNat := (readLanes32_lane hps).1
+  have hnil : ps.drop j0 = [] := List.drop_eq_nil_of_le (by omega)
+  have hj1 : j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length
+      = j0 := by
+    rw [hnil]
+    simp
+  have hwin : ((ps.drop (j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = true := by
+    rw [hj1, hnil]
+    rfl
+  have hmodel : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (writeBytes (writeBytes mem xj (wordBytes 8 j0)) outn
+        (wordBytes 8 len.toNat), 1, []) := by
+    simp only [stage2StringBody, hbase, hj0, hps]
+    rw [if_pos hwin, hj1]
+  refine ⟨⟨.int 32 (BitVec.ofNat 32 1),
+    writeBytes mem outn (natToBytes len.toNat 8), next + 8⟩, ?_, ?_, ?_⟩
+  · simpa only [stateAt, stagedState] using hrun
+  · exact s2StringBodyPost_of_bodyItself hmodel
+      (stage2ReadWord_writeBytes_self mem xj 8 j0 hj0)
+  · simp only [s2StringBodyFoot, he]
+    exact (UnchangedOutside.refl' mem _).write_le (a := outn) (w := 8)
+      ⟨(outn, 8), by simp, le_rfl, le_rfl⟩ (by simp [natToBytes_length])
 
 /-! ### Axiom footprints
 
