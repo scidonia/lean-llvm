@@ -4490,6 +4490,42 @@ theorem s2StringBodySlot_absorb (a : Mem) (ei : Nat) (w : BitVec 64) :
     (by simp [natToBytes_length])
 
 
+/-
+**The instruments, and where each was learned.**  This module's memory and control
+work produced one instrument per failure, and they are recorded here because each is
+cheaper than the failure it came from:
+
+* **price a path by its heavy states × the values its terminal spells**, paid where the
+  terminal is proved — a lemma's proof is not re-elaborated at its call site;
+* **count a stated obligation's lemmas before writing them** — a route that fails at a
+  hypothesis is naming the theorem's subject;
+* **a missing lemma can be a direction** — before proving "X absorbs Y across Z", ask
+  which of the two writes is being moved;
+* **a commutation count fits permutations; an erasure is not one** — compare multisets
+  of writes, and count crossings in the shorter direction (a round trip is one of the
+  ways a count can be wrong);
+* **a hypothesis a lemma needs is the union over every crossing it makes** — the
+  conclusion names one region, the proof crosses three;
+* **state the statement alone first**, in the file and options the proof will live in
+  (`lean <module>`, not `/tmp`: scratch leaves `autoImplicit` on);
+* **a map is not a write** — a canonical form must agree with the operation, on lengths
+  (presence) *and* multiplicity (duplicates);
+* **a lemma and its dual are one statement with constants flipped** — write the dual as
+  a substitution, check it, and the proof mirrors;
+* **name the term**: a statement whose state has many cells, or whose memory term is
+  deep, is a `whnf` liability — and **the depth can be in a hypothesis's type**, not
+  only in the goal.  Before composing, print the terminal's conclusion and ask how deep
+  its memory term is; deeper than two `writeBytes` and it needs a named-outcome variant
+  *before* any composition starts;
+* **a chain is not a proof script** — the count and the order are what a reader needs,
+  but each rewrite's arguments are the state that move leaves, so a crossing costs about
+  two instantiations and the goal, not the chain, says at what;
+* **a fact the caller has is not a fact the lemma has** — state the hypothesis; and
+* **the check must be the one the artifact's context performs** — a build's exit status
+  must gate the commit, not decorate it, and a check run under other options has not
+  been run.
+-/
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
