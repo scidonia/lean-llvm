@@ -80,7 +80,20 @@ already exists as a named target in `WalkLink` — `NodeBlock41_at`, `LeafBlock3
 `land_rhs_i_preheader_at`, `land_rhs_i_at`, `NodeBlock52_at`, `LeafBlock43_at` — so the
 rest is composition: resolve each arm, supply each step's cell, and append.  A step's
 named state is read off that step's own conclusion, which is why no further hypothesis
-about the tail is needed.
+about the tail is needed.  The tail is now composed: `walkChain_extend_leafBlock33`
+through `walkChain_extend_leafBlock43` are one extension per step and
+`walkScanChain_to_latch` is the five of them as one chain, to the scan's latch.
+
+**Two shapes a resolved arm costs, beyond the nesting rule.**  `rfl` does not fire on
+`if c then a else b` for a symbolic `c`, and neither does `simp [h]` when `h : c` — the
+rewrite is one congruence away from the term it has to reach, so `simp` splits the `if`
+instead and asks for `c` at a goal the hypothesis does not close.  `if_pos h` (and
+`if_neg`, with `1 ≠ 0` on the one-bit comparison) is the form that applies: it is the
+`if`'s own equation, so the arm is the literal the next link's `rfl` needs.  And a
+`WalkLocal` premise that reads `C.inner` from a carry the chain has already nested does
+not unify with the source carry's projection, however equal the two are — the fix is to
+take the scan's bound as its own `Nat` parameter with `C.inner = inner`, so the
+premise's term never contains the nested projection.
 
 **The target terms are part of the work.**  Each instance's state is a literal nest
 (`{ (s.bind a v).bind b w with … }`), so a chain's target is that nest applied k
@@ -676,6 +689,86 @@ theorem walkScanChain_to_latch {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (C := { { { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" } with
       block := "NodeBlock52" } with block := "LeafBlock43" }) (inner := C.inner) h₄ rfl h36₄
       hge rfl hcount
+
+/-! ### The five inductions, named
+
+A scan's visit is not a finite path: the scan repeats until its counter reaches its
+bound, so what it owes the dispatch is an induction, one per scan.  The five are the
+census's `walkScanStepSets` sets — the literal comparison's, the whitespace skip's, the
+string scan's, the escape scan's and the extra-token scan's — and each has the same four
+pieces, stated once here so the five are five instantiations rather than five arguments:
+
+* **the step** — from the latch, short of the bound, one visit reaches the scan's
+  landing block at a count inside one byte's allowance (`stage2ByteAllowance`), and the
+  visiting carry is the latch's again with its counter re-pinned.  The *chain* of that
+  visit is `walkScanChain_to_latch`'s at the scan's names; reading it as a
+  `WalkSegment` is `WalkSegment.of_chain`;
+* **the exit** — at the bound the latch's equality test is set, so the terminator takes
+  the scan's exit arm; `execTerm_condbr_bit` resolves the arm from the test's bit, which
+  is what names the exit's successor;
+* **the advance** — the latch's increment is its counter plus one, which is the
+  induction's measure: the bound less the counter falls by one per visit, so the visit
+  count is bounded by the remaining budget.
+
+The four token scans' lattices are the body's own blocks (`scanBlock`/`scanWhitespace_find`
+and its three siblings); the literal comparison's is `for.inc.i.i`.  None of the three
+pieces is proved here: what this module proves is the *chain* a visit is made of, and the
+price the census charges it (`walkScanStepWidth_le_byteAllowance`), so the inductions
+are stated at exactly the facts those two leave for them. -/
+structure WalkScanInduction (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
+    (latch land inc phi cond exit : String) : Prop where
+  /-- One visit: the landing block, at a count inside one byte's allowance, the visiting
+  carry's counter re-pinned. -/
+  step : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = latch →
+    ∀ i c : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) → i < c →
+      ∃ (C' : WalkCarry G) (s' : State) (j : Nat),
+        WalkSegment calls G C s C' s' j ∧ C'.block = land ∧ j ≤ stage2ByteAllowance ∧
+        lookupName s'.env phi = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+        lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c))
+  /-- The exit: at the bound the latch's test is set, and the terminator is the jump to
+  the scan's own exit block. -/
+  exitStep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = latch →
+    ∀ i : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 i)) →
+      ∃ (s' : State), _root_.LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = exit
+  /-- The increment: the latch writes its counter plus one before testing it. -/
+  advance : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = latch →
+    ∀ i : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1)))
+
+/-- The literal comparison's scan: its latch, its landing block and its registers. -/
+def walkInductionLiteral (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  WalkScanInduction calls G "for.inc.i.i" "for.body.i.i" "%inc.i.i" "%i.029.i.i"
+    "%cond.i.i" "if.end48.i"
+
+/-- The whitespace skip's scan — the one `walkScanChain_to_latch` follows to the latch. -/
+def walkInductionWhitespace (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  WalkScanInduction calls G "while.body370.i" "land.rhs.i" "%inc371.i" "%ee.0.i238"
+    "%cond350.i" "if.end372.i"
+
+/-- The string scan. -/
+def walkInductionString (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  WalkScanInduction calls G "while.body.i104" "land.rhs.i103" "%inc.i105" "%ee.011.i"
+    "%cond.i" "cleanup474.i"
+
+/-- The escape scan. -/
+def walkInductionEscape (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  WalkScanInduction calls G "while.body76.i" "land.rhs71.i" "%inc77.i" "%s2.020.i"
+    "%cond.i" "while.end78.i"
+
+/-- The extra-token scan. -/
+def walkInductionExtraToken (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
+  WalkScanInduction calls G "while.body462.i" "land.rhs457.i" "%inc463.i" "%q.0.i246"
+    "%cond350.i" "if.end473.i"
+
+-- Each named latch is a block of the pinned body, so an induction named at a block the
+-- body does not carry fails at elaboration rather than at use.
+#guard (stage2Body.findBlock "for.inc.i.i").isSome
+#guard (stage2Body.findBlock "while.body370.i").isSome
+#guard (stage2Body.findBlock "while.body.i104").isSome
+#guard (stage2Body.findBlock "while.body76.i").isSome
+#guard (stage2Body.findBlock "while.body462.i").isSome
 
 /-! ### The instrument -/
 
