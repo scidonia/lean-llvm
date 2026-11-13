@@ -12,26 +12,36 @@ alternative is
     Cd.eoff ≤ G.n ∧ p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
       stage2ByteAllowance * (G.n - entryPos G C.k)`.
 
-This module proves that alternative at a branch that produces it.  The dispatch's
-proof is not a chain of `WalkLink`s: a link's target is existential, so a chain
-leaves the state at the refusal copy unnamed and the price says nothing (that
-module's own note, "What a dispatch proof still owes").  A dispatch proof is a
-per-block run at the *values the next block reads*, so each block below is one
-`WalkLink` whose source and target states are named (`refuseS₁` … `refuseS₆`), the
-successor's environment is the predecessor's plus one cell, and the branch is
-resolved by the bit its `icmp` computes at the byte the run carries.
+This module proves that alternative at two branches that produce it.  The
+dispatch's proof is not a chain of `WalkLink`s: a link's target is existential, so
+a chain leaves the state at the refusal copy unnamed and the price says nothing
+(that module's own note, "What a dispatch proof still owes").  A dispatch proof is
+a per-block run at the *values the next block reads*, so each block below is one
+`WalkLink` whose source and target states are named (`refuseS₁` … `refuseS₆`,
+`quoteS₁` … `refuseStore205Out`), the successor's environment is the predecessor's
+plus one cell, and the branch is resolved by the bit its `icmp` computes at the byte
+the run carries.
 
-**The branch.**  A depth-zero closing bracket is refused with entries remaining:
-the switch's pivots take `NodeBlock21 → NodeBlock19 → NodeBlock11 → LeafBlock9`,
-`if.then53.i` tests the depth register and takes `if.then56.i`, and that block
-stores the entry's position in `%e + 8` and jumps to the refusal copy `if.then` —
-six blocks from the head, inside one entry's allowance (`refusePrice_six`).
+**The branches.**
 
-**What is not here.**  The other refusal branches (`if.then205.i`, the string
-opener at the last entry; `if.then71.i`, `cleanup104.i` and the mismatched
-literals; the four trap blocks), and the `finish` alternative.  Each is the same
-shape: a path of named per-block runs from `walkLoopHead`, which is why they are
-stated as branches of one `WalkRefuseAt` and not as one theorem over the token. -/
+* a depth-zero closing bracket, refused with entries remaining:
+  `NodeBlock21 → NodeBlock19 → NodeBlock11 → LeafBlock9 → if.then53.i →
+  if.then56.i → if.then` — six blocks, the offset being the entry's own position;
+* a string opener with no entries left: `NodeBlock21 → NodeBlock5 → LeafBlock →
+  sw.bb202.i → if.then205.i → if.then` — five blocks, the offset being the
+  document's length.  This is the branch `hlast`'s own hypothesis selects, since
+  `¬ (C.k + 1 < G.nep)` at `%inc.i = C.k + 1` is `sw.bb202.i`'s negated test.
+
+Both prices are one bound (`refusePrice_of_le`): a refusal path is at most thirty
+steps, so with one entry unconsumed the entry term alone pays for it.
+
+**What is not here.**  The remaining refusal branches — `if.then71.i`,
+`cleanup104.i`, `if.then13.i`/`if.then176.i`, the mismatched literals' — and the
+`four` trap blocks (`walkTrap_noStep`), plus the `finish` alternative.  Each is the
+same shape: named per-block runs from `walkLoopHead`, which is why they are stated
+as branches of one `WalkRefuseAt` rather than as one theorem over the token.  The
+general `hlast` obligation is the case split over `%8` that selects among them, and
+this module does not state it. -/
 
 namespace LeanLLVM.Refinement
 namespace WalkScope
@@ -60,14 +70,14 @@ def WalkRefuseAt (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
       stage2ByteAllowance * (G.n - entryPos G C.k)
 
-/-- **Six blocks are inside one entry's credit.**  The refusal path is six control
-steps, and the price it must fit is `32·Δk + 8·ΔA`; with one entry still unconsumed
-the entry term alone is `32`.  The byte term is left where it is: the refusal reads
-one byte of the document and decodes nothing, so no decoded extent has to be
-charged. -/
-theorem refusePrice_six {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (hk : C.k < G.nep) :
-    6 + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+/-- **A refusal path shorter than the entry's credit.**  The price a refusal must fit
+is `32·Δk + 8·ΔA`; with one entry still unconsumed the entry term alone is `32`, so
+every path of at most thirty steps fits it, and the branch's own byte term is left
+where it is: the refusal reads a byte of the document and decodes nothing, so no
+decoded extent has to be charged. -/
+theorem refusePrice_of_le {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {p : Nat}
+    (hp : p ≤ 30) (hk : C.k < G.nep) :
+    p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
       stage2ByteAllowance * (G.n - entryPos G C.k) := by
   have h : 1 ≤ G.nep - C.k := by omega
   have hmul : stage2EntryAllowance * 1 ≤ stage2EntryAllowance * (G.nep - C.k) :=
@@ -277,7 +287,7 @@ theorem bracketRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
       (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) L₅.inv' rfl hv₅ he₅ hj hj64
   refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
     refuseS₆ C j (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))), 6, ?_, rfl,
-    L₆.inv'.eoff_le, refusePrice_six G C hk⟩
+    L₆.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
   exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
     (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
 
@@ -302,9 +312,225 @@ theorem walkRefuseWitness_bracket {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   bracketRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
 
+/-! ### The string opener's refusal, at the last entry
+
+The second refusal branch the dispatch note names: `%8 = 34` takes the switch's
+`LeafBlock → sw.bb202.i` arm, and `sw.bb202.i` tests `%inc.i < %nep` — a string opener
+needs a closing entry, so with none left the block stores the document's length in
+`%e + 8` and jumps to the refusal copy.  Its condition is `hlast`'s own
+(`¬ (C.k + 1 < G.nep)`, at `%inc.i = C.k + 1`), not a bound the caller adds.
+
+Every state is written at its own input, so each `_at` instance's `pre := some s.pc`
+is the `def`'s own term and the block's equality is `rfl` past the branch's bit. -/
+
+/-- **`%inc.i < %nep` is false at the last entry.**  `evalICmp`'s unsigned comparison
+on `ofNat` operands is the natural order, so the negated bound is the bit. -/
+theorem refuseUlt_zero {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (h : ¬ a < b) :
+    evalICmp .ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = 0 := by
+  have hu : BitVec.ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = false := by
+    rw [BitVec.ult]
+    simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+    exact decide_eq_false h
+  simp only [evalICmp, hu]
+  rfl
+
+/-- `NodeBlock21` at `%8 = 34`: `%8 < 91` is true, so the edge is `NodeBlock5`. -/
+def quoteS₁ (s : State) : State :=
+  { s.bind "%Pivot22" (.int 1 (1 : BitVec 1)) with pc := "NodeBlock5", pre := some s.pc }
+
+/-- `NodeBlock5` at `%8 = 34`: `%8 < 44` is true, so the edge is `LeafBlock`. -/
+def quoteS₂ (s : State) : State :=
+  { s.bind "%Pivot6" (.int 1 (1 : BitVec 1)) with pc := "LeafBlock", pre := some s.pc }
+
+/-- `LeafBlock` at `%8 = 34`: `%8 = 34` is true, so the edge is `sw.bb202.i`. -/
+def quoteS₃ (s : State) : State :=
+  { s.bind "%SwitchLeaf" (.int 1 (1 : BitVec 1)) with
+    pc := "sw.bb202.i", pre := some s.pc }
+
+/-- `sw.bb202.i` at the last entry: `%inc.i < %nep` is false, so the edge is
+`if.then205.i`. -/
+def quoteS₄ (s : State) (inc nep : BitVec 64) : State :=
+  { s.bind "%cmp203.not.i" (.int 1 (evalICmp .ult inc nep)) with
+    pc := "if.then205.i", pre := some s.pc }
+
+/-- `if.then205.i`'s successor: the document's length at `%e + 8`, at the copy. -/
+def refuseStore205Out {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat)
+    (s : State) : State :=
+  { { s with
+      env := ("%off1.i.i76", .ptr (C.stage.e + 8)) :: s.env
+      mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- **`NodeBlock21` at a quote.**  `%8 < 91` is true at `34`, so the run leaves the
+head at `NodeBlock5`. -/
+theorem quoteRefuseStep₁ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34))) :
+    WalkLink calls G C s { C with block := "NodeBlock5" } (quoteS₁ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.NodeBlock21_at G C s hInv hhead h8
+  have hbit : evalICmp .slt (BitVec.ofNat 8 34) (BitVec.ofNat 8 91) = 1 := by decide
+  have hstate : s' = quoteS₁ s := hs'.trans (by simp [quoteS₁, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`NodeBlock5` at a quote.**  `%8 < 44` is true at `34`, so the run leaves
+`NodeBlock5` at `LeafBlock`. -/
+theorem quoteRefuseStep₂ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "NodeBlock5")
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34))) :
+    WalkLink calls G C s { C with block := "LeafBlock" } (quoteS₂ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.NodeBlock5_at G C s hInv hblock h8
+  have hbit : evalICmp .slt (BitVec.ofNat 8 34) (BitVec.ofNat 8 44) = 1 := by decide
+  have hstate : s' = quoteS₂ s := hs'.trans (by simp [quoteS₂, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`LeafBlock` at a quote.**  The leaf's equality test is true at `34`, so the run
+takes the string-opener arm, `sw.bb202.i`. -/
+theorem quoteRefuseStep₃ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "LeafBlock")
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34))) :
+    WalkLink calls G C s { C with block := "sw.bb202.i" } (quoteS₃ s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.LeafBlock_at G C s hInv hblock h8
+  have hbit : evalICmp .eq (BitVec.ofNat 8 34) (BitVec.ofNat 8 34) = 1 := by decide
+  have hstate : s' = quoteS₃ s := hs'.trans (by simp [quoteS₃, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`sw.bb202.i` at the last entry.**  `%inc.i < %nep` is false, so the run takes
+`if.then205.i` — the refusal, not the merge's arm. -/
+theorem quoteRefuseStep₄ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "sw.bb202.i")
+    {inc nep : BitVec 64}
+    (hinc : evalOperand s (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand s (.reg "%nep") = some (.int 64 nep))
+    (hbit : evalICmp .ult inc nep = 0) :
+    WalkLink calls G C s { C with block := "if.then205.i" } (quoteS₄ s inc nep) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.sw_bb202_i_at G C s hInv hblock hinc hnep
+  have hstate : s' = quoteS₄ s inc nep := hs'.trans (by simp [quoteS₄, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`if.then205.i` at the last entry.**  The document's length is stored at `%e + 8`
+and the edge is the refusal copy. -/
+theorem quoteRefuseStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then205.i")
+    (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hn64 : G.n < 2 ^ 64) :
+    WalkLink calls G C s { C with block := "if.then", eoff := G.n, refusal := true }
+      (refuseStore205Out C G.n s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then205_i_at G C s hInv hblock hv he (le_refl G.n) hn64
+  rw [hs'] at hl
+  exact hl
+
+/-- **The string opener's refusal, as one counted run.**  Five links from the head to
+`if.then`: the switch's two pivots and the leaf's equality, the count test, and the
+offset store. -/
+theorem quoteRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
+    {inc nep : BitVec 64}
+    (hinc : evalOperand s (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand s (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0)
+    (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e)) (hk : C.k < G.nep) :
+    WalkRefuseAt calls G C s := by
+  -- the byte, at the three states the switch binds into
+  have h8₁ : evalOperand (quoteS₁ s) (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)) := by
+    simpa only [quoteS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₂ : evalOperand (quoteS₂ (quoteS₁ s)) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 34)) := by
+    simpa only [quoteS₂, quoteS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot6") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₃ : evalOperand (quoteS₃ (quoteS₂ (quoteS₁ s))) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 34)) := by
+    simpa only [quoteS₃, quoteS₂, quoteS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  -- the count's two operands at the test's state, and the offset's two at the store
+  have hinc₄ : evalOperand (quoteS₃ (quoteS₂ (quoteS₁ s))) (.reg "%inc.i") =
+      some (.int 64 inc) := by
+    simpa only [quoteS₃, quoteS₂, quoteS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%inc.i") _ _ (by decide)] using hinc
+  have hnep₄ : evalOperand (quoteS₃ (quoteS₂ (quoteS₁ s))) (.reg "%nep") =
+      some (.int 64 nep) := by
+    simpa only [quoteS₃, quoteS₂, quoteS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%nep") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%nep") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%nep") _ _ (by decide)] using hnep
+  have hv₅ : evalOperand (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) (.reg "%4") =
+      some (.int 64 (BitVec.ofNat 64 G.n)) := by
+    simpa only [quoteS₄, quoteS₃, quoteS₂, quoteS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%cmp203.not.i") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%4") _ _ (by decide)] using hv
+  have he₅ : lookupName (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep).env "%e" =
+      some (.ptr C.stage.e) := by
+    simpa only [quoteS₄, quoteS₃, quoteS₂, quoteS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp203.not.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%e") _ _ (by decide)] using he
+  -- the five links, each at the state the previous one names
+  have L₁ : WalkLink calls G C s { C with block := "NodeBlock5" } (quoteS₁ s) :=
+    quoteRefuseStep₁ G C s hInv hhead h8
+  have L₂ : WalkLink calls G { C with block := "NodeBlock5" } (quoteS₁ s)
+      { C with block := "LeafBlock" } (quoteS₂ (quoteS₁ s)) :=
+    quoteRefuseStep₂ G { C with block := "NodeBlock5" } (quoteS₁ s) L₁.inv' rfl h8₁
+  have L₃ : WalkLink calls G { C with block := "LeafBlock" } (quoteS₂ (quoteS₁ s))
+      { C with block := "sw.bb202.i" } (quoteS₃ (quoteS₂ (quoteS₁ s))) :=
+    quoteRefuseStep₃ G { C with block := "LeafBlock" } (quoteS₂ (quoteS₁ s)) L₂.inv' rfl h8₂
+  have L₄ : WalkLink calls G { C with block := "sw.bb202.i" } (quoteS₃ (quoteS₂ (quoteS₁ s)))
+      { C with block := "if.then205.i" } (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) :=
+    quoteRefuseStep₄ G { C with block := "sw.bb202.i" } (quoteS₃ (quoteS₂ (quoteS₁ s)))
+      L₃.inv' rfl hinc₄ hnep₄ hge
+  have L₅ : WalkLink calls G { C with block := "if.then205.i" }
+      (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep)
+      { C with block := "if.then", eoff := G.n, refusal := true }
+      (refuseStore205Out C G.n (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep)) :=
+    quoteRefuseStep₅ G { C with block := "if.then205.i" }
+      (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) L₄.inv' rfl hv₅ he₅
+      (WalkGeom.n_lt G)
+  refine ⟨{ C with block := "if.then", eoff := G.n, refusal := true },
+    refuseStore205Out C G.n (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep), 5, ?_, rfl,
+    L₅.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
+  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+    (Seg.tail L₅ (Seg.nil L₅.inv'))))))
+
+/-- **The `refuse` witness at a string opener with no entries left**, in the exact
+shape `WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct.
+Five blocks from the head to the refusal copy, the document's length as the offset,
+and the price inside one entry's allowance.
+
+This is the branch `hlast`'s own hypothesis selects: `¬ (C.k + 1 < G.nep)` at
+`%inc.i = C.k + 1` is exactly `sw.bb202.i`'s negated test, so the run is the dispatch
+refusing on the terminal entry rather than a caller-supplied bound. -/
+theorem walkRefuseWitness_quote {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
+    {inc nep : BitVec 64}
+    (hinc : evalOperand s (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand s (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0)
+    (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e)) (hk : C.k < G.nep) :
+    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
+      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k) :=
+  quoteRefuse_at G C s hInv hhead h8 hinc hnep hge hv he hk
+
 /-! ### The instrument -/
 
-#print axioms LeanLLVM.Refinement.WalkScope.refusePrice_six
+#print axioms LeanLLVM.Refinement.WalkScope.refusePrice_of_le
 #print axioms LeanLLVM.Refinement.WalkScope.refuseStep₁
 #print axioms LeanLLVM.Refinement.WalkScope.refuseStep₂
 #print axioms LeanLLVM.Refinement.WalkScope.refuseStep₃
@@ -313,3 +539,11 @@ theorem walkRefuseWitness_bracket {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
 #print axioms LeanLLVM.Refinement.WalkScope.refuseStep₆
 #print axioms LeanLLVM.Refinement.WalkScope.bracketRefuse_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_bracket
+#print axioms LeanLLVM.Refinement.WalkScope.refuseUlt_zero
+#print axioms LeanLLVM.Refinement.WalkScope.quoteRefuseStep₁
+#print axioms LeanLLVM.Refinement.WalkScope.quoteRefuseStep₂
+#print axioms LeanLLVM.Refinement.WalkScope.quoteRefuseStep₃
+#print axioms LeanLLVM.Refinement.WalkScope.quoteRefuseStep₄
+#print axioms LeanLLVM.Refinement.WalkScope.quoteRefuseStep₅
+#print axioms LeanLLVM.Refinement.WalkScope.quoteRefuse_at
+#print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_quote
