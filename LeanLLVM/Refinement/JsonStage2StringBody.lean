@@ -609,13 +609,13 @@ def s2StringBodyEnv4 (env : Env) (base : Nat) : Env :=
   ("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) :: env
 
 def s2StringBodyEnv5 (env : Env) (p base : Nat) : Env :=
-  ("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 (p - base))) :: env
+  ("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 p - BitVec.ofNat 64 base)) :: env
 
 def s2StringBodyEnv6 (env : Env) (j0 : Nat) : Env :=
   ("%xj.promoted", .int 64 (BitVec.ofNat 64 j0)) :: env
 
 def s2StringBodyEnv7 (env : Env) (j0 : Nat) (nxp : BitVec 64) : Env :=
-  ("%cmp3", .int 1 (evalICmpNat .ult 64 j0 nxp.toNat)) :: env
+  ("%cmp3", .int 1 (evalICmp .ult (BitVec.ofNat 64 j0) nxp)) :: env
 
 /-- The seven instructions the entry block runs, in order: the slot's
 allocation, the two address conversions and their subtraction, the cursor read
