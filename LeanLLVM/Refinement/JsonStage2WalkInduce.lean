@@ -679,6 +679,96 @@ theorem walkWhiteScanVisit48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   exact walkWhiteScanBack48 (C₀ := C₀) (s₀ := s₀) (C := { C with block := "NodeBlock52" })
     h₁ rfl h36 hge13 hge32 hne32 hsc
 
+/-! ### A visit as a segment
+
+The closure of an induction is a recursion on the counter's remaining distance, and its
+unit is a *segment*: `WalkSegment.of_chain` reads a chain as one, so each visit above is
+a segment at its own count.  What a *price* needs beyond this is the count itself — a
+`WalkChain` records none (it is a `Prop`, so a length is not definable) — which is the
+`Seg` relation the next step introduces: a chain together with the number of links it is
+made of, from which the price `n ≤ stage2ByteAllowance` follows link by link. -/
+
+/-- **The visit through `LeafBlock43`, as a segment.** -/
+theorem walkWhiteScanVisitSeg43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hlt13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ j, WalkSegment calls G C₀ s₀
+      (scanCarryLatchOf { { C with block := "NodeBlock52" } with block := "LeafBlock43" })
+      (leafBlock43OutAt
+        (nodeBlock52OutAt (landRhsIOutAt G s e (scanB G e)) (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) j :=
+  WalkSegment.of_chain (walkWhiteScanVisit43 hchain hblock hpre hin hv hpos hqn halen hevlen
+    hlt13 hws hsc)
+
+/-- **The visit through `LeafBlock46`, as a segment.** -/
+theorem walkWhiteScanVisitSeg46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hge13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hlt32 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 1)
+    (hne13 : evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ j, WalkSegment calls G C₀ s₀
+      (scanCarryLatchOf (scanCarryLeafBlock46 { C with block := "NodeBlock52" }))
+      (scanLeafBlock46Out
+        (scanNodeBlock50Out
+          (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+            (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) j :=
+  WalkSegment.of_chain (walkWhiteScanVisit46 hchain hblock hpre hin hv hpos hqn halen hevlen
+    hge13 hlt32 hne13 hsc)
+
+/-- **The visit through `LeafBlock48`, as a segment.** -/
+theorem walkWhiteScanVisitSeg48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hge13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 0)
+    (hge32 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 0)
+    (hne32 : evalICmp .eq (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 32) = 0)
+    (hsc : ScanCount (landRhsIOutAt G s e (scanB G e)) "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ j, WalkSegment calls G C₀ s₀
+      (scanCarryLatchOf (scanCarryLeafBlock48 { C with block := "NodeBlock52" }))
+      (scanLeafBlock48Out
+        (scanNodeBlock48Out
+          (scanNodeBlock50In (landRhsIOutAt G s e (scanB G e))
+            (BitVec.ofNat 8 (scanB G e).toNat))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) j :=
+  WalkSegment.of_chain (walkWhiteScanVisit48 hchain hblock hpre hin hv hpos hqn halen hevlen
+    hge13 hge32 hne32 hsc)
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
@@ -1015,6 +1105,9 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisit43
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisit46
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisit48
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg43
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg46
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg48
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
