@@ -5354,6 +5354,59 @@ theorem s2StringBodyArm_scan_ifThen {mem : Mem} {next ch p dst outn xp xj : Nat}
       (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
       ⟨(outn, 8), by simp, le_rfl, le_rfl⟩ (by simp [natToBytes_length])
 
+/-- **The scan's lane exit finishes form `1`** when the lane at the counter is past
+the window: the inside test's bit is `0`, `if.then` takes the body-itself answer,
+and the model's window at `j1` is empty by the same lane. -/
+theorem s2StringBodyArm_scan_landLhsTrue {mem : Mem} {next ch p dst outn xp xj : Nat}
+    {len nxp : BitVec 64} {base j0 : Nat} {ps : List Nat} {env0 : Env} {ei : Nat}
+    {x : State} {c1 lane : Nat} {conv : BitVec 64}
+    (hbase : stage2ReadWord mem ch 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hpc : x.pc = "land.lhs.true")
+    (hmem : x.mem = writeBytes mem xj (wordBytes 8 c1))
+    (hfix : s2StringBodyScanPrefix ps (p - base) j0 c1)
+    (hlane : ps[c1]? = some lane) (hge : p - base ≤ lane)
+    (hconv : lookupName x.env "%conv" = some (.int 64 conv)) (hconvq : conv.toNat = lane)
+    (hsub : lookupName x.env "%sub.ptr.sub"
+      = some (.int 64 (BitVec.ofNat 64 (p - base))))
+    (hpast : p - base + len.toNat ≤ lane)
+    (hp0 : p - base < 2 ^ 64) (hpw : p - base + len.toNat < 2 ^ 64)
+    (hlen : lookupName x.env "%len" = some (.int 64 len))
+    (houtn : lookupName x.env "%outn" = some (.ptr outn)) :
+    s2StringBodyConcludes
+      [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next 3 x := by
+  have hlen_ps : ps.length = nxp.toNat := (readLanes32_lane hps).1
+  have hj1 : c1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length :=
+    s2StringBodyScanExit_j1 hfix (Or.inr ⟨lane, hlane, hge⟩) hlen_ps
+  have hwin : ((ps.drop c1).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = true :=
+    s2StringBodyWindow_empty_of_lane hlane hpast
+  have hmodel := s2StringBodyModel_bodyItself (mem := mem) (c := ch) (p := p)
+    (dst := dst) (outn := outn) (xp := xp) (xj := xj) (j1 := c1) (len := len)
+    (nxp := nxp) (base := base) (j0 := j0) (ps := ps) hbase hj0 hps hj1 hwin
+  have hsum : ((BitVec.ofNat 64 (p - base)) + len).toNat = p - base + len.toNat := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hp0,
+      Nat.mod_eq_of_lt hpw]
+  have hbit : evalICmpNat .ugt 64 ((BitVec.ofNat 64 (p - base)) + len).toNat
+      conv.toNat = 0#1 := by
+    rw [hsum, hconvq]
+    exact evalICmpNat_ugt_zero hpw (by omega) hpast
+  refine ⟨⟨.int 32 (BitVec.ofNat 32 1),
+    writeBytes x.mem outn (natToBytes len.toNat 8), next + 8⟩, ?_, ?_, ?_⟩
+  · exact s2StringBodyExit_landLhsTrue_toIfThen (e := x) hpc hsub hlen hconv hbit houtn
+  · refine ⟨writeBytes (writeBytes mem xj (wordBytes 8 c1)) outn
+      (wordBytes 8 len.toNat), 1, [], hmodel, rfl, ?_, rfl⟩
+    rw [hmem]
+    rfl
+  · rw [hmem]
+    simp only [s2StringBodyFoot]
+    exact ((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
+      ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+      (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
+      ⟨(outn, 8), by simp, le_rfl, le_rfl⟩ (by simp [natToBytes_length])
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
