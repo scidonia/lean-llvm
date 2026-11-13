@@ -1059,6 +1059,31 @@ def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
       p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)
 
+/-- Whether a block stores through the arena-cursor pointer. -/
+def storesArenaCursor (b : Block) : Bool :=
+  b.instrs.any fun i =>
+    match i with
+    | Instr.store _ _ (Operand.reg "%alen") => true
+    | _ => false
+
+section
+
+-- The body's 165 blocks are decided in one `decide`; the recursion is the list's depth.
+set_option maxRecDepth 100000
+
+/-- **The arena cursor has two writers in the whole body.**  `%alen` is the body's only
+address for `z + 48` (the entry computes it, once), and only two blocks store through it:
+the entry's initialisation and `if.else285.i`, the arena append.  So no block off the
+append's own step moves the cursor word, and the entry's write is the seed's — which is
+what the per-revolution statement consumes: the append is the only mover on the loop's
+paths. -/
+theorem stage2Body_arena_writers :
+    ∀ b ∈ stage2Body.blocks, storesArenaCursor b = true →
+      b.name = "entry" ∨ b.name = "if.else285.i" := by
+  decide
+
+end
+
 /-- **The exit**: at the head whose merge fails its test (`C.k + 1 = G.nep`, so
 `%inc.i` is the entry count), `27` steps reach a state whose jump is followed by a
 return — *beside* the potential the state still holds, because that state's own
