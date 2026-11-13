@@ -4526,6 +4526,57 @@ cheaper than the failure it came from:
   been run.
 -/
 
+/-- **The decoded arm's facts, bundled.**  The third position of "name the term": the
+hypothesis *list*.  A statement that mentions one argument of this type does not make the
+elaborator spell sixteen laminate-bearing propositions. -/
+structure s2StringBodyDecodedFacts (e : State) (p dst ei outn xp xj : Nat)
+    (len sub conv nxp : BitVec 64) (extra : Mem) (nx : Nat) (call : BitVec 64)
+    (outj out : List UInt8) (j1 k : Nat) : Prop where
+  hpc : e.pc = "land.lhs.true"
+  hsub : lookupName e.env "%sub.ptr.sub" = some (.int 64 sub)
+  hlen : lookupName e.env "%len" = some (.int 64 len)
+  hconv : lookupName e.env "%conv" = some (.int 64 conv)
+  hbit7 : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 1#1
+  hp : lookupName e.env "%p" = some (.ptr p)
+  hdst : lookupName e.env "%dst" = some (.ptr dst)
+  hei : lookupName e.env "%ei" = some (.ptr ei)
+  hxp : lookupName e.env "%xp" = some (.ptr xp)
+  hxj : lookupName e.env "%xj" = some (.ptr xj)
+  hnxp : lookupName e.env "%nxp" = some (.int 64 nxp)
+  hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+    [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+     .int 64 sub] (writeBytes e.mem ei (natToBytes (0#64).toNat 8)) e.next =
+    some { ret := .int 64 call, mem := extra, next := nx }
+  hbit9 : evalICmp .eq call 0xffffffffffffffff#64 = 0#1
+  houtn : lookupName e.env "%outn" = some (.ptr outn)
+  hextra : extra = s2StringBodyExpandMem e.mem ei dst xj out outj
+  hcall : call = BitVec.ofNat 64 out.length
+  hlenOut : out.length < 2 ^ 64
+  hei_p : readBytes e.mem ei 8 ≠ none
+  hdst_p : readBytes e.mem dst out.length ≠ none
+  hxj_p : readBytes e.mem xj 8 ≠ none
+  houtn_p : readBytes e.mem outn 8 ≠ none
+  hd_ei : ei + 8 ≤ dst ∨ dst + out.length ≤ ei
+  hx_ei : ei + 8 ≤ xj ∨ xj + 8 ≤ ei
+  hd_xj : dst + out.length ≤ xj ∨ xj + 8 ≤ dst
+  ho_ei : ei + 8 ≤ outn ∨ outn + 8 ≤ ei
+  ho_d : outn + 8 ≤ dst ∨ dst + out.length ≤ outn
+  ho_x : outn + 8 ≤ xj ∨ xj + 8 ≤ outn
+
+/-- The statement alone, at the bundle: if this elaborates at the default budget, the
+bundle suffices and stage 3's proof is the two rewrites already written. -/
+example {e : State} {p dst ei outn xp xj : Nat} {len sub conv nxp : BitVec 64}
+    {extra : Mem} {nx : Nat} {call : BitVec 64} {outj out : List UInt8} {j1 k : Nat}
+    (h : s2StringBodyDecodedFacts e p dst ei outn xp xj len sub conv nxp extra nx call
+      outj out j1 k)
+    (hgoal : runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000002#32))
+        (s2StringBodyDecodedMem e.mem dst xj outn ei outj out))) :
+    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+      some (.ret (some (.int 32 0x00000002#32))
+        (s2StringBodyDecodedMem e.mem dst xj outn ei outj out)) :=
+  hgoal
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
