@@ -1076,13 +1076,16 @@ theorem WalkIter.names_of_eq {m0 : Mem} {G : WalkGeom m0} {k : Nat} {env : Env}
 
 /-- **The preheader's five binds are the staging's own values.**  `while.body.i.lr.ph`
 binds `%k11.i`, `%h1.i.i.i51`, `%gap.i`, `%end.i` and `%kind404.i`, each to the
-address `walkStaticRegs` names for it, so the static carrier survives the block. -/
+address `walkStaticRegs` names for it, so the static carrier survives the block.
+The list is the run's own environment, newest first: the block writes the five in
+source order, so `%kind404.i` is the outermost cell and `%k11.i` the oldest — the
+order `cells` reads its argument in. -/
 theorem preheaderRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env)
     (h : WalkRegs G C env) :
     WalkRegs G C (cells
-      [("%k11.i", .ptr (C.stage.c + 32)), ("%h1.i.i.i51", .ptr (C.stage.z + 24)),
-       ("%gap.i", .ptr (C.stage.tok + 20)), ("%end.i", .ptr (C.stage.tok + 8)),
-       ("%kind404.i", .ptr (C.stage.tok + 16))] env) := by
+      [("%kind404.i", .ptr (C.stage.tok + 16)), ("%end.i", .ptr (C.stage.tok + 8)),
+       ("%gap.i", .ptr (C.stage.tok + 20)), ("%h1.i.i.i51", .ptr (C.stage.z + 24)),
+       ("%k11.i", .ptr (C.stage.c + 32))] env) := by
   intro p hp
   rw [walkStaticRegs] at hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
@@ -5479,7 +5482,12 @@ links are `WalkLink.LeafBlock33`, `…43`, `…64`, `…85` and `…96`.
 **H2.**  `while.body.i.lr.ph` binds five `getelementptr`s — `%c.i + 32`,
 `%z + 24`, `%t352.i + 20`, `+ 8`, `+ 16` — of which only the first is in
 `WalkPtrs`, so its link needs four more fixed addresses (and `%t352.i` itself is
-not a `WalkPtrs` register).  `if.then281.i` is `add i32 %7, 1`, a `zext`, and an
+not a `WalkPtrs` register).  The five also fix the *order* of the environment the
+link's carrier is read at: each bind prepends, so the run leaves `%kind404.i`
+outermost and `%k11.i` oldest, and `preheaderRegs` states the carrier at that
+list — `cells`' newest-first order, not the source order of the writes.  The two
+orders are not interchangeable: the carrier is about the cells the run holds, and
+a list in write order describes an environment the block never produces.  `if.then281.i` is `add i32 %7, 1`, a `zext`, and an
 `or` with the top bit set; it needs `%7`'s value, which is `if.then328.i`'s
 `%conv286.i.sink`, and it carries `inner` untouched.
 
