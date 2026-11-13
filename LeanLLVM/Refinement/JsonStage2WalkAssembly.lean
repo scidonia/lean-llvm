@@ -260,6 +260,47 @@ theorem walkIcmpBrStep {calls : Calls} (s : State) {b : Block} {d : String}
   simp only [evalOperand, lookupName_cons_self]
   rcases hbit with h | h <;> simp [h]
 
+/-! ### Class A's instances
+
+Each block's link lemma returns `∃ s', WalkLink … s'`; the step shape names the
+target.  Both compute the same `step` from the same two operand facts, so
+`Ctrl.jump`'s injectivity identifies the link's witness with the named state — the
+pattern `walkBack_step_at` uses at the merge.  An instance is therefore its block's
+`find`/`term`, its operand's value, and the two rewrites; nothing about the block's
+name enters the proof.
+
+The first instance proves the pattern.  The other fifty-nine are the same text with
+the block's own comparison and edges, which is what the class's proof obligation is
+once the shape is stated. -/
+
+/-- **`LeafBlock99`'s target, named.**  The link's witness is the state
+`walkIcmpBrStep` names: the comparison's cell, and the arm its bit picks. -/
+theorem WalkLink.LeafBlock99_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock99")
+    {x1 : BitVec 8} (h1 : evalOperand s (.reg "%47") = some (.int 8 x1))
+    (hl : WalkLocal { C with block := "while.body462.i" }
+      { stateAt (("%SwitchLeaf100", .int 1 (evalICmp .eq x1 (BitVec.ofNat 8 13))) :: s.env) s with
+        pc := "while.body462.i", pre := some s.pc }) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1
+            then "while.body462.i" else "if.then467.i") } s' ∧
+      s' = { (s.bind "%SwitchLeaf100"
+          (.int 1 (evalICmp .eq x1 (BitVec.ofNat 8 13)))) with
+        pc := (if evalICmp .eq x1 (BitVec.ofNat 8 13) = 1
+          then "while.body462.i" else "if.then467.i")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.LeafBlock99 G C s hInv hblock h1 hl
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkIcmpBrStep (calls := calls) (s := s)
+    (b := walkLeafBlock99) (d := "%SwitchLeaf100") (pred := IPred.eq) (w := 8)
+    (a₁ := .reg "%47") (a₂ := .imm (.int 8 (BitVec.ofNat 8 13)))
+    (t := "while.body462.i") (f := "if.then467.i")
+    (x := x1) (y := BitVec.ofNat 8 13)
+    (by rw [hInv.pc_eq, hblock]; exact walkLeafBlock99_find) rfl rfl h1 rfl
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
 /-- **Class B: an empty block and a `br`.**  The target is the source with the edge's
 destination; nothing the block does moves a register or a byte. -/
 theorem walkBrStep {calls : Calls} (s : State) {b : Block} {dest : String}
@@ -1442,6 +1483,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.LeafBlock99_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkCondbrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen488Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen492Step
