@@ -1260,6 +1260,11 @@ theorem walkEntryStaging_zeroArm {mem : Mem} (G : WalkGeom mem) (S : WalkStage G
       -- the environment the next row reads, in its own form: one conjunct for every cell
       -- (`%4` is `walkEntryEnv3`'s bound value, `%e` the base env's pointer), and the
       -- equality is `rfl` because both steps preserve `env` structurally.
+      s'.mem = walkSeg4PostMem (G.next0 + 8) (G.next0 + 12)
+          (walkSeg3PostMem G.b G.n G.ep G.nep S.e S.c
+            (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev G.nev0 G.evcap
+              (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+                ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) mem))) ∧
       s'.env = walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
           (walkEntryEnv1 (EntryState stage2Body
               (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -1400,8 +1405,11 @@ theorem walkEntryStaging_zeroArm {mem : Mem} (G : WalkGeom mem) (S : WalkStage G
     simp only [s₁, stateAt, memAt, e4, walkEntryEnv4, cells]
     exact lookupName_cons_self _ _ _
   have hpc₁ : s₁.pc = ent.pc := by simp only [s₁, stateAt, memAt]
-  exact ⟨walkEntryJump s₁ G.nep, walkEntry_step ent rfl hden₁ hne hnep64 hpc₁,
-    by simp [walkEntryJump, hzero], rfl⟩
+  have hnext : ent.next = G.next0 := rfl
+  refine ⟨walkEntryJump s₁ G.nep, walkEntry_step ent rfl hden₁ hne hnep64 hpc₁,
+    by simp [walkEntryJump, hzero], ?_, ?_⟩
+  · simp only [walkEntryJump, s₁, stateAt, memAt, m1, hnext]
+  · rfl
 
 /-- **The entry's four environment layers do not bind the loop's two registers.**
 `%k.0.i249` is the inner loop's counter phi and `%sp.i.0248` the stack pointer the
