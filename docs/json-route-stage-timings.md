@@ -843,3 +843,218 @@ the refinement theorem speaks about the parsed AST and `Mem`, and the compiler a
 link step from that to the object this page measures is the trust boundary
 `docs/contract.md` rows 8 and 9 record.  What the rows do price is the artifact
 as deployed, decision and staging and printing included.
+
+## The native parse core's stages
+
+The rows above price the object as one `native_ns` interval.  This section opens
+that interval: the six stages, per byte and per token, beside the reference's own
+two halves.  Two instruments produce it, and each pairs inside one process
+because this host's level moves by more than a quarter between processes —
+`profile-pipeline.sh` (the stage table) alternates its acts round by round, and
+the new `probes/json/core-shape/shape.sh` (the call-shape table) alternates its
+variants the same way, so every number below is a within-process comparison even
+where the absolute level between the two tables is not shared.
+
+```bash
+nix develop -c bash probes/json/core-shape/shape.sh --corpus-out .lake/core-profile --rounds 31 --core 3
+nix develop -c bash kernel/json/bench/profile-pipeline.sh --corpus .lake/core-profile/corpus.tsv --rounds 31 --core 3
+```
+
+The first command writes the nine documents `bench.sh` times — the three scalar
+arrays, the five escape documents and `probes/bench/json/scale-4096.json`, the
+digests the corpus table above records — and runs the call-shape probe; the
+second times the same bytes with the stage instrument.  The kernel objects are
+the measured clang line (`-O3 -march=x86-64-v3 -mpclmul`, 64/4096-byte
+alignment), simdjson is the pinned 4.6.11 library and headers, and the arm is the
+route's own word, 2.
+
+Both instruments check before the clock: the entry stream the stages are timed
+over is byte-identical to the pipeline's own, both arms accept, every variant of
+the call shape returns the same `nk`, `nxp`, `ndst`, `nev`, `err` and the same
+event and arena bytes as the aligned one, and the reference's full traversal
+returns a nonzero count.
+
+### The stages (unit: ns per 64-byte block; medians of 31 rounds, P-core, arm 2)
+
+| document | masks | entry | escape | utf8 | stage2 | pipeline | reference | ratio |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `fast-nums-4096` | 11.938 | 5.800 | 2.723 | 0.683 | 79.585 | 92.877 | 74.877 | **1.239** |
+| `fast-nums-16384` | 11.650 | 5.591 | 2.362 | 0.527 | 80.630 | 95.008 | 76.502 | **1.240** |
+| `fast-nums-65536` | 11.596 | 5.902 | 2.241 | 0.596 | 80.094 | 95.446 | 75.772 | **1.261** |
+| `scale-4096` | 11.859 | 7.078 | 2.625 | 0.754 | 56.875 | 70.938 | 187.203 | 0.390 |
+| `fast-esc` | 12.219 | 3.094 | 18.750 | 0.875 | 41.094 | 68.281 | 167.969 | 0.406 |
+| `fast-esc-quotes` | 12.438 | 3.188 | 18.844 | 0.910 | 41.062 | 67.688 | 168.062 | 0.411 |
+| `fast-esc-u` | 12.106 | 2.766 | 10.660 | 0.753 | 58.234 | 77.128 | 59.277 | **1.311** |
+| `fast-surrogate` | 12.064 | 2.851 | 10.660 | 0.777 | 36.723 | 54.191 | 33.936 | **1.636** |
+| `fast-utf8` | 12.125 | 3.156 | 3.500 | 2.871 | 0.688 | 15.125 | 11.000 | **1.523** |
+
+Construction: `masks` is `leanllvm_json_s1_masks` plus the pipeline's three
+lines (the scalar word `S`, the entry word `ent` and the last block's clamp);
+`entry` is `leanllvm_json_entry_pos8` over the precomputed entry words;
+`escape` is `leanllvm_json_escape_list` over the precomputed masks; `utf8` is
+`leanllvm_json_utf8` alone; `stage2` is `leanllvm_json_stage2` over the
+precomputed entry and escape streams; `pipeline` is `leanllvm_json_pipeline`,
+one call; `reference` is simdjson's `iterate` plus the full value traversal.
+`ratio` is `pipeline` over `reference`, the same document and process.  The five
+stage columns sum to more than `pipeline` by the overlap the fused call recovers
+(4.98–8.88 ns/block here); they are separate acts over the same buffers, not a
+partition.
+
+### Per byte and per token
+
+| document | pipeline ns/B | stage 1 ns/B | walk ns/B | reference ns/B | pipeline ns/token | walk ns/token | reference ns/token |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `fast-nums-4096` | 1.451 | 0.330 | 1.244 | 1.170 | 8.82 | 7.55 | 7.10 |
+| `fast-nums-16384` | 1.485 | 0.315 | 1.260 | 1.195 | 8.94 | 7.58 | 7.20 |
+| `fast-nums-65536` | 1.491 | 0.318 | 1.251 | 1.184 | 8.96 | 7.51 | 7.11 |
+| `scale-4096` | 1.108 | 0.349 | 0.889 | 2.925 | 0.510 | 0.409 | 1.346 |
+
+Construction: the byte columns divide the stage table's column by 64; the token
+columns multiply it by the document's block count and divide by the event
+records the route's `--consume` counts on the same file (685, 2,733, 10,925 and
+8,902).  The five escape documents carry three event records each, so their
+per-token figures divide by three and are not read; their per-byte figures are
+the comparable ones and are in the first table.
+
+The number conversion is the walk's largest part on the scalar arrays: the
+`numbers` act times `num_fast_el1` over every number token, 50.938, 52.996 and
+54.011 ns/block, which is 4.85, 4.99 and 5.07 ns per number at 683, 2,731 and
+10,923 numbers.  The reference's own conversion, the per-round difference
+between its walk and the same walk without `get_double`, is 40.108, 41.004 and
+40.656 ns/block — 3.82, 3.86 and 3.82 ns per number.  The extraction is not the
+difference: its measured text and the extracted text agree to within
+0.14 ns/block on the same tokens.
+
+### Where the 18–20 ns/block goes (unit: ns per block; same rows)
+
+The identity `margin = pipeline − reference = (stage 1 − overlap) + (our
+conversion − the reference's) + (our walk's non-number work − the reference's)`
+holds to the printed medians on every row:
+
+| document | margin | stage 1 | overlap | net stage 1 | conversion excess | walk excess |
+|---|---:|---:|---:|---:|---:|---:|
+| `fast-nums-4096` | +18.000 | 21.144 | 7.852 | 13.292 | +10.830 | −6.122 |
+| `fast-nums-16384` | +18.506 | 20.130 | 5.752 | 14.378 | +11.992 | −7.864 |
+| `fast-nums-65536` | +19.674 | 20.335 | 4.983 | 15.352 | +13.355 | −9.033 |
+| `fast-esc-u` | +17.851 | 26.285 | 7.391 | 18.894 | +1.106 | −2.149 |
+| `fast-surrogate` | +20.255 | 26.352 | 8.884 | 17.468 | +0.809 | +1.978 |
+| `fast-utf8` | +4.125 | 21.652 | 7.215 | 14.437 | +0.781 | −11.093 |
+
+Construction: `stage 1` is the four stage-1 columns summed, `overlap` is
+`stage 1 + stage2 − pipeline`, `conversion excess` is the `numbers` column less
+`refnum`, and `walk excess` is `(stage2 − numbers) − (reference − refnum)` —
+positive where the walk's non-number work costs more than the reference's.  The
+three signed columns sum to `margin` on every row.
+
+### The call shape is not the gap (unit: ns per block; the same nine documents)
+
+The route hands the object `window + 3` and fresh buffers; the stage table above
+hands it a 64-byte-aligned window and reused buffers.  The probe times both
+shapes, plus a 64-byte-aligned copy buffer set, in one process, 31 rounds,
+order rotated:
+
+| document | site | arm 0 | off3 | off0 | fresh3 | fresh+64 | fresh0 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `fast-nums-4096` | 89.246 | 88.123 | 89.769 | 89.200 | 93.108 | 91.185 | 91.108 |
+| `fast-nums-16384` | 91.564 | 88.872 | 91.163 | 93.280 | 93.887 | 93.447 | 92.148 |
+| `fast-nums-65536` | 94.606 | 93.141 | 96.299 | 90.580 | 94.243 | 92.678 | 91.276 |
+| `scale-4096` | 70.938 | 66.047 | 69.625 | 68.594 | 72.016 | 71.125 | 71.172 |
+| `fast-utf8` | 14.844 | 12.438 | 14.375 | 13.750 | 14.781 | 15.062 | 14.531 |
+| `fast-esc` | 66.594 | — | 66.438 | 66.062 | 71.062 | 68.719 | 70.250 |
+
+`arm 0` is `—` where the document carries a backslash: with no escape list
+stage 2 skips the body work and the call is a different parse, which is why the
+probe checks arm 0 only where the route's own call produced `nxp = 0`.  On the
+others the two arms are the same call — an empty list either way — and must
+agree byte for byte, which the probe asserts.
+
+Reading the shape columns against each other, every variant is within 4.5
+ns/block of the aligned, reused baseline, and the sign flips between documents:
+the three-byte offset runs 0.16 ns/block above `site` on `fast-nums-16384` and
+the aligned window 4.03 below it on `fast-nums-65536`; a fresh buffer set is
+0.36 below on the 64 KiB document and 4.47 above on `fast-esc`, and 64-byte
+alignment of that set moves it by at most 1.9 in either direction.  The `site`
+column itself moved from 86.2 to 89.2 ns/block on `fast-nums-4096` between two
+runs of the same binary a minute apart, which is larger than every shape
+difference in the table, so none of them is established.  A paired cross-binary check — the route's own
+`--stages` `native_ns` against this probe's `fresh3` on the same file,
+alternating seven rounds — read 1.088 (range 0.978–1.131) on `fast-nums-4096`
+and 1.018 (0.908–1.147) on `fast-esc`, both ranges crossing 1.0.  The route's
+`native_ns` figure is therefore the core's own cost, not a call-shape tax.
+
+### What the rows say
+
+**On the scalar arrays the 1.24–1.26 is stage 1 plus the number conversion, and
+the walk is a credit.**  Net stage 1 is 13.3–15.4 ns/block and the conversion
+excess 10.8–13.4; the walk's non-number work is 6.1–9.0 ns/block *cheaper* than
+the reference's non-number work.  The walk alone is also slower than the
+reference's *entire* parse on these documents (79.6 against 74.9 at 4 KiB), so
+the per-entry dispatch is not the missing 1.3: the walk is 3.78 ns per entry
+against the reference's 3.56 per entry for its whole parse — and 6.1–9.0
+ns/block of the walk is cheaper than the reference's own non-number work.
+
+**On the unicode-escape documents the gap is stage 1 again, and there the
+escape list is the large item.**  `fast-esc-u` and `fast-surrogate` carry 500
+and 500 `\u` escapes; their escape stage is 10.66 ns/block against 2.2–2.7 on
+the documents that have none, and `stage 1` is 26.3 ns/block, of which the fused
+call hides 7.4–8.9.  Their walk is within 2.8 ns/block of the reference's, so
+nothing in stage 2 is responsible.
+
+**Where the core wins, the reference's per-string work is what it wins
+against.**  `fast-esc` and `fast-esc-quotes` are 0.41 — simdjson unescapes every
+string body and pays 168 ns/block for it, while the escape list and the
+expander cost 41.1 plus 18.8.  `scale-4096` is 0.39: 36 entries/block of small
+objects and strings, where the reference's per-value cost dominates.
+
+**The raw-UTF-8 document is stage 1's own overhead exposed.**  Its walk is 0.688
+ns/block and its reference 11.0, but the mask pass and the UTF-8 stage (12.1 and
+2.9) make the pipeline 1.52 times the reference on a document whose result is 95
+bytes.
+
+### The candidates, with their measured cost
+
+1. **Stage 1: the mask pass and the entry emitter.**  11.9–12.4 ns/block
+   (0.19 ns/byte) for the mask unit plus the entry word, 5.6–7.1 for POS8
+   emission (0.26–0.28 ns per entry at 21 entries/block), and 2.2–3.5 for the
+   escape list where there is nothing to list.  Only 5.0–8.9 ns/block of the
+   20–26 is recovered by the fused call.  This is the largest term in every row
+   the core loses: 13.3–18.9 ns/block net.
+2. **The number conversion.**  4.85–5.07 ns per number against the reference's
+   3.82–3.86, 1.27–1.31 times, and 10.8–13.4 ns/block of the 18–20 — 60–68% of
+   the margin on the scalar arrays.  The extracted text equals the measured
+   text, so the lever is the conversion itself, not the extraction.
+3. **The escape list on documents with no escapes.**  The route passes arm 2 on
+   every document, so `leanllvm_json_escape_list` runs over every block even
+   where its output is empty: 1.1–2.7 ns/block on the scalar arrays, 4.9 on
+   `scale-4096`, 2.4 on `fast-utf8`.  The `arm 0` column prices exactly that —
+   it is the same call wherever `nxp = 0`, which the probe asserts.  The guard
+   is "the document carries no backslash byte": the admission's candidate flag
+   being clear implies that, so the flag is a sound but conservative guard — it
+   would cover the three scalar arrays and not `scale-4096` or `fast-utf8`,
+   whose quotes set it while their escape lists stay empty.
+
+Neither of the first two is reachable from this change's boundary: both live in
+`kernel/json/`, which this record reads and does not edit.  The third is a
+1.2–6.9% change on the rows that lose and it needs the route's own arm decision
+threaded from a native fact the admission does not carry; it is left as the
+measured follow-up rather than landed here.
+
+### What this does and does not establish
+
+It establishes, for one session on a shared eight-core host pinned to one
+P-class core, the six stages' cost inside the route's `native_ns` interval, the
+reference's conversion/non-conversion split on the same bytes, and the
+decomposition of the margin on the rows where the core loses.  It refutes the
+call-shape hypothesis: the route's window offset, its fresh staging buffers and
+their alignment are all inside this machine's noise, so the route's stage row is
+the core's cost.
+
+It does not establish a portable level.  The same document read 86.2, 89.2 and
+110.6 ns/block in three runs of the same binary across the session, which is why
+every claim here is a within-process comparison and why the tables' absolute
+columns are not compared with the page's older sections.  The arm is the route's
+(2), the core class is the P-class one, and the corpus is the nine generated
+documents; the seven standard documents of
+[the pipeline record](json-pipeline-performance.md) live outside the checkout and
+are not timed here.  Nothing here is a threshold or a pass/fail claim: a ratio
+above 1.0 is a measurement.
