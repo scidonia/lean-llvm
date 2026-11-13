@@ -3528,12 +3528,24 @@ the same, because the target's slot write comes **last**:
   crossings to reach it, the absorption, and then three back, because the model's
   memory has the slot last and it has to return.
 
-So the join takes the first: two commutations, one absorption
-(`s2StringBodySlot_absorb`), one commutation, every one already proved and each
-requiring only the presence and disjointness of the region being crossed.  An
-earlier version of this paragraph said the leftward direction was three moves; that
-was the count to *reach* the adjacency, not the count to finish, and the return trip
-is what the model's write order charges for.
+**Neither count is reachable with commutations alone, and the typecheck says why.**
+The statement typechecks with its conclusion as a hypothesis (the produced-form
+check: if `example (…) (h : <the equality>) : <the equality> := h` elaborates, the
+terms are the ones the callee produces), and the same check shows the gap: the
+source order is
+`clear, dst, xj, slot, outn` and the target is `dst, xj, outn, slot`.  Commuting a
+write never *removes* one, so the `clear` must be **erased**, not moved — and the
+only eraser is a write to the same region, which the target's `slot` is, but only
+after `outn`, i.e. not adjacent to the `clear` in any order the commutations can
+produce while keeping the target's order.  So the absorption is necessary after all,
+and it is `writeBytes_absorb_one` — the lemma this section previously concluded was
+an artefact.  **Two counts and one retraction are recorded here on purpose**: the
+leftward count (three) reached the adjacency but not the target; the rightward
+count (four) reached neither without erasing; and the erasure is the induction.
+
+What the typecheck *did* establish is worth keeping: the source term is the body's
+own, the target term is the model's plus the slot at `next = ei`, and the two differ
+exactly by the clear's erasure — which is the whole of what the induction must show.
 
 For the record, the two facts that direction would have needed:
 
