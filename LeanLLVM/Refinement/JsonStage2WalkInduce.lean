@@ -148,6 +148,125 @@ abbrev scanLatchOut (s : State) (inc test : String) (i c : Nat) (t : String) : S
        (inc, .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) s with
     pc := t, pre := some s.pc }
 
+/-- The state a scan's latch leaves, at the edge's own name: `scanLatchOut`'s fields
+with the source block as `pre` — the record `scan_term` builds, and therefore the one a
+copied proof's `rfl`s are about. -/
+abbrev scanLatchAt (s : State) (src inc test : String) (i c : Nat) (t : String) : State :=
+  { stateAt (cells
+      [(test, .int 1 (0 : BitVec 1)),
+       (inc, .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) s with
+    pc := t, pre := some src }
+
+/-- **The same visit, its witness named.**  `scan_step` leaves its target existential; a
+consumer that must read that state's `pre` or its two cells asks for them by name, and
+`scanLatchAt` is the name.  A companion rather than a restatement: `scan_step`'s five
+callers never look at the witness, and a wider conclusion would have changed all five.
+
+Its `dsimp`s unfold the name's definitions — `scanLatchAt`, `scanLatchOut`, `cells`,
+`stateAt`, `State.bind` — because an abbrev application does not reduce to the record the
+proof was written against. -/
+theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (i c : Nat) (src land phi inc test cond exit : String)
+    (hInv : WalkInv G C s) (hblock : C.block = src)
+    (hfind : stage2Body.findBlock src = some (scanBlock src inc phi test cond exit land))
+    (hinc_cond : inc ≠ cond) (htest_cond : test ≠ cond) (htest_inc : test ≠ inc)
+    (hinc_k : inc ≠ "%k.0.i249") (htest_k : test ≠ "%k.0.i249")
+    (hinc_sp : inc ≠ "%sp.i.0248") (htest_sp : test ≠ "%sp.i.0248")
+    (hincN : ¬ inc = "%3" ∧ ¬ inc = "%5" ∧ ¬ inc = "%k11.i" ∧ ¬ inc = "%ctype.i"
+      ∧ ¬ inc = "%cst.i" ∧ ¬ inc = "%hash1.i.i")
+    (htestN : ¬ test = "%3" ∧ ¬ test = "%5" ∧ ¬ test = "%k11.i" ∧ ¬ test = "%ctype.i"
+      ∧ ¬ test = "%cst.i" ∧ ¬ test = "%hash1.i.i")
+    (hincS : inc ∉ walkStaticNames) (htestS : test ∉ walkStaticNames)
+    (hincI7 : inc ≠ "%7") (hincI8 : inc ≠ "%8")
+    (htestI7 : test ≠ "%7") (htestI8 : test ≠ "%8")
+    (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hinner : c - i ≤ C.inner) (hlt : i + 1 < c) (hcw : c < 2 ^ 64)
+    (hland : ∀ (e : State), e.pre = some src →
+      lookupName e.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) →
+      lookupName e.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      WalkLocal (G := G) { C with block := land, inner := C.inner - 1 } e) :
+    ∃ (e : State),
+      e = scanLatchAt s src inc test i c land ∧
+      step calls stage2Body s = .jump e ∧
+      WalkInv G { C with block := land, inner := C.inner - 1 } e ∧
+      walkMeasure G { C with block := land, inner := C.inner - 1 } < walkMeasure G C ∧
+      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
+  have hpc : s.pc = src := by rw [hInv.pc_eq, hblock]
+  let e : State := scanLatchAt s src inc test i c land
+  have hstep : step calls stage2Body s = .jump e := by
+    rw [scan_term s i c src land phi inc test cond exit hpc hfind hinc_cond hi hc hlt hcw]
+    dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+  have hinc : lookupName e.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_inc, lookupName_cons_self]
+  have hcond : lookupName e.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
+    dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_cond, lookupName_cons_ne _ _ hinc_cond]
+    exact hc
+  have hk : lookupName e.env "%k.0.i249" = lookupName s.env "%k.0.i249" := by
+    dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_k, lookupName_cons_ne _ _ hinc_k]
+  have hsp : lookupName e.env "%sp.i.0248" = lookupName s.env "%sp.i.0248" := by
+    dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+    rw [lookupName_cons_ne _ _ htest_sp, lookupName_cons_ne _ _ hinc_sp]
+  refine ⟨e, rfl, hstep, ?_, ?_, ?_⟩
+  · refine
+      { pc_eq := rfl
+        blockIndex := ?_
+        k_le := hInv.k_le
+        events_le := hInv.events_le
+        evlen_eq := hInv.evlen_eq
+        evBytes := hInv.evBytes
+        alen_le_sum := hInv.alen_le_sum
+        alen_ge := hInv.alen_ge
+        spans_order := hInv.spans_order
+        spans_end := hInv.spans_end
+        spans_inside := hInv.spans_inside
+        pending_at := hInv.pending_at
+        pending_cursor := hInv.pending_cursor
+        pending_len := hInv.pending_len
+        eoff_le := hInv.eoff_le
+        inner_cap := by
+          show C.inner - 1 ≤ walkInnerCap G
+          have := hInv.inner_cap
+          omega
+        depth_cap := hInv.depth_cap
+        depth_reg := by rw [hsp]; exact hInv.depth_reg
+        sp_le_wlen := hInv.sp_le_wlen
+        wlen_cap := hInv.wlen_cap
+        tyBytes := hInv.tyBytes
+        stBytes := hInv.stBytes
+        ptrs := by
+          dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+          exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
+        regs := by
+          dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+          exact hInv.regs.bind_pair (a := inc) (b := test) hincS htestS
+        iter := by
+          dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+          exact hInv.iter.bind_pair (a := inc) (b := test)
+            (va := .int 64 (BitVec.ofNat 64 (i + 1))) (vb := .int 1 (0 : BitVec 1))
+            hincI7 hincI8 htestI7 htestI8
+        log_hash := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.log_hash
+        log_len := hInv.log_len
+        log_cap := hInv.log_cap
+        log_alen := hInv.log_alen
+        log_acap := hInv.log_acap
+        owned := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.owned
+        frame := ?_
+        blockLocal := ?_ }
+    · rw [hk]; exact hInv.blockIndex
+    · dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.frame
+    · exact hland e rfl hinc hcond
+  · dsimp only [walkMeasure]
+    exact Nat.add_lt_add_left (by omega) _
+  · intro k
+    rw [show 1 + k = k + 1 from by omega]
+    simp only [runFuel, hstep]
+
+/-! #### The four arms -/
+
 /-- **A scan latch's visit.**  Short of the bound, the latch is one control step to its
 landing block: the increment is written, the test is clear, and the invariant at the
 landing block is `pureCore`'s — the block's `denoteCode` and the two arms' local facts
