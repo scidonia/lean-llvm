@@ -845,6 +845,40 @@ theorem consumer_tail_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
   refine ⟨TailCarryScan C ev, TailS₃ (TailS₂ (TailS₁ s r₁ c rdv x) r₂) r₃ ei cd, 3, ?_, rfl, rfl⟩
   exact Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))
 
+/-- **The scan's local fact at the tail's target.**  The tail leaves `land.rhs457.i`
+entered from `if.then447.i`, and the landing's own `phi` selects `%ee.1.i` on that
+edge — the counter register the scan's local fact is written at is `%ee.1.i`, not
+`%q.0.i246`, which the `phi` binds only once it has run.  So `ScanEntered` holds
+there from the two cells `if.then447.i` already licensed, and it is the fact the
+landing's step lemma will start from. -/
+theorem tail_scan_entered {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r₁ r₂ r₃ : CallOutcome) (c rdv x : BitVec 32) (ei cd : Nat)
+    (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hinner : cd - ei ≤ C.inner) (hlt : ei < cd) (hcd64 : cd < 2 ^ 64) :
+    ScanEntered (TailS₃ (TailS₂ (TailS₁ s r₁ c rdv x) r₂) r₃ ei cd)
+      "if.then447.i" "%ee.1.i" "%cond350.i" C.inner := by
+  refine ⟨ei, cd, hinner, hlt, hcd64, rfl, ?_, ?_⟩
+  · simp only [TailS₃, TailS₂, TailS₁, stateAt, State.bind,
+      lookupName_cons_ne (k := "%cmp451.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool428.not.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call427.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%ee.1.i") _ _ (by decide)]
+    exact hei
+  · simp only [TailS₃, TailS₂, TailS₁, stateAt, State.bind,
+      lookupName_cons_ne (k := "%cmp451.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool428.not.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call427.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%cond350.i") _ _ (by decide)]
+    exact hcd
+
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
