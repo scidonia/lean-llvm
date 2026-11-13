@@ -4082,6 +4082,33 @@ theorem s2StringBodyEntry_seat_landRhs {env : Env} {s : State}
    s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hpc hble hp64 hword hps hj0N
      hxpc hxj hnxp⟩
 
+/-- **The contract's statement, checked** — not proved.  It is the module's opening
+sentence made into a proposition: at the staging `s2StringBodyPre` states, the body's
+run answers with a `CallOutcome` satisfying the post and the footprint.  The budget is
+a term of the arguments — the entry's one step, the scan's `(N + 1) * 2`, and the
+longest arm's five — so the statement's fuel is computable before any proof is written.
+
+The eight premises are all proved (see the assembly note); what is missing is the
+composition.  Checking the statement here, in this module's options, is the point:
+the shape is settled, and the proof is the only thing outstanding. -/
+example {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2StringBodyPre args mem next)
+    (hgoal : ∃ o : CallOutcome,
+      runFuel s2StringBodyCalls
+          (1 + (2 + 1) * 2 + 5) s2StringBodyBody
+          (stagedState s2StringBodyBody args mem next) =
+        some (.ret (some o.ret) o.mem) ∧
+      s2StringBodyPost args mem next o ∧
+      UnchangedOutside mem o.mem (s2StringBodyFoot args mem next)) :
+    ∃ o : CallOutcome,
+      runFuel s2StringBodyCalls
+          (1 + (2 + 1) * 2 + 5) s2StringBodyBody
+          (stagedState s2StringBodyBody args mem next) =
+        some (.ret (some o.ret) o.mem) ∧
+      s2StringBodyPost args mem next o ∧
+      UnchangedOutside mem o.mem (s2StringBodyFoot args mem next) :=
+  hgoal
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
