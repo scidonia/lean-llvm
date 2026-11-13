@@ -5823,6 +5823,64 @@ theorem s2StringBodyRefusedC3_erase (mem : Mem) {ei xj c1 offN k : Nat}
   rw [s2StringBodyRefusedC3, s2StringBodyRefusedC2_collapse, s2StringBodyRefusedC0]
   exact writeBytes_absorb_single mem hxj hei hlen hdis
 
+/-- **The staged memory is the model's.**  The erase puts the scan's write out of
+the chain and the collapse puts the callee's offset beside it; restoring the slot's
+clear makes the chain the erased form the join is stated at, and the join then gives
+the model's order. -/
+theorem s2StringBodyRefusedC6_join (mem : Mem) {ei xj c1 e' offN k p base : Nat}
+    (hxj : readBytes mem xj (wordBytes 8 c1).length ≠ none)
+    (hei : readBytes mem ei (wordBytes 8 offN).length ≠ none)
+    (hlen : (wordBytes 8 c1).length ≤ (wordBytes 8 (c1 + k)).length)
+    (hdis : xj + (wordBytes 8 c1).length ≤ ei ∨
+      ei + (wordBytes 8 offN).length ≤ xj)
+    (hWoff : (wordBytes 8 offN).length = 8)
+    (hxj' : readBytes mem xj (wordBytes 8 (c1 + k)).length ≠ none)
+    (he0 : readBytes mem e' (natToBytes (0#32).toNat 4).length ≠ none)
+    (he1 : readBytes mem (e' + (8#64).toNat)
+      (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length
+      ≠ none)
+    (he2 : readBytes mem (e' + (16#64).toNat)
+      (natToBytes (0#64).toNat 8).length ≠ none)
+    (h1 : ei + (wordBytes 8 offN).length ≤ xj ∨
+      xj + (wordBytes 8 (c1 + k)).length ≤ ei)
+    (h2 : ei + (wordBytes 8 offN).length ≤ e' ∨
+      e' + (natToBytes (0#32).toNat 4).length ≤ ei)
+    (h3 : ei + (wordBytes 8 offN).length ≤ e' + (8#64).toNat ∨
+      e' + (8#64).toNat +
+        (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length
+        ≤ ei)
+    (h4 : ei + (wordBytes 8 offN).length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ ei)
+    (h5 : xj + (wordBytes 8 (c1 + k)).length ≤ e' ∨
+      e' + (natToBytes (0#32).toNat 4).length ≤ xj)
+    (h6 : xj + (wordBytes 8 (c1 + k)).length ≤ e' + (8#64).toNat ∨
+      e' + (8#64).toNat +
+        (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length
+        ≤ xj)
+    (h7 : xj + (wordBytes 8 (c1 + k)).length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ xj)
+    (h8 : e' + (natToBytes (0#32).toNat 4).length ≤ e' + (8#64).toNat ∨
+      e' + (8#64).toNat +
+        (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length
+        ≤ e')
+    (h9 : e' + (natToBytes (0#32).toNat 4).length ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ e')
+    (h10 : e' + (8#64).toNat +
+        (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length
+        ≤ e' + (16#64).toNat ∨
+      e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ e' + (8#64).toNat) :
+    s2StringBodyRefusedC6 mem ei xj c1 e' offN k p base
+      = s2StringBodyRefusedModel mem ei xj e' (wordBytes 8 offN)
+          (wordBytes 8 (c1 + k)) (natToBytes (0#32).toNat 4)
+          (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8)
+          (natToBytes (0#64).toNat 8) := by
+  rw [s2StringBodyRefusedC6, s2StringBodyRefusedC5, s2StringBodyRefusedC4,
+    s2StringBodyRefusedC3_erase mem hxj hei hlen hdis]
+  rw [← writeBytes_writeBytes_same mem ei (natToBytes (0#64).toNat 8)
+    (wordBytes 8 offN) (by simp [natToBytes_length, wordBytes])]
+  exact s2StringBodyRefusedErased_join mem hWoff hei hxj' he0 he1 he2 h1 h2 h3 h4
+    h5 h6 h7 h8 h9 h10
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
