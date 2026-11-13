@@ -1502,9 +1502,15 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   The word is also bounded *below*, at the arena's staged cursor: it starts there
   (the initialisation stores `%ndst`'s word at `%z + 48`) and the one block that
   writes it writes a sum with the old word as an addend, so it never goes back
-  below the staging.  That is the clause the post's `ndst0 ≤ ndst'` reads: the
-  number the caller reads back is this word — the decoded prefix — rather than the
-  carry, which is the *reserved* window and is at least as large. -/
+  below the staging.  That is the clause the post's `ndst0 ≤ ndst'` reads.
+
+  The two numbers are the *same* number seen at different moments, not two
+  cursors: `arenaAppend` advances the carried cursor by the decoded length as it
+  writes the body, and the block that writes the word back (`if.else285.i`) stores
+  the same decoded length.  So the inequality is a lag inside one iteration — the
+  carry is ahead of the memory between the append and the write-back — and at the
+  loop head, after the write-back, the two are equal.  That equality is what the
+  exit's slot copy needs, and it is the dispatch's to produce. -/
   log_alen : ∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧
     readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
   /-- **The log's arena capacity is the staged one** (the word at `%z + 56`,
