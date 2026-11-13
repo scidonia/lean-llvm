@@ -419,6 +419,264 @@ theorem walkHeadChain_to_nodeBlock41Out {m0 : Mem} {G : WalkGeom m0}
     "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
   block_lk
 
+/-- The state `LeafBlock33` leaves at the class that takes the whitespace arm: the
+offset's two cells, at `land.rhs.i.preheader`. -/
+def leafBlock33OutAt (s : State) (x : BitVec 8) : State :=
+  { stateAt (cells
+      [("%SwitchLeaf34", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+        (BitVec.ofNat 8 1))),
+       ("%.off", .int 8 (x + BitVec.ofNat 8 247))] s.env) s with
+    pc := "land.rhs.i.preheader", pre := some s.pc }
+
+/-- The state the whitespace scan's preheader leaves: nothing but the edge, at
+`land.rhs.i`. -/
+def landRhsPreheaderOutAt (s : State) : State :=
+  { s with pc := "land.rhs.i", pre := some s.pc }
+
+/-- **The chain extended by `LeafBlock33`'s step.**  A chain to `LeafBlock33` is one step
+longer at the class that takes the whitespace arm; the step's two cells are its own, and
+its successor is the `def` — no restated nest. -/
+theorem walkChain_extend_leafBlock33 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "LeafBlock33")
+    {x : BitVec 8} (h35 : lookupName s.env "%35" = some (.int 8 x))
+    (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1) :
+    WalkChain calls G C₀ s₀ { C with block := "land.rhs.i.preheader" }
+      (leafBlock33OutAt s x) := by
+  have hres : (if evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+      then "land.rhs.i.preheader" else "if.end372.i") = "land.rhs.i.preheader" :=
+    if_pos hws
+  obtain ⟨s', hl, hs⟩ := WalkLink.LeafBlock33_at G C s (WalkChain.inv_last hchain) hblock h35
+  have hstep : s' = leafBlock33OutAt s x := by
+    rw [hs]
+    simp only [leafBlock33OutAt, hres]
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `land.rhs.i.preheader`'s step.**  The block is the edge
+alone, so the step is the block's own `br` and its successor is the source state at the
+new block and predecessor. -/
+theorem walkChain_extend_landRhsPreheader {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i.preheader")
+    (hpcs : s.pc = "land.rhs.i.preheader")
+    {inner : Nat} (hinner : C.inner = inner)
+    (hsc : ScanEntered { s with pc := "land.rhs.i", pre := some s.pc }
+      "land.rhs.i.preheader" "%idxprom.i" "%cond350.i" inner) :
+    WalkChain calls G C₀ s₀ { C with block := "land.rhs.i" } (landRhsPreheaderOutAt s) := by
+  have hloc : WalkLocal { C with block := "land.rhs.i" }
+      { s with pc := "land.rhs.i", pre := some s.pc } := by
+    simp only [WalkLocal, hblock]
+    rw [hinner]
+    exact Or.inr hsc
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.land_rhs_i_preheader_at G C s (WalkChain.inv_last hchain) hblock hloc
+  have hstep : s' = landRhsPreheaderOutAt s := by
+    rw [hs]
+    rfl
+  rw [hstep] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- The state `land.rhs.i` leaves: the scan's byte and the address it came from, at
+`NodeBlock52`.  The selected `phi`'s cell is the environment the step binds before its
+own cells, which is the `bindAll` the helper's conclusion names. -/
+def landRhsIOutAt {m0 : Mem} (G : WalkGeom m0) (s : State) (e : BitVec 64) (b : UInt8) :
+    State :=
+  { stateAt (cells [("%36", .int 8 (BitVec.ofNat 8 b.toNat)),
+      ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat))]
+      (s.bindAll [("%ee.0.i238", .int 64 e)]).env)
+      (s.bindAll [("%ee.0.i238", .int 64 e)]) with
+    pc := "NodeBlock52"
+    pre := some (s.bindAll [("%ee.0.i238", .int 64 e)]).pc }
+
+/-- The state `NodeBlock52` leaves at the class that takes `%36 < 13`: the pivot's cell,
+at `LeafBlock43`. -/
+def nodeBlock52OutAt (s : State) (x : BitVec 8) : State :=
+  { (s.bind "%Pivot53" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))) with
+    pc := "LeafBlock43", pre := some s.pc }
+
+/-- The state `LeafBlock43` leaves on the arm that returns to the scan's latch: the
+offset's two cells, at `while.body370.i`. -/
+def leafBlock43OutAt (s : State) (x : BitVec 8) : State :=
+  { stateAt (cells
+      [("%SwitchLeaf45", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+        (BitVec.ofNat 8 1))),
+       ("%.off44", .int 8 (x + BitVec.ofNat 8 247))] s.env) s with
+    pc := "while.body370.i", pre := some s.pc }
+
+/-- **The chain extended by `land.rhs.i`'s step.**  The scan's counter `phi`, the
+address it indexes and the byte it loads: the byte is the document's own
+(`walkDoc_byte`), so the step's price is a byte of the document and nothing else. -/
+theorem walkChain_extend_landRhsI {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "land.rhs.i")
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap) :
+    WalkChain calls G C₀ s₀ { C with block := "NodeBlock52" }
+      (landRhsIOutAt G s e (G.bs.getD (e.signExtend 64).toNat 0)) := by
+  have hread : readBytes s.mem (G.b + (e.signExtend 64).toNat) 1
+      = some [G.bs.getD (e.signExtend 64).toNat 0] :=
+    walkDoc_byte G C s (WalkChain.inv_last hchain) halen hevlen hqn
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.land_rhs_i_at G C s (WalkChain.inv_last hchain) hblock hpre hin hv hpos hread
+  have hstep : s' = landRhsIOutAt G s e (G.bs.getD (e.signExtend 64).toNat 0) := by
+    rw [hs]
+    rfl
+  rw [hstep] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `NodeBlock52`'s step.**  The scan's byte against `13`, its
+arm resolved by the class's bit. -/
+theorem walkChain_extend_nodeBlock52 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock52")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hlt : evalICmp .slt x (BitVec.ofNat 8 13) = 1) :
+    WalkChain calls G C₀ s₀ { C with block := "LeafBlock43" } (nodeBlock52OutAt s x) := by
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have hres : (if evalICmp .slt x (BitVec.ofNat 8 13) = 1
+      then "LeafBlock43" else "NodeBlock50") = "LeafBlock43" := if_pos hlt
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.NodeBlock52_at G C s (WalkChain.inv_last hchain) hblock h1
+  have hstep : s' = nodeBlock52OutAt s x := by
+    rw [hs]
+    simp only [nodeBlock52OutAt, hres]
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `LeafBlock43`'s step** — the whitespace skip's leaf taking
+the back edge, so the chain arrives at the scan's latch. -/
+theorem walkChain_extend_leafBlock43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "LeafBlock43")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hge : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0)
+    {inner : Nat} (hinner : C.inner = inner)
+    (hsc : ScanCount (leafBlock43OutAt s x) "%ee.0.i238" "%cond350.i" inner) :
+    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" } (leafBlock43OutAt s x) := by
+  have hloc : WalkLocal { C with block := "while.body370.i" } (leafBlock43OutAt s x) := by
+    simp only [WalkLocal, leafBlock43OutAt, hblock]
+    rw [hinner]
+    exact hsc
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.LeafBlock43_at G C s (WalkChain.inv_last hchain) hblock h36 hloc
+  have hres : (if evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+      then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
+    if_neg (by rw [hge]; decide)
+  have hstep : s' = leafBlock43OutAt s x := by
+    rw [hs]
+    simp only [leafBlock43OutAt, hres]
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-! ### The scan's chain to its latch, as one theorem
+
+The five links from `LeafBlock33` to the latch, composed.  The states are the `def`s
+of the links applied in order, so the theorem names the path instead of its nest, and
+every premise is a fact about the program at one of those `def`s: the preheader's entry
+fact, the byte the scan loads (the document's own), the two pivot bits, and the
+counter's bound at the latch. -/
+abbrev scanB {m0 : Mem} (G : WalkGeom m0) (e : BitVec 64) : UInt8 :=
+  G.bs.getD (e.signExtend 64).toNat 0
+
+/-- The chain's state after `LeafBlock33`. -/
+def scanT₁ (s : State) (x : BitVec 8) : State := leafBlock33OutAt s x
+
+/-- The chain's state after `land.rhs.i.preheader`. -/
+def scanT₂ (s : State) (x : BitVec 8) : State := landRhsPreheaderOutAt (scanT₁ s x)
+
+/-- The chain's state after `land.rhs.i`: the scan's byte is the document's at the
+counter. -/
+def scanT₃ {m0 : Mem} (G : WalkGeom m0) (s : State) (x : BitVec 8) (e : BitVec 64) :
+    State :=
+  landRhsIOutAt G (scanT₂ s x) e (scanB G e)
+
+/-- The chain's state after `NodeBlock52`. -/
+def scanT₄ {m0 : Mem} (G : WalkGeom m0) (s : State) (x : BitVec 8) (e : BitVec 64) :
+    State :=
+  nodeBlock52OutAt (scanT₃ G s x e) (BitVec.ofNat 8 (scanB G e).toNat)
+
+/-- The chain's state at the latch, after `LeafBlock43` takes the back edge. -/
+def scanT₅ {m0 : Mem} (G : WalkGeom m0) (s : State) (x : BitVec 8) (e : BitVec 64) :
+    State :=
+  leafBlock43OutAt (scanT₄ G s x e) (BitVec.ofNat 8 (scanB G e).toNat)
+
+/-- **The scan's chain to its latch.**  `LeafBlock33`'s step under the whitespace arm,
+the preheader's edge, the scan's own step (whose byte is `walkDoc_byte`'s), the pivot
+on the byte, and the whitespace skip's leaf taking the back edge — one chain, at the
+`def`s, ending at `while.body370.i`. -/
+theorem walkScanChain_to_latch {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "LeafBlock33")
+    {x : BitVec 8} (h35 : lookupName s.env "%35" = some (.int 8 x))
+    (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    -- the preheader's entry fact: the scan's counter and its bound
+    (hsc : ScanEntered (scanT₂ s x) "land.rhs.i.preheader" "%idxprom.i" "%cond350.i"
+      C.inner)
+    -- the byte the scan loads, and the document it comes from
+    {e : BitVec 64}
+    (hin : phiIncoming "land.rhs.i.preheader"
+      [("while.body370.i", (Operand.reg "%inc371.i")),
+       ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] =
+      some (.reg "%idxprom.i"))
+    (hv : evalOperand (landRhsPreheaderOutAt (scanT₁ s x)) (.reg "%idxprom.i")
+      = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    -- the byte's two pivots
+    (h36₃ : lookupName (scanT₃ G s x e).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)))
+    (hlt : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1)
+    (h36₄ : lookupName (scanT₄ G s x e).env "%36"
+      = some (.int 8 (BitVec.ofNat 8 (scanB G e).toNat)))
+    (hge : evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 0)
+    -- the latch's own counter fact
+    (hcount : ScanCount (scanT₅ G s x e) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" } (scanT₅ G s x e) := by
+  -- `LeafBlock33`
+  have h₁ : WalkChain calls G C₀ s₀ { C with block := "land.rhs.i.preheader" }
+      (scanT₁ s x) :=
+    walkChain_extend_leafBlock33 (C₀ := C₀) (s₀ := s₀) hchain hblock h35 hws
+  -- the preheader's edge
+  have hpcs : (scanT₁ s x).pc = "land.rhs.i.preheader" := rfl
+  have h₂ : WalkChain calls G C₀ s₀
+      { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" }
+      (scanT₂ s x) :=
+    walkChain_extend_landRhsPreheader (C₀ := C₀) (s₀ := s₀)
+      (C := { C with block := "land.rhs.i.preheader" }) (inner := C.inner) h₁ rfl hpcs rfl hsc
+  -- the scan's own step
+  have h₃ : WalkChain calls G C₀ s₀
+      { { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" } with
+        block := "NodeBlock52" } (scanT₃ G s x e) :=
+    walkChain_extend_landRhsI (C₀ := C₀) (s₀ := s₀)
+      (C := { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" })
+      h₂ rfl rfl hin hv hpos hqn halen hevlen
+  -- the pivot on the byte
+  have h₄ : WalkChain calls G C₀ s₀
+      { { { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" } with
+        block := "NodeBlock52" } with block := "LeafBlock43" } (scanT₄ G s x e) :=
+    walkChain_extend_nodeBlock52 (C₀ := C₀) (s₀ := s₀)
+      (C := { { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" } with
+        block := "NodeBlock52" }) h₃ rfl h36₃ hlt
+  -- the whitespace skip's leaf, back to the latch
+  exact walkChain_extend_leafBlock43 (C₀ := C₀) (s₀ := s₀)
+    (C := { { { { C with block := "land.rhs.i.preheader" } with block := "land.rhs.i" } with
+      block := "NodeBlock52" } with block := "LeafBlock43" }) (inner := C.inner) h₄ rfl h36₄
+      hge rfl hcount
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91
@@ -427,6 +685,12 @@ theorem walkHeadChain_to_nodeBlock41Out {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_condOut
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_nodeBlock41
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_nodeBlock41Out
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_leafBlock33
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_landRhsPreheader
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_landRhsI
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock52
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_leafBlock43
+#print axioms LeanLLVM.Refinement.WalkScope.walkScanChain_to_latch
 
 end WalkScope
 
