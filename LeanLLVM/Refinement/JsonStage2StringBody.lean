@@ -848,4 +848,42 @@ theorem s2StringBody_ifThen_denote {calls : Calls} {env : Env} {s : State}
         (stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8) }) := by
   rw [denoteCode_store64 calls env s "%len" "%outn" hlen houtn []]
 
+/-- The `if.end14` arm's one instruction: the decoded length at `outn`. -/
+theorem s2StringBodyIfEnd14Instrs_eq :
+    (s2StringBodyBody.findBlock "if.end14").map (·.instrs) =
+      some [Instr.store (Ty.int 64) (Operand.reg "%call") (Operand.reg "%outn")] := by
+  decide
+
+/-- **The `if.end14` arm's run**: the expander's returned word at `outn`, which is
+the decoded length on the accepting arm. -/
+theorem s2StringBody_ifEnd14_denote {calls : Calls} {env : Env} {s : State}
+    {call : BitVec 64} {outn : Nat}
+    (hcall : lookupName env "%call" = some (.int 64 call))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    denoteCode calls
+        [Instr.store (Ty.int 64) (Operand.reg "%call") (Operand.reg "%outn")]
+        (stateAt env s) =
+      denoteCode calls []
+        (stateAt env { s with mem := writeBytes s.mem outn (natToBytes call.toNat 8) }) := by
+  rw [denoteCode_store64 calls env s "%call" "%outn" hcall houtn []]
+
+/-- The `while.body` block's instruction list. -/
+def s2StringBodyWhileBodyInstrs : List Instr :=
+  [Instr.binop "%inc" (BinOp.add) 64 (Operand.reg "%inc24")
+     (Operand.imm (Const.int 64 0x0000000000000001#64)),
+   Instr.store (Ty.int 64) (Operand.reg "%inc") (Operand.reg "%xj"),
+   Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
+     (Operand.reg "%nxp")]
+
+/-- The `while.body` block's three instructions: the counter's increment, its
+write-back to the cursor word, and the exit test. -/
+theorem s2StringBodyWhileBodyInstrs_eq :
+    (s2StringBodyBody.findBlock "while.body").map (·.instrs) =
+      some [Instr.binop "%inc" (BinOp.add) 64 (Operand.reg "%inc24")
+              (Operand.imm (Const.int 64 0x0000000000000001#64)),
+            Instr.store (Ty.int 64) (Operand.reg "%inc") (Operand.reg "%xj"),
+            Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
+              (Operand.reg "%nxp")] := by
+  decide
+
 end LeanLLVM.Refinement
