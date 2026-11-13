@@ -769,6 +769,62 @@ module. -/
 #guard_msgs in
 #print axioms s2StringBodyCalls_expand_eq
 
+/-- `store i32 <c>, ptr %p`: the refusal record's first field. -/
+theorem sb_step_store32_imm (calls : Calls) (env : Env) (s : State) (p : String)
+    {x : BitVec 32} {a : Nat} (hp : lookupName env p = some (.ptr a)) :
+    evalInstr calls (stateAt env s) (.store (Ty.int 32) (.imm (.int 32 x)) (.reg p)) =
+      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+  have h1 : evalOperand (stateAt env s) (.imm (.int 32 x)) = some (.int 32 x) := rfl
+  have h2 : evalOperand (stateAt env s) (.reg p) = some (.ptr a) := hp
+  unfold evalInstr
+  dsimp only
+  rw [h1, h2]
+  simp [State.bind, stateAt, storeValue]
+
+/-- A void call at two arguments: the lifetime marker's emitted form. -/
+theorem sb_step_callVoid2 (calls : Calls) (env : Env) (s : State) (callee : String)
+    (o1 o2 : Operand) {v1 v2 : Value} {r : CallOutcome}
+    (h1 : evalOperand (stateAt env s) o1 = some v1)
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (hc : calls callee [v1, v2] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, o1), (Ty.ptr, o2)]) =
+      some (stateAt env { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, o1), (Ty.ptr, o2)] = some [v1, v2] := by
+    simp only [evalOperands, h1, h2]
+  have hc' : calls callee [v1, v2] (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+/-- A call at eight arguments binding its `i64` result: the expander's emitted
+form.  Its outcome is the clause's (`escapeExpand8_decoded`/`_refused`). -/
+theorem sb_step_call8 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (o1 o2 o3 o4 o5 o6 o7 o8 : Operand)
+    {v1 v2 v3 v4 v5 v6 v7 v8 : Value} {r : CallOutcome}
+    (h1 : evalOperand (stateAt env s) o1 = some v1)
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (h3 : evalOperand (stateAt env s) o3 = some v3)
+    (h4 : evalOperand (stateAt env s) o4 = some v4)
+    (h5 : evalOperand (stateAt env s) o5 = some v5)
+    (h6 : evalOperand (stateAt env s) o6 = some v6)
+    (h7 : evalOperand (stateAt env s) o7 = some v7)
+    (h8 : evalOperand (stateAt env s) o8 = some v8)
+    (hc : calls callee [v1, v2, v3, v4, v5, v6, v7, v8] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s) (.call d (Ty.int 64) callee
+        [(Ty.ptr, o1), (Ty.int 64, o2), (Ty.ptr, o3), (Ty.ptr, o4), (Ty.ptr, o5),
+         (Ty.ptr, o6), (Ty.int 64, o7), (Ty.int 64, o8)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, o1), (Ty.int 64, o2), (Ty.ptr, o3), (Ty.ptr, o4), (Ty.ptr, o5),
+       (Ty.ptr, o6), (Ty.int 64, o7), (Ty.int 64, o8)] =
+      some [v1, v2, v3, v4, v5, v6, v7, v8] := by
+    simp only [evalOperands, h1, h2, h3, h4, h5, h6, h7, h8]
+  have hc' : calls callee [v1, v2, v3, v4, v5, v6, v7, v8]
+      (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
 /-- **The entry block's run.**  The seven instructions, each applied at the
 **cons** environment the previous step built — the named `Env` definitions are
 the statement's spelling and are reconciled at the end — with the allocator cell
