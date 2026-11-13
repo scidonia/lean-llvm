@@ -82,6 +82,7 @@ import LeanLLVM.Refinement.JsonStage2Contract
 import LeanLLVM.Refinement.JsonStage2HelperIR
 import LeanLLVM.Refinement.JsonStage2HelperIRBodies
 import LeanLLVM.Refinement.JsonStage2StringBody
+import LeanLLVM.Refinement.JsonStage2WalkChain
 import LeanLLVM.Refinement.JsonStage2WalkSteps
 import LeanLLVM.Refinement.PipelineDischarge
 import LeanLLVM.StrtodRefine
