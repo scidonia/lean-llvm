@@ -222,6 +222,154 @@ theorem scanLatch_visit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     rw [lookupName_cons_ne _ _ hneTC, lookupName_cons_ne _ _ hneIC]
     exact hc
 
+/-! ### The scan's way back
+
+A visit's second half.  The whitespace scan's landing block jumps to `NodeBlock52`, which
+compares the byte against `13`; the first arm is `LeafBlock43` (the path the head chain
+already crosses) and the second is `NodeBlock50`'s second comparison against `32`, whose
+two arms are `LeafBlock46` (the byte is `13`) and `LeafBlock48` (it is `32`).  Each leaf
+takes the back edge to `while.body370.i` when its own equality is clear.
+
+So the way back from `NodeBlock52` is three classes of byte, and each class is two links:
+the pivot's and the leaf's.  The class facts are the caller's, exactly as the head
+chain's pivots take theirs; what the leaves need beyond them is the latch's own local
+fact, which is `WalkLocal.whitespace`'s at the counter the visit writes. -/
+
+/-- The state `NodeBlock50` leaves at the class that takes its first arm. -/
+abbrev scanNodeBlock50Out (s : State) (x : BitVec 8) : State :=
+  { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
+    pc := "LeafBlock46", pre := some s.pc }
+
+/-- The state `LeafBlock46` leaves at the class that takes the back edge. -/
+abbrev scanLeafBlock46Out (s : State) (x : BitVec 8) : State :=
+  { stateAt ((("%SwitchLeaf47", .int 1 (evalICmp .eq x (BitVec.ofNat 8 13)))) :: s.env) s with
+    pc := "while.body370.i", pre := some s.pc }
+
+/-- The state `LeafBlock48` leaves at the class that takes the back edge. -/
+abbrev scanLeafBlock48Out (s : State) (x : BitVec 8) : State :=
+  { stateAt ((("%SwitchLeaf49", .int 1 (evalICmp .eq x (BitVec.ofNat 8 32)))) :: s.env) s with
+    pc := "while.body370.i", pre := some s.pc }
+
+/-- **The chain extended by `NodeBlock52`'s second arm.**  The byte is at or above `13`,
+so the pivot reaches `NodeBlock50`. -/
+theorem walkChain_extend_nodeBlock50 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock52")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hge13 : evalICmp .slt x (BitVec.ofNat 8 13) = 0) :
+    WalkChain calls G C₀ s₀ { C with block := "NodeBlock50" }
+      { (s.bind "%Pivot53" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))) with
+        pc := "NodeBlock50", pre := some s.pc } := by
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have hres : (if evalICmp .slt x (BitVec.ofNat 8 13) = 1
+      then "LeafBlock43" else "NodeBlock50") = "NodeBlock50" := if_neg (by rw [hge13]; decide)
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.NodeBlock52_at G C s (WalkChain.inv_last hchain) hblock h1
+  have hstep : s' = { (s.bind "%Pivot53" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 13)))) with
+      pc := "NodeBlock50", pre := some s.pc } := by
+    rw [hs]
+    simp only [hres]
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `NodeBlock50`'s first arm.**  The byte is below `32`, so the
+second pivot reaches `LeafBlock46`. -/
+theorem walkChain_extend_nodeBlock50Out {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock50")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hlt32 : evalICmp .slt x (BitVec.ofNat 8 32) = 1) :
+    WalkChain calls G C₀ s₀ { C with block := "LeafBlock46" } (scanNodeBlock50Out s x) := by
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have hres : (if evalICmp .slt x (BitVec.ofNat 8 32) = 1
+      then "LeafBlock46" else "LeafBlock48") = "LeafBlock46" := if_pos hlt32
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.NodeBlock50_at G C s (WalkChain.inv_last hchain) hblock h1
+  have hstep : s' = scanNodeBlock50Out s x := by
+    rw [hs]
+    simp only [scanNodeBlock50Out, hres]
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `NodeBlock50`'s second arm.**  The byte is at or above `32`,
+so the second pivot reaches `LeafBlock48`. -/
+theorem walkChain_extend_nodeBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "NodeBlock50")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hge32 : evalICmp .slt x (BitVec.ofNat 8 32) = 0) :
+    WalkChain calls G C₀ s₀ { C with block := "LeafBlock48" }
+      { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
+        pc := "LeafBlock48", pre := some s.pc } := by
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have hres : (if evalICmp .slt x (BitVec.ofNat 8 32) = 1
+      then "LeafBlock46" else "LeafBlock48") = "LeafBlock48" := if_neg (by rw [hge32]; decide)
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.NodeBlock50_at G C s (WalkChain.inv_last hchain) hblock h1
+  have hstep : s' = { (s.bind "%Pivot51" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32)))) with
+      pc := "LeafBlock48", pre := some s.pc } := by
+    rw [hs]
+    simp only [hres]
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `LeafBlock46`'s back edge.**  The byte is not `13`, so the
+leaf returns to the latch. -/
+theorem walkChain_extend_leafBlock46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "LeafBlock46")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hne13 : evalICmp .eq x (BitVec.ofNat 8 13) = 0)
+    (hsc : ScanCount (scanLeafBlock46Out s x) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" } (scanLeafBlock46Out s x) := by
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have hres : (if evalICmp .eq x (BitVec.ofNat 8 13) = 1
+      then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
+    if_neg (by rw [hne13]; decide)
+  have hloc : WalkLocal { C with block := "while.body370.i" } (scanLeafBlock46Out s x) := by
+    rw [WalkLocal.whitespace (C := { C with block := "while.body370.i" })
+      (s := scanLeafBlock46Out s x) rfl]
+    exact hsc
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.LeafBlock46_at G C s (WalkChain.inv_last hchain) hblock h1 hloc
+  have hstep : s' = scanLeafBlock46Out s x := by
+    rw [hs]
+    simp only [scanLeafBlock46Out, hres]
+    rfl
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
+/-- **The chain extended by `LeafBlock48`'s back edge.**  The byte is not `32`, so the
+leaf returns to the latch. -/
+theorem walkChain_extend_leafBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C₀ : WalkCarry G} {s₀ : State} {C : WalkCarry G} {s : State}
+    (hchain : WalkChain calls G C₀ s₀ C s) (hblock : C.block = "LeafBlock48")
+    {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
+    (hne32 : evalICmp .eq x (BitVec.ofNat 8 32) = 0)
+    (hsc : ScanCount (scanLeafBlock48Out s x) "%ee.0.i238" "%cond350.i" C.inner) :
+    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" } (scanLeafBlock48Out s x) := by
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have hres : (if evalICmp .eq x (BitVec.ofNat 8 32) = 1
+      then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
+    if_neg (by rw [hne32]; decide)
+  have hloc : WalkLocal { C with block := "while.body370.i" } (scanLeafBlock48Out s x) := by
+    rw [WalkLocal.whitespace (C := { C with block := "while.body370.i" })
+      (s := scanLeafBlock48Out s x) rfl]
+    exact hsc
+  obtain ⟨s', hl, hs⟩ :=
+    WalkLink.LeafBlock48_at G C s (WalkChain.inv_last hchain) hblock h1 hloc
+  have hstep : s' = scanLeafBlock48Out s x := by
+    rw [hs]
+    simp only [scanLeafBlock48Out, hres]
+    rfl
+  rw [hstep] at hl
+  rw [hres] at hl
+  exact hchain.append (WalkChain.tail hl (WalkChain.nil hl.inv'))
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
@@ -547,6 +695,11 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.scanBlock_den
 #print axioms LeanLLVM.Refinement.WalkScope.scanBlock_step
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatch_visit
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock50
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock50Out
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_nodeBlock48
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_leafBlock46
+#print axioms LeanLLVM.Refinement.WalkScope.walkChain_extend_leafBlock48
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
