@@ -3528,6 +3528,30 @@ the same, because the target's slot write comes **last**:
   crossings to reach it, the absorption, and then three back, because the model's
   memory has the slot last and it has to return.
 
+**The absorption's route, and why it is not the induction the section first named.**
+An induction over the memory carrying outside-agreement needs, at each cell, the
+cell's *position* in both memories and the byte that belongs at that offset — which
+is the shape machinery `readByte_not_determined_by_reads` shows cannot come from
+reads.  The cheap route is to make the shape **definitional**: define the canonical
+update
+
+    memUpd A a n bs := A.map (fun (d, v) => if a ≤ d ∧ d < a + n then (d, bs.getD (d - a) 0) else (d, v))
+
+and prove `writeBytes A a bs = memUpd A a bs.length bs` once, by induction over `bs`
+(each step is `writeByte`'s own definition).  Then:
+
+* **position preservation** is `List.map`'s congruence — the address sequence of
+  `memUpd` is the address sequence of `A`, definitionally;
+* **extensionality** is `List.map` equality on pairs, which needs *no* hypothesis
+  about reads and therefore no `Nodup` clause;
+* **the absorption** is the composition of two maps, decided by the offsets: the
+  clear's cells are overwritten by the slot's, and the intervening writes' offsets
+  are disjoint from the slot's.
+
+That is the induction done once, in the place where the shape lives, instead of at
+each use.  It is also where the two preservations (`_above`/`_below`) stop being
+needed: they are what a proof without a canonical form spends, one byte at a time.
+
 **Neither count is reachable with commutations alone, and the typecheck says why.**
 The statement typechecks with its conclusion as a hypothesis (the produced-form
 check: if `example (…) (h : <the equality>) : <the equality> := h` elaborates, the
