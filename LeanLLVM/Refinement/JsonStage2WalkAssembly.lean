@@ -224,7 +224,18 @@ named.  The two shapes below are the ones whose target depends on nothing the bl
 instructions compute — an empty instruction list with a `br` (class B) and with a
 `condbr` on a carried bit (class B′) — so their targets are the source state with the
 edge's destination and predecessor, and the class's nine-plus-one instances are the
-`find`/`term` pair of each block. -/
+`find`/`term` pair of each block.
+
+**The classes are not one shape each.**  Measured off the pinned body, class G's
+fourteen blocks are six shapes — `load+load+binop+icmp` (`if.end.i.i`,
+`if.end.i.i55`), `gep+load+icmp` (`lor.lhs.false.i`), `binop+zext+gep+load+icmp`
+(`if.end179.i`, `land.lhs.true.i`), `gep+load+binop+icmp` (`if.then231.i`),
+`gep+load+zext` (`cond.true345.i`), `gep+load` (`land.lhs.true357.i`) — beside two
+long chains (`if.end59.i`, `if.end133.i`).  So a shape pays for itself at a repeated
+variant and the rest are instances: the count of shapes to write is the count of
+distinct opcode sequences, not the count of classes.  Class D divides the same way
+(`store` alone, `gep+store`), and E is `phi`-headed with the selection read from the
+predecessor. -/
 
 /-- **Class H1: the arithmetic latch.**  `add` an immediate into a fresh name, compare
 it against a bound, branch on the bit — ten blocks, the dispatch's range tests.  The
