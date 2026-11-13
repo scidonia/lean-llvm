@@ -5944,6 +5944,112 @@ theorem s2StringBodyExpand_refused_named {mem xmem : Mem} {p dst xp xj : Nat}
     (hc1 := hc1) (hxjp := hxjp) (heip := heip) (heixj := heixj)
     (heilan := heilan) (hjlan := hjlan) (hmem := hmem) (hr := hr)
 
+/-- The arm's run, every leaf a variable: the callee's answer comes from the named
+derivation, and the exit lemma takes the memory it produced. -/
+theorem s2StringBodyArm_scan_refused_run {mem extra : Mem} {x : State}
+    {ch p dst outn xp xj : Nat} {len nxp : BitVec 64}
+    {base j0 c1 ei next lane offN k e' : Nat} {ps : List Nat} {body : List UInt8}
+    {conv : BitVec 64} {Woff Wj : List UInt8}
+    (hpc : x.pc = "land.lhs.true")
+    (hmem : x.mem = writeBytes mem xj (wordBytes 8 c1))
+    (hC0 : s2StringBodyRefusedC0 mem xj c1
+      = writeBytes mem xj (wordBytes 8 c1))
+    (hexpMem : extra
+      = writeBytes
+          (writeBytes (writeBytes (s2StringBodyRefusedC0 mem xj c1) ei
+            (natToBytes (0#64).toNat 8)) ei Woff) xj Wj)
+    (hWoff : Woff = wordBytes 8 offN) (hWj : Wj = wordBytes 8 (c1 + k))
+    (hlane : ps[c1]? = some lane) (hge : p - base ≤ lane)
+    (hlt : lane < p - base + len.toNat)
+    (hconv : lookupName x.env "%conv" = some (.int 64 conv)) (hconvq : conv.toNat = lane)
+    (hc : lookupName x.env "%c" = some (.ptr ch))
+    (hsub : lookupName x.env "%sub.ptr.sub" =
+      some (.int 64 (BitVec.ofNat 64 (p - base))))
+    (hlen : lookupName x.env "%len" = some (.int 64 len))
+    (hp : lookupName x.env "%p" = some (.ptr p))
+    (hdst : lookupName x.env "%dst" = some (.ptr dst))
+    (hei : lookupName x.env "%ei" = some (.ptr ei))
+    (hxp : lookupName x.env "%xp" = some (.ptr xp))
+    (hxj : lookupName x.env "%xj" = some (.ptr xj))
+    (hnxp : lookupName x.env "%nxp" = some (.int 64 nxp))
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hbody : readBytes mem p len.toNat = some body)
+    (hrec : stage2ReadWord mem (ch + 1112) 8 = some e')
+    (hp0 : p - base < 2 ^ 64) (hpw : p - base + len.toNat < 2 ^ 64) (hc1 : c1 < 2 ^ 64)
+    (hoffN : offN < 2 ^ 64)
+    (hxjp : RegionsApart xj 8 p len.toNat)
+    (heip : RegionsApart ei 8 p len.toNat)
+    (heixj : RegionsApart ei 8 xj 8)
+    (heilan : ∀ j, j < nxp.toNat → xp + 4 * j + 4 ≤ ei ∨ ei + 8 ≤ xp + 4 * j)
+    (hjlan : ∀ j, j < nxp.toNat → xp + 4 * j + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * j)
+    (hwjLen : Wj.length = 8) (hc1k : c1 + k = c1 + k)
+    (hxje : RegionsApart xj 8 (ch + 1112) 8)
+    (heie : RegionsApart ei 8 (ch + 1112) 8)
+    (hoff : readBytes extra ei 8 = some Woff)
+    (hr : escapeDecodeGo body 0 0
+      (((ps.drop c1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+        (fun q => q - (p - base))) [] = .refused offN k) :
+    runFuel s2StringBodyCalls 5 s2StringBodyBody x =
+      some (.ret (some (.int 32 0x00000000#32))
+        (s2StringBodyIfThen11Mem extra e' (BitVec.ofNat 64 offN)
+          (BitVec.ofNat 64 (p - base)))) := by
+  have hsum : ((BitVec.ofNat 64 (p - base)) + len).toNat = p - base + len.toNat := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hp0,
+      Nat.mod_eq_of_lt hpw]
+  have hbit7 : evalICmpNat .ugt 64 ((BitVec.ofNat 64 (p - base)) + len).toNat
+      conv.toNat = 1#1 := by
+    rw [hsum, hconvq]
+    exact evalICmpNat_ugt_one hpw (by omega) hlt
+  have he64 : e' < 2 ^ 64 := stage2ReadWord_lt_64 hrec
+  have hrecB : readBytes mem (ch + (1112#64).toNat) 8 = some (wordBytes 8 e') := by
+    simpa using readBytes_of_stage2ReadWord hrec
+  have hrecE : readBytes extra (ch + (1112#64).toNat) 8 = some (wordBytes 8 e') := by
+    rw [hexpMem]
+    rw [readBytes_writeBytes_apart (ws := Wj)
+      (show RegionsApart xj Wj.length (ch + (1112#64).toNat) 8 from by
+        rcases hxje with h | h
+        · exact Or.inl (by rw [hwjLen]; exact h)
+        · exact Or.inr h)]
+    rw [readBytes_writeBytes_apart (ws := Woff)
+      (show RegionsApart ei Woff.length (ch + (1112#64).toNat) 8 from by
+        rcases heie with h | h
+        · exact Or.inl (by rw [hWoff]; simp [natToBytes_length]; exact h)
+        · exact Or.inr h)]
+    rw [readBytes_writeBytes_apart (ws := natToBytes (0#64).toNat 8)
+      (show RegionsApart ei (natToBytes (0#64).toNat 8).length
+        (ch + (1112#64).toNat) 8 from by
+        rcases heie with h | h
+        · exact Or.inl (by rw [natToBytes_length]; exact h)
+        · exact Or.inr h)]
+    rw [s2StringBodyRefusedC0]
+    rw [readBytes_writeBytes_apart (ws := wordBytes 8 c1)
+      (show RegionsApart xj (wordBytes 8 c1).length (ch + (1112#64).toNat) 8 from by
+        rcases hxje with h | h
+        · exact Or.inl (by rw [show (wordBytes 8 c1).length = 8 from
+            natToBytes_length _ _]; exact h)
+        · exact Or.inr h)]
+    exact hrecB
+  have hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 (BitVec.ofNat 64 (p - base))]
+      (writeBytes x.mem ei (natToBytes (0#64).toNat 8)) x.next =
+      some { ret := .int 64 0xffffffffffffffff#64, mem := extra, next := x.next } := by
+    have h := s2StringBodyExpand_refused_named (xmem := s2StringBodyRefusedC0 mem xj c1)
+      (Woff := Woff) (Wj := Wj) (next := x.next) (dst := dst) hC0 hps hbody hlane hge hp0 hc1 hWoff hWj hxjp heip
+      heixj heilan hjlan hr
+    have hx : x.mem = s2StringBodyRefusedC0 mem xj c1 := hmem.trans hC0.symm
+    rw [hx]
+    rw [← hexpMem] at h
+    exact h
+  exact s2StringBodyExit_refused (e := x) (off := BitVec.ofNat 64 offN) hpc hc hsub
+    hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp (evalICmp_eq_one rfl)
+    (by rw [show (BitVec.ofNat 64 offN).toNat = offN from by
+          rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hoffN]]
+        show readBytes extra ei 8 = some (wordBytes 8 offN)
+        rw [← hWoff]
+        exact hoff)
+    (by simpa using hrecE) he64
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
