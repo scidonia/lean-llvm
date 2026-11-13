@@ -1283,6 +1283,70 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
         by simpa [stateAt, cells, lookupName] using hcd⟩)
     (by simp [WalkLocal])
 
+
+/-- **`if.then447.i`'s target, with the helper's answer named.**  The copy block's consumer:
+`s2_after_value`'s contract resolves at the staging, and the link's target is the state the
+block's `denoteCode` leaves — the test's cell at the answer's memory.  The carry changes
+`stMap` (`walkAfterValueMap`), which the link's conclusion already names. -/
+theorem walkIfThen447_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then447.i")
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hpre : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    {ei cd : Nat}
+    (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hinner : cd - ei ≤ C.inner) (hlt : ei < cd) (hcd64 : cd < 2 ^ 64) :
+    ∃ (r : CallOutcome) (s' : State),
+      stage2Calls stage2SubCalls "s2_after_value"
+        [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r ∧
+      WalkLink (stage2Calls stage2SubCalls) G C s
+        { C with
+          block := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
+            then "land.rhs457.i" else "if.end473.i")
+          stMap := walkAfterValueMap C } s' ∧
+      s' = { stateAt
+          (cells [("%cmp451.i", .int 1 (evalICmp .ult (BitVec.ofNat 64 ei)
+            (BitVec.ofNat 64 cd))) ] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
+          then "land.rhs457.i" else "if.end473.i")
+        pre := some s.pc } := by
+  obtain ⟨r, hcall, hpost, -⟩ := s2AfterValueContract.resolves (next := s.next) hpre
+  obtain ⟨s', hl⟩ := WalkLink.if_then447_i (G := G) (C := C) (s := s) hInv hblock hrd hpre
+    hei hcd hinner hlt hcd64
+  refine ⟨r, s', hcall, hl, ?_⟩
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen447I.instrs s =
+      some (stateAt (cells [("%cmp451.i", .int 1 (evalICmp .ult (BitVec.ofNat 64 ei)
+        (BitVec.ofNat 64 cd))) ] s.env) { s with mem := r.mem, next := r.next }) := by
+    simpa only [stateAt] using (walkIfThen447I_denote (sub := stage2SubCalls) (env := s.env)
+      (s := s) (sp := BitVec.ofNat 32 C.sp) (rd := G.next0 + 8) (ct := C.stage.ctype)
+      (cs := C.stage.cst) (r := r) (ei := ei) (cd := cd) hInv.depth_reg hrd
+      (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall hei hcd)
+  have hbit : lookupName (stateAt (cells [("%cmp451.i", .int 1 (evalICmp .ult
+      (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd))) ] s.env)
+      { s with mem := r.mem, next := r.next }).env "%cmp451.i" =
+      some (.int 1 (evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd))) := by
+    simp only [stateAt, cells, lookupName_cons_self]
+  have hfind : stage2Body.findBlock s.pc = some walkIfThen447I := by
+    rw [hInv.pc_eq, hblock]; exact walkIfThen447I_find
+  have hterm : walkIfThen447I.term =
+      Term.condbr (.reg "%cmp451.i") "land.rhs457.i" "if.end473.i" := rfl
+  have hstep : step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump
+      { stateAt (cells [("%cmp451.i", .int 1 (evalICmp .ult (BitVec.ofNat 64 ei)
+          (BitVec.ofNat 64 cd))) ] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
+          then "land.rhs457.i" else "if.end473.i")
+        pre := some s.pc } := by
+    simp only [LeanLLVM.step, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%cmp451.i") (tl := "land.rhs457.i") (fl := "if.end473.i")
+      (bit := evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd)) hbit]
+    dsimp only [stateAt]
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-! ## The arena reservation's block
 
 `if.end256.i` is where a decoded body's room is checked: the token's extent
