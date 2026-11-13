@@ -91,4 +91,3 @@ theorem WalkLink.land_rhs_i_preheader_at {calls : Calls} {m0 : Mem}
     (dest := "land.rhs.i")
     (by rw [hInv.pc_eq, hblock]; exact walkLand_rhs_i_preheader_find) rfl rfl
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
-

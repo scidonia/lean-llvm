@@ -244,6 +244,16 @@ each of those by `by simp [lookupName]` at its own literals, so **a shape's hypo
 approach the instance's own proof**: it pays at two instances and is a loss below
 that.  The rule, for every remaining block: repeated sequence → shape; once → instance.
 
+**The rule's boundary.**  "Once → instance" holds only for a block whose sequence an
+*existing* shape covers.  A block ending in a `br` cannot compute its own `step`
+against the `def` of the block: `step`'s unfolding has already turned the block's
+`instrs` and `term` into literals, so a `denoteCode` fact stated at `B.instrs` no
+longer matches and the `match` does not reduce.  The block has to stay symbolic, and
+that is what a shape is — so the single-block sequences that end in a `br` need a
+shape too, and `walkGepLoadBrStep` is one: it serves `land.lhs.true357.i` directly and
+`land.rhs.i` and `while.body370.i` after their `phi` runs, three blocks for one shape
+under either reading.
+
 Two of the shapes' statements are not free choices, and each cost a round to find.
 A `phi`-headed block's target carries `pre := some (s.bindAll vs).pc`, not `some s.pc`:
 `bindAll` extends the environment and its `pc` is not definitionally the source's, so
@@ -465,6 +475,47 @@ theorem walkPhiCondbrStep {calls : Calls} (s : State) {B : Block}
     simpa only [List.append_nil, denoteCode_nil] using h
   simp only [step, hfind, hden, hterm, execTerm, evalOperand, hbit]
   rcases hb01 with rfl | rfl <;> simp
+
+/-- **The `gep`-and-load shape: a register-indexed address and the byte it holds.**
+Three of the walk's blocks end this way — `land.lhs.true357.i` on its own, and
+`land.rhs.i` and `while.body370.i` after their `phi` runs — so the sequence is a shape
+and not an instance, and the two `phi`-headed ones compose it with
+`denoteCode_phiRun`.
+
+It is also the case that settles the cost rule's boundary: an instance whose block
+ends in a `br` cannot compute its own `step` against the *def* of the block, because
+`step`'s unfolding has already turned the block's `instrs` and `term` into literals
+and the `denoteCode` fact no longer matches.  The block must stay symbolic, which is
+what a shape is — so "once → instance" holds only for a block whose sequence an
+*existing* shape covers. -/
+theorem walkGepLoadBrStep {calls : Calls} (s : State) {B : Block}
+    {ap ld base off dest : String} {a j : Nat} {b : UInt8}
+    (hfind : stage2Body.findBlock s.pc = some B)
+    (hinstrs : B.instrs = [Instr.gep ap (Ty.int 8) (.reg base) (.reg off),
+      Instr.load ld (.int 8) (.reg ap)])
+    (hterm : B.term = Term.br dest)
+    (hbase : lookupName s.env base = some (.ptr a))
+    (hoff : lookupName s.env off = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj63 : j < 2 ^ 63)
+    (hread : readBytes s.mem (a + j) 1 = some [b]) :
+    LeanLLVM.step calls stage2Body s =
+      .jump { stateAt (cells [(ld, .int 8 (BitVec.ofNat 8 b.toNat)),
+          (ap, .ptr (a + j))] s.env) s with
+        pc := dest, pre := some s.pc } := by
+  have hden : denoteCode calls B.instrs s =
+      some (stateAt (cells [(ld, .int 8 (BitVec.ofNat 8 b.toNat)),
+        (ap, .ptr (a + j))] s.env) s) := by
+    rw [hinstrs, ← stateAt_self s]
+    rw [denoteCode_gep8_reg (calls := calls) (env := s.env) (s := s) (d := ap)
+      (base := base) (off := off) (a := a) (idx := BitVec.ofNat 64 j)
+      hbase hoff (by rw [sExt_ofNat64 hj63]; exact hj63)]
+    rw [sExt_ofNat64 hj63]
+    rw [denoteCode_load8_single (calls := calls)
+      (env := (ap, .ptr (a + j)) :: s.env) (s := s)
+      (d := ld) (p := ap) (a := a + j) (by simp [lookupName]) hread]
+    rfl
+  simp only [LeanLLVM.step, hfind, hden, hterm, execTerm]
+  rfl
 
 /-- **Class A: one comparison and a branch.**  Sixty of the walk's blocks are this
 shape — one `icmp` into a fresh name and a `condbr` on it — which makes the class a
@@ -1735,6 +1786,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkStackMarkerStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkGepLoadBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.LeafBlock99_at
