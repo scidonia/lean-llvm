@@ -730,6 +730,132 @@ def walkSelectEnv (sub cmpi sel zx apx ldv cvt d : String) (db : BitVec 8)
     (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))),
     (sub, .int 32 (x + c))] env
 
+/-- **The environment the select nest's first half leaves.**  The four cells the
+arithmetic and the `select` bind, in the order the run binds them: the offset, the
+expected marker, the byte's test, and the depth less one.  Naming it is what lets the
+nest's `denoteCode` be two four-instruction theorems instead of one eight-instruction
+term — the split this layer's cap needs. -/
+def walkSelectEnv4 (sub cmpi sel zx : String) (db : BitVec 8) (x c : BitVec 32)
+    (env : Env) : Env :=
+  cells [
+    (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)),
+    (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+      else BitVec.ofNat 32 2)),
+    (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))),
+    (sub, .int 32 (x + c))] env
+
+/-- **The select nest's first four instructions**, at an arbitrary tail: `%sub.i` is
+the depth less one, `%cmp61.i` the closing byte's test, `%conv64.i` the expected marker
+and `%idxprom65.i` the offset.  The successor's environment is `walkSelectEnv4`. -/
+theorem walkSelectDen4 {calls : Calls} (env : Env) (s : State)
+    {sub cmpi sel zx : String} {db : BitVec 8} {x c : BitVec 32}
+    (hsp : lookupName env "%sp.i.0248" = some (.int 32 x))
+    (h8 : lookupName env "%8" = some (.int 8 db))
+    (hs8 : sub ≠ "%8") (hselSub : sel ≠ sub) (hcmpiSub : cmpi ≠ sub)
+    (rest : List Instr) :
+    denoteCode calls (
+      Instr.binop sub BinOp.add 32 (.reg "%sp.i.0248") (.imm (.int 32 c)) ::
+      Instr.icmp cmpi IPred.eq 8 (.reg "%8") (.imm (.int 8 (BitVec.ofNat 8 125))) ::
+      Instr.select sel (.int 32) (.reg cmpi) (.imm (.int 32 (BitVec.ofNat 32 1)))
+        (.imm (.int 32 (BitVec.ofNat 32 2))) ::
+      Instr.zext zx 32 64 (.reg sub) :: rest) (stateAt env s) =
+      denoteCode calls rest (stateAt (walkSelectEnv4 sub cmpi sel zx db x c env) s) := by
+  rw [walkDenoteCode_add_imm_w (calls := calls) (env := env) (s := s) (d := sub)
+    (a := "%sp.i.0248") (w := 32) (x := x) (c := c) hsp]
+  rw [denoteCode_icmp_eq_imm_w (calls := calls) (env := (sub, .int 32 (x + c)) :: env)
+    (s := s) (d := cmpi) (a := "%8") (w := 8) (x := db) (c := BitVec.ofNat 8 125)
+    (by rw [lookupName_cons_ne (k := sub) (n := "%8") _ _ hs8]; exact h8)]
+  rw [denoteCode_select_imm_imm_w (calls := calls)
+    (env := (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+      (sub, .int 32 (x + c)) :: env) (s := s)
+    (d := sel) (c := cmpi) (w := 32) (bb := evalICmp .eq db (BitVec.ofNat 8 125))
+    (x := BitVec.ofNat 32 1) (y := BitVec.ofNat 32 2)
+    (by simp [lookupName])]
+  rw [denoteCode_zext (calls := calls)
+    (env := (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1
+        then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
+      (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+      (sub, .int 32 (x + c)) :: env) (s := s) (d := zx) (v := sub)
+    (wIn := 32) (wOut := 64) (x := x + c)
+    (by rw [lookupName_cons_ne (k := sel) (n := sub) _ _ hselSub,
+            lookupName_cons_ne (k := cmpi) (n := sub) _ _ hcmpiSub]; simp [lookupName])]
+  rfl
+
+/-- **The select nest's second four instructions**: the stack's address, the byte, its
+`zext`, and the comparison with the expected marker.  Runs from the environment
+`walkSelectEnv4` names and leaves `walkSelectEnv`. -/
+theorem walkSelectDen8 {calls : Calls} (env : Env) (s : State)
+    {sub cmpi sel zx apx ldv cvt d base : String} {db : BitVec 8} {x c : BitVec 32}
+    {ct q : Nat} {bs : List UInt8}
+    (hzb : zx ≠ base) (hselBase : sel ≠ base) (hcmpiBase : cmpi ≠ base)
+    (hsb : sub ≠ base)
+    (hb : lookupName env base = some (.ptr ct))
+    (hpos : (x + c).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (ct + (x + c).toNat) 1 = some bs)
+    (hbsn : bytesToNat bs = q)
+    (hcvtSel : cvt ≠ sel) (hldvSel : ldv ≠ sel) (hapxSel : apx ≠ sel) (hzxSel : zx ≠ sel)
+    (rest : List Instr) :
+    denoteCode calls (
+      Instr.gep apx (.int 8) (.reg base) (.reg zx) ::
+      Instr.load ldv (.int 8) (.reg apx) ::
+      Instr.zext cvt 8 32 (.reg ldv) ::
+      Instr.icmp d IPred.eq 32 (.reg sel) (.reg cvt) :: rest)
+      (stateAt (walkSelectEnv4 sub cmpi sel zx db x c env) s) =
+      denoteCode calls rest
+        (stateAt (walkSelectEnv sub cmpi sel zx apx ldv cvt d db x c ct q env) s) := by
+  simp only [walkSelectEnv4, cells]
+  rw [denoteCode_gep8_ofNat (calls := calls)
+    (env := (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+      (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+        else BitVec.ofNat 32 2)) ::
+      (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+      (sub, .int 32 (x + c)) :: env) (s := s) (d := apx) (base := base) (off := zx)
+    (a := ct) (j := (x + c).toNat)
+    (by
+      rw [lookupName_cons_ne (k := zx) (n := base) _ _ hzb,
+          lookupName_cons_ne (k := sel) (n := base) _ _ hselBase,
+          lookupName_cons_ne (k := cmpi) (n := base) _ _ hcmpiBase,
+          lookupName_cons_ne (k := sub) (n := base) _ _ hsb]
+      exact hb)
+    (by simp [lookupName]) hpos]
+  rw [denoteCode_load8 (calls := calls)
+    (env := (apx, .ptr (ct + (x + c).toNat)) ::
+      (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+      (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+        else BitVec.ofNat 32 2)) ::
+      (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+      (sub, .int 32 (x + c)) :: env)
+    (s := s) (d := ldv) (p := apx) (a := ct + (x + c).toNat) (q := q) (bs := bs)
+    (by simp [lookupName]) hread hbsn]
+  rw [denoteCode_zext (calls := calls)
+    (env := (ldv, .int 8 (BitVec.ofNat 8 q)) :: (apx, .ptr (ct + (x + c).toNat)) ::
+      (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+      (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+        else BitVec.ofNat 32 2)) ::
+      (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+      (sub, .int 32 (x + c)) :: env) (s := s) (d := cvt) (v := ldv)
+    (wIn := 8) (wOut := 32) (x := BitVec.ofNat 8 q) (by simp [lookupName])]
+  rw [denoteCode_icmp_reg_w (calls := calls)
+    (env := (cvt, .int 32 (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)) ::
+      (ldv, .int 8 (BitVec.ofNat 8 q)) :: (apx, .ptr (ct + (x + c).toNat)) ::
+      (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
+      (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1
+        else BitVec.ofNat 32 2)) ::
+      (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
+      (sub, .int 32 (x + c)) :: env) (s := s) (d := d) (a := sel) (b := cvt)
+    IPred.eq 32
+    (x := if evalICmp .eq db (BitVec.ofNat 8 125) = 1
+      then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)
+    (y := BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)
+    (by
+      rw [lookupName_cons_ne (k := cvt) (n := sel) _ _ hcvtSel,
+          lookupName_cons_ne (k := ldv) (n := sel) _ _ hldvSel,
+          lookupName_cons_ne (k := apx) (n := sel) _ _ hapxSel,
+          lookupName_cons_ne (k := zx) (n := sel) _ _ hzxSel]
+      simp [lookupName, walkSelVal, walkSelBit])
+    (by simp [lookupName])]
+  rfl
+
 /-- **One stack byte at `%sp - 1`, tested for a marker, then a `condbr`.**  The
 five-instruction shape `if.end179.i` and `land.lhs.true.i`. -/
 theorem WalkLink.stackMarkerBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -988,71 +1114,14 @@ theorem WalkLink.stackSelectBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
             else BitVec.ofNat 32 2)
           (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat) = 1 then tl else fl) } s' := by
   have hden : denoteCode calls B.instrs s = some (stateAt env' s) := by
-    rw [hinstrs, ← stateAt_self s]
-    rw [walkDenoteCode_add_imm_w (calls := calls) (env := s.env) (s := s) (d := sub)
-      (a := "%sp.i.0248") (w := 32) (x := x) (c := c) hsp]
-    rw [denoteCode_icmp_eq_imm_w (calls := calls) (env := (sub, .int 32 (x + c)) :: s.env)
-      (s := s) (d := cmpi) (a := "%8") (w := 8) (x := db) (c := BitVec.ofNat 8 125)
-      (by rw [lookupName_cons_ne (k := sub) (n := "%8") _ _ hs8]; exact h8)]
-    rw [denoteCode_select_imm_imm_w (calls := calls)
-      (env := (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
-        (sub, .int 32 (x + c)) :: s.env) (s := s)
-      (d := sel) (c := cmpi) (w := 32) (bb := evalICmp .eq db (BitVec.ofNat 8 125))
-      (x := BitVec.ofNat 32 1) (y := BitVec.ofNat 32 2)
-      (by simp [lookupName])]
-    rw [denoteCode_zext (calls := calls)
-      (env := (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
-        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
-        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := zx) (v := sub)
-      (wIn := 32) (wOut := 64) (x := x + c)
-      (by rw [lookupName_cons_ne (k := sel) (n := sub) _ _ hselSub,
-              lookupName_cons_ne (k := cmpi) (n := sub) _ _ hcmpiSub]; simp [lookupName])]
-    rw [denoteCode_gep8_ofNat (calls := calls)
-      (env := (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
-        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
-        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
-        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := apx) (base := base) (off := zx)
-      (a := ct) (j := (x + c).toNat)
-      (by
-        rw [lookupName_cons_ne (k := zx) (n := base) _ _ hzb,
-            lookupName_cons_ne (k := sel) (n := base) _ _ hselBase,
-            lookupName_cons_ne (k := cmpi) (n := base) _ _ hcmpiBase,
-            lookupName_cons_ne (k := sub) (n := base) _ _ hsb]
-        exact hb)
-      (by simp [lookupName]) hpos]
-    rw [denoteCode_load8 (calls := calls)
-      (env := (apx, .ptr (ct + (x + c).toNat)) ::
-        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
-        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
-        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
-        (sub, .int 32 (x + c)) :: s.env)
-      (s := s) (d := ldv) (p := apx) (a := ct + (x + c).toNat) (q := q) (bs := bs)
-      (by simp [lookupName]) hread hbsn]
-    rw [denoteCode_zext (calls := calls)
-      (env := (ldv, .int 8 (BitVec.ofNat 8 q)) :: (apx, .ptr (ct + (x + c).toNat)) ::
-        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
-        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
-        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
-        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := cvt) (v := ldv)
-      (wIn := 8) (wOut := 32) (x := BitVec.ofNat 8 q) (by simp [lookupName])]
-    rw [denoteCode_icmp_reg_w (calls := calls)
-      (env := (cvt, .int 32 (BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)) ::
-        (ldv, .int 8 (BitVec.ofNat 8 q)) :: (apx, .ptr (ct + (x + c).toNat)) ::
-        (zx, .int 64 (BitVec.ofNat 64 (x + c).toNat)) ::
-        (sel, .int 32 (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)) ::
-        (cmpi, .int 1 (evalICmp .eq db (BitVec.ofNat 8 125))) ::
-        (sub, .int 32 (x + c)) :: s.env) (s := s) (d := d) (a := sel) (b := cvt)
-      IPred.eq 32
-      (x := if evalICmp .eq db (BitVec.ofNat 8 125) = 1
-        then BitVec.ofNat 32 1 else BitVec.ofNat 32 2)
-      (y := BitVec.ofNat 32 (BitVec.ofNat 8 q).toNat)
-      (by
-        rw [lookupName_cons_ne (k := cvt) (n := sel) _ _ hcvtSel,
-            lookupName_cons_ne (k := ldv) (n := sel) _ _ hldvSel,
-            lookupName_cons_ne (k := apx) (n := sel) _ _ hapxSel,
-            lookupName_cons_ne (k := zx) (n := sel) _ _ hzxSel]
-        simp [lookupName, walkSelVal, walkSelBit])
-      (by simp [lookupName])]
+    rw [hinstrs, ← stateAt_self s,
+      walkSelectDen4 (calls := calls) (env := s.env) (s := s) hsp h8 hs8 hselSub hcmpiSub
+        (rest := [Instr.gep apx (.int 8) (.reg base) (.reg zx),
+          Instr.load ldv (.int 8) (.reg apx),
+          Instr.zext cvt 8 32 (.reg ldv),
+          Instr.icmp d IPred.eq 32 (.reg sel) (.reg cvt)]),
+      walkSelectDen8 (calls := calls) (env := s.env) (s := s) hzb hselBase hcmpiBase hsb hb
+        hpos hread hbsn hcvtSel hldvSel hapxSel hzxSel (rest := [])]
     rw [henv]
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
