@@ -315,16 +315,19 @@ The arms below take four (three) control steps, and `runFuel`'s equation turns
 each into a `match` on `step`.  Composing them as a single `runFuel` unfolding
 chain puts the *whole* body state of every later step into the goal the next
 `rw` has to reduce, and a `rw` that matches a state literal against a state
-literal pays for the nine-cell environment it contains at every step.  Measured
-on that form: one arm's closing chain peaked at 9.4 GB.
+literal pays for the nine-cell environment it contains at every step.
 
 Stated as a prefix instead, each step is its own small equality — `runFuel` at
 the step's fuel against `runFuel` at the continuation — so the composition meets
 `runFuel k f t` and never a `match` over a run, and `runFuel_prefix_some` carries
-the last step's outcome.  Measured on the same arm: 3 s and a 2.2 GB peak for the
-module's whole elaboration (`/usr/bin/time`, `maxrss`), against the 9.4 GB peak
-the unfolding chain was killed at; every arm was then restated this way, and the
-two depth-zero arms with them. -/
+the last step's outcome.
+
+The two forms were measured against each other on this module alone, one
+instrument for both (`/usr/bin/time`'s `maxrss`): with this arm's closing left as
+an unfolding chain the elaboration had reached 12.7 GB after 50 s and had not
+finished when it was stopped, and with the prefixes it completes in about 3 s at
+a 2.2 GB peak.  Every arm is stated this way, the two depth-zero arms with the
+rest. -/
 
 /-- One control step, as a run prefix: the fuel is spent and the run continues at
 the state the step jumped to, with the remaining fuel as a parameter so prefixes
@@ -998,7 +1001,6 @@ theorem s2ValuePos_run_object {sp rd : BitVec 32} {ct cs : Nat} {mem : Mem} {nex
   have s4 := s2_runFuel_ret h4
   have hs := runFuel_prefix_some
     (runFuel_prefix_trans (runFuel_prefix_trans s1 s2) s3) s4
-  rw [h0]
   refine hs.trans ?_
   rw [s2_res_two8, s2_ofNat8_toNat]
   rfl
@@ -1078,7 +1080,6 @@ theorem s2ValuePos_run_array {sp rd : BitVec 32} {ct cs : Nat} {mem : Mem} {next
   have s4 := s2_runFuel_ret h4
   have hs := runFuel_prefix_some
     (runFuel_prefix_trans (runFuel_prefix_trans s1 s2) s3) s4
-  rw [h0]
   refine hs.trans ?_
   rw [s2_res_mask8, s2_ofNat8_toNat]
   rfl
@@ -1439,7 +1440,6 @@ theorem s2AfterValue_run_above {sp : BitVec 32} {rd ct cs : Nat} {mem : Mem} {ne
   have s2 := s2_runFuel_jump h2
   have s3 := s2_runFuel_ret h3
   have hs := runFuel_prefix_some (runFuel_prefix_trans s1 s2) s3
-  rw [h0]
   refine hs.trans ?_
   rw [s2TopIdx_eq, s2MinusOne_toNat sp hsp, s2_convBytes]
   rfl
