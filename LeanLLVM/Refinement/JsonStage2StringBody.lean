@@ -588,6 +588,55 @@ theorem s2StringBody_findBlock_cleanup16 :
 theorem s2StringBody_findBlock_entry_ne_ifEnd :
     s2StringBodyBody.findBlock "entry" ≠ s2StringBodyBody.findBlock "if.end" := by decide
 
+/-! ### The entry block's environment, named
+
+The block builds seven cells over the caller's environment, and the run's
+statement names them as definitions rather than as nested cons terms — the
+spelling `JsonStage2WalkRun`'s `walkEntry_denote` uses, and the reason its chain
+matches: a step's conclusion is `stateAt ((d, v) :: env) s'`, and a named
+definition is *that* term, so the closer's `dsimp only [s2StringBodyEnv1, …]`
+reconciles the two without either side having to guess a wildcard.  The
+allocator moves once, at the slot's `alloca`, and every definition below is
+parameterised by the value its instruction read. -/
+def s2StringBodyEnv1 (env : Env) (ei : Nat) : Env := ("%ei", .ptr ei) :: env
+
+def s2StringBodyEnv2 (env : Env) (base : Nat) : Env := ("%0", .ptr base) :: env
+
+def s2StringBodyEnv3 (env : Env) (p : Nat) : Env :=
+  ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: env
+
+def s2StringBodyEnv4 (env : Env) (base : Nat) : Env :=
+  ("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) :: env
+
+def s2StringBodyEnv5 (env : Env) (p base : Nat) : Env :=
+  ("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 (p - base))) :: env
+
+def s2StringBodyEnv6 (env : Env) (j0 : Nat) : Env :=
+  ("%xj.promoted", .int 64 (BitVec.ofNat 64 j0)) :: env
+
+def s2StringBodyEnv7 (env : Env) (j0 : Nat) (nxp : BitVec 64) : Env :=
+  ("%cmp3", .int 1 (evalICmpNat .ult 64 j0 nxp.toNat)) :: env
+
+/-- The seven instructions the entry block runs, in order: the slot's
+allocation, the two address conversions and their subtraction, the cursor read
+and the test. -/
+def s2StringBodyEntryInstrs : List Instr :=
+  [Instr.alloca "%ei" (Ty.int 64) 0,
+   Instr.load "%0" (Ty.ptr) (Operand.reg "%c"),
+   Instr.ptrtoint "%sub.ptr.lhs.cast" (Operand.reg "%p"),
+   Instr.ptrtoint "%sub.ptr.rhs.cast" (Operand.reg "%0"),
+   Instr.binop "%sub.ptr.sub" (BinOp.sub) 64 (Operand.reg "%sub.ptr.lhs.cast")
+     (Operand.reg "%sub.ptr.rhs.cast"),
+   Instr.load "%xj.promoted" (Ty.int 64) (Operand.reg "%xj"),
+   Instr.icmp "%cmp3" (IPred.ult) 64 (Operand.reg "%xj.promoted")
+     (Operand.reg "%nxp")]
+
+-- The instruction list is the block the pin resolves to: the run is the block's
+-- own body, not a reading of it.
+theorem s2StringBodyEntryInstrs_eq :
+    (s2StringBodyBody.findBlock "entry").map (·.instrs) =
+      some s2StringBodyEntryInstrs := by decide
+
 /- **A write of the bytes already there leaves the memory alone** — the form the
 closing needs for a region the body rewrites with its own value (the cursor word
 when the scan does not run, the slot on the arm that writes nothing):
