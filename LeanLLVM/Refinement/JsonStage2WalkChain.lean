@@ -338,6 +338,87 @@ theorem walkHeadChain_to_nodeBlock41 {m0 : Mem} {G : WalkGeom m0}
   refine ⟨_, s₆, hchain₅.append (WalkChain.tail hl₆ (WalkChain.nil hl₆.inv')), ?_, hs₆⟩
   rfl
 
+/-- The state `NodeBlock41` leaves at the class that takes `%35 < 13`: the pivot's
+cell, at `LeafBlock33`. -/
+def nodeBlock41OutAt (s : State) (b : BitVec 8) : State :=
+  { (s.bind "%Pivot42" (.int 1 (evalICmp .slt b (BitVec.ofNat 8 13)))) with
+    pc := "LeafBlock33", pre := some s.pc }
+
+/-- **The head path through `NodeBlock41` to `LeafBlock33`.**  The cell it branches on is
+the one `land.lhs.true357.i` bound, read at the successor's state — so the pivot's own
+register fact is a lookup at the environment the previous link installed, and the step
+is `NodeBlock41_at` with its arm resolved by the class's bit.  Its successor is named by
+the `def` rather than by the nest, so the statement stays about the program. -/
+theorem walkHeadChain_to_nodeBlock41Out {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (hlt44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
+    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
+    {inc nep c ix : BitVec 64} {reg : String}
+    (hinc : evalOperand (headS₃ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (headS₃ s x) (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0) (hugt : evalICmp .ugt c ix = 1)
+    (hpre4 : (headS₄ s x inc nep).pre = some "sw.default.i")
+    (hinc4 : phiIncoming "sw.default.i" [("cond.true345.i", Operand.reg "%conv347.i"),
+      ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
+    (hav4 : lookupName (headS₄ s x inc nep).env reg = some (.int 64 c))
+    (hidx4 : lookupName (headS₄ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok4 : lookupName (headS₄ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap4 : lookupName (headS₄ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)))
+    {q : Nat} (hpos : c.toNat = q + 1) (hq63 : c.toNat < 2 ^ 63) (hqn : q < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hbit : evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat)
+      (BitVec.ofNat 8 13) = 1) :
+    ∃ (C₇ : WalkCarry G) (s₇ : State), WalkChain (stage2Calls stage2SubCalls) G C s C₇ s₇ ∧
+      C₇.block = "LeafBlock33" ∧
+      lookupName s₇.env "%35" =
+        some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+  obtain ⟨C₆, s₆, hchain₆, hC₆, hs₆⟩ :=
+    walkHeadChain_to_nodeBlock41 hInv hhead h8 hlt91 hlt44 hne34 hinc hnep hge hugt hpre4
+      hinc4 hav4 hidx4 htok4 hgap4 hpos hq63 hqn halen hevlen
+  rw [hC₆] at hchain₆
+  have hInv₆ := WalkChain.inv_last hchain₆
+  -- the pivot's operand is the cell the previous link bound
+  have h35 : evalOperand s₆ (.reg "%35") =
+      some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := by
+    rw [hs₆]
+    show lookupName (cells
+      [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+       ("%gep", .ptr ((G.b - 1) + c.toNat))]
+      (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+      "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+    block_lk
+  -- the step, its arm resolved by the class's bit
+  obtain ⟨s₇, hl₇, hs₇⟩ :=
+    WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G _ _ hInv₆ rfl h35
+  have hres : (if evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat)
+      (BitVec.ofNat 8 13) = 1 then "LeafBlock33" else "NodeBlock39")
+      = "LeafBlock33" := if_pos hbit
+  have hstep7 : s₇ = nodeBlock41OutAt s₆ (BitVec.ofNat 8 (G.bs.getD q 0).toNat) := by
+    rw [hs₇]
+    simp only [nodeBlock41OutAt, hres]
+  rw [hstep7] at hl₇
+  rw [hres] at hl₇
+  have hl₇' : WalkLink (stage2Calls stage2SubCalls) G
+      { { C with block := "cond.end349.i" } with block := "NodeBlock41" } s₆
+      { { { C with block := "cond.end349.i" } with block := "NodeBlock41" } with
+        block := "LeafBlock33" }
+      (nodeBlock41OutAt s₆ (BitVec.ofNat 8 (G.bs.getD q 0).toNat)) := hl₇
+  refine ⟨_, _, hchain₆.append (WalkChain.tail hl₇' (WalkChain.nil hl₇'.inv')), rfl, ?_⟩
+  show lookupName (("%Pivot42", .int 1 (evalICmp .slt
+      (BitVec.ofNat 8 (G.bs.getD q 0).toNat) (BitVec.ofNat 8 13))) :: s₆.env) "%35" =
+    some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+  rw [lookupName_cons_ne _ _ (by decide)]
+  rw [hs₆]
+  show lookupName (cells
+    [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+     ("%gep", .ptr ((G.b - 1) + c.toNat))]
+    (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+    "%35" = some (.int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat))
+  block_lk
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91
@@ -345,6 +426,7 @@ theorem walkHeadChain_to_nodeBlock41 {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_default
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_condOut
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_nodeBlock41
+#print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_nodeBlock41Out
 
 end WalkScope
 
