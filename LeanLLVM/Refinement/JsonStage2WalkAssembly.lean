@@ -284,6 +284,79 @@ theorem walkIfEnd490Step {calls : Calls} (s : State) (hpc : s.pc = "if.end490.i"
   simp only [execTerm, evalOperand, lookupName_cons_self, hpc]
   rcases walkBitVec1_zero_or_one (evalICmp .eq v (BitVec.ofNat 32 0)) with h | h <;> simp [h]
 
+/-! ### The two refusal arms
+
+`if.then488.i` and `if.then492.i` are one instruction pair each — `%off = %e + 8`
+and the store of `%4` there — and both branch to `if.then`, the refusal copy.  They
+are the two entries into the exit's refusal arm: the depth's non-zero test goes
+straight to the first, and the root-done flag's zero test to the second.  What they
+write is the refusal offset, the number the wrapper's `if.then` then copies into the
+record's slot, so the step names the state it leaves rather than only its edge. -/
+
+/-- **`if.then488.i`'s step.**  The depth's non-zero arm: `%off` is `%e + 8` and
+`%4`'s word is stored there, then the branch to the refusal copy. -/
+theorem walkIfThen488Step {calls : Calls} (s : State) (hpc : s.pc = "if.then488.i")
+    {e : Nat} {v : Nat}
+    (he : lookupName s.env "%e" = some (.ptr e))
+    (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
+    (hv64 : v < 2 ^ 64) :
+    step calls stage2Body s =
+      .jump { { s with
+          env := ("%off1.i.i115", .ptr (e + 8)) :: s.env
+          mem := writeBytes s.mem (e + 8) (wordBytes 8 v) } with
+        pc := "if.then", pre := some s.pc } := by
+  have hden : denoteCode calls walkIf_then488_i.instrs s =
+      some { s with
+        env := ("%off1.i.i115", .ptr (e + 8)) :: s.env
+        mem := writeBytes s.mem (e + 8) (wordBytes 8 v) } := by
+    simp only [walkIf_then488_i]
+    conv_lhs => rw [← stateAt_self s]
+    rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_gep8_lit_w (calls := calls)
+      (env := s.env) (s := s) (d := "%off1.i.i115") (base := "%e") (a := e)
+      (w := 64) (n := BitVec.ofNat 64 8) (by simpa [lookupName] using he) (by decide)]
+    simp only [show (BitVec.ofNat 64 8).signExtend 64 = BitVec.ofNat 64 8 from by decide,
+      show (BitVec.ofNat 64 8).toNat = 8 from by decide]
+    rw [denoteCode_store64_ofNat (calls := calls)
+      (env := ("%off1.i.i115", .ptr (e + 8)) :: s.env) (s := s)
+      (v := "%4") (p := "%off1.i.i115") (a := e + 8) (j := v)
+      (by simpa [lookupName] using h4) hv64 (by simp [lookupName]) []]
+    rfl
+  have hterm : walkIf_then488_i.term = Term.br "if.then" := rfl
+  simp only [step, hpc, walkIf_then488_i_find, hden, hterm]
+  simp only [execTerm, hpc]
+
+/-- **`if.then492.i`'s step.**  The root-done flag's zero arm: the same pair, at
+its own `%off` name, then the refusal copy. -/
+theorem walkIfThen492Step {calls : Calls} (s : State) (hpc : s.pc = "if.then492.i")
+    {e : Nat} {v : Nat}
+    (he : lookupName s.env "%e" = some (.ptr e))
+    (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
+    (hv64 : v < 2 ^ 64) :
+    step calls stage2Body s =
+      .jump { { s with
+          env := ("%off1.i.i117", .ptr (e + 8)) :: s.env
+          mem := writeBytes s.mem (e + 8) (wordBytes 8 v) } with
+        pc := "if.then", pre := some s.pc } := by
+  have hden : denoteCode calls walkIf_then492_i.instrs s =
+      some { s with
+        env := ("%off1.i.i117", .ptr (e + 8)) :: s.env
+        mem := writeBytes s.mem (e + 8) (wordBytes 8 v) } := by
+    simp only [walkIf_then492_i]
+    conv_lhs => rw [← stateAt_self s]
+    rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_gep8_lit_w (calls := calls)
+      (env := s.env) (s := s) (d := "%off1.i.i117") (base := "%e") (a := e)
+      (w := 64) (n := BitVec.ofNat 64 8) (by simpa [lookupName] using he) (by decide)]
+    simp only [show (BitVec.ofNat 64 8).signExtend 64 = BitVec.ofNat 64 8 from by decide,
+      show (BitVec.ofNat 64 8).toNat = 8 from by decide]
+    rw [denoteCode_store64_ofNat (calls := calls)
+      (env := ("%off1.i.i117", .ptr (e + 8)) :: s.env) (s := s)
+      (v := "%4") (p := "%off1.i.i117") (a := e + 8) (j := v)
+      (by simpa [lookupName] using h4) hv64 (by simp [lookupName]) []]
+    rfl
+  have hterm : walkIf_then492_i.term = Term.br "if.then" := rfl
+  simp only [step, hpc, walkIf_then492_i_find, hden, hterm]
+  simp only [execTerm, hpc]
+
 /-- **The back edge, at the state the next pass reads.**  `walkBack_step`'s four
 facts at `cleanup478Out`, so the header's pass has its two `phi` values and its
 predecessor without a hypothesis beside them. -/
@@ -1264,6 +1337,8 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen488Step
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfThen492Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen485Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd490Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkBackFalse_step
