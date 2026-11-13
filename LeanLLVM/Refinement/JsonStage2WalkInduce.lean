@@ -2572,6 +2572,102 @@ theorem walkScanRound457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
   · rw [hs₃]
     exact latch462S_cond (m0 := m0) s i c (BitVec.ofNat 64 (i + 1)) a q x hc
 
+
+/-- **The extra-token scan's visits, composed.**  Two hypotheses, because a visit's round
+branches on the byte it loads: `hround` is the round at a given byte, and `hbyte` is the
+input's totality — every index the scan visits has a byte of the whitespace class.
+
+The walk's invariants describe the cursor, the carries and the memory; that every index
+below the bound has a byte is a property of the **input**, and the traversal must take it
+because the model branches on data it does not store. -/
+theorem walkScanRounds457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Nat}
+    (hround : ∀ (C : WalkCarry G) (s : State) (p a : Nat) (bs : List UInt8) (q : Nat)
+      (x : BitVec 8), WalkInv G C s → C.block = "while.body462.i" →
+      lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      p + 1 < c → p + 1 < 2 ^ 63 →
+      lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i").env
+        "%3" = some (.ptr a) →
+      readBytes s.mem (a + (p + 1)) 1 = some bs → bytesToNat bs = q →
+      evalOperand (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" p c
+        "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) →
+      evalICmp .slt x (BitVec.ofNat 8 13) = 1 →
+      evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 →
+      WalkLocal (ScanC₁₀₅ (ScanCLand C))
+        (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+          (BitVec.ofNat 64 (p + 1)) a q) →
+      WalkLocal (ScanC₉₆ (ScanCLand C))
+        (ScanS₉₆ (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+          (BitVec.ofNat 64 (p + 1)) a q x) →
+      WalkLocal { ScanCLand C with block := "while.body462.i" }
+        (Latch462S (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+          (BitVec.ofNat 64 (p + 1)) a q x) →
+      ∃ (C' : WalkCarry G) (s' : State) (j : Nat), WalkSegment calls G C s C' s' j ∧
+        WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
+        lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
+        lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hbyte : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
+      C.block = "while.body462.i" → p + 1 < c →
+      lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
+        lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i").env
+          "%3" = some (.ptr a) ∧
+        readBytes s.mem (a + (p + 1)) 1 = some bs ∧ bytesToNat bs = q ∧
+        evalOperand (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" p c
+          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) ∧
+        evalICmp .slt x (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 ∧
+        WalkLocal (ScanC₁₀₅ (ScanCLand C))
+          (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+            (BitVec.ofNat 64 (p + 1)) a q) ∧
+        WalkLocal (ScanC₉₆ (ScanCLand C))
+          (ScanS₉₆ (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+            (BitVec.ofNat 64 (p + 1)) a q x) ∧
+        WalkLocal { ScanCLand C with block := "while.body462.i" }
+          (Latch462S (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+            (BitVec.ofNat 64 (p + 1)) a q x))
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
+    (hi : lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hc63 : c ≤ 2 ^ 63) (hic : i < c) :
+    ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
+      WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
+      lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+      n ≤ stage2ByteAllowance * (c - 1 - i) := by
+  have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
+      WalkInv G C s → C.block = "while.body462.i" →
+      lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      i < c →
+      ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
+        WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
+        lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+        n ≤ stage2ByteAllowance * r := by
+    intro r
+    induction r with
+    | zero =>
+        intro i C s _ hInv hblock hi _ hic
+        have hie : i = c - 1 := by omega
+        exact ⟨C, s, 0, Seg.measure (Seg.nil hInv), hInv, hblock, by rw [← hie]; exact hi, by simp⟩
+    | succ n ih =>
+        intro i C s hr hInv hblock hi hc' hic
+        have hlt : i + 1 < c := by omega
+        have hposi : i + 1 < 2 ^ 63 := by omega
+        obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
+          hbyte C s i hInv hblock hlt hi hc'
+        obtain ⟨C₁, s₁, j, hseg, hInv₁, hb₁, hj, hi₁, hc₁⟩ :=
+          hround C s i a bs q x hInv hblock hi hc' hlt hposi h3 hread hbs h47 hbit hws
+            hl105 hl96 hll
+        obtain ⟨C₂, s₂, m, hseg₂, hInv₂, hb₂, hi₂, hm⟩ :=
+          ih (i + 1) C₁ s₁ (by omega) hInv₁ hb₁ hi₁ hc₁ (by omega)
+        refine ⟨C₂, s₂, j + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, ?_⟩
+        rw [Nat.mul_succ]
+        omega
+  obtain ⟨C', s', n, hseg, hInv', hb, hi', hn⟩ :=
+    go (c - 1 - i) i C s rfl hInv hblock hi hc hic
+  exact ⟨C', s', n, hseg, hInv', hb, hi', hn⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
