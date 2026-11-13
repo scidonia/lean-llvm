@@ -232,3 +232,33 @@ theorem WalkLink.landRhs457_at {calls : Calls} {m0 : Mem}
   have hstep := walkLandRhs457Jump (calls := calls) (s := s) (idx := idx) (a := a) (q := q)
     (bs := bs) (by rw [hInv.pc_eq, hblock]) hpre hinc hop h3 hpos hread hbs
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-! ### The scan dispatch's states, named
+
+**A state a proof must compare, peel *or state a hypothesis at* has to be a
+module-level name.**  Four measurements, one per level:
+
+* the definitions: `TailCarry₂/₃/Scan` — the carries;
+* the proof's locals: `TailS₁/₂/₃` — a local `let` is not reducible on demand
+  through a `with`-nest, and a module `abbrev` is;
+* the lemmas' conclusions: `TailS₁/₂/₃` again, since `simp` can unfold a name but
+  cannot fold a literal — and the literal was not even a literal, a `have`-bound
+  intermediate whose `pre` read off the predecessor's field;
+* the chain's hypotheses: the two below, since an inline `cells`/`stateAt` nest is
+  rejected in the first argument it appears in.
+
+The scan's landing state is already a name (`landRhs457OutAt`); the pivot's bite and
+the range leaf's two cells are these. -/
+
+/-- The first pivot's bite: `%Pivot106`, at the landing's three cells. -/
+abbrev ScanS₉₆ (s : State) (idx : BitVec 64) (a q : Nat) (x : BitVec 8) : State :=
+  stateAt (("%Pivot106", .int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) ::
+    (landRhs457OutAt s idx a q).env) (landRhs457OutAt s idx a q)
+
+/-- The range leaf's two cells, at the scan's latch. -/
+abbrev Latch462S (s : State) (idx : BitVec 64) (a q : Nat) (x : BitVec 8) : State :=
+  stateAt (cells
+    [("%SwitchLeaf98", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1))),
+     ("%.off97", .int 8 (x + BitVec.ofNat 8 247))] (ScanS₉₆ s idx a q x).env)
+    (ScanS₉₆ s idx a q x)
