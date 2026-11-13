@@ -759,4 +759,65 @@ module. -/
 #guard_msgs in
 #print axioms s2StringBodyCalls_expand_eq
 
+/-- **The entry block's run.**  The seven instructions, each applied at the
+**cons** environment the previous step built — the named `Env` definitions are
+the statement's spelling and are reconciled at the end — with the allocator cell
+carried as `(Ty.int 64).sizeBytes` and each one-cell-deep lookup peeled by
+`s2_lk`.  The two address cells are the instructions' own values, `ptrtoint` and
+`sub` at `i64`, which is what the model's `Nat` arithmetic is bridged to at the
+closing rather than here. -/
+theorem s2StringBody_entry_denote {calls : Calls} {env : Env} {s : State}
+    {c p xj base j0 : Nat} {nxp : BitVec 64}
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64) :
+    denoteCode calls s2StringBodyEntryInstrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt (s2StringBodyEnv7 (s2StringBodyEnv6 (s2StringBodyEnv5
+          (s2StringBodyEnv4 (s2StringBodyEnv3 (s2StringBodyEnv2
+            (s2StringBodyEnv1 env s.next) base) p) base) p base) j0) j0 nxp)
+          { s with next := s.next + (Ty.int 64).sizeBytes }) := by
+  dsimp only [s2StringBodyEntryInstrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (sb_step_alloca calls env s "%ei" (Ty.int 64) 0)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_loadPtr calls (("%ei", .ptr s.next) :: env)
+      { s with next := s.next + (Ty.int 64).sizeBytes }
+      "%0" "%c" (by s2_lk) hbase hb64)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_ptrtoint calls (("%0", .ptr base) :: ("%ei", .ptr s.next) :: env)
+      { s with next := s.next + (Ty.int 64).sizeBytes }
+      "%sub.ptr.lhs.cast" "%p" (by s2_lk) hp64)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_ptrtoint calls
+      (("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+        ("%ei", .ptr s.next) :: env)
+      { s with next := s.next + (Ty.int 64).sizeBytes }
+      "%sub.ptr.rhs.cast" "%0" (by s2_lk) hb64)]
+  rw [denoteCode_sub_reg calls
+    (("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+      ("%ei", .ptr s.next) :: env) { s with next := s.next + (Ty.int 64).sizeBytes }
+    "%sub.ptr.sub" "%sub.ptr.lhs.cast" "%sub.ptr.rhs.cast" (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_load64 (v := BitVec.ofNat 64 j0) calls
+    (("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 p - BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+      ("%ei", .ptr s.next) :: env) { s with next := s.next + (Ty.int 64).sizeBytes }
+    "%xj.promoted" "%xj" (by s2_lk)
+    (by rw [hj0]; simp only [wordBytes]; rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj64]) _]
+  rw [denoteCode_icmp_ult_reg calls
+    (("%xj.promoted", .int 64 (BitVec.ofNat 64 j0)) ::
+      ("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 p - BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+      ("%ei", .ptr s.next) :: env) { s with next := s.next + (Ty.int 64).sizeBytes }
+    "%cmp3" "%xj.promoted" "%nxp" (by s2_lk) (by s2_lk) []]
+  rw [denoteCode_nil, denoteCode_nil]
+  simp only [s2StringBodyEnv1, s2StringBodyEnv2, s2StringBodyEnv3, s2StringBodyEnv4,
+    s2StringBodyEnv5, s2StringBodyEnv6, s2StringBodyEnv7]
+
 end LeanLLVM.Refinement
