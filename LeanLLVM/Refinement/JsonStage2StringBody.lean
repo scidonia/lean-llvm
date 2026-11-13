@@ -4577,6 +4577,25 @@ example {e : State} {p dst ei outn xp xj : Nat} {len sub conv nxp : BitVec 64}
         (s2StringBodyDecodedMem e.mem dst xj outn ei outj out)) :=
   hgoal
 
+/-- The inside test's environment, named: the two cells `land.lhs.true` builds over the
+exit's. -/
+def s2StringBodyLhsEnv (e : State) (sub len conv : BitVec 64) : Env :=
+  ("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+    ("%add", .int 64 (sub + len)) :: e.env
+
+/-- The `if.end14` entry state, named: the inside test's environment over the expander's
+output.  Rule four at the state — a step whose conclusion names this is narrow again. -/
+def s2StringBodyIfEnd14State (e : State) (sub len conv : BitVec 64) (call : BitVec 64)
+    (extra : Mem) (nx : Nat) : State :=
+  stateAt (s2StringBodyIfEndEnv (s2StringBodyLhsEnv e sub len conv) call)
+    { e with mem := extra, next := nx, pc := "if.end14", pre := some "if.end" }
+
+/-- The `cleanup` entry state after the length's write, named. -/
+def s2StringBodyCleanupState (e : State) (sub len conv : BitVec 64) (call : BitVec 64)
+    (extra : Mem) (nx outn : Nat) : State :=
+  stateAt (s2StringBodyLhsEnv e sub len conv)
+    ({ e with mem := writeBytes extra outn (natToBytes call.toNat 8), next := nx, pc := "cleanup", pre := some "if.end14" })
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
