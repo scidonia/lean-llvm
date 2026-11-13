@@ -5748,6 +5748,66 @@ theorem s2StringBodyRefusedErased_join (mem : Mem) {ei xj e' : Nat}
   exact s2StringBodyMemory_refused mem hWoff hei hxj he0 he1 he2 h1 h2 h3 h4 h5 h6
     h7 h8 h9 h10
 
+/-! ### The refused arm's memory, as stages
+
+A rewrite inside a named memory requires unfolding it, so a name is not enough for
+a term a proof must rewrite *inside*: each rewrite site needs a stage.  The stages
+are one `writeBytes` over the previous one, so every equality and every frame step
+is between shallow identifiers and the seven-deep term never appears in a statement
+again.  The first stage is the scan's own cursor write, because the arm's memory
+starts where the scan left it. -/
+
+/-- The scan's cursor write. -/
+def s2StringBodyRefusedC0 (mem : Mem) (xj c1 : Nat) : Mem :=
+  writeBytes mem xj (wordBytes 8 c1)
+
+/-- `if.end`'s clear at the body's slot. -/
+def s2StringBodyRefusedC1 (mem : Mem) (ei xj c1 : Nat) : Mem :=
+  writeBytes (s2StringBodyRefusedC0 mem xj c1) ei (natToBytes (0#64).toNat 8)
+
+/-- The callee's body-relative offset, at the same slot. -/
+def s2StringBodyRefusedC2 (mem : Mem) (ei xj c1 offN : Nat) : Mem :=
+  writeBytes (s2StringBodyRefusedC1 mem ei xj c1) ei (wordBytes 8 offN)
+
+/-- The callee's cursor word. -/
+def s2StringBodyRefusedC3 (mem : Mem) (ei xj c1 offN k : Nat) : Mem :=
+  writeBytes (s2StringBodyRefusedC2 mem ei xj c1 offN) xj (wordBytes 8 (c1 + k))
+
+/-- The record's first word. -/
+def s2StringBodyRefusedC4 (mem : Mem) (ei xj c1 e' offN k : Nat) : Mem :=
+  writeBytes (s2StringBodyRefusedC3 mem ei xj c1 offN k) e'
+    (natToBytes (0#32).toNat 4)
+
+/-- The record's second word: the body-relative offset added to the document's. -/
+def s2StringBodyRefusedC5 (mem : Mem) (ei xj c1 e' offN k p base : Nat) : Mem :=
+  writeBytes (s2StringBodyRefusedC4 mem ei xj c1 e' offN k) (e' + (8#64).toNat)
+    (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8)
+
+/-- The record's third word: the arm's final memory. -/
+def s2StringBodyRefusedC6 (mem : Mem) (ei xj c1 e' offN k p base : Nat) : Mem :=
+  writeBytes (s2StringBodyRefusedC5 mem ei xj c1 e' offN k p base)
+    (e' + (16#64).toNat) (natToBytes (0#64).toNat 8)
+
+/-- The callee's call memory and its two writes, as stages three deep. -/
+def s2StringBodyRefusedExtra (mem : Mem) (ei xj c1 offN k : Nat) : Mem :=
+  s2StringBodyRefusedC3 mem ei xj c1 offN k
+
+/-- **The record's three words are the staged three**, stated between identifiers. -/
+theorem s2StringBodyIfThen11Mem_staged (mem : Mem) (ei xj c1 e' offN k p base : Nat) :
+    s2StringBodyIfThen11Mem (s2StringBodyRefusedExtra mem ei xj c1 offN k) e'
+      (BitVec.ofNat 64 offN) (BitVec.ofNat 64 (p - base))
+      = s2StringBodyRefusedC6 mem ei xj c1 e' offN k p base := rfl
+
+/-- **The callee's two slot writes collapse**: they are adjacent at the staged
+form, so the offset write is the memory. -/
+theorem s2StringBodyRefusedC2_collapse (mem : Mem) (ei xj c1 offN : Nat) :
+    s2StringBodyRefusedC2 mem ei xj c1 offN
+      = writeBytes (s2StringBodyRefusedC0 mem xj c1) ei (wordBytes 8 offN) := by
+  simp only [s2StringBodyRefusedC2, s2StringBodyRefusedC1]
+  rw [writeBytes_writeBytes_same (s2StringBodyRefusedC0 mem xj c1) ei
+    (natToBytes (0#64).toNat 8) (wordBytes 8 offN)
+    (by simp [natToBytes_length, wordBytes])]
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
