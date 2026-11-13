@@ -226,6 +226,39 @@ instructions compute — an empty instruction list with a `br` (class B) and wit
 edge's destination and predecessor, and the class's nine-plus-one instances are the
 `find`/`term` pair of each block. -/
 
+/-- **Class H1: the arithmetic latch.**  `add` an immediate into a fresh name, compare
+it against a bound, branch on the bit — ten blocks, the dispatch's range tests.  The
+target is the two cells the pair binds and the arm the comparison picks, stated at
+`stateAt (cells …)` because that is the form the class's links take their `WalkLocal`
+hypotheses at, so an instance's local facts line up without a transport. -/
+theorem walkAddIcmpBrStep {calls : Calls} (s : State) {b : Block} {reg off d : String}
+    {c one : BitVec 8} {tl fl : String} {x : BitVec 8}
+    (hfind : stage2Body.findBlock s.pc = some b)
+    (hinstrs : b.instrs = [Instr.binop off BinOp.add 8 (.reg reg) (.imm (.int 8 c)),
+      Instr.icmp d IPred.ule 8 (.reg off) (.imm (.int 8 one))])
+    (hterm : b.term = Term.condbr (.reg d) tl fl)
+    (hreg : lookupName s.env reg = some (.int 8 x))
+    (hbit : evalICmp .ule (x + c) one = 0 ∨ evalICmp .ule (x + c) one = 1) :
+    step calls stage2Body s =
+      .jump { stateAt (cells [(d, .int 1 (evalICmp .ule (x + c) one)),
+          (off, .int 8 (x + c))] s.env) s with
+        pc := (if evalICmp .ule (x + c) one = 1 then tl else fl)
+        pre := some s.pc } := by
+  have hden : denoteCode calls b.instrs s =
+      some (stateAt (cells [(d, .int 1 (evalICmp .ule (x + c) one)),
+        (off, .int 8 (x + c))] s.env) s) := by
+    rw [hinstrs, ← stateAt_self s,
+      walkDenoteCode_add_imm_w (calls := calls) (env := s.env) (s := s) (d := off)
+        (a := reg) (w := 8) (x := x) (c := c) hreg]
+    rw [walkDenoteCode_icmp (calls := calls) (env := (off, .int 8 (x + c)) :: s.env)
+      (s := s) d 8 IPred.ule (x := x + c) (y := one)
+      (by simp only [stateAt, evalOperand, lookupName_cons_self])
+      (by exact evalOperand_lit_of _ _ _) []]
+    rfl
+  simp only [step, hfind, hden, hterm, execTerm]
+  simp only [evalOperand, stateAt, cells, lookupName_cons_self]
+  rcases hbit with h | h <;> simp [h]
+
 /-- **Class A: one comparison and a branch.**  Sixty of the walk's blocks are this
 shape — one `icmp` into a fresh name and a `condbr` on it — which makes the class a
 single step: the target's environment carries the comparison's cell and its `pc` is
@@ -432,7 +465,7 @@ theorem walkIfThen488Step {calls : Calls} (s : State) (hpc : s.pc = "if.then488.
     rfl
   have hterm : walkIf_then488_i.term = Term.br "if.then" := rfl
   simp only [step, hpc, walkIf_then488_i_find, hden, hterm]
-  simp only [execTerm, hpc]
+  simp only [execTerm]
 
 /-- **`if.then492.i`'s step.**  The root-done flag's zero arm: the same pair, at
 its own `%off` name, then the refusal copy. -/
@@ -464,7 +497,7 @@ theorem walkIfThen492Step {calls : Calls} (s : State) (hpc : s.pc = "if.then492.
     rfl
   have hterm : walkIf_then492_i.term = Term.br "if.then" := rfl
   simp only [step, hpc, walkIf_then492_i_find, hden, hterm]
-  simp only [execTerm, hpc]
+  simp only [execTerm]
 
 /-- **The back edge, at the state the next pass reads.**  `walkBack_step`'s four
 facts at `cleanup478Out`, so the header's pass has its two `phi` values and its
@@ -1481,6 +1514,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
+#print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.LeafBlock99_at
