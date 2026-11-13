@@ -1,12 +1,27 @@
 /-
-`s2_string_body`'s emitted body: the AST it parses to, and the body proved of its
-contract.
+`s2_string_body`'s emitted body: the AST it parses to, its ten blocks pinned and
+run, and the expander's clause at the call's own arguments.  **The contract is not
+yet proved of it.**
 
 `JsonStage2HelperIR` pins `s2_string_body`'s text only as far as its parse.  This
-module takes the rest of the step the sibling rows' bodies took: the ten blocks
-are transcribed, `#guard`ed against the fixture, and then run at the staging
-`s2StringBodyPre` states, with the outcome shown to satisfy `s2StringBodyPost` and
-`s2StringBodyFoot`'s frame.
+module takes the same step the sibling rows' bodies took, and has taken it this
+far: the ten blocks are transcribed and `#guard`ed against the fixture; each block
+is a `denoteCode` run and a control step, with its branch bit named; the scan is a
+`BoundLoop` value at `cost = 2` whose invariant is seated at the head the entry
+leaves; and every path -- the body-itself arm, the decoded length, the refusal
+record, through `land.lhs.true`'s inside test or straight out of the scan -- has
+its terminal run proved.  The memory primitives the closing rests on are proved
+too: writing a region twice is the second write, a region the memory holds is
+written back in place, and two in-place writes over disjoint regions commute once
+the commutation lemma's two swaps are in.
+
+What is **owed** is exactly the contract: the memory term's two callee arms (the
+commutation lemma and its instantiations, where the body's write order meets the
+model's) and the assembly that composes seat, run and memory into
+`s2StringBodyPost` and `s2StringBodyFoot`'s frame -- `s2StringBodyBody_contract`,
+which does not exist yet.  Individual block runs are useful progress, but they do
+not establish the whole helper's totality or postcondition, and nothing in this
+module claims they do: no row moves on their strength.
 
 **The file's order is the dependency's**: the fixtures and the pinned AST, then
 the block pins (`findBlock`, instruction lists), then the one-instruction steps,
@@ -1431,6 +1446,55 @@ theorem writeByte_swap_of_present_second (m : Mem) (a : Nat) (b : UInt8)
     writeByte (writeByte m a b) a' b' = writeByte (writeByte m a' b') a b :=
   (writeByte_swap_of_readByte m a' b' a b (Ne.symm h) hp).symm
 
+
+/-- **A single byte at `b` commutes with a sequence at `a`**, given that the memory
+holds a sequence of the same length at `a` and that the two ranges are disjoint.
+The induction peels the presence one cell at a time (each peel is the `readBytes`
+recursion), which is why presence is stated existentially — the *written* bytes and
+the *present* bytes are different lists of the same length. -/
+theorem writeByte_writeBytes_comm (m : Mem) (b : Nat) (y : UInt8) :
+    ∀ (a : Nat) (X : List UInt8), (∃ X₀, readBytes m a X.length = some X₀) →
+      (b < a ∨ a + X.length ≤ b) →
+      writeByte (writeBytes m a X) b y = writeBytes (writeByte m b y) a X
+  | _, [], _, _ => rfl
+  | a, c :: cs, hpres, hdisj => by
+      obtain ⟨X₀, hX₀⟩ := hpres
+      simp only [List.length_cons] at hX₀ hdisj
+      obtain ⟨c₀, hc₀⟩ : ∃ c₀, readByte m a = some c₀ := by
+        cases h : readByte m a with
+        | none =>
+            rw [show readBytes m a (cs.length + 1) = none from by
+              simp only [readBytes, h]] at hX₀
+            cases hX₀
+        | some c₀ => exact ⟨c₀, rfl⟩
+      obtain ⟨cs₀, hcs₀⟩ : ∃ cs₀, readBytes m (a + 1) cs.length = some cs₀ := by
+        rw [show readBytes m a (cs.length + 1) = (match readByte m a with
+          | none => none
+          | some c₀ => match readBytes m (a + 1) cs.length with
+            | none => none
+            | some bs => some (c₀ :: bs))
+          from rfl, hc₀] at hX₀
+        cases h : readBytes m (a + 1) cs.length with
+        | none => rw [h] at hX₀; cases hX₀
+        | some cs₀ => exact ⟨cs₀, rfl⟩
+      have htail : ∃ cs₀, readBytes (writeByte m a c) (a + 1) cs.length = some cs₀ :=
+        ⟨cs₀, by
+          rw [readBytes_writeByte_below m cs.length (a + 1) (by omega)]
+          exact hcs₀⟩
+      have hdisj' : b < a + 1 ∨ (a + 1) + cs.length ≤ b := by
+        rcases hdisj with h | h
+        · exact Or.inl (by omega)
+        · exact Or.inr (by omega)
+      have hne : a ≠ b := by
+        intro heq
+        rw [heq] at hdisj
+        rcases hdisj with h | h <;> omega
+      show writeByte (writeBytes (writeByte m a c) (a + 1) cs) b y
+        = writeBytes (writeByte m b y) a (c :: cs)
+      rw [writeByte_writeBytes_comm (writeByte m a c) b y (a + 1) cs htail hdisj']
+      rw [show writeBytes (writeByte m b y) a (c :: cs)
+        = writeBytes (writeByte (writeByte m b y) a c) (a + 1) cs from rfl]
+      rw [writeByte_swap_of_readByte m a c b y hne (by rw [hc₀]; exact Option.some_ne_none c₀)]
 
 /-- A cell outside a written range keeps its place: the write sequence conses
 nothing at that address and appends nothing before it. -/
