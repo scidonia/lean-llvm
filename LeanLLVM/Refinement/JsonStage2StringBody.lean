@@ -8,6 +8,16 @@ are transcribed, `#guard`ed against the fixture, and then run at the staging
 `s2StringBodyPre` states, with the outcome shown to satisfy `s2StringBodyPost` and
 `s2StringBodyFoot`'s frame.
 
+**The file's order is the dependency's**: the fixtures and the pinned AST, then
+the block pins (`findBlock`, instruction lists), then the one-instruction steps,
+then the runs — a run placed before a step it calls reads as an unknown
+identifier.  **The chain's four facts**, each of which cost a revert to find: a
+step is applied at the **cons** environment the previous step built (the named
+`Env` definitions are the statement's spelling, reconciled at the end); the
+allocator cell is `(Ty.int 64).sizeBytes`, not the numeral it reduces to; a
+one-cell-deep lookup is `(by s2_lk)`; and `denoteCode_load64`'s implicit value
+must be named (`(v := …)`) or its metavariable survives into the closing goal.
+
 **The body.**  `entry` converts the two addresses and reads the cursor word;
 `land.rhs`/`while.body` scan the position list forward to the body's first
 position; `land.lhs.true` tests whether that position is inside the body;
@@ -819,5 +829,23 @@ theorem s2StringBody_entry_denote {calls : Calls} {env : Env} {s : State}
   rw [denoteCode_nil, denoteCode_nil]
   simp only [s2StringBodyEnv1, s2StringBodyEnv2, s2StringBodyEnv3, s2StringBodyEnv4,
     s2StringBodyEnv5, s2StringBodyEnv6, s2StringBodyEnv7]
+
+/-- The `if.then` arm's one instruction: the body-itself form's length word. -/
+theorem s2StringBodyIfThenInstrs_eq :
+    (s2StringBodyBody.findBlock "if.then").map (·.instrs) =
+      some [Instr.store (Ty.int 64) (Operand.reg "%len") (Operand.reg "%outn")] := by
+  decide
+
+/-- **The `if.then` arm's run**: `outn` takes the body's extent, and the memory is
+the caller's everywhere else. -/
+theorem s2StringBody_ifThen_denote {calls : Calls} {env : Env} {s : State}
+    {len : BitVec 64} {outn : Nat}
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    denoteCode calls [Instr.store (Ty.int 64) (Operand.reg "%len") (Operand.reg "%outn")]
+        (stateAt env s) =
+      denoteCode calls []
+        (stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8) }) := by
+  rw [denoteCode_store64 calls env s "%len" "%outn" hlen houtn []]
 
 end LeanLLVM.Refinement
