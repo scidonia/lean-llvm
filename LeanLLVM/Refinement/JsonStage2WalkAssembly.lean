@@ -1078,6 +1078,12 @@ word serves rather than the carry's `eoff`. -/
 def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 = G.nep →
+    -- **The arena word, produced by the dispatch.**  `WalkInv.log_alen` is the inequality (the
+    -- carry is ahead of the memory between the append and the write-back), so the equality is a
+    -- fact about the run rather than the state: it is a hypothesis here, and the traverse
+    -- supplies it from the dispatch's evidence.  The exit's path stores nothing at `z + 48`,
+    -- so the word travels through it unchanged.
+    readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen) →
     ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
       Cend.block = "cleanup478.i" ∧ Cend.k = G.nep ∧
       -- **The arena word is the cursor at the merge.**  The carry advances with
@@ -2409,13 +2415,15 @@ entry index: while an entry is left after this one the dispatch runs and the
 merge's test is clear, and at the last entry the test fails and the exit's tail
 takes over. -/
 theorem walkLoopStep_of_dispatch_exit {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    {v : Value} (hdisp : WalkDispatch calls G) (hexit : WalkExit calls G v) :
+    {v : Value} (hdisp : WalkDispatch calls G) (hexit : WalkExit calls G v)
+    (hword : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)) :
     WalkLoopStep calls G v 27 := by
   intro C s hInv hhead hk
   by_cases hcase : C.k + 1 < G.nep
   · exact Or.inl (hdisp.revolution C s hInv hhead hcase)
   · obtain ⟨Cend, sEnd, -, -, -, -, q₁, q₂, s1, s2, sret, hseg1, hq, hseg2,
-      hstep1, hret⟩ := hexit C s hInv hhead (by omega)
+      hstep1, hret⟩ := hexit C s hInv hhead (by omega) (hword C s hInv hhead)
     refine Or.inr ⟨q₁ + q₂, s1, s2, sret, ?_, ?_, hstep1, hret⟩
     · omega
     · exact runFuel_prefix_trans hseg1 hseg2
