@@ -906,6 +906,33 @@ def walkInductionExtraToken (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop 
 #guard (stage2Body.findBlock "while.body76.i").isSome
 #guard (stage2Body.findBlock "while.body462.i").isSome
 
+-- The exit each induction leaves by, and the block it lands on, are blocks of the body
+-- too — the landing blocks are the five `scanLanding` instances' and the exits are the
+-- latches' own second arms.
+#guard (stage2Body.findBlock "for.end.i.i").isSome
+#guard (stage2Body.findBlock "if.end372.i").isSome
+#guard (stage2Body.findBlock "cleanup474.i").isSome
+#guard (stage2Body.findBlock "while.end78.i").isSome
+#guard (stage2Body.findBlock "if.end473.i").isSome
+#guard (stage2Body.findBlock "for.body.i.i").isSome
+#guard (stage2Body.findBlock "land.rhs.i").isSome
+#guard (stage2Body.findBlock "land.rhs.i103").isSome
+#guard (stage2Body.findBlock "land.rhs71.i").isSome
+#guard (stage2Body.findBlock "land.rhs457.i").isSome
+
+-- And each exit is its latch's `condbr` target, so the induction's `exit` is the arm the
+-- latch itself names rather than a block the step has to travel through.
+#guard (decide ((scanBlock "for.inc.i.i" "%inc.i.i" "%i.029.i.i" "%exitcond.not.i.i"
+  "%cond.i.i" "for.end.i.i" "for.body.i.i").term = Term.condbr (Operand.reg "%exitcond.not.i.i") "for.end.i.i" "for.body.i.i"))
+#guard (decide ((scanBlock "while.body370.i" "%inc371.i" "%ee.0.i238" "%exitcond.not"
+  "%cond350.i" "if.end372.i" "land.rhs.i").term = Term.condbr (Operand.reg "%exitcond.not") "if.end372.i" "land.rhs.i"))
+#guard (decide ((scanBlock "while.body.i104" "%inc.i105" "%ee.011.i" "%exitcond.not.i"
+  "%cond.i" "cleanup474.i" "land.rhs.i103").term = Term.condbr (Operand.reg "%exitcond.not.i") "cleanup474.i" "land.rhs.i103"))
+#guard (decide ((scanBlock "while.body76.i" "%inc77.i" "%s2.020.i" "%exitcond24.not.i"
+  "%cond.i" "while.end78.i" "land.rhs71.i").term = Term.condbr (Operand.reg "%exitcond24.not.i") "while.end78.i" "land.rhs71.i"))
+#guard (decide ((scanBlock "while.body462.i" "%inc463.i" "%q.0.i246" "%exitcond298.not"
+  "%cond350.i" "if.end473.i" "land.rhs457.i").term = Term.condbr (Operand.reg "%exitcond298.not") "if.end473.i" "land.rhs457.i"))
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91
