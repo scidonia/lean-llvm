@@ -97,6 +97,13 @@ applied on both sides — which is why every carry and every intermediate state 
 passes through is a `def` here (`scanCarryLeafBlock46`, `scanNodeBlock50In`, …), and why a
 composition's statement names the state the run visits rather than one equal to it.
 
+**A class helper's arm is resolved after its call, not before.**  `LeafBlock43_at` (and
+its siblings at the leaves and the pivots) take no bit hypothesis: their conclusion carries
+the `if` on the comparison, so the caller names the arm with `if_pos`/`if_neg` and rewrites
+it into the link *after* the call.  The consequence for a counted composition is that the
+link's type is the arm-resolved one, which is why a link-level build resolves first and
+`Seg.tail`s second.
+
 **Two more shapes a proof of these costs.**  A `WalkLocal`'s *state* argument must be
 passed explicitly — left implicit, `rw` instantiates it by unification and leaves the
 equality of the two state forms as a goal instead of the local fact.  And a leaf helper's
