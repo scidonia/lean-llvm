@@ -275,3 +275,45 @@ abbrev Latch462S (s : State) (idx : BitVec 64) (a q : Nat) (x : BitVec 8) : Stat
        ("%.off97", .int 8 (x + BitVec.ofNat 8 247))] (ScanS₉₆ s idx a q x).env)
       (ScanS₉₆ s idx a q x) with
     pc := "while.body462.i", pre := some (ScanS₉₆ s idx a q x).pc }
+
+/-- **The extra-token scan's landing, through the whitespace class, to its latch.**
+Three links — the landing's run, the first pivot, and the range leaf — the chain the
+scan's traversal starts from, since the merge is reached only through the latch's
+bound test.  The other three classes leave at `if.then467.i`, the token's end, and
+are not on this path. -/
+theorem walkScanChain457_ws {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hblock : C.block = "land.rhs457.i")
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
+    (hpre : s.pre = some "if.then447.i")
+    (hinc : phiIncoming "if.then447.i"
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
+    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+    (h3 : lookupName s.env "%3" = some (.ptr a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
+    (hbs : bytesToNat bs = q)
+    (hloc105 : WalkLocal (ScanC₁₀₅ C) (landRhs457OutAt s idx a q))
+    {x : BitVec 8}
+    (h47 : evalOperand (landRhs457OutAt s idx a q) (.reg "%47") = some (.int 8 x))
+    (hbit : evalICmp .slt x (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    (hloc96 : WalkLocal (ScanC₉₆ C) (ScanS₉₆ s idx a q x))
+    (hlatch : WalkLocal { C with block := "while.body462.i" } (Latch462S s idx a q x)) :
+    ∃ (s' : State), WalkChain calls G C s { C with block := "while.body462.i" } s' := by
+  obtain ⟨s₁, hl₁, hs₁⟩ := WalkLink.landRhs457_at (G := G) (C := C) (s := s) hInv hblock
+    hpre hinc hop h3 hpos hread hbs hloc105
+  rw [hs₁] at hl₁
+  obtain ⟨s₂, hl₂, hs₂⟩ := WalkLink.NodeBlock105_at (G := G) (C := ScanC₁₀₅ C)
+    (s := landRhs457OutAt s idx a q) hl₁.inv' rfl h47
+  have hs₂' : s₂ = ScanS₉₆ s idx a q x := by rw [hs₂, if_pos hbit]; rfl
+  rw [hs₂'] at hl₂
+  rw [if_pos hbit] at hl₂
+  obtain ⟨s₃, hl₃⟩ := WalkLink.LeafBlock96 (G := G) (C := ScanC₉₆ C)
+    (s := ScanS₉₆ s idx a q x) hl₂.inv' rfl
+    (by
+      simpa only [ScanS₉₆, stateAt, evalOperand,
+        lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide)] using h47)
+    hlatch
+  rw [if_pos hws] at hl₃
+  exact ⟨s₃, WalkChain.tail hl₁ (WalkChain.tail hl₂ (WalkChain.tail hl₃ (WalkChain.nil hl₃.inv')))⟩
