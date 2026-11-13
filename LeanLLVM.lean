@@ -96,3 +96,4 @@ import LeanLLVM.ElGuardRefine
 import LeanLLVM.StrtodTier3
 import LeanLLVM.StrtodReader
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitness
+import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessState
