@@ -22,6 +22,16 @@ must be named (`(v := …)`) or its metavariable survives into the closing goal.
 deep gets a `def` — there the parser's layout, not the prover, decides whether the
 lemma exists at all.
 
+**And the fifth**: every term a chain matches on is the *unreduced* form the
+emitting step produces, so the statement's `def` and the chain's patterns must be
+written from the produced term and not from the source text.  Three parts, each
+measured on `if.then11`: a `getelementptr`'s address is `a + n.toNat` with the
+literal's `toNat` unreduced (`c + (1112#64).toNat`, not `c + 1112`); a stored
+value likewise (`natToBytes (0#32).toNat 4`, not `natToBytes 0 4`); and an
+arithmetic cell is `x + c` in the immediate's own `BitVec` form.  The two sides of
+a failed reconciliation are printed by the compiler, which is where the produced
+term should be copied from.
+
 **The body.**  `entry` converts the two addresses and reads the cursor word;
 `land.rhs`/`while.body` scan the position list forward to the body's first
 position; `land.lhs.true` tests whether that position is inside the body;
