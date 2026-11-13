@@ -46,6 +46,24 @@ premises are the census's dispatch chain and the exit's tail, and the post half 
 untouched here.  The premises are stated, not assumed away, and
 `WalkPremises`/`stage2WalkCompletes_of_premises` is the exact shape of what a
 dispatch supplies.
+
+The seed's residue is not a trace and is enumerated rather than assumed.  The three
+block runs `walkSeedPrefix_runFuel` takes are `entry`'s fifty-seven instructions
+(`walkEntry_denote`), `while.body.i.lr.ph`'s five `getelementptr`s
+(`walkPreheader_denote`) and `while.body.i`'s first pass
+(`whileBodyFirst_denote`), plus the entry test's bit and the header's two loads.
+`walkEntry_denote`'s hypothesis list is what the residue is made of, and every item
+in it is one of four kinds: the eighteen register bindings, which are
+`EntryState`'s own argument list read at `stage2Body.params`; five region-separation
+facts, which are `WalkStage.separate` at the two cursor slots; the two cursor-slot
+reads, which are the geometry's `ndstRead`/`nevRead`; and the word facts the two
+preconditions do not state — `0 < G.b`, `G.b < 2^64`, `G.ep < 2^64`, and the counts
+`G.nxp`, `G.dstcap`, `G.evcap`, `G.ndst0`, `G.nev0` inside their words.  The last
+family is the same one the stage's construction owes (§ *The stage*), and it is what `Stage2Run`
+asserts of the *report* (`nxpLt`, `dstcapLt`, `evcapLt`, `nepLt`): the record's post
+demands a width its precondition leaves free.  So the seed's three runs are address
+facts and environment reads, not a trace — which is why the four premises reduce to
+the dispatch's chain and the exit's tail once the widths are stated.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
 import LeanLLVM.Refinement.JsonStage2WalkTraverse
@@ -321,6 +339,74 @@ theorem WalkGeom.nep_lt {m0 : Mem} (G : WalkGeom m0) : G.nep < 2 ^ 64 := by
   have h' := WalkGeom.n_lt G
   omega
 
+/-! ### The stage, and what its construction needs
+
+`WalkStage` is the adapter's staging at the geometry.  `stage2StagedPre` supplies
+the seven objects' presence, `%d.i`'s and the seventeen-object separation, and
+`WalkStage`'s own clauses add the cursor the seven end at.  Building it is *not* the
+definitional match the geometry is, and the two lemmas below are the part that is:
+**the separation transports**, once the numbers agree.
+
+`walkDisjoint_drop_member` drops `%d.i`'s entry from the staged list — the one
+structural difference between the two region lists, since `stage2StagedPre` inserts
+it between the seventeen walk regions and the caller's two count slots while
+`WalkStage.separate` names the seventeen without it — and `walkDisjoint_before`
+reads the half of `WalkStage.dSep` the staging's order carries.  So the separation
+algebra is not what the construction owes.
+
+What it owes is the *numbers*, and they are not free:
+
+* `stage2StagedPre` names its columns as words (`n nep nxp dstcap evcap` are
+  `BitVec 64`) and its region list at their `.toNat`s, while `WalkGeom` carries the
+  `Nat`s the ABI's argument list holds.  The two agree only inside the words, so
+  the construction needs the 64-bit width facts — and `Γ_stage2.pre` states none of
+  them, while `Stage2Run`'s `nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` assert them of the
+  *report*.  That is a contract gap rather than a construction step: the record's
+  post demands widths its precondition leaves free;
+* the arena entry's extent names the cursor *value* — `G.ndst0`, which is
+  `stage2Pre`'s read of the slot — while the adapter's staging names its own read of
+  the same slot (`stage2StagedPre`'s `ndst0`).  Nothing relates the two witnesses:
+  both predicates read `readBytes mem ndst 8` and neither states the value, so a
+  construction either takes the equation as a hypothesis or proves `natToBytes`
+  injective at both values' widths;
+* `WalkStage.sevenEnd` bounds the seven nested objects by the caller's cursor.
+  `stage2StagedPre` separates the seven but says nothing about where they end, and
+  `stage2Pre`'s watermark is stated at the thirteen ABI objects only, so this is a
+  staging fact the adapter must state.  It is what makes the root slot fresh of the
+  log and the event stream (`WalkStage.rootSlot_log`, `WalkStage.rootSlot_ev`).
+
+So premise 4 has one constructive half and one that is a caller's clause: the
+geometry is `walkGeom_at_pre`, and the stage is these two lemmas plus a staging
+predicate that states the widths, the cursor and the watermark at the seven.
+-/
+
+/-- **A separated list stays separated when an inserted member is dropped.**  The
+staged list has `%d.i` inserted between the seventeen walk regions and the
+caller's two count slots; `WalkStage.separate` names the list without it. -/
+theorem walkDisjoint_drop_member {L slots : List (Nat × Nat)} {d : Nat}
+    (h : DisjointRegions ((L ++ [(d, 8)]) ++ slots)) : DisjointRegions (L ++ slots) := by
+  unfold DisjointRegions at h ⊢
+  rw [List.pairwise_append] at h
+  obtain ⟨hL, hslots, hcross⟩ := h
+  rw [List.pairwise_append] at hL
+  obtain ⟨hLp, -, -⟩ := hL
+  refine (List.pairwise_append).2 ⟨hLp, hslots, ?_⟩
+  intro a ha b hb
+  exact hcross a (List.mem_append_left _ ha) b hb
+
+/-- **Every walk region ends at or before the inserted member**, which is the half
+of `WalkStage.dSep` the staging's order carries. -/
+theorem walkDisjoint_before {L slots : List (Nat × Nat)} {d n : Nat}
+    (h : DisjointRegions ((L ++ [(d, n)]) ++ slots)) :
+    ∀ r ∈ L, r.1 + r.2 ≤ d ∨ d + n ≤ r.1 := by
+  unfold DisjointRegions at h
+  rw [List.pairwise_append] at h
+  obtain ⟨hL, -, hcross⟩ := h
+  rw [List.pairwise_append] at hL
+  obtain ⟨-, -, hcrossL⟩ := hL
+  intro r hr
+  exact hcrossL r hr (d, n) (by simp)
+
 /-! ### The completion at the ABI's arguments -/
 
 /-- **What a dispatch supplies, and nothing else.**  At every staging the record
@@ -389,6 +475,22 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] m0 from rfl]
   exact hrun
 
+/-- **The obligation from the premises and its post.**  `Stage2WalkObligation` is
+the completion conjunct beside the post (`stage2WalkObligation_iff_completion`), so
+a dispatch that supplies `WalkPremises` and the record's post rule has the
+obligation.  Naming the two is the point: the completion is this module's, and the
+post half — the run's own region claim at the outcome — is not read here. -/
+theorem stage2WalkObligation_of_premises {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    {sub : Calls} (h : WalkPremises sub d c ctype cst tok s z e nkSlot nxpSlot)
+    (hpost : ∀ args mem next,
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
+      ∀ o, BehFromState (stage2Calls sub) stage2Body
+          (EntryState stage2Body args mem next) o →
+        (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
+    JsonStage2IR.Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot sub :=
+  (stage2WalkObligation_iff_completion d c ctype cst tok s z e nkSlot nxpSlot sub).2
+    ⟨stage2WalkCompletes_of_premises h, hpost⟩
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_k
@@ -398,9 +500,12 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStep_of_dispatch_exit
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitFits
 #print axioms LeanLLVM.Refinement.WalkScope.walkGeom_at_pre
+#print axioms LeanLLVM.Refinement.WalkScope.walkDisjoint_drop_member
+#print axioms LeanLLVM.Refinement.WalkScope.walkDisjoint_before
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.n_lt
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.nep_lt
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_premises
+#print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_premises
 
 end WalkScope
 

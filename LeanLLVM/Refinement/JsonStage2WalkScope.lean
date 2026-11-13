@@ -2844,7 +2844,14 @@ one of the three the lead named** — the nesting and the two reserves are all
    (`whileBody_step`, `ifEnd24_step`), and the trace they belong to is stated
    (`WalkLink`/`WalkChain`, with `WalkLink.whileBody` and `WalkLink.ifEnd24` its
    two proved links).  What remains is the ten predecessors' `phi` facts at
-   `cleanup478.i` and the links between the arms.
+   `cleanup478.i` and the links between the arms.  The two steps now compose with
+   the back edge rather than standing beside it: `JsonStage2WalkAssembly` names the
+   merge's target state (`cleanup478Out`), so `walkBack_step_at` hands
+   `whileBody_step` its two `phi` values and its predecessor by definition, and one
+   revolution is a single segment (`WalkDispatch.revolution`).  The links between
+   the arms are stated there as `WalkDispatch` — the chain from the head to
+   `cleanup478.i` with the index's strict advance and the iteration's price — and
+   the exit's tail as `WalkExit`.
 3. **The six sub-unit contracts.**  `s2_init`, `s2_value_pos`, `s2_after_value`,
    `s2_string_body`, `od_scalar_value` and `num_fast_el1` all fall through
    `stage2Calls` to the parameter `sub`, and the `#guard` in `JsonStage2IR` pins

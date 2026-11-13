@@ -87,6 +87,27 @@ arithmetic).  Named exactly:
    it is a construction rather than a proof: every field of both structures is one
    of the two preconditions' clauses.
 
+Where this stops, `JsonStage2WalkAssembly` picks up.  The revolution's composition
+was blocked by `walkBack_step`'s existential target, and `walkBack_step_at` names it
+(`cleanup478Out`) with the two `phi` values the header's pass reads, so one revolution
+is the dispatch's segment, the merge's step and the header's pass
+(`WalkDispatch.revolution`) and the loop's step is a case split on the entry index
+(`walkLoopStep_of_dispatch_exit`): while an entry is left after this one the dispatch
+runs, and at the last entry the merge's test fails.  Premise 1 is therefore **two**
+premises — `WalkDispatch`, the dispatch's chain to `cleanup478.i` with the ten
+predecessors' `phi` facts, and `WalkExit`, the false edge's tail inside the
+finalisation allowance — and premise 3 is `walkExitFits`.  Premise 4's geometry is a
+construction there: `walkGeom_at_pre` is `stage2Pre`'s witnesses as a `WalkGeom` with
+the argument list the geometry's own numbers.  Its stage is not, and what it owes is
+recorded there: the separation transports (`walkDisjoint_drop_member`,
+`walkDisjoint_before`), and what remains is that the adapter's staging names its
+columns as words and their `.toNat`s while the geometry carries the ABI's `Nat`s, that
+the arena's extent names the cursor value while `stage2StagedPre` names its own read
+of the slot, and that `WalkStage.sevenEnd` bounds the seven nested objects by the
+caller's cursor — the first family being the widths `Stage2Run`'s
+`nepLt`/`nxpLt`/`dstcapLt`/`evcapLt` assert of the *report* while `Γ_stage2.pre` leaves
+them free.
+
 Nothing above is a claim about `Stage2WalkObligation`: its completion half is the
 conjunct these premises discharge, and its post half is not read here. -/
 
