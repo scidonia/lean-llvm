@@ -50,6 +50,20 @@ step binds are its own `cells` list; and the *document's* bytes a scan loads are
 fields rather than a new one.  So no link has yet needed a carry field the model lacks;
 if one does, that is a finding at the model, not a hypothesis at the chain.
 
+**Per-link checklist, from the links that were written.**  Four things a chain
+extension has to get right, each of which cost a rewrite when it was missed.  Keep the
+chain at its state *def* and state the next link's facts at the def — `simp only
+[headS₅, condEnd349OutAt, cells]` — rather than rewriting the def away with `rw`, which
+turns every later fact into a statement about the raw nest.  `WalkInv.regs` takes a
+*pair* and a membership proof, not a name: `hInv.regs ("%invariant.gep", .ptr (G.b - 1))
+(by simp [walkStaticRegs])`.  A cell a step bound at a `Nat` is a `BitVec` in the
+statement, so `%cond350.i`'s offset hypothesis is `c.toNat < 2 ^ 63` and the address
+`(G.b - 1) + c.toNat` is `G.b + (c.toNat - 1)` only with `1 ≤ c.toNat` in hand — the
+rewrite should `obtain ⟨q, rfl⟩ := Nat.exists_eq_succ_of_ne_zero …` rather than ask
+`omega` for a subtraction it does not have.  And a link lemma fixed at one selection
+(the class-F instance) fixes the whole chain's `calls`, which is why the chains here are
+stated at `stage2Calls stage2SubCalls` and nowhere else.
+
 **The target terms are part of the work.**  Each instance's state is a literal nest
 (`{ (s.bind a v).bind b w with … }`), so a chain's target is that nest applied k
 times and its statement grows with the path — at twenty-two blocks it is unreadable,
