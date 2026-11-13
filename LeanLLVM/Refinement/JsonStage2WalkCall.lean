@@ -2973,6 +2973,96 @@ The two stores are at the token's first eight bytes and at `%gap.i`
 (`%t352.i + 20`), both inside the token's staged extent, so the frame, presence
 and the two streams' reads are the same four facts every in-frame store uses. -/
 
+
+/-- **`if.then413.i`'s target, with the helper's answer named.**  The consumer's shape: the
+call resolves at the staging (the `s2_value_pos` contract's own `resolves`), and the link's
+target is the state the block's `denoteCode` leaves — the four cells at the call's result.
+
+The result is exposed rather than hidden because the *next* block reads the memory the call
+left: naming it is what makes a store-then-read junction composable. -/
+theorem walkIfThen413_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
+    {p reg : String} {c : BitVec 32} {op : Operand} {rdv : BitVec 32} {x : BitVec 32}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 32 c))
+    (hkind : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hread : readBytes
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4))
+      (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre' : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next)
+    (hx : ∀ r, stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next = some r →
+      r.ret = .int 32 x) :
+    ∃ (r : CallOutcome) (s' : State),
+      stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst]
+        (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next = some r ∧
+      WalkLink (stage2Calls stage2SubCalls) G C s
+        { C with block := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
+            then "if.then418.i" else "if.then425.i") } s' ∧
+      s' = { stateAt
+          (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+            ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+            ("%.sink372", .int 32 c)] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
+          then "if.then418.i" else "if.then425.i")
+        pre := some s.pc } := by
+  obtain ⟨r, hcall, hpost, -⟩ := s2ValuePosContract.resolves (next := s.next) hpre'
+  obtain ⟨-, -, hret, -, -⟩ := hpost
+  obtain ⟨s', hl⟩ := WalkLink.if_then413_i (G := G) (C := C) (s := s) (p := p) (reg := reg)
+    hInv hblock hpre hinc hop hkind hrd hread hpre' hx
+  refine ⟨r, s', hcall, hl, ?_⟩
+  have hret' : r.ret = .int 32 x := hx r hcall
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen413I.instrs s =
+      some (stateAt
+        (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+          ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+          ("%.sink372", .int 32 c)] s.env)
+        { s with mem := r.mem, next := r.next }) := by
+    simpa only [stateAt] using (walkIfThen413I_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+    (p := p) (reg := reg) (c := c) (kind := C.stage.tok + 16) (root := G.next0 + 8)
+    (rdv := rdv) (sp := BitVec.ofNat 32 C.sp) (ct := C.stage.ctype) (cs := C.stage.cst)
+    (r := r) (x := x) (op := op) hpre hinc hop hkind hrd hread hInv.depth_reg
+    (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall hret')
+  have hbit : lookupName (stateAt
+      (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+        ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+        ("%.sink372", .int 32 c)] s.env) { s with mem := r.mem, next := r.next }).env
+      "%tobool417.not.i" = some (.int 1 (evalICmp .eq x (BitVec.ofNat 32 0))) := by
+    simp only [stateAt, cells, lookupName_cons_self]
+  have hfind : stage2Body.findBlock s.pc = some walkIfThen413I := by
+    rw [hInv.pc_eq, hblock]; exact walkIfThen413I_find
+  have hterm : walkIfThen413I.term =
+      Term.condbr (.reg "%tobool417.not.i") "if.then418.i" "if.then425.i" := rfl
+  have hstep : step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump
+      { stateAt
+          (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+            ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+            ("%.sink372", .int 32 c)] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
+          then "if.then418.i" else "if.then425.i")
+        pre := some s.pc } := by
+    simp only [LeanLLVM.step, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%tobool417.not.i") (tl := "if.then418.i")
+      (fl := "if.then425.i") (bit := evalICmp .eq x (BitVec.ofNat 32 0)) hbit]
+    dsimp only [stateAt]
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-- **A store of a literal at 32 bits**, the token's gap flag.  `BlockEval`'s
 store steps take a register and a 64-bit width; this is the 32-bit literal. -/
 theorem walkDenoteCode_store32_imm (calls : Calls) (env : Env) (s : State)
