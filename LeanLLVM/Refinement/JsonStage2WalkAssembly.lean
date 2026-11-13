@@ -1125,6 +1125,49 @@ def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   bLt := G.bLt
   epLt := G.epLt
 
+/-- **A behaviour of a completing run is the completion's outcome.**  `BehFromState`
+quantifies over the fuel, and the fuel does not select the result
+(`runFuel_outcome_unique`): two budgets that both produce an outcome produce the
+same one.  So beside a completion at `o`, the `.ub` behaviour is impossible and
+every returning one is that same outcome.
+
+This is the step that turns the completion conjunct into the post's `∀` over
+behaviours: `stage2Post` is a match on the outcome, so once the outcome is the
+completion's the post is the boundary `stage2Run_boundary` supplies. -/
+theorem stage2Post_of_completion {calls : Calls} {args : List Value} {mem : Mem}
+    {next : Nat} {sE : State} {B : Nat} {oGood : Outcome}
+    (hcom : runFuel calls B stage2Body sE = some oGood)
+    (hgood : stage2Post args mem next oGood) :
+    ∀ o, BehFromState calls stage2Body sE o → stage2Post args mem next o := by
+  intro o hbeh
+  rcases hbeh with ⟨n, hn⟩ | ⟨n, hn⟩
+  · have hEq : oGood = Outcome.ub := (runFuel_outcome_unique hn hcom).symm
+    rw [hEq] at hgood
+    exact hgood.elim
+  · have hEq := runFuel_outcome_unique hn hcom
+    rw [hEq]
+    exact hgood
+
+/-- **The post, from a completion at the report's memory.**  `stage2Run_boundary`
+gives the boundary at the outcome `(.int 64 verdict)` in the memory the wrapper's
+stores leave (`stage2Report`), and `stage2Post_of_completion` carries it from that
+one outcome to every behaviour of the run.  So the post half's two inputs are the
+boundary at the report — which is a projection of the invariant
+(`Stage2Run.ofInv`) — and the completion conjunct's own outcome, read at
+`stage2Report`.
+
+What this states is that the post needs nothing else: the run's other outcomes are
+excluded by the fuel's uniqueness, and the boundary is the record's. -/
+theorem stage2Post_of_run {args : List Value} {mem m0 : Mem} {B : Nat}
+    {calls : Calls} {sE : State}
+    (hrun : Stage2Run args mem m0)
+    (hcom : runFuel calls B stage2Body sE = some
+      (Outcome.ret (some (.int 64 (stage2Verdict hrun.refusal)))
+        (stage2Report m0 hrun.ndst hrun.nev hrun.err hrun.alen hrun.evlen
+          hrun.refusal hrun.eoff))) :
+    ∀ o, BehFromState calls stage2Body sE o → stage2Post args mem hrun.next0 o :=
+  stage2Post_of_completion hcom (stage2Run_boundary hrun)
+
 /-- **The obligation from the premises and its post.**  `Stage2WalkObligation` is
 the completion conjunct beside the post (`stage2WalkObligation_iff_completion`), so
 a dispatch that supplies `WalkPremises` and the record's post rule has the
@@ -1219,6 +1262,8 @@ theorem walkCredit_long_string :
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.Stage2Run.ofInv
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_completion
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_run
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen485Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd490Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkBackFalse_step
