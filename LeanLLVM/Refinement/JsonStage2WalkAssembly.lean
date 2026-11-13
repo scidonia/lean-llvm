@@ -3388,6 +3388,138 @@ theorem walkExitStep {sub : Calls} (s : State) (hpc : s.pc = "s2_walk.exit")
   dsimp only [walkExitBlock, execTerm]
   rw [hpc₁]
 
+/-! ### The exit's tail, composed
+
+The paths the module's census lists — `if.then485.i → if.end490.i → s2_walk.exit → if.end`,
+`if.then485.i → if.end490.i → if.then492.i → if.then → if.end` and
+`if.then485.i → if.then488.i → if.then → if.end` — with every block's step already proved, so what
+each route owes is the composition.  The states are named (`exitS₁`…`exitS₄`) because each step's
+premise is read off the previous target's environment; the exit block's `denote` and `if.end`'s
+three register facts stay the caller's, as `walkExit492Tail` takes them. -/
+
+/-- The state the merge's false arm leaves: `walkBackFalse_step`'s target. -/
+def exitS₁ (s : State) (spv k2 : Nat) : State :=
+  { (((s.bind "%sp.i.1" (.int 32 (BitVec.ofNat 32 spv))).bind
+      "%k.2.i" (.int 64 (BitVec.ofNat 64 k2))).bind
+      "%cmp.i" (.int 1 (0 : BitVec 1))) with
+    pc := "if.then485.i", pre := some "cleanup478.i" }
+
+/-- `if.then485.i` on the empty-stack arm: `walkIfThen485Step`'s target. -/
+def exitS₂ (s : State) (spv : Nat) : State :=
+  { (s.bind "%48" (.int 1 (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0)))) with
+    pc := "if.end490.i", pre := some s.pc }
+
+/-- `if.end490.i` with the root slot clear: `walkIfEnd490Step`'s target, at the exit. -/
+def exitS₃ (s : State) (v : BitVec 32) : State :=
+  { ((s.bind "%.pr" (.int 32 v)).bind "%tobool491.not.i"
+      (.int 1 (evalICmp .eq v (BitVec.ofNat 32 0)))) with
+    pc := "s2_walk.exit", pre := some s.pc }
+
+/-- `s2_walk.exit`'s target: the block's denote output, at `if.end`. -/
+def exitS₄ (s s' : State) : State :=
+  { s' with pc := "if.end", pre := some s.pc }
+
+theorem exitS₁_sp {s : State} {spv k2 : Nat} :
+    lookupName (exitS₁ s spv k2).env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)) := by
+  simp only [exitS₁, State.bind]
+  rw [lookupName_cons_ne (k := "%cmp.i") (n := "%sp.i.1") (h := by decide)]
+  rw [lookupName_cons_ne (k := "%k.2.i") (n := "%sp.i.1") (h := by decide)]
+  exact lookupName_cons_self _ _ _
+
+theorem exitS₁_rd {s : State} {spv k2 : Nat} :
+    lookupName (exitS₁ s spv k2).env "%root_done.i" = lookupName s.env "%root_done.i" := by
+  simp only [exitS₁, State.bind]
+  rw [lookupName_cons_ne (k := "%cmp.i") (n := "%root_done.i") (h := by decide)]
+  rw [lookupName_cons_ne (k := "%k.2.i") (n := "%root_done.i") (h := by decide)]
+  rw [lookupName_cons_ne (k := "%sp.i.1") (n := "%root_done.i") (h := by decide)]
+
+theorem exitS₂_rd {s : State} {spv : Nat} :
+    lookupName (exitS₂ s spv).env "%root_done.i" = lookupName s.env "%root_done.i" := by
+  simp only [exitS₂, State.bind]
+  rw [lookupName_cons_ne (k := "%48") (n := "%root_done.i") (h := by decide)]
+
+/-- **The exit tail's `s2_walk.exit` route, as `WalkExit` states its run.**  The merge's false
+arm, `if.then485.i` with the stack empty, `if.end490.i` with the root slot clear, then the exit
+block's copy and `if.end`'s return: three steps to the exit block, a jump, and a return — the
+constraint `q + 2 ≤ 27` reads as the finalisation allowance's own.
+
+The exit block's `denote` and `if.end`'s three register facts are the caller's, as
+`walkExit492Tail` takes them — they are the ceiling, not step arithmetic.  The four steps name
+their targets (`exitS₁`…`exitS₄`), so none of the states between them is existential: each
+step's premise is read off the previous target's environment. -/
+theorem walkExitTailExit {sub : Calls} {s : State} {p : String}
+    {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    {rd : Nat} {rv : BitVec 32} {s₃ : State}
+    (hpc : s.pc = "cleanup478.i") (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hk2 : k2 < 2 ^ 64) (hguard : nepv.toNat ≤ k2)
+    (hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s.mem rd 4 = some (natToBytes rv.toNat 4))
+    (hzero : evalICmp .eq rv (BitVec.ofNat 32 0) = 0)
+    (hden : denoteCode (stage2Calls sub) walkExitBlock.instrs
+      (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) = some s₃)
+    (hpc₃ : s₃.pc = (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv).pc)
+    {v bit : BitVec 64} {pe pz ps : Nat}
+    (he : lookupName (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃).env "%e"
+      = some (.ptr pe))
+    (hz : lookupName (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃).env "%z"
+      = some (.ptr pz))
+    (hs : lookupName (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃).env "%s"
+      = some (.ptr ps))
+    (hphi : phiIncoming "s2_walk.exit" walkIfEndIncoming
+      = some (Operand.imm (Const.int 64 bit)))
+    (hv : bit = v) :
+    ∃ (q : Nat) (s1 s2 sret : State),
+      (∀ n, runFuel (stage2Calls sub) (q + n) stage2Body s
+        = runFuel (stage2Calls sub) n stage2Body s1) ∧
+      q + 2 ≤ 27 ∧
+      step (stage2Calls sub) stage2Body s1 = .jump s2 ∧
+      step (stage2Calls sub) stage2Body s2 = .ret (some (.int 64 v)) sret := by
+  have hstep₁ : step (stage2Calls sub) stage2Body s = .jump (exitS₁ s spv k2) :=
+    walkBackFalse_step (calls := stage2Calls sub) s hpc hpre hsp hspv hk hkv hnep hk2 hguard
+  have hstep₂ : step (stage2Calls sub) stage2Body (exitS₁ s spv k2)
+      = .jump (exitS₂ (exitS₁ s spv k2) spv) := by
+    rw [walkIfThen485Step (calls := stage2Calls sub) (exitS₁ s spv k2) rfl
+      (spv := spv) exitS₁_sp]
+    simp only [exitS₂]
+    rw [show (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+      then "if.end490.i" else "if.then488.i") = "if.end490.i" from if_pos hsp0]
+  have hstep₃ : step (stage2Calls sub) stage2Body (exitS₂ (exitS₁ s spv k2) spv)
+      = .jump (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) := by
+    rw [walkIfEnd490Step (calls := stage2Calls sub) (exitS₂ (exitS₁ s spv k2) spv) rfl
+      (v := rv)
+      ((exitS₂_rd (s := exitS₁ s spv k2) (spv := spv)).trans
+        ((exitS₁_rd (s := s) (spv := spv) (k2 := k2)).trans hroot))
+      (by simpa only [exitS₂, exitS₁, State.bind] using hread)]
+    simp only [exitS₃]
+    rw [show (if evalICmp .eq rv (BitVec.ofNat 32 0) = 1
+      then "if.then492.i" else "s2_walk.exit") = "s2_walk.exit" from
+      if_neg (by rw [hzero]; decide)]
+  have hstep₄ : step (stage2Calls sub) stage2Body
+      (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv)
+      = .jump (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃) :=
+    walkExitStep (sub := sub) _ rfl hden hpc₃
+  have hstep₅ : step (stage2Calls sub) stage2Body
+      (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃)
+      = .ret (some (.int 64 v))
+        (stateAt (("%tobool.not151", .int 64 bit) ::
+          (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃).env)
+          (exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃)) :=
+    walkIfEnd_step (sub := sub) _ rfl he hz hs rfl hphi hv
+  refine ⟨3, exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv,
+    exitS₄ (exitS₃ (exitS₂ (exitS₁ s spv k2) spv) rv) s₃, _, ?_, by omega,
+    hstep₄, hstep₅⟩
+  intro n
+  rw [show 3 + n = 1 + (1 + (1 + n)) from by omega]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + n))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + n)]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₃ n]
+
 /-- **The dispatch, and the word it produces.**  The revolution's segment stores the arena cursor
 at `z + 48`, so a proof of the dispatch that names the word at the head gives both premises the
 completion needs — `WalkDispatch` by the first projection and `WalkLoopStep`'s `hword` by the
