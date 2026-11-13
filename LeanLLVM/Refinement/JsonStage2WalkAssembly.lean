@@ -3520,6 +3520,193 @@ theorem walkExitTailExit {sub : Calls} {s : State} {p : String}
   rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + n)]
   rw [runFuel_jump_prefix (f := stage2Body) hstep₃ n]
 
+/-- `if.end490.i` with the root slot set: `walkIfEnd490Step`'s target, at the refusal. -/
+def exitS₃r (s : State) (v : BitVec 32) : State :=
+  { ((s.bind "%.pr" (.int 32 v)).bind "%tobool491.not.i"
+      (.int 1 (evalICmp .eq v (BitVec.ofNat 32 0)))) with
+    pc := "if.then492.i", pre := some s.pc }
+
+/-- `if.then492.i`'s target: the error offset's store, at `if.then`. -/
+def exitS₅ (s : State) (e v : Nat) : State :=
+  { { s with
+      env := ("%off1.i.i117", .ptr (e + 8)) :: s.env
+      mem := writeBytes s.mem (e + 8) (wordBytes 8 v) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- `if.then485.i` on the non-empty-stack arm: `walkIfThen485Step`'s other target. -/
+def exitS₂r (s : State) (spv : Nat) : State :=
+  { (s.bind "%48" (.int 1 (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0)))) with
+    pc := "if.then488.i", pre := some s.pc }
+
+/-- `if.then488.i`'s target: the error offset's store, at `if.then`. -/
+def exitS₅r (s : State) (e v : Nat) : State :=
+  { { s with
+      env := ("%off1.i.i115", .ptr (e + 8)) :: s.env
+      mem := writeBytes s.mem (e + 8) (wordBytes 8 v) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- **The exit tail's refusal route through `if.then492.i`.**  The merge's false arm, the empty
+stack, the root slot set, `if.then492.i`'s offset store, the copy and the return: four steps to
+`if.then`, a jump and a return. -/
+theorem walkExitTailRefuse {sub : Calls} {s : State} {p : String}
+    {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
+    {rd : Nat} {rv : BitVec 32} {s₂ : State} {e v : Nat}
+    (hpc : s.pc = "cleanup478.i") (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hk2 : k2 < 2 ^ 64) (hguard : nepv.toNat ≤ k2)
+    (hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s.mem rd 4 = some (natToBytes rv.toNat 4))
+    (hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 1)
+    (he : lookupName (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv).env "%e" = some (.ptr e))
+    (h4 : lookupName (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv).env "%4"
+      = some (.int 64 (BitVec.ofNat 64 v)))
+    (hv64 : v < 2 ^ 64)
+    (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs
+      (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) = some s₂)
+    (hpc₂ : s₂.pc = (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v).pc)
+    {w bit : BitVec 64} {pe pz ps : Nat}
+    (he' : lookupName
+      (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂).env "%e"
+      = some (.ptr pe))
+    (hz' : lookupName
+      (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂).env "%z"
+      = some (.ptr pz))
+    (hs' : lookupName
+      (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂).env "%s"
+      = some (.ptr ps))
+    (hphi : phiIncoming "if.then" walkIfEndIncoming = some (Operand.imm (Const.int 64 bit)))
+    (hw : bit = w) :
+    ∃ (q : Nat) (s1 s2' sret : State),
+      (∀ n, runFuel (stage2Calls sub) (q + n) stage2Body s
+        = runFuel (stage2Calls sub) n stage2Body s1) ∧
+      q + 2 ≤ 27 ∧
+      step (stage2Calls sub) stage2Body s1 = .jump s2' ∧
+      step (stage2Calls sub) stage2Body s2' = .ret (some (.int 64 w)) sret := by
+  have hstep₁ : step (stage2Calls sub) stage2Body s = .jump (exitS₁ s spv k2) :=
+    walkBackFalse_step (calls := stage2Calls sub) s hpc hpre hsp hspv hk hkv hnep hk2 hguard
+  have hstep₂ : step (stage2Calls sub) stage2Body (exitS₁ s spv k2)
+      = .jump (exitS₂ (exitS₁ s spv k2) spv) := by
+    rw [walkIfThen485Step (calls := stage2Calls sub) (exitS₁ s spv k2) rfl
+      (spv := spv) exitS₁_sp]
+    simp only [exitS₂]
+    rw [show (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+      then "if.end490.i" else "if.then488.i") = "if.end490.i" from if_pos hsp0]
+  have hstep₃ : step (stage2Calls sub) stage2Body (exitS₂ (exitS₁ s spv k2) spv)
+      = .jump (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) := by
+    rw [walkIfEnd490Step (calls := stage2Calls sub) (exitS₂ (exitS₁ s spv k2) spv) rfl
+      (v := rv)
+      ((exitS₂_rd (s := exitS₁ s spv k2) (spv := spv)).trans
+        ((exitS₁_rd (s := s) (spv := spv) (k2 := k2)).trans hroot))
+      (by simpa only [exitS₂, exitS₁, State.bind] using hread)]
+    simp only [exitS₃r]
+    rw [show (if evalICmp .eq rv (BitVec.ofNat 32 0) = 1
+      then "if.then492.i" else "s2_walk.exit") = "if.then492.i" from
+      if_pos hroot0]
+  have hstep₄ : step (stage2Calls sub) stage2Body
+      (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv)
+      = .jump (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) := by
+    rw [walkIfThen492Step (calls := stage2Calls sub)
+      (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) rfl he h4 hv64]
+    simp only [exitS₅]
+  have hstep₅ : step (stage2Calls sub) stage2Body
+      (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v)
+      = .jump (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂) :=
+    walkIfThen_step (sub := sub) _ rfl hden hpc₂
+  have hstep₆ : step (stage2Calls sub) stage2Body
+      (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂)
+      = .ret (some (.int 64 w))
+        (stateAt (("%tobool.not151", .int 64 bit) ::
+          (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂).env)
+          (exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂)) :=
+    walkIfEnd_step (sub := sub) _ rfl he' hz' hs' rfl hphi hw
+  refine ⟨4, exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v,
+    exitS₄ (exitS₅ (exitS₃r (exitS₂ (exitS₁ s spv k2) spv) rv) e v) s₂, _, ?_, by omega,
+    hstep₅, hstep₆⟩
+  intro n
+  rw [show 4 + n = 1 + (1 + (1 + (1 + n))) from by omega]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + (1 + n)))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + (1 + n))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₃ (1 + n)]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₄ n]
+
+/-- **The exit tail's refusal route through `if.then488.i`.**  The merge's false arm, the
+non-empty stack, `if.then488.i`'s offset store, the copy and the return: three steps to `if.then`,
+a jump and a return.  The `if.end490.i` test is not on this path. -/
+theorem walkExitTailRefuse488 {sub : Calls} {s : State} {p : String}
+    {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64} {s₂ : State} {e v : Nat}
+    (hpc : s.pc = "cleanup478.i") (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hk2 : k2 < 2 ^ 64) (hguard : nepv.toNat ≤ k2)
+    (hspn : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 0)
+    (he : lookupName (exitS₂r (exitS₁ s spv k2) spv).env "%e" = some (.ptr e))
+    (h4 : lookupName (exitS₂r (exitS₁ s spv k2) spv).env "%4"
+      = some (.int 64 (BitVec.ofNat 64 v)))
+    (hv64 : v < 2 ^ 64)
+    (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs
+      (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) = some s₂)
+    (hpc₂ : s₂.pc = (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v).pc)
+    {w bit : BitVec 64} {pe pz ps : Nat}
+    (he' : lookupName
+      (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂).env "%e"
+      = some (.ptr pe))
+    (hz' : lookupName
+      (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂).env "%z"
+      = some (.ptr pz))
+    (hs' : lookupName
+      (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂).env "%s"
+      = some (.ptr ps))
+    (hphi : phiIncoming "if.then" walkIfEndIncoming = some (Operand.imm (Const.int 64 bit)))
+    (hw : bit = w) :
+    ∃ (q : Nat) (s1 s2' sret : State),
+      (∀ n, runFuel (stage2Calls sub) (q + n) stage2Body s
+        = runFuel (stage2Calls sub) n stage2Body s1) ∧
+      q + 2 ≤ 27 ∧
+      step (stage2Calls sub) stage2Body s1 = .jump s2' ∧
+      step (stage2Calls sub) stage2Body s2' = .ret (some (.int 64 w)) sret := by
+  have hstep₁ : step (stage2Calls sub) stage2Body s = .jump (exitS₁ s spv k2) :=
+    walkBackFalse_step (calls := stage2Calls sub) s hpc hpre hsp hspv hk hkv hnep hk2 hguard
+  have hstep₂ : step (stage2Calls sub) stage2Body (exitS₁ s spv k2)
+      = .jump (exitS₂r (exitS₁ s spv k2) spv) := by
+    rw [walkIfThen485Step (calls := stage2Calls sub) (exitS₁ s spv k2) rfl
+      (spv := spv) exitS₁_sp]
+    simp only [exitS₂r]
+    rw [show (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+      then "if.end490.i" else "if.then488.i") = "if.then488.i" from
+      if_neg (c := (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1))
+        (by rw [hspn]; decide)]
+  have hstep₃ : step (stage2Calls sub) stage2Body (exitS₂r (exitS₁ s spv k2) spv)
+      = .jump (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) := by
+    rw [walkIfThen488Step (calls := stage2Calls sub)
+      (exitS₂r (exitS₁ s spv k2) spv) rfl he h4 hv64]
+    simp only [exitS₅r]
+  have hstep₄ : step (stage2Calls sub) stage2Body
+      (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v)
+      = .jump (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂) :=
+    walkIfThen_step (sub := sub) _ rfl hden hpc₂
+  have hstep₅ : step (stage2Calls sub) stage2Body
+      (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂)
+      = .ret (some (.int 64 w))
+        (stateAt (("%tobool.not151", .int 64 bit) ::
+          (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂).env)
+          (exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂)) :=
+    walkIfEnd_step (sub := sub) _ rfl he' hz' hs' rfl hphi hw
+  refine ⟨3, exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v,
+    exitS₄ (exitS₅r (exitS₂r (exitS₁ s spv k2) spv) e v) s₂, _, ?_, by omega,
+    hstep₄, hstep₅⟩
+  intro n
+  rw [show 3 + n = 1 + (1 + (1 + n)) from by omega]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + n))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + n)]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₃ n]
 end WalkScope
 
 end LeanLLVM.Refinement
