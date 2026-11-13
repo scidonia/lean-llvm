@@ -2186,6 +2186,86 @@ theorem walkLandRhs457_find :
     stage2Body.findBlock "land.rhs457.i" = some walkLandRhs457 := by
   simp [stage2Body, Function.findBlock, findBlockList, walkLandRhs457]
 
+/-- **The landing's `denoteCode` run.**  The `phi` selects `%ee.1.i` on the
+`if.then447.i` edge, the `gep` adds it to `%3`, and the load binds the byte — the
+three cells `NodeBlock105` reads. -/
+theorem walkLandRhs457Step {calls : Calls} (s : State)
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
+    (hpre : s.pre = some "if.then447.i")
+    (hinc : phiIncoming "if.then447.i"
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
+    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+    (h3 : lookupName s.env "%3" = some (.ptr a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
+    (hbs : bytesToNat bs = q) :
+    denoteCode calls walkLandRhs457.instrs s =
+      some (stateAt (cells
+        [("%47", .int 8 (BitVec.ofNat 8 q)),
+         ("%arrayidx458.i", .ptr (a + (idx.signExtend 64).toNat)),
+         ("%q.0.i246", .int 64 idx)] s.env) s) := by
+  show denoteCode calls
+    [Instr.phi "%q.0.i246" (Ty.int 64)
+       [("while.body462.i", (Operand.reg "%inc463.i")),
+        ("if.then447.i", (Operand.reg "%ee.1.i"))],
+     Instr.gep "%arrayidx458.i" (Ty.int 8) (Operand.reg "%3") (Operand.reg "%q.0.i246"),
+     Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx458.i")] s = _
+  rw [← stateAt_self s]
+  rw [denoteCode_phi (calls := calls) (env := s.env) (s := s) (d := "%q.0.i246")
+    (ty := Ty.int 64) (inc := [("while.body462.i", (Operand.reg "%inc463.i")),
+      ("if.then447.i", (Operand.reg "%ee.1.i"))]) (p := "if.then447.i")
+    (op := Operand.reg "%ee.1.i") (v := .int 64 idx) hpre hinc hop
+    (is := [Instr.gep "%arrayidx458.i" (Ty.int 8) (Operand.reg "%3") (Operand.reg "%q.0.i246"),
+      Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx458.i")]) (by decide)]
+  rw [denoteCode_gep8_reg (calls := calls) (env := (("%q.0.i246", .int 64 idx) :: s.env))
+    (s := s) (d := "%arrayidx458.i") (base := "%3") (off := "%q.0.i246") (a := a)
+    (idx := idx) (by rw [lookupName_cons_ne _ _ (by decide)]; exact h3)
+    (by simp only [lookupName_cons_self]) hpos
+    (is := [Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx458.i")])]
+  rw [denoteCode_load8 (calls := calls)
+    (env := (("%arrayidx458.i", .ptr (a + (idx.signExtend 64).toNat)) ::
+      ("%q.0.i246", .int 64 idx) :: s.env)) (s := s) (d := "%47") (p := "%arrayidx458.i")
+    (a := a + (idx.signExtend 64).toNat) (q := q) (bs := bs)
+    (by simp only [lookupName_cons_self]) hread hbs (is := [])]
+  rfl
+
+/-- **The landing's step.**  The run above, then the unconditional edge to
+`NodeBlock105`: the dispatch's entry, where the byte's class is read. -/
+theorem walkLandRhs457Jump {calls : Calls} (s : State)
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
+    (hpc : s.pc = "land.rhs457.i")
+    (hpre : s.pre = some "if.then447.i")
+    (hinc : phiIncoming "if.then447.i"
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
+    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+    (h3 : lookupName s.env "%3" = some (.ptr a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
+    (hbs : bytesToNat bs = q) :
+    step calls stage2Body s =
+      .jump { stateAt (cells
+          [("%47", .int 8 (BitVec.ofNat 8 q)),
+           ("%arrayidx458.i", .ptr (a + (idx.signExtend 64).toNat)),
+           ("%q.0.i246", .int 64 idx)] s.env) s with
+        pc := "NodeBlock105", pre := some s.pc } := by
+  have hden := walkLandRhs457Step (calls := calls) (s := s) (idx := idx) (a := a) (q := q)
+    (bs := bs) hpre hinc hop h3 hpos hread hbs
+  have hden' : denoteCode calls
+      [Instr.phi "%q.0.i246" (Ty.int 64)
+         [("while.body462.i", (Operand.reg "%inc463.i")),
+          ("if.then447.i", (Operand.reg "%ee.1.i"))],
+       Instr.gep "%arrayidx458.i" (Ty.int 8) (Operand.reg "%3") (Operand.reg "%q.0.i246"),
+       Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx458.i")] s =
+      some (stateAt (cells
+        [("%47", .int 8 (BitVec.ofNat 8 q)),
+         ("%arrayidx458.i", .ptr (a + (idx.signExtend 64).toNat)),
+         ("%q.0.i246", .int 64 idx)] s.env) s) := hden
+  simp only [step, hpc, walkLandRhs457_find]
+  rw [hden]
+  simp only [walkLandRhs457, execTerm, stateAt, State.bind, hpc]
+
 end WalkScope
 
 end LeanLLVM.Refinement
