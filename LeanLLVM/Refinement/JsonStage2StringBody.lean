@@ -362,6 +362,90 @@ theorem sb_step_loadPtr (calls : Calls) (env : Env) (s : State) (d p : String)
     simp only [loadValue, hv, hbs]
   simp only [evalInstr, evalOperand, stateAt, hp, hv', State.bind]
 
+theorem sb_step_load32 (calls : Calls) (env : Env) (s : State) (d p : String)
+    {a : Nat} {bs : List UInt8} (hp : lookupName env p = some (.ptr a))
+    (hv : readBytes s.mem a 4 = some bs) :
+    evalInstr calls (stateAt env s) (.load d (Ty.int 32) (.reg p)) =
+      some (stateAt ((d, .int 32 (BitVec.ofNat 32 (bytesToNat bs))) :: env) s) := by
+  have h1 : evalOperand (stateAt env s) (.reg p) = some (.ptr a) := hp
+  have hv' : loadValue (stateAt env s).mem (.int 32) a =
+      some (.int 32 (BitVec.ofNat 32 (bytesToNat bs))) := by
+    change loadValue s.mem (.int 32) a =
+      some (.int 32 (BitVec.ofNat 32 (bytesToNat bs)))
+    simp only [loadValue, hv, show (32 + 7) / 8 = 4 from rfl]
+    rw [ite_eq_right (by decide : ¬ ((32 : Nat) = 0))]
+  unfold evalInstr
+  dsimp only
+  rw [h1]
+  dsimp only
+  rw [hv']
+  rfl
+
+theorem sb_step_ptrtoint (calls : Calls) (env : Env) (s : State) (d v : String)
+    {a : Nat} (hv : lookupName env v = some (.ptr a)) (ha : a < 2 ^ 64) :
+    evalInstr calls (stateAt env s) (.ptrtoint d (.reg v)) =
+      some (stateAt ((d, .int 64 (BitVec.ofNat 64 a)) :: env) s) := by
+  have h1 : evalOperand (stateAt env s) (.reg v) = some (.ptr a) := hv
+  unfold evalInstr
+  dsimp only
+  rw [h1]
+  dsimp only
+  rw [if_pos ha]
+  rfl
+
+theorem sb_step_gep32 (calls : Calls) (env : Env) (s : State) (d base off : String)
+    {a : Nat} {idx : BitVec 64}
+    (hb : lookupName env base = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls (stateAt env s) (.gep d (Ty.int 32) (.reg base) (.reg off)) =
+      some (stateAt ((d, .ptr (a + (idx.signExtend 64).toNat * 4)) :: env) s) := by
+  have h1 : evalOperand (stateAt env s) (.reg base) = some (.ptr a) := hb
+  have h2 : evalOperand (stateAt env s) (.reg off) = some (.int 64 idx) := ho
+  unfold evalInstr
+  dsimp only
+  rw [h1, h2]
+  dsimp only
+  rw [if_pos hpos]
+  simp [State.bind, stateAt, Ty.sizeBytes, BitVec.signExtend_eq]
+
+theorem sb_step_gep8_lit (calls : Calls) (env : Env) (s : State) (d base : String)
+    (n : BitVec 64) {a : Nat}
+    (hb : lookupName env base = some (.ptr a)) (hpos : n.toNat < 2 ^ 63) :
+    evalInstr calls (stateAt env s) (.gep d (Ty.int 8) (.reg base) (.imm (.int 64 n))) =
+      some (stateAt ((d, .ptr (a + n.toNat)) :: env) s) := by
+  have h1 : evalOperand (stateAt env s) (.reg base) = some (.ptr a) := hb
+  have h2 : evalOperand (stateAt env s) (.imm (.int 64 n)) = some (.int 64 n) := rfl
+  unfold evalInstr
+  dsimp only
+  rw [h1, h2]
+  dsimp only
+  rw [if_pos (by simpa using hpos)]
+  simp [State.bind, stateAt, Ty.sizeBytes, BitVec.signExtend_eq]
+
+theorem sb_step_icmp_rr (calls : Calls) (env : Env) (s : State) (d a b : String)
+    (pr : IPred) {x y : BitVec 64}
+    (ha : lookupName env a = some (.int 64 x)) (hb : lookupName env b = some (.int 64 y)) :
+    evalInstr calls (stateAt env s) (.icmp d pr 64 (.reg a) (.reg b)) =
+      some (stateAt ((d, .int 1 (evalICmpNat pr 64 x.toNat y.toNat)) :: env) s) := by
+  have h1 : evalOperand (stateAt env s) (.reg a) = some (.int 64 x) := ha
+  have h2 : evalOperand (stateAt env s) (.reg b) = some (.int 64 y) := hb
+  unfold evalInstr
+  dsimp only
+  rw [h1, h2]
+  simp [State.bind, stateAt, Value.intToNat]
+
+theorem sb_step_store64_imm (calls : Calls) (env : Env) (s : State) (p : String)
+    {x : BitVec 64} {a : Nat} (hp : lookupName env p = some (.ptr a)) :
+    evalInstr calls (stateAt env s) (.store (Ty.int 64) (.imm (.int 64 x)) (.reg p)) =
+      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
+  have h1 : evalOperand (stateAt env s) (.imm (.int 64 x)) = some (.int 64 x) := rfl
+  have h2 : evalOperand (stateAt env s) (.reg p) = some (.ptr a) := hp
+  unfold evalInstr
+  dsimp only
+  rw [h1, h2]
+  simp [State.bind, stateAt, storeValue]
+
 theorem sb_step_storePtr_null (calls : Calls) (env : Env) (s : State) (p : String)
     {a : Nat} (hp : lookupName env p = some (.ptr a)) :
     evalInstr calls (stateAt env s) (.store (Ty.ptr) (.imm (.null)) (.reg p)) =
