@@ -3637,6 +3637,184 @@ theorem s2StringBodyErrRecord_reconciles (mem : Mem) (e : Nat) (off : BitVec 64)
   simp only [stage2ErrSetMsg, stage2ErrSet, wordBytes, htoNat, h0_32, h0_64, h8, h16,
     Nat.add_comm]
 
+/-- **The refused arm's memory join.**  The clear is absorbed by the callee's own
+`ei` write (adjacent: for the refusal the slot's content *is* that word), then
+`scan(xj)` moves right past the record's three words and the `ei` write follows it —
+seven crossings over five present, pairwise disjoint regions. -/
+theorem s2StringBodyMemory_refused (mem : Mem) {ei xj e : Nat}
+    {Wj R0 R1 R2 Woff : List UInt8}
+    (hWoff : Woff.length = 8)
+    (hei : readBytes mem ei Woff.length ≠ none)
+    (hxj : readBytes mem xj Wj.length ≠ none)
+    (he0 : readBytes mem e R0.length ≠ none)
+    (he1 : readBytes mem (e + (8#64).toNat) R1.length ≠ none)
+    (he2 : readBytes mem (e + (16#64).toNat) R2.length ≠ none)
+    (h1 : ei + Woff.length ≤ xj ∨ xj + Wj.length ≤ ei)
+    (h2 : ei + Woff.length ≤ e ∨ e + R0.length ≤ ei)
+    (h3 : ei + Woff.length ≤ e + (8#64).toNat ∨
+      e + (8#64).toNat + R1.length ≤ ei)
+    (h4 : ei + Woff.length ≤ e + (16#64).toNat ∨
+      e + (16#64).toNat + R2.length ≤ ei)
+    (h5 : xj + Wj.length ≤ e ∨ e + R0.length ≤ xj)
+    (h6 : xj + Wj.length ≤ e + (8#64).toNat ∨
+      e + (8#64).toNat + R1.length ≤ xj)
+    (h7 : xj + Wj.length ≤ e + (16#64).toNat ∨
+      e + (16#64).toNat + R2.length ≤ xj)
+    (h8 : e + R0.length ≤ e + (8#64).toNat ∨
+      e + (8#64).toNat + R1.length ≤ e)
+    (h9 : e + R0.length ≤ e + (16#64).toNat ∨
+      e + (16#64).toNat + R2.length ≤ e)
+    (h10 : e + (8#64).toNat + R1.length ≤ e + (16#64).toNat ∨
+      e + (16#64).toNat + R2.length ≤ e + (8#64).toNat) :
+    writeBytes
+        (writeBytes
+          (writeBytes
+            (writeBytes
+              (writeBytes
+                (writeBytes mem ei (natToBytes (0#64).toNat 8)) ei Woff)
+              xj Wj)
+            e R0)
+          (e + (8#64).toNat) R1)
+        (e + (16#64).toNat) R2
+      = writeBytes
+          (writeBytes
+            (writeBytes
+              (writeBytes
+                (writeBytes mem e R0)
+                (e + (8#64).toNat) R1)
+              (e + (16#64).toNat) R2)
+            xj Wj)
+          ei Woff := by
+  rw [show writeBytes (writeBytes mem ei (natToBytes (0#64).toNat 8)) ei Woff
+      = writeBytes mem ei Woff from
+    writeBytes_writeBytes_same mem ei (natToBytes (0#64).toNat 8) Woff
+      (by simp [natToBytes_length, hWoff])]
+  -- the presences, one per region per hop
+  have hei_xj : readBytes (writeBytes mem xj Wj) ei Woff.length ≠ none := by
+    rcases h1 with h | h
+    · rw [readBytes_writeBytes_below mem Wj Woff.length ei xj (by omega)]; exact hei
+    · rw [s2StringBodyReadBytes_above mem Wj Woff.length ei xj (by omega)]; exact hei
+  have he0_xj : readBytes (writeBytes mem xj Wj) e R0.length ≠ none := by
+    rcases h5 with h | h
+    · rw [s2StringBodyReadBytes_above mem Wj R0.length e xj (by omega)]; exact he0
+    · rw [readBytes_writeBytes_below mem Wj R0.length e xj (by omega)]; exact he0
+  have hei_xj0 : readBytes (writeBytes (writeBytes mem xj Wj) e R0) ei Woff.length ≠ none := by
+    rcases h2 with h | h
+    · rw [readBytes_writeBytes_below (writeBytes mem xj Wj) R0 Woff.length ei e (by omega)]
+      exact hei_xj
+    · rw [s2StringBodyReadBytes_above (writeBytes mem xj Wj) R0 Woff.length ei e (by omega)]
+      exact hei_xj
+  have hei_xj01 : readBytes (writeBytes (writeBytes (writeBytes mem xj Wj) e R0)
+      (e + (8#64).toNat) R1) ei Woff.length ≠ none := by
+    rcases h3 with h | h
+    · rw [readBytes_writeBytes_below (writeBytes (writeBytes mem xj Wj) e R0) R1
+        Woff.length ei (e + (8#64).toNat) (by omega)]
+      exact hei_xj0
+    · rw [s2StringBodyReadBytes_above (writeBytes (writeBytes mem xj Wj) e R0) R1
+        Woff.length ei (e + (8#64).toNat) (by omega)]
+      exact hei_xj0
+  have he1_xj : readBytes (writeBytes mem xj Wj) (e + (8#64).toNat) R1.length ≠ none := by
+    rcases h6 with h | h
+    · rw [s2StringBodyReadBytes_above mem Wj R1.length (e + (8#64).toNat) xj (by omega)]
+      exact he1
+    · rw [readBytes_writeBytes_below mem Wj R1.length (e + (8#64).toNat) xj (by omega)]
+      exact he1
+  have he1_xj0 : readBytes (writeBytes (writeBytes mem xj Wj) e R0)
+      (e + (8#64).toNat) R1.length ≠ none := by
+    rcases h8 with h | h
+    · rw [s2StringBodyReadBytes_above (writeBytes mem xj Wj) R0 R1.length
+        (e + (8#64).toNat) e h]
+      exact he1_xj
+    · rw [readBytes_writeBytes_below (writeBytes mem xj Wj) R0 R1.length
+        (e + (8#64).toNat) e h]
+      exact he1_xj
+  have he2_xj : readBytes (writeBytes mem xj Wj) (e + (16#64).toNat) R2.length ≠ none := by
+    rcases h7 with h | h
+    · rw [s2StringBodyReadBytes_above mem Wj R2.length (e + (16#64).toNat) xj (by omega)]
+      exact he2
+    · rw [readBytes_writeBytes_below mem Wj R2.length (e + (16#64).toNat) xj (by omega)]
+      exact he2
+  have he2_xj0 : readBytes (writeBytes (writeBytes mem xj Wj) e R0)
+      (e + (16#64).toNat) R2.length ≠ none := by
+    rcases h9 with h | h
+    · rw [s2StringBodyReadBytes_above (writeBytes mem xj Wj) R0 R2.length
+        (e + (16#64).toNat) e h]
+      exact he2_xj
+    · rw [readBytes_writeBytes_below (writeBytes mem xj Wj) R0 R2.length
+        (e + (16#64).toNat) e h]
+      exact he2_xj
+  have he2_e0 : readBytes (writeBytes mem e R0) (e + (16#64).toNat) R2.length ≠ none := by
+    rcases h9 with h | h
+    · rw [s2StringBodyReadBytes_above mem R0 R2.length (e + (16#64).toNat) e h]; exact he2
+    · rw [readBytes_writeBytes_below mem R0 R2.length (e + (16#64).toNat) e h]; exact he2
+  have he2_xj01 : readBytes (writeBytes (writeBytes (writeBytes mem xj Wj) e R0)
+      (e + (8#64).toNat) R1) (e + (16#64).toNat) R2.length ≠ none := by
+    rcases h10 with h | h
+    · rw [s2StringBodyReadBytes_above (writeBytes (writeBytes mem xj Wj) e R0) R1
+        R2.length (e + (16#64).toNat) (e + (8#64).toNat) h]
+      exact he2_xj0
+    · rw [readBytes_writeBytes_below (writeBytes (writeBytes mem xj Wj) e R0) R1
+        R2.length (e + (16#64).toNat) (e + (8#64).toNat) h]
+      exact he2_xj0
+  -- 1. `ei`'s write crosses `xj`
+  rw [writeBytes_comm_of_present mem ei Woff xj Wj
+    (exists_readBytes_of_ne hei) (exists_readBytes_of_ne hxj) h1]
+  -- 2-3. and the record's first two words
+  rw [writeBytes_comm_of_present (writeBytes mem xj Wj) ei Woff e R0
+    (exists_readBytes_of_ne hei_xj) (exists_readBytes_of_ne he0_xj) h2]
+  rw [writeBytes_comm_of_present (writeBytes (writeBytes mem xj Wj) e R0) ei Woff
+    (e + (8#64).toNat) R1 (exists_readBytes_of_ne hei_xj0)
+    (exists_readBytes_of_ne he1_xj0) h3]
+  rw [writeBytes_comm_of_present (writeBytes (writeBytes (writeBytes mem xj Wj) e R0)
+      (e + (8#64).toNat) R1) ei Woff (e + (16#64).toNat) R2
+    (exists_readBytes_of_ne hei_xj01)
+    (exists_readBytes_of_ne he2_xj01) h4]
+  -- 4. `xj` past the record's first word
+  rw [writeBytes_comm_of_present mem xj Wj e R0
+    (exists_readBytes_of_ne hxj) (exists_readBytes_of_ne he0) h5]
+  -- 5-6. and past the next two, which needs `xj`'s and their presence in what the
+  -- earlier crossings left
+  have hxj_e0 : readBytes (writeBytes mem e R0) xj Wj.length ≠ none := by
+    rcases h5 with h | h
+    · rw [readBytes_writeBytes_below mem R0 Wj.length xj e h]; exact hxj
+    · rw [s2StringBodyReadBytes_above mem R0 Wj.length xj e h]; exact hxj
+  have he1_e0 : readBytes (writeBytes mem e R0) (e + (8#64).toNat) R1.length ≠ none := by
+    rcases h8 with h | h
+    · rw [s2StringBodyReadBytes_above mem R0 R1.length (e + (8#64).toNat) e h]; exact he1
+    · rw [readBytes_writeBytes_below mem R0 R1.length (e + (8#64).toNat) e h]; exact he1
+  have he1_e0xj : readBytes (writeBytes (writeBytes mem e R0) xj Wj)
+      (e + (8#64).toNat) R1.length ≠ none := by
+    rcases h6 with h | h
+    · rw [s2StringBodyReadBytes_above (writeBytes mem e R0) Wj R1.length
+        (e + (8#64).toNat) xj h]
+      exact he1_e0
+    · rw [readBytes_writeBytes_below (writeBytes mem e R0) Wj R1.length
+        (e + (8#64).toNat) xj h]
+      exact he1_e0
+  rw [writeBytes_comm_of_present (writeBytes mem e R0) xj Wj (e + (8#64).toNat) R1
+    (exists_readBytes_of_ne hxj_e0) (exists_readBytes_of_ne he1_e0) h6]
+  have hxj_e01 : readBytes (writeBytes (writeBytes mem e R0) (e + (8#64).toNat) R1)
+      xj Wj.length ≠ none := by
+    rcases h6 with h | h
+    · rw [readBytes_writeBytes_below (writeBytes mem e R0) R1 Wj.length xj
+        (e + (8#64).toNat) h]
+      exact hxj_e0
+    · rw [s2StringBodyReadBytes_above (writeBytes mem e R0) R1 Wj.length xj
+        (e + (8#64).toNat) h]
+      exact hxj_e0
+  have he2_e01 : readBytes (writeBytes (writeBytes mem e R0) (e + (8#64).toNat) R1)
+      (e + (16#64).toNat) R2.length ≠ none := by
+    rcases h10 with h | h
+    · rw [s2StringBodyReadBytes_above (writeBytes mem e R0) R1 R2.length
+        (e + (16#64).toNat) (e + (8#64).toNat) h]
+      exact he2_e0
+    · rw [readBytes_writeBytes_below (writeBytes mem e R0) R1 R2.length
+        (e + (16#64).toNat) (e + (8#64).toNat) h]
+      exact he2_e0
+  rw [writeBytes_comm_of_present (writeBytes (writeBytes mem e R0) (e + (8#64).toNat) R1)
+    xj Wj (e + (16#64).toNat) R2 (exists_readBytes_of_ne hxj_e01)
+    (exists_readBytes_of_ne he2_e01) h7]
+
 /-- The cursor word the scan leaves is the model's `j1`: the exit word's counter,
 written at the caller's cursor, is the memory the model's `j1` names.  This is where
 `ExitWord`'s `∃ c` is consumed — at the memory term, not at the exits. -/
