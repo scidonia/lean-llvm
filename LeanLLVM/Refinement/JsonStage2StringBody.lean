@@ -3880,6 +3880,33 @@ theorem s2StringBodyMemory_refused (mem : Mem) {ei xj e : Nat}
     xj Wj (e + (16#64).toNat) R2 (exists_readBytes_of_ne hxj_e01)
     (exists_readBytes_of_ne he2_e01) h7]
 
+/-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
+post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
+and the other blocks allocate nothing. -/
+theorem s2StringBodySlot_sizeBytes : (Ty.int 64).sizeBytes = 8 := by decide
+
+/- **The assembly's remaining content, and it is the control flow, not the memory.**
+The memory is done: both arms' joins, the record reconciliation, the `takeWhile`
+bridge.  What the contract still needs is the correspondence between the model's
+three-way split and the body's four branch bits, each derived from the model's own
+data:
+
+* `%cmp3` (entry) is `j0 < nxp.toNat` — the pre's `j0 < 2^63` and the model's
+  `readLanes32` give it;
+* `%cmp1` (the head) is `pos0 ≤ ps[c]` read backwards: the lane's value is the model's
+  entry (`readLanes32_lane`) and `sub` is `pos0` at `i64` (`ofNat_sub`);
+* `%cmp7` (the inside test) is `pos0 + len` against that lane — which is where the
+  model's `inBody.isEmpty` decides the body-itself arm, and the `takeWhile` bridge
+  supplies the `j1` the arm's memory names;
+* `%cmp9` (the call's answer) is the expander's own word, which the clause gives
+  (`escapeExpand8_decoded`/`_refused`).
+
+So the assembly is **four bit derivations and a composition**, and the composition is
+the part the module already has: entry prefix, seat, `s2StringBodyScan_run`, the
+`Exited` split, and the arm-correct join.  It is the control flow's correspondence
+that is new, and it is the same kind of work as the bridge: a semantic link between
+the model's `Nat` data and the body's `i1` tests. -/
+
 /- **The contract's prerequisite, now proved.**  The planning estimate was that
 `s2StringBodyBody_contract` would assemble seat, run, split and joins — "no crossings,
 so the smallest unit" — and a check of this cone said otherwise: the scan's
