@@ -149,6 +149,15 @@ right side* (an `if` inside a `pc` field).  Seven sites, one rule: an arm is res
 naming the proposition its `if` tests, and the site decides only which of `if_pos`, `if_neg`
 or a full `simp` reaches it — never whether the resolution is needed at all.
 
+**Two traps a terminator's `match` leaves.**  The `match`'s arms are *not* the terminator's
+arms: `split` on a goal whose left side is `match evalOperand … with …` takes the catch-all
+as an arm and produces a `Ctrl.ub = .jump …` branch no terminator can satisfy, which is why
+`by_cases` + `if_pos`/`if_neg` closes such a goal where `split <;> rfl` cannot.  And the
+`match`'s branch *names* its payload (`some (.int 1 v)`), so a hypothesis stated with the
+expression — `= some (.int 1 (evalICmp …))` — is the same proposition but not the same term,
+and `simp` rewrites terms: state the fact over an explicit `v`, or `subst` the payload,
+before casing the arm.
+
 **A class helper's arm is resolved after its call, not before.**  `LeafBlock43_at` (and
 its siblings at the leaves and the pivots) take no bit hypothesis: their conclusion carries
 the `if` on the comparison, so the caller names the arm with `if_pos`/`if_neg` and rewrites
