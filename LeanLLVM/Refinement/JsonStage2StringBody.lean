@@ -1090,11 +1090,16 @@ is `s2StringBodyCalls`'s own clause.
 **The marker's step is stated, not rewritten through `sb_step_callVoid2`.**  That
 step takes the argument values and the outcome as parameters, so a chain that
 supplies only the operands leaves `v2`, `r`, and the `r.mem`/`r.next` in the goal
-as metavariables, and the side goal the compiler reports is about one of them —
-printed as a truncated context, which reads as a failure of the *argument* the
-last attempt passed.  At this environment the answer is not a parameter: the
-marker writes nothing and allocates nothing, so the step's conclusion is the
-state unchanged. -/
+as metavariables.  The side goal the compiler then reports is
+
+    ⊢ s2StringBodyCalls callee [v1, ?v2] s.mem s.next = some ?r
+
+— a goal *about* the call, whose visible form names its operands, not the
+marker's answer — and a chain that keeps answering it by rewriting the argument
+alone leaves it unchanged, because the missing piece is `hc`, not `h1`/`h2`.  At
+this environment the answer is not a parameter: `stage2Calls` selects it by the
+callee's name, so the marker writes nothing and allocates nothing, and the step's
+conclusion is the state unchanged.  The form to write from is the produced one. -/
 theorem sb_step_lifetime (env : Env) (s : State) (ei : Nat) (callee : String)
     (hname : callee = "llvm.lifetime.start.p0" ∨ callee = "llvm.lifetime.end.p0")
     (hei : lookupName env "%ei" = some (.ptr ei)) :
@@ -1333,5 +1338,166 @@ theorem s2StringBody_cleanup16_denote {calls : Calls} {env : Env} {s : State}
       denoteCode calls [] (stateAt (("%retval.1", .int 32 form) :: env) s) := by
   dsimp only [s2StringBodyCleanup16Instrs]
   rw [denoteCode_phi calls env s "%retval.1" (Ty.int 32) _ hpre hinc hop _ (by decide)]
+
+/-! ### The scan's bound
+
+The scan is the body's only loop: `land.rhs` reads the lane at the counter, and
+`while.body` advances the counter and writes it back.  It leaves in two ways —
+`land.rhs` for `land.lhs.true` when the lane is already inside the body, and
+`while.body` for `if.then` when the counter reaches the count — so the exit is a
+predicate and the head's test is the disjunction of both.
+
+**The measure is the counter's distance to the count.**  `while.body` writes
+`c + 1` to the cursor word it was given, so at the head the cursor word holds the
+counter; `Inv r s c` says exactly that, together with `c + r = N`.  Both ways out
+are then `atBound`'s two disjuncts: the first is the count reached, the second is
+the lane already at or past the body's first position.  Neither is a decrease of
+the lane's index — it is the *distance* that falls — which is why the bound is
+`N` and not the position list's length. -/
+
+/-- The scan's invariant at the head: the state is at `land.rhs`, its cursor word
+holds the counter `c`, and `c + r` is the count.  `mem0` is the memory the scan
+started from, and `xj` the cursor word's address: the loop's only memory effect is
+that word's write, one per iteration. -/
+def s2StringBodyScanInv (mem0 : Mem) (xj N : Nat) (r : Nat) (s : State)
+    (c : Nat) : Prop :=
+  s.pc = "land.rhs" ∧ s.mem = writeBytes mem0 xj (wordBytes 8 c) ∧ c + r = N
+
+/-- The head's test: the next index reaches the count, or the lane at this index is
+already inside the body.  The `match` is the second disjunct in a decidable form —
+an unbounded `∃` over `Nat` is not a decision — and
+`s2StringBodyScanAtBound_eq` states the disjunction it stands for. -/
+def s2StringBodyScanAtBound (ps : List Nat) (pos0 N : Nat) : State → Nat → Bool :=
+  fun _ c =>
+    decide (N ≤ c + 1) ||
+      match ps[c]? with
+      | some q => decide (pos0 ≤ q)
+      | none => false
+
+/-- The head's test, as the two ways out. -/
+theorem s2StringBodyScanAtBound_eq (ps : List Nat) (pos0 N : Nat) (s : State)
+    (c : Nat) :
+    s2StringBodyScanAtBound ps pos0 N s c = true ↔
+      (N ≤ c + 1 ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) := by
+  unfold s2StringBodyScanAtBound
+  rw [Bool.or_eq_true, decide_eq_true_eq]
+  constructor
+  · rintro (h | h)
+    · exact Or.inl h
+    · split at h
+      · rename_i q hq
+        exact Or.inr ⟨q, hq, of_decide_eq_true h⟩
+      · cases h
+  · rintro (h | ⟨q, hq, hle⟩)
+    · exact Or.inl h
+    · exact Or.inr (by rw [hq]; exact decide_eq_true hle)
+
+/-- **The invariant's entry**: the head carrying the entry's counter `j0`, with the
+count as the whole budget. -/
+theorem s2StringBodyScanInv_entry (mem0 : Mem) (xj N j0 : Nat) (s : State)
+    (hpc : s.pc = "land.rhs") (hmem : s.mem = writeBytes mem0 xj (wordBytes 8 j0))
+    (hj0 : j0 ≤ N) :
+    s2StringBodyScanInv mem0 xj N (N - j0) s j0 :=
+  ⟨hpc, hmem, by omega⟩
+
+/-- **The scan is a `BoundLoop`.**  The bound, the head's test, the invariant and
+the budget are fixed here; the two arms are the body's — the exit step and one
+iteration's return to the head — stated as the shape's per-iteration facts, as the
+decoder's and the copy loops' instances state theirs.  The two exits share one
+induction: `Exit` is the disjunction of the blocks they leave for. -/
+def s2StringBodyScanBoundLoop (mem0 : Mem) (xj N pos0 : Nat) (ps : List Nat)
+    (cost : Nat) (Exit ExitWord : State → Prop)
+    (step_exit : ∀ (r : Nat) (s : State) (c : Nat),
+      s2StringBodyScanInv mem0 xj N r s c →
+      s2StringBodyScanAtBound ps pos0 N s c = true →
+      ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧ ExitWord e ∧
+        ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+          runFuel s2StringBodyCalls k s2StringBodyBody e)
+    (step_loop : ∀ (r : Nat) (s : State) (c : Nat),
+      s2StringBodyScanInv mem0 xj N (r + 1) s c →
+      s2StringBodyScanAtBound ps pos0 N s c = false →
+      ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = "land.rhs" ∧ c < c' ∧
+        s2StringBodyScanInv mem0 xj N r e c' ∧
+        ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+          runFuel s2StringBodyCalls k s2StringBodyBody e) :
+    BoundLoop s2StringBodyCalls s2StringBodyBody where
+  head := "land.rhs"
+  exitBlock := "land.lhs.true"
+  N := N
+  cost := cost
+  Inv := s2StringBodyScanInv mem0 xj N
+  atBound := s2StringBodyScanAtBound ps pos0 N
+  Exit := Exit
+  ExitWord := ExitWord
+  step_exit := step_exit
+  step_loop := step_loop
+  exit_at_zero := by
+    intro s c h
+    obtain ⟨_hpc, _hmem, hsum⟩ := h
+    rw [s2StringBodyScanAtBound_eq]
+    exact Or.inl (by omega)
+  budget := by
+    intro r s c h
+    obtain ⟨_hpc, _hmem, hsum⟩ := h
+    omega
+
+/-- **The scan's fuel is a term of the arguments.**  With the body's two arms, the
+head reaches an exit within `(N + 1) * cost` control steps, and a completed exit
+continuation lifts to the whole loop.  The induction is `BoundLoop.run_at`'s;
+nothing here is specific to the scan beyond its invariant. -/
+theorem s2StringBodyScan_run_at (mem0 : Mem) (xj N pos0 : Nat) (ps : List Nat)
+    (cost : Nat) (Exit ExitWord : State → Prop)
+    (step_exit : ∀ (r : Nat) (s : State) (c : Nat),
+      s2StringBodyScanInv mem0 xj N r s c →
+      s2StringBodyScanAtBound ps pos0 N s c = true →
+      ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧ ExitWord e ∧
+        ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+          runFuel s2StringBodyCalls k s2StringBodyBody e)
+    (step_loop : ∀ (r : Nat) (s : State) (c : Nat),
+      s2StringBodyScanInv mem0 xj N (r + 1) s c →
+      s2StringBodyScanAtBound ps pos0 N s c = false →
+      ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = "land.rhs" ∧ c < c' ∧
+        s2StringBodyScanInv mem0 xj N r e c' ∧
+        ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+          runFuel s2StringBodyCalls k s2StringBodyBody e)
+    (s : State) (c : Nat) (k : Nat) (hinv : s2StringBodyScanInv mem0 xj N N s c)
+    {o : Outcome}
+    (hcont : ∀ (e : State), Exit e → ExitWord e →
+      runFuel s2StringBodyCalls k s2StringBodyBody e = some o) :
+    runFuel s2StringBodyCalls ((N + 1) * cost + k) s2StringBodyBody s = some o :=
+  (s2StringBodyScanBoundLoop mem0 xj N pos0 ps cost Exit ExitWord step_exit
+    step_loop).run_at s c hinv k hcont
+
+/-! ### Axiom footprints
+
+The runs and the loop's shape print their footprints with `#guard_msgs`, so the
+build checks them rather than printing them.  `Classical.choice` appears exactly
+where a `getelementptr`'s sign-extension enters (`s2StringBody_landRhs_denote`, and
+the loop that composes it), which is the `gep` step's core lemma and not a choice
+any proof here makes; the blocks with no `getelementptr` carry the frame lemmas'
+`[propext, Quot.sound]`. -/
+/-- info: 'LeanLLVM.Refinement.sb_step_lifetime' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms sb_step_lifetime
+
+/-- info: 'LeanLLVM.Refinement.s2StringBody_ifEnd_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms s2StringBody_ifEnd_denote
+
+/-- info: 'LeanLLVM.Refinement.s2StringBody_landRhs_denote' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms s2StringBody_landRhs_denote
+
+/-- info: 'LeanLLVM.Refinement.s2StringBodyScanAtBound_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms s2StringBodyScanAtBound_eq
+
+/-- info: 'LeanLLVM.Refinement.s2StringBodyScanBoundLoop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms s2StringBodyScanBoundLoop
+
+/-- info: 'LeanLLVM.Refinement.s2StringBodyScan_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms s2StringBodyScan_run_at
 
 end LeanLLVM.Refinement
