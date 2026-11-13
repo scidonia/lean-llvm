@@ -1583,16 +1583,79 @@ theorem walkCarryZero_invNum {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) 
 are `walkEntryEnv3`'s own cells — the block's two `alloca`s' loads — so at the successor's
 environment they are `.ptr b` and `.ptr ep`, which is the two-pointer half of `WalkPtrs` that
 the seating *establishes*.  The other four of the six are the staging's. -/
-theorem walkEntryEnv_ptr35 (env : Env) (c n b nep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
+theorem walkEntryEnv_ptr35 (env : Env) (c n b ep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
     lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
-        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n nep sAddr c)
-      b nep) "%3" = some (.ptr b) ∧
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b ep) "%3" = some (.ptr b) ∧
     lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
-        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n nep sAddr c)
-      b nep) "%5" = some (.ptr nep) := by
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b ep) "%5" = some (.ptr ep) := by
   constructor <;>
     simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
       lookupName_cons_ne]
+
+/-- **The invariant at the start of the walk.**  The zero carry satisfies all its clauses at
+a state at the loop head with the staging's environment and memory: the fifteen numeric ones
+are `walkCarryZero_invNum`'s components, the two registers and the carriers are the staging's
+own lookups, and the memory clauses are the staging's facts.  This is the seating's *passed*
+half made explicit: the state's environment and memory are the caller's, so the invariant is
+asserted of them rather than derived, which is the boundary the three kinds mark. -/
+theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : State}
+    (hpc : s.pc = walkLoopHead)
+    (hk : lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)))
+    (hptr : WalkPtrs G (walkCarryZero G stage) s.env)
+    (hreg : WalkRegs G (walkCarryZero G stage) s.env)
+    (hiter : WalkIter G 0 s.env)
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)))
+    (hlogHash : readBytes s.mem (stage.z + 32) 4 = some (natToBytes 0 4))
+    (hlogLen : readBytes s.mem (stage.z + 8) 8 = some (wordBytes 8 G.nev0))
+    (hlogCap : readBytes s.mem (stage.z + 16) 8 = some (wordBytes 8 G.evcap))
+    (hlogA : ∃ a, G.ndst0 ≤ a ∧ a ≤ G.ndst0 ∧
+      readBytes s.mem (stage.z + 48) 8 = some (wordBytes 8 a))
+    (hlogAcap : readBytes s.mem (stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
+    (hown : ∀ r ∈ walkStaged G (walkCarryZero G stage), HasBytes s.mem r.1 r.2)
+    (hframe : UnchangedOutside m0 s.mem (walkWide G (walkCarryZero G stage)))
+    (hty : WalkStackBytes s.mem stage.ctype (fun _ => 0) 0)
+    (hst : WalkStackBytes s.mem stage.cst (fun _ => 0) 0)
+    (hEv : readBytes s.mem (G.ev + G.nev0) 0 = some [])
+    (hlocal : WalkLocal (walkCarryZero G stage) s) :
+    WalkInv G (walkCarryZero G stage) s := by
+  obtain ⟨hk_le, hev_le, halen_le, halen_ge, horder, hinside, hend, hpat, hplen,
+    hpcurs, heoff, hinner, hdepth, hspwl, hwcap⟩ := walkCarryZero_invNum G stage
+  exact
+    { pc_eq := hpc
+      blockIndex := hk
+      k_le := hk_le
+      events_le := hev_le
+      evlen_eq := by simp [walkCarryZero]
+      evBytes := hEv
+      alen_le_sum := halen_le
+      alen_ge := halen_ge
+      spans_order := horder
+      spans_inside := hinside
+      spans_end := hend
+      pending_at := hpat
+      pending_len := hplen
+      pending_cursor := hpcurs
+      eoff_le := heoff
+      inner_cap := hinner
+      depth_cap := hdepth
+      depth_reg := hsp
+      sp_le_wlen := hspwl
+      wlen_cap := hwcap
+      tyBytes := hty
+      stBytes := hst
+      ptrs := hptr
+      regs := hreg
+      iter := hiter
+      log_hash := hlogHash
+      log_len := hlogLen
+      log_cap := hlogCap
+      log_alen := hlogA
+      log_acap := hlogAcap
+      owned := hown
+      frame := hframe
+      blockLocal := hlocal }
 
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
