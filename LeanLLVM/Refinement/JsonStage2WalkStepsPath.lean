@@ -170,3 +170,15 @@ theorem WalkLink.land_rhs_i_at {calls : Calls} {m0 : Mem}
     (by rw [hInv.pc_eq, hblock]; exact walkLand_rhs_i_find) rfl rfl hpre
     hsel hbase hoff hpos hread
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- `cond.end349.i`'s target state: the bound's cell, the compare's cell, the token's
+two stores, and the arm the compare picks.  A `def` rather than a nest, so the
+statement names it and the instance's equality applies directly. -/
+def condEnd349Out (s : State) (c ix : BitVec 64) (tk : Nat) : State :=
+  { env := cells [("%cmp355.i", .int 1 (evalICmp .ugt c ix)),
+      ("%cond350.i", .int 64 c)] s.env
+    mem := writeBytes (writeBytes s.mem tk (natToBytes ix.toNat 8)) (tk + 20)
+      (natToBytes (BitVec.ofNat 32 1).toNat 4)
+    next := s.next
+    pc := (if evalICmp .ugt c ix = 1 then "land.lhs.true357.i" else "if.end372.i")
+    pre := some s.pc }
