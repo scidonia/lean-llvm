@@ -172,4 +172,11 @@ clang "${kflags[@]}" "$here/driver.c" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" -o "$build/driver"
 
+# The guard's own scenario (`guard.sh`) drives this probe over the corpus, the
+# escape unit's rows and the bench's documents; it is built here so the probe
+# and the route share one kernel object set.
+clang "${kflags[@]}" "$here/guard_check.c" \
+  "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
+  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" -o "$build/guard_check"
+
 echo "ok: $build/leanllvm-json-route"

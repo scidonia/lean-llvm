@@ -56,6 +56,10 @@ extern "C" {
 #include "utf8.h"
 #include "escape.h"
 #include "stage2.h"
+
+/* The route's escape-list guard: `escape_guard.h` is the adapter's copy of the
+   condition, so the instrument and the route cannot drift. */
+#include "../route/escape_guard.h"
 }
 
 #define PINNED_MAJOR 4
@@ -83,6 +87,20 @@ static double median_of(std::vector<double> v) {
   if (v.empty()) return 0.0;
   std::sort(v.begin(), v.end());
   return v[v.size() / 2];
+}
+
+/* A ratio's median with the tenth-to-ninetieth percentile range: one field, so
+   a reader sees how wide the per-round pairs were rather than only where their
+   middle sat.  The extremes are left out because one preempted round moves them
+   and says nothing about the pair. */
+static std::string ratio_field(const std::vector<double> &v) {
+  if (v.empty()) return "-";
+  std::vector<double> s = v;
+  std::sort(s.begin(), s.end());
+  size_t lo = s.size() / 10, hi = s.size() - 1 - s.size() / 10;
+  char b[80];
+  snprintf(b, sizeof b, "%.4f (%.3f-%.3f)", median_of(v), s[lo], s[hi]);
+  return b;
 }
 
 static void *xmalloc(size_t n) {
@@ -366,8 +384,8 @@ static int digest_of(const char *path, char out[65]) {
 
 /* ---- the acts ------------------------------------------------------------ */
 
-enum { A_SITE, A_ARM0, A_OFF3, A_OFF0, A_FRESH3, A_FRESHA64, A_FRESH0,
-       A_REF, A_REFNONUM, A_PAD, NA };
+enum { A_SITE, A_ARM0, A_GUARD, A_GUARDSCAN, A_SITEBEFORE, A_SITECTL, A_OFF3,
+       A_OFF0, A_FRESH3, A_FRESHA64, A_FRESH0, A_REF, A_REFNONUM, A_PAD, NA };
 
 static double act_site(doc &d) {
   double t0 = now_ns();
@@ -382,6 +400,41 @@ static double act_site(doc &d) {
 static double act_arm0(doc &d) {
   double t0 = now_ns();
   uint64_t v = pipeline_call(d.win_site + 64, d.n, d.b, 0);
+  double t1 = now_ns();
+  sink ^= v;
+  return t1 - t0;
+}
+
+/* The escape-list guard's acts, one call per timed window: the route calls the
+   object once per document with a fresh buffer set, and a repeated call would
+   price a hot cache the route never has.  The clock reads are inside every act
+   and therefore cancel in the before/after pair; `act_guardscan` is the scan
+   alone, in the same shape. */
+
+/* the guard's own scan: one presence pass over the document */
+static double act_guardscan(doc &d) {
+  double t0 = now_ns();
+  int skip = leanllvm_route_escape_can_skip(d.win_site + 64, d.n);
+  double t1 = now_ns();
+  sink ^= (uint64_t)skip;
+  return t1 - t0;
+}
+
+/* the guard's decision and the call it selects: the arm the route passes */
+static double act_guard(doc &d) {
+  double t0 = now_ns();
+  int skip = leanllvm_route_escape_can_skip(d.win_site + 64, d.n);
+  uint64_t v = pipeline_call(d.win_site + 64, d.n, d.b, skip ? 0 : 2);
+  double t1 = now_ns();
+  sink ^= v;
+  return t1 - t0;
+}
+
+/* the same call the route made before the guard (arm 2): the before arm, and
+   the drift control when its second slot runs it too */
+static double act_site_before(doc &d) {
+  double t0 = now_ns();
+  uint64_t v = pipeline_call(d.win_site + 64, d.n, d.b, ARM);
   double t1 = now_ns();
   sink ^= v;
   return t1 - t0;
@@ -547,23 +600,43 @@ static int verify(doc &d) {
       }
     }
   }
-  /* arm 0 is the same call on a document with no backslash: the escape list
-     is empty under both arms, so every output must agree */
-  if (d.b.nxp == 0) {
+  /* The escape-list guard's two sides, from the route's own copy of the
+     condition (`escape_guard.h`).  Where it fires, arm 2's list must be empty
+     and arm 0 must produce the identical result: that is the claim the guard
+     arms the call on.  Where it does not fire and arm 2's list is non-empty,
+     forcing arm 0 must change the result -- the failing control, so a guard
+     that never mattered cannot pass for one that does. */
+  {
+    int skip = leanllvm_route_escape_can_skip(d.win_site + 64, d.n);
     buffers b;
     memset(&b, 0, sizeof b);
     buffers_alloc(&b, d.n, d.nb, 0);
     buffers_zero(&b);
     uint64_t vv = pipeline_call(d.win_site + 64, d.n, b, 0);
-    int bad = vv != 1 || b.nk != d.b.nk || b.nxp != 0 ||
-              b.ndst != d.b.ndst || b.nev != d.b.nev || b.err != d.b.err ||
-              memcmp(b.ev, ev0.data(), ev0.size()) != 0 ||
-              memcmp(b.dst, dst0.data(), dst0.size()) != 0;
-    buffers_free(&b);
-    if (bad) {
-      fprintf(stderr, "SETUP: %s: arm 0 differs with an empty escape list\n", d.name);
+    int agreed = vv == v && b.nk == d.b.nk && b.nxp == d.b.nxp &&
+                 b.ndst == d.b.ndst && b.nev == d.b.nev && b.err == d.b.err &&
+                 memcmp(b.ev, ev0.data(), ev0.size()) == 0 &&
+                 memcmp(b.dst, dst0.data(), dst0.size()) == 0;
+    if (skip) {
+      if (d.b.nxp != 0) {
+        fprintf(stderr, "SETUP: %s: the guard fires but arm 2's list holds %llu\n",
+                d.name, (unsigned long long)d.b.nxp);
+        buffers_free(&b);
+        return 3;
+      }
+      if (!agreed) {
+        fprintf(stderr, "SETUP: %s: the guard fires and arm 0 differs\n", d.name);
+        buffers_free(&b);
+        return 3;
+      }
+    } else if (d.b.nxp && agreed) {
+      fprintf(stderr,
+              "SETUP: %s: the control did not fire (arm 0 agrees while arm 2's "
+              "list holds %llu)\n", d.name, (unsigned long long)d.b.nxp);
+      buffers_free(&b);
       return 3;
     }
+    buffers_free(&b);
   }
 
   /* the stage acts read the entry words and masks of this call; fill them */
@@ -623,7 +696,8 @@ int main(int argc, char **argv) {
 
   /* warm-up: one untimed act per variant per document */
   for (auto &d : docs) {
-    act_site(d); act_off3(d); act_off0(d);
+    act_site(d); act_arm0(d); act_guard(d); act_guardscan(d);
+    act_site_before(d); act_off3(d); act_off0(d);
     act_fresh(d, 0, d.win_off3 + 3);
     act_fresh(d, 1, d.win_off3 + 3);
     act_fresh(d, 0, d.win_off0);
@@ -642,6 +716,10 @@ int main(int argc, char **argv) {
         switch (s) {
         case A_SITE: ns = act_site(d); break;
         case A_ARM0: ns = act_arm0(d); break;
+        case A_GUARD: ns = act_guard(d); break;
+        case A_GUARDSCAN: ns = act_guardscan(d); break;
+        case A_SITEBEFORE: ns = act_site_before(d); break;
+        case A_SITECTL: ns = act_site_before(d); break;
         case A_OFF3: ns = act_off3(d); break;
         case A_OFF0: ns = act_off0(d); break;
         case A_FRESH3: ns = act_fresh(d, 0, d.win_off3 + 3); break;
@@ -668,6 +746,37 @@ int main(int argc, char **argv) {
            docs[i].name, v[A_SITE], v[A_ARM0], v[A_OFF3], v[A_OFF0], v[A_FRESH3],
            v[A_FRESHA64], v[A_FRESH0], v[A_REF], v[A_REF] - v[A_REFNONUM],
            v[A_PAD], v[A_FRESH3] / v[A_REF]);
+  }
+
+  /* The escape-list guard, paired.  `site` is the route's call before this
+     change (arm 2 on every document); `guard` is the after arm (the presence
+     scan plus the arm it selects); both are one call in one timed window, the
+     route's own shape, so the pair differs in the scan and the arm alone.
+     `delta` is the median of the per-round differences in ns/block (negative
+     is a saving), and `site/site-ctl` is the drift control: the identical act
+     in a second slot of the same round, so a shift between rounds cancels
+     rather than being attributed to the guard. */
+  printf("\n## the escape-list guard, paired (unit: ns/block; before `site`, "
+         "after `guard`)\n");
+  printf("ratios are medians of the per-round pairs; `site/site-ctl` is the "
+         "drift control\n\n");
+  printf("%-14s %8s %8s %8s %-22s %-22s %7s %5s\n", "document", "site",
+         "guard", "delta", "guard/site", "site/site-ctl", "scan", "fired");
+  for (size_t i = 0; i < nd; i++) {
+    std::vector<double> ratio, ctl, diff;
+    for (size_t r = 0; r < t[A_SITEBEFORE * nd + i].size(); r++) {
+      double before = t[A_SITEBEFORE * nd + i][r];
+      double after = t[A_GUARD * nd + i][r];
+      ratio.push_back(after / before);
+      diff.push_back(after - before);
+      /* the drift control: the identical act in a second slot of the round */
+      ctl.push_back(t[A_SITECTL * nd + i][r] / before);
+    }
+    int skip = leanllvm_route_escape_can_skip(docs[i].win_site + 64, docs[i].n);
+    printf("%-14s %8.3f %8.3f %8.3f %-22s %-22s %7.3f %5d\n", docs[i].name,
+           median_of(t[A_SITEBEFORE * nd + i]), median_of(t[A_GUARD * nd + i]),
+           median_of(diff), ratio_field(ratio).c_str(), ratio_field(ctl).c_str(),
+           median_of(t[A_GUARDSCAN * nd + i]), skip);
   }
 
   /* the six stages, in the site shape */

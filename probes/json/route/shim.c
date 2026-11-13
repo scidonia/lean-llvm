@@ -51,6 +51,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "escape_guard.h"
 #include "pipeline.h"
 #include "entry.h"
 #include "policy.h"
@@ -292,10 +293,10 @@ static lean_object *failure(uint64_t tag, uint64_t detail, uint64_t want,
  * block rather than only its `n` bytes.
  */
 
-/* The admission result's header: nine words, no payload.  `tag` names the
+/* The admission result's header: ten words, no payload.  `tag` names the
    measured class or a failed precondition; the other words are meaningful for
    one of the two. */
-#define ADMIT_HEADER_BYTES 72
+#define ADMIT_HEADER_BYTES 80
 
 /* The depth pass's header: nine words, no payload. */
 #define DEPTH_HEADER_BYTES 72
@@ -433,14 +434,18 @@ static lean_object *word_result(size_t bytes, const uint64_t *w, size_t words) {
 /* Phase one's result.  `want`/`got` describe the clause's comparison, or the
    failed precondition when `tag` is `ADMIT_DOMAIN`; `depth` is the measured
    maximum structural nesting the depth clause compares (and zero on the empty
-   and over-long paths, which refuse before a byte of the walk runs). */
+   and over-long paths, which refuse before a byte of the walk runs).  The last
+   word is the escape-list guard's fact (`escape_guard.h`), taken in the same
+   call as the other document facts because a separate native call costs more
+   than the list the guard skips. */
 static lean_object *admit_result(uint64_t tag, uint64_t detail, uint64_t want,
                                  uint64_t got, uint64_t depth,
                                  uint64_t candidate, uint64_t blocks,
-                                 uint64_t verdict, uint64_t clause) {
-  uint64_t w[9] = {tag, detail, want, got, depth, candidate, blocks, verdict,
-                   clause};
-  return word_result(ADMIT_HEADER_BYTES, w, 9);
+                                 uint64_t verdict, uint64_t clause,
+                                 uint64_t escape_skip) {
+  uint64_t w[10] = {tag, detail, want, got, depth, candidate, blocks, verdict,
+                    clause, escape_skip};
+  return word_result(ADMIT_HEADER_BYTES, w, 10);
 }
 
 /* The document's bytes, which the caller provides the length of: `n > doc.size`
@@ -449,20 +454,26 @@ static lean_object *admit_impl(lean_object *doc, uint64_t n, uint64_t maxInput,
                                uint64_t maxDepth) {
   uint64_t bytes = array_bytes(doc);
   if (n > bytes)
-    return admit_result(ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0, 0, ADMIT_NONE);
+    return admit_result(ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0, 0, ADMIT_NONE,
+                        0);
   if (n == 0)
-    return admit_result(ADMIT_MEASURED, 0, 1, 0, 0, 0, 0, 0, ADMIT_EMPTY);
+    return admit_result(ADMIT_MEASURED, 0, 1, 0, 0, 0, 0, 0, ADMIT_EMPTY, 0);
   if (n > maxInput)
     return admit_result(ADMIT_MEASURED, 0, maxInput, n, 0, 0, 0, 0,
-                        ADMIT_LENGTH);
+                        ADMIT_LENGTH, 0);
 
+  const uint8_t *b = lean_sarray_cptr(doc);
   depth_facts f;
-  depth_measure(lean_sarray_cptr(doc), n, &f);
+  depth_measure(b, n, &f);
   uint64_t depth = (uint64_t)f.max;
   uint64_t clause = depth > maxDepth ? ADMIT_DEPTH : ADMIT_NONE;
   uint64_t verdict = clause == ADMIT_NONE ? 1 : 0;
+  /* The escape-list guard, one presence pass over the same bytes.  Only a
+     document the native clauses admit can reach the pipeline, so a refused one
+     is not scanned: the fact costs nothing on a row the route refuses. */
+  uint64_t skip = verdict ? (uint64_t)leanllvm_route_escape_can_skip(b, n) : 0;
   return admit_result(ADMIT_MEASURED, 0, maxDepth, depth, depth,
-                      (uint64_t)f.candidate, f.blocks, verdict, clause);
+                      (uint64_t)f.candidate, f.blocks, verdict, clause, skip);
 }
 
 /* The depth facts, as their own pass over the document. */

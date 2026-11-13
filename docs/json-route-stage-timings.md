@@ -78,8 +78,8 @@ the numbers.
 | stage | the work inside the timed region |
 |---|---|
 | `read_ns` | `IO.FS.readBinFile` of the document — reported apart from the stages, in no stage |
-| `admission_ns` | the two-phase decision, both phases: `admission_native_ns` (the adapter's walk over the document — the running depth, its maximum, the structural lane list through the proved counter, the candidate flag, and the header decode) plus `admission_policy_ns` (the native character-policy scan, which runs only where the walk saw a candidate; `-` on the rows where it was skipped) |
-| `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_depth` — the maximum structural nesting — `admission_candidate`, `admission_blocks`, `admission_clause`) |
+| `admission_ns` | the two-phase decision, both phases: `admission_native_ns` (the adapter's walk over the document — the running depth, its maximum, the structural lane list through the proved counter, the candidate flag, the escape-list guard's presence scan, and the header decode) plus `admission_policy_ns` (the native character-policy scan, which runs only where the walk saw a candidate; `-` on the rows where it was skipped) |
+| `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_depth` — the maximum structural nesting — `admission_candidate`, `admission_blocks`, `admission_clause`, and `escape_skip` — whether the pipeline's arm bit 1 was cleared, which is the fact `escape_guard.h` defines) |
 | `staging_ns` | the record's shape in bytes: the window `[0,0,0] ++ doc ++ padding ++ 32`, and the four growing buffers, each a fresh `ByteArray` at the record's capacity, zero-filled by the adapter's `leanllvm_route_zeroed` — one allocation and one `memset` per buffer |
 | `copyin_ns` | the adapter's precondition checks and its copy of the thirteen buffers the object writes into its own allocations (13 `malloc` + `memcpy`); the document window is borrowed, because the object only reads it, so its bytes are staged once rather than twice |
 | `native_ns` | the call to `leanllvm_json_pipeline` alone |
@@ -122,6 +122,14 @@ exactly on the event stream's end, and produce the same checksum; `check.sh`
 pins a five-event fixture's counts as well.
 
 ## The record
+
+> These rows were captured before the escape-list guard landed.  A current
+> `--stages` row carries one more field, `escape_skip` (whether the arm that row's
+> call took cleared the list gate), and `admission_native_ns` now includes the
+> guard's presence scan; the row's other fields mean what they meant.  The
+> guard's own price and decision are in "The escape-list guard, paired" below,
+> and the kernel objects are unchanged, so the object columns of the stage table
+> still name the same code.
 
 ```text
 lean-llvm: Lean (version 4.35.0, Release)
@@ -982,6 +990,101 @@ alternating seven rounds — read 1.088 (range 0.978–1.131) on `fast-nums-4096
 and 1.018 (0.908–1.147) on `fast-esc`, both ranges crossing 1.0.  The route's
 `native_ns` figure is therefore the core's own cost, not a call-shape tax.
 
+### The escape-list guard, paired (unit: ns per 64-byte block; three sessions of 301 rounds)
+
+The route takes the pipeline's arm word from the admission's own native call.
+`probes/json/route/escape_guard.h` states the guard — no `0x5C` byte and no byte
+at or below `0x1F` — and the scan stops at the first backslash, so the documents
+the guard cannot help are the ones it barely touches.  `escape_guard.h` also
+states why the two classes are the list's emptiness: the list is
+`(ctl | e) & in_string` per block, every escape-start lane of `e` is derived from
+the backslash lanes, and the raw control lanes are the second class — the
+escape corpus's `short:raw-control` (`{"a":"<LF>"}`) is a document with no
+backslash whose list is not empty.
+
+`probes/json/route/guard.sh` is the equivalence gate rather than a timing: 164
+documents (the route's corpus, the escape unit's 21 committed rows, the nine
+generated bench documents and the four committed `probes/bench/json/` ones), of
+which 112 fire the guard.  On every one of those, arm 0 and arm 2 must agree
+field for field — the verdict, the four cursors, the error offset, the arena
+bytes and the event bytes — and the arm-2 list must be empty; on the 48
+documents whose arm-2 list is not empty, a forced arm 0 must change the result.
+That gate passed on the tree this section was measured on, at those counts.
+
+The arms here are `shape.cc`'s `site` shape: `before` is the call the route made
+(`pipeline_call`, arm 2) and `after` is the guard's scan followed by the call at
+the arm it selects, one call per timed window.  Each round runs every act once in
+an order rotated by the round index, so no act always runs first; a pair is the
+two acts of one round.  `delta` is the median of the per-round differences in
+ns/block; `ratio` is the median of the per-round quotients, with the
+tenth-to-ninetieth percentile range printed beside it by the instrument.  The
+drift control is the identical arm-2 act in a second slot of the same round: its
+median ratio is what the instrument reports for a pair that differs in nothing.
+
+| document | fired | delta, sessions A / B / C | ratio, sessions A / B / C | scan ns/block | control ratio, sessions A / B / C |
+|---|---:|---:|---|---:|---|
+| `fast-nums-4096` | 1 | −1.631 / −0.892 / −1.831 | 0.9870 / 0.9930 / 0.9853 | 1.85 | 0.9974 / 0.9948 / 0.9979 |
+| `fast-nums-16384` | 1 | −1.237 / −0.891 / −2.051 | 0.9902 / 0.9929 / 0.9835 | 1.67 | 0.9992 / 0.9981 / 0.9996 |
+| `fast-nums-65536` | 1 | −0.882 / −0.613 / −1.329 | 0.9927 / 0.9952 / 0.9894 | 1.60 | 0.9994 / 0.9987 / 0.9985 |
+| `scale-4096` | 1 | −2.406 / −1.531 / −2.156 | 0.9797 / 0.9869 / 0.9810 | 1.77 | 0.9960 / 0.9969 / 0.9975 |
+| `fast-utf8` | 1 | −0.781 / **+0.375** / −1.219 | 0.9621 / **1.0168** / 0.9420 | 2.13 (5.03 in B) | 0.9971 / 0.9972 / 0.9985 |
+| `fast-esc` | 0 | +0.188 / −0.125 / 0.000 | 1.0017 / 0.9989 / 1.0000 | 0.59 | 0.9986 / 0.9994 / 0.9988 |
+| `fast-esc-quotes` | 0 | +0.094 / +0.062 / +0.062 | 1.0008 / 1.0006 / 1.0006 | 0.59 | 0.9988 / 0.9991 / 0.9988 |
+| `fast-esc-u` | 0 | −0.106 / +0.064 / +0.064 | 0.9990 / 1.0006 / 1.0006 | 0.38 | 0.9958 / 0.9986 / 0.9988 |
+| `fast-surrogate` | 0 | +0.021 / +0.106 / +0.128 | 1.0003 / 1.0013 / 1.0016 | 0.40 | 0.9989 / 0.9984 / 0.9984 |
+
+Construction: one `shape.sh` run per session,
+`probes/json/core-shape/shape.sh --corpus-out .lake/escape-guard-corpus --rounds
+301 --core 6`, on one shared eight-core host whose load averaged 1.8–2.1 during
+the sessions; the kernel objects are the six the shape harness compiles at
+`clang -O3 -march=x86-64-v3 -mpclmul` (`pipeline.o`
+`104d4d6f…`, `s1_block.o` `972627de…`, `entry.o` `af3bc047…`, `utf8.o`
+`6e00f46c…`, `escape.o` `3b349623…`, `stage2.o` `15539fbf…`, sha256 prefixes),
+and the nine documents are the generated bench set.  `before` and `after` are
+the same call shape; they differ in the scan and the arm alone.
+
+What the rows say:
+
+- **On every document the guard fires on, the pair is negative in every session
+  but one cell.**  The saving is 0.6–2.4 ns/block: 0.5–1.6% of the pipeline on
+  the three scalar arrays, 1.3–2.1% on `scale-4096`, and 3.7–5.8% on
+  `fast-utf8` in the two sessions whose rounds were not disturbed, whose
+  pipeline is the smallest of the nine.  The exception is session B's
+  `fast-utf8` (+0.375 ns/block, a 1.7% loss), and it is the cell whose scan read
+  5.03 ns/block where the other two sessions read 2.13 — a disturbed set of
+  rounds on a 32-block document, not a reading about the guard.
+- **The documents the guard cannot help are within the control's own range.**
+  Their deltas are −0.13 to +0.19 ns/block and their ratios 0.9989–1.0017,
+  against control medians of 0.9958–0.9996.  The early exit is what makes this
+  true: the scan is 0.38–0.59 ns/block on those rows because it stops at the
+  first backslash, where the full scan is 1.6–2.1.
+- **The control is the instrument's noise floor, and it is small.**  Its median
+  ratio never leaves 0.9948–0.9996 across all 27 cells: the second slot of the
+  identical act is at most half a percent from the first.  The array ratios sit
+  0.70–1.65% from 1 in the same table, one-and-a-half to three times that
+  control's largest deviation, and `scale-4096`'s and `fast-utf8`'s sit further;
+  the sessions that disagree in size still agree in sign on every firing
+  document.
+- **The `arm 0` column above is an upper bound, not the effect.**  Clearing bit
+  1 unconditionally prices the list at 2.8–7.5 ns/block on these documents
+  across the three sessions (`site` less `arm 0` in each session's own table),
+  and this section's paired saving is far below that.  The difference is the
+  instrument: `site` and `arm 0` are two acts in two slots of the round, and the
+  same act's two slots differ by 2.5% (the main table's `site` reads 129.969
+  ns/block for `fast-nums-16384` in session A where the paired table's `site`
+  slot reads 126.724), which is larger than the whole saving.  That slot bias is
+  what the control column prices, and why the paired estimate is the one stated
+  here and the `arm 0` column is read as a bound.
+
+What it does not establish: a portable level, or that the scan is the cheapest
+possible construction — it is one 32-byte presence pass per document and it
+cannot be cheaper than reading the document once.  The route-level rows carry
+the guard inside `admission_native_ns` rather than as a stage of its own, so
+`native_ns` alone no longer prices the escape-list arm; `escape_skip` in the row
+says whether the call it priced carried it.  The sessions are paired within one
+process and one core, and the absolute columns are not compared with this page's
+other sections, as those sections' own caveat says.
+
 ### What the rows say
 
 **On the scalar arrays the 1.24–1.26 is stage 1 plus the number conversion, and
@@ -1023,21 +1126,21 @@ bytes.
    3.82–3.86, 1.27–1.31 times, and 10.8–13.4 ns/block of the 18–20 — 60–68% of
    the margin on the scalar arrays.  The extracted text equals the measured
    text, so the lever is the conversion itself, not the extraction.
-3. **The escape list on documents with no escapes.**  The route passes arm 2 on
-   every document, so `leanllvm_json_escape_list` runs over every block even
-   where its output is empty: 1.1–2.7 ns/block on the scalar arrays, 4.9 on
-   `scale-4096`, 2.4 on `fast-utf8`.  The `arm 0` column prices exactly that —
-   it is the same call wherever `nxp = 0`, which the probe asserts.  The guard
-   is "the document carries no backslash byte": the admission's candidate flag
-   being clear implies that, so the flag is a sound but conservative guard — it
-   would cover the three scalar arrays and not `scale-4096` or `fast-utf8`,
-   whose quotes set it while their escape lists stay empty.
+3. **The escape list on documents with no escapes — landed.**  The route passed
+   arm 2 on every document, so `leanllvm_json_escape_list` ran over every block
+   even where its output is empty.  The arm decision now comes from the
+   admission's own native call: `escape_guard.h` decides whether the document
+   carries no byte the list can name, the pipeline is called with bit 1 cleared
+   when it does, and `escape_skip` in the stage row names the decision.  The
+   measured, paired saving is 0.6–2.4 ns/block on the documents it fires on
+   (0.5–1.6% on the scalar arrays, 1.3–2.1% on `scale-4096`, 3.7–5.8% on
+   `fast-utf8` in two sessions and a 1.7% loss in the third) and −0.13 to +0.19 ns/block on the documents it cannot help, and
+   the equivalence gate over 164 documents is `probes/json/route/guard.sh`.  The
+   section above states the construction, the three sessions and the control.
 
 Neither of the first two is reachable from this change's boundary: both live in
-`kernel/json/`, which this record reads and does not edit.  The third is a
-1.2–6.9% change on the rows that lose and it needs the route's own arm decision
-threaded from a native fact the admission does not carry; it is left as the
-measured follow-up rather than landed here.
+`kernel/json/`, which this record reads and does not edit.  The third is landed
+and its measurement is in the section above.
 
 ### What this does and does not establish
 

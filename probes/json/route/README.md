@@ -9,6 +9,8 @@ pipeline's record demands and calls the native object.  The contract is
 | `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting and the policy-candidate flag), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array |
 | `shim.c` | the adapter: validates the staging, allocates its zero-filled buffers (`leanllvm_route_zeroed`: one allocation and one `memset` each, in place of `Array.replicate`'s boxed fill), copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the walk over the document's structural delimiter sequence, whose maximum is the depth clause's number and whose lane list goes through the proved depth counter — phase two's wrapper over the policy scan, and the depth pass the admission record reports |
 | `policy.c`, `policy.h` | phase two of the admission: the character-policy scan, native, reproducing `policyRefusal`'s decisions branch for branch — the class and the byte — over the document's bytes, with a screen that answers a document no policy refusal is possible in without visiting a position.  Its `policy_step` is also the body scan phase one walks (`leanllvm_route_body_stop`), so the depth clause's string spans and the policy class array are one reading of a body |
+| `escape_guard.h` | the pipeline's arm decision: whether the document carries no byte the stage-1 escape list can name — no `0x5C` and no byte at or below `0x1F` — so the list is empty on every block and bit 1 of the arm word may be cleared.  A 32-byte presence scan that stops at the first backslash; `shim.c` takes the fact in the admission's own native call, `RouteMain.lean` takes the arm from it, and `driver.c` applies the same decision |
+| `guard_check.c`, `guard.sh` | the guard's equivalence gate: 164 documents (the route's corpus, the escape unit's rows, the bench's documents) called twice each, arm 2 against the arm the guard selects, compared field for field and byte for byte; where the guard fires the arm-2 list must be empty, and a forced arm 0 must change the result on every document whose arm-2 list is not empty |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
 | `build.sh` | compiles the six kernel units, the proved depth counter (`tests/v16/depth_count.ll`), the policy scan, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined |
 | `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the depth clause's own documents and a fixed-seed malformed sweep, the fourteen-row policy class, the three outcomes' distinctness, the two-phase decision's agreement with `admission` on every row — at the refusal's class and byte, and at the measured depth wherever the walk ran — with a control that must report a disagreement, and the consumer mode's reading of a five-event fixture |
@@ -35,7 +37,11 @@ one of three paths, and the output distinguishes them:
 * **the fast path** (`verdict=...` on stdout).  The decision admits the
   document, the program stages it, and the native object answers; the
   observation, the arena and the event stream are printed.  This is the only
-  path that calls the object.
+  path that calls the object.  The pipeline's arm word is `escapeArm` of the
+  admission's escape-list guard fact: bit 1 is cleared where the document's
+  stage-1 list would be empty, which is the same call under either arm, so the
+  fast path never builds a list it cannot use and never changes what it
+  reports — `guard.sh` checks that on every document the guard fires on.
 * **the fallback's refusal** (`refused: ...` on stderr, exit 2).  The decision
   does not admit the document and the scalar reference parser refuses it; the
   reason and position printed are `parseBytes`'s own.
@@ -61,6 +67,7 @@ the counting routine is new code with no refinement theorem yet.
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
+nix develop -c bash probes/json/route/guard.sh   # the escape-list arm's gate
 "$PWD/probes/json/route/build/leanllvm-json-route" --consume tests/json/corpus/depth-two-ok.json 21
 "$PWD/probes/json/route/build/leanllvm-json-route" --admit tests/json/corpus/depth-two-ok.json 21
 nix develop -c bash probes/json/route/correspondence.sh
@@ -105,13 +112,17 @@ line's write.  The parts price the route's own reporting, not the object.
 
 The admission stage is the two-phase decision and reports its split:
 `admission_ns` is both phases, `admission_native_ns` is phase one's native call
-(including the `@[extern]` call and the nine-word header decode) and
-`admission_policy_ns` is phase two — the native policy scan, including its own
-`@[extern]` call and six-word header decode — present only on the rows whose walk
-saw a candidate byte; `admission_policy_ns=-` is a row where the phase was
-skipped.  A row also carries the facts the decision was taken on:
-`admission_depth` (the maximum structural nesting the depth clause compares),
-`admission_candidate`, `admission_blocks` and `admission_clause`.
+(including the `@[extern]` call, the ten-word header decode and the escape-list
+guard's presence scan) and `admission_policy_ns` is phase two — the native policy
+scan, including its own `@[extern]` call and six-word header decode — present
+only on the rows whose walk saw a candidate byte; `admission_policy_ns=-` is a
+row where the phase was skipped.  A row also carries the facts the decision was
+taken on: `admission_depth` (the maximum structural nesting the depth clause
+compares), `admission_candidate`, `admission_blocks`, `admission_clause` and
+`escape_skip` (whether the arm this row's native call took cleared the list
+gate).  The guard is a fact of phase one rather than a stage of its own because a
+separate native call costs more than the list it skips: the guard's own scan is
+priced in `probes/json/core-shape/shape.sh`'s paired table.
 
 `--admit <file> <reps> [<native depth>]` is the agreement probe rather than a
 route: it runs phase one, the depth pass, the two-phase decision, the library's
@@ -448,14 +459,16 @@ expected and observed numbers.  `RouteMain.lean` prints the observation for the
 first two classes as before, and reports the last three on stderr at exit 3, 4
 and 5.
 
-The admission call returns a header of its own, nine words and no payload:
-`tag detail want got depth candidate blocks verdict clause`.  `detail`,
-`want` and `got` are the failed precondition's when the tag is the failure class;
-otherwise `got` is the measured maximum structural nesting and `depth` the same
-number (the clause's comparison is `want`/`got`), `candidate` the policy flag,
-`blocks` the document's 64-byte block count, `verdict` the native clauses'
-decision, and `clause` which of them refused (`0` none, `1` empty, `2` over-long,
-`3` too deep).  On the empty and over-long clauses `depth` and `got` are zero and
+The admission call returns a header of its own, ten words and no payload:
+`tag detail want got depth candidate blocks verdict clause escape_skip`.
+`detail`, `want` and `got` are the failed precondition's when the tag is the
+failure class; otherwise `got` is the measured maximum structural nesting and
+`depth` the same number (the clause's comparison is `want`/`got`), `candidate`
+the policy flag, `blocks` the document's 64-byte block count, `verdict` the
+native clauses' decision, `clause` which of them refused (`0` none, `1` empty,
+`2` over-long, `3` too deep), and `escape_skip` the escape-list guard's fact (a
+refused document, which never reaches the pipeline, is not scanned and reports
+`0`).  On the empty and over-long clauses `depth` and `got` are zero and
 mean nothing: the decision returns before the walk runs.  The policy scan's header is six words, no payload:
 `tag detail want got class pos` — `class` is `0` for a document the character
 policy admits, `1` for an unpaired surrogate escape and `2` for a noncharacter,

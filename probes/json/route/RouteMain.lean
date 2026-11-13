@@ -274,14 +274,23 @@ def stage (doc : ByteArray) (n : Nat) : IO Staged := do
            nxp := nxp, xcarry := xcarry, dst := dst, dstcap := dstcap
            ndst := ndst, ev := ev, evcap := evcap, nev := nev, err := err }
 
-/-- The native call through the adapter, over a staged document. -/
-def call (s : Staged) : IO ByteArray :=
+/-- The arm word the fast path passes: the escape-list gate is bit 1, and a
+document the guard fires on is the same call with that bit clear, because the
+list arm 2 would build is empty.  The other two selector bits are the route's
+own (`0`: the POS8 emitter, ungated UTF-8). -/
+def escapeArm (skip : Bool) : UInt64 := if skip then 0 else 2
+
+/-- The native call through the adapter, over a staged document.  `skip` is the
+escape-list guard's decision over the same bytes, and the arm word is
+`escapeArm skip`: the adapter does not rewrite the arm it is handed, so the
+argument list `JsonCallRoute.routeArgs` states is the one the object sees. -/
+def call (s : Staged) (skip : Bool) : IO ByteArray :=
   route s.window (UInt64.ofNat s.n)
     s.sc s.mkSlot s.entw
     s.ep (UInt64.ofNat s.epcap) s.nk
     s.xp (UInt64.ofNat s.xpcap) s.nxp s.xcarry
     s.dst (UInt64.ofNat s.dstcap) s.ndst
-    s.ev (UInt64.ofNat s.evcap) s.nev s.err 2
+    s.ev (UInt64.ofNat s.evcap) s.nev s.err (escapeArm skip)
 
 /-! ### Outcome handling, in the parts the stage report prices
 
@@ -448,8 +457,8 @@ adapter's accumulator and the counter's recombined final depth is reported besid
 it.  `leanllvm_route_depth` reports both, and `check.sh` compares the maximum
 against `docDepth` and the two final depths against each other. -/
 
-/-- The admission result's header: nine words, no payload. -/
-def admitHeaderBytes : Nat := 72
+/-- The admission result's header: ten words, no payload. -/
+def admitHeaderBytes : Nat := 80
 
 /-- The depth facts' header: nine words, no payload. -/
 def depthHeaderBytes : Nat := 72
@@ -457,7 +466,7 @@ def depthHeaderBytes : Nat := 72
 /-- Phase one of the admission: the document, its length, and the two certified
 bounds.  It returns the header `shim.c` documents: the tag and a failed
 precondition's fields, then the openers, the candidate flag, the block count, the
-verdict and the refused clause. -/
+verdict, the refused clause and the escape-list guard's fact. -/
 @[extern "leanllvm_route_admit"]
 opaque admitNative (doc : ByteArray) (n maxInput maxDepth : UInt64) :
   IO ByteArray
@@ -473,13 +482,19 @@ opaque depthNative (doc : ByteArray) (n : UInt64) : IO ByteArray
 `clause` names the one that refused (`0` none, `1` empty, `2` over-long, `3` too
 deep), `depth` is the document's maximum structural nesting — the depth clause's
 number, and the value its reason reports — `candidate` is the policy-candidate
-flag, and `blocks` is the document's 64-byte block count. -/
+flag, `blocks` is the document's 64-byte block count, and `escapeSkip` is the
+stage-1 escape-list guard (`escape_guard.h`): the document carries no byte the
+list can name, so the pipeline's arm bit 1 may be cleared.  The guard is a fact
+of the same native call as the others — a separate call costs more than the list
+it skips — and a document the native clauses refuse is not scanned, because it
+never reaches the pipeline. -/
 structure AdmitFacts where
   verdict : Bool
   clause : Nat
   depth : Nat
   candidate : Bool
   blocks : Nat
+  escapeSkip : Bool
 
 /-- What the depth pass reported: the proved counter's recombined final depth
 and prefix-depth sum over the document's structural delimiter sequence, how many
@@ -514,7 +529,8 @@ def admitFactsOf (r : ByteArray) : Except (UInt32 × String) AdmitFacts :=
         .ok { verdict := indexWord r 56 == 1, clause := clause,
               depth := (indexWord r 32).toNat,
               candidate := indexWord r 40 == 1,
-              blocks := (indexWord r 48).toNat }
+              blocks := (indexWord r 48).toNat,
+              escapeSkip := indexWord r 72 == 1 }
     else
       .error (5, s!"the admission result carries tag {tag}")
 
@@ -622,7 +638,7 @@ def nativeRefusal (f : AdmitFacts) : Option KernelRefusal :=
 /-- The document's disposition under the two-phase admission.  `failed` is the
 adapter's own failure class, with the exit status the route reports for it. -/
 inductive Decision where
-  | admitted
+  | admitted (f : AdmitFacts)
   | refused (r : KernelRefusal)
   | failed (status : UInt32)
 
@@ -637,9 +653,9 @@ def decide2From (doc : ByteArray) (f : AdmitFacts) : IO Decision := do
       if f.candidate then
         match ← policyPhase doc with
         | .ok (some r) => return .refused r
-        | .ok none => return .admitted
+        | .ok none => return .admitted f
         | .error status => return .failed status
-      else return .admitted
+      else return .admitted f
 
 /-- The two-phase admission.  `maxDepth` is the native side's bound and defaults
 to the certified one; a caller that passes another number is running the
@@ -668,15 +684,16 @@ def reasonTag : Option KernelRefusal → String
 /-- The decision's reason tag, or `failed` for an adapter failure. -/
 def decisionTag (d : Decision) : String :=
   match d with
-  | .admitted => "none"
+  | .admitted _ => "none"
   | .refused r => reasonTag (some r)
   | .failed _ => "failed"
 
 /-- The fast path: stage the document in the record's shape, call the object
-through the adapter, and print the observation and the two payloads. -/
-def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
+through the adapter with the arm the admission's guard fact selects, and print
+the observation and the two payloads. -/
+def runFast (doc : ByteArray) (n : Nat) (skip : Bool) : IO UInt32 := do
   let staged ← stage doc n
-  let result ← call staged
+  let result ← call staged skip
   interpret result
 
 /-- The fallback's acceptance, in the route's wording: the tape's token count,
@@ -709,7 +726,7 @@ def run (path : String) (maxDepth : Nat := kernelMaxDepth) : IO UInt32 := do
   -- bound unless a caller overrides it, which only the agreement scenario's
   -- control does.
   match ← decide2 doc maxDepth with
-  | .admitted => runFast doc doc.size
+  | .admitted f => runFast doc doc.size f.escapeSkip
   | .refused _ => runFallback doc
   | .failed status => return status
 
@@ -722,15 +739,18 @@ hoisted out of its timed region and shared between repetitions: each
 repetition's document is a fresh `ByteArray`.  A stage the path does not take is
 reported `-`, not 0.
 
-The five stages of the fast path are admission, staging, the adapter's copy-in,
-the native call, and the adapter's copy-out; outcome handling is the sixth, and
-it is the work between the adapter's return and the printed observation.  The
-admission stage is both phases of the decision, and its two intervals are
-reported separately: `admission_native_ns` is phase one's native call and
+The stages of the fast path are admission, staging, the adapter's copy-in, the
+native call, and the adapter's copy-out; outcome handling is the last, and it is
+the work between the adapter's return and the printed observation.  The admission
+stage is both phases of the decision, and its two intervals are reported
+separately: `admission_native_ns` is phase one's native call and
 `admission_policy_ns` is phase two's scan, present only on the rows whose masks
-saw a candidate.  The adapter's three intervals come from the instrumented
-build's slots, so the route must be built with `TIMING=1`; a build without it
-reports that instead of printing zeros. -/
+saw a candidate.  The escape-list guard is a fact of phase one's own native call,
+so its cost is inside `admission_native_ns`; `escape_skip` is the decision it
+reached, so a row states whether the call it priced carried the escape-list arm.
+The adapter's three intervals come from the instrumented build's slots, so the
+route must be built with `TIMING=1`; a build without it reports that instead of
+printing zeros. -/
 
 def median (xs : Array Nat) : Nat :=
   if xs.isEmpty then 0
@@ -774,6 +794,7 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
   let mut status := 0
   let mut kind := "fast"
   let mut candidate := 0
+  let mut escapeSkipWord := 0
   let mut depth := 0
   let mut blocks := 0
   let mut clause := "-"
@@ -827,12 +848,17 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         status := st
         total := total.push (o1 - a0)
         summed := summed.push ((a2 - a0) + (f1 - f0) + (o1 - o0))
-    | .admitted =>
+    | .admitted f =>
+        -- The escape-list guard is a fact of the admission's own native call,
+        -- so its cost is inside `admission_native_ns` and not a stage of its
+        -- own; the row states the decision the arm was taken from.
+        let skip := f.escapeSkip
+        escapeSkipWord := if skip then 1 else 0
         let s0 ← IO.monoNanosNow
         let staged ← stage doc doc.size
         let s1 ← IO.monoNanosNow
         let c0 ← IO.monoNanosNow
-        let result ← call staged
+        let result ← call staged skip
         let c1 ← IO.monoNanosNow
         let ci ← stageNsAt 0
         let na ← stageNsAt 1
@@ -885,6 +911,7 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     admission_policy_ns={stageField admpolicy} \
     admission_candidate={candidate} admission_depth={depth} \
     admission_blocks={blocks} admission_clause={clause} \
+    escape_skip={escapeSkipWord} \
     staging_ns={stageField staging} copyin_ns={stageField copyin} \
     native_ns={stageField native} copyout_ns={stageField copyout} \
     adapter_wall_ns={stageField awall} fallback_ns={stageField fallback} outcome_ns={stageField outcome} \
@@ -1041,11 +1068,15 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
     | .failed status => return status
     | .refused _ =>
       kind := "fallback"
-    | .admitted =>
+    | .admitted f =>
+      -- The arm is the admission's own guard fact, as in `runFast`: the
+      -- consumer measures the route's native call and nothing about the arm
+      -- decision costs it a call of its own.
+      let skip := f.escapeSkip
       let s0 ← IO.monoNanosNow
       let staged ← stage doc doc.size
       let c0 ← IO.monoNanosNow
-      let result ← call staged
+      let result ← call staged skip
       let c1 ← IO.monoNanosNow
       staging := staging.push (c0 - s0)
       routeNs := routeNs.push (c1 - c0)
@@ -1129,6 +1160,7 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
   let mut depthS := "-"
   let mut candidateS := "-"
   let mut blocksS := "-"
+  let mut escapeSkipS := "-"
   let mut policyS := "-"
   let mut policyNativeS := "-"
   let mut policyOracleS := "-"
@@ -1168,9 +1200,9 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
               if f.candidate then
                 match ← policyPhase doc with
                 | .ok (some r) => natReading := reasonTag (some r); pure (.refused r)
-                | .ok none => natReading := "none"; pure .admitted
+                | .ok none => natReading := "none"; pure (.admitted f)
                 | .error status => pure (.failed status)
-              else pure .admitted
+              else pure (.admitted f)
     let t3 ← IO.monoNanosNow
     -- The oracle: the reference's own scan on the same bytes, timed apart from
     -- everything the decision pays.
@@ -1204,6 +1236,7 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
         depthS := if f.clause == 1 || f.clause == 2 then "-" else toString f.depth
         candidateS := if f.candidate then "1" else "0"
         blocksS := toString f.blocks
+        escapeSkipS := if f.escapeSkip then "1" else "0"
         if f.verdict && f.candidate then
           policyS := "1"
           pol := pol.push (t3 - t2)
@@ -1231,7 +1264,8 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
       | _ => if twoTag == certTag then 1 else 0
   IO.eprintln s!"admit doc={(System.FilePath.fileName path).getD path} size={size} \
     reps={reps} maxdepth={nativeDepth} native={nativeS} native_clause={clauseS} \
-    native_depth={depthS} candidate={candidateS} blocks={blocksS} policy={policyS} \
+    native_depth={depthS} candidate={candidateS} blocks={blocksS} \
+    escape_skip={escapeSkipS} policy={policyS} \
     policy_native={policyNativeS} policy_oracle={policyOracleS} \
     depth_final={depthFinalS} depth_sum={depthSumS} structurals={structuralsS} \
     depth_max={depthMaxS} depth_walk_final={depthWalkS} \

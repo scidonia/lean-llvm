@@ -689,3 +689,48 @@ What it shows, and what it does not:
   walk has no refinement theorem and is not in `kernel/json/`.  The *predicate* it
   measures is certified (`JsonKernelCertificate.depth_bridge_core`); the native
   measurement is not.
+## The escape-list guard's control (`R17`)
+
+The route's fast path takes the pipeline's arm word from the admission's own
+native call: `probes/json/route/escape_guard.h` decides whether the document
+carries no byte the stage-1 escape list can name — no `0x5C` and no byte at or
+below `0x1F` — and bit 1 of the arm is cleared when it does, because the list
+arm 2 would build is empty on every block.  `probes/json/route/guard.sh` is the
+gate.  Its subject is the pair of calls on the same bytes and the same staging:
+arm 2, and the arm the guard selects; the verdict, the four cursors, the error
+offset, the arena bytes and the event bytes must agree wherever the guard fires,
+and the arm-2 list must be empty there.
+
+This control is not a staged cut of the shipped code: the arm word is the
+probe's, and `guard_check.c` forces bit 1 clear on a document whose arm-2 list is
+not empty.  That is a differential control, exercised on every run rather than
+recorded once, and it fires on 48 of the 164 documents the scenario feeds:
+
+| Control | Applied where | What must happen | Observed |
+|---|---|---|---|
+| `R17` the forced arm | `guard_check.c`: a third call at arm 0, on every document whose arm-2 list is not empty | the result must change; a forced arm that agreed would mean the guard's decision is not the claim under test | 48 of 48 diverge, named in the transcript (`fast-esc` first, then the escape unit's `short:backslash-n`, `short:raw-control` and the rest); `controls_fired=48` |
+
+The rows, from the same run:
+
+| Row class | Documents | What is asserted |
+|---|---:|---|
+| the guard fires | 112 | the arm-2 list is empty, and the guarded call agrees with arm 2 field for field |
+| the guard declines, arm-2 list non-empty | 48 | the forced arm 0 changes the result |
+| the guard declines, arm-2 list empty | 4 | nothing beyond the pair, which is the same call (`site/site-ctl` in the timing table) |
+
+What it shows, and what it does not:
+
+- **The list's emptiness is the claim, and it is observed on every firing
+  document.**  A guard that fired on a document whose list was not empty is a
+  red, even where the two outputs happened to agree, because the next arm's
+  consumer would be reading a list the call claimed not to need.
+- **The documents that make a backslash-only guard wrong are in the set.**  A
+  raw control byte inside a string is a position too: `raw-lf.json` and its
+  siblings in `tests/json/corpus`, and `short:raw-control` in the escape unit's
+  rows, are documents with no backslash whose arm-2 list is not empty.  They
+  are the 48-row control class's members that a "no backslash" guard would have
+  skipped; the guard's second byte class is what keeps them on arm 2.
+- **What it does not show.**  That the arm decision is right on a document
+  outside the 164 rows — the class is checked as a relation over the rows the
+  scenario feeds, not proved; and the timing of the decision, which is
+  `probes/json/core-shape/shape.sh`'s paired table and not this gate's.
