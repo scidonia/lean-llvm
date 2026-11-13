@@ -1195,7 +1195,11 @@ performs is on the *dispatch's* branch rather than on `C.k + 1` alone: the hypot
 `¬ (C.k + 1 < G.nep)` is what selects the last entry, and which of `finish`/`refuse` it is
 is the disjunction's own. -/
 theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    (hcont : WalkDispatch calls G)
+    -- The continue case only: the revolution is consumed in that branch alone, so the premise
+    -- names what it uses rather than the whole loop.  (Discharging it still needs the
+    -- revolution's evidence, which is why this narrows the premise without retiring it.)
+    (hcont : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      C.k + 1 < G.nep → WalkDispatchOutcome calls G C s)
     (hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
       ¬ (C.k + 1 < G.nep) →
       (∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
@@ -1213,7 +1217,7 @@ theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : Walk
     WalkDispatchThree calls G := by
   intro C s hInv hhead
   by_cases hk : C.k + 1 < G.nep
-  · exact WalkDispatchOutcome.ofDispatch hcont hInv hhead hk
+  · exact hcont C s hInv hhead hk
   · rcases hlast C s hInv hhead hk with
       ⟨Cd, sd, p, k2, prev, kOp, nepv, seg, hblock, hpre, hkOp, hk2, hnepv, hterm, hprice⟩ |
       ⟨Cd, sd, p, seg, hblock, herr, hprice⟩
