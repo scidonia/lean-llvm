@@ -4057,8 +4057,8 @@ def s2StringBodyHeadState (env : Env) (s : State) (base p j0 : Nat)
 
 /-- **The entry, seated**: the body's first control step reaches the named head, and
 the invariant holds there.  The prefix and the seat, consumed as one fact. -/
-theorem s2StringBodyEntry_seat_landRhs {env : Env} {s : State} {c p xj base j0 : Nat}
-    {nxp : BitVec 64} {ps : List Nat}
+theorem s2StringBodyEntry_seat_landRhs {env : Env} {s : State}
+    {c p xj base j0 xp : Nat} {nxp : BitVec 64} {ps : List Nat}
     (hpc : s.pc = "entry")
     (hc : lookupName env "%c" = some (.ptr c))
     (hp : lookupName env "%p" = some (.ptr p))
