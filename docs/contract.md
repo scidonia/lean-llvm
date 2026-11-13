@@ -408,22 +408,41 @@ clause's verdict with the reference's own depth verdict on the deep-but-balanced
 class, the boundary, and the corpus's depth rows, and reproduces the deleted
 clause as a control that disagrees on exactly that class.
 
-**The route's native character-policy scan is modelled, not proved.**  The
-probe's `probes/json/route/policy.c` decides the policy clause natively, and
+**The route's native character-policy scan is proved at the model level; its
+body correspondence is not.**  The probe's `probes/json/route/policy.c` decides
+the policy clause natively, and
 `LeanLLVM/Refinement/JsonPolicyModel.lean` writes its transition beside the
-reference's: the emission's `policy_step` at its own byte and lookahead, in the
-emission's branch order, with the three-valued class `policy_class_of` reads;
-the reference's reading of a scan (`refClass`, stated over `scanCharsFrom`); and
-the reference's own equations read at the lead ranges the emission tests.  What
-that module proves is the supporting lemmas — the byte and noncharacter bridges,
-the suffix decomposition, and the per-lead reference equations — and nothing
-about agreement: the step equivalence, the walk and the backward fill are the
-remaining work.  So the policy clause's evidence remains the route's observation
-(§7.1 item 5 and `probes/json/route/README.md`), and the row that would move it
-to proved is the missing theorem.  The emission is also outside the modelled
-fragment — `switch`, `insertvalue`/`extractvalue` and an anonymous-struct return
-— which is a second, structural obligation that no proof can close while the
-fragment stays as it is.
+reference's and proves the two the same step.  The transition is the emission's
+`policy_step` at its own byte and lookahead, in the emission's branch order,
+with the three-valued class `policy_class_of` reads; the reference's reading is
+`refClass` over `scanCharsFrom`.
+
+`policyStep_spec` is the one-step equivalence: every branch of the emission's
+step is the reference's step at the same byte — the same refusal class at the
+same labelled position, or the reference's own decomposition into the character
+it accepted and the scan of the suffix the emission continues at, or a branch
+that answers nothing where the reference does not refuse on the policy's
+account (it ends, or fails for syntax).  `policyWalk_spec` carries it over a
+whole scan, `policyClass_refClass` reads that at the fuel `policyClass`
+supplies, and `policyClass_backward` states the backward fill's recurrence —
+`cls[i]` is the step's own class or the class already filled at `cls[next]`,
+which is what makes a pass filling slots from the buffer's end the forward walk.
+The position scan is covered too: `scanCharsEnd_error` in
+`LeanLLVM/JSON/Scan.lean` names the error side (the success side was already
+`scanCharsEnd_sound`), and `refClass_scanCharsEnd` states that the refusal
+`policyRefusalAt` reads through `scanCharsEnd` is the reference's, reason and
+position.  All six theorems are at `[propext, Quot.sound]`, pinned in the model
+module beside a `Classical.choice` control.
+
+What that does **not** establish is that the emitted body computes this
+transition.  The emission is outside the modelled fragment — `switch`,
+`insertvalue`/`extractvalue` and an anonymous-struct return — so the step from
+the instructions to `policyStep`'s branch structure is unproved, and no proof in
+this fragment can close it while the fragment stays as it is.  So this row
+claims model-level agreement and says nothing about the emitted body; the
+policy clause's runtime evidence remains the route's observation (§7.1 item 5
+and `probes/json/route/README.md`), and the body correspondence is the open,
+structural obligation.
 
 ### 7.6 The stage-2 helpers' correspondence
 
