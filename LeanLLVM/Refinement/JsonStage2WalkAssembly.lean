@@ -1493,6 +1493,14 @@ onto it rather than re-establishing it. -/
 theorem walkInvSeat_frame {m0 : Mem} (G : WalkGeom m0) (regions : List (Nat × Nat)) :
     UnchangedOutside m0 m0 regions := fun _ _ => rfl
 
+/-- **The seating's stack clause.**  `WalkStackBytes mem base M n` is the pointwise
+`readByte mem (base + i) = some (M i)` for `i < n`; at the staging nothing has been pushed,
+so the depth is zero and both copies' predicates are the empty case — the clause a depth
+reduced to zero restates, which is why the seating's two stack fields need no bytes at all. -/
+theorem walkInvSeat_stackBytes {mem : Mem} (base : Nat) (M : Nat → UInt8) :
+    WalkStackBytes mem base M 0 :=
+  WalkStackBytes.empty
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
