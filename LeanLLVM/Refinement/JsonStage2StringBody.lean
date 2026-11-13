@@ -1503,6 +1503,28 @@ theorem readBytes_writeByte_above (m : Mem) {x : Nat} {v : UInt8} :
       | none => rfl
       | some b => rw [readBytes_writeByte_above m n (a + 1) (by omega)]
 
+/-- **The position list survives a write away from every lane**: a write whose region
+misses each lane's four bytes leaves `readLanes32` as it was.  This is the frame the
+callee's own read of the list needs at a memory the scan has written the cursor
+word into. -/
+theorem readLanes32_writeBytes_away {m : Mem} {start : Nat} {ws : List UInt8}
+    {addr k : Nat}
+    (h : ∀ j, j < k → addr + 4 * j + 4 ≤ start ∨ start + ws.length ≤ addr + 4 * j) :
+    readLanes32 (writeBytes m start ws) addr k = readLanes32 m addr k := by
+  induction k generalizing addr with
+  | zero => rfl
+  | succ k ih =>
+      have h4 : readBytes (writeBytes m start ws) addr 4 = readBytes m addr 4 := by
+        rcases h 0 (Nat.succ_pos k) with hb | ha
+        · exact readBytes_writeBytes_below m ws 4 addr start hb
+        · exact s2StringBodyReadBytes_above m ws 4 addr start (by simpa using ha)
+      have hrec : readLanes32 (writeBytes m start ws) (addr + 4) k
+          = readLanes32 m (addr + 4) k :=
+        ih (addr := addr + 4) (fun j hj => by
+          have := h (j + 1) (by omega)
+          simpa [show addr + 4 + 4 * j = addr + 4 * (j + 1) by omega] using this)
+      simp only [readLanes32, h4, hrec]
+
 /-- **The swap with the presence on the other address.**  The equality is symmetric
 in its two writes, so this is `writeByte_swap_of_readByte` with the addresses
 exchanged — the variant the commutation's upper case needs, where the region, not
@@ -1872,6 +1894,21 @@ theorem readBytes_of_stage2ReadWord {mem : Mem} {a w v : Nat}
         rw [← htake]
         exact natToBytes_bytesToNat bs w (by omega)
       simpa only [wordBytes, hbs] using hr
+
+/-- A word's bytes read back as the word, in range. -/
+theorem bytesToNat_natToBytes {v w : Nat} (h : v < 256 ^ w) :
+    bytesToNat (natToBytes v w) = v := by
+  rw [natToBytes_toNat, Nat.mod_eq_of_lt h]
+
+/-- **The byte read as a word read**: the dual of `readBytes_of_stage2ReadWord`, at a
+value the staging's bound keeps in range.  The callee's own read is stated as a word
+read (its model's vocabulary) and the exit's memory carries the cursor as bytes. -/
+theorem stage2ReadWord_of_readBytes {mem : Mem} {a w v : Nat} (hv : v < 256 ^ w)
+    (h : readBytes mem a w = some (wordBytes w v)) : stage2ReadWord mem a w = some v := by
+  unfold stage2ReadWord
+  rw [h]
+  simp only [Option.map_some]
+  rw [wordBytes, bytesToNat_natToBytes hv]
 
 /-- **A counter whose every position below it satisfies the predicate, and whose own
 position does not (or is past the list), is the `takeWhile` length.**  Induction on
