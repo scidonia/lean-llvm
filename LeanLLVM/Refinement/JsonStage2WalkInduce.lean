@@ -953,6 +953,42 @@ theorem walkWhiteScanVisitSeg3_43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   rw [hres] at hl₃
   exact Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv')))
 
+/-- **The landing block's `phi` is the latch's increment.**  The landing block shadows the
+counter's cell with the value the phi selects, and the phi selects `%inc371.i` when the
+predecessor is the latch — which the latch's own write sets to `i + 1`.  So the value the
+visit carries as `e` is the advanced counter, in every byte class: the chain is the latch's
+and does not depend on which leaf the byte picks. -/
+theorem scanPhiIncrement {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {i c : Nat} {op : Operand} {p : String} {e : BitVec 64}
+    (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
+    (hpre : (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") op
+      = some (.int 64 e))
+    (hinc : lookupName (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env
+      "%inc371.i" = some (.int 64 (BitVec.ofNat 64 (i + 1)))) :
+    e = BitVec.ofNat 64 (i + 1) := by
+  have hp : p = "while.body370.i" := by
+    have h : some p = some s.pc := by
+      rw [← hpre]
+    injection h with hp'
+    rw [hp', hInv.pc_eq, hblock]
+  have hphi : phiIncoming "while.body370.i"
+      [("while.body370.i", (Operand.reg "%inc371.i")),
+       ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some (.reg "%inc371.i") := by
+    simp [phiIncoming]
+  have hop : op = .reg "%inc371.i" := by
+    rw [hp] at hin
+    rw [hphi] at hin
+    exact (Option.some.inj hin).symm
+  have h : lookupName (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env
+      "%inc371.i" = some (.int 64 e) := by
+    rw [hop] at hv
+    exact hv
+  rw [hinc] at h
+  exact heq_iff_eq.mp (Value.int.inj (Option.some.inj h)).2.symm
+
 /-- **A round of the whitespace scan, counted: four steps.**  The latch's link and the
 visit's three, `trans` at `1 + 3`, inside the byte allowance.  This is the unit the
 dispatch's credit consumes: `c - i` rounds are `(c - i) · 4` steps against
@@ -1048,27 +1084,9 @@ theorem walkWhiteScanRound43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     Seg.measure (walkWhiteScanVisitSeg3_43
       (s := scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i")
       hinv₁ rfl hpre hin hv hpos hqn halen hevlen hlt13 hws hsc)
-  -- the landing block's `phi` is the latch's increment, so the counter it writes is `i + 1`
-  have hp : p = "while.body370.i" := by
-    have h : some p = some s.pc := by
-      rw [← hpre]
-    injection h with hp'
-    rw [hp', hInv.pc_eq, hblock]
-  have hphi : phiIncoming "while.body370.i"
-      [("while.body370.i", (Operand.reg "%inc371.i")),
-       ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some (.reg "%inc371.i") := by
-    simp [phiIncoming]
-  have hop : op = .reg "%inc371.i" := by
-    rw [hp] at hin
-    rw [hphi] at hin
-    exact (Option.some.inj hin).symm
-  have heq : e = BitVec.ofNat 64 (i + 1) := by
-    have h : lookupName (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env
-        "%inc371.i" = some (.int 64 e) := by
-      rw [hop] at hv
-      exact hv
-    rw [hinc₁] at h
-    exact heq_iff_eq.mp (Value.int.inj (Option.some.inj h)).2.symm
+  -- the counter the landing writes is the latch's increment, in every byte class
+  have heq : e = BitVec.ofNat 64 (i + 1) :=
+    scanPhiIncrement hInv hblock hpre hin hv hinc₁
   -- the target's environment, named: what the visit's three blocks install
   have henv : (leafBlock43OutAt
       (nodeBlock52OutAt (landRhsIOutAt G
@@ -1547,6 +1565,7 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg3_43
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatch_link
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanRound43
+#print axioms LeanLLVM.Refinement.WalkScope.scanPhiIncrement
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds43
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
