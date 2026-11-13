@@ -938,7 +938,19 @@ def stage2Pre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     -- the pre has to state; the post states all three (`stage2Boundary`), and a
     -- precondition that left them free would demand of its proof what it did not
     -- grant its caller.
-    nxp < 2 ^ 64 ∧ dstcap < 2 ^ 64 ∧ evcap < 2 ^ 64
+    nxp < 2 ^ 64 ∧ dstcap < 2 ^ 64 ∧ evcap < 2 ^ 64 ∧
+    -- **The two addresses are non-null words.**  The document's base is read at
+    -- `%3 - 1` by the entry block's `%invariant.gep` (a signed `getelementptr` at
+    -- `-1`), so a base of zero is not a caller the body can be run for: the
+    -- model's arithmetic would form `2 ^ 64 - 1` where the flattening's pointer
+    -- arithmetic means one byte below the document, and the body would write
+    -- outside the frame it promises to leave silent.  A base or entry stream at
+    -- or above `2 ^ 64` cannot round-trip through the eight-byte word the
+    -- staging writes for it (`%s->b`, `%s->ep`, and the entry stream's lanes), so
+    -- the reader of those words would see the value modulo the word.  Both facts
+    -- hold of every real caller; they are the two addresses' own statement, and
+    -- `pipelineStaging` carries the same two widths for the pipeline's staging.
+    0 < b ∧ b < 2 ^ 64 ∧ ep < 2 ^ 64
 
 /-! ### The post -/
 
@@ -1227,7 +1239,7 @@ theorem stage2Pre_cursor_bounds {args : List Value} {mem : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, _hargs, _hdoc, _htail, hent, horder, hlt, _hxp, _hdstpres,
     hdst, _hevpres, hev, _hndst, _hnev, _herr, _hmax, _hdisj, _hwm, _hnxp, _hdstcap,
-    _hevcap⟩ := h
+    _hevcap, _hbpos, _hbLt, _hepLt⟩ := h
   refine ⟨n, nep, dstcap, evcap, ndst0, nev0, by omega, by omega, ?_⟩
   rw [← readLanes32_length mem ep nep ent hent]
   exact length_le_of_pairwise_lt horder hlt
@@ -1239,54 +1251,56 @@ concrete memory.  The empty document keeps the check honest without an encoder:
 `readBytes mem b 0 = some []` and `readLanes32 mem ep 0 = some []` are the
 zero-length cases, so the memory needs only the arena and the three slots. -/
 
-/-- The witness memory: thirty-two document-tail bytes at zero, sixty-four arena
-bytes at thirty-two, then the two cursor slots and the refusal slot, each eight
-zero bytes. -/
+/-- The witness memory: thirty-two document-tail bytes at one, sixty-four arena
+bytes at thirty-three, then the two cursor slots and the refusal slot, each eight
+zero bytes.  The tail starts at one so the witness satisfies the record's
+`0 < b`: a document based at zero is not a caller the entry block can run for,
+since its `%invariant.gep` is a signed `getelementptr` at `-1`. -/
 def stage2Mem : Mem :=
-  writeBytes (writeBytes (writeBytes (writeBytes (writeBytes [] 0
-    (List.replicate stage2ReadTail 0)) 32 (List.replicate 64 0))
-    96 (wordBytes 8 0)) 104 (wordBytes 8 0)) 112 (wordBytes 8 0)
+  writeBytes (writeBytes (writeBytes (writeBytes (writeBytes [] 1
+    (List.replicate stage2ReadTail 0)) 33 (List.replicate 64 0))
+    97 (wordBytes 8 0)) 105 (wordBytes 8 0)) 113 (wordBytes 8 0)
 
 /-- The document's read-past tail is readable at the witness memory. -/
 theorem stage2Mem_tail :
-    readBytes stage2Mem 0 stage2ReadTail = some (List.replicate stage2ReadTail 0) := by
+    readBytes stage2Mem 1 stage2ReadTail = some (List.replicate stage2ReadTail 0) := by
   unfold stage2Mem
-  rw [readBytes_writeBytes_frame _ _ 112 0 stage2ReadTail (by decide),
-      readBytes_writeBytes_frame _ _ 104 0 stage2ReadTail (by decide),
-      readBytes_writeBytes_frame _ _ 96 0 stage2ReadTail (by decide),
-      readBytes_writeBytes_frame _ _ 32 0 stage2ReadTail (by decide)]
-  exact readBytes_writeBytes_same [] (bs := List.replicate stage2ReadTail 0) (addr := 0)
+  rw [readBytes_writeBytes_frame _ _ 113 1 stage2ReadTail (by decide),
+      readBytes_writeBytes_frame _ _ 105 1 stage2ReadTail (by decide),
+      readBytes_writeBytes_frame _ _ 97 1 stage2ReadTail (by decide),
+      readBytes_writeBytes_frame _ _ 33 1 stage2ReadTail (by decide)]
+  exact readBytes_writeBytes_same [] (bs := List.replicate stage2ReadTail 0) (addr := 1)
 
 /-- The arena bytes are readable at the witness memory. -/
-theorem stage2Mem_arena : readBytes stage2Mem 32 64 = some (List.replicate 64 0) := by
+theorem stage2Mem_arena : readBytes stage2Mem 33 64 = some (List.replicate 64 0) := by
   unfold stage2Mem
-  rw [readBytes_writeBytes_frame _ _ 112 32 64 (by decide),
-      readBytes_writeBytes_frame _ _ 104 32 64 (by decide),
-      readBytes_writeBytes_frame _ _ 96 32 64 (by decide)]
-  exact readBytes_writeBytes_same _ (bs := List.replicate 64 0) (addr := 32)
+  rw [readBytes_writeBytes_frame _ _ 113 33 64 (by decide),
+      readBytes_writeBytes_frame _ _ 105 33 64 (by decide),
+      readBytes_writeBytes_frame _ _ 97 33 64 (by decide)]
+  exact readBytes_writeBytes_same _ (bs := List.replicate 64 0) (addr := 33)
 
 /-- The first cursor slot is readable at the witness memory. -/
-theorem stage2Mem_ndst : readBytes stage2Mem 96 8 = some (wordBytes 8 0) := by
+theorem stage2Mem_ndst : readBytes stage2Mem 97 8 = some (wordBytes 8 0) := by
   unfold stage2Mem
-  rw [readBytes_writeBytes_frame _ _ 112 96 8 (by decide),
-      readBytes_writeBytes_frame _ _ 104 96 8 (by decide)]
-  exact readBytes_writeBytes_same _ (bs := wordBytes 8 0) (addr := 96)
+  rw [readBytes_writeBytes_frame _ _ 113 97 8 (by decide),
+      readBytes_writeBytes_frame _ _ 105 97 8 (by decide)]
+  exact readBytes_writeBytes_same _ (bs := wordBytes 8 0) (addr := 97)
 
 /-- The second cursor slot is readable at the witness memory. -/
-theorem stage2Mem_nev : readBytes stage2Mem 104 8 = some (wordBytes 8 0) := by
+theorem stage2Mem_nev : readBytes stage2Mem 105 8 = some (wordBytes 8 0) := by
   unfold stage2Mem
-  rw [readBytes_writeBytes_frame _ _ 112 104 8 (by decide)]
-  exact readBytes_writeBytes_same _ (bs := wordBytes 8 0) (addr := 104)
+  rw [readBytes_writeBytes_frame _ _ 113 105 8 (by decide)]
+  exact readBytes_writeBytes_same _ (bs := wordBytes 8 0) (addr := 105)
 
 /-- The refusal slot is readable at the witness memory. -/
-theorem stage2Mem_err : readBytes stage2Mem 112 8 = some (wordBytes 8 0) := by
+theorem stage2Mem_err : readBytes stage2Mem 113 8 = some (wordBytes 8 0) := by
   unfold stage2Mem
-  exact readBytes_writeBytes_same _ (bs := wordBytes 8 0) (addr := 112)
+  exact readBytes_writeBytes_same _ (bs := wordBytes 8 0) (addr := 113)
 
 /-- The witness staging's objects are separate. -/
 theorem stage2Mem_disjoint :
     DisjointRegions
-      (stage2Regions 0 0 0 0 0 0 32 0 0 0 96 104 112) := by
+      (stage2Regions 1 0 0 0 0 0 33 0 0 0 97 105 113) := by
   simp only [DisjointRegions, stage2Regions, stage2ArenaReserve, stage2ReadTail]
   decide
 
@@ -1296,18 +1310,20 @@ empty so its two content clauses are vacuous, the document's read-past tail is
 staged, and the cursors read zero.  The record therefore promises something
 rather than refusing every caller.
 
-The watermark is `120`: the witness's largest staged object ends at `112 + 8`, so
-a cursor at `120` is the smallest the clause admits — and `1`, the model's
+The watermark is `121`: the witness's largest staged object ends at `113 + 8`, so
+a cursor at `121` is the smallest the clause admits — and `1`, the model's
 `initState` cursor, is *not* admitted, which is the clause's content rather than
-an accident of the witness. -/
+an accident of the witness.  The base is `1`, not `0`: the record now asks the
+document's base to be a non-null word, because `entry`'s `%invariant.gep` is a
+signed `getelementptr` at `-1`. -/
 theorem stage2_pre_inhabited :
     Γ_stage2.pre
-      [.ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 32,
-       .int 64 64, .ptr 96, .ptr 0, .int 64 0, .ptr 104, .ptr 112]
-      stage2Mem 120 := by
-  refine ⟨0, 0, 0, 0, 0, 0, 32, 64, 96, 0, 0, 104, 112, [], [], 0, 0, rfl,
+      [.ptr 1, .int 64 0, .ptr 0, .int 64 0, .ptr 0, .int 64 0, .ptr 33,
+       .int 64 64, .ptr 97, .ptr 0, .int 64 0, .ptr 105, .ptr 113]
+      stage2Mem 121 := by
+  refine ⟨1, 0, 0, 0, 0, 0, 33, 64, 97, 0, 0, 105, 113, [], [], 0, 0, rfl,
     rfl, ?_, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_⟩
+    ?_, ?_, ?_, ?_⟩
   · exact ⟨List.replicate stage2ReadTail 0, stage2Mem_tail⟩
   · simp
   · simp
@@ -1321,6 +1337,9 @@ theorem stage2_pre_inhabited :
   · exact ⟨wordBytes 8 0, stage2Mem_err⟩
   · decide
   · exact stage2Mem_disjoint
+  · decide
+  · decide
+  · decide
   · decide
   · decide
   · decide

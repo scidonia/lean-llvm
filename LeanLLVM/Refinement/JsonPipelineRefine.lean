@@ -543,7 +543,7 @@ theorem pipelineStaging_args {tab base : Nat} {args : List Value} {mem : Mem}
         .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
         .int 64 arm] := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
-    nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, -⟩ := h
+    nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, -, -, -⟩ := h
   exact ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     n, epcap, xpcap, dstcap, evcap, arm, hargs⟩
 
@@ -574,7 +574,7 @@ theorem pipelineStaging_base {tab base : Nat} {args : List Value} {mem : Mem}
       ∃ rest : List Value, args = .ptr base :: .int 64 n :: rest := by
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs,
-    hargs, _hnlen, _hmax, hwin, htail, h3, hpre3, -⟩ := h
+    hargs, _hnlen, _hmax, hwin, htail, h3, hpre3, -, -, -⟩ := h
   exact ⟨n, bs, h3, hpre3, hwin, htail, _, by rw [hargs]⟩
 
 /-- **The staging stages what the decoder reads past the document.**  The padded
@@ -1132,7 +1132,7 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     hlen, hbound, hwin, _htail, hbase3, hlow3, hpos, htab, hsc, hcarry, hnk0, hnxp0,
     hepcap,
     hxpbytes, hdstcap, hdstbytes, hevbytes, hevroom, hndst0, hnev0, hroomk,
-    hroomx, h32, harm, hreads, hdisj⟩ := hpre
+    hroomx, h32, harm, hreads, hdisj, _hbLt, _hepLt⟩ := hpre
   subst hargs
   simp only [pipelineUnitsPost] at hpost
   split at hpost

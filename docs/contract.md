@@ -373,6 +373,22 @@ staging construction.  Nothing about the domain is asserted without a proof, and
 the capacity exclusion is a theorem about the parser (`parseBytes`
 never returns `.outOfCapacity` inside the input bound), not a policy choice.
 
+**The two addresses are words, and the record says so.**  The staging now states
+`base < 2 ^ 64` and `ep < 2 ^ 64` beside the capacities it already bounded
+(`pipelineStaging`, `JsonPipelineContract`), and `routePre` states the same two
+facts of the caller's layout (`JsonCallRoute`); `0 < base` follows from the
+three-byte prefix room the layout already requires.  The stage-2 record's
+precondition states the corresponding facts at its own thirteen arguments
+(`0 < b`, `b < 2 ^ 64`, `ep < 2 ^ 64`, `JsonStage2Contract.stage2Pre`): the entry
+block's `%invariant.gep` is a signed `getelementptr` at `-1`, so a zero base is
+not a caller the body can be run for, and a base or entry-stream address at or
+above `2 ^ 64` cannot round-trip through the eight-byte word the staging writes.
+The record's inhabitedness witness (`stage2_pre_inhabited`) is at `b = 1` for the
+same reason.  These are properties of every real caller, not narrowing the
+admitted documents, and the pre's `0 < nep` remains *obliged* rather than
+stated: the empty entry stream is the all-whitespace document, which the route
+admits and the body must be proved to refuse.
+
 The scalar reference parser is the **fallback** for a document the decision does
 not admit, and for nothing else.  The route's three outcomes are `admitted`
 (the native pipeline answers), `refused` (the reference parser refuses, with its

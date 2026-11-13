@@ -7450,7 +7450,8 @@ theorem pipelineArgLen_staged {tab base : Nat} {args : List Value} {mem : Mem}
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0,
     ndst0, nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin,
     htail, hb3, hzero3, hpos, htab, hsc, hcarry, hnk, hnxp, hepcap, hxp, hdstcap, hdst, hev,
-    hevcap, hndst, hnev, hroomk, hroomxn, hblk, harm, hreads, hdisj⟩ := hst
+    hevcap, hndst, hnev, hroomk, hroomxn, hblk, harm, hreads, hdisj, _hbLt,
+    _hepLt⟩ := hst
   have hnpos : 0 < n.toNat := by omega
   have hlen : pipelineArgLen [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep,
       .int 64 epcap, .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
@@ -7838,7 +7839,8 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err,
     nxp0, ndst0, nev0, n, epcap, xpcap, dstcap, evcap, sel, bs, hargs, hn, hlim, hwin,
     htail, hb3, hzero3, hpos, htab, hsc, hcarry, hnk, hnxp, hepcap, hxp, hdstcap, hdst,
-    hev, hevcap, hndst, hnev, hroomk, hroomxn, hblk, harm, hreads, hdisj⟩ := hst
+    hev, hevcap, hndst, hnev, hroomk, hroomxn, hblk, harm, hreads, hdisj, _hbLt,
+    _hepLt⟩ := hst
   subst hargs
   -- the block count, as the staging's successor
   have hNpos : 0 < pipelineBlocks bs.length := by

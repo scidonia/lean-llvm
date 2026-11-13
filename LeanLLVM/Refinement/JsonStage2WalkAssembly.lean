@@ -62,15 +62,17 @@ in it is one of four kinds: the eighteen register bindings, which are
 facts, which are `WalkStage.separate` at the two cursor slots; the two cursor-slot
 reads, which are the geometry's `ndstRead`/`nevRead`; and the word facts —
 `0 < G.b`, `G.b < 2^64`, `G.ep < 2^64`, and the counts `G.nxp`, `G.dstcap`,
-`G.evcap`, `G.ndst0`, `G.nev0` inside their words.  The widths are the
-precondition's: `Γ_stage2.pre` states the three words (`nxp`, `dstcap`, `evcap`)
-and `nep` follows from the stream, which is what `Stage2Run`'s
-`nxpLt`/`dstcapLt`/`evcapLt`/`nepLt` read at the *report*, and `G.n` is below the
-document's `2 ^ 32` bound (`WalkGeom.n_lt`).  The two addresses are the caller's:
-nothing in a record fixes where its buffers are, so `0 < G.b` and `G.b < 2^64` are
-statements about a particular caller's staging, not about the record.  So the
-seed's three runs are address facts and environment reads, not a trace — which is
-why the four premises reduce to the dispatch's chain and the exit's tail.
+`G.evcap`, `G.ndst0`, `G.nev0` inside their words.  Every one of them is the
+precondition's: `Γ_stage2.pre` states the three counts (`nxp`, `dstcap`, `evcap`),
+the two addresses (`0 < b`, `b < 2^64`, `ep < 2^64`), and `nep` follows from the
+stream, which is what `Stage2Run`'s
+`nxpLt`/`dstcapLt`/`evcapLt`/`nepLt`/`bPos`/`bLt`/`epLt` read at the *report*, and
+`G.n` is below the document's `2 ^ 32` bound (`WalkGeom.n_lt`).  So the seed's
+three runs are environment reads, not a trace — the record grants every fact they
+ask — which is why the four premises reduce to the dispatch's chain and the exit's
+tail.  The final state is `walkSeedFinalState`, whose cursor is the entry run's
+`next + 28` (the four `alloca`s `stage2AllocaWrites` names); the state the three
+blocks leave and the state the loop reads are one state, field for field.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
 import LeanLLVM.Refinement.JsonStage2WalkTraverse
@@ -377,7 +379,7 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, hargs, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
     evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
-    hevcap⟩ := h'
+    hevcap, hbpos, hbLt, hepLt⟩ := h'
   refine ⟨{
     b := b
     n := n
@@ -413,6 +415,9 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
     nxpLt := hnxp
     dstcapLt := hdstcap
     evcapLt := hevcap
+    bPos := hbpos
+    bLt := hbLt
+    epLt := hepLt
     separate := separate
     next0 := next
     watermark := hwm }, rfl, hargs⟩

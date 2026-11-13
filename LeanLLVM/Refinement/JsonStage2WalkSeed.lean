@@ -14,10 +14,12 @@ allocator cursor), the pointer store, the 32- and 64-bit immediate stores, the
 signed `getelementptr` at `-1` (the header's unused `%invariant.gep`), and the
 two `memset`s and `s2_init`, whose memories are the model's own.
 
-The seed needs two facts `stage2Pre` does not state, both recorded here rather
-than assumed away: `0 < b`, because `%invariant.gep` is `%3 - 1` and the
-semantics refuses a displacement past the base; and `0 < nep`, because `entry`
-branches to `if.then492.i` when the entry count is zero.
+The seed asks for the entry stream to be non-empty — `0 < nep`, because `entry`
+branches to `if.then492.i` when the entry count is zero.  That fact is the
+caller's own: `stage2Pre` admits the empty stream, and the flush arm is a run
+that must be proved rather than a caller the record refuses.  The three address
+facts the block run needs (`0 < b`, `b < 2 ^ 64`, `ep < 2 ^ 64`) are now
+`stage2Pre`'s clauses, so the seed no longer asks for them beside the record.
 
 The register carriers are `WalkInv` fields (`WalkRegs`, `WalkIter`), and this
 module is where their *production* belongs: `WalkSeedState` asks for them, and

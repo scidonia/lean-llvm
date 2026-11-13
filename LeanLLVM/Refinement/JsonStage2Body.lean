@@ -873,6 +873,13 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   /-- **The escape count is its argument word's value**, for the same reason:
   `stage2Boundary`'s `nxp < 2 ^ 64`, and `stage2Pre`'s. -/
   nxpLt : nxp < 2 ^ 64
+  /-- **The document's base is non-null**, `stage2Pre`'s clause: the entry block's
+  `%invariant.gep` is a signed `getelementptr` at `-1`. -/
+  bPos : 0 < b
+  /-- **The document's base is a word**, `stage2Pre`'s clause. -/
+  bLt : b < 2 ^ 64
+  /-- **The entry stream's base is a word**, `stage2Pre`'s clause. -/
+  epLt : ep < 2 ^ 64
 
 namespace Stage2Run
 
@@ -893,7 +900,8 @@ theorem pre (h : Stage2Run args mem m0) : Γ_stage2.pre args mem h.next0 :=
   ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.dst, h.dstcap, h.ndst, h.ev, h.evcap, h.nev,
     h.err, h.bs, h.ent, h.ndst0, h.nev0, h.args_eq, h.doc, h.tail, h.entries, h.order,
     h.inside, h.esc, h.arenaCap, h.arenaRoom, h.evCap, h.evRoom, h.ndstRead, h.nevRead,
-    h.errBytes, h.maxDoc, h.separate, h.watermark, h.nxpLt, h.dstcapLt, h.evcapLt⟩
+    h.errBytes, h.maxDoc, h.separate, h.watermark, h.nxpLt, h.dstcapLt, h.evcapLt,
+    h.bPos, h.bLt, h.epLt⟩
 
 /-- The arena and event-stream cursors are inside the objects the caller staged:
 the arena's by its reserve, the event stream's by its write room. -/

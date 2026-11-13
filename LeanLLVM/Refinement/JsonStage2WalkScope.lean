@@ -308,7 +308,7 @@ open LeanLLVM.Refinement.BlockEval
 /-- `stage2Pre`'s witnesses, at the memory the caller staged.  A geometry is the
 staging the loop reads, held fixed for the run; the invariant and the measure are
 indexed by it.  Every field and every clause is `stage2Pre`'s (the three widths
-sit beside `maxDoc` rather than after the watermark),
+and the two address facts sit beside `maxDoc` rather than after the watermark),
 so the loop does not work at a weaker domain than the record admits. -/
 structure WalkGeom (m0 : Mem) where
   /-- The document. -/
@@ -317,6 +317,15 @@ structure WalkGeom (m0 : Mem) where
   n : Nat
   /-- The entry stream. -/
   ep : Nat
+  /-- **The document's base is non-null**, `stage2Pre`'s clause.  The entry block's
+  `%invariant.gep` is a signed `getelementptr` at `-1`, so a base of zero is not a
+  caller the body can be run for. -/
+  bPos : 0 < b
+  /-- **The document's base is a word**, `stage2Pre`'s clause: the value the
+  staging writes at `%s->b` and the entry block reads back as `%3`. -/
+  bLt : b < 2 ^ 64
+  /-- **The entry stream's base is a word**, `stage2Pre`'s clause. -/
+  epLt : ep < 2 ^ 64
   /-- The entry count. -/
   nep : Nat
   /-- The escape list. -/
@@ -408,7 +417,7 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, -, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
     evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
-    hevcap⟩ := h'
+    hevcap, hbpos, hbLt, hepLt⟩ := h'
   exact ⟨{
     b := b
     n := n
@@ -444,6 +453,9 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
     nxpLt := hnxp
     dstcapLt := hdstcap
     evcapLt := hevcap
+    bPos := hbpos
+    bLt := hbLt
+    epLt := hepLt
     separate := separate
     next0 := next
     watermark := hwm

@@ -1119,7 +1119,14 @@ def walkSeedFinalState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
     env := walkSeedFinalEnv G S s.env s q bt
     mem := walkEntryMem G S
     pc := "NodeBlock21"
-    pre := some "while.body.i" }
+    pre := some "while.body.i"
+    -- The entry block's four `alloca`s advance the cursor by `28`
+    -- (`stage2AllocaWrites` at `s.next`), and the environment above is read at
+    -- the *pre*-allocation cursor, which is where those four objects land.  The
+    -- final state is the run's, so its cursor is the advanced one; keeping
+    -- `s.next` here would make the state differ from the run's in a field the
+    -- next block's allocations read.
+    next := s.next + 28 }
 
 theorem walkSeedFinalState_env {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
     (s : State) (q : Nat) (bt : UInt8) :

@@ -397,7 +397,15 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     arm.toNat < 8 ∧
     -- the read set, and the staged objects' separation
     (∀ r ∈ pipelineReads base tab 0 nxp0 args, HasBytes mem r.1 r.2) ∧
-    DisjointRegions (pipelineRegions base tab 0 nxp0 args)
+    DisjointRegions (pipelineRegions base tab 0 nxp0 args) ∧
+    -- **The document's base and the entry stream's are 64-bit words.**  The
+    -- wrapper writes both addresses into eight-byte words the stages read back
+    -- (`%sc`'s record, the entry stream's lanes), and a value at or above `2 ^ 64`
+    -- would be read as itself modulo the word.  The base is also non-null: the
+    -- stage-2 call's `%invariant.gep` is a signed `getelementptr` at `-1` from it,
+    -- so `Γ_stage2.pre` asks `0 < b`, and the `3 ≤ base` below is the same
+    -- statement for this staging.
+    base < 2 ^ 64 ∧ ep < 2 ^ 64
 
 /-! ### The count slot's witness
 
