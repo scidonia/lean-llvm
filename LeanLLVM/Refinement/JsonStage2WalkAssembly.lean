@@ -1776,6 +1776,20 @@ theorem walkSeg2Ws3_inside (zAddr v2 evcap : Nat) :
   rcases hp with rfl | rfl
   all_goals simp [wordBytes, natToBytes_length, woff] <;> omega
 
+/-- **Segment 3's stores stay inside the cursor record.**  The 1152-byte memset at `%c + 40`
+is the longest entry, and the five word stores sit at `%c + 0/8/16/24` and `%c + 1112`; the
+whole run fits 1192 bytes, which is the memset's own end. -/
+theorem walkSeg3Stores_inside (b n ep nep eAddr cAddr : Nat) :
+    ∀ p ∈ walkSeg3Stores b n ep nep eAddr cAddr,
+      cAddr ≤ p.1 ∧ p.1 + p.2.length ≤ cAddr + 1192 := by
+  intro p hp
+  simp only [walkSeg3Stores, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl
+  · simp only [List.length_replicate, woff]
+    have hw : (BitVec.signExtend 64 (40#64)).toNat = 40 := by decide
+    omega
+  all_goals simp [wordBytes, natToBytes_length, woff] <;> omega
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
