@@ -480,10 +480,93 @@ theorem walkIfEnd473_at {sub : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     rw [← hInv.pc_eq]
   exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
 
+
+/-! ### The entry stream's lane
+
+`cond.true345.i` reads the entry stream's `%inc.i`-th lane and zero-extends it into
+`%conv347.i`: three instructions, and only one non-arithmetic fact — that the stream at
+`s.mem` is the geometry's at `G.ep`.  That fact is the frame's, so it is the step's
+hypothesis (`hframe`) and not a re-derivation here: **the arithmetic is free, the fact that
+the memory is the geometry's is the price**, and a block says what it assumes. -/
+
+/-- **`cond.true345.i`'s target, named.**  The lane's three cells, at `cond.end349.i`.
+`hframe` is the frame's entry-stream preservation at the cursor — the one fact whose
+producer is elsewhere.
+
+Two details of the chain are worth stating because neither is arithmetic:
+
+* the `zext`'s cell is `ofNat 64 (ofNat 32 q).toNat`, not `ofNat 64 q`: `denoteCode_zext`
+  binds the *narrow* value's `toNat`, so a statement with `q` at 64 bits differs from the
+  run in exactly that cell and the closing `rfl` fails there and nowhere else;
+* `hv` needs `BitVec.toNat_ofNat` before `Nat.mod_eq_of_lt`: the target is
+  `(BitVec.ofNat 32 q).toNat`, which is not yet spelled `q % 2 ^ 32`.
+
+The successor is a `let` and both sides go through `dsimp only [e, stateAt, …]`: the
+`denoteCode` rewrite leaves `(stateAt (cells …) s).env` on one side and the definition has
+`(cells … s.env)` on the other, and reducing the projection is what makes them one term. -/
+theorem walkCondTrue345_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "cond.true345.i")
+    {i q : Nat}
+    (h5 : lookupName s.env "%5" = some (.ptr G.ep))
+    (hi : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hi63 : i < 2 ^ 63)
+    (hq32 : q < 2 ^ 32)
+    (hframe : readBytes s.mem (G.ep + i * 4) 4 = some (natToBytes q 4)) :
+    ∃ (s' : State), WalkLink calls G C s { C with block := "cond.end349.i" } s' ∧
+      s' = { s with
+        env := cells [("%conv347.i", .int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat)),
+          ("%34", .int 32 (BitVec.ofNat 32 q)),
+          ("%arrayidx346.i", .ptr (G.ep + i * 4))] s.env
+        pc := "cond.end349.i"
+        pre := some s.pc } := by
+  have hv : readBytes s.mem (G.ep + i * 4) 4 =
+      some (natToBytes (BitVec.ofNat 32 q).toNat 4) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hq32]; exact hframe
+  have hden : denoteCode calls walkCond_true345_i.instrs s =
+      some (stateAt (cells [("%conv347.i", .int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat)),
+        ("%34", .int 32 (BitVec.ofNat 32 q)),
+        ("%arrayidx346.i", .ptr (G.ep + i * 4))] s.env) s) := by
+    rw [show walkCond_true345_i.instrs = [
+        Instr.gep "%arrayidx346.i" (.int 32) (.reg "%5") (.reg "%inc.i"),
+        Instr.load "%34" (.int 32) (.reg "%arrayidx346.i"),
+        Instr.zext "%conv347.i" 32 64 (.reg "%34")] from rfl, ← stateAt_self s]
+    rw [denoteCode_gep32_ofNat (calls := calls) (env := s.env) (s := s)
+      (d := "%arrayidx346.i") (base := "%5") (off := "%inc.i") (a := G.ep) (j := i)
+      h5 hi hi63 [Instr.load "%34" (.int 32) (.reg "%arrayidx346.i"),
+        Instr.zext "%conv347.i" 32 64 (.reg "%34")]]
+    rw [JsonScanLane.denoteCode_load_i32 (calls := calls)
+      (env := ("%arrayidx346.i", .ptr (G.ep + i * 4)) :: s.env) (s := s) (d := "%34")
+      (p := "%arrayidx346.i") (a := G.ep + i * 4) (v := BitVec.ofNat 32 q)
+      (by simp [lookupName]) hv [Instr.zext "%conv347.i" 32 64 (.reg "%34")]]
+    rw [denoteCode_zext (calls := calls)
+      (env := ("%34", .int 32 (BitVec.ofNat 32 q)) ::
+        ("%arrayidx346.i", .ptr (G.ep + i * 4)) :: s.env)
+      (s := s) (d := "%conv347.i") (v := "%34") (wIn := 32) (wOut := 64)
+      (x := BitVec.ofNat 32 q) (by simp [lookupName])]
+    rfl
+  have hfind : stage2Body.findBlock C.block = some walkCond_true345_i := by
+    rw [hblock]; exact walkCond_true345_i_find
+  obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (calls := calls) G C s hInv hfind hden
+    (by unfold walkCarried; decide) rfl rfl (t := "cond.end349.i") rfl
+    (by simp [WalkLocal])
+  let e : State :=
+    { s with
+      env := (cells [("%conv347.i", .int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat)),
+        ("%34", .int 32 (BitVec.ofNat 32 q)),
+        ("%arrayidx346.i", .ptr (G.ep + i * 4))] s.env)
+      pc := "cond.end349.i"
+      pre := some s.pc }
+  refine ⟨s', hl, ?_⟩
+  have hstep : step calls stage2Body s = Ctrl.jump e := by
+    simp only [LeanLLVM.step, hInv.pc_eq, hfind, hden]
+    dsimp only [e, stateAt, walkCond_true345_i, execTerm]
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd473_at
+#print axioms LeanLLVM.Refinement.WalkScope.walkCondTrue345_at
 
 end WalkScope
 end LeanLLVM.Refinement
