@@ -2394,6 +2394,36 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionEscape_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionExtraToken_holds
 
+/-- The counter the landing's `phi` binds survives to the latch: `%q.0.i246` at the
+leaf's state is the selected value, five cells deep. -/
+theorem latch462S_counter {m0 : Mem} (s : State) (i c : Nat) (idx : BitVec 64) (a q : Nat)
+    (x : BitVec 8) :
+    lookupName (Latch462S (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i")
+      idx a q x).env "%q.0.i246" = some (.int 64 idx) := by
+  simp only [Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut, stateAt, cells, State.bind,
+    lookupName_cons_ne (k := "%SwitchLeaf98") (n := "%q.0.i246") _ _ (by decide),
+    lookupName_cons_ne (k := "%.off97") (n := "%q.0.i246") _ _ (by decide),
+    lookupName_cons_ne (k := "%Pivot106") (n := "%q.0.i246") _ _ (by decide),
+    lookupName_cons_ne (k := "%47") (n := "%q.0.i246") _ _ (by decide),
+    lookupName_cons_ne (k := "%arrayidx458.i") (n := "%q.0.i246") _ _ (by decide),
+    lookupName_cons_self]
+
+/-- The bound survives the same five cells. -/
+theorem latch462S_cond {m0 : Mem} (s : State) (i c : Nat) (idx : BitVec 64) (a q : Nat)
+    (x : BitVec 8) (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c))) :
+    lookupName (Latch462S (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i")
+      idx a q x).env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
+  simp only [Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut, stateAt, cells, State.bind,
+    lookupName_cons_ne (k := "%SwitchLeaf98") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%.off97") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%Pivot106") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%47") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%arrayidx458.i") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%q.0.i246") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%exitcond298.not") (n := "%cond350.i") _ _ (by decide),
+    lookupName_cons_ne (k := "%inc463.i") (n := "%cond350.i") _ _ (by decide)]
+  exact hc
+
 end WalkScope
 
 end LeanLLVM.Refinement
