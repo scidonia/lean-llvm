@@ -2077,6 +2077,15 @@ theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
       s'.mem = writeBytes s.mem (e + 8) (wordBytes 8 v) :=
   ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl, rfl⟩
 
+/-- **The entry run's outgoing memory at a staging**, named because more than one statement
+mentions it. -/
+def walkEntryMemAt {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : Mem :=
+  walkSeg4PostMem (G.next0 + 8) (G.next0 + 12)
+    (walkSeg3PostMem G.b G.n G.ep G.nep S.e S.c
+      (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev G.nev0 G.evcap
+        (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+          ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) m0)))
+
 /-- **The entry block's zero arm and the flush block, chained.**  Two of the arm's four steps:
 the second's two operands and its environment come from the first's returned environment, and
 the document bound is the geometry's. -/
@@ -2096,6 +2105,7 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
       lookupName s₂.env "%root_done.i" = some (.ptr (G.next0 + 8)) ∧
       lookupName s₂.env "%alen" = some (.ptr (S.z + woff 48)) ∧
       lookupName s₂.env "%len" = some (.ptr (S.z + woff 8)) ∧
+      s₂.mem = writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n) ∧
       s₂.env = ("%off1.i.i117", .ptr (S.e + 8)) :: walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
           (walkEntryEnv1 (EntryState stage2Body
               (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -2105,7 +2115,7 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
               d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env G.next0 G.n)
           S.s S.z G.ep G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev) G.b G.n G.ep S.s S.c)
         G.b G.nep := by
-  obtain ⟨s₁, h1, hpc1, -, henv1⟩ := walkEntryStaging_zeroArm G S hzero
+  obtain ⟨s₁, h1, hpc1, hmem1, henv1⟩ := walkEntryStaging_zeroArm G S hzero
   obtain ⟨he0, h40⟩ := walkEntryEnv_e4 (EntryState stage2Body
       (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
         .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
@@ -2120,8 +2130,11 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
     have h := G.maxDoc
     simp only [stage2MaxDocument] at h
     omega
-  obtain ⟨s₂, h2, hpc2, henv2, -⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
+  obtain ⟨s₂, h2, hpc2, henv2, hmem2⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
     hpc1 he h4 hn64
+  have hmem1' : s₁.mem = walkEntryMemAt G S := hmem1
+  have hmem2' : s₂.mem = writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n) := by
+    rw [hmem2, hmem1']
   rw [henv1] at henv2
   have hnine := walkEntryEnv_copy (EntryState stage2Body
       (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -2130,7 +2143,7 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
       d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env
     G.next0 G.n G.b G.ep G.nep S.s S.z G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev S.e
-  refine ⟨s₁, s₂, h1, h2, hpc2, ?_, ?_, ?_, ?_, henv2⟩
+  refine ⟨s₁, s₂, h1, h2, hpc2, ?_, ?_, ?_, ?_, hmem2', henv2⟩
   · rw [henv2]; exact hnine.1
   · rw [henv2]; exact hnine.2.1
   · rw [henv2]; exact hnine.2.2.1
