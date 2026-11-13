@@ -1757,6 +1757,25 @@ theorem walkSeg2Ws1_inside (sAddr zAddr nep xp nxp dst : Nat) :
   rcases hp with rfl | rfl | rfl | rfl | rfl
   all_goals simp [wordBytes, natToBytes_length, woff, List.length_replicate] <;> omega
 
+/-- **Segment 2's middle stores are the log's.**  The arena cursor, the capacity and the
+stream base at `%z + 48/56/0`. -/
+theorem walkSeg2Ws2_inside (zAddr v1 dstcap ev : Nat) :
+    ∀ p ∈ walkSeg2Ws2 zAddr v1 dstcap ev,
+      zAddr ≤ p.1 ∧ p.1 + p.2.length ≤ zAddr + 64 := by
+  intro p hp
+  simp only [walkSeg2Ws2, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl | rfl
+  all_goals simp [wordBytes, natToBytes_length, woff] <;> omega
+
+/-- **Segment 2's last stores are the log's two cursor words.** -/
+theorem walkSeg2Ws3_inside (zAddr v2 evcap : Nat) :
+    ∀ p ∈ walkSeg2Ws3 zAddr v2 evcap,
+      zAddr ≤ p.1 ∧ p.1 + p.2.length ≤ zAddr + 64 := by
+  intro p hp
+  simp only [walkSeg2Ws3, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl
+  all_goals simp [wordBytes, natToBytes_length, woff] <;> omega
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
