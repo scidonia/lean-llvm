@@ -695,6 +695,69 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       (bs := wordBytes 8 0) (by simp [wordBytes, natToBytes_length])
 
 
+
+/-- **`if.then425.i`'s refuse arm, with the answer named.**  `od_scalar_value` refused (its
+answer is zero, the error record written), so `%tobool428.not.i` is one and the run takes
+the refusal's continuation `if.then432.i`. -/
+theorem walkIfThen425_refuse_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then425.i")
+    {r : CallOutcome} {pos : Nat}
+    (hc : lookupName s.env "%c.i" = some (.ptr C.stage.c))
+    (ht : lookupName s.env "%t352.i" = some (.ptr C.stage.tok))
+    (ho : lookupName s.env "%z" = some (.ptr C.stage.z))
+    (hcall : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z] s.mem s.next = some r)
+    (hrefuse : r.mem = stage2ErrSetMsg s.mem (C.stage.e) pos 0)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 0)) :
+    ∃ (s' : State), WalkLink (stage2Calls stage2SubCalls) G C s
+        { C with block := "if.then432.i" } s' ∧
+      s' = { stateAt (cells [
+          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 0)
+            (BitVec.ofNat 32 0))),
+          ("%call427.i", .int 32 (BitVec.ofNat 32 0))] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := "if.then432.i"
+        pre := some s.pc } := by
+  obtain ⟨s', hl⟩ := WalkLink.if_then425_i_refuse (G := G) (C := C) (s := s) hInv hblock hc ht
+    ho hcall hrefuse hret
+  refine ⟨s', hl, ?_⟩
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen425.instrs s =
+      some (stateAt (cells [
+          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 0)
+            (BitVec.ofNat 32 0))),
+          ("%call427.i", .int 32 (BitVec.ofNat 32 0))] s.env)
+        { s with mem := r.mem, next := r.next }) := by
+    simpa only [stateAt] using (walkIfThen425_denote (sub := stage2SubCalls) (env := s.env)
+      (s := s) (c := C.stage.c) (t := C.stage.tok) (o := C.stage.z)
+      (x := BitVec.ofNat 32 0) (r := r) hc ht ho hcall hret)
+  have hbit1 : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = (1 : BitVec 1) := by
+    decide
+  have hbit : lookupName (stateAt (cells [
+      ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 0)
+        (BitVec.ofNat 32 0))),
+      ("%call427.i", .int 32 (BitVec.ofNat 32 0))] s.env)
+      { s with mem := r.mem, next := r.next }).env "%tobool428.not.i" =
+      some (.int 1 (1 : BitVec 1)) := by
+    simp only [stateAt, cells, lookupName_cons_self, hbit1]
+  have hfind : stage2Body.findBlock s.pc = some walkIfThen425 := by
+    rw [hInv.pc_eq, hblock]; exact walkIfThen425_find
+  have hterm : walkIfThen425.term =
+      Term.condbr (.reg "%tobool428.not.i") "if.then432.i" "if.then447.i" := rfl
+  have hstep : step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump
+      { stateAt (cells [
+          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 0)
+            (BitVec.ofNat 32 0))),
+          ("%call427.i", .int 32 (BitVec.ofNat 32 0))] s.env)
+          { s with mem := r.mem, next := r.next } with
+        pc := "if.then432.i"
+        pre := some s.pc } := by
+    simp only [LeanLLVM.step, hfind, hden, hterm]
+    rw [walkExecTerm_condbr (d := "%tobool428.not.i") (tl := "if.then432.i")
+      (fl := "if.then447.i") (bit := (1 : BitVec 1)) hbit]
+    dsimp only [stateAt]
+    rfl
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-- A byte at an inside index of the state stack is separated from the log. -/
 theorem walkCstByte_log_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) {q : Nat} (hq : q + 1 ≤ stage2StackExtent) :
