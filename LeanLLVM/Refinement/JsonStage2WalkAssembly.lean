@@ -1919,6 +1919,68 @@ theorem walkSeg3Stores_cover {R : List (Nat × Nat)} (b n ep nep eAddr cAddr : N
       ∃ q ∈ R, q.1 ≤ p.1 ∧ p.1 + p.2.length ≤ q.1 + q.2 :=
   fun p hp => exists_mem_of_abs hR (walkSeg3Stores_inside b n ep nep eAddr cAddr p hp)
 
+/-- **The entry's preservation at the staging's successor.**  `walkEntry_inv`'s premises are
+discharged here: the two stack copies and the log's words are frame facts over the run's
+narrow write region, presence is the staged objects' presence, and the frame is the seed's —
+while the environment's clauses and the separations are the staging's own.
+
+The memory is **opaque**: the four-layer write spine is the caller's (`hmem` at the run's own
+conclusion), so every clause here is a rewrite through `hm` and the spine appears once rather
+than at every premise.  The separations are one per window. -/
+theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {s' : State} {m' : Mem} {R : List (Nat × Nat)}
+    (hmem : s'.mem = m') (hm : UnchangedOutside s.mem m' R)
+    (hpc : s'.pc = "if.then492.i")
+    (hk : lookupName s'.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)))
+    (hsp : lookupName s'.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
+    (hptr : WalkPtrs G C s'.env) (hreg : WalkRegs G C s'.env)
+    (hiter : WalkIter G C.k s'.env)
+    (hsepTy : ∀ i, i < C.wlen → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.ctype + i ∧ C.stage.ctype + i < q.1 + q.2))
+    (hsepSt : ∀ i, i < C.wlen → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.cst + i ∧ C.stage.cst + i < q.1 + q.2))
+    (hsepH : ∀ i, i < 4 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + 32 + i ∧ C.stage.z + 32 + i < q.1 + q.2))
+    (hsepL : ∀ i, i < 8 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + 8 + i ∧ C.stage.z + 8 + i < q.1 + q.2))
+    (hsepC : ∀ i, i < 8 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + 16 + i ∧ C.stage.z + 16 + i < q.1 + q.2))
+    (hsepAc : ∀ i, i < 8 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + 56 + i ∧ C.stage.z + 56 + i < q.1 + q.2))
+    (hsepA : ∀ i, i < 8 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + 48 + i ∧ C.stage.z + 48 + i < q.1 + q.2))
+    (hsepEv : ∀ i, i < (C.events.map EventRecord.encodedBytes).flatten.length → ∀ q ∈ R,
+      ¬ (q.1 ≤ G.ev + G.nev0 + i ∧ G.ev + G.nev0 + i < q.1 + q.2))
+    (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
+    (hframe : UnchangedOutside m0 s'.mem (walkWide G C))
+    (hlocal : WalkLocal { C with block := "if.then492.i" } s') :
+    WalkInv G { C with block := "if.then492.i" } s' := by
+  have hTy : WalkStackBytes s'.mem C.stage.ctype C.tyMap C.wlen := by
+    rw [hmem]
+    exact WalkStackBytes.frame hInv.tyBytes hm hsepTy
+  have hSt : WalkStackBytes s'.mem C.stage.cst C.stMap C.wlen := by
+    rw [hmem]
+    exact WalkStackBytes.frame hInv.stBytes hm hsepSt
+  have hEv : readBytes s'.mem (G.ev + G.nev0)
+      (C.events.map EventRecord.encodedBytes).flatten.length =
+      some (C.events.map EventRecord.encodedBytes).flatten := by
+    rw [hmem, readBytes_frame hm hsepEv]
+    exact hInv.evBytes
+  refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hEv hTy hSt hptr hreg
+    hiter ?_ ?_ ?_ ?_ ?_ hown hframe hlocal
+  · rw [hmem, readBytes_frame hm hsepH]
+    exact hInv.log_hash
+  · rw [hmem, readBytes_frame hm hsepL]
+    exact hInv.log_len
+  · rw [hmem, readBytes_frame hm hsepC]
+    exact hInv.log_cap
+  · obtain ⟨a, ha1, ha2, ha3⟩ := hInv.log_alen
+    refine ⟨a, ha1, ha2, ?_⟩
+    rw [hmem, readBytes_frame hm hsepA]
+    exact ha3
+  · rw [hmem, readBytes_frame hm hsepAc]
+    exact hInv.log_acap
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
