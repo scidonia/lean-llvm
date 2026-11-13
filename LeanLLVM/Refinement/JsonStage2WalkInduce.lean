@@ -152,7 +152,7 @@ abbrev scanLatchOut (s : State) (inc test : String) (i c : Nat) (t : String) : S
 landing block: the increment is written, the test is clear, and the invariant at the
 landing block is `pureCore`'s — the block's `denoteCode` and the two arms' local facts
 are all it reads. -/
-theorem scanLatch_visit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+theorem scanLatch_link {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s)
     {src inc phi test cond exit land : String} (hsrc : C.block = src)
     {B : Block} (hfind : stage2Body.findBlock src = some B)
@@ -167,8 +167,8 @@ theorem scanLatch_visit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     (hcw : c < 2 ^ 64) (hlt : i + 1 < c)
     (hexit : WalkLocal { C with block := exit } (scanLatchOut s inc test i c exit))
     (hland : WalkLocal { C with block := land } (scanLatchOut s inc test i c land)) :
-    ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 1 ∧
-      C'.block = land ∧
+    ∃ (s' : State), WalkLink calls G C s { C with block := land } s' ∧
+      s' = scanLatchOut s inc test i c land ∧
       lookupName s'.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
       lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
   have hpc : s.pc = src := by rw [hInv.pc_eq, hsrc]
@@ -204,23 +204,47 @@ theorem scanLatch_visit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   have hse : s' = scanLatchOut s inc test i c land := by
     rw [hl.step] at hstepN
     simpa only [scanLatchOut] using Ctrl.jump.inj hstepN
-  refine ⟨{ C with block := land }, scanLatchOut s inc test i c land, ?_, rfl, ?_, ?_⟩
-  · rw [hse] at hl
-    rw [hres] at hl
-    exact WalkSegment.of_link hl
-  · show lookupName (cells
+  rw [hres] at hl
+  refine ⟨s', hl, hse, ?_, ?_⟩
+  · rw [hse]
+    show lookupName (cells
       [(test, .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c))),
        (inc, .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) inc =
       some (.int 64 (BitVec.ofNat 64 (i + 1)))
     simp only [cells]
     rw [lookupName_cons_ne _ _ hneTI, lookupName_cons_self]
-  · show lookupName (cells
+  · rw [hse]
+    show lookupName (cells
       [(test, .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c))),
        (inc, .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) cond =
       some (.int 64 (BitVec.ofNat 64 c))
     simp only [cells]
     rw [lookupName_cons_ne _ _ hneTC, lookupName_cons_ne _ _ hneIC]
     exact hc
+
+/-- **A scan latch's visit**, as a segment: the link of `scanLatch_link` at its own count. -/
+theorem scanLatch_visit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    {src inc phi test cond exit land : String} (hsrc : C.block = src)
+    {B : Block} (hfind : stage2Body.findBlock src = some B)
+    (his : B.instrs = [Instr.binop inc BinOp.add 64 (.reg phi)
+        (.imm (.int 64 (BitVec.ofNat 64 1))),
+      Instr.icmp test IPred.eq 64 (.reg inc) (.reg cond)])
+    (ht : B.term = Term.condbr (.reg test) exit land)
+    (hneIC : inc ≠ cond) (hneTI : test ≠ inc) (hneTC : test ≠ cond)
+    (hfree : walkCarried B.instrs)
+    {i c : Nat} (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hlt : i + 1 < c)
+    (hexit : WalkLocal { C with block := exit } (scanLatchOut s inc test i c exit))
+    (hland : WalkLocal { C with block := land } (scanLatchOut s inc test i c land)) :
+    ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 1 ∧
+      C'.block = land ∧
+      lookupName s'.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+      lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
+  obtain ⟨s', hl, _, hi', hc'⟩ :=
+    scanLatch_link G C s hInv hsrc hfind his ht hneIC hneTI hneTC hfree hi hc hcw hlt hexit hland
+  exact ⟨_, s', WalkSegment.of_link hl, rfl, hi', hc'⟩
 
 /-! ### The scan's way back
 
@@ -929,6 +953,100 @@ theorem walkWhiteScanVisitSeg3_43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   rw [hres] at hl₃
   exact Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv')))
 
+/-- **A round of the whitespace scan, counted: four steps.**  The latch's link and the
+visit's three, `trans` at `1 + 3`, inside the byte allowance.  This is the unit the
+dispatch's credit consumes: `c - i` rounds are `(c - i) · 4` steps against
+`(c - i) · 8`. -/
+theorem walkWhiteScanRound43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
+    {i c : Nat} (hi : lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hlt : i + 1 < c)
+    {op : Operand} {p : String} {e : BitVec 64}
+    (hpre : (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").pre = some p)
+    (hin : phiIncoming p [("while.body370.i", (Operand.reg "%inc371.i")),
+      ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") op
+      = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hqn : (e.signExtend 64).toNat < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hlt13 : evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat) (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 0)
+    (hsc : ScanCount
+      (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+        (scanB G e))
+      "%ee.0.i238" "%cond350.i" C.inner) :
+    ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 4 ∧
+      4 ≤ stage2ByteAllowance := by
+  -- the latch's own count, and the landing block's local fact it establishes
+  have hSC : ScanCount s "%ee.0.i238" "%cond350.i" C.inner := by
+    have h := hInv.blockLocal
+    rwa [WalkLocal.whitespace hblock] at h
+  have hsub : c - i ≤ C.inner := ScanCount.same hSC hi hc hcw (by omega)
+  have hinc₁ : lookupName
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env "%inc371.i" =
+      some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    show lookupName (cells
+      [("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1))
+          (BitVec.ofNat 64 c))),
+       ("%inc371.i", .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) "%inc371.i" =
+      some (.int 64 (BitVec.ofNat 64 (i + 1)))
+    simp only [cells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+  have hcond₁ : lookupName
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 c)) := by
+    show lookupName (cells
+      [("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1))
+          (BitVec.ofNat 64 c))),
+       ("%inc371.i", .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 c))
+    simp only [cells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hc
+  have hland : WalkLocal { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") := by
+    rw [WalkLocal.whitespaceLanded rfl]
+    exact Or.inl ⟨i + 1, c, by show c - (i + 1) ≤ C.inner; omega, hlt, hcw,
+      by show some s.pc = some "while.body370.i"; rw [hInv.pc_eq, hblock],
+      hinc₁, hcond₁⟩
+  obtain ⟨s₁, hl₁, hs₁, -, -⟩ :=
+    scanLatch_link (G := G) (C := C) (s := s) hInv hblock
+      (src := "while.body370.i") (inc := "%inc371.i") (phi := "%ee.0.i238")
+      (test := "%exitcond.not") (cond := "%cond350.i") (exit := "if.end372.i")
+      (land := "land.rhs.i")
+      (B := scanBlock "while.body370.i" "%inc371.i" "%ee.0.i238" "%exitcond.not"
+        "%cond350.i" "if.end372.i" "land.rhs.i")
+      scanWhitespace_find rfl rfl (by decide) (by decide) (by decide)
+      (by unfold walkCarried scanBlock; decide) hi hc hcw hlt
+      (by simp [WalkLocal]) hland
+  -- the counted visit, at the state the latch leaves
+  have hseg₁ : WalkSegment calls G C s { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") 1 := by
+    rw [hs₁] at hl₁
+    exact Seg.measure (Seg.tail hl₁ (Seg.nil hl₁.inv'))
+  have hinv₁ : WalkInv G { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") := by
+    rw [← hs₁]
+    exact hl₁.inv'
+  have hseg₂ : WalkSegment calls G { C with block := "land.rhs.i" }
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i")
+      (scanCarryLatchOf { { C with block := "land.rhs.i" } with block := "LeafBlock43" })
+      (leafBlock43OutAt
+        (nodeBlock52OutAt
+          (landRhsIOutAt G (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e
+        (scanB G e))
+          (BitVec.ofNat 8 (scanB G e).toNat))
+        (BitVec.ofNat 8 (scanB G e).toNat)) 3 :=
+    Seg.measure (walkWhiteScanVisitSeg3_43
+      (s := scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i")
+      hinv₁ rfl hpre hin hv hpos hqn halen hevlen hlt13 hws hsc)
+  exact ⟨_, _, hseg₁.trans hseg₂, by simp [stage2ByteAllowance]⟩
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
@@ -1273,6 +1391,8 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.WalkChain.seg
 #print axioms LeanLLVM.Refinement.WalkScope.link_price
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg3_43
+#print axioms LeanLLVM.Refinement.WalkScope.scanLatch_link
+#print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanRound43
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
