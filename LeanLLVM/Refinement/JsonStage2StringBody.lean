@@ -1452,6 +1452,99 @@ theorem writeByte_writeBytes_head (m : Mem) (a : Nat) :
         (by rw [readByte_writeByte_same]; exact Option.some_ne_none b₁)]
       rw [writeByte_writeByte_same]
 
+/-- A successful read of `n` bytes has `n` of them. -/
+theorem readBytes_length_some {m : Mem} {addr n : Nat} {bs : List UInt8}
+    (h : readBytes m addr n = some bs) : bs.length = n := by
+  induction n generalizing addr bs with
+  | zero => simp only [readBytes, Option.some.injEq] at h; subst h; rfl
+  | succ n ih =>
+      simp only [readBytes] at h
+      cases hb : readByte m addr with
+      | none => rw [hb] at h; cases h
+      | some b =>
+          rw [hb] at h
+          cases hr : readBytes m (addr + 1) n with
+          | none => rw [hr] at h; cases h
+          | some tl =>
+              rw [hr] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              simp only [List.length_cons, ih hr]
+
+/-- A byte read back at an address is the byte that is there, so writing it back
+changes nothing: the cell is replaced where it stands. -/
+theorem writeByte_readByte_self (m : Mem) (a : Nat) (b : UInt8)
+    (h : readByte m a = some b) : writeByte m a b = m := by
+  induction m with
+  | nil => simp only [readByte] at h; cases h
+  | cons cell rest ih =>
+      obtain ⟨a', b'⟩ := cell
+      by_cases ha : a' = a
+      · subst ha
+        simp only [readByte] at h
+        rw [ite_eq_left trivial] at h
+        simp only [Option.some.injEq] at h
+        subst h
+        simp only [writeByte]
+        rw [ite_eq_left trivial]
+      · simp only [readByte, ite_eq_right ha] at h
+        simp only [writeByte, ite_eq_right ha]
+        rw [ih h]
+
+/-- **A region the memory already holds is written back with no effect.**  This is
+the presence fact the scan's invariant and the closing's memory term both need:
+the bytes a `readBytes` returned are exactly the bytes a `writeBytes` of them
+leaves, because every cell is replaced in place. -/
+theorem writeBytes_of_readBytes_self (m : Mem) :
+    ∀ (n a : Nat) {bs : List UInt8}, readBytes m a n = some bs →
+      bs.length = n → writeBytes m a bs = m
+  | 0, _, _, h, _ => by
+      simp only [readBytes, Option.some.injEq] at h
+      subst h
+      rfl
+  | n + 1, a, bs, h, hlen => by
+      simp only [readBytes] at h
+      cases hb : readByte m a with
+      | none => rw [hb] at h; cases h
+      | some b =>
+          rw [hb] at h
+          cases hr : readBytes m (a + 1) n with
+          | none => rw [hr] at h; cases h
+          | some tl =>
+              rw [hr] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              simp only [List.length_cons] at hlen
+              show writeBytes (writeByte m a b) (a + 1) tl = m
+              rw [writeByte_readByte_self m a b hb]
+              exact writeBytes_of_readBytes_self m n (a + 1) hr (by omega)
+
+/-- **The cursor word's presence, at the model's own vocabulary.**  A word the
+staging reads at `xj` is already the memory's there, so the scan's first write of
+it is a no-op — which is the seating's first clause, and the same fact the closing
+needs for every region the body rewrites. -/
+theorem stage2ReadWord_writeBytes_self (mem : Mem) (xj w j : Nat)
+    (h : stage2ReadWord mem xj w = some j) :
+    writeBytes mem xj (wordBytes w j) = mem := by
+  unfold stage2ReadWord at h
+  cases hr : readBytes mem xj w with
+  | none => rw [hr] at h; cases h
+  | some bs =>
+      rw [hr] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      subst h
+      have hlen : bs.length = w := readBytes_length_some hr
+      have hbs0 : List.take bs.length (natToBytes (bytesToNat bs) w) = bs :=
+        natToBytes_bytesToNat bs w (by omega)
+      have htake : List.take bs.length (natToBytes (bytesToNat bs) w)
+          = natToBytes (bytesToNat bs) w :=
+        List.take_of_length_le (by rw [natToBytes_length]; omega)
+      have hbs : natToBytes (bytesToNat bs) w = bs := by rw [← htake]; exact hbs0
+      simp only [wordBytes]
+      rw [hbs]
+      exact writeBytes_of_readBytes_self mem w xj hr hlen
+
+
 /-- **Writing a region twice is the second write**, when the second write is at
 least as long: the first write's cells inside the region are replaced in place,
 and the two writes append the same cells in the same order.  This is the form the
@@ -1555,25 +1648,6 @@ values, the lane read's value as the model's `ps` entry, and then the head's tes
 in both of its forms.  Nothing here is about a state's history — the bits are
 functions of the counter, the lane and the two bounds — which is why the arms can
 be proved once rather than at each iteration. -/
-
-/-- A successful read of `n` bytes has `n` of them. -/
-theorem readBytes_length_some {m : Mem} {addr n : Nat} {bs : List UInt8}
-    (h : readBytes m addr n = some bs) : bs.length = n := by
-  induction n generalizing addr bs with
-  | zero => simp only [readBytes, Option.some.injEq] at h; subst h; rfl
-  | succ n ih =>
-      simp only [readBytes] at h
-      cases hb : readByte m addr with
-      | none => rw [hb] at h; cases h
-      | some b =>
-          rw [hb] at h
-          cases hr : readBytes m (addr + 1) n with
-          | none => rw [hr] at h; cases h
-          | some tl =>
-              rw [hr] at h
-              simp only [Option.some.injEq] at h
-              subst h
-              simp only [List.length_cons, ih hr]
 
 /-- Reads at or above a written range are unchanged (`Memory` states the below
 case; this is its dual, in the form a four-byte lane read needs). -/
