@@ -158,9 +158,78 @@ theorem cleanup478_denote_finish (calls : Calls) (s : State) (p : String)
   rw [hult]
   rfl
 
+end WalkScope
+
+/-! ### The invariant, across a block change
+
+`WalkInv` mentions the carry's `block` in exactly two fields — `pc_eq`, which says the
+state is at it, and `blockLocal`, which is `WalkLocal` read at it.  Every other field is
+about the index, the cursors, the two maps, the staging, the environment, the memory or
+the geometry, and a `with` on `block` leaves all of those alone.  So a step that changes a
+block and nothing else transports the invariant, with the two block-reading fields
+re-supplied — which is the whole cost of a block change, and it is why a step into the
+exit's blocks needs no field-by-field construction.
+
+This belongs beside `WalkInv` in the invariant's own module; it is stated here because that
+module is not this slice's to extend, and its consumers are the exit's steps, which are. -/
+
+/-- **The invariant transports across a block change.**  `pc_eq` becomes the new state's
+position and `blockLocal` the `WalkLocal` at the new block; every other field is the
+invariant's own, because none of them reads `C.block`. -/
+theorem WalkInv.reblock {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {b : String} (h : WalkInv G C s) (hpc : s.pc = b)
+    (hloc : WalkLocal { C with block := b } s) :
+    WalkInv G { C with block := b } s where
+  pc_eq := hpc
+  blockIndex := h.blockIndex
+  k_le := h.k_le
+  events_le := h.events_le
+  evlen_eq := h.evlen_eq
+  evBytes := h.evBytes
+  alen_le_sum := h.alen_le_sum
+  alen_ge := h.alen_ge
+  spans_order := h.spans_order
+  spans_inside := h.spans_inside
+  spans_end := h.spans_end
+  pending_at := h.pending_at
+  pending_len := h.pending_len
+  pending_cursor := h.pending_cursor
+  eoff_le := h.eoff_le
+  inner_cap := h.inner_cap
+  depth_cap := h.depth_cap
+  depth_reg := h.depth_reg
+  sp_le_wlen := h.sp_le_wlen
+  wlen_cap := h.wlen_cap
+  tyBytes := h.tyBytes
+  stBytes := h.stBytes
+  ptrs := h.ptrs
+  regs := h.regs
+  iter := h.iter
+  log_hash := h.log_hash
+  log_len := h.log_len
+  log_cap := h.log_cap
+  log_alen := h.log_alen
+  log_acap := h.log_acap
+  owned := h.owned
+  frame := h.frame
+  blockLocal := hloc
+
+/-- **A block change is free at a non-scan block**: `WalkLocal` there is `True`, so the
+transport needs only the state's position. -/
+theorem WalkInv.reblock_true {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {b : String} (h : WalkInv G C s) (hpc : s.pc = b)
+    (hloc : WalkLocal { C with block := b } s = True) :
+    WalkInv G { C with block := b } s :=
+  h.reblock hpc (by rw [hloc]; trivial)
+
+
+end LeanLLVM.Refinement
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfElse387_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen403_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen403_seg
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478_denote_finish
+#print axioms LeanLLVM.Refinement.WalkInv.reblock
+#print axioms LeanLLVM.Refinement.WalkInv.reblock_true
