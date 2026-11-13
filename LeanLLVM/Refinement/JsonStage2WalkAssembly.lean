@@ -1721,6 +1721,20 @@ theorem walkEntryEnv_iter {m0 : Mem} (G : WalkGeom m0) (env : Env)
         lookupName_cons_ne]]
     exact h8
 
+/-- **A stack copy survives writes outside it.**  `WalkStackBytes` is a pointwise read over
+`[base, base + n)`, so an unchanged-outside fact over a region list that avoids every point of
+that window transports it between the two memories.  This is the frame the entry's run needs:
+its four `*PostMem` layers each give `UnchangedOutside m m' R` through
+`stage2WriteStores_frame`, and `R` is the record and the arena, not the stack's copies. -/
+theorem WalkStackBytes.frame {mem mem' : Mem} {base n : Nat} {M : Nat → UInt8}
+    {R : List (Nat × Nat)}
+    (h : WalkStackBytes mem base M n) (hfr : UnchangedOutside mem mem' R)
+    (hout : ∀ i, i < n → ∀ q ∈ R, ¬ (q.1 ≤ base + i ∧ base + i < q.1 + q.2)) :
+    WalkStackBytes mem' base M n := by
+  intro i hi
+  rw [hfr (base + i) (hout i hi)]
+  exact h i hi
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
