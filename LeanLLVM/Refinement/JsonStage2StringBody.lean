@@ -36,6 +36,16 @@ single `rw`), and a step's `_` slot can hide a **bound** as easily as a value, s
 when the two sides print identically and the goal will not close, the residual is
 a side condition of a step rather than a mismatch of terms.
 
+**And the two vocabulary gaps this module had to fill.**  `Lexis`-level facts the
+cone does not carry: `Memory` proves the *below* case for a sequence read
+(`readBytes_writeBytes_below`) and only the single-byte case above it, so
+`s2StringBodyReadBytes_above` is proved here — a four-byte lane read past a write
+needs it.  And there is no `getElem?_isSome`: `ps[c]? = some q` yields `c <
+ps.length` through `List.getElem?_eq_none` and `cases` on the resulting absurdity.
+`readLanes32_nth` states what `readLanes32_lane` states here and lives in the
+walk's cone, out of this module's imports; the two names differ deliberately, so a
+consumer importing both has one of each rather than an ambiguity.
+
 **The body.**  `entry` converts the two addresses and reads the cursor word;
 `land.rhs`/`while.body` scan the position list forward to the body's first
 position; `land.lhs.true` tests whether that position is inside the body;
@@ -1774,13 +1784,13 @@ decoder's and the copy loops' instances state theirs.  The two exits share one
 induction: `Exit` is the disjunction of the blocks they leave for. -/
 def s2StringBodyScanBoundLoop (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
     (cost : Nat) (Exit ExitWord : State → Prop)
-    (step_exit : ∀ (r : Nat) (s : State) (c : Nat),
+    (step_exit : ∀ (r c : Nat) (s : State),
       s2StringBodyScanInv mem0 xj pos0 xp N ps r s c →
       s2StringBodyScanAtBound ps pos0 N s c = true →
       ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧ ExitWord e ∧
         ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
           runFuel s2StringBodyCalls k s2StringBodyBody e)
-    (step_loop : ∀ (r : Nat) (s : State) (c : Nat),
+    (step_loop : ∀ (r c : Nat) (s : State),
       s2StringBodyScanInv mem0 xj pos0 xp N ps (r + 1) s c →
       s2StringBodyScanAtBound ps pos0 N s c = false →
       ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = "land.rhs" ∧ c < c' ∧
@@ -1796,8 +1806,8 @@ def s2StringBodyScanBoundLoop (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
   atBound := s2StringBodyScanAtBound ps pos0 N
   Exit := Exit
   ExitWord := ExitWord
-  step_exit := step_exit
-  step_loop := step_loop
+  step_exit := fun r s c => step_exit r c s
+  step_loop := fun r s c => step_loop r c s
   exit_at_zero := by
     intro s c h
     obtain ⟨_hpc, _hmem, hsum, _⟩ := h
@@ -1814,13 +1824,13 @@ continuation lifts to the whole loop.  The induction is `BoundLoop.run_at`'s;
 nothing here is specific to the scan beyond its invariant. -/
 theorem s2StringBodyScan_run_at (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
     (cost : Nat) (Exit ExitWord : State → Prop)
-    (step_exit : ∀ (r : Nat) (s : State) (c : Nat),
+    (step_exit : ∀ (r c : Nat) (s : State),
       s2StringBodyScanInv mem0 xj pos0 xp N ps r s c →
       s2StringBodyScanAtBound ps pos0 N s c = true →
       ∃ (e : State) (j : Nat), j ≤ cost ∧ Exit e ∧ ExitWord e ∧
         ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
           runFuel s2StringBodyCalls k s2StringBodyBody e)
-    (step_loop : ∀ (r : Nat) (s : State) (c : Nat),
+    (step_loop : ∀ (r c : Nat) (s : State),
       s2StringBodyScanInv mem0 xj pos0 xp N ps (r + 1) s c →
       s2StringBodyScanAtBound ps pos0 N s c = false →
       ∃ (e : State) (c' : Nat) (j : Nat), j ≤ cost ∧ e.pc = "land.rhs" ∧ c < c' ∧
@@ -2365,10 +2375,10 @@ cells, the cursor word is the new counter (`s2StringBodyScan_advance`, which is
 where the write order matters), and the lane at `c + 1` is the model's entry there
 (`readLanes32_lane`), read past the cursor's write by the region's disjointness. -/
 theorem s2StringBodyScan_step_loop (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
-    (r c : Nat) (s : State)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (r c : Nat) (s : State)
     (hinv : s2StringBodyScanInv mem0 xj pos0 xp N ps (r + 1) s c)
     (hbound : s2StringBodyScanAtBound ps pos0 N s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 2 ∧ e.pc = "land.rhs" ∧ c < c' ∧
@@ -2493,10 +2503,11 @@ def s2StringBodyScanExitWord (mem0 : Mem) (xj : Nat) (ps : List Nat) (pos0 N : N
     (N ≤ c + 1 ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q)
 
 theorem s2StringBodyScan_step_exit (mem0 : Mem) (xj pos0 xp N : Nat)
-    (ps : List Nat) (r c : Nat) (s : State)
+    (ps : List Nat)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (r c : Nat) (s : State)
     (hinv : s2StringBodyScanInv mem0 xj pos0 xp N ps r s c)
     (hbound : s2StringBodyScanAtBound ps pos0 N s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 2 ∧ s2StringBodyScanExited e ∧
@@ -2578,10 +2589,8 @@ def s2StringBodyScanLoop (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
     BoundLoop s2StringBodyCalls s2StringBodyBody :=
   s2StringBodyScanBoundLoop mem0 xj pos0 xp N ps 2
     s2StringBodyScanExited (s2StringBodyScanExitWord mem0 xj ps pos0 N)
-    (fun r s c hinv hb => s2StringBodyScan_step_exit mem0 xj pos0 xp N ps r c s
-      hps hdisj hN hpos0 hinv hb)
-    (fun r s c hinv hb => s2StringBodyScan_step_loop mem0 xj pos0 xp N ps r c s
-      hps hdisj hN hpos0 hinv hb)
+    (s2StringBodyScan_step_exit mem0 xj pos0 xp N ps hps hdisj hN hpos0)
+    (s2StringBodyScan_step_loop mem0 xj pos0 xp N ps hps hdisj hN hpos0)
 
 /-- **The scan's fuel, read off its instance**: `(N + 1) * 2` control steps from the
 head, and the exit's continuation at its own fuel. -/
