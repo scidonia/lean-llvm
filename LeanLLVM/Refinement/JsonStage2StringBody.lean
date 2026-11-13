@@ -3482,7 +3482,20 @@ model's, and the join needs exactly two facts:
   `readBytes_writeByte_above`/`_below`, one for each side of the region.  **That
   two-sidedness is the cluster's whole content**: the commutation splits on which
   side the odd address lies, and so does the preservation it needs.  The remaining
-  obligation is the two instantiations, whose presence facts are the staging's.  -/
+  obligation is the two instantiations, whose presence facts are the staging's.
+
+**A write-order join's cost is the distance between the model's write position and
+the body's, measured in intervening regions — every unit of distance is one
+commutation.**  The body writes the slot early (the callee does it, before `outn`'s
+word), the model writes it last, so the decoded arm is three moves (absorb the
+arm's clear, then commute the slot past `outn` and `outn` past `xj`/`dst`) and the
+refused arm is one more.  A reader who knows the distance will not expect one move.
+The first of those moves needs a lemma this section does not yet have —
+`writeBytes_absorb_one`: a write to a region that is **present**, followed by
+intervening writes disjoint from it, is absorbed by a later write to that region.
+Its proof is an induction over the memory showing that an in-place write changes no
+cell's *position*, which is what the two preservations above supply one byte at a
+time.  -/
 
 /-- **The slot write absorbs the arm's clear.**  The body writes `0` at the slot
 before the call and the callee writes the arm's word there; the second write is the
