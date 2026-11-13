@@ -1307,13 +1307,7 @@ theorem walkIfThen447_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
           block := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
             then "land.rhs457.i" else "if.end473.i")
           stMap := walkAfterValueMap C } s' ∧
-      s' = { stateAt
-          (cells [("%cmp451.i", .int 1 (evalICmp .ult (BitVec.ofNat 64 ei)
-            (BitVec.ofNat 64 cd))) ] s.env)
-          { s with mem := r.mem, next := r.next } with
-        pc := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
-          then "land.rhs457.i" else "if.end473.i")
-        pre := some s.pc } := by
+      s' = TailS₃ s r ei cd := by
   obtain ⟨r, hcall, hpost, -⟩ := s2AfterValueContract.resolves (next := s.next) hpre
   obtain ⟨s', hl⟩ := WalkLink.if_then447_i (G := G) (C := C) (s := s) hInv hblock hrd hpre
     hei hcd hinner hlt hcd64
@@ -3077,14 +3071,7 @@ theorem walkIfThen413_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
       WalkLink (stage2Calls stage2SubCalls) G C s
         { C with block := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
             then "if.then418.i" else "if.then425.i") } s' ∧
-      s' = { stateAt
-          (cells [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
-            ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
-            ("%.sink372", .int 32 c)] s.env)
-          { s with mem := r.mem, next := r.next } with
-        pc := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
-          then "if.then418.i" else "if.then425.i")
-        pre := some s.pc } := by
+      s' = TailS₁ s r c rdv x := by
   obtain ⟨r, hcall, hpost, -⟩ := s2ValuePosContract.resolves (next := s.next) hpre'
   obtain ⟨-, -, hret, -, -⟩ := hpost
   obtain ⟨s', hl⟩ := WalkLink.if_then413_i (G := G) (C := C) (s := s) (p := p) (reg := reg)

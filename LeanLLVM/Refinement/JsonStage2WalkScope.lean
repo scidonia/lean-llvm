@@ -291,6 +291,7 @@ a push at `519` carries `520` out of `if.end24.i`.  What the clause does not car
 is the stacks' contents — the push/pop discipline `ctype[i]`/`cst[i]` and
 `s2_value_pos` maintain — which is the dispatch's, not the invariant's.
 -/
+import LeanLLVM.Refinement.BlockEval
 import LeanLLVM.Refinement.JsonStage2Body
 import LeanLLVM.Refinement.JsonEscapeListBody
 
@@ -4624,6 +4625,8 @@ or below `[propext, Quot.sound]`. -/
 namespace LeanLLVM.Refinement
 namespace WalkScope
 
+
+
 open LeanLLVM
 open LeanLLVM.Refinement.JsonStage2IR
 open LeanLLVM.Refinement.BlockEval
@@ -8294,3 +8297,39 @@ same lemmas, so a per-instance reading adds nothing; what it would add is the
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkExecTerm_condbr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkExecTerm_condbr
+
+namespace LeanLLVM.Refinement
+namespace WalkScope
+open BlockEval
+/-- The value-position call's successor, named: the four cells it binds, at the answer's memory
+and the block its test picks. -/
+abbrev TailS₁ (s : State) (r : CallOutcome) (c rdv x : BitVec 32) : State :=
+  { stateAt (cells
+      [("%tobool417.not.i", .int 1 (evalICmp .eq x (BitVec.ofNat 32 0))),
+       ("%call416.i", .int 32 x), ("%38", .int 32 rdv),
+       ("%.sink372", .int 32 c)] s.env)
+      { s with mem := r.mem, next := r.next } with
+    pc := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1 then "if.then418.i" else "if.then425.i")
+    pre := some s.pc }
+
+/-- The scalar call's emit arm, named. -/
+abbrev TailS₂ (s : State) (r : CallOutcome) : State :=
+  { stateAt (cells
+      [("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 1)
+        (BitVec.ofNat 32 0))),
+       ("%call427.i", .int 32 (BitVec.ofNat 32 1))] s.env)
+      { s with mem := r.mem, next := r.next } with
+    pc := "if.then447.i"
+    pre := some s.pc }
+
+/-- The copy call's successor, named: the whitespace scan's entry. -/
+abbrev TailS₃ (s : State) (r : CallOutcome) (ei cd : Nat) : State :=
+  { stateAt (cells
+      [("%cmp451.i", .int 1 (evalICmp .ult (BitVec.ofNat 64 ei)
+        (BitVec.ofNat 64 cd)))] s.env)
+      { s with mem := r.mem, next := r.next } with
+    pc := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
+      then "land.rhs457.i" else "if.end473.i")
+    pre := some s.pc }
+end WalkScope
+end LeanLLVM.Refinement

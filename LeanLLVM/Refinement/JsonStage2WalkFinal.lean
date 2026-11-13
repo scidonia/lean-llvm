@@ -372,13 +372,7 @@ theorem walkIfThen425_emit_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
           block := "if.then447.i"
           evlen := C.evlen + ev.encodedSize
           events := C.events ++ [ev] } s' ∧
-      s' = { stateAt (cells [
-          ("%tobool428.not.i", .int 1 (evalICmp .eq (BitVec.ofNat 32 1)
-            (BitVec.ofNat 32 0))),
-          ("%call427.i", .int 32 (BitVec.ofNat 32 1))] s.env)
-          { s with mem := r.mem, next := r.next } with
-        pc := "if.then447.i"
-        pre := some s.pc } := by
+      s' = TailS₂ s r := by
   obtain ⟨s', hl⟩ := WalkLink.if_then425_i_emit (G := G) (C := C) (s := s) hInv hblock hc ht
     ho hzread hcall happ hret hev64 hevlen64 hlt
   refine ⟨s', hl, ?_⟩
