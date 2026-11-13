@@ -1473,6 +1473,22 @@ theorem readBytes_writeByte_below (m : Mem) {x : Nat} {v : UInt8} :
       | some b =>
           rw [readBytes_writeByte_below m n (a + 1) (by omega)]
 
+/-- Reads at or above a written range are unchanged (`Memory` states the below
+case; this is its dual, in the form a four-byte lane read needs). -/
+theorem s2StringBodyReadBytes_above (m : Mem) :
+    ∀ (bs : List UInt8) (n addr start : Nat), start + bs.length ≤ addr →
+      readBytes (writeBytes m start bs) addr n = readBytes m addr n
+  | _, 0, _, _, _ => by simp only [readBytes]
+  | bs, n + 1, addr, start, h => by
+      have hb : readByte (writeBytes m start bs) addr = readByte m addr :=
+        readByte_writeBytes_above m bs h
+      simp only [readBytes, hb]
+      cases hr : readByte m addr with
+      | none => simp only [hr]
+      | some b =>
+          simp only [hr]
+          rw [s2StringBodyReadBytes_above m bs n (addr + 1) start (by omega)]
+
 /-- Reads entirely below a single written cell are unchanged — the dual of
 `readBytes_writeByte_below`, and the other half of what a presence fact needs: a
 write on either side of a region leaves it alone. -/
@@ -1771,6 +1787,52 @@ theorem writeBytes_comm_of_present (A : Mem) :
         = writeBytes (writeBytes (writeByte A b y) (b + 1) Ys) a X from rfl]
       exact writeBytes_comm_of_present (writeByte A b y) a X (b + 1) Ys hX' hY' hdisj'
 
+/-- Presence as an existential, from the `≠ none` form the section states. -/
+theorem exists_readBytes_of_ne {A : Mem} {a n : Nat} (h : readBytes A a n ≠ none) :
+    ∃ bs, readBytes A a n = some bs := by
+  cases hb : readBytes A a n with
+  | none => exact absurd hb h
+  | some bs => exact ⟨bs, rfl⟩
+
+/-- **The absorption**: an earlier write to a region, crossed by two writes disjoint
+from it, is erased by a later write to that same region.  Three presences, and they
+are exactly the regions the proof crosses; the crossing itself is two commutations
+and then `writeBytes_writeBytes_same`, because the two writes to the erased region
+end up adjacent. -/
+theorem writeBytes_absorb_one (B : Mem) {ei dst xj : Nat} {X out Wj Z : List UInt8}
+    (hei : readBytes B ei X.length ≠ none)
+    (hdst : readBytes B dst out.length ≠ none)
+    (hxj : readBytes B xj Wj.length ≠ none)
+    (hlen : X.length ≤ Z.length)
+    (hd_ei : ei + X.length ≤ dst ∨ dst + out.length ≤ ei)
+    (hx_ei : ei + X.length ≤ xj ∨ xj + Wj.length ≤ ei)
+    (hd_xj : dst + out.length ≤ xj ∨ xj + Wj.length ≤ dst) :
+    writeBytes (writeBytes (writeBytes (writeBytes B ei X) dst out) xj Wj) ei Z
+      = writeBytes (writeBytes (writeBytes B dst out) xj Wj) ei Z := by
+  obtain ⟨X₀, hX₀⟩ := exists_readBytes_of_ne hei
+  obtain ⟨O₀, hO₀⟩ := exists_readBytes_of_ne hdst
+  obtain ⟨W₀, hW₀⟩ := exists_readBytes_of_ne hxj
+  -- 1. the clear crosses `dst`
+  rw [writeBytes_comm_of_present B ei X dst out ⟨X₀, hX₀⟩ ⟨O₀, hO₀⟩ hd_ei]
+  -- 2. and then `xj`: the `ei` region is still present after `dst`'s write
+  have hei' : readBytes (writeBytes B dst out) ei X.length ≠ none := by
+    rcases hd_ei with h | h
+    · rw [readBytes_writeBytes_below B out X.length ei dst h]
+      exact hei
+    · rw [s2StringBodyReadBytes_above B out X.length ei dst h]
+      exact hei
+  have hxj' : readBytes (writeBytes B dst out) xj Wj.length ≠ none := by
+    rcases hd_xj with h | h
+    · rw [s2StringBodyReadBytes_above B out Wj.length xj dst h]
+      exact hxj
+    · rw [readBytes_writeBytes_below B out Wj.length xj dst h]
+      exact hxj
+  obtain ⟨X₁, hX₁⟩ := exists_readBytes_of_ne hei'
+  obtain ⟨W₁, hW₁⟩ := exists_readBytes_of_ne hxj'
+  rw [writeBytes_comm_of_present (writeBytes B dst out) ei X xj Wj ⟨X₁, hX₁⟩ ⟨W₁, hW₁⟩ hx_ei]
+  -- 3. the two writes to `ei` are adjacent, and the second one is the memory
+  exact writeBytes_writeBytes_same (writeBytes (writeBytes B dst out) xj Wj) ei X Z hlen
+
 /-! ### The scan's bound
 
 The scan is the body's only loop: `land.rhs` reads the lane at the counter, and
@@ -1857,22 +1919,6 @@ values, the lane read's value as the model's `ps` entry, and then the head's tes
 in both of its forms.  Nothing here is about a state's history — the bits are
 functions of the counter, the lane and the two bounds — which is why the arms can
 be proved once rather than at each iteration. -/
-
-/-- Reads at or above a written range are unchanged (`Memory` states the below
-case; this is its dual, in the form a four-byte lane read needs). -/
-theorem s2StringBodyReadBytes_above (m : Mem) :
-    ∀ (bs : List UInt8) (n addr start : Nat), start + bs.length ≤ addr →
-      readBytes (writeBytes m start bs) addr n = readBytes m addr n
-  | _, 0, _, _, _ => by simp only [readBytes]
-  | bs, n + 1, addr, start, h => by
-      have hb : readByte (writeBytes m start bs) addr = readByte m addr :=
-        readByte_writeBytes_above m bs h
-      simp only [readBytes, hb]
-      cases hr : readByte m addr with
-      | none => simp only [hr]
-      | some b =>
-          simp only [hr]
-          rw [s2StringBodyReadBytes_above m bs n (addr + 1) start (by omega)]
 
 /-- Sign-extending an `i64` value to `i64` is the value. -/
 theorem signExtend_ofNat (c : Nat) (hc : c < 2 ^ 64) :
@@ -3565,26 +3611,17 @@ absorption needs it on all three regions it crosses.  The join has it: `dst` and
 are staged (the writing caller's buffers) and `ei` is the caller's own stack slot, so
 none of the three is appended by these writes.
 
-Stated, therefore, with the presence of all three as its hypothesis and the two
-intervening writes at their own regions:
+The lemma is proved above (`writeBytes_absorb_one`), and **it is not a walk**: the
+earlier clear crosses `dst`, then `xj`, and the two writes to the erased region end
+up adjacent, where `writeBytes_writeBytes_same` erases the first.  Two commutations
+and one absorption — which is the four-move count, vindicated: the retraction two
+rounds ago (that commutations cannot remove a write) was wrong because adjacency plus
+`writeBytes_writeBytes_same` *is* the removal.
 
-    readBytes B ei X.length ≠ none → readBytes B dst out.length ≠ none →
-    readBytes B xj Wj.length ≠ none → Z.length = X.length →
-    writeBytes (writeBytes (writeBytes (writeBytes B ei X) dst out) xj Wj) ei Z
-      = writeBytes (writeBytes (writeBytes B dst out) xj Wj) ei Z
-
-Its proof is the walk over `B`: at each cell the cell's address decides which write
-touches it, both sides do the same thing there — the erased region's cell ends as
-`Z`'s byte, the others as their region's — and no side appends, so the lists have the
-same length and the same cells in the same order.  It carries the region's presence as the cursor moves
-(`readBytes_writeByte_above`/`_below`), and it does not need to know how many cells
-share an address, only that every step does the same thing to the same cell.
-
-What the canonical form would have bought is still worth naming, because it is what
-the direct induction pays instead: position preservation and extensionality as map
-congruences.  `List.map` cannot express `writeByte`'s first-occurrence semantics
-without duplicate-freedom, so those two facts must come from the induction, cell by
-cell.
+Its hypotheses are six, and instrument eleven counts them exactly: **three presences**
+(the erased region and both regions it crosses) and **three pairwise disjointnesses**
+(one per pair).  Each crossing spends its presence and its disjointness, which is why
+the conclusion's one region needed six facts in the statement.
 
 **Neither count is reachable with commutations alone, and the typecheck says why.**
 The statement typechecks with its conclusion as a hypothesis (the produced-form
