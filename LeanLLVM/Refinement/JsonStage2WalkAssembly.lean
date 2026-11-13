@@ -1094,49 +1094,15 @@ def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
         step calls stage2Body s1 = .jump s2 ∧
         step calls stage2Body s2 = .ret v sret
 
-/-- **The empty entry stream's flush arm.**  The entry's own step and the refusal
-copy reach a return, inside the finalisation allowance, whenever the entry count
-is zero.
-
-The empty stream is the all-whitespace document: a real input the reference
-*refuses* and the record admits, so it is a branch of the completion rather than a
-clause on the precondition.  The count is the entry state's own `%nep` — the ABI's
-fourth argument, and nothing the entry block computes — so the premise reads it
-from the state instead of taking it as a number; `nep = 0` selects the entry's
-`if.then492.i` arm (`walkEntry_step`'s zero branch, `walkEntryJump`), whose store
-and `if.then`'s copy are the refusal arm's (`walkIfThenBlock_denote`), and
-`if.end` returns the refusal bit (`walkIfEnd_step`'s `0` arm).
-
-The allowance is `stage2FinalisationAllowance`, which is the term `stage2Budget`
-carries whatever the counts are: one step for the entry, one for the flush block,
-one for the copy and one for the return, so the budget covers the arm at `nep = 0`
-and at every document length.
-
-The state is the record's own: the entry state at the ABI's thirteen words and the
-eight the flattening appends, at a memory and a cursor.  Stating it at an arbitrary
-state would be false — the entry block reads `%s`, `%z`, `%e`, the counts and the
-appended pointers, so a state that is not an entry state at an argument list has no
-run at all — which is why the premise is the completion *at the argument list*, and
-the branch that uses it supplies the count's zero and the budget's allowance. -/
-def WalkFlush (calls : Calls) (v0 : Value) (a13 : List Value) (nep : Nat)
-    (d c ctype cst tok s z e : Nat) : Prop :=
-  nep = 0 →
-    ∀ (mem : Mem) (next : Nat),
-      ∃ (q : Nat) (m : Mem), q ≤ stage2FinalisationAllowance ∧
-        runFuel calls q stage2Body
-          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
-          some (.ret v0 m)
-
-/-- **The empty entry stream's flush, at the memory and cursor it is used at.**  The form
-above quantifies `mem` and `next` *universally*, and that is too strong for a run: the entry
-block loads `%ndst` and `%nev`, which an arbitrary memory may omit, and the initialisation's
-writes do not manufacture the caller's cursor words.  So the arm is a property of the
-particular memory and allocator cursor the staging hands the entry — the ones the caller has
-preconditions for (`Γ_stage2.pre`, `stage2StagedPre`) and can supply at the use.  `WalkFlush`
-remains the stronger form; it is usable only where those preconditions hold for *every*
-memory, which is not the case at the entry, and that is the inaccuracy recorded here rather
-than repaired at the definition: replacing it changes `WalkPremises`' consumers and belongs
-to the next planning step. -/
+/-- **The empty entry stream's flush, at the memory and cursor it is used at.**  The arm was
+first stated with `mem` and `next` quantified *universally*, and that form is **false of the
+model**: the entry block loads `%ndst` and `%nev`, an arbitrary memory may omit them, and the
+initialisation's writes do not manufacture the caller's cursor words.  So the arm is a
+property of the particular memory and allocator cursor the staging hands the entry — the ones
+the caller has preconditions for (`Γ_stage2.pre`, `stage2StagedPre`) and supplies at the use —
+and `WalkPremises` takes this form.  The universal statement is gone rather than retained
+beside it: a premise that is false of the model must not stay in the layer that consumes it,
+and its only honest content was the pinning, which is now a use rather than a lemma. -/
 def WalkFlushAt (calls : Calls) (v0 : Value) (mem : Mem) (next : Nat)
     (a13 : List Value) (nep : Nat) (d c ctype cst tok s z e : Nat) : Prop :=
   nep = 0 →
@@ -1144,15 +1110,6 @@ def WalkFlushAt (calls : Calls) (v0 : Value) (mem : Mem) (next : Nat)
       runFuel calls q stage2Body
         (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
         some (.ret v0 m)
-
-/-- **The universal form pins to any memory and cursor** — so nothing the stronger premise
-supplied is lost when the weaker one is used, and the two differ only at memories no
-staging produces. -/
-theorem WalkFlush.at {calls : Calls} {v0 : Value} {a13 : List Value} {nep : Nat}
-    {d c ctype cst tok s z e : Nat}
-    (h : WalkFlush calls v0 a13 nep d c ctype cst tok s z e) (mem : Mem) (next : Nat) :
-    WalkFlushAt calls v0 mem next a13 nep d c ctype cst tok s z e :=
-  fun h0 => h h0 mem next
 
 /-- **A dispatch's outcome, and it is one of three.**  The index cannot decide it in
 advance.  A standalone string consumes *two* entries — the opener and the closer, the merge
@@ -1757,7 +1714,7 @@ def WalkPremises (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] ∧
       ((G.nep = 0 ∧
           ∃ v0 : Value,
-            WalkFlush (stage2Calls stage2SubCalls) v0 a13 G.nep d c ctype cst tok s z e) ∨
+            WalkFlushAt (stage2Calls stage2SubCalls) v0 mem next a13 G.nep d c ctype cst tok s z e) ∨
         (0 < G.nep ∧
         (∀ n, runFuel (stage2Calls stage2SubCalls) (3 + n) stage2Body
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
@@ -1790,7 +1747,7 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] →
       ((G.nep = 0 ∧
           ∃ v0 : Value,
-            WalkFlush (stage2Calls stage2SubCalls) v0 a13 G.nep d c ctype cst tok s z e) ∨
+            WalkFlushAt (stage2Calls stage2SubCalls) v0 mem next a13 G.nep d c ctype cst tok s z e) ∨
         (0 < G.nep ∧
         (∀ n, runFuel (stage2Calls stage2SubCalls) (3 + n) stage2Body
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
@@ -1828,7 +1785,7 @@ loop head, and the loop's step.  The budget is `stage2Budget` at `a13`, which
 `walkGeom_at_pre` identifies with the geometry's numbers.
 
 The empty entry stream is a branch of its own: at `nep = 0` the entry's test takes
-its zero arm and `WalkFlush` completes the run inside the finalisation allowance,
+its zero arm and `WalkFlushAt` completes the run inside the finalisation allowance,
 which `stage2Budget` carries at every staging (`walkBudget_ge_finalisation`).  The
 other branch is the loop, and the two are exhaustive because the count is a
 `Nat`. -/
@@ -1839,7 +1796,7 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
   obtain ⟨m0, G, S, hnext, hargs, hbr⟩ := h a13 mem next hpre hstaged
   rcases hbr with ⟨hzero, v0, hflush⟩ | ⟨hn, hseed, hInv, hloop⟩
   · -- the empty entry stream: the entry's zero arm and the refusal copy
-    obtain ⟨q, m, hq, hrun⟩ := hflush hzero mem next
+    obtain ⟨q, m, hq, hrun⟩ := hflush hzero
     refine ⟨v0, m, ?_⟩
     rw [hargs] at hrun ⊢
     exact runFuel_mono_le (le_trans hq walkBudget_ge_finalisation) hrun
@@ -2163,7 +2120,6 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkStage_at_pre
 #print axioms LeanLLVM.Refinement.WalkScope.walkPremises_of_parts
 #print axioms LeanLLVM.Refinement.WalkScope.walkBudget_ge_finalisation
-#print axioms LeanLLVM.Refinement.WalkScope.WalkFlush
 #print axioms LeanLLVM.Refinement.WalkScope.walkSeedPrefix_entry
 #print axioms LeanLLVM.Refinement.WalkScope.walkSeedPrefix_entry_geometry
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_premises
