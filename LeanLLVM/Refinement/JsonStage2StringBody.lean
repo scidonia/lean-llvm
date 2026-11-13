@@ -5340,6 +5340,102 @@ theorem s2StringBodyModel_refused {mem : Mem} {c p dst outn xp xj j1 k off e' : 
   rw [if_neg (by simpa using hne)]
   simp only [hbody, hr, he]
 
+/-- A read framed past one written region, in the orientation `RegionsApart` states. -/
+theorem readBytes_writeBytes_apart {m : Mem} {a n start : Nat} {ws : List UInt8}
+    (hsep : RegionsApart start ws.length a n) :
+    readBytes (writeBytes m start ws) a n = readBytes m a n := by
+  rcases hsep with h | h
+  · rw [s2StringBodyReadBytes_above m ws n a start h]
+  · rw [readBytes_writeBytes_below m ws n a start h]
+
+/-- **The expander's accepting answer at the exit's memory**: the four reads the
+callee makes are the staging's — framed past the slot's write and the scan's — and
+its clause then answers with the decoded prefix, the advanced cursor and the slot's
+word.  The counter's `takeWhile` is empty because the lane there is already past the
+body's first position, so the callee's `j1` is the exit's counter. -/
+theorem s2StringBodyExpand_decoded_at_exit {mem xmem : Mem} {ch p dst xp xj : Nat}
+    {len nxp : BitVec 64} {base c1 ei next lane : Nat} {ps : List Nat}
+    {body out : List UInt8} {k : Nat}
+    (hmem : xmem = writeBytes mem xj (wordBytes 8 c1))
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hbody : readBytes mem p len.toNat = some body)
+    (hlane : ps[c1]? = some lane) (hge : p - base ≤ lane)
+    (hp0 : p - base < 2 ^ 64) (hc1 : c1 < 2 ^ 64)
+    (hxjp : RegionsApart xj 8 p len.toNat)
+    (heip : RegionsApart ei 8 p len.toNat)
+    (heixj : RegionsApart ei 8 xj 8)
+    (heilan : ∀ j, j < nxp.toNat → xp + 4 * j + 4 ≤ ei ∨ ei + 8 ≤ xp + 4 * j)
+    (hjlan : ∀ j, j < nxp.toNat → xp + 4 * j + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * j)
+    (hdec : escapeDecodeGo body 0 0
+      (((ps.drop c1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+        (fun q => q - (p - base))) [] = .decoded out k) :
+    s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 (BitVec.ofNat 64 (p - base))]
+      (writeBytes xmem ei (natToBytes (0#64).toNat 8)) next =
+    some { ret := .int 64 (BitVec.ofNat 64 out.length),
+           mem := writeBytes
+             (writeBytes
+               (writeBytes (writeBytes xmem ei (natToBytes (0#64).toNat 8)) dst out)
+               xj (wordBytes 8 (c1 +
+                 ((ps.drop c1).takeWhile (fun q => decide (q < p - base))).length + k)))
+             ei (wordBytes 8 out.length),
+           next := next } := by
+  have hxjX : readBytes xmem xj 8 = some (wordBytes 8 c1) := by
+    rw [hmem]
+    exact readBytes_wordBytes_same
+  have hxjC : readBytes (writeBytes xmem ei (natToBytes (0#64).toNat 8)) xj 8
+      = some (wordBytes 8 c1) := by
+    rw [readBytes_writeBytes_apart (ws := natToBytes (0#64).toNat 8)
+      (by rw [natToBytes_length]; exact heixj)]
+    exact hxjX
+  have hlanX : readLanes32 xmem xp nxp.toNat = some ps := by
+    rw [hmem]
+    rw [readLanes32_writeBytes_away (start := xj) (ws := wordBytes 8 c1)
+      (fun j hj => by
+        have := hjlan j hj
+        simpa [wordBytes, natToBytes_length] using this)]
+    exact hps
+  have hlanC : readLanes32 (writeBytes xmem ei (natToBytes (0#64).toNat 8)) xp
+      nxp.toNat = some ps := by
+    rw [readLanes32_writeBytes_away (start := ei) (ws := natToBytes (0#64).toNat 8)
+      (fun j hj => by
+        have := heilan j hj
+        simpa [natToBytes_length] using this)]
+    exact hlanX
+  have hbodyX : readBytes xmem p len.toNat = some body := by
+    rw [hmem]
+    rw [readBytes_writeBytes_apart (m := mem) (ws := wordBytes 8 c1) hxjp]
+    exact hbody
+  have hbodyC : readBytes (writeBytes xmem ei (natToBytes (0#64).toNat 8)) p len.toNat
+      = some body := by
+    rw [readBytes_writeBytes_apart (ws := natToBytes (0#64).toNat 8)
+      (by rw [natToBytes_length]; exact heip)]
+    exact hbodyX
+  have hdrop : ps.drop c1 = lane :: ps.drop (c1 + 1) := drop_eq_cons_of_getElem? hlane
+  have htake0 : ((ps.drop c1).takeWhile (fun q => decide (q < p - base))).length = 0 := by
+    rw [hdrop, List.takeWhile_cons_of_neg (by
+      have hlt : ¬ (lane < p - base) := by omega
+      simpa using hlt)]
+    rfl
+  have hdec' : escapeDecodeGo body 0 0
+      (((ps.drop (c1 + ((ps.drop c1).takeWhile (fun q => decide (q < p - base))).length)).takeWhile
+        (fun q => decide (q < p - base + len.toNat))).map (fun q => q - (p - base))) []
+      = .decoded out k := by
+    rw [show c1 + ((ps.drop c1).takeWhile (fun q => decide (q < p - base))).length = c1 from by
+      rw [htake0]; omega]
+    exact hdec
+  have hxjW : stage2ReadWord (writeBytes xmem ei (natToBytes (0#64).toNat 8)) xj 8
+      = some c1 :=
+    stage2ReadWord_of_readBytes (by rw [show (256 : Nat) ^ 8 = 2 ^ 64 from by decide]; exact hc1)
+      hxjC
+  have h := escapeExpand8_decoded (p := p) (len := len.toNat) (dst := dst) (ei := ei)
+    (xp := xp) (xj := xj) (nxp := nxp.toNat) (pos0 := p - base)
+    (mem := writeBytes xmem ei (natToBytes (0#64).toNat 8)) (next := next)
+    (j0 := c1) (ps := ps) (body := body) (out := out) (k := k)
+    hxjW hlanC hbodyC len.isLt nxp.isLt hp0 hdec'
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq] using h
+
 /-- **The scan's `if.then` exit finishes form `1`**: the counter reached the count,
 so the window at `j1` is empty and the model answers the body itself.  The exit's
 cursor word is the word the model writes, so the two memories are one term. -/
