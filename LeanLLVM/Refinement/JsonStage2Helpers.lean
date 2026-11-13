@@ -329,7 +329,15 @@ with `ptrtoint`, which is `ub` at or above `2 ^ 64`, and subtracts them at
 the model's window bound is `Nat`, so `p - base + len` must not wrap.  And the
 scan's `getelementptr i32` sign-extends its index, which is the forward branch
 only below `2 ^ 63`; the scan is entered exactly when the cursor is below the
-count, so `j0` and the count are both bounded there. -/
+count, so `j0` and the count are both bounded there.
+
+**The staging's memory facts are reads, and that is enough.**  A body proof that
+writes one of these words back needs the write to be a no-op, which is a lemma
+composed at the use (`JsonStage2StringBody.stage2ReadWord_writeBytes_self`: a
+region a `readBytes` returned is written back in place, byte by byte) rather than
+a clause here — the read already says the bytes are present.  The spacing clause
+is the only memory clause that had to be stated, because it is the one the
+decoded-length bound cannot be derived from a read. -/
 def s2StringBodyPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
   ∃ (c p : Nat) (len : BitVec 64) (dst outn xp xj : Nat) (nxp : BitVec 64)
     (base j0 : Nat) (ps : List Nat) (body : List UInt8) (e : Nat),

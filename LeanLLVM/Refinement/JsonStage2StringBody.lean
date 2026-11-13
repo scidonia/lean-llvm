@@ -22,6 +22,12 @@ must be named (`(v := …)`) or its metavariable survives into the closing goal.
 deep gets a `def` — there the parser's layout, not the prover, decides whether the
 lemma exists at all.
 
+**A fact two sections share belongs before both.**  The order above (fixtures,
+steps, runs) is a dependency order and says nothing about a lemma that one
+section states and another consumes; `readBytes_length_some` was written in the
+bits section and read by the memory section, and had to move.  Stating such a fact
+ahead of both is the rule, not an afterthought.
+
 **And the fifth**: every term a chain matches on is the *unreduced* form the
 emitting step produces, so the statement's `def` and the chain's patterns must be
 written from the produced term and not from the source text.  Three parts, each
@@ -2741,6 +2747,55 @@ theorem s2StringBodyEntry_prefix_ifThen {env : Env} {s : State}
   exact runFuel_jump_prefix
     (step_entry_ifThen hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit) k
 
+
+
+/-- **Seating the scan's invariant at the head the entry left.**  Every clause is
+read off the staging: the entry writes nothing, so its memory is the caller's and
+the cursor word's presence (`stage2ReadWord_writeBytes_self`) is the invariant's
+memory clause; the `phi`'s edge is `entry` selecting `%xj.promoted`, which the entry
+has just bound to `j0`; `%xp`, `%xj` and `%nxp` are the caller's registers, falling
+through the entry's seven cells; `%sub.ptr.sub` is `p - base` (`ofNat_sub`); and the
+lane at `j0` is the model's, because the head's memory is the caller's. -/
+theorem s2StringBodyScanInv_seat (env : Env) (s : State) (base p xj xp j0 : Nat)
+    (ps : List Nat) (nxp : BitVec 64)
+    (hpc : s.pc = "entry")
+    (hbase : base ≤ p) (hp64 : p < 2 ^ 64)
+    (hword : stage2ReadWord s.mem xj 8 = some j0)
+    (hps : readLanes32 s.mem xp nxp.toNat = some ps)
+    (hj0 : j0 < nxp.toNat)
+    (hxpc : lookupName env "%xp" = some (.ptr xp))
+    (hxjc : lookupName env "%xj" = some (.ptr xj))
+    (hnxpc : lookupName env "%nxp" = some (.int 64 nxp)) :
+    s2StringBodyScanInv s.mem xj (p - base) xp nxp.toNat ps (nxp.toNat - j0)
+      (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+        { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc })
+      j0 := by
+  obtain ⟨q, bs, hq, hlaneM, hval⟩ := (readLanes32_lane hps).2 j0 hj0
+  have hblen : bs.length = 4 := readBytes_length_some hlaneM
+  have hpres := stage2ReadWord_writeBytes_self s.mem xj 8 j0 hword
+  have hnxp : BitVec.ofNat 64 nxp.toNat = nxp := by
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt nxp.isLt]
+  refine ⟨rfl, ?_, by omega, ?_, ?_, ?_, ?_, ?_, ⟨q, bs, hq, hblen, hval, ?_⟩⟩
+  · simpa only [stateAt] using hpres.symm
+  · refine ⟨"entry", Operand.reg "%xj.promoted", ?_, by simp [phiIncoming], ?_⟩
+    · simp only [stateAt, hpc]
+    · simp [stateAt, evalOperand, lookupName, s2StringBodyEntryOut,
+        s2StringBodyEnv7, s2StringBodyEnv6]
+  · simp [stateAt, lookupName, s2StringBodyEntryOut, s2StringBodyEnv7,
+      s2StringBodyEnv6, s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3,
+      s2StringBodyEnv2, s2StringBodyEnv1, hxpc]
+  · simp [stateAt, lookupName, s2StringBodyEntryOut, s2StringBodyEnv7,
+      s2StringBodyEnv6, s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3,
+      s2StringBodyEnv2, s2StringBodyEnv1, ofNat_sub p base hbase hp64]
+  · simp [stateAt, lookupName, s2StringBodyEntryOut, s2StringBodyEnv7,
+      s2StringBodyEnv6, s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3,
+      s2StringBodyEnv2, s2StringBodyEnv1, hxjc]
+  · simp [stateAt, lookupName, s2StringBodyEntryOut, s2StringBodyEnv7,
+      s2StringBodyEnv6, s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3,
+      s2StringBodyEnv2, s2StringBodyEnv1, hnxp, hnxpc]
+  · simp only [stateAt]
+    exact hlaneM
 
 
 /-! ### Axiom footprints
