@@ -263,12 +263,74 @@ theorem walkHeadChain_to_condOut {m0 : Mem} {G : WalkGeom m0}
   refine ⟨_, s₅, hchain₃.append (WalkChain.tail hl₄' (WalkChain.tail hl₅ (WalkChain.nil hl₅.inv'))),
     rfl, hs₅⟩
 
+/-- **The head path through the token's own byte to `NodeBlock41`.**  The arm that reached
+`cond.end349.i`'s successor is resolved first, so the next link's block hypothesis is a
+literal.  `%invariant.gep` is `G.b - 1` and `%cond350.i` the position, so the address is
+the document's `position - 1`-th byte, read by `walkDoc_byte` — the byte is `G.bs.getD`'s,
+not a hypothesis.  With `c.toNat = q + 1` the address normalises to `G.b + q`. -/
+theorem walkHeadChain_to_nodeBlock41 {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (hlt44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
+    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
+    {inc nep c ix : BitVec 64} {reg : String}
+    (hinc : evalOperand (headS₃ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (headS₃ s x) (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0) (hugt : evalICmp .ugt c ix = 1)
+    (hpre4 : (headS₄ s x inc nep).pre = some "sw.default.i")
+    (hinc4 : phiIncoming "sw.default.i" [("cond.true345.i", Operand.reg "%conv347.i"),
+      ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
+    (hav4 : lookupName (headS₄ s x inc nep).env reg = some (.int 64 c))
+    (hidx4 : lookupName (headS₄ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok4 : lookupName (headS₄ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap4 : lookupName (headS₄ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)))
+    {q : Nat} (hpos : c.toNat = q + 1) (hq63 : c.toNat < 2 ^ 63) (hqn : q < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap) :
+    ∃ (C₆ : WalkCarry G) (s₆ : State), WalkChain (stage2Calls stage2SubCalls) G C s C₆ s₆ ∧
+      C₆ = { { C with block := "cond.end349.i" } with block := "NodeBlock41" } ∧
+      s₆ = { stateAt (cells [("%35", .int 8 (BitVec.ofNat 8 (G.bs.getD q 0).toNat)),
+          ("%gep", .ptr ((G.b - 1) + c.toNat))]
+          (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)).env)
+          (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok (C.stage.tok + 20)) with
+        pc := "NodeBlock41"
+        pre := some (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok
+          (C.stage.tok + 20)).pc } := by
+  obtain ⟨C₅, s₅, hchain₅, hC₅, hs₅⟩ :=
+    walkHeadChain_to_condOut (p := "sw.default.i") hInv hhead h8 hlt91 hlt44 hne34 hinc
+      hnep hge hpre4 hinc4 hav4 hidx4 htok4 hgap4
+  rw [hC₅] at hchain₅
+  rw [hs₅] at hchain₅
+  rw [show (if evalICmp .ugt c ix = 1 then "land.lhs.true357.i" else "if.end372.i")
+    = "land.lhs.true357.i" from by simp [hugt]] at hchain₅
+  have hInv₅ := WalkChain.inv_last hchain₅
+  have hig : lookupName (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok
+      (C.stage.tok + 20)).env "%invariant.gep" = some (.ptr (G.b - 1)) :=
+    hInv₅.regs ("%invariant.gep", .ptr (G.b - 1)) (by simp [walkStaticRegs])
+  have hcond : lookupName (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok
+      (C.stage.tok + 20)).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 c.toNat)) := by
+    simp only [condEnd349OutAt, cells]
+    rw [lookupName_cons_ne (k := "%cmp355.i") (n := "%cond350.i") _ _ (by decide)]
+    rw [lookupName_cons_self, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+  have hbyte : readBytes (condEnd349OutAt (headS₄ s x inc nep) c ix C.stage.tok
+      (C.stage.tok + 20)).mem ((G.b - 1) + c.toNat) 1 = some [G.bs.getD q 0] := by
+    have hbpos : 0 < G.b := G.bPos
+    rw [hpos, show G.b - 1 + (q + 1) = G.b + q from by omega]
+    exact walkDoc_byte G _ _ hInv₅ halen hevlen hqn
+  obtain ⟨s₆, hl₆, hs₆⟩ :=
+    WalkLink.land_lhs_true357_i_at G _ _ hInv₅ rfl hig hcond (by omega) hbyte
+  refine ⟨_, s₆, hchain₅.append (WalkChain.tail hl₆ (WalkChain.nil hl₆.inv')), ?_, hs₆⟩
+  rfl
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_lt91_lt44
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_default
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_condOut
+#print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_nodeBlock41
 
 end WalkScope
 
