@@ -2162,7 +2162,7 @@ theorem numTier2Binary_eq_strtodSpec {d : Decimal} (hwf : d.wellFormed)
           split <;> simp only [hzero, Nat.zero_mul]
         have hspec : strtodSpec d = .fin d.neg 0 0 := by
           unfold strtodSpec
-          rw [hP, LeanLLVM.JSON.roundMag_zero (Decimal.ticks_den_pos d)]
+          rw [hP, LeanLLVM.roundMag_zero (Decimal.ticks_den_pos d)]
         rw [hspec]
   · have hpos : 0 < d.mantissa := Nat.pos_of_ne_zero hzero
     have h64 := mantissa_lt_two_pow_64 hwf hnd

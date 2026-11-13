@@ -614,7 +614,7 @@ theorem jam_compare {M r s T : Nat} (hr0 : 0 < r) (hrs : r < 10 ^ s) :
   constructor
   · constructor
     · intro h
-      exact LeanLLVM.JSON.lt_of_mul_lt_mul_right
+      exact LeanLLVM.lt_of_mul_lt_mul_right
         (Nat.lt_of_le_of_lt (Nat.le_add_right _ _) h)
     · exact key
   · intro h
@@ -1036,7 +1036,7 @@ theorem shift_of_near {m : Nat} {E : Int} {J : Nat} {eB : Int}
             rw [show 10 ^ (leadM m E).toNat * 10 ^ E.natAbs * 2 ^ (768 - (leadM m E).toNat)
                 = 10 ^ (leadM m E).toNat * 2 ^ (768 - (leadM m E).toNat) * 10 ^ E.natAbs
                 from by ac_rfl] at h5
-            exact LeanLLVM.JSON.lt_of_mul_lt_mul_right h5
+            exact LeanLLVM.lt_of_mul_lt_mul_right h5
           exact absurd (le_trans (hsmall_pow _ (by omega)) hsmall.le)
             (Nat.not_le.mpr (two_pow_lt_of_lt (by decide)))
         · -- both exponents negative: the subnormal-scale case
