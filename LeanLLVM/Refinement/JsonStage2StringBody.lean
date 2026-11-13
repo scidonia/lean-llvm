@@ -1339,6 +1339,126 @@ theorem s2StringBody_cleanup16_denote {calls : Calls} {env : Env} {s : State}
   dsimp only [s2StringBodyCleanup16Instrs]
   rw [denoteCode_phi calls env s "%retval.1" (Ty.int 32) _ hpre hinc hop _ (by decide)]
 
+/-! ### Writing a region twice
+
+The closing must match the body's memory to the model's, and the scan's own
+invariant must update the cursor word once per iteration.  Both need the same
+fact, and it is not the one the list encoding makes obvious: `writeByte` replaces
+a cell in place when the address is present and **appends** it otherwise, so two
+writes over separated regions are *not* interchangeable as lists — the write order
+survives in the appended cells (`writeBytes_absent_comm_witness` is the witness).
+What does hold is the weaker, sufficient form proved here: writing a region twice
+is the second write, when the second write is at least as long.  The first write's
+cells inside the region are then all replaced in place, and the cells the two
+writes append are the same cells in the same order — so the appended tail, which
+is what the order would have distinguished, is identical.
+
+This ordering rule is the one the scan needs at `(xj, 8)` every iteration and the
+one the closing needs wherever the body rewrites a region the model writes once. -/
+
+/-- Writing one address twice is the second write: the first leaves a cell there,
+in place or appended, and the second replaces that cell. -/
+theorem writeByte_writeByte_same (m : Mem) (a : Nat) (b₁ b : UInt8) :
+    writeByte (writeByte m a b₁) a b = writeByte m a b := by
+  induction m with
+  | nil => simp [writeByte]
+  | cons cell rest ih =>
+      obtain ⟨a', b'⟩ := cell
+      by_cases h : a' = a
+      · subst h; simp [writeByte]
+      · simp only [writeByte, ite_eq_right h]
+        rw [ih]
+
+/-- Writes at two different addresses commute as lists when the second address is
+occupied: an absent cell is appended, so its *position* is what makes the two
+orders differ, and an occupied one is replaced where it stands. -/
+theorem writeByte_swap_of_readByte (m : Mem) (a : Nat) (b : UInt8) :
+    ∀ (a' : Nat) (b' : UInt8), a ≠ a' → readByte m a ≠ none →
+      writeByte (writeByte m a b) a' b' = writeByte (writeByte m a' b') a b := by
+  induction m with
+  | nil => intro a' b' _ hp; exact absurd rfl hp
+  | cons cell rest ih =>
+      obtain ⟨x, c⟩ := cell
+      intro a' b' hne hp
+      by_cases h1 : x = a
+      · have hxa' : x ≠ a' := by rw [h1]; exact hne
+        simp only [writeByte, ite_eq_left h1, ite_eq_right hxa']
+      · by_cases h2 : x = a'
+        · simp only [writeByte, ite_eq_right h1, ite_eq_left h2]
+        · have hp' : readByte rest a ≠ none := by
+            intro hc
+            apply hp
+            simp only [readByte, ite_eq_right h1, hc]
+          simp only [writeByte, ite_eq_right h1, ite_eq_right h2]
+          rw [ih a' b' hne hp']
+
+/-- A cell outside a written range keeps its place: the write sequence conses
+nothing at that address and appends nothing before it. -/
+theorem writeBytes_cons_outside (a' : Nat) (b' : UInt8) :
+    ∀ (a : Nat) (bs : List UInt8), a' < a ∨ a + bs.length ≤ a' →
+      ∀ rest : Mem,
+        writeBytes ((a', b') :: rest) a bs = (a', b') :: writeBytes rest a bs
+  | _, [], _, _ => rfl
+  | a, b :: bs, h, rest => by
+      have hne : a' ≠ a := by
+        intro heq
+        subst heq
+        rcases h with h | h
+        · exact absurd h (Nat.lt_irrefl a')
+        · simp only [List.length_cons] at h; omega
+      show writeBytes (writeByte ((a', b') :: rest) a b) (a + 1) bs
+        = (a', b') :: writeBytes rest a (b :: bs)
+      rw [show writeByte ((a', b') :: rest) a b = (a', b') :: writeByte rest a b from by
+        simp only [writeByte, ite_eq_right hne]]
+      exact writeBytes_cons_outside a' b' (a + 1) bs (by
+        rcases h with h | h
+        · exact Or.inl (by omega)
+        · simp only [List.length_cons] at h; omega) (writeByte rest a b)
+
+/-- A single write below a sequence's range commutes with the whole sequence, when
+the address it writes is occupied. -/
+theorem writeByte_writeBytes_above (m : Mem) (a : Nat) (b : UInt8) :
+    ∀ (a' : Nat) (bs : List UInt8), a < a' → readByte m a ≠ none →
+      writeByte (writeBytes m a' bs) a b = writeBytes (writeByte m a b) a' bs
+  | _, [], _, _ => rfl
+  | a', b' :: bs, hlt, hp => by
+      show writeByte (writeBytes (writeByte m a' b') (a' + 1) bs) a b
+        = writeBytes (writeByte (writeByte m a b) a' b') (a' + 1) bs
+      have hpres : readByte (writeByte m a' b') a ≠ none := by
+        rw [readByte_writeByte_other m b' (by omega)]; exact hp
+      rw [writeByte_writeBytes_above (writeByte m a' b') a b (a' + 1) bs (by omega) hpres]
+      rw [writeByte_swap_of_readByte m a b a' b' (by omega) hp]
+
+/-- A write at the head of a sequence is the sequence with its head replaced: the
+rest of the sequence pushes the cell out of the way, so the write lands on the
+head's own cell wherever the sequence appended it. -/
+theorem writeByte_writeBytes_head (m : Mem) (a : Nat) :
+    ∀ (b₁ : UInt8) (bs : List UInt8) (b : UInt8),
+      writeByte (writeBytes m a (b₁ :: bs)) a b
+        = writeBytes (writeByte m a b) (a + 1) bs
+  | b₁, bs, b => by
+      show writeByte (writeBytes (writeByte m a b₁) (a + 1) bs) a b = _
+      rw [writeByte_writeBytes_above (writeByte m a b₁) a b (a + 1) bs (by omega)
+        (by rw [readByte_writeByte_same]; exact Option.some_ne_none b₁)]
+      rw [writeByte_writeByte_same]
+
+/-- **Writing a region twice is the second write**, when the second write is at
+least as long: the first write's cells inside the region are replaced in place,
+and the two writes append the same cells in the same order.  This is the form the
+scan's invariant and the closing's memory term both consume. -/
+theorem writeBytes_writeBytes_same (m : Mem) (a : Nat) :
+    ∀ (bs₁ bs₂ : List UInt8), bs₁.length ≤ bs₂.length →
+      writeBytes (writeBytes m a bs₁) a bs₂ = writeBytes m a bs₂
+  | [], _, _ => rfl
+  | _ :: _, [], h => by
+      simp only [List.length_cons, List.length_nil] at h; omega
+  | b₁ :: bs₁, b :: bs, h => by
+      show writeBytes (writeByte (writeBytes m a (b₁ :: bs₁)) a b) (a + 1) bs
+        = writeBytes (writeByte m a b) (a + 1) bs
+      rw [writeByte_writeBytes_head m a b₁ bs₁ b]
+      exact writeBytes_writeBytes_same (writeByte m a b) (a + 1) bs₁ bs
+        (by simp only [List.length_cons] at h; omega)
+
 /-! ### The scan's bound
 
 The scan is the body's only loop: `land.rhs` reads the lane at the counter, and
