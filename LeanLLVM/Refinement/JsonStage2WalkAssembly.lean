@@ -3289,6 +3289,36 @@ theorem walkExit490 {calls : Calls} {s : State} {rd : Nat} {v : BitVec 32}
         else "s2_walk.exit") :=
   ⟨_, walkIfEnd490Step s hpc hroot hread, rfl⟩
 
+/-- **The refusal route's three steps.**  `if.then492.i` → `if.then` → `if.end`, ending in the
+`.ret` the arm's verdict names.  The copy's `denote` is the caller's (the ceiling), every premise
+is stated at a named state (the named-existential rule), and the final witness is `stateAt`'s. -/
+theorem walkExit492Tail {sub : Calls} {s s₁ s₂ send : State} {e v : Nat} {p : String}
+    {pe pz ps : Nat} {bit : BitVec 64}
+    (hpc : s.pc = "if.then492.i")
+    (he : lookupName s.env "%e" = some (.ptr e))
+    (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v))) (hv64 : v < 2 ^ 64)
+    (hstep₁ : LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s₁)
+    (hpc₁ : s₁.pc = "if.then")
+    (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s₁ = some s₂)
+    (hpc₂ : s₂.pc = s₁.pc)
+    (he₂ : lookupName s₂.env "%e" = some (.ptr pe))
+    (hz₂ : lookupName s₂.env "%z" = some (.ptr pz))
+    (hs₂ : lookupName s₂.env "%s" = some (.ptr ps))
+    (hphi : phiIncoming s₁.pc walkIfEndIncoming = some (Operand.imm (Const.int 64 bit)))
+    (hv : bit = BitVec.ofNat 64 v) :
+    LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s₁ ∧
+      LeanLLVM.step (stage2Calls sub) stage2Body s₁ =
+        .jump { s₂ with pc := "if.end", pre := some s₁.pc } ∧
+      LeanLLVM.step (stage2Calls sub) stage2Body
+        { s₂ with pc := "if.end", pre := some s₁.pc } =
+        .ret (some (.int 64 (BitVec.ofNat 64 v)))
+          (stateAt (("%tobool.not151", .int 64 bit) ::
+            { s₂ with pc := "if.end", pre := some s₁.pc }.env)
+            { s₂ with pc := "if.end", pre := some s₁.pc }) := by
+  refine ⟨hstep₁, walkIfThen_step s₁ hpc₁ hden hpc₂, ?_⟩
+  exact walkIfEnd_step { s₂ with pc := "if.end", pre := some s₁.pc } rfl
+    he₂ hz₂ hs₂ rfl hphi hv
+
 end WalkScope
 
 end LeanLLVM.Refinement
