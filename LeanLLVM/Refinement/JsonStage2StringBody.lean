@@ -1347,6 +1347,14 @@ The scan is the body's only loop: `land.rhs` reads the lane at the counter, and
 `while.body` for `if.then` when the counter reaches the count — so the exit is a
 predicate and the head's test is the disjunction of both.
 
+**The cost is two control steps.**  One iteration is `land.rhs`'s step —
+`getelementptr`, the lane load, the zero-extension and the test — then
+`while.body`'s — the counter's increment, its write-back and the exit test — and
+the back edge is the second one's jump, so every instantiation passes `cost = 2`;
+the exit is `land.rhs`'s own jump to `land.lhs.true`, one step, inside that bound.
+The field is a parameter here for the reason the decoder's instance makes it one:
+the arms are the body's facts, and the bound's arithmetic is `BoundLoop`'s.
+
 **The measure is the counter's distance to the count.**  `while.body` writes
 `c + 1` to the cursor word it was given, so at the head the cursor word holds the
 counter; `Inv r s c` says exactly that, together with `c + r = N`.  Both ways out
