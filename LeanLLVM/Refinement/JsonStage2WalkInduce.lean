@@ -236,17 +236,17 @@ chain's pivots take theirs; what the leaves need beyond them is the latch's own 
 fact, which is `WalkLocal.whitespace`'s at the counter the visit writes. -/
 
 /-- The carry the scan's second pivot leaves: `NodeBlock52`'s second arm. -/
-abbrev scanCarryNodeBlock50 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+def scanCarryNodeBlock50 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
   { C with block := "NodeBlock50" }
 
 /-- The carry `NodeBlock50` leaves at the class that takes its second arm.  A chain's
 carry is an index, so the composition names it rather than writing the nest: two nests
 that are equal are not thereby the same index. -/
-abbrev scanCarryLeafBlock48 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+def scanCarryLeafBlock48 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
   { scanCarryNodeBlock50 C with block := "LeafBlock48" }
 
 /-- The carry a leaf's back edge leaves: its own, at the latch. -/
-abbrev scanCarryLatchOf {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+def scanCarryLatchOf {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
   { C with block := "while.body370.i" }
 
 /-- The state `NodeBlock50` leaves at the class that takes its first arm. -/
@@ -443,7 +443,7 @@ theorem walkWhiteScanBack43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (hlt13 : evalICmp .slt x (BitVec.ofNat 8 13) = 1)
     (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0)
     (hsc : ScanCount s "%ee.0.i238" "%cond350.i" C.inner) :
-    WalkChain calls G C₀ s₀ { C with block := "while.body370.i" }
+    WalkChain calls G C₀ s₀ (scanCarryLatchOf { C with block := "LeafBlock43" })
       (leafBlock43OutAt (nodeBlock52OutAt s x) x) := by
   have h₁ := walkChain_extend_nodeBlock52 (C₀ := C₀) (s₀ := s₀) hchain hblock h36 hlt13
   have h36' : lookupName (nodeBlock52OutAt s x).env "%36" = some (.int 8 x) := by
@@ -468,8 +468,7 @@ theorem walkWhiteScanBack46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (hne13 : evalICmp .eq x (BitVec.ofNat 8 13) = 0)
     (hsc : ScanCount s "%ee.0.i238" "%cond350.i" C.inner) :
     WalkChain calls G C₀ s₀
-      { { { C with block := "NodeBlock52" } with block := "NodeBlock50" } with
-        block := "while.body370.i" }
+      (scanCarryLatchOf { { C with block := "NodeBlock50" } with block := "LeafBlock46" })
       (scanLeafBlock46Out (scanNodeBlock50Out (nodeBlock52OutAt s x) x) x) := by
   have h₁ := walkChain_extend_nodeBlock50 (C₀ := C₀) (s₀ := s₀) hchain hblock h36 hge13
   have h36₁ : lookupName (nodeBlock52OutAt s x).env "%36" = some (.int 8 x) := by
