@@ -2030,6 +2030,94 @@ theorem step_cleanup16_ret {env : Env} {s : State} {p : String} {op : Operand}
     simp only [execTerm, hv]
 
 
+/-- The scan's cursor word after one iteration: the word written where the cursor's
+own word stands replaces it in place, so the head's memory is the caller's with the
+cursor at the new counter.  This is `writeBytes_writeBytes_same` at `(xj, 8)`, and
+`hc64` is what makes the counter's increment not wrap. -/
+theorem s2StringBodyScan_advance (mem0 : Mem) (xj c : Nat) (s : State)
+    (hmem : s.mem = writeBytes mem0 xj (wordBytes 8 c))
+    (hc64 : c + 1 < 2 ^ 64) :
+    writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8) =
+      writeBytes mem0 xj (wordBytes 8 (c + 1)) := by
+  rw [hmem]
+  have htoNat : ((BitVec.ofNat 64 c) + 1#64).toNat = c + 1 := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    omega
+  rw [htoNat]
+  exact writeBytes_writeBytes_same mem0 xj (wordBytes 8 c) (wordBytes 8 (c + 1))
+    (by simp [wordBytes, natToBytes_length])
+
+/-- **The scan's iteration**: two control steps from the head back to the head, the
+counter's word written where it stands.  The two steps are the block steps composed
+through `runFuel_jump_prefix`, so the cost this loop's instance names is `2` and the
+state it returns is the next head, at `(r, c + 1)` in the invariant's terms. -/
+theorem s2StringBodyScanIterate {envH : Env} {s : State} {p : String} {op : Operand}
+    {inc24 nxp : BitVec 64} {xp xj : Nat} {bs : List UInt8} {sub : BitVec 64}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some p)
+    (hxj : lookupName envH "%xj" = some (.ptr xj))
+    (hnxp : lookupName envH "%nxp" = some (.int 64 nxp))
+    (hinc : phiIncoming p [("while.body", Operand.reg "%inc"),
+      ("entry", Operand.reg "%xj.promoted")] = some op)
+    (hop : evalOperand (stateAt envH s) op = some (.int 64 inc24))
+    (hxp : lookupName envH "%xp" = some (.ptr xp))
+    (hsub : lookupName envH "%sub.ptr.sub" = some (.int 64 sub))
+    (hpos : (inc24.signExtend 64).toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (xp + (inc24.signExtend 64).toNat * 4) 4 = some bs)
+    (hbit1 : evalICmpNat .ugt 64 sub.toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 1#1)
+    (hbit2 : evalICmp .eq (inc24 + 1#64) nxp = 0#1) :
+    ∀ k, runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt envH s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt
+          (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+            ("%inc", .int 64 (inc24 + 1#64)) ::
+            s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+          ({ s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8), pc := "land.rhs", pre := some "while.body" })) := by
+  intro k
+  have h1 := step_landRhs_while (env := envH) (s := s) (p := p) (op := op)
+    hpc hpre hinc hop hxp hsub hpos hlane hbit1
+  have h2 := step_whileBody_back
+    (env := s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+    (s := { s with pc := "while.body", pre := some s.pc })
+    (inc24 := inc24) (nxp := nxp) (xj := xj)
+    rfl (by s2_lk) (by s2_lk) (by s2_lk) hbit2
+  calc runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt envH s)
+      = runFuel s2StringBodyCalls (1 + (1 + k)) s2StringBodyBody (stateAt envH s) := by
+        rw [show 2 + k = 1 + (1 + k) from by omega]
+    _ = runFuel s2StringBodyCalls (1 + k) s2StringBodyBody
+          (stateAt (s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+            { s with pc := "while.body", pre := some s.pc }) :=
+        runFuel_jump_prefix h1 (1 + k)
+    _ = runFuel s2StringBodyCalls k s2StringBodyBody
+          (stateAt
+            (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+              ("%inc", .int 64 (inc24 + 1#64)) ::
+              s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+            ({ s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8), pc := "land.rhs", pre := some "while.body" })) :=
+        runFuel_jump_prefix h2 k
+
+/-- **The scan's first exit**: one control step to `land.lhs.true`, the lane already
+inside the body, the memory as the head left it. -/
+theorem s2StringBodyScanExit {envH : Env} {s : State} {p : String} {op : Operand}
+    {inc24 : BitVec 64} {xp : Nat} {bs : List UInt8} {sub : BitVec 64}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("while.body", Operand.reg "%inc"),
+      ("entry", Operand.reg "%xj.promoted")] = some op)
+    (hop : evalOperand (stateAt envH s) op = some (.int 64 inc24))
+    (hxp : lookupName envH "%xp" = some (.ptr xp))
+    (hsub : lookupName envH "%sub.ptr.sub" = some (.int 64 sub))
+    (hpos : (inc24.signExtend 64).toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (xp + (inc24.signExtend 64).toNat * 4) 4 = some bs)
+    (hbit : evalICmpNat .ugt 64 sub.toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 0#1) :
+    ∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody (stateAt envH s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt (s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+          { s with pc := "land.lhs.true", pre := some s.pc }) := by
+  intro k
+  exact runFuel_jump_prefix
+    (step_landRhs_exit hpc hpre hinc hop hxp hsub hpos hlane hbit) k
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
