@@ -2469,6 +2469,109 @@ theorem walkScanLinks457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   refine ⟨s₃, ?_, Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))⟩
   rw [hs₃, if_pos hws]
 
+
+/-- **One round of the extra-token scan.**  The latch's visit — one step — and the
+dispatch's three links: four steps.
+
+Where a hypothesis is warranted and where a proof is owed: **a fact about a field the
+composition preserves is a premise; a fact about a field it changes is a derivation.**
+
+`hposi` is the round's own premise: `ScanCount` gives `c < 2 ^ 64` and `i < c`, which
+permits `i + 1` anywhere below `2 ^ 64`, so the sign-extension bound is not derivable from
+the counter's invariants. -/
+theorem walkScanRound457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
+    (hguard : ScanGuard s "%q.0.i246" "%cond350.i" C.inner)
+    {i c : Nat} (hi : lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hlt : i + 1 < c) (hposi : i + 1 < 2 ^ 63)
+    {a : Nat} {bs : List UInt8} {q : Nat} {x : BitVec 8}
+    (h3 : lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i").env
+      "%3" = some (.ptr a))
+    (hread : readBytes s.mem (a + (i + 1)) 1 = some bs)
+    (hbs : bytesToNat bs = q)
+    (hloc105 : WalkLocal (ScanC₁₀₅ (ScanCLand C))
+      (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i")
+        (BitVec.ofNat 64 (i + 1)) a q))
+    (h47 : evalOperand (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" i c
+      "land.rhs457.i") (BitVec.ofNat 64 (i + 1)) a q) (.reg "%47") = some (.int 8 x))
+    (hbit : evalICmp .slt x (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    (hloc96 : WalkLocal (ScanC₉₆ (ScanCLand C))
+      (ScanS₉₆ (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i")
+        (BitVec.ofNat 64 (i + 1)) a q x))
+    (hlatch : WalkLocal { ScanCLand C with block := "while.body462.i" }
+      (Latch462S (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i")
+        (BitVec.ofNat 64 (i + 1)) a q x)) :
+    ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
+      WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
+      n ≤ stage2ByteAllowance + 3 ∧
+      lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+      lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
+  have hSC : ScanCount s "%q.0.i246" "%cond350.i" C.inner := by
+    have h := hInv.blockLocal
+    rwa [WalkLocal.extraToken hblock] at h
+  have hsub : c - i ≤ C.inner := ScanCount.same hSC hi hc hcw (by omega)
+  have h1 : (BitVec.ofNat 64 (i + 1)).toNat = i + 1 := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have h2 : ((BitVec.ofNat 64 (i + 1)).signExtend 64).toNat
+      = (BitVec.ofNat 64 (i + 1)).toNat := by
+    simp [BitVec.signExtend]
+  have hpre : (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i").pre
+      = some "while.body462.i" := by
+    dsimp only [scanLatchOut, stateAt, State.bind]
+    rw [hInv.pc_eq, hblock]
+  have hincCell : lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" i c
+      "land.rhs457.i").env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    dsimp only [scanLatchOut, stateAt, State.bind, cells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+  have hcondCell : lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" i c
+      "land.rhs457.i").env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
+    dsimp only [scanLatchOut, stateAt, State.bind, cells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hc
+  have hexit : WalkLocal { C with block := "if.end473.i" }
+      (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "if.end473.i") := by
+    simp [WalkLocal]
+  have hland : WalkLocal { C with block := "land.rhs457.i" }
+      (scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i") := by
+    rw [WalkLocal.extraTokenLanded rfl]
+    exact Or.inl ⟨i + 1, c, by show c - (i + 1) ≤ C.inner; omega, hlt, hcw,
+      hpre, hincCell, hcondCell⟩
+  obtain ⟨C₁, s₁, hC₁, hs₁, hseg₁, hb₁, hi₁, hc₁⟩ :=
+    scanLatch_visit_at (calls := calls) (G := G) (C := C) (s := s) hInv hblock
+      (src := "while.body462.i") (inc := "%inc463.i") (phi := "%q.0.i246")
+      (test := "%exitcond298.not") (cond := "%cond350.i") (exit := "if.end473.i")
+      (land := "land.rhs457.i")
+      (B := scanBlock "while.body462.i" "%inc463.i" "%q.0.i246" "%exitcond298.not"
+        "%cond350.i" "if.end473.i" "land.rhs457.i")
+      scanExtraToken_find rfl rfl (by decide) (by decide) (by decide)
+      (by unfold walkCarried scanBlock; decide) hi hc hcw hlt hexit hland
+  rw [hC₁] at hseg₁
+  rw [hs₁] at hseg₁
+  obtain ⟨s₃, hs₃, hseg₃⟩ := walkScanLinks457 (calls := calls) (G := G) (C := ScanCLand C)
+    (s := scanLatchOut s "%inc463.i" "%exitcond298.not" i c "land.rhs457.i")
+    hseg₁.inv' rfl hpre
+    (sel := Operand.reg "%inc463.i") (by decide)
+    (by
+      dsimp only [scanLatchOut, stateAt, State.bind, cells]
+      simp only [evalOperand]
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self])
+    (x := x) (a := a) (q := q) (bs := bs) h3
+    (by rw [h2, h1]; omega)
+    (by
+      have hr : readBytes s.mem (a + ((BitVec.ofNat 64 (i + 1)).signExtend 64).toNat) 1
+          = some bs := by rw [h2, h1]; exact hread
+      simpa only [scanLatchOut, stateAt, State.bind] using hr)
+    hbs hloc105 h47 hbit hws hloc96 hlatch
+  have hallow : 1 ≤ stage2ByteAllowance := by simp [stage2ByteAllowance]
+  refine ⟨_, s₃, 1 + 3, hseg₁.trans hseg₃, hseg₃.inv', ?_, by omega, ?_, ?_⟩
+  · rfl
+  · rw [hs₃]
+    exact latch462S_counter (m0 := m0) s i c (BitVec.ofNat 64 (i + 1)) a q x
+  · rw [hs₃]
+    exact latch462S_cond (m0 := m0) s i c (BitVec.ofNat 64 (i + 1)) a q x hc
+
 end WalkScope
 
 end LeanLLVM.Refinement
