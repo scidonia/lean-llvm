@@ -2433,6 +2433,170 @@ theorem s2StringBodyScan_step_loop (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List 
   · exact hrun
 
 
+/-- **The scan's iteration, leaving.**  The same two control steps as
+`s2StringBodyScanIterate`, but the counter has reached the count, so `while.body`'s
+test holds and the scan leaves for `if.then`. -/
+theorem s2StringBodyScanIterateExit {envH : Env} {s : State} {p : String} {op : Operand}
+    {inc24 nxp : BitVec 64} {xp xj : Nat} {bs : List UInt8} {sub : BitVec 64}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some p)
+    (hxj : lookupName envH "%xj" = some (.ptr xj))
+    (hnxp : lookupName envH "%nxp" = some (.int 64 nxp))
+    (hinc : phiIncoming p [("while.body", Operand.reg "%inc"),
+      ("entry", Operand.reg "%xj.promoted")] = some op)
+    (hop : evalOperand (stateAt envH s) op = some (.int 64 inc24))
+    (hxp : lookupName envH "%xp" = some (.ptr xp))
+    (hsub : lookupName envH "%sub.ptr.sub" = some (.int 64 sub))
+    (hpos : (inc24.signExtend 64).toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (xp + (inc24.signExtend 64).toNat * 4) 4 = some bs)
+    (hbit1 : evalICmpNat .ugt 64 sub.toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 1#1)
+    (hbit2 : evalICmp .eq (inc24 + 1#64) nxp = 1#1) :
+    ∀ k, runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt envH s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt
+          (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+            ("%inc", .int 64 (inc24 + 1#64)) ::
+            s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+          ({ s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })) := by
+  intro k
+  have h1 := step_landRhs_while (env := envH) (s := s) (p := p) (op := op)
+    hpc hpre hinc hop hxp hsub hpos hlane hbit1
+  have h2 := step_whileBody_exit
+    (env := s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+    (s := { s with pc := "while.body", pre := some s.pc })
+    (inc24 := inc24) (nxp := nxp) (xj := xj)
+    rfl (by s2_lk) (by s2_lk) (by s2_lk) hbit2
+  calc runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt envH s)
+      = runFuel s2StringBodyCalls (1 + (1 + k)) s2StringBodyBody (stateAt envH s) := by
+        rw [show 2 + k = 1 + (1 + k) from by omega]
+    _ = runFuel s2StringBodyCalls (1 + k) s2StringBodyBody
+          (stateAt (s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+            { s with pc := "while.body", pre := some s.pc }) :=
+        runFuel_jump_prefix h1 (1 + k)
+    _ = runFuel s2StringBodyCalls k s2StringBodyBody
+          (stateAt
+            (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+              ("%inc", .int 64 (inc24 + 1#64)) ::
+              s2StringBodyLandRhsEnv envH inc24 xp bs sub)
+            ({ s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })) :=
+        runFuel_jump_prefix h2 k
+
+/-- The blocks the scan may leave for. -/
+def s2StringBodyScanExited (e : State) : Prop :=
+  e.pc = "land.lhs.true" ∨ e.pc = "if.then"
+
+/-- What the scan leaves behind: the cursor word at the counter it stopped at, and
+that counter being the count or the first lane inside the body. -/
+def s2StringBodyScanExitWord (mem0 : Mem) (xj : Nat) (ps : List Nat) (pos0 N : Nat)
+    (e : State) : Prop :=
+  ∃ c, e.mem = writeBytes mem0 xj (wordBytes 8 c) ∧
+    (N ≤ c + 1 ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q)
+
+theorem s2StringBodyScan_step_exit (mem0 : Mem) (xj pos0 xp N : Nat)
+    (ps : List Nat) (r c : Nat) (s : State)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (hinv : s2StringBodyScanInv mem0 xj pos0 xp N ps r s c)
+    (hbound : s2StringBodyScanAtBound ps pos0 N s c = true) :
+    ∃ (e : State) (j : Nat), j ≤ 2 ∧ s2StringBodyScanExited e ∧
+      s2StringBodyScanExitWord mem0 xj ps pos0 N e ∧
+      ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+        runFuel s2StringBodyCalls k s2StringBodyBody e := by
+  obtain ⟨hpc, hmem, hsum, ⟨p, op, hpre, hinc, hop⟩, hxp, hsub, hxj, hnxp,
+    ⟨q, bs, hq, hblen, hval, hlane⟩⟩ := hinv
+  have hlen : ps.length = N := (readLanes32_lane hps).1
+  have hcN : c < N := by
+    have : c < ps.length := by
+      by_contra h
+      rw [List.getElem?_eq_none (by omega)] at hq
+      cases hq
+    omega
+  have hb : s2StringBodyScanAtBound ps pos0 N s c = true := hbound
+  rw [s2StringBodyScanAtBound_eq] at hbound
+  have hN64 : N < 2 ^ 64 := by omega
+  have hpos : ((BitVec.ofNat 64 c).signExtend 64).toNat < 2 ^ 63 := by
+    rw [signExtend_ofNat c (by omega)]; omega
+  have hidx : ((BitVec.ofNat 64 c).signExtend 64).toNat * 4 = 4 * c := by
+    rw [signExtend_ofNat c (by omega)]; omega
+  have hlane' : readBytes s.mem (xp + ((BitVec.ofNat 64 c).signExtend 64).toNat * 4) 4
+      = some bs := by
+    rw [hidx]; exact hlane
+  have hconv : (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = q := by
+    have h32 := bytesToNat_lt_32 hblen
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h32,
+      Nat.mod_eq_of_lt (by omega), hval]
+  by_cases hge : pos0 ≤ q
+  · -- the lane is already inside the body: the head's exit, one step
+    have hbit : evalICmpNat .ugt 64 (BitVec.ofNat 64 pos0).toNat
+        (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 0#1 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+      exact evalICmpNat_ugt_of_ge hpos0 (by have := bytesToNat_lt_32 hblen; omega) hge
+    have hrun := s2StringBodyScanExit (envH := s.env) (s := s) (p := p) (op := op)
+      hpc hpre hinc hop hxp hsub hpos hlane' hbit
+    let e : State := stateAt (s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs
+        (BitVec.ofNat 64 pos0)) { s with pc := "land.lhs.true", pre := some s.pc }
+    refine ⟨e, 1, by decide, Or.inl rfl, ?_, hrun⟩
+    exact ⟨c, by simp only [e, stateAt]; exact hmem, Or.inr ⟨q, hq, hge⟩⟩
+  · -- the lane is below the body's start, so only the count can have stopped it
+    have hlt : q < pos0 := by omega
+    have hNle : N ≤ c + 1 := by
+      rcases hbound with h | ⟨q', hq', hge'⟩
+      · exact h
+      · rw [hq] at hq'; cases Option.some.inj hq'; exact absurd hge' hge
+    have heqc : c + 1 = N := by omega
+    have hbit1 : evalICmpNat .ugt 64 (BitVec.ofNat 64 pos0).toNat
+        (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 1#1 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+      exact evalICmpNat_ugt_one hpos0 (by have := bytesToNat_lt_32 hblen; omega) hlt
+    have hbit2 : evalICmp .eq ((BitVec.ofNat 64 c) + 1#64) (BitVec.ofNat 64 N) = 1#1 :=
+      evalICmp_eq_of_eq hN64 heqc.symm
+    have hrun := s2StringBodyScanIterateExit (envH := s.env) (s := s) (p := p) (op := op)
+      hpc hpre hxj hnxp hinc hop hxp hsub hpos hlane' hbit1 hbit2
+    let e : State := stateAt
+        (("%exitcond.not", .int 1 (evalICmp .eq ((BitVec.ofNat 64 c) + 1#64)
+            (BitVec.ofNat 64 N))) ::
+          ("%inc", .int 64 ((BitVec.ofNat 64 c) + 1#64)) ::
+          s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
+        ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })
+    refine ⟨e, 2, le_rfl, Or.inr rfl, ?_, hrun⟩
+    refine ⟨c + 1, ?_, Or.inl (by omega)⟩
+    simp only [e, stateAt]
+    rw [show (writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8))
+        = writeBytes mem0 xj (wordBytes 8 (c + 1)) from
+      s2StringBodyScan_advance mem0 xj c s hmem (by omega)]
+
+
+/-- **The scan, as a `BoundLoop`.**  The two arms are proved, so the value carries no
+hypothesis beyond the staging's: the lane list, the region disjointness the frame
+needs, and the two bounds.  The exits are `land.lhs.true` and `if.then`, and the
+exit word is the cursor at the counter the scan stopped at. -/
+def s2StringBodyScanLoop (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64) :
+    BoundLoop s2StringBodyCalls s2StringBodyBody :=
+  s2StringBodyScanBoundLoop mem0 xj pos0 xp N ps 2
+    s2StringBodyScanExited (s2StringBodyScanExitWord mem0 xj ps pos0 N)
+    (fun r s c hinv hb => s2StringBodyScan_step_exit mem0 xj pos0 xp N ps r c s
+      hps hdisj hN hpos0 hinv hb)
+    (fun r s c hinv hb => s2StringBodyScan_step_loop mem0 xj pos0 xp N ps r c s
+      hps hdisj hN hpos0 hinv hb)
+
+/-- **The scan's fuel, read off its instance**: `(N + 1) * 2` control steps from the
+head, and the exit's continuation at its own fuel. -/
+theorem s2StringBodyScan_run (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (s : State) (c : Nat) (k : Nat)
+    (hinv : s2StringBodyScanInv mem0 xj pos0 xp N ps N s c) {o : Outcome}
+    (hcont : ∀ (e : State), s2StringBodyScanExited e →
+      s2StringBodyScanExitWord mem0 xj ps pos0 N e →
+      runFuel s2StringBodyCalls k s2StringBodyBody e = some o) :
+    runFuel s2StringBodyCalls ((N + 1) * 2 + k) s2StringBodyBody s = some o :=
+  (s2StringBodyScanLoop mem0 xj pos0 xp N ps hps hdisj hN hpos0).run_at s c hinv k hcont
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
