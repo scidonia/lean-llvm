@@ -13,7 +13,13 @@ The census is the pinned body's, computed below rather than transcribed:
   the 165; `LeafBlock99`'s instance is `WalkLink.LeafBlock99_at` in
   `JsonStage2WalkAssembly` (the shape's first instance, and the one that proved the
   pattern), and the fifty-nine here are the class's remainder — fifty-eight inside
-  the dispatch's reach and `if.then485.i`, which the exit's tail reads.
+  the dispatch's reach and `if.then485.i`, which the exit's tail reads;
+* **class C** — the refusal store: a `gep` of the escape buffer's offset word, a
+  `store` of the refusal position into it, and a `br` to the arm that records it.
+  Eighteen blocks; the two in the exit's tail (`if.then488.i`, `if.then492.i`) have
+  their steps in `JsonStage2WalkAssembly` as `walkIfThen488Step`/`walkIfThen492Step`,
+  and the sixteen here are the reach's remainder, from one generic shape lemma
+  (`walkRefusalStoreStep`) which also covers those two.
 
 Each instance is its block's `find`/`term` pair, the operands' values and the class
 step's own conclusion: by `Ctrl.jump.inj` the link's witness *is* the state the step
@@ -21,7 +27,7 @@ names, so the identification is the same comparison read twice.  Nothing about t
 block's name enters the proof, which is why the class collapses to one shape plus an
 enumeration.
 
-The guards beside the class check the list against the census computed from
+The guards beside each class check the list against the census computed from
 `stage2Body`: the class's total, that the instances are distinct members of it, and
 that the only members without an instance are the ones the assembly module proves.
 -/
@@ -1648,8 +1654,439 @@ def walkStepsA : List String :=
 #guard (walkIcmpBrBlocks.filter (fun n => !walkStepsA.contains n)) = ["LeafBlock99"]
 
 
+/-! ### Class C's step shape -/
+/-- **Class C: the refusal store.**  Eighteen of the walk's blocks are one shape: a
+`gep` of the escape buffer's offset word, a `store` of the refusal position into it,
+and a `br` to the arm that records the refusal.  The two existing concrete steps
+(`walkIfThen488Step`, `walkIfThen492Step`) are instances of this at their own
+`%off` names; stated generically, the class's remaining sixteen are its `find`/`term`
+pair and the two register facts.
+
+The offset register is a parameter because the register's number is the block's:
+the store's destination is `%e + 8` and the word written is the position's. -/
+theorem walkRefusalStoreStep {calls : Calls} (s : State) {b : Block} {off : String}
+    {v : String} {dest : String} {e : Nat} {j : Nat}
+    (hneq : off ≠ v)
+    (hfind : stage2Body.findBlock s.pc = some b)
+    (his : b.instrs = [Instr.gep off (.int 8) (.reg "%e") (.imm (.int 64 (BitVec.ofNat 64 8))),
+                       Instr.store (.int 64) (.reg v) (.reg off)])
+    (ht : b.term = Term.br dest)
+    (he : lookupName s.env "%e" = some (.ptr e))
+    (hv : lookupName s.env v = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj64 : j < 2 ^ 64) :
+    step calls stage2Body s =
+      .jump { { s with
+          env := (off, .ptr (e + 8)) :: s.env
+          mem := writeBytes s.mem (e + 8) (wordBytes 8 j) } with
+        pc := dest, pre := some s.pc } := by
+  have hden : denoteCode calls b.instrs s =
+      some { s with
+        env := (off, .ptr (e + 8)) :: s.env
+        mem := writeBytes s.mem (e + 8) (wordBytes 8 j) } := by
+    rw [his]
+    conv_lhs => rw [← stateAt_self s]
+    rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_gep8_lit_w (calls := calls)
+      (env := s.env) (s := s) (d := off) (base := "%e") (a := e)
+      (w := 64) (n := BitVec.ofNat 64 8) (by simpa [lookupName] using he) (by decide)]
+    simp only [show (BitVec.ofNat 64 8).signExtend 64 = BitVec.ofNat 64 8 from by decide,
+      show (BitVec.ofNat 64 8).toNat = 8 from by decide]
+    rw [denoteCode_store64_ofNat (calls := calls)
+      (env := (off, .ptr (e + 8)) :: s.env) (s := s)
+      (v := v) (p := off) (a := e + 8) (j := j)
+      (by rw [lookupName_cons_ne _ _ hneq]; exact hv) hj64 (by simp [lookupName]) []]
+    rfl
+  simp only [step, hfind, hden, ht, execTerm]
+
+/-! ### Class C's instances
+
+*The sixteen.*  `if.then488.i` and `if.then492.i` are the shape at their own `%off`
+names and have their steps in the assembly module.
+-/
+
+/-- **`if.then16.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then16_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then16.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then16_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then16_i)
+    (off := "%off1.i.i") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then16_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then21.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then21_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then21.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i38", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then21_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then21_i)
+    (off := "%off1.i.i38") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then21_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then56.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then56_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then56.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i41", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then56_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then56_i)
+    (off := "%off1.i.i41") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then56_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then71.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then71_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then71.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i43", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then71_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then71_i)
+    (off := "%off1.i.i43") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then71_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`cleanup104.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.cleanup104_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "cleanup104.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i45", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.cleanup104_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkCleanup104_i)
+    (off := "%off1.i.i45") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkCleanup104_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then130.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then130_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then130.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i66", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then130_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then130_i)
+    (off := "%off1.i.i66") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then130_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then147.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then147_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then147.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i68", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then147_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then147_i)
+    (off := "%off1.i.i68") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then147_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then159.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then159_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then159.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i70", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then159_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then159_i)
+    (off := "%off1.i.i70") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then159_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then176.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then176_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then176.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i72", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then176_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then176_i)
+    (off := "%off1.i.i72") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then176_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then192.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then192_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then192.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i74", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then192_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then192_i)
+    (off := "%off1.i.i74") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then192_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then205.i`'s target, named.**  `gep %e, 8` and `store %4`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then205_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then205.i")
+    {j : Nat} (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i76", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then205_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then205_i)
+    (off := "%off1.i.i76") (v := "%4") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then205_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then214.i`'s target, named.**  `gep %e, 8` and `store %4`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then214_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then214.i")
+    {j : Nat} (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i78", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then214_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then214_i)
+    (off := "%off1.i.i78") (v := "%4") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then214_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then249.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the offset recorded. -/
+theorem WalkLink.if_then249_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then249.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "if.then", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i80", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "if.then", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then249_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then249_i)
+    (off := "%off1.i.i80") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then249_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then418.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `cleanup474.i` with the offset recorded. -/
+theorem WalkLink.if_then418_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then418.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "cleanup474.i", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i91", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "cleanup474.i", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then418_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then418_i)
+    (off := "%off1.i.i91") (v := "%idxprom.i") (dest := "cleanup474.i") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then418_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.else43.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `cleanup474.i` with the offset recorded. -/
+theorem WalkLink.if_else43_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.else43.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "cleanup474.i", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i129.i", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "cleanup474.i", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_else43_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_else43_i)
+    (off := "%off1.i129.i") (v := "%idxprom.i") (dest := "cleanup474.i") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_else43_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`if.then467.i`'s target, named.**  `gep %e, 8` and `store %q.0.i246`;
+the branch takes `cleanup474.i` with the offset recorded. -/
+theorem WalkLink.if_then467_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.then467.i")
+    {j : Nat} (hv : evalOperand s (.reg "%q.0.i246") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
+    : ∃ (s' : State), WalkLink calls G C s
+        { C with block := "cleanup474.i", eoff := j, refusal := true } s' ∧
+      s' = { { s with
+          env := ("%off1.i.i113", .ptr (C.stage.e + 8)) :: s.env
+          mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+        pc := "cleanup474.i", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then467_i G C s hInv hblock hv he hj hj64
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then467_i)
+    (off := "%off1.i.i113") (v := "%q.0.i246") (dest := "cleanup474.i") (e := C.stage.e) (j := j)
+    (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then467_i_find) rfl rfl he
+    (by simpa only [evalOperand] using hv) hj64
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- The class-C blocks this module states, in the census's order. -/
+def walkStepsC : List String :=
+  ["if.then16.i",
+   "if.then21.i",
+   "if.then56.i",
+   "if.then71.i",
+   "cleanup104.i",
+   "if.then130.i",
+   "if.then147.i",
+   "if.then159.i",
+   "if.then176.i",
+   "if.then192.i",
+   "if.then205.i",
+   "if.then214.i",
+   "if.then249.i",
+   "if.then418.i",
+   "if.else43.i",
+   "if.then467.i"]
+
+#guard walkStepsC.length = 16
+#guard walkStepsC.eraseDups.length = walkStepsC.length
+#guard walkStepsC.all walkRefusalBlocks.contains
+
+-- The class's remainder, exactly: the assembly module's two concrete steps and
+-- nothing else.
+#guard ((walkRefusalBlocks.filter (fun n => !walkStepsC.contains n)) =
+  ["if.then488.i", "if.then492.i"])
+
+
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.walkRefusalStoreStep
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.NodeBlock21_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.NodeBlock19_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.NodeBlock17_at
@@ -1709,6 +2146,22 @@ def walkStepsA : List String :=
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.NodeBlock103_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.LeafBlock101_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then485_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then16_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then21_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then56_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then71_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup104_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then130_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then147_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then159_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then176_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then192_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then205_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then214_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then249_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then418_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else43_i_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then467_i_at
 
 end WalkScope
 
