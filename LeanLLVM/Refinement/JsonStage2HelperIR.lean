@@ -54,8 +54,8 @@ open, and one is still outside it:
 
 * `od_scalar_value` is expressible after the walk's three rewrites and is pinned
   by shape (38 blocks, 145 instructions, four parameters).  Its proof is
-  obstructed: its accepted path calls `num_fast_el1`, whose body this fragment
-  cannot express, and it must match `outTag`'s hash chain and `emitBlobs`'
+  obstructed: its accepted path calls `num_fast_el1`, whose body is pinned but
+  whose proof is open, and it must match `outTag`'s hash chain and `emitBlobs`'
   reserve byte for byte.
 * `s2_string_body` carries `ptrtoint`, which the fragment models as
   `Instr.ptrtoint` at the model's 64-bit pointer width; the step is exact below
@@ -65,19 +65,25 @@ open, and one is still outside it:
   body parses; its contents are pinned below.
 * `num_fast_el1` carries `alloca [768 x i8]`, `alloca %struct.Stk` and the
   binary64 chain (`uitofp`, `fmul`, `fdiv`, `fneg`, `select double`), all of
-  which the fragment models.  Its body is still outside the fragment, and the
-  reader of the text names three surfaces the capture leaves in place: the
-  extracted block is one `define`, so it carries no `%struct.Stk = type { … }`
-  line and the parser takes a struct's extent from its `Layout` argument; its
-  one `llvm.umin.i64` call is at `i64` with an immediate operand where the
-  model's unsigned minimum is `@llvm.umin.i32` at `i32` with two operands; and
-  `ashr exact`'s flag is refused by name.  Its text is not written to the tree:
-  a fixture nothing can read is not a pin.  `stage2.helpers.tsv` records its
-  shape (1 922 lines, 237 blocks, two aggregate allocas, thirty-eight
-  floating-point sites) and those three grounds, and the capture refuses if the
-  emission stops carrying the constructs it measures.  The literal spelling the
-  reader used to refuse, `-0.000000e+00`, is read now: LLVM prints binary64 with
-  the exponent's sign written and a sign in front of the mantissa, and the
+  which the fragment models.  Three surfaces kept the raw text out of the
+  fragment; two are closed in the capture's strip and one by the pin's declared
+  layout:
+  the extracted block is one `define`, so it carries no
+  `%struct.Stk = type { … }` line and the parser takes a struct's extent from its
+  `Layout` argument — the pin supplies `[("Stk", 1568)]`, the number the body's
+  own `llvm.lifetime.start` names; its one `llvm.umin.i64` call is folded to the
+  `icmp ult`/`select` pair that is the same function at `i64`; and `ashr exact`'s
+  flag is dropped, which leaves the model *weaker* than the instruction at the
+  inputs the flag excludes (`numFast_ashr_admits_shifted_out_bit` is the
+  witness), so the flag's obligation is a staging fact the text does not carry.
+  The body is now written to the tree and pinned by shape (255 parsed blocks,
+  1 157 instructions, four parameters), with the refusal of the same bytes under
+  no declared layout as the control that the extent is load-bearing.
+  `stage2.helpers.tsv` records the shape, the two rewrites and the flag, and the
+  capture refuses if the emission stops carrying the constructs it measures or if
+  the struct's lifetime marker stops naming 1 568 bytes.  The literal spelling
+  the reader used to refuse, `-0.000000e+00`, is read now: LLVM prints binary64
+  with the exponent's sign written and a sign in front of the mantissa, and the
   reader takes both (`tests/core-extension.lean` pins the form).
 
 **One finding the body text carries.**  Where the model refuses, it writes the
@@ -125,9 +131,29 @@ def s2StringBodySrc : String :=
 def odScalarValueSrc : String :=
   include_str "../../probes/install/ir/stage2.helper.od_scalar_value.ll"
 
+/-- `@num_fast_el1`, after its two strip rewrites. -/
+def numFastSrc : String :=
+  include_str "../../probes/install/ir/stage2.helper.num_fast_el1.ll"
+
+/-- **The declared layout the `num_fast_el1` fixture needs.**  The capture takes
+one `define` block, so the module's `%struct.Stk = type { … }` line is not in the
+text, and the parser takes a struct's extent from its `Layout` argument.  `Stk`
+is two `StkBn` (ninety-six `u64` limbs and a count word: 768 and 8 bytes, so 776)
+followed by an `int64_t` and an `int`: 1568 bytes, which is the number the body's
+own `llvm.lifetime.start.p0(i64 1568, ptr %v.i.i)` names.  The pin below holds
+the two together; the number is not a reading of the text, it is the text's own
+lifetime marker. -/
+def numFastLayout : Layout := [("Stk", 1568)]
+
 /-- Parse a fixture and take its single function. -/
 def firstFunction (src : String) : Option Function :=
   match parseModule src with
+  | .ok m => m.functions.head?
+  | .error _ => none
+
+/-- Parse a fixture under a declared layout.  `num_fast_el1`'s only way in. -/
+def firstFunctionWith (layout : Layout) (src : String) : Option Function :=
+  match parseModuleWith layout src with
   | .ok m => m.functions.head?
   | .error _ => none
 
@@ -407,6 +433,38 @@ def storesNullAt (f : Function) (reg : String) : Bool :=
 #guard (match firstFunction s2InitSrc with
   | some f => !storesNullAt f "%msg2.i.i"
   | none => false)
+
+/-! #### `num_fast_el1`, pinned at the shape the capture records
+
+The body is a program of the fragment after the capture's two strip rewrites and
+with the declared layout.  The pin states the parsed shape; the control beside
+it is the refusal the *same text* gets without the layout, which is what makes
+the declared extent a fact the text depends on rather than a decoration. -/
+#guard decide ((firstFunctionWith numFastLayout numFastSrc).map
+  (fun f => (f.name, f.blocks.length, (f.blocks.flatMap (·.instrs)).length,
+    f.params.length)) = some ("num_fast_el1", 255, 1157, 4))
+
+-- The control: the same bytes, parsed without the declared layout, are refused.
+#guard decide (firstFunction numFastSrc = none)
+
+-- The two rewrites, each beside the marker that the construct it replaced is
+-- gone and the form it became is present.  The markers are instruction-shaped:
+-- the fixture's banner names both constructs in prose.
+#guard !hasSubstr numFastSrc "@llvm.umin.i64("
+#guard hasSubstr numFastSrc ".min = icmp ult i64 "
+#guard !hasSubstr numFastSrc "ashr exact i64"
+#guard hasSubstr numFastSrc "ashr i64 "
+
+/-- **`num_fast_el1`'s flag-erased shift, at a witness rather than in prose.**
+The capture drops `exact`, so the pinned body's `ashr` is the model's own: it
+answers for every input.  `1 i64 >> 1` is `0` and the bit shifted out is `1`, so
+this is an input on which LLVM's `ashr exact` is poison and the pinned body is
+defined.  The model is therefore *weaker* than the emitted instruction here, and
+a caller that needs the emitted behaviour supplies the bound; the flag is
+recorded as the staging fact the text does not carry. -/
+theorem numFast_ashr_admits_shifted_out_bit :
+    evalBinop BinOp.ashr (1 : BitVec 64) (1 : BitVec 64) = some (0 : BitVec 64) := by
+  decide
 
 /-- **The message slot is outside the contract's error region.**  The helpers'
 footprints name the refusal record as the region `(e, 16)`, the half-open range

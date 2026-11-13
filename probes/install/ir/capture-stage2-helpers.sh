@@ -61,29 +61,34 @@
 #   num_fast_el1     aggregate and binary64 text: `alloca [768 x i8]`,
 #                    `alloca %struct.Stk`, `alloca double`, and the `uitofp`/
 #                    `fmul`/`fdiv`/`fneg`/`select double` chain, all modelled.
-#                    The body is still outside the fragment, on three grounds
-#                    this capture leaves in place, measured by reading the body
-#                    with `LeanLLVM.Parser`:
+#                    Three surfaces keep the raw text out of the fragment, and
+#                    this capture closes them in the two ways the format allows:
 #
 #                      %struct.Stk   the extraction takes one `define` block, so
 #                                    the module's `%struct.Stk = type { … }` line
-#                                    is not in the text, and the parser takes a
+#                                    is not in the text.  The parser takes a
 #                                    struct's extent from its `Layout` argument
-#                                    rather than recomputing it from fields
-#                                    (`expectAllocaTy`);
-#                      llvm.umin.i64 one call, at i64 with an immediate operand;
-#                                    the model's unsigned minimum is
-#                                    `@llvm.umin.i32` at i32 with two operands;
-#                      ashr exact    `exact` on the shift, a flag the token strip
-#                                    does not remove and the parser refuses by
-#                                    name.
+#                                    (`expectAllocaTy`), so the extent is the
+#                                    pin's to supply: 1568 bytes, which is the
+#                                    number the body's own
+#                                    `llvm.lifetime.start.p0(i64 1568, …)` names
+#                                    and the checks below hold the two to.
+#                      llvm.umin.i64 folded to `icmp ult` and `select` at i64 —
+#                                    the same function the fragment's umin.i32
+#                                    is, at the width the text uses.
+#                      ashr exact    the `exact` flag is dropped, so the pinned
+#                                    body is the flag-erased form.  The flag's
+#                                    obligation — the bits shifted out are zero
+#                                    — is then a staging fact the text does not
+#                                    carry, and it is recorded as such here and
+#                                    in the ledger rather than assumed.
 #
 #                    The double reader accepts the body's literals —
 #                    `-0.000000e+00` and `0.000000e+00` included.
 #
-# num_fast_el1's text is not written to the tree: a fixture nothing can read is
-# not a pin.  The inventory records the shape and the verdict, and the checks
-# below refuse if the emission stops having the measured constructs.
+# Every helper's text is written to the tree now that every one of them parses:
+# the inventory records the shape and the verdict, and the checks below refuse
+# if the emission stops having the measured constructs.
 #
 # Exit status: 0 when the fixtures and the inventory are written; 3 when an
 # input is missing or a derivation check fails.
@@ -208,13 +213,43 @@ od_rewrites() { # <in> <out>
   mv "$out2" "$2"
 }
 
-capture() { # <symbol> <rewrite: none|od|as-is>
+# `num_fast_el1`'s two strip rewrites, and nothing else.
+#
+# Its `llvm.umin.i64` takes a register and an immediate where the fragment's
+# unsigned minimum is `llvm.umin.i32` at two registers, so it is folded to the
+# `icmp`/`select` pair that is the same function at the same width.  Its `ashr`
+# carries `exact`, a flag the token strip does not remove and the parser refuses
+# by name; the flag is dropped, so the pinned body is the flag-erased form and
+# the obligation it states — the bits shifted out are zero — is a staging fact
+# the text does not carry, recorded in `stage2.helpers.tsv` and in the ledger
+# rather than silently satisfied.
+#
+# The body's third obstruction is not a rewrite: the extraction takes one
+# `define` block, so the module's `%struct.Stk = type { … }` line is absent and
+# the parser takes a struct's extent from its `Layout` argument.  `Stk` is
+# `{ StkBn m; StkBn pow; int64_t S; int sticky; }` with `StkBn` 96 `u64` limbs
+# and a count word — 776 bytes each, 1552 for the pair, so 1568 for the struct —
+# which is the number the body's own `llvm.lifetime.start` names.  The pin
+# supplies it as `[("Stk", 1568)]`; nothing in the text is added.
+nf_rewrites() { # <in> <out>
+  local out1="$work/nf.1.ll"
+  sed -E -e 's/^  (%[A-Za-z0-9_.]+) = tail call /  \1 = call /' "$1" > "$out1"
+  sed -E     -e 's/^  (%[A-Za-z0-9_.]+) = call i64 @llvm\.umin\.i64\(i64 ([^,]+), i64 ([^)]+)\)$/  \1.min = icmp ult i64 \2, \3\n  \1 = select i1 \1.min, i64 \2, i64 \3/' \
+    -e 's/ashr exact /ashr /' "$out1" > "$2"
+  grep -qE 'llvm\.umin\.i64|ashr exact' "$2" &&
+    fail "num_fast_el1 still carries a construct the fragment has no term for"
+  grep -qE '^  %[A-Za-z0-9_.]+\.min = icmp ult i64 ' "$2" ||
+    fail "num_fast_el1's llvm.umin.i64 was not folded to its icmp/select pair"
+}
+
+capture() { # <symbol> <rewrite: none|od|nf|as-is>
   local sym=$1 mode=$2
   extract_define "$sym" "$work/$sym.raw.ll"
   strip_body "$work/$sym.raw.ll" "$work/$sym.stripped.ll"
   case "$mode" in
     none) cp "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     od) od_rewrites "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
+    nf) nf_rewrites "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     as-is) cp "$work/$sym.stripped.ll" "$work/$sym.body.ll" ;;
     *) fail "unknown capture mode $mode" ;;
   esac
@@ -225,7 +260,7 @@ capture s2_value_pos none
 capture s2_after_value none
 capture s2_string_body as-is
 capture od_scalar_value od
-capture num_fast_el1 as-is
+capture num_fast_el1 nf
 
 # These four bodies carry none of the constructs the two measured bodies do,
 # and the check refuses if a regeneration introduces one.
@@ -250,6 +285,11 @@ nagg=$(grep -cE 'alloca (\[[0-9]+ x |%struct\.)' "$work/num_fast_el1.body.ll" ||
   fail "num_fast_el1's body no longer carries binary64; the recorded construct is not the emission's"
 [ "$nagg" -ge 1 ] ||
   fail "num_fast_el1's body no longer carries an aggregate alloca; the recorded construct is not the emission's"
+grep -q 'alloca %struct\.Stk' "$work/num_fast_el1.body.ll" ||
+  fail "num_fast_el1's body no longer allocates %struct.Stk; the pin's declared Layout is then a claim about a struct the emission stopped naming"
+nstk=$(grep -cE '^  call void @llvm\.lifetime\.start\.p0\(i64 1568, ptr %v\.i\.i\)$' "$work/num_fast_el1.body.ll" || true)
+[ "$nstk" -ge 1 ] ||
+  fail "num_fast_el1's lifetime marker for %struct.Stk no longer names 1568 bytes; the pin's Layout disagrees with the body"
 
 # ---------------------------------------------------------------------------
 # The cross-check: each captured body is the symbol the walk's fixture declares
@@ -299,20 +339,24 @@ banner() { # <symbol> <what>
 ;
 ; from kernel/json/stage2.c, emitted at the measured compiler line with
 ; \`noinline\` on every helper except s2_walk, the same token strip
-; capture-stage2.sh applies, and — for od_scalar_value only — the walk's own
-; three rewrites: its conversion slot becomes a pointer parameter, its
-; messages become \`null\`, and its one llvm.umin.i64 unfolds.  $2
+; capture-stage2.sh applies.  od_scalar_value takes the walk's own three
+; rewrites — its conversion slot becomes a pointer parameter, its messages
+; become \`null\`, and its one llvm.umin.i64 unfolds — and num_fast_el1 takes
+; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
+; \`ashr exact\` loses its flag.  $2
 ;
 EOF
 }
 
-for sym in s2_init s2_value_pos s2_after_value s2_string_body od_scalar_value; do
+for sym in s2_init s2_value_pos s2_after_value s2_string_body od_scalar_value num_fast_el1; do
   out=$here/stage2.helper.$sym.ll
   case "$sym" in
     s2_string_body)
       note='The body is a program of this fragment: its `ptrtoint` pair and its `@.str.14` symbol operand are both modelled, and `JsonStage2HelperIR` pins the AST it parses to.' ;;
     od_scalar_value)
-      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is outside the fragment at the surfaces `stage2.helpers.tsv` names.' ;;
+      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is `stage2.helper.num_fast_el1.ll`.' ;;
+    num_fast_el1)
+      note='The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIR` pins the AST it parses to.' ;;
     *)
       note='The body is captured and the fragment expresses it.' ;;
   esac
@@ -338,8 +382,8 @@ done
         verdict=expressible
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean" ;;
       num_fast_el1)
-        verdict=refused
-        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)), all modelled; refused at three surfaces this capture leaves in place: the extracted block has no %struct.Stk declaration and the parser takes a struct's extent from a Layout argument, the one llvm.umin.i64 call is at i64 with an immediate where the model's umin is i32 with two operands, and ashr exact's flag is refused by name; the decimal literals parse" ;;
+        verdict=expressible
+        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)); parses after two strip rewrites — the one llvm.umin.i64 folds to its icmp/select pair (the fragment's umin is i32 at two registers), and ashr exact loses the flag, so the pinned body is the flag-erased form and 'the bits shifted out are zero' is a staging fact the text does not carry — and with %struct.Stk's 1568-byte extent supplied as the Layout the pin states; the decimal literals parse" ;;
       *)
         verdict=expressible
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean" ;;

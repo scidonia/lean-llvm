@@ -5,9 +5,11 @@
 ;
 ; from kernel/json/stage2.c, emitted at the measured compiler line with
 ; `noinline` on every helper except s2_walk, the same token strip
-; capture-stage2.sh applies, and — for od_scalar_value only — the walk's own
-; three rewrites: its conversion slot becomes a pointer parameter, its
-; messages become `null`, and its one llvm.umin.i64 unfolds.  The body is captured and the fragment expresses it.
+; capture-stage2.sh applies.  od_scalar_value takes the walk's own three
+; rewrites — its conversion slot becomes a pointer parameter, its messages
+; become `null`, and its one llvm.umin.i64 unfolds — and num_fast_el1 takes
+; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
+; `ashr exact` loses its flag.  The body is captured and the fragment expresses it.
 ;
 define void @s2_after_value(i32 %sp.0.val, ptr %root_done, ptr %ct, ptr %cs) {
 entry:

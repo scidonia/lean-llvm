@@ -483,9 +483,9 @@ row 5's and is untouched by that proof.
 | a | `s2_init` | The `S2` record's fifteen field stores at the five arguments the emitted call passes; **proved**: the call answers there (`s2Init_answers`), every answer is that store list (`s2Init_sound`), and the frame over the record's extent (`s2Init_framed`) — `s2InitContract` | proved (body) | `JsonStage2Body.stage2Init`, `s2InitStores`; the stores' offsets are `S2`'s (`stage2.c:981-988`); the emitted body: `stage2.helper.s2_init.ll`, `JsonStage2HelperIR.s2InitBody_run`, `s2InitBody_contract` |
 | b | `s2_value_pos` | The value-position test's bit at the four arguments the call passes, with the caller's memory returned unchanged; **proved**: the call answers there (`stage2ValuePos_answers`, `stage2ValuePos_zero`) and the answer satisfies the post at the empty footprint (`s2ValuePosContract`) | proved (body) | `JsonStage2Body.stage2ValuePos`, `stage2ValuePosCall`; `stage2.c:990-997`; the emitted body: `stage2.helper.s2_value_pos.ll` pinned to `JsonStage2HelperIR.s2ValuePosBody`, run at the contract's staging and proved of it — `JsonStage2HelperIRBodies.s2ValuePosBody_contract`, read through the instance as `s2ValuePosBody_satisfies`, over the three arms `s2ValuePos_run_zero`, `s2ValuePos_run_object`, `s2ValuePos_run_array` |
 | c | `s2_after_value` | The root flag at depth zero or one container-stack byte at the running depth; **proved**: the call answers there (`stage2AfterValue_answers`) and the write is inside the one-byte or four-byte region (`s2AfterValueContract`) | proved (body) | `JsonStage2Body.stage2AfterValue`; `stage2.c:998-1003`; the emitted body: `stage2.helper.s2_after_value.ll` pinned to `JsonStage2HelperIR.s2AfterValueBody`, run at the contract's staging and proved of it — `JsonStage2HelperIRBodies.s2AfterValueBody_contract`, read through the instance as `s2AfterValueBody_satisfies`, over the two arms `s2AfterValue_run_zero`, `s2AfterValue_run_above`; the byte the store writes is the model's own (`s2_convBytes`), not merely one of the same width |
-| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), the decoded form is never longer than its body (`escapeDecodeGo_length_le`), the decoded length is inside the body's extent (`s2StringBody_outn_le`), and the frame over the cursor, length, body and error regions (`s2StringBodyContract`) | assumed (model); body pinned, proof open | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047`; the emitted body: `stage2.helper.s2_string_body.ll`, which the fragment parses — `ptrtoint` and the `@.str.14` symbol operand are both modelled — with the AST and the contents pinned by `JsonStage2HelperIR` and the parse and a run pinned by `tests/core-extension.lean` |
+| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), the decoded form is never longer than its body (`escapeDecodeGo_length_le`), the decoded length is inside the body's extent (`s2StringBody_outn_le`), and the frame over the cursor, length, body and error regions (`s2StringBodyContract`) | assumed (model); body pinned, proof open | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047`; the emitted body: `stage2.helper.s2_string_body.ll`, which the fragment parses — `ptrtoint` and the `@.str.14` symbol operand are both modelled — with the AST and the contents pinned by `JsonStage2HelperIR` and the parse and a run pinned by `tests/core-extension.lean`.  The proof is open for the reason below, not for want of a representation: the emitted refusal arm's third store has no counterpart in the model, and the model's omission is the gap, not the body's extra store |
 | e | `od_scalar_value` | The appended number record (`T_NUM` and the value's eight bytes), the literal tag after the literal check, the refusal's `od_fail` record, and the event cursor's write-back at `o + 8`; **proved**: where the calls answer and what they write (`emitBlobs_spec`, `emitBlobs_frame`, `arenaAppend_spec`, `arenaAppend_frame`), that a record inside the reserve is written (`emitBlobs_complete`), and the frame over the cursor, record and error regions (`s2ScalarValueContract`) | assumed (model); body pinned, proof obstructed | `JsonStage2Body.stage2ScalarValue`; `stage2.c:929-957`; the emitted body: `stage2.helper.od_scalar_value.ll`, pinned by shape at `JsonStage2HelperIR`, obstructed by its `num_fast_el1` callee and the `outTag`/`emitBlobs` match |
-| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`), and both exits' frame over the value and offset slots (`s2NumFastContract`) | assumed (model); body not expressible | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455`; the emitted body: `probes/install/ir/stage2.helpers.tsv` row `num_fast_el1` (two aggregate allocas, thirty-eight floating-point sites, all modelled; the body is refused at three surfaces the capture leaves in place — the extracted block carries no `%struct.Stk = type` line, so the parser has no extent for it; its one `llvm.umin.i64` is at `i64` with an immediate operand where the model's unsigned minimum is `i32` with two operands; and `ashr exact`'s flag is refused by name — and the capture refuses if those counts leave the emission) |
+| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`), and both exits' frame over the value and offset slots (`s2NumFastContract`) | assumed (model); body pinned, proof open | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455`; the emitted body: `stage2.helper.num_fast_el1.ll`, which the fragment now parses after two strip rewrites — its one `llvm.umin.i64` folds to the `icmp ult`/`select` pair that is the same function at `i64`, and `ashr exact` loses a flag the model has no term for, so the pinned body is the flag-erased form and the flag's obligation is a staging fact the text does not carry (`JsonStage2HelperIR.numFast_ashr_admits_shifted_out_bit` is the witness that the model is weaker there) — and with `%struct.Stk`'s 1 568-byte extent supplied as the pin's declared `Layout`, the number the body's own `llvm.lifetime.start` names.  `JsonStage2HelperIR` pins the parsed shape (255 blocks, 1 157 instructions, four parameters) with the same bytes under no declared layout refused as the control, and `tests/core-extension.lean` pins the decimal literals; the capture refuses if the emission stops carrying the constructs it measures or if the struct's lifetime marker stops naming 1 568 bytes — and it records the shape, the two rewrites and the flag in `stage2.helpers.tsv` |
 
 Two things about the table are deliberate.  First, **each row's frame is proved
 at the helper's whole footprint.**  `JsonStage2Body`'s per-emitter frame lemmas
@@ -533,10 +533,13 @@ model that converted every readable lexeme would answer a value where the emitte
 function answers a refusal, which is why the refusal is modelled and not skipped.
 
 **What is stated, and what is not.**  The six *caller-side* records are in the
-tree and each is proved of its model; one is now also proved of its emitted body.
-`LeanLLVM/Refinement/JsonStage2HelperIR` pins three bodies to their parsed ASTs,
-proves `s2_init`'s body against `s2InitContract`, and names per helper what stays
-open (below).  The rest of this paragraph is the caller-side record.
+tree and each is proved of its model; three are now also proved of their emitted
+bodies (rows a, b and c).
+`LeanLLVM/Refinement/JsonStage2HelperIR` pins three bodies to their parsed ASTs
+and the other three by shape, and pins each captured fixture's parse; the body
+proofs of rows a, b and c are in `JsonStage2HelperIRBodies`, and the module names
+per helper what stays open (below).  The rest of this paragraph is the
+caller-side record.
 `LeanLLVM/Refinement/JsonStage2Helpers` states `HelperContract` — the staging, the
 post, the footprint, and the three facts a call block applies (it resolves at the
 staging, every answer satisfies the post, and every answer's memory is the
@@ -581,27 +584,39 @@ plumbing (`s2_convBytes`).  Neither proof restates the contract: the statements
 are `JsonStage2Helpers`' own `pre`, `post` and `foot`, read at the instances the
 call sites use.  Row d is a program of
 this fragment — the address conversions and the symbol operand are modelled — and
-its body is pinned, so what remains there is the body proof; row f is still
-outside it, at the three surfaces `stage2.helpers.tsv` names — a named struct's
-extent, `llvm.umin.i64` at `i64` with an immediate, and `ashr exact`'s flag.  The
-literal spelling the row used to be refused at, `-0.000000e+00`, is read now: LLVM
-prints binary64 with the exponent's sign written and a sign in front of the
+its body is pinned; what remains there is the body proof, and what blocks it is
+the model, not the fragment: the emitted refusal arm's `err_set` writes the
+record's message word at `e + 16` and `stage2ErrSet` does not, so the post's
+`r.mem = m` is false on that arm until the model states the store (the gap below).
+Row f's body is pinned now too: the capture folds its one `llvm.umin.i64` to the
+`icmp`/`select` pair and drops `ashr exact`'s flag, and the pin declares
+`%struct.Stk`'s 1 568-byte extent, so the three surfaces the row used to be
+refused at are closed on the text's own numbers; its proof is open.
+The literal spelling rows used to be refused at, `-0.000000e+00`, is read now:
+LLVM prints binary64 with the exponent's sign written and a sign in front of the
 mantissa, and the double reader takes both, as `tests/core-extension.lean` pins.
-Both contracts are stated at the call boundary: d's because its
-body proof is open, f's because it has no denotation to prove anything of.  Row e is expressible and
-pinned but obstructed by `num_fast_el1` and the `outTag`/`emitBlobs` match.  Every
+Both contracts are stated at the call boundary — d's and f's alike — because
+their proofs are open rather than because a denotation is missing.  Row e is
+expressible and pinned but obstructed by `num_fast_el1` and the
+`outTag`/`emitBlobs` match.  Every
 row's body-to-binary distance is the pipeline's body-faithfulness seam (§7.1 items
 1–3 and row 5), the seam `numFastEmitted_strtodSpec` and the `#guard` pins already
 rest on; the body proof moves one row's *transcription* off that basis and leaves
 the binary side where it was.
 
-One gap the body text carries is recorded rather than repaired.  The refusal
-paths of `s2_string_body` and `od_scalar_value` store the error record's message
-pointer at `e + 16`, one byte past the sixteen-byte region their footprints name,
-so a body-level frame at that region is not true of the emitted text.  The
-region lists are `JsonStage2Helpers`' and are not widened here; the record's
-staged extent (`stage2ErrorExtent`, 24 bytes) is the region a walk invariant must
-claim, and it is the one the walk's staged-writes list already carries.
+One gap the body text carries is recorded rather than repaired, and it has two
+halves.  The refusal paths of `s2_string_body` and `od_scalar_value` store the
+error record's message pointer at `e + 16` — the source's `err_set` writes
+`ok`, `off` and `msg` (`kernel/json/stage2.c:69-73`) — one byte past the
+sixteen-byte region their footprints name.  So a body-level frame at that region
+is not true of the emitted text, *and* the model's refusal memory is not the
+body's: `stage2ErrSet` writes `ok` and `off` only, twelve bytes, so the post's
+`r.mem = m` fails on the refusal arm of `s2_string_body` and, for the same
+reason, on `od_scalar_value`'s.  This is the model being incomplete rather than
+the body being wrong, and it is why row d's proof is open.  The region lists are
+`JsonStage2Helpers`' and are not widened here; the record's staged extent
+(`stage2ErrorExtent`, 24 bytes) is the region a walk invariant must claim, and it
+is the one the walk's staged-writes list already carries.
 
 ## 8. Out of scope for the first contract
 
