@@ -1520,6 +1520,163 @@ theorem s2StringBodyScanAtBound_eq (ps : List Nat) (pos0 N : Nat) (s : State)
     · exact Or.inl h
     · exact Or.inr (by rw [hq]; exact decide_eq_true hle)
 
+/-! ### The head's bits, from the head's test
+
+The steps take the branch bits as hypotheses; the loop's arms must produce them,
+and producing them is this section: the comparison's two outcomes as `BitVec 1`
+values, the lane read's value as the model's `ps` entry, and then the head's test
+in both of its forms.  Nothing here is about a state's history — the bits are
+functions of the counter, the lane and the two bounds — which is why the arms can
+be proved once rather than at each iteration. -/
+
+/-- The unsigned-greater test is `1` exactly when the second operand is below the
+first, both below `2 ^ 64` (the width the model reads them at). -/
+theorem evalICmpNat_ugt_one {x y : Nat} (hx : x < 2 ^ 64) (hy : y < 2 ^ 64)
+    (h : y < x) : evalICmpNat .ugt 64 x y = 1#1 := by
+  simp only [evalICmpNat, evalICmp, BitVec.ult, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt hy, h, BitVec.ofBool]
+  rfl
+
+/-- The same test as `0` when the first operand is at or below the second. -/
+theorem evalICmpNat_ugt_zero {x y : Nat} (hx : x < 2 ^ 64) (hy : y < 2 ^ 64)
+    (h : x ≤ y) : evalICmpNat .ugt 64 x y = 0#1 := by
+  have hlt : ¬ y < x := by omega
+  simp only [evalICmpNat, evalICmp, BitVec.ult, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt hy, hlt, BitVec.ofBool]
+  rfl
+
+/-- Equality as a one-bit value. -/
+theorem evalICmp_eq_one {x y : BitVec 64} (h : x = y) : evalICmp .eq x y = 1#1 := by
+  subst h
+  simp only [evalICmp, BitVec.ofBool]
+  rfl
+
+/-- Inequality as a one-bit value. -/
+theorem evalICmp_eq_zero {x y : BitVec 64} (h : x ≠ y) : evalICmp .eq x y = 0#1 := by
+  simp only [evalICmp, BitVec.ofBool, h]
+  rfl
+
+/-- A four-byte lane is below `2 ^ 32`, so a lane's value is its own widening to
+`i64`. -/
+theorem bytesToNat_lt_32 {bs : List UInt8} (h : bs.length = 4) :
+    bytesToNat bs < 2 ^ 32 := by
+  have := bytesToNat_lt bs
+  rw [h] at this
+  calc bytesToNat bs < 256 ^ 4 := this
+    _ = 2 ^ 32 := by decide
+
+/-- **The lane the model names.**  A successful lane read gives, at every index
+inside it, the list's entry there and the four bytes it was read from — with the
+entry being exactly the bytes' value.  This is what lets the head's read at
+`xp + c * 4` be the model's `ps[c]`. -/
+theorem readLanes32_lane {m : Mem} {addr : Nat} :
+    ∀ {n : Nat} {l : List Nat}, readLanes32 m addr n = some l →
+      l.length = n ∧ ∀ j, j < n →
+        ∃ q bs, l[j]? = some q ∧ readBytes m (addr + 4 * j) 4 = some bs ∧
+          bytesToNat bs = q
+  | 0, l, h => by
+      simp only [readLanes32, Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, fun j hj => absurd hj (Nat.not_lt_zero j)⟩
+  | n + 1, l, h => by
+      simp only [readLanes32] at h
+      cases hb : readBytes m addr 4 with
+      | none => rw [hb] at h; cases h
+      | some bs =>
+          rw [hb] at h
+          cases hr : readLanes32 m (addr + 4) n with
+          | none => rw [hr] at h; cases h
+          | some tl =>
+              rw [hr] at h
+              simp only [Option.map_some, Option.bind_some, Option.some.injEq] at h
+              subst h
+              obtain ⟨hlen, hget⟩ := readLanes32_lane (m := m) (addr := addr + 4) hr
+              refine ⟨by simp [hlen], ?_⟩
+              intro j hj
+              cases j with
+              | zero => exact ⟨bytesToNat bs, bs, by simp, by simpa using hb, rfl⟩
+              | succ i =>
+                  obtain ⟨q, bs', hq, hread, hval⟩ := hget i (by omega)
+                  exact ⟨q, bs', by simp [hq], by
+                    rw [show addr + 4 * (i + 1) = addr + 4 + 4 * i from by omega]
+                    exact hread, hval⟩
+
+/-- The head's test, in its false form: the scan has not reached the count and the
+lane at the counter is below the body's first position. -/
+theorem s2StringBodyScanAtBound_false (ps : List Nat) (pos0 N : Nat) (s : State)
+    (c : Nat) :
+    s2StringBodyScanAtBound ps pos0 N s c = false ↔
+      ¬ (N ≤ c + 1 ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) := by
+  by_cases h : s2StringBodyScanAtBound ps pos0 N s c = true
+  · have hp : N ≤ c + 1 ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q :=
+      (s2StringBodyScanAtBound_eq ps pos0 N s c).mp h
+    exact ⟨fun hf => absurd (hf.symm.trans h) (by decide), fun hn => absurd hp hn⟩
+  · have hf : s2StringBodyScanAtBound ps pos0 N s c = false := by
+      cases hb : s2StringBodyScanAtBound ps pos0 N s c with
+      | false => rfl
+      | true => exact absurd hb h
+    exact ⟨fun _ hp => h ((s2StringBodyScanAtBound_eq ps pos0 N s c).mpr hp),
+      fun _ => hf⟩
+
+/-- The head's lane test when the lane is already inside the body: `0`, so the scan
+leaves at the head in one step (`s2StringBodyScanExit`'s bit). -/
+theorem evalICmpNat_ugt_of_ge {pos0 q : Nat} (hpos0 : pos0 < 2 ^ 64)
+    (hq64 : q < 2 ^ 64) (hge : pos0 ≤ q) :
+    evalICmpNat .ugt 64 pos0 q = 0#1 :=
+  evalICmpNat_ugt_zero hpos0 hq64 hge
+
+/-- The exit test when the counter has reached the count: `1`, so `while.body`
+leaves for `if.then` (`s2StringBodyScanIterate`'s second bit in its exit form). -/
+theorem evalICmp_eq_of_eq {c N : Nat} (hN : N < 2 ^ 64) (heq : N = c + 1) :
+    evalICmp .eq ((BitVec.ofNat 64 c) + 1#64) (BitVec.ofNat 64 N) = 1#1 := by
+  have htoNat : ((BitVec.ofNat 64 c) + 1#64).toNat = c + 1 := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    omega
+  have hbit : (BitVec.ofNat 64 c) + 1#64 = BitVec.ofNat 64 N := by
+    apply BitVec.eq_of_toNat_eq
+    rw [htoNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hN, heq]
+  exact evalICmp_eq_one hbit
+
+/-- **The head's two bits, from the head's test being false**: the lane is the
+model's `ps` entry at the counter, `sub` is the body's first position, and the
+counter is the index — under which the lane test holds (the scan advances) and the
+exit test does not (the counter has not reached the count).  These are exactly the
+two hypotheses `s2StringBodyScanIterate` consumes. -/
+theorem s2StringBodyScan_bits_of_not_atBound
+    {ps : List Nat} {pos0 N c q : Nat} {bs : List UInt8} {s : State}
+    {sub inc24 nxp : BitVec 64}
+    (hbound : s2StringBodyScanAtBound ps pos0 N s c = false)
+    (hq : ps[c]? = some q) (hval : bytesToNat bs = q) (hblen : bs.length = 4)
+    (hsub : sub = BitVec.ofNat 64 pos0) (hpos0 : pos0 < 2 ^ 64)
+    (hinc24 : inc24 = BitVec.ofNat 64 c) (hnxp : nxp = BitVec.ofNat 64 N)
+    (hN : N < 2 ^ 64) :
+    evalICmpNat .ugt 64 sub.toNat
+        (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = 1#1 ∧
+      evalICmp .eq (inc24 + 1#64) nxp = 0#1 := by
+  rw [s2StringBodyScanAtBound_false] at hbound
+  have hnot : ¬ (N ≤ c + 1 ∨ ∃ q', ps[c]? = some q' ∧ pos0 ≤ q') := hbound
+  have hlt : c + 1 < N := by
+    by_contra h; exact hnot (Or.inl (by omega))
+  have hqlt : q < pos0 := by
+    by_contra h; exact hnot (Or.inr ⟨q, hq, by omega⟩)
+  have hconv : (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat = q := by
+    have h32 := bytesToNat_lt_32 hblen
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h32,
+      Nat.mod_eq_of_lt (by omega), hval]
+  constructor
+  · rw [hsub, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
+    exact evalICmpNat_ugt_one hpos0 (by have := bytesToNat_lt_32 hblen; omega) hqlt
+  · have hne : (BitVec.ofNat 64 c) + 1#64 ≠ BitVec.ofNat 64 N := by
+      intro heq
+      have htoNat : ((BitVec.ofNat 64 c) + 1#64).toNat = c + 1 := by
+        rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+        omega
+      have := congrArg BitVec.toNat heq
+      rw [htoNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hN] at this
+      omega
+    rw [hinc24, hnxp]
+    exact evalICmp_eq_zero hne
+
 /-- **The invariant's entry**: the head carrying the entry's counter `j0`, with the
 count as the whole budget. -/
 theorem s2StringBodyScanInv_entry (mem0 : Mem) (xj N j0 : Nat) (s : State)
