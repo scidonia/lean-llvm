@@ -362,6 +362,17 @@ theorem sb_step_loadPtr (calls : Calls) (env : Env) (s : State) (d p : String)
     simp only [loadValue, hv, hbs]
   simp only [evalInstr, evalOperand, stateAt, hp, hv', State.bind]
 
+/-- **The comparison instruction's value, at the model's form.**  `evalInstr`
+binds `evalICmpNat p w x.toNat y.toNat` — the instruction's operands are read as
+values and compared at their `Nat` readings — while every statement about a body's
+*test* is written at `evalICmp p x y`, the `BitVec` form the branch conditions use.
+The two are the same function: `evalICmpNat` is `evalICmp` at `BitVec.ofNat`, and
+`BitVec.ofNat w x.toNat = x`.  This is the pair `BlockEval`'s `denoteCode_icmp_*`
+steps meet when they are reused on an emitted body. -/
+theorem evalICmpNat_toNat (p : IPred) (w : Nat) (x y : BitVec w) :
+    evalICmpNat p w x.toNat y.toNat = evalICmp p x y := by
+  simp only [evalICmpNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
 theorem sb_step_load32 (calls : Calls) (env : Env) (s : State) (d p : String)
     {a : Nat} {bs : List UInt8} (hp : lookupName env p = some (.ptr a))
     (hv : readBytes s.mem a 4 = some bs) :
@@ -460,6 +471,10 @@ the build checks them rather than printing them.  The instrument's
 discriminating control is the one §7.6 records: a throwaway declaration proved
 with `sorry` prints `sorryAx` under the same command.  No `sorry` is in this
 module. -/
+/-- info: 'LeanLLVM.Refinement.evalICmpNat_toNat' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms evalICmpNat_toNat
+
 /-- info: 'LeanLLVM.Refinement.escapeExpand8_decoded' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escapeExpand8_decoded
