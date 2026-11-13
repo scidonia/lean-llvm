@@ -68,6 +68,13 @@ extension must resolve it first — `rw [show (if evalICmp .ugt c ix = 1 then "a
 = "a" from by simp [hugt]] at hchain` — otherwise the next link's `block` hypothesis
 cannot be `rfl` and the invariant is at a carry whose `block` is an `if`.
 
+**State the target with the nesting the links produce.**  `rfl` compares the literal, so
+a chain lemma's `C₇` must be written `{ { { C with block := "a" } with block := "b" } with
+block := "c" }` — each link's own step — and not a tidied version.  The same holds for a
+step's named state: the helper's `s'` is a `bind`-under-`let` term, so re-typing it in a
+different-but-equal form fails `rfl` even though the state agrees, and the extension should
+pass the helper's own equality rather than restate it.
+
 **The rest of the chain has its steps.**  Every remaining step of the head chain
 already exists as a named target in `WalkLink` — `NodeBlock41_at`, `LeafBlock33_at`,
 `land_rhs_i_preheader_at`, `land_rhs_i_at`, `NodeBlock52_at`, `LeafBlock43_at` — so the
