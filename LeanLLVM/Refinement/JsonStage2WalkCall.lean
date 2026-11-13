@@ -2423,6 +2423,18 @@ def walkIfThenBlock : Block :=
 theorem walkIfThenBlock_find : stage2Body.findBlock "if.then" = some walkIfThenBlock := by
   simp [stage2Body, Function.findBlock, findBlockList, walkIfThenBlock]
 
+/-- The refusal arm's output, named: the record's three slots written and the
+four cells the block's loads and `gep` leave, over the block's writes.  The state
+`walkIfThenBlock_denote` concludes to, spelled once here so a consumer can name it
+instead of printing a term whose own elaboration the module option cannot afford. -/
+def walkIfThenBlockState (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (s : State) : State :=
+  stateAt
+    (cells [("%53", .int 64 E), ("%off", .ptr (e + 8)),
+      ("%52", .int 64 L), ("%51", .int 64 A)] env)
+    (walkSetMem s (writeBytes (writeBytes (writeBytes s.mem nd
+      (wordBytes 8 A.toNat)) nv (wordBytes 8 L.toNat)) err (wordBytes 8 E.toNat)))
+
 /-- **The refusal arm's copy.**  The same live-range prefix as `s2_walk.exit`,
 then the arena's cursor, the event stream's, and the error's offset into the
 record's three slots. -/
@@ -2523,6 +2535,34 @@ theorem walkIfThenBlock_denote {sub : Calls} (env : Env) (s : State)
     (by simp [lookupName]) E.isLt (by simpa [lookupName] using herr)]
   dsimp only [walkSetMem]
   rfl
+
+/-- The refusal arm's copy, in the named state: the same premise set concluding to
+`walkIfThenBlockState`, so a consumer never prints the copied state's term. -/
+theorem walkIfThenBlock_denote_named {sub : Calls} (env : Env) (s : State)
+    {a : Nat} {A : BitVec 64} {l : Nat} {L : BitVec 64}
+    {xj rd cst ctp c e nd nv err : Nat} {E : BitVec 64}
+    (hxj : lookupName env "%xj.i" = some (.ptr xj))
+    (hrd : lookupName env "%root_done.i" = some (.ptr rd))
+    (hcst : lookupName env "%cst.i" = some (.ptr cst))
+    (hctp : lookupName env "%ctype.i" = some (.ptr ctp))
+    (hc : lookupName env "%c.i" = some (.ptr c))
+    (halen : lookupName env "%alen" = some (.ptr a))
+    (hnd : lookupName env "%ndst" = some (.ptr nd))
+    (hlen : lookupName env "%len" = some (.ptr l))
+    (hnev : lookupName env "%nev" = some (.ptr nv))
+    (he : lookupName env "%e" = some (.ptr e))
+    (herr : lookupName env "%err" = some (.ptr err))
+    (hA : readBytes s.mem a 8 = some (natToBytes A.toNat 8))
+    (hL : readBytes s.mem l 8 = some (natToBytes L.toNat 8))
+    (hE : readBytes s.mem (e + 8) 8 = some (natToBytes E.toNat 8))
+    (hsep : nd + 8 ≤ l ∨ l + 8 ≤ nd)
+    (hsepE1 : nd + 8 ≤ e + 8 ∨ e + 8 + 8 ≤ nd)
+    (hsepE2 : nv + 8 ≤ e + 8 ∨ e + 8 + 8 ≤ nv) :
+    denoteCode (stage2Calls sub) walkIfThenBlock.instrs (stateAt env s) =
+      some (walkIfThenBlockState env nd nv err e A L E s) := by
+  simpa only [walkIfThenBlockState]
+    using walkIfThenBlock_denote (sub := sub) env s hxj hrd hcst hctp hc halen hnd
+      hlen hnev he herr hA hL hE hsep hsepE1 hsepE2
 
 /-- **The refusal arm's step**: `if.then` jumps to the return. -/
 theorem walkIfThen_step {sub : Calls} (s : State) (hpc : s.pc = "if.then")
