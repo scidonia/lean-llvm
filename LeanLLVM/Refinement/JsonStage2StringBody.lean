@@ -4109,6 +4109,48 @@ example {args : List Value} {mem : Mem} {next : Nat}
       UnchangedOutside mem o.mem (s2StringBodyFoot args mem next) :=
   hgoal
 
+/-- **The preamble**: the staged entry of the body carries the eight arguments as its
+registers, the caller's memory and allocator, and the entry as its block.  Every arm's
+proof starts here, so it is stated once and arm-independently. -/
+theorem s2StringBodyStaged_entry (mem : Mem) (next : Nat)
+    {c p dst outn xp xj : Nat} {len nxp : BitVec 64} :
+    (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).pc = "entry" ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%c" = some (.ptr c) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%p" = some (.ptr p) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%len" = some (.int 64 len) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%dst" = some (.ptr dst) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%outn" = some (.ptr outn) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%xp" = some (.ptr xp) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%xj" = some (.ptr xj) ∧
+    lookupName (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).env "%nxp" = some (.int 64 nxp) ∧
+    (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).mem = mem ∧
+    (stagedState s2StringBodyBody
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next).next = next := by
+  refine ⟨rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, rfl, rfl⟩ <;>
+    simp [stagedState, initState, s2StringBodyBody, List.zip_cons_cons,
+      List.map_cons, lookupName]
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
