@@ -1698,6 +1698,29 @@ theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (en
   simp [WalkRegs, walkStaticRegs, walkCarryZero, walkEntryEnv4, walkEntryEnv3,
     walkEntryEnv2, walkEntryEnv1, cells, lookupName_cons_ne, woff, hb1, hb2, hb3, hb4]
 
+/-- **The successor's per-iteration carrier.**  `%7` and `%8` are bound by no entry layer, so
+the lane and the byte the invariant names at index zero are the staging's — the carrier is
+passed, and the entry leaves it alone for the first iteration to overwrite. -/
+theorem walkEntryEnv_iter {m0 : Mem} (G : WalkGeom m0) (env : Env)
+    (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev : Nat)
+    (hiter : WalkIter G 0 env) :
+    WalkIter G 0 (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
+      sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep) := by
+  obtain ⟨h7, h8⟩ := hiter
+  refine ⟨?_, ?_⟩
+  · rw [show lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
+        sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep) "%7"
+        = lookupName env "%7" from by
+      simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+        lookupName_cons_ne]]
+    exact h7
+  · rw [show lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
+        sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep) "%8"
+        = lookupName env "%8" from by
+      simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+        lookupName_cons_ne]]
+    exact h8
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
