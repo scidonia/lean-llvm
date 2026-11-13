@@ -242,7 +242,16 @@ inequality is decidable at elaboration, while with parameters the same goal beco
 `dl₂ = dl₁ → nc = nl`, which the statement does not carry.  An instance discharges
 each of those by `by simp [lookupName]` at its own literals, so **a shape's hypotheses
 approach the instance's own proof**: it pays at two instances and is a loss below
-that.  The rule, for every remaining block: repeated sequence → shape; once → instance. -/
+that.  The rule, for every remaining block: repeated sequence → shape; once → instance.
+
+Two of the shapes' statements are not free choices, and each cost a round to find.
+A `phi`-headed block's target carries `pre := some (s.bindAll vs).pc`, not `some s.pc`:
+`bindAll` extends the environment and its `pc` is not definitionally the source's, so
+the `Ctrl.jump` equality the step closes by does not reduce.  And a `condbr` on a cell
+the block's own instructions bound needs `evalOperand` in the simp set *before* the
+cell's `lookupName` fact fires — the fact is about the environment, and `execTerm`
+reaches it through `evalOperand`, so `simp only [hbit]` alone leaves the match
+unreduced. -/
 
 /-- **Class G's stack-marker variant: an index, a load and a compare.**  `if.end179.i`
 and `land.lhs.true.i` are the same five instructions at their own names — the depth's
@@ -744,7 +753,16 @@ the dispatch's own count plus the merge's and the header's two steps, against
 document byte the entry spans.  The two steps are named in the premise because they
 are steps the revolution takes and the credit is charged for them: one iteration's
 own path is `stage2EntryAllowance` (`32`) and the merge and the header are the last
-two blocks in it.  The byte term is what pays the scans: an entry's dispatch runs
+two blocks in it.
+
+The dispatch's interior is not one path.  Five of its blocks open scans — the
+whitespace skip, the two string scans, the escape list's and the number's — whose
+visits are the entry's own bytes, so the revolution's trace is a finite path from
+the head to the scans' latches, one induction per scan over its counter, and the
+token's post-scan blocks to the merge.  `WalkSegment.trans` composes those pieces and
+`WalkChain.append` composes the finite ones; what an induction supplies is a segment
+whose `j` is the counter's own bound, which is why the price is stated per byte
+(`stage2ByteAllowance`) rather than per block.  The byte term is what pays the scans: an entry's dispatch runs
 inside the bytes between its position and the next entry's. -/
 def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
