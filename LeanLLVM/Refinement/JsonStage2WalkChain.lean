@@ -18,6 +18,15 @@ names to prove anything, but a named equality has to be *written*, and a wrong n
 be written down and checked.  So the five levels are not only how the layers compose; they
 are how a wrong block is found before it is believed.
 
+**Two spellings the environment decides, not the proof.**  A structure literal whose field
+name is also a notation token cannot be written named: `PhiSpec`'s `incoming` is in scope
+from the IR's `phi` syntax, so `{ dst := …, ty := …, incoming := … }` is rejected where the
+positional `(⟨dst, ty, incoming⟩ : PhiSpec)` elaborates — the name itself is unavailable, and
+the fix is positional rather than an annotation.  And a step lemma may exist at two widths:
+`denoteCode_icmp_eq` is the `i64` case, while `walkDenoteCode_icmp` takes the width, so an
+`icmp … 8` from the IR needs the general one — a recipe that pins the special case is a
+sitting spent on the wrong lemma.
+
 The *count* is the mechanism, not only the philosophy.  An environment named once is peeled
 a fixed number of cells, so the count is a claim about that environment: when a peel went
 one cell too far, the proof's own `decide` refused `"%ee.0.i238" ≠ "%ee.0.i238"` — the proof
