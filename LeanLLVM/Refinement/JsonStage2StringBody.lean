@@ -4012,6 +4012,40 @@ theorem s2StringBodyBit_cmp1_exit {pos0 q : Nat} (hpos0 : pos0 < 2 ^ 64)
   rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hpos0, hconv]
   exact evalICmpNat_ugt_zero hpos0 (by omega) h
 
+/-! ### The arm correspondence
+
+The window's emptiness and the body's inside test are two readings of one comparison:
+the lane at the scan's counter against `pos0 + len`.  The pair below is the bridge in
+that direction, and it is where the model's three arms are separated from each other. -/
+
+/-- **Empty window → the lane is past the window's end.**  Read
+`s2StringBodyInBody_empty_iff` against the lane the list holds at the counter: the
+window is empty only if there is no lane or the lane it starts at is at or past
+`pos0 + len`. -/
+theorem s2StringBodyWindow_lane_ge {ps : List Nat} {c pos0 len lane : Nat}
+    (hlane : ps[c]? = some lane)
+    (hempty : ((ps.drop c).takeWhile (fun q => decide (q < pos0 + len))).isEmpty = true) :
+    pos0 + len ≤ lane := by
+  rw [s2StringBodyInBody_empty_iff] at hempty
+  rcases hempty with hnil | ⟨a, t, heq, hle⟩
+  · rw [drop_eq_cons_of_getElem? hlane] at hnil
+    exact absurd hnil (by simp)
+  · rw [drop_eq_cons_of_getElem? hlane] at heq
+    simp only [List.cons.injEq] at heq
+    obtain ⟨rfl, -⟩ := heq
+    exact hle
+
+/-- **Non-empty window → the lane is inside it.**  The dual, by substitution. -/
+theorem s2StringBodyWindow_lane_lt {ps : List Nat} {c pos0 len lane : Nat}
+    (hlane : ps[c]? = some lane)
+    (hcons : ((ps.drop c).takeWhile (fun q => decide (q < pos0 + len))).isEmpty = false) :
+    lane < pos0 + len := by
+  by_contra hge
+  have hempty : ((ps.drop c).takeWhile (fun q => decide (q < pos0 + len))).isEmpty = true :=
+    s2StringBodyWindow_empty_of_lane hlane (by omega)
+  rw [hempty] at hcons
+  exact absurd hcons (by simp)
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
