@@ -232,13 +232,22 @@ and `if.then`'s copy are the refusal arm's (`walkIfThenBlock_denote`), and
 The allowance is `stage2FinalisationAllowance`, which is the term `stage2Budget`
 carries whatever the counts are: one step for the entry, one for the flush block,
 one for the copy and one for the return, so the budget covers the arm at `nep = 0`
-and at every document length. -/
-def WalkFlush (calls : Calls) (v0 : Value) : Prop :=
-  ∀ (s : State), s.pc = "entry" →
-    (∃ nep : Nat,
-      lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 nep)) ∧ nep = 0) →
-    ∃ (q : Nat) (m : Mem), q ≤ stage2FinalisationAllowance ∧
-      runFuel calls q stage2Body s = some (.ret v0 m)
+and at every document length.
+
+The state is the record's own: the entry state at the ABI's thirteen words and the
+eight the flattening appends, at a memory and a cursor.  Stating it at an arbitrary
+state would be false — the entry block reads `%s`, `%z`, `%e`, the counts and the
+appended pointers, so a state that is not an entry state at an argument list has no
+run at all — which is why the premise is the completion *at the argument list*, and
+the branch that uses it supplies the count's zero and the budget's allowance. -/
+def WalkFlush (calls : Calls) (v0 : Value) (a13 : List Value) (nep : Nat)
+    (d c ctype cst tok s z e : Nat) : Prop :=
+  nep = 0 →
+    ∀ (mem : Mem) (next : Nat),
+      ∃ (q : Nat) (m : Mem), q ≤ stage2FinalisationAllowance ∧
+        runFuel calls q stage2Body
+          (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+          some (.ret v0 m)
 
 /-! ### What a dispatch proof still owes
 
@@ -727,7 +736,9 @@ def WalkPremises (sub : Calls) (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : 
         .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
         .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] ∧
-      ((G.nep = 0 ∧ ∃ v0 : Value, WalkFlush (stage2Calls sub) v0) ∨
+      ((G.nep = 0 ∧
+          ∃ v0 : Value,
+            WalkFlush (stage2Calls sub) v0 a13 G.nep d c ctype cst tok s z e) ∨
         (0 < G.nep ∧
         (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
@@ -758,7 +769,9 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {su
         .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
         .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] →
-      ((G.nep = 0 ∧ ∃ v0 : Value, WalkFlush (stage2Calls sub) v0) ∨
+      ((G.nep = 0 ∧
+          ∃ v0 : Value,
+            WalkFlush (stage2Calls sub) v0 a13 G.nep d c ctype cst tok s z e) ∨
         (0 < G.nep ∧
         (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
@@ -775,23 +788,6 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat} {su
   intro a13 mem next hpre hst
   obtain ⟨G, S, hnext, hargs⟩ := walkStage_at_pre hpre hst
   exact ⟨mem, G, S, hnext, hargs, h a13 mem next G S hpre hst hnext hargs⟩
-
-/-- **The ABI's fourth argument is the entry state's `%nep`.**  The thirteen
-parameters' prefix of the flattened body's list is the ABI's own, so the entry
-state's environment binds `%nep` to the fourth argument and to nothing the entry
-block computes: the empty-stream branch reads the count from the state it is given,
-not from a number a proof supplies. -/
-theorem walkEntryState_nep {b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat}
-    {mem : Mem} {next : Nat} {d c ctype cst tok s z e : Nat} :
-    lookupName
-      (EntryState stage2Body
-        (stage2Args [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
-          .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
-          .ptr dst, .int 64 (BitVec.ofNat 64 dstcap), .ptr ndst, .ptr ev,
-          .int 64 (BitVec.ofNat 64 evcap), .ptr nev, .ptr err] d c ctype cst tok s z e)
-        mem next).env "%nep" = some (.int 64 (BitVec.ofNat 64 nep)) := by
-  simp [EntryState, stage2Body, stage2Args, stage2StagingArgs, List.zip, List.map,
-    List.zipWith, lookupName]
 
 /-- **The budget carries the finalisation allowance at every staging**, so the
 empty stream's flush arm is inside it: the record's budget is
@@ -824,16 +820,7 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
   obtain ⟨m0, G, S, hnext, hargs, hbr⟩ := h a13 mem next hpre hstaged
   rcases hbr with ⟨hzero, v0, hflush⟩ | ⟨hn, hseed, hInv, hloop⟩
   · -- the empty entry stream: the entry's zero arm and the refusal copy
-    have hlen : ∃ nep : Nat,
-        lookupName (EntryState stage2Body
-            (stage2Args a13 d c ctype cst tok s z e) mem next).env "%nep" =
-          some (.int 64 (BitVec.ofNat 64 nep)) ∧ nep = 0 := by
-      refine ⟨G.nep, ?_, hzero⟩
-      rw [hargs]
-      exact walkEntryState_nep
-    obtain ⟨q, m, hq, hrun⟩ :=
-      hflush (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-        rfl hlen
+    obtain ⟨q, m, hq, hrun⟩ := hflush hzero mem next
     refine ⟨v0, m, ?_⟩
     rw [hargs] at hrun ⊢
     exact runFuel_mono_le (le_trans hq walkBudget_ge_finalisation) hrun
@@ -977,7 +964,6 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.WalkGeom.nep_lt
 #print axioms LeanLLVM.Refinement.WalkScope.walkStage_at_pre
 #print axioms LeanLLVM.Refinement.WalkScope.walkPremises_of_parts
-#print axioms LeanLLVM.Refinement.WalkScope.walkEntryState_nep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBudget_ge_finalisation
 #print axioms LeanLLVM.Refinement.WalkScope.WalkFlush
 #print axioms LeanLLVM.Refinement.WalkScope.walkSeedPrefix_entry
