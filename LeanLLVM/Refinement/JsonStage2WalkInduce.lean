@@ -981,6 +981,9 @@ theorem walkWhiteScanRound43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
         (scanB G e))
       "%ee.0.i238" "%cond350.i" C.inner) :
     ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 4 ∧
+      WalkInv G C' s' ∧ C'.block = "while.body370.i" ∧
+      lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+      lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) ∧
       4 ≤ stage2ByteAllowance := by
   -- the latch's own count, and the landing block's local fact it establishes
   have hSC : ScanCount s "%ee.0.i238" "%cond350.i" C.inner := by
@@ -1045,7 +1048,127 @@ theorem walkWhiteScanRound43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     Seg.measure (walkWhiteScanVisitSeg3_43
       (s := scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i")
       hinv₁ rfl hpre hin hv hpos hqn halen hevlen hlt13 hws hsc)
-  exact ⟨_, _, hseg₁.trans hseg₂, by simp [stage2ByteAllowance]⟩
+  -- the landing block's `phi` is the latch's increment, so the counter it writes is `i + 1`
+  have hp : p = "while.body370.i" := by
+    have h : some p = some s.pc := by
+      rw [← hpre]
+    injection h with hp'
+    rw [hp', hInv.pc_eq, hblock]
+  have hphi : phiIncoming "while.body370.i"
+      [("while.body370.i", (Operand.reg "%inc371.i")),
+       ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))] = some (.reg "%inc371.i") := by
+    simp [phiIncoming]
+  have hop : op = .reg "%inc371.i" := by
+    rw [hp] at hin
+    rw [hphi] at hin
+    exact (Option.some.inj hin).symm
+  have heq : e = BitVec.ofNat 64 (i + 1) := by
+    have h : lookupName (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env
+        "%inc371.i" = some (.int 64 e) := by
+      rw [hop] at hv
+      exact hv
+    rw [hinc₁] at h
+    exact heq_iff_eq.mp (Value.int.inj (Option.some.inj h)).2.symm
+  -- the target's environment, named: what the visit's three blocks install
+  have henv : (leafBlock43OutAt
+      (nodeBlock52OutAt (landRhsIOutAt G
+        (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e (scanB G e))
+        (BitVec.ofNat 8 (scanB G e).toNat))
+      (BitVec.ofNat 8 (scanB G e).toNat)).env =
+      ("%SwitchLeaf45", .int 1 (evalICmp .ule
+          (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))) ::
+      ("%.off44", .int 8 (BitVec.ofNat 8 (scanB G e).toNat + BitVec.ofNat 8 247)) ::
+      ("%Pivot53", .int 1 (evalICmp .slt (BitVec.ofNat 8 (scanB G e).toNat)
+        (BitVec.ofNat 8 13))) ::
+      ("%36", .int 8 (BitVec.ofNat 8 (scanB G e).toNat)) ::
+      ("%arrayidx367.i", .ptr (G.b + (e.signExtend 64).toNat)) ::
+      ("%ee.0.i238", .int 64 e) ::
+      (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i").env := by
+    simp only [leafBlock43OutAt, nodeBlock52OutAt, landRhsIOutAt, stateAt, State.bind,
+      State.bindAll, cells]
+  have hee : lookupName (leafBlock43OutAt
+      (nodeBlock52OutAt (landRhsIOutAt G
+        (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e (scanB G e))
+        (BitVec.ofNat 8 (scanB G e).toNat)) (BitVec.ofNat 8 (scanB G e).toNat)).env
+      "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (i + 1))) := by
+    rw [henv,
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+    rw [heq]
+  have hcond₂ : lookupName (leafBlock43OutAt
+      (nodeBlock52OutAt (landRhsIOutAt G
+        (scanLatchOut s "%inc371.i" "%exitcond.not" i c "land.rhs.i") e (scanB G e))
+        (BitVec.ofNat 8 (scanB G e).toNat)) (BitVec.ofNat 8 (scanB G e).toNat)).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
+    rw [henv,
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    exact hcond₁
+  exact ⟨_, _, hseg₁.trans hseg₂, hseg₂.inv', rfl, hee, hcond₂,
+    by simp [stage2ByteAllowance]⟩
+
+/-! ### The counted traversal
+
+A round is four steps and leaves the scan at its latch with the counter advanced, so the
+positions still to visit are `c - 1 - i` and the traversal is that many rounds: `4` steps
+each, inside `8` each.  The round's own hypotheses are about the byte at the counter and so
+differ at every step; what the recursion consumes is only that a round exists at each
+visiting counter, advances it by one, and leaves the invariant and the bound. -/
+
+/-- **The whitespace scan's counted traversal.**  `4 · (c - 1 - i)` steps, inside
+`8 · (c - 1 - i)` — the unit the dispatch's credit consumes. -/
+theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat}
+    (hround : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
+      C.block = "while.body370.i" →
+      lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      c < 2 ^ 64 → p + 1 < c →
+      ∃ (C' : WalkCarry G) (s' : State), WalkSegment calls G C s C' s' 4 ∧
+        WalkInv G C' s' ∧ C'.block = "while.body370.i" ∧
+        lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
+        lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
+    (hi : lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hic : i < c) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkSegment calls G C s C' s' (4 * (c - 1 - i)) ∧ WalkInv G C' s' ∧
+      C'.block = "while.body370.i" ∧
+      lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+      4 * (c - 1 - i) ≤ 8 * (c - 1 - i) := by
+  have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
+      WalkInv G C s → C.block = "while.body370.i" →
+      lookupName s.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      i < c →
+      ∃ (C' : WalkCarry G) (s' : State),
+        WalkSegment calls G C s C' s' (4 * r) ∧ WalkInv G C' s' ∧
+        C'.block = "while.body370.i" ∧
+        lookupName s'.env "%ee.0.i238" = some (.int 64 (BitVec.ofNat 64 (c - 1))) := by
+    intro r
+    induction r with
+    | zero =>
+        intro i C s _ hInv hblock hi _ hic
+        have hie : i = c - 1 := by omega
+        refine ⟨C, s, ?_, hInv, hblock, ?_⟩
+        · refine ⟨fun k => ?_, hInv⟩
+          rw [Nat.mul_zero, Nat.zero_add]
+        · rw [← hie]
+          exact hi
+    | succ n ih =>
+        intro i C s hr hInv hblock hi hc' hic
+        have hlt : i + 1 < c := by omega
+        obtain ⟨C₁, s₁, hseg, hinv, hb₁, hi₁, hc₁⟩ := hround C s i hInv hblock hi hc' hcw hlt
+        obtain ⟨C₂, s₂, hseg₂, hinv₂, hb₂, hi₂⟩ :=
+          ih (i + 1) C₁ s₁ (by omega) hinv hb₁ hi₁ hc₁ (by omega)
+        refine ⟨C₂, s₂, ?_, hinv₂, hb₂, hi₂⟩
+        have := hseg.trans hseg₂
+        simpa only [Nat.mul_succ, Nat.add_comm] using this
+  obtain ⟨C', s', hseg, hinv, hb, hi'⟩ := go (c - 1 - i) i C s rfl hInv hblock hi hc hic
+  exact ⟨C', s', hseg, hinv, hb, hi', by omega⟩
 
 /-! ### The five inductions
 
@@ -1393,6 +1516,7 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg3_43
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatch_link
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanRound43
+#print axioms LeanLLVM.Refinement.WalkScope.walkScanRounds43
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
