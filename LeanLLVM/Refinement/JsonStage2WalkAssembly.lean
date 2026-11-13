@@ -1403,6 +1403,25 @@ theorem walkEntryStaging_zeroArm {mem : Mem} (G : WalkGeom mem) (S : WalkStage G
   exact ⟨walkEntryJump s₁ G.nep, walkEntry_step ent rfl hden₁ hne hnep64 hpc₁,
     by simp [walkEntryJump, hzero], rfl⟩
 
+/-- **The entry's four environment layers do not bind the loop's two registers.**
+`%k.0.i249` is the inner loop's counter phi and `%sp.i.0248` the stack pointer the
+carry tracks; the entry's run prepends its own cells to the environment and never
+shadows either name, so the invariant's two lookup fields pass through the chain
+unchanged.  This is the mechanical half of the entry's preservation: the other
+fields either carry (`hInv`'s own conclusions, which no step touches) or are the
+step's `pc`, and the memory fields are the block's own writes. -/
+theorem walkEntryEnv_k (env : Env) (c n b nep sAddr zAddr xp nxp dst v1 v2 ev :
+    Nat) :
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n 0 sAddr c)
+      b nep) "%k.0.i249" = lookupName env "%k.0.i249" ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr nep xp nxp dst v1 v2 ev) b n 0 sAddr c)
+      b nep) "%sp.i.0248" = lookupName env "%sp.i.0248" := by
+  constructor <;>
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
