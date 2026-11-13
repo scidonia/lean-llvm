@@ -2672,6 +2672,54 @@ theorem walkScanRounds457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Na
     go (c - 1 - i) i C s rfl hInv hblock (hguard C s hInv hblock) hi hc hic
   exact ⟨C', s', n, hseg, hInv', hb, hi', hn⟩
 
+
+
+/-- **The extra-token scan's arrival at the latch's last visit.**  The traversal at the
+round; the input's facts at the caller's, where they have always lived —
+\`extraToken_scan\`'s own premises are this contract, read from the caller. -/
+theorem walkScanArrival457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Nat}
+    (hguard : ∀ (C : WalkCarry G) (s : State), WalkInv G C s →
+      C.block = "while.body462.i" → ScanGuard s "%q.0.i246" "%cond350.i" C.inner)
+    (hbyte : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
+      C.block = "while.body462.i" → p + 1 < c →
+      lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
+        lookupName (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i").env
+          "%3" = some (.ptr a) ∧
+        readBytes s.mem (a + (p + 1)) 1 = some bs ∧ bytesToNat bs = q ∧
+        evalOperand (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" p c
+          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) ∧
+        evalICmp .slt x (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 ∧
+        WalkLocal (ScanC₁₀₅ (ScanCLand C))
+          (landRhs457OutAt (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+            (BitVec.ofNat 64 (p + 1)) a q) ∧
+        WalkLocal (ScanC₉₆ (ScanCLand C))
+          (ScanS₉₆ (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+            (BitVec.ofNat 64 (p + 1)) a q x) ∧
+        WalkLocal { ScanCLand C with block := "while.body462.i" }
+          (Latch462S (scanLatchOut s "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
+            (BitVec.ofNat 64 (p + 1)) a q x))
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
+    (hi : lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hc63 : c ≤ 2 ^ 63) (hic : i < c) :
+    ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
+      WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
+      lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+      n ≤ stage2ByteAllowance * (c - 1 - i) :=
+  walkScanRounds457 (calls := calls) G
+    (hround := by
+      intro C s p a bs q x hInv hblock hi hc hlt hposi h3 hread hbs h47 hbit hws
+        hl105 hl96 hll
+      obtain ⟨C', s', n, hseg, hInv', hb', hn, hi', hc'⟩ :=
+        walkScanRound457 (calls := calls) (G := G) (C := C) (s := s) hInv hblock
+          (hguard C s hInv hblock) hi hc hcw hlt hposi h3 hread hbs hl105 h47 hbit hws
+          hl96 hll
+      exact ⟨C', s', n, hseg, hInv', hb', hn, hi', hc'⟩)
+    hguard hbyte hInv hblock hi hc hcw hc63 hic
+
 end WalkScope
 
 end LeanLLVM.Refinement
