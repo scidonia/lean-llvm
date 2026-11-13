@@ -3518,16 +3518,22 @@ Its proof is an induction over the memory showing that an in-place write changes
 cell's *position*, which is what the two preservations above supply one byte at a
 time.
 
-**The absorption is an artefact of the direction, and it is not needed.**  The
-chain above commutes *leftwards* — the later same-region write is moved towards the
-earlier one — and once the two `ei` writes are adjacent, `writeBytes_writeBytes_same`
-absorbs the clear with no other hypothesis (`s2StringBodySlot_absorb` is that
-instance).  So the join is three commutations and one same-region absorption, all of
-which are already proved, and the intervening writes never block anything: the
-commutation's `b`-present hypothesis is met by the *region the write is crossing*,
-not by one it would have to cross first.  What that leaves unreachable is nothing —
-`writeBytes_absorb_one` was the right lemma for the *other* direction (carrying an
-earlier write forwards), and the join does not take it.
+**The absorption is an artefact of the direction, and moving the *clear* rightwards
+is what makes it cheap.**  Two directions reach the adjacency, and they do not cost
+the same, because the target's slot write comes **last**:
+
+* moving the **clear** rightwards to meet the slot costs **four** moves — past
+  `dst`, past `xj`, the absorption itself, then the slot past `outn`;
+* moving the **slot** leftwards towards the clear costs **seven** — the same three
+  crossings to reach it, the absorption, and then three back, because the model's
+  memory has the slot last and it has to return.
+
+So the join takes the first: two commutations, one absorption
+(`s2StringBodySlot_absorb`), one commutation, every one already proved and each
+requiring only the presence and disjointness of the region being crossed.  An
+earlier version of this paragraph said the leftward direction was three moves; that
+was the count to *reach* the adjacency, not the count to finish, and the return trip
+is what the model's write order charges for.
 
 For the record, the two facts that direction would have needed:
 
