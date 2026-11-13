@@ -562,11 +562,61 @@ theorem walkCondTrue345_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     dsimp only [e, stateAt, walkCond_true345_i, execTerm]
   exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
 
+
+/-! ### Chaining where no successor needs a name
+
+`if.end372.i` is the block that needs no `_at`: its successors read `%8` — which the
+invariant carries in its own form — and the `or` bit, which the term consumed.  So the path
+composes over `WalkLink`s and each link takes the *previous link's* `inv'`, never a named
+state.  This is the first piece of the path to the merge, and it records the criterion: a
+named successor is needed exactly where a later block reads a cell the run itself binds.
+
+The `denoteCode` is not re-derived here.  An attempt to state it (with the successor named)
+failed at the `denoteCode_phiRun` call: its `specs := [{ dst := … }]` argument could not
+elaborate the record literal — *"invalid `{…}` notation, structure type expected"* — under
+two spellings, while `cleanup478_denote`'s identical construct works.  The difference is the
+`rw`'s context rather than the syntax, and re-deriving is unnecessary: the layer's link
+already carries the chain. -/
+
+/-- **`if.end372.i`'s else arm and `if.else387.i`**, as one chain: the block's decision (its
+`or` bit clear), then the empty body's `br`. -/
+theorem end372_else_chain {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end372.i")
+    {p : String} {op : Operand} {e : BitVec 64} {b8 : BitVec 8}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p
+      [("cond.end349.i", (Operand.reg "%idxprom.i")),
+       ("while.body370.i", (Operand.reg "%cond350.i")),
+       ("LeafBlock43", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock46", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock48", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock33", (Operand.reg "%cond350.i")),
+       ("LeafBlock35", (Operand.reg "%cond350.i")),
+       ("LeafBlock37", (Operand.reg "%cond350.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hend : lookupName s.env "%end.i" = some (.ptr (C.stage.tok + 8)))
+    (h8 : lookupName s.env "%8" = some (.int 8 b8))
+    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) :
+    ∃ (s₂ : State), WalkChain calls G C s
+      { C with block := "NodeBlock62" } s₂ := by
+  obtain ⟨s₁, hl₁⟩ := WalkLink.if_end372_i (calls := calls) G C s hInv hblock hpre hin hv hend
+    h8
+  have hcarry : { C with block := (if (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+        evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1 then
+        "if.then413.i" else "if.else387.i") } = { C with block := "if.else387.i" } := by
+    rw [hbit]; rfl
+  rw [hcarry] at hl₁
+  obtain ⟨s₂, hl₂⟩ := WalkLink.if_else387_i (calls := calls)
+    (C := { C with block := "if.else387.i" }) G s₁ hl₁.inv' rfl
+  exact ⟨s₂, WalkChain.tail hl₁ (WalkChain.tail hl₂ (WalkChain.nil hl₂.inv'))⟩
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd473_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkCondTrue345_at
+#print axioms LeanLLVM.Refinement.WalkScope.end372_else_chain
 
 end WalkScope
 end LeanLLVM.Refinement
