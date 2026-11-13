@@ -2909,11 +2909,11 @@ theorem s2StringBodyCleanup_fromDecoded_finishes {env : Env} {s : State} {ei : N
 /-- **The decoded length's path finishes**: the word at `outn`, `cleanup`'s decoded
 form, and the run is over in three control steps. -/
 theorem s2StringBodyIfEnd14_finishes {env : Env} {s : State} {call : BitVec 64}
-    {outn : Nat}
+    {outn ei : Nat}
     (hpc : s.pc = "if.end14")
     (hcall : lookupName env "%call" = some (.int 64 call))
     (houtn : lookupName env "%outn" = some (.ptr outn))
-    (hei : lookupName env "%ei" = some (.ptr 0)) :
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
     runFuel s2StringBodyCalls 3 s2StringBodyBody (stateAt env s) =
       some (.ret (some (.int 32 0x00000002#32))
         (writeBytes s.mem outn (natToBytes call.toNat 8))) := by
@@ -3079,6 +3079,68 @@ theorem s2StringBodyLandLhsTrue_refused_finishes {env : Env} {s : State}
     (c := c) (ei := ei) (e := e) (off := off) (sub := sub)
     rfl (by s2_lk) (by s2_lk) (by s2_lk) (by simpa only [stateAt] using hoff)
     (by simpa only [stateAt] using hcval) he64 (by s2_lk)
+  have := runFuel_prefix_some hpre hfin
+  simpa using this
+
+
+/-- **The inside test's decoded path, end to end**: `land.lhs.true`, `if.end`, the
+decoded length's word at `outn` — five control steps, answer `2`.  The terminal
+spells no caller value, so this composition is the cheapest of the four. -/
+theorem s2StringBodyLandLhsTrue_decoded_finishes {env : Env} {s : State}
+    {sub len conv : BitVec 64} {p dst ei outn xp xj : Nat} {nxp : BitVec 64}
+    {extra : Mem} {nx : Nat} {call : BitVec 64}
+    (hpc : s.pc = "land.lhs.true")
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hconv : lookupName env "%conv" = some (.int 64 conv))
+    (hbit7 : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 1#1)
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hdst : lookupName env "%dst" = some (.ptr dst))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes s.mem ei (natToBytes (0#64).toNat 8)) s.next =
+      some { ret := .int 64 call, mem := extra, next := nx })
+    (hbit9 : evalICmp .eq call 0xffffffffffffffff#64 = 0#1)
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    runFuel s2StringBodyCalls 5 s2StringBodyBody (stateAt env s) =
+      some (.ret (some (.int 32 0x00000002#32))
+        (writeBytes extra outn (natToBytes call.toNat 8))) := by
+  have h1 := step_landLhsTrue_ifEnd hpc hsub hlen hconv hbit7
+  have h2 : step s2StringBodyCalls s2StringBodyBody
+      (stateAt
+        (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+          ("%add", .int 64 (sub + len)) :: env)
+        { s with pc := "if.end", pre := some s.pc }) =
+      .jump (stateAt (s2StringBodyIfEndEnv
+        (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+          ("%add", .int 64 (sub + len)) :: env) call)
+        { s with mem := extra, next := nx, pc := "if.end14", pre := some "if.end" }) := by
+    refine step_ifEnd_ifEnd14 (env := ("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+        ("%add", .int 64 (sub + len)) :: env)
+      (s := { s with pc := "if.end", pre := some s.pc }) rfl
+      (by s2_lk) (by s2_lk) (by s2_lk) (by s2_lk) (by s2_lk) (by s2_lk) (by s2_lk) (by s2_lk)
+      ?_ hbit9
+    simpa only [stateAt] using hexp
+  have hpre : ∀ k, runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt env s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt (s2StringBodyIfEndEnv
+          (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+            ("%add", .int 64 (sub + len)) :: env) call)
+          { s with mem := extra, next := nx, pc := "if.end14", pre := some "if.end" }) := by
+    have h12 := runFuel_prefix_trans (fun j => runFuel_jump_prefix h1 j)
+      (fun j => runFuel_jump_prefix h2 j)
+    intro k
+    simpa [show 2 + k = 1 + (1 + k) from by omega] using h12 k
+  have hfin := s2StringBodyIfEnd14_finishes (env := s2StringBodyIfEndEnv
+      (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+        ("%add", .int 64 (sub + len)) :: env) call)
+    (s := { s with mem := extra, next := nx, pc := "if.end14", pre := some "if.end" })
+    (call := call) (outn := outn)
+    rfl (by s2_lk) (by s2_lk) (by s2_lk)
   have := runFuel_prefix_some hpre hfin
   simpa using this
 
