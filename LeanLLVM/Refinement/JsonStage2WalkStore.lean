@@ -1301,6 +1301,63 @@ stack and writes `1`.  The emitted `sub` is `add i32 %sp, 4294967295`, so the
 index is `C.sp - 1` at the `i32` wrap; `1 ≤ C.sp` is what makes it the
 predecessor. -/
 
+/-- The state `if.else285.i` leaves: the append's two cells and the arena cursor stored
+at the new value, at `if.end290.i`. -/
+def ifElse285OutAt (s : State) (z a l : Nat) : State :=
+  { stateAt (cells [("%add289.i", .int 64 (BitVec.ofNat 64 (a + l))),
+      ("%32", .int 64 (BitVec.ofNat 64 l))] s.env)
+      { s with mem := writeBytes s.mem (z + 48) (wordBytes 8 (a + l)) } with
+    pc := "if.end290.i", pre := some s.pc }
+
+/-- **`if.else285.i`'s target, named.**  The same link as `WalkLink.if_else285_i`, with
+the successor's state exposed: the append's store is visible, so a consumer can read the
+arena cursor it writes. -/
+theorem WalkLink.if_else285_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.else285.i")
+    {l a ao : Nat}
+    (houtn : lookupName s.env "%outn.i" = some (.ptr ao))
+    (hread : readBytes s.mem ao 8 = some (wordBytes 8 l)) (hl64 : l < 2 ^ 64)
+    (hz36 : lookupName s.env "%z.val36" = some (.int 64 (BitVec.ofNat 64 a)))
+    (halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)))
+    (hal64 : a + l < 2 ^ 64)
+    (hge : G.ndst0 ≤ a) (hale : a + l ≤ C.alen) :
+    ∃ s', WalkLink calls G C s { C with block := "if.end290.i" } s' ∧
+      s' = ifElse285OutAt s C.stage.z a l := by
+  obtain ⟨s', hl⟩ :=
+    WalkLink.if_else285_i (calls := calls) G C s hInv hblock houtn hread hl64 hz36 halen
+      hal64 hge hale
+  have hpc : s.pc = C.block := hInv.pc_eq
+  have hread' : readBytes s.mem ao 8 = some (natToBytes (BitVec.ofNat 64 l).toNat 8) := by
+    rw [walkToNat_ofNat64 hl64]; exact hread
+  have hden : denoteCode calls walkIf_else285_i.instrs s =
+      some (stateAt (cells [("%add289.i", .int 64 (BitVec.ofNat 64 (a + l))),
+        ("%32", .int 64 (BitVec.ofNat 64 l))] s.env)
+        { s with mem := writeBytes s.mem (C.stage.z + 48) (wordBytes 8 (a + l)) }) := by
+    dsimp only [walkIf_else285_i]
+    rw [← stateAt_self s]
+    rw [denoteCode_load64 calls s.env s "%32" "%outn.i" (v := BitVec.ofNat 64 l) houtn hread'
+      [Instr.binop "%add289.i" .add 64 (.reg "%z.val36") (.reg "%32"),
+       Instr.store (.int 64) (.reg "%add289.i") (.reg "%alen")]]
+    rw [denoteCode_add_reg calls _ s "%add289.i" "%z.val36" "%32"
+      (by rw [lookupName_cons_ne _ _ (by decide)]; exact hz36)
+      (by rw [lookupName_cons_self])
+      [Instr.store (.int 64) (.reg "%add289.i") (.reg "%alen")]]
+    rw [← BitVec.ofNat_add]
+    rw [denoteCode_store64_ofNat calls _ s "%add289.i" "%alen"
+      (by rw [lookupName_cons_self]) hal64
+      (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]; exact halen) []]
+    dsimp only [cells]
+    rfl
+  have hfind : stage2Body.findBlock C.block = some walkIf_else285_i := by
+    rw [hblock]; exact walkIf_else285_i_find
+  have htermN : walkIf_else285_i.term = Term.br "if.end290.i" := rfl
+  have hstep : LeanLLVM.step calls stage2Body s = .jump (ifElse285OutAt s C.stage.z a l) := by
+    simp only [LeanLLVM.step, hpc, hfind, hden, htermN, execTerm]
+    dsimp only [ifElse285OutAt, stateAt]
+    rw [hpc]
+  exact ⟨s', hl, Ctrl.jump.inj (hl.step.symm.trans hstep)⟩
+
 /-- `if.then330.i`: the state stack's byte at depth minus one is set to `1`. -/
 def walkIf_then330_i : Block :=
   { name := "if.then330.i",
