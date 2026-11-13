@@ -2003,6 +2003,32 @@ theorem walkEntryEnv_e4 (env : Env) (c n b ep nep sAddr zAddr xp nxp dst v1 v2 e
     simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
       lookupName_cons_ne]
 
+/-- **The flush block's operands at the entry's successor.**  The row's environment equality
+plus `walkEntryEnv_e4` give the two cells `if.then492.i` reads, so the block's step is two
+rewrites and an application at the use site. -/
+theorem walkEntryStaging_cells {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : Nat}
+    (hzero : G.nep = 0) :
+    ∃ s', LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body
+          (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+            .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+            .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+            .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+          d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0) = .jump s' ∧
+      s'.pc = "if.then492.i" ∧
+      lookupName s'.env "%e" = some (.ptr S.e) ∧
+      lookupName s'.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) := by
+  obtain ⟨s', hstep, hpc, - , henv⟩ := walkEntryStaging_zeroArm G S hzero
+  obtain ⟨he, h4⟩ :=
+    walkEntryEnv_e4 (EntryState stage2Body
+      (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+      d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0).env
+      G.next0 G.n G.b G.ep G.nep S.s S.z G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev
+  exact ⟨s', hstep, hpc, by rw [henv]; exact he, by rw [henv]; exact h4⟩
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
