@@ -769,6 +769,59 @@ theorem walkWhiteScanVisitSeg48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   WalkSegment.of_chain (walkWhiteScanVisit48 hchain hblock hpre hin hv hpos hqn halen hevlen
     hge13 hge32 hne32 hsc)
 
+/-! ### The counted chain
+
+`WalkChain` is a `Prop`, so no length is definable from it — a large elimination — and
+`WalkChain.steps` is existential for that reason.  A price therefore cannot be read off a
+chain however many links it visibly has, which is exactly why `WalkSegment` carries an
+index.  This relation records the count beside the chain: the same constructors, with the
+number of links an index, so a chain's price is a `Nat` the caller can compare.
+
+It is the trace vocabulary's third form — `WalkChain` for chaining, `WalkSegment` for the
+run, and `Seg` for reading one out of the other at a known count. -/
+inductive Seg (calls : Calls) {m0 : Mem} (G : WalkGeom m0) :
+    WalkCarry G → State → WalkCarry G → State → Nat → Prop
+  | nil {C : WalkCarry G} {s : State} (h : WalkInv G C s) :
+      Seg calls G C s C s 0
+  | tail {C C' C'' : WalkCarry G} {s s' s'' : State} {n : Nat}
+      (hl : WalkLink calls G C s C' s')
+      (ht : Seg calls G C' s' C'' s'' n) :
+      Seg calls G C s C'' s'' (n + 1)
+
+/-- **A counted chain is a chain.** -/
+theorem Seg.toChain {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' : State} {n : Nat} (h : Seg calls G C s C' s' n) :
+    WalkChain calls G C s C' s' := by
+  induction h with
+  | nil h => exact WalkChain.nil h
+  | tail hl _ ih => exact WalkChain.tail hl ih
+
+/-- **A counted chain is a segment at its own count** — the price, read off the count. -/
+theorem Seg.measure {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' : State} {n : Nat} (h : Seg calls G C s C' s' n) :
+    WalkSegment calls G C s C' s' n := by
+  induction h with
+  | nil h =>
+      refine ⟨fun k => ?_, h⟩
+      simp only [Nat.zero_add]
+  | @tail C C' C'' s s' s'' n hl _ ih =>
+      have := WalkSegment.of_link hl |>.trans ih
+      simpa only [Nat.one_add] using this
+
+/-- **Every chain is counted.** -/
+theorem WalkChain.seg {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' : State} (h : WalkChain calls G C s C' s') :
+    ∃ n, Seg calls G C s C' s' n := by
+  induction h with
+  | nil h => exact ⟨0, Seg.nil h⟩
+  | tail hl _ ih => obtain ⟨n, h'⟩ := ih; exact ⟨n + 1, Seg.tail hl h'⟩
+
+/-- **A single link's price.**  One link is one fuel unit, inside the byte allowance. -/
+theorem link_price {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' : State} (hl : WalkLink calls G C s C' s') :
+    ∃ (h : Seg calls G C s C' s' 1), 1 ≤ stage2ByteAllowance :=
+  ⟨Seg.tail hl (Seg.nil hl.inv'), by decide⟩
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
@@ -1108,6 +1161,10 @@ theorem walkInductionLiteral_holds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg43
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg46
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhiteScanVisitSeg48
+#print axioms LeanLLVM.Refinement.WalkScope.Seg.toChain
+#print axioms LeanLLVM.Refinement.WalkScope.Seg.measure
+#print axioms LeanLLVM.Refinement.WalkScope.WalkChain.seg
+#print axioms LeanLLVM.Refinement.WalkScope.link_price
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionLiteral_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionWhitespace_holds
 #print axioms LeanLLVM.Refinement.WalkScope.walkInductionString_holds
