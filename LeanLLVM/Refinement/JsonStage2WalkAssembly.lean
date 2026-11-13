@@ -1241,6 +1241,38 @@ theorem walkEntry_zeroArm {calls : Calls} {s : State} {nep : Nat}
       s'.pc = "if.then492.i" :=
   ⟨_, walkEntry_step s hpc hden hne hne64 hpc₁, by simp [walkEntryJump, hzero]⟩
 
+/-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
+the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
+theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
+    (hpc : s.pc = "if.then492.i")
+    (he : lookupName s.env "%e" = some (.ptr e))
+    (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
+    (hv64 : v < 2 ^ 64) :
+    ∃ s' : State, LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = "if.then" :=
+  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl⟩
+
+/-- **The refusal copy's step.**  `if.then`'s five live-range ends at the state the flush
+block leaves: the jump's destination is `if.end`. -/
+theorem walkRefusalCopy_at {sub : Calls} {s : State} {s₁ : State}
+    (hpc : s.pc = "if.then")
+    (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s = some s₁)
+    (hpc₁ : s₁.pc = s.pc) :
+    ∃ s' : State, LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s' ∧ s'.pc = "if.end" :=
+  ⟨_, walkIfThen_step s hpc hden hpc₁, rfl⟩
+
+/-- **The return.**  `if.end`'s `phi` at the refusal bit, returning the verdict the copy
+carried. -/
+theorem walkReturn_at {sub : Calls} {s : State}
+    (hpc : s.pc = "if.end") {p : String} {v bit : BitVec 64} {pe pz ps : Nat}
+    (he : lookupName s.env "%e" = some (.ptr pe))
+    (hz : lookupName s.env "%z" = some (.ptr pz))
+    (hs : lookupName s.env "%s" = some (.ptr ps))
+    (hpre : s.pre = some p)
+    (hphi : phiIncoming p walkIfEndIncoming = some (Operand.imm (Const.int 64 bit)))
+    (hv : bit = v) :
+    ∃ s' : State, LeanLLVM.step (stage2Calls sub) stage2Body s = .ret (some (.int 64 v)) s' :=
+  ⟨_, walkIfEnd_step s hpc he hz hs hpre hphi hv⟩
+
 /-- **The flush arm from four named steps.**  The zero-entry run is the entry block's zero
 arm, the flush block, the refusal copy and the return — four control steps, inside
 `stage2FinalisationAllowance` — so `WalkFlushAt` follows from their four step equations at the
