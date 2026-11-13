@@ -3533,6 +3533,83 @@ theorem s2StringBodyMemory_of_bodyItself (mem : Mem) (xj outn j1 len : Nat) :
     writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (natToBytes len 8) =
       writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (wordBytes 8 len) := rfl
 
+/-- **The decoded arm's memory join**: the body's memory is the model's plus the slot
+at the call's allocator.  Two moves — the arm's clear is absorbed, then the slot's
+write crosses `outn`'s — each spending the presence and disjointness of the region it
+crosses. -/
+theorem s2StringBodyMemory_decoded (mem : Mem) {ei dst xj outn j1 k : Nat}
+    {out : List UInt8}
+    (hei : readBytes mem ei 8 ≠ none)
+    (hdst : readBytes mem dst out.length ≠ none)
+    (hxj : readBytes mem xj 8 ≠ none)
+    (houtn : readBytes mem outn 8 ≠ none)
+    (hd_ei : ei + 8 ≤ dst ∨ dst + out.length ≤ ei)
+    (hx_ei : ei + 8 ≤ xj ∨ xj + 8 ≤ ei)
+    (hd_xj : dst + out.length ≤ xj ∨ xj + 8 ≤ dst)
+    (ho_ei : ei + 8 ≤ outn ∨ outn + 8 ≤ ei)
+    (ho_d : outn + 8 ≤ dst ∨ dst + out.length ≤ outn)
+    (ho_x : outn + 8 ≤ xj ∨ xj + 8 ≤ outn) :
+    writeBytes
+        (writeBytes
+          (writeBytes
+            (writeBytes
+              (writeBytes mem ei (natToBytes (0#64).toNat 8)) dst out)
+            xj (wordBytes 8 (j1 + k)))
+          ei (wordBytes 8 out.length))
+        outn (natToBytes out.length 8)
+      = writeBytes
+          (writeBytes
+            (writeBytes
+              (writeBytes mem dst out)
+              xj (wordBytes 8 (j1 + k)))
+            outn (wordBytes 8 out.length))
+          ei (wordBytes 8 out.length) := by
+  -- name the arm's word in the model's spelling, so the two sides' only difference
+  -- is the clear's presence
+  show writeBytes (writeBytes (writeBytes (writeBytes (writeBytes mem ei (natToBytes (0#64).toNat 8)) dst out)
+      xj (wordBytes 8 (j1 + k))) ei (wordBytes 8 out.length)) outn (wordBytes 8 out.length)
+    = writeBytes (writeBytes (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
+        outn (wordBytes 8 out.length)) ei (wordBytes 8 out.length)
+  -- 1. the arm's clear is absorbed
+  rw [writeBytes_absorb_one mem hei hdst hxj
+    (by simp [wordBytes, natToBytes_length]) hd_ei hx_ei hd_xj]
+  -- 2. the slot's write crosses `outn`, which needs both regions present in the
+  --    memory the crossed writes leave
+  have hmid_ei : readBytes (writeBytes mem dst out) ei 8 ≠ none := by
+    rcases hd_ei with h | h
+    · rw [readBytes_writeBytes_below mem out 8 ei dst h]; exact hei
+    · rw [s2StringBodyReadBytes_above mem out 8 ei dst h]; exact hei
+  have hmid_outn : readBytes (writeBytes mem dst out) outn 8 ≠ none := by
+    rcases ho_d with h | h
+    · rw [readBytes_writeBytes_below mem out 8 outn dst h]; exact houtn
+    · rw [s2StringBodyReadBytes_above mem out 8 outn dst h]; exact houtn
+  have hei' : readBytes (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
+      ei 8 ≠ none := by
+    rcases hx_ei with h | h
+    · rw [readBytes_writeBytes_below (writeBytes mem dst out) (wordBytes 8 (j1 + k))
+        8 ei xj h]
+      exact hmid_ei
+    · rw [s2StringBodyReadBytes_above (writeBytes mem dst out) (wordBytes 8 (j1 + k))
+        8 ei xj (by simpa [wordBytes, natToBytes_length] using h)]
+      exact hmid_ei
+  have houtn' : readBytes (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
+      outn 8 ≠ none := by
+    rcases ho_x with h | h
+    · rw [readBytes_writeBytes_below (writeBytes mem dst out) (wordBytes 8 (j1 + k))
+        8 outn xj h]
+      exact hmid_outn
+    · rw [s2StringBodyReadBytes_above (writeBytes mem dst out) (wordBytes 8 (j1 + k))
+        8 outn xj (by simpa [wordBytes, natToBytes_length] using h)]
+      exact hmid_outn
+  obtain ⟨X₁, hX₁⟩ := exists_readBytes_of_ne hei'
+  obtain ⟨O₁, hO₁⟩ := exists_readBytes_of_ne houtn'
+  have ho_ei' : ei + (wordBytes 8 out.length).length ≤ outn ∨
+      outn + (wordBytes 8 out.length).length ≤ ei := by
+    simpa [wordBytes, natToBytes_length] using ho_ei
+  rw [writeBytes_comm_of_present (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
+    ei (wordBytes 8 out.length) outn (wordBytes 8 out.length)
+    ⟨X₁, hX₁⟩ ⟨O₁, hO₁⟩ ho_ei']
+
 /-- The cursor word the scan leaves is the model's `j1`: the exit word's counter,
 written at the caller's cursor, is the memory the model's `j1` names.  This is where
 `ExitWord`'s `∃ c` is consumed — at the memory term, not at the exits. -/
