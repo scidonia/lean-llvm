@@ -1127,6 +1127,33 @@ def WalkFlush (calls : Calls) (v0 : Value) (a13 : List Value) (nep : Nat)
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
           some (.ret v0 m)
 
+/-- **The empty entry stream's flush, at the memory and cursor it is used at.**  The form
+above quantifies `mem` and `next` *universally*, and that is too strong for a run: the entry
+block loads `%ndst` and `%nev`, which an arbitrary memory may omit, and the initialisation's
+writes do not manufacture the caller's cursor words.  So the arm is a property of the
+particular memory and allocator cursor the staging hands the entry — the ones the caller has
+preconditions for (`Γ_stage2.pre`, `stage2StagedPre`) and can supply at the use.  `WalkFlush`
+remains the stronger form; it is usable only where those preconditions hold for *every*
+memory, which is not the case at the entry, and that is the inaccuracy recorded here rather
+than repaired at the definition: replacing it changes `WalkPremises`' consumers and belongs
+to the next planning step. -/
+def WalkFlushAt (calls : Calls) (v0 : Value) (mem : Mem) (next : Nat)
+    (a13 : List Value) (nep : Nat) (d c ctype cst tok s z e : Nat) : Prop :=
+  nep = 0 →
+    ∃ (q : Nat) (m : Mem), q ≤ stage2FinalisationAllowance ∧
+      runFuel calls q stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+        some (.ret v0 m)
+
+/-- **The universal form pins to any memory and cursor** — so nothing the stronger premise
+supplied is lost when the weaker one is used, and the two differ only at memories no
+staging produces. -/
+theorem WalkFlush.at {calls : Calls} {v0 : Value} {a13 : List Value} {nep : Nat}
+    {d c ctype cst tok s z e : Nat}
+    (h : WalkFlush calls v0 a13 nep d c ctype cst tok s z e) (mem : Mem) (next : Nat) :
+    WalkFlushAt calls v0 mem next a13 nep d c ctype cst tok s z e :=
+  fun h0 => h h0 mem next
+
 /-- **A dispatch's outcome, and it is one of three.**  The index cannot decide it in
 advance.  A standalone string consumes *two* entries — the opener and the closer, the merge
 selecting `%inc208.i = %k.0.i249 + 2` — so at `nep = 2` the same `C.k + 1 < G.nep` that
