@@ -3232,6 +3232,31 @@ equation obtained at its own site, `walkRefusalCopy_at`, `walkReturn_at`, then
 `WalkFlushAt.ofRun` — and not a lemma of its own: a wrapper whose statement is another lemma's
 statement with one substitution adds no content. -/
 
+/-- **The exit's first step, with the guard chained.**  The exit's hypothesis supplies
+`C.k + 1 = G.nep`; the invariant's `blockIndex` supplies `%k.0.i249 = C.k`; the header's carrier
+supplies `%inc.i = C.k + 1`; the staging's cell supplies `%nep = BitVec.ofNat 64 G.nep`.  Four
+facts, one inequality, one step — the shape every branch of the exit repeats. -/
+theorem walkExitFalseEdge {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} {p : String} {spv : Nat} {nepv : BitVec 64}
+    (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hlast : C.k + 1 = G.nep)
+    (hpc : s.pc = "cleanup478.i") (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some (.reg "%sp.i.0248"))
+    (hk : phiIncoming p cleanupKIncoming = some (.reg "%inc.i"))
+    (hspv : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hinc : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hnepv : nepv.toNat = G.nep) (hneple : G.nep < 2 ^ 64) :
+    ∃ s', LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = "if.then485.i" := by
+  have hk2 : C.k + 1 < 2 ^ 64 := by omega
+  have hguard : nepv.toNat ≤ C.k + 1 := by omega
+  have hspv' : evalOperand s (.reg "%sp.i.0248") =
+      some (.int 32 (BitVec.ofNat 32 spv)) := by
+    simp only [evalOperand]; exact hspv
+  have hkv' : evalOperand s (.reg "%inc.i") =
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
+    simp only [evalOperand]; exact hinc
+  exact ⟨_, walkBackFalse_step s hpc hpre hsp hspv' hk hkv' hnep hk2 hguard, rfl⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
