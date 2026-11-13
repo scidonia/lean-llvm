@@ -1735,6 +1735,17 @@ theorem WalkStackBytes.frame {mem mem' : Mem} {base n : Nat} {M : Nat → UInt8}
   rw [hfr (base + i) (hout i hi)]
   exact h i hi
 
+/-- **The initialisation's stores stay inside the record.**  The fifteen stores land at
+`%s + 0 … + 112`, eight bytes each, so the whole run of them fits the record's 120. -/
+theorem s2InitStores_inside (sAddr b ep : Nat) (n nb : BitVec 64) :
+    ∀ p ∈ s2InitStores sAddr b n.toNat nb.toNat ep,
+      sAddr ≤ p.1 ∧ p.1 + p.2.length ≤ sAddr + 120 := by
+  intro p hp
+  simp only [s2InitStores, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl
+  all_goals simp [wordBytes, natToBytes_length] <;> try omega
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
