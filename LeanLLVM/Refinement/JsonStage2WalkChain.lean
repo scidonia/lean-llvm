@@ -846,30 +846,37 @@ price the census charges it (`walkScanStepWidth_le_byteAllowance`), so the induc
 are stated at exactly the facts those two leave for them. -/
 structure WalkScanInduction (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
     (latch land inc phi cond exit : String) : Prop where
-  /-- One visit: the landing block, at a count inside one byte's allowance, the visiting
-  carry's counter re-pinned. -/
+  /-- **The step**: one visit of the latch, short of the bound, reaching the scan's
+  landing block inside one byte's allowance with the increment written.
+
+  The hypothesis is `i + 1 < c`, not `i < c`: the latch's test is `%inc = %cond`, so the
+  visit is taken exactly while the increment is *short* of the bound, and `i + 1 = c` is
+  the exit.  `c < 2 ^ 64` is the bound's own width: the register holds the word, so a
+  `c` above it is the same register value as `c % 2 ^ 64`, and the count `c - i` is only
+  the register's remaining distance when `c` is the word.  The re-pinned register is the increment, not the counter: the counter's own
+  `phi` is the *landing* block's first instruction, so at the landing block's entry the
+  counter still holds the visiting value — a field claiming it advanced there would be
+  false, and the visit's counter change is the landing block's `phi` (`ScanLanded`). -/
   step : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = latch →
     ∀ i c : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
-      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) → i < c →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      c < 2 ^ 64 → i + 1 < c →
       ∃ (C' : WalkCarry G) (s' : State) (j : Nat),
         WalkSegment calls G C s C' s' j ∧ C'.block = land ∧ j ≤ stage2ByteAllowance ∧
-        lookupName s'.env phi = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
+        lookupName s'.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
         lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c))
-  /-- The exit: at the bound the latch's test is set, and the terminator is the jump to
-  the scan's own exit block. -/
+  /-- **The exit**: the test is set at `i + 1 = c` — the increment reaching the bound —
+  and the terminator is the jump to the scan's own exit block. -/
   exitStep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = latch →
-    ∀ i : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
-      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 i)) →
+    ∀ i c : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      c < 2 ^ 64 → i + 1 = c →
       ∃ (s' : State), _root_.LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = exit
-  /-- The increment: the latch writes its counter plus one before testing it. -/
-  advance : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = latch →
-    ∀ i : Nat, lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
-      lookupName s.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1)))
 
 /-- The literal comparison's scan: its latch, its landing block and its registers. -/
 def walkInductionLiteral (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   WalkScanInduction calls G "for.inc.i.i" "for.body.i.i" "%inc.i.i" "%i.029.i.i"
-    "%cond.i.i" "if.end48.i"
+    "%cond.i.i" "for.end.i.i"
 
 /-- The whitespace skip's scan — the one `walkScanChain_to_latch` follows to the latch. -/
 def walkInductionWhitespace (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
