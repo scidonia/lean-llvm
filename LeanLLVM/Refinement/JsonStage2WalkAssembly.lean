@@ -3267,6 +3267,17 @@ theorem walkExit485 {calls : Calls} {s : State} {spv : Nat}
         then "if.end490.i" else "if.then488.i") :=
   ⟨_, walkIfThen485Step s hpc hsp, rfl⟩
 
+/-- **`if.end490.i`'s test, with its two destinations named.**  The root-done word decides between
+the refusal arm and the exit's own tail. -/
+theorem walkExit490 {calls : Calls} {s : State} {rd : Nat} {v : BitVec 32}
+    (hpc : s.pc = "if.end490.i")
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s.mem rd 4 = some (natToBytes v.toNat 4)) :
+    ∃ s', LeanLLVM.step calls stage2Body s = .jump s' ∧
+      s'.pc = (if evalICmp .eq v (BitVec.ofNat 32 0) = 1 then "if.then492.i"
+        else "s2_walk.exit") :=
+  ⟨_, walkIfEnd490Step s hpc hroot hread, rfl⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
