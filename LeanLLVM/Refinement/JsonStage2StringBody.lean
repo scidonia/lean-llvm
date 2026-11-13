@@ -5303,6 +5303,57 @@ theorem s2StringBodyModel_refused {mem : Mem} {c p dst outn xp xj j1 k off e' : 
   rw [if_neg (by simpa using hne)]
   simp only [hbody, hr, he]
 
+/-- **The scan's `if.then` exit finishes form `1`**: the counter reached the count,
+so the window at `j1` is empty and the model answers the body itself.  The exit's
+cursor word is the word the model writes, so the two memories are one term. -/
+theorem s2StringBodyArm_scan_ifThen {mem : Mem} {next ch p dst outn xp xj : Nat}
+    {len nxp : BitVec 64} {base j0 : Nat} {ps : List Nat} {env0 : Env} {ei : Nat}
+    {x : State}
+    (hbase : stage2ReadWord mem ch 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hpc : x.pc = "if.then")
+    (hword : s2StringBodyScanExitWordP mem xj j0 ps (p - base) nxp.toNat env0 ei xp x)
+    (hlen : lookupName x.env "%len" = some (.int 64 len))
+    (houtn : lookupName x.env "%outn" = some (.ptr outn)) :
+    s2StringBodyConcludes
+      [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next 2 x := by
+  obtain ⟨c1, hmem, hfix, -, -, -, -, -, -, hif, -⟩ := hword
+  have hcN : c1 = nxp.toNat := hif hpc
+  have hlen_ps : ps.length = nxp.toNat := (readLanes32_lane hps).1
+  have hj1 : c1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length :=
+    s2StringBodyScanExit_j1 hfix (Or.inl hcN) hlen_ps
+  have hnil : ps.drop (j0 + ((ps.drop j0).takeWhile
+      (fun q => decide (q < p - base))).length) = [] := by
+    rw [← hj1, hcN]
+    exact List.drop_eq_nil_of_le (by omega)
+  have hwin : ((ps.drop (j0 + ((ps.drop j0).takeWhile
+      (fun q => decide (q < p - base))).length)).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = true := by
+    rw [hnil]
+    rfl
+  have hwin' : ((ps.drop c1).takeWhile
+      (fun q => decide (q < p - base + len.toNat))).isEmpty = true := by
+    rw [hj1]
+    exact hwin
+  have hmodel := s2StringBodyModel_bodyItself (mem := mem) (c := ch) (p := p)
+    (dst := dst) (outn := outn) (xp := xp) (xj := xj) (j1 := c1) (len := len)
+    (nxp := nxp) (base := base) (j0 := j0) (ps := ps) hbase hj0 hps hj1 hwin'
+  refine ⟨⟨.int 32 (BitVec.ofNat 32 1),
+    writeBytes x.mem outn (natToBytes len.toNat 8), next + 8⟩, ?_, ?_, ?_⟩
+  · exact s2StringBodyExit_ifThen (e := x) hpc hlen houtn
+  · refine ⟨writeBytes (writeBytes mem xj (wordBytes 8 c1)) outn
+      (wordBytes 8 len.toNat), 1, [], hmodel, rfl, ?_, rfl⟩
+    rw [hmem]
+    rfl
+  · rw [hmem]
+    simp only [s2StringBodyFoot]
+    exact ((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
+      ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+      (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
+      ⟨(outn, 8), by simp, le_rfl, le_rfl⟩ (by simp [natToBytes_length])
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
