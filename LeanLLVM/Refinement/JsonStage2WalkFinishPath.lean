@@ -1,42 +1,44 @@
 /-
-The stage-2 walk's finish tail, on the exit's third path.
+The stage-2 walk's finish tail: the three routes from the merge's false arm to the return.
 
-`JsonStage2WalkAssembly`'s tail census lists three routes to `if.end`:
+`JsonStage2WalkAssembly`'s tail census lists them:
 
-  `if.then485.i → if.end490.i → s2_walk.exit → if.end`
-  `if.then485.i → if.end490.i → if.then492.i → if.then → if.end`
-  `if.then485.i → if.then488.i → if.then → if.end`
+  `if.then485.i → if.end490.i → s2_walk.exit → if.end`          (path 1)
+  `if.then485.i → if.end490.i → if.then492.i → if.then → if.end` (path 2)
+  `if.then485.i → if.then488.i → if.then → if.end`               (path 3)
 
-The third is the one this module composes: the depth's non-zero arm, whose step leaves
-`if.then488.i` on the refusal store, and the refusal copy.  Every block's step is already
-proved (`walkIfThen485Step` and `walkIfThen488Step` at a generic `calls`, `walkIfThen_step`
-at `stage2Calls sub`); what the path owes is the composure, and the obstruction is that a
-`WalkSegment` carries its target's invariant (`WalkSegment.inv'`) while a bare `.jump` does
-not produce one.
+Every block's step is already proved (`walkIfThen485Step`, `walkIfThen488Step`,
+`walkIfEnd490Step` and `walkIfThen492Step` at a generic `calls`; `walkExitStep`,
+`walkIfThen_step` and `walkReturn_at` at `stage2Calls sub`).  What the three routes owe is
+their composure, and the obstruction is that a `WalkSegment` carries its target's invariant
+(`WalkSegment.inv'`) while a bare `.jump` does not produce one.
 
-**The path is a two-step segment plus one step, and the split is a fact about the
-invariant, not a convenience.**  `WalkInv.frame` is `UnchangedOutside m0 s.mem (walkWide G C)`,
-and `walkWide` names the arena's decoded prefix, the event stream's prefix, the seven
-appended objects, `%d.i` and the body's four allocations — it does **not** name the arena's
-cursor slot, the event stream's or the refusal record's.  `if.then` stores the cursor words
-and the refusal offset into exactly those three slots (`walkIfThenBlock`), so its target's
-memory differs from the initial one at bytes the frame claims are unchanged: **`WalkInv` is
-not preserved through `if.then`, and a `WalkSegment` cannot end at `if.end`.**
-`walkFinish_not_frame_of` is the proof of the outside half — every byte of the three slots is
-outside `walkWide` — and the repository states the same fact where the arm is described
-(`JsonStage2WalkCall`'s note that the copy's stores are the record's, outside the walk's
-frame, so it is the terminal step's refusal arm and not a link).  The two blocks before it
-are a segment: `if.then488.i`'s store lands inside the refusal record's staged extent, which
+**Past `if.end490.i` no route is a segment, and the reason is the frame.**  `WalkInv.frame`
+is `UnchangedOutside m0 s.mem (walkWide G C)`, and `walkWide` names the arena's decoded
+prefix, the event stream's prefix, the seven appended objects, `%d.i` and the body's four
+allocations — it does **not** name the arena's cursor slot, the event stream's or the refusal
+record's.  Two of the tail's blocks store the two cursor words and the refusal offset into
+exactly those three slots: `s2_walk.exit` (path 1) and `if.then` (paths 2 and 3), both
+`%ndst`, `%nev`, `%err`.  Their targets therefore differ from the initial memory at bytes the
+frame claims are unchanged, so **`WalkInv` is not preserved through either block and no
+`WalkSegment` can end at `if.end`.**  `walkFinish_not_frame_of` is the proof of the outside
+half — every byte of the three slots is outside `walkWide` — and the repository states the
+same fact where the arm is described (`JsonStage2WalkCall`'s note that the copy's stores are
+the record's, outside the walk's frame, so it is the terminal step's refusal arm and not a
+link).  So paths 1 and 2 are `runFuel` equations from `if.then485.i` to `if.end`, and path 3
+is a segment only as far as `if.then`, which is the last block on it that preserves the
+invariant: `if.then488.i`'s store lands inside the refusal record's staged extent, which
 `walkWide` does name.
 
-So the composition is `walkFinishPath3`'s segment (two steps, to `if.then`) and
-`walkFinishCopyStep`'s jump, and `walkFinishRun` is their `runFuel` equation: three control
-steps from `if.then485.i` to `if.end`, the shape `walkExitTailRefuse488` gives the same
-blocks from the merge's other arms.
+The three routes share the exit's first step, so it is stated once: `walkFinishPrefix` is
+`if.then485.i` on the empty-stack arm, the head of paths 1 and 2 (path 3 takes its sibling,
+the bit's other arm, and is `walkFinishPath3`).  `walkFinishPath1`, `walkFinishPath2` and
+`walkFinishRun` are then the routes' `runFuel` equations, at the counts the census gives
+them, in the shape `walkExitTailRefuse488` already has for the same blocks from the merge.
 
 Only `JsonStage2WalkAssembly` is imported: it carries all four step lemmas, the carries, the
-invariant, the staging and the region helpers, and `JsonStage2WalkStepsPath` (which imports it)
-adds the chain instances the tail's own steps are stated over, not the ones used here.
+invariant, the staging and the region helpers, and `JsonStage2WalkStepsPath` (which imports
+it) adds the chain instances the tail's own steps are stated over, not the ones used here.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkAssembly
 
@@ -116,6 +118,64 @@ theorem walkFinishThenStep {sub : Calls} {s s₂ : State}
     (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s = some s₂) :
     step (stage2Calls sub) stage2Body s = .jump (finishSEnd s s₂) :=
   walkIfThen_step s hpc hden hpc₂
+
+/-! ### The empty-stack arm's head, and `if.end490.i`'s two arms
+
+Paths 1 and 2 both leave `if.then485.i` on the depth's *zero* test — the bit path 3 does not
+take — so the exit's first step is stated once, as the shared head of their runs, and then
+`if.end490.i`'s root-done test splits them: a non-zero word takes `s2_walk.exit` (path 1), a
+zero word takes the refusal copy's entry `if.then492.i` (path 2).  The two arms are
+`walkExit490`'s, with the bit resolved so each route names its own successor. -/
+
+/-- **The exit's first step on the empty-stack arm.**  The block's bit is `1`, so the
+successor is `if.end490.i` and the target is `exitS₂`. -/
+theorem walkFinish485StepEnd {calls : Calls} {s : State} {spv : Nat}
+    (hpc : s.pc = "if.then485.i")
+    (hsp : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hbit : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1) :
+    step calls stage2Body s = .jump (exitS₂ s spv) := by
+  rw [walkIfThen485Step (calls := calls) s hpc hsp]
+  simp only [exitS₂]
+  rw [show (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+    then "if.end490.i" else "if.then488.i") = "if.end490.i" from
+    ite_eq_left (by rw [hbit])]
+
+/-- **The exit's shared head, as a run.**  `if.then485.i` on the empty-stack arm: one step to
+`if.end490.i`, the first step of paths 1 and 2, stated once so neither route re-derives it.
+Path 3's head is the same block on the bit's other arm (`walkFinish485Step`). -/
+theorem walkFinishPrefix {calls : Calls} {s : State} {spv : Nat}
+    (hpc : s.pc = "if.then485.i")
+    (hsp : lookupName s.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hbit : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1) :
+    (∀ n, runFuel calls (1 + n) stage2Body s = runFuel calls n stage2Body (exitS₂ s spv)) ∧
+      (exitS₂ s spv).pc = "if.end490.i" :=
+  ⟨runFuel_jump_prefix (walkFinish485StepEnd hpc hsp hbit), rfl⟩
+
+/-- **`if.end490.i` with the root slot set.**  A non-zero root-done word takes the exit's own
+tail, `s2_walk.exit`: path 1's second step. -/
+theorem walkFinish490StepExit {calls : Calls} {s : State} {rv : BitVec 32} {rd : Nat}
+    (hpc : s.pc = "if.end490.i")
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s.mem rd 4 = some (natToBytes rv.toNat 4))
+    (hzero : evalICmp .eq rv (BitVec.ofNat 32 0) = 0) :
+    step calls stage2Body s = .jump (exitS₃ s rv) := by
+  rw [walkIfEnd490Step (calls := calls) s hpc (v := rv) hroot hread]
+  simp only [exitS₃]
+  rw [show (if evalICmp .eq rv (BitVec.ofNat 32 0) = 1 then "if.then492.i"
+    else "s2_walk.exit") = "s2_walk.exit" from ite_eq_right (by rw [hzero]; decide)]
+
+/-- **`if.end490.i` with the root slot clear.**  A zero root-done word takes the refusal
+copy's entry, `if.then492.i`: path 2's second step. -/
+theorem walkFinish490StepRefuse {calls : Calls} {s : State} {rv : BitVec 32} {rd : Nat}
+    (hpc : s.pc = "if.end490.i")
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s.mem rd 4 = some (natToBytes rv.toNat 4))
+    (hone : evalICmp .eq rv (BitVec.ofNat 32 0) = 1) :
+    step calls stage2Body s = .jump (exitS₃r s rv) := by
+  rw [walkIfEnd490Step (calls := calls) s hpc (v := rv) hroot hread]
+  simp only [exitS₃r]
+  rw [show (if evalICmp .eq rv (BitVec.ofNat 32 0) = 1 then "if.then492.i"
+    else "s2_walk.exit") = "if.then492.i" from ite_eq_left (by rw [hone])]
 
 /-! ### The invariant across one step
 
@@ -398,6 +458,85 @@ theorem walkFinish_not_frame_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
       ⟨r, hr, hlo, hhi⟩
 
 /-! ### The path -/
+
+/-- **Path 1, as a run.**  The shared head, `if.end490.i` with the root slot set, and
+`s2_walk.exit`'s copy: three control steps to the return's block.  No `WalkInv` is carried
+past the head's successor, because the exit block's stores are the record's and lie outside
+the walk's frame (`walkFinish_not_frame_of`); the route is a `runFuel` equation for the same
+reason `walkExitTailExit` is.
+
+The two lookups the last step is stated at are the caller's, as at `walkExitStep`: they are
+the copy's byte facts, not step arithmetic. -/
+theorem walkFinishPath1 {sub : Calls} (s0 : State) (hpc : s0.pc = "if.then485.i")
+    {spv rd : Nat} {rv : BitVec 32} {s₃ : State}
+    (hsp : lookupName s0.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hone : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
+    (hroot : lookupName s0.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s0.mem rd 4 = some (natToBytes rv.toNat 4))
+    (hzero : evalICmp .eq rv (BitVec.ofNat 32 0) = 0)
+    (hden : denoteCode (stage2Calls sub) walkExitBlock.instrs
+      (exitS₃ (exitS₂ s0 spv) rv) = some s₃)
+    (hpc₃ : s₃.pc = (exitS₃ (exitS₂ s0 spv) rv).pc) :
+    ∃ (s : State),
+      (∀ n, runFuel (stage2Calls sub) (3 + n) stage2Body s0 =
+        runFuel (stage2Calls sub) n stage2Body s) ∧
+      s.pc = "if.end" ∧ s = exitS₄ (exitS₃ (exitS₂ s0 spv) rv) s₃ := by
+  obtain ⟨hstep₁, hpc₁⟩ := walkFinishPrefix hpc hsp hone
+  have hstep₂ : step (stage2Calls sub) stage2Body (exitS₂ s0 spv) =
+      .jump (exitS₃ (exitS₂ s0 spv) rv) :=
+    walkFinish490StepExit hpc₁ ((exitS₂_rd (s := s0) (spv := spv)).trans hroot) hread hzero
+  have hstep₃ : step (stage2Calls sub) stage2Body (exitS₃ (exitS₂ s0 spv) rv) =
+      .jump (exitS₄ (exitS₃ (exitS₂ s0 spv) rv) s₃) :=
+    walkExitStep (sub := sub) _ rfl hden hpc₃
+  refine ⟨exitS₄ (exitS₃ (exitS₂ s0 spv) rv) s₃, fun n => ?_, rfl, rfl⟩
+  rw [show 3 + n = 1 + (1 + (1 + n)) from by omega]
+  rw [hstep₁ (1 + (1 + n))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + n)]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₃ n]
+
+/-- **Path 2, as a run.**  The shared head, `if.end490.i` with the root slot clear,
+`if.then492.i`'s refusal store, and the copy: four control steps to the return's block.  Its
+stores are the record's (`if.then492.i`'s is inside the refusal record, the copy's the three
+record slots), so the route is a `runFuel` equation from `if.end490.i` on.
+
+`%e` and `%4` are stated at the refusal block, where the previous step left them: the copy
+reads the offset the store wrote. -/
+theorem walkFinishPath2 {sub : Calls} (s0 : State) (hpc : s0.pc = "if.then485.i")
+    {spv rd e v : Nat} {rv : BitVec 32} {s₂ : State}
+    (hsp : lookupName s0.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hone : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
+    (hroot : lookupName s0.env "%root_done.i" = some (.ptr rd))
+    (hread : readBytes s0.mem rd 4 = some (natToBytes rv.toNat 4))
+    (hclear : evalICmp .eq rv (BitVec.ofNat 32 0) = 1)
+    (he : lookupName (exitS₃r (exitS₂ s0 spv) rv).env "%e" = some (.ptr e))
+    (h4 : lookupName (exitS₃r (exitS₂ s0 spv) rv).env "%4" =
+      some (.int 64 (BitVec.ofNat 64 v)))
+    (hv64 : v < 2 ^ 64)
+    (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs
+      (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v) = some s₂)
+    (hpc₂ : s₂.pc = (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v).pc) :
+    ∃ (s : State),
+      (∀ n, runFuel (stage2Calls sub) (4 + n) stage2Body s0 =
+        runFuel (stage2Calls sub) n stage2Body s) ∧
+      s.pc = "if.end" ∧
+      s = exitS₄ (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v) s₂ := by
+  obtain ⟨hstep₁, hpc₁⟩ := walkFinishPrefix hpc hsp hone
+  have hstep₂ : step (stage2Calls sub) stage2Body (exitS₂ s0 spv) =
+      .jump (exitS₃r (exitS₂ s0 spv) rv) :=
+    walkFinish490StepRefuse hpc₁ ((exitS₂_rd (s := s0) (spv := spv)).trans hroot) hread hclear
+  have hstep₃ : step (stage2Calls sub) stage2Body (exitS₃r (exitS₂ s0 spv) rv) =
+      .jump (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v) :=
+    walkIfThen492Step _ rfl he h4 hv64
+  have hstep₄ : step (stage2Calls sub) stage2Body
+      (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v) =
+      .jump (exitS₄ (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v) s₂) :=
+    walkIfThen_step _ rfl hden hpc₂
+  refine ⟨exitS₄ (exitS₅ (exitS₃r (exitS₂ s0 spv) rv) e v) s₂, fun n => ?_, rfl, rfl⟩
+  rw [show 4 + n = 1 + (1 + (1 + (1 + n))) from by omega]
+  rw [hstep₁ (1 + (1 + (1 + n)))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + (1 + n))]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₃ (1 + n)]
+  rw [runFuel_jump_prefix (f := stage2Body) hstep₄ n]
 
 /-- **The finish tail's third path's two blocks that preserve the invariant, as one
 segment.**  `if.then485.i`'s depth test off the non-empty-stack arm, then `if.then488.i`'s
