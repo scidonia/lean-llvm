@@ -389,14 +389,16 @@ theorem scanLatch_visit_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     (hcw : c < 2 ^ 64) (hlt : i + 1 < c)
     (hexit : WalkLocal { C with block := exit } (scanLatchOut s inc test i c exit))
     (hland : WalkLocal { C with block := land } (scanLatchOut s inc test i c land)) :
-    ∃ (C' : WalkCarry G) (s' : State), s' = scanLatchOut s inc test i c land ∧
+    ∃ (C' : WalkCarry G) (s' : State),
+      C' = { C with block := land } ∧
+      s' = scanLatchOut s inc test i c land ∧
       WalkSegment calls G C s C' s' 1 ∧
       C'.block = land ∧
       lookupName s'.env inc = some (.int 64 (BitVec.ofNat 64 (i + 1))) ∧
       lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)) := by
   obtain ⟨s', hl, hs, hi', hc'⟩ :=
     scanLatch_link G C s hInv hsrc hfind his ht hneIC hneTI hneTC hfree hi hc hcw hlt hexit hland
-  exact ⟨_, s', hs, WalkSegment.of_link hl, rfl, hi', hc'⟩
+  exact ⟨_, s', rfl, hs, WalkSegment.of_link hl, rfl, hi', hc'⟩
 
 /-! ### The scan's way back
 

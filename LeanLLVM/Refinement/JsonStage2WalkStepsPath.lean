@@ -258,7 +258,7 @@ abbrev ScanC₁₀₅ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry
 /-- The landing's carry, as a scan visit leaves it: the block and the inner budget one
 shorter — the record the visit's own segment is stated at. -/
 abbrev ScanCLand {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
-  { C with block := "land.rhs457.i", inner := C.inner - 1 }
+  { C with block := "land.rhs457.i" }
 
 /-- The range leaf's carry. -/
 abbrev ScanC₉₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
