@@ -1111,14 +1111,20 @@ theorem walkWhiteScanRound43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The counted traversal
 
-A round is four steps and leaves the scan at its latch with the counter advanced, so the
-positions still to visit are `c - 1 - i` and the traversal is that many rounds: `4` steps
-each, inside `8` each.  The round's own hypotheses are about the byte at the counter and so
-differ at every step; what the recursion consumes is only that a round exists at each
-visiting counter, advances it by one, and leaves the invariant and the bound. -/
+A round leaves the scan at its latch with the counter advanced, so the positions still to
+visit are `c - 1 - i` and the traversal is that many rounds.  The round's own hypotheses
+are about the byte at the counter and so differ at every step; what the recursion consumes
+is only that a round exists at each visiting counter, advances it by one, and leaves the
+invariant and the bound.
 
-/-- **The whitespace scan's counted traversal.**  `4 · (c - 1 - i)` steps, inside
-`8 · (c - 1 - i)` — the unit the dispatch's credit consumes. -/
+**The scan does not have *a* price: each byte class has its own**, and all of them are
+inside `stage2ByteAllowance`.  A leaf reached after one pivot is four steps and one reached
+after two is five, so the price is a parameter here and the bound is checked once per class
+rather than per leaf.  The recursion is leaf-agnostic — only `hround` differs — which is
+why the traversal is stated once and instantiated at each class's `k`. -/
+
+/-- **A scan's counted traversal.**  `k · (c - 1 - i)` steps, inside
+`stage2ByteAllowance · (c - 1 - i)` — the unit the dispatch's credit consumes. -/
 theorem walkScanRounds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c k : Nat}
     (hk : k ≤ stage2ByteAllowance)
     (hround : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
