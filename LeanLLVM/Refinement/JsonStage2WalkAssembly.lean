@@ -1575,23 +1575,29 @@ theorem walkCarryZero_invNum {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) 
 are `walkEntryEnv3`'s own cells — the block's two `alloca`s' loads — so at the successor's
 environment they are `.ptr b` and `.ptr ep`, which is the two-pointer half of `WalkPtrs` that
 the seating *establishes*.  The other four of the six are the staging's. -/
-theorem walkEntryEnv_ptr35 (env : Env) (c n b ep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
+theorem walkEntryEnv_ptr35 (env : Env) (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
     lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
         (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
-      b ep) "%3" = some (.ptr b) ∧
+      b nep) "%3" = some (.ptr b) ∧
     lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
         (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
-      b ep) "%5" = some (.ptr ep) := by
-  constructor <;>
+      b nep) "%5" = some (.ptr ep) ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%k11.i" = lookupName env "%k11.i" ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%ctype.i" = lookupName env "%ctype.i" ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%cst.i" = lookupName env "%cst.i" ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%hash1.i.i" = some (.ptr (zAddr + woff 32)) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
       lookupName_cons_ne]
 
-/-- **The invariant at the start of the walk.**  The zero carry satisfies all its clauses at
-a state at the loop head with the staging's environment and memory: the fifteen numeric ones
-are `walkCarryZero_invNum`'s components, the two registers and the carriers are the staging's
-own lookups, and the memory clauses are the staging's facts.  This is the seating's *passed*
-half made explicit: the state's environment and memory are the caller's, so the invariant is
-asserted of them rather than derived, which is the boundary the three kinds mark. -/
 theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : State}
     (hpc : s.pc = walkLoopHead)
     (hk : lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)))
