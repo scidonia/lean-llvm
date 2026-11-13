@@ -68,6 +68,13 @@ extension must resolve it first — `rw [show (if evalICmp .ugt c ix = 1 then "a
 = "a" from by simp [hugt]] at hchain` — otherwise the next link's `block` hypothesis
 cannot be `rfl` and the invariant is at a carry whose `block` is an `if`.
 
+**The rest of the chain has its steps.**  Every remaining step of the head chain
+already exists as a named target in `WalkLink` — `NodeBlock41_at`, `LeafBlock33_at`,
+`land_rhs_i_preheader_at`, `land_rhs_i_at`, `NodeBlock52_at`, `LeafBlock43_at` — so the
+rest is composition: resolve each arm, supply each step's cell, and append.  A step's
+named state is read off that step's own conclusion, which is why no further hypothesis
+about the tail is needed.
+
 **The target terms are part of the work.**  Each instance's state is a literal nest
 (`{ (s.bind a v).bind b w with … }`), so a chain's target is that nest applied k
 times and its statement grows with the path — at twenty-two blocks it is unreadable,
