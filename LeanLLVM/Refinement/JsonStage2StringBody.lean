@@ -1408,6 +1408,30 @@ theorem writeByte_swap_of_readByte (m : Mem) (a : Nat) (b : UInt8) :
           simp only [writeByte, ite_eq_right h1, ite_eq_right h2]
           rw [ih a' b' hne hp']
 
+/-- Reads above a single written cell are unchanged, so a sequence's presence
+survives a write below it. -/
+theorem readBytes_writeByte_below (m : Mem) {x : Nat} {v : UInt8} :
+    ∀ (n a : Nat), x < a → readBytes (writeByte m x v) a n = readBytes m a n
+  | 0, _, _ => by simp only [readBytes]
+  | n + 1, a, h => by
+      have hb : readByte (writeByte m x v) a = readByte m a :=
+        readByte_writeByte_other m v (by omega)
+      simp only [readBytes, hb]
+      cases hr : readByte m a with
+      | none => rfl
+      | some b =>
+          rw [readBytes_writeByte_below m n (a + 1) (by omega)]
+
+/-- **The swap with the presence on the other address.**  The equality is symmetric
+in its two writes, so this is `writeByte_swap_of_readByte` with the addresses
+exchanged — the variant the commutation's upper case needs, where the region, not
+the odd byte, is the address the memory is known to hold. -/
+theorem writeByte_swap_of_present_second (m : Mem) (a : Nat) (b : UInt8)
+    (a' : Nat) (b' : UInt8) (h : a ≠ a') (hp : readByte m a' ≠ none) :
+    writeByte (writeByte m a b) a' b' = writeByte (writeByte m a' b') a b :=
+  (writeByte_swap_of_readByte m a' b' a b (Ne.symm h) hp).symm
+
+
 /-- A cell outside a written range keeps its place: the write sequence conses
 nothing at that address and appends nothing before it. -/
 theorem writeBytes_cons_outside (a' : Nat) (b' : UInt8) :
