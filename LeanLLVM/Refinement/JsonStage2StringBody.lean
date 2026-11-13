@@ -380,23 +380,14 @@ theorem writeBytes_absent_comm_witness :
 /- **A write of the bytes already there leaves the memory alone** — the form the
 closing needs for a region the body rewrites with its own value (the cursor word
 when the scan does not run, the slot on the arm that writes nothing):
-`readBytes m a bs.length = some bs → writeBytes m a bs = m`, by induction on the
-byte list, since `writeByte` replaces a present cell in place with the value it
-already holds.  It is stated here as the next obligation rather than proved: the
-induction's `if p = a` split needs the list's head named before the split, which
-is one more step than the shape above, and the witness below is what the closing
-cannot do without it. -/
-
-/-- **The comparison instruction's value, at the model's form.**  `evalInstr`
-binds `evalICmpNat p w x.toNat y.toNat` — the instruction's operands are read as
-values and compared at their `Nat` readings — while every statement about a body's
-*test* is written at `evalICmp p x y`, the `BitVec` form the branch conditions use.
-The two are the same function: `evalICmpNat` is `evalICmp` at `BitVec.ofNat`, and
-`BitVec.ofNat w x.toNat = x`.  This is the pair `BlockEval`'s `denoteCode_icmp_*`
-steps meet when they are reused on an emitted body. -/
-theorem evalICmpNat_toNat (p : IPred) (w : Nat) (x y : BitVec w) :
-    evalICmpNat p w x.toNat y.toNat = evalICmp p x y := by
-  simp only [evalICmpNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+`readBytes m a bs.length = some bs → writeBytes m a bs = m`.  The proof is
+`writeByte`'s in-place branch at the head byte and the induction at the next
+address: `rw [List.length_cons, Nat.add_one] at h` before `simp only [readBytes]`
+(so the read unfolds at the sum), then the head's `readByte` and the tail's
+`readBytes` named by `cases`, then the head byte substituted — after which the
+self-write lemma is applied at `b`, not at the `cases`-bound name — and the
+induction hypothesis at `a + 1`.  It is stated here as the next obligation rather
+than proved. -/
 
 theorem sb_step_load32 (calls : Calls) (env : Env) (s : State) (d p : String)
     {a : Nat} {bs : List UInt8} (hp : lookupName env p = some (.ptr a))
@@ -496,10 +487,6 @@ the build checks them rather than printing them.  The instrument's
 discriminating control is the one §7.6 records: a throwaway declaration proved
 with `sorry` prints `sorryAx` under the same command.  No `sorry` is in this
 module. -/
-/-- info: 'LeanLLVM.Refinement.evalICmpNat_toNat' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms evalICmpNat_toNat
-
 /-- info: 'LeanLLVM.Refinement.escapeExpand8_decoded' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms escapeExpand8_decoded
