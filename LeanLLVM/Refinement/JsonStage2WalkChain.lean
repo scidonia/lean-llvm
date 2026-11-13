@@ -88,6 +88,23 @@ path's own last links are `walkHeadChain_to_nodeBlock41Out`'s, and
 the latch.  What that leaves is not a link but the repeated visit: an induction per
 scan, which `WalkScanInduction` names.
 
+**A chain's index wants a `def`, its states included.**  A `WalkChain`'s carry and state
+are indices, and an index is unified syntactically: two terms that are definitionally
+equal are not thereby the same index.  The elaborator unfolds an `abbrev` eagerly, so the
+index it produces and the one written down differ as terms even when they agree, and the
+composition fails at `exact`.  A `def` is not unfolded, so the produced index is the `def`
+applied on both sides — which is why every carry and every intermediate state a chain
+passes through is a `def` here (`scanCarryLeafBlock46`, `scanNodeBlock50In`, …), and why a
+composition's statement names the state the run visits rather than one equal to it.
+
+**Two more shapes a proof of these costs.**  A `WalkLocal`'s *state* argument must be
+passed explicitly — left implicit, `rw` instantiates it by unification and leaves the
+equality of the two state forms as a goal instead of the local fact.  And a leaf helper's
+target state is the `stateAt`-form while the block's own state is the `bind`-form: they
+are equal, but `simp only` will not close a *state* equality by definitional equality, so
+the proof needs an explicit `rfl` after it and the abbreviation naming the state must
+mirror the helper's form.
+
 **Two shapes a resolved arm costs, beyond the nesting rule.**  `rfl` does not fire on
 `if c then a else b` for a symbolic `c`, and neither does `simp [h]` when `h : c` — the
 rewrite is one congruence away from the term it has to reach, so `simp` splits the `if`
