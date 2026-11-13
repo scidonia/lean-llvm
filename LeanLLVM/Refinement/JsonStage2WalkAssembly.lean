@@ -227,9 +227,13 @@ dispatch proof is therefore a per-block run at the *values* the next block reads
 (the shape `WalkLink.addImmBr` and the named-environment statements in
 `JsonStage2WalkPure` already take), not a chain of the existing links.
 
-**The path, exactly.**  From `while.body.i` to the merge, over the body's own graph
-with the five scans' repeated visits removed (the ten blocks `walkScanBlocks`
-names), the longest path is twenty-two steps:
+**The price's path and the trace.**  The dispatch is a switch over the token, so a
+proof covers every branch, and the run is written over the blocks reachable from the
+head without passing the merge — `walkDispatchReach`, **156 blocks**, the four trap
+blocks included (`walkTrap_noStep`).  The *price* is much smaller than that: over
+the same graph with the five scans' repeated visits removed (the ten blocks
+`walkScanBlocks` names), the longest path from `while.body.i` to the merge is
+twenty-two steps:
 
   `while.body.i → NodeBlock21 → NodeBlock5 → NodeBlock → LeafBlock1 → sw.default.i
   → cond.true345.i → cond.end349.i → land.lhs.true357.i → NodeBlock41 → NodeBlock39
@@ -241,7 +245,10 @@ names), the longest path is twenty-two steps:
 against `stage2EntryAllowance`.  `WalkDispatch` is stated at the head
 (`NodeBlock21`, one step into the path), so the dispatch's own count is at most
 twenty-one and `p + 2` — the merge and the header's pass — is at most twenty-three,
-inside the `22 + 2` the credit's rows use.
+inside the `22 + 2` the credit's rows use.  The price is a bound on one path; the
+ten blocks `walkScanBlocks` names are charged per document byte instead
+(`walkScanStepSets`, `walkScanStepWidth_le_byteAllowance`), which is how 156 blocks'
+worth of trace fits twenty-one steps' worth of entry allowance.
 
 **What naming costs.**  Each block's step must be computed at the concrete
 environment the invariant fixes, so that `Ctrl.jump`'s injectivity names the
@@ -250,10 +257,12 @@ successor: `step calls stage2Body s = .jump sN` from a `simp` at the block's
 `Ctrl.jump.inj` — the pattern `walkBack_step_at` uses at the merge.  Four of the
 dispatch's twenty-one have a `_denote` at the block (`walkCondEnd349_denote`,
 `walkIfThen413I_denote`, `walkIfThen425_denote`, `walkIfThen447I_denote`; the merge
-has `cleanup478_denote`); the other seventeen — the switch's nodes and leaves, the
-scan exits, the write arm and the four call blocks — have a `WalkLink` each, with
-their `denoteCode` derived inside that link's own proof, so each needs a `_denote`
-at the environment the invariant fixes before its `WalkLink` can name its target.
+has `cleanup478_denote`); the rest of the trace has a `WalkLink` at each block's own name except the five scan
+latches (`forInc`, `scanLanding`), the four trap blocks, `if.end24.i` (`ifEnd24`),
+`if.then425.i` (the pair `if_then425_i_emit`/`_refuse`) and the return's two blocks
+(`if.end`, `if.then`, whose runs are `walkIfEnd_step` and `walkIfThen_step`); each
+block's `denoteCode` is derived inside its link's proof, so each needs a `_denote` at
+the environment the invariant fixes before its `WalkLink` can name its target.
 
 The two `phi` values come out of that: `%inc.i` is bound by the *header*
 (`while.body.i`, `%inc.i = %k.0.i249 + 1`), so at the merge it is `C.k + 1` and
@@ -800,6 +809,32 @@ extents asked the price to fit after the newly decoded bytes were charged —
 `22 + 6b + 2 + 8b ≤ 32` — which fails from the first byte on, so no entry containing
 a string could satisfy it and the premise had no producer.  `walkCreditOldOk` is
 that form, and the guard below is its falsity at the acceptance's rows. -/
+
+/-- **The blocks the dispatch's trace can visit.**  Reachable from the head without
+passing the merge that closes the iteration: the switch's branch is the token's, so
+a proof must cover every branch, and this set — not `walkDispatchPrice`'s longest
+path — is what a dispatch's run is written over.  The four trap blocks are in it
+(`walkTrap_noStep`: they have no step), and so are the five scan latches, whose
+links are named for the edge they close. -/
+def walkDispatchReach : List String :=
+  let rec go (fuel : Nat) (seen : List String) (frontier : List String) : List String :=
+    match fuel with
+    | 0 => seen
+    | fuel + 1 =>
+      match frontier with
+      | [] => seen
+      | b :: rest =>
+        if seen.contains b || b = "cleanup478.i" then go fuel seen rest
+        else go fuel (b :: seen) (rest ++ (walkSucc b).filter (fun u => !seen.contains u))
+  go 400 [] ["NodeBlock21"]
+
+#guard walkDispatchReach.length = 156
+
+#guard walkDispatchReach.eraseDups.length = walkDispatchReach.length
+
+#guard walkDispatchReach.all (fun n => (stage2Body.findBlock n).isSome) = true
+
+#guard walkDispatchReach.contains "cleanup478.i" = false
 
 /-- The dispatch's counted price fits the credit it consumes, at every entry width:
 twenty-two blocks and six per byte against thirty-two and eight. -/
