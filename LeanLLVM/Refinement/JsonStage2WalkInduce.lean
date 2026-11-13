@@ -1829,6 +1829,62 @@ theorem walkScanRounds43 {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat
   walkScanRounds "while.body370.i" "%ee.0.i238" "%cond350.i" (k := 4)
     (by simp [stage2ByteAllowance]) hround hInv hblock hi hc hcw hic
 
+/-- **A scan's visits, composed at the visit's own price.**  `walkScanRounds` fixes the
+visit's cost at `k`; here it is existential and bounded by one byte's allowance, which is
+what `WalkScanInduction.step` carries — each scan's visit costs what its own leaf costs,
+so no single `k` states them all.  One round is the latch's visit and the landing chain
+back to the latch, as `walkScanRounds`' `hround` is. -/
+theorem walkScanRounds' {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c : Nat}
+    (latch counter cond : String)
+    (hround : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
+      C.block = latch →
+      lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 p)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      c < 2 ^ 64 → p + 1 < c →
+      ∃ (C' : WalkCarry G) (s' : State) (j : Nat), WalkSegment calls G C s C' s' j ∧
+        WalkInv G C' s' ∧ C'.block = latch ∧ j ≤ stage2ByteAllowance ∧
+        lookupName s'.env counter = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
+        lookupName s'.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = latch)
+    (hi : lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcw : c < 2 ^ 64) (hic : i < c) :
+    ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
+      WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧
+      C'.block = latch ∧
+      lookupName s'.env counter = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+      n ≤ stage2ByteAllowance * (c - 1 - i) := by
+  have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
+      WalkInv G C s → C.block = latch →
+      lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c)) →
+      i < c →
+      ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
+        WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = latch ∧
+        lookupName s'.env counter = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
+        n ≤ stage2ByteAllowance * r := by
+    intro r
+    induction r with
+    | zero =>
+        intro i C s _ hInv hblock hi _ hic
+        have hie : i = c - 1 := by omega
+        exact ⟨C, s, 0, Seg.measure (Seg.nil hInv), hInv, hblock,
+          by rw [← hie]; exact hi, by simp⟩
+    | succ n ih =>
+        intro i C s hr hInv hblock hi hc' hic
+        have hlt : i + 1 < c := by omega
+        obtain ⟨C₁, s₁, j, hseg, hInv₁, hb₁, hj, hi₁, hc₁⟩ :=
+          hround C s i hInv hblock hi hc' hcw hlt
+        obtain ⟨C₂, s₂, m, hseg₂, hInv₂, hb₂, hi₂, hm⟩ :=
+          ih (i + 1) C₁ s₁ (by omega) hInv₁ hb₁ hi₁ hc₁ (by omega)
+        refine ⟨C₂, s₂, j + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, ?_⟩
+        rw [Nat.mul_succ]
+        omega
+  obtain ⟨C', s', n, hseg, hInv', hb, hi', hn⟩ :=
+    go (c - 1 - i) i C s rfl hInv hblock hi hc hic
+  exact ⟨C', s', n, hseg, hInv', hb, hi', hn⟩
+
 /-! ### The five inductions
 
 Each instance is its latch's `find` and shape, the two disequalities its names give,
