@@ -194,3 +194,41 @@ theorem WalkLink.cond_end349_i_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   have hstep := walkCondEnd349Step (sub := stage2SubCalls) s
     (by rw [hInv.pc_eq, hblock]) hpre hinc hav htok hidx hgap
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- The state `land.rhs457.i` leaves: the counter's selection, the byte's address and
+the byte, at the dispatch's entry `NodeBlock105`. -/
+def landRhs457OutAt (s : State) (idx : BitVec 64) (a q : Nat) : State :=
+  { stateAt (cells
+      [("%47", .int 8 (BitVec.ofNat 8 q)),
+       ("%arrayidx458.i", .ptr (a + (idx.signExtend 64).toNat)),
+       ("%q.0.i246", .int 64 idx)] s.env) s with
+    pc := "NodeBlock105", pre := some s.pc }
+
+/-- **`land.rhs457.i`'s target, named.**  The scan's landing runs its `phi`, the byte's
+address and the load, then takes the one edge to the dispatch's entry. -/
+theorem WalkLink.landRhs457_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "land.rhs457.i")
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
+    (hpre : s.pre = some "if.then447.i")
+    (hinc : phiIncoming "if.then447.i"
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
+    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+    (h3 : lookupName s.env "%3" = some (.ptr a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
+    (hbs : bytesToNat bs = q)
+    (hloc : WalkLocal { C with block := "NodeBlock105" }
+      { landRhs457OutAt s idx a q with pc := "NodeBlock105", pre := some s.pc }) :
+    ∃ (s' : State), WalkLink calls G C s { C with block := "NodeBlock105" } s' ∧
+      s' = landRhs457OutAt s idx a q := by
+  obtain ⟨s', hlink⟩ := WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
+    (B := walkLandRhs457) (by rw [hblock]; exact walkLandRhs457_find)
+    (walkLandRhs457Step (calls := calls) (s := s) (idx := idx) (a := a) (q := q) (bs := bs)
+      hpre hinc hop h3 hpos hread hbs)
+    (by unfold walkCarried; decide) rfl rfl rfl hloc
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkLandRhs457Jump (calls := calls) (s := s) (idx := idx) (a := a) (q := q)
+    (bs := bs) (by rw [hInv.pc_eq, hblock]) hpre hinc hop h3 hpos hread hbs
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
