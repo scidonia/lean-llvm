@@ -2190,12 +2190,12 @@ theorem walkLandRhs457_find :
 `if.then447.i` edge, the `gep` adds it to `%3`, and the load binds the byte — the
 three cells `NodeBlock105` reads. -/
 theorem walkLandRhs457Step {calls : Calls} (s : State)
-    {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
-    (hpre : s.pre = some "if.then447.i")
-    (hinc : phiIncoming "if.then447.i"
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
+    (hpre : s.pre = some src)
+    (hinc : phiIncoming src
       [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
-    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
+    (hop : evalOperand (stateAt s.env s) sel = some (.int 64 idx))
     (h3 : lookupName s.env "%3" = some (.ptr a))
     (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
     (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
@@ -2214,8 +2214,8 @@ theorem walkLandRhs457Step {calls : Calls} (s : State)
   rw [← stateAt_self s]
   rw [denoteCode_phi (calls := calls) (env := s.env) (s := s) (d := "%q.0.i246")
     (ty := Ty.int 64) (inc := [("while.body462.i", (Operand.reg "%inc463.i")),
-      ("if.then447.i", (Operand.reg "%ee.1.i"))]) (p := "if.then447.i")
-    (op := Operand.reg "%ee.1.i") (v := .int 64 idx) hpre hinc hop
+      ("if.then447.i", (Operand.reg "%ee.1.i"))]) (p := src)
+    (op := sel) (v := .int 64 idx) hpre hinc hop
     (is := [Instr.gep "%arrayidx458.i" (Ty.int 8) (Operand.reg "%3") (Operand.reg "%q.0.i246"),
       Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx458.i")]) (by decide)]
   rw [denoteCode_gep8_reg (calls := calls) (env := (("%q.0.i246", .int 64 idx) :: s.env))
@@ -2235,11 +2235,12 @@ theorem walkLandRhs457Step {calls : Calls} (s : State)
 theorem walkLandRhs457Jump {calls : Calls} (s : State)
     {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
     (hpc : s.pc = "land.rhs457.i")
-    (hpre : s.pre = some "if.then447.i")
-    (hinc : phiIncoming "if.then447.i"
+    {src : String} {sel : Operand}
+    (hpre : s.pre = some src)
+    (hinc : phiIncoming src
       [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
-    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
+    (hop : evalOperand (stateAt s.env s) sel = some (.int 64 idx))
     (h3 : lookupName s.env "%3" = some (.ptr a))
     (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
     (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)

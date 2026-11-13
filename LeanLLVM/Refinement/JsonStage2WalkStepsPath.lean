@@ -209,12 +209,12 @@ address and the load, then takes the one edge to the dispatch's entry. -/
 theorem WalkLink.landRhs457_at {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "land.rhs457.i")
-    {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
-    (hpre : s.pre = some "if.then447.i")
-    (hinc : phiIncoming "if.then447.i"
+    {idx : BitVec 64} {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
+    (hpre : s.pre = some src)
+    (hinc : phiIncoming src
       [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
-    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
+    (hop : evalOperand (stateAt s.env s) sel = some (.int 64 idx))
     (h3 : lookupName s.env "%3" = some (.ptr a))
     (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
     (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
@@ -284,11 +284,12 @@ are not on this path. -/
 theorem walkScanChain457_ws {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hblock : C.block = "land.rhs457.i")
     {idx : BitVec 64} {a q : Nat} {bs : List UInt8}
-    (hpre : s.pre = some "if.then447.i")
-    (hinc : phiIncoming "if.then447.i"
+    {src : String} {sel : Operand}
+    (hpre : s.pre = some src)
+    (hinc : phiIncoming src
       [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (Operand.reg "%ee.1.i"))
-    (hop : evalOperand (stateAt s.env s) (.reg "%ee.1.i") = some (.int 64 idx))
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
+    (hop : evalOperand (stateAt s.env s) sel = some (.int 64 idx))
     (h3 : lookupName s.env "%3" = some (.ptr a))
     (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
     (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 1 = some bs)
