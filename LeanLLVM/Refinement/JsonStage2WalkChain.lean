@@ -1056,6 +1056,20 @@ def walkInductionExtraToken (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop 
 #print axioms LeanLLVM.Refinement.WalkScope.walkScanChain_to_latch
 #print axioms LeanLLVM.Refinement.WalkScope.walkHeadChain_to_scanLatch
 
+/-- **The `%35` pivot's arm, from the head chain's state.**  The head's six links end at
+`NodeBlock41`, and this is the dispatch's first link past them: `icmp slt i8 %35, 13` picks
+`LeafBlock33` or `NodeBlock39`.  It lives here rather than in `Assembly` because the `_at` lemmas
+are in `Steps`, which imports `Assembly` — the cycle forbids the other direction. -/
+theorem walkDispatchFirstLink {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hblock : C.block = "NodeBlock41")
+    {x1 : BitVec 8} (h35 : evalOperand s (.reg "%35") = some (.int 8 x1)) :
+    ∃ s', WalkLink calls G C s
+      { C with
+        block := (if evalICmp .slt x1 (BitVec.ofNat 8 13) = 1 then
+          "LeafBlock33" else "NodeBlock39") } s' := by
+  obtain ⟨s', hlink, _⟩ := WalkLink.NodeBlock41_at G C s hInv hblock h35
+  exact ⟨s', hlink⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
