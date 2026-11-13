@@ -158,3 +158,158 @@ theorem refuseStep₄ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
   have hstate : s' = refuseS₄ s := hs'.trans (by simp [refuseS₄, hbit])
   rw [hstate] at hl
   simpa [hbit] using hl
+
+/-! ### The refusal's own two blocks
+
+`if.then53.i` tests the depth register and `if.then56.i` records the entry's
+position in `%e + 8`.  The store is the block whose successor *is* the refusal copy,
+so the segment's target state is this block's own conclusion rather than a `pc` the
+next block reads. -/
+
+/-- `if.then56.i`: the entry's position written at `%e + 8`, at `if.then`. -/
+def refuseS₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat) (s : State) : State :=
+  { { s with
+      env := ("%off1.i.i41", .ptr (C.stage.e + 8)) :: s.env
+      mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- **`if.then53.i` at depth zero.**  `%sp.i.0248 = 0` — the invariant's own
+`depth_reg` at `C.sp = 0` — is true, so the run takes `if.then56.i`. -/
+theorem refuseStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then53.i")
+    (hsp : C.sp = 0) :
+    WalkLink calls G C s { C with block := "if.then56.i" } (refuseS₅ s) := by
+  have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 0)) := by
+    simpa only [evalOperand, hsp] using hInv.depth_reg
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then53_i_at G C s hInv hblock h1
+  have hbit : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = 1 := by decide
+  have hstate : s' = refuseS₅ s := hs'.trans (by simp [refuseS₅, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`if.then56.i`.**  The refusal's offset store: the entry's position goes to
+`%e + 8` and the edge is the refusal copy, so the carry's `eoff` is the position the
+store wrote — the same number the document's own bound covers. -/
+theorem refuseStep₆ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then56.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    WalkLink calls G C s { C with block := "if.then", eoff := j, refusal := true }
+      (refuseS₆ C j s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then56_i_at G C s hInv hblock hv he hj hj64
+  rw [hs'] at hl
+  simpa only [refuseS₆] using hl
+
+/-! ### The witness
+
+The six links composed at their own count.  `Seg` is the trace vocabulary's counted
+form (`JsonStage2WalkInduce`), so the price is the segment's index — six — and not a
+number read off a `Prop`'s shape. -/
+
+/-- **The closing-bracket refusal, as one counted run.**  The head's three pivots,
+the leaf's equality, the depth test and the offset store: six links from
+`walkLoopHead` to `if.then`, at the cells each block's successor reads. -/
+theorem bracketRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)))
+    (hsp : C.sp = 0)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    WalkRefuseAt calls G C s := by
+  -- the byte, at each switch state: one cell per block, and `%8` is not one of them
+  have h8₁ : evalOperand (refuseS₁ s) (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₂ : evalOperand (refuseS₂ (refuseS₁ s)) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [refuseS₂, refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₃ : evalOperand (refuseS₃ (refuseS₂ (refuseS₁ s))) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [refuseS₃, refuseS₂, refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot12") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  -- the position and the refusal record, through the five cells the path binds
+  have hv₅ : evalOperand (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))))
+      (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)) := by
+    simpa only [refuseS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot12") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%idxprom.i") _ _ (by decide)] using hv
+  have he₅ : lookupName (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).env "%e" =
+      some (.ptr C.stage.e) := by
+    simpa only [refuseS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot12") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%e") _ _ (by decide)] using he
+  -- the six links, each at the state the previous one names
+  have L₁ : WalkLink calls G C s { C with block := "NodeBlock19" } (refuseS₁ s) :=
+    refuseStep₁ G C s hInv hhead h8
+  have L₂ : WalkLink calls G { C with block := "NodeBlock19" } (refuseS₁ s)
+      { C with block := "NodeBlock11" } (refuseS₂ (refuseS₁ s)) :=
+    refuseStep₂ G { C with block := "NodeBlock19" } (refuseS₁ s) L₁.inv' rfl h8₁
+  have L₃ : WalkLink calls G { C with block := "NodeBlock11" } (refuseS₂ (refuseS₁ s))
+      { C with block := "LeafBlock9" } (refuseS₃ (refuseS₂ (refuseS₁ s))) :=
+    refuseStep₃ G { C with block := "NodeBlock11" } (refuseS₂ (refuseS₁ s)) L₂.inv' rfl h8₂
+  have L₄ : WalkLink calls G { C with block := "LeafBlock9" } (refuseS₃ (refuseS₂ (refuseS₁ s)))
+      { C with block := "if.then53.i" } (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))) :=
+    refuseStep₄ G { C with block := "LeafBlock9" } (refuseS₃ (refuseS₂ (refuseS₁ s)))
+      L₃.inv' rfl h8₃
+  have L₅ : WalkLink calls G { C with block := "if.then53.i" }
+      (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))
+      { C with block := "if.then56.i" }
+      (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) :=
+    refuseStep₅ G { C with block := "if.then53.i" }
+      (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))) L₄.inv' rfl hsp
+  have L₆ : WalkLink calls G { C with block := "if.then56.i" }
+      (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))))
+      { C with block := "if.then", eoff := j, refusal := true }
+      (refuseS₆ C j (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))))) :=
+    refuseStep₆ G { C with block := "if.then56.i" }
+      (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) L₅.inv' rfl hv₅ he₅ hj hj64
+  refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
+    refuseS₆ C j (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))), 6, ?_, rfl,
+    L₆.inv'.eoff_le, refusePrice_six G C hk⟩
+  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+    (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+
+/-- **The `refuse` witness at a depth-zero closing bracket**, in the exact shape
+`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct.  Six
+blocks from the head to the refusal copy, the offset the store wrote, and the price
+inside one entry's allowance and the document's remaining bytes.
+
+A closing bracket at depth zero is the refusal the old `C.k + 1 < G.nep` split
+could not describe: the dispatch is refused while entries remain, and no revolution
+follows. -/
+theorem walkRefuseWitness_bracket {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)))
+    (hsp : C.sp = 0)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
+      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k) :=
+  bracketRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
+
+/-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.refusePrice_six
+#print axioms LeanLLVM.Refinement.WalkScope.refuseStep₁
+#print axioms LeanLLVM.Refinement.WalkScope.refuseStep₂
+#print axioms LeanLLVM.Refinement.WalkScope.refuseStep₃
+#print axioms LeanLLVM.Refinement.WalkScope.refuseStep₄
+#print axioms LeanLLVM.Refinement.WalkScope.refuseStep₅
+#print axioms LeanLLVM.Refinement.WalkScope.refuseStep₆
+#print axioms LeanLLVM.Refinement.WalkScope.bracketRefuse_at
+#print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_bracket
