@@ -1081,6 +1081,53 @@ theorem walkDispatchSecondLink {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   obtain ⟨s', hlink, _⟩ := WalkLink.NodeBlock39_at G C s hInv hblock h35
   exact ⟨s', hlink⟩
 
+/-- **The dispatch's segment to the whitespace preheader.**  The head path's six links end at
+`NodeBlock41`; taking that block's `icmp slt i8 %35, 13` pivot towards `LeafBlock33`, and then the
+leaf's `ule %35 + 247, 1` arm, puts the chain at `land.rhs.i.preheader` — the whitespace skip's
+entry.
+
+The composition is `walkHeadChain_to_nodeBlock41Out`'s rather than a chain of the pivot links, for
+two reasons that are both facts about the interface.  A chain's next link needs a fact at the state
+the previous one left, and `walkDispatchFirstLink` states its target as `∃ s', WalkLink … s'` —
+dropping the `s' = …` equality the `_at` lemma beneath it carries — so a step that follows it has no
+`lookupName s'.env "%35"` to extend with.  The state has to be named, which is what
+`nodeBlock41Out`'s composition does.  And the two pivots are alternatives, not a sequence:
+`NodeBlock41`'s `LeafBlock33` arm and its `NodeBlock39` arm are the two sides of one branch, and
+`NodeBlock39` continues at `LeafBlock35` (`%35 < 32`) or `LeafBlock37` — never at `LeafBlock33`.  A
+chain that took the second pivot would be at one of those leaves, where this extension's block
+hypothesis cannot hold: they reach the preheader by their own `icmp eq` arms, and are separate
+segments that this module does not extend. -/
+theorem walkDispatchSegmentStart {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (hlt44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
+    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
+    {inc nep c ix : BitVec 64} {reg : String}
+    (hinc : evalOperand (headS₃ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (headS₃ s x) (.reg "%nep") = some (.int 64 nep))
+    (hge : evalICmp .ult inc nep = 0) (hugt : evalICmp .ugt c ix = 1)
+    (hpre4 : (headS₄ s x inc nep).pre = some "sw.default.i")
+    (hinc4 : phiIncoming "sw.default.i" [("cond.true345.i", Operand.reg "%conv347.i"),
+      ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
+    (hav4 : lookupName (headS₄ s x inc nep).env reg = some (.int 64 c))
+    (hidx4 : lookupName (headS₄ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok4 : lookupName (headS₄ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap4 : lookupName (headS₄ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)))
+    {q : Nat} (hpos : c.toNat = q + 1) (hq63 : c.toNat < 2 ^ 63) (hqn : q < G.n)
+    (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C.evlen ≤ G.evcap)
+    (hbit : evalICmp .slt (BitVec.ofNat 8 (G.bs.getD q 0).toNat) (BitVec.ofNat 8 13) = 1)
+    (hws : evalICmp .ule (BitVec.ofNat 8 (G.bs.getD q 0).toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 1) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkChain (stage2Calls stage2SubCalls) G C s C' s' ∧
+        C'.block = "land.rhs.i.preheader" := by
+  obtain ⟨C₇, s₇, hc₇, hC₇, h35₇⟩ :=
+    walkHeadChain_to_nodeBlock41Out hInv hhead h8 hlt91 hlt44 hne34 hinc hnep hge hugt hpre4
+      hinc4 hav4 hidx4 htok4 hgap4 hpos hq63 hqn halen hevlen hbit
+  exact ⟨_, _, walkChain_extend_leafBlock33 (C₀ := C) (s₀ := s) hc₇ hC₇ h35₇ hws, rfl⟩
+
 end WalkScope
 
 end LeanLLVM.Refinement
