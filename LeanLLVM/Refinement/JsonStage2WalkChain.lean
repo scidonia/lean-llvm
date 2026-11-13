@@ -32,6 +32,24 @@ the step binds one cell, so `evalOperand` at the target is the source's fact aft
 `pc` (the block it came from), not the original head's — which is why a chain names
 its intermediate states rather than a flat `s.pc`.
 
+**Two facts that only appear at composition.**  The chain's selection is
+`stage2Calls stage2SubCalls` by construction: the class-F instance is fixed at it (the
+`lifetime.start` marker is the reference selection's own answer), so no chain
+polymorphic in `calls` can compose it — the same reason `WalkPremises` pinned the
+selection.  And a link's carry is the *nested* update
+`{{C with block := b₁} with block := b₂}`, not the flattened `{C with block := b₂}`:
+the two are definitionally equal, but only the nested form typechecks against the
+link's own conclusion, so a chain follows the links' shapes rather than a tidied
+version of them.
+
+**What the chain's hypotheses cost.**  Every fact a link needs is one of three kinds.
+The staging's registers are the invariant's (`WalkInv.regs` over `walkStaticRegs`,
+which includes `%invariant.gep` as `G.b - 1` and the four stack slots); the cells a
+step binds are its own `cells` list; and the *document's* bytes a scan loads are
+`WalkGeom.doc` at the position `WalkInv.iter`'s lane names — a derivation from two
+fields rather than a new one.  So no link has yet needed a carry field the model lacks;
+if one does, that is a finding at the model, not a hypothesis at the chain.
+
 **The target terms are part of the work.**  Each instance's state is a literal nest
 (`{ (s.bind a v).bind b w with … }`), so a chain's target is that nest applied k
 times and its statement grows with the path — at twenty-two blocks it is unreadable,
