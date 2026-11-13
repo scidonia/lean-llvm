@@ -1154,7 +1154,7 @@ theorem stackMarkerRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
       omega
     rw [L₅.inv'.tyBytes (C.sp - 1) hlt]
     rfl
-  have hq256 : (C.tyMap (C.sp - 1)).toNat < 256 := (C.tyMap (C.sp - 1)).toNat_lt
+  have hq256 : (C.tyMap (C.sp - 1)).toNat < 256 := UInt8.toNat_lt (C.tyMap (C.sp - 1))
   have hbit : evalICmp .eq (BitVec.ofNat 8 (C.tyMap (C.sp - 1)).toNat)
       (BitVec.ofNat 8 1) = 0 := by
     refine refuseICmp_eq_zero (fun h => hq1 ?_)
@@ -1230,6 +1230,332 @@ theorem walkRefuseWitness_stackMarker {calls : Calls} {m0 : Mem} (G : WalkGeom m
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   stackMarkerRefuse_at G C s hInv hhead h8 hsp hq1 hv he hj hj64 hk
 
+/-! ### The mismatched literal
+
+The container's nesting is *checked* at `if.end59.i`: the byte one below the depth is the
+marker the type stack holds there, and a closing bracket that disagrees with it is the
+refusal `if.then71.i`.  Its run is the dispatch's select nest, whose `denoteCode` is now
+two four-instruction theorems with a named intermediate environment
+(`walkSelectEnv4`), so naming its target is a two-line consumer rather than the
+eight-instruction term this file's earlier attempt at it could not elaborate under the
+cap.
+
+`if.end59.i` is also the block the state-stack refusal (`cleanup104.i`) crosses, which is
+why the naming is one statement and not two. -/
+
+/-- The select nest's own cell, in the form `walkSelectEnv` binds it: the expected
+marker compared with the byte's `zext`.  Writing the bit through this `abbrev` is what
+makes the step's successor and the state named below the *same* term. -/
+abbrev stackSelBit (db : BitVec 8) (b : UInt8) : BitVec 1 :=
+  evalICmp .eq
+    (if evalICmp .eq db (BitVec.ofNat 8 125) = 1 then (1 : BitVec 32) else (2 : BitVec 32))
+    (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat)
+
+/-- The state `if.end59.i` leaves, at the environment its select nest binds. -/
+abbrev stackSelOut (s : State) (sp ct : Nat) (db : BitVec 8) (b : UInt8)
+    (bit : BitVec 1) : State :=
+  { stateAt (walkSelectEnv "%sub.i" "%cmp61.i" "%conv64.i" "%idxprom65.i" "%arrayidx66.i"
+      "%14" "%conv67.i" "%cmp69.not.i" db (BitVec.ofNat 32 sp)
+      (BitVec.ofNat 32 4294967295) ct (bytesToNat [b]) s.env) s with
+    pc := (if bit = 1 then "if.end74.i" else "if.then71.i")
+    pre := some s.pc }
+
+/-- **`if.end59.i`'s target, named.**  The select class's step (`walkSelectStep`), at
+the cells this branch reads: the depth register, the document byte, the type stack's
+base, and the marker one below the depth. -/
+theorem walkIfEnd59_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "if.end59.i")
+    {sp ct : Nat} {db : BitVec 8} {b : UInt8}
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (h8 : lookupName s.env "%8" = some (.int 8 db))
+    (hct : lookupName s.env "%ctype.i" = some (.ptr ct))
+    (hq63 : (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat < 2 ^ 63)
+    (hread : readBytes s.mem
+      (ct + (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat) 1 = some [b]) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .eq (walkSelVal db)
+            (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 1
+          then "if.end74.i" else "if.then71.i") } s' ∧
+      s' = stackSelOut s sp ct db b (stackSelBit db b) := by
+  obtain ⟨s', hl⟩ := WalkLink.if_end59_i (calls := calls) G C s hInv hblock hsp h8 hct hq63
+    hread
+  refine ⟨s', hl, ?_⟩
+  have hbit : lookupName (stateAt (walkSelectEnv "%sub.i" "%cmp61.i" "%conv64.i"
+      "%idxprom65.i" "%arrayidx66.i" "%14" "%conv67.i" "%cmp69.not.i" db
+      (BitVec.ofNat 32 sp) (BitVec.ofNat 32 4294967295) ct (bytesToNat [b]) s.env) s).env
+      "%cmp69.not.i" = some (.int 1 (stackSelBit db b)) := by
+    simp only [stateAt, walkSelectEnv, cells, stackSelBit]
+    simp [lookupName]
+  have hstep := walkSelectStep (calls := calls) (s := s) (B := walkIf_end59_i)
+    (sub := "%sub.i") (cmpi := "%cmp61.i") (sel := "%conv64.i") (zx := "%idxprom65.i")
+    (apx := "%arrayidx66.i") (ldv := "%14") (cvt := "%conv67.i") (d := "%cmp69.not.i")
+    (base := "%ctype.i") (tl := "if.end74.i") (fl := "if.then71.i")
+    (x := BitVec.ofNat 32 sp) (c := BitVec.ofNat 32 4294967295) (ct := ct)
+    (q := bytesToNat [b]) (bs := [b]) (db := db) (bit := stackSelBit db b)
+    (by rw [hInv.pc_eq, hblock]; exact walkIf_end59_i_find) rfl rfl hsp h8 hct (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) hq63 hread (bytesToNat_singleton b) hbit
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
+/-- `if.then53.i` at a *non-zero* depth: the depth test's cell is zero, at
+`if.end59.i`. -/
+def mlS₅ (s : State) : State :=
+  { s.bind "%cmp54.i" (.int 1 (0 : BitVec 1)) with pc := "if.end59.i", pre := some s.pc }
+
+/-- `if.then71.i`: the entry's position written at `%e + 8`, at `if.then`. -/
+def mlS₇ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat) (s : State) : State :=
+  { { s with
+      env := ("%off1.i.i43", .ptr (C.stage.e + 8)) :: s.env
+      mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s.pc }
+
+/-- **`if.then53.i` above depth zero.**  The depth register is not `0`, so the run takes
+the nesting check `if.end59.i` instead of the refusal arm. -/
+theorem mlStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then53.i")
+    (hsp : C.sp ≠ 0) :
+    WalkLink calls G C s { C with block := "if.end59.i" } (mlS₅ s) := by
+  have hsp32 : C.sp < 2 ^ 32 := by
+    have h := hInv.depth_cap
+    simp only [stage2StackExtent] at h
+    omega
+  have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 C.sp)) := by
+    simpa only [evalOperand] using hInv.depth_reg
+  have hne : BitVec.ofNat 32 C.sp ≠ BitVec.ofNat 32 0 := by
+    intro h
+    have h' := congrArg BitVec.toNat h
+    simp only [BitVec.toNat_ofNat, Nat.zero_mod, Nat.mod_eq_of_lt hsp32] at h'
+    omega
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then53_i_at G C s hInv hblock h1
+  have hbit : evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0) = 0 :=
+    refuseICmp_eq_zero hne
+  have hstate : s' = mlS₅ s := hs'.trans (by simp [mlS₅, hbit])
+  rw [hstate] at hl
+  simpa [hbit] using hl
+
+/-- **`if.end59.i` at a disagreeing bracket.**  The document byte's bracket does not name
+the marker the type stack holds, so the run takes the refusal store. -/
+theorem mlStep₆ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end59.i")
+    {sp ct : Nat} {db : BitVec 8} {b : UInt8}
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (h8 : lookupName s.env "%8" = some (.int 8 db))
+    (hct : lookupName s.env "%ctype.i" = some (.ptr ct))
+    (hq63 : (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat < 2 ^ 63)
+    (hread : readBytes s.mem
+      (ct + (BitVec.ofNat 32 sp + BitVec.ofNat 32 4294967295).toNat) 1 = some [b])
+    (hbit : evalICmp .eq (walkSelVal db)
+      (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 0) :
+    WalkLink calls G C s { C with block := "if.then71.i" }
+      (stackSelOut s sp ct db b (stackSelBit db b)) := by
+  obtain ⟨s', hl, hs'⟩ := walkIfEnd59_at (calls := calls) G C s hInv hblock hsp h8 hct hq63
+    hread
+  have hcond : ¬ (evalICmp .eq (walkSelVal db)
+      (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [b])).toNat) = 1) := by
+    rw [hbit]; decide
+  rw [hs'] at hl
+  rw [if_neg hcond] at hl
+  exact hl
+
+/-- **`if.then71.i`.**  The refusal's offset store: the entry's position goes to
+`%e + 8` and the edge is the refusal copy. -/
+theorem mlStep₇ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then71.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    WalkLink calls G C s { C with block := "if.then", eoff := j, refusal := true }
+      (mlS₇ C j s) := by
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then71_i_at G C s hInv hblock hv he hj hj64
+  rw [hs'] at hl
+  exact hl
+
+/-- **The mismatched literal, as one counted run.**  Seven links: the switch's four
+pivots at `]`, the depth test's *non*-refusal arm, the select nest that compares the
+bracket with the type stack's marker, and the offset store. -/
+theorem mismatchedRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)))
+    (hsp : C.sp ≠ 0) (hq : (C.tyMap (C.sp - 1)).toNat ≠ 2)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    WalkRefuseAt calls G C s := by
+  have h8₁ : evalOperand (refuseS₁ s) (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₂ : evalOperand (refuseS₂ (refuseS₁ s)) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [refuseS₂, refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₃ : evalOperand (refuseS₃ (refuseS₂ (refuseS₁ s))) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [refuseS₃, refuseS₂, refuseS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot12") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have L₁ : WalkLink calls G C s { C with block := "NodeBlock19" } (refuseS₁ s) :=
+    refuseStep₁ G C s hInv hhead h8
+  have L₂ : WalkLink calls G { C with block := "NodeBlock19" } (refuseS₁ s)
+      { C with block := "NodeBlock11" } (refuseS₂ (refuseS₁ s)) :=
+    refuseStep₂ G { C with block := "NodeBlock19" } (refuseS₁ s) L₁.inv' rfl h8₁
+  have L₃ : WalkLink calls G { C with block := "NodeBlock11" } (refuseS₂ (refuseS₁ s))
+      { C with block := "LeafBlock9" } (refuseS₃ (refuseS₂ (refuseS₁ s))) :=
+    refuseStep₃ G { C with block := "NodeBlock11" } (refuseS₂ (refuseS₁ s)) L₂.inv' rfl h8₂
+  have L₄ : WalkLink calls G { C with block := "LeafBlock9" }
+      (refuseS₃ (refuseS₂ (refuseS₁ s))) { C with block := "if.then53.i" }
+      (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))) :=
+    refuseStep₄ G { C with block := "LeafBlock9" } (refuseS₃ (refuseS₂ (refuseS₁ s)))
+      L₃.inv' rfl h8₃
+  have L₅ : WalkLink calls G { C with block := "if.then53.i" }
+      (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))) { C with block := "if.end59.i" }
+      (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) :=
+    mlStep₅ G { C with block := "if.then53.i" } (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))
+      L₄.inv' rfl hsp
+  have hsp₆ : lookupName (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).env
+      "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)) :=
+    L₅.inv'.depth_reg
+  have h8₆ : lookupName (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).env "%8" =
+      some (.int 8 (BitVec.ofNat 8 93)) := by
+    simpa only [mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind, evalOperand,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot12") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have hct₆ : lookupName (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).env
+      "%ctype.i" = some (.ptr C.stage.ctype) :=
+    L₅.inv'.ptrs.2.2.2.1
+  have hsub : (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat = C.sp - 1 := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    have hsp32 : C.sp < 2 ^ 32 := by
+      have h := hInv.depth_cap
+      simp only [stage2StackExtent] at h
+      omega
+    have hpos : 0 < C.sp := Nat.pos_of_ne_zero hsp
+    have hb : (4294967295 : Nat) < 2 ^ 32 := by decide
+    rw [Nat.mod_eq_of_lt hsp32, Nat.mod_eq_of_lt hb]
+    rw [show C.sp + 4294967295 = (C.sp - 1) + 4294967296 from by omega, Nat.add_mod_right,
+      Nat.mod_eq_of_lt (by omega)]
+  have hq63 : (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat < 2 ^ 63 := by
+    rw [hsub]
+    have hpos : 0 < C.sp := Nat.pos_of_ne_zero hsp
+    omega
+  have hread : readBytes (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).mem
+      (C.stage.ctype + (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat) 1 =
+      some [C.tyMap (C.sp - 1)] := by
+    rw [hsub, JsonEntrySteps.readBytes_one]
+    have hpos : 0 < C.sp := Nat.pos_of_ne_zero hsp
+    have hlt : C.sp - 1 < C.wlen := by
+      have hspw : C.sp ≤ C.wlen := L₅.inv'.sp_le_wlen
+      omega
+    rw [L₅.inv'.tyBytes (C.sp - 1) hlt]
+    rfl
+  have hq256 : (C.tyMap (C.sp - 1)).toNat < 256 := UInt8.toNat_lt (C.tyMap (C.sp - 1))
+  have hbit : evalICmp .eq (walkSelVal (BitVec.ofNat 8 93))
+      (BitVec.ofNat 32 (BitVec.ofNat 8 (bytesToNat [C.tyMap (C.sp - 1)])).toNat) = 0 := by
+    have hselbit : evalICmp .eq (BitVec.ofNat 8 93) (BitVec.ofNat 8 125) = 0 := by decide
+    have hsel : walkSelVal (BitVec.ofNat 8 93) = BitVec.ofNat 32 2 := by
+      rw [walkSelVal, walkSelBit, hselbit]
+      rfl
+    have hbs : bytesToNat [C.tyMap (C.sp - 1)] = (C.tyMap (C.sp - 1)).toNat := by
+      simp [bytesToNat]
+    have hq8 : (BitVec.ofNat 8 (C.tyMap (C.sp - 1)).toNat).toNat =
+        (C.tyMap (C.sp - 1)).toNat := by
+      rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt hq256
+    rw [hsel, hbs, hq8]
+    refine refuseICmp_eq_zero (fun h => hq ?_)
+    have h' := congrArg BitVec.toNat h
+    simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide : (2 : Nat) < 2 ^ 32),
+      Nat.mod_eq_of_lt (by omega : (C.tyMap (C.sp - 1)).toNat < 2 ^ 32)] at h'
+    exact h'.symm
+  have L₆ : WalkLink calls G { C with block := "if.end59.i" }
+      (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) { C with block := "if.then71.i" }
+      (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) C.sp
+        C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+        (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))) :=
+    mlStep₆ G { C with block := "if.end59.i" } (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))))
+      L₅.inv' rfl hsp₆ h8₆ hct₆ hq63 hread hbit
+  have hv₇ : evalOperand (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))))
+      C.sp C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+      (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))) (.reg "%idxprom.i") =
+      some (.int 64 (BitVec.ofNat 64 j)) := by
+    simp only [stackSelOut, stackSelBit, walkSelectEnv, cells, stateAt, evalOperand,
+      lookupName_cons_ne (k := "%cmp69.not.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%conv67.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%14") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%arrayidx66.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%idxprom65.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%conv64.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%cmp61.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%sub.i") (n := "%idxprom.i") _ _ (by decide),
+      mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot12") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%idxprom.i") _ _ (by decide)]
+    exact hv
+  have he₇ : lookupName (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s)))))
+      C.sp C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+      (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))).env "%e" =
+      some (.ptr C.stage.e) := by
+    simp only [stackSelOut, stackSelBit, walkSelectEnv, cells, stateAt,
+      lookupName_cons_ne (k := "%cmp69.not.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%conv67.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%14") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%arrayidx66.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%idxprom65.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%conv64.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%cmp61.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%sub.i") (n := "%e") _ _ (by decide),
+      mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot12") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%e") _ _ (by decide)]
+    exact he
+  have L₇ : WalkLink calls G { C with block := "if.then71.i" }
+      (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) C.sp
+        C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+        (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))))
+      { C with block := "if.then", eoff := j, refusal := true }
+      (mlS₇ C j (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) C.sp
+        C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+        (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))))) :=
+    mlStep₇ G { C with block := "if.then71.i" }
+      (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) C.sp
+        C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+        (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))))
+      L₆.inv' rfl hv₇ he₇ hj hj64
+  refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
+    mlS₇ C j (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) C.sp
+      C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
+      (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))), 7, ?_, rfl,
+    L₇.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
+  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+    (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
+
+/-- **The `refuse` witness at a mismatched bracket**, in the exact shape
+`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct: a closing
+bracket inside a container whose marker it does not match, refused at the nesting check,
+with the entry's position as the offset. -/
+theorem walkRefuseWitness_mismatched {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 93)))
+    (hsp : C.sp ≠ 0) (hq : (C.tyMap (C.sp - 1)).toNat ≠ 2)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
+      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k) :=
+  mismatchedRefuse_at G C s hInv hhead h8 hsp hq hv he hj hj64 hk
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.refusePrice_of_le
@@ -1260,3 +1586,9 @@ theorem walkRefuseWitness_stackMarker {calls : Calls} {m0 : Mem} (G : WalkGeom m
 #print axioms LeanLLVM.Refinement.WalkScope.smStep₇
 #print axioms LeanLLVM.Refinement.WalkScope.stackMarkerRefuse_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_stackMarker
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd59_at
+#print axioms LeanLLVM.Refinement.WalkScope.mlStep₅
+#print axioms LeanLLVM.Refinement.WalkScope.mlStep₆
+#print axioms LeanLLVM.Refinement.WalkScope.mlStep₇
+#print axioms LeanLLVM.Refinement.WalkScope.mismatchedRefuse_at
+#print axioms LeanLLVM.Refinement.WalkScope.walkRefuseWitness_mismatched
