@@ -5808,6 +5808,21 @@ theorem s2StringBodyRefusedC2_collapse (mem : Mem) (ei xj c1 offN : Nat) :
     (natToBytes (0#64).toNat 8) (wordBytes 8 offN)
     (by simp [natToBytes_length, wordBytes])]
 
+/-- **The scan's cursor write is erased, at the stages**: the collapse puts the
+callee's offset adjacent to the scan's write, and one crossing then carries the
+callee's cursor write past it. -/
+theorem s2StringBodyRefusedC3_erase (mem : Mem) {ei xj c1 offN k : Nat}
+    (hxj : readBytes mem xj (wordBytes 8 c1).length ≠ none)
+    (hei : readBytes mem ei (wordBytes 8 offN).length ≠ none)
+    (hlen : (wordBytes 8 c1).length ≤ (wordBytes 8 (c1 + k)).length)
+    (hdis : xj + (wordBytes 8 c1).length ≤ ei ∨
+      ei + (wordBytes 8 offN).length ≤ xj) :
+    s2StringBodyRefusedC3 mem ei xj c1 offN k
+      = writeBytes (writeBytes mem ei (wordBytes 8 offN)) xj
+          (wordBytes 8 (c1 + k)) := by
+  rw [s2StringBodyRefusedC3, s2StringBodyRefusedC2_collapse, s2StringBodyRefusedC0]
+  exact writeBytes_absorb_single mem hxj hei hlen hdis
+
 /-- **The entry's short arm**: the cursor is at or past the count, so `%cmp3` is
 `0` and the entry goes straight to `if.then`.  The model's `j1` is `j0` (the list
 is exhausted at the cursor), the window is empty, and the answer is form `1` — and
