@@ -152,7 +152,16 @@ what the completion consumes, so the assembly states its premises at segments
 and `WalkSegment.of_chain` is where a chain re-enters. -/
 
 /-- **A counted segment of the walk's run**: `j` steps from `s` reach `s'` and
-leave it exactly (for every further fuel), and `WalkInv` holds at the target. -/
+leave it exactly (for every further fuel), and `WalkInv` holds at the target.
+
+**It carries no memory clause, and a word clause cannot be added here.**  At
+`if.else285.i` the arena append stores `wordBytes 8 (a + l)` at `z + 48` while the
+target carry's `alen` is unchanged — the carry is *ahead* of the arena, which that
+link's own premise records (`hale : a + l ≤ C.alen` in `WalkLink.if_else285_i`).  So
+"the word is `alen` at both ends" is false on that link, and the head's equality is a
+property of a whole revolution rather than of a segment.  A *general* memory clause
+would have to be a write trace, composed by `trans`; the head equality is stated
+head-to-head beside the dispatch. -/
 structure WalkSegment (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
     (C : WalkCarry G) (s : State) (C' : WalkCarry G) (s' : State) (j : Nat) : Prop where
   /-- The run, at the segment's own count and every continuation. -/
