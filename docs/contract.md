@@ -408,6 +408,23 @@ clause's verdict with the reference's own depth verdict on the deep-but-balanced
 class, the boundary, and the corpus's depth rows, and reproduces the deleted
 clause as a control that disagrees on exactly that class.
 
+**The route's native character-policy scan is modelled, not proved.**  The
+probe's `probes/json/route/policy.c` decides the policy clause natively, and
+`LeanLLVM/Refinement/JsonPolicyModel.lean` writes its transition beside the
+reference's: the emission's `policy_step` at its own byte and lookahead, in the
+emission's branch order, with the three-valued class `policy_class_of` reads;
+the reference's reading of a scan (`refClass`, stated over `scanCharsFrom`); and
+the reference's own equations read at the lead ranges the emission tests.  What
+that module proves is the supporting lemmas — the byte and noncharacter bridges,
+the suffix decomposition, and the per-lead reference equations — and nothing
+about agreement: the step equivalence, the walk and the backward fill are the
+remaining work.  So the policy clause's evidence remains the route's observation
+(§7.1 item 5 and `probes/json/route/README.md`), and the row that would move it
+to proved is the missing theorem.  The emission is also outside the modelled
+fragment — `switch`, `insertvalue`/`extractvalue` and an anonymous-struct return
+— which is a second, structural obligation that no proof can close while the
+fragment stays as it is.
+
 ### 7.6 The stage-2 helpers' correspondence
 
 The emitted `s2_walk` calls six functions out of line — `s2_init`,

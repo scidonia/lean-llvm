@@ -311,7 +311,18 @@ which also carries the candidate-heavy row set the corpus was extended with).
 
 What is not proved: there is no refinement theorem for this unit, and it is not
 in `kernel/json/` — the certified units are the ones with certificates, and this
-is a probe's.  What establishes it is observation, in three readings: the gate's
+is a probe's.  `LeanLLVM/Refinement/JsonPolicyModel.lean` is the start of one: it
+writes the emission's transition (`policyStep`) beside the reference's
+(`scanCharsFrom`) in the emission's branch order, its three-valued class, the
+reference's reading of a scan, and the reference's own equations read at the
+lead ranges the emission tests.  It proves the supporting lemmas and **not** the
+equivalence: the step-by-step theorem, the walk and the backward-fill theorem
+are the remaining work, so nothing in the tree yet states that `policy_step` and
+`scanCharsAt` agree.  The emission's own body is a second open piece and a
+structural one: `@leanllvm_route_policy_scan` and `@policy_step` are outside the
+modelled fragment (`switch`, `insertvalue`/`extractvalue`, and an anonymous-struct
+return), so the body-level correspondence needs those forms modelled or the
+fixture rewritten, and neither exists yet.  What establishes it is observation, in three readings: the gate's
 137 rows (verdict, reason, and the refusal's byte); the candidate-heavy corpus
 the bench measures, whose rows the gate's comparison also covers where they
 overlap; and two differential sweeps against the oracle — 1547 random documents
