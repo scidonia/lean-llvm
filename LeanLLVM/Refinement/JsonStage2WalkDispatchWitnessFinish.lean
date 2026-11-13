@@ -888,6 +888,40 @@ theorem tail_scan_entered {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 #print axioms LeanLLVM.Refinement.WalkScope.end372_else_chain
 #check @LeanLLVM.Refinement.WalkScope.ConsumerTailSeg
 
+
+/-- **The scan's exit as one step.**  From the extra-token scan's latch at its bound to
+the merge's entry: `scanStepAt_exit`'s step and invariant, with no `mono` — a segment
+carries no price, which is why the merge needs no `WalkLink`. -/
+theorem scanExitSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
+    {i c : Nat} (hi : lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
+    (hc : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hinner : c - i ≤ C.inner) (hie : i + 1 = c) (hcw : c < 2 ^ 64)
+    (hexit : ∀ (e : State), e.pre = some "while.body462.i" →
+      lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (i + 1))) →
+      lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
+      WalkLocal (G := G) { C with block := "if.end473.i" } e) :
+    ∃ (s' : State),
+      WalkSegment calls G C s { C with block := "if.end473.i" } s' 1 ∧
+      s'.pc = "if.end473.i" ∧
+      s' = scanLatchOut s "%inc463.i" "%exitcond298.not" i c "if.end473.i" ∧
+      WalkInv G { C with block := "if.end473.i" } s' := by
+  obtain ⟨s', hs', hstep, hpc', hinv'⟩ :=
+    scanStepAt_exit (calls := calls) G C s i c "while.body462.i" "land.rhs457.i"
+      "%q.0.i246" "%inc463.i" "%exitcond298.not" "%cond350.i" "if.end473.i"
+      hInv hblock scanExtraToken_find (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide)
+      (hincN := by decide) (htestN := by decide)
+      (hincS := by decide) (htestS := by decide)
+      (hincI7 := by decide) (hincI8 := by decide)
+      (htestI7 := by decide) (htestI8 := by decide)
+      hi hc hinner hie hcw hexit
+  refine ⟨s', ?_, hpc', hs', hinv'⟩
+  exact { run := fun n => by
+            rw [show 1 + n = n + 1 from by omega]
+            simp only [runFuel, hstep]
+          inv' := hinv' }
+
 end WalkScope
 end LeanLLVM.Refinement
 
