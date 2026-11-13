@@ -1989,6 +1989,20 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
   · rw [hmem, readBytes_frame hm hsepAc]
     exact hInv.log_acap
 
+/-- **The flush block's two cells at the entry's successor.**  `%4` is `walkEntryEnv3`'s bound
+value — the entry count, as a word — and `%e` is the base environment's pointer, which no layer
+shadows.  These are the two operands `if.then492.i` reads. -/
+theorem walkEntryEnv_e4 (env : Env) (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev : Nat) :
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%e" = lookupName env "%e" ∧
+    lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2
+        (walkEntryEnv1 env c n) sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c)
+      b nep) "%4" = some (.int 64 (BitVec.ofNat 64 n)) := by
+  constructor <;>
+    simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+      lookupName_cons_ne]
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
