@@ -53,6 +53,7 @@ def constOperand (σ : Subst) : Operand → Option Const
           | .vector _ _ => none
           | _ => some c
       | none => none
+  | .global _ => none
   | .imm c =>
       match c with
       | .undef => none
@@ -61,12 +62,14 @@ def constOperand (σ : Subst) : Operand → Option Const
       | .vector _ _ => none
       | _ => some c
 
-/-- Replace a register by its literal, when the substitution knows one. -/
+/-- Replace a register by its literal, when the substitution knows one.  A global
+symbol is left as it is: its address is the run's, not the substitution's. -/
 def substOperand (σ : Subst) : Operand → Operand
   | .reg n =>
       match σ n with
       | some c => .imm c
       | none => .reg n
+  | .global n => .global n
   | .imm c => .imm c
 
 def substInstr (σ : Subst) : Instr → Instr
@@ -77,6 +80,15 @@ def substInstr (σ : Subst) : Instr → Instr
   | .trunc d wIn wOut v => .trunc d wIn wOut (substOperand σ v)
   | .zext d wIn wOut v => .zext d wIn wOut (substOperand σ v)
   | .sext d wIn wOut v => .sext d wIn wOut (substOperand σ v)
+  | .ptrtoint d v => .ptrtoint d (substOperand σ v)
+  | .inttoptr d v => .inttoptr d (substOperand σ v)
+  | .uitofp d wIn v => .uitofp d wIn (substOperand σ v)
+  | .fmul d a b => .fmul d (substOperand σ a) (substOperand σ b)
+  | .fdiv d a b => .fdiv d (substOperand σ a) (substOperand σ b)
+  | .fneg d v => .fneg d (substOperand σ v)
+  | .fcmp d pred a b => .fcmp d pred (substOperand σ a) (substOperand σ b)
+  | .bitcastToInt d v => .bitcastToInt d (substOperand σ v)
+  | .bitcastToDouble d v => .bitcastToDouble d (substOperand σ v)
   | .alloca d ty align => .alloca d ty align
   | .load d ty p => .load d ty (substOperand σ p)
   | .store ty v p => .store ty (substOperand σ v) (substOperand σ p)
@@ -230,6 +242,7 @@ theorem evalOperand_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (o :
       cases hσ : σ n with
       | none => rfl
       | some c => exact (h n c hσ).symm
+  | global n => rfl
   | imm c => rfl
 
 theorem evalOperands_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) :
@@ -287,15 +300,18 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
           cases c' with
           | int w v => simp at hc; cases hc; exact h n (.int w v) hσ
           | null => simp at hc; cases hc; exact h n .null hσ
+          | float b => simp at hc; cases hc; exact h n (.float b) hσ
           | undef => simp at hc
           | poison => simp at hc
           | splat _ _ _ => simp at hc
           | vector _ _ => simp at hc
+  | global n => simp only [constOperand] at hc; cases hc
   | imm k =>
       simp only [constOperand] at hc
       cases k with
       | int w v => simp at hc; cases hc; rfl
       | null => simp at hc; cases hc; rfl
+      | float b => simp at hc; cases hc; rfl
       | undef => simp at hc
       | poison => simp at hc
       | splat _ _ _ => simp at hc
@@ -322,15 +338,18 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
           cases c' with
           | int w v => simp at h; cases h; exact ⟨_, rfl⟩
           | null => simp at h; cases h; exact ⟨_, rfl⟩
+          | float b => simp at h; cases h; exact ⟨_, rfl⟩
           | undef => simp at h
           | poison => simp at h
           | splat _ _ _ => simp at h
           | vector _ _ => simp at h
+  | global n => simp only [constOperand] at h; cases h
   | imm k =>
       simp only [constOperand] at h
       cases k with
       | int w v => simp at h; cases h; exact ⟨_, rfl⟩
       | null => simp at h; cases h; exact ⟨_, rfl⟩
+      | float b => simp at h; cases h; exact ⟨_, rfl⟩
       | undef => simp at h
       | poison => simp at h
       | splat _ _ _ => simp at h
@@ -396,8 +415,10 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | some cb =>
           simp only [hca, hcb] at hf
           cases ca with
+          | float _ => simp [foldBinop] at hf
           | int w1 x =>
             cases cb with
+            | float _ => simp [foldBinop] at hf
             | int w2 y =>
               simp only [foldBinop] at hf
               by_cases h1 : w1 = w
@@ -437,8 +458,10 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | some cb =>
           simp only [hca, hcb] at hf
           cases ca with
+          | float _ => simp [foldICmp] at hf
           | int w1 x =>
             cases cb with
+            | float _ => simp [foldICmp] at hf
             | int w2 y =>
               simp only [foldICmp] at hf
               by_cases h1 : w1 = w
@@ -464,6 +487,15 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
           | poison => simp [foldICmp] at hf
           | splat _ _ _ => simp [foldICmp] at hf
           | vector _ _ => simp [foldICmp] at hf
+  | ptrtoint d v => simp [foldInstr] at hf
+  | inttoptr d v => simp [foldInstr] at hf
+  | uitofp d wIn v => simp [foldInstr] at hf
+  | fmul d a b => simp [foldInstr] at hf
+  | fdiv d a b => simp [foldInstr] at hf
+  | fneg d v => simp [foldInstr] at hf
+  | fcmp d pred a b => simp [foldInstr] at hf
+  | bitcastToInt d v => simp [foldInstr] at hf
+  | bitcastToDouble d v => simp [foldInstr] at hf
   | icmpPtr d pred a b =>
       -- No fold is defined for a pointer comparison, so `foldInstr` is `none`
       -- and there is nothing to be unsound about.
@@ -474,6 +506,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
       | none => simp [hcc] at hf
       | some cc =>
         cases cc with
+        | float _ => simp [hcc] at hf
         | int w1 bit =>
           by_cases hw : w1 = 1
           · cases hw
@@ -522,6 +555,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
       | some cv =>
         simp only [hcv] at hf
         cases cv with
+        | float _ => simp at hf
         | int w x =>
           by_cases hw : w = wIn
           · simp only [hw, ite_true] at hf
@@ -543,6 +577,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
       | some cv =>
         simp only [hcv] at hf
         cases cv with
+        | float _ => simp at hf
         | int w x =>
           by_cases hw : w = wIn
           · simp only [hw, ite_true] at hf
@@ -564,6 +599,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
       | some cv =>
         simp only [hcv] at hf
         cases cv with
+        | float _ => simp at hf
         | int w x =>
           by_cases hw : w = wIn
           · simp only [hw, ite_true] at hf
@@ -622,6 +658,21 @@ theorem execTerm_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (t : Te
           | vec n elem =>
               change execTerm s (.ret (.vec n elem) (some (substOperand σ o))) =
                 execTerm s (.ret (.vec n elem) (some o))
+              simp only [execTerm]
+              rw [evalOperand_subst h]
+          | array n elem =>
+              change execTerm s (.ret (.array n elem) (some (substOperand σ o))) =
+                execTerm s (.ret (.array n elem) (some o))
+              simp only [execTerm]
+              rw [evalOperand_subst h]
+          | struct name bytes =>
+              change execTerm s (.ret (.struct name bytes) (some (substOperand σ o))) =
+                execTerm s (.ret (.struct name bytes) (some o))
+              simp only [execTerm]
+              rw [evalOperand_subst h]
+          | double =>
+              change execTerm s (.ret .double (some (substOperand σ o))) =
+                execTerm s (.ret .double (some o))
               simp only [execTerm]
               rw [evalOperand_subst h]
   | br d => rfl

@@ -140,6 +140,53 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
               rw [evalOperand_env_eq henv op]
               cases evalOperand t op <;>
                 simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+  | ptrtoint d v =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv v]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | inttoptr d v =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv v]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | uitofp d wIn v =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv v]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | fmul d a b =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv a, evalOperand_env_eq henv b]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | fdiv d a b =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv a, evalOperand_env_eq henv b]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | fneg d v =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv v]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | fcmp d pred a b =>
+      simp only [evalInstr]
+      cases pred with
+      | oeq =>
+          rw [evalOperand_env_eq henv a, evalOperand_env_eq henv b]
+          repeat' split
+          all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | bitcastToInt d v =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv v]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
+  | bitcastToDouble d v =>
+      simp only [evalInstr]
+      rw [evalOperand_env_eq henv v]
+      repeat' split
+      all_goals (simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre])
   | binop d op w a b =>
       simp only [evalInstr]
       rw [evalOperand_env_eq henv a, evalOperand_env_eq henv b]
@@ -164,10 +211,13 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | vec n w l =>
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+          | float z =>
+              cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | ptr x =>
               cases vb with
               | int w y => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | vec n w l => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+              | float z => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | ptr y =>
                   cases hic : evalICmpPtr pred x y with
                   | none => simp [hic, OptStateRel]
@@ -211,6 +261,7 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
           cases pv with
           | int w x => exact trivial
           | vec n w l => exact trivial
+          | float b => exact trivial
           | ptr addr => exact storeValue_next ⟨henv, hmem, hpc, hpre⟩ ty vv addr
   | gep d elemTy base off =>
       simp only [evalInstr]
@@ -335,6 +386,30 @@ theorem execTerm_next_irr {s t : State} (h : SameApartFromNext s t) (term : Term
               rw [evalOperand_env_eq henv o]
               cases evalOperand t o <;>
                 simp [CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre]
+      | array n elem =>
+          cases v with
+          | none => simp [execTerm, CtrlSameApartFromNext]
+          | some o =>
+              simp only [execTerm]
+              rw [evalOperand_env_eq henv o]
+              cases evalOperand t o <;>
+                simp [CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre]
+      | struct name bytes =>
+          cases v with
+          | none => simp [execTerm, CtrlSameApartFromNext]
+          | some o =>
+              simp only [execTerm]
+              rw [evalOperand_env_eq henv o]
+              cases evalOperand t o <;>
+                simp [CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre]
+      | double =>
+          cases v with
+          | none => simp [execTerm, CtrlSameApartFromNext]
+          | some o =>
+              simp only [execTerm]
+              rw [evalOperand_env_eq henv o]
+              cases evalOperand t o <;>
+                simp [CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre]
   | br dest =>
       simp [execTerm, CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre]
   | condbr c t' f =>
@@ -349,6 +424,7 @@ theorem execTerm_next_irr {s t : State} (h : SameApartFromNext s t) (term : Term
               all_goals (simp [CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre])
           | ptr a => simp [hc, CtrlSameApartFromNext]
           | vec n w l => simp [hc, CtrlSameApartFromNext]
+          | float b => simp [hc, CtrlSameApartFromNext]
   | unreachable => simp [execTerm, CtrlSameApartFromNext]
 
 set_option linter.unusedSimpArgs false in

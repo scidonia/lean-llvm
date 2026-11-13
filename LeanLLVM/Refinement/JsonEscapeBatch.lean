@@ -56,6 +56,13 @@ theorem evalOperand_withEnv_cons_of_ne {env : Env} {s : State} {n : String}
         intro hnm
         exact h (by simp only [Operand.regs, List.mem_singleton]; exact hnm)
       simp only [withEnv, evalOperand, State.bind, lookupName_cons_ne v env hmn]
+  -- A global symbol is read under its `@` key, which a register's cell cannot
+  -- shadow: the keys are disjoint by construction, so the same peel applies.
+  | global m =>
+      have hmn : n ≠ m := by
+        intro hnm
+        exact h (by simp only [Operand.regs, List.mem_singleton]; exact hnm)
+      simp only [withEnv, evalOperand, State.bind, lookupName_cons_ne v env hmn]
   | imm c => rfl
 
 /-- A leading `phi` run of one member: the operand is read at the state the edge

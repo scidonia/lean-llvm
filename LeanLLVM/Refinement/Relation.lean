@@ -498,6 +498,36 @@ theorem execTerm_ret_isSome {s : State} {ty : Ty} {vp : Option Operand}
               simp only [execTerm, hv] at h
               cases h
               rfl
+  | array n elem =>
+      cases vp with
+      | none => simp at hsome
+      | some o =>
+          cases hv : evalOperand s o with
+          | none => simp [execTerm, hv] at h
+          | some x =>
+              simp only [execTerm, hv] at h
+              cases h
+              rfl
+  | struct name bytes =>
+      cases vp with
+      | none => simp at hsome
+      | some o =>
+          cases hv : evalOperand s o with
+          | none => simp [execTerm, hv] at h
+          | some x =>
+              simp only [execTerm, hv] at h
+              cases h
+              rfl
+  | double =>
+      cases vp with
+      | none => simp at hsome
+      | some o =>
+          cases hv : evalOperand s o with
+          | none => simp [execTerm, hv] at h
+          | some x =>
+              simp only [execTerm, hv] at h
+              cases h
+              rfl
 
 /-- A step that returns carries a value when every terminator's `ret` does. -/
 theorem step_ret_isSome {calls : Calls} {f : Function} (hf : retsValued f = true)
@@ -527,6 +557,7 @@ theorem step_ret_isSome {calls : Calls} {f : Function} (hf : retsValued f = true
               | none => simp [hc] at h
               | some x =>
                   cases x with
+                  | float b => simp [hc] at h
                   | int w bit =>
                       cases w with
                       | zero => simp only [hc] at h; simp at h

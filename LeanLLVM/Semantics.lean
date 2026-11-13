@@ -17,6 +17,7 @@ and the allocator state the caller resumes from — so a call is a memory channe
 between caller and callee.  An unresolved call is `ub`.
 -/
 import LeanLLVM.Syntax
+import LeanLLVM.Binary64
 
 namespace LeanLLVM
 
@@ -81,6 +82,16 @@ block, so replacing it leaves those projections alone. -/
 def State.bind (s : State) (n : String) (v : Value) : State :=
   { s with env := (n, v) :: s.env }
 
+
+/-- The state with the loader's global assignment bound.  This is the staging
+step a body taking a global symbol needs: the text names the symbol, and the
+caller supplies the address the loader would have assigned it.  The bindings go
+ahead of the state's own, so reading a symbol is a head lookup where the
+assignment is concrete; the keys cannot collide with a register's, so the order
+is immaterial to every program the parser produces. -/
+def State.withGlobals (s : State) (g : Globals) : State :=
+  { s with env := g.env ++ s.env }
+
 /-- Bind a list of registers in the order the block wrote them.  The last entry
 ends at the head of the environment, exactly where binding each in turn would
 leave it, so a group's install is the install its members would each have made. -/
@@ -123,9 +134,15 @@ abbrev Calls := String → List Value → Mem → Nat → Option CallOutcome
 /-- The environment in which no call resolves. -/
 def noCalls : Calls := fun _ _ _ _ => none
 
-/-- Read an operand. -/
+/-- Read an operand.  A register and a global symbol are both read from the
+environment, under their own spellings; a symbol the environment does not bind
+has no value, which the instruction reading it turns into `ub` — the same
+reading an unresolved call gets.  A literal is read by `Const.toValue`, which
+does not consult the state: a constant's value is a function of the constant,
+and that is why a global symbol is not one. -/
 def evalOperand (s : State) : Operand → Option Value
   | .reg n => lookupName s.env n
+  | .global n => lookupName s.env n
   | .imm c => Const.toValue c
 
 /-- Reading an operand does not consult the predecessor field. -/
@@ -183,6 +200,22 @@ def Value.intToNat (w : Nat) : Value → Option Nat
   | .int w' v => if w' = w then some v.toNat else none
   | .ptr _ => none
   | .vec .. => none
+  | .float _ => none
+
+/-- The integer value an address converts to, at the model's pointer width.
+`BitVec.ofNat 64` is the identity on the addresses a 64-bit pointer holds, and
+truncates the rest; `Value.toAddr` reads it back exactly below `2 ^ 64`. -/
+def Value.ofAddr (a : Nat) : Value := .int 64 (BitVec.ofNat 64 a)
+
+/-- The address a value holds, when it is a 64-bit integer: the reading
+`ptrtoint` inverts.  The model's address is an unbounded `Nat`, so the
+conversion keeps the values a pointer can hold and answers `none` otherwise.
+The width test is an `if` rather than a pattern so the equation at a width
+*variable* is a case split, which is what the transport lemmas over an
+arbitrary operand need. -/
+def Value.toAddr : Value → Option Nat
+  | .int w v => if w = 64 then some v.toNat else none
+  | _ => none
 
 /-- `evalBinop` at the `Nat` level: the operands are read as `w`-bit values. -/
 def evalBinopNat (op : BinOp) (w : Nat) (a b : Nat) : Option Nat :=
@@ -362,6 +395,10 @@ def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
       match readBytes m addr 8 with
       | some bs => some (.ptr (bytesToNat bs))
       | none => none
+  | .double =>
+      match readBytes m addr 8 with
+      | some bs => some (.float (BitVec.ofNat 64 (bytesToNat bs)))
+      | none => none
   | .vec n (.int 8) =>
       match readBytes m addr n with
       | some bs => some (.vec n 8 (bs.map fun b => BitVec.ofNat 8 b.toNat))
@@ -373,6 +410,8 @@ def loadValue (m : Mem) (ty : Ty) (addr : Nat) : Option Value :=
         | none => none
       else none
   | .vec _ _ => none
+  | .array _ _ => none
+  | .struct _ _ => none
   | .void => none
 
 /-- Store a value at an address.  A vector is stored as its lanes packed
@@ -391,6 +430,8 @@ def storeValue (s : State) (ty : Ty) (v : Value) (addr : Nat) : Option State :=
         some { s with mem := writeBytes s.mem addr (natToBytes x.toNat ((w + 7) / 8)) }
       else none
   | .ptr, .ptr a => some { s with mem := writeBytes s.mem addr (natToBytes a 8) }
+  | .double, .float b =>
+      some { s with mem := writeBytes s.mem addr (natToBytes b.toNat 8) }
   | .vec n (.int w), .vec n' w' lanes =>
       if n' = n ∧ w' = w ∧ lanes.length = n ∧ n * w % 8 = 0 then
         some { s with mem := writeBytes s.mem addr (natToBytes (packLanes lanes) (n * w / 8)) }
@@ -483,6 +524,56 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
           if w' = wIn then
             some (s.bind d (.int wOut (BitVec.ofNat wOut (BitVec.signExtend wOut (BitVec.ofNat wIn x.toNat)).toNat)))
           else none
+      | _ => none
+  | .ptrtoint d v =>
+      -- An address is an unbounded `Nat`, while the conversion's range is the
+      -- one a 64-bit pointer has.  An address at or above `2 ^ 64` is a value
+      -- `i64` cannot hold, so it is `ub` rather than a truncation; the staging's
+      -- bound is what a use discharges to reach the accepting case.
+      match evalOperand s v with
+      | some (.ptr a) =>
+          if a < 2 ^ 64 then some (s.bind d (.ofAddr a)) else none
+      | _ => none
+  | .inttoptr d v =>
+      -- The inverse reading.  An `i64` value names an address below `2 ^ 64` by
+      -- construction, so the step is total on the modelled operand type; a value
+      -- of another shape is `ub`, which the parser's type table refuses in text.
+      match evalOperand s v with
+      | some vv =>
+          match vv.toAddr with
+          | some a => some (s.bind d (.ptr a))
+          | none => none
+      | none => none
+  | .uitofp d wIn v =>
+      match evalOperand s v with
+      | some (.int w' x) =>
+          if w' = wIn then some (s.bind d (.float (uitofpBits x.toNat))) else none
+      | _ => none
+  | .fmul d a b =>
+      match evalOperand s a, evalOperand s b with
+      | some (.float x), some (.float y) => some (s.bind d (.float (fmulBits x y)))
+      | _, _ => none
+  | .fdiv d a b =>
+      match evalOperand s a, evalOperand s b with
+      | some (.float x), some (.float y) => some (s.bind d (.float (fdivBits x y)))
+      | _, _ => none
+  | .fneg d v =>
+      match evalOperand s v with
+      | some (.float x) => some (s.bind d (.float (fnegBits x)))
+      | _ => none
+  | .fcmp d pred a b =>
+      match evalOperand s a, evalOperand s b with
+      | some (.float x), some (.float y) =>
+          match pred with
+          | .oeq => some (s.bind d (.int 1 (if fcmpOeqBits x y then (1 : BitVec 1) else 0)))
+      | _, _ => none
+  | .bitcastToInt d v =>
+      match evalOperand s v with
+      | some (.float x) => some (s.bind d (.int 64 x))
+      | _ => none
+  | .bitcastToDouble d v =>
+      match evalOperand s v with
+      | some (.int 64 x) => some (s.bind d (.float x))
       | _ => none
   | .alloca d ty _align =>
       some { s with env := (d, .ptr s.next) :: s.env, next := s.next + ty.sizeBytes }
@@ -762,6 +853,7 @@ theorem evalInstr_gep_none_of_base {calls : Calls} {s : State} {d : String}
   | ptr a => exact absurd rfl (hv a)
   | int w x => rfl
   | vec n w l => rfl
+  | float b => rfl
 
 /-- An index that is not an integer is refused, a pointer base or not: a pointer
 offset by a pointer has no meaning here. -/
@@ -773,6 +865,7 @@ theorem evalInstr_gep_none_of_off {calls : Calls} {s : State} {d : String}
   | int w x => exact absurd rfl (hv w x)
   | ptr b => simp only [evalInstr, hb, ho]
   | vec n w l => simp only [evalInstr, hb, ho]
+  | float b => simp only [evalInstr, hb, ho]
 
 /-- An operand that does not read — an unbound register, an `undef` or `poison`
 literal — is refused before either value shape is examined. -/
@@ -816,6 +909,47 @@ theorem laneList_getElem?_eq_none {α : Type} {l : List α} {i : Nat} (h : l.len
       cases i with
       | zero => simp at h
       | succ j => simp [ih (by simpa using h)]
+
+/-- The conversion pair is the identity on the addresses a pointer holds:
+`BitVec.ofNat 64` is injective below `2 ^ 64`, so `Value.toAddr` reads back
+exactly what `Value.ofAddr` wrote. -/
+theorem Value.toAddr_ofAddr (a : Nat) (ha : a < 2 ^ 64) :
+    Value.toAddr (.ofAddr a) = some a := by
+  simp [Value.toAddr, Value.ofAddr, Nat.mod_eq_of_lt ha]
+
+/-- **`ptrtoint` at an address below `2 ^ 64`**: the accepting step. -/
+theorem evalInstr_ptrtoint {calls : Calls} {s : State} {d : String} {v : Operand}
+    {a : Nat} (hv : evalOperand s v = some (.ptr a)) (ha : a < 2 ^ 64) :
+    evalInstr calls s (.ptrtoint d v) = some (s.bind d (.ofAddr a)) := by
+  simp [evalInstr, hv, ha]
+
+/-- **`ptrtoint` at an address at or above `2 ^ 64`**: refused.  LLVM's pointer
+holds 64 bits, so an address above them has no value at the modelled width; the
+step is `ub` rather than a truncation. -/
+theorem evalInstr_ptrtoint_out_of_range {calls : Calls} {s : State} {d : String}
+    {v : Operand} {a : Nat} (hv : evalOperand s v = some (.ptr a))
+    (ha : 2 ^ 64 ≤ a) :
+    evalInstr calls s (.ptrtoint d v) = none := by
+  simp [evalInstr, hv, Nat.not_lt.mpr ha]
+
+/-- **`inttoptr`**: the inverse step at an `i64` value. -/
+theorem evalInstr_inttoptr {calls : Calls} {s : State} {d : String} {v : Operand}
+    {x : BitVec 64} (hv : evalOperand s v = some (.int 64 x)) :
+    evalInstr calls s (.inttoptr d v) = some (s.bind d (.ptr x.toNat)) := by
+  simp [evalInstr, hv, Value.toAddr]
+
+/-- **The pair round-trips at the instruction level**: `inttoptr` of what
+`ptrtoint` bound is the address it started from, when that address is below
+`2 ^ 64`.  This is the statement the pair is admitted for; the hypothesis is the
+staging's bound, not an artefact of the model. -/
+theorem evalInstr_inttoptr_ptrtoint {calls : Calls} {s : State} {d e : String}
+    {v : Operand} {a : Nat} (hv : evalOperand s v = some (.ptr a)) (ha : a < 2 ^ 64) :
+    evalInstr calls (s.bind d (.ofAddr a)) (.inttoptr e (.reg d)) =
+      some ((s.bind d (.ofAddr a)).bind e (.ptr a)) := by
+  have hlookup : evalOperand (s.bind d (.ofAddr a)) (.reg d) = some (.ofAddr a) := by
+    simp [evalOperand, State.bind]
+  rw [evalInstr_inttoptr hlookup]
+  simp [Value.ofAddr, Nat.mod_eq_of_lt ha]
 
 /-- A lane read inside the range binds the lane the index names. -/
 theorem evalInstr_extractelement {calls : Calls} {s : State} {d : String}
@@ -1358,6 +1492,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | none => rfl
       | some va =>
         cases va with
+        | float b => rfl
         | int w x =>
             cases evalOperand s b <;> dsimp only <;> rfl
         | vec n w l =>
@@ -1367,6 +1502,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             | none => rfl
             | some vb =>
               cases vb with
+              | float b => rfl
               | int w y => dsimp only; rfl
               | vec n w l => dsimp only; rfl
               | ptr addr2 =>
@@ -1380,6 +1516,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | none => rfl
       | some vc =>
         cases vc with
+        | float b => rfl
         | int w cbit =>
           cases w with
           | zero => rfl
@@ -1432,9 +1569,15 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
                 | ptr => rfl
                 | void => rfl
                 | vec _ _ => rfl
+                | double => rfl
+                | array _ _ => rfl
+                | struct _ _ => rfl
               | int _ => rfl
               | ptr => rfl
               | void => rfl
+              | double => rfl
+              | array _ _ => rfl
+              | struct _ _ => rfl
             | succ j => rfl
   | trunc d wIn wOut v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
@@ -1443,6 +1586,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | float b => rfl
         | int w' x =>
           try dsimp only
           by_cases hw : w' = wIn
@@ -1459,6 +1603,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | float b => rfl
         | int w' x =>
           try dsimp only
           by_cases hw : w' = wIn
@@ -1475,6 +1620,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | float b => rfl
         | int w' x =>
           try dsimp only
           by_cases hw : w' = wIn
@@ -1483,6 +1629,155 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           · rw [ite_eq_right hw, ite_eq_right hw]
             rfl
         | ptr a => rfl
+        | vec n w l => rfl
+  | ptrtoint d v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w' x => rfl
+        | ptr a =>
+          try dsimp only
+          by_cases ha : a < 2 ^ 64
+          · rw [ite_eq_left ha, ite_eq_left ha]
+            rfl
+          · rw [ite_eq_right ha, ite_eq_right ha]
+            rfl
+        | vec n w l => rfl
+        | float b => rfl
+  | inttoptr d v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w' x =>
+          simp only [Value.toAddr]
+          repeat' split
+          all_goals rfl
+        | ptr a => rfl
+        | vec n w l => rfl
+        | float b => rfl
+  | uitofp d wIn v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | int w' x =>
+          try dsimp only
+          by_cases hw : w' = wIn
+          · rw [ite_eq_left hw, ite_eq_left hw]
+            rfl
+          · rw [ite_eq_right hw, ite_eq_right hw]
+            rfl
+        | ptr a => rfl
+        | vec n w l => rfl
+        | float b => rfl
+  | fmul d a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases va with
+        | float x =>
+          try dsimp only
+          cases evalOperand s b with
+          | none => rfl
+          | some vb =>
+            try dsimp only
+            cases vb with
+            | float y => rfl
+            | int w z => rfl
+            | ptr p => rfl
+            | vec n w l => rfl
+        | int w z => rfl
+        | ptr p => rfl
+        | vec n w l => rfl
+  | fdiv d a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s a with
+      | none => rfl
+      | some va =>
+        try dsimp only
+        cases va with
+        | float x =>
+          try dsimp only
+          cases evalOperand s b with
+          | none => rfl
+          | some vb =>
+            try dsimp only
+            cases vb with
+            | float y => rfl
+            | int w z => rfl
+            | ptr p => rfl
+            | vec n w l => rfl
+        | int w z => rfl
+        | ptr p => rfl
+        | vec n w l => rfl
+  | fneg d v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | float x => rfl
+        | int w z => rfl
+        | ptr p => rfl
+        | vec n w l => rfl
+  | fcmp d pred a b =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases pred with
+      | oeq =>
+        cases evalOperand s a with
+        | none => rfl
+        | some va =>
+          try dsimp only
+          cases va with
+          | float x =>
+            try dsimp only
+            cases evalOperand s b with
+            | none => rfl
+            | some vb =>
+              try dsimp only
+              cases vb with
+              | float y => rfl
+              | int w z => rfl
+              | ptr p => rfl
+              | vec n w l => rfl
+          | int w z => rfl
+          | ptr p => rfl
+          | vec n w l => rfl
+  | bitcastToInt d v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | float x => rfl
+        | int w z => rfl
+        | ptr p => rfl
+        | vec n w l => rfl
+  | bitcastToDouble d v =>
+      simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
+      cases evalOperand s v with
+      | none => rfl
+      | some vv =>
+        try dsimp only
+        cases vv with
+        | float x => rfl
+        | int w z =>
+          try dsimp only
+          repeat' split
+          all_goals rfl
+        | ptr p => rfl
         | vec n w l => rfl
   | alloca d ty align =>
       simp only [evalInstr, State.setPre, Option.map_some]
@@ -1493,6 +1788,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some pv =>
         try dsimp only
         cases pv with
+        | float b => rfl
         | int w x => rfl
         | ptr addr =>
           try dsimp only
@@ -1511,6 +1807,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | some pv =>
           try dsimp only
           cases pv with
+          | float b => rfl
           | int w x => rfl
           | ptr addr => rfl
           | vec n w l => rfl
@@ -1520,6 +1817,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | none => rfl
       | some bv =>
         cases bv with
+        | float b => rfl
         | int w x => rfl
         | ptr a =>
           try dsimp only
@@ -1528,6 +1826,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | some ov =>
             try dsimp only
             cases ov with
+            | float b => rfl
             | int w n =>
               try dsimp only
               by_cases hp : (n.signExtend 64).toNat < 2 ^ 63
@@ -1623,6 +1922,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | float b => rfl
         | int w x => rfl
         | ptr a => rfl
         | vec bn bw bl =>
@@ -1645,6 +1945,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | some iv =>
           try dsimp only
           cases iv with
+          | float b => rfl
           | int wi k =>
             try dsimp only
             cases vv.vecLanes n w with
@@ -1671,6 +1972,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | some iv =>
             try dsimp only
             cases iv with
+            | float b => rfl
             | int wi k =>
               try dsimp only
               cases vv.vecLanes n w with
@@ -1793,6 +2095,30 @@ theorem execTerm_setPre (s : State) (p : Option String) (t : Term) :
               | none => rfl
               | some x => rfl
       | vec n elem =>
+          cases v with
+          | none => rfl
+          | some o =>
+              simp only [execTerm, evalOperand_setPre]
+              cases ho : evalOperand s o with
+              | none => rfl
+              | some x => rfl
+      | double =>
+          cases v with
+          | none => rfl
+          | some o =>
+              simp only [execTerm, evalOperand_setPre]
+              cases ho : evalOperand s o with
+              | none => rfl
+              | some x => rfl
+      | array n elem =>
+          cases v with
+          | none => rfl
+          | some o =>
+              simp only [execTerm, evalOperand_setPre]
+              cases ho : evalOperand s o with
+              | none => rfl
+              | some x => rfl
+      | struct name bytes =>
           cases v with
           | none => rfl
           | some o =>
@@ -2044,6 +2370,11 @@ theorem evalOperand_agree {s t : State} {op : Operand}
   cases op with
   | reg n =>
       simpa only [evalOperand] using h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)
+  -- A global symbol is read from the environment under its key, which is in the
+  -- operand's read set, so the same transport that carries a register carries it.
+  | global n =>
+      simpa only [evalOperand] using
+        h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)
   | imm c => rfl
 
 /-- An operand the instruction evaluates reads the same at two states that agree
@@ -2126,6 +2457,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
   cases ty with
   | int w =>
     cases v with
+    | float b => simp only [storeValue] at hs; cases hs
     | int w' x =>
       by_cases hw : w' = w
       · simp only [storeValue, ite_eq_left hw] at hs
@@ -2140,6 +2472,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
   | ptr =>
     cases v with
+    | float b => simp only [storeValue] at hs; cases hs
     | ptr a =>
       simp only [storeValue] at hs
       cases hs
@@ -2149,10 +2482,24 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
     | int w x => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
   | void => simp only [storeValue] at hs; cases hs
+  | double =>
+    cases v with
+    | float b =>
+      simp only [storeValue] at hs
+      cases hs
+      let t' : State := { t with mem := writeBytes t.mem addr (natToBytes b.toNat 8) }
+      refine ⟨t', ?_, ⟨by rw [hm], hn, hp, hl⟩⟩
+      simp only [storeValue, t']
+    | int w x => simp only [storeValue] at hs; cases hs
+    | ptr a => simp only [storeValue] at hs; cases hs
+    | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+  | array n elem => cases v <;> simp only [storeValue] at hs <;> cases hs
+  | struct name bytes => cases v <;> simp only [storeValue] at hs <;> cases hs
   | vec n elem =>
     cases elem with
     | int w =>
       cases v with
+      | float b => simp only [storeValue] at hs; cases hs
       | vec n' w' lanes =>
         by_cases hc : n' = n ∧ w' = w ∧ lanes.length = n ∧ n * w % 8 = 0
         · simp only [storeValue, ite_eq_left hc] at hs
@@ -2168,6 +2515,9 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
     | ptr => cases v <;> simp only [storeValue] at hs <;> cases hs
     | void => cases v <;> simp only [storeValue] at hs <;> cases hs
     | vec n2 e2 => cases v <;> simp only [storeValue] at hs <;> cases hs
+    | double => cases v <;> simp only [storeValue] at hs <;> cases hs
+    | array n2 e2 => cases v <;> simp only [storeValue] at hs <;> cases hs
+    | struct nm b => cases v <;> simp only [storeValue] at hs <;> cases hs
 
 
 /-- **A single-width integer condition.**  `select`'s first arm binds the
@@ -2266,6 +2616,7 @@ theorem select_int (calls : Calls) {ns : List String} {d : String} {wt : Nat}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
@@ -2298,6 +2649,7 @@ theorem select_ptr (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
@@ -2330,6 +2682,7 @@ theorem select_void (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
@@ -2362,6 +2715,7 @@ theorem select_vecI (calls : Calls) {ns : List String} {d : String} {nv wi : Nat
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs => exact select_of_lanes calls h hc ha hb hcv hs
@@ -2388,6 +2742,7 @@ theorem select_vecP (calls : Calls) {ns : List String} {d : String} {nv : Nat}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
@@ -2420,6 +2775,7 @@ theorem select_vecV (calls : Calls) {ns : List String} {d : String} {nv : Nat}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
@@ -2452,8 +2808,207 @@ theorem select_vecVv (calls : Calls) {ns : List String} {d : String} {nv n2 : Na
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the `double` result type. -/
+theorem select_double (calls : Calls) {ns : List String} {d : String}
+    {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d Ty.double c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d Ty.double c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d Ty.double c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d Ty.double c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | float c' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the array result type. -/
+theorem select_array (calls : Calls) {ns : List String} {d : String}
+    {nv : Nat} {el : Ty} {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.array nv el) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.array nv el) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.array nv el) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.array nv el) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | float c' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the struct result type. -/
+theorem select_struct (calls : Calls) {ns : List String} {d : String}
+    {nm : String} {bytes : Nat} {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.struct nm bytes) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.struct nm bytes) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.struct nm bytes) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.struct nm bytes) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | float c' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the vector-of-`double` result type. -/
+theorem select_vecD (calls : Calls) {ns : List String} {d : String}
+    {nv : Nat} {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv Ty.double) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv Ty.double) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv Ty.double) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv Ty.double) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | float c' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the vector-of-array result type. -/
+theorem select_vecA (calls : Calls) {ns : List String} {d : String}
+    {nv n2 : Nat} {e2 : Ty} {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.array n2 e2)) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv (Ty.array n2 e2)) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv (Ty.array n2 e2)) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.array n2 e2)) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | float c' => simp [evalInstr, hc, hcv] at hs
+    | vec vn vw vs =>
+      simp only [evalInstr, hc, ha, hb, hcv] at hs
+      rcases vw with _ | k
+      · simp at hs
+      · rcases k with _ | j
+        · simp at hs
+        · simp at hs
+
+/-- The `select` transport at the vector-of-struct result type. -/
+theorem select_vecS (calls : Calls) {ns : List String} {d : String}
+    {nv : Nat} {nm : String} {bytes : Nat} {c a b : Operand} {s t s' : State} (h : State.AgreeOn ns s t)
+    (hread : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.struct nm bytes)) c a b), n ∈ ns)
+    (hs : evalInstr calls s (.select d (Ty.vec nv (Ty.struct nm bytes)) c a b) = some s') :
+    ∃ t', evalInstr calls t (.select d (Ty.vec nv (Ty.struct nm bytes)) c a b) = some t' ∧
+      State.AgreeOn ns s' t' := by
+  have hl : ∀ n ∈ Instr.uses (.select d (Ty.vec nv (Ty.struct nm bytes)) c a b),
+      lookupName s.env n = lookupName t.env n :=
+    fun n hn' => h.2.2.2 n (hread n hn')
+  have hc : evalOperand s c = evalOperand t c :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases c <;> simp_all [Instr.uses, Operand.regs])
+  have ha : evalOperand s a = evalOperand t a :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+  have hb : evalOperand s b = evalOperand t b :=
+    evalOperand_agree_of_uses hl (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+  rcases hcv : evalOperand t c with _ | vc
+  · simp [evalInstr, hc, hcv] at hs
+  · cases vc with
+    | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
+    | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | float c' => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -2474,12 +3029,18 @@ theorem select_agree (calls : Calls) {ns : List String} {d : String} {ty : Ty}
   | int wt => exact select_int calls h hread hs
   | ptr => exact select_ptr calls h hread hs
   | void => exact select_void calls h hread hs
+  | double => exact select_double calls h hread hs
+  | array nv el => exact select_array calls h hread hs
+  | struct nm bytes => exact select_struct calls h hread hs
   | vec nv el =>
     cases el with
     | int wi => exact select_vecI calls h hread hs
     | ptr => exact select_vecP calls h hread hs
     | void => exact select_vecV calls h hread hs
     | vec n2 e2 => exact select_vecVv calls h hread hs
+    | double => exact select_vecD calls h hread hs
+    | array n2 e2 => exact select_vecA calls h hread hs
+    | struct nm bytes => exact select_vecS calls h hread hs
 
 /-- **Consecutive-block transport: one instruction.**  If two states agree on the
 names an instruction reads, the instruction's run succeeds at the second state
@@ -2540,8 +3101,10 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
               exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
           | int w z => simp [hva, hvb] at hs
           | vec n w l => simp [hva, hvb] at hs
+          | float z => simp [hva, hvb] at hs
         | int w z => simp [hva, hvb] at hs
         | vec n w l => simp [hva, hvb] at hs
+        | float z => simp [hva, hvb] at hs
   | select d ty c a b =>
     exact select_agree calls h hread hs
   | trunc d wIn wOut v =>
@@ -2565,6 +3128,102 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
          exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
       | (cases hs)
   | sext d wIn wOut v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | ptrtoint d v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | inttoptr d v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | uitofp d wIn v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | fmul d a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | fdiv d a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | fneg d v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | fcmp d pred a b =>
+    have ha := evalOperand_agree_of_uses hl (op := a) (by
+      intro n hn'; cases a <;> simp_all [Instr.uses, Operand.regs])
+    have hb := evalOperand_agree_of_uses hl (op := b) (by
+      intro n hn'; cases b <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, ha, hb] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | bitcastToInt d v =>
+    have hv := evalOperand_agree_of_uses hl (op := v) (by
+      intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
+    simp only [evalInstr, hv] at hs
+    repeat (split at hs)
+    all_goals
+      first
+      | (cases hs
+         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+      | (cases hs)
+  | bitcastToDouble d v =>
     have hv := evalOperand_agree_of_uses hl (op := v) (by
       intro n hn'; cases v <;> simp_all [Instr.uses, Operand.regs])
     simp only [evalInstr, hv] at hs
@@ -2613,10 +3272,12 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
       · cases vb with
         | int wb y => simp [hbv, hov] at hs
         | vec n w l => simp [hbv, hov] at hs
+        | float z => simp [hbv, hov] at hs
         | ptr addr =>
           cases vo with
           | ptr z => simp [hbv, hov] at hs
           | vec n w l => simp [hbv, hov] at hs
+          | float z => simp [hbv, hov] at hs
           | int wi n =>
             by_cases hpos : (BitVec.signExtend 64 n).toNat < 2 ^ 63
             · simp only [hbv, hov, hpos] at hs

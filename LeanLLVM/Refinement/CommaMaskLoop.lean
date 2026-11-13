@@ -248,6 +248,8 @@ theorem evalInstr_mul_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
   | none => simp
   | some v =>
     cases v with
+    | float b =>
+      simp [Value.intToNat]
     | int w a =>
       by_cases hw : w = 64
       · subst hw
@@ -269,8 +271,12 @@ theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
     | none => simp
     | some v₂ =>
       cases v₁ with
+      | float b =>
+        simp [Value.intToNat]
       | int w a =>
         cases v₂ with
+        | float b =>
+          simp [Value.intToNat]
         | int w' b =>
           by_cases hw : w = 64
           · by_cases hw' : w' = 64
@@ -293,6 +299,8 @@ theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : Bi
   | none => simp
   | some v =>
     cases v with
+    | float b =>
+      simp [Value.intToNat]
     | int w b =>
       by_cases hw : w = 64
       · subst hw
@@ -356,6 +364,8 @@ theorem evalInstr_icmp_ult_imm (calls : Calls) (s : State) (d r : String) (b : B
   | none => simp
   | some v =>
     cases v with
+    | float b =>
+      simp [Value.intToNat]
     | int w a =>
       by_cases hw : w = 64
       · subst hw

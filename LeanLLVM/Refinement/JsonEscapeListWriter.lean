@@ -1721,13 +1721,20 @@ theorem ctpop_zero64 : ctpop (0 : BitVec 64) = 0 := by
 first `phi` extends. -/
 theorem evalOperand_cons_of_ne (env : Env) (s : State) (k : String) (v : Value)
     (oc : Operand) (w : Value)
-    (hne : ∀ n, oc = .reg n → n ≠ k)
+    (hne : k ∉ Operand.regs oc)
     (h : evalOperand (withEnv env s) oc = some w) :
     evalOperand (withEnv ((k, v) :: env) s) oc = some w := by
   cases oc with
   | reg n =>
+      have hnk : k ≠ n := by simpa [Operand.regs] using hne
       simp only [evalOperand, withEnv] at h ⊢
-      rw [lookupName_cons_ne v env (Ne.symm (hne n rfl))]
+      rw [lookupName_cons_ne v env hnk]
+      exact h
+  -- A symbol's cell is keyed by its own `@`-spelling, so the same peel applies.
+  | global n =>
+      have hnk : k ≠ n := by simpa [Operand.regs] using hne
+      simp only [evalOperand, withEnv] at h ⊢
+      rw [lookupName_cons_ne v env hnk]
       exact h
   | imm c => simpa only [evalOperand] using h
 
@@ -1855,10 +1862,8 @@ theorem lstWriter_step_exit (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : Lis
       have : xp + 4 * xn0 + 4 * used + 32 ≤ xp + 4 * blockMax xn0 := by
         unfold blockMax batchReserve; omega
       omega
-  have hne : ∀ n, oc = .reg n → n ≠ "%o.044.i.i" := by
-    intro n hn
-    rcases hocv with h | h <;> rw [hn] at h <;>
-      (injection h with h'; rw [h']; decide)
+  have hne : "%o.044.i.i" ∉ Operand.regs oc := by
+    rcases hocv with h | h <;> rw [h] <;> simp [Operand.regs]
   have hvc' : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: s.env) s) oc =
       some (.int 64 w) :=
     evalOperand_cons_of_ne s.env s "%o.044.i.i" (.ptr o) oc (.int 64 w) hne hvc
@@ -1918,10 +1923,8 @@ theorem lstWriter_step_loop (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : Lis
       have : xp + 4 * xn0 + 4 * used + 32 ≤ xp + 4 * blockMax xn0 := by
         unfold blockMax batchReserve; omega
       omega
-  have hne : ∀ n, oc = .reg n → n ≠ "%o.044.i.i" := by
-    intro n hn
-    rcases hocv with h | h <;> rw [hn] at h <;>
-      (injection h with h'; rw [h']; decide)
+  have hne : "%o.044.i.i" ∉ Operand.regs oc := by
+    rcases hocv with h | h <;> rw [h] <;> simp [Operand.regs]
   have hvc' : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: s.env) s) oc =
       some (.int 64 w) :=
     evalOperand_cons_of_ne s.env s "%o.044.i.i" (.ptr o) oc (.int 64 w) hne hvc

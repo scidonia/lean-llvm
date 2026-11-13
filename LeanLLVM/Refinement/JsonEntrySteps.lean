@@ -177,6 +177,13 @@ theorem evalOperand_withEnv_cons_of_ne {env : Env} {s : State} {n : String}
         intro hnm
         exact h (by simp only [Operand.regs, List.mem_singleton]; exact hnm)
       simp only [withEnv, evalOperand, State.bind, lookupName_cons_ne v env hmn]
+  -- A global symbol is read under its `@` key, which a register's cell cannot
+  -- shadow: the keys are disjoint by construction, so the same peel applies.
+  | global m =>
+      have hmn : n ≠ m := by
+        intro hnm
+        exact h (by simp only [Operand.regs, List.mem_singleton]; exact hnm)
+      simp only [withEnv, evalOperand, State.bind, lookupName_cons_ne v env hmn]
   | imm c => rfl
 
 
@@ -1856,131 +1863,27 @@ theorem storeValue_env (s s' : State) (ty : Ty) (v : Value) (addr : Nat)
   | .vec n (.vec _ _), _ => cases v <;> simp [storeValue] at h
   | .vec n .ptr, _ => cases v <;> simp [storeValue] at h
   | .vec n .void, _ => cases v <;> simp [storeValue] at h
+  | .double, _ =>
+      simp only [storeValue] at h
+      repeat' split at h
+      all_goals (try cases h)
+      all_goals rfl
+  | .array _ _, _ => simp [storeValue] at h
+  | .struct _ _, _ => simp [storeValue] at h
 
 theorem evalInstr_env_pre (calls : Calls) (s s' : State) (i : Instr)
     (h : evalInstr calls s i = some s') :
     (i.dst? = none ∧ s'.env = s.env) ∨
       (∃ d v, i.dst? = some d ∧ s'.env = (d, v) :: s.env) := by
-  cases i <;> simp only [evalInstr] at h
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · cases h
-    exact Or.inr ⟨_, _, rfl, rfl⟩
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inl ⟨rfl, storeValue_env _ _ _ _ _ h⟩
-             | exact Or.inr ⟨_, _, rfl, rfl⟩)
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
-  · (try (split at h)) <;> (try (split at h)) <;> (try (split at h)) <;>
-      (try (split at h)) <;> (try (split at h)) <;> (try (cases h)) <;>
-      (first | exact Or.inr ⟨_, _, rfl, rfl⟩
-             | exact Or.inl ⟨rfl, rfl⟩
-             | (rw [Option.map_eq_some_iff] at h; rcases h with ⟨r, _, rfl⟩;
-                exact Or.inr ⟨_, _, rfl, rfl⟩))
+  cases i <;> simp only [evalInstr] at h <;>
+    (repeat' (first | (split at h) | (cases h))) <;>
+    (first
+      | exact Or.inr ⟨_, _, rfl, rfl⟩
+      | exact Or.inl ⟨rfl, rfl⟩
+      | exact Or.inl ⟨rfl, storeValue_env _ _ _ _ _ h⟩
+      | (rw [Option.map_eq_some_iff] at h
+         rcases h with ⟨r, _, rfl⟩
+         exact Or.inr ⟨_, _, rfl, rfl⟩))
 
 theorem evalInstr_lookupName (calls : Calls) (s s' : State) (i : Instr) (n : String)
     (h : evalInstr calls s i = some s') (hn : i.dst? ≠ some n) :

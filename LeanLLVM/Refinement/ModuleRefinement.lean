@@ -126,6 +126,7 @@ theorem loop_seam_callRefines :
           · simp [envFor, hw]
         | ptr a => simp [envFor]
         | vec n' w' lanes => simp [envFor]
+        | float b => simp [envFor]
   · simp [envFor, h]
 
 /-- The contextual replacement: the caller under the memory-backed loop's
@@ -186,7 +187,7 @@ undefined. -/
 theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem : Mem)
     (next : Nat) (hne : ∀ y, a ≠ .int 64 y) :
     envForBody 10000 16 candidateFunction seamSymbol (a :: rest) mem next = none := by
-  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ := a
+  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ | ⟨bits⟩ := a
   · have hw : w ≠ 64 := by
       intro hw
       subst hw
@@ -199,6 +200,11 @@ theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem :
       findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
       argName]
+  · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
+      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
+      candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
+      argName]
+
   · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
@@ -286,6 +292,11 @@ theorem loop_seam_within_refines (x : BitVec 64) :
         intro y hy
         cases hy))
 
+    | .float bits =>
+      exact Or.inl (candidate_envForBody_none_of_head (.float bits) rest mem next (by
+        intro y hy
+        cases hy))
+
 /-- The emitted caller (`probes/install/ir/caller.ll`, `SeamContext.callerFunction`)
 observes the loop's selection at the loop's own footprint.  Its call is its first
 instruction, so it is reached at allocator base `1` with empty memory
@@ -355,6 +366,12 @@ theorem caller_replaces_loop_within (x : BitVec 64) :
     | .vec n' w' lanes =>
       exact ⟨o, caller_beh_of_unresolved 10000 16 candidateFunction (.vec n' w' lanes) rest o
         (candidate_envForBody_none_of_head (.vec n' w' lanes) rest [] 1 (by
+          intro y hy
+          cases hy)), Outcome.agreesOutside_refl o _⟩
+
+    | .float bits =>
+      exact ⟨o, caller_beh_of_unresolved 10000 16 candidateFunction (.float bits) rest o
+        (candidate_envForBody_none_of_head (.float bits) rest [] 1 (by
           intro y hy
           cases hy)), Outcome.agreesOutside_refl o _⟩
 
@@ -545,6 +562,13 @@ theorem memCaller_replaces_loop_within (x : BitVec 64) :
       exact ⟨o, memCaller_beh_of_unresolved (envForBody 10000 16 candidateFunction)
         (.vec n' w' lanes) rest o
         (candidate_envForBody_none_of_head (.vec n' w' lanes) rest [] 9 (by
+          intro y hy
+          cases hy)), Outcome.agreesOutside_refl o _⟩
+
+    | .float bits =>
+      exact ⟨o, memCaller_beh_of_unresolved (envForBody 10000 16 candidateFunction)
+        (.float bits) rest o
+        (candidate_envForBody_none_of_head (.float bits) rest [] 9 (by
           intro y hy
           cases hy)), Outcome.agreesOutside_refl o _⟩
 

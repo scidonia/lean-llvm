@@ -118,6 +118,15 @@ theorem evalInstr_escapeListCalls {Γ : MemContract} (s : State) (i : Instr)
   | insertelement _ _ _ _ _ _ => rfl
   | shuffleVec _ _ _ _ _ _ => rfl
   | vecBitcast _ _ _ _ _ _ => rfl
+  | ptrtoint _ _ => rfl
+  | inttoptr _ _ => rfl
+  | uitofp _ _ _ => rfl
+  | fmul _ _ _ => rfl
+  | fdiv _ _ _ => rfl
+  | fneg _ _ => rfl
+  | fcmp _ _ _ _ => rfl
+  | bitcastToInt _ _ => rfl
+  | bitcastToDouble _ _ => rfl
   | phi _ _ _ => rfl
 
 /-- A straight-line instruction sequence evaluates the same at either environment

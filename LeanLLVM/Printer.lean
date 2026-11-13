@@ -33,6 +33,16 @@ def Ty.render : Ty → String
   | .ptr => "ptr"
   | .void => "void"
   | .vec n elem => s!"<{n} x {elem.render}>"
+  | .array n elem => s!"[{n} x {elem.render}]"
+  | .struct name _ => s!"%struct.{name}"
+  | .double => "double"
+
+/-- Sixteen hexadecimal digits, zero-padded: the exact spelling of a binary64
+pattern.  LLVM reads `double 0x…` as the bit pattern, so the printed form is
+exact for every value, including `-0` and every NaN payload. -/
+def hex16 (n : Nat) : String :=
+  let ds := Nat.toDigits 16 n
+  "0x" ++ String.ofList (List.replicate (16 - ds.length) '0' ++ ds)
 
 /-- A literal, without its type: an integer is its unsigned value, as LLVM
 prints it.  A splat is `splat (<elem> <value>)` — the lane count is omitted
@@ -41,8 +51,10 @@ comes from the value itself.  A lane list is `<i8 34, i8 92>`, each lane written
 with its width the way LLVM prints a vector constant.  Every splat has a printed
 form, because a splat carries an integer.  A lane list with no lanes prints
 `<>`, which the parser does not read back: the parser requires at least one lane,
-so a zero-lane literal can only be built directly in an AST. -/
+so a zero-lane literal can only be built directly in an AST.  A binary64 literal
+is written as its 16-digit hexadecimal pattern, which is exact for every value. -/
 def Const.render : Const → String
+  | .float b => hex16 b.toNat
   | .int _ v => toString v.toNat
   | .null => "null"
   | .undef => "undef"
@@ -54,12 +66,14 @@ def Const.render : Const → String
 /-- Render an operand that carries no type prefix of its own. -/
 def Operand.token : Operand → String
   | .reg n => n
+  | .global n => n
   | .imm c => Const.render c
 
 /-- Render an operand with its type, as LLVM does where the type cannot be
 inferred from position. -/
 def Operand.render (ty : Ty) : Operand → String
   | .reg n => s!"{ty.render} {n}"
+  | .global n => s!"{ty.render} {n}"
   | .imm c => s!"{ty.render} {Const.render c}"
 
 def BinOp.render : BinOp → String
@@ -67,6 +81,9 @@ def BinOp.render : BinOp → String
   | .udiv => "udiv" | .sdiv => "sdiv" | .urem => "urem" | .srem => "srem"
   | .and => "and" | .or => "or" | .xor => "xor"
   | .shl => "shl" | .lshr => "lshr" | .ashr => "ashr"
+
+def FPred.render : FPred → String
+  | .oeq => "oeq"
 
 def IPred.render : IPred → String
   | .eq => "eq" | .ne => "ne"
@@ -85,6 +102,15 @@ def Instr.resultTy : Instr → Option Ty
   | .trunc _ _ wOut _ => some (.int wOut)
   | .zext _ _ wOut _ => some (.int wOut)
   | .sext _ _ wOut _ => some (.int wOut)
+  | .ptrtoint .. => some (.int 64)
+  | .inttoptr .. => some .ptr
+  | .uitofp .. => some .double
+  | .fmul .. => some .double
+  | .fdiv .. => some .double
+  | .fneg .. => some .double
+  | .fcmp .. => some (.int 1)
+  | .bitcastToInt .. => some (.int 64)
+  | .bitcastToDouble .. => some .double
   | .alloca .. => some .ptr
   | .load _ ty _ => some ty
   | .store .. => none
@@ -183,6 +209,24 @@ def Instr.renderWith (regTy : String → Option Ty) : Instr → String
       s!"  {d} = zext i{wIn} {v.token} to i{wOut}"
   | .sext d wIn wOut v =>
       s!"  {d} = sext i{wIn} {v.token} to i{wOut}"
+  | .ptrtoint d v =>
+      s!"  {d} = ptrtoint ptr {v.token} to i64"
+  | .inttoptr d v =>
+      s!"  {d} = inttoptr i64 {v.token} to ptr"
+  | .uitofp d wIn v =>
+      s!"  {d} = uitofp i{wIn} {v.token} to double"
+  | .fmul d a b =>
+      s!"  {d} = fmul double {a.token}, {b.token}"
+  | .fdiv d a b =>
+      s!"  {d} = fdiv double {a.token}, {b.token}"
+  | .fneg d v =>
+      s!"  {d} = fneg double {v.token}"
+  | .fcmp d pred a b =>
+      s!"  {d} = fcmp {pred.render} double {a.token}, {b.token}"
+  | .bitcastToInt d v =>
+      s!"  {d} = bitcast double {v.token} to i64"
+  | .bitcastToDouble d v =>
+      s!"  {d} = bitcast i64 {v.token} to double"
   | .alloca d ty align =>
       if align = 0 then s!"  {d} = alloca {ty.render}"
       else s!"  {d} = alloca {ty.render}, align {align}"

@@ -288,10 +288,8 @@ theorem lstWriter_step_mem (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : List
       have : xp + 4 * xn0 + 4 * used + 32 ≤ xp + 4 * blockMax xn0 := by
         unfold blockMax batchReserve; omega
       omega
-  have hne : ∀ n, oc = .reg n → n ≠ "%o.044.i.i" := by
-    intro n hn
-    rcases hocv with h | h <;> rw [hn] at h <;>
-      (injection h with h'; rw [h']; decide)
+  have hne : "%o.044.i.i" ∉ Operand.regs oc := by
+    rcases hocv with h | h <;> rw [h] <;> simp [Operand.regs]
   have hvc' : evalOperand (withEnv (("%o.044.i.i", .ptr o) :: s.env) s) oc =
       some (.int 64 w) :=
     evalOperand_cons_of_ne s.env s "%o.044.i.i" (.ptr o) oc (.int 64 w) hne hvc

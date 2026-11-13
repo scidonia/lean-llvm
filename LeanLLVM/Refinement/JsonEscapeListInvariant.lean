@@ -219,6 +219,8 @@ theorem xl_batch_post_unpack {args mem next out} (h : Γ_xl_batch.post args mem 
       | none => simp at h
       | some v =>
           cases v with
+          | float b =>
+            simp at h
           | int w c =>
               by_cases hw : w = 32
               · subst hw

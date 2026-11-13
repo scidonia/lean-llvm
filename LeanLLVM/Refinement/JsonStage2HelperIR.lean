@@ -48,29 +48,32 @@ their bodies here.  What remains is stated rather than implied:
 Both are stated at the same staging the contracts give, so neither is blocked by
 a missing representation; the obligation is the trace, not a widening.
 
-**Two obstructions, measured.**  One body is expressible but its proof is
-obstructed, and two bodies are not programs of this fragment at all:
+**The obstructions, measured.**  One body is expressible but its proof is
+obstructed, one was outside the fragment and is now a program whose proof is
+open, and one is still outside it:
 
 * `od_scalar_value` is expressible after the walk's three rewrites and is pinned
   by shape (38 blocks, 145 instructions, four parameters).  Its proof is
   obstructed: its accepted path calls `num_fast_el1`, whose body this fragment
   cannot express, and it must match `outTag`'s hash chain and `emitBlobs`'
   reserve byte for byte.
-* `s2_string_body` carries `ptrtoint`, and the fragment has no term for it:
-  `Ty`, `Instr` and `Value` have no pointer-to-integer conversion, and an address
-  is an unbounded `Nat` while an `i64` is `BitVec 64`.  The parser refuses the
-  body at that instruction, so there is no denotation to prove anything of.  Its
-  text is in the tree and the refusal is pinned; its cursor-scan loop would be the
-  next obstruction.
+* `s2_string_body` carries `ptrtoint`, which the fragment models as
+  `Instr.ptrtoint` at the model's 64-bit pointer width; the step is exact below
+  `2 ^ 64` and `ub` at or above it, so a use owes the staging's address bound.
+  The body's other construct is its global-symbol operand `@.str.14`, which is an
+  `Operand.global` read from the loader's assignment at the run's staging.  The
+  body parses; its contents are pinned below.
 * `num_fast_el1` carries `alloca [768 x i8]`, `alloca %struct.Stk` and the
-  binary64 chain (`uitofp`, `fmul`, `fdiv`, `fneg`, `select double`).  `Ty` has
-  no aggregate and no floating point, so the body is outside the fragment by
-  construction — the same measurement `stage2.rewrites.tsv` records as the reason
-  the walk's fixture keeps it out of line.  Its text is not written to the tree: a
-  fixture nothing can read is not a pin.  `stage2.helpers.tsv` records its shape
-  (1 922 lines, 237 blocks, two aggregate allocas, thirty-eight floating-point
-  sites) and the refusal reason, and the capture refuses if the emission stops
-  carrying them.
+  binary64 chain (`uitofp`, `fmul`, `fdiv`, `fneg`, `select double`), all of
+  which the fragment models.  Its body is still outside it, on a narrower ground
+  than the shape: `-0.000000e+00`, the form LLVM prints for a negative zero, is
+  an exponent spelling the double reader refuses — it reads a decimal or a `0x`
+  pattern — so the measurement `stage2.rewrites.tsv` records as the reason the
+  walk's fixture keeps it out of line stands.  Its text is not written to the
+  tree: a fixture nothing can read is not a pin.  `stage2.helpers.tsv` records
+  its shape (1 922 lines, 237 blocks, two aggregate allocas, thirty-eight
+  floating-point sites) and the refusal reason, and the capture refuses if the
+  emission stops carrying them.
 
 **One finding the body text carries.**  Where the model refuses, it writes the
 error record's `ok` word and its offset (`stage2ErrSet`), and the helpers'
@@ -410,13 +413,14 @@ does not leave it so.  The lemma is the arithmetic only; the region is
 theorem errorRegion_message_outside (e : Nat) :
     ¬ (e ≤ e + 16 ∧ e + 16 < e + 16) := by omega
 
-/-! #### `s2_string_body`: refused at `ptrtoint`
+/-! #### `s2_string_body`: the conversions and the symbol
 
-The capture writes the body to the tree so the refusal is a measurement rather
-than a claim.  The parser refuses it, and the marker that names why discriminates:
-the same marker is false on a body the fragment does express. -/
--- The fragment does not parse this text, and it parses the sibling beside it.
-#guard !parses s2StringBodySrc
+The capture writes the body to the tree, so what it parses to is a measurement
+rather than a claim.  It carries the conversion pair and the global-symbol
+operand; the marker below discriminates, because the sibling body carries
+neither. -/
+-- The fragment parses this text and the sibling beside it.
+#guard parses s2StringBodySrc
 #guard parses s2InitSrc
 -- The construct the fragment has no term for, and the control that the marker
 -- does not find it where the fragment does have terms.

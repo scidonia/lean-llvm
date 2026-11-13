@@ -16,8 +16,8 @@ about.  `capture-stage2.sh` records how it is derived; the summary is:
   `stage2.strip.tsv`) and four rewrites (recorded in `stage2.rewrites.tsv`):
   array reads become byte reads, the three refusal-message operands become
   `null`, `llvm.umin.i64` unfolds to `icmp`+`select`, and the eight local objects
-  the fragment cannot allocate become appended `ptr` parameters
-  (`stage2.staging.tsv`).
+  the fragment could not allocate when the fixture was cut become appended `ptr`
+  parameters (`stage2.staging.tsv`).
 
 ## What the pinned body is, and what it is not
 
@@ -30,9 +30,10 @@ emission of the same source is 1754 lines in 233 blocks and carries binary64
 `phi double`), because `od_scalar_value` and `num_fast_el1` are
 `__attribute__((always_inline))`; the same source with the twelve helpers
 `noinline` is 944 lines in 165 blocks with no binary64 and no vector operation.
-`Ty` and `Semantics` have no floating point, so the inlined text has no
-representation here at all.  Out of line, the number path is a call, and its
-contract is the one this tree already proves: `numFastEmitted_strtodSpec` in
+The inlined text had no representation when the fixture was cut, `Ty` and
+`Semantics` having had no floating point; the core extension now models binary64
+and aggregates, but this proof is over the out-of-line body, whose number path is
+a call, and that is the contract the tree proves: `numFastEmitted_strtodSpec` in
 `JsonStage2Body`, the composition of the three tier theorems, states the
 conversion's observable.
 

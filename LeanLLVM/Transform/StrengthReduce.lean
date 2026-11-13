@@ -57,14 +57,36 @@ def strengthReduceInstr : Instr → Instr
 theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
     evalInstr calls s (strengthReduceInstr i) = evalInstr calls s i := by
   cases i with
+  | bitcastToDouble d v =>
+    rfl
+  | bitcastToInt d v =>
+    rfl
+  | fcmp d pred a b =>
+    rfl
+  | fneg d v =>
+    rfl
+  | fdiv d a b =>
+    rfl
+  | fmul d a b =>
+    rfl
+  | uitofp d wIn v =>
+    rfl
+  | inttoptr d v =>
+    rfl
+  | ptrtoint d v =>
+    rfl
   | gep d elemTy base off => rfl
   | binop d op w lhs rhs =>
       cases op with
       | mul =>
           cases rhs with
+          | global n =>
+            rfl
           | reg n => rfl
           | imm c =>
               cases c with
+              | float b =>
+                rfl
               | int w2 v =>
                   simp only [strengthReduceInstr]
                   by_cases h : w2 = w
@@ -78,6 +100,8 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
                       | none => rfl
                       | some val =>
                           cases val with
+                          | float b =>
+                            simp [evalOperand, Const.toValue, Value.intToNat]
                           | ptr a =>
                               simp [evalOperand, Const.toValue, Value.intToNat]
                           | int w' x =>

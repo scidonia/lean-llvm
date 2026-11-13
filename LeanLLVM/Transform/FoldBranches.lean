@@ -40,9 +40,13 @@ theorem execTerm_foldTerm (s : State) (t : Term) :
   | condbr c a b =>
       simp only [foldTerm]
       cases c with
+      | global n =>
+        rfl
       | reg n => rfl
       | imm cc =>
           cases cc with
+          | float b =>
+            rfl
           | int w v =>
               simp only [truthValue]
               by_cases hw : w = 1

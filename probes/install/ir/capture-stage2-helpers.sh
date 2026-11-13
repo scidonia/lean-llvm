@@ -50,24 +50,25 @@
 # `llvm.umin.i64` unfolds — because its number path takes the conversion's slot
 # as a pointer exactly as the walk's `%d.i` does.
 #
-# Two are not programs of the fragment, and the script measures it rather than
-# asserting it:
+# The two bodies the core extension is about are measured rather than asserted:
 #
-#   s2_string_body   `ptrtoint` (the body's `%sub.ptr.sub`).  `Ty`/`Instr`/`Value`
-#                    have no pointer-to-integer conversion, and the model's
-#                    address is an unbounded `Nat` while an i64 is `BitVec 64`,
-#                    so there is no term for the instruction and no rewrite
-#                    that preserves it.
+#   s2_string_body   `ptrtoint` (the body's `%sub.ptr.sub`) and the
+#                    global-symbol operand `@.str.14`.  Both are modelled —
+#                    `Instr.ptrtoint` at the model's 64-bit pointer width,
+#                    `Operand.global` read from the run's staging — so the body
+#                    is a program of the fragment, and `JsonStage2HelperIR`
+#                    pins the AST it parses to.
 #   num_fast_el1     aggregate and binary64 text: `alloca [768 x i8]`,
 #                    `alloca %struct.Stk`, `alloca double`, and the `uitofp`/
-#                    `fmul`/`fdiv`/`fneg`/`select double` chain.  `Ty` has no
-#                    aggregate and no floating point, so the conversion's body
-#                    is outside the fragment by construction — which is the
-#                    derivation's own reason for keeping it a call.
+#                    `fmul`/`fdiv`/`fneg`/`select double` chain, all modelled.
+#                    The body is still outside the fragment at one literal
+#                    spelling: `-0.000000e+00`, LLVM's printed negative zero, is
+#                    an exponent form the double reader refuses (it reads a
+#                    decimal or a `0x` pattern).
 #
-# Their text is not written to the tree: a fixture nothing can read is not a
-# pin.  The inventory records the shape and the refusal reason, and the checks
-# below refuse if the emission stops having it.
+# num_fast_el1's text is not written to the tree: a fixture nothing can read is
+# not a pin.  The inventory records the shape and the verdict, and the checks
+# below refuse if the emission stops having the measured constructs.
 #
 # Exit status: 0 when the fixtures and the inventory are written; 3 when an
 # input is missing or a derivation check fails.
@@ -161,7 +162,7 @@ extract_define() { # <symbol> <out>
 }
 
 # ---------------------------------------------------------------------------
-# The four bodies the fragment models, and the two it cannot
+# The captured bodies, and the one rewrite the walk applies
 # ---------------------------------------------------------------------------
 
 # `od_scalar_value`'s staging: its `alloca double` becomes an appended pointer
@@ -211,7 +212,8 @@ capture s2_string_body as-is
 capture od_scalar_value od
 capture num_fast_el1 as-is
 
-# The four representable bodies carry no construct the fragment refuses.
+# These four bodies carry none of the constructs the two measured bodies do,
+# and the check refuses if a regeneration introduces one.
 for sym in s2_init s2_value_pos s2_after_value od_scalar_value; do
   for pat in 'ptrtoint' 'double' '%struct\.' '\[[0-9]+ x ' '@\.str\.' 'umin' ' fastcc '; do
     if grep -qE "$pat" "$work/$sym.body.ll"; then
@@ -222,17 +224,17 @@ for sym in s2_init s2_value_pos s2_after_value od_scalar_value; do
   [ "$nret" -ge 1 ] || fail "$sym's body has no \`ret\`"
 done
 
-# The two the fragment does not represent: the construct is measured, not
-# assumed, and the script refuses if the emission stops carrying it.
+# The two measured bodies: the construct is measured, not assumed, and the
+# script refuses if the emission stops carrying it.
 nptrtoint=$(grep -c 'ptrtoint ' "$work/s2_string_body.body.ll" || true)
 [ "$nptrtoint" -ge 1 ] ||
-  fail "s2_string_body's body no longer carries \`ptrtoint\`; the recorded obstruction is not the emission's"
+  fail "s2_string_body's body no longer carries \`ptrtoint\`; the recorded construct is not the emission's"
 nfp=$(grep -cE '\b(uitofp|sitofp|fadd|fsub|fmul|fdiv|fneg|fcmp|fpext|fptrunc)\b|(^|[^a-z])double([^a-z]|$)' "$work/num_fast_el1.body.ll" || true)
 nagg=$(grep -cE 'alloca (\[[0-9]+ x |%struct\.)' "$work/num_fast_el1.body.ll" || true)
 [ "$nfp" -ge 1 ] ||
-  fail "num_fast_el1's body no longer carries binary64; the recorded obstruction is not the emission's"
+  fail "num_fast_el1's body no longer carries binary64; the recorded construct is not the emission's"
 [ "$nagg" -ge 1 ] ||
-  fail "num_fast_el1's body no longer carries an aggregate alloca; the recorded obstruction is not the emission's"
+  fail "num_fast_el1's body no longer carries an aggregate alloca; the recorded construct is not the emission's"
 
 # ---------------------------------------------------------------------------
 # The cross-check: each captured body is the symbol the walk's fixture declares
@@ -293,9 +295,9 @@ for sym in s2_init s2_value_pos s2_after_value s2_string_body od_scalar_value; d
   out=$here/stage2.helper.$sym.ll
   case "$sym" in
     s2_string_body)
-      note='The body is captured but is not a program of this fragment: it carries `ptrtoint`, which `Ty`, `Instr` and `Value` have no term for.  The model states its contract at the call boundary and this fixture is the measurement of why it cannot state it in the body language.' ;;
+      note='The body is a program of this fragment: its `ptrtoint` pair and its `@.str.14` symbol operand are both modelled, and `JsonStage2HelperIR` pins the AST it parses to.' ;;
     od_scalar_value)
-      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose body the fragment cannot express.' ;;
+      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose body is outside the fragment at the negative-zero literal spelling `-0.000000e+00`.' ;;
     *)
       note='The body is captured and the fragment expresses it.' ;;
   esac
@@ -318,11 +320,11 @@ done
     params=$(arity_of "$(head -1 "$f")")
     case "$sym" in
       s2_string_body)
-        verdict=refused
-        basis="ptrtoint: no pointer-to-integer conversion in Ty/Instr/Value, and the model's address is an unbounded Nat while i64 is BitVec 64" ;;
+        verdict=expressible
+        basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean" ;;
       num_fast_el1)
         verdict=refused
-        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)): Ty has no aggregate and no floating point" ;;
+        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)), all modelled; refused at the negative-zero literal spelling -0.000000e+00, an exponent form the double reader does not accept" ;;
       *)
         verdict=expressible
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean" ;;

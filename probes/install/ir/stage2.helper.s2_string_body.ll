@@ -7,7 +7,7 @@
 ; `noinline` on every helper except s2_walk, the same token strip
 ; capture-stage2.sh applies, and — for od_scalar_value only — the walk's own
 ; three rewrites: its conversion slot becomes a pointer parameter, its
-; messages become `null`, and its one llvm.umin.i64 unfolds.  The body is captured but is not a program of this fragment: it carries `ptrtoint`, which `Ty`, `Instr` and `Value` have no term for.  The model states its contract at the call boundary and this fixture is the measurement of why it cannot state it in the body language.
+; messages become `null`, and its one llvm.umin.i64 unfolds.  The body is a program of this fragment: its `ptrtoint` pair and its `@.str.14` symbol operand are both modelled, and `JsonStage2HelperIR` pins the AST it parses to.
 ;
 define i32 @s2_string_body(ptr %c, ptr %p, i64 %len, ptr %dst, ptr %outn, ptr %xp, ptr %xj, i64 %nxp) {
 entry:

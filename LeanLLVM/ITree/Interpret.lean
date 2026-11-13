@@ -93,6 +93,7 @@ def storeMem (m : Mem) (ty : Ty) (v : Value) (addr : Nat) : Mem :=
       if n' = n ∧ w' = w ∧ lanes.length = n ∧ n * w % 8 = 0 then
         writeBytes m addr (natToBytes (packLanes lanes) (n * w / 8))
       else m
+  | .double, .float b => writeBytes m addr (natToBytes b.toNat 8)
   | _, _ => m
 
 /-- Instructions with no event: the semantics' own decision, lifted. -/
@@ -331,6 +332,42 @@ theorem evalInstr_mem_of_not_store_or_call (calls : Calls) (s : State) (i : Inst
       simp only [evalInstr] at h
       repeat' split at h
       all_goals (cases h <;> rfl)
+  | ptrtoint d v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | inttoptr d v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | uitofp d wIn v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | fmul d a b =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | fdiv d a b =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | fneg d v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | fcmp d pred a b =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | bitcastToInt d v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
+  | bitcastToDouble d v =>
+      simp only [evalInstr] at h
+      repeat' split at h
+      all_goals (cases h <;> rfl)
   | phi d ty inc =>
       exact evalInstr_phi_mem h
 
@@ -351,6 +388,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
           · exact absurd h (by simp)
       | ptr a => simp [storeValue] at h
       | vec n' w' lanes => simp [storeValue] at h
+      | float b => simp [storeValue] at h
   | ptr =>
       cases v with
       | int w x => simp [storeValue] at h
@@ -359,6 +397,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
           subst h
           simp only [storeMem]
       | vec n' w' lanes => simp [storeValue] at h
+      | float b => simp [storeValue] at h
   | vec n elem =>
       cases elem with
       | int w =>
@@ -374,10 +413,25 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
               · exact absurd h (by simp)
           | int w' x => simp [storeValue] at h
           | ptr a => simp [storeValue] at h
+          | float b => simp [storeValue] at h
       | ptr => cases v <;> simp [storeValue] at h
       | void => cases v <;> simp [storeValue] at h
       | vec m e => cases v <;> simp [storeValue] at h
+      | array m e => cases v <;> simp [storeValue] at h
+      | struct name bytes => cases v <;> simp [storeValue] at h
+      | double => cases v <;> simp [storeValue] at h
   | void => cases v <;> simp [storeValue] at h
+  | array n e => cases v <;> simp [storeValue] at h
+  | struct name bytes => cases v <;> simp [storeValue] at h
+  | double =>
+      cases v with
+      | float b =>
+          simp only [storeValue, Option.some.injEq] at h
+          subst h
+          simp only [storeMem]
+      | int w x => simp [storeValue] at h
+      | ptr a => simp [storeValue] at h
+      | vec n' w' lanes => simp [storeValue] at h
 
 theorem exec_pureInstrT (calls : Calls) (s : State) (i : Instr)
     (k : State → Tree Ev Outcome) (r : Option Outcome)
@@ -411,6 +465,11 @@ theorem exec_instrT_load (calls : Calls) (s : State) (d : String) (ty : Ty) (p :
   | some v =>
       cases v with
       | int w x =>
+          have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+          rw [hub hE]
+          simp only [instrT, hOp]
+          exact Exec.ub
+      | float b =>
           have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
           rw [hub hE]
           simp only [instrT, hOp]
@@ -460,6 +519,12 @@ theorem exec_instrT_store (calls : Calls) (s : State) (ty : Ty) (v p : Operand)
           exact Exec.ub
       | some pv =>
           cases pv with
+          | float b =>
+              have hE : evalInstr calls s (.store ty v p) = none := by
+                simp [evalInstr, hv, hp]
+              rw [hub hE]
+              simp only [instrT, hv, hp]
+              exact Exec.ub
           | int w x =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]
@@ -631,6 +696,60 @@ theorem exec_codeTFrom (calls : Calls) (hpure : PureEnv calls) :
           (instrT calls (s.bindAll pend) i (fun s' => codeTFrom calls [] is s' k))
           (s.bindAll pend).mem r
         cases i with
+      | ptrtoint d v =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.ptrtoint d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.ptrtoint d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | inttoptr d v =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.inttoptr d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.inttoptr d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | uitofp d wIn v =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.uitofp d wIn v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.uitofp d wIn v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fmul d a b =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.fmul d a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fmul d a b) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fdiv d a b =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.fdiv d a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fdiv d a b) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fneg d v =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.fneg d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fneg d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fcmp d pred a b =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.fcmp d pred a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fcmp d pred a b) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | bitcastToInt d v =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.bitcastToInt d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.bitcastToInt d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | bitcastToDouble d v =>
+          exact exec_pureInstrT calls (s.bindAll pend) (.bitcastToDouble d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.bitcastToDouble d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
       | phi d ty inc => simp only [Instr.isPhi] at hi; cases hi
       | load d ty p => exact exec_instrT_load calls (s.bindAll pend) d ty p _ r hokK hubK
       | store ty v p => exact exec_instrT_store calls (s.bindAll pend) ty v p _ r hokK hubK
@@ -742,6 +861,7 @@ theorem execTerm_jump_mem (s : State) (t : Term) (s' : State)
       | some v =>
           cases v with
           | ptr a => simp [execTerm, hOp] at h
+          | float b => simp [execTerm, hOp] at h
           | vec n w x => simp [execTerm, hOp] at h
           | int w b =>
               cases w with

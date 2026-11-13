@@ -46,6 +46,47 @@ inductive Instr where
   | trunc (dst : String) (wIn wOut : Nat) (v : Operand)
   | zext (dst : String) (wIn wOut : Nat) (v : Operand)
   | sext (dst : String) (wIn wOut : Nat) (v : Operand)
+  /-- An address as an integer: `%d = ptrtoint ptr %v to i64`.  The model's
+  pointer is 64 bits wide — the pinned datalayout's address-space-0 width, which
+  `Ty.sizeBytes .ptr` reads — while an address is an unbounded `Nat`.  So this is
+  the one width at which the conversion is a bijection on the addresses a
+  pointer holds: `BitVec.ofNat 64` is the identity below `2 ^ 64`, and
+  `Value.toAddr` reads it back there.  A destination of any other width is not
+  modelled.  A narrower `iN` would truncate an address the model keeps wider,
+  and a wider one would zero-extend a value that is already 64 bits.  No width
+  field is carried, for the reason `icmpPtr` carries no operand type: the parser
+  checks the written `i64` and the printer emits it.
+
+  The step is defined only for an address below `2 ^ 64`.  An address at or
+  above it is one LLVM's pointer cannot hold, and the model refuses it (`ub`)
+  rather than truncating it.  A use therefore discharges `a < 2 ^ 64` from its
+  staging, where the addresses are bounded. -/
+  | ptrtoint (dst : String) (v : Operand)
+  /-- An address from an integer: `%d = inttoptr i64 %v to ptr`.  The inverse
+  reading of `ptrtoint` at the same width.  An `i64` value names an address
+  below `2 ^ 64` by construction, so the step is total on the modelled operand.
+  It is admitted as the other half of the conversion pair, which is what states
+  the pair's exactness (`Value.toAddr_ofAddr`); no captured body emits one yet,
+  so its acceptance control is the scenario in `tests/casts.lean` rather than an
+  emitted body. -/
+  | inttoptr (dst : String) (v : Operand)
+  /-- `%d = uitofp iW %v to double`: the integer's value as the nearest
+  binary64, ties to even.  The source width is a field because it is what the
+  read checks the value against; the result type is fixed. -/
+  | uitofp (dst : String) (wIn : Nat) (v : Operand)
+  /-- `%d = fmul double %a, %b`.  The type is not a field: both operands are
+  binary64, which the parser checks. -/
+  | fmul (dst : String) (lhs rhs : Operand)
+  /-- `%d = fdiv double %a, %b`, on the same reading as `fmul`. -/
+  | fdiv (dst : String) (lhs rhs : Operand)
+  /-- `%d = fneg double %v`: the sign bit's inversion, payload preserved. -/
+  | fneg (dst : String) (v : Operand)
+  /-- `%d = fcmp <pred> double %a, %b`. -/
+  | fcmp (dst : String) (pred : FPred) (lhs rhs : Operand)
+  /-- `%d = bitcast double %v to i64`: the same 64 bits, read as an integer. -/
+  | bitcastToInt (dst : String) (v : Operand)
+  /-- `%d = bitcast i64 %v to double`: the same 64 bits, read as a number. -/
+  | bitcastToDouble (dst : String) (v : Operand)
   | alloca (dst : String) (ty : Ty) (align : Nat)
   | load (dst : String) (ty : Ty) (ptr : Operand)
   /-- A memory write of a scalar or a vector of integer lanes.  A vector value is
@@ -233,6 +274,7 @@ index to the element width would close the address-width gap, and is not added
 here. -/
 def Ty.gepElemAdmitted : Ty → Bool
   | .int 1 | .int 7 | .int 8 | .int 16 | .int 32 | .int 64 | .int 128 => true
+  | .double => true
   | .vec n (.int w) => w % 8 == 0 && isPowerOfTwo (n * w / 8)
   | _ => false
 
@@ -245,6 +287,15 @@ def Instr.dst? : Instr → Option String
   | .trunc d _ _ _ => some d
   | .zext d _ _ _ => some d
   | .sext d _ _ _ => some d
+  | .ptrtoint d _ => some d
+  | .inttoptr d _ => some d
+  | .uitofp d _ _ => some d
+  | .fmul d _ _ => some d
+  | .fdiv d _ _ => some d
+  | .fneg d _ => some d
+  | .fcmp d _ _ _ => some d
+  | .bitcastToInt d _ => some d
+  | .bitcastToDouble d _ => some d
   | .alloca d _ _ => some d
   | .load d _ _ => some d
   | .store _ _ _ => none
@@ -269,6 +320,15 @@ def Instr.uses : Instr → List String
   | .trunc _ _ _ v => v.regs
   | .zext _ _ _ v => v.regs
   | .sext _ _ _ v => v.regs
+  | .ptrtoint _ v => v.regs
+  | .inttoptr _ v => v.regs
+  | .uitofp _ _ v => v.regs
+  | .fmul _ a b => a.regs ++ b.regs
+  | .fdiv _ a b => a.regs ++ b.regs
+  | .fneg _ v => v.regs
+  | .fcmp _ _ a b => a.regs ++ b.regs
+  | .bitcastToInt _ v => v.regs
+  | .bitcastToDouble _ v => v.regs
   | .alloca _ _ _ => []
   | .load _ _ p => p.regs
   | .store _ v p => v.regs ++ p.regs
@@ -296,6 +356,15 @@ def Instr.isPure : Instr → Bool
   | .trunc .. => true
   | .zext .. => true
   | .sext .. => true
+  | .ptrtoint .. => true
+  | .inttoptr .. => true
+  | .uitofp .. => true
+  | .fmul .. => true
+  | .fdiv .. => true
+  | .fneg .. => true
+  | .fcmp .. => true
+  | .bitcastToInt .. => true
+  | .bitcastToDouble .. => true
   | .alloca .. => false
   | .load .. => true
   | .store .. => false

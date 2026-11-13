@@ -450,8 +450,8 @@ canonical IR, checked with `llvm-as` in the verification runs.
    proof is naturally one-directional.
 2. **Unreachable-block elimination.**  Branch folding creates unreachable
    blocks; removing them is an equivalence over reachable states.
-3. **Wider syntax.**  Globals, and a dominance check for
-   cross-block constant propagation.  (`phi` is modelled: selection is by the
+3. **Wider syntax.**  A dominance check for cross-block constant propagation is
+   what remains next.  (`phi` is modelled: selection is by the
    predecessor field, and its conformance and differential evidence live in
    `tests/phi-fragment.lean` and `tests/phi-differential.sh`.)  Calls are modelled
    (`Instr.call` resolved through `Calls`, which returns the callee's value,
@@ -496,8 +496,27 @@ canonical IR, checked with `llvm-as` in the verification runs.
    step scales by the size LLVM allocates, which is the packed size only where
    the two clauses hold; `<8 x i1>` fails the first (the model packs one byte where
    `sizeBytes` counts eight) and `<4 x i24>` and `<3 x i32>` the second (both pack
-   12 bytes and LLVM steps 16).  A width whose two sizes differ (`i24`, `i48`),
-   and an aggregate or pointer element type, remains future and is refused by name.
+   12 bytes and LLVM steps 16).  A width whose two sizes differ (`i24`, `i48`)
+   remains future and is refused by name.
+   Four further constructs are modelled, each the surface an emitted stage-2
+   body needs and each checked in `tests/core-extension.lean`.  A symbol `@g` is
+   `Operand.global`: its value is the address the run's staging assigns
+   (`withGlobals`), its environment key is its own `@`-spelling where a
+   register's is its `%`-spelling, it is read at `ptr` only, and a symbol the
+   staging does not bind is `ub`.  `ptrtoint`/`inttoptr` convert at
+   `sizeBytes .ptr`'s 64 bits — exact below `2 ^ 64` and `ub` at or above it,
+   with the round trip `Value.toAddr_ofAddr` — and another written width or
+   source type is refused by name.  `double` is carried as its 64-bit pattern,
+   so signed zeros are distinct and a NaN keeps its payload; `fmul`, `fdiv`,
+   `uitofp`, `fneg` and `fcmp` each form the operation's exact value in ticks and
+   round it once with `roundMag`, the nearest-even rounding lattice
+   `LeanLLVM/Binary64.lean` carries.  Aggregates are
+   carried as their extent: `Ty.array N T` is `N * sizeBytes T` for an admitted
+   `T`, and `Ty.struct name bytes` takes its bytes from the declared datalayout
+   (`parseModuleWith`, refused when the layout does not declare it);
+   `getelementptr` over an array with a literal `0` leading index reduces to the
+   one-index step at the element type, while a struct or pointer element type, a
+   nonzero leading index and a nested array are refused by name.
 4. **Memory.**  Provenance and a store-to-load forwarding pass; the current
    byte map is the starting point, not the destination.  The same-address
    store/load round trip, the little-endian round trip and write-below framing

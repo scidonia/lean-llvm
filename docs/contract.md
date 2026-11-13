@@ -447,9 +447,9 @@ row 5's and is untouched by that proof.
 | a | `s2_init` | The `S2` record's fifteen field stores at the five arguments the emitted call passes; **proved**: the call answers there (`s2Init_answers`), every answer is that store list (`s2Init_sound`), and the frame over the record's extent (`s2Init_framed`) — `s2InitContract` | proved (body) | `JsonStage2Body.stage2Init`, `s2InitStores`; the stores' offsets are `S2`'s (`stage2.c:981-988`); the emitted body: `stage2.helper.s2_init.ll`, `JsonStage2HelperIR.s2InitBody_run`, `s2InitBody_contract` |
 | b | `s2_value_pos` | The value-position test's bit at the four arguments the call passes, with the caller's memory returned unchanged; **proved**: the call answers there (`stage2ValuePos_answers`, `stage2ValuePos_zero`) and the answer satisfies the post at the empty footprint (`s2ValuePosContract`) | assumed (model); body pinned, proof open | `JsonStage2Body.stage2ValuePos`, `stage2ValuePosCall`; `stage2.c:990-997`; the emitted body: `stage2.helper.s2_value_pos.ll` pinned to `JsonStage2HelperIR.s2ValuePosBody` |
 | c | `s2_after_value` | The root flag at depth zero or one container-stack byte at the running depth; **proved**: the call answers there (`stage2AfterValue_answers`) and the write is inside the one-byte or four-byte region (`s2AfterValueContract`) | assumed (model); body pinned, proof open | `JsonStage2Body.stage2AfterValue`; `stage2.c:998-1003`; the emitted body: `stage2.helper.s2_after_value.ll` pinned to `JsonStage2HelperIR.s2AfterValueBody` |
-| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), the decoded form is never longer than its body (`escapeDecodeGo_length_le`), the decoded length is inside the body's extent (`s2StringBody_outn_le`), and the frame over the cursor, length, body and error regions (`s2StringBodyContract`) | assumed (model); body not expressible | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047`; the emitted body: `stage2.helper.s2_string_body.ll`, refused by the parser at `ptrtoint` (`JsonStage2HelperIR` pins the refusal) |
+| d | `s2_string_body` | The three forms (body-itself, escaped, refused), the cursor word, the decoded-length word and the decoded prefix at `dst`; **proved**: every branch answers (`stage2StringBody_answers`), the decoded form is never longer than its body (`escapeDecodeGo_length_le`), the decoded length is inside the body's extent (`s2StringBody_outn_le`), and the frame over the cursor, length, body and error regions (`s2StringBodyContract`) | assumed (model); body pinned, proof open | `JsonStage2Body.stage2StringBody`; `stage2.c:1017-1047`; the emitted body: `stage2.helper.s2_string_body.ll`, which the fragment parses — `ptrtoint` and the `@.str.14` symbol operand are both modelled — with the AST and the contents pinned by `JsonStage2HelperIR` and the parse and a run pinned by `tests/core-extension.lean` |
 | e | `od_scalar_value` | The appended number record (`T_NUM` and the value's eight bytes), the literal tag after the literal check, the refusal's `od_fail` record, and the event cursor's write-back at `o + 8`; **proved**: where the calls answer and what they write (`emitBlobs_spec`, `emitBlobs_frame`, `arenaAppend_spec`, `arenaAppend_frame`), that a record inside the reserve is written (`emitBlobs_complete`), and the frame over the cursor, record and error regions (`s2ScalarValueContract`) | assumed (model); body pinned, proof obstructed | `JsonStage2Body.stage2ScalarValue`; `stage2.c:929-957`; the emitted body: `stage2.helper.od_scalar_value.ll`, pinned by shape at `JsonStage2HelperIR`, obstructed by its `num_fast_el1` callee and the `outTag`/`emitBlobs` match |
-| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`), and both exits' frame over the value and offset slots (`s2NumFastContract`) | assumed (model); body not expressible | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455`; the emitted body: `probes/install/ir/stage2.helpers.tsv` row `num_fast_el1` (two aggregate allocas, thirty-eight floating-point sites; the capture refuses if they leave the emission) |
+| f | `num_fast_el1` | **Both exits**: the accepted lexeme's eight bytes at `out`, and the first rejected position at `err`; **proved**: the scan's refusal of `1e`, `01`, `-` and its acceptance of the controls (the `#guard`s above), the offset's bound `off ≤ n` (`numLexScan_fst_le`), the accepted value's `strtodSpec` agreement (`numFastEmitted_strtodSpec`), and both exits' frame over the value and offset slots (`s2NumFastContract`) | assumed (model); body not expressible | `JsonStage2Body.numLexScan`, `stage2NumFast`; `stage2.c:379-455`; the emitted body: `probes/install/ir/stage2.helpers.tsv` row `num_fast_el1` (two aggregate allocas, thirty-eight floating-point sites, all modelled; the body is refused at the negative-zero literal spelling `-0.000000e+00`, an exponent form the double reader does not accept — the capture refuses if those counts leave the emission) |
 
 Two things about the table are deliberate.  First, **each row's frame is proved
 at the helper's whole footprint.**  `JsonStage2Body`'s per-emitter frame lemmas
@@ -540,9 +540,12 @@ transcription-to-body distance is closed.  Rows b and c are pinned — the fixtu
 parses back to the stated AST — with their body proofs open, and the remaining
 obligation is the trace, not a missing representation: for `s2_value_pos` the
 `phi` thread and the `and i8, -3 = 0` equivalence, for `s2_after_value` the
-32-bit `sp + (-1)` read and the same byte-value plumbing.  Rows d and f are not
-programs of this fragment (`ptrtoint`; aggregate allocas and binary64), so their
-contracts can only be stated at the call boundary.  Row e is expressible and
+32-bit `sp + (-1)` read and the same byte-value plumbing.  Row d is a program of
+this fragment — the address conversions and the symbol operand are modelled — and
+its body is pinned, so what remains there is the body proof; row f is still
+outside it, at the negative-zero literal spelling `-0.000000e+00` the double
+reader refuses.  Both contracts are stated at the call boundary: d's because its
+body proof is open, f's because it has no denotation to prove anything of.  Row e is expressible and
 pinned but obstructed by `num_fast_el1` and the `outTag`/`emitBlobs` match.  Every
 row's body-to-binary distance is the pipeline's body-faithfulness seam (§7.1 items
 1–3 and row 5), the seam `numFastEmitted_strtodSpec` and the `#guard` pins already
@@ -559,11 +562,16 @@ claim, and it is the one the walk's staged-writes list already carries.
 
 ## 8. Out of scope for the first contract
 
-`NaN`/`Infinity`, binary floating-point conversion as a proved equivalence,
-NDJSON, incremental input, concurrent parsing, diagnostic text or positions,
+`NaN`/`Infinity` as inputs the first contract's route reasons about, the
+decimal-to-binary64 conversion as a proved equivalence (the model's `double`
+forms, NaN and infinity included, are modelled and `strtodSpec` computes the
+value; that an emitted conversion computes it is owed), NDJSON, incremental
+input, concurrent parsing, diagnostic text or positions,
 and any vector operation the semantics does not model. The modelled vector
 forms — `Ty.vec` with integer lanes, `Const.splat`, a vector `load`, lane-wise
 `icmp` and integer binops, and `bitcastMask` — are listed in
 `docs/capabilities.md`, "Language and IR coverage", with the construct in
-`probes/install/ir/json-classify.candidate.ll` that each one serves. Each
-further extension is a later, explicitly stated change.
+`probes/install/ir/json-classify.candidate.ll` that each one serves; the core
+extension's forms — the global-symbol operand, `ptrtoint`/`inttoptr`, binary64
+and aggregates — are listed there too, with the stage-2 helper body each serves.
+Each further extension is a later, explicitly stated change.

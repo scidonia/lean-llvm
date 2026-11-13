@@ -280,6 +280,9 @@ theorem classify32_step_nonptr (calls : Calls) (s : State) (v : Value)
   | vec n w l =>
       simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
         evalOperand, harg]
+  | float b =>
+      simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
+        evalOperand, harg]
 
 /-- The classifier body run from a state whose argument is not a pointer is
 undefined. -/
@@ -327,6 +330,9 @@ theorem envForBodySym_eq_envForMask (v : Value) (mem : Mem) (next : Nat) :
   | vec n w l =>
       simp only [envForBodySym, classify32_run_ub_of_head (.vec n w l) [] mem next
         (by intro p h; cases h), ↓reduceIte, envForMask]
+  | float b =>
+      simp only [envForBodySym, classify32_run_ub_of_head (.float b) [] mem next
+        (by intro p h; cases h), ↓reduceIte, envForMask]
 
 /-- `classifySeam_refines`: the installed candidate refines the reference
 selection at every symbol, outside an empty frame.  `replaceScanner_sound`
@@ -362,6 +368,7 @@ theorem classifySeam_refines :
     | .ptr p :: _ :: _ => exact Or.inl (by simp [envForMask])
     | .int w x :: _ => exact Or.inl (by simp [envForMask])
     | .vec n w l :: _ => exact Or.inl (by simp [envForMask])
+    | .float b :: _ => exact Or.inl (by simp [envForMask])
   · exact Or.inl (by simp [envForMask, hs])
 
 /-! ### The caller's step equivalence -/

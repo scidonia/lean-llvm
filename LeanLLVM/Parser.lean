@@ -109,6 +109,7 @@ label that names no real predecessor is accepted, because selecting nothing is
 `ub`, which widens the model's permitted behaviours rather than narrowing them.
 -/
 import LeanLLVM.Syntax
+import LeanLLVM.Binary64
 import LeanLLVM.Printer
 
 namespace LeanLLVM
@@ -195,6 +196,7 @@ end P
 def parseTy (s : String) : Except String Ty :=
   if s = "void" then .ok .void
   else if s = "ptr" then .ok .ptr
+  else if s = "double" then .ok .double
   else if s.startsWith "i" then
     match (s.drop 1).toString.toNat? with
     | some w =>
@@ -230,6 +232,63 @@ def expectTy : P Ty := do
       | .ok ty => pure ty
       | .error e => P.fail e
 
+/-- A declared layout for named structs: the byte extent the target datalayout
+gives each `%struct.<name>`.  The model takes a struct's extent as declared, not
+recomputed: the extent depends on the target's alignment rules (padding the
+emission's `%struct.Stk` from its fields' stored sizes would need a field layout
+and an ABI alignment rule), and every access inside the struct is a byte
+`getelementptr` at a constant offset, so nothing in the model needs the fields.
+A struct with no entry here is refused by name. -/
+abbrev Layout := List (String × Nat)
+
+/-- Parse an array type `[N x T]`.  `N` is a positive decimal, and `T` is one
+scalar type token whose allocated size is its stored size — the same admission
+`Ty.gepElemAdmitted` makes for `getelementptr` element types, because an array's
+allocated size is its element count times the element's and a disagreement in the
+element would be a disagreement in the array.  A nested aggregate is not a
+single token and is refused by the token reader that meets it. -/
+def expectArrayTy : P Ty := do
+  P.expect "["
+  let nTok ← P.next
+  if nTok = "[" then P.fail "a nested array type is not modelled"
+  let n ← match nTok.toNat? with
+    | some n => if n = 0 then P.fail "an array needs at least one element" else pure n
+    | none => P.fail s!"invalid array element count '{nTok}'"
+  P.expect "x"
+  let elemTok ← P.next
+  let elem ← match parseTy elemTok with
+    | .ok ty => pure ty
+    | .error e => P.fail e
+  P.expect "]"
+  if elem.gepElemAdmitted then pure (.array n elem)
+  else
+    P.fail s!"array element type '{elemTok}' is not admitted: an array's allocated size \
+        is its element count times the element's allocated size, so its element must be a \
+        type whose allocated and stored sizes agree — the set `Ty.gepElemAdmitted` pins \
+        (the integer widths i1, i7, i8, i16, i32, i64 and i128, and whole-byte vectors \
+        whose packed size is a power of two)"
+
+/-- Parse the type an `alloca` allocates: an array, a named struct resolved from
+the declared `layout`, or any scalar type `expectTy` reads.  A named struct is
+admitted only here: no instruction in the fragment takes one as an operand type,
+a GEP element type, or a load/store type, and this reader is the only one that
+resolves the name. -/
+def expectAllocaTy (layout : Layout) : P Ty := do
+  match (← P.peek) with
+  | some "[" => expectArrayTy
+  | some t =>
+      if t.startsWith "%struct." then do
+        let _ ← P.next
+        let name := (t.drop 8).toString
+        match lookupName layout name with
+        | some bytes => pure (.struct name bytes)
+        | none =>
+            P.fail s!"named struct '{t}' has no declared layout: the model takes a \
+                struct's byte extent from the target datalayout (a `Layout` argument) and \
+                does not recompute it from fields"
+      else expectTy
+  | none => P.fail "unexpected end of line"
+
 def hexVal (c : Char) : Option Nat :=
   if c.isDigit then some (c.toNat - '0'.toNat)
   else if 'a' ≤ c ∧ c ≤ 'f' then some (10 + c.toNat - 'a'.toNat)
@@ -248,6 +307,70 @@ def parseNat (s : String) : Option Nat :=
 def parseInt (s : String) : Option Int :=
   if s.startsWith "-" then (parseNat (s.drop 1).toString).map fun n => -(n : Int)
   else (parseNat s).map fun n => (n : Int)
+
+/-- Split a decimal literal's characters at its exponent marker: the mantissa's
+characters and the exponent.  A malformed exponent yields `none`. -/
+def splitDecimalExp (cs : List Char) : Option (List Char × Int) :=
+  match cs with
+  | [] => some ([], 0)
+  | c :: rest =>
+      if c = 'e' || c = 'E' then
+        match parseInt (String.ofList rest) with
+        | some e => some ([], e)
+        | none => none
+      else
+        match splitDecimalExp rest with
+        | none => none
+        | some (m, e) => some (c :: m, e)
+
+/-- Read `digits[.digits]` as a significand and the power of ten it is scaled by:
+`12.5` is `125` at `-1`. -/
+def parseMantissa (cs : List Char) : Option (Nat × Int) :=
+  let rec go (cs : List Char) (n : Nat) (scale : Int) (dot : Bool) : Option (Nat × Int) :=
+    match cs with
+    | [] => some (n, scale)
+    | '.' :: rest => if dot then none else go rest n scale true
+    | c :: rest =>
+        if c.isDigit then
+          go rest (n * 10 + (c.toNat - '0'.toNat)) (if dot then scale - 1 else scale) dot
+        else none
+  go cs 0 0 false
+
+/-- Parse a binary64 literal: a 16-digit `0x` pattern, or a decimal that denotes
+an exactly representable binary64.
+
+The pattern is exact for every value, so it is the spelling a refusal names.  A
+decimal is read as the exact rational `m * 10 ^ e`, rounded once by `roundMag`;
+it is admitted only when that rounding is the identity, because a decimal the
+model would have to round is a value the text does not pin to one pattern. -/
+def parseDoubleLit (t : String) : Except String (BitVec 64) :=
+  if t.startsWith "0x" || t.startsWith "0X" then
+    match parseNat t with
+    | some n =>
+        if n < 2 ^ 64 then .ok (BitVec.ofNat 64 n)
+        else .error s!"the hexadecimal literal '{t}' does not fit a binary64 pattern"
+    | none => .error s!"invalid hexadecimal floating-point literal '{t}'"
+  else
+    let neg := t.startsWith "-"
+    match splitDecimalExp t.toList with
+    | none => .error s!"invalid floating-point literal '{t}': write a decimal or a 0x pattern"
+    | some (mcs, e) =>
+      match parseMantissa mcs with
+      | none => .error s!"invalid floating-point literal '{t}': write a decimal or a 0x pattern"
+      | some (m, scale) =>
+        let e := e + scale
+        if e > 400 || e < -1200 then
+          .error s!"the decimal '{t}' is not a finite binary64: write its bit pattern as 0x…"
+        else
+          let P := if e ≥ 0 then m * 10 ^ e.toNat * 2 ^ 1074 else m * 2 ^ 1074
+          let d := if e ≥ 0 then 1 else 10 ^ (-e).toNat
+          match roundMag P d with
+          | .inf =>
+              .error s!"the decimal '{t}' is not a finite binary64: write its bit pattern as 0x…"
+          | .fin c =>
+              if c.ticks * d = P then .ok (packMag (.fin c) neg)
+              else
+                .error s!"the decimal '{t}' is not exactly a binary64: write its bit                     pattern as 0x…"
 
 /-- A constant of the given type.  Register operands are parsed by
 `parseOperand`.  A vector constant has two literal forms: a lane list, which
@@ -282,6 +405,12 @@ def parseConst (ty : Ty) (t : String) : Except String Const :=
       if t = "undef" then .ok .undef
       else if t = "poison" then .ok .poison
       else .error s!"unsupported vector constant '{t}': only integer lanes are modelled"
+  | .double =>
+      match parseDoubleLit t with
+      | .ok b => .ok (.float b)
+      | .error e => .error e
+  | .array _ _ => .error "an array constant is not modelled"
+  | .struct _ _ => .error "a struct constant is not modelled"
   | .void => .error "void operand"
 
 /-- The lane value of a splat: an integer literal of exactly width `w`.  `none`
@@ -347,6 +476,19 @@ count and lane width are checked against the operand's type. -/
 def parseOperand (ty : Ty) : P Operand := do
   let t ← P.next
   if t.startsWith "%" then pure (.reg t)
+  else if t.startsWith "@" then
+    -- A global symbol is an address, so it has type `ptr` and nowhere else.
+    -- The parser does not ask the module whether the symbol is declared: the
+    -- text that names a symbol is not the text that assigns its address, and a
+    -- captured `define` block carries the use without the module's global
+    -- declarations — the same arrangement `call`'s callee has, which the
+    -- environment resolves rather than the module.
+    if t.length = 1 then
+      P.fail "a global symbol needs a name after '@'"
+    else if ty = .ptr then pure (.global t)
+    else
+      P.fail (s!"a global symbol's value is an address, so it has type ptr: " ++
+        s!"'{t}' is written here at type {ty.render}")
   else if t = "splat" then
     let (n, w) ← match ty with
       | .vec n (.int w) => pure (n, w)
@@ -918,6 +1060,10 @@ def checkPhiIncoming (f : Function) (blockName d : String) (ty : Ty) :
     List (String × Operand) → Except String Bool
   | [] => .ok true
   | (_, .imm _) :: rest => checkPhiIncoming f blockName d ty rest
+  -- A global symbol is read at `ptr` by the operand grammar, which is the
+  -- check's own gate: an incoming value written at any other type never became
+  -- one.
+  | (_, .global _) :: rest => checkPhiIncoming f blockName d ty rest
   | (_, .reg n) :: rest =>
       match f.regType n with
       | some ty' =>
@@ -972,6 +1118,9 @@ verifier refuses the same module — and accepting it would leave the semantics'
 `none` to stand for a text the parser could have judged. -/
 def checkICmpPtrOperand (f : Function) (d pos : String) : Operand → Except String Bool
   | .imm .null => .ok true
+  -- A global symbol is an address, and `icmpPtr` compares addresses, so this is
+  -- the operand's own type rather than a conversion.
+  | .global _ => .ok true
   | .imm _ =>
       .error s!"icmp {d} compares a pointer with an integer literal: a pointer and \
           an integer are not comparable"
@@ -998,6 +1147,84 @@ def checkICmpPtrTypes (f : Function) : Except String Unit :=
   | .error e => .error e
   | .ok _ => .ok ()
 
+/-- Check a `ptrtoint`'s source operand against the function's register table: it
+must be bound at `ptr`.  The operand grammar reads a register without consulting
+its type, so without this check `ptrtoint ptr %q to i64` with `%q` an `i64`
+parsed.  A literal is read at the written type by the grammar, and an undefined
+register has no type and stays accepted — it is `ub` when read, as everywhere
+else. -/
+def checkPtrToIntOperand (f : Function) (d : String) : Operand → Except String Bool
+  | .imm _ => .ok true
+  -- A global symbol's value is an address, so it is a pointer already.
+  | .global _ => .ok true
+  | .reg n =>
+      match f.regType n with
+      | some .ptr => .ok true
+      | some ty =>
+          .error s!"ptrtoint {d} converts {n}, which has type {ty.render}: only a \
+              pointer converts to an integer"
+      | none => .ok true
+
+/-- Check an `inttoptr`'s source operand: it must be bound at `i64`. -/
+def checkIntToPtrOperand (f : Function) (d : String) : Operand → Except String Bool
+  | .imm _ => .ok true
+  -- Unreachable from text: the operand grammar admits a global symbol only at
+  -- `ptr`, so an `i64` source never became one.  A hand-built AST that puts one
+  -- here is refused by the semantics' own value-shape test, as a non-integer is.
+  | .global _ => .ok true
+  | .reg n =>
+      match f.regType n with
+      | some (.int 64) => .ok true
+      | some ty =>
+          .error s!"inttoptr {d} converts {n}, which has type {ty.render}: only an \
+              i64 converts to an address"
+      | none => .ok true
+
+/-- Check one operand of a floating-point instruction against the type the
+instruction reads it at.  A literal is read at the written type by the operand
+grammar; a register is read without consulting its type, so the check is this
+function's job, as it is for `icmp ptr` and `store`. -/
+def checkFPOperand (f : Function) (d : String) (expect : Ty) :
+    Operand → Except String Bool
+  | .imm _ => .ok true
+  | .global _ => .ok true
+  | .reg n =>
+      match f.regType n with
+      | some ty =>
+          if ty = expect then .ok true
+          else
+            .error s!"{d} reads {n} at {expect.render}, but {n} has type {ty.render}"
+      | none => .ok true
+
+/-- Check every address conversion and floating-point instruction of a function.
+This runs once the blocks and the register table are known, like the `phi`,
+`icmp ptr` and `store` checks. -/
+def checkCastTypes (f : Function) : Except String Unit :=
+  match f.blocks.allM fun b =>
+      b.instrs.allM fun i =>
+        match i with
+        | .ptrtoint d v => checkPtrToIntOperand f d v
+        | .inttoptr d v => checkIntToPtrOperand f d v
+        | .uitofp d wIn v => checkFPOperand f d (.int wIn) v
+        | .fmul d a b =>
+            match checkFPOperand f d .double a with
+            | .error e => .error e
+            | .ok _ => checkFPOperand f d .double b
+        | .fdiv d a b =>
+            match checkFPOperand f d .double a with
+            | .error e => .error e
+            | .ok _ => checkFPOperand f d .double b
+        | .fcmp d _ a b =>
+            match checkFPOperand f d .double a with
+            | .error e => .error e
+            | .ok _ => checkFPOperand f d .double b
+        | .fneg d v => checkFPOperand f d .double v
+        | .bitcastToInt d v => checkFPOperand f d .double v
+        | .bitcastToDouble d v => checkFPOperand f d (.int 64) v
+        | _ => .ok true with
+  | .error e => .error e
+  | .ok _ => .ok ()
+
 /-- Check a `store`'s value operand against the written type, when the operand
 names a register the function defines.
 
@@ -1013,6 +1240,10 @@ function neither binds nor takes as a parameter.  A literal is read at the
 written type by the operand grammar, so it has no separate type to compare. -/
 def checkStoreValue (f : Function) (written : Ty) : Operand → Except String Bool
   | .imm _ => .ok true
+  -- The operand grammar admits a global symbol only at `ptr`, and the value
+  -- operand is read at the written type, so one that reaches this check is
+  -- already the written type's: the check has nothing to add.
+  | .global _ => .ok true
   | .reg n =>
       match f.regType n with
       | some ty' =>
@@ -1096,7 +1327,31 @@ def parseAlignOpt : P (Option Nat) := do
         only trailing attribute modelled here"
   else pure none
 
-def parseValueInstr (dst : String) : P Stmt := do
+/-- Refuse a fast-math flag by name.  The model's floating point is IEEE 754
+binary64 with no flags: a flag permits a transformation the model's arithmetic
+does not make, and the capture's `strip_body` does not remove one from an
+instruction line, so a flagged instruction reaches the parser and must be named
+rather than silently accepted. -/
+def noFastMath : P Unit := do
+  match (← P.peek) with
+  | some t =>
+      if t = "fast" || t = "nnan" || t = "ninf" || t = "nsz" || t = "arcp" ||
+         t = "contract" || t = "afn" || t = "reassoc" then
+        P.fail s!"the fast-math flag '{t}' is not modelled: the model's floating \
+            point is IEEE 754 binary64 with no flags"
+      else pure ()
+  | none => pure ()
+
+/-- Read the type token of a floating-point instruction: `double`, and nothing
+else, because binary64 is the only floating-point type modelled. -/
+def expectDouble : P Unit := do
+  let t ← P.next
+  if t = "double" then pure ()
+  else
+    P.fail s!"'{t}' is not modelled: the only floating-point type read is double \
+        (IEEE 754 binary64)"
+
+def parseValueInstr (layout : Layout) (dst : String) : P Stmt := do
   let op ← P.next
   match op with
   | "add" => parseBinop dst .add
@@ -1163,6 +1418,11 @@ def parseValueInstr (dst : String) : P Stmt := do
                   ne, ult, ule, ugt and uge are modelled on pointers"
       | .void => P.fail "icmp on a void type is not modelled"
       | .vec _ _ => P.fail "icmp on a vector of non-integer lanes is not modelled"
+      | .array _ _ => P.fail "icmp on an array type is not modelled"
+      | .struct _ _ => P.fail "icmp on a struct type is not modelled"
+      | .double =>
+          P.fail "icmp on a floating-point type is not modelled: a binary64 value \
+              is compared with fcmp, whose only modelled predicate is oeq"
   | "select" =>
       -- Two forms share one constructor.  A scalar `i1` condition selects a
       -- whole value; a `<n x i1>` condition selects lane by lane from two
@@ -1208,8 +1468,92 @@ def parseValueInstr (dst : String) : P Stmt := do
   | "trunc" => parseCast dst fun d wi wo v => .trunc d wi wo v
   | "zext" => parseCast dst fun d wi wo v => .zext d wi wo v
   | "sext" => parseCast dst fun d wi wo v => .sext d wi wo v
+  | "ptrtoint" =>
+      -- `%d = ptrtoint ptr %v to i64`.  The model's pointer is 64 bits, so this
+      -- is the one width at which the conversion is exact; the destination is
+      -- read and checked rather than kept, because the instruction has no field
+      -- for it and the printer emits `i64`.  Any other integer width is refused
+      -- by name: a narrower destination truncates an address the model keeps as
+      -- an unbounded `Nat`, and a wider one zero-extends a value that is already
+      -- 64 bits.
+      let tyIn ← expectTy
+      if tyIn ≠ .ptr then
+        P.fail s!"ptrtoint's source must be ptr, got {tyIn.render}: only an \
+            address converts to an integer"
+      else
+        let v ← parseOperand .ptr
+        P.expect "to"
+        let tyOut ← expectTy
+        match tyOut with
+        | .int 64 => pure (.instr (.ptrtoint dst v))
+        | .int w =>
+            P.fail s!"ptrtoint to i{w} is not modelled: the model's pointer is 64 \
+                bits, so an address converts exactly at i64 only"
+        | _ =>
+            P.fail s!"ptrtoint's result must be an integer type, got {tyOut.render}"
+  | "inttoptr" =>
+      -- `%d = inttoptr i64 %v to ptr`, the inverse at the same width, with the
+      -- same refusal for a source of another width.
+      let tyIn ← expectTy
+      match tyIn with
+      | .int 64 =>
+          let v ← parseOperand tyIn
+          P.expect "to"
+          let tyOut ← expectTy
+          if tyOut ≠ .ptr then
+            P.fail s!"inttoptr's result must be ptr, got {tyOut.render}: only an \
+                integer converts to an address"
+          else pure (.instr (.inttoptr dst v))
+      | .int w =>
+          P.fail s!"inttoptr from i{w} is not modelled: the model's pointer is 64 \
+              bits, so the conversion is modelled at i64 only"
+      | _ =>
+          P.fail s!"inttoptr's source must be an integer type, got {tyIn.render}"
+  | "uitofp" =>
+      noFastMath
+      -- `%d = uitofp iW %v to double`.  The source width is read and kept,
+      -- because it is what the run checks the value against; the result type is
+      -- fixed, so a written one that is not `double` is refused by name.
+      let tyIn ← expectTy
+      let wIn ← match tyIn with
+        | .int w => pure w
+        | _ => P.fail s!"uitofp's source must be an integer type, got {tyIn.render}"
+      let v ← parseOperand tyIn
+      P.expect "to"
+      let tyOut ← expectTy
+      if tyOut ≠ .double then
+        P.fail s!"uitofp's result must be double, got {tyOut.render}: the only \
+            floating-point type modelled is binary64"
+      else pure (.instr (.uitofp dst wIn v))
+  | "fmul" | "fdiv" =>
+      noFastMath
+      let _ ← expectDouble
+      let a ← parseOperand .double
+      P.expect ","
+      let b ← parseOperand .double
+      pure (.instr (if op = "fmul" then .fmul dst a b else .fdiv dst a b))
+  | "fneg" =>
+      noFastMath
+      let _ ← expectDouble
+      let v ← parseOperand .double
+      pure (.instr (.fneg dst v))
+  | "fcmp" =>
+      noFastMath
+      let p ← P.next
+      let pred ← match p with
+        | "oeq" => pure .oeq
+        | "false" | "true" | "ord" | "uno" | "ueq" | "une" | "ogt" | "oge"
+        | "olt" | "ole" | "one" | "ugt" | "uge" | "ult" | "ule" =>
+            P.fail s!"fcmp predicate '{p}' is not modelled: the one predicate read \
+                is 'oeq' (ordered and equal)"
+        | _ => P.fail s!"unknown fcmp predicate '{p}'"
+      let _ ← expectDouble
+      let a ← parseOperand .double
+      P.expect ","
+      let b ← parseOperand .double
+      pure (.instr (.fcmp dst pred a b))
   | "alloca" =>
-      let ty ← expectTy
+      let ty ← expectAllocaTy layout
       let align ← match (← parseAlignOpt) with
         | some k => pure k
         | none => pure 0
@@ -1236,6 +1580,8 @@ def parseValueInstr (dst : String) : P Stmt := do
       P.expect "to"
       let tyOut ← expectTy
       match tyIn, tyOut with
+      | .double, .int 64 => pure (.instr (.bitcastToInt dst v))
+      | .int 64, .double => pure (.instr (.bitcastToDouble dst v))
       | .vec n (.int 1), .int m =>
           if m = n then pure (.instr (.bitcastMask dst n v))
           else P.fail s!"bitcast from {tyIn.render} to {tyOut.render} is not modelled"
@@ -1352,56 +1698,105 @@ def parseValueInstr (dst : String) : P Stmt := do
       -- and dropped: the instruction has no field for it, and the printer emits
       -- an ordinary `getelementptr`, so the round trip adds no promise.
       let _ ← gepModifiers
-      let elemTy ← expectTy
-      if elemTy.gepElemAdmitted then pure ()
-      else
-        match elemTy with
-        | .int w =>
-            P.fail s!"getelementptr element width i{w} is not admitted: the step \
-              scales by the stored size, and only i1, i7, i8, i16, i32, i64 and \
-              i128 are admitted — the widths the model pins as having the same \
-              allocated and stored size. A width where the two differ would be \
-              given one address here and another by LLVM, and a width the model \
-              does not pin is not characterised here; both are refused"
-        | .vec n (.int w) =>
-            -- The two divergence classes are named separately, because the
-            -- condition has two clauses and a rule that kept only one would admit
-            -- the input class the other excludes.
-            let stored := n * ((w + 7) / 8)
-            let packed := n * w / 8
-            if w % 8 ≠ 0 then
-              P.fail s!"getelementptr element type '{elemTy.render}' is not admitted: \
-                a lane width of i{w} is not a whole number of bytes, so the packed \
-                size n * w / 8 = {packed} is not the n * ((w + 7) / 8) = {stored} \
-                bytes this step would scale by, and LLVM steps the packed size \
-                rounded up to its next power of two"
-            else
-              P.fail s!"getelementptr element type '{elemTy.render}' is not admitted: \
-                its packed size n * w / 8 = {packed} is not a power of two, so LLVM \
-                steps the next power of two above it while sizeBytes is {stored}. \
-                A vector element type is admitted under one condition — w % 8 = 0 \
-                and n * w / 8 a power of two, hence at least 1 — because the step \
-                scales by the size LLVM allocates"
-        | _ =>
-            P.fail s!"getelementptr element type '{elemTy.render}' is not modelled: a \
-              pointer or void element type has no integer size to scale the index by"
-      P.expect ","
-      let baseTyTok ← P.next
-      if baseTyTok ≠ "ptr" then
-        P.fail s!"getelementptr base type '{baseTyTok}' is not modelled: the base must be a ptr"
-      let base ← parseOperand .ptr
-      P.expect ","
-      let idxTok ← P.next
-      let w ← match parseTy idxTok with
-        | .ok (.int w) => pure w
-        | _ => P.fail s!"getelementptr index type '{idxTok}' is not modelled: the index must be an integer type"
-      if w > 64 then
-        P.fail s!"getelementptr index width i{w} is not modelled: an index wider than 64 bits is refused rather than truncated"
-      let off ← parseOperand (.int w)
+      -- Two admitted shapes.  The scalar/vector form is the one-index step whose
+      -- scale is the element type's size.  The aggregate form is LLVM's
+      -- two-index step over `[N x T]`: with a literal 0 leading index its first
+      -- term is zero and the second scales by `T`, so the address is the
+      -- one-index step at `T`.  The reduction is what the model can express, and
+      -- the printer emits the reduced one-index form, which re-parses to the
+      -- same AST.  The leading index is not decoration: a nonzero one has a
+      -- whole-array stride this instruction has no term for, so it is refused.
       match (← P.peek) with
-      | some "," => P.fail "getelementptr with more than one index is not modelled"
-      | _ => pure ()
-      pure (.instr (.gep dst elemTy base off))
+      | some "[" =>
+          let arr ← expectArrayTy
+          let elemTy ← match arr with
+            | .array _ elem => pure elem
+            | _ => P.fail "internal parser error: an array reader returned another type"
+          P.expect ","
+          let baseTyTok ← P.next
+          if baseTyTok ≠ "ptr" then
+            P.fail s!"getelementptr base type '{baseTyTok}' is not modelled: the base must be a ptr"
+          let base ← parseOperand .ptr
+          P.expect ","
+          let leadTyTok ← P.next
+          let wLead ← match parseTy leadTyTok with
+            | .ok (.int w) => pure w
+            | _ => P.fail s!"getelementptr leading index type '{leadTyTok}' is not modelled: the index must be an integer type"
+          let lead ← parseOperand (.int wLead)
+          match lead with
+          | .imm (.int _ v) =>
+              if v.toNat = 0 then pure ()
+              else
+                P.fail s!"getelementptr over '{arr.render}' is modelled only with a literal 0 \
+                    leading index, got {v.toNat}: the model's step has one index and no term \
+                    for a whole-array stride"
+          | _ =>
+              P.fail s!"getelementptr over '{arr.render}' is modelled only with a literal 0 \
+                  leading index: the model's step has one index and no term for a \
+                  whole-array stride"
+          P.expect ","
+          let idxTok ← P.next
+          let w ← match parseTy idxTok with
+            | .ok (.int w) => pure w
+            | _ => P.fail s!"getelementptr index type '{idxTok}' is not modelled: the index must be an integer type"
+          if w > 64 then
+            P.fail s!"getelementptr index width i{w} is not modelled: an index wider than 64 bits is refused rather than truncated"
+          let off ← parseOperand (.int w)
+          match (← P.peek) with
+          | some "," => P.fail "getelementptr with more than two indices is not modelled"
+          | _ => pure ()
+          pure (.instr (.gep dst elemTy base off))
+      | _ =>
+            let elemTy ← expectTy
+            if elemTy.gepElemAdmitted then pure ()
+            else
+              match elemTy with
+              | .int w =>
+                  P.fail s!"getelementptr element width i{w} is not admitted: the step \
+                    scales by the stored size, and only i1, i7, i8, i16, i32, i64 and \
+                    i128 are admitted — the widths the model pins as having the same \
+                    allocated and stored size. A width where the two differ would be \
+                    given one address here and another by LLVM, and a width the model \
+                    does not pin is not characterised here; both are refused"
+              | .vec n (.int w) =>
+                  -- The two divergence classes are named separately, because the
+                  -- condition has two clauses and a rule that kept only one would admit
+                  -- the input class the other excludes.
+                  let stored := n * ((w + 7) / 8)
+                  let packed := n * w / 8
+                  if w % 8 ≠ 0 then
+                    P.fail s!"getelementptr element type '{elemTy.render}' is not admitted: \
+                      a lane width of i{w} is not a whole number of bytes, so the packed \
+                      size n * w / 8 = {packed} is not the n * ((w + 7) / 8) = {stored} \
+                      bytes this step would scale by, and LLVM steps the packed size \
+                      rounded up to its next power of two"
+                  else
+                    P.fail s!"getelementptr element type '{elemTy.render}' is not admitted: \
+                      its packed size n * w / 8 = {packed} is not a power of two, so LLVM \
+                      steps the next power of two above it while sizeBytes is {stored}. \
+                      A vector element type is admitted under one condition — w % 8 = 0 \
+                      and n * w / 8 a power of two, hence at least 1 — because the step \
+                      scales by the size LLVM allocates"
+              | _ =>
+                  P.fail s!"getelementptr element type '{elemTy.render}' is not modelled: a \
+                    pointer or void element type has no integer size to scale the index by"
+            P.expect ","
+            let baseTyTok ← P.next
+            if baseTyTok ≠ "ptr" then
+              P.fail s!"getelementptr base type '{baseTyTok}' is not modelled: the base must be a ptr"
+            let base ← parseOperand .ptr
+            P.expect ","
+            let idxTok ← P.next
+            let w ← match parseTy idxTok with
+              | .ok (.int w) => pure w
+              | _ => P.fail s!"getelementptr index type '{idxTok}' is not modelled: the index must be an integer type"
+            if w > 64 then
+              P.fail s!"getelementptr index width i{w} is not modelled: an index wider than 64 bits is refused rather than truncated"
+            let off ← parseOperand (.int w)
+            match (← P.peek) with
+            | some "," => P.fail "getelementptr with more than one index is not modelled"
+            | _ => pure ()
+            pure (.instr (.gep dst elemTy base off))
   | "call" => parseCall (some dst)
   | "tail" => do
       P.expect "call"
@@ -1511,11 +1906,11 @@ def parseSimple : P Stmt := do
   | other => P.fail s!"unsupported instruction '{other}'"
 
 /-- Parse one instruction or terminator line. -/
-def parseStmtLine (toks : List String) : Except String Stmt :=
+def parseStmtLine (layout : Layout) (toks : List String) : Except String Stmt :=
   match toks with
   | [] => .error "empty instruction"
   | dst :: "=" :: rest =>
-      if dst.startsWith "%" then P.runExact (parseValueInstr dst) rest
+      if dst.startsWith "%" then P.runExact (parseValueInstr layout dst) rest
       else .error s!"expected a register before '=', got '{dst}'"
   | _ => P.runExact parseSimple toks
 
@@ -1526,7 +1921,7 @@ def isLabel (toks : List String) : Bool :=
   | [_, ":"] => true
   | _ => false
 
-def parseBlockBody (name : String) (ls : List (List String)) :
+def parseBlockBody (layout : Layout) (name : String) (ls : List (List String)) :
     Except String (Block × List (List String)) := do
   -- `seen` records whether a non-`phi` instruction has already been read in this
   -- block.  LLVM requires `phi` nodes to be the first instructions of a basic
@@ -1537,7 +1932,7 @@ def parseBlockBody (name : String) (ls : List (List String)) :
     match ls with
     | [] => .error s!"block '{name}' has no terminator"
     | l :: rest =>
-        match parseStmtLine l with
+        match parseStmtLine layout l with
         | .error e => .error s!"in block '{name}': {e}"
         | .ok (.instr i) =>
             if i.isPhi && seen then
@@ -1551,14 +1946,14 @@ def parseBlockBody (name : String) (ls : List (List String)) :
 /-- Parse the body of a function: a sequence of labelled blocks.  The fuel is
 the number of lines, so each recursion consumes one line even when a block body
 is length-checked by the parser rather than by the recursion. -/
-def parseBlocks (ls : List (List String)) : Except String (List Block) :=
+def parseBlocks (layout : Layout) (ls : List (List String)) : Except String (List Block) :=
   let rec go : Nat → List (List String) → List Block → Except String (List Block)
     | 0, _, _ => .error "internal parser error: block fuel exhausted"
     | _ + 1, [], acc => .ok acc.reverse
     | fuel + 1, l :: rest, acc =>
         match l with
         | [name, ":"] =>
-            match parseBlockBody name rest with
+            match parseBlockBody layout name rest with
             | .error e => .error e
             | .ok (b, rest') => go fuel rest' (b :: acc)
         | _ => .error s!"expected a block label, got '{String.intercalate " " l}'"
@@ -1649,7 +2044,7 @@ def dropHeaderSurface : List String → List String
       if (parseNat n).isSome then dropHeaderSurface rest else "cc" :: n :: rest
   | t :: rest => if isHeaderSurface t then dropHeaderSurface rest else t :: rest
 
-def parseFunction (header : List String) (rest : List (List String)) :
+def parseFunction (layout : Layout) (header : List String) (rest : List (List String)) :
     Except String (Function × List (List String)) := do
   let (retTok?, nameTok, afterName) ←
     match findAt none header with
@@ -1685,7 +2080,7 @@ def parseFunction (header : List String) (rest : List (List String)) :
   if !hasBody then
     throw s!"malformed function header of @{name}: expected an opening brace after the parameter list"
   let (body, rest') ← takeBody rest
-  let blocks ← parseBlocks body
+  let blocks ← parseBlocks layout body
   let f : Function := ⟨name, retTy, params, blocks⟩
   match checkDefinitions f with
   | .error e => throw e
@@ -1698,7 +2093,10 @@ def parseFunction (header : List String) (rest : List (List String)) :
           | .ok _ =>
               match checkStoreValues f with
               | .error e => throw e
-              | .ok _ => .ok (f, rest')
+              | .ok _ =>
+                  match checkCastTypes f with
+                  | .error e => throw e
+                  | .ok _ => .ok (f, rest')
 
 /-- Build one parameter from the tokens between two commas. -/
 def finishDeclParam (cur : List String) (acc : List Ty) : Except String (List Ty) :=
@@ -1740,7 +2138,7 @@ def parseDecl (l : List String) : Except String Decl := do
   | _ => .error s!"malformed declaration '{String.intercalate " " l}'"
 
 /-- Parse a module: declarations, then function definitions. -/
-def parseModule (src : String) : Except String Module := do
+def parseModuleWith (layout : Layout) (src : String) : Except String Module := do
   let rec go : Nat → List (List String) → List Decl → List Function →
       Except String Module
     | 0, _, _, _ => .error "internal parser error: module fuel exhausted"
@@ -1752,12 +2150,17 @@ def parseModule (src : String) : Except String Module := do
             | .error e => .error e
             | .ok d => go fuel rest (d :: decls) acc
         | "define" :: _ =>
-            match parseFunction l rest with
+            match parseFunction layout l rest with
             | .error e => .error e
             | .ok (f, rest') => go fuel rest' decls (f :: acc)
         | ["}"] => go fuel rest decls acc
         | _ => .error s!"expected 'define' or 'declare', got '{String.intercalate " " l}'"
   let lines := tokenLines src
   go (lines.length + 1) lines [] []
+
+
+/-- Parse a module with no declared struct layouts: the entry point every
+existing caller uses, and the one whose text carries no named struct. -/
+def parseModule (src : String) : Except String Module := parseModuleWith [] src
 
 end LeanLLVM

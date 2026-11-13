@@ -7,6 +7,6 @@
 s2_init	15	1	12	5	expressible	parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean
 s2_value_pos	33	6	20	4	expressible	parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean
 s2_after_value	23	4	14	4	expressible	parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean
-s2_string_body	66	10	45	8	refused	ptrtoint: no pointer-to-integer conversion in Ty/Instr/Value, and the model's address is an unbounded Nat while i64 is BitVec 64
+s2_string_body	66	10	45	8	expressible	parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean
 od_scalar_value	260	38	183	4	expressible	parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean
-num_fast_el1	1922	237	1411	4	refused	aggregate and binary64 text (2 aggregate alloca(s), 38 floating-point site(s)): Ty has no aggregate and no floating point
+num_fast_el1	1922	237	1411	4	refused	aggregate and binary64 text (2 aggregate alloca(s), 38 floating-point site(s)), all modelled; refused at the negative-zero literal spelling -0.000000e+00, an exponent form the double reader does not accept

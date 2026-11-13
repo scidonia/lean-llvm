@@ -88,6 +88,15 @@ theorem evalInstr_refines {calls' calls : Calls}
   | trunc d wi wo v => intro s' he; exact Or.inl he
   | zext d wi wo v => intro s' he; exact Or.inl he
   | sext d wi wo v => intro s' he; exact Or.inl he
+  | ptrtoint d v => intro s' he; exact Or.inl he
+  | inttoptr d v => intro s' he; exact Or.inl he
+  | uitofp d wIn v => intro s' he; exact Or.inl he
+  | fmul d a b => intro s' he; exact Or.inl he
+  | fdiv d a b => intro s' he; exact Or.inl he
+  | fneg d v => intro s' he; exact Or.inl he
+  | fcmp d pred a b => intro s' he; exact Or.inl he
+  | bitcastToInt d v => intro s' he; exact Or.inl he
+  | bitcastToDouble d v => intro s' he; exact Or.inl he
   | alloca d ty a => intro s' he; exact Or.inl he
   | load d ty p => intro s' he; exact Or.inl he
   | store ty v p => intro s' he; exact Or.inl he
@@ -138,6 +147,15 @@ theorem evalInstr_ub_refines {calls' calls : Calls}
     (h : ∀ sym, CallRefines calls' calls sym) (s : State) (i : Instr) :
     evalInstr calls' s i = none → evalInstr calls s i = none := by
   cases i with
+  | ptrtoint d v => intro he; exact he
+  | inttoptr d v => intro he; exact he
+  | uitofp d wIn v => intro he; exact he
+  | fmul d a b => intro he; exact he
+  | fdiv d a b => intro he; exact he
+  | fneg d v => intro he; exact he
+  | fcmp d pred a b => intro he; exact he
+  | bitcastToInt d v => intro he; exact he
+  | bitcastToDouble d v => intro he; exact he
   | call d retTy callee args =>
       intro he
       simp only [evalInstr] at he ⊢

@@ -271,6 +271,30 @@ theorem execTerm_ret_mem (s : State) (t : Term) (v : Option Value) (s' : State)
               split at h
               · cases h; rfl
               · cases h
+      | array n elem =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h
+          | some o =>
+              simp only [execTerm] at h
+              split at h
+              · cases h; rfl
+              · cases h
+      | struct name bytes =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h
+          | some o =>
+              simp only [execTerm] at h
+              split at h
+              · cases h; rfl
+              · cases h
+      | double =>
+          cases w with
+          | none => simp only [execTerm] at h; cases h
+          | some o =>
+              simp only [execTerm] at h
+              split at h
+              · cases h; rfl
+              · cases h
 
 /-- `handle` of an undefined-behaviour node resolves to `some .ub`. -/
 theorem handled_ubT (calls : Calls) (frame : Nat → Prop) (m : Mem) :
@@ -336,6 +360,11 @@ theorem handled_instrT_load (calls : Calls) (frame : Nat → Prop) (s : State) (
           rw [hub hE]
           simp only [instrT, hOp]
           exact handled_ubT calls frame s.mem
+      | float b =>
+          have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+          rw [hub hE]
+          simp only [instrT, hOp]
+          exact handled_ubT calls frame s.mem
       | ptr addr =>
           cases hL : loadValue s.mem ty addr with
           | none =>
@@ -379,6 +408,12 @@ theorem handled_instrT_store (calls : Calls) (frame : Nat → Prop) (s : State) 
           exact handled_ubT calls frame s.mem
       | some pv =>
           cases pv with
+          | float b =>
+              have hE : evalInstr calls s (.store ty v p) = none := by
+                simp [evalInstr, hv, hp]
+              rw [hub hE]
+              simp only [instrT, hv, hp]
+              exact handled_ubT calls frame s.mem
           | int w x =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]
@@ -565,6 +600,60 @@ theorem handled_codeTFrom (calls : Calls) (hcall : PureEnv calls) (frame : Nat �
           (handle frame (s.bindAll pend).mem
             (instrT calls (s.bindAll pend) i (fun s1 => codeTFrom calls [] is s1 k))) r
         cases i with
+      | ptrtoint d v =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.ptrtoint d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.ptrtoint d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | inttoptr d v =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.inttoptr d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.inttoptr d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | uitofp d wIn v =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.uitofp d wIn v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.uitofp d wIn v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fmul d a b =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.fmul d a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fmul d a b) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fdiv d a b =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.fdiv d a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fdiv d a b) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fneg d v =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.fneg d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fneg d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | fcmp d pred a b =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.fcmp d pred a b) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.fcmp d pred a b) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | bitcastToInt d v =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.bitcastToInt d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.bitcastToInt d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
+      | bitcastToDouble d v =>
+          exact handled_pureInstrT calls frame (s.bindAll pend) (.bitcastToDouble d v) _ r
+            (fun s' h => evalInstr_mem_of_not_store_or_call calls (s.bindAll pend) (.bitcastToDouble d v) s'
+              (by intro ty v p hh; cases hh)
+              (by intro d rt c a hh; cases hh)
+              (by intro c a hh; cases hh) h) hokK hubK
       | phi d ty inc => simp only [Instr.isPhi] at hi; cases hi
       | load d ty p => exact handled_instrT_load calls frame (s.bindAll pend) d ty p _ r hokK hubK
       | store ty v p => exact handled_instrT_store calls frame (s.bindAll pend) ty v p _ r hokK hubK
