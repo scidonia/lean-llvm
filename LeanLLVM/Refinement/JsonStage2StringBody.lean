@@ -2955,6 +2955,20 @@ theorem s2StringBodyLandLhsTrue_toIfThen_finishes {env : Env} {s : State}
   simpa using this
 
 
+/-- The refusal record's output state, named: the record's three fields written over
+the caller's memory, at `cleanup`.  Rule four's failure mode is why this exists:
+stated inline, the nine-cell environment is a `whnf` liability the elaborator pays
+at every unification, and the proof dies in `whnf` — *not* in logic — at the
+default budget and again at a million heartbeats.  Naming the state is necessary
+but was measured **not** sufficient for the refusal path: the cost that remains is
+the instantiation of a completion lemma at this environment, so a path stated here
+still wants its completion proved over a state variable (no `s2StringBodyIfThen11Mem`
+in the type) rather than at this term. -/
+def s2StringBodyIfThen11Out (env : Env) (s : State) (off sub : BitVec 64) (c e : Nat) :
+    State :=
+  stateAt (s2StringBodyIfThen11Env env off sub c e)
+    { s with mem := s2StringBodyIfThen11Mem s.mem e off sub, pc := "cleanup", pre := some s.pc }
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
