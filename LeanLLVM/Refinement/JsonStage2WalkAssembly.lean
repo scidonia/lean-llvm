@@ -1026,7 +1026,17 @@ token's post-scan blocks to the merge.  `WalkSegment.trans` composes those piece
 `WalkChain.append` composes the finite ones; what an induction supplies is a segment
 whose `j` is the counter's own bound, which is why the price is stated per byte
 (`stage2ByteAllowance`) rather than per block.  The byte term is what pays the scans: an entry's dispatch runs
-inside the bytes between its position and the next entry's. -/
+inside the bytes between its position and the next entry's.
+
+**What this statement does not carry: memory.**  `WalkSegment` records a run and an
+invariant, not the writes along it, so the arena word a loop head holds is not here.
+It is the fact that the last append stored the cursor — `%alen` is written by
+`if.else285.i` (`IR:697`) and by the entry block (`IR:196`) — and it is a
+*cross-iteration* fact, true at the head only after the append's store, which is why
+`WalkInv` carries the inequality (`log_alen`) rather than the equality.  So a
+producer of this predicate does not discharge it: the head's word is a separate
+statement beside this one, composed through the revolutions, and `WalkLoopStep`'s
+producer takes it as its third argument. -/
 def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep →

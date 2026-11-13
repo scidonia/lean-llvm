@@ -385,7 +385,16 @@ reads the phi the previous merge left, and `whileBody_step`'s guard is
 exit.  The exit's bound is the potential *beside* `F`, not `F` alone: the last
 entry's dispatch is byte-dependent work like any other revolution's, so the branch
 that dispatches it and then finalises is bounded by the credit it consumes plus the
-finalisation allowance. -/
+finalisation allowance.
+
+**What a producer of this takes, and what the two branches do not imply.**  Its
+assembly is three arguments, not two: the dispatch (`WalkDispatch`), the exit
+(`WalkExit`), and the arena word at the head
+(`readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)`) — the exit's
+statement only *takes* that word as a hypothesis, so the other two do not imply it.
+The word is a run fact: `%alen` is stored at `if.else285.i` (the arena append) and
+at the entry block, and the invariant carries the inequality rather than the
+equality, so it is owed by its own producer beside the dispatch. -/
 def WalkLoopStep (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) (F : Nat) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead → C.k < G.nep →
     (∃ (C' : WalkCarry G) (s' : State) (p : Nat),
