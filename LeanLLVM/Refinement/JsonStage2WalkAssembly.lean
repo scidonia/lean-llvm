@@ -1552,6 +1552,33 @@ def walkCarryZero {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) : WalkCarry
   stMap := fun _ => 0
   stage := stage
 
+/-- **The zero carry's numeric clauses.**  Every invariant clause about the count, the
+trace, the arena cursor, the extents, the record in flight, the offsets, the caps and the
+stack is immediate at `walkCarryZero`: the empty list makes the `∀ r ∈ spans` clauses
+vacuous, `none` makes the pending clauses vacuous, and the rest are zero comparisons.  This
+is the seating's `established` half beside the three lemmas. -/
+theorem walkCarryZero_invNum {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) :
+    (walkCarryZero G stage).k ≤ G.nep ∧
+    (walkCarryZero G stage).events.length ≤ (walkCarryZero G stage).k ∧
+    (walkCarryZero G stage).alen ≤
+      G.ndst0 + ((walkCarryZero G stage).spans.map (fun r => r.2)).sum ∧
+    G.ndst0 ≤ (walkCarryZero G stage).alen ∧
+    (walkCarryZero G stage).spans.Pairwise (fun r s => r.1 + r.2 ≤ s.1) ∧
+    (∀ r ∈ (walkCarryZero G stage).spans, r.1 + r.2 ≤ G.n) ∧
+    (∀ r ∈ (walkCarryZero G stage).spans, r.1 + r.2 ≤ (walkCarryZero G stage).alen) ∧
+    (∀ p off len, (walkCarryZero G stage).pending = some (p, off, len) →
+      off ≤ (walkCarryZero G stage).alen ∧ p < G.n) ∧
+    (∀ p off len, (walkCarryZero G stage).pending = some (p, off, len) → p + len ≤ G.n) ∧
+    (∀ p off len, (walkCarryZero G stage).pending = some (p, off, len) →
+      (walkCarryZero G stage).alen ≤ G.ndst0 + p) ∧
+    (walkCarryZero G stage).eoff ≤ G.n ∧
+    (walkCarryZero G stage).inner ≤ walkInnerCap G ∧
+    (walkCarryZero G stage).sp ≤ stage2StackExtent ∧
+    (walkCarryZero G stage).sp ≤ (walkCarryZero G stage).wlen ∧
+    (walkCarryZero G stage).wlen ≤ stage2StackExtent := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    (simp [walkCarryZero]; try omega)
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
