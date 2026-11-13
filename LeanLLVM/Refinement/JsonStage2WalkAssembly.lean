@@ -1241,6 +1241,156 @@ theorem walkEntry_zeroArm {calls : Calls} {s : State} {nep : Nat}
       s'.pc = "if.then492.i" :=
   ⟨_, walkEntry_step s hpc hden hne hne64 hpc₁, by simp [walkEntryJump, hzero]⟩
 
+/-- **The entry's zero arm at a staging.**  The entry block's run at the ABI's entry state —
+its 21-cell environment, the four bounds, the five separations and the two cursor reads the
+staging supplies — then its step, whose destination at `nep = 0` is `if.then492.i`.  The
+premise supply is `walkSeedPrefix_entry`'s, transplanted: it is the same environment and the
+same facts, and the arm differs only in the count. -/
+theorem walkEntryStaging_zeroArm {mem : Mem} (G : WalkGeom mem) (S : WalkStage G)
+    {d : Nat} (hzero : G.nep = 0) :
+    ∃ s' : State,
+      LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body
+          (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+            .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+            .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+            .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+          d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0) = .jump s' ∧
+      s'.pc = "if.then492.i" := by
+  let ent : State := EntryState stage2Body
+    (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+      d S.c S.ctype S.cst S.tok S.s S.z S.e)
+    mem G.next0
+  let e1 : Env := walkEntryEnv1 ent.env ent.next G.n
+  let e2 : Env := walkEntryEnv2 e1 S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.nev0 G.ev
+  let e3 : Env := walkEntryEnv3 e2 G.b G.n G.ep S.s S.c
+  let e4 : Env := walkEntryEnv4 e3 G.b G.nep
+  let m1 : Mem := walkSeg4PostMem (ent.next + 8) (ent.next + 12)
+    (walkSeg3PostMem G.b G.n G.ep G.nep S.e S.c
+      (walkSeg2PostMem S.s S.z G.nep G.xp G.nxp G.dst G.ndst0 G.dstcap G.ev G.nev0 G.evcap
+        (walkSeg2InitMem S.s G.b G.ep (BitVec.ofNat 64 G.n)
+          ((BitVec.ofNat 64 G.n + BitVec.ofNat 64 63) >>> 6) mem)))
+  let s₁ : State := stateAt e4 (memAt { ent with next := ent.next + 28 } m1)
+  let p5 : Env := ("%kind404.i", .ptr (S.tok + 16)) :: ("%end.i", .ptr (S.tok + 8)) ::
+    ("%gap.i", .ptr (S.tok + 20)) :: ("%h1.i.i.i51", .ptr (S.z + 24)) ::
+    ("%k11.i", .ptr (S.c + 32)) :: e4
+  let s₂ : State := stateAt p5 (walkEntryJump s₁ G.nep)
+  let sl : State := { s₂ with pc := "while.body.i", pre := some "while.body.i.lr.ph" }
+  let s₃ : State := stateAt (whileBodyOut sl.env 0 0 G.b G.ep S.c (entryPos G 0) (entryByte G 0))
+    { sl with mem := writeBytes sl.mem (S.c + 32) (wordBytes 8 1) }
+  have hn64 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  have hnep64 : G.nep < 2 ^ 64 := by
+    have h := G.nep_le
+    have h2 := G.maxDoc
+    simp only [stage2MaxDocument] at h2
+    omega
+  have hndst0 : G.ndst0 < 2 ^ 64 := by
+    have hroom := G.arenaRoom
+    have hcap := G.dstcapLt
+    simp only [stage2ArenaReserve] at hroom
+    omega
+  have hnev0 : G.nev0 < 2 ^ 64 := by
+    have hroom := G.evRoom
+    have hcap := G.evcapLt
+    omega
+  have hentEnv : ent.env = [("%b", .ptr G.b), ("%n", .int 64 (BitVec.ofNat 64 G.n)),
+      ("%ep", .ptr G.ep), ("%nep", .int 64 (BitVec.ofNat 64 G.nep)), ("%xp", .ptr G.xp),
+      ("%nxp", .int 64 (BitVec.ofNat 64 G.nxp)), ("%dst", .ptr G.dst),
+      ("%dstcap", .int 64 (BitVec.ofNat 64 G.dstcap)), ("%ndst", .ptr G.ndst),
+      ("%ev", .ptr G.ev), ("%evcap", .int 64 (BitVec.ofNat 64 G.evcap)),
+      ("%nev", .ptr G.nev), ("%err", .ptr G.err), ("%d.i", .ptr d), ("%c.i", .ptr S.c),
+      ("%ctype.i", .ptr S.ctype), ("%cst.i", .ptr S.cst), ("%t352.i", .ptr S.tok),
+      ("%s", .ptr S.s), ("%z", .ptr S.z), ("%e", .ptr S.e)] := by
+    simp only [ent, walkEntryState_env]
+  have hb : lookupName ent.env "%b" = some (.ptr G.b) := by rw [hentEnv]; rfl
+  have hn' : lookupName ent.env "%n" = some (.int 64 (BitVec.ofNat 64 G.n)) := by
+    rw [hentEnv]; rfl
+  have hep' : lookupName ent.env "%ep" = some (.ptr G.ep) := by rw [hentEnv]; rfl
+  have hnec : lookupName ent.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) := by
+    rw [hentEnv]; rfl
+  have hxp : lookupName ent.env "%xp" = some (.ptr G.xp) := by rw [hentEnv]; rfl
+  have hnxp : lookupName ent.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)) := by
+    rw [hentEnv]; rfl
+  have hdst : lookupName ent.env "%dst" = some (.ptr G.dst) := by rw [hentEnv]; rfl
+  have hndst : lookupName ent.env "%ndst" = some (.ptr G.ndst) := by rw [hentEnv]; rfl
+  have hdcap : lookupName ent.env "%dstcap" = some (.int 64 (BitVec.ofNat 64 G.dstcap)) := by
+    rw [hentEnv]; rfl
+  have hev : lookupName ent.env "%ev" = some (.ptr G.ev) := by rw [hentEnv]; rfl
+  have hnev : lookupName ent.env "%nev" = some (.ptr G.nev) := by rw [hentEnv]; rfl
+  have hevcap : lookupName ent.env "%evcap" = some (.int 64 (BitVec.ofNat 64 G.evcap)) := by
+    rw [hentEnv]; rfl
+  have hcAddr : lookupName ent.env "%c.i" = some (.ptr S.c) := by rw [hentEnv]; rfl
+  have hct : lookupName ent.env "%ctype.i" = some (.ptr S.ctype) := by rw [hentEnv]; rfl
+  have hcs : lookupName ent.env "%cst.i" = some (.ptr S.cst) := by rw [hentEnv]; rfl
+  have hsAddr : lookupName ent.env "%s" = some (.ptr S.s) := by rw [hentEnv]; rfl
+  have hzAddr : lookupName ent.env "%z" = some (.ptr S.z) := by rw [hentEnv]; rfl
+  have heAddr : lookupName ent.env "%e" = some (.ptr S.e) := by rw [hentEnv]; rfl
+  have htok : lookupName ent.env "%t352.i" = some (.ptr S.tok) := by rw [hentEnv]; rfl
+  have hsepS : G.ndst + 8 ≤ S.s ∨ S.s + 120 ≤ G.ndst := by
+    have h := walkRegion_against_writes S (r := (G.ndst, 8))
+      (by simp [stage2Regions])
+      (q := (S.s, stage2StateExtent)) (by simp [stage2StagedWrites])
+    simp only [stage2StateExtent] at h
+    simpa using h
+  have hsepZ : G.ndst + 8 ≤ S.z ∨ S.z + 64 ≤ G.ndst := by
+    have h := walkRegion_against_writes S (r := (G.ndst, 8))
+      (by simp [stage2Regions])
+      (q := (S.z, stage2LogExtent)) (by simp [stage2StagedWrites])
+    simp only [stage2LogExtent] at h
+    simpa using h
+  have hsepS2 : G.nev + 8 ≤ S.s ∨ S.s + 120 ≤ G.nev := by
+    have h := walkRegion_against_writes S (r := (G.nev, 8))
+      (by simp [stage2Regions])
+      (q := (S.s, stage2StateExtent)) (by simp [stage2StagedWrites])
+    simp only [stage2StateExtent] at h
+    simpa using h
+  have hsepZ2 : G.nev + 8 ≤ S.z ∨ S.z + 64 ≤ G.nev := by
+    have h := walkRegion_against_writes S (r := (G.nev, 8))
+      (by simp [stage2Regions])
+      (q := (S.z, stage2LogExtent)) (by simp [stage2StagedWrites])
+    simp only [stage2LogExtent] at h
+    simpa using h
+  have hsepSZ : S.s + 120 ≤ S.z ∨ S.z + 64 ≤ S.s := by
+    have h := disjointRegions_pair_of_mem (S.writes_separate)
+      (r := (S.s, stage2StateExtent)) (t := (S.z, stage2LogExtent))
+      (by simp [stage2StagedWrites]) (by simp [stage2StagedWrites])
+      (by intro hh
+          have h2 : stage2StateExtent = stage2LogExtent := congrArg Prod.snd hh
+          simp only [stage2StateExtent, stage2LogExtent] at h2
+          omega)
+    simp only [stage2StateExtent, stage2LogExtent] at h
+    exact h
+  have hnd : readBytes mem G.ndst 8 = some (natToBytes G.ndst0 8) := by
+    simpa only [wordBytes] using G.ndstRead
+  have hnevR : readBytes mem G.nev 8 = some (natToBytes G.nev0 8) := by
+    simpa only [wordBytes] using G.nevRead
+  have hden₁ : denoteCode (stage2Calls stage2SubCalls) walkEntryInstrs ent = some s₁ := by
+    have hs : stateAt ent.env (memAt ent mem) = ent := by
+      simp only [ent, stateAt, memAt, EntryState]
+    rw [← hs]
+    rw [walkEntry_denote (env := ent.env) (s := ent) (m := mem)
+      (n := G.n) (sAddr := S.s) (zAddr := S.z) (eAddr := S.e) (b := G.b) (ep := G.ep)
+      (nep := G.nep) (xp := G.xp) (nxp := G.nxp) (dst := G.dst) (dstcap := G.dstcap)
+      (ev := G.ev) (ndst := G.ndst) (nev := G.nev) (v1 := G.ndst0) (v2 := G.nev0)
+      (evcap := G.evcap) (cAddr := S.c) (ctypeAddr := S.ctype) (cstAddr := S.cst)
+      G.bLt hn64 G.epLt G.bPos hn' hsAddr hzAddr heAddr hb hep' hnec hxp
+      hnxp hdst hndst hdcap hev hnev hevcap hcAddr hct hcs hnep64 G.nxpLt
+      G.dstcapLt hndst0 hnev0 G.evcapLt hsepS hsepZ hsepS2 hsepZ2 hsepSZ hnd hnevR]
+    simp only [s₁, stateAt, memAt, e1, e2, e3, e4, m1, denoteCode_nil]
+  have hne : lookupName s₁.env "%cmp.i247.not" =
+      some (.int 1 (evalICmp .eq (BitVec.ofNat 64 G.nep) (BitVec.ofNat 64 0))) := by
+    simp only [s₁, stateAt, memAt, e4, walkEntryEnv4, cells]
+    exact lookupName_cons_self _ _ _
+  have hpc₁ : s₁.pc = ent.pc := by simp only [s₁, stateAt, memAt]
+  exact ⟨_, walkEntry_step ent rfl hden₁ hne hnep64 hpc₁,
+    by simp [walkEntryJump, hzero]⟩
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
