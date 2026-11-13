@@ -4293,21 +4293,94 @@ def s2StringBodyScanShape (env0 : Env) (s : State) : Prop :=
   ∃ cells, s.env = cells ++ env0 ∧
     ∀ name w, (name, w) ∈ cells → name ∈ s2StringBodyScanNames
 
-/-- The scan's invariant with the visited prefix and the environment's shape
-beside it. -/
+/-- **A caller's cell, read through the scan's own cells**: the shape plus the
+name's absence from the body's own names is the pass-through at an exit state the
+continuation did not build. -/
+theorem s2StringBodyScan_lookup_env0 {env0 : Env} {s : State} {name : String}
+    {v : Value} (hshape : s2StringBodyScanShape env0 s)
+    (hname : name ∉ s2StringBodyScanNames) (h0 : lookupName env0 name = some v) :
+    lookupName s.env name = some v := by
+  obtain ⟨cells, hcells, hnames⟩ := hshape
+  rw [hcells]
+  refine lookupName_append_of_forall env0 (fun w hw => ?_) h0
+  exact hname (hnames name w hw)
+
+/-- **The registers a continuation reads, at the head's cells**: five caller
+registers fall through the head's own five.  Stated as a bundle because the peel is
+one `repeat rw` per goal and a `simp` over the whole environment duplicates the
+arithmetic the cells carry — the cost this file records for `s2_lk`. -/
+theorem s2StringBodyScan_lookup_landRhs {env : Env} {ei xp xj pos0 N : Nat}
+    {inc24 : BitVec 64} {bs : List UInt8} {sub : BitVec 64}
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 (BitVec.ofNat 64 pos0)))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 N))) :
+    lookupName (s2StringBodyLandRhsEnv env inc24 xp bs sub) "%ei" = some (.ptr ei) ∧
+    lookupName (s2StringBodyLandRhsEnv env inc24 xp bs sub) "%sub.ptr.sub"
+        = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+    lookupName (s2StringBodyLandRhsEnv env inc24 xp bs sub) "%xp" = some (.ptr xp) ∧
+    lookupName (s2StringBodyLandRhsEnv env inc24 xp bs sub) "%xj" = some (.ptr xj) ∧
+    lookupName (s2StringBodyLandRhsEnv env inc24 xp bs sub) "%nxp"
+        = some (.int 64 (BitVec.ofNat 64 N)) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+    (simp only [s2StringBodyLandRhsEnv]
+     repeat rw [lookupName_cons_ne _ _ (by decide)]
+     first | exact hei | exact hsub | exact hxp | exact hxj | exact hnxp)
+
+/-- The same at the counter's two cells over the head's. -/
+theorem s2StringBodyScan_lookup_iterate {env : Env} {ei xp xj pos0 N : Nat}
+    {inc24 nxp : BitVec 64} {bs : List UInt8} {sub : BitVec 64}
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 (BitVec.ofNat 64 pos0)))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 N))) :
+    lookupName (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+      ("%inc", .int 64 (inc24 + 1#64)) ::
+      s2StringBodyLandRhsEnv env inc24 xp bs sub) "%ei" = some (.ptr ei) ∧
+    lookupName (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+      ("%inc", .int 64 (inc24 + 1#64)) ::
+      s2StringBodyLandRhsEnv env inc24 xp bs sub) "%sub.ptr.sub"
+        = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+    lookupName (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+      ("%inc", .int 64 (inc24 + 1#64)) ::
+      s2StringBodyLandRhsEnv env inc24 xp bs sub) "%xp" = some (.ptr xp) ∧
+    lookupName (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+      ("%inc", .int 64 (inc24 + 1#64)) ::
+      s2StringBodyLandRhsEnv env inc24 xp bs sub) "%xj" = some (.ptr xj) ∧
+    lookupName (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+      ("%inc", .int 64 (inc24 + 1#64)) ::
+      s2StringBodyLandRhsEnv env inc24 xp bs sub) "%nxp"
+        = some (.int 64 (BitVec.ofNat 64 N)) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+    (repeat rw [lookupName_cons_ne _ _ (by decide)]
+     first | exact hei | exact hsub | exact hxp | exact hxj | exact hnxp)
+
+/-- The scan's invariant with the visited prefix, the environment's shape, and the
+body's own slot **by value**.  `%ei` is the one cell that cannot pass through: the
+entry's `alloca` shadows the caller's name, so the value the exit's continuation
+needs is the one the entry bound, and it has to be stated. -/
 def s2StringBodyScanInvP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
-    (env0 : Env) (r : Nat) (s : State) (c : Nat) : Prop :=
+    (env0 : Env) (ei : Nat) (r : Nat) (s : State) (c : Nat) : Prop :=
   s2StringBodyScanInv mem0 xj pos0 xp N ps r s c ∧
     s2StringBodyScanPrefix ps pos0 j0 c ∧
-    s2StringBodyScanShape env0 s
+    s2StringBodyScanShape env0 s ∧
+    lookupName s.env "%ei" = some (.ptr ei)
 
 /-- What the scan leaves behind, with the visited prefix at the counter it stopped
 at. -/
 def s2StringBodyScanExitWordP (mem0 : Mem) (xj j0 : Nat) (ps : List Nat)
-    (pos0 N : Nat) (env0 : Env) (e : State) : Prop :=
+    (pos0 N : Nat) (env0 : Env) (ei xp : Nat) (e : State) : Prop :=
   ∃ c, e.mem = writeBytes mem0 xj (wordBytes 8 c) ∧
-    (c = N ∨ ∃ q, ps[c]? = some q ∧ pos0 ≤ q) ∧
-    s2StringBodyScanPrefix ps pos0 j0 c ∧ s2StringBodyScanShape env0 e
+    (c = N ∨ ∃ q conv, ps[c]? = some q ∧ pos0 ≤ q ∧
+      lookupName e.env "%conv" = some (.int 64 conv) ∧ conv.toNat = q) ∧
+    s2StringBodyScanPrefix ps pos0 j0 c ∧ s2StringBodyScanShape env0 e ∧
+    lookupName e.env "%ei" = some (.ptr ei) ∧
+    lookupName e.env "%sub.ptr.sub" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
+    lookupName e.env "%xp" = some (.ptr xp) ∧
+    lookupName e.env "%xj" = some (.ptr xj) ∧
+    lookupName e.env "%nxp" = some (.int 64 (BitVec.ofNat 64 N))
 
 /-- At its own start the scan has passed nothing. -/
 theorem s2StringBodyScanPrefix_self (ps : List Nat) (pos0 j0 : Nat) :
@@ -4318,12 +4391,12 @@ theorem s2StringBodyScanPrefix_self (ps : List Nat) (pos0 j0 : Nat) :
 
 /-- The strengthened exit word is the old one: `c = N` is the count reached. -/
 theorem s2StringBodyScanExitWordP.toExitWord {mem0 : Mem} {xj j0 : Nat} {ps : List Nat}
-    {pos0 N : Nat} {env0 : Env} {e : State}
-    (h : s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 e) :
+    {pos0 N : Nat} {env0 : Env} {ei xp : Nat} {e : State}
+    (h : s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 ei xp e) :
     s2StringBodyScanExitWord mem0 xj ps pos0 N e := by
-  obtain ⟨c, hmem, hstop, -, -⟩ := h
+  obtain ⟨c, hmem, hstop, -, -, -, -, -, -⟩ := h
   refine ⟨c, hmem, ?_⟩
-  rcases hstop with hN | ⟨q, hq, hge⟩
+  rcases hstop with hN | ⟨q, conv, hq, hge, -, -⟩
   · exact Or.inl (by omega)
   · exact Or.inr ⟨q, hq, hge⟩
 
@@ -4343,18 +4416,18 @@ theorem s2StringBodyScanExit_j1 {ps : List Nat} {pos0 N j0 c : Nat}
 /-- **The exit arm, with the prefix**: the same two exits as
 `s2StringBodyScan_step_exit`, each handing back the lanes it passed. -/
 theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
-    (ps : List Nat) (env0 : Env)
+    (ps : List Nat) (env0 : Env) (ei : Nat)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
     (r c : Nat) (s : State)
-    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 r s c)
+    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 ei r s c)
     (hbound : s2StringBodyScanAtBound ps pos0 N s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 2 ∧ s2StringBodyScanExited e ∧
-      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 e ∧
+      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 ei xp e ∧
       ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
         runFuel s2StringBodyCalls k s2StringBodyBody e := by
-  obtain ⟨hinv, hfix, hshape⟩ := hinv
+  obtain ⟨hinv, hfix, hshape, hei⟩ := hinv
   obtain ⟨hpc, hmem, hsum, ⟨p, op, hpre, hinc, hop⟩, hxp, hsub, hxj, hnxp,
     ⟨q, bs, hq, hblen, hval, hlane⟩⟩ := hinv
   have hlen : ps.length = N := (readLanes32_lane hps).1
@@ -4388,6 +4461,14 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
       hpc hpre hinc hop hxp hsub hpos hlane' hbit
     let e : State := stateAt (s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs
         (BitVec.ofNat 64 pos0)) { s with pc := "land.lhs.true", pre := some s.pc }
+    have hconv' : lookupName e.env "%conv" =
+        some (.int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat)) := by
+      simp only [e, stateAt, s2StringBodyLandRhsEnv]
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+    obtain ⟨hei', hsub', hxp', hxj', hnxp'⟩ := by
+      simpa only [e, stateAt] using
+        s2StringBodyScan_lookup_landRhs (inc24 := BitVec.ofNat 64 c) (bs := bs)
+          (sub := BitVec.ofNat 64 pos0) hei hsub hxp hxj hnxp
     have hshape' : s2StringBodyScanShape env0 e := by
       obtain ⟨cells, hcells, hnames⟩ := hshape
       refine ⟨s2StringBodyLandRhsEnv [] (BitVec.ofNat 64 c) xp bs
@@ -4402,8 +4483,9 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
           obtain ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
         · exact hnames name w hw
     refine ⟨e, 1, by decide, Or.inl rfl, ?_, hrun⟩
-    exact ⟨c, by simp only [e, stateAt]; exact hmem, Or.inr ⟨q, hq, hge⟩, hfix,
-      hshape'⟩
+    exact ⟨c, by simp only [e, stateAt]; exact hmem,
+      Or.inr ⟨q, BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat, hq, hge,
+        hconv', hconv⟩, hfix, hshape', hei', hsub', hxp', hxj', hnxp'⟩
   · -- the lane is below the body's start, so only the count can have stopped it
     have hlt : q < pos0 := by omega
     have hNle : N ≤ c + 1 := by
@@ -4425,6 +4507,11 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
           ("%inc", .int 64 ((BitVec.ofNat 64 c) + 1#64)) ::
           s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
         ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })
+    obtain ⟨hei', hsub', hxp', hxj', hnxp'⟩ := by
+      simpa only [e, stateAt] using
+        s2StringBodyScan_lookup_iterate (inc24 := BitVec.ofNat 64 c)
+          (nxp := BitVec.ofNat 64 N) (bs := bs) (sub := BitVec.ofNat 64 pos0)
+          hei hsub hxp hxj hnxp
     have hshape' : s2StringBodyScanShape env0 e := by
       obtain ⟨cells, hcells, hnames⟩ := hshape
       refine ⟨("%exitcond.not", .int 1 (evalICmp .eq ((BitVec.ofNat 64 c) + 1#64)
@@ -4452,7 +4539,7 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
         subst hk
         exact ⟨q, hq, hlt⟩
     refine ⟨e, 2, le_rfl, Or.inr rfl, ?_, hrun⟩
-    refine ⟨c + 1, ?_, Or.inl heqc, hfix', hshape'⟩
+    refine ⟨c + 1, ?_, Or.inl heqc, hfix', hshape', hei', hsub', hxp', hxj', hnxp'⟩
     simp only [e, stateAt]
     rw [show (writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8))
         = writeBytes mem0 xj (wordBytes 8 (c + 1)) from
@@ -4461,18 +4548,18 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
 /-- **The back edge, with the prefix**: one iteration, and the lane it passed joins
 the prefix. -/
 theorem s2StringBodyScan_step_loopP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
-    (ps : List Nat) (env0 : Env)
+    (ps : List Nat) (env0 : Env) (ei : Nat)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
     (r c : Nat) (s : State)
-    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 (r + 1) s c)
+    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 ei (r + 1) s c)
     (hbound : s2StringBodyScanAtBound ps pos0 N s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 2 ∧ e.pc = "land.rhs" ∧ c < c' ∧
-      s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 r e c' ∧
+      s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 ei r e c' ∧
       ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
         runFuel s2StringBodyCalls k s2StringBodyBody e := by
-  obtain ⟨hinv, hfix, hshape⟩ := hinv
+  obtain ⟨hinv, hfix, hshape, hei⟩ := hinv
   obtain ⟨hpc, hmem, hsum, ⟨p, op, hpre, hinc, hop⟩, hxp, hsub, hxj, hnxp,
     ⟨q, bs, hq, hblen, hval, hlane⟩⟩ := hinv
   have hlen : ps.length = N := (readLanes32_lane hps).1
@@ -4524,6 +4611,11 @@ theorem s2StringBodyScan_step_loopP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
     · have hk : k = c := by omega
       subst hk
       exact ⟨q, hq, hltq⟩
+  obtain ⟨hei', -, -, -, -⟩ := by
+    simpa only [e, stateAt] using
+      s2StringBodyScan_lookup_iterate (inc24 := BitVec.ofNat 64 c)
+        (nxp := BitVec.ofNat 64 N) (bs := bs) (sub := BitVec.ofNat 64 pos0)
+        hei hsub hxp hxj hnxp
   have hshape' : s2StringBodyScanShape env0 e := by
     obtain ⟨cells, hcells, hnames⟩ := hshape
     refine ⟨("%exitcond.not", .int 1 (evalICmp .eq ((BitVec.ofNat 64 c) + 1#64)
@@ -4542,7 +4634,7 @@ theorem s2StringBodyScan_step_loopP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
           or_false, Prod.mk.injEq] at hw
         obtain ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
       · exact hnames name w hw
-  refine ⟨e, c + 1, 2, le_rfl, rfl, by omega, ⟨?_, hfix', hshape'⟩, ?_⟩
+  refine ⟨e, c + 1, 2, le_rfl, rfl, by omega, ⟨?_, hfix', hshape', hei'⟩, ?_⟩
   · refine ⟨rfl, ?_, by omega,
       ⟨"while.body", Operand.reg "%inc", rfl, by simp [phiIncoming], ?_⟩,
       ?_, ?_, ?_, ?_, ⟨laneQ, laneBs, hq', hblen', hval', ?_⟩⟩
@@ -4561,7 +4653,7 @@ theorem s2StringBodyScan_step_loopP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
 
 /-- **The scan, as a `BoundLoop`, handing back the lanes it passed.** -/
 def s2StringBodyScanLoopP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
-    (env0 : Env)
+    (env0 : Env) (ei : Nat)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64) :
@@ -4570,14 +4662,14 @@ def s2StringBodyScanLoopP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
   exitBlock := "land.lhs.true"
   N := N
   cost := 2
-  Inv := s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0
+  Inv := s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 ei
   atBound := s2StringBodyScanAtBound ps pos0 N
   Exit := s2StringBodyScanExited
-  ExitWord := s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0
+  ExitWord := s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 ei xp
   step_exit := fun r s c =>
-    s2StringBodyScan_step_exitP mem0 xj pos0 xp N j0 ps env0 hps hdisj hN hpos0 r c s
+    s2StringBodyScan_step_exitP mem0 xj pos0 xp N j0 ps env0 ei hps hdisj hN hpos0 r c s
   step_loop := fun r s c =>
-    s2StringBodyScan_step_loopP mem0 xj pos0 xp N j0 ps env0 hps hdisj hN hpos0 r c s
+    s2StringBodyScan_step_loopP mem0 xj pos0 xp N j0 ps env0 ei hps hdisj hN hpos0 r c s
   exit_at_zero := by
     intro s c h
     obtain ⟨hb, -⟩ := h
@@ -4593,33 +4685,33 @@ def s2StringBodyScanLoopP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
 /-- **The scan's run, with the lanes it passed**: from the seated head, the exit at
 `(N + 1) * 2` steps carries the model's `j1` as its counter. -/
 theorem s2StringBodyScan_runP (mem0 : Mem) (xj pos0 xp N j0 : Nat) (ps : List Nat)
-    (env0 : Env)
+    (env0 : Env) (ei : Nat)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
     (s : State) (c : Nat) (k : Nat)
-    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 N s c) {o : Outcome}
+    (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 ei N s c) {o : Outcome}
     (hcont : ∀ (e : State), s2StringBodyScanExited e →
-      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 e →
+      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 ei xp e →
       runFuel s2StringBodyCalls k s2StringBodyBody e = some o) :
     runFuel s2StringBodyCalls ((N + 1) * 2 + k) s2StringBodyBody s = some o :=
-  (s2StringBodyScanLoopP mem0 xj pos0 xp N j0 ps env0 hps hdisj hN hpos0).run_at s c hinv k hcont
+  (s2StringBodyScanLoopP mem0 xj pos0 xp N j0 ps env0 ei hps hdisj hN hpos0).run_at s c hinv k hcont
 
 /-- **The scan's exit, existentially**: the exit's state, the counter, and the word
 beside the run's prefix.  The arms dispatch on the state, so this is the form a
 composition consumes; `s2StringBodyScan_runP` is the same run with the outcome
 fixed in advance. -/
 theorem s2StringBodyScan_reaches_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
-    (ps : List Nat) (env0 : Env)
+    (ps : List Nat) (env0 : Env) (ei : Nat)
     (hps : readLanes32 mem0 xp N = some ps)
     (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
     (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
-    (s : State) (c : Nat) (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 N s c) :
+    (s : State) (c : Nat) (hinv : s2StringBodyScanInvP mem0 xj pos0 xp N j0 ps env0 ei N s c) :
     ∃ (e : State) (j : Nat), j ≤ (N + 1) * 2 ∧ s2StringBodyScanExited e ∧
-      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 e ∧
+      s2StringBodyScanExitWordP mem0 xj j0 ps pos0 N env0 ei xp e ∧
       ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
         runFuel s2StringBodyCalls k s2StringBodyBody e :=
-  s2StringBodyScanLoopP mem0 xj pos0 xp N j0 ps env0 hps hdisj hN hpos0
+  s2StringBodyScanLoopP mem0 xj pos0 xp N j0 ps env0 ei hps hdisj hN hpos0
     |>.run_from N s c hinv
 
 /-- **The seated invariant, with the prefix and the environment's shape**: at the
@@ -4635,24 +4727,30 @@ theorem s2StringBodyScanInvP_seat (env : Env) (s : State) (base p xj xp j0 : Nat
     (hxpc : lookupName env "%xp" = some (.ptr xp))
     (hxjc : lookupName env "%xj" = some (.ptr xj))
     (hnxpc : lookupName env "%nxp" = some (.int 64 nxp)) :
-    s2StringBodyScanInvP s.mem xj (p - base) xp nxp.toNat j0 ps env
+    s2StringBodyScanInvP s.mem xj (p - base) xp nxp.toNat j0 ps env s.next
       (nxp.toNat - j0)
       (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
         { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc })
       j0 := by
   refine ⟨s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hpc hbase hp64 hword hps
-    hj0 hxpc hxjc hnxpc, s2StringBodyScanPrefix_self ps (p - base) j0, ?_⟩
-  refine ⟨s2StringBodyEntryOut [] s.next base p j0 nxp, ?_, ?_⟩
-  · simp only [stateAt, s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
+    hj0 hxpc hxjc hnxpc, s2StringBodyScanPrefix_self ps (p - base) j0, ?_, ?_⟩
+  · refine ⟨s2StringBodyEntryOut [] s.next base p j0 nxp, ?_, ?_⟩
+    · simp only [stateAt, s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
+        s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
+        s2StringBodyEnv1, List.cons_append, List.nil_append]
+    · intro name w hw
+      simp only [s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
+        s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
+        s2StringBodyEnv1, List.mem_cons, List.not_mem_nil, or_false,
+        Prod.mk.injEq] at hw
+      obtain ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ |
+        ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
+  · -- `%ei` is the entry's own cell, over the caller's environment
+    simp only [stateAt, s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
       s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
-      s2StringBodyEnv1, List.cons_append, List.nil_append]
-  · intro name w hw
-    simp only [s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
-      s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
-      s2StringBodyEnv1, List.mem_cons, List.not_mem_nil, or_false,
-      Prod.mk.injEq] at hw
-    obtain ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ |
-      ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
+      s2StringBodyEnv1]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
 
 /-- The callee's decoded memory, named. -/
 def s2StringBodyExpandMem (mem : Mem) (ei dst xj : Nat) (out outj : List UInt8) : Mem :=
