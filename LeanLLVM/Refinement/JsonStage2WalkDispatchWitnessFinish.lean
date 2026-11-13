@@ -436,9 +436,54 @@ theorem walkFinishMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     rcases hkey with h | h | h <;> (rw [h]; decide)
   · simp [WalkLocal]
 
+
+/-! ### The last block before the merge
+
+`if.end473.i` is a lifetime marker and a `br cleanup478.i`: the marker writes nothing
+(`walkDenoteCode_lifetimeEnd`), so the step is the state itself at the merge, and it is the
+only block on the path to `cleanup478.i` that needs no contract — the four before it are the
+number path's. -/
+
+/-- `if.end473.i`: the token record's lifetime marker, then the merge. -/
+def walkIf_end473_i : Block :=
+  { name := "if.end473.i",
+    instrs := [Instr.callVoid "llvm.lifetime.end.p0"
+      [(Ty.int 64, Operand.imm (.int 64 (BitVec.ofNat 64 24))),
+       (Ty.ptr, Operand.reg "%t352.i")]],
+    term := Term.br "cleanup478.i" }
+
+theorem walkIf_end473_i_find : stage2Body.findBlock "if.end473.i" = some walkIf_end473_i := by
+  simp [stage2Body, Function.findBlock, findBlockList, walkIf_end473_i]
+
+/-- **`if.end473.i`'s target, named.**  The marker leaves the state, and the `br` moves it
+to the merge. -/
+theorem walkIfEnd473_at {sub : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.end473.i")
+    {tok : Nat} (htok : lookupName s.env "%t352.i" = some (.ptr tok)) :
+    ∃ (s' : State), WalkLink (stage2Calls sub) G C s { C with block := "cleanup478.i" } s' ∧
+      s' = { s with pc := "cleanup478.i", pre := some s.pc } := by
+  have hden : denoteCode (stage2Calls sub) walkIf_end473_i.instrs s = some s := by
+    rw [show walkIf_end473_i.instrs = [Instr.callVoid "llvm.lifetime.end.p0"
+        [(Ty.int 64, Operand.imm (.int 64 (BitVec.ofNat 64 24))),
+         (Ty.ptr, Operand.reg "%t352.i")]] from rfl, ← stateAt_self s,
+      walkDenoteCode_lifetimeEnd (sub := sub) s.env s htok []]
+    rfl
+  have hfind : stage2Body.findBlock C.block = some walkIf_end473_i := by
+    rw [hblock]; exact walkIf_end473_i_find
+  obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (calls := stage2Calls sub) G C s hInv hfind hden
+    (by unfold walkCarried; decide) rfl rfl (t := "cleanup478.i") rfl (by simp [WalkLocal])
+  refine ⟨s', hl, ?_⟩
+  have hstep : step (stage2Calls sub) stage2Body s =
+      Ctrl.jump { s with pc := "cleanup478.i", pre := some s.pc } := by
+    simp only [LeanLLVM.step, hInv.pc_eq, hfind, hden]
+    dsimp only [walkIf_end473_i, execTerm]
+    rw [← hInv.pc_eq]
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishMerge_at
+#print axioms LeanLLVM.Refinement.WalkScope.walkIfEnd473_at
 
 end WalkScope
 end LeanLLVM.Refinement
