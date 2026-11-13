@@ -2606,6 +2606,69 @@ theorem s2StringBodyScan_run (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
     runFuel s2StringBodyCalls ((N + 1) * 2 + k) s2StringBodyBody s = some o :=
   (s2StringBodyScanLoop mem0 xj pos0 xp N ps hps hdisj hN hpos0).run_at s c hinv k hcont
 
+
+/-! ### The entry's prefix
+
+The body's run starts here: the entry block's step, stated as the `runFuel` prefix
+the closing composes with (`s2StringBodyScan_run` for the scan, and the exit
+continuations for the rest).  The *seating* — reading `s2StringBodyScanInv` off the
+staging at the head the entry leaves — is not stated here, and its first clause is
+why: the invariant wants `s.mem = writeBytes s.mem xj (wordBytes 8 j0)`, which is
+the self-write form of a region already present.  That is the presence clause
+`s2StringBodyPre` still owes (obligation 3), so the seating belongs with it rather
+than ahead of it. -/
+
+/-- `ofNat` at `i64` is a homomorphism for subtraction when the operands do not
+borrow: `(p - base)` as the model's `Nat` is the bit-vector difference. -/
+theorem ofNat_sub (p base : Nat) (hb : base ≤ p) (hp : p < 2 ^ 64) :
+    (BitVec.ofNat 64 p) - (BitVec.ofNat 64 base) = BitVec.ofNat 64 (p - base) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+  omega
+
+/-- **The entry's step to the scan's head, as a prefix**: one control step, and the
+run continues from the head at `land.rhs`. -/
+theorem s2StringBodyEntry_prefix_landRhs {env : Env} {s : State}
+    {c p xj base j0 : Nat} {nxp : BitVec 64}
+    (hpc : s.pc = "entry")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1) :
+    ∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody (stateAt env s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+          ({ s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc })) := by
+  intro k
+  exact runFuel_jump_prefix
+    (step_entry_landRhs hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit) k
+
+/-- **The entry's step to the body-itself arm, as a prefix.** -/
+theorem s2StringBodyEntry_prefix_ifThen {env : Env} {s : State}
+    {c p xj base j0 : Nat} {nxp : BitVec 64}
+    (hpc : s.pc = "entry")
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 0#1) :
+    ∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody (stateAt env s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
+          ({ s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then", pre := some s.pc })) := by
+  intro k
+  exact runFuel_jump_prefix
+    (step_entry_ifThen hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit) k
+
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
