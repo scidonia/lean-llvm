@@ -3495,7 +3495,33 @@ The first of those moves needs a lemma this section does not yet have —
 intervening writes disjoint from it, is absorbed by a later write to that region.
 Its proof is an induction over the memory showing that an in-place write changes no
 cell's *position*, which is what the two preservations above supply one byte at a
-time.  -/
+time.
+
+**The absorption, reduced.**  Pushing the two failure routes through — commute
+first needs `b` present, which the chain does not have; absorb adjacent first
+leaves the intervening write in the way — leaves two facts, and neither is a
+commutation:
+
+* **position preservation** — a write over a *present* region changes values only,
+  so every cell keeps its position and the memory's *shape* is unchanged.  That is
+  what rules out `b`'s append moving when the `a`-region is rewritten first, the
+  hypothesis the commutation route could not supply;
+* **region extensionality** — two memories that agree at every address outside a
+  region, and each hold that region present, agree after being rewritten there with
+  the same bytes.  That is what lets a final in-place write erase an earlier one
+  whose values differ.
+
+With both, `writeBytes_absorb_one` is an induction whose region extent is
+*constant* (both `ei` writes are eight bytes, so no length negotiation enters) and
+whose outside-agreement is carried by `readBytes_writeByte_above`/`_below`.
+
+**And the method, three times over**: a lemma written for one purpose has twice
+become the next lemma's prerequisite — `readBytes_writeByte_below` was written for
+the commutation, `_above` as its dual, and the absorption needs both, as the
+instrument that carries a presence past a write on either side.  That is what a
+vocabulary converging on the right side conditions looks like, and the practical
+reason to state a fact at the weakest side condition its *use* needs rather than at
+the strongest its proof can reach.  -/
 
 /-- **The slot write absorbs the arm's clear.**  The body writes `0` at the slot
 before the call and the callee writes the arm's word there; the second write is the
