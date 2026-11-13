@@ -4182,6 +4182,21 @@ theorem s2StringBodyArm_bodyItself {env : Env} {s : State}
       rfl (by s2_lk) (by s2_lk)
   exact runFuel_prefix_some (fun k => runFuel_jump_prefix h1 k) h2
 
+/-- **The scan stage**: from the seated head, the scan reaches an exit — the block it
+lefts for, the word it leaves, and the prefix of fuel `(N + 1) * 2`.  The existential
+form (rather than the outcome form `s2StringBodyScan_run` takes) is what the
+composition needs: the exit's *state* is what the arm stages then dispatch on. -/
+theorem s2StringBodyScan_reaches_exit (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
+    (hps : readLanes32 mem0 xp N = some ps)
+    (hdisj : ∀ k, k < N → xp + 4 * k + 4 ≤ xj ∨ xj + 8 ≤ xp + 4 * k)
+    (hN : N < 2 ^ 63) (hpos0 : pos0 < 2 ^ 64)
+    (s : State) (c : Nat) (hinv : s2StringBodyScanInv mem0 xj pos0 xp N ps N s c) :
+    ∃ (e : State) (j : Nat), j ≤ (N + 1) * 2 ∧ s2StringBodyScanExited e ∧
+      s2StringBodyScanExitWord mem0 xj ps pos0 N e ∧
+      ∀ k, runFuel s2StringBodyCalls (j + k) s2StringBodyBody s =
+        runFuel s2StringBodyCalls k s2StringBodyBody e :=
+  s2StringBodyScanLoop mem0 xj pos0 xp N ps hps hdisj hN hpos0 |>.run_from N s c hinv
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
