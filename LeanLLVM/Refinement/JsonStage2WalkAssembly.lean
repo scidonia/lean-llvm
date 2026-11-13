@@ -2343,11 +2343,12 @@ return in three or four blocks and on every path:
   `if.then485.i → if.then488.i → if.then → if.end`
 
 `walkExitBlock_denote`, `walkIfThen_step` and `walkIfEnd_step` are the last three
-blocks of those paths; the merge's *false* branch and `if.then485.i`,
-`if.end490.i`, `if.then492.i`, `if.then488.i` are what is not yet run.  `WalkExit`
-is stated at the head because the last entry's dispatch runs inside the exit
-branch's credit (`walkPotential G C + 27`), so it is the dispatch's run followed by
-this tail. -/
+blocks of those paths.  Every block on them now has a step — `walkBackFalse_step`
+for the merge's false edge, `walkIfThen485Step`, `walkIfEnd490Step`,
+`walkIfThen492Step`, `walkIfThen488Step` for the rest — so what remains is the
+composition, not a run.  `WalkExit` is stated at the head because the last entry's
+dispatch runs inside the exit branch's credit (`walkPotential G C + 27`), so it is
+the dispatch's run followed by this tail. -/
 
 /-! ### The revolution, composed
 
