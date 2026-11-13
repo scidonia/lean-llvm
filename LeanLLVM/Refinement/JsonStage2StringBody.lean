@@ -362,6 +362,31 @@ theorem sb_step_loadPtr (calls : Calls) (env : Env) (s : State) (d p : String)
     simp only [loadValue, hv, hbs]
   simp only [evalInstr, evalOperand, stateAt, hp, hv', State.bind]
 
+/-- **Write order is not free when a region is absent from memory.**  The closing
+must align the body's write order with the model's, and the obvious lemma — that
+two writes over separated regions commute — is *false* as an equality of
+memories.  `writeByte` replaces a present cell in place and appends an absent
+one, so two absent regions are ordered by the write sequence: here the same two
+bytes at the same two addresses, written in the two orders, are two different
+lists.  A commutation that holds is pointwise (`readByte` equality outside the
+two regions), or is an equality of lists at a staging where both regions are
+already present (`readBytes m a bs.length = some bs` makes the write a no-op).
+The witness is why the closing's regions must be stated present, not merely
+separated. -/
+theorem writeBytes_absent_comm_witness :
+    writeBytes (writeBytes [] 0 [1]) 1 [2] ≠
+      writeBytes (writeBytes [] 1 [2]) 0 [1] := by decide
+
+/- **A write of the bytes already there leaves the memory alone** — the form the
+closing needs for a region the body rewrites with its own value (the cursor word
+when the scan does not run, the slot on the arm that writes nothing):
+`readBytes m a bs.length = some bs → writeBytes m a bs = m`, by induction on the
+byte list, since `writeByte` replaces a present cell in place with the value it
+already holds.  It is stated here as the next obligation rather than proved: the
+induction's `if p = a` split needs the list's head named before the split, which
+is one more step than the shape above, and the witness below is what the closing
+cannot do without it. -/
+
 /-- **The comparison instruction's value, at the model's form.**  `evalInstr`
 binds `evalICmpNat p w x.toNat y.toNat` — the instruction's operands are read as
 values and compared at their `Nat` readings — while every statement about a body's
