@@ -91,3 +91,26 @@ theorem WalkLink.land_rhs_i_preheader_at {calls : Calls} {m0 : Mem}
     (dest := "land.rhs.i")
     (by rw [hInv.pc_eq, hblock]; exact walkLand_rhs_i_preheader_find) rfl rfl
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- **`land.lhs.true357.i`'s target, named.**  Off `walkGepLoadBrStep`: the instance is
+the block's syntax, the two lookups, the offset's width and the byte's read — no
+`denoteCode` of its own, which is what the shape being symbolic buys. -/
+theorem WalkLink.land_lhs_true357_i_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "land.lhs.true357.i")
+    {ig q : Nat} {b : UInt8}
+    (hig : lookupName s.env "%invariant.gep" = some (.ptr ig))
+    (hcond : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 q)))
+    (hq63 : q < 2 ^ 63) (hread : readBytes s.mem (ig + q) 1 = some [b]) :
+    ∃ (s' : State), WalkLink calls G C s { C with block := "NodeBlock41" } s' ∧
+      s' = { stateAt (cells [("%35", .int 8 (BitVec.ofNat 8 b.toNat)),
+          ("%gep", .ptr (ig + q))] s.env) s with
+        pc := "NodeBlock41", pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.land_lhs_true357_i G C s hInv hblock hig hcond hq63 hread
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkGepLoadBrStep (calls := calls) (s := s) (B := walkLand_lhs_true357_i)
+    (ap := "%gep") (ld := "%35") (base := "%invariant.gep") (off := "%cond350.i")
+    (dest := "NodeBlock41") (a := ig) (j := q) (b := b)
+    (by rw [hInv.pc_eq, hblock]; exact walkLand_lhs_true357_i_find) rfl rfl
+    hig hcond hq63 hread
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)

@@ -517,6 +517,55 @@ theorem walkGepLoadBrStep {calls : Calls} (s : State) {B : Block}
   simp only [LeanLLVM.step, hfind, hden, hterm, execTerm]
   rfl
 
+/-- **A `phi` run and the `gep`-and-load body.**  `land.rhs.i` and `while.body370.i`
+are the same block: the counter's `phi`, the register-indexed address, the byte it
+loads, and a `br` — so the E-bodied form is a shape, and the run composes with
+`walkGepLoadBrStep`'s sequence at the selected environment.  The target is stated at
+`s.bindAll vs`, the environment the selection leaves, so an instance's local facts are
+`PhiSelects`' own. -/
+theorem walkPhiGepLoadBrStep {calls : Calls} (s : State) {B : Block}
+    {specs : List PhiSpec} {vs : List (String × Value)} {p : String}
+    {ap ld base off dest : String} {a j : Nat} {b : UInt8}
+    (hfind : stage2Body.findBlock s.pc = some B)
+    (hinstrs : B.instrs = specs.map PhiSpec.instr ++
+      [Instr.gep ap (Ty.int 8) (.reg base) (.reg off),
+       Instr.load ld (.int 8) (.reg ap)])
+    (hterm : B.term = Term.br dest)
+    (hpre : s.pre = some p)
+    (hsel : PhiSelects s p specs vs)
+    (hbase : lookupName (s.bindAll vs).env base = some (.ptr a))
+    (hoff : lookupName (s.bindAll vs).env off = some (.int 64 (BitVec.ofNat 64 j)))
+    (hj63 : j < 2 ^ 63)
+    (hread : readBytes (s.bindAll vs).mem (a + j) 1 = some [b]) :
+    LeanLLVM.step calls stage2Body s =
+      .jump { stateAt (cells [(ld, .int 8 (BitVec.ofNat 8 b.toNat)),
+          (ap, .ptr (a + j))] (s.bindAll vs).env) (s.bindAll vs) with
+        pc := dest, pre := some (s.bindAll vs).pc } := by
+  have hbody : denoteCode calls
+      [Instr.gep ap (Ty.int 8) (.reg base) (.reg off),
+       Instr.load ld (.int 8) (.reg ap)] (s.bindAll vs) =
+      some (stateAt (cells [(ld, .int 8 (BitVec.ofNat 8 b.toNat)),
+        (ap, .ptr (a + j))] (s.bindAll vs).env) (s.bindAll vs)) := by
+    rw [← stateAt_self (s.bindAll vs)]
+    rw [denoteCode_gep8_reg (calls := calls) (env := (s.bindAll vs).env)
+      (s := s.bindAll vs) (d := ap) (base := base) (off := off) (a := a)
+      (idx := BitVec.ofNat 64 j) hbase hoff (by rw [sExt_ofNat64 hj63]; exact hj63)]
+    rw [sExt_ofNat64 hj63]
+    rw [denoteCode_load8_single (calls := calls)
+      (env := (ap, .ptr (a + j)) :: (s.bindAll vs).env) (s := s.bindAll vs)
+      (d := ld) (p := ap) (a := a + j) (by simp [lookupName]) hread]
+    rfl
+  have hden : denoteCode calls B.instrs s =
+      some (stateAt (cells [(ld, .int 8 (BitVec.ofNat 8 b.toNat)),
+        (ap, .ptr (a + j))] (s.bindAll vs).env) (s.bindAll vs)) := by
+    rw [hinstrs]
+    rw [denoteCode_phiRun (specs := specs) (vs := vs)
+      (rest := [Instr.gep ap (Ty.int 8) (.reg base) (.reg off),
+        Instr.load ld (.int 8) (.reg ap)]) hpre hsel (by rfl)]
+    exact hbody
+  simp only [LeanLLVM.step, hfind, hden, hterm, execTerm]
+  rfl
+
 /-- **Class A: one comparison and a branch.**  Sixty of the walk's blocks are this
 shape — one `icmp` into a fresh name and a `condbr` on it — which makes the class a
 single step: the target's environment carries the comparison's cell and its `pc` is
@@ -1786,6 +1835,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkStackMarkerStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkPhiGepLoadBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkGepLoadBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkBrStep
