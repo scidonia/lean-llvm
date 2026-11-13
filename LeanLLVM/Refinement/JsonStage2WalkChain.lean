@@ -11,6 +11,13 @@ with, because `simp` will not normalise a mixed `cells`/`bind`/`bindAll` nest.  
 same trade: the producer states the fact, and every consumer reads it instead of computing
 it again — which is what makes the layers composable at all.
 
+Naming rather than normalising is also what catches a mistake.  A visit's environment named
+once showed a leaf installing `("%SwitchLeaf45", …)`/`("%.off44", …)` where the draft had
+written `LeafBlock33`'s cells: a `simp` over the same nest would have had to reduce both
+names to prove anything, but a named equality has to be *written*, and a wrong name cannot
+be written down and checked.  So the five levels are not only how the layers compose; they
+are how a wrong block is found before it is believed.
+
 The walk's dispatch chain: the finite pieces of a revolution.
 
 `WalkDispatch`'s interior is not one path.  A revolution is a finite path from the
