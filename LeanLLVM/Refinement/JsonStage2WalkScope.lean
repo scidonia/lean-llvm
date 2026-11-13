@@ -1528,11 +1528,18 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
 
   The list is the run's whole touched extent, and it grows with the cursors: a
   store into the arena or the event stream at the new cursor is inside it.  The
-  four stack slots are in it because the helpers store through them — a claim
-  that stopped at the seven was false of `s2_init`, `s2_string_body` and
+  stack slots are in it because the helpers store through them — a claim that
+  stopped at the seven was false of `s2_init`, `s2_string_body` and
   `num_fast_el1` — and they are *fresh* by `G.watermark`, which is what lets the
   document's and the entry stream's reads below conclude a byte outside this
   whole list.
+
+  The slots are `stage2AllocaWrites`: the body's four allocations at `G.next0`
+  plus `(G.next0 + 28, 8)`, the `%ei` `s2_string_body` allocates at the helper's
+  cursor.  `num_fast_el1` is the census's open row: its body allocates 936 bytes
+  (`[768 x i8]` and a `%struct.Stk`) at the same cursor, so row f adds an entry
+  there rather than extending the four, and every frame proof that reads this
+  list re-elaborates with it.
 
   This is the half the report's frame reads (`stage2ReportFrame`), and the half
   the two prefix reads read; nothing else consumes it. -/
