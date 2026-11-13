@@ -3880,6 +3880,25 @@ theorem s2StringBodyMemory_refused (mem : Mem) {ei xj e : Nat}
     xj Wj (e + (16#64).toNat) R2 (exists_readBytes_of_ne hxj_e01)
     (exists_readBytes_of_ne he2_e01) h7]
 
+/-- **`%cmp3`'s bit.**  The entry's test is `j0` against the count at `i64`; both
+sides are below `2 ^ 63`, so the unsigned comparison is the model's `Nat` one. -/
+theorem s2StringBodyBit_cmp3_one {j0 : Nat} {nxp : BitVec 64}
+    (hx : j0 < 2 ^ 63) (hy : nxp.toNat < 2 ^ 63) (h : j0 < nxp.toNat) :
+    evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1 := by
+  have h64 : j0 < 2 ^ 64 := by omega
+  simp only [evalICmp, BitVec.ult, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h64, h, BitVec.ofBool]
+  rfl
+
+/-- The same test as `0`: the entry leaves for the body-itself arm. -/
+theorem s2StringBodyBit_cmp3_zero {j0 : Nat} {nxp : BitVec 64}
+    (hx : j0 < 2 ^ 63) (hy : nxp.toNat < 2 ^ 63) (h : nxp.toNat ≤ j0) :
+    evalICmp .ult (BitVec.ofNat 64 j0) nxp = 0#1 := by
+  have h64 : j0 < 2 ^ 64 := by omega
+  have hlt : ¬ j0 < nxp.toNat := by omega
+  simp only [evalICmp, BitVec.ult, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h64, hlt,
+    BitVec.ofBool]
+  rfl
+
 /-- The body's own slot is eight bytes, so the run's cursor moves by exactly the
 post's `next + 8` — and nothing else in the body moves it: the callee keeps `next`,
 and the other blocks allocate nothing. -/
