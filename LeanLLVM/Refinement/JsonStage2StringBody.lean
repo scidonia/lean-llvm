@@ -4187,6 +4187,22 @@ post's `next + 8` — and nothing else in the body moves it: the callee keeps `n
 and the other blocks allocate nothing. -/
 theorem s2StringBodySlot_sizeBytes : (Ty.int 64).sizeBytes = 8 := by decide
 
+/- **The arms are separated by the window, not by the scan's exit.**  Stage 3's plan —
+"seat + scan + split + `%cmp9` → decoded" — needs one correction the four-bit work
+reveals: the scan's **two** exits both lead onward, and which model arm they reach is
+decided by the *window* at the exit counter, not by which exit was taken.  `if.then`
+out of `while.body` (the counter reached the count) is the body-itself arm when the
+window there is empty, and `land.lhs.true` is the inside test, whose own bit then picks
+`if.then` or `if.end`.  So the composition is:
+
+* one **scan stage**: seat → prefix → `s2StringBodyScan_run` → the exit, with the window
+  decided by `s2StringBodyWindow_lane_ge`/`_lt` at the exit counter;
+* then the **`%cmp9` fork**, shared by the decoded and refused arms, which is the only
+  thing that differs between them.
+
+Stating it this way is why stage 2 was three steps: it is the *entry's* `%cmp3` arm, a
+different way into the same form. -/
+
 /- **The assembly's remaining content, and it is the control flow, not the memory.**
 The memory is done: both arms' joins, the record reconciliation, the `takeWhile`
 bridge.  What the contract still needs is the correspondence between the model's
