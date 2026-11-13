@@ -276,6 +276,37 @@ theorem walkCondEnd349Step {sub : Calls} (s : State)
   · simp only [condEnd349OutAt]
   · simp only [evalOperand, condEnd349OutAt, cells, lookupName_cons_self]
 
+/-- **A byte outside the run's whole touched extent is outside its frame.**  The
+seed's version (`walkSeedWide_outside`) is stated at `walkSeed G S`, whose cursors are
+the staging's; a chain's carries have advanced, so the bounds are the *carry's*
+(`C.alen`, `C.evlen`) and the proof is the seed's with the cursor names substituted.
+
+This is what a scan link's loaded-byte derivation runs on: `walkWide` never covers the
+document, so a document byte reads as the caller's — `G.doc`'s own. -/
+theorem walkWide_outside {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {a m : Nat}
+    (hArena : a + m ≤ G.dst ∨ G.dst + C.alen ≤ a)
+    (hEv : a + m ≤ G.ev ∨ G.ev + C.evlen ≤ a)
+    (hSeven : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok
+      C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ a ∨ a + m ≤ r.1)
+    (hD : C.stage.d + 8 ≤ a ∨ a + m ≤ C.stage.d)
+    (hwm : a + m ≤ G.next0) {e : Nat} (ha : a ≤ e) (he : e < a + m) :
+    ¬ inRegions (walkWide G C) e := by
+  rintro ⟨r, hr, hlo, hhi⟩
+  simp only [walkWide, walkPresent, stage2ReportScratch] at hr
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_append.mp hr with hr | hr
+    · rcases List.mem_cons.mp hr with rfl | hr'
+      · rcases hArena with h' | h' <;> omega
+      · rcases List.mem_cons.mp hr' with rfl | hnil
+        · rcases hEv with h' | h' <;> omega
+        · exact absurd hnil (by simp)
+    · rcases List.mem_append.mp hr with hr | hr
+      · rcases hSeven r hr with h' | h' <;> omega
+      · rcases List.mem_cons.mp hr with rfl | hnil
+        · rcases hD with h' | h' <;> omega
+        · exact absurd hnil (by simp)
+  · exact not_walkAlloca_of_lt (by omega) ⟨r, hr, hlo, hhi⟩
+
 /-! ### The trace's step shapes
 
 `WalkLink` carries `step : step calls stage2Body s = .jump s'`, so a chain names every
@@ -1907,6 +1938,7 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.walkTwoLoadAddIcmpStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkAddIcmpBrStep
 #print axioms LeanLLVM.Refinement.WalkScope.walkPhiGepLoadBrStep
+#print axioms LeanLLVM.Refinement.WalkScope.walkWide_outside
 #print axioms LeanLLVM.Refinement.WalkScope.execTerm_condbr_bit
 #print axioms LeanLLVM.Refinement.WalkScope.walkCondEnd349Step
 #print axioms LeanLLVM.Refinement.WalkScope.walkGepLoadBrStep
