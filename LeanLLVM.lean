@@ -81,6 +81,9 @@ import LeanLLVM.Refinement.PipelineBodyStep
 import LeanLLVM.Refinement.JsonStage2Contract
 import LeanLLVM.Refinement.JsonStage2HelperIR
 import LeanLLVM.Refinement.JsonStage2HelperIRBodies
+import LeanLLVM.Refinement.JsonStage2HelperIRNumFast
+import LeanLLVM.Refinement.JsonStage2NumFastBody
+import LeanLLVM.Refinement.JsonStage2NumFastScan
 import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkChain
 import LeanLLVM.Refinement.JsonStage2WalkInduce

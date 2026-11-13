@@ -6,6 +6,12 @@
 #
 #   nix develop -c bash probes/install/ir/capture-stage2-helpers.sh
 #
+# The bodies' Lean pins are generated from the same parse rather than copied
+# from the text; `--emit-pins` prints them, which is how
+# LeanLLVM/Refinement/JsonStage2HelperIRNumFast's generated section is produced:
+#
+#   nix develop -c bash probes/install/ir/capture-stage2-helpers.sh --emit-pins
+#
 # Input
 #   kernel/json/stage2.c   the stage-2 unit: the six helpers `s2_walk` calls out
 #                          of line, and the walk and wrapper around them
@@ -102,6 +108,196 @@ walk=$here/stage2.candidate.ll
 inventory=$here/stage2.helpers.tsv
 
 fail() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
+
+# ---------------------------------------------------------------------------
+# --emit-pins: the block pins `JsonStage2HelperIRNumFast` holds
+#
+# The first body with more than a handful of blocks is pinned block by block,
+# and its pins are *generated from the parse* rather than copied from the
+# fixture: this mode parses `stage2.helper.num_fast_el1.ll` under the declared
+# layout and prints the Lean text the module holds — the whole-body literal, the
+# instruction lists the runs read, the two hundred and fifty-five `findBlock`
+# equations, and the instruction-list projections.  The module's `#guard`s are
+# what hold that text to the fixture; this mode is how the text is produced.
+#
+#   nix develop -c bash probes/install/ir/capture-stage2-helpers.sh --emit-pins
+#
+# Exit status: 0 when the text is printed; 3 when the fixture is missing or the
+# parser refuses it.
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--emit-pins" ]; then
+  fixture=$here/stage2.helper.num_fast_el1.ll
+  [ -f "$fixture" ] || fail "absent: $fixture"
+  command -v lake >/dev/null 2>&1 || fail "lake is not on PATH"
+  gen=$repo/.lake/tmp-numfast-pins.lean
+  cat > "$gen" <<'LEANGEN'
+import LeanLLVM.Parser
+
+open LeanLLVM
+
+namespace Gen
+
+def hexOf (w : Nat) (v : BitVec w) : String :=
+  let digits := (w + 3) / 4
+  let s := String.ofList (Nat.toDigits 16 v.toNat)
+  "0x" ++ String.ofList (List.replicate (digits - s.length) '0') ++ s ++ "#" ++ toString w
+
+partial def tyStr : Ty → String
+  | .int w => s!"(Ty.int {w})"
+  | .ptr => "Ty.ptr"
+  | .void => "Ty.void"
+  | .double => "Ty.double"
+  | .vec n e => s!"(Ty.vec {n} {tyStr e})"
+  | .array n e => s!"(Ty.array {n} {tyStr e})"
+  | .struct n b => s!"(Ty.struct \"{n}\" {b})"
+
+def constStr : Const → String
+  | .int w v => s!"(Const.int {w} {hexOf w v})"
+  | .null => "Const.null" | .undef => "Const.undef" | .poison => "Const.poison"
+  | .splat n w v => s!"(Const.splat {n} {w} {hexOf w v})"
+  | .vector w lanes => s!"(Const.vector {w} [{String.intercalate ", " (lanes.map (hexOf w))}])"
+  | .float b => s!"(Const.float {hexOf 64 b})"
+
+def opStr : Operand → String
+  | .reg n => s!"(Operand.reg \"{n}\")"
+  | .global n => s!"(Operand.global \"{n}\")"
+  | .imm c => s!"(Operand.imm {constStr c})"
+
+def predStr : IPred → String
+  | .eq => "IPred.eq" | .ne => "IPred.ne" | .ult => "IPred.ult" | .ule => "IPred.ule"
+  | .ugt => "IPred.ugt" | .uge => "IPred.uge" | .slt => "IPred.slt" | .sle => "IPred.sle"
+  | .sgt => "IPred.sgt" | .sge => "IPred.sge"
+
+def binStr : BinOp → String
+  | .add => "BinOp.add" | .sub => "BinOp.sub" | .mul => "BinOp.mul" | .udiv => "BinOp.udiv"
+  | .sdiv => "BinOp.sdiv" | .urem => "BinOp.urem" | .srem => "BinOp.srem" | .and => "BinOp.and"
+  | .or => "BinOp.or" | .xor => "BinOp.xor" | .shl => "BinOp.shl" | .lshr => "BinOp.lshr"
+  | .ashr => "BinOp.ashr"
+
+def argsStr (args : List (Ty × Operand)) : String :=
+  "[" ++ String.intercalate ",\n                             "
+    (args.map fun (t, o) => s!"({tyStr t}, {opStr o})") ++ "]"
+
+def instrStr : Instr → String
+  | .binop d op w a b => s!"Instr.binop \"{d}\" ({binStr op}) {w} {opStr a} {opStr b}"
+  | .icmp d p w a b => s!"Instr.icmp \"{d}\" ({predStr p}) {w} {opStr a} {opStr b}"
+  | .icmpPtr d p a b => s!"Instr.icmpPtr \"{d}\" ({predStr p}) {opStr a} {opStr b}"
+  | .select d t c a b => s!"Instr.select \"{d}\" {tyStr t} {opStr c} {opStr a} {opStr b}"
+  | .trunc d wi wo v => s!"Instr.trunc \"{d}\" {wi} {wo} {opStr v}"
+  | .zext d wi wo v => s!"Instr.zext \"{d}\" {wi} {wo} {opStr v}"
+  | .sext d wi wo v => s!"Instr.sext \"{d}\" {wi} {wo} {opStr v}"
+  | .ptrtoint d v => s!"Instr.ptrtoint \"{d}\" {opStr v}"
+  | .inttoptr d v => s!"Instr.inttoptr \"{d}\" {opStr v}"
+  | .uitofp d w v => s!"Instr.uitofp \"{d}\" {w} {opStr v}"
+  | .fmul d a b => s!"Instr.fmul \"{d}\" {opStr a} {opStr b}"
+  | .fdiv d a b => s!"Instr.fdiv \"{d}\" {opStr a} {opStr b}"
+  | .fneg d v => s!"Instr.fneg \"{d}\" {opStr v}"
+  | .fcmp d p a b => s!"Instr.fcmp \"{d}\" (FPred.oeq) {opStr a} {opStr b}"
+  | .bitcastToInt d v => s!"Instr.bitcastToInt \"{d}\" {opStr v}"
+  | .bitcastToDouble d v => s!"Instr.bitcastToDouble \"{d}\" {opStr v}"
+  | .alloca d t al => s!"Instr.alloca \"{d}\" {tyStr t} {al}"
+  | .load d t p => s!"Instr.load \"{d}\" {tyStr t} {opStr p}"
+  | .store t v p => s!"Instr.store {tyStr t} {opStr v} {opStr p}"
+  | .gep d t b o => s!"Instr.gep \"{d}\" {tyStr t} {opStr b} {opStr o}"
+  | .icmpVec d p n w a b => s!"Instr.icmpVec \"{d}\" ({predStr p}) {n} {w} {opStr a} {opStr b}"
+  | .binopVec d op n w a b => s!"Instr.binopVec \"{d}\" ({binStr op}) {n} {w} {opStr a} {opStr b}"
+  | .bitcastMask d n v => s!"Instr.bitcastMask \"{d}\" {n} {opStr v}"
+  | .extractelement d n w v i => s!"Instr.extractelement \"{d}\" {n} {w} {opStr v} {opStr i}"
+  | .insertelement d n w v e i => s!"Instr.insertelement \"{d}\" {n} {w} {opStr v} {opStr e} {opStr i}"
+  | .shuffleVec d n w a b m => s!"Instr.shuffleVec \"{d}\" {n} {w} {opStr a} {opStr b} {m}"
+  | .vecBitcast d n w m jw v => s!"Instr.vecBitcast \"{d}\" {n} {w} {m} {jw} {opStr v}"
+  | .call d t c args => s!"Instr.call \"{d}\" {tyStr t} \"{c}\" {argsStr args}"
+  | .callVoid c args => s!"Instr.callVoid \"{c}\" {argsStr args}"
+  | .phi d t inc =>
+      s!"Instr.phi \"{d}\" {tyStr t} [" ++ String.intercalate ",\n                                       "
+        (inc.map fun (b, o) => s!"(\"{b}\", {opStr o})") ++ "]"
+
+def termStr : Term → String
+  | .ret t (some v) => s!"Term.ret {tyStr t} (some {opStr v})"
+  | .ret t none => s!"Term.ret {tyStr t} none"
+  | .br d => s!"Term.br \"{d}\""
+  | .condbr c t f => s!"Term.condbr {opStr c} \"{t}\" \"{f}\""
+  | .unreachable => "Term.unreachable"
+
+def pinList (b : Block) : String :=
+  "[\n" ++ String.intercalate ",\n" (b.instrs.map fun i => "          " ++ instrStr i) ++ "]"
+
+def blockStr (b : Block) : String :=
+  "\n    { name := \"" ++ b.name ++ "\",\n      instrs := [\n" ++
+    String.intercalate ",\n" (b.instrs.map fun i => "        " ++ instrStr i) ++
+    "\n      ],\n      term := " ++ termStr b.term ++ " }"
+
+def fnStr (f : Function) : String :=
+  "{ name := \"" ++ f.name ++ "\",\n  retTy := " ++ tyStr f.retTy ++ ",\n  params := [" ++
+    String.intercalate ",\n             " (f.params.map fun (n, t) => s!"(\"{n}\", {tyStr t})") ++
+    "],\n  blocks := [" ++ String.intercalate "," (f.blocks.map blockStr) ++ "] }"
+
+def sanitize (s : String) : String :=
+  String.ofList (s.toList.map fun c => if c.isAlphanum then c else '_')
+
+def camel (s : String) : String :=
+  let parts := (s.splitOn ".").filter (· ≠ "")
+  String.join (parts.map fun p =>
+    match p.toList with
+    | [] => ""
+    | c :: rest => String.singleton c.toUpper ++ String.ofList rest)
+
+def defOf (b : Block) : String :=
+  "def numFast" ++ camel b.name ++ "Instrs : List Instr :=\n  [\n" ++
+    String.intercalate ",\n" (b.instrs.map fun i => "    " ++ instrStr i) ++ "]\n"
+
+def pin (b : Block) (lhs : String) : String :=
+  "theorem numFast_findBlock_" ++ sanitize b.name ++ " :\n    numFastBody.findBlock \"" ++ b.name ++
+    "\" = some ⟨\"" ++ b.name ++ "\", " ++ lhs ++ ", " ++ termStr b.term ++ "⟩ := by decide\n"
+
+def instrsEq (b : Block) : String :=
+  "theorem numFast" ++ camel b.name ++ "Instrs_eq :\n    (numFastBody.findBlock \"" ++ b.name ++
+    "\").map (·.instrs) = some numFast" ++ camel b.name ++ "Instrs := by decide\n"
+
+end Gen
+
+open Gen
+
+def runBlocks : List String :=
+  ["entry", "land.lhs.true", "if.end", "if.then5", "if.end6", "if.else", "if.else66",
+   "cleanup300", "land.lhs.true41", "while.body52", "if.then55", "if.end62", "if.end68",
+   "if.end230"]
+
+def main : IO Unit := do
+  let src ← IO.FS.readFile "probes/install/ir/stage2.helper.num_fast_el1.ll"
+  match parseModuleWith [("Stk", 1568)] src with
+  | .error e => IO.eprintln s!"ERROR: {e}"; IO.Process.exit 3
+  | .ok m =>
+    match m.functions.head? with
+    | none => IO.eprintln "ERROR: no function"; IO.Process.exit 3
+    | some f =>
+      IO.println "-- § the body literal"
+      IO.println ("def numFastBody : Function := " ++ fnStr f)
+      IO.println "-- § the instruction lists"
+      let mut defs := ""
+      for b in f.blocks do
+        if runBlocks.contains b.name then defs := defs ++ defOf b ++ "\n"
+      IO.print defs
+      IO.println "-- § the pins"
+      let mut pins := ""
+      for b in f.blocks do
+        if runBlocks.contains b.name then
+          pins := pins ++ pin b ("numFast" ++ camel b.name ++ "Instrs") ++ "\n"
+        else
+          pins := pins ++ pin b (pinList b) ++ "\n"
+      IO.print pins
+      IO.println "-- § the instruction-list projections"
+      let mut eqs := ""
+      for b in f.blocks do
+        if runBlocks.contains b.name then eqs := eqs ++ instrsEq b ++ "\n"
+      IO.print eqs
+      IO.eprintln s!"emitted pins for {f.blocks.length} blocks, {(f.blocks.flatMap (·.instrs)).length} instructions"
+LEANGEN
+  ( cd "$repo" && lake env lean --run "$gen" 2>/dev/null | grep -v '^lean-llvm: Lean' )
+  rc=${PIPESTATUS[0]}
+  rm -f "$gen"
+  exit $rc
+fi
 
 [ -f "$repo/$src" ] || fail "absent: $repo/$src"
 [ -f "$walk" ] || fail "absent: $walk (run capture-stage2.sh first)"
@@ -410,7 +606,7 @@ done
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean and tests/core-extension.lean.  One strip rewrite: the refusal message becomes null, because Calls has no global table and the extracted block carries no global declaration; Operand.global's body-level evidence is tests/core-extension.lean's pins, not this fixture" ;;
       num_fast_el1)
         verdict=expressible
-        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)); parses after two strip rewrites — the one llvm.umin.i64 folds to its icmp/select pair (the fragment's umin is i32 at two registers), and ashr exact loses the flag, so the pinned body is the flag-erased form and 'the bits shifted out are zero' is a staging fact the text does not carry — and with %struct.Stk's 1568-byte extent supplied as the Layout the pin states; the decimal literals parse" ;;
+        basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)); parses after two strip rewrites — the one llvm.umin.i64 folds to its icmp/select pair (the fragment's umin is i32 at two registers), and ashr exact loses the flag, so the pinned body is the flag-erased form and 'the bits shifted out are zero' is a staging fact the text does not carry — and with %struct.Stk's 1568-byte extent supplied as the Layout the pin states; the decimal literals parse.  Pinned at every block in LeanLLVM/Refinement/JsonStage2HelperIRNumFast.lean (255 findBlock equations emitted by --emit-pins); the digit scan's BoundLoop is JsonStage2NumFastScan's, and the empty lexeme's refusal is proved of the body in JsonStage2NumFastBody.lean; the conversion arm is open" ;;
       *)
         verdict=expressible
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean" ;;
