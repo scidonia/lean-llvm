@@ -250,15 +250,28 @@ module-level name.**  Four measurements, one per level:
 The scan's landing state is already a name (`landRhs457OutAt`); the pivot's bite and
 the range leaf's two cells are these. -/
 
-/-- The first pivot's bite: `%Pivot106`, at the landing's three cells. -/
-abbrev ScanS₉₆ (s : State) (idx : BitVec 64) (a q : Nat) (x : BitVec 8) : State :=
-  stateAt (("%Pivot106", .int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) ::
-    (landRhs457OutAt s idx a q).env) (landRhs457OutAt s idx a q)
+/-- The dispatch's carries, named: the nesting a `with` chain builds is not something a
+term can spell, so each step's carry is a name too. -/
+abbrev ScanC₁₀₅ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { C with block := "NodeBlock105" }
 
-/-- The range leaf's two cells, at the scan's latch. -/
+/-- The range leaf's carry. -/
+abbrev ScanC₉₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { ScanC₁₀₅ C with block := "LeafBlock96" }
+
+/-- The first pivot's target: `%Pivot106`'s bite, at the landing's three cells, and
+the edge to the range leaf — **the state the next link's hypothesis reads**, its `pc`
+and `pre` included, not the block's mid-state. -/
+abbrev ScanS₉₆ (s : State) (idx : BitVec 64) (a q : Nat) (x : BitVec 8) : State :=
+  { stateAt (("%Pivot106", .int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) ::
+      (landRhs457OutAt s idx a q).env) (landRhs457OutAt s idx a q) with
+    pc := "LeafBlock96", pre := some (landRhs457OutAt s idx a q).pc }
+
+/-- The range leaf's target: its two cells, at the scan's latch. -/
 abbrev Latch462S (s : State) (idx : BitVec 64) (a q : Nat) (x : BitVec 8) : State :=
-  stateAt (cells
-    [("%SwitchLeaf98", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
-      (BitVec.ofNat 8 1))),
-     ("%.off97", .int 8 (x + BitVec.ofNat 8 247))] (ScanS₉₆ s idx a q x).env)
-    (ScanS₉₆ s idx a q x)
+  { stateAt (cells
+      [("%SwitchLeaf98", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+        (BitVec.ofNat 8 1))),
+       ("%.off97", .int 8 (x + BitVec.ofNat 8 247))] (ScanS₉₆ s idx a q x).env)
+      (ScanS₉₆ s idx a q x) with
+    pc := "while.body462.i", pre := some (ScanS₉₆ s idx a q x).pc }
