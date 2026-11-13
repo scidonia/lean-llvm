@@ -1079,4 +1079,96 @@ theorem s2StringBody_whileBody_denote {calls : Calls} {env : Env} {s : State}
     { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) }
     "%exitcond.not" "%inc" "%nxp" (by s2_lk) (by s2_lk) []]
 
+/-! ### The `if.end` block: the expander's call, and the test of its answer
+
+The block marks `%ei` live, clears the offset word, calls the expander at eight
+arguments, and compares the returned word with all-ones.  Its two call shapes are
+the model's: the lifetime marker is an identity (`stage2Calls` selects it by the
+callee's name — no value read, no byte written, no allocation), and the expander
+is `s2StringBodyCalls`'s own clause.
+
+**The marker's step is stated, not rewritten through `sb_step_callVoid2`.**  That
+step takes the argument values and the outcome as parameters, so a chain that
+supplies only the operands leaves `v2`, `r`, and the `r.mem`/`r.next` in the goal
+as metavariables, and the side goal the compiler reports is about one of them —
+printed as a truncated context, which reads as a failure of the *argument* the
+last attempt passed.  At this environment the answer is not a parameter: the
+marker writes nothing and allocates nothing, so the step's conclusion is the
+state unchanged. -/
+theorem sb_step_lifetime (env : Env) (s : State) (ei : Nat) (callee : String)
+    (hname : callee = "llvm.lifetime.start.p0" ∨ callee = "llvm.lifetime.end.p0")
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
+    evalInstr s2StringBodyCalls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, .imm (.int 64 (8#64))), (Ty.ptr, .reg "%ei")]) =
+      some (stateAt env s) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, .imm (.int 64 (8#64))), (Ty.ptr, .reg "%ei")] =
+      some [.int 64 (8#64), .ptr ei] := by
+    simp only [evalOperands, evalOperand, Const.toValue, stateAt, hei]
+  rcases hname with rfl | rfl <;>
+    simp only [evalInstr, hargs, s2StringBodyCalls, JsonStage2IR.stage2Calls]
+
+/-- The `if.end` block's environment: the expander's returned word and the
+branch test over it. -/
+def s2StringBodyIfEndEnv (env : Env) (call : BitVec 64) : Env :=
+  ("%cmp9", .int 1 (evalICmp .eq call 0xffffffffffffffff#64)) ::
+    ("%call", .int 64 call) :: env
+
+/-- The `if.end` block's instruction list: the marker, the cleared offset word,
+the expander at eight arguments, and the test of its answer. -/
+def s2StringBodyIfEndInstrs : List Instr :=
+  [Instr.callVoid "llvm.lifetime.start.p0"
+     [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+      (Ty.ptr, Operand.reg "%ei")],
+   Instr.store (Ty.int 64) (Operand.imm (Const.int 64 0x0000000000000000#64))
+     (Operand.reg "%ei"),
+   Instr.call "%call" (Ty.int 64) "leanllvm_json_escape_expand"
+     [(Ty.ptr, Operand.reg "%p"), (Ty.int 64, Operand.reg "%len"),
+      (Ty.ptr, Operand.reg "%dst"), (Ty.ptr, Operand.reg "%ei"),
+      (Ty.ptr, Operand.reg "%xp"), (Ty.ptr, Operand.reg "%xj"),
+      (Ty.int 64, Operand.reg "%nxp"), (Ty.int 64, Operand.reg "%sub.ptr.sub")],
+   Instr.icmp "%cmp9" (IPred.eq) 64 (Operand.reg "%call")
+     (Operand.imm (Const.int 64 0xffffffffffffffff#64))]
+
+-- The list is the block the pin resolves to: the run is the block's own body.
+theorem s2StringBodyIfEndInstrs_eq :
+    (s2StringBodyBody.findBlock "if.end").map (·.instrs) =
+      some s2StringBodyIfEndInstrs := by decide
+
+/-- **The `if.end` block's run**: the marker, the cleared offset word, the
+expander at the eight registers the entry block left, and the test of the
+returned word against all-ones.  The callee's answer is the arm's own literal —
+its returned word, its memory and its cursor — so the chain's state is named
+rather than existentially bound: no step of it leaves a metavariable in the
+conclusion. -/
+theorem s2StringBody_ifEnd_denote {env : Env} {s : State}
+    {p dst ei xp xj : Nat} {len nxp sub call : BitVec 64} {m : Mem} {nx : Nat}
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hdst : lookupName env "%dst" = some (.ptr dst))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hc : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes s.mem ei (natToBytes (0#64).toNat 8)) s.next =
+      some { ret := .int 64 call, mem := m, next := nx }) :
+    denoteCode s2StringBodyCalls s2StringBodyIfEndInstrs (stateAt env s) =
+      denoteCode s2StringBodyCalls []
+        (stateAt (s2StringBodyIfEndEnv env call) { s with mem := m, next := nx }) := by
+  dsimp only [s2StringBodyIfEndInstrs]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_lifetime env s ei "llvm.lifetime.start.p0" (Or.inl rfl) hei)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_store64_imm s2StringBodyCalls env s "%ei" (x := 0#64) hei)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_call8 s2StringBodyCalls env _ "%call" "leanllvm_json_escape_expand"
+      (.reg "%p") (.reg "%len") (.reg "%dst") (.reg "%ei") (.reg "%xp")
+      (.reg "%xj") (.reg "%nxp") (.reg "%sub.ptr.sub")
+      hp hlen hdst hei hxp hxj hnxp hsub hc)]
+  rw [denoteCode_icmp_eq_imm s2StringBodyCalls _ _ "%cmp9" "%call" (by s2_lk) []]
+  simp only [denoteCode_nil, s2StringBodyIfEndEnv]
+
 end LeanLLVM.Refinement
